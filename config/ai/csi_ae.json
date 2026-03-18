@@ -1,0 +1,87 @@
+{
+  "enable": false,
+  "modelName": "CSI_AE_v1",
+  "latentDim": 64,
+  "input": {
+    "type": "CSI",
+    "representation": "realimag",
+    "nSubcarriers": "auto",
+    "nRx": "auto",
+    "nTx": "auto"
+  },
+  "network": {
+    "encoder": [
+      {
+        "type": "conv2d",
+        "filters": 16,
+        "kernel": [
+          3,
+          3
+        ],
+        "stride": [
+          1,
+          1
+        ],
+        "activation": "relu"
+      },
+      {
+        "type": "conv2d",
+        "filters": 32,
+        "kernel": [
+          3,
+          3
+        ],
+        "stride": [
+          2,
+          2
+        ],
+        "activation": "relu"
+      },
+      {
+        "type": "dense",
+        "units": 64,
+        "activation": "linear"
+      }
+    ],
+    "decoder": [
+      {
+        "type": "dense",
+        "units": 256,
+        "activation": "relu"
+      },
+      {
+        "type": "deconv2d",
+        "filters": 16,
+        "kernel": [
+          3,
+          3
+        ],
+        "stride": [
+          2,
+          2
+        ],
+        "activation": "relu"
+      },
+      {
+        "type": "conv2d",
+        "filters": 2,
+        "kernel": [
+          1,
+          1
+        ],
+        "stride": [
+          1,
+          1
+        ],
+        "activation": "linear"
+      }
+    ]
+  },
+  "training": {
+    "optimizer": "adam",
+    "learningRate": 0.001,
+    "batchSize": 256,
+    "epochs": 50,
+    "validationSplit": 0.1
+  }
+}

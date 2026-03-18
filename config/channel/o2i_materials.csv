@@ -1,0 +1,13 @@
+material,category,freq_GHz,loss_dB,notes
+standardGlass,lowLoss,3.5,2.0,Illustrative
+standardGlass,lowLoss,7.0,3.0,Illustrative
+standardGlass,lowLoss,14.0,4.0,Illustrative
+infraredReflectiveGlass,highLoss,3.5,15.0,Illustrative
+infraredReflectiveGlass,highLoss,7.0,20.0,Illustrative
+infraredReflectiveGlass,highLoss,14.0,25.0,Illustrative
+concrete,highLoss,3.5,18.0,Illustrative
+concrete,highLoss,7.0,23.0,Illustrative
+concrete,highLoss,14.0,28.0,Illustrative
+wood,lowLoss,3.5,5.0,Illustrative
+wood,lowLoss,7.0,7.0,Illustrative
+wood,lowLoss,14.0,10.0,Illustrative

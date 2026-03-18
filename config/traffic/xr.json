@@ -1,0 +1,21 @@
+{
+  "name": "XR",
+  "description": "Interactive XR traffic model (downlink-heavy with latency constraints).",
+  "qos": {
+    "5QI": 84,
+    "latencyBudget_ms": 20,
+    "packetErrorRate": 1e-05
+  },
+  "dl": {
+    "meanRate_Mbps": 200,
+    "burstiness": "high",
+    "frameRate_Hz": 90,
+    "frameSize_kB": 250
+  },
+  "ul": {
+    "meanRate_Mbps": 20,
+    "burstiness": "medium",
+    "packetSize_bytes": 200,
+    "interval_ms": 5
+  }
+}

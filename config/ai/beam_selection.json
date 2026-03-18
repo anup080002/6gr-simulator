@@ -1,0 +1,47 @@
+{
+  "enable": false,
+  "modelName": "BeamSelect_v1",
+  "beamCodebook": {
+    "type": "DFT",
+    "nBeams": 64,
+    "nTxAnt": "auto"
+  },
+  "features": {
+    "useRSRP": true,
+    "useCSI": false,
+    "usePosition": false
+  },
+  "network": {
+    "type": "cnn",
+    "layers": [
+      {
+        "type": "conv1d",
+        "filters": 32,
+        "kernel": 5,
+        "activation": "relu"
+      },
+      {
+        "type": "conv1d",
+        "filters": 64,
+        "kernel": 3,
+        "activation": "relu"
+      },
+      {
+        "type": "dense",
+        "units": 128,
+        "activation": "relu"
+      },
+      {
+        "type": "dense",
+        "units": 64,
+        "activation": "softmax"
+      }
+    ]
+  },
+  "training": {
+    "optimizer": "adam",
+    "learningRate": 0.001,
+    "batchSize": 512,
+    "epochs": 30
+  }
+}

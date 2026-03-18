@@ -1,0 +1,9 @@
+scenario,condition,fmin_GHz,fmax_GHz,alpha,beta,gamma,sigma_dB,notes
+UMa,LOS,6.0,24.25,2.0,31.4,2.0,4.0,Example ABG coefficients for FR3 extension (validate for your study)
+UMa,NLOS,6.0,24.25,3.2,25.1,2.1,7.0,Example ABG coefficients for FR3 extension (validate for your study)
+SMa,LOS,6.0,24.25,2.1,30.0,2.0,4.0,Example ABG coefficients for FR3 extension (validate for your study)
+SMa,NLOS,6.0,24.25,3.0,24.0,2.1,7.0,Example ABG coefficients for FR3 extension (validate for your study)
+RMa,LOS,6.0,24.25,2.0,32.0,2.0,4.0,Example ABG coefficients for FR3 extension (validate for your study)
+RMa,NLOS,6.0,24.25,2.9,26.0,2.0,7.0,Example ABG coefficients for FR3 extension (validate for your study)
+InH,LOS,6.0,24.25,1.8,32.5,2.0,3.0,Example ABG coefficients for FR3 extension (validate for your study)
+InH,NLOS,6.0,24.25,2.6,28.0,2.0,4.0,Example ABG coefficients for FR3 extension (validate for your study)

@@ -1,0 +1,36 @@
+{
+  "enable": true,
+  "modulation": "256QAM",
+  "nLayers": 2,
+  "codeRate": 0.75,
+  "transformPrecoding": true,
+  "rnti": 1,
+  "prbAllocation": {
+    "type": "full",
+    "rbStart": 0,
+    "rbLen": "auto"
+  },
+  "symbolAllocation": {
+    "start": 0,
+    "length": 14
+  },
+  "dmrs": {
+    "configType": 1,
+    "typeApos": 2,
+    "additionalPos": 1,
+    "length": 1,
+    "numCDMGroupsWithoutData": 2
+  },
+  "ptrs": {
+    "enable": false
+  },
+  "harq": {
+    "enable": true,
+    "rvSequence": [
+      0,
+      2,
+      3,
+      1
+    ]
+  }
+}

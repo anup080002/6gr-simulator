@@ -1,0 +1,46 @@
+{
+  "scenario": {
+    "name": "SuburbanMacro",
+    "layout": {
+      "type": "hex",
+      "nSites": 7,
+      "interSiteDistance_m": 750,
+      "nSectorsPerSite": 3,
+      "wrapAround": true
+    },
+    "ue": {
+      "nUE": 100,
+      "distribution": {
+        "type": "uniform",
+        "indoorFraction": 0.3,
+        "minBSdist_m": 10,
+        "maxBSdist_m": 750
+      }
+    }
+  },
+  "channel": {
+    "type": "TR38901",
+    "fc_Hz": 7000000000.0,
+    "bandwidth_Hz": 100000000.0,
+    "subcarrierSpacing_kHz": 30,
+    "pathloss": {
+      "model": "CI",
+      "shadowFadingStd_dB": 6,
+      "o2iLoss_dB": 0
+    },
+    "fading": {
+      "enable": true,
+      "model": "CDL",
+      "profile": "CDL-C",
+      "delaySpread_s": 2e-07,
+      "maxDoppler_Hz": 50
+    }
+  },
+  "phy": {
+    "carrier": {
+      "SubcarrierSpacing": 30,
+      "NSizeGrid": 273,
+      "CyclicPrefix": "normal"
+    }
+  }
+}

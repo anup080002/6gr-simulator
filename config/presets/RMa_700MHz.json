@@ -1,0 +1,62 @@
+{
+  "scenario": {
+    "name": "RuralMacro",
+    "layout": {
+      "type": "hex",
+      "nSites": 7,
+      "interSiteDistance_m": 1732,
+      "nSectorsPerSite": 3,
+      "wrapAround": true
+    },
+    "ue": {
+      "nUE": 50,
+      "distribution": {
+        "type": "uniform",
+        "indoorFraction": 0.1,
+        "minBSdist_m": 35,
+        "maxBSdist_m": 1732
+      }
+    },
+    "mobility": {
+      "enable": true,
+      "model": "randomWaypoint",
+      "speed_kmh": [
+        30,
+        120
+      ],
+      "updatePeriod_s": 0.2
+    }
+  },
+  "channel": {
+    "type": "TR38901",
+    "fc_Hz": 700000000.0,
+    "bandwidth_Hz": 10000000.0,
+    "subcarrierSpacing_kHz": 15,
+    "pathloss": {
+      "model": "nrPathLoss",
+      "shadowFadingStd_dB": 8,
+      "o2iLoss_dB": 0
+    },
+    "fading": {
+      "enable": true,
+      "model": "TDL",
+      "profile": "TDL-A",
+      "delaySpread_s": 3e-07,
+      "maxDoppler_Hz": 200
+    }
+  },
+  "phy": {
+    "carrier": {
+      "SubcarrierSpacing": 15,
+      "NSizeGrid": 52,
+      "CyclicPrefix": "normal"
+    },
+    "waveform": {
+      "dl": "CP-OFDM",
+      "ul": "CP-OFDM"
+    },
+    "pusch": {
+      "transformPrecoding": false
+    }
+  }
+}

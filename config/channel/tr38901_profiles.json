@@ -1,0 +1,95 @@
+{
+  "profiles": {
+    "UrbanMacro": {
+      "scenario": "UMa",
+      "losProbability": "TR38901",
+      "pathlossModel": "nrPathLoss",
+      "shadowFadingStd_dB": {
+        "LOS": 4,
+        "NLOS": 6
+      },
+      "o2iLoss_dB": {
+        "enable": true,
+        "type": "lowLoss",
+        "additional_dB": 0
+      },
+      "fading": {
+        "model": "CDL",
+        "profileLOS": "CDL-D",
+        "profileNLOS": "CDL-C",
+        "delaySpread_s": 3e-07
+      }
+    },
+    "SuburbanMacro": {
+      "scenario": "SMa",
+      "losProbability": "TR38901",
+      "pathlossModel": "CI",
+      "shadowFadingStd_dB": {
+        "LOS": 4,
+        "NLOS": 7
+      },
+      "o2iLoss_dB": {
+        "enable": true,
+        "type": "lowLoss",
+        "additional_dB": 0
+      },
+      "fading": {
+        "model": "CDL",
+        "profileLOS": "CDL-C",
+        "profileNLOS": "CDL-C",
+        "delaySpread_s": 2e-07
+      }
+    },
+    "RuralMacro": {
+      "scenario": "RMa",
+      "losProbability": "TR38901",
+      "pathlossModel": "nrPathLoss",
+      "shadowFadingStd_dB": {
+        "LOS": 4,
+        "NLOS": 8
+      },
+      "o2iLoss_dB": {
+        "enable": true,
+        "type": "lowLoss",
+        "additional_dB": 0
+      },
+      "fading": {
+        "model": "TDL",
+        "profileLOS": "TDL-A",
+        "profileNLOS": "TDL-A",
+        "delaySpread_s": 3e-07
+      }
+    },
+    "IndoorHotspot": {
+      "scenario": "InH",
+      "losProbability": "TR38901",
+      "pathlossModel": "ABG",
+      "shadowFadingStd_dB": {
+        "LOS": 3,
+        "NLOS": 4
+      },
+      "o2iLoss_dB": {
+        "enable": true,
+        "type": "highLoss",
+        "additional_dB": 5
+      },
+      "fading": {
+        "model": "TDL",
+        "profileLOS": "TDL-A",
+        "profileNLOS": "TDL-A",
+        "delaySpread_s": 5e-08
+      }
+    }
+  },
+  "defaults": {
+    "txRxHeights_m": {
+      "bs": 25,
+      "ue": 1.5
+    },
+    "distance_m": {
+      "min": 1,
+      "max": 5000
+    },
+    "temperature_C": 20
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "run": {
+    "campaign": {
+      "profile": "quick",
+      "e2eStrictValidation": true,
+      "e2eMaxSlots": 6000,
+      "e2eAirModel": "lut",
+      "e2eScaleServiceWithCompression": true,
+      "e2eServiceScaleCap": 256,
+      "e2eEnableSemanticChecks": true,
+      "e2eScaleChunkWithCompression": true,
+      "e2eMaxSDUChunkBytes": 4194304,
+      "calibrateSystemBLERFromLink": true,
+      "reuseLinkForDetailedDiagnostics": true,
+      "mirrorStructuredResults": false,
+      "systemDetailedTrace": false,
+      "mmtcSaveFigures": false,
+      "linkSweepMaxPoints": 7,
+      "useFastLinkModel": false,
+      "useMexAcceleration": true,
+      "setupToolboxChecks": false
+    }
+  },
+  "channel": {
+    "awgnOnly": false,
+    "dopplerHz": 70,
+    "rayTracing": {
+      "enable": false
+    }
+  },
+  "phy": {
+    "ldpc": {
+      "useMexBatchDecode": true
+    },
+    "rx": {
+      "useFastChannelEstMex": false
+    },
+    "ssb": {
+      "Enable": true
+    },
+    "dl": {
+      "pdcch": {
+        "Enable": true
+      }
+    },
+    "ul": {
+      "pucch": {
+        "Enable": true
+      },
+      "srs": {
+        "Enable": true
+      },
+      "prach": {
+        "Enable": true
+      }
+    }
+  },
+  "traffic": {
+    "transport": "MIXED",
+    "flowDirection": "BIDIR",
+    "packetDelayBudget_ms": 20,
+    "rlcSduChunk_bytes": 1200
+  }
+}

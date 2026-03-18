@@ -1,0 +1,617 @@
+{
+  "meta": {
+    "toolkitName": "6GR Sim Studio Unified",
+    "version": "v18",
+    "schemaVersion": 1,
+    "createdUTC": "2026-02-26T15:40:46Z",
+    "loadedFrom": ""
+  },
+  "run": {
+    "seed": 1,
+    "mode": "both",
+    "module": "SixGR_Simulator",
+    "failFast": true,
+    "useParallel": false,
+    "numWorkers": 0,
+    "resultsRoot": "results",
+    "runTag": "",
+    "shortRun": true,
+    "numFrames": 20,
+    "numTTI": 200,
+    "saveIntermediate": false,
+    "verbose": true,
+    "nFrames": 10,
+    "slotDuration_ms": 0.5,
+    "saveRoot": "results",
+    "showProgress": true,
+    "configFile": "config/suite_config.json"
+  },
+  "scenario": {
+    "name": "basic_single_cell",
+    "layout": {
+      "type": "hex",
+      "nSites": 19,
+      "interSiteDistance_m": 500,
+      "nSectorsPerSite": 3,
+      "wrapAround": true
+    },
+    "bs": {
+      "height_m": 25,
+      "txPower_dBm": 46,
+      "noiseFigure_dB": 7,
+      "nTxAnt": 64,
+      "nRxAnt": 64,
+      "antenna": {
+        "type": "URA",
+        "size": [
+          8,
+          8
+        ],
+        "elementSpacing_wl": [
+          0.5,
+          0.5
+        ]
+      }
+    },
+    "ue": {
+      "nUE": 190,
+      "height_m": 1.5,
+      "txPower_dBm": 23,
+      "noiseFigure_dB": 9,
+      "nTxAnt": 4,
+      "nRxAnt": 4,
+      "distribution": {
+        "type": "uniform",
+        "indoorFraction": 0.2,
+        "minBSdist_m": 10,
+        "maxBSdist_m": 500
+      }
+    },
+    "mobility": {
+      "enable": true,
+      "model": "randomWaypoint",
+      "speed_kmh": [
+        3,
+        30
+      ],
+      "updatePeriod_s": 0.1
+    },
+    "description": "Baseline single-cell NR link+system harness (foundation config).",
+    "simTime_s": 0.05,
+    "carrierFreq_Hz": 3.5E+9,
+    "bandwidth_Hz": 2.0E+7,
+    "sCS_kHz": 30,
+    "duplexMode": "TDD",
+    "tddPattern": {
+      "dlSlots": 4,
+      "ulSlots": 1,
+      "specialSlots": 0
+    },
+    "nUE": 1
+  },
+  "traffic": {
+    "model": "fullBuffer",
+    "dlRatio": 0.8,
+    "ulRatio": 0.2,
+    "qos": {
+      "enable5QI": true,
+      "default5QI": 9,
+      "flows": []
+    }
+  },
+  "channel": {
+    "type": "TR38901",
+    "fc_Hz": 4.0E+9,
+    "bandwidth_Hz": 1.0E+8,
+    "subcarrierSpacing_kHz": 30,
+    "pathloss": {
+      "model": "nrPathLoss"
+    },
+    "shadowFadingStd_dB": 6,
+    "o2iLoss_dB": 0,
+    "fading": {
+      "enable": true,
+      "model": "TDL",
+      "profile": "TDL-C",
+      "delaySpread_s": 1E-7,
+      "maxDoppler_Hz": 70
+    },
+    "raytracing": {
+      "enable": false,
+      "scene": "",
+      "method": "sbr",
+      "maxReflections": 2
+    },
+    "interference": {
+      "enable": true,
+      "model": "fullReuse"
+    },
+    "model": "AWGN",
+    "delayProfile": "TDL-C",
+    "delaySpread_s": 3E-7,
+    "dopplerHz": 0,
+    "snr_dB": 20,
+    "awgnOnly": true,
+    "rayTracing": {
+      "enable": false,
+      "scenario": "Urban",
+      "map": "",
+      "bsHeight_m": 25,
+      "ueHeight_m": 1.5
+    },
+    "sampleRate_Hz": 3.072E+7,
+    "nfft": 1024
+  },
+  "phy": {
+    "carrier": {
+      "NCellID": 1,
+      "SubcarrierSpacing": 30,
+      "NSizeGrid": 66,
+      "CyclicPrefix": "normal",
+      "NFrame": 0,
+      "fc_Hz": 4.0E+9
+    },
+    "dl": {
+      "pdsch": {
+        "Enable": true,
+        "Modulation": "16QAM",
+        "NumLayers": 1,
+        "RNTI": 1,
+        "MappingType": "A",
+        "PRBSet": "full",
+        "SymbolAllocation": [
+          0,
+          14
+        ],
+        "DMRS": {
+          "DMRSTypeAPosition": 2,
+          "DMRSLength": 1,
+          "DMRSAdditionalPosition": 1,
+          "NumCDMGroupsWithoutData": 2
+        },
+        "PTRS": {
+          "Enable": false
+        }
+      },
+      "pdcch": {
+        "Enable": false
+      },
+      "csirs": {
+        "Enable": false
+      },
+      "beamforming": {
+        "Enable": false,
+        "Method": "tddReciprocitySRS"
+      }
+    },
+    "ul": {
+      "pusch": {
+        "Enable": true,
+        "Modulation": "16QAM",
+        "NumLayers": 1,
+        "RNTI": 1,
+        "TransformPrecoding": false,
+        "PRBSet": "full",
+        "SymbolAllocation": [
+          0,
+          14
+        ],
+        "DMRS": {
+          "DMRSTypeAPosition": 2,
+          "DMRSLength": 1,
+          "DMRSAdditionalPosition": 1
+        },
+        "PTRS": {
+          "Enable": false
+        }
+      },
+      "pucch": {
+        "Enable": false
+      },
+      "srs": {
+        "Enable": true
+      },
+      "prach": {
+        "Enable": false
+      }
+    },
+    "duplex": {
+      "mode": "TDD",
+      "tddPattern": "DDDSU"
+    },
+    "waveform": {
+      "dl": "CP-OFDM",
+      "ul": "CP-OFDM",
+      "type": "CP-OFDM",
+      "SampleRate": "auto"
+    },
+    "ssb": {
+      "enable": true,
+      "blockPattern": "Case B",
+      "period_ms": 20,
+      "nBeams": 8,
+      "Enable": false,
+      "BlockPattern": "Case B",
+      "NSSB": 4,
+      "BeamSweep": {
+        "Enable": false
+      }
+    },
+    "pbch": {
+      "enable": true
+    },
+    "mib": {
+      "enable": true
+    },
+    "sib1": {
+      "enable": true
+    },
+    "prach": {
+      "enable": true,
+      "configurationIndex": 16,
+      "subcarrierSpacing_kHz": 1.25,
+      "preambleFormat": "A1",
+      "rootSeqIndex": 1,
+      "zeroCorrelationZone": 8,
+      "Enable": false,
+      "ConfigurationIndex": 0,
+      "SubcarrierSpacing": 1.25
+    },
+    "pdcch": {
+      "enable": false,
+      "searchSpaceType": "ue",
+      "aggregationLevel": 8,
+      "dciFormat": "1_0"
+    },
+    "pdsch": {
+      "enable": true,
+      "modulation": "16QAM",
+      "nLayers": 1,
+      "codeRate": 0.75,
+      "enablePTRS": false,
+      "dmrs": {
+        "typeApos": 2,
+        "configType": 1,
+        "numCDMGroupsWithoutData": 2
+      },
+      "numLayers": 1,
+      "rnti": 1
+    },
+    "csirs": {
+      "enable": true,
+      "nPorts": 8
+    },
+    "csi": {
+      "enable": true,
+      "feedbackMode": "PMI+CQI"
+    },
+    "pucch": {
+      "enable": false,
+      "format": 2
+    },
+    "pusch": {
+      "enable": true,
+      "modulation": "16QAM",
+      "nLayers": 1,
+      "codeRate": 0.75,
+      "transformPrecoding": false,
+      "dmrs": {
+        "configType": 1,
+        "numCDMGroupsWithoutData": 2
+      },
+      "numLayers": 1,
+      "rnti": 1
+    },
+    "srs": {
+      "enable": true,
+      "nPorts": 2,
+      "period_slots": 20
+    },
+    "harq": {
+      "enable": true,
+      "nProcesses": 16,
+      "rvSequence": [
+        0,
+        2,
+        3,
+        1
+      ],
+      "Enable": true,
+      "NumProcesses": 8
+    },
+    "rx": {
+      "channelEstimation": "DMRS",
+      "equalizer": "MMSE",
+      "mimoDetector": "MMSE",
+      "cfoCompensation": true,
+      "channelEst": "DMRS",
+      "llrType": "approx"
+    },
+    "numerology": {
+      "SubcarrierSpacing_kHz": 30,
+      "NRB": 66,
+      "NSubcarriers": 792,
+      "mu": 1,
+      "slotsPerSubframe": 2,
+      "slotsPerFrame": 20
+    },
+    "ofdm": {
+      "Nfft": 1024,
+      "SampleRate": 3.072E+7,
+      "CyclicPrefixLengths": [
+        88,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        88,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72
+      ],
+      "SymbolLengths": [
+        1112,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1112,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096,
+        1096
+      ],
+      "Windowing": 36,
+      "SymbolPhases": [
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0,
+        -0
+      ],
+      "SymbolsPerSlot": 14,
+      "SlotsPerSubframe": 2,
+      "SlotsPerFrame": 20
+    }
+  },
+  "mac": {
+    "scheduler": {
+      "type": "roundRobin",
+      "metricAveraging": "exp",
+      "alpha": 0.9,
+      "tbsScaling": 1
+    },
+    "harq": {
+      "enable": true,
+      "maxRetx": 3,
+      "Enable": true
+    },
+    "lcp": {
+      "Enable": true
+    }
+  },
+  "rlc": {
+    "mode": "AM",
+    "tPollRetransmit_ms": 45,
+    "tReassembly_ms": 35,
+    "pollPDU": 16,
+    "pollByte": 10000
+  },
+  "pdcp": {
+    "snLen_bits": 18,
+    "enableCiphering": false,
+    "enableIntegrity": false,
+    "ciphering": {
+      "Enable": false
+    },
+    "integrity": {
+      "Enable": false
+    },
+    "snSize": 18
+  },
+  "sdap": {
+    "enable": true,
+    "Enable": false
+  },
+  "rrc": {
+    "enable": true,
+    "attachProcedure": true,
+    "Enable": false,
+    "mib": {
+      "Enable": false
+    },
+    "sib1": {
+      "Enable": false
+    }
+  },
+  "rf": {
+    "enable": false,
+    "noiseFigure_dB": 7,
+    "iqImbalance": {
+      "enable": false,
+      "ampImb_dB": 0,
+      "phaseImb_deg": 0,
+      "Enable": false
+    },
+    "phaseNoise": {
+      "enable": false,
+      "level_dBcHz": -80,
+      "offset_Hz": 100000,
+      "Enable": false
+    },
+    "pa": {
+      "enable": false,
+      "model": "memoryless",
+      "backoff_dB": 3
+    },
+    "txPower_dBm": 23
+  },
+  "energy": {
+    "enable": true,
+    "bs": {
+      "pStatic_W": 500,
+      "pDynPerWattPerHz": 2E-6
+    },
+    "ue": {
+      "pStatic_W": 2,
+      "pDynPerWattPerHz": 5E-6
+    },
+    "Enable": false
+  },
+  "ai": {
+    "enable": false,
+    "csiCompression": {
+      "enable": false,
+      "latentDim": 64,
+      "network": "autoencoder"
+    },
+    "beamSelection": {
+      "enable": false,
+      "network": "cnn",
+      "Enable": false
+    },
+    "neuralReceiver": {
+      "enable": false,
+      "type": "nnEqualizer"
+    },
+    "positioning": {
+      "enable": false,
+      "Enable": false
+    },
+    "Enable": false,
+    "csiFeedback": {
+      "Enable": false,
+      "Model": "transformerAutoencoder"
+    }
+  },
+  "outputs": {
+    "saveMAT": true,
+    "saveCSV": true,
+    "saveFIG": false,
+    "savePNG": true,
+    "plotVisible": false,
+    "kpi": {
+      "enable": true,
+      "list": [
+        "throughput",
+        "bler",
+        "ber",
+        "evm",
+        "papr",
+        "sinr",
+        "cqi"
+      ]
+    },
+    "saveMat": true,
+    "saveFigures": true,
+    "plots": {
+      "throughput": true,
+      "bler": true
+    }
+  },
+  "gui": {
+    "enable": true,
+    "useSiteViewer": true,
+    "showUEMobility": true,
+    "Enable": true
+  },
+  "layout": {
+    "topology": "singleCell",
+    "cellRadius_m": 250,
+    "gNB": {
+      "position_m": [
+        0,
+        0,
+        25
+      ],
+      "nTxAnt": 8,
+      "array": {
+        "type": "URA",
+        "size": [
+          4,
+          2
+        ],
+        "elemSpacing_lambda": 0.5
+      }
+    },
+    "UE": {
+      "height_m": 1.5,
+      "nRxAnt": 2,
+      "array": {
+        "type": "ULA",
+        "size": [
+          2,
+          1
+        ],
+        "elemSpacing_lambda": 0.5
+      }
+    }
+  },
+  "ue": {
+    "rnti": 1,
+    "nLayersDL": 1,
+    "nLayersUL": 1,
+    "maxMIMOLayersDL": 8,
+    "maxMIMOLayersUL": 4
+  }
+}

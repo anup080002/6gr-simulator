@@ -1,0 +1,352 @@
+{
+  "run": {
+    "mode": "both",
+    "seed": 1,
+    "nFrames": 10,
+    "slotDuration_ms": 0.5,
+    "saveRoot": "C:/Users/anup0/OneDrive/Documents/Simulator/sixgr_foundation_v2/results",
+    "resultsRoot": "C:/Users/anup0/OneDrive/Documents/Simulator/sixgr_foundation_v2/results",
+    "failFast": true,
+    "showProgress": true,
+    "configFile": "",
+    "campaign": {
+      "profile": "quick",
+      "linkDuration_s": 20,
+      "systemDuration_s": 20,
+      "e2eDuration_s": 20,
+      "e2eMaxSlots": 800,
+      "e2eUECount": 4,
+      "systemNumUE": 32,
+      "runMMTC": false,
+      "runAuxiliaryProbes": false,
+      "useFastLinkModel": true,
+      "useMexAcceleration": true,
+      "autoBuildMexAcceleration": true,
+      "setupToolboxChecks": false,
+      "organizeByBlock": false,
+      "linkSaveFigures": false,
+      "systemSaveFigures": false,
+      "e2eSaveFigures": false,
+      "generateCampaignPlots": false,
+      "verifyArtifacts": false
+    }
+  },
+  "scenario": {
+    "name": "basic_single_cell",
+    "description": "Baseline single-cell NR link+system harness (foundation config).",
+    "simTime_s": 0.05,
+    "carrierFreq_Hz": 3500000000.0,
+    "bandwidth_Hz": 20000000.0,
+    "sCS_kHz": 30,
+    "duplexMode": "TDD",
+    "tddPattern": {
+      "dlSlots": 4,
+      "ulSlots": 1,
+      "specialSlots": 0
+    },
+    "nUE": 1
+  },
+  "traffic": {
+    "model": "xr",
+    "transport": "MIXED",
+    "flowDirection": "BIDIR",
+    "packetDelayBudget_ms": 50,
+    "dlRatio": 0.8,
+    "ulRatio": 0.2,
+    "packetSize_bytes": 1200,
+    "packetInterval_ms": 10,
+    "targetRate_Mbps": 50,
+    "jitterPct": 0.1,
+    "qos": {
+      "enable5QI": true,
+      "default5QI": 9,
+      "latencyBudget_ms": 50
+    },
+    "tcp": {
+      "initCwnd_packets": 10,
+      "maxCwnd_packets": 256,
+      "lossProb": 0.01,
+      "lossBackoff": 0.5,
+      "minRateFloor": 0.2
+    },
+    "flows": [
+      {
+        "name": "eMBB_DL_TCP",
+        "qfi": 9,
+        "fiveQi": 9,
+        "protocol": "TCP",
+        "direction": "DL",
+        "packetDelayBudget_ms": 100,
+        "packetSize_bytes": 1400,
+        "packetInterval_ms": 8,
+        "rate_Mbps": 40,
+        "weight": 1.0,
+        "jitterPct": 0.1,
+        "burstiness": "medium"
+      },
+      {
+        "name": "URLLC_UL_UDP",
+        "qfi": 80,
+        "fiveQi": 80,
+        "protocol": "UDP",
+        "direction": "UL",
+        "packetDelayBudget_ms": 10,
+        "packetSize_bytes": 300,
+        "packetInterval_ms": 2,
+        "rate_Mbps": 8,
+        "weight": 1.2,
+        "jitterPct": 0.05,
+        "burstiness": "low"
+      },
+      {
+        "name": "XR_BIDIR_UDP",
+        "qfi": 84,
+        "fiveQi": 84,
+        "protocol": "UDP",
+        "direction": "BIDIR",
+        "packetDelayBudget_ms": 20,
+        "packetSize_bytes": 900,
+        "packetInterval_ms": 5,
+        "rate_Mbps": 16,
+        "weight": 1.0,
+        "jitterPct": 0.15,
+        "burstiness": "high"
+      }
+    ]
+  },
+  "layout": {
+    "topology": "singleCell",
+    "cellRadius_m": 250,
+    "gNB": {
+      "position_m": [
+        0,
+        0,
+        25
+      ],
+      "nTxAnt": 8,
+      "array": {
+        "type": "URA",
+        "size": [
+          4,
+          2
+        ],
+        "elemSpacing_lambda": 0.5
+      }
+    },
+    "UE": {
+      "height_m": 1.5,
+      "nRxAnt": 2,
+      "array": {
+        "type": "ULA",
+        "size": [
+          2,
+          1
+        ],
+        "elemSpacing_lambda": 0.5
+      }
+    }
+  },
+  "ue": {
+    "rnti": 1,
+    "nLayersDL": 1,
+    "nLayersUL": 1,
+    "maxMIMOLayersDL": 8,
+    "maxMIMOLayersUL": 4
+  },
+  "channel": {
+    "model": "TDL-C",
+    "delayProfile": "TDL-C",
+    "delaySpread_s": 3e-07,
+    "dopplerHz": 0,
+    "snr_dB": 20,
+    "awgnOnly": true,
+    "rayTracing": {
+      "enable": false,
+      "scenario": "Urban",
+      "map": "",
+      "bsHeight_m": 25,
+      "ueHeight_m": 1.5
+    }
+  },
+  "phy": {
+    "carrier": {
+      "NCellID": 1,
+      "NSizeGrid": 66,
+      "SubcarrierSpacing": 30,
+      "CyclicPrefix": "normal"
+    },
+    "dl": {
+      "pdsch": {
+        "Enable": true,
+        "Modulation": "16QAM",
+        "NumLayers": 1,
+        "RNTI": 1,
+        "MappingType": "A",
+        "PRBSet": "full",
+        "SymbolAllocation": [
+          0,
+          14
+        ],
+        "DMRS": {
+          "DMRSTypeAPosition": 2,
+          "DMRSLength": 1,
+          "DMRSAdditionalPosition": 1,
+          "NumCDMGroupsWithoutData": 2
+        },
+        "PTRS": {
+          "Enable": false
+        }
+      },
+      "pdcch": {
+        "Enable": false
+      },
+      "csirs": {
+        "Enable": false
+      },
+      "beamforming": {
+        "Enable": false,
+        "Method": "tddReciprocitySRS"
+      }
+    },
+    "ul": {
+      "pusch": {
+        "Enable": true,
+        "Modulation": "16QAM",
+        "NumLayers": 1,
+        "RNTI": 1,
+        "TransformPrecoding": false,
+        "PRBSet": "full",
+        "SymbolAllocation": [
+          0,
+          14
+        ],
+        "DMRS": {
+          "DMRSTypeAPosition": 2,
+          "DMRSLength": 1,
+          "DMRSAdditionalPosition": 1
+        },
+        "PTRS": {
+          "Enable": false
+        }
+      },
+      "pucch": {
+        "Enable": false
+      },
+      "srs": {
+        "Enable": false
+      },
+      "prach": {
+        "Enable": false
+      }
+    },
+    "ssb": {
+      "Enable": false,
+      "BlockPattern": "Case B",
+      "NSSB": 4,
+      "BeamSweep": {
+        "Enable": false
+      }
+    },
+    "prach": {
+      "Enable": false,
+      "ConfigurationIndex": 0,
+      "SubcarrierSpacing": 1.25
+    },
+    "waveform": {
+      "type": "CP-OFDM",
+      "SampleRate": "auto"
+    },
+    "harq": {
+      "Enable": true,
+      "NumProcesses": 8
+    },
+    "ldpc": {
+      "maxIterations": 12,
+      "algorithm": "Normalized min-sum",
+      "useMexBatchDecode": true
+    },
+    "rx": {
+      "channelEst": "DMRS",
+      "equalizer": "MMSE",
+      "llrType": "approx",
+      "useFastChannelEstMex": true
+    }
+  },
+  "mac": {
+    "scheduler": {
+      "type": "roundRobin",
+      "tbsScaling": 1.0
+    },
+    "harq": {
+      "Enable": true
+    },
+    "lcp": {
+      "Enable": true
+    }
+  },
+  "rlc": {
+    "mode": "AM",
+    "pollPDU": 16,
+    "pollByte": 10000,
+    "tReassembly_ms": 35
+  },
+  "pdcp": {
+    "ciphering": {
+      "Enable": false
+    },
+    "integrity": {
+      "Enable": false
+    },
+    "snSize": 18
+  },
+  "sdap": {
+    "Enable": false
+  },
+  "rrc": {
+    "Enable": false,
+    "mib": {
+      "Enable": false
+    },
+    "sib1": {
+      "Enable": false
+    }
+  },
+  "rf": {
+    "txPower_dBm": 23,
+    "noiseFigure_dB": 7,
+    "phaseNoise": {
+      "Enable": false
+    },
+    "iqImbalance": {
+      "Enable": false
+    }
+  },
+  "energy": {
+    "Enable": false
+  },
+  "ai": {
+    "Enable": false,
+    "csiFeedback": {
+      "Enable": false,
+      "Model": "transformerAutoencoder"
+    },
+    "beamSelection": {
+      "Enable": false
+    },
+    "positioning": {
+      "Enable": false
+    }
+  },
+  "outputs": {
+    "saveMat": true,
+    "saveCSV": true,
+    "saveFigures": false,
+    "plots": {
+      "throughput": true,
+      "bler": true
+    }
+  },
+  "gui": {
+    "Enable": true
+  }
+}

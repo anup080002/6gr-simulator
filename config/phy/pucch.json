@@ -1,0 +1,20 @@
+{
+  "enable": true,
+  "format": 2,
+  "rnti": 1,
+  "numUCIBits": 20,
+  "resource": {
+    "startPRB": 0,
+    "nPRB": 1,
+    "startSymbol": 12,
+    "nSymbols": 2
+  },
+  "uci": {
+    "type": "ACK+CSI",
+    "betaOffsets": {
+      "ack": 1.0,
+      "csi1": 1.0,
+      "csi2": 1.0
+    }
+  }
+}

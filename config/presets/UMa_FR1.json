@@ -1,0 +1,38 @@
+{
+  "scenario": {
+    "name": "UrbanMacro"
+  },
+  "channel": {
+    "type": "TR38901",
+    "fc_Hz": 3500000000.0,
+    "bandwidth_Hz": 100000000.0,
+    "subcarrierSpacing_kHz": 30,
+    "pathloss": {
+      "model": "nrPathLoss",
+      "shadowFadingStd_dB": 6,
+      "o2iLoss_dB": 0
+    },
+    "fading": {
+      "enable": true,
+      "model": "CDL",
+      "profile": "CDL-D",
+      "delaySpread_s": 3e-07,
+      "maxDoppler_Hz": 70
+    }
+  },
+  "phy": {
+    "carrier": {
+      "SubcarrierSpacing": 30,
+      "NSizeGrid": 273,
+      "CyclicPrefix": "normal"
+    },
+    "duplex": {
+      "mode": "TDD",
+      "tddPattern": "DDDSU"
+    },
+    "waveform": {
+      "dl": "CP-OFDM",
+      "ul": "DFT-s-OFDM"
+    }
+  }
+}

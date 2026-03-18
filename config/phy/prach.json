@@ -1,0 +1,14 @@
+{
+  "enable": true,
+  "configurationIndex": 16,
+  "subcarrierSpacing_kHz": 1.25,
+  "preambleFormat": "A1",
+  "rootSeqIndex": 1,
+  "zeroCorrelationZone": 8,
+  "restrictedSet": "Unrestricted",
+  "numPreambles": 64,
+  "preambleIndex": 44,
+  "powerRamping_dB": 2,
+  "maxTransmissions": 10,
+  "msg1Fdm": 1
+}

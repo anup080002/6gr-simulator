@@ -1,0 +1,81 @@
+{
+  "kpis": [
+    {
+      "name": "throughput",
+      "scope": "link|system",
+      "unit": "Mbps"
+    },
+    {
+      "name": "bler",
+      "scope": "link",
+      "unit": "-"
+    },
+    {
+      "name": "ber",
+      "scope": "link",
+      "unit": "-"
+    },
+    {
+      "name": "evm",
+      "scope": "link",
+      "unit": "%"
+    },
+    {
+      "name": "papr_ccdf",
+      "scope": "link",
+      "unit": "-"
+    },
+    {
+      "name": "sinr",
+      "scope": "link|system",
+      "unit": "dB"
+    },
+    {
+      "name": "cqi",
+      "scope": "link|system",
+      "unit": "index"
+    },
+    {
+      "name": "ri",
+      "scope": "link|system",
+      "unit": "layers"
+    },
+    {
+      "name": "pmi",
+      "scope": "link|system",
+      "unit": "index"
+    },
+    {
+      "name": "harq_retx",
+      "scope": "link|system",
+      "unit": "count"
+    },
+    {
+      "name": "latency_cdf",
+      "scope": "system",
+      "unit": "ms"
+    },
+    {
+      "name": "scheduler_fairness",
+      "scope": "system",
+      "unit": "Jain"
+    },
+    {
+      "name": "energy_bs",
+      "scope": "system",
+      "unit": "W"
+    },
+    {
+      "name": "energy_ue",
+      "scope": "system",
+      "unit": "W"
+    }
+  ],
+  "export": {
+    "csv": true,
+    "mat": true,
+    "figures": true,
+    "png": true,
+    "pdf": true
+  }
+}

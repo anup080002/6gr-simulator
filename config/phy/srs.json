@@ -1,0 +1,14 @@
+{
+  "enable": true,
+  "nPorts": 2,
+  "period_slots": 20,
+  "combSize": 2,
+  "bsrs": 0,
+  "sequenceId": 0,
+  "resource": {
+    "startPRB": 0,
+    "nPRB": "auto",
+    "startSymbol": 13,
+    "nSymbols": 1
+  }
+}

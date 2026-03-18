@@ -1,0 +1,22 @@
+{
+  "ssb": {
+    "enable": true,
+    "blockPattern": "Case B",
+    "period_ms": 20,
+    "nBeams": 8,
+    "kSSB": 0
+  },
+  "pbch": {
+    "enable": true,
+    "crc": "24A",
+    "scrambling": {
+      "nCellIDFromCarrier": true
+    }
+  },
+  "mib": {
+    "enable": true
+  },
+  "sib1": {
+    "enable": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "GenAI",
+  "description": "Generative AI interactive traffic (uplink prompts + downlink tokens/stream).",
+  "qos": {
+    "5QI": 9,
+    "latencyBudget_ms": 50,
+    "packetErrorRate": 0.001
+  },
+  "ul": {
+    "promptSize_bytes": 2000,
+    "promptInterval_ms": 200,
+    "burstiness": "medium"
+  },
+  "dl": {
+    "tokenRate_kbps": 2000,
+    "chunkSize_bytes": 1200,
+    "chunkInterval_ms": 20,
+    "burstiness": "medium"
+  }
+}

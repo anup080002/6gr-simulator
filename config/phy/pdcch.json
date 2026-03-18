@@ -1,0 +1,11 @@
+{
+  "enable": true,
+  "searchSpaceType": "ue",
+  "aggregationLevel": 8,
+  "dciFormat": "1_0",
+  "rnti": 1,
+  "coreset": {
+    "durationSymbols": 2,
+    "frequencyResources": "auto"
+  }
+}

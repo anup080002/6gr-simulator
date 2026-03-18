@@ -1,0 +1,26 @@
+{
+  "name": "mMTC",
+  "description": "Massive machine-type communications (small packets, sporadic access).",
+  "qos": {
+    "5QI": 9,
+    "latencyBudget_ms": 1000,
+    "packetErrorRate": 0.01
+  },
+  "devices": {
+    "nDevices": 10000,
+    "activeFraction": 0.01
+  },
+  "ul": {
+    "packetSize_bytes": 50,
+    "meanInterArrival_s": 60,
+    "distribution": "exponential"
+  },
+  "rach": {
+    "preambleFormat": "A1",
+    "backoff_s": [
+      0,
+      2
+    ],
+    "maxAttempts": 10
+  }
+}

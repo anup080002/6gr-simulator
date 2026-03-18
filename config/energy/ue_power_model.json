@@ -1,0 +1,13 @@
+{
+  "model": "simpleLoadDependent",
+  "units": "W",
+  "pStatic_W": 2.0,
+  "pSleep_W": 0.2,
+  "pTxChain_W": 0.8,
+  "pRxChain_W": 0.5,
+  "dynamic": {
+    "coef_W_per_Hz": 5e-06,
+    "refBandwidth_Hz": 20000000.0
+  },
+  "notes": "Illustrative parameters. Calibrate to device assumptions."
+}

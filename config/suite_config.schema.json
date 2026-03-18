@@ -1,0 +1,658 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sixgr://schema/suite_config.schema.json",
+  "title": "SixGR SimSuite Configuration",
+  "type": "object",
+  "required": [
+    "run",
+    "scenario",
+    "channel",
+    "phy",
+    "outputs",
+    "gui"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "properties": {
+        "toolkitName": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdUTC": {
+          "type": "string"
+        },
+        "loadedFrom": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "seed",
+        "mode",
+        "module",
+        "resultsRoot"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "link",
+            "system",
+            "hybrid",
+            "both"
+          ]
+        },
+        "module": {
+          "type": "string"
+        },
+        "failFast": {
+          "type": "boolean"
+        },
+        "useParallel": {
+          "type": "boolean"
+        },
+        "numWorkers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resultsRoot": {
+          "type": "string"
+        },
+        "runTag": {
+          "type": "string"
+        },
+        "shortRun": {
+          "type": "boolean"
+        },
+        "numFrames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "numTTI": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "saveIntermediate": {
+          "type": "boolean"
+        },
+        "verbose": {
+          "type": "boolean"
+        },
+        "configFile": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "name",
+        "layout",
+        "bs",
+        "ue",
+        "mobility"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "layout": {
+          "type": "object",
+          "required": [
+            "type",
+            "wrapAround"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "grid",
+                "manual",
+                "singleCell"
+              ]
+            },
+            "nSites": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "interSiteDistance_m": {
+              "type": "number",
+              "minimum": 0
+            },
+            "nSectorsPerSite": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "wrapAround": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "bs": {
+          "type": "object",
+          "properties": {
+            "height_m": {
+              "type": "number",
+              "minimum": 0
+            },
+            "txPower_dBm": {
+              "type": "number"
+            },
+            "noiseFigure_dB": {
+              "type": "number",
+              "minimum": 0
+            },
+            "nTxAnt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "nRxAnt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "antenna": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "elementSpacing_wl": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "ue": {
+          "type": "object",
+          "required": [
+            "nUE"
+          ],
+          "properties": {
+            "nUE": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height_m": {
+              "type": "number",
+              "minimum": 0
+            },
+            "txPower_dBm": {
+              "type": "number"
+            },
+            "noiseFigure_dB": {
+              "type": "number",
+              "minimum": 0
+            },
+            "nTxAnt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "nRxAnt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "distribution": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "mobility": {
+          "type": "object",
+          "properties": {
+            "enable": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "speed_kmh": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "updatePeriod_s": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "traffic": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "enum": [
+            "fullBuffer",
+            "xr",
+            "genai",
+            "mmtc",
+            "mixed"
+          ]
+        },
+        "transport": {
+          "type": "string",
+          "enum": [
+            "UDP",
+            "TCP",
+            "MIXED"
+          ]
+        },
+        "flowDirection": {
+          "type": "string",
+          "enum": [
+            "DL",
+            "UL",
+            "BIDIR"
+          ]
+        },
+        "packetDelayBudget_ms": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "dlRatio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ulRatio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "packetSize_bytes": {
+          "type": "number",
+          "minimum": 1
+        },
+        "packetInterval_ms": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "targetRate_Mbps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "qos": {
+          "type": "object",
+          "properties": {
+            "enable5QI": {
+              "type": "boolean"
+            },
+            "default5QI": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "latencyBudget_ms": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": true
+        },
+        "tcp": {
+          "type": "object",
+          "properties": {
+            "initCwnd_packets": {
+              "type": "number",
+              "minimum": 1
+            },
+            "maxCwnd_packets": {
+              "type": "number",
+              "minimum": 1
+            },
+            "lossProb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "lossBackoff": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "minRateFloor": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": true
+        },
+        "flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "qfi": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 255
+              },
+              "fiveQi": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 255
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "UDP",
+                  "TCP"
+                ]
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "DL",
+                  "UL",
+                  "BIDIR"
+                ]
+              },
+              "packetDelayBudget_ms": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "packetSize_bytes": {
+                "type": "number",
+                "minimum": 1
+              },
+              "packetInterval_ms": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "rate_Mbps": {
+                "type": "number",
+                "minimum": 0
+              },
+              "weight": {
+                "type": "number",
+                "minimum": 0
+              },
+              "jitterPct": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "burstiness": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "channel": {
+      "type": "object",
+      "required": [
+        "type",
+        "fc_Hz",
+        "bandwidth_Hz"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "TR38901",
+            "TDL",
+            "CDL",
+            "raytracing",
+            "AWGN",
+            "awgn"
+          ]
+        },
+        "fc_Hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "bandwidth_Hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "subcarrierSpacing_kHz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pathloss": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "fading": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "raytracing": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "interference": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "sampleRate_Hz": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "phy": {
+      "type": "object",
+      "required": [
+        "carrier",
+        "duplex",
+        "waveform"
+      ],
+      "properties": {
+        "carrier": {
+          "type": "object",
+          "required": [
+            "NCellID",
+            "SubcarrierSpacing",
+            "NSizeGrid",
+            "CyclicPrefix"
+          ],
+          "properties": {
+            "NCellID": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1007
+            },
+            "SubcarrierSpacing": {
+              "type": "number"
+            },
+            "NSizeGrid": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "CyclicPrefix": {
+              "type": "string",
+              "enum": [
+                "normal",
+                "extended"
+              ]
+            },
+            "NFrame": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": true
+        },
+        "duplex": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "waveform": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "ssb": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "pbch": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "mib": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "sib1": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "prach": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "pdcch": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "pdsch": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "pucch": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "pusch": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "srs": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "harq": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "rx": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "mac": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "rlc": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "pdcp": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "sdap": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "rrc": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "rf": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "energy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "outputs": {
+      "type": "object",
+      "required": [
+        "saveMAT",
+        "saveCSV"
+      ],
+      "properties": {
+        "saveMAT": {
+          "type": "boolean"
+        },
+        "saveCSV": {
+          "type": "boolean"
+        },
+        "saveFIG": {
+          "type": "boolean"
+        },
+        "savePNG": {
+          "type": "boolean"
+        },
+        "plotVisible": {
+          "type": "boolean"
+        },
+        "kpi": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "gui": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

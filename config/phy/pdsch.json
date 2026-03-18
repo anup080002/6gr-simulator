@@ -1,0 +1,29 @@
+{
+  "enable": true,
+  "modulation": "256QAM",
+  "nLayers": 4,
+  "codeRate": 0.75,
+  "prbAllocation": {
+    "type": "full",
+    "rbStart": 0,
+    "rbLen": "auto"
+  },
+  "symbolAllocation": {
+    "start": 0,
+    "length": 14
+  },
+  "dmrs": {
+    "typeApos": 2,
+    "configType": 1,
+    "additionalPos": 1,
+    "length": 1,
+    "numCDMGroupsWithoutData": 2
+  },
+  "ptrs": {
+    "enable": false
+  },
+  "mimo": {
+    "precoding": "codebook",
+    "nTxPorts": "auto"
+  }
+}
