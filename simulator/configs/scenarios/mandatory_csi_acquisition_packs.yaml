@@ -1,0 +1,58 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_7ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_csi_acquisition_packs",
+    "description": "Mandatory CSI acquisition and estimation study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "agreed_starting_point"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["csi_rs", "srs", "dmrs", "bundle"],
+    "notes": "Encodes DL, UL, joint, reciprocity-oriented, and feedback-oriented CSI acquisition studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_csi_acquisition",
+      "overrides": [
+        {"label": "dl_based_csi", "config": {"reference_signals": {"csi_acquisition_mode": "dl_based", "operation_orientation": "fdd_feedback", "csi_rs_enabled": true, "srs_enabled": false}}},
+        {"label": "ul_based_csi", "config": {"reference_signals": {"csi_acquisition_mode": "ul_based", "operation_orientation": "tdd_reciprocity", "csi_rs_enabled": false, "srs_enabled": true}}},
+        {"label": "joint_dl_ul_csi", "config": {"reference_signals": {"csi_acquisition_mode": "joint_dl_ul", "csi_rs_enabled": true, "srs_enabled": true}, "csi_acquisition_and_reporting": {"joint_dl_ul_csi_enabled": true, "joint_port_mapping_policy": "shared_port_map", "joint_timeline_policy": "aligned_joint_timeline"}}},
+        {"label": "tdd_reciprocity_operation", "config": {"reference_signals": {"operation_orientation": "tdd_reciprocity"}, "frequency": {"duplex_mode": "TDD"}}},
+        {"label": "fdd_feedback_operation", "config": {"reference_signals": {"operation_orientation": "fdd_feedback"}, "frequency": {"duplex_mode": "FDD"}}},
+        {"label": "dmrs_tracking_candidate", "config": {"reference_signals": {"dmrs_csi_tracking_enabled": true, "channel_estimation_mode": "dmrs_tracking_candidate"}}},
+        {"label": "srs_ports_1", "config": {"reference_signals": {"srs_ports": 1}}},
+        {"label": "srs_ports_2", "config": {"reference_signals": {"srs_ports": 2}}},
+        {"label": "srs_ports_3", "config": {"reference_signals": {"srs_ports": 3}}},
+        {"label": "srs_ports_4", "config": {"reference_signals": {"srs_ports": 4}}},
+        {"label": "srs_ports_8", "config": {"reference_signals": {"srs_ports": 8}}},
+        {"label": "srs_periodicity_5ms", "config": {"reference_signals": {"srs_periodicity_ms": 5}}},
+        {"label": "srs_periodicity_10ms", "config": {"reference_signals": {"srs_periodicity_ms": 10}}},
+        {"label": "srs_periodicity_20ms", "config": {"reference_signals": {"srs_periodicity_ms": 20}}},
+        {"label": "srs_periodicity_40ms", "config": {"reference_signals": {"srs_periodicity_ms": 40}}},
+        {"label": "srs_periodicity_80ms", "config": {"reference_signals": {"srs_periodicity_ms": 80}}},
+        {"label": "srs_periodicity_160ms", "config": {"reference_signals": {"srs_periodicity_ms": 160}}},
+        {"label": "low_papr_srs_sequence", "config": {"reference_signals": {"srs_sequence_family": "low_papr_candidate"}}},
+        {"label": "low_correlation_srs_sequence", "config": {"reference_signals": {"srs_sequence_family": "low_correlation_candidate"}}},
+        {"label": "receiver_mmse_irc", "config": {"reference_signals": {"receiver_example": "mmse_irc", "sgcs_reporting_enabled": true, "nmse_reporting_enabled": true}}},
+        {"label": "receiver_rml", "config": {"reference_signals": {"receiver_example": "rml", "sgcs_reporting_enabled": true, "nmse_reporting_enabled": true}}}
+      ]
+    }
+  }
+}

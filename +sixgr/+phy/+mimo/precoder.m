@@ -58,7 +58,7 @@ end
 if isempty(W)
     ports = layers;
     info = struct("Mode","identity","nLayers",size(layers,2),"nPorts",size(layers,2), ...
-        "NormalizeW",false);
+        "NormalizeW",false,"W",eye(size(layers,2), class(layers)));
     return;
 end
 
@@ -98,5 +98,6 @@ info.nLayers = nLayers;
 info.nPorts = size(Wuse,1);
 info.NormalizeW = opts.NormalizeW;
 info.WSize = [size(Wuse,1) size(Wuse,2)];
+info.W = Wuse;
 
 end

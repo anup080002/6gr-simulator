@@ -1,0 +1,19 @@
+meta:
+  matrix_id: AI_ML_AND_ENERGY
+  description: Exact AI/ML and energy suite covering non-AI baselines, AI candidates, and energy-efficiency study packs.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/ce_non_ai_baseline.yaml
+  - simulator/configs/scenarios/csi_non_ai_baseline.yaml
+  - simulator/configs/scenarios/beam_prediction_ai.yaml
+  - simulator/configs/scenarios/energy_aware_ai_mode_select.yaml
+  - simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+  - simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml

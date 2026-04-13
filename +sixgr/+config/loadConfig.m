@@ -76,9 +76,9 @@ if isfile(cfgFile)
 end
 
 % If relative, try relative to project root (folder containing +sixgr)
-if ~isabsolute(cfgFile)
-    here = fileparts(mfilename("fullpath"));              % .../+sixgr/+config
-    root = fileparts(fileparts(fileparts(here)));         % project root
+    if ~isabsolute(cfgFile)
+        here = fileparts(mfilename("fullpath"));              % .../+sixgr/+config
+        root = fileparts(fileparts(here));                    % project root
 
     cand = fullfile(root, cfgFile);
     if isfile(cand)
@@ -103,7 +103,7 @@ end
 
 function root = localProjectRoot()
 here = fileparts(mfilename("fullpath"));              % .../+sixgr/+config
-root = fileparts(fileparts(fileparts(here)));         % project root
+root = fileparts(fileparts(here));                    % project root
 end
 
 function [cfgFrag, files] = localLoadConfigFragments(root)
@@ -259,19 +259,15 @@ if strlength(string(presetName)) > 0
     return;
 end
 
-% Best-effort mapping from scenario.name to known preset.
-sc = lower(strtrim(char(string(sixgr.util.structGet(userCfg, "scenario.name", "")))));
-switch sc
-    case {"urbanmacro","uma","uma_fr1"}
-        presetName = "UMa_FR1";
-    case {"indoorhotspot","inh","inh_fr3"}
-        presetName = "InH_FR3";
-    case {"suburbanmacro","sma","sma_fr3"}
-        presetName = "SMa_FR3";
-    case {"ruralmacro","rma","rma_700mhz"}
-        presetName = "RMa_700MHz";
-    otherwise
-        presetName = "";
+% Best-effort mapping from scenario.profileName / scenario.name to known preset.
+sc = lower(strtrim(char(string(sixgr.util.structGet(userCfg, "scenario.profileName", ...
+    sixgr.util.structGet(userCfg, "scenario.name", ""))))));
+catalog = sixgr.config.loadCoreCatalog();
+aliases = sixgr.util.structGet(catalog, "preset_aliases", struct());
+if isstruct(aliases) && isfield(aliases, sc)
+    presetName = char(string(aliases.(sc)));
+else
+    presetName = "";
 end
 end
 

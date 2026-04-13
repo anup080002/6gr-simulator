@@ -79,12 +79,13 @@ if exist("nrPRACH", "file") == 2 && exist("nrPRACHDetect", "file") == 2
         assert(pHigh >= 0.50, "PRACH high-SNR detection is below threshold.");
         assert(pLow <= pHigh + 1e-9, "PRACH low-SNR detection should not exceed high-SNR detection.");
     else
-        % Current known path: direct detector may be non-triggering; wrapper must mark skip explicitly.
+        % When the direct detector is non-triggering, the wrapper must still report completed measured failure.
         for k = 1:3
             r = sixgr.link.runPRACHDetection(cfg, "SNR_dB", 100);
-            assert(logical(r.Ok), "PRACH wrapper should not fail hard when detector is non-triggering.");
-            assert(logical(r.Skipped), "PRACH wrapper must report skipped state when detection does not trigger.");
-            assert(contains(lower(string(r.Notes)), "skipped"), "PRACH wrapper skip reason note is missing.");
+            assert(logical(r.Ok), "PRACH wrapper should complete cleanly when detector is non-triggering.");
+            assert(~logical(r.Skipped), "PRACH wrapper must not relabel a measured non-detection as skipped.");
+            assert(~logical(sixgr.util.structGet(r, "Detected", true)), "PRACH wrapper must expose measured non-detection explicitly.");
+            assert(contains(lower(string(r.Notes)), "not detected"), "PRACH wrapper non-detection note is missing.");
         end
     end
 end
@@ -120,4 +121,3 @@ if numel(a) ~= numel(b)
     be = be + abs(numel(a) - numel(b));
 end
 end
-

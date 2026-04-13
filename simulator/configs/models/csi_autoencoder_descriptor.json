@@ -1,0 +1,8 @@
+{
+  "plugin_type": "latent_quantizer",
+  "model_family": "descriptor_plugin",
+  "latent_dim": 16,
+  "quant_bits": 6,
+  "confidence_bias": 0.82,
+  "parameter_count": 18000
+}

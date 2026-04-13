@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "research_class": "baseline_benchmark"
+  },
+  "waveform": {
+    "dl_waveform": "CP-OFDM",
+    "ul_waveform": "CP-OFDM"
+  },
+  "coding": {
+    "data_code_type": "LDPC",
+    "control_code_type": "Polar",
+    "candidate_base_graph_mode": "nr_like_bg"
+  }
+}

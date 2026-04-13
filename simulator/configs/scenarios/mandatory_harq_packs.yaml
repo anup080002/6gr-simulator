@@ -1,0 +1,43 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_harq_packs",
+    "description": "Mandatory DL and UL HARQ study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "agreed_starting_point"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["bundle", "dl", "ul", "harq"],
+    "notes": "Encodes DL/UL HARQ latency, reliability, coverage, feedback, and control-coupling studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_harq",
+      "overrides": [
+        {"label": "dl_harq_latency_reliability", "config": {"simulation": {"link_direction": "dl"}, "harq": {"study_axes": ["latency", "reliability"], "stop_condition": "latency_budget"}}},
+        {"label": "ul_harq_coverage", "config": {"simulation": {"link_direction": "ul"}, "harq": {"study_axes": ["coverage", "ue_power_saving"], "stop_condition": "reliability_budget"}}},
+        {"label": "system_efficiency_feedback", "config": {"harq": {"study_axes": ["system_efficiency", "feedback_efficiency"], "feedback_timing_slots": 2}}},
+        {"label": "ack_nack_dtx_model", "config": {"harq": {"ack_nack_dtx_model": "ack_nack_dtx"}}},
+        {"label": "pdcch_miss_behavior", "config": {"harq": {"pdcch_miss_behavior": "treat_as_dtx"}}},
+        {"label": "detection_feedback_interaction", "config": {"harq": {"detection_feedback_interaction_enabled": true}, "control": {"detection_feedback_enabled": true}}}
+      ]
+    }
+  }
+}

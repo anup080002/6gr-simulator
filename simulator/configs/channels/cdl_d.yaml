@@ -1,0 +1,13 @@
+{
+  "channels": {
+    "model_type": "CDL",
+    "profile": "CDL-D",
+    "delay_spread_ns": 500,
+    "doppler_hz": 200,
+    "mobility_kmph": 30,
+    "los_enabled": true,
+    "spatial_consistency_enabled": false,
+    "pathloss_enabled": false,
+    "shadow_fading_enabled": false
+  }
+}

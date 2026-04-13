@@ -1,0 +1,7 @@
+{
+  "plugin_type": "argmax",
+  "model_family": "descriptor_plugin",
+  "num_beams": 8,
+  "confidence_bias": 0.88,
+  "parameter_count": 9000
+}

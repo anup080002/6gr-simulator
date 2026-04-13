@@ -25,38 +25,70 @@ classdef LinkLevelRunner
                 numFrames = min(numFrames, 8);
             end
             numFrames = max(1, round(numFrames));
+            baseSNR_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", 30));
 
             rows = repmat(localCaseRow("", struct()), 0, 1);
 
             caseDefs = { ...
                 struct('name',"CellSearch_MIB_SIB1", 'fcn', @() sixgr.link.runCellSearch_MIB_SIB1(cfg, "Logger", log)); ...
-                struct('name',"PRACH_Detection",     'fcn', @() sixgr.link.runPRACHDetection(cfg, "Logger", log, "SNR_dB", 100)); ...
+                struct('name',"PRACH_Detection",     'fcn', @() sixgr.link.runPRACHDetection(cfg, "Logger", log, "SNR_dB", baseSNR_dB)); ...
                 struct('name',"DL_PDSCH_Throughput", 'fcn', @() sixgr.link.runDLPDSCHThroughput(cfg, "Logger", log, "NumFrames", numFrames)); ...
-                struct('name',"UL_PUSCH_Throughput", 'fcn', @() sixgr.link.runULPUSCHThroughput(cfg, "Logger", log, "NumFrames", numFrames, "SNR_dB", 30)); ...
-                struct('name',"UL_SRS_ChannelEst",   'fcn', @() sixgr.link.runSRSChannelEstimation(cfg, "Logger", log, "SNR_dB", 30)); ...
+                struct('name',"UL_PUSCH_Throughput", 'fcn', @() sixgr.link.runULPUSCHThroughput(cfg, "Logger", log, "NumFrames", numFrames, "SNR_dB", baseSNR_dB)); ...
+                struct('name',"UL_SRS_ChannelEst",   'fcn', @() sixgr.link.runSRSChannelEstimation(cfg, "Logger", log, "SNR_dB", baseSNR_dB)); ...
                 struct('name',"UL_LowPAPR",          'fcn', @() sixgr.link.runULLowPAPR(cfg, "Logger", log, "NumFrames", numFrames)) ...
                 };
+            seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1));
+            useParallelCases = localCanParallelizeCases(cfg, numel(caseDefs));
 
-            for k = 1:numel(caseDefs)
-                c = caseDefs{k};
-                try
-                    cres = c.fcn();
-                catch ME
-                    cres = struct();
-                    cres.Ok = false;
-                    cres.Skipped = false;
-                    cres.Notes = "Crash: " + string(ME.message);
-                    out.Errors(end+1,1) = "Case " + c.name + " failed: " + string(ME.message);
+            if useParallelCases
+                caseNames = strings(numel(caseDefs), 1);
+                caseResults = cell(numel(caseDefs), 1);
+                for k = 1:numel(caseDefs)
+                    caseNames(k) = string(caseDefs{k}.name);
                 end
-                out.Cases.(matlab.lang.makeValidName(c.name)) = cres;
-                rows(end+1,1) = localCaseRow(c.name, cres); %#ok<AGROW>
+                parfor k = 1:numel(caseDefs)
+                    caseResults{k} = localRunCaseDeterministic(caseNames(k), cfg, numFrames, seedBase + 100*k);
+                end
+                for k = 1:numel(caseDefs)
+                    cName = caseDefs{k}.name;
+                    cres = caseResults{k};
+                    if ~logical(sixgr.util.structGet(cres, "Ok", false)) && ...
+                            ~logical(sixgr.util.structGet(cres, "Skipped", false))
+                        out.Errors(end+1,1) = "Case " + cName + " failed: " + string(sixgr.util.structGet(cres, "Notes", "")); %#ok<AGROW>
+                    end
+                    out.Cases.(matlab.lang.makeValidName(cName)) = cres;
+                    rows(end+1,1) = localCaseRow(cName, cres); %#ok<AGROW>
+                end
+            else
+                for k = 1:numel(caseDefs)
+                    c = caseDefs{k};
+                    try
+                        cres = c.fcn();
+                    catch ME
+                        cres = struct();
+                        cres.Ok = false;
+                        cres.Skipped = false;
+                        cres.Notes = "Crash: " + string(ME.message);
+                        out.Errors(end+1,1) = "Case " + c.name + " failed: " + string(ME.message);
+                    end
+                    out.Cases.(matlab.lang.makeValidName(c.name)) = cres;
+                    rows(end+1,1) = localCaseRow(c.name, cres); %#ok<AGROW>
+                end
             end
 
             if ~isempty(rows)
                 out.KPITable = struct2table(rows);
             end
 
-            out.Ok = ~any(out.KPITable.Ok == false & out.KPITable.Skipped == false);
+            skippedMask = false(height(out.KPITable), 1);
+            if istable(out.KPITable) && ismember("Skipped", string(out.KPITable.Properties.VariableNames))
+                skippedMask = logical(out.KPITable.Skipped);
+            end
+            if any(skippedMask)
+                skippedCases = string(out.KPITable.Case(skippedMask));
+                out.Errors(end+1,1) = "Skipped link coverage cases: " + strjoin(skippedCases, ", ");
+            end
+            out.Ok = ~any(~logical(out.KPITable.Ok) | skippedMask);
             if ~out.Ok
                 log.warn("LinkLevelRunner completed with failing case(s).");
             else
@@ -82,6 +114,40 @@ classdef LinkLevelRunner
             end
         end
     end
+end
+
+function tf = localCanParallelizeCases(cfg, nCases)
+tf = logical(sixgr.util.structGet(cfg, "run.useParallel", false)) && ...
+    double(sixgr.util.structGet(cfg, "run.numWorkers", 0)) > 1 && ...
+    nCases > 1 && exist("gcp", "file") == 2 && ~isempty(gcp("nocreate"));
+end
+
+function cres = localRunCaseDeterministic(caseName, cfg, numFrames, seed)
+rng(double(seed), "twister");
+baseSNR_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", 30));
+try
+    switch string(caseName)
+        case "CellSearch_MIB_SIB1"
+            cres = sixgr.link.runCellSearch_MIB_SIB1(cfg);
+        case "PRACH_Detection"
+            cres = sixgr.link.runPRACHDetection(cfg, "SNR_dB", baseSNR_dB);
+        case "DL_PDSCH_Throughput"
+            cres = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", numFrames);
+        case "UL_PUSCH_Throughput"
+            cres = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", numFrames, "SNR_dB", baseSNR_dB);
+        case "UL_SRS_ChannelEst"
+            cres = sixgr.link.runSRSChannelEstimation(cfg, "SNR_dB", baseSNR_dB);
+        case "UL_LowPAPR"
+            cres = sixgr.link.runULLowPAPR(cfg, "NumFrames", numFrames);
+        otherwise
+            error("sixgr:link:UnknownCase", "Unknown link case '%s'.", string(caseName));
+    end
+catch ME
+    cres = struct();
+    cres.Ok = false;
+    cres.Skipped = false;
+    cres.Notes = "Crash: " + string(ME.message);
+end
 end
 
 function doFig = localResolveSaveFigures(cfg, defaultVal)

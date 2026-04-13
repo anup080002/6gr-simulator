@@ -1,0 +1,18 @@
+{
+  "inherits": [
+    "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed.yaml",
+    "simulator/configs/channels/awgn.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_mimo4x4_multiuser_beamformed_awgn_validation",
+    "description": "Clean AWGN validation profile for 4T4R two-layer multi-user beamformed waveform LLS.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_a_baseline_dl"
+  },
+  "simulation": {
+    "snr_db": 34
+  },
+  "output": {
+    "profile": "lls_mimo4x4_multiuser_beamformed_awgn_validation"
+  }
+}

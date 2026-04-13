@@ -1,0 +1,32 @@
+{
+  "frequency": {
+    "range_name": "FR2",
+    "band_name": "30ghz",
+    "center_frequency_hz": 30000000000,
+    "bandwidth_hz": 100000000,
+    "bandwidth_options_hz": [50000000, 100000000, 200000000],
+    "duplex_mode": "TDD",
+    "numerology_options_khz": [60, 120],
+    "max_mimo_size": 8,
+    "mobility_defaults_kmph": 30,
+    "channel_model_defaults": "CDL-D",
+    "reference_signal_defaults": "tracking",
+    "power_model_defaults": "fr2",
+    "energy_model_defaults": "fr2_energy",
+    "rf_impairment_defaults": "fr2_tracking",
+    "n_size_grid": 66
+  },
+  "frame": {
+    "scs_khz": 120
+  },
+  "waveform": {
+    "fft_size": 1024,
+    "sample_rate_hz": 122880000
+  },
+  "channels": {
+    "model_type": "CDL",
+    "profile": "CDL-D",
+    "doppler_hz": 200,
+    "mobility_kmph": 30
+  }
+}

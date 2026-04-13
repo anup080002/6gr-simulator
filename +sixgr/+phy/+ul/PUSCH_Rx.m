@@ -39,6 +39,7 @@ ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscala
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -116,9 +117,12 @@ end
 trBlkSize = double(trBlkSize);
 
 % Base graph
+tbCRCType = '24A';
+tbCRCLen = 24;
 try
     ulschInfo = nrULSCHInfo(trBlkSize, targetCodeRate);
     bgn = double(ulschInfo.BGN);
+    [tbCRCType, tbCRCLen] = localResolveTBCRCSpec(ulschInfo, tbCRCType, tbCRCLen);
 catch
     bgn = 2;
 end
@@ -126,10 +130,14 @@ end
 % DMRS
 [dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
 useFastAWGNPath = logical(opt.FastAWGNPath);
+strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
+channelModelToken = localResolveEstimatorChannelModel(cfg);
+numTxPorts = localExpectedTxPorts(pusch);
+localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PUSCH_Rx");
 
 % Timing estimate
 toffset = 0;
-if ~useFastAWGNPath
+if ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate)
     try
         toffset = nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym);
         toffset = max(0, double(toffset));
@@ -139,7 +147,8 @@ if ~useFastAWGNPath
 end
 
 if toffset > 0 && (toffset+1) <= size(rxWaveform,1)
-    rxWaveform = rxWaveform(1+toffset:end, :);
+    rxWaveform = [rxWaveform(1+toffset:end, :); ...
+        zeros(toffset, size(rxWaveform,2), 'like', rxWaveform)];
 end
 
 % OFDM demod
@@ -154,13 +163,19 @@ useFastChEstMex = logical(sixgr.util.structGet(cfg, 'phy.rx.useFastChannelEstMex
 if useFastAWGNPath
     Hest = ones(size(rxGrid), 'like', rxGrid);
     nVarEst = 0;
+    estInfo = struct( ...
+        "EngineUsed", "unit-flat-shortcut", ...
+        "ChannelModel", string(channelModelToken), ...
+        "ExpectedTxPorts", double(numTxPorts), ...
+        "NumRxAnt", double(max(1, size(rxGrid, 3))), ...
+        "ScalarFastPathUsed", true);
 else
-    try
-        [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
-            "UseFastMex", useFastChEstMex);
-    catch
-        Hest = [];
-    end
+    [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
+        "UseFastMex", useFastChEstMex, ...
+        "StrictMode", strictMode, ...
+        "ChannelModel", channelModelToken, ...
+        "ExpectedTxPorts", numTxPorts, ...
+        "ContextLabel", "PUSCH_Rx");
 end
 
 % Noise variance
@@ -171,17 +186,13 @@ if isempty(nVar)
     else
         nVar = 1e-10;
     end
+else
+    nVar = localConvertNoiseVarToGridDomain(nVar, ofdmInfo);
 end
 nVar = double(nVar);
 
 % Extract resources
-try
-    [rxSym, hestSym] = nrExtractResources(puschInd, rxGrid, Hest);
-catch
-    rxSym = nrExtractResources(puschInd, rxGrid);
-    % Fallback (SISO back-to-back): assume flat unit channel
-    hestSym = ones(size(rxSym));
-end
+[rxSym, hestSym] = nrExtractResources(puschInd, rxGrid, Hest);
 
 % Equalize
 [eqSym, csi] = nrEqualizeMMSE(rxSym, hestSym, nVar);
@@ -207,6 +218,7 @@ recLLRBatch = localEnsureLLRBatch(recLLR);
 C = size(recLLRBatch, 2);
 actIter = zeros(1, C);
 parity = zeros(1, C);
+decodeTic = tic;
 useMexLDPC = logical(sixgr.util.structGet(cfg, 'phy.ldpc.useMexBatchDecode', false)) ...
     && (exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3 || exist("sixgr_ldpc_decode_batch_kernel","file") == 2);
 
@@ -282,11 +294,12 @@ if ~useMexLDPC
         decCbs = decCbs(1:maxLen, :);
     end
 end
+decodeLatency_s = toc(decodeTic);
 
 % Code block desegmentation + TB CRC check
-B = trBlkSize + 24;
-tbCrc = sixgr.phy.tb.desegmentLDPC(decCbs, bgn, B);
-[tbBits, crcOK, crcErr] = sixgr.phy.tb.checkCRC(tbCrc, '24A');
+B = trBlkSize + tbCRCLen;
+[tbCrc, cbCrcErr] = sixgr.phy.tb.desegmentLDPC(decCbs, bgn, B);
+[tbBits, crcOK, crcErr] = sixgr.phy.tb.checkCRC(tbCrc, tbCRCType);
 
 % Outputs
 rx = struct();
@@ -295,6 +308,8 @@ rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
 rx.NoiseVar = nVar;
 rx.TimingOffset = toffset;
+rx.DecodeLatency_s = double(decodeLatency_s);
+rx.MaxDecoderIterations = double(maxIter);
 if ~logical(opt.CompactOutput)
     rx.TransportBlock = int8(tbBits(:));
     rx.CodewordLLR = cwLLR;
@@ -302,6 +317,7 @@ if ~logical(opt.CompactOutput)
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
     rx.ParityChecks = parity;
+    rx.CodeBlockCRCError = cbCrcErr;
     rx.ChannelEstimate = Hest;
     rx.Carrier = carrier;
     rx.PUSCH = pusch;
@@ -316,6 +332,22 @@ info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
 
+end
+
+function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
+crcType = defaultType;
+crcLen = defaultLen;
+if nargin < 1 || ~isstruct(schInfo)
+    return;
+end
+rawType = char(string(sixgr.util.structGet(schInfo, 'CRC', defaultType)));
+if ~isempty(rawType)
+    crcType = rawType;
+end
+rawLen = double(sixgr.util.structGet(schInfo, 'L', defaultLen));
+if isfinite(rawLen) && rawLen >= 0
+    crcLen = rawLen;
+end
 end
 
 function qm = localQm(modScheme)
@@ -349,5 +381,77 @@ if ~ismatrix(x)
     x = reshape(x, size(x,1), []);
 else
     x = reshape(x, size(x,1), size(x,2));
+end
+end
+
+function numTxPorts = localExpectedTxPorts(pusch)
+numTxPorts = 1;
+try
+    numTxPorts = max(numTxPorts, double(pusch.NumLayers));
+catch
+end
+if ~(isscalar(numTxPorts) && isfinite(numTxPorts) && numTxPorts >= 1)
+    numTxPorts = 1;
+end
+numTxPorts = max(1, round(numTxPorts));
+end
+
+function localValidateFastScalarShortcut(channelToken, numTxPorts, numRxAnt, useFastAWGNPath, contextLabel)
+if ~logical(useFastAWGNPath)
+    return;
+end
+if ~(localIsExplicitFlatChannel(channelToken) && numTxPorts <= 1 && numRxAnt <= 1)
+    error("sixgr:phy:rx:InvalidFastScalarShortcut", ...
+        "%s requires an explicit AWGN/flat SISO validation mode. Channel='%s', TxPorts=%d, RxAnt=%d.", ...
+        contextLabel, localDisplayChannelToken(channelToken), numTxPorts, numRxAnt);
+end
+end
+
+function channelToken = localResolveEstimatorChannelModel(cfg)
+candidates = { ...
+    sixgr.util.structGet(cfg, 'channel.tdlProfile', ''), ...
+    sixgr.util.structGet(cfg, 'channel.cdlProfile', ''), ...
+    sixgr.util.structGet(cfg, 'channel.delayProfile', ''), ...
+    sixgr.util.structGet(cfg, 'channel.fading.profile', ''), ...
+    sixgr.util.structGet(cfg, 'channel.model', ''), ...
+    sixgr.util.structGet(cfg, 'channel.fading.model', '') ...
+    };
+
+channelToken = "";
+for i = 1:numel(candidates)
+    token = localNormalizeChannelToken(candidates{i});
+    if startsWith(token, "TDL") || startsWith(token, "CDL")
+        channelToken = token;
+        return;
+    end
+    if strlength(token) > 0 && strlength(channelToken) == 0
+        channelToken = token;
+    end
+end
+end
+
+function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
+nVarGrid = double(nVarTime);
+if nargin < 2 || ~isstruct(ofdmInfo)
+    return;
+end
+nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+if isfinite(nfft) && nfft > 0
+    nVarGrid = nVarGrid * nfft;
+end
+end
+
+function token = localNormalizeChannelToken(rawValue)
+token = upper(strtrim(string(rawValue)));
+end
+
+function tf = localIsExplicitFlatChannel(channelToken)
+tf = any(strcmpi(char(string(channelToken)), {'AWGN', 'NONE', 'OFF'}));
+end
+
+function token = localDisplayChannelToken(channelToken)
+token = char(string(channelToken));
+if isempty(token)
+    token = '<unspecified>';
 end
 end

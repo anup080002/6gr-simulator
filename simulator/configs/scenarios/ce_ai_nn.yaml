@@ -1,0 +1,26 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/ce_nn.yaml"
+  ],
+  "meta": {
+    "scenario_id": "ce_ai_nn",
+    "description": "AI-enhanced channel-estimation benchmark using descriptor-backed plugin.",
+    "research_class": "optional_research_experiment",
+    "scenario_group": "group_d_ai_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "ai_benchmark",
+    "target_cases": ["srs"]
+  }
+}

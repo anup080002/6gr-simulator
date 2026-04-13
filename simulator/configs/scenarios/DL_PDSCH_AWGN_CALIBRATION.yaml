@@ -1,0 +1,16 @@
+meta:
+  matrix_id: DL_PDSCH_AWGN_CALIBRATION
+  description: Exact DL PDSCH AWGN calibration suite with calibration baseline and coding or modulation study surfaces.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml
+  - simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+  - simulator/configs/scenarios/high_order_modulation_stress.yaml

@@ -1,0 +1,34 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_30ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "ul_30ghz_impairment_stress",
+    "description": "30 GHz UL beam tracking and impairment sensitivity case.",
+    "research_class": "study_item_candidate",
+    "scenario_group": "group_b_baseline_ul"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["ul", "pusch", "srs", "bundle"]
+  },
+  "simulation": {
+    "link_direction": "ul",
+    "snr_db": 18
+  },
+  "impairments": {
+    "phase_noise_enabled": true,
+    "cfo_hz": 1200
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "dl_4ghz_baseline",
+    "description": "4 GHz TDD CP-OFDM 2x2 DL baseline with PDSCH, PDCCH, and CSI-RS.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_a_baseline_dl"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["dl", "pdsch", "pdcch", "csi_rs", "bundle"]
+  },
+  "simulation": {
+    "link_direction": "dl",
+    "snr_db": 20
+  }
+}

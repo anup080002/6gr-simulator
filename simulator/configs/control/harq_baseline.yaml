@@ -1,0 +1,10 @@
+{
+  "harq": {
+    "enabled": true,
+    "process_count": 8,
+    "rv_sequence": [0, 2, 3, 1],
+    "cbg_enabled": false,
+    "feedback_timing_slots": 4,
+    "combining_mode": "soft"
+  }
+}

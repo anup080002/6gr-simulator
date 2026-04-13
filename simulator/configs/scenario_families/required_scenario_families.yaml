@@ -1,0 +1,901 @@
+library_id: required_6g_phy_lls_scenario_families
+version: "1.0"
+description: >
+  Required 6G PHY LLS scenario-family catalog. Each family defines its
+  objective, baseline config anchor, supporting config packs, sweep
+  dimensions, KPI expectations, plots, pass/fail expectations, and debug
+  traces.
+families:
+  - family_id: nr_like_benchmark_baseline
+    family_name: NR-like benchmark baseline
+    research_class: baseline_benchmark
+    objective: Establish the NR-like OFDM, LDPC, Polar, and conventional link-adaptation benchmark that all candidate 6G studies compare against.
+    baseline_config:
+      path: simulator/configs/scenarios/dl_4ghz_baseline.yaml
+    config_packs:
+      - path: simulator/configs/releases/nr_ofdm_nr_baseline.yaml
+        role: release_profile
+      - path: simulator/configs/bands/band_4ghz.yaml
+        role: band_pack
+      - path: simulator/configs/channels/tdl_c.yaml
+        role: channel_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: snr_db
+          source: sweeps_and_matrix.snr_sweep
+          recommended_values: [-5, 0, 5, 10, 15, 20]
+        - name: rank
+          source: mimo_and_beam_management.rank_set
+          recommended_values: [1, 2]
+        - name: channel_profile
+          source: channel_model.model_family
+          recommended_values: [TDL-C, CDL-D]
+    primary_kpis: [bler, throughput_mbps, spectral_efficiency_bps_hz, cqi, ri, pmi]
+    optional_kpis: [nmse_db, llr_histogram, rs_overhead_pct, energy_per_bit_nj]
+    mandatory_plots: [bler_vs_snr, throughput_vs_snr, cqi_vs_sinr, rank_selection_histogram]
+    pass_fail_expectations:
+      - BLER should decrease monotonically across the baseline SNR sweep.
+      - CQI and selected modulation should increase with improving channel quality.
+      - No candidate-only features may be active in the benchmark reference.
+    typical_debug_traces: [dmrs_channel_estimate, decoder_iteration_trace, amc_selection_log, resource_grid_snapshot]
+
+  - family_id: band_700mhz_fdd_coverage
+    family_name: 700 MHz FDD coverage
+    research_class: baseline_benchmark
+    objective: Characterize low-band FDD coverage, long-range robustness, and common-signal acquisition margins.
+    baseline_config:
+      path: simulator/configs/scenarios/dl_700mhz_coverage.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_general_scope_packs.yaml
+        role: family_anchor
+        override_label: around_700mhz
+      - path: simulator/configs/bands/band_700mhz.yaml
+        role: band_pack
+      - path: simulator/configs/channels/tdl_c.yaml
+        role: channel_pack
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: snr_db
+          source: sweeps_and_matrix.snr_sweep
+          recommended_values: [-15, -10, -5, 0, 5, 10]
+        - name: delay_spread_ns
+          source: sweeps_and_matrix.delay_spread_sweep
+          recommended_values: [100, 300, 1000]
+        - name: common_signal_power_boost_db
+          source: signals_and_channels_common.ssb.power_boost
+          recommended_values: [-3, 0, 3]
+    primary_kpis: [pbch_success_rate, pdcch_detection_rate, pdsch_bler, rsrp_dbm, effective_coverage_radius]
+    optional_kpis: [search_latency_ms, false_alarm_rate, energy_per_successful_access_nj]
+    mandatory_plots: [pbch_success_vs_snr, rsrp_vs_pathloss, pdsch_bler_vs_snr, access_latency_cdf]
+    pass_fail_expectations:
+      - PBCH and SIB-related control decoding must remain robust at low SNR operating points.
+      - Coverage-oriented modulation and coding should favor reliability over peak throughput.
+      - FDD timing and acquisition metrics should remain stable across the sweep.
+    typical_debug_traces: [pss_sss_detection_log, pbch_crc_log, common_signal_beam_map, timing_estimator_trace]
+
+  - family_id: band_2ghz_fdd_baseline
+    family_name: 2 GHz FDD baseline
+    research_class: baseline_benchmark
+    objective: Provide an anchored mid-low-band FDD benchmark around 2 GHz for comparison against 700 MHz coverage and 4 GHz TDD baselines.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_general_scope_packs.yaml
+      override_label: around_2ghz
+      inline_overrides:
+        frequency:
+          duplex_mode: FDD
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_general_scope_packs.yaml
+        role: family_anchor
+        override_label: around_2ghz
+      - path: simulator/configs/bands/band_2ghz.yaml
+        role: band_pack
+      - path: simulator/configs/releases/nr_ofdm_nr_baseline.yaml
+        role: release_profile
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: snr_db
+          source: sweeps_and_matrix.snr_sweep
+          recommended_values: [-10, -5, 0, 5, 10, 15]
+        - name: bandwidth_hz
+          source: sweeps_and_matrix.bandwidth_sweep
+          recommended_values: [5000000, 20000000]
+        - name: rank
+          source: sweeps_and_matrix.rank_sweep
+          recommended_values: [1, 2]
+    primary_kpis: [bler, throughput_mbps, cqi, ri, pmi, rsrp_dbm]
+    optional_kpis: [latency_ms, rs_overhead_pct, energy_per_bit_nj]
+    mandatory_plots: [bler_vs_snr, throughput_vs_snr, cqi_vs_snr]
+    pass_fail_expectations:
+      - FDD benchmark behavior must remain close to the NR-like reference operating point.
+      - Link-adaptation transitions should remain smooth across bandwidth and SNR sweeps.
+      - Control and data channels must stay internally consistent across the family sweeps.
+    typical_debug_traces: [amc_selection_log, decoder_iteration_trace, csi_report_trace]
+
+  - family_id: band_4ghz_tdd_baseline
+    family_name: 4 GHz TDD baseline
+    research_class: agreed_starting_point
+    objective: Provide the reference TDD mid-band starting point for DL/UL balance, control reliability, and CSI-assisted adaptation.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_tracking_packs.yaml
+      override_label: tdd_4ghz_30khz
+    config_packs:
+      - path: simulator/configs/scenarios/dl_4ghz_baseline.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_tracking_packs.yaml
+        role: family_anchor
+        override_label: tdd_4ghz_30khz
+      - path: simulator/configs/bands/band_4ghz.yaml
+        role: band_pack
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: snr_db
+          source: sweeps_and_matrix.snr_sweep
+          recommended_values: [-5, 0, 5, 10, 15, 20]
+        - name: tdd_pattern
+          source: frame_timing.tdd_pattern
+          recommended_values: [dddsuu, dddsuuuu, dynamic_slot_group]
+        - name: ue_speed_kmh
+          source: sweeps_and_matrix.speed_sweep
+          recommended_values: [3, 30, 120]
+    primary_kpis: [bler, throughput_mbps, latency_ms, cqi, ri, harq_success_rate]
+    optional_kpis: [nmse_db, scheduling_delay_ms, rs_overhead_pct]
+    mandatory_plots: [throughput_vs_snr, bler_vs_snr, latency_cdf, cqi_time_series]
+    pass_fail_expectations:
+      - TDD baseline must sustain stable DL and UL channel quality reporting across mobility points.
+      - HARQ and CQI behavior should remain consistent with the NR-like agreed starting point.
+      - No study-item candidate feature should be required for baseline operation.
+    typical_debug_traces: [harq_process_log, cqi_report_trace, slot_allocation_trace, channel_snapshot_trace]
+
+  - family_id: band_7ghz_wideband_high_capacity
+    family_name: 7 GHz wideband / high-capacity
+    research_class: agreed_starting_point
+    objective: Exercise wideband 7 GHz operation with larger bandwidth, higher-order MIMO capability, and capacity-oriented link adaptation.
+    baseline_config:
+      path: simulator/configs/scenarios/dl_7ghz_mimo4x4.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_general_scope_packs.yaml
+        role: family_anchor
+        override_label: around_7ghz
+      - path: simulator/configs/bands/band_7ghz.yaml
+        role: band_pack
+      - path: simulator/configs/mimo/mimo_4x4.yaml
+        role: mimo_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: snr_db
+          source: sweeps_and_matrix.snr_sweep
+          recommended_values: [0, 5, 10, 15, 20, 25]
+        - name: bandwidth_hz
+          source: sweeps_and_matrix.bandwidth_sweep
+          recommended_values: [20000000, 100000000]
+        - name: rank
+          source: sweeps_and_matrix.rank_sweep
+          recommended_values: [1, 2, 3, 4]
+    primary_kpis: [throughput_mbps, spectral_efficiency_bps_hz, bler, ri, pmi, beamforming_gain_db]
+    optional_kpis: [nmse_db, condition_number, per_layer_sinr_db, energy_per_bit_nj]
+    mandatory_plots: [throughput_vs_snr, spectral_efficiency_vs_rank, rank_usage_histogram, beam_gain_cdf]
+    pass_fail_expectations:
+      - Capacity should scale with SNR and rank until BLER targets or channel condition limits are hit.
+      - Beamforming and PMI selection must track the channel state consistently.
+      - Wideband operation should not violate resource-grid or RS-overhead sanity checks.
+    typical_debug_traces: [precoder_selection_log, beam_search_scores, per_layer_llr_trace, wideband_channel_estimate]
+
+  - family_id: band_30ghz_high_band_beam_centric
+    family_name: 30 GHz high-band beam-centric
+    research_class: study_item_candidate
+    objective: Study high-band beam-centric operation with sparse coverage, beam tracking, and high-SCS tracking requirements.
+    baseline_config:
+      path: simulator/configs/scenarios/dl_30ghz_beam_tracking.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_general_scope_packs.yaml
+        role: family_anchor
+        override_label: around_30ghz
+      - path: simulator/configs/bands/band_30ghz.yaml
+        role: band_pack
+      - path: simulator/configs/channels/cdl_d.yaml
+        role: channel_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: snr_db
+          source: sweeps_and_matrix.snr_sweep
+          recommended_values: [-5, 0, 5, 10, 15, 20]
+        - name: beam_count
+          source: sweeps_and_matrix.beam_count_sweep
+          recommended_values: [4, 8, 16]
+        - name: ue_speed_kmh
+          source: sweeps_and_matrix.speed_sweep
+          recommended_values: [3, 30, 120]
+    primary_kpis: [beam_tracking_success_rate, throughput_mbps, bler, tracking_phase_error_deg, beam_switch_latency_ms]
+    optional_kpis: [trs_nmse_db, search_latency_ms, energy_per_tracking_update_nj]
+    mandatory_plots: [beam_tracking_success_vs_snr, throughput_vs_beam_count, phase_error_cdf, beam_switch_latency_cdf]
+    pass_fail_expectations:
+      - Beam tracking and refinement must improve or maintain link quality relative to fixed-beam baselines.
+      - High-band synchronization and tracking metrics must remain bounded across mobility sweeps.
+      - Capacity-oriented modulation should degrade gracefully under beam mismatch stress.
+    typical_debug_traces: [beam_tracking_log, trs_observation_trace, cfo_phase_tracker_log, beam_pair_selection_trace]
+
+  - family_id: tracking_rs_synchronization_stress
+    family_name: tracking RS / synchronization stress
+    research_class: study_item_candidate
+    objective: Stress synchronization, CFO, phase-tracking, TRS, and tracking-RS behavior across time-frequency tracking assumptions.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_tracking_packs.yaml
+      override_label: cfo_initial_acquisition
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_tracking_packs.yaml
+        role: family_anchor
+        override_label: cfo_initial_acquisition
+      - path: simulator/configs/scenarios/cfo_stress.yaml
+        role: stress_scenario
+      - path: simulator/configs/scenarios/phase_noise_stress.yaml
+        role: stress_scenario
+      - path: simulator/configs/scenarios/high_doppler_stress.yaml
+        role: stress_scenario
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: cfo_profile
+          source: synchronization_and_tracking.cfo_estimator
+          recommended_values: [initial_acquisition, non_initial_acquisition, drift_study]
+        - name: ue_speed_kmh
+          source: sweeps_and_matrix.speed_sweep
+          recommended_values: [3, 120, 350, 500]
+        - name: delay_spread_ns
+          source: sweeps_and_matrix.delay_spread_sweep
+          recommended_values: [30, 100, 300, 1000]
+    primary_kpis: [sync_success_rate, cfo_residual_hz, timing_error_samples, trs_nmse_db, tracking_failure_rate]
+    optional_kpis: [phase_error_deg, search_latency_ms, complexity_per_slot]
+    mandatory_plots: [residual_cfo_vs_speed, timing_error_cdf, trs_nmse_vs_snr, sync_success_vs_impairment]
+    pass_fail_expectations:
+      - Residual timing and frequency error must remain bounded after tracking convergence.
+      - Tracking-RS and TRS chains must show measurable benefit under drift and Doppler stress.
+      - One-shot acquisition modes must report honest miss-detection behavior when they fail.
+    typical_debug_traces: [coarse_timing_trace, cfo_estimator_trace, trs_tracking_log, phase_tracker_log]
+
+  - family_id: pdcch_reliability_blind_decoding_blocking
+    family_name: PDCCH reliability / blind-decoding / blocking
+    research_class: study_item_candidate
+    objective: Study control-channel reliability, blind-decoding burden, blocking resilience, and aggregation-level behavior.
+    baseline_config:
+      path: simulator/configs/scenarios/pdcch_blind_decode_sweep.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_pdcch_packs.yaml
+        role: family_anchor
+        override_label: slot_level_monitoring_baseline
+      - path: simulator/configs/scenarios/mandatory_pdcch_packs.yaml
+        role: stress_anchor
+        override_label: control_blocking_stress
+      - path: simulator/configs/control/pdcch_baseline.yaml
+        role: control_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: aggregation_level
+          source: pdcch.aggregation_levels
+          recommended_values: [1, 2, 4, 8, 16]
+        - name: blind_decode_budget
+          source: pdcch.max_blind_decodes
+          recommended_values: [8, 16, 24, 32]
+        - name: blocking_mode
+          source: pdcch.control_blocking_eval_policy
+          recommended_values: [baseline, control_blocking, interference_limited, puncturing]
+    primary_kpis: [dci_detection_rate, false_alarm_rate, blind_decode_count, control_blocking_rate, pdcch_bler]
+    optional_kpis: [energy_per_blind_decode_nj, cce_utilization_pct, detection_feedback_accuracy]
+    mandatory_plots: [dci_detection_vs_al, false_alarm_vs_blind_decode_budget, blocking_rate_bar, blind_decode_energy_cdf]
+    pass_fail_expectations:
+      - False-alarm and miss-detection accounting must remain explicit for every search-space configuration.
+      - Detection probability should improve with aggregation level in equivalent conditions.
+      - Blocking and puncturing stress must visibly degrade performance rather than silently flattening metrics.
+    typical_debug_traces: [blind_decode_log, crc_mask_check_log, candidate_generation_trace, control_energy_log]
+
+  - family_id: ul_waveform_cp_ofdm_vs_dfts_ofdm
+    family_name: UL waveform CP-OFDM vs DFT-s-OFDM
+    research_class: study_item_candidate
+    objective: Compare UL CP-OFDM and DFT-s-OFDM baselines and candidate low-PAPR extensions under power-limited and non-power-limited operation.
+    baseline_config:
+      path: simulator/configs/scenarios/ul_4ghz_cpofdm.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/ul_4ghz_cpofdm.yaml
+        role: baseline_scenario
+      - path: simulator/configs/scenarios/ul_4ghz_dfts_pi2bpsk.yaml
+        role: comparison_scenario
+      - path: simulator/configs/scenarios/mandatory_ul_waveform_packs.yaml
+        role: family_anchor
+        override_label: ul_cp_ofdm_all_layers
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: ul_waveform
+          source: waveform.ul_waveform
+          recommended_values: [CP-OFDM, DFT-S-OFDM]
+        - name: low_papr_mode
+          source: waveform.low_papr_mode
+          recommended_values: [disabled, pi_over_2_bpsk, tone_reservation, truncation]
+        - name: layer_count
+          source: sweeps_and_matrix.rank_sweep
+          recommended_values: [1, 2, 4]
+    primary_kpis: [ul_bler, ul_throughput_mbps, papr_db, pa_backoff_db, energy_per_bit_nj]
+    optional_kpis: [evm_pct, dmrs_nmse_db, uci_reliability]
+    mandatory_plots: [ul_bler_vs_snr, papr_ccdf, throughput_vs_waveform, energy_per_bit_vs_waveform]
+    pass_fail_expectations:
+      - Single-layer DFT-s-OFDM should demonstrate lower PAPR than CP-OFDM baselines.
+      - Candidate low-PAPR features must show explicit trade-offs in performance and complexity.
+      - Multi-layer candidate DFT-s-OFDM studies must retain honest failure behavior if unsupported settings are used.
+    typical_debug_traces: [ul_waveform_snapshot, papr_trace, pa_model_log, dmrs_estimation_trace]
+
+  - family_id: dl_based_csi_acquisition
+    family_name: DL-based CSI acquisition
+    research_class: agreed_starting_point
+    objective: Benchmark DL reference-signal-based CSI acquisition, CQI/PMI/RI/CRI generation, and scheduler-facing CSI quality.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+      override_label: dl_based_csi
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+        role: family_anchor
+        override_label: dl_based_csi
+      - path: simulator/configs/reference_signals/csi_tracking_baseline.yaml
+        role: rs_pack
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: csi_rs_density
+          source: reference_signals.nzp_csi_rs.time_density
+          recommended_values: [sparse, medium, dense]
+        - name: report_periodicity_ms
+          source: csi_acquisition_and_reporting.report_periodicity
+          recommended_values: [5, 10, 20, 40]
+        - name: codebook_mode
+          source: csi_acquisition_and_reporting.codebook_framework
+          recommended_values: [type1_su_mimo, type2_mu_mimo, etype2_candidate]
+    primary_kpis: [cqi_accuracy, pmi_selection_consistency, ri_accuracy, cri_accuracy, sgcs, nmse_db]
+    optional_kpis: [feedback_overhead_bits, report_latency_ms, scheduler_gain_pct]
+    mandatory_plots: [nmse_vs_snr, cqi_accuracy_vs_density, pmi_mode_histogram, report_overhead_bar]
+    pass_fail_expectations:
+      - CQI, PMI, RI, and CRI outputs must remain self-consistent with the measured channel state.
+      - CSI-RS density increases should improve estimation quality or reduce report uncertainty.
+      - Candidate codebook modes must remain explicitly labeled and comparable to the baseline.
+    typical_debug_traces: [csi_rs_observation_trace, csi_report_payload_trace, pmi_candidate_score_log, channel_estimation_grid]
+
+  - family_id: ul_based_csi_acquisition
+    family_name: UL-based CSI acquisition
+    research_class: agreed_starting_point
+    objective: Benchmark SRS-driven UL CSI acquisition, reciprocity-oriented channel inference, and estimation quality across port and periodicity choices.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+      override_label: ul_based_csi
+    config_packs:
+      - path: simulator/configs/scenarios/ul_7ghz_srs_csi.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+        role: family_anchor
+        override_label: ul_based_csi
+      - path: simulator/configs/reference_signals/csi_tracking_baseline.yaml
+        role: rs_pack
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: srs_ports
+          source: reference_signals.srs.num_ports
+          recommended_values: [1, 2, 4, 8]
+        - name: srs_periodicity_ms
+          source: csi_acquisition_and_reporting.report_periodicity
+          recommended_values: [5, 10, 20, 40, 80, 160]
+        - name: srs_sequence_family
+          source: reference_signals.srs.sequence_type
+          recommended_values: [baseline, low_papr_candidate, low_correlation_candidate]
+    primary_kpis: [sgcs, nmse_db, ri_accuracy, reciprocity_error_db, csi_latency_ms]
+    optional_kpis: [srs_overhead_pct, energy_per_srs_report_nj, beam_selection_accuracy]
+    mandatory_plots: [nmse_vs_srs_periodicity, sgcs_vs_port_count, reciprocity_error_cdf, srs_overhead_bar]
+    pass_fail_expectations:
+      - SRS-driven estimation quality must improve with stronger port diversity when the channel supports it.
+      - Periodicity sweeps must expose the overhead versus freshness trade-off directly.
+      - Low-PAPR or low-correlation candidate sequences must be identifiable as candidate-only behavior.
+    typical_debug_traces: [srs_observation_trace, reciprocity_mapping_log, csi_estimator_trace, port_selection_log]
+
+  - family_id: joint_dl_ul_csi_acquisition
+    family_name: joint DL/UL CSI acquisition
+    research_class: study_item_candidate
+    objective: Study combined DL and UL CSI acquisition with joint report synthesis, reciprocity, and feedback trade-offs.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+      override_label: joint_dl_ul_csi
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+        role: family_anchor
+        override_label: joint_dl_ul_csi
+      - path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+        role: reference_anchor
+        override_label: tdd_reciprocity_operation
+      - path: simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml
+        role: reference_anchor
+        override_label: fdd_feedback_operation
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: acquisition_mode
+          source: csi_acquisition_and_reporting.joint_dl_ul_csi_enabled
+          recommended_values: [joint_baseline, reciprocity_oriented, feedback_oriented]
+        - name: report_periodicity_ms
+          source: sweeps_and_matrix.report_periodicity_sweep
+          recommended_values: [5, 10, 20, 40]
+        - name: codebook_mode
+          source: csi_acquisition_and_reporting.codebook_framework
+          recommended_values: [type1_su_mimo, type2_mu_mimo, etype2_candidate]
+    primary_kpis: [csi_fusion_accuracy, cqi_accuracy, pmi_consistency, ri_accuracy, cri_accuracy, report_overhead_bits]
+    optional_kpis: [scheduler_gain_pct, reciprocity_error_db, report_latency_ms]
+    mandatory_plots: [fusion_accuracy_vs_snr, overhead_vs_periodicity, pmi_consistency_heatmap, scheduler_gain_bar]
+    pass_fail_expectations:
+      - Joint CSI families must show whether combining DL and UL information improves report quality or scheduler utility.
+      - Report overhead and latency must remain explicit across feedback-oriented and reciprocity-oriented modes.
+      - Candidate codebook and joint-report modes must remain separable from the baseline.
+    typical_debug_traces: [joint_csi_merge_log, csi_payload_trace, scheduler_application_log, codebook_selection_log]
+
+  - family_id: prach_initial_access_beam_management
+    family_name: PRACH / initial access / beam management
+    research_class: study_item_candidate
+    objective: Cover SSB, PBCH, PRACH, SSB-RO mapping, beam sweep, and beam refinement studies for initial access.
+    baseline_config:
+      path: simulator/configs/scenarios/prach_detection.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/prach_detection.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_initial_access_packs.yaml
+        role: family_anchor
+        override_label: periodic_ssb_baseline
+      - path: simulator/configs/scenarios/mandatory_initial_access_packs.yaml
+        role: beam_anchor
+        override_label: beam_sweep_clustering
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: ssb_periodicity_ms
+          source: signals_and_channels_common.ssb.periodicity
+          recommended_values: [20, 40, 80, 160]
+        - name: prach_format
+          source: prach.format_set
+          recommended_values: [A1, A2, B1, long]
+        - name: beam_policy
+          source: prach.msg1_beam_policy
+          recommended_values: [same_beam, different_beam, predicted_beam]
+    primary_kpis: [prach_detection_rate, miss_detection_rate, false_alarm_rate, access_latency_ms, beam_pair_success_rate]
+    optional_kpis: [ta_error_samples, msg3_success_rate, common_signal_energy_nj]
+    mandatory_plots: [prach_detection_vs_snr, access_latency_cdf, beam_pair_success_bar, ta_error_cdf]
+    pass_fail_expectations:
+      - Detection, miss, and false-alarm accounting must remain explicit for every PRACH configuration.
+      - SSB and RO mapping changes must produce measurable effects on access latency and beam success metrics.
+      - Candidate beam prediction and refinement modes must remain clearly tagged as non-baseline behavior.
+    typical_debug_traces: [prach_correlation_trace, ssb_beam_sweep_log, beam_refinement_trace, msg2_msg3_linkage_log]
+
+  - family_id: harq_latency_reliability_tradeoff
+    family_name: HARQ latency-reliability trade-off
+    research_class: agreed_starting_point
+    objective: Study HARQ process count, RV sequencing, combining, stop conditions, and feedback timing trade-offs between latency and reliability.
+    baseline_config:
+      path: simulator/configs/scenarios/harq_process_sweep.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/harq_process_sweep.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_harq_packs.yaml
+        role: family_anchor
+      - path: simulator/configs/control/harq_baseline.yaml
+        role: harq_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: process_count
+          source: harq.process_count
+          recommended_values: [4, 8, 16]
+        - name: max_retx
+          source: harq.max_retx
+          recommended_values: [1, 2, 4]
+        - name: combining_mode
+          source: harq.combining_mode
+          recommended_values: [chase, incremental_redundancy]
+    primary_kpis: [harq_success_rate, median_latency_ms, p95_latency_ms, retx_count, reliability_target_hit_rate]
+    optional_kpis: [feedback_overhead_bits, ue_energy_per_success_nj, scheduler_retx_utilization]
+    mandatory_plots: [latency_reliability_tradeoff_curve, retx_histogram, success_rate_vs_process_count, combining_gain_bar]
+    pass_fail_expectations:
+      - Reliability should improve with additional HARQ opportunities at the expected latency and overhead cost.
+      - DL and UL HARQ behavior may differ, but both must remain internally consistent.
+      - Stop conditions and DTX handling must remain explicit in the logged outcomes.
+    typical_debug_traces: [harq_process_log, rv_sequence_trace, ack_nack_dtx_log, combining_buffer_trace]
+
+  - family_id: high_order_modulation_and_coding_chain
+    family_name: high-order modulation and coding chain
+    research_class: study_item_candidate
+    objective: Stress high-order modulation, higher code rates, and modulation-aware mapping across DL and UL data channels.
+    baseline_config:
+      path: simulator/configs/scenarios/high_order_modulation_stress.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/high_order_modulation_stress.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: family_anchor
+        override_label: 1024qam_candidate
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: 4096qam_candidate
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: qam_order
+          source: modulation_and_mapping.qam_order
+          recommended_values: [64, 256, 1024, 4096]
+        - name: mcs_index
+          source: sweeps_and_matrix.mcs_sweep
+          recommended_values: [10, 16, 20, 24, 27]
+        - name: rank
+          source: sweeps_and_matrix.rank_sweep
+          recommended_values: [1, 2, 4]
+    primary_kpis: [bler, throughput_mbps, evm_pct, spectral_efficiency_bps_hz, cqi]
+    optional_kpis: [llr_saturation_rate, iteration_count, power_backoff_db]
+    mandatory_plots: [bler_vs_snr_by_modulation, throughput_vs_mcs, evm_vs_qam_order, spectral_efficiency_bar]
+    pass_fail_expectations:
+      - Higher-order modulation gains must only appear where the BLER target remains satisfied.
+      - Candidate 1024QAM and 4096QAM modes must remain clearly separated from baseline modulation families.
+      - Power and EVM penalties must remain visible rather than being hidden behind throughput summaries.
+    typical_debug_traces: [constellation_snapshot, llr_histogram, amc_selection_log, evm_trace]
+
+  - family_id: probabilistic_shaping_distribution_matching
+    family_name: probabilistic shaping / DM studies
+    research_class: study_item_candidate
+    objective: Compare CCDM, MPDM, ESS, ECC-DM, and arithmetic-related shaping choices, including retransmission behavior and pre-coding DM placement.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+      override_label: shaping_ccdm
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: family_anchor
+        override_label: shaping_ccdm
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: shaping_mpdm
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: shaping_ess
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: shaping_ecc_dm
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: dm_algorithm
+          source: modulation_and_mapping.dm_algorithm
+          recommended_values: [ccdm, mpdm, ess, ecc_dm, arithmetic_variant]
+        - name: dm_before_coding
+          source: modulation_and_mapping.joint_coding_modulation_flag
+          recommended_values: [false, true]
+        - name: shaping_retx_mode
+          source: sweeps_and_matrix.shaping_sweep
+          recommended_values: [baseline, retained_distribution, rematched_distribution]
+    primary_kpis: [shaping_gain_db, bler, throughput_mbps, dm_rate_loss_pct, complexity_per_bit]
+    optional_kpis: [distribution_distance, latency_ms, memory_proxy]
+    mandatory_plots: [shaping_gain_vs_snr, rate_loss_bar, bler_vs_dm_algorithm, complexity_vs_gain]
+    pass_fail_expectations:
+      - Candidate shaping gains must be reported together with rate-loss and complexity penalties.
+      - DM algorithm changes must remain explicit in retransmission behavior and payload shaping traces.
+      - No shaping result may be mislabeled as a baseline benchmark.
+    typical_debug_traces: [distribution_matcher_trace, symbol_probability_log, shaped_constellation_trace, retransmission_shaping_log]
+
+  - family_id: joint_coding_modulation_candidate_studies
+    family_name: joint coding + modulation candidate studies
+    research_class: study_item_candidate
+    objective: Study joint coding-modulation candidates including MGCM, DBICM, and TB-DBICM under identical channel conditions.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+      override_label: joint_coding_modulation_candidate
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: family_anchor
+        override_label: joint_coding_modulation_candidate
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: mgcm_candidate
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: dbicm_candidate
+      - path: simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml
+        role: candidate_anchor
+        override_label: tb_dbicm_candidate
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: joint_mode
+          source: channel_coding.mgcm_flag
+          recommended_values: [joint_coding_modulation, mgcm, dbicm, tb_dbicm]
+        - name: qam_order
+          source: sweeps_and_matrix.modulation_sweep
+          recommended_values: [64, 256, 1024]
+        - name: decoder_iterations
+          source: sweeps_and_matrix.decode_iteration_sweep
+          recommended_values: [4, 8, 12]
+    primary_kpis: [bler, throughput_mbps, decoder_iterations_mean, complexity_per_bit, spectral_efficiency_bps_hz]
+    optional_kpis: [energy_per_bit_nj, llr_entropy, rate_matching_loss_pct]
+    mandatory_plots: [bler_vs_snr_by_joint_mode, throughput_vs_complexity, iteration_histogram, efficiency_vs_qam_order]
+    pass_fail_expectations:
+      - Candidate joint coding-modulation modes must be compared against equivalent conventional baselines.
+      - Complexity increases must be reported alongside any throughput or BLER gains.
+      - Decoder-iteration and early-stop behavior must remain visible for all candidate modes.
+    typical_debug_traces: [joint_mapping_log, decoder_iteration_trace, rate_matching_trace, llr_distribution_log]
+
+  - family_id: ai_demodulation
+    family_name: AI demodulation
+    research_class: study_item_candidate
+    objective: Compare AI-assisted demodulation against the mandatory non-AI baseline with confidence, fallback, and robustness reporting.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+      override_label: ai_demodulation_candidate
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+        role: baseline_anchor
+        override_label: non_ai_baseline
+      - path: simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+        role: family_anchor
+        override_label: ai_demodulation_candidate
+      - path: simulator/configs/scenarios/ce_non_ai_baseline.yaml
+        role: non_ai_reference
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: channel_mismatch
+          source: ai_ml.channel_generalization_sweeps
+          recommended_values: [matched, doppler_mismatch, delay_spread_mismatch]
+        - name: inference_frequency
+          source: ai_ml.inference_frequency
+          recommended_values: [every_slot, every_2_slots, every_4_slots]
+        - name: fallback_mode
+          source: ai_ml.fallback_mode
+          recommended_values: [disabled, confidence_gated, hard_guard]
+    primary_kpis: [bler, throughput_mbps, inference_latency_us, confidence_calibration_error, fallback_rate]
+    optional_kpis: [flop_count, parameter_count, memory_use_mb, robustness_drop_pct]
+    mandatory_plots: [bler_ai_vs_non_ai, fallback_rate_vs_snr, confidence_reliability_curve, inference_cost_bar]
+    pass_fail_expectations:
+      - Every AI demodulation scenario must include a non-AI baseline pair.
+      - Confidence and fallback behavior must be explicit; poor service quality may not be hidden behind semantic correctness.
+      - Robustness sweeps must report degradation under mismatch instead of silently reverting behavior.
+    typical_debug_traces: [ai_feature_tensor_trace, inference_call_log, confidence_trace, fallback_decision_log]
+
+  - family_id: ai_csi_compression_reporting
+    family_name: AI CSI compression / reporting
+    research_class: study_item_candidate
+    objective: Study SSCC, JSCC, and JSCM CSI compression and reporting against non-AI CSI baselines.
+    baseline_config:
+      path: simulator/configs/scenarios/csi_ai_autoencoder.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/csi_non_ai_baseline.yaml
+        role: non_ai_reference
+      - path: simulator/configs/scenarios/csi_ai_autoencoder.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+        role: family_anchor
+        override_label: ai_csi_feedback_sscc
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: feedback_mode
+          source: csi_acquisition_and_reporting.compression_mode
+          recommended_values: [sscc, jscc, jscm]
+        - name: report_periodicity_ms
+          source: sweeps_and_matrix.report_periodicity_sweep
+          recommended_values: [5, 10, 20, 40]
+        - name: generalization_profile
+          source: ai_ml.band_generalization_sweeps
+          recommended_values: [matched_band, adjacent_band, out_of_band]
+    primary_kpis: [reconstruction_nmse_db, cqi_accuracy, pmi_accuracy, report_overhead_bits, scheduler_gain_pct]
+    optional_kpis: [latency_ms, parameter_count, flop_budget_use_pct]
+    mandatory_plots: [nmse_vs_feedback_mode, overhead_vs_accuracy, scheduler_gain_bar, generalization_heatmap]
+    pass_fail_expectations:
+      - AI CSI compression families must always be paired with the non-AI CSI baseline.
+      - Overhead reduction claims must be reported together with reconstruction quality and scheduler impact.
+      - Downloadable and non-downloadable AI model assumptions must remain explicit.
+    typical_debug_traces: [csi_encoder_trace, latent_vector_snapshot, csi_decoder_trace, scheduler_application_log]
+
+  - family_id: energy_efficiency_common_signal_clustering
+    family_name: energy-efficiency / common-signal clustering
+    research_class: study_item_candidate
+    objective: Study UE and network energy instrumentation, SSB/common-channel clustering, monitoring adaptation, and race-to-sleep behavior.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml
+      override_label: common_channel_clustering
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml
+        role: family_anchor
+        override_label: common_channel_clustering
+      - path: simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml
+        role: baseline_anchor
+        override_label: energy_instrumentation_baseline
+      - path: simulator/configs/scenarios/energy_aware_ai_mode_select.yaml
+        role: optional_experiment
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: clustering_mode
+          source: energy_and_complexity.network_energy_saving_metrics
+          recommended_values: [disabled, ssb_clustering, common_channel_clustering]
+        - name: duty_cycle_target
+          source: energy_and_complexity.duty_cycle_metrics
+          recommended_values: [0.2, 0.5, 0.8]
+        - name: monitoring_adaptation
+          source: energy_efficiency.pdcch_monitoring_adaptation_enabled
+          recommended_values: [false, true]
+    primary_kpis: [ue_energy_per_bit_nj, gnb_energy_per_bit_nj, duty_cycle_pct, wakeup_latency_ms, throughput_per_watt]
+    optional_kpis: [blind_decode_energy_nj, rf_chain_energy_nj, sleep_entry_count]
+    mandatory_plots: [energy_per_bit_bar, duty_cycle_cdf, throughput_per_watt_vs_policy, wakeup_latency_cdf]
+    pass_fail_expectations:
+      - Energy savings must be reported with their throughput, latency, and control-observability trade-offs.
+      - Clustering or sleep strategies may not silently suppress required control-plane activity.
+      - Per-block and RF-chain energy instrumentation must remain present whenever the family is enabled.
+    typical_debug_traces: [energy_meter_trace, sleep_state_transition_log, common_signal_schedule_log, monitoring_energy_log]
+
+  - family_id: bandwidth_adaptation_bwp_like_studies
+    family_name: bandwidth adaptation / BWP-like studies
+    research_class: agreed_starting_point
+    objective: Study active bandwidth adaptation, BWP-like switching, partial-band activation, and common-control implications.
+    baseline_config:
+      path: simulator/configs/scenarios/bandwidth_operation_profiles.yaml
+    config_packs:
+      - path: simulator/configs/scenarios/bandwidth_operation_profiles.yaml
+        role: direct_scenario
+      - path: simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml
+        role: family_anchor
+        override_label: bandwidth_adaptation_bwp_like
+      - path: simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml
+        role: comparison_anchor
+        override_label: bandwidth_adaptation_non_bwp_like
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: bandwidth_hz
+          source: sweeps_and_matrix.bandwidth_sweep
+          recommended_values: [5000000, 20000000, 100000000]
+        - name: switching_mode
+          source: bandwidth_operation.configuration_profile_switching
+          recommended_values: [static, dci_based, limited_fast_adaptation]
+        - name: switching_application_time
+          source: bandwidth_operation.switching_application_time
+          recommended_values: [1_slot, 2_slots, 4_slots]
+    primary_kpis: [throughput_mbps, switching_latency_slots, control_overhead_pct, energy_per_bit_nj, bler]
+    optional_kpis: [active_bandwidth_pct, dci_size_stability, buffer_drain_latency_ms]
+    mandatory_plots: [throughput_vs_bandwidth, switching_latency_cdf, overhead_vs_bandwidth_mode, energy_vs_active_bandwidth]
+    pass_fail_expectations:
+      - Adaptation policies must expose both control overhead and energy trade-offs.
+      - Switching guards, ACK modes, and application timing must remain explicit in the family definition.
+      - BWP-like and non-BWP-like studies must remain clearly distinguishable.
+    typical_debug_traces: [bandwidth_switch_log, dci_switch_command_trace, active_rb_mask_trace, control_overhead_log]
+
+  - family_id: mtrp_sfn_coordinated_transmission
+    family_name: mTRP / SFN / coordinated transmission
+    research_class: study_item_candidate
+    objective: Study coordinated transmission, mTRP operation, SFN-like synchronization, and TRP selection behavior with beamformed multi-user baselines.
+    baseline_config:
+      path: simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed.yaml
+      inline_overrides:
+        deployment_topology:
+          num_trps: 2
+          trp_sync_mode: phase_aligned
+          trp_switching_mode: coordinated
+        mimo_and_beam_management:
+          mtrp_coordination: true
+          sfn_mode: single_frequency
+          trp_switching: enabled
+          trp_selection_metric: rsrp
+    config_packs:
+      - path: simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml
+        role: validation_anchor
+      - path: simulator/configs/scenarios/dl_30ghz_beam_tracking.yaml
+        role: beam_reference
+      - path: simulator/configs/mimo/mimo_4x4.yaml
+        role: mimo_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: trp_count
+          source: sweeps_and_matrix.trp_sweep
+          recommended_values: [1, 2, 4]
+        - name: coordination_mode
+          source: mimo_and_beam_management.mtrp_coordination
+          recommended_values: [disabled, coordinated, sfn]
+        - name: trp_selection_metric
+          source: mimo_and_beam_management.trp_selection_metric
+          recommended_values: [rsrp, sinr, throughput_proxy]
+    primary_kpis: [throughput_mbps, edge_user_bler, trp_switch_rate, beamforming_gain_db, coordination_gain_pct]
+    optional_kpis: [inter_trp_phase_error_deg, control_overhead_pct, scheduler_gain_pct]
+    mandatory_plots: [coordination_gain_bar, edge_bler_vs_trp_count, trp_switch_rate_cdf, beam_gain_vs_coordination_mode]
+    pass_fail_expectations:
+      - Coordinated or SFN-like operation must be compared against the single-TRP reference under identical channel assumptions.
+      - TRP switching and beam coordination must remain visible in the saved traces.
+      - Candidate coordination gains must not hide synchronization or overhead penalties.
+    typical_debug_traces: [trp_selection_log, coordinated_precoder_trace, beam_coordination_log, inter_trp_sync_log]
+
+  - family_id: mrss_coexistence_stress
+    family_name: MRSS coexistence stress
+    research_class: study_item_candidate
+    objective: Stress MRSS-tolerant control and data behavior under coexistence, blocking, and puncturing pressure.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_pdcch_packs.yaml
+      override_label: mrss_tolerant_candidate
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_pdcch_packs.yaml
+        role: family_anchor
+        override_label: mrss_tolerant_candidate
+      - path: simulator/configs/scenarios/mandatory_pdcch_packs.yaml
+        role: stress_anchor
+        override_label: puncturing_stress
+      - path: simulator/configs/scenarios/mandatory_pdcch_packs.yaml
+        role: stress_anchor
+        override_label: interference_limited_stress
+    sweep_definition:
+      mode: generic_sweep
+      dimensions:
+        - name: coexistence_mode
+          source: resource_grid.mrss_constraints
+          recommended_values: [baseline, tolerant, stress]
+        - name: puncturing_ratio
+          source: resource_grid.puncturing_policy
+          recommended_values: [none, light, medium, heavy]
+        - name: interference_profile
+          source: interference.cochannel_interference_profile
+          recommended_values: [none, moderate, severe]
+    primary_kpis: [pdcch_detection_rate, pdsch_bler, control_blocking_rate, rs_collision_rate, coexistence_outage_rate]
+    optional_kpis: [cce_utilization_pct, puncturing_loss_db, control_energy_nj]
+    mandatory_plots: [detection_rate_vs_coexistence_mode, bler_vs_puncturing_ratio, collision_rate_bar, outage_cdf]
+    pass_fail_expectations:
+      - MRSS-tolerant behavior must remain distinguishable from the baseline control design.
+      - Coexistence and puncturing stress must create visible degradation where expected.
+      - Control and data failures must be accounted for separately.
+    typical_debug_traces: [mrss_resource_mask_trace, puncturing_map_log, control_collision_log, coexistence_policy_log]
+
+  - family_id: full_duplex_self_interference_candidate_studies
+    family_name: full-duplex self-interference candidate studies
+    research_class: study_item_candidate
+    objective: Study full-duplex self-interference estimation, cancellation-oriented RS design, and AI-assisted SI channel estimation under candidate assumptions.
+    baseline_config:
+      path: simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+      override_label: ai_full_duplex_si_channel_estimation
+      inline_overrides:
+        deployment_topology:
+          full_duplex_flag: true
+          self_interference_path_model: coupled_rf_path
+        interference:
+          self_interference_model: calibrated_coupling
+        reference_signals:
+          self_interference_rs:
+            enabled: true
+        mimo_and_beam_management:
+          full_duplex_coordination: enabled
+          self_interference_estimation: ai_assisted
+    config_packs:
+      - path: simulator/configs/scenarios/mandatory_ai_ml_packs.yaml
+        role: family_anchor
+        override_label: ai_full_duplex_si_channel_estimation
+      - path: simulator/configs/scenarios/ul_30ghz_impairment_stress.yaml
+        role: impairment_reference
+      - path: simulator/configs/reference_signals/csi_tracking_baseline.yaml
+        role: rs_pack
+    sweep_definition:
+      mode: native_matrix
+      dimensions:
+        - name: si_path_strength_db
+          source: deployment_topology.self_interference_path_model
+          recommended_values: [weak, medium, strong]
+        - name: cancellation_mode
+          source: mimo_and_beam_management.self_interference_estimation
+          recommended_values: [baseline_estimator, ai_assisted, hybrid]
+        - name: impairment_profile
+          source: sweeps_and_matrix.impairment_sweep
+          recommended_values: [baseline, phase_noise, iq_imbalance, pa_nonlinearity]
+    primary_kpis: [si_cancellation_gain_db, residual_si_db, bler, throughput_mbps, failure_detection_rate]
+    optional_kpis: [ai_inference_latency_us, self_interference_rs_overhead_pct, energy_per_slot_nj]
+    mandatory_plots: [si_cancellation_gain_bar, residual_si_cdf, throughput_vs_cancellation_mode, robustness_heatmap]
+    pass_fail_expectations:
+      - Full-duplex candidate studies must remain explicitly tagged as non-baseline and non-agreed behavior.
+      - Residual self-interference and cancellation gain must be reported directly, not inferred from throughput alone.
+      - AI-assisted estimation must be paired with clear fallback or baseline comparison paths.
+    typical_debug_traces: [self_interference_channel_trace, cancellation_filter_log, ai_si_estimator_trace, residual_error_trace]

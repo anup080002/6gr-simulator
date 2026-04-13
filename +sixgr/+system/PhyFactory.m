@@ -17,42 +17,15 @@ classdef PhyFactory
                 end
             end
 
-            strictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
-            db = sixgr.util.structGet(params, "BLERDB", struct());
-            lut = sixgr.util.structGet(params, "BLERLUT", []);
-            if ~isstruct(db)
-                db = struct();
+            phyBackend = lower(char(string(sixgr.util.structGet(params, "PHYBackend", ...
+                sixgr.util.structGet(cfg, "system.phyBackend", "waveform")))));
+            if strcmp(phyBackend, "waveform")
+                strictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
+                phy = sixgr.system.WaveformPHY(cfg, params, "Seed", seed, "StrictMode", strictMode);
+                return;
             end
-
-            if ~isempty(fieldnames(db))
-                dbN = sixgr.system.BLER_DB(db);
-                if strictMode
-                    dbSrc = lower(string(sixgr.util.structGet(dbN, "Source", "")));
-                    if contains(dbSrc, "default") || contains(dbSrc, "synthetic")
-                        error("sixgr:system:PhyFactory:StrictSyntheticDB", ...
-                            "Strict mode requires calibrated BLERDB (received source: %s).", dbSrc);
-                    end
-                end
-                payload = struct("DB", dbN, "StrictMode", strictMode);
-            elseif ~isempty(lut)
-                lutN = sixgr.system.BLER_LUT(lut);
-                if strictMode
-                    lutSrc = lower(string(sixgr.util.structGet(lutN, "Source", "")));
-                    if contains(lutSrc, "default") || contains(lutSrc, "synthetic")
-                        error("sixgr:system:PhyFactory:StrictSyntheticLUT", ...
-                            "Strict mode requires calibrated BLERLUT (received source: %s).", lutSrc);
-                    end
-                end
-                payload = struct("LUT", lutN, "StrictMode", strictMode);
-            else
-                if strictMode
-                    error("sixgr:system:PhyFactory:MissingCalibration", ...
-                        "Strict mode requires BLERDB or BLERLUT calibration.");
-                end
-                payload = struct("LUT", sixgr.system.BLER_LUT(), "StrictMode", strictMode);
-            end
-
-            phy = sixgr.system.AbstractPHY(payload, "Seed", seed);
+            error("sixgr:system:ProxyBackendRemoved", "%s", ...
+                sprintf("System PHY backend '%s' has been removed from the active simulator. Use system.phyBackend='waveform' only.", phyBackend));
         end
     end
 end

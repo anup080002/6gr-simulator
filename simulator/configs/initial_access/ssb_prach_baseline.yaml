@@ -1,0 +1,11 @@
+{
+  "random_access": {
+    "ssb_unit_mode": "baseline_periodic_ssb",
+    "ssb_periodicity_ms": 20,
+    "ssb_repetition_enabled": false,
+    "prach_sequence_family": "zadoff_chu_baseline",
+    "preamble_length_mode": "long",
+    "ssb_ro_mapping_mode": "one_to_one_baseline",
+    "msg3_waveform_alignment": "inherit_ul_waveform"
+  }
+}

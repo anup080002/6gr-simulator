@@ -1,0 +1,44 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_30ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_8x8.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "beam_prediction_ai",
+    "description": "AI beam prediction benchmark with fallback-ready beam sweep.",
+    "research_class": "optional_research_experiment",
+    "scenario_group": "group_d_ai_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "ai_benchmark",
+    "target_cases": ["csi_rs", "bundle"]
+  },
+  "ai_ml": {
+    "enabled": true,
+    "use_case": "beam_prediction",
+    "mode": "online_inference",
+    "model_path": "simulator/configs/models/beam_prediction_descriptor.json",
+    "model_id": "beam_prediction_descriptor",
+    "model_version": "1.0",
+    "input_features": ["beam_power_vector"],
+    "output_targets": ["beam_index"],
+    "inference_batch_size": 1,
+    "latency_budget_us": 500,
+    "flops_budget": 400000,
+    "quantization_mode": "fp16",
+    "runtime_budget_us": 500,
+    "fallback_enabled": true,
+    "confidence_logging": true,
+    "descriptor_type": "plugin_descriptor"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "top_level_order": [
+    "inherits", "meta", "run_control", "config_inheritance", "output_control",
+    "global_radio_scope", "frame_timing", "bandwidth_operation", "deployment_topology", "mobility",
+    "antenna_and_array", "power_and_rf_frontend", "waveform", "resource_grid", "channel_model",
+    "interference", "signals_and_channels_common", "reference_signals", "pdcch", "pdsch", "pusch",
+    "pucch", "prach", "mimo_and_beam_management", "csi_acquisition_and_reporting", "channel_coding",
+    "modulation_and_mapping", "link_adaptation", "harq", "synchronization_and_tracking",
+    "receiver_algorithms", "impairments", "ai_ml", "energy_and_complexity", "kpi_spec",
+    "sweeps_and_matrix", "sanity_checks", "processing_chains", "scenario", "simulation", "frequency",
+    "frame", "channels", "mimo", "users", "coding", "modulation", "control", "random_access",
+    "energy_efficiency", "kpis", "logging", "output"
+  ],
+  "sections": {
+    "processing_chains": {"required": true, "parameters": {
+      "dl_common_signal_initial_access_tx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "dl_common_signal_initial_access_rx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "prach_tx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "prach_rx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pdcch_tx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pdcch_rx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pdsch_tx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pdsch_rx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pusch_tx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pusch_rx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "pucch_tx_rx": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "reference_signal_chains": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "csi_acquisition_reporting": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "harq_chain": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"},
+      "ai_ml_chain": {"required": true, "type": "struct", "nested_rule": "processing_chain_object"}
+    }}
+  },
+  "nested_sections": {
+    "processing_chain_object": {"parameters": {
+      "enabled": {"required": true, "type": "boolean"},
+      "chain_label": {"required": true, "type": "string", "nonempty": true},
+      "baseline_or_candidate_tag": {"required": true, "type": "string", "nonempty": true},
+      "exact_order_locked": {"required": true, "type": "boolean"},
+      "ordered_blocks": {"required": true, "type": "struct_array", "item_nested_rule": "processing_chain_block_object"},
+      "kpi_bindings": {"required": true, "type": "string_list"},
+      "artifact_bindings": {"required": true, "type": "string_list"},
+      "notes": {"required": true, "type": "string"}
+    }},
+    "processing_chain_block_object": {"parameters": {
+      "order": {"required": true, "type": "integer", "min": 1},
+      "block_id": {"required": true, "type": "string", "nonempty": true},
+      "block_name": {"required": true, "type": "string", "nonempty": true},
+      "baseline_or_candidate_tag": {"required": true, "type": "string", "nonempty": true},
+      "config_paths": {"required": true, "type": "string_list", "min_items": 1},
+      "outputs": {"required": true, "type": "string_list"},
+      "optional_flag": {"required": true, "type": "boolean"},
+      "notes": {"required": true, "type": "string"}
+    }}
+  }
+}

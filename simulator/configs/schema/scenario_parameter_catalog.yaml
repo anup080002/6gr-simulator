@@ -1,0 +1,736 @@
+kind: scenario
+top_level_order:
+  - inherits
+  - meta
+  - scenario
+  - simulation
+  - frequency
+  - frame
+  - waveform
+  - channels
+  - reference_signals
+  - mimo
+  - users
+  - coding
+  - modulation
+  - control
+  - harq
+  - random_access
+  - impairments
+  - ai_ml
+  - energy_efficiency
+  - kpis
+  - logging
+  - output
+sections:
+  meta:
+    required: true
+    parameters:
+      scenario_id: {required: true, type: string, nonempty: true}
+      description: {required: true, type: string, nonempty: true}
+      version: {required: true, type: string, nonempty: true}
+      owner: {required: true, type: string, nonempty: true}
+      research_class:
+        required: false
+        type: string
+        allowed_values:
+          - baseline_benchmark
+          - agreed_starting_point
+          - study_item_candidate
+          - optional_research_experiment
+      maturity_tag:
+        required: true
+        type: string
+        allowed_values: [baseline, smoke, regression, stress, experimental, lab]
+      scenario_group: {required: false, type: string}
+      tags: {required: false, type: string_list}
+  scenario:
+    required: true
+    parameters:
+      runner_profile:
+        required: true
+        type: string
+        allowed_values: [waveform_bundle, pdcch_blind_decode_sweep, prach_detection, generic_sweep, ai_benchmark]
+      target_cases:
+        required: true
+        type: string_list
+        min_items: 1
+        allowed_values: [bundle, dl, ul, pdsch, pusch, pdcch, pucch, pbch, ssb, prach, csi_rs, srs, dmrs, trs, harq]
+      notes: {required: true, type: string}
+      sweep: {required: false, type: struct}
+      ai_benchmark: {required: false, type: struct}
+      expected_outputs: {required: false, type: string_list}
+  simulation:
+    required: true
+    parameters:
+      link_direction:
+        required: true
+        type: string
+        allowed_values: [dl, ul, both]
+      n_frames: {required: true, type: integer, min: 1}
+      n_slots: {required: true, type: integer, min: 1}
+      n_subframes: {required: true, type: integer, min: 1}
+      monte_carlo_iterations: {required: true, type: integer, min: 1}
+      random_seed: {required: true, type: integer, min: 0}
+      deterministic_mode: {required: true, type: boolean}
+      snr_db: {required: true, type: number}
+      min_duration_s: {required: true, type: number, min_exclusive: 0}
+      snr_sweep_offsets_db: {required: true, type: number_list, min_items: 1}
+  frequency:
+    required: true
+    parameters:
+      range_name:
+        required: true
+        type: string
+        allowed_values: [FR1, FR2, FR3]
+      center_frequency_hz: {required: true, type: number, min_exclusive: 0}
+      bandwidth_hz: {required: true, type: number, min_exclusive: 0}
+      duplex_mode:
+        required: true
+        type: string
+        allowed_values: [FDD, TDD]
+      carrier_count: {required: true, type: integer, min: 1}
+      carrier_aggregation_enabled: {required: true, type: boolean}
+      band_name:
+        required: true
+        type: string
+        nonempty: true
+      bandwidth_options_hz: {required: true, type: number_list, min_items: 1}
+      numerology_options_khz:
+        required: true
+        type: number_list
+        min_items: 1
+        allowed_numeric_values: [15, 30, 60, 120, 240]
+      max_mimo_size: {required: true, type: integer, min: 1}
+      max_supported_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
+      custom_frequency_override_allowed: {required: false, type: boolean}
+      mobility_defaults_kmph: {required: true, type: number, min: 0}
+      channel_model_defaults: {required: true, type: string}
+      reference_signal_defaults: {required: true, type: string}
+      power_model_defaults: {required: true, type: string}
+      energy_model_defaults: {required: true, type: string}
+      rf_impairment_defaults: {required: true, type: string}
+      n_size_grid: {required: true, type: integer, min: 1}
+  frame:
+    required: true
+    parameters:
+      scs_khz:
+        required: true
+        type: number
+        allowed_numeric_values: [15, 30, 60, 120, 240]
+      cp_type:
+        required: true
+        type: string
+        allowed_values: [normal, extended]
+      slot_format:
+        required: true
+        type: string
+        allowed_values: [dl, ul, flexible, mixed]
+      tdd_pattern: {required: true, type: string, nonempty: true}
+  waveform:
+    required: true
+    parameters:
+      dl_waveform:
+        required: true
+        type: string
+        allowed_values: [CP-OFDM, DFT-s-OFDM]
+      ul_waveform:
+        required: true
+        type: string
+        allowed_values: [CP-OFDM, DFT-s-OFDM]
+      fft_size: {required: true, type: integer, min: 64}
+      sample_rate_hz: {required: true, type: number, min_exclusive: 0}
+      windowing_enabled: {required: true, type: boolean}
+      transform_precoding_enabled: {required: true, type: boolean}
+      experimental_dl_dfts_ofdm_enabled: {required: false, type: boolean}
+      ul_layer_support_mode:
+        required: false
+        type: string
+        allowed_values: [all_supported_layers, single_layer_baseline, multi_layer_candidate]
+      low_papr_mode:
+        required: false
+        type: string
+        allowed_values: [none, tone_reservation, frequency_domain_truncation, candidate_enhanced]
+      tone_reservation_enabled: {required: false, type: boolean}
+      frequency_domain_truncation_enabled: {required: false, type: boolean}
+      flexible_dft_size_enabled: {required: false, type: boolean}
+      noncontiguous_mapping_enabled: {required: false, type: boolean}
+      dmrs_data_multiplexing_mode:
+        required: false
+        type: string
+        allowed_values: [baseline, enhanced_candidate]
+      ue_coherence_mode:
+        required: false
+        type: string
+        allowed_values: [coherent, partially_coherent]
+      ue_power_limited: {required: false, type: boolean}
+  channels:
+    required: true
+    parameters:
+      model_type:
+        required: true
+        type: string
+        allowed_values: [AWGN, TDL, CDL]
+      profile:
+        required: true
+        type: string
+        allowed_values: [AWGN, TDL-A, TDL-B, TDL-C, TDL-D, TDL-E, CDL-A, CDL-B, CDL-C, CDL-D, CDL-E]
+      delay_spread_ns: {required: true, type: number, min: 0}
+      doppler_hz: {required: true, type: number, min: 0}
+      mobility_kmph: {required: true, type: number, min: 0}
+      los_enabled: {required: true, type: boolean}
+      spatial_consistency_enabled: {required: true, type: boolean}
+      pathloss_enabled: {required: true, type: boolean}
+      shadow_fading_enabled: {required: true, type: boolean}
+      pathloss_model:
+        required: true
+        type: string
+        allowed_values: [nrPathLoss, freeSpace, none]
+      shadow_fading_std_db: {required: true, type: number, min: 0}
+  reference_signals:
+    required: true
+    parameters:
+      ssb_enabled: {required: true, type: boolean}
+      pbch_enabled: {required: true, type: boolean}
+      pdcch_dmrs_enabled: {required: true, type: boolean}
+      pdsch_dmrs_ports: {required: true, type: integer, min: 1}
+      pusch_dmrs_ports: {required: true, type: integer, min: 1}
+      csi_rs_enabled: {required: true, type: boolean}
+      srs_enabled: {required: true, type: boolean}
+      trs_enabled: {required: true, type: boolean}
+      tracking_rs_enabled: {required: false, type: boolean}
+      ptrs_enabled: {required: true, type: boolean}
+      csi_reporting_enabled: {required: false, type: boolean}
+      csi_feedback_mode:
+        required: true
+        type: string
+        allowed_values: [none, CQI, PMI, RI, CRI, PMI+CQI, PMI+CQI+RI, PMI+CQI+RI+CRI]
+      csi_acquisition_mode:
+        required: false
+        type: string
+        allowed_values: [dl_based, ul_based, joint_dl_ul]
+      operation_orientation:
+        required: false
+        type: string
+        allowed_values: [tdd_reciprocity, fdd_feedback]
+      dmrs_csi_tracking_enabled: {required: false, type: boolean}
+      srs_ports:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2, 3, 4, 8]
+      srs_sequence_family:
+        required: false
+        type: string
+        allowed_values: [baseline_nr, low_papr_candidate, low_correlation_candidate]
+      srs_periodicity_ms:
+        required: false
+        type: number
+        allowed_numeric_values: [5, 10, 20, 40, 80, 160]
+      channel_estimation_mode:
+        required: false
+        type: string
+        allowed_values: [realistic_baseline, dmrs_tracking_candidate, ai_assisted_candidate]
+      receiver_example:
+        required: false
+        type: string
+        allowed_values: [mmse_irc, rml]
+      sgcs_reporting_enabled: {required: false, type: boolean}
+      nmse_reporting_enabled: {required: false, type: boolean}
+      cqi_reporting_enabled: {required: true, type: boolean}
+      pmi_reporting_enabled: {required: true, type: boolean}
+      ri_reporting_enabled: {required: true, type: boolean}
+      cri_reporting_enabled: {required: false, type: boolean}
+      pmi_codebook_mode:
+        required: false
+        type: string
+        allowed_values: [type1_su_mimo, type2_mu_mimo, etype2_candidate, noncodebook]
+      channel_state_information_mode:
+        required: false
+        type: string
+        allowed_values: [none, CQI, PMI, RI, CRI, PMI+CQI, PMI+CQI+RI, PMI+CQI+RI+CRI]
+      pdsch_dmrs_config_type:
+        required: true
+        type: integer
+        allowed_numeric_values: [1, 2]
+      pdsch_dmrs_type_a_position:
+        required: true
+        type: integer
+        allowed_numeric_values: [2, 3]
+      pdsch_dmrs_num_cdm_groups_without_data:
+        required: true
+        type: integer
+        allowed_numeric_values: [1, 2, 3]
+  mimo:
+    required: true
+    parameters:
+      n_tx_ant: {required: true, type: integer, min: 1}
+      n_rx_ant: {required: true, type: integer, min: 1}
+      n_layers: {required: true, type: integer, min: 1}
+      precoder_type:
+        required: true
+        type: string
+        allowed_values: [none, wideband, subband]
+      codebook_type:
+        required: true
+        type: string
+        allowed_values: [type1, type2, etype2, noncodebook]
+      reciprocity_mode:
+        required: true
+        type: string
+        allowed_values: [FDD, TDD]
+      beam_sweep_enabled: {required: true, type: boolean}
+      beam_count: {required: true, type: integer, min: 1}
+      mtrp_ready: {required: true, type: boolean}
+      multi_panel_ready: {required: true, type: boolean}
+      panel_count: {required: true, type: integer, min: 1}
+      trp_count:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2, 4]
+      precoding_granularity:
+        required: false
+        type: string
+        allowed_values: [prg_wideband]
+  users:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      n_users: {required: true, type: integer, min: 1}
+      rnti_start: {required: true, type: integer, min: 1}
+      seed_stride: {required: true, type: integer, min: 1}
+      execution_model:
+        required: true
+        type: string
+        allowed_values: [independent_link_sweep]
+      beam_selection_strategy:
+        required: true
+        type: string
+        allowed_values: [fixed_first_beam, round_robin_codebook]
+      save_user_tables: {required: true, type: boolean}
+  coding:
+    required: true
+    parameters:
+      data_code_type:
+        required: true
+        type: string
+        allowed_values: [LDPC]
+      control_code_type:
+        required: true
+        type: string
+        allowed_values: [Polar]
+      tb_crc_type:
+        required: true
+        type: string
+        allowed_values: [16, 24A, 24B]
+      cb_crc_type:
+        required: true
+        type: string
+        allowed_values: [16, 24A, 24B]
+      base_graph:
+        required: true
+        type: integer
+        allowed_numeric_values: [1, 2]
+      max_decoder_iterations: {required: true, type: integer, min: 1}
+      csi_code_type:
+        required: false
+        type: string
+        allowed_values: [Polar, LDPC, none]
+      candidate_base_graph_mode:
+        required: false
+        type: string
+        allowed_values: [nr_like_bg, sixg_candidate_bg]
+      outer_code_enabled: {required: false, type: boolean}
+      outer_code_type:
+        required: false
+        type: string
+        allowed_values: [none, inter_cb, outer_packet, parity_cb]
+      retransmission_granularity:
+        required: false
+        type: string
+        allowed_values: [tb, cbg, parity_cb, packet_level]
+      nuc_mode:
+        required: false
+        type: string
+        allowed_values: [none, nuc, 2d_nuc]
+      mixed_modulation_enabled: {required: false, type: boolean}
+      dcm_enabled: {required: false, type: boolean}
+      joint_coding_modulation_mode:
+        required: false
+        type: string
+        allowed_values: [none, joint_coding_modulation, mgcm, dbicm, tb_dbicm]
+      distribution_matching_mode:
+        required: false
+        type: string
+        allowed_values: [none, ccdm, mpdm, ess, ecc_dm, arithmetic_variant]
+      distribution_matching_before_coding: {required: false, type: boolean}
+      shaping_retransmission_mode:
+        required: false
+        type: string
+        allowed_values: [repeat_original, redraw_distribution, study_dimension]
+      packet_level_coding_enabled: {required: false, type: boolean}
+  modulation:
+    required: true
+    parameters:
+      dl_modulation_order:
+        required: true
+        type: integer
+        allowed_numeric_values: [1, 2, 4, 6, 8, 10, 12]
+      ul_modulation_order:
+        required: true
+        type: integer
+        allowed_numeric_values: [1, 2, 4, 6, 8, 10, 12]
+      pi2_bpsk_enabled: {required: true, type: boolean}
+      constellation_shaping_enabled: {required: true, type: boolean}
+      mcs_table:
+        required: true
+        type: string
+        allowed_values: [qam64_table1, qam256_table2, qam64LowSE_table3]
+      dl_mcs_index: {required: true, type: integer, min: 0, max: 27}
+      ul_mcs_index: {required: true, type: integer, min: 0, max: 27}
+  control:
+    required: true
+    parameters:
+      pdcch_enabled: {required: true, type: boolean}
+      coreset_type:
+        required: true
+        type: string
+        allowed_values: [common, ue, ue_specific]
+      search_space_type:
+        required: true
+        type: string
+        allowed_values: [common, ue, ue_specific]
+      aggregation_levels:
+        required: true
+        type: number_list
+        min_items: 1
+        allowed_numeric_values: [1, 2, 4, 8, 16]
+      dci_formats:
+        required: true
+        type: string_list
+        min_items: 1
+        allowed_values: ["0_0", "0_1", "1_0", "1_1"]
+      blind_decode_candidates: {required: true, type: integer, min: 1}
+      coreset_duration: {required: true, type: integer, min: 1, max: 3}
+      coreset_frequency_resources:
+        required: true
+        type: number_list
+        min_items: 1
+        allowed_numeric_values: [0, 1]
+      candidate_aggregation_levels:
+        required: false
+        type: number_list
+        min_items: 0
+        integer: true
+        min: 1
+      search_space_num_candidates:
+        required: true
+        type: number_list
+        min_items: 1
+        integer: true
+        min: 0
+      pdcch_payload_bits: {required: true, type: integer, min: 1}
+      blind_decode_list_length: {required: true, type: integer, min: 1}
+      monitoring_mode:
+        required: false
+        type: string
+        allowed_values: [slot_level_baseline, span_level_candidate, slot_group_candidate]
+      repetition_enabled: {required: false, type: boolean}
+      detection_feedback_enabled: {required: false, type: boolean}
+      prior_information_aided_dci_enabled: {required: false, type: boolean}
+      multi_stage_dci_enabled: {required: false, type: boolean}
+      simplified_dci_enabled: {required: false, type: boolean}
+      mrss_tolerant_enabled: {required: false, type: boolean}
+      stress_mode:
+        required: false
+        type: string
+        allowed_values: [none, control_blocking, interference_limited, puncturing]
+      pucch_enabled: {required: true, type: boolean}
+      pucch_format:
+        required: true
+        type: integer
+        allowed_numeric_values: [0, 1, 2, 3, 4]
+  harq:
+    required: true
+    parameters:
+      enabled: {required: true, type: boolean}
+      process_count: {required: true, type: integer, min: 1}
+      rv_sequence:
+        required: true
+        type: number_list
+        min_items: 1
+        allowed_numeric_values: [0, 1, 2, 3]
+      cbg_enabled: {required: true, type: boolean}
+      feedback_timing_slots: {required: true, type: integer, min: 0}
+      combining_mode:
+        required: true
+        type: string
+        allowed_values: [soft, chase, incremental_redundancy]
+      study_axes:
+        required: false
+        type: string_list
+        allowed_values:
+          - latency
+          - reliability
+          - coverage
+          - nw_power_saving
+          - ue_power_saving
+          - nw_complexity
+          - ue_complexity
+          - service_diversity
+          - system_efficiency
+          - feedback_efficiency
+      stop_condition:
+        required: false
+        type: string
+        allowed_values: [max_retransmissions, latency_budget, reliability_budget]
+      ack_nack_dtx_model:
+        required: false
+        type: string
+        allowed_values: [ack_nack_only, ack_nack_dtx]
+      pdcch_miss_behavior:
+        required: false
+        type: string
+        allowed_values: [treat_as_dtx, treat_as_nack, hold_state]
+      detection_feedback_interaction_enabled: {required: false, type: boolean}
+      validation_mode:
+        required: false
+        type: string
+        allowed_values: [observation, exercise]
+  random_access:
+    required: true
+    parameters:
+      enabled: {required: true, type: boolean}
+      ssb_unit_mode:
+        required: false
+        type: string
+        allowed_values: [baseline_periodic_ssb, on_demand_candidate, alternative_candidate]
+      ssb_periodicity_ms: {required: false, type: number, min_exclusive: 0}
+      ssb_repetition_enabled: {required: false, type: boolean}
+      clustered_common_signal_enabled: {required: false, type: boolean}
+      long_ssb_periodicity_candidate_enabled: {required: false, type: boolean}
+      ssb_beam_count: {required: false, type: integer, min: 1}
+      beam_clustering_enabled: {required: false, type: boolean}
+      prach_format:
+        required: true
+        type: string
+        allowed_values: [A1, A2, A3, B1, B4, C0, C2]
+      prach_sequence_family:
+        required: false
+        type: string
+        allowed_values: [zadoff_chu_baseline, multisequence_candidate, occ_candidate, optimized_candidate]
+      preamble_length_mode:
+        required: false
+        type: string
+        allowed_values: [long, short]
+      preamble_count: {required: true, type: integer, min: 1}
+      zero_correlation_zone: {required: true, type: integer, min: 0}
+      detection_threshold: {required: true, type: number}
+      msg3_enabled: {required: true, type: boolean}
+      repetition_count: {required: false, type: integer, min: 1}
+      repetition_beam_mode:
+        required: false
+        type: string
+        allowed_values: [same_beam, different_beam]
+      ssb_ro_mapping_mode:
+        required: false
+        type: string
+        allowed_values: [one_to_one_baseline, unsymmetric_candidate]
+      ro_clustering_enabled: {required: false, type: boolean}
+      parameterized_config_enabled: {required: false, type: boolean}
+      beam_refinement_enabled: {required: false, type: boolean}
+      beam_report_enabled: {required: false, type: boolean}
+      pre_rach_refinement_enabled: {required: false, type: boolean}
+      ai_beam_prediction_enabled: {required: false, type: boolean}
+      msg3_waveform_alignment:
+        required: false
+        type: string
+        allowed_values: [inherit_ul_waveform, candidate_msg3_waveform]
+      min_detection_trials: {required: true, type: integer, min: 1}
+      configuration_index: {required: true, type: integer, min: 0}
+      subcarrier_spacing_khz:
+        required: true
+        type: number
+        allowed_numeric_values: [1.25, 5, 15, 30, 60, 120]
+      root_sequence_index: {required: true, type: integer, min: 0}
+      preamble_index: {required: true, type: integer, min: 0}
+  impairments:
+    required: true
+    parameters:
+      cfo_hz: {required: true, type: number}
+      phase_noise_enabled: {required: true, type: boolean}
+      iq_imbalance_enabled: {required: true, type: boolean}
+      pa_nonlinearity_enabled: {required: true, type: boolean}
+      adc_quantization_bits: {required: true, type: integer, min: 1}
+      dac_quantization_bits: {required: true, type: integer, min: 1}
+      timing_offset_samples: {required: true, type: number}
+      cfo_acquisition_mode:
+        required: false
+        type: string
+        allowed_values: [initial_acquisition, non_initial_acquisition]
+      cfo_drift_hz_per_s: {required: false, type: number}
+      oscillator_profile:
+        required: false
+        type: string
+        allowed_values: [lab_clean, initial_acquisition, non_initial_acquisition, drift_study]
+      initial_time_offset_fraction_cp: {required: false, type: number, min: 0, max: 1}
+  ai_ml:
+    required: true
+    parameters:
+      enabled: {required: true, type: boolean}
+      use_case:
+        required: true
+        type: string
+        allowed_values:
+          - channel_estimation_enhancement
+          - csi_compression_reconstruction
+          - link_adaptation_mcs_selection
+          - beam_prediction
+          - interference_classification
+          - detector_selection
+          - impairment_mitigation
+          - energy_aware_mode_selection
+          - demodulation
+          - initial_access_rach_assistance
+          - self_interference_channel_estimation
+      mode:
+        required: true
+        type: string
+        allowed_values: [disabled, offline_training, online_inference]
+      model_path: {required: true, type: string}
+      model_id: {required: true, type: string}
+      model_version: {required: true, type: string}
+      input_features: {required: true, type: string_list}
+      output_targets: {required: true, type: string_list}
+      inference_batch_size: {required: true, type: integer, min: 1}
+      latency_budget_us: {required: true, type: number, min: 0}
+      flops_budget: {required: true, type: number, min: 0}
+      quantization_mode:
+        required: true
+        type: string
+        allowed_values: [fp32, fp16, int8, int4]
+      runtime_budget_us: {required: true, type: number, min: 0}
+      fallback_enabled: {required: true, type: boolean}
+      confidence_logging: {required: true, type: boolean}
+      model_delivery_mode:
+        required: false
+        type: string
+        allowed_values: [download, non_download]
+      csi_feedback_mode:
+        required: false
+        type: string
+        allowed_values: [none, sscc, jscc, jscm]
+      inference_period_slots: {required: false, type: integer, min: 1}
+      robustness_sweep_enabled: {required: false, type: boolean}
+      mismatch_profiles: {required: false, type: string_list}
+      descriptor_type:
+        required: true
+        type: string
+        allowed_values: [plugin_descriptor, benchmark_descriptor]
+      benchmark_observations: {required: true, type: integer, min: 1}
+  energy_efficiency:
+    required: true
+    parameters:
+      enabled: {required: true, type: boolean}
+      tx_power_dbm: {required: true, type: number}
+      pa_efficiency: {required: true, type: number, min_exclusive: 0, max: 1}
+      rf_chain_count: {required: true, type: integer, min: 1}
+      sleep_state_model:
+        required: true
+        type: string
+        allowed_values: [none, micro_sleep, deep_sleep]
+      duty_cycle_logging: {required: true, type: boolean}
+      energy_per_bit_reporting: {required: true, type: boolean}
+      ai_compute_energy_per_flop_score: {required: true, type: number, min: 0}
+      ssb_clustering_enabled: {required: false, type: boolean}
+      common_channel_clustering_enabled: {required: false, type: boolean}
+      bandwidth_adaptation_mode:
+        required: false
+        type: string
+        allowed_values: [none, bwp_like, non_bwp_like]
+      pdcch_monitoring_adaptation_enabled: {required: false, type: boolean}
+      blind_decode_reduction_enabled: {required: false, type: boolean}
+      cross_slot_scheduling_enabled: {required: false, type: boolean}
+      active_sleep_tracking_enabled: {required: false, type: boolean}
+      race_to_sleep_enabled: {required: false, type: boolean}
+      per_block_processing_energy_enabled: {required: false, type: boolean}
+      rf_chain_energy_enabled: {required: false, type: boolean}
+      wideband_narrowband_tradeoff_enabled: {required: false, type: boolean}
+  kpis:
+    required: true
+    parameters:
+      bler: {required: true, type: boolean}
+      throughput_mbps: {required: true, type: boolean}
+      spectral_efficiency: {required: true, type: boolean}
+      evm: {required: true, type: boolean}
+      sinr: {required: true, type: boolean}
+      latency_us: {required: true, type: boolean}
+      prach_false_alarm: {required: true, type: boolean}
+      prach_miss_detection: {required: true, type: boolean}
+      harq_retx_count: {required: true, type: boolean}
+      csi_accuracy: {required: true, type: boolean}
+      beam_failure_rate: {required: true, type: boolean}
+      flops: {required: true, type: boolean}
+      memory_mb: {required: true, type: boolean}
+      energy_per_bit: {required: true, type: boolean}
+      sgcs: {required: false, type: boolean}
+      nmse: {required: false, type: boolean}
+      processing_energy: {required: false, type: boolean}
+      rf_chain_energy: {required: false, type: boolean}
+  logging:
+    required: true
+    parameters:
+      level:
+        required: true
+        type: string
+        allowed_values: [debug, info, warning, error]
+      save_logs: {required: true, type: boolean}
+      save_intermediate: {required: true, type: boolean}
+      strict_validation: {required: true, type: boolean}
+      include_git_hash: {required: true, type: boolean}
+      echo_to_console: {required: true, type: boolean}
+  output:
+    required: true
+    parameters:
+      bucket:
+        required: true
+        type: string
+        allowed_values: [lls, sls, e2e]
+      profile: {required: true, type: string, nonempty: true}
+      save_csv: {required: true, type: boolean}
+      save_mat: {required: true, type: boolean}
+      save_figures: {required: true, type: boolean}
+      save_png: {required: true, type: boolean}
+      save_yaml_snapshot: {required: true, type: boolean}
+      save_json_snapshot: {required: true, type: boolean}
+      organize_by_block: {required: true, type: boolean}
+      generate_summary_plots: {required: true, type: boolean}
+      emit_placeholder_artifacts: {required: false, type: boolean}
+      emit_disabled_audit_artifacts: {required: false, type: boolean}
+nested_sections:
+  scenario_sweep:
+    path: scenario.sweep
+    parameters:
+      base_profile:
+        required: false
+        type: string
+        allowed_values: [waveform_bundle, ai_benchmark]
+      overrides: {required: false, type: struct_array}
+      output_name: {required: false, type: string}
+  scenario_sweep_override:
+    path: scenario.sweep.overrides[]
+    parameters:
+      label: {required: false, type: string}
+      config: {required: false, type: struct}
+      notes: {required: false, type: string}
+value_maps:
+  modulation_order_to_name:
+    - {order: 1, name: "BPSK"}
+    - {order: 2, name: "QPSK"}
+    - {order: 4, name: "16QAM"}
+    - {order: 6, name: "64QAM"}
+    - {order: 8, name: "256QAM"}
+    - {order: 10, name: "1024QAM"}
+    - {order: 12, name: "4096QAM"}
+  target_case_groups:
+    pdsch_enable: [pdsch, dl, bundle, csi_rs]
+    pusch_enable: [pusch, ul, bundle, srs]

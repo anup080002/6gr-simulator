@@ -2,15 +2,16 @@ function report = sixgr_run_3gpp_full_campaign(cfgFile, varargin)
 %SIXGR_RUN_3GPP_FULL_CAMPAIGN Unified 3GPP-oriented analysis campaign.
 %
 % This orchestrator runs multiple analyses and stores all artifacts under one
-% parent folder with subfolders per module:
-%   - link/         : long link-level run (time + SNR sweep + plots)
-%   - detailed_lls/ : block-level PHY diagnostics
-%   - system/       : mobility system-level KPIs
-%   - system_mmtc/  : mMTC traffic profile KPIs
-%   - end_to_end/   : SDAP/PDCP/RLC/MAC/RRC/AI stack probe
-%   - csv/          : campaign-level probe tables + 25-category audit
-%   - mat/          : consolidated report mat file
-%   - logs/         : campaign log
+% parent folder with structured subfolders per simulator domain:
+%   - air_interface/        : link-level waveform outputs
+%   - air_interface/detailed: detailed PHY diagnostics
+%   - system/               : mobility/system-level KPIs
+%   - mmtc/                 : mMTC traffic profile KPIs
+%   - packet_flow/          : end-to-end stack outputs
+%   - control/              : control-plane traces and attach signaling
+%   - reports/              : markdown/MAT/csv reports and audits
+%   - meta/                 : reproducibility manifests and config snapshots
+%   - logs/                 : campaign log
 %
 % NOTE:
 %   Some 25-category items are approximated or not modeled by the current
@@ -26,6 +27,8 @@ ip.addParameter("LinkSNRGrid_dB", -10:4:30, @(x)isnumeric(x)&&isvector(x)&&~isem
 ip.addParameter("LinkSweepFrames", 3, @(x)isnumeric(x)&&isscalar(x)&&x>=1);
 ip.addParameter("LinkSweepMaxPoints", 5, @(x)isnumeric(x)&&isscalar(x)&&x>=3);
 ip.addParameter("LinkSaveFigures", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("RunLinkCampaign", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("RunDetailedLinkDiagnostics", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("SystemDuration_s", 20, @(x)isnumeric(x)&&isscalar(x)&&x>0);
 ip.addParameter("SystemNumUE", 32, @(x)isnumeric(x)&&isscalar(x)&&x>=4);
 ip.addParameter("SystemDetailedTrace", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
@@ -34,7 +37,7 @@ ip.addParameter("RunSystemMMTCProbe", false, @(x)islogical(x)||(isnumeric(x)&&is
 ip.addParameter("MMTCNumUE", 0, @(x)isnumeric(x)&&isscalar(x)&&x>=0);
 ip.addParameter("MMTCSaveFigures", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("RunAuxiliaryProbes", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
-ip.addParameter("UseFastLinkModel", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("UseFastLinkModel", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("UseMexAcceleration", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("UseParallelAcceleration", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("AutoStartParallelPool", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
@@ -54,7 +57,7 @@ ip.addParameter("E2EUECount", 4, @(x)isnumeric(x)&&isscalar(x)&&x>=1);
 ip.addParameter("E2ETrafficModel", "xr", @(x)ischar(x)||isstring(x));
 ip.addParameter("E2EEnableAI", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("E2ESaveFigures", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
-ip.addParameter("E2EAirModel", "lut", @(x)ischar(x)||isstring(x));
+ip.addParameter("E2EAirModel", "truth", @(x)ischar(x)||isstring(x));
 ip.addParameter("E2EScaleServiceWithCompression", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("E2EServiceScaleCap", 256, @(x)isnumeric(x)&&isscalar(x)&&x>=1);
 ip.addParameter("E2EStrictValidation", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
@@ -63,22 +66,31 @@ ip.addParameter("E2EEnableSemanticChecks", true, @(x)islogical(x)||(isnumeric(x)
 ip.addParameter("E2EScaleChunkWithCompression", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("E2EMaxSDUChunkBytes", 4*1024*1024, @(x)isnumeric(x)&&isscalar(x)&&x>=1024);
 ip.addParameter("E2EFastTraceMode", "lite", @(x)ischar(x)||isstring(x));
-ip.addParameter("E2ETruthFastAWGNPath", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("E2ETruthFastAWGNPath", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("E2ETruthCompactPHYIO", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("E2ETruthAdaptiveLDPC", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("E2ETruthLDPCMaxIterations", 0, @(x)isnumeric(x)&&isscalar(x)&&x>=0);
 ip.addParameter("E2ETruthUseGPU", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
-ip.addParameter("CalibrateSystemBLERFromLink", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("CalibrateSystemBLERFromLink", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("ReuseLinkForDetailedDiagnostics", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("MirrorStructuredResults", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("OrganizeByBlock", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("GenerateCampaignPlots", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("VerifyArtifacts", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("CampaignProfileMode", "", @(x)ischar(x)||isstring(x));
+ip.addParameter("CampaignProfileEntryPoint", "", @(x)ischar(x)||isstring(x));
+ip.addParameter("NoProxyTruthContract", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("SetupToolboxChecks", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("Verbose", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.parse(cfgFile, varargin{:});
 optUser = ip.Results;
 opt = optUser;
+profileMeta = localNormalizeCampaignProfileMeta( ...
+    sixgr.util.structGet(opt, "CampaignProfileMode", ""), ...
+    sixgr.util.structGet(opt, "CampaignProfileEntryPoint", ""));
+opt.CampaignProfileMode = char(string(profileMeta.Mode));
+opt.CampaignProfileLabel = char(string(profileMeta.Label));
+opt.CampaignProfileEntryPoint = char(string(profileMeta.EntryPoint));
 
 verbose = logical(opt.Verbose);
 setup6GRSimToolkit("Verbose", verbose, "RunToolboxChecks", logical(opt.SetupToolboxChecks));
@@ -100,6 +112,8 @@ end
 cfg.run.useMex = logical(sixgr.util.structGet(cfg, "run.useMex", false)) || logical(opt.UseMexAcceleration);
 cfg.run.useParallel = logical(sixgr.util.structGet(cfg, "run.useParallel", false)) || logical(opt.UseParallelAcceleration);
 cfg.run.autoStartParallelPool = logical(sixgr.util.structGet(cfg, "run.autoStartParallelPool", false)) || logical(opt.AutoStartParallelPool);
+cfg.run.noProxyTruthContract = localNoProxyTruthContractEnabled(cfg, opt);
+localRejectRemovedProxyModes(cfg, opt);
 if cfg.run.useParallel && cfg.run.autoStartParallelPool
     localEnsureParallelPool();
 end
@@ -114,11 +128,13 @@ end
 resultsRoot = localResolveResultsRoot(resultsRoot);
 cfg.run.resultsRoot = resultsRoot;
 opt.ResultsRoot = resultsRoot;
-runFolder = fullfile(resultsRoot, "full3gpp_" + string(sixgr.util.timeStamp()));
-sixgr.util.ensureDir(runFolder);
-sixgr.util.ensureDir(fullfile(runFolder, "csv"));
-sixgr.util.ensureDir(fullfile(runFolder, "mat"));
-sixgr.util.ensureDir(fullfile(runFolder, "logs"));
+[runBucket, runProfile] = localCampaignRunFolderClass(opt, profileMeta);
+runFolder = sixgr.report.defaultRunFolder(resultsRoot, ...
+    "Bucket", runBucket, ...
+    "Profile", runProfile, ...
+    "Leaf", "current", ...
+    "CleanExisting", true);
+layout = sixgr.report.resultLayout(runFolder);
 
 logFile = fullfile(runFolder, "logs", "full_campaign.log");
 L = sixgr.core.Logger(logFile, "Level", 3, "EchoToConsole", verbose);
@@ -127,53 +143,85 @@ L.info("Run folder: " + string(runFolder));
 onlyE2E = logical(opt.OnlyE2E);
 runMMTC = logical(opt.RunSystemMMTCProbe);
 runAux = logical(opt.RunAuxiliaryProbes);
+runLinkCampaign = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunLinkCampaign", true));
+runDetailedDiagnostics = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunDetailedLinkDiagnostics", true));
+runSystemCampaign = ~onlyE2E;
 organizeByBlock = logical(opt.OrganizeByBlock);
+localGuardTruthE2ESystemCoupling(cfg, opt, onlyE2E, runSystemCampaign);
+localEnforceNoProxyTruthContract(cfg, opt, onlyE2E, runLinkCampaign, runSystemCampaign);
 
 % Save resolved config snapshot.
 try
-    sixgr.util.jsonWrite(fullfile(runFolder, "config_resolved_full_campaign.json"), cfg);
+    sixgr.util.jsonWrite(layout.ConfigResolvedJSON, cfg);
 catch
 end
 
 % -------------------------------------------------------------------------
 % 1) Link-level campaign (main)
 % -------------------------------------------------------------------------
-linkFolder = fullfile(runFolder, "link");
-detailDst = fullfile(runFolder, "detailed_lls");
+linkFolder = layout.AirInterfaceDir;
+detailDst = layout.DetailedLLSDir;
 sysDst = fullfile(runFolder, "system");
 e2eAirLUT = struct();
 sysBlerLUT = struct();
 if onlyE2E
     L.info("OnlyE2E=true: skipping link/system/auxiliary probes and running E2E stack only.");
-    link = struct("Ok", false, "RunFolder", linkFolder, "Result", struct(), ...
+    link = localMarkModuleSkipped(struct("Ok", false, "RunFolder", linkFolder, "Result", struct(), ...
         "KPITable", table(), "SNRSweep", table(), "Errors", strings(0,1), ...
-        "Artifacts", struct("csv",{{}}, "mat",{{}}, "fig",{{}}, "m",{{}}));
-    detailed = struct("Ok", false, "RunFolder", detailDst, "Result", struct(), ...
-        "Table", table(), "Errors", strings(0,1));
-    sys = struct("Ok", false, "RunFolder", sysDst, "Result", struct(), ...
-        "KPITable", table(), "Errors", strings(0,1));
-    mmtc = struct("Ok", false, "Result", struct(), "Table", table());
-    harq = struct("Ok", false, "PacketTable", table(), "SummaryTable", table());
-    syncCtrl = struct("Ok", false, "Table", table());
-    v2x = struct("Ok", false, "Table", table());
-    ntn = struct("Ok", false, "Table", table());
-    interf = struct("Ok", false, "Table", table());
-    rfp = struct("Ok", false, "Table", table());
-    numProbe = struct("Ok", false, "Table", table());
-    beam = struct("Ok", false, "Table", table());
+        "Artifacts", struct("csv",{{}}, "mat",{{}}, "fig",{{}}, "m",{{}})), ...
+        "Skipped by OnlyE2E=true");
+    detailed = localMarkModuleSkipped(struct("Ok", false, "RunFolder", detailDst, "Result", struct(), ...
+        "Table", table(), "Errors", strings(0,1)), ...
+        "Skipped by OnlyE2E=true");
+    sys = localMarkModuleSkipped(struct("Ok", false, "RunFolder", sysDst, "Result", struct(), ...
+        "KPITable", table(), "Errors", strings(0,1)), ...
+        "Skipped by OnlyE2E=true");
+    mmtc = localMarkModuleSkipped(struct("Ok", false, "Result", struct(), "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    harq = localMarkModuleSkipped(struct("Ok", false, "PacketTable", table(), "SummaryTable", table()), ...
+        "Skipped by OnlyE2E=true");
+    syncCtrl = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    v2x = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    ntn = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    interf = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    rfp = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    numProbe = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
+    beam = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+        "Skipped by OnlyE2E=true");
 else
-    L.info("Running link-level campaign");
-    link = localRunLinkCampaign(cfg, linkFolder, opt);
-    if logical(opt.CalibrateSystemBLERFromLink)
-        e2eAirLUT = localBuildDualDirectionBLERLUTFromSweep(sixgr.util.structGet(link, "SNRSweep", table()));
-        sysBlerLUT = sixgr.util.structGet(e2eAirLUT, "System", struct());
+    if runLinkCampaign
+        L.info("Running link-level campaign");
+        link = localRunLinkCampaign(cfg, linkFolder, opt);
+        if logical(opt.CalibrateSystemBLERFromLink)
+            e2eAirLUT = localBuildDualDirectionBLERLUTFromSweep(sixgr.util.structGet(link, "SNRSweep", table()));
+            sysBlerLUT = sixgr.util.structGet(e2eAirLUT, "System", struct());
+        end
+    else
+        L.info("RunLinkCampaign=false: skipping link-level campaign.");
+        link = localMarkModuleSkipped(struct("Ok", false, "RunFolder", linkFolder, "Result", struct(), ...
+            "KPITable", table(), "SNRSweep", table(), "Errors", strings(0,1), ...
+            "Artifacts", struct("csv",{{}}, "mat",{{}}, "fig",{{}}, "m",{{}})), ...
+            "Skipped by RunLinkCampaign=false");
     end
 
     % ---------------------------------------------------------------------
     % 2) Detailed link-level diagnostics
     % ---------------------------------------------------------------------
-    L.info("Running detailed link-level diagnostics");
-    detailed = localRunDetailedDiagnostics(cfg, detailDst, opt, link);
+    if runDetailedDiagnostics
+        L.info("Running detailed link-level diagnostics");
+        detailed = localRunDetailedDiagnostics(cfg, detailDst, opt, link);
+    else
+        L.info("RunDetailedLinkDiagnostics=false: skipping detailed link-level diagnostics.");
+        detailed = localMarkModuleSkipped(struct("Ok", false, "RunFolder", detailDst, "Result", struct(), ...
+            "Table", table(), "Errors", strings(0,1)), ...
+            "Skipped by RunDetailedLinkDiagnostics=false");
+    end
 
     % ---------------------------------------------------------------------
     % 3) System mobility campaign
@@ -186,10 +234,11 @@ else
     % ---------------------------------------------------------------------
     if runMMTC
         L.info("Running mMTC probe");
-        mmtc = localRunMMTCProbe(cfg, fullfile(runFolder, "system_mmtc"), opt, sysBlerLUT);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_mmtc_kpis.csv"), mmtc.Table);
+        mmtc = localRunMMTCProbe(cfg, layout.MMTCDir, opt, sysBlerLUT);
+        sixgr.util.csvWriteTable(fullfile(layout.MMTCCSVDir, "probe_mmtc_kpis.csv"), mmtc.Table);
     else
-        mmtc = struct("Ok", false, "Result", struct(), "Table", table(), "Notes", "Skipped by RunSystemMMTCProbe=false");
+        mmtc = localMarkModuleSkipped(struct("Ok", false, "Result", struct(), "Table", table()), ...
+            "Skipped by RunSystemMMTCProbe=false");
     end
 
     if runAux
@@ -198,66 +247,74 @@ else
         % -----------------------------------------------------------------
         L.info("Running HARQ probe");
         harq = localRunHARQProbe(cfg, double(opt.LinkSNR_dB), round(double(opt.HARQPackets)), round(double(opt.HARQMaxRetx)));
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_harq_packets.csv"), harq.PacketTable);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_harq_summary.csv"), harq.SummaryTable);
+        sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"), harq.PacketTable);
+        sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"), harq.SummaryTable);
 
         % -----------------------------------------------------------------
         % 6) Sync/control probe
         % -----------------------------------------------------------------
         L.info("Running synchronization/control probe");
         syncCtrl = localRunSyncControlProbe(cfg, double(opt.LinkSNR_dB));
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_sync_control.csv"), syncCtrl.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "probe_sync_control.csv"), syncCtrl.Table);
 
         % -----------------------------------------------------------------
         % 7) V2X sidelink probe
         % -----------------------------------------------------------------
         L.info("Running V2X sidelink probe");
         v2x = localRunV2XProbe(cfg, opt, double(opt.LinkSNR_dB));
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_v2x_sidelink.csv"), v2x.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.V2XCSVDir, "probe_v2x_sidelink.csv"), v2x.Table);
 
         % -----------------------------------------------------------------
         % 8) NTN delay/doppler probe
         % -----------------------------------------------------------------
         L.info("Running NTN delay/doppler probe");
         ntn = localRunNTNProbe(cfg, opt, double(opt.LinkSNR_dB));
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_ntn_delay_doppler.csv"), ntn.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.NTNCSVDir, "probe_ntn_delay_doppler.csv"), ntn.Table);
 
         % -----------------------------------------------------------------
         % 9) Interference probe
         % -----------------------------------------------------------------
         L.info("Running interference probe");
         interf = localRunInterferenceProbe(cfg, [-10 -5 0 5 10 15], 8);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_interference_sir_bler.csv"), interf.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.InterferenceCSVDir, "probe_interference_sir_bler.csv"), interf.Table);
 
         % -----------------------------------------------------------------
         % 10) RF impairment + energy probe
         % -----------------------------------------------------------------
         L.info("Running RF/energy probe");
         rfp = localRunRFProbe(cfg);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_rf_energy.csv"), rfp.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.RFCSVDir, "probe_rf_energy.csv"), rfp.Table);
 
         % -----------------------------------------------------------------
         % 11) Numerology probe
         % -----------------------------------------------------------------
         L.info("Running numerology probe");
         numProbe = localRunNumerologyProbe(cfg, double(opt.LinkSNR_dB), [15 30 60], 8);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_numerology.csv"), numProbe.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.NumerologyCSVDir, "probe_numerology.csv"), numProbe.Table);
 
         % -----------------------------------------------------------------
         % 12) Beam/MIMO probe
         % -----------------------------------------------------------------
         L.info("Running beam/MIMO probe");
         beam = localRunBeamMIMOProbe(cfg, double(opt.LinkSNR_dB));
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_beam_mimo.csv"), beam.Table);
+        sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, "probe_beam_mimo.csv"), beam.Table);
     else
-        harq = struct("Ok", false, "PacketTable", table(), "SummaryTable", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        syncCtrl = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        v2x = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        ntn = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        interf = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        rfp = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        numProbe = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
-        beam = struct("Ok", false, "Table", table(), "Notes", "Skipped by RunAuxiliaryProbes=false");
+        harq = localMarkModuleSkipped(struct("Ok", false, "PacketTable", table(), "SummaryTable", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        syncCtrl = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        v2x = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        ntn = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        interf = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        rfp = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        numProbe = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
+        beam = localMarkModuleSkipped(struct("Ok", false, "Table", table()), ...
+            "Skipped by RunAuxiliaryProbes=false");
     end
 end
 
@@ -266,17 +323,54 @@ end
 % -------------------------------------------------------------------------
 if logical(opt.RunE2EStackProbe)
     L.info("Running end-to-end stack probe");
-    e2e = localRunEndToEndProbe(cfg, fullfile(runFolder, "end_to_end"), opt, e2eAirLUT);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_slot_metrics.csv"), e2e.SlotTable);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_component_io.csv"), e2e.ComponentIOTable);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_component_checks.csv"), e2e.CheckTable);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_packet_integrity.csv"), e2e.PacketIntegrityTable);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_summary.csv"), e2e.SummaryTable);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_ai_metrics.csv"), e2e.AITable);
+    e2e = localRunEndToEndProbe(cfg, layout.PacketFlowDir, opt, e2eAirLUT);
+    sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_slot_metrics.csv"), e2e.SlotTable);
+    sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_component_io.csv"), e2e.ComponentIOTable);
+    sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_component_checks.csv"), e2e.CheckTable);
+    sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_packet_integrity.csv"), e2e.PacketIntegrityTable);
+    sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_summary.csv"), e2e.SummaryTable);
+    if isfield(e2e, "QoSEvaluationTable") && istable(e2e.QoSEvaluationTable)
+        sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_qos_evaluation.csv"), e2e.QoSEvaluationTable);
+    end
+    sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "probe_e2e_ai_metrics.csv"), e2e.AITable);
+    if isfield(e2e, "ArtifactSpec") && isstruct(e2e.ArtifactSpec)
+        topSpec = sixgr.util.structGet(e2e.ArtifactSpec, "TopLevel", struct());
+        if isfield(topSpec, "SlotMetricsCSV")
+            e2e.SlotMetricsArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.SlotMetricsCSV)));
+            sixgr.util.csvWriteTable(e2e.SlotMetricsArtifactCSV, e2e.SlotTable);
+        end
+        if isfield(topSpec, "ComponentIOCSV")
+            e2e.ComponentIOArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.ComponentIOCSV)));
+            sixgr.util.csvWriteTable(e2e.ComponentIOArtifactCSV, e2e.ComponentIOTable);
+        end
+        if isfield(topSpec, "ComponentChecksCSV")
+            e2e.ComponentChecksArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.ComponentChecksCSV)));
+            sixgr.util.csvWriteTable(e2e.ComponentChecksArtifactCSV, e2e.CheckTable);
+        end
+        if isfield(topSpec, "PacketIntegrityCSV")
+            e2e.PacketIntegrityArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.PacketIntegrityCSV)));
+            sixgr.util.csvWriteTable(e2e.PacketIntegrityArtifactCSV, e2e.PacketIntegrityTable);
+        end
+        if isfield(topSpec, "SummaryCSV")
+            e2e.SummaryArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.SummaryCSV)));
+            sixgr.util.csvWriteTable(e2e.SummaryArtifactCSV, e2e.SummaryTable);
+        end
+        if isfield(topSpec, "QoSEvaluationCSV") && isfield(e2e, "QoSEvaluationTable") && istable(e2e.QoSEvaluationTable)
+            e2e.QoSEvaluationArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.QoSEvaluationCSV)));
+            sixgr.util.csvWriteTable(e2e.QoSEvaluationArtifactCSV, e2e.QoSEvaluationTable);
+        end
+        if isfield(topSpec, "AIMetricsCSV")
+            e2e.AIArtifactCSV = fullfile(layout.PacketFlowCSVDir, char(string(topSpec.AIMetricsCSV)));
+            sixgr.util.csvWriteTable(e2e.AIArtifactCSV, e2e.AITable);
+        end
+    end
 else
-    e2e = struct();
+    e2e = localMarkModuleSkipped(struct(), "Skipped by RunE2EStackProbe=false");
     e2e.Ok = false;
     e2e.RunFolder = "";
+    e2e.ExecutionMode = "";
+    e2e.ArtifactMode = "";
+    e2e.ArtifactSpec = struct();
     e2e.SlotTable = table();
     e2e.ComponentIOTable = table();
     e2e.CheckTable = table();
@@ -290,13 +384,25 @@ else
     e2e.DropCauseTable = table();
     e2e.SummaryTable = table();
     e2e.AITable = table();
-    e2e.Notes = "Skipped by RunE2EStackProbe=false";
 end
 
 % -------------------------------------------------------------------------
 % 13b) Control-plane detailed trace package
 % -------------------------------------------------------------------------
-controlTrace = localExportControlPlaneTraces(runFolder, link, e2e, syncCtrl);
+if onlyE2E
+    controlTrace = localMarkModuleSkipped(struct( ...
+        "Folder", "", ...
+        "CellSearchTrialsCSV", "", ...
+        "PBCHRecoveryTrialsCSV", "", ...
+        "PRACHTrialsCSV", "", ...
+        "PDCCHTrialsCSV", "", ...
+        "PUCCHTrialsCSV", "", ...
+        "AttachStateTraceCSV", "", ...
+        "RRCMessageTraceCSV", ""), ...
+        "Skipped by OnlyE2E=true");
+else
+    controlTrace = localExportControlPlaneTraces(runFolder, link, e2e, syncCtrl);
+end
 
 % -------------------------------------------------------------------------
 % 14) Calibration artifact package (BLER DB + metadata/coverage/validation)
@@ -304,25 +410,32 @@ controlTrace = localExportControlPlaneTraces(runFolder, link, e2e, syncCtrl);
 calibration = struct("Ok", false, "CalibrationFolder", "", "BLERDBMat", "", ...
     "MetadataJSON", "", "CoverageCSV", "", "ValidationCSV", "", ...
     "Source", "", "CoveragePct", NaN, "MissingPoints", NaN, "TotalPoints", NaN);
-try
-    calibPayload = localBuildCampaignCalibrationPayload(cfg, e2eAirLUT, link);
-    trialCounts = localCollectCalibrationTrialCounts(runFolder);
-    calibration = sixgr.hybrid.ExportCalibrationArtifacts(runFolder, calibPayload, ...
-        "StrictMode", logical(sixgr.util.structGet(cfg, "run.strictMode", false)), ...
-        "SourceRun", runFolder, ...
-        "TrialCounts", trialCounts);
-    calibration.Ok = true;
-catch ME
-    calibration.Ok = false;
-    calibration.Notes = string(ME.message);
-    L.warn("Calibration artifact export failed: " + string(ME.message));
+[exportCalibration, calibrationSkipReason] = localShouldExportCalibrationArtifacts(opt);
+if exportCalibration
+    try
+        calibPayload = localBuildCampaignCalibrationPayload(cfg, opt, e2eAirLUT, link);
+        trialCounts = localCollectCalibrationTrialCounts(runFolder);
+        calibration = sixgr.hybrid.ExportCalibrationArtifacts(runFolder, calibPayload, ...
+            "StrictMode", logical(sixgr.util.structGet(cfg, "run.strictMode", false)), ...
+            "SourceRun", runFolder, ...
+            "TrialCounts", trialCounts);
+        calibration.Ok = true;
+        calibration.Executed = true;
+    catch ME
+        calibration.Ok = false;
+        calibration.Executed = true;
+        calibration.Notes = string(ME.message);
+        L.warn("Calibration artifact export failed: " + string(ME.message));
+    end
+else
+    calibration = localMarkModuleSkipped(calibration, calibrationSkipReason);
 end
 
 % -------------------------------------------------------------------------
 % 15) 25-category audit
 % -------------------------------------------------------------------------
-audit = localBuild25CategoryAudit(link, sys, mmtc, harq, syncCtrl, v2x, ntn, interf, rfp, numProbe, beam, e2e);
-csvAudit = fullfile(runFolder, "csv", "full_3gpp_category_audit.csv");
+audit = localBuild25CategoryAudit(runFolder, opt, link, sys, mmtc, harq, syncCtrl, v2x, ntn, interf, rfp, numProbe, beam, e2e);
+csvAudit = layout.CategoryAuditCSV;
 sixgr.util.csvWriteTable(csvAudit, audit);
 
 % Campaign report.
@@ -331,25 +444,95 @@ summary.RunFolder = runFolder;
 summary.LinkRunFolder = linkFolder;
 summary.DetailRunFolder = detailDst;
 summary.SystemRunFolder = sysDst;
-summary.MMTCFolder = fullfile(runFolder, "system_mmtc");
-summary.E2EFolder = fullfile(runFolder, "end_to_end");
-summary.ControlTraceFolder = string(sixgr.util.structGet(controlTrace, "Folder", fullfile(runFolder, "control", "csv")));
-summary.CalibrationFolder = sixgr.util.structGet(calibration, "CalibrationFolder", "");
-summary.CalibrationDBMat = sixgr.util.structGet(calibration, "BLERDBMat", "");
-summary.CalibrationMetadataJSON = sixgr.util.structGet(calibration, "MetadataJSON", "");
-summary.CalibrationCoverageCSV = sixgr.util.structGet(calibration, "CoverageCSV", "");
-summary.CalibrationValidationCSV = sixgr.util.structGet(calibration, "ValidationCSV", "");
-summary.CalibrationSource = string(sixgr.util.structGet(calibration, "Source", ""));
+summary.MMTCFolder = layout.MMTCDir;
+summary.E2EFolder = layout.PacketFlowDir;
+summary.LinkRunRequested = logical(runLinkCampaign);
+summary.DetailedLLSRequested = logical(runDetailedDiagnostics);
+summary.SystemRunRequested = logical(runSystemCampaign);
+[summary.LinkRunStatus, summary.LinkRunNotes] = localSummarizeSubrun(runLinkCampaign, link, linkFolder, ...
+    localJoinNotes("Skipped by OnlyE2E=true", "Skipped by RunLinkCampaign=false"));
+[summary.DetailRunStatus, summary.DetailRunNotes] = localSummarizeSubrun(runDetailedDiagnostics, detailed, detailDst, ...
+    localJoinNotes("Skipped by OnlyE2E=true", "Skipped by RunDetailedLinkDiagnostics=false"));
+[summary.SystemRunStatus, summary.SystemRunNotes] = localSummarizeSubrun(runSystemCampaign, sys, sysDst, "Skipped by OnlyE2E=true");
+[summary.MMTCRunStatus, summary.MMTCRunNotes] = localSummarizeSubrun(~onlyE2E && runMMTC, mmtc, layout.MMTCDir, ...
+    "Skipped by " + localMMTCSkipReason(onlyE2E, runMMTC));
+[summary.E2ERunStatus, summary.E2ERunNotes] = localSummarizeSubrun(logical(opt.RunE2EStackProbe), e2e, layout.PacketFlowDir, ...
+    "Skipped by RunE2EStackProbe=false");
+[summary.CalibrationStatus, summary.CalibrationNotes] = localSummarizeSubrun(exportCalibration, calibration, ...
+    fullfile(runFolder, "calibration"), calibrationSkipReason);
+summary.E2EExecutionMode = string(sixgr.util.structGet(e2e, "ExecutionMode", ""));
+summary.E2EArtifactMode = string(sixgr.util.structGet(e2e, "ArtifactMode", ""));
+summary.E2ESlotMetricsCSV = string(sixgr.util.structGet(e2e, "SlotMetricsArtifactCSV", ""));
+summary.E2EComponentIOCSV = string(sixgr.util.structGet(e2e, "ComponentIOArtifactCSV", ""));
+summary.E2EComponentChecksCSV = string(sixgr.util.structGet(e2e, "ComponentChecksArtifactCSV", ""));
+summary.E2ESummaryCSV = string(sixgr.util.structGet(e2e, "SummaryArtifactCSV", ""));
+summary.E2EQoSEvaluationCSV = string(sixgr.util.structGet(e2e, "QoSEvaluationArtifactCSV", ""));
+summary.E2EAIMetricsCSV = string(sixgr.util.structGet(e2e, "AIArtifactCSV", ""));
+summary.E2EPacketIntegrityCSV = string(sixgr.util.structGet(e2e, "PacketIntegrityArtifactCSV", ""));
+summary.E2EPacketTraceCSV = string(sixgr.util.structGet(e2e, "PacketTraceArtifactCSV", ""));
+summary.E2EFlowSummaryCSV = string(sixgr.util.structGet(e2e, "FlowSummaryArtifactCSV", ""));
+summary.E2EBearerSummaryCSV = string(sixgr.util.structGet(e2e, "BearerSummaryArtifactCSV", ""));
+summary.E2EAttachTraceCSV = string(sixgr.util.structGet(e2e, "AttachTraceArtifactCSV", ""));
+summary.E2ESchedulerTraceCSV = string(sixgr.util.structGet(e2e, "SchedulerTraceArtifactCSV", ""));
+summary.E2EHARQTraceCSV = string(sixgr.util.structGet(e2e, "HARQTraceArtifactCSV", ""));
+summary.E2EDropCausesCSV = string(sixgr.util.structGet(e2e, "DropCauseArtifactCSV", ""));
+summary.E2EMAT = string(sixgr.util.structGet(e2e, "ArtifactMAT", ""));
+summary.ControlTraceFolder = string(sixgr.util.structGet(controlTrace, "Folder", ""));
+summary.CalibrationFolder = "";
+summary.CalibrationDBMat = "";
+summary.CalibrationMetadataJSON = "";
+summary.CalibrationCoverageCSV = "";
+summary.CalibrationValidationCSV = "";
+summary.CalibrationSource = "";
+summary.CalibrationSourceKind = "";
+summary.CalibrationUsedByThisRun = false;
+summary.CalibrationGeneratedFromCampaignLinkSweep = false;
+summary.CalibrationUsedByModules = strings(0,1);
+strictnessMeta = localBuildStrictnessMetadata(cfg, opt);
+summary.OnlyE2E = logical(strictnessMeta.OnlyE2E);
+summary.CampaignStrictMode = logical(strictnessMeta.CampaignStrictMode);
+summary.E2EStrictValidation = logical(strictnessMeta.E2EStrictValidation);
+summary.LinkStrictValidation = logical(strictnessMeta.LinkStrictValidation);
+summary.SystemStrictValidation = logical(strictnessMeta.SystemStrictValidation);
+summary.DetailedLLSStrictValidation = logical(strictnessMeta.DetailedLLSStrictValidation);
+summary.CalibrationStrictValidation = logical(strictnessMeta.CalibrationStrictValidation);
+summary.LinkExecuted = logical(strictnessMeta.LinkExecuted);
+summary.SystemExecuted = logical(strictnessMeta.SystemExecuted);
+summary.DetailedLLSExecuted = logical(strictnessMeta.DetailedLLSExecuted);
+summary.E2EExecuted = logical(strictnessMeta.E2EExecuted);
+summary.CalibrationExecuted = logical(strictnessMeta.CalibrationExecuted);
+summary.NoProxyTruthContract = logical(strictnessMeta.NoProxyTruthContract);
+summary.CampaignProfileMode = string(profileMeta.Mode);
+summary.CampaignProfileLabel = string(profileMeta.Label);
+summary.CampaignProfileEntryPoint = string(profileMeta.EntryPoint);
+summary.RunScope = localBuildRunScope(opt);
+summary.ConformanceLevel = localDetermineConformanceLevel(cfg, opt, summary);
+summary = localAppendE2EReportSummary(summary, e2e);
+summary.ConformanceLevel = localDetermineConformanceLevel(cfg, opt, summary);
+if exportCalibration && isfolder(char(string(sixgr.util.structGet(calibration, "CalibrationFolder", ""))))
+    summary.CalibrationFolder = sixgr.util.structGet(calibration, "CalibrationFolder", "");
+end
+if exportCalibration
+    summary.CalibrationDBMat = sixgr.util.structGet(calibration, "BLERDBMat", "");
+    summary.CalibrationMetadataJSON = sixgr.util.structGet(calibration, "MetadataJSON", "");
+    summary.CalibrationCoverageCSV = sixgr.util.structGet(calibration, "CoverageCSV", "");
+    summary.CalibrationValidationCSV = sixgr.util.structGet(calibration, "ValidationCSV", "");
+    summary.CalibrationSource = string(sixgr.util.structGet(calibration, "Source", ""));
+    summary.CalibrationSourceKind = string(sixgr.util.structGet(calibration, "SourceKind", ""));
+    summary.CalibrationUsedByThisRun = logical(sixgr.util.structGet(calibration, "UsedByThisRun", false));
+    summary.CalibrationGeneratedFromCampaignLinkSweep = logical(sixgr.util.structGet(calibration, "GeneratedFromCampaignLinkSweep", false));
+    summary.CalibrationUsedByModules = string(sixgr.util.structGet(calibration, "UsedByModules", strings(0,1)));
+end
 summary.AuditCSV = csvAudit;
 summary.LogFile = logFile;
-summary.MetaFolder = fullfile(runFolder, "meta");
+summary.MetaFolder = layout.MetaDir;
 if onlyE2E
     summary.Ok = logical((~logical(opt.RunE2EStackProbe) || sixgr.util.structGet(e2e, "Ok", false)));
 else
     summary.Ok = logical( ...
-        sixgr.util.structGet(link, "Ok", false) && ...
-        sixgr.util.structGet(detailed, "Ok", false) && ...
-        sixgr.util.structGet(sys, "Ok", false) && ...
+        (~runLinkCampaign || sixgr.util.structGet(link, "Ok", false)) && ...
+        (~runDetailedDiagnostics || sixgr.util.structGet(detailed, "Ok", false)) && ...
+        (~runSystemCampaign || sixgr.util.structGet(sys, "Ok", false)) && ...
         (~runMMTC || sixgr.util.structGet(mmtc, "Ok", false)) && ...
         (~runAux || sixgr.util.structGet(harq, "Ok", false)) && ...
         (~runAux || sixgr.util.structGet(syncCtrl, "Ok", false)) && ...
@@ -361,6 +544,7 @@ else
         (~runAux || sixgr.util.structGet(beam, "Ok", false)) && ...
         (~logical(opt.RunE2EStackProbe) || sixgr.util.structGet(e2e, "Ok", false)));
 end
+summary = localFinalizeRunCompletion(summary);
 
 % Build block-wise structured analysis tree for easier review.
 structured = struct();
@@ -381,6 +565,7 @@ if organizeByBlock
 end
 summary.StructuredFolder = sixgr.util.structGet(structured, "StructuredFolder", "");
 summary.StructuredMirrorFolder = sixgr.util.structGet(structured, "MirrorFolder", "");
+summary.StructuredMirrorLayout = sixgr.util.structGet(structured, "MirrorLayout", "");
 summary.StructuredManifestCSV = sixgr.util.structGet(structured, "ManifestCSV", "");
 
 % Generate campaign-level summary plots (root fig folder) to improve
@@ -399,11 +584,25 @@ summary.CampaignPlotCount = double(sixgr.util.structGet(plotSummary, "NumPlots",
 % Verify artifact completeness (CSV/MAT/fig/log) against expected set.
 % NOTE: run verification after provisional MAT/MD are written so checklist
 % can include those top-level report artifacts.
-artifactCheck = struct("Ok", false, "Table", table(), "CSV", "", "MD", "", "Coverage_pct", NaN, "MissingCount", NaN);
+artifactCheck = struct( ...
+    "Ok", false, ...
+    "Table", table(), ...
+    "CSV", "", ...
+    "MD", "", ...
+    "Coverage_pct", NaN, ...
+    "MissingCount", NaN, ...
+    "RequiredOutputsTable", table(), ...
+    "RequiredOutputsCSV", "", ...
+    "RequiredOutputCoverage_pct", NaN, ...
+    "RequiredOutputMissingCount", NaN, ...
+    "MissingRequiredOutputs", strings(0,1));
 summary.ArtifactChecklistCSV = "";
 summary.ArtifactChecklistMD = "";
 summary.ArtifactCoverage_pct = NaN;
 summary.ArtifactMissingCount = NaN;
+summary.RequiredOutputsCSV = "";
+summary.RequiredOutputCoverage_pct = NaN;
+summary.RequiredOutputMissingCount = NaN;
 
 metaRepro = localWriteReproducibilityMeta(runFolder, cfg, opt, summary, audit, calibration, artifactCheck);
 summary.MetaRunManifestJSON = sixgr.util.structGet(metaRepro, "RunManifestJSON", "");
@@ -412,21 +611,28 @@ summary.MetaSeedsCSV = sixgr.util.structGet(metaRepro, "SeedsCSV", "");
 summary.MetaApproximationsCSV = sixgr.util.structGet(metaRepro, "ApproximationsCSV", "");
 summary.MetaCalibrationSourceJSON = sixgr.util.structGet(metaRepro, "CalibrationSourceJSON", "");
 
-matFile = fullfile(runFolder, "mat", "full_campaign_report.mat");
-mdFile = fullfile(runFolder, "full_campaign_report.md");
+matFile = layout.CampaignReportMAT;
+mdFile = layout.CampaignReportMD;
 localSaveCampaignMAT(matFile, summary, link, detailed, sys, mmtc, harq, syncCtrl, v2x, ntn, interf, rfp, numProbe, beam, e2e, calibration, audit, plotSummary, artifactCheck);
 localWriteMarkdown(mdFile, summary, audit);
 
 if logical(opt.VerifyArtifacts)
     try
-        artifactCheck = localVerifyArtifacts(runFolder, logical(opt.GenerateCampaignPlots), opt);
+        artifactCheck = localVerifyArtifacts(runFolder, logical(opt.GenerateCampaignPlots), opt, summary, ...
+            logical(sixgr.util.structGet(cfg, "run.strictMode", false)));
     catch ME
+        if logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+            rethrow(ME);
+        end
         L.warn("Artifact verification failed: " + string(ME.message));
     end
     summary.ArtifactChecklistCSV = sixgr.util.structGet(artifactCheck, "CSV", "");
     summary.ArtifactChecklistMD = sixgr.util.structGet(artifactCheck, "MD", "");
     summary.ArtifactCoverage_pct = double(sixgr.util.structGet(artifactCheck, "Coverage_pct", NaN));
     summary.ArtifactMissingCount = double(sixgr.util.structGet(artifactCheck, "MissingCount", NaN));
+    summary.RequiredOutputsCSV = sixgr.util.structGet(artifactCheck, "RequiredOutputsCSV", "");
+    summary.RequiredOutputCoverage_pct = double(sixgr.util.structGet(artifactCheck, "RequiredOutputCoverage_pct", NaN));
+    summary.RequiredOutputMissingCount = double(sixgr.util.structGet(artifactCheck, "RequiredOutputMissingCount", NaN));
 
     metaRepro = localWriteReproducibilityMeta(runFolder, cfg, opt, summary, audit, calibration, artifactCheck);
     summary.MetaRunManifestJSON = sixgr.util.structGet(metaRepro, "RunManifestJSON", "");
@@ -443,16 +649,20 @@ end
 if logical(opt.VerifyArtifacts)
     summary.Ok = logical(summary.Ok) && logical(sixgr.util.structGet(artifactCheck, "Ok", false));
     if isnan(double(sixgr.util.structGet(summary, "ArtifactCoverage_pct", NaN))) || ...
-            isnan(double(sixgr.util.structGet(summary, "ArtifactMissingCount", NaN)))
+            isnan(double(sixgr.util.structGet(summary, "ArtifactMissingCount", NaN))) || ...
+            isnan(double(sixgr.util.structGet(summary, "RequiredOutputCoverage_pct", NaN))) || ...
+            isnan(double(sixgr.util.structGet(summary, "RequiredOutputMissingCount", NaN)))
         summary.Ok = false;
     end
+    summary = localFinalizeRunCompletion(summary);
     % Persist final status after artifact gating so report files are consistent.
     localWriteMarkdown(mdFile, summary, audit);
     localSaveCampaignMAT(matFile, summary, link, detailed, sys, mmtc, harq, syncCtrl, v2x, ntn, interf, rfp, numProbe, beam, e2e, calibration, audit, plotSummary, artifactCheck);
 end
 
-% Refresh structured block organization after final metadata/report files are
-% written so analysis_by_block captures complete campaign artifacts.
+% Refresh structured organization after final metadata/report files are
+% written so the run-local manifest and the repo-level lls/sls/e2e mirrors
+% capture complete campaign artifacts.
 if organizeByBlock
     try
         structured = sixgr.report.OrganizeRunResults(runFolder, ...
@@ -460,6 +670,7 @@ if organizeByBlock
             "MirrorToResultsRoot", logical(opt.MirrorStructuredResults));
         summary.StructuredFolder = sixgr.util.structGet(structured, "StructuredFolder", "");
         summary.StructuredMirrorFolder = sixgr.util.structGet(structured, "MirrorFolder", "");
+        summary.StructuredMirrorLayout = sixgr.util.structGet(structured, "MirrorLayout", "");
         summary.StructuredManifestCSV = sixgr.util.structGet(structured, "ManifestCSV", "");
     catch ME
         L.warn("Structured organization refresh failed: " + string(ME.message));
@@ -492,58 +703,60 @@ report.Structured = structured;
 report.PlotSummary = plotSummary;
 report.ArtifactCheck = artifactCheck;
 report.Artifacts = struct();
-report.Artifacts.csv = { ...
-    fullfile(runFolder, "csv", "probe_mmtc_kpis.csv"), ...
-    fullfile(runFolder, "csv", "probe_harq_packets.csv"), ...
-    fullfile(runFolder, "csv", "probe_harq_summary.csv"), ...
-    fullfile(runFolder, "csv", "probe_sync_control.csv"), ...
-    fullfile(runFolder, "csv", "probe_v2x_sidelink.csv"), ...
-    fullfile(runFolder, "csv", "probe_ntn_delay_doppler.csv"), ...
-    fullfile(runFolder, "csv", "probe_interference_sir_bler.csv"), ...
-    fullfile(runFolder, "csv", "probe_rf_energy.csv"), ...
-    fullfile(runFolder, "csv", "probe_numerology.csv"), ...
-    fullfile(runFolder, "csv", "probe_beam_mimo.csv"), ...
-    fullfile(runFolder, "csv", "probe_e2e_slot_metrics.csv"), ...
-    fullfile(runFolder, "csv", "probe_e2e_component_io.csv"), ...
-    fullfile(runFolder, "csv", "probe_e2e_component_checks.csv"), ...
-    fullfile(runFolder, "csv", "probe_e2e_packet_integrity.csv"), ...
-    fullfile(runFolder, "csv", "probe_e2e_summary.csv"), ...
-    fullfile(runFolder, "csv", "probe_e2e_ai_metrics.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_packet_trace.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_flow_summary.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_bearer_summary.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_attach_trace.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_harq_trace.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_scheduler_trace.csv"), ...
-    fullfile(runFolder, "end_to_end", "csv", "e2e_drop_causes.csv"), ...
-    fullfile(runFolder, "control", "csv", "cell_search_trials.csv"), ...
-    fullfile(runFolder, "control", "csv", "pbch_recovery_trials.csv"), ...
-    fullfile(runFolder, "control", "csv", "prach_trials.csv"), ...
-    fullfile(runFolder, "control", "csv", "pdcch_trials.csv"), ...
-    fullfile(runFolder, "control", "csv", "pucch_trials.csv"), ...
-    fullfile(runFolder, "control", "csv", "attach_state_trace.csv"), ...
-    fullfile(runFolder, "control", "csv", "rrc_message_trace.csv"), ...
-    fullfile(runFolder, "meta", "seeds.csv"), ...
-    fullfile(runFolder, "meta", "approximations_used.csv"), ...
-    fullfile(runFolder, "calibration", "calibration_coverage.csv"), ...
-    fullfile(runFolder, "calibration", "calibration_validation.csv"), ...
-    fullfile(runFolder, "csv", "full_3gpp_artifact_checklist.csv"), ...
-    csvAudit};
-report.Artifacts.mat = {matFile, fullfile(runFolder, "calibration", "bler_db.mat")};
-report.Artifacts.logs = {logFile, mdFile, fullfile(runFolder, "calibration", "bler_db_metadata.json"), ...
-    fullfile(runFolder, "meta", "run_manifest.json"), ...
-    fullfile(runFolder, "meta", "environment.json"), ...
-    fullfile(runFolder, "meta", "calibration_source.json")};
+report.Artifacts.csv = localFilterPresentArtifacts({ ...
+    fullfile(layout.MMTCCSVDir, "probe_mmtc_kpis.csv"), ...
+    fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"), ...
+    fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"), ...
+    fullfile(layout.ControlCSVDir, "probe_sync_control.csv"), ...
+    fullfile(layout.V2XCSVDir, "probe_v2x_sidelink.csv"), ...
+    fullfile(layout.NTNCSVDir, "probe_ntn_delay_doppler.csv"), ...
+    fullfile(layout.InterferenceCSVDir, "probe_interference_sir_bler.csv"), ...
+    fullfile(layout.RFCSVDir, "probe_rf_energy.csv"), ...
+    fullfile(layout.NumerologyCSVDir, "probe_numerology.csv"), ...
+    fullfile(layout.BeamformingCSVDir, "probe_beam_mimo.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_slot_metrics.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_component_io.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_component_checks.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_packet_integrity.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_summary.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_qos_evaluation.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "probe_e2e_ai_metrics.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_packet_trace.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_flow_summary.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_bearer_summary.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_attach_trace.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_harq_trace.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_scheduler_trace.csv"), ...
+    fullfile(layout.PacketFlowCSVDir, "e2e_drop_causes.csv"), ...
+    fullfile(layout.ControlCSVDir, "cell_search_trials.csv"), ...
+    fullfile(layout.ControlCSVDir, "pbch_recovery_trials.csv"), ...
+    fullfile(layout.ControlCSVDir, "prach_trials.csv"), ...
+    fullfile(layout.ControlCSVDir, "pdcch_trials.csv"), ...
+    fullfile(layout.ControlCSVDir, "pucch_trials.csv"), ...
+    fullfile(layout.ControlCSVDir, "attach_state_trace.csv"), ...
+    fullfile(layout.ControlCSVDir, "rrc_message_trace.csv"), ...
+    layout.SeedsCSV, ...
+    layout.ApproximationsCSV, ...
+    fullfile(layout.CalibrationDir, "calibration_coverage.csv"), ...
+    fullfile(layout.CalibrationDir, "calibration_validation.csv"), ...
+    layout.ArtifactChecklistCSV, ...
+    layout.RequiredOutputsCSV, ...
+    csvAudit});
+report.Artifacts.mat = localFilterPresentArtifacts({matFile, fullfile(layout.CalibrationDir, "bler_db.mat")});
+report.Artifacts.logs = localFilterPresentArtifacts({logFile, mdFile, fullfile(layout.CalibrationDir, "bler_db_metadata.json"), ...
+    layout.RunManifestJSON, ...
+    layout.EnvironmentJSON, ...
+    layout.CalibrationSourceJSON});
 report.Artifacts.structured = { ...
     sixgr.util.structGet(structured, "StructuredFolder", ""), ...
     sixgr.util.structGet(structured, "MirrorFolder", ""), ...
     sixgr.util.structGet(structured, "ManifestCSV", "")};
-report.Artifacts.meta = { ...
-    fullfile(runFolder, "meta", "run_manifest.json"), ...
-    fullfile(runFolder, "meta", "environment.json"), ...
-    fullfile(runFolder, "meta", "seeds.csv"), ...
-    fullfile(runFolder, "meta", "approximations_used.csv"), ...
-    fullfile(runFolder, "meta", "calibration_source.json")};
+report.Artifacts.meta = localFilterPresentArtifacts({ ...
+    layout.RunManifestJSON, ...
+    layout.EnvironmentJSON, ...
+    layout.SeedsCSV, ...
+    layout.ApproximationsCSV, ...
+    layout.CalibrationSourceJSON});
 
 L.info("Full 3GPP campaign completed.");
 L.close();
@@ -572,19 +785,22 @@ sixgr.util.matSave(matFile, struct( ...
 end
 
 function out = localWriteReproducibilityMeta(runFolder, cfg, opt, summary, audit, calibration, artifactCheck)
-metaDir = fullfile(runFolder, "meta");
+layout = sixgr.report.resultLayout(runFolder);
+metaDir = layout.MetaDir;
 sixgr.util.ensureDir(metaDir);
 
-runManifestFile = fullfile(metaDir, "run_manifest.json");
-envFile = fullfile(metaDir, "environment.json");
-seedFile = fullfile(metaDir, "seeds.csv");
-approxFile = fullfile(metaDir, "approximations_used.csv");
-calSrcFile = fullfile(metaDir, "calibration_source.json");
+runManifestFile = layout.RunManifestJSON;
+envFile = layout.EnvironmentJSON;
+seedFile = layout.SeedsCSV;
+approxFile = layout.ApproximationsCSV;
+calSrcFile = layout.CalibrationSourceJSON;
+includeCalibrationMeta = localIncludeCalibrationMeta(summary, calibration);
+strictnessMeta = localBuildStrictnessMetadata(cfg, opt);
 
 cfgHash = localComputeConfigHash(cfg);
 repoRoot = fileparts(mfilename("fullpath"));
 [codeVersion, codeVersionDetail] = localDetectCodeVersion(repoRoot);
-strictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
+strictMode = logical(strictnessMeta.CampaignStrictMode);
 
 env = localBuildEnvironmentStruct(codeVersion, codeVersionDetail, repoRoot);
 sixgr.util.jsonWrite(envFile, env);
@@ -595,18 +811,41 @@ sixgr.util.csvWriteTable(seedFile, seedTable);
 approxTable = localBuildApproximationsUsedTable(audit, runFolder, calibration);
 sixgr.util.csvWriteTable(approxFile, approxTable);
 
-calSrc = struct();
-calSrc.Source = char(string(sixgr.util.structGet(calibration, "Source", "")));
-calSrc.StrictMode = strictMode;
-calSrc.BLERDBMat = char(string(sixgr.util.structGet(calibration, "BLERDBMat", "")));
-calSrc.MetadataJSON = char(string(sixgr.util.structGet(calibration, "MetadataJSON", "")));
-calSrc.CoverageCSV = char(string(sixgr.util.structGet(calibration, "CoverageCSV", "")));
-calSrc.ValidationCSV = char(string(sixgr.util.structGet(calibration, "ValidationCSV", "")));
-calSrc.CoveragePct = double(sixgr.util.structGet(calibration, "CoveragePct", NaN));
-calSrc.MissingPoints = double(sixgr.util.structGet(calibration, "MissingPoints", NaN));
-calSrc.TotalPoints = double(sixgr.util.structGet(calibration, "TotalPoints", NaN));
-calSrc.GeneratedUTC = char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss''Z'''));
-sixgr.util.jsonWrite(calSrcFile, calSrc);
+if includeCalibrationMeta
+    calSrc = struct();
+    calSrc.Source = char(string(sixgr.util.structGet(calibration, "Source", "")));
+    calSrc.SourceKind = char(string(sixgr.util.structGet(calibration, "SourceKind", "")));
+    calSrc.StrictMode = strictMode;
+    calSrc.StrictModeSemantics = "CampaignStrictMode";
+    calSrc.CampaignStrictMode = logical(strictnessMeta.CampaignStrictMode);
+    calSrc.OnlyE2E = logical(strictnessMeta.OnlyE2E);
+    calSrc.NoProxyTruthContract = logical(strictnessMeta.NoProxyTruthContract);
+    calSrc.E2EStrictValidation = logical(strictnessMeta.E2EStrictValidation);
+    calSrc.LinkStrictValidation = logical(strictnessMeta.LinkStrictValidation);
+    calSrc.SystemStrictValidation = logical(strictnessMeta.SystemStrictValidation);
+    calSrc.DetailedLLSStrictValidation = logical(strictnessMeta.DetailedLLSStrictValidation);
+    calSrc.CalibrationStrictValidation = logical(strictnessMeta.CalibrationStrictValidation);
+    calSrc.LinkExecuted = logical(strictnessMeta.LinkExecuted);
+    calSrc.SystemExecuted = logical(strictnessMeta.SystemExecuted);
+    calSrc.DetailedLLSExecuted = logical(strictnessMeta.DetailedLLSExecuted);
+    calSrc.E2EExecuted = logical(strictnessMeta.E2EExecuted);
+    calSrc.CalibrationExecuted = logical(strictnessMeta.CalibrationExecuted);
+    calSrc.GeneratedFromCampaignLinkSweep = logical(sixgr.util.structGet(calibration, "GeneratedFromCampaignLinkSweep", false));
+    calSrc.UsedByThisRun = logical(sixgr.util.structGet(calibration, "UsedByThisRun", false));
+    calSrc.UsedByModules = cellstr(string(sixgr.util.structGet(calibration, "UsedByModules", strings(0,1))));
+    calSrc.Notes = char(string(sixgr.util.structGet(calibration, "Notes", "")));
+    calSrc.BLERDBMat = char(string(sixgr.util.structGet(calibration, "BLERDBMat", "")));
+    calSrc.MetadataJSON = char(string(sixgr.util.structGet(calibration, "MetadataJSON", "")));
+    calSrc.CoverageCSV = char(string(sixgr.util.structGet(calibration, "CoverageCSV", "")));
+    calSrc.ValidationCSV = char(string(sixgr.util.structGet(calibration, "ValidationCSV", "")));
+    calSrc.CoveragePct = double(sixgr.util.structGet(calibration, "CoveragePct", NaN));
+    calSrc.MissingPoints = double(sixgr.util.structGet(calibration, "MissingPoints", NaN));
+    calSrc.TotalPoints = double(sixgr.util.structGet(calibration, "TotalPoints", NaN));
+    calSrc.Status = char(string(sixgr.util.structGet(summary, "CalibrationStatus", "")));
+    calSrc.Notes = char(string(sixgr.util.structGet(summary, "CalibrationNotes", "")));
+    calSrc.GeneratedUTC = char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss''Z'''));
+    sixgr.util.jsonWrite(calSrcFile, calSrc);
+end
 
 [~, runName] = fileparts(runFolder);
 manifest = struct();
@@ -615,40 +854,103 @@ manifest.RunName = string(runName);
 manifest.RunFolder = string(runFolder);
 manifest.GeneratedUTC = string(char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss''Z''')));
 manifest.StrictMode = strictMode;
-manifest.ConfigResolvedJSON = string(fullfile(runFolder, "config_resolved_full_campaign.json"));
+manifest.StrictModeSemantics = "CampaignStrictMode";
+manifest.CampaignProfileMode = string(sixgr.util.structGet(summary, "CampaignProfileMode", ""));
+manifest.CampaignProfileLabel = string(sixgr.util.structGet(summary, "CampaignProfileLabel", ""));
+manifest.CampaignProfileEntryPoint = string(sixgr.util.structGet(summary, "CampaignProfileEntryPoint", ""));
+manifest.NoProxyTruthContract = logical(sixgr.util.structGet(summary, "NoProxyTruthContract", false));
+manifest.RunScope = string(sixgr.util.structGet(summary, "RunScope", ""));
+manifest.RunCompletion = string(sixgr.util.structGet(summary, "RunCompletion", ""));
+manifest.ConformanceLevel = string(sixgr.util.structGet(summary, "ConformanceLevel", ""));
+manifest.RunLinkCampaign = logical(sixgr.util.structGet(opt, "RunLinkCampaign", true));
+manifest.RunDetailedLinkDiagnostics = logical(sixgr.util.structGet(opt, "RunDetailedLinkDiagnostics", true));
+manifest.CampaignStrictMode = logical(strictnessMeta.CampaignStrictMode);
+manifest.OnlyE2E = logical(strictnessMeta.OnlyE2E);
+manifest.E2EStrictValidation = logical(strictnessMeta.E2EStrictValidation);
+manifest.LinkStrictValidation = logical(strictnessMeta.LinkStrictValidation);
+manifest.SystemStrictValidation = logical(strictnessMeta.SystemStrictValidation);
+manifest.DetailedLLSStrictValidation = logical(strictnessMeta.DetailedLLSStrictValidation);
+manifest.CalibrationStrictValidation = logical(strictnessMeta.CalibrationStrictValidation);
+manifest.LinkExecuted = logical(strictnessMeta.LinkExecuted);
+manifest.SystemExecuted = logical(strictnessMeta.SystemExecuted);
+manifest.DetailedLLSExecuted = logical(strictnessMeta.DetailedLLSExecuted);
+manifest.E2EExecuted = logical(strictnessMeta.E2EExecuted);
+manifest.CalibrationExecuted = logical(strictnessMeta.CalibrationExecuted);
+manifest.ConfigResolvedJSON = string(layout.ConfigResolvedJSON);
 manifest.ConfigHash = string(cfgHash);
 manifest.CodeVersion = string(codeVersion);
 manifest.CodeVersionDetail = string(codeVersionDetail);
 manifest.VerifyArtifactsEnabled = logical(sixgr.util.structGet(opt, "VerifyArtifacts", false));
-manifest.E2EAirModel = string(sixgr.util.structGet(opt, "E2EAirModel", ""));
+if logical(strictnessMeta.E2EExecuted)
+    manifest.E2EAirModel = string(sixgr.util.structGet(opt, "E2EAirModel", ""));
+else
+    manifest.E2EAirModel = "not_run";
+end
+manifest.E2EExecutionMode = string(sixgr.util.structGet(summary, "E2EExecutionMode", ""));
+manifest.E2EArtifactMode = string(sixgr.util.structGet(summary, "E2EArtifactMode", ""));
+manifest.E2ESystemCoupled = logical(sixgr.util.structGet(summary, "E2ESystemCoupled", false));
+manifest.E2ECouplingMode = string(sixgr.util.structGet(summary, "E2ECouplingMode", ""));
+manifest.E2ECouplingNotes = string(sixgr.util.structGet(summary, "E2ECouplingNotes", ""));
+manifest.E2EAppSDUChunkBytes = double(sixgr.util.structGet(summary, "E2EAppSDUChunkBytes", NaN));
+manifest.E2EAppSDUChunkSource = string(sixgr.util.structGet(summary, "E2EAppSDUChunkSource", ""));
+manifest.E2ESlotMetricsCSV = string(sixgr.util.structGet(summary, "E2ESlotMetricsCSV", ""));
+manifest.E2EComponentIOCSV = string(sixgr.util.structGet(summary, "E2EComponentIOCSV", ""));
+manifest.E2EComponentChecksCSV = string(sixgr.util.structGet(summary, "E2EComponentChecksCSV", ""));
+manifest.E2ESummaryCSV = string(sixgr.util.structGet(summary, "E2ESummaryCSV", ""));
+manifest.E2EQoSEvaluationCSV = string(sixgr.util.structGet(summary, "E2EQoSEvaluationCSV", ""));
+manifest.E2EAIMetricsCSV = string(sixgr.util.structGet(summary, "E2EAIMetricsCSV", ""));
+manifest.E2EPacketIntegrityCSV = string(sixgr.util.structGet(summary, "E2EPacketIntegrityCSV", ""));
+manifest.E2EPacketTraceCSV = string(sixgr.util.structGet(summary, "E2EPacketTraceCSV", ""));
+manifest.E2EFlowSummaryCSV = string(sixgr.util.structGet(summary, "E2EFlowSummaryCSV", ""));
+manifest.E2EBearerSummaryCSV = string(sixgr.util.structGet(summary, "E2EBearerSummaryCSV", ""));
+manifest.E2EAttachTraceCSV = string(sixgr.util.structGet(summary, "E2EAttachTraceCSV", ""));
+manifest.E2ESchedulerTraceCSV = string(sixgr.util.structGet(summary, "E2ESchedulerTraceCSV", ""));
+manifest.E2EHARQTraceCSV = string(sixgr.util.structGet(summary, "E2EHARQTraceCSV", ""));
+manifest.E2EDropCausesCSV = string(sixgr.util.structGet(summary, "E2EDropCausesCSV", ""));
+manifest.E2EMAT = string(sixgr.util.structGet(summary, "E2EMAT", ""));
 manifest.UseMexAcceleration = logical(sixgr.util.structGet(opt, "UseMexAcceleration", false));
 manifest.SummaryOk = logical(sixgr.util.structGet(summary, "Ok", false));
+manifest.E2EQoSPass = logical(sixgr.util.structGet(summary, "E2EQoSPass", true));
+manifest.E2EPacketAccountingPassRate_pct = double(sixgr.util.structGet(summary, "E2EPacketAccountingPassRate_pct", NaN));
 manifest.ArtifactCoverage_pct = double(sixgr.util.structGet(summary, "ArtifactCoverage_pct", NaN));
 manifest.ArtifactMissingCount = double(sixgr.util.structGet(summary, "ArtifactMissingCount", NaN));
 manifest.ArtifactChecklistCSV = string(sixgr.util.structGet(summary, "ArtifactChecklistCSV", ""));
-manifest.CalibrationSource = string(sixgr.util.structGet(summary, "CalibrationSource", ""));
+manifest.RequiredOutputsCSV = string(sixgr.util.structGet(summary, "RequiredOutputsCSV", ""));
+manifest.RequiredOutputCoverage_pct = double(sixgr.util.structGet(summary, "RequiredOutputCoverage_pct", NaN));
+manifest.RequiredOutputMissingCount = double(sixgr.util.structGet(summary, "RequiredOutputMissingCount", NaN));
 manifest.ApproximationsCount = height(approxTable);
 manifest.SeedRows = height(seedTable);
 manifest.MetaFiles = struct( ...
     "run_manifest", string(runManifestFile), ...
     "environment", string(envFile), ...
     "seeds", string(seedFile), ...
-    "approximations_used", string(approxFile), ...
-    "calibration_source", string(calSrcFile));
+    "approximations_used", string(approxFile));
 manifest.TopLevelFiles = struct( ...
-    "report_md", string(fullfile(runFolder, "full_campaign_report.md")), ...
-    "report_mat", string(fullfile(runFolder, "mat", "full_campaign_report.mat")), ...
-    "category_audit_csv", string(fullfile(runFolder, "csv", "full_3gpp_category_audit.csv")));
-manifest.CalibrationFiles = struct( ...
-    "bler_db_mat", string(sixgr.util.structGet(calibration, "BLERDBMat", "")), ...
-    "metadata_json", string(sixgr.util.structGet(calibration, "MetadataJSON", "")), ...
-    "coverage_csv", string(sixgr.util.structGet(calibration, "CoverageCSV", "")), ...
-    "validation_csv", string(sixgr.util.structGet(calibration, "ValidationCSV", "")));
+    "report_md", string(layout.CampaignReportMD), ...
+    "report_mat", string(layout.CampaignReportMAT), ...
+    "category_audit_csv", string(layout.CategoryAuditCSV));
+if includeCalibrationMeta
+    manifest.CalibrationSource = string(sixgr.util.structGet(summary, "CalibrationSource", ""));
+    manifest.CalibrationSourceKind = string(sixgr.util.structGet(summary, "CalibrationSourceKind", ""));
+    manifest.CalibrationUsedByThisRun = logical(sixgr.util.structGet(summary, "CalibrationUsedByThisRun", false));
+    manifest.CalibrationGeneratedFromCampaignLinkSweep = logical(sixgr.util.structGet(summary, "CalibrationGeneratedFromCampaignLinkSweep", false));
+    manifest.CalibrationUsedByModules = string(sixgr.util.structGet(summary, "CalibrationUsedByModules", strings(0,1)));
+    manifest.MetaFiles.calibration_source = string(calSrcFile);
+    manifest.CalibrationFiles = struct( ...
+        "bler_db_mat", string(sixgr.util.structGet(calibration, "BLERDBMat", "")), ...
+        "metadata_json", string(sixgr.util.structGet(calibration, "MetadataJSON", "")), ...
+        "coverage_csv", string(sixgr.util.structGet(calibration, "CoverageCSV", "")), ...
+        "validation_csv", string(sixgr.util.structGet(calibration, "ValidationCSV", "")));
+end
 if isstruct(artifactCheck) && isfield(artifactCheck, "Ok")
     manifest.ArtifactCheck = struct( ...
         "Ok", logical(sixgr.util.structGet(artifactCheck, "Ok", false)), ...
         "Coverage_pct", double(sixgr.util.structGet(artifactCheck, "Coverage_pct", NaN)), ...
         "MissingCount", double(sixgr.util.structGet(artifactCheck, "MissingCount", NaN)), ...
+        "RequiredOutputsCSV", string(sixgr.util.structGet(artifactCheck, "RequiredOutputsCSV", "")), ...
+        "RequiredOutputCoverage_pct", double(sixgr.util.structGet(artifactCheck, "RequiredOutputCoverage_pct", NaN)), ...
+        "RequiredOutputMissingCount", double(sixgr.util.structGet(artifactCheck, "RequiredOutputMissingCount", NaN)), ...
+        "MissingRequiredOutputs", string(sixgr.util.structGet(artifactCheck, "MissingRequiredOutputs", strings(0,1))), ...
         "CSV", string(sixgr.util.structGet(artifactCheck, "CSV", "")), ...
         "MD", string(sixgr.util.structGet(artifactCheck, "MD", "")));
 end
@@ -660,7 +962,11 @@ out.RunManifestJSON = runManifestFile;
 out.EnvironmentJSON = envFile;
 out.SeedsCSV = seedFile;
 out.ApproximationsCSV = approxFile;
-out.CalibrationSourceJSON = calSrcFile;
+if includeCalibrationMeta
+    out.CalibrationSourceJSON = calSrcFile;
+else
+    out.CalibrationSourceJSON = "";
+end
 out.ConfigHash = string(cfgHash);
 out.CodeVersion = string(codeVersion);
 end
@@ -722,17 +1028,34 @@ function T = localBuildSeedTable(cfg, opt)
 baseSeed = double(sixgr.util.structGet(cfg, "run.seed", 1));
 strictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
 useMex = logical(sixgr.util.structGet(opt, "UseMexAcceleration", false));
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
+runAux = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunAuxiliaryProbes", false));
+runMMTC = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunSystemMMTCProbe", false));
+includeCalibrationSeed = localShouldExportCalibrationArtifacts(opt);
 rows = repmat(struct("Component","","Seed",NaN,"SeedExpression","","Notes",""), 0, 1);
 
 rows(end+1,1) = localSeedRow("global_campaign", baseSeed, "cfg.run.seed", "Master seed for campaign reproducibility.");
-rows(end+1,1) = localSeedRow("link_campaign", baseSeed, "cfg.run.seed", "Link-level modules consume deterministic streams from base seed.");
-rows(end+1,1) = localSeedRow("detailed_lls", baseSeed, "cfg.run.seed", "Detailed PHY diagnostics seeded from base.");
-rows(end+1,1) = localSeedRow("system_campaign", baseSeed, "cfg.run.seed", "System-level runner base seed.");
-rows(end+1,1) = localSeedRow("system_phy_decode", baseSeed + 31, "cfg.run.seed + 31", "PHY decoder RNG in system-level path.");
-rows(end+1,1) = localSeedRow("e2e_probe", baseSeed, "cfg.run.seed", "E2E stack scheduling/queue randomness.");
-rows(end+1,1) = localSeedRow("sync_control_probes", baseSeed, "cfg.run.seed", "PBCH/PRACH/PDCCH/PUCCH trial traces.");
-rows(end+1,1) = localSeedRow("calibration_export", baseSeed, "cfg.run.seed", "Calibration artifact generation context.");
+if ~onlyE2E
+    rows(end+1,1) = localSeedRow("link_campaign", baseSeed, "cfg.run.seed", "Link-level modules consume deterministic streams from base seed.");
+    rows(end+1,1) = localSeedRow("detailed_lls", baseSeed, "cfg.run.seed", "Detailed PHY diagnostics seeded from base.");
+    rows(end+1,1) = localSeedRow("system_campaign", baseSeed, "cfg.run.seed", "System-level runner base seed.");
+    rows(end+1,1) = localSeedRow("system_phy_decode", baseSeed + 31, "cfg.run.seed + 31", "PHY decoder RNG in system-level path.");
+end
+if runE2E
+    rows(end+1,1) = localSeedRow("e2e_probe", baseSeed, "cfg.run.seed", "E2E stack scheduling/queue randomness.");
+end
+if runAux || runE2E
+    rows(end+1,1) = localSeedRow("sync_control_probes", baseSeed, "cfg.run.seed", "PBCH/PRACH/PDCCH/PUCCH trial traces.");
+end
+if runMMTC
+    rows(end+1,1) = localSeedRow("mmtc", baseSeed, "cfg.run.seed", "mMTC probe seeded from base.");
+end
+if includeCalibrationSeed
+    rows(end+1,1) = localSeedRow("calibration_export", baseSeed, "cfg.run.seed", "Calibration artifact generation context.");
+end
 rows(end+1,1) = localSeedRow("mode_flags", NaN, "N/A", "strictMode=" + string(strictMode) + ", useMex=" + string(useMex));
+rows(end).Notes = rows(end).Notes + ", noProxyTruthContract=" + string(localNoProxyTruthContractEnabled(cfg, opt));
 
 T = struct2table(rows);
 T.Component = string(T.Component);
@@ -746,6 +1069,131 @@ r.Component = string(component);
 r.Seed = double(seed);
 r.SeedExpression = string(expr);
 r.Notes = string(notes);
+end
+
+function meta = localBuildStrictnessMetadata(cfg, opt)
+if nargin < 1 || ~isstruct(cfg)
+    cfg = struct();
+end
+if nargin < 2 || ~isstruct(opt)
+    opt = struct();
+end
+
+campaignStrict = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
+[runCalibration, ~] = localShouldExportCalibrationArtifacts(opt);
+linkExecuted = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunLinkCampaign", true));
+systemExecuted = ~onlyE2E;
+detailedExecuted = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunDetailedLinkDiagnostics", true));
+noProxyTruthContract = localNoProxyTruthContractEnabled(cfg, opt);
+
+meta = struct();
+meta.CampaignStrictMode = campaignStrict;
+meta.OnlyE2E = onlyE2E;
+meta.NoProxyTruthContract = noProxyTruthContract;
+meta.E2EStrictValidation = runE2E && logical(sixgr.util.structGet(opt, "E2EStrictValidation", false));
+meta.LinkStrictValidation = linkExecuted && campaignStrict;
+meta.SystemStrictValidation = systemExecuted && campaignStrict;
+meta.DetailedLLSStrictValidation = detailedExecuted && campaignStrict;
+meta.CalibrationStrictValidation = runCalibration && campaignStrict;
+meta.LinkExecuted = linkExecuted;
+meta.SystemExecuted = systemExecuted;
+meta.DetailedLLSExecuted = detailedExecuted;
+meta.E2EExecuted = runE2E;
+meta.CalibrationExecuted = runCalibration;
+end
+
+function usedBy = localCalibrationUsedByModules(opt)
+if nargin < 1 || ~isstruct(opt)
+    opt = struct();
+end
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
+airModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")))));
+usedBy = strings(0,1);
+
+if ~onlyE2E && logical(sixgr.util.structGet(opt, "CalibrateSystemBLERFromLink", true))
+    usedBy(end+1,1) = "system"; %#ok<AGROW>
+end
+if runE2E && strcmp(airModel, "lut")
+    usedBy(end+1,1) = "e2e_lut"; %#ok<AGROW>
+end
+usedBy = unique(usedBy, "stable");
+end
+
+function T = localAppendE2ESummaryStrictness(T, cfg, opt)
+if ~istable(T) || isempty(T)
+    return;
+end
+meta = localBuildStrictnessMetadata(cfg, opt);
+n = height(T);
+T.OnlyE2E = repmat(logical(meta.OnlyE2E), n, 1);
+T.NoProxyTruthContract = repmat(logical(meta.NoProxyTruthContract), n, 1);
+T.CampaignStrictMode = repmat(logical(meta.CampaignStrictMode), n, 1);
+T.E2EStrictValidation = repmat(logical(meta.E2EStrictValidation), n, 1);
+T.LinkStrictValidation = repmat(logical(meta.LinkStrictValidation), n, 1);
+T.SystemStrictValidation = repmat(logical(meta.SystemStrictValidation), n, 1);
+T.DetailedLLSStrictValidation = repmat(logical(meta.DetailedLLSStrictValidation), n, 1);
+T.CalibrationStrictValidation = repmat(logical(meta.CalibrationStrictValidation), n, 1);
+T.LinkExecuted = repmat(logical(meta.LinkExecuted), n, 1);
+T.SystemExecuted = repmat(logical(meta.SystemExecuted), n, 1);
+T.DetailedLLSExecuted = repmat(logical(meta.DetailedLLSExecuted), n, 1);
+T.E2EExecuted = repmat(logical(meta.E2EExecuted), n, 1);
+T.CalibrationExecuted = repmat(logical(meta.CalibrationExecuted), n, 1);
+T.RunScope = repmat(localBuildRunScope(opt), n, 1);
+T.ConformanceLevel = repmat(localDetermineConformanceLevel(cfg, opt, struct()), n, 1);
+end
+
+function localGuardTruthE2ESystemCoupling(cfg, opt, onlyE2E, runSystemCampaign)
+% Truth E2E now consumes an internal waveform SystemLevelRunner grant trace,
+% so combined system + truth E2E requests no longer need to fail closed
+% here. Keep the hook for future coupling sanity checks.
+return;
+end
+
+function tf = localNoProxyTruthContractEnabled(cfg, opt)
+if nargin < 1 || ~isstruct(cfg)
+    cfg = struct();
+end
+if nargin < 2 || ~isstruct(opt)
+    opt = struct();
+end
+explicit = logical(sixgr.util.structGet(opt, "NoProxyTruthContract", ...
+    sixgr.util.structGet(cfg, "run.noProxyTruthContract", false)));
+profileMode = lower(strtrim(char(string(sixgr.util.structGet(opt, "CampaignProfileMode", "")))));
+tf = explicit || strcmp(profileMode, "truth_validation");
+end
+
+function localEnforceNoProxyTruthContract(cfg, opt, onlyE2E, runLinkCampaign, runSystemCampaign)
+if ~localNoProxyTruthContractEnabled(cfg, opt)
+    return;
+end
+
+runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
+e2eAirModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")))));
+trafficModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2ETrafficModel", ...
+    sixgr.util.structGet(cfg, "traffic.model", "fullBuffer"))))));
+e2eUsesSystemCoupling = runE2E && strcmp(e2eAirModel, "truth");
+ctx = struct();
+ctx.Enabled = true;
+ctx.E2EAirModel = e2eAirModel;
+ctx.TrafficModel = trafficModel;
+ctx.UseFastLinkModel = logical(sixgr.util.structGet(opt, "UseFastLinkModel", false)) && logical(runLinkCampaign);
+ctx.SystemPHYBackend = string(sixgr.util.structGet(cfg, "system.phyBackend", "abstract"));
+ctx.RunE2E = runE2E;
+ctx.RunSystem = logical(runSystemCampaign) || logical(e2eUsesSystemCoupling);
+ctx.RunLink = logical(runLinkCampaign);
+ctx.OnlyE2E = logical(onlyE2E);
+ctx.CampaignProfileMode = string(sixgr.util.structGet(opt, "CampaignProfileMode", ""));
+if e2eUsesSystemCoupling
+    ctx.CouplingMode = "system_waveform_grant_trace";
+    ctx.E2ESystemCoupled = true;
+    if ~logical(runSystemCampaign)
+        ctx.SystemPHYBackend = "waveform";
+    end
+end
+sixgr.truth.enforceNoProxyContract(cfg, ctx);
 end
 
 function T = localBuildApproximationsUsedTable(audit, runFolder, calibration)
@@ -766,7 +1214,8 @@ if istable(audit) && ~isempty(audit) && all(ismember(["Category","Status","Evide
     end
 end
 
-e2eFile = fullfile(runFolder, "csv", "probe_e2e_summary.csv");
+layout = sixgr.report.resultLayout(runFolder);
+e2eFile = fullfile(layout.PacketFlowCSVDir, "probe_e2e_summary.csv");
 if exist(e2eFile, "file") == 2
     try
         E = readtable(e2eFile, "VariableNamingRule", "preserve");
@@ -775,24 +1224,36 @@ if exist(e2eFile, "file") == 2
             phyMode = "";
             airMode = "";
             airSrc = "";
+            systemCoupled = false;
+            couplingMode = "";
             if ismember("ExecutionBackend", string(E.Properties.VariableNames)), backend = string(E.ExecutionBackend(1)); end
             if ismember("PHYMode", string(E.Properties.VariableNames)), phyMode = string(E.PHYMode(1)); end
             if ismember("E2EAirModel", string(E.Properties.VariableNames)), airMode = string(E.E2EAirModel(1)); end
             if ismember("E2EAirModelSource", string(E.Properties.VariableNames)), airSrc = string(E.E2EAirModelSource(1)); end
+            if ismember("E2ESystemCoupled", string(E.Properties.VariableNames)), systemCoupled = logical(E.E2ESystemCoupled(1)); end
+            if ismember("E2ECouplingMode", string(E.Properties.VariableNames)), couplingMode = string(E.E2ECouplingMode(1)); end
             if contains(upper(backend), "FAST_PROXY") || contains(upper(phyMode), "PROXY") || lower(airMode) ~= "truth"
                 rows(end+1,1) = struct( ... %#ok<AGROW>
                     "Area", "E2E", ...
                     "Component", "end_to_end_radio_delivery", ...
                     "ApproximationMode", "proxy_model", ...
-                    "Evidence", "csv/probe_e2e_summary.csv", ...
+                    "Evidence", "packet_flow/csv/probe_e2e_summary.csv", ...
                     "Notes", "ExecutionBackend=" + backend + "; PHYMode=" + phyMode + "; AirModel=" + airMode + "; Source=" + airSrc);
+            end
+            if lower(airMode) == "truth" && ~systemCoupled
+                rows(end+1,1) = struct( ... %#ok<AGROW>
+                    "Area", "E2E", ...
+                    "Component", "truth_e2e_coupling", ...
+                    "ApproximationMode", "uncoupled_truth_replay", ...
+                    "Evidence", "packet_flow/csv/probe_e2e_summary.csv", ...
+                    "Notes", "E2ESystemCoupled=false; E2ECouplingMode=" + couplingMode + "; Source=" + airSrc);
             end
         end
     catch
     end
 end
 
-sysFile = fullfile(runFolder, "system", "csv", "system_kpis.csv");
+sysFile = fullfile(layout.SystemCSVDir, "system_kpis.csv");
 if exist(sysFile, "file") == 2
     try
         S = readtable(sysFile, "VariableNamingRule", "preserve");
@@ -913,6 +1374,13 @@ cfgL.outputs.saveMAT = true;
 cfgL.outputs.saveFigures = logical(opt.LinkSaveFigures);
 cfgL.outputs.saveFIG = cfgL.outputs.saveFigures;
 cfgL.channel.snr_dB = double(opt.LinkSNR_dB);
+strictNoProxy = logical(sixgr.util.structGet(cfgL, "run.strictMode", false)) || ...
+    logical(sixgr.util.structGet(cfgL, "run.noProxyTruthContract", false));
+
+if logical(sixgr.util.structGet(cfgL, "run.noProxyTruthContract", false)) && logical(opt.UseFastLinkModel)
+    error("sixgr:link:NoProxyFastLinkForbidden", ...
+        "UseFastLinkModel=true is forbidden for link execution under the no-proxy truth contract.");
+end
 
 if logical(opt.UseFastLinkModel) && (exist("sixgr_link_fast_core_kernel_mex","file") == 3 || exist("sixgr_link_fast_core_kernel","file") == 2)
     out = localRunLinkCampaignFast(cfgL, runFolder, opt);
@@ -931,44 +1399,59 @@ params.NumFrames = numFrames;
 params.ForceLong = true;
 
 res = sixgr.link.LinkLevelRunner.run(ctx, params);
-cfgLinkUsed = cfgL;
 kpi = sixgr.util.structGet(res, "KPITable", table());
+snrGrid = localReduceSweepGrid(double(opt.LinkSNRGrid_dB(:)), round(double(opt.LinkSweepMaxPoints)), double(opt.LinkSNR_dB));
+fallback = struct("Active", false, "Result", struct(), "KPITable", table(), ...
+    "SNRSweep", table(), "Artifacts", struct("csv",{{}}, "mat",{{}}, "fig",{{}}), ...
+    "ConfigUsed", struct(), "Notes", "");
+
 if ~localLinkKPITableHealthy(kpi)
-    % Fallback for unsupported/unstable channel settings in current release.
+    if strictNoProxy
+        sixgr.link.failIfStrictCoverageGap(cfgL, "sixgr:link:StrictCoverageGap", ...
+            "Primary waveform link campaign failed coverage, and fallback rescue reruns are forbidden under strict/no-proxy execution.");
+    end
+    % Keep rescued reruns quarantined in explicitly named sidecar exports.
     cfgLF = localBuildDLTraceFallbackCfg(cfgL);
     try
+        cfgLF.outputs.saveCSV = false;
+        cfgLF.outputs.saveMAT = false;
+        cfgLF.outputs.saveFigures = false;
+        cfgLF.outputs.saveFIG = false;
         ctxF = sixgr.core.SimContext(cfgLF, "RunFolder", runFolder);
         ctxF.Logger.EchoToConsole = false;
         resF = sixgr.link.LinkLevelRunner.run(ctxF, params);
         kpiF = sixgr.util.structGet(resF, "KPITable", table());
         if localLinkKPITableHealthy(kpiF)
-            res = resF;
-            kpi = kpiF;
-            cfgLinkUsed = cfgLF;
-            if isfield(res, "Cases")
-                fn = string(fieldnames(res.Cases));
-                for iFn = 1:numel(fn)
-                    c = res.Cases.(char(fn(iFn)));
-                    note = string(sixgr.util.structGet(c, "Notes", ""));
-                    c.Notes = "link_campaign_fallback_awgn|" + note;
-                    res.Cases.(char(fn(iFn))) = c;
-                end
-            end
+            resF = localTagLinkFallbackCases(resF, "link_campaign_fallback_awgn");
+            kpiF = localAnnotateFallbackLinkKPI(kpiF, cfgL, cfgLF, "link_campaign_fallback_awgn");
+            fallback.Active = true;
+            fallback.Result = resF;
+            fallback.KPITable = kpiF;
+            fallback.ConfigUsed = cfgLF;
+            fallback.Artifacts = sixgr.link.exportLinkKPIs(runFolder, kpiF, resF, ...
+                "SaveCSV", true, "SaveMAT", false, "SaveFigures", false, ...
+                "FileSuffix", "_fallback");
+            fallback.SNRSweep = localRunLinkSNRSweep(cfgLF, snrGrid, round(double(opt.LinkSweepFrames)));
+            fSweepFallback = fullfile(runFolder, "csv", "lls_snr_sweep_fallback.csv");
+            sixgr.util.csvWriteTable(fSweepFallback, fallback.SNRSweep);
+            fallback.Artifacts.csv{end+1} = fSweepFallback;
+            fallback.Notes = "Fallback link reruns exported to *_fallback.csv sidecars.";
         end
     catch
     end
 end
 
-if ~isempty(kpi)
+sweep = localRunLinkSNRSweep(cfgL, snrGrid, round(double(opt.LinkSweepFrames)));
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), sweep);
+rawTrials = localExportLinkRawTrialTables(cfgL, runFolder, res, numFrames, double(opt.LinkSNR_dB));
+[kpi, integrity] = sixgr.link.enforcePrimaryLinkExportIntegrity(cfgL, kpi, rawTrials);
+res.KPITable = kpi;
+if istable(kpi) && width(kpi) > 0
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "link_kpis.csv"), kpi);
     sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_kpi_summary.csv"), kpi);
 elseif exist(fullfile(runFolder, "csv", "link_kpis.csv"), "file")
     copyfile(fullfile(runFolder, "csv", "link_kpis.csv"), fullfile(runFolder, "csv", "lls_kpi_summary.csv"));
 end
-
-snrGrid = localReduceSweepGrid(double(opt.LinkSNRGrid_dB(:)), round(double(opt.LinkSweepMaxPoints)), double(opt.LinkSNR_dB));
-sweep = localRunLinkSNRSweep(cfgLinkUsed, snrGrid, round(double(opt.LinkSweepFrames)));
-sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), sweep);
-rawTrials = localExportLinkRawTrialTables(cfgLinkUsed, runFolder, res, numFrames, double(opt.LinkSNR_dB));
 
 out = struct();
 out.Ok = logical(sixgr.util.structGet(res, "Ok", false));
@@ -979,14 +1462,19 @@ out.SNRSweep = sweep;
 out.RawTrials = rawTrials;
 out.Errors = sixgr.util.structGet(res, "Errors", strings(0,1));
 out.Artifacts = sixgr.util.structGet(res, "Artifacts", struct("csv",{{}}, "mat",{{}}, "fig",{{}}, "m",{{}}));
-out.ConfigUsed = cfgLinkUsed;
+if fallback.Active
+    out.Artifacts.csv = [out.Artifacts.csv, fallback.Artifacts.csv]; %#ok<AGROW>
+end
+out.ConfigUsed = cfgL;
+out.Fallback = fallback;
+out.Integrity = integrity;
 end
 
 function out = localRunLinkCampaignFast(cfgL, runFolder, opt)
 sixgr.util.ensureDir(runFolder);
 sixgr.util.ensureDir(fullfile(runFolder, "csv"));
 sixgr.util.ensureDir(fullfile(runFolder, "mat"));
-sixgr.util.ensureDir(fullfile(runFolder, "fig"));
+sixgr.util.ensureDir(fullfile(runFolder, "image"));
 sixgr.util.ensureDir(fullfile(runFolder, "logs"));
 
 slotDur_s = localSlotDuration(cfgL);
@@ -1044,6 +1532,11 @@ res.Cases = struct( ...
 res.KPITable = kpi;
 res.Artifacts = struct("csv", {{fullfile(runFolder, "csv", "link_kpis.csv")}}, ...
     "mat", {{fullfile(runFolder, "mat", "link_results.mat")}});
+rawTrials = localExportLinkRawTrialTables(cfgL, runFolder, res, numFrames, snrMain);
+[kpi, integrity] = sixgr.link.enforcePrimaryLinkExportIntegrity(cfgL, kpi, rawTrials);
+res.KPITable = kpi;
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "link_kpis.csv"), kpi);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_kpi_summary.csv"), kpi);
 
 out = struct();
 out.Ok = true;
@@ -1051,10 +1544,11 @@ out.RunFolder = runFolder;
 out.Result = res;
 out.KPITable = kpi;
 out.SNRSweep = sweep;
-out.RawTrials = localExportLinkRawTrialTables(cfgL, runFolder, res, numFrames, snrMain);
+out.RawTrials = rawTrials;
 out.Errors = strings(0,1);
 out.Artifacts = struct("csv", {{fullfile(runFolder, "csv", "link_kpis.csv"), fullfile(runFolder, "csv", "lls_snr_sweep.csv")}}, ...
     "mat", {{fullfile(runFolder, "mat", "link_results.mat")}}, "fig", {{}}, "m", {{}});
+out.Integrity = integrity;
 end
 
 function T = localRunLinkSNRSweepFast(snrGrid, nFrames, slotDur_s, bw_Hz)
@@ -1105,7 +1599,50 @@ if ~all(ismember(["Ok","Skipped"], string(kpi.Properties.VariableNames)))
 end
 ok = logical(kpi.Ok);
 sk = logical(kpi.Skipped);
-tf = all(ok | sk);
+tf = all(ok & ~sk);
+end
+
+function res = localTagLinkFallbackCases(res, notePrefix)
+if ~(isstruct(res) && isscalar(res) && isfield(res, "Cases"))
+    return;
+end
+
+fn = string(fieldnames(res.Cases));
+for iFn = 1:numel(fn)
+    c = res.Cases.(char(fn(iFn)));
+    note = string(sixgr.util.structGet(c, "Notes", ""));
+    c.Notes = string(notePrefix) + "|" + note;
+    res.Cases.(char(fn(iFn))) = c;
+end
+end
+
+function kpi = localAnnotateFallbackLinkKPI(kpi, cfgRequested, cfgUsed, reason)
+if ~(istable(kpi) && ~isempty(kpi))
+    return;
+end
+
+n = height(kpi);
+if ~ismember("RequestedChannelModel", string(kpi.Properties.VariableNames))
+    kpi.RequestedChannelModel = strings(n,1);
+end
+if ~ismember("ObservedChannelModel", string(kpi.Properties.VariableNames))
+    kpi.ObservedChannelModel = strings(n,1);
+end
+if ~ismember("FallbackUsed", string(kpi.Properties.VariableNames))
+    kpi.FallbackUsed = false(n,1);
+end
+if ~ismember("FallbackReason", string(kpi.Properties.VariableNames))
+    kpi.FallbackReason = strings(n,1);
+end
+
+kpi.RequestedChannelModel(:) = localResolveRequestedLinkChannelModel(cfgRequested);
+kpi.ObservedChannelModel(:) = localResolveRequestedLinkChannelModel(cfgUsed);
+kpi.FallbackUsed(:) = true;
+kpi.FallbackReason(:) = string(reason);
+
+if ismember("Notes", string(kpi.Properties.VariableNames))
+    kpi.Notes = "fallback_" + string(reason) + "|" + string(kpi.Notes);
+end
 end
 
 function T = localRunLinkSNRSweep(cfg, snrGrid, nFrames)
@@ -1164,22 +1701,26 @@ if isempty(dlTrials)
         dlTrials = table();
     end
 end
+dlTrials = localEnsureLinkTrialTable(dlTrials, "DL", snr_dB, cfg);
+fDL = fullfile(csvDir, "dl_pdsch_trials.csv");
+sixgr.util.csvWriteTable(fDL, dlTrials);
+fDLFallback = "";
 if localAllTrialsCrash(dlTrials)
     cfgDL = localBuildDLTraceFallbackCfg(cfg);
     try
         dlRun = sixgr.link.runDLPDSCHThroughput(cfgDL, "NumFrames", nTrials, "SNR_dB", snr_dB);
-        dlTrials = sixgr.util.structGet(dlRun, "TrialTable", table());
-        if istable(dlTrials) && ~isempty(dlTrials)
-            if ismember("Notes", dlTrials.Properties.VariableNames)
-                dlTrials.Notes = "fallback_awgn_profile|" + string(dlTrials.Notes);
+        dlFallback = sixgr.util.structGet(dlRun, "TrialTable", table());
+        if istable(dlFallback) && ~isempty(dlFallback)
+            if ismember("Notes", dlFallback.Properties.VariableNames)
+                dlFallback.Notes = "fallback_awgn_profile|" + string(dlFallback.Notes);
             end
+            dlFallback = localEnsureLinkTrialTable(dlFallback, "DL", snr_dB, cfgDL);
+            fDLFallback = fullfile(csvDir, "dl_pdsch_trials_fallback.csv");
+            sixgr.util.csvWriteTable(fDLFallback, dlFallback);
         end
     catch
     end
 end
-dlTrials = localEnsureLinkTrialTable(dlTrials, "DL", snr_dB, cfg);
-fDL = fullfile(csvDir, "dl_pdsch_trials.csv");
-sixgr.util.csvWriteTable(fDL, dlTrials);
 
 ulTrials = localGetCaseTrialTable(linkRes, "UL_PUSCH_Throughput");
 if isempty(ulTrials)
@@ -1190,20 +1731,26 @@ if isempty(ulTrials)
         ulTrials = table();
     end
 end
+ulTrials = localEnsureLinkTrialTable(ulTrials, "UL", snr_dB, cfg);
+fUL = fullfile(csvDir, "ul_pusch_trials.csv");
+sixgr.util.csvWriteTable(fUL, ulTrials);
+fULFallback = "";
 if localAllTrialsCrash(ulTrials)
     cfgUL = localBuildULTraceFallbackCfg(cfg);
     try
         ulRun = sixgr.link.runULPUSCHThroughput(cfgUL, "NumFrames", nTrials, "SNR_dB", snr_dB);
-        ulTrials = sixgr.util.structGet(ulRun, "TrialTable", table());
-        if istable(ulTrials) && ~isempty(ulTrials) && ismember("Notes", ulTrials.Properties.VariableNames)
-            ulTrials.Notes = "fallback_valid_tdl_profile|" + string(ulTrials.Notes);
+        ulFallback = sixgr.util.structGet(ulRun, "TrialTable", table());
+        if istable(ulFallback) && ~isempty(ulFallback)
+            if ismember("Notes", ulFallback.Properties.VariableNames)
+                ulFallback.Notes = "fallback_valid_tdl_profile|" + string(ulFallback.Notes);
+            end
+            ulFallback = localEnsureLinkTrialTable(ulFallback, "UL", snr_dB, cfgUL);
+            fULFallback = fullfile(csvDir, "ul_pusch_trials_fallback.csv");
+            sixgr.util.csvWriteTable(fULFallback, ulFallback);
         end
     catch
     end
 end
-ulTrials = localEnsureLinkTrialTable(ulTrials, "UL", snr_dB, cfg);
-fUL = fullfile(csvDir, "ul_pusch_trials.csv");
-sixgr.util.csvWriteTable(fUL, ulTrials);
 
 pbchTrials = localCollectPBCHTrials(cfg, snr_dB, max(4, ceil(nTrials/4)));
 fPBCH = fullfile(csvDir, "pbch_trials.csv");
@@ -1228,6 +1775,8 @@ sixgr.util.csvWriteTable(fSRS, srsTrials);
 out = struct();
 out.DL = fDL;
 out.UL = fUL;
+out.DLFallback = fDLFallback;
+out.ULFallback = fULFallback;
 out.PBCH = fPBCH;
 out.PRACH = fPRACH;
 out.PDCCH = fPDCCH;
@@ -1236,10 +1785,11 @@ out.SRS = fSRS;
 end
 
 function out = localExportControlPlaneTraces(runFolder, link, e2e, syncCtrl)
-controlDir = fullfile(runFolder, "control", "csv");
+layout = sixgr.report.resultLayout(runFolder);
+controlDir = layout.ControlCSVDir;
 sixgr.util.ensureDir(controlDir);
 
-linkCsvDir = fullfile(runFolder, "link", "csv");
+linkCsvDir = layout.AirInterfaceCSVDir;
 pbchTrials = localReadControlTrialTable(fullfile(linkCsvDir, "pbch_trials.csv"));
 prachTrials = localReadControlTrialTable(fullfile(linkCsvDir, "prach_trials.csv"));
 pdcchTrials = localReadControlTrialTable(fullfile(linkCsvDir, "pdcch_trials.csv"));
@@ -1302,7 +1852,7 @@ if builtin("isstruct", e2e) && isscalar(e2e)
 end
 if ~(istable(attachTrace) && ~isempty(attachTrace))
     try
-        attachTrace = readtable(fullfile(runFolder, "end_to_end", "csv", "e2e_attach_trace.csv"), "VariableNamingRule", "preserve");
+        attachTrace = readtable(fullfile(layout.PacketFlowCSVDir, "e2e_attach_trace.csv"), "VariableNamingRule", "preserve");
     catch
         attachTrace = table();
     end
@@ -1566,6 +2116,27 @@ cfgF.channel.doppler_Hz = max(0, double(sixgr.util.structGet(cfg, "channel.doppl
 cfgF.channel.dopplerHz = cfgF.channel.doppler_Hz;
 end
 
+function model = localResolveRequestedLinkChannelModel(cfg)
+model = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+if strlength(model) == 0 || model == "NONE" || model == "OFF"
+    model = "AWGN";
+end
+
+if model == "TDL"
+    prof = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.tdlProfile", ...
+        sixgr.util.structGet(cfg, "channel.fading.profile", "")))));
+    if strlength(prof) > 0
+        model = prof;
+    end
+elseif model == "CDL"
+    prof = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.cdlProfile", ...
+        sixgr.util.structGet(cfg, "channel.fading.profile", "")))));
+    if strlength(prof) > 0
+        model = prof;
+    end
+end
+end
+
 function T = localGetCaseTrialTable(linkRes, caseField)
 T = table();
 if ~(builtin("isstruct", linkRes) && isscalar(linkRes))
@@ -1620,15 +2191,27 @@ end
 if all(~isfinite(double(T.SNR_dB)))
     T.SNR_dB(:) = double(snr_dB);
 end
+reqModel = localResolveRequestedLinkChannelModel(cfg);
 if all(strlength(string(T.ChannelModel)) == 0)
-    T.ChannelModel(:) = string(sixgr.util.structGet(cfg, "channel.model", "AWGN"));
+    T.ChannelModel(:) = reqModel;
 end
 uCm = upper(strtrim(string(T.ChannelModel)));
-maskTDL = (uCm == "TDL");
+maskAWGN = (uCm == "NONE" | uCm == "OFF");
+if any(maskAWGN)
+    T.ChannelModel(maskAWGN) = "AWGN";
+end
+maskTDL = (uCm == "TDL") & startsWith(reqModel, "TDL");
 if any(maskTDL)
-    T.ChannelModel(maskTDL) = "TDL-C";
+    T.ChannelModel(maskTDL) = reqModel;
     if ismember("Notes", T.Properties.VariableNames)
-        T.Notes(maskTDL) = string(T.Notes(maskTDL)) + "|normalized_channel_model=TDL-C";
+        T.Notes(maskTDL) = string(T.Notes(maskTDL)) + "|normalized_channel_model=" + reqModel;
+    end
+end
+maskCDL = (uCm == "CDL") & startsWith(reqModel, "CDL");
+if any(maskCDL)
+    T.ChannelModel(maskCDL) = reqModel;
+    if ismember("Notes", T.Properties.VariableNames)
+        T.Notes(maskCDL) = string(T.Notes(maskCDL)) + "|normalized_channel_model=" + reqModel;
     end
 end
 if all(~isfinite(double(T.DopplerHz)))
@@ -1662,9 +2245,16 @@ for k = 1:nTrials
     try
         out = sixgr.link.runCellSearch_MIB_SIB1(cfg, "NumSubframes", 10);
         ok = logical(sixgr.util.structGet(out, "Ok", false));
+        skipped = logical(sixgr.util.structGet(out, "Skipped", false));
+        ok = ok && ~skipped;
         r.CRCPass = double(ok);
-        r.DetectionMetric = double(ok);
-        if ok, r.Status = "PASS"; end
+        if ok
+            r.DetectionMetric = 1;
+            r.Status = "PASS";
+        else
+            r.DetectionMetric = NaN;
+            r.Status = "FAIL";
+        end
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
     catch ME
         r.Crash = true;
@@ -1685,10 +2275,20 @@ for k = 1:nTrials
     r.Status = "FAIL";
     try
         out = sixgr.link.runPRACHDetection(cfg, "SNR_dB", snr_dB);
-        ok = logical(sixgr.util.structGet(out, "Ok", false));
-        r.CRCPass = double(ok);
-        r.DetectionMetric = double(ok);
-        if ok, r.Status = "PASS"; end
+        completed = logical(sixgr.util.structGet(out, "Ok", false)) && ...
+            ~logical(sixgr.util.structGet(out, "Skipped", false));
+        detected = logical(sixgr.util.structGet(out, "Detected", false));
+        r.CRCPass = double(detected);
+        r.DetectionMetric = double(sixgr.util.structGet(out, "DetectionMetric", double(detected)));
+        if completed && detected
+            r.Status = "PASS";
+        elseif logical(sixgr.util.structGet(out, "Skipped", false))
+            r.CRCPass = NaN;
+            r.DetectionMetric = NaN;
+            r.Status = "NA";
+        else
+            r.Status = "FAIL";
+        end
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
     catch ME
         r.Crash = true;
@@ -1812,7 +2412,7 @@ row.MCS = NaN;
 row.PRBs = NaN;
 row.Layers = NaN;
 row.TBSize_bits = NaN;
-row.ChannelModel = string(sixgr.util.structGet(cfg, "channel.model", "AWGN"));
+row.ChannelModel = localResolveRequestedLinkChannelModel(cfg);
 row.DopplerHz = dopp;
 row.CRCPass = NaN;
 row.DecoderIterations = NaN;
@@ -1879,7 +2479,7 @@ if logical(opt.ReuseLinkForDetailedDiagnostics) && builtin("isstruct", linkRef) 
         && logical(sixgr.util.structGet(linkRef, "Ok", false))
     sixgr.util.ensureDir(fullfile(runFolder, "csv"));
     sixgr.util.ensureDir(fullfile(runFolder, "mat"));
-    sixgr.util.ensureDir(fullfile(runFolder, "fig"));
+    sixgr.util.ensureDir(fullfile(runFolder, "image"));
     sixgr.util.ensureDir(fullfile(runFolder, "logs"));
 
     T = sixgr.util.structGet(linkRef, "KPITable", table());
@@ -1941,6 +2541,8 @@ if nargin < 4
     blerLUT = struct();
 end
 strictSLS = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
+strictSLS = strictSLS || localNoProxyTruthContractEnabled(cfg, opt);
+strictSLS = strictSLS || strcmpi(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")), "truth");
 numSites = max(1, round(double(sixgr.util.structGet(cfg, "scenario.layout.nSites", 1))));
 numSectors = max(1, round(double(sixgr.util.structGet(cfg, "scenario.layout.nSectorsPerSite", 1))));
 multiCellRequested = (numSites * numSectors) > 1;
@@ -1964,14 +2566,18 @@ cfgS.scenario.mobility.enable = true;
 cfgS.scenario.mobility.model = "randomWaypoint";
 cfgS.scenario.ue.nUE = round(double(opt.SystemNumUE));
 cfgS.scenario.nUE = round(double(opt.SystemNumUE));
+if strcmpi(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")), "truth")
+    cfgS.system.phyBackend = "waveform";
+end
 
 ctx = sixgr.core.SimContext(cfgS, "RunFolder", runFolder);
 ctx.Logger.EchoToConsole = false;
 
 params = struct();
+slotDur_s = localSlotDuration(cfgS);
 params.SimDuration_s = double(opt.SystemDuration_s);
-params.TTI_s = 1.0;
-params.NumTTI = max(100, ceil(double(opt.SystemDuration_s)));
+params.TTI_s = slotDur_s;
+params.NumTTI = max(1, ceil(double(opt.SystemDuration_s) / max(slotDur_s, eps)));
 params.ForceLong = true;
 params.DetailedTrace = logical(opt.SystemDetailedTrace);
 if ~isempty(fieldnames(blerLUT))
@@ -2002,7 +2608,7 @@ cfgS.scenario.nUE = round(double(opt.SystemNumUE));
 sixgr.util.ensureDir(runFolder);
 sixgr.util.ensureDir(fullfile(runFolder, "csv"));
 sixgr.util.ensureDir(fullfile(runFolder, "mat"));
-sixgr.util.ensureDir(fullfile(runFolder, "fig"));
+sixgr.util.ensureDir(fullfile(runFolder, "image"));
 sixgr.util.ensureDir(fullfile(runFolder, "logs"));
 
 nUE = max(1, round(double(opt.SystemNumUE)));
@@ -2014,7 +2620,10 @@ qMaxBits = double(sixgr.util.structGet(cfgS, "system.queueMaxBits", 5e7));
 
 try
     traffic = sixgr.system.TrafficFactory.generate(cfgS, nUE, nTTI, tti_s);
-catch
+catch ME
+    if localNoProxyTruthContractEnabled(cfgS, opt)
+        rethrow(ME);
+    end
     traffic = struct();
     traffic.OfferedBitsDL = max(0, round(6e4 + 2e4*randn(nTTI, nUE)));
     traffic.OfferedBitsUL = max(0, round(2e4 + 1e4*randn(nTTI, nUE)));
@@ -2118,178 +2727,15 @@ out.RunFolder = runFolder;
 out.Result = res;
 out.KPITable = kpi;
 out.Errors = strings(0,1);
-out.Notes = "System run used FAST_PROXY_KERNEL (queue/scheduler abstraction).";
+out.Notes = "System run used FAST_PROXY_KERNEL; aggregate-only slot traces are exported and per-grant tables stay empty when no real grants exist.";
 end
 
 function traces = localBuildFastSystemTraceArtifacts( ...
     nTTI, nUE, tti_s, slot, offeredDL, offeredUL, servedDL, servedUL, ...
     droppedDL, droppedUL, schedDL, schedUL, sinrDL, sinrUL, meanQ, bw_Hz)
-
-time_s = (double(slot(:)) - 1) * double(tti_s);
-nDL = sum(schedDL(:) > 0);
-nUL = sum(schedUL(:) > 0);
-nGrant = nDL + nUL;
-
-if nGrant <= 0
-    schedulerGrants = table([], [], string.empty(0,1), string.empty(0,1), [], [], [], [], [], [], [], [], [], [], [], [], [], ...
-        false(0,1), [], [], [], false(0,1), [], [], [], [], [], [], [], [], [], string.empty(0,1), ...
-        'VariableNames', {'TTI','Time_s','Direction','SlotDirection','CellID','UE','PRBStart','PRBCount', ...
-        'SymbolStart','NumSymbols','TBSBits','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
-        'SINR_dB','BLER','Ack','HarqID','RV','NDI','IsRetransmission','DAI','K1','K2', ...
-        'SearchSpaceID','CORESETID','BWPId','HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantReason'});
-else
-    TTI = zeros(nGrant,1);
-    Time_s = zeros(nGrant,1);
-    Direction = strings(nGrant,1);
-    SlotDirection = repmat("FDD_DLUL", nGrant, 1);
-    CellID = ones(nGrant,1);
-    UE = ones(nGrant,1);
-    PRBStart = zeros(nGrant,1);
-    PRBCount = zeros(nGrant,1);
-    SymbolStart = zeros(nGrant,1);
-    NumSymbols = repmat(14, nGrant, 1);
-    TBSBits = zeros(nGrant,1);
-    CQIUsed = zeros(nGrant,1);
-    MCSIndex = zeros(nGrant,1);
-    NumLayers = ones(nGrant,1);
-    TargetCodeRate = repmat(0.5, nGrant, 1);
-    SINR_dB = zeros(nGrant,1);
-    BLER = ones(nGrant,1);
-    Ack = false(nGrant,1);
-    HarqID = zeros(nGrant,1);
-    RV = zeros(nGrant,1);
-    NDI = ones(nGrant,1);
-    IsRetransmission = false(nGrant,1);
-    DAI = ones(nGrant,1);
-    K1 = repmat(4, nGrant, 1);
-    K2 = ones(nGrant,1);
-    SearchSpaceID = zeros(nGrant,1);
-    CORESETID = zeros(nGrant,1);
-    BWPId = zeros(nGrant,1);
-    HeadOfLineDelay_ms = zeros(nGrant,1);
-    BufferBytesBefore = zeros(nGrant,1);
-    BufferBytesAfter = zeros(nGrant,1);
-    GrantReason = repmat("fast_proxy_slot", nGrant, 1);
-
-    idx = 0;
-    for t = 1:nTTI
-        if schedDL(t) > 0
-            idx = idx + 1;
-            TTI(idx) = t;
-            Time_s(idx) = time_s(t);
-            Direction(idx) = "DL";
-            PRBCount(idx) = max(1, round(double(schedDL(t))));
-            TBSBits(idx) = max(0, round(double(servedDL(t))));
-            SINR_dB(idx) = mean(double(sinrDL(t,:)), "omitnan");
-            CQIUsed(idx) = localFastSINRToCQI(SINR_dB(idx));
-            MCSIndex(idx) = localFastCQIToMCS(CQIUsed(idx));
-            Ack(idx) = logical(TBSBits(idx) > 0);
-            BLER(idx) = double(~Ack(idx));
-            HarqID(idx) = mod(t - 1, 16);
-        end
-        if schedUL(t) > 0
-            idx = idx + 1;
-            TTI(idx) = t;
-            Time_s(idx) = time_s(t);
-            Direction(idx) = "UL";
-            PRBCount(idx) = max(1, round(double(schedUL(t))));
-            TBSBits(idx) = max(0, round(double(servedUL(t))));
-            SINR_dB(idx) = mean(double(sinrUL(t,:)), "omitnan");
-            CQIUsed(idx) = localFastSINRToCQI(SINR_dB(idx));
-            MCSIndex(idx) = localFastCQIToMCS(CQIUsed(idx));
-            Ack(idx) = logical(TBSBits(idx) > 0);
-            BLER(idx) = double(~Ack(idx));
-            HarqID(idx) = mod(t - 1, 16);
-        end
-    end
-
-    schedulerGrants = table(TTI, Time_s, Direction, SlotDirection, CellID, UE, PRBStart, PRBCount, ...
-        SymbolStart, NumSymbols, TBSBits, CQIUsed, MCSIndex, NumLayers, TargetCodeRate, ...
-        SINR_dB, BLER, Ack, HarqID, RV, NDI, IsRetransmission, DAI, K1, K2, ...
-        SearchSpaceID, CORESETID, BWPId, HeadOfLineDelay_ms, BufferBytesBefore, BufferBytesAfter, GrantReason, ...
-        'VariableNames', {'TTI','Time_s','Direction','SlotDirection','CellID','UE','PRBStart','PRBCount', ...
-        'SymbolStart','NumSymbols','TBSBits','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
-        'SINR_dB','BLER','Ack','HarqID','RV','NDI','IsRetransmission','DAI','K1','K2', ...
-        'SearchSpaceID','CORESETID','BWPId','HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantReason'});
-end
-
-if isempty(schedulerGrants)
-    harqTable = table([], [], string.empty(0,1), [], [], [], [], [], false(0,1), false(0,1), string.empty(0,1), [], [], [], [], ...
-        'VariableNames', {'TTI','Time_s','Direction','CellID','UE','HarqID','RV','NDI', ...
-        'IsRetransmission','Ack','Outcome','TBSBits','MCSIndex','CQIUsed','BLER'});
-else
-    outcome = repmat("NACK", height(schedulerGrants), 1);
-    outcome(logical(schedulerGrants.Ack)) = "ACK";
-    harqTable = table(schedulerGrants.TTI, schedulerGrants.Time_s, schedulerGrants.Direction, ...
-        schedulerGrants.CellID, schedulerGrants.UE, schedulerGrants.HarqID, ...
-        schedulerGrants.RV, schedulerGrants.NDI, schedulerGrants.IsRetransmission, ...
-        schedulerGrants.Ack, outcome, schedulerGrants.TBSBits, ...
-        schedulerGrants.MCSIndex, schedulerGrants.CQIUsed, schedulerGrants.BLER, ...
-        'VariableNames', {'TTI','Time_s','Direction','CellID','UE','HarqID','RV','NDI', ...
-        'IsRetransmission','Ack','Outcome','TBSBits','MCSIndex','CQIUsed','BLER'});
-end
-
-qDL = 0;
-qUL = 0;
-cellTTI = (1:nTTI).';
-cellTime = time_s;
-queueDLStart = zeros(nTTI,1);
-queueULStart = zeros(nTTI,1);
-queueDLEnd = zeros(nTTI,1);
-queueULEnd = zeros(nTTI,1);
-offDL = sum(double(offeredDL), 2);
-offUL = sum(double(offeredUL), 2);
-srvDL = double(servedDL(:));
-srvUL = double(servedUL(:));
-drpDL = double(droppedDL(:));
-drpUL = double(droppedUL(:));
-activeDL = sum(double(offeredDL) > 0, 2);
-activeUL = sum(double(offeredUL) > 0, 2);
-grantDL = double(schedDL(:) > 0);
-grantUL = double(schedUL(:) > 0);
-for t = 1:nTTI
-    queueDLStart(t) = qDL;
-    queueULStart(t) = qUL;
-    qDL = max(qDL + offDL(t) - srvDL(t) - drpDL(t), 0);
-    qUL = max(qUL + offUL(t) - srvUL(t) - drpUL(t), 0);
-    queueDLEnd(t) = qDL;
-    queueULEnd(t) = qUL;
-end
-
-cellLoad = table(cellTTI, cellTime, ones(nTTI,1), repmat("FDD_DLUL", nTTI, 1), ...
-    activeDL, activeUL, grantDL, grantUL, offDL, offUL, ...
-    queueDLStart, queueULStart, srvDL, srvUL, drpDL, drpUL, queueDLEnd, queueULEnd, ...
-    'VariableNames', {'TTI','Time_s','CellID','SlotDirection','ActiveUE_DL','ActiveUE_UL', ...
-    'GrantCountDL','GrantCountUL','OfferedBitsDL','OfferedBitsUL', ...
-    'QueueBitsDL_Begin','QueueBitsUL_Begin','ServedBitsDL','ServedBitsUL', ...
-    'DroppedBitsDL','DroppedBitsUL','QueueBitsDL_End','QueueBitsUL_End'});
-
-intrfRows = nTTI * nUE;
-intrfTTI = repelem((1:nTTI).', nUE, 1);
-intrfTime = repelem(time_s, nUE, 1);
-intrfUE = repmat((1:nUE).', nTTI, 1);
-noise_dBm = -174 + 10*log10(max(double(bw_Hz), 1)) + 7;
-interfDetail = table(intrfTTI, intrfTime, intrfUE, ones(intrfRows,1), ...
-    NaN(intrfRows,1), NaN(intrfRows,1), repmat(noise_dBm, intrfRows, 1), ...
-    zeros(intrfRows,1), zeros(intrfRows,1), zeros(intrfRows,1), ...
-    reshape(double(sinrDL).', [], 1), reshape(double(sinrUL).', [], 1), NaN(intrfRows,1), ...
-    'VariableNames', {'TTI','Time_s','UE','ServingCell','Pathloss_dB','RxPower_dBm', ...
-    'Noise_dBm','InterferenceMargin_dB','SmallScaleFading_dB','InterferenceVariation_dB', ...
-    'SINR_DL_dB','SINR_UL_dB','RSRP_dBm'});
-
-hoEvents = table([], [], [], [], [], [], [], string.empty(0,1), string.empty(0,1), ...
-    'VariableNames', {'UE','FromCell','ToCell','TriggerTTI','StartTTI','CompleteTTI','Interruption_ms','Status','Reason'});
-beamEvents = table([], [], [], [], [], [], [], [], string.empty(0,1), ...
-    'VariableNames', {'TTI','Time_s','UE','ServingCell','PrevBeamIndex','NewBeamIndex', ...
-    'PrevBeamGain_dB','NewBeamGain_dB','EventType'});
-
-traces = struct();
-traces.SchedulerGrants = schedulerGrants;
-traces.HARQProcesses = harqTable;
-traces.CellLoad = cellLoad;
-traces.InterferenceDetail = interfDetail;
-traces.HandoverEvents = hoEvents;
-traces.BeamEvents = beamEvents;
+traces = sixgr.system.buildFastProxyTraceArtifacts( ...
+    nTTI, nUE, tti_s, slot, offeredDL, offeredUL, servedDL, servedUL, ...
+    droppedDL, droppedUL, schedDL, schedUL, sinrDL, sinrUL, meanQ, bw_Hz);
 traces.MeanQueue = double(meanQ(:));
 end
 
@@ -2618,7 +3064,7 @@ for i = 1:n
     for k = 1:nSync
         try
             r = sixgr.link.runPRACHDetection(cfgS, "SNR_dB", snr);
-            okCnt = okCnt + double(logical(sixgr.util.structGet(r, "Ok", false)));
+            okCnt = okCnt + double(logical(sixgr.util.structGet(r, "Detected", false)));
         catch
         end
     end
@@ -3017,7 +3463,8 @@ function out = localRunEndToEndProbe(cfg, runFolder, opt, e2eAirLUT)
 if nargin < 4
     e2eAirLUT = struct();
 end
-strictValidation = logical(opt.E2EStrictValidation);
+noProxyTruthContract = localNoProxyTruthContractEnabled(cfg, opt);
+strictValidation = logical(opt.E2EStrictValidation) || noProxyTruthContract;
 airModeReq = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut"))));
 if logical(opt.UseMexAcceleration) && ~strictValidation && ~strcmp(airModeReq, "truth") && ...
         (exist("sixgr_e2e_fast_core_kernel_mex","file") == 3 || exist("sixgr_e2e_fast_core_kernel","file") == 2)
@@ -3028,7 +3475,7 @@ end
 sixgr.util.ensureDir(runFolder);
 sixgr.util.ensureDir(fullfile(runFolder, "csv"));
 sixgr.util.ensureDir(fullfile(runFolder, "mat"));
-sixgr.util.ensureDir(fullfile(runFolder, "fig"));
+sixgr.util.ensureDir(fullfile(runFolder, "image"));
 sixgr.util.ensureDir(fullfile(runFolder, "logs"));
 
 slotDurBase_s = localSlotDuration(cfg);
@@ -3103,7 +3550,7 @@ waveformUL = string(sixgr.util.structGet(cfgE, "phy.waveform.ul", "CP-OFDM"));
 try
     traffic = sixgr.system.TrafficFactory.generate(cfgE, nUE, nSlots, slotDur_s);
 catch ME
-    if strictValidation
+    if strictValidation || noProxyTruthContract
         rethrow(ME);
     end
     traffic = struct();
@@ -3160,7 +3607,8 @@ pdb_ms = double(sixgr.util.structGet(traffic, "PacketDelayBudget_ms", sixgr.util
 if ~isfinite(pdb_ms) || pdb_ms <= 0
     pdb_ms = 50;
 end
-baseChunk = max(512, round(double(sixgr.util.structGet(cfgE, "traffic.rlcSduChunk_bytes", 32768))));
+chunkInfo = localResolveE2EAppChunk(cfgE, traffic);
+baseChunk = chunkInfo.Bytes;
 appSDUChunkBytes = baseChunk;
 if logical(opt.E2EScaleChunkWithCompression)
     maxChunk = max(1024, round(double(opt.E2EMaxSDUChunkBytes)));
@@ -3170,9 +3618,9 @@ end
 airModel = localBuildE2EAirModel(cfgE, fileparts(runFolder), opt, e2eAirLUT);
 airModelName = string(sixgr.util.structGet(airModel, "Mode", "logistic"));
 airModelSource = string(sixgr.util.structGet(airModel, "Source", "default"));
+artifactSpec = localBuildE2EArtifactSpec("truth");
 enableSemanticChecks = logical(opt.E2EEnableSemanticChecks);
 enablePacketTrace = true;
-pdbSlots = max(1, ceil((pdb_ms * 1e-3) / max(semanticSlotDur_s, eps)));
 
 sdapDLTx = cell(nUE,1); sdapDLRx = cell(nUE,1);
 pdcpDLTx = cell(nUE,1); pdcpDLRx = cell(nUE,1);
@@ -3282,6 +3730,11 @@ end
 if strictValidation && ~attachOK
     error("sixgr:e2e:AttachFailedStrict", "Strict validation requires successful attach before data scheduling.");
 end
+if logical(attachOK) && isfinite(double(attachSlots))
+    attachGateSlots = min(nSlots, max(0, round(double(attachSlots))));
+else
+    attachGateSlots = nSlots;
+end
 
 slotIndex = (1:nSlots).';
 offeredBits = zeros(nSlots,1);
@@ -3339,6 +3792,15 @@ if ~(isfinite(nRB) && nRB >= 1)
     nRB = 51;
 end
 
+coupledTruth = localInitE2ESystemCouplingContext();
+if strcmp(airModeReq, "truth")
+    coupledTruth = localRunE2ESystemCoupling( ...
+        cfgE, runFolder, traffic, nSlots, slotDur_s, nUE, nRB, ...
+        attachGateSlots, opt, flowDirCfg);
+    [appSDUChunkBytes, chunkInfo.Source] = localCapE2EAppChunkForCoupledTruth( ...
+        appSDUChunkBytes, chunkInfo.Source, coupledTruth);
+end
+
 for t = 1:nSlots
     [slotDL, slotUL, slotLbl] = localSlotDuplexStateE2E(cfgE, t);
     slotDirection(t) = slotLbl;
@@ -3347,19 +3809,24 @@ for t = 1:nSlots
     elseif flowDirCfg == "UL"
         slotDL = false;
     end
-    dataPlaneReady = logical(attachOK) && isfinite(double(attachSlots)) && ...
-        (t > max(0, round(double(attachSlots))));
+    dataPlaneReady = logical(attachOK) && (t > attachGateSlots);
     if ~dataPlaneReady
         slotDL = false;
         slotUL = false;
     end
-    offeredBitsDL(t) = sum(traffic.OfferedBitsDL(t,:));
-    offeredBitsUL(t) = sum(traffic.OfferedBitsUL(t,:));
+    slotOfferedDL = double(traffic.OfferedBitsDL(t,:));
+    slotOfferedUL = double(traffic.OfferedBitsUL(t,:));
+    if ~dataPlaneReady
+        slotOfferedDL(:) = 0;
+        slotOfferedUL(:) = 0;
+    end
+    offeredBitsDL(t) = sum(slotOfferedDL);
+    offeredBitsUL(t) = sum(slotOfferedUL);
     offeredBits(t) = offeredBitsDL(t) + offeredBitsUL(t);
 
     for u = 1:nUE
-        bytesInDL = floor(max(double(traffic.OfferedBitsDL(t,u)), 0) / 8);
-        bytesInUL = floor(max(double(traffic.OfferedBitsUL(t,u)), 0) / 8);
+        bytesInDL = floor(max(double(slotOfferedDL(u)), 0) / 8);
+        bytesInUL = floor(max(double(slotOfferedUL(u)), 0) / 8);
 
         if bytesInDL > 0
             ioDL_AppIn(t) = ioDL_AppIn(t) + bytesInDL;
@@ -3372,9 +3839,8 @@ for t = 1:nSlots
                 pdcpPduDL = pdcpDLTx{u}.tx(sdapPduDL.SDUPayload);
                 rlcDLTx{u}.addSDU(pdcpPduDL);
                 if enableSemanticChecks || enablePacketTrace
-                    [virtPktQ_DL{u}, nextPktIdDL(u)] = localEnqueueVirtualPacket( ...
-                        virtPktQ_DL{u}, nextPktIdDL(u), chunk, t, ...
-                        "FlowID", u, "BearerID", lcidData, "QFI", qfi);
+                    [virtPktQ_DL{u}, nextPktIdDL(u)] = localEnqueueVirtualPacketDirect( ...
+                        virtPktQ_DL{u}, nextPktIdDL(u), chunk, t, u, lcidData, qfi);
                     generatedPktsDL_UE(u) = generatedPktsDL_UE(u) + 1;
                 end
                 ioDL_SDAP_TxOut(t) = ioDL_SDAP_TxOut(t) + numel(sdapPduDL.SDUPayload);
@@ -3395,9 +3861,8 @@ for t = 1:nSlots
                 pdcpPduUL = pdcpULTx{u}.tx(sdapPduUL.SDUPayload);
                 rlcULTx{u}.addSDU(pdcpPduUL);
                 if enableSemanticChecks || enablePacketTrace
-                    [virtPktQ_UL{u}, nextPktIdUL(u)] = localEnqueueVirtualPacket( ...
-                        virtPktQ_UL{u}, nextPktIdUL(u), chunk, t, ...
-                        "FlowID", u, "BearerID", lcidData, "QFI", qfi);
+                    [virtPktQ_UL{u}, nextPktIdUL(u)] = localEnqueueVirtualPacketDirect( ...
+                        virtPktQ_UL{u}, nextPktIdUL(u), chunk, t, u, lcidData, qfi);
                     generatedPktsUL_UE(u) = generatedPktsUL_UE(u) + 1;
                 end
                 ioUL_SDAP_TxOut(t) = ioUL_SDAP_TxOut(t) + numel(sdapPduUL.SDUPayload);
@@ -3427,23 +3892,40 @@ for t = 1:nSlots
 
     grantsDL = struct([]);
     grantsUL = struct([]);
-    if slotDL
-        try
-            [grantsDL, ~] = schedDL.schedule(t-1, ueStatesDL, struct("NPRB", nRB, "SymbolAllocation", [0 14]));
-        catch
-            grantsDL = struct([]);
+    if coupledTruth.Enabled
+        grantsDL = coupledTruth.GrantsDLBySlot{t};
+        grantsUL = coupledTruth.GrantsULBySlot{t};
+    else
+        if slotDL
+            try
+                [grantsDL, ~] = schedDL.schedule(t-1, ueStatesDL, struct("NPRB", nRB, "SymbolAllocation", [0 14]));
+            catch
+                grantsDL = struct([]);
+            end
         end
-    end
-    if slotUL
-        try
-            [grantsUL, ~] = schedUL.schedule(t-1, ueStatesUL, struct("NPRB", nRB, "SymbolAllocation", [0 14]));
-        catch
-            grantsUL = struct([]);
+        if slotUL
+            try
+                [grantsUL, ~] = schedUL.schedule(t-1, ueStatesUL, struct("NPRB", nRB, "SymbolAllocation", [0 14]));
+            catch
+                grantsUL = struct([]);
+            end
         end
     end
     grantCountDL(t) = numel(grantsDL);
     grantCountUL(t) = numel(grantsUL);
     grantCount(t) = grantCountDL(t) + grantCountUL(t);
+    if coupledTruth.Enabled
+        cqiCoupled = zeros(0,1);
+        if ~isempty(grantsDL)
+            cqiCoupled = [cqiCoupled; reshape(double([grantsDL.CQIUsed]), [], 1)]; %#ok<AGROW>
+        end
+        if ~isempty(grantsUL)
+            cqiCoupled = [cqiCoupled; reshape(double([grantsUL.CQIUsed]), [], 1)]; %#ok<AGROW>
+        end
+        if ~isempty(cqiCoupled)
+            meanCQI(t) = mean(cqiCoupled, "omitnan");
+        end
+    end
     feedbackDL = repmat(struct("RNTI",0, "TBSBits",0, "Ack",false), max(1, numel(grantsDL)), 1);
     feedbackUL = repmat(struct("RNTI",0, "TBSBits",0, "Ack",false), max(1, numel(grantsUL)), 1);
     nFbDL = 0;
@@ -3455,7 +3937,10 @@ for t = 1:nSlots
         gr = grantsDL(g);
         u = max(1, min(nUE, round(double(gr.RNTI))));
         queueBefore = max(0, queueBytesDL_UE(u));
-        tbsBytesBase = max(1, round(double(sixgr.util.structGet(gr, "TBSBytes", 120))));
+        [grantTBSBits, ~] = sixgr.util.resolveGrantTBSBits(gr, ...
+            sprintf("E2E DL slot=%d grant=%d RNTI=%d", round(t), round(g), round(u)));
+        grantTBSBytes = max(1, round(grantTBSBits / 8));
+        tbsBytesBase = grantTBSBytes;
         tbsBytes = max(1, round(double(tbsBytesBase) * double(serviceScale)));
         harqId = 0;
         isRetx = false;
@@ -3487,13 +3972,13 @@ for t = 1:nSlots
                 sduList = rlcDLTx{u}.buildMACSDUs(localMacPayloadBudget(tbsBytes));
                 ceList = struct([]);
                 ioDL_RLC_TxOut(t) = ioDL_RLC_TxOut(t) + localSumMACSDUPayloadBytes(sduList);
-                [macPdu, ~] = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "DL");
+                macPdu = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "DL");
             end
         else
             sduList = rlcDLTx{u}.buildMACSDUs(localMacPayloadBudget(tbsBytes));
             ioDL_RLC_TxOut(t) = ioDL_RLC_TxOut(t) + localSumMACSDUPayloadBytes(sduList);
             ceList = struct([]);
-            [macPdu, ~] = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "DL");
+            macPdu = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "DL");
         end
         ioDL_MAC_TBOut(t) = ioDL_MAC_TBOut(t) + numel(macPdu);
 
@@ -3502,8 +3987,12 @@ for t = 1:nSlots
         catch
         end
 
-        airRes = localDeliverGrantOverPhy(cfgE, "DL", gr, macPdu, snr_dB, airModel, strictValidation, ...
-            double(ueStatesDL(u).CQI), retxDepthDL(u,pid));
+        if coupledTruth.Enabled && isfield(gr, "CoupledAck")
+            airRes = localCoupledGrantAirResult(gr, coupledTruth);
+        else
+            airRes = localDeliverGrantOverPhy(cfgE, "DL", gr, macPdu, snr_dB, airModel, strictValidation, ...
+                double(ueStatesDL(u).CQI), retxDepthDL(u,pid));
+        end
         ack = logical(airRes.Ok);
         blerEff = double(airRes.BLER); %#ok<NASGU>
         virtPktQ_DL{u} = localMarkVirtualPacketTx(virtPktQ_DL{u}, numel(macPdu), t, pid, ack);
@@ -3514,7 +4003,7 @@ for t = 1:nSlots
         end
 
         nFbDL = nFbDL + 1;
-        feedbackDL(nFbDL) = struct("RNTI", u, "TBSBits", 8*double(numel(macPdu)), "Ack", ack);
+        feedbackDL(nFbDL) = struct("RNTI", u, "TBSBits", grantTBSBits, "Ack", ack);
 
         if ack
             ackCountDL(t) = ackCountDL(t) + 1;
@@ -3522,7 +4011,7 @@ for t = 1:nSlots
             retxDepthDL(u,pid) = 0;
             ioDL_Air_RxIn(t) = ioDL_Air_RxIn(t) + numel(macPdu);
 
-            [rxSdus, ~] = sixgr.l2.mac.TBAssembler.disassemble(macPdu, "Direction", "DL");
+            rxSdus = sixgr.l2.mac.TBAssembler.disassemble(macPdu, "Direction", "DL");
             deliveredNowBytes = 0;
             disasmBytes = 0;
             for s = 1:numel(rxSdus)
@@ -3572,9 +4061,8 @@ for t = 1:nSlots
             deliveredBitsDL(t) = deliveredBitsDL(t) + 8*double(deliveredNowBytes);
             queueBytesDL_UE(u) = max(queueBytesDL_UE(u) - numel(macPdu), 0);
             if enableSemanticChecks || enablePacketTrace
-                [virtPktQ_DL{u}, sem] = localConsumeVirtualPackets(virtPktQ_DL{u}, deliveredNowBytes, ...
-                    t, semanticSlotDur_s, pdbSlots, lastDeliveredPktIdDL(u), ...
-                    "Direction", "DL", "UE", u);
+                [virtPktQ_DL{u}, sem] = localConsumeVirtualPacketsDirect(virtPktQ_DL{u}, deliveredNowBytes, ...
+                    t, semanticSlotDur_s, pdb_ms, lastDeliveredPktIdDL(u), "DL", u);
                 lastDeliveredPktIdDL(u) = sem.LastDeliveredId;
                 deliveredPktsDL_UE(u) = deliveredPktsDL_UE(u) + sem.DeliveredPackets;
                 deadlineMissPktsDL_UE(u) = deadlineMissPktsDL_UE(u) + sem.DeadlineMissPackets;
@@ -3600,13 +4088,14 @@ for t = 1:nSlots
         tr.Slot = t;
         tr.Time_s = (t - 1) * slotDur_s;
         tr.Direction = "DL";
+        tr.CellID = double(sixgr.util.structGet(gr, "CellID", 1));
         tr.UE = u;
         tr.FlowID = u;
         tr.BearerID = lcidData;
         tr.QFI = qfi;
         tr.GrantIndex = g;
         tr.NumPRB = numPRB;
-        tr.TBSBytes = numel(macPdu);
+        tr.TBSBytes = grantTBSBytes;
         tr.CQIUsed = cqiUsed;
         tr.MCSIndex = mcsIdx;
         tr.NumLayers = numLayers;
@@ -3632,7 +4121,10 @@ for t = 1:nSlots
         gr = grantsUL(g);
         u = max(1, min(nUE, round(double(gr.RNTI))));
         queueBefore = max(0, queueBytesUL_UE(u));
-        tbsBytesBase = max(1, round(double(sixgr.util.structGet(gr, "TBSBytes", 120))));
+        [grantTBSBits, ~] = sixgr.util.resolveGrantTBSBits(gr, ...
+            sprintf("E2E UL slot=%d grant=%d RNTI=%d", round(t), round(g), round(u)));
+        grantTBSBytes = max(1, round(grantTBSBits / 8));
+        tbsBytesBase = grantTBSBytes;
         tbsBytes = max(1, round(double(tbsBytesBase) * double(serviceScale)));
         harqId = 0;
         isRetx = false;
@@ -3664,7 +4156,7 @@ for t = 1:nSlots
                 sduList = rlcULTx{u}.buildMACSDUs(localMacPayloadBudget(tbsBytes));
                 ceList = struct([]);
                 ioUL_RLC_TxOut(t) = ioUL_RLC_TxOut(t) + localSumMACSDUPayloadBytes(sduList);
-                [macPdu, ~] = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "UL");
+                macPdu = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "UL");
             end
         else
             sduList = rlcULTx{u}.buildMACSDUs(localMacPayloadBudget(tbsBytes));
@@ -3680,7 +4172,7 @@ for t = 1:nSlots
                 if ~isempty(cePHR), ceList = [ceList cePHR]; end
             catch
             end
-            [macPdu, ~] = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "UL");
+            macPdu = sixgr.l2.mac.TBAssembler.assemble(tbsBytes, sduList, ceList, "Direction", "UL");
         end
         ioUL_MAC_TBOut(t) = ioUL_MAC_TBOut(t) + numel(macPdu);
 
@@ -3689,8 +4181,12 @@ for t = 1:nSlots
         catch
         end
 
-        airRes = localDeliverGrantOverPhy(cfgE, "UL", gr, macPdu, snr_dB + ulSnrOffset_dB, airModel, strictValidation, ...
-            double(ueStatesUL(u).CQI), retxDepthUL(u,pid));
+        if coupledTruth.Enabled && isfield(gr, "CoupledAck")
+            airRes = localCoupledGrantAirResult(gr, coupledTruth);
+        else
+            airRes = localDeliverGrantOverPhy(cfgE, "UL", gr, macPdu, snr_dB + ulSnrOffset_dB, airModel, strictValidation, ...
+                double(ueStatesUL(u).CQI), retxDepthUL(u,pid));
+        end
         ack = logical(airRes.Ok);
         blerEff = double(airRes.BLER); %#ok<NASGU>
         virtPktQ_UL{u} = localMarkVirtualPacketTx(virtPktQ_UL{u}, numel(macPdu), t, pid, ack);
@@ -3701,7 +4197,7 @@ for t = 1:nSlots
         end
 
         nFbUL = nFbUL + 1;
-        feedbackUL(nFbUL) = struct("RNTI", u, "TBSBits", 8*double(numel(macPdu)), "Ack", ack);
+        feedbackUL(nFbUL) = struct("RNTI", u, "TBSBits", grantTBSBits, "Ack", ack);
 
         if ack
             ackCountUL(t) = ackCountUL(t) + 1;
@@ -3709,7 +4205,7 @@ for t = 1:nSlots
             retxDepthUL(u,pid) = 0;
             ioUL_Air_RxIn(t) = ioUL_Air_RxIn(t) + numel(macPdu);
 
-            [rxSdus, ~] = sixgr.l2.mac.TBAssembler.disassemble(macPdu, "Direction", "UL");
+            rxSdus = sixgr.l2.mac.TBAssembler.disassemble(macPdu, "Direction", "UL");
             deliveredNowBytes = 0;
             disasmBytes = 0;
             for s = 1:numel(rxSdus)
@@ -3759,9 +4255,8 @@ for t = 1:nSlots
             deliveredBitsUL(t) = deliveredBitsUL(t) + 8*double(deliveredNowBytes);
             queueBytesUL_UE(u) = max(queueBytesUL_UE(u) - numel(macPdu), 0);
             if enableSemanticChecks || enablePacketTrace
-                [virtPktQ_UL{u}, sem] = localConsumeVirtualPackets(virtPktQ_UL{u}, deliveredNowBytes, ...
-                    t, semanticSlotDur_s, pdbSlots, lastDeliveredPktIdUL(u), ...
-                    "Direction", "UL", "UE", u);
+                [virtPktQ_UL{u}, sem] = localConsumeVirtualPacketsDirect(virtPktQ_UL{u}, deliveredNowBytes, ...
+                    t, semanticSlotDur_s, pdb_ms, lastDeliveredPktIdUL(u), "UL", u);
                 lastDeliveredPktIdUL(u) = sem.LastDeliveredId;
                 deliveredPktsUL_UE(u) = deliveredPktsUL_UE(u) + sem.DeliveredPackets;
                 deadlineMissPktsUL_UE(u) = deadlineMissPktsUL_UE(u) + sem.DeadlineMissPackets;
@@ -3787,13 +4282,14 @@ for t = 1:nSlots
         tr.Slot = t;
         tr.Time_s = (t - 1) * slotDur_s;
         tr.Direction = "UL";
+        tr.CellID = double(sixgr.util.structGet(gr, "CellID", 1));
         tr.UE = u;
         tr.FlowID = u;
         tr.BearerID = lcidData;
         tr.QFI = qfi;
         tr.GrantIndex = g;
         tr.NumPRB = numPRB;
-        tr.TBSBytes = numel(macPdu);
+        tr.TBSBytes = grantTBSBytes;
         tr.CQIUsed = cqiUsed;
         tr.MCSIndex = mcsIdx;
         tr.NumLayers = numLayers;
@@ -3820,16 +4316,18 @@ for t = 1:nSlots
             grantTraceChunks, grantTraceChunkCount, slotGrantRows(1:nSlotGrantRows));
     end
 
-    if nFbDL > 0
-        try
-            schedDL.updateAfterRx(feedbackDL(1:nFbDL));
-        catch
+    if ~coupledTruth.Enabled
+        if nFbDL > 0
+            try
+                schedDL.updateAfterRx(feedbackDL(1:nFbDL));
+            catch
+            end
         end
-    end
-    if nFbUL > 0
-        try
-            schedUL.updateAfterRx(feedbackUL(1:nFbUL));
-        catch
+        if nFbUL > 0
+            try
+                schedUL.updateAfterRx(feedbackUL(1:nFbUL));
+            catch
+            end
         end
     end
 
@@ -3852,14 +4350,14 @@ if enablePacketTrace
     end
     for u = 1:nUE
         [virtPktQ_DL{u}, dropRowsDL] = localFinalizeVirtualQueueDrops( ...
-            virtPktQ_DL{u}, nSlots, semanticSlotDur_s, pdbSlots, ...
+            virtPktQ_DL{u}, nSlots, semanticSlotDur_s, pdb_ms, ...
             lastDeliveredPktIdDL(u), "DL", u, finalDropCause);
         if ~isempty(dropRowsDL)
             [packetTraceChunks, packetTraceChunkCount] = localPushStructChunk( ...
                 packetTraceChunks, packetTraceChunkCount, dropRowsDL(:));
         end
         [virtPktQ_UL{u}, dropRowsUL] = localFinalizeVirtualQueueDrops( ...
-            virtPktQ_UL{u}, nSlots, semanticSlotDur_s, pdbSlots, ...
+            virtPktQ_UL{u}, nSlots, semanticSlotDur_s, pdb_ms, ...
             lastDeliveredPktIdUL(u), "UL", u, finalDropCause);
         if ~isempty(dropRowsUL)
             [packetTraceChunks, packetTraceChunkCount] = localPushStructChunk( ...
@@ -3884,9 +4382,6 @@ offeredUL_Mbps = totalOfferedBitsUL / max(simDur_s, eps) / 1e6;
 goodput_Mbps_total = totalDeliveredBits / max(simDur_s, eps) / 1e6;
 goodputDL_Mbps_total = totalDeliveredBitsDL / max(simDur_s, eps) / 1e6;
 goodputUL_Mbps_total = totalDeliveredBitsUL / max(simDur_s, eps) / 1e6;
-deliveryRatio = totalDeliveredBits / max(totalOfferedBits, 1);
-deliveryRatioDL = totalDeliveredBitsDL / max(totalOfferedBitsDL, 1);
-deliveryRatioUL = totalDeliveredBitsUL / max(totalOfferedBitsUL, 1);
 retxProb = sum(retxCount) / max(sum(grantCount), 1);
 retxProbDL = sum(retxCountDL) / max(sum(grantCountDL), 1);
 retxProbUL = sum(retxCountUL) / max(sum(grantCountUL), 1);
@@ -3898,26 +4393,20 @@ nackRateDL = sum(nackCountDL) / max(sum(grantCountDL), 1);
 nackRateUL = sum(nackCountUL) / max(sum(grantCountUL), 1);
 deliveredBytesUE = deliveredBytesDL_UE + deliveredBytesUL_UE;
 jain = (sum(deliveredBytesUE)^2) / max(nUE * sum(deliveredBytesUE.^2), eps);
-latencySamplesDL_ms = localFinalizeLatencyBuffer(latencyDLBuf);
-latencySamplesUL_ms = localFinalizeLatencyBuffer(latencyULBuf);
-[packetIntegrityTable, semanticPassRate] = localBuildE2EPacketIntegrityTable( ...
-    generatedPktsDL_UE, deliveredPktsDL_UE, deadlineMissPktsDL_UE, ...
-    duplicatePktsDL_UE, reorderedPktsDL_UE, latencySamplesDL_ms, ...
-    generatedPktsUL_UE, deliveredPktsUL_UE, deadlineMissPktsUL_UE, ...
-    duplicatePktsUL_UE, reorderedPktsUL_UE, latencySamplesUL_ms, pdb_ms);
 packetTraceTable = localPacketTraceRowsToTable(packetTraceRows);
 [schedulerTraceTable, harqTraceTable] = localBuildE2EGrantTraceTables(grantTraceRows);
 attachTraceTable = localBuildE2EAttachTraceTable(attachTraceRows);
+[packetIntegrityTable, semanticPassRate] = localBuildE2EPacketIntegrityTableFromTrace(packetTraceTable, pdb_ms);
 [flowSummaryTable, bearerSummaryTable, dropCauseTable] = localBuildE2ETraceSummaries(packetTraceTable, simDur_s);
-if ~isempty(packetTraceTable)
-    packetTraceTable.TraceMode = repmat("FULL_STACK_REPLAY", height(packetTraceTable), 1);
-end
-if ~isempty(schedulerTraceTable)
-    schedulerTraceTable.TraceMode = repmat("FULL_STACK_REPLAY", height(schedulerTraceTable), 1);
-end
-if ~isempty(harqTraceTable)
-    harqTraceTable.TraceMode = repmat("FULL_STACK_REPLAY", height(harqTraceTable), 1);
-end
+[deliveryRatio, deliveryRatioDL, deliveryRatioUL] = localPacketIntegrityDeliveryRatios(packetIntegrityTable);
+packetTraceTable = localAnnotateE2ETraceTable(packetTraceTable, "TRUTH_REPLAY", "REAL_PACKET_TRAVERSAL");
+schedulerTraceTable = localAnnotateE2ETraceTable(schedulerTraceTable, "TRUTH_REPLAY", "REAL_SCHEDULER_GRANT_TRACE");
+harqTraceTable = localAnnotateE2ETraceTable(harqTraceTable, "TRUTH_REPLAY", "REAL_HARQ_TRACE");
+attachTraceTable = localAnnotateE2EDataTable(attachTraceTable, "TRUTH_REPLAY", "ATTACH_CONTROL_PLANE_TRACE");
+packetIntegrityTable = localAnnotateE2EDataTable(packetIntegrityTable, "TRUTH_REPLAY", "REAL_PACKET_TRAVERSAL");
+flowSummaryTable = localAnnotateE2EDataTable(flowSummaryTable, "TRUTH_REPLAY", "REAL_PACKET_TRAVERSAL");
+bearerSummaryTable = localAnnotateE2EDataTable(bearerSummaryTable, "TRUTH_REPLAY", "REAL_PACKET_TRAVERSAL");
+dropCauseTable = localAnnotateE2EDataTable(dropCauseTable, "TRUTH_REPLAY", "REAL_PACKET_TRAVERSAL");
 
 fddFrac = mean(slotDirection == "FDD_DLUL");
 dlFrac = mean(slotDirection == "DL");
@@ -3969,8 +4458,45 @@ summaryTable = table(string(trafficModel), string(transport), string(flowDirCfg)
                       'AttachSuccess','AttachSlots','AttachMessages','AttachRNTI', ...
                       'ServiceScaleFactor','E2EAirModel','E2EAirModelSource','StrictValidationMode', ...
                       'SemanticCheckPassRate_pct'});
-summaryTable.ExecutionBackend = repmat("FULL_STACK_REPLAY", height(summaryTable), 1);
-summaryTable.PHYMode = repmat("GRANT_DELIVERY_BACKEND", height(summaryTable), 1);
+summaryTable = localAppendE2ESummaryStrictness(summaryTable, cfg, opt);
+if coupledTruth.Enabled
+    summaryTable.E2EAirModelSource = repmat(string(coupledTruth.Source), height(summaryTable), 1);
+end
+summaryTable.PacketAccountingPassRate_pct = summaryTable.SemanticCheckPassRate_pct;
+summaryTable.PacketAccountingMeaning = repmat(localE2EAccountingMeaning(), height(summaryTable), 1);
+if coupledTruth.Enabled
+    summaryTable.ExecutionBackend = repmat("FULL_STACK_REPLAY_SYSTEM_COUPLED", height(summaryTable), 1);
+    summaryTable.PHYMode = repmat("SYSTEM_WAVEFORM_GRANT_TRACE_REPLAY", height(summaryTable), 1);
+    summaryTable.AirInterfaceBackend = repmat(string(coupledTruth.ExecutionBackend), height(summaryTable), 1);
+    summaryTable.AirInterfacePHYMode = repmat(string(coupledTruth.PHYMode), height(summaryTable), 1);
+else
+    summaryTable.ExecutionBackend = repmat("FULL_STACK_REPLAY", height(summaryTable), 1);
+    summaryTable.PHYMode = repmat("GRANT_DELIVERY_BACKEND", height(summaryTable), 1);
+    summaryTable.AirInterfaceBackend = repmat("WAVEFORM_GRANT_REPLAY", height(summaryTable), 1);
+    summaryTable.AirInterfacePHYMode = repmat("CRC_WAVEFORM_REPLAY", height(summaryTable), 1);
+end
+summaryTable.ExecutionMode = repmat("TRUTH_REPLAY", height(summaryTable), 1);
+summaryTable.ArtifactMode = repmat(string(artifactSpec.Mode), height(summaryTable), 1);
+summaryTable.PacketTraceSemantics = repmat("REAL_PACKET_TRAVERSAL", height(summaryTable), 1);
+summaryTable.SchedulerTraceSemantics = repmat("REAL_SCHEDULER_GRANT_TRACE", height(summaryTable), 1);
+summaryTable.HARQTraceSemantics = repmat("REAL_HARQ_TRACE", height(summaryTable), 1);
+summaryTable.SummaryArtifact = repmat(string(artifactSpec.TopLevel.SummaryCSV), height(summaryTable), 1);
+summaryTable.PacketIntegrityArtifact = repmat(string(artifactSpec.TopLevel.PacketIntegrityCSV), height(summaryTable), 1);
+qosEvaluationTable = localBuildE2EQoSEvaluationTable(cfgE, traffic, packetIntegrityTable, ...
+    offered_Mbps, offeredDL_Mbps, offeredUL_Mbps, ...
+    goodput_Mbps_total, goodputDL_Mbps_total, goodputUL_Mbps_total, logical(attachOK));
+qosEvaluationTable = localAnnotateE2EDataTable(qosEvaluationTable, "TRUTH_REPLAY", "QOS_SLA_EVALUATION");
+summaryTable = localAppendE2EQoSSummary(summaryTable, qosEvaluationTable, string(artifactSpec.TopLevel.QoSEvaluationCSV));
+summaryTable.PacketTraceArtifact = repmat("packet_flow/csv/" + string(artifactSpec.EndToEnd.PacketTraceCSV), height(summaryTable), 1);
+summaryTable.SchedulerTraceArtifact = repmat("packet_flow/csv/" + string(artifactSpec.EndToEnd.SchedulerTraceCSV), height(summaryTable), 1);
+summaryTable.HARQTraceArtifact = repmat("packet_flow/csv/" + string(artifactSpec.EndToEnd.HARQTraceCSV), height(summaryTable), 1);
+summaryTable.E2ESystemCoupled = repmat(logical(coupledTruth.Enabled), height(summaryTable), 1);
+summaryTable.E2ECouplingMode = repmat(string(coupledTruth.CouplingMode), height(summaryTable), 1);
+summaryTable.E2ECouplingNotes = repmat(string(coupledTruth.Notes), height(summaryTable), 1);
+summaryTable.AppSDUChunkBytes = repmat(double(appSDUChunkBytes), height(summaryTable), 1);
+summaryTable.AppSDUChunkSource = repmat(string(chunkInfo.Source), height(summaryTable), 1);
+summaryTable.ConformanceLevel = repmat(localDetermineConformanceLevel(cfg, opt, struct( ...
+    "E2ESystemCoupled", logical(coupledTruth.Enabled))), height(summaryTable), 1);
 
 componentIOTable = table(slotIndex, string(slotDirection), ...
     ioDL_AppIn, ioDL_SDAP_TxOut, ioDL_PDCP_TxOut, ioDL_RLC_TxOut, ioDL_MAC_TBOut, ...
@@ -3985,8 +4511,29 @@ componentIOTable = table(slotIndex, string(slotDirection), ...
 checkTable = localBuildE2EComponentChecks(componentIOTable, packetIntegrityTable);
 passRate = 100 * mean(double(checkTable.Pass));
 summaryTable.ComponentCheckPassRate_pct = passRate;
+resultIntegrityTable = sixgr.report.checkResultIntegrity(struct( ...
+    "SummaryTable", summaryTable, ...
+    "PacketIntegrityTable", packetIntegrityTable, ...
+    "FlowSummaryTable", flowSummaryTable, ...
+    "BearerSummaryTable", bearerSummaryTable, ...
+    "PacketTraceTable", packetTraceTable, ...
+    "CheckTable", checkTable));
+resultIntegrityPassRate = 100 * mean(double(resultIntegrityTable.Pass));
+summaryTable.ResultIntegrityPassRate_pct = resultIntegrityPassRate;
+summaryTable.ResultIntegrityFailureCount = sum(~logical(resultIntegrityTable.Pass));
+checkTable = localAppendResultIntegrityChecks(checkTable, resultIntegrityTable);
+if any(~logical(resultIntegrityTable.Pass)) && strictValidation
+    failedChecks = string(resultIntegrityTable.Check(~logical(resultIntegrityTable.Pass)));
+    error("sixgr:e2e:ResultIntegrityFailed", ...
+        "Strict E2E truth validation failed result-integrity checks: %s", ...
+        strjoin(cellstr(failedChecks), ", "));
+end
+slotTable = localAnnotateE2EDataTable(slotTable, "TRUTH_REPLAY", "SLOT_LEVEL_MEASUREMENTS");
+componentIOTable = localAnnotateE2EDataTable(componentIOTable, "TRUTH_REPLAY", "COMPONENT_IO_COUNTERS");
+checkTable = localAnnotateE2EDataTable(checkTable, "TRUTH_REPLAY", "VALIDATION_RESULTS");
 
 aiTable = localRunE2EAIProbe(cfgE, logical(opt.E2EEnableAI), snr_dB);
+aiTable = localAnnotateE2EDataTable(aiTable, "TRUTH_REPLAY", "AI_AUXILIARY_METRICS");
 
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_packet_trace.csv"), packetTraceTable);
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_flow_summary.csv"), flowSummaryTable);
@@ -3995,12 +4542,47 @@ sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_attach_trace.csv"), att
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_harq_trace.csv"), harqTraceTable);
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_scheduler_trace.csv"), schedulerTraceTable);
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_drop_causes.csv"), dropCauseTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_qos_evaluation.csv"), qosEvaluationTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.PacketTraceCSV))), packetTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.FlowSummaryCSV))), flowSummaryTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.BearerSummaryCSV))), bearerSummaryTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.AttachTraceCSV))), attachTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.HARQTraceCSV))), harqTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.SchedulerTraceCSV))), schedulerTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.DropCausesCSV))), dropCauseTable);
 
 sixgr.util.matSave(fullfile(runFolder, "mat", "e2e_probe.mat"), struct( ...
     "slotTable", slotTable, ...
     "componentIOTable", componentIOTable, ...
     "checkTable", checkTable, ...
     "packetIntegrityTable", packetIntegrityTable, ...
+    "qosEvaluationTable", qosEvaluationTable, ...
+    "packetTraceTable", packetTraceTable, ...
+    "flowSummaryTable", flowSummaryTable, ...
+    "bearerSummaryTable", bearerSummaryTable, ...
+    "attachTraceTable", attachTraceTable, ...
+    "harqTraceTable", harqTraceTable, ...
+    "schedulerTraceTable", schedulerTraceTable, ...
+    "dropCauseTable", dropCauseTable, ...
+    "summaryTable", summaryTable, ...
+    "aiTable", aiTable, ...
+    "attach", struct("Ok",attachOK,"Slots",attachSlots,"Messages",attachMsgCount,"RNTI",attachRNTI), ...
+    "generatedBytesDL_UE", generatedBytesDL_UE, ...
+    "generatedBytesUL_UE", generatedBytesUL_UE, ...
+    "deliveredBytesDL_UE", deliveredBytesDL_UE, ...
+    "deliveredBytesUL_UE", deliveredBytesUL_UE, ...
+    "ackUE_DL", ackUE_DL, ...
+    "ackUE_UL", ackUE_UL, ...
+    "nackUE_DL", nackUE_DL, ...
+    "nackUE_UL", nackUE_UL, ...
+    "retxDepthDL", retxDepthDL, ...
+    "retxDepthUL", retxDepthUL));
+sixgr.util.matSave(fullfile(runFolder, "mat", char(string(artifactSpec.EndToEnd.MAT))), struct( ...
+    "slotTable", slotTable, ...
+    "componentIOTable", componentIOTable, ...
+    "checkTable", checkTable, ...
+    "packetIntegrityTable", packetIntegrityTable, ...
+    "qosEvaluationTable", qosEvaluationTable, ...
     "packetTraceTable", packetTraceTable, ...
     "flowSummaryTable", flowSummaryTable, ...
     "bearerSummaryTable", bearerSummaryTable, ...
@@ -4028,12 +4610,31 @@ if logical(opt.E2ESaveFigures)
 end
 
 out = struct();
-out.Ok = true;
+out.Ok = all(logical(checkTable.Pass));
 out.RunFolder = runFolder;
+out.ExecutionMode = "TRUTH_REPLAY";
+out.ArtifactMode = string(artifactSpec.Mode);
+out.ArtifactSpec = artifactSpec;
+out.SlotMetricsArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.SlotMetricsCSV)));
+out.ComponentIOArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.ComponentIOCSV)));
+out.ComponentChecksArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.ComponentChecksCSV)));
+out.SummaryArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.SummaryCSV)));
+out.QoSEvaluationArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.QoSEvaluationCSV)));
+out.AIArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.AIMetricsCSV)));
+out.PacketIntegrityArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.PacketIntegrityCSV)));
+out.PacketTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.PacketTraceCSV)));
+out.FlowSummaryArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.FlowSummaryCSV)));
+out.BearerSummaryArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.BearerSummaryCSV)));
+out.AttachTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.AttachTraceCSV)));
+out.SchedulerTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.SchedulerTraceCSV)));
+out.HARQTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.HARQTraceCSV)));
+out.DropCauseArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.DropCausesCSV)));
+out.ArtifactMAT = fullfile(runFolder, "mat", char(string(artifactSpec.EndToEnd.MAT)));
 out.SlotTable = slotTable;
 out.ComponentIOTable = componentIOTable;
 out.CheckTable = checkTable;
 out.PacketIntegrityTable = packetIntegrityTable;
+out.QoSEvaluationTable = qosEvaluationTable;
 out.PacketTraceTable = packetTraceTable;
 out.FlowSummaryTable = flowSummaryTable;
 out.BearerSummaryTable = bearerSummaryTable;
@@ -4043,7 +4644,18 @@ out.SchedulerTraceTable = schedulerTraceTable;
 out.DropCauseTable = dropCauseTable;
 out.SummaryTable = summaryTable;
 out.AITable = aiTable;
-out.Notes = "E2E stack probe completed (DL/UL/bidirectional with duplex-aware scheduling).";
+out.ResultIntegrityTable = resultIntegrityTable;
+out.SystemCoupled = logical(coupledTruth.Enabled);
+out.CouplingMode = string(coupledTruth.CouplingMode);
+out.CouplingNotes = string(coupledTruth.Notes);
+out.AppSDUChunkBytes = double(appSDUChunkBytes);
+out.AppSDUChunkSource = string(chunkInfo.Source);
+out.CoupledSystemMeta = rmfield(coupledTruth, {'GrantsDLBySlot','GrantsULBySlot','Result'});
+if coupledTruth.Enabled
+    out.Notes = "E2E truth replay completed with actual SystemLevelRunner waveform grant coupling and lower-layer scheduler/HARQ outcomes.";
+else
+    out.Notes = "E2E truth replay completed with explicit truth-labeled artifacts and real packet/grant traversal traces.";
+end
 end
 
 function out = localRunEndToEndProbeFast(cfg, runFolder, opt, e2eAirLUT)
@@ -4053,7 +4665,7 @@ end
 sixgr.util.ensureDir(runFolder);
 sixgr.util.ensureDir(fullfile(runFolder, "csv"));
 sixgr.util.ensureDir(fullfile(runFolder, "mat"));
-sixgr.util.ensureDir(fullfile(runFolder, "fig"));
+sixgr.util.ensureDir(fullfile(runFolder, "image"));
 sixgr.util.ensureDir(fullfile(runFolder, "logs"));
 
 slotDurBase_s = localSlotDuration(cfg);
@@ -4218,9 +4830,6 @@ offeredUL_Mbps = totalOfferedBitsUL / max(simDur_s, eps) / 1e6;
 goodput_Mbps_total = totalDeliveredBits / max(simDur_s, eps) / 1e6;
 goodputDL_Mbps_total = totalDeliveredBitsDL / max(simDur_s, eps) / 1e6;
 goodputUL_Mbps_total = totalDeliveredBitsUL / max(simDur_s, eps) / 1e6;
-deliveryRatio = totalDeliveredBits / max(totalOfferedBits, 1);
-deliveryRatioDL = totalDeliveredBitsDL / max(totalOfferedBitsDL, 1);
-deliveryRatioUL = totalDeliveredBitsUL / max(totalOfferedBitsUL, 1);
 retxProb = sum(retxCount) / max(sum(grantCount), 1);
 retxProbDL = sum(retxCountDL) / max(sum(grantCountDL), 1);
 retxProbUL = sum(retxCountUL) / max(sum(grantCountUL), 1);
@@ -4245,6 +4854,7 @@ spFrac = mean(slotDirection == "S");
 airModel = localBuildE2EAirModel(cfgE, fileparts(runFolder), opt, e2eAirLUT);
 airModelName = "fast_proxy_kernel";
 airModelSource = "queue_cqi_logistic_proxy|" + string(sixgr.util.structGet(airModel, "Source", "default"));
+artifactSpec = localBuildE2EArtifactSpec("fast_proxy");
 
 slotTable = table(slotIndex, string(slotDirection), ...
     offeredBits, offeredBitsDL, offeredBitsUL, ...
@@ -4297,52 +4907,27 @@ componentIOTable = table(slotIndex, string(slotDirection), ...
                       'UL_AppIn_Bytes','UL_SDAP_TxOut_Bytes','UL_PDCP_TxOut_Bytes','UL_RLC_TxOut_Bytes','UL_MAC_TBOut_Bytes', ...
                       'UL_Air_RxIn_Bytes','UL_MAC_DisasmOut_Bytes','UL_RLC_RxOut_Bytes','UL_PDCP_RxOut_Bytes','UL_AppOut_Bytes'});
 
-appChunk = max(512, round(double(sixgr.util.structGet(cfgE, "traffic.rlcSduChunk_bytes", 32768))));
-genDL = max(0, round(sum(dlAppIn) / max(appChunk,1)));
-genUL = max(0, round(sum(ulAppIn) / max(appChunk,1)));
-delDL = max(0, round(sum(dlAppOutIO) / max(appChunk,1)));
-delUL = max(0, round(sum(ulAppOutIO) / max(appChunk,1)));
-generatedPktsDL_UE = repmat(round(genDL/max(nUE,1)), nUE, 1);
-generatedPktsUL_UE = repmat(round(genUL/max(nUE,1)), nUE, 1);
-deliveredPktsDL_UE = repmat(round(delDL/max(nUE,1)), nUE, 1);
-deliveredPktsUL_UE = repmat(round(delUL/max(nUE,1)), nUE, 1);
-deadlineMissPktsDL_UE = zeros(nUE,1);
-deadlineMissPktsUL_UE = zeros(nUE,1);
-duplicatePktsDL_UE = zeros(nUE,1);
-duplicatePktsUL_UE = zeros(nUE,1);
-reorderedPktsDL_UE = zeros(nUE,1);
-reorderedPktsUL_UE = zeros(nUE,1);
-latencySamplesDL_ms = 1e3 * slotDur_s * ones(max(delDL,1),1);
-latencySamplesUL_ms = 1e3 * slotDur_s * ones(max(delUL,1),1);
 pdb_ms = double(sixgr.util.structGet(traffic, "PacketDelayBudget_ms", sixgr.util.structGet(cfgE, "traffic.packetDelayBudget_ms", 50)));
-[packetIntegrityTable, semanticPassRate] = localBuildE2EPacketIntegrityTable( ...
-    generatedPktsDL_UE, deliveredPktsDL_UE, deadlineMissPktsDL_UE, ...
-    duplicatePktsDL_UE, reorderedPktsDL_UE, latencySamplesDL_ms, ...
-    generatedPktsUL_UE, deliveredPktsUL_UE, deadlineMissPktsUL_UE, ...
-    duplicatePktsUL_UE, reorderedPktsUL_UE, latencySamplesUL_ms, pdb_ms);
-traceMode = lower(string(sixgr.util.structGet(opt, "E2EFastTraceMode", "lite")));
-if traceMode == "full"
-    [packetTraceTable, schedulerTraceTable, harqTraceTable] = localBuildFastE2ESyntheticTraces( ...
-        nSlots, nUE, slotDurBase_s, slotDirection, offeredDLMat, offeredULMat, ...
-        deliveredBitsDL, deliveredBitsUL, grantCountDL, grantCountUL, ...
-        ackCountDL, ackCountUL, nackCountDL, nackCountUL, meanCQI, lcidData, qfi, attachOK);
-else
-    [packetTraceTable, schedulerTraceTable, harqTraceTable, traceAgg] = localBuildFastE2ESyntheticTracesLite( ...
-        nSlots, nUE, slotDurBase_s, slotDirection, offeredDLMat, offeredULMat, ...
-        deliveredBitsDL, deliveredBitsUL, grantCountDL, grantCountUL, ...
-        ackCountDL, ackCountUL, nackCountDL, nackCountUL, meanCQI, lcidData, qfi, attachOK);
-end
+proxyPacketTraceTable = localBuildFastE2EProxyPacketTrace( ...
+    nSlots, nUE, slotDur_s, offeredDLMat, offeredULMat, deliveredBitsDL, deliveredBitsUL, ...
+    lcidData, qfi, attachOK, pdb_ms);
+packetTraceTable = localPacketTraceRowsToTable(repmat(localPacketTraceRowTemplate(), 0, 1));
+[schedulerTraceTable, harqTraceTable] = localBuildE2EGrantTraceTables([]);
 attachTraceTable = localBuildE2EAttachTraceTable(attachTraceRows);
-if traceMode == "full"
-    [flowSummaryTable, bearerSummaryTable, dropCauseTable] = localBuildE2ETraceSummaries(packetTraceTable, simDur_s);
-else
-    [flowSummaryTable, bearerSummaryTable, dropCauseTable] = localBuildFastE2ETraceSummariesFromAgg( ...
-        traceAgg, simDur_s, slotDurBase_s, lcidData, qfi, attachOK);
-end
+[packetIntegrityTable, semanticPassRate] = localBuildE2EPacketIntegrityTableFromTrace(proxyPacketTraceTable, pdb_ms);
+[flowSummaryTable, bearerSummaryTable, dropCauseTable] = localBuildE2ETraceSummaries(proxyPacketTraceTable, simDur_s);
+[deliveryRatio, deliveryRatioDL, deliveryRatioUL] = localPacketIntegrityDeliveryRatios(packetIntegrityTable);
+packetTraceTable = localAnnotateE2ETraceTable(packetTraceTable, "FAST_PROXY", "NO_REAL_PACKET_TRAVERSAL_IN_PROXY");
+schedulerTraceTable = localAnnotateE2ETraceTable(schedulerTraceTable, "FAST_PROXY", "NO_REAL_SCHEDULER_GRANT_TRACE_IN_PROXY");
+harqTraceTable = localAnnotateE2ETraceTable(harqTraceTable, "FAST_PROXY", "NO_REAL_HARQ_TRACE_IN_PROXY");
+attachTraceTable = localAnnotateE2EDataTable(attachTraceTable, "FAST_PROXY", "ATTACH_CONTROL_PLANE_TRACE");
+packetIntegrityTable = localAnnotateE2EDataTable(packetIntegrityTable, "FAST_PROXY", "PROXY_PACKET_MODEL");
+flowSummaryTable = localAnnotateE2EDataTable(flowSummaryTable, "FAST_PROXY", "PROXY_PACKET_MODEL");
+bearerSummaryTable = localAnnotateE2EDataTable(bearerSummaryTable, "FAST_PROXY", "PROXY_PACKET_MODEL");
+dropCauseTable = localAnnotateE2EDataTable(dropCauseTable, "FAST_PROXY", "PROXY_PACKET_MODEL");
 
 checkTable = localBuildE2EComponentChecks(componentIOTable, packetIntegrityTable);
 passRate = 100 * mean(double(checkTable.Pass));
-
 summaryTable = table(string(trafficModel), string(sixgr.util.structGet(traffic, "Transport", "UDP")), string(flowDirCfg), pdb_ms, ...
     string(sixgr.util.structGet(cfgE, "scenario.duplexMode", "TDD")), ...
     string(sixgr.util.structGet(cfgE, "phy.waveform.dl", "CP-OFDM")), ...
@@ -4371,11 +4956,50 @@ summaryTable = table(string(trafficModel), string(sixgr.util.structGet(traffic, 
                       'AttachSuccess','AttachSlots','AttachMessages','AttachRNTI', ...
                       'ServiceScaleFactor','E2EAirModel','E2EAirModelSource','StrictValidationMode', ...
                       'SemanticCheckPassRate_pct'});
+summaryTable = localAppendE2ESummaryStrictness(summaryTable, cfg, opt);
 summaryTable.ComponentCheckPassRate_pct = passRate;
+summaryTable.PacketAccountingPassRate_pct = summaryTable.SemanticCheckPassRate_pct;
+summaryTable.PacketAccountingMeaning = repmat(localE2EAccountingMeaning(), height(summaryTable), 1);
 summaryTable.ExecutionBackend = repmat("FAST_PROXY_KERNEL", height(summaryTable), 1);
 summaryTable.PHYMode = repmat("QUEUE_CQI_LOGISTIC_PROXY", height(summaryTable), 1);
+summaryTable.ExecutionMode = repmat("FAST_PROXY", height(summaryTable), 1);
+summaryTable.ArtifactMode = repmat(string(artifactSpec.Mode), height(summaryTable), 1);
+summaryTable.PacketTraceSemantics = repmat("NO_REAL_PACKET_TRAVERSAL_IN_PROXY", height(summaryTable), 1);
+summaryTable.SchedulerTraceSemantics = repmat("NO_REAL_SCHEDULER_GRANT_TRACE_IN_PROXY", height(summaryTable), 1);
+summaryTable.HARQTraceSemantics = repmat("NO_REAL_HARQ_TRACE_IN_PROXY", height(summaryTable), 1);
+summaryTable.SummaryArtifact = repmat(string(artifactSpec.TopLevel.SummaryCSV), height(summaryTable), 1);
+summaryTable.PacketIntegrityArtifact = repmat(string(artifactSpec.TopLevel.PacketIntegrityCSV), height(summaryTable), 1);
+qosEvaluationTable = localBuildE2EQoSEvaluationTable(cfgE, traffic, packetIntegrityTable, ...
+    offered_Mbps, offeredDL_Mbps, offeredUL_Mbps, ...
+    goodput_Mbps_total, goodputDL_Mbps_total, goodputUL_Mbps_total, logical(attachOK));
+qosEvaluationTable = localAnnotateE2EDataTable(qosEvaluationTable, "FAST_PROXY", "QOS_SLA_EVALUATION");
+summaryTable = localAppendE2EQoSSummary(summaryTable, qosEvaluationTable, string(artifactSpec.TopLevel.QoSEvaluationCSV));
+summaryTable.PacketTraceArtifact = repmat("packet_flow/csv/" + string(artifactSpec.EndToEnd.PacketTraceCSV), height(summaryTable), 1);
+summaryTable.SchedulerTraceArtifact = repmat("packet_flow/csv/" + string(artifactSpec.EndToEnd.SchedulerTraceCSV), height(summaryTable), 1);
+summaryTable.HARQTraceArtifact = repmat("packet_flow/csv/" + string(artifactSpec.EndToEnd.HARQTraceCSV), height(summaryTable), 1);
+resultIntegrityTable = sixgr.report.checkResultIntegrity(struct( ...
+    "SummaryTable", summaryTable, ...
+    "PacketIntegrityTable", packetIntegrityTable, ...
+    "FlowSummaryTable", flowSummaryTable, ...
+    "BearerSummaryTable", bearerSummaryTable, ...
+    "PacketTraceTable", packetTraceTable, ...
+    "CheckTable", checkTable));
+resultIntegrityPassRate = 100 * mean(double(resultIntegrityTable.Pass));
+summaryTable.ResultIntegrityPassRate_pct = resultIntegrityPassRate;
+summaryTable.ResultIntegrityFailureCount = sum(~logical(resultIntegrityTable.Pass));
+checkTable = localAppendResultIntegrityChecks(checkTable, resultIntegrityTable);
+if any(~logical(resultIntegrityTable.Pass)) && logical(opt.E2EStrictValidation)
+    failedChecks = string(resultIntegrityTable.Check(~logical(resultIntegrityTable.Pass)));
+    error("sixgr:e2e:ResultIntegrityFailed", ...
+        "Strict E2E proxy validation failed result-integrity checks: %s", ...
+        strjoin(cellstr(failedChecks), ", "));
+end
+slotTable = localAnnotateE2EDataTable(slotTable, "FAST_PROXY", "SLOT_LEVEL_PROXY_METRICS");
+componentIOTable = localAnnotateE2EDataTable(componentIOTable, "FAST_PROXY", "PROXY_COMPONENT_IO_COUNTERS");
+checkTable = localAnnotateE2EDataTable(checkTable, "FAST_PROXY", "VALIDATION_RESULTS");
 
 aiTable = localRunE2EAIProbe(cfgE, logical(opt.E2EEnableAI), snr_dB);
+aiTable = localAnnotateE2EDataTable(aiTable, "FAST_PROXY", "AI_AUXILIARY_METRICS");
 
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_packet_trace.csv"), packetTraceTable);
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_flow_summary.csv"), flowSummaryTable);
@@ -4384,12 +5008,37 @@ sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_attach_trace.csv"), att
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_harq_trace.csv"), harqTraceTable);
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_scheduler_trace.csv"), schedulerTraceTable);
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "e2e_drop_causes.csv"), dropCauseTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "probe_e2e_qos_evaluation.csv"), qosEvaluationTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.PacketTraceCSV))), packetTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.FlowSummaryCSV))), flowSummaryTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.BearerSummaryCSV))), bearerSummaryTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.AttachTraceCSV))), attachTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.HARQTraceCSV))), harqTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.SchedulerTraceCSV))), schedulerTraceTable);
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.DropCausesCSV))), dropCauseTable);
 
 sixgr.util.matSave(fullfile(runFolder, "mat", "e2e_probe.mat"), struct( ...
     "slotTable", slotTable, ...
     "componentIOTable", componentIOTable, ...
     "checkTable", checkTable, ...
     "packetIntegrityTable", packetIntegrityTable, ...
+    "qosEvaluationTable", qosEvaluationTable, ...
+    "packetTraceTable", packetTraceTable, ...
+    "flowSummaryTable", flowSummaryTable, ...
+    "bearerSummaryTable", bearerSummaryTable, ...
+    "attachTraceTable", attachTraceTable, ...
+    "harqTraceTable", harqTraceTable, ...
+    "schedulerTraceTable", schedulerTraceTable, ...
+    "dropCauseTable", dropCauseTable, ...
+    "summaryTable", summaryTable, ...
+    "aiTable", aiTable, ...
+    "attach", struct("Ok",attachOK,"Slots",attachSlots,"Messages",attachMsgCount,"RNTI",attachRNTI)));
+sixgr.util.matSave(fullfile(runFolder, "mat", char(string(artifactSpec.EndToEnd.MAT))), struct( ...
+    "slotTable", slotTable, ...
+    "componentIOTable", componentIOTable, ...
+    "checkTable", checkTable, ...
+    "packetIntegrityTable", packetIntegrityTable, ...
+    "qosEvaluationTable", qosEvaluationTable, ...
     "packetTraceTable", packetTraceTable, ...
     "flowSummaryTable", flowSummaryTable, ...
     "bearerSummaryTable", bearerSummaryTable, ...
@@ -4407,12 +5056,31 @@ if logical(opt.E2ESaveFigures)
 end
 
 out = struct();
-out.Ok = true;
+out.Ok = all(logical(checkTable.Pass));
 out.RunFolder = runFolder;
+out.ExecutionMode = "FAST_PROXY";
+out.ArtifactMode = string(artifactSpec.Mode);
+out.ArtifactSpec = artifactSpec;
+out.SlotMetricsArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.SlotMetricsCSV)));
+out.ComponentIOArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.ComponentIOCSV)));
+out.ComponentChecksArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.ComponentChecksCSV)));
+out.SummaryArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.SummaryCSV)));
+out.QoSEvaluationArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.QoSEvaluationCSV)));
+out.AIArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.AIMetricsCSV)));
+out.PacketIntegrityArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.TopLevel.PacketIntegrityCSV)));
+out.PacketTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.PacketTraceCSV)));
+out.FlowSummaryArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.FlowSummaryCSV)));
+out.BearerSummaryArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.BearerSummaryCSV)));
+out.AttachTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.AttachTraceCSV)));
+out.SchedulerTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.SchedulerTraceCSV)));
+out.HARQTraceArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.HARQTraceCSV)));
+out.DropCauseArtifactCSV = fullfile(runFolder, "csv", char(string(artifactSpec.EndToEnd.DropCausesCSV)));
+out.ArtifactMAT = fullfile(runFolder, "mat", char(string(artifactSpec.EndToEnd.MAT)));
 out.SlotTable = slotTable;
 out.ComponentIOTable = componentIOTable;
 out.CheckTable = checkTable;
 out.PacketIntegrityTable = packetIntegrityTable;
+out.QoSEvaluationTable = qosEvaluationTable;
 out.PacketTraceTable = packetTraceTable;
 out.FlowSummaryTable = flowSummaryTable;
 out.BearerSummaryTable = bearerSummaryTable;
@@ -4422,7 +5090,114 @@ out.SchedulerTraceTable = schedulerTraceTable;
 out.DropCauseTable = dropCauseTable;
 out.SummaryTable = summaryTable;
 out.AITable = aiTable;
-out.Notes = "E2E fast core probe completed (FAST_PROXY_KERNEL, abstraction mode).";
+out.ResultIntegrityTable = resultIntegrityTable;
+out.Notes = "E2E fast proxy completed with explicit proxy-labeled artifacts; packet, scheduler, and HARQ primary traces remain empty because no real traversal exists in proxy mode.";
+end
+
+function packetTraceTable = localBuildFastE2EProxyPacketTrace( ...
+    nSlots, nUE, slotDur_s, offeredDLMat, offeredULMat, deliveredBitsDL, deliveredBitsUL, ...
+    lcidData, qfi, attachOK, pdb_ms)
+
+appChunk = 1500;
+queueBytesDL_UE = zeros(nUE,1);
+queueBytesUL_UE = zeros(nUE,1);
+virtPktQ_DL = cell(nUE,1);
+virtPktQ_UL = cell(nUE,1);
+nextPktIdDL = zeros(nUE,1);
+nextPktIdUL = zeros(nUE,1);
+lastDeliveredPktIdDL = zeros(nUE,1);
+lastDeliveredPktIdUL = zeros(nUE,1);
+offeredDLBytes = floor(max(double(offeredDLMat), 0) / 8);
+offeredULBytes = floor(max(double(offeredULMat), 0) / 8);
+deliveredDLBytes = floor(max(double(deliveredBitsDL(:)), 0) / 8);
+deliveredULBytes = floor(max(double(deliveredBitsUL(:)), 0) / 8);
+packetChunks = cell(max(128, min(2 * nSlots * max(nUE, 1), 2e6)), 1);
+packetChunkCount = 0;
+vqCap0 = max(512, 4 * nSlots);
+
+for u = 1:nUE
+    virtPktQ_DL{u} = localInitVirtualQueue(vqCap0);
+    virtPktQ_UL{u} = localInitVirtualQueue(vqCap0);
+end
+
+for t = 1:nSlots
+    for u = 1:nUE
+        bytesInDL = offeredDLBytes(t,u);
+        bytesInUL = offeredULBytes(t,u);
+        rem = bytesInDL;
+        while rem > 0
+            chunk = min(rem, appChunk);
+            [virtPktQ_DL{u}, nextPktIdDL(u)] = localEnqueueVirtualPacketDirect( ...
+                virtPktQ_DL{u}, nextPktIdDL(u), chunk, t, u, lcidData, qfi);
+            queueBytesDL_UE(u) = queueBytesDL_UE(u) + chunk;
+            rem = rem - chunk;
+        end
+        rem = bytesInUL;
+        while rem > 0
+            chunk = min(rem, appChunk);
+            [virtPktQ_UL{u}, nextPktIdUL(u)] = localEnqueueVirtualPacketDirect( ...
+                virtPktQ_UL{u}, nextPktIdUL(u), chunk, t, u, lcidData, qfi);
+            queueBytesUL_UE(u) = queueBytesUL_UE(u) + chunk;
+            rem = rem - chunk;
+        end
+    end
+
+    delBytesDL = deliveredDLBytes(t);
+    delBytesUL = deliveredULBytes(t);
+    allocDL = localProportionalByteAllocation(queueBytesDL_UE, delBytesDL);
+    allocUL = localProportionalByteAllocation(queueBytesUL_UE, delBytesUL);
+    if ~attachOK
+        allocDL(:) = 0;
+        allocUL(:) = 0;
+    end
+
+    for u = 1:nUE
+        if allocDL(u) > 0
+            virtPktQ_DL{u} = localMarkVirtualPacketTx(virtPktQ_DL{u}, allocDL(u), t, 0, true);
+            [virtPktQ_DL{u}, semDL] = localConsumeVirtualPacketsDirect( ...
+                virtPktQ_DL{u}, allocDL(u), t, slotDur_s, pdb_ms, lastDeliveredPktIdDL(u), "DL", u);
+            lastDeliveredPktIdDL(u) = semDL.LastDeliveredId;
+            queueBytesDL_UE(u) = max(queueBytesDL_UE(u) - allocDL(u), 0);
+            if ~isempty(semDL.PacketRows)
+                [packetChunks, packetChunkCount] = localPushStructChunk( ...
+                    packetChunks, packetChunkCount, semDL.PacketRows(:));
+            end
+        end
+        if allocUL(u) > 0
+            virtPktQ_UL{u} = localMarkVirtualPacketTx(virtPktQ_UL{u}, allocUL(u), t, 0, true);
+            [virtPktQ_UL{u}, semUL] = localConsumeVirtualPacketsDirect( ...
+                virtPktQ_UL{u}, allocUL(u), t, slotDur_s, pdb_ms, lastDeliveredPktIdUL(u), "UL", u);
+            lastDeliveredPktIdUL(u) = semUL.LastDeliveredId;
+            queueBytesUL_UE(u) = max(queueBytesUL_UE(u) - allocUL(u), 0);
+            if ~isempty(semUL.PacketRows)
+                [packetChunks, packetChunkCount] = localPushStructChunk( ...
+                    packetChunks, packetChunkCount, semUL.PacketRows(:));
+            end
+        end
+    end
+end
+
+finalDropCause = "not_delivered_by_end";
+if ~attachOK
+    finalDropCause = "attach_not_connected";
+end
+for u = 1:nUE
+    [virtPktQ_DL{u}, drDL] = localFinalizeVirtualQueueDrops( ...
+        virtPktQ_DL{u}, nSlots, slotDur_s, pdb_ms, lastDeliveredPktIdDL(u), "DL", u, finalDropCause);
+    if ~isempty(drDL)
+        [packetChunks, packetChunkCount] = localPushStructChunk( ...
+            packetChunks, packetChunkCount, drDL(:));
+    end
+    [virtPktQ_UL{u}, drUL] = localFinalizeVirtualQueueDrops( ...
+        virtPktQ_UL{u}, nSlots, slotDur_s, pdb_ms, lastDeliveredPktIdUL(u), "UL", u, finalDropCause);
+    if ~isempty(drUL)
+        [packetChunks, packetChunkCount] = localPushStructChunk( ...
+            packetChunks, packetChunkCount, drUL(:));
+    end
+end
+
+packetRows = localConcatStructChunks(packetChunks, packetChunkCount, localPacketTraceRowTemplate());
+packetTraceTable = localPacketTraceRowsToTable(packetRows);
 end
 
 function [packetTraceTable, schedulerTraceTable, harqTraceTable] = localBuildFastE2ESyntheticTraces( ...
@@ -4455,16 +5230,16 @@ for t = 1:nSlots
         rem = bytesInDL;
         while rem > 0
             chunk = min(rem, appChunk);
-            [virtPktQ_DL{u}, nextPktIdDL(u)] = localEnqueueVirtualPacket( ...
-                virtPktQ_DL{u}, nextPktIdDL(u), chunk, t, "FlowID", u, "BearerID", lcidData, "QFI", qfi);
+            [virtPktQ_DL{u}, nextPktIdDL(u)] = localEnqueueVirtualPacketDirect( ...
+                virtPktQ_DL{u}, nextPktIdDL(u), chunk, t, u, lcidData, qfi);
             queueBytesDL_UE(u) = queueBytesDL_UE(u) + chunk;
             rem = rem - chunk;
         end
         rem = bytesInUL;
         while rem > 0
             chunk = min(rem, appChunk);
-            [virtPktQ_UL{u}, nextPktIdUL(u)] = localEnqueueVirtualPacket( ...
-                virtPktQ_UL{u}, nextPktIdUL(u), chunk, t, "FlowID", u, "BearerID", lcidData, "QFI", qfi);
+            [virtPktQ_UL{u}, nextPktIdUL(u)] = localEnqueueVirtualPacketDirect( ...
+                virtPktQ_UL{u}, nextPktIdUL(u), chunk, t, u, lcidData, qfi);
             queueBytesUL_UE(u) = queueBytesUL_UE(u) + chunk;
             rem = rem - chunk;
         end
@@ -4478,9 +5253,8 @@ for t = 1:nSlots
     for u = 1:nUE
         if allocDL(u) > 0
             virtPktQ_DL{u} = localMarkVirtualPacketTx(virtPktQ_DL{u}, allocDL(u), t, 0, true);
-            [virtPktQ_DL{u}, semDL] = localConsumeVirtualPackets( ...
-                virtPktQ_DL{u}, allocDL(u), t, slotDur_s, pdbSlots, lastDeliveredPktIdDL(u), ...
-                "Direction", "DL", "UE", u);
+            [virtPktQ_DL{u}, semDL] = localConsumeVirtualPacketsDirect( ...
+                virtPktQ_DL{u}, allocDL(u), t, slotDur_s, pdbSlots, lastDeliveredPktIdDL(u), "DL", u);
             lastDeliveredPktIdDL(u) = semDL.LastDeliveredId;
             queueBytesDL_UE(u) = max(queueBytesDL_UE(u) - allocDL(u), 0);
             if ~isempty(semDL.PacketRows)
@@ -4489,9 +5263,8 @@ for t = 1:nSlots
         end
         if allocUL(u) > 0
             virtPktQ_UL{u} = localMarkVirtualPacketTx(virtPktQ_UL{u}, allocUL(u), t, 0, true);
-            [virtPktQ_UL{u}, semUL] = localConsumeVirtualPackets( ...
-                virtPktQ_UL{u}, allocUL(u), t, slotDur_s, pdbSlots, lastDeliveredPktIdUL(u), ...
-                "Direction", "UL", "UE", u);
+            [virtPktQ_UL{u}, semUL] = localConsumeVirtualPacketsDirect( ...
+                virtPktQ_UL{u}, allocUL(u), t, slotDur_s, pdbSlots, lastDeliveredPktIdUL(u), "UL", u);
             lastDeliveredPktIdUL(u) = semUL.LastDeliveredId;
             queueBytesUL_UE(u) = max(queueBytesUL_UE(u) - allocUL(u), 0);
             if ~isempty(semUL.PacketRows)
@@ -4587,7 +5360,7 @@ for u = 1:nUE
 end
 
 packetTraceTable = localPacketTraceRowsToTable(packetRows);
-[schedulerTraceTable, harqTraceTable] = localBuildE2EGrantTraceTables(grantRows);
+[schedulerTraceTable, harqTraceTable] = localBuildE2EGrantTraceTables([]);
 if ~isempty(packetTraceTable)
     packetTraceTable.TraceMode = repmat("FAST_PROXY_SYNTHETIC", height(packetTraceTable), 1);
 end
@@ -4655,11 +5428,7 @@ for t = 1:nSlots
 end
 
 packetTraceTable = localFastPacketBufferToTable(pkt);
-grantBase = localBuildFastGrantBaseTable( ...
-    nSlots, nUE, slotDur_s, deliveredBitsDL, deliveredBitsUL, ...
-    grantCountDL, grantCountUL, ackCountDL, ackCountUL, ...
-    nackCountDL, nackCountUL, meanCQI, lcidData, qfi);
-[schedulerTraceTable, harqTraceTable] = localBuildE2EGrantTraceTables(grantBase);
+[schedulerTraceTable, harqTraceTable] = localBuildE2EGrantTraceTables([]);
 if ~isempty(packetTraceTable)
     packetTraceTable.TraceMode = repmat("FAST_PROXY_SYNTHETIC_LITE", height(packetTraceTable), 1);
 end
@@ -5197,19 +5966,23 @@ rows(end+1,1) = localCheckRow("UL","APP_RX", ...
     sumCol("UL_PDCP_RxOut_Bytes"), sumCol("UL_AppOut_Bytes"), "<=", epsTol, ...
     "App delivered bytes should be <= PDCP output bytes");
 
-% Semantic checks: packet-level integrity and latency budget compliance.
-if ~isempty(packetIntegrityTable) && all(ismember(["Direction","SemanticPass"], string(packetIntegrityTable.Properties.VariableNames)))
+% Packet-accounting integrity checks only. QoS/SLA acceptance is reported separately.
+if ~isempty(packetIntegrityTable) && all(ismember(["Direction"], string(packetIntegrityTable.Properties.VariableNames)))
     for i = 1:height(packetIntegrityTable)
         dirI = string(packetIntegrityTable.Direction(i));
         if dirI == "ALL"
             continue;
         end
-        notes = "Packet semantics: ordering/duplication/deadline checks";
-        if ismember("Notes", string(packetIntegrityTable.Properties.VariableNames))
-            notes = string(packetIntegrityTable.Notes(i));
+        passField = "SemanticPass";
+        if ismember("AccountingIntegrityPass", string(packetIntegrityTable.Properties.VariableNames))
+            passField = "AccountingIntegrityPass";
         end
-        rows(end+1,1) = struct('Direction',dirI,'Component',"SEMANTIC_INTEGRITY", ...
-            'InputBytes',0,'OutputBytes',0,'ExpectedRelation',"packet_checks",'Pass',logical(packetIntegrityTable.SemanticPass(i)), ...
+        notes = "Packet accounting integrity: no duplicate delivery inflation, no out-of-order accounting bug, honest deadline-miss bookkeeping";
+        if ismember("Notes", string(packetIntegrityTable.Properties.VariableNames))
+            notes = localJoinNotes(notes, string(packetIntegrityTable.Notes(i)));
+        end
+        rows(end+1,1) = struct('Direction',dirI,'Component',"PACKET_ACCOUNTING_INTEGRITY", ...
+            'InputBytes',0,'OutputBytes',0,'ExpectedRelation',"packet_accounting_checks",'Pass',logical(packetIntegrityTable.(char(passField))(i)), ...
             'Notes',notes);
     end
 end
@@ -5227,6 +6000,33 @@ rows(end+1,1) = struct('Direction',"ALL",'Component',"NON_NEGATIVE", ...
     'Notes',"All component byte counters must be non-negative");
 
 T = struct2table(rows);
+end
+
+function T = localAppendResultIntegrityChecks(T, resultIntegrityTable)
+if ~(istable(resultIntegrityTable) && ~isempty(resultIntegrityTable))
+    return;
+end
+
+rows = repmat(struct('Direction',"ALL",'Component',"",'InputBytes',0,'OutputBytes',0, ...
+    'ExpectedRelation',"",'Pass',false,'Notes',""), height(resultIntegrityTable), 1);
+for i = 1:height(resultIntegrityTable)
+    componentName = "RESULT_INTEGRITY_" + upper(strrep(string(resultIntegrityTable.Check(i)), "-", "_"));
+    rows(i) = struct( ...
+        'Direction',"ALL", ...
+        'Component',componentName, ...
+        'InputBytes',0, ...
+        'OutputBytes',0, ...
+        'ExpectedRelation',"report_check", ...
+        'Pass',logical(resultIntegrityTable.Pass(i)), ...
+        'Notes',string(resultIntegrityTable.Notes(i)));
+end
+
+appendT = struct2table(rows);
+if isempty(T)
+    T = appendT;
+else
+    T = [T; appendT]; %#ok<AGROW>
+end
 end
 
 function r = localCheckRow(direction, component, inBytes, outBytes, relation, tol, notes)
@@ -5248,58 +6048,111 @@ r.Notes = string(notes);
 end
 
 function row = localPacketTraceRowTemplate()
-row = struct();
-row.Direction = "";
-row.UE = NaN;
-row.PacketID = NaN;
-row.FlowID = NaN;
-row.BearerID = NaN;
-row.QFI = NaN;
-row.PacketBytes = NaN;
-row.GenerationSlot = NaN;
-row.GenerationTime_s = NaN;
-row.GrantSlot = NaN;
-row.HARQProcess = NaN;
-row.Attempts = NaN;
-row.CRCResult = false;
-row.DeliverySlot = NaN;
-row.DeliveryTime_s = NaN;
-row.Latency_ms = NaN;
-row.DeadlineMiss = false;
-row.DuplicateFlag = false;
-row.ReorderFlag = false;
-row.DropCause = "";
+persistent rowTemplate;
+if isempty(rowTemplate)
+    rowTemplate = struct();
+    rowTemplate.Direction = "";
+    rowTemplate.UE = NaN;
+    rowTemplate.PacketID = NaN;
+    rowTemplate.FlowID = NaN;
+    rowTemplate.BearerID = NaN;
+    rowTemplate.QFI = NaN;
+    rowTemplate.PacketBytes = NaN;
+    rowTemplate.GenerationSlot = NaN;
+    rowTemplate.GenerationTime_s = NaN;
+    rowTemplate.GrantSlot = NaN;
+    rowTemplate.HARQProcess = NaN;
+    rowTemplate.Attempts = NaN;
+    rowTemplate.CRCResult = false;
+    rowTemplate.DeliverySlot = NaN;
+    rowTemplate.DeliveryTime_s = NaN;
+    rowTemplate.Latency_ms = NaN;
+    rowTemplate.DeadlineMiss = false;
+    rowTemplate.DuplicateFlag = false;
+    rowTemplate.ReorderFlag = false;
+    rowTemplate.DropCause = "";
+end
+row = rowTemplate;
 end
 
 function row = localE2EGrantTraceRowTemplate()
-row = struct();
-row.Slot = NaN;
-row.Time_s = NaN;
-row.Direction = "";
-row.UE = NaN;
-row.FlowID = NaN;
-row.BearerID = NaN;
-row.QFI = NaN;
-row.GrantIndex = NaN;
-row.NumPRB = NaN;
-row.TBSBytes = NaN;
-row.CQIUsed = NaN;
-row.MCSIndex = NaN;
-row.NumLayers = NaN;
-row.TargetCodeRate = NaN;
-row.QueueBytesBefore = NaN;
-row.QueueBytesAfter = NaN;
-row.HARQProcess = NaN;
-row.RetxDepthBefore = NaN;
-row.RetxDepthAfter = NaN;
-row.AttemptCount = NaN;
-row.IsRetransmission = false;
-row.Ack = false;
-row.CRCResult = false;
-row.BLER = NaN;
-row.AirMode = "";
-row.Note = "";
-row.GrantReason = "";
+persistent rowTemplate;
+if isempty(rowTemplate)
+    rowTemplate = struct();
+    rowTemplate.Slot = NaN;
+    rowTemplate.Time_s = NaN;
+    rowTemplate.Direction = "";
+    rowTemplate.CellID = NaN;
+    rowTemplate.UE = NaN;
+    rowTemplate.FlowID = NaN;
+    rowTemplate.BearerID = NaN;
+    rowTemplate.QFI = NaN;
+    rowTemplate.GrantIndex = NaN;
+    rowTemplate.NumPRB = NaN;
+    rowTemplate.TBSBytes = NaN;
+    rowTemplate.CQIUsed = NaN;
+    rowTemplate.MCSIndex = NaN;
+    rowTemplate.NumLayers = NaN;
+    rowTemplate.TargetCodeRate = NaN;
+    rowTemplate.QueueBytesBefore = NaN;
+    rowTemplate.QueueBytesAfter = NaN;
+    rowTemplate.HARQProcess = NaN;
+    rowTemplate.RetxDepthBefore = NaN;
+    rowTemplate.RetxDepthAfter = NaN;
+    rowTemplate.AttemptCount = NaN;
+    rowTemplate.IsRetransmission = false;
+    rowTemplate.Ack = false;
+    rowTemplate.CRCResult = false;
+    rowTemplate.BLER = NaN;
+    rowTemplate.AirMode = "";
+    rowTemplate.Note = "";
+    rowTemplate.GrantReason = "";
+end
+row = rowTemplate;
+end
+
+function spec = localBuildE2EArtifactSpec(mode)
+mode = lower(string(mode));
+if strlength(mode) == 0
+    mode = "unknown";
+end
+spec = struct();
+spec.Mode = mode;
+spec.TopLevel = struct( ...
+    "SlotMetricsCSV", "probe_e2e_slot_metrics_" + mode + ".csv", ...
+    "ComponentIOCSV", "probe_e2e_component_io_" + mode + ".csv", ...
+    "ComponentChecksCSV", "probe_e2e_component_checks_" + mode + ".csv", ...
+    "PacketIntegrityCSV", "probe_e2e_packet_integrity_" + mode + ".csv", ...
+    "SummaryCSV", "probe_e2e_summary_" + mode + ".csv", ...
+    "QoSEvaluationCSV", "probe_e2e_qos_evaluation_" + mode + ".csv", ...
+    "AIMetricsCSV", "probe_e2e_ai_metrics_" + mode + ".csv");
+spec.EndToEnd = struct( ...
+    "PacketTraceCSV", "e2e_packet_trace_" + mode + ".csv", ...
+    "FlowSummaryCSV", "e2e_flow_summary_" + mode + ".csv", ...
+    "BearerSummaryCSV", "e2e_bearer_summary_" + mode + ".csv", ...
+    "AttachTraceCSV", "e2e_attach_trace_" + mode + ".csv", ...
+    "HARQTraceCSV", "e2e_harq_trace_" + mode + ".csv", ...
+    "SchedulerTraceCSV", "e2e_scheduler_trace_" + mode + ".csv", ...
+    "DropCausesCSV", "e2e_drop_causes_" + mode + ".csv", ...
+    "MAT", "e2e_probe_" + mode + ".mat");
+end
+
+function T = localAnnotateE2EDataTable(T, executionMode, dataSemantics)
+if ~istable(T)
+    return;
+end
+n = height(T);
+T.ExecutionMode = repmat(string(executionMode), n, 1);
+T.DataSemantics = repmat(string(dataSemantics), n, 1);
+end
+
+function T = localAnnotateE2ETraceTable(T, executionMode, traceSemantics)
+if ~istable(T)
+    return;
+end
+n = height(T);
+T.ExecutionMode = repmat(string(executionMode), n, 1);
+T.TraceSemantics = repmat(string(traceSemantics), n, 1);
 end
 
 function T = localPacketTraceRowsToTable(rows)
@@ -5315,6 +6168,14 @@ T.DropCause = string(T.DropCause);
 end
 
 function [schedulerTrace, harqTrace] = localBuildE2EGrantTraceTables(rows)
+schedulerCols = { ...
+    'Slot','Time_s','Direction','CellID','UE','FlowID','BearerID','QFI','GrantIndex', ...
+    'NumPRB','TBSBytes','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
+    'QueueBytesBefore','QueueBytesAfter','HARQProcess','IsRetransmission','GrantReason'};
+harqCols = { ...
+    'Slot','Time_s','Direction','CellID','UE','FlowID','HARQProcess','GrantIndex', ...
+    'RetxDepthBefore','RetxDepthAfter','AttemptCount','IsRetransmission', ...
+    'Ack','CRCResult','BLER','AirMode','Note','TBSBytes'};
 if istable(rows)
     base = rows;
 elseif isempty(rows)
@@ -5325,22 +6186,14 @@ else
     base = struct2table(rows);
 end
 if isempty(base)
-    schedulerTrace = base;
-    harqTrace = base;
+    schedulerTrace = base(:, schedulerCols);
+    harqTrace = base(:, harqCols);
     return;
 end
 base.Direction = string(base.Direction);
 base.AirMode = string(base.AirMode);
 base.Note = string(base.Note);
 base.GrantReason = string(base.GrantReason);
-schedulerCols = { ...
-    'Slot','Time_s','Direction','UE','FlowID','BearerID','QFI','GrantIndex', ...
-    'NumPRB','TBSBytes','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
-    'QueueBytesBefore','QueueBytesAfter','HARQProcess','IsRetransmission','GrantReason'};
-harqCols = { ...
-    'Slot','Time_s','Direction','UE','FlowID','HARQProcess','GrantIndex', ...
-    'RetxDepthBefore','RetxDepthAfter','AttemptCount','IsRetransmission', ...
-    'Ack','CRCResult','BLER','AirMode','Note','TBSBytes'};
 schedulerTrace = base(:, schedulerCols);
 harqTrace = base(:, harqCols);
 end
@@ -5496,6 +6349,431 @@ else
 end
 end
 
+function [allRatio, dlRatio, ulRatio] = localPacketIntegrityDeliveryRatios(packetIntegrityTable)
+allRatio = NaN;
+dlRatio = NaN;
+ulRatio = NaN;
+if ~(istable(packetIntegrityTable) && ~isempty(packetIntegrityTable) && ...
+        all(ismember(["Direction","PacketDeliveryRatio"], string(packetIntegrityTable.Properties.VariableNames))))
+    return;
+end
+
+allRatio = localPacketIntegrityRatioForDirection(packetIntegrityTable, "ALL");
+dlRatio = localPacketIntegrityRatioForDirection(packetIntegrityTable, "DL");
+ulRatio = localPacketIntegrityRatioForDirection(packetIntegrityTable, "UL");
+end
+
+function ratio = localPacketIntegrityRatioForDirection(packetIntegrityTable, direction)
+ratio = NaN;
+dirMask = upper(strtrim(string(packetIntegrityTable.Direction))) == upper(string(direction));
+idx = find(dirMask, 1, "first");
+if isempty(idx)
+    return;
+end
+ratio = double(packetIntegrityTable.PacketDeliveryRatio(idx));
+end
+
+function txt = localE2EAccountingMeaning()
+txt = "packet_accounting_only:no_duplicate_inflation;no_out_of_order_accounting_bug;honest_deadline_miss_bookkeeping";
+end
+
+function T = localBuildE2EQoSEvaluationTable(cfg, traffic, packetIntegrityTable, ...
+    offeredAll_Mbps, offeredDL_Mbps, offeredUL_Mbps, ...
+    goodputAll_Mbps, goodputDL_Mbps, goodputUL_Mbps, attachOK)
+
+dirs = ["DL"; "UL"; "ALL"];
+requestedDir = upper(string(sixgr.util.structGet(traffic, "FlowDirection", ...
+    sixgr.util.structGet(cfg, "traffic.flowDirection", "BIDIR"))));
+trafficModel = lower(string(sixgr.util.structGet(traffic, "Model", sixgr.util.structGet(cfg, "traffic.model", "fullbuffer"))));
+trafficProfile = string(sixgr.util.structGet(cfg, "traffic.profileName", trafficModel));
+if strlength(trafficProfile) == 0
+    trafficProfile = trafficModel;
+end
+qfi = double(sixgr.util.structGet(cfg, "traffic.qos.default5QI", 9));
+
+offeredByDir = [offeredDL_Mbps; offeredUL_Mbps; offeredAll_Mbps];
+goodputByDir = [goodputDL_Mbps; goodputUL_Mbps; goodputAll_Mbps];
+
+evaluated = true(3,1);
+if requestedDir == "DL"
+    evaluated(2) = false;
+elseif requestedDir == "UL"
+    evaluated(1) = false;
+end
+
+deliveryObserved = NaN(3,1);
+latencyObserved = NaN(3,1);
+generatedPackets = zeros(3,1);
+deliveryTarget = NaN(3,1);
+deliveryPass = true(3,1);
+latencyTarget = NaN(3,1);
+latencyPercentile = NaN(3,1);
+latencyPass = true(3,1);
+throughputFracTarget = NaN(3,1);
+throughputTarget = NaN(3,1);
+throughputPass = true(3,1);
+attachRequired = false(3,1);
+attachPass = true(3,1);
+qosPass = true(3,1);
+notes = strings(3,1);
+policySource = strings(3,1);
+
+for i = 1:3
+    dirTag = dirs(i);
+    row = localDirectionRow(packetIntegrityTable, dirTag);
+    if ~isempty(row)
+        deliveryObserved(i) = double(row.PacketDeliveryRatio);
+        latencyObserved(i) = double(row.P95Latency_ms);
+        generatedPackets(i) = double(row.GeneratedPackets);
+    end
+
+    policy = localResolveE2EQoSPolicy(cfg, trafficModel, trafficProfile, qfi);
+    deliveryTarget(i) = policy.DeliveryRatioTarget;
+    latencyTarget(i) = policy.LatencyBudget_ms;
+    latencyPercentile(i) = policy.LatencyPercentile;
+    throughputFracTarget(i) = policy.ThroughputTargetFractionOfOffered;
+    throughputTarget(i) = max(0, offeredByDir(i)) * max(policy.ThroughputTargetFractionOfOffered, 0);
+    if isfinite(double(policy.ThroughputTarget_Mbps))
+        throughputTarget(i) = max(throughputTarget(i), double(policy.ThroughputTarget_Mbps));
+    end
+    attachRequired(i) = logical(policy.RequireAttach);
+    policySource(i) = string(policy.Source);
+
+    if ~evaluated(i)
+        notes(i) = "direction_not_requested";
+        continue;
+    end
+
+    if generatedPackets(i) <= 0 && max(offeredByDir(i), 0) <= 1e-12
+        attachPass(i) = ~attachRequired(i) || logical(attachOK);
+        qosPass(i) = attachPass(i);
+        notes(i) = "no_generated_packets";
+        continue;
+    end
+
+    deliveryPass(i) = isfinite(deliveryObserved(i)) && (deliveryObserved(i) + 1e-12 >= deliveryTarget(i));
+    if isnan(latencyObserved(i))
+        latencyPass(i) = false;
+    else
+        latencyPass(i) = latencyObserved(i) <= latencyTarget(i) + 1e-9;
+    end
+    throughputPass(i) = (~isfinite(throughputTarget(i))) || (goodputByDir(i) + 1e-9 >= throughputTarget(i));
+    attachPass(i) = ~attachRequired(i) || logical(attachOK);
+    qosPass(i) = deliveryPass(i) && latencyPass(i) && throughputPass(i) && attachPass(i);
+
+    noteParts = strings(0,1);
+    if ~deliveryPass(i)
+        noteParts(end+1,1) = "delivery_ratio_below_target"; %#ok<AGROW>
+    end
+    if ~latencyPass(i)
+        noteParts(end+1,1) = "latency_budget_not_met"; %#ok<AGROW>
+    end
+    if ~throughputPass(i)
+        noteParts(end+1,1) = "throughput_target_not_met"; %#ok<AGROW>
+    end
+    if ~attachPass(i)
+        noteParts(end+1,1) = "attach_not_completed"; %#ok<AGROW>
+    end
+    if isempty(noteParts)
+        noteParts(end+1,1) = "qos_targets_met"; %#ok<AGROW>
+    end
+    notes(i) = strjoin(noteParts, ";");
+end
+
+T = table(dirs, repmat(trafficModel, 3, 1), repmat(trafficProfile, 3, 1), repmat(qfi, 3, 1), ...
+    evaluated, generatedPackets, ...
+    deliveryObserved, deliveryTarget, deliveryPass, ...
+    latencyObserved, latencyTarget, latencyPercentile, latencyPass, ...
+    offeredByDir, goodputByDir, throughputFracTarget, throughputTarget, throughputPass, ...
+    attachRequired, repmat(logical(attachOK), 3, 1), attachPass, qosPass, policySource, notes, ...
+    'VariableNames', {'Direction','TrafficModel','TrafficProfile','FiveQI', ...
+    'Evaluated','GeneratedPackets', ...
+    'DeliveryRatioObserved','DeliveryRatioTarget','DeliveryRatioPass', ...
+    'ObservedP95Latency_ms','LatencyBudgetTarget_ms','LatencyPercentile','LatencyBudgetPass', ...
+    'Offered_Mbps','Goodput_Mbps','ThroughputTargetFractionOfOffered','ThroughputTarget_Mbps','ThroughputTargetPass', ...
+    'AttachRequired','AttachObserved','AttachPass','QoSPass','PolicySource','Notes'});
+end
+
+function policy = localResolveE2EQoSPolicy(cfg, trafficModel, trafficProfile, qfi)
+policy = struct();
+policy.DeliveryRatioTarget = 0.90;
+policy.LatencyBudget_ms = double(sixgr.util.structGet(cfg, "traffic.packetDelayBudget_ms", ...
+    sixgr.util.structGet(cfg, "traffic.qos.latencyBudget_ms", 50)));
+policy.LatencyPercentile = 95;
+policy.ThroughputTargetFractionOfOffered = 0.50;
+policy.ThroughputTarget_Mbps = NaN;
+policy.RequireAttach = true;
+policy.Source = "default";
+
+switch lower(char(trafficModel))
+    case {"xr","traffic_xr","extendedreality"}
+        policy.DeliveryRatioTarget = 0.99;
+        policy.ThroughputTargetFractionOfOffered = 0.85;
+        policy.LatencyBudget_ms = min(policy.LatencyBudget_ms, 20);
+        policy.Source = "traffic_model:" + string(trafficModel);
+    case {"genai","traffic_genai","ai"}
+        policy.DeliveryRatioTarget = 0.95;
+        policy.ThroughputTargetFractionOfOffered = 0.70;
+        policy.Source = "traffic_model:" + string(trafficModel);
+    case {"mmtc","traffic_mmtc","iot"}
+        policy.DeliveryRatioTarget = 0.90;
+        policy.ThroughputTargetFractionOfOffered = 0.40;
+        policy.Source = "traffic_model:" + string(trafficModel);
+    otherwise
+        policy.DeliveryRatioTarget = 0.85;
+        policy.ThroughputTargetFractionOfOffered = 0.50;
+        policy.Source = "traffic_model:generic";
+end
+
+if isfinite(double(qfi))
+    switch round(double(qfi))
+        case 84
+            policy.DeliveryRatioTarget = max(policy.DeliveryRatioTarget, 0.99);
+            policy.ThroughputTargetFractionOfOffered = max(policy.ThroughputTargetFractionOfOffered, 0.85);
+            policy.LatencyBudget_ms = min(policy.LatencyBudget_ms, 20);
+            policy.Source = localJoinNotes(policy.Source, "5qi:84");
+        case 9
+            policy.DeliveryRatioTarget = max(policy.DeliveryRatioTarget, 0.90);
+            policy.Source = localJoinNotes(policy.Source, "5qi:9");
+    end
+end
+
+policy = localOverlayQoSPolicy(policy, sixgr.util.structGet(cfg, "traffic.qos.acceptance", struct()), "traffic.qos.acceptance");
+if strlength(string(trafficProfile)) > 0
+    policy = localOverlayQoSPolicy(policy, ...
+        sixgr.util.structGet(cfg, "traffic.qos.acceptance.byProfile." + string(trafficProfile), struct()), ...
+        "traffic.qos.acceptance.byProfile." + string(trafficProfile));
+end
+policy = localOverlayQoSPolicy(policy, ...
+    sixgr.util.structGet(cfg, "traffic.qos.acceptance.byTrafficModel." + string(trafficModel), struct()), ...
+    "traffic.qos.acceptance.byTrafficModel." + string(trafficModel));
+policy = localOverlayQoSPolicy(policy, ...
+    sixgr.util.structGet(cfg, "traffic.qos.acceptance.by5QI.qi" + string(round(double(qfi))), struct()), ...
+    "traffic.qos.acceptance.by5QI.qi" + string(round(double(qfi))));
+
+if ~(isfinite(double(policy.LatencyBudget_ms)) && double(policy.LatencyBudget_ms) > 0)
+    policy.LatencyBudget_ms = 50;
+end
+policy.DeliveryRatioTarget = min(max(double(policy.DeliveryRatioTarget), 0), 1);
+policy.ThroughputTargetFractionOfOffered = max(double(policy.ThroughputTargetFractionOfOffered), 0);
+policy.LatencyPercentile = min(max(double(policy.LatencyPercentile), 0), 100);
+policy.RequireAttach = logical(policy.RequireAttach);
+end
+
+function policy = localOverlayQoSPolicy(policy, rawOverride, sourceLabel)
+if ~(isstruct(rawOverride) && isscalar(rawOverride))
+    return;
+end
+if isfield(rawOverride, "deliveryRatioTarget")
+    policy.DeliveryRatioTarget = double(rawOverride.deliveryRatioTarget);
+end
+if isfield(rawOverride, "latencyBudget_ms")
+    policy.LatencyBudget_ms = double(rawOverride.latencyBudget_ms);
+elseif isfield(rawOverride, "packetDelayBudget_ms")
+    policy.LatencyBudget_ms = double(rawOverride.packetDelayBudget_ms);
+end
+if isfield(rawOverride, "latencyPercentile")
+    policy.LatencyPercentile = double(rawOverride.latencyPercentile);
+end
+if isfield(rawOverride, "throughputTargetFractionOfOffered")
+    policy.ThroughputTargetFractionOfOffered = double(rawOverride.throughputTargetFractionOfOffered);
+elseif isfield(rawOverride, "throughputFractionOfOffered")
+    policy.ThroughputTargetFractionOfOffered = double(rawOverride.throughputFractionOfOffered);
+end
+if isfield(rawOverride, "throughputTarget_Mbps")
+    policy.ThroughputTarget_Mbps = double(rawOverride.throughputTarget_Mbps);
+end
+if isfield(rawOverride, "requireAttach")
+    policy.RequireAttach = logical(rawOverride.requireAttach);
+elseif isfield(rawOverride, "attachRequired")
+    policy.RequireAttach = logical(rawOverride.attachRequired);
+end
+policy.Source = string(sourceLabel);
+end
+
+function summaryTable = localAppendE2EQoSSummary(summaryTable, qosEvaluationTable, qosArtifact)
+if ~(istable(summaryTable) && height(summaryTable) == 1)
+    return;
+end
+
+summaryTable.QoSPass = true(height(summaryTable), 1);
+summaryTable.DeliveryRatioTarget = NaN(height(summaryTable), 1);
+summaryTable.DeliveryRatioPass = true(height(summaryTable), 1);
+summaryTable.LatencyBudgetTarget_ms = NaN(height(summaryTable), 1);
+summaryTable.ObservedP95Latency_ms = NaN(height(summaryTable), 1);
+summaryTable.LatencyBudgetPass = true(height(summaryTable), 1);
+summaryTable.ThroughputTargetFractionOfOffered = NaN(height(summaryTable), 1);
+summaryTable.ThroughputTarget_Mbps = NaN(height(summaryTable), 1);
+summaryTable.ThroughputTargetPass = true(height(summaryTable), 1);
+summaryTable.AttachRequired = false(height(summaryTable), 1);
+summaryTable.AttachPass = true(height(summaryTable), 1);
+summaryTable.QoSFailureCount = zeros(height(summaryTable), 1);
+summaryTable.QoSPolicySource = repmat("", height(summaryTable), 1);
+summaryTable.QoSEvaluationArtifact = repmat(string(qosArtifact), height(summaryTable), 1);
+
+if ~(istable(qosEvaluationTable) && ~isempty(qosEvaluationTable))
+    return;
+end
+
+evalMask = logical(qosEvaluationTable.Evaluated);
+allRow = qosEvaluationTable(upper(string(qosEvaluationTable.Direction)) == "ALL", :);
+if isempty(allRow)
+    allRow = qosEvaluationTable(1,:);
+end
+
+summaryTable.QoSPass(:) = all(logical(qosEvaluationTable.QoSPass(evalMask)));
+summaryTable.DeliveryRatioTarget(:) = double(allRow.DeliveryRatioTarget(1));
+summaryTable.DeliveryRatioPass(:) = logical(allRow.DeliveryRatioPass(1));
+summaryTable.LatencyBudgetTarget_ms(:) = double(allRow.LatencyBudgetTarget_ms(1));
+summaryTable.ObservedP95Latency_ms(:) = double(allRow.ObservedP95Latency_ms(1));
+summaryTable.LatencyBudgetPass(:) = logical(allRow.LatencyBudgetPass(1));
+summaryTable.ThroughputTargetFractionOfOffered(:) = double(allRow.ThroughputTargetFractionOfOffered(1));
+summaryTable.ThroughputTarget_Mbps(:) = double(allRow.ThroughputTarget_Mbps(1));
+summaryTable.ThroughputTargetPass(:) = logical(allRow.ThroughputTargetPass(1));
+summaryTable.AttachRequired(:) = logical(allRow.AttachRequired(1));
+summaryTable.AttachPass(:) = logical(allRow.AttachPass(1));
+summaryTable.QoSFailureCount(:) = sum(evalMask & ~logical(qosEvaluationTable.QoSPass));
+summaryTable.QoSPolicySource(:) = string(allRow.PolicySource(1));
+end
+
+function summary = localAppendE2EReportSummary(summary, e2e)
+if ~(isstruct(summary) && isstruct(e2e))
+    return;
+end
+T = sixgr.util.structGet(e2e, "SummaryTable", table());
+if ~(istable(T) && height(T) >= 1)
+    return;
+end
+S = T(1,:);
+summary.E2EPacketAccountingPassRate_pct = double(localScalarFromTableRow(S, "PacketAccountingPassRate_pct", ...
+    localScalarFromTableRow(S, "SemanticCheckPassRate_pct", NaN)));
+summary.E2EPacketAccountingMeaning = string(localStringFromTableRow(S, "PacketAccountingMeaning", localE2EAccountingMeaning()));
+summary.E2EQoSPass = logical(localScalarFromTableRow(S, "QoSPass", true));
+summary.E2EDeliveryRatio = double(localScalarFromTableRow(S, "DeliveryRatio", NaN));
+summary.E2EDeliveryRatioTarget = double(localScalarFromTableRow(S, "DeliveryRatioTarget", NaN));
+summary.E2EDeliveryRatioPass = logical(localScalarFromTableRow(S, "DeliveryRatioPass", true));
+summary.E2EObservedP95Latency_ms = double(localScalarFromTableRow(S, "ObservedP95Latency_ms", NaN));
+summary.E2ELatencyBudgetTarget_ms = double(localScalarFromTableRow(S, "LatencyBudgetTarget_ms", NaN));
+summary.E2ELatencyBudgetPass = logical(localScalarFromTableRow(S, "LatencyBudgetPass", true));
+summary.E2EGoodput_Mbps = double(localScalarFromTableRow(S, "Goodput_Mbps", NaN));
+summary.E2EThroughputTarget_Mbps = double(localScalarFromTableRow(S, "ThroughputTarget_Mbps", NaN));
+summary.E2EThroughputTargetPass = logical(localScalarFromTableRow(S, "ThroughputTargetPass", true));
+summary.E2EAttachPass = logical(localScalarFromTableRow(S, "AttachPass", true));
+summary.E2EQoSFailureCount = double(localScalarFromTableRow(S, "QoSFailureCount", 0));
+summary.E2EQoSPolicySource = string(localStringFromTableRow(S, "QoSPolicySource", ""));
+summary.E2ESystemCoupled = logical(localScalarFromTableRow(S, "E2ESystemCoupled", false));
+summary.E2ECouplingMode = string(localStringFromTableRow(S, "E2ECouplingMode", ""));
+summary.E2ECouplingNotes = string(localStringFromTableRow(S, "E2ECouplingNotes", ""));
+summary.E2EAppSDUChunkBytes = double(localScalarFromTableRow(S, "AppSDUChunkBytes", NaN));
+summary.E2EAppSDUChunkSource = string(localStringFromTableRow(S, "AppSDUChunkSource", ""));
+end
+
+function info = localResolveE2EAppChunk(cfgE, traffic)
+info = struct();
+info.Bytes = NaN;
+info.Source = "";
+
+cfgChunk = double(sixgr.util.structGet(cfgE, "traffic.rlcSduChunk_bytes", NaN));
+if isfinite(cfgChunk) && cfgChunk > 0
+    info.Bytes = max(64, round(cfgChunk));
+    info.Source = "traffic.rlcSduChunk_bytes";
+    return;
+end
+
+flowTable = sixgr.util.structGet(traffic, "FlowTable", table());
+if istable(flowTable) && ~isempty(flowTable) && ismember("PacketSize_bytes", string(flowTable.Properties.VariableNames))
+    pktVals = double(flowTable.PacketSize_bytes);
+    pktVals = pktVals(isfinite(pktVals) & pktVals > 0);
+    if ~isempty(pktVals)
+        info.Bytes = max(64, round(median(pktVals, "omitnan")));
+        info.Source = "traffic_flow_packet_size_bytes";
+        return;
+    end
+end
+
+pktChunk = double(sixgr.util.structGet(cfgE, "traffic.packetSize_bytes", NaN));
+if isfinite(pktChunk) && pktChunk > 0
+    info.Bytes = max(64, round(pktChunk));
+    info.Source = "traffic_packet_size_bytes";
+    return;
+end
+
+info.Bytes = 32768;
+info.Source = "legacy_default_32768";
+end
+
+function [chunkBytes, sourceOut] = localCapE2EAppChunkForCoupledTruth(chunkBytesIn, sourceIn, coupledTruth)
+chunkBytes = max(64, round(double(chunkBytesIn)));
+sourceOut = string(sourceIn);
+if ~logical(sixgr.util.structGet(coupledTruth, "Enabled", false))
+    return;
+end
+if sourceOut == "traffic.rlcSduChunk_bytes" || ...
+        sourceOut == "traffic_packet_size_bytes" || ...
+        sourceOut == "traffic_flow_packet_size_bytes"
+    return;
+end
+
+res = sixgr.util.structGet(coupledTruth, "Result", struct());
+details = sixgr.util.structGet(res, "Details", struct());
+grantTable = sixgr.util.structGet(details, "SchedulerGrants", table());
+if ~(istable(grantTable) && ~isempty(grantTable) && ismember("TBSBits", string(grantTable.Properties.VariableNames)))
+    return;
+end
+
+tbsBytes = ceil(double(grantTable.TBSBits) / 8);
+tbsBytes = tbsBytes(isfinite(tbsBytes) & tbsBytes >= 64);
+if isempty(tbsBytes)
+    return;
+end
+
+capBytes = floor(prctile(tbsBytes, 25));
+capBytes = max(64, round(double(capBytes)));
+if capBytes < chunkBytes
+    chunkBytes = capBytes;
+    if strlength(sourceOut) > 0
+        sourceOut = sourceOut + "|coupled_truth_grant_tbs_p25_cap";
+    else
+        sourceOut = "coupled_truth_grant_tbs_p25_cap";
+    end
+end
+end
+
+function v = localScalarFromTableRow(T, fieldName, defaultValue)
+v = defaultValue;
+if ~(istable(T) && height(T) >= 1 && ismember(string(fieldName), string(T.Properties.VariableNames)))
+    return;
+end
+raw = T.(char(fieldName));
+if isempty(raw)
+    return;
+end
+v = raw(1);
+end
+
+function v = localStringFromTableRow(T, fieldName, defaultValue)
+v = string(defaultValue);
+if ~(istable(T) && height(T) >= 1 && ismember(string(fieldName), string(T.Properties.VariableNames)))
+    return;
+end
+raw = string(T.(char(fieldName)));
+if isempty(raw)
+    return;
+end
+v = raw(1);
+end
+
+function row = localDirectionRow(T, dirTag)
+row = table();
+if ~(istable(T) && ~isempty(T) && ismember("Direction", string(T.Properties.VariableNames)))
+    return;
+end
+idx = find(upper(string(T.Direction)) == upper(string(dirTag)), 1, "first");
+if ~isempty(idx)
+    row = T(idx,:);
+end
+end
+
 function [chunks, count] = localPushStructChunk(chunks, count, rows)
 if isempty(rows)
     return;
@@ -5520,15 +6798,6 @@ rows = rows(:);
 end
 
 function [q, nextId] = localEnqueueVirtualPacket(q, nextId, bytes, slotIdx, varargin)
-if nargin < 1 || isempty(q)
-    q = localInitVirtualQueue(256);
-else
-    q = localEnsureVirtualQueue(q);
-end
-nextId = max(0, round(double(nextId))) + 1;
-bytes = max(1, round(double(bytes)));
-slotIdx = max(1, round(double(slotIdx)));
-
 flowId = NaN;
 bearerId = NaN;
 qfi = NaN;
@@ -5549,6 +6818,21 @@ if ~isempty(varargin)
         end
     end
 end
+ [q, nextId] = localEnqueueVirtualPacketDirect(q, nextId, bytes, slotIdx, flowId, bearerId, qfi);
+end
+
+function [q, nextId] = localEnqueueVirtualPacketDirect(q, nextId, bytes, slotIdx, flowId, bearerId, qfi)
+if nargin < 1 || isempty(q)
+    q = localInitVirtualQueue(256);
+else
+    q = localEnsureVirtualQueue(q);
+end
+nextId = max(0, round(double(nextId))) + 1;
+bytes = max(1, round(double(bytes)));
+slotIdx = max(1, round(double(slotIdx)));
+flowId = double(flowId);
+bearerId = double(bearerId);
+qfi = double(qfi);
 
 if q.Count >= q.Capacity
     q = localGrowVirtualQueue(q, max(2 * q.Capacity, q.Capacity + 512));
@@ -5613,16 +6897,7 @@ while rem > 0 && visited < q.Count
 end
 end
 
-function [q, sem] = localConsumeVirtualPackets(q, deliveredBytes, slotIdx, slotDur_s, pdbSlots, lastDeliveredId, varargin)
-sem = struct();
-sem.DeliveredPackets = 0;
-sem.DeadlineMissPackets = 0;
-sem.DuplicatePackets = 0;
-sem.OutOfOrderPackets = 0;
-sem.LastDeliveredId = double(lastDeliveredId);
-sem.LatencyMs = zeros(0,1);
-sem.PacketRows = repmat(localPacketTraceRowTemplate(), 0, 1);
-
+function [q, sem] = localConsumeVirtualPackets(q, deliveredBytes, slotIdx, slotDur_s, pdb_ms, lastDeliveredId, varargin)
 direction = "";
 ueId = NaN;
 if ~isempty(varargin)
@@ -5640,6 +6915,18 @@ if ~isempty(varargin)
         end
     end
 end
+ [q, sem] = localConsumeVirtualPacketsDirect(q, deliveredBytes, slotIdx, slotDur_s, pdb_ms, lastDeliveredId, direction, ueId);
+end
+
+function [q, sem] = localConsumeVirtualPacketsDirect(q, deliveredBytes, slotIdx, slotDur_s, pdb_ms, lastDeliveredId, direction, ueId)
+sem = struct();
+sem.DeliveredPackets = 0;
+sem.DeadlineMissPackets = 0;
+sem.DuplicatePackets = 0;
+sem.OutOfOrderPackets = 0;
+sem.LastDeliveredId = double(lastDeliveredId);
+sem.LatencyMs = zeros(0,1);
+sem.PacketRows = repmat(localPacketTraceRowTemplate(), 0, 1);
 
 if isempty(q) || deliveredBytes <= 0
     return;
@@ -5651,7 +6938,7 @@ end
 
 rem = max(0, round(double(deliveredBytes)));
 slotIdx = max(1, round(double(slotIdx)));
-pdbSlots = max(1, round(double(pdbSlots)));
+pdb_ms = max(double(pdb_ms), eps);
 slotDur_ms = 1e3 * double(slotDur_s);
 nLatCap = max(1, q.Count);
 lat = zeros(nLatCap, 1);
@@ -5684,13 +6971,14 @@ while rem > 0 && q.Count > 0
     sem.LastDeliveredId = max(sem.LastDeliveredId, pktId);
     sem.DeliveredPackets = sem.DeliveredPackets + 1;
 
-    latSlots = max(1, slotIdx - double(q.GenSlot(idx)) + 1);
-    deadlineMiss = (latSlots > pdbSlots);
+    generationTime_s = (double(q.GenSlot(idx)) - 1) * double(slotDur_s);
+    deliveryTime_s = double(slotIdx) * double(slotDur_s);
+    latMs = max(0, 1e3 * (deliveryTime_s - generationTime_s));
+    deadlineMiss = (latMs > pdb_ms + 1e-9);
     if deadlineMiss
         sem.DeadlineMissPackets = sem.DeadlineMissPackets + 1;
     end
     nLat = nLat + 1;
-    latMs = latSlots * slotDur_ms;
     lat(nLat) = latMs;
 
     row = localPacketTraceRowTemplate();
@@ -5702,13 +6990,13 @@ while rem > 0 && q.Count > 0
     row.QFI = double(q.QFI(idx));
     row.PacketBytes = double(q.InitialBytes(idx));
     row.GenerationSlot = double(q.GenSlot(idx));
-    row.GenerationTime_s = (double(q.GenSlot(idx)) - 1) * double(slotDur_s);
+    row.GenerationTime_s = generationTime_s;
     row.GrantSlot = double(q.FirstGrantSlot(idx));
     row.HARQProcess = double(q.LastHarqProcess(idx));
     row.Attempts = double(q.Attempts(idx));
     row.CRCResult = logical(q.LastCRC(idx));
     row.DeliverySlot = double(slotIdx);
-    row.DeliveryTime_s = (double(slotIdx) - 1) * double(slotDur_s);
+    row.DeliveryTime_s = deliveryTime_s;
     row.Latency_ms = double(latMs);
     row.DeadlineMiss = logical(deadlineMiss);
     row.DuplicateFlag = logical(dupFlag);
@@ -5871,7 +7159,7 @@ if q.Tail > q.Capacity
 end
 end
 
-function [q, rows] = localFinalizeVirtualQueueDrops(q, finalSlot, slotDur_s, pdbSlots, lastDeliveredId, direction, ueId, dropCause)
+function [q, rows] = localFinalizeVirtualQueueDrops(q, finalSlot, slotDur_s, pdb_ms, lastDeliveredId, direction, ueId, dropCause)
 rows = repmat(localPacketTraceRowTemplate(), 0, 1);
 if isempty(q)
     return;
@@ -5886,13 +7174,16 @@ end
 if nargin < 8 || strlength(string(dropCause)) == 0
     dropCause = "not_delivered_by_end";
 end
+pdb_ms = max(double(pdb_ms), eps);
 idxList = localRingLinearIndices(q.Head, q.Count, q.Capacity);
 rows = repmat(localPacketTraceRowTemplate(), numel(idxList), 1);
 for i = 1:numel(idxList)
     idx = idxList(i);
     pktId = double(q.ID(idx));
-    latSlots = max(1, round(double(finalSlot - q.GenSlot(idx) + 1)));
-    deadlineMiss = latSlots > max(1, round(double(pdbSlots)));
+    generationTime_s = (double(q.GenSlot(idx)) - 1) * double(slotDur_s);
+    observedTime_s = double(finalSlot) * double(slotDur_s);
+    latMs = max(0, 1e3 * (observedTime_s - generationTime_s));
+    deadlineMiss = latMs > (pdb_ms + 1e-9);
     row = localPacketTraceRowTemplate();
     row.Direction = string(direction);
     row.UE = double(ueId);
@@ -5902,14 +7193,14 @@ for i = 1:numel(idxList)
     row.QFI = double(q.QFI(idx));
     row.PacketBytes = double(q.InitialBytes(idx));
     row.GenerationSlot = double(q.GenSlot(idx));
-    row.GenerationTime_s = (double(q.GenSlot(idx)) - 1) * double(slotDur_s);
+    row.GenerationTime_s = generationTime_s;
     row.GrantSlot = double(q.FirstGrantSlot(idx));
     row.HARQProcess = double(q.LastHarqProcess(idx));
     row.Attempts = double(q.Attempts(idx));
     row.CRCResult = logical(q.LastCRC(idx));
     row.DeliverySlot = NaN;
     row.DeliveryTime_s = NaN;
-    row.Latency_ms = NaN;
+    row.Latency_ms = latMs;
     row.DeadlineMiss = logical(deadlineMiss);
     row.DuplicateFlag = logical(pktId <= double(lastDeliveredId));
     row.ReorderFlag = false;
@@ -5926,14 +7217,9 @@ if count <= 0
     idx = zeros(0,1);
     return;
 end
-idx = zeros(count,1);
-for i = 1:count
-    p = head + i - 1;
-    while p > capacity
-        p = p - capacity;
-    end
-    idx(i) = p;
-end
+idx = head + (0:count-1);
+idx = mod(idx - 1, capacity) + 1;
+idx = idx(:);
 end
 
 function buf = localInitLatencyBuffer(capacity)
@@ -5969,6 +7255,125 @@ if isempty(buf) || ~isstruct(buf) || ~isfield(buf, "Count") || buf.Count <= 0
     return;
 end
 x = buf.Data(1:buf.Count);
+end
+
+function [T, passRate_pct] = localBuildE2EPacketIntegrityTableFromTrace(packetTraceTable, pdb_ms)
+dirs = ["DL";"UL";"ALL"];
+generated = zeros(3,1);
+delivered = zeros(3,1);
+undelivered = zeros(3,1);
+pdr = zeros(3,1);
+meanLat = NaN(3,1);
+p95Lat = NaN(3,1);
+missN = zeros(3,1);
+missRate = zeros(3,1);
+dupN = zeros(3,1);
+reordN = zeros(3,1);
+deadlinePDB = repmat(double(pdb_ms), 3, 1);
+duplicateInflationFreePass = true(3,1);
+orderingIntegrityPass = true(3,1);
+deadlineAccountingPass = true(3,1);
+accountingIntegrityPass = true(3,1);
+semanticPass = true(3,1);
+semanticNotes = repmat("OK", 3, 1);
+
+Traw = packetTraceTable;
+if isempty(Traw)
+    Traw = localPacketTraceRowsToTable(repmat(localPacketTraceRowTemplate(), 0, 1));
+end
+if ~ismember("DropCause", string(Traw.Properties.VariableNames))
+    Traw.DropCause = strings(height(Traw), 1);
+end
+if ~ismember("Latency_ms", string(Traw.Properties.VariableNames))
+    Traw.Latency_ms = NaN(height(Traw), 1);
+end
+if ~ismember("DeadlineMiss", string(Traw.Properties.VariableNames))
+    Traw.DeadlineMiss = false(height(Traw), 1);
+end
+if ~ismember("DuplicateFlag", string(Traw.Properties.VariableNames))
+    Traw.DuplicateFlag = false(height(Traw), 1);
+end
+if ~ismember("ReorderFlag", string(Traw.Properties.VariableNames))
+    Traw.ReorderFlag = false(height(Traw), 1);
+end
+
+dirCol = upper(string(Traw.Direction));
+dropCause = string(Traw.DropCause);
+isDelivered = (strlength(dropCause) == 0);
+isMiss = logical(Traw.DeadlineMiss);
+isDup = logical(Traw.DuplicateFlag);
+isReord = logical(Traw.ReorderFlag);
+latCol = double(Traw.Latency_ms);
+
+for i = 1:3
+    if dirs(i) == "ALL"
+        idx = true(height(Traw), 1);
+    else
+        idx = (dirCol == dirs(i));
+    end
+    idxDel = idx & isDelivered;
+    generated(i) = sum(idx);
+    delivered(i) = sum(idxDel);
+    undelivered(i) = sum(idx & ~isDelivered);
+    pdr(i) = delivered(i) / max(generated(i), 1);
+    lat = latCol(idxDel);
+    lat = lat(isfinite(lat));
+    if ~isempty(lat)
+        meanLat(i) = mean(lat, "omitnan");
+        p95Lat(i) = localPercentile(lat, 95);
+    end
+    missN(i) = sum(idx & isMiss);
+    missRate(i) = missN(i) / max(generated(i), 1);
+    dupN(i) = sum(idx & isDup);
+    reordN(i) = sum(idx & isReord);
+
+    lateWithoutMiss = any(idx & isfinite(latCol) & (latCol > double(pdb_ms) + 1e-9) & ~isMiss);
+    missWithoutLate = any(idx & isfinite(latCol) & (latCol <= double(pdb_ms) + 1e-9) & isMiss);
+    duplicateInflationFreePass(i) = (delivered(i) <= generated(i)) && (dupN(i) == 0);
+    orderingIntegrityPass(i) = (reordN(i) == 0);
+    deadlineAccountingPass(i) = ~(lateWithoutMiss || missWithoutLate);
+    accountingIntegrityPass(i) = duplicateInflationFreePass(i) && orderingIntegrityPass(i) && deadlineAccountingPass(i);
+    semanticPass(i) = accountingIntegrityPass(i);
+    if ~semanticPass(i)
+        msg = strings(0,1);
+        if ~duplicateInflationFreePass(i)
+            if delivered(i) > generated(i)
+                msg(end+1,1) = "delivered>generated"; %#ok<AGROW>
+            end
+            if dupN(i) > 0
+                msg(end+1,1) = "duplicate_packets"; %#ok<AGROW>
+            end
+        end
+        if ~orderingIntegrityPass(i)
+            msg(end+1,1) = "reordered_packets"; %#ok<AGROW>
+        end
+        if ~deadlineAccountingPass(i)
+            if lateWithoutMiss
+                msg(end+1,1) = "late_packets_without_deadline_miss"; %#ok<AGROW>
+            end
+            if missWithoutLate
+                msg(end+1,1) = "deadline_miss_flag_without_late_packet"; %#ok<AGROW>
+            end
+        end
+        if isempty(msg)
+            msg(end+1,1) = "inconsistent_packet_integrity"; %#ok<AGROW>
+        end
+        semanticNotes(i) = strjoin(msg, ";");
+    else
+        semanticNotes(i) = "packet_accounting_integrity_ok";
+    end
+end
+
+T = table(dirs, generated, delivered, undelivered, pdr, meanLat, p95Lat, ...
+    missN, missRate, dupN, reordN, deadlinePDB, ...
+    duplicateInflationFreePass, orderingIntegrityPass, deadlineAccountingPass, accountingIntegrityPass, ...
+    semanticPass, repmat(localE2EAccountingMeaning(), 3, 1), semanticNotes, ...
+    'VariableNames', {'Direction','GeneratedPackets','DeliveredPackets','UndeliveredPackets', ...
+    'PacketDeliveryRatio','MeanLatency_ms','P95Latency_ms','DeadlineMissPackets', ...
+    'DeadlineMissRate','DuplicatePackets','OutOfOrderPackets','PacketDelayBudget_ms', ...
+    'DuplicateInflationFreePass','OrderingIntegrityPass','DeadlineAccountingPass','AccountingIntegrityPass', ...
+    'SemanticPass','AccountingMeaning','Notes'});
+passRate_pct = 100 * mean(double(semanticPass));
 end
 
 function [T, passRate_pct] = localBuildE2EPacketIntegrityTable( ...
@@ -6022,33 +7427,41 @@ dupN = [dupDL; dupUL; dupAll];
 reordN = [reordDL; reordUL; reordAll];
 deadlinePDB = repmat(double(pdb_ms), 3, 1);
 
-semanticPass = (delivered <= generated) & (dupN == 0) & (reordN == 0) & (missRate <= 0.10);
+duplicateInflationFreePass = (delivered <= generated) & (dupN == 0);
+orderingIntegrityPass = (reordN == 0);
+deadlineAccountingPass = true(size(dirs));
+accountingIntegrityPass = duplicateInflationFreePass & orderingIntegrityPass & deadlineAccountingPass;
+semanticPass = accountingIntegrityPass;
 semanticNotes = repmat("OK", 3, 1);
 for i = 1:3
     if ~semanticPass(i)
         msg = strings(0,1);
-        if delivered(i) > generated(i)
-            msg(end+1,1) = "delivered>generated"; %#ok<AGROW>
+        if ~duplicateInflationFreePass(i)
+            if delivered(i) > generated(i)
+                msg(end+1,1) = "delivered>generated"; %#ok<AGROW>
+            end
+            if dupN(i) > 0
+                msg(end+1,1) = "duplicate_packets"; %#ok<AGROW>
+            end
         end
-        if dupN(i) > 0
-            msg(end+1,1) = "duplicate_packets"; %#ok<AGROW>
-        end
-        if reordN(i) > 0
+        if ~orderingIntegrityPass(i)
             msg(end+1,1) = "reordered_packets"; %#ok<AGROW>
         end
-        if missRate(i) > 0.10
-            msg(end+1,1) = "deadline_miss_rate_high"; %#ok<AGROW>
-        end
         semanticNotes(i) = strjoin(msg, ";");
+    else
+        semanticNotes(i) = "packet_accounting_integrity_ok";
     end
 end
 
 T = table(dirs, generated, delivered, undelivered, pdr, meanLat, p95Lat, ...
-    missN, missRate, dupN, reordN, deadlinePDB, semanticPass, semanticNotes, ...
+    missN, missRate, dupN, reordN, deadlinePDB, ...
+    duplicateInflationFreePass, orderingIntegrityPass, deadlineAccountingPass, accountingIntegrityPass, ...
+    semanticPass, repmat(localE2EAccountingMeaning(), 3, 1), semanticNotes, ...
     'VariableNames', {'Direction','GeneratedPackets','DeliveredPackets','UndeliveredPackets', ...
     'PacketDeliveryRatio','MeanLatency_ms','P95Latency_ms','DeadlineMissPackets', ...
     'DeadlineMissRate','DuplicatePackets','OutOfOrderPackets','PacketDelayBudget_ms', ...
-    'SemanticPass','Notes'});
+    'DuplicateInflationFreePass','OrderingIntegrityPass','DeadlineAccountingPass','AccountingIntegrityPass', ...
+    'SemanticPass','AccountingMeaning','Notes'});
 passRate_pct = 100 * mean(double(semanticPass));
 end
 
@@ -6353,6 +7766,198 @@ gnbRach = sixgr.l3.rrc.RACHProcedure(cfg, "Role", "gNB", "UEId", ueId, "CellID",
 gnbAttach.bindRACH(gnbRach);
 end
 
+function ctx = localInitE2ESystemCouplingContext()
+ctx = struct();
+ctx.Enabled = false;
+ctx.CouplingMode = "standalone_scheduler_replay";
+ctx.Notes = "Truth E2E uses standalone schedulers/queues and is not coupled to SystemLevelRunner multi-cell state.";
+ctx.Source = "waveform_grant_replay";
+ctx.ExecutionBackend = "WAVEFORM_GRANT_REPLAY";
+ctx.PHYMode = "CRC_WAVEFORM_REPLAY";
+ctx.Result = struct();
+ctx.GrantsDLBySlot = {};
+ctx.GrantsULBySlot = {};
+end
+
+function ctx = localRunE2ESystemCoupling(cfgE, runFolder, traffic, nSlots, slotDur_s, nUE, nRB, attachGateSlots, opt, flowDirCfg)
+ctx = localInitE2ESystemCouplingContext();
+
+offeredDL = localExpandTrafficBits(sixgr.util.structGet(traffic, "OfferedBitsDL", zeros(nSlots, nUE)), nSlots, nUE, "E2ECoupledOfferedBitsDL");
+offeredUL = localExpandTrafficBits(sixgr.util.structGet(traffic, "OfferedBitsUL", zeros(nSlots, nUE)), nSlots, nUE, "E2ECoupledOfferedBitsUL");
+offeredDL = max(0, round(double(offeredDL)));
+offeredUL = max(0, round(double(offeredUL)));
+if upper(string(flowDirCfg)) == "DL"
+    offeredUL(:) = 0;
+elseif upper(string(flowDirCfg)) == "UL"
+    offeredDL(:) = 0;
+end
+if attachGateSlots > 0
+    offeredDL(1:attachGateSlots, :) = 0;
+    offeredUL(1:attachGateSlots, :) = 0;
+end
+
+cfgS = cfgE;
+cfgS.run.mode = "system";
+cfgS.run.shortRun = false;
+cfgS.outputs.saveCSV = false;
+cfgS.outputs.saveMAT = false;
+cfgS.outputs.saveFigures = false;
+cfgS.outputs.saveFIG = false;
+cfgS.outputs.detailedSystemTrace = false;
+cfgS.system.phyBackend = "waveform";
+cfgS.scenario.ue.nUE = nUE;
+cfgS.scenario.nUE = nUE;
+
+tmpRun = tempname;
+sixgr.util.ensureDir(tmpRun);
+cleanupTmp = onCleanup(@() localSafeRemoveDir(tmpRun)); %#ok<NASGU>
+
+ctxSys = sixgr.core.SimContext(cfgS, "RunFolder", tmpRun);
+ctxSys.Logger.EchoToConsole = false;
+
+params = struct();
+params.NumTTI = nSlots;
+params.TTI_s = slotDur_s;
+params.SimDuration_s = nSlots * slotDur_s;
+params.ForceLong = true;
+params.DetailedTrace = false;
+params.OfferedBitsDL = offeredDL;
+params.OfferedBitsUL = offeredUL;
+params.OfferedBits = offeredDL + offeredUL;
+params.TrafficModel = string(sixgr.util.structGet(traffic, "Model", sixgr.util.structGet(cfgS, "traffic.model", "custom")));
+params.TrafficTransport = string(sixgr.util.structGet(traffic, "Transport", sixgr.util.structGet(cfgS, "traffic.transport", "UDP")));
+params.TrafficFlowDirection = string(sixgr.util.structGet(traffic, "FlowDirection", sixgr.util.structGet(cfgS, "traffic.flowDirection", "BIDIR")));
+params.PacketDelayBudget_ms = double(sixgr.util.structGet(traffic, "PacketDelayBudget_ms", sixgr.util.structGet(cfgS, "traffic.packetDelayBudget_ms", 50)));
+params.PHYBackend = "waveform";
+params.NoProxyTruthContract = localNoProxyTruthContractEnabled(cfgS, opt);
+params.WaveformCompactPHYIO = logical(sixgr.util.structGet(opt, "E2ETruthCompactPHYIO", true));
+params.WaveformFastAWGNPath = logical(sixgr.util.structGet(opt, "E2ETruthFastAWGNPath", false));
+params.WaveformAdaptiveLDPC = logical(sixgr.util.structGet(opt, "E2ETruthAdaptiveLDPC", true));
+params.WaveformLDPCMaxIterations = double(sixgr.util.structGet(opt, "E2ETruthLDPCMaxIterations", 0));
+params.WaveformUseGPU = logical(sixgr.util.structGet(opt, "E2ETruthUseGPU", false));
+
+res = sixgr.system.SystemLevelRunner.run(ctxSys, params);
+if ~logical(sixgr.util.structGet(res, "Ok", false))
+    errs = string(sixgr.util.structGet(res, "Errors", strings(0,1)));
+    if isempty(errs)
+        errs = "unknown_system_coupling_failure";
+    end
+    error("sixgr:e2e:SystemCouplingFailed", ...
+        "Truth E2E system coupling failed before packet replay: %s", strjoin(cellstr(errs), " | "));
+end
+
+details = sixgr.util.structGet(res, "Details", struct());
+waveformBacked = logical(sixgr.util.structGet(details, "WaveformBacked", false));
+if ~waveformBacked
+    error("sixgr:e2e:SystemCouplingBackend", ...
+        "Truth E2E system coupling requires a waveform-backed SystemLevelRunner backend.");
+end
+
+grantTable = sixgr.util.structGet(details, "SchedulerGrants", table());
+[grantsDLBySlot, grantsULBySlot] = localBuildCoupledE2EGrantSlots(grantTable, nSlots, nRB);
+
+ctx.Enabled = true;
+ctx.CouplingMode = "system_waveform_grant_trace";
+ctx.Notes = "Truth E2E consumed actual SystemLevelRunner waveform grant, HARQ, and scheduler outcomes.";
+ctx.Source = "system_waveform_grant_trace";
+ctx.ExecutionBackend = string(sixgr.util.structGet(details, "ExecutionBackend", "WAVEFORM_SYSTEM_PHY"));
+ctx.PHYMode = string(sixgr.util.structGet(details, "PHYMode", "GRANT_CRC_WAVEFORM_REPLAY_EXPERIMENTAL"));
+ctx.Result = res;
+ctx.GrantsDLBySlot = grantsDLBySlot;
+ctx.GrantsULBySlot = grantsULBySlot;
+end
+
+function [grantsDLBySlot, grantsULBySlot] = localBuildCoupledE2EGrantSlots(grantTable, nSlots, nRB)
+grantsDLBySlot = repmat({struct([])}, nSlots, 1);
+grantsULBySlot = repmat({struct([])}, nSlots, 1);
+if ~(istable(grantTable) && ~isempty(grantTable))
+    return;
+end
+
+for i = 1:height(grantTable)
+    row = grantTable(i,:);
+    slotIdx = max(1, min(nSlots, round(double(row.TTI(1)))));
+    g = struct();
+    g.RNTI = double(row.UE(1));
+    g.CellID = double(row.CellID(1));
+    g.NPRB = max(1, round(double(row.PRBCount(1))));
+    g.PRBStart = double(row.PRBStart(1));
+    if isfinite(g.PRBStart)
+        g.PRBSet = g.PRBStart + (0:(g.NPRB-1));
+    else
+        g.PRBSet = [];
+    end
+    g.SymbolAllocation = [double(row.SymbolStart(1)) double(row.NumSymbols(1))];
+    g.TBSBits = double(row.TBSBits(1));
+    g.TBSBytes = ceil(max(g.TBSBits, 0) / 8);
+    g.CQIUsed = double(row.CQIUsed(1));
+    g.MCSIndex = double(row.MCSIndex(1));
+    g.NumLayers = max(1, round(double(row.NumLayers(1))));
+    g.TargetCodeRate = double(row.TargetCodeRate(1));
+    g.HeadOfLineDelay_ms = double(row.HeadOfLineDelay_ms(1));
+    g.BufferBytesBefore = double(row.BufferBytesBefore(1));
+    g.BufferBytesAfter = double(row.BufferBytesAfter(1));
+    g.GrantReason = string(row.GrantReason(1));
+    g.SearchSpaceID = double(row.SearchSpaceID(1));
+    g.CORESETID = double(row.CORESETID(1));
+    g.BWPId = double(row.BWPId(1));
+    g.DAI = double(row.DAI(1));
+    g.K1 = double(row.K1(1));
+    g.K2 = double(row.K2(1));
+    g.HARQ = struct( ...
+        "HarqID", double(row.HarqID(1)), ...
+        "RV", double(row.RV(1)), ...
+        "NDI", double(row.NDI(1)), ...
+        "IsRetransmission", logical(row.IsRetransmission(1)));
+    g.CoupledAck = logical(row.Ack(1));
+    g.CoupledBLER = double(row.BLER(1));
+    g.CoupledSINR_dB = double(row.SINR_dB(1));
+    g.CoupledSource = "system_waveform_grant_trace";
+
+    dirTag = upper(string(row.Direction(1)));
+    if dirTag == "DL"
+        if isempty(grantsDLBySlot{slotIdx})
+            grantsDLBySlot{slotIdx} = g;
+        else
+            grantsDLBySlot{slotIdx}(end+1,1) = g; %#ok<AGROW>
+        end
+    elseif dirTag == "UL"
+        if isempty(grantsULBySlot{slotIdx})
+            grantsULBySlot{slotIdx} = g;
+        else
+            grantsULBySlot{slotIdx}(end+1,1) = g; %#ok<AGROW>
+        end
+    end
+end
+end
+
+function airRes = localCoupledGrantAirResult(grant, coupledTruth)
+airRes = struct();
+airRes.Ok = logical(sixgr.util.structGet(grant, "CoupledAck", false));
+bler = double(sixgr.util.structGet(grant, "CoupledBLER", NaN));
+if ~isfinite(bler)
+    bler = 1.0 - double(airRes.Ok);
+end
+airRes.BLER = bler;
+airRes.Mode = "truth";
+airRes.Source = string(sixgr.util.structGet(coupledTruth, "Source", "system_waveform_grant_trace"));
+airRes.ExecutionBackend = string(sixgr.util.structGet(coupledTruth, "ExecutionBackend", "WAVEFORM_SYSTEM_PHY"));
+airRes.PHYMode = string(sixgr.util.structGet(coupledTruth, "PHYMode", "GRANT_CRC_WAVEFORM_REPLAY_EXPERIMENTAL"));
+airRes.Notes = "system_coupled_grant_trace";
+end
+
+function localSafeRemoveDir(pathIn)
+if nargin < 1 || strlength(string(pathIn)) == 0
+    return;
+end
+try
+    if exist(pathIn, "dir") == 7
+        rmdir(pathIn, "s");
+    end
+catch
+end
+end
+
 function airRes = localDeliverGrantOverPhy(cfgE, direction, grant, macPduBytes, snr_dB, airModel, strictValidation, cqi, retxDepth)
 if nargin < 8 || isempty(cqi)
     cqi = 10;
@@ -6400,46 +8005,43 @@ function airRes = localTruthPhyReplay(cfgE, direction, grant, macPduBytes, snr_d
 if nargin < 6
     airModel = struct();
 end
-dir = upper(string(direction));
 tbBitsIn = sixgr.l2.mac.TBAssembler.bytesToBits(uint8(macPduBytes(:)));
 if isempty(tbBitsIn)
-    airRes = struct("Ok", false, "BLER", 1.0, "Mode", "truth", "Notes", "empty_tb");
+    airRes = struct("Ok", false, "BLER", 1.0, "Mode", "truth", ...
+        "Source", "waveform_grant_replay", "Notes", "empty_tb");
     return;
 end
 
+strictMode = logical(sixgr.util.structGet(cfgE, "run.strictMode", false));
+compactPHY = logical(sixgr.util.structGet(airModel, "TruthCompactPHYIO", true));
+fastAWGNPath = logical(sixgr.util.structGet(airModel, "TruthFastAWGNPath", false));
+adaptiveLDPC = logical(sixgr.util.structGet(airModel, "TruthAdaptiveLDPC", true));
+maxIter = double(sixgr.util.structGet(airModel, "TruthLDPCMaxIterations", 0));
+useGPU = logical(sixgr.util.structGet(airModel, "TruthUseGPU", false));
+dir = upper(string(direction));
 try
     tmpl = localTruthTemplateForGrant(cfgE, dir, grant);
     tbBits = localResizeBitsForTB(tbBitsIn, double(tmpl.TransportBlockSize));
-    compactPHY = logical(sixgr.util.structGet(airModel, "TruthCompactPHYIO", true));
-    fastAWGNPath = logical(sixgr.util.structGet(airModel, "TruthFastAWGNPath", true));
-    maxIter = localTruthLDPCMaxIterations(snr_dB, cfgE, airModel);
-    if dir == "UL"
-        tx = sixgr.phy.ul.PUSCH_Tx(cfgE, ...
-            "Carrier", tmpl.Carrier, "PUSCH", tmpl.PUSCH, ...
-            "TransportBlockBits", tbBits, "RV", tmpl.RV, "TargetCodeRate", tmpl.TargetCodeRate, ...
-            "CompactOutput", compactPHY);
-        [rxWave, nVar] = localAddAwgnTruth(tx.Waveform, snr_dB, airModel);
-        [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgE, ...
-            "Carrier", tx.Carrier, "PUSCH", tx.PUSCH, "PUSCHIndices", tx.PUSCHIndices, ...
-            "TransportBlockSize", tx.TransportBlockSize, "TargetCodeRate", tx.TargetCodeRate, ...
-            "RV", tx.RV, "NoiseVar", nVar, "MaxIterations", maxIter, ...
-            "CompactOutput", compactPHY, "FastAWGNPath", fastAWGNPath);
-    else
-        tx = sixgr.phy.dl.PDSCH_Tx(cfgE, ...
-            "Carrier", tmpl.Carrier, "PDSCH", tmpl.PDSCH, ...
-            "TransportBlockBits", tbBits, "RV", tmpl.RV, "TargetCodeRate", tmpl.TargetCodeRate, ...
-            "CompactOutput", compactPHY);
-        [rxWave, nVar] = localAddAwgnTruth(tx.Waveform, snr_dB, airModel);
-        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgE, ...
-            "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, "PDSCHIndices", tx.PDSCHIndices, ...
-            "TransportBlockSize", tx.TransportBlockSize, "TargetCodeRate", tx.TargetCodeRate, ...
-            "RV", tx.RV, "NoiseVar", nVar, "MaxIterations", maxIter, ...
-            "CompactOutput", compactPHY, "FastAWGNPath", fastAWGNPath);
-    end
-    ok = logical(sixgr.util.structGet(rx, "Ok", false));
-    airRes = struct("Ok", ok, "BLER", double(~ok), "Mode", "truth", "Notes", "");
+    grantReplay = grant;
+    grantReplay.TBSBits = double(tmpl.TransportBlockSize);
+    grantReplay.TBSBytes = ceil(double(tmpl.TransportBlockSize) / 8);
+    replay = sixgr.system.waveform.replayGrant(cfgE, direction, grantReplay, tbBits, snr_dB, ...
+        "InputFormat", "bits", ...
+        "StrictMode", strictMode, ...
+        "CompactPHYIO", compactPHY, ...
+        "FastAWGNPath", fastAWGNPath, ...
+        "AdaptiveLDPC", adaptiveLDPC, ...
+        "LDPCMaxIterations", maxIter, ...
+        "UseGPU", useGPU);
+    airRes = replay;
+    airRes.Mode = "truth";
+    airRes.Source = "waveform_grant_replay";
 catch ME
+    if strictMode
+        rethrow(ME);
+    end
     airRes = struct("Ok", false, "BLER", 1.0, "Mode", "truth", ...
+        "Source", "waveform_grant_replay", ...
         "Notes", "truth_replay_failed: " + string(ME.message));
 end
 end
@@ -6856,7 +8458,12 @@ end
 
 function model = localBuildE2EAirModel(cfg, campaignRunFolder, opt, e2eAirLUT)
 mode = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut"))));
-strictValidation = logical(sixgr.util.structGet(opt, "E2EStrictValidation", false));
+strictValidation = logical(sixgr.util.structGet(opt, "E2EStrictValidation", false)) || ...
+    logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false));
+if logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false)) && ~strcmp(mode, "truth")
+    error("sixgr:e2e:NoProxyTruthAirModel", ...
+        "No-proxy truth contract requires E2EAirModel='truth'.");
+end
 if strictValidation && strcmp(mode, "logistic")
     error("sixgr:e2e:StrictLogisticForbidden", "Strict validation forbids logistic air model fallback. Use 'truth' or calibrated 'lut'.");
 end
@@ -6868,8 +8475,8 @@ model.DL = struct();
 model.UL = struct();
 
 if strcmp(mode, "truth")
-    model.Source = "truth_phy_replay";
-    model.TruthFastAWGNPath = logical(sixgr.util.structGet(opt, "E2ETruthFastAWGNPath", true));
+    model.Source = "waveform_grant_replay";
+    model.TruthFastAWGNPath = logical(sixgr.util.structGet(opt, "E2ETruthFastAWGNPath", false));
     model.TruthCompactPHYIO = logical(sixgr.util.structGet(opt, "E2ETruthCompactPHYIO", true));
     model.TruthAdaptiveLDPC = logical(sixgr.util.structGet(opt, "E2ETruthAdaptiveLDPC", true));
     model.TruthLDPCMaxIterations = double(sixgr.util.structGet(opt, "E2ETruthLDPCMaxIterations", 0));
@@ -6967,23 +8574,41 @@ out.UL = struct("SNR_dB", snrN, "BLER", ulN, "Source", "link_sweep_ul");
 out.System = struct("SNR_dB", snrN, "BLER", sysBLER, "Source", "link_sweep_avg");
 end
 
-function calib = localBuildCampaignCalibrationPayload(cfg, e2eAirLUT, link)
+function calib = localBuildCampaignCalibrationPayload(cfg, opt, e2eAirLUT, link)
 calib = struct();
-if nargin >= 2 && builtin("isstruct", e2eAirLUT) && isscalar(e2eAirLUT)
+usedByModules = localCalibrationUsedByModules(opt);
+calib.UsedByModules = usedByModules;
+calib.UsedByThisRun = ~isempty(usedByModules);
+calib.GeneratedFromCampaignLinkSweep = false;
+calib.SourceKind = "";
+calib.Notes = "";
+
+if nargin >= 3 && builtin("isstruct", e2eAirLUT) && isscalar(e2eAirLUT)
     if isfield(e2eAirLUT, "DL") || isfield(e2eAirLUT, "UL")
         calib = e2eAirLUT;
-        calib.Source = string(sixgr.util.structGet(e2eAirLUT, "Source", "campaign_e2e_air_lut"));
+        src = string(sixgr.util.structGet(e2eAirLUT, "Source", "campaign_link_sweep"));
+        calib.Source = src;
+        calib.SourceKind = localClassifyCalibrationSourceKind(src);
+        calib.GeneratedFromCampaignLinkSweep = calib.SourceKind == "campaign_link_sweep";
+        calib.UsedByModules = usedByModules;
+        calib.UsedByThisRun = ~isempty(usedByModules);
+        calib.Notes = localDescribeCalibrationPayload(calib);
         return;
     end
 end
 
 Ts = table();
-if nargin >= 3 && builtin("isstruct", link) && isscalar(link)
+if nargin >= 4 && builtin("isstruct", link) && isscalar(link)
     Ts = sixgr.util.structGet(link, "SNRSweep", table());
 end
 if istable(Ts) && ~isempty(Ts)
     calib = localBuildDualDirectionBLERLUTFromSweep(Ts);
     calib.Source = "campaign_link_sweep";
+    calib.SourceKind = "campaign_link_sweep";
+    calib.GeneratedFromCampaignLinkSweep = true;
+    calib.UsedByModules = usedByModules;
+    calib.UsedByThisRun = ~isempty(usedByModules);
+    calib.Notes = localDescribeCalibrationPayload(calib);
     return;
 end
 
@@ -6991,12 +8616,53 @@ lut = sixgr.system.BLER_LUT();
 calib = struct();
 calib.DL = struct("SNR_dB", double(lut.SNR_dB(:)), "BLER", double(lut.BLER(:)), "Source", "default_lut_dl");
 calib.UL = struct("SNR_dB", double(lut.SNR_dB(:)), "BLER", double(lut.BLER(:)), "Source", "default_lut_ul");
-calib.Source = "campaign_default_lut";
+calib.Source = "external_default_lut";
+calib.SourceKind = "external_default_lut";
 calib.StrictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
+calib.UsedByModules = usedByModules;
+calib.UsedByThisRun = ~isempty(usedByModules);
+calib.GeneratedFromCampaignLinkSweep = false;
+calib.Notes = localDescribeCalibrationPayload(calib);
+end
+
+function kind = localClassifyCalibrationSourceKind(src)
+src = lower(strtrim(char(string(src))));
+if contains(src, "campaign_link_sweep") || strcmp(src, "link_sweep") || contains(src, "link_sweep")
+    kind = "campaign_link_sweep";
+elseif contains(src, "default") || contains(src, "external")
+    kind = "external_default_lut";
+else
+    kind = "external_payload";
+end
+end
+
+function notes = localDescribeCalibrationPayload(calib)
+used = logical(sixgr.util.structGet(calib, "UsedByThisRun", false));
+srcKind = string(sixgr.util.structGet(calib, "SourceKind", ""));
+if srcKind == "campaign_link_sweep"
+    origin = "Generated from campaign link sweeps.";
+elseif srcKind == "external_default_lut"
+    origin = "Loaded from external/default LUT because no campaign link sweep calibration input was available.";
+else
+    origin = "Loaded from external calibration payload.";
+end
+
+if used
+    usedBy = string(sixgr.util.structGet(calib, "UsedByModules", strings(0,1)));
+    if isempty(usedBy)
+        usage = "UsedByThisRun=true.";
+    else
+        usage = "UsedByThisRun=true via " + strjoin(cellstr(usedBy), ", ") + ".";
+    end
+else
+    usage = "UsedByThisRun=false.";
+end
+notes = localJoinNotes(origin, usage);
 end
 
 function tc = localCollectCalibrationTrialCounts(runFolder)
 tc = struct();
+layout = sixgr.report.resultLayout(runFolder);
 files = { ...
     "dl_pdsch_trials.csv", ...
     "ul_pusch_trials.csv", ...
@@ -7008,7 +8674,7 @@ files = { ...
 for i = 1:numel(files)
     fn = char(files{i});
     key = matlab.lang.makeValidName(erase(fn, ".csv"));
-    p = fullfile(runFolder, "link", "csv", fn);
+    p = fullfile(layout.AirInterfaceCSVDir, fn);
     st = struct("file", p, "rows", 0, "pass", 0, "fail", 0, "crash", 0);
     if exist(p, "file") == 2
         try
@@ -7115,76 +8781,84 @@ end
 
 function localSaveE2EPlots(runFolder, slotTable, packetTraceTable, flowSummaryTable, bearerSummaryTable, dropCauseTable, harqTraceTable, attachTraceTable, summaryTable)
 try
-    figDir = fullfile(runFolder, "fig");
+    figDir = fullfile(runFolder, "image");
     csvDir = fullfile(runFolder, "csv");
     sixgr.util.ensureDir(figDir);
+    hasSlotTableArg = (nargin >= 2) && istable(slotTable);
+    hasPacketTraceArg = (nargin >= 3) && istable(packetTraceTable);
+    hasFlowSummaryArg = (nargin >= 4) && istable(flowSummaryTable);
+    hasBearerSummaryArg = (nargin >= 5) && istable(bearerSummaryTable);
+    hasDropCauseArg = (nargin >= 6) && istable(dropCauseTable);
+    hasHarqTraceArg = (nargin >= 7) && istable(harqTraceTable);
+    hasAttachTraceArg = (nargin >= 8) && istable(attachTraceTable);
+    hasSummaryArg = (nargin >= 9) && istable(summaryTable);
 
-    if nargin < 2 || ~istable(slotTable) || isempty(slotTable)
+    if ~hasSlotTableArg
         try
             slotTable = readtable(fullfile(csvDir, "e2e_slot_metrics.csv"), "VariableNamingRule", "preserve");
         catch
             slotTable = table();
         end
     end
-    if nargin < 3 || ~istable(packetTraceTable)
+    if ~hasPacketTraceArg
         packetTraceTable = table();
     end
-    if nargin < 4 || ~istable(flowSummaryTable)
+    if ~hasFlowSummaryArg
         flowSummaryTable = table();
     end
-    if nargin < 5 || ~istable(bearerSummaryTable)
+    if ~hasBearerSummaryArg
         bearerSummaryTable = table();
     end
-    if nargin < 6 || ~istable(dropCauseTable)
+    if ~hasDropCauseArg
         dropCauseTable = table();
     end
-    if nargin < 7 || ~istable(harqTraceTable)
+    if ~hasHarqTraceArg
         harqTraceTable = table();
     end
-    if nargin < 8 || ~istable(attachTraceTable)
+    if ~hasAttachTraceArg
         attachTraceTable = table();
     end
-    if nargin < 9 || ~istable(summaryTable)
+    if ~hasSummaryArg
         summaryTable = table();
     end
 
-    if isempty(packetTraceTable)
+    if ~hasPacketTraceArg && isempty(packetTraceTable)
         try
             packetTraceTable = readtable(fullfile(csvDir, "e2e_packet_trace.csv"), "VariableNamingRule", "preserve");
         catch
         end
     end
-    if isempty(flowSummaryTable)
+    if ~hasFlowSummaryArg && isempty(flowSummaryTable)
         try
             flowSummaryTable = readtable(fullfile(csvDir, "e2e_flow_summary.csv"), "VariableNamingRule", "preserve");
         catch
         end
     end
-    if isempty(bearerSummaryTable)
+    if ~hasBearerSummaryArg && isempty(bearerSummaryTable)
         try
             bearerSummaryTable = readtable(fullfile(csvDir, "e2e_bearer_summary.csv"), "VariableNamingRule", "preserve");
         catch
         end
     end
-    if isempty(dropCauseTable)
+    if ~hasDropCauseArg && isempty(dropCauseTable)
         try
             dropCauseTable = readtable(fullfile(csvDir, "e2e_drop_causes.csv"), "VariableNamingRule", "preserve");
         catch
         end
     end
-    if isempty(harqTraceTable)
+    if ~hasHarqTraceArg && isempty(harqTraceTable)
         try
             harqTraceTable = readtable(fullfile(csvDir, "e2e_harq_trace.csv"), "VariableNamingRule", "preserve");
         catch
         end
     end
-    if isempty(attachTraceTable)
+    if ~hasAttachTraceArg && isempty(attachTraceTable)
         try
             attachTraceTable = readtable(fullfile(csvDir, "e2e_attach_trace.csv"), "VariableNamingRule", "preserve");
         catch
         end
     end
-    if isempty(summaryTable)
+    if ~hasSummaryArg && isempty(summaryTable)
         try
             summaryTable = readtable(fullfile(csvDir, "e2e_summary.csv"), "VariableNamingRule", "preserve");
         catch
@@ -7546,52 +9220,165 @@ exportgraphics(figHandle, pdfFile, "ContentType", "vector");
 close(figHandle);
 end
 
-function audit = localBuild25CategoryAudit(link, sys, mmtc, harq, syncCtrl, v2x, ntn, interf, rfp, numProbe, beam, e2e)
+function audit = localBuild25CategoryAudit(runFolder, opt, link, sys, mmtc, harq, syncCtrl, v2x, ntn, interf, rfp, numProbe, beam, e2e)
 rows = repmat(struct("Category","","Status","","Evidence","","Notes",""), 0, 1);
 
-rows(end+1,1) = localAudit("1. Error Performance Metrics", "implemented", "link/csv/lls_kpi_summary.csv", "BER/BLER/outage proxy");
-rows(end+1,1) = localAudit("2. Throughput and Rate Metrics", "implemented", "link/csv/lls_kpi_summary.csv", "Goodput + spectral efficiency + peak from sweep");
-rows(end+1,1) = localAudit("3. Signal Quality and CSI", "approximated", "link/csv/lls_frame_metrics_*.csv", "SNR and noise variance; full CSI feedback set is partial");
-rows(end+1,1) = localAudit("4. Channel Estimation and Equalization", "implemented", "link/csv/lls_kpi_summary.csv", "Channel-estimation MSE + EVM-based quality");
-rows(end+1,1) = localAudit("5. MIMO and Beamforming", localOkToStatus(beam.Ok, "approximated"), "csv/probe_beam_mimo.csv", "Capacity/condition/beam metrics from probe");
-rows(end+1,1) = localAudit("6. Link Adaptation", "implemented", "link/csv/lls_snr_sweep.csv", "BLER/BER/throughput vs SNR curves");
-rows(end+1,1) = localAudit("7. HARQ and Retransmissions", localOkToStatus(harq.Ok, "implemented"), "csv/probe_harq_summary.csv", "Retransmission probability/RTT/residual BLER");
-rows(end+1,1) = localAudit("8. Latency and Timing", localOkToStatus(harq.Ok, "approximated"), "csv/probe_harq_packets.csv", "Processing delay + HARQ RTT proxy");
-rows(end+1,1) = localAudit("9. Power and Energy Efficiency", localOkToStatus(rfp.Ok, "approximated"), "csv/probe_rf_energy.csv", "Power model outputs + PAPR");
-rows(end+1,1) = localAudit("10. Synchronization and Timing Offsets", localOkToStatus(syncCtrl.Ok, "approximated"), "csv/probe_sync_control.csv", "PBCH/PRACH detect + timing offset");
-rows(end+1,1) = localAudit("11. Channel Coding and Decoding", "implemented", "link/csv/lls_kpi_summary.csv", "LDPC decoder iterations + BER/BLER");
-rows(end+1,1) = localAudit("12. Modulation and Waveform Quality", "implemented", "link/fig/*.png", "EVM, constellation, PAPR CCDF");
-rows(end+1,1) = localAudit("13. Interference Analysis", localOkToStatus(interf.Ok, "approximated"), "csv/probe_interference_sir_bler.csv", "Synthetic SIR vs BLER probe");
-rows(end+1,1) = localAudit("14. Mobility and Time-Varying Channels", localOkToStatus(sys.Ok, "implemented"), "system/csv/system_time_series.csv", "Mobility traces and time-varying SINR");
-rows(end+1,1) = localAudit("15. Multi-User and Multi-Cell Metrics", localOkToStatus(sys.Ok, "approximated"), "system/csv/system_kpis.csv", "Fairness/sum-rate style KPIs from system abstraction");
-rows(end+1,1) = localAudit("16. Beam Management", localOkToStatus(beam.Ok, "approximated"), "csv/probe_beam_mimo.csv", "Beam score metrics; full beam management loop not modeled");
-rows(end+1,1) = localAudit("17. Waveform and Numerology Specifics", localOkToStatus(numProbe.Ok, "implemented"), "csv/probe_numerology.csv", "SCS sweep impact on BER/BLER/throughput");
-rows(end+1,1) = localAudit("18. Control Channel and Random Access", localOkToStatus(syncCtrl.Ok, "implemented"), "csv/probe_sync_control.csv", "PBCH/PRACH/PDCCH/PUCCH probe metrics");
-rows(end+1,1) = localAudit("19. Hardware Impairments", localOkToStatus(rfp.Ok, "implemented"), "csv/probe_rf_energy.csv", "IQ imbalance/phase noise/CFO/DC offset sensitivity");
-rows(end+1,1) = localAudit("20. Reliability and Outage (URLLC)", "approximated", "link/csv/lls_kpi_summary.csv", "Outage and BLER reliability proxy");
-rows(end+1,1) = localAudit("21. Massive MTC (mMTC) Metrics", localOkToStatus(mmtc.Ok, "implemented"), "csv/probe_mmtc_kpis.csv", "Connection density + access success proxy");
-rows(end+1,1) = localAudit("22. V2X Metrics", localOkToStatus(v2x.Ok, "approximated"), "csv/probe_v2x_sidelink.csv", "Sidelink-style PRR/IPG/latency vs velocity");
-rows(end+1,1) = localAudit("23. NTN Metrics", localOkToStatus(ntn.Ok, "approximated"), "csv/probe_ntn_delay_doppler.csv", "Delay/Doppler compensation probe");
-rows(end+1,1) = localAudit("24. Protocol and Stack Interactions", localOkToStatus(e2e.Ok, "implemented"), "csv/probe_e2e_summary.csv + csv/probe_e2e_packet_integrity.csv", "SDAP/PDCP/RLC/MAC/HARQ/RRC hooks with semantic packet checks");
-rows(end+1,1) = localAudit("25. Miscellaneous Statistical Outputs", "implemented", "link/fig + system/csv", "CDFs/time series/correlation-ready exports");
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+runAux = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunAuxiliaryProbes", false));
+runMMTC = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunSystemMMTCProbe", false));
+runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
+runLink = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunLinkCampaign", true));
+runSystem = ~onlyE2E;
+[systemWaveformBacked, systemBackendLabel] = localSystemWaveformAuditState(sys);
+
+multiUserStatus = "approximated";
+multiUserNotes = "Fairness/sum-rate style KPIs from system abstraction";
+if systemWaveformBacked
+    multiUserStatus = "implemented";
+    multiUserNotes = "Fairness/sum-rate KPIs from waveform-backed system grant replay (" + systemBackendLabel + ")";
+end
+
+rows(end+1,1) = localAudit(runFolder, "1. Error Performance Metrics", "implemented", ...
+    "air_interface/csv/lls_kpi_summary.csv", "BER/BLER/outage proxy", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "2. Throughput and Rate Metrics", "implemented", ...
+    "air_interface/csv/lls_kpi_summary.csv", "Goodput + spectral efficiency + peak from sweep", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "3. Signal Quality and CSI", "approximated", ...
+    "air_interface/mat/link_results.mat", "SNR and noise variance; full CSI feedback set is partial", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "4. Channel Estimation and Equalization", "implemented", ...
+    "air_interface/mat/link_results.mat", "Channel-estimation artifacts and equalization outputs", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "5. MIMO and Beamforming", "approximated", ...
+    "beamforming/csv/probe_beam_mimo.csv", "Capacity/condition/beam metrics from probe", runAux, beam);
+rows(end+1,1) = localAudit(runFolder, "6. Link Adaptation", "implemented", ...
+    "air_interface/csv/lls_snr_sweep.csv", "BLER/BER/throughput vs SNR curves", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "7. HARQ and Retransmissions", "implemented", ...
+    "harq/csv/probe_harq_summary.csv", "Retransmission probability/RTT/residual BLER", runAux, harq);
+rows(end+1,1) = localAudit(runFolder, "8. Latency and Timing", "approximated", ...
+    "harq/csv/probe_harq_packets.csv", "Processing delay + HARQ RTT proxy", runAux, harq);
+rows(end+1,1) = localAudit(runFolder, "9. Power and Energy Efficiency", "approximated", ...
+    "rf/csv/probe_rf_energy.csv", "Power model outputs + PAPR", runAux, rfp);
+rows(end+1,1) = localAudit(runFolder, "10. Synchronization and Timing Offsets", "approximated", ...
+    "control/csv/probe_sync_control.csv", "PBCH/PRACH detect + timing offset", runAux, syncCtrl);
+rows(end+1,1) = localAudit(runFolder, "11. Channel Coding and Decoding", "implemented", ...
+    "air_interface/csv/lls_kpi_summary.csv", "LDPC decoder iterations + BER/BLER", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "12. Modulation and Waveform Quality", "implemented", ...
+    "air_interface/mat/link_results.mat", "EVM/PAPR waveform-quality artifacts; figures are optional", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "13. Interference Analysis", "approximated", ...
+    "system/csv/system_interference_detail.csv", "Per-UE interference decomposition trace", runSystem, sys);
+rows(end+1,1) = localAudit(runFolder, "14. Mobility and Time-Varying Channels", "implemented", ...
+    "system/csv/system_time_series.csv", "Mobility traces and time-varying SINR", runSystem, sys);
+rows(end+1,1) = localAudit(runFolder, "15. Multi-User and Multi-Cell Metrics", multiUserStatus, ...
+    "system/csv/system_kpis.csv", multiUserNotes, runSystem, sys);
+rows(end+1,1) = localAudit(runFolder, "16. Beam Management", "approximated", ...
+    "beamforming/csv/probe_beam_mimo.csv", "Beam score metrics; full beam management loop not modeled", runAux, beam);
+rows(end+1,1) = localAudit(runFolder, "17. Waveform and Numerology Specifics", "implemented", ...
+    "numerology/csv/probe_numerology.csv", "SCS sweep impact on BER/BLER/throughput", runAux, numProbe);
+rows(end+1,1) = localAudit(runFolder, "18. Control Channel and Random Access", "implemented", ...
+    "control/csv/probe_sync_control.csv", "PBCH/PRACH/PDCCH/PUCCH probe metrics", runAux, syncCtrl);
+rows(end+1,1) = localAudit(runFolder, "19. Hardware Impairments", "implemented", ...
+    "rf/csv/probe_rf_energy.csv", "IQ imbalance/phase noise/CFO/DC offset sensitivity", runAux, rfp);
+rows(end+1,1) = localAudit(runFolder, "20. Reliability and Outage (URLLC)", "approximated", ...
+    "air_interface/csv/lls_kpi_summary.csv", "Outage and BLER reliability proxy", runLink, link);
+rows(end+1,1) = localAudit(runFolder, "21. Massive MTC (mMTC) Metrics", "implemented", ...
+    "mmtc/csv/probe_mmtc_kpis.csv", "Connection density + access success proxy", runMMTC, mmtc);
+rows(end+1,1) = localAudit(runFolder, "22. V2X Metrics", "approximated", ...
+    "v2x/csv/probe_v2x_sidelink.csv", "Sidelink-style PRR/IPG/latency vs velocity", runAux, v2x);
+rows(end+1,1) = localAudit(runFolder, "23. NTN Metrics", "approximated", ...
+    "ntn/csv/probe_ntn_delay_doppler.csv", "Delay/Doppler compensation probe", runAux, ntn);
+rows(end+1,1) = localAudit(runFolder, "24. Protocol and Stack Interactions", "implemented", ...
+    "packet_flow/csv/probe_e2e_summary.csv + packet_flow/csv/probe_e2e_packet_integrity.csv", "SDAP/PDCP/RLC/MAC/HARQ/RRC hooks with semantic packet checks", runE2E, e2e);
+rows(end+1,1) = localAudit(runFolder, "25. Miscellaneous Statistical Outputs", "implemented", ...
+    "packet_flow/csv/probe_e2e_slot_metrics.csv", "Slot-level statistical exports for correlation and post-processing", runE2E, e2e);
 
 audit = struct2table(rows);
 end
 
-function s = localOkToStatus(ok, okStatus)
-if ok
-    s = okStatus;
-else
-    s = "not_modeled";
+function r = localAudit(runFolder, cat, desiredStatus, evidence, notes, executed, module)
+[evidenceExists, missingTokens] = localAuditEvidenceExists(runFolder, evidence);
+moduleOk = logical(sixgr.util.structGet(module, "Ok", false));
+moduleNotes = localExtractModuleNotes(module);
+status = string(desiredStatus);
+notesOut = string(notes);
+if ~logical(executed)
+    status = "not_run";
+    notesOut = localDefaultAuditSkipNote(moduleNotes);
+elseif ~evidenceExists
+    status = "missing_artifact";
+    notesOut = localJoinNotes(notesOut, "Missing evidence: " + strjoin(cellstr(missingTokens), ", "));
+elseif ~moduleOk
+    status = "failed";
+    notesOut = localJoinNotes(notesOut, localDefaultAuditFailureNote(moduleNotes));
 end
-end
-
-function r = localAudit(cat, status, evidence, notes)
 r = struct();
 r.Category = string(cat);
 r.Status = string(status);
 r.Evidence = string(evidence);
-r.Notes = string(notes);
+r.Notes = string(notesOut);
+end
+
+function [waveformBacked, backendLabel] = localSystemWaveformAuditState(sys)
+waveformBacked = false;
+backendLabel = "";
+
+kpi = sixgr.util.structGet(sys, "KPITable", table());
+if ~(istable(kpi) && height(kpi) >= 1)
+    return;
+end
+
+if ismember("WaveformBacked", string(kpi.Properties.VariableNames))
+    waveformBacked = logical(kpi.WaveformBacked(1));
+end
+if ismember("ExecutionBackend", string(kpi.Properties.VariableNames))
+    backendLabel = string(kpi.ExecutionBackend(1));
+    waveformBacked = waveformBacked || contains(upper(backendLabel), "WAVEFORM");
+end
+end
+
+function [existsAll, missingTokens] = localAuditEvidenceExists(runFolder, evidence)
+tokens = split(string(evidence), "+");
+missingTokens = strings(0,1);
+existsAll = true;
+for i = 1:numel(tokens)
+    token = strtrim(tokens(i));
+    if strlength(token) == 0
+        continue;
+    end
+    if ~localAuditEvidenceTokenExists(runFolder, token)
+        existsAll = false;
+        missingTokens(end+1,1) = token; %#ok<AGROW>
+    end
+end
+end
+
+function tf = localAuditEvidenceTokenExists(runFolder, token)
+token = strtrim(string(token));
+if strlength(token) == 0
+    tf = true;
+    return;
+end
+absPattern = fullfile(runFolder, char(token));
+if localPatternHasWildcard(token)
+    tf = ~isempty(dir(absPattern));
+else
+    tf = exist(absPattern, "file") == 2 || exist(absPattern, "dir") == 7;
+end
+end
+
+function note = localDefaultAuditSkipNote(moduleNotes)
+note = strtrim(string(moduleNotes));
+if strlength(note) == 0
+    note = "Module not executed for this campaign.";
+end
+end
+
+function note = localDefaultAuditFailureNote(moduleNotes)
+note = strtrim(string(moduleNotes));
+if strlength(note) == 0
+    note = "Module reported Ok=false.";
+end
+end
+
+function txt = localExtractModuleNotes(module)
+txt = strtrim(string(sixgr.util.structGet(module, "Notes", "")));
 end
 
 function localEnsureMexAccelerators()
@@ -7600,11 +9387,7 @@ if ~isempty(builtOK) && builtOK
     return;
 end
 
-need = ["sixgr_l2_mac_estimateTBSApprox_entry_mex", ...
-    "sixgr_system_fast_core_kernel_mex", ...
-    "sixgr_e2e_fast_core_kernel_mex", ...
-    "sixgr_link_fast_core_kernel_mex", ...
-    "sixgr_fft_papr_kernel_mex", ...
+need = ["sixgr_fft_papr_kernel_mex", ...
     "sixgr_ldpc_decode_batch_kernel_mex", ...
     "sixgr_channel_est_ls_kernel_mex", ...
     "sixgr_awgn_complex_kernel_mex", ...
@@ -7628,6 +9411,37 @@ try
     builtOK = logical(sixgr.util.structGet(out, "Ok", false));
 catch
     builtOK = false;
+end
+end
+
+function localRejectRemovedProxyModes(cfg, opt)
+useFastLink = logical(sixgr.util.structGet(opt, "UseFastLinkModel", false));
+if useFastLink
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "UseFastLinkModel=true is no longer supported. The active repository is waveform-truth-only.");
+end
+
+airModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth")))));
+if ~strcmp(airModel, "truth")
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "E2EAirModel='%s' is no longer supported. Use E2EAirModel='truth' only.", airModel);
+end
+
+profileMode = lower(strtrim(char(string(sixgr.util.structGet(opt, "CampaignProfileMode", "")))));
+if strcmp(profileMode, "stress_proxy")
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "CampaignProfileMode='stress_proxy' has been removed from the active repository.");
+end
+
+if logical(sixgr.util.structGet(opt, "CalibrateSystemBLERFromLink", false))
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "CalibrateSystemBLERFromLink=true is no longer supported because BLER calibration/LUT proxy paths were removed.");
+end
+
+phyBackend = lower(strtrim(char(string(sixgr.util.structGet(cfg, "system.phyBackend", "waveform")))));
+if ~strcmp(phyBackend, "waveform")
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "system.phyBackend='%s' is no longer supported. Use waveform only.", phyBackend);
 end
 end
 
@@ -7748,6 +9562,7 @@ opt = localOverrideBool(opt, camp, "AutoBuildMexAcceleration", "autoBuildMexAcce
 opt = localOverrideBool(opt, camp, "SetupToolboxChecks", "setupToolboxChecks");
 opt = localOverrideBool(opt, camp, "GenerateCampaignPlots", "generateCampaignPlots");
 opt = localOverrideBool(opt, camp, "VerifyArtifacts", "verifyArtifacts");
+opt = localOverrideBool(opt, camp, "NoProxyTruthContract", "noProxyTruthContract");
 opt = localOverrideString(opt, camp, "E2EAirModel", "e2eAirModel");
 end
 
@@ -7779,13 +9594,14 @@ end
 end
 
 function out = localGenerateCampaignPlots(runFolder)
-figDir = fullfile(runFolder, "fig");
+layout = sixgr.report.resultLayout(runFolder);
+figDir = layout.ReportImageDir;
 sixgr.util.ensureDir(figDir);
 files = strings(0,1);
 nPlots = 0;
 
 % 1) Link SNR sweep.
-fSweep = fullfile(runFolder, "link", "csv", "lls_snr_sweep.csv");
+fSweep = fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv");
 if exist(fSweep, "file") == 2
     T = readtable(fSweep, "VariableNamingRule", "preserve");
     if ~isempty(T) && ismember("SNR_dB", string(T.Properties.VariableNames))
@@ -7808,7 +9624,7 @@ if exist(fSweep, "file") == 2
 end
 
 % 2) HARQ summary.
-fHarq = fullfile(runFolder, "csv", "probe_harq_summary.csv");
+fHarq = fullfile(layout.HARQCSVDir, "probe_harq_summary.csv");
 if exist(fHarq, "file") == 2
     T = readtable(fHarq, "VariableNamingRule", "preserve");
     if ~isempty(T) && ismember("Mode", string(T.Properties.VariableNames))
@@ -7834,7 +9650,7 @@ if exist(fHarq, "file") == 2
 end
 
 % 3) Sync/control metrics.
-fSync = fullfile(runFolder, "csv", "probe_sync_control.csv");
+fSync = fullfile(layout.ControlCSVDir, "probe_sync_control.csv");
 if exist(fSync, "file") == 2
     T = readtable(fSync, "VariableNamingRule", "preserve");
     if ~isempty(T) && ismember("SNR_dB", string(T.Properties.VariableNames))
@@ -7860,7 +9676,7 @@ if exist(fSync, "file") == 2
 end
 
 % 4) Interference.
-fInterf = fullfile(runFolder, "csv", "probe_interference_sir_bler.csv");
+fInterf = fullfile(layout.InterferenceCSVDir, "probe_interference_sir_bler.csv");
 if exist(fInterf, "file") == 2
     T = readtable(fInterf, "VariableNamingRule", "preserve");
     if ~isempty(T) && all(ismember(["SIR_dB","BLER"], string(T.Properties.VariableNames)))
@@ -7876,7 +9692,7 @@ if exist(fInterf, "file") == 2
 end
 
 % 5) Numerology.
-fNum = fullfile(runFolder, "csv", "probe_numerology.csv");
+fNum = fullfile(layout.NumerologyCSVDir, "probe_numerology.csv");
 if exist(fNum, "file") == 2
     T = readtable(fNum, "VariableNamingRule", "preserve");
     if ~isempty(T) && all(ismember(["SCS_kHz","DL_Throughput_Mbps"], string(T.Properties.VariableNames)))
@@ -7892,7 +9708,7 @@ if exist(fNum, "file") == 2
 end
 
 % 6) V2X and NTN.
-fV2X = fullfile(runFolder, "csv", "probe_v2x_sidelink.csv");
+fV2X = fullfile(layout.V2XCSVDir, "probe_v2x_sidelink.csv");
 if exist(fV2X, "file") == 2
     T = readtable(fV2X, "VariableNamingRule", "preserve");
     if ~isempty(T) && all(ismember(["Velocity_kmh","PacketReceptionRatio_WithComp"], string(T.Properties.VariableNames)))
@@ -7907,7 +9723,7 @@ if exist(fV2X, "file") == 2
     end
 end
 
-fNTN = fullfile(runFolder, "csv", "probe_ntn_delay_doppler.csv");
+fNTN = fullfile(layout.NTNCSVDir, "probe_ntn_delay_doppler.csv");
 if exist(fNTN, "file") == 2
     T = readtable(fNTN, "VariableNamingRule", "preserve");
     if ~isempty(T) && all(ismember(["PropagationDelay_ms","BLER_NoComp","BLER_WithComp"], string(T.Properties.VariableNames)))
@@ -7926,7 +9742,7 @@ if exist(fNTN, "file") == 2
 end
 
 % 7) E2E slot flow.
-fE2E = fullfile(runFolder, "csv", "probe_e2e_slot_metrics.csv");
+fE2E = fullfile(layout.PacketFlowCSVDir, "probe_e2e_slot_metrics.csv");
 if exist(fE2E, "file") == 2
     T = readtable(fE2E, "VariableNamingRule", "preserve");
     if ~isempty(T) && all(ismember(["Slot","OfferedBits","DeliveredBits"], string(T.Properties.VariableNames)))
@@ -7961,190 +9777,116 @@ files(end+1,1) = string(pngFile); %#ok<AGROW>
 files(end+1,1) = string(pdfFile); %#ok<AGROW>
 end
 
-function out = localVerifyArtifacts(runFolder, requireCampaignPlots, opt)
+function out = localVerifyArtifacts(runFolder, requireCampaignPlots, opt, summary, strictMode)
 if nargin < 2
     requireCampaignPlots = false;
 end
 if nargin < 3 || ~isstruct(opt)
     opt = struct();
 end
-spec = localArtifactSpec(requireCampaignPlots, opt);
-n = numel(spec);
-rows = repmat(struct( ...
-    "Category", "", ...
-    "ArtifactID", "", ...
-    "Pattern", "", ...
-    "Kind", "", ...
-    "Required", true, ...
-    "Exists", false, ...
-    "FoundCount", 0, ...
-    "Status", "", ...
-    "Notes", ""), n, 1);
-
-for i = 1:n
-    p = fullfile(runFolder, char(spec(i).Pattern));
-    d = dir(p);
-    d = d(~[d.isdir]);
-    found = numel(d);
-    ex = found > 0;
-    req = logical(spec(i).Required);
-    if ex
-        st = "ok";
-    elseif req
-        st = "missing_required";
-    else
-        st = "missing_optional";
-    end
-    rows(i) = struct( ...
-        "Category", string(spec(i).Category), ...
-        "ArtifactID", string(spec(i).ArtifactID), ...
-        "Pattern", string(spec(i).Pattern), ...
-        "Kind", string(spec(i).Kind), ...
-        "Required", req, ...
-        "Exists", ex, ...
-        "FoundCount", found, ...
-        "Status", st, ...
-        "Notes", string(spec(i).Notes));
+if nargin < 4 || ~isstruct(summary)
+    summary = struct();
+end
+if nargin < 5
+    strictMode = false;
+end
+ctx = localBuildArtifactVerificationContext(requireCampaignPlots, opt);
+out = sixgr.report.verifyCampaignArtifacts(runFolder, summary, ...
+    "ModuleContext", ctx, ...
+    "StrictMode", logical(strictMode));
 end
 
-T = struct2table(rows);
-reqMask = logical(T.Required);
-reqCov = mean(double(T.Exists(reqMask)));
-covPct = 100 * reqCov;
-missingN = sum(reqMask & ~T.Exists);
-
-csvFile = fullfile(runFolder, "csv", "full_3gpp_artifact_checklist.csv");
-sixgr.util.csvWriteTable(csvFile, T);
-mdFile = fullfile(runFolder, "full_3gpp_artifact_checklist.md");
-localWriteArtifactChecklistMD(mdFile, T, covPct, missingN);
-
-out = struct();
-out.Ok = missingN == 0;
-out.Table = T;
-out.CSV = csvFile;
-out.MD = mdFile;
-out.Coverage_pct = covPct;
-out.MissingCount = double(missingN);
-end
-
-function S = localArtifactSpec(requireCampaignPlots, opt)
+function ctx = localBuildArtifactVerificationContext(requireCampaignPlots, opt)
 if nargin < 1
     requireCampaignPlots = false;
 end
 if nargin < 2 || ~isstruct(opt)
     opt = struct();
 end
-requireAuxProbes = logical(sixgr.util.structGet(opt, "RunAuxiliaryProbes", false));
-requireMMTC = logical(sixgr.util.structGet(opt, "RunSystemMMTCProbe", false));
-requireSystemFigures = logical(sixgr.util.structGet(opt, "SystemSaveFigures", false));
-S = repmat(struct("Category","","ArtifactID","","Pattern","","Kind","","Required",true,"Notes",""),0,1);
 
-S(end+1) = localSpec("Run", "run_log", "logs/full_campaign.log", "log", true, "Top-level campaign log");
-S(end+1) = localSpec("Run", "run_report_mat", "mat/full_campaign_report.mat", "mat", true, "Top-level report MAT");
-S(end+1) = localSpec("Run", "run_report_md", "full_campaign_report.md", "md", true, "Top-level report markdown");
-S(end+1) = localSpec("Run", "category_audit", "csv/full_3gpp_category_audit.csv", "csv", true, "25-category audit table");
-S(end+1) = localSpec("Run", "structured_manifest", "analysis_by_block/run/meta/structured_manifest.csv", "csv", false, "Structured manifest (if organizer succeeds)");
-S(end+1) = localSpec("Run", "campaign_plots", "fig/campaign_*.png", "fig", logical(requireCampaignPlots), "Campaign-level synthesized plots");
-S(end+1) = localSpec("Run", "calibration_bler_db_mat", "calibration/bler_db.mat", "mat", true, "Calibration BLER DB MAT");
-S(end+1) = localSpec("Run", "calibration_bler_db_metadata", "calibration/bler_db_metadata.json", "json", true, "Calibration BLER DB metadata");
-S(end+1) = localSpec("Run", "calibration_coverage", "calibration/calibration_coverage.csv", "csv", true, "Calibration coverage summary");
-S(end+1) = localSpec("Run", "calibration_validation", "calibration/calibration_validation.csv", "csv", true, "Calibration validation metrics");
-S(end+1) = localSpec("Run", "meta_run_manifest", "meta/run_manifest.json", "json", true, "Run-level reproducibility manifest");
-S(end+1) = localSpec("Run", "meta_environment", "meta/environment.json", "json", true, "MATLAB/host/toolbox environment snapshot");
-S(end+1) = localSpec("Run", "meta_seeds", "meta/seeds.csv", "csv", true, "Seed table for deterministic replay");
-S(end+1) = localSpec("Run", "meta_approximations", "meta/approximations_used.csv", "csv", true, "Approximations/proxy modes used in run");
-S(end+1) = localSpec("Run", "meta_calibration_source", "meta/calibration_source.json", "json", true, "Calibration provenance snapshot");
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
+runAux = logical(sixgr.util.structGet(opt, "RunAuxiliaryProbes", false));
+runMMTC = logical(sixgr.util.structGet(opt, "RunSystemMMTCProbe", false));
+runLink = logical(sixgr.util.structGet(opt, "RunLinkCampaign", true));
 
-S(end+1) = localSpec("1. Error Performance Metrics", "lls_kpi", "link/csv/lls_kpi_summary.csv", "csv", true, "BER/BLER summary");
-S(end+1) = localSpec("1. Error Performance Metrics", "dl_pdsch_trials", "link/csv/dl_pdsch_trials.csv", "csv", true, "Per-trial DL PDSCH trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "ul_pusch_trials", "link/csv/ul_pusch_trials.csv", "csv", true, "Per-trial UL PUSCH trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "pdcch_trials", "link/csv/pdcch_trials.csv", "csv", true, "Per-trial PDCCH trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "pucch_trials", "link/csv/pucch_trials.csv", "csv", true, "Per-trial PUCCH trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "pbch_trials", "link/csv/pbch_trials.csv", "csv", true, "Per-trial PBCH trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "prach_trials", "link/csv/prach_trials.csv", "csv", true, "Per-trial PRACH trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "srs_trials", "link/csv/srs_trials.csv", "csv", true, "Per-trial SRS trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "control_cell_search_trials", "control/csv/cell_search_trials.csv", "csv", true, "Control-plane cell-search trial trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "control_pbch_recovery_trials", "control/csv/pbch_recovery_trials.csv", "csv", true, "Control-plane PBCH recovery trial trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "control_prach_trials", "control/csv/prach_trials.csv", "csv", true, "Control-plane PRACH trial trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "control_pdcch_trials", "control/csv/pdcch_trials.csv", "csv", true, "Control-plane PDCCH trial trace");
-S(end+1) = localSpec("1. Error Performance Metrics", "control_pucch_trials", "control/csv/pucch_trials.csv", "csv", true, "Control-plane PUCCH trial trace");
-S(end+1) = localSpec("2. Throughput and Rate Metrics", "lls_snr", "link/csv/lls_snr_sweep.csv", "csv", true, "Throughput vs SNR");
-S(end+1) = localSpec("3. Signal Quality and CSI", "sync_ctrl", "csv/probe_sync_control.csv", "csv", requireAuxProbes, "SNR/control quality probes");
-S(end+1) = localSpec("4. Channel Estimation and Equalization", "lls_link_results", "link/mat/link_results.mat", "mat", true, "Channel/equalization artifacts");
-S(end+1) = localSpec("5. MIMO and Beamforming", "beam_mimo", "csv/probe_beam_mimo.csv", "csv", requireAuxProbes, "MIMO/beam probe");
-S(end+1) = localSpec("6. Link Adaptation", "snr_sweep", "link/csv/lls_snr_sweep.csv", "csv", true, "MCS adaptation proxy");
-S(end+1) = localSpec("7. HARQ and Retransmissions", "harq_summary", "csv/probe_harq_summary.csv", "csv", requireAuxProbes, "HARQ summary");
-S(end+1) = localSpec("8. Latency and Timing", "harq_packets", "csv/probe_harq_packets.csv", "csv", requireAuxProbes, "RTT/processing delay proxy");
-S(end+1) = localSpec("9. Power and Energy Efficiency", "rf_energy", "csv/probe_rf_energy.csv", "csv", requireAuxProbes, "Energy/power probe");
-S(end+1) = localSpec("10. Synchronization and Timing Offsets", "sync", "csv/probe_sync_control.csv", "csv", requireAuxProbes, "Sync metrics");
-S(end+1) = localSpec("11. Channel Coding and Decoding", "harq_packets", "csv/probe_harq_packets.csv", "csv", requireAuxProbes, "Decoder iterations");
-S(end+1) = localSpec("12. Modulation and Waveform Quality", "rf_energy", "csv/probe_rf_energy.csv", "csv", requireAuxProbes, "EVM/PAPR proxy");
-S(end+1) = localSpec("13. Interference Analysis", "sir_bler", "csv/probe_interference_sir_bler.csv", "csv", requireAuxProbes, "Interference probe");
-S(end+1) = localSpec("13. Interference Analysis", "sys_interference_detail", "system/csv/system_interference_detail.csv", "csv", true, "Per-UE interference decomposition trace");
-S(end+1) = localSpec("14. Mobility and Time-Varying Channels", "sys_timeseries", "system/csv/system_time_series.csv", "csv", true, "Mobility time series");
-S(end+1) = localSpec("14. Mobility and Time-Varying Channels", "sys_handover_events", "system/csv/system_handover_events.csv", "csv", true, "Handover events and interruption timing");
-S(end+1) = localSpec("14. Mobility and Time-Varying Channels", "sys_beam_events", "system/csv/system_beam_events.csv", "csv", true, "Beam update/switch event log");
-S(end+1) = localSpec("15. Multi-User and Multi-Cell Metrics", "sys_kpi", "system/csv/system_kpis.csv", "csv", true, "System KPIs");
-S(end+1) = localSpec("15. Multi-User and Multi-Cell Metrics", "sys_cell_load", "system/csv/system_cell_load.csv", "csv", true, "Per-cell offered/served/queued load");
-S(end+1) = localSpec("15. Multi-User and Multi-Cell Metrics", "sys_scheduler_grants", "system/csv/system_scheduler_grants.csv", "csv", true, "Per-grant scheduler trace");
-S(end+1) = localSpec("15. Multi-User and Multi-Cell Metrics", "sys_harq_processes", "system/csv/system_harq_processes.csv", "csv", true, "HARQ process outcomes by grant");
-S(end+1) = localSpec("16. Beam Management", "beam_mimo", "csv/probe_beam_mimo.csv", "csv", requireAuxProbes, "Beam tracking/selection proxy");
-S(end+1) = localSpec("17. Waveform and Numerology Specifics", "numerology", "csv/probe_numerology.csv", "csv", requireAuxProbes, "Numerology sweep");
-S(end+1) = localSpec("18. Control Channel and Random Access", "sync", "csv/probe_sync_control.csv", "csv", requireAuxProbes, "PDCCH/PUCCH/PRACH");
-S(end+1) = localSpec("18. Control Channel and Random Access", "attach_state_trace", "control/csv/attach_state_trace.csv", "csv", true, "Attach state transition trace");
-S(end+1) = localSpec("18. Control Channel and Random Access", "rrc_message_trace", "control/csv/rrc_message_trace.csv", "csv", true, "RRC message sequence trace");
-S(end+1) = localSpec("19. Hardware Impairments", "rf", "csv/probe_rf_energy.csv", "csv", requireAuxProbes, "RF impairment probe");
-S(end+1) = localSpec("20. Reliability and Outage", "harq_summary", "csv/probe_harq_summary.csv", "csv", requireAuxProbes, "Residual BLER/outage proxy");
-S(end+1) = localSpec("21. Massive MTC Metrics", "mmtc", "csv/probe_mmtc_kpis.csv", "csv", requireMMTC, "mMTC KPIs");
-S(end+1) = localSpec("22. V2X Metrics", "v2x", "csv/probe_v2x_sidelink.csv", "csv", requireAuxProbes, "V2X sidelink KPIs");
-S(end+1) = localSpec("23. NTN Metrics", "ntn", "csv/probe_ntn_delay_doppler.csv", "csv", requireAuxProbes, "NTN KPIs");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_summary", "csv/probe_e2e_summary.csv", "csv", true, "Cross-layer KPIs");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_packet_integrity", "csv/probe_e2e_packet_integrity.csv", "csv", true, "Packet-level integrity and deadline checks");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_packet_trace", "end_to_end/csv/e2e_packet_trace.csv", "csv", true, "Per-packet E2E trace");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_flow_summary", "end_to_end/csv/e2e_flow_summary.csv", "csv", true, "Per-flow E2E packet summary");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_bearer_summary", "end_to_end/csv/e2e_bearer_summary.csv", "csv", true, "Per-bearer E2E packet summary");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_attach_trace", "end_to_end/csv/e2e_attach_trace.csv", "csv", true, "Attach control-plane event trace");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_harq_trace", "end_to_end/csv/e2e_harq_trace.csv", "csv", true, "HARQ transmission outcomes");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_scheduler_trace", "end_to_end/csv/e2e_scheduler_trace.csv", "csv", true, "Scheduler grant-level trace");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_drop_causes", "end_to_end/csv/e2e_drop_causes.csv", "csv", true, "Packet drop-cause summary");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_latency_cdf_fig", "end_to_end/fig/e2e_latency_cdf.png", "fig", false, "Latency CDF figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_jitter_cdf_fig", "end_to_end/fig/e2e_jitter_cdf.png", "fig", false, "Jitter CDF figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_latency_percentiles_fig", "end_to_end/fig/e2e_latency_percentiles.png", "fig", false, "P95/P99/P99.9 latency figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_deadline_miss_vs_load_fig", "end_to_end/fig/e2e_deadline_miss_vs_offered_load.png", "fig", false, "Deadline-miss vs offered-load figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_drop_cause_breakdown_fig", "end_to_end/fig/e2e_drop_cause_breakdown.png", "fig", false, "Drop-cause breakdown figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_retx_depth_hist_fig", "end_to_end/fig/e2e_retx_depth_histogram.png", "fig", false, "Retransmission-depth histogram (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_attach_delay_hist_fig", "end_to_end/fig/e2e_attach_delay_histogram.png", "fig", false, "Attach delay histogram (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_per_flow_throughput_fig", "end_to_end/fig/e2e_per_flow_throughput.png", "fig", false, "Per-flow throughput figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("24. Protocol and Stack Interactions", "e2e_per_bearer_qos_fig", "end_to_end/fig/e2e_per_bearer_qos_compliance.png", "fig", false, "Per-bearer QoS compliance figure (when E2ESaveFigures=true)");
-S(end+1) = localSpec("25. Miscellaneous Statistical Outputs", "sys_fig", "system/fig/*.png", "fig", requireSystemFigures, "Time-series/CDF plots");
+ctx = struct();
+ctx.IncludeRun = true;
+ctx.IncludeReproMeta = true;
+ctx.IncludeCalibration = localShouldExportCalibrationArtifacts(opt);
+ctx.IncludeStructuredManifest = logical(sixgr.util.structGet(opt, "OrganizeByBlock", false));
+ctx.IncludeLink = ~onlyE2E && runLink;
+ctx.IncludeControl = ~onlyE2E && logical(runE2E || runLink);
+ctx.IncludeAuxiliary = ~onlyE2E && runAux;
+ctx.IncludeMMTC = ~onlyE2E && runMMTC;
+ctx.IncludeSystem = ~onlyE2E;
+ctx.IncludeE2E = runE2E;
+ctx.IncludeCampaignPlots = logical(requireCampaignPlots);
+ctx.IncludeSystemFigures = ~onlyE2E && logical(sixgr.util.structGet(opt, "SystemSaveFigures", false));
+ctx.IncludeE2EFigures = runE2E && logical(sixgr.util.structGet(opt, "E2ESaveFigures", false));
 end
 
-function r = localSpec(cat, id, pat, kind, req, notes)
-r = struct();
-r.Category = string(cat);
-r.ArtifactID = string(id);
-r.Pattern = string(pat);
-r.Kind = string(kind);
-r.Required = logical(req);
-r.Notes = string(notes);
+function requiredOutputs = localBuildRequiredOutputList(runFolder, summary, spec)
+requiredOutputs = strings(0,1);
+for i = 1:numel(spec)
+    pat = string(spec(i).Pattern);
+    if logical(spec(i).Required) && strlength(pat) > 0 && ~localPatternHasWildcard(pat)
+        requiredOutputs(end+1,1) = string(fullfile(runFolder, char(pat))); %#ok<AGROW>
+    end
 end
 
-function localWriteArtifactChecklistMD(mdFile, T, covPct, missingN)
-fid = fopen(mdFile, "w");
-if fid < 0
-    return;
+summaryFields = [ ...
+    "LogFile", "AuditCSV", ...
+    "CalibrationDBMat", "CalibrationMetadataJSON", "CalibrationCoverageCSV", "CalibrationValidationCSV", ...
+    "MetaRunManifestJSON", "MetaEnvironmentJSON", "MetaSeedsCSV", "MetaApproximationsCSV", "MetaCalibrationSourceJSON", ...
+    "E2ESlotMetricsCSV", "E2EComponentIOCSV", "E2EComponentChecksCSV", ...
+    "E2ESummaryCSV", "E2EAIMetricsCSV", "E2EPacketIntegrityCSV", ...
+    "E2EPacketTraceCSV", "E2EFlowSummaryCSV", "E2EBearerSummaryCSV", "E2EAttachTraceCSV", ...
+    "E2ESchedulerTraceCSV", "E2EHARQTraceCSV", "E2EDropCausesCSV", "E2EMAT"];
+for i = 1:numel(summaryFields)
+    fieldName = summaryFields(i);
+    if isfield(summary, fieldName)
+        pathValue = string(summary.(char(fieldName)));
+        pathValue = strtrim(pathValue);
+        if strlength(pathValue) > 0
+            requiredOutputs(end+1,1) = pathValue; %#ok<AGROW>
+        end
+    end
 end
-c = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fprintf(fid, "# Artifact Checklist\n\n");
-fprintf(fid, "- Required coverage: `%.2f%%`\n", covPct);
-fprintf(fid, "- Missing required items: `%d`\n\n", missingN);
-fprintf(fid, "| Category | Artifact | Pattern | Exists | FoundCount | Status |\n");
-fprintf(fid, "|---|---|---|---:|---:|---|\n");
-for i = 1:height(T)
-    fprintf(fid, "| %s | %s | `%s` | %d | %d | %s |\n", ...
-        char(T.Category(i)), char(T.ArtifactID(i)), char(T.Pattern(i)), ...
-        double(T.Exists(i)), double(T.FoundCount(i)), char(T.Status(i)));
+
+layout = sixgr.report.resultLayout(runFolder);
+requiredOutputs(end+1,1) = string(layout.ConfigResolvedJSON); %#ok<AGROW>
+requiredOutputs = unique(requiredOutputs(strlength(requiredOutputs) > 0), "stable");
 end
+
+function tf = localPatternHasWildcard(pattern)
+pattern = char(string(pattern));
+tf = contains(pattern, "*") || contains(pattern, "?");
+end
+
+function meta = localNormalizeCampaignProfileMeta(modeIn, entryPointIn)
+mode = lower(strtrim(string(modeIn)));
+if strlength(mode) == 0
+    mode = "unspecified";
+end
+
+entryPoint = strtrim(string(entryPointIn));
+if strlength(entryPoint) == 0
+    entryPoint = "sixgr_run_3gpp_full_campaign";
+end
+
+if mode == "stress_proxy"
+    label = "STRESS_PROXY_PROFILE";
+elseif mode == "truth_validation"
+    label = "TRUTH_VALIDATION_PROFILE";
+else
+    label = upper(mode) + "_PROFILE";
+end
+
+meta = struct();
+meta.Mode = mode;
+meta.Label = label;
+meta.EntryPoint = entryPoint;
 end
 
 function localWriteMarkdown(mdFile, summary, audit)
@@ -8155,28 +9897,54 @@ end
 c = onCleanup(@() fclose(fid)); %#ok<NASGU>
 fprintf(fid, "# Full 3GPP Campaign Report\n\n");
 fprintf(fid, "- Run folder: `%s`\n", summary.RunFolder);
-fprintf(fid, "- Link run folder: `%s`\n", summary.LinkRunFolder);
-fprintf(fid, "- Detailed LLS folder: `%s`\n", summary.DetailRunFolder);
-fprintf(fid, "- System folder: `%s`\n", summary.SystemRunFolder);
-fprintf(fid, "- mMTC folder: `%s`\n\n", summary.MMTCFolder);
-fprintf(fid, "- End-to-end stack folder: `%s`\n", summary.E2EFolder);
-if isfield(summary, "CalibrationFolder")
+if isfield(summary, "CampaignProfileLabel") && strlength(string(summary.CampaignProfileLabel)) > 0
+    fprintf(fid, "- Campaign profile: `%s`\n", string(summary.CampaignProfileLabel));
+end
+if isfield(summary, "CampaignProfileMode") && strlength(string(summary.CampaignProfileMode)) > 0
+    fprintf(fid, "- Campaign profile mode: `%s`\n", string(summary.CampaignProfileMode));
+end
+if isfield(summary, "CampaignProfileEntryPoint") && strlength(string(summary.CampaignProfileEntryPoint)) > 0
+    fprintf(fid, "- Campaign entry point: `%s`\n", string(summary.CampaignProfileEntryPoint));
+end
+if isfield(summary, "RunScope") && strlength(string(summary.RunScope)) > 0
+    fprintf(fid, "- Run scope: `%s`\n", string(summary.RunScope));
+end
+if isfield(summary, "RunCompletion") && strlength(string(summary.RunCompletion)) > 0
+    fprintf(fid, "- Run completion: `%s`\n", string(summary.RunCompletion));
+end
+if isfield(summary, "ConformanceLevel") && strlength(string(summary.ConformanceLevel)) > 0
+    fprintf(fid, "- Conformance level: `%s`\n", string(summary.ConformanceLevel));
+end
+if isfield(summary, "NoProxyTruthContract")
+    fprintf(fid, "- No-proxy truth contract: `%s`\n", string(logical(sixgr.util.structGet(summary, "NoProxyTruthContract", false))));
+end
+localWriteSubrunLine(fid, "Link run", sixgr.util.structGet(summary, "LinkRunStatus", ""), ...
+    sixgr.util.structGet(summary, "LinkRunFolder", ""), sixgr.util.structGet(summary, "LinkRunNotes", ""));
+localWriteSubrunLine(fid, "Detailed LLS", sixgr.util.structGet(summary, "DetailRunStatus", ""), ...
+    sixgr.util.structGet(summary, "DetailRunFolder", ""), sixgr.util.structGet(summary, "DetailRunNotes", ""));
+localWriteSubrunLine(fid, "System mobility", sixgr.util.structGet(summary, "SystemRunStatus", ""), ...
+    sixgr.util.structGet(summary, "SystemRunFolder", ""), sixgr.util.structGet(summary, "SystemRunNotes", ""));
+localWriteSubrunLine(fid, "mMTC run", sixgr.util.structGet(summary, "MMTCRunStatus", ""), ...
+    sixgr.util.structGet(summary, "MMTCFolder", ""), sixgr.util.structGet(summary, "MMTCRunNotes", ""));
+localWriteSubrunLine(fid, "End-to-end stack", sixgr.util.structGet(summary, "E2ERunStatus", ""), ...
+    sixgr.util.structGet(summary, "E2EFolder", ""), sixgr.util.structGet(summary, "E2ERunNotes", ""));
+localWriteSubrunLine(fid, "Calibration artifacts", sixgr.util.structGet(summary, "CalibrationStatus", ""), ...
+    sixgr.util.structGet(summary, "CalibrationFolder", ""), sixgr.util.structGet(summary, "CalibrationNotes", ""));
+fprintf(fid, "\n");
+if localShouldWriteCalibrationDetails(summary)
     fprintf(fid, "- Calibration folder: `%s`\n", string(summary.CalibrationFolder));
-end
-if isfield(summary, "CalibrationDBMat")
     fprintf(fid, "- Calibration DB MAT: `%s`\n", string(summary.CalibrationDBMat));
-end
-if isfield(summary, "CalibrationMetadataJSON")
     fprintf(fid, "- Calibration metadata JSON: `%s`\n", string(summary.CalibrationMetadataJSON));
-end
-if isfield(summary, "CalibrationCoverageCSV")
     fprintf(fid, "- Calibration coverage CSV: `%s`\n", string(summary.CalibrationCoverageCSV));
-end
-if isfield(summary, "CalibrationValidationCSV")
     fprintf(fid, "- Calibration validation CSV: `%s`\n", string(summary.CalibrationValidationCSV));
-end
-if isfield(summary, "CalibrationSource")
     fprintf(fid, "- Calibration source: `%s`\n", string(summary.CalibrationSource));
+    fprintf(fid, "- Calibration source kind: `%s`\n", string(sixgr.util.structGet(summary, "CalibrationSourceKind", "")));
+    fprintf(fid, "- Calibration generated from campaign link sweep: `%s`\n", string(logical(sixgr.util.structGet(summary, "CalibrationGeneratedFromCampaignLinkSweep", false))));
+    fprintf(fid, "- Calibration used by this run: `%s`\n", string(logical(sixgr.util.structGet(summary, "CalibrationUsedByThisRun", false))));
+    usedBy = string(sixgr.util.structGet(summary, "CalibrationUsedByModules", strings(0,1)));
+    if ~isempty(usedBy)
+        fprintf(fid, "- Calibration used by modules: `%s`\n", strjoin(cellstr(usedBy), ", "));
+    end
 end
 if isfield(summary, "MetaFolder")
     fprintf(fid, "- Metadata folder: `%s`\n", string(summary.MetaFolder));
@@ -8193,7 +9961,7 @@ end
 if isfield(summary, "MetaApproximationsCSV")
     fprintf(fid, "- Approximations CSV: `%s`\n", string(summary.MetaApproximationsCSV));
 end
-if isfield(summary, "MetaCalibrationSourceJSON")
+if isfield(summary, "MetaCalibrationSourceJSON") && strlength(string(summary.MetaCalibrationSourceJSON)) > 0
     fprintf(fid, "- Calibration source JSON: `%s`\n", string(summary.MetaCalibrationSourceJSON));
 end
 if isfield(summary, "CampaignPlotFolder")
@@ -8207,34 +9975,329 @@ if isfield(summary, "ArtifactCoverage_pct")
         double(sixgr.util.structGet(summary, "ArtifactCoverage_pct", NaN)), ...
         double(sixgr.util.structGet(summary, "ArtifactMissingCount", NaN)));
 end
+if isfield(summary, "RequiredOutputsCSV")
+    fprintf(fid, "- Required outputs CSV: `%s`\n", string(summary.RequiredOutputsCSV));
+end
+if isfield(summary, "RequiredOutputCoverage_pct")
+    fprintf(fid, "- Required output completeness: `%.2f%%` (missing=%g)\n", ...
+        double(sixgr.util.structGet(summary, "RequiredOutputCoverage_pct", NaN)), ...
+        double(sixgr.util.structGet(summary, "RequiredOutputMissingCount", NaN)));
+end
 if isfield(summary, "StructuredFolder")
     fprintf(fid, "- Structured block-wise folder: `%s`\n", string(summary.StructuredFolder));
 end
 if isfield(summary, "StructuredMirrorFolder")
     fprintf(fid, "- Structured mirror folder: `%s`\n", string(summary.StructuredMirrorFolder));
 end
-fprintf(fid, "- Overall status: `%s`\n\n", string(summary.Ok));
+if isfield(summary, "StructuredMirrorLayout")
+    fprintf(fid, "- Structured mirror layout: `%s`\n", string(summary.StructuredMirrorLayout));
+end
+if isfield(summary, "E2EPacketAccountingPassRate_pct") || isfield(summary, "E2EQoSPass")
+    fprintf(fid, "\n## E2E Integrity vs QoS\n\n");
+    if isfield(summary, "E2EPacketAccountingPassRate_pct")
+        fprintf(fid, "- Packet-accounting integrity pass rate: `%.2f%%`\n", double(sixgr.util.structGet(summary, "E2EPacketAccountingPassRate_pct", NaN)));
+    end
+    if isfield(summary, "E2EPacketAccountingMeaning")
+        fprintf(fid, "- Packet-accounting meaning: `%s`\n", string(sixgr.util.structGet(summary, "E2EPacketAccountingMeaning", "")));
+    end
+    if isfield(summary, "E2EQoSPass")
+        fprintf(fid, "- QoS/SLA acceptance: `%s`\n", string(logical(sixgr.util.structGet(summary, "E2EQoSPass", false))));
+    end
+    if isfield(summary, "E2EDeliveryRatio")
+        fprintf(fid, "- Delivery ratio: `%.6f` vs target `%.6f` -> `%s`\n", ...
+            double(sixgr.util.structGet(summary, "E2EDeliveryRatio", NaN)), ...
+            double(sixgr.util.structGet(summary, "E2EDeliveryRatioTarget", NaN)), ...
+            string(logical(sixgr.util.structGet(summary, "E2EDeliveryRatioPass", false))));
+    end
+    if isfield(summary, "E2EObservedP95Latency_ms")
+        fprintf(fid, "- P95 latency: `%.3f ms` vs budget `%.3f ms` -> `%s`\n", ...
+            double(sixgr.util.structGet(summary, "E2EObservedP95Latency_ms", NaN)), ...
+            double(sixgr.util.structGet(summary, "E2ELatencyBudgetTarget_ms", NaN)), ...
+            string(logical(sixgr.util.structGet(summary, "E2ELatencyBudgetPass", false))));
+    end
+    if isfield(summary, "E2EGoodput_Mbps")
+        fprintf(fid, "- Goodput: `%.6f Mbps` vs throughput target `%.6f Mbps` -> `%s`\n", ...
+            double(sixgr.util.structGet(summary, "E2EGoodput_Mbps", NaN)), ...
+            double(sixgr.util.structGet(summary, "E2EThroughputTarget_Mbps", NaN)), ...
+            string(logical(sixgr.util.structGet(summary, "E2EThroughputTargetPass", false))));
+    end
+    if isfield(summary, "E2ESystemCoupled")
+        fprintf(fid, "- System-coupled execution: `%s`\n", string(logical(sixgr.util.structGet(summary, "E2ESystemCoupled", false))));
+    end
+    if isfield(summary, "E2ECouplingMode") && strlength(string(summary.E2ECouplingMode)) > 0
+        fprintf(fid, "- E2E coupling mode: `%s`\n", string(sixgr.util.structGet(summary, "E2ECouplingMode", "")));
+    end
+    if isfield(summary, "E2EAppSDUChunkBytes")
+        fprintf(fid, "- App SDU chunk bytes: `%.0f` (`%s`)\n", ...
+            double(sixgr.util.structGet(summary, "E2EAppSDUChunkBytes", NaN)), ...
+            string(sixgr.util.structGet(summary, "E2EAppSDUChunkSource", "")));
+    end
+    if isfield(summary, "E2EAttachPass")
+        fprintf(fid, "- Attach pass: `%s`\n", string(logical(sixgr.util.structGet(summary, "E2EAttachPass", false))));
+    end
+    if isfield(summary, "E2EQoSFailureCount")
+        fprintf(fid, "- QoS failure count: `%g`\n", double(sixgr.util.structGet(summary, "E2EQoSFailureCount", NaN)));
+    end
+    if isfield(summary, "E2EQoSEvaluationCSV") && strlength(string(summary.E2EQoSEvaluationCSV)) > 0
+        fprintf(fid, "- QoS evaluation CSV: `%s`\n", string(summary.E2EQoSEvaluationCSV));
+    end
+    if isfield(summary, "E2ECouplingNotes") && strlength(string(summary.E2ECouplingNotes)) > 0
+        fprintf(fid, "- Coupling note: %s\n", string(summary.E2ECouplingNotes));
+    end
+    fprintf(fid, "- Interpretation: execution/report integrity can pass while QoS/SLA acceptance fails.\n");
+end
+fprintf(fid, "\n- Overall execution/report integrity status: `%s`\n\n", string(summary.Ok));
 fprintf(fid, "## 25-Category Audit\n\n");
 for i = 1:height(audit)
     fprintf(fid, "- **%s**: `%s` (%s)\n", char(audit.Category(i)), char(audit.Status(i)), char(audit.Notes(i)));
 end
 end
 
-function p = localResolveResultsRoot(inPath)
-p = char(string(inPath));
-if strlength(string(p)) == 0
-    p = "results";
+function localWriteSubrunLine(fid, label, status, folder, notes)
+status = strtrim(string(status));
+folder = strtrim(string(folder));
+notes = strtrim(string(notes));
+if strlength(status) == 0
+    status = "unknown";
 end
-p = char(string(strtrim(p)));
-if ispc
-    isAbs = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, "\\");
+fprintf(fid, "- %s: `%s`", label, status);
+if any(status == ["completed","failed","missing_artifact"]) && strlength(folder) > 0 && isfolder(char(folder))
+    fprintf(fid, " (`%s`)", folder);
+end
+if strlength(notes) > 0
+    fprintf(fid, " - %s", notes);
+end
+fprintf(fid, "\n");
+end
+
+function scope = localBuildRunScope(opt)
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+if onlyE2E
+    scope = "e2e_only";
+    return;
+end
+
+parts = strings(0,1);
+if logical(sixgr.util.structGet(opt, "RunLinkCampaign", true))
+    parts(end+1,1) = "air_interface"; %#ok<AGROW>
+end
+if logical(sixgr.util.structGet(opt, "RunDetailedLinkDiagnostics", true))
+    parts(end+1,1) = "air_interface_detailed"; %#ok<AGROW>
+end
+parts(end+1,1) = "system"; %#ok<AGROW>
+if logical(sixgr.util.structGet(opt, "RunSystemMMTCProbe", false))
+    parts(end+1,1) = "mmtc"; %#ok<AGROW>
+end
+if logical(sixgr.util.structGet(opt, "RunAuxiliaryProbes", false))
+    parts(end+1,1) = "auxiliary"; %#ok<AGROW>
+end
+if logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true))
+    parts(end+1,1) = "packet_flow"; %#ok<AGROW>
+end
+scope = strjoin(parts, "+");
+if strlength(scope) == 0
+    scope = "no_modules";
+end
+end
+
+function level = localDetermineConformanceLevel(cfg, opt, summary)
+if nargin < 3 || ~isstruct(summary)
+    summary = struct();
+end
+if localNoProxyTruthContractEnabled(cfg, opt)
+    level = "strict_no_proxy_truth";
+    return;
+end
+
+profileMode = lower(strtrim(char(string(sixgr.util.structGet(opt, "CampaignProfileMode", "")))));
+if strcmp(profileMode, "stress_proxy")
+    level = "stress_proxy";
+    return;
+end
+
+e2eAirModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")))));
+systemCoupled = logical(sixgr.util.structGet(summary, "E2ESystemCoupled", false));
+if strcmp(e2eAirModel, "truth") && systemCoupled
+    level = "system_coupled_truth_replay";
+    return;
+end
+if strcmp(e2eAirModel, "truth") && ~systemCoupled
+    level = "uncoupled_truth_replay";
+    return;
+end
+
+sysPhyBackend = lower(strtrim(char(string(sixgr.util.structGet(cfg, "system.phyBackend", "abstract")))));
+if strcmp(e2eAirModel, "truth") || strcmp(sysPhyBackend, "waveform")
+    level = "partial_truth_execution";
+    return;
+end
+
+level = "mixed_proxy_truth";
+end
+
+function summary = localFinalizeRunCompletion(summary)
+if ~(isstruct(summary) && isfield(summary, "Ok"))
+    return;
+end
+if logical(summary.Ok)
+    summary.RunCompletion = "completed_requested_scope";
 else
-    isAbs = startsWith(p, "/");
+    summary.RunCompletion = "failed_requested_scope";
 end
-if ~isAbs
-    p = fullfile(pwd, p);
 end
-p = char(string(p));
+
+function tf = localShouldWriteCalibrationDetails(summary)
+status = lower(strtrim(char(string(sixgr.util.structGet(summary, "CalibrationStatus", "")))));
+tf = any(strcmp(status, {"completed", "failed", "missing_artifact"}));
+end
+
+function module = localMarkModuleSkipped(module, reason)
+if nargin < 1 || ~isstruct(module)
+    module = struct();
+end
+if nargin < 2
+    reason = "Skipped";
+end
+module.Executed = false;
+module.Status = "skipped";
+module.Notes = string(reason);
+end
+
+function [status, notes] = localSummarizeSubrun(executed, module, runFolder, skipReason)
+if nargin < 4
+    skipReason = "Skipped";
+end
+status = "skipped";
+notes = localExtractModuleNotes(module);
+if ~logical(executed)
+    if strlength(notes) == 0
+        notes = string(skipReason);
+    end
+    return;
+end
+
+runFolder = strtrim(string(runFolder));
+hasFolder = strlength(runFolder) > 0 && isfolder(char(runFolder));
+ok = logical(sixgr.util.structGet(module, "Ok", false));
+if hasFolder
+    if ok
+        status = "completed";
+    else
+        status = "failed";
+    end
+else
+    if ok
+        status = "missing_artifact";
+    else
+        status = "failed";
+    end
+    notes = localJoinNotes(notes, "Expected run folder missing.");
+end
+end
+
+function [tf, reason] = localShouldExportCalibrationArtifacts(opt)
+tf = false;
+reason = "Calibration/LUT artifact export was removed from the active waveform-truth-only repository.";
+end
+
+function tf = localIncludeCalibrationMeta(summary, calibration)
+status = lower(strtrim(char(string(sixgr.util.structGet(summary, "CalibrationStatus", "")))));
+tf = any(strcmp(status, {"completed", "failed", "missing_artifact"}));
+if ~tf
+    src = strtrim(char(string(sixgr.util.structGet(calibration, "Source", ""))));
+    tf = strlength(string(src)) > 0 && ~strcmp(status, "skipped");
+end
+end
+
+function reason = localMMTCSkipReason(onlyE2E, runMMTC)
+if logical(onlyE2E)
+    reason = "OnlyE2E=true";
+elseif ~logical(runMMTC)
+    reason = "RunSystemMMTCProbe=false";
+else
+    reason = "module_disabled";
+end
+end
+
+function out = localJoinNotes(varargin)
+parts = strings(0,1);
+for i = 1:nargin
+    s = strtrim(string(varargin{i}));
+    if strlength(s) > 0
+        parts(end+1,1) = s; %#ok<AGROW>
+    end
+end
+if isempty(parts)
+    out = "";
+    return;
+end
+parts = unique(parts, "stable");
+out = join(parts, " | ");
+out = out(1);
+end
+
+function paths = localFilterPresentArtifacts(pathsIn)
+if isempty(pathsIn)
+    paths = {};
+    return;
+end
+paths = {};
+for i = 1:numel(pathsIn)
+    p = strtrim(string(pathsIn{i}));
+    if strlength(p) == 0
+        continue;
+    end
+    pChar = char(p);
+    if exist(pChar, "file") == 2 || isfolder(pChar)
+        paths{end+1} = pChar; %#ok<AGROW>
+    end
+end
+end
+
+function p = localResolveResultsRoot(inPath)
+p = sixgr.report.resolveResultsRoot(inPath);
+end
+
+function [bucket, profile] = localCampaignRunFolderClass(opt, profileMeta)
+onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
+runLink = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunLinkCampaign", true));
+runDetailed = ~onlyE2E && logical(sixgr.util.structGet(opt, "RunDetailedLinkDiagnostics", true));
+runSystem = ~onlyE2E;
+
+profile = localSanitizeRunFolderToken(string(sixgr.util.structGet(profileMeta, "Mode", "")), "campaign");
+if strcmpi(profile, "unspecified")
+    profile = "campaign";
+end
+
+if onlyE2E
+    bucket = "e2e";
+elseif runSystem || strcmpi(profile, "stress_proxy")
+    bucket = "sls";
+elseif runLink || runDetailed
+    bucket = "lls";
+else
+    bucket = "sls";
+end
+
+if strlength(string(profile)) == 0 || strcmpi(profile, "campaign")
+    if onlyE2E
+        profile = "packet_flow";
+    elseif strcmpi(bucket, "lls")
+        profile = "link_validation";
+    else
+        profile = "campaign";
+    end
+end
+end
+
+function tok = localSanitizeRunFolderToken(inTok, fallback)
+tok = lower(strtrim(char(string(inTok))));
+tok = regexprep(tok, '[^a-z0-9]+', '_');
+tok = regexprep(tok, '_+', '_');
+tok = regexprep(tok, '^_+|_+$', '');
+if strlength(string(tok)) == 0
+    tok = char(string(fallback));
+end
 end
 
 function slotDur_s = localSlotDuration(cfg)

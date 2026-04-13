@@ -1,0 +1,31 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/awgn.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "pdcch_blind_decode_sweep",
+    "description": "PDCCH blind decoding sweep across aggregation levels 1,2,4,8,16.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_c_control"
+  },
+  "scenario": {
+    "runner_profile": "pdcch_blind_decode_sweep",
+    "target_cases": ["pdcch"]
+  },
+  "simulation": {
+    "link_direction": "dl",
+    "snr_db": 20,
+    "monte_carlo_iterations": 6
+  }
+}

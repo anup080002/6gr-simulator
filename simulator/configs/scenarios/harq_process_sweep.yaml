@@ -1,0 +1,35 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "harq_process_sweep",
+    "description": "HARQ process-count sweep for asynchronous adaptive HARQ study.",
+    "research_class": "agreed_starting_point",
+    "scenario_group": "group_c_control"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["dl", "ul", "bundle"],
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "harq_process_sweep",
+      "overrides": [
+        {"label": "harq_4", "config": {"harq": {"process_count": 4}}},
+        {"label": "harq_8", "config": {"harq": {"process_count": 8}}},
+        {"label": "harq_16", "config": {"harq": {"process_count": 16}}}
+      ]
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_coding_modulation_packs",
+    "description": "Mandatory coding, modulation, and shaping study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "study_item_candidate"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["bundle", "dl", "ul", "pdsch", "pusch", "pdcch"],
+    "notes": "Encodes baseline coding families and candidate coding/modulation/shaping studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_coding_modulation",
+      "overrides": [
+        {"label": "ldpc_polar_baseline", "config": {"coding": {"data_code_type": "LDPC", "control_code_type": "Polar", "candidate_base_graph_mode": "nr_like_bg"}}},
+        {"label": "csi_polar_benchmark", "config": {"coding": {"csi_code_type": "Polar"}}},
+        {"label": "candidate_bg_study", "config": {"coding": {"candidate_base_graph_mode": "sixg_candidate_bg"}}},
+        {"label": "outer_packet_coding_candidate", "config": {"coding": {"outer_code_enabled": true, "outer_code_type": "outer_packet", "packet_level_coding_enabled": true}}},
+        {"label": "retransmission_packet_level", "config": {"coding": {"retransmission_granularity": "packet_level"}}},
+        {"label": "1024qam_candidate", "config": {"modulation": {"dl_modulation_order": 10, "ul_modulation_order": 10}, "modulation_and_mapping": {"high_order_modulation_stress_enabled": true}, "output_control": {"impairment_visibility": "full"}}},
+        {"label": "4096qam_candidate", "config": {"modulation": {"dl_modulation_order": 12, "ul_modulation_order": 12}, "modulation_and_mapping": {"high_order_modulation_stress_enabled": true, "qam4096_candidate_enabled": true}, "output_control": {"impairment_visibility": "full"}, "power_and_rf_frontend": {"pa_nonlinearity_model": "rapp_baseline"}, "sweeps_and_matrix": {"snr_sweep": {"enabled": true, "values_db": [30, 40, 50]}}}},
+        {"label": "nuc_candidate", "config": {"coding": {"nuc_mode": "nuc"}}},
+        {"label": "mixed_modulation_candidate", "config": {"coding": {"mixed_modulation_enabled": true}, "modulation": {"dl_modulation_order": 10, "ul_modulation_order": 6}, "modulation_and_mapping": {"high_order_modulation_stress_enabled": true}, "output_control": {"impairment_visibility": "full"}}},
+        {"label": "dcm_candidate", "config": {"coding": {"dcm_enabled": true}}},
+        {"label": "joint_coding_modulation_candidate", "config": {"coding": {"joint_coding_modulation_mode": "joint_coding_modulation"}}},
+        {"label": "mgcm_candidate", "config": {"coding": {"joint_coding_modulation_mode": "mgcm"}}},
+        {"label": "dbicm_candidate", "config": {"coding": {"joint_coding_modulation_mode": "dbicm"}}},
+        {"label": "tb_dbicm_candidate", "config": {"coding": {"joint_coding_modulation_mode": "tb_dbicm"}}},
+        {"label": "shaping_ccdm", "config": {"coding": {"distribution_matching_mode": "ccdm"}}},
+        {"label": "shaping_mpdm", "config": {"coding": {"distribution_matching_mode": "mpdm"}}},
+        {"label": "shaping_ess", "config": {"coding": {"distribution_matching_mode": "ess"}}},
+        {"label": "shaping_ecc_dm", "config": {"coding": {"distribution_matching_mode": "ecc_dm"}}},
+        {"label": "shaping_arithmetic_variant", "config": {"coding": {"distribution_matching_mode": "arithmetic_variant"}}},
+        {"label": "dm_before_coding", "config": {"coding": {"distribution_matching_before_coding": true}}},
+        {"label": "shaping_retx_study", "config": {"coding": {"shaping_retransmission_mode": "study_dimension"}}}
+      ]
+    }
+  }
+}

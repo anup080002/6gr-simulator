@@ -1,0 +1,58 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_tracking_packs",
+    "description": "Mandatory finer time-frequency tracking reference packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "agreed_starting_point"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["bundle", "dl", "pdsch", "csi_rs"],
+    "notes": "Encodes duplex, carrier/SCS, TRP, bandwidth, rank, modulation, delay-spread, mobility, timing-offset, and CFO tracking reference packs.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_tracking",
+      "overrides": [
+        {"label": "fdd_700mhz_15khz", "config": {"frequency": {"duplex_mode": "FDD", "band_name": "700mhz_tracking", "center_frequency_hz": 700000000, "bandwidth_hz": 5000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "numerology_options_khz": [15]}, "frame": {"scs_khz": 15}, "mimo": {"trp_count": 1, "n_layers": 1}, "modulation": {"dl_modulation_order": 2}}},
+        {"label": "tdd_4ghz_30khz", "config": {"frequency": {"duplex_mode": "TDD", "band_name": "4ghz_tracking", "center_frequency_hz": 4000000000, "bandwidth_hz": 20000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "numerology_options_khz": [30]}, "frame": {"scs_khz": 30}, "mimo": {"trp_count": 2, "n_layers": 2}, "modulation": {"dl_modulation_order": 4}, "reference_signals": {"tracking_rs": {"trp_transmission_assumption": "noncoherent_multi_trp"}}}},
+        {"label": "tdd_7ghz_30khz", "config": {"frequency": {"duplex_mode": "TDD", "band_name": "7ghz_tracking", "center_frequency_hz": 7000000000, "bandwidth_hz": 100000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "numerology_options_khz": [30], "range_name": "FR2"}, "frame": {"scs_khz": 30}, "mimo": {"trp_count": 4, "n_layers": 3}, "modulation": {"dl_modulation_order": 8}, "reference_signals": {"tracking_rs": {"trp_transmission_assumption": "noncoherent_multi_trp"}}}},
+        {"label": "tdd_30ghz_120khz", "config": {"frequency": {"duplex_mode": "TDD", "band_name": "30ghz_tracking", "center_frequency_hz": 30000000000, "bandwidth_hz": 100000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "numerology_options_khz": [120], "range_name": "FR2"}, "frame": {"scs_khz": 120}, "mimo": {"trp_count": 4, "n_layers": 4}, "modulation": {"dl_modulation_order": 10}, "reference_signals": {"tracking_rs": {"trp_transmission_assumption": "noncoherent_multi_trp"}}, "modulation_and_mapping": {"high_order_modulation_stress_enabled": true}, "output_control": {"impairment_visibility": "full"}}},
+        {"label": "bandwidth_5mhz", "config": {"frequency": {"bandwidth_hz": 5000000, "bandwidth_options_hz": [5000000, 20000000, 100000000]}}},
+        {"label": "bandwidth_20mhz", "config": {"frequency": {"bandwidth_hz": 20000000, "bandwidth_options_hz": [5000000, 20000000, 100000000]}}},
+        {"label": "bandwidth_100mhz", "config": {"frequency": {"bandwidth_hz": 100000000, "bandwidth_options_hz": [5000000, 20000000, 100000000]}}},
+        {"label": "rank4_1024qam", "config": {"mimo": {"n_layers": 4, "precoding_granularity": "prg_wideband"}, "modulation": {"dl_modulation_order": 10}, "modulation_and_mapping": {"high_order_modulation_stress_enabled": true}, "output_control": {"impairment_visibility": "full"}}},
+        {"label": "cdl_30ns", "config": {"channels": {"model_type": "CDL", "profile": "CDL-D", "delay_spread_ns": 30}}},
+        {"label": "cdl_100ns", "config": {"channels": {"model_type": "CDL", "profile": "CDL-D", "delay_spread_ns": 100}}},
+        {"label": "cdl_300ns", "config": {"channels": {"model_type": "CDL", "profile": "CDL-D", "delay_spread_ns": 300}}},
+        {"label": "cdl_1000ns", "config": {"channels": {"model_type": "CDL", "profile": "CDL-D", "delay_spread_ns": 1000}}},
+        {"label": "mobility_3kmph", "config": {"channels": {"mobility_kmph": 3}}},
+        {"label": "mobility_10kmph", "config": {"channels": {"mobility_kmph": 10}}},
+        {"label": "mobility_120kmph", "config": {"channels": {"mobility_kmph": 120}}},
+        {"label": "mobility_350kmph", "config": {"channels": {"mobility_kmph": 350}}},
+        {"label": "mobility_500kmph", "config": {"channels": {"mobility_kmph": 500}}},
+        {"label": "time_offset_eighth_cp", "config": {"impairments": {"initial_time_offset_fraction_cp": 0.125}}},
+        {"label": "cfo_initial_acquisition", "config": {"impairments": {"cfo_acquisition_mode": "initial_acquisition", "oscillator_profile": "initial_acquisition"}}},
+        {"label": "cfo_non_initial_acquisition", "config": {"impairments": {"cfo_acquisition_mode": "non_initial_acquisition", "oscillator_profile": "non_initial_acquisition"}}},
+        {"label": "cfo_drift_rate_pack", "config": {"impairments": {"oscillator_profile": "drift_study", "cfo_drift_hz_per_s": 15}}}
+      ]
+    }
+  }
+}

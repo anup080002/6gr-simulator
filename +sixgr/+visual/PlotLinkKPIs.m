@@ -46,91 +46,41 @@ kpis = localGetKPIs(results);
 figs = struct();
 madeAny = false;
 
-% Find a primary table with SNR
-idx = localFindTableWithVar(tbls, {'snr','snr_db','esno','esno_db'});
-if idx == 0 && ~isempty(tbls)
-    idx = 1;
-end
-
-if idx == 0
-    % nothing to plot
+T = localResolvePrimarySweepTable(kpis, tbls);
+if isempty(T)
     return;
 end
-
-T = tbls{idx};
 
 % Extract x-axis: SNR or Eb/No
 [x, xname] = localFindNumericVar(T, {'SNR_dB','SNR','EsNo_dB','EbNo_dB','EsNo','EbNo'});
 
 % Plot BLER
-[y, yname] = localFindNumericVar(T, {'BLER','bler','TB_BLER','PDSCH_BLER','PUSCH_BLER'});
-if ~isempty(x) && ~isempty(y)
-    figs.BLER = localMakeFig(opt, sprintf('%s_BLER', opt.FigurePrefix));
-    ax = axes(figs.BLER);
-    semilogy(ax, x, max(y, eps));
-    grid(ax,'on');
-    xlabel(ax, xname);
-    ylabel(ax, yname);
-    title(ax, sprintf('%s: %s vs %s', opt.FigurePrefix, yname, xname));
-    madeAny = true;
-end
+[figs, made] = localMaybePlotSweepMetric(figs, "BLER", opt, T, x, xname, ...
+    {'DL_BLER','UL_BLER','BLER','PDSCH_BLER','PUSCH_BLER'}, {'DL','UL','Aggregate','PDSCH','PUSCH'}, ...
+    "BLER", true);
+madeAny = made || madeAny;
 
 % Plot BER
-[y, yname] = localFindNumericVar(T, {'BER','ber','BitErrorRate'});
-if ~isempty(x) && ~isempty(y)
-    figs.BER = localMakeFig(opt, sprintf('%s_BER', opt.FigurePrefix));
-    ax = axes(figs.BER);
-    semilogy(ax, x, max(y, eps));
-    grid(ax,'on');
-    xlabel(ax, xname);
-    ylabel(ax, yname);
-    title(ax, sprintf('%s: %s vs %s', opt.FigurePrefix, yname, xname));
-    madeAny = true;
-end
+[figs, made] = localMaybePlotSweepMetric(figs, "BER", opt, T, x, xname, ...
+    {'DL_BER','UL_BER','BER','BitErrorRate'}, {'DL','UL','Aggregate','Aggregate'}, ...
+    "BER", true);
+madeAny = made || madeAny;
 
 % Plot throughput
-[y, yname] = localFindNumericVar(T, {'Throughput_Mbps','ThroughputGbps','Tput_Mbps','Tput'});
-if ~isempty(x) && ~isempty(y)
-    figs.Throughput = localMakeFig(opt, sprintf('%s_Throughput', opt.FigurePrefix));
-    ax = axes(figs.Throughput);
-    plot(ax, x, y);
-    grid(ax,'on');
-    xlabel(ax, xname);
-    ylabel(ax, yname);
-    title(ax, sprintf('%s: %s vs %s', opt.FigurePrefix, yname, xname));
-    madeAny = true;
-end
+[figs, made] = localMaybePlotSweepMetric(figs, "Throughput", opt, T, x, xname, ...
+    {'DL_Throughput_Mbps','UL_Throughput_Mbps','Throughput_Mbps','Tput_Mbps','Tput'}, {'DL','UL','Aggregate','Aggregate','Aggregate'}, ...
+    "Throughput (Mbps)", false);
+madeAny = made || madeAny;
 
 % Plot EVM
-[y, yname] = localFindNumericVar(T, {'EVM_rms','EVM','EVM_percent','EVM_rms_percent'});
-if ~isempty(x) && ~isempty(y)
-    figs.EVM = localMakeFig(opt, sprintf('%s_EVM', opt.FigurePrefix));
-    ax = axes(figs.EVM);
-    plot(ax, x, y);
-    grid(ax,'on');
-    xlabel(ax, xname);
-    ylabel(ax, yname);
-    title(ax, sprintf('%s: %s vs %s', opt.FigurePrefix, yname, xname));
-    madeAny = true;
-end
+[figs, made] = localMaybePlotSweepMetric(figs, "EVM", opt, T, x, xname, ...
+    {'DL_EVM_rms','UL_EVM_rms','EVM_rms','EVM','EVM_percent','EVM_rms_percent'}, {'DL','UL','Aggregate','Aggregate','Aggregate','Aggregate'}, ...
+    "EVM", false);
+madeAny = made || madeAny;
 
 % If a PAPR CCDF table exists, plot it
-idxP = localFindTableWithVar(tbls, {'papr','ccdf'});
-if idxP ~= 0
-    TP = tbls{idxP};
-    [px, pxname] = localFindNumericVar(TP, {'PAPR_dB','PAPR','PAPRdb'});
-    [py, pyname] = localFindNumericVar(TP, {'CCDF','ccdf','Pr'});
-    if ~isempty(px) && ~isempty(py)
-        figs.PAPR = localMakeFig(opt, sprintf('%s_PAPR_CCDF', opt.FigurePrefix));
-        ax = axes(figs.PAPR);
-        semilogy(ax, px, max(py, eps));
-        grid(ax,'on');
-        xlabel(ax, pxname);
-        ylabel(ax, pyname);
-        title(ax, sprintf('%s: PAPR CCDF', opt.FigurePrefix));
-        madeAny = true;
-    end
-end
+[figs, made] = localMaybePlotPAPR(figs, opt, kpis);
+madeAny = made || madeAny;
 
 % Fallback for case-wise KPI tables (no SNR axis).
 if ~madeAny
@@ -186,6 +136,224 @@ figs.DebugTables = names; %#ok<STRNU>
 end
 
 % ---------------- helpers ----------------
+
+function T = localResolvePrimarySweepTable(kpis, tbls)
+T = table();
+if isstruct(kpis) && isfield(kpis, 'LinkSNRSweep') && istable(kpis.LinkSNRSweep) && ...
+        ~isempty(kpis.LinkSNRSweep) && ismember("SNR_dB", string(kpis.LinkSNRSweep.Properties.VariableNames))
+    T = kpis.LinkSNRSweep;
+    return;
+end
+
+idx = localFindTableWithVar(tbls, {'snr','snr_db','esno','esno_db'});
+if idx == 0 && ~isempty(tbls)
+    idx = 1;
+end
+if idx ~= 0
+    T = tbls{idx};
+end
+end
+
+function [figs, made] = localMaybePlotSweepMetric(figs, fieldName, opt, T, x, xname, candidates, labels, yLabel, useLog)
+made = false;
+if isempty(x)
+    return;
+end
+[series, names, sourceVars] = localFindNamedSeries(T, candidates, labels);
+if isempty(series)
+    return;
+end
+figs.(fieldName) = localMakeFig(opt, sprintf('%s_%s', opt.FigurePrefix, fieldName)); %#ok<NASGU>
+ax = axes(figs.(fieldName));
+hold(ax, 'on');
+if useLog
+    set(ax, 'YScale', 'log');
+end
+for i = 1:numel(series)
+    y = series{i};
+    yPlot = y;
+    if useLog
+        yPlot = localResolveLogSweepSeries(T, sourceVars{i}, yPlot);
+    end
+    mask = isfinite(x) & isfinite(yPlot);
+    if ~any(mask)
+        continue;
+    end
+    localPlotDiscreteSweepSeries(ax, x(mask), yPlot(mask), useLog, names{i});
+    made = true;
+end
+if ~made
+    close(figs.(fieldName));
+    figs.(fieldName) = [];
+    return;
+end
+grid(ax,'on');
+xlabel(ax, xname, 'Interpreter', 'none');
+ylabel(ax, yLabel, 'Interpreter', 'none');
+title(ax, sprintf('%s: %s vs %s', opt.FigurePrefix, yLabel, xname), 'Interpreter', 'none');
+localApplyFiniteXLimits(ax, x);
+localApplyFiniteSweepTicks(ax, x);
+if numel(series) > 1
+    legend(ax, 'Location', 'best');
+end
+end
+
+function [figs, made] = localMaybePlotPAPR(figs, opt, kpis)
+made = false;
+if ~(isstruct(kpis) && isfield(kpis, 'PAPRCCDF') && istable(kpis.PAPRCCDF))
+    return;
+end
+TP = kpis.PAPRCCDF;
+if isempty(TP) || ~all(ismember(["PAPR_dB","CCDF"], string(TP.Properties.VariableNames)))
+    return;
+end
+figs.PAPR = localMakeFig(opt, sprintf('%s_PAPR_CCDF', opt.FigurePrefix)); %#ok<NASGU>
+ax = axes(figs.PAPR);
+hold(ax, 'on');
+if ismember("Direction", string(TP.Properties.VariableNames))
+    dirs = unique(string(TP.Direction));
+else
+    dirs = "Aggregate";
+    TP.Direction = repmat("Aggregate", height(TP), 1);
+end
+for i = 1:numel(dirs)
+    maskDir = string(TP.Direction) == dirs(i);
+    x = double(TP.PAPR_dB(maskDir));
+    y = double(TP.CCDF(maskDir));
+    mask = isfinite(x) & isfinite(y);
+    if ~any(mask)
+        continue;
+    end
+    [xSorted, order] = sort(x(mask));
+    ySorted = y(mask);
+    ySorted = ySorted(order);
+    semilogy(ax, xSorted, max(ySorted, eps), 'o-', 'LineWidth', 1.25, 'MarkerSize', 4, 'DisplayName', char(dirs(i)));
+    made = true;
+end
+if ~made
+    close(figs.PAPR);
+    figs.PAPR = [];
+    return;
+end
+grid(ax,'on');
+xlabel(ax, 'PAPR_dB', 'Interpreter', 'none');
+ylabel(ax, 'CCDF', 'Interpreter', 'none');
+title(ax, sprintf('%s: PAPR CCDF', opt.FigurePrefix), 'Interpreter', 'none');
+localApplyFiniteXLimits(ax, double(TP.PAPR_dB));
+if numel(dirs) > 1
+    legend(ax, 'Location', 'best');
+end
+end
+
+function [series, names, sourceVars] = localFindNamedSeries(T, candidates, labels)
+series = {};
+names = {};
+sourceVars = {};
+if ~istable(T)
+    return;
+end
+vnames = string(T.Properties.VariableNames);
+for i = 1:numel(candidates)
+    c = string(candidates{i});
+    j = find(strcmpi(vnames, c), 1);
+    if isempty(j)
+        continue;
+    end
+    vec = T.(vnames(j));
+    if ~isnumeric(vec)
+        continue;
+    end
+    series{end+1} = double(vec(:)); %#ok<AGROW>
+    names{end+1} = char(labels{i}); %#ok<AGROW>
+    sourceVars{end+1} = char(vnames(j)); %#ok<AGROW>
+end
+end
+
+function y = localResolveLogSweepSeries(T, metricVar, y)
+y = double(y(:));
+mask = isfinite(y) & y <= 0;
+if ~any(mask)
+    return;
+end
+[~, ciHighVar] = localResolveSweepCIColumns(T, metricVar);
+if strlength(ciHighVar) > 0 && ismember(ciHighVar, string(T.Properties.VariableNames))
+    hi = double(T.(ciHighVar));
+    hi = hi(:);
+    useCI = mask & isfinite(hi) & hi > 0;
+    y(useCI) = hi(useCI);
+    mask = isfinite(y) & y <= 0;
+end
+if any(mask)
+    positive = y(isfinite(y) & y > 0);
+    if isempty(positive)
+        floorVal = eps;
+    else
+        floorVal = max(min(positive) / 10, eps);
+    end
+    y(mask) = floorVal;
+end
+end
+
+function [ciLowVar, ciHighVar] = localResolveSweepCIColumns(T, metricVar)
+ciLowVar = "";
+ciHighVar = "";
+if ~istable(T)
+    return;
+end
+vars = string(T.Properties.VariableNames);
+metricVar = string(metricVar);
+lowCand = metricVar + "_CI_Low";
+highCand = metricVar + "_CI_High";
+if ismember(lowCand, vars) && ismember(highCand, vars)
+    ciLowVar = lowCand;
+    ciHighVar = highCand;
+    return;
+end
+if endsWith(metricVar, "_dB")
+    base = extractBefore(metricVar, strlength(metricVar) - 2);
+    lowCand = base + "_CI_Low";
+    highCand = base + "_CI_High";
+    if ismember(lowCand, vars) && ismember(highCand, vars)
+        ciLowVar = lowCand;
+        ciHighVar = highCand;
+    end
+end
+end
+
+function localApplyFiniteXLimits(ax, x)
+x = double(x(:));
+x = x(isfinite(x));
+if isempty(x)
+    return;
+end
+if min(x) < max(x)
+    xlim(ax, [min(x), max(x)]);
+else
+    xlim(ax, [min(x) - 0.5, max(x) + 0.5]);
+end
+end
+
+function localApplyFiniteSweepTicks(ax, x)
+x = double(x(:));
+x = unique(x(isfinite(x)), 'sorted');
+if isempty(x) || numel(x) > 16
+    return;
+end
+xticks(ax, x.');
+end
+
+function localPlotDiscreteSweepSeries(ax, x, y, useLog, displayName)
+[x, order] = sort(double(x(:)));
+y = double(y(:));
+y = y(order);
+if useLog
+    y = max(y, eps);
+end
+if numel(x) > 1
+    stairs(ax, x, y, '-', 'LineWidth', 1.1, 'HandleVisibility', 'off');
+end
+plot(ax, x, y, 'o', 'LineWidth', 1.1, 'MarkerSize', 5, 'DisplayName', displayName);
+end
 
 function kpis = localGetKPIs(results)
 if isa(results,'sixgr.core.SimResults')

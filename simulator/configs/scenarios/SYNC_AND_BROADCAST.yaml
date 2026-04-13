@@ -1,0 +1,16 @@
+meta:
+  matrix_id: SYNC_AND_BROADCAST
+  description: Exact sync and broadcast suite covering baseline PBCH or SSB operation, tracking packs, and CFO stress.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/lls_700mhz_20mhz_2x2_rank2_beam_truth.yaml
+  - simulator/configs/scenarios/mandatory_tracking_packs.yaml
+  - simulator/configs/scenarios/cfo_stress.yaml

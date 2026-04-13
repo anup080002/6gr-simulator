@@ -1,0 +1,16 @@
+meta:
+  matrix_id: UL_PUSCH_WAVEFORM_AND_PAPR
+  description: Exact UL waveform and PAPR suite covering CP-OFDM, DFT-s-OFDM, and low-PAPR study sweeps.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/ul_4ghz_cpofdm.yaml
+  - simulator/configs/scenarios/ul_4ghz_dfts_pi2bpsk.yaml
+  - simulator/configs/scenarios/mandatory_ul_waveform_packs.yaml

@@ -1,0 +1,19 @@
+meta:
+  matrix_id: DL_PDSCH_FADING_MIMO
+  description: Exact DL PDSCH fading and MIMO suite spanning low-band through high-band baselines and rank adaptation.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/dl_700mhz_coverage.yaml
+  - simulator/configs/scenarios/dl_4ghz_baseline.yaml
+  - simulator/configs/scenarios/dl_7ghz_mimo4x4.yaml
+  - simulator/configs/scenarios/dl_30ghz_beam_tracking.yaml
+  - simulator/configs/scenarios/rank_adaptation_sweep.yaml
+  - simulator/configs/scenarios/lls_700mhz_20mhz_2x2_rank2_beam_truth.yaml

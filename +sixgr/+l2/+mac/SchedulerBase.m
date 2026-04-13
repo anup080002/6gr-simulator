@@ -271,6 +271,11 @@ classdef (Abstract) SchedulerBase < handle
                 targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.codeRate",0.5));
             end
 
+            cqi = double(sixgr.util.structGet(ue, "CQI", NaN));
+            if isfinite(cqi) && cqi >= 1
+                [modStr, targetCodeRate] = localAMCFromCQI(cqi, modStr, targetCodeRate, obj.Cfg);
+            end
+
             if isfield(ue,'Modulation') && ~isempty(ue.Modulation)
                 modStr = char(string(ue.Modulation));
             end
@@ -281,7 +286,16 @@ classdef (Abstract) SchedulerBase < handle
                 nLayers = max(1, min(8, double(ue.RI)));
             end
             if isfield(ue,'TargetCodeRate') && ~isempty(ue.TargetCodeRate)
-                targetCodeRate = double(ue.TargetCodeRate);
+                tcrOverride = double(ue.TargetCodeRate);
+                if isfinite(tcrOverride) && tcrOverride > 0
+                    targetCodeRate = tcrOverride;
+                end
+            end
+
+            if localUseWaveformFadingAMC(obj.Cfg) && strcmp(dir, 'UL')
+                % UL waveform replay is currently validated only for single-layer
+                % grants on the fading truth path.
+                nLayers = 1;
             end
 
             % Clamp
@@ -321,21 +335,23 @@ classdef (Abstract) SchedulerBase < handle
             if ~useFastNRE
                 try
                     if strcmpi(obj.Direction,'DL')
-                        pdsch = nrPDSCHConfig;
-                        pdsch.Modulation = char(modStr);
-                        pdsch.NumLayers = double(nLayers);
-                        pdsch.PRBSet = 0:(max(nPRB,1)-1);
-                        pdsch.SymbolAllocation = [0 nSym];
-                        info = nrPDSCHInfo(pdsch);
-                        nrePerPRB = double(info.NREPerPRB);
+                        [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
+                            "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
+                        [~, info] = sixgr.phy.grid.allocREsPDSCH(carrier, obj.Cfg, ...
+                            "PRBSet", 0:(max(nPRB,1)-1), ...
+                            "SymbolAllocation", [0 nSym], ...
+                            "Modulation", char(modStr), ...
+                            "NumLayers", double(nLayers));
+                        nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers);
                     else
-                        pusch = nrPUSCHConfig;
-                        pusch.Modulation = char(modStr);
-                        pusch.NumLayers = double(nLayers);
-                        pusch.PRBSet = 0:(max(nPRB,1)-1);
-                        pusch.SymbolAllocation = [0 nSym];
-                        info = nrPUSCHInfo(pusch);
-                        nrePerPRB = double(info.NREPerPRB);
+                        [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
+                            "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
+                        [~, info] = sixgr.phy.grid.allocREsPUSCH(carrier, obj.Cfg, ...
+                            "PRBSet", 0:(max(nPRB,1)-1), ...
+                            "SymbolAllocation", [0 nSym], ...
+                            "Modulation", char(modStr), ...
+                            "NumLayers", double(nLayers));
+                        nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers);
                     end
                 catch
                     % keep fallback
@@ -502,6 +518,58 @@ classdef (Abstract) SchedulerBase < handle
             end
         end
 
+        function mcs = approxMCSIndex(modStr, targetCodeRate, cqiFallback)
+            if nargin < 3
+                cqiFallback = NaN;
+            end
+
+            s = upper(char(string(modStr)));
+            tcr = double(targetCodeRate);
+            if ~(isfinite(tcr) && tcr > 0)
+                mcs = localCQIToMCSFallback(cqiFallback);
+                return;
+            end
+
+            switch s
+                case 'QPSK'
+                    if tcr <= 0.15
+                        mcs = 0;
+                    elseif tcr <= 0.25
+                        mcs = 2;
+                    else
+                        mcs = 5;
+                    end
+                case '16QAM'
+                    if tcr <= 0.20
+                        mcs = 7;
+                    elseif tcr <= 0.35
+                        mcs = 10;
+                    else
+                        mcs = 12;
+                    end
+                case '64QAM'
+                    if tcr <= 0.35
+                        mcs = 17;
+                    elseif tcr <= 0.55
+                        mcs = 20;
+                    else
+                        mcs = 22;
+                    end
+                case '256QAM'
+                    if tcr <= 0.40
+                        mcs = 24;
+                    elseif tcr <= 0.60
+                        mcs = 26;
+                    else
+                        mcs = 27;
+                    end
+                otherwise
+                    mcs = localCQIToMCSFallback(cqiFallback);
+            end
+
+            mcs = max(0, min(31, round(double(mcs))));
+        end
+
         function bits = uintToBits(val, width)
             width = max(1, round(double(width)));
             v = max(0, floor(double(val)));
@@ -561,4 +629,57 @@ end
 s = max(0, min(13, round(sa(1))));
 l = max(1, min(14, round(sa(2))));
 idx = s*14 + (l-1);
+end
+
+function [modStr, targetCodeRate] = localAMCFromCQI(cqiIn, modDefault, tcrDefault, cfg)
+if nargin < 4
+    cfg = struct();
+end
+[modStr, targetCodeRate] = sixgr.link.amcFromCQI(cqiIn, modDefault, tcrDefault, cfg);
+end
+
+function tf = localUseWaveformFadingAMC(cfg)
+backend = lower(char(string(sixgr.util.structGet(cfg, "system.phyBackend", ""))));
+awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+channelModel = upper(char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+fadingModel = upper(char(string(sixgr.util.structGet(cfg, "channel.fading.model", ""))));
+delayProfile = upper(char(string(sixgr.util.structGet(cfg, "channel.delayProfile", ""))));
+tdlProfile = upper(char(string(sixgr.util.structGet(cfg, "channel.tdlProfile", ""))));
+cdlProfile = upper(char(string(sixgr.util.structGet(cfg, "channel.cdlProfile", ""))));
+fadingEnabled = logical(sixgr.util.structGet(cfg, "channel.fading.enable", false));
+
+isConcreteFading = startsWith(channelModel, "TDL") || startsWith(channelModel, "CDL") || ...
+    startsWith(delayProfile, "TDL") || startsWith(delayProfile, "CDL") || ...
+    startsWith(tdlProfile, "TDL-") || startsWith(cdlProfile, "CDL-") || ...
+    strcmp(fadingModel, "TDL") || strcmp(fadingModel, "CDL");
+
+tf = strcmp(backend, "waveform") && fadingEnabled && ~awgnOnly && isConcreteFading;
+end
+
+function mcs = localCQIToMCSFallback(cqi)
+if ~(isfinite(double(cqi)) && double(cqi) >= 1)
+    mcs = 0;
+    return;
+end
+mcs = max(0, min(31, round((double(cqi) - 1) * 2)));
+end
+
+function nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers)
+nrePerPRB = [];
+if isstruct(info) && isfield(info, "IndicesInfo")
+    indInfo = info.IndicesInfo;
+else
+    indInfo = struct();
+end
+
+if isstruct(indInfo) && isfield(indInfo, "NREPerPRB")
+    nrePerPRB = double(indInfo.NREPerPRB);
+elseif isstruct(indInfo) && isfield(indInfo, "NRE")
+    nrePerPRB = floor(double(indInfo.NRE) / max(double(nPRB), 1));
+elseif isstruct(indInfo) && isfield(indInfo, "G")
+    qm = sixgr.l2.mac.SchedulerBase.modOrder(modStr);
+    nrePerPRB = floor(double(indInfo.G) / max(double(qm) * double(nLayers) * double(nPRB), 1));
+elseif isstruct(info) && isfield(info, "NRE")
+    nrePerPRB = floor(double(info.NRE) / max(double(nPRB), 1));
+end
 end

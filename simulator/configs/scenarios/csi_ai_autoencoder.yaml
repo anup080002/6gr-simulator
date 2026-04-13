@@ -1,0 +1,26 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_7ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_a.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/csi_autoencoder.yaml"
+  ],
+  "meta": {
+    "scenario_id": "csi_ai_autoencoder",
+    "description": "AI CSI reconstruction case with complexity reporting.",
+    "research_class": "optional_research_experiment",
+    "scenario_group": "group_d_ai_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "ai_benchmark",
+    "target_cases": ["csi_rs"]
+  }
+}

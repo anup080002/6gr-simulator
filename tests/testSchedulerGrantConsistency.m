@@ -28,6 +28,9 @@ for i = 1:numel(grants)
     assert(double(g.BufferBytesAfter) <= double(g.BufferBytesBefore), ...
         "BufferBytesAfter must not exceed BufferBytesBefore");
     assert(double(g.TBSBits) >= 0 && double(g.TBSBytes) >= 0, "Invalid TBS fields");
+    [tbsBits, upperBoundBits] = sixgr.util.resolveGrantTBSBits(g, sprintf("test grant %d", i));
+    assert(double(tbsBits) == double(g.TBSBits), "Resolved TBSBits does not match grant field.");
+    assert(double(tbsBits) <= double(upperBoundBits), "Grant TBS exceeds loose allocation upper bound.");
     assert(isstruct(g.DCI) && isfield(g.DCI, "Bits") && isfield(g.DCI, "Hex"), "Missing DCI bitfield payload.");
     if ~isempty(g.PRBSet)
         assert(numel(g.DCI.Bits) > 0, "DCI bits must be populated for allocated grants.");

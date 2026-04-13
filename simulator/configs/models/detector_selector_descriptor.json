@@ -1,0 +1,7 @@
+{
+  "plugin_type": "condition_threshold_rule",
+  "model_family": "descriptor_plugin",
+  "condition_threshold": 12,
+  "confidence_bias": 0.81,
+  "parameter_count": 5000
+}

@@ -1,0 +1,30 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "ul_4ghz_cpofdm",
+    "description": "4 GHz CP-OFDM uplink baseline.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_b_baseline_ul"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["ul", "pusch", "srs", "bundle"]
+  },
+  "simulation": {
+    "link_direction": "ul",
+    "snr_db": 20
+  }
+}

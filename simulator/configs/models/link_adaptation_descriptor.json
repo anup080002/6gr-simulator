@@ -1,0 +1,8 @@
+{
+  "plugin_type": "mcs_bias_rule",
+  "model_family": "descriptor_plugin",
+  "mcs_bias": 1,
+  "snr_step_db": 2,
+  "confidence_bias": 0.84,
+  "parameter_count": 6000
+}

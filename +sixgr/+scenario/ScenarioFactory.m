@@ -24,6 +24,9 @@ classdef ScenarioFactory
             if nargin < 2 || (isstring(scenarioName) && strlength(scenarioName) == 0) || (ischar(scenarioName) && isempty(scenarioName))
                 scenarioName = sixgr.util.structGet(cfg, "scenario.profileName", "");
                 if (isstring(scenarioName) && strlength(scenarioName) == 0) || (ischar(scenarioName) && isempty(scenarioName))
+                    scenarioName = sixgr.util.structGet(cfg, "channel.propagationScenario", "");
+                end
+                if (isstring(scenarioName) && strlength(scenarioName) == 0) || (ischar(scenarioName) && isempty(scenarioName))
                     scenarioName = sixgr.util.structGet(cfg, "scenario.name", "UMa");
                 end
             end
@@ -75,7 +78,7 @@ classdef ScenarioFactory
                 names = fieldnames(cfg.scenario.profiles);
             end
             if isempty(names)
-                names = {'UMa','InH','SMa','RMa'};
+                names = {'UMa','UMi','InH','SMa','RMa'};
             end
         end
     end
@@ -208,6 +211,14 @@ function prof = localBuiltinProfile(scenarioName)
         prof.ue.distribution.indoorFraction = 1.0;
         prof.ue.distribution.speeds_kmh = [0 3];
         prof.ue.distribution.speedWeights = [0.5 0.5];
+    elseif contains(s, 'umi') || contains(s, 'urbanmicro') || contains(s, 'denseurban')
+        prof.name = 'UMi';
+        prof.isd_m = 200;
+        prof.bs.height_m = 10;
+        prof.bs.txPower_dBm = 30;
+        prof.ue.distribution.indoorFraction = 0.5;
+        prof.ue.distribution.speeds_kmh = [3 30 60];
+        prof.ue.distribution.speedWeights = [0.6 0.3 0.1];
     elseif contains(s, 'sma')
         prof.name = 'SMa';
         prof.isd_m = 1299;

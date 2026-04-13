@@ -1,0 +1,33 @@
+{
+  "frequency": {
+    "range_name": "FR1",
+    "band_name": "700mhz",
+    "center_frequency_hz": 700000000,
+    "bandwidth_hz": 20000000,
+    "bandwidth_options_hz": [5000000, 10000000, 20000000],
+    "duplex_mode": "FDD",
+    "numerology_options_khz": [15, 30],
+    "max_mimo_size": 4,
+    "mobility_defaults_kmph": 3,
+    "channel_model_defaults": "TDL-A",
+    "reference_signal_defaults": "coverage",
+    "power_model_defaults": "coverage",
+    "energy_model_defaults": "coverage_energy",
+    "rf_impairment_defaults": "coverage_clean",
+    "n_size_grid": 106
+  },
+  "frame": {
+    "scs_khz": 15
+  },
+  "waveform": {
+    "fft_size": 2048,
+    "sample_rate_hz": 30720000
+  },
+  "channels": {
+    "profile": "TDL-A",
+    "mobility_kmph": 3
+  },
+  "energy_efficiency": {
+    "tx_power_dbm": 26
+  }
+}

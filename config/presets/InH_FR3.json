@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "presetClass": "fading_truth",
+    "presetIntent": "scenario_profile_inh_fr3",
+    "presetNotes": "Indoor hotspot scenario preset with explicit TDL-A fading."
+  },
   "scenario": {
     "name": "IndoorHotspot",
     "layout": {

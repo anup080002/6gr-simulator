@@ -1,18 +1,23 @@
 {
+  "meta": {
+    "presetClass": "fading_truth",
+    "presetIntent": "strict_validation_fr1",
+    "presetNotes": "Strict FR1 validation preset with explicit TDL-C fading and no AWGN shortcut."
+  },
   "run": {
     "campaign": {
       "profile": "quick",
       "e2eStrictValidation": true,
       "e2eMaxSlots": 6000,
-      "e2eAirModel": "lut",
+      "e2eAirModel": "truth",
       "e2eScaleServiceWithCompression": true,
       "e2eServiceScaleCap": 256,
       "e2eEnableSemanticChecks": true,
       "e2eScaleChunkWithCompression": true,
       "e2eMaxSDUChunkBytes": 4194304,
-      "calibrateSystemBLERFromLink": true,
+      "calibrateSystemBLERFromLink": false,
       "reuseLinkForDetailedDiagnostics": true,
-      "mirrorStructuredResults": false,
+      "mirrorStructuredResults": true,
       "systemDetailedTrace": false,
       "mmtcSaveFigures": false,
       "linkSweepMaxPoints": 7,
@@ -22,8 +27,16 @@
     }
   },
   "channel": {
+    "model": "TDL-C",
+    "delayProfile": "TDL-C",
     "awgnOnly": false,
     "dopplerHz": 70,
+    "fading": {
+      "enable": true,
+      "model": "TDL",
+      "profile": "TDL-C",
+      "maxDoppler_Hz": 70
+    },
     "rayTracing": {
       "enable": false
     }

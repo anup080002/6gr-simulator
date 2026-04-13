@@ -4,7 +4,10 @@
     "version": "v18",
     "schemaVersion": 1,
     "createdUTC": "2026-02-26T15:40:46Z",
-    "loadedFrom": ""
+    "loadedFrom": "",
+    "presetClass": "fading_truth",
+    "presetIntent": "linkfull_waveform_validation",
+    "presetNotes": "Concrete TDL-C fading preset for non-AWGN link and system validation."
   },
   "run": {
     "seed": 1,
@@ -126,12 +129,12 @@
       "enable": true,
       "model": "fullReuse"
     },
-    "model": "AWGN",
+    "model": "TDL-C",
     "delayProfile": "TDL-C",
     "delaySpread_s": 3E-7,
-    "dopplerHz": 0,
+    "dopplerHz": 70,
     "snr_dB": 20,
-    "awgnOnly": true,
+    "awgnOnly": false,
     "rayTracing": {
       "enable": false,
       "scenario": "Urban",

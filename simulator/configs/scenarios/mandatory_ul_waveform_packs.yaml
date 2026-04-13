@@ -1,0 +1,50 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_ul_waveform_packs",
+    "description": "Mandatory uplink waveform and low-PAPR study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "study_item_candidate"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["ul", "pusch", "srs", "bundle"],
+    "notes": "Encodes UL CP-OFDM, DFT-s-OFDM baseline and candidate UL waveform studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_ul_waveform",
+      "overrides": [
+        {"label": "ul_cp_ofdm_all_layers", "config": {"waveform": {"ul_waveform": "CP-OFDM", "transform_precoding_enabled": false, "ul_layer_support_mode": "all_supported_layers"}}},
+        {"label": "ul_dfts_single_layer_baseline", "config": {"waveform": {"ul_waveform": "DFT-S-OFDM", "transform_precoding_enabled": true, "ul_layer_support_mode": "single_layer_baseline"}, "mimo": {"n_layers": 1}}},
+        {"label": "ul_dfts_multilayer_candidate", "config": {"waveform": {"ul_waveform": "DFT-S-OFDM", "transform_precoding_enabled": true, "ul_layer_support_mode": "multi_layer_candidate", "multi_layer_dfts_ofdm_candidate_enabled": true}, "mimo": {"n_layers": 2}, "pusch": {"layer_count": 2}}},
+        {"label": "low_papr_tone_reservation", "config": {"waveform": {"low_papr_mode": "tone_reservation", "tone_reservation_enabled": true}}},
+        {"label": "low_papr_frequency_truncation", "config": {"waveform": {"low_papr_mode": "frequency_domain_truncation", "frequency_domain_truncation_enabled": true}}},
+        {"label": "pi_over_2_bpsk", "config": {"modulation": {"pi2_bpsk_enabled": true, "ul_modulation_order": 1}, "waveform": {"transform_precoding_enabled": true, "ul_waveform": "DFT-S-OFDM"}, "mimo": {"n_layers": 1}, "pusch": {"layer_count": 1}}},
+        {"label": "flexible_dft_size", "config": {"waveform": {"flexible_dft_size_enabled": true, "transform_precoding_enabled": true, "ul_waveform": "DFT-S-OFDM"}, "mimo": {"n_layers": 1}, "pusch": {"layer_count": 1}}},
+        {"label": "noncontiguous_mapping", "config": {"waveform": {"noncontiguous_mapping_enabled": true}}},
+        {"label": "dmrs_data_multiplexing_candidate", "config": {"waveform": {"dmrs_data_multiplexing_mode": "enhanced_candidate"}}},
+        {"label": "coherent_ue_mode", "config": {"waveform": {"ue_coherence_mode": "coherent"}}},
+        {"label": "partially_coherent_ue_mode", "config": {"waveform": {"ue_coherence_mode": "partially_coherent"}}},
+        {"label": "power_limited_ue", "config": {"waveform": {"ue_power_limited": true}}},
+        {"label": "non_power_limited_ue", "config": {"waveform": {"ue_power_limited": false}}}
+      ]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/dfts_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "ul_4ghz_dfts_pi2bpsk",
+    "description": "4 GHz DFT-s-OFDM UL baseline with pi/2-BPSK.",
+    "research_class": "agreed_starting_point",
+    "scenario_group": "group_b_baseline_ul"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["ul", "pusch", "srs", "bundle"]
+  },
+  "simulation": {
+    "link_direction": "ul",
+    "snr_db": 18
+  },
+  "modulation": {
+    "ul_modulation_order": 1,
+    "ul_mcs_index": 0
+  }
+}

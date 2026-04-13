@@ -1,0 +1,16 @@
+{
+  "energy_efficiency": {
+    "enabled": true,
+    "ssb_clustering_enabled": false,
+    "common_channel_clustering_enabled": false,
+    "bandwidth_adaptation_mode": "none",
+    "pdcch_monitoring_adaptation_enabled": false,
+    "blind_decode_reduction_enabled": false,
+    "cross_slot_scheduling_enabled": false,
+    "active_sleep_tracking_enabled": false,
+    "race_to_sleep_enabled": false,
+    "per_block_processing_energy_enabled": true,
+    "rf_chain_energy_enabled": true,
+    "wideband_narrowband_tradeoff_enabled": false
+  }
+}

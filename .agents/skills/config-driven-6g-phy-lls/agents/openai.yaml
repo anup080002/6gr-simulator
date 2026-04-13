@@ -1,0 +1,4 @@
+interface:
+  display_name: "6G PHY LLS Architect"
+  short_description: "Config-driven 6G PHY LLS framework design"
+  default_prompt: "Use $config-driven-6g-phy-lls to design or extend a YAML-only 6G PHY LLS scenario framework."

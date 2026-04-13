@@ -1,0 +1,23 @@
+kind: matrix
+top_level_order:
+  - meta
+  - execution
+  - scenarios
+sections:
+  meta:
+    required: true
+    parameters:
+      matrix_id: {required: true, type: string, nonempty: true}
+      description: {required: true, type: string, nonempty: true}
+      owner: {required: false, type: string}
+      version: {required: false, type: string}
+  execution:
+    required: true
+    parameters:
+      stop_on_failure: {required: true, type: boolean}
+      max_parallel_jobs: {required: true, type: integer, min: 1}
+      repeat_count: {required: true, type: integer, min: 1}
+      save_combined_summary: {required: true, type: boolean}
+  scenarios:
+    required: true
+    parameters: {}

@@ -1,0 +1,15 @@
+meta:
+  matrix_id: RANDOM_ACCESS
+  description: Exact random-access suite covering PRACH detection and initial-access study packs.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/prach_detection.yaml
+  - simulator/configs/scenarios/mandatory_initial_access_packs.yaml

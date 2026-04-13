@@ -1,0 +1,29 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_30ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "phase_noise_stress",
+    "description": "Strong phase-noise stress case.",
+    "research_class": "study_item_candidate",
+    "scenario_group": "group_e_stress"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["bundle"]
+  },
+  "impairments": {
+    "phase_noise_enabled": true
+  }
+}

@@ -1,0 +1,19 @@
+meta:
+  matrix_id: CSI_ACQUISITION
+  description: Exact CSI acquisition suite spanning non-AI baselines, AI studies, UL SRS acquisition, and joint CSI packs.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/ce_non_ai_baseline.yaml
+  - simulator/configs/scenarios/ce_ai_nn.yaml
+  - simulator/configs/scenarios/csi_non_ai_baseline.yaml
+  - simulator/configs/scenarios/csi_ai_autoencoder.yaml
+  - simulator/configs/scenarios/ul_7ghz_srs_csi.yaml
+  - simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml

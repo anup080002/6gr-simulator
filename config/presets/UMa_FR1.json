@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "presetClass": "fading_truth",
+    "presetIntent": "scenario_profile_uma_fr1",
+    "presetNotes": "Urban Macro scenario preset with explicit CDL-D fading."
+  },
   "scenario": {
     "name": "UrbanMacro"
   },

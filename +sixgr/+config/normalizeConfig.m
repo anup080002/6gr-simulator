@@ -49,18 +49,55 @@ if isfield(cfg,'channel') && isa(cfg.channel,'struct')
     end
     if isfield(cfg.channel,'awgnOnly') && logical(cfg.channel.awgnOnly)
         cfg.channel.model = 'AWGN';
+        cfg.channel.type = 'AWGN';
+        cfg.channel.delayProfile = '';
+        cfg.channel.tdlProfile = '';
+        cfg.channel.cdlProfile = '';
+        cfg.channel.fading = localStructEnsure(cfg.channel, 'fading');
+        cfg.channel.fading.enable = false;
+        cfg.channel.fading.model = '';
+        cfg.channel.fading.profile = '';
     end
 
+    if isfield(cfg.channel,'model')
+        cfg.channel.model = localNormalizeChannelToken(cfg.channel.model);
+    end
+    if isfield(cfg.channel,'delayProfile')
+        cfg.channel.delayProfile = localNormalizeChannelToken(cfg.channel.delayProfile);
+    end
     if isfield(cfg.channel,'tdlProfile')
-        cfg.channel.tdlProfile = upper(strtrim(char(string(cfg.channel.tdlProfile))));
+        cfg.channel.tdlProfile = localNormalizeChannelToken(cfg.channel.tdlProfile);
     end
     if isfield(cfg.channel,'cdlProfile')
-        cfg.channel.cdlProfile = upper(strtrim(char(string(cfg.channel.cdlProfile))));
+        cfg.channel.cdlProfile = localNormalizeChannelToken(cfg.channel.cdlProfile);
+    end
+    if isfield(cfg.channel,'fading') && isa(cfg.channel.fading,'struct')
+        if isfield(cfg.channel.fading,'model')
+            cfg.channel.fading.model = localNormalizeChannelToken(cfg.channel.fading.model);
+        end
+        if isfield(cfg.channel.fading,'profile')
+            cfg.channel.fading.profile = localNormalizeChannelToken(cfg.channel.fading.profile);
+        end
     end
 
     cfg.channel = localAdoptConcreteChannelProfile(cfg.channel, sixgr.util.structGet(cfg, 'channel.delayProfile', ""));
-    cfg.channel = localAdoptConcreteChannelProfile(cfg.channel, sixgr.util.structGet(cfg, 'channel.fading.profile', ""));
-    cfg.channel = localAdoptConcreteChannelProfile(cfg.channel, sixgr.util.structGet(cfg, 'channel.fading.model', ""));
+    [modelOut, channelOut] = localNormalizeLegacyChannelModel( ...
+        sixgr.util.structGet(cfg, 'channel.model', ""), cfg.channel);
+    channelOut.model = modelOut;
+    cfg.channel = channelOut;
+    if isfield(cfg.channel,'fading') && isa(cfg.channel.fading,'struct')
+        [fadingModelOut, fadingProfileOut, channelOut] = ...
+            localNormalizeLegacyChannelFamily(cfg.channel, ...
+            sixgr.util.structGet(cfg, 'channel.fading.model', ""), ...
+            sixgr.util.structGet(cfg, 'channel.fading.profile', ""));
+        channelOut.fading = localStructEnsure(channelOut, 'fading');
+        channelOut.fading.model = fadingModelOut;
+        channelOut.fading.profile = fadingProfileOut;
+        cfg.channel = channelOut;
+    end
+    if isfield(cfg.channel,'model') && ~isempty(cfg.channel.model)
+        cfg.channel.type = cfg.channel.model;
+    end
 
     if isfield(cfg.channel,'fading') && isa(cfg.channel.fading,'struct')
         if isfield(cfg.channel.fading,'delaySpread_s') && (~isfield(cfg.channel,'delaySpread_s') || isempty(cfg.channel.delaySpread_s))
@@ -74,18 +111,6 @@ if isfield(cfg,'channel') && isa(cfg.channel,'struct')
         cfg.channel.doppler_Hz = cfg.channel.dopplerHz;
     end
 
-    if isfield(cfg.channel,'model')
-        chModel = upper(strtrim(char(string(cfg.channel.model))));
-        if localIsConcreteTDLProfile(chModel)
-            cfg.channel = localAdoptConcreteChannelProfile(cfg.channel, chModel);
-            cfg.channel.model = 'TDL';
-        elseif localIsConcreteCDLProfile(chModel)
-            cfg.channel = localAdoptConcreteChannelProfile(cfg.channel, chModel);
-            cfg.channel.model = 'CDL';
-        elseif strcmp(chModel,'TDL') || strcmp(chModel,'CDL')
-            cfg.channel.model = chModel;
-        end
-    end
 end
 
 % PHY legacy hierarchy aliases: phy.dl.pdsch -> phy.pdsch, etc.
@@ -185,6 +210,54 @@ end
 % Harmonize carrier / channel parameters
 % -------------------------------------------------------------------------
 % Prefer cfg.channel.* as the "carrier truth", but keep cfg.phy.carrier aligned.
+
+profileName = localNormalizeScenarioClass(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "scenario.profileName", []), ...
+    sixgr.util.structGet(cfg, "deployment_topology.cell_type", []), ...
+    sixgr.util.structGet(cfg, "lls6g.resolvedConfig.deployment_topology.cell_type", []), ...
+    sixgr.util.structGet(cfg, "scenario.name", []), ...
+    "UMa"));
+propagationScenario = localNormalizeScenarioClass(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "channel.propagationScenario", []), ...
+    sixgr.util.structGet(cfg, "run.scenario", []), ...
+    sixgr.util.structGet(cfg, "deployment_topology.cell_type", []), ...
+    sixgr.util.structGet(cfg, "lls6g.resolvedConfig.deployment_topology.cell_type", []), ...
+    profileName, ...
+    "UMa"));
+
+cfg = sixgr.util.structSet(cfg, "scenario.profileName", char(profileName));
+cfg = sixgr.util.structSet(cfg, "scenario.name", char(profileName));
+cfg = sixgr.util.structSet(cfg, "channel.propagationScenario", char(propagationScenario));
+cfg = sixgr.util.structSet(cfg, "run.scenario", char(propagationScenario));
+cfg = sixgr.util.structSet(cfg, "phy.fc_Hz", ...
+    sixgr.util.structGet(cfg, "phy.fc_Hz", ...
+    sixgr.util.structGet(cfg, "channel.fc_Hz", 3.5e9)));
+cfg = sixgr.util.structSet(cfg, "channel.pathlossModel", ...
+    sixgr.util.structGet(cfg, "channel.pathlossModel", ...
+    sixgr.util.structGet(cfg, "channel.pathloss.model", "nrPathLoss")));
+cfg = sixgr.util.structSet(cfg, "channel.shadowSigma_dB", ...
+    sixgr.util.structGet(cfg, "channel.shadowSigma_dB", ...
+    sixgr.util.structGet(cfg, "channel.shadowFadingStd_dB", 0)));
+cfg = sixgr.util.structSet(cfg, "channel.pathlossEnabled", ...
+    localLogicalWithDefault(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "channel.pathlossEnabled", []), ...
+    sixgr.util.structGet(cfg, "channel.pathloss.enabled", []), ...
+    true), true));
+cfg = sixgr.util.structSet(cfg, "channel.shadowFadingEnabled", ...
+    localLogicalWithDefault(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", []), ...
+    sixgr.util.structGet(cfg, "channel.shadowFading.enabled", []), ...
+    true), true));
+cfg = sixgr.util.structSet(cfg, "channel.losEnabled", ...
+    localLogicalWithDefault(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "channel.losEnabled", []), ...
+    sixgr.util.structGet(cfg, "channel.los.enabled", []), ...
+    true), true));
+cfg = sixgr.util.structSet(cfg, "channel.spatialConsistencyEnabled", ...
+    localLogicalWithDefault(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "channel.spatialConsistencyEnabled", []), ...
+    sixgr.util.structGet(cfg, "channel.spatialConsistency.enabled", []), ...
+    false), false));
 
 if isfield(cfg,'channel') && isa(cfg.channel,'struct')
     if isfield(cfg.channel,'fc_Hz')
@@ -315,8 +388,61 @@ else
 end
 end
 
+function value = localFirstNonEmpty(varargin)
+value = [];
+for i = 1:nargin
+    candidate = varargin{i};
+    if ischar(candidate) || isstring(candidate)
+        if strlength(strtrim(string(candidate))) > 0
+            value = candidate;
+            return;
+        end
+    elseif isnumeric(candidate) || islogical(candidate)
+        if ~isempty(candidate)
+            value = candidate;
+            return;
+        end
+    elseif ~isempty(candidate)
+        value = candidate;
+        return;
+    end
+end
+end
+
+function tf = localLogicalWithDefault(value, defaultValue)
+if isempty(value)
+    tf = logical(defaultValue);
+else
+    tf = logical(value);
+end
+end
+
+function scenarioName = localNormalizeScenarioClass(value)
+token = lower(strtrim(char(string(value))));
+switch token
+    case {"uma", "urbanmacro", "urban_macro"}
+        scenarioName = "UMa";
+    case {"umi", "urbanmicro", "urban_micro", "denseurban", "dense_urban"}
+        scenarioName = "UMi";
+    case {"rma", "ruralmacro", "rural_macro"}
+        scenarioName = "RMa";
+    case {"sma", "suburbanmacro", "suburban_macro"}
+        scenarioName = "SMa";
+    case {"inh", "indoorhotspot", "indoor_hotspot", "indoor", "office"}
+        scenarioName = "InH";
+    case {"inf", "indoorfactory", "indoor_factory", "factory"}
+        scenarioName = "InF";
+    otherwise
+        if strlength(strtrim(string(value))) == 0
+            scenarioName = "UMa";
+        else
+            scenarioName = string(value);
+        end
+end
+end
+
 function ch = localAdoptConcreteChannelProfile(ch, rawProfile)
-profile = upper(strtrim(char(string(rawProfile))));
+profile = localNormalizeChannelToken(rawProfile);
 if localIsConcreteTDLProfile(profile)
     if ~isfield(ch,'tdlProfile') || isempty(ch.tdlProfile) || strcmpi(strtrim(char(string(ch.tdlProfile))), 'TDL')
         ch.tdlProfile = profile;
@@ -328,12 +454,74 @@ elseif localIsConcreteCDLProfile(profile)
 end
 end
 
+function [modelOut, ch] = localNormalizeLegacyChannelModel(rawModel, ch)
+modelOut = localNormalizeChannelToken(rawModel);
+if localIsConcreteTDLProfile(modelOut)
+    ch = localAdoptConcreteChannelProfile(ch, modelOut);
+    modelOut = 'TDL';
+elseif localIsConcreteCDLProfile(modelOut)
+    ch = localAdoptConcreteChannelProfile(ch, modelOut);
+    modelOut = 'CDL';
+elseif localIsTDLModelAlias(modelOut)
+    modelOut = 'TDL';
+elseif localIsCDLModelAlias(modelOut)
+    modelOut = 'CDL';
+end
+end
+
+function [modelOut, profileOut, ch] = localNormalizeLegacyChannelFamily(ch, rawModel, rawProfile)
+modelOut = localNormalizeChannelToken(rawModel);
+profileOut = localNormalizeChannelToken(rawProfile);
+
+ch = localAdoptConcreteChannelProfile(ch, profileOut);
+
+if localIsConcreteTDLProfile(modelOut)
+    ch = localAdoptConcreteChannelProfile(ch, modelOut);
+    if isempty(profileOut) || strcmp(profileOut, 'TDL') || strcmp(profileOut, modelOut)
+        profileOut = modelOut;
+    end
+    modelOut = 'TDL';
+elseif localIsConcreteCDLProfile(modelOut)
+    ch = localAdoptConcreteChannelProfile(ch, modelOut);
+    if isempty(profileOut) || strcmp(profileOut, 'CDL') || strcmp(profileOut, modelOut)
+        profileOut = modelOut;
+    end
+    modelOut = 'CDL';
+elseif localIsTDLModelAlias(modelOut)
+    modelOut = 'TDL';
+elseif localIsCDLModelAlias(modelOut)
+    modelOut = 'CDL';
+end
+
+if isempty(modelOut)
+    if localIsConcreteTDLProfile(profileOut)
+        modelOut = 'TDL';
+    elseif localIsConcreteCDLProfile(profileOut)
+        modelOut = 'CDL';
+    end
+end
+end
+
+function token = localNormalizeChannelToken(rawValue)
+token = upper(strtrim(char(string(rawValue))));
+end
+
+function tf = localIsTDLModelAlias(model)
+model = localNormalizeChannelToken(model);
+tf = any(strcmp(model, {'TDL', 'NRTDL'}));
+end
+
+function tf = localIsCDLModelAlias(model)
+model = localNormalizeChannelToken(model);
+tf = any(strcmp(model, {'CDL', 'NRCDL'}));
+end
+
 function tf = localIsConcreteTDLProfile(profile)
-profile = upper(strtrim(char(string(profile))));
+profile = localNormalizeChannelToken(profile);
 tf = startsWith(profile, 'TDL') && ~strcmp(profile, 'TDL');
 end
 
 function tf = localIsConcreteCDLProfile(profile)
-profile = upper(strtrim(char(string(profile))));
+profile = localNormalizeChannelToken(profile);
 tf = startsWith(profile, 'CDL') && ~strcmp(profile, 'CDL');
 end

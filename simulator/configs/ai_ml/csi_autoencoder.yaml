@@ -1,0 +1,20 @@
+{
+  "ai_ml": {
+    "enabled": true,
+    "use_case": "csi_compression_reconstruction",
+    "mode": "online_inference",
+    "model_path": "simulator/configs/models/csi_autoencoder_descriptor.json",
+    "model_id": "csi_autoencoder_descriptor",
+    "model_version": "1.0",
+    "input_features": ["csi_real", "csi_imag"],
+    "output_targets": ["latent_vector", "reconstructed_csi"],
+    "inference_batch_size": 1,
+    "latency_budget_us": 800,
+    "flops_budget": 800000,
+    "quantization_mode": "int8",
+    "runtime_budget_us": 800,
+    "fallback_enabled": true,
+    "confidence_logging": true,
+    "descriptor_type": "plugin_descriptor"
+  }
+}

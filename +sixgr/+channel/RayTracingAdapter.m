@@ -30,8 +30,8 @@ classdef RayTracingAdapter < handle
                 cfg = struct();
             end
 
-            obj.Scenario = string(sixgr.util.structGet(cfg, "run.scenario", obj.Scenario));
-            obj.Fc_Hz = double(sixgr.util.structGet(cfg, "phy.fc_Hz", obj.Fc_Hz));
+            obj.Scenario = string(localCanonicalScenario(cfg, obj.Scenario));
+            obj.Fc_Hz = double(localCanonicalStructGet(cfg, "phy.fc_Hz", "channel.fc_Hz", obj.Fc_Hz));
             obj.CoordinateSystem = string(sixgr.util.structGet(cfg, "scenario.siteviewer.coordinateSystem", obj.CoordinateSystem));
 
             if mod(numel(varargin),2) ~= 0
@@ -192,4 +192,24 @@ classdef RayTracingAdapter < handle
             end
         end
     end
+end
+
+function value = localCanonicalStructGet(cfg, canonicalPath, aliasPath, defaultValue)
+value = sixgr.util.structGet(cfg, canonicalPath, []);
+if isempty(value)
+    value = sixgr.util.structGet(cfg, aliasPath, defaultValue);
+end
+end
+
+function value = localCanonicalScenario(cfg, defaultValue)
+value = sixgr.util.structGet(cfg, "channel.propagationScenario", []);
+if isempty(value)
+    value = sixgr.util.structGet(cfg, "run.scenario", []);
+end
+if isempty(value)
+    value = sixgr.util.structGet(cfg, "scenario.profileName", []);
+end
+if isempty(value)
+    value = sixgr.util.structGet(cfg, "scenario.name", defaultValue);
+end
 end

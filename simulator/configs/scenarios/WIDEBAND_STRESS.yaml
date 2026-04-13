@@ -1,0 +1,22 @@
+meta:
+  matrix_id: WIDEBAND_STRESS
+  description: Exact wideband stress suite spanning band coverage packs, bandwidth-operation sweeps, impairments, and high-band stress cases.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/mandatory_general_scope_packs.yaml
+  - simulator/configs/scenarios/bandwidth_operation_profiles.yaml
+  - simulator/configs/scenarios/high_doppler_stress.yaml
+  - simulator/configs/scenarios/low_snr_stress.yaml
+  - simulator/configs/scenarios/phase_noise_stress.yaml
+  - simulator/configs/scenarios/cfo_stress.yaml
+  - simulator/configs/scenarios/high_order_modulation_stress.yaml
+  - simulator/configs/scenarios/ul_30ghz_impairment_stress.yaml
+  - simulator/configs/scenarios/dl_30ghz_beam_tracking.yaml

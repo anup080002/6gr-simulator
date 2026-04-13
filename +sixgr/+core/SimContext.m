@@ -60,16 +60,22 @@ classdef SimContext < handle
             end
 
             if isempty(runFolder)
-                ts = char(sixgr.util.timeStamp()); % timeStamp returns string in util; cast to char
-                runFolder = fullfile(rootDir, 'results', ['run_' ts]);
+                resultsRoot = char(string(sixgr.util.structGet(cfg, "run.resultsRoot", "results")));
+                resultsRoot = sixgr.report.resolveResultsRoot(resultsRoot);
+                runFolder = sixgr.report.defaultRunFolder(resultsRoot, ...
+                    "Bucket", localDefaultBucket(cfg), ...
+                    "Profile", localDefaultProfile(cfg), ...
+                    "Leaf", "current", ...
+                    "CleanExisting", true);
             end
 
             obj.Cfg = cfg;
             obj.RootDir = char(rootDir);
             obj.RunFolder = char(runFolder);
 
-            % Ensure results subfolders exist
-            sixgr.util.ensureDir(obj.RunFolder);
+            % Ensure the requested run folder exists without auto-spawning
+            % legacy csv/mat/fig/logs trees under structured result roots.
+            sixgr.util.ensureFolder(obj.RunFolder);
 
             % Capabilities
             obj.Capabilities = sixgr.util.getToolboxStatus();
@@ -84,4 +90,26 @@ classdef SimContext < handle
             obj.RngState = sixgr.util.rngInit(seed);
         end
     end
+end
+
+function bucket = localDefaultBucket(cfg)
+mode = lower(strtrim(char(string(sixgr.util.structGet(cfg, "run.mode", "both")))));
+switch mode
+    case "link"
+        bucket = "lls";
+    case {"system", "both"}
+        bucket = "sls";
+    otherwise
+        bucket = "sls";
+end
+end
+
+function profile = localDefaultProfile(cfg)
+mode = lower(strtrim(char(string(sixgr.util.structGet(cfg, "run.mode", "both")))));
+switch mode
+    case "link"
+        profile = "session";
+    otherwise
+        profile = "session";
+end
 end

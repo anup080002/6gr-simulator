@@ -1,0 +1,30 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_7ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_a.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "dl_7ghz_mimo4x4",
+    "description": "7 GHz beamformed DL CSI case with 4x4 MIMO.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_a_baseline_dl"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["dl", "pdsch", "csi_rs", "bundle"]
+  },
+  "simulation": {
+    "link_direction": "dl",
+    "snr_db": 22
+  }
+}

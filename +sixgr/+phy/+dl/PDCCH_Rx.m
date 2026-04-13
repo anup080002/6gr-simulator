@@ -116,12 +116,44 @@ if timingOffset > 0
     rxWave = rxWave(1+timingOffset:end, :);
 end
 
+% Keep one full slot available for OFDM demod even when timing estimation
+% trims a few leading samples on otherwise aligned captures.
+try
+    ofdmInfo = nrOFDMInfo(carrier);
+    slotSymbols = max(1, round(double(ofdmInfo.SymbolsPerSlot)));
+    symbolLengths = double(ofdmInfo.SymbolLengths(:).');
+    if numel(symbolLengths) >= slotSymbols
+        expectedSamples = sum(symbolLengths(1:slotSymbols));
+    else
+        expectedSamples = sum(symbolLengths);
+    end
+    if size(rxWave, 1) > expectedSamples
+        rxWave = rxWave(1:expectedSamples, :);
+    end
+    if size(rxWave, 1) < expectedSamples
+        rxWave(end+1:expectedSamples, :) = 0; %#ok<AGROW>
+    end
+catch
+    % Continue without padding if OFDM info is unavailable.
+end
+
 % ---------------------- OFDM demod ----------------------
 try
     rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
 catch
     % Fallback to toolbox directly
     rxGrid = nrOFDMDemodulate(carrier, rxWave);
+end
+
+% This receiver operates on a single slot. Some toolbox metadata paths
+% describe a full subframe, so trim/pad the demodulated grid to one slot.
+slotSymbols = max(1, round(double(carrier.SymbolsPerSlot)));
+if size(rxGrid, 2) > slotSymbols
+    rxGrid = rxGrid(:, 1:slotSymbols, :);
+elseif size(rxGrid, 2) < slotSymbols
+    pad = complex(zeros(size(rxGrid, 1), slotSymbols - size(rxGrid, 2), size(rxGrid, 3), ...
+        'like', rxGrid));
+    rxGrid = cat(2, rxGrid, pad);
 end
 
 % ---------------------- Try candidates ----------------------

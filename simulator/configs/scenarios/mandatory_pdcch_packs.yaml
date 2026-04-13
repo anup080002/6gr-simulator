@@ -1,0 +1,50 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_pdcch_packs",
+    "description": "Mandatory PDCCH and downlink-control study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "agreed_starting_point"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["pdcch", "bundle"],
+    "notes": "Encodes baseline and candidate downlink control monitoring, aggregation, repetition, and stress packs.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_pdcch",
+      "overrides": [
+        {"label": "slot_level_monitoring_baseline", "config": {"control": {"monitoring_mode": "slot_level_baseline", "aggregation_levels": [1, 2, 4, 8, 16]}}},
+        {"label": "higher_al_candidate", "config": {"control": {"candidate_aggregation_levels": [32]}}},
+        {"label": "span_level_candidate", "config": {"control": {"monitoring_mode": "span_level_candidate"}}},
+        {"label": "slot_group_candidate", "config": {"control": {"monitoring_mode": "slot_group_candidate"}}},
+        {"label": "pdcch_repetition_candidate", "config": {"control": {"repetition_enabled": true}}},
+        {"label": "detection_feedback_candidate", "config": {"control": {"detection_feedback_enabled": true}}},
+        {"label": "prior_information_candidate", "config": {"control": {"prior_information_aided_dci_enabled": true}}},
+        {"label": "multi_stage_dci_candidate", "config": {"control": {"multi_stage_dci_enabled": true}}},
+        {"label": "simplified_dci_candidate", "config": {"control": {"simplified_dci_enabled": true}}},
+        {"label": "mrss_tolerant_candidate", "config": {"control": {"mrss_tolerant_enabled": true}}},
+        {"label": "control_blocking_stress", "config": {"control": {"stress_mode": "control_blocking"}}},
+        {"label": "interference_limited_stress", "config": {"control": {"stress_mode": "interference_limited"}}},
+        {"label": "puncturing_stress", "config": {"control": {"stress_mode": "puncturing"}}}
+      ]
+    }
+  }
+}

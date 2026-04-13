@@ -1,0 +1,69 @@
+function ok = test6GLLSMultiUserBeamforming()
+%TEST6GLLSMULTIUSERBEAMFORMING Ensure config-driven LLS keeps multi-user beamformed MIMO honest.
+
+setup6GRSimToolkit("Verbose", false);
+
+tmp = tempname;
+mkdir(tmp);
+c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+
+baseScenario = fullfile(pwd, "simulator", "configs", "scenarios", "lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml");
+scenarioPath = fullfile(tmp, "lls_multiuser_smoke.yaml");
+fid = fopen(scenarioPath, "w");
+fprintf(fid, "%s", ['{' ...
+    '"inherits":["' strrep(baseScenario, '\', '\\') '"],' ...
+    '"meta":{"scenario_id":"lls_multiuser_smoke","description":"multi-user smoke","version":"1","owner":"test","maturity_tag":"smoke"},' ...
+    '"simulation":{"n_frames":1,"n_slots":1,"monte_carlo_iterations":1,"random_seed":19,"snr_db":34},' ...
+    '"users":{"enabled":true,"n_users":2,"rnti_start":101,"seed_stride":29,' ...
+    '"execution_model":"independent_link_sweep","beam_selection_strategy":"round_robin_codebook","save_user_tables":true},' ...
+    '"output":{"save_figures":false,"save_mat":false,"profile":"lls_multiuser_smoke"}}']);
+fclose(fid);
+
+out = run_6g_phy_lls_single(scenarioPath, tmp, "smoke");
+assert(out.Ok, "Multi-user beamformed AWGN validation scenario should complete cleanly.");
+
+runFolder = char(string(out.RunFolder));
+dlFile = fullfile(runFolder, "air_interface", "csv", "dl_pdsch_trials.csv");
+ulFile = fullfile(runFolder, "air_interface", "csv", "ul_pusch_trials.csv");
+beamFile = fullfile(runFolder, "beamforming", "csv", "probe_beam_mimo.csv");
+summaryFile = fullfile(runFolder, "air_interface", "csv", "multiuser_user_summary.csv");
+
+assert(exist(dlFile, "file") == 2, "Missing multi-user DL trials CSV.");
+assert(exist(ulFile, "file") == 2, "Missing multi-user UL trials CSV.");
+assert(exist(beamFile, "file") == 2, "Missing multi-user beamforming CSV.");
+assert(exist(summaryFile, "file") == 2, "Missing multi-user summary CSV.");
+
+dl = readtable(dlFile, "VariableNamingRule", "preserve");
+ul = readtable(ulFile, "VariableNamingRule", "preserve");
+beam = readtable(beamFile, "VariableNamingRule", "preserve");
+summary = readtable(summaryFile, "VariableNamingRule", "preserve");
+
+assert(ismember("UEIndex", dl.Properties.VariableNames), "DL trials must expose UEIndex.");
+assert(ismember("UEIndex", ul.Properties.VariableNames), "UL trials must expose UEIndex.");
+assert(numel(unique(double(dl.UEIndex))) >= 2, "DL trials must cover multiple UEs.");
+assert(numel(unique(double(ul.UEIndex))) >= 2, "UL trials must cover multiple UEs.");
+assert(any(double(dl.ConfiguredTxAntennas) == 4), "DL trials must preserve 4T transmit configuration.");
+assert(any(double(ul.ConfiguredTxAntennas) == 4), "UL trials must preserve 4T transmit configuration.");
+assert(any(double(dl.ConfiguredLayers) == 2), "DL trials must preserve the configured layer count.");
+assert(any(double(ul.ConfiguredLayers) == 2), "UL trials must preserve the configured layer count.");
+assert(all(double(dl.Layers) == 2), "DL waveform trials must execute at two layers in this scenario.");
+assert(all(double(ul.Layers) == 2), "UL waveform trials must execute at two layers in this scenario.");
+assert(ismember("BeamIndexSet", beam.Properties.VariableNames), "Beam diagnostics must export selected beam indices.");
+assert(ismember("PrecoderSource", beam.Properties.VariableNames), "Beam diagnostics must expose precoder provenance.");
+assert(any(strlength(string(beam.BeamIndexSet)) > 0), "Beam diagnostics must include selected beam indices.");
+assert(any(logical(beam.BeamformingApplied)), "Beam diagnostics must mark applied beamforming.");
+assert(ismember("ExecutionModel", summary.Properties.VariableNames), "Multi-user summary must expose execution model.");
+assert(all(string(summary.ExecutionModel) == "independent_link_sweep"), ...
+    "Multi-user summary must honestly declare the execution model.");
+
+manifest = jsondecode(fileread(fullfile(runFolder, "meta", "scenario_manifest.json")));
+assert(isfield(manifest, "ConfiguredUsers") && manifest.ConfiguredUsers == 2, ...
+    "Manifest must persist the configured user count.");
+assert(isfield(manifest, "ConfiguredLayers") && manifest.ConfiguredLayers == 2, ...
+    "Manifest must persist the configured layer count.");
+assert(isfield(manifest, "BeamSelectionStrategy"), ...
+    "Manifest must persist the beam selection strategy.");
+assert(~isempty(summary), "Multi-user summary must not be empty.");
+
+ok = true;
+end

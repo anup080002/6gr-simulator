@@ -126,7 +126,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     g.Direction = obj.Direction;
                     g.HARQ = retx.HARQ;
                     g.CQIUsed = localUECQI(ueStates(k));
-                    g.MCSIndex = localCQIToMCS(g.CQIUsed);
+                    g.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(g.Modulation, g.TargetCodeRate, g.CQIUsed);
                     g.DAI = 1;
                     g.K1 = k1;
                     g.K2 = k2;
@@ -140,6 +140,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     end
                     g.BufferBytesAfter = max(g.BufferBytesBefore - double(g.TBSBytes), 0);
                     g.GrantReason = "harq_retx";
+                    [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                        sprintf("%s harq_retx RNTI=%d", class(obj), round(rnti)));
+                    g.TBSBytes = g.TBSBits / 8;
                     g.DCI = obj.buildDCIBitfield(g);
 
                     nGrant = nGrant + 1;
@@ -202,22 +205,22 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
 
                 % AMC selection
                 [modStr, nLayers, tcr] = obj.selectAMC(ueStates(k));
-                [tbsBits, tbsBytes, ~] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, tcr);
+                [allocTbsBits, allocTbsBytes, ~] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, tcr);
 
-                % Clamp TBS by buffer occupancy (optional)
                 bufB = localUEBufferByFlag(ueStates(k), isDL);
+                servedBytes = allocTbsBytes;
                 if isfinite(bufB)
-                    tbsBytes = min(tbsBytes, floor(bufB));
-                    tbsBits = 8*floor(tbsBytes/8);
+                    servedBytes = min(allocTbsBytes, floor(bufB));
                 end
-                if tbsBits <= 0 || tbsBytes <= 0
+                servedBytes = max(0, floor(servedBytes));
+                if allocTbsBits <= 0 || allocTbsBytes <= 0 || servedBytes <= 0
                     continue;
                 end
 
                 % HARQ allocation (new data)
                 harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
                 if hasHARQ
-                    txp = obj.HARQ.allocate(rnti, slot, tbsBytes, 'NewData', true);
+                    txp = obj.HARQ.allocate(rnti, slot, allocTbsBytes, 'NewData', true);
                     harqInfo = txp.HARQ;
                 end
 
@@ -230,11 +233,11 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.Modulation = char(modStr);
                 g.NumLayers = nLayers;
                 g.TargetCodeRate = tcr;
-                g.TBSBits = tbsBits;
-                g.TBSBytes = tbsBytes;
+                g.TBSBits = allocTbsBits;
+                g.TBSBytes = allocTbsBytes;
                 g.HARQ = harqInfo;
                 g.CQIUsed = localUECQI(ueStates(k));
-                g.MCSIndex = localCQIToMCS(g.CQIUsed);
+                g.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(g.Modulation, g.TargetCodeRate, g.CQIUsed);
                 g.DAI = 1;
                 g.K1 = k1;
                 g.K2 = k2;
@@ -246,8 +249,11 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 if ~isfinite(g.BufferBytesBefore)
                     g.BufferBytesBefore = 0;
                 end
-                g.BufferBytesAfter = max(g.BufferBytesBefore - double(tbsBytes), 0);
+                g.BufferBytesAfter = max(g.BufferBytesBefore - double(servedBytes), 0);
                 g.GrantReason = "new_data_rr";
+                [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                    sprintf("%s new_data_rr RNTI=%d", class(obj), round(rnti)));
+                g.TBSBytes = g.TBSBits / 8;
                 g.DCI = obj.buildDCIBitfield(g);
 
                 nGrant = nGrant + 1;

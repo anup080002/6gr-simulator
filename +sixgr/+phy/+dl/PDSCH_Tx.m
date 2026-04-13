@@ -16,7 +16,8 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %     "RV"           : redundancy version (0..3)
 %     "TargetCodeRate": code rate (0..1)
 %     "XOverhead"    : xOverhead for nrTBS (default 0)
-%     "NumTxAnt"     : number of TX antennas (default 1)
+%     "NumTxAnt"     : number of TX antennas / mapped antenna ports
+%     "PrecodingMatrix" : wideband PDSCH precoder, Nports-by-Nlayers or transpose
 %
 %   Outputs:
 %     TX.Waveform      : time-domain OFDM waveform
@@ -30,10 +31,15 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %     TX.DMRSSymbols   : DMRS symbols
 %     TX.PTRSIndices   : linear indices for PTRS mapping (maybe empty)
 %     TX.PTRSSymbols   : PTRS symbols (maybe empty)
+%     TX.PDSCHAntennaIndices : antenna-oriented PDSCH indices after precoding
+%     TX.DMRSAntennaIndices  : antenna-oriented DMRS indices after precoding
+%     TX.PrecodeInfo    : explicit precoding metadata / guard decisions
 %
 %   Notes:
 %     * nrPDSCH internally performs scrambling using pdsch.NID / pdsch.RNTI.
 %       Therefore, TX.Codeword is NOT scrambled here.
+%     * This transmitter currently supports a single codeword only
+%       (NumLayers <= 4). Unsupported higher-rank combinations error early.
 
 % ---------------------- Parse inputs ----------------------
 ip = inputParser;
@@ -44,9 +50,11 @@ ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
 ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
 ip.addParameter('NumTxAnt', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
+ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+localGuardUnsupportedNumLayers(cfg, opt.PDSCH);
 
 % Carrier
 if isempty(opt.Carrier)
@@ -84,11 +92,10 @@ if isempty(xOverhead)
     xOverhead = double(sixgr.util.structGet(cfg, 'phy.pdsch.xOverhead', 0));
 end
 
-numTxAnt = opt.NumTxAnt;
-if isempty(numTxAnt)
-    numTxAnt = double(sixgr.util.structGet(cfg, 'phy.nTxAnt', 1));
-end
-numTxAnt = max(1, round(numTxAnt));
+prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
+    "PrecodingMatrix", opt.PrecodingMatrix);
+
+numTxAnt = localResolveNumTxAnt(cfg, opt.NumTxAnt, prec);
 
 % Transport block size
 nPRB = numel(pdsch.PRBSet);
@@ -120,45 +127,30 @@ else
 end
 
 % Base graph selection (use toolbox helper when available)
+tbCRCType = '24A';
+tbCRCLen = 24;
 try
     dlschInfo = nrDLSCHInfo(trBlkSize, targetCodeRate);
     bgn = double(dlschInfo.BGN);
+    [tbCRCType, tbCRCLen] = localResolveTBCRCSpec(dlschInfo, tbCRCType, tbCRCLen);
 catch
     % Fallback: conservative choice
     bgn = 2;
 end
 
 % ---------------------- DL-SCH encoding (modular blocks) ----------------------
-% TB CRC (24A)
-tbCrc = sixgr.phy.tb.attachCRC(trBlk, '24A');
-crcInfo = struct();
+% Match the TB CRC selected by nrDLSCHInfo for this transport block size.
+tbCrc = sixgr.phy.tb.attachCRC(trBlk, tbCRCType);
+crcInfo = struct("Type", string(tbCRCType), "Length", double(tbCRCLen));
 B = numel(tbCrc);
 
 % Code block segmentation
 [cbs, segInfo] = sixgr.phy.tb.segmentLDPC(tbCrc, bgn);
 C = size(cbs, 2);
 
-% LDPC encode each code block
-enc1 = sixgr.phy.phycode.ldpcEncode(cbs(:, 1), bgn);
-ldpcEnc = zeros(size(enc1,1), C, 'int8');
-ldpcEnc(:, 1) = int8(enc1(:));
-if C > 1
-    usePar = logical(sixgr.util.structGet(cfg, 'run.useParallel', false)) ...
-        && license('test','Distrib_Computing_Toolbox') && ~isempty(gcp('nocreate'));
-    if usePar
-        encRest = cell(C-1,1);
-        parfor c = 2:C
-            encRest{c-1} = int8(sixgr.phy.phycode.ldpcEncode(cbs(:, c), bgn));
-        end
-        for c = 2:C
-            ldpcEnc(:, c) = encRest{c-1}(:);
-        end
-    else
-        for c = 2:C
-            ldpcEnc(:, c) = int8(sixgr.phy.phycode.ldpcEncode(cbs(:, c), bgn));
-        end
-    end
-end
+% LDPC encode all code blocks in one toolbox call to avoid repeated
+% per-code-block MATLAB loop overhead.
+ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
 
 % Rate match to G bits
 if isfield(pdschInfo, 'G')
@@ -187,19 +179,29 @@ end
 % PTRS (optional)
 [ptrsInd, ptrsSym, ptrsInfo] = sixgr.phy.refsig.ptrsPDSCH(carrier, pdsch);
 
-% Build resource grid and map
-try
-    txGrid = nrResourceGrid(carrier, numTxAnt);
-catch
-    txGrid = nrResourceGrid(carrier);
+pdschAntInd = pdschInd;
+pdschAntSym = pdschSym;
+dmrsAntInd = dmrsInd;
+dmrsAntSym = dmrsSym;
+if prec.Active
+    % Precode layer-domain data and DM-RS before the final antenna-port map.
+    [pdschAntSym, pdschAntInd] = nrPDSCHPrecode(carrier, pdschSym, pdschInd, prec.MatrixNR);
+    [dmrsAntSym, dmrsAntInd] = nrPDSCHPrecode(carrier, dmrsSym, dmrsInd, prec.MatrixNR);
 end
 
-% Map PDSCH (single codeword/single layer path)
-txGrid = localMapToGrid(txGrid, pdschInd, pdschSym);
+% Build resource grid and map
+nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsInd,2), numTxAnt, 1]);
+try
+    txGrid = nrResourceGrid(carrier, nPages);
+catch
+    txGrid = complex(zeros(carrier.NSizeGrid*12, carrier.SymbolsPerSlot, nPages));
+end
+
+txGrid = localMapToGrid(txGrid, pdschAntInd, pdschAntSym);
 
 % Map DMRS/PTRS
 if ~isempty(dmrsInd)
-    txGrid = localMapToGrid(txGrid, dmrsInd, dmrsSym);
+    txGrid = localMapToGrid(txGrid, dmrsAntInd, dmrsAntSym);
 end
 if ~isempty(ptrsInd)
     txGrid = localMapToGrid(txGrid, ptrsInd, ptrsSym);
@@ -221,15 +223,23 @@ if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlock = trBlk;
     tx.TransportBlockCRC = tbCrc;
+    tx.TransportBlockCRCType = char(tbCRCType);
+    tx.TransportBlockCRCLength = double(tbCRCLen);
     tx.TransportBlockLenWithCRC = B;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
     tx.G = G;
     tx.PDSCHInfo = pdschInfo;
+    tx.PDSCHSymbols = pdschSym;
     tx.DMRSIndices = dmrsInd;
     tx.DMRSSymbols = dmrsSym;
+    tx.PDSCHAntennaIndices = pdschAntInd;
+    tx.PDSCHAntennaSymbols = pdschAntSym;
+    tx.DMRSAntennaIndices = dmrsAntInd;
+    tx.DMRSAntennaSymbols = dmrsAntSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
+    tx.PrecodeInfo = prec;
 end
 
 info = struct();
@@ -239,7 +249,47 @@ info.Segmentation = segInfo;
 info.PDSCHSymbols = pdschSymInfo;
 info.PTRS = ptrsInfo;
 info.OFDM = ofdmInfo;
+info.Precoding = prec;
 
+end
+
+function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
+crcType = defaultType;
+crcLen = defaultLen;
+if nargin < 1 || ~isstruct(schInfo)
+    return;
+end
+rawType = char(string(sixgr.util.structGet(schInfo, 'CRC', defaultType)));
+if ~isempty(rawType)
+    crcType = rawType;
+end
+rawLen = double(sixgr.util.structGet(schInfo, 'L', defaultLen));
+if isfinite(rawLen) && rawLen >= 0
+    crcLen = rawLen;
+end
+end
+
+function localGuardUnsupportedNumLayers(cfg, pdsch)
+nLayers = 1;
+if isempty(pdsch)
+    nLayers = double(sixgr.util.structGet(cfg, 'phy.pdsch.numLayers', ...
+        sixgr.util.structGet(cfg, 'phy.pdsch.nLayers', 1)));
+else
+    try
+        nLayers = double(pdsch.NumLayers);
+    catch
+        nLayers = 1;
+    end
+end
+if ~(isscalar(nLayers) && isfinite(nLayers) && nLayers >= 1)
+    nLayers = 1;
+end
+nLayers = round(nLayers);
+if nLayers > 4
+    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
+        "PDSCH_Tx/PDSCH_Rx support a single codeword only. Requested %d layer(s) implies 2 codeword(s).", ...
+        nLayers);
+end
 end
 
 function qm = localQm(modScheme)
@@ -283,5 +333,24 @@ end
 L = min(numel(indLin), numel(symLin));
 if L > 0
     grid(indLin(1:L)) = symLin(1:L);
+end
+end
+
+function numTxAnt = localResolveNumTxAnt(cfg, requested, prec)
+if isempty(requested)
+    if prec.Active
+        numTxAnt = prec.NumPorts;
+    else
+        numTxAnt = double(sixgr.util.structGet(cfg, 'phy.nTxAnt', 1));
+    end
+else
+    numTxAnt = double(requested);
+end
+
+numTxAnt = max(1, round(numTxAnt));
+if prec.Active && numTxAnt ~= prec.NumPorts
+    error("PDSCH_Tx:NumTxAntMismatch", ...
+        "Explicit PDSCH precoding resolves to %d antenna port(s), but NumTxAnt=%d.", ...
+        prec.NumPorts, numTxAnt);
 end
 end

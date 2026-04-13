@@ -1,0 +1,306 @@
+categories:
+  - code: A
+    key: run_metadata_outputs
+    name: Run metadata outputs
+    file_name: run_metadata_outputs.csv
+    metrics:
+      - { key: scenario_identifiers, label: scenario identifiers }
+      - { key: resolved_config, label: resolved config }
+      - { key: simulator_version, label: simulator version }
+      - { key: git_hash, label: git hash }
+      - { key: seed, label: seed }
+      - { key: execution_timestamp, label: execution timestamp }
+      - { key: hardware_software_environment, label: hardware/software environment }
+      - { key: runtime_summary, label: runtime summary }
+      - { key: warnings_validation_messages, label: warnings and validation messages }
+      - { key: baseline_candidate_tags, label: baseline/candidate tags }
+      - { key: configured_operating_point, label: configured nominal operating point }
+      - { key: effective_layer_histogram, label: effective layer histogram }
+      - { key: effective_rank_histogram, label: effective rank histogram }
+      - { key: effective_modulation_histogram, label: effective modulation histogram }
+      - { key: effective_mcs_histogram, label: effective MCS histogram }
+  - code: B
+    key: basic_phy_performance_outputs
+    name: Basic PHY performance outputs
+    file_name: basic_phy_performance_outputs.csv
+    metrics:
+      - { key: bler_vs_snr_sinr_esn0, label: BLER vs SNR/SINR/EsN0 }
+      - { key: ber_vs_snr_sinr_esn0, label: BER vs SNR/SINR/EsN0 }
+      - { key: fer_tb_error_rate, label: FER / TB error rate }
+      - { key: code_block_bler, label: code-block BLER }
+      - { key: cbg_bler, label: CBG BLER }
+      - { key: throughput, label: throughput }
+      - { key: goodput, label: goodput }
+      - { key: spectral_efficiency, label: spectral efficiency }
+      - { key: user_perceived_throughput, label: user-perceived throughput if modeled }
+      - { key: required_snr_target_bler, label: required SNR at target BLER values }
+      - { key: outage_probability, label: outage probability }
+      - { key: error_floor_region_characterization, label: error-floor region characterization }
+  - code: C
+    key: coding_decoder_outputs
+    name: Coding/decoder outputs
+    file_name: coding_decoder_outputs.csv
+    metrics:
+      - { key: decoder_iterations, label: decoder iterations }
+      - { key: early_stop_rate, label: early-stop rate }
+      - { key: computation_complexity, label: computation complexity }
+      - { key: normalized_decoding_complexity, label: normalized decoding complexity }
+      - { key: latency_per_decode, label: decode compute latency }
+      - { key: area_efficiency_proxy, label: area-efficiency proxy }
+      - { key: snr_gain_same_complexity, label: SNR gain at same complexity }
+      - { key: complexity_reduction_same_bler, label: complexity reduction at same BLER }
+      - { key: cb_size_distribution, label: CB size distribution }
+      - { key: segmentation_statistics, label: segmentation statistics }
+      - { key: puncturing_shortening_statistics, label: puncturing / shortening statistics }
+  - code: D
+    key: modulation_shaping_outputs
+    name: Modulation / shaping outputs
+    file_name: modulation_shaping_outputs.csv
+    metrics:
+      - { key: constellation_scatter, label: constellation scatter }
+      - { key: evm, label: EVM }
+      - { key: symbol_error_rate, label: symbol error rate }
+      - { key: papr_ccdf, label: PAPR CCDF }
+      - { key: peak_clipping_events, label: peak clipping events }
+      - { key: shaping_rate_loss, label: shaping rate loss }
+      - { key: distribution_matching_latency, label: distribution matching latency }
+      - { key: modulation_mapping_sensitivity, label: modulation-mapping sensitivity }
+      - { key: llr_reliability_imbalance_metrics, label: LLR reliability imbalance metrics }
+      - { key: high_order_modulation_robustness_under_impairments, label: high-order modulation robustness under impairments }
+  - code: E
+    key: channel_estimation_tracking_outputs
+    name: Channel-estimation / tracking outputs
+    file_name: channel_estimation_tracking_outputs.csv
+    metrics:
+      - { key: ce_nmse, label: CE NMSE }
+      - { key: cfo_rmse, label: CFO RMSE }
+      - { key: to_rmse, label: TO RMSE }
+      - { key: doppler_rmse, label: Doppler RMSE }
+      - { key: phase_tracking_error, label: phase tracking error }
+      - { key: qcl_estimation_accuracy, label: QCL estimation accuracy }
+      - { key: channel_aging_loss, label: channel aging loss }
+      - { key: interpolation_loss, label: interpolation loss }
+      - { key: mismatch_sensitivity, label: mismatch sensitivity }
+      - { key: acquisition_time, label: acquisition observation time }
+      - { key: tracking_failure_probability, label: tracking failure probability }
+  - code: F
+    key: pdcch_control_outputs
+    name: PDCCH/control outputs
+    file_name: pdcch_control_outputs.csv
+    metrics:
+      - { key: miss_detection_probability, label: miss-detection probability }
+      - { key: false_alarm_probability, label: false-alarm probability }
+      - { key: blocking_probability, label: blocking probability }
+      - { key: blind_decode_count, label: blind-decode count }
+      - { key: non_overlapped_cce_usage, label: non-overlapped CCE usage }
+      - { key: aggregation_level_distribution, label: AL distribution }
+      - { key: dci_size_distribution, label: DCI size distribution }
+      - { key: control_capacity_under_load, label: control capacity under load }
+      - { key: coreset_utilization, label: CORESET utilization }
+      - { key: control_latency, label: control radio latency }
+      - { key: detection_feedback_effectiveness, label: detection-feedback effectiveness }
+      - { key: pdcch_repetition_gain, label: PDCCH repetition gain }
+      - { key: pdcch_monitoring_energy, label: PDCCH monitoring energy }
+      - { key: invalid_detection_power_cost, label: invalid detection power cost }
+      - { key: puncturing_exclusion_sensitivity, label: puncturing/exclusion sensitivity }
+      - { key: mrss_impact_on_control, label: MRSS impact on control }
+  - code: G
+    key: pdsch_outputs
+    name: PDSCH outputs
+    file_name: pdsch_outputs.csv
+    metrics:
+      - { key: per_layer_bler, label: per-layer BLER }
+      - { key: per_codeword_bler, label: per-codeword BLER }
+      - { key: per_rank_throughput, label: per-rank throughput }
+      - { key: equalizer_output_sinr, label: equalizer output SINR }
+      - { key: residual_interference_power, label: residual interference power }
+      - { key: harq_gain_per_retransmission, label: HARQ gain per retransmission }
+      - { key: rate_matching_overhead, label: rate matching overhead }
+      - { key: rs_overhead_contribution, label: RS overhead contribution }
+      - { key: beam_precoder_gain, label: beam / precoder gain }
+      - { key: mtrp_gain, label: mTRP gain }
+      - { key: detector_complexity, label: detector complexity }
+  - code: H
+    key: pusch_pucch_outputs
+    name: PUSCH / PUCCH outputs
+    file_name: pusch_pucch_outputs.csv
+    metrics:
+      - { key: ul_bler_throughput, label: UL BLER / throughput }
+      - { key: low_papr_gain, label: low-PAPR gain }
+      - { key: pa_backoff_impact, label: PA backoff impact }
+      - { key: prep_time_related_impact, label: prep-time related impact }
+      - { key: uci_multiplexing_efficiency, label: UCI multiplexing efficiency }
+      - { key: simultaneous_pucch_pusch_behavior, label: simultaneous PUCCH/PUSCH behavior }
+      - { key: power_control_convergence, label: power control convergence }
+      - { key: dmrs_estimation_quality, label: DMRS estimation quality }
+      - { key: msg3_specific_success_metrics, label: Msg3-specific success metrics }
+  - code: I
+    key: csi_outputs
+    name: CSI outputs
+    file_name: csi_outputs.csv
+    metrics:
+      - { key: cqi_accuracy, label: CQI accuracy }
+      - { key: pmi_accuracy, label: PMI accuracy }
+      - { key: ri_accuracy, label: RI accuracy }
+      - { key: l1_sinr_accuracy, label: L1-SINR accuracy }
+      - { key: rsrp_accuracy, label: RSRP accuracy }
+      - { key: csi_report_size, label: CSI report size }
+      - { key: csi_reporting_overhead, label: CSI reporting overhead }
+      - { key: report_latency, label: CSI report radio latency }
+      - { key: csi_aging_loss, label: CSI aging loss }
+      - { key: scheduler_application_loss, label: scheduler application loss }
+      - { key: sgcs, label: SGCS }
+      - { key: nmse, label: NMSE }
+      - { key: dmrs_vs_csirs_comparison, label: DMRS-based vs CSI-RS-based comparison }
+      - { key: srs_port_scaling_impact, label: SRS-port scaling impact }
+      - { key: reciprocity_mismatch_impact, label: reciprocity mismatch impact }
+      - { key: analog_jscc_jscm_robustness_metrics, label: analog / JSCC / JSCM robustness metrics }
+  - code: J
+    key: beam_management_outputs
+    name: Beam-management outputs
+    file_name: beam_management_outputs.csv
+    metrics:
+      - { key: beam_detection_probability, label: beam detection probability }
+      - { key: beam_index_hit_rate, label: beam index hit rate }
+      - { key: top_k_beam_hit_rate, label: top-k beam hit rate }
+      - { key: beam_switch_latency, label: beam switch latency }
+      - { key: beam_misalignment_probability, label: beam misalignment probability }
+      - { key: beam_prediction_accuracy, label: beam prediction accuracy }
+      - { key: beam_refinement_convergence, label: beam refinement convergence }
+      - { key: beam_failure_rate, label: beam failure rate }
+      - { key: mtrp_beam_selection_gain, label: mTRP beam-selection gain }
+      - { key: beam_management_overhead, label: beam-management overhead }
+  - code: K
+    key: initial_access_random_access_outputs
+    name: Initial-access / random-access outputs
+    file_name: initial_access_random_access_outputs.csv
+    metrics:
+      - { key: one_shot_ssb_detection_probability, label: one-shot SSB detection probability }
+      - { key: cell_id_detection_success, label: cell-ID detection success }
+      - { key: pbch_decode_success, label: PBCH decode success }
+      - { key: initial_access_latency, label: initial-access procedure delay }
+      - { key: search_complexity, label: search complexity }
+      - { key: pbch_repetition_gain, label: PBCH repetition gain }
+      - { key: ssb_repetition_gain, label: SSB repetition gain }
+      - { key: prach_detection_probability, label: PRACH detection probability }
+      - { key: prach_false_alarm, label: PRACH false alarm }
+      - { key: ta_error, label: TA error }
+      - { key: preamble_collision_statistics, label: preamble collision statistics }
+      - { key: ro_utilization, label: RO utilization }
+      - { key: access_success_probability, label: access success probability }
+      - { key: access_delay_cdf, label: access procedure-delay CDF }
+      - { key: beam_pair_acquisition_success, label: beam-pair acquisition success }
+      - { key: msg3_decode_success, label: Msg3 decode success }
+      - { key: initial_access_energy, label: initial-access energy }
+      - { key: clustering_gain_penalty, label: clustering gain / penalty }
+  - code: L
+    key: harq_outputs
+    name: HARQ outputs
+    file_name: harq_outputs.csv
+    metrics:
+      - { key: rtt_distribution, label: RTT distribution }
+      - { key: retransmission_count_distribution, label: retransmission count distribution }
+      - { key: combining_gain, label: combining gain }
+      - { key: ack_nack_dtx_distribution, label: ACK/NACK/DTX distribution }
+      - { key: feedback_overhead, label: feedback overhead }
+      - { key: stop_condition_distribution, label: stop condition distribution }
+      - { key: latency_percentile, label: latency percentile }
+      - { key: reliability_percentile, label: reliability percentile }
+      - { key: control_miss_induced_harq_penalties, label: control-miss induced HARQ penalties }
+      - { key: parity_cb_packet_level_coding_benefits, label: parity-CB / packet-level coding benefits }
+  - code: M
+    key: energy_efficiency_outputs
+    name: Energy-efficiency outputs
+    file_name: energy_efficiency_outputs.csv
+    metrics:
+      - { key: ue_energy_per_successful_bit, label: UE energy per successful bit }
+      - { key: ue_energy_per_slot_frame_burst, label: UE energy per slot / frame / burst }
+      - { key: gnb_energy_per_successful_bit, label: gNB energy per successful bit }
+      - { key: gnb_active_sleep_duty_cycle, label: gNB active/sleep duty cycle }
+      - { key: rf_chain_active_time, label: RF-chain active time }
+      - { key: bb_processing_energy, label: BB processing energy }
+      - { key: pdcch_monitoring_energy_metric, label: PDCCH monitoring energy }
+      - { key: ssb_pbch_common_signal_energy, label: SSB/PBCH/common-signal energy }
+      - { key: prach_common_channel_clustering_energy_effect, label: PRACH/common-channel clustering energy effect }
+      - { key: bandwidth_adaptation_energy_effect, label: bandwidth adaptation energy effect }
+      - { key: race_to_sleep_gains, label: race-to-sleep gains }
+      - { key: throughput_per_watt, label: throughput-per-watt }
+      - { key: energy_delay_product, label: energy-delay product }
+      - { key: energy_spectral_efficiency_tradeoff, label: energy spectral efficiency trade-off }
+  - code: N
+    key: complexity_implementation_outputs
+    name: Complexity / implementation outputs
+    file_name: complexity_implementation_outputs.csv
+    metrics:
+      - { key: runtime_per_block, label: runtime per block }
+      - { key: peak_memory, label: peak memory }
+      - { key: average_memory, label: average memory }
+      - { key: number_of_model_invocations, label: number of model invocations }
+      - { key: flops_macs_estimate, label: FLOPs / MACs estimate }
+      - { key: inference_latency, label: inference latency }
+      - { key: decode_latency, label: decode compute latency }
+      - { key: fft_ce_equalizer_detector_cost, label: FFT/CE/equalizer/detector cost }
+      - { key: per_feature_complexity_breakdown, label: per-feature complexity breakdown }
+  - code: O
+    key: ai_ml_outputs
+    name: AI/ML outputs
+    file_name: ai_ml_outputs.csv
+    metrics:
+      - { key: model_parameters, label: model parameters }
+      - { key: ai_flops, label: FLOPs }
+      - { key: memory_footprint, label: memory footprint }
+      - { key: operation_frequency, label: operation frequency }
+      - { key: ai_inference_latency, label: inference latency }
+      - { key: generalization_bands, label: generalization across bands }
+      - { key: generalization_speeds, label: generalization across speeds }
+      - { key: generalization_delay_spreads, label: generalization across delay spreads }
+      - { key: generalization_channels, label: generalization across channels }
+      - { key: generalization_arrays, label: generalization across arrays }
+      - { key: generalization_impairments, label: generalization across impairments }
+      - { key: train_test_mismatch_loss, label: train/test mismatch loss }
+      - { key: confidence_score_statistics, label: confidence score statistics }
+      - { key: fallback_rate, label: fallback rate }
+      - { key: robustness_under_quantization, label: robustness under quantization }
+      - { key: robustness_under_rf_impairments, label: robustness under RF impairments }
+      - { key: performance_complexity_frontier, label: performance-complexity frontier }
+      - { key: baseline_delta, label: baseline delta }
+  - code: P
+    key: debug_trace_outputs
+    name: Debug / trace outputs
+    file_name: debug_trace_outputs.csv
+    metrics:
+      - { key: selected_waveforms, label: selected waveforms }
+      - { key: channel_snapshots, label: channel snapshots }
+      - { key: channel_estimates, label: channel estimates }
+      - { key: equalized_constellations, label: equalized constellations }
+      - { key: llr_histograms, label: LLR histograms }
+      - { key: cfo_to_tracking_traces, label: CFO/TO tracking traces }
+      - { key: harq_process_timelines, label: HARQ process timelines }
+      - { key: dci_candidate_traces, label: DCI candidate traces }
+      - { key: prach_correlation_traces, label: PRACH correlation traces }
+      - { key: beam_score_traces, label: beam score traces }
+      - { key: ai_confidence_traces, label: AI confidence traces }
+      - { key: energy_timeline_traces, label: energy timeline traces }
+  - code: Q
+    key: aggregated_reporting_outputs
+    name: Aggregated reporting outputs
+    file_name: aggregated_reporting_outputs.csv
+    metrics:
+      - { key: per_scenario_summary_tables, label: per-scenario summary tables }
+      - { key: per_sweep_comparison_tables, label: per-sweep comparison tables }
+      - { key: baseline_candidate_delta_tables, label: baseline vs candidate delta tables }
+      - { key: waterfall_bar_charts_gains_losses, label: waterfall charts / bar charts of gains/losses }
+      - { key: curves_bler_vs_snr, label: curves: BLER vs SNR }
+      - { key: curves_throughput_vs_snr, label: curves: throughput vs SNR }
+      - { key: curves_nmse_vs_snr, label: curves: NMSE vs SNR }
+      - { key: curves_papr_ccdf, label: curves: PAPR CCDF }
+      - { key: curves_latency_cdf, label: curves: latency semantics CDF }
+      - { key: curves_access_delay_cdf, label: curves: access procedure-delay CDF }
+      - { key: curves_energy_vs_throughput, label: curves: energy vs throughput }
+      - { key: curves_complexity_vs_gain, label: curves: complexity vs gain }
+      - { key: heatmaps_band_feature_kpi, label: heatmaps: band vs feature vs KPI }
+      - { key: heatmaps_impairment_kpi, label: heatmaps: impairment vs KPI }
+      - { key: heatmaps_beam_rank_trp_kpi, label: heatmaps: beam/rank/TRP vs KPI }
+      - { key: automatic_markdown_summary, label: automatic Markdown summary }
+      - { key: executive_one_page_summary, label: executive one-page summary }
+      - { key: detailed_technical_report, label: detailed technical report }

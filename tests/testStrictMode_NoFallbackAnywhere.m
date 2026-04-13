@@ -2,15 +2,11 @@ function ok = testStrictMode_NoFallbackAnywhere()
 %TESTSTRICTMODE_NOFALLBACKANYWHERE Strict mode must reject fallback paths.
 
 setup6GRSimToolkit("Verbose", false);
+repoRoot = fileparts(which("setup6GRSimToolkit"));
 
 % Strict LUT fallback guard.
-threwLUT = false;
-try
-    sixgr.system.BLER_LUT("StrictMode", true); %#ok<NASGU>
-catch
-    threwLUT = true;
-end
-assert(threwLUT, "Strict BLER_LUT build should reject synthetic fallback.");
+assert(exist(fullfile(repoRoot, "+sixgr", "+system", "BLER_LUT.m"), "file") == 0, ...
+    "BLER_LUT proxy backend source should be removed from the repo.");
 
 % Strict scheduler TBS fallback guard.
 cfgS = sixgr.config.defaultConfig();
@@ -58,18 +54,17 @@ threwLogistic = false;
 try
     sixgr_run_3gpp_full_campaign(cfg, common{:}, "E2EAirModel", "logistic");
 catch ME
-    threwLogistic = contains(string(ME.identifier), "StrictLogisticForbidden");
+    threwLogistic = strcmp(ME.identifier, "sixgr:campaign:ProxyModeRemoved");
 end
-assert(threwLogistic, "Strict E2E mode must reject logistic air-model fallback.");
+assert(threwLogistic, "Campaign runner must reject removed logistic air-model mode.");
 
 threwMissingLUT = false;
 try
     sixgr_run_3gpp_full_campaign(cfg, common{:}, "E2EAirModel", "lut");
 catch ME
-    threwMissingLUT = contains(string(ME.identifier), "StrictMissingDLLUT");
+    threwMissingLUT = strcmp(ME.identifier, "sixgr:campaign:ProxyModeRemoved");
 end
-assert(threwMissingLUT, "Strict E2E LUT mode must fail when calibrated LUT is missing.");
+assert(threwMissingLUT, "Campaign runner must reject removed LUT air-model mode.");
 
 ok = true;
 end
-

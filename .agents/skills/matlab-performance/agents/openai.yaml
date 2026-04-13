@@ -1,0 +1,4 @@
+interface:
+  display_name: "MATLAB Performance"
+  short_description: "Optimize MATLAB hot paths without drift"
+  default_prompt: "Use $matlab-performance to optimize MATLAB or MEX hot paths while preserving validation and result integrity."

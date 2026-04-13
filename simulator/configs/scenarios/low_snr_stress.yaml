@@ -1,0 +1,29 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "low_snr_stress",
+    "description": "Low SNR stress case.",
+    "research_class": "study_item_candidate",
+    "scenario_group": "group_e_stress"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["bundle"]
+  },
+  "simulation": {
+    "snr_db": 0
+  }
+}

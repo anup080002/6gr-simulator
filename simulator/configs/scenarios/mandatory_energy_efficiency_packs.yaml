@@ -1,0 +1,48 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_700mhz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_energy_efficiency_packs",
+    "description": "Mandatory energy-efficiency instrumentation and adaptation packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "study_item_candidate"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["bundle", "pdcch", "prach", "ssb"],
+    "notes": "Encodes UE and network energy instrumentation, clustering, adaptation, and sleep-behavior studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_energy_efficiency",
+      "overrides": [
+        {"label": "energy_instrumentation_baseline", "config": {"energy_efficiency": {"per_block_processing_energy_enabled": true, "rf_chain_energy_enabled": true}}},
+        {"label": "ssb_clustering", "config": {"energy_efficiency": {"ssb_clustering_enabled": true}}},
+        {"label": "common_channel_clustering", "config": {"energy_efficiency": {"common_channel_clustering_enabled": true}}},
+        {"label": "bandwidth_adaptation_bwp_like", "config": {"energy_efficiency": {"bandwidth_adaptation_mode": "bwp_like"}}},
+        {"label": "bandwidth_adaptation_non_bwp_like", "config": {"energy_efficiency": {"bandwidth_adaptation_mode": "non_bwp_like"}}},
+        {"label": "pdcch_monitoring_adaptation", "config": {"energy_efficiency": {"pdcch_monitoring_adaptation_enabled": true}}},
+        {"label": "blind_decode_reduction", "config": {"energy_efficiency": {"blind_decode_reduction_enabled": true}}},
+        {"label": "cross_slot_scheduling", "config": {"energy_efficiency": {"cross_slot_scheduling_enabled": true}}},
+        {"label": "active_sleep_duty_cycle", "config": {"energy_efficiency": {"active_sleep_tracking_enabled": true, "duty_cycle_logging": true}}},
+        {"label": "race_to_sleep", "config": {"energy_efficiency": {"race_to_sleep_enabled": true, "sleep_state_model": "micro_sleep"}}},
+        {"label": "wideband_narrowband_tradeoff", "config": {"energy_efficiency": {"wideband_narrowband_tradeoff_enabled": true}, "frequency": {"bandwidth_options_hz": [5000000, 20000000, 100000000]}}}
+      ]
+    }
+  }
+}

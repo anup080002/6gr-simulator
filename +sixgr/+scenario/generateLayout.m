@@ -95,8 +95,7 @@ end
 % ---------------- Local helpers ----------------
 
 function siteXY = localHexSites(nSites, isd_m)
-% Generate up to 19-site hex lattice centered at origin.
-% For nSites <= 19, we fill rings 0..2.
+% Generate an arbitrary-size hex lattice centered at origin.
 
 nSites = double(nSites);
 isd_m = double(isd_m);
@@ -106,18 +105,30 @@ if nSites <= 0
     return;
 end
 
-% Axial coordinates for rings 0,1,2 (total 19)
-axial = [0 0];
-if nSites > 1
-    ring1 = [ 1 0; 1 -1; 0 -1; -1 0; -1 1; 0 1];
-    axial = [axial; ring1]; %#ok<AGROW>
+axial = zeros(nSites, 2);
+axial(1,:) = [0 0];
+count = 1;
+ring = 1;
+dirs = [0 -1; -1 0; -1 1; 0 1; 1 0; 1 -1];
+while count < nSites
+    q = ring;
+    r = 0;
+    for side = 1:6
+        for step = 1:ring
+            count = count + 1;
+            axial(count,:) = [q r];
+            if count >= nSites
+                break;
+            end
+            q = q + dirs(side,1);
+            r = r + dirs(side,2);
+        end
+        if count >= nSites
+            break;
+        end
+    end
+    ring = ring + 1;
 end
-if nSites > 7
-    ring2 = [ 2 0; 2 -1; 2 -2; 1 -2; 0 -2; -1 -1; -2 0; -2 1; -2 2; -1 2; 0 2; 1 1];
-    axial = [axial; ring2]; %#ok<AGROW>
-end
-
-axial = axial(1:min(nSites,size(axial,1)), :);
 
 q = axial(:,1);
 r = axial(:,2);

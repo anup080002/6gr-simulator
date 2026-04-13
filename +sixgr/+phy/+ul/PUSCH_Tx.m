@@ -117,44 +117,29 @@ else
 end
 
 % Base graph selection
+tbCRCType = '24A';
+tbCRCLen = 24;
 try
     ulschInfo = nrULSCHInfo(trBlkSize, targetCodeRate);
     bgn = double(ulschInfo.BGN);
+    [tbCRCType, tbCRCLen] = localResolveTBCRCSpec(ulschInfo, tbCRCType, tbCRCLen);
 catch
     bgn = 2;
 end
 
 % ---------------------- UL-SCH encoding (modular blocks) ----------------------
-% TB CRC (24A)
-tbCrc = sixgr.phy.tb.attachCRC(trBlk, '24A');
-crcInfo = struct();
+% Match the TB CRC selected by nrULSCHInfo for this transport block size.
+tbCrc = sixgr.phy.tb.attachCRC(trBlk, tbCRCType);
+crcInfo = struct("Type", string(tbCRCType), "Length", double(tbCRCLen));
 B = numel(tbCrc);
 
 % Code block segmentation
 [cbs, segInfo] = sixgr.phy.tb.segmentLDPC(tbCrc, bgn);
 C = size(cbs, 2);
 
-% LDPC encode each code block
-enc1 = sixgr.phy.phycode.ldpcEncode(cbs(:, 1), bgn);
-ldpcEnc = zeros(size(enc1,1), C, 'int8');
-ldpcEnc(:, 1) = int8(enc1(:));
-if C > 1
-    usePar = logical(sixgr.util.structGet(cfg, 'run.useParallel', false)) ...
-        && license('test','Distrib_Computing_Toolbox') && ~isempty(gcp('nocreate'));
-    if usePar
-        encRest = cell(C-1,1);
-        parfor c = 2:C
-            encRest{c-1} = int8(sixgr.phy.phycode.ldpcEncode(cbs(:, c), bgn));
-        end
-        for c = 2:C
-            ldpcEnc(:, c) = encRest{c-1}(:);
-        end
-    else
-        for c = 2:C
-            ldpcEnc(:, c) = int8(sixgr.phy.phycode.ldpcEncode(cbs(:, c), bgn));
-        end
-    end
-end
+% LDPC encode all code blocks in one toolbox call to avoid repeated
+% per-code-block MATLAB loop overhead.
+ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
 
 % Rate match to G bits
 if isfield(puschInfo, 'G')
@@ -167,17 +152,7 @@ codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pus
 codeword = int8(codeword(:));
 
 % ---------------------- PUSCH modulation & mapping ----------------------
-codewords = {codeword};
-
-% nrPUSCH can optionally return PTRS symbols
-ptrsSym = [];
-try
-    [puschSym, ptrsSym] = nrPUSCH(carrier, pusch, codewords);
-    puschSymInfo = struct();
-catch
-    puschSym = nrPUSCH(carrier, pusch, codewords);
-    puschSymInfo = struct();
-end
+[puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword);
 
 % DMRS
 [dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
@@ -228,11 +203,14 @@ if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlock = trBlk;
     tx.TransportBlockCRC = tbCrc;
+    tx.TransportBlockCRCType = char(tbCRCType);
+    tx.TransportBlockCRCLength = double(tbCRCLen);
     tx.TransportBlockLenWithCRC = B;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
     tx.G = G;
     tx.PUSCHInfo = puschInfo;
+    tx.PUSCHSymbols = puschSym;
     tx.DMRSIndices = dmrsInd;
     tx.DMRSSymbols = dmrsSym;
     tx.PTRSIndices = ptrsInd;
@@ -246,6 +224,58 @@ info.Segmentation = segInfo;
 info.PUSCHSymbols = puschSymInfo;
 info.OFDM = ofdmInfo;
 
+end
+
+function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
+crcType = defaultType;
+crcLen = defaultLen;
+if nargin < 1 || ~isstruct(schInfo)
+    return;
+end
+rawType = char(string(sixgr.util.structGet(schInfo, 'CRC', defaultType)));
+if ~isempty(rawType)
+    crcType = rawType;
+end
+rawLen = double(sixgr.util.structGet(schInfo, 'L', defaultLen));
+if isfinite(rawLen) && rawLen >= 0
+    crcLen = rawLen;
+end
+end
+
+function [puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword)
+% MATLAB releases disagree on whether a single-codeword PUSCH call should
+% receive the codeword directly or wrapped in a 1x1 cell array. Try the
+% older numeric signature first, then fall back to the cell signature used
+% by newer releases.
+ptrsSym = [];
+puschSymInfo = struct();
+numericErr = [];
+try
+    [puschSym, ptrsSym] = nrPUSCH(carrier, pusch, codeword);
+    return;
+catch ME
+    numericErr = ME;
+end
+
+codewords = {codeword};
+try
+    [puschSym, ptrsSym] = nrPUSCH(carrier, pusch, codewords);
+    return;
+catch
+end
+
+try
+    puschSym = nrPUSCH(carrier, pusch, codeword);
+    return;
+catch
+end
+
+try
+    puschSym = nrPUSCH(carrier, pusch, codewords);
+    return;
+catch
+    rethrow(numericErr);
+end
 end
 
 function qm = localQm(modScheme)

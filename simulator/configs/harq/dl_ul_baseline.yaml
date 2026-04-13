@@ -1,0 +1,9 @@
+{
+  "harq": {
+    "study_axes": ["latency", "reliability"],
+    "stop_condition": "max_retransmissions",
+    "ack_nack_dtx_model": "ack_nack_only",
+    "pdcch_miss_behavior": "treat_as_dtx",
+    "detection_feedback_interaction_enabled": false
+  }
+}

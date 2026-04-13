@@ -1,0 +1,428 @@
+{
+  "schema_version": 1,
+  "parameters": {
+    "meta": {
+      "toolkitName": {"value_type": "string", "default": "6GR Sim Studio Unified"},
+      "version": {"value_type": "string", "default": "v18"},
+      "schemaVersion": {"value_type": "integer", "default": 1, "min": 1},
+      "createdUTC": {"value_type": "string", "default_kind": "dynamic_created_utc"},
+      "loadedFrom": {"value_type": "string_or_empty", "default": ""},
+      "presetClass": {"value_type": "string_or_empty", "allowed_values": ["fading_truth"]},
+      "presetIntent": {"value_type": "string_or_empty"}
+    },
+    "run": {
+      "seed": {"value_type": "integer", "default": 1, "min": 0},
+      "mode": {"value_type": "string", "default": "both", "allowed_values": ["link", "system", "both"]},
+      "module": {"value_type": "string", "default": "sixgr_run_3gpp_full_campaign"},
+      "failFast": {"value_type": "boolean", "default": true},
+      "useParallel": {"value_type": "boolean", "default": false},
+      "numWorkers": {"value_type": "integer", "default": 0, "min": 0},
+      "resultsRoot": {"value_type": "string", "default": "results"},
+      "runTag": {"value_type": "string_or_empty", "default": ""},
+      "shortRun": {"value_type": "boolean", "default": true},
+      "numFrames": {"value_type": "integer", "default": 20, "min": 1},
+      "numTTI": {"value_type": "integer", "default": 200, "min": 1},
+      "saveIntermediate": {"value_type": "boolean", "default": false},
+      "verbose": {"value_type": "boolean", "default": true},
+      "noProxyTruthContract": {"value_type": "boolean", "default": false},
+      "strictMode": {"value_type": "boolean"},
+      "useMex": {"value_type": "boolean"},
+      "preset": {"value_type": "string_or_empty"},
+      "configPreset": {"value_type": "string_or_empty"},
+      "useConfigFragments": {"value_type": "boolean"},
+      "campaign": {
+        "useFastLinkModel": {"value_type": "boolean"},
+        "useMexAcceleration": {"value_type": "boolean"}
+      }
+    },
+    "scenario": {
+      "name": {"value_type": "string", "default": "UrbanMacro"},
+      "layout": {
+        "type": {"value_type": "string", "default": "hex", "allowed_values": ["hex", "grid", "manual"]},
+        "nSites": {"value_type": "integer", "default": 19, "min": 1},
+        "interSiteDistance_m": {"value_type": "number", "default": 500, "min": 0},
+        "nSectorsPerSite": {"value_type": "integer", "default": 3, "min": 1},
+        "wrapAround": {"value_type": "boolean", "default": true}
+      },
+      "bs": {
+        "height_m": {"value_type": "number", "default": 25, "min": 0},
+        "txPower_dBm": {"value_type": "number", "default": 46},
+        "noiseFigure_dB": {"value_type": "number", "default": 7},
+        "nTxAnt": {"value_type": "integer", "default": 64, "min": 1},
+        "nRxAnt": {"value_type": "integer", "default": 64, "min": 1},
+        "antenna": {
+          "type": {"value_type": "string", "default": "URA", "allowed_values": ["URA", "ULA", "custom"]},
+          "size": {"value_type": "integer_vector", "default": [8, 8], "min": 1, "min_length": 2, "max_length": 2},
+          "elementSpacing_wl": {"value_type": "number_vector", "default": [0.5, 0.5], "min": 0, "min_length": 2, "max_length": 2}
+        }
+      },
+      "ue": {
+        "nUE": {"value_type": "integer", "default": 190, "min": 1},
+        "height_m": {"value_type": "number", "default": 1.5, "min": 0},
+        "txPower_dBm": {"value_type": "number", "default": 23},
+        "noiseFigure_dB": {"value_type": "number", "default": 9},
+        "nTxAnt": {"value_type": "integer", "default": 4, "min": 1},
+        "nRxAnt": {"value_type": "integer", "default": 4, "min": 1},
+        "distribution": {
+          "type": {"value_type": "string", "default": "uniform", "allowed_values": ["uniform", "hotspot", "manual"]},
+          "indoorFraction": {"value_type": "number", "default": 0.2, "min": 0, "max": 1},
+          "minBSdist_m": {"value_type": "number", "default": 10, "min": 0},
+          "maxBSdist_m": {"value_type": "number", "default": 500, "min": 0}
+        }
+      },
+      "mobility": {
+        "enable": {"value_type": "boolean", "default": true},
+        "model": {"value_type": "string", "default": "randomWaypoint", "allowed_values": ["randomWaypoint", "straightLine", "trace"]},
+        "speed_kmh": {"value_type": "number_vector", "default": [3, 30], "min": 0, "min_length": 1, "max_length": 2},
+        "updatePeriod_s": {"value_type": "number", "default": 0.1, "min": 0}
+      }
+    },
+    "traffic": {
+      "model": {"value_type": "string", "default": "fullBuffer", "allowed_values": ["fullBuffer", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
+      "transport": {"value_type": "string", "default": "UDP", "allowed_values": ["UDP", "TCP", "MIXED"]},
+      "flowDirection": {"value_type": "string", "default": "BIDIR", "allowed_values": ["DL", "UL", "BIDIR"]},
+      "dlRatio": {"value_type": "number", "default": 0.8, "min": 0, "max": 1},
+      "ulRatio": {"value_type": "number", "default": 0.2, "min": 0, "max": 1},
+      "packetDelayBudget_ms": {"value_type": "number", "default": 50, "min": 0},
+      "packetSize_bytes": {"value_type": "integer", "default": 1200, "min": 1},
+      "packetInterval_ms": {"value_type": "number", "default": 10, "min": 0},
+      "targetRate_Mbps": {"value_type": "number", "default": 50, "min": 0},
+      "jitterPct": {"value_type": "number", "default": 0.1, "min": 0},
+      "fullBufferBitsPerTTI": {"value_type": "integer", "default": 100000, "min": 1},
+      "tcp": {
+        "initCwnd_packets": {"value_type": "integer", "default": 10, "min": 1},
+        "maxCwnd_packets": {"value_type": "integer", "default": 256, "min": 1},
+        "lossProb": {"value_type": "number", "default": 0.01, "min": 0, "max": 1},
+        "lossBackoff": {"value_type": "number", "default": 0.5, "min": 0, "max": 1},
+        "minRateFloor": {"value_type": "number", "default": 0.2, "min": 0}
+      },
+      "qos": {
+        "enable5QI": {"value_type": "boolean", "default": true},
+        "default5QI": {"value_type": "integer", "default": 9, "min": 1},
+        "latencyBudget_ms": {"value_type": "number", "default": 50, "min": 0},
+        "flows": {"value_type": "struct_array", "default_kind": "empty_struct_array"}
+      },
+      "flows": {"value_type": "struct_array", "default_kind": "empty_struct_array"},
+      "trace": {
+        "file": {"value_type": "string_or_empty", "default": ""},
+        "offeredBitsDL": {"value_type": "number_array", "default": [], "min": 0},
+        "offeredBitsUL": {"value_type": "number_array", "default": [], "min": 0},
+        "transport": {"value_type": "string_or_empty", "default": ""},
+        "flowDirection": {"value_type": "string_or_empty", "default": ""},
+        "packetDelayBudget_ms": {"value_type": "number_vector", "default": [], "min": 0},
+        "flowTable": {"value_type": "table", "default_kind": "empty_table"}
+      }
+    },
+    "system": {
+      "tti_s": {"value_type": "number_vector", "default": [], "min": 0},
+      "queueMaxBits": {"value_type": "number", "default": 50000000, "min": 0},
+      "ulSinrOffset_dB": {"value_type": "number", "default": -1},
+      "phyBackend": {"value_type": "string", "default": "waveform", "allowed_values": ["waveform"]},
+      "mobility": {
+        "updatePeriod_slots": {"value_type": "number_vector", "default": [], "min": 0}
+      },
+      "largeScaleUpdatePeriod_slots": {"value_type": "number_vector", "default": [], "min": 0},
+      "measurement": {
+        "periodSlots": {"value_type": "integer", "default": 2, "min": 1},
+        "filterAlpha": {"value_type": "number", "default": 0.7, "min": 0, "max": 1}
+      },
+      "beam": {
+        "enable": {"value_type": "boolean", "default": true},
+        "numBeams": {"value_type": "integer", "default": 8, "min": 1},
+        "updatePeriod_slots": {"value_type": "integer", "default": 4, "min": 1},
+        "sectorSpan_deg": {"value_type": "number", "default": 120, "min": 0},
+        "maxGain_dB": {"value_type": "number", "default": 12}
+      },
+      "handover": {
+        "enable": {"value_type": "boolean", "default": true},
+        "a3Offset_dB": {"value_type": "number", "default": 3},
+        "hysteresis_dB": {"value_type": "number", "default": 1, "min": 0},
+        "timeToTrigger_slots": {"value_type": "integer", "default": 6, "min": 0},
+        "minServingSlots": {"value_type": "integer", "default": 8, "min": 0},
+        "preparationSlots": {"value_type": "integer", "default": 1, "min": 0},
+        "interruptionSlots": {"value_type": "integer", "default": 2, "min": 0},
+        "blockDuringPreparation": {"value_type": "boolean", "default": false}
+      }
+    },
+    "channel": {
+      "type": {"value_type": "string", "default": "TR38901", "allowed_values": ["TR38901", "TDL", "CDL", "raytracing", "AWGN"]},
+      "model": {"value_type": "string", "allowed_values": ["TR38901", "TDL", "CDL", "raytracing", "AWGN", "OFF", "NONE"]},
+      "fc_Hz": {"value_type": "number", "default": 4000000000, "min": 1},
+      "bandwidth_Hz": {"value_type": "number", "default": 100000000, "min": 1},
+      "subcarrierSpacing_kHz": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120, 240]},
+      "delayProfile": {"value_type": "string_or_empty"},
+      "tdlProfile": {"value_type": "string_or_empty"},
+      "cdlProfile": {"value_type": "string_or_empty"},
+      "delaySpread_s": {"value_type": "number", "min": 0},
+      "doppler_Hz": {"value_type": "number", "min": 0},
+      "awgnOnly": {"value_type": "boolean"},
+      "pathloss": {
+        "model": {"value_type": "string", "default": "nrPathLoss", "allowed_values": ["nrPathLoss", "CI", "ABG", "custom", "freeSpace", "none"]}
+      },
+      "shadowFadingStd_dB": {"value_type": "number", "default": 6, "min": 0},
+      "o2iLoss_dB": {"value_type": "number", "default": 0},
+      "fading": {
+        "enable": {"value_type": "boolean", "default": true},
+        "model": {"value_type": "string_or_empty", "default": "TDL", "allowed_values": ["TDL", "CDL", ""]},
+        "profile": {"value_type": "string_or_empty", "default": "TDL-C"},
+        "delaySpread_s": {"value_type": "number", "default": 0.0000001, "min": 0},
+        "maxDoppler_Hz": {"value_type": "number", "default": 70, "min": 0}
+      },
+      "raytracing": {
+        "enable": {"value_type": "boolean", "default": false},
+        "scene": {"value_type": "string_or_empty", "default": ""},
+        "method": {"value_type": "string", "default": "sbr", "allowed_values": ["sbr", "image"]},
+        "maxReflections": {"value_type": "integer", "default": 2, "min": 0}
+      },
+      "interference": {
+        "enable": {"value_type": "boolean", "default": true},
+        "model": {"value_type": "string", "default": "fullReuse", "allowed_values": ["fullReuse", "custom"]}
+      }
+    },
+    "phy": {
+      "carrier": {
+        "NCellID": {"value_type": "integer", "default": 1, "min": 0},
+        "SubcarrierSpacing": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120, 240]},
+        "NSizeGrid": {"value_type": "integer", "default": 51, "min": 1},
+        "CyclicPrefix": {"value_type": "string", "default": "normal", "allowed_values": ["normal", "extended"]},
+        "NFrame": {"value_type": "integer", "default": 0, "min": 0}
+      },
+      "duplex": {
+        "mode": {"value_type": "string", "default": "TDD", "allowed_values": ["TDD", "FDD"]},
+        "tddPattern": {"value_type": "any", "default": "DDDSU"}
+      },
+      "waveform": {
+        "dl": {"value_type": "string", "default": "CP-OFDM", "allowed_values": ["CP-OFDM"]},
+        "ul": {"value_type": "string", "default": "DFT-s-OFDM", "allowed_values": ["DFT-s-OFDM", "CP-OFDM"]}
+      },
+      "ssb": {
+        "enable": {"value_type": "boolean", "default": true},
+        "blockPattern": {"value_type": "string", "default": "Case B", "allowed_values": ["Case A", "Case B", "Case C", "Case D", "Case E"]},
+        "period_ms": {"value_type": "number", "default": 20, "min": 0},
+        "nBeams": {"value_type": "integer", "default": 8, "min": 1}
+      },
+      "pbch": {"enable": {"value_type": "boolean", "default": true}},
+      "mib": {"enable": {"value_type": "boolean", "default": true}},
+      "sib1": {"enable": {"value_type": "boolean", "default": true}},
+      "prach": {
+        "enable": {"value_type": "boolean", "default": true},
+        "configurationIndex": {"value_type": "integer", "default": 16, "min": 0},
+        "subcarrierSpacing_kHz": {"value_type": "number", "default": 1.25, "min": 0},
+        "preambleFormat": {"value_type": "string", "default": "A1"},
+        "rootSeqIndex": {"value_type": "integer", "default": 1, "min": 0},
+        "zeroCorrelationZone": {"value_type": "integer", "default": 8, "min": 0}
+      },
+      "pdcch": {
+        "enable": {"value_type": "boolean", "default": true},
+        "searchSpaceType": {"value_type": "string", "default": "ue", "allowed_values": ["ue", "common"]},
+        "aggregationLevel": {"value_type": "integer", "default": 8, "min": 1},
+        "dciFormat": {"value_type": "string", "default": "1_0", "allowed_values": ["0_0", "0_1", "1_0", "1_1"]}
+      },
+      "pdsch": {
+        "enable": {"value_type": "boolean", "default": true},
+        "modulation": {"value_type": "string", "default": "256QAM", "allowed_values": ["PI/2-BPSK", "BPSK", "QPSK", "16QAM", "64QAM", "256QAM", "1024QAM", "4096QAM"]},
+        "nLayers": {"value_type": "integer", "default": 4, "min": 1},
+        "numLayers": {"value_type": "integer", "min": 1},
+        "codeRate": {"value_type": "number", "default": 0.75, "min": 0, "max": 1},
+        "enablePTRS": {"value_type": "boolean", "default": false},
+        "dmrs": {
+          "typeApos": {"value_type": "integer", "default": 2, "min": 0},
+          "configType": {"value_type": "integer", "default": 1, "allowed_values": [1, 2]},
+          "numCDMGroupsWithoutData": {"value_type": "integer", "default": 2, "min": 0}
+        }
+      },
+      "csirs": {
+        "enable": {"value_type": "boolean", "default": true},
+        "nPorts": {"value_type": "integer", "default": 8, "min": 1}
+      },
+      "csi": {
+        "enable": {"value_type": "boolean", "default": true},
+        "feedbackMode": {"value_type": "string", "default": "PMI+CQI+RI", "allowed_values": ["PMI+CQI", "RI+PMI+CQI", "PMI+CQI+RI", "PMI+CQI+RI+CRI", "CRI", "none"]},
+        "reportCQI": {"value_type": "boolean", "default": true},
+        "reportPMI": {"value_type": "boolean", "default": true},
+        "reportRI": {"value_type": "boolean", "default": true},
+        "reportCRI": {"value_type": "boolean", "default": false},
+        "reportCSI": {"value_type": "boolean", "default": true},
+        "channelStateInformationMode": {"value_type": "string", "default": "PMI+CQI+RI", "allowed_values": ["PMI+CQI", "PMI+CQI+RI", "PMI+CQI+RI+CRI", "CRI", "none"]},
+        "pmiCodebookMode": {"value_type": "string", "default": "type1_su_mimo", "allowed_values": ["type1_su_mimo", "type2_mu_mimo", "etype2_candidate", "noncodebook"]},
+        "codebookType": {"value_type": "string", "default": "type1", "allowed_values": ["type1", "type2", "etype2", "noncodebook"]},
+        "reportPMIType1": {"value_type": "boolean", "default": true},
+        "reportPMIType2": {"value_type": "boolean", "default": false},
+        "reportPMIEnhancedType2": {"value_type": "boolean", "default": false}
+      },
+      "pucch": {
+        "enable": {"value_type": "boolean", "default": true},
+        "format": {"value_type": "integer", "default": 2, "allowed_values": [0, 1, 2, 3, 4]}
+      },
+      "pusch": {
+        "enable": {"value_type": "boolean", "default": true},
+        "modulation": {"value_type": "string", "default": "256QAM", "allowed_values": ["PI/2-BPSK", "BPSK", "QPSK", "16QAM", "64QAM", "256QAM", "1024QAM", "4096QAM"]},
+        "nLayers": {"value_type": "integer", "default": 2, "min": 1},
+        "numLayers": {"value_type": "integer", "min": 1},
+        "codeRate": {"value_type": "number", "default": 0.75, "min": 0, "max": 1},
+        "transformPrecoding": {"value_type": "boolean", "default": true},
+        "dmrs": {
+          "configType": {"value_type": "integer", "default": 1, "allowed_values": [1, 2]},
+          "numCDMGroupsWithoutData": {"value_type": "integer", "default": 2, "min": 0}
+        }
+      },
+      "srs": {
+        "enable": {"value_type": "boolean", "default": true},
+        "nPorts": {"value_type": "integer", "default": 2, "min": 1},
+        "period_slots": {"value_type": "integer", "default": 20, "min": 1}
+      },
+      "harq": {
+        "enable": {"value_type": "boolean", "default": true},
+        "nProcesses": {"value_type": "integer", "default": 16, "min": 1},
+        "rvSequence": {"value_type": "integer_vector", "default": [0, 2, 3, 1], "min": 0}
+      },
+      "ldpc": {
+        "maxIterations": {"value_type": "integer", "default": 12, "min": 1},
+        "algorithm": {"value_type": "string", "default": "Normalized min-sum"},
+        "useMexBatchDecode": {"value_type": "boolean", "default": true}
+      },
+      "rx": {
+        "channelEstimation": {"value_type": "string", "default": "DMRS", "allowed_values": ["DMRS", "SRS", "perfect"]},
+        "equalizer": {"value_type": "string", "default": "MMSE", "allowed_values": ["ZF", "MMSE", "IRC"]},
+        "mimoDetector": {"value_type": "string", "default": "MMSE", "allowed_values": ["MMSE", "ML", "SIC"]},
+        "cfoCompensation": {"value_type": "boolean", "default": true},
+        "useFastChannelEstMex": {"value_type": "boolean", "default": false}
+      }
+    },
+    "mac": {
+      "scheduler": {
+        "type": {"value_type": "string", "default": "PF", "allowed_values": ["PF", "RR", "MAXCQI", "MaxCqi", "roundRobin", "proportionalFair", "maxCqi", "rr", "pf"]},
+        "metricAveraging": {"value_type": "string", "default": "exp"},
+        "alpha": {"value_type": "number", "default": 0.9, "min": 0, "max": 1}
+      },
+      "harq": {
+        "enable": {"value_type": "boolean", "default": true},
+        "maxRetx": {"value_type": "integer", "default": 3, "min": 0}
+      }
+    },
+    "rlc": {
+      "mode": {"value_type": "string", "default": "AM", "allowed_values": ["AM", "UM", "TM"]},
+      "tPollRetransmit_ms": {"value_type": "number", "default": 45, "min": 0},
+      "tReassembly_ms": {"value_type": "number", "default": 35, "min": 0}
+    },
+    "pdcp": {
+      "snLen_bits": {"value_type": "integer", "default": 18, "min": 1},
+      "enableCiphering": {"value_type": "boolean", "default": false},
+      "enableIntegrity": {"value_type": "boolean", "default": false}
+    },
+    "sdap": {
+      "enable": {"value_type": "boolean", "default": true}
+    },
+    "rrc": {
+      "enable": {"value_type": "boolean", "default": true},
+      "attachProcedure": {"value_type": "boolean", "default": true}
+    },
+    "rf": {
+      "enable": {"value_type": "boolean", "default": false},
+      "noiseFigure_dB": {"value_type": "number", "default": 7},
+      "iqImbalance": {
+        "enable": {"value_type": "boolean", "default": false},
+        "ampImb_dB": {"value_type": "number", "default": 0},
+        "phaseImb_deg": {"value_type": "number", "default": 0}
+      },
+      "phaseNoise": {
+        "enable": {"value_type": "boolean", "default": false},
+        "level_dBcHz": {"value_type": "number", "default": -80},
+        "offset_Hz": {"value_type": "number", "default": 100000, "min": 0}
+      },
+      "pa": {
+        "enable": {"value_type": "boolean", "default": false},
+        "model": {"value_type": "string", "default": "memoryless", "allowed_values": ["memoryless"]},
+        "backoff_dB": {"value_type": "number", "default": 3}
+      }
+    },
+    "energy": {
+      "enable": {"value_type": "boolean", "default": true},
+      "bs": {
+        "pStatic_W": {"value_type": "number", "default": 500, "min": 0},
+        "pDynPerWattPerHz": {"value_type": "number", "default": 0.000002, "min": 0}
+      },
+      "ue": {
+        "pStatic_W": {"value_type": "number", "default": 2, "min": 0},
+        "pDynPerWattPerHz": {"value_type": "number", "default": 0.000005, "min": 0}
+      }
+    },
+    "ai": {
+      "enable": {"value_type": "boolean", "default": false},
+      "csiCompression": {
+        "enable": {"value_type": "boolean", "default": false},
+        "latentDim": {"value_type": "integer", "default": 64, "min": 1},
+        "network": {"value_type": "any", "default": "autoencoder"}
+      },
+      "beamSelection": {
+        "enable": {"value_type": "boolean", "default": false},
+        "network": {"value_type": "any", "default": "cnn"}
+      },
+      "neuralReceiver": {
+        "enable": {"value_type": "boolean", "default": false},
+        "type": {"value_type": "string", "default": "nnEqualizer", "allowed_values": ["nnEqualizer"]}
+      },
+      "positioning": {
+        "enable": {"value_type": "boolean", "default": false}
+      }
+    },
+    "outputs": {
+      "saveMAT": {"value_type": "boolean", "default": true},
+      "saveCSV": {"value_type": "boolean", "default": true},
+      "saveFigures": {"value_type": "boolean", "default": true},
+      "saveFIG": {"value_type": "boolean", "default": true},
+      "savePNG": {"value_type": "boolean", "default": true},
+      "plotVisible": {"value_type": "boolean", "default": false},
+      "kpi": {
+        "enable": {"value_type": "boolean", "default": true},
+        "list": {"value_type": "string_list", "default": ["throughput", "bler", "ber", "evm", "papr", "sinr", "cqi"]}
+      }
+    },
+    "gui": {
+      "enable": {"value_type": "boolean", "default": true},
+      "useSiteViewer": {"value_type": "boolean", "default": true},
+      "showUEMobility": {"value_type": "boolean", "default": true}
+    }
+  },
+  "preset_aliases": {
+    "urbanmacro": "UMa_FR1",
+    "uma": "UMa_FR1",
+    "uma_fr1": "UMa_FR1",
+    "indoorhotspot": "InH_FR3",
+    "inh": "InH_FR3",
+    "inh_fr3": "InH_FR3",
+    "suburbanmacro": "SMa_FR3",
+    "sma": "SMa_FR3",
+    "sma_fr3": "SMa_FR3",
+    "ruralmacro": "RMa_700MHz",
+    "rma": "RMa_700MHz",
+    "rma_700mhz": "RMa_700MHz"
+  },
+  "coder_enums": {
+    "run": {
+      "mode": {"ordered_values": ["link", "system", "both"], "default_code": 0}
+    },
+    "scenario": {
+      "name": {"ordered_values": ["indoorhotspot", "urbanmacro", "suburbanmacro", "ruralmacro", "denseurban"], "default_code": 1}
+    },
+    "channel": {
+      "type": {"ordered_values": ["tr38901", "tdl", "cdl", "raytracing", "awgn"], "default_code": 0}
+    },
+    "phy": {
+      "carrier": {
+        "CyclicPrefix": {"ordered_values": ["normal", "extended"], "default_code": 0}
+      },
+      "pdsch": {
+        "modulation": {"ordered_values": ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM", "4096QAM"], "default_code": 3}
+      },
+      "pusch": {
+        "modulation": {"ordered_values": ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM", "4096QAM"], "default_code": 3}
+      }
+    },
+    "mac": {
+      "scheduler": {
+        "type": {"ordered_values": ["PF", "RR", "MAXCQI"], "default_code": 0}
+      }
+    }
+  }
+}

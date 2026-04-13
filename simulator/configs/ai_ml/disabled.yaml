@@ -1,0 +1,20 @@
+{
+  "ai_ml": {
+    "enabled": false,
+    "use_case": "channel_estimation_enhancement",
+    "mode": "disabled",
+    "model_path": "",
+    "model_id": "disabled",
+    "model_version": "0",
+    "input_features": ["hest_real", "hest_imag"],
+    "output_targets": ["hhat_real", "hhat_imag"],
+    "inference_batch_size": 1,
+    "latency_budget_us": 1000,
+    "flops_budget": 1000000,
+    "quantization_mode": "fp32",
+    "runtime_budget_us": 1000,
+    "fallback_enabled": true,
+    "confidence_logging": true,
+    "descriptor_type": "plugin_descriptor"
+  }
+}

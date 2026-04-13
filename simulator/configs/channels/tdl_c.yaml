@@ -1,0 +1,13 @@
+{
+  "channels": {
+    "model_type": "TDL",
+    "profile": "TDL-C",
+    "delay_spread_ns": 300,
+    "doppler_hz": 70,
+    "mobility_kmph": 30,
+    "los_enabled": false,
+    "spatial_consistency_enabled": false,
+    "pathloss_enabled": false,
+    "shadow_fading_enabled": false
+  }
+}

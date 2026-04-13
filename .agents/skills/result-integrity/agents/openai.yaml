@@ -1,0 +1,4 @@
+interface:
+  display_name: "Result Integrity"
+  short_description: "Protect result tables and export semantics"
+  default_prompt: "Use $result-integrity to review or patch result tables, exports, manifests, and truth/proxy labeling."

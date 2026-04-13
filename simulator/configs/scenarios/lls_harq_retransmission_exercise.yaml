@@ -1,0 +1,80 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_harq_retransmission_exercise",
+    "description": "Waveform-truth HARQ exercise preset that lowers SNR and raises MCS so retransmission and combining behavior is exercised with real decode outcomes.",
+    "version": "1.0.0",
+    "owner": "codex",
+    "maturity_tag": "regression",
+    "scenario_group": "lls_truth_validation",
+    "research_class": "study_item_candidate",
+    "tags": ["lls", "truth", "waveform", "harq", "exercise", "retransmission"]
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["bundle", "dl", "ul", "harq"],
+    "notes": "Dedicated HARQ validation preset. Real waveform decode outcomes must exercise retransmissions and combining without synthetic NACK injection."
+  },
+  "simulation": {
+    "link_direction": "both",
+    "n_frames": 8,
+    "n_slots": 8,
+    "n_subframes": 8,
+    "monte_carlo_iterations": 8,
+    "random_seed": 29,
+    "deterministic_mode": true,
+    "snr_db": -12,
+    "min_duration_s": 0.004,
+    "snr_sweep_offsets_db": [0, 4]
+  },
+  "channels": {
+    "model_type": "TDL",
+    "profile": "TDL-C",
+    "delay_spread_ns": 300,
+    "doppler_hz": 111,
+    "mobility_kmph": 30
+  },
+  "modulation": {
+    "dl_modulation_order": 6,
+    "ul_modulation_order": 6,
+    "mcs_table": "qam64_table1",
+    "dl_mcs_index": 26,
+    "ul_mcs_index": 26
+  },
+  "harq": {
+    "enabled": true,
+    "process_count": 8,
+    "rv_sequence": [0, 2, 3, 1],
+    "cbg_enabled": false,
+    "feedback_timing_slots": 4,
+    "combining_mode": "soft",
+    "max_retx": 3,
+    "validation_mode": "exercise",
+    "study_axes": ["latency", "reliability"],
+    "stop_condition": "max_retransmissions"
+  },
+  "output": {
+    "profile": "lls_harq_retransmission_exercise",
+    "save_csv": true,
+    "save_mat": false,
+    "save_figures": false,
+    "save_png": false,
+    "save_yaml_snapshot": true,
+    "save_json_snapshot": true,
+    "organize_by_block": true,
+    "generate_summary_plots": false
+  }
+}

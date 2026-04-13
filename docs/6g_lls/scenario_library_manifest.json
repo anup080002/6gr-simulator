@@ -1,0 +1,260 @@
+{
+  "library_id": "6g_phy_lls_curated_scenario_library",
+  "version": "1.0",
+  "minimum_required_scenarios": 20,
+  "curation_scope": "config-driven 6G PHY LLS reference, regression, stress, and research packs",
+  "scenarios": [
+    {
+      "id": "dl_700mhz_coverage",
+      "path": "simulator/configs/scenarios/dl_700mhz_coverage.yaml",
+      "group": "band_coverage",
+      "research_class": "baseline_benchmark",
+      "purpose": "Low-band DL coverage reference benchmark"
+    },
+    {
+      "id": "dl_4ghz_baseline",
+      "path": "simulator/configs/scenarios/dl_4ghz_baseline.yaml",
+      "group": "band_coverage",
+      "research_class": "baseline_benchmark",
+      "purpose": "Mid-band NR-like DL benchmark"
+    },
+    {
+      "id": "dl_7ghz_mimo4x4",
+      "path": "simulator/configs/scenarios/dl_7ghz_mimo4x4.yaml",
+      "group": "band_coverage",
+      "research_class": "agreed_starting_point",
+      "purpose": "7 GHz SU-MIMO benchmark"
+    },
+    {
+      "id": "dl_30ghz_beam_tracking",
+      "path": "simulator/configs/scenarios/dl_30ghz_beam_tracking.yaml",
+      "group": "band_coverage",
+      "research_class": "study_item_candidate",
+      "purpose": "FR2 beam-tracking baseline and candidate studies"
+    },
+    {
+      "id": "ul_4ghz_cpofdm",
+      "path": "simulator/configs/scenarios/ul_4ghz_cpofdm.yaml",
+      "group": "ul_waveforms",
+      "research_class": "baseline_benchmark",
+      "purpose": "UL CP-OFDM reference"
+    },
+    {
+      "id": "ul_4ghz_dfts_pi2bpsk",
+      "path": "simulator/configs/scenarios/ul_4ghz_dfts_pi2bpsk.yaml",
+      "group": "ul_waveforms",
+      "research_class": "study_item_candidate",
+      "purpose": "DFT-s-OFDM, pi/2-BPSK, and low-PAPR study"
+    },
+    {
+      "id": "ul_7ghz_srs_csi",
+      "path": "simulator/configs/scenarios/ul_7ghz_srs_csi.yaml",
+      "group": "csi_acquisition",
+      "research_class": "agreed_starting_point",
+      "purpose": "SRS-driven CSI acquisition benchmark"
+    },
+    {
+      "id": "pdcch_blind_decode_sweep",
+      "path": "simulator/configs/scenarios/pdcch_blind_decode_sweep.yaml",
+      "group": "control_channel",
+      "research_class": "baseline_benchmark",
+      "purpose": "PDCCH aggregation-level and blind-decode study"
+    },
+    {
+      "id": "prach_detection",
+      "path": "simulator/configs/scenarios/prach_detection.yaml",
+      "group": "initial_access",
+      "research_class": "baseline_benchmark",
+      "purpose": "PRACH detection, miss, and false-alarm reference study"
+    },
+    {
+      "id": "harq_process_sweep",
+      "path": "simulator/configs/scenarios/harq_process_sweep.yaml",
+      "group": "harq",
+      "research_class": "agreed_starting_point",
+      "purpose": "HARQ process, RV, and combining behavior sweep"
+    },
+    {
+      "id": "rank_adaptation_sweep",
+      "path": "simulator/configs/scenarios/rank_adaptation_sweep.yaml",
+      "group": "mimo_beamforming",
+      "research_class": "study_item_candidate",
+      "purpose": "Rank, layer, and beam adaptation sweep"
+    },
+    {
+      "id": "lls_mimo4x4_multiuser_beamformed_awgn_validation",
+      "path": "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml",
+      "group": "mimo_beamforming",
+      "research_class": "agreed_starting_point",
+      "purpose": "Multi-user beamformed 4x4 validation reference"
+    },
+    {
+      "id": "lls_mimo4x4_multiuser_beamformed",
+      "path": "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed.yaml",
+      "group": "mimo_beamforming",
+      "research_class": "study_item_candidate",
+      "purpose": "Multi-user beamforming under fading"
+    },
+    {
+      "id": "beam_prediction_ai",
+      "path": "simulator/configs/scenarios/beam_prediction_ai.yaml",
+      "group": "ai_ml",
+      "research_class": "study_item_candidate",
+      "purpose": "AI-assisted beam prediction with baseline fallback"
+    },
+    {
+      "id": "ce_ai_nn",
+      "path": "simulator/configs/scenarios/ce_ai_nn.yaml",
+      "group": "ai_ml",
+      "research_class": "study_item_candidate",
+      "purpose": "AI-assisted channel estimation"
+    },
+    {
+      "id": "ce_non_ai_baseline",
+      "path": "simulator/configs/scenarios/ce_non_ai_baseline.yaml",
+      "group": "ai_ml",
+      "research_class": "baseline_benchmark",
+      "purpose": "Non-AI channel estimation reference"
+    },
+    {
+      "id": "csi_ai_autoencoder",
+      "path": "simulator/configs/scenarios/csi_ai_autoencoder.yaml",
+      "group": "ai_ml",
+      "research_class": "study_item_candidate",
+      "purpose": "AI-based CSI compression and feedback"
+    },
+    {
+      "id": "csi_non_ai_baseline",
+      "path": "simulator/configs/scenarios/csi_non_ai_baseline.yaml",
+      "group": "ai_ml",
+      "research_class": "baseline_benchmark",
+      "purpose": "Non-AI CSI reporting reference"
+    },
+    {
+      "id": "energy_aware_ai_mode_select",
+      "path": "simulator/configs/scenarios/energy_aware_ai_mode_select.yaml",
+      "group": "energy_efficiency",
+      "research_class": "optional_research_experiment",
+      "purpose": "Energy-aware AI mode selection study"
+    },
+    {
+      "id": "bandwidth_operation_profiles",
+      "path": "simulator/configs/scenarios/bandwidth_operation_profiles.yaml",
+      "group": "bandwidth_profiles",
+      "research_class": "agreed_starting_point",
+      "purpose": "Bandwidth adaptation and profile benchmarking"
+    },
+    {
+      "id": "high_order_modulation_stress",
+      "path": "simulator/configs/scenarios/high_order_modulation_stress.yaml",
+      "group": "coding_modulation",
+      "research_class": "study_item_candidate",
+      "purpose": "256QAM/1024QAM stress and mapping study"
+    },
+    {
+      "id": "low_snr_stress",
+      "path": "simulator/configs/scenarios/low_snr_stress.yaml",
+      "group": "channel_stress",
+      "research_class": "baseline_benchmark",
+      "purpose": "Coverage-limited low-SNR stress"
+    },
+    {
+      "id": "high_doppler_stress",
+      "path": "simulator/configs/scenarios/high_doppler_stress.yaml",
+      "group": "channel_stress",
+      "research_class": "study_item_candidate",
+      "purpose": "High-speed time-selective fading stress"
+    },
+    {
+      "id": "cfo_stress",
+      "path": "simulator/configs/scenarios/cfo_stress.yaml",
+      "group": "impairments",
+      "research_class": "baseline_benchmark",
+      "purpose": "Carrier-frequency-offset acquisition and tracking stress"
+    },
+    {
+      "id": "phase_noise_stress",
+      "path": "simulator/configs/scenarios/phase_noise_stress.yaml",
+      "group": "impairments",
+      "research_class": "study_item_candidate",
+      "purpose": "Phase-noise sensitivity and tracking study"
+    },
+    {
+      "id": "ul_30ghz_impairment_stress",
+      "path": "simulator/configs/scenarios/ul_30ghz_impairment_stress.yaml",
+      "group": "impairments",
+      "research_class": "study_item_candidate",
+      "purpose": "FR2 UL impairment and power-limited stress"
+    },
+    {
+      "id": "mandatory_general_scope_packs",
+      "path": "simulator/configs/scenarios/mandatory_general_scope_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "baseline_benchmark",
+      "purpose": "Reference band pack coverage and arbitrary-frequency support"
+    },
+    {
+      "id": "mandatory_tracking_packs",
+      "path": "simulator/configs/scenarios/mandatory_tracking_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "agreed_starting_point",
+      "purpose": "Tracking and finer time-frequency packs"
+    },
+    {
+      "id": "mandatory_ul_waveform_packs",
+      "path": "simulator/configs/scenarios/mandatory_ul_waveform_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "study_item_candidate",
+      "purpose": "UL waveform and low-PAPR study packs"
+    },
+    {
+      "id": "mandatory_csi_acquisition_packs",
+      "path": "simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "agreed_starting_point",
+      "purpose": "CSI acquisition and reporting reference packs"
+    },
+    {
+      "id": "mandatory_pdcch_packs",
+      "path": "simulator/configs/scenarios/mandatory_pdcch_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "study_item_candidate",
+      "purpose": "Control-channel baseline and candidate study packs"
+    },
+    {
+      "id": "mandatory_initial_access_packs",
+      "path": "simulator/configs/scenarios/mandatory_initial_access_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "study_item_candidate",
+      "purpose": "SSB, PBCH, PRACH, and beam-refinement pack set"
+    },
+    {
+      "id": "mandatory_harq_packs",
+      "path": "simulator/configs/scenarios/mandatory_harq_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "agreed_starting_point",
+      "purpose": "DL and UL HARQ design-space packs"
+    },
+    {
+      "id": "mandatory_coding_modulation_packs",
+      "path": "simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "study_item_candidate",
+      "purpose": "Coding, shaping, modulation, and mapping packs"
+    },
+    {
+      "id": "mandatory_ai_ml_packs",
+      "path": "simulator/configs/scenarios/mandatory_ai_ml_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "study_item_candidate",
+      "purpose": "AI/ML candidate pack set with baseline companions"
+    },
+    {
+      "id": "mandatory_energy_efficiency_packs",
+      "path": "simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml",
+      "group": "mandatory_catalog",
+      "research_class": "study_item_candidate",
+      "purpose": "Energy-efficiency and duty-cycle study packs"
+    }
+  ]
+}

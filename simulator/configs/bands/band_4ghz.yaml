@@ -1,0 +1,31 @@
+{
+  "frequency": {
+    "range_name": "FR1",
+    "band_name": "4ghz",
+    "center_frequency_hz": 4000000000,
+    "bandwidth_hz": 40000000,
+    "bandwidth_options_hz": [20000000, 40000000, 100000000],
+    "duplex_mode": "TDD",
+    "numerology_options_khz": [15, 30, 60],
+    "max_mimo_size": 8,
+    "mobility_defaults_kmph": 30,
+    "channel_model_defaults": "TDL-C",
+    "reference_signal_defaults": "fr1",
+    "power_model_defaults": "baseline",
+    "energy_model_defaults": "baseline_energy",
+    "rf_impairment_defaults": "baseline_clean",
+    "n_size_grid": 106
+  },
+  "frame": {
+    "scs_khz": 30
+  },
+  "waveform": {
+    "fft_size": 2048,
+    "sample_rate_hz": 61440000
+  },
+  "channels": {
+    "profile": "TDL-C",
+    "doppler_hz": 70,
+    "mobility_kmph": 30
+  }
+}

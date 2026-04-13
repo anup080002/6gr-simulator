@@ -11,7 +11,11 @@ end
 filePath = char(filePath);
 sixgr.util.ensureDir(filePath);
 
-writetable(T, filePath);
+try
+    writetable(T, filePath, 'Delimiter', ',', 'QuoteStrings', true);
+catch
+    writetable(T, filePath);
+end
 
 end
 

@@ -1,0 +1,16 @@
+{
+  "mimo": {
+    "n_tx_ant": 8,
+    "n_rx_ant": 8,
+    "n_layers": 4,
+    "precoder_type": "wideband",
+    "codebook_type": "type1",
+    "reciprocity_mode": "TDD",
+    "beam_sweep_enabled": true,
+    "beam_count": 16
+  },
+  "reference_signals": {
+    "pdsch_dmrs_ports": 8,
+    "pusch_dmrs_ports": 8
+  }
+}

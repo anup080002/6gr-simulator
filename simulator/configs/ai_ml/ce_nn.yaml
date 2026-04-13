@@ -1,0 +1,20 @@
+{
+  "ai_ml": {
+    "enabled": true,
+    "use_case": "channel_estimation_enhancement",
+    "mode": "online_inference",
+    "model_path": "simulator/configs/models/ce_nn_descriptor.json",
+    "model_id": "ce_nn_descriptor",
+    "model_version": "1.0",
+    "input_features": ["hest_real", "hest_imag", "noise_var"],
+    "output_targets": ["hhat_real", "hhat_imag"],
+    "inference_batch_size": 1,
+    "latency_budget_us": 500,
+    "flops_budget": 500000,
+    "quantization_mode": "fp16",
+    "runtime_budget_us": 500,
+    "fallback_enabled": true,
+    "confidence_logging": true,
+    "descriptor_type": "plugin_descriptor"
+  }
+}

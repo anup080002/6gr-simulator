@@ -3,7 +3,7 @@ classdef TrafficFactory
 % Flow-aware traffic generation for system and E2E simulations.
 %
 % Supports:
-%   - Model families: fullBuffer, xr, genai, mmtc, mixed
+%   - Model families: fullBuffer, xr, genai, mmtc, mixed, traceReplay
 %   - Transport: UDP/TCP (or mixed via per-flow setting)
 %   - Direction: DL / UL / BIDIR
 %   - QoS hints: 5QI/QFI + packet delay budget (PDB)
@@ -16,8 +16,12 @@ classdef TrafficFactory
 
     methods(Static)
         function traffic = generate(cfg, nUE, nTTI, tti_s)
-            model = lower(char(string(sixgr.util.structGet(cfg, "traffic.model", "fullBuffer"))));
-            baseBits = localBaseModelBits(cfg, model, nUE, nTTI, tti_s);
+            model = lower(strtrim(string(sixgr.util.structGet(cfg, "traffic.model", "fullBuffer"))));
+            if any(model == ["tracereplay","trace_replay","trace"])
+                traffic = localGenerateTraceReplayTraffic(cfg, nUE, nTTI, tti_s);
+                return;
+            end
+            baseBits = localBaseModelBits(cfg, char(model), nUE, nTTI, tti_s);
 
             [flows, flowTable] = localResolveFlows(cfg, model, tti_s, baseBits);
             if isempty(flows)
@@ -85,6 +89,9 @@ classdef TrafficFactory
             traffic.MeanBitsPerUEPerTTI = mean(offered, 1);
             traffic.FlowTable = flowTable;
             traffic.FlowCount = height(flowTable);
+            traffic.ModelSource = "profile_generator";
+            traffic.Deterministic = false;
+            traffic.ProxyShapingUsed = any(upper(string(flowTable.Protocol)) == "TCP");
         end
     end
 end
@@ -106,6 +113,59 @@ switch model
         baseBits = bitsPerTTI * ones(nTTI, nUE);
 end
 baseBits = max(0, double(baseBits));
+end
+
+function traffic = localGenerateTraceReplayTraffic(cfg, nUE, nTTI, tti_s)
+[traceSpec, sourceLabel] = localLoadTraceReplaySpec(cfg);
+
+offeredDL = localNormalizeTraceMatrix(sixgr.util.structGet(traceSpec, "offeredBitsDL", []), nTTI, nUE, "traffic.trace.offeredBitsDL");
+offeredUL = localNormalizeTraceMatrix(sixgr.util.structGet(traceSpec, "offeredBitsUL", []), nTTI, nUE, "traffic.trace.offeredBitsUL");
+offered = offeredDL + offeredUL;
+
+transport = upper(string(sixgr.util.structGet(traceSpec, "transport", "")));
+if strlength(transport) == 0
+    transport = upper(string(sixgr.util.structGet(cfg, "traffic.transport", "UDP")));
+end
+flowDir = upper(string(sixgr.util.structGet(traceSpec, "flowDirection", "")));
+if strlength(flowDir) == 0
+    flowDir = upper(string(sixgr.util.structGet(cfg, "traffic.flowDirection", "BIDIR")));
+end
+pdbMs = double(sixgr.util.structGet(traceSpec, "packetDelayBudget_ms", NaN));
+if ~(isscalar(pdbMs) && isfinite(pdbMs) && pdbMs > 0)
+    pdbMs = double(sixgr.util.structGet(cfg, "traffic.packetDelayBudget_ms", 50));
+end
+if ~(isscalar(pdbMs) && isfinite(pdbMs) && pdbMs > 0)
+    pdbMs = 50;
+end
+
+flowTable = sixgr.util.structGet(traceSpec, "flowTable", table());
+if ~(istable(flowTable) && ~isempty(flowTable))
+    rateMbps = mean(offered(:), "omitnan") / max(tti_s, eps) / 1e6;
+    flowTable = table("traceReplay", 9, 9, string(transport), string(flowDir), pdbMs, ...
+        double(sixgr.util.structGet(cfg, "traffic.packetSize_bytes", 1200)), ...
+        double(sixgr.util.structGet(cfg, "traffic.packetInterval_ms", 10)), ...
+        double(rateMbps), 1.0, "trace", ...
+        'VariableNames', {'Name','QFI','FiveQI','Protocol','Direction', ...
+                          'PacketDelayBudget_ms','PacketSize_bytes','PacketInterval_ms', ...
+                          'Rate_Mbps','Weight','Burstiness'});
+    flowTable.Protocol = upper(string(flowTable.Protocol));
+    flowTable.Direction = upper(string(flowTable.Direction));
+end
+
+traffic = struct();
+traffic.Model = "traceReplay";
+traffic.Transport = upper(string(transport));
+traffic.FlowDirection = upper(string(flowDir));
+traffic.PacketDelayBudget_ms = double(pdbMs);
+traffic.OfferedBits = offered;
+traffic.OfferedBitsDL = offeredDL;
+traffic.OfferedBitsUL = offeredUL;
+traffic.MeanBitsPerUEPerTTI = mean(offered, 1);
+traffic.FlowTable = flowTable;
+traffic.FlowCount = height(flowTable);
+traffic.ModelSource = string(sourceLabel);
+traffic.Deterministic = true;
+traffic.ProxyShapingUsed = false;
 end
 
 function [flows, flowTable] = localResolveFlows(cfg, model, tti_s, baseBits)
@@ -184,6 +244,101 @@ f.JitterPct = double(sixgr.util.structGet(cfg, "traffic.jitterPct", 0.1));
 f.Burstiness = "medium";
 end
 
+function [traceSpec, sourceLabel] = localLoadTraceReplaySpec(cfg)
+traceSpec = sixgr.util.structGet(cfg, "traffic.trace", struct());
+if ~(isstruct(traceSpec) && isscalar(traceSpec))
+    traceSpec = struct();
+end
+
+sourceLabel = "traceReplay_inline";
+traceFile = char(string(sixgr.util.structGet(traceSpec, "file", "")));
+if strlength(string(traceFile)) == 0
+    traceFile = char(string(sixgr.util.structGet(traceSpec, "path", "")));
+end
+if strlength(string(traceFile)) == 0
+    if isempty(sixgr.util.structGet(traceSpec, "offeredBitsDL", [])) && isempty(sixgr.util.structGet(traceSpec, "offeredBitsUL", []))
+        error("sixgr:traffic:MissingTraceReplaySpec", ...
+            "traffic.model='traceReplay' requires traffic.trace.offeredBitsDL/UL or traffic.trace.file.");
+    end
+    return;
+end
+
+if exist(traceFile, "file") ~= 2
+    error("sixgr:traffic:MissingTraceReplayFile", ...
+        "Trace replay file does not exist: %s", traceFile);
+end
+
+[~, ~, ext] = fileparts(traceFile);
+ext = lower(string(ext));
+if ext == ".json"
+    traceSpec = jsondecode(fileread(traceFile));
+    sourceLabel = "traceReplay_json";
+elseif ext == ".csv"
+    T = readtable(traceFile, "VariableNamingRule", "preserve");
+    traceSpec = localTraceSpecFromCSV(T);
+    sourceLabel = "traceReplay_csv";
+else
+    error("sixgr:traffic:UnsupportedTraceReplayFile", ...
+        "Unsupported trace replay file type: %s", traceFile);
+end
+end
+
+function traceSpec = localTraceSpecFromCSV(T)
+if ~(istable(T) && ~isempty(T))
+    error("sixgr:traffic:BadTraceReplayCSV", "Trace replay CSV is empty.");
+end
+required = ["Slot","UE","DLBits","ULBits"];
+if ~all(ismember(required, string(T.Properties.VariableNames)))
+    error("sixgr:traffic:BadTraceReplayCSV", ...
+        "Trace replay CSV must contain columns: %s", strjoin(cellstr(required), ", "));
+end
+
+slots = double(T.Slot);
+ues = double(T.UE);
+if any(~isfinite(slots)) || any(~isfinite(ues))
+    error("sixgr:traffic:BadTraceReplayCSV", "Trace replay CSV Slot/UE columns must be finite.");
+end
+nTTI = max(1, round(max(slots)));
+nUE = max(1, round(max(ues)));
+offeredDL = zeros(nTTI, nUE);
+offeredUL = zeros(nTTI, nUE);
+for i = 1:height(T)
+    s = round(double(T.Slot(i)));
+    u = round(double(T.UE(i)));
+    if s < 1 || u < 1
+        error("sixgr:traffic:BadTraceReplayCSV", "Trace replay CSV Slot/UE indices must be one-based positive integers.");
+    end
+    offeredDL(s, u) = double(T.DLBits(i));
+    offeredUL(s, u) = double(T.ULBits(i));
+end
+
+traceSpec = struct();
+traceSpec.offeredBitsDL = offeredDL;
+traceSpec.offeredBitsUL = offeredUL;
+end
+
+function M = localNormalizeTraceMatrix(raw, nTTI, nUE, label)
+if isempty(raw)
+    M = zeros(nTTI, nUE);
+    return;
+end
+M = double(raw);
+sz = size(M);
+if isscalar(M)
+    M = repmat(M, nTTI, nUE);
+elseif isequal(sz, [nTTI, nUE])
+    % keep shape
+elseif isequal(sz, [nTTI, 1])
+    M = repmat(M, 1, nUE);
+elseif isequal(sz, [1, nUE])
+    M = repmat(M, nTTI, 1);
+else
+    error("sixgr:traffic:BadTraceReplayShape", ...
+        "%s must be scalar, [NumTTI x NumUE], [NumTTI x 1], or [1 x NumUE].", label);
+end
+M = max(0, round(M));
+end
+
 function [fDL, fUL] = localGenerateFlowBits(cfg, flow, nUE, nTTI, tti_s, baseBits, nFlows)
 % Construct a per-flow source process first.
 if isfinite(flow.Rate_Mbps) && flow.Rate_Mbps > 0
@@ -240,6 +395,10 @@ end
 
 function src = localApplyTCPShaping(cfg, src)
 % Simple congestion-window-like shaping (simulation proxy).
+if logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false))
+    error("sixgr:traffic:ProxyTransportForbidden", ...
+        "TCP proxy shaping is forbidden under the no-proxy truth contract. Use traffic.model='traceReplay' with explicit trace traffic.");
+end
 [nTTI, nUE] = size(src);
 initCwnd = max(1, round(double(sixgr.util.structGet(cfg, "traffic.tcp.initCwnd_packets", 10))));
 lossProb = min(max(double(sixgr.util.structGet(cfg, "traffic.tcp.lossProb", 0.01)), 0), 0.5);
@@ -318,4 +477,3 @@ else
     v = def;
 end
 end
-

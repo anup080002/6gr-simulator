@@ -86,6 +86,8 @@ rnti = double(sixgr.util.structGet(cfg, 'phy.pusch.RNTI', 1));
 prb = sixgr.util.structGet(cfg, 'phy.pusch.prbSet', []);
 symAlloc = sixgr.util.structGet(cfg, 'phy.pusch.symbolAllocation', [0 14]);
 tp = logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
+mapType = upper(char(string(sixgr.util.structGet(cfg, 'phy.pusch.mappingType', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.MappingType', 'A')))));
 
 % Apply overrides
 if ~isempty(opts.Modulation), mod = char(opts.Modulation); end
@@ -103,6 +105,7 @@ pusch.TransformPrecoding = tp;
 prbVec = localExpandPRBSet(prb, carrier.NSizeGrid);
 pusch.PRBSet = prbVec;
 pusch.SymbolAllocation = symAlloc;
+pusch = localNormalizePUSCHMapping(pusch, mapType);
 
 % Scrambling NID if available
 try
@@ -118,6 +121,36 @@ try
 catch
 end
 
+end
+
+function pusch = localNormalizePUSCHMapping(pusch, mapType)
+if nargin < 2 || strlength(string(mapType)) == 0
+    mapType = "A";
+end
+
+symAlloc = [0 14];
+try
+    if isprop(pusch, "SymbolAllocation") && ~isempty(pusch.SymbolAllocation)
+        symAlloc = double(pusch.SymbolAllocation(:).');
+    end
+catch
+end
+startSym = 0;
+if ~isempty(symAlloc)
+    startSym = max(0, round(symAlloc(1)));
+end
+
+mapType = upper(char(string(mapType)));
+if startSym > 3 && strcmp(mapType, "A")
+    mapType = "B";
+end
+
+try
+    if isprop(pusch, "MappingType")
+        pusch.MappingType = char(mapType);
+    end
+catch
+end
 end
 
 function prbVec = localExpandPRBSet(prb, nSizeGrid)

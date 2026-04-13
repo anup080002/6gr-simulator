@@ -1,0 +1,58 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_30ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_initial_access_packs",
+    "description": "Mandatory SSB, PBCH, and PRACH initial-access study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "study_item_candidate"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["ssb", "pbch", "prach", "bundle"],
+    "notes": "Encodes baseline and candidate initial-access, SSB, beam sweeping, and PRACH studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_initial_access",
+      "overrides": [
+        {"label": "periodic_ssb_baseline", "config": {"random_access": {"ssb_unit_mode": "baseline_periodic_ssb", "ssb_periodicity_ms": 20}}},
+        {"label": "on_demand_ssb_candidate", "config": {"random_access": {"ssb_unit_mode": "on_demand_candidate"}}},
+        {"label": "ssb_repetition_candidate", "config": {"random_access": {"ssb_repetition_enabled": true}}},
+        {"label": "clustered_common_signal", "config": {"random_access": {"clustered_common_signal_enabled": true}}},
+        {"label": "long_ssb_periodicity_candidate", "config": {"random_access": {"long_ssb_periodicity_candidate_enabled": true, "ssb_periodicity_ms": 160}}},
+        {"label": "increased_ssb_beam_count", "config": {"random_access": {"ssb_beam_count": 16}}},
+        {"label": "beam_sweep_clustering", "config": {"random_access": {"beam_clustering_enabled": true}, "mimo": {"beam_sweep_enabled": true}}},
+        {"label": "prach_zc_baseline_long", "config": {"random_access": {"prach_sequence_family": "zadoff_chu_baseline", "preamble_length_mode": "long"}}},
+        {"label": "prach_short_preamble", "config": {"random_access": {"preamble_length_mode": "short", "prach_format": "B1"}}},
+        {"label": "prach_multisequence_occ_candidate", "config": {"random_access": {"prach_sequence_family": "multisequence_candidate"}}},
+        {"label": "prach_same_beam_repetition", "config": {"random_access": {"repetition_count": 2, "repetition_beam_mode": "same_beam"}}},
+        {"label": "prach_different_beam_repetition", "config": {"random_access": {"repetition_count": 2, "repetition_beam_mode": "different_beam"}}},
+        {"label": "one_to_one_ssb_ro_mapping", "config": {"random_access": {"ssb_ro_mapping_mode": "one_to_one_baseline"}}},
+        {"label": "unsymmetric_ssb_ro_mapping", "config": {"random_access": {"ssb_ro_mapping_mode": "unsymmetric_candidate"}}},
+        {"label": "clustered_ro_candidate", "config": {"random_access": {"ro_clustering_enabled": true}}},
+        {"label": "parameter_based_prach", "config": {"random_access": {"parameterized_config_enabled": true}}},
+        {"label": "msg3_waveform_consistency", "config": {"random_access": {"msg3_waveform_alignment": "inherit_ul_waveform"}, "waveform": {"ul_waveform": "DFT-S-OFDM", "transform_precoding_enabled": true}, "mimo": {"n_layers": 1}, "pusch": {"layer_count": 1}}},
+        {"label": "beam_refinement_candidate", "config": {"random_access": {"beam_refinement_enabled": true}}},
+        {"label": "beam_report_candidate", "config": {"random_access": {"beam_report_enabled": true}}},
+        {"label": "pre_rach_refinement_candidate", "config": {"random_access": {"pre_rach_refinement_enabled": true}}},
+        {"label": "ai_beam_prediction_candidate", "config": {"random_access": {"ai_beam_prediction_enabled": true}}}
+      ]
+    }
+  }
+}

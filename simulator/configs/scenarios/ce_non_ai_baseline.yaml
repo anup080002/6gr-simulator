@@ -1,0 +1,29 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "ce_non_ai_baseline",
+    "description": "Non-AI baseline channel-estimation benchmark using classical estimator.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_d_ai_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "ai_benchmark",
+    "target_cases": ["srs"]
+  },
+  "ai_ml": {
+    "use_case": "channel_estimation_enhancement"
+  }
+}

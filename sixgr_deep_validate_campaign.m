@@ -32,6 +32,7 @@ if ~isfolder(runFolder)
     error("sixgr:deepValidate:RunFolderNotFound", "Run folder not found: %s", runFolder);
 end
 runFolder = localCanonicalPath(runFolder);
+layout = sixgr.report.resultLayout(runFolder);
 
 outFolder = char(string(opt.OutputFolder));
 if strlength(string(outFolder)) == 0
@@ -67,24 +68,24 @@ writetable(figCheck.Table, figCheckCSV);
 % -------------------------------------------------------------------------
 % 2) Key table loads
 % -------------------------------------------------------------------------
-T_slot = localLoadCSV(runFolder, "csv/probe_e2e_slot_metrics.csv");
-T_io = localLoadCSV(runFolder, "csv/probe_e2e_component_io.csv");
-T_chk = localLoadCSV(runFolder, "csv/probe_e2e_component_checks.csv");
-T_e2e = localLoadCSV(runFolder, "csv/probe_e2e_summary.csv");
-T_ai = localLoadCSV(runFolder, "csv/probe_e2e_ai_metrics.csv");
-T_sync = localLoadCSV(runFolder, "csv/probe_sync_control.csv");
-T_harq = localLoadCSV(runFolder, "csv/probe_harq_summary.csv");
-T_lls = localLoadCSV(runFolder, "link/csv/lls_kpi_summary.csv");
-T_snr = localLoadCSV(runFolder, "link/csv/lls_snr_sweep.csv");
-T_sys = localLoadCSV(runFolder, "system/csv/system_kpis.csv");
-T_mmtc = localLoadCSV(runFolder, "csv/probe_mmtc_kpis.csv");
-T_v2x = localLoadCSV(runFolder, "csv/probe_v2x_sidelink.csv");
-T_ntn = localLoadCSV(runFolder, "csv/probe_ntn_delay_doppler.csv");
-T_intf = localLoadCSV(runFolder, "csv/probe_interference_sir_bler.csv");
-T_num = localLoadCSV(runFolder, "csv/probe_numerology.csv");
-T_beam = localLoadCSV(runFolder, "csv/probe_beam_mimo.csv");
-T_audit = localLoadCSV(runFolder, "csv/full_3gpp_category_audit.csv");
-T_art = localLoadCSV(runFolder, "csv/full_3gpp_artifact_checklist.csv");
+T_slot = localLoadCSVAbs(fullfile(layout.PacketFlowCSVDir, "probe_e2e_slot_metrics.csv"));
+T_io = localLoadCSVAbs(fullfile(layout.PacketFlowCSVDir, "probe_e2e_component_io.csv"));
+T_chk = localLoadCSVAbs(fullfile(layout.PacketFlowCSVDir, "probe_e2e_component_checks.csv"));
+T_e2e = localLoadCSVAbs(fullfile(layout.PacketFlowCSVDir, "probe_e2e_summary.csv"));
+T_ai = localLoadCSVAbs(fullfile(layout.PacketFlowCSVDir, "probe_e2e_ai_metrics.csv"));
+T_sync = localLoadCSVAbs(fullfile(layout.ControlCSVDir, "probe_sync_control.csv"));
+T_harq = localLoadCSVAbs(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
+T_lls = localLoadCSVAbs(fullfile(layout.AirInterfaceCSVDir, "lls_kpi_summary.csv"));
+T_snr = localLoadCSVAbs(fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"));
+T_sys = localLoadCSVAbs(fullfile(layout.SystemCSVDir, "system_kpis.csv"));
+T_mmtc = localLoadCSVAbs(fullfile(layout.MMTCCSVDir, "probe_mmtc_kpis.csv"));
+T_v2x = localLoadCSVAbs(fullfile(layout.V2XCSVDir, "probe_v2x_sidelink.csv"));
+T_ntn = localLoadCSVAbs(fullfile(layout.NTNCSVDir, "probe_ntn_delay_doppler.csv"));
+T_intf = localLoadCSVAbs(fullfile(layout.InterferenceCSVDir, "probe_interference_sir_bler.csv"));
+T_num = localLoadCSVAbs(fullfile(layout.NumerologyCSVDir, "probe_numerology.csv"));
+T_beam = localLoadCSVAbs(fullfile(layout.BeamformingCSVDir, "probe_beam_mimo.csv"));
+T_audit = localLoadCSVAbs(layout.CategoryAuditCSV);
+T_art = localLoadCSVAbs(layout.ArtifactChecklistCSV);
 
 % -------------------------------------------------------------------------
 % 3) Revalidate artifact checklist after all files are fully written
@@ -379,6 +380,10 @@ end
 
 function T = localLoadCSV(runFolder, relPath)
 f = fullfile(runFolder, char(replace(string(relPath), "/", filesep)));
+T = localLoadCSVAbs(f);
+end
+
+function T = localLoadCSVAbs(f)
 if exist(f, "file") ~= 2
     T = table();
     return;

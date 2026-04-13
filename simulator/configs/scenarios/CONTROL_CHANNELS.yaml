@@ -1,0 +1,15 @@
+meta:
+  matrix_id: CONTROL_CHANNELS
+  description: Exact control-channel suite spanning blind decoding baselines and candidate PDCCH monitoring studies.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/pdcch_blind_decode_sweep.yaml
+  - simulator/configs/scenarios/mandatory_pdcch_packs.yaml

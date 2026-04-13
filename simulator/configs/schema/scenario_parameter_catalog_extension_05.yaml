@@ -1,0 +1,31 @@
+{
+  "sections": {
+    "output_control": {"parameters": {
+      "impairment_visibility": {"required": true, "type": "string", "allowed_values": ["none", "summary_only", "per_sweep", "full"]}
+    }},
+    "bandwidth_operation": {"parameters": {
+      "switching_reliability_policy": {"required": true, "type": "string", "allowed_values": ["none", "baseline_ack_guard", "repetition_guard", "predictive_guard", "custom_lab_policy"]},
+      "misalignment_handling_policy": {"required": true, "type": "string", "allowed_values": ["none", "hold_last_config", "discard_until_aligned", "dual_decode_guard", "custom_lab_policy"]}
+    }},
+    "waveform": {"parameters": {
+      "multi_layer_dfts_ofdm_candidate_enabled": {"required": true, "type": "boolean"}
+    }},
+    "pdcch": {"parameters": {
+      "non_qpsk_candidate_enabled": {"required": true, "type": "boolean"}
+    }},
+    "csi_acquisition_and_reporting": {"parameters": {
+      "joint_port_mapping_policy": {"required": true, "type": "string", "allowed_values": ["disabled", "shared_port_map", "explicit_joint_port_map", "custom_lab_policy"]},
+      "joint_timeline_policy": {"required": true, "type": "string", "allowed_values": ["disabled", "aligned_joint_timeline", "staggered_joint_timeline", "scheduler_defined_joint_timeline", "custom_lab_policy"]},
+      "rf_papr_assumption": {"required": true, "type": "string", "allowed_values": ["unspecified", "baseline_nr_like_crc_coded_feedback", "low_papr_uplink_feedback", "analog_feedback_relaxed", "custom_lab_assumption"]}
+    }},
+    "modulation_and_mapping": {"parameters": {
+      "high_order_modulation_stress_enabled": {"required": true, "type": "boolean"},
+      "qam4096_candidate_enabled": {"required": true, "type": "boolean"}
+    }}
+  },
+  "nested_sections": {
+    "reference_signal_object": {"parameters": {
+      "trp_transmission_assumption": {"required": true, "type": "string", "allowed_values": ["single_trp_only", "coherent_multi_trp", "noncoherent_multi_trp", "switched_multi_trp", "configured_lab_assumption"]}
+    }}
+  }
+}

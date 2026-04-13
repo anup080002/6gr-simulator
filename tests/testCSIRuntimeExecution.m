@@ -1,0 +1,64 @@
+function ok = testCSIRuntimeExecution()
+%TESTCSIRUNTIMEEXECUTION Verify runtime PMI/RI/CRI computation and exports.
+
+setup6GRSimToolkit("Verbose", false);
+
+cfg = sixgr.config.defaultConfig();
+cfg.run.shortRun = true;
+cfg.outputs.saveCSV = false;
+cfg.outputs.saveMAT = false;
+cfg.outputs.saveFigures = false;
+cfg.phy.nTxAnt = 4;
+cfg.phy.nRxAnt = 2;
+cfg = sixgr.util.structSet(cfg, "phy.csi.reportCQI", true);
+cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMI", true);
+cfg = sixgr.util.structSet(cfg, "phy.csi.reportRI", true);
+cfg = sixgr.util.structSet(cfg, "phy.csi.reportCRI", true);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.numResources", 4);
+cfg = sixgr.util.structSet(cfg, "phy.beamManagement.trpCount", 4);
+
+Hwb = [1.05 + 0.05j, 0.35 - 0.10j, 0.20 + 0.03j, 0.05; ...
+       0.18 + 0.04j, 0.95 + 0.02j, 0.12 - 0.08j, 0.30 + 0.05j];
+Hest = repmat(reshape(Hwb, 1, 1, size(Hwb, 1), size(Hwb, 2)), [24, 14, 1, 1]);
+
+cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo");
+cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "type1");
+csi1 = sixgr.phy.dl.CSI_Feedback(Hest, 0.02, cfg, "MaxRank", 2);
+assert(isfinite(csi1.CQI), "CQI must be finite.");
+assert(isfinite(csi1.RI) && csi1.RI >= 1 && csi1.RI <= 2, "RI must be reported from the runtime channel.");
+assert(isfinite(csi1.PMI), "PMI must be reported from the runtime channel.");
+assert(isfinite(csi1.CRI) && csi1.CRI >= 0 && csi1.CRI < 4, "CRI must be reported from configured resource candidates.");
+assert(strcmpi(string(csi1.PMIType), "type1"), "Type-1 PMI mode must be preserved in runtime output.");
+assert(size(csi1.SelectedPrecoder, 1) == 4, "Selected precoder must match the Tx-port count.");
+assert(csi1.CSIPayloadBitLength > 0, "Runtime CSI feedback must export a packed payload.");
+assert(strlength(string(csi1.CSIPayloadHex)) > 0, "Runtime CSI feedback must export payload hex.");
+
+cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "type2_mu_mimo");
+cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "type2");
+csi2 = sixgr.phy.dl.CSI_Feedback(Hest, 0.02, cfg, "MaxRank", 2);
+assert(strcmpi(string(csi2.PMIType), "type2"), "Type-2 PMI mode must be preserved in runtime output.");
+assert(csi2.PMICandidateCount >= csi1.PMICandidateCount, "Type-2 codebook should not reduce candidate coverage.");
+
+cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "etype2_candidate");
+cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "etype2");
+csi3 = sixgr.phy.dl.CSI_Feedback(Hest, 0.02, cfg, "MaxRank", 2);
+assert(strcmpi(string(csi3.PMIType), "etype2"), "eType2 PMI mode must be preserved in runtime output.");
+assert(csi3.PMICandidateCount >= csi2.PMICandidateCount, "eType2 codebook should not reduce candidate coverage.");
+
+cfgRun = cfg;
+cfgRun.phy.pdsch.enable = true;
+cfgRun.phy.pdsch.nLayers = 1;
+cfgRun.phy.pdsch.numLayers = 1;
+cfgRun.phy.nRxAnt = 1;
+dl = sixgr.link.runDLPDSCHThroughput(cfgRun, "NumFrames", 2, "SNR_dB", 20);
+assert(istable(dl.TrialTable), "DL runtime must return a trial table.");
+assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex"], string(dl.TrialTable.Properties.VariableNames))), ...
+    "DL trial tables must export CSI runtime fields.");
+
+ul = sixgr.link.runULPUSCHThroughput(cfgRun, "NumFrames", 2, "SNR_dB", 20);
+assert(istable(ul.TrialTable), "UL runtime must return a trial table.");
+assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex"], string(ul.TrialTable.Properties.VariableNames))), ...
+    "UL trial tables must export CSI runtime fields.");
+
+ok = true;
+end

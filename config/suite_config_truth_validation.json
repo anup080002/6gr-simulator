@@ -1,0 +1,108 @@
+{
+  "meta": {
+    "presetClass": "fading_truth",
+    "presetIntent": "truth_validation_profile",
+    "presetNotes": "Strict non-AWGN truth-validation preset with concrete TDL-C fading."
+  },
+  "run": {
+    "mode": "both",
+    "shortRun": true,
+    "strictMode": true,
+    "campaign": {
+      "profile": "truth_validation",
+      "useFastLinkModel": false,
+      "useMexAcceleration": false,
+      "autoBuildMexAcceleration": false,
+      "setupToolboxChecks": false,
+      "organizeByBlock": true,
+      "mirrorStructuredResults": true,
+      "linkSaveFigures": true,
+      "e2eSaveFigures": true,
+      "generateCampaignPlots": true,
+      "verifyArtifacts": true
+    }
+  },
+  "traffic": {
+    "model": "mmtc",
+    "transport": "MIXED",
+    "flowDirection": "BIDIR",
+    "packetDelayBudget_ms": 20
+  },
+  "channel": {
+    "model": "TDL-C",
+    "delayProfile": "TDL-C",
+    "awgnOnly": false,
+    "snr_dB": 30,
+    "dopplerHz": 70,
+    "fading": {
+      "enable": true,
+      "model": "TDL",
+      "profile": "TDL-C",
+      "maxDoppler_Hz": 70
+    }
+  },
+  "phy": {
+    "carrier": {
+      "NSizeGrid": 48
+    },
+    "rx": {
+      "useFastChannelEstMex": false,
+      "UseFastChannelEstMex": false
+    },
+    "ssb": {
+      "enable": true,
+      "Enable": true
+    },
+    "pbch": {
+      "enable": true
+    },
+    "mib": {
+      "enable": true
+    },
+    "sib1": {
+      "enable": true
+    },
+    "dl": {
+      "pdsch": {
+        "Enable": true,
+        "NumLayers": 1
+      },
+      "pdcch": {
+        "Enable": true
+      },
+      "csirs": {
+        "Enable": false
+      }
+    },
+    "ul": {
+      "pusch": {
+        "Enable": true
+      },
+      "pucch": {
+        "Enable": true
+      },
+      "srs": {
+        "Enable": true
+      },
+      "prach": {
+        "Enable": true
+      }
+    },
+    "prach": {
+      "Enable": true,
+      "ConfigurationIndex": 86,
+      "SubcarrierSpacing": 15
+    },
+    "pdcch": {
+      "nStartBWP": 0,
+      "nSizeBWP": 48
+    }
+  },
+  "outputs": {
+    "saveCSV": true,
+    "saveMAT": true,
+    "saveFigures": true,
+    "savePNG": true,
+    "plotVisible": false
+  }
+}

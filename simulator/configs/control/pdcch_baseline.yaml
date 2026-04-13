@@ -1,0 +1,15 @@
+{
+  "control": {
+    "pdcch_enabled": true,
+    "coreset_type": "common",
+    "search_space_type": "ue",
+    "aggregation_levels": [1, 2, 4, 8, 16],
+    "dci_formats": ["1_0", "0_1"],
+    "blind_decode_candidates": 16,
+    "coreset_duration": 3,
+    "coreset_frequency_resources": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "search_space_num_candidates": [8, 8, 4, 2, 1],
+    "pucch_enabled": true,
+    "pucch_format": 2
+  }
+}

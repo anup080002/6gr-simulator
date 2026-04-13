@@ -1,0 +1,11 @@
+{
+  "waveform": {
+    "dl_waveform": "CP-OFDM",
+    "ul_waveform": "DFT-S-OFDM",
+    "transform_precoding_enabled": true,
+    "experimental_dl_dfts_ofdm_enabled": false
+  },
+  "modulation": {
+    "pi2_bpsk_enabled": true
+  }
+}

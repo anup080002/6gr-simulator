@@ -1,112 +1,360 @@
 function [csi, info] = CSI_Feedback(hEst, nVar, cfg, varargin)
-%CSI_Feedback Compute basic CSI feedback hooks (CQI/PMI/RI) for simulator.
-%
-%   [CSI,INFO] = sixgr.phy.dl.CSI_Feedback(HEST, NVAR, CFG) computes a
-%   lightweight CSI report that can be used by higher layers (scheduler,
-%   link adaptation). This module is intentionally designed as a "hook":
-%   - If 5G Toolbox CSI selection helpers are available in the running
-%     MATLAB version, you can enable them later without touching callers.
-%   - By default, it uses a conservative, SINR-to-CQI mapping suitable for
-%     smoke tests.
-%
-%   Inputs:
-%     HEST : Channel estimate. Any numeric array; average power is used.
-%     NVAR : Noise variance (scalar, linear).
-%     CFG  : Simulator config struct.
-%
-%   Name-Value options:
-%     "Method"        : "simple" (default) or "toolbox".
-%     "MaxRank"       : max RI to report (default 1).
-%     "WidebandOnly"  : true (default).
-%
-%   Outputs:
-%     CSI.CQI : [0..15] wideband CQI (0 means out-of-range)
-%     CSI.RI  : rank indicator (>=1)
-%     CSI.PMI : placeholder PMI index (>=0)
+%CSI_Feedback Compute wideband CQI/PMI/RI/CRI from an actual channel estimate.
 
 ip = inputParser;
-ip.addParameter('Method', "simple", @(s) ischar(s) || isstring(s));
-ip.addParameter('MaxRank', 1, @(x) isnumeric(x) && isscalar(x) && x>=1);
-ip.addParameter('WidebandOnly', true, @(x) islogical(x) && isscalar(x));
+ip.addParameter("Method", "wideband_codebook", @(s) ischar(s) || isstring(s));
+ip.addParameter("MaxRank", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 1));
+ip.addParameter("WidebandOnly", true, @(x) islogical(x) && isscalar(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
 method = lower(string(opt.Method));
-
-% Basic sanity
-if isempty(hEst)
-    hPow = 0;
-else
-    hPow = mean(abs(hEst(:)).^2);
-end
+Hwb = localWidebandChannelMatrix(hEst);
 nVar = double(nVar);
 if ~isfinite(nVar) || nVar < 0
     nVar = 0;
 end
 
-% Wideband SINR estimate (very simple)
-if nVar == 0
-    sinrLin = inf;
+[numRxAnt, numTxPorts] = size(Hwb);
+if isempty(Hwb)
+    numRxAnt = 1;
+    numTxPorts = 1;
+end
+
+maxRank = opt.MaxRank;
+if isempty(maxRank)
+    cfgMaxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", min(numRxAnt, numTxPorts)));
+    maxRank = max(1, min([cfgMaxRank, numRxAnt, numTxPorts]));
 else
-    sinrLin = hPow / nVar;
-end
-sinr_dB = 10*log10(sinrLin);
-
-% Defaults
-ri = min(double(opt.MaxRank), 1);
-pmi = 0;
-
-cqi = 0;
-engineUsed = "simple";
-
-if method == "toolbox"
-    % Optional: attempt to use toolbox CSI selection helpers if present.
-    % We keep this guarded to avoid runtime failures across MATLAB releases.
-    if exist('nrCQISelect','file') == 2
-        try
-            % Many toolbox CSI helpers require a CSI-RS configuration and
-            % per-subband processing. We keep a narrow wideband fallback:
-            % use SINR-based CQI mapping below even if function exists.
-            engineUsed = "toolbox-present";
-        catch
-            engineUsed = "simple";
-        end
-    end
+    maxRank = max(1, min([double(maxRank), numRxAnt, numTxPorts]));
 end
 
-% Simple SINR->CQI mapping (wideband)
-% This is a conservative mapping intended for link smoke tests. Replace with
-% 3GPP table-based mapping when the CSI-RS measurement module is integrated.
-thresholds_dB = [-inf -5 -2 0 2 4 6 8 10 12 14 16 18 20 22 24];
-% thresholds_dB(k) corresponds to CQI=k-1. Output range [0..15].
-idx = find(sinr_dB >= thresholds_dB, 1, 'last');
-if isempty(idx)
-    cqi = 0;
+reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", true));
+reportPMI = logical(sixgr.util.structGet(cfg, "phy.csi.reportPMI", true));
+reportRI = logical(sixgr.util.structGet(cfg, "phy.csi.reportRI", true));
+reportCRI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCRI", false));
+csiMode = string(sixgr.util.structGet(cfg, "phy.csi.channelStateInformationMode", ...
+    sixgr.util.structGet(cfg, "phy.csi.feedbackMode", "PMI+CQI+RI")));
+codebookMode = string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo"));
+codebookType = string(sixgr.util.structGet(cfg, "phy.csi.codebookType", localPMIType(codebookMode)));
+
+best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode);
+criInfo = localSelectCRI(Hwb, nVar, cfg);
+
+sinrLin = best.EffectiveSINR;
+if ~isfinite(sinrLin)
+    sinrLin = 0;
+end
+if sinrLin <= 0
+    sinr_dB = -inf;
 else
-    cqi = max(0, min(15, idx-1));
+    sinr_dB = 10 * log10(sinrLin);
 end
+
+hPow = mean(abs(Hwb(:)).^2, "omitnan");
+if isempty(hPow) || ~isfinite(hPow) || hPow <= 0
+    hPow = 0;
+end
+channelGain_dB = 10 * log10(max(hPow, eps));
+rsrp_dB = channelGain_dB;
+cqi = localMapSINRToCQI(sinr_dB);
 
 csi = struct();
-csi.CQI = double(cqi);
-csi.RI = double(ri);
-csi.PMI = double(pmi);
+csi.CQI = localReportedScalar(cqi, reportCQI);
+csi.RI = localReportedScalar(best.Rank, reportRI);
+csi.PMI = localReportedScalar(best.PMI, reportPMI);
+csi.CRI = localReportedScalar(criInfo.CRI, reportCRI);
 csi.SINR_dB = double(sinr_dB);
+csi.RSRP_dB = double(rsrp_dB);
+csi.ChannelGain_dB = double(channelGain_dB);
+csi.ChannelStateInformationMode = char(csiMode);
+csi.PMICodebookMode = char(codebookMode);
+csi.CodebookType = char(codebookType);
+csi.PMIType = char(best.PMIType);
+csi.PMICandidateCount = double(best.NumCandidates);
+csi.CRICandidateCount = double(criInfo.NumCandidates);
+csi.NumRxAnt = double(numRxAnt);
+csi.NumTxPorts = double(numTxPorts);
+csi.SelectedBeamIndices = double(best.BeamIndices);
+csi.SelectedPrecoder = best.W;
+csi.SelectedCRIMetric_dB = double(criInfo.Metric_dB);
+csi.ReportCQI = reportCQI;
+csi.ReportPMI = reportPMI;
+csi.ReportRI = reportRI;
+csi.ReportCRI = reportCRI;
+
+payload = sixgr.phy.dl.packCSIFeedbackPayload(csi, cfg, ...
+    "Candidate", sixgr.util.structGet(best, "Candidate", struct()), ...
+    "CodebookInfo", sixgr.util.structGet(best, "CodebookInfo", struct()), ...
+    "MaxRank", maxRank);
+csi.CSIPayloadBits = payload.Bits;
+csi.CSIPayloadBitLength = double(payload.BitLength);
+csi.CSIPayloadHex = char(string(payload.Hex));
+csi.CSIPayloadMode = char(string(payload.Mode));
+csi.CSIPayloadStandardProfile = char(string(payload.StandardProfile));
+csi.CSIPayloadCRCEnabled = logical(payload.CRCEnabled);
+csi.CSIPayloadFieldCount = double(payload.FieldCount);
+csi.CSIPayloadFieldLayout = payload.FieldLayout;
 
 info = struct();
 info.Method = char(method);
-info.EngineUsed = char(engineUsed);
-info.NoiseVar = nVar;
-info.ChannelPower = hPow;
+info.EngineUsed = "wideband_codebook";
+info.NoiseVar = double(nVar);
+info.ChannelPower = double(hPow);
 info.WidebandOnly = logical(opt.WidebandOnly);
+info.WidebandChannel = Hwb;
+info.SelectedMetric = double(best.Metric);
+info.SelectedEffectiveSINR = double(best.EffectiveSINR);
+info.SelectedRank = double(best.Rank);
+info.SelectedPMI = double(best.PMI);
+info.SelectedCRI = double(criInfo.CRI);
+info.Config = struct( ...
+    "TargetBLER", double(sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", 0.1)), ...
+    "PMICodebookMode", char(codebookMode), ...
+    "CodebookType", char(codebookType), ...
+    "ChannelStateInformationMode", char(csiMode));
+info.SelectedCandidate = sixgr.util.structGet(best, "Candidate", struct());
+info.CodebookInfo = sixgr.util.structGet(best, "CodebookInfo", struct());
+info.Payload = payload;
+info.Hints = struct( ...
+    "AddCSIRSBasedCQI", true, ...
+    "AddPMISelection", true, ...
+    "AddRISelection", true, ...
+    "AddCRISelection", true);
+end
 
-% Keep a hook for future per-UE, per-subband reporting
-info.Hints = struct();
-info.Hints.AddCSIRSBasedCQI = true;
-info.Hints.AddPMISelection = true;
-info.Hints.AddRISelection = true;
+function best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode)
+numTxPorts = size(Hwb, 2);
+if isempty(Hwb)
+    best = struct( ...
+        "Rank", 1, ...
+        "PMI", 0, ...
+        "PMIType", char(localPMIType(codebookMode)), ...
+        "W", eye(1), ...
+        "BeamIndices", 1, ...
+        "Metric", 0, ...
+        "EffectiveSINR", 0, ...
+        "NumCandidates", 1);
+    return;
+end
 
-% Echo a few config knobs used by later schedulers
-info.Config = struct();
-info.Config.TargetBLER = double(sixgr.util.structGet(cfg, 'phy.pdsch.targetBLER', 0.1));
+best = struct( ...
+    "Rank", 1, ...
+    "PMI", 0, ...
+    "PMIType", char(localPMIType(codebookMode)), ...
+    "W", eye(numTxPorts, 1), ...
+    "BeamIndices", 1, ...
+    "Metric", -inf, ...
+    "EffectiveSINR", 0, ...
+    "NumCandidates", 0);
 
+for rankIdx = 1:maxRank
+    if codebookMode == "noncodebook"
+        W = localDominantRightSingularVectors(Hwb, rankIdx);
+        metric = localCapacityMetric(Hwb, W, nVar);
+        effSinr = localEffectiveSINR(Hwb, W, nVar);
+        candidate = struct( ...
+            "Rank", double(rankIdx), ...
+            "PMI", -1, ...
+            "PMIType", "noncodebook", ...
+            "W", W, ...
+            "BeamIndices", 1:rankIdx, ...
+            "Metric", metric, ...
+            "EffectiveSINR", effSinr, ...
+            "NumCandidates", 1, ...
+            "Candidate", struct( ...
+                "PMI", -1, ...
+                "BeamIndices", 1:rankIdx, ...
+                "PMIType", "noncodebook", ...
+                "CodebookMode", "noncodebook", ...
+                "NumPorts", double(numTxPorts), ...
+                "NumLayers", double(rankIdx), ...
+                "NumBeams", double(numTxPorts), ...
+                "StartBeamIndex", 0, ...
+                "Stride", 1, ...
+                "StrideIndex", 0, ...
+                "PhaseVariantIndex", 0, ...
+                "PhasePattern", ones(1, rankIdx)), ...
+            "CodebookInfo", struct( ...
+                "Mode", "noncodebook", ...
+                "PMIType", "noncodebook", ...
+                "NumBeams", double(numTxPorts), ...
+                "NumCandidates", 1, ...
+                "NumPorts", double(numTxPorts), ...
+                "NumLayers", double(rankIdx), ...
+                "StrideSet", 1, ...
+                "NumPhaseVariants", 1));
+    else
+        [candidates, cbInfo] = sixgr.phy.dl.pmiCodebookCandidates(cfg, rankIdx, numTxPorts, "Mode", codebookMode);
+        [winner, metric, effSinr] = localBestCandidate(Hwb, candidates, nVar);
+        candidate = struct( ...
+            "Rank", double(rankIdx), ...
+            "PMI", double(winner.PMI), ...
+            "PMIType", char(winner.PMIType), ...
+            "W", winner.W, ...
+            "BeamIndices", double(winner.BeamIndices), ...
+            "Metric", double(metric), ...
+            "EffectiveSINR", double(effSinr), ...
+            "NumCandidates", double(numel(candidates)), ...
+            "Candidate", winner, ...
+            "CodebookInfo", cbInfo);
+    end
+    if candidate.Metric > best.Metric + 1e-9
+        best = candidate;
+    end
+end
+end
+
+function [winner, bestMetric, effSinr] = localBestCandidate(Hwb, candidates, nVar)
+winner = candidates(1);
+bestMetric = -inf;
+effSinr = 0;
+for i = 1:numel(candidates)
+    W = candidates(i).W;
+    metric = localCapacityMetric(Hwb, W, nVar);
+    if metric > bestMetric
+        bestMetric = metric;
+        effSinr = localEffectiveSINR(Hwb, W, nVar);
+        winner = candidates(i);
+    end
+end
+end
+
+function criInfo = localSelectCRI(Hwb, nVar, cfg)
+numTxPorts = size(Hwb, 2);
+if isempty(Hwb)
+    criInfo = struct("CRI", 0, "NumCandidates", 1, "Metric_dB", -inf);
+    return;
+end
+
+numCandidates = double(sixgr.util.structGet(cfg, "phy.csi.numResourceCandidates", []));
+if isempty(numCandidates) || ~isfinite(numCandidates) || numCandidates < 1
+    numCandidates = double(sixgr.util.structGet(cfg, "phy.csirs.numResources", []));
+end
+if isempty(numCandidates) || ~isfinite(numCandidates) || numCandidates < 1
+    numCandidates = double(sixgr.util.structGet(cfg, "phy.beamManagement.trpCount", 1));
+end
+numCandidates = max(1, round(numCandidates));
+
+codebook = localOversampledDFTCodebook(numTxPorts, max(numCandidates, numTxPorts));
+metrics = zeros(numCandidates, 1);
+for i = 1:numCandidates
+    w = codebook(:, i);
+    metrics(i) = localEffectiveSINR(Hwb, w, nVar);
+end
+[bestMetric, idx] = max(metrics);
+criInfo = struct( ...
+    "CRI", double(idx - 1), ...
+    "NumCandidates", double(numCandidates), ...
+    "Metric_dB", double(10 * log10(max(bestMetric, eps))));
+end
+
+function metric = localCapacityMetric(Hwb, W, nVar)
+if isempty(Hwb) || isempty(W)
+    metric = -inf;
+    return;
+end
+rankW = max(1, size(W, 2));
+snrScale = 1 / max(double(nVar), eps);
+Heff = Hwb * W;
+s = svd(double(Heff), "econ");
+metric = sum(log2(1 + (abs(s).^2) * snrScale / rankW), "omitnan");
+end
+
+function effSinr = localEffectiveSINR(Hwb, W, nVar)
+if isempty(Hwb) || isempty(W)
+    effSinr = 0;
+    return;
+end
+rankW = max(1, size(W, 2));
+powerGain = real(trace((Hwb * W) * (Hwb * W)')) / rankW;
+if ~isfinite(powerGain) || powerGain < 0
+    powerGain = 0;
+end
+effSinr = powerGain / max(double(nVar), eps);
+end
+
+function W = localDominantRightSingularVectors(Hwb, rankIdx)
+[~, ~, V] = svd(double(Hwb), "econ");
+rankIdx = max(1, min(rankIdx, size(V, 2)));
+W = V(:, 1:rankIdx);
+W = localNormalizeColumns(W);
+end
+
+function Hwb = localWidebandChannelMatrix(Hest)
+Hwb = [];
+if isempty(Hest)
+    return;
+end
+nd = ndims(Hest);
+if nd >= 4
+    try
+        Havg = mean(mean(Hest, 1, "omitnan"), 2, "omitnan");
+    catch
+        Havg = mean(mean(Hest, 1), 2);
+    end
+    Hwb = squeeze(Havg);
+elseif nd == 3
+    try
+        Havg = mean(mean(Hest, 1, "omitnan"), 2, "omitnan");
+    catch
+        Havg = mean(mean(Hest, 1), 2);
+    end
+    Hwb = reshape(squeeze(Havg), [], 1);
+elseif ismatrix(Hest)
+    Hwb = double(Hest);
+end
+if isvector(Hwb)
+    Hwb = reshape(Hwb, numel(Hwb), 1);
+end
+if ~ismatrix(Hwb)
+    Hwb = [];
+end
+end
+
+function B = localOversampledDFTCodebook(numTxPorts, numBeams)
+n = (0:(numTxPorts-1)).';
+m = 0:(numBeams-1);
+B = exp(-1j * 2 * pi * (n * m) / max(numBeams, 1));
+B = B ./ sqrt(max(numTxPorts, 1));
+end
+
+function cqi = localMapSINRToCQI(sinr_dB)
+thresholds_dB = [-inf -5 -2 0 2 4 6 8 10 12 14 16 18 20 22 24];
+idx = find(sinr_dB >= thresholds_dB, 1, "last");
+if isempty(idx)
+    cqi = 0;
+else
+    cqi = max(0, min(15, idx - 1));
+end
+end
+
+function value = localReportedScalar(value, enabled)
+if ~enabled
+    value = NaN;
+else
+    value = double(value);
+end
+end
+
+function tag = localPMIType(codebookMode)
+switch lower(string(codebookMode))
+    case "type1_su_mimo"
+        tag = "type1";
+    case "type2_mu_mimo"
+        tag = "type2";
+    case "etype2_candidate"
+        tag = "etype2";
+    otherwise
+        tag = "noncodebook";
+end
+end
+
+function W = localNormalizeColumns(W)
+for i = 1:size(W, 2)
+    nrm = norm(W(:, i));
+    if nrm > 0
+        W(:, i) = W(:, i) ./ nrm;
+    end
+end
 end

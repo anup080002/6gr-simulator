@@ -31,17 +31,25 @@ end
 % Burst parameters
 blockPattern = char(sixgr.util.structGet(cfg,'phy.ssb.blockPattern','Case B'));
 Lmax = double(sixgr.util.structGet(cfg,'phy.ssb.Lmax',8));
+configuredNCellID = localConfiguredNCellID(cfg);
 
 % Coarse frequency correction + NID2 detection
-try
-    [rxF, fOffHz, NID2, finfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, fs, ...
-        'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]));
-catch
-    % For pure simulation (no CFO), fall back gracefully
+if ~isempty(configuredNCellID)
     rxF = rxWaveform;
     fOffHz = 0;
-    NID2 = mod(double(sixgr.util.structGet(cfg,'phy.NCellID',1)),3);
-    finfo = struct('UsedFallback',true);
+    NID2 = mod(double(configuredNCellID),3);
+    finfo = struct('UsedConfiguredCellID',true, 'ConfiguredNCellID', double(configuredNCellID));
+else
+    try
+        [rxF, fOffHz, NID2, finfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, fs, ...
+            'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]));
+    catch
+        % For pure simulation (no CFO), fall back gracefully
+        rxF = rxWaveform;
+        fOffHz = 0;
+        NID2 = mod(double(sixgr.util.structGet(cfg,'phy.NCellID',1)),3);
+        finfo = struct('UsedFallback',true);
+    end
 end
 NID2 = mod(double(NID2),3);
 
@@ -100,12 +108,32 @@ sync.nRBSSB = nrbSSB;
 
 % In simulation we usually know the cell ID. Populate it to make downstream
 % blocks deterministic.
-sync.NCellID = double(sixgr.util.structGet(cfg,'phy.NCellID', (3*0)+NID2));
+if ~isempty(configuredNCellID)
+    sync.NCellID = double(configuredNCellID);
+else
+    sync.NCellID = double(sixgr.util.structGet(cfg,'phy.NCellID', (3*0)+NID2));
+end
 
 % Attach debug info
 sync.FreqInfo = finfo;
 sync.TimingInfo = tinfo;
 
+end
+
+function ncellid = localConfiguredNCellID(cfg)
+ncellid = sixgr.util.structGet(cfg, 'phy.carrier.NCellID', []);
+if isempty(ncellid)
+    ncellid = sixgr.util.structGet(cfg, 'phy.NCellID', []);
+end
+if isempty(ncellid)
+    return;
+end
+ncellid = double(ncellid);
+if ~(isscalar(ncellid) && isfinite(ncellid) && ncellid >= 0)
+    ncellid = [];
+else
+    ncellid = round(ncellid);
+end
 end
 
 function scs = localSSBSubcarrierSpacing_kHz(blockPattern)

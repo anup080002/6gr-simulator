@@ -1,0 +1,32 @@
+{
+  "library_id": "required_6g_phy_lls_scenario_families",
+  "version": "1.0",
+  "source_path": "simulator/configs/scenario_families/required_scenario_families.yaml",
+  "required_family_count": 24,
+  "families": [
+    {"id": "nr_like_benchmark_baseline", "name": "NR-like benchmark baseline", "research_class": "baseline_benchmark", "baseline_config_path": "simulator/configs/scenarios/dl_4ghz_baseline.yaml"},
+    {"id": "band_700mhz_fdd_coverage", "name": "700 MHz FDD coverage", "research_class": "baseline_benchmark", "baseline_config_path": "simulator/configs/scenarios/dl_700mhz_coverage.yaml"},
+    {"id": "band_2ghz_fdd_baseline", "name": "2 GHz FDD baseline", "research_class": "baseline_benchmark", "baseline_config_path": "simulator/configs/scenarios/mandatory_general_scope_packs.yaml", "baseline_override_label": "around_2ghz"},
+    {"id": "band_4ghz_tdd_baseline", "name": "4 GHz TDD baseline", "research_class": "agreed_starting_point", "baseline_config_path": "simulator/configs/scenarios/mandatory_tracking_packs.yaml", "baseline_override_label": "tdd_4ghz_30khz"},
+    {"id": "band_7ghz_wideband_high_capacity", "name": "7 GHz wideband / high-capacity", "research_class": "agreed_starting_point", "baseline_config_path": "simulator/configs/scenarios/dl_7ghz_mimo4x4.yaml"},
+    {"id": "band_30ghz_high_band_beam_centric", "name": "30 GHz high-band beam-centric", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/dl_30ghz_beam_tracking.yaml"},
+    {"id": "tracking_rs_synchronization_stress", "name": "tracking RS / synchronization stress", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_tracking_packs.yaml", "baseline_override_label": "cfo_initial_acquisition"},
+    {"id": "pdcch_reliability_blind_decoding_blocking", "name": "PDCCH reliability / blind-decoding / blocking", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/pdcch_blind_decode_sweep.yaml"},
+    {"id": "ul_waveform_cp_ofdm_vs_dfts_ofdm", "name": "UL waveform CP-OFDM vs DFT-s-OFDM", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/ul_4ghz_cpofdm.yaml"},
+    {"id": "dl_based_csi_acquisition", "name": "DL-based CSI acquisition", "research_class": "agreed_starting_point", "baseline_config_path": "simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml", "baseline_override_label": "dl_based_csi"},
+    {"id": "ul_based_csi_acquisition", "name": "UL-based CSI acquisition", "research_class": "agreed_starting_point", "baseline_config_path": "simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml", "baseline_override_label": "ul_based_csi"},
+    {"id": "joint_dl_ul_csi_acquisition", "name": "joint DL/UL CSI acquisition", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_csi_acquisition_packs.yaml", "baseline_override_label": "joint_dl_ul_csi"},
+    {"id": "prach_initial_access_beam_management", "name": "PRACH / initial access / beam management", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/prach_detection.yaml"},
+    {"id": "harq_latency_reliability_tradeoff", "name": "HARQ latency-reliability trade-off", "research_class": "agreed_starting_point", "baseline_config_path": "simulator/configs/scenarios/harq_process_sweep.yaml"},
+    {"id": "high_order_modulation_and_coding_chain", "name": "high-order modulation and coding chain", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/high_order_modulation_stress.yaml"},
+    {"id": "probabilistic_shaping_distribution_matching", "name": "probabilistic shaping / DM studies", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml", "baseline_override_label": "shaping_ccdm"},
+    {"id": "joint_coding_modulation_candidate_studies", "name": "joint coding + modulation candidate studies", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_coding_modulation_packs.yaml", "baseline_override_label": "joint_coding_modulation_candidate"},
+    {"id": "ai_demodulation", "name": "AI demodulation", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_ai_ml_packs.yaml", "baseline_override_label": "ai_demodulation_candidate"},
+    {"id": "ai_csi_compression_reporting", "name": "AI CSI compression / reporting", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/csi_ai_autoencoder.yaml"},
+    {"id": "energy_efficiency_common_signal_clustering", "name": "energy-efficiency / common-signal clustering", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_energy_efficiency_packs.yaml", "baseline_override_label": "common_channel_clustering"},
+    {"id": "bandwidth_adaptation_bwp_like_studies", "name": "bandwidth adaptation / BWP-like studies", "research_class": "agreed_starting_point", "baseline_config_path": "simulator/configs/scenarios/bandwidth_operation_profiles.yaml"},
+    {"id": "mtrp_sfn_coordinated_transmission", "name": "mTRP / SFN / coordinated transmission", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed.yaml"},
+    {"id": "mrss_coexistence_stress", "name": "MRSS coexistence stress", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_pdcch_packs.yaml", "baseline_override_label": "mrss_tolerant_candidate"},
+    {"id": "full_duplex_self_interference_candidate_studies", "name": "full-duplex self-interference candidate studies", "research_class": "study_item_candidate", "baseline_config_path": "simulator/configs/scenarios/mandatory_ai_ml_packs.yaml", "baseline_override_label": "ai_full_duplex_si_channel_estimation"}
+  ]
+}

@@ -100,7 +100,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.Direction = obj.Direction;
                         g.HARQ = retx.HARQ;
                         g.CQIUsed = localUECQI(ueStates(k));
-                        g.MCSIndex = localCQIToMCS(g.CQIUsed);
+                        g.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(g.Modulation, g.TargetCodeRate, g.CQIUsed);
                         g.DAI = 1;
                         g.K1 = k1;
                         g.K2 = k2;
@@ -111,6 +111,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.BufferBytesBefore = bufBytes(k);
                         g.BufferBytesAfter = max(bufBytes(k) - double(g.TBSBytes), 0);
                         g.GrantReason = "harq_retx";
+                        [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                            sprintf("%s harq_retx RNTI=%d", class(obj), round(rnti)));
+                        g.TBSBytes = g.TBSBits / 8;
                         g.DCI = obj.buildDCIBitfield(g);
                         grants(end+1) = g; %#ok<AGROW>
                     end
@@ -143,14 +146,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 end
 
                 [modStr, nLayers, tcr] = obj.selectAMC(ueStates(k));
-                [tbsBits, tbsBytes, ~] = obj.estimateTBS(modStr, nLayers, prbChunk, symAlloc, tcr);
-
-                % Clamp by buffer
-                tbsBytes = min(tbsBytes, floor(bufBytes(k)));
-                tbsBits = 8*floor(tbsBytes/8);
-
-                estTBS(t) = tbsBits;
-                metrics(t) = obj.pfMetric(ueStates(k), tbsBits);
+                [allocTbsBits, allocTbsBytes, ~] = obj.estimateTBS(modStr, nLayers, prbChunk, symAlloc, tcr);
+                servedBytes = min(allocTbsBytes, floor(bufBytes(k)));
+                servedBytes = max(0, floor(servedBytes));
+                estTBS(t) = 8 * servedBytes;
+                metrics(t) = obj.pfMetric(ueStates(k), estTBS(t));
             end
 
             % Sort UEs by PF metric descending
@@ -179,15 +179,16 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 cursor = cursor + nAlloc;
 
                 [modStr, nLayers, tcr] = obj.selectAMC(ueStates(k));
-                [tbsBits, tbsBytes, ~] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, tcr);
-
-                % Clamp by buffer
-                tbsBytes = min(tbsBytes, floor(bufBytes(k)));
-                tbsBits = 8*floor(tbsBytes/8);
+                [allocTbsBits, allocTbsBytes, ~] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, tcr);
+                servedBytes = min(allocTbsBytes, floor(bufBytes(k)));
+                servedBytes = max(0, floor(servedBytes));
+                if allocTbsBits <= 0 || allocTbsBytes <= 0 || servedBytes <= 0
+                    continue;
+                end
 
                 harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
                 if ~isempty(obj.HARQ)
-                    txp = obj.HARQ.allocate(rnti, slot, tbsBytes, 'NewData', true);
+                    txp = obj.HARQ.allocate(rnti, slot, allocTbsBytes, 'NewData', true);
                     harqInfo = txp.HARQ;
                 end
 
@@ -200,11 +201,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 g.Modulation = char(modStr);
                 g.NumLayers = nLayers;
                 g.TargetCodeRate = tcr;
-                g.TBSBits = tbsBits;
-                g.TBSBytes = tbsBytes;
+                g.TBSBits = allocTbsBits;
+                g.TBSBytes = allocTbsBytes;
                 g.HARQ = harqInfo;
                 g.CQIUsed = localUECQI(ueStates(k));
-                g.MCSIndex = localCQIToMCS(g.CQIUsed);
+                g.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(g.Modulation, g.TargetCodeRate, g.CQIUsed);
                 g.DAI = 1;
                 g.K1 = k1;
                 g.K2 = k2;
@@ -213,8 +214,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 g.BWPId = bwpId;
                 g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
                 g.BufferBytesBefore = bufBytes(k);
-                g.BufferBytesAfter = max(bufBytes(k) - double(tbsBytes), 0);
+                g.BufferBytesAfter = max(bufBytes(k) - double(servedBytes), 0);
                 g.GrantReason = "new_data_pf";
+                [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                    sprintf("%s new_data_pf RNTI=%d", class(obj), round(rnti)));
+                g.TBSBytes = g.TBSBits / 8;
                 g.DCI = obj.buildDCIBitfield(g);
 
                 grants(end+1) = g; %#ok<AGROW>

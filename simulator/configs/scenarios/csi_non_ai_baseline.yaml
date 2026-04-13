@@ -1,0 +1,29 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_7ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_a.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "csi_non_ai_baseline",
+    "description": "Non-AI CSI compression baseline.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_d_ai_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "ai_benchmark",
+    "target_cases": ["csi_rs"]
+  },
+  "ai_ml": {
+    "use_case": "csi_compression_reconstruction"
+  }
+}

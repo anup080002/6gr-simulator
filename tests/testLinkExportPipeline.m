@@ -19,9 +19,14 @@ art = sixgr.link.exportLinkKPIs(tmp, T, struct(), ...
     "SaveCSV", true, "SaveMAT", true, "SaveFigures", true, ...
     "SavePNG", true, "PlotVisible", false, "FigurePrefix", "linktest");
 
+artFallback = sixgr.link.exportLinkKPIs(tmp, T, struct(), ...
+    "SaveCSV", true, "SaveMAT", false, "SaveFigures", false, ...
+    "FileSuffix", "_fallback");
+
 assert(isfield(art, "csv") && ~isempty(art.csv), "CSV artifacts missing.");
 assert(isfield(art, "mat") && ~isempty(art.mat), "MAT artifacts missing.");
 assert(isfield(art, "fig") && ~isempty(art.fig), "FIG artifacts missing.");
+assert(numel(artFallback.csv) == 2, "Fallback CSV sidecars were not written.");
 
 for i = 1:numel(art.csv)
     assert(exist(art.csv{i}, "file") == 2, "Missing CSV artifact: %s", art.csv{i});
@@ -32,7 +37,8 @@ end
 for i = 1:numel(art.fig)
     assert(exist(art.fig{i}, "file") == 2, "Missing FIG artifact: %s", art.fig{i});
 end
+assert(exist(fullfile(tmp, "csv", "link_kpis_fallback.csv"), "file") == 2, "Missing fallback link KPI CSV.");
+assert(exist(fullfile(tmp, "csv", "lls_kpi_summary_fallback.csv"), "file") == 2, "Missing fallback summary CSV.");
 
 ok = true;
 end
-

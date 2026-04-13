@@ -10,6 +10,8 @@ classdef SystemLevelRunner
 
             cfg = ctx.Cfg;
             log = ctx.Logger;
+            runTimer = tic;
+            startedUTC = localUTCStamp();
 
             nTTI = double(sixgr.util.structGet(params, "NumTTI", ...
                           sixgr.util.structGet(cfg, "run.numTTI", 200)));
@@ -54,6 +56,13 @@ classdef SystemLevelRunner
                 out.Errors(end+1,1) = "No UEs available for system simulation.";
                 return;
             end
+            ueInitial = struct( ...
+                "profileName", sixgr.util.structGet(ue, "profileName", ""), ...
+                "id", sixgr.util.structGet(ue, "id", (1:K).'), ...
+                "pos_m", sixgr.util.structGet(ue, "pos_m", zeros(K,3)), ...
+                "indoor", logical(sixgr.util.structGet(ue, "indoor", false(K,1))), ...
+                "speed_kmh", double(sixgr.util.structGet(ue, "speed_kmh", zeros(K,1))), ...
+                "heading_deg", double(sixgr.util.structGet(ue, "heading_deg", zeros(K,1))));
 
             traffic = localBuildTraffic(cfg, params, K, nTTI, tti_s);
 
@@ -62,7 +71,10 @@ classdef SystemLevelRunner
             pphy = params;
             pphy.BLERDB = db;
             pphy.BLERLUT = lut;
+            pphy.PHYBackend = sixgr.util.structGet(params, "PHYBackend", ...
+                sixgr.util.structGet(cfg, "system.phyBackend", "abstract"));
             phy = sixgr.system.PhyFactory.create(cfg, pphy, "Seed", seed + 31);
+            [phyBackendLabel, phyModeLabel, waveformBacked] = localDescribeSystemPHY(phy);
             plModel = sixgr.channel.TR38901Plus(cfg, "Seed", seed + 17);
 
             queueBitsDL = zeros(K,1);
@@ -201,13 +213,11 @@ classdef SystemLevelRunner
             prevServingBeamIdx = NaN(K,1);
             prevServingBeamGain_dB = NaN(K,1);
 
-            if detailedTrace
-                posXHist = NaN(nTTI, K);
-                posYHist = NaN(nTTI, K);
-            else
-                posXHist = [];
-                posYHist = [];
-            end
+            captureGeometryTrace = true;
+            posXHist = NaN(nTTI, K);
+            posYHist = NaN(nTTI, K);
+            posZHist = NaN(nTTI, K);
+            headingHist = NaN(nTTI, K);
 
             mobModel = [];
             noiseFig_dB = double(sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", 7));
@@ -239,7 +249,7 @@ classdef SystemLevelRunner
                 "CQI", 1, ...
                 "RI", nLayersDL, ...
                 "NumLayers", nLayersDL, ...
-                "TargetCodeRate", tcrDL, ...
+                "TargetCodeRate", NaN, ...
                 "HeadOfLineDelay_ms", 0), K, 1);
             ueStateULAll = repmat(struct( ...
                 "RNTI", 0, ...
@@ -247,7 +257,7 @@ classdef SystemLevelRunner
                 "CQI", 1, ...
                 "RI", nLayersUL, ...
                 "NumLayers", nLayersUL, ...
-                "TargetCodeRate", tcrUL, ...
+                "TargetCodeRate", NaN, ...
                 "HeadOfLineDelay_ms", 0), K, 1);
             for k = 1:K
                 ueStateDLAll(k).RNTI = k;
@@ -459,9 +469,11 @@ classdef SystemLevelRunner
                 servingBeamHist(t,:) = servingBeamNow(:).';
                 servingBeamGainHist(t,:) = servingBeamGainNow_dB(:).';
                 hoStateHist(t,:) = localEncodeHOState(hoPrepRemain, hoInterRemain).';
-                if detailedTrace
+                if captureGeometryTrace
                     posXHist(t,:) = ue.pos_m(:,1).';
                     posYHist(t,:) = ue.pos_m(:,2).';
+                    posZHist(t,:) = ue.pos_m(:,3).';
+                    headingHist(t,:) = ue.heading_deg(:).';
                 end
 
                 [slotDL, slotUL, slotLabel] = localSlotDuplexState(cfg, t);
@@ -662,13 +674,14 @@ classdef SystemLevelRunner
                     else
                         cqiUsed = double(cqiDLVec(u));
                     end
-                    if isfield(g, "TBSBits")
-                        tbsBits = max(0, round(double(g.TBSBits)));
-                    elseif isfield(g, "TBSBytes")
-                        tbsBits = max(0, round(8 * double(g.TBSBytes)));
-                    else
-                        tbsBits = 0;
+                    gTBS = g;
+                    if (~isfield(gTBS, "PRBSet") || isempty(gTBS.PRBSet)) && ...
+                            (~isfield(gTBS, "NPRB") || isempty(gTBS.NPRB))
+                        gTBS.NPRB = prbCount;
                     end
+                    [tbsBits, ~] = sixgr.util.resolveGrantTBSBits(gTBS, ...
+                        sprintf("SystemLevelRunner DL TTI=%d Cell=%d RNTI=%d", ...
+                        round(t), round(cellId), round(u)));
                     if tbsBits <= 0
                         continue;
                     end
@@ -698,7 +711,9 @@ classdef SystemLevelRunner
                         "ChannelModel", channelModel, ...
                         "DopplerHz", dopplerHz, ...
                         "SCS_kHz", scs_kHz, ...
-                        "ServingCellID", cellId);
+                        "ServingCellID", cellId, ...
+                        "Grant", g, ...
+                        "TBSBits", tbsBits);
                     [okDL, blerDL] = phy.decode(ctxDL);
                     if isnan(blerHistDL(t,u))
                         blerHistDL(t,u) = blerDL;
@@ -748,13 +763,14 @@ classdef SystemLevelRunner
                     else
                         cqiUsed = double(cqiULVec(u));
                     end
-                    if isfield(g, "TBSBits")
-                        tbsBits = max(0, round(double(g.TBSBits)));
-                    elseif isfield(g, "TBSBytes")
-                        tbsBits = max(0, round(8 * double(g.TBSBytes)));
-                    else
-                        tbsBits = 0;
+                    gTBS = g;
+                    if (~isfield(gTBS, "PRBSet") || isempty(gTBS.PRBSet)) && ...
+                            (~isfield(gTBS, "NPRB") || isempty(gTBS.NPRB))
+                        gTBS.NPRB = prbCount;
                     end
+                    [tbsBits, ~] = sixgr.util.resolveGrantTBSBits(gTBS, ...
+                        sprintf("SystemLevelRunner UL TTI=%d Cell=%d RNTI=%d", ...
+                        round(t), round(cellId), round(u)));
                     if tbsBits <= 0
                         continue;
                     end
@@ -784,7 +800,9 @@ classdef SystemLevelRunner
                         "ChannelModel", channelModel, ...
                         "DopplerHz", dopplerHz, ...
                         "SCS_kHz", scs_kHz, ...
-                        "ServingCellID", cellId);
+                        "ServingCellID", cellId, ...
+                        "Grant", g, ...
+                        "TBSBits", tbsBits);
                     [okUL, blerUL] = phy.decode(ctxUL);
                     if isnan(blerHistUL(t,u))
                         blerHistUL(t,u) = blerUL;
@@ -956,6 +974,7 @@ classdef SystemLevelRunner
                 util, avgActiveUE, schedUtil, ...
                 1e3*delay_s, K, nCells, nTTI, simDur_s, ...
                 hoTriggerTotal, hoStartTotal, hoCompleteTotal, hoInterruptedUEmean, hoInterruption_ms, ...
+                string(phyBackendLabel), string(phyModeLabel), logical(waveformBacked), ...
                 'VariableNames', {'Throughput_Mbps','ThroughputDL_Mbps','ThroughputUL_Mbps', ...
                                   'PacketLoss','PacketLossDL','PacketLossUL','AvgBLER','JainFairness', ...
                                   'MeanQueue_bits','MeanSINR_dB','MeanRSRP_dBm','MeanEbNo_dB', ...
@@ -963,10 +982,17 @@ classdef SystemLevelRunner
                                   'SpectralEfficiency_bpsHz','SpectralEfficiencyDL_bpsHz','SpectralEfficiencyUL_bpsHz', ...
                                   'Utilization','AvgActiveUE','ScheduleUtilization', ...
                                   'ApproxDelay_ms','NumUE','NumCells','NumTTI','SimDuration_s', ...
-                                  'HO_Triggered','HO_Started','HO_Completed','HO_InterruptedUE_Mean','HO_InterruptionMean_ms'});
+                                  'HO_Triggered','HO_Started','HO_Completed','HO_InterruptedUE_Mean','HO_InterruptionMean_ms', ...
+                                  'ExecutionBackend','PHYMode','WaveformBacked'});
             out.KPITable = kpi;
 
             out.Details = struct();
+            out.Details.ExecutionBackend = string(phyBackendLabel);
+            out.Details.PHYMode = string(phyModeLabel);
+            out.Details.WaveformBacked = logical(waveformBacked);
+            if waveformBacked && isprop(phy, "LastReplay")
+                out.Details.LastPHYReplay = phy.LastReplay;
+            end
             out.Details.ScheduledUE_DL = scheduledUE_DL;
             out.Details.ScheduledUE_UL = scheduledUE_UL;
             out.Details.ScheduledUE = max(scheduledUE_DL, scheduledUE_UL);
@@ -1022,6 +1048,7 @@ classdef SystemLevelRunner
             out.Details.InterferenceVariation_dB = interfVar_dB;
             out.Details.NumRB = nRB;
             out.Details.Layout = layout;
+            out.Details.UEInitial = ueInitial;
             out.Details.UEFinal = ue;
             out.Details.DecodeOK = decodeOkCountDL + decodeOkCountUL;
             out.Details.DecodeFail = decodeFailCountDL + decodeFailCountUL;
@@ -1063,9 +1090,11 @@ classdef SystemLevelRunner
                 "UpdatePeriod_slots", beamUpdatePeriodSlots, ...
                 "SectorSpan_deg", beamSpanDeg, ...
                 "MaxGain_dB", beamMaxGain_dB);
-            if detailedTrace
+            if captureGeometryTrace
                 out.Details.UEPosX_m = posXHist;
                 out.Details.UEPosY_m = posYHist;
+                out.Details.UEPosZ_m = posZHist;
+                out.Details.UEHeading_deg = headingHist;
             end
 
             ueSummary = localBuildUESummary( ...
@@ -1080,7 +1109,8 @@ classdef SystemLevelRunner
             algoProc = localBuildAlgoTable( ...
                 cfg, traffic.Model, traffic.UserClass, nTTI, tti_s, K, ...
                 decodeOkCountDL + decodeOkCountUL, decodeFailCountDL + decodeFailCountUL, overflowEvents, avgActiveUE, ...
-                hoTriggerTotal, hoCompleteTotal, mean(hoInterruptedUECount));
+                hoTriggerTotal, hoCompleteTotal, mean(hoInterruptedUECount), ...
+                phyBackendLabel, phyModeLabel, waveformBacked);
 
             out.Details.UESummary = ueSummary;
             out.Details.TimeSeries = timeSeries;
@@ -1161,6 +1191,18 @@ classdef SystemLevelRunner
                 out.Errors(end+1,1) = "Replay script write failed: " + string(MEm.message);
             end
 
+            runtimeSummary = localBuildRuntimeSummary(startedUTC, runTimer, ctx.RunFolder, out.Errors);
+            environmentSummary = localBuildEnvironmentSummary(ctx);
+            out.RuntimeSummary = runtimeSummary;
+            out.EnvironmentSummary = environmentSummary;
+
+            try
+                out.OutputCatalog = sixgr.report.exportSLSOutputCatalog( ...
+                    ctx.RunFolder, cfg, out, runtimeSummary, environmentSummary);
+            catch MEcat
+                out.Errors(end+1,1) = "SLS output catalog export failed: " + string(MEcat.message);
+            end
+
             log.info("SystemLevelRunner completed: throughput=" + string(round(throughput_Mbps,3)) + " Mbps");
         end
     end
@@ -1210,11 +1252,17 @@ q = quantile(x, p);
 end
 
 function nRB = localEstimateNRB(cfg, bw_Hz)
+cfgGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
+if isfinite(cfgGrid) && cfgGrid >= 1
+    nRB = round(cfgGrid);
+    return;
+end
+
 scs_kHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
                  sixgr.util.structGet(cfg, "channel.subcarrierSpacing_kHz", 30)));
 scs_Hz = max(scs_kHz * 1e3, 1);
 nRB = floor(double(bw_Hz) / (12 * scs_Hz));
-nRB = max(1, nRB);
+nRB = min(275, max(1, nRB));
 end
 
 function rsrp_dBm = localRxPowerToRSRP(rxPower_dBm, nRB)
@@ -2069,9 +2117,28 @@ timeSeries = table(ttis, time_s, string(slotDirection), ...
                       'MeanQueueDL_bits','MeanQueueUL_bits'});
 end
 
+function [backendLabel, phyModeLabel, waveformBacked] = localDescribeSystemPHY(phy)
+backendLabel = "ABSTRACT_SYSTEM_PHY";
+phyModeLabel = "SINR_TO_BLER_ABSTRACTION";
+waveformBacked = false;
+if isa(phy, "sixgr.system.WaveformPHY")
+    waveformBacked = true;
+    if isprop(phy, "ExecutionBackend")
+        backendLabel = string(phy.ExecutionBackend);
+    else
+        backendLabel = "WAVEFORM_SYSTEM_PHY";
+    end
+    if isprop(phy, "PHYMode")
+        phyModeLabel = string(phy.PHYMode);
+    else
+        phyModeLabel = "GRANT_CRC_WAVEFORM_REPLAY_EXPERIMENTAL";
+    end
+end
+end
+
 function algoProc = localBuildAlgoTable( ...
     cfg, trafficModel, trafficClass, nTTI, tti_s, K, decodeOkCount, decodeFailCount, overflowEvents, avgActiveUE, ...
-    hoTriggerTotal, hoCompleteTotal, hoInterruptedUEmean)
+    hoTriggerTotal, hoCompleteTotal, hoInterruptedUEmean, phyBackendLabel, phyModeLabel, waveformBacked)
 
 scheduler = string(sixgr.util.structGet(cfg, "mac.scheduler.type", "rr"));
 pathlossModel = string(sixgr.util.structGet(cfg, "channel.pathlossModel", "nrPathLoss"));
@@ -2084,11 +2151,13 @@ uClass = join(uClass, ",");
 name = ["NumTTI";"TTI_s";"NumUE";"Scheduler";"PathlossModel";"TrafficModel"; ...
         "TrafficClasses";"DuplexMode";"WaveformDL";"WaveformUL"; ...
         "DecodeOK";"DecodeFail";"OverflowEvents";"AvgActiveUE"; ...
-        "HOTriggered";"HOCompleted";"HOInterruptedUE_Mean"];
+        "HOTriggered";"HOCompleted";"HOInterruptedUE_Mean"; ...
+        "PHYBackend";"PHYMode";"WaveformBacked"];
 value = [string(nTTI);string(tti_s);string(K);scheduler;pathlossModel;string(trafficModel); ...
          string(uClass);duplexMode;wfDL;wfUL;string(decodeOkCount);string(decodeFailCount); ...
          string(overflowEvents);string(avgActiveUE); ...
-         string(hoTriggerTotal);string(hoCompleteTotal);string(hoInterruptedUEmean)];
+         string(hoTriggerTotal);string(hoCompleteTotal);string(hoInterruptedUEmean); ...
+         string(phyBackendLabel);string(phyModeLabel);string(logical(waveformBacked))];
 algoProc = table(name, value, 'VariableNames', {'Metric','Value'});
 end
 
@@ -2127,7 +2196,7 @@ if nargin < 13 || ~(isfinite(scatterCap) && scatterCap >= 2000)
 end
 
 files = {};
-figDir = fullfile(runFolder, "fig");
+figDir = fullfile(runFolder, "image");
 sixgr.util.ensureDir(figDir);
 set(groot, "defaultFigureVisible", "off");
 
@@ -2260,4 +2329,34 @@ fprintf(fid, "params.DetailedTrace = %d;\\n", double(logical(detailedTrace)));
 fprintf(fid, "out = sixgr.system.SystemLevelRunner.run(ctx, params);\\n");
 fprintf(fid, "disp(out.KPITable);\\n");
 fprintf(fid, "end\\n");
+end
+
+function runtime = localBuildRuntimeSummary(startUTC, runTimer, runFolder, errors)
+runtime = struct();
+runtime.StartedUTC = char(string(startUTC));
+runtime.CompletedUTC = char(string(localUTCStamp()));
+runtime.ElapsedSeconds = double(toc(runTimer));
+runtime.RunFolder = char(string(runFolder));
+runtime.WarningCount = 0;
+runtime.Warnings = strings(0,1);
+runtime.ErrorCount = double(numel(errors));
+runtime.Errors = string(errors(:));
+end
+
+function env = localBuildEnvironmentSummary(ctx)
+env = struct();
+env.Platform = char(string(computer));
+env.Architecture = char(string(computer("arch")));
+env.MATLABVersion = char(string(version));
+env.MATLABRelease = char(string(version("-release")));
+env.JavaVersion = char(string(version("-java")));
+env.Hostname = char(string(getenv("COMPUTERNAME")));
+env.OS = char(string(getenv("OS")));
+env.Toolboxes = sixgr.util.getToolboxStatus();
+env.RunFolder = char(string(ctx.RunFolder));
+end
+
+function txt = localUTCStamp()
+dt = datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd HH:mm:ss");
+txt = char(replace(string(dt), " ", "T") + "Z");
 end

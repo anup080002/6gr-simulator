@@ -205,7 +205,14 @@ pdcch.SearchSpace = ss;
 % Aggregation level (must correspond to nonzero candidate count)
 pdcch.AggregationLevel = aggr;
 
-% Slot number from carrier (if provided) else 0
+% Keep transmitter BWP explicit so it stays aligned with the carrier grid and
+% matches the receiver-side default builder.
+try
+    pdcch.NStartBWP = double(sixgr.util.structGet(cfg, 'phy.pdcch.nStartBWP', carrier.NStartGrid));
+    pdcch.NSizeBWP  = double(sixgr.util.structGet(cfg, 'phy.pdcch.nSizeBWP', carrier.NSizeGrid));
+catch
+    % Ignore if these properties are unavailable in the installed toolbox.
+end
 
 end
 

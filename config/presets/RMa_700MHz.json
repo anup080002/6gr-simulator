@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "presetClass": "fading_truth",
+    "presetIntent": "scenario_profile_rma_700mhz",
+    "presetNotes": "Rural macro scenario preset with explicit TDL-A fading."
+  },
   "scenario": {
     "name": "RuralMacro",
     "layout": {

@@ -1,0 +1,952 @@
+function validateScenarioConfig(cfg, varargin)
+%VALIDATESCENARIOCONFIG Strict schema and compatibility validation.
+
+ip = inputParser;
+ip.addRequired("cfg", @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("Kind", "scenario", @(x)ischar(x) || isstring(x));
+ip.addParameter("AllowPartial", false, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("Context", "", @(x)ischar(x) || isstring(x));
+ip.parse(cfg, varargin{:});
+opt = ip.Results;
+
+kind = lower(string(opt.Kind));
+schemaDef = sixgr.lls6g.config.schema(kind);
+catalog = sixgr.lls6g.config.loadParameterCatalog(kind);
+ctx = string(opt.Context);
+
+localRejectUnknownTopLevel(cfg, schemaDef.AllowedTopLevel, ctx);
+switch kind
+    case "scenario"
+        localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+        if ~logical(opt.AllowPartial)
+            localValidateScenarioCompatibility(cfg, catalog, ctx);
+        end
+    case "matrix"
+        localValidateMatrix(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+    otherwise
+        error("sixgr:lls6g:config:UnknownValidationKind", ...
+            "Unsupported validation kind '%s'.", kind);
+end
+end
+
+function localRejectUnknownTopLevel(cfg, allowed, ctx)
+fields = string(fieldnames(cfg));
+bad = setdiff(fields, allowed, "stable");
+if ~isempty(bad)
+    error("sixgr:lls6g:config:UnknownTopLevelKey", ...
+        "Unknown top-level keys in %s: %s", localCtx(ctx), strjoin(cellstr(bad), ", "));
+end
+end
+
+function localValidateScenarioSections(cfg, schemaDef, catalog, allowPartial, ctx)
+allowedSections = schemaDef.AllowedBySection;
+sectionNames = fieldnames(allowedSections);
+for i = 1:numel(sectionNames)
+    sec = sectionNames{i};
+    if ~isfield(cfg, sec)
+        if ~allowPartial && any(schemaDef.RequiredTopLevel == string(sec))
+            error("sixgr:lls6g:config:MissingSection", ...
+                "Missing required section '%s' in %s.", sec, localCtx(ctx));
+        end
+        continue;
+    end
+    if ~(builtin("isstruct", cfg.(sec)) && isscalar(cfg.(sec)))
+        error("sixgr:lls6g:config:BadSectionType", ...
+            "Section '%s' in %s must be a scalar struct.", sec, localCtx(ctx));
+    end
+    localRejectUnknownSectionFields(cfg.(sec), allowedSections.(sec), sec, ctx);
+    if ~allowPartial
+        reqFields = string.empty(0,1);
+        if isfield(schemaDef.RequiredBySection, sec)
+            reqFields = schemaDef.RequiredBySection.(sec);
+        end
+        localRequireFields(cfg.(sec), reqFields, sec, ctx);
+    end
+    localValidateStructRules(cfg.(sec), catalog.sections.(sec).parameters, sec, ctx, catalog, allowPartial);
+end
+
+if isfield(cfg, "scenario") && isfield(cfg.scenario, "sweep") && ~isempty(cfg.scenario.sweep)
+    if ~(builtin("isstruct", cfg.scenario.sweep) && isscalar(cfg.scenario.sweep))
+        error("sixgr:lls6g:config:BadSweepType", ...
+            "scenario.sweep in %s must be a scalar struct.", localCtx(ctx));
+    end
+    localRejectUnknownSectionFields(cfg.scenario.sweep, schemaDef.NestedAllowed.scenario_sweep, "scenario.sweep", ctx);
+    localValidateStructRules(cfg.scenario.sweep, catalog.nested_sections.scenario_sweep.parameters, "scenario.sweep", ctx, catalog, allowPartial);
+    overrides = sixgr.util.structGet(cfg, "scenario.sweep.overrides", struct([]));
+    if ~isempty(overrides)
+        if ~isstruct(overrides)
+            error("sixgr:lls6g:config:BadSweepOverrides", ...
+                "scenario.sweep.overrides in %s must be a struct array.", localCtx(ctx));
+        end
+        for i = 1:numel(overrides)
+            localRejectUnknownSectionFields(overrides(i), schemaDef.NestedAllowed.scenario_sweep_override, ...
+                sprintf("scenario.sweep.overrides(%d)", i), ctx);
+            localValidateStructRules(overrides(i), catalog.nested_sections.scenario_sweep_override.parameters, ...
+                sprintf("scenario.sweep.overrides(%d)", i), ctx, catalog, allowPartial);
+            if isfield(overrides(i), "config")
+                sixgr.lls6g.config.validateScenarioConfig(overrides(i).config, ...
+                    "Kind", "scenario", "AllowPartial", true, "Context", ctx + "::sweep_override");
+            end
+        end
+    end
+end
+end
+
+function localValidateMatrix(cfg, schemaDef, catalog, allowPartial, ctx)
+sectionNames = fieldnames(schemaDef.AllowedBySection);
+for i = 1:numel(sectionNames)
+    sec = sectionNames{i};
+    if strcmp(sec, "scenarios")
+        continue;
+    end
+    if ~isfield(cfg, sec)
+        if ~allowPartial
+            error("sixgr:lls6g:config:MissingMatrixSection", ...
+                "Missing matrix section '%s' in %s.", sec, localCtx(ctx));
+        end
+        continue;
+    end
+    if ~(builtin("isstruct", cfg.(sec)) && isscalar(cfg.(sec)))
+        error("sixgr:lls6g:config:BadMatrixSectionType", ...
+            "Matrix section '%s' in %s must be a scalar struct.", sec, localCtx(ctx));
+    end
+    localRejectUnknownSectionFields(cfg.(sec), schemaDef.AllowedBySection.(sec), sec, ctx);
+    if ~allowPartial
+        localRequireFields(cfg.(sec), schemaDef.RequiredBySection.(sec), sec, ctx);
+    end
+    localValidateStructRules(cfg.(sec), catalog.sections.(sec).parameters, sec, ctx, catalog, allowPartial);
+end
+if ~isfield(cfg, "scenarios") || isempty(cfg.scenarios)
+    if ~allowPartial
+        error("sixgr:lls6g:config:MissingMatrixScenarios", ...
+            "Matrix config %s must include a non-empty scenarios list.", localCtx(ctx));
+    end
+    return;
+end
+if ~(iscell(cfg.scenarios) || isstring(cfg.scenarios))
+    error("sixgr:lls6g:config:BadMatrixScenarioList", ...
+        "Matrix scenarios in %s must be a string/cellstr list.", localCtx(ctx));
+end
+end
+
+function localRejectUnknownSectionFields(secStruct, allowed, secName, ctx)
+fields = string(fieldnames(secStruct));
+bad = setdiff(fields, string(allowed), "stable");
+if ~isempty(bad)
+    error("sixgr:lls6g:config:UnknownSectionKey", ...
+        "Unknown keys in section '%s' of %s: %s", secName, localCtx(ctx), strjoin(cellstr(bad), ", "));
+end
+end
+
+function localRequireFields(secStruct, required, secName, ctx)
+required = string(required);
+for i = 1:numel(required)
+    key = required(i);
+    if ~isfield(secStruct, key)
+        error("sixgr:lls6g:config:MissingField", ...
+            "Missing required field '%s.%s' in %s.", secName, key, localCtx(ctx));
+    end
+    end
+end
+
+function localValidateScenarioCompatibility(cfg, catalog, ctx)
+runnerProfile = lower(string(cfg.scenario.runner_profile));
+if ~ismember(runnerProfile, localCatalogAllowedStrings(catalog.sections.scenario.parameters.runner_profile))
+    error("sixgr:lls6g:config:BadRunnerProfile", ...
+        "scenario.runner_profile in %s is unsupported.", localCtx(ctx));
+end
+targetCases = string(cfg.scenario.target_cases);
+if isempty(targetCases)
+    error("sixgr:lls6g:config:EmptyTargetCases", ...
+        "scenario.target_cases in %s must be non-empty.", localCtx(ctx));
+end
+if runnerProfile == "generic_sweep"
+    if ~isfield(cfg.scenario, "sweep") || isempty(cfg.scenario.sweep)
+        error("sixgr:lls6g:config:MissingSweepConfig", ...
+            "scenario.runner_profile='generic_sweep' in %s requires scenario.sweep.", localCtx(ctx));
+    end
+    sweepBase = lower(string(sixgr.util.structGet(cfg, "scenario.sweep.base_profile", "")));
+    if ~ismember(sweepBase, localCatalogAllowedStrings(catalog.nested_sections.scenario_sweep.parameters.base_profile))
+        error("sixgr:lls6g:config:BadSweepBaseProfile", ...
+            "scenario.sweep.base_profile in %s must be waveform_bundle or ai_benchmark.", ...
+            localCtx(ctx));
+    end
+end
+
+linkDir = lower(string(cfg.simulation.link_direction));
+if ~ismember(linkDir, localCatalogAllowedStrings(catalog.sections.simulation.parameters.link_direction))
+    error("sixgr:lls6g:config:BadLinkDirection", ...
+        "simulation.link_direction in %s must be dl, ul, or both.", localCtx(ctx));
+end
+
+scs = double(cfg.frame.scs_khz);
+allowedSCS = double(sixgr.util.structGet(cfg, "frequency.numerology_options_khz", scs));
+if ~ismember(scs, allowedSCS)
+    error("sixgr:lls6g:config:BadBandSCS", ...
+        "frame.scs_khz=%g in %s is not allowed by frequency.numerology_options_khz.", scs, localCtx(ctx));
+end
+
+bw = double(cfg.frequency.bandwidth_hz);
+allowedBW = double(sixgr.util.structGet(cfg, "frequency.bandwidth_options_hz", bw));
+if ~ismember(bw, allowedBW)
+    error("sixgr:lls6g:config:BadBandwidth", ...
+        "frequency.bandwidth_hz=%g in %s is not allowed by frequency.bandwidth_options_hz.", bw, localCtx(ctx));
+end
+
+minDuration_s = double(cfg.simulation.min_duration_s);
+if ~(isfinite(minDuration_s) && minDuration_s > 0)
+    error("sixgr:lls6g:config:BadMinDuration", ...
+        "simulation.min_duration_s in %s must be a positive scalar.", localCtx(ctx));
+end
+
+snrSweepOffsets = double(cfg.simulation.snr_sweep_offsets_db);
+if isempty(snrSweepOffsets) || ~isvector(snrSweepOffsets) || any(~isfinite(snrSweepOffsets))
+    error("sixgr:lls6g:config:BadSNRSweepOffsets", ...
+        "simulation.snr_sweep_offsets_db in %s must be a finite numeric vector.", localCtx(ctx));
+end
+
+ulWf = upper(string(cfg.waveform.ul_waveform));
+if ulWf == "DFT-S-OFDM" && ~logical(cfg.waveform.transform_precoding_enabled)
+    error("sixgr:lls6g:config:BadDFTSOFDM", ...
+        "UL DFT-s-OFDM in %s requires waveform.transform_precoding_enabled=true.", localCtx(ctx));
+end
+
+if upper(string(cfg.coding.data_code_type)) == "POLAR"
+    error("sixgr:lls6g:config:BadDataCoding", ...
+        "coding.data_code_type in %s cannot be Polar for data channels.", localCtx(ctx));
+end
+if upper(string(cfg.coding.control_code_type)) ~= "POLAR"
+    error("sixgr:lls6g:config:BadControlCoding", ...
+        "coding.control_code_type in %s must be Polar for control-channel scenarios.", localCtx(ctx));
+end
+
+aiEnabled = logical(cfg.ai_ml.enabled);
+aiMode = lower(string(cfg.ai_ml.mode));
+aiUseCase = lower(string(cfg.ai_ml.use_case));
+modelPath = string(cfg.ai_ml.model_path);
+if aiEnabled && strlength(modelPath) == 0
+    error("sixgr:lls6g:config:MissingAIModelPath", ...
+        "ai_ml.model_path is required in %s when ai_ml.enabled=true.", localCtx(ctx));
+end
+if aiEnabled && ~(aiMode == "offline_training" || aiMode == "online_inference" || aiMode == "disabled")
+    error("sixgr:lls6g:config:BadAIMode", ...
+        "ai_ml.mode in %s must be offline_training, online_inference, or disabled.", localCtx(ctx));
+end
+if aiEnabled && aiMode == "disabled"
+    error("sixgr:lls6g:config:EnabledAIDisabledMode", ...
+        "ai_ml.enabled=true in %s cannot use ai_ml.mode='disabled'.", localCtx(ctx));
+end
+if aiEnabled && strlength(string(cfg.ai_ml.model_id)) == 0
+    error("sixgr:lls6g:config:MissingAIModelID", ...
+        "ai_ml.model_id is required in %s when ai_ml.enabled=true.", localCtx(ctx));
+end
+if aiEnabled && strlength(string(cfg.ai_ml.model_version)) == 0
+    error("sixgr:lls6g:config:MissingAIModelVersion", ...
+        "ai_ml.model_version is required in %s when ai_ml.enabled=true.", localCtx(ctx));
+end
+if aiEnabled && strlength(string(cfg.ai_ml.descriptor_type)) == 0
+    error("sixgr:lls6g:config:MissingAIDescriptorType", ...
+        "ai_ml.descriptor_type is required in %s when ai_ml.enabled=true.", localCtx(ctx));
+end
+if ~ismember(aiUseCase, localCatalogAllowedStrings(catalog.sections.ai_ml.parameters.use_case))
+    error("sixgr:lls6g:config:BadAIUseCase", ...
+        "ai_ml.use_case in %s is unsupported.", localCtx(ctx));
+end
+
+benchmarkObs = double(cfg.ai_ml.benchmark_observations);
+if ~(isfinite(benchmarkObs) && benchmarkObs >= 1 && abs(benchmarkObs - round(benchmarkObs)) < eps)
+    error("sixgr:lls6g:config:BadAIBenchmarkObservations", ...
+        "ai_ml.benchmark_observations in %s must be a positive integer.", localCtx(ctx));
+end
+
+nLayers = double(cfg.mimo.n_layers);
+nTx = double(cfg.mimo.n_tx_ant);
+nRx = double(cfg.mimo.n_rx_ant);
+beamCount = double(cfg.mimo.beam_count);
+panelCount = double(cfg.mimo.panel_count);
+usersEnabled = logical(localOptionalStructValue(cfg, "users.enabled", false));
+nUsers = double(localOptionalStructValue(cfg, "users.n_users", 1));
+seedStride = double(localOptionalStructValue(cfg, "users.seed_stride", 1));
+rntiStart = double(localOptionalStructValue(cfg, "users.rnti_start", 1));
+userExec = lower(string(localOptionalStructValue(cfg, "users.execution_model", "independent_link_sweep")));
+beamStrategy = lower(string(localOptionalStructValue(cfg, "users.beam_selection_strategy", "fixed_first_beam")));
+maxMimo = double(sixgr.util.structGet(cfg, "frequency.max_mimo_size", max([nTx nRx])));
+if nLayers > min([nTx nRx maxMimo])
+    error("sixgr:lls6g:config:BadRank", ...
+        "mimo.n_layers=%g in %s exceeds available antennas/ports.", nLayers, localCtx(ctx));
+end
+if ~(isfinite(beamCount) && beamCount >= 1 && abs(beamCount - round(beamCount)) < eps)
+    error("sixgr:lls6g:config:BadBeamCount", ...
+        "mimo.beam_count in %s must be a positive integer.", localCtx(ctx));
+end
+if ~(isfinite(panelCount) && panelCount >= 1 && abs(panelCount - round(panelCount)) < eps)
+    error("sixgr:lls6g:config:BadPanelCount", ...
+        "mimo.panel_count in %s must be a positive integer.", localCtx(ctx));
+end
+if logical(cfg.mimo.multi_panel_ready) && panelCount < 2
+    error("sixgr:lls6g:config:BadMultiPanelCount", ...
+        "mimo.multi_panel_ready in %s requires mimo.panel_count >= 2.", localCtx(ctx));
+end
+if ~(isfinite(nUsers) && nUsers >= 1 && abs(nUsers - round(nUsers)) < eps)
+    error("sixgr:lls6g:config:BadUserCount", ...
+        "users.n_users in %s must be a positive integer.", localCtx(ctx));
+end
+if ~(isfinite(seedStride) && seedStride >= 1 && abs(seedStride - round(seedStride)) < eps)
+    error("sixgr:lls6g:config:BadUserSeedStride", ...
+        "users.seed_stride in %s must be a positive integer.", localCtx(ctx));
+end
+if ~(isfinite(rntiStart) && rntiStart >= 1 && abs(rntiStart - round(rntiStart)) < eps)
+    error("sixgr:lls6g:config:BadUserRNTIStart", ...
+        "users.rnti_start in %s must be a positive integer.", localCtx(ctx));
+end
+if nUsers > 1 && ~usersEnabled
+    error("sixgr:lls6g:config:UsersDisabledMismatch", ...
+        "users.enabled in %s must be true when users.n_users > 1.", localCtx(ctx));
+end
+if usersEnabled && runnerProfile ~= "waveform_bundle"
+    error("sixgr:lls6g:config:UsersRequireWaveformBundle", ...
+        "users.enabled in %s is only supported with scenario.runner_profile='waveform_bundle'.", localCtx(ctx));
+end
+if usersEnabled && userExec ~= "independent_link_sweep"
+    error("sixgr:lls6g:config:BadUserExecutionModel", ...
+        "users.execution_model in %s must be 'independent_link_sweep'.", localCtx(ctx));
+end
+if usersEnabled && ~ismember(beamStrategy, localCatalogAllowedStrings(catalog.sections.users.parameters.beam_selection_strategy))
+    error("sixgr:lls6g:config:BadBeamSelectionStrategy", ...
+        "users.beam_selection_strategy in %s is unsupported.", localCtx(ctx));
+end
+if usersEnabled && nTx <= 1
+    error("sixgr:lls6g:config:UsersRequireMultiAntennaTx", ...
+        "users.enabled in %s requires mimo.n_tx_ant > 1 for beamformed link sweeps.", localCtx(ctx));
+end
+if usersEnabled && string(cfg.mimo.precoder_type) == "none"
+    error("sixgr:lls6g:config:UsersRequirePrecoding", ...
+        "users.enabled in %s requires mimo.precoder_type to be a beamforming-capable mode.", localCtx(ctx));
+end
+if usersEnabled && linkDir == "dl" && ~logical(cfg.reference_signals.csi_rs_enabled) && ~logical(cfg.reference_signals.srs_enabled)
+    error("sixgr:lls6g:config:UsersRequireBeamReferenceSignals", ...
+        "Beamformed multi-user DL sweeps in %s require CSI-RS or SRS enabled.", localCtx(ctx));
+end
+
+pdschDmrsPorts = double(cfg.reference_signals.pdsch_dmrs_ports);
+puschDmrsPorts = double(cfg.reference_signals.pusch_dmrs_ports);
+if nLayers > max(pdschDmrsPorts, 1) && ismember(linkDir, ["dl","both"])
+    error("sixgr:lls6g:config:BadPDSCHDMRSPorts", ...
+        "mimo.n_layers=%g in %s exceeds reference_signals.pdsch_dmrs_ports=%g.", ...
+        nLayers, localCtx(ctx), pdschDmrsPorts);
+end
+if nLayers > max(puschDmrsPorts, 1) && ismember(linkDir, ["ul","both"])
+    error("sixgr:lls6g:config:BadPUSCHDMRSPorts", ...
+        "mimo.n_layers=%g in %s exceeds reference_signals.pusch_dmrs_ports=%g.", ...
+        nLayers, localCtx(ctx), puschDmrsPorts);
+end
+
+pdcchPayloadBits = double(cfg.control.pdcch_payload_bits);
+if ~(isfinite(pdcchPayloadBits) && pdcchPayloadBits >= 1 && abs(pdcchPayloadBits - round(pdcchPayloadBits)) < eps)
+    error("sixgr:lls6g:config:BadPDCCHPayloadBits", ...
+        "control.pdcch_payload_bits in %s must be a positive integer.", localCtx(ctx));
+end
+
+blindDecodeListLength = double(cfg.control.blind_decode_list_length);
+maxAgg = max(double(cfg.control.aggregation_levels));
+if ~(isfinite(blindDecodeListLength) && blindDecodeListLength >= maxAgg && ...
+        abs(blindDecodeListLength - round(blindDecodeListLength)) < eps)
+    error("sixgr:lls6g:config:BadBlindDecodeListLength", ...
+        "control.blind_decode_list_length in %s must be an integer >= max aggregation level.", localCtx(ctx));
+end
+
+minDetectionTrials = double(cfg.random_access.min_detection_trials);
+if ~(isfinite(minDetectionTrials) && minDetectionTrials >= 1 && ...
+        abs(minDetectionTrials - round(minDetectionTrials)) < eps)
+    error("sixgr:lls6g:config:BadPrachMinTrials", ...
+        "random_access.min_detection_trials in %s must be a positive integer.", localCtx(ctx));
+end
+
+shadowFadingStd_dB = double(cfg.channels.shadow_fading_std_db);
+if ~(isfinite(shadowFadingStd_dB) && shadowFadingStd_dB >= 0)
+    error("sixgr:lls6g:config:BadShadowFadingStd", ...
+        "channels.shadow_fading_std_db in %s must be a non-negative scalar.", localCtx(ctx));
+end
+
+pathlossModel = lower(string(cfg.channels.pathloss_model));
+if ~ismember(pathlossModel, localCatalogAllowedStrings(catalog.sections.channels.parameters.pathloss_model))
+    error("sixgr:lls6g:config:BadPathlossModel", ...
+        "channels.pathloss_model in %s must be nrPathLoss, freeSpace, or none.", localCtx(ctx));
+end
+
+dmrsConfigType = double(cfg.reference_signals.pdsch_dmrs_config_type);
+dmrsTypeAPos = double(cfg.reference_signals.pdsch_dmrs_type_a_position);
+dmrsCDMGroups = double(cfg.reference_signals.pdsch_dmrs_num_cdm_groups_without_data);
+if ~ismember(dmrsConfigType, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_config_type))
+    error("sixgr:lls6g:config:BadDMRSConfigType", ...
+        "reference_signals.pdsch_dmrs_config_type in %s must be 1 or 2.", localCtx(ctx));
+end
+if ~ismember(dmrsTypeAPos, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_type_a_position))
+    error("sixgr:lls6g:config:BadDMRSTypeAPosition", ...
+        "reference_signals.pdsch_dmrs_type_a_position in %s must be 2 or 3.", localCtx(ctx));
+end
+if ~ismember(dmrsCDMGroups, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_num_cdm_groups_without_data))
+    error("sixgr:lls6g:config:BadDMRSCDMGroups", ...
+        "reference_signals.pdsch_dmrs_num_cdm_groups_without_data in %s must be 1, 2, or 3.", ...
+        localCtx(ctx));
+end
+
+aiEnergyScale = double(cfg.energy_efficiency.ai_compute_energy_per_flop_score);
+if ~(isfinite(aiEnergyScale) && aiEnergyScale >= 0)
+    error("sixgr:lls6g:config:BadAIEnergyScale", ...
+        "energy_efficiency.ai_compute_energy_per_flop_score in %s must be a non-negative scalar.", ...
+        localCtx(ctx));
+end
+
+profile = upper(string(cfg.channels.profile));
+modelType = upper(string(cfg.channels.model_type));
+if startsWith(profile, "TDL") && modelType ~= "TDL"
+    error("sixgr:lls6g:config:BadChannelProfile", ...
+        "channels.profile=%s in %s requires channels.model_type=TDL.", profile, localCtx(ctx));
+end
+if startsWith(profile, "CDL") && modelType ~= "CDL"
+    error("sixgr:lls6g:config:BadChannelProfile", ...
+        "channels.profile=%s in %s requires channels.model_type=CDL.", profile, localCtx(ctx));
+end
+if modelType == "TDL" && ~startsWith(profile, "TDL-")
+    error("sixgr:lls6g:config:BadTDLProfile", ...
+        "channels.model_type=TDL in %s requires a concrete TDL-* profile.", localCtx(ctx));
+end
+if modelType == "CDL" && ~startsWith(profile, "CDL-")
+    error("sixgr:lls6g:config:BadCDLProfile", ...
+        "channels.model_type=CDL in %s requires a concrete CDL-* profile.", localCtx(ctx));
+end
+
+studyStatus = localScenarioStudyStatus(cfg);
+ulLayerCount = max(double(localOptionalStructValue(cfg, "pusch.layer_count", 1)), double(cfg.mimo.n_layers));
+if ulWf == "DFT-S-OFDM" && ulLayerCount > 1
+    if ~logical(localOptionalStructValue(cfg, "waveform.multi_layer_dfts_ofdm_candidate_enabled", false))
+        error("sixgr:lls6g:config:MultiLayerDFTSOFDMCandidateRequired", ...
+            "UL DFT-s-OFDM with layer_count > 1 in %s requires waveform.multi_layer_dfts_ofdm_candidate_enabled=true.", ...
+            localCtx(ctx));
+    end
+    if ~localIsCandidateStudy(studyStatus)
+        error("sixgr:lls6g:config:MultiLayerDFTSOFDMStudyTagRequired", ...
+            "UL DFT-s-OFDM with layer_count > 1 in %s must be tagged as a candidate study.", ...
+            localCtx(ctx));
+    end
+end
+
+pdcchMod = localConfiguredPDCCHModulation(cfg);
+if pdcchMod ~= "QPSK" && ~logical(localOptionalStructValue(cfg, "pdcch.non_qpsk_candidate_enabled", false))
+    error("sixgr:lls6g:config:NonQPSKPDCCHCandidateRequired", ...
+        "pdcch.modulation=%s in %s requires pdcch.non_qpsk_candidate_enabled=true.", ...
+        pdcchMod, localCtx(ctx));
+end
+
+maxModOrder = localMaxConfiguredModulationOrder(cfg);
+if maxModOrder >= 10
+    if ~logical(localOptionalStructValue(cfg, "modulation_and_mapping.high_order_modulation_stress_enabled", false))
+        error("sixgr:lls6g:config:HighOrderModulationStressRequired", ...
+            "Modulation order >= 1024QAM in %s requires modulation_and_mapping.high_order_modulation_stress_enabled=true.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "output_control.impairment_visibility", "none"))
+        error("sixgr:lls6g:config:HighOrderModulationImpairmentVisibilityRequired", ...
+            "Modulation order >= 1024QAM in %s requires output_control.impairment_visibility to be configured.", ...
+            localCtx(ctx));
+    end
+end
+
+if maxModOrder >= 12
+    if ~logical(localOptionalStructValue(cfg, "modulation_and_mapping.qam4096_candidate_enabled", false))
+        error("sixgr:lls6g:config:QAM4096CandidateRequired", ...
+            "4096QAM in %s requires modulation_and_mapping.qam4096_candidate_enabled=true.", ...
+            localCtx(ctx));
+    end
+    if ~localHasVisibleHardwareImpairment(cfg)
+        error("sixgr:lls6g:config:QAM4096HardwareImpairmentRequired", ...
+            "4096QAM in %s requires an explicit hardware impairment model.", ...
+            localCtx(ctx));
+    end
+    if ~localHasHighSNRStressSweep(cfg, 35)
+        error("sixgr:lls6g:config:QAM4096HighSNRSweepRequired", ...
+            "4096QAM in %s requires a high-SNR stress sweep reaching at least 35 dB.", ...
+            localCtx(ctx));
+    end
+end
+
+if localRequiresStrictMCSConsistency(cfg)
+    localValidateDirectionModulationMCSConsistency(cfg, "DL", ctx);
+    localValidateDirectionModulationMCSConsistency(cfg, "UL", ctx);
+end
+
+jsccEnabled = logical(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.jscc_mode", false)) || ...
+    lower(string(localOptionalStructValue(cfg, "ai_ml.csi_feedback_mode", "none"))) == "jscc";
+jscmEnabled = logical(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.jscm_mode", false)) || ...
+    lower(string(localOptionalStructValue(cfg, "ai_ml.csi_feedback_mode", "none"))) == "jscm";
+if jsccEnabled || jscmEnabled
+    crcAttached = logical(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.crc_attached_mode", false));
+    crcFree = logical(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.crc_free_mode", false));
+    if crcAttached == crcFree
+        error("sixgr:lls6g:config:JSCCJSCMCRCConfigRequired", ...
+            "JSCC/JSCM in %s requires an explicit CRC mode with exactly one of crc_attached_mode or crc_free_mode enabled.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.multiplexing_with_uci_policy", ""))
+        error("sixgr:lls6g:config:JSCCJSCMMultiplexingConfigRequired", ...
+            "JSCC/JSCM in %s requires csi_acquisition_and_reporting.multiplexing_with_uci_policy.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.rf_papr_assumption", "unspecified"))
+        error("sixgr:lls6g:config:JSCCJSCMRFPAPRConfigRequired", ...
+            "JSCC/JSCM in %s requires csi_acquisition_and_reporting.rf_papr_assumption.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "ai_ml.baseline_pairing", ""))
+        error("sixgr:lls6g:config:JSCCJSCMBaselineRequired", ...
+            "JSCC/JSCM in %s requires ai_ml.baseline_pairing to name a non-AI baseline comparator.", ...
+            localCtx(ctx));
+    end
+end
+
+if logical(localOptionalStructValue(cfg, "bandwidth_operation.dci_based_switching_enabled", false))
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "bandwidth_operation.switching_reliability_policy", "none"))
+        error("sixgr:lls6g:config:DCISwitchingReliabilityPolicyRequired", ...
+            "bandwidth_operation.dci_based_switching_enabled=true in %s requires switching_reliability_policy.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "bandwidth_operation.misalignment_handling_policy", "none"))
+        error("sixgr:lls6g:config:DCISwitchingMisalignmentPolicyRequired", ...
+            "bandwidth_operation.dci_based_switching_enabled=true in %s requires misalignment_handling_policy.", ...
+            localCtx(ctx));
+    end
+end
+
+jointDLULCSI = logical(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.joint_dl_ul_csi_enabled", false)) || ...
+    lower(string(localOptionalStructValue(cfg, "reference_signals.csi_acquisition_mode", ""))) == "joint_dl_ul";
+if jointDLULCSI
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.joint_port_mapping_policy", "disabled"))
+        error("sixgr:lls6g:config:JointCSIPortMappingRequired", ...
+            "Joint DL/UL CSI in %s requires csi_acquisition_and_reporting.joint_port_mapping_policy.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "csi_acquisition_and_reporting.joint_timeline_policy", "disabled"))
+        error("sixgr:lls6g:config:JointCSITimelineRequired", ...
+            "Joint DL/UL CSI in %s requires csi_acquisition_and_reporting.joint_timeline_policy.", ...
+            localCtx(ctx));
+    end
+end
+
+if logical(localOptionalStructValue(cfg, "deployment_topology.full_duplex_flag", false))
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "deployment_topology.self_interference_path_model", "none"))
+        error("sixgr:lls6g:config:FullDuplexSIPathRequired", ...
+            "full_duplex_flag=true in %s requires deployment_topology.self_interference_path_model.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "interference.self_interference_model", "none"))
+        error("sixgr:lls6g:config:FullDuplexSIChannelRequired", ...
+            "full_duplex_flag=true in %s requires interference.self_interference_model.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "mimo_and_beam_management.self_interference_estimation", "disabled"))
+        error("sixgr:lls6g:config:FullDuplexEstimatorRequired", ...
+            "full_duplex_flag=true in %s requires mimo_and_beam_management.self_interference_estimation.", ...
+            localCtx(ctx));
+    end
+    if localIsUnsetPolicy(localOptionalStructValue(cfg, "receiver_algorithms.interference_cancellation", "disabled"))
+        error("sixgr:lls6g:config:FullDuplexCancellationRequired", ...
+            "full_duplex_flag=true in %s requires receiver_algorithms.interference_cancellation.", ...
+            localCtx(ctx));
+    end
+end
+
+numTRPs = max(double(localOptionalStructValue(cfg, "deployment_topology.num_trps", 1)), ...
+    double(localOptionalStructValue(cfg, "mimo.trp_count", 1)));
+trackingRSEnabled = logical(localOptionalStructValue(cfg, "reference_signals.tracking_rs.enabled", ...
+    localOptionalStructValue(cfg, "reference_signals.tracking_rs_enabled", false)));
+if trackingRSEnabled && numTRPs > 1
+    trpAssumption = localOptionalStructValue(cfg, "reference_signals.tracking_rs.trp_transmission_assumption", "single_trp_only");
+    if localIsUnsetPolicy(trpAssumption) || lower(string(trpAssumption)) == "single_trp_only"
+        error("sixgr:lls6g:config:TrackingRSMultiTRPAssumptionRequired", ...
+            "tracking_rs with num_trps > 1 in %s requires reference_signals.tracking_rs.trp_transmission_assumption.", ...
+            localCtx(ctx));
+    end
+end
+
+if ~logical(localOptionalStructValue(cfg, "run_control.save_intermediate", false))
+    formats = lower(string(localOptionalStructValue(cfg, "output_control.artifact_formats", strings(0,1))));
+    if ~logical(localOptionalStructValue(cfg, "output_control.save_resolved_config", false)) || ...
+            ~any(formats == "json") || ~any(formats == "csv") || ...
+            ~logical(localOptionalStructValue(cfg, "output_control.save_report", false))
+        error("sixgr:lls6g:config:MinimumArtifactsRequired", ...
+            "save_intermediate=false in %s still requires resolved config, JSON/CSV artifacts, and a saved report.", ...
+            localCtx(ctx));
+    end
+end
+
+if aiEnabled && localIsUnsetPolicy(localOptionalStructValue(cfg, "ai_ml.baseline_pairing", ""))
+    error("sixgr:lls6g:config:AINeedsBaselineComparator", ...
+        "ai_ml.enabled=true in %s requires ai_ml.baseline_pairing to name a non-AI baseline comparator.", ...
+        localCtx(ctx));
+end
+end
+
+function txt = localCtx(ctx)
+ctx = string(ctx);
+if strlength(ctx) == 0
+    txt = "config";
+else
+    txt = char(ctx);
+end
+end
+
+function value = localOptionalStructValue(s, path, defaultValue)
+value = sixgr.util.structGet(s, path, defaultValue);
+end
+
+function localValidateStructRules(secStruct, ruleStruct, secName, ctx, catalog, allowPartial)
+fieldNames = string(fieldnames(ruleStruct));
+for i = 1:numel(fieldNames)
+    name = fieldNames(i);
+    if ~isfield(secStruct, name)
+        continue;
+    end
+    localValidateRuleValue(secStruct.(name), ruleStruct.(name), secName + "." + name, ctx, catalog, allowPartial);
+end
+end
+
+function localValidateRuleValue(value, rule, fieldPath, ctx, catalog, allowPartial)
+if isfield(rule, "type")
+    localValidateRuleType(value, string(rule.type), fieldPath, ctx);
+end
+
+if isfield(rule, "nonempty") && logical(rule.nonempty)
+    if (ischar(value) || isstring(value)) && strlength(strtrim(string(value))) == 0
+        error("sixgr:lls6g:config:EmptyValue", ...
+            "%s in %s must be non-empty.", fieldPath, localCtx(ctx));
+    end
+end
+
+if isfield(rule, "allowed_values")
+    localValidateAllowedStrings(value, string(rule.allowed_values), fieldPath, ctx);
+end
+if isfield(rule, "allowed_numeric_values")
+    localValidateAllowedNumeric(value, double(rule.allowed_numeric_values), fieldPath, ctx);
+end
+
+if isnumeric(value) || islogical(value)
+    v = double(value(:));
+    if isfield(rule, "min") && any(v < double(rule.min))
+        error("sixgr:lls6g:config:ValueTooSmall", ...
+            "%s in %s must be >= %g.", fieldPath, localCtx(ctx), double(rule.min));
+    end
+    if isfield(rule, "max") && any(v > double(rule.max))
+        error("sixgr:lls6g:config:ValueTooLarge", ...
+            "%s in %s must be <= %g.", fieldPath, localCtx(ctx), double(rule.max));
+    end
+    if isfield(rule, "min_exclusive") && any(v <= double(rule.min_exclusive))
+        error("sixgr:lls6g:config:ValueTooSmall", ...
+            "%s in %s must be > %g.", fieldPath, localCtx(ctx), double(rule.min_exclusive));
+    end
+    if isfield(rule, "integer") && logical(rule.integer)
+        if any(abs(v - round(v)) > eps(max(abs(v), 1)))
+            error("sixgr:lls6g:config:NonIntegerValue", ...
+                "%s in %s must contain only integer values.", fieldPath, localCtx(ctx));
+        end
+    end
+end
+
+if isfield(rule, "min_items")
+    nItems = localNumItems(value);
+    if nItems < double(rule.min_items)
+        error("sixgr:lls6g:config:TooFewItems", ...
+            "%s in %s must contain at least %d item(s).", fieldPath, localCtx(ctx), double(rule.min_items));
+    end
+end
+
+if isfield(rule, "nested_rule")
+    nestedKey = char(string(rule.nested_rule));
+    if ~builtin("isstruct", value) || ~isscalar(value)
+        error("sixgr:lls6g:config:BadNestedStruct", ...
+            "%s in %s must be a scalar struct for nested rule '%s'.", fieldPath, localCtx(ctx), nestedKey);
+    end
+    if ~isfield(catalog, "nested_sections") || ~isfield(catalog.nested_sections, nestedKey)
+        error("sixgr:lls6g:config:MissingNestedRule", ...
+            "Catalog nested rule '%s' referenced by %s is not defined.", nestedKey, fieldPath);
+    end
+    nestedRule = catalog.nested_sections.(nestedKey);
+    localRejectUnknownSectionFields(value, string(fieldnames(nestedRule.parameters)), fieldPath, ctx);
+    reqFields = localRequiredNestedFields(nestedRule.parameters);
+    if ~allowPartial
+        localRequireFields(value, reqFields, fieldPath, ctx);
+    end
+    localValidateStructRules(value, nestedRule.parameters, fieldPath, ctx, catalog, allowPartial);
+end
+
+if strcmpi(string(rule.type), "struct_array") && isfield(rule, "item_nested_rule")
+    nestedKey = char(string(rule.item_nested_rule));
+    if ~isfield(catalog, "nested_sections") || ~isfield(catalog.nested_sections, nestedKey)
+        error("sixgr:lls6g:config:MissingNestedRule", ...
+            "Catalog nested rule '%s' referenced by %s is not defined.", nestedKey, fieldPath);
+    end
+    nestedRule = catalog.nested_sections.(nestedKey);
+    reqFields = localRequiredNestedFields(nestedRule.parameters);
+    for idx = 1:numel(value)
+        elemPath = sprintf("%s(%d)", fieldPath, idx);
+        localRejectUnknownSectionFields(value(idx), string(fieldnames(nestedRule.parameters)), elemPath, ctx);
+        if ~allowPartial
+            localRequireFields(value(idx), reqFields, elemPath, ctx);
+        end
+        localValidateStructRules(value(idx), nestedRule.parameters, elemPath, ctx, catalog, allowPartial);
+    end
+end
+end
+
+function localValidateRuleType(value, typeName, fieldPath, ctx)
+switch lower(typeName)
+    case "string"
+        ok = ischar(value) || (isstring(value) && isscalar(value));
+    case "string_list"
+        ok = ischar(value) || isstring(value) || iscellstr(value) || ...
+            (isempty(value) && (isnumeric(value) || iscell(value)));
+    case "number"
+        ok = isnumeric(value) && isscalar(value) && isfinite(double(value));
+    case "number_list"
+        ok = isnumeric(value) && isvector(value) && all(isfinite(double(value(:))));
+    case "integer"
+        ok = isnumeric(value) && isscalar(value) && isfinite(double(value)) && abs(double(value) - round(double(value))) <= eps(max(abs(double(value)), 1));
+    case "boolean"
+        ok = islogical(value) && isscalar(value);
+    case "struct"
+        ok = builtin("isstruct", value) && isscalar(value);
+    case "struct_array"
+        ok = isstruct(value);
+    otherwise
+        ok = true;
+end
+if ~ok
+    error("sixgr:lls6g:config:BadValueType", ...
+        "%s in %s must match catalog type '%s'.", fieldPath, localCtx(ctx), typeName);
+end
+end
+
+function localValidateAllowedStrings(value, allowedValues, fieldPath, ctx)
+allowedValues = lower(string(allowedValues(:)));
+if isempty(allowedValues)
+    return;
+end
+if ischar(value) || (isstring(value) && isscalar(value))
+    values = lower(string(value));
+elseif isstring(value)
+    values = lower(value(:));
+elseif iscellstr(value)
+    values = lower(string(value(:)));
+else
+    return;
+end
+bad = values(~ismember(values, allowedValues));
+if ~isempty(bad)
+    error("sixgr:lls6g:config:BadEnumValue", ...
+        "%s in %s contains unsupported value(s): %s", fieldPath, localCtx(ctx), strjoin(cellstr(unique(bad)), ", "));
+end
+end
+
+function localValidateAllowedNumeric(value, allowedValues, fieldPath, ctx)
+allowedValues = double(allowedValues(:));
+if isempty(allowedValues) || ~isnumeric(value)
+    return;
+end
+values = double(value(:));
+badMask = false(size(values));
+for i = 1:numel(values)
+    badMask(i) = ~any(abs(values(i) - allowedValues) <= eps(max(abs(values(i)), 1)));
+end
+if any(badMask)
+    bad = values(badMask);
+    error("sixgr:lls6g:config:BadEnumValue", ...
+        "%s in %s contains unsupported numeric value(s): %s", fieldPath, localCtx(ctx), mat2str(unique(bad(:).')));
+end
+end
+
+function n = localNumItems(value)
+if ischar(value) || (isstring(value) && isscalar(value))
+    n = double(strlength(string(value)) > 0);
+elseif isstring(value) || isnumeric(value) || islogical(value)
+    n = numel(value);
+elseif iscell(value) || isstruct(value)
+    n = numel(value);
+else
+    n = 0;
+end
+end
+
+function req = localRequiredNestedFields(ruleStruct)
+names = string(fieldnames(ruleStruct));
+req = strings(0,1);
+for i = 1:numel(names)
+    rule = ruleStruct.(names(i));
+    if isfield(rule, "required") && logical(rule.required)
+        req(end+1,1) = names(i); %#ok<AGROW>
+    end
+end
+end
+
+function values = localCatalogAllowedStrings(rule)
+values = lower(string(rule.allowed_values(:)));
+end
+
+function values = localCatalogAllowedNumeric(rule)
+values = double(rule.allowed_numeric_values(:));
+end
+
+function status = localScenarioStudyStatus(cfg)
+status = lower(string(localOptionalStructValue(cfg, "meta.research_class", "")));
+if strlength(strtrim(status)) == 0
+    status = lower(string(localOptionalStructValue(cfg, "meta.study_status", "")));
+end
+if strlength(strtrim(status)) == 0
+    status = lower(string(localOptionalStructValue(cfg, "meta.maturity_tag", "")));
+end
+end
+
+function tf = localIsCandidateStudy(status)
+status = lower(string(status));
+tf = any(status == ["study_item_candidate", "optional_research_experiment"]);
+end
+
+function mod = localConfiguredPDCCHModulation(cfg)
+pdcchMod = upper(string(localOptionalStructValue(cfg, "pdcch.modulation", "")));
+legacyMod = upper(string(localOptionalStructValue(cfg, "modulation_and_mapping.pdcch_modulation", "")));
+if strlength(strtrim(pdcchMod)) > 0 && pdcchMod ~= "QPSK"
+    mod = pdcchMod;
+elseif strlength(strtrim(legacyMod)) > 0 && legacyMod ~= "QPSK"
+    mod = legacyMod;
+elseif strlength(strtrim(pdcchMod)) > 0
+    mod = pdcchMod;
+elseif strlength(strtrim(legacyMod)) > 0
+    mod = legacyMod;
+else
+    mod = "QPSK";
+end
+end
+
+function maxOrder = localMaxConfiguredModulationOrder(cfg)
+orders = [ ...
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "modulation.dl_modulation_order", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "modulation.ul_modulation_order", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "modulation_and_mapping.qam_order", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "modulation_and_mapping.pdsch_modulation", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "modulation_and_mapping.pusch_modulation", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "pdsch.modulation", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "pusch.modulation", []))
+    localQAMOrderFromValue(localOptionalStructValue(cfg, "pdcch.modulation", []))
+    ];
+orders = orders(isfinite(orders) & orders > 0);
+if isempty(orders)
+    maxOrder = 0;
+else
+    maxOrder = max(orders);
+end
+end
+
+function order = localQAMOrderFromValue(value)
+order = NaN;
+if isempty(value)
+    return;
+end
+if isnumeric(value) && isscalar(value) && isfinite(double(value))
+    order = double(value);
+    return;
+end
+txt = upper(string(value));
+if any(txt == ["BPSK", "PI/2-BPSK", "PI_OVER_2_BPSK"])
+    order = 1;
+elseif txt == "QPSK"
+    order = 2;
+elseif txt == "16QAM"
+    order = 4;
+elseif txt == "64QAM"
+    order = 6;
+elseif txt == "256QAM"
+    order = 8;
+elseif txt == "1024QAM"
+    order = 10;
+elseif txt == "4096QAM"
+    order = 12;
+end
+end
+
+function tf = localHasHighSNRStressSweep(cfg, minHighSNRAccept_dB)
+tf = false;
+values = localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.values_db", []);
+enabled = logical(localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.enabled", false));
+if enabled && isnumeric(values) && isvector(values) && numel(values) >= 2 && all(isfinite(values))
+    tf = max(double(values(:))) >= double(minHighSNRAccept_dB);
+    if tf
+        return;
+    end
+end
+baseSNR = double(localOptionalStructValue(cfg, "simulation.snr_db", NaN));
+offsets = localOptionalStructValue(cfg, "simulation.snr_sweep_offsets_db", []);
+if isfinite(baseSNR) && isnumeric(offsets) && isvector(offsets) && numel(offsets) >= 2 && all(isfinite(offsets))
+    tf = max(baseSNR + double(offsets(:))) >= double(minHighSNRAccept_dB);
+end
+end
+
+function tf = localHasVisibleHardwareImpairment(cfg)
+frontEndPolicies = lower(string({ ...
+    localOptionalStructValue(cfg, "power_and_rf_frontend.pa_nonlinearity_model", "none")
+    localOptionalStructValue(cfg, "power_and_rf_frontend.lo_phase_noise_model", "none")
+    localOptionalStructValue(cfg, "power_and_rf_frontend.iq_imbalance", "none")
+    localOptionalStructValue(cfg, "power_and_rf_frontend.saturation_model", "none")
+    }));
+tf = any(~ismember(frontEndPolicies, ["", "none", "disabled", "ideal", "constant_zero"]));
+if tf
+    return;
+end
+legacyFlags = [ ...
+    logical(localOptionalStructValue(cfg, "impairments.pa_nonlinearity_enabled", false))
+    logical(localOptionalStructValue(cfg, "impairments.phase_noise_enabled", false))
+    logical(localOptionalStructValue(cfg, "impairments.iq_imbalance_enabled", false))
+    ];
+tf = any(legacyFlags);
+end
+
+function tf = localRequiresStrictMCSConsistency(cfg)
+tags = lower(string(localOptionalStructValue(cfg, "meta.tags", strings(0, 1))));
+scenarioGroup = lower(string(localOptionalStructValue(cfg, "meta.scenario_group", "")));
+tf = any(ismember(tags, ["no-proxy", "truth", "strict_truth"])) || any(contains(scenarioGroup, "truth"));
+end
+
+function localValidateDirectionModulationMCSConsistency(cfg, direction, ctx)
+direction = upper(string(direction));
+tableName = string(localOptionalStructValue(cfg, "modulation.mcs_table", ""));
+if strlength(strtrim(tableName)) == 0
+    return;
+end
+if direction == "DL"
+    modValue = localOptionalStructValue(cfg, "modulation.dl_modulation_order", []);
+    mcsIndex = localOptionalStructValue(cfg, "modulation.dl_mcs_index", []);
+else
+    modValue = localOptionalStructValue(cfg, "modulation.ul_modulation_order", []);
+    mcsIndex = localOptionalStructValue(cfg, "modulation.ul_mcs_index", []);
+end
+configuredOrder = localQAMOrderFromValue(modValue);
+if ~(isfinite(configuredOrder) && configuredOrder > 0 && isnumeric(mcsIndex) && isscalar(mcsIndex) && isfinite(double(mcsIndex)))
+    return;
+end
+profile = sixgr.link.resolveMCSProfile(tableName, double(mcsIndex));
+if ~logical(profile.Valid)
+    return;
+end
+resolvedOrder = localQAMOrderFromValue(string(profile.Modulation));
+if ~(isfinite(resolvedOrder) && resolvedOrder > 0)
+    return;
+end
+if round(double(configuredOrder)) ~= round(double(resolvedOrder))
+    error("sixgr:lls6g:config:ModulationMCSConsistencyRequired", ...
+        "%s modulation order %g in %s conflicts with modulation.mcs_table=%s, %s_mcs_index=%g, which resolves to %s per TS 38.214.", ...
+        direction, double(configuredOrder), localCtx(ctx), tableName, lower(direction), double(mcsIndex), string(profile.Modulation));
+    end
+end
+
+function tf = localIsUnsetPolicy(value)
+txt = lower(strtrim(string(value)));
+tf = strlength(txt) == 0 || any(txt == ["none", "disabled", "unspecified", "false", "off"]);
+end

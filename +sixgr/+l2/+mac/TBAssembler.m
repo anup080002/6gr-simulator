@@ -68,11 +68,16 @@ classdef TBAssembler
 
             tbSizeBytes = max(0, round(tbSizeBytes));
             used = zeros(tbSizeBytes, 1, 'uint8');
+            needManifest = (nargout > 1);
             info = struct();
             info.Direction = dir;
-            maxManifest = max(1, numel(items) + 1);
-            itemTemplate = sixgr.l2.mac.TBAssembler.makePaddingItem(1, 1);
-            manifestBuf = repmat(itemTemplate, maxManifest, 1);
+            if needManifest
+                maxManifest = max(1, numel(items) + 1);
+                itemTemplate = sixgr.l2.mac.TBAssembler.makePaddingItem(1, 1);
+                manifestBuf = repmat(itemTemplate, maxManifest, 1);
+            else
+                manifestBuf = sixgr.l2.mac.TBAssembler.emptyManifest();
+            end
             manifestCount = 0;
             offset = 0;
             writePos = 1;
@@ -94,9 +99,11 @@ classdef TBAssembler
                 if (offset + need) > tbSizeBytes
                     % Not enough space
                     if strcmp(it.Type,'SDU') && opt.AllowDropLastSDU
-                        manifestCount = manifestCount + 1;
-                        manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
-                            it, lcid, payloadLen, hdrLen, offset, true, NaN, NaN);
+                        if needManifest
+                            manifestCount = manifestCount + 1;
+                            manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
+                                it, lcid, payloadLen, hdrLen, offset, true, NaN, NaN);
+                        end
                         continue;
                     else
                         % Stop building, go to padding
@@ -112,9 +119,11 @@ classdef TBAssembler
                 end
                 startByte = offset + 1;
                 endByte = offset + need;
-                manifestCount = manifestCount + 1;
-                manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
-                    it, lcid, payloadLen, hdrLen, offset, false, startByte, endByte);
+                if needManifest
+                    manifestCount = manifestCount + 1;
+                    manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
+                        it, lcid, payloadLen, hdrLen, offset, false, startByte, endByte);
+                end
                 offset = offset + need;
                 writePos = writePos + need;
             end
@@ -132,14 +141,18 @@ classdef TBAssembler
                 padHdr = sixgr.l2.mac.TBAssembler.buildFixedHeader(padLCID);
                 if rem >= 1
                     used(writePos) = padHdr;
-                    manifestCount = manifestCount + 1;
-                    manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makePaddingItem(offset+1, offset+rem);
+                    if needManifest
+                        manifestCount = manifestCount + 1;
+                        manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makePaddingItem(offset+1, offset+rem);
+                    end
                     info.PaddingBytes = rem-1;
                     info.PaddingSubheader = true;
                 else
                     % no room even for header (shouldn't happen)
-                    manifestCount = manifestCount + 1;
-                    manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makePaddingItem(offset+1, offset+rem);
+                    if needManifest
+                        manifestCount = manifestCount + 1;
+                        manifestBuf(manifestCount) = sixgr.l2.mac.TBAssembler.makePaddingItem(offset+1, offset+rem);
+                    end
                     info.PaddingBytes = rem;
                     info.PaddingSubheader = false;
                 end
@@ -148,10 +161,12 @@ classdef TBAssembler
                 info.PaddingSubheader = false;
             end
 
-            if manifestCount > 0
-                info.Items = manifestBuf(1:manifestCount);
-            else
-                info.Items = sixgr.l2.mac.TBAssembler.emptyManifest();
+            if needManifest
+                if manifestCount > 0
+                    info.Items = manifestBuf(1:manifestCount);
+                else
+                    info.Items = sixgr.l2.mac.TBAssembler.emptyManifest();
+                end
             end
 
             macPduBytes = used;
@@ -169,17 +184,26 @@ classdef TBAssembler
             b = uint8(macPduBytes(:));
             n = numel(b);
 
+            needCE = (nargout > 1);
+            needInfo = (nargout > 2);
             sTemplate = struct('LCID',0,'Payload',uint8([]),'Meta',sixgr.l2.mac.TBAssembler.defaultTraceMeta());
-            cTemplate = sTemplate;
             maxItems = max(1, n);
             sdusBuf = repmat(sTemplate, maxItems, 1);
-            cesBuf = repmat(cTemplate, maxItems, 1);
+            if needCE
+                cesBuf = repmat(sTemplate, maxItems, 1);
+            else
+                cesBuf = struct('LCID',{},'Payload',{},'Meta',{});
+            end
             nSDU = 0;
             nCE = 0;
             info = struct();
             info.Direction = dir;
-            iTemplate = sixgr.l2.mac.TBAssembler.makePaddingItem(1, 1);
-            infoBuf = repmat(iTemplate, maxItems, 1);
+            if needInfo
+                iTemplate = sixgr.l2.mac.TBAssembler.makePaddingItem(1, 1);
+                infoBuf = repmat(iTemplate, maxItems, 1);
+            else
+                infoBuf = sixgr.l2.mac.TBAssembler.emptyManifest();
+            end
             nInfo = 0;
 
             ptr = 1;
@@ -192,8 +216,10 @@ classdef TBAssembler
                     % Padding: rest is padding
                     info.PaddingOffset = ptr;
                     info.PaddingBytes = n - ptr + 1;
-                    nInfo = nInfo + 1;
-                    infoBuf(nInfo) = sixgr.l2.mac.TBAssembler.makePaddingItem(ptr, n);
+                    if needInfo
+                        nInfo = nInfo + 1;
+                        infoBuf(nInfo) = sixgr.l2.mac.TBAssembler.makePaddingItem(ptr, n);
+                    end
                     break;
                 end
 
@@ -212,15 +238,19 @@ classdef TBAssembler
 
                     if sixgr.l2.mac.TBAssembler.isCE_LCID(lcid, dir)
                         item.Type = "CE";
-                        nCE = nCE + 1;
-                        cesBuf(nCE) = struct('LCID',lcid,'Payload',payload,'Meta',m);
+                        if needCE
+                            nCE = nCE + 1;
+                            cesBuf(nCE) = struct('LCID',lcid,'Payload',payload,'Meta',m);
+                        end
                     else
                         nSDU = nSDU + 1;
                         sdusBuf(nSDU) = struct('LCID',lcid,'Payload',payload,'Meta',m);
                     end
-                    nInfo = nInfo + 1;
-                    infoBuf(nInfo) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
-                        item, lcid, numel(payload), 1, startPtr-1, false, startPtr, endPtr);
+                    if needInfo
+                        nInfo = nInfo + 1;
+                        infoBuf(nInfo) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
+                            item, lcid, numel(payload), 1, startPtr-1, false, startPtr, endPtr);
+                    end
                 else
                     % Variable header: R/F/LCID then L (8 or 16 bits)
                     f = bitget(hb, 7); % F is bit6 => position7
@@ -248,15 +278,19 @@ classdef TBAssembler
 
                     if sixgr.l2.mac.TBAssembler.isCE_LCID(lcid, dir)
                         item.Type = "CE";
-                        nCE = nCE + 1;
-                        cesBuf(nCE) = struct('LCID',lcid,'Payload',payload,'Meta',m);
+                        if needCE
+                            nCE = nCE + 1;
+                            cesBuf(nCE) = struct('LCID',lcid,'Payload',payload,'Meta',m);
+                        end
                     else
                         nSDU = nSDU + 1;
                         sdusBuf(nSDU) = struct('LCID',lcid,'Payload',payload,'Meta',m);
                     end
-                    nInfo = nInfo + 1;
-                    infoBuf(nInfo) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
-                        item, lcid, numel(payload), hdrLen, startPtr-1, false, startPtr, endPtr);
+                    if needInfo
+                        nInfo = nInfo + 1;
+                        infoBuf(nInfo) = sixgr.l2.mac.TBAssembler.makeManifestItem( ...
+                            item, lcid, numel(payload), hdrLen, startPtr-1, false, startPtr, endPtr);
+                    end
                 end
             end
 
@@ -265,15 +299,17 @@ classdef TBAssembler
             else
                 sdus = struct('LCID',{},'Payload',{},'Meta',{});
             end
-            if nCE > 0
+            if needCE && nCE > 0
                 ces = cesBuf(1:nCE);
             else
                 ces = struct('LCID',{},'Payload',{},'Meta',{});
             end
-            if nInfo > 0
-                info.Items = infoBuf(1:nInfo);
-            else
-                info.Items = sixgr.l2.mac.TBAssembler.emptyManifest();
+            if needInfo
+                if nInfo > 0
+                    info.Items = infoBuf(1:nInfo);
+                else
+                    info.Items = sixgr.l2.mac.TBAssembler.emptyManifest();
+                end
             end
         end
 
@@ -464,19 +500,23 @@ classdef TBAssembler
         end
 
         function tr = defaultTraceMeta()
-            tr = struct( ...
-                "PktId", NaN, ...
-                "FlowId", NaN, ...
-                "QFI", NaN, ...
-                "CreationSlot", NaN, ...
-                "CreationTime_s", NaN, ...
-                "PDCP_SN", NaN, ...
-                "RLC_SN", NaN, ...
-                "SegmentOffset", NaN, ...
-                "HARQProcess", NaN, ...
-                "GrantSlot", NaN, ...
-                "DeliverySlot", NaN, ...
-                "DropCause", "");
+            persistent trTemplate;
+            if isempty(trTemplate)
+                trTemplate = struct( ...
+                    "PktId", NaN, ...
+                    "FlowId", NaN, ...
+                    "QFI", NaN, ...
+                    "CreationSlot", NaN, ...
+                    "CreationTime_s", NaN, ...
+                    "PDCP_SN", NaN, ...
+                    "RLC_SN", NaN, ...
+                    "SegmentOffset", NaN, ...
+                    "HARQProcess", NaN, ...
+                    "GrantSlot", NaN, ...
+                    "DeliverySlot", NaN, ...
+                    "DropCause", "");
+            end
+            tr = trTemplate;
         end
 
         function tr = normalizeTraceMeta(in)
@@ -484,12 +524,19 @@ classdef TBAssembler
             if isempty(in) || ~isstruct(in)
                 return;
             end
-            f = fieldnames(in);
-            for i = 1:numel(f)
-                tr.(f{i}) = in.(f{i});
-            end
-            if ~isfield(tr, "DropCause") || strlength(string(tr.DropCause)) == 0
-                tr.DropCause = "";
+            if isfield(in, "PktId"), tr.PktId = in.PktId; end
+            if isfield(in, "FlowId"), tr.FlowId = in.FlowId; end
+            if isfield(in, "QFI"), tr.QFI = in.QFI; end
+            if isfield(in, "CreationSlot"), tr.CreationSlot = in.CreationSlot; end
+            if isfield(in, "CreationTime_s"), tr.CreationTime_s = in.CreationTime_s; end
+            if isfield(in, "PDCP_SN"), tr.PDCP_SN = in.PDCP_SN; end
+            if isfield(in, "RLC_SN"), tr.RLC_SN = in.RLC_SN; end
+            if isfield(in, "SegmentOffset"), tr.SegmentOffset = in.SegmentOffset; end
+            if isfield(in, "HARQProcess"), tr.HARQProcess = in.HARQProcess; end
+            if isfield(in, "GrantSlot"), tr.GrantSlot = in.GrantSlot; end
+            if isfield(in, "DeliverySlot"), tr.DeliverySlot = in.DeliverySlot; end
+            if isfield(in, "DropCause") && strlength(string(in.DropCause)) > 0
+                tr.DropCause = in.DropCause;
             end
         end
 

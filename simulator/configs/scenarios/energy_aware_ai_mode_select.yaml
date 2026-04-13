@@ -1,0 +1,44 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "energy_aware_ai_mode_select",
+    "description": "Energy-aware AI mode-selection benchmark.",
+    "research_class": "optional_research_experiment",
+    "scenario_group": "group_d_ai_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "ai_benchmark",
+    "target_cases": ["bundle"]
+  },
+  "ai_ml": {
+    "enabled": true,
+    "use_case": "energy_aware_mode_selection",
+    "mode": "online_inference",
+    "model_path": "simulator/configs/models/energy_mode_descriptor.json",
+    "model_id": "energy_mode_descriptor",
+    "model_version": "1.0",
+    "input_features": ["throughput", "energy_per_bit"],
+    "output_targets": ["selected_mode"],
+    "inference_batch_size": 1,
+    "latency_budget_us": 200,
+    "flops_budget": 100000,
+    "quantization_mode": "int8",
+    "runtime_budget_us": 200,
+    "fallback_enabled": true,
+    "confidence_logging": true,
+    "descriptor_type": "plugin_descriptor"
+  }
+}

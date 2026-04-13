@@ -1,0 +1,2651 @@
+[setup] Added paths under: C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2
+[setup] OK  : 5G Toolbox                   (nrOFDMInfo)
+[setup] OK  : 5G Toolbox                   (nrPUSCH)
+[setup] OK  : 5G Toolbox                   (nrPDSCH)
+[setup] OK  : 5G Toolbox                   (nrLDPCEncode)
+[setup] OK  : 5G Toolbox                   (nrRateRecoverLDPC)
+[setup] OK  : COMM Toolbox                 (awgn)
+[setup] OK  : DL Toolbox                   (trainNetwork)
+[setup] OK  : PCT                          (parpool)
+[setup] OK  : PHASED                       (phased.URA)
+[setup] OK  : WNS Lib                      (wirelessNetworkSimulator)
+[setup] OK  : Site Viewer                  (siteviewer)
+[setup] OK  : RF Prop                      (txsite)
+[setup] OK  : 5G Toolbox                   (nrPathLoss)
+[setup] Done.
+[PASS] testConfig
+[PASS] testCoreConfigCatalog
+[PASS] test6GScenarioConfigValidation
+[PASS] test6GParameterCatalog
+[PASS] test6GScenarioRegistry
+[PASS] test6GScenarioPromptCompliance
+[PASS] test6GDeliverablesPack
+[PASS] test6GRequiredScenarioFamilies
+[PASS] test6GValidationRules
+[PASS] test6GTopLevelSchemaSections
+[PASS] test6GProcessingChainsSchema
+[PASS] test6GCSIReportingCoverage
+[PASS] test6GReferenceSignalChainCoverage
+[PASS] testCSIRuntimeExecution
+[PASS] testCSIPayloadPackingRuntime
+[PASS] testTRSReferenceSignalExecution
+[PASS] test6GMandatoryStudyPackScenarios
+[PASS] test6GExactScenarioSuites
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\control\csv' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\control' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\meta' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\reports\csv' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\reports\image' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\reports\mat' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke\reports' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\pdcch_smoke\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 19)
+In testAll (line 101)] 
+[PASS] test6GScenarioRunner
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\meta' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\reports\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\reports' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\meta' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\reports\csv' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\reports\image'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\reports\mat' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\reports' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\meta' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports\csv'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports\image'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports\mat'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\meta' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports\csv'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports\image'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports\mat'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\control\csv' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\control' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\meta' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\reports\csv' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\reports\image' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\reports\mat' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1\reports' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs\lls' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke\runs' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 68)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\meta' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\reports\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\reports' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\meta' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\reports\csv' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\reports\image' from
+the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\reports\mat' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\reports' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\meta'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports\csv'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports\image'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports\mat'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point\reports'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\meta'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports\csv'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports\image'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports\mat'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point\reports'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed
+'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1'
+from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs\lls' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary\runs' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\smoke_matrix_nosummary\nosummary' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runMatrix (line 19)
+In run_6g_phy_lls_matrix (line 14)
+In test6GScenarioMatrixRunner (line 143)
+In testAll (line 101)] 
+[PASS] test6GScenarioMatrixRunner
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\air_interface\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\air_interface\logs' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\air_interface\mat' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\air_interface' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\beamforming\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\beamforming' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\control\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\control' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\harq\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\harq' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\meta' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\reports\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\reports\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\rf\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke\rf' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_multiuser_smoke\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GLLSMultiUserBeamforming (line 22)
+In testAll (line 101)] 
+[PASS] test6GLLSMultiUserBeamforming
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\ce_ai_reporting\smoke\meta' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIBenchmarkReporting (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\ce_ai_reporting\smoke\reports\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIBenchmarkReporting (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\ce_ai_reporting\smoke\reports\image' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIBenchmarkReporting (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\ce_ai_reporting\smoke\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIBenchmarkReporting (line 19)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\ce_ai_reporting\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIBenchmarkReporting (line 19)
+In testAll (line 101)] 
+[PASS] test6GAIBenchmarkReporting
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\link_adaptation_mcs_selection\smoke\meta' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\link_adaptation_mcs_selection\smoke\reports\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\link_adaptation_mcs_selection\smoke\reports\image' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\link_adaptation_mcs_selection\smoke\reports' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\link_adaptation_mcs_selection\smoke' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\interference_classification\smoke\meta' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\interference_classification\smoke\reports\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\interference_classification\smoke\reports\image' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\interference_classification\smoke\reports' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\interference_classification\smoke' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\detector_selection\smoke\meta' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\detector_selection\smoke\reports\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\detector_selection\smoke\reports\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\detector_selection\smoke\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\detector_selection\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\impairment_mitigation\smoke\meta' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\impairment_mitigation\smoke\reports\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\impairment_mitigation\smoke\reports\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\impairment_mitigation\smoke\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\impairment_mitigation\smoke' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In test6GAIUseCaseCoverage (line 31)
+In testAll (line 101)] 
+[PASS] test6GAIUseCaseCoverage
+[PASS] testPresetHygiene
+[PASS] testMIBSIB1Recovery
+[PASS] testLLS_DL
+[PASS] testPDSCHSISORegression
+[PASS] testPDSCHMultiPortPrecoding
+[PASS] testPMIPrecodingRuntime
+[PASS] testLLSClosedLoopLinkAdaptation
+[PASS] testChannelEstimationValidation
+[PASS] testFadingLinkDelayAlignment
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\air_interface\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\air_interface\image' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\air_interface\logs' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\air_interface\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\air_interface' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\beamforming\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\beamforming\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\beamforming' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\control\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\control' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\harq\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\harq' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\meta' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\reports\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\reports\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\rf\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke\rf' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_richness_smoke\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSResultRichness (line 23)
+In testAll (line 101)] 
+[PASS] testLLSResultRichness
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\air_interface\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\air_interface\image' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\air_interface\logs' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\air_interface\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\air_interface' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\beamforming\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\beamforming\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\beamforming' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\control\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\control' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\harq\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\harq' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\meta' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\reports\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\reports\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\rf\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke\rf' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_report_bundle\smoke' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSReportBundle (line 23)
+In testAll (line 101)] 
+[PASS] testLLSReportBundle
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\air_interface\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\air_interface\logs' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\air_interface\mat' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\air_interface' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\beamforming\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\beamforming' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\control\csv' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\control' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\harq\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\harq' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\meta' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\reports\csv' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\reports\image' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\reports\mat' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\reports' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\rf\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status\rf' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\lls_status_propagation_failure\status' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.lls6g.runners.runSingle (line 15)
+In run_6g_phy_lls_single (line 14)
+In testLLSScenarioStatusPropagation (line 22)
+In testAll (line 101)] 
+[PASS] testLLSScenarioStatusPropagation
+[PASS] testLLS_UL
+[PASS] testLLS_ReferencePoints
+[PASS] testControlDetectionThresholds
+[PASS] testLinkExportPipeline
+[PASS] testLinkPrimaryExportIntegrity
+[PASS] testStrictCoverageValidation
+[PASS] testRequiredOutputCompleteness
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\logs' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\meta\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\meta\fig' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\meta\logs' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\meta\mat' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\meta' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\fig' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\image\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\image\fig' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\image\logs' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\image\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\logs' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow\mat' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\packet_flow' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\reports\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\reports\mat' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\packet_flow\current' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testArtifactVerificationScope (line 16)
+In testAll (line 101)] 
+[PASS] testArtifactVerificationScope
+[PASS] testPartialCampaignReportHonesty
+[PASS] testCalibrationProvenanceHonesty
+[PASS] testFollowupPromptClaimMatrix
+[PASS] testResultIntegrityChecks
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\comparisons' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\debug' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\logs' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\manifests' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\maps' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\plots' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\raw' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\summaries' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\tables' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current\traces' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\session\current' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testWaveformGrantGridAlignment (line 69)
+In testAll (line 101)] 
+[2026-03-24 19:32:30.141] INFO  SystemLevelRunner completed: throughput=3.356 Mbps
+[2026-03-24 19:32:53.212] INFO  SystemLevelRunner completed: throughput=1.878 Mbps
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\control\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\control' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\logs' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\meta\csv' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\meta\fig' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\meta\logs' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\meta\mat' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\meta' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\reports\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\reports\mat' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\reports' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\comparisons' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\debug' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\logs' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\manifests' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\maps' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\mat' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\plots' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\raw' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\summaries' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\tables' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system\traces' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current\system' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\waveform_system_truth_experimental\current' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In testWaveformGrantGridAlignment (line 127)
+In testAll (line 101)] 
+[PASS] testWaveformGrantGridAlignment
+[2026-03-24 19:33:52.525] INFO  SystemLevelRunner completed: throughput=3.47 Mbps
+[PASS] testSLS_WaveformBackend
+[2026-03-24 19:34:40.252] INFO  SystemLevelRunner completed: throughput=3.622 Mbps
+[PASS] testSLSOutputCatalog
+[PASS] testSLS_Abstract
+[2026-03-24 19:40:52.485] INFO  SystemLevelRunner completed: throughput=0.506 Mbps
+[PASS] testMobilityControlLoop
+[PASS] testStrictProxyGuards
+[PASS] testStrictMode_NoFallbackAnywhere
+[PASS] testTraceReplayTrafficMode
+[PASS] testNoProxyTruthContract
+[PASS] testHybrid
+[PASS] testHybrid_CalibrationCoverage
+[PASS] testE2E_FastVsTruth
+[Warning: Randomized truth campaign generated UL traffic but delivered none across the sampled seeds; semantic/accounting checks still passed, so treat this as a QoS
+outcome rather than a semantic failure.] 
+[> In testE2E_TruthPacketSemanticCampaign (line 88)
+In testAll (line 101)] 
+[PASS] testE2E_TruthPacketSemanticCampaign
+[PASS] testE2E_TruthArtifactNaming
+[PASS] testE2E_ProxyArtifactNaming
+[PASS] testE2E_QoSvsSemanticReporting
+[PASS] testE2ETruthChunkMetadata
+[PASS] testE2E_DeadlineMissAccounting
+[PASS] testE2E_SummaryRawConsistency
+[PASS] testStrictnessMetadataConsistency
+[PASS] testRunScopeConformanceMetadata
+[PASS] testTruthValidationControlCoverage
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\logs' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\meta\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\meta\fig' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\meta\logs' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\meta\mat' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\meta' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\fig' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\image\csv' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\image\fig' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\image\logs' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\image\mat' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\logs' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\packet_flow' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\image\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\image\fig' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\image\logs' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\image\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\image' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\reports' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\air_interface\csv' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\air_interface\image' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\air_interface\logs' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\air_interface\mat' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\air_interface' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\beamforming\csv' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\beamforming\image' from the
+MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\beamforming' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\control\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\control' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\harq\csv' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\harq' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\reports\csv' from the MATLAB
+path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\reports' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\rf\csv' from the MATLAB path
+for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link\rf' from the MATLAB path for
+this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current\supplemental_link' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\e2e\truth_validation\current' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In run_truth_validation_profile (line 33)
+In testTruthValidationProfile (line 10)
+In testAll (line 101)] 
+[PASS] testTruthValidationProfile
+[PASS] test60CellStressProfileMode
+[PASS] test60CellTruthGuard
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\logs' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\meta' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\fig' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\image\csv' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\image\fig' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\image\logs' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\image\mat' from the MATLAB path for this
+MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\image' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\logs' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow\mat' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\packet_flow' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\comparisons' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\csv' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\debug' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\logs' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\manifests' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\maps' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\mat' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\plots' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\raw' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\summaries' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\tables' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system\traces' from the MATLAB path for this MATLAB
+session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current\system' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\sls\campaign\current' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr_run_3gpp_full_campaign (line 132)
+In test60CellTruthE2ECouplingGuard (line 12)
+In testAll (line 101)] 
+[PASS] test60CellTruthE2ECouplingGuard
+[PASS] testSchedulerGrantConsistency
+[PASS] testGrantTraceIntegrity
+[PASS] testArtifactIntegrity
+[PASS] testOrganizeRunResults_E2EArtifactPreservation
+[PASS] testOrganizeRunResults_TopicalMirror
+[PASS] testResolveResultsRoot
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\session\current\logs' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testSimContextResultsRoot (line 10)
+In testAll (line 101)] 
+[Warning: Removed 'C:\Users\anup0\OneDrive\Documents\Simulator\sixgr_foundation_v2\results\lls\session\current' from the MATLAB path for this MATLAB session.
+	See 'doc path' for more information.] 
+[> In sixgr.report.defaultRunFolder>localResetRunFolder (line 54)
+In sixgr.report.defaultRunFolder (line 30)
+In sixgr.core/SimContext (line 65)
+In testSimContextResultsRoot (line 10)
+In testAll (line 101)] 
+[PASS] testSimContextResultsRoot
+[PASS] testAttachProcedure
+[PASS] testPDCP_SecurityProfiles
+[PASS] testPDCP_RLC_PacketConservation

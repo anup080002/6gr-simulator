@@ -13,6 +13,7 @@ end
 
 % Ensure normalized before export
 cfg = sixgr.config.normalizeConfig(cfg);
+catalog = sixgr.config.loadCoreCatalog();
 
 c = struct();
 
@@ -24,14 +25,17 @@ c.run.seed = uint32(cfg.run.seed);
 c.run.shortRun = logical(cfg.run.shortRun);
 
 c.run.mode = uint8(localMapEnum(lower(char(cfg.run.mode)), ...
-    {'link','system','hybrid','both'}, uint8(0)));
+    localCatalogEnumOrder(catalog, "run.mode", {'link','system','both'}), ...
+    uint8(localCatalogDefaultCode(catalog, "run.mode", 0))));
 
 % -------------------------------------------------------------------------
 % Scenario
 % -------------------------------------------------------------------------
 c.scenario = struct();
 c.scenario.name = uint8(localMapEnum(lower(char(cfg.scenario.name)), ...
-    {'indoorhotspot','urbanmacro','suburbanmacro','ruralmacro','denseurban'}, uint8(1)));
+    localCatalogEnumOrder(catalog, "scenario.name", ...
+    {'indoorhotspot','urbanmacro','suburbanmacro','ruralmacro','denseurban'}), ...
+    uint8(localCatalogDefaultCode(catalog, "scenario.name", 1))));
 
 c.scenario.nUE = uint16(cfg.scenario.ue.nUE);
 c.scenario.wrapAround = logical(cfg.scenario.layout.wrapAround);
@@ -53,7 +57,9 @@ c.channel.bandwidth_Hz = double(cfg.channel.bandwidth_Hz);
 c.channel.scs_kHz = double(cfg.phy.carrier.SubcarrierSpacing);
 
 c.channel.type = uint8(localMapEnum(lower(char(cfg.channel.type)), ...
-    {'tr38901','tdl','cdl','raytracing','awgn'}, uint8(0)));
+    localCatalogEnumOrder(catalog, "channel.type", ...
+    {'tr38901','tdl','cdl','raytracing','awgn'}), ...
+    uint8(localCatalogDefaultCode(catalog, "channel.type", 0))));
 
 % -------------------------------------------------------------------------
 % PHY essentials
@@ -61,14 +67,18 @@ c.channel.type = uint8(localMapEnum(lower(char(cfg.channel.type)), ...
 c.phy = struct();
 c.phy.NCellID = uint16(cfg.phy.carrier.NCellID);
 c.phy.NSizeGrid = uint16(cfg.phy.carrier.NSizeGrid);
-c.phy.CyclicPrefix = uint8(localMapEnum(lower(char(cfg.phy.carrier.CyclicPrefix)), {'normal','extended'}, uint8(0)));
+c.phy.CyclicPrefix = uint8(localMapEnum(lower(char(cfg.phy.carrier.CyclicPrefix)), ...
+    localCatalogEnumOrder(catalog, "phy.carrier.CyclicPrefix", {'normal','extended'}), ...
+    uint8(localCatalogDefaultCode(catalog, "phy.carrier.CyclicPrefix", 0))));
 
 % DL
 c.phy.dl = struct();
 c.phy.dl.pdschEnable = logical(cfg.phy.pdsch.enable);
 c.phy.dl.nLayers = uint8(cfg.phy.pdsch.nLayers);
 c.phy.dl.modulation = uint8(localMapEnum(upper(char(cfg.phy.pdsch.modulation)), ...
-    {'QPSK','16QAM','64QAM','256QAM','1024QAM','4096QAM'}, uint8(3)));
+    localCatalogEnumOrder(catalog, "phy.pdsch.modulation", ...
+    {'QPSK','16QAM','64QAM','256QAM','1024QAM','4096QAM'}), ...
+    uint8(localCatalogDefaultCode(catalog, "phy.pdsch.modulation", 3))));
 c.phy.dl.codeRate = single(cfg.phy.pdsch.codeRate);
 
 % UL
@@ -76,7 +86,9 @@ c.phy.ul = struct();
 c.phy.ul.puschEnable = logical(cfg.phy.pusch.enable);
 c.phy.ul.nLayers = uint8(cfg.phy.pusch.nLayers);
 c.phy.ul.modulation = uint8(localMapEnum(upper(char(cfg.phy.pusch.modulation)), ...
-    {'QPSK','16QAM','64QAM','256QAM','1024QAM','4096QAM'}, uint8(3)));
+    localCatalogEnumOrder(catalog, "phy.pusch.modulation", ...
+    {'QPSK','16QAM','64QAM','256QAM','1024QAM','4096QAM'}), ...
+    uint8(localCatalogDefaultCode(catalog, "phy.pusch.modulation", 3))));
 c.phy.ul.codeRate = single(cfg.phy.pusch.codeRate);
 c.phy.ul.transformPrecoding = logical(cfg.phy.pusch.transformPrecoding);
 
@@ -91,7 +103,9 @@ c.phy.nHarq = uint8(cfg.phy.harq.nProcesses);
 % MAC essentials
 % -------------------------------------------------------------------------
 c.mac = struct();
-c.mac.schedulerType = uint8(localMapEnum(upper(char(cfg.mac.scheduler.type)), {'PF','RR','MAXCQI'}, uint8(0)));
+c.mac.schedulerType = uint8(localMapEnum(upper(char(cfg.mac.scheduler.type)), ...
+    localCatalogEnumOrder(catalog, "mac.scheduler.type", {'PF','RR','MAXCQI'}), ...
+    uint8(localCatalogDefaultCode(catalog, "mac.scheduler.type", 0))));
 c.mac.harqEnable = logical(cfg.mac.harq.enable);
 c.mac.harqMaxRetx = uint8(cfg.mac.harq.maxRetx);
 
@@ -128,4 +142,22 @@ for i = 1:numel(allowed)
         return;
     end
 end
+end
+
+function ordered = localCatalogEnumOrder(catalog, path, fallback)
+ordered = fallback;
+node = sixgr.util.structGet(catalog, "coder_enums." + string(path) + ".ordered_values", []);
+if isempty(node)
+    return;
+end
+ordered = cellstr(string(node(:).'));
+end
+
+function code = localCatalogDefaultCode(catalog, path, fallback)
+code = fallback;
+node = sixgr.util.structGet(catalog, "coder_enums." + string(path) + ".default_code", []);
+if isempty(node)
+    return;
+end
+code = double(node);
 end

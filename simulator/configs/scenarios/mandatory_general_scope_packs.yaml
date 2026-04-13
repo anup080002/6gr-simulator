@@ -1,0 +1,43 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_general_scope_packs",
+    "description": "Mandatory general-scope baseline/reference carrier packs and arbitrary carrier override support.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "baseline_benchmark"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["bundle"],
+    "notes": "Encodes baseline OFDM, NR-like coding, reference carrier bands, and arbitrary additional carrier support.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_general_scope",
+      "overrides": [
+        {"label": "around_700mhz", "config": {"frequency": {"band_name": "700mhz_reference", "center_frequency_hz": 700000000, "bandwidth_hz": 5000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "range_name": "FR1"}, "frame": {"scs_khz": 15}, "simulation": {"link_direction": "dl"}}},
+        {"label": "around_2ghz", "config": {"frequency": {"band_name": "2ghz_reference", "center_frequency_hz": 2000000000, "bandwidth_hz": 20000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "range_name": "FR1"}}},
+        {"label": "around_4ghz", "config": {"frequency": {"band_name": "4ghz_reference", "center_frequency_hz": 4000000000, "bandwidth_hz": 20000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "range_name": "FR1"}, "frame": {"scs_khz": 30}}},
+        {"label": "around_7ghz", "config": {"frequency": {"band_name": "7ghz_reference", "center_frequency_hz": 7000000000, "bandwidth_hz": 100000000, "bandwidth_options_hz": [20000000, 100000000], "range_name": "FR2"}, "frame": {"scs_khz": 30}}},
+        {"label": "around_30ghz", "config": {"frequency": {"band_name": "30ghz_reference", "center_frequency_hz": 30000000000, "bandwidth_hz": 100000000, "bandwidth_options_hz": [100000000], "numerology_options_khz": [120], "range_name": "FR2"}, "frame": {"scs_khz": 120}}},
+        {"label": "custom_10_5ghz", "config": {"frequency": {"band_name": "custom_10_5ghz", "center_frequency_hz": 10500000000, "bandwidth_hz": 20000000, "bandwidth_options_hz": [5000000, 20000000, 100000000], "range_name": "FR3"}}}
+      ]
+    }
+  }
+}

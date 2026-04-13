@@ -1,0 +1,20 @@
+{
+  "logging": {
+    "level": "info",
+    "save_logs": true,
+    "save_intermediate": false,
+    "strict_validation": true,
+    "include_git_hash": true,
+    "echo_to_console": false
+  },
+  "output": {
+    "save_csv": true,
+    "save_mat": true,
+    "save_figures": true,
+    "save_png": true,
+    "save_yaml_snapshot": true,
+    "save_json_snapshot": true,
+    "organize_by_block": true,
+    "generate_summary_plots": true
+  }
+}

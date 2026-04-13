@@ -26,50 +26,6 @@ cfg.SaturateOnIntegerOverflow = false;
 cfg.DynamicMemoryAllocation = "Threshold";
 cfg.DynamicMemoryAllocationThreshold = 65536;
 
-try
-    codegen -config cfg sixgr_l2_mac_estimateTBSApprox_entry ...
-        -args {0, 0, 0, 0, 0};
-    out.Built(end+1,1) = "sixgr_l2_mac_estimateTBSApprox_entry_mex";
-catch ME
-    out.Ok = false;
-    out.Failed(end+1,1) = "sixgr_l2_mac_estimateTBSApprox_entry_mex";
-    out.Notes(end+1,1) = "TBS kernel build failed: " + string(ME.message);
-end
-
-try
-    M = coder.typeof(0, [inf inf], [1 1]);
-    codegen -config cfg sixgr_system_fast_core_kernel ...
-        -args {M, M, M, M, 0, 0, 0, uint8(0)};
-    out.Built(end+1,1) = "sixgr_system_fast_core_kernel_mex";
-catch ME
-    out.Ok = false;
-    out.Failed(end+1,1) = "sixgr_system_fast_core_kernel_mex";
-    out.Notes(end+1,1) = "System fast-core build failed: " + string(ME.message);
-end
-
-try
-    M = coder.typeof(0, [inf inf], [1 1]);
-    V = coder.typeof(false, [inf 1], [1 0]);
-    codegen -config cfg sixgr_e2e_fast_core_kernel ...
-        -args {M, M, V, V, 0, 0, 0, 0};
-    out.Built(end+1,1) = "sixgr_e2e_fast_core_kernel_mex";
-catch ME
-    out.Ok = false;
-    out.Failed(end+1,1) = "sixgr_e2e_fast_core_kernel_mex";
-    out.Notes(end+1,1) = "E2E fast-core build failed: " + string(ME.message);
-end
-
-try
-    V = coder.typeof(0, [inf 1], [1 0]);
-    codegen -config cfg sixgr_link_fast_core_kernel ...
-        -args {V, 0, 0, 0};
-    out.Built(end+1,1) = "sixgr_link_fast_core_kernel_mex";
-catch ME
-    out.Ok = false;
-    out.Failed(end+1,1) = "sixgr_link_fast_core_kernel_mex";
-    out.Notes(end+1,1) = "Link fast-core build failed: " + string(ME.message);
-end
-
 % Optional acceleration kernels for heavy PHY blocks (do not fail campaign).
 try
     C = coder.typeof(complex(0), [inf inf], [1 1]);

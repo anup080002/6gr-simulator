@@ -1,0 +1,4 @@
+interface:
+  display_name: "NR Validation"
+  short_description: "Guard strict NR validation invariants"
+  default_prompt: "Use $nr-validation to review or patch NR config, fading, truth/proxy, or channel-estimation changes."

@@ -1,0 +1,7 @@
+{
+  "plugin_type": "evm_gain_rule",
+  "model_family": "descriptor_plugin",
+  "evm_improvement_db": 0.75,
+  "confidence_bias": 0.79,
+  "parameter_count": 6500
+}

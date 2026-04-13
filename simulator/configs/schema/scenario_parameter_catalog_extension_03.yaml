@@ -1,0 +1,147 @@
+{
+  "sections": {
+    "channel_coding": {"required": true, "parameters": {
+      "data_channel_family": {"required": true, "type": "string"}, "control_channel_family": {"required": true, "type": "string"},
+      "csi_channel_family": {"required": true, "type": "string"}, "ldpc_base_graph": {"required": true, "type": "integer", "min": 1},
+      "new_6g_bg_flag": {"required": true, "type": "boolean"}, "lifting_size": {"required": true, "type": "integer", "min": 1},
+      "segmentation_policy": {"required": true, "type": "string"}, "max_segment_count": {"required": true, "type": "integer", "min": 1},
+      "cb_crc_policy": {"required": true, "type": "string"}, "tb_crc_policy": {"required": true, "type": "string"},
+      "outer_code_flag": {"required": true, "type": "boolean"}, "outer_code_family": {"required": true, "type": "string"},
+      "inter_cb_coding_flag": {"required": true, "type": "boolean"}, "packet_level_coding_flag": {"required": true, "type": "boolean"},
+      "cbg_policy": {"required": true, "type": "string"}, "parity_cb_policy": {"required": true, "type": "string"},
+      "decoder_algorithm": {"required": true, "type": "string"}, "decoder_iteration_policy": {"required": true, "type": "string"},
+      "early_stop_policy": {"required": true, "type": "string"}, "rate_matching": {"required": true, "type": "string"},
+      "bit_interleaver": {"required": true, "type": "string"}, "codeblock_interleaver": {"required": true, "type": "string"},
+      "mgcm_flag": {"required": true, "type": "boolean"}, "dbicm_flag": {"required": true, "type": "boolean"},
+      "tb_dbicm_flag": {"required": true, "type": "boolean"}, "harq_combining_policy": {"required": true, "type": "string"},
+      "complexity_measurement_policy": {"required": true, "type": "string"}, "area_efficiency_proxy_policy": {"required": true, "type": "string"},
+      "latency_measurement_policy": {"required": true, "type": "string"}
+    }},
+    "modulation_and_mapping": {"required": true, "parameters": {
+      "constellation_family": {"required": true, "type": "string"}, "qam_order": {"required": true, "type": "integer", "min": 1},
+      "nuc_flag": {"required": true, "type": "boolean"}, "geometric_shaping_flag": {"required": true, "type": "boolean"},
+      "probabilistic_shaping_flag": {"required": true, "type": "boolean"}, "shaping_algorithm": {"required": true, "type": "string"},
+      "dm_algorithm": {"required": true, "type": "string"}, "quantization_policy": {"required": true, "type": "string"},
+      "mapping_policy": {"required": true, "type": "string"}, "adaptive_mapping_flag": {"required": true, "type": "boolean"},
+      "bit_reliability_aware_mapping_flag": {"required": true, "type": "boolean"}, "mixed_modulation_flag": {"required": true, "type": "boolean"},
+      "joint_coding_modulation_flag": {"required": true, "type": "boolean"}, "symbol_interleaving": {"required": true, "type": "string"},
+      "pdcch_modulation": {"required": true, "type": "string"}, "pdsch_modulation": {"required": true, "type": "string"},
+      "pusch_modulation": {"required": true, "type": "string"}, "pucch_modulation": {"required": true, "type": "string"},
+      "pbch_modulation": {"required": true, "type": "string"}, "modulation_candidate_tag": {"required": true, "type": "string"}
+    }},
+    "link_adaptation": {"required": true, "parameters": {
+      "fixed_or_amc": {"required": true, "type": "string"}, "outer_loop_flag": {"required": true, "type": "boolean"},
+      "inner_loop_flag": {"required": true, "type": "boolean"}, "cqi_source": {"required": true, "type": "string"},
+      "dmrs_based_tracking_flag": {"required": true, "type": "boolean"}, "csi_rs_based_tracking_flag": {"required": true, "type": "boolean"},
+      "delta_cqi_policy": {"required": true, "type": "string"}, "delta_mcs_policy": {"required": true, "type": "string"},
+      "pdcch_link_adaptation_policy": {"required": true, "type": "string"}, "pdsch_link_adaptation_policy": {"required": true, "type": "string"},
+      "pusch_link_adaptation_policy": {"required": true, "type": "string"}, "rank_adaptation_policy": {"required": true, "type": "string"},
+      "al_adaptation_policy": {"required": true, "type": "string"}, "beam_adaptation_policy": {"required": true, "type": "string"},
+      "adaptation_periodicity": {"required": true, "type": "string"}, "adaptation_delay_model": {"required": true, "type": "string"}
+    }},
+    "harq": {"parameters": {
+      "dl_harq_enabled": {"required": true, "type": "boolean"}, "ul_harq_enabled": {"required": true, "type": "boolean"},
+      "asynchronous_or_synchronous": {"required": true, "type": "string"}, "tb_cbg_mode": {"required": true, "type": "string"},
+      "parity_cb_mode": {"required": true, "type": "string"}, "ack_codebook_mode": {"required": true, "type": "string"},
+      "feedback_timing": {"required": true, "type": "string"}, "dtx_model": {"required": true, "type": "string"},
+      "pdcch_miss_interaction": {"required": true, "type": "string"}, "detection_feedback_interaction": {"required": true, "type": "string"},
+      "max_retx": {"required": true, "type": "integer", "min": 0}, "latency_budget": {"required": true, "type": "string"},
+      "reliability_target": {"required": true, "type": "string"}, "overhead_budget": {"required": true, "type": "string"},
+      "retransmission_scheduler_policy": {"required": true, "type": "string"}
+    }},
+    "synchronization_and_tracking": {"required": true, "parameters": {
+      "initial_sync_policy": {"required": true, "type": "string"}, "cell_search_policy": {"required": true, "type": "string"},
+      "pss_sss_detection_policy": {"required": true, "type": "string"}, "pbch_decode_policy": {"required": true, "type": "string"},
+      "one_shot_detection_policy": {"required": true, "type": "string"}, "cfo_estimator": {"required": true, "type": "string"},
+      "to_estimator": {"required": true, "type": "string"}, "phase_tracker": {"required": true, "type": "string"},
+      "doppler_tracker": {"required": true, "type": "string"}, "qcl_estimator": {"required": true, "type": "string"},
+      "tracking_rs_policy": {"required": true, "type": "string"}, "trs_policy": {"required": true, "type": "string"},
+      "dmrs_tracking_policy": {"required": true, "type": "string"}, "csi_rs_tracking_policy": {"required": true, "type": "string"},
+      "connected_mode_tracking": {"required": true, "type": "boolean"}, "idle_mode_tracking": {"required": true, "type": "boolean"},
+      "tracking_density": {"required": true, "type": "string"}, "tracking_bandwidth": {"required": true, "type": "string"},
+      "symbol_gap": {"required": true, "type": "integer", "min": 0}, "beam_mismatch_model": {"required": true, "type": "string"}
+    }},
+    "receiver_algorithms": {"required": true, "parameters": {
+      "channel_estimator": {"required": true, "type": "string"}, "interpolation_method": {"required": true, "type": "string"},
+      "equalizer": {"required": true, "type": "string"}, "detector": {"required": true, "type": "string"},
+      "list_size": {"required": true, "type": "integer", "min": 1}, "iterative_receiver_flag": {"required": true, "type": "boolean"},
+      "interference_cancellation": {"required": true, "type": "string"}, "soft_demapper": {"required": true, "type": "string"},
+      "llr_quantization": {"required": true, "type": "string"}, "descrambling": {"required": true, "type": "string"},
+      "deinterleaving": {"required": true, "type": "string"}, "rate_dematching": {"required": true, "type": "string"},
+      "decoder": {"required": true, "type": "string"}, "decoder_iterations": {"required": true, "type": "integer", "min": 1},
+      "crc_checker": {"required": true, "type": "string"}, "error_detection_policy": {"required": true, "type": "string"},
+      "harq_combiner": {"required": true, "type": "string"}, "pdcch_candidate_generator": {"required": true, "type": "string"},
+      "prach_detector": {"required": true, "type": "string"}, "csi_estimator": {"required": true, "type": "string"},
+      "beam_selector": {"required": true, "type": "string"}, "ai_receiver_hook": {"required": true, "type": "string"}
+    }},
+    "impairments": {"parameters": {
+      "awgn": {"required": true, "type": "struct"}, "cfo": {"required": true, "type": "struct"}, "to": {"required": true, "type": "struct"},
+      "phase_noise": {"required": true, "type": "struct"}, "drift_rate": {"required": true, "type": "struct"},
+      "iq_imbalance": {"required": true, "type": "struct"}, "dc_offset": {"required": true, "type": "struct"},
+      "clipping": {"required": true, "type": "struct"}, "quantization_noise": {"required": true, "type": "struct"},
+      "reciprocity_error": {"required": true, "type": "struct"}, "amplitude_phase_mismatch": {"required": true, "type": "struct"},
+      "srs_power_imbalance": {"required": true, "type": "struct"}, "rs_collision": {"required": true, "type": "struct"},
+      "burst_interference": {"required": true, "type": "struct"}, "interference_randomization": {"required": true, "type": "struct"},
+      "channel_estimation_nonideality": {"required": true, "type": "struct"}, "timing_jitter": {"required": true, "type": "struct"},
+      "calibration_error": {"required": true, "type": "struct"}, "puncturing_loss": {"required": true, "type": "struct"},
+      "missing_resource_mask": {"required": true, "type": "struct"}
+    }},
+    "ai_ml": {"parameters": {
+      "model_family": {"required": true, "type": "string"}, "model_name": {"required": true, "type": "string"},
+      "training_mode": {"required": true, "type": "string"}, "inference_mode": {"required": true, "type": "string"},
+      "downloadability": {"required": true, "type": "string"}, "lcm_assumptions": {"required": true, "type": "string"},
+      "baseline_pairing": {"required": true, "type": "string"}, "fallback_mode": {"required": true, "type": "string"},
+      "feature_inputs": {"required": true, "type": "string_list"}, "label_definition": {"required": true, "type": "string"},
+      "preprocessing": {"required": true, "type": "string"}, "normalization": {"required": true, "type": "string"},
+      "quantization": {"required": true, "type": "string"}, "precision": {"required": true, "type": "string"},
+      "inference_frequency": {"required": true, "type": "string"}, "batching_policy": {"required": true, "type": "string"},
+      "memory_budget": {"required": true, "type": "number", "min": 0}, "parameter_count_budget": {"required": true, "type": "number", "min": 0},
+      "training_dataset_scope": {"required": true, "type": "string"}, "test_dataset_scope": {"required": true, "type": "string"},
+      "channel_generalization_sweeps": {"required": true, "type": "struct"}, "speed_generalization_sweeps": {"required": true, "type": "struct"},
+      "delay_spread_generalization_sweeps": {"required": true, "type": "struct"}, "band_generalization_sweeps": {"required": true, "type": "struct"},
+      "array_generalization_sweeps": {"required": true, "type": "struct"}, "robustness_to_impairments": {"required": true, "type": "string"},
+      "explainability_hooks": {"required": true, "type": "string"}, "confidence_metric": {"required": true, "type": "string"},
+      "failure_detection_metric": {"required": true, "type": "string"}
+    }},
+    "energy_and_complexity": {"required": true, "parameters": {
+      "ue_energy_model": {"required": true, "type": "string"}, "gnb_energy_model": {"required": true, "type": "string"},
+      "per_block_energy_measurement": {"required": true, "type": "boolean"}, "pdcch_monitoring_energy": {"required": true, "type": "string"},
+      "rf_chain_energy": {"required": true, "type": "string"}, "bb_processing_energy": {"required": true, "type": "string"},
+      "sleep_state_model": {"required": true, "type": "string"}, "wakeup_latency": {"required": true, "type": "string"},
+      "duty_cycle_metrics": {"required": true, "type": "string"}, "race_to_sleep_metrics": {"required": true, "type": "string"},
+      "network_energy_saving_metrics": {"required": true, "type": "string"}, "operation_count_metrics": {"required": true, "type": "string"},
+      "runtime_metrics": {"required": true, "type": "string"}, "memory_metrics": {"required": true, "type": "string"},
+      "iteration_metrics": {"required": true, "type": "string"}, "area_efficiency_proxy": {"required": true, "type": "string"},
+      "throughput_per_watt": {"required": true, "type": "boolean"}
+    }},
+    "kpi_spec": {"required": true, "parameters": {
+      "mandatory_kpis": {"required": true, "type": "string_list", "min_items": 1},
+      "optional_kpis": {"required": true, "type": "string_list"},
+      "per_snr_curve_points": {"required": true, "type": "number_list", "min_items": 1},
+      "target_bler_points": {"required": true, "type": "number_list", "min_items": 1},
+      "target_latency_points": {"required": true, "type": "number_list", "min_items": 1},
+      "target_energy_points": {"required": true, "type": "number_list", "min_items": 1},
+      "aggregation_rules": {"required": true, "type": "string"}, "confidence_interval_policy": {"required": true, "type": "string"},
+      "percentile_policy": {"required": true, "type": "string"}, "comparison_policy": {"required": true, "type": "string"},
+      "baseline_diff_policy": {"required": true, "type": "string"}
+    }},
+    "sweeps_and_matrix": {"required": true, "parameters": {
+      "snr_sweep": {"required": true, "type": "struct"}, "sinr_sweep": {"required": true, "type": "struct"},
+      "esno_sweep": {"required": true, "type": "struct"}, "speed_sweep": {"required": true, "type": "struct"},
+      "delay_spread_sweep": {"required": true, "type": "struct"}, "bandwidth_sweep": {"required": true, "type": "struct"},
+      "frequency_sweep": {"required": true, "type": "struct"}, "rank_sweep": {"required": true, "type": "struct"},
+      "trp_sweep": {"required": true, "type": "struct"}, "beam_count_sweep": {"required": true, "type": "struct"},
+      "impairment_sweep": {"required": true, "type": "struct"}, "ai_generalization_sweep": {"required": true, "type": "struct"},
+      "harq_sweep": {"required": true, "type": "struct"}, "report_periodicity_sweep": {"required": true, "type": "struct"},
+      "periodicity_sweep": {"required": true, "type": "struct"}, "repetition_sweep": {"required": true, "type": "struct"},
+      "mcs_sweep": {"required": true, "type": "struct"}, "modulation_sweep": {"required": true, "type": "struct"},
+      "shaping_sweep": {"required": true, "type": "struct"}, "decode_iteration_sweep": {"required": true, "type": "struct"}
+    }},
+    "sanity_checks": {"required": true, "parameters": {
+      "energy_sanity": {"required": true, "type": "struct"}, "throughput_sanity": {"required": true, "type": "struct"},
+      "bler_monotonicity_checks": {"required": true, "type": "struct"}, "power_normalization_checks": {"required": true, "type": "struct"},
+      "rs_overhead_checks": {"required": true, "type": "struct"}, "invalid_mapping_checks": {"required": true, "type": "struct"},
+      "unsupported_combination_checks": {"required": true, "type": "struct"}, "reproducibility_checks": {"required": true, "type": "struct"}
+    }}
+  }
+}

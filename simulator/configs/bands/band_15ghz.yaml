@@ -1,0 +1,32 @@
+{
+  "frequency": {
+    "range_name": "FR3",
+    "band_name": "15ghz",
+    "center_frequency_hz": 15000000000,
+    "bandwidth_hz": 100000000,
+    "bandwidth_options_hz": [50000000, 100000000, 200000000],
+    "duplex_mode": "TDD",
+    "numerology_options_khz": [60, 120],
+    "max_mimo_size": 8,
+    "mobility_defaults_kmph": 80,
+    "channel_model_defaults": "CDL-A",
+    "reference_signal_defaults": "beam",
+    "power_model_defaults": "fr3",
+    "energy_model_defaults": "fr3_energy",
+    "rf_impairment_defaults": "fr3_beam_tracking",
+    "n_size_grid": 132
+  },
+  "frame": {
+    "scs_khz": 60
+  },
+  "waveform": {
+    "fft_size": 2048,
+    "sample_rate_hz": 122880000
+  },
+  "channels": {
+    "model_type": "CDL",
+    "profile": "CDL-A",
+    "doppler_hz": 180,
+    "mobility_kmph": 80
+  }
+}

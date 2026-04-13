@@ -1,0 +1,8 @@
+{
+  "impairments": {
+    "cfo_acquisition_mode": "initial_acquisition",
+    "cfo_drift_hz_per_s": 0,
+    "oscillator_profile": "lab_clean",
+    "initial_time_offset_fraction_cp": 0
+  }
+}

@@ -52,10 +52,10 @@ classdef TR38901Plus < handle
             end
 
             % Defaults from cfg
-            obj.Scenario = string(sixgr.util.structGet(cfg, "run.scenario", obj.Scenario));
-            obj.Fc_Hz = double(sixgr.util.structGet(cfg, "phy.fc_Hz", obj.Fc_Hz));
-            obj.PathlossModel = string(sixgr.util.structGet(cfg, "channel.pathlossModel", obj.PathlossModel));
-            obj.ShadowSigma_dB = double(sixgr.util.structGet(cfg, "channel.shadowSigma_dB", obj.ShadowSigma_dB));
+            obj.Scenario = string(localCanonicalScenario(cfg, obj.Scenario));
+            obj.Fc_Hz = double(localCanonicalStructGet(cfg, "phy.fc_Hz", "channel.fc_Hz", obj.Fc_Hz));
+            obj.PathlossModel = string(localCanonicalStructGet(cfg, "channel.pathlossModel", "channel.pathloss.model", obj.PathlossModel));
+            obj.ShadowSigma_dB = double(localCanonicalStructGet(cfg, "channel.shadowSigma_dB", "channel.shadowFadingStd_dB", obj.ShadowSigma_dB));
             obj.O2IModel = string(sixgr.util.structGet(cfg, "channel.o2i.model", obj.O2IModel));
             obj.O2ICustom_dB = double(sixgr.util.structGet(cfg, "channel.o2i.custom_dB", obj.O2ICustom_dB));
 
@@ -106,6 +106,8 @@ classdef TR38901Plus < handle
             else
                 obj.Stream = RandStream("mt19937ar","Seed",double(seed));
             end
+
+            localLogResolvedConfigOnce(cfg, obj);
         end
 
         function p = losProbability(obj, d2d_m, scenarioName)
@@ -287,4 +289,41 @@ classdef TR38901Plus < handle
             end
         end
     end
+end
+
+function value = localCanonicalStructGet(cfg, canonicalPath, aliasPath, defaultValue)
+value = sixgr.util.structGet(cfg, canonicalPath, []);
+if isempty(value)
+    value = sixgr.util.structGet(cfg, aliasPath, defaultValue);
+end
+end
+
+function value = localCanonicalScenario(cfg, defaultValue)
+value = sixgr.util.structGet(cfg, "channel.propagationScenario", []);
+if isempty(value)
+    value = sixgr.util.structGet(cfg, "run.scenario", []);
+end
+if isempty(value)
+    value = sixgr.util.structGet(cfg, "scenario.profileName", []);
+end
+if isempty(value)
+    value = sixgr.util.structGet(cfg, "scenario.name", defaultValue);
+end
+end
+
+function localLogResolvedConfigOnce(cfg, obj)
+persistent didLogResolvedConfig
+if ~isempty(didLogResolvedConfig) && didLogResolvedConfig
+    return;
+end
+
+verbose = logical(sixgr.util.structGet(cfg, "run.verbose", false)) || ...
+    logical(sixgr.util.structGet(cfg, "logging.echo_to_console", false));
+if ~verbose
+    return;
+end
+
+fprintf("[TR38901Plus] Resolved config: Scenario=%s Fc_Hz=%.15g PathlossModel=%s ShadowSigma_dB=%.15g\n", ...
+    char(obj.Scenario), double(obj.Fc_Hz), char(obj.PathlossModel), double(obj.ShadowSigma_dB));
+didLogResolvedConfig = true;
 end

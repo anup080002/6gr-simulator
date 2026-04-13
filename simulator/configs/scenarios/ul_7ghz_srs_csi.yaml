@@ -1,0 +1,30 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_7ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_a.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "ul_7ghz_srs_csi",
+    "description": "7 GHz UL SRS-based CSI acquisition case.",
+    "research_class": "agreed_starting_point",
+    "scenario_group": "group_b_baseline_ul"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["ul", "srs", "pusch", "bundle"]
+  },
+  "simulation": {
+    "link_direction": "ul",
+    "snr_db": 22
+  }
+}

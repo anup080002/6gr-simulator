@@ -32,7 +32,7 @@ p = inputParser;
 addParameter(p, 'NumSubframes', 10);
 addParameter(p, 'NCellID', []);
 addParameter(p, 'SSBIndex', 0);
-addParameter(p, 'SSBBlockPattern', 'Case B');
+addParameter(p, 'SSBBlockPattern', []);
 addParameter(p, 'SubcarrierSpacingCommon_kHz', []);
 addParameter(p, 'ChannelBandwidth_MHz', []);
 addParameter(p, 'FrequencyRange', 'FR1');
@@ -88,9 +88,15 @@ bwp.NSizeBWP = double(NSizeGrid);
 cfgDL.BandwidthParts = {bwp};
 
 % SS burst configuration
+if isempty(opt.SSBBlockPattern)
+    ssbBlockPattern = string(sixgr.util.structGet(cfg, 'phy.ssb.blockPattern', 'Case B'));
+else
+    ssbBlockPattern = string(opt.SSBBlockPattern);
+end
+
 ssb = nrWavegenSSBurstConfig;
 ssb.Enable = true;
-ssb.BlockPattern = string(opt.SSBBlockPattern);
+ssb.BlockPattern = ssbBlockPattern;
 ssb.Period = 20; % ms
 ssb.Power = 0;
 
@@ -103,8 +109,22 @@ ssb.TransmittedBlocks(idx+1) = uint8(1);
 
 cfgDL.SSBurst = ssb;
 
-% Disable other channels unless explicitly enabled
+% Disable other channels unless explicitly enabled. SSB generation should
+% not inherit unrelated control/data allocations that can make waveform
+% generation fail for reasons unrelated to initial access itself.
 cfgDL.PDSCH{1}.Enable = logical(opt.EnablePDSCH);
+if isprop(cfgDL, 'PDCCH')
+    try
+        if iscell(cfgDL.PDCCH)
+            for k = 1:numel(cfgDL.PDCCH)
+                cfgDL.PDCCH{k}.Enable = false;
+            end
+        elseif ~isempty(cfgDL.PDCCH)
+            cfgDL.PDCCH.Enable = false;
+        end
+    catch
+    end
+end
 if isprop(cfgDL, 'CSIRS')
     cfgDL.CSIRS{1}.Enable = logical(opt.EnableCSIRS);
 end

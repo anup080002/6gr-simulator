@@ -1,0 +1,102 @@
+{
+  "channel_coding": {
+    "data_channel_family": "LDPC", "control_channel_family": "Polar", "csi_channel_family": "Polar", "ldpc_base_graph": 2,
+    "new_6g_bg_flag": false, "lifting_size": 384, "segmentation_policy": "baseline", "max_segment_count": 32,
+    "cb_crc_policy": "24B", "tb_crc_policy": "24A", "outer_code_flag": false, "outer_code_family": "none", "inter_cb_coding_flag": false,
+    "packet_level_coding_flag": false, "cbg_policy": "disabled", "parity_cb_policy": "disabled", "decoder_algorithm": "belief_propagation",
+    "decoder_iteration_policy": "fixed", "early_stop_policy": "crc", "rate_matching": "baseline", "bit_interleaver": "baseline",
+    "codeblock_interleaver": "baseline", "mgcm_flag": false, "dbicm_flag": false, "tb_dbicm_flag": false, "harq_combining_policy": "soft",
+    "complexity_measurement_policy": "enabled", "area_efficiency_proxy_policy": "enabled", "latency_measurement_policy": "enabled"
+  },
+  "modulation_and_mapping": {
+    "constellation_family": "QAM", "qam_order": 6, "nuc_flag": false, "geometric_shaping_flag": false, "probabilistic_shaping_flag": false,
+    "shaping_algorithm": "none", "dm_algorithm": "none", "quantization_policy": "none", "mapping_policy": "gray", "adaptive_mapping_flag": false,
+    "bit_reliability_aware_mapping_flag": false, "mixed_modulation_flag": false, "joint_coding_modulation_flag": false, "symbol_interleaving": "baseline",
+    "pdcch_modulation": "QPSK", "pdsch_modulation": "64QAM", "pusch_modulation": "16QAM", "pucch_modulation": "QPSK", "pbch_modulation": "QPSK",
+    "modulation_candidate_tag": "baseline_benchmark", "high_order_modulation_stress_enabled": false, "qam4096_candidate_enabled": false
+  },
+  "link_adaptation": {
+    "fixed_or_amc": "amc", "outer_loop_flag": false, "inner_loop_flag": true, "cqi_source": "csi_feedback",
+    "dmrs_based_tracking_flag": false, "csi_rs_based_tracking_flag": true, "delta_cqi_policy": "none", "delta_mcs_policy": "none",
+    "pdcch_link_adaptation_policy": "fixed", "pdsch_link_adaptation_policy": "baseline", "pusch_link_adaptation_policy": "baseline",
+    "rank_adaptation_policy": "fixed", "al_adaptation_policy": "fixed", "beam_adaptation_policy": "fixed", "adaptation_periodicity": "slot", "adaptation_delay_model": "baseline"
+  },
+  "harq": {
+    "dl_harq_enabled": true, "ul_harq_enabled": true, "asynchronous_or_synchronous": "asynchronous", "tb_cbg_mode": "tb", "parity_cb_mode": "disabled",
+    "ack_codebook_mode": "baseline", "feedback_timing": "4_slots", "dtx_model": "ack_nack_only", "pdcch_miss_interaction": "treat_as_dtx",
+    "detection_feedback_interaction": "disabled", "max_retx": 4, "latency_budget": "baseline", "reliability_target": "baseline",
+    "overhead_budget": "baseline", "retransmission_scheduler_policy": "baseline"
+  },
+  "synchronization_and_tracking": {
+    "initial_sync_policy": "baseline", "cell_search_policy": "baseline", "pss_sss_detection_policy": "baseline", "pbch_decode_policy": "baseline",
+    "one_shot_detection_policy": "disabled", "cfo_estimator": "baseline", "to_estimator": "baseline", "phase_tracker": "baseline",
+    "doppler_tracker": "baseline", "qcl_estimator": "baseline", "tracking_rs_policy": "disabled", "trs_policy": "disabled",
+    "dmrs_tracking_policy": "baseline", "csi_rs_tracking_policy": "baseline", "connected_mode_tracking": true, "idle_mode_tracking": true,
+    "tracking_density": "baseline", "tracking_bandwidth": "baseline", "symbol_gap": 0, "beam_mismatch_model": "none"
+  },
+  "receiver_algorithms": {
+    "channel_estimator": "realistic_baseline", "interpolation_method": "2d_linear", "equalizer": "mmse", "detector": "baseline", "list_size": 8,
+    "iterative_receiver_flag": false, "interference_cancellation": "disabled", "soft_demapper": "maxlog", "llr_quantization": "float",
+    "descrambling": "enabled", "deinterleaving": "enabled", "rate_dematching": "enabled", "decoder": "family_default",
+    "decoder_iterations": 8, "crc_checker": "enabled", "error_detection_policy": "crc", "harq_combiner": "soft", "pdcch_candidate_generator": "baseline",
+    "prach_detector": "baseline", "csi_estimator": "baseline", "beam_selector": "max_metric", "ai_receiver_hook": "disabled"
+  },
+  "impairments": {
+    "awgn": {"enabled": true, "mode": "baseline"},
+    "cfo": {"enabled": false, "value_hz": 0},
+    "to": {"enabled": false, "value_samples": 0},
+    "phase_noise": {"enabled": false, "model": "none"},
+    "drift_rate": {"enabled": false, "value_hz_per_s": 0},
+    "iq_imbalance": {"enabled": false, "model": "none"},
+    "dc_offset": {"enabled": false, "model": "none"},
+    "clipping": {"enabled": false, "model": "none"},
+    "quantization_noise": {"enabled": false, "model": "none"},
+    "reciprocity_error": {"enabled": false, "model": "none"},
+    "amplitude_phase_mismatch": {"enabled": false, "model": "none"},
+    "srs_power_imbalance": {"enabled": false, "model": "none"},
+    "rs_collision": {"enabled": false, "model": "none"},
+    "burst_interference": {"enabled": false, "model": "none"},
+    "interference_randomization": {"enabled": false, "model": "none"},
+    "channel_estimation_nonideality": {"enabled": true, "model": "realistic_baseline"},
+    "timing_jitter": {"enabled": false, "model": "none"},
+    "calibration_error": {"enabled": false, "model": "none"},
+    "puncturing_loss": {"enabled": false, "model": "none"},
+    "missing_resource_mask": {"enabled": false, "model": "none"}
+  },
+  "ai_ml": {
+    "model_family": "none", "model_name": "none", "training_mode": "offline", "inference_mode": "disabled", "downloadability": "download",
+    "lcm_assumptions": "none", "baseline_pairing": "non_ai_baseline", "fallback_mode": "enabled", "feature_inputs": ["hest_real", "hest_imag"],
+    "label_definition": "family_default", "preprocessing": "none", "normalization": "none", "quantization": "fp32", "precision": "fp32",
+    "inference_frequency": "slot", "batching_policy": "none", "memory_budget": 0, "parameter_count_budget": 0,
+    "training_dataset_scope": "lab_default", "test_dataset_scope": "lab_default", "channel_generalization_sweeps": {"enabled": false},
+    "speed_generalization_sweeps": {"enabled": false}, "delay_spread_generalization_sweeps": {"enabled": false},
+    "band_generalization_sweeps": {"enabled": false}, "array_generalization_sweeps": {"enabled": false},
+    "robustness_to_impairments": "baseline", "explainability_hooks": "disabled", "confidence_metric": "none", "failure_detection_metric": "none"
+  },
+  "energy_and_complexity": {
+    "ue_energy_model": "baseline", "gnb_energy_model": "baseline", "per_block_energy_measurement": true, "pdcch_monitoring_energy": "enabled",
+    "rf_chain_energy": "enabled", "bb_processing_energy": "enabled", "sleep_state_model": "none", "wakeup_latency": "baseline",
+    "duty_cycle_metrics": "enabled", "race_to_sleep_metrics": "disabled", "network_energy_saving_metrics": "enabled",
+    "operation_count_metrics": "enabled", "runtime_metrics": "enabled", "memory_metrics": "enabled", "iteration_metrics": "enabled",
+    "area_efficiency_proxy": "enabled", "throughput_per_watt": true
+  },
+  "kpi_spec": {
+    "mandatory_kpis": ["bler", "throughput_mbps", "sinr", "spectral_efficiency"], "optional_kpis": ["evm", "sgcs", "nmse", "energy_per_bit"],
+    "per_snr_curve_points": [-10, 0, 10], "target_bler_points": [0.1, 0.01], "target_latency_points": [1000], "target_energy_points": [1],
+    "aggregation_rules": "mean", "confidence_interval_policy": "95pct", "percentile_policy": "p50_p90_p99", "comparison_policy": "baseline_delta",
+    "baseline_diff_policy": "absolute_and_relative"
+  },
+  "sweeps_and_matrix": {
+    "snr_sweep": {"enabled": true, "values_db": [-10, 0, 10]}, "sinr_sweep": {"enabled": false}, "esno_sweep": {"enabled": false},
+    "speed_sweep": {"enabled": false}, "delay_spread_sweep": {"enabled": false}, "bandwidth_sweep": {"enabled": false},
+    "frequency_sweep": {"enabled": false}, "rank_sweep": {"enabled": false}, "trp_sweep": {"enabled": false}, "beam_count_sweep": {"enabled": false},
+    "impairment_sweep": {"enabled": false}, "ai_generalization_sweep": {"enabled": false}, "harq_sweep": {"enabled": false},
+    "report_periodicity_sweep": {"enabled": false}, "periodicity_sweep": {"enabled": false}, "repetition_sweep": {"enabled": false},
+    "mcs_sweep": {"enabled": false}, "modulation_sweep": {"enabled": false}, "shaping_sweep": {"enabled": false}, "decode_iteration_sweep": {"enabled": false}
+  },
+  "sanity_checks": {
+    "energy_sanity": {"enabled": true}, "throughput_sanity": {"enabled": true}, "bler_monotonicity_checks": {"enabled": true},
+    "power_normalization_checks": {"enabled": true}, "rs_overhead_checks": {"enabled": true}, "invalid_mapping_checks": {"enabled": true},
+    "unsupported_combination_checks": {"enabled": true}, "reproducibility_checks": {"enabled": true}
+  }
+}

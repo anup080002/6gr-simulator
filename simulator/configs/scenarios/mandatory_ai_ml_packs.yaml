@@ -1,0 +1,50 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../releases/nr_ofdm_nr_baseline.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_4x4.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../reference_signals/csi_tracking_baseline.yaml",
+    "../impairments/tracking_baseline.yaml",
+    "../energy/efficiency_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "mandatory_ai_ml_packs",
+    "description": "Mandatory AI/ML baseline and candidate study packs.",
+    "scenario_group": "mandatory_pack_catalog",
+    "research_class": "optional_research_experiment"
+  },
+  "scenario": {
+    "runner_profile": "generic_sweep",
+    "target_cases": ["bundle", "dl", "ul", "csi_rs", "srs"],
+    "notes": "Encodes mandatory non-AI baselines and AI candidate packs for demodulation, CSI feedback, beam prediction, initial access, and robustness studies.",
+    "sweep": {
+      "base_profile": "waveform_bundle",
+      "output_name": "mandatory_ai_ml",
+      "overrides": [
+        {"label": "non_ai_baseline", "config": {"ai_ml": {"enabled": false, "use_case": "channel_estimation_enhancement", "mode": "disabled"}}},
+        {"label": "ai_demodulation_candidate", "config": {"ai_ml": {"enabled": true, "use_case": "demodulation", "mode": "online_inference", "model_path": "simulator/configs/models/detector_selector_descriptor.json", "model_id": "demodulation_candidate", "model_version": "1.0", "descriptor_type": "benchmark_descriptor"}}},
+        {"label": "ai_csi_feedback_sscc", "config": {"ai_ml": {"enabled": true, "use_case": "csi_compression_reconstruction", "csi_feedback_mode": "sscc", "mode": "online_inference", "model_path": "simulator/configs/models/csi_autoencoder_descriptor.json", "model_id": "csi_sscc_candidate", "model_version": "1.0", "descriptor_type": "benchmark_descriptor"}}},
+        {"label": "ai_csi_feedback_jscc", "config": {"ai_ml": {"enabled": true, "use_case": "csi_compression_reconstruction", "csi_feedback_mode": "jscc", "mode": "online_inference", "model_path": "simulator/configs/models/csi_autoencoder_descriptor.json", "model_id": "csi_jscc_candidate", "model_version": "1.0", "descriptor_type": "benchmark_descriptor", "baseline_pairing": "non_ai_baseline"}, "csi_acquisition_and_reporting": {"jscc_mode": true, "jscm_mode": false, "crc_attached_mode": true, "crc_free_mode": false, "multiplexing_with_uci_policy": "baseline", "rf_papr_assumption": "baseline_nr_like_crc_coded_feedback"}}},
+        {"label": "ai_csi_feedback_jscm", "config": {"ai_ml": {"enabled": true, "use_case": "csi_compression_reconstruction", "csi_feedback_mode": "jscm", "mode": "online_inference", "model_path": "simulator/configs/models/csi_autoencoder_descriptor.json", "model_id": "csi_jscm_candidate", "model_version": "1.0", "descriptor_type": "benchmark_descriptor", "baseline_pairing": "non_ai_baseline"}, "csi_acquisition_and_reporting": {"jscc_mode": false, "jscm_mode": true, "crc_attached_mode": true, "crc_free_mode": false, "multiplexing_with_uci_policy": "baseline", "rf_papr_assumption": "baseline_nr_like_crc_coded_feedback"}}},
+        {"label": "ai_beam_prediction_candidate", "config": {"ai_ml": {"enabled": true, "use_case": "beam_prediction", "mode": "online_inference", "model_path": "simulator/configs/models/beam_prediction_descriptor.json", "model_id": "beam_prediction_candidate", "model_version": "1.0", "descriptor_type": "benchmark_descriptor"}}},
+        {"label": "ai_initial_access_rach_candidate", "config": {"ai_ml": {"enabled": true, "use_case": "initial_access_rach_assistance", "mode": "online_inference", "model_path": "simulator/configs/models/beam_prediction_descriptor.json", "model_id": "initial_access_rach_candidate", "model_version": "1.0", "descriptor_type": "benchmark_descriptor"}, "random_access": {"ai_beam_prediction_enabled": true}}},
+        {"label": "ai_channel_estimation_candidate", "config": {"ai_ml": {"enabled": true, "use_case": "channel_estimation_enhancement", "mode": "online_inference", "model_path": "simulator/configs/models/ce_nn_descriptor.json", "model_id": "ce_ai_candidate", "model_version": "1.0", "descriptor_type": "plugin_descriptor"}, "reference_signals": {"channel_estimation_mode": "ai_assisted_candidate"}}},
+        {"label": "ai_full_duplex_si_channel_estimation", "config": {"ai_ml": {"enabled": true, "use_case": "self_interference_channel_estimation", "mode": "online_inference", "model_path": "simulator/configs/models/ce_nn_descriptor.json", "model_id": "si_channel_estimation_candidate", "model_version": "1.0", "descriptor_type": "plugin_descriptor"}}},
+        {"label": "model_download_mode", "config": {"ai_ml": {"model_delivery_mode": "download"}}},
+        {"label": "model_non_download_mode", "config": {"ai_ml": {"model_delivery_mode": "non_download"}}},
+        {"label": "fallback_non_ai_behavior", "config": {"ai_ml": {"fallback_enabled": true}}},
+        {"label": "robustness_and_mismatch_sweep", "config": {"ai_ml": {"robustness_sweep_enabled": true, "mismatch_profiles": ["matched_baseline", "doppler_mismatch", "delay_spread_mismatch"], "inference_period_slots": 2}}}
+      ]
+    }
+  }
+}

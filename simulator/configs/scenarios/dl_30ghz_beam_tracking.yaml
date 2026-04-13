@@ -1,0 +1,33 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_30ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/cdl_d.yaml",
+    "../mimo/mimo_8x8.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "dl_30ghz_beam_tracking",
+    "description": "30 GHz directional DL case with tracking RS enabled.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_a_baseline_dl"
+  },
+  "scenario": {
+    "runner_profile": "waveform_bundle",
+    "target_cases": ["dl", "pdsch", "csi_rs", "bundle"]
+  },
+  "reference_signals": {
+    "trs_enabled": true
+  },
+  "simulation": {
+    "link_direction": "dl",
+    "snr_db": 24
+  }
+}

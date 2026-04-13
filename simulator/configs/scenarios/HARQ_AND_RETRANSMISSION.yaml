@@ -1,0 +1,17 @@
+meta:
+  matrix_id: HARQ_AND_RETRANSMISSION
+  description: Exact HARQ and retransmission suite covering process sweeps, latency or reliability packs, and a waveform truth reference.
+  owner: codex
+  version: "1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 4
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/harq_process_sweep.yaml
+  - simulator/configs/scenarios/mandatory_harq_packs.yaml
+  - simulator/configs/scenarios/lls_harq_retransmission_exercise.yaml
+  - simulator/configs/scenarios/lls_700mhz_20mhz_2x2_rank2_beam_truth.yaml

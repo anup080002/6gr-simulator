@@ -1,0 +1,7 @@
+{
+  "plugin_type": "moving_average_denoiser",
+  "model_family": "descriptor_plugin",
+  "smoothing_alpha": 0.25,
+  "confidence_bias": 0.9,
+  "parameter_count": 12000
+}

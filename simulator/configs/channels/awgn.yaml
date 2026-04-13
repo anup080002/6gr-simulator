@@ -1,0 +1,13 @@
+{
+  "channels": {
+    "model_type": "AWGN",
+    "profile": "AWGN",
+    "delay_spread_ns": 0,
+    "doppler_hz": 0,
+    "mobility_kmph": 0,
+    "los_enabled": true,
+    "spatial_consistency_enabled": false,
+    "pathloss_enabled": false,
+    "shadow_fading_enabled": false
+  }
+}

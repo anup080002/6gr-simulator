@@ -1,58 +1,25 @@
 function ok = testStrictProxyGuards()
-%TESTSTRICTPROXYGUARDS Ensure strict mode blocks synthetic/proxy calibration.
+%TESTSTRICTPROXYGUARDS Ensure quarantined proxy paths fail closed.
 
 setup6GRSimToolkit("Verbose", false);
+repoRoot = fileparts(which("setup6GRSimToolkit"));
 
-% BLER_DB must reject implicit synthetic tensor generation.
-threwImplicit = false;
-try
-    sixgr.system.BLER_DB(); %#ok<NASGU>
-catch
-    threwImplicit = true;
-end
-assert(threwImplicit, "BLER_DB should reject implicit synthetic generation.");
+assert(exist(fullfile(repoRoot, "+sixgr", "+system", "BLER_DB.m"), "file") == 0, ...
+    "BLER_DB proxy backend source should be removed from the repo.");
+assert(exist(fullfile(repoRoot, "+sixgr", "+system", "BLER_LUT.m"), "file") == 0, ...
+    "BLER_LUT proxy backend source should be removed from the repo.");
+assert(exist(fullfile(repoRoot, "+sixgr", "+hybrid", "CalibrateBLER.m"), "file") == 0, ...
+    "Hybrid calibration source should be removed from the repo.");
 
-% BLER_DB strict build must reject synthetic tensor generation.
-threwDB = false;
-try
-    sixgr.system.BLER_DB("StrictMode", true); %#ok<NASGU>
-catch
-    threwDB = true;
-end
-assert(threwDB, "Strict BLER_DB build should reject synthetic fallback.");
-
-% PhyFactory strict mode must reject default/synthetic DB source.
 cfg = sixgr.config.defaultConfig();
 cfg.run.strictMode = true;
-params = struct("BLERDB", sixgr.system.BLER_DB("AllowSynthetic", true));
 threwPHY = false;
 try
-    sixgr.system.PhyFactory.create(cfg, params); %#ok<NASGU>
-catch
-    threwPHY = true;
+    sixgr.system.PhyFactory.create(cfg, struct("PHYBackend", "abstract")); %#ok<NASGU>
+catch ME
+    threwPHY = strcmp(ME.identifier, "sixgr:system:ProxyBackendRemoved");
 end
-assert(threwPHY, "Strict PhyFactory should reject synthetic/default BLER DB.");
-
-% CalibrateBLER should not silently synthesize unsupported contexts by default.
-cfgCal = cfg;
-cfgCal.run.strictMode = false;
-ctxCal = sixgr.core.SimContext(cfgCal);
-threwCal = false;
-try
-    sixgr.hybrid.CalibrateBLER(ctxCal, struct( ...
-        "SNRGrid_dB", [0], ...
-        "CalibFrames", 1, ...
-        "CalibDirection", ["DL"], ...
-        "CalibMCS", [6], ...
-        "CalibPRB", [10], ...
-        "CalibLayers", [1], ...
-        "CalibSCS_kHz", [30], ...
-        "CalibDopplerHz", [0], ...
-        "CalibChannelModels", ["TDL-C"]));
-catch
-    threwCal = true;
-end
-assert(threwCal, "CalibrateBLER should fail on unsupported truth context unless fallback is explicitly enabled.");
+assert(threwPHY, "PhyFactory should reject the removed abstract/proxy backend.");
 
 ok = true;
 end

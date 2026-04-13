@@ -1,0 +1,7 @@
+{
+  "plugin_type": "threshold_classifier",
+  "model_family": "descriptor_plugin",
+  "classification_thresholds_db": [3, 10],
+  "confidence_bias": 0.83,
+  "parameter_count": 7000
+}

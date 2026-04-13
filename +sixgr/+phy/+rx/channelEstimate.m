@@ -14,6 +14,12 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
 %
 %   Name-value pairs are forwarded to nrChannelEstimate (e.g.:
 %     "CDMLengths", "AveragingWindow", "Interpolation", ...).
+%   Local controls consumed here:
+%     "UseFastMex"      : request the scalar LS MEX shortcut
+%     "StrictMode"      : reject invalid scalar-estimator combinations
+%     "ChannelModel"    : normalized channel token/profile for validation
+%     "ExpectedTxPorts" : expected TX port count for truth validation
+%     "ContextLabel"    : caller label for diagnostics
 %
 %   Outputs
 %     Hest : K-by-L-by-R-by-P channel estimate
@@ -30,24 +36,69 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     end
 
     useFastMex = false;
+    strictMode = false;
+    expectedTxPorts = 1;
+    channelModel = "";
+    contextLabel = "channelEstimate";
     fwd = varargin;
     if ~isempty(varargin)
         keep = true(size(varargin));
         i = 1;
         while i <= numel(varargin)-1
             k = varargin{i};
-            if (ischar(k) || isstring(k)) && strcmpi(string(k), "UseFastMex")
-                useFastMex = logical(varargin{i+1});
-                keep(i:i+1) = false;
-                i = i + 2;
-                continue;
+            if ischar(k) || isstring(k)
+                key = string(k);
+                if strcmpi(key, "UseFastMex")
+                    useFastMex = logical(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "StrictMode")
+                    strictMode = logical(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "ExpectedTxPorts")
+                    expectedTxPorts = double(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "ChannelModel")
+                    channelModel = string(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "ContextLabel")
+                    contextLabel = string(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                end
             end
             i = i + 2;
         end
         fwd = varargin(keep);
     end
 
-    if useFastMex && (exist("sixgr_channel_est_ls_kernel_mex","file") == 3 || exist("sixgr_channel_est_ls_kernel","file") == 2)
+    policy = localResolveScalarFastPathPolicy(useFastMex, strictMode, channelModel, expectedTxPorts, rxGrid, contextLabel);
+    if policy.InvalidStrictCombo
+        error("sixgr:phy:channelEstimate:InvalidScalarFastPath", "%s", policy.ErrorMessage);
+    end
+
+    info = struct();
+    info.ContextLabel = string(policy.ContextLabel);
+    info.ChannelModel = string(policy.ChannelModel);
+    info.ExpectedTxPorts = double(policy.ExpectedTxPorts);
+    info.NumRxAnt = double(policy.NumRxAnt);
+    info.StrictMode = logical(policy.StrictMode);
+    info.ScalarFastPathRequested = logical(useFastMex);
+    info.ScalarFastPathAllowed = logical(policy.ScalarFastPathAllowed);
+    info.ScalarFastPathUsed = false;
+    info.ScalarFastPathDisabledReason = string(policy.DisabledReason);
+    info.RxGridSize = size(rxGrid);
+
+    if policy.UseFastMexEffective && ...
+            (exist("sixgr_channel_est_ls_kernel_mex","file") == 3 || exist("sixgr_channel_est_ls_kernel","file") == 2)
         try
             rxRef = nrExtractResources(refInd, rxGrid);
             if ~isvector(rxRef)
@@ -65,14 +116,14 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
                 engine = "sixgr_channel_est_ls_kernel";
             end
             Hest = cast(ones(size(rxGrid)), "like", rxGrid) .* cast(hScalar, "like", rxGrid);
-            info = struct();
             info.EngineUsed = engine;
-            info.RxGridSize = size(rxGrid);
             info.HestSize = size(Hest);
             info.NoiseVar = nVar;
+            info.ScalarFastPathUsed = true;
             return;
-        catch
-            % Fallback to full nrChannelEstimate path.
+        catch ME
+            info.FastMexError = string(ME.message);
+            % Safe fallback to the resource-selective nrChannelEstimate path.
         end
     end
 
@@ -85,9 +136,82 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
             "nrChannelEstimate failed: %s", ME.message);
     end
 
-    info = struct();
     info.EngineUsed = engine;
-    info.RxGridSize = size(rxGrid);
     info.HestSize = size(Hest);
     info.NoiseVar = nVar;
+end
+
+function policy = localResolveScalarFastPathPolicy(useFastMex, strictMode, channelModel, expectedTxPorts, rxGrid, contextLabel)
+expectedTxPorts = localNormalizeTxPorts(expectedTxPorts);
+numRxAnt = localNumRxAnt(rxGrid);
+channelModel = localNormalizeChannelToken(channelModel);
+contextLabel = string(contextLabel);
+if strlength(contextLabel) == 0
+    contextLabel = "channelEstimate";
+end
+
+isSelectiveChannel = localIsSelectiveChannel(channelModel);
+requiresSpatialSelectivity = expectedTxPorts > 1 || numRxAnt > 1;
+scalarFastPathAllowed = localIsExplicitFlatChannel(channelModel) && ...
+    ~isSelectiveChannel && ~requiresSpatialSelectivity;
+
+disabledReason = "";
+if logical(useFastMex) && ~scalarFastPathAllowed
+    if isSelectiveChannel
+        disabledReason = "Selective fading truth validation requires a resource-selective estimator.";
+    elseif requiresSpatialSelectivity
+        disabledReason = "Multi-antenna truth validation requires a resource-selective estimator.";
+    else
+        disabledReason = "Scalar fast estimation is restricted to explicit AWGN/flat SISO validation modes.";
+    end
+end
+
+policy = struct();
+policy.ChannelModel = channelModel;
+policy.ContextLabel = contextLabel;
+policy.ExpectedTxPorts = expectedTxPorts;
+policy.NumRxAnt = numRxAnt;
+policy.StrictMode = logical(strictMode);
+policy.ScalarFastPathAllowed = logical(scalarFastPathAllowed);
+policy.UseFastMexEffective = logical(useFastMex) && logical(scalarFastPathAllowed);
+policy.DisabledReason = disabledReason;
+policy.InvalidStrictCombo = logical(useFastMex) && logical(strictMode) && ~logical(scalarFastPathAllowed);
+policy.ErrorMessage = sprintf('%s: %s Channel=''%s'', TxPorts=%d, RxAnt=%d. Disable the scalar fast estimator or use an explicit AWGN/flat SISO validation mode.', ...
+    char(contextLabel), char(disabledReason), localDisplayChannelToken(channelModel), expectedTxPorts, numRxAnt);
+end
+
+function numTxPorts = localNormalizeTxPorts(expectedTxPorts)
+numTxPorts = double(expectedTxPorts);
+if ~(isscalar(numTxPorts) && isfinite(numTxPorts) && numTxPorts >= 1)
+    numTxPorts = 1;
+end
+numTxPorts = max(1, round(numTxPorts));
+end
+
+function numRxAnt = localNumRxAnt(rxGrid)
+sz = size(rxGrid);
+if numel(sz) < 3 || isempty(sz(3))
+    numRxAnt = 1;
+else
+    numRxAnt = max(1, double(sz(3)));
+end
+end
+
+function token = localNormalizeChannelToken(rawValue)
+token = upper(strtrim(char(string(rawValue))));
+end
+
+function tf = localIsSelectiveChannel(channelModel)
+tf = startsWith(channelModel, "TDL") || startsWith(channelModel, "CDL");
+end
+
+function tf = localIsExplicitFlatChannel(channelModel)
+tf = any(strcmp(channelModel, {"AWGN", "NONE", "OFF"}));
+end
+
+function token = localDisplayChannelToken(channelModel)
+token = char(channelModel);
+if isempty(token)
+    token = "<unspecified>";
+end
 end
