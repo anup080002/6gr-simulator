@@ -15,7 +15,7 @@ function [ue, model] = updatePositions(ue, cfg, dt_s, model)
 %   model : mobility model object (cache and reuse each TTI/slot)
 %
 % Model selection:
-%   cfg.scenario.mobility.model = "randomWaypoint" | "rmaMixedSpeed"
+%   cfg.scenario.mobility.model = "randomWaypoint" | "straightLine" | "zigzag" | "trace"
 %
 % Notes:
 % - This wrapper exists so higher layers do not directly construct classes.
@@ -45,7 +45,14 @@ prof = sixgr.scenario.ScenarioFactory.getProfile(cfg);
     switch lower(modelName)
         case {"randomwaypoint","rwp"}
             model = sixgr.scenario.mobility.MobilityRandomWaypoint(area_m, wrapEn);
-        case {"rmamixedspeed","rma","mixed"}
+        case {"zigzag","zig_zag","zigzagline","zig_zag_line"}
+            segDur_s = double(sixgr.util.structGet(cfg, "scenario.mobility.zigzagSegmentDuration_s", ...
+                sixgr.util.structGet(cfg, "scenario.mobility.segmentDuration_s", 0.75)));
+            turnAngle_deg = double(sixgr.util.structGet(cfg, "scenario.mobility.zigzagTurnAngle_deg", ...
+                sixgr.util.structGet(cfg, "scenario.mobility.turnAngle_deg", 35)));
+            model = sixgr.scenario.mobility.MobilityZigZag(area_m, wrapEn, ...
+                "SegmentDuration_s", segDur_s, "TurnAngle_deg", turnAngle_deg);
+        case {"rmamixedspeed","rma","mixed","straightline","straight_line","straight","line"}
             model = sixgr.scenario.mobility.MobilityRMaMixedSpeed(area_m, wrapEn);
         otherwise
             model = sixgr.scenario.mobility.MobilityRandomWaypoint(area_m, wrapEn);

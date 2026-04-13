@@ -185,12 +185,82 @@ if ~ismember(scs, allowedSCS)
     error("sixgr:lls6g:config:BadBandSCS", ...
         "frame.scs_khz=%g in %s is not allowed by frequency.numerology_options_khz.", scs, localCtx(ctx));
 end
+localValidateDerivedTimingConsistency(cfg, scs, ctx);
+localValidateRunSlotControls(cfg, scs, ctx);
 
 bw = double(cfg.frequency.bandwidth_hz);
 allowedBW = double(sixgr.util.structGet(cfg, "frequency.bandwidth_options_hz", bw));
 if ~ismember(bw, allowedBW)
     error("sixgr:lls6g:config:BadBandwidth", ...
         "frequency.bandwidth_hz=%g in %s is not allowed by frequency.bandwidth_options_hz.", bw, localCtx(ctx));
+end
+
+function localValidateDerivedTimingConsistency(cfg, scsKHz, ctx)
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    return;
+end
+mu = log2(scsKHz / 15);
+if ~isfinite(mu)
+    return;
+end
+mu = round(mu);
+slotDurationMs = 1 / 2^double(mu);
+slotsPerFrame = 10 * 2^double(mu);
+
+configuredMu = double(localOptionalStructValue(cfg, "global_radio_scope.numerology_mu", NaN));
+if isfinite(configuredMu) && configuredMu ~= mu
+    error("sixgr:lls6g:config:NumerologyTimingMismatch", ...
+        "global_radio_scope.numerology_mu=%g in %s conflicts with frame.scs_khz=%g (expected mu=%g).", ...
+        configuredMu, localCtx(ctx), scsKHz, mu);
+end
+
+configuredSlotDuration = double(localOptionalStructValue(cfg, "frame_timing.slot_duration_ms", NaN));
+if isfinite(configuredSlotDuration) && abs(configuredSlotDuration - slotDurationMs) > 1e-12
+    error("sixgr:lls6g:config:NumerologyTimingMismatch", ...
+        "frame_timing.slot_duration_ms=%g in %s conflicts with frame.scs_khz=%g (expected %.12g ms).", ...
+        configuredSlotDuration, localCtx(ctx), scsKHz, slotDurationMs);
+end
+
+configuredSlotsPerFrame = double(localOptionalStructValue(cfg, "frame_timing.slots_per_frame", NaN));
+if isfinite(configuredSlotsPerFrame) && configuredSlotsPerFrame ~= slotsPerFrame
+    error("sixgr:lls6g:config:NumerologyTimingMismatch", ...
+        "frame_timing.slots_per_frame=%g in %s conflicts with frame.scs_khz=%g (expected %g).", ...
+        configuredSlotsPerFrame, localCtx(ctx), scsKHz, slotsPerFrame);
+end
+end
+
+function localValidateRunSlotControls(cfg, scsKHz, ctx)
+totalSlots = double(localOptionalStructValue(cfg, "run_control.total_slots", NaN));
+warmupSlots = double(localOptionalStructValue(cfg, "run_control.warmup_slots", NaN));
+measurementSlots = double(localOptionalStructValue(cfg, "run_control.measurement_slots", NaN));
+if isfinite(totalSlots) && abs(totalSlots - round(totalSlots)) > eps(max(abs(totalSlots), 1))
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.total_slots in %s must be an integer slot count.", localCtx(ctx));
+end
+if isfinite(warmupSlots) && abs(warmupSlots - round(warmupSlots)) > eps(max(abs(warmupSlots), 1))
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_slots in %s must be an integer slot count.", localCtx(ctx));
+end
+if isfinite(measurementSlots) && abs(measurementSlots - round(measurementSlots)) > eps(max(abs(measurementSlots), 1))
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.measurement_slots in %s must be an integer slot count.", localCtx(ctx));
+end
+if isfinite(totalSlots) && isfinite(warmupSlots) && isfinite(measurementSlots) && ...
+        round(warmupSlots) + round(measurementSlots) ~= round(totalSlots)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_slots + run_control.measurement_slots must equal run_control.total_slots in %s.", ...
+        localCtx(ctx));
+end
+if ~(isfinite(totalSlots) && isfinite(scsKHz))
+    return;
+end
+slotDurationMs = 1 / 2^round(log2(scsKHz / 15));
+configuredTotalMs = double(localOptionalStructValue(cfg, "run_control.total_time_ms", NaN));
+if isfinite(configuredTotalMs) && abs(configuredTotalMs - totalSlots * slotDurationMs) > 1e-9
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.total_time_ms=%g in %s conflicts with total_slots=%g and frame.scs_khz=%g (expected %.12g ms).", ...
+        configuredTotalMs, localCtx(ctx), totalSlots, scsKHz, totalSlots * slotDurationMs);
+end
 end
 
 minDuration_s = double(cfg.simulation.min_duration_s);
@@ -269,7 +339,7 @@ nUsers = double(localOptionalStructValue(cfg, "users.n_users", 1));
 seedStride = double(localOptionalStructValue(cfg, "users.seed_stride", 1));
 rntiStart = double(localOptionalStructValue(cfg, "users.rnti_start", 1));
 userExec = lower(string(localOptionalStructValue(cfg, "users.execution_model", "independent_link_sweep")));
-beamStrategy = lower(string(localOptionalStructValue(cfg, "users.beam_selection_strategy", "fixed_first_beam")));
+beamStrategy = lower(string(localOptionalStructValue(cfg, "users.beam_selection_strategy", "")));
 maxMimo = double(sixgr.util.structGet(cfg, "frequency.max_mimo_size", max([nTx nRx])));
 if nLayers > min([nTx nRx maxMimo])
     error("sixgr:lls6g:config:BadRank", ...
@@ -303,13 +373,21 @@ if nUsers > 1 && ~usersEnabled
     error("sixgr:lls6g:config:UsersDisabledMismatch", ...
         "users.enabled in %s must be true when users.n_users > 1.", localCtx(ctx));
 end
-if usersEnabled && runnerProfile ~= "waveform_bundle"
+if usersEnabled && ~ismember(runnerProfile, ["waveform_bundle","system_level_lls"])
     error("sixgr:lls6g:config:UsersRequireWaveformBundle", ...
-        "users.enabled in %s is only supported with scenario.runner_profile='waveform_bundle'.", localCtx(ctx));
+        "users.enabled in %s is only supported with scenario.runner_profile='waveform_bundle' or 'system_level_lls'.", localCtx(ctx));
 end
-if usersEnabled && userExec ~= "independent_link_sweep"
+if usersEnabled && ~ismember(userExec, localCatalogAllowedStrings(catalog.sections.users.parameters.execution_model))
     error("sixgr:lls6g:config:BadUserExecutionModel", ...
-        "users.execution_model in %s must be 'independent_link_sweep'.", localCtx(ctx));
+        "users.execution_model in %s is unsupported.", localCtx(ctx));
+end
+if usersEnabled && userExec == "slot_coupled_truth" && linkDir ~= "both"
+    error("sixgr:lls6g:config:CoupledTruthRequiresBidirectional", ...
+        "users.execution_model='slot_coupled_truth' in %s requires simulation.link_direction='both'.", localCtx(ctx));
+end
+if usersEnabled && userExec == "independent_link_sweep" && localRequiresSlotCoupledTruth(cfg)
+    error("sixgr:lls6g:config:IndependentSweepForbiddenForTruth", ...
+        "users.execution_model='independent_link_sweep' in %s is forbidden for strict/no-proxy/truth-tagged multi-user runs; use users.execution_model='slot_coupled_truth' so scheduler, HARQ, mobility, DL, and UL publish from one canonical SlotTrace.", localCtx(ctx));
 end
 if usersEnabled && ~ismember(beamStrategy, localCatalogAllowedStrings(catalog.sections.users.parameters.beam_selection_strategy))
     error("sixgr:lls6g:config:BadBeamSelectionStrategy", ...
@@ -708,7 +786,8 @@ switch lower(typeName)
     case "number"
         ok = isnumeric(value) && isscalar(value) && isfinite(double(value));
     case "number_list"
-        ok = isnumeric(value) && isvector(value) && all(isfinite(double(value(:))));
+        ok = (isnumeric(value) && isvector(value) && all(isfinite(double(value(:))))) || ...
+            (isempty(value) && (isnumeric(value) || iscell(value)));
     case "integer"
         ok = isnumeric(value) && isscalar(value) && isfinite(double(value)) && abs(double(value) - round(double(value))) <= eps(max(abs(double(value)), 1));
     case "boolean"
@@ -716,7 +795,7 @@ switch lower(typeName)
     case "struct"
         ok = builtin("isstruct", value) && isscalar(value);
     case "struct_array"
-        ok = isstruct(value);
+        ok = isstruct(value) || isempty(value);
     otherwise
         ok = true;
 end
@@ -912,6 +991,15 @@ function tf = localRequiresStrictMCSConsistency(cfg)
 tags = lower(string(localOptionalStructValue(cfg, "meta.tags", strings(0, 1))));
 scenarioGroup = lower(string(localOptionalStructValue(cfg, "meta.scenario_group", "")));
 tf = any(ismember(tags, ["no-proxy", "truth", "strict_truth"])) || any(contains(scenarioGroup, "truth"));
+end
+
+function tf = localRequiresSlotCoupledTruth(cfg)
+tags = lower(string(localOptionalStructValue(cfg, "meta.tags", strings(0, 1))));
+scenarioGroup = lower(string(localOptionalStructValue(cfg, "meta.scenario_group", "")));
+honestyMode = lower(string(localOptionalStructValue(cfg, "scenario.honesty_mode", "")));
+tf = honestyMode == "strict" || ...
+    any(ismember(tags, ["no-proxy", "truth", "strict_truth", "coupled_truth"])) || ...
+    any(contains(scenarioGroup, "truth"));
 end
 
 function localValidateDirectionModulationMCSConsistency(cfg, direction, ctx)

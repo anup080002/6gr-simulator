@@ -85,7 +85,15 @@ classdef AntennaArrayFactory
             if havePhased
                 try
                     elemObj = phased.IsotropicAntennaElement("FrequencyRange",[max(1,fc/10) 10*fc]);
-                    arrObj = phased.URA("Size",[nRow nCol], "ElementSpacing", d, "Element", elemObj);
+                    if nRow >= 2 && nCol >= 2
+                        arrObj = phased.URA("Size",[nRow nCol], "ElementSpacing", d, "Element", elemObj);
+                    elseif nRow == 1 && nCol == 1
+                        arrObj = phased.ULA("NumElements", 1, "ElementSpacing", d(1), "Element", elemObj);
+                    elseif nRow == 1
+                        arrObj = phased.ULA("NumElements", nCol, "ElementSpacing", d(2), "Element", elemObj);
+                    else
+                        arrObj = phased.ULA("NumElements", nRow, "ElementSpacing", d(1), "Element", elemObj);
+                    end
                 catch ME
                     % Fall back to numeric-only representation
                     havePhased = false;

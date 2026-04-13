@@ -1,0 +1,575 @@
+route,page,kind,section_slug,artifact
+/reports,reports,reports,,browser_route
+/reports/run-trial-scenario-overview,reports,reports,run-trial-scenario-overview,browser_route
+/reports/scenario-geometry-topology-layout,reports,reports,scenario-geometry-topology-layout,browser_route
+/reports/mobility-access-cell-selection-reselection-handover,reports,reports,mobility-access-cell-selection-reselection-handover,browser_route
+/reports/air-interface-frame-slot-symbol-grid,reports,reports,air-interface-frame-slot-symbol-grid,browser_route
+/reports/scheduler-mac-queue-qos-power-control-uci-flow,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,browser_route
+/reports/harq-ack-nack-retransmission,reports,reports,harq-ack-nack-retransmission,browser_route
+/reports/dl-control-phy-pdcch,reports,reports,dl-control-phy-pdcch,browser_route
+/reports/ssb-pbch-pss-sss,reports,reports,ssb-pbch-pss-sss,browser_route
+/reports/csi-rs,reports,reports,csi-rs,browser_route
+/reports/pdsch-dl-data-chain,reports,reports,pdsch-dl-data-chain,browser_route
+/reports/pusch-ul-data-chain,reports,reports,pusch-ul-data-chain,browser_route
+/reports/pucch-f0-f1-f2-f3-f4,reports,reports,pucch-f0-f1-f2-f3-f4,browser_route
+/reports/prach-random-access,reports,reports,prach-random-access,browser_route
+/reports/srs-ul-sounding-massive-mimo-inputs,reports,reports,srs-ul-sounding-massive-mimo-inputs,browser_route
+/reports/channel-interference-impairments,reports,reports,channel-interference-impairments,browser_route
+/reports/measurements-csi-link-adaptation-inputs,reports,reports,measurements-csi-link-adaptation-inputs,browser_route
+/reports/beamforming-precoding-mimo-massive-mimo,reports,reports,beamforming-precoding-mimo-massive-mimo,browser_route
+/reports/ue-side-state-ue-power-ue-control,reports,reports,ue-side-state-ue-power-ue-control,browser_route
+/reports/gnb-side-state-thread-coordinator-phy-mac-api,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,browser_route
+/reports/power-energy-thermal-compute-runtime,reports,reports,power-energy-thermal-compute-runtime,browser_route
+/reports/persistence-export-consistency-browser-health,reports,reports,persistence-export-consistency-browser-health,browser_route
+/reports/generic-investigator-views,reports,reports,generic-investigator-views,browser_route
+/reports/run-trial-scenario-overview/tables/live_run_overview,reports,reports,run-trial-scenario-overview,live_run_overview_v
+/reports/run-trial-scenario-overview/tables/live_trial_overview,reports,reports,run-trial-scenario-overview,live_trial_overview_v
+/reports/run-trial-scenario-overview/tables/live_scenario_overview,reports,reports,run-trial-scenario-overview,live_scenario_overview_v
+/reports/run-trial-scenario-overview/tables/live_case_status,reports,reports,run-trial-scenario-overview,live_case_status_v
+/reports/run-trial-scenario-overview/tables/live_required_vs_optional_case_status,reports,reports,run-trial-scenario-overview,live_required_vs_optional_case_status_v
+/reports/run-trial-scenario-overview/tables/live_truth_policy_status,reports,reports,run-trial-scenario-overview,live_truth_policy_status_v
+/reports/scenario-geometry-topology-layout/tables/live_site_table,reports,reports,scenario-geometry-topology-layout,live_site_table_v
+/reports/scenario-geometry-topology-layout/tables/live_sector_table,reports,reports,scenario-geometry-topology-layout,live_sector_table_v
+/reports/scenario-geometry-topology-layout/tables/live_trp_table,reports,reports,scenario-geometry-topology-layout,live_trp_table_v
+/reports/scenario-geometry-topology-layout/tables/live_cell_table,reports,reports,scenario-geometry-topology-layout,live_cell_table_v
+/reports/scenario-geometry-topology-layout/tables/live_ue_table,reports,reports,scenario-geometry-topology-layout,live_ue_table_v
+/reports/scenario-geometry-topology-layout/tables/live_link_table,reports,reports,scenario-geometry-topology-layout,live_link_table_v
+/reports/scenario-geometry-topology-layout/tables/live_path_geometry_table,reports,reports,scenario-geometry-topology-layout,live_path_geometry_table_v
+/reports/scenario-geometry-topology-layout/tables/live_candidate_cell_table,reports,reports,scenario-geometry-topology-layout,live_candidate_cell_table_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_mobility_state,reports,reports,mobility-access-cell-selection-reselection-handover,live_mobility_state_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_measurement_filter_state,reports,reports,mobility-access-cell-selection-reselection-handover,live_measurement_filter_state_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_selection_state,reports,reports,mobility-access-cell-selection-reselection-handover,live_selection_state_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_reselection_state,reports,reports,mobility-access-cell-selection-reselection-handover,live_reselection_state_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_handover_state,reports,reports,mobility-access-cell-selection-reselection-handover,live_handover_state_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_event_trigger_table,reports,reports,mobility-access-cell-selection-reselection-handover,live_event_trigger_table_v
+/reports/mobility-access-cell-selection-reselection-handover/tables/live_access_state,reports,reports,mobility-access-cell-selection-reselection-handover,live_access_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_carrier_config,reports,reports,air-interface-frame-slot-symbol-grid,live_carrier_config_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_numerology_state,reports,reports,air-interface-frame-slot-symbol-grid,live_numerology_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_frame_grid_state,reports,reports,air-interface-frame-slot-symbol-grid,live_frame_grid_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_bwp_state,reports,reports,air-interface-frame-slot-symbol-grid,live_bwp_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_coreset_state,reports,reports,air-interface-frame-slot-symbol-grid,live_coreset_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_search_space_state,reports,reports,air-interface-frame-slot-symbol-grid,live_search_space_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_ssb_occasion_state,reports,reports,air-interface-frame-slot-symbol-grid,live_ssb_occasion_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_prach_occasion_state,reports,reports,air-interface-frame-slot-symbol-grid,live_prach_occasion_state_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_prb_allocation_snapshot,reports,reports,air-interface-frame-slot-symbol-grid,live_prb_allocation_snapshot_v
+/reports/air-interface-frame-slot-symbol-grid/tables/live_re_allocation_snapshot,reports,reports,air-interface-frame-slot-symbol-grid,live_re_allocation_snapshot_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_scheduler_cycle,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_scheduler_cycle_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_dl_scheduler_grants,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_dl_scheduler_grants_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_ul_scheduler_grants,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_ul_scheduler_grants_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_queue_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_queue_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_buffer_status,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_buffer_status_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_hol_delay_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_hol_delay_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_qos_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_qos_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_mac_pdu_summary,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_mac_pdu_summary_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_power_control_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_power_control_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_phr_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_phr_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_sr_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_sr_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_bsr_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_bsr_state_v
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/tables/live_mac_ce_state,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,live_mac_ce_state_v
+/reports/harq-ack-nack-retransmission/tables/live_harq_process_table,reports,reports,harq-ack-nack-retransmission,live_harq_process_table_v
+/reports/harq-ack-nack-retransmission/tables/live_harq_timeline,reports,reports,harq-ack-nack-retransmission,live_harq_timeline_v
+/reports/harq-ack-nack-retransmission/tables/live_ack_nack_table,reports,reports,harq-ack-nack-retransmission,live_ack_nack_table_v
+/reports/harq-ack-nack-retransmission/tables/live_soft_buffer_table,reports,reports,harq-ack-nack-retransmission,live_soft_buffer_table_v
+/reports/dl-control-phy-pdcch/tables/live_pdcch_stage_table,reports,reports,dl-control-phy-pdcch,live_pdcch_stage_table_v
+/reports/dl-control-phy-pdcch/tables/live_pdcch_summary,reports,reports,dl-control-phy-pdcch,live_pdcch_summary_v
+/reports/dl-control-phy-pdcch/tables/live_pdcch_dmrs_table,reports,reports,dl-control-phy-pdcch,live_pdcch_dmrs_table_v
+/reports/ssb-pbch-pss-sss/tables/live_ssb_stage_table,reports,reports,ssb-pbch-pss-sss,live_ssb_stage_table_v
+/reports/ssb-pbch-pss-sss/tables/live_pbch_summary,reports,reports,ssb-pbch-pss-sss,live_pbch_summary_v
+/reports/ssb-pbch-pss-sss/tables/live_sync_signal_state,reports,reports,ssb-pbch-pss-sss,live_sync_signal_state_v
+/reports/csi-rs/tables/live_csirs_stage_table,reports,reports,csi-rs,live_csirs_stage_table_v
+/reports/csi-rs/tables/live_csirs_resource_table,reports,reports,csi-rs,live_csirs_resource_table_v
+/reports/pdsch-dl-data-chain/tables/live_pdsch_stage_table,reports,reports,pdsch-dl-data-chain,live_pdsch_stage_table_v
+/reports/pdsch-dl-data-chain/tables/live_pdsch_transport_block_table,reports,reports,pdsch-dl-data-chain,live_pdsch_transport_block_table_v
+/reports/pdsch-dl-data-chain/tables/live_pdsch_code_block_table,reports,reports,pdsch-dl-data-chain,live_pdsch_code_block_table_v
+/reports/pdsch-dl-data-chain/tables/live_pdsch_mapping_table,reports,reports,pdsch-dl-data-chain,live_pdsch_mapping_table_v
+/reports/pdsch-dl-data-chain/tables/live_pdsch_dmrs_ptrs_table,reports,reports,pdsch-dl-data-chain,live_pdsch_dmrs_ptrs_table_v
+/reports/pusch-ul-data-chain/tables/live_pusch_stage_table,reports,reports,pusch-ul-data-chain,live_pusch_stage_table_v
+/reports/pusch-ul-data-chain/tables/live_pusch_rx_summary,reports,reports,pusch-ul-data-chain,live_pusch_rx_summary_v
+/reports/pusch-ul-data-chain/tables/live_ul_dmrs_table,reports,reports,pusch-ul-data-chain,live_ul_dmrs_table_v
+/reports/pusch-ul-data-chain/tables/live_llr_summary,reports,reports,pusch-ul-data-chain,live_llr_summary_v
+/reports/pusch-ul-data-chain/tables/live_decoder_summary,reports,reports,pusch-ul-data-chain,live_decoder_summary_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_pucch_summary,reports,reports,pucch-f0-f1-f2-f3-f4,live_pucch_summary_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_pucch_f0_table,reports,reports,pucch-f0-f1-f2-f3-f4,live_pucch_f0_table_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_pucch_f1_table,reports,reports,pucch-f0-f1-f2-f3-f4,live_pucch_f1_table_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_pucch_f2_table,reports,reports,pucch-f0-f1-f2-f3-f4,live_pucch_f2_table_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_pucch_f3_table,reports,reports,pucch-f0-f1-f2-f3-f4,live_pucch_f3_table_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_pucch_f4_table,reports,reports,pucch-f0-f1-f2-f3-f4,live_pucch_f4_table_v
+/reports/pucch-f0-f1-f2-f3-f4/tables/live_uci_table,reports,reports,pucch-f0-f1-f2-f3-f4,live_uci_table_v
+/reports/prach-random-access/tables/live_prach_stage_table,reports,reports,prach-random-access,live_prach_stage_table_v
+/reports/prach-random-access/tables/live_prach_detection_table,reports,reports,prach-random-access,live_prach_detection_table_v
+/reports/prach-random-access/tables/live_random_access_state,reports,reports,prach-random-access,live_random_access_state_v
+/reports/srs-ul-sounding-massive-mimo-inputs/tables/live_srs_stage_table,reports,reports,srs-ul-sounding-massive-mimo-inputs,live_srs_stage_table_v
+/reports/srs-ul-sounding-massive-mimo-inputs/tables/live_srs_channel_estimation_table,reports,reports,srs-ul-sounding-massive-mimo-inputs,live_srs_channel_estimation_table_v
+/reports/srs-ul-sounding-massive-mimo-inputs/tables/live_csi_output_table,reports,reports,srs-ul-sounding-massive-mimo-inputs,live_csi_output_table_v
+/reports/channel-interference-impairments/tables/live_channel_realization_table,reports,reports,channel-interference-impairments,live_channel_realization_table_v
+/reports/channel-interference-impairments/tables/live_interference_table,reports,reports,channel-interference-impairments,live_interference_table_v
+/reports/channel-interference-impairments/tables/live_impairment_table,reports,reports,channel-interference-impairments,live_impairment_table_v
+/reports/channel-interference-impairments/tables/live_tracking_table,reports,reports,channel-interference-impairments,live_tracking_table_v
+/reports/measurements-csi-link-adaptation-inputs/tables/live_measurement_table,reports,reports,measurements-csi-link-adaptation-inputs,live_measurement_table_v
+/reports/measurements-csi-link-adaptation-inputs/tables/live_csi_feedback_table,reports,reports,measurements-csi-link-adaptation-inputs,live_csi_feedback_table_v
+/reports/measurements-csi-link-adaptation-inputs/tables/live_link_adaptation_input_table,reports,reports,measurements-csi-link-adaptation-inputs,live_link_adaptation_input_table_v
+/reports/beamforming-precoding-mimo-massive-mimo/tables/live_beam_selection_table,reports,reports,beamforming-precoding-mimo-massive-mimo,live_beam_selection_table_v
+/reports/beamforming-precoding-mimo-massive-mimo/tables/live_precoder_table,reports,reports,beamforming-precoding-mimo-massive-mimo,live_precoder_table_v
+/reports/beamforming-precoding-mimo-massive-mimo/tables/live_combiner_table,reports,reports,beamforming-precoding-mimo-massive-mimo,live_combiner_table_v
+/reports/beamforming-precoding-mimo-massive-mimo/tables/live_mimo_state_table,reports,reports,beamforming-precoding-mimo-massive-mimo,live_mimo_state_table_v
+/reports/beamforming-precoding-mimo-massive-mimo/tables/live_user_grouping_table,reports,reports,beamforming-precoding-mimo-massive-mimo,live_user_grouping_table_v
+/reports/ue-side-state-ue-power-ue-control/tables/live_ue_state_table,reports,reports,ue-side-state-ue-power-ue-control,live_ue_state_table_v
+/reports/ue-side-state-ue-power-ue-control/tables/live_ue_measurement_state,reports,reports,ue-side-state-ue-power-ue-control,live_ue_measurement_state_v
+/reports/ue-side-state-ue-power-ue-control/tables/live_ue_control_state,reports,reports,ue-side-state-ue-power-ue-control,live_ue_control_state_v
+/reports/ue-side-state-ue-power-ue-control/tables/live_ue_power_state,reports,reports,ue-side-state-ue-power-ue-control,live_ue_power_state_v
+/reports/ue-side-state-ue-power-ue-control/tables/live_drx_state,reports,reports,ue-side-state-ue-power-ue-control,live_drx_state_v
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/tables/live_gnb_state_table,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,live_gnb_state_table_v
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/tables/live_per_cell_context,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,live_per_cell_context_v
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/tables/live_per_ue_context,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,live_per_ue_context_v
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/tables/live_phy_mac_api_table,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,live_phy_mac_api_table_v
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/tables/live_thread_orchestration_table,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,live_thread_orchestration_table_v
+/reports/power-energy-thermal-compute-runtime/tables/live_power_runtime_table,reports,reports,power-energy-thermal-compute-runtime,live_power_runtime_table_v
+/reports/power-energy-thermal-compute-runtime/tables/live_rf_power_table,reports,reports,power-energy-thermal-compute-runtime,live_rf_power_table_v
+/reports/power-energy-thermal-compute-runtime/tables/live_bb_power_table,reports,reports,power-energy-thermal-compute-runtime,live_bb_power_table_v
+/reports/power-energy-thermal-compute-runtime/tables/live_energy_efficiency_table,reports,reports,power-energy-thermal-compute-runtime,live_energy_efficiency_table_v
+/reports/power-energy-thermal-compute-runtime/tables/live_sleep_state_table,reports,reports,power-energy-thermal-compute-runtime,live_sleep_state_table_v
+/reports/persistence-export-consistency-browser-health/tables/live_db_write_table,reports,reports,persistence-export-consistency-browser-health,live_db_write_table_v
+/reports/persistence-export-consistency-browser-health/tables/live_csv_write_table,reports,reports,persistence-export-consistency-browser-health,live_csv_write_table_v
+/reports/persistence-export-consistency-browser-health/tables/live_artifact_write_table,reports,reports,persistence-export-consistency-browser-health,live_artifact_write_table_v
+/reports/persistence-export-consistency-browser-health/tables/live_browser_surface_integrity_table,reports,reports,persistence-export-consistency-browser-health,live_browser_surface_integrity_table_v
+/reports/persistence-export-consistency-browser-health/tables/live_consistency_check_table,reports,reports,persistence-export-consistency-browser-health,live_consistency_check_table_v
+/reports/generic-investigator-views/tables/reports_all_stage_exec_v,reports,reports,generic-investigator-views,reports_all_stage_exec_v
+/reports/generic-investigator-views/tables/reports_all_scalars_v,reports,reports,generic-investigator-views,reports_all_scalars_v
+/reports/generic-investigator-views/tables/reports_all_enums_v,reports,reports,generic-investigator-views,reports_all_enums_v
+/reports/generic-investigator-views/tables/reports_all_artifacts_v,reports,reports,generic-investigator-views,reports_all_artifacts_v
+/reports/generic-investigator-views/tables/reports_stage_lineage_v,reports,reports,generic-investigator-views,reports_stage_lineage_v
+/reports/generic-investigator-views/tables/reports_truth_violations_v,reports,reports,generic-investigator-views,reports_truth_violations_v
+/reports/generic-investigator-views/tables/reports_partial_or_missing_v,reports,reports,generic-investigator-views,reports_partial_or_missing_v
+/reports/generic-investigator-views/tables/reports_config_vs_measured_conflicts_v,reports,reports,generic-investigator-views,reports_config_vs_measured_conflicts_v
+/reports/generic-investigator-views/tables/reports_value_semantics_coverage_v,reports,reports,generic-investigator-views,reports_value_semantics_coverage_v
+/reports/generic-investigator-views/tables/reports_status_rollup_explanations_v,reports,reports,generic-investigator-views,reports_status_rollup_explanations_v
+/reports/run-trial-scenario-overview/charts/run-health-timeline,reports,reports,run-trial-scenario-overview,run health timeline
+/reports/run-trial-scenario-overview/charts/error-warning-fallback-stacked-time-series,reports,reports,run-trial-scenario-overview,error/warning/fallback stacked time series
+/reports/run-trial-scenario-overview/charts/required-vs-failed-case-bar-chart,reports,reports,run-trial-scenario-overview,required vs failed case bar chart
+/reports/run-trial-scenario-overview/charts/truth-policy-violations-by-category,reports,reports,run-trial-scenario-overview,truth policy violations by category
+/reports/scenario-geometry-topology-layout/charts/bs-sector-ue-topology-scatter-plot,reports,reports,scenario-geometry-topology-layout,BS/sector/UE topology scatter plot
+/reports/scenario-geometry-topology-layout/charts/ue-trajectory-overlay,reports,reports,scenario-geometry-topology-layout,UE trajectory overlay
+/reports/scenario-geometry-topology-layout/charts/serving-cell-map,reports,reports,scenario-geometry-topology-layout,serving cell map
+/reports/scenario-geometry-topology-layout/charts/candidate-cell-rank-heatmap,reports,reports,scenario-geometry-topology-layout,candidate cell rank heatmap
+/reports/scenario-geometry-topology-layout/charts/distance-distribution-histogram,reports,reports,scenario-geometry-topology-layout,distance distribution histogram
+/reports/scenario-geometry-topology-layout/charts/azimuth-elevation-rose-plots,reports,reports,scenario-geometry-topology-layout,azimuth/elevation rose plots
+/reports/scenario-geometry-topology-layout/charts/path-geometry-summary-charts,reports,reports,scenario-geometry-topology-layout,path geometry summary charts
+/reports/mobility-access-cell-selection-reselection-handover/charts/serving-cell-timeline,reports,reports,mobility-access-cell-selection-reselection-handover,serving cell timeline
+/reports/mobility-access-cell-selection-reselection-handover/charts/selected-beam-timeline,reports,reports,mobility-access-cell-selection-reselection-handover,selected beam timeline
+/reports/mobility-access-cell-selection-reselection-handover/charts/mobility-event-timeline,reports,reports,mobility-access-cell-selection-reselection-handover,mobility event timeline
+/reports/mobility-access-cell-selection-reselection-handover/charts/hysteresis-ttt-scatter,reports,reports,mobility-access-cell-selection-reselection-handover,hysteresis / TTT scatter
+/reports/mobility-access-cell-selection-reselection-handover/charts/access-state-transition-sankey,reports,reports,mobility-access-cell-selection-reselection-handover,access state transition Sankey
+/reports/mobility-access-cell-selection-reselection-handover/charts/doppler-vs-speed-plot,reports,reports,mobility-access-cell-selection-reselection-handover,Doppler vs speed plot
+/reports/mobility-access-cell-selection-reselection-handover/charts/selection-reselection-trigger-histogram,reports,reports,mobility-access-cell-selection-reselection-handover,selection/reselection trigger histogram
+/reports/air-interface-frame-slot-symbol-grid/charts/frame-slot-symbol-occupancy-timeline,reports,reports,air-interface-frame-slot-symbol-grid,frame/slot/symbol occupancy timeline
+/reports/air-interface-frame-slot-symbol-grid/charts/prb-heatmap,reports,reports,air-interface-frame-slot-symbol-grid,PRB heatmap
+/reports/air-interface-frame-slot-symbol-grid/charts/re-occupancy-heatmap,reports,reports,air-interface-frame-slot-symbol-grid,RE occupancy heatmap
+/reports/air-interface-frame-slot-symbol-grid/charts/dl-ul-guard-slot-pattern-chart,reports,reports,air-interface-frame-slot-symbol-grid,DL/UL/guard slot pattern chart
+/reports/air-interface-frame-slot-symbol-grid/charts/ssb-occasion-timeline,reports,reports,air-interface-frame-slot-symbol-grid,SSB occasion timeline
+/reports/air-interface-frame-slot-symbol-grid/charts/prach-occasion-timeline,reports,reports,air-interface-frame-slot-symbol-grid,PRACH occasion timeline
+/reports/air-interface-frame-slot-symbol-grid/charts/coreset-search-space-occupancy-chart,reports,reports,air-interface-frame-slot-symbol-grid,CORESET/search-space occupancy chart
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/scheduled-prbs-per-ue-over-time,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,scheduled PRBs per UE over time
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/mcs-over-time,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,MCS over time
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/cqi-vs-selected-mcs,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,CQI vs selected MCS
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/queue-depth-over-time,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,queue depth over time
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/hol-delay-over-time,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,HOL delay over time
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/scheduler-fairness-over-time,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,scheduler fairness over time
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/sr-bsr-event-timeline,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,SR/BSR event timeline
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/power-control-command-timeline,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,power control command timeline
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/phr-distribution,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,PHR distribution
+/reports/scheduler-mac-queue-qos-power-control-uci-flow/charts/grant-reason-distribution,reports,reports,scheduler-mac-queue-qos-power-control-uci-flow,grant reason distribution
+/reports/harq-ack-nack-retransmission/charts/harq-process-timeline,reports,reports,harq-ack-nack-retransmission,HARQ process timeline
+/reports/harq-ack-nack-retransmission/charts/rv-usage-distribution,reports,reports,harq-ack-nack-retransmission,RV usage distribution
+/reports/harq-ack-nack-retransmission/charts/retransmission-count-histogram,reports,reports,harq-ack-nack-retransmission,retransmission count histogram
+/reports/harq-ack-nack-retransmission/charts/ack-nack-timeline,reports,reports,harq-ack-nack-retransmission,ACK/NACK timeline
+/reports/harq-ack-nack-retransmission/charts/residual-bler-by-harq-process,reports,reports,harq-ack-nack-retransmission,residual BLER by HARQ process
+/reports/harq-ack-nack-retransmission/charts/combining-gain-histogram,reports,reports,harq-ack-nack-retransmission,combining gain histogram
+/reports/dl-control-phy-pdcch/charts/pdcch-stage-latency-waterfall,reports,reports,dl-control-phy-pdcch,PDCCH stage latency waterfall
+/reports/dl-control-phy-pdcch/charts/aggregation-level-distribution,reports,reports,dl-control-phy-pdcch,aggregation level distribution
+/reports/dl-control-phy-pdcch/charts/cce-usage-heatmap,reports,reports,dl-control-phy-pdcch,CCE usage heatmap
+/reports/dl-control-phy-pdcch/charts/pdcch-dmrs-occupancy,reports,reports,dl-control-phy-pdcch,PDCCH DMRS occupancy
+/reports/dl-control-phy-pdcch/charts/pdcch-decode-success-failure-trend-if-applicable,reports,reports,dl-control-phy-pdcch,PDCCH decode success/failure trend if applicable
+/reports/ssb-pbch-pss-sss/charts/ssb-index-timeline,reports,reports,ssb-pbch-pss-sss,SSB index timeline
+/reports/ssb-pbch-pss-sss/charts/pbch-stage-latency,reports,reports,ssb-pbch-pss-sss,PBCH stage latency
+/reports/ssb-pbch-pss-sss/charts/ssb-pbch-occupancy-map,reports,reports,ssb-pbch-pss-sss,SSB/PBCH occupancy map
+/reports/ssb-pbch-pss-sss/charts/sync-success-failure-timeline-if-available,reports,reports,ssb-pbch-pss-sss,sync success/failure timeline if available
+/reports/csi-rs/charts/csi-rs-resource-occupancy,reports,reports,csi-rs,CSI-RS resource occupancy
+/reports/csi-rs/charts/port-usage-chart,reports,reports,csi-rs,port usage chart
+/reports/csi-rs/charts/csi-rs-latency-trend,reports,reports,csi-rs,CSI-RS latency trend
+/reports/pdsch-dl-data-chain/charts/tb-size-over-time,reports,reports,pdsch-dl-data-chain,TB size over time
+/reports/pdsch-dl-data-chain/charts/mcs-code-rate-timeline,reports,reports,pdsch-dl-data-chain,MCS/code-rate timeline
+/reports/pdsch-dl-data-chain/charts/code-block-count-histogram,reports,reports,pdsch-dl-data-chain,code-block count histogram
+/reports/pdsch-dl-data-chain/charts/ldpc-stage-latency-waterfall,reports,reports,pdsch-dl-data-chain,LDPC stage latency waterfall
+/reports/pdsch-dl-data-chain/charts/dmrs-ptrs-occupancy-plot,reports,reports,pdsch-dl-data-chain,DMRS/PTRS occupancy plot
+/reports/pdsch-dl-data-chain/charts/precoder-beam-selection-timeline,reports,reports,pdsch-dl-data-chain,precoder / beam selection timeline
+/reports/pdsch-dl-data-chain/charts/dl-resource-grid-heatmap,reports,reports,pdsch-dl-data-chain,DL resource-grid heatmap
+/reports/pusch-ul-data-chain/charts/channel-estimation-latency,reports,reports,pusch-ul-data-chain,channel estimation latency
+/reports/pusch-ul-data-chain/charts/equalizer-latency,reports,reports,pusch-ul-data-chain,equalizer latency
+/reports/pusch-ul-data-chain/charts/decoder-iteration-histogram,reports,reports,pusch-ul-data-chain,decoder iteration histogram
+/reports/pusch-ul-data-chain/charts/ta-estimate-timeline,reports,reports,pusch-ul-data-chain,TA estimate timeline
+/reports/pusch-ul-data-chain/charts/llr-statistics-over-time,reports,reports,pusch-ul-data-chain,LLR statistics over time
+/reports/pusch-ul-data-chain/charts/ul-resource-grid-equalized-symbol-summaries,reports,reports,pusch-ul-data-chain,UL resource-grid / equalized symbol summaries
+/reports/pucch-f0-f1-f2-f3-f4/charts/requested-vs-resolved-format-confusion-matrix,reports,reports,pucch-f0-f1-f2-f3-f4,requested vs resolved format confusion matrix
+/reports/pucch-f0-f1-f2-f3-f4/charts/pucch-decode-success-failure-trend,reports,reports,pucch-f0-f1-f2-f3-f4,PUCCH decode success/failure trend
+/reports/pucch-f0-f1-f2-f3-f4/charts/ack-nack-match-chart,reports,reports,pucch-f0-f1-f2-f3-f4,ACK/NACK match chart
+/reports/pucch-f0-f1-f2-f3-f4/charts/dtx-detection-chart,reports,reports,pucch-f0-f1-f2-f3-f4,DTX detection chart
+/reports/pucch-f0-f1-f2-f3-f4/charts/per-format-latency-histograms,reports,reports,pucch-f0-f1-f2-f3-f4,per-format latency histograms
+/reports/pucch-f0-f1-f2-f3-f4/charts/crash-error-timeline,reports,reports,pucch-f0-f1-f2-f3-f4,crash/error timeline
+/reports/pucch-f0-f1-f2-f3-f4/charts/uci-bit-count-distribution,reports,reports,pucch-f0-f1-f2-f3-f4,UCI bit count distribution
+/reports/prach-random-access/charts/prach-peak-search-timeline,reports,reports,prach-random-access,PRACH peak search timeline
+/reports/prach-random-access/charts/noise-floor-trend,reports,reports,prach-random-access,noise floor trend
+/reports/prach-random-access/charts/peak-value-histogram,reports,reports,prach-random-access,peak value histogram
+/reports/prach-random-access/charts/preamble-usage-chart,reports,reports,prach-random-access,preamble usage chart
+/reports/prach-random-access/charts/ta-estimate-trend,reports,reports,prach-random-access,TA estimate trend
+/reports/prach-random-access/charts/access-attempt-success-timeline,reports,reports,prach-random-access,access attempt/success timeline
+/reports/srs-ul-sounding-massive-mimo-inputs/charts/srs-validity-timeline,reports,reports,srs-ul-sounding-massive-mimo-inputs,SRS validity timeline
+/reports/srs-ul-sounding-massive-mimo-inputs/charts/channel-estimate-quality-trend,reports,reports,srs-ul-sounding-massive-mimo-inputs,channel estimate quality trend
+/reports/srs-ul-sounding-massive-mimo-inputs/charts/srs-consumption-by-scheduler-beam-module,reports,reports,srs-ul-sounding-massive-mimo-inputs,SRS consumption by scheduler/beam module
+/reports/channel-interference-impairments/charts/channel-quality-timeline,reports,reports,channel-interference-impairments,channel quality timeline
+/reports/channel-interference-impairments/charts/cfo-true-vs-estimated-vs-residual,reports,reports,channel-interference-impairments,CFO true vs estimated vs residual
+/reports/channel-interference-impairments/charts/timing-offset-true-vs-estimated-vs-residual,reports,reports,channel-interference-impairments,timing offset true vs estimated vs residual
+/reports/channel-interference-impairments/charts/pathloss-shadowing-distributions,reports,reports,channel-interference-impairments,pathloss/shadowing distributions
+/reports/channel-interference-impairments/charts/interference-power-timeline,reports,reports,channel-interference-impairments,interference power timeline
+/reports/channel-interference-impairments/charts/impairment-contribution-bar-chart,reports,reports,channel-interference-impairments,impairment contribution bar chart
+/reports/channel-interference-impairments/charts/channel-heatmap-artifact-links,reports,reports,channel-interference-impairments,channel heatmap artifact links
+/reports/measurements-csi-link-adaptation-inputs/charts/configured-vs-applied-vs-measured-snr-sinr-comparison,reports,reports,measurements-csi-link-adaptation-inputs,configured vs applied vs measured SNR/SINR comparison
+/reports/measurements-csi-link-adaptation-inputs/charts/rsrp-csi-rsrp-timeline,reports,reports,measurements-csi-link-adaptation-inputs,RSRP/CSI-RSRP timeline
+/reports/measurements-csi-link-adaptation-inputs/charts/cqi-pmi-ri-cri-timeline,reports,reports,measurements-csi-link-adaptation-inputs,CQI / PMI / RI / CRI timeline
+/reports/measurements-csi-link-adaptation-inputs/charts/measurement-source-coverage-chart,reports,reports,measurements-csi-link-adaptation-inputs,measurement source coverage chart
+/reports/measurements-csi-link-adaptation-inputs/charts/config-vs-measured-conflict-dashboard,reports,reports,measurements-csi-link-adaptation-inputs,config-vs-measured conflict dashboard
+/reports/beamforming-precoding-mimo-massive-mimo/charts/selected-vs-best-beam-timeline,reports,reports,beamforming-precoding-mimo-massive-mimo,selected vs best beam timeline
+/reports/beamforming-precoding-mimo-massive-mimo/charts/beam-gain-gap-histogram,reports,reports,beamforming-precoding-mimo-massive-mimo,beam gain gap histogram
+/reports/beamforming-precoding-mimo-massive-mimo/charts/beam-hit-rate-timeline,reports,reports,beamforming-precoding-mimo-massive-mimo,beam hit rate timeline
+/reports/beamforming-precoding-mimo-massive-mimo/charts/rank-distribution,reports,reports,beamforming-precoding-mimo-massive-mimo,rank distribution
+/reports/beamforming-precoding-mimo-massive-mimo/charts/condition-number-distribution,reports,reports,beamforming-precoding-mimo-massive-mimo,condition number distribution
+/reports/beamforming-precoding-mimo-massive-mimo/charts/mu-grouping-summary,reports,reports,beamforming-precoding-mimo-massive-mimo,MU grouping summary
+/reports/beamforming-precoding-mimo-massive-mimo/charts/precoder-mode-distribution,reports,reports,beamforming-precoding-mimo-massive-mimo,precoder mode distribution
+/reports/ue-side-state-ue-power-ue-control/charts/ue-tx-power-timeline,reports,reports,ue-side-state-ue-power-ue-control,UE Tx power timeline
+/reports/ue-side-state-ue-power-ue-control/charts/ue-power-headroom-timeline,reports,reports,ue-side-state-ue-power-ue-control,UE power headroom timeline
+/reports/ue-side-state-ue-power-ue-control/charts/ue-control-report-timeline,reports,reports,ue-side-state-ue-power-ue-control,UE control/report timeline
+/reports/ue-side-state-ue-power-ue-control/charts/drx-state-timeline,reports,reports,ue-side-state-ue-power-ue-control,DRX state timeline
+/reports/ue-side-state-ue-power-ue-control/charts/ue-energy-proxy-timeline,reports,reports,ue-side-state-ue-power-ue-control,UE energy proxy timeline
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/charts/per-cell-context-health-timeline,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,per-cell context health timeline
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/charts/api-message-rate,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,API message rate
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/charts/orchestration-latency-chart,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,orchestration latency chart
+/reports/gnb-side-state-thread-coordinator-phy-mac-api/charts/per-worker-workload-chart,reports,reports,gnb-side-state-thread-coordinator-phy-mac-api,per-worker workload chart
+/reports/power-energy-thermal-compute-runtime/charts/tx-power-timeline-per-cell,reports,reports,power-energy-thermal-compute-runtime,TX power timeline per cell
+/reports/power-energy-thermal-compute-runtime/charts/tx-power-timeline-per-ue,reports,reports,power-energy-thermal-compute-runtime,TX power timeline per UE
+/reports/power-energy-thermal-compute-runtime/charts/power-vs-throughput,reports,reports,power-energy-thermal-compute-runtime,power vs throughput
+/reports/power-energy-thermal-compute-runtime/charts/power-vs-bler,reports,reports,power-energy-thermal-compute-runtime,power vs BLER
+/reports/power-energy-thermal-compute-runtime/charts/energy-per-bit-over-time,reports,reports,power-energy-thermal-compute-runtime,energy per bit over time
+/reports/power-energy-thermal-compute-runtime/charts/joules-gb-over-time,reports,reports,power-energy-thermal-compute-runtime,joules/GB over time
+/reports/power-energy-thermal-compute-runtime/charts/cpu-cycles-and-memory-usage-time-series,reports,reports,power-energy-thermal-compute-runtime,CPU cycles and memory usage time series
+/reports/power-energy-thermal-compute-runtime/charts/latency-breakdown-stacked-chart,reports,reports,power-energy-thermal-compute-runtime,latency breakdown stacked chart
+/reports/power-energy-thermal-compute-runtime/charts/papr-distribution,reports,reports,power-energy-thermal-compute-runtime,PAPR distribution
+/reports/power-energy-thermal-compute-runtime/charts/sleep-state-timeline,reports,reports,power-energy-thermal-compute-runtime,sleep-state timeline
+/reports/power-energy-thermal-compute-runtime/charts/efficiency-scatter-plots,reports,reports,power-energy-thermal-compute-runtime,efficiency scatter plots
+/reports/persistence-export-consistency-browser-health/charts/db-write-latency-over-time,reports,reports,persistence-export-consistency-browser-health,DB write latency over time
+/reports/persistence-export-consistency-browser-health/charts/export-lag-over-time,reports,reports,persistence-export-consistency-browser-health,export lag over time
+/reports/persistence-export-consistency-browser-health/charts/duplicate-write-count-trend,reports,reports,persistence-export-consistency-browser-health,duplicate write count trend
+/reports/persistence-export-consistency-browser-health/charts/consistency-failure-trend,reports,reports,persistence-export-consistency-browser-health,consistency failure trend
+/reports/persistence-export-consistency-browser-health/charts/artifact-creation-rate,reports,reports,persistence-export-consistency-browser-health,artifact creation rate
+/reports/generic-investigator-views/charts/investigator-stage-lineage-graph,reports,reports,generic-investigator-views,investigator stage lineage graph
+/reports/generic-investigator-views/charts/truth-violation-rollup,reports,reports,generic-investigator-views,truth violation rollup
+/reports/generic-investigator-views/charts/partial-or-missing-data-dashboard,reports,reports,generic-investigator-views,partial or missing data dashboard
+/reports/generic-investigator-views/charts/config-vs-measured-conflict-dashboard,reports,reports,generic-investigator-views,config vs measured conflict dashboard
+/reports/generic-investigator-views/charts/value-semantics-coverage-chart,reports,reports,generic-investigator-views,value semantics coverage chart
+/analytics,analytics,analytics,,browser_route
+/analytics/waveform-time-domain-analytics,analytics,analytics,waveform-time-domain-analytics,browser_route
+/analytics/spectrum-psd-papr-analytics,analytics,analytics,spectrum-psd-papr-analytics,browser_route
+/analytics/constellation-evm-analytics,analytics,analytics,constellation-evm-analytics,browser_route
+/analytics/resource-grid-re-occupancy-analytics,analytics,analytics,resource-grid-re-occupancy-analytics,browser_route
+/analytics/channel-estimation-propagation-analytics,analytics,analytics,channel-estimation-propagation-analytics,browser_route
+/analytics/detection-control-analytics,analytics,analytics,detection-control-analytics,browser_route
+/analytics/error-reliability-analytics,analytics,analytics,error-reliability-analytics,browser_route
+/analytics/throughput-goodput-spectral-efficiency-analytics,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,browser_route
+/analytics/measurement-csi-link-adaptation-analytics,analytics,analytics,measurement-csi-link-adaptation-analytics,browser_route
+/analytics/harq-analytics,analytics,analytics,harq-analytics,browser_route
+/analytics/beamforming-precoding-mimo-analytics,analytics,analytics,beamforming-precoding-mimo-analytics,browser_route
+/analytics/mobility-selection-reselection-handover-analytics,analytics,analytics,mobility-selection-reselection-handover-analytics,browser_route
+/analytics/random-access-prach-analytics,analytics,analytics,random-access-prach-analytics,browser_route
+/analytics/impairments-tracking-analytics,analytics,analytics,impairments-tracking-analytics,browser_route
+/analytics/power-energy-efficiency-analytics,analytics,analytics,power-energy-efficiency-analytics,browser_route
+/analytics/runtime-compute-complexity-parallelism-analytics,analytics,analytics,runtime-compute-complexity-parallelism-analytics,browser_route
+/analytics/export-consistency-truth-analytics,analytics,analytics,export-consistency-truth-analytics,browser_route
+/analytics/regression-baseline-vs-candidate-analytics,analytics,analytics,regression-baseline-vs-candidate-analytics,browser_route
+/analytics/optional-6g-extension-analytics,analytics,analytics,optional-6g-extension-analytics,browser_route
+/analytics/waveform-time-domain-analytics/tables/waveform_analytics,analytics,analytics,waveform-time-domain-analytics,waveform_analytics_v
+/analytics/waveform-time-domain-analytics/tables/waveform_comparison_analytics,analytics,analytics,waveform-time-domain-analytics,waveform_comparison_analytics_v
+/analytics/waveform-time-domain-analytics/tables/waveform_stage_overlay_analytics,analytics,analytics,waveform-time-domain-analytics,waveform_stage_overlay_analytics_v
+/analytics/spectrum-psd-papr-analytics/tables/spectrum_analytics,analytics,analytics,spectrum-psd-papr-analytics,spectrum_analytics_v
+/analytics/spectrum-psd-papr-analytics/tables/papr_analytics,analytics,analytics,spectrum-psd-papr-analytics,papr_analytics_v
+/analytics/spectrum-psd-papr-analytics/tables/clipping_analytics,analytics,analytics,spectrum-psd-papr-analytics,clipping_analytics_v
+/analytics/constellation-evm-analytics/tables/constellation_analytics,analytics,analytics,constellation-evm-analytics,constellation_analytics_v
+/analytics/constellation-evm-analytics/tables/evm_analytics,analytics,analytics,constellation-evm-analytics,evm_analytics_v
+/analytics/resource-grid-re-occupancy-analytics/tables/resource_grid_analytics,analytics,analytics,resource-grid-re-occupancy-analytics,resource_grid_analytics_v
+/analytics/resource-grid-re-occupancy-analytics/tables/re_collision_analytics,analytics,analytics,resource-grid-re-occupancy-analytics,re_collision_analytics_v
+/analytics/channel-estimation-propagation-analytics/tables/channel_estimation_analytics,analytics,analytics,channel-estimation-propagation-analytics,channel_estimation_analytics_v
+/analytics/channel-estimation-propagation-analytics/tables/channel_quality_analytics,analytics,analytics,channel-estimation-propagation-analytics,channel_quality_analytics_v
+/analytics/channel-estimation-propagation-analytics/tables/propagation_analytics,analytics,analytics,channel-estimation-propagation-analytics,propagation_analytics_v
+/analytics/detection-control-analytics/tables/detection_analytics,analytics,analytics,detection-control-analytics,detection_analytics_v
+/analytics/detection-control-analytics/tables/control_decode_analytics,analytics,analytics,detection-control-analytics,control_decode_analytics_v
+/analytics/detection-control-analytics/tables/random_access_detection_analytics,analytics,analytics,detection-control-analytics,random_access_detection_analytics_v
+/analytics/error-reliability-analytics/tables/error_rate_analytics,analytics,analytics,error-reliability-analytics,error_rate_analytics_v
+/analytics/error-reliability-analytics/tables/decoder_analytics,analytics,analytics,error-reliability-analytics,decoder_analytics_v
+/analytics/error-reliability-analytics/tables/codeblock_analytics,analytics,analytics,error-reliability-analytics,codeblock_analytics_v
+/analytics/throughput-goodput-spectral-efficiency-analytics/tables/throughput_analytics,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput_analytics_v
+/analytics/throughput-goodput-spectral-efficiency-analytics/tables/goodput_analytics,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,goodput_analytics_v
+/analytics/throughput-goodput-spectral-efficiency-analytics/tables/spectral_efficiency_analytics,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,spectral_efficiency_analytics_v
+/analytics/throughput-goodput-spectral-efficiency-analytics/tables/fairness_analytics,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,fairness_analytics_v
+/analytics/measurement-csi-link-adaptation-analytics/tables/measurement_feedback_analytics,analytics,analytics,measurement-csi-link-adaptation-analytics,measurement_feedback_analytics_v
+/analytics/measurement-csi-link-adaptation-analytics/tables/link_adaptation_analytics,analytics,analytics,measurement-csi-link-adaptation-analytics,link_adaptation_analytics_v
+/analytics/measurement-csi-link-adaptation-analytics/tables/cqi_mcs_consistency_analytics,analytics,analytics,measurement-csi-link-adaptation-analytics,cqi_mcs_consistency_analytics_v
+/analytics/harq-analytics/tables/harq_analytics,analytics,analytics,harq-analytics,harq_analytics_v
+/analytics/harq-analytics/tables/harq_process_analytics,analytics,analytics,harq-analytics,harq_process_analytics_v
+/analytics/harq-analytics/tables/soft_buffer_analytics,analytics,analytics,harq-analytics,soft_buffer_analytics_v
+/analytics/beamforming-precoding-mimo-analytics/tables/beam_analytics,analytics,analytics,beamforming-precoding-mimo-analytics,beam_analytics_v
+/analytics/beamforming-precoding-mimo-analytics/tables/mimo_analytics,analytics,analytics,beamforming-precoding-mimo-analytics,mimo_analytics_v
+/analytics/beamforming-precoding-mimo-analytics/tables/user_grouping_analytics,analytics,analytics,beamforming-precoding-mimo-analytics,user_grouping_analytics_v
+/analytics/beamforming-precoding-mimo-analytics/tables/precoder_analytics,analytics,analytics,beamforming-precoding-mimo-analytics,precoder_analytics_v
+/analytics/mobility-selection-reselection-handover-analytics/tables/mobility_analytics,analytics,analytics,mobility-selection-reselection-handover-analytics,mobility_analytics_v
+/analytics/mobility-selection-reselection-handover-analytics/tables/selection_reselection_analytics,analytics,analytics,mobility-selection-reselection-handover-analytics,selection_reselection_analytics_v
+/analytics/mobility-selection-reselection-handover-analytics/tables/handover_analytics,analytics,analytics,mobility-selection-reselection-handover-analytics,handover_analytics_v
+/analytics/random-access-prach-analytics/tables/random_access_analytics,analytics,analytics,random-access-prach-analytics,random_access_analytics_v
+/analytics/random-access-prach-analytics/tables/prach_analytics,analytics,analytics,random-access-prach-analytics,prach_analytics_v
+/analytics/impairments-tracking-analytics/tables/impairment_analytics,analytics,analytics,impairments-tracking-analytics,impairment_analytics_v
+/analytics/impairments-tracking-analytics/tables/tracking_analytics,analytics,analytics,impairments-tracking-analytics,tracking_analytics_v
+/analytics/power-energy-efficiency-analytics/tables/power_analytics,analytics,analytics,power-energy-efficiency-analytics,power_analytics_v
+/analytics/power-energy-efficiency-analytics/tables/energy_efficiency_analytics,analytics,analytics,power-energy-efficiency-analytics,energy_efficiency_analytics_v
+/analytics/power-energy-efficiency-analytics/tables/runtime_power_analytics,analytics,analytics,power-energy-efficiency-analytics,runtime_power_analytics_v
+/analytics/power-energy-efficiency-analytics/tables/sleep_state_analytics,analytics,analytics,power-energy-efficiency-analytics,sleep_state_analytics_v
+/analytics/runtime-compute-complexity-parallelism-analytics/tables/compute_analytics,analytics,analytics,runtime-compute-complexity-parallelism-analytics,compute_analytics_v
+/analytics/runtime-compute-complexity-parallelism-analytics/tables/runtime_latency_analytics,analytics,analytics,runtime-compute-complexity-parallelism-analytics,runtime_latency_analytics_v
+/analytics/runtime-compute-complexity-parallelism-analytics/tables/determinism_analytics,analytics,analytics,runtime-compute-complexity-parallelism-analytics,determinism_analytics_v
+/analytics/runtime-compute-complexity-parallelism-analytics/tables/parallelism_analytics,analytics,analytics,runtime-compute-complexity-parallelism-analytics,parallelism_analytics_v
+/analytics/export-consistency-truth-analytics/tables/export_consistency_analytics,analytics,analytics,export-consistency-truth-analytics,export_consistency_analytics_v
+/analytics/export-consistency-truth-analytics/tables/truth_policy_analytics,analytics,analytics,export-consistency-truth-analytics,truth_policy_analytics_v
+/analytics/export-consistency-truth-analytics/tables/schema_drift_analytics,analytics,analytics,export-consistency-truth-analytics,schema_drift_analytics_v
+/analytics/regression-baseline-vs-candidate-analytics/tables/regression_analytics,analytics,analytics,regression-baseline-vs-candidate-analytics,regression_analytics_v
+/analytics/regression-baseline-vs-candidate-analytics/tables/regression_baseline_view,analytics,analytics,regression-baseline-vs-candidate-analytics,regression_baseline_view_v
+/analytics/regression-baseline-vs-candidate-analytics/tables/regression_candidate_view,analytics,analytics,regression-baseline-vs-candidate-analytics,regression_candidate_view_v
+/analytics/regression-baseline-vs-candidate-analytics/tables/regression_delta_view,analytics,analytics,regression-baseline-vs-candidate-analytics,regression_delta_view_v
+/analytics/regression-baseline-vs-candidate-analytics/tables/change_impact_analytics,analytics,analytics,regression-baseline-vs-candidate-analytics,change_impact_analytics_v
+/analytics/optional-6g-extension-analytics/tables/ai_inference_analytics,analytics,analytics,optional-6g-extension-analytics,ai_inference_analytics_v
+/analytics/optional-6g-extension-analytics/tables/sensing_analytics,analytics,analytics,optional-6g-extension-analytics,sensing_analytics_v
+/analytics/optional-6g-extension-analytics/tables/localization_analytics,analytics,analytics,optional-6g-extension-analytics,localization_analytics_v
+/analytics/optional-6g-extension-analytics/tables/ntn_haps_uav_analytics,analytics,analytics,optional-6g-extension-analytics,ntn_haps_uav_analytics_v
+/analytics/optional-6g-extension-analytics/tables/ris_analytics,analytics,analytics,optional-6g-extension-analytics,ris_analytics_v
+/analytics/optional-6g-extension-analytics/tables/cell_free_mimo_analytics,analytics,analytics,optional-6g-extension-analytics,cell_free_mimo_analytics_v
+/analytics/optional-6g-extension-analytics/tables/sub_thz_impairment_analytics,analytics,analytics,optional-6g-extension-analytics,sub_thz_impairment_analytics_v
+/analytics/waveform-time-domain-analytics/charts/tx-waveform,analytics,analytics,waveform-time-domain-analytics,Tx waveform
+/analytics/waveform-time-domain-analytics/charts/rx-waveform,analytics,analytics,waveform-time-domain-analytics,Rx waveform
+/analytics/waveform-time-domain-analytics/charts/pre-channel-waveform,analytics,analytics,waveform-time-domain-analytics,pre-channel waveform
+/analytics/waveform-time-domain-analytics/charts/post-channel-waveform,analytics,analytics,waveform-time-domain-analytics,post-channel waveform
+/analytics/waveform-time-domain-analytics/charts/post-impairment-waveform,analytics,analytics,waveform-time-domain-analytics,post-impairment waveform
+/analytics/waveform-time-domain-analytics/charts/magnitude-vs-sample,analytics,analytics,waveform-time-domain-analytics,magnitude vs sample
+/analytics/waveform-time-domain-analytics/charts/phase-vs-sample,analytics,analytics,waveform-time-domain-analytics,phase vs sample
+/analytics/waveform-time-domain-analytics/charts/power-vs-sample,analytics,analytics,waveform-time-domain-analytics,power vs sample
+/analytics/waveform-time-domain-analytics/charts/stage-overlay-plots,analytics,analytics,waveform-time-domain-analytics,stage overlay plots
+/analytics/waveform-time-domain-analytics/charts/ue-wise-link-wise-waveform-comparison,analytics,analytics,waveform-time-domain-analytics,UE-wise / link-wise waveform comparison
+/analytics/spectrum-psd-papr-analytics/charts/psd,analytics,analytics,spectrum-psd-papr-analytics,PSD
+/analytics/spectrum-psd-papr-analytics/charts/occupied-bandwidth,analytics,analytics,spectrum-psd-papr-analytics,occupied bandwidth
+/analytics/spectrum-psd-papr-analytics/charts/out-of-band-spectral-summaries-if-measurable,analytics,analytics,spectrum-psd-papr-analytics,out-of-band spectral summaries if measurable
+/analytics/spectrum-psd-papr-analytics/charts/papr-histogram-cdf,analytics,analytics,spectrum-psd-papr-analytics,PAPR histogram / CDF
+/analytics/spectrum-psd-papr-analytics/charts/clipping-event-histogram,analytics,analytics,spectrum-psd-papr-analytics,clipping event histogram
+/analytics/spectrum-psd-papr-analytics/charts/power-spectral-comparison-before-after-impairment,analytics,analytics,spectrum-psd-papr-analytics,power spectral comparison before/after impairment
+/analytics/constellation-evm-analytics/charts/pre-equalization-constellation,analytics,analytics,constellation-evm-analytics,pre-equalization constellation
+/analytics/constellation-evm-analytics/charts/post-equalization-constellation,analytics,analytics,constellation-evm-analytics,post-equalization constellation
+/analytics/constellation-evm-analytics/charts/constellation-per-layer,analytics,analytics,constellation-evm-analytics,constellation per layer
+/analytics/constellation-evm-analytics/charts/constellation-per-codeword,analytics,analytics,constellation-evm-analytics,constellation per codeword
+/analytics/constellation-evm-analytics/charts/constellation-per-modulation-order,analytics,analytics,constellation-evm-analytics,constellation per modulation order
+/analytics/constellation-evm-analytics/charts/evm-rms,analytics,analytics,constellation-evm-analytics,EVM RMS
+/analytics/constellation-evm-analytics/charts/evm-per-symbol,analytics,analytics,constellation-evm-analytics,EVM per symbol
+/analytics/constellation-evm-analytics/charts/evm-per-subcarrier,analytics,analytics,constellation-evm-analytics,EVM per subcarrier
+/analytics/constellation-evm-analytics/charts/evm-per-layer,analytics,analytics,constellation-evm-analytics,EVM per layer
+/analytics/constellation-evm-analytics/charts/symbol-decision-error-histogram,analytics,analytics,constellation-evm-analytics,symbol decision error histogram
+/analytics/resource-grid-re-occupancy-analytics/charts/re-occupancy-heatmap,analytics,analytics,resource-grid-re-occupancy-analytics,RE occupancy heatmap
+/analytics/resource-grid-re-occupancy-analytics/charts/prb-heatmap,analytics,analytics,resource-grid-re-occupancy-analytics,PRB heatmap
+/analytics/resource-grid-re-occupancy-analytics/charts/pdcch-map,analytics,analytics,resource-grid-re-occupancy-analytics,PDCCH map
+/analytics/resource-grid-re-occupancy-analytics/charts/pbch-ssb-map,analytics,analytics,resource-grid-re-occupancy-analytics,PBCH/SSB map
+/analytics/resource-grid-re-occupancy-analytics/charts/csi-rs-map,analytics,analytics,resource-grid-re-occupancy-analytics,CSI-RS map
+/analytics/resource-grid-re-occupancy-analytics/charts/pdsch-map,analytics,analytics,resource-grid-re-occupancy-analytics,PDSCH map
+/analytics/resource-grid-re-occupancy-analytics/charts/pusch-map,analytics,analytics,resource-grid-re-occupancy-analytics,PUSCH map
+/analytics/resource-grid-re-occupancy-analytics/charts/pucch-map,analytics,analytics,resource-grid-re-occupancy-analytics,PUCCH map
+/analytics/resource-grid-re-occupancy-analytics/charts/prach-opportunity-map,analytics,analytics,resource-grid-re-occupancy-analytics,PRACH opportunity map
+/analytics/resource-grid-re-occupancy-analytics/charts/srs-map,analytics,analytics,resource-grid-re-occupancy-analytics,SRS map
+/analytics/resource-grid-re-occupancy-analytics/charts/dmrs-ptrs-occupancy-map,analytics,analytics,resource-grid-re-occupancy-analytics,DMRS/PTRS occupancy map
+/analytics/resource-grid-re-occupancy-analytics/charts/re-collision-heatmap-table,analytics,analytics,resource-grid-re-occupancy-analytics,RE collision heatmap / table
+/analytics/channel-estimation-propagation-analytics/charts/true-h-tau-if-available,analytics,analytics,channel-estimation-propagation-analytics,true H(tau) if available
+/analytics/channel-estimation-propagation-analytics/charts/estimated-hhat-tau,analytics,analytics,channel-estimation-propagation-analytics,estimated Hhat(tau)
+/analytics/channel-estimation-propagation-analytics/charts/true-h-f-if-available,analytics,analytics,channel-estimation-propagation-analytics,true H(f) if available
+/analytics/channel-estimation-propagation-analytics/charts/estimated-hhat-f,analytics,analytics,channel-estimation-propagation-analytics,estimated Hhat(f)
+/analytics/channel-estimation-propagation-analytics/charts/channel-magnitude-heatmap,analytics,analytics,channel-estimation-propagation-analytics,channel magnitude heatmap
+/analytics/channel-estimation-propagation-analytics/charts/channel-phase-heatmap,analytics,analytics,channel-estimation-propagation-analytics,channel phase heatmap
+/analytics/channel-estimation-propagation-analytics/charts/tap-power-profile,analytics,analytics,channel-estimation-propagation-analytics,tap power profile
+/analytics/channel-estimation-propagation-analytics/charts/delay-spread-chart,analytics,analytics,channel-estimation-propagation-analytics,delay spread chart
+/analytics/channel-estimation-propagation-analytics/charts/angle-spread-chart,analytics,analytics,channel-estimation-propagation-analytics,angle spread chart
+/analytics/channel-estimation-propagation-analytics/charts/pathloss-distribution,analytics,analytics,channel-estimation-propagation-analytics,pathloss distribution
+/analytics/channel-estimation-propagation-analytics/charts/shadowing-distribution,analytics,analytics,channel-estimation-propagation-analytics,shadowing distribution
+/analytics/channel-estimation-propagation-analytics/charts/o2i-distribution,analytics,analytics,channel-estimation-propagation-analytics,O2I distribution
+/analytics/channel-estimation-propagation-analytics/charts/noise-variance-trend,analytics,analytics,channel-estimation-propagation-analytics,noise variance trend
+/analytics/channel-estimation-propagation-analytics/charts/nmse-vs-snr-sinr,analytics,analytics,channel-estimation-propagation-analytics,NMSE vs SNR / SINR
+/analytics/channel-estimation-propagation-analytics/charts/estimator-bias-variance-summaries,analytics,analytics,channel-estimation-propagation-analytics,estimator bias / variance summaries
+/analytics/channel-estimation-propagation-analytics/charts/serving-vs-interferer-decomposition,analytics,analytics,channel-estimation-propagation-analytics,serving vs interferer decomposition
+/analytics/detection-control-analytics/charts/p-fa,analytics,analytics,detection-control-analytics,P_FA
+/analytics/detection-control-analytics/charts/far,analytics,analytics,detection-control-analytics,FAR
+/analytics/detection-control-analytics/charts/p-md,analytics,analytics,detection-control-analytics,P_MD
+/analytics/detection-control-analytics/charts/p-d,analytics,analytics,detection-control-analytics,P_D
+/analytics/detection-control-analytics/charts/prach-correlation-peak-distributions,analytics,analytics,detection-control-analytics,PRACH correlation peak distributions
+/analytics/detection-control-analytics/charts/prach-noise-floor-distributions,analytics,analytics,detection-control-analytics,PRACH noise floor distributions
+/analytics/detection-control-analytics/charts/prach-peak-search-results,analytics,analytics,detection-control-analytics,PRACH peak search results
+/analytics/detection-control-analytics/charts/ssb-detection-statistics,analytics,analytics,detection-control-analytics,SSB detection statistics
+/analytics/detection-control-analytics/charts/pucch-dtx-statistics,analytics,analytics,detection-control-analytics,PUCCH DTX statistics
+/analytics/detection-control-analytics/charts/control-decode-success-failure-tables,analytics,analytics,detection-control-analytics,control decode success/failure tables
+/analytics/detection-control-analytics/charts/threshold-sweep-plots-if-data-exists,analytics,analytics,detection-control-analytics,threshold sweep plots if data exists
+/analytics/detection-control-analytics/charts/pbch-pdcch-pucch-detection-and-decode-timelines,analytics,analytics,detection-control-analytics,PBCH/PDCCH/PUCCH detection and decode timelines
+/analytics/error-reliability-analytics/charts/ber,analytics,analytics,error-reliability-analytics,BER
+/analytics/error-reliability-analytics/charts/bler,analytics,analytics,error-reliability-analytics,BLER
+/analytics/error-reliability-analytics/charts/fer,analytics,analytics,error-reliability-analytics,FER
+/analytics/error-reliability-analytics/charts/crc-pass-fail-rates,analytics,analytics,error-reliability-analytics,CRC pass/fail rates
+/analytics/error-reliability-analytics/charts/code-block-error-rates,analytics,analytics,error-reliability-analytics,code-block error rates
+/analytics/error-reliability-analytics/charts/cbg-error-rates,analytics,analytics,error-reliability-analytics,CBG error rates
+/analytics/error-reliability-analytics/charts/residual-bler-after-harq,analytics,analytics,error-reliability-analytics,residual BLER after HARQ
+/analytics/error-reliability-analytics/charts/decoder-iteration-distributions,analytics,analytics,error-reliability-analytics,decoder iteration distributions
+/analytics/error-reliability-analytics/charts/per-channel-reliability-breakdown,analytics,analytics,error-reliability-analytics,per-channel reliability breakdown
+/analytics/error-reliability-analytics/charts/per-format-reliability-breakdown,analytics,analytics,error-reliability-analytics,per-format reliability breakdown
+/analytics/error-reliability-analytics/charts/per-ue-and-per-cell-reliability,analytics,analytics,error-reliability-analytics,per-UE and per-cell reliability
+/analytics/error-reliability-analytics/charts/bler-vs-snr,analytics,analytics,error-reliability-analytics,BLER vs SNR
+/analytics/error-reliability-analytics/charts/bler-vs-sinr,analytics,analytics,error-reliability-analytics,BLER vs SINR
+/analytics/error-reliability-analytics/charts/ber-vs-snr,analytics,analytics,error-reliability-analytics,BER vs SNR
+/analytics/error-reliability-analytics/charts/fer-vs-snr,analytics,analytics,error-reliability-analytics,FER vs SNR
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/throughput,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/offered-throughput,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,offered throughput
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/goodput,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,goodput
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/spectral-efficiency,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,spectral efficiency
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/throughput-vs-snr,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput vs SNR
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/throughput-vs-sinr,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput vs SINR
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/throughput-vs-load,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput vs load
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/goodput-vs-retransmissions,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,goodput vs retransmissions
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/per-ue-throughput,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,per-UE throughput
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/per-cell-throughput,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,per-cell throughput
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/throughput-percentile-plots,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput percentile plots
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/throughput-cdf,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,throughput CDF
+/analytics/throughput-goodput-spectral-efficiency-analytics/charts/fairness-index-trend,analytics,analytics,throughput-goodput-spectral-efficiency-analytics,fairness index trend
+/analytics/measurement-csi-link-adaptation-analytics/charts/configured-snr-vs-applied-awgn-snr-vs-measured-sinr-vs-large-scale-sinr,analytics,analytics,measurement-csi-link-adaptation-analytics,configured SNR vs applied AWGN SNR vs measured SINR vs large-scale SINR
+/analytics/measurement-csi-link-adaptation-analytics/charts/servingrsrp-rsrp-csi-rsrp-trends,analytics,analytics,measurement-csi-link-adaptation-analytics,ServingRSRP / RSRP / CSI-RSRP trends
+/analytics/measurement-csi-link-adaptation-analytics/charts/cqi-pmi-ri-cri-ssbri-trends,analytics,analytics,measurement-csi-link-adaptation-analytics,CQI / PMI / RI / CRI / SSBRI trends
+/analytics/measurement-csi-link-adaptation-analytics/charts/cqi-to-mcs-mapping-plot,analytics,analytics,measurement-csi-link-adaptation-analytics,CQI-to-MCS mapping plot
+/analytics/measurement-csi-link-adaptation-analytics/charts/selected-mcs-distribution,analytics,analytics,measurement-csi-link-adaptation-analytics,selected MCS distribution
+/analytics/measurement-csi-link-adaptation-analytics/charts/selected-vs-derived-mcs-confusion-matrix,analytics,analytics,measurement-csi-link-adaptation-analytics,selected vs derived MCS confusion matrix
+/analytics/measurement-csi-link-adaptation-analytics/charts/quality-vs-selected-mcs-mismatch-plot,analytics,analytics,measurement-csi-link-adaptation-analytics,quality-vs-selected-MCS mismatch plot
+/analytics/measurement-csi-link-adaptation-analytics/charts/per-beam-quality-plot,analytics,analytics,measurement-csi-link-adaptation-analytics,per-beam quality plot
+/analytics/measurement-csi-link-adaptation-analytics/charts/per-layer-quality-plot,analytics,analytics,measurement-csi-link-adaptation-analytics,per-layer quality plot
+/analytics/measurement-csi-link-adaptation-analytics/charts/config-vs-measured-conflict-dashboard,analytics,analytics,measurement-csi-link-adaptation-analytics,config-vs-measured conflict dashboard
+/analytics/harq-analytics/charts/harq-process-timeline,analytics,analytics,harq-analytics,HARQ process timeline
+/analytics/harq-analytics/charts/retransmission-count-histogram,analytics,analytics,harq-analytics,retransmission count histogram
+/analytics/harq-analytics/charts/retransmission-rate-trend,analytics,analytics,harq-analytics,retransmission rate trend
+/analytics/harq-analytics/charts/harq-rtt-distribution,analytics,analytics,harq-analytics,HARQ RTT distribution
+/analytics/harq-analytics/charts/harq-combining-gain-distribution,analytics,analytics,harq-analytics,HARQ combining gain distribution
+/analytics/harq-analytics/charts/newtx-vs-retx-comparison,analytics,analytics,harq-analytics,newTx vs retx comparison
+/analytics/harq-analytics/charts/residual-failure-patterns,analytics,analytics,harq-analytics,residual failure patterns
+/analytics/beamforming-precoding-mimo-analytics/charts/beam-id-timeline,analytics,analytics,beamforming-precoding-mimo-analytics,beam id timeline
+/analytics/beamforming-precoding-mimo-analytics/charts/beam-pair-timeline,analytics,analytics,beamforming-precoding-mimo-analytics,beam pair timeline
+/analytics/beamforming-precoding-mimo-analytics/charts/selected-vs-best-beam-gap,analytics,analytics,beamforming-precoding-mimo-analytics,selected vs best beam gap
+/analytics/beamforming-precoding-mimo-analytics/charts/beam-hit-rate-top-k-hit-rate,analytics,analytics,beamforming-precoding-mimo-analytics,beam hit rate / top-K hit rate
+/analytics/beamforming-precoding-mimo-analytics/charts/beam-gain-gap-histogram,analytics,analytics,beamforming-precoding-mimo-analytics,beam gain gap histogram
+/analytics/beamforming-precoding-mimo-analytics/charts/precoder-mode-distribution,analytics,analytics,beamforming-precoding-mimo-analytics,precoder mode distribution
+/analytics/beamforming-precoding-mimo-analytics/charts/combiner-summary,analytics,analytics,beamforming-precoding-mimo-analytics,combiner summary
+/analytics/beamforming-precoding-mimo-analytics/charts/rank-distribution,analytics,analytics,beamforming-precoding-mimo-analytics,rank distribution
+/analytics/beamforming-precoding-mimo-analytics/charts/per-layer-sinr,analytics,analytics,beamforming-precoding-mimo-analytics,per-layer SINR
+/analytics/beamforming-precoding-mimo-analytics/charts/inter-user-leakage,analytics,analytics,beamforming-precoding-mimo-analytics,inter-user leakage
+/analytics/beamforming-precoding-mimo-analytics/charts/mu-grouping-analytics,analytics,analytics,beamforming-precoding-mimo-analytics,MU grouping analytics
+/analytics/beamforming-precoding-mimo-analytics/charts/condition-number-distribution,analytics,analytics,beamforming-precoding-mimo-analytics,condition number distribution
+/analytics/beamforming-precoding-mimo-analytics/charts/calibration-reciprocity-diagnostics-if-modeled,analytics,analytics,beamforming-precoding-mimo-analytics,calibration / reciprocity diagnostics if modeled
+/analytics/mobility-selection-reselection-handover-analytics/charts/ue-trajectory-views,analytics,analytics,mobility-selection-reselection-handover-analytics,UE trajectory views
+/analytics/mobility-selection-reselection-handover-analytics/charts/serving-cell-timeline,analytics,analytics,mobility-selection-reselection-handover-analytics,serving cell timeline
+/analytics/mobility-selection-reselection-handover-analytics/charts/neighbor-ranking-timeline,analytics,analytics,mobility-selection-reselection-handover-analytics,neighbor ranking timeline
+/analytics/mobility-selection-reselection-handover-analytics/charts/selection-reselection-trigger-tables,analytics,analytics,mobility-selection-reselection-handover-analytics,selection/reselection trigger tables
+/analytics/mobility-selection-reselection-handover-analytics/charts/hysteresis-ttt-studies,analytics,analytics,mobility-selection-reselection-handover-analytics,hysteresis / TTT studies
+/analytics/mobility-selection-reselection-handover-analytics/charts/mobility-robustness-summaries,analytics,analytics,mobility-selection-reselection-handover-analytics,mobility robustness summaries
+/analytics/mobility-selection-reselection-handover-analytics/charts/access-delay-vs-mobility,analytics,analytics,mobility-selection-reselection-handover-analytics,access delay vs mobility
+/analytics/mobility-selection-reselection-handover-analytics/charts/measurement-filtering-analytics,analytics,analytics,mobility-selection-reselection-handover-analytics,measurement filtering analytics
+/analytics/mobility-selection-reselection-handover-analytics/charts/handover-event-timeline,analytics,analytics,mobility-selection-reselection-handover-analytics,handover event timeline
+/analytics/random-access-prach-analytics/charts/detection-rate,analytics,analytics,random-access-prach-analytics,detection rate
+/analytics/random-access-prach-analytics/charts/false-alarm-rate,analytics,analytics,random-access-prach-analytics,false alarm rate
+/analytics/random-access-prach-analytics/charts/missed-detection-rate,analytics,analytics,random-access-prach-analytics,missed detection rate
+/analytics/random-access-prach-analytics/charts/access-latency,analytics,analytics,random-access-prach-analytics,access latency
+/analytics/random-access-prach-analytics/charts/retry-count-distribution,analytics,analytics,random-access-prach-analytics,retry count distribution
+/analytics/random-access-prach-analytics/charts/timing-advance-distribution,analytics,analytics,random-access-prach-analytics,timing advance distribution
+/analytics/random-access-prach-analytics/charts/preamble-root-cyclic-shift-usage-summary,analytics,analytics,random-access-prach-analytics,preamble/root/cyclic-shift usage summary
+/analytics/random-access-prach-analytics/charts/collision-summary-if-modeled,analytics,analytics,random-access-prach-analytics,collision summary if modeled
+/analytics/impairments-tracking-analytics/charts/cfo-true-vs-estimated-vs-residual,analytics,analytics,impairments-tracking-analytics,CFO true vs estimated vs residual
+/analytics/impairments-tracking-analytics/charts/timing-offset-true-vs-estimated-vs-residual,analytics,analytics,impairments-tracking-analytics,timing offset true vs estimated vs residual
+/analytics/impairments-tracking-analytics/charts/phase-noise-summary,analytics,analytics,impairments-tracking-analytics,phase noise summary
+/analytics/impairments-tracking-analytics/charts/iq-imbalance-summary,analytics,analytics,impairments-tracking-analytics,IQ imbalance summary
+/analytics/impairments-tracking-analytics/charts/pa-nonlinearity-summary,analytics,analytics,impairments-tracking-analytics,PA nonlinearity summary
+/analytics/impairments-tracking-analytics/charts/clipping-summary,analytics,analytics,impairments-tracking-analytics,clipping summary
+/analytics/impairments-tracking-analytics/charts/quantization-summary,analytics,analytics,impairments-tracking-analytics,quantization summary
+/analytics/impairments-tracking-analytics/charts/impairment-order-trace,analytics,analytics,impairments-tracking-analytics,impairment order trace
+/analytics/impairments-tracking-analytics/charts/contribution-decomposition-if-measurable,analytics,analytics,impairments-tracking-analytics,contribution decomposition if measurable
+/analytics/power-energy-efficiency-analytics/charts/dl-tx-power-per-cell-beam-ue,analytics,analytics,power-energy-efficiency-analytics,DL Tx power per cell / beam / UE
+/analytics/power-energy-efficiency-analytics/charts/ul-tx-power-per-ue,analytics,analytics,power-energy-efficiency-analytics,UL Tx power per UE
+/analytics/power-energy-efficiency-analytics/charts/power-control-behavior,analytics,analytics,power-energy-efficiency-analytics,power control behavior
+/analytics/power-energy-efficiency-analytics/charts/pa-backoff-distribution,analytics,analytics,power-energy-efficiency-analytics,PA backoff distribution
+/analytics/power-energy-efficiency-analytics/charts/rf-chain-power,analytics,analytics,power-energy-efficiency-analytics,RF chain power
+/analytics/power-energy-efficiency-analytics/charts/baseband-power,analytics,analytics,power-energy-efficiency-analytics,baseband power
+/analytics/power-energy-efficiency-analytics/charts/cpu-power-if-available,analytics,analytics,power-energy-efficiency-analytics,CPU power if available
+/analytics/power-energy-efficiency-analytics/charts/power-vs-throughput,analytics,analytics,power-energy-efficiency-analytics,power vs throughput
+/analytics/power-energy-efficiency-analytics/charts/power-vs-bler,analytics,analytics,power-energy-efficiency-analytics,power vs BLER
+/analytics/power-energy-efficiency-analytics/charts/energy-bit,analytics,analytics,power-energy-efficiency-analytics,energy/bit
+/analytics/power-energy-efficiency-analytics/charts/joules-gb,analytics,analytics,power-energy-efficiency-analytics,joules/GB
+/analytics/power-energy-efficiency-analytics/charts/energy-efficiency-by-ue,analytics,analytics,power-energy-efficiency-analytics,energy efficiency by UE
+/analytics/power-energy-efficiency-analytics/charts/energy-efficiency-by-cell,analytics,analytics,power-energy-efficiency-analytics,energy efficiency by cell
+/analytics/power-energy-efficiency-analytics/charts/sleep-idle-active-state-occupancy,analytics,analytics,power-energy-efficiency-analytics,sleep/idle/active state occupancy
+/analytics/power-energy-efficiency-analytics/charts/papr-vs-power,analytics,analytics,power-energy-efficiency-analytics,PAPR vs power
+/analytics/power-energy-efficiency-analytics/charts/thermal-throttling-analytics-if-available,analytics,analytics,power-energy-efficiency-analytics,thermal/throttling analytics if available
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/block-execution-time,analytics,analytics,runtime-compute-complexity-parallelism-analytics,block execution time
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/stage-latency,analytics,analytics,runtime-compute-complexity-parallelism-analytics,stage latency
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/end-to-end-latency,analytics,analytics,runtime-compute-complexity-parallelism-analytics,end-to-end latency
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/compute-latency,analytics,analytics,runtime-compute-complexity-parallelism-analytics,compute latency
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/decode-latency,analytics,analytics,runtime-compute-complexity-parallelism-analytics,decode latency
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/cpu-cycles,analytics,analytics,runtime-compute-complexity-parallelism-analytics,CPU cycles
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/memory-usage,analytics,analytics,runtime-compute-complexity-parallelism-analytics,memory usage
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/worker-timelines,analytics,analytics,runtime-compute-complexity-parallelism-analytics,worker timelines
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/lock-contention-observations,analytics,analytics,runtime-compute-complexity-parallelism-analytics,lock/contention observations
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/db-write-latency,analytics,analytics,runtime-compute-complexity-parallelism-analytics,DB write latency
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/export-lag,analytics,analytics,runtime-compute-complexity-parallelism-analytics,export lag
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/single-thread-vs-multi-thread-determinism,analytics,analytics,runtime-compute-complexity-parallelism-analytics,single-thread vs multi-thread determinism
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/dropped-row-duplicate-write-analytics,analytics,analytics,runtime-compute-complexity-parallelism-analytics,dropped row / duplicate write analytics
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/decoder-complexity-units,analytics,analytics,runtime-compute-complexity-parallelism-analytics,decoder complexity units
+/analytics/runtime-compute-complexity-parallelism-analytics/charts/normalized-decoder-complexity,analytics,analytics,runtime-compute-complexity-parallelism-analytics,normalized decoder complexity
+/analytics/export-consistency-truth-analytics/charts/csv-vs-db-consistency,analytics,analytics,export-consistency-truth-analytics,CSV vs DB consistency
+/analytics/export-consistency-truth-analytics/charts/db-vs-browser-consistency,analytics,analytics,export-consistency-truth-analytics,DB vs browser consistency
+/analytics/export-consistency-truth-analytics/charts/source-row-count-vs-analytics-row-count,analytics,analytics,export-consistency-truth-analytics,source row count vs analytics row count
+/analytics/export-consistency-truth-analytics/charts/missing-field-audits,analytics,analytics,export-consistency-truth-analytics,missing-field audits
+/analytics/export-consistency-truth-analytics/charts/schema-drift,analytics,analytics,export-consistency-truth-analytics,schema drift
+/analytics/export-consistency-truth-analytics/charts/config-drift,analytics,analytics,export-consistency-truth-analytics,config drift
+/analytics/export-consistency-truth-analytics/charts/truth-policy-violation-counts,analytics,analytics,export-consistency-truth-analytics,truth-policy violation counts
+/analytics/export-consistency-truth-analytics/charts/smoke-exposure-checks,analytics,analytics,export-consistency-truth-analytics,smoke exposure checks
+/analytics/export-consistency-truth-analytics/charts/placeholder-exposure-checks,analytics,analytics,export-consistency-truth-analytics,placeholder exposure checks
+/analytics/export-consistency-truth-analytics/charts/fallback-event-summaries,analytics,analytics,export-consistency-truth-analytics,fallback event summaries
+/analytics/export-consistency-truth-analytics/charts/assumption-usage-summaries,analytics,analytics,export-consistency-truth-analytics,assumption usage summaries
+/analytics/export-consistency-truth-analytics/charts/run-status-truth-checks,analytics,analytics,export-consistency-truth-analytics,run status truth checks
+/analytics/export-consistency-truth-analytics/charts/summary-vs-raw-contradiction-checks,analytics,analytics,export-consistency-truth-analytics,summary-vs-raw contradiction checks
+/analytics/regression-baseline-vs-candidate-analytics/charts/kpi-delta-tables,analytics,analytics,regression-baseline-vs-candidate-analytics,KPI delta tables
+/analytics/regression-baseline-vs-candidate-analytics/charts/baseline-vs-candidate-overlays,analytics,analytics,regression-baseline-vs-candidate-analytics,baseline vs candidate overlays
+/analytics/regression-baseline-vs-candidate-analytics/charts/throughput-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,throughput delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/bler-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,BLER delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/ber-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,BER delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/evm-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,EVM delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/nmse-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,NMSE delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/p-fa-p-md-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,P_FA / P_MD delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/harq-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,HARQ delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/beam-hit-gap-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,beam hit/gap delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/latency-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,latency delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/power-energy-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,power / energy delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/determinism-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,determinism delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/schema-drift-delta,analytics,analytics,regression-baseline-vs-candidate-analytics,schema drift delta
+/analytics/regression-baseline-vs-candidate-analytics/charts/fallback-placeholder-smoke-regressions,analytics,analytics,regression-baseline-vs-candidate-analytics,fallback / placeholder / smoke regressions
+/analytics/optional-6g-extension-analytics/charts/ai-inference-confidence-latency,analytics,analytics,optional-6g-extension-analytics,AI inference confidence / latency
+/analytics/optional-6g-extension-analytics/charts/sensing-p-d-p-fa,analytics,analytics,optional-6g-extension-analytics,sensing P_D / P_FA
+/analytics/optional-6g-extension-analytics/charts/localization-rmse,analytics,analytics,optional-6g-extension-analytics,localization RMSE
+/analytics/optional-6g-extension-analytics/charts/ntn-haps-uav-delay-and-doppler,analytics,analytics,optional-6g-extension-analytics,NTN/HAPS/UAV delay and Doppler
+/analytics/optional-6g-extension-analytics/charts/ris-state-summaries,analytics,analytics,optional-6g-extension-analytics,RIS state summaries
+/analytics/optional-6g-extension-analytics/charts/cell-free-distributed-mimo-combining-gains,analytics,analytics,optional-6g-extension-analytics,cell-free / distributed MIMO combining gains
+/analytics/optional-6g-extension-analytics/charts/sub-thz-impairment-studies,analytics,analytics,optional-6g-extension-analytics,sub-THz impairment studies

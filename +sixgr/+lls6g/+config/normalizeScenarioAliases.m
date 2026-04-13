@@ -30,10 +30,12 @@ cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.cp_type", "frame
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.sample_rate_hz", "waveform.sample_rate_hz", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.fft_size", "waveform.fft_size", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.tdd_pattern", "frame.tdd_pattern", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "deployment_topology.num_ues", "users.n_users", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "mobility.ue_speed_kmh", "channels.mobility_kmph", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "mobility.spatial_consistency_flag", "channels.spatial_consistency_enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "antenna_and_array.bs_num_antenna_elements", "mimo.n_tx_ant", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "antenna_and_array.ue_num_antenna_elements", "mimo.n_rx_ant", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "antenna_and_array.digital_precoder_family", "mimo.precoder_type", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "power_and_rf_frontend.bs_tx_power_dbm", "energy_efficiency.tx_power_dbm", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "waveform.dl_waveform", "waveform.dl_waveform", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "waveform.ul_waveform", "waveform.ul_waveform", "identity");
@@ -43,6 +45,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.model_family", "chann
 cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.scenario_label", "channels.profile", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.delay_spread_ns", "channels.delay_spread_ns", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.doppler_hz", "channels.doppler_hz", "identity");
+  cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.doppler_source_mode", "channels.doppler_source_mode", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo_and_beam_management.beam_sweeping", "mimo.beam_sweep_enabled", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo_and_beam_management.rank_set", "mimo.n_layers", "first_numeric");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo_and_beam_management.codebook_family", "mimo.codebook_type", "identity");
@@ -85,13 +88,14 @@ cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.pdsch_dmrs.num_po
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.pusch_dmrs.num_ports", "reference_signals.pusch_dmrs_ports", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.srs.num_ports", "reference_signals.srs_ports", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.srs.sequence_type", "reference_signals.srs_sequence_family", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.srs.periodicity", "reference_signals.srs_periodicity_ms", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.srs.periodicity", "reference_signals.srs_periodicity_ms", "numeric_string");
 cfg = localSyncValue(cfg, newBase, oldBase, "pdcch.enabled", "control.pdcch_enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "pdcch.aggregation_levels", "control.aggregation_levels", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "pucch.enabled", "control.pucch_enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "prach.enabled", "random_access.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "prach.sequence_family", "random_access.prach_sequence_family", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "prach.format_set", "random_access.prach_format", "first_string");
+cfg = localApplyDerivedRadioAliases(cfg, newBase);
 end
 
 function cfg = localEnsureConfigInheritance(cfg, sourceFiles, configPath)
@@ -112,6 +116,45 @@ end
 
 function cfg = localSyncNestedFlag(cfg, newBase, oldBase, newPath, oldPath)
 cfg = localSyncValue(cfg, newBase, oldBase, newPath, oldPath, "identity");
+end
+
+function cfg = localApplyDerivedRadioAliases(cfg, newBase)
+scsKHz = double(sixgr.util.structGet(cfg, "frame.scs_khz", NaN));
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    return;
+end
+
+mu = log2(scsKHz / 15);
+if isfinite(mu)
+    mu = round(mu);
+end
+if ~(isfinite(mu) && mu >= 0)
+    return;
+end
+
+slotDurationMs = 1 / 2^double(mu);
+slotsPerFrame = 10 * 2^double(mu);
+
+cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "global_radio_scope.scs_hz", scsKHz * 1e3);
+cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "global_radio_scope.numerology_mu", mu);
+cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "frame_timing.slot_duration_ms", slotDurationMs);
+cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "frame_timing.slots_per_frame", slotsPerFrame);
+cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "frame_timing.symbols_per_slot", 14);
+
+carrierGrid = double(sixgr.util.structGet(cfg, "frequency.n_size_grid", NaN));
+activeMode = lower(strtrim(string(sixgr.util.structGet(cfg, "bandwidth_operation.active_bandwidth_mode", "fullband"))));
+supportsPartial = logical(sixgr.util.structGet(cfg, "bandwidth_operation.supports_partial_band_activation", false));
+if isfinite(carrierGrid) && carrierGrid > 0 && (~supportsPartial || activeMode == "fullband")
+    cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "resource_grid.num_rbs", round(carrierGrid));
+end
+end
+
+function cfg = localReplaceIfDefaultOrMissing(cfg, baseCfg, pathStr, value)
+current = sixgr.util.structGet(cfg, pathStr, []);
+baseValue = sixgr.util.structGet(baseCfg, pathStr, []);
+if isempty(current) || isequaln(current, baseValue)
+    cfg = sixgr.util.structSet(cfg, pathStr, value);
+end
 end
 
 function cfg = localSyncValue(cfg, newBase, oldBase, newPath, oldPath, mode)
@@ -199,6 +242,17 @@ switch mode
             out = localKPIListToStruct(value);
         else
             out = value;
+        end
+    case "numeric_string"
+        if direction == "new_to_old"
+            numericValue = str2double(string(value));
+            if isfinite(numericValue)
+                out = numericValue;
+            else
+                out = value;
+            end
+        else
+            out = char(string(value));
         end
     otherwise
         out = value;

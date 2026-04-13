@@ -1,0 +1,2 @@
+inherits:
+  - ../../simulator/configs/scenarios/lls_3gpp_4ghz_100mhz_longrun.yaml

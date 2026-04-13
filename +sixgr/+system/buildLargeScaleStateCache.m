@@ -40,6 +40,7 @@ state.PropagationScenario = string(sixgr.util.structGet(cfg, "channel.propagatio
 state.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", true));
 state.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", true));
 state.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", true));
+state.PropagationReused = logical(opt.ReusePropagation);
 
 txPower_dBm = reshape(double(layout.bs.txPower_dBm), 1, []);
 if numel(txPower_dBm) ~= nCells
@@ -106,7 +107,10 @@ else
         [pl_dB, los, ex] = plModel.pathloss(txPos, rxPos, ...
             "Scenario", state.PropagationScenario, ...
             "IndoorRx", indoorRow, ...
-            "IndoorDistance_m", indoorDistanceRow);
+            "IndoorDistance_m", indoorDistanceRow, ...
+            "PathlossEnabled", state.PathlossEnabled, ...
+            "ShadowFadingEnabled", state.ShadowFadingEnabled, ...
+            "LOSEnabled", state.LOSEnabled);
         state.Pathloss_dB(:, c) = double(pl_dB(:));
         state.LOS(:, c) = logical(los(:));
         state.Shadow_dB(:, c) = double(ex.shadow_dB(:));

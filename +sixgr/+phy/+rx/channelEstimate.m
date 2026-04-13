@@ -34,6 +34,8 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
         error("sixgr:phy:channelEstimate:InvalidReference", ...
             "refInd/refSym must be non-empty.");
     end
+    localValidateReferenceSymbols(refSym);
+    [refInd, refSym, refPruneInfo] = localPruneZeroReferenceSymbols(refInd, refSym);
 
     useFastMex = false;
     strictMode = false;
@@ -96,6 +98,10 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.ScalarFastPathUsed = false;
     info.ScalarFastPathDisabledReason = string(policy.DisabledReason);
     info.RxGridSize = size(rxGrid);
+    info.ReferenceSymbolsOriginalCount = double(refPruneInfo.OriginalCount);
+    info.ReferenceSymbolsUsedCount = double(refPruneInfo.RetainedCount);
+    info.ZeroReferenceSymbolCount = double(refPruneInfo.ZeroReferenceSymbolCount);
+    info.PrunedZeroReferenceSymbols = logical(refPruneInfo.PrunedZeroReferenceSymbols);
 
     if policy.UseFastMexEffective && ...
             (exist("sixgr_channel_est_ls_kernel_mex","file") == 3 || exist("sixgr_channel_est_ls_kernel","file") == 2)
@@ -129,8 +135,24 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
 
     engine = "nrChannelEstimate";
     try
+        suppressZeroReferenceWarning = false;
+        prevWarnMsg = "";
+        prevWarnId = "";
+        if double(refPruneInfo.ZeroReferenceSymbolCount) > 0 && ~logical(refPruneInfo.PrunedZeroReferenceSymbols)
+            [prevWarnMsg, prevWarnId] = lastwarn;
+            warnState = warning("query", "nr5g:nrChannelEstimate:ZeroValuedSym");
+            cleanupWarn = onCleanup(@() warning(warnState.state, "nr5g:nrChannelEstimate:ZeroValuedSym")); %#ok<NASGU>
+            warning("off", "nr5g:nrChannelEstimate:ZeroValuedSym");
+            suppressZeroReferenceWarning = true;
+        end
         % Most common signature: [Hest, nVar] = nrChannelEstimate(carrier, rxGrid, refInd, refSym, ...)
         [Hest, nVar] = nrChannelEstimate(carrier, rxGrid, refInd, refSym, fwd{:});
+        if suppressZeroReferenceWarning
+            [warnMsg, warnId] = lastwarn;
+            if strcmp(string(warnId), "nr5g:nrChannelEstimate:ZeroValuedSym")
+                lastwarn(prevWarnMsg, prevWarnId);
+            end
+        end
     catch ME
         error("sixgr:phy:channelEstimate:Failed", ...
             "nrChannelEstimate failed: %s", ME.message);
@@ -139,6 +161,75 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.EngineUsed = engine;
     info.HestSize = size(Hest);
     info.NoiseVar = nVar;
+end
+
+function localValidateReferenceSymbols(refSym)
+try
+    refValues = refSym(:);
+catch
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "refSym must be an array of numeric reference symbols.");
+end
+if ~isnumeric(refValues) || isempty(refValues)
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "refSym must contain numeric reference symbols.");
+end
+finiteMask = isfinite(real(refValues)) & isfinite(imag(refValues));
+if ~all(finiteMask)
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "refSym contains non-finite reference symbols.");
+end
+if ~any(abs(refValues) > 0)
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "refSym contains no non-zero reference symbols; channel estimation requires real DMRS/CSI-RS evidence.");
+end
+end
+
+function [refIndOut, refSymOut, info] = localPruneZeroReferenceSymbols(refInd, refSym)
+refIndOut = refInd;
+refSymOut = refSym;
+refValues = refSym(:);
+keep = abs(refValues) > 0;
+
+info = struct();
+info.OriginalCount = double(numel(refValues));
+info.RetainedCount = double(nnz(keep));
+info.ZeroReferenceSymbolCount = double(numel(refValues) - nnz(keep));
+info.PrunedZeroReferenceSymbols = info.ZeroReferenceSymbolCount > 0;
+
+if ~logical(info.PrunedZeroReferenceSymbols)
+    return;
+end
+if localShouldPreserveReferencePortShape(refInd, refSym)
+    info.PrunedZeroReferenceSymbols = false;
+    info.PreservedReferencePortShape = true;
+    return;
+end
+if ~any(keep)
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "refSym contains no non-zero reference symbols; channel estimation requires real DMRS/CSI-RS evidence.");
+end
+if ~isnumeric(refInd)
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "refInd must be numeric when pruning zero reference symbols.");
+end
+
+if numel(refInd) == numel(refValues)
+    refIndValues = refInd(:);
+    refIndOut = refIndValues(keep);
+    refSymOut = refValues(keep);
+elseif size(refInd, 1) == numel(refValues)
+    refIndOut = refInd(keep, :);
+    refSymOut = refValues(keep);
+else
+    error("sixgr:phy:channelEstimate:InvalidReference", ...
+        "Cannot prune zero reference symbols because refInd/refSym shapes do not align.");
+end
+end
+
+function tf = localShouldPreserveReferencePortShape(refInd, refSym)
+tf = isnumeric(refInd) && isnumeric(refSym) && ~isvector(refInd) && ~isvector(refSym) && ...
+    size(refInd, 2) == size(refSym, 2) && size(refSym, 2) > 1;
 end
 
 function policy = localResolveScalarFastPathPolicy(useFastMex, strictMode, channelModel, expectedTxPorts, rxGrid, contextLabel)

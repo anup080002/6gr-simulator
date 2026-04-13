@@ -187,6 +187,37 @@ if isfield(cfg,'phy') && isa(cfg.phy,'struct')
             cfg.phy.pusch.transformPrecoding = true;
         end
     end
+
+    cfg.phy = localStructEnsure(cfg, 'phy');
+    cfg.phy.csi = localStructEnsure(cfg.phy, 'csi');
+    cfg.phy.pdsch = localStructEnsure(cfg.phy, 'pdsch');
+    cfg.phy.pusch = localStructEnsure(cfg.phy, 'pusch');
+
+    defaultCQITable = char(localNormalizeCQITable(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.csi.cqiTable", []), ...
+        "table1")));
+    cfg.phy.csi.cqiTable = defaultCQITable;
+    cfg.phy.csi.dlCQITable = char(localNormalizeCQITable(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.csi.dlCQITable", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.cqiTable", []), ...
+        defaultCQITable)));
+    cfg.phy.csi.ulCQITable = char(localNormalizeCQITable(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.csi.ulCQITable", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.cqiTable", []), ...
+        defaultCQITable)));
+    cfg.phy.pdsch.cqiTable = cfg.phy.csi.dlCQITable;
+    cfg.phy.pusch.cqiTable = cfg.phy.csi.ulCQITable;
+    % Wideband CQI fallback is intentionally conservative because it maps a
+    % single effective SINR into NR CQI without per-RB frequency selectivity.
+    cfg.phy.csi.widebandSINRMargin_dB = double(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.csi.widebandSINRMargin_dB", []), 5));
+
+    cfg.phy.pdsch.mcsTable = char(localNormalizeMCSTable(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.pdsch.mcsTable", []), ...
+        localDefaultMCSTableForModulation(sixgr.util.structGet(cfg, "phy.pdsch.modulation", "16QAM")))));
+    cfg.phy.pusch.mcsTable = char(localNormalizeMCSTable(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.pusch.mcsTable", []), ...
+        localDefaultMCSTableForModulation(sixgr.util.structGet(cfg, "phy.pusch.modulation", "16QAM")))));
 end
 
 % Output aliases
@@ -293,6 +324,21 @@ if any(strcmpi(cfg.run.module, legacyModules))
     cfg.run.module = 'sixgr_run_3gpp_full_campaign';
 end
 
+cfg.mac = localStructEnsure(cfg, 'mac');
+cfg.mac.scheduler = localStructEnsure(cfg.mac, 'scheduler');
+cfg.mac.scheduler.tbsMode = char(localNormalizeTBSMode(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "mac.scheduler.tbsMode", []), "approximate")));
+cfg.mac.scheduler.viennaEquivalent = localLogicalWithDefault(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "mac.scheduler.viennaEquivalent", []), false), false);
+if strcmpi(cfg.mac.scheduler.tbsMode, 'faithful') || strcmpi(cfg.mac.scheduler.tbsMode, 'strict') || ...
+        logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || logical(cfg.mac.scheduler.viennaEquivalent)
+    cfg.mac.scheduler.fastNREApprox = false;
+elseif ~isfield(cfg.mac.scheduler, 'fastNREApprox') || isempty(cfg.mac.scheduler.fastNREApprox)
+    cfg.mac.scheduler.fastNREApprox = true;
+else
+    cfg.mac.scheduler.fastNREApprox = logical(cfg.mac.scheduler.fastNREApprox);
+end
+
 % -------------------------------------------------------------------------
 % Derive numerology helpers
 % -------------------------------------------------------------------------
@@ -364,6 +410,22 @@ end
 % -------------------------------------------------------------------------
 % Output flags normalize to logical
 % -------------------------------------------------------------------------
+if ~isfield(cfg.outputs, 'storageBackend') || strlength(string(cfg.outputs.storageBackend)) == 0
+    cfg.outputs.storageBackend = "filesystem";
+end
+if ~isfield(cfg.outputs, 'databaseHost') || strlength(string(cfg.outputs.databaseHost)) == 0
+    cfg.outputs.databaseHost = "localhost";
+end
+if ~isfield(cfg.outputs, 'databasePort') || isempty(cfg.outputs.databasePort)
+    cfg.outputs.databasePort = 3306;
+end
+if ~isfield(cfg.outputs, 'databaseSchema') || strlength(string(cfg.outputs.databaseSchema)) == 0
+    cfg.outputs.databaseSchema = "sixgr_results";
+end
+cfg.outputs.storageBackend = char(string(cfg.outputs.storageBackend));
+cfg.outputs.databaseHost = char(string(cfg.outputs.databaseHost));
+cfg.outputs.databasePort = double(cfg.outputs.databasePort);
+cfg.outputs.databaseSchema = char(string(cfg.outputs.databaseSchema));
 cfg.outputs.saveMAT = logical(cfg.outputs.saveMAT);
 cfg.outputs.saveCSV = logical(cfg.outputs.saveCSV);
 cfg.outputs.saveFigures = logical(cfg.outputs.saveFigures);
@@ -414,6 +476,49 @@ if isempty(value)
     tf = logical(defaultValue);
 else
     tf = logical(value);
+end
+end
+
+function token = localNormalizeCQITable(value)
+token = lower(strtrim(char(string(value))));
+switch token
+    case {"", "1", "table1", "table_1", "cqi_table1", "cqi_table_1", "nr_table1", "nr_cqi_table1"}
+        token = 'table1';
+    case {"2", "table2", "table_2", "cqi_table2", "cqi_table_2", "nr_table2", "nr_cqi_table2"}
+        token = 'table2';
+end
+end
+
+function token = localNormalizeMCSTable(value)
+token = lower(strtrim(char(string(value))));
+switch token
+    case {"", "qam64", "table1", "mcs_table1", "qam64table1"}
+        token = 'qam64_table1';
+    case {"qam256", "table2", "mcs_table2", "qam256table2"}
+        token = 'qam256_table2';
+    case {"qam64lowse", "table3", "mcs_table3", "qam64lowse_table3"}
+        token = 'qam64lowse_table3';
+end
+end
+
+function token = localDefaultMCSTableForModulation(modulation)
+scheme = upper(char(string(modulation)));
+if any(strcmp(scheme, {'256QAM','1024QAM','4096QAM'}))
+    token = 'qam256_table2';
+else
+    token = 'qam64_table1';
+end
+end
+
+function token = localNormalizeTBSMode(value)
+token = lower(strtrim(char(string(value))));
+switch token
+    case {"", "fast", "approx", "approximate"}
+        token = 'approximate';
+    case {"faithful", "accurate", "exact", "nr"}
+        token = 'faithful';
+    case {"strict"}
+        token = 'strict';
 end
 end
 

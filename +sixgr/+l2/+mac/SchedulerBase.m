@@ -256,25 +256,27 @@ classdef (Abstract) SchedulerBase < handle
             end
         end
 
-        function [modStr, nLayers, targetCodeRate] = selectAMC(obj, ue)
-            % Select modulation/layers/code rate.
-            %
-            % If UE provides overrides, use them; otherwise fall back to cfg.
+        function [modStr, nLayers, targetCodeRate, amc] = selectAMC(obj, ue)
+            % Select modulation/layers/code rate using an explicit NR AMC path.
             dir = upper(obj.Direction);
+            mcsTable = obj.resolveMCSTable();
+            cqiTable = obj.resolveCQITable();
+            cqiRaw = double(sixgr.util.structGet(ue, "CQI", NaN));
+
             if strcmp(dir,'DL')
                 modStr = char(string(sixgr.util.structGet(obj.Cfg,"phy.pdsch.modulation","16QAM")));
                 nLayers = double(sixgr.util.structGet(obj.Cfg,"phy.pdsch.nLayers",1));
                 targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"phy.pdsch.codeRate",0.5));
+                cfgMCSIndex = double(sixgr.util.structGet(obj.Cfg,"phy.pdsch.mcsIndex", NaN));
+                linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.dlPolicy", "");
             else
                 modStr = char(string(sixgr.util.structGet(obj.Cfg,"phy.pusch.modulation","16QAM")));
                 nLayers = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.nLayers",1));
                 targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.codeRate",0.5));
+                cfgMCSIndex = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.mcsIndex", NaN));
+                linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.ulPolicy", "");
             end
-
-            cqi = double(sixgr.util.structGet(ue, "CQI", NaN));
-            if isfinite(cqi) && cqi >= 1
-                [modStr, targetCodeRate] = localAMCFromCQI(cqi, modStr, targetCodeRate, obj.Cfg);
-            end
+            linkAdaptationMode = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.mode", "fixed");
 
             if isfield(ue,'Modulation') && ~isempty(ue.Modulation)
                 modStr = char(string(ue.Modulation));
@@ -282,7 +284,6 @@ classdef (Abstract) SchedulerBase < handle
             if isfield(ue,'NumLayers') && ~isempty(ue.NumLayers)
                 nLayers = double(ue.NumLayers);
             elseif isfield(ue,'RI') && ~isempty(ue.RI)
-                % If RI present, use it as layers (clamped)
                 nLayers = max(1, min(8, double(ue.RI)));
             end
             if isfield(ue,'TargetCodeRate') && ~isempty(ue.TargetCodeRate)
@@ -292,23 +293,110 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
 
-            if localUseWaveformFadingAMC(obj.Cfg) && strcmp(dir, 'UL')
-                % UL waveform replay is currently validated only for single-layer
-                % grants on the fading truth path.
+            amc = struct( ...
+                "Mode", "fixed_modulation", ...
+                "MCSTable", char(mcsTable), ...
+                "CQITable", char(cqiTable), ...
+                "CQIUsed", double(cqiRaw), ...
+                "MCSIndex", NaN, ...
+                "MCSProfile", sixgr.link.resolveMCSProfile(mcsTable, -1));
+
+            ueMCSIndex = double(sixgr.util.structGet(ue, "MCSIndex", NaN));
+            hasExplicitModulation = isfield(ue,'Modulation') && ~isempty(ue.Modulation) && ...
+                strlength(string(ue.Modulation)) > 0;
+            hasExplicitTargetCodeRate = isfield(ue,'TargetCodeRate') && ~isempty(ue.TargetCodeRate) && ...
+                isfinite(double(ue.TargetCodeRate)) && double(ue.TargetCodeRate) > 0;
+            hasExplicitFixedModulation = hasExplicitModulation || hasExplicitTargetCodeRate;
+            useCQIForAMC = localUseCQIForAMC(linkAdaptationMode, linkAdaptationPolicy, cqiRaw);
+
+            if isfinite(ueMCSIndex) && ueMCSIndex >= 0
+                amc.Mode = "fixed_mcs";
+                amc.MCSIndex = round(ueMCSIndex);
+            elseif useCQIForAMC
+                amc.Mode = "cqi_table";
+                cqiDecision = sixgr.link.resolveMCSFromCQI(max(1, round(cqiRaw)), mcsTable, cqiTable);
+                if cqiDecision.Valid
+                    amc.MCSIndex = double(cqiDecision.MCSIndex);
+                    amc.MCSProfile = cqiDecision.MCSProfile;
+                    modStr = char(string(cqiDecision.MCSProfile.Modulation));
+                    targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
+                elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
+                    amc.Mode = "fixed_mcs";
+                    amc.MCSIndex = round(cfgMCSIndex);
+                end
+            elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
+                amc.Mode = "fixed_mcs";
+                amc.MCSIndex = round(cfgMCSIndex);
+            elseif hasExplicitFixedModulation
+                amc.Mode = "fixed_modulation";
+            elseif isfinite(cqiRaw)
+                amc.Mode = "cqi_table";
+                cqiDecision = sixgr.link.resolveMCSFromCQI(max(1, round(cqiRaw)), mcsTable, cqiTable);
+                if cqiDecision.Valid
+                    amc.MCSIndex = double(cqiDecision.MCSIndex);
+                    amc.MCSProfile = cqiDecision.MCSProfile;
+                    modStr = char(string(cqiDecision.MCSProfile.Modulation));
+                    targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
+                end
+            end
+
+            if amc.Mode == "fixed_mcs" && isfinite(amc.MCSIndex) && amc.MCSIndex >= 0
+                prof = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
+                if prof.Valid
+                    amc.MCSProfile = prof;
+                    modStr = char(string(prof.Modulation));
+                    targetCodeRate = double(prof.TargetCodeRate);
+                end
+            elseif ~isfinite(amc.MCSIndex)
+                amc.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, targetCodeRate, cqiRaw, mcsTable);
+                amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
+            end
+
+            if localUseWaveformULSingleLayerSafety(obj.Cfg) && strcmp(dir, 'UL')
+                % Preserve the validated waveform-fading UL single-layer safety
+                % behavior without coupling it to CQI or AMC table selection.
                 nLayers = 1;
             end
 
-            % Clamp
             nLayers = max(1, min(8, round(nLayers)));
             targetCodeRate = min(max(targetCodeRate, 0.05), 0.95);
+            amc.Modulation = char(string(modStr));
+            amc.TargetCodeRate = double(targetCodeRate);
+            amc.NumLayers = double(nLayers);
         end
 
-        function [tbsBits, tbsBytes, nrePerPRB] = estimateTBS(obj, modStr, nLayers, nPRB, symAlloc, targetCodeRate)
+        function tableName = resolveMCSTable(obj)
+            if strcmpi(obj.Direction, 'UL')
+                token = sixgr.util.structGet(obj.Cfg, "phy.pusch.mcsTable", ...
+                    localDefaultMCSTable(sixgr.util.structGet(obj.Cfg, "phy.pusch.modulation", "16QAM")));
+            else
+                token = sixgr.util.structGet(obj.Cfg, "phy.pdsch.mcsTable", ...
+                    localDefaultMCSTable(sixgr.util.structGet(obj.Cfg, "phy.pdsch.modulation", "16QAM")));
+            end
+            tableName = char(lower(string(token)));
+        end
+
+        function tableName = resolveCQITable(obj)
+            if strcmpi(obj.Direction, 'UL')
+                token = sixgr.util.structGet(obj.Cfg, "phy.pusch.cqiTable", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.csi.ulCQITable", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.csi.cqiTable", "table1")));
+            else
+                token = sixgr.util.structGet(obj.Cfg, "phy.pdsch.cqiTable", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.csi.dlCQITable", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.csi.cqiTable", "table1")));
+            end
+            tableName = char(sixgr.link.resolveCQIProfile(token, 1).Table);
+        end
+
+        function [tbsBits, tbsBytes, nrePerPRB, info] = estimateTBS(obj, modStr, nLayers, nPRB, symAlloc, targetCodeRate)
             % Estimate TB size using nrTBS. Uses NREPerPRB from nrPDSCHInfo/nrPUSCHInfo.
             if nargin < 5 || isempty(symAlloc)
                 symAlloc = [0 obj.SymbolsPerSlot];
             end
             nSym = double(symAlloc(2));
+            info = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
+                "TBSMode", "approximate", "ViennaEquivalent", false);
 
             % Memoize repeated TBS queries (same AMC + budget) since these are
             % called very frequently in per-slot scheduling loops.
@@ -328,8 +416,14 @@ classdef (Abstract) SchedulerBase < handle
 
             useFastNRE = logical(sixgr.util.structGet(obj.Cfg, "mac.scheduler.fastNREApprox", true));
             strictMode = logical(sixgr.util.structGet(obj.Cfg, "run.strictMode", false));
-            if strictMode
+            tbsMode = lower(string(sixgr.util.structGet(obj.Cfg, "mac.scheduler.tbsMode", "approximate")));
+            viennaEquivalent = logical(sixgr.util.structGet(obj.Cfg, "mac.scheduler.viennaEquivalent", false));
+            info.StrictTBSMode = strictMode;
+            info.ViennaEquivalent = viennaEquivalent;
+            info.TBSMode = char(tbsMode);
+            if strictMode || tbsMode == "faithful" || tbsMode == "strict" || viennaEquivalent
                 useFastNRE = false;
+                info.TBSMode = "faithful";
             end
             nrePerPRB = 12*nSym; % fast approximation
             if ~useFastNRE
@@ -337,21 +431,21 @@ classdef (Abstract) SchedulerBase < handle
                     if strcmpi(obj.Direction,'DL')
                         [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
                             "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
-                        [~, info] = sixgr.phy.grid.allocREsPDSCH(carrier, obj.Cfg, ...
+                        [~, allocInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, obj.Cfg, ...
                             "PRBSet", 0:(max(nPRB,1)-1), ...
                             "SymbolAllocation", [0 nSym], ...
                             "Modulation", char(modStr), ...
                             "NumLayers", double(nLayers));
-                        nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers);
+                        nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
                     else
                         [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
                             "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
-                        [~, info] = sixgr.phy.grid.allocREsPUSCH(carrier, obj.Cfg, ...
+                        [~, allocInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, obj.Cfg, ...
                             "PRBSet", 0:(max(nPRB,1)-1), ...
                             "SymbolAllocation", [0 nSym], ...
                             "Modulation", char(modStr), ...
                             "NumLayers", double(nLayers));
-                        nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers);
+                        nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
                     end
                 catch
                     % keep fallback
@@ -360,6 +454,7 @@ classdef (Abstract) SchedulerBase < handle
 
             qm = sixgr.l2.mac.SchedulerBase.modOrder(modStr);
             if useFastNRE
+                info.UsedFastNREApprox = true;
                 if obj.UseMexTBS && exist("sixgr_l2_mac_estimateTBSApprox_entry_mex", "file") == 3
                     [tbsBits, tbsBytes, nrePerPRB] = sixgr_l2_mac_estimateTBSApprox_entry_mex( ...
                         double(qm), double(nLayers), double(nPRB), double(nSym), double(targetCodeRate));
@@ -386,6 +481,53 @@ classdef (Abstract) SchedulerBase < handle
             if ~isempty(obj.TBSCache) && strlength(string(key)) > 0
                 obj.TBSCache(char(key)) = [double(tbsBits), double(tbsBytes), double(nrePerPRB)];
             end
+        end
+
+        function plan = buildNewDataGrantPlan(obj, ue, prbSet, symAlloc, queueBytes)
+            queueBytes = max(0, floor(double(queueBytes)));
+            [modStr, nLayers, targetCodeRate, amc] = obj.selectAMC(ue);
+            [rawBits, rawBytes, rawNRE] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate);
+
+            plan = struct( ...
+                "Valid", false, ...
+                "PRBSet", double(prbSet(:).'), ...
+                "Modulation", char(string(modStr)), ...
+                "NumLayers", double(nLayers), ...
+                "TargetCodeRate", double(targetCodeRate), ...
+                "MCSIndex", double(amc.MCSIndex), ...
+                "MCSTable", char(string(amc.MCSTable)), ...
+                "CQITable", char(string(amc.CQITable)), ...
+                "AMCMode", char(string(amc.Mode)), ...
+                "NREPerPRB", double(rawNRE), ...
+                "TBSBits", double(rawBits), ...
+                "TBSBytes", double(rawBytes), ...
+                "RawEstimatedTBSBits", double(rawBits), ...
+                "RawEstimatedTBSBytes", double(rawBytes), ...
+                "QueueLimited", false);
+
+            if queueBytes <= 0 || rawBits <= 0 || rawBytes <= 0 || isempty(prbSet)
+                return;
+            end
+            if rawBytes <= queueBytes
+                plan.Valid = true;
+                return;
+            end
+
+            best = localFindQueueLimitedPlan(obj, amc, prbSet, symAlloc, queueBytes);
+            if ~best.Valid
+                return;
+            end
+
+            plan.Valid = true;
+            plan.PRBSet = double(best.PRBSet);
+            plan.Modulation = char(string(best.Modulation));
+            plan.NumLayers = double(best.NumLayers);
+            plan.TargetCodeRate = double(best.TargetCodeRate);
+            plan.MCSIndex = double(best.MCSIndex);
+            plan.NREPerPRB = double(best.NREPerPRB);
+            plan.TBSBits = double(best.TBSBits);
+            plan.TBSBytes = double(best.TBSBytes);
+            plan.QueueLimited = true;
         end
 
         function metric = pfMetric(obj, ue, tbsBits)
@@ -518,56 +660,51 @@ classdef (Abstract) SchedulerBase < handle
             end
         end
 
-        function mcs = approxMCSIndex(modStr, targetCodeRate, cqiFallback)
+        function mcs = approxMCSIndex(modStr, targetCodeRate, cqiFallback, mcsTable)
             if nargin < 3
                 cqiFallback = NaN;
+            end
+            if nargin < 4 || isempty(mcsTable)
+                mcsTable = localDefaultMCSTable(modStr);
             end
 
             s = upper(char(string(modStr)));
             tcr = double(targetCodeRate);
-            if ~(isfinite(tcr) && tcr > 0)
-                mcs = localCQIToMCSFallback(cqiFallback);
-                return;
-            end
-
-            switch s
-                case 'QPSK'
-                    if tcr <= 0.15
-                        mcs = 0;
-                    elseif tcr <= 0.25
-                        mcs = 2;
-                    else
-                        mcs = 5;
-                    end
-                case '16QAM'
-                    if tcr <= 0.20
-                        mcs = 7;
-                    elseif tcr <= 0.35
-                        mcs = 10;
-                    else
-                        mcs = 12;
-                    end
-                case '64QAM'
-                    if tcr <= 0.35
-                        mcs = 17;
-                    elseif tcr <= 0.55
-                        mcs = 20;
-                    else
-                        mcs = 22;
-                    end
-                case '256QAM'
-                    if tcr <= 0.40
-                        mcs = 24;
-                    elseif tcr <= 0.60
-                        mcs = 26;
-                    else
-                        mcs = 27;
-                    end
-                otherwise
-                    mcs = localCQIToMCSFallback(cqiFallback);
+            if isfinite(tcr) && tcr > 0 && strlength(string(s)) > 0
+                mcs = localMatchMCSIndex(mcsTable, s, tcr);
+            elseif isfinite(double(cqiFallback))
+                cqiTable = localDefaultCQITable(mcsTable);
+                amc = sixgr.link.resolveMCSFromCQI(max(1, round(double(cqiFallback))), mcsTable, cqiTable);
+                if amc.Valid
+                    mcs = double(amc.MCSIndex);
+                else
+                    mcs = 0;
+                end
+            else
+                mcs = 0;
             end
 
             mcs = max(0, min(31, round(double(mcs))));
+        end
+
+        function profile = resolveMCSProfileForGrant(obj, grant, cqiFallback)
+            if nargin < 3
+                cqiFallback = NaN;
+            end
+            modStr = char(string(sixgr.util.structGet(grant, "Modulation", "QPSK")));
+            defaultMCSTable = localDefaultMCSTable(modStr);
+            mcsTable = sixgr.util.structGet(grant, "MCSTable", defaultMCSTable);
+            mcsIndex = double(sixgr.util.structGet(grant, "MCSIndex", NaN));
+            if isfinite(mcsIndex) && mcsIndex >= 0
+                profile = sixgr.link.resolveMCSProfile(mcsTable, mcsIndex);
+                if profile.Valid
+                    return;
+                end
+            end
+
+            tcr = double(sixgr.util.structGet(grant, "TargetCodeRate", 0.5));
+            mcsIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, tcr, cqiFallback, mcsTable);
+            profile = sixgr.link.resolveMCSProfile(mcsTable, mcsIndex);
         end
 
         function bits = uintToBits(val, width)
@@ -631,14 +768,7 @@ l = max(1, min(14, round(sa(2))));
 idx = s*14 + (l-1);
 end
 
-function [modStr, targetCodeRate] = localAMCFromCQI(cqiIn, modDefault, tcrDefault, cfg)
-if nargin < 4
-    cfg = struct();
-end
-[modStr, targetCodeRate] = sixgr.link.amcFromCQI(cqiIn, modDefault, tcrDefault, cfg);
-end
-
-function tf = localUseWaveformFadingAMC(cfg)
+function tf = localUseWaveformULSingleLayerSafety(cfg)
 backend = lower(char(string(sixgr.util.structGet(cfg, "system.phyBackend", ""))));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
 channelModel = upper(char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
@@ -656,12 +786,120 @@ isConcreteFading = startsWith(channelModel, "TDL") || startsWith(channelModel, "
 tf = strcmp(backend, "waveform") && fadingEnabled && ~awgnOnly && isConcreteFading;
 end
 
-function mcs = localCQIToMCSFallback(cqi)
-if ~(isfinite(double(cqi)) && double(cqi) >= 1)
-    mcs = 0;
+function tf = localUseCQIForAMC(linkAdaptationMode, linkAdaptationPolicy, cqiRaw)
+mode = lower(strtrim(string(linkAdaptationMode)));
+policy = lower(strtrim(string(linkAdaptationPolicy)));
+fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
+tf = isfinite(double(cqiRaw)) && ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
+end
+
+function mcs = localMatchMCSIndex(mcsTable, modStr, targetCodeRate)
+targetQM = sixgr.l2.mac.SchedulerBase.modOrder(modStr);
+targetSE = double(targetQM) * double(targetCodeRate);
+bestIdx = 0;
+bestScore = inf;
+for idx = 0:31
+    prof = sixgr.link.resolveMCSProfile(mcsTable, idx);
+    if ~prof.Valid
+        continue;
+    end
+    if prof.Qm > targetQM + 1e-9
+        continue;
+    end
+    score = abs(double(prof.SpectralEfficiency) - targetSE);
+    if score < bestScore - 1e-9 || ...
+            (abs(score - bestScore) <= 1e-9 && abs(double(prof.TargetCodeRate) - double(targetCodeRate)) < 1e-9 && idx > bestIdx)
+        bestScore = score;
+        bestIdx = idx;
+    end
+end
+mcs = bestIdx;
+end
+
+function tableName = localDefaultMCSTable(modulationToken)
+qm = sixgr.l2.mac.SchedulerBase.modOrder(modulationToken);
+if qm >= 8
+    tableName = "qam256_table2";
+else
+    tableName = "qam64_table1";
+end
+end
+
+function tableName = localDefaultCQITable(mcsTable)
+token = lower(string(mcsTable));
+if contains(token, "256") || contains(token, "table2")
+    tableName = "table2";
+else
+    tableName = "table1";
+end
+end
+
+function best = localFindQueueLimitedPlan(obj, amc, prbSet, symAlloc, queueBytes)
+best = struct("Valid", false);
+rawPRBSet = double(prbSet(:).');
+if isempty(rawPRBSet)
     return;
 end
-mcs = max(0, min(31, round((double(cqi) - 1) * 2)));
+
+candidateProfiles = localCandidateMCSProfiles(amc);
+bestBits = -inf;
+bestPRBCount = inf;
+for nUse = 1:numel(rawPRBSet)
+    prbSubset = rawPRBSet(1:nUse);
+    for i = 1:numel(candidateProfiles)
+        cand = candidateProfiles(i);
+        [tbsBits, tbsBytes, nrePerPRB] = obj.estimateTBS( ...
+            cand.Modulation, cand.NumLayers, numel(prbSubset), symAlloc, cand.TargetCodeRate);
+        if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
+            continue;
+        end
+        if tbsBytes > queueBytes
+            continue;
+        end
+        if tbsBits > bestBits + 1e-9 || ...
+                (abs(tbsBits - bestBits) <= 1e-9 && numel(prbSubset) < bestPRBCount)
+            best = struct( ...
+                "Valid", true, ...
+                "PRBSet", double(prbSubset), ...
+                "Modulation", char(string(cand.Modulation)), ...
+                "NumLayers", double(cand.NumLayers), ...
+                "TargetCodeRate", double(cand.TargetCodeRate), ...
+                "MCSIndex", double(cand.MCSIndex), ...
+                "NREPerPRB", double(nrePerPRB), ...
+                "TBSBits", double(tbsBits), ...
+                "TBSBytes", double(tbsBytes));
+            bestBits = double(tbsBits);
+            bestPRBCount = numel(prbSubset);
+        end
+    end
+end
+end
+
+function candidates = localCandidateMCSProfiles(amc)
+mode = lower(string(sixgr.util.structGet(amc, "Mode", "fixed_modulation")));
+mcsTable = char(string(sixgr.util.structGet(amc, "MCSTable", "qam64_table1")));
+numLayers = max(1, round(double(sixgr.util.structGet(amc, "NumLayers", 1))));
+
+if mode == "cqi_table" && isfinite(double(sixgr.util.structGet(amc, "MCSIndex", NaN)))
+    idxList = round(double(sixgr.util.structGet(amc, "MCSIndex", 0))):-1:0;
+    candidates = repmat(struct("MCSIndex", 0, "Modulation", "QPSK", "TargetCodeRate", 0.1, "NumLayers", numLayers), 0, 1);
+    for idx = idxList
+        prof = sixgr.link.resolveMCSProfile(mcsTable, idx);
+        if prof.Valid
+            candidates(end+1) = struct( ... %#ok<AGROW>
+                "MCSIndex", double(idx), ...
+                "Modulation", char(string(prof.Modulation)), ...
+                "TargetCodeRate", double(prof.TargetCodeRate), ...
+                "NumLayers", double(numLayers));
+        end
+    end
+else
+    candidates = struct( ...
+        "MCSIndex", double(sixgr.util.structGet(amc, "MCSIndex", 0)), ...
+        "Modulation", char(string(sixgr.util.structGet(amc, "Modulation", "QPSK"))), ...
+        "TargetCodeRate", double(sixgr.util.structGet(amc, "TargetCodeRate", 0.1)), ...
+        "NumLayers", double(numLayers));
+end
 end
 
 function nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers)

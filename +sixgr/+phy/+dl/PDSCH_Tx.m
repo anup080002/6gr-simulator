@@ -179,6 +179,8 @@ end
 % PTRS (optional)
 [ptrsInd, ptrsSym, ptrsInfo] = sixgr.phy.refsig.ptrsPDSCH(carrier, pdsch);
 
+[csirsInd, csirsSym, csirsInfo, csirsCfg, csirsEvent] = localGenerateCSIRSRuntimeResource(carrier, cfg);
+
 pdschAntInd = pdschInd;
 pdschAntSym = pdschSym;
 dmrsAntInd = dmrsInd;
@@ -190,7 +192,8 @@ if prec.Active
 end
 
 % Build resource grid and map
-nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsInd,2), numTxAnt, 1]);
+nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsInd,2), size(csirsInd,2), ...
+    double(sixgr.util.structGet(csirsEvent, "NumPorts", NaN)), numTxAnt, 1]);
 try
     txGrid = nrResourceGrid(carrier, nPages);
 catch
@@ -206,6 +209,19 @@ end
 if ~isempty(ptrsInd)
     txGrid = localMapToGrid(txGrid, ptrsInd, ptrsSym);
 end
+if logical(sixgr.util.structGet(csirsEvent, "Scheduled", false)) && ~isempty(csirsInd)
+    [collision, collisionWith] = localCSIRSResourceCollision(csirsInd, pdschAntInd, dmrsAntInd, ptrsInd);
+    if collision
+        csirsEvent.Transmitted = false;
+        csirsEvent.RuntimeMaterializationStatus = "blocked_resource_collision";
+        csirsEvent.Blocker = "csirs_re_collision_with_" + collisionWith;
+    else
+        txGrid = localMapToGrid(txGrid, csirsInd, csirsSym);
+        csirsEvent.Transmitted = true;
+        csirsEvent.RuntimeMaterializationStatus = "runtime_grid_mapped";
+        csirsEvent.UpdateOutcome = "transmitted_on_dl_resource_grid";
+    end
+end
 
 % OFDM modulation
 [txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
@@ -219,6 +235,8 @@ tx.TargetCodeRate = targetCodeRate;
 tx.Carrier = carrier;
 tx.PDSCH = pdsch;
 tx.PDSCHIndices = pdschInd;
+tx.PDSCHSymbolsForEvidence = pdschSym;
+tx.PrecodeInfo = prec;
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlock = trBlk;
@@ -239,7 +257,11 @@ if ~logical(opt.CompactOutput)
     tx.DMRSAntennaSymbols = dmrsAntSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
-    tx.PrecodeInfo = prec;
+    tx.CSIRSIndices = csirsInd;
+    tx.CSIRSSymbols = csirsSym;
+    tx.CSIRSInfo = csirsInfo;
+    tx.CSIRS = csirsCfg;
+    tx.CSIRSRuntimeEvent = csirsEvent;
 end
 
 info = struct();
@@ -248,6 +270,8 @@ info.CRC = crcInfo;
 info.Segmentation = segInfo;
 info.PDSCHSymbols = pdschSymInfo;
 info.PTRS = ptrsInfo;
+info.CSIRS = csirsInfo;
+info.CSIRSRuntimeEvent = csirsEvent;
 info.OFDM = ofdmInfo;
 info.Precoding = prec;
 
@@ -311,6 +335,144 @@ switch upper(char(string(modScheme)))
     otherwise
         qm = 2;
 end
+end
+
+function [csirsInd, csirsSym, csirsInfo, csirsCfg, event] = localGenerateCSIRSRuntimeResource(carrier, cfg)
+csirsInd = zeros(0, 1);
+csirsSym = complex(zeros(0, 1));
+csirsInfo = struct("Channel", "CSI-RS", "Enabled", false);
+csirsCfg = [];
+event = localEmptyCSIRSEvent(cfg);
+if ~logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false))
+    event.RuntimeMaterializationStatus = "disabled";
+    event.Blocker = "phy.csirs.enable_false";
+    event.UpdateOutcome = "not_scheduled";
+    return;
+end
+event.Scheduled = true;
+try
+    [csirsInd, csirsSym, csirsInfo, csirsCfg] = sixgr.phy.refsig.csirs(carrier, cfg);
+catch ME
+    event.RuntimeMaterializationStatus = "blocked_generation_failed";
+    event.Blocker = string(ME.identifier) + ":" + string(ME.message);
+    event.UpdateOutcome = "not_transmitted";
+    return;
+end
+event.RuntimeEvidenceSource = "sixgr.phy.dl.PDSCH_Tx:csirs_runtime_grid_mapping";
+event.NRE = double(numel(csirsSym));
+event.SymbolLocations = localFormatNumericVector(localObjectValue(csirsCfg, "SymbolLocations", []));
+event.SubcarrierLocations = localFormatNumericVector(localObjectValue(csirsCfg, "SubcarrierLocations", []));
+event.RBOffset = double(localObjectValue(csirsCfg, "RBOffset", NaN));
+event.NumRB = double(localObjectValue(csirsCfg, "NumRB", NaN));
+event.NumPorts = double(sixgr.util.structGet(csirsInfo, "NumCSIRSPorts", NaN));
+event.RowNumber = double(sixgr.util.structGet(csirsInfo, "RowNumber", NaN));
+event.CSIRSType = string(localObjectValue(csirsCfg, "CSIRSType", "nzp"));
+event.Density = string(localObjectValue(csirsCfg, "Density", ""));
+event.Periodicity = localFormatCSIRSPeriod(localObjectValue(csirsCfg, "CSIRSPeriod", ""));
+if isempty(csirsSym)
+    event.RuntimeMaterializationStatus = "blocked_empty_resource";
+    event.Blocker = "nrCSIRS_returned_empty_symbols";
+    event.UpdateOutcome = "not_transmitted";
+else
+    event.RuntimeMaterializationStatus = "generated_not_yet_mapped";
+    event.UpdateOutcome = "generated_runtime_symbols";
+end
+end
+
+function event = localEmptyCSIRSEvent(cfg)
+event = struct();
+event.SignalFamily = "CSI-RS";
+event.SignalDirection = "DL";
+event.ResourceID = double(sixgr.util.structGet(cfg, "phy.csirs.resourceID", 0));
+event.ResourceSetID = double(sixgr.util.structGet(cfg, "phy.csirs.resourceSetID", 0));
+event.Scheduled = false;
+event.Transmitted = false;
+event.Observed = false;
+event.Consumed = false;
+event.Consumer = "";
+event.RuntimeMaterializationStatus = "";
+event.Blocker = "";
+event.UpdateOutcome = "";
+event.RuntimeEvidenceSource = "";
+event.NRE = NaN;
+event.NumPorts = NaN;
+event.RowNumber = NaN;
+event.CSIRSType = "";
+event.Density = "";
+event.Periodicity = "";
+event.SymbolLocations = "";
+event.SubcarrierLocations = "";
+event.RBOffset = NaN;
+event.NumRB = NaN;
+end
+
+function [collision, collisionWith] = localCSIRSResourceCollision(csirsInd, pdschInd, dmrsInd, ptrsInd)
+collision = false;
+collisionWith = "";
+csirsSet = localIndexSet(csirsInd);
+if isempty(csirsSet)
+    return;
+end
+checks = {pdschInd, "pdsch"; dmrsInd, "dmrs"; ptrsInd, "ptrs"};
+for i = 1:size(checks, 1)
+    other = localIndexSet(checks{i, 1});
+    if ~isempty(other) && ~isempty(intersect(csirsSet, other))
+        collision = true;
+        collisionWith = string(checks{i, 2});
+        return;
+    end
+end
+end
+
+function values = localIndexSet(ind)
+values = [];
+if isempty(ind)
+    return;
+end
+try
+    values = unique(double(ind(:)));
+    values = values(isfinite(values));
+catch
+    values = [];
+end
+end
+
+function text = localFormatNumericVector(values)
+try
+    values = double(values(:).');
+catch
+    values = [];
+end
+values = values(isfinite(values));
+if isempty(values)
+    text = "";
+else
+    text = strjoin(string(values), "|");
+end
+end
+
+function text = localFormatCSIRSPeriod(value)
+if isnumeric(value)
+    text = localFormatNumericVector(value);
+else
+    text = string(value);
+end
+end
+
+function value = localObjectValue(obj, propName, defaultValue)
+value = defaultValue;
+if isempty(obj)
+    return;
+end
+try
+    raw = obj.(propName);
+catch
+    return;
+end
+if isempty(raw)
+    return;
+end
+value = raw;
 end
 
 function grid = localMapToGrid(grid, ind, sym)

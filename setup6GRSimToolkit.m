@@ -12,10 +12,12 @@ p = inputParser;
 p.addParameter("AddSubfolders", true, @(x)islogical(x) && isscalar(x));
 p.addParameter("Verbose", true, @(x)islogical(x) && isscalar(x));
 p.addParameter("RunToolboxChecks", [], @(x) isempty(x) || (islogical(x) && isscalar(x)));
+p.addParameter("CheckYAMLRuntime", true, @(x)islogical(x) && isscalar(x));
 p.parse(varargin{:});
 opt = p.Results;
 
 rootDir = fileparts(mfilename("fullpath"));
+resultsDir = fullfile(rootDir, "results");
 doChecks = opt.Verbose;
 if ~isempty(opt.RunToolboxChecks)
     doChecks = logical(opt.RunToolboxChecks);
@@ -27,6 +29,12 @@ if isempty(cache)
 end
 
 pathChanged = false;
+
+% Keep sibling copies of this toolkit off the active MATLAB path.
+pathChanged = localPruneSiblingToolkitRoots(rootDir) || pathChanged;
+
+% Generated result folders are not source code and must stay off the MATLAB path.
+pathChanged = localPruneGeneratedTrees(resultsDir) || pathChanged;
 
 % Add root
 if ~contains(path, rootDir)
@@ -42,6 +50,9 @@ if opt.AddSubfolders
         for i = 1:numel(sub)
             d = string(sub{i});
             if strlength(d)==0
+                continue;
+            end
+            if localPathIsUnder(d, resultsDir)
                 continue;
             end
             if contains(d, filesep + "+") || contains(d, filesep + "@")
@@ -72,6 +83,7 @@ end
 % Toolbox/capability detection (function-availability based; no license checks)
 tb = struct();
 tb.rootDir = rootDir;
+tb.yaml = struct();
 
 checks = { ...
     "5G Toolbox", "nrOFDMInfo", "file"; ...
@@ -122,6 +134,16 @@ if opt.Verbose
     if ~doChecks
         fprintf("[setup] Toolbox checks skipped (RunToolboxChecks=false).\n");
     end
+    if logical(opt.CheckYAMLRuntime) && exist("sixgr.lls6g.config.ensureYAMLRuntime", "file") == 2
+        try
+            tb.yaml = sixgr.lls6g.config.ensureYAMLRuntime("Verbose", true, "RequireYAML", false, "ConfigurePyEnv", true);
+        catch ME
+            tb.yaml = struct("Status", "error", "Message", char(string(ME.message)));
+            fprintf("[setup] YAML runtime: error      %s\n", ME.message);
+        end
+    else
+        tb.yaml = struct();
+    end
     fprintf("[setup] Done.\n");
 end
 
@@ -145,5 +167,126 @@ try
     end
 catch
     ok = false;
+end
+end
+
+function changed = localPruneGeneratedTrees(resultsDir)
+changed = false;
+resultsDir = char(string(resultsDir));
+if strlength(string(resultsDir)) == 0 || ~isfolder(resultsDir)
+    return;
+end
+
+pathParts = strsplit(path, pathsep);
+pathParts = pathParts(~cellfun(@isempty, pathParts));
+toRemove = strings(0,1);
+for i = 1:numel(pathParts)
+    p = char(string(pathParts{i}));
+    if localPathIsUnder(p, resultsDir)
+        toRemove(end+1,1) = string(p); %#ok<AGROW>
+    end
+end
+if isempty(toRemove)
+    return;
+end
+
+try
+    rmpath(strjoin(toRemove, pathsep));
+    changed = true;
+catch
+    for i = 1:numel(toRemove)
+        try
+            rmpath(char(toRemove(i)));
+            changed = true;
+        catch
+        end
+    end
+end
+end
+
+function tf = localPathIsUnder(pathValue, rootValue)
+pathValue = localNormalizePath(pathValue);
+rootValue = localNormalizePath(rootValue);
+if strlength(string(pathValue)) == 0 || strlength(string(rootValue)) == 0
+    tf = false;
+    return;
+end
+if ispc
+    pathCmp = lower(pathValue);
+    rootCmp = lower(rootValue);
+else
+    pathCmp = pathValue;
+    rootCmp = rootValue;
+end
+tf = strcmp(pathCmp, rootCmp) || startsWith(pathCmp, [rootCmp filesep]);
+end
+
+function changed = localPruneSiblingToolkitRoots(rootDir)
+changed = false;
+hits = which("setup6GRSimToolkit", "-all");
+if ischar(hits)
+    hits = {hits};
+end
+if isempty(hits)
+    return;
+end
+
+pathParts = strsplit(path, pathsep);
+pathParts = pathParts(~cellfun(@isempty, pathParts));
+toRemove = strings(0,1);
+for i = 1:numel(hits)
+    hitRoot = fileparts(char(string(hits{i})));
+    if localSamePath(hitRoot, rootDir)
+        continue;
+    end
+    for j = 1:numel(pathParts)
+        p = char(string(pathParts{j}));
+        if localPathIsUnder(p, hitRoot)
+            toRemove(end+1,1) = string(p); %#ok<AGROW>
+        end
+    end
+end
+toRemove = unique(toRemove, "stable");
+if isempty(toRemove)
+    return;
+end
+
+try
+    rmpath(strjoin(toRemove, pathsep));
+    changed = true;
+catch
+    for i = 1:numel(toRemove)
+        try
+            rmpath(char(toRemove(i)));
+            changed = true;
+        catch
+        end
+    end
+end
+end
+
+function tf = localSamePath(a, b)
+a = localNormalizePath(a);
+b = localNormalizePath(b);
+if ispc
+    tf = strcmpi(a, b);
+else
+    tf = strcmp(a, b);
+end
+end
+
+function p = localNormalizePath(inPath)
+p = char(string(strtrim(string(inPath))));
+if strlength(string(p)) == 0
+    p = "";
+    return;
+end
+p = strrep(p, "/", filesep);
+p = strrep(p, "\", filesep);
+while contains(p, [filesep filesep])
+    p = strrep(p, [filesep filesep], filesep);
+end
+if strlength(string(p)) > 1 && endsWith(p, filesep) && ~(ispc && numel(p) == 3 && p(2) == ':')
+    p = char(extractBefore(string(p), strlength(string(p))));
 end
 end

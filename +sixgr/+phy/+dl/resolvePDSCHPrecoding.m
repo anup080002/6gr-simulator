@@ -18,11 +18,18 @@ prec = struct();
 prec.Active = false;
 prec.Mode = "siso-bypass";
 prec.Source = "none";
+prec.ApplicationStage = "none";
 prec.NormalizeW = false;
 prec.NumLayers = nLayers;
 prec.NumPorts = nLayers;
 prec.NumCodewords = nCodewords;
 prec.WidebandOnly = true;
+prec.PMI = NaN;
+prec.PMIType = "";
+prec.CodebookMode = "";
+prec.BeamIndices = [];
+prec.MatrixRows = max(nLayers, 1);
+prec.MatrixCols = max(nLayers, 1);
 prec.MatrixPorts = eye(max(nLayers, 1));
 prec.MatrixNR = reshape(eye(max(nLayers, 1)), [max(nLayers, 1), max(nLayers, 1), 1]);
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
@@ -55,7 +62,7 @@ end
 if isempty(Wcfg)
     [Wcfg, pmiMeta] = localResolvePMIPrecodingMatrix(cfg, nLayers, requestedPorts);
 else
-    pmiMeta = struct();
+    pmiMeta = localResolveExplicitMatrixMetadata(cfg, Wcfg, nLayers, requestedPorts);
 end
 
 normalizeW = opt.NormalizeW;
@@ -128,11 +135,28 @@ end
 prec.Active = true;
 prec.Mode = "explicit-wideband";
 prec.Source = source;
+prec.ApplicationStage = "nrPDSCHPrecode_before_RE_mapping";
 prec.NormalizeW = normalizeW;
 prec.NumPorts = size(Wports, 1);
+prec.MatrixRows = size(Wports, 1);
+prec.MatrixCols = size(Wports, 2);
 prec.MatrixPorts = Wports;
 prec.MatrixNR = reshape(Wports.', [nLayers, size(Wports, 1), 1]);
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+if isstruct(pmiMeta)
+    if isfield(pmiMeta, "PMI")
+        prec.PMI = double(pmiMeta.PMI);
+    end
+    if isfield(pmiMeta, "PMIType")
+        prec.PMIType = string(pmiMeta.PMIType);
+    end
+    if isfield(pmiMeta, "CodebookMode")
+        prec.CodebookMode = string(pmiMeta.CodebookMode);
+    end
+    if isfield(pmiMeta, "BeamIndices")
+        prec.BeamIndices = double(pmiMeta.BeamIndices);
+    end
+end
 
 end
 
@@ -222,4 +246,156 @@ meta.Source = "pmi-codebook";
 meta.Mode = info.Mode;
 meta.PMI = double(pmiIndex);
 meta.PMIType = string(candidates(pmiIndex + 1).PMIType);
+meta.CodebookMode = string(candidates(pmiIndex + 1).CodebookMode);
+meta.BeamIndices = double(candidates(pmiIndex + 1).BeamIndices);
+end
+
+function meta = localResolveExplicitMatrixMetadata(cfg, Wcfg, nLayers, requestedPorts)
+meta = struct( ...
+    "Source", "", ...
+    "PMI", NaN, ...
+    "PMIType", "", ...
+    "CodebookMode", "", ...
+    "BeamIndices", []);
+
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+userSource = string(sixgr.util.structGet(userMeta, "PrecoderSource", ""));
+if strlength(strtrim(userSource)) > 0
+    meta.Source = userSource;
+else
+    meta.Source = "explicit-matrix";
+end
+
+beamToken = string(sixgr.util.structGet(userMeta, "BeamIndexSet", ""));
+parsedBeamIdx = localParseBeamIndexSet(beamToken);
+if ~isempty(parsedBeamIdx)
+    meta.BeamIndices = parsedBeamIdx;
+end
+
+Wports = localNormalizeExplicitMatrix(Wcfg, nLayers);
+if isempty(Wports)
+    return;
+end
+numPorts = requestedPorts;
+if isempty(numPorts)
+    numPorts = size(Wports, 1);
+end
+numPorts = max(1, round(double(numPorts)));
+
+mode = string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", ""));
+if strlength(strtrim(mode)) == 0
+    codebookType = lower(string(sixgr.util.structGet(cfg, "phy.csi.codebookType", "type1")));
+    switch codebookType
+        case "type1"
+            mode = "type1_su_mimo";
+        case "type2"
+            mode = "type2_mu_mimo";
+        case "etype2"
+            mode = "etype2_candidate";
+        otherwise
+            mode = "";
+    end
+end
+mode = lower(strtrim(mode));
+if strlength(mode) == 0 || mode == "noncodebook"
+    return;
+end
+
+try
+    [candidates, info] = sixgr.phy.dl.pmiCodebookCandidates(cfg, nLayers, numPorts, "Mode", mode);
+catch
+    candidates = struct([]);
+    info = struct();
+end
+if isempty(candidates)
+    return;
+end
+
+matchIdx = NaN;
+for i = 1:numel(candidates)
+    if localMatricesEquivalent(Wports, candidates(i).W)
+        matchIdx = i;
+        break;
+    end
+end
+if ~(isfinite(matchIdx) && matchIdx >= 1 && matchIdx <= numel(candidates))
+    return;
+end
+
+matched = candidates(matchIdx);
+meta.PMI = double(matched.PMI);
+meta.PMIType = string(matched.PMIType);
+meta.CodebookMode = string(matched.CodebookMode);
+meta.BeamIndices = double(matched.BeamIndices);
+if strlength(strtrim(meta.Source)) == 0 || meta.Source == "explicit-matrix"
+    meta.Source = "codebook_dft";
+end
+if isstruct(info) && isfield(info, "Mode") && strlength(string(info.Mode)) > 0
+    meta.CodebookMode = string(info.Mode);
+end
+end
+
+function Wports = localNormalizeExplicitMatrix(Wcfg, nLayers)
+Wports = [];
+if isempty(Wcfg)
+    return;
+end
+Wtry = Wcfg;
+if ndims(Wtry) > 2 && size(Wtry, 3) == 1
+    Wtry = squeeze(Wtry);
+end
+if ~ismatrix(Wtry)
+    return;
+end
+sz = size(Wtry);
+if sz(2) ~= nLayers && sz(1) == nLayers
+    Wtry = Wtry.';
+end
+if size(Wtry, 2) ~= nLayers
+    return;
+end
+try
+    [~, precInfo] = sixgr.phy.mimo.precoder(eye(nLayers), Wtry, "NormalizeW", true);
+    Wports = double(precInfo.W);
+catch
+    Wports = [];
+end
+end
+
+function tf = localMatricesEquivalent(Wlhs, Wrhs)
+tf = false;
+if isempty(Wlhs) || isempty(Wrhs) || ~isequal(size(Wlhs), size(Wrhs))
+    return;
+end
+Wlhs = double(Wlhs);
+Wrhs = double(Wrhs);
+for c = 1:size(Wlhs, 2)
+    lhs = Wlhs(:, c);
+    rhs = Wrhs(:, c);
+    lhsNorm = norm(lhs);
+    rhsNorm = norm(rhs);
+    if ~(isfinite(lhsNorm) && lhsNorm > 0 && isfinite(rhsNorm) && rhsNorm > 0)
+        return;
+    end
+    overlap = abs((lhs' * rhs) / (lhsNorm * rhsNorm));
+    if ~(isfinite(overlap) && overlap >= (1 - 1e-9))
+        return;
+    end
+end
+tf = true;
+end
+
+function beamIdx = localParseBeamIndexSet(raw)
+beamIdx = [];
+raw = string(raw);
+if strlength(strtrim(raw)) == 0
+    return;
+end
+tok = regexp(char(raw), "\d+", "match");
+if isempty(tok)
+    return;
+end
+beamIdx = unique(round(str2double(string(tok))), "stable");
+beamIdx = beamIdx(isfinite(beamIdx) & beamIdx >= 1);
+beamIdx = double(beamIdx(:).');
 end

@@ -1,0 +1,119 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN00_BOUNDED_WAVEFORM_TRUTH_SCALE
+  description: Bounded 4 GHz / 100 MHz multicell waveform-truth scale validation profile with runtime profiling and primary artifact scanning.
+  version: "1.0.0"
+  owner: codex
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn00
+    - bounded
+    - waveform
+    - truth
+    - scale
+    - profiler
+    - artifact_scan
+
+run_control:
+  study_mode: smoke
+  simulation_mode: full_phy
+  run_profile: quick
+  total_slots: 2
+  warmup_slots: 0
+  measurement_slots: 2
+  warmup_time_ms: 0
+  measurement_time_ms: 1
+  total_time_ms: 1
+  checkpoint_every_slots: 1
+  snapshot_every_slots: 1
+  log_every_slots: 1
+  num_seeds: 1
+  num_drops: 1
+  num_workers: 1
+
+scenario:
+  scale_profile: bounded_multicell_waveform_truth_validation
+  notes: >
+    Bounded validation profile for the 4 GHz / 100 MHz family. It intentionally keeps the
+    full waveform-backed system PHY path, TDD numerology, scheduler grants, mobility,
+    handover state, and inter-cell interference enabled while reducing cells, UEs, and
+    duration so CI/local validation can inspect real artifacts and runtime profile output.
+
+simulation:
+  n_frames: 1
+  n_slots: 2
+  n_subframes: 1
+  monte_carlo_iterations: 1
+
+frame:
+  tdd_pattern: DU
+
+deployment_topology:
+  num_sites: 2
+  num_base_stations: 2
+  num_cells: 6
+  num_sectors_per_site: 3
+  num_ues: 18
+  num_trps: 6
+  wraparound_enabled: true
+
+mimo:
+  n_tx_ant: 16
+  n_rx_ant: 4
+  beam_count: 8
+  trp_count: 6
+
+antenna_and_array:
+  bs_num_txrus: 16
+  bs_num_rxrus: 16
+  bs_num_antenna_elements: 16
+  ue_num_antenna_elements: 4
+
+users:
+  n_users: 18
+  execution_model: slot_coupled_truth
+  beam_selection_strategy: runtime_best_beam_per_link
+
+system:
+  scheduler:
+    type: PF
+    maxActiveUEsPerSlot: 6
+    maxActiveUEsPerCellPerSlot: 1
+    maxPRBAllocationPerUE: 96
+    fairnessAlpha: 1.0
+    proportionalFairWindow_ms: 100
+    beamAware: true
+    energyAware: false
+    qosAware: false
+    sliceAware: false
+    starvationGuard: true
+    cellEdgeBoost: true
+  measurement:
+    periodSlots: 1
+    filterAlpha: 0.7
+  beam:
+    enable: true
+    numBeams: 8
+    updatePeriod_slots: 1
+    sectorSpan_deg: 120
+    maxGain_dB: 14
+  handover:
+    enable: true
+    a3Offset_dB: 3
+    hysteresis_dB: 2
+    timeToTrigger_slots: 1
+    minServingSlots: 1
+    preparationSlots: 1
+    interruptionSlots: 1
+    blockDuringPreparation: false
+
+output:
+  backend: filesystem
+  profile: SCN00_BOUNDED_WAVEFORM_TRUTH_SCALE
+  profiler_enabled: true
+  profiler_top_functions: 80
+  profiler_top_edges: 160

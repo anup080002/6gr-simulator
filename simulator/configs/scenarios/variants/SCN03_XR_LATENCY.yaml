@@ -1,0 +1,53 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN03_XR_LATENCY
+  description: XR-biased low-latency variant with tighter packet budgets and latency-aware scheduling.
+  version: "1.0.0"
+  owner: codex
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn03
+    - xr
+    - latency
+    - qos
+
+run_control:
+  study_mode: campaign
+
+traffic:
+  model: xr
+  transport: UDP
+  flowDirection: BIDIR
+  packetDelayBudget_ms: 5
+  packetSize_bytes: 900
+  packetInterval_ms: 4
+  targetRate_Mbps: 60
+  jitterPct: 0.02
+  flows:
+    - name: xr_stream_primary
+      qfi: 82
+      fiveQi: 82
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 5
+      packetSize_bytes: 900
+      packetInterval_ms: 4
+      rate_Mbps: 60
+      weight: 5
+      jitterPct: 0.02
+      burstiness: periodic
+      service_profile: XR
+      ue_class: UE_CLASS_XR
+
+system:
+  scheduler:
+    type: LATENCY_AWARE_PF
+    qosAware: true
+    fairnessAlpha: 0.8
+
+output:
+  profile: SCN03_XR_LATENCY

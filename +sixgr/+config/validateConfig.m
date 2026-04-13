@@ -102,6 +102,16 @@ localScalarLogical(cfg.outputs.saveMAT, 'outputs.saveMAT');
 localScalarLogical(cfg.outputs.saveCSV, 'outputs.saveCSV');
 localScalarLogical(cfg.outputs.saveFigures, 'outputs.saveFigures');
 localScalarLogical(cfg.outputs.saveFIG, 'outputs.saveFIG');
+localOutputBackend(cfg.outputs.storageBackend);
+if ~(ischar(cfg.outputs.databaseHost) || (isstring(cfg.outputs.databaseHost) && isscalar(cfg.outputs.databaseHost)))
+    error('sixgr:config:BadType', 'outputs.databaseHost must be a text scalar.');
+end
+if ~(isnumeric(cfg.outputs.databasePort) && isscalar(cfg.outputs.databasePort) && isfinite(cfg.outputs.databasePort) && cfg.outputs.databasePort >= 1)
+    error('sixgr:config:BadType', 'outputs.databasePort must be a finite scalar >= 1.');
+end
+if ~(ischar(cfg.outputs.databaseSchema) || (isstring(cfg.outputs.databaseSchema) && isscalar(cfg.outputs.databaseSchema)))
+    error('sixgr:config:BadType', 'outputs.databaseSchema must be a text scalar.');
+end
 
 end
 
@@ -138,6 +148,13 @@ end
 function localScalarLogical(val, fieldName)
 if ~(islogical(val) && isscalar(val))
     error('sixgr:config:BadType', '%s must be a scalar logical.', fieldName);
+end
+end
+
+function localOutputBackend(val)
+token = lower(string(val));
+if ~(isscalar(token) && any(token == ["filesystem","mysql_web"]))
+    error('sixgr:config:BadEnum', 'outputs.storageBackend must be one of: filesystem, mysql_web');
 end
 end
 

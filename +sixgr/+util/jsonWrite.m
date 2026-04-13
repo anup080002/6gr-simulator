@@ -9,7 +9,6 @@ arguments
 end
 
 filePath = char(filePath);
-sixgr.util.ensureDir(filePath); % creates parent
 
 % Pretty print if supported
 try
@@ -20,6 +19,12 @@ end
 
 % jsonencode returns string in some releases
 txt = char(txt);
+
+if sixgr.db.storeTextArtifact(filePath, [txt, newline], "application/json; charset=UTF-8", "json")
+    return;
+end
+
+sixgr.util.ensureDir(filePath); % creates parent
 
 fid = fopen(filePath, "w", "n", "UTF-8");
 if fid < 0

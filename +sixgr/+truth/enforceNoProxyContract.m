@@ -26,7 +26,7 @@ end
 
 if logical(sixgr.util.structGet(context, "RunSystem", false))
     sysPhyBackend = lower(strtrim(char(string(sixgr.util.structGet(context, "SystemPHYBackend", ...
-        sixgr.util.structGet(cfg, "system.phyBackend", "abstract"))))));
+        sixgr.util.structGet(cfg, "system.phyBackend", "waveform"))))));
     if ~strcmp(sysPhyBackend, "waveform")
         violations(end+1,1) = "System PHY backend must be 'waveform' under the no-proxy truth contract."; %#ok<AGROW>
     end
@@ -38,7 +38,7 @@ if strcmp(profileMode, "stress_proxy")
 end
 
 if logical(sixgr.util.structGet(context, "RunE2E", false))
-    airModel = lower(strtrim(char(string(sixgr.util.structGet(context, "E2EAirModel", "lut")))));
+    airModel = lower(strtrim(char(string(sixgr.util.structGet(context, "E2EAirModel", "truth")))));
     if ~strcmp(airModel, "truth")
         violations(end+1,1) = "E2E air model must be 'truth' under the no-proxy truth contract."; %#ok<AGROW>
     end

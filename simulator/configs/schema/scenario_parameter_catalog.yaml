@@ -47,15 +47,46 @@ sections:
   scenario:
     required: true
     parameters:
+      name:
+        required: false
+        type: string
+      description:
+        required: false
+        type: string
+      honesty_mode:
+        required: false
+        type: string
+        allowed_values: [strict]
+      unsupported_output_policy:
+        required: false
+        type: string
+        allowed_values: [show_unavailable_with_reason]
+      provenance_logging:
+        required: false
+        type: boolean
       runner_profile:
         required: true
         type: string
-        allowed_values: [waveform_bundle, pdcch_blind_decode_sweep, prach_detection, generic_sweep, ai_benchmark]
+        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, prach_detection, generic_sweep, ai_benchmark]
+      scale_profile:
+        required: false
+        type: string
       target_cases:
         required: true
         type: string_list
         min_items: 1
         allowed_values: [bundle, dl, ul, pdsch, pusch, pdcch, pucch, pbch, ssb, prach, csi_rs, srs, dmrs, trs, harq]
+      bundle_anchor_cases:
+        required: false
+        type: string_list
+        min_items: 1
+        allowed_values:
+          - cell_search_mib_sib1
+          - prach_detection
+          - dl_pdsch_throughput
+          - ul_pusch_throughput
+          - ul_srs_channelest
+          - ul_lowpapr
       notes: {required: true, type: string}
       sweep: {required: false, type: struct}
       ai_benchmark: {required: false, type: struct}
@@ -74,6 +105,10 @@ sections:
       random_seed: {required: true, type: integer, min: 0}
       deterministic_mode: {required: true, type: boolean}
       snr_db: {required: true, type: number}
+      noise_operating_mode:
+        required: false
+        type: string
+        allowed_values: [configured_snr_anchor_after_large_scale_gain, receiver_noise_figure_thermal_noise]
       min_duration_s: {required: true, type: number, min_exclusive: 0}
       snr_sweep_offsets_db: {required: true, type: number_list, min_items: 1}
   frequency:
@@ -177,6 +212,7 @@ sections:
         allowed_values: [AWGN, TDL-A, TDL-B, TDL-C, TDL-D, TDL-E, CDL-A, CDL-B, CDL-C, CDL-D, CDL-E]
       delay_spread_ns: {required: true, type: number, min: 0}
       doppler_hz: {required: true, type: number, min: 0}
+      doppler_source_mode: {required: false, type: string, allowed_values: [configured, derive_from_ue_speed]}
       mobility_kmph: {required: true, type: number, min: 0}
       los_enabled: {required: true, type: boolean}
       spatial_consistency_enabled: {required: true, type: boolean}
@@ -286,7 +322,7 @@ sections:
       trp_count:
         required: false
         type: integer
-        allowed_numeric_values: [1, 2, 4]
+        min: 1
       precoding_granularity:
         required: false
         type: string
@@ -301,11 +337,11 @@ sections:
       execution_model:
         required: true
         type: string
-        allowed_values: [independent_link_sweep]
+        allowed_values: [independent_link_sweep, slot_coupled_truth]
       beam_selection_strategy:
         required: true
         type: string
-        allowed_values: [fixed_first_beam, round_robin_codebook]
+        allowed_values: [fixed_first_beam, round_robin_codebook, runtime_best_beam_per_link]
       save_user_tables: {required: true, type: boolean}
   coding:
     required: true
@@ -696,10 +732,20 @@ sections:
         type: string
         allowed_values: [lls, sls, e2e]
       profile: {required: true, type: string, nonempty: true}
+      backend:
+        required: false
+        type: string
+        allowed_values: [filesystem, mysql_web]
+      database_host: {required: false, type: string}
+      database_port: {required: false, type: integer, min: 1}
+      database_schema: {required: false, type: string}
       save_csv: {required: true, type: boolean}
       save_mat: {required: true, type: boolean}
       save_figures: {required: true, type: boolean}
       save_png: {required: true, type: boolean}
+      profiler_enabled: {required: false, type: boolean}
+      profiler_top_functions: {required: false, type: integer, min: 1}
+      profiler_top_edges: {required: false, type: integer, min: 1}
       save_yaml_snapshot: {required: true, type: boolean}
       save_json_snapshot: {required: true, type: boolean}
       organize_by_block: {required: true, type: boolean}

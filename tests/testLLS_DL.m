@@ -28,5 +28,11 @@ assert(isfinite(double(resLow.BER)) && double(resLow.BER) >= 0 && double(resLow.
 assert(isfinite(double(resHigh.BER)) && double(resHigh.BER) >= 0 && double(resHigh.BER) <= 1, "Invalid high-SNR BER.");
 assert(double(resHigh.BLER) <= double(resLow.BLER) + 0.15, "DL BLER should improve with SNR.");
 assert(double(resHigh.Throughput_Mbps) + 0.1 >= double(resLow.Throughput_Mbps), "DL throughput should not regress at high SNR.");
+if istable(resLow.TrialTable) && istable(resHigh.TrialTable) && ...
+        all(ismember(["WidebandCQI","MCS"], string(resLow.TrialTable.Properties.VariableNames))) && ...
+        all(ismember(["WidebandCQI","MCS"], string(resHigh.TrialTable.Properties.VariableNames)))
+    assert(mean(double(resHigh.TrialTable.WidebandCQI), "omitnan") >= mean(double(resLow.TrialTable.WidebandCQI), "omitnan"), ...
+        "DL wideband CQI should not regress at higher SNR.");
+end
 ok = true;
 end

@@ -28,6 +28,15 @@ if ~(logical(puschLow.Skipped) || logical(puschHigh.Skipped))
     assert(double(puschHigh.BLER) <= double(puschLow.BLER) + 0.15, "UL BLER should improve with SNR.");
     assert(double(puschHigh.Throughput_Mbps) + 0.1 >= double(puschLow.Throughput_Mbps), ...
         "UL throughput should not regress at high SNR.");
+    if istable(puschLow.TrialTable) && istable(puschHigh.TrialTable) && ...
+            all(ismember(["WidebandCQI","MCS"], string(puschLow.TrialTable.Properties.VariableNames))) && ...
+            all(ismember(["WidebandCQI","MCS"], string(puschHigh.TrialTable.Properties.VariableNames)))
+        assert(mean(double(puschHigh.TrialTable.WidebandCQI), "omitnan") >= mean(double(puschLow.TrialTable.WidebandCQI), "omitnan"), ...
+            "UL wideband CQI should not regress at higher SNR.");
+    end
+else
+    localAssertAllowedPUSCHSkip(puschLow, "low-SNR");
+    localAssertAllowedPUSCHSkip(puschHigh, "high-SNR");
 end
 
 srs = sixgr.link.runSRSChannelEstimation(cfg);
@@ -36,4 +45,13 @@ assert(isfield(srs, "Ok"), "SRS result missing Ok");
 prach = sixgr.link.runPRACHDetection(cfg);
 assert(isfield(prach, "Ok"), "PRACH result missing Ok");
 ok = true;
+end
+
+function localAssertAllowedPUSCHSkip(res, label)
+if ~logical(res.Skipped)
+    return;
+end
+note = lower(string(sixgr.util.structGet(res, "Notes", "")));
+allowed = contains(note, "nrpusch apis unavailable") || contains(note, "phy.pusch.enable=false");
+assert(allowed, sprintf("Unexpected %s PUSCH skip must not hide runtime frame crashes: %s", label, note));
 end

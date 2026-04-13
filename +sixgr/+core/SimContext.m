@@ -82,8 +82,17 @@ classdef SimContext < handle
 
             % Logger (create default if not provided)
             logLevel = sixgr.util.structGet(cfg, "run.logLevel", "info");
-            logFile = fullfile(obj.RunFolder, 'logs', 'run.log');
+            backend = lower(string(sixgr.util.structGet(cfg, "outputs.storageBackend", "filesystem")));
+            if backend == "mysql_web" && sixgr.db.isArtifactStoreActive()
+                logFile = '';
+            else
+                logFile = fullfile(obj.RunFolder, 'logs', 'run.log');
+            end
             obj.Logger = sixgr.core.Logger(logFile, "Level", logLevel);
+            if backend == "mysql_web" && sixgr.db.isArtifactStoreActive()
+                obj.Logger.addSink(@(levelStr, timeStr, msgStr) ...
+                    sixgr.db.appendLogLine(levelStr, timeStr, msgStr));
+            end
 
             % RNG init
             seed = double(sixgr.util.structGet(cfg, "run.seed", 1));

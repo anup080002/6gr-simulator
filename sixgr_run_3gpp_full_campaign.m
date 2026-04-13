@@ -199,8 +199,8 @@ else
         L.info("Running link-level campaign");
         link = localRunLinkCampaign(cfg, linkFolder, opt);
         if logical(opt.CalibrateSystemBLERFromLink)
-            e2eAirLUT = localBuildDualDirectionBLERLUTFromSweep(sixgr.util.structGet(link, "SNRSweep", table()));
-            sysBlerLUT = sixgr.util.structGet(e2eAirLUT, "System", struct());
+            error("sixgr:campaign:ProxyModeRemoved", ...
+                "CalibrateSystemBLERFromLink=true is no longer supported because BLER calibration/LUT proxy paths were removed.");
         end
     else
         L.info("RunLinkCampaign=false: skipping link-level campaign.");
@@ -808,7 +808,7 @@ sixgr.util.jsonWrite(envFile, env);
 seedTable = localBuildSeedTable(cfg, opt);
 sixgr.util.csvWriteTable(seedFile, seedTable);
 
-approxTable = localBuildApproximationsUsedTable(audit, runFolder, calibration);
+approxTable = localBuildApproximationsUsedTable(cfg, audit, runFolder, calibration);
 sixgr.util.csvWriteTable(approxFile, approxTable);
 
 if includeCalibrationMeta
@@ -1110,10 +1110,10 @@ if nargin < 1 || ~isstruct(opt)
 end
 onlyE2E = logical(sixgr.util.structGet(opt, "OnlyE2E", false));
 runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
-airModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")))));
+airModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth")))));
 usedBy = strings(0,1);
 
-if ~onlyE2E && logical(sixgr.util.structGet(opt, "CalibrateSystemBLERFromLink", true))
+if ~onlyE2E && logical(sixgr.util.structGet(opt, "CalibrateSystemBLERFromLink", false))
     usedBy(end+1,1) = "system"; %#ok<AGROW>
 end
 if runE2E && strcmp(airModel, "lut")
@@ -1171,7 +1171,7 @@ if ~localNoProxyTruthContractEnabled(cfg, opt)
 end
 
 runE2E = logical(sixgr.util.structGet(opt, "RunE2EStackProbe", true));
-e2eAirModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")))));
+e2eAirModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth")))));
 trafficModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2ETrafficModel", ...
     sixgr.util.structGet(cfg, "traffic.model", "fullBuffer"))))));
 e2eUsesSystemCoupling = runE2E && strcmp(e2eAirModel, "truth");
@@ -1180,7 +1180,7 @@ ctx.Enabled = true;
 ctx.E2EAirModel = e2eAirModel;
 ctx.TrafficModel = trafficModel;
 ctx.UseFastLinkModel = logical(sixgr.util.structGet(opt, "UseFastLinkModel", false)) && logical(runLinkCampaign);
-ctx.SystemPHYBackend = string(sixgr.util.structGet(cfg, "system.phyBackend", "abstract"));
+ctx.SystemPHYBackend = string(sixgr.util.structGet(cfg, "system.phyBackend", "waveform"));
 ctx.RunE2E = runE2E;
 ctx.RunSystem = logical(runSystemCampaign) || logical(e2eUsesSystemCoupling);
 ctx.RunLink = logical(runLinkCampaign);
@@ -1196,7 +1196,7 @@ end
 sixgr.truth.enforceNoProxyContract(cfg, ctx);
 end
 
-function T = localBuildApproximationsUsedTable(audit, runFolder, calibration)
+function T = localBuildApproximationsUsedTable(cfg, audit, runFolder, calibration)
 rows = repmat(struct("Area","","Component","","ApproximationMode","","Evidence","","Notes",""), 0, 1);
 
 if istable(audit) && ~isempty(audit) && all(ismember(["Category","Status","Evidence","Notes"], string(audit.Properties.VariableNames)))
@@ -1212,6 +1212,52 @@ if istable(audit) && ~isempty(audit) && all(ismember(["Category","Status","Evide
             "Evidence", string(audit.Evidence(k)), ...
             "Notes", string(audit.Notes(k)));
     end
+end
+
+channelModel = lower(strtrim(string(sixgr.util.structGet(cfg, "channel.model", ""))));
+pathlossModel = lower(strtrim(string(sixgr.util.structGet(cfg, "channel.pathlossModel", ...
+    sixgr.util.structGet(cfg, "channel.pathloss.model", "")))));
+usesTR38901LargeScale = any(channelModel == ["tr38901","tr38.901","tr38_901","abg","large","abstract"]);
+if (usesTR38901LargeScale || any(pathlossModel == ["nrpathloss","nr","abg","tr38901abg","fr3abg"])) && ...
+        any(pathlossModel == ["nrpathloss","nr"]) && ...
+        (exist("nrPathLossConfig","class") ~= 8 || exist("nrPathLoss","file") ~= 2)
+    rows(end+1,1) = struct( ... %#ok<AGROW>
+        "Area", "Channel/RF", ...
+        "Component", "large_scale_pathloss", ...
+        "ApproximationMode", "free_space_path_loss_fallback", ...
+        "Evidence", "sixgr.channel.TR38901Plus.pathlossViaNrPathLoss", ...
+        "Notes", "nrPathLoss runtime backend unavailable; TR38901Plus falls back to FSPL and must stay labeled approximate.");
+elseif usesTR38901LargeScale && any(pathlossModel == ["abg","tr38901abg","fr3abg"])
+    rows(end+1,1) = struct( ... %#ok<AGROW>
+        "Area", "Channel/RF", ...
+        "Component", "large_scale_pathloss", ...
+        "ApproximationMode", "abg_large_scale_model", ...
+        "Evidence", "sixgr.channel.TR38901Plus", ...
+        "Notes", "Configured ABG pathloss is a large-scale abstraction and not the standards-backed nrPathLoss runtime backend.");
+end
+
+if logical(sixgr.util.structGet(cfg, "channel.spatialNonStationary.enable", false))
+    rows(end+1,1) = struct( ... %#ok<AGROW>
+        "Area", "Channel/RF", ...
+        "Component", "spatial_non_stationarity", ...
+        "ApproximationMode", "random_placeholder_visibility_masks", ...
+        "Evidence", "sixgr.channel.SpatialNonStationarity", ...
+        "Notes", "Visibility masks are random placeholders without geometry, angle, or array-manifold coupling.");
+end
+
+if logical(sixgr.util.structGet(cfg, "rf.phaseNoise.enable", false))
+    phaseNoiseBackend = "wiener_linewidth_proxy_fallback";
+    phaseNoiseNotes = "PhaseNoiseModel helper resolves to the Wiener/linewidth proxy if used directly.";
+    if exist("comm.PhaseNoise","class") == 8
+        phaseNoiseBackend = "comm_phase_noise_runtime_backend";
+        phaseNoiseNotes = "PhaseNoiseModel helper can resolve to comm.PhaseNoise, but the active no-proxy waveform replay path does not materialize phase-noise impairment.";
+    end
+    rows(end+1,1) = struct( ... %#ok<AGROW>
+        "Area", "Channel/RF", ...
+        "Component", "phase_noise", ...
+        "ApproximationMode", "not_materialized_in_active_waveform_truth_path", ...
+        "Evidence", "sixgr.link.applyWaveformImpairments", ...
+        "Notes", "Configured phase noise is not applied in the active waveform truth path. Helper backend=" + phaseNoiseBackend + ". " + phaseNoiseNotes);
 end
 
 layout = sixgr.report.resultLayout(runFolder);
@@ -2542,7 +2588,7 @@ if nargin < 4
 end
 strictSLS = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
 strictSLS = strictSLS || localNoProxyTruthContractEnabled(cfg, opt);
-strictSLS = strictSLS || strcmpi(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")), "truth");
+strictSLS = strictSLS || strcmpi(string(sixgr.util.structGet(opt, "E2EAirModel", "truth")), "truth");
 numSites = max(1, round(double(sixgr.util.structGet(cfg, "scenario.layout.nSites", 1))));
 numSectors = max(1, round(double(sixgr.util.structGet(cfg, "scenario.layout.nSectorsPerSite", 1))));
 multiCellRequested = (numSites * numSectors) > 1;
@@ -2551,8 +2597,8 @@ detailedTraceRequested = logical(sixgr.util.structGet(opt, "SystemDetailedTrace"
 requireFullSystem = multiCellRequested || handoverRequested || detailedTraceRequested;
 if logical(opt.UseMexAcceleration) && ~strictSLS && ~requireFullSystem && ...
         (exist("sixgr_system_fast_core_kernel_mex","file") == 3 || exist("sixgr_system_fast_core_kernel","file") == 2)
-    out = localRunSystemMobilityCampaignFast(cfg, runFolder, opt);
-    return;
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "The system fast proxy kernel was removed from the active waveform-truth-only repository. Run the waveform SystemLevelRunner path instead.");
 end
 
 cfgS = cfg;
@@ -2566,7 +2612,7 @@ cfgS.scenario.mobility.enable = true;
 cfgS.scenario.mobility.model = "randomWaypoint";
 cfgS.scenario.ue.nUE = round(double(opt.SystemNumUE));
 cfgS.scenario.nUE = round(double(opt.SystemNumUE));
-if strcmpi(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")), "truth")
+if strcmpi(string(sixgr.util.structGet(opt, "E2EAirModel", "truth")), "truth")
     cfgS.system.phyBackend = "waveform";
 end
 
@@ -2580,10 +2626,6 @@ params.TTI_s = slotDur_s;
 params.NumTTI = max(1, ceil(double(opt.SystemDuration_s) / max(slotDur_s, eps)));
 params.ForceLong = true;
 params.DetailedTrace = logical(opt.SystemDetailedTrace);
-if ~isempty(fieldnames(blerLUT))
-    params.BLERLUT = blerLUT;
-end
-
 res = sixgr.system.SystemLevelRunner.run(ctx, params);
 
 out = struct();
@@ -2595,6 +2637,10 @@ out.Errors = sixgr.util.structGet(res, "Errors", strings(0,1));
 end
 
 function out = localRunSystemMobilityCampaignFast(cfg, runFolder, opt)
+%#ok<INUSD>
+error("sixgr:campaign:ProxyModeRemoved", ...
+    "The system fast proxy kernel is inaccessible in the active waveform-truth-only repository.");
+
 cfgS = cfg;
 cfgS.run.mode = "system";
 cfgS.run.shortRun = false;
@@ -2776,10 +2822,6 @@ params.NumTTI = nTTI;
 params.TTI_s = 1.0;
 params.ForceLong = true;
 params.DetailedTrace = logical(opt.SystemDetailedTrace);
-if ~isempty(fieldnames(blerLUT))
-    params.BLERLUT = blerLUT;
-end
-
 res = sixgr.system.SystemLevelRunner.run(ctx, params);
 
 connDensity = cfgM.scenario.ue.nUE;
@@ -3465,11 +3507,11 @@ if nargin < 4
 end
 noProxyTruthContract = localNoProxyTruthContractEnabled(cfg, opt);
 strictValidation = logical(opt.E2EStrictValidation) || noProxyTruthContract;
-airModeReq = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut"))));
+airModeReq = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth"))));
 if logical(opt.UseMexAcceleration) && ~strictValidation && ~strcmp(airModeReq, "truth") && ...
         (exist("sixgr_e2e_fast_core_kernel_mex","file") == 3 || exist("sixgr_e2e_fast_core_kernel","file") == 2)
-    out = localRunEndToEndProbeFast(cfg, runFolder, opt, e2eAirLUT);
-    return;
+    error("sixgr:campaign:ProxyModeRemoved", ...
+        "The E2E fast proxy kernel was removed from the active waveform-truth-only repository. Use E2EAirModel='truth'.");
 end
 
 sixgr.util.ensureDir(runFolder);
@@ -4659,6 +4701,10 @@ end
 end
 
 function out = localRunEndToEndProbeFast(cfg, runFolder, opt, e2eAirLUT)
+%#ok<INUSD>
+error("sixgr:campaign:ProxyModeRemoved", ...
+    "The E2E fast proxy kernel is inaccessible in the active waveform-truth-only repository.");
+
 if nargin < 4
     e2eAirLUT = struct();
 end
@@ -4689,7 +4735,7 @@ if strictValidation
     nSlots = nSlotsRaw;
     serviceScale = 1;
 end
-airModeReq = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut"))));
+airModeReq = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth"))));
 if strcmp(airModeReq, "truth")
     truthMaxSlots = max(20, round(double(sixgr.util.structGet(opt, "E2ETruthMaxSlots", 240))));
     if nSlots > truthMaxSlots
@@ -7972,33 +8018,14 @@ airRes.BLER = 1.0;
 airRes.Mode = "unknown";
 airRes.Notes = "";
 
-mode = lower(char(string(sixgr.util.structGet(airModel, "Mode", "lut"))));
+mode = lower(char(string(sixgr.util.structGet(airModel, "Mode", "truth"))));
 if strcmp(mode, "truth")
     airRes = localTruthPhyReplay(cfgE, direction, grant, macPduBytes, snr_dB, airModel);
     return;
 end
 
-airRes = localFastLUTDelivery(cfgE, direction, grant, macPduBytes, snr_dB, airModel, strictValidation, cqi, retxDepth);
-end
-
-function airRes = localFastLUTDelivery(cfgE, direction, grant, macPduBytes, snr_dB, airModel, strictValidation, cqi, retxDepth)
-codeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", 0.5));
-pSucc = localEstimateHARQSuccessProb(snr_dB, cqi, codeRate, retxDepth > 0, retxDepth, cfgE, direction, airModel);
-ack = rand < pSucc;
-
-airRes = struct();
-airRes.Ok = logical(ack);
-airRes.BLER = min(max(1 - pSucc, 1e-4), 0.9999);
-airRes.Mode = "lut";
-airRes.Notes = "";
-if strictValidation && (~isfinite(pSucc) || pSucc <= 0 || pSucc >= 1)
-    error("sixgr:e2e:StrictLUTInvalid", "Strict mode requires valid LUT-based delivery probabilities.");
-end
-if isempty(macPduBytes)
-    airRes.Ok = false;
-    airRes.BLER = 1.0;
-    airRes.Notes = "empty_mac_pdu";
-end
+error("sixgr:e2e:ProxyAirModelRemoved", ...
+    "E2E air model '%s' is not reachable in the waveform-truth-only runtime. Use E2EAirModel='truth'.", mode);
 end
 
 function airRes = localTruthPhyReplay(cfgE, direction, grant, macPduBytes, snr_dB, airModel)
@@ -8382,82 +8409,8 @@ end
 tf = logical(available);
 end
 
-function p = localEstimateHARQSuccessProb(snr_dB, cqi, codeRate, isRetx, retxDepth, cfg, direction, airModel)
-if nargin < 5 || isempty(retxDepth)
-    retxDepth = 0;
-end
-if nargin < 6 || isempty(cfg)
-    cfg = struct();
-end
-if nargin < 7 || isempty(direction)
-    direction = "DL";
-end
-if nargin < 8
-    airModel = struct();
-end
-cqi = max(1, min(15, double(cqi)));
-codeRate = min(max(double(codeRate), 0.05), 0.95);
-retxDepth = max(0, round(double(retxDepth)));
-
-mode = lower(char(string(sixgr.util.structGet(airModel, "Mode", "logistic"))));
-dir = upper(string(direction));
-
-if strcmp(mode, "lut")
-    if dir == "UL"
-        lut = sixgr.util.structGet(airModel, "UL", struct());
-    else
-        lut = sixgr.util.structGet(airModel, "DL", struct());
-    end
-    x = double(sixgr.util.structGet(lut, "SNR_dB", []));
-    y = double(sixgr.util.structGet(lut, "BLER", []));
-    if isempty(x) || isempty(y) || numel(x) ~= numel(y)
-        p = localEstimateHARQSuccessProbLogistic(snr_dB, cqi, codeRate, isRetx, retxDepth, cfg, dir);
-        return;
-    end
-
-    % CQI/code-rate compensate the nominal SNR before LUT lookup.
-    effSnr = double(snr_dB) + 0.45*(cqi - 9) - 8.0*(codeRate - 0.5);
-    bler = interp1(x(:), y(:), effSnr, "linear", "extrap");
-    bler = min(max(bler, 1e-4), 0.9999);
-
-    combMode = upper(string(sixgr.util.structGet(cfg, "mac.harq.combiningMode", ...
-        sixgr.util.structGet(cfg, "phy.harq.combiningMode", "IR"))));
-    if isRetx
-        if combMode == "CHASE"
-            combGain_dB = min(1.4 * max(retxDepth,1), 6.0);
-        else
-            combGain_dB = min(2.1 * max(retxDepth,1), 8.0);
-        end
-        bler = bler * 10.^(-combGain_dB/10);
-    end
-    p = 1 - bler;
-else
-    p = localEstimateHARQSuccessProbLogistic(snr_dB, cqi, codeRate, isRetx, retxDepth, cfg, dir);
-end
-p = min(max(p, 1e-3), 0.999);
-end
-
-function p = localEstimateHARQSuccessProbLogistic(snr_dB, cqi, codeRate, isRetx, retxDepth, cfg, direction)
-thr = -4 + 1.6*cqi + 10*(codeRate - 0.5);
-margin = double(snr_dB) - thr;
-combMode = upper(string(sixgr.util.structGet(cfg, "mac.harq.combiningMode", ...
-    sixgr.util.structGet(cfg, "phy.harq.combiningMode", "IR"))));
-if isRetx
-    if combMode == "CHASE"
-        combGain_dB = min(1.4 * retxDepth, 6.0);
-    else
-        combGain_dB = min(2.1 * retxDepth, 8.0);
-    end
-    margin = margin + combGain_dB;
-end
-if upper(string(direction)) == "UL"
-    margin = margin - 0.25;
-end
-p = 1.0 ./ (1.0 + exp(-0.55 * margin));
-end
-
 function model = localBuildE2EAirModel(cfg, campaignRunFolder, opt, e2eAirLUT)
-mode = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut"))));
+mode = lower(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth"))));
 strictValidation = logical(sixgr.util.structGet(opt, "E2EStrictValidation", false)) || ...
     logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false));
 if logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false)) && ~strcmp(mode, "truth")
@@ -8465,7 +8418,7 @@ if logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false)) && ~str
         "No-proxy truth contract requires E2EAirModel='truth'.");
 end
 if strictValidation && strcmp(mode, "logistic")
-    error("sixgr:e2e:StrictLogisticForbidden", "Strict validation forbids logistic air model fallback. Use 'truth' or calibrated 'lut'.");
+    error("sixgr:e2e:StrictLogisticForbidden", "Strict validation forbids logistic air model fallback. Use E2EAirModel='truth'.");
 end
 
 model = struct();
@@ -8484,145 +8437,14 @@ if strcmp(mode, "truth")
     return;
 end
 
-if strcmp(mode, "lut")
-    lutIn = e2eAirLUT;
-    if isempty(fieldnames(lutIn))
-        sweepFile = fullfile(campaignRunFolder, "link", "csv", "lls_snr_sweep.csv");
-        if exist(sweepFile, "file") == 2
-            try
-                Ts = readtable(sweepFile, "VariableNamingRule", "preserve");
-                lutIn = localBuildDualDirectionBLERLUTFromSweep(Ts);
-            catch
-                lutIn = struct();
-            end
-        end
-    end
-    if ~isempty(fieldnames(lutIn))
-        model.DL = sixgr.util.structGet(lutIn, "DL", struct());
-        model.UL = sixgr.util.structGet(lutIn, "UL", struct());
-        model.Source = string(sixgr.util.structGet(lutIn, "Source", "link_sweep"));
-    end
-end
-
-if isempty(fieldnames(model.DL))
-    if strictValidation
-        error("sixgr:e2e:StrictMissingDLLUT", "Strict validation requires calibrated DL LUT.");
-    end
-    dflt = sixgr.system.BLER_LUT();
-    model.DL = struct("SNR_dB", dflt.SNR_dB, "BLER", dflt.BLER, "Source", "fallback_default");
-end
-if isempty(fieldnames(model.UL))
-    if strictValidation
-        error("sixgr:e2e:StrictMissingULLUT", "Strict validation requires calibrated UL LUT.");
-    end
-    dflt = sixgr.system.BLER_LUT();
-    model.UL = struct("SNR_dB", dflt.SNR_dB, "BLER", dflt.BLER, "Source", "fallback_default");
-end
-
-% Slightly conservative UL baseline unless explicit UL LUT provided.
-if strcmp(mode, "lut") && isfield(model.DL, "SNR_dB") && isfield(model.UL, "SNR_dB")
-    if isequal(size(model.DL.SNR_dB), size(model.UL.SNR_dB)) && all(model.DL.SNR_dB == model.UL.SNR_dB)
-        if ~isfield(e2eAirLUT, "UL")
-            model.UL.BLER = min(max(double(model.UL.BLER) * 1.10, 1e-4), 0.9999);
-        end
-    end
-end
-
-% Keep mode fallback robust.
-if strcmp(mode, "lut")
-    if isempty(model.DL.SNR_dB) || isempty(model.UL.SNR_dB)
-        if strictValidation
-            error("sixgr:e2e:StrictLUTInvalid", "Strict validation requires valid DL/UL LUT axes.");
-        end
-        model.Mode = "logistic";
-        model.Source = "fallback_logistic";
-    end
-end
-end
-
-function out = localBuildDualDirectionBLERLUTFromSweep(Ts)
-out = struct();
-out.Source = "link_sweep";
-if isempty(Ts) || ~ismember("SNR_dB", string(Ts.Properties.VariableNames))
-    return;
-end
-snr = double(Ts.SNR_dB(:));
-dlRaw = NaN(size(snr));
-ulRaw = NaN(size(snr));
-if ismember("DL_BLER", string(Ts.Properties.VariableNames))
-    dlRaw = double(Ts.DL_BLER(:));
-end
-if ismember("UL_BLER", string(Ts.Properties.VariableNames))
-    ulRaw = double(Ts.UL_BLER(:));
-end
-if all(~isfinite(dlRaw)) && all(isfinite(ulRaw))
-    dlRaw = ulRaw;
-end
-if all(~isfinite(ulRaw)) && all(isfinite(dlRaw))
-    ulRaw = dlRaw;
-end
-if all(~isfinite(dlRaw)) && all(~isfinite(ulRaw))
-    return;
-end
-
-[snrN, dlN] = localNormalizeBLERCurve(snr, dlRaw);
-[~, ulN] = localNormalizeBLERCurve(snr, ulRaw);
-sysBLER = min(max(0.5 * (dlN + ulN), 1e-4), 0.9999);
-
-out.DL = struct("SNR_dB", snrN, "BLER", dlN, "Source", "link_sweep_dl");
-out.UL = struct("SNR_dB", snrN, "BLER", ulN, "Source", "link_sweep_ul");
-out.System = struct("SNR_dB", snrN, "BLER", sysBLER, "Source", "link_sweep_avg");
+error("sixgr:e2e:ProxyAirModelRemoved", ...
+    "E2EAirModel='%s' is no longer supported because LUT/logistic proxy air models were removed. Use E2EAirModel='truth'.", mode);
 end
 
 function calib = localBuildCampaignCalibrationPayload(cfg, opt, e2eAirLUT, link)
-calib = struct();
-usedByModules = localCalibrationUsedByModules(opt);
-calib.UsedByModules = usedByModules;
-calib.UsedByThisRun = ~isempty(usedByModules);
-calib.GeneratedFromCampaignLinkSweep = false;
-calib.SourceKind = "";
-calib.Notes = "";
-
-if nargin >= 3 && builtin("isstruct", e2eAirLUT) && isscalar(e2eAirLUT)
-    if isfield(e2eAirLUT, "DL") || isfield(e2eAirLUT, "UL")
-        calib = e2eAirLUT;
-        src = string(sixgr.util.structGet(e2eAirLUT, "Source", "campaign_link_sweep"));
-        calib.Source = src;
-        calib.SourceKind = localClassifyCalibrationSourceKind(src);
-        calib.GeneratedFromCampaignLinkSweep = calib.SourceKind == "campaign_link_sweep";
-        calib.UsedByModules = usedByModules;
-        calib.UsedByThisRun = ~isempty(usedByModules);
-        calib.Notes = localDescribeCalibrationPayload(calib);
-        return;
-    end
-end
-
-Ts = table();
-if nargin >= 4 && builtin("isstruct", link) && isscalar(link)
-    Ts = sixgr.util.structGet(link, "SNRSweep", table());
-end
-if istable(Ts) && ~isempty(Ts)
-    calib = localBuildDualDirectionBLERLUTFromSweep(Ts);
-    calib.Source = "campaign_link_sweep";
-    calib.SourceKind = "campaign_link_sweep";
-    calib.GeneratedFromCampaignLinkSweep = true;
-    calib.UsedByModules = usedByModules;
-    calib.UsedByThisRun = ~isempty(usedByModules);
-    calib.Notes = localDescribeCalibrationPayload(calib);
-    return;
-end
-
-lut = sixgr.system.BLER_LUT();
-calib = struct();
-calib.DL = struct("SNR_dB", double(lut.SNR_dB(:)), "BLER", double(lut.BLER(:)), "Source", "default_lut_dl");
-calib.UL = struct("SNR_dB", double(lut.SNR_dB(:)), "BLER", double(lut.BLER(:)), "Source", "default_lut_ul");
-calib.Source = "external_default_lut";
-calib.SourceKind = "external_default_lut";
-calib.StrictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
-calib.UsedByModules = usedByModules;
-calib.UsedByThisRun = ~isempty(usedByModules);
-calib.GeneratedFromCampaignLinkSweep = false;
-calib.Notes = localDescribeCalibrationPayload(calib);
+%#ok<INUSD>
+error("sixgr:campaign:ProxyModeRemoved", ...
+    "BLER calibration payload export was removed from the active waveform-truth-only repository.");
 end
 
 function kind = localClassifyCalibrationSourceKind(src)
@@ -8630,7 +8452,7 @@ src = lower(strtrim(char(string(src))));
 if contains(src, "campaign_link_sweep") || strcmp(src, "link_sweep") || contains(src, "link_sweep")
     kind = "campaign_link_sweep";
 elseif contains(src, "default") || contains(src, "external")
-    kind = "external_default_lut";
+    kind = "external_proxy_payload";
 else
     kind = "external_payload";
 end
@@ -8641,8 +8463,8 @@ used = logical(sixgr.util.structGet(calib, "UsedByThisRun", false));
 srcKind = string(sixgr.util.structGet(calib, "SourceKind", ""));
 if srcKind == "campaign_link_sweep"
     origin = "Generated from campaign link sweeps.";
-elseif srcKind == "external_default_lut"
-    origin = "Loaded from external/default LUT because no campaign link sweep calibration input was available.";
+elseif srcKind == "external_proxy_payload"
+    origin = "External proxy calibration payload is not used by active waveform-truth runs.";
 else
     origin = "Loaded from external calibration payload.";
 end
@@ -8691,32 +8513,6 @@ for i = 1:numel(files)
     end
     tc.(key) = st;
 end
-end
-
-function [snrN, blerN] = localNormalizeBLERCurve(snr, blerIn)
-snr = double(snr(:));
-bler = double(blerIn(:));
-[snrS, idx] = sort(snr, "ascend");
-blerS = bler(idx);
-ref = sixgr.system.BLER_LUT("SNR_dB", snrS);
-if all(~isfinite(blerS))
-    blerS = double(ref.BLER(:));
-else
-    miss = ~isfinite(blerS);
-    if any(~miss)
-        blerS(miss) = interp1(snrS(~miss), blerS(~miss), snrS(miss), "linear", "extrap");
-    end
-    miss2 = ~isfinite(blerS);
-    if any(miss2)
-        blerS(miss2) = double(ref.BLER(miss2));
-    end
-end
-blerS = min(max(blerS, 1e-4), 0.9999);
-for k = 2:numel(blerS)
-    blerS(k) = min(blerS(k), blerS(k-1));
-end
-snrN = snrS;
-blerN = blerS;
 end
 
 function T = localRunE2EAIProbe(cfg, enableAI, snr_dB)
@@ -10115,7 +9911,7 @@ if strcmp(profileMode, "stress_proxy")
     return;
 end
 
-e2eAirModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "lut")))));
+e2eAirModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2EAirModel", "truth")))));
 systemCoupled = logical(sixgr.util.structGet(summary, "E2ESystemCoupled", false));
 if strcmp(e2eAirModel, "truth") && systemCoupled
     level = "system_coupled_truth_replay";
@@ -10126,7 +9922,7 @@ if strcmp(e2eAirModel, "truth") && ~systemCoupled
     return;
 end
 
-sysPhyBackend = lower(strtrim(char(string(sixgr.util.structGet(cfg, "system.phyBackend", "abstract")))));
+sysPhyBackend = lower(strtrim(char(string(sixgr.util.structGet(cfg, "system.phyBackend", "waveform")))));
 if strcmp(e2eAirModel, "truth") || strcmp(sysPhyBackend, "waveform")
     level = "partial_truth_execution";
     return;

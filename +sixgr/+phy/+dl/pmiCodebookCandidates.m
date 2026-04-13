@@ -70,7 +70,7 @@ switch mode
             "Unsupported PMI codebook mode '%s'.", mode);
 end
 
-B = localOversampledDFTCodebook(numTxPorts, numBeams);
+B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams);
 candidateList = repmat(struct( ...
     "PMI", NaN, ...
     "BeamIndices", [], ...
@@ -200,6 +200,92 @@ n = (0:(numTxPorts-1)).';
 m = 0:(numBeams-1);
 B = exp(-1j * 2 * pi * (n * m) / max(numBeams, 1));
 B = B ./ sqrt(max(numTxPorts, 1));
+end
+
+function B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams)
+B = [];
+arr = localResolveRuntimeBSAntenna(cfg, numTxPorts);
+if isstruct(arr) && ~isempty(fieldnames(arr))
+    [nRow, nCol] = localResolveArrayDims(arr, numTxPorts);
+    if nRow > 1 || nCol > 1
+        [nBeamsRow, nBeamsCol] = localResolveBeamGrid(nRow, nCol, numBeams);
+        try
+            B = sixgr.rf.AntennaArrayFactory.dftCodebookURA(nRow, nCol, nBeamsRow, nBeamsCol);
+        catch
+            B = [];
+        end
+    end
+end
+if isempty(B)
+    B = localOversampledDFTCodebook(numTxPorts, numBeams);
+end
+if size(B, 1) > numTxPorts
+    B = B(1:numTxPorts, :);
+elseif size(B, 1) < numTxPorts
+    B(end + 1:numTxPorts, :) = 0;
+end
+for i = 1:size(B, 2)
+    nrm = norm(B(:, i));
+    if nrm > 0
+        B(:, i) = B(:, i) ./ nrm;
+    end
+end
+end
+
+function arr = localResolveRuntimeBSAntenna(cfg, numTxPorts)
+arr = struct();
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+candidate = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
+if isstruct(candidate) && ~isempty(fieldnames(candidate))
+    nant = double(sixgr.util.structGet(candidate, "Nant", NaN));
+    if isfinite(nant) && round(nant) == round(double(numTxPorts))
+        arr = candidate;
+        return;
+    end
+end
+shape = double(sixgr.util.structGet(cfg, "phy.bsArray", [1 numTxPorts 1]));
+if numel(shape) < 2
+    shape = [1 max(1, round(double(numTxPorts))) 1];
+end
+arr = struct( ...
+    "Size", double(shape(1:2)), ...
+    "Nant", double(prod(max(1, round(shape(1:2))))), ...
+    "Type", char(string(sixgr.util.structGet(cfg, "antenna.bs.geometry", "ura"))));
+end
+
+function [nRow, nCol] = localResolveArrayDims(arr, fallbackPorts)
+nRow = 1;
+nCol = max(1, round(double(fallbackPorts)));
+if isfield(arr, "Size") && isnumeric(arr.Size) && numel(arr.Size) >= 2
+    nRow = max(1, round(double(arr.Size(1))));
+    nCol = max(1, round(double(arr.Size(2))));
+elseif isfield(arr, "nRow") && isfield(arr, "nCol")
+    nRow = max(1, round(double(arr.nRow)));
+    nCol = max(1, round(double(arr.nCol)));
+end
+if nRow * nCol ~= max(1, round(double(fallbackPorts)))
+    nRow = 1;
+    nCol = max(1, round(double(fallbackPorts)));
+end
+end
+
+function [nBeamsRow, nBeamsCol] = localResolveBeamGrid(nRow, nCol, numBeams)
+numBeams = max(1, round(double(numBeams)));
+nRow = max(1, round(double(nRow)));
+nCol = max(1, round(double(nCol)));
+if nRow <= 1
+    nBeamsRow = 1;
+    nBeamsCol = numBeams;
+    return;
+end
+if nCol <= 1
+    nBeamsRow = numBeams;
+    nBeamsCol = 1;
+    return;
+end
+targetRatio = nRow / max(nCol, 1);
+nBeamsRow = max(1, round(sqrt(numBeams * targetRatio)));
+nBeamsCol = max(1, ceil(numBeams / max(nBeamsRow, 1)));
 end
 
 function key = localCandidateKey(beamIdx, phaseRow)

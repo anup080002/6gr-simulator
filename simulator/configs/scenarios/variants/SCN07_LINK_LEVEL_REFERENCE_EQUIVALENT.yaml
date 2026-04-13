@@ -1,0 +1,52 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN07_LINK_LEVEL_REFERENCE_EQUIVALENT
+  description: Reduced single-link reference-equivalent variant for PHY sanity and BLER curve work inside the same scenario family.
+  version: "1.0.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn07
+    - reference
+    - tdlc
+    - single_link
+
+simulation:
+  n_frames: 2
+  n_slots: 4
+  monte_carlo_iterations: 2
+
+deployment_topology:
+  num_sites: 1
+  num_base_stations: 1
+  num_cells: 1
+  num_sectors_per_site: 1
+  num_ues: 1
+  num_trps: 1
+  wraparound_enabled: false
+  inter_site_distance: 100
+
+users:
+  enabled: true
+  n_users: 1
+  execution_model: independent_link_sweep
+
+channels:
+  model_type: TDL
+  profile: TDL-C
+  delay_spread_ns: 300
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+
+interference:
+  inter_cell_interference_flag: true
+  intra_cell_interference_flag: false
+  mu_mimo_interference_flag: false
+  inter_cell_execution_mode: full_per_link_channel_waveform_sum
+
+output:
+  profile: SCN07_LINK_LEVEL_REFERENCE_EQUIVALENT

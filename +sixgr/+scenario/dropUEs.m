@@ -32,8 +32,7 @@ K = prof.ue.count;
 W = prof.area_m(1);
 H = prof.area_m(2);
 
-% Uniform drop in centered rectangle ([-W/2,W/2] x [-H/2,H/2])
-xy = [ (rand(K,1)-0.5)*W, (rand(K,1)-0.5)*H ];
+[xy, servingRef, headingSeedDeg] = localResolveDropPositions(layout, prof, K, W, H);
 
 % Heights
 z = prof.ue.height_m * ones(K,1);
@@ -44,18 +43,13 @@ indoor = rand(K,1) < indoorFrac;
 
 % Speed distribution (km/h)
 speeds = double(sixgr.util.structGet(prof, "ue.distribution.speeds_kmh", [3 30 120]));
-p = double(sixgr.util.structGet(prof, "ue.distribution.speedProb", ones(1,numel(speeds))/numel(speeds)));
-p = p(:).';
-if numel(p) ~= numel(speeds)
-    p = ones(1,numel(speeds))/numel(speeds);
-end
-p = p / sum(p);
+p = localResolveSpeedWeights(prof, speeds);
 
 speedIdx = localDiscreteSample(p, K);
 speedKmh = speeds(speedIdx).';
 
 % Heading (deg)
-headingDeg = rand(K,1) * 360;
+headingDeg = mod(double(headingSeedDeg(:)) + 20 .* randn(K,1), 360);
 
 ue = struct();
 ue.profileName = prof.name;
@@ -65,10 +59,91 @@ ue.pos_m = [xy z];
 ue.indoor = indoor;
 ue.speed_kmh = speedKmh;
 ue.heading_deg = headingDeg;
+ue.drop_cell_id = servingRef(:);
 
 end
 
 % ---------------- Local helpers ----------------
+
+function [xy, servingRef, headingSeedDeg] = localResolveDropPositions(layout, prof, K, W, H)
+xy = zeros(K, 2);
+servingRef = ones(K, 1);
+headingSeedDeg = rand(K, 1) * 360;
+
+bsPos = double(sixgr.util.structGet(layout, "bs.pos_m", zeros(0,3)));
+bsAz = double(sixgr.util.structGet(layout, "bs.azim_deg", zeros(size(bsPos,1),1)));
+if isempty(bsPos) || isempty(bsAz) || size(bsPos,1) < 1
+    xy = [ (rand(K,1)-0.5)*W, (rand(K,1)-0.5)*H ];
+    return;
+end
+
+nCells = size(bsPos, 1);
+sectorSpanDeg = localResolveSectorSpan(layout, prof);
+radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
+radiusMin_m = min(40, max(5, 0.08 * radiusMax_m));
+
+servingRef = repmat((1:nCells).', ceil(K / nCells), 1);
+servingRef = servingRef(1:K);
+servingRef = servingRef(randperm(K));
+
+for u = 1:K
+    c = servingRef(u);
+    az = double(bsAz(c));
+    theta = az + (rand - 0.5) * 0.92 * sectorSpanDeg;
+    rho = sqrt(rand) * (radiusMax_m - radiusMin_m) + radiusMin_m;
+    xy(u,1) = bsPos(c,1) + rho * cosd(theta);
+    xy(u,2) = bsPos(c,2) + rho * sind(theta);
+    headingSeedDeg(u) = mod(theta + 180 + 25 * randn(), 360);
+end
+
+xy(:,1) = min(max(xy(:,1), -0.5 * W), 0.5 * W);
+xy(:,2) = min(max(xy(:,2), -0.5 * H), 0.5 * H);
+end
+
+function p = localResolveSpeedWeights(prof, speeds)
+p = double(sixgr.util.structGet(prof, "ue.distribution.speedWeights", ...
+    sixgr.util.structGet(prof, "ue.distribution.speedProb", ones(1, numel(speeds)) / max(numel(speeds), 1))));
+p = p(:).';
+if isempty(speeds)
+    p = 1;
+    return;
+end
+if numel(p) ~= numel(speeds) || ~any(isfinite(p))
+    p = ones(1, numel(speeds)) / numel(speeds);
+else
+    p(~isfinite(p) | p < 0) = 0;
+    if sum(p) <= 0
+        p = ones(1, numel(speeds)) / numel(speeds);
+    else
+        p = p / sum(p);
+    end
+end
+end
+
+function spanDeg = localResolveSectorSpan(layout, prof)
+spanDeg = 360 / max(1, double(sixgr.util.structGet(prof, "nSectors", numel(sixgr.util.structGet(layout, "bs.azim_deg", 1)))));
+if isfield(layout, "bs") && isfield(layout.bs, "siteId") && isfield(layout.bs, "sectorId")
+    siteIds = double(layout.bs.siteId(:));
+    if ~isempty(siteIds)
+        firstSite = siteIds(1);
+        nOnSite = nnz(siteIds == firstSite);
+        if nOnSite >= 1
+            spanDeg = 360 / double(nOnSite);
+        end
+    end
+end
+spanDeg = max(45, min(180, spanDeg));
+end
+
+function radiusMax_m = localResolveSectorRadius(layout, prof, W, H)
+isd_m = double(sixgr.util.structGet(layout, "isd_m", sixgr.util.structGet(prof, "isd_m", NaN)));
+if isfinite(isd_m) && isd_m > 0
+    radiusMax_m = 0.42 * isd_m;
+else
+    radiusMax_m = 0.22 * min(double(W), double(H));
+end
+radiusMax_m = max(radiusMax_m, 25);
+end
 
 function idx = localDiscreteSample(p, N)
 % Sample N iid indices from categorical distribution p (row vector).

@@ -1,0 +1,25 @@
+{Error using sixgr.db.artifactStore>localActivate
+Failed to activate the MySQL artifact store: MySQL username is required. Set MYSQL_USER or pass 'Username'.
+
+Error in sixgr.db.artifactStore (line 12)
+        [state, out] = localActivate(state, varargin{:});
+
+Error in sixgr.db.activateArtifactStore (line 5)
+out = sixgr.db.artifactStore("activate", runFolder, cfg, meta);
+
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 633)
+storeInfo = sixgr.db.activateArtifactStore(runFolder, cfg, struct( ...
+
+Error in sixgr.lls6g.runners.runSingle (line 30)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder);
+
+Error in run_6g_phy_lls_single (line 14)
+out = sixgr.lls6g.runners.runSingle(configPath, outputDir, runTag);
+
+Error in codex_lls_3gpp_4ghz_100mhz_longrun_attempt3 (line 5)
+out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_3gpp_4ghz_100mhz_longrun.yaml','results','codex_lls_3gpp_4ghz_100mhz_longrun_attempt3');
+
+Error in run (line 99)
+evalin('caller', strcat(script, ';'));
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

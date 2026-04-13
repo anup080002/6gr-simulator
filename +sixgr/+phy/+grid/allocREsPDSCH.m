@@ -144,6 +144,8 @@ try
 catch
 end
 
+pdsch = localReserveCSIRSResources(carrier, pdsch, cfg);
+
 end
 
 function prbVec = localExpandPRBSet(prbSetCfg, nSizeGrid)
@@ -162,4 +164,42 @@ else
     prbVec = prbSetCfg;
 end
 
+end
+
+function pdsch = localReserveCSIRSResources(carrier, pdsch, cfg)
+if ~(isstruct(cfg) && logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false)))
+    return;
+end
+try
+    [~, csirsSym, csirsInfo, csirs] = sixgr.phy.refsig.csirs(carrier, cfg);
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationFailed", ...
+        "CSI-RS is enabled but runtime CSI-RS resources could not be generated for PDSCH reservation: %s", ME.message);
+end
+if isempty(csirsSym) || ~isstruct(csirsInfo) || ~logical(sixgr.util.structGet(csirsInfo, "Enabled", false))
+    return;
+end
+try
+    res = nrPDSCHReservedConfig;
+    rbOffset = double(csirs.RBOffset);
+    numRB = double(csirs.NumRB);
+    res.PRBSet = rbOffset:(rbOffset + max(0, numRB - 1));
+    res.SymbolSet = double(csirs.SymbolLocations(:).');
+    period = sixgr.util.structGet(cfg, "phy.csirs.pdschReservationPeriod", []);
+    if ~isempty(period)
+        res.Period = double(period);
+    end
+
+    existing = pdsch.ReservedPRB;
+    if isempty(existing)
+        pdsch.ReservedPRB = {res};
+    elseif iscell(existing)
+        pdsch.ReservedPRB = [existing(:).' {res}];
+    else
+        pdsch.ReservedPRB = {existing, res};
+    end
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationApplyFailed", ...
+        "CSI-RS runtime resources were generated but could not be reserved in the PDSCH allocation: %s", ME.message);
+end
 end

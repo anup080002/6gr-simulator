@@ -1,0 +1,30 @@
+[2026-04-10T10:37:00Z] INFO PBCH raw trial sweep progress: point 1/2 at 0.000 dB, rows=3.
+[2026-04-10T10:37:06Z] INFO PBCH raw trial sweep progress: point 2/2 at 10.000 dB, rows=6.
+[2026-04-10T10:37:07Z] INFO PRACH raw trial sweep progress: point 1/2 at 0.000 dB, rows=3.
+[2026-04-10T10:37:07Z] INFO PRACH raw trial sweep progress: point 2/2 at 10.000 dB, rows=6.
+[2026-04-10T10:37:08Z] INFO PDCCH raw trial sweep progress: point 1/2 at 0.000 dB, rows=6.
+[2026-04-10T10:37:09Z] INFO PDCCH raw trial sweep progress: point 2/2 at 10.000 dB, rows=12.
+[2026-04-10T10:37:10Z] INFO PUCCH raw trial sweep progress: point 1/2 at 0.000 dB, rows=6.
+[2026-04-10T10:37:10Z] INFO PUCCH raw trial sweep progress: point 2/2 at 10.000 dB, rows=12.
+[2026-04-10T10:37:11Z] INFO SRS raw trial sweep progress: point 1/2 at 0.000 dB, rows=4.
+[2026-04-10T10:37:11Z] INFO SRS raw trial sweep progress: point 2/2 at 10.000 dB, rows=8.
+[2026-04-10T10:37:13Z] INFO TRS raw trial sweep progress: point 1/2 at 0.000 dB, rows=4.
+[2026-04-10T10:37:14Z] INFO TRS raw trial sweep progress: point 2/2 at 10.000 dB, rows=8.
+{Error using sixgr.link.failIfStrictCoverageGap
+Strict mode forbids skipping PDSCH coverage because every frame crashed: snr_dB must be a finite scalar. [addAwgnComplex:16]
+
+Error in sixgr.link.runDLPDSCHThroughput (line 748)
+    sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
+
+Error in sixgr.truth.runWaveformLinkBundle>localCollectSingleUserLinkTrialsAcrossSweep (line 1688)
+        res = sixgr.link.runDLPDSCHThroughput(cfg, ...
+
+Error in sixgr.truth.runWaveformLinkBundle>localExportLinkRawTrialTables (line 593)
+        [dlTrials, dlConst] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "DL", nTrials, snrGrid, ...
+
+Error in sixgr.truth.runWaveformLinkBundle (line 103)
+rawTrials = localExportLinkRawTrialTables(cfgExec, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser, saveFigures, liveMobilityArtifacts);
+
+Error in testLLSSweepTrialBudget (line 17)
+out = sixgr.truth.runWaveformLinkBundle(cfg, tmp, struct( ...
+} 

@@ -143,12 +143,12 @@
   },
   "nested_sections": {
     "common_signal_object": {"parameters": {
-      "enable_flag": {"required": true, "type": "boolean"}, "baseline_or_candidate_tag": {"required": true, "type": "string"},
+      "enable_flag": {"required": true, "type": "boolean"}, "baseline_or_candidate_tag": {"required": true, "type": "string", "allowed_values": ["baseline_benchmark", "agreed_starting_point", "study_item_candidate", "optional_research_experiment"]},
       "periodicity": {"required": true, "type": "string"}, "time_window": {"required": true, "type": "string"},
       "symbol_span": {"required": true, "type": "string"}, "rb_span": {"required": true, "type": "string"},
       "beam_count": {"required": true, "type": "integer", "min": 1}, "repetition_count": {"required": true, "type": "integer", "min": 0},
       "repetition_mode": {"required": true, "type": "string"}, "multiplexing_mode": {"required": true, "type": "string"},
-      "coding": {"required": true, "type": "string"}, "modulation": {"required": true, "type": "string"},
+      "coding": {"required": true, "type": "string", "allowed_values": ["none", "Polar", "LDPC", "configured"]}, "modulation": {"required": true, "type": "string", "allowed_values": ["none", "BPSK", "QPSK", "16QAM", "64QAM", "256QAM", "configured"]},
       "power_boost": {"required": true, "type": "string"}, "dmrs_policy": {"required": true, "type": "string"},
       "detection_target": {"required": true, "type": "string"}, "coverage_target": {"required": true, "type": "string"},
       "energy_saving_policy": {"required": true, "type": "string"}

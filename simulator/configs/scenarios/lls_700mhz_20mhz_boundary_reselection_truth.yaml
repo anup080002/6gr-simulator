@@ -1,0 +1,57 @@
+{
+  "inherits": [
+    "./lls_700mhz_20mhz_multiuser_macro_amc.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_700mhz_20mhz_boundary_reselection_truth",
+    "description": "Deterministic waveform-LLS mobility truth scenario that crosses a two-cell boundary and visibly triggers RSRP-driven serving-cell reselection in the live map and DB-backed result tables.",
+    "version": "1.0.0",
+    "owner": "codex",
+    "research_class": "study_item_candidate",
+    "maturity_tag": "experimental",
+    "scenario_group": "lls_live_mobility",
+    "tags": ["lls", "truth", "mobility", "reselection", "rsrp", "live-map", "boundary-crossing"]
+  },
+  "scenario": {
+    "notes": "Waveform LLS truth demo for live mobility observability. The topology, speed, and update cadence are chosen specifically to guarantee a visible RSRP-driven best-cell crossing without relabeling the run as a full traffic-coupled system simulation."
+  },
+  "simulation": {
+    "n_frames": 4,
+    "n_slots": 4,
+    "n_subframes": 4,
+    "monte_carlo_iterations": 2,
+    "random_seed": 1,
+    "snr_db": 12,
+    "snr_sweep_offsets_db": [-10, 0, 10]
+  },
+  "users": {
+    "n_users": 1,
+    "execution_model": "slot_coupled_truth",
+    "save_user_tables": true
+  },
+  "deployment_topology": {
+    "cell_type": "UMi",
+    "num_cells": 2,
+    "num_ues": 1,
+    "inter_site_distance": 160
+  },
+  "mobility": {
+    "ue_speed_kmh": 240,
+    "trajectory_model": "straightLine",
+    "update_period_s": 0.001
+  },
+  "channels": {
+    "los_enabled": true,
+    "pathloss_enabled": true,
+    "shadow_fading_enabled": false,
+    "pathloss_model": "nrPathLoss",
+    "shadow_fading_std_db": 0
+  },
+  "output": {
+    "profile": "lls_700mhz_20mhz_boundary_reselection_truth",
+    "backend": "mysql_web",
+    "profiler_enabled": true,
+    "profiler_top_functions": 200,
+    "profiler_top_edges": 400
+  }
+}

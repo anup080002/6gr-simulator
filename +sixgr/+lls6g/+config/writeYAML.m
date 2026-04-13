@@ -2,15 +2,10 @@ function writeYAML(filePath, data)
 %WRITEYAML Write a struct/cell/numeric/string object as YAML text.
 
 filePath = char(string(filePath));
-sixgr.util.ensureFolder(fileparts(filePath));
 txt = localSerializeValue(data, 0, false);
-fid = fopen(filePath, "w");
-if fid < 0
-    error("sixgr:lls6g:config:YAMLWriteFailed", ...
-        "Unable to open YAML output '%s'.", string(filePath));
-end
-cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fprintf(fid, "%s", txt);
+sixgr.util.writeTextFile(filePath, txt, ...
+    "MimeType", "application/x-yaml; charset=UTF-8", ...
+    "ArtifactKind", "yaml");
 end
 
 function txt = localSerializeValue(v, indentLevel, inline)
@@ -46,9 +41,13 @@ if isnumeric(v)
     if isempty(v)
         txt = "[]";
     elseif isscalar(v)
-        txt = string(v);
+        txt = localScalarNumeric(v);
     else
-        txt = "[" + strjoin(string(v(:).'), ", ") + "]";
+        items = strings(1, numel(v));
+        for ii = 1:numel(v)
+            items(ii) = localScalarNumeric(v(ii));
+        end
+        txt = "[" + strjoin(items, ", ") + "]";
     end
     return;
 end
@@ -71,11 +70,19 @@ for i = 1:numel(f)
     value = s.(f{i});
     indent = string(repmat(' ', 1, 2*indentLevel));
     if builtin("isstruct", value)
-        lines(end+1,1) = indent + key + ":"; %#ok<AGROW>
-        lines = [lines; splitlines(string(localSerializeStruct(value, indentLevel+1)))]; %#ok<AGROW>
+        if isempty(value)
+            lines(end+1,1) = indent + key + ": {}"; %#ok<AGROW>
+        else
+            lines(end+1,1) = indent + key + ":"; %#ok<AGROW>
+            lines = [lines; splitlines(string(localSerializeStruct(value, indentLevel+1)))]; %#ok<AGROW>
+        end
     elseif iscell(value)
-        lines(end+1,1) = indent + key + ":"; %#ok<AGROW>
-        lines = [lines; splitlines(string(localSerializeCell(value, indentLevel+1)))]; %#ok<AGROW>
+        if isempty(value)
+            lines(end+1,1) = indent + key + ": []"; %#ok<AGROW>
+        else
+            lines(end+1,1) = indent + key + ":"; %#ok<AGROW>
+            lines = [lines; splitlines(string(localSerializeCell(value, indentLevel+1)))]; %#ok<AGROW>
+        end
     else
         lines(end+1,1) = indent + key + ": " + localSerializeValue(value, indentLevel+1, true); %#ok<AGROW>
     end
@@ -107,6 +114,34 @@ v = string(v);
 if strlength(v) == 0
     txt = '""';
 else
-    txt = '"' + replace(v, '"', '\"') + '"';
+    escaped = replace(v, "\", "\\");
+    escaped = replace(escaped, '"', '\"');
+    escaped = replace(escaped, sprintf('\r'), '\r');
+    escaped = replace(escaped, sprintf('\n'), '\n');
+    escaped = replace(escaped, sprintf('\t'), '\t');
+    txt = '"' + escaped + '"';
+end
+end
+
+function txt = localScalarNumeric(v)
+if ~isscalar(v)
+    error("sixgr:lls6g:config:NonScalarNumericToken", ...
+        "Numeric YAML token helper requires a scalar value.");
+end
+if isnan(v)
+    txt = ".nan";
+    return;
+end
+if isinf(v)
+    if v > 0
+        txt = ".inf";
+    else
+        txt = "-.inf";
+    end
+    return;
+end
+txt = string(v);
+if contains(lower(txt), "e") && ~contains(txt, ".")
+    txt = regexprep(txt, '^([+-]?\d+)e([+-]?\d+)$', '$1.0e$2');
 end
 end

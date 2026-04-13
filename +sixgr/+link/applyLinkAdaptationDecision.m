@@ -30,6 +30,10 @@ else
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.mcsIndex", double(decision.MCSIndex));
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.numLayers", double(decision.NumLayers));
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.nLayers", double(decision.NumLayers));
+    if logical(sixgr.util.structGet(decision, "PMIUpdated", false))
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.PMI", double(decision.PMI));
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.TPMI", double(decision.PMI));
+    end
 end
 
 cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.lastDecision", decision);

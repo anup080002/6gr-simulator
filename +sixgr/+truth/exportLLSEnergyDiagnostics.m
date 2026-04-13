@@ -58,38 +58,90 @@ end
 
 for i = 1:height(T)
     load = 1;
-    if ismember("PRBs", string(T.Properties.VariableNames)) && isfinite(double(T.PRBs(i)))
-        load = min(max(double(T.PRBs(i)) / totalRBs, 0), 1);
+    prbCount = localNumericField(T, i, ["PRBs","AllocatedPRBCount","PRBCount"], NaN);
+    if isfinite(prbCount)
+        load = min(max(double(prbCount) / totalRBs, 0), 1);
     end
     status = string(localTableValue(T, i, "Status", "NA"));
     successBits = 0;
-    if status == "PASS" && ismember("TBSize_bits", string(T.Properties.VariableNames)) && isfinite(double(T.TBSize_bits(i)))
-        successBits = double(T.TBSize_bits(i));
+    tbBits = localNumericField(T, i, ["TBSize_bits","TBSBits","BitsCompared"], NaN);
+    if status == "PASS" && isfinite(tbBits)
+        successBits = double(tbBits);
     end
     frameVal = double(localTableValue(T, i, "Frame", i));
     slotVal = double(localTableValue(T, i, "Slot", i));
+    symbolVal = localNumericField(T, i, ["SymbolStart"], NaN);
+    ueId = localNumericField(T, i, ["UEID","UEIndex"], NaN);
+    cellId = localNumericField(T, i, ["CellID","BaseStationID"], NaN);
+    baseStationId = localNumericField(T, i, ["BaseStationID","CellID"], NaN);
+    rnti = localNumericField(T, i, ["RNTI","UEID","UEIndex"], NaN);
+    layers = localNumericField(T, i, ["Layers","RankIndicator","Rank"], NaN);
+    txPower_dBm = NaN;
+    rxPower_dBm = NaN;
+    if upper(string(direction)) == "DL"
+        txPower_dBm = localOptionalScalar(T, i, "TxPower_dBm", NaN);
+        if ~isfinite(txPower_dBm)
+            txPower_dBm = localOptionalScalar(T, i, "ConfiguredTxPower_dBm", NaN);
+        end
+        if ~isfinite(txPower_dBm)
+            txPower_dBm = localOptionalScalar(T, i, "BS_TX_Power_dBm", NaN);
+        end
+        if ~isfinite(txPower_dBm)
+            txPower_dBm = localWToDbm(bsTxPowerW);
+        end
+        rxPower_dBm = localNumericField(T, i, ["ServingRSRP_dBm","CSI_RSRP_dB","RSRP_dBm"], NaN);
+    else
+        txPower_dBm = localOptionalScalar(T, i, "TxPower_dBm", NaN);
+        if ~isfinite(txPower_dBm)
+            txPower_dBm = localOptionalScalar(T, i, "ConfiguredTxPower_dBm", NaN);
+        end
+        if ~isfinite(txPower_dBm)
+            txPower_dBm = localWToDbm(ueTxPowerW);
+        end
+        rxPower_dBm = localNumericField(T, i, ["ReceivedPower_dBm","RxPower_dBm","ServingRSRP_dBm"], NaN);
+    end
     switch upper(string(direction))
         case "DL"
             bs = bsModel.power('active', rfChains, load, bsTxPowerW);
             ue = ueModel.power('rx', 0);
-            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, slotDur_s, bs.totalW, successBits, rfChains, bs.trxW * slotDur_s, sourceArtifact, status); %#ok<AGROW>
-            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, slotDur_s, ue.totalW, successBits, rfChains, 0, sourceArtifact, status); %#ok<AGROW>
+            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, rfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
+                ueId, cellId, baseStationId, rnti, prbCount, load, layers, rfChains, 1, txPower_dBm, NaN, "active_tx");
+            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, rfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
+                ueId, cellId, baseStationId, rnti, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"));
         otherwise
             ue = ueModel.power('tx', ueTxPowerW);
             bs = bsModel.power('active', rfChains, load, 0);
-            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, slotDur_s, ue.totalW, successBits, rfChains, 0, sourceArtifact, status); %#ok<AGROW>
-            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, slotDur_s, bs.totalW, successBits, rfChains, bs.trxW * slotDur_s, sourceArtifact, status); %#ok<AGROW>
+            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, rfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
+                ueId, cellId, baseStationId, rnti, prbCount, load, layers, rfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"));
+            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, rfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
+                ueId, cellId, baseStationId, rnti, prbCount, load, layers, 0, 0, NaN, rxPower_dBm, "active_rx");
     end
 end
 end
 
-function row = localMakeEnergyRow(entity, domain, direction, frameVal, slotVal, duration_s, powerW, successBits, rfChains, bbEnergyJ, sourceArtifact, status)
+function row = localMakeEnergyRow(entity, domain, direction, frameVal, slotVal, symbolVal, duration_s, powerW, successBits, rfChains, bbEnergyJ, sourceArtifact, status, ueId, cellId, baseStationId, rnti, prbCount, activeBWFrac, activeRank, activeTxruCount, controlMonitoringLoad, txPower_dBm, rxPower_dBm, state)
 row = struct( ...
     "Entity", string(entity), ...
+    "EntityType", localEntityTypeToken(entity), ...
+    "EntityID", localEntityID(entity, ueId, cellId, baseStationId), ...
     "Domain", string(domain), ...
     "Direction", string(direction), ...
     "Frame", double(frameVal), ...
     "Slot", double(slotVal), ...
+    "Symbol", double(symbolVal), ...
+    "TimestampSim_ms", double(((max(frameVal, 1) - 1) * 1e1) + ((max(slotVal, 1) - 1) * duration_s * 1e3)), ...
+    "UEID", double(ueId), ...
+    "CellID", double(cellId), ...
+    "BaseStationID", double(baseStationId), ...
+    "RNTI", double(rnti), ...
+    "PRBCount", double(prbCount), ...
+    "ActiveBWFraction", double(activeBWFrac), ...
+    "ActiveRank", double(activeRank), ...
+    "ActiveTxRUCount", double(activeTxruCount), ...
+    "ControlMonitoringLoad", double(controlMonitoringLoad), ...
+    "TxPower_dBm", double(txPower_dBm), ...
+    "RxPowerEst_dBm", double(rxPower_dBm), ...
+    "State", string(state), ...
     "Duration_s", double(duration_s), ...
     "Power_W", double(powerW), ...
     "Energy_J", double(powerW * duration_s), ...
@@ -102,7 +154,11 @@ end
 
 function row = localEmptyEnergyRow()
 row = struct( ...
-    "Entity", "", "Domain", "", "Direction", "", "Frame", NaN, "Slot", NaN, ...
+    "Entity", "", "EntityType", "", "EntityID", NaN, "Domain", "", "Direction", "", ...
+    "Frame", NaN, "Slot", NaN, "Symbol", NaN, "TimestampSim_ms", NaN, ...
+    "UEID", NaN, "CellID", NaN, "BaseStationID", NaN, "RNTI", NaN, ...
+    "PRBCount", NaN, "ActiveBWFraction", NaN, "ActiveRank", NaN, "ActiveTxRUCount", NaN, ...
+    "ControlMonitoringLoad", NaN, "TxPower_dBm", NaN, "RxPowerEst_dBm", NaN, "State", "", ...
     "Duration_s", NaN, "Power_W", NaN, "Energy_J", NaN, "SuccessfulBits", NaN, ...
     "RFChainCount", NaN, "BBProcessingEnergy_J", NaN, "SourceArtifact", "", "Status", "");
 end
@@ -210,6 +266,92 @@ if ~(istable(T) && rowIdx >= 1 && rowIdx <= height(T) && ismember(varName, strin
     return;
 end
 value = T.(varName)(rowIdx);
+end
+
+function value = localOptionalScalar(T, rowIdx, varName, defaultValue)
+value = defaultValue;
+if ~(istable(T) && rowIdx >= 1 && rowIdx <= height(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+raw = T.(varName)(rowIdx);
+if iscell(raw)
+    raw = raw{1};
+end
+numeric = str2double(string(raw));
+if isfinite(numeric)
+    value = double(numeric);
+elseif isnumeric(raw) || islogical(raw)
+    value = double(raw);
+end
+end
+
+function value = localNumericField(T, rowIdx, names, defaultValue)
+value = defaultValue;
+for name = reshape(string(names), 1, [])
+    candidate = localOptionalScalar(T, rowIdx, char(name), NaN);
+    if isfinite(candidate)
+        value = candidate;
+        return;
+    end
+end
+end
+
+function token = localEntityTypeToken(entity)
+entity = upper(string(entity));
+if entity == "UE"
+    token = "ue";
+else
+    token = "cell";
+end
+end
+
+function entityID = localEntityID(entity, ueId, cellId, baseStationId)
+entity = upper(string(entity));
+if entity == "UE"
+    entityID = double(ueId);
+elseif isfinite(cellId)
+    entityID = double(cellId);
+else
+    entityID = double(baseStationId);
+end
+end
+
+function load = localControlMonitoringLoad(domain)
+domain = upper(string(domain));
+if contains(domain, "PDCCH") || contains(domain, "PUCCH")
+    load = 1;
+else
+    load = 0;
+end
+end
+
+function state = localUEEnergyState(domain, direction, entity)
+domain = upper(string(domain));
+direction = upper(string(direction));
+entity = upper(string(entity));
+if entity ~= "UE"
+    if direction == "DL"
+        state = "active_tx";
+    else
+        state = "active_rx";
+    end
+    return;
+end
+if contains(domain, "PDCCH")
+    state = "monitor_only";
+elseif direction == "DL"
+    state = "active_rx";
+else
+    state = "active_tx";
+end
+end
+
+function dbm = localWToDbm(powerW)
+if ~(isfinite(powerW) && powerW > 0)
+    dbm = NaN;
+    return;
+end
+dbm = 10 * log10(double(powerW) / 1e-3);
 end
 
 function watts = localdBmToW(dbm)

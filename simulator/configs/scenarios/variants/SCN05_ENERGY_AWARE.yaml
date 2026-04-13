@@ -1,0 +1,44 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN05_ENERGY_AWARE
+  description: Energy-aware scheduling variant with bursty mixed traffic and energy instrumentation enabled.
+  version: "1.0.0"
+  owner: codex
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn05
+    - energy
+    - scheduler
+    - efficiency
+
+traffic:
+  model: mixed
+  transport: MIXED
+  flowDirection: BIDIR
+  packetDelayBudget_ms: 20
+  packetInterval_ms: 15
+  targetRate_Mbps: 35
+  jitterPct: 0.2
+
+system:
+  scheduler:
+    type: ENERGY_AWARE_PF
+    energyAware: true
+    beamAware: true
+
+energy_efficiency:
+  enabled: true
+  sleep_state_model: micro_sleep
+  duty_cycle_logging: true
+  energy_per_bit_reporting: true
+  active_sleep_tracking_enabled: true
+  race_to_sleep_enabled: true
+  per_block_processing_energy_enabled: true
+  rf_chain_energy_enabled: true
+
+output:
+  profile: SCN05_ENERGY_AWARE

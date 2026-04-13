@@ -43,6 +43,10 @@ trsFile = fullfile(runFolder, "air_interface", "csv", "trs_trials.csv");
 cellSearchFile = fullfile(runFolder, "control", "csv", "cell_search_trials.csv");
 pbchRecoveryFile = fullfile(runFolder, "control", "csv", "pbch_recovery_trials.csv");
 prachCtrlFile = fullfile(runFolder, "control", "csv", "prach_trials.csv");
+runtimeModeFile = fullfile(runFolder, "reports", "csv", "runtime_operating_mode.csv");
+cqiRefFile = fullfile(runFolder, "reports", "csv", "cqi_table_reference.csv");
+mcsRefFile = fullfile(runFolder, "reports", "csv", "mcs_table_reference.csv");
+layoutRefFile = fullfile(runFolder, "reports", "csv", "deployment_layout_reference.csv");
 assert(exist(dlFile, "file") == 2, "Missing DL trial CSV.");
 assert(exist(ulFile, "file") == 2, "Missing UL trial CSV.");
 assert(exist(beamFile, "file") == 2, "Missing beamforming diagnostics CSV.");
@@ -56,6 +60,10 @@ assert(exist(trsFile, "file") == 2, "Missing TRS trial CSV.");
 assert(exist(cellSearchFile, "file") == 2, "Missing cell-search diagnostics CSV.");
 assert(exist(pbchRecoveryFile, "file") == 2, "Missing PBCH-recovery diagnostics CSV.");
 assert(exist(prachCtrlFile, "file") == 2, "Missing PRACH control diagnostics CSV.");
+assert(exist(runtimeModeFile, "file") == 2, "Missing runtime operating-mode reference CSV.");
+assert(exist(cqiRefFile, "file") == 2, "Missing CQI reference CSV.");
+assert(exist(mcsRefFile, "file") == 2, "Missing MCS reference CSV.");
+assert(exist(layoutRefFile, "file") == 2, "Missing deployment-layout reference CSV.");
 
 dl = readtable(dlFile, "VariableNamingRule", "preserve");
 ul = readtable(ulFile, "VariableNamingRule", "preserve");
@@ -70,12 +78,18 @@ trs = readtable(trsFile, "VariableNamingRule", "preserve");
 cellSearch = readtable(cellSearchFile, "VariableNamingRule", "preserve");
 pbchRecovery = readtable(pbchRecoveryFile, "VariableNamingRule", "preserve");
 prachCtrl = readtable(prachCtrlFile, "VariableNamingRule", "preserve");
+runtimeMode = readtable(runtimeModeFile, "VariableNamingRule", "preserve");
+cqiRef = readtable(cqiRefFile, "VariableNamingRule", "preserve");
+mcsRef = readtable(mcsRefFile, "VariableNamingRule", "preserve");
+layoutRef = readtable(layoutRefFile, "VariableNamingRule", "preserve");
 
 assert(ismember("MeasuredSINR_dB", string(dl.Properties.VariableNames)), "DL trials must export measured SINR.");
 assert(ismember("MeasuredSINR_dB", string(ul.Properties.VariableNames)), "UL trials must export measured SINR.");
 assert(ismember("CRI", string(dl.Properties.VariableNames)), "DL trials must export CRI.");
 assert(ismember("CRI", string(ul.Properties.VariableNames)), "UL trials must export CRI.");
 assert(ismember("CSIPayloadBitLength", string(dl.Properties.VariableNames)), "DL trials must export CSI payload length.");
+assert(all(ismember(["CQIDerivedMCS","CQIDerivedModulation","CQIDerivedTargetCodeRate","LinkAdaptationMode","ActualMCSSelectionMode","CQITable","MCSTable"], ...
+    string(dl.Properties.VariableNames))), "DL trials must preserve CQI-derived AMC columns through the waveform bundle.");
 assert(ismember("LinkAdaptationScheduled", string(dl.Properties.VariableNames)), "DL trials must export link-adaptation state.");
 assert(ismember("Goodput_Mbps", string(dl.Properties.VariableNames)), "DL trials must export goodput.");
 assert(ismember("OfferedThroughput_Mbps", string(dl.Properties.VariableNames)), "DL trials must export offered throughput.");
@@ -110,6 +124,8 @@ assert(ismember("SymbolErrorRate", string(ul.Properties.VariableNames)), "UL tri
 assert(ismember("ComputeLatency_ms", string(ul.Properties.VariableNames)), "UL trials must export compute latency.");
 assert(ismember("ProcedureDelay_ms", string(ul.Properties.VariableNames)), "UL trials must export procedure delay.");
 assert(ismember("AirInterfaceTTI_ms", string(ul.Properties.VariableNames)), "UL trials must export radio-time TTI.");
+assert(all(ismember(["CQIDerivedMCS","CQIDerivedModulation","CQIDerivedTargetCodeRate","LinkAdaptationMode","ActualMCSSelectionMode","CQITable","MCSTable"], ...
+    string(ul.Properties.VariableNames))), "UL trials must preserve CQI-derived AMC columns through the waveform bundle.");
 assert(all(ismember(["InjectedCFO_Hz","EstimatedCFO_PreCorrection_Hz","ResidualCFO_PostCorrection_Hz", ...
     "EstimatedCFO_Hz","TrueCFO_Hz","CFOError_Hz","InjectedTimingOffset_samples", ...
     "EstimatedTimingOffset_PreCorrection_samples","ResidualTimingError_PostCorrection_samples", ...
@@ -218,6 +234,14 @@ assert(any(isfinite(double(pbchRecovery.AcquisitionTime_ms))), "PBCH-recovery tr
 assert(any(isfinite(double(cellSearch.AirInterfaceObservation_ms))), "Cell-search trials must contain finite radio-time observation samples.");
 assert(any(isfinite(double(pbchRecovery.AirInterfaceObservation_ms))), "PBCH-recovery trials must contain finite radio-time observation samples.");
 assert(any(isfinite(double(prachCtrl.AirInterfaceObservation_ms))), "PRACH control trials must contain finite radio-time observation samples.");
+assert(all(ismember(["Direction","ActualMCSSelectionMode","CQITable","MCSTable"], string(runtimeMode.Properties.VariableNames))), ...
+    "Runtime operating-mode reference CSV must expose AMC interpretation metadata.");
+assert(all(ismember(["Direction","CQITable","CQI","Modulation","TargetCodeRate"], string(cqiRef.Properties.VariableNames))), ...
+    "CQI reference CSV must expose NR CQI rows.");
+assert(all(ismember(["Direction","MCSTable","MCSIndex","Modulation","TargetCodeRate"], string(mcsRef.Properties.VariableNames))), ...
+    "MCS reference CSV must expose NR MCS rows.");
+assert(all(ismember(["NumSites","SectorsPerSite","NumCells","InterSiteDistance_m","MobilityEnabled"], string(layoutRef.Properties.VariableNames))), ...
+    "Deployment-layout reference CSV must expose topology and mobility knobs.");
 assert(localAliasMatches(cellSearch, "AcquisitionTime_ms", "AirInterfaceObservation_ms"), "Cell-search acquisition time must mirror radio-time observation, not compute runtime.");
 assert(localAliasMatches(pbchRecovery, "AcquisitionTime_ms", "AirInterfaceObservation_ms"), "PBCH-recovery acquisition time must mirror radio-time observation, not compute runtime.");
 assert(localAliasMatches(prachCtrl, "AcquisitionTime_ms", "AirInterfaceObservation_ms"), "PRACH control acquisition time must mirror radio-time observation, not compute runtime.");

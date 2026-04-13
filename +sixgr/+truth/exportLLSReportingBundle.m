@@ -155,11 +155,17 @@ ctx.Tables.PDCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "p
 ctx.Tables.PUCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"));
 ctx.Tables.SRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
 ctx.Tables.TRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"));
+ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.ControlCSVDir, "initial_access_lifecycle_trace.csv"));
+if ~(istable(ctx.Tables.InitialAccessLifecycle) && ~isempty(ctx.Tables.InitialAccessLifecycle))
+    ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.ReportCSVDir, "initial_access_lifecycle_trace.csv"));
+end
 ctx.Tables.CellSearch = localReadOptionalTable(fullfile(layout.ControlCSVDir, "cell_search_trials.csv"));
 ctx.Tables.PBCHRecovery = localReadOptionalTable(fullfile(layout.ControlCSVDir, "pbch_recovery_trials.csv"));
 ctx.Tables.Beam = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "probe_beam_mimo.csv"));
 ctx.Tables.BeamManagement = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "probe_beam_management.csv"));
 ctx.Tables.BeamScoreTrace = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_score_trace.csv"));
+ctx.Tables.BeamManagementStateTrace = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_management_state_trace.csv"));
+ctx.Tables.BeamManagementEventTrace = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_management_event_trace.csv"));
 ctx.Tables.HARQPackets = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"));
 ctx.Tables.HARQSummary = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
 ctx.Tables.HARQTimeline = localReadOptionalTable(fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"));
@@ -611,7 +617,7 @@ switch key
     case "per_rank_throughput"
         T = localPerRankThroughputRows(cat, metric, ctx.Tables.DL);
     case "equalizer_output_sinr"
-        T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "MeasuredSINR_dB", "DL", "dB");
+        T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ReceiverHestSINR_dB", "DL", "dB");
     case "residual_interference_power"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ResidualInterferencePower_dB", "DL", "dB");
     case "beam_precoder_gain"
@@ -839,7 +845,10 @@ switch key
         imgPath = localDebugArtifactPath(ctx, "PRACHCorrelationImage");
         T = localPrachCorrelationMetricRows(cat, metric, ctx, csvPath, imgPath);
     case "beam_score_traces"
-        T = localMetricTableRow(cat, metric, "trace", "beam_score_trace", localTableAvailability(ctx.Tables.BeamScoreTrace), NaN, "beamforming/csv/beam_score_trace.csv", "", "beamforming/csv/beam_score_trace.csv", "");
+        T = [T; ...
+            localMetricTableRow(cat, metric, "trace", "beam_score_trace", localTableAvailability(ctx.Tables.BeamScoreTrace), NaN, "beamforming/csv/beam_score_trace.csv", "", "beamforming/csv/beam_score_trace.csv", ""); ...
+            localMetricTableRow(cat, metric, "trace", "beam_management_state_trace", localTableAvailability(ctx.Tables.BeamManagementStateTrace), NaN, "beamforming/csv/beam_management_state_trace.csv", "", "beamforming/csv/beam_management_state_trace.csv", "Runtime beam state machine trace emitted from actual slot-ordered beam observations."); ...
+            localMetricTableRow(cat, metric, "trace", "beam_management_event_trace", localTableAvailability(ctx.Tables.BeamManagementEventTrace), NaN, "beamforming/csv/beam_management_event_trace.csv", "", "beamforming/csv/beam_management_event_trace.csv", "Runtime beam event trace emitted from actual slot-ordered beam observations.")];
     case "ai_confidence_traces"
         csvPath = localDebugArtifactPath(ctx, "AIConfidenceCSV");
         imgPath = localDebugArtifactPath(ctx, "AIConfidenceImage");
@@ -885,7 +894,8 @@ switch key
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No compute, radio-time, or procedure-delay samples are available; placeholder figure emitted."));
     case "curves_access_delay_cdf"
         aggPath = localAggregateArtifactPath(ctx, "AccessDelayCDFPlot");
-        hasData = localHasAnyFiniteColumn(ctx.Tables.PRACH, ["AccessDelay_ms","ProcedureDelay_ms"]) || ...
+        hasData = localHasAnyFiniteColumn(ctx.Tables.InitialAccessLifecycle, ["AccessDelay_ms","ProcedureDelay_ms"]) || ...
+            localHasAnyFiniteColumn(ctx.Tables.PRACH, ["AccessDelay_ms","ProcedureDelay_ms"]) || ...
             localHasAnyFiniteColumn(ctx.Tables.PBCH, ["ProcedureDelay_ms"]) || ...
             localHasAnyFiniteColumn(ctx.Tables.PBCHRecovery, ["ProcedureDelay_ms"]) || ...
             localHasAnyFiniteColumn(ctx.Tables.CellSearch, ["ProcedureDelay_ms"]);
@@ -906,7 +916,7 @@ switch key
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No joint energy/throughput samples available; placeholder figure emitted."));
     case "curves_complexity_vs_gain"
         aggPath = localAggregateArtifactPath(ctx, "ComplexityVsGainPlot");
-        hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["DecoderIterations","MeasuredSINR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["DecoderIterations","MeasuredSINR_dB"]);
+        hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["DecoderIterations","ReceiverHestSINR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["DecoderIterations","ReceiverHestSINR_dB"]);
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No complexity/gain sample pairs available; placeholder figure emitted."));
     case "heatmaps_band_feature_kpi"
         aggPath = localAggregateArtifactPath(ctx, "BandFeatureKPIHeatmap");
@@ -1976,7 +1986,7 @@ T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pusch.power_control"], "baseline");
 note = "Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.";
 T = [T; localMetricTableRow(cat, metric, "UL", "policy", "available", NaN, policy, "", localDefaultSource("UL"), note)]; %#ok<AGROW>
-sinr = localFiniteColumn(ctx.Tables.UL, "MeasuredSINR_dB");
+sinr = localFiniteColumn(ctx.Tables.UL, "ReceiverHestSINR_dB");
 if isempty(sinr)
     return;
 end
@@ -2017,16 +2027,19 @@ end
 
 function T = localInitialAccessLatencyRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-note = "Initial-access latency in this bundle is reserved for true procedure-delay samples. Wall-clock PBCH/PRACH runtime is exported separately as compute latency and is not reused here.";
-T = [T; ... %#ok<AGROW>
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.PBCH, "ProcedureDelay_ms", "PBCH", "ms", "air_interface/csv/pbch_trials.csv", note); ...
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.PBCHRecovery, "ProcedureDelay_ms", "PBCH_recovery", "ms", "control/csv/pbch_recovery_trials.csv", note); ...
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.CellSearch, "ProcedureDelay_ms", "cell_search", "ms", "control/csv/cell_search_trials.csv", note); ...
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.PRACH, "AccessDelay_ms", "PRACH", "ms", "air_interface/csv/prach_trials.csv", note); ...
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.PRACH, "ProcedureDelay_ms", "PRACH", "ms", "air_interface/csv/prach_trials.csv", note)];
+note = "Initial-access latency is reported only from complete slot-coupled SSB/PBCH/PRACH/PDCCH/Msg3/Msg4 lifecycle samples. Wall-clock PBCH/PRACH runtime is exported separately as compute latency and is not reused here.";
+[samples, sourceRel] = localInitialAccessProcedureDelaySamples(ctx);
+if ~isempty(samples)
+    T = [T; ... %#ok<AGROW>
+        localMetricTableRow(cat, metric, "initial_access", "mean", "available", mean(samples, "omitnan"), "", "ms", sourceRel, note); ...
+        localMetricTableRow(cat, metric, "initial_access", "p50", "available", prctile(samples, 50), "", "ms", sourceRel, note); ...
+        localMetricTableRow(cat, metric, "initial_access", "p95", "available", prctile(samples, 95), "", "ms", sourceRel, note); ...
+        localMetricTableRow(cat, metric, "initial_access", "sample_count", "available", numel(samples), "", "count", sourceRel, note)];
+    return;
+end
 if isempty(T)
     T = localUnavailableMetricRows(cat, metric, "initial_access", "procedure_delay", "air_interface/csv/prach_trials.csv", ...
-        "No true initial-access procedure delay is modeled by the current waveform LLS path.");
+        "No complete slot-coupled SSB/PBCH/PRACH/PDCCH/Msg3/Msg4 lifecycle sample is available in this run.");
 end
 end
 
@@ -2224,6 +2237,21 @@ T = [T; ... %#ok<AGROW>
 end
 
 function [samples, sourceRel] = localInitialAccessProcedureDelaySamples(ctx)
+life = ctx.Tables.InitialAccessLifecycle;
+if istable(life) && ~isempty(life)
+    if ismember("CompleteFlag", string(life.Properties.VariableNames))
+        try
+            life = life(logical(life.CompleteFlag), :);
+        catch
+        end
+    end
+    samples = localFiniteColumn(life, ["AccessDelay_ms","ProcedureDelay_ms"]);
+    samples = samples(isfinite(samples));
+    sourceRel = "control/csv/initial_access_lifecycle_trace.csv";
+    if ~isempty(samples)
+        return;
+    end
+end
 samples = [ ...
     localFiniteColumn(ctx.Tables.PRACH, ["AccessDelay_ms","ProcedureDelay_ms"]); ...
     localFiniteColumn(ctx.Tables.PBCH, "ProcedureDelay_ms"); ...
@@ -2376,7 +2404,7 @@ function T = localDMRSVsCSIRSComparisonRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 dmrsNmse = localMeanColumn(ctx.Tables.DL, "NMSE_dB");
 csirsEnabled = localConfigFlag(ctx, ["reference_signals.csi_rs_enabled", "reference_signals.nzp_csi_rs.enabled"], false);
-note = "Current LLS runtime does not persist a standalone CSI-RS estimate table, so the exported delta reflects the shared-estimator path used when CSI-RS is enabled.";
+note = "Dedicated CSI-RS runtime events are persisted when waveform CSI-RS is mapped and observed; this DMRS-vs-CSI-RS estimate delta still reflects the shared CSI estimator path.";
 if isfinite(dmrsNmse)
     T = [T; localMetricTableRow(cat, metric, "DL", "dmrs_nmse_db", "available", dmrsNmse, "", "dB", "air_interface/csv/dl_pdsch_trials.csv", note)]; %#ok<AGROW>
 end
@@ -2424,11 +2452,11 @@ end
 
 function T = localCQIAccuracyRowsForTable(cat, metric, trialT, entity, note)
 T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["WidebandCQI","MeasuredSINR_dB"], string(trialT.Properties.VariableNames))))
+if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["WidebandCQI","ReceiverHestSINR_dB"], string(trialT.Properties.VariableNames))))
     return;
 end
 reported = double(trialT.WidebandCQI);
-sinr = double(trialT.MeasuredSINR_dB);
+sinr = double(trialT.ReceiverHestSINR_dB);
 mask = isfinite(reported) & isfinite(sinr);
 if ~any(mask)
     return;
@@ -2490,11 +2518,11 @@ end
 
 function T = localL1SINRAccuracyRowsForTable(cat, metric, trialT, entity, note)
 T = localEmptyMetricTable();
-req = ["MeasuredSINR_dB","ChannelGain_dB","NoiseVariance"];
+req = ["ReceiverHestSINR_dB","ChannelGain_dB","NoiseVariance"];
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
     return;
 end
-reported = double(trialT.MeasuredSINR_dB);
+reported = double(trialT.ReceiverHestSINR_dB);
 gain = double(trialT.ChannelGain_dB);
 noiseVar = double(trialT.NoiseVariance);
 reference = gain - 10 .* log10(max(noiseVar, eps));
@@ -2927,10 +2955,17 @@ end
 
 function T = localInferenceLatencyRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-note = "Inference latency is exported from actual AI benchmark metadata when present, otherwise from the resolved AI latency budget and scenario enable state.";
-metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["InferenceLatency","LatencyBudget_us","RuntimeBudget_us"]);
-if isfinite(double(metaVal))
-    T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_us", "available", double(metaVal), "", "us", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
+note = "Inference latency is promoted only when the active AI path emits measured runtime latency telemetry. Configured latency budgets remain config_only and do not count as measured AI execution evidence.";
+benchVal = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredInferenceLatency_us","ObservedInferenceLatency_us","RuntimeMeasuredInferenceLatency_us","InferenceLatency_us"]);
+metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredInferenceLatency_us","ObservedInferenceLatency_us","RuntimeMeasuredInferenceLatency_us","InferenceLatency_us","InferenceLatency"]);
+latencyVal = benchVal;
+latencySrc = "reports/csv/ai_channel_estimation_benchmark.csv";
+if ~isfinite(double(latencyVal))
+    latencyVal = metaVal;
+    latencySrc = "reports/csv/ai_benchmark_metadata.csv";
+end
+if isfinite(double(latencyVal))
+    T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_us", "available", double(latencyVal), "", "us", latencySrc, note)]; %#ok<AGROW>
     return;
 end
 latBudget = localConfigNumber(ctx, ["ai_ml.latency_budget_us", "ai_ml.runtime_budget_us"], 0);
@@ -3067,10 +3102,19 @@ end
 
 function T = localAIModelParameterRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-value = localAIMetadataValue(ctx.Tables.AIMetadata, ["ParameterCount","ModelParameters"]);
-src = "reports/csv/ai_benchmark_metadata.csv";
-note = "Model parameter count is exported from AI benchmark metadata when available, otherwise from the resolved AI parameter-count budget for the executed scenario.";
+value = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredParameterCount","ObservedParameterCount","RuntimeModelParameterCount","LoadedParameterCount"]);
+src = "reports/csv/ai_channel_estimation_benchmark.csv";
+note = "Model parameter count is promoted only when the runtime AI path emits model-load telemetry. Descriptor-side parameter counts remain config_only because they are not measured inference metadata.";
 avail = "available";
+if ~(isnumeric(value) && isfinite(double(value)))
+    value = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredParameterCount","ObservedParameterCount","RuntimeModelParameterCount","LoadedParameterCount"]);
+    src = "reports/csv/ai_benchmark_metadata.csv";
+end
+if ~(isnumeric(value) && isfinite(double(value)))
+    value = localAIMetadataValue(ctx.Tables.AIMetadata, ["ParameterCount","ModelParameters"]);
+    src = "reports/csv/ai_benchmark_metadata.csv";
+    avail = localAIConfigAvailability(ctx);
+end
 if ~(isnumeric(value) && isfinite(double(value)))
     value = localConfigNumber(ctx, ["ai_ml.parameter_count_budget"], 0);
     src = "meta/scenario_config_resolved.json";
@@ -3081,10 +3125,19 @@ end
 
 function T = localAIFLOPsRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-value = localAIMetadataValue(ctx.Tables.AIMetadata, ["FLOPs","FLOPsBudget"]);
-src = "reports/csv/ai_benchmark_metadata.csv";
-note = "AI FLOPs are exported from actual AI benchmark metadata when available, otherwise from the resolved AI FLOPs budget.";
+value = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredFLOPs","ObservedFLOPs","RuntimeModelFLOPs","RuntimeMeasuredFLOPs"]);
+src = "reports/csv/ai_channel_estimation_benchmark.csv";
+note = "AI FLOPs are promoted only when the runtime AI path emits measured execution-cost metadata. Configured FLOPs budgets remain config_only.";
 avail = "available";
+if ~(isnumeric(value) && isfinite(double(value)))
+    value = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredFLOPs","ObservedFLOPs","RuntimeModelFLOPs","RuntimeMeasuredFLOPs"]);
+    src = "reports/csv/ai_benchmark_metadata.csv";
+end
+if ~(isnumeric(value) && isfinite(double(value)))
+    value = localAIMetadataValue(ctx.Tables.AIMetadata, ["FLOPs","FLOPsBudget"]);
+    src = "reports/csv/ai_benchmark_metadata.csv";
+    avail = localAIConfigAvailability(ctx);
+end
 if ~(isnumeric(value) && isfinite(double(value)))
     value = localConfigNumber(ctx, ["ai_ml.flops_budget"], 0);
     src = "meta/scenario_config_resolved.json";
@@ -3095,10 +3148,19 @@ end
 
 function T = localAIMemoryFootprintRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-value = localAIMetadataValue(ctx.Tables.AIMetadata, ["MemoryFootprint","MemoryBudget"]);
-src = "reports/csv/ai_benchmark_metadata.csv";
-note = "AI memory footprint is exported from benchmark metadata when available, otherwise from the resolved AI memory budget.";
+value = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredMemoryFootprint","ObservedMemoryFootprint","RuntimePeakMemoryBytes","RuntimeMemoryBytes"]);
+src = "reports/csv/ai_channel_estimation_benchmark.csv";
+note = "AI memory footprint is promoted only when the runtime AI path emits measured memory telemetry. Configured memory budgets remain config_only.";
 avail = "available";
+if ~(isnumeric(value) && isfinite(double(value)))
+    value = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredMemoryFootprint","ObservedMemoryFootprint","RuntimePeakMemoryBytes","RuntimeMemoryBytes"]);
+    src = "reports/csv/ai_benchmark_metadata.csv";
+end
+if ~(isnumeric(value) && isfinite(double(value)))
+    value = localAIMetadataValue(ctx.Tables.AIMetadata, ["MemoryFootprint","MemoryBudget"]);
+    src = "reports/csv/ai_benchmark_metadata.csv";
+    avail = localAIConfigAvailability(ctx);
+end
 if ~(isnumeric(value) && isfinite(double(value)))
     value = localConfigNumber(ctx, ["ai_ml.memory_budget"], 0);
     src = "meta/scenario_config_resolved.json";
@@ -3178,14 +3240,17 @@ end
 
 function T = localAIConfidenceRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["ConfidenceMetric","ConfidenceScore"]);
-note = "AI confidence statistics are exported from actual benchmark metadata when present, otherwise from the resolved confidence metric configuration.";
-if isnumeric(metaVal) && isfinite(double(metaVal))
+benchVal = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredConfidenceScore","ObservedConfidenceScore","RuntimeMeasuredConfidenceScore","ConfidenceScore"]);
+metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredConfidenceScore","ObservedConfidenceScore","RuntimeMeasuredConfidenceScore","ConfidenceScore","ConfidenceMetric"]);
+note = "AI confidence statistics are promoted only when runtime confidence telemetry is emitted by the active AI path. Static descriptor confidence settings remain config_only.";
+if isnumeric(benchVal) && isfinite(double(benchVal))
+    T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_confidence", "available", double(benchVal), "", "score", "reports/csv/ai_channel_estimation_benchmark.csv", note)]; %#ok<AGROW>
+elseif isnumeric(metaVal) && isfinite(double(metaVal))
     T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_confidence", "available", double(metaVal), "", "score", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
 elseif ~isnumeric(metaVal)
     txt = localConfigTextValue(metaVal);
     if strlength(txt) > 0 && txt ~= "[]"
-        T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_metric", "available", NaN, txt, "", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
+        T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_metric", localAIConfigAvailability(ctx), NaN, txt, "", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
     end
 end
 if isempty(T)
@@ -3200,8 +3265,13 @@ end
 
 function T = localAIFallbackRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["FallbackRate"]);
-note = "Fallback rate is exported from actual AI metadata when available, otherwise from the resolved fallback configuration and scenario enable state.";
+benchVal = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredFallbackRate","ObservedFallbackRate","RuntimeFallbackRate","FallbackRate"]);
+metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredFallbackRate","ObservedFallbackRate","RuntimeFallbackRate","FallbackRate"]);
+note = "Fallback rate is promoted only when the active AI path emits measured fallback telemetry. Fallback configuration flags remain config_only.";
+if isnumeric(benchVal) && isfinite(double(benchVal))
+    T = [T; localMetricTableRow(cat, metric, "ai_ml", "observed_rate", "available", double(benchVal), "", "fraction", "reports/csv/ai_channel_estimation_benchmark.csv", note)]; %#ok<AGROW>
+    return;
+end
 if isnumeric(metaVal) && isfinite(double(metaVal))
     T = [T; localMetricTableRow(cat, metric, "ai_ml", "observed_rate", "available", double(metaVal), "", "fraction", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
     return;
@@ -3211,8 +3281,8 @@ if ~localAIEnabled(ctx)
     T = [T; localMetricTableRow(cat, metric, "ai_ml", "observed_rate", localAIConfigAvailability(ctx), 0, "", "fraction", "meta/scenario_config_resolved.json", note + " AI/ML is disabled in this scenario, so fallback rate is zero.")]; %#ok<AGROW>
 else
     T = [T; ... %#ok<AGROW>
-        localMetricTableRow(cat, metric, "ai_ml", "configured_enabled_flag", "available", double(enabled), "", "flag", "meta/scenario_config_resolved.json", note); ...
-        localMetricTableRow(cat, metric, "ai_ml", "configured_mode", "available", NaN, string(enabled), "", "meta/scenario_config_resolved.json", note)];
+        localMetricTableRow(cat, metric, "ai_ml", "configured_enabled_flag", localAIConfigAvailability(ctx), double(enabled), "", "flag", "meta/scenario_config_resolved.json", note); ...
+        localMetricTableRow(cat, metric, "ai_ml", "configured_mode", localAIConfigAvailability(ctx), NaN, string(enabled), "", "meta/scenario_config_resolved.json", note)];
 end
 end
 
@@ -3305,6 +3375,39 @@ for i = 1:numel(fieldNames)
     end
     value = candidate;
     return;
+end
+end
+
+function value = localAIBenchmarkNumericValue(S, fieldNames)
+value = NaN;
+if ~(isstruct(S) && ~isempty(fieldnames(S)))
+    return;
+end
+fieldNames = string(fieldNames);
+names = fieldnames(S);
+for i = 1:numel(fieldNames)
+    for j = 1:numel(names)
+        T = S.(names{j});
+        if ~(istable(T) && ~isempty(T))
+            continue;
+        end
+        vars = string(T.Properties.VariableNames);
+        idx = find(vars == fieldNames(i), 1, "first");
+        if isempty(idx)
+            continue;
+        end
+        candidate = T.(vars(idx));
+        if ~(isnumeric(candidate) || islogical(candidate))
+            continue;
+        end
+        candidate = double(candidate(:));
+        candidate = candidate(isfinite(candidate));
+        if isempty(candidate)
+            continue;
+        end
+        value = mean(candidate, "omitnan");
+        return;
+    end
 end
 end
 
@@ -3605,7 +3708,7 @@ if isfinite(xMin) && isfinite(xMax)
 end
 legend(ax, "Location", "best");
 pathOut = string(fullfile(imgDir, fileName));
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localPlotDiscreteSweepSeries(ax, x, y, color, displayName)
@@ -3759,7 +3862,7 @@ grid(ax, "on");
 ylabel(ax, "Pass rate");
 title(ax, "Control and Initial-Access Pass Rates");
 pathOut = string(fullfile(imgDir, "control_pass_rates.png"));
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function pathOut = localPlotCoverageAvailability(imgDir, coverageT)
@@ -3786,7 +3889,7 @@ ylabel(ax, "Metric count");
 title(ax, "LLS Output Coverage States by Category");
 legend(ax, cellstr(localAvailabilityStateLabels(states)), "Location", "eastoutside");
 pathOut = string(fullfile(imgDir, "metric_coverage_by_category.png"));
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function artifacts = localWriteAggregateArtifacts(ctx, coverageT, rows, plots)
@@ -3992,7 +4095,7 @@ if ~isempty(T)
 end
 T = table( ...
     "not_available", "", NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, "not_available", "none", ...
-    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','MeasuredSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
+    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','ReceiverHestSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
     'EstimatedCFO_Hz','CFOError_Hz','TimingError_samples','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy','Status','SourceArtifact'});
 end
 
@@ -4008,7 +4111,7 @@ T = table( ...
     localDebugNumericColumn(sourceT, "Frame", n), ...
     localDebugNumericColumn(sourceT, "Slot", n), ...
     localDebugNumericColumn(sourceT, "SNR_dB", n), ...
-    localDebugNumericColumn(sourceT, "MeasuredSINR_dB", n), ...
+    localDebugNumericColumn(sourceT, "ReceiverHestSINR_dB", n), ...
     localDebugNumericColumn(sourceT, "NMSE_dB", n), ...
     localDebugNumericColumn(sourceT, "ChannelGain_dB", n), ...
     localDebugNumericColumn(sourceT, "ConditionNumber_dB", n), ...
@@ -4021,7 +4124,7 @@ T = table( ...
     localDebugNumericColumn(sourceT, "QCLAccuracy", n), ...
     localDebugStringColumn(sourceT, "Status", n), ...
     repmat(string(sourceArtifact), n, 1), ...
-    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','MeasuredSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
+    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','ReceiverHestSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
     'EstimatedCFO_Hz','CFOError_Hz','TimingError_samples','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy','Status','SourceArtifact'});
 end
 
@@ -4217,18 +4320,33 @@ enabled = localAIEnabled(ctx);
 useCase = string(ctx.ScenarioConfig.get("ai_ml.use_case", ""));
 inferenceMode = string(ctx.ScenarioConfig.get("ai_ml.inference_mode", ""));
 confidenceMetric = string(ctx.ScenarioConfig.get("ai_ml.confidence_metric", ctx.ScenarioConfig.get("ai_ml.confidence_metric_name", "")));
-confidence = localAIMetadataValue(ctx.Tables.AIMetadata, ["ConfidenceScore","ConfidenceMetric"]);
-fallbackRate = localAIMetadataValue(ctx.Tables.AIMetadata, ["FallbackRate"]);
+confidence = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredConfidenceScore","ObservedConfidenceScore","RuntimeMeasuredConfidenceScore","ConfidenceScore"]);
+confidenceSource = "reports/csv/ai_channel_estimation_benchmark.csv";
+if ~isfinite(confidence)
+    confidence = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredConfidenceScore","ObservedConfidenceScore","RuntimeMeasuredConfidenceScore","ConfidenceScore"]);
+    confidenceSource = "reports/csv/ai_benchmark_metadata.csv";
+end
+fallbackRate = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredFallbackRate","ObservedFallbackRate","RuntimeFallbackRate","FallbackRate"]);
+fallbackSource = "reports/csv/ai_channel_estimation_benchmark.csv";
+if ~isfinite(fallbackRate)
+    fallbackRate = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredFallbackRate","ObservedFallbackRate","RuntimeFallbackRate","FallbackRate"]);
+    fallbackSource = "reports/csv/ai_benchmark_metadata.csv";
+end
+hasMeasuredTrace = isfinite(confidence) || isfinite(fallbackRate);
 if ~isfinite(fallbackRate)
     fallbackRate = double(~enabled) * 0;
 end
 sourceArtifact = "meta/scenario_config_resolved.json";
 status = "config_only";
-notes = "Resolved AI/ML trace emitted from configuration and run context.";
-if istable(ctx.Tables.AIMetadata) && ~isempty(ctx.Tables.AIMetadata)
-    sourceArtifact = "reports/csv/ai_benchmark_metadata.csv";
+notes = "Resolved AI/ML trace emitted from configuration and run context. Confidence and fallback values stay config_only unless measured runtime telemetry exists.";
+if hasMeasuredTrace
+    if isfinite(confidence)
+        sourceArtifact = confidenceSource;
+    else
+        sourceArtifact = fallbackSource;
+    end
     status = "derived";
-    notes = "Resolved AI/ML trace emitted from benchmark metadata and run context.";
+    notes = "Resolved AI/ML trace emitted from measured runtime confidence/fallback telemetry and run context.";
 elseif ~localAIEnabled(ctx)
     if localShouldEmitAIAuditArtifacts(ctx)
         status = "disabled";
@@ -4260,7 +4378,10 @@ if (istable(ctx.Tables.DLConstellation) && ~isempty(ctx.Tables.DLConstellation))
     tl = tiledlayout(fig, 1, 2, "Padding", "compact", "TileSpacing", "compact");
     localConstellationAxes(nexttile(tl), ctx.Tables.DLConstellation, "DL Symbol Constellation");
     localConstellationAxes(nexttile(tl), ctx.Tables.ULConstellation, "UL Symbol Constellation");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "Symbol Constellations", "No symbol-domain constellation samples were emitted by the current LLS path.");
@@ -4275,7 +4396,10 @@ if ~isempty(dl) || ~isempty(ul)
     tl = tiledlayout(fig, 1, 2, "Padding", "compact", "TileSpacing", "compact");
     localHistogramAxes(nexttile(tl), dl, "DL LLR Magnitude", "|LLR|");
     localHistogramAxes(nexttile(tl), ul, "UL LLR Magnitude", "|LLR|");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "LLR Histograms", "No LLR summary statistics were emitted by the current LLS path.");
@@ -4297,7 +4421,10 @@ if istable(T) && ~isempty(T) && any(usableMask)
         "Doppler Error Trace", "Hz");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["PhaseTrackingError_deg"]), ...
         "Phase Tracking Trace", "deg");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "CFO/TO Tracking Traces", "No CFO/TO tracking samples were emitted by the current LLS path.");
@@ -4345,6 +4472,9 @@ end
 
 function localPlotPRACHCorrelationTraceOrPlaceholder(pathOut, ctx)
 if localTruthCasePruned(ctx, "PRACH_Detection")
+    if ~localShouldEmitPlaceholderArtifacts(ctx)
+        return;
+    end
     localExportPlaceholderFigure(pathOut, "PRACH Correlation Trace", ...
         "PRACH_Detection was pruned from the active truth profile for this run.");
     return;
@@ -4359,7 +4489,10 @@ if ~isempty(metric)
     ylabel(ax, "Detection metric");
     title(ax, "PRACH Correlation Trace");
     grid(ax, "on");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "PRACH Correlation Trace", "No PRACH detection metrics were emitted by the current LLS path.");
@@ -4376,7 +4509,7 @@ set(ax, 'XTickLabel', {'Confidence','FallbackRate'});
 title(ax, "AI Confidence Trace (" + string(traceT.UseCase(1)) + ", enabled=" + string(traceT.AIEnabled(1)) + ")");
 ylabel(ax, "Value");
 grid(ax, "on");
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localConstellationAxes(ax, T, plotTitle)
@@ -4534,7 +4667,7 @@ for i = 1:numel(values)
     end
     text(ax, i, 1, txt, "HorizontalAlignment", "center", "Color", "w", "FontWeight", "bold");
 end
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function tf = localScenarioFlag(scfg, keyPath, defaultValue)
@@ -4611,6 +4744,8 @@ if ~isempty(plots)
         fprintf(fid, "- `%s`\n", localRelativeToRunFolder(plots(i), ctx.RunFolder));
     end
 end
+clear cleanupObj
+sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
 end
 
 function localPlotWaterfallOrPlaceholder(pathOut, ctx)
@@ -4626,7 +4761,10 @@ if any(isfinite(thr)) || any(isfinite(bler))
     ylabel(ax, "KPI proxy value");
     title(ax, "Key Gains/Losses Summary");
     grid(ax, "on");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "Key Gains/Losses Summary", "No throughput/BLER sweep data available for this run.");
@@ -4645,7 +4783,10 @@ if ~isempty(x)
     ylabel(ax, "CCDF");
     title(ax, "PAPR CCDF (" + label + ")");
     grid(ax, "on");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "PAPR CCDF", "No PAPR samples were emitted by the current LLS path.");
@@ -4655,6 +4796,9 @@ function localPlotLatencyCDFOrPlaceholder(pathOut, ctx)
 series = localLatencyCDFFigureSeries(ctx);
 if ~isempty(series)
     localExportLatencySemanticsCDFFigure(pathOut, series);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "Latency Semantics CDF", "No compute, radio-time, or procedure-delay samples were emitted by the current LLS path.");
@@ -4684,7 +4828,7 @@ if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
     ylabel(ax, "Energy per bit (J)");
     title(ax, "Energy vs Throughput");
     grid(ax, "on");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
     return;
 end
 [x, y] = localEnergyThroughputPair(ctx);
@@ -4697,7 +4841,10 @@ if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
     ylabel(ax, "Energy per bit (J/bit)");
     title(ax, "Energy vs Throughput");
     grid(ax, "on");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "Energy vs Throughput", "No joint energy/throughput samples were emitted by the current LLS path.");
@@ -4708,17 +4855,20 @@ x = localFiniteColumn(ctx.Tables.DL, "DecoderComplexityUnits");
 if isempty(x)
     x = localFiniteColumn(ctx.Tables.DL, "DecoderIterations");
 end
-y = localFiniteColumn(ctx.Tables.DL, "MeasuredSINR_dB");
+y = localFiniteColumn(ctx.Tables.DL, "ReceiverHestSINR_dB");
 if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
     scatter(ax, x, y, 36, "filled");
     xlabel(ax, "Decoder complexity");
-    ylabel(ax, "Measured SINR (dB)");
+    ylabel(ax, "Receiver Hest SINR (dB)");
     title(ax, "Complexity vs Gain");
     grid(ax, "on");
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
+if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "Complexity vs Gain", "No complexity/gain sample pairs were emitted by the current LLS path.");
@@ -4736,6 +4886,9 @@ values = [ ...
     localProbeMetricScalar(ctx.Tables.RFEnergy, "ue_energy_per_successful_bit")];
 labels = ["DL Thr","UL Thr","DL BLER","UL BLER","SRS NMSE","Beam Hit","HARQ RTT","UE E/bit"];
 rowLabel = string(ctx.ScenarioConfig.get("global_radio_scope.frequency_range_label", ctx.ScenarioConfig.get("frequency.range", "single_run")));
+if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
+    return;
+end
 localExportNamedHeatmap(pathOut, "Band vs Feature vs KPI", labels, rowLabel, values, ...
     "Single-run band/feature/KPI snapshot built from actual run data.");
 end
@@ -4755,6 +4908,9 @@ values = [ ...
     localMeanColumn(ctx.Tables.DL, "MismatchSensitivity_dB"), ...
     localProbeMetricScalar(ctx.Tables.RFEnergy, "ue_energy_per_successful_bit")];
 labels = ["DL BLER","UL BLER","SRS NMSE","CFO RMSE","TO RMSE","Doppler RMSE","Mismatch","UE E/bit"];
+if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
+    return;
+end
 localExportNamedHeatmap(pathOut, "Impairment vs KPI", labels, rowLabel, values, ...
     "No impairment-linked KPI snapshot was emitted by the current LLS path.");
 end
@@ -4780,6 +4936,9 @@ values = [ ...
     localMeanColumn(ctx.Tables.Sweep, "UL_BLER"), ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "mtrp_beam_selection_gain")];
 labels = ["Beam Hit","Top-K Hit","Switch Lat","DL Thr","UL Thr","DL BLER","UL BLER","mTRP Gain"];
+if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
+    return;
+end
 localExportNamedHeatmap(pathOut, "Beam/Rank/TRP vs KPI", labels, rowLabel, values, ...
     "No beam/rank/TRP KPI snapshot was emitted by the current LLS path.");
 end
@@ -4862,6 +5021,8 @@ if ~isempty(plots)
         fprintf(fid, "- `%s`\n", localRelativeToRunFolder(plots(i), ctx.RunFolder));
     end
 end
+clear cleanupObj
+sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
 end
 
 function localWriteTechnicalReport(filePath, ctx, coverageT, rows, plots)
@@ -4955,6 +5116,8 @@ fprintf(fid, "- `air_interface/csv/lls_kpi_summary.csv`\n");
 fprintf(fid, "- `air_interface/csv/lls_snr_sweep.csv`\n");
 fprintf(fid, "- `harq/csv/probe_harq_summary.csv`\n");
 fprintf(fid, "- `beamforming/csv/probe_beam_management.csv`\n");
+fprintf(fid, "- `beamforming/csv/beam_management_state_trace.csv`\n");
+fprintf(fid, "- `beamforming/csv/beam_management_event_trace.csv`\n");
 fprintf(fid, "- `rf/csv/probe_rf_energy.csv`\n");
 fprintf(fid, "- `reports/csv/lls_output_spec_coverage.csv`\n");
 fprintf(fid, "- `reports/csv/artifact_inventory.csv`\n");
@@ -4982,6 +5145,8 @@ if ~isempty(plots)
         fprintf(fid, "- `%s`\n", localRelativeToRunFolder(plots(i), ctx.RunFolder));
     end
 end
+clear cleanupObj
+sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
 end
 
 function localWriteMetricHighlight(fid, T, varName, label)
@@ -5276,7 +5441,11 @@ out = localDerivedOrPlaceholderAvailability(any(localUsableTrackingTraceRows(T))
 end
 
 function out = localAIConfidenceTraceAvailability(ctx)
-if istable(ctx.Tables.AIMetadata) && ~isempty(ctx.Tables.AIMetadata)
+benchVal = localAIBenchmarkNumericValue(ctx.Tables.AIBenchmarks, ["MeasuredConfidenceScore","ObservedConfidenceScore","RuntimeMeasuredConfidenceScore","ConfidenceScore", ...
+    "MeasuredFallbackRate","ObservedFallbackRate","RuntimeFallbackRate","FallbackRate"]);
+metaVal = localAIMetadataValue(ctx.Tables.AIMetadata, ["MeasuredConfidenceScore","ObservedConfidenceScore","RuntimeMeasuredConfidenceScore","ConfidenceScore", ...
+    "MeasuredFallbackRate","ObservedFallbackRate","RuntimeFallbackRate","FallbackRate"]);
+if isfinite(double(benchVal)) || isfinite(double(metaVal))
     out = "derived";
 elseif localAIEnabled(ctx)
     out = "config_only";
@@ -5444,6 +5613,7 @@ end
 
 function samples = localProcedureDelaySamplesForLatencyCDF(ctx)
 samples = [ ...
+    localFiniteColumn(ctx.Tables.InitialAccessLifecycle, ["AccessDelay_ms","ProcedureDelay_ms"]); ...
     localCollectFiniteColumns({ctx.Tables.DL, ctx.Tables.UL, ctx.Tables.PDCCH, ctx.Tables.PBCH, ...
         ctx.Tables.PBCHRecovery, ctx.Tables.CellSearch, ctx.Tables.PRACH, ctx.Tables.SRS, ctx.Tables.TRS}, "ProcedureDelay_ms"); ...
     localFiniteColumn(ctx.Tables.PRACH, "AccessDelay_ms")];
@@ -5475,7 +5645,7 @@ ax = axes(fig);
 axis(ax, "off");
 text(ax, 0.5, 0.62, char(plotTitle), "HorizontalAlignment", "center", "FontWeight", "bold", "FontSize", 12, "Interpreter", "none");
 text(ax, 0.5, 0.42, char(message), "HorizontalAlignment", "center", "FontSize", 10, "Interpreter", "none");
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localExportCDFFigure(pathOut, x, plotTitle, xLabel)
@@ -5490,7 +5660,7 @@ grid(ax, "on");
 xlabel(ax, xLabel);
 ylabel(ax, "CDF");
 title(ax, plotTitle);
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localExportLatencySemanticsCDFFigure(pathOut, series)
@@ -5514,7 +5684,7 @@ if ~any(string({series.Label}) == "ProcedureDelay_ms")
     text(ax, 0.98, 0.02, "ProcedureDelay_ms unavailable in this run", ...
         "Units", "normalized", "HorizontalAlignment", "right", "VerticalAlignment", "bottom");
 end
-exportgraphics(fig, pathOut, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localExportCoverageHeatmap(pathOut, plotTitle, message, coverageT, axisLabel)
@@ -5537,7 +5707,7 @@ if istable(coverageT) && ~isempty(coverageT)
     xlabel(ax, "KPI category");
     ylabel(ax, "Context");
     title(ax, plotTitle);
-    exportgraphics(fig, pathOut, "Resolution", 160);
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
     return;
 end
 localExportPlaceholderFigure(pathOut, plotTitle, message);

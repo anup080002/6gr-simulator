@@ -9,6 +9,9 @@ arguments
 end
 
 filePath = char(filePath);
+if sixgr.db.isArtifactStoreActive()
+    sixgr.db.storeTableArtifact(filePath, T);
+end
 sixgr.util.ensureDir(filePath);
 
 try

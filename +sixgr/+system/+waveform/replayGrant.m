@@ -29,7 +29,40 @@ replay = struct( ...
     "TransportBlockSize", NaN, ...
     "DecoderIterations", NaN, ...
     "EffectiveTxAntennas", NaN, ...
-    "EffectiveRxAntennas", NaN);
+    "EffectiveRxAntennas", NaN, ...
+    "ReceiverHestSINR_dB", NaN, ...
+    "ReceiverHestSINRSource", "unavailable_waveform_replay_not_executed", ...
+    "ReceiverHestSINRValueRole", "unavailable", ...
+    "ReceiverHestSINRValueStatus", "unavailable", ...
+    "ReceiverHestSINRNAReason", "waveform_replay_not_executed", ...
+    "DecoderTruthProxySINR_dB", NaN, ...
+    "DecoderTruthProxySINRSource", "unavailable_equalizer_evm_not_computed", ...
+    "DecoderTruthProxySINRValueRole", "unavailable", ...
+    "DecoderTruthProxySINRValueStatus", "unavailable", ...
+    "DecoderTruthProxySINRNAReason", "waveform_replay_not_executed", ...
+    "PrecoderSource", "unavailable_waveform_replay_not_executed", ...
+    "RequestedPrecoderSource", "unavailable_waveform_replay_not_executed", ...
+    "AppliedPrecoderSource", "unavailable_waveform_replay_not_executed", ...
+    "RequestedPrecoderPMI", NaN, ...
+    "PrecodingMode", "unavailable", ...
+    "PrecodingApplicationStage", "unavailable", ...
+    "PrecodingActive", false, ...
+    "ExplicitBeamWeightsApplied", false, ...
+    "TransformPrecodingApplied", false, ...
+    "BeamformingApplied", false, ...
+    "AppliedBeamIndexSet", "", ...
+    "AppliedPrecoderPMI", NaN, ...
+    "AppliedPrecoderValueRole", "unavailable", ...
+    "AppliedPrecoderValueStatus", "unavailable", ...
+    "AppliedPrecoderNAReason", "waveform_replay_not_executed", ...
+    "ExplicitPrecoderReplayStatus", "not_materialized", ...
+    "ExplicitPrecoderReplayBlocker", "waveform_replay_not_executed", ...
+    "AppliedPrecoderPMIType", "", ...
+    "AppliedPrecoderCodebookMode", "", ...
+    "PrecodingNumPorts", NaN, ...
+    "PrecodingNumLayers", NaN, ...
+    "PrecodingMatrixRows", NaN, ...
+    "PrecodingMatrixCols", NaN);
 
 try
     cfgReplay = localBuildReplayConfig(cfgIn, dir, grant);
@@ -51,7 +84,7 @@ try
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         fastAWGNPath = logical(opt.FastAWGNPath) && localAllowsFastAWGN(cfgReplay, grant, chState);
-        [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgReplay, ...
+        [rx, rxInfo] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgReplay, ...
             "Carrier", tx.Carrier, ...
             "PUSCH", tx.PUSCH, ...
             "PUSCHIndices", tx.PUSCHIndices, ...
@@ -77,7 +110,7 @@ try
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         fastAWGNPath = logical(opt.FastAWGNPath) && localAllowsFastAWGN(cfgReplay, grant, chState);
-        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgReplay, ...
+        [rx, rxInfo] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgReplay, ...
             "Carrier", tx.Carrier, ...
             "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, ...
@@ -95,6 +128,7 @@ try
     replay.BLER = double(~replay.Ok);
     replay.UsedFading = logical(sixgr.util.structGet(chState, "UseFading", false));
     replay.FastAWGNPath = logical(fastAWGNPath);
+    replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo);
     if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
         replay.DecoderIterations = mean(double(rx.ActiveIterations(:)), "omitnan");
     end
@@ -117,6 +151,138 @@ catch ME
     replay.BLER = 1.0;
     replay.Notes = "waveform_replay_failed: " + string(ME.message);
 end
+end
+
+function replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo)
+replay.ReceiverHestSINR_dB = double(sixgr.util.structGet(rx, "ReceiverHestSINR_dB", NaN));
+replay.ReceiverHestSINRSource = string(sixgr.util.structGet(rx, "ReceiverHestSINRSource", "unavailable_receiver_hest_csi_feedback"));
+replay.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", "unavailable"));
+replay.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", "unavailable"));
+replay.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", "receiver_hest_sinr_not_exported_by_replay_rx"));
+
+[decoderSINR, decoderMeta] = localDecoderTruthProxySINR(tx, rx, dir);
+replay.DecoderTruthProxySINR_dB = double(decoderSINR);
+replay.DecoderTruthProxySINRSource = string(sixgr.util.structGet(decoderMeta, "Source", "unavailable_equalizer_evm_not_computed"));
+replay.DecoderTruthProxySINRValueRole = string(sixgr.util.structGet(decoderMeta, "ValueRole", "unavailable"));
+replay.DecoderTruthProxySINRValueStatus = string(sixgr.util.structGet(decoderMeta, "ValueStatus", "unavailable"));
+replay.DecoderTruthProxySINRNAReason = string(sixgr.util.structGet(decoderMeta, "NAReason", "equalizer_evm_metric_unavailable"));
+
+prec = sixgr.util.structGet(txInfo, "Precoding", struct());
+if ~(isstruct(prec) && ~isempty(fieldnames(prec)))
+    prec = sixgr.util.structGet(rxInfo, "Precoding", struct());
+end
+if ~(isstruct(prec) && ~isempty(fieldnames(prec)))
+    prec = sixgr.util.structGet(tx, "PrecodeInfo", struct());
+end
+if ~(isstruct(prec) && ~isempty(fieldnames(prec)))
+    replay.ExplicitPrecoderReplayStatus = "not_materialized";
+    replay.ExplicitPrecoderReplayBlocker = "waveform_replay_precoder_metadata_missing";
+    return;
+end
+
+precSource = string(sixgr.util.structGet(prec, "Source", ""));
+if strlength(strtrim(precSource)) == 0 || strcmpi(char(precSource), "none")
+    precSource = "waveform_replay_direct_mapping_no_explicit_beam_weights";
+end
+precMode = string(sixgr.util.structGet(prec, "Mode", "runtime_precoding_state"));
+replay.PrecoderSource = precSource;
+replay.RequestedPrecoderSource = precSource;
+replay.AppliedPrecoderSource = precSource;
+replay.RequestedPrecoderPMI = double(sixgr.util.structGet(prec, "PMI", NaN));
+replay.PrecodingMode = precMode;
+replay.PrecodingApplicationStage = string(sixgr.util.structGet(prec, "ApplicationStage", "waveform_replay_runtime"));
+replay.PrecodingActive = logical(sixgr.util.structGet(prec, "Active", false));
+replay.ExplicitBeamWeightsApplied = logical(sixgr.util.structGet(prec, "ExplicitBeamWeightsApplied", ...
+    replay.PrecodingActive && dir == "DL" && contains(lower(precMode), "explicit")));
+replay.TransformPrecodingApplied = logical(sixgr.util.structGet(prec, "TransformPrecodingApplied", ...
+    contains(lower(precMode), "transform")));
+replay.BeamformingApplied = logical(sixgr.util.structGet(prec, "BeamformingApplied", replay.PrecodingActive));
+replay.AppliedBeamIndexSet = localNumericSetToken(sixgr.util.structGet(prec, "BeamIndices", []));
+replay.AppliedPrecoderPMI = double(sixgr.util.structGet(prec, "PMI", NaN));
+replay.AppliedPrecoderValueRole = "applied";
+replay.AppliedPrecoderValueStatus = "OK";
+replay.AppliedPrecoderNAReason = "";
+replay.ExplicitPrecoderReplayStatus = "materialized";
+replay.ExplicitPrecoderReplayBlocker = "";
+replay.AppliedPrecoderPMIType = string(sixgr.util.structGet(prec, "PMIType", ""));
+replay.AppliedPrecoderCodebookMode = string(sixgr.util.structGet(prec, "CodebookMode", ""));
+replay.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
+replay.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
+replay.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", NaN));
+replay.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", NaN));
+end
+
+function [sinr_dB, meta] = localDecoderTruthProxySINR(tx, rx, dir)
+meta = struct( ...
+    "Source", "unavailable_equalizer_evm_not_computed", ...
+    "ValueRole", "unavailable", ...
+    "ValueStatus", "unavailable", ...
+    "NAReason", "equalized_or_reference_symbols_missing");
+sinr_dB = NaN;
+eqSym = localEvidenceSymbols(rx, "EqualizedSymbolsForEvidence", "EqualizedSymbols");
+if dir == "UL"
+    refSym = localEvidenceSymbols(tx, "PUSCHSymbolsForEvidence", "PUSCHSymbols");
+else
+    refSym = localEvidenceSymbols(tx, "PDSCHSymbolsForEvidence", "PDSCHSymbols");
+end
+if isempty(eqSym) || isempty(refSym)
+    return;
+end
+L = min(numel(eqSym), numel(refSym));
+if L <= 0
+    return;
+end
+eqSym = double(eqSym(1:L));
+refSym = double(refSym(1:L));
+valid = isfinite(real(eqSym)) & isfinite(imag(eqSym)) & isfinite(real(refSym)) & isfinite(imag(refSym));
+if ~any(valid)
+    meta.NAReason = "equalized_or_reference_symbols_nonfinite";
+    return;
+end
+err = eqSym(valid) - refSym(valid);
+pRef = mean(abs(refSym(valid)).^2, "omitnan");
+if ~(isfinite(pRef) && pRef > 0)
+    meta.NAReason = "reference_symbol_power_unavailable";
+    return;
+end
+evm = sqrt(mean(abs(err).^2, "omitnan") / max(pRef, eps));
+[sinr_dB, meta] = sixgr.link.deriveDecoderTruthProxySINR(struct("EVM_rms", evm));
+if ~isfinite(sinr_dB)
+    meta.NAReason = "equalizer_evm_sinr_unavailable";
+end
+end
+
+function values = localEvidenceSymbols(s, preferredName, legacyName)
+values = sixgr.util.structGet(s, preferredName, []);
+if isempty(values)
+    values = sixgr.util.structGet(s, legacyName, []);
+end
+if iscell(values) && ~isempty(values)
+    values = values{1};
+end
+values = values(:);
+end
+
+function token = localNumericSetToken(values)
+if isempty(values)
+    token = "";
+    return;
+end
+values = double(values(:));
+values = values(isfinite(values));
+if isempty(values)
+    token = "";
+    return;
+end
+parts = strings(numel(values), 1);
+for i = 1:numel(values)
+    if abs(values(i) - round(values(i))) < 1e-9
+        parts(i) = string(round(values(i)));
+    else
+        parts(i) = string(values(i));
+    end
+end
+token = strjoin(parts, "|");
 end
 
 function cfgOut = localBuildReplayConfig(cfgIn, dir, grant)
@@ -159,12 +325,19 @@ end
 
 function cfgOut = localAlignReplayCarrierToGrant(cfgOut, grant)
 requiredNSizeGrid = NaN;
+prbOffset = 0;
+useGrantLocalGrid = logical(sixgr.util.structGet(cfgOut, "system.waveform.useGrantLocalGrid", false));
 
 prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
 if ~isempty(prbSet)
     prbSet = unique(prbSet(isfinite(prbSet) & prbSet >= 0));
     if ~isempty(prbSet)
-        requiredNSizeGrid = max(prbSet) + 1;
+        if useGrantLocalGrid
+            prbOffset = min(prbSet);
+            requiredNSizeGrid = max(prbSet) - prbOffset + 1;
+        else
+            requiredNSizeGrid = max(prbSet) + 1;
+        end
     end
 end
 
@@ -184,38 +357,94 @@ if ~(isfinite(currentNSizeGrid) && currentNSizeGrid >= 1)
     currentNSizeGrid = requiredNSizeGrid;
 end
 
-cfgOut.phy.carrier.NSizeGrid = max(round(currentNSizeGrid), round(requiredNSizeGrid));
-cfgOut.phy.carrier.NStartGrid = max(0, round(double(sixgr.util.structGet(cfgOut, "phy.carrier.NStartGrid", 0))));
+if useGrantLocalGrid
+    cfgOut.phy.carrier.NSizeGrid = max(1, round(requiredNSizeGrid));
+    cfgOut.phy.carrier.NStartGrid = max(0, round(double(sixgr.util.structGet(cfgOut, "phy.carrier.NStartGrid", 0))) + round(prbOffset));
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayPRBOffset", double(prbOffset));
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayGridMode", "grant_allocation");
+else
+    cfgOut.phy.carrier.NSizeGrid = max(round(currentNSizeGrid), round(requiredNSizeGrid));
+    cfgOut.phy.carrier.NStartGrid = max(0, round(double(sixgr.util.structGet(cfgOut, "phy.carrier.NStartGrid", 0))));
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayPRBOffset", 0);
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayGridMode", "full_carrier");
+end
 end
 
 function n = localEffectiveTxAntennas(cfg, dir, numLayers)
+if dir == "UL"
+    explicitUL = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "channel.ul.nTxAnt", []), ...
+        sixgr.util.structGet(cfg, "phy.ul.nTxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", []));
+    if isfinite(explicitUL) && explicitUL >= 1
+        n = localApplyReplayAntennaCap(cfg, explicitUL, numLayers);
+        return;
+    end
+end
+
 explicit = double(sixgr.util.structGet(cfg, "channel.nTxAnt", ...
     sixgr.util.structGet(cfg, "phy.nTxAnt", NaN)));
 if isfinite(explicit) && explicit >= 1
-    n = max(1, round(explicit));
+    n = localApplyReplayAntennaCap(cfg, explicit, numLayers);
     return;
 end
 if dir == "UL"
     ueTx = double(sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", 1));
-    n = max(1, min(round(max(1, ueTx)), numLayers));
+    n = localApplyReplayAntennaCap(cfg, ueTx, numLayers);
 else
     n = max(1, round(numLayers));
 end
 end
 
 function n = localEffectiveRxAntennas(cfg, dir, numLayers)
+if dir == "UL"
+    explicitUL = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "channel.ul.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "phy.ul.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", []));
+    if isfinite(explicitUL) && explicitUL >= 1
+        n = localApplyReplayAntennaCap(cfg, explicitUL, numLayers);
+        return;
+    end
+end
+
 explicit = double(sixgr.util.structGet(cfg, "channel.nRxAnt", ...
     sixgr.util.structGet(cfg, "phy.nRxAnt", NaN)));
 if isfinite(explicit) && explicit >= 1
-    n = max(1, round(explicit));
+    n = localApplyReplayAntennaCap(cfg, explicit, numLayers);
     return;
 end
 if dir == "UL"
-    bsRx = double(sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", 1));
-    n = max(1, min(round(max(1, bsRx)), max(numLayers, 1)));
+    bsRx = double(sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", ...
+        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", 1)));
+    n = localApplyReplayAntennaCap(cfg, bsRx, numLayers);
 else
     ueRx = double(sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", 1));
-    n = max(1, min(round(max(1, ueRx)), max(numLayers, 1)));
+    n = localApplyReplayAntennaCap(cfg, ueRx, numLayers);
+end
+end
+
+function n = localApplyReplayAntennaCap(cfg, value, numLayers)
+n = max(1, round(double(value)));
+if logical(sixgr.util.structGet(cfg, "system.waveform.capReplayAntennasToLayers", false))
+    n = max(1, min(n, max(1, round(double(numLayers)))));
+end
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw) || ~isnumeric(raw)
+        continue;
+    end
+    raw = double(raw(:));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw(1);
+        return;
+    end
 end
 end
 
@@ -247,11 +476,14 @@ bits = int8(bits(:));
 end
 
 function [tx0, grantUsed] = localBuildGrantAlignedPDSCHTx(cfgE, grant)
+if isfield(grant, "PRBSet") && ~isempty(grant.PRBSet)
+    cfgE = sixgr.util.structSet(cfgE, "phy.pdsch.prbSet", localReplayPRBSet(cfgE, grant));
+end
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgE);
 [~, pdschInfo, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfgE);
 grantUsed = grant;
 if isfield(grant, "PRBSet") && ~isempty(grant.PRBSet) && isprop(pdsch, "PRBSet")
-    pdsch.PRBSet = double(unique(grant.PRBSet(:).'));
+    pdsch.PRBSet = localReplayPRBSet(cfgE, grant);
 end
 if isfield(grant, "SymbolAllocation") && ~isempty(grant.SymbolAllocation) && isprop(pdsch, "SymbolAllocation")
     sa = double(grant.SymbolAllocation(:).');
@@ -282,12 +514,28 @@ tx0 = struct( ...
         double(sixgr.util.structGet(cfgE, "phy.pdsch.xOverhead", 0))));
 end
 
+function prbSet = localReplayPRBSet(cfgE, grant)
+prbSet = double(unique(grant.PRBSet(:).'));
+offset = double(sixgr.util.structGet(cfgE, "system.waveform.replayPRBOffset", 0));
+if isfinite(offset) && offset > 0
+    prbSet = prbSet - offset;
+end
+prbSet = prbSet(isfinite(prbSet) & prbSet >= 0);
+if isempty(prbSet)
+    nGrid = max(1, round(double(sixgr.util.structGet(cfgE, "phy.carrier.NSizeGrid", 1))));
+    prbSet = 0:(nGrid-1);
+end
+end
+
 function [tx0, grantUsed] = localBuildGrantAlignedPUSCHTx(cfgE, grant)
+if isfield(grant, "PRBSet") && ~isempty(grant.PRBSet)
+    cfgE = sixgr.util.structSet(cfgE, "phy.pusch.prbSet", localReplayPRBSet(cfgE, grant));
+end
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgE);
 [~, puschInfo, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfgE);
 grantUsed = grant;
 if isfield(grant, "PRBSet") && ~isempty(grant.PRBSet) && isprop(pusch, "PRBSet")
-    pusch.PRBSet = double(unique(grant.PRBSet(:).'));
+    pusch.PRBSet = localReplayPRBSet(cfgE, grant);
 end
 if isfield(grant, "SymbolAllocation") && ~isempty(grant.SymbolAllocation) && isprop(pusch, "SymbolAllocation")
     sa = double(grant.SymbolAllocation(:).');

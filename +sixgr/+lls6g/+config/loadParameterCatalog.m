@@ -39,7 +39,16 @@ for i = 1:numel(overlayPaths)
         continue;
     end
     overlay = sixgr.lls6g.config.readConfigFile(overlayPath);
-    catalog = sixgr.util.mergeStruct(catalog, overlay);
+    catalog = localMergeCatalogOverlay(catalog, overlay);
+end
+end
+
+function merged = localMergeCatalogOverlay(baseCatalog, overlayCatalog)
+merged = sixgr.util.mergeStruct(baseCatalog, overlayCatalog);
+if isfield(baseCatalog, "top_level_order") || isfield(overlayCatalog, "top_level_order")
+    baseTop = string(sixgr.util.structGet(baseCatalog, "top_level_order", strings(0,1)));
+    overlayTop = string(sixgr.util.structGet(overlayCatalog, "top_level_order", strings(0,1)));
+    merged.top_level_order = cellstr(union(baseTop(:), overlayTop(:), "stable"));
 end
 end
 

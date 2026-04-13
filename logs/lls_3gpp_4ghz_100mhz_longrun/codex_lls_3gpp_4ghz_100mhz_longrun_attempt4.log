@@ -1,0 +1,7 @@
+[2026-04-13T01:09:09Z] INFO Preparing LLS run: scenario=lls_3gpp_4ghz_100mhz_longrun runTag=codex_lls_3gpp_4ghz_100mhz_longrun_attempt4 runFolder=C:\Users\Administrator\AppData\Local\Temp\2\sixgr_mysql_web_runs\lls_3gpp_4ghz_100mhz_longrun\codex_lls_3gpp_4ghz_100mhz_longrun_attempt4
+[2026-04-13T01:09:11Z] INFO Artifact store active=1 backend=mysql_web schema=sixgr_results
+[2026-04-13T01:09:11Z] INFO Writing resolved snapshots.
+[2026-04-13T01:09:12Z] INFO Exporting live geometry artifacts.
+[2026-04-13T01:09:13Z] INFO Executing runner profile=system_level_lls.
+[2026-04-13T01:09:13Z] INFO System-level LLS starting: NumTTI=50000 PHYBackend=waveform simulationMode=full_phy
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=0

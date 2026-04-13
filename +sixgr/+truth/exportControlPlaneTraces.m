@@ -1,71 +1,189 @@
-function controlTrace = exportControlPlaneTraces(runFolder, e2e)
+function controlTrace = exportControlPlaneTraces(runFolder, e2e, runtime)
 %EXPORTCONTROLPLANETRACES Build control-plane traces from link and E2E truth outputs.
 
 layout = sixgr.report.resultLayout(runFolder);
 controlDir = layout.ControlCSVDir;
 sixgr.util.ensureFolder(controlDir);
 
+if nargin < 2 || ~(builtin("isstruct", e2e) && isscalar(e2e))
+    e2e = struct();
+end
+if nargin < 3 || ~(builtin("isstruct", runtime) && isscalar(runtime))
+    runtime = struct();
+end
+
 linkCsvDir = layout.AirInterfaceCSVDir;
-pbchTrials = localReadControlTrialTable(fullfile(linkCsvDir, "pbch_trials.csv"));
-prachTrials = localReadControlTrialTable(fullfile(linkCsvDir, "prach_trials.csv"));
-pdcchTrials = localReadControlTrialTable(fullfile(linkCsvDir, "pdcch_trials.csv"));
-pucchTrials = localReadControlTrialTable(fullfile(linkCsvDir, "pucch_trials.csv"));
+runtimeTables = localResolveRuntimeTables(runtime);
+pbchTrials = localResolveControlTrialTable(runtimeTables, "PBCH", fullfile(controlDir, "pbch_trials.csv"), fullfile(linkCsvDir, "pbch_trials.csv"));
+prachTrials = localResolveControlTrialTable(runtimeTables, "PRACH", fullfile(controlDir, "prach_trials.csv"), fullfile(linkCsvDir, "prach_trials.csv"));
+pdcchTrials = localResolveControlTrialTable(runtimeTables, "PDCCH", fullfile(controlDir, "pdcch_trials.csv"), fullfile(linkCsvDir, "pdcch_trials.csv"));
+pucchTrials = localResolveControlTrialTable(runtimeTables, "PUCCH", fullfile(controlDir, "pucch_trials.csv"), fullfile(linkCsvDir, "pucch_trials.csv"));
+srsTrials = localResolveControlTrialTable(runtimeTables, "SRS", fullfile(controlDir, "srs_trials.csv"), fullfile(linkCsvDir, "srs_trials.csv"));
+trsTrials = localResolveControlTrialTable(runtimeTables, "TRS", fullfile(controlDir, "trs_trials.csv"), fullfile(linkCsvDir, "trs_trials.csv"));
+initialAccessLifecycle = localResolveOptionalTable(runtimeTables, "InitialAccessLifecycleTraceTable", ...
+    fullfile(controlDir, "initial_access_lifecycle_trace.csv"), ...
+    fullfile(layout.ReportCSVDir, "initial_access_lifecycle_trace.csv"));
+controlSummary = localResolveOptionalTable(runtimeTables, "ControlGatingSummaryTable", fullfile(layout.ReportCSVDir, "live_control_gating_summary.csv"));
+controlState = localResolveOptionalTable(runtimeTables, "ControlGatingStateTable", fullfile(layout.ReportCSVDir, "live_control_gating_state.csv"));
 
-if isempty(pbchTrials), pbchTrials = localEmptyLinkTrialTable(0); end
-if isempty(prachTrials), prachTrials = localEmptyLinkTrialTable(0); end
-if isempty(pdcchTrials), pdcchTrials = localEmptyLinkTrialTable(0); end
-if isempty(pucchTrials), pucchTrials = localEmptyLinkTrialTable(0); end
-
-cellSearchTrials = pbchTrials;
-pbchRecoveryTrials = pbchTrials;
-if ~isempty(cellSearchTrials), cellSearchTrials.ControlStage = repmat("CELL_SEARCH", height(cellSearchTrials), 1); end
-if ~isempty(pbchRecoveryTrials), pbchRecoveryTrials.ControlStage = repmat("PBCH_RECOVERY", height(pbchRecoveryTrials), 1); end
-if ~isempty(prachTrials), prachTrials.ControlStage = repmat("PRACH_ACCESS", height(prachTrials), 1); end
-if ~isempty(pdcchTrials), pdcchTrials.ControlStage = repmat("PDCCH_CONTROL", height(pdcchTrials), 1); end
-if ~isempty(pucchTrials), pucchTrials.ControlStage = repmat("PUCCH_CONTROL", height(pucchTrials), 1); end
+cellSearchTrials = localBuildStageDerivedTrialTable(pbchTrials, "CELL_SEARCH");
+pbchRecoveryTrials = localBuildStageDerivedTrialTable(pbchTrials, "PBCH_RECOVERY");
+prachTrials = localApplyControlStage(prachTrials, "PRACH_ACCESS");
+pdcchTrials = localApplyControlStage(pdcchTrials, "PDCCH_CONTROL");
+pucchTrials = localApplyControlStage(pucchTrials, "PUCCH_CONTROL");
+srsTrials = localApplyControlStage(srsTrials, "SRS_SOUNDING");
+trsTrials = localApplyControlStage(trsTrials, "TRS_TRACKING");
 
 fCell = fullfile(controlDir, "cell_search_trials.csv");
 fPBCH = fullfile(controlDir, "pbch_recovery_trials.csv");
+fPBCHRaw = fullfile(controlDir, "pbch_trials.csv");
 fPRACH = fullfile(controlDir, "prach_trials.csv");
 fPDCCH = fullfile(controlDir, "pdcch_trials.csv");
 fPUCCH = fullfile(controlDir, "pucch_trials.csv");
-sixgr.util.csvWriteTable(fCell, cellSearchTrials);
-sixgr.util.csvWriteTable(fPBCH, pbchRecoveryTrials);
-sixgr.util.csvWriteTable(fPRACH, prachTrials);
-sixgr.util.csvWriteTable(fPDCCH, pdcchTrials);
-sixgr.util.csvWriteTable(fPUCCH, pucchTrials);
+fSRS = fullfile(controlDir, "srs_trials.csv");
+fTRS = fullfile(controlDir, "trs_trials.csv");
+fInitialAccessLifecycle = fullfile(controlDir, "initial_access_lifecycle_trace.csv");
+fControlSummary = fullfile(controlDir, "control_gating_summary.csv");
+fControlState = fullfile(controlDir, "control_gating_state.csv");
+fCell = localWriteOptionalTable(fCell, cellSearchTrials);
+fPBCH = localWriteOptionalTable(fPBCH, pbchRecoveryTrials);
+fPBCHRaw = localWriteOptionalTable(fPBCHRaw, pbchTrials);
+fPRACH = localWriteOptionalTable(fPRACH, prachTrials);
+fPDCCH = localWriteOptionalTable(fPDCCH, pdcchTrials);
+fPUCCH = localWriteOptionalTable(fPUCCH, pucchTrials);
+fSRS = localWriteOptionalTable(fSRS, srsTrials);
+fTRS = localWriteOptionalTable(fTRS, trsTrials);
+fInitialAccessLifecycle = localWriteOptionalTable(fInitialAccessLifecycle, initialAccessLifecycle);
+fControlSummary = localWriteOptionalTable(fControlSummary, controlSummary);
+fControlState = localWriteOptionalTable(fControlState, controlState);
 
 attachTrace = table();
-if builtin("isstruct", e2e) && isscalar(e2e)
-    attachTrace = sixgr.util.structGet(e2e, "AttachTraceTable", table());
-end
-if ~(istable(attachTrace) && ~isempty(attachTrace))
+attachTrace = sixgr.util.structGet(e2e, "AttachTraceTable", table());
+if ~(istable(attachTrace) && ~isempty(attachTrace)) && ~(istable(controlState) && ~isempty(controlState))
     try
         attachTrace = readtable(fullfile(layout.PacketFlowCSVDir, "e2e_attach_trace.csv"), "VariableNamingRule", "preserve");
     catch
-        attachTrace = localEmptyAttachTraceTable();
+        attachTrace = table();
     end
 end
-if isempty(attachTrace)
-    attachTrace = localEmptyAttachTraceTable();
-end
 
-attachStateTrace = localBuildAttachStateTraceTable(attachTrace);
-rrcMessageTrace = localBuildRRCMessageTraceTable(attachTrace);
 fAttachState = fullfile(controlDir, "attach_state_trace.csv");
 fRRCMsg = fullfile(controlDir, "rrc_message_trace.csv");
-sixgr.util.csvWriteTable(fAttachState, attachStateTrace);
-sixgr.util.csvWriteTable(fRRCMsg, rrcMessageTrace);
+if istable(attachTrace) && ~isempty(attachTrace)
+    attachStateTrace = localBuildAttachStateTraceTable(attachTrace);
+    rrcMessageTrace = localBuildRRCMessageTraceTable(attachTrace);
+elseif istable(controlState) && ~isempty(controlState)
+    attachStateTrace = localBuildAttachStateTraceFromControlState(controlState);
+    rrcMessageTrace = table();
+else
+    attachStateTrace = table();
+    rrcMessageTrace = table();
+end
+fAttachState = localWriteOptionalTable(fAttachState, attachStateTrace);
+fRRCMsg = localWriteOptionalTable(fRRCMsg, rrcMessageTrace);
 
 controlTrace = struct();
 controlTrace.Folder = controlDir;
 controlTrace.CellSearchTrialsCSV = fCell;
 controlTrace.PBCHRecoveryTrialsCSV = fPBCH;
+controlTrace.PBCHTrialsCSV = fPBCHRaw;
 controlTrace.PRACHTrialsCSV = fPRACH;
 controlTrace.PDCCHTrialsCSV = fPDCCH;
 controlTrace.PUCCHTrialsCSV = fPUCCH;
+controlTrace.SRSTrialsCSV = fSRS;
+controlTrace.TRSTrialsCSV = fTRS;
+controlTrace.InitialAccessLifecycleTraceCSV = fInitialAccessLifecycle;
+controlTrace.ControlGatingSummaryCSV = fControlSummary;
+controlTrace.ControlGatingStateCSV = fControlState;
 controlTrace.AttachStateTraceCSV = fAttachState;
 controlTrace.RRCMessageTraceCSV = fRRCMsg;
+end
+
+function runtimeTables = localResolveRuntimeTables(runtime)
+runtimeTables = struct();
+if ~(builtin("isstruct", runtime) && isscalar(runtime))
+    return;
+end
+names = ["PBCH","PRACH","PDCCH","PUCCH","SRS","TRS","ControlGatingSummaryTable","ControlGatingStateTable","InitialAccessLifecycleTraceTable"];
+for i = 1:numel(names)
+    name = char(names(i));
+    runtimeTables.(name) = sixgr.util.structGet(runtime, name, table());
+end
+coupled = sixgr.util.structGet(runtime, "CoupledRuntime", []);
+if ~isempty(coupled)
+    coupledControlTrials = sixgr.util.structGet(coupled, "ControlTrials", struct());
+    for i = 1:6
+        trialName = char(names(i));
+        if ~(istable(runtimeTables.(trialName)) && ~isempty(runtimeTables.(trialName)))
+            runtimeTables.(trialName) = sixgr.util.structGet(coupledControlTrials, trialName, table());
+        end
+    end
+    try
+        coupledArtifacts = sixgr.truth.CoupledTruthRuntime.mobilityArtifacts(coupled);
+    catch
+        coupledArtifacts = struct();
+    end
+    if ~(istable(runtimeTables.ControlGatingSummaryTable) && ~isempty(runtimeTables.ControlGatingSummaryTable))
+        runtimeTables.ControlGatingSummaryTable = sixgr.util.structGet(coupledArtifacts, "ControlGatingSummaryTable", ...
+            sixgr.util.structGet(coupled, "ControlGatingSummaryTable", table()));
+    end
+    if ~(istable(runtimeTables.ControlGatingStateTable) && ~isempty(runtimeTables.ControlGatingStateTable))
+        runtimeTables.ControlGatingStateTable = sixgr.util.structGet(coupledArtifacts, "ControlGatingStateTable", ...
+            sixgr.util.structGet(coupled, "ControlGatingStateTable", table()));
+    end
+    if ~(istable(runtimeTables.InitialAccessLifecycleTraceTable) && ~isempty(runtimeTables.InitialAccessLifecycleTraceTable))
+        runtimeTables.InitialAccessLifecycleTraceTable = sixgr.util.structGet(coupled, "InitialAccessLifecycleTraceTable", table());
+    end
+end
+end
+
+function T = localResolveControlTrialTable(runtimeTables, fieldName, varargin)
+T = sixgr.util.structGet(runtimeTables, fieldName, table());
+if istable(T) && ~isempty(T)
+    return;
+end
+for i = 1:numel(varargin)
+    T = localReadControlTrialTable(varargin{i});
+    if istable(T) && ~isempty(T)
+        return;
+    end
+end
+T = table();
+end
+
+function T = localResolveOptionalTable(runtimeTables, fieldName, varargin)
+T = sixgr.util.structGet(runtimeTables, fieldName, table());
+if istable(T) && ~isempty(T)
+    return;
+end
+for i = 1:numel(varargin)
+    T = localReadControlTrialTable(varargin{i});
+    if istable(T) && ~isempty(T)
+        return;
+    end
+end
+T = table();
+end
+
+function T = localBuildStageDerivedTrialTable(Tin, stageName)
+T = localApplyControlStage(Tin, stageName);
+end
+
+function T = localApplyControlStage(T, stageName)
+if ~(istable(T) && ~isempty(T))
+    T = table();
+    return;
+end
+T.ControlStage = repmat(string(stageName), height(T), 1);
+end
+
+function outPath = localWriteOptionalTable(filePath, T)
+outPath = "";
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+sixgr.util.csvWriteTable(filePath, T);
+outPath = string(filePath);
 end
 
 function T = localReadControlTrialTable(filePath)
@@ -97,6 +215,35 @@ end
 function T = localEmptyAttachTraceTable()
 T = table([], [], string.empty(0,1), string.empty(0,1), string.empty(0,1), [], [], [], false(0,1), string.empty(0,1), ...
     'VariableNames', {'Slot','Time_s','Direction','Event','Message','UE','CellID','TempCRNTI','Success','Cause'});
+end
+
+function T = localBuildAttachStateTraceFromControlState(controlState)
+if ~(istable(controlState) && ~isempty(controlState))
+    T = localBuildAttachStateTraceTable(table());
+    return;
+end
+n = height(controlState);
+step = (1:n).';
+slotCol = localNumericColumn(controlState, "LastSuccessfulPRACHSlot", NaN(n,1));
+fallbackPBCH = localNumericColumn(controlState, "LastSuccessfulPBCHSlot", NaN(n,1));
+fallbackPDCCH = localNumericColumn(controlState, "LastSuccessfulPDCCHSlot", NaN(n,1));
+missingSlot = ~isfinite(slotCol);
+slotCol(missingSlot) = fallbackPBCH(missingSlot);
+missingSlot = ~isfinite(slotCol);
+slotCol(missingSlot) = fallbackPDCCH(missingSlot);
+timeCol = nan(n,1);
+ueCol = localNumericColumn(controlState, "UEIndex", NaN(n,1));
+cellCol = localNumericColumn(controlState, "ServingCell", NaN(n,1));
+dirCol = repmat("UL", n, 1);
+evtCol = repmat("CONTROL_GATING_SNAPSHOT", n, 1);
+stateCol = localStringColumn(controlState, "AccessState", strings(n,1));
+okCol = localLogicalColumn(controlState, "SchedulingEligibility", false(n,1));
+pbchCol = localStringColumn(controlState, "CellAcquisitionState", strings(n,1));
+pdcchCol = localStringColumn(controlState, "LastPDCCHStatus", strings(n,1));
+srsCol = localStringColumn(controlState, "SRSValidityState", strings(n,1));
+causeCol = "PBCH=" + pbchCol + ";PDCCH=" + pdcchCol + ";SRS=" + srsCol;
+T = table(step, slotCol, timeCol, ueCol, cellCol, dirCol, evtCol, stateCol, okCol, causeCol, ...
+    'VariableNames', {'Step','Slot','Time_s','UE','CellID','Direction','Event','State','Success','Cause'});
 end
 
 function T = localBuildAttachStateTraceTable(attachTrace)

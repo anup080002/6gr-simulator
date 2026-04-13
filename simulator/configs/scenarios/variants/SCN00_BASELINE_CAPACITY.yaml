@@ -1,0 +1,26 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN00_BASELINE_CAPACITY
+  description: Browser-owned baseline capacity study for the 6G_4GHz_100MHz_19S3_100UE_UMa family.
+  version: "1.0.0"
+  owner: codex
+  research_class: agreed_starting_point
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn00
+    - baseline
+    - capacity
+    - browser
+    - multicell
+    - lls
+
+run_control:
+  study_mode: baseline
+  simulation_mode: full_phy
+  run_profile: normal
+
+output:
+  profile: SCN00_BASELINE_CAPACITY

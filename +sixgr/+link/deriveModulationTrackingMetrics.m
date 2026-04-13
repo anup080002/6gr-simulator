@@ -274,18 +274,18 @@ if numel(gainPerSym) >= 2
     metrics.ChannelAgingLoss_dB = max(0, 10 * log10(max(gainPerSym(1), eps) / max(gainPerSym(end), eps)));
 end
 
-hSym = mean(H2, 1, "omitnan");
-hSym = hSym(:);
-valid = isfinite(real(hSym)) & isfinite(imag(hSym));
-if nnz(valid) >= 2
-    slotDur_s = localSlotDuration(cfg);
-    t = linspace(0, slotDur_s, nnz(valid)).';
-    phase = unwrap(angle(hSym(valid)));
-    p = polyfit(t, phase, 1);
-    metrics.EstimatedDopplerHz = p(1) / (2 * pi);
-    phaseFit = polyval(p, t);
-    resid = phase - phaseFit;
-    metrics.PhaseTrackingError_deg = sqrt(mean(resid.^2, "omitnan")) * (180 / pi);
+if size(H2, 2) >= 2
+    symCorr = sum(conj(H2(:, 1:end-1)) .* H2(:, 2:end), 1, "omitnan");
+    valid = isfinite(real(symCorr)) & isfinite(imag(symCorr)) & (abs(symCorr) > 0);
+    if nnz(valid) >= 1
+        slotDur_s = localSlotDuration(cfg);
+        symDur_s = slotDur_s / max(size(H2, 2) - 1, 1);
+        phaseStep = angle(symCorr(valid));
+        meanStep = mean(phaseStep, "omitnan");
+        metrics.EstimatedDopplerHz = meanStep / (2 * pi * max(symDur_s, eps));
+        resid = phaseStep - meanStep;
+        metrics.PhaseTrackingError_deg = sqrt(mean(resid.^2, "omitnan")) * (180 / pi);
+    end
 end
 
 ref = H2(:, 1);

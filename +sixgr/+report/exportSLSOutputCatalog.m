@@ -555,7 +555,7 @@ bsXYUnique = zeros(0,2);
 if ~isempty(bsPos)
     bsXYUnique = unique(bsPos(:,1:2), "rows", "stable");
 end
-if size(bsXYUnique, 1) >= 2
+if size(bsXYUnique, 1) >= 3
     voronoi(ax, bsXYUnique(:,1), bsXYUnique(:,2), "k:");
 end
 if ~isempty(bsPos)
@@ -730,6 +730,9 @@ manifest.StrictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false)
 manifest.ExecutionBackend = char(string(sixgr.util.structGet(details, "ExecutionBackend", "UNKNOWN")));
 manifest.PHYMode = char(string(sixgr.util.structGet(details, "PHYMode", "UNKNOWN")));
 manifest.WaveformBacked = logical(sixgr.util.structGet(details, "WaveformBacked", false));
+manifest.WaveformPHYActive = logical(sixgr.util.structGet(details, "WaveformPHYActive", manifest.WaveformBacked));
+manifest.ProxyPHYActive = logical(sixgr.util.structGet(details, "ProxyPHYActive", ~manifest.WaveformBacked));
+manifest.FallbackUsed = logical(sixgr.util.structGet(details, "FallbackUsed", manifest.ProxyPHYActive));
 manifest.NumCells = localPrimaryMetric(results, "NumCells");
 manifest.NumUE = localPrimaryMetric(results, "NumUE");
 manifest.SaveCSV = persistCSV;
@@ -919,7 +922,10 @@ report.parameters = entries;
 report.runtime_notes = struct( ...
     "execution_backend", char(string(sixgr.util.structGet(results, "Details.ExecutionBackend", ""))), ...
     "phy_mode", char(string(sixgr.util.structGet(results, "Details.PHYMode", ""))), ...
-    "waveform_backed", logical(sixgr.util.structGet(results, "Details.WaveformBacked", false)));
+    "waveform_backed", logical(sixgr.util.structGet(results, "Details.WaveformBacked", false)), ...
+    "waveform_phy_active", logical(sixgr.util.structGet(results, "Details.WaveformPHYActive", false)), ...
+    "proxy_phy_active", logical(sixgr.util.structGet(results, "Details.ProxyPHYActive", true)), ...
+    "fallback_used", logical(sixgr.util.structGet(results, "Details.FallbackUsed", true)));
 end
 
 function specs = localAssumptionSpecs()
@@ -1247,6 +1253,9 @@ in.scenario = sixgr.util.structGet(cfg, "scenario", struct());
 in.mac = sixgr.util.structGet(cfg, "mac", struct());
 in.execution_backend = sixgr.util.structGet(results, "Details.ExecutionBackend", "");
 in.phy_mode = sixgr.util.structGet(results, "Details.PHYMode", "");
+in.waveform_phy_active = logical(sixgr.util.structGet(results, "Details.WaveformPHYActive", false));
+in.proxy_phy_active = logical(sixgr.util.structGet(results, "Details.ProxyPHYActive", true));
+in.fallback_used = logical(sixgr.util.structGet(results, "Details.FallbackUsed", true));
 end
 
 function in = localBuildResultHashInput(results, inventoryT, crossCheck)

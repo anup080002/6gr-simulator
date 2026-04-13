@@ -4,9 +4,9 @@
 
 Enable an honest multi-cell waveform system truth path for scheduler, mobility, handover, CRC outcomes, and bidirectional traffic without routing truth-mode execution through abstract PHY or BLER proxy decisions.
 
-## Current Blocker
+## Current Status
 
-The active repo no longer ships `AbstractPHY`, LUT/DB BLER proxy backends, hybrid calibration flows, or the old 60-cell stress/proxy runner. The remaining blocker is now practical waveform-system scale: longer-duration, larger-topology SLS runs still need more runtime optimization, validation breadth, and artifact review before they can be claimed as production-grade waveform system truth.
+The active repo no longer ships `AbstractPHY`, LUT/DB BLER proxy backends, hybrid calibration flows, or the old 60-cell stress/proxy runner. A bounded multicell waveform-truth scale profile now exists at `simulator/configs/scenarios/variants/SCN00_BOUNDED_WAVEFORM_TRUTH_SCALE.yaml`; it keeps the 4 GHz / 100 MHz / TDD / 30 kHz system-level waveform path active, emits runtime scale/profile tables, captures MATLAB profiler CSVs, and runs the primary truth-artifact scanner. Large-topology, long-duration production truth is still not claimed until those same checks pass on longer 19-site or 20-site runs.
 
 ## Scope Boundary
 
@@ -41,7 +41,8 @@ Phase 2:
 - No fallback-only rescue rows may enter truth-labeled system outputs.
 
 5. Add scale-aware validation profiles
-- Create dedicated waveform system validation configs before attempting 20-site, 60-cell truth runs.
+- Maintain dedicated waveform system validation configs before attempting 20-site, 60-cell truth runs.
+- Use `SCN00_BOUNDED_WAVEFORM_TRUTH_SCALE` as the local bounded guard profile for runtime profiling and truth-artifact scans.
 - Keep stress/proxy profiles separate from truth-validation profiles.
 
 ## Acceptance Criteria
@@ -52,7 +53,7 @@ Truth system mode is only acceptable when all of the following are true:
 - no LUT/logistic/BLER-proxy decode decisions in truth mode
 - grant traces are backed by real allocations and CRC outcomes
 - mobility and handover traces are driven by waveform-consistent measurements
-- truth-labeled system artifacts contain no `proxy`, `fallback`, `lut`, `logistic`, `synthetic`, or `FAST_PROXY` markers
+- truth-labeled system artifacts pass `reports/csv/truth_primary_artifact_scan.csv` with zero active `proxy`, `fallback`, `lut`, `logistic`, `synthetic`, or `FAST_PROXY` marker issues
 - dedicated tests cover multi-cell scheduler, mobility, handover, CRC, and artifact integrity
 
 Only after those conditions are met should the repo add or claim a true 20-site, 60-cell system runner.

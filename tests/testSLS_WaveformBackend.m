@@ -55,19 +55,46 @@ assert(res.Ok, "Waveform-backed system run reported failure.");
 assert(istable(res.KPITable) && height(res.KPITable) >= 1, "Missing system KPI table.");
 assert(isfield(res, "Details") && isstruct(res.Details), "Missing system details.");
 assert(logical(res.Details.WaveformBacked), "System details must record waveform-backed execution.");
+assert(logical(res.Details.WaveformPHYActive), "System details must record active waveform PHY execution.");
+assert(~logical(res.Details.ProxyPHYActive), "System details must record that proxy PHY is inactive.");
+assert(~logical(res.Details.FallbackUsed), "System details must record that no fallback PHY was used.");
 assert(sum(double(res.Details.GrantCountDL + res.Details.GrantCountUL)) > 0, ...
     "Waveform-backed system run should issue at least one grant.");
 assert(double(res.Details.DecodeOK) + double(res.Details.DecodeFail) > 0, ...
     "Waveform-backed system run should attempt at least one decode.");
+assert(istable(res.Details.InterferenceDetail) && height(res.Details.InterferenceDetail) >= nUE, ...
+    "Waveform-backed system run must export per-UE interference detail.");
+
+intrf = res.Details.InterferenceDetail;
+requiredCols = ["DesiredPowerDL_dBm","InterferencePowerDL_dBm","NoiseDL_dBm", ...
+    "DesiredPowerUL_dBm","InterferencePowerUL_dBm","NoiseUL_dBm","ActiveInterfererCountDL"];
+for i = 1:numel(requiredCols)
+    assert(ismember(requiredCols(i), string(intrf.Properties.VariableNames)), ...
+        "Interference detail is missing required column '%s'.", requiredCols(i));
+end
+assert(all(double(intrf.ActiveInterfererCountDL) == 0), ...
+    "Single-cell waveform backend run should not report non-serving DL interferers.");
+assert(all(isfinite(double(intrf.DesiredPowerDL_dBm))), ...
+    "Desired DL power trace must be finite for the waveform backend run.");
+dlRows = isfinite(double(intrf.SINR_DL_dB));
+assert(any(dlRows), "Waveform backend run must include at least one DL-active slot.");
+assert(all(isfinite(double(intrf.NoiseDL_dBm(dlRows)))), ...
+    "Noise DL trace must be finite on DL-active waveform-backend slots.");
 
 k = res.KPITable(1,:);
 assert(ismember("ExecutionBackend", string(k.Properties.VariableNames)), "KPI table must expose ExecutionBackend.");
 assert(ismember("PHYMode", string(k.Properties.VariableNames)), "KPI table must expose PHYMode.");
 assert(ismember("WaveformBacked", string(k.Properties.VariableNames)), "KPI table must expose WaveformBacked.");
+assert(ismember("WaveformPHYActive", string(k.Properties.VariableNames)), "KPI table must expose WaveformPHYActive.");
+assert(ismember("ProxyPHYActive", string(k.Properties.VariableNames)), "KPI table must expose ProxyPHYActive.");
+assert(ismember("FallbackUsed", string(k.Properties.VariableNames)), "KPI table must expose FallbackUsed.");
 assert(strcmpi(char(string(k.ExecutionBackend)), "WAVEFORM_SYSTEM_PHY"), ...
     "KPI table should report the waveform system backend.");
 assert(contains(upper(char(string(k.PHYMode))), "WAVEFORM_REPLAY"), ...
     "KPI table should report waveform replay mode.");
 assert(logical(k.WaveformBacked), "KPI table must mark the waveform backend as waveform-backed.");
+assert(logical(k.WaveformPHYActive), "KPI table must mark waveform PHY active.");
+assert(~logical(k.ProxyPHYActive), "KPI table must mark proxy PHY inactive.");
+assert(~logical(k.FallbackUsed), "KPI table must mark fallback inactive.");
 ok = true;
 end

@@ -14,13 +14,17 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
     properties
         MaxUEPerSlot (1,1) double = inf
         MinPRBPerUE (1,1) double = 4
+        MaxPRBPerUE (1,1) double = inf
     end
 
     methods
         function obj = SchedulerPF(cfg, varargin)
             obj@sixgr.l2.mac.SchedulerBase(cfg, varargin{:});
-            obj.MaxUEPerSlot = double(sixgr.util.structGet(cfg,"mac.scheduler.maxUEPerSlot",obj.MaxUEPerSlot));
+            obj.MaxUEPerSlot = double(sixgr.util.structGet(cfg,"mac.scheduler.maxUEPerSlot", ...
+                sixgr.util.structGet(cfg,"system.scheduler.maxActiveUEsPerSlot",obj.MaxUEPerSlot)));
             obj.MinPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.minPRBPerUE",obj.MinPRBPerUE));
+            obj.MaxPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.maxPRBAllocationPerUE", ...
+                sixgr.util.structGet(cfg,"system.scheduler.maxPRBAllocationPerUE",obj.MaxPRBPerUE)));
         end
 
         function [grants, info] = schedule(obj, slot, ueStates, budget)
@@ -98,9 +102,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
 
                         g.Slot = slot;
                         g.Direction = obj.Direction;
+                        if ~isfield(g, "MCSTable") || strlength(string(g.MCSTable)) == 0
+                            g.MCSTable = obj.resolveMCSTable();
+                        end
                         g.HARQ = retx.HARQ;
-                        g.CQIUsed = localUECQI(ueStates(k));
-                        g.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(g.Modulation, g.TargetCodeRate, g.CQIUsed);
+                        g.CQIUsed = double(sixgr.util.structGet(g, "CQIUsed", localUECQI(ueStates(k))));
                         g.DAI = 1;
                         g.K1 = k1;
                         g.K2 = k2;
@@ -109,11 +115,10 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.BWPId = bwpId;
                         g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
                         g.BufferBytesBefore = bufBytes(k);
+                        g.TBSBits = double(sixgr.util.structGet(g, "TBSBits", sixgr.util.structGet(g, "TransportBlockSize", 0)));
+                        g.TBSBytes = floor(max(g.TBSBits, 0) / 8);
                         g.BufferBytesAfter = max(bufBytes(k) - double(g.TBSBytes), 0);
                         g.GrantReason = "harq_retx";
-                        [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
-                            sprintf("%s harq_retx RNTI=%d", class(obj), round(rnti)));
-                        g.TBSBytes = g.TBSBits / 8;
                         g.DCI = obj.buildDCIBitfield(g);
                         grants(end+1) = g; %#ok<AGROW>
                     end
@@ -132,6 +137,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
 
             % Choose an initial chunk size.
             prbChunk = max(obj.MinPRBPerUE, floor(nPRBAvail / maxUE));
+            if isfinite(obj.MaxPRBPerUE) && obj.MaxPRBPerUE > 0
+                prbChunk = min(prbChunk, floor(obj.MaxPRBPerUE));
+            end
             prbChunk = max(prbChunk, 1);
 
             metrics = -inf(1, numel(ueIdx));
@@ -145,11 +153,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     continue;
                 end
 
-                [modStr, nLayers, tcr] = obj.selectAMC(ueStates(k));
-                [allocTbsBits, allocTbsBytes, ~] = obj.estimateTBS(modStr, nLayers, prbChunk, symAlloc, tcr);
-                servedBytes = min(allocTbsBytes, floor(bufBytes(k)));
-                servedBytes = max(0, floor(servedBytes));
-                estTBS(t) = 8 * servedBytes;
+                probePRBSet = 0:(prbChunk-1);
+                plan = obj.buildNewDataGrantPlan(ueStates(k), probePRBSet, symAlloc, bufBytes(k));
+                estTBS(t) = double(sixgr.util.structGet(plan, "TBSBits", 0));
                 metrics(t) = obj.pfMetric(ueStates(k), estTBS(t));
             end
 
@@ -175,20 +181,18 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 end
 
                 nAlloc = min(prbChunk, numel(prbAvail)-cursor+1);
-                prbSet = prbAvail(cursor:(cursor+nAlloc-1));
-                cursor = cursor + nAlloc;
-
-                [modStr, nLayers, tcr] = obj.selectAMC(ueStates(k));
-                [allocTbsBits, allocTbsBytes, ~] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, tcr);
-                servedBytes = min(allocTbsBytes, floor(bufBytes(k)));
-                servedBytes = max(0, floor(servedBytes));
-                if allocTbsBits <= 0 || allocTbsBytes <= 0 || servedBytes <= 0
+                candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
+                plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufBytes(k));
+                if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
                     continue;
                 end
+                prbSet = double(plan.PRBSet(:).');
+                cursor = cursor + numel(prbSet);
+                servedBytes = double(plan.TBSBytes);
 
                 harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
                 if ~isempty(obj.HARQ)
-                    txp = obj.HARQ.allocate(rnti, slot, allocTbsBytes, 'NewData', true);
+                    txp = obj.HARQ.allocate(rnti, slot, servedBytes, 'NewData', true);
                     harqInfo = txp.HARQ;
                 end
 
@@ -198,14 +202,21 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 g.RNTI = rnti;
                 g.PRBSet = prbSet;
                 g.SymbolAllocation = symAlloc;
-                g.Modulation = char(modStr);
-                g.NumLayers = nLayers;
-                g.TargetCodeRate = tcr;
-                g.TBSBits = allocTbsBits;
-                g.TBSBytes = allocTbsBytes;
+                g.Modulation = char(string(plan.Modulation));
+                g.NumLayers = double(plan.NumLayers);
+                g.TargetCodeRate = double(plan.TargetCodeRate);
+                g.TBSBits = double(plan.TBSBits);
+                g.TBSBytes = double(plan.TBSBytes);
+                g.EstimatedTBSBits = double(plan.RawEstimatedTBSBits);
+                g.EstimatedTBSBytes = double(plan.RawEstimatedTBSBytes);
+                g.NREPerPRB = double(plan.NREPerPRB);
+                g.MCSTable = char(string(plan.MCSTable));
+                g.CQITable = char(string(plan.CQITable));
+                g.AMCMode = char(string(plan.AMCMode));
+                g.QueueLimited = logical(plan.QueueLimited);
                 g.HARQ = harqInfo;
                 g.CQIUsed = localUECQI(ueStates(k));
-                g.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(g.Modulation, g.TargetCodeRate, g.CQIUsed);
+                g.MCSIndex = double(plan.MCSIndex);
                 g.DAI = 1;
                 g.K1 = k1;
                 g.K2 = k2;
@@ -246,9 +257,16 @@ g.NumLayers = 1;
 g.TargetCodeRate = 0.5;
 g.TBSBits = 0;
 g.TBSBytes = 0;
+g.EstimatedTBSBits = 0;
+g.EstimatedTBSBytes = 0;
+g.NREPerPRB = 0;
+g.MCSTable = 'qam64_table1';
+g.CQITable = 'table1';
+g.AMCMode = 'fixed_modulation';
+g.QueueLimited = false;
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 0;
-g.CQIUsed = 1;
+g.CQIUsed = 0;
 g.DAI = 1;
 g.K1 = 4;
 g.K2 = 1;
@@ -280,8 +298,8 @@ end
 end
 
 function cqi = localUECQI(ue)
-cqi = double(sixgr.util.structGet(ue, "CQI", 1));
-cqi = max(1, min(15, round(cqi)));
+cqi = double(sixgr.util.structGet(ue, "CQI", 0));
+cqi = max(0, min(15, round(cqi)));
 end
 
 function mcs = localCQIToMCS(cqi)

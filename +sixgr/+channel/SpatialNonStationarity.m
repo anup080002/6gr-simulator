@@ -104,5 +104,9 @@ vis.numClusters = opt.NumClusters;
 vis.txMask = logical(txMask);
 vis.rxMask = logical(rxMask);
 vis.note = "Visibility masks are random placeholders; calibrate to geometry for research.";
+vis.truthClassification = "approximate_random_placeholder_visibility_masks";
+vis.approximationMode = "random_visibility_masks_without_geometry_or_angle_coupling";
+vis.approximationReason = "spatial_non_stationarity_masks_are_random_placeholders_not_calibrated_runtime_visibility_regions";
+vis.valueStatus = "approximate_placeholder";
 
 end

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jio Platforms Limited RAN Simulator — Home</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="data.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="home">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main-wrap">
+      <header class="topbar" id="topbar"></header>
+      <main class="main">
+<section class="hero-grid">
+  <div class="panel col-8"><div class="panel-body"><div class="kicker">First page</div><h2>Choose the mode. Understand the flow. Open the right workspace.</h2><p class="lead">This version is designed as a clean simulation workstation. No YAML on the front page. The user first sees the mode, the same-flow architecture, profiles, and direct routes into scenario building, PHY inspection, live monitoring, and analytics.</p><div class="kpi-strip" id="homeKpis"></div></div></div>
+  <div class="panel col-4"><div class="panel-header"><div><h3 class="panel-title">Mode selection</h3><p class="panel-subtitle">LLS is primary. SLS and E2E remain visible but separate.</p></div><span class="badge blue">Mode-first</span></div><div class="panel-body"><div class="mode-cards" id="modeCards"></div></div></div>
+</section>
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Same-flow simulation architecture</h3><p class="panel-subtitle">Everything you configure and inspect should map to one understandable sequence.</p></div><a class="btn primary" href="lls_builder.html">Open LLS Builder</a></div><div class="panel-body"><div class="flow-grid" id="sameFlow"></div></div></section>
+<section class="card-grid">
+  <div class="panel col-6"><div class="panel-header"><div><h3 class="panel-title">Profiles</h3><p class="panel-subtitle">Presets for speed without hiding simulator semantics.</p></div><span class="badge amber">Presets</span></div><div class="panel-body"><div class="profile-rail" id="profiles"></div></div></div>
+  <div class="panel col-6"><div class="panel-header"><div><h3 class="panel-title">Workspace map</h3><p class="panel-subtitle">Each page has one clear engineering purpose.</p></div><span class="badge green">Pages</span></div><div class="panel-body"><div class="route-grid" id="routeGrid"></div></div></div>
+</section>
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Design principles</h3><p class="panel-subtitle">Clear, hierarchical, drill-down friendly, DB-traceable, and built for big data.</p></div></div><div class="panel-body"><div class="callout-grid"><div class="callout"><h4>Scenario first</h4><p>Users begin with study intent, topology, traffic, waveform, and policy — not raw YAML.</p></div><div class="callout"><h4>L1 by signal family</h4><p>The PHY explorer is grouped by DL control, DL data, UL control, UL data, RS / MIMO, and Massive MIMO.</p></div><div class="callout"><h4>Real-time + post-run split</h4><p>Operational live data is separated from deeper analytics and reporting.</p></div><div class="callout"><h4>Canonical truth</h4><p>Browser pages are designed to consume canonical DB-backed artifacts, not stale mirrors.</p></div></div></div></section>
+<div class="footer-note">Design v7 — cleaner workstation structure with explicit Scenario / Geometry / Waveform / Traffic / MAC / L1 / Air Interface / Real-Time / Analytics separation.</div>
+</main>
+    </div>
+    <aside class="rightbar" id="rightbar"></aside>
+  </div>
+</body>
+</html>

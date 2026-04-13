@@ -247,6 +247,23 @@ classdef HARQEntity < handle
                 procs(pid).TB = tbBytes;
             end
 
+            % Keep the stored grant snapshot aligned with the actual transmitted
+            % HARQ payload length. Retransmission replay must follow the TB that
+            % was really sent, even if an upstream grant shell carried stale or
+            % queue-limited sizing fields.
+            if ~isstruct(grant)
+                grant = struct();
+            end
+            actualTBSBits = double(numel(tbBytes));
+            if isfinite(actualTBSBits) && actualTBSBits > 0
+                grant.TransportBlockSize = actualTBSBits;
+                grant.TBSBits = actualTBSBits;
+                grant.TBSBytes = floor(actualTBSBits / 8);
+                if ~isfield(grant, 'ScheduledTransportBlockSize') || ...
+                        ~(isfinite(double(grant.ScheduledTransportBlockSize)) && double(grant.ScheduledTransportBlockSize) > 0)
+                    grant.ScheduledTransportBlockSize = actualTBSBits;
+                end
+            end
             procs(pid).LastGrant = grant;
 
             obj.UEProcs{ui} = procs;

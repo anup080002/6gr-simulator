@@ -1,0 +1,67 @@
+{
+  "inherits": [
+    "./lls_700mhz_20mhz_2x2_rank2_beam_truth.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_700mhz_20mhz_multiuser_macro_amc",
+    "description": "Dashboard-oriented waveform LLS study at 700 MHz / 20 MHz with AMC enabled, a macro-style multi-cell layout, multiple users, and explicit mobility/topology knobs for live browser analysis.",
+    "version": "1.0.0",
+    "owner": "codex",
+    "research_class": "study_item_candidate",
+    "maturity_tag": "experimental",
+    "scenario_group": "lls_web_default",
+    "tags": ["lls", "waveform", "700mhz", "20mhz", "multiuser", "macro", "amc", "mobility", "dashboard"]
+  },
+  "scenario": {
+    "notes": "Waveform LLS study surface for the intranet dashboard. Multi-user behavior uses the slot_coupled_truth execution mode so DL and UL publish from one interleaved truth loop with shared runtime state."
+  },
+  "simulation": {
+    "n_frames": 12,
+    "n_slots": 12,
+    "n_subframes": 12,
+    "monte_carlo_iterations": 6,
+    "snr_db": 10,
+    "snr_sweep_offsets_db": [-20, -10, -5, 0, 5, 10]
+  },
+  "sweeps_and_matrix": {
+    "snr_sweep": {
+      "enabled": false,
+      "values_db": []
+    }
+  },
+  "users": {
+    "enabled": true,
+    "n_users": 24,
+    "execution_model": "slot_coupled_truth",
+    "save_user_tables": true
+  },
+  "deployment_topology": {
+    "cell_type": "UMa",
+    "num_cells": 60,
+    "num_ues": 24,
+    "inter_site_distance": 500
+  },
+  "mobility": {
+    "ue_speed_kmh": 30,
+    "trajectory_model": "zigzag",
+    "update_period_s": 0.0005,
+    "zigzag_segment_duration_s": 0.0025,
+    "zigzag_turn_angle_deg": 38
+  },
+  "link_adaptation": {
+    "fixed_or_amc": "amc",
+    "pdsch_link_adaptation_policy": "baseline",
+    "pusch_link_adaptation_policy": "baseline",
+    "rank_adaptation_policy": "fixed",
+    "beam_adaptation_policy": "fixed",
+    "adaptation_periodicity": "slot",
+    "adaptation_delay_model": "zero",
+    "cqi_source": "csi_feedback"
+  },
+  "output": {
+    "backend": "mysql_web",
+    "profiler_enabled": true,
+    "profiler_top_functions": 200,
+    "profiler_top_edges": 400
+  }
+}

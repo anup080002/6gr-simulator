@@ -58,7 +58,7 @@ if localPolicyEnabled(policy)
         decision.Reason = "missing_cqi";
         return;
     end
-    [modStr, targetCodeRate, mcsIdx] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg);
+    [modStr, targetCodeRate, mcsIdx] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
     if deltaMCSPolicy ~= "none" && deltaMCSPolicy ~= "disabled" && deltaMCSPolicy ~= "off"
         deltaMCS = round(double(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSOffset", 0)));
         mcsIdx = max(0, min(31, mcsIdx + deltaMCS));
@@ -119,14 +119,16 @@ if direction == "DL"
     base.NumLayers = max(1, round(double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
         sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)))));
     base.MCSIndex = double(sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", ...
-        sixgr.l2.mac.SchedulerBase.approxMCSIndex(base.Modulation, base.TargetCodeRate, NaN)));
+        sixgr.l2.mac.SchedulerBase.approxMCSIndex(base.Modulation, base.TargetCodeRate, NaN, ...
+        sixgr.link.resolveConfiguredMCSTable(cfg, "DL"))));
 else
     base.Modulation = char(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", "QPSK")));
     base.TargetCodeRate = double(sixgr.util.structGet(cfg, "phy.pusch.codeRate", 0.5));
     base.NumLayers = max(1, round(double(sixgr.util.structGet(cfg, "phy.pusch.numLayers", ...
         sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)))));
     base.MCSIndex = double(sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", ...
-        sixgr.l2.mac.SchedulerBase.approxMCSIndex(base.Modulation, base.TargetCodeRate, NaN)));
+        sixgr.l2.mac.SchedulerBase.approxMCSIndex(base.Modulation, base.TargetCodeRate, NaN, ...
+        sixgr.link.resolveConfiguredMCSTable(cfg, "UL"))));
 end
 end
 

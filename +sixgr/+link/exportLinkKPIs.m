@@ -75,7 +75,7 @@ if opt.SaveFigures
             end
             if opt.SavePNG
                 fp = fullfile(runFolder, "image", lower(figPrefix) + "_" + lower(string(n)) + ".png");
-                exportgraphics(f, fp, "Resolution", round(double(opt.FigureResolution)));
+                sixgr.util.exportFigureArtifact(f, fp, "Resolution", round(double(opt.FigureResolution)));
                 artifacts.fig{end+1} = char(fp); %#ok<AGROW>
             end
             try

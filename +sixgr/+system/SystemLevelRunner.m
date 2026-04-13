@@ -13,13 +13,14 @@ classdef SystemLevelRunner
             runTimer = tic;
             startedUTC = localUTCStamp();
 
+            explicitNumTTI = isfield(params, "NumTTI") && ~isempty(params.NumTTI);
             nTTI = double(sixgr.util.structGet(params, "NumTTI", ...
                           sixgr.util.structGet(cfg, "run.numTTI", 200)));
             tti_s = localSlotDuration(cfg, params);
 
             simDuration_s = sixgr.util.structGet(params, "SimDuration_s", ...
                             sixgr.util.structGet(cfg, "system.simDuration_s", []));
-            if ~isempty(simDuration_s)
+            if ~explicitNumTTI && ~isempty(simDuration_s)
                 nTTI = ceil(double(simDuration_s) / max(tti_s, eps));
             end
 
@@ -66,15 +67,15 @@ classdef SystemLevelRunner
 
             traffic = localBuildTraffic(cfg, params, K, nTTI, tti_s);
 
-            db = sixgr.util.structGet(params, "BLERDB", struct());
-            lut = sixgr.util.structGet(params, "BLERLUT", []);
             pphy = params;
-            pphy.BLERDB = db;
-            pphy.BLERLUT = lut;
+            proxyParamNames = intersect(fieldnames(pphy), {'BLERDB'; 'BLERLUT'});
+            if ~isempty(proxyParamNames)
+                pphy = rmfield(pphy, proxyParamNames);
+            end
             pphy.PHYBackend = sixgr.util.structGet(params, "PHYBackend", ...
-                sixgr.util.structGet(cfg, "system.phyBackend", "abstract"));
+                sixgr.util.structGet(cfg, "system.phyBackend", "waveform"));
             phy = sixgr.system.PhyFactory.create(cfg, pphy, "Seed", seed + 31);
-            [phyBackendLabel, phyModeLabel, waveformBacked] = localDescribeSystemPHY(phy);
+            [phyBackendLabel, phyModeLabel, waveformBacked, proxyPHYActive, fallbackUsed] = localDescribeSystemPHY(phy);
             plModel = sixgr.channel.TR38901Plus(cfg, "Seed", seed + 17);
 
             queueBitsDL = zeros(K,1);
@@ -96,6 +97,14 @@ classdef SystemLevelRunner
             rsrpHist = NaN(nTTI, K);
             ebnoHist = NaN(nTTI, K);
             rxPowerHist = NaN(nTTI, K);
+            desiredPowerHistDL = NaN(nTTI, K);
+            desiredPowerHistUL = NaN(nTTI, K);
+            interferencePowerHistDL = NaN(nTTI, K);
+            interferencePowerHistUL = NaN(nTTI, K);
+            noisePowerHistDL = NaN(nTTI, K);
+            noisePowerHistUL = NaN(nTTI, K);
+            interfererCellCountHistDL = zeros(nTTI, K);
+            interfererCellCountHistUL = zeros(nTTI, K);
             pathlossHist = NaN(nTTI, K);
             dServeHist = NaN(nTTI, K);
             queueHist = NaN(nTTI, K);
@@ -118,8 +127,10 @@ classdef SystemLevelRunner
             activeUECount = zeros(nTTI,1);
             decodeOkCountDL = 0;
             decodeFailCountDL = 0;
+            decodeUnavailableCountDL = 0;
             decodeOkCountUL = 0;
             decodeFailCountUL = 0;
+            decodeUnavailableCountUL = 0;
             overflowEvents = 0;
             scheduler = lower(char(string(sixgr.util.structGet(cfg, "mac.scheduler.type", "rr"))));
             ulSinrOffset_dB = double(sixgr.util.structGet(cfg, "system.ulSinrOffset_dB", -1.0));
@@ -162,7 +173,6 @@ classdef SystemLevelRunner
                 sixgr.util.structGet(cfg, "phy.ssb.nBeams", 8)))));
             beamSpanDeg = max(30, min(240, double(sixgr.util.structGet(cfg, "system.beam.sectorSpan_deg", 120))));
             beamMaxGain_dB = double(sixgr.util.structGet(cfg, "system.beam.maxGain_dB", 12));
-            fc_GHz = max(double(sixgr.util.structGet(cfg, "channel.fc_Hz", 4e9)) / 1e9, 0.1);
 
             servingIdxState = ones(K,1);
             servingSinceSlot = ones(K,1);
@@ -175,6 +185,7 @@ classdef SystemLevelRunner
             hoInterruptAccumSlots = zeros(K,1);
 
             measRSRP_dBm = NaN(K, nCells);
+            measRSRPTrace_dBm = NaN(nTTI, K, nCells);
             beamIdx = ones(K, nCells);
             beamGain_dB = zeros(K, nCells);
 
@@ -220,11 +231,18 @@ classdef SystemLevelRunner
             headingHist = NaN(nTTI, K);
 
             mobModel = [];
-            noiseFig_dB = double(sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", 7));
-            noise_dBm = -174 + 10*log10(max(bw_Hz,1)) + noiseFig_dB;
+            sinrModel = localResolveSINRModel(cfg);
+            legacySINRMode = sinrModel == "legacy_margin_calibration";
+            noiseFigDL_dB = double(sixgr.util.structGet(cfg, "scenario.ue.noiseFigure_dB", 9));
+            noiseFigUL_dB = double(sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", 7));
             interfMargin_dB = double(sixgr.util.structGet(cfg, "channel.interferenceMargin_dB", 3));
             nRB = max(1, localEstimateNRB(cfg, bw_Hz));
-            [fastFading_dB, interfVar_dB] = localBuildChannelVariationTraces(cfg, nTTI, K, tti_s, seed);
+            if legacySINRMode
+                [fastFading_dB, interfVar_dB] = localBuildChannelVariationTraces(cfg, nTTI, K, tti_s, seed);
+            else
+                fastFading_dB = zeros(nTTI, K);
+                interfVar_dB = zeros(nTTI, K);
+            end
             mobilityEnable = logical(sixgr.util.structGet(cfg, "scenario.mobility.enable", true));
             mobilityPeriod_s = max(tti_s, double(sixgr.util.structGet(cfg, "scenario.mobility.updatePeriod_s", tti_s)));
             mobilityUpdateSlots = sixgr.util.structGet(cfg, "system.mobility.updatePeriod_slots", []);
@@ -234,14 +252,23 @@ classdef SystemLevelRunner
             mobilityUpdateSlots = max(1, round(double(mobilityUpdateSlots)));
             largeScaleUpdateSlots = sixgr.util.structGet(cfg, "system.largeScaleUpdatePeriod_slots", []);
             if isempty(largeScaleUpdateSlots)
-                largeScaleUpdateSlots = mobilityUpdateSlots;
+                if mobilityEnable
+                    largeScaleUpdateSlots = mobilityUpdateSlots;
+                else
+                    largeScaleUpdateSlots = NaN;
+                end
+            else
+                largeScaleUpdateSlots = double(largeScaleUpdateSlots);
+                if isfinite(largeScaleUpdateSlots)
+                    largeScaleUpdateSlots = max(1, round(largeScaleUpdateSlots));
+                else
+                    largeScaleUpdateSlots = NaN;
+                end
             end
-            largeScaleUpdateSlots = max(1, round(double(largeScaleUpdateSlots)));
-
-            d2d = zeros(K, nCells);
-            rawRSRPCells_dBm = NaN(K, nCells);
-            pl_dB_cache = NaN(K,1);
-            prevServingIdx = servingIdxState;
+            hasPeriodicLargeScaleUpdate = isfinite(largeScaleUpdateSlots) && largeScaleUpdateSlots >= 1;
+            largeScaleState = struct();
+            largeScaleRefreshMask = false(nTTI, 1);
+            largeScalePropagationUpdateMask = false(nTTI, 1);
 
             ueStateDLAll = repmat(struct( ...
                 "RNTI", 0, ...
@@ -264,21 +291,39 @@ classdef SystemLevelRunner
                 ueStateULAll(k).RNTI = k;
             end
 
+            progressEverySlots = localResolveProgressEverySlots(cfg, nTTI);
+            lastProgressEmit_s = -Inf;
+            localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
+                "initializing", K, nCells, 0, 0, 0, 0, "system_level_lls_started");
+
             for t = 1:nTTI
-                doMobilityUpdate = (t == 1) || (mod(t-1, mobilityUpdateSlots) == 0);
+                doMobilityUpdate = mobilityEnable && ((t == 1) || (mod(t-1, mobilityUpdateSlots) == 0));
                 if doMobilityUpdate && mobilityEnable
                     dtMove_s = tti_s * min(mobilityUpdateSlots, nTTI - t + 1);
                     [ue, mobModel] = sixgr.scenario.mobility.updatePositions(ue, cfg, dtMove_s, mobModel);
                 end
 
-                doLargeScaleUpdate = (t == 1) || doMobilityUpdate || (mod(t-1, largeScaleUpdateSlots) == 0);
-                if doLargeScaleUpdate
-                    d2d = localDistanceMatrix(ue.pos_m, layout.bs.pos_m, layout.wraparoundEnabled, layout.area_m);
-                    rawRSRPCells_dBm = localEstimateCellRSRP(layout.bs.txPower_dBm(:).', d2d, fc_GHz, beamGain_dB);
+                doPeriodicLargeScaleUpdate = hasPeriodicLargeScaleUpdate && ((t == 1) || (mod(t-1, largeScaleUpdateSlots) == 0));
+                doLargeScaleUpdate = (t == 1) || doMobilityUpdate || doPeriodicLargeScaleUpdate;
+                doBeamUpdate = beamEnable && (t == 1 || mod(t-1, beamUpdatePeriodSlots) == 0);
+                if doBeamUpdate
+                    [beamIdx, beamGain_dB] = sixgr.system.selectBestBeamPerLink( ...
+                        ue.pos_m, layout.bs.pos_m, layout.bs.azim_deg, nBeams, beamSpanDeg, beamMaxGain_dB);
+                    beamUpdateCount(t) = K;
                 end
+                reusePropagation = ~isempty(fieldnames(largeScaleState)) && ~doLargeScaleUpdate;
+                if isempty(fieldnames(largeScaleState)) || doLargeScaleUpdate || doBeamUpdate
+                    largeScaleState = sixgr.system.buildLargeScaleStateCache( ...
+                        cfg, layout, ue, beamIdx, beamGain_dB, plModel, ...
+                        "NumRB", nRB, ...
+                        "PreviousState", largeScaleState, ...
+                        "ReusePropagation", reusePropagation);
+                    largeScaleRefreshMask(t) = true;
+                    largeScalePropagationUpdateMask(t) = logical(~reusePropagation);
+                end
+                rawRSRPCells_dBm = largeScaleState.RSRP_dBm;
                 if t == 1
-                    [~, servingIdxState] = min(d2d, [], 2);
-                    servingIdxState = min(max(round(servingIdxState), 1), nCells);
+                    [servingIdxState, ~] = sixgr.system.selectServingCellsFromPower(rawRSRPCells_dBm);
                     servingSinceSlot(:) = 1;
                 end
 
@@ -332,13 +377,6 @@ classdef SystemLevelRunner
                     end
                 end
 
-                if beamEnable && (t == 1 || mod(t-1, beamUpdatePeriodSlots) == 0)
-                    [beamIdx, beamGain_dB] = localSelectBestBeamPerLink( ...
-                        ue.pos_m, layout.bs.pos_m, layout.bs.azim_deg, nBeams, beamSpanDeg, beamMaxGain_dB);
-                    beamUpdateCount(t) = K;
-                    rawRSRPCells_dBm = localEstimateCellRSRP(layout.bs.txPower_dBm(:).', d2d, fc_GHz, beamGain_dB);
-                end
-
                 if t == 1 || mod(t-1, measPeriodSlots) == 0
                     if any(isnan(measRSRP_dBm(:)))
                         measRSRP_dBm = rawRSRPCells_dBm;
@@ -347,8 +385,11 @@ classdef SystemLevelRunner
                     end
                     measReportCount(t) = K;
                 end
+                measRSRPTrace_dBm(t,:,:) = measRSRP_dBm;
 
                 if handoverEnable && nCells > 1
+                    [bestMeasCell, bestMeasMetric_dBm] = sixgr.system.selectServingCellsFromPower( ...
+                        measRSRP_dBm, "FallbackMetric_dBm", rawRSRPCells_dBm);
                     for u = 1:K
                         if hoPrepRemain(u) > 0 || hoInterRemain(u) > 0
                             continue;
@@ -356,12 +397,16 @@ classdef SystemLevelRunner
                         sCell = min(max(round(servingIdxState(u)), 1), nCells);
                         sMetric = measRSRP_dBm(u, sCell);
                         if ~isfinite(sMetric)
-                            [~, sCell] = min(d2d(u,:));
+                            sMetric = rawRSRPCells_dBm(u, sCell);
+                        end
+                        if ~isfinite(sMetric)
+                            sCell = bestMeasCell(u);
                             servingIdxState(u) = sCell;
                             servingSinceSlot(u) = t;
-                            sMetric = measRSRP_dBm(u, sCell);
+                            sMetric = bestMeasMetric_dBm(u);
                         end
-                        [bestMetric, bestCell] = max(measRSRP_dBm(u,:));
+                        bestCell = bestMeasCell(u);
+                        bestMetric = bestMeasMetric_dBm(u);
                         if ~isfinite(bestMetric) || ~isfinite(sMetric) || bestCell == sCell
                             hoCandidateCell(u) = 0;
                             hoCandidateCount(u) = 0;
@@ -430,39 +475,19 @@ classdef SystemLevelRunner
 
                 servingIdx = min(max(round(servingIdxState), 1), nCells);
                 servingIdxState = servingIdx;
-                linIdx = sub2ind(size(d2d), (1:K).', servingIdx);
-                dServe = d2d(linIdx);
+                linIdx = sub2ind(size(largeScaleState.d2d_m), (1:K).', servingIdx);
+                dServe = largeScaleState.d2d_m(linIdx);
                 dServeHist(t,:) = dServe(:).';
-
-                txP_dBm = layout.bs.txPower_dBm(servingIdx);
-                servingChanged = (servingIdx ~= prevServingIdx) | ~isfinite(pl_dB_cache);
-                if doLargeScaleUpdate
-                    txPos = layout.bs.pos_m(servingIdx, :).';
-                    rxPos = ue.pos_m.';
-                    [pl_dB, ~, ~] = plModel.pathloss(txPos, rxPos, "IndoorRx", ue.indoor(:).');
-                    pl_dB = pl_dB(:);
-                    pl_dB_cache = pl_dB;
-                else
-                    pl_dB = pl_dB_cache;
-                    if any(servingChanged)
-                        idxCh = find(servingChanged);
-                        txPos = layout.bs.pos_m(servingIdx(idxCh), :).';
-                        rxPos = ue.pos_m(idxCh, :).';
-                        [pl_dB_ch, ~, ~] = plModel.pathloss(txPos, rxPos, "IndoorRx", ue.indoor(idxCh).');
-                        pl_dB_ch = pl_dB_ch(:);
-                        pl_dB(idxCh) = pl_dB_ch;
-                        pl_dB_cache(idxCh) = pl_dB_ch;
-                    end
-                end
-                prevServingIdx = servingIdx;
-
-                rxP_dBm = txP_dBm(:) - pl_dB;
-                sinr_dB = rxP_dBm - noise_dBm - interfMargin_dB + fastFading_dB(t,:).' - interfVar_dB(t,:).';
-                sinrHist(t,:) = sinr_dB(:).';
+                pl_dB = largeScaleState.Pathloss_dB(linIdx);
+                rxP_dBm = largeScaleState.RxPower_dBm(linIdx);
+                ulLinkPowerCells_dBm = localBuildULLinkPowerTable(cfg, largeScaleState);
+                rxPUL_dBm = ulLinkPowerCells_dBm(linIdx);
+                rsrpServing_dBm = largeScaleState.RSRP_dBm(linIdx);
                 pathlossHist(t,:) = pl_dB(:).';
                 rxPowerHist(t,:) = rxP_dBm(:).';
-                rsrpHist(t,:) = localRxPowerToRSRP(rxP_dBm(:), nRB).';
-                ebnoHist(t,:) = localSINRtoEbNo(sinr_dB(:)).';
+                desiredPowerHistDL(t,:) = rxP_dBm(:).';
+                desiredPowerHistUL(t,:) = rxPUL_dBm(:).';
+                rsrpHist(t,:) = rsrpServing_dBm(:).';
                 servingCellHist(t,:) = servingIdx(:).';
                 servingBeamNow = localGatherServingValues(double(beamIdx), servingIdx);
                 servingBeamGainNow_dB = localGatherServingValues(beamGain_dB, servingIdx);
@@ -478,8 +503,8 @@ classdef SystemLevelRunner
 
                 [slotDL, slotUL, slotLabel] = localSlotDuplexState(cfg, t);
                 slotDirection(t) = slotLabel;
-                sinrUL_dB = sinr_dB + ulSinrOffset_dB;
-                sinrHistUL(t,:) = sinrUL_dB(:).';
+                dlBudget = localSlotBudget(nRB, slotLabel, "DL");
+                ulBudget = localSlotBudget(nRB, slotLabel, "UL");
 
                 [beamEventTrace, beamEventCount] = localAppendBeamEvents( ...
                     beamEventTrace, beamEventCount, t, tti_s, servingIdx, ...
@@ -489,29 +514,12 @@ classdef SystemLevelRunner
                 prevServingBeamIdx = servingBeamNow;
                 prevServingBeamGain_dB = servingBeamGainNow_dB;
 
-                intrfIdx = (t-1) * K + (1:K);
-                interferenceTrace.TTI(intrfIdx) = t;
-                interferenceTrace.Time_s(intrfIdx) = (t - 1) * tti_s;
-                interferenceTrace.UE(intrfIdx) = (1:K).';
-                interferenceTrace.ServingCell(intrfIdx) = servingIdx(:);
-                interferenceTrace.Pathloss_dB(intrfIdx) = pl_dB(:);
-                interferenceTrace.RxPower_dBm(intrfIdx) = rxP_dBm(:);
-                interferenceTrace.Noise_dBm(intrfIdx) = noise_dBm;
-                interferenceTrace.InterferenceMargin_dB(intrfIdx) = interfMargin_dB;
-                interferenceTrace.SmallScaleFading_dB(intrfIdx) = fastFading_dB(t,:).';
-                interferenceTrace.InterferenceVariation_dB(intrfIdx) = interfVar_dB(t,:).';
-                interferenceTrace.SINR_DL_dB(intrfIdx) = sinr_dB(:);
-                interferenceTrace.SINR_UL_dB(intrfIdx) = sinrUL_dB(:);
-                interferenceTrace.RSRP_dBm(intrfIdx) = rsrpHist(t,:).';
-
                 queueBitsDL = queueBitsDL + traffic.OfferedBitsDL(t,:).';
                 queueBitsUL = queueBitsUL + traffic.OfferedBitsUL(t,:).';
                 queueBitsDL_Start = queueBitsDL;
                 queueBitsUL_Start = queueBitsUL;
                 offeredCellDL = accumarray(servingIdx, traffic.OfferedBitsDL(t,:).', [nCells, 1], @sum, 0);
                 offeredCellUL = accumarray(servingIdx, traffic.OfferedBitsUL(t,:).', [nCells, 1], @sum, 0);
-                cqiDLVec = localSINRtoCQI(sinr_dB);
-                cqiULVec = localSINRtoCQI(sinrUL_dB);
 
                 activeDL = find(queueBitsDL > 0 & ~interruptedMask);
                 activeUL = find(queueBitsUL > 0 & ~interruptedMask);
@@ -529,6 +537,22 @@ classdef SystemLevelRunner
                 ueByCellUL = localSplitUEByServingCell(activeUL, servingIdx, nCells);
                 activeCellDL = cellfun("length", ueByCellDL);
                 activeCellUL = cellfun("length", ueByCellUL);
+
+                if legacySINRMode
+                    [schedSinrDL_dB, schedSinrUL_dB, schedPowerState] = localBuildLegacySINRState( ...
+                        rxP_dBm, rxPUL_dBm, slotDL, slotUL, dlBudget, ulBudget, scs_kHz, ...
+                        noiseFigDL_dB, noiseFigUL_dB, fastFading_dB(t,:).', interfVar_dB(t,:).', ...
+                        interfMargin_dB, ulSinrOffset_dB);
+                else
+                    schedPowerState = localBuildExplicitSINRState( ...
+                        rxP_dBm, rxPUL_dBm, largeScaleState.RxPower_dBm, ulLinkPowerCells_dBm, ...
+                        servingIdx, slotDL, slotUL, dlBudget, ulBudget, scs_kHz, noiseFigDL_dB, noiseFigUL_dB, ...
+                        activeCellDL > 0, activeUL, servingIdx(activeUL));
+                    schedSinrDL_dB = schedPowerState.SINR_DL_dB;
+                    schedSinrUL_dB = schedPowerState.SINR_UL_dB;
+                end
+                cqiDLVec = localResolveWidebandCQI(schedSinrDL_dB, cfg, "DL");
+                cqiULVec = localResolveWidebandCQI(schedSinrUL_dB, cfg, "UL");
 
                 grantsDL = struct([]);
                 grantsUL = struct([]);
@@ -563,7 +587,6 @@ classdef SystemLevelRunner
                 end
 
                 if slotDL
-                    dlBudget = localSlotBudget(nRB, slotLabel, "DL");
                     activeCellsDL = find(activeCellDL > 0).';
                     grantSetsDL = cell(numel(activeCellsDL), 1);
                     grantCellsDL = cell(numel(activeCellsDL), 1);
@@ -595,7 +618,6 @@ classdef SystemLevelRunner
                 end
 
                 if slotUL
-                    ulBudget = localSlotBudget(nRB, slotLabel, "UL");
                     activeCellsUL = find(activeCellUL > 0).';
                     grantSetsUL = cell(numel(activeCellsUL), 1);
                     grantCellsUL = cell(numel(activeCellsUL), 1);
@@ -645,6 +667,55 @@ classdef SystemLevelRunner
                     end
                 end
 
+                if legacySINRMode
+                    finalPowerState = localBuildLegacySINRState( ...
+                        rxP_dBm, rxPUL_dBm, slotDL, slotUL, dlBudget, ulBudget, scs_kHz, ...
+                        noiseFigDL_dB, noiseFigUL_dB, fastFading_dB(t,:).', interfVar_dB(t,:).', ...
+                        interfMargin_dB, ulSinrOffset_dB);
+                else
+                    finalPowerState = localBuildExplicitSINRState( ...
+                        rxP_dBm, rxPUL_dBm, largeScaleState.RxPower_dBm, ulLinkPowerCells_dBm, ...
+                        servingIdx, slotDL, slotUL, dlBudget, ulBudget, scs_kHz, noiseFigDL_dB, noiseFigUL_dB, ...
+                        grantCountDLByCell > 0, localGrantRNTI(grantsUL), grantCellUL);
+                end
+
+                sinr_dB = finalPowerState.SINR_DL_dB;
+                sinrUL_dB = finalPowerState.SINR_UL_dB;
+                sinrHist(t,:) = sinr_dB(:).';
+                sinrHistUL(t,:) = sinrUL_dB(:).';
+                ebnoHist(t,:) = localSINRtoEbNo(sinr_dB(:)).';
+                desiredPowerHistDL(t,:) = finalPowerState.DesiredPowerDL_dBm(:).';
+                desiredPowerHistUL(t,:) = finalPowerState.DesiredPowerUL_dBm(:).';
+                interferencePowerHistDL(t,:) = finalPowerState.InterferencePowerDL_dBm(:).';
+                interferencePowerHistUL(t,:) = finalPowerState.InterferencePowerUL_dBm(:).';
+                noisePowerHistDL(t,:) = finalPowerState.NoisePowerDL_dBm(:).';
+                noisePowerHistUL(t,:) = finalPowerState.NoisePowerUL_dBm(:).';
+                interfererCellCountHistDL(t,:) = finalPowerState.ActiveInterfererCountDL(:).';
+                interfererCellCountHistUL(t,:) = finalPowerState.ActiveInterfererCountUL(:).';
+
+                intrfIdx = (t-1) * K + (1:K);
+                interferenceTrace.TTI(intrfIdx) = t;
+                interferenceTrace.Time_s(intrfIdx) = (t - 1) * tti_s;
+                interferenceTrace.UE(intrfIdx) = (1:K).';
+                interferenceTrace.ServingCell(intrfIdx) = servingIdx(:);
+                interferenceTrace.Pathloss_dB(intrfIdx) = pl_dB(:);
+                interferenceTrace.RxPower_dBm(intrfIdx) = finalPowerState.DesiredPowerDL_dBm(:);
+                interferenceTrace.Noise_dBm(intrfIdx) = finalPowerState.NoisePowerDL_dBm(:);
+                interferenceTrace.InterferenceMargin_dB(intrfIdx) = finalPowerState.LegacyInterferenceMarginDL_dB(:);
+                interferenceTrace.SmallScaleFading_dB(intrfIdx) = finalPowerState.SmallScaleFading_dB(:);
+                interferenceTrace.InterferenceVariation_dB(intrfIdx) = finalPowerState.InterferenceVariation_dB(:);
+                interferenceTrace.DesiredPowerDL_dBm(intrfIdx) = finalPowerState.DesiredPowerDL_dBm(:);
+                interferenceTrace.InterferencePowerDL_dBm(intrfIdx) = finalPowerState.InterferencePowerDL_dBm(:);
+                interferenceTrace.NoiseDL_dBm(intrfIdx) = finalPowerState.NoisePowerDL_dBm(:);
+                interferenceTrace.ActiveInterfererCountDL(intrfIdx) = finalPowerState.ActiveInterfererCountDL(:);
+                interferenceTrace.DesiredPowerUL_dBm(intrfIdx) = finalPowerState.DesiredPowerUL_dBm(:);
+                interferenceTrace.InterferencePowerUL_dBm(intrfIdx) = finalPowerState.InterferencePowerUL_dBm(:);
+                interferenceTrace.NoiseUL_dBm(intrfIdx) = finalPowerState.NoisePowerUL_dBm(:);
+                interferenceTrace.ActiveInterfererCountUL(intrfIdx) = finalPowerState.ActiveInterfererCountUL(:);
+                interferenceTrace.SINR_DL_dB(intrfIdx) = sinr_dB(:);
+                interferenceTrace.SINR_UL_dB(intrfIdx) = sinrUL_dB(:);
+                interferenceTrace.RSRP_dBm(intrfIdx) = rsrpHist(t,:).';
+
                 if ~isempty(grantsDL)
                     scheduledUE_DL(t) = numel(unique(double([grantsDL.RNTI])));
                 end
@@ -685,11 +756,7 @@ classdef SystemLevelRunner
                     if tbsBits <= 0
                         continue;
                     end
-                    if isfield(g, "MCSIndex")
-                        mcsIdx = double(g.MCSIndex);
-                    else
-                        mcsIdx = double(localCQIToMCS(cqiUsed));
-                    end
+                    mcsIdx = double(localResolveGrantMCSIndex(cfg, g, cqiUsed, "DL"));
                     if isfield(g, "NumLayers")
                         numLayers = double(g.NumLayers);
                     else
@@ -712,15 +779,22 @@ classdef SystemLevelRunner
                         "DopplerHz", dopplerHz, ...
                         "SCS_kHz", scs_kHz, ...
                         "ServingCellID", cellId, ...
+                        "TTI", t, ...
+                        "GrantIndex", gi, ...
+                        "GrantCountInSlot", numel(grantsDL), ...
                         "Grant", g, ...
                         "TBSBits", tbsBits);
                     [okDL, blerDL] = phy.decode(ctxDL);
+                    replayDL = localLastPHYReplay(phy);
+                    decisionUnavailableDL = localPHYDecisionUnavailable(replayDL);
                     if isnan(blerHistDL(t,u))
                         blerHistDL(t,u) = blerDL;
                     else
                         blerHistDL(t,u) = 0.5 * (blerHistDL(t,u) + blerDL);
                     end
-                    if okDL
+                    if decisionUnavailableDL
+                        decodeUnavailableCountDL = decodeUnavailableCountDL + 1;
+                    elseif okDL
                         servedDL = min(queueBitsDL(u), tbsBits);
                         queueBitsDL(u) = queueBitsDL(u) - servedDL;
                         servedBitsTotalDL = servedBitsTotalDL + servedDL;
@@ -734,12 +808,14 @@ classdef SystemLevelRunner
                     [grantTrace, grantTraceCount] = localAppendGrantTrace( ...
                         grantTrace, grantTraceCount, t, tti_s, slotLabel, "DL", ...
                         cellId, g, prbCount, tbsBits, cqiUsed, mcsIdx, numLayers, ...
-                        tgtCodeRate, sinr_dB(u), blerDL, logical(okDL));
-                    fb = struct("RNTI", u, "TBSBits", tbsBits, "Ack", logical(okDL));
-                    fbIdx = fbDLWriteIdx(cellId) + 1;
-                    if ~isempty(fbDLByCell{cellId}) && fbIdx <= numel(fbDLByCell{cellId})
-                        fbDLByCell{cellId}(fbIdx) = fb;
-                        fbDLWriteIdx(cellId) = fbIdx;
+                        tgtCodeRate, sinr_dB(u), blerDL, logical(okDL), replayDL);
+                    if ~decisionUnavailableDL
+                        fb = struct("RNTI", u, "TBSBits", tbsBits, "Ack", logical(okDL));
+                        fbIdx = fbDLWriteIdx(cellId) + 1;
+                        if ~isempty(fbDLByCell{cellId}) && fbIdx <= numel(fbDLByCell{cellId})
+                            fbDLByCell{cellId}(fbIdx) = fb;
+                            fbDLWriteIdx(cellId) = fbIdx;
+                        end
                     end
                 end
 
@@ -774,11 +850,7 @@ classdef SystemLevelRunner
                     if tbsBits <= 0
                         continue;
                     end
-                    if isfield(g, "MCSIndex")
-                        mcsIdx = double(g.MCSIndex);
-                    else
-                        mcsIdx = double(localCQIToMCS(cqiUsed));
-                    end
+                    mcsIdx = double(localResolveGrantMCSIndex(cfg, g, cqiUsed, "UL"));
                     if isfield(g, "NumLayers")
                         numLayers = double(g.NumLayers);
                     else
@@ -801,15 +873,22 @@ classdef SystemLevelRunner
                         "DopplerHz", dopplerHz, ...
                         "SCS_kHz", scs_kHz, ...
                         "ServingCellID", cellId, ...
+                        "TTI", t, ...
+                        "GrantIndex", gi, ...
+                        "GrantCountInSlot", numel(grantsUL), ...
                         "Grant", g, ...
                         "TBSBits", tbsBits);
                     [okUL, blerUL] = phy.decode(ctxUL);
+                    replayUL = localLastPHYReplay(phy);
+                    decisionUnavailableUL = localPHYDecisionUnavailable(replayUL);
                     if isnan(blerHistUL(t,u))
                         blerHistUL(t,u) = blerUL;
                     else
                         blerHistUL(t,u) = 0.5 * (blerHistUL(t,u) + blerUL);
                     end
-                    if okUL
+                    if decisionUnavailableUL
+                        decodeUnavailableCountUL = decodeUnavailableCountUL + 1;
+                    elseif okUL
                         servedUL = min(queueBitsUL(u), tbsBits);
                         queueBitsUL(u) = queueBitsUL(u) - servedUL;
                         servedBitsTotalUL = servedBitsTotalUL + servedUL;
@@ -823,12 +902,14 @@ classdef SystemLevelRunner
                     [grantTrace, grantTraceCount] = localAppendGrantTrace( ...
                         grantTrace, grantTraceCount, t, tti_s, slotLabel, "UL", ...
                         cellId, g, prbCount, tbsBits, cqiUsed, mcsIdx, numLayers, ...
-                        tgtCodeRate, sinrUL_dB(u), blerUL, logical(okUL));
-                    fb = struct("RNTI", u, "TBSBits", tbsBits, "Ack", logical(okUL));
-                    fbIdx = fbULWriteIdx(cellId) + 1;
-                    if ~isempty(fbULByCell{cellId}) && fbIdx <= numel(fbULByCell{cellId})
-                        fbULByCell{cellId}(fbIdx) = fb;
-                        fbULWriteIdx(cellId) = fbIdx;
+                        tgtCodeRate, sinrUL_dB(u), blerUL, logical(okUL), replayUL);
+                    if ~decisionUnavailableUL
+                        fb = struct("RNTI", u, "TBSBits", tbsBits, "Ack", logical(okUL));
+                        fbIdx = fbULWriteIdx(cellId) + 1;
+                        if ~isempty(fbULByCell{cellId}) && fbIdx <= numel(fbULByCell{cellId})
+                            fbULByCell{cellId}(fbIdx) = fb;
+                            fbULWriteIdx(cellId) = fbIdx;
+                        end
                     end
                 end
 
@@ -892,7 +973,26 @@ classdef SystemLevelRunner
                 queueHistDL(t,:) = queueBitsDL(:).';
                 queueHistUL(t,:) = queueBitsUL(:).';
                 queueHist(t,:) = (queueBitsDL(:) + queueBitsUL(:)).';
+
+                elapsedNow_s = toc(runTimer);
+                if t == 1 || t == nTTI || mod(t, progressEverySlots) == 0 || ...
+                        (elapsedNow_s - lastProgressEmit_s) >= 30
+                    localEmitLiveProgress(cfg, log, runTimer, t, nTTI, tti_s, ...
+                        slotLabel, activeUECount(t), nCells, ...
+                        grantCountDL(t) + grantCountUL(t), ...
+                        servedBitsTotalDL + servedBitsTotalUL, ...
+                        droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
+                        "system_level_lls_slot_progress");
+                    lastProgressEmit_s = elapsedNow_s;
+                end
             end
+
+            localEmitLiveProgress(cfg, log, runTimer, nTTI, nTTI, tti_s, ...
+                "finalizing", activeUECount(end), nCells, ...
+                grantCountDL(end) + grantCountUL(end), ...
+                servedBitsTotalDL + servedBitsTotalUL, ...
+                droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
+                "system_level_lls_finalizing_exports");
 
             for u = 1:K
                 eIdx = hoActiveEventIdx(u);
@@ -975,6 +1075,7 @@ classdef SystemLevelRunner
                 1e3*delay_s, K, nCells, nTTI, simDur_s, ...
                 hoTriggerTotal, hoStartTotal, hoCompleteTotal, hoInterruptedUEmean, hoInterruption_ms, ...
                 string(phyBackendLabel), string(phyModeLabel), logical(waveformBacked), ...
+                logical(waveformBacked), logical(proxyPHYActive), logical(fallbackUsed), ...
                 'VariableNames', {'Throughput_Mbps','ThroughputDL_Mbps','ThroughputUL_Mbps', ...
                                   'PacketLoss','PacketLossDL','PacketLossUL','AvgBLER','JainFairness', ...
                                   'MeanQueue_bits','MeanSINR_dB','MeanRSRP_dBm','MeanEbNo_dB', ...
@@ -983,13 +1084,17 @@ classdef SystemLevelRunner
                                   'Utilization','AvgActiveUE','ScheduleUtilization', ...
                                   'ApproxDelay_ms','NumUE','NumCells','NumTTI','SimDuration_s', ...
                                   'HO_Triggered','HO_Started','HO_Completed','HO_InterruptedUE_Mean','HO_InterruptionMean_ms', ...
-                                  'ExecutionBackend','PHYMode','WaveformBacked'});
+                                  'ExecutionBackend','PHYMode','WaveformBacked', ...
+                                  'WaveformPHYActive','ProxyPHYActive','FallbackUsed'});
             out.KPITable = kpi;
 
             out.Details = struct();
             out.Details.ExecutionBackend = string(phyBackendLabel);
             out.Details.PHYMode = string(phyModeLabel);
             out.Details.WaveformBacked = logical(waveformBacked);
+            out.Details.WaveformPHYActive = logical(waveformBacked);
+            out.Details.ProxyPHYActive = logical(proxyPHYActive);
+            out.Details.FallbackUsed = logical(fallbackUsed);
             if waveformBacked && isprop(phy, "LastReplay")
                 out.Details.LastPHYReplay = phy.LastReplay;
             end
@@ -999,6 +1104,8 @@ classdef SystemLevelRunner
             out.Details.GrantCountDL = grantCountDL;
             out.Details.GrantCountUL = grantCountUL;
             out.Details.GrantCount = grantCountDL + grantCountUL;
+            out.Details.DecodeUnavailableDL = decodeUnavailableCountDL;
+            out.Details.DecodeUnavailableUL = decodeUnavailableCountUL;
             out.Details.SlotDirection = slotDirection;
             out.Details.OfferedBits = traffic.OfferedBits;
             out.Details.OfferedBitsDL = traffic.OfferedBitsDL;
@@ -1027,6 +1134,14 @@ classdef SystemLevelRunner
             out.Details.RSRP_dBm = rsrpHist;
             out.Details.EbNo_dB = ebnoHist;
             out.Details.RxPower_dBm = rxPowerHist;
+            out.Details.DesiredPowerDL_dBm = desiredPowerHistDL;
+            out.Details.DesiredPowerUL_dBm = desiredPowerHistUL;
+            out.Details.InterferencePowerDL_dBm = interferencePowerHistDL;
+            out.Details.InterferencePowerUL_dBm = interferencePowerHistUL;
+            out.Details.NoiseDL_dBm = noisePowerHistDL;
+            out.Details.NoiseUL_dBm = noisePowerHistUL;
+            out.Details.ActiveInterfererCountDL = interfererCellCountHistDL;
+            out.Details.ActiveInterfererCountUL = interfererCellCountHistUL;
             out.Details.Pathloss_dB = pathlossHist;
             out.Details.ServingDistance_m = dServeHist;
             out.Details.QueueBits = queueHist;
@@ -1038,12 +1153,17 @@ classdef SystemLevelRunner
             out.Details.TrafficModel = traffic.Model;
             out.Details.TrafficClass = traffic.UserClass;
             out.Details.TrafficTransport = sixgr.util.structGet(traffic, "Transport", "UDP");
+            out.Details.TrafficTransportSemanticClass = sixgr.util.structGet(traffic, "TransportSemanticClass", "");
+            out.Details.TrafficTransportTruthLabel = sixgr.util.structGet(traffic, "TransportTruthLabel", "");
+            out.Details.TrafficTransportApproximationReason = sixgr.util.structGet(traffic, "TransportApproximationReason", "");
             out.Details.FlowDirection = sixgr.util.structGet(traffic, "FlowDirection", "BIDIR");
             out.Details.PacketDelayBudget_ms = sixgr.util.structGet(traffic, "PacketDelayBudget_ms", NaN);
             out.Details.FlowTable = sixgr.util.structGet(traffic, "FlowTable", table());
             out.Details.TTI_s = tti_s;
-            out.Details.Noise_dBm = noise_dBm;
-            out.Details.InterferenceMargin_dB = interfMargin_dB;
+            out.Details.SINRModel = sinrModel;
+            out.Details.Noise_dBm = noisePowerHistDL;
+            out.Details.InterferenceMargin_dB = localInterferenceMarginFromPowers( ...
+                interferencePowerHistDL, noisePowerHistDL);
             out.Details.SmallScaleFading_dB = fastFading_dB;
             out.Details.InterferenceVariation_dB = interfVar_dB;
             out.Details.NumRB = nRB;
@@ -1062,8 +1182,13 @@ classdef SystemLevelRunner
             out.Details.ServingBeamGain_dB = servingBeamGainHist;
             out.Details.HandoverState = hoStateHist;
             out.Details.MeasurementRSRP_dBm = measRSRP_dBm;
+            out.Details.MeasurementRSRPTrace_dBm = measRSRPTrace_dBm;
             out.Details.MeasurementReportCount = measReportCount;
             out.Details.BeamUpdateCount = beamUpdateCount;
+            out.Details.LargeScaleRefreshMask = largeScaleRefreshMask;
+            out.Details.LargeScalePropagationUpdateMask = largeScalePropagationUpdateMask;
+            out.Details.LargeScaleState = largeScaleState;
+            out.Details.LargeScaleUpdatePeriod_slots = largeScaleUpdateSlots;
             out.Details.HandoverTriggerCount = hoTriggerCount;
             out.Details.HandoverStartCount = hoStartCount;
             out.Details.HandoverCompleteCount = hoCompleteCount;
@@ -1110,7 +1235,7 @@ classdef SystemLevelRunner
                 cfg, traffic.Model, traffic.UserClass, nTTI, tti_s, K, ...
                 decodeOkCountDL + decodeOkCountUL, decodeFailCountDL + decodeFailCountUL, overflowEvents, avgActiveUE, ...
                 hoTriggerTotal, hoCompleteTotal, mean(hoInterruptedUECount), ...
-                phyBackendLabel, phyModeLabel, waveformBacked);
+                phyBackendLabel, phyModeLabel, waveformBacked, proxyPHYActive, fallbackUsed);
 
             out.Details.UESummary = ueSummary;
             out.Details.TimeSeries = timeSeries;
@@ -1265,10 +1390,6 @@ nRB = floor(double(bw_Hz) / (12 * scs_Hz));
 nRB = min(275, max(1, nRB));
 end
 
-function rsrp_dBm = localRxPowerToRSRP(rxPower_dBm, nRB)
-rsrp_dBm = double(rxPower_dBm) - 10*log10(max(12*nRB, 1));
-end
-
 function ebno_dB = localSINRtoEbNo(sinr_dB)
 se = log2(1 + 10.^(double(sinr_dB)/10));
 ebno_dB = double(sinr_dB) - 10*log10(max(se, 1e-9));
@@ -1343,6 +1464,213 @@ end
 budget = struct("NPRB", nPRB, "SymbolAllocation", symAlloc);
 end
 
+function mode = localResolveSINRModel(cfg)
+raw = string(sixgr.util.structGet(cfg, "system.sinrModel", ...
+    sixgr.util.structGet(cfg, "channel.interferenceModel", "explicit_activity_power_sum")));
+raw = lower(strtrim(raw));
+switch raw
+    case {"legacy","legacy_margin","legacy_margin_calibration","margin_calibration", ...
+            "non_vienna_calibration","placeholder_margin"}
+        mode = "legacy_margin_calibration";
+    otherwise
+        mode = "explicit_activity_power_sum";
+end
+end
+
+function ulLinkPower_dBm = localBuildULLinkPowerTable(cfg, largeScaleState)
+K = double(sixgr.util.structGet(largeScaleState, "NumUE", size(largeScaleState.Pathloss_dB, 1)));
+nCells = double(sixgr.util.structGet(largeScaleState, "NumCells", size(largeScaleState.Pathloss_dB, 2)));
+ueTxPower_dBm = double(sixgr.util.structGet(cfg, "scenario.ue.txPower_dBm", 23));
+if isscalar(ueTxPower_dBm)
+    ueTxPower_dBm = repmat(ueTxPower_dBm, K, 1);
+else
+    ueTxPower_dBm = reshape(ueTxPower_dBm, [], 1);
+    if numel(ueTxPower_dBm) ~= K
+        ueTxPower_dBm = repmat(ueTxPower_dBm(1), K, 1);
+    end
+end
+ulLinkPower_dBm = repmat(ueTxPower_dBm, 1, nCells) + ...
+    double(largeScaleState.BeamGain_dB) - double(largeScaleState.Pathloss_dB);
+end
+
+function [sinrDL_dB, sinrUL_dB, state] = localBuildLegacySINRState( ...
+    desiredDL_dBm, desiredUL_dBm, slotDL, slotUL, dlBudget, ulBudget, scs_kHz, ...
+    noiseFigDL_dB, noiseFigUL_dB, fastFading_dB, interfVar_dB, interfMargin_dB, ulSinrOffset_dB)
+K = numel(desiredDL_dBm);
+state = localInitSINRState(K);
+state.DesiredPowerDL_dBm = double(desiredDL_dBm(:));
+state.DesiredPowerUL_dBm = double(desiredUL_dBm(:));
+state.SmallScaleFading_dB = double(fastFading_dB(:));
+state.InterferenceVariation_dB = double(interfVar_dB(:));
+
+if slotDL
+    noiseDL_dBm = localThermalNoisePower_dBm(dlBudget.NPRB, scs_kHz, noiseFigDL_dB);
+    state.NoisePowerDL_dBm(:) = noiseDL_dBm;
+    state.InterferencePowerDL_dBm = localInterferencePowerFromMargin(noiseDL_dBm, interfMargin_dB, K);
+    state.LegacyInterferenceMarginDL_dB(:) = interfMargin_dB;
+    sinrDL_dB = state.DesiredPowerDL_dBm - noiseDL_dBm - interfMargin_dB + ...
+        state.SmallScaleFading_dB - state.InterferenceVariation_dB;
+else
+    sinrDL_dB = NaN(K,1);
+end
+
+if slotUL
+    noiseUL_dBm = localThermalNoisePower_dBm(ulBudget.NPRB, scs_kHz, noiseFigUL_dB);
+    state.NoisePowerUL_dBm(:) = noiseUL_dBm;
+    state.InterferencePowerUL_dBm = localInterferencePowerFromMargin(noiseUL_dBm, interfMargin_dB, K);
+    sinrUL_dB = state.DesiredPowerUL_dBm - noiseUL_dBm - interfMargin_dB + ...
+        state.SmallScaleFading_dB - state.InterferenceVariation_dB + double(ulSinrOffset_dB);
+else
+    sinrUL_dB = NaN(K,1);
+end
+
+state.SINR_DL_dB = sinrDL_dB;
+state.SINR_UL_dB = sinrUL_dB;
+end
+
+function state = localBuildExplicitSINRState( ...
+    desiredDL_dBm, desiredUL_dBm, dlLinkCells_dBm, ulLinkCells_dBm, servingIdx, ...
+    slotDL, slotUL, dlBudget, ulBudget, scs_kHz, noiseFigDL_dB, noiseFigUL_dB, ...
+    activeDLCellMask, activeULTxUE, activeULTxCell)
+K = numel(servingIdx);
+state = localInitSINRState(K);
+state.DesiredPowerDL_dBm = double(desiredDL_dBm(:));
+state.DesiredPowerUL_dBm = double(desiredUL_dBm(:));
+state.SmallScaleFading_dB(:) = 0;
+state.InterferenceVariation_dB(:) = 0;
+
+if slotDL
+    [interfDL_dBm, activeCntDL] = localSumDLCellInterference(dlLinkCells_dBm, servingIdx, activeDLCellMask);
+    noiseDL_dBm = localThermalNoisePower_dBm(dlBudget.NPRB, scs_kHz, noiseFigDL_dB);
+    state.InterferencePowerDL_dBm = interfDL_dBm;
+    state.NoisePowerDL_dBm(:) = noiseDL_dBm;
+    state.ActiveInterfererCountDL = activeCntDL;
+    state.LegacyInterferenceMarginDL_dB = localInterferenceMarginFromPowers(interfDL_dBm, state.NoisePowerDL_dBm);
+    state.SINR_DL_dB = localComputeSINRFromPowers(state.DesiredPowerDL_dBm, interfDL_dBm, state.NoisePowerDL_dBm);
+end
+
+if slotUL
+    [interfUL_dBm, activeCntUL] = localSumULGrantInterference(ulLinkCells_dBm, servingIdx, activeULTxUE, activeULTxCell);
+    noiseUL_dBm = localThermalNoisePower_dBm(ulBudget.NPRB, scs_kHz, noiseFigUL_dB);
+    state.InterferencePowerUL_dBm = interfUL_dBm;
+    state.NoisePowerUL_dBm(:) = noiseUL_dBm;
+    state.ActiveInterfererCountUL = activeCntUL;
+    state.SINR_UL_dB = localComputeSINRFromPowers(state.DesiredPowerUL_dBm, interfUL_dBm, state.NoisePowerUL_dBm);
+end
+end
+
+function state = localInitSINRState(K)
+K = max(1, round(double(K)));
+state = struct();
+state.DesiredPowerDL_dBm = NaN(K,1);
+state.InterferencePowerDL_dBm = -Inf(K,1);
+state.NoisePowerDL_dBm = NaN(K,1);
+state.ActiveInterfererCountDL = zeros(K,1);
+state.DesiredPowerUL_dBm = NaN(K,1);
+state.InterferencePowerUL_dBm = -Inf(K,1);
+state.NoisePowerUL_dBm = NaN(K,1);
+state.ActiveInterfererCountUL = zeros(K,1);
+state.LegacyInterferenceMarginDL_dB = NaN(K,1);
+state.SmallScaleFading_dB = zeros(K,1);
+state.InterferenceVariation_dB = zeros(K,1);
+state.SINR_DL_dB = NaN(K,1);
+state.SINR_UL_dB = NaN(K,1);
+end
+
+function [interf_dBm, activeCount] = localSumDLCellInterference(linkCells_dBm, servingIdx, activeCellMask)
+K = numel(servingIdx);
+interf_dBm = -Inf(K,1);
+activeCount = zeros(K,1);
+activeCellMask = reshape(logical(activeCellMask), 1, []);
+for u = 1:K
+    mask = activeCellMask;
+    s = min(max(round(double(servingIdx(u))), 1), numel(mask));
+    mask(s) = false;
+    activeCount(u) = nnz(mask);
+    interf_mW = sum(localDbmToMilliwatt(linkCells_dBm(u, mask)));
+    interf_dBm(u) = localMilliwattToDbm(interf_mW);
+end
+end
+
+function [interf_dBm, activeCount] = localSumULGrantInterference(ulLinkCells_dBm, servingIdx, activeULTxUE, activeULTxCell)
+K = numel(servingIdx);
+interf_dBm = -Inf(K,1);
+activeCount = zeros(K,1);
+if isempty(activeULTxUE) || isempty(activeULTxCell)
+    return;
+end
+ueVec = reshape(double(activeULTxUE), [], 1);
+cellVec = reshape(double(activeULTxCell), [], 1);
+pairMat = unique([ueVec, cellVec], "rows", "stable");
+ueVec = pairMat(:,1);
+cellVec = pairMat(:,2);
+for u = 1:K
+    s = min(max(round(double(servingIdx(u))), 1), size(ulLinkCells_dBm, 2));
+    mask = cellVec ~= s;
+    if ~any(mask)
+        continue;
+    end
+    interfererUE = ueVec(mask);
+    activeCount(u) = numel(unique(cellVec(mask)));
+    interf_mW = sum(localDbmToMilliwatt(ulLinkCells_dBm(interfererUE, s)));
+    interf_dBm(u) = localMilliwattToDbm(interf_mW);
+end
+end
+
+function noise_dBm = localThermalNoisePower_dBm(nPRB, scs_kHz, noiseFig_dB)
+nPRB = max(0, round(double(nPRB)));
+if nPRB <= 0
+    noise_dBm = NaN;
+    return;
+end
+bw_Hz = max(double(nPRB) * 12 * max(double(scs_kHz), 1) * 1e3, 1);
+noise_dBm = -174 + 10*log10(bw_Hz) + double(noiseFig_dB);
+end
+
+function mW = localDbmToMilliwatt(p_dBm)
+mW = zeros(size(p_dBm), "double");
+finiteMask = isfinite(p_dBm);
+mW(finiteMask) = 10.^(double(p_dBm(finiteMask)) / 10);
+end
+
+function p_dBm = localMilliwattToDbm(mW)
+p_dBm = -Inf(size(mW), "double");
+finiteMask = isfinite(mW) & (mW > 0);
+p_dBm(finiteMask) = 10*log10(double(mW(finiteMask)));
+end
+
+function sinr_dB = localComputeSINRFromPowers(desired_dBm, interference_dBm, noise_dBm)
+desired_mW = localDbmToMilliwatt(desired_dBm);
+interference_mW = localDbmToMilliwatt(interference_dBm);
+noise_mW = localDbmToMilliwatt(noise_dBm);
+den_mW = interference_mW + noise_mW;
+sinr_dB = NaN(size(desired_mW));
+validMask = isfinite(desired_dBm) & isfinite(noise_dBm) & (den_mW > 0);
+sinr_dB(validMask) = 10*log10(desired_mW(validMask) ./ den_mW(validMask));
+end
+
+function margin_dB = localInterferenceMarginFromPowers(interference_dBm, noise_dBm)
+interference_mW = localDbmToMilliwatt(interference_dBm);
+noise_mW = localDbmToMilliwatt(noise_dBm);
+margin_dB = NaN(size(noise_mW));
+validMask = isfinite(noise_dBm) & (noise_mW > 0);
+margin_dB(validMask) = 10*log10(1 + (interference_mW(validMask) ./ noise_mW(validMask)));
+end
+
+function interf_dBm = localInterferencePowerFromMargin(noise_dBm, margin_dB, K)
+totalImpairment_mW = localDbmToMilliwatt(repmat(double(noise_dBm), K, 1)) .* 10.^(double(margin_dB) / 10);
+noise_mW = localDbmToMilliwatt(repmat(double(noise_dBm), K, 1));
+interf_dBm = localMilliwattToDbm(max(totalImpairment_mW - noise_mW, 0));
+end
+
+function ueIdx = localGrantRNTI(grants)
+if isempty(grants)
+    ueIdx = zeros(0,1);
+    return;
+end
+ueIdx = reshape(double([grants.RNTI]), [], 1);
+end
+
 function [fastFading_dB, interfVar_dB] = localBuildChannelVariationTraces(cfg, nTTI, nUE, tti_s, seed)
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
 dopp = max(0, double(sixgr.util.structGet(cfg, "channel.dopplerHz", 0)));
@@ -1376,13 +1704,41 @@ for t = 2:nTTI
 end
 end
 
-function cqi = localSINRtoCQI(sinr_dB)
-s = double(sinr_dB);
-cqi = max(1, min(15, round((s + 6.0) / 1.8)));
+function cqi = localResolveWidebandCQI(sinr_dB, cfg, direction)
+feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", sinr_dB), cfg, direction);
+cqi = double(feedback.WidebandCQI);
 end
 
-function mcs = localCQIToMCS(cqi)
-mcs = max(0, min(27, round((double(cqi) - 1) * (27/14))));
+function mcs = localResolveGrantMCSIndex(cfg, grant, cqiUsed, direction)
+if isfield(grant, "MCSIndex") && ~isempty(grant.MCSIndex) && isfinite(double(grant.MCSIndex))
+    mcs = double(grant.MCSIndex);
+    return;
+end
+if isfield(grant, "MCSTable") && strlength(string(grant.MCSTable)) > 0
+    mcsTable = char(string(grant.MCSTable));
+else
+    mcsTable = localResolveDirectionMCSTable(cfg, direction, sixgr.util.structGet(grant, "Modulation", "QPSK"));
+end
+modStr = char(string(sixgr.util.structGet(grant, "Modulation", "QPSK")));
+tcr = double(sixgr.util.structGet(grant, "TargetCodeRate", 0.5));
+mcs = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, tcr, cqiUsed, mcsTable);
+end
+
+function tableName = localResolveDirectionMCSTable(cfg, direction, modulation)
+dir = upper(char(string(direction)));
+if strcmp(dir, "UL")
+    token = sixgr.util.structGet(cfg, "phy.pusch.mcsTable", []);
+else
+    token = sixgr.util.structGet(cfg, "phy.pdsch.mcsTable", []);
+end
+if strlength(string(token)) == 0
+    if sixgr.l2.mac.SchedulerBase.modOrder(modulation) >= 8
+        token = "qam256_table2";
+    else
+        token = "qam64_table1";
+    end
+end
+tableName = char(lower(string(token)));
 end
 
 function tokens = localExpandTDDPattern(pattern)
@@ -1605,46 +1961,6 @@ end
 doFig = logical(defaultVal);
 end
 
-function [beamIdx, beamGain_dB] = localSelectBestBeamPerLink(uePos, bsPos, bsAzim_deg, nBeams, spanDeg, maxGain_dB)
-K = size(uePos, 1);
-B = size(bsPos, 1);
-beamIdx = ones(K, B);
-beamGain_dB = zeros(K, B);
-
-nBeams = max(1, round(double(nBeams)));
-spanDeg = max(30, min(240, double(spanDeg)));
-maxGain_dB = double(maxGain_dB);
-
-beamOffsets = linspace(-0.5*spanDeg, 0.5*spanDeg, nBeams);
-beamBW = max(spanDeg / max(nBeams, 1), 5);
-for b = 1:B
-    dx = uePos(:,1) - bsPos(b,1);
-    dy = uePos(:,2) - bsPos(b,2);
-    linkAz = atan2d(dy, dx);
-    beamCenters = double(bsAzim_deg(b)) + beamOffsets;
-    delta = abs(localWrapTo180(linkAz - reshape(beamCenters, 1, [])));
-    atten_dB = min(30, 12 .* (delta ./ beamBW).^2);
-    [bestAtten, idx] = min(atten_dB, [], 2);
-    beamIdx(:,b) = idx;
-    beamGain_dB(:,b) = maxGain_dB - bestAtten;
-end
-end
-
-function rsrpCell_dBm = localEstimateCellRSRP(txPower_dBm, d2d, fc_GHz, beamGain_dB)
-K = size(d2d, 1);
-B = size(d2d, 2);
-tx = reshape(double(txPower_dBm), 1, []);
-if numel(tx) ~= B
-    tx = repmat(tx(1), 1, B);
-end
-d_km = max(double(d2d) / 1000, 1e-4);
-pl_dB = 32.4 + 20*log10(max(fc_GHz, 0.1)) + 31.9*log10(d_km);
-if isempty(beamGain_dB)
-    beamGain_dB = zeros(K, B);
-end
-rsrpCell_dBm = repmat(tx, K, 1) - pl_dB + double(beamGain_dB);
-end
-
 function v = localGatherServingValues(M, servingIdx)
 K = size(M, 1);
 B = size(M, 2);
@@ -1695,6 +2011,46 @@ trace.HeadOfLineDelay_ms = NaN(cap,1);
 trace.BufferBytesBefore = NaN(cap,1);
 trace.BufferBytesAfter = NaN(cap,1);
 trace.GrantReason = strings(cap,1);
+trace.PHYDecisionRole = strings(cap,1);
+trace.PHYDecisionStatus = strings(cap,1);
+trace.PHYDecisionSource = strings(cap,1);
+trace.PHYDecisionReason = strings(cap,1);
+trace.WaveformReplayExecuted = false(cap,1);
+trace.WaveformReplayReused = false(cap,1);
+trace.WaveformReplayKey = strings(cap,1);
+trace.ReceiverHestSINR_dB = NaN(cap,1);
+trace.ReceiverHestSINRSource = strings(cap,1);
+trace.ReceiverHestSINRValueRole = strings(cap,1);
+trace.ReceiverHestSINRValueStatus = strings(cap,1);
+trace.ReceiverHestSINRNAReason = strings(cap,1);
+trace.DecoderTruthProxySINR_dB = NaN(cap,1);
+trace.DecoderTruthProxySINRSource = strings(cap,1);
+trace.DecoderTruthProxySINRValueRole = strings(cap,1);
+trace.DecoderTruthProxySINRValueStatus = strings(cap,1);
+trace.DecoderTruthProxySINRNAReason = strings(cap,1);
+trace.PrecoderSource = strings(cap,1);
+trace.RequestedPrecoderSource = strings(cap,1);
+trace.AppliedPrecoderSource = strings(cap,1);
+trace.RequestedPrecoderPMI = NaN(cap,1);
+trace.PrecodingMode = strings(cap,1);
+trace.PrecodingApplicationStage = strings(cap,1);
+trace.PrecodingActive = false(cap,1);
+trace.ExplicitBeamWeightsApplied = false(cap,1);
+trace.TransformPrecodingApplied = false(cap,1);
+trace.BeamformingApplied = false(cap,1);
+trace.AppliedBeamIndexSet = strings(cap,1);
+trace.AppliedPrecoderPMI = NaN(cap,1);
+trace.AppliedPrecoderValueRole = strings(cap,1);
+trace.AppliedPrecoderValueStatus = strings(cap,1);
+trace.AppliedPrecoderNAReason = strings(cap,1);
+trace.ExplicitPrecoderReplayStatus = strings(cap,1);
+trace.ExplicitPrecoderReplayBlocker = strings(cap,1);
+trace.AppliedPrecoderPMIType = strings(cap,1);
+trace.AppliedPrecoderCodebookMode = strings(cap,1);
+trace.PrecodingNumPorts = NaN(cap,1);
+trace.PrecodingNumLayers = NaN(cap,1);
+trace.PrecodingMatrixRows = NaN(cap,1);
+trace.PrecodingMatrixCols = NaN(cap,1);
 end
 
 function [trace, count] = localEnsureGrantTraceCapacity(trace, count, need)
@@ -1722,7 +2078,11 @@ end
 end
 
 function [trace, count] = localAppendGrantTrace(trace, count, t, tti_s, slotLabel, direction, ...
-    cellId, grant, prbCount, tbsBits, cqiUsed, mcsIdx, numLayers, targetCodeRate, sinr_dB, bler, ack)
+    cellId, grant, prbCount, tbsBits, cqiUsed, mcsIdx, numLayers, targetCodeRate, sinr_dB, bler, ack, replay)
+
+if nargin < 18 || ~isstruct(replay)
+    replay = struct();
+end
 
 [trace, count] = localEnsureGrantTraceCapacity(trace, count, 1);
 count = count + 1;
@@ -1775,16 +2135,59 @@ trace.HeadOfLineDelay_ms(i) = double(sixgr.util.structGet(grant, "HeadOfLineDela
 trace.BufferBytesBefore(i) = double(sixgr.util.structGet(grant, "BufferBytesBefore", NaN));
 trace.BufferBytesAfter(i) = double(sixgr.util.structGet(grant, "BufferBytesAfter", NaN));
 trace.GrantReason(i) = string(sixgr.util.structGet(grant, "GrantReason", ""));
+trace.PHYDecisionRole(i) = string(sixgr.util.structGet(replay, "PHYDecisionRole", "measured"));
+trace.PHYDecisionStatus(i) = string(sixgr.util.structGet(replay, "PHYDecisionStatus", "OK"));
+trace.PHYDecisionSource(i) = string(sixgr.util.structGet(replay, "PHYDecisionSource", "sixgr.system.waveform.replayGrant"));
+trace.PHYDecisionReason(i) = string(sixgr.util.structGet(replay, "PHYDecisionReason", "waveform_replay_executed"));
+trace.WaveformReplayExecuted(i) = logical(sixgr.util.structGet(replay, "WaveformReplayExecuted", true));
+trace.WaveformReplayReused(i) = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
+trace.WaveformReplayKey(i) = string(sixgr.util.structGet(replay, "WaveformReplayKey", ""));
+trace.ReceiverHestSINR_dB(i) = double(sixgr.util.structGet(replay, "ReceiverHestSINR_dB", NaN));
+trace.ReceiverHestSINRSource(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRSource", ""));
+trace.ReceiverHestSINRValueRole(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRValueRole", ""));
+trace.ReceiverHestSINRValueStatus(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRValueStatus", ""));
+trace.ReceiverHestSINRNAReason(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRNAReason", ""));
+trace.DecoderTruthProxySINR_dB(i) = double(sixgr.util.structGet(replay, "DecoderTruthProxySINR_dB", NaN));
+trace.DecoderTruthProxySINRSource(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRSource", ""));
+trace.DecoderTruthProxySINRValueRole(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRValueRole", ""));
+trace.DecoderTruthProxySINRValueStatus(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRValueStatus", ""));
+trace.DecoderTruthProxySINRNAReason(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRNAReason", ""));
+trace.PrecoderSource(i) = string(sixgr.util.structGet(replay, "PrecoderSource", ""));
+trace.RequestedPrecoderSource(i) = string(sixgr.util.structGet(replay, "RequestedPrecoderSource", ""));
+trace.AppliedPrecoderSource(i) = string(sixgr.util.structGet(replay, "AppliedPrecoderSource", ""));
+trace.RequestedPrecoderPMI(i) = double(sixgr.util.structGet(replay, "RequestedPrecoderPMI", NaN));
+trace.PrecodingMode(i) = string(sixgr.util.structGet(replay, "PrecodingMode", ""));
+trace.PrecodingApplicationStage(i) = string(sixgr.util.structGet(replay, "PrecodingApplicationStage", ""));
+trace.PrecodingActive(i) = logical(sixgr.util.structGet(replay, "PrecodingActive", false));
+trace.ExplicitBeamWeightsApplied(i) = logical(sixgr.util.structGet(replay, "ExplicitBeamWeightsApplied", false));
+trace.TransformPrecodingApplied(i) = logical(sixgr.util.structGet(replay, "TransformPrecodingApplied", false));
+trace.BeamformingApplied(i) = logical(sixgr.util.structGet(replay, "BeamformingApplied", false));
+trace.AppliedBeamIndexSet(i) = string(sixgr.util.structGet(replay, "AppliedBeamIndexSet", ""));
+trace.AppliedPrecoderPMI(i) = double(sixgr.util.structGet(replay, "AppliedPrecoderPMI", NaN));
+trace.AppliedPrecoderValueRole(i) = string(sixgr.util.structGet(replay, "AppliedPrecoderValueRole", ""));
+trace.AppliedPrecoderValueStatus(i) = string(sixgr.util.structGet(replay, "AppliedPrecoderValueStatus", ""));
+trace.AppliedPrecoderNAReason(i) = string(sixgr.util.structGet(replay, "AppliedPrecoderNAReason", ""));
+trace.ExplicitPrecoderReplayStatus(i) = string(sixgr.util.structGet(replay, "ExplicitPrecoderReplayStatus", ""));
+trace.ExplicitPrecoderReplayBlocker(i) = string(sixgr.util.structGet(replay, "ExplicitPrecoderReplayBlocker", ""));
+trace.AppliedPrecoderPMIType(i) = string(sixgr.util.structGet(replay, "AppliedPrecoderPMIType", ""));
+trace.AppliedPrecoderCodebookMode(i) = string(sixgr.util.structGet(replay, "AppliedPrecoderCodebookMode", ""));
+trace.PrecodingNumPorts(i) = double(sixgr.util.structGet(replay, "PrecodingNumPorts", NaN));
+trace.PrecodingNumLayers(i) = double(sixgr.util.structGet(replay, "PrecodingNumLayers", NaN));
+trace.PrecodingMatrixRows(i) = double(sixgr.util.structGet(replay, "PrecodingMatrixRows", NaN));
+trace.PrecodingMatrixCols(i) = double(sixgr.util.structGet(replay, "PrecodingMatrixCols", NaN));
 end
 
 function T = localGrantTraceToTable(trace, count)
 if count <= 0
     T = table([], [], string.empty(0,1), string.empty(0,1), [], [], [], [], [], [], [], [], [], [], [], [], [], ...
         false(0,1), [], [], [], false(0,1), [], [], [], [], [], [], [], [], [], string.empty(0,1), ...
+        string.empty(0,1), string.empty(0,1), string.empty(0,1), string.empty(0,1), false(0,1), false(0,1), string.empty(0,1), ...
         'VariableNames', {'TTI','Time_s','Direction','SlotDirection','CellID','UE','PRBStart','PRBCount', ...
         'SymbolStart','NumSymbols','TBSBits','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
         'SINR_dB','BLER','Ack','HarqID','RV','NDI','IsRetransmission','DAI','K1','K2', ...
-        'SearchSpaceID','CORESETID','BWPId','HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantReason'});
+        'SearchSpaceID','CORESETID','BWPId','HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantReason', ...
+        'PHYDecisionRole','PHYDecisionStatus','PHYDecisionSource','PHYDecisionReason','WaveformReplayExecuted','WaveformReplayReused','WaveformReplayKey'});
+    T = localAttachGrantTraceEvidenceColumns(T, trace, []);
     return;
 end
 idx = 1:count;
@@ -1798,10 +2201,79 @@ T = table(double(trace.TTI(idx)), double(trace.Time_s(idx)), string(trace.Direct
     double(trace.SearchSpaceID(idx)), double(trace.CORESETID(idx)), double(trace.BWPId(idx)), ...
     double(trace.HeadOfLineDelay_ms(idx)), double(trace.BufferBytesBefore(idx)), ...
     double(trace.BufferBytesAfter(idx)), string(trace.GrantReason(idx)), ...
+    string(trace.PHYDecisionRole(idx)), string(trace.PHYDecisionStatus(idx)), string(trace.PHYDecisionSource(idx)), ...
+    string(trace.PHYDecisionReason(idx)), logical(trace.WaveformReplayExecuted(idx)), logical(trace.WaveformReplayReused(idx)), ...
+    string(trace.WaveformReplayKey(idx)), ...
     'VariableNames', {'TTI','Time_s','Direction','SlotDirection','CellID','UE','PRBStart','PRBCount', ...
     'SymbolStart','NumSymbols','TBSBits','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
     'SINR_dB','BLER','Ack','HarqID','RV','NDI','IsRetransmission','DAI','K1','K2', ...
-    'SearchSpaceID','CORESETID','BWPId','HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantReason'});
+    'SearchSpaceID','CORESETID','BWPId','HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantReason', ...
+    'PHYDecisionRole','PHYDecisionStatus','PHYDecisionSource','PHYDecisionReason','WaveformReplayExecuted','WaveformReplayReused','WaveformReplayKey'});
+T = localAttachGrantTraceEvidenceColumns(T, trace, idx);
+end
+
+function T = localAttachGrantTraceEvidenceColumns(T, trace, idx)
+n = height(T);
+T.ReceiverHestSINR_dB = localTraceNumeric(trace, "ReceiverHestSINR_dB", idx, n, NaN);
+T.ReceiverHestSINRSource = localTraceString(trace, "ReceiverHestSINRSource", idx, n, "");
+T.ReceiverHestSINRValueRole = localTraceString(trace, "ReceiverHestSINRValueRole", idx, n, "");
+T.ReceiverHestSINRValueStatus = localTraceString(trace, "ReceiverHestSINRValueStatus", idx, n, "");
+T.ReceiverHestSINRNAReason = localTraceString(trace, "ReceiverHestSINRNAReason", idx, n, "");
+T.DecoderTruthProxySINR_dB = localTraceNumeric(trace, "DecoderTruthProxySINR_dB", idx, n, NaN);
+T.DecoderTruthProxySINRSource = localTraceString(trace, "DecoderTruthProxySINRSource", idx, n, "");
+T.DecoderTruthProxySINRValueRole = localTraceString(trace, "DecoderTruthProxySINRValueRole", idx, n, "");
+T.DecoderTruthProxySINRValueStatus = localTraceString(trace, "DecoderTruthProxySINRValueStatus", idx, n, "");
+T.DecoderTruthProxySINRNAReason = localTraceString(trace, "DecoderTruthProxySINRNAReason", idx, n, "");
+T.PrecoderSource = localTraceString(trace, "PrecoderSource", idx, n, "");
+T.RequestedPrecoderSource = localTraceString(trace, "RequestedPrecoderSource", idx, n, "");
+T.AppliedPrecoderSource = localTraceString(trace, "AppliedPrecoderSource", idx, n, "");
+T.RequestedPrecoderPMI = localTraceNumeric(trace, "RequestedPrecoderPMI", idx, n, NaN);
+T.PrecodingMode = localTraceString(trace, "PrecodingMode", idx, n, "");
+T.PrecodingApplicationStage = localTraceString(trace, "PrecodingApplicationStage", idx, n, "");
+T.PrecodingActive = localTraceLogical(trace, "PrecodingActive", idx, n, false);
+T.ExplicitBeamWeightsApplied = localTraceLogical(trace, "ExplicitBeamWeightsApplied", idx, n, false);
+T.TransformPrecodingApplied = localTraceLogical(trace, "TransformPrecodingApplied", idx, n, false);
+T.BeamformingApplied = localTraceLogical(trace, "BeamformingApplied", idx, n, false);
+T.AppliedBeamIndexSet = localTraceString(trace, "AppliedBeamIndexSet", idx, n, "");
+T.AppliedPrecoderPMI = localTraceNumeric(trace, "AppliedPrecoderPMI", idx, n, NaN);
+T.AppliedPrecoderValueRole = localTraceString(trace, "AppliedPrecoderValueRole", idx, n, "");
+T.AppliedPrecoderValueStatus = localTraceString(trace, "AppliedPrecoderValueStatus", idx, n, "");
+T.AppliedPrecoderNAReason = localTraceString(trace, "AppliedPrecoderNAReason", idx, n, "");
+T.ExplicitPrecoderReplayStatus = localTraceString(trace, "ExplicitPrecoderReplayStatus", idx, n, "");
+T.ExplicitPrecoderReplayBlocker = localTraceString(trace, "ExplicitPrecoderReplayBlocker", idx, n, "");
+T.AppliedPrecoderPMIType = localTraceString(trace, "AppliedPrecoderPMIType", idx, n, "");
+T.AppliedPrecoderCodebookMode = localTraceString(trace, "AppliedPrecoderCodebookMode", idx, n, "");
+T.PrecodingNumPorts = localTraceNumeric(trace, "PrecodingNumPorts", idx, n, NaN);
+T.PrecodingNumLayers = localTraceNumeric(trace, "PrecodingNumLayers", idx, n, NaN);
+T.PrecodingMatrixRows = localTraceNumeric(trace, "PrecodingMatrixRows", idx, n, NaN);
+T.PrecodingMatrixCols = localTraceNumeric(trace, "PrecodingMatrixCols", idx, n, NaN);
+end
+
+function values = localTraceNumeric(trace, name, idx, n, defaultValue)
+values = repmat(double(defaultValue), n, 1);
+if n == 0 || ~isfield(trace, name)
+    return;
+end
+values = double(trace.(name)(idx));
+values = values(:);
+end
+
+function values = localTraceString(trace, name, idx, n, defaultValue)
+values = repmat(string(defaultValue), n, 1);
+if n == 0 || ~isfield(trace, name)
+    return;
+end
+values = string(trace.(name)(idx));
+values = values(:);
+end
+
+function values = localTraceLogical(trace, name, idx, n, defaultValue)
+values = repmat(logical(defaultValue), n, 1);
+if n == 0 || ~isfield(trace, name)
+    return;
+end
+values = logical(trace.(name)(idx));
+values = values(:);
 end
 
 function T = localBuildHARQProcessTable(grantTable)
@@ -1874,19 +2346,36 @@ trace.Noise_dBm = NaN(nRows,1);
 trace.InterferenceMargin_dB = NaN(nRows,1);
 trace.SmallScaleFading_dB = NaN(nRows,1);
 trace.InterferenceVariation_dB = NaN(nRows,1);
+trace.DesiredPowerDL_dBm = NaN(nRows,1);
+trace.InterferencePowerDL_dBm = NaN(nRows,1);
+trace.NoiseDL_dBm = NaN(nRows,1);
+trace.ActiveInterfererCountDL = zeros(nRows,1);
+trace.DesiredPowerUL_dBm = NaN(nRows,1);
+trace.InterferencePowerUL_dBm = NaN(nRows,1);
+trace.NoiseUL_dBm = NaN(nRows,1);
+trace.ActiveInterfererCountUL = zeros(nRows,1);
 trace.SINR_DL_dB = NaN(nRows,1);
 trace.SINR_UL_dB = NaN(nRows,1);
 trace.RSRP_dBm = NaN(nRows,1);
 end
 
 function T = localInterferenceTraceToTable(trace)
+% Keep the legacy DL alias columns for downstream readers:
+% RxPower_dBm == DesiredPowerDL_dBm, Noise_dBm == NoiseDL_dBm, and
+% InterferenceMargin_dB is the exact DL interference-over-noise margin.
 T = table(double(trace.TTI), double(trace.Time_s), double(trace.UE), double(trace.ServingCell), ...
     double(trace.Pathloss_dB), double(trace.RxPower_dBm), double(trace.Noise_dBm), ...
     double(trace.InterferenceMargin_dB), double(trace.SmallScaleFading_dB), ...
-    double(trace.InterferenceVariation_dB), double(trace.SINR_DL_dB), ...
+    double(trace.InterferenceVariation_dB), double(trace.DesiredPowerDL_dBm), ...
+    double(trace.InterferencePowerDL_dBm), double(trace.NoiseDL_dBm), ...
+    double(trace.ActiveInterfererCountDL), double(trace.DesiredPowerUL_dBm), ...
+    double(trace.InterferencePowerUL_dBm), double(trace.NoiseUL_dBm), ...
+    double(trace.ActiveInterfererCountUL), double(trace.SINR_DL_dB), ...
     double(trace.SINR_UL_dB), double(trace.RSRP_dBm), ...
     'VariableNames', {'TTI','Time_s','UE','ServingCell','Pathloss_dB','RxPower_dBm', ...
     'Noise_dBm','InterferenceMargin_dB','SmallScaleFading_dB','InterferenceVariation_dB', ...
+    'DesiredPowerDL_dBm','InterferencePowerDL_dBm','NoiseDL_dBm','ActiveInterfererCountDL', ...
+    'DesiredPowerUL_dBm','InterferencePowerUL_dBm','NoiseUL_dBm','ActiveInterfererCountUL', ...
     'SINR_DL_dB','SINR_UL_dB','RSRP_dBm'});
 end
 
@@ -2018,10 +2507,6 @@ for i = 1:(numel(cut)-1)
 end
 end
 
-function y = localWrapTo180(x)
-y = mod(double(x) + 180, 360) - 180;
-end
-
 function ueSummary = localBuildUESummary( ...
     ue, layout, trafficClass, offeredBits, servedPerUE, droppedPerUE, ...
     sinrHist, rsrpHist, ebnoHist, blerHist, queueHist, dServeHist, simDur_s)
@@ -2117,12 +2602,16 @@ timeSeries = table(ttis, time_s, string(slotDirection), ...
                       'MeanQueueDL_bits','MeanQueueUL_bits'});
 end
 
-function [backendLabel, phyModeLabel, waveformBacked] = localDescribeSystemPHY(phy)
-backendLabel = "ABSTRACT_SYSTEM_PHY";
-phyModeLabel = "SINR_TO_BLER_ABSTRACTION";
+function [backendLabel, phyModeLabel, waveformBacked, proxyPHYActive, fallbackUsed] = localDescribeSystemPHY(phy)
+backendLabel = "NON_WAVEFORM_SYSTEM_PHY_BLOCKED";
+phyModeLabel = "BLOCKED_NON_WAVEFORM_BACKEND";
 waveformBacked = false;
+proxyPHYActive = true;
+fallbackUsed = true;
 if isa(phy, "sixgr.system.WaveformPHY")
     waveformBacked = true;
+    proxyPHYActive = false;
+    fallbackUsed = false;
     if isprop(phy, "ExecutionBackend")
         backendLabel = string(phy.ExecutionBackend);
     else
@@ -2136,9 +2625,30 @@ if isa(phy, "sixgr.system.WaveformPHY")
 end
 end
 
+function replay = localLastPHYReplay(phy)
+replay = struct();
+try
+    if isprop(phy, "LastReplay")
+        replay = phy.LastReplay;
+    end
+catch
+    replay = struct();
+end
+end
+
+function tf = localPHYDecisionUnavailable(replay)
+tf = false;
+if nargin < 1 || ~isstruct(replay)
+    return;
+end
+status = upper(strtrim(string(sixgr.util.structGet(replay, "PHYDecisionStatus", ""))));
+role = lower(strtrim(string(sixgr.util.structGet(replay, "PHYDecisionRole", ""))));
+tf = any(status == ["NOT_AVAILABLE", "UNSUPPORTED"]) || any(role == ["unavailable", "unsupported"]);
+end
+
 function algoProc = localBuildAlgoTable( ...
     cfg, trafficModel, trafficClass, nTTI, tti_s, K, decodeOkCount, decodeFailCount, overflowEvents, avgActiveUE, ...
-    hoTriggerTotal, hoCompleteTotal, hoInterruptedUEmean, phyBackendLabel, phyModeLabel, waveformBacked)
+    hoTriggerTotal, hoCompleteTotal, hoInterruptedUEmean, phyBackendLabel, phyModeLabel, waveformBacked, proxyPHYActive, fallbackUsed)
 
 scheduler = string(sixgr.util.structGet(cfg, "mac.scheduler.type", "rr"));
 pathlossModel = string(sixgr.util.structGet(cfg, "channel.pathlossModel", "nrPathLoss"));
@@ -2152,12 +2662,13 @@ name = ["NumTTI";"TTI_s";"NumUE";"Scheduler";"PathlossModel";"TrafficModel"; ...
         "TrafficClasses";"DuplexMode";"WaveformDL";"WaveformUL"; ...
         "DecodeOK";"DecodeFail";"OverflowEvents";"AvgActiveUE"; ...
         "HOTriggered";"HOCompleted";"HOInterruptedUE_Mean"; ...
-        "PHYBackend";"PHYMode";"WaveformBacked"];
+        "PHYBackend";"PHYMode";"WaveformBacked";"WaveformPHYActive";"ProxyPHYActive";"FallbackUsed"];
 value = [string(nTTI);string(tti_s);string(K);scheduler;pathlossModel;string(trafficModel); ...
          string(uClass);duplexMode;wfDL;wfUL;string(decodeOkCount);string(decodeFailCount); ...
          string(overflowEvents);string(avgActiveUE); ...
          string(hoTriggerTotal);string(hoCompleteTotal);string(hoInterruptedUEmean); ...
-         string(phyBackendLabel);string(phyModeLabel);string(logical(waveformBacked))];
+         string(phyBackendLabel);string(phyModeLabel);string(logical(waveformBacked)); ...
+         string(logical(waveformBacked));string(logical(proxyPHYActive));string(logical(fallbackUsed))];
 algoProc = table(name, value, 'VariableNames', {'Metric','Value'});
 end
 
@@ -2202,10 +2713,12 @@ set(groot, "defaultFigureVisible", "off");
 
 % SINR CDF
 f = figure("Color","w");
-cdfplot(sinrHist(~isnan(sinrHist))); grid on;
+ax = axes(f);
+localPlotEmpiricalCDF(ax, sinrHist(~isnan(sinrHist)));
+grid(ax, "on");
 xlabel("SINR (dB)"); ylabel("CDF"); title("SINR CDF");
 fp = fullfile(figDir, "system_sinr_cdf.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % RSRP vs SINR
@@ -2219,7 +2732,7 @@ end
 scatter(x(idx), y(idx), 4, ".", "MarkerEdgeAlpha", 0.3); grid on;
 xlabel("SINR (dB)"); ylabel("RSRP (dBm)"); title("RSRP vs SINR");
 fp = fullfile(figDir, "system_rsrp_vs_sinr.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % EbNo vs time
@@ -2231,7 +2744,7 @@ grid on; xlabel("Time (s)"); ylabel("dB");
 title("Mean Eb/No and SINR vs Time");
 legend({"Mean Eb/No","Mean SINR"}, "Location", "best");
 fp = fullfile(figDir, "system_ebno_sinr_vs_time.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % Throughput and offered load vs time
@@ -2242,7 +2755,7 @@ grid on; xlabel("Time (s)"); ylabel("Mbps");
 title("Offered Load vs Throughput");
 legend({"Offered","Served"}, "Location", "best");
 fp = fullfile(figDir, "system_throughput_vs_time.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % Queue evolution
@@ -2253,7 +2766,7 @@ grid on; xlabel("Time (s)"); ylabel("Queue (bits)");
 title("Queue Evolution");
 legend({"Mean queue","P95 queue"}, "Location", "best");
 fp = fullfile(figDir, "system_queue_vs_time.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % UE throughput by traffic class
@@ -2263,30 +2776,31 @@ boxchart(cats, ueSummary.Throughput_Mbps); grid on;
 xlabel("Traffic class"); ylabel("UE throughput (Mbps)");
 title("UE Throughput by Traffic Class");
 fp = fullfile(figDir, "system_ue_throughput_by_traffic_class.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % Cell-edge vs center SINR
 f = figure("Color","w");
-hold on;
+ax = axes(f);
+hold(ax, "on");
 zc = ueSummary.Zone == "center";
 ze = ueSummary.Zone == "edge";
 leg = strings(0,1);
 if any(zc)
-    cdfplot(ueSummary.MeanSINR_dB(zc));
+    localPlotEmpiricalCDF(ax, ueSummary.MeanSINR_dB(zc));
     leg(end+1,1) = "Center"; %#ok<AGROW>
 end
 if any(ze)
-    cdfplot(ueSummary.MeanSINR_dB(ze));
+    localPlotEmpiricalCDF(ax, ueSummary.MeanSINR_dB(ze));
     leg(end+1,1) = "Edge"; %#ok<AGROW>
 end
-grid on; xlabel("Mean SINR (dB)"); ylabel("CDF");
+grid(ax, "on"); xlabel("Mean SINR (dB)"); ylabel("CDF");
 title("Center vs Edge UE Mean SINR");
 if ~isempty(leg)
     legend(cellstr(leg), "Location", "best");
 end
 fp = fullfile(figDir, "system_center_edge_sinr_cdf.png");
-exportgraphics(f, fp, "Resolution", figRes); close(f);
+sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
 files{end+1} = fp;
 
 % Mobility trajectories (if captured)
@@ -2301,9 +2815,25 @@ if detailedTrace && ~isempty(posXHist) && ~isempty(posYHist)
     xlabel("x (m)"); ylabel("y (m)");
     title("Sample UE Mobility Trajectories");
     fp = fullfile(figDir, "system_ue_trajectories.png");
-    exportgraphics(f, fp, "Resolution", figRes); close(f);
+    sixgr.util.exportFigureArtifact(f, fp, "Resolution", figRes); close(f);
     files{end+1} = fp;
 end
+end
+
+function h = localPlotEmpiricalCDF(ax, values)
+if nargin < 1 || isempty(ax) || ~isgraphics(ax, "axes")
+    ax = gca;
+end
+values = double(values(:));
+values = values(isfinite(values));
+if isempty(values)
+    h = plot(ax, NaN, NaN, "LineWidth", 1.2);
+    return;
+end
+values = sort(values);
+y = (1:numel(values)) ./ numel(values);
+h = stairs(ax, values, y, "LineWidth", 1.2);
+ylim(ax, [0 1]);
 end
 
 function localWriteReplayScript(mFile, nTTI, tti_s, detailedTrace)
@@ -2341,6 +2871,89 @@ runtime.WarningCount = 0;
 runtime.Warnings = strings(0,1);
 runtime.ErrorCount = double(numel(errors));
 runtime.Errors = string(errors(:));
+end
+
+function nSlots = localResolveProgressEverySlots(cfg, nTTI)
+nSlots = sixgr.util.structGet(cfg, "run.logEverySlots", ...
+    sixgr.util.structGet(cfg, "run.snapshotEverySlots", ...
+    sixgr.util.structGet(cfg, "outputs.liveProgressEverySlots", [])));
+if isempty(nSlots) || ~isfinite(double(nSlots)) || double(nSlots) <= 0
+    nSlots = max(1, floor(double(nTTI) / 100));
+end
+nSlots = max(1, round(double(nSlots)));
+end
+
+function localEmitLiveProgress(cfg, log, runTimer, slotIdx, totalSlots, tti_s, ...
+    slotLabel, activeUECount, nCells, grantCount, servedBits, droppedBits, ...
+    overflowEvents, stageName)
+
+if nargin < 14 || strlength(string(stageName)) == 0
+    stageName = "system_level_lls_progress";
+end
+slotIdx = max(0, round(double(slotIdx)));
+totalSlots = max(1, round(double(totalSlots)));
+elapsed_s = double(toc(runTimer));
+completion = min(1, max(0, double(slotIdx) / max(double(totalSlots), 1)));
+simTime_ms = 1e3 * double(tti_s) * double(slotIdx);
+stageText = char(string(stageName));
+slotText = char(string(slotLabel));
+nowUTC = localUTCStamp();
+
+msg = sprintf(['%s slot=%d/%d completion=%.4f elapsed_s=%.1f ' ...
+    'slot_direction=%s active_ue=%d cells=%d grants=%d served_bits=%.0f ' ...
+    'dropped_bits=%.0f overflow_events=%d'], ...
+    stageText, slotIdx, totalSlots, completion, elapsed_s, slotText, ...
+    round(double(activeUECount)), round(double(nCells)), round(double(grantCount)), ...
+    double(servedBits), double(droppedBits), round(double(overflowEvents)));
+
+try
+    fprintf('[%s] INFO %s\n', nowUTC, msg);
+catch
+end
+try
+    if ~isempty(log)
+        log.info(string(msg));
+    end
+catch
+end
+
+try
+    if sixgr.db.isArtifactStoreActive()
+        payload = struct();
+        payload.stage = stageText;
+        payload.current_slot = double(slotIdx);
+        payload.total_slots = double(totalSlots);
+        payload.run_completion = completion;
+        payload.elapsed_s = elapsed_s;
+        payload.sim_time_ms = simTime_ms;
+        payload.slot_duration_ms = 1e3 * double(tti_s);
+        payload.slot_direction = slotText;
+        payload.active_ue_count = double(activeUECount);
+        payload.cell_count = double(nCells);
+        payload.grant_count_slot = double(grantCount);
+        payload.served_bits_total = double(servedBits);
+        payload.dropped_bits_total = double(droppedBits);
+        payload.overflow_event_count = double(overflowEvents);
+        payload.scenario_id = char(string(sixgr.util.structGet(cfg, ...
+            "meta.lls6gScenarioID", sixgr.util.structGet(cfg, "scenario.id", ""))));
+        payload.run_profile = char(string(sixgr.util.structGet(cfg, "run.profile", ...
+            sixgr.util.structGet(cfg, "run.mode", ""))));
+        payload.value_role = "measured";
+        payload.value_source = "sixgr.system.SystemLevelRunner";
+        payload.value_status = "OK";
+        payload.placeholder_flag = false;
+        payload.fallback_flag = false;
+        payload.config_only_flag = false;
+        payload.timestamp_utc = nowUTC;
+        sixgr.db.markRunStatus("running", payload);
+        sixgr.db.appendLogLine("INFO", nowUTC, msg);
+    end
+catch ME
+    try
+        fprintf('[%s] WARN system progress DB heartbeat failed: %s\n', nowUTC, ME.message);
+    catch
+    end
+end
 end
 
 function env = localBuildEnvironmentSummary(ctx)

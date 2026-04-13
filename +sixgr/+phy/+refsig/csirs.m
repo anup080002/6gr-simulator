@@ -72,13 +72,24 @@ if isempty(row)
 end
 csirs.RowNumber = double(row);
 
-% Basic placement defaults (can be overridden later when config expands)
-csirs.SymbolLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.symbolLocations', 0));
-csirs.SubcarrierLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.subcarrierLocations', 0));
+% Basic placement defaults. Multi-port CSI-RS rows require different k_i/l_i
+% vector lengths; use valid NR Toolbox defaults unless config overrides them.
+csirs.SymbolLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.symbolLocations', localDefaultSymbolLocations(row)));
+csirs.SubcarrierLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.subcarrierLocations', localDefaultSubcarrierLocations(row)));
 csirs.NumRB = double(sixgr.util.structGet(cfg, 'phy.csirs.numRB', carrier.NSizeGrid));
 csirs.RBOffset = double(sixgr.util.structGet(cfg, 'phy.csirs.rbOffset', 0));
+try
+    csirs.Density = char(string(sixgr.util.structGet(cfg, 'phy.csirs.density', localDefaultDensity(row))));
+catch
+end
 cdm = sixgr.util.structGet(cfg, 'phy.csirs.cdmType', 'FD-CDM2');
-csirs.CDMType = char(cdm);
+try
+    csirs.CDMType = char(cdm);
+catch
+    % Some 5G Toolbox releases make CDMType read-only and derive it from
+    % RowNumber. Keep generation runtime-backed instead of failing on an
+    % optional override that this release cannot apply directly.
+end
 
 % Scrambling identity
 try
@@ -106,6 +117,38 @@ for r = 1:18
 end
 if isempty(row)
     error('csirs:NoMatchingRow', 'No nrCSIRSConfig.RowNumber found for nPorts=%d.', nPorts);
+end
+end
+
+function loc = localDefaultSubcarrierLocations(row)
+switch double(row)
+    case {6, 11, 12, 16, 17, 18}
+        loc = [0 3 6 9];
+    case {7, 8}
+        loc = [0 6];
+    case 9
+        loc = [0 2 4 6 8 10];
+    case {10, 13, 14, 15}
+        loc = [0 4 8];
+    otherwise
+        loc = 0;
+end
+end
+
+function loc = localDefaultSymbolLocations(row)
+switch double(row)
+    case {13, 14, 16, 17}
+        loc = [0 2];
+    otherwise
+        loc = 0;
+end
+end
+
+function density = localDefaultDensity(row)
+if double(row) == 1
+    density = "three";
+else
+    density = "one";
 end
 end
 

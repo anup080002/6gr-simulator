@@ -22,6 +22,9 @@ classdef PhaseNoiseModel < handle
         SampleRate_Hz (1,1) double = 1e6
         Seed (1,1) double = 1
         UseCommObj (1,1) logical = false
+        Backend (1,1) string = ""
+        TruthClassification (1,1) string = ""
+        ApproximationReason (1,1) string = ""
     end
 
     properties(Access=private)
@@ -57,20 +60,37 @@ classdef PhaseNoiseModel < handle
             end
 
             obj.UseCommObj = (exist("comm.PhaseNoise","class") == 8);
+            obj.Backend = "disabled";
+            obj.TruthClassification = "disabled";
+            obj.ApproximationReason = "";
 
-            if obj.UseCommObj && obj.Enable
+            if ~obj.Enable
+                obj.Obj = [];
+                return;
+            end
+
+            if obj.UseCommObj
                 try
                     obj.Obj = comm.PhaseNoise( ...
                         "Level", obj.Level_dBcHz, ...
                         "FrequencyOffset", obj.FrequencyOffset_Hz, ...
                         "SampleRate", obj.SampleRate_Hz);
+                    obj.Backend = "comm_phase_noise_runtime_backend";
+                    obj.TruthClassification = "toolbox_runtime_phase_noise_backend";
+                    obj.ApproximationReason = "";
                 catch ME
                     obj.UseCommObj = false;
                     obj.Obj = [];
+                    obj.Backend = "wiener_linewidth_proxy_fallback";
+                    obj.TruthClassification = "approximate_phase_noise_proxy_fallback";
+                    obj.ApproximationReason = "comm_phasenoise_initialization_failed_" + string(ME.identifier);
                     warning("PhaseNoiseModel:CommFailed","comm.PhaseNoise init failed: %s", ME.message);
                 end
             else
                 obj.Obj = [];
+                obj.Backend = "wiener_linewidth_proxy_fallback";
+                obj.TruthClassification = "approximate_phase_noise_proxy_fallback";
+                obj.ApproximationReason = "comm_phasenoise_class_unavailable_in_current_matlab_environment";
             end
         end
 

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jio Platforms Limited RAN Simulator — Antenna & Air Interface</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="data.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="antenna">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main-wrap">
+      <header class="topbar" id="topbar"></header>
+      <main class="main">
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Antenna & Air Interface</h3><p class="panel-subtitle">BS/UE arrays, beamforming, channel/air-interface coupling, ToA/ToD, and interference-path truth.</p></div><span class="badge green">Array + channel truth</span></div><div class="panel-body"><div class="layout-board">
+<div class="layout-col"><h4>BS antenna</h4><ul><li>Array profile, rows/cols/elements</li><li>Tilt, boresight, polarization</li><li>Ports / TXRU / logical ports</li><li>Beam policy and active precoder</li></ul></div>
+<div class="layout-col"><h4>UE antenna</h4><ul><li>Tx/Rx ports and elements</li><li>Array profile and orientation</li><li>Receiver path assumptions</li><li>UL beam/precoder truth</li></ul></div>
+<div class="layout-col"><h4>Air interface</h4><ul><li>Pathloss / shadowing / O2I</li><li>Delay spread / Doppler</li><li>Serving + interferer paths</li><li>Noise / impairments / timing</li></ul></div>
+<div class="layout-col"><h4>Timing / positioning</h4><ul><li>ToA / ToD lineage</li><li>Propagation delay source</li><li>Timing estimate used</li><li>Runtime evidence tables</li></ul></div>
+</div></div></section>
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Design note</h3><p class="panel-subtitle">Antenna creation, beamforming, channel usage, and interference assumptions must come from one same-flow runtime path.</p></div></div><div class="panel-body"><div class="clean-note">This page should answer: what arrays exist, where they are created, where they are applied, whether the channel uses the same antenna assumptions, and whether the interferer path uses the same beam/precoder truth.</div></div></section>
+</main>
+    </div>
+    <aside class="rightbar" id="rightbar"></aside>
+  </div>
+</body>
+</html>

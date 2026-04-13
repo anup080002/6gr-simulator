@@ -1,0 +1,51 @@
+function ok = test6G4GHzScenarioFamilyConfig()
+%TEST6G4GHZSCENARIOFAMILYCONFIG Validate the 4 GHz / 100 MHz browser-study family wiring.
+
+setup6GRSimToolkit("Verbose", false);
+
+rootPath = "simulator/configs/scenarios/lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml";
+variantPath = "simulator/configs/scenarios/variants/SCN00_BASELINE_CAPACITY.yaml";
+
+assert(exist(rootPath, "file") == 2, "Missing family root scenario YAML.");
+assert(exist(variantPath, "file") == 2, "Missing SCN00 baseline variant YAML.");
+
+scfg = sixgr.lls6g.config.loadScenarioConfig(variantPath);
+cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "scn00_family_config_check"));
+
+assert(string(scfg.ScenarioID) == "SCN00_BASELINE_CAPACITY", "SCN00 scenario id mismatch.");
+assert(string(scfg.get("meta.scenario_group")) == "6G_4GHz_100MHz_19S3_100UE_UMa", ...
+    "Scenario group mismatch for the 4 GHz family.");
+assert(double(scfg.get("frequency.center_frequency_hz")) == 4.0e9, "Center frequency mismatch.");
+assert(double(scfg.get("frequency.bandwidth_hz")) == 100.0e6, "Bandwidth mismatch.");
+assert(string(scfg.get("frequency.duplex_mode")) == "TDD", "Duplex mode mismatch.");
+assert(double(scfg.get("frame.scs_khz")) == 30, "SCS mismatch.");
+assert(string(scfg.get("frame.tdd_pattern")) == "DDDDU", "TDD pattern mismatch.");
+assert(double(scfg.get("deployment_topology.num_sites")) == 19, "Site count mismatch.");
+assert(double(scfg.get("deployment_topology.num_cells")) == 57, "Cell count mismatch.");
+assert(double(scfg.get("deployment_topology.num_ues")) == 100, "UE count mismatch.");
+assert(logical(scfg.get("deployment_topology.wraparound_enabled")), "Wraparound must be enabled.");
+assert(logical(scfg.get("interference.inter_cell_interference_flag")), "Inter-cell interference must be enabled.");
+assert(string(scfg.get("interference.inter_cell_execution_mode")) == "full_per_link_channel_waveform_sum", ...
+    "Baseline inter-cell execution mode must disclose the large-scale activity power budget without using the removed abstract PHY mode.");
+assert(string(scfg.get("run_control.execution_mode")) == "LLS", "Browser execution mode must stay on LLS.");
+assert(string(scfg.get("run_control.simulation_mode")) == "full_phy", ...
+    "Simulation mode mismatch.");
+assert(string(scfg.get("scenario.runner_profile")) == "system_level_lls", "Runner profile mismatch.");
+assert(string(scfg.get("users.beam_selection_strategy")) == "runtime_best_beam_per_link", ...
+    "Baseline beam selection strategy must reflect the active system-level runtime beam owner.");
+assert(isequal(string(scfg.get("scenario.bundle_anchor_cases")), "ul_lowpapr"), ...
+    "Scenario bundle anchor cases must explicitly bound the preflight stage.");
+assert(string(scfg.get("output.backend")) == "mysql_web", "Output backend must stay on mysql_web.");
+
+assert(double(sixgr.util.structGet(cfg, "scenario.nUE", NaN)) == 100, "Internal config UE count mismatch.");
+assert(double(sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", NaN)) == 100, ...
+    "Internal config bandwidth propagation mismatch.");
+assert(double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", NaN)) == 30, ...
+    "Internal config SCS propagation mismatch.");
+assert(strcmpi(char(string(sixgr.util.structGet(cfg, "mac.scheduler.type", ""))), "PF"), ...
+    "Internal config scheduler type mismatch.");
+assert(double(sixgr.util.structGet(cfg, "run.batchSizeLinks", NaN)) == 1, ...
+    "Internal config batch_size_links wiring mismatch.");
+
+ok = true;
+end

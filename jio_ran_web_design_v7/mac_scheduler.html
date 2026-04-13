@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jio Platforms Limited RAN Simulator — MAC / Scheduler</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="data.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="mac">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main-wrap">
+      <header class="topbar" id="topbar"></header>
+      <main class="main">
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Scheduler decision workflow</h3><p class="panel-subtitle">Queues, eligibility, control gating, candidate ranking, PRB allocation, and MCS/TBS/HARQ decisions.</p></div><span class="badge purple">MAC / Scheduler</span></div><div class="panel-body" id="macWorkflow"></div></section>
+<div class="section-grid"><div class="panel"><div class="panel-header"><div><h3 class="panel-title">Scheduler summary</h3><p class="panel-subtitle">Resolved runtime scheduler policy and adaptation state.</p></div></div><div class="panel-body" id="macSummary"></div></div><div class="panel"><div class="panel-header"><div><h3 class="panel-title">Why this page exists</h3><p class="panel-subtitle">Users should understand scheduling logic separately from PHY blocks.</p></div></div><div class="panel-body"><div class="clean-note">This page is where PRB policy, fairness, OLLA, HARQ, target BLER, and queue/latency behavior are configured and reviewed. The L1 page should show how grants are consumed, not how they are chosen.</div></div></div></div>
+</main>
+    </div>
+    <aside class="rightbar" id="rightbar"></aside>
+  </div>
+</body>
+</html>

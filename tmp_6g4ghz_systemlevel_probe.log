@@ -1,0 +1,8 @@
+STEP0
+STEP1
+[2026-04-10T15:51:10Z] INFO Preparing LLS run: scenario=SCN00_BASELINE_CAPACITY_SYSTEMLEVEL_SMOKE runTag=system_level_smoke runFolder=C:\Anup\6gsimulation\sixgr_foundation_v2\results\lls\scn00_baseline_capacity_systemlevel_smoke\system_level_smoke
+[2026-04-10T15:51:11Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-04-10T15:51:11Z] INFO Writing resolved snapshots.
+[2026-04-10T15:51:12Z] INFO Exporting live geometry artifacts.
+[2026-04-10T15:51:12Z] INFO Executing runner profile=system_level_lls.
+[2026-04-10T15:51:12Z] INFO System-level LLS starting: NumTTI=2 PHYBackend=waveform

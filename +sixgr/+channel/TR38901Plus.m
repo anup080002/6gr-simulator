@@ -29,12 +29,20 @@ classdef TR38901Plus < handle
 
         % "nrPathLoss" or "ABG"
         PathlossModel (1,1) string = "nrPathLoss"
+        PathlossExecutionBackend (1,1) string = ""
+        PathlossTruthClassification (1,1) string = ""
+        PathlossApproximationReason (1,1) string = ""
 
         % ABG coefficients (used if PathlossModel="ABG")
         ABG struct
 
         % Shadow fading sigma (dB). Set 0 to disable.
         ShadowSigma_dB (1,1) double = 0
+
+        % Propagation feature flags.
+        PathlossEnabled (1,1) logical = true
+        ShadowFadingEnabled (1,1) logical = true
+        LOSEnabled (1,1) logical = true
 
         % O2I model: "none" | "low" | "high" | "custom"
         O2IModel (1,1) string = "none"
@@ -56,6 +64,9 @@ classdef TR38901Plus < handle
             obj.Fc_Hz = double(localCanonicalStructGet(cfg, "phy.fc_Hz", "channel.fc_Hz", obj.Fc_Hz));
             obj.PathlossModel = string(localCanonicalStructGet(cfg, "channel.pathlossModel", "channel.pathloss.model", obj.PathlossModel));
             obj.ShadowSigma_dB = double(localCanonicalStructGet(cfg, "channel.shadowSigma_dB", "channel.shadowFadingStd_dB", obj.ShadowSigma_dB));
+            obj.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", obj.PathlossEnabled));
+            obj.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", obj.ShadowFadingEnabled));
+            obj.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", obj.LOSEnabled));
             obj.O2IModel = string(sixgr.util.structGet(cfg, "channel.o2i.model", obj.O2IModel));
             obj.O2ICustom_dB = double(sixgr.util.structGet(cfg, "channel.o2i.custom_dB", obj.O2ICustom_dB));
 
@@ -84,6 +95,12 @@ classdef TR38901Plus < handle
                         obj.PathlossModel = string(val);
                     case "shadowsigma_db"
                         obj.ShadowSigma_dB = double(val);
+                    case "pathlossenabled"
+                        obj.PathlossEnabled = logical(val);
+                    case "shadowfadingenabled"
+                        obj.ShadowFadingEnabled = logical(val);
+                    case "losenabled"
+                        obj.LOSEnabled = logical(val);
                     case "o2imodel"
                         obj.O2IModel = string(val);
                     case "o2icustom_db"
@@ -106,6 +123,8 @@ classdef TR38901Plus < handle
             else
                 obj.Stream = RandStream("mt19937ar","Seed",double(seed));
             end
+
+            obj = obj.refreshPathlossTruthBoundary();
 
             localLogResolvedConfigOnce(cfg, obj);
         end
@@ -134,14 +153,24 @@ classdef TR38901Plus < handle
             % Name-value:
             %   "Scenario"    : override scenario name
             %   "LOS"         : provide LOS flags directly (logical)
+            %   "Shadow_dB"   : provide shadow-fading values directly
+            %   "O2ILoss_dB"  : provide O2I loss directly
             %   "IndoorRx"    : logical (scalar or Nx1)
             %   "IndoorDistance_m": scalar or Nx1 (for O2I)
+            %   "PathlossEnabled"     : override pathloss flag
+            %   "ShadowFadingEnabled" : override shadow-fading flag
+            %   "LOSEnabled"          : override LOS-logic flag
             %
             opt = struct();
             opt.Scenario = obj.Scenario;
             opt.LOS = [];
+            opt.Shadow_dB = [];
+            opt.O2ILoss_dB = [];
             opt.IndoorRx = false;
             opt.IndoorDistance_m = [];
+            opt.PathlossEnabled = obj.PathlossEnabled;
+            opt.ShadowFadingEnabled = obj.ShadowFadingEnabled;
+            opt.LOSEnabled = obj.LOSEnabled;
 
             if mod(numel(varargin),2) ~= 0
                 error("TR38901Plus:pathloss:BadNV","Name-value inputs must come in pairs.");
@@ -154,10 +183,20 @@ classdef TR38901Plus < handle
                         opt.Scenario = string(val);
                     case "los"
                         opt.LOS = logical(val);
+                    case {"shadow_db","shadowfading_db"}
+                        opt.Shadow_dB = double(val);
+                    case {"o2iloss_db","o2i_db"}
+                        opt.O2ILoss_dB = double(val);
                     case {"indoor","indoorrx"}
                         opt.IndoorRx = logical(val);
                     case {"indoordistance_m","dindoor_m","dindoor"}
                         opt.IndoorDistance_m = double(val);
+                    case "pathlossenabled"
+                        opt.PathlossEnabled = logical(val);
+                    case "shadowfadingenabled"
+                        opt.ShadowFadingEnabled = logical(val);
+                    case "losenabled"
+                        opt.LOSEnabled = logical(val);
                     otherwise
                         error("TR38901Plus:pathloss:UnknownOpt","Unknown option: %s", name);
                 end
@@ -178,43 +217,64 @@ classdef TR38901Plus < handle
 
             % LOS
             if isempty(opt.LOS)
-                los = obj.drawLOS(d2d, opt.Scenario);
+                if opt.LOSEnabled
+                    los = obj.drawLOS(d2d, opt.Scenario);
+                else
+                    los = false(1,N);
+                end
             else
                 los = opt.LOS;
                 if isscalar(los) && N > 1
                     los = repmat(los,1,N);
                 end
             end
+            los = logical(double(los(:)).');
 
             % Base pathloss
             plBase = zeros(1,N);
-            model = lower(strtrim(obj.PathlossModel));
-            if any(model == ["nrpathloss","nr"])
-                plBase = obj.pathlossViaNrPathLoss(txPos_m, rxPos_m, los, opt.Scenario);
-            elseif any(model == ["abg","tr38901abg","fr3abg"])
-                plBase = sixgr.channel.PathlossABG(d3d, obj.Fc_Hz, obj.ABG, "Stream", obj.Stream);
-            else
-                % Fallback: free-space path loss
-                c = 299792458;
-                lambda = c / obj.Fc_Hz;
-                plBase = 20*log10(4*pi*max(d3d,1e-3)/lambda);
+            if opt.PathlossEnabled
+                model = lower(strtrim(obj.PathlossModel));
+                if any(model == ["nrpathloss","nr"])
+                    plBase = obj.pathlossViaNrPathLoss(txPos_m, rxPos_m, los, opt.Scenario);
+                elseif any(model == ["abg","tr38901abg","fr3abg"])
+                    plBase = sixgr.channel.PathlossABG(d3d, obj.Fc_Hz, obj.ABG, "Stream", obj.Stream);
+                else
+                    % Fallback: free-space path loss
+                    c = 299792458;
+                    lambda = c / obj.Fc_Hz;
+                    plBase = 20*log10(4*pi*max(d3d,1e-3)/lambda);
+                end
             end
             plBase = double(plBase(:)).';
 
             % Shadow fading
             sf = zeros(1,N);
-            if obj.ShadowSigma_dB > 0
+            if ~isempty(opt.Shadow_dB)
+                sf = double(opt.Shadow_dB);
+                if isscalar(sf) && N > 1
+                    sf = repmat(sf, 1, N);
+                end
+            elseif opt.ShadowFadingEnabled && obj.ShadowSigma_dB > 0
                 sf = obj.ShadowSigma_dB .* randn(obj.Stream, 1, N);
             end
             sf = double(sf(:)).';
+            if ~opt.ShadowFadingEnabled
+                sf(:) = 0;
+            end
 
             % O2I
             indoor = opt.IndoorRx;
             if isscalar(indoor) && N > 1
                 indoor = repmat(indoor,1,N);
             end
+            indoor = logical(double(indoor(:)).');
             o2i = zeros(1,N);
-            if any(indoor)
+            if ~isempty(opt.O2ILoss_dB)
+                o2i = double(opt.O2ILoss_dB);
+                if isscalar(o2i) && N > 1
+                    o2i = repmat(o2i, 1, N);
+                end
+            elseif opt.PathlossEnabled && any(indoor)
                 if isempty(opt.IndoorDistance_m)
                     dIn = 10; % m
                 else
@@ -235,6 +295,9 @@ classdef TR38901Plus < handle
                 end
             end
             o2i = double(o2i(:)).';
+            if ~opt.PathlossEnabled
+                o2i(:) = 0;
+            end
 
             pl_dB = plBase + sf + o2i;
 
@@ -248,10 +311,39 @@ classdef TR38901Plus < handle
             ex.scenario = opt.Scenario;
             ex.fc_Hz = obj.Fc_Hz;
             ex.model = obj.PathlossModel;
+            ex.pathlossEnabled = opt.PathlossEnabled;
+            ex.shadowFadingEnabled = opt.ShadowFadingEnabled;
+            ex.losEnabled = opt.LOSEnabled;
         end
     end
 
     methods(Access=private)
+        function obj = refreshPathlossTruthBoundary(obj)
+            model = lower(strtrim(obj.PathlossModel));
+            obj.PathlossExecutionBackend = "";
+            obj.PathlossTruthClassification = "";
+            obj.PathlossApproximationReason = "";
+
+            if any(model == ["nrpathloss","nr"])
+                if exist("nrPathLossConfig","class") == 8 && exist("nrPathLoss","file") == 2
+                    obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
+                    obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
+                else
+                    obj.PathlossExecutionBackend = "free_space_path_loss_fallback";
+                    obj.PathlossTruthClassification = "approximate_fallback_not_tr38901_pathloss";
+                    obj.PathlossApproximationReason = "nrpathloss_runtime_backend_unavailable_in_current_matlab_environment";
+                end
+            elseif any(model == ["abg","tr38901abg","fr3abg"])
+                obj.PathlossExecutionBackend = "abg_large_scale_model";
+                obj.PathlossTruthClassification = "approximate_abg_large_scale_pathloss_model";
+                obj.PathlossApproximationReason = "abg_pathloss_is_a_configured_large_scale_abstraction_not_nrpathloss_runtime";
+            else
+                obj.PathlossExecutionBackend = "free_space_path_loss_shortcut";
+                obj.PathlossTruthClassification = "approximate_non_tr38901_pathloss_shortcut";
+                obj.PathlossApproximationReason = "configured_pathloss_model_is_not_nrpathloss_or_abg";
+            end
+        end
+
         function pl = pathlossViaNrPathLoss(obj, txPos_m, rxPos_m, los, scenarioName)
             % Use nrPathLoss if available. Otherwise, fallback to FSPL.
             N = size(txPos_m,2);
@@ -259,12 +351,19 @@ classdef TR38901Plus < handle
 
             if exist("nrPathLossConfig","class") ~= 8 || exist("nrPathLoss","file") ~= 2
                 % Fallback: FSPL
+                obj.PathlossExecutionBackend = "free_space_path_loss_fallback";
+                obj.PathlossTruthClassification = "approximate_fallback_not_tr38901_pathloss";
+                obj.PathlossApproximationReason = "nrpathloss_runtime_backend_unavailable_in_current_matlab_environment";
                 c = 299792458;
                 lambda = c / obj.Fc_Hz;
                 d3d = sqrt(sum((txPos_m - rxPos_m).^2,1));
                 pl = 20*log10(4*pi*max(d3d,1e-3)/lambda);
                 return;
             end
+
+            obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
+            obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
+            obj.PathlossApproximationReason = "";
 
             % Try to configure nrPathLossConfig; keep minimal to avoid version issues.
             try
@@ -323,7 +422,8 @@ if ~verbose
     return;
 end
 
-fprintf("[TR38901Plus] Resolved config: Scenario=%s Fc_Hz=%.15g PathlossModel=%s ShadowSigma_dB=%.15g\n", ...
-    char(obj.Scenario), double(obj.Fc_Hz), char(obj.PathlossModel), double(obj.ShadowSigma_dB));
+fprintf("[TR38901Plus] Resolved config: Scenario=%s Fc_Hz=%.15g PathlossModel=%s ShadowSigma_dB=%.15g PathlossEnabled=%d ShadowEnabled=%d LOSEnabled=%d\n", ...
+    char(obj.Scenario), double(obj.Fc_Hz), char(obj.PathlossModel), double(obj.ShadowSigma_dB), ...
+    double(obj.PathlossEnabled), double(obj.ShadowFadingEnabled), double(obj.LOSEnabled));
 didLogResolvedConfig = true;
 end

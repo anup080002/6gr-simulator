@@ -1,0 +1,4 @@
+ disp(''sp_smoke'')
+        |
+{Invalid expression. Check for missing multiplication operator, missing or unbalanced delimiters, or other syntax error. To construct matrices, use brackets instead of parentheses.
+} 

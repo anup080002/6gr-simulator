@@ -1,0 +1,11 @@
+setup6GRSimToolkit('Verbose', false);
+cfg = sixgr.config.defaultConfig();
+runFolder = fullfile(pwd, 'tmp_fer_hdr_probe');
+if exist(runFolder, 'dir') ~= 7
+    mkdir(runFolder);
+end
+dlT = table([1;2],[320;321],[10;10],[1;1],[1;2],[1;1],[0;0],[128;128],["PASS";"PASS"],[0;0], 'VariableNames', {'UEIndex','RNTI','SNR_dB','Frame','Slot','CRCPass','BitErrors','BitsCompared','Status','Crash'});
+ulT = dlT;
+rawTrials = struct('DL', dlT, 'UL', ulT, 'SRS', table(), 'TRS', table(), 'MultiUserDL', table(), 'MultiUserUL', table());
+artifacts = sixgr.truth.exportLLSLiveDerivedTables(cfg, runFolder, rawTrials, struct(), struct(), struct());
+disp(char(artifacts.ErrorRateSummaryPath));

@@ -40,6 +40,7 @@ ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -136,20 +137,39 @@ numTxPorts = localExpectedTxPorts(pusch);
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PUSCH_Rx");
 
 % Timing estimate
+trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTrackingState, cfg);
+sampleRateHz = localCarrierSampleRateHz(carrier);
+if logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
+        isfinite(sampleRateHz) && sampleRateHz > 0
+    rxWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -double(trackingCorrection.EstimatedCFO_Hz));
+    trackingCorrection.CFOCorrectionApplied = true;
+    trackingCorrection.CFOCorrectionApplied_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+elseif logical(trackingCorrection.CFOEstimateAvailable)
+    trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
+end
+
 toffset = 0;
-if ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate)
+timingEstimateUsed = false;
+timingEstimateSource = "unavailable";
+if logical(trackingCorrection.TimingEstimateAvailable) && isfinite(double(trackingCorrection.TimingEstimate_samples))
+    toffset = round(double(trackingCorrection.TimingEstimate_samples));
+    timingEstimateUsed = true;
+    timingEstimateSource = string(trackingCorrection.Source);
+    trackingCorrection.TimingCorrectionApplied = true;
+elseif ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate)
     try
         toffset = nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym);
         toffset = max(0, double(toffset));
+        timingEstimateUsed = true;
+        timingEstimateSource = "nrTimingEstimate_dmrs";
     catch
         toffset = 0;
+        timingEstimateUsed = false;
+        timingEstimateSource = "nrTimingEstimate_failed";
     end
 end
 
-if toffset > 0 && (toffset+1) <= size(rxWaveform,1)
-    rxWaveform = [rxWaveform(1+toffset:end, :); ...
-        zeros(toffset, size(rxWaveform,2), 'like', rxWaveform)];
-end
+rxWaveform = localApplyTimingCorrection(rxWaveform, toffset);
 
 % OFDM demod
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
@@ -196,6 +216,7 @@ nVar = double(nVar);
 
 % Equalize
 [eqSym, csi] = nrEqualizeMMSE(rxSym, hestSym, nVar);
+receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 
 % Decode PUSCH to codeword LLR
 puschRxSym = [];
@@ -308,8 +329,24 @@ rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
 rx.NoiseVar = nVar;
 rx.TimingOffset = toffset;
+rx.TimingEstimateUsed = logical(timingEstimateUsed);
+rx.TimingEstimateSource = char(timingEstimateSource);
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
+rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
+rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
+rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
+rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
+rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
+rx.ReceiverTrackingCorrectionNAReason = char(string(trackingCorrection.NAReason));
+rx.ReceiverHestSINR_dB = double(receiverSINR.Value);
+rx.ReceiverHestSINRSource = char(receiverSINR.Source);
+rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
+rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
+rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
+rx.EqualizedSymbolsForEvidence = eqSym;
+rx.PUSCHRxSymbolsForEvidence = puschRxSym;
 if ~logical(opt.CompactOutput)
     rx.TransportBlock = int8(tbBits(:));
     rx.CodewordLLR = cwLLR;
@@ -319,6 +356,9 @@ if ~logical(opt.CompactOutput)
     rx.ParityChecks = parity;
     rx.CodeBlockCRCError = cbCrcErr;
     rx.ChannelEstimate = Hest;
+    rx.RxGrid = rxGrid;
+    rx.DMRSIndices = dmrsInd;
+    rx.DMRSSymbols = dmrsSym;
     rx.Carrier = carrier;
     rx.PUSCH = pusch;
     rx.PUSCHInfo = puschInfo;
@@ -331,7 +371,181 @@ info = struct();
 info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
+info.ReceiverTrackingCorrection = trackingCorrection;
 
+end
+
+function tracking = localResolveReceiverTrackingCorrection(explicitState, cfg)
+tracking = struct( ...
+    "TRSProcessed", false, ...
+    "TimingEstimateAvailable", false, ...
+    "TimingEstimate_samples", NaN, ...
+    "TimingCorrectionApplied", false, ...
+    "CFOEstimateAvailable", false, ...
+    "EstimatedCFO_Hz", NaN, ...
+    "CFOCorrectionApplied", false, ...
+    "CFOCorrectionApplied_Hz", NaN, ...
+    "Source", "unavailable_receiver_tracking_state", ...
+    "Status", "unavailable", ...
+    "NAReason", "no_receiver_tracking_state", ...
+    "CFONAReason", "");
+
+raw = explicitState;
+if isempty(raw)
+    raw = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+end
+if ~(isstruct(raw) && ~isempty(fieldnames(raw)))
+    return;
+end
+
+processed = localFirstLogical(raw, ["TRSProcessed","RuntimeTRSProcessed"], false);
+tracking.TRSProcessed = logical(processed);
+tracking.Source = localFirstString(raw, ["RuntimeTRSRuntimeEvidenceSource","RuntimeEvidenceSource","TrackingEstimateSource"], ...
+    "trs_receiver_tracking_state");
+if ~processed
+    tracking.NAReason = "trs_tracking_state_not_processed";
+    return;
+end
+
+stateTokens = [ ...
+    localFirstString(raw, ["TrackingState","RuntimeTRSTrackingStateAfter"], ""), ...
+    localFirstString(raw, ["TRSValidityState","RuntimeTRSValidityState"], ""), ...
+    localFirstString(raw, ["ChannelTrackingFreshnessState","RuntimeTRSChannelTrackingFreshnessState"], "")];
+stateTokensLower = lower(stateTokens);
+if any(contains(stateTokensLower, "stale") | contains(stateTokensLower, "expired") | ...
+        contains(stateTokensLower, "invalid") | contains(stateTokensLower, "fail") | ...
+        contains(stateTokensLower, "inactive"))
+    tracking.NAReason = "trs_tracking_state_stale_or_invalid";
+    return;
+end
+
+timingAvailable = localFirstLogical(raw, ["TimingEstimateAvailable","RuntimeTRSTimingEstimateAvailable"], false);
+timingSamples = localFirstFinite(raw, ["TimingEstimate_samples","RuntimeTRSTimingEstimate_samples","EstimatedTimingOffset_samples"], NaN);
+cfoAvailable = localFirstLogical(raw, ["CFOEstimateAvailable","RuntimeTRSCFOEstimateAvailable"], false);
+cfoHz = localFirstFinite(raw, ["EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+
+tracking.TimingEstimateAvailable = logical(timingAvailable && isfinite(timingSamples));
+tracking.TimingEstimate_samples = double(timingSamples);
+tracking.CFOEstimateAvailable = logical(cfoAvailable && isfinite(cfoHz));
+tracking.EstimatedCFO_Hz = double(cfoHz);
+if tracking.TimingEstimateAvailable || tracking.CFOEstimateAvailable
+    tracking.Status = "available";
+    tracking.NAReason = "";
+else
+    tracking.NAReason = "trs_tracking_state_has_no_timing_or_cfo_estimate";
+end
+end
+
+function y = localApplyFrequencyCorrection(x, sampleRateHz, correctionHz)
+if ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0 && isfinite(double(correctionHz)))
+    y = x;
+    return;
+end
+n = (0:size(x, 1)-1).';
+rot = exp(1j * 2 * pi * (double(correctionHz) / double(sampleRateHz)) * n);
+y = x .* cast(rot, "like", x);
+end
+
+function y = localApplyTimingCorrection(x, timingOffset)
+timingOffset = round(double(timingOffset));
+if ~isfinite(timingOffset) || timingOffset == 0
+    y = x;
+elseif timingOffset > 0
+    if timingOffset < size(x, 1)
+        y = [x(1+timingOffset:end, :); zeros(timingOffset, size(x, 2), "like", x)];
+    else
+        y = zeros(size(x), "like", x);
+    end
+else
+    lead = abs(timingOffset);
+    if lead < size(x, 1)
+        y = [zeros(lead, size(x, 2), "like", x); x(1:end-lead, :)];
+    else
+        y = zeros(size(x), "like", x);
+    end
+end
+end
+
+function fs = localCarrierSampleRateHz(carrier)
+fs = NaN;
+try
+    ofdmInfo = nrOFDMInfo(carrier);
+    fs = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
+catch
+end
+end
+
+function value = localFirstLogical(s, names, defaultValue)
+value = logical(defaultValue);
+for i = 1:numel(names)
+    name = char(names(i));
+    if isfield(s, name)
+        raw = s.(name);
+        if ~isempty(raw)
+            value = logical(raw(1));
+            return;
+        end
+    end
+end
+end
+
+function value = localFirstFinite(s, names, defaultValue)
+value = double(defaultValue);
+for i = 1:numel(names)
+    name = char(names(i));
+    if isfield(s, name)
+        raw = double(s.(name));
+        raw = raw(isfinite(raw));
+        if ~isempty(raw)
+            value = raw(1);
+            return;
+        end
+    end
+end
+end
+
+function value = localFirstString(s, names, defaultValue)
+value = string(defaultValue);
+for i = 1:numel(names)
+    name = char(names(i));
+    if isfield(s, name)
+        raw = string(s.(name));
+        if ~isempty(raw) && strlength(strtrim(raw(1))) > 0
+            value = raw(1);
+            return;
+        end
+    end
+end
+end
+
+function evidence = localReceiverHestSINR(Hest, nVar, cfg, direction, rxGrid, refInd, refSym)
+evidence = struct( ...
+    "Value", NaN, ...
+    "Source", "unavailable_receiver_hest_csi_feedback_failed", ...
+    "ValueRole", "unavailable", ...
+    "ValueStatus", "unavailable", ...
+    "NAReason", "receiver_hest_csi_feedback_metric_not_available");
+if isempty(Hest)
+    evidence.NAReason = "receiver_hest_grid_empty";
+    return;
+end
+try
+    args = {"Direction", direction};
+    if ~isempty(rxGrid) && ~isempty(refInd) && ~isempty(refSym)
+        args = [args, {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym}];
+    end
+    csiMetric = sixgr.phy.dl.CSI_Feedback(Hest, nVar, cfg, args{:});
+    sinr = double(sixgr.util.structGet(csiMetric, "SINR_dB", NaN));
+    if isfinite(sinr)
+        evidence.Value = sinr;
+        evidence.Source = "receiver_hest_csi_feedback_wideband_effective_sinr";
+        evidence.ValueRole = "estimated";
+        evidence.ValueStatus = "OK";
+        evidence.NAReason = "";
+    end
+catch ME
+    evidence.NAReason = "receiver_hest_csi_feedback_failed:" + string(ME.identifier);
+end
 end
 
 function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
@@ -386,6 +600,10 @@ end
 
 function numTxPorts = localExpectedTxPorts(pusch)
 numTxPorts = 1;
+try
+    numTxPorts = max(numTxPorts, double(pusch.NumAntennaPorts));
+catch
+end
 try
     numTxPorts = max(numTxPorts, double(pusch.NumLayers));
 catch

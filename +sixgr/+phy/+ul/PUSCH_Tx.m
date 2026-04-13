@@ -28,6 +28,7 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     TX.DMRSSymbols       : DMRS symbols
 %     TX.PTRSIndices       : linear indices for PTRS mapping (maybe empty)
 %     TX.PTRSSymbols       : PTRS symbols (maybe empty)
+%     TX.PrecodeInfo       : runtime-applied native PUSCH precoding metadata
 %
 %   Notes:
 %     * nrPUSCH internally performs scrambling using pusch.NID / pusch.RNTI.
@@ -82,9 +83,14 @@ if isempty(xOverhead)
     xOverhead = double(sixgr.util.structGet(cfg, 'phy.pusch.xOverhead', 0));
 end
 
+prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg);
+
 numTxAnt = opt.NumTxAnt;
 if isempty(numTxAnt)
-    numTxAnt = double(sixgr.util.structGet(cfg, 'phy.nTxAnt', 1));
+    numTxAnt = double(sixgr.util.structGet(cfg, 'phy.nTxAnt', sixgr.util.structGet(prec, "NumPorts", 1)));
+end
+if logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+    numTxAnt = max(double(numTxAnt), double(sixgr.util.structGet(prec, "NumPorts", 1)));
 end
 numTxAnt = max(1, round(numTxAnt));
 
@@ -199,6 +205,8 @@ tx.TargetCodeRate = targetCodeRate;
 tx.Carrier = carrier;
 tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
+tx.PUSCHSymbolsForEvidence = puschSym;
+tx.PrecodeInfo = prec;
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlock = trBlk;
@@ -215,6 +223,10 @@ if ~logical(opt.CompactOutput)
     tx.DMRSSymbols = dmrsSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
+    tx.PUSCHAntennaIndices = puschInd;
+    tx.PUSCHAntennaSymbols = puschSym;
+    tx.DMRSAntennaIndices = dmrsInd;
+    tx.DMRSAntennaSymbols = dmrsSym;
 end
 
 info = struct();
@@ -223,6 +235,7 @@ info.CRC = crcInfo;
 info.Segmentation = segInfo;
 info.PUSCHSymbols = puschSymInfo;
 info.OFDM = ofdmInfo;
+info.Precoding = prec;
 
 end
 

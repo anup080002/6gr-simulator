@@ -1,0 +1,40 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN01_CELL_EDGE_INTERFERENCE
+  description: Cell-edge interference stress variant with heavier hotspot overlap and higher offered load.
+  version: "1.0.0"
+  owner: codex
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn01
+    - cell_edge
+    - interference
+    - hotspot
+
+run_control:
+  study_mode: campaign
+
+deployment_topology:
+  hotspot_enable: true
+  hotspot_count: 12
+  hotspot_radius_m: 100
+  hotspot_user_fraction: 0.5
+
+traffic:
+  model: mixed
+  targetRate_Mbps: 110
+  packetDelayBudget_ms: 20
+  fullBufferBitsPerTTI: 180000
+
+system:
+  scheduler:
+    type: PF
+    cellEdgeBoost: true
+    fairnessAlpha: 1.2
+
+output:
+  profile: SCN01_CELL_EDGE_INTERFERENCE

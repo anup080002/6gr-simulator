@@ -72,7 +72,7 @@
       },
       "mobility": {
         "enable": {"value_type": "boolean", "default": true},
-        "model": {"value_type": "string", "default": "randomWaypoint", "allowed_values": ["randomWaypoint", "straightLine", "trace"]},
+        "model": {"value_type": "string", "default": "randomWaypoint", "allowed_values": ["randomWaypoint", "straightLine", "zigzag", "trace"]},
         "speed_kmh": {"value_type": "number_vector", "default": [3, 30], "min": 0, "min_length": 1, "max_length": 2},
         "updatePeriod_s": {"value_type": "number", "default": 0.1, "min": 0}
       }
@@ -224,6 +224,8 @@
         "nLayers": {"value_type": "integer", "default": 4, "min": 1},
         "numLayers": {"value_type": "integer", "min": 1},
         "codeRate": {"value_type": "number", "default": 0.75, "min": 0, "max": 1},
+        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3"]},
+        "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "enablePTRS": {"value_type": "boolean", "default": false},
         "dmrs": {
           "typeApos": {"value_type": "integer", "default": 2, "min": 0},
@@ -243,6 +245,10 @@
         "reportRI": {"value_type": "boolean", "default": true},
         "reportCRI": {"value_type": "boolean", "default": false},
         "reportCSI": {"value_type": "boolean", "default": true},
+        "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
+        "dlCQITable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
+        "ulCQITable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
+        "widebandSINRMargin_dB": {"value_type": "number", "default": 5},
         "channelStateInformationMode": {"value_type": "string", "default": "PMI+CQI+RI", "allowed_values": ["PMI+CQI", "PMI+CQI+RI", "PMI+CQI+RI+CRI", "CRI", "none"]},
         "pmiCodebookMode": {"value_type": "string", "default": "type1_su_mimo", "allowed_values": ["type1_su_mimo", "type2_mu_mimo", "etype2_candidate", "noncodebook"]},
         "codebookType": {"value_type": "string", "default": "type1", "allowed_values": ["type1", "type2", "etype2", "noncodebook"]},
@@ -260,6 +266,8 @@
         "nLayers": {"value_type": "integer", "default": 2, "min": 1},
         "numLayers": {"value_type": "integer", "min": 1},
         "codeRate": {"value_type": "number", "default": 0.75, "min": 0, "max": 1},
+        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3"]},
+        "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "transformPrecoding": {"value_type": "boolean", "default": true},
         "dmrs": {
           "configType": {"value_type": "integer", "default": 1, "allowed_values": [1, 2]},
@@ -293,7 +301,9 @@
       "scheduler": {
         "type": {"value_type": "string", "default": "PF", "allowed_values": ["PF", "RR", "MAXCQI", "MaxCqi", "roundRobin", "proportionalFair", "maxCqi", "rr", "pf"]},
         "metricAveraging": {"value_type": "string", "default": "exp"},
-        "alpha": {"value_type": "number", "default": 0.9, "min": 0, "max": 1}
+        "alpha": {"value_type": "number", "default": 0.9, "min": 0, "max": 1},
+        "tbsMode": {"value_type": "string", "default": "approximate", "allowed_values": ["approximate", "faithful", "strict"]},
+        "viennaEquivalent": {"value_type": "boolean", "default": false}
       },
       "harq": {
         "enable": {"value_type": "boolean", "default": true},
@@ -367,6 +377,10 @@
       }
     },
     "outputs": {
+      "storageBackend": {"value_type": "string", "default": "filesystem", "allowed_values": ["filesystem", "mysql_web"]},
+      "databaseHost": {"value_type": "string", "default": "localhost"},
+      "databasePort": {"value_type": "integer", "default": 3306, "min": 1},
+      "databaseSchema": {"value_type": "string", "default": "sixgr_results"},
       "saveMAT": {"value_type": "boolean", "default": true},
       "saveCSV": {"value_type": "boolean", "default": true},
       "saveFigures": {"value_type": "boolean", "default": true},

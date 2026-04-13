@@ -1,0 +1,43 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN04_UL_CSI_SRS_STRESS
+  description: UL-heavy stress variant with faster SRS cadence, more SRS ports, and DFT-s-OFDM uplink waveform.
+  version: "1.0.0"
+  owner: codex
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn04
+    - uplink
+    - srs
+    - csi
+    - dfts_ofdm
+
+waveform:
+  ul_waveform: DFT-S-OFDM
+  transform_precoding_enabled: true
+
+traffic:
+  model: mixed
+  transport: UDP
+  flowDirection: UL
+  dlRatio: 0.2
+  ulRatio: 0.8
+  targetRate_Mbps: 55
+  packetDelayBudget_ms: 20
+
+reference_signals:
+  srs_enabled: true
+  srs_ports: 4
+  srs_periodicity_ms: 5
+
+system:
+  scheduler:
+    type: PF
+    qosAware: true
+
+output:
+  profile: SCN04_UL_CSI_SRS_STRESS

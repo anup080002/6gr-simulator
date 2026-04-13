@@ -12,16 +12,26 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
 leaf = localResolveLeaf(runTag);
-runFolder = sixgr.report.defaultRunFolder(outputDir, ...
-    "Bucket", "lls", ...
-    "Profile", scfg.ScenarioID, ...
-    "Leaf", leaf, ...
-    "CleanExisting", true);
-execOut = localExecutePreparedScenario(scfg, runFolder);
+backend = lower(string(scfg.get("output.backend", "filesystem")));
+logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
+if backend == "mysql_web"
+    runFolder = localComposeDBStagingRunFolder(scfg.ScenarioID, leaf);
+    localResetRunFolder(runFolder);
+    localDeleteFolderTreeIfExists(logicalRunFolder);
+else
+    runFolder = sixgr.report.defaultRunFolder(outputDir, ...
+        "Bucket", "lls", ...
+        "Profile", scfg.ScenarioID, ...
+        "Leaf", leaf, ...
+        "CleanExisting", true);
+end
+
+cleanupStaging = onCleanup(@() localCleanupDBOnlyRunFolders(backend, runFolder, logicalRunFolder)); %#ok<NASGU>
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder);
 
 out = struct();
 out.Ok = logical(execOut.Ok);
-out.RunFolder = string(runFolder);
+out.RunFolder = string(logicalRunFolder);
 out.Config = scfg;
 out.Manifest = execOut.Manifest;
 out.Profile = string(execOut.Profile);
@@ -46,9 +56,26 @@ opt.LinkSweepMaxPoints = numel(opt.LinkSNRGrid_dB);
 opt.LinkAdaptiveSweepEnabled = true;
 opt.LinkAdaptiveSweepStep_dB = 2;
 opt.LinkAdaptiveSweepMaxPoints = 12;
+opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
 opt.SaveFigures = logical(scfg.get("output.save_figures"));
+localDBLog("INFO", "Waveform bundle starting: snr=%.3f dB sweepPoints=%d frames=%d monteCarlo=%d", ...
+    double(opt.LinkSNR_dB), double(numel(opt.LinkSNRGrid_dB)), ...
+    double(opt.LinkMaxSimFrames), double(mcIterations));
 link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
-controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct());
+localDBLog("INFO", "Waveform bundle finished: ok=%d", double(logical(sixgr.util.structGet(link, "Ok", false))));
+runtimeControl = sixgr.util.structGet(link, "RawTrials", struct());
+runtimeControl.CoupledRuntime = sixgr.util.structGet(link, "CoupledRuntime", struct());
+mobilityArtifacts = sixgr.util.structGet(link, "MobilityArtifacts", struct());
+if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())) && ...
+        ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())))
+    runtimeControl.ControlGatingSummaryTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingSummaryTable", table());
+end
+if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())) && ...
+        ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())))
+    runtimeControl.ControlGatingStateTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingStateTable", table());
+end
+controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), runtimeControl);
+localDBLog("INFO", "Control-plane trace export complete.");
 
 rows = repmat(struct("Block","", "Ok", false, "Notes",""), 0, 1);
 if istable(link.KPITable)
@@ -69,6 +96,52 @@ result = struct();
 result.Ok = logical(link.Ok);
 result.Link = link;
 result.Control = controlTrace;
+end
+
+function result = localRunSystemLevelScenario(cfg, scfg, runFolder)
+layout = sixgr.report.resultLayout(runFolder);
+ctx = sixgr.core.SimContext(cfg, "RunFolder", layout.SystemDir);
+
+slotDuration_s = max(eps, double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 0.5)) / 1e3);
+numTTI = max(1, ceil(double(sixgr.util.structGet(cfg, "run.totalTime_ms", slotDuration_s * 1e3)) / (slotDuration_s * 1e3)));
+params = struct();
+params.PHYBackend = string(sixgr.util.structGet(cfg, "system.phyBackend", "waveform"));
+params.DetailedTrace = true;
+params.NumTTI = numTTI;
+params.SimDuration_s = double(sixgr.util.structGet(cfg, "system.simDuration_s", numTTI * slotDuration_s));
+params.TTI_s = slotDuration_s;
+
+localDBLog("INFO", "System-level LLS starting: NumTTI=%d PHYBackend=%s simulationMode=%s", ...
+    double(numTTI), char(string(params.PHYBackend)), char(string(sixgr.util.structGet(cfg, "run.simulationMode", ""))));
+systemOut = sixgr.system.SystemLevelRunner.run(ctx, params);
+localDBLog("INFO", "System-level LLS finished: ok=%d", double(logical(sixgr.util.structGet(systemOut, "Ok", false))));
+
+canon = sixgr.truth.exportSystemLevelCanonicalArtifacts(runFolder, scfg, cfg, systemOut);
+
+notes = string(strjoin(string(sixgr.util.structGet(systemOut, "Errors", strings(0, 1))), "; "));
+if strlength(notes) == 0
+    notes = "system_level_lls_runner_completed";
+end
+kpitable = table( ...
+    string("system_level_lls"), ...
+    logical(sixgr.util.structGet(systemOut, "Ok", false)), ...
+    false, ...
+    notes, ...
+    'VariableNames', {'Case','Ok','Skipped','Notes'});
+
+link = struct();
+link.Ok = logical(sixgr.util.structGet(systemOut, "Ok", false));
+link.Result = struct("Ok", logical(sixgr.util.structGet(systemOut, "Ok", false)));
+link.Errors = string(sixgr.util.structGet(systemOut, "Errors", strings(0, 1)));
+link.UnsupportedCases = table();
+link.KPITable = kpitable;
+link.RawTrials = canon.RawTrials;
+
+result = struct();
+result.Ok = logical(sixgr.util.structGet(systemOut, "Ok", false));
+result.Link = link;
+result.System = systemOut;
+result.Canonical = canon;
 end
 
 function result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder)
@@ -532,68 +605,468 @@ end
 result = struct("Ok", true, "DecisionTable", T);
 end
 
-function execOut = localExecutePreparedScenario(scfg, runFolder)
+function execOut = localExecutePreparedScenario(scfg, runFolder, runTag, publicRunFolder)
+if nargin < 3
+    runTag = "";
+end
+if nargin < 4 || strlength(string(publicRunFolder)) == 0
+    publicRunFolder = runFolder;
+end
 runStartUTC = localUTCStamp();
 runTimer = tic;
 layout = sixgr.report.resultLayout(runFolder);
 localEnsureScenarioDirs(layout);
 localApplyRunRandomness(scfg);
+localDBLog("INFO", "Preparing LLS run: scenario=%s runTag=%s runFolder=%s", ...
+    char(string(scfg.ScenarioID)), char(string(runTag)), char(string(runFolder)));
 
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+cfg.run.runTag = char(string(runTag));
+cfg.run.runnerProfile = char(string(scfg.get("scenario.runner_profile")));
+cfg.run.scenarioID = char(string(scfg.ScenarioID));
+cfg.meta.scenarioID = char(string(scfg.ScenarioID));
+cfg.meta.configHash = char(string(scfg.ConfigHash));
 cfg = localEnsureExactMexAcceleration(cfg);
 cfg = localEnsureParallelExecution(cfg);
-localWriteResolvedSnapshots(layout, scfg);
+profilerCfg = localResolveProfilerConfig(scfg);
+profilerState = localStartProfilerIfEnabled(profilerCfg);
+storeInfo = sixgr.db.activateArtifactStore(runFolder, cfg, struct( ...
+    "ScenarioID", scfg.ScenarioID, ...
+    "RunTag", runTag, ...
+    "Bucket", scfg.get("output.bucket"), ...
+    "Profile", localResolveRunRowProfileName(scfg), ...
+    "LogicalRunFolder", publicRunFolder, ...
+    "ScenarioConfigStruct", scfg.toStruct(), ...
+    "ScenarioSourceFiles", string(scfg.SourceFiles(:))));
+cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
+if logical(sixgr.util.structGet(storeInfo, "Active", false))
+    sixgr.db.markRunStatus("running", struct("started_utc", runStartUTC));
+end
+localDBLog("INFO", "Artifact store active=%d backend=%s schema=%s", ...
+    double(logical(sixgr.util.structGet(storeInfo, "Active", false))), ...
+    char(string(sixgr.util.structGet(storeInfo, "Backend", ""))), ...
+    char(string(sixgr.util.structGet(storeInfo, "DatabaseSchema", ""))));
 
-profile = lower(string(scfg.get("scenario.runner_profile")));
-switch profile
-    case "waveform_bundle"
-        result = localRunWaveformBundleScenario(cfg, scfg, runFolder);
-    case "pdcch_blind_decode_sweep"
-        result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder);
-    case "prach_detection"
-        result = localRunPRACHDetectionScenario(cfg, scfg, runFolder);
-    case "generic_sweep"
-        result = localRunGenericSweep(cfg, scfg, runFolder);
-    case "ai_benchmark"
-        result = localRunAIBenchmark(cfg, scfg, runFolder);
-    otherwise
-        error("sixgr:lls6g:runner:UnknownProfile", ...
-            "Unsupported scenario.runner_profile '%s' for '%s'.", profile, scfg.ScenarioID);
+try
+    localDBLog("INFO", "Writing resolved snapshots.");
+    localWriteResolvedSnapshots(layout, scfg);
+    localDBLog("INFO", "Exporting live geometry artifacts.");
+    localExportLiveGeometryArtifacts(layout, scfg, cfg);
+
+    profile = lower(string(scfg.get("scenario.runner_profile")));
+    localDBLog("INFO", "Executing runner profile=%s.", char(profile));
+    switch profile
+        case "waveform_bundle"
+            result = localRunWaveformBundleScenario(cfg, scfg, runFolder);
+        case "system_level_lls"
+            result = localRunSystemLevelScenario(cfg, scfg, runFolder);
+        case "pdcch_blind_decode_sweep"
+            result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder);
+        case "prach_detection"
+            result = localRunPRACHDetectionScenario(cfg, scfg, runFolder);
+        case "generic_sweep"
+            result = localRunGenericSweep(cfg, scfg, runFolder);
+        case "ai_benchmark"
+            result = localRunAIBenchmark(cfg, scfg, runFolder);
+        otherwise
+            error("sixgr:lls6g:runner:UnknownProfile", ...
+                "Unsupported scenario.runner_profile '%s' for '%s'.", profile, scfg.ScenarioID);
+    end
+    localDBLog("INFO", "Runner profile completed. result.Ok=%d", ...
+        double(logical(sixgr.util.structGet(result, "Ok", false))));
+
+    scenarioStatus = localAggregateScenarioStatus(result);
+    result = localApplyScenarioStatus(result, scenarioStatus);
+    localDBLog("INFO", "Scenario status aggregated: completion=%s resultOk=%d requiredFailures=%d optionalPruned=%d", ...
+        char(string(scenarioStatus.RunCompletion)), double(logical(scenarioStatus.ResultOk)), ...
+        double(scenarioStatus.RequiredFailureCount), double(scenarioStatus.OptionalPrunedCount));
+
+    localDBLog("INFO", "Annotating CSV artifacts.");
+    localAnnotateAllCSV(runFolder, scfg, profile);
+    summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
+    if logical(scfg.get("output.save_csv"))
+        localDBLog("INFO", "Writing scenario summary CSV.");
+        sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
+    end
+    runtimeSummary = localBuildRuntimeSummary(runStartUTC, runTimer, profile, publicRunFolder, cfg);
+    environmentSummary = localBuildEnvironmentSummary(cfg);
+    localDBLog("INFO", "Writing runtime and environment summaries.");
+    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "runtime_summary.json"), runtimeSummary);
+    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "environment.json"), environmentSummary);
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+    localDBLog("INFO", "Writing scenario manifest.");
+    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localDBLog("INFO", "Exporting config-ownership and hardcoding audit artifacts.");
+    configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
+    preTruthScenarioStatus = scenarioStatus;
+    scenarioStatus = localApplyRuntimeTruthContract(scenarioStatus, result, scfg, cfg, runFolder);
+    result = localApplyScenarioStatus(result, scenarioStatus);
+    localDBLog("INFO", "Runtime truth contract evaluated: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
+        double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
+        double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), double(scenarioStatus.StrictTruthFailureCount));
+    summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
+    if logical(scfg.get("output.save_csv"))
+        localDBLog("INFO", "Rewriting scenario summary CSV with final truth-gated status.");
+        sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
+    end
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+    localDBLog("INFO", "Rewriting scenario manifest with final truth-gated status.");
+    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localDBLog("INFO", "Exporting LLS reporting bundle.");
+    reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
+    reportBundle.ConfigOwnershipArtifacts = configOwnership;
+    localDBLog("INFO", "Scanning truth primary artifacts for active proxy/fallback markers.");
+    truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
+    reportBundle.TruthArtifactScan = truthArtifactScan;
+    localDBLog("INFO", "Exporting output-coverage and honest-unavailable artifacts.");
+    outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
+    reportBundle.OutputCoverageArtifacts = outputCoverage;
+    reportBundle.Inventory = sixgr.util.structGet(outputCoverage, "UpdatedArtifactInventory", sixgr.util.structGet(reportBundle, "Inventory", table()));
+    scenarioStatus = localApplyRuntimeTruthContract(preTruthScenarioStatus, result, scfg, cfg, runFolder);
+    result = localApplyScenarioStatus(result, scenarioStatus);
+    localDBLog("INFO", "Runtime truth contract re-evaluated after final artifact exports: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
+        double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
+        double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), double(scenarioStatus.StrictTruthFailureCount));
+    summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
+    if logical(scfg.get("output.save_csv"))
+        localDBLog("INFO", "Rewriting scenario summary CSV with final artifact truth-gated status.");
+        sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
+    end
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+    localDBLog("INFO", "Rewriting scenario manifest with final artifact truth-gated status.");
+    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localDBLog("INFO", "Writing artifact manifest.");
+    manifest.ArtifactManifestPath = char(localWriteArtifactManifest(runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
+    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localDBLog("INFO", "Writing scenario markdown report.");
+    localWriteMarkdownReport(fullfile(layout.ReportDir, "scenario_report.md"), scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus);
+    if logical(scfg.get("output.save_mat"))
+        localDBLog("INFO", "Writing MAT result bundle.");
+        sixgr.util.matSave(fullfile(layout.ReportMATDir, "scenario_result.mat"), ...
+            struct("ScenarioConfig", scfg.toStruct(), "Result", result, "Manifest", manifest, ...
+            "RuntimeSummary", runtimeSummary, "EnvironmentSummary", environmentSummary, "ReportBundle", reportBundle, ...
+            "ScenarioStatus", scenarioStatus));
+    end
+    localDBLog("INFO", "Pruning empty result directories.");
+    localPruneEmptyDirs(runFolder);
+    profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, "Run completed successfully.");
+
+    if sixgr.db.isArtifactStoreActive()
+        sixgr.db.markRunStatus(string(scenarioStatus.RunCompletion), struct( ...
+            "result_ok", logical(scenarioStatus.ResultOk), ...
+            "run_completion", string(scenarioStatus.RunCompletion), ...
+            "required_failure_count", double(scenarioStatus.RequiredFailureCount), ...
+            "failing_case_count", double(scenarioStatus.FailingCaseCount), ...
+            "warning_count", double(scenarioStatus.WarningCount), ...
+            "status_authority", string(scenarioStatus.StatusAuthority), ...
+            "runtime_truth_contract_ok", logical(scenarioStatus.RuntimeTruthContractOk), ...
+            "roundtrip_mismatch_count", double(scenarioStatus.RoundtripMismatchCount), ...
+            "required_runtime_evidence_missing_count", double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), ...
+            "strict_truth_failure_count", double(scenarioStatus.StrictTruthFailureCount), ...
+            "error_source", string(scenarioStatus.ErrorSource), ...
+            "error_identifier", string(scenarioStatus.ErrorIdentifier), ...
+            "error_message", string(scenarioStatus.ErrorMessage)));
+    end
+    if logical(scenarioStatus.ResultOk)
+        localDBLog("INFO", "Run completed successfully in %.3f seconds.", toc(runTimer));
+    else
+        localDBLog("WARN", "Run completed with truth/status failures in %.3f seconds: requiredFailures=%d strictTruthFailures=%d", ...
+            toc(runTimer), double(scenarioStatus.RequiredFailureCount), double(scenarioStatus.StrictTruthFailureCount));
+    end
+
+    execOut = struct();
+    execOut.Ok = logical(scenarioStatus.ResultOk);
+    execOut.Result = result;
+    execOut.Profile = string(profile);
+    execOut.Manifest = manifest;
+    execOut.RuntimeSummary = runtimeSummary;
+    execOut.EnvironmentSummary = environmentSummary;
+    execOut.ReportBundle = reportBundle;
+    execOut.ConfigOwnershipArtifacts = configOwnership;
+    execOut.ScenarioStatus = scenarioStatus;
+    execOut.ProfilerArtifacts = profilerArtifacts;
+catch ME
+    localDBLog("ERROR", "Run failed: %s | %s", char(string(ME.identifier)), char(string(ME.message)));
+    try
+        localExportProfilerArtifacts(layout, profilerCfg, profilerState, ...
+            "Run failed before completion; partial MATLAB profiler capture exported.");
+    catch profilerME
+        localDBLog("WARN", "Profiler export after failure did not complete: %s", ...
+            char(string(profilerME.message)));
+        localStopProfilerSession(profilerState);
+    end
+    try
+        sixgr.util.writeTextFile(fullfile(layout.MetaDir, "failure_debug_report.txt"), ...
+            getReport(ME, "extended", "hyperlinks", "off"), ...
+            "ArtifactKind", "failure_debug_report", ...
+            "MimeType", "text/plain; charset=UTF-8");
+    catch
+    end
+    if sixgr.db.isArtifactStoreActive()
+        sixgr.db.markRunStatus("failed", struct( ...
+            "identifier", string(ME.identifier), ...
+            "message", string(ME.message)));
+    end
+    try
+        localPruneEmptyDirs(runFolder);
+    catch
+    end
+    rethrow(ME);
+end
 end
 
-scenarioStatus = localAggregateScenarioStatus(result);
-result = localApplyScenarioStatus(result, scenarioStatus);
-
-localAnnotateAllCSV(runFolder, scfg, profile);
-summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
-if logical(scfg.get("output.save_csv"))
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
+function profilerCfg = localResolveProfilerConfig(scfg)
+profilerCfg = struct( ...
+    "Enabled", logical(scfg.get("output.profiler_enabled", false)), ...
+    "TopFunctions", max(1, round(double(scfg.get("output.profiler_top_functions", 160)))), ...
+    "TopEdges", max(1, round(double(scfg.get("output.profiler_top_edges", 320)))));
 end
-runtimeSummary = localBuildRuntimeSummary(runStartUTC, runTimer, profile, runFolder, cfg);
-environmentSummary = localBuildEnvironmentSummary(cfg);
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "runtime_summary.json"), runtimeSummary);
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "environment.json"), environmentSummary);
-manifest = localBuildManifest(scfg, runFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
-reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
-localWriteMarkdownReport(fullfile(layout.ReportDir, "scenario_report.md"), scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus);
-if logical(scfg.get("output.save_mat"))
-    sixgr.util.matSave(fullfile(layout.ReportMATDir, "scenario_result.mat"), ...
-        struct("ScenarioConfig", scfg.toStruct(), "Result", result, "Manifest", manifest, ...
-        "RuntimeSummary", runtimeSummary, "EnvironmentSummary", environmentSummary, "ReportBundle", reportBundle, ...
-        "ScenarioStatus", scenarioStatus));
-end
-localPruneEmptyDirs(runFolder);
 
-execOut = struct();
-execOut.Ok = logical(scenarioStatus.ResultOk);
-execOut.Result = result;
-execOut.Profile = string(profile);
-execOut.Manifest = manifest;
-execOut.RuntimeSummary = runtimeSummary;
-execOut.EnvironmentSummary = environmentSummary;
-execOut.ReportBundle = reportBundle;
-execOut.ScenarioStatus = scenarioStatus;
+function profilerState = localStartProfilerIfEnabled(profilerCfg)
+profilerState = struct( ...
+    "Enabled", logical(sixgr.util.structGet(profilerCfg, "Enabled", false)), ...
+    "OwnsSession", false);
+if ~profilerState.Enabled || localProfilerIsRunning()
+    return;
+end
+profile clear;
+profile on;
+profilerState.OwnsSession = true;
+localDBLog("INFO", "MATLAB profiler enabled for this run.");
+end
+
+function profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, statusNote)
+profilerArtifacts = struct( ...
+    "SummaryTable", table(), ...
+    "FunctionTable", table(), ...
+    "EdgeTable", table());
+if nargin < 4
+    statusNote = "";
+end
+if ~logical(sixgr.util.structGet(profilerCfg, "Enabled", false)) || ...
+        ~logical(sixgr.util.structGet(profilerState, "OwnsSession", false))
+    localStopProfilerSession(profilerState);
+    return;
+end
+
+info = localStopAndCollectProfilerInfo();
+summaryT = localBuildProfilerSummaryTable(info, profilerCfg, statusNote);
+funcT = localBuildProfilerFunctionTable(info, profilerCfg);
+edgeT = localBuildProfilerEdgeTable(info, profilerCfg);
+
+localDBLog("INFO", "Writing MATLAB profiler CSV artifacts: functions=%d edges=%d", ...
+    double(height(funcT)), double(height(edgeT)));
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_profiler_summary.csv"), summaryT);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_function_profile.csv"), funcT);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_function_call_edges.csv"), edgeT);
+
+profilerArtifacts.SummaryTable = summaryT;
+profilerArtifacts.FunctionTable = funcT;
+profilerArtifacts.EdgeTable = edgeT;
+end
+
+function info = localStopAndCollectProfilerInfo()
+try
+    profile off;
+catch
+end
+try
+    info = profile("info");
+catch
+    info = struct();
+end
+try
+    profile clear;
+catch
+end
+end
+
+function localStopProfilerSession(profilerState)
+if ~logical(sixgr.util.structGet(profilerState, "OwnsSession", false))
+    return;
+end
+try
+    profile off;
+catch
+end
+try
+    profile clear;
+catch
+end
+end
+
+function tf = localProfilerIsRunning()
+try
+    st = profile("status");
+    statusToken = string(localProfileGetField(st, "ProfilerStatus", ...
+        localProfileGetField(st, "Profiler", "off")));
+    tf = contains(lower(strtrim(statusToken)), "on");
+catch
+    tf = false;
+end
+end
+
+function T = localBuildProfilerSummaryTable(info, profilerCfg, statusNote)
+ft = localProfileGetField(info, "FunctionTable", struct([]));
+functionCount = double(numel(ft));
+edgeCount = 0;
+for i = 1:numel(ft)
+    edgeCount = edgeCount + numel(localProfileGetField(ft(i), "Children", struct([])));
+end
+T = table( ...
+    string(localProfileGetField(info, "Name", "MATLAB profile")), ...
+    double(localProfileGetField(info, "ClockPrecision", NaN)), ...
+    double(localProfileGetField(info, "ClockSpeed", NaN)), ...
+    double(localProfileGetField(info, "Overhead", NaN)), ...
+    functionCount, ...
+    min(functionCount, double(sixgr.util.structGet(profilerCfg, "TopFunctions", functionCount))), ...
+    double(edgeCount), ...
+    min(double(edgeCount), double(sixgr.util.structGet(profilerCfg, "TopEdges", edgeCount))), ...
+    string(localUTCStamp()), ...
+    string(statusNote), ...
+    'VariableNames', { ...
+        'ProfilerName', ...
+        'ClockPrecision_s', ...
+        'ClockSpeed_Hz', ...
+        'Overhead_s', ...
+        'FunctionCount', ...
+        'ExportedFunctionCount', ...
+        'EdgeCount', ...
+        'ExportedEdgeCount', ...
+        'CapturedUTC', ...
+        'Notes'});
+end
+
+function T = localBuildProfilerFunctionTable(info, profilerCfg)
+ft = localProfileGetField(info, "FunctionTable", struct([]));
+if isempty(ft)
+    T = table('Size', [0 13], ...
+        'VariableTypes', {'double','double','string','string','string','string','double','double','double','double','double','double','logical'}, ...
+        'VariableNames', {'ProfileRank','FunctionIndex','FunctionName','CompleteName','FileName','FunctionType','NumCalls','TotalTime_s','SelfTimeApprox_s','ChildTime_s','TotalRecursiveTime_s','ParentCount','IsRecursive'});
+    return;
+end
+
+rows = repmat(struct( ...
+    "FunctionIndex", NaN, ...
+    "FunctionName", "", ...
+    "CompleteName", "", ...
+    "FileName", "", ...
+    "FunctionType", "", ...
+    "NumCalls", NaN, ...
+    "TotalTime_s", NaN, ...
+    "SelfTimeApprox_s", NaN, ...
+    "ChildTime_s", NaN, ...
+    "TotalRecursiveTime_s", NaN, ...
+    "ParentCount", NaN, ...
+    "ChildCount", NaN, ...
+    "IsRecursive", false), numel(ft), 1);
+for i = 1:numel(ft)
+    childTime = localProfileChildTime(localProfileGetField(ft(i), "Children", struct([])));
+    totalTime = double(localProfileGetField(ft(i), "TotalTime", NaN));
+    rows(i) = struct( ...
+        "FunctionIndex", double(i), ...
+        "FunctionName", string(localProfileGetField(ft(i), "FunctionName", "")), ...
+        "CompleteName", string(localProfileGetField(ft(i), "CompleteName", "")), ...
+        "FileName", string(localProfileGetField(ft(i), "FileName", "")), ...
+        "FunctionType", string(localProfileGetField(ft(i), "Type", "")), ...
+        "NumCalls", double(localProfileGetField(ft(i), "NumCalls", NaN)), ...
+        "TotalTime_s", totalTime, ...
+        "SelfTimeApprox_s", max(totalTime - childTime, 0), ...
+        "ChildTime_s", childTime, ...
+        "TotalRecursiveTime_s", double(localProfileGetField(ft(i), "TotalRecursiveTime", NaN)), ...
+        "ParentCount", double(numel(localProfileGetField(ft(i), "Parents", struct([])))), ...
+        "ChildCount", double(numel(localProfileGetField(ft(i), "Children", struct([])))), ...
+        "IsRecursive", logical(localProfileGetField(ft(i), "IsRecursive", false)));
+    if strlength(strtrim(rows(i).FunctionName)) == 0
+        rows(i).FunctionName = localProfileFallbackName(rows(i).CompleteName, rows(i).FileName);
+    end
+end
+
+T = struct2table(rows);
+T = sortrows(T, {'TotalTime_s', 'SelfTimeApprox_s', 'NumCalls'}, {'descend', 'descend', 'descend'});
+limitRows = min(height(T), double(sixgr.util.structGet(profilerCfg, "TopFunctions", height(T))));
+T = T(1:limitRows, :);
+T = addvars(T, transpose((1:height(T))), 'Before', 1, 'NewVariableNames', 'ProfileRank');
+end
+
+function T = localBuildProfilerEdgeTable(info, profilerCfg)
+ft = localProfileGetField(info, "FunctionTable", struct([]));
+rows = repmat(struct( ...
+    "CallerFunctionIndex", NaN, ...
+    "CallerFunctionName", "", ...
+    "CallerCompleteName", "", ...
+    "CalleeFunctionIndex", NaN, ...
+    "CalleeFunctionName", "", ...
+    "CalleeCompleteName", "", ...
+    "NumCalls", NaN, ...
+    "TotalTime_s", NaN), 0, 1);
+for i = 1:numel(ft)
+    callerName = string(localProfileGetField(ft(i), "FunctionName", ""));
+    callerComplete = string(localProfileGetField(ft(i), "CompleteName", ""));
+    if strlength(strtrim(callerName)) == 0
+        callerName = localProfileFallbackName(callerComplete, string(localProfileGetField(ft(i), "FileName", "")));
+    end
+    children = localProfileGetField(ft(i), "Children", struct([]));
+    for k = 1:numel(children)
+        childIndex = round(double(localProfileGetField(children(k), "Index", NaN)));
+        if ~(isfinite(childIndex) && childIndex >= 1 && childIndex <= numel(ft))
+            continue;
+        end
+        calleeName = string(localProfileGetField(ft(childIndex), "FunctionName", ""));
+        calleeComplete = string(localProfileGetField(ft(childIndex), "CompleteName", ""));
+        if strlength(strtrim(calleeName)) == 0
+            calleeName = localProfileFallbackName(calleeComplete, string(localProfileGetField(ft(childIndex), "FileName", "")));
+        end
+        rows(end+1,1) = struct( ... %#ok<AGROW>
+            "CallerFunctionIndex", double(i), ...
+            "CallerFunctionName", callerName, ...
+            "CallerCompleteName", callerComplete, ...
+            "CalleeFunctionIndex", double(childIndex), ...
+            "CalleeFunctionName", calleeName, ...
+            "CalleeCompleteName", calleeComplete, ...
+            "NumCalls", double(localProfileGetField(children(k), "NumCalls", NaN)), ...
+            "TotalTime_s", double(localProfileGetField(children(k), "TotalTime", NaN)));
+    end
+end
+
+if isempty(rows)
+    T = table('Size', [0 9], ...
+        'VariableTypes', {'double','double','string','string','double','string','string','double','double'}, ...
+        'VariableNames', {'EdgeRank','CallerFunctionIndex','CallerFunctionName','CallerCompleteName','CalleeFunctionIndex','CalleeFunctionName','CalleeCompleteName','NumCalls','TotalTime_s'});
+    return;
+end
+
+T = struct2table(rows);
+T = sortrows(T, {'TotalTime_s', 'NumCalls'}, {'descend', 'descend'});
+limitRows = min(height(T), double(sixgr.util.structGet(profilerCfg, "TopEdges", height(T))));
+T = T(1:limitRows, :);
+T = addvars(T, transpose((1:height(T))), 'Before', 1, 'NewVariableNames', 'EdgeRank');
+end
+
+function value = localProfileGetField(s, fieldName, defaultValue)
+value = defaultValue;
+if builtin("isstruct", s) && isfield(s, fieldName)
+    value = s.(fieldName);
+end
+end
+
+function childTime = localProfileChildTime(children)
+childTime = 0;
+if ~(builtin("isstruct", children) && ~isempty(children) && isfield(children, "TotalTime"))
+    return;
+end
+childTime = sum(double([children.TotalTime]), "omitnan");
+end
+
+function name = localProfileFallbackName(completeName, fileName)
+name = string(completeName);
+if strlength(strtrim(name)) == 0
+    name = string(fileName);
+end
+if contains(name, filesep)
+    [~, stem, ext] = fileparts(char(name));
+    name = string(stem + ext);
+end
 end
 
 function localWriteResolvedSnapshots(layout, scfg)
@@ -608,6 +1081,82 @@ end
 srcFiles = arrayfun(@(p)localPortablePath(p), string(scfg.SourceFiles(:)));
 srcT = table(srcFiles, 'VariableNames', {'SourceConfigFile'});
 sixgr.util.csvWriteTable(fullfile(metaDir, "scenario_source_chain.csv"), srcT);
+end
+
+function localExportLiveGeometryArtifacts(layout, scfg, cfg)
+backend = lower(string(scfg.get("output.backend", "filesystem")));
+if backend ~= "mysql_web"
+    return;
+end
+
+rngState = rng; %#ok<RNGR>
+cleanupRng = onCleanup(@() rng(rngState)); %#ok<NASGU>
+
+try
+    seed = double(sixgr.util.structGet(cfg, "run.seed", sixgr.util.structGet(cfg, "run.randomSeed", 1)));
+    rng(seed, "twister");
+
+    scenarioName = string(sixgr.util.structGet(cfg, "scenario.name", scfg.ScenarioID));
+    scenarioLayout = sixgr.scenario.generateLayout(cfg, scenarioName);
+    ue = sixgr.scenario.dropUEs(cfg, scenarioLayout, scenarioName);
+    [siteT, sectorT, trpT, ueT] = localBuildProjectedGeometryTables(scenarioLayout, ue);
+
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "sites.csv"), siteT);
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "sectors.csv"), sectorT);
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "trps.csv"), trpT);
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "ues.csv"), ueT);
+catch
+    % Geometry export is best-effort for the live dashboard and must not
+    % change scenario execution semantics if a profile cannot provide it.
+end
+end
+
+function [siteT, sectorT, trpT, ueT] = localBuildProjectedGeometryTables(layoutStruct, ue)
+anchorLat = 19.122164;
+anchorLon = 72.999217;
+anchorLabel = "Reliance Corporate Park, Ghansoli, Navi Mumbai";
+coordMode = "projected_default_anchor";
+
+sitePos = double(sixgr.util.structGet(layoutStruct, "sites.pos_m", zeros(0,3)));
+siteId = double(sixgr.util.structGet(layoutStruct, "sites.id", (1:size(sitePos,1)).'));
+[siteLat, siteLon] = localProjectXYToLatLon(sitePos(:,1), sitePos(:,2), anchorLat, anchorLon);
+siteT = table( ...
+    siteId(:), sitePos(:,1), sitePos(:,2), sitePos(:,3), siteLat(:), siteLon(:), ...
+    repmat(string(coordMode), numel(siteId), 1), repmat(string(anchorLabel), numel(siteId), 1), ...
+    'VariableNames', {'SiteID','X_m','Y_m','Z_m','Lat','Lon','CoordinateMode','MapAnchorLabel'});
+
+bsPos = double(sixgr.util.structGet(layoutStruct, "bs.pos_m", zeros(0,3)));
+siteRef = double(sixgr.util.structGet(layoutStruct, "bs.siteId", nan(size(bsPos,1),1)));
+sectorId = double(sixgr.util.structGet(layoutStruct, "bs.sectorId", (1:size(bsPos,1)).'));
+az = double(sixgr.util.structGet(layoutStruct, "bs.azim_deg", nan(size(bsPos,1),1)));
+txP = double(sixgr.util.structGet(layoutStruct, "bs.txPower_dBm", nan(size(bsPos,1),1)));
+[bsLat, bsLon] = localProjectXYToLatLon(bsPos(:,1), bsPos(:,2), anchorLat, anchorLon);
+
+sectorT = table( ...
+    siteRef(:), sectorId(:), az(:), bsPos(:,1), bsPos(:,2), bsPos(:,3), bsLat(:), bsLon(:), ...
+    repmat(string(coordMode), numel(sectorId), 1), repmat(string(anchorLabel), numel(sectorId), 1), ...
+    'VariableNames', {'SiteID','SectorID','Azimuth_deg','X_m','Y_m','Z_m','Lat','Lon','CoordinateMode','MapAnchorLabel'});
+
+trpId = (1:size(bsPos,1)).';
+trpT = table( ...
+    trpId(:), siteRef(:), sectorId(:), az(:), txP(:), bsPos(:,1), bsPos(:,2), bsPos(:,3), bsLat(:), bsLon(:), ...
+    repmat(string(coordMode), numel(trpId), 1), repmat(string(anchorLabel), numel(trpId), 1), ...
+    'VariableNames', {'TRPID','SiteID','SectorID','Azimuth_deg','TxPower_dBm','X_m','Y_m','Z_m','Lat','Lon','CoordinateMode','MapAnchorLabel'});
+
+ueId = double(sixgr.util.structGet(ue, "id", (1:size(ue.pos_m,1)).'));
+uePos = double(sixgr.util.structGet(ue, "pos_m", zeros(0,3)));
+ueIndoor = logical(sixgr.util.structGet(ue, "indoor", false(size(uePos,1),1)));
+ueSpeed = double(sixgr.util.structGet(ue, "speed_kmh", nan(size(uePos,1),1)));
+ueHeading = double(sixgr.util.structGet(ue, "heading_deg", nan(size(uePos,1),1)));
+[ueLat, ueLon] = localProjectXYToLatLon(uePos(:,1), uePos(:,2), anchorLat, anchorLon);
+ueT = table( ...
+    ueId(:), uePos(:,1), uePos(:,2), uePos(:,3), ueLat(:), ueLon(:), ueIndoor(:), ueSpeed(:), ueHeading(:), ...
+    repmat(string(coordMode), numel(ueId), 1), repmat(string(anchorLabel), numel(ueId), 1), ...
+    'VariableNames', {'UEID','X_m','Y_m','Z_m','Lat','Lon','Indoor','Speed_kmh','Heading_deg','CoordinateMode','MapAnchorLabel'});
+end
+
+function [lat, lon] = localProjectXYToLatLon(x_m, y_m, anchorLat, anchorLon)
+[lat, lon] = sixgr.util.projectLocalXYToGeo(x_m, y_m, double(anchorLat), double(anchorLon));
 end
 
 function tf = localShouldWriteCSV(scfg)
@@ -632,12 +1181,16 @@ manifest.StrictValidation = logical(scfg.get("logging.strict_validation"));
 manifest.LinkDirection = char(string(scfg.get("simulation.link_direction")));
 manifest.ConfiguredUsers = double(scfg.get("users.n_users", 1));
 manifest.UserExecutionModel = char(string(scfg.get("users.execution_model", "independent_link_sweep")));
-manifest.BeamSelectionStrategy = char(string(scfg.get("users.beam_selection_strategy", "fixed_first_beam")));
+manifest.BeamSelectionStrategy = char(string(scfg.get("users.beam_selection_strategy")));
 manifest.ConfiguredLayers = double(scfg.get("mimo.n_layers"));
 manifest.ConfiguredTxAntennas = double(scfg.get("mimo.n_tx_ant"));
 manifest.ConfiguredRxAntennas = double(scfg.get("mimo.n_rx_ant"));
 manifest.OutputBucket = char(string(scfg.get("output.bucket")));
 manifest.OutputProfile = char(string(scfg.get("output.profile")));
+manifest.OutputBackend = char(string(scfg.get("output.backend", "filesystem")));
+manifest.OutputDatabaseHost = char(string(scfg.get("output.database_host", "localhost")));
+manifest.OutputDatabasePort = double(scfg.get("output.database_port", 3306));
+manifest.OutputDatabaseSchema = char(string(scfg.get("output.database_schema", "sixgr_results")));
 manifest.SaveCSV = logical(scfg.get("output.save_csv"));
 manifest.SaveMAT = logical(scfg.get("output.save_mat"));
 manifest.SaveFigures = logical(scfg.get("output.save_figures"));
@@ -674,11 +1227,113 @@ manifest.RequiredFailedCases = cellstr(string(scenarioStatus.RequiredFailedCases
 manifest.OptionalPrunedCases = cellstr(string(scenarioStatus.OptionalPrunedCases(:)));
 manifest.StatusAuthority = char(string(scenarioStatus.StatusAuthority));
 manifest.StatusNotes = char(string(scenarioStatus.StatusNotes));
+manifest.RuntimeTruthContractOk = logical(scenarioStatus.RuntimeTruthContractOk);
+manifest.RoundtripMismatchCount = double(scenarioStatus.RoundtripMismatchCount);
+manifest.RequiredRuntimeEvidenceMissingCount = double(scenarioStatus.RequiredRuntimeEvidenceMissingCount);
+manifest.StrictTruthFailureCount = double(scenarioStatus.StrictTruthFailureCount);
+manifest.StrictProxyGuardFailureCount = double(scenarioStatus.StrictProxyGuardFailureCount);
+manifest.CanonicalArtifactGapCount = double(scenarioStatus.CanonicalArtifactGapCount);
+manifest.RuntimeTruthContractFailures = cellstr(string(scenarioStatus.RuntimeTruthContractFailures(:)));
 end
 
 function txt = localUTCStamp()
 dt = datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd HH:mm:ss");
 txt = char(replace(string(dt), " ", "T") + "Z");
+end
+
+function localDBLog(levelStr, messageText, varargin)
+if nargin >= 3
+    try
+        messageText = sprintf(messageText, varargin{:});
+    catch
+    end
+end
+try
+    fprintf(1, "[%s] %s %s\n", localUTCStamp(), upper(char(string(levelStr))), char(string(messageText)));
+catch
+end
+try
+    if sixgr.db.isArtifactStoreActive()
+        sixgr.db.appendLogLine(string(levelStr), string(localUTCStamp()), string(messageText));
+    end
+catch
+end
+end
+
+function relPath = localWriteArtifactManifest(runFolder, scfg, profile, manifest, reportBundle, scenarioStatus)
+storeState = sixgr.db.artifactStore("get_state");
+runID = double(sixgr.util.structGet(storeState, "RunID", NaN));
+if isfinite(runID) && runID > 0
+    runToken = sprintf("%d", round(runID));
+else
+    runToken = localSanitizeToken(string(scfg.ScenarioID), "scenario");
+end
+relPath = fullfile("outputs", runToken, "artifact_manifest.json");
+inventoryT = sixgr.util.structGet(reportBundle, "Inventory", table());
+unavailableRows = sixgr.util.structGet(reportBundle, "OutputCoverageArtifacts.ManifestUnavailableEntries", struct([]));
+payload = struct();
+payload.GeneratedUTC = localUTCStamp();
+payload.RunID = runID;
+payload.ScenarioID = char(string(scfg.ScenarioID));
+payload.RunnerProfile = char(string(profile));
+payload.ConfigHash = char(string(sixgr.util.structGet(manifest, "ConfigHash", "")));
+payload.RunCompletion = char(string(sixgr.util.structGet(scenarioStatus, "RunCompletion", "")));
+payload.ResultOk = logical(sixgr.util.structGet(scenarioStatus, "ResultOk", false));
+payload.ArtifactInventoryCSV = "reports/csv/artifact_inventory.csv";
+payload.ArtifactCount = height(inventoryT);
+payload.Artifacts = localArtifactManifestRows(inventoryT);
+payload.UnavailableArtifacts = unavailableRows;
+sixgr.util.jsonWrite(fullfile(runFolder, relPath), payload);
+end
+
+function rows = localArtifactManifestRows(T)
+rows = repmat(struct( ...
+    "RelativePath", "", ...
+    "ArtifactClass", "", ...
+    "SemanticState", "", ...
+    "Bytes", NaN, ...
+    "MachineReadable", false, ...
+    "HumanReadable", false), 0, 1);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+for i = 1:height(T)
+    row = struct();
+    row.RelativePath = char(string(localTableValue(T, i, "RelativePath", "")));
+    row.ArtifactClass = char(string(localTableValue(T, i, "ArtifactClass", "")));
+    row.SemanticState = char(string(localTableValue(T, i, "SemanticState", "")));
+    row.Bytes = double(localTableValue(T, i, "Bytes", NaN));
+    row.MachineReadable = logical(localTableValue(T, i, "MachineReadable", false));
+    row.HumanReadable = logical(localTableValue(T, i, "HumanReadable", false));
+    rows(end + 1, 1) = row; %#ok<AGROW>
+end
+end
+
+function value = localTableValue(T, rowIdx, varName, defaultValue)
+value = defaultValue;
+if ~(istable(T) && rowIdx >= 1 && rowIdx <= height(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+raw = T.(char(varName))(rowIdx);
+if iscell(raw)
+    value = raw{1};
+else
+    value = raw;
+end
+end
+
+function profileName = localResolveRunRowProfileName(scfg)
+profileName = string(scfg.get("scenario.runner_profile", ""));
+if strlength(strtrim(profileName)) == 0
+    profileName = string(scfg.get("scenario.profile_name", ""));
+end
+if strlength(strtrim(profileName)) == 0
+    profileName = string(scfg.get("deployment_topology.cell_type", ""));
+end
+if strlength(strtrim(profileName)) == 0
+    profileName = string(scfg.ScenarioID);
+end
+profileName = strtrim(profileName);
 end
 
 function [codeVersion, detail] = localDetectCodeVersion(includeGitHash)
@@ -704,6 +1359,9 @@ detail = "branch=" + string(branch) + "; hash=" + string(hash);
 end
 
 function localAnnotateAllCSV(runFolder, scfg, profile)
+if sixgr.db.isArtifactStoreActive()
+    return;
+end
 files = dir(fullfile(runFolder, "**", "*.csv"));
 for i = 1:numel(files)
     f = fullfile(files(i).folder, files(i).name);
@@ -736,6 +1394,11 @@ end
 function T = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus)
 okVal = logical(scenarioStatus.ResultOk);
 opSummary = localOperatingPointSummary(scfg, result);
+numerologyMu = double(sixgr.util.structGet(opSummary, "Radio.Numerology_mu", NaN));
+scsKHz = double(sixgr.util.structGet(opSummary, "Radio.SCS_kHz", NaN));
+slotDuration_ms = double(sixgr.util.structGet(opSummary, "Radio.SlotDuration_ms", NaN));
+slotsPerFrame = double(sixgr.util.structGet(opSummary, "Radio.SlotsPerFrame", NaN));
+symbolsPerSlot = double(sixgr.util.structGet(opSummary, "Radio.SymbolsPerSlot", NaN));
 T = table( ...
     string(scfg.ScenarioID), ...
     string(profile), ...
@@ -745,7 +1408,7 @@ T = table( ...
     logical(scfg.get("logging.strict_validation")), ...
     double(scfg.get("users.n_users", 1)), ...
     double(scfg.get("mimo.n_layers")), ...
-    string(scfg.get("users.beam_selection_strategy", "fixed_first_beam")), ...
+    string(scfg.get("users.beam_selection_strategy")), ...
     "6G_PHY_LLS_SINGLE_SCENARIO", ...
     string(scenarioStatus.RunCompletion), ...
     okVal, ...
@@ -756,6 +1419,13 @@ T = table( ...
     double(scenarioStatus.RequiredFailureCount), ...
     double(scenarioStatus.OptionalPrunedCount), ...
     string(scenarioStatus.StatusAuthority), ...
+    logical(scenarioStatus.RuntimeTruthContractOk), ...
+    double(scenarioStatus.RoundtripMismatchCount), ...
+    double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), ...
+    double(scenarioStatus.StrictTruthFailureCount), ...
+    double(scenarioStatus.StrictProxyGuardFailureCount), ...
+    double(scenarioStatus.CanonicalArtifactGapCount), ...
+    string(strjoin(string(scenarioStatus.RuntimeTruthContractFailures(:)), "; ")), ...
     string(scfg.get("meta.description", "")), ...
     string(opSummary.RuntimeQualifiedDescription), ...
     "nominal", ...
@@ -765,6 +1435,13 @@ T = table( ...
     double(opSummary.Radio.ActiveGridNumRBs), ...
     double(opSummary.Radio.ConfiguredGridNumRBs), ...
     string(opSummary.Radio.ActiveGridSource), ...
+    numerologyMu, ...
+    scsKHz, ...
+    slotDuration_ms, ...
+    slotsPerFrame, ...
+    symbolsPerSlot, ...
+    string(sixgr.util.structGet(opSummary, "Radio.NumerologySource", "")), ...
+    string(sixgr.util.structGet(opSummary, "Radio.TimingInterpretationSource", "")), ...
     string(opSummary.Radio.ActiveDuplexMode), ...
     string(opSummary.Radio.ConfiguredTDDPattern), ...
     string(opSummary.Radio.ActiveTDDPattern), ...
@@ -783,16 +1460,25 @@ T = table( ...
     string(opSummary.UL.ModulationHistogram), ...
     string(opSummary.UL.MCSHistogram), ...
     double(opSummary.UL.ConfiguredMatchRate), ...
+    double(scenarioStatus.FailingCaseCount), ...
+    double(scenarioStatus.WarningCount), ...
+    string(scenarioStatus.ErrorSource), ...
+    string(scenarioStatus.ErrorIdentifier), ...
+    string(scenarioStatus.ErrorMessage), ...
+    string(scenarioStatus.AuthoritativeStatusSource), ...
     string(opSummary.RuntimeNarrative), ...
     'VariableNames', {'ScenarioID','RunnerProfile','ConfigHash','RandomSeed', ...
     'DeterministicMode','StrictValidation','NumUsers','ConfiguredLayers','BeamSelectionStrategy', ...
     'RunScope','RunCompletion','Ok','ResultOk','PartialOk','ArtifactsGenerated', ...
-    'RequiredCaseCount','RequiredFailureCount','OptionalPrunedCount','StatusAuthority','Description', ...
+    'RequiredCaseCount','RequiredFailureCount','OptionalPrunedCount','StatusAuthority', ...
+    'RuntimeTruthContractOk','RoundtripMismatchCount','RequiredRuntimeEvidenceMissingCount', ...
+    'StrictTruthFailureCount','StrictProxyGuardFailureCount','CanonicalArtifactGapCount','RuntimeTruthContractFailures','Description', ...
     'RuntimeQualifiedDescription', ...
     'ConfiguredParameterSemantics','ConfiguredMIMO','ConfiguredDLNominalOperatingPoint','ConfiguredULNominalOperatingPoint', ...
-    'ActiveGridNumRBs','ConfiguredGridNumRBs','ActiveGridSource','ActiveDuplexMode','ConfiguredTDDPattern','ActiveTDDPattern','TDDPatternApplicable', ...
+    'ActiveGridNumRBs','ConfiguredGridNumRBs','ActiveGridSource','Numerology_mu','SCS_kHz','SlotDuration_ms','SlotsPerFrame','SymbolsPerSlot','NumerologySource','TimingInterpretationSource','ActiveDuplexMode','ConfiguredTDDPattern','ActiveTDDPattern','TDDPatternApplicable', ...
     'EffectiveDLTrialCount','EffectiveDLDominantOperatingPoint','EffectiveDLLayerHistogram','EffectiveDLRankHistogram','EffectiveDLModulationHistogram','EffectiveDLMCSHistogram','EffectiveDLConfiguredMatchRate', ...
     'EffectiveULTrialCount','EffectiveULDominantOperatingPoint','EffectiveULLayerHistogram','EffectiveULRankHistogram','EffectiveULModulationHistogram','EffectiveULMCSHistogram','EffectiveULConfiguredMatchRate', ...
+    'FailingCaseCount','WarningCount','ErrorSource','ErrorIdentifier','ErrorMessage','AuthoritativeStatusSource', ...
     'EffectiveRuntimeNote'});
 end
 
@@ -818,7 +1504,7 @@ fprintf(fid, "- Users: `%d`\n", double(scfg.get("users.n_users", 1)));
 fprintf(fid, "- Configured nominal layers: `%d`\n", double(scfg.get("mimo.n_layers")));
 fprintf(fid, "- Configured nominal Tx/Rx antennas: `%dx%d`\n", double(scfg.get("mimo.n_tx_ant")), double(scfg.get("mimo.n_rx_ant")));
 fprintf(fid, "- User execution model: `%s`\n", string(scfg.get("users.execution_model", "independent_link_sweep")));
-fprintf(fid, "- Beam selection strategy: `%s`\n", string(scfg.get("users.beam_selection_strategy", "fixed_first_beam")));
+fprintf(fid, "- Beam selection strategy: `%s`\n", string(scfg.get("users.beam_selection_strategy")));
 fprintf(fid, "- Run scope: `%s`\n", string(manifest.RunScope));
 fprintf(fid, "- Run completion: `%s`\n", string(manifest.RunCompletion));
 fprintf(fid, "- Result OK: `%s`\n", string(logical(scenarioStatus.ResultOk)));
@@ -829,6 +1515,10 @@ fprintf(fid, "- Required case count: `%g`\n", double(scenarioStatus.RequiredCase
 fprintf(fid, "- Required failure count: `%g`\n", double(scenarioStatus.RequiredFailureCount));
 fprintf(fid, "- Optional/pruned case count: `%g`\n", double(scenarioStatus.OptionalPrunedCount));
 fprintf(fid, "- Status authority: `%s`\n", string(scenarioStatus.StatusAuthority));
+fprintf(fid, "- Runtime truth contract OK: `%s`\n", string(logical(scenarioStatus.RuntimeTruthContractOk)));
+fprintf(fid, "- Roundtrip mismatch count: `%g`\n", double(scenarioStatus.RoundtripMismatchCount));
+fprintf(fid, "- Required runtime evidence missing count: `%g`\n", double(scenarioStatus.RequiredRuntimeEvidenceMissingCount));
+fprintf(fid, "- Strict truth failure count: `%g`\n", double(scenarioStatus.StrictTruthFailureCount));
 if strlength(string(scenarioStatus.StatusNotes)) > 0
     fprintf(fid, "- Status notes: `%s`\n", string(scenarioStatus.StatusNotes));
 end
@@ -874,6 +1564,8 @@ fprintf(fid, "\n## Source Chain\n\n");
 for i = 1:numel(scfg.SourceFiles)
     fprintf(fid, "- `%s`\n", string(localPortablePath(scfg.SourceFiles(i))));
 end
+clear cleanupObj
+sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
 end
 
 function opSummary = localOperatingPointSummary(scfg, result)
@@ -883,14 +1575,41 @@ if isstruct(result) && isfield(result, "Link")
     rawTrials = sixgr.util.structGet(result.Link, "RawTrials", struct());
     dlTrials = localOptionalRawTrialTable(rawTrials, "DL");
     ulTrials = localOptionalRawTrialTable(rawTrials, "UL");
+    if isempty(dlTrials)
+        dlTrials = localOptionalNestedTrialTable(result.Link, "ResultDL");
+    end
+    if isempty(ulTrials)
+        ulTrials = localOptionalNestedTrialTable(result.Link, "ResultUL");
+    end
 end
 opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
+opSummary.Radio.Numerology_mu = localDeriveNumerologyMu(double(scfg.get("frame.scs_khz", NaN)));
+opSummary.Radio.SCS_kHz = double(scfg.get("frame.scs_khz", NaN));
+opSummary.Radio.SlotDuration_ms = localDeriveSlotDurationMs(opSummary.Radio.Numerology_mu);
+opSummary.Radio.SlotsPerFrame = localDeriveSlotsPerFrame(opSummary.Radio.Numerology_mu);
+opSummary.Radio.SymbolsPerSlot = 14;
+opSummary.Radio.NumerologySource = "frame.scs_khz_runtime_authority";
+opSummary.Radio.TimingInterpretationSource = "nr_mu_from_scs";
 end
 
 function T = localOptionalRawTrialTable(rawTrials, fieldName)
 T = table();
 if isstruct(rawTrials) && isfield(rawTrials, char(fieldName)) && istable(rawTrials.(char(fieldName)))
     T = rawTrials.(char(fieldName));
+end
+end
+
+function T = localOptionalNestedTrialTable(linkResult, fieldName)
+T = table();
+if ~(isstruct(linkResult) && isfield(linkResult, char(fieldName)))
+    return;
+end
+node = linkResult.(char(fieldName));
+if isstruct(node)
+    T = sixgr.util.structGet(node, "TrialTable", table());
+end
+if ~istable(T)
+    T = table();
 end
 end
 
@@ -978,6 +1697,16 @@ runtime.RequestedWorkers = double(sixgr.util.structGet(cfg, "run.parallelRequest
 runtime.EffectiveWorkers = double(sixgr.util.structGet(cfg, "run.numWorkers", 0));
 runtime.ParallelDisabledReason = char(string(sixgr.util.structGet(cfg, "run.parallelDisabledReason", "")));
 runtime.MaxNumCompThreads = double(localSafeMaxNumCompThreads());
+runtime.Numerology_mu = double(sixgr.util.structGet(cfg, "phy.numerology.mu", NaN));
+runtime.SCS_kHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN));
+runtime.SlotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
+runtime.SlotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN));
+runtime.SymbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", NaN));
+runtime.ConfiguredGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.configuredGridNumRBs", NaN));
+runtime.ActiveGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.activeGridNumRBs", NaN));
+runtime.ActiveGridSource = char(string(sixgr.util.structGet(cfg, "phy.numerology.activeGridSource", "")));
+runtime.NumerologySource = char(string(sixgr.util.structGet(cfg, "phy.numerology.numerologySource", "")));
+runtime.TimingInterpretationSource = char(string(sixgr.util.structGet(cfg, "phy.numerology.timingInterpretationSource", "")));
 end
 
 function env = localBuildEnvironmentSummary(cfg)
@@ -1020,6 +1749,46 @@ if strlength(string(runTag)) == 0
     leaf = "current";
 else
     leaf = localSanitizeToken(runTag, "current");
+end
+end
+
+function runFolder = localComposeRunFolderNoCreate(resultsRoot, bucket, profile, leaf)
+root = sixgr.report.resolveResultsRoot(char(string(resultsRoot)));
+bucket = localSanitizeToken(bucket, "lls");
+profile = localSanitizeToken(profile, "scenario");
+leaf = localSanitizeToken(leaf, "current");
+runFolder = fullfile(root, bucket, profile, leaf);
+end
+
+function runFolder = localComposeDBStagingRunFolder(profile, leaf)
+profile = localSanitizeToken(profile, "scenario");
+leaf = localSanitizeToken(leaf, "current");
+runFolder = fullfile(tempdir, "sixgr_mysql_web_runs", profile, leaf);
+end
+
+function localResetRunFolder(runFolder)
+localDeleteFolderTreeIfExists(runFolder);
+sixgr.util.ensureFolder(runFolder);
+end
+
+function localCleanupDBOnlyRunFolders(backend, stagingRunFolder, logicalRunFolder)
+if lower(string(backend)) ~= "mysql_web"
+    return;
+end
+localDeleteFolderTreeIfExists(stagingRunFolder);
+localDeleteFolderTreeIfExists(logicalRunFolder);
+end
+
+function localDeleteFolderTreeIfExists(folderPath)
+folderPath = char(string(folderPath));
+if strlength(string(folderPath)) == 0 || ~isfolder(folderPath)
+    return;
+end
+try
+    warnState = warning("off", "all");
+    cleanupWarn = onCleanup(@() warning(warnState)); %#ok<NASGU>
+    rmdir(folderPath, "s");
+catch
 end
 end
 
@@ -1226,6 +1995,11 @@ if nargin >= 4 && logical(sweepEnabled)
 end
 snr_dB = double(snr_dB);
 offsets_dB = double(offsets_dB(:)).';
+offsets_dB = offsets_dB(isfinite(offsets_dB));
+if isempty(offsets_dB)
+    grid = snr_dB;
+    return;
+end
 grid = unique(sort(snr_dB + offsets_dB));
 end
 
@@ -1328,14 +2102,86 @@ status.StatusAuthority = "scenario_status_aggregation_v1";
 status.StatusNotes = "";
 status.ProfileReportedOk = logical(sixgr.util.structGet(result, "Ok", true));
 status.AuthoritativeStatusSource = "result.Ok";
+status.RuntimeTruthContractOk = true;
+status.RoundtripMismatchCount = 0;
+status.RequiredRuntimeEvidenceMissingCount = 0;
+status.StrictTruthFailureCount = 0;
+status.StrictProxyGuardFailureCount = 0;
+status.CanonicalArtifactGapCount = 0;
+status.RuntimeTruthContractFailures = strings(0, 1);
+status.WarningCount = 0;
+status.FailingCaseCount = 0;
+status.CaseOk = logical(status.ResultOk);
+status.ErrorSource = "";
+status.ErrorIdentifier = "";
+status.ErrorMessage = "";
 
 if isstruct(result) && isfield(result, "Link")
     [status.ResultOk, status.RequiredCaseCount, status.RequiredFailureCount, ...
         status.RequiredFailedCases, status.OptionalPrunedCount, status.OptionalPrunedCases, ...
-        status.StatusNotes, status.AuthoritativeStatusSource] = localAggregateWaveformLinkStatus(result.Link, status.ProfileReportedOk);
+        status.StatusNotes, status.AuthoritativeStatusSource, status.WarningCount, ...
+        status.ErrorSource, status.ErrorIdentifier, status.ErrorMessage] = localAggregateWaveformLinkStatus(result.Link, status.ProfileReportedOk);
 end
 
+status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+status.CaseOk = status.FailingCaseCount == 0;
+if ~logical(status.ResultOk) && status.RunCompletion == "completed"
+    status.RunCompletion = "completed_with_failures";
+end
 status.PartialOk = logical(status.ArtifactsGenerated) && ~logical(status.ResultOk);
+end
+
+function status = localApplyRuntimeTruthContract(status, result, scfg, cfg, runFolder)
+try
+    verdict = sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result);
+catch ME
+    verdict = struct();
+    verdict.Ok = false;
+    verdict.RuntimeTruthContractOk = false;
+    verdict.RoundtripMismatchCount = 0;
+    verdict.RequiredRuntimeEvidenceMissingCount = 1;
+    verdict.StrictTruthFailureCount = 1;
+    verdict.StrictProxyGuardFailureCount = 0;
+    verdict.CanonicalArtifactGapCount = 0;
+    verdict.Failures = "runtime_truth_contract_evaluator_error:" + string(ME.identifier);
+end
+
+status.StatusAuthority = "scenario_status_aggregation_v2_runtime_truth_contract";
+status.RuntimeTruthContractOk = logical(sixgr.util.structGet(verdict, "RuntimeTruthContractOk", sixgr.util.structGet(verdict, "Ok", false)));
+status.RoundtripMismatchCount = double(sixgr.util.structGet(verdict, "RoundtripMismatchCount", 0));
+status.RequiredRuntimeEvidenceMissingCount = double(sixgr.util.structGet(verdict, "RequiredRuntimeEvidenceMissingCount", 0));
+status.StrictTruthFailureCount = double(sixgr.util.structGet(verdict, "StrictTruthFailureCount", 0));
+status.StrictProxyGuardFailureCount = double(sixgr.util.structGet(verdict, "StrictProxyGuardFailureCount", 0));
+status.CanonicalArtifactGapCount = double(sixgr.util.structGet(verdict, "CanonicalArtifactGapCount", 0));
+status.RuntimeTruthContractFailures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
+status.RuntimeTruthContractFailures = status.RuntimeTruthContractFailures(:);
+roundtripStatusDetails = string(sixgr.util.structGet(verdict, "RoundtripStatusDetails", strings(0, 1)));
+roundtripStatusDetails = roundtripStatusDetails(strlength(roundtripStatusDetails) > 0);
+if ~isempty(roundtripStatusDetails)
+    status.RuntimeTruthContractFailures = unique([status.RuntimeTruthContractFailures; roundtripStatusDetails(:)], "stable");
+end
+
+if ~logical(status.RuntimeTruthContractOk)
+    status.ResultOk = false;
+    status.CaseOk = false;
+    status.PartialOk = logical(status.ArtifactsGenerated);
+    status.RunCompletion = "completed_with_failures";
+    status.RequiredFailureCount = double(status.RequiredFailureCount) + max(1, double(status.StrictTruthFailureCount));
+    status.RequiredFailedCases = unique([string(status.RequiredFailedCases(:)); status.RuntimeTruthContractFailures], "stable");
+    status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+    status.AuthoritativeStatusSource = "runtime_truth_contract";
+    status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+        "Run-level success is gated by the runtime truth contract; missing/proxy/mismatched evidence forces ResultOk=false.");
+    if strlength(string(status.ErrorIdentifier)) == 0
+        status.ErrorSource = "runtime_truth_contract";
+        status.ErrorIdentifier = "runtime_truth_contract_failed";
+        status.ErrorMessage = char(strjoin(status.RuntimeTruthContractFailures, "; "));
+    end
+else
+    status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+    status.CaseOk = logical(status.ResultOk) && status.FailingCaseCount == 0;
+    status.PartialOk = logical(status.ArtifactsGenerated) && ~logical(status.ResultOk);
+end
 end
 
 function result = localApplyScenarioStatus(result, scenarioStatus)
@@ -1352,9 +2198,22 @@ result.OptionalPrunedCases = string(scenarioStatus.OptionalPrunedCases(:));
 result.StatusAuthority = char(string(scenarioStatus.StatusAuthority));
 result.StatusNotes = char(string(scenarioStatus.StatusNotes));
 result.AuthoritativeStatusSource = char(string(scenarioStatus.AuthoritativeStatusSource));
+result.RuntimeTruthContractOk = logical(scenarioStatus.RuntimeTruthContractOk);
+result.RoundtripMismatchCount = double(scenarioStatus.RoundtripMismatchCount);
+result.RequiredRuntimeEvidenceMissingCount = double(scenarioStatus.RequiredRuntimeEvidenceMissingCount);
+result.StrictTruthFailureCount = double(scenarioStatus.StrictTruthFailureCount);
+result.StrictProxyGuardFailureCount = double(scenarioStatus.StrictProxyGuardFailureCount);
+result.CanonicalArtifactGapCount = double(scenarioStatus.CanonicalArtifactGapCount);
+result.RuntimeTruthContractFailures = string(scenarioStatus.RuntimeTruthContractFailures(:));
+result.WarningCount = double(scenarioStatus.WarningCount);
+result.FailingCaseCount = double(scenarioStatus.FailingCaseCount);
+result.CaseOk = logical(scenarioStatus.CaseOk);
+result.ErrorSource = char(string(scenarioStatus.ErrorSource));
+result.ErrorIdentifier = char(string(scenarioStatus.ErrorIdentifier));
+result.ErrorMessage = char(string(scenarioStatus.ErrorMessage));
 end
 
-function [resultOk, requiredCaseCount, requiredFailureCount, failedCases, optionalPrunedCount, optionalPrunedCases, statusNotes, authority] = localAggregateWaveformLinkStatus(link, profileReportedOk)
+function [resultOk, requiredCaseCount, requiredFailureCount, failedCases, optionalPrunedCount, optionalPrunedCases, statusNotes, authority, warningCount, errorSource, errorIdentifier, errorMessage] = localAggregateWaveformLinkStatus(link, profileReportedOk)
 resultOk = logical(profileReportedOk);
 requiredCaseCount = NaN;
 requiredFailureCount = NaN;
@@ -1363,6 +2222,10 @@ optionalPrunedCount = 0;
 optionalPrunedCases = strings(0, 1);
 statusNotes = "";
 authority = "Link.Result.Ok";
+warningCount = 0;
+errorSource = "";
+errorIdentifier = "";
+errorMessage = "";
 
 kpitable = sixgr.util.structGet(link, "KPITable", table());
 unsupported = sixgr.util.structGet(link, "UnsupportedCases", table());
@@ -1382,6 +2245,7 @@ end
 if istable(unsupported) && ~isempty(unsupported) && ismember("Case", string(unsupported.Properties.VariableNames))
     optionalPrunedCases = unique(string(unsupported.Case), "stable");
     optionalPrunedCount = double(numel(optionalPrunedCases));
+    warningCount = optionalPrunedCount;
 end
 
 candidateOk = [linkResultOk, linkOuterOk];
@@ -1405,12 +2269,45 @@ if ~resultOk && isempty(failedCases) && isfinite(linkResultOk) && ~logical(linkR
     if ~isfinite(requiredFailureCount) || requiredFailureCount <= 0
         requiredFailureCount = 1;
     end
+    errorSource = "Link.Result.Ok";
+    errorIdentifier = "required_case_failed";
+    errorMessage = "Nested link result reported failure.";
 end
 if ~isfinite(requiredCaseCount)
     requiredCaseCount = 0;
 end
 if ~isfinite(requiredFailureCount)
     requiredFailureCount = double(~resultOk);
+end
+if requiredFailureCount > 0 && strlength(string(errorIdentifier)) == 0
+    errorSource = "KPITable";
+    errorIdentifier = "required_case_failed";
+    errorMessage = "At least one required waveform-link case failed or was skipped.";
+end
+end
+
+function mu = localDeriveNumerologyMu(scsKHz)
+mu = NaN;
+scsKHz = double(scsKHz);
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    return;
+end
+mu = round(log2(scsKHz / 15));
+end
+
+function slotDuration_ms = localDeriveSlotDurationMs(mu)
+slotDuration_ms = NaN;
+mu = double(mu);
+if isfinite(mu)
+    slotDuration_ms = 1 / 2^mu;
+end
+end
+
+function slotsPerFrame = localDeriveSlotsPerFrame(mu)
+slotsPerFrame = NaN;
+mu = double(mu);
+if isfinite(mu)
+    slotsPerFrame = 10 * 2^mu;
 end
 end
 
@@ -1469,6 +2366,7 @@ metadata.InferenceBatchSize = double(scfg.get("ai_ml.inference_batch_size"));
 metadata.FallbackEnabled = logical(scfg.get("ai_ml.fallback_enabled"));
 metadata.ConfidenceLoggingEnabled = logical(scfg.get("ai_ml.confidence_logging"));
 metadata.ParameterCount = double(localOptionalDescriptorValue(descriptor, "parameter_count", NaN));
+metadata.ConfiguredConfidenceBias = double(localOptionalDescriptorValue(descriptor, "confidence_bias", NaN));
 metadata.ConfiguredInputFeatures = strjoin(string(scfg.get("ai_ml.input_features")), "|");
 metadata.ConfiguredOutputTargets = strjoin(string(scfg.get("ai_ml.output_targets")), "|");
 end
@@ -1507,7 +2405,10 @@ if ~logical(scfg.get("ai_ml.confidence_logging"))
     value = NaN;
     return;
 end
-value = double(localOptionalDescriptorValue(descriptor, "confidence_bias", NaN));
+% Descriptor-side confidence_bias is static model metadata, not measured
+% runtime confidence telemetry. Keep benchmark confidence unavailable until
+% the active AI path emits per-observation runtime confidence.
+value = double(localOptionalDescriptorValue(descriptor, "runtime_measured_confidence_score", NaN));
 end
 
 function Hout = localApplyCEPlugin(Hin, descriptor)

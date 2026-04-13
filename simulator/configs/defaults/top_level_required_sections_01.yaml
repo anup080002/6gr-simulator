@@ -15,6 +15,36 @@
   "run_control": {
     "seed": 11,
     "deterministic_mode": true,
+    "execution_mode": "LLS",
+    "study_mode": "baseline",
+    "simulation_mode": "full_phy",
+    "run_profile": "normal",
+    "random_seed_master": 11,
+    "random_seed_list": [11],
+    "num_seeds": 1,
+    "num_drops": 1,
+    "warmup_time_ms": 0,
+    "measurement_time_ms": 10,
+    "total_time_ms": 10,
+    "slot_level_logging_enable": true,
+    "symbol_level_logging_enable": false,
+    "per_ue_logging_enable": true,
+    "per_cell_logging_enable": true,
+    "raw_iq_capture_enable": false,
+    "raw_grid_capture_enable": false,
+    "save_constellations": false,
+    "save_channel_tensors": false,
+    "save_scheduler_decisions": true,
+    "save_harq_buffers": false,
+    "save_reference_signal_maps": false,
+    "save_beam_weights": false,
+    "save_link_budget_tables": true,
+    "save_interference_breakdown": true,
+    "save_energy_trace": false,
+    "batch_size_links": 1,
+    "gpu_enable": false,
+    "mixed_precision_enable": false,
+    "fail_on_validation_warning": true,
     "num_workers": 1,
     "device_target": "cpu",
     "precision_mode": "fp64",
@@ -122,10 +152,85 @@
     "speed_profile": "constant",
     "direction_model": "fixed",
     "trajectory_model": "linear",
+    "update_period_s": 0.1,
+    "zigzag_segment_duration_s": 0.75,
+    "zigzag_turn_angle_deg": 35,
     "acceleration_profile": "none",
     "handover_context_flag": false,
     "beam_dynamics_model": "static",
     "spatial_consistency_flag": false
+  },
+  "system": {
+    "queueMaxBits": 50000000,
+    "scheduler": {
+      "type": "PF",
+      "maxActiveUEsPerSlot": 16,
+      "maxPRBAllocationPerUE": 273,
+      "fairnessAlpha": 1.0,
+      "proportionalFairWindow_ms": 100,
+      "beamAware": true,
+      "energyAware": false,
+      "qosAware": false,
+      "sliceAware": false,
+      "starvationGuard": true,
+      "cellEdgeBoost": true
+    },
+    "measurement": {
+      "periodSlots": 2,
+      "filterAlpha": 0.7
+    },
+    "beam": {
+      "enable": true,
+      "numBeams": 8,
+      "updatePeriod_slots": 4,
+      "sectorSpan_deg": 120,
+      "maxGain_dB": 12
+    },
+    "handover": {
+      "enable": true,
+      "a3Offset_dB": 3,
+      "hysteresis_dB": 2,
+      "timeToTrigger_slots": 6,
+      "minServingSlots": 8,
+      "preparationSlots": 1,
+      "interruptionSlots": 2,
+      "blockDuringPreparation": false
+    }
+  },
+  "traffic": {
+    "model": "fullBuffer",
+    "transport": "UDP",
+    "flowDirection": "BIDIR",
+    "dlRatio": 0.8,
+    "ulRatio": 0.2,
+    "packetDelayBudget_ms": 50,
+    "packetSize_bytes": 1200,
+    "packetInterval_ms": 10,
+    "targetRate_Mbps": 50,
+    "jitterPct": 0.1,
+    "fullBufferBitsPerTTI": 100000,
+    "tcp": {
+      "initCwnd_packets": 10,
+      "maxCwnd_packets": 256,
+      "lossProb": 0.01,
+      "lossBackoff": 0.5,
+      "minRateFloor": 0.2
+    },
+    "qos": {
+      "enable5QI": true,
+      "default5QI": 9,
+      "latencyBudget_ms": 50
+    },
+    "flows": [],
+    "trace": {
+      "file": "",
+      "offeredBitsDL": [],
+      "offeredBitsUL": [],
+      "transport": "",
+      "flowDirection": "",
+      "packetDelayBudget_ms": [],
+      "flowTable": []
+    }
   },
   "antenna_and_array": {
     "bs_array_geometry": "ura",
@@ -152,6 +257,7 @@
   "power_and_rf_frontend": {
     "bs_tx_power_dbm": 23,
     "ue_tx_power_dbm": 23,
+    "ue_noise_figure_db": 5,
     "power_backoff_db": 0,
     "pa_model": "ideal",
     "pa_efficiency_model": "constant",
@@ -215,6 +321,7 @@
     "scenario_label": "TDL-C",
     "delay_spread_ns": 100,
     "doppler_hz": 30,
+    "doppler_source_mode": "configured",
     "k_factor": 0,
     "angular_spread": "baseline",
     "zsa": "baseline",
@@ -234,6 +341,7 @@
     "inter_cell_interference_flag": false,
     "intra_cell_interference_flag": false,
     "mu_mimo_interference_flag": false,
+    "inter_cell_execution_mode": "none",
     "adjacent_channel_interference": "none",
     "cochannel_interference_profile": "none",
     "puncturing_interference": "none",
@@ -243,5 +351,17 @@
     "self_interference_model": "none",
     "uplink_interference_model": "none",
     "interference_measurement_policy": "standard"
+  },
+  "control_gating": {
+    "pbch_required": true,
+    "prach_required": true,
+    "pdcch_required": true,
+    "srs_required": true,
+    "srs_max_age_slots": 4,
+    "trs_required": false,
+    "trs_max_age_slots": 4
+  },
+  "receiver": {
+    "use_ideal_timing_sync": false
   }
 }

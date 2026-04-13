@@ -15,6 +15,9 @@ function [puschInd, info, pusch] = allocREsPUSCH(carrier, cfgOrPusch, varargin)
 %     "NumLayers"        - number of layers
 %     "RNTI"             - UE RNTI
 %     "TransformPrecoding"- true/false
+%     "TransmissionScheme"- "nonCodeBook" or "codebook"
+%     "NumAntennaPorts"  - UL codebook antenna ports
+%     "TPMI"             - UL codebook TPMI/PMI
 
 opts.IndexBase = '1based';
 opts.PRBSet = [];
@@ -23,6 +26,9 @@ opts.Modulation = '';
 opts.NumLayers = [];
 opts.RNTI = [];
 opts.TransformPrecoding = [];
+opts.TransmissionScheme = '';
+opts.NumAntennaPorts = [];
+opts.TPMI = [];
 
 for i = 1:2:numel(varargin)
     if i+1 > numel(varargin), break; end
@@ -45,6 +51,12 @@ for i = 1:2:numel(varargin)
             opts.RNTI = val;
         case 'transformprecoding'
             opts.TransformPrecoding = val;
+        case 'transmissionscheme'
+            opts.TransmissionScheme = char(string(val));
+        case {'numantennaports','numports','nports'}
+            opts.NumAntennaPorts = val;
+        case {'tpmi','pmi'}
+            opts.TPMI = val;
     end
 end
 
@@ -67,6 +79,10 @@ info.Modulation = char(string(pusch.Modulation));
 info.NumLayers = double(pusch.NumLayers);
 info.RNTI = double(pusch.RNTI);
 info.TransformPrecoding = logical(pusch.TransformPrecoding);
+info.TransmissionScheme = char(localObjectValue(pusch, 'TransmissionScheme', ''));
+info.NumAntennaPorts = double(localObjectValue(pusch, 'NumAntennaPorts', NaN));
+info.TPMI = double(localObjectValue(pusch, 'TPMI', NaN));
+info.CodebookType = char(string(localObjectValue(pusch, 'CodebookType', '')));
 info.PRBSet = pusch.PRBSet;
 info.SymbolAllocation = pusch.SymbolAllocation;
 info.NRE = size(puschInd, 1);
@@ -86,6 +102,16 @@ rnti = double(sixgr.util.structGet(cfg, 'phy.pusch.RNTI', 1));
 prb = sixgr.util.structGet(cfg, 'phy.pusch.prbSet', []);
 symAlloc = sixgr.util.structGet(cfg, 'phy.pusch.symbolAllocation', [0 14]);
 tp = logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
+tpmi = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, 'phy.pusch.tpmi', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.TPMI', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.pmi', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.PMI', []));
+transmissionScheme = char(string(sixgr.util.structGet(cfg, 'phy.pusch.transmissionScheme', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.TransmissionScheme', ''))));
+[numAntennaPorts, numAntennaPortsExplicit] = localResolvePUSCHAntennaPorts(cfg);
+codebookType = char(string(sixgr.util.structGet(cfg, 'phy.pusch.codebookType', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.CodebookType', ''))));
 mapType = upper(char(string(sixgr.util.structGet(cfg, 'phy.pusch.mappingType', ...
     sixgr.util.structGet(cfg, 'phy.pusch.MappingType', 'A')))));
 
@@ -96,11 +122,58 @@ if ~isempty(opts.RNTI), rnti = double(opts.RNTI); end
 if ~isempty(opts.PRBSet), prb = opts.PRBSet; end
 if ~isempty(opts.SymbolAllocation), symAlloc = opts.SymbolAllocation; end
 if ~isempty(opts.TransformPrecoding), tp = logical(opts.TransformPrecoding); end
+if ~isempty(opts.TPMI), tpmi = localFirstFiniteScalar(opts.TPMI); end
+if ~isempty(opts.TransmissionScheme), transmissionScheme = char(string(opts.TransmissionScheme)); end
+if ~isempty(opts.NumAntennaPorts)
+    numAntennaPorts = localFirstFiniteScalar(opts.NumAntennaPorts);
+    numAntennaPortsExplicit = true;
+end
+if ~numAntennaPortsExplicit && (~isfinite(numAntennaPorts) || numAntennaPorts < nl)
+    numAntennaPorts = nl;
+end
 
 pusch.Modulation = mod;
 pusch.NumLayers = nl;
 pusch.RNTI = rnti;
 pusch.TransformPrecoding = tp;
+
+if isempty(strtrim(transmissionScheme)) && ~tp && isfinite(tpmi)
+    transmissionScheme = 'codebook';
+end
+if ~isempty(strtrim(transmissionScheme))
+    try
+        pusch.TransmissionScheme = char(transmissionScheme);
+    catch ME
+        error("sixgr:phy:grid:allocREsPUSCH:BadTransmissionScheme", ...
+            "Invalid phy.pusch.transmissionScheme '%s': %s", char(transmissionScheme), ME.message);
+    end
+end
+if isfinite(numAntennaPorts)
+    try
+        pusch.NumAntennaPorts = localNormalizePUSCHAntennaPorts(numAntennaPorts, nl, numAntennaPortsExplicit);
+    catch ME
+        error("sixgr:phy:grid:allocREsPUSCH:BadNumAntennaPorts", ...
+            "Invalid phy.pusch.NumAntennaPorts/numPorts value: %s", ME.message);
+    end
+end
+if strcmpi(char(string(localObjectValue(pusch, 'TransmissionScheme', ''))), 'codebook')
+    if isfinite(tpmi)
+        try
+            pusch.TPMI = round(double(tpmi));
+        catch ME
+            error("sixgr:phy:grid:allocREsPUSCH:BadTPMI", ...
+                "Invalid phy.pusch.PMI/TPMI value %g: %s", double(tpmi), ME.message);
+        end
+    end
+    if ~isempty(strtrim(codebookType))
+        try
+            pusch.CodebookType = char(codebookType);
+        catch ME
+            error("sixgr:phy:grid:allocREsPUSCH:BadCodebookType", ...
+                "Invalid phy.pusch.CodebookType '%s': %s", char(codebookType), ME.message);
+        end
+    end
+end
 
 prbVec = localExpandPRBSet(prb, carrier.NSizeGrid);
 pusch.PRBSet = prbVec;
@@ -151,6 +224,77 @@ try
     end
 catch
 end
+end
+
+function value = localObjectValue(obj, propName, defaultValue)
+value = defaultValue;
+if isempty(obj)
+    return;
+end
+try
+    raw = obj.(propName);
+catch
+    return;
+end
+if isempty(raw)
+    return;
+end
+value = raw;
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw) || ~isnumeric(raw)
+        continue;
+    end
+    raw = double(raw(:));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw(1);
+        return;
+    end
+end
+end
+
+function [value, explicit] = localResolvePUSCHAntennaPorts(cfg)
+value = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, 'phy.pusch.numAntennaPorts', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.NumAntennaPorts', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.numPorts', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.nPorts', []));
+explicit = isfinite(value);
+if explicit
+    return;
+end
+
+% PUSCH NumAntennaPorts is a UL codebook-port field, not the gNB-wide
+% downlink antenna count. Fall back to UL-local port/layer evidence only.
+value = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, 'phy.pusch.dmrs.nPorts', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.dmrs.numPorts', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.numLayers', []), ...
+    sixgr.util.structGet(cfg, 'phy.pusch.nLayers', []), ...
+    sixgr.util.structGet(cfg, 'scenario.ue.nTxAnt', []));
+end
+
+function value = localNormalizePUSCHAntennaPorts(value, numLayers, explicit)
+allowed = [1 2 4];
+value = max(1, round(double(value)));
+minPorts = max(1, round(double(numLayers)));
+if explicit && ~any(value == allowed)
+    error("explicit NumAntennaPorts=%g is invalid for nrPUSCHConfig; expected one of [1 2 4].", value);
+end
+value = max(value, minPorts);
+idx = find(allowed >= value, 1, 'first');
+if isempty(idx)
+    if explicit
+        error("explicit NumAntennaPorts=%g cannot support NumLayers=%g within nrPUSCHConfig allowed ports [1 2 4].", value, minPorts);
+    end
+    idx = numel(allowed);
+end
+value = allowed(idx);
 end
 
 function prbVec = localExpandPRBSet(prb, nSizeGrid)

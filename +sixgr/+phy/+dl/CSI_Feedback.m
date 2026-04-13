@@ -5,11 +5,16 @@ ip = inputParser;
 ip.addParameter("Method", "wideband_codebook", @(s) ischar(s) || isstring(s));
 ip.addParameter("MaxRank", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 1));
 ip.addParameter("WidebandOnly", true, @(x) islogical(x) && isscalar(x));
+ip.addParameter("Direction", "DL", @(s) ischar(s) || isstring(s));
+ip.addParameter("ReceivedGrid", [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter("ReferenceIndices", [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter("ReferenceSymbols", [], @(x) isempty(x) || isnumeric(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
 method = lower(string(opt.Method));
-Hwb = localWidebandChannelMatrix(hEst);
+direction = localNormalizeDirection(opt.Direction);
+Hwb = localWidebandChannelMatrix(hEst, cfg);
 nVar = double(nVar);
 if ~isfinite(nVar) || nVar < 0
     nVar = 0;
@@ -56,8 +61,15 @@ if isempty(hPow) || ~isfinite(hPow) || hPow <= 0
     hPow = 0;
 end
 channelGain_dB = 10 * log10(max(hPow, eps));
-rsrp_dB = channelGain_dB;
-cqi = localMapSINRToCQI(sinr_dB);
+[referencePower, rsrpSource] = localMeasureReferencePower(opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
+if isfinite(referencePower) && referencePower > 0
+    rsrp_dB = 10 * log10(max(referencePower, eps));
+else
+    rsrp_dB = channelGain_dB;
+    rsrpSource = "channel_estimate_gain_proxy";
+end
+cqiFeedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", sinr_dB), cfg, direction);
+cqi = double(cqiFeedback.WidebandCQI);
 
 csi = struct();
 csi.CQI = localReportedScalar(cqi, reportCQI);
@@ -65,6 +77,7 @@ csi.RI = localReportedScalar(best.Rank, reportRI);
 csi.PMI = localReportedScalar(best.PMI, reportPMI);
 csi.CRI = localReportedScalar(criInfo.CRI, reportCRI);
 csi.SINR_dB = double(sinr_dB);
+csi.Direction = char(direction);
 csi.RSRP_dB = double(rsrp_dB);
 csi.ChannelGain_dB = double(channelGain_dB);
 csi.ChannelStateInformationMode = char(csiMode);
@@ -95,6 +108,7 @@ csi.CSIPayloadStandardProfile = char(string(payload.StandardProfile));
 csi.CSIPayloadCRCEnabled = logical(payload.CRCEnabled);
 csi.CSIPayloadFieldCount = double(payload.FieldCount);
 csi.CSIPayloadFieldLayout = payload.FieldLayout;
+csi.RSRPSource = char(rsrpSource);
 
 info = struct();
 info.Method = char(method);
@@ -109,18 +123,44 @@ info.SelectedRank = double(best.Rank);
 info.SelectedPMI = double(best.PMI);
 info.SelectedCRI = double(criInfo.CRI);
 info.Config = struct( ...
-    "TargetBLER", double(sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", 0.1)), ...
+    "TargetBLER", double(localResolveTargetBLER(cfg, direction)), ...
     "PMICodebookMode", char(codebookMode), ...
     "CodebookType", char(codebookType), ...
     "ChannelStateInformationMode", char(csiMode));
 info.SelectedCandidate = sixgr.util.structGet(best, "Candidate", struct());
 info.CodebookInfo = sixgr.util.structGet(best, "CodebookInfo", struct());
 info.Payload = payload;
+info.ReferencePower = double(referencePower);
+info.RSRPSource = char(rsrpSource);
 info.Hints = struct( ...
     "AddCSIRSBasedCQI", true, ...
     "AddPMISelection", true, ...
     "AddRISelection", true, ...
     "AddCRISelection", true);
+end
+
+function direction = localNormalizeDirection(rawDirection)
+direction = upper(strtrim(string(rawDirection)));
+if strlength(direction) == 0
+    direction = "DL";
+end
+if ~ismember(direction, ["DL", "UL"])
+    error("sixgr:phy:dl:CSI_Feedback:InvalidDirection", ...
+        "CSI feedback direction must be DL or UL, got '%s'.", char(direction));
+end
+end
+
+function targetBLER = localResolveTargetBLER(cfg, direction)
+if direction == "UL"
+    targetBLER = double(sixgr.util.structGet(cfg, "phy.pusch.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.csi.targetBLER", 0.1)));
+else
+    targetBLER = double(sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.csi.targetBLER", 0.1)));
+end
+if ~(isscalar(targetBLER) && isfinite(targetBLER) && targetBLER > 0)
+    targetBLER = 0.1;
+end
 end
 
 function best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode)
@@ -281,10 +321,13 @@ W = V(:, 1:rankIdx);
 W = localNormalizeColumns(W);
 end
 
-function Hwb = localWidebandChannelMatrix(Hest)
+function Hwb = localWidebandChannelMatrix(Hest, cfg)
 Hwb = [];
 if isempty(Hest)
     return;
+end
+if nargin < 2
+    cfg = struct();
 end
 nd = ndims(Hest);
 if nd >= 4
@@ -302,7 +345,17 @@ elseif nd == 3
     end
     Hwb = reshape(squeeze(Havg), [], 1);
 elseif ismatrix(Hest)
-    Hwb = double(Hest);
+    [expectedRx, expectedTx] = localExpectedWidebandMatrixSize(cfg);
+    if size(Hest, 1) == expectedRx && size(Hest, 2) == expectedTx
+        Hwb = double(Hest);
+    else
+        try
+            Havg = mean(Hest(:), "omitnan");
+        catch
+            Havg = mean(Hest(:));
+        end
+        Hwb = Havg;
+    end
 end
 if isvector(Hwb)
     Hwb = reshape(Hwb, numel(Hwb), 1);
@@ -312,6 +365,21 @@ if ~ismatrix(Hwb)
 end
 end
 
+function [expectedRx, expectedTx] = localExpectedWidebandMatrixSize(cfg)
+expectedRx = double(sixgr.util.structGet(cfg, "phy.nRxAnt", 1));
+expectedTx = double(sixgr.util.structGet(cfg, "phy.nTxAnt", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", ...
+    sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1))));
+if ~(isscalar(expectedRx) && isfinite(expectedRx) && expectedRx >= 1)
+    expectedRx = 1;
+end
+if ~(isscalar(expectedTx) && isfinite(expectedTx) && expectedTx >= 1)
+    expectedTx = 1;
+end
+expectedRx = max(1, round(expectedRx));
+expectedTx = max(1, round(expectedTx));
+end
+
 function B = localOversampledDFTCodebook(numTxPorts, numBeams)
 n = (0:(numTxPorts-1)).';
 m = 0:(numBeams-1);
@@ -319,14 +387,40 @@ B = exp(-1j * 2 * pi * (n * m) / max(numBeams, 1));
 B = B ./ sqrt(max(numTxPorts, 1));
 end
 
-function cqi = localMapSINRToCQI(sinr_dB)
-thresholds_dB = [-inf -5 -2 0 2 4 6 8 10 12 14 16 18 20 22 24];
-idx = find(sinr_dB >= thresholds_dB, 1, "last");
-if isempty(idx)
-    cqi = 0;
-else
-    cqi = max(0, min(15, idx - 1));
+function [powerLin, source] = localMeasureReferencePower(rxGrid, refInd, refSym)
+powerLin = NaN;
+source = "measurement_unavailable";
+if isempty(rxGrid) || isempty(refInd)
+    return;
 end
+try
+    rxRef = nrExtractResources(refInd, rxGrid);
+catch
+    rxRef = [];
+end
+if isempty(rxRef)
+    return;
+end
+
+if ~isempty(refSym)
+    try
+        refMask = abs(refSym(:)) > 0;
+        if ismatrix(rxRef) && size(rxRef, 1) == numel(refMask)
+            rxRef = rxRef(refMask, :);
+        elseif isvector(rxRef) && numel(rxRef) == numel(refMask)
+            rxRef = rxRef(refMask);
+        end
+    catch
+    end
+end
+
+vals = abs(double(rxRef(:))).^2;
+vals = vals(isfinite(vals));
+if isempty(vals)
+    return;
+end
+powerLin = mean(vals, "omitnan");
+source = "received_reference_signal_power";
 end
 
 function value = localReportedScalar(value, enabled)

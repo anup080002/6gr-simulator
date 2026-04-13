@@ -1,0 +1,413 @@
+inherits:
+  - ./lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: lls_3gpp_4ghz_100mhz_longrun
+  description: 3GPP-based long-run LLS scenario for 4 GHz TDD, 100 MHz, ISD 600 m.
+  version: "1.0.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: baseline
+  scenario_group: lls_3gpp_4ghz_100mhz_longrun
+  scenario_name: 3GPP-based long-run LLS scenario for 4 GHz TDD, 100 MHz, ISD 600 m.
+  scenario_family: lls_3gpp_4ghz_100mhz_longrun
+  purpose: Truthful long-run MATLAB-first LLS execution with strict unsupported-output reporting.
+  study_status: baseline
+  baseline_reference_name: lls_3gpp_4ghz_100mhz_longrun
+  comparison_group_name: 4ghz_100mhz_longrun_replay
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - 3gpp
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - longrun
+    - strict
+
+scenario:
+  name: lls_3gpp_4ghz_100mhz_longrun
+  description: 3GPP-based long-run LLS scenario for 4 GHz TDD, 100 MHz, ISD 600 m.
+  runner_profile: system_level_lls
+  target_cases: [bundle]
+  bundle_anchor_cases: [ul_lowpapr]
+  honesty_mode: strict
+  unsupported_output_policy: show_unavailable_with_reason
+  provenance_logging: true
+  notes: >
+    Locked default long-run scenario for the MATLAB-first LLS simulator. The runtime must
+    preserve strict truth semantics: no smoke rows, no silent fallback, no configured values
+    relabeled as measured output, and unsupported outputs must remain visible with exact
+    unavailable reasons. Browser/backend launch uses the canonical MySQL-backed flow.
+
+run_control:
+  seed: 104729
+  deterministic_mode: true
+  execution_mode: LLS
+  study_mode: baseline
+  simulation_mode: full_phy
+  run_profile: very_long_run
+  random_seed_master: 104729
+  random_seed_list: [104729]
+  num_seeds: 1
+  num_drops: 1
+  total_slots: 50000
+  warmup_slots: 5000
+  measurement_slots: 45000
+  checkpoint_every_slots: 1000
+  snapshot_every_slots: 100
+  log_every_slots: 100
+  warmup_time_ms: 2500
+  measurement_time_ms: 22500
+  total_time_ms: 25000
+  save_intermediate: true
+  save_intermediate_artifacts: true
+  deterministic_replay: true
+  slot_level_logging_enable: true
+  symbol_level_logging_enable: false
+  per_ue_logging_enable: true
+  per_cell_logging_enable: true
+  raw_iq_capture_enable: false
+  raw_grid_capture_enable: false
+  save_constellations: false
+  save_channel_tensors: false
+  save_scheduler_decisions: true
+  save_harq_buffers: false
+  save_reference_signal_maps: true
+  save_beam_weights: true
+  save_link_budget_tables: true
+  save_interference_breakdown: true
+  save_energy_trace: true
+  batch_size_links: 1
+  gpu_enable: false
+  mixed_precision_enable: false
+  fail_on_validation_warning: true
+  num_workers: 1
+  max_runtime_guard: 86400
+  debug_level: info
+  fail_on_warning: true
+  trace_capture_level: standard
+
+seeds:
+  global_seed: 104729
+  topology_seed: 104759
+  channel_seed: 104761
+  traffic_seed: 104773
+  scheduler_seed: 104779
+  harq_seed: 104789
+  mobility_seed: 104801
+  impairment_seed: 104803
+  beam_seed: 104827
+  debug_seed: 104831
+
+simulation:
+  link_direction: both
+  n_frames: 2500
+  n_slots: 50000
+  n_subframes: 50000
+  monte_carlo_iterations: 1
+  random_seed: 104729
+  deterministic_mode: true
+  snr_db: 12
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+  min_duration_s: 25
+  snr_sweep_offsets_db: [0]
+
+frequency:
+  range_name: FR1
+  band_name: 4ghz_100mhz_uma_longrun
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 100000000
+  bandwidth_options_hz: [100000000]
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  numerology_options_khz: [30]
+  max_mimo_size: 64
+  n_size_grid: 273
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: flexible
+  tdd_pattern: DDDSU
+
+global_radio_scope:
+  carrier_frequency_hz: 4000000000
+  frequency_range_label: FR1
+  channel_bandwidth_hz: 100000000
+  simulation_bandwidth_hz: 100000000
+  occupied_bandwidth_hz: 98300000
+  duplex_mode: TDD
+  scs_hz: 30000
+  numerology_mu: 1
+  cp_type: normal
+  sample_rate_hz: 122880000
+  fft_size: 4096
+  ifft_size: 4096
+  guard_band_hz: 1700000
+
+frame_timing:
+  frame_duration_ms: 10
+  subframe_duration_ms: 1
+  slot_duration_ms: 0.5
+  symbols_per_slot: 14
+  slots_per_frame: 20
+  tdd_pattern: DDDSU
+
+resource_grid:
+  num_rbs: 273
+
+deployment_topology:
+  scenario_type: multi-cell
+  site_layout: hex_grid
+  layout_type: hexagonal_macro
+  cell_type: UMa
+  inter_site_distance: 600
+  num_sites: 7
+  num_base_stations: 7
+  num_cells: 21
+  num_sectors_per_site: 3
+  num_ues: 100
+  indoor_ue_fraction: 0.0
+  num_trps: 21
+  trp_topology: per_cell_trp
+  trp_sync_mode: synchronous
+  trp_switching_mode: disabled
+  cell_free_flag: false
+  full_duplex_flag: false
+  self_interference_path_model: none
+  wraparound_enabled: true
+
+users:
+  enabled: true
+  n_users: 100
+  rnti_start: 1
+  seed_stride: 17
+  execution_model: slot_coupled_truth
+  beam_selection_strategy: runtime_best_beam_per_link
+  save_user_tables: true
+
+mobility:
+  ue_speed_kmh: 3
+  speed_profile: baseline_low_mobility_browser_profile
+  direction_model: random
+  trajectory_model: zigzag
+  update_period_s: 0.0005
+  zigzag_segment_duration_s: 0.0025
+  zigzag_turn_angle_deg: 35
+  acceleration_profile: none
+  handover_context_flag: true
+  beam_dynamics_model: mobile_uma
+  spatial_consistency_flag: true
+
+waveform:
+  dl_waveform: CP-OFDM
+  ul_waveform: CP-OFDM
+  fft_size: 4096
+  sample_rate_hz: 122880000
+  windowing_enabled: false
+  transform_precoding_enabled: false
+
+channels:
+  model_type: TDL
+  profile: TDL-C
+  delay_spread_ns: 300
+  doppler_hz: 11.1111111111
+  doppler_source_mode: derive_from_ue_speed
+  mobility_kmph: 3
+  los_enabled: false
+  spatial_consistency_enabled: true
+  pathloss_enabled: true
+  shadow_fading_enabled: true
+  pathloss_model: nrPathLoss
+  shadow_fading_std_db: 6
+
+channel_model:
+  model_family: TDL
+  scenario_label: TDL-C
+  delay_spread_ns: 300
+  doppler_hz: 11.1111111111
+  doppler_source_mode: derive_from_ue_speed
+
+reference_signals:
+  ssb_enabled: true
+  pbch_enabled: true
+  pdcch_dmrs_enabled: true
+  pdsch_dmrs_ports: 2
+  pusch_dmrs_ports: 2
+  csi_rs_enabled: true
+  srs_enabled: true
+  trs_enabled: true
+  tracking_rs_enabled: true
+  ptrs_enabled: true
+  csi_reporting_enabled: true
+  csi_feedback_mode: PMI+CQI+RI
+  csi_acquisition_mode: dl_based
+  operation_orientation: fdd_feedback
+  dmrs_csi_tracking_enabled: false
+  srs_ports: 2
+  srs_sequence_family: baseline_nr
+  srs_periodicity_ms: 10
+  channel_estimation_mode: realistic_baseline
+  receiver_example: mmse_irc
+  sgcs_reporting_enabled: false
+  nmse_reporting_enabled: false
+  cqi_reporting_enabled: true
+  pmi_reporting_enabled: true
+  ri_reporting_enabled: true
+  cri_reporting_enabled: false
+  pmi_codebook_mode: type1_su_mimo
+  channel_state_information_mode: PMI+CQI+RI
+  pdsch_dmrs_config_type: 1
+  pdsch_dmrs_type_a_position: 2
+  pdsch_dmrs_num_cdm_groups_without_data: 2
+
+mimo:
+  n_tx_ant: 64
+  n_rx_ant: 4
+  n_layers: 1
+  precoder_type: wideband
+  codebook_type: type1
+  reciprocity_mode: FDD
+  beam_sweep_enabled: true
+  beam_count: 32
+  mtrp_ready: false
+  multi_panel_ready: false
+  panel_count: 2
+  trp_count: 21
+  precoding_granularity: prg_wideband
+
+system:
+  queueMaxBits: 100000000
+  largeScaleUpdatePeriod_slots: 1000
+  scheduler:
+    type: PF
+    maxActiveUEsPerSlot: 16
+    maxActiveUEsPerCellPerSlot: 1
+    maxPRBAllocationPerUE: 24
+    fairnessAlpha: 1.0
+    proportionalFairWindow_ms: 100
+    beamAware: true
+    energyAware: false
+    qosAware: true
+    sliceAware: false
+    starvationGuard: true
+    cellEdgeBoost: true
+  measurement:
+    periodSlots: 2
+    filterAlpha: 0.7
+  beam:
+    enable: true
+    numBeams: 32
+    updatePeriod_slots: 4
+    sectorSpan_deg: 120
+    maxGain_dB: 14
+  handover:
+    enable: true
+    a3Offset_dB: 3
+    hysteresis_dB: 2
+    timeToTrigger_slots: 8
+    minServingSlots: 8
+    preparationSlots: 1
+    interruptionSlots: 2
+    blockDuringPreparation: false
+  waveform:
+    useGrantLocalGrid: true
+    replayGridMode: grant_allocation
+    capReplayAntennasToLayers: true
+    longRunAudit:
+      enabled: true
+      periodSlots: 5003
+      maxGrantsPerAuditSlot: 1
+      unsampledGrantPolicy: unavailable_no_feedback
+
+control:
+  pdcch_enabled: true
+  aggregation_levels: [1, 2, 4, 8, 16]
+  dci_formats: ["1_0"]
+  blind_decode_candidates: 16
+  coreset_duration: 2
+  pdcch_payload_bits: 64
+  monitoring_mode: slot_level_baseline
+  pucch_enabled: true
+  pucch_format: 2
+
+pucch:
+  enabled: true
+  formats: [0, 1, 2, 3, 4]
+
+random_access:
+  enabled: true
+  ssb_periodicity_ms: 20
+  ssb_beam_count: 8
+  prach_format: A1
+  preamble_count: 64
+  msg3_enabled: true
+  configuration_index: 16
+  subcarrier_spacing_khz: 30
+  root_sequence_index: 1
+  preamble_index: 0
+
+control_gating:
+  pbch_required: true
+  prach_required: true
+  pdcch_required: true
+  srs_required: true
+  srs_max_age_slots: 4
+  trs_required: true
+  trs_max_age_slots: 4
+
+link_adaptation:
+  fixed_or_amc: amc
+  cqi_table: table1
+  outer_loop_flag: false
+  inner_loop_flag: true
+  cqi_source: csi_feedback
+  delta_cqi_policy: none
+  delta_mcs_policy: none
+  pdcch_link_adaptation_policy: fixed
+  pdsch_link_adaptation_policy: baseline
+  pusch_link_adaptation_policy: baseline
+  rank_adaptation_policy: fixed
+  al_adaptation_policy: fixed
+  beam_adaptation_policy: fixed
+  adaptation_periodicity: slot
+  adaptation_delay_model: baseline
+
+harq:
+  enabled: true
+  process_count: 16
+  rv_sequence: [0, 2, 3, 1]
+  cbg_enabled: false
+  feedback_timing_slots: 4
+  combining_mode: soft
+  max_retx: 4
+  validation_mode: exercise
+
+output:
+  backend: mysql_web
+  profile: lls_3gpp_4ghz_100mhz_longrun
+  save_csv: true
+  save_mat: true
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: true
+  emit_placeholder_artifacts: false
+  emit_disabled_audit_artifacts: true
+  profiler_enabled: false
+  profiler_top_functions: 120
+  profiler_top_edges: 200
+
+logging:
+  level: info
+  save_logs: true
+  save_intermediate: true
+  strict_validation: true
+  include_git_hash: true
+  echo_to_console: true

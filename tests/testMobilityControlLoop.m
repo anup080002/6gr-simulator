@@ -52,15 +52,26 @@ assert(isfield(D, "HandoverEvents"), "Missing handover event table.");
 assert(isfield(D, "MobilityControlSeries"), "Missing mobility-control time series.");
 assert(isfield(D, "ServingCell"), "Missing serving-cell history.");
 assert(isfield(D, "ServingBeamIndex"), "Missing serving-beam history.");
+assert(isfield(D, "MeasurementRSRPTrace_dBm"), "Missing measurement RSRP history.");
+assert(isfield(D, "LargeScaleState") && isstruct(D.LargeScaleState), "Missing shared large-scale cache output.");
+assert(isfield(D, "LargeScalePropagationUpdateMask"), "Missing large-scale propagation update mask.");
+assert(isfield(D.LargeScaleState, "Pathloss_dB"), "Large-scale cache must carry pathloss state.");
+assert(isfield(D.LargeScaleState, "RSRP_dBm"), "Large-scale cache must carry RSRP state.");
 assert(istable(D.HandoverEvents), "HandoverEvents must be a table.");
 assert(istable(D.MobilityControlSeries), "MobilityControlSeries must be a table.");
 assert(height(D.MobilityControlSeries) == numTTI, "MobilityControlSeries row count mismatch.");
+assert(numel(D.LargeScalePropagationUpdateMask) == numTTI, "Propagation update mask row count mismatch.");
 
 % Under this aggressive setup, we expect at least one full HO with interruption.
 assert(sum(double(D.HandoverTriggerCount)) > 0, "Expected at least one handover trigger.");
 assert(sum(double(D.HandoverCompleteCount)) > 0, "Expected at least one handover completion.");
 assert(any(double(D.HandoverInterruptedUECount) > 0), "Expected at least one UE interruption window.");
 assert(any(isfinite(double(D.ServingCell(:)))), "Serving-cell history is empty.");
+
+slot1Meas = reshape(double(D.MeasurementRSRPTrace_dBm(1,:,:)), [nUE, size(D.MeasurementRSRPTrace_dBm, 3)]);
+[attachByPower, ~] = sixgr.system.selectServingCellsFromPower(slot1Meas);
+assert(isequal(attachByPower, reshape(double(D.ServingCell(1,:)), [], 1)), ...
+    "Initial attach must follow cache-derived per-cell measurement power rather than geometry distance.");
 
 k = res.KPITable(1,:);
 assert(double(k.NumCells) >= 2, "Expected multi-cell layout.");

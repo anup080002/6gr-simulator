@@ -45,6 +45,10 @@ classdef ChannelFactory
             opt.Viewer = [];
             opt.EnableSpatialNonStationarity = [];
             opt.Seed = [];
+            opt.TransmitAntennaRuntime = struct();
+            opt.ReceiveAntennaRuntime = struct();
+            opt.TransmitAntennaMeta = struct();
+            opt.ReceiveAntennaMeta = struct();
 
             % Backward compatibility:
             %   create(cfg,'downlink')   % legacy smoke-test call
@@ -85,6 +89,14 @@ classdef ChannelFactory
                         opt.EnableSpatialNonStationarity = logical(val);
                     case "seed"
                         opt.Seed = val;
+                    case {"transmitantennaruntime","txantennaruntime","runtime transmitantenna","runtime txantenna"}
+                        opt.TransmitAntennaRuntime = val;
+                    case {"receiveantennaruntime","rxantennaruntime","runtime receiveantenna","runtime rxantenna"}
+                        opt.ReceiveAntennaRuntime = val;
+                    case {"transmitantennameta","txantennameta","runtime transmitantennameta","runtime txantennameta"}
+                        opt.TransmitAntennaMeta = val;
+                    case {"receiveantennameta","rxantennameta","runtime receiveantennameta","runtime rxantennameta"}
+                        opt.ReceiveAntennaMeta = val;
                     otherwise
                         error("ChannelFactory:create:UnknownOpt", "Unknown option: %s", name);
                 end
@@ -129,18 +141,74 @@ classdef ChannelFactory
             meta.NumRxAnt = opt.NumRxAnt;
             meta.Scenario = opt.Scenario;
             meta.LinkDirection = opt.LinkDirection;
+            meta.ChannelArrayModel = "";
+            meta.ChannelObjectSource = "";
+            meta.ChannelObjectClass = "";
+            meta.ChannelArrayHandlingStatus = "";
+            meta.ChannelArrayHandlingBlocker = "";
+            meta.ChannelUsesCountOnlyAntennaModel = false;
+            meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+            meta.ChannelGeometryCouplingLevel = "";
+            meta.GeometryAdapterType = "";
+            meta.GeometryAdapterSource = "";
+            meta.GeometryAdapterLimitation = "";
+            meta.GeometryAdapterPortMapping = "";
+            meta.PathlossExecutionBackend = "";
+            meta.PathlossTruthClassification = "";
+            meta.PathlossApproximationReason = "";
+            meta.SpatialNonStationarityTruthClassification = "";
+            meta.SpatialNonStationarityApproximationMode = "";
+            meta.SpatialNonStationarityApproximationReason = "";
 
             % Create channel
             if any(model == ["awgn","none","off",""])
+                meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
+                    meta, "awgn", "none", "sixgr.channel.ChannelFactory.create:awgn_shortcut");
                 ch = struct("Type","AWGN","Object",[],"IsFading",false,"IsLargeScaleOnly",false,"Meta",meta);
                 return;
             end
 
             if any(model == ["nrtdl","tdl"])
-                chObj = sixgr.channel.ChannelFactory.localCreateTDL(cfg, opt);
+                [chObj, arrayRuntimeMeta] = sixgr.channel.ChannelFactory.localCreateTDL(cfg, opt);
+                meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
+                    meta, "tdl", class(chObj), "sixgr.channel.ChannelFactory.localCreateTDL");
+                if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeGeometryCorrelationApplied", false))
+                    meta.ChannelArrayModel = "nrtdl_runtime_geometry_correlation_channel";
+                    meta.ChannelArrayHandlingStatus = "adapted_geometry_backed_reduced_representation";
+                    meta.ChannelArrayHandlingBlocker = "nrtdlchannel_consumes_custom_spatial_correlation_matrices_not_runtime_array_objects";
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "runtime_geometry_reduced_spatial_correlation";
+                    meta.GeometryAdapterType = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterType", ""));
+                    meta.GeometryAdapterSource = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterSource", ""));
+                    meta.GeometryAdapterLimitation = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterLimitation", ""));
+                    meta.GeometryAdapterPortMapping = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterPortMapping", ""));
+                    meta.TDLTransmitCorrelationMatrixSource = string(sixgr.util.structGet(arrayRuntimeMeta, "TransmitCorrelationMatrixSource", ""));
+                    meta.TDLReceiveCorrelationMatrixSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ReceiveCorrelationMatrixSource", ""));
+                    meta.TDLTransmitCorrelationMatrixSize = string(sixgr.util.structGet(arrayRuntimeMeta, "TransmitCorrelationMatrixSize", ""));
+                    meta.TDLReceiveCorrelationMatrixSize = string(sixgr.util.structGet(arrayRuntimeMeta, "ReceiveCorrelationMatrixSize", ""));
+                    meta.TDLGeometryCorrelationDistance_lambda = double(sixgr.util.structGet(arrayRuntimeMeta, "GeometryCorrelationDistance_lambda", NaN));
+                end
                 ch = struct("Type","nrTDLChannel","Object",chObj,"IsFading",true,"IsLargeScaleOnly",false,"Meta",meta);
             elseif any(model == ["nrcdl","cdl"])
-                chObj = sixgr.channel.ChannelFactory.localCreateCDL(cfg, opt);
+                [chObj, arrayRuntimeMeta] = sixgr.channel.ChannelFactory.localCreateCDL(cfg, opt);
+                meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
+                    meta, "cdl", class(chObj), "sixgr.channel.ChannelFactory.localCreateCDL");
+                if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false))
+                    meta.ChannelArrayModel = "nrcdl_runtime_array_geometry_channel";
+                    meta.ChannelArrayHandlingStatus = "runtime_array_shape_spacing_orientation_coupled";
+                    meta.ChannelArrayHandlingBlocker = "";
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = true;
+                    meta.ChannelGeometryCouplingLevel = "runtime_array_shape_spacing_orientation";
+                    meta.GeometryAdapterType = "backend_native_nrCDLChannel_antenna_array";
+                    meta.GeometryAdapterSource = string(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometrySource", ""));
+                    meta.GeometryAdapterLimitation = "";
+                    meta.GeometryAdapterPortMapping = "runtime_array_shape_matches_channel_ports";
+                    meta.ChannelRuntimeGeometrySource = string(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometrySource", ""));
+                    meta.TransmitArrayOrientation_deg = sixgr.util.structGet(arrayRuntimeMeta, "TransmitArrayOrientation_deg", [NaN; NaN; NaN]);
+                    meta.ReceiveArrayOrientation_deg = sixgr.util.structGet(arrayRuntimeMeta, "ReceiveArrayOrientation_deg", [NaN; NaN; NaN]);
+                end
                 ch = struct("Type","nrCDLChannel","Object",chObj,"IsFading",true,"IsLargeScaleOnly",false,"Meta",meta);
             elseif any(model == ["tr38901","tr38.901","tr38_901","abg","large","abstract"])
                 args = {"Fc_Hz", opt.Fc_Hz, "Seed", opt.Seed};
@@ -148,6 +216,11 @@ classdef ChannelFactory
                     args = [{"Scenario", opt.Scenario}, args];
                 end
                 chObj = sixgr.channel.TR38901Plus(cfg, args{:});
+                meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
+                    meta, "tr38901", class(chObj), "sixgr.channel.ChannelFactory.create:TR38901Plus");
+                meta.PathlossExecutionBackend = string(chObj.PathlossExecutionBackend);
+                meta.PathlossTruthClassification = string(chObj.PathlossTruthClassification);
+                meta.PathlossApproximationReason = string(chObj.PathlossApproximationReason);
                 ch = struct("Type","TR38901Plus","Object",chObj,"IsFading",false,"IsLargeScaleOnly",true,"Meta",meta);
             elseif any(model == ["raytracing","ray","rt"])
                 args = {"Fc_Hz", opt.Fc_Hz, "Viewer", opt.Viewer};
@@ -155,6 +228,8 @@ classdef ChannelFactory
                     args = [{"Scenario", opt.Scenario}, args];
                 end
                 chObj = sixgr.channel.RayTracingAdapter(cfg, args{:});
+                meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
+                    meta, "raytracing", class(chObj), "sixgr.channel.ChannelFactory.create:RayTracingAdapter");
                 ch = struct("Type","RayTracing","Object",chObj,"IsFading",false,"IsLargeScaleOnly",true,"Meta",meta);
             else
                 error("ChannelFactory:create:UnknownModel", "Unsupported cfg.channel.model='%s'.", model);
@@ -166,21 +241,104 @@ classdef ChannelFactory
                     vis = sixgr.channel.SpatialNonStationarity(cfg, ...
                         "NumTxAnt", opt.NumTxAnt, "NumRxAnt", opt.NumRxAnt, "Seed", opt.Seed);
                     ch.Meta.SpatialNonStationarity = vis;
+                    ch.Meta.SpatialNonStationarityTruthClassification = string(sixgr.util.structGet(vis, "truthClassification", ""));
+                    ch.Meta.SpatialNonStationarityApproximationMode = string(sixgr.util.structGet(vis, "approximationMode", ""));
+                    ch.Meta.SpatialNonStationarityApproximationReason = string(sixgr.util.structGet(vis, "approximationReason", ""));
                 catch ME
                     % Non-fatal: keep channel but warn in metadata
                     ch.Meta.SpatialNonStationarity = struct("enable",true,"error",string(ME.message));
+                    ch.Meta.SpatialNonStationarityTruthClassification = "unavailable_due_to_runtime_error";
+                    ch.Meta.SpatialNonStationarityApproximationMode = "runtime_error";
+                    ch.Meta.SpatialNonStationarityApproximationReason = string(ME.message);
                 end
             end
         end
     end
 
     methods(Static, Access=private)
-        function tdl = localCreateTDL(cfg, opt)
+        function meta = localApplyChannelHandlingMeta(meta, modelToken, objectClass, objectSource)
+            token = lower(strtrim(char(string(modelToken))));
+            objClass = char(string(objectClass));
+            objSource = char(string(objectSource));
+            meta.ChannelObjectSource = string(objSource);
+            meta.ChannelObjectClass = string(objClass);
+            switch token
+                case "tdl"
+                    meta.ChannelArrayModel = "nrtdl_count_only_fading_channel";
+                    meta.ChannelArrayHandlingStatus = "count_only_spatial_dims_no_runtime_geometry";
+                    meta.ChannelArrayHandlingBlocker = "runtime_geometry_not_supplied_or_not_mappable_to_tdl_custom_correlation";
+                    meta.ChannelUsesCountOnlyAntennaModel = true;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "none_count_only_antenna_dimensions";
+                    meta.GeometryAdapterType = "";
+                    meta.GeometryAdapterSource = "";
+                    meta.GeometryAdapterLimitation = "nrTDLChannel does not consume runtime antenna array objects; adapter requires runtime geometry for custom correlation matrices.";
+                    meta.GeometryAdapterPortMapping = "";
+                case "cdl"
+                    meta.ChannelArrayModel = "nrcdl_config_array_shape_channel";
+                    meta.ChannelArrayHandlingStatus = "config_array_shape_no_runtime_object_pose";
+                    meta.ChannelArrayHandlingBlocker = "nrcdlchannel_uses_configured_array_shape_but_not_runtime_antenna_object_pose";
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "config_array_shape_only";
+                    meta.GeometryAdapterType = "backend_native_nrCDLChannel_config_array_shape";
+                    meta.GeometryAdapterSource = "config";
+                    meta.GeometryAdapterLimitation = "no runtime antenna metadata supplied";
+                    meta.GeometryAdapterPortMapping = "";
+                case "awgn"
+                    meta.ChannelArrayModel = "awgn_no_array_channel";
+                    meta.ChannelArrayHandlingStatus = "no_fading_channel_object";
+                    meta.ChannelArrayHandlingBlocker = "";
+                    meta.ChannelUsesCountOnlyAntennaModel = true;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "not_applicable_no_fading_channel_object";
+                    meta.GeometryAdapterType = "";
+                    meta.GeometryAdapterSource = "";
+                    meta.GeometryAdapterLimitation = "";
+                    meta.GeometryAdapterPortMapping = "";
+                case "tr38901"
+                    meta.ChannelArrayModel = "tr38901_large_scale_no_waveform_array_channel";
+                    meta.ChannelArrayHandlingStatus = "large_scale_only_no_waveform_array_kernel";
+                    meta.ChannelArrayHandlingBlocker = "large_scale_channel_not_used_as_waveform_array_fading_kernel";
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "large_scale_only_no_waveform_array_kernel";
+                    meta.GeometryAdapterType = "";
+                    meta.GeometryAdapterSource = "";
+                    meta.GeometryAdapterLimitation = meta.ChannelArrayHandlingBlocker;
+                    meta.GeometryAdapterPortMapping = "";
+                case "raytracing"
+                    meta.ChannelArrayModel = "raytracing_large_scale_no_waveform_array_channel";
+                    meta.ChannelArrayHandlingStatus = "large_scale_only_no_waveform_array_kernel";
+                    meta.ChannelArrayHandlingBlocker = "large_scale_channel_not_used_as_waveform_array_fading_kernel";
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "large_scale_only_no_waveform_array_kernel";
+                    meta.GeometryAdapterType = "";
+                    meta.GeometryAdapterSource = "";
+                    meta.GeometryAdapterLimitation = meta.ChannelArrayHandlingBlocker;
+                    meta.GeometryAdapterPortMapping = "";
+                otherwise
+                    meta.ChannelArrayModel = "other_channel_model";
+                    meta.ChannelArrayHandlingStatus = "unknown_channel_array_handling";
+                    meta.ChannelArrayHandlingBlocker = "";
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                    meta.ChannelGeometryCouplingLevel = "unknown";
+                    meta.GeometryAdapterType = "";
+                    meta.GeometryAdapterSource = "";
+                    meta.GeometryAdapterLimitation = "";
+                    meta.GeometryAdapterPortMapping = "";
+            end
+        end
+
+        function [tdl, arrayRuntimeMeta] = localCreateTDL(cfg, opt)
             delayProfile = sixgr.channel.ChannelFactory.localResolveConcreteDelayProfile(cfg, "TDL");
             if exist("nrTDLChannel","class") ~= 8
                 error("ChannelFactory:TDL:Missing5G", "nrTDLChannel not found. Install/enable 5G Toolbox.");
             end
 
+            arrayRuntimeMeta = sixgr.channel.ChannelFactory.localEmptyTDLGeometryAdapterMeta();
             tdl = nrTDLChannel;
 
             % Basic profile parameters
@@ -208,26 +366,241 @@ classdef ChannelFactory
                 tdl.RandomStream = "mt19937ar with seed";
                 tdl.Seed = double(seed);
             end
+
+            [tdl, arrayRuntimeMeta] = sixgr.channel.ChannelFactory.localConfigureTDLGeometryAdapter(tdl, cfg, opt, arrayRuntimeMeta);
         end
 
-        function cdl = localCreateCDL(cfg, opt)
+        function meta = localEmptyTDLGeometryAdapterMeta()
+            meta = struct( ...
+                "RuntimeGeometryCorrelationApplied", false, ...
+                "GeometryAdapterType", "", ...
+                "GeometryAdapterSource", "", ...
+                "GeometryAdapterLimitation", "", ...
+                "GeometryAdapterPortMapping", "", ...
+                "TransmitCorrelationMatrixSource", "", ...
+                "ReceiveCorrelationMatrixSource", "", ...
+                "TransmitCorrelationMatrixSize", "", ...
+                "ReceiveCorrelationMatrixSize", "", ...
+                "GeometryCorrelationDistance_lambda", NaN);
+        end
+
+        function [tdl, meta] = localConfigureTDLGeometryAdapter(tdl, cfg, opt, meta)
+            if ~(isobject(tdl) && isprop(tdl, "MIMOCorrelation") && ...
+                    isprop(tdl, "TransmitCorrelationMatrix") && isprop(tdl, "ReceiveCorrelationMatrix"))
+                return;
+            end
+
+            numTx = max(1, round(double(opt.NumTxAnt)));
+            numRx = max(1, round(double(opt.NumRxAnt)));
+            if numTx <= 1 && numRx <= 1
+                return;
+            end
+
+            corrDistance = double(sixgr.util.structGet(cfg, ...
+                "channel.tdlGeometryCorrelationDistance_lambda", ...
+                sixgr.util.structGet(cfg, "channel.geometryCorrelationDistance_lambda", 0.7)));
+            if ~(isfinite(corrDistance) && corrDistance > 0)
+                corrDistance = 0.7;
+            end
+
+            [txCorr, txSource, txMapping, txValid] = sixgr.channel.ChannelFactory.localRuntimeTDLCorrelationMatrix( ...
+                opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta, numTx, corrDistance, "tx");
+            [rxCorr, rxSource, rxMapping, rxValid] = sixgr.channel.ChannelFactory.localRuntimeTDLCorrelationMatrix( ...
+                opt.ReceiveAntennaRuntime, opt.ReceiveAntennaMeta, numRx, corrDistance, "rx");
+            if ~(txValid || rxValid)
+                return;
+            end
+            if ~txValid
+                txCorr = eye(numTx);
+                txSource = "identity_no_runtime_tx_geometry";
+                txMapping = "identity_tx_side_not_geometry_backed";
+            end
+            if ~rxValid
+                rxCorr = eye(numRx);
+                rxSource = "identity_no_runtime_rx_geometry";
+                rxMapping = "identity_rx_side_not_geometry_backed";
+            end
+
+            try
+                tdl.MIMOCorrelation = "Custom";
+                tdl.TransmitCorrelationMatrix = txCorr;
+                tdl.ReceiveCorrelationMatrix = rxCorr;
+            catch ME
+                error("ChannelFactory:TDL:GeometryAdapterFailed", ...
+                    "Runtime TDL geometry adapter could not apply custom correlation matrices to nrTDLChannel: %s", ME.message);
+            end
+
+            meta.RuntimeGeometryCorrelationApplied = true;
+            meta.GeometryAdapterType = "tdl_custom_tx_rx_correlation_from_runtime_element_positions";
+            meta.GeometryAdapterSource = "ChannelFactory.localConfigureTDLGeometryAdapter";
+            meta.GeometryAdapterLimitation = "nrTDLChannel consumes reduced custom correlation matrices; it does not consume runtime array object pose or element pattern or polarization angles or per-path angles.";
+            meta.GeometryAdapterPortMapping = string(txMapping) + ";" + string(rxMapping);
+            meta.TransmitCorrelationMatrixSource = string(txSource);
+            meta.ReceiveCorrelationMatrixSource = string(rxSource);
+            meta.TransmitCorrelationMatrixSize = sprintf("%dx%d", size(txCorr, 1), size(txCorr, 2));
+            meta.ReceiveCorrelationMatrixSize = sprintf("%dx%d", size(rxCorr, 1), size(rxCorr, 2));
+            meta.GeometryCorrelationDistance_lambda = corrDistance;
+        end
+
+        function [corr, source, mapping, valid] = localRuntimeTDLCorrelationMatrix(runtimeAntenna, runtimeMeta, numAnt, corrDistance, role)
+            corr = [];
+            source = "";
+            mapping = "";
+            valid = false;
+            [positionsLambda, posSource, posMapping, posValid] = sixgr.channel.ChannelFactory.localRuntimeTDLPositionsLambda( ...
+                runtimeAntenna, runtimeMeta, numAnt, role);
+            if ~posValid
+                return;
+            end
+            corr = sixgr.channel.ChannelFactory.localSpatialCorrelationFromPositions(positionsLambda, corrDistance);
+            if isempty(corr) || any(size(corr) ~= [numAnt numAnt])
+                corr = [];
+                return;
+            end
+            source = posSource;
+            mapping = posMapping;
+            valid = true;
+        end
+
+        function [positionsLambda, source, mapping, valid] = localRuntimeTDLPositionsLambda(runtimeAntenna, runtimeMeta, numAnt, role)
+            positionsLambda = [];
+            source = "";
+            mapping = "";
+            valid = false;
+            numAnt = max(1, round(double(numAnt)));
+            if ~(isstruct(runtimeMeta) && ~isempty(fieldnames(runtimeMeta)))
+                runtimeMeta = struct();
+            end
+            if ~(isstruct(runtimeAntenna) && ~isempty(fieldnames(runtimeAntenna)))
+                runtimeAntenna = struct();
+            end
+
+            pos = double(sixgr.util.structGet(runtimeAntenna, "ElementPositions_m", []));
+            lambda = double(sixgr.util.structGet(runtimeAntenna, "Lambda_m", NaN));
+            if ismatrix(pos) && size(pos, 2) >= 3 && size(pos, 1) >= numAnt && isfinite(lambda) && lambda > 0
+                positionsLambda = pos(1:numAnt, 1:3) ./ lambda;
+                source = string(role) + "_runtime_element_positions_m";
+                if size(pos, 1) == numAnt
+                    mapping = string(role) + "_runtime_positions_match_waveform_ports";
+                else
+                    mapping = string(role) + "_runtime_positions_reduced_to_waveform_ports";
+                end
+                valid = all(isfinite(positionsLambda(:)));
+                return;
+            end
+
+            nRow = double(sixgr.util.structGet(runtimeMeta, "NumRows", NaN));
+            nCol = double(sixgr.util.structGet(runtimeMeta, "NumCols", NaN));
+            nPol = double(sixgr.util.structGet(runtimeMeta, "NumPolarizations", NaN));
+            spacingH = double(sixgr.util.structGet(runtimeMeta, "SpacingH_lambda", NaN));
+            spacingV = double(sixgr.util.structGet(runtimeMeta, "SpacingV_lambda", NaN));
+            if ~(isfinite(nRow) && isfinite(nCol))
+                sizeVec = double(sixgr.util.structGet(runtimeAntenna, "Size", [NaN NaN]));
+                if numel(sizeVec) >= 2
+                    nRow = double(sizeVec(1));
+                    nCol = double(sizeVec(2));
+                end
+            end
+            if ~(isfinite(nPol) && nPol >= 1)
+                nPol = double(sixgr.util.structGet(runtimeAntenna, "NPol", 1));
+            end
+            if ~(isfinite(spacingH) && isfinite(spacingV) && spacingH > 0 && spacingV > 0)
+                spacing = double(sixgr.util.structGet(runtimeAntenna, "ElementSpacing_m", [NaN NaN]));
+                lambda = double(sixgr.util.structGet(runtimeAntenna, "Lambda_m", NaN));
+                if isfinite(lambda) && lambda > 0 && numel(spacing) >= 2
+                    spacingH = spacing(1) ./ lambda;
+                    spacingV = spacing(2) ./ lambda;
+                end
+            end
+            if ~(isfinite(nRow) && nRow >= 1 && isfinite(nCol) && nCol >= 1 && ...
+                    isfinite(nPol) && nPol >= 1 && isfinite(spacingH) && spacingH > 0 && ...
+                    isfinite(spacingV) && spacingV > 0)
+                return;
+            end
+
+            allPositions = sixgr.channel.ChannelFactory.localGridPositionsLambda( ...
+                max(1, round(nRow)), max(1, round(nCol)), max(1, round(nPol)), spacingH, spacingV);
+            if size(allPositions, 1) < numAnt
+                return;
+            end
+            positionsLambda = allPositions(1:numAnt, :);
+            source = string(role) + "_runtime_metadata_shape_spacing_lambda";
+            if size(allPositions, 1) == numAnt
+                mapping = string(role) + "_runtime_metadata_ports_match_waveform_ports";
+            else
+                mapping = string(role) + "_runtime_metadata_ports_reduced_to_waveform_ports";
+            end
+            valid = all(isfinite(positionsLambda(:)));
+        end
+
+        function positions = localGridPositionsLambda(nRow, nCol, nPol, spacingH, spacingV)
+            y = ((0:nRow-1) - (nRow-1)/2) .* double(spacingH);
+            z = ((0:nCol-1) - (nCol-1)/2) .* double(spacingV);
+            [Y, Z] = ndgrid(y, z);
+            base = [zeros(numel(Y), 1), Y(:), Z(:)];
+            if nPol > 1
+                positions = repmat(base, max(1, round(double(nPol))), 1);
+            else
+                positions = base;
+            end
+        end
+
+        function corr = localSpatialCorrelationFromPositions(positionsLambda, corrDistance)
+            positionsLambda = double(positionsLambda);
+            n = size(positionsLambda, 1);
+            corr = eye(n);
+            for ii = 1:n
+                for jj = (ii+1):n
+                    d = norm(positionsLambda(ii, :) - positionsLambda(jj, :));
+                    rho = exp(-d ./ double(corrDistance));
+                    corr(ii, jj) = rho;
+                    corr(jj, ii) = rho;
+                end
+            end
+            corr = (corr + corr') ./ 2;
+            corr = corr + eye(n) .* 1e-10;
+            d = sqrt(max(real(diag(corr)), eps));
+            corr = corr ./ (d * d.');
+            corr = (corr + corr') ./ 2;
+        end
+
+        function [cdl, arrayRuntimeMeta] = localCreateCDL(cfg, opt)
             delayProfile = sixgr.channel.ChannelFactory.localResolveConcreteDelayProfile(cfg, "CDL");
             if exist("nrCDLChannel","class") ~= 8
                 error("ChannelFactory:CDL:Missing5G", "nrCDLChannel not found. Install/enable 5G Toolbox.");
             end
 
+            arrayRuntimeMeta = struct( ...
+                "RuntimeArrayGeometryCoupled", false, ...
+                "RuntimeArrayGeometrySource", "", ...
+                "TransmitArrayOrientation_deg", [NaN; NaN; NaN], ...
+                "ReceiveArrayOrientation_deg", [NaN; NaN; NaN]);
             cdl = nrCDLChannel;
             cdl.DelayProfile = delayProfile;
             cdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
             cdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
-            cdl.TransmitAntennaArray = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
+            [cdl.TransmitAntennaArray, txRuntimeCoupled] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.TransmitAntennaArray, opt.NumTxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.bs_array_geometry", "ura"), ...
-                sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""));
-            cdl.ReceiveAntennaArray = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
+                sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""), ...
+                opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta);
+            [cdl.ReceiveAntennaArray, rxRuntimeCoupled] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.ReceiveAntennaArray, opt.NumRxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.ue_array_geometry", "ula"), ...
-                sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""));
+                sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""), ...
+                opt.ReceiveAntennaRuntime, opt.ReceiveAntennaMeta);
+            if txRuntimeCoupled && rxRuntimeCoupled
+                txOrientation = sixgr.channel.ChannelFactory.localResolveRuntimeAntennaOrientation( ...
+                    opt.TransmitAntennaMeta, "Azimuth_deg");
+                rxOrientation = sixgr.channel.ChannelFactory.localResolveRuntimeAntennaOrientation( ...
+                    opt.ReceiveAntennaMeta, "Heading_deg");
+                cdl = sixgr.channel.ChannelFactory.localSetCDLArrayOrientation(cdl, "Transmit", txOrientation);
+                cdl = sixgr.channel.ChannelFactory.localSetCDLArrayOrientation(cdl, "Receive", rxOrientation);
+                arrayRuntimeMeta.RuntimeArrayGeometryCoupled = true;
+                arrayRuntimeMeta.RuntimeArrayGeometrySource = "CoupledTruthRuntime.runtime_antenna_metadata_to_nrCDLChannel";
+                arrayRuntimeMeta.TransmitArrayOrientation_deg = txOrientation;
+                arrayRuntimeMeta.ReceiveArrayOrientation_deg = rxOrientation;
+            end
 
             if ~isempty(opt.SampleRate)
                 cdl.SampleRate = opt.SampleRate;
@@ -249,13 +622,113 @@ classdef ChannelFactory
             end
         end
 
-        function arr = localConfigureCDLAntennaArray(arr, numAnt, geometry, polarization)
+        function [arr, usedRuntimeGeometry] = localConfigureCDLAntennaArray(arr, numAnt, geometry, polarization, runtimeAntenna, runtimeMeta)
+            if nargin < 5
+                runtimeAntenna = struct();
+            end
+            if nargin < 6
+                runtimeMeta = struct();
+            end
+            [runtimeSpec, usedRuntimeGeometry] = sixgr.channel.ChannelFactory.localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta);
+            if usedRuntimeGeometry
+                arr.Size = runtimeSpec.Size;
+                arr.ElementSpacing = runtimeSpec.ElementSpacing;
+                arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
+                    arr.PolarizationAngles, runtimeSpec.PolarizationCount);
+                return;
+            end
             numAnt = max(1, round(double(numAnt)));
             polCount = sixgr.channel.ChannelFactory.localResolveCDLPolarizationCount(numAnt, polarization);
             spatialCount = max(1, round(numAnt / polCount));
             arr.Size = sixgr.channel.ChannelFactory.localResolveCDLArraySize(spatialCount, polCount, geometry);
             arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
                 arr.PolarizationAngles, polCount);
+        end
+
+        function [spec, valid] = localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta)
+            spec = struct("Size", [NaN NaN NaN 1 1], "ElementSpacing", [NaN NaN 1 1], "PolarizationCount", NaN);
+            valid = false;
+            if ~(isstruct(runtimeMeta) && ~isempty(fieldnames(runtimeMeta)))
+                runtimeMeta = struct();
+            end
+            if ~(isstruct(runtimeAntenna) && ~isempty(fieldnames(runtimeAntenna)))
+                runtimeAntenna = struct();
+            end
+            nRow = double(sixgr.util.structGet(runtimeMeta, "NumRows", NaN));
+            nCol = double(sixgr.util.structGet(runtimeMeta, "NumCols", NaN));
+            nPol = double(sixgr.util.structGet(runtimeMeta, "NumPolarizations", NaN));
+            if ~isfinite(nPol)
+                nPol = double(sixgr.util.structGet(runtimeAntenna, "NPol", NaN));
+            end
+            if ~(isfinite(nRow) && isfinite(nCol))
+                sizeVec = double(sixgr.util.structGet(runtimeAntenna, "Size", [NaN NaN]));
+                if numel(sizeVec) >= 2
+                    nRow = double(sizeVec(1));
+                    nCol = double(sizeVec(2));
+                end
+            end
+            if ~(isfinite(nRow) && nRow >= 1 && isfinite(nCol) && nCol >= 1)
+                return;
+            end
+            if ~(isfinite(nPol) && nPol >= 1)
+                nPol = 1;
+            end
+            nRow = max(1, round(nRow));
+            nCol = max(1, round(nCol));
+            nPol = max(1, round(nPol));
+            spacingH = double(sixgr.util.structGet(runtimeMeta, "SpacingH_lambda", NaN));
+            spacingV = double(sixgr.util.structGet(runtimeMeta, "SpacingV_lambda", NaN));
+            if ~(isfinite(spacingH) && isfinite(spacingV) && spacingH > 0 && spacingV > 0)
+                spacing = double(sixgr.util.structGet(runtimeAntenna, "ElementSpacing_m", [NaN NaN]));
+                lambda = double(sixgr.util.structGet(runtimeAntenna, "Lambda_m", NaN));
+                if isfinite(lambda) && lambda > 0 && numel(spacing) >= 2
+                    spacingH = spacing(1) ./ lambda;
+                    spacingV = spacing(2) ./ lambda;
+                end
+            end
+            if ~(isfinite(spacingH) && isfinite(spacingV) && spacingH > 0 && spacingV > 0)
+                spacingH = 0.5;
+                spacingV = 0.5;
+            end
+            spec.Size = [nRow nCol nPol 1 1];
+            spec.ElementSpacing = [spacingH spacingV 1 1];
+            spec.PolarizationCount = nPol;
+            valid = true;
+        end
+
+        function orientation = localResolveRuntimeAntennaOrientation(runtimeMeta, primaryField)
+            orientation = [0; 0; 0];
+            if ~(isstruct(runtimeMeta) && ~isempty(fieldnames(runtimeMeta)))
+                return;
+            end
+            az = double(sixgr.util.structGet(runtimeMeta, primaryField, NaN));
+            if ~isfinite(az)
+                az = double(sixgr.util.structGet(runtimeMeta, "Azimuth_deg", ...
+                    sixgr.util.structGet(runtimeMeta, "Heading_deg", NaN)));
+            end
+            tilt = double(sixgr.util.structGet(runtimeMeta, "Tilt_deg", 0));
+            if isfinite(az)
+                orientation(1) = az;
+            end
+            if isfinite(tilt)
+                orientation(2) = tilt;
+            end
+        end
+
+        function cdl = localSetCDLArrayOrientation(cdl, side, orientation)
+            propName = string(side) + "ArrayOrientation";
+            if isprop(cdl, char(propName))
+                cdl.(char(propName)) = double(orientation(:));
+                return;
+            end
+            arrayProp = string(side) + "AntennaArray";
+            if isprop(cdl, char(arrayProp))
+                arr = cdl.(char(arrayProp));
+                if isstruct(arr) && isfield(arr, "Orientation")
+                    arr.Orientation = double(orientation(:));
+                    cdl.(char(arrayProp)) = arr;
+                end
+            end
         end
 
         function polCount = localResolveCDLPolarizationCount(numAnt, polarization)

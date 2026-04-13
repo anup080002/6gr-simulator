@@ -1,0 +1,626 @@
+function varargout = artifactStore(action, varargin)
+%ARTIFACTSTORE Run-scoped MySQL-backed artifact sink.
+
+persistent state
+if isempty(state)
+    state = localEmptyState();
+end
+
+action = lower(string(action));
+switch action
+    case "activate"
+        [state, out] = localActivate(state, varargin{:});
+        varargout{1} = out;
+    case "deactivate"
+        state = localDeactivate(state);
+    case "is_active"
+        varargout{1} = localIsActive(state);
+    case "store_table"
+        varargout{1} = localStoreTable(state, varargin{:});
+    case "store_text"
+        varargout{1} = localStoreText(state, varargin{:});
+    case "store_binary"
+        varargout{1} = localStoreBinary(state, varargin{:});
+    case "capture_file"
+        varargout{1} = localCaptureFile(state, varargin{:});
+    case "append_log"
+        localAppendLog(state, varargin{:});
+    case "mark_status"
+        localMarkStatus(state, varargin{:});
+    case "get_state"
+        varargout{1} = state;
+    otherwise
+        error("sixgr:db:artifactStore:UnknownAction", ...
+            "Unsupported artifact-store action '%s'.", action);
+end
+
+end
+
+function state = localEmptyState()
+state = struct( ...
+    "Active", false, ...
+    "Backend", "", ...
+    "RunFolder", "", ...
+    "DisplayRunFolder", "", ...
+    "RunID", NaN, ...
+    "RunUUID", "", ...
+    "DatabaseHost", "", ...
+    "DatabasePort", NaN, ...
+    "DatabaseSchema", "", ...
+    "MaxAllowedPacketBytes", NaN, ...
+    "Connection", [], ...
+    "LogSequence", 0);
+end
+
+function tf = localIsActive(state)
+tf = isstruct(state) && logical(sixgr.util.structGet(state, "Active", false)) && ...
+    ~isempty(sixgr.util.structGet(state, "Connection", []));
+end
+
+function [state, out] = localActivate(state, runFolder, cfg, meta)
+if nargin < 4 || ~isstruct(meta)
+    meta = struct();
+end
+
+state = localDeactivate(state);
+backend = lower(string(sixgr.util.structGet(cfg, "outputs.storageBackend", "filesystem")));
+if backend ~= "mysql_web"
+    out = struct("Active", false, "Backend", backend);
+    return;
+end
+
+host = char(string(sixgr.util.structGet(cfg, "outputs.databaseHost", "localhost")));
+port = double(sixgr.util.structGet(cfg, "outputs.databasePort", 3306));
+schemaName = char(string(sixgr.util.structGet(cfg, "outputs.databaseSchema", "sixgr_results")));
+
+adminConn = [];
+conn = [];
+try
+    adminConn = sixgr.util.connectMySQLJDBC( ...
+        Host=host, Port=port, Database="", Username=getenv("MYSQL_USER"), Password=getenv("MYSQL_PASSWORD"));
+    localExec(adminConn, "CREATE DATABASE IF NOT EXISTS `" + localEscapeIdentifier(schemaName) + ...
+        "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    adminConn.close();
+    adminConn = [];
+
+    conn = sixgr.util.connectMySQLJDBC( ...
+        Host=host, Port=port, Database=schemaName, Username=getenv("MYSQL_USER"), Password=getenv("MYSQL_PASSWORD"));
+    localEnsureSchema(conn);
+
+    state = localEmptyState();
+    state.Active = true;
+    state.Backend = char(backend);
+    state.RunFolder = char(string(runFolder));
+    state.DisplayRunFolder = char(string(sixgr.util.structGet(meta, "LogicalRunFolder", runFolder)));
+    state.DatabaseHost = host;
+    state.DatabasePort = port;
+    state.DatabaseSchema = schemaName;
+    state.Connection = conn;
+    state.MaxAllowedPacketBytes = localQueryMaxAllowedPacket(conn);
+    state.RunUUID = char(javaMethod("randomUUID", "java.util.UUID").toString());
+    state.RunID = localInsertRunRow(conn, state, cfg, meta);
+
+    out = struct( ...
+        "Active", true, ...
+        "Backend", state.Backend, ...
+        "RunID", state.RunID, ...
+        "RunUUID", string(state.RunUUID), ...
+        "DatabaseSchema", string(state.DatabaseSchema));
+catch ME
+    try
+        if ~isempty(adminConn)
+            adminConn.close();
+        end
+    catch
+    end
+    try
+        if ~isempty(conn)
+            conn.close();
+        end
+    catch
+    end
+    state = localEmptyState();
+    error("sixgr:db:artifactStore:ActivateFailed", ...
+        "Failed to activate the MySQL artifact store: %s", ME.message);
+end
+end
+
+function state = localDeactivate(state)
+if ~localIsActive(state)
+    state = localEmptyState();
+    return;
+end
+try
+    state.Connection.close();
+catch
+end
+state = localEmptyState();
+end
+
+function handled = localStoreTable(state, filePath, T)
+handled = false;
+if ~localIsActive(state)
+    return;
+end
+
+tmpPath = char(string(tempname) + ".csv");
+cleanupObj = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>
+try
+    sixgr.util.ensureDir(tmpPath);
+    try
+        writetable(T, tmpPath, "Delimiter", ",", "QuoteStrings", true);
+    catch
+        writetable(T, tmpPath);
+    end
+    bytes = localReadFileBytes(tmpPath);
+    metadata = struct( ...
+        "row_count", height(T), ...
+        "column_names", {cellstr(string(T.Properties.VariableNames(:)).')}, ...
+        "variable_count", width(T), ...
+        "source_path", char(string(filePath)));
+    handled = localStoreBinary(state, char(string(filePath)), bytes, ...
+        "table_csv", "text/csv; charset=UTF-8", metadata);
+catch ME
+    error("sixgr:db:artifactStore:StoreTableFailed", ...
+        "Failed to store table artifact '%s' in MySQL: %s", string(filePath), ME.message);
+end
+end
+
+function handled = localStoreText(state, filePath, txt, mimeType, artifactKind, metadata)
+handled = false;
+if ~localIsActive(state)
+    return;
+end
+if nargin < 4 || strlength(string(mimeType)) == 0
+    mimeType = "text/plain; charset=UTF-8";
+end
+if nargin < 5 || strlength(string(artifactKind)) == 0
+    artifactKind = "text";
+end
+if nargin < 6 || ~isstruct(metadata)
+    metadata = struct();
+end
+bytes = uint8(unicode2native(char(string(txt)), "UTF-8"));
+handled = localStoreBinary(state, filePath, bytes, artifactKind, mimeType, metadata);
+end
+
+function handled = localStoreBinary(state, filePath, bytes, artifactKind, mimeType, metadata)
+handled = false;
+if ~localIsActive(state)
+    return;
+end
+if nargin < 6 || ~isstruct(metadata)
+    metadata = struct();
+end
+
+conn = state.Connection;
+logicalPath = localLogicalPath(filePath, state.RunFolder);
+bytes = uint8(bytes(:).');
+metadata.source_path = string(filePath);
+metadata.logical_path = string(logicalPath);
+metadata_json = localJSON(metadata);
+
+oldId = localFindArtifactID(conn, state.RunID, logicalPath);
+prevAutoCommit = [];
+try
+    prevAutoCommit = conn.getAutoCommit();
+catch
+end
+cleanupAuto = onCleanup(@() localRestoreAutoCommit(conn, prevAutoCommit)); %#ok<NASGU>
+try
+    if isempty(prevAutoCommit) || logical(prevAutoCommit)
+        conn.setAutoCommit(false);
+    end
+
+    if isfinite(oldId)
+        localDeleteArtifact(conn, oldId);
+    end
+
+    ps = conn.prepareStatement([ ...
+        "INSERT INTO sim_artifacts " + ...
+        "(run_id, logical_path, artifact_kind, mime_type, byte_size, metadata_json, created_utc) " + ...
+        "VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())"]);
+    cleanupInsert = onCleanup(@() ps.close()); %#ok<NASGU>
+    ps.setLong(1, int64(state.RunID));
+    ps.setString(2, char(logicalPath));
+    ps.setString(3, char(string(artifactKind)));
+    ps.setString(4, char(string(mimeType)));
+    ps.setLong(5, int64(numel(bytes)));
+    ps.setString(6, char(metadata_json));
+    ps.executeUpdate();
+    artifactID = localLastInsertID(conn);
+    clear cleanupInsert
+
+    [chunkSize, chunkBatchSize] = localResolveChunkPlan(state, bytes, artifactKind, mimeType);
+    if ~isempty(bytes)
+        psChunk = conn.prepareStatement([ ...
+            "INSERT INTO sim_artifact_chunks (artifact_id, chunk_index, chunk_data) " + ...
+            "VALUES (?, ?, ?)"]);
+        cleanupChunk = onCleanup(@() psChunk.close()); %#ok<NASGU>
+        chunkIndex = 1;
+        queued = 0;
+        for idx = 1:chunkSize:numel(bytes)
+            chunk = bytes(idx:min(idx + chunkSize - 1, numel(bytes)));
+            psChunk.setLong(1, int64(artifactID));
+            psChunk.setInt(2, int32(chunkIndex));
+            psChunk.setBytes(3, localJavaBytes(chunk));
+            if chunkBatchSize <= 1
+                psChunk.executeUpdate();
+            else
+                psChunk.addBatch();
+                queued = queued + 1;
+                if queued >= chunkBatchSize
+                    psChunk.executeBatch();
+                    queued = 0;
+                end
+            end
+            chunkIndex = chunkIndex + 1;
+        end
+        if chunkBatchSize > 1 && queued > 0
+            psChunk.executeBatch();
+        end
+    end
+
+    localTouchRun(conn, state.RunID);
+    conn.commit();
+    handled = true;
+catch ME
+    try
+        conn.rollback();
+    catch
+    end
+    rethrow(ME);
+end
+end
+
+function handled = localCaptureFile(state, filePath, artifactKind, mimeType, deleteAfter, logicalPath)
+handled = false;
+if nargin < 5
+    deleteAfter = true;
+end
+if nargin < 6 || strlength(string(logicalPath)) == 0
+    logicalPath = filePath;
+end
+if ~localIsActive(state) || exist(filePath, "file") ~= 2
+    return;
+end
+bytes = localReadFileBytes(filePath);
+metadata = struct("captured_from_file", true);
+handled = localStoreBinary(state, logicalPath, bytes, artifactKind, mimeType, metadata);
+if handled && logical(deleteAfter)
+    localDeleteIfExists(filePath);
+end
+end
+
+function localAppendLog(state, levelStr, timeStr, msgStr)
+if ~localIsActive(state)
+    return;
+end
+conn = state.Connection;
+ps = conn.prepareStatement([ ...
+    "INSERT INTO sim_run_logs (run_id, level_str, time_str, message_text, created_utc) " + ...
+    "VALUES (?, ?, ?, ?, UTC_TIMESTAMP())"]);
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setLong(1, int64(state.RunID));
+ps.setString(2, char(string(levelStr)));
+ps.setString(3, char(string(timeStr)));
+ps.setString(4, char(string(msgStr)));
+ps.executeUpdate();
+localTouchRun(conn, state.RunID);
+end
+
+function localMarkStatus(state, statusText, statusPayload)
+if ~localIsActive(state)
+    return;
+end
+if nargin < 3 || ~isstruct(statusPayload)
+    statusPayload = struct();
+end
+ps = state.Connection.prepareStatement([ ...
+    "UPDATE sim_runs SET status_text=?, status_json=?, updated_utc=UTC_TIMESTAMP() " + ...
+    "WHERE run_id=?"]);
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setString(1, char(string(statusText)));
+ps.setString(2, char(localJSON(statusPayload)));
+ps.setLong(3, int64(state.RunID));
+ps.executeUpdate();
+end
+
+function localTouchRun(conn, runID)
+ps = conn.prepareStatement( ...
+    "UPDATE sim_runs SET updated_utc=UTC_TIMESTAMP() WHERE run_id=?");
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setLong(1, int64(runID));
+ps.executeUpdate();
+end
+
+function localEnsureSchema(conn)
+localExec(conn, [ ...
+    "CREATE TABLE IF NOT EXISTS sim_runs (" + ...
+    "run_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, " + ...
+    "run_uuid VARCHAR(64) NOT NULL UNIQUE, " + ...
+    "scenario_id VARCHAR(255) NULL, " + ...
+    "run_tag VARCHAR(255) NULL, " + ...
+    "run_folder VARCHAR(2048) NULL, " + ...
+    "bucket VARCHAR(64) NULL, " + ...
+    "profile_name VARCHAR(255) NULL, " + ...
+    "backend VARCHAR(64) NULL, " + ...
+    "status_text VARCHAR(64) NULL, " + ...
+    "status_json LONGTEXT NULL, " + ...
+    "config_json LONGTEXT NULL, " + ...
+    "created_utc TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, " + ...
+    "updated_utc TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" + ...
+    ")"]);
+
+localExec(conn, [ ...
+    "CREATE TABLE IF NOT EXISTS sim_artifacts (" + ...
+    "artifact_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, " + ...
+    "run_id BIGINT NOT NULL, " + ...
+    "logical_path VARCHAR(2048) NOT NULL, " + ...
+    "artifact_kind VARCHAR(64) NOT NULL, " + ...
+    "mime_type VARCHAR(255) NULL, " + ...
+    "byte_size BIGINT NOT NULL DEFAULT 0, " + ...
+    "metadata_json LONGTEXT NULL, " + ...
+    "created_utc TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, " + ...
+    "INDEX idx_sim_artifacts_run_id (run_id), " + ...
+    "INDEX idx_sim_artifacts_logical_path (logical_path(255))" + ...
+    ")"]);
+
+localExec(conn, [ ...
+    "CREATE TABLE IF NOT EXISTS sim_artifact_chunks (" + ...
+    "artifact_id BIGINT NOT NULL, " + ...
+    "chunk_index INT NOT NULL, " + ...
+    "chunk_data LONGBLOB NOT NULL, " + ...
+    "PRIMARY KEY (artifact_id, chunk_index)" + ...
+    ")"]);
+
+localExec(conn, [ ...
+    "CREATE TABLE IF NOT EXISTS sim_run_logs (" + ...
+    "log_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, " + ...
+    "run_id BIGINT NOT NULL, " + ...
+    "level_str VARCHAR(16) NULL, " + ...
+    "time_str VARCHAR(64) NULL, " + ...
+    "message_text LONGTEXT NULL, " + ...
+    "created_utc TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, " + ...
+    "INDEX idx_sim_run_logs_run_id (run_id)" + ...
+    ")"]);
+
+localCreateIndexIfMissing(conn, "sim_runs", "idx_sim_runs_run_tag", "(run_tag)");
+localCreateIndexIfMissing(conn, "sim_runs", "idx_sim_runs_updated_utc", "(updated_utc)");
+localCreateIndexIfMissing(conn, "sim_artifacts", "idx_sim_artifacts_run_artifact", "(run_id, artifact_id)");
+localCreateIndexIfMissing(conn, "sim_artifacts", "idx_sim_artifacts_run_created", "(run_id, created_utc, artifact_id)");
+localCreateIndexIfMissing(conn, "sim_run_logs", "idx_sim_run_logs_run_log", "(run_id, log_id)");
+end
+
+function runID = localInsertRunRow(conn, state, cfg, meta)
+scenarioID = char(string(sixgr.util.structGet(meta, "ScenarioID", sixgr.util.structGet(cfg, "meta.lls6gScenarioID", ""))));
+runTag = char(string(sixgr.util.structGet(meta, "RunTag", sixgr.util.structGet(cfg, "run.runTag", ""))));
+bucket = char(string(sixgr.util.structGet(meta, "Bucket", sixgr.util.structGet(cfg, "run.mode", ""))));
+profileName = char(string(sixgr.util.structGet(meta, "Profile", sixgr.util.structGet(cfg, "scenario.id", ""))));
+configPayload = localBuildRunConfigPayload(cfg, meta);
+ps = conn.prepareStatement([ ...
+    "INSERT INTO sim_runs " + ...
+    "(run_uuid, scenario_id, run_tag, run_folder, bucket, profile_name, backend, status_text, status_json, config_json, created_utc, updated_utc) " + ...
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"]);
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setString(1, char(state.RunUUID));
+ps.setString(2, scenarioID);
+ps.setString(3, runTag);
+ps.setString(4, char(string(state.DisplayRunFolder)));
+ps.setString(5, bucket);
+ps.setString(6, profileName);
+ps.setString(7, char(string(state.Backend)));
+ps.setString(8, "running");
+ps.setString(9, "{}");
+ps.setString(10, char(localJSON(configPayload)));
+ps.executeUpdate();
+runID = localLastInsertID(conn);
+end
+
+function payload = localBuildRunConfigPayload(cfg, meta)
+payload = cfg;
+scenarioStruct = sixgr.util.structGet(meta, "ScenarioConfigStruct", struct());
+if isstruct(scenarioStruct) && ~isempty(fieldnames(scenarioStruct))
+    payload = sixgr.util.structSet(payload, "lls6g.submittedScenarioConfig", scenarioStruct);
+    payload = sixgr.util.structSet(payload, "lls6g.browserResolvedScenarioConfig", scenarioStruct);
+end
+sourceFiles = string(sixgr.util.structGet(meta, "ScenarioSourceFiles", strings(0, 1)));
+if ~isempty(sourceFiles)
+    payload = sixgr.util.structSet(payload, "lls6g.scenarioSourceFiles", cellstr(sourceFiles(:)));
+end
+payload = sixgr.util.structSet(payload, "lls6g.browserExecutionPath", "browser_runtime_yaml_overlay");
+end
+
+function artifactID = localFindArtifactID(conn, runID, logicalPath)
+artifactID = NaN;
+ps = conn.prepareStatement([ ...
+    "SELECT artifact_id FROM sim_artifacts WHERE run_id=? AND logical_path=? ORDER BY artifact_id DESC LIMIT 1"]);
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setLong(1, int64(runID));
+ps.setString(2, char(logicalPath));
+rs = ps.executeQuery();
+cleanupRs = onCleanup(@() rs.close()); %#ok<NASGU>
+if rs.next()
+    artifactID = double(rs.getLong(1));
+end
+end
+
+function localDeleteArtifact(conn, artifactID)
+localExec(conn, "DELETE FROM sim_artifact_chunks WHERE artifact_id=" + string(round(double(artifactID))));
+localExec(conn, "DELETE FROM sim_artifacts WHERE artifact_id=" + string(round(double(artifactID))));
+end
+
+function id = localLastInsertID(conn)
+stmt = conn.createStatement();
+cleanupObj = onCleanup(@() stmt.close()); %#ok<NASGU>
+rs = stmt.executeQuery("SELECT LAST_INSERT_ID()");
+cleanupRs = onCleanup(@() rs.close()); %#ok<NASGU>
+if ~rs.next()
+    error("sixgr:db:artifactStore:MissingInsertID", "Failed to read LAST_INSERT_ID().");
+end
+id = double(rs.getLong(1));
+end
+
+function localExec(conn, sqlText)
+stmt = conn.createStatement();
+cleanupObj = onCleanup(@() stmt.close()); %#ok<NASGU>
+stmt.execute(char(string(sqlText)));
+end
+
+function localCreateIndexIfMissing(conn, tableName, indexName, columnSpec)
+sqlText = "CREATE INDEX " + string(indexName) + " ON " + string(tableName) + " " + string(columnSpec);
+try
+    localExec(conn, sqlText);
+catch ME
+    msg = lower(string(ME.message));
+    if contains(msg, "duplicate") || contains(msg, "exists") || contains(msg, "1061")
+        return;
+    end
+    rethrow(ME);
+end
+end
+
+function localRestoreAutoCommit(conn, prevAutoCommit)
+try
+    if ~isempty(prevAutoCommit)
+        conn.setAutoCommit(prevAutoCommit);
+    else
+        conn.setAutoCommit(true);
+    end
+catch
+end
+end
+
+function maxPacketBytes = localQueryMaxAllowedPacket(conn)
+maxPacketBytes = NaN;
+stmt = [];
+rs = [];
+try
+    stmt = conn.createStatement();
+    rs = stmt.executeQuery("SELECT @@max_allowed_packet");
+    if rs.next()
+        maxPacketBytes = double(rs.getLong(1));
+    end
+catch
+    maxPacketBytes = NaN;
+end
+try
+    if ~isempty(rs)
+        rs.close();
+    end
+catch
+end
+try
+    if ~isempty(stmt)
+        stmt.close();
+    end
+catch
+end
+if ~isfinite(maxPacketBytes) || maxPacketBytes <= 0
+    maxPacketBytes = 64 * 1024 * 1024;
+end
+end
+
+function [chunkSize, chunkBatchSize] = localResolveChunkPlan(state, bytes, artifactKind, mimeType)
+maxPacketBytes = double(sixgr.util.structGet(state, "MaxAllowedPacketBytes", NaN));
+if ~isfinite(maxPacketBytes) || maxPacketBytes <= 0
+    maxPacketBytes = 64 * 1024 * 1024;
+end
+
+defaultChunkSize = 8 * 1024 * 1024;
+safePacketBudget = max(1 * 1024 * 1024, floor(0.5 * maxPacketBytes));
+chunkSize = min(defaultChunkSize, safePacketBudget);
+chunkSize = max(1 * 1024 * 1024, chunkSize);
+
+artifactKind = lower(string(artifactKind));
+mimeType = lower(string(mimeType));
+isLargeBinary = contains(mimeType, "application/octet-stream") || ...
+    contains(artifactKind, "binary") || numel(bytes) > floor(0.25 * maxPacketBytes);
+
+if isLargeBinary
+    chunkSize = min(chunkSize, 4 * 1024 * 1024);
+    chunkBatchSize = 1;
+    return;
+end
+
+chunkBatchSize = max(1, floor(safePacketBudget / max(double(chunkSize), 1)));
+chunkBatchSize = min(chunkBatchSize, 8);
+end
+
+function logicalPath = localLogicalPath(filePath, runFolder)
+filePath = char(string(filePath));
+runFolder = char(string(runFolder));
+fileNorm = localNormalizePath(filePath);
+runNorm = localNormalizePath(runFolder);
+if strlength(string(runNorm)) > 0 && localPathStartsWith(fileNorm, runNorm)
+    rel = extractAfter(string(fileNorm), strlength(string(runNorm)));
+    rel = replace(rel, "\", "/");
+    rel = regexprep(rel, '^/+', '');
+    logicalPath = char(rel);
+else
+    logicalPath = char(replace(string(fileNorm), "\", "/"));
+end
+end
+
+function tf = localPathStartsWith(pathValue, rootValue)
+pathValue = localNormalizePath(pathValue);
+rootValue = localNormalizePath(rootValue);
+if ispc
+    pathCmp = lower(pathValue);
+    rootCmp = lower(rootValue);
+else
+    pathCmp = pathValue;
+    rootCmp = rootValue;
+end
+tf = strcmp(pathCmp, rootCmp) || startsWith(pathCmp, [rootCmp filesep]);
+end
+
+function p = localNormalizePath(inPath)
+p = char(string(inPath));
+if strlength(string(p)) == 0
+    return;
+end
+p = strrep(p, "/", filesep);
+p = strrep(p, "\", filesep);
+while contains(p, [filesep filesep])
+    p = strrep(p, [filesep filesep], filesep);
+end
+end
+
+function txt = localEscapeIdentifier(txtIn)
+txt = replace(string(txtIn), "`", "``");
+end
+
+function txt = localJSON(value)
+try
+    txt = string(jsonencode(value, "PrettyPrint", true));
+catch
+    txt = string(jsonencode(value));
+end
+txt = char(txt);
+end
+
+function bytes = localReadFileBytes(filePath)
+fid = fopen(filePath, "rb");
+if fid < 0
+    error("sixgr:db:artifactStore:ReadFailed", "Unable to read artifact '%s'.", string(filePath));
+end
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+bytes = fread(fid, Inf, "*uint8").';
+end
+
+function bytesOut = localJavaBytes(bytesIn)
+% Preserve raw uint8 payload bits when passing bytes above 127 to Java.
+bytesOut = typecast(uint8(bytesIn(:).'), "int8");
+end
+
+function localDeleteIfExists(filePath)
+try
+    if exist(filePath, "file") == 2
+        warnState = warning("off", "all");
+        cleanupWarn = onCleanup(@() warning(warnState)); %#ok<NASGU>
+        delete(filePath);
+    end
+catch
+end
+end

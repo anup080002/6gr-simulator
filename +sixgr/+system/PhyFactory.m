@@ -24,8 +24,12 @@ classdef PhyFactory
                 phy = sixgr.system.WaveformPHY(cfg, params, "Seed", seed, "StrictMode", strictMode);
                 return;
             end
-            error("sixgr:system:ProxyBackendRemoved", "%s", ...
-                sprintf("System PHY backend '%s' has been removed from the active simulator. Use system.phyBackend='waveform' only.", phyBackend));
+            if any(string(phyBackend) == ["abstract","lut","bler_lut","bler_db","proxy","lls_calibrated_link2system"])
+                error("sixgr:system:ProxyBackendRemoved", ...
+                    "System PHY backend '%s' was removed from active runtime. Use system.phyBackend='waveform' so grants are decoded through WaveformPHY.", phyBackend);
+            end
+            error("sixgr:system:UnsupportedPHYBackend", ...
+                "Unsupported system PHY backend '%s'. Use 'waveform'.", phyBackend);
         end
     end
 end

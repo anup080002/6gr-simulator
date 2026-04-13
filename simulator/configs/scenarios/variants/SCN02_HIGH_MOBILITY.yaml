@@ -1,0 +1,42 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN02_HIGH_MOBILITY
+  description: High-mobility variant with faster UE motion, stronger Doppler, and faster measurement and beam refresh cadence.
+  version: "1.0.0"
+  owner: codex
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn02
+    - high_mobility
+    - doppler
+    - tracking
+
+run_control:
+  study_mode: campaign
+
+mobility:
+  ue_speed_kmh: 120
+  speed_profile: high_mobility_120kmh
+
+channels:
+  doppler_source_mode: derive_from_ue_speed
+  mobility_kmph: 120
+
+reference_signals:
+  srs_periodicity_ms: 5
+
+system:
+  measurement:
+    periodSlots: 1
+    filterAlpha: 0.5
+  beam:
+    updatePeriod_slots: 1
+  handover:
+    timeToTrigger_slots: 4
+
+output:
+  profile: SCN02_HIGH_MOBILITY

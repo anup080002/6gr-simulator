@@ -23,11 +23,17 @@ classdef TrafficFactory
             end
             baseBits = localBaseModelBits(cfg, char(model), nUE, nTTI, tti_s);
 
-            [flows, flowTable] = localResolveFlows(cfg, model, tti_s, baseBits);
+            [flows, flowTable] = localResolveFlows(cfg, model, tti_s, baseBits, nUE);
             if isempty(flows)
+                if logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false))
+                    error("sixgr:traffic:MissingResolvedFlowOwnership", ...
+                        "Strict LLS traffic generation requires explicit traffic.flows or buildInternalConfig-derived traffic.flows with traffic.flowSource/traffic.flowDerivationMode labels.");
+                end
                 flows = localDefaultFlow(cfg, model, tti_s, baseBits);
                 flowTable = localFlowTable(flows);
             end
+            flowTable = localAnnotateFlowTable(flowTable);
+            [transportSemanticClass, transportTruthLabel, transportApproxReason] = localSummarizeFlowTransportSemantics(flowTable);
 
             offeredDL = zeros(nTTI, nUE);
             offeredUL = zeros(nTTI, nUE);
@@ -91,7 +97,10 @@ classdef TrafficFactory
             traffic.FlowCount = height(flowTable);
             traffic.ModelSource = "profile_generator";
             traffic.Deterministic = false;
-            traffic.ProxyShapingUsed = any(upper(string(flowTable.Protocol)) == "TCP");
+            traffic.ProxyShapingUsed = any(string(flowTable.TransportTruthLabel) == "proxy_transport_not_full_tcp_truth");
+            traffic.TransportSemanticClass = string(transportSemanticClass);
+            traffic.TransportTruthLabel = string(transportTruthLabel);
+            traffic.TransportApproximationReason = string(transportApproxReason);
         end
     end
 end
@@ -150,6 +159,7 @@ if ~(istable(flowTable) && ~isempty(flowTable))
                           'Rate_Mbps','Weight','Burstiness'});
     flowTable.Protocol = upper(string(flowTable.Protocol));
     flowTable.Direction = upper(string(flowTable.Direction));
+    flowTable = localAnnotateFlowTable(flowTable);
 end
 
 traffic = struct();
@@ -166,9 +176,13 @@ traffic.FlowCount = height(flowTable);
 traffic.ModelSource = string(sourceLabel);
 traffic.Deterministic = true;
 traffic.ProxyShapingUsed = false;
+[transportSemanticClass, transportTruthLabel, transportApproxReason] = localSummarizeFlowTransportSemantics(flowTable);
+traffic.TransportSemanticClass = string(transportSemanticClass);
+traffic.TransportTruthLabel = string(transportTruthLabel);
+traffic.TransportApproximationReason = string(transportApproxReason);
 end
 
-function [flows, flowTable] = localResolveFlows(cfg, model, tti_s, baseBits)
+function [flows, flowTable] = localResolveFlows(cfg, model, tti_s, baseBits, nUE)
 flows = struct([]);
 flowTable = localFlowTable(flows);
 
@@ -217,8 +231,13 @@ for i = 1:numel(raw)
     f.Weight = double(localGetField(r, "weight", 1.0));
     f.JitterPct = double(localGetField(r, "jitterPct", sixgr.util.structGet(cfg, "traffic.jitterPct", 0.1)));
     f.Burstiness = lower(string(localGetField(r, "burstiness", "medium")));
+    f.ServiceProfile = string(localGetField(r, "service_profile", ""));
+    f.UEClass = string(localGetField(r, "ue_class", ""));
+    f.UECount = double(localGetField(r, "ue_count", NaN));
     flows(i) = f;
 end
+
+flows = localAssignFlowUserMasks(flows, nUE);
 
 flowTable = localFlowTable(flows);
 end
@@ -242,6 +261,10 @@ end
 f.Weight = 1.0;
 f.JitterPct = double(sixgr.util.structGet(cfg, "traffic.jitterPct", 0.1));
 f.Burstiness = "medium";
+f.ServiceProfile = string(model);
+f.UEClass = "";
+f.UECount = NaN;
+f.UserMask = true(1, size(baseBits, 2));
 end
 
 function [traceSpec, sourceLabel] = localLoadTraceReplaySpec(cfg)
@@ -340,6 +363,13 @@ M = max(0, round(M));
 end
 
 function [fDL, fUL] = localGenerateFlowBits(cfg, flow, nUE, nTTI, tti_s, baseBits, nFlows)
+mask = true(1, nUE);
+if isfield(flow, "UserMask") && ~isempty(flow.UserMask)
+    rawMask = logical(flow.UserMask(:).');
+    mask = false(1, nUE);
+    mask(1:min(nUE, numel(rawMask))) = rawMask(1:min(nUE, numel(rawMask)));
+end
+
 % Construct a per-flow source process first.
 if isfinite(flow.Rate_Mbps) && flow.Rate_Mbps > 0
     meanBits = flow.Rate_Mbps * 1e6 * tti_s;
@@ -360,8 +390,35 @@ if ~(isfinite(flow.Rate_Mbps) && flow.Rate_Mbps > 0)
     end
 end
 
+% Apply any explicit UE ownership mask before temporal shaping so flow
+% periodicity is assigned across the users that actually own this flow.
+src(:, ~mask) = 0;
+
+burstiness = lower(strtrim(string(flow.Burstiness)));
+if any(burstiness == ["periodic","steady"])
+    intTti = max(1, round((max(flow.PacketInterval_ms, tti_s * 1e3) * 1e-3) / max(tti_s, eps)));
+    periodicSrc = zeros(nTTI, nUE);
+    ownedIdx = find(mask);
+    for localUserIdx = 1:numel(ownedIdx)
+        u = ownedIdx(localUserIdx);
+        offset = mod(localUserIdx - 1, intTti);
+        activeSlots = (offset + 1):intTti:nTTI;
+        if isempty(activeSlots)
+            continue;
+        end
+        periodicSrc(activeSlots, u) = src(activeSlots, u) * intTti;
+    end
+    src = periodicSrc;
+end
+
 % Burstiness shaping.
-switch lower(char(flow.Burstiness))
+switch burstiness
+    case {"saturation","fullbuffer","full_buffer"}
+        pOn = 1.0;
+    case {"periodic","steady"}
+        pOn = 1.0;
+    case {"bursty","burst"}
+        pOn = 0.35;
     case "high"
         pOn = 0.35;
     case "low"
@@ -369,8 +426,10 @@ switch lower(char(flow.Burstiness))
     otherwise
         pOn = 0.65;
 end
-onMask = rand(nTTI, nUE) < pOn;
-src = src .* onMask;
+if pOn < 1.0
+    onMask = rand(nTTI, nUE) < pOn;
+    src = src .* onMask;
+end
 
 % Jitter.
 j = min(max(flow.JitterPct, 0), 0.95);
@@ -378,8 +437,8 @@ src = src .* (1 + j * (2 * rand(nTTI, nUE) - 1));
 src = max(src, 0);
 
 % Transport-level shaping.
-proto = upper(char(flow.Protocol));
-if strcmp(proto, "TCP")
+proto = upper(strtrim(string(flow.Protocol)));
+if proto == "TCP"
     src = localApplyTCPShaping(cfg, src);
 end
 
@@ -387,7 +446,7 @@ end
 src = max(0, src * max(flow.Weight, 0));
 
 % Direction split.
-dir = upper(char(flow.Direction));
+dir = upper(strtrim(string(flow.Direction)));
 [dlRatio, ulRatio] = localDirectionRatios(cfg, dir);
 fDL = src * dlRatio;
 fUL = src * ulRatio;
@@ -439,9 +498,11 @@ function T = localFlowTable(flows)
 if isempty(flows)
     T = table(string.empty(0,1), zeros(0,1), zeros(0,1), string.empty(0,1), string.empty(0,1), ...
         zeros(0,1), zeros(0,1), zeros(0,1), zeros(0,1), zeros(0,1), string.empty(0,1), ...
+        string.empty(0,1), string.empty(0,1), zeros(0,1), string.empty(0,1), string.empty(0,1), string.empty(0,1), ...
         'VariableNames', {'Name','QFI','FiveQI','Protocol','Direction', ...
                           'PacketDelayBudget_ms','PacketSize_bytes','PacketInterval_ms', ...
-                          'Rate_Mbps','Weight','Burstiness'});
+                          'Rate_Mbps','Weight','Burstiness','ServiceProfile','UEClass','UECount', ...
+                          'TransportSemanticClass','TransportTruthLabel','TransportApproximationReason'});
     return;
 end
 
@@ -449,9 +510,13 @@ T = table(string({flows.Name}.'), [flows.QFI].', [flows.FiveQI].', ...
     string({flows.Protocol}.'), string({flows.Direction}.'), ...
     [flows.PacketDelayBudget_ms].', [flows.PacketSize_bytes].', [flows.PacketInterval_ms].', ...
     [flows.Rate_Mbps].', [flows.Weight].', string({flows.Burstiness}.'), ...
+    string({flows.ServiceProfile}.'), string({flows.UEClass}.'), [flows.UECount].', ...
+    strings(numel(flows),1), strings(numel(flows),1), strings(numel(flows),1), ...
     'VariableNames', {'Name','QFI','FiveQI','Protocol','Direction', ...
                       'PacketDelayBudget_ms','PacketSize_bytes','PacketInterval_ms', ...
-                      'Rate_Mbps','Weight','Burstiness'});
+                      'Rate_Mbps','Weight','Burstiness','ServiceProfile','UEClass','UECount', ...
+                      'TransportSemanticClass','TransportTruthLabel','TransportApproximationReason'});
+T = localAnnotateFlowTable(T);
 end
 
 function f = localFlowTemplate()
@@ -468,6 +533,165 @@ f.Rate_Mbps = 50;
 f.Weight = 1.0;
 f.JitterPct = 0.1;
 f.Burstiness = "medium";
+f.ServiceProfile = "";
+f.UEClass = "";
+f.UECount = NaN;
+f.UserMask = true(1, 0);
+end
+
+function T = localAnnotateFlowTable(T)
+if ~(istable(T) && all(ismember(["Protocol","ServiceProfile"], string(T.Properties.VariableNames))))
+    return;
+end
+n = height(T);
+semanticClass = strings(n,1);
+truthLabel = strings(n,1);
+approxReason = strings(n,1);
+for i = 1:n
+    [semanticClass(i), truthLabel(i), approxReason(i)] = localResolveTransportSemantics( ...
+        string(T.Protocol(i)), string(T.ServiceProfile(i)));
+end
+T.TransportSemanticClass = semanticClass;
+T.TransportTruthLabel = truthLabel;
+T.TransportApproximationReason = approxReason;
+end
+
+function [semanticClass, truthLabel, approxReason] = localResolveTransportSemantics(protocol, serviceProfile)
+protocol = upper(strtrim(string(protocol)));
+serviceProfile = upper(strtrim(string(serviceProfile)));
+
+semanticClass = "configured_transport_semantics_unspecified";
+truthLabel = "transport_semantics_unspecified";
+approxReason = "";
+
+if serviceProfile == "FTP3_LIKE" && protocol == "UDP"
+    semanticClass = "ftp3_like_udp_offered_load_approximation";
+    truthLabel = "approximate_not_truthful_tcp";
+    approxReason = "ftp3_like_profile_uses_udp_offered_load_without_tcp_connection_state_ack_retransmission_or_ftp_session_semantics";
+    return;
+end
+
+if protocol == "TCP"
+    semanticClass = "tcp_proxy_congestion_window_shaping";
+    truthLabel = "proxy_transport_not_full_tcp_truth";
+    approxReason = "tcp_mode_uses_simple_cwnd_loss_shaping_proxy_and_not_a_full_tcp_or_ftp_session_model";
+    return;
+end
+
+if protocol == "UDP"
+    semanticClass = "configured_udp_datagram_transport";
+    truthLabel = "configured_udp_transport";
+    approxReason = "";
+    return;
+end
+end
+
+function [semanticClass, truthLabel, approxReason] = localSummarizeFlowTransportSemantics(T)
+if ~(istable(T) && ~isempty(T) && ismember("TransportTruthLabel", string(T.Properties.VariableNames)))
+    semanticClass = "";
+    truthLabel = "";
+    approxReason = "";
+    return;
+end
+
+labels = string(T.TransportTruthLabel);
+classes = string(T.TransportSemanticClass);
+reasons = string(T.TransportApproximationReason);
+labels = labels(strlength(strtrim(labels)) > 0);
+classes = classes(strlength(strtrim(classes)) > 0);
+reasons = unique(reasons(strlength(strtrim(reasons)) > 0), "stable");
+
+if any(labels == "approximate_not_truthful_tcp")
+    semanticClass = "contains_ftp3_like_udp_offered_load_approximation";
+    truthLabel = "contains_approximate_transport_semantics";
+elseif any(labels == "proxy_transport_not_full_tcp_truth")
+    semanticClass = "contains_tcp_proxy_transport_semantics";
+    truthLabel = "contains_proxy_transport_semantics";
+elseif numel(unique(labels, "stable")) == 1
+    truthLabel = labels(1);
+    if isempty(classes)
+        semanticClass = "";
+    elseif numel(unique(classes, "stable")) == 1
+        semanticClass = classes(1);
+    else
+        semanticClass = "mixed_configured_transport_semantics";
+    end
+else
+    semanticClass = "mixed_transport_semantics";
+    truthLabel = "mixed_transport_truth_labels";
+end
+
+approxReason = strjoin(cellstr(reasons), "; ");
+end
+
+function flows = localAssignFlowUserMasks(flows, nUE)
+if isempty(flows)
+    return;
+end
+nUE = max(1, round(double(nUE)));
+explicit = false(numel(flows), 1);
+for i = 1:numel(flows)
+    count = double(flows(i).UECount);
+    explicit(i) = isfinite(count) && count > 0;
+    flows(i).UserMask = false(1, nUE);
+end
+if ~any(explicit)
+    for i = 1:numel(flows)
+        flows(i).UserMask = true(1, nUE);
+        flows(i).UECount = nUE;
+    end
+    return;
+end
+
+remaining = true(1, nUE);
+for i = 1:numel(flows)
+    if ~explicit(i)
+        continue;
+    end
+    count = min(sum(remaining), max(0, round(double(flows(i).UECount))));
+    if count <= 0
+        flows(i).UECount = 0;
+        continue;
+    end
+    idx = find(remaining, count, "first");
+    flows(i).UserMask(idx) = true;
+    remaining(idx) = false;
+    flows(i).UECount = count;
+end
+
+unspecified = find(~explicit);
+if isempty(unspecified)
+    if any(remaining)
+        lastExplicit = find(explicit, 1, "last");
+        flows(lastExplicit).UserMask(remaining) = true;
+        flows(lastExplicit).UECount = sum(flows(lastExplicit).UserMask);
+    end
+    return;
+end
+
+remainingIdx = find(remaining);
+if isempty(remainingIdx)
+    for i = unspecified(:).'
+        flows(i).UECount = 0;
+    end
+    return;
+end
+
+baseCount = floor(numel(remainingIdx) / numel(unspecified));
+extra = mod(numel(remainingIdx), numel(unspecified));
+cursor = 1;
+for k = 1:numel(unspecified)
+    i = unspecified(k);
+    count = baseCount + double(k <= extra);
+    if count <= 0
+        flows(i).UECount = 0;
+        continue;
+    end
+    idx = remainingIdx(cursor:(cursor + count - 1));
+    flows(i).UserMask(idx) = true;
+    flows(i).UECount = count;
+    cursor = cursor + count;
+end
 end
 
 function v = localGetField(s, name, def)

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.sixgr/lls_3gpp_full_config.schema.json",
+  "title": "SixGR MATLAB-first 3GPP LLS scenario",
+  "type": "object",
+  "description": "External-tooling schema for the locked 4 GHz / 100 MHz long-run scenario. The authoritative runtime schema remains simulator/configs/schema/scenario_parameter_catalog*.yaml.",
+  "required": ["meta", "scenario", "run_control", "seeds", "simulation", "frequency", "frame", "deployment_topology", "output", "logging"],
+  "properties": {
+    "inherits": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "meta": {
+      "type": "object",
+      "required": ["scenario_id", "description", "scenario_group"],
+      "properties": {
+        "scenario_id": {"const": "lls_3gpp_4ghz_100mhz_longrun"},
+        "description": {"type": "string"},
+        "scenario_group": {"const": "lls_3gpp_4ghz_100mhz_longrun"}
+      },
+      "additionalProperties": true
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "name": {"const": "lls_3gpp_4ghz_100mhz_longrun"},
+        "honesty_mode": {"const": "strict"},
+        "unsupported_output_policy": {"const": "show_unavailable_with_reason"},
+        "provenance_logging": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "run_control": {
+      "type": "object",
+      "properties": {
+        "run_profile": {"const": "very_long_run"},
+        "total_slots": {"const": 50000},
+        "warmup_slots": {"const": 5000},
+        "measurement_slots": {"const": 45000},
+        "checkpoint_every_slots": {"const": 1000},
+        "snapshot_every_slots": {"const": 100},
+        "log_every_slots": {"const": 100},
+        "deterministic_replay": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "seeds": {
+      "type": "object",
+      "properties": {
+        "global_seed": {"const": 104729},
+        "topology_seed": {"const": 104759},
+        "channel_seed": {"const": 104761},
+        "traffic_seed": {"const": 104773},
+        "scheduler_seed": {"const": 104779},
+        "harq_seed": {"const": 104789},
+        "mobility_seed": {"const": 104801},
+        "impairment_seed": {"const": 104803},
+        "beam_seed": {"const": 104827},
+        "debug_seed": {"const": 104831}
+      },
+      "additionalProperties": true
+    },
+    "simulation": {
+      "type": "object",
+      "properties": {
+        "n_slots": {"const": 50000},
+        "random_seed": {"const": 104729},
+        "deterministic_mode": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "frequency": {
+      "type": "object",
+      "properties": {
+        "center_frequency_hz": {"const": 4000000000},
+        "bandwidth_hz": {"const": 100000000},
+        "duplex_mode": {"const": "TDD"},
+        "n_size_grid": {"const": 273}
+      },
+      "additionalProperties": true
+    },
+    "frame": {
+      "type": "object",
+      "properties": {
+        "scs_khz": {"const": 30},
+        "tdd_pattern": {"const": "DDDSU"}
+      },
+      "additionalProperties": true
+    },
+    "deployment_topology": {
+      "type": "object",
+      "properties": {
+        "num_sites": {"const": 7},
+        "num_cells": {"const": 21},
+        "num_sectors_per_site": {"const": 3},
+        "inter_site_distance": {"const": 600},
+        "wraparound_enabled": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "backend": {"const": "mysql_web"},
+        "emit_placeholder_artifacts": {"const": false},
+        "emit_disabled_audit_artifacts": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "strict_validation": {"const": true},
+        "save_logs": {"const": true}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

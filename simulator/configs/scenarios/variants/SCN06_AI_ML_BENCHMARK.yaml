@@ -1,0 +1,35 @@
+inherits:
+  - ../lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+
+meta:
+  scenario_id: SCN06_AI_ML_BENCHMARK
+  description: AI/ML benchmark companion variant for the 4 GHz multi-cell family. This uses the repo's explicit ai_benchmark runner rather than the coupled waveform bundle.
+  version: "1.0.0"
+  owner: codex
+  research_class: optional_research_experiment
+  maturity_tag: experimental
+  scenario_group: 6G_4GHz_100MHz_19S3_100UE_UMa
+  tags:
+    - scn06
+    - ai
+    - ml
+    - benchmark
+
+scenario:
+  runner_profile: ai_benchmark
+  target_cases: [bundle]
+  notes: >
+    This companion scenario stays inside the same config-driven simulator stack and browser launch flow,
+    but it intentionally uses the ai_benchmark runner instead of the coupled waveform bundle.
+
+ai_ml:
+  enabled: true
+  use_case: beam_prediction
+  mode: online_inference
+  model_path: simulator/configs/models/beam_prediction_descriptor.json
+  model_id: scn06_beam_prediction
+  model_version: "1.0"
+  descriptor_type: plugin_descriptor
+
+output:
+  profile: SCN06_AI_ML_BENCHMARK

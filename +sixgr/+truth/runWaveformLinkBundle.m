@@ -11,7 +11,9 @@ cfgL.outputs.saveFIG = false;
 cfgL.outputs.savePNG = true;
 cfgL.channel.snr_dB = double(sixgr.util.structGet(opt, "LinkSNR_dB", 30));
 multiUser = localResolveMultiUserSpec(cfgL);
+isCoupledTruth = logical(multiUser.Enabled) && string(multiUser.ExecutionModel) == "slot_coupled_truth";
 cfgExec = localPrepareUserCfg(cfgL, multiUser, 1);
+rootRunFolder = fileparts(char(string(runFolder)));
 
 sixgr.util.ensureFolder(runFolder);
 sixgr.util.ensureFolder(fullfile(runFolder, "csv"));
@@ -23,17 +25,77 @@ ctx.Logger.EchoToConsole = false;
 
 slotDur_s = localSlotDuration(cfgExec);
 reqFrames = ceil(double(sixgr.util.structGet(opt, "LinkDuration_s", 0.02)) / max(slotDur_s, eps));
-numFrames = max(8, min(round(double(sixgr.util.structGet(opt, "LinkMaxSimFrames", 8))), reqFrames));
+requestedMaxFrames = round(double(sixgr.util.structGet(opt, "LinkMaxSimFrames", reqFrames)));
+numFrames = max(1, min(requestedMaxFrames, reqFrames));
 
 params = struct();
 params.NumFrames = numFrames;
 params.ForceLong = true;
+bundleStart = tic;
+stageRows = repmat(localEmptyRuntimeStageRow(), 0, 1);
+stageOrder = 0;
+saveFigures = logical(sixgr.util.structGet(opt, "SaveFigures", true));
+anchorCaseNames = localResolveBundleAnchorCases(opt);
 
 localLogStage(ctx, "Starting strict waveform LLS bundle: frames=" + string(numFrames) + ...
     ", snr_anchor_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
-res = sixgr.link.LinkLevelRunner.run(ctx, params);
+stageStart = tic;
+if isempty(anchorCaseNames)
+    res = sixgr.link.LinkLevelRunner.run(ctx, params);
+else
+    localLogStage(ctx, "Bundle anchor cases constrained by config: " + strjoin(anchorCaseNames, ", "));
+    res = localRunConfiguredBundleAnchorCases(cfgExec, ctx, numFrames, ...
+        double(sixgr.util.structGet(opt, "LinkSNR_dB", 30)), anchorCaseNames);
+end
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "anchor_link_run", toc(stageStart), toc(bundleStart), "Initial anchor waveform run completed.");
 unsupportedCases = table();
 [res, unsupportedCases] = localPruneUnsupportedTruthCases(res);
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "link_anchor_complete", ...
+    "AnchorKPIsReady", istable(sixgr.util.structGet(res, "KPITable", table())), ...
+    "DLTrialsReady", false, ...
+    "ULTrialsReady", false, ...
+    "ControlReady", false, ...
+    "HARQReady", false, ...
+    "BeamReady", false, ...
+    "RFReady", false, ...
+    "SweepReady", false, ...
+    "FinalBundleReady", false, ...
+    "Notes", "Initial anchor link run completed."));
+stageStart = tic;
+localPublishAnchorKPIArtifacts(runFolder, res);
+localPublishRuntimeReferenceArtifacts(runFolder, cfgL, multiUser);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "runtime_reference_artifacts", toc(stageStart), toc(bundleStart), "Reference runtime, CQI, MCS, and deployment tables published.");
+localLogStage(ctx, "Publishing live mobility, serving-cell, and coverage sidecar tables.");
+stageStart = tic;
+if isCoupledTruth
+    liveMobilityArtifacts = struct();
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "live_mobility_deferred_to_coupled_runtime", toc(stageStart), toc(bundleStart), ...
+        "Coupled truth mode defers live mobility/map telemetry to the canonical slot runtime.");
+else
+    liveMobilityArtifacts = sixgr.truth.exportLLSLiveMobilityTables(cfgL, rootRunFolder, multiUser);
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "live_mobility_sidecar", toc(stageStart), toc(bundleStart), "Per-slot RSRP, movement, coverage, and reselection sidecar tables published.");
+end
+localLogStage(ctx, "Deferring HARQ diagnostics until DL/UL raw trials are available.");
+harqArtifacts = struct("PacketTable", table(), "SummaryTable", table(), "TimelineTable", table(), "PreviewOnly", false);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "harq_export_deferred", 0, toc(bundleStart), "HARQ diagnostics deferred until DL/UL raw trials are available.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "pre_raw_sweep", ...
+    "AnchorKPIsReady", istable(sixgr.util.structGet(res, "KPITable", table())), ...
+    "DLTrialsReady", false, ...
+    "ULTrialsReady", false, ...
+    "ControlReady", false, ...
+    "HARQReady", false, ...
+    "BeamReady", false, ...
+    "RFReady", false, ...
+    "SweepReady", false, ...
+    "FinalBundleReady", false, ...
+    "Notes", "HARQ diagnostics are deferred until DL/UL raw trials are available."));
 if istable(unsupportedCases) && ~isempty(unsupportedCases)
     localLogStage(ctx, "Pruned unsupported truth-only cases from KPI table: " + string(height(unsupportedCases)));
 end
@@ -44,46 +106,181 @@ snrGrid = localReduceSweepGrid( ...
     double(sixgr.util.structGet(opt, "LinkSNR_dB", 30)));
 localLogStage(ctx, "Exporting raw truth trial tables across SNR grid [" + ...
     strjoin(string(round(snrGrid(:).', 6)), ", ") + "].");
-rawTrials = localExportLinkRawTrialTables(cfgExec, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser);
+stageStart = tic;
+rawTrials = localExportLinkRawTrialTables(cfgExec, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser, saveFigures, liveMobilityArtifacts);
+slotTrace = struct();
+if isCoupledTruth
+    slotTrace = sixgr.util.structGet(rawTrials, "CoupledRuntime", struct());
+    if isstruct(slotTrace) && ~isempty(fieldnames(slotTrace))
+        liveMobilityArtifacts = localBuildMobilityArtifactsFromCoupledRuntime(slotTrace);
+    end
+end
+localPublishRuntimeReferenceArtifacts(runFolder, cfgL, multiUser, rawTrials);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "raw_trials_export", toc(stageStart), toc(bundleStart), "Primary raw trial tables published.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "raw_trials_exported", ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", istable(sixgr.util.structGet(rawTrials, "DL", table())) && ~isempty(sixgr.util.structGet(rawTrials, "DL", table())), ...
+    "ULTrialsReady", istable(sixgr.util.structGet(rawTrials, "UL", table())) && ~isempty(sixgr.util.structGet(rawTrials, "UL", table())), ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", false, ...
+    "BeamReady", false, ...
+    "RFReady", false, ...
+    "SweepReady", false, ...
+    "FinalBundleReady", false, ...
+    "Notes", "Primary raw trial tables were written to the active artifact sink."));
+localLogStage(ctx, "Publishing live derived channel, beam, CSI, and coverage tables from raw trials.");
+stageStart = tic;
+liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgL, rootRunFolder, rawTrials, multiUser, liveMobilityArtifacts, slotTrace);
+if isstruct(sixgr.util.structGet(liveDerivedArtifacts, "HARQ", struct()))
+    harqArtifacts = sixgr.util.structGet(liveDerivedArtifacts, "HARQ", harqArtifacts);
+end
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "live_derived_tables_initial", toc(stageStart), toc(bundleStart), "Initial live derived channel, beam, CSI, and coverage tables published.");
 localLogStage(ctx, "Building primary SNR sweep from raw truth trials.");
+stageStart = tic;
 res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "primary_sweep_from_raw_trials", toc(stageStart), toc(bundleStart), "Primary SNR sweep summary constructed from raw trials.");
 refinedGrid = localBuildAdaptiveRefinedGrid(res.SNRSweep, snrGrid(:), cfgExec, opt);
-if ~isempty(refinedGrid)
+if isCoupledTruth
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "refined_sweep_skipped_for_coupled_truth", 0, toc(bundleStart), ...
+        "Coupled truth uses the canonical slot runtime as the authoritative source and skips legacy refined sweeps.");
+elseif ~isempty(refinedGrid)
     localLogStage(ctx, "Refining truth SNR sweep near the observed waterfall at [" + ...
         strjoin(string(round(refinedGrid(:).', 6)), ", ") + "].");
+    stageStart = tic;
     rawTrials = localAugmentRawTrialsWithRefinedSweep(cfgExec, runFolder, rawTrials, sweepPlan.PrimaryTrialsPerSNR, refinedGrid(:), multiUser);
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "refined_sweep", toc(stageStart), toc(bundleStart), "Adaptive refined raw trials were added near the waterfall.");
     snrGrid = unique(sort([double(snrGrid(:)); double(refinedGrid(:))]));
     res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
 end
-localLogStage(ctx, "Running fixed-reference SNR sweep.");
-res.ReferenceSweep = localRunReferenceLinkSNRSweep(cfgExec, snrGrid(:), sweepPlan.ReferenceTrialsPerSNR, multiUser, sweepPlan);
+if isCoupledTruth
+    res.ReferenceSweep = table();
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "reference_sweep_skipped_for_coupled_truth", 0, toc(bundleStart), ...
+        "Coupled truth skips the legacy fixed-reference sweep and uses canonical slot-trace summaries only.");
+else
+    localLogStage(ctx, "Running fixed-reference SNR sweep.");
+    stageStart = tic;
+    res.ReferenceSweep = localRunReferenceLinkSNRSweep(cfgExec, snrGrid(:), sweepPlan.ReferenceTrialsPerSNR, multiUser, sweepPlan);
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "reference_sweep", toc(stageStart), toc(bundleStart), "Fixed-reference SNR sweep completed.");
+end
 localLogStage(ctx, "Applying primary sweep results to the authoritative KPI table.");
+stageStart = tic;
 res = localApplyPrimarySweepResults(res, rawTrials, cfgExec, snrGrid(:));
 res.PAPRCCDF = localBuildPAPRCCDFTable(rawTrials);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "primary_sweep_apply", toc(stageStart), toc(bundleStart), "Primary sweep results were applied to the authoritative KPI table.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "primary_sweep_ready", ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", true, ...
+    "ULTrialsReady", true, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", false, ...
+    "BeamReady", false, ...
+    "RFReady", false, ...
+    "SweepReady", true, ...
+    "FinalBundleReady", false, ...
+    "Notes", "Primary sweep summary is available for live charts."));
+localLogStage(ctx, "Refreshing live derived tables after primary sweep consolidation.");
+stageStart = tic;
+liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgL, rootRunFolder, rawTrials, multiUser, liveMobilityArtifacts, slotTrace);
+if isstruct(sixgr.util.structGet(liveDerivedArtifacts, "HARQ", struct()))
+    harqArtifacts = sixgr.util.structGet(liveDerivedArtifacts, "HARQ", harqArtifacts);
+end
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "live_derived_tables_refresh", toc(stageStart), toc(bundleStart), "Live derived tables refreshed after sweep consolidation.");
 if logical(multiUser.Enabled)
     res.MultiUserMode = string(multiUser.ExecutionModel);
     res.MultiUserEnabled = logical(multiUser.Enabled);
     res.MultiUserCount = double(multiUser.NumUsers);
 end
 localLogStage(ctx, "Writing primary and reference sweep CSV artifacts.");
+stageStart = tic;
 sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), res.SNRSweep);
 if istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
     sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), res.ReferenceSweep);
 end
-saveFigures = logical(sixgr.util.structGet(opt, "SaveFigures", true));
-localLogStage(ctx, "Exporting HARQ diagnostics.");
-harqArtifacts = sixgr.truth.exportLLSHARQDiagnostics(cfgExec, runFolder, opt);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "sweep_csv_export", toc(stageStart), toc(bundleStart), "Primary and reference sweep CSV artifacts written.");
+legacyHARQReady = localLegacyHARQArtifactsReady(rootRunFolder);
+if ~localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
+        logical(sixgr.util.structGet(harqArtifacts, "PreviewOnly", false)) || ~legacyHARQReady
+    localLogStage(ctx, "Exporting HARQ diagnostics.");
+    stageStart = tic;
+    harqArtifacts = sixgr.truth.exportLLSHARQDiagnostics(cfgExec, runFolder, opt);
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "harq_export", toc(stageStart), toc(bundleStart), "HARQ diagnostics exported.");
+else
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "harq_export_reuse", 0, toc(bundleStart), "HARQ diagnostics were already available.");
+end
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "harq_ready", ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", true, ...
+    "ULTrialsReady", true, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "BeamReady", false, ...
+    "RFReady", false, ...
+    "SweepReady", true, ...
+    "FinalBundleReady", false, ...
+    "Notes", "HARQ diagnostics were exported."));
 localLogStage(ctx, "Exporting beamforming diagnostics.");
+stageStart = tic;
 beamArtifacts = localExportBeamformingDiagnostics(cfgExec, runFolder, rawTrials, saveFigures);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "beam_export", toc(stageStart), toc(bundleStart), "Beamforming diagnostics exported.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "beam_ready", ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", true, ...
+    "ULTrialsReady", true, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "BeamReady", localArtifactStructReady(beamArtifacts, "SummaryTable"), ...
+    "RFReady", false, ...
+    "SweepReady", true, ...
+    "FinalBundleReady", false, ...
+    "Notes", "Beam diagnostics were exported."));
 localLogStage(ctx, "Exporting RF and energy diagnostics.");
+stageStart = tic;
 energyArtifacts = sixgr.truth.exportLLSEnergyDiagnostics(cfgExec, runFolder, rawTrials);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "rf_energy_export", toc(stageStart), toc(bundleStart), "RF and energy diagnostics exported.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "rf_ready", ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", true, ...
+    "ULTrialsReady", true, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "BeamReady", localArtifactStructReady(beamArtifacts, "SummaryTable"), ...
+    "RFReady", localArtifactStructReady(energyArtifacts, "SummaryTable"), ...
+    "SweepReady", true, ...
+    "FinalBundleReady", false, ...
+    "Notes", "RF and energy diagnostics were exported."));
 localLogStage(ctx, "Exporting trial diagnostic plots.");
+stageStart = tic;
 trialPlots = localExportTrialDiagnosticPlots(runFolder, rawTrials, saveFigures);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "trial_plot_export", toc(stageStart), toc(bundleStart), "Trial diagnostic plots exported.");
 
 localLogStage(ctx, "Checking primary-link export integrity.");
+stageStart = tic;
 [kpi, integrity] = sixgr.link.enforcePrimaryLinkExportIntegrity(cfgExec, sixgr.util.structGet(res, "KPITable", table()), rawTrials);
 res.KPITable = kpi;
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "integrity_check", toc(stageStart), toc(bundleStart), "Primary-link export integrity check completed.");
 localLogStage(ctx, "Exporting structured link KPI bundle and report inputs.");
+stageStart = tic;
 arts = sixgr.link.exportLinkKPIs(runFolder, kpi, res, ...
     "SaveCSV", true, ...
     "SaveMAT", true, ...
@@ -92,6 +289,22 @@ arts = sixgr.link.exportLinkKPIs(runFolder, kpi, res, ...
     "FigurePrefix", "link_truth_validation", ...
     "PlotVisible", false, ...
     "FigureResolution", 140);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "final_kpi_bundle_export", toc(stageStart), toc(bundleStart), "Final structured KPI bundle exported.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "final_bundle_ready", ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", true, ...
+    "ULTrialsReady", true, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "BeamReady", localArtifactStructReady(beamArtifacts, "SummaryTable"), ...
+    "RFReady", localArtifactStructReady(energyArtifacts, "SummaryTable"), ...
+    "SweepReady", true, ...
+    "FinalBundleReady", true, ...
+    "Notes", "Final structured KPI bundle export completed."));
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+    "bundle_complete", 0, toc(bundleStart), "Strict waveform LLS bundle completed.");
 
 out = struct();
 out.Ok = logical(localLinkKPITableHealthy(kpi));
@@ -106,6 +319,9 @@ out.BeamformingArtifacts = beamArtifacts;
 out.HARQArtifacts = harqArtifacts;
 out.EnergyArtifacts = energyArtifacts;
 out.TrialDiagnosticPlots = trialPlots;
+out.LiveMobilityArtifacts = liveMobilityArtifacts;
+out.LiveDerivedArtifacts = liveDerivedArtifacts;
+out.RuntimeStageProfile = struct2table(stageRows);
 out.Integrity = integrity;
 out.Errors = sixgr.util.structGet(res, "Errors", strings(0,1));
 out.UnsupportedCases = unsupportedCases;
@@ -144,6 +360,154 @@ if any(mask)
     end
     res.KPITable = res.KPITable(~mask, :);
 end
+end
+
+function caseNames = localResolveBundleAnchorCases(opt)
+rawCases = sixgr.util.structGet(opt, "LinkAnchorCases", {});
+if isempty(rawCases)
+    caseNames = strings(0, 1);
+    return;
+end
+tokens = string(rawCases(:));
+tokens = lower(strtrim(tokens));
+tokens = tokens(strlength(tokens) > 0);
+caseNames = strings(0, 1);
+for i = 1:numel(tokens)
+    caseNames(end+1, 1) = localNormalizeBundleAnchorCaseName(tokens(i)); %#ok<AGROW>
+end
+caseNames = unique(caseNames, "stable");
+end
+
+function caseName = localNormalizeBundleAnchorCaseName(token)
+switch lower(strtrim(string(token)))
+    case {"cell_search_mib_sib1", "cellsearch_mib_sib1", "cellsearch"}
+        caseName = "CellSearch_MIB_SIB1";
+    case {"prach_detection", "prach"}
+        caseName = "PRACH_Detection";
+    case {"dl_pdsch_throughput", "dl_pdsch", "pdsch", "dl"}
+        caseName = "DL_PDSCH_Throughput";
+    case {"ul_pusch_throughput", "ul_pusch", "pusch", "ul"}
+        caseName = "UL_PUSCH_Throughput";
+    case {"ul_srs_channelest", "ul_srs_channel_est", "srs", "ul_srs"}
+        caseName = "UL_SRS_ChannelEst";
+    case {"ul_lowpapr", "ul_low_papr", "lowpapr", "papr"}
+        caseName = "UL_LowPAPR";
+    otherwise
+        error("sixgr:truth:UnknownBundleAnchorCase", ...
+            "Unsupported scenario.bundle_anchor_cases token '%s'.", string(token));
+end
+end
+
+function caseDefs = localBundleAnchorCaseDefs()
+caseDefs = { ...
+    struct('name',"CellSearch_MIB_SIB1"); ...
+    struct('name',"PRACH_Detection"); ...
+    struct('name',"DL_PDSCH_Throughput"); ...
+    struct('name',"UL_PUSCH_Throughput"); ...
+    struct('name',"UL_SRS_ChannelEst"); ...
+    struct('name',"UL_LowPAPR") ...
+    };
+end
+
+function res = localRunConfiguredBundleAnchorCases(cfg, ctx, numFrames, baseSNR_dB, anchorCaseNames)
+caseDefs = localBundleAnchorCaseDefs();
+res = struct();
+res.Ok = false;
+res.Skipped = false;
+res.Errors = strings(0, 1);
+res.Cases = struct();
+res.KPITable = table();
+res.Artifacts = struct('csv', {{}}, 'mat', {{}}, 'fig', {{}});
+
+rows = repmat(localMakeBundleAnchorKpiRow("", struct()), 0, 1);
+for k = 1:numel(caseDefs)
+    cName = string(caseDefs{k}.name);
+    deferred = struct( ...
+        "Ok", false, ...
+        "Skipped", false, ...
+        "BER", NaN, ...
+        "BLER", NaN, ...
+        "Throughput_Mbps", NaN, ...
+        "EVM_rms", NaN, ...
+        "PAPR_CP_dB", NaN, ...
+        "PAPR_DFTs_dB", NaN, ...
+        "PAPR_Gain_dB", NaN, ...
+        "NMSE_dB", NaN, ...
+        "Notes", "deferred_to_primary_raw_trials");
+    res.Cases.(matlab.lang.makeValidName(char(cName))) = deferred;
+    rows(end+1, 1) = localMakeBundleAnchorKpiRow(cName, deferred); %#ok<AGROW>
+end
+res.KPITable = struct2table(rows);
+
+for k = 1:numel(anchorCaseNames)
+    cName = string(anchorCaseNames(k));
+    try
+        cres = localRunBundleAnchorCase(cfg, ctx, cName, numFrames, baseSNR_dB);
+    catch ME
+        cres = struct( ...
+            "Ok", false, ...
+            "Skipped", false, ...
+            "BER", NaN, ...
+            "BLER", NaN, ...
+            "Throughput_Mbps", NaN, ...
+            "EVM_rms", NaN, ...
+            "PAPR_CP_dB", NaN, ...
+            "PAPR_DFTs_dB", NaN, ...
+            "PAPR_Gain_dB", NaN, ...
+            "NMSE_dB", NaN, ...
+            "Notes", "Crash: " + string(ME.message));
+        res.Errors(end+1, 1) = "Anchor case " + cName + " failed: " + string(ME.message); %#ok<AGROW>
+    end
+    res = localReplaceCaseResult(res, cName, cres);
+    if ~logical(sixgr.util.structGet(cres, "Ok", false)) && ...
+            ~logical(sixgr.util.structGet(cres, "Skipped", false))
+        res.Errors(end+1, 1) = "Anchor case " + cName + " failed: " + string(sixgr.util.structGet(cres, "Notes", "")); %#ok<AGROW>
+    end
+end
+res.Ok = localLinkKPITableHealthy(res.KPITable);
+if ~res.Ok
+    localLogStage(ctx, "Configured bundle anchor cases completed with deferred or failing case rows.");
+end
+end
+
+function cres = localRunBundleAnchorCase(cfg, ctx, caseName, numFrames, baseSNR_dB)
+log = [];
+if isa(ctx, "sixgr.core.SimContext") && isprop(ctx, "Logger")
+    log = ctx.Logger;
+end
+switch string(caseName)
+    case "CellSearch_MIB_SIB1"
+        cres = sixgr.link.runCellSearch_MIB_SIB1(cfg, "Logger", log);
+    case "PRACH_Detection"
+        cres = sixgr.link.runPRACHDetection(cfg, "Logger", log, "SNR_dB", baseSNR_dB);
+    case "DL_PDSCH_Throughput"
+        cres = sixgr.link.runDLPDSCHThroughput(cfg, "Logger", log, "NumFrames", numFrames);
+    case "UL_PUSCH_Throughput"
+        cres = sixgr.link.runULPUSCHThroughput(cfg, "Logger", log, "NumFrames", numFrames, "SNR_dB", baseSNR_dB);
+    case "UL_SRS_ChannelEst"
+        cres = sixgr.link.runSRSChannelEstimation(cfg, "Logger", log, "SNR_dB", baseSNR_dB);
+    case "UL_LowPAPR"
+        cres = sixgr.link.runULLowPAPR(cfg, "Logger", log, "NumFrames", numFrames);
+    otherwise
+        error("sixgr:truth:UnknownBundleAnchorCaseName", ...
+            "Unknown normalized bundle anchor case '%s'.", string(caseName));
+end
+end
+
+function row = localMakeBundleAnchorKpiRow(caseName, s)
+row = struct();
+row.Case = string(caseName);
+row.Ok = logical(sixgr.util.structGet(s, "Ok", false));
+row.Skipped = logical(sixgr.util.structGet(s, "Skipped", false));
+row.BER = double(sixgr.util.structGet(s, "BER", NaN));
+row.BLER = double(sixgr.util.structGet(s, "BLER", NaN));
+row.Throughput_Mbps = double(sixgr.util.structGet(s, "Throughput_Mbps", NaN));
+row.EVM_rms = double(sixgr.util.structGet(s, "EVM_rms", NaN));
+row.PAPR_CP_dB = double(sixgr.util.structGet(s, "PAPR_CP_dB", NaN));
+row.PAPR_DFTs_dB = double(sixgr.util.structGet(s, "PAPR_DFTs_dB", NaN));
+row.PAPR_Gain_dB = double(sixgr.util.structGet(s, "PAPR_Gain_dB", NaN));
+row.NMSE_dB = double(sixgr.util.structGet(s, "NMSE_dB", NaN));
+row.Notes = string(sixgr.util.structGet(s, "Notes", ""));
 end
 
 function T = localRunLinkSNRSweep(cfg, snrGrid, nFrames, multiUser)
@@ -264,76 +628,236 @@ catch
 end
 end
 
-function out = localExportLinkRawTrialTables(cfg, runFolder, linkRes, nFrames, snrGrid_dB, multiUser)
+function out = localExportLinkRawTrialTables(cfg, runFolder, linkRes, nFrames, snrGrid_dB, multiUser, saveFigures, mobilityArtifacts)
 if nargin < 6 || ~isstruct(multiUser)
     multiUser = localResolveMultiUserSpec(cfg);
 end
+if nargin < 7
+    saveFigures = false;
+end
+if nargin < 8 || ~isstruct(mobilityArtifacts)
+    mobilityArtifacts = struct();
+end
+coupledTruth = logical(multiUser.Enabled) && string(multiUser.ExecutionModel) == "slot_coupled_truth";
 csvDir = fullfile(runFolder, "csv");
 sixgr.util.ensureFolder(csvDir);
 
-nTrials = max(8, round(double(nFrames)));
+nTrials = max(1, round(double(nFrames)));
 snrGrid = unique(sort(double(snrGrid_dB(:))));
 if isempty(snrGrid)
     snrGrid = double(sixgr.util.structGet(cfg, "channel.snr_dB", 30));
 end
 
-if logical(multiUser.Enabled)
-    [dlTrials, dlUserSummary] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "DL", nTrials, snrGrid);
-    dlConst = table();
-else
-    [dlTrials, dlConst] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "DL", nTrials, snrGrid);
-    dlUserSummary = table();
-end
 fDL = fullfile(csvDir, "dl_pdsch_trials.csv");
-sixgr.util.csvWriteTable(fDL, dlTrials);
-
-if logical(multiUser.Enabled)
-    [ulTrials, ulUserSummary] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "UL", nTrials, snrGrid);
-    ulConst = table();
-else
-    [ulTrials, ulConst] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "UL", nTrials, snrGrid);
-    ulUserSummary = table();
-end
 fUL = fullfile(csvDir, "ul_pusch_trials.csv");
-sixgr.util.csvWriteTable(fUL, ulTrials);
+fPBCH = fullfile(csvDir, "pbch_trials.csv");
+fPRACH = fullfile(csvDir, "prach_trials.csv");
+fPDCCH = fullfile(csvDir, "pdcch_trials.csv");
+fPUCCH = fullfile(csvDir, "pucch_trials.csv");
+fSRS = fullfile(csvDir, "srs_trials.csv");
+fCSIRS = fullfile(csvDir, "csi_rs_trials.csv");
+fTRS = fullfile(csvDir, "trs_trials.csv");
+isLiveDBMode = localIsMySQLWebMode(cfg);
+dlLiveConstellationPath = "";
+ulLiveConstellationPath = "";
+if isLiveDBMode
+    dlLiveConstellationPath = fullfile(csvDir, "dl_constellation_preview.csv");
+    ulLiveConstellationPath = fullfile(csvDir, "ul_constellation_preview.csv");
+end
+if isLiveDBMode
+    emptyTrials = localEmptyLinkTrialTable(0);
+    sixgr.util.csvWriteTable(fDL, emptyTrials);
+    sixgr.util.csvWriteTable(fUL, emptyTrials);
+    sixgr.util.csvWriteTable(fPBCH, emptyTrials);
+    sixgr.util.csvWriteTable(fPRACH, emptyTrials);
+    sixgr.util.csvWriteTable(fPDCCH, emptyTrials);
+    sixgr.util.csvWriteTable(fPUCCH, emptyTrials);
+    sixgr.util.csvWriteTable(fSRS, emptyTrials);
+    sixgr.util.csvWriteTable(fCSIRS, table());
+    sixgr.util.csvWriteTable(fTRS, emptyTrials);
+    localPublishWaveformBundleStageStatus(runFolder, struct( ...
+        "Stage", "raw_trials_streaming", ...
+        "AnchorKPIsReady", true, ...
+        "DLTrialsReady", false, ...
+        "ULTrialsReady", false, ...
+        "ControlReady", false, ...
+        "HARQReady", false, ...
+        "BeamReady", false, ...
+        "RFReady", false, ...
+        "SweepReady", false, ...
+        "FinalBundleReady", false, ...
+        "Notes", "Raw truth tables are streaming into the database as each SNR sweep point completes."));
+end
+
+pbchTrials = localEmptyLinkTrialTable(0);
+prachTrials = localEmptyLinkTrialTable(0);
+pdcchTrials = localEmptyLinkTrialTable(0);
+pucchTrials = localEmptyLinkTrialTable(0);
+srsTrials = localEmptyLinkTrialTable(0);
+csirsTrials = table();
+trsTrials = localEmptyLinkTrialTable(0);
+coupledRuntime = struct();
+
+if ~coupledTruth
+    pbchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPBCHTrials(cfg, snr, max(1, ceil(nTrials/4))), snrGrid, fPBCH, "PBCH");
+    sixgr.util.csvWriteTable(fPBCH, pbchTrials);
+
+    prachTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPRACHTrials(cfg, snr, max(1, ceil(nTrials/4))), snrGrid, fPRACH, "PRACH");
+    sixgr.util.csvWriteTable(fPRACH, prachTrials);
+
+    pdcchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPDCCHTrials(cfg, snr, max(1, ceil(nTrials/2))), snrGrid, fPDCCH, "PDCCH");
+    sixgr.util.csvWriteTable(fPDCCH, pdcchTrials);
+
+    pucchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPUCCHTrials(cfg, snr, max(1, ceil(nTrials/2))), snrGrid, fPUCCH, "PUCCH");
+    sixgr.util.csvWriteTable(fPUCCH, pucchTrials);
+
+    srsTrials = localCollectTrialsAcrossSweep(@(snr) localCollectSRSTrials(cfg, snr, max(1, ceil(nTrials/3))), snrGrid, fSRS, "SRS");
+    sixgr.util.csvWriteTable(fSRS, srsTrials);
+
+    trsTrials = localCollectTrialsAcrossSweep(@(snr) localCollectTRSTrials(cfg, snr, max(1, ceil(nTrials/3))), snrGrid, fTRS, "TRS");
+    sixgr.util.csvWriteTable(fTRS, trsTrials);
+    if isLiveDBMode
+        localPublishWaveformBundleStageStatus(runFolder, struct( ...
+            "Stage", "control_trials_ready", ...
+            "AnchorKPIsReady", true, ...
+            "DLTrialsReady", false, ...
+            "ULTrialsReady", false, ...
+            "ControlReady", true, ...
+            "HARQReady", false, ...
+            "BeamReady", false, ...
+            "RFReady", false, ...
+            "SweepReady", false, ...
+            "FinalBundleReady", false, ...
+            "Notes", "Control-plane raw trial rows are available live in the database."));
+    end
+end
+
+if coupledTruth
+    [dlTrials, ulTrials, dlUserSummary, ulUserSummary, dlConst, ulConst, controlTrials, coupledRuntime] = ...
+        localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
+        fDL, fUL, dlLiveConstellationPath, ulLiveConstellationPath, struct());
+    pbchTrials = sixgr.util.structGet(controlTrials, "PBCH", pbchTrials);
+    prachTrials = sixgr.util.structGet(controlTrials, "PRACH", prachTrials);
+    pdcchTrials = sixgr.util.structGet(controlTrials, "PDCCH", pdcchTrials);
+    pucchTrials = sixgr.util.structGet(controlTrials, "PUCCH", pucchTrials);
+    srsTrials = sixgr.util.structGet(controlTrials, "SRS", srsTrials);
+    csirsTrials = sixgr.util.structGet(controlTrials, "CSIRS", csirsTrials);
+    trsTrials = sixgr.util.structGet(controlTrials, "TRS", trsTrials);
+elseif logical(multiUser.Enabled) && isLiveDBMode
+    [dlTrials, ulTrials, dlUserSummary, ulUserSummary, dlConst, ulConst, csirsTrials] = ...
+        localCollectInterleavedMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
+        fDL, fUL, dlLiveConstellationPath, ulLiveConstellationPath, saveFigures, mobilityArtifacts);
+else
+    if logical(multiUser.Enabled)
+        [dlTrials, dlUserSummary, dlConst, csirsTrials] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "DL", nTrials, snrGrid, fDL, dlLiveConstellationPath, "DL PDSCH");
+    else
+        [dlTrials, dlConst, csirsTrials] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "DL", nTrials, snrGrid, ...
+            fDL, dlLiveConstellationPath, "DL PDSCH");
+        dlUserSummary = table();
+    end
+    sixgr.util.csvWriteTable(fDL, dlTrials);
+    if istable(csirsTrials) && ~isempty(csirsTrials)
+        sixgr.util.csvWriteTable(fCSIRS, csirsTrials);
+    end
+    if isLiveDBMode
+        liveArtifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, struct( ...
+            "DL", dlTrials, ...
+            "UL", table(), ...
+            "SRS", srsTrials, ...
+            "CSIRS", csirsTrials, ...
+            "TRS", trsTrials, ...
+            "PDCCH", pdcchTrials, ...
+            "PBCH", pbchTrials, ...
+            "PRACH", prachTrials, ...
+            "PUCCH", pucchTrials, ...
+            "MultiUserDL", dlUserSummary, ...
+            "MultiUserUL", table()), multiUser, mobilityArtifacts);
+        localPublishWaveformBundleStageStatus(runFolder, struct( ...
+            "Stage", "dl_raw_trials_ready", ...
+            "AnchorKPIsReady", true, ...
+            "DLTrialsReady", true, ...
+            "ULTrialsReady", false, ...
+            "ControlReady", true, ...
+            "HARQReady", localArtifactStructReady(liveArtifacts.HARQ, "SummaryTable") || localArtifactStructReady(liveArtifacts.HARQ, "TimelineTable"), ...
+            "BeamReady", localArtifactStructReady(liveArtifacts.Beam, "SummaryTable"), ...
+            "RFReady", localArtifactStructReady(liveArtifacts.Energy, "SummaryTable"), ...
+            "SweepReady", false, ...
+            "FinalBundleReady", false, ...
+            "Notes", "DL PDSCH raw trial rows are available live in the database."));
+    end
+
+    if logical(multiUser.Enabled)
+        [ulTrials, ulUserSummary, ulConst] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "UL", nTrials, snrGrid, fUL, ulLiveConstellationPath, "UL PUSCH");
+    else
+        [ulTrials, ulConst] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "UL", nTrials, snrGrid, ...
+            fUL, ulLiveConstellationPath, "UL PUSCH");
+        ulUserSummary = table();
+    end
+    sixgr.util.csvWriteTable(fUL, ulTrials);
+    if isLiveDBMode
+        liveArtifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, struct( ...
+            "DL", dlTrials, ...
+            "UL", ulTrials, ...
+            "SRS", srsTrials, ...
+            "CSIRS", csirsTrials, ...
+            "TRS", trsTrials, ...
+            "PDCCH", pdcchTrials, ...
+            "PBCH", pbchTrials, ...
+            "PRACH", prachTrials, ...
+            "PUCCH", pucchTrials, ...
+            "MultiUserDL", dlUserSummary, ...
+            "MultiUserUL", ulUserSummary), multiUser, mobilityArtifacts);
+        localPublishWaveformBundleStageStatus(runFolder, struct( ...
+            "Stage", "ul_raw_trials_ready", ...
+            "AnchorKPIsReady", true, ...
+            "DLTrialsReady", true, ...
+            "ULTrialsReady", true, ...
+            "ControlReady", true, ...
+            "HARQReady", localArtifactStructReady(liveArtifacts.HARQ, "SummaryTable") || localArtifactStructReady(liveArtifacts.HARQ, "TimelineTable"), ...
+            "BeamReady", localArtifactStructReady(liveArtifacts.Beam, "SummaryTable"), ...
+            "RFReady", localArtifactStructReady(liveArtifacts.Energy, "SummaryTable"), ...
+            "SweepReady", false, ...
+            "FinalBundleReady", false, ...
+            "Notes", "UL PUSCH raw trial rows are available live in the database."));
+    end
+end
+
+if coupledTruth && isstruct(coupledRuntime)
+    mobilityArtifacts = localBuildMobilityArtifactsFromCoupledRuntime(coupledRuntime);
+end
+if istable(csirsTrials) && ~isempty(csirsTrials)
+    sixgr.util.csvWriteTable(fCSIRS, csirsTrials);
+end
+
+liveSweep = localBuildSNRSweepFromRawTrials(struct("DL", dlTrials, "UL", ulTrials, "SRS", srsTrials), cfg, snrGrid);
+liveSweepPath = fullfile(csvDir, "live_link_snr_sweep.csv");
+if istable(liveSweep) && ~isempty(liveSweep)
+    sixgr.util.csvWriteTable(liveSweepPath, liveSweep);
+end
 
 if istable(dlConst) && ~isempty(dlConst)
-    outDLConst = fullfile(csvDir, "dl_constellation_samples.csv");
-    sixgr.util.csvWriteTable(outDLConst, dlConst);
+    if isLiveDBMode
+        outDLConst = fullfile(csvDir, "dl_constellation_preview.csv");
+        sixgr.util.csvWriteTable(outDLConst, localDownsampleConstellationTable(dlConst, 2500));
+    else
+        outDLConst = fullfile(csvDir, "dl_constellation_samples.csv");
+        sixgr.util.csvWriteTable(outDLConst, dlConst);
+    end
 else
     outDLConst = "";
 end
 
 if istable(ulConst) && ~isempty(ulConst)
-    outULConst = fullfile(csvDir, "ul_constellation_samples.csv");
-    sixgr.util.csvWriteTable(outULConst, ulConst);
+    if isLiveDBMode
+        outULConst = fullfile(csvDir, "ul_constellation_preview.csv");
+        sixgr.util.csvWriteTable(outULConst, localDownsampleConstellationTable(ulConst, 2500));
+    else
+        outULConst = fullfile(csvDir, "ul_constellation_samples.csv");
+        sixgr.util.csvWriteTable(outULConst, ulConst);
+    end
 else
     outULConst = "";
 end
-
-pbchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPBCHTrials(cfg, snr, max(4, ceil(nTrials/4))), snrGrid);
-fPBCH = fullfile(csvDir, "pbch_trials.csv");
-sixgr.util.csvWriteTable(fPBCH, pbchTrials);
-
-prachTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPRACHTrials(cfg, snr, max(4, ceil(nTrials/4))), snrGrid);
-fPRACH = fullfile(csvDir, "prach_trials.csv");
-sixgr.util.csvWriteTable(fPRACH, prachTrials);
-
-pdcchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPDCCHTrials(cfg, snr, max(8, ceil(nTrials/2))), snrGrid);
-fPDCCH = fullfile(csvDir, "pdcch_trials.csv");
-sixgr.util.csvWriteTable(fPDCCH, pdcchTrials);
-
-pucchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPUCCHTrials(cfg, snr, max(8, ceil(nTrials/2))), snrGrid);
-fPUCCH = fullfile(csvDir, "pucch_trials.csv");
-sixgr.util.csvWriteTable(fPUCCH, pucchTrials);
-
-srsTrials = localCollectTrialsAcrossSweep(@(snr) localCollectSRSTrials(cfg, snr, max(6, ceil(nTrials/3))), snrGrid);
-fSRS = fullfile(csvDir, "srs_trials.csv");
-sixgr.util.csvWriteTable(fSRS, srsTrials);
-
-trsTrials = localCollectTrialsAcrossSweep(@(snr) localCollectTRSTrials(cfg, snr, max(6, ceil(nTrials/3))), snrGrid);
-fTRS = fullfile(csvDir, "trs_trials.csv");
-sixgr.util.csvWriteTable(fTRS, trsTrials);
 
 out = struct();
 out.DL = dlTrials;
@@ -343,6 +867,7 @@ out.PRACH = prachTrials;
 out.PDCCH = pdcchTrials;
 out.PUCCH = pucchTrials;
 out.SRS = srsTrials;
+out.CSIRS = csirsTrials;
 out.TRS = trsTrials;
 out.DLPath = fDL;
 out.ULPath = fUL;
@@ -355,9 +880,14 @@ out.PRACHPath = fPRACH;
 out.PDCCHPath = fPDCCH;
 out.PUCCHPath = fPUCCH;
 out.SRSPath = fSRS;
+out.CSIRSPath = fCSIRS;
 out.TRSPath = fTRS;
+out.LiveSweepPath = liveSweepPath;
 out.MultiUserDL = dlUserSummary;
 out.MultiUserUL = ulUserSummary;
+out.CoupledRuntime = coupledRuntime;
+out.InitialAccessLifecycleTraceTable = sixgr.util.structGet(coupledRuntime, "InitialAccessLifecycleTraceTable", table());
+out.MobilityArtifacts = mobilityArtifacts;
 if logical(multiUser.Enabled) && logical(multiUser.SaveUserTables)
     out.MultiUserSummaryPath = fullfile(csvDir, "multiuser_user_summary.csv");
     userSummary = localMergeMultiUserSummaries(dlUserSummary, ulUserSummary, multiUser);
@@ -405,6 +935,941 @@ if logical(multiUser.Enabled) && isfield(out, "MultiUserSummaryPath") && strleng
 end
 end
 
+function tf = localIsMySQLWebMode(cfg)
+tf = lower(string(sixgr.util.structGet(cfg, "outputs.storageBackend", "filesystem"))) == "mysql_web";
+end
+
+function T = localDownsampleConstellationTable(Tin, maxRows)
+T = Tin;
+if ~(istable(Tin) && ~isempty(Tin))
+    return;
+end
+maxRows = max(1, round(double(maxRows)));
+if height(Tin) <= maxRows
+    return;
+end
+idx = unique(round(linspace(1, height(Tin), maxRows)));
+T = Tin(idx, :);
+end
+
+function localPublishAnchorKPIArtifacts(runFolder, res)
+kpi = sixgr.util.structGet(res, "KPITable", table());
+if ~(istable(kpi) && ~isempty(kpi))
+    return;
+end
+sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "link_anchor_kpis.csv"), kpi);
+end
+
+function localPublishRuntimeReferenceArtifacts(runFolder, cfg, multiUser, rawTrials)
+if nargin < 4
+    rawTrials = struct();
+end
+rootRunFolder = fileparts(char(string(runFolder)));
+layout = sixgr.report.resultLayout(rootRunFolder);
+
+runtimeT = localBuildRuntimeOperatingModeTable(cfg, multiUser, rawTrials);
+if ~isempty(runtimeT)
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv"), runtimeT);
+end
+
+layoutT = localBuildDeploymentLayoutReferenceTable(cfg, multiUser);
+if ~isempty(layoutT)
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "deployment_layout_reference.csv"), layoutT);
+end
+
+cqiT = localBuildCQITableReferenceTable(cfg);
+if ~isempty(cqiT)
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "cqi_table_reference.csv"), cqiT);
+end
+
+mcsT = localBuildMCSTableReferenceTable(cfg);
+if ~isempty(mcsT)
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "mcs_table_reference.csv"), mcsT);
+end
+end
+
+function localPublishWaveformBundleStageStatus(runFolder, status)
+rootRunFolder = localNormalizeBundleRootRunFolder(runFolder);
+layout = sixgr.report.resultLayout(rootRunFolder);
+statusPath = fullfile(layout.ReportCSVDir, "live_stage_status.csv");
+status = localNormalizeStageStatusStruct(status, localReadStageStatusStruct(statusPath));
+T = struct2table(orderfields(status));
+sixgr.util.csvWriteTable(statusPath, T);
+end
+
+function statusOut = localNormalizeStageStatusStruct(statusIn, statusBase)
+statusOut = struct( ...
+    "Stage", "", ...
+    "CurrentDirection", "", ...
+    "CurrentSNR_dB", NaN, ...
+    "SweepPointIndex", NaN, ...
+    "SweepPointCount", NaN, ...
+    "CurrentUEIndex", NaN, ...
+    "TotalUsers", NaN, ...
+    "CurrentSlot", NaN, ...
+    "DLCompletedFrames", NaN, ...
+    "ULCompletedFrames", NaN, ...
+    "CompletedFrames", NaN, ...
+    "TotalFrames", NaN, ...
+    "DLTrialRows", NaN, ...
+    "ULTrialRows", NaN, ...
+    "DLUniqueUsersPublished", NaN, ...
+    "ULUniqueUsersPublished", NaN, ...
+    "DLSummaryUsersPublished", NaN, ...
+    "ULSummaryUsersPublished", NaN, ...
+    "DLGrantCount", NaN, ...
+    "ULGrantCount", NaN, ...
+    "DLActiveUsers", NaN, ...
+    "ULActiveUsers", NaN, ...
+    "DLGrantedUsers", NaN, ...
+    "ULGrantedUsers", NaN, ...
+    "DLQueueBits", NaN, ...
+    "ULQueueBits", NaN, ...
+    "DLUserProgressFraction", NaN, ...
+    "ULUserProgressFraction", NaN, ...
+    "BidirectionalInterleavingEnabled", false, ...
+    "AnchorKPIsReady", false, ...
+    "DLTrialsReady", false, ...
+    "ULTrialsReady", false, ...
+    "ControlReady", false, ...
+    "HARQReady", false, ...
+    "BeamReady", false, ...
+    "RFReady", false, ...
+    "SweepReady", false, ...
+    "FinalBundleReady", false, ...
+    "Notes", "");
+if nargin >= 2 && isstruct(statusBase) && ~isempty(fieldnames(statusBase))
+    fBase = fieldnames(statusBase);
+    for i = 1:numel(fBase)
+        statusOut.(fBase{i}) = statusBase.(fBase{i});
+    end
+end
+if ~(isstruct(statusIn) && ~isempty(fieldnames(statusIn)))
+    return;
+end
+f = fieldnames(statusIn);
+for i = 1:numel(f)
+    statusOut.(f{i}) = statusIn.(f{i});
+end
+end
+
+function status = localReadStageStatusStruct(statusPath)
+status = struct();
+if exist(statusPath, "file") ~= 2
+    return;
+end
+try
+    T = readtable(statusPath, "VariableNamingRule", "preserve");
+    if istable(T) && ~isempty(T)
+        status = table2struct(T(1, :), "ToScalar", true);
+    end
+catch
+    status = struct();
+end
+end
+
+function rootRunFolder = localNormalizeBundleRootRunFolder(runFolder)
+runFolder = char(string(runFolder));
+[~, leaf] = fileparts(runFolder);
+domainLeaves = {"air_interface","beamforming","control","harq","meta","reports","rf"};
+if any(strcmpi(leaf, domainLeaves))
+    rootRunFolder = fileparts(runFolder);
+else
+    rootRunFolder = runFolder;
+end
+end
+
+function [rows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, rows, stageOrder, stageName, stageElapsed_s, bundleElapsed_s, notes)
+stageOrder = double(stageOrder) + 1;
+row = localEmptyRuntimeStageRow();
+row.StageOrder = double(stageOrder);
+row.StageName = string(stageName);
+row.StageElapsed_s = double(stageElapsed_s);
+row.BundleElapsed_s = double(bundleElapsed_s);
+row.CompletedUTC = string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+row.Notes = string(notes);
+rows(end+1,1) = row; %#ok<AGROW>
+layout = sixgr.report.resultLayout(rootRunFolder);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_stage_profile.csv"), struct2table(rows));
+end
+
+function row = localEmptyRuntimeStageRow()
+row = struct( ...
+    "StageOrder", NaN, ...
+    "StageName", "", ...
+    "StageElapsed_s", NaN, ...
+    "BundleElapsed_s", NaN, ...
+    "CompletedUTC", "", ...
+    "Notes", "");
+end
+
+function T = localBuildRuntimeOperatingModeTable(cfg, multiUser, rawTrials)
+if nargin < 3
+    rawTrials = struct();
+end
+rows = repmat(struct( ...
+    "Direction", "", ...
+    "LinkAdaptationMode", "", ...
+    "ConfiguredLinkAdaptationMode", "", ...
+    "DirectionPolicy", "", ...
+    "ActualMCSSelectionMode", "", ...
+    "ConfiguredMCSSelectionPolicy", "", ...
+    "ConfiguredMCSSelectionMode", "", ...
+    "SchedulerGrantMCSSelectionMode", "", ...
+    "RequestedOperatingPointSource", "", ...
+    "AppliedOperatingPointSource", "", ...
+    "ActualMCSSelectionModeAuthority", "", ...
+    "CQITable", "", ...
+    "MCSTable", "", ...
+    "FixedMCSIndex", NaN, ...
+    "FixedModulation", "", ...
+    "FixedTargetCodeRate", NaN, ...
+    "Numerology_mu", NaN, ...
+    "SCS_kHz", NaN, ...
+    "SlotDuration_ms", NaN, ...
+    "SlotsPerFrame", NaN, ...
+    "SymbolsPerSlot", NaN, ...
+    "ConfiguredGridNumRBs", NaN, ...
+    "ActiveGridNumRBs", NaN, ...
+    "ActiveGridSource", "", ...
+    "NumerologySource", "", ...
+    "TimingInterpretationSource", "", ...
+    "CQISource", "", ...
+    "WidebandSINRMargin_dB", NaN, ...
+    "MultiUserEnabled", false, ...
+    "ConfiguredUsers", NaN, ...
+    "BrowserExecutionMode", "", ...
+    "UserExecutionModel", "", ...
+    "ConfiguredLayers", NaN, ...
+    "NoiseOperatingMode", "", ...
+    "ConfiguredSNRAnchorEnabled", false, ...
+    "DopplerSourceMode", "", ...
+    "ResolvedDopplerHz", NaN, ...
+    "MobilitySpeed_kmh", NaN, ...
+    "InterferenceMode", "", ...
+    "FullInterfererChannelTruthUsed", false, ...
+    "AntennaRuntimeObjectSource", "", ...
+    "ChannelArrayModel", "", ...
+    "ChannelObjectSource", "", ...
+    "ChannelObjectClass", "", ...
+    "ChannelArrayHandlingStatus", "", ...
+    "ChannelArrayHandlingBlocker", "", ...
+    "ChannelGeometryCouplingLevel", "", ...
+    "GeometryAdapterType", "", ...
+    "GeometryAdapterSource", "", ...
+    "GeometryAdapterLimitation", "", ...
+    "GeometryAdapterPortMapping", "", ...
+    "ChannelUsesSameRuntimeAntennaAssumptions", false, ...
+    "InterferenceChannelObjectSource", "", ...
+    "InterferenceChannelObjectClass", "", ...
+    "InterferenceChannelArrayHandlingStatus", "", ...
+    "InterferenceChannelArrayHandlingBlocker", "", ...
+    "InterferenceUsesSameRuntimeAntennaAssumptions", false, ...
+    "InterferencePathUsesSameArrayAssumptions", false, ...
+    "ControlIntegrationMode", "", ...
+    "PBCHMode", "", ...
+    "PRACHMode", "", ...
+    "PDCCHMode", "", ...
+    "PUCCHMode", "", ...
+    "SRSMode", "", ...
+    "TRSMode", "", ...
+    "TRSRuntimeConsumer", "", ...
+    "TRSInfluencedDecision", false, ...
+    "TRSInfluenceDefinition", "", ...
+    "TRSReceiverIntegrationStatus", "", ...
+    "TRSReceiverIntegrationBlocker", "", ...
+    "PBCHGatingActive", false, ...
+    "PRACHGatingActive", false, ...
+    "PDCCHGatingActive", false, ...
+    "SRSGatingActive", false, ...
+    "TRSGatingActive", false, ...
+    "ParallelExecutionActive", false, ...
+    "ConfiguredWorkers", NaN, ...
+    "EffectiveWorkers", NaN, ...
+    "ParallelDisabledReason", "", ...
+    "ConfiguredBatchSizeLinks", NaN, ...
+    "ConfiguredSchedulerType", "", ...
+    "ConfiguredMeasurementPeriodSlots", NaN, ...
+    "ConfiguredBeamUpdatePeriodSlots", NaN, ...
+    "ConfiguredTrafficModel", "", ...
+    "ConfiguredTrafficTransport", "", ...
+    "ConfiguredTrafficFlowDirection", "", ...
+    "ConfiguredTrafficTargetRate_Mbps", NaN, ...
+    "TrafficFlowSource", "", ...
+    "TrafficFlowDerivationMode", "", ...
+    "TrafficFlowResolvedFlag", false, ...
+    "CoupledGrantExecutionMode", "", ...
+    "RunStateSource", "", ...
+    "SlotTraceSource", "", ...
+    "SlotTraceRows", NaN, ...
+    "CanonicalSlotTraceFirst", false, ...
+    "TruthModeIndependentSweepForbidden", false, ...
+    "ExecutionBackend", "", ...
+    "PHYMode", "", ...
+    "WaveformBacked", false, ...
+    "WaveformPHYActive", false, ...
+    "ProxyPHYActive", true, ...
+    "FallbackUsed", true), 2, 1);
+noiseMode = localResolveNoiseOperatingMode(cfg);
+dopplerMode = localResolveDopplerSourceMode(cfg);
+dopplerHz = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
+    sixgr.util.structGet(cfg, "channel.dopplerHz", sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", NaN))));
+speedRange = double(sixgr.util.structGet(cfg, "scenario.mobility.speed_kmh", [NaN NaN]));
+mobilitySpeedKmh = NaN;
+if ~isempty(speedRange)
+    mobilitySpeedKmh = speedRange(1);
+end
+interferenceMode = ternaryInterferenceMode(cfg);
+controlMode = localResolveControlIntegrationMode(cfg, multiUser);
+pbchGating = localResolveControlGatingFlag(cfg, "run.controlGating.pbchRequired", "control_gating.pbch_required");
+prachGating = localResolveControlGatingFlag(cfg, "run.controlGating.prachRequired", "control_gating.prach_required");
+pdcchGating = localResolveControlGatingFlag(cfg, "run.controlGating.pdcchRequired", "control_gating.pdcch_required");
+srsGating = localResolveControlGatingFlag(cfg, "run.controlGating.srsRequired", "control_gating.srs_required");
+trsGating = localResolveControlGatingFlag(cfg, "run.controlGating.trsRequired", "control_gating.trs_required");
+browserExecutionMode = string(sixgr.util.structGet(cfg, "run.executionMode", "LLS"));
+parallelActive = logical(sixgr.util.structGet(cfg, "run.useParallel", false)) && ...
+    double(sixgr.util.structGet(cfg, "run.numWorkers", 0)) > 1;
+configuredWorkers = double(sixgr.util.structGet(cfg, "run.parallelRequestedWorkers", ...
+    sixgr.util.structGet(cfg, "run.numWorkers", NaN)));
+effectiveWorkers = double(sixgr.util.structGet(cfg, "run.numWorkers", NaN));
+parallelDisabledReason = char(string(sixgr.util.structGet(cfg, "run.parallelDisabledReason", "")));
+configuredBatchSizeLinks = double(sixgr.util.structGet(cfg, "run.batchSizeLinks", NaN));
+configuredSchedulerType = char(string(sixgr.util.structGet(cfg, "system.scheduler.type", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.type", ""))));
+configuredMeasurementPeriodSlots = double(sixgr.util.structGet(cfg, "system.measurement.periodSlots", NaN));
+configuredBeamUpdatePeriodSlots = double(sixgr.util.structGet(cfg, "system.beam.updatePeriod_slots", NaN));
+configuredTrafficModel = char(string(sixgr.util.structGet(cfg, "traffic.model", "")));
+configuredTrafficTransport = char(string(sixgr.util.structGet(cfg, "traffic.transport", "")));
+configuredTrafficFlowDirection = char(string(sixgr.util.structGet(cfg, "traffic.flowDirection", "")));
+configuredTrafficTargetRate = double(sixgr.util.structGet(cfg, "traffic.targetRate_Mbps", NaN));
+trafficFlowSource = char(string(sixgr.util.structGet(cfg, "traffic.flowSource", "")));
+trafficFlowDerivationMode = char(string(sixgr.util.structGet(cfg, "traffic.flowDerivationMode", "")));
+trafficFlowResolvedFlag = logical(sixgr.util.structGet(cfg, "traffic.flowResolvedFlag", false));
+coupledRuntime = sixgr.util.structGet(rawTrials, "CoupledRuntime", struct());
+slotTraceT = sixgr.util.structGet(coupledRuntime, "SlotTraceTable", table());
+slotTraceRows = height(slotTraceT);
+userExecutionModel = string(sixgr.util.structGet(multiUser, "ExecutionModel", "independent_link_sweep"));
+grantExecutionMode = "serial_per_grant_execution";
+if parallelActive
+    grantExecutionMode = "parallel_worker_batch_serial_commit";
+elseif isfinite(configuredBatchSizeLinks) && configuredBatchSizeLinks > 1
+    grantExecutionMode = "serial_chunked_grant_execution";
+end
+executionBackend = "WAVEFORM_LINK_BUNDLE";
+phyMode = "COUPLED_WAVEFORM_GRANT_EXECUTION";
+for i = 1:2
+    direction = "DL";
+    if i == 2
+        direction = "UL";
+    end
+    [configuredMode, policy, configuredSelectionMode] = localResolveLinkAdaptationTokens(cfg, direction);
+    requestedOperatingPointSource = localResolveOperatingPointSourceToken(configuredSelectionMode, policy);
+    runtimeEvidence = localSummarizeRuntimeOperatingPointEvidence(rawTrials, direction);
+    channelEvidence = localSummarizeChannelArrayEvidence(rawTrials, direction);
+    rows(i).Direction = char(direction);
+    rows(i).LinkAdaptationMode = char(policy);
+    rows(i).ConfiguredLinkAdaptationMode = char(configuredMode);
+    rows(i).DirectionPolicy = char(policy);
+    rows(i).ActualMCSSelectionMode = "";
+    rows(i).ConfiguredMCSSelectionPolicy = char(configuredSelectionMode);
+    rows(i).ConfiguredMCSSelectionMode = char(configuredSelectionMode);
+    rows(i).SchedulerGrantMCSSelectionMode = "";
+    rows(i).RequestedOperatingPointSource = char(requestedOperatingPointSource);
+    rows(i).AppliedOperatingPointSource = "";
+    rows(i).ActualMCSSelectionModeAuthority = "runtime_trial_evidence_pending";
+    rows(i).CQITable = char(localResolveCQITable(cfg, direction));
+    rows(i).MCSTable = char(localResolveMCSTable(cfg, direction));
+    rows(i).Numerology_mu = double(sixgr.util.structGet(cfg, "phy.numerology.mu", NaN));
+    rows(i).SCS_kHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN));
+    rows(i).SlotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
+    rows(i).SlotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN));
+    rows(i).SymbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", NaN));
+    rows(i).ConfiguredGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.configuredGridNumRBs", ...
+        sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)));
+    rows(i).ActiveGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.activeGridNumRBs", ...
+        sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)));
+    rows(i).ActiveGridSource = char(string(sixgr.util.structGet(cfg, "phy.numerology.activeGridSource", "configured_n_size_grid")));
+    rows(i).NumerologySource = char(string(sixgr.util.structGet(cfg, "phy.numerology.numerologySource", "carrier_subcarrier_spacing_khz")));
+    rows(i).TimingInterpretationSource = char(string(sixgr.util.structGet(cfg, "phy.numerology.timingInterpretationSource", "nr_mu_from_scs")));
+    rows(i).CQISource = char(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiSource", "csi_feedback")));
+    rows(i).WidebandSINRMargin_dB = double(sixgr.util.structGet(cfg, "phy.csi.widebandSINRMargin_dB", NaN));
+    rows(i).MultiUserEnabled = logical(sixgr.util.structGet(multiUser, "Enabled", false));
+    rows(i).ConfiguredUsers = double(sixgr.util.structGet(multiUser, "NumUsers", 1));
+    rows(i).BrowserExecutionMode = char(browserExecutionMode);
+    rows(i).UserExecutionModel = char(userExecutionModel);
+    rows(i).NoiseOperatingMode = char(noiseMode);
+    rows(i).ConfiguredSNRAnchorEnabled = noiseMode == "configured_snr_anchor_after_large_scale_gain";
+    rows(i).DopplerSourceMode = char(dopplerMode);
+    rows(i).ResolvedDopplerHz = double(dopplerHz);
+    rows(i).MobilitySpeed_kmh = double(mobilitySpeedKmh);
+    rows(i).InterferenceMode = char(interferenceMode);
+    rows(i).FullInterfererChannelTruthUsed = interferenceMode == "full_per_link_channel_waveform_sum";
+    rows(i).AntennaRuntimeObjectSource = char(string(channelEvidence.AntennaRuntimeObjectSource));
+    rows(i).ChannelArrayModel = char(string(channelEvidence.ChannelArrayModel));
+    rows(i).ChannelObjectSource = char(string(channelEvidence.ChannelObjectSource));
+    rows(i).ChannelObjectClass = char(string(channelEvidence.ChannelObjectClass));
+    rows(i).ChannelArrayHandlingStatus = char(string(channelEvidence.ChannelArrayHandlingStatus));
+    rows(i).ChannelArrayHandlingBlocker = char(string(channelEvidence.ChannelArrayHandlingBlocker));
+    rows(i).ChannelGeometryCouplingLevel = char(string(channelEvidence.ChannelGeometryCouplingLevel));
+    rows(i).GeometryAdapterType = char(string(channelEvidence.GeometryAdapterType));
+    rows(i).GeometryAdapterSource = char(string(channelEvidence.GeometryAdapterSource));
+    rows(i).GeometryAdapterLimitation = char(string(channelEvidence.GeometryAdapterLimitation));
+    rows(i).GeometryAdapterPortMapping = char(string(channelEvidence.GeometryAdapterPortMapping));
+    rows(i).ChannelUsesSameRuntimeAntennaAssumptions = logical(channelEvidence.ChannelUsesSameRuntimeAntennaAssumptions);
+    rows(i).InterferenceChannelObjectSource = char(string(channelEvidence.InterferenceChannelObjectSource));
+    rows(i).InterferenceChannelObjectClass = char(string(channelEvidence.InterferenceChannelObjectClass));
+    rows(i).InterferenceChannelArrayHandlingStatus = char(string(channelEvidence.InterferenceChannelArrayHandlingStatus));
+    rows(i).InterferenceChannelArrayHandlingBlocker = char(string(channelEvidence.InterferenceChannelArrayHandlingBlocker));
+    rows(i).InterferenceUsesSameRuntimeAntennaAssumptions = logical(channelEvidence.InterferenceUsesSameRuntimeAntennaAssumptions);
+    rows(i).InterferencePathUsesSameArrayAssumptions = logical(channelEvidence.InterferencePathUsesSameArrayAssumptions);
+    rows(i).ControlIntegrationMode = char(controlMode);
+    rows(i).PBCHMode = char(localResolveControlSidecarMode(cfg, "PBCH", controlMode));
+    rows(i).PRACHMode = char(localResolveControlSidecarMode(cfg, "PRACH", controlMode));
+    rows(i).PDCCHMode = char(localResolveControlSidecarMode(cfg, "PDCCH", controlMode));
+    rows(i).PUCCHMode = char(localResolveControlSidecarMode(cfg, "PUCCH", controlMode));
+    rows(i).SRSMode = char(localResolveControlSidecarMode(cfg, "SRS", controlMode));
+    rows(i).TRSMode = char(localResolveControlSidecarMode(cfg, "TRS", controlMode));
+    trsSummary = localResolveTRSOperatingModeSummary(rawTrials, direction, trsGating, cfg);
+    rows(i).TRSRuntimeConsumer = char(string(trsSummary.TRSRuntimeConsumer));
+    rows(i).TRSInfluencedDecision = logical(trsSummary.TRSInfluencedDecision);
+    rows(i).TRSInfluenceDefinition = char(string(trsSummary.TRSInfluenceDefinition));
+    rows(i).TRSReceiverIntegrationStatus = char(string(trsSummary.TRSReceiverIntegrationStatus));
+    rows(i).TRSReceiverIntegrationBlocker = char(string(trsSummary.TRSReceiverIntegrationBlocker));
+    rows(i).PBCHGatingActive = pbchGating;
+    rows(i).PRACHGatingActive = prachGating;
+    rows(i).PDCCHGatingActive = pdcchGating;
+    rows(i).SRSGatingActive = srsGating;
+    rows(i).TRSGatingActive = trsGating;
+    rows(i).ParallelExecutionActive = parallelActive;
+    rows(i).ConfiguredWorkers = configuredWorkers;
+    rows(i).EffectiveWorkers = effectiveWorkers;
+    rows(i).ParallelDisabledReason = parallelDisabledReason;
+    rows(i).ConfiguredBatchSizeLinks = configuredBatchSizeLinks;
+    rows(i).ConfiguredSchedulerType = configuredSchedulerType;
+    rows(i).ConfiguredMeasurementPeriodSlots = configuredMeasurementPeriodSlots;
+    rows(i).ConfiguredBeamUpdatePeriodSlots = configuredBeamUpdatePeriodSlots;
+    rows(i).ConfiguredTrafficModel = configuredTrafficModel;
+    rows(i).ConfiguredTrafficTransport = configuredTrafficTransport;
+    rows(i).ConfiguredTrafficFlowDirection = configuredTrafficFlowDirection;
+    rows(i).ConfiguredTrafficTargetRate_Mbps = configuredTrafficTargetRate;
+    rows(i).TrafficFlowSource = trafficFlowSource;
+    rows(i).TrafficFlowDerivationMode = trafficFlowDerivationMode;
+    rows(i).TrafficFlowResolvedFlag = trafficFlowResolvedFlag;
+    rows(i).CoupledGrantExecutionMode = char(grantExecutionMode);
+    rows(i).RunStateSource = "reports/csv/run_state.csv";
+    rows(i).SlotTraceSource = "reports/csv/slot_trace.csv";
+    rows(i).SlotTraceRows = double(slotTraceRows);
+    rows(i).CanonicalSlotTraceFirst = logical(userExecutionModel == "slot_coupled_truth" && slotTraceRows > 0);
+    rows(i).TruthModeIndependentSweepForbidden = logical(userExecutionModel == "slot_coupled_truth");
+    rows(i).ExecutionBackend = char(executionBackend);
+    rows(i).PHYMode = char(phyMode);
+    rows(i).WaveformBacked = true;
+    rows(i).WaveformPHYActive = true;
+    rows(i).ProxyPHYActive = false;
+    rows(i).FallbackUsed = false;
+    if strlength(strtrim(string(runtimeEvidence.LinkAdaptationMode))) > 0
+        rows(i).LinkAdaptationMode = char(string(runtimeEvidence.LinkAdaptationMode));
+    end
+    if strlength(strtrim(string(runtimeEvidence.ActualMCSSelectionMode))) > 0
+        rows(i).ActualMCSSelectionMode = char(string(runtimeEvidence.ActualMCSSelectionMode));
+        rows(i).ActualMCSSelectionModeAuthority = "raw_trial_runtime_evidence";
+    end
+    if strlength(strtrim(string(runtimeEvidence.SchedulerGrantMCSSelectionMode))) > 0
+        rows(i).SchedulerGrantMCSSelectionMode = char(string(runtimeEvidence.SchedulerGrantMCSSelectionMode));
+    end
+    if strlength(strtrim(string(runtimeEvidence.AppliedOperatingPointSource))) > 0
+        rows(i).AppliedOperatingPointSource = char(string(runtimeEvidence.AppliedOperatingPointSource));
+        if rows(i).ActualMCSSelectionModeAuthority == ""
+            rows(i).ActualMCSSelectionModeAuthority = "raw_trial_runtime_evidence";
+        end
+    end
+    if direction == "UL"
+        rows(i).FixedMCSIndex = double(sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", NaN));
+        rows(i).FixedModulation = char(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", "")));
+        rows(i).FixedTargetCodeRate = double(sixgr.util.structGet(cfg, "phy.pusch.codeRate", NaN));
+        rows(i).ConfiguredLayers = double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", NaN));
+    else
+        rows(i).FixedMCSIndex = double(sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", NaN));
+        rows(i).FixedModulation = char(string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", "")));
+        rows(i).FixedTargetCodeRate = double(sixgr.util.structGet(cfg, "phy.pdsch.codeRate", NaN));
+        rows(i).ConfiguredLayers = double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN));
+    end
+end
+T = struct2table(rows);
+end
+
+function mode = localResolveNoiseOperatingMode(cfg)
+mode = string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+if strlength(strtrim(mode)) == 0
+    mode = "configured_snr_anchor_after_large_scale_gain";
+end
+end
+
+function mode = localResolveDopplerSourceMode(cfg)
+mode = string(sixgr.util.structGet(cfg, "channel.dopplerSourceMode", "configured"));
+mode = lower(strtrim(mode));
+if strlength(mode) == 0
+    mode = "configured";
+end
+end
+
+function mode = localResolveControlIntegrationMode(cfg, multiUser)
+mode = "independent_signal_bundle";
+if logical(sixgr.util.structGet(multiUser, "Enabled", false)) && ...
+        string(sixgr.util.structGet(multiUser, "ExecutionModel", "")) == "slot_coupled_truth"
+    if localResolveControlGatingFlag(cfg, "run.controlGating.trsRequired", "control_gating.trs_required")
+        mode = "runtime_control_access_tracking_state_gated";
+    else
+        mode = "runtime_control_access_state_gated";
+    end
+end
+end
+
+function mode = localResolveControlSidecarMode(cfg, signalName, controlMode)
+signalName = upper(string(signalName));
+enabled = false;
+    switch signalName
+        case "PBCH"
+            enabled = logical(sixgr.util.structGet(cfg, "phy.pbch.enable", false));
+        case "PRACH"
+            enabled = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
+        case "PDCCH"
+            enabled = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
+        case "PUCCH"
+            enabled = logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+        case "SRS"
+            enabled = logical(sixgr.util.structGet(cfg, "phy.srs.enable", false));
+        case "TRS"
+            enabled = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
+    end
+if ~enabled
+    mode = "disabled";
+elseif signalName == "PBCH" && localResolveControlGatingFlag(cfg, "run.controlGating.pbchRequired", "control_gating.pbch_required")
+    mode = "runtime_cell_search_gate";
+elseif signalName == "PRACH" && localResolveControlGatingFlag(cfg, "run.controlGating.prachRequired", "control_gating.prach_required")
+    mode = "runtime_prach_success_gate_simplified_ra";
+elseif signalName == "PDCCH" && localResolveControlGatingFlag(cfg, "run.controlGating.pdcchRequired", "control_gating.pdcch_required")
+    mode = "grant_coupled_pdcch_dci_gating";
+elseif signalName == "PUCCH"
+    mode = "runtime_coupled_pucch_grant_waveform_execution";
+elseif signalName == "SRS" && localResolveControlGatingFlag(cfg, "run.controlGating.srsRequired", "control_gating.srs_required")
+    mode = "srs_freshness_csi_gate";
+elseif signalName == "TRS" && localResolveControlGatingFlag(cfg, "run.controlGating.trsRequired", "control_gating.trs_required")
+    mode = "runtime_shared_receiver_tracking_state_gate";
+elseif signalName == "TRS"
+    mode = "runtime_shared_receiver_tracking_observer";
+else
+    mode = "enabled";
+end
+end
+
+function tf = localResolveControlGatingFlag(cfg, resolvedPath, legacyPath)
+value = sixgr.util.structGet(cfg, resolvedPath, []);
+if isempty(value)
+    value = sixgr.util.structGet(cfg, legacyPath, []);
+end
+if isempty(value)
+    error("sixgr:truth:MissingControlGatingConfig", ...
+        "Missing explicit control-gating config for '%s'.", string(legacyPath));
+end
+tf = logical(value);
+end
+
+function summary = localResolveTRSOperatingModeSummary(rawTrials, direction, trsGating, cfg)
+summary = struct( ...
+    "TRSRuntimeConsumer", "", ...
+    "TRSInfluencedDecision", false, ...
+    "TRSInfluenceDefinition", "", ...
+    "TRSReceiverIntegrationStatus", "", ...
+    "TRSReceiverIntegrationBlocker", "");
+if ~logical(sixgr.util.structGet(cfg, "phy.trs.enable", false))
+    summary.TRSRuntimeConsumer = "inactive";
+    summary.TRSInfluenceDefinition = "trs_disabled";
+    summary.TRSReceiverIntegrationStatus = "inactive";
+    return;
+end
+summary.TRSRuntimeConsumer = "pending_shared_receiver_tracking_state";
+summary.TRSInfluencedDecision = false;
+summary.TRSInfluenceDefinition = "trs_runtime_observation_required_before_receiver_tracking_state_update";
+summary.TRSReceiverIntegrationStatus = "pending_no_runtime_trs_observation";
+summary.TRSReceiverIntegrationBlocker = "no_trs_trial_row_in_current_bounded_run";
+if trsGating
+    summary.TRSInfluenceDefinition = "shared_receiver_tracking_state_required_for_grant_scheduling_when_trs_gating_active";
+end
+sourceT = table();
+dirField = char(upper(string(direction)));
+if isstruct(rawTrials) && isfield(rawTrials, dirField) && istable(rawTrials.(dirField)) && ~isempty(rawTrials.(dirField))
+    sourceT = rawTrials.(dirField);
+end
+if isempty(sourceT) && isstruct(rawTrials) && isfield(rawTrials, "TRS") && istable(rawTrials.TRS) && ~isempty(rawTrials.TRS)
+    sourceT = rawTrials.TRS;
+end
+if ~(istable(sourceT) && ~isempty(sourceT))
+    return;
+end
+summary.TRSRuntimeConsumer = localFirstNonEmptyString(sourceT, ["TRSRuntimeConsumer","RuntimeStateConsumer"], summary.TRSRuntimeConsumer);
+summary.TRSInfluenceDefinition = localFirstNonEmptyString(sourceT, ["TRSInfluenceDefinition"], summary.TRSInfluenceDefinition);
+summary.TRSReceiverIntegrationStatus = localFirstNonEmptyString(sourceT, ["TRSReceiverIntegrationStatus"], summary.TRSReceiverIntegrationStatus);
+summary.TRSReceiverIntegrationBlocker = localFirstNonEmptyString(sourceT, ["TRSReceiverIntegrationBlocker"], summary.TRSReceiverIntegrationBlocker);
+summary.TRSInfluencedDecision = localFirstLogicalValue(sourceT, ["TRSInfluencedDecision","RuntimeStateUpdated"], summary.TRSInfluencedDecision);
+end
+
+function value = localFirstNonEmptyString(T, candidates, defaultValue)
+value = string(defaultValue);
+for i = 1:numel(candidates)
+    name = char(candidates(i));
+    if ~ismember(name, string(T.Properties.VariableNames))
+        continue;
+    end
+    tokens = string(T.(name));
+    tokens = strtrim(tokens);
+    tokens = tokens(strlength(tokens) > 0 & lower(tokens) ~= "missing");
+    if ~isempty(tokens)
+        value = tokens(1);
+        return;
+    end
+end
+end
+
+function value = localFirstLogicalValue(T, candidates, defaultValue)
+value = logical(defaultValue);
+for i = 1:numel(candidates)
+    name = char(candidates(i));
+    if ~ismember(name, string(T.Properties.VariableNames))
+        continue;
+    end
+    col = T.(name);
+    if islogical(col)
+        if ~isempty(col)
+            value = logical(col(1));
+            return;
+        end
+    else
+        numCol = double(col);
+        mask = isfinite(numCol);
+        if any(mask)
+            value = logical(numCol(find(mask, 1, "first")));
+            return;
+        end
+    end
+end
+end
+
+function T = localBuildDeploymentLayoutReferenceTable(cfg, multiUser)
+speedRange = double(sixgr.util.structGet(cfg, "scenario.mobility.speed_kmh", [0 0]));
+if isempty(speedRange)
+    speedRange = [0 0];
+end
+speedRange = [speedRange(:).' zeros(1, max(0, 2 - numel(speedRange)))];
+speedRange = speedRange(1:2);
+numSites = localFiniteMax([ ...
+    double(sixgr.util.structGet(cfg, "scenario.layout.nSites", NaN)), ...
+    double(sixgr.util.structGet(cfg, "deployment_topology.num_sites", NaN))]);
+numCells = localFiniteMax([ ...
+    double(sixgr.util.structGet(cfg, "scenario.layout.nCells", NaN)), ...
+    double(sixgr.util.structGet(cfg, "deployment_topology.num_cells", NaN))]);
+sectorsPerSite = localFiniteMax([ ...
+    double(sixgr.util.structGet(cfg, "scenario.layout.nSectorsPerSite", NaN)), ...
+    double(sixgr.util.structGet(cfg, "deployment_topology.sectors_per_site", NaN))]);
+if ~(isfinite(sectorsPerSite) && sectorsPerSite >= 1) && isfinite(numSites) && numSites >= 1 && isfinite(numCells) && numCells >= 1
+    sectorsPerSite = max(1, round(numCells / numSites));
+end
+if ~(isfinite(numSites) && numSites >= 1) && isfinite(numCells) && isfinite(sectorsPerSite) && sectorsPerSite >= 1
+    numSites = max(1, round(numCells / sectorsPerSite));
+end
+if ~(isfinite(numCells) && numCells >= 1) && isfinite(numSites) && numSites >= 1 && isfinite(sectorsPerSite) && sectorsPerSite >= 1
+    numCells = double(numSites) * double(sectorsPerSite);
+end
+numUEs = max([ ...
+    double(sixgr.util.structGet(cfg, "scenario.nUE", NaN)), ...
+    double(sixgr.util.structGet(cfg, "scenario.ue.nUE", NaN)), ...
+    double(sixgr.util.structGet(cfg, "deployment_topology.num_ues", NaN)), ...
+    double(sixgr.util.structGet(multiUser, "NumUsers", NaN))], [], "omitnan");
+mobilityModel = string(sixgr.util.structGet(cfg, "scenario.mobility.model", ...
+    sixgr.util.structGet(cfg, "mobility.trajectory_model", "RandomWaypoint")));
+layoutType = string(sixgr.util.structGet(cfg, "scenario.geometry.deployment", ...
+    sixgr.util.structGet(cfg, "deployment_topology.layout_type", "")));
+mobilityEnabled = logical(sixgr.util.structGet(cfg, "scenario.mobility.enable", false));
+if ~mobilityEnabled
+    mobilityToken = lower(strtrim(string(mobilityModel)));
+    mobilityEnabled = any(speedRange > 0) || ~any(mobilityToken == ["", "none", "static"]);
+end
+T = table( ...
+    layoutType, ...
+    double(numSites), ...
+    double(sectorsPerSite), ...
+    double(numCells), ...
+    double(sixgr.util.structGet(cfg, "scenario.layout.interSiteDistance_m", sixgr.util.structGet(cfg, "deployment_topology.inter_site_distance", NaN))), ...
+    double(numUEs), ...
+    double(sixgr.util.structGet(cfg, "phy.beamManagement.trpCount", sixgr.util.structGet(cfg, "deployment_topology.num_trps", 1))), ...
+    logical(mobilityEnabled), ...
+    mobilityModel, ...
+    speedRange(1), speedRange(2), ...
+    logical(sixgr.util.structGet(multiUser, "Enabled", false)), ...
+    double(sixgr.util.structGet(multiUser, "NumUsers", 1)), ...
+    string(sixgr.util.structGet(multiUser, "ExecutionModel", "independent_link_sweep")), ...
+    'VariableNames', {'LayoutType','NumSites','SectorsPerSite','NumCells','InterSiteDistance_m','NumUEs','NumTRPs', ...
+    'MobilityEnabled','MobilityModel','MobilitySpeedMin_kmh','MobilitySpeedMax_kmh', ...
+    'MultiUserEnabled','ConfiguredUsers','UserExecutionModel'});
+end
+
+function value = localFiniteMax(values)
+values = double(values(:));
+values = values(isfinite(values));
+if isempty(values)
+    value = NaN;
+else
+    value = max(values);
+end
+end
+
+function T = localBuildCQITableReferenceTable(cfg)
+rows = repmat(struct( ...
+    "Direction", "", ...
+    "CQITable", "", ...
+    "CQI", NaN, ...
+    "Modulation", "", ...
+    "TargetCodeRate", NaN, ...
+    "SpectralEfficiency", NaN), 0, 1);
+for direction = ["DL", "UL"]
+    tableToken = localResolveCQITable(cfg, direction);
+    for idx = 0:15
+        profile = sixgr.link.resolveCQIProfile(tableToken, idx);
+        rows(end+1,1) = struct( ... %#ok<AGROW>
+            "Direction", char(direction), ...
+            "CQITable", char(tableToken), ...
+            "CQI", double(idx), ...
+            "Modulation", char(string(profile.Modulation)), ...
+            "TargetCodeRate", double(profile.TargetCodeRate), ...
+            "SpectralEfficiency", double(profile.SpectralEfficiency));
+    end
+end
+T = struct2table(rows);
+end
+
+function T = localBuildMCSTableReferenceTable(cfg)
+rows = repmat(struct( ...
+    "Direction", "", ...
+    "MCSTable", "", ...
+    "MCSIndex", NaN, ...
+    "Modulation", "", ...
+    "TargetCodeRate", NaN, ...
+    "SpectralEfficiency", NaN), 0, 1);
+for direction = ["DL", "UL"]
+    tableToken = localResolveMCSTable(cfg, direction);
+    for idx = 0:31
+        profile = sixgr.link.resolveMCSProfile(tableToken, idx);
+        if ~logical(profile.Valid)
+            continue;
+        end
+        rows(end+1,1) = struct( ... %#ok<AGROW>
+            "Direction", char(direction), ...
+            "MCSTable", char(tableToken), ...
+            "MCSIndex", double(idx), ...
+            "Modulation", char(string(profile.Modulation)), ...
+            "TargetCodeRate", double(profile.TargetCodeRate), ...
+            "SpectralEfficiency", double(profile.SpectralEfficiency));
+    end
+end
+T = struct2table(rows);
+end
+
+function [mode, policy, actualMode] = localResolveLinkAdaptationTokens(cfg, direction)
+mode = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed")));
+if upper(string(direction)) == "UL"
+    policy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", mode)));
+else
+    policy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", mode)));
+end
+if strlength(strtrim(policy)) == 0
+    policy = mode;
+end
+actualMode = "configured_fixed";
+if policy ~= "fixed"
+    actualMode = "cqi_driven";
+end
+end
+
+function values = localResolveOperatingPointSourceColumn(actualMode, linkMode)
+values = repmat("", numel(actualMode), 1);
+actualMode = lower(strtrim(string(actualMode)));
+linkMode = lower(strtrim(string(linkMode)));
+values(actualMode == "scheduler_grant") = "scheduler_grant";
+values(actualMode == "cqi_driven") = "cqi_link_adaptation";
+values(actualMode == "configured_fixed") = "configured_fixed_mcs";
+mask = strlength(values) == 0 & strlength(linkMode) > 0;
+values(mask) = "link_adaptation_mode_reference";
+end
+
+function value = localResolveOperatingPointSourceToken(actualMode, linkMode)
+values = localResolveOperatingPointSourceColumn(string(actualMode), string(linkMode));
+if isempty(values)
+    value = "";
+else
+    value = string(values(1));
+end
+end
+
+function summary = localSummarizeRuntimeOperatingPointEvidence(rawTrials, direction)
+summary = struct( ...
+    "LinkAdaptationMode", "", ...
+    "ActualMCSSelectionMode", "", ...
+    "SchedulerGrantMCSSelectionMode", "", ...
+    "AppliedOperatingPointSource", "");
+if ~(isstruct(rawTrials) && ~isempty(fieldnames(rawTrials)))
+    return;
+end
+trialTable = sixgr.util.structGet(rawTrials, char(string(direction)), table());
+if ~(istable(trialTable) && ~isempty(trialTable))
+    return;
+end
+if ismember("Direction", string(trialTable.Properties.VariableNames))
+    mask = strcmpi(strtrim(string(trialTable.Direction)), char(string(direction)));
+    if any(mask)
+        trialTable = trialTable(mask, :);
+    end
+end
+if isempty(trialTable)
+    return;
+end
+if ismember("IsWarmupFrame", string(trialTable.Properties.VariableNames))
+    warmMask = logical(trialTable.IsWarmupFrame);
+    if any(~warmMask)
+        trialTable = trialTable(~warmMask, :);
+    end
+end
+summary.LinkAdaptationMode = localDominantStringValue(trialTable, "LinkAdaptationMode");
+summary.ActualMCSSelectionMode = localDominantStringValue(trialTable, "ActualMCSSelectionMode");
+summary.SchedulerGrantMCSSelectionMode = localDominantStringValue(trialTable, "SchedulerGrantMCSSelectionMode");
+summary.AppliedOperatingPointSource = localDominantStringValue(trialTable, "AppliedOperatingPointSource");
+end
+
+function summary = localSummarizeChannelArrayEvidence(rawTrials, direction)
+summary = struct( ...
+    "AntennaRuntimeObjectSource", "", ...
+    "ChannelArrayModel", "", ...
+    "ChannelObjectSource", "", ...
+    "ChannelObjectClass", "", ...
+    "ChannelArrayHandlingStatus", "", ...
+    "ChannelArrayHandlingBlocker", "", ...
+    "ChannelGeometryCouplingLevel", "", ...
+    "GeometryAdapterType", "", ...
+    "GeometryAdapterSource", "", ...
+    "GeometryAdapterLimitation", "", ...
+    "GeometryAdapterPortMapping", "", ...
+    "ChannelUsesSameRuntimeAntennaAssumptions", false, ...
+    "InterferenceChannelObjectSource", "", ...
+    "InterferenceChannelObjectClass", "", ...
+    "InterferenceChannelArrayHandlingStatus", "", ...
+    "InterferenceChannelArrayHandlingBlocker", "", ...
+    "InterferenceUsesSameRuntimeAntennaAssumptions", false, ...
+    "InterferencePathUsesSameArrayAssumptions", false);
+if ~(isstruct(rawTrials) && ~isempty(fieldnames(rawTrials)))
+    return;
+end
+trialTable = sixgr.util.structGet(rawTrials, char(string(direction)), table());
+if ~(istable(trialTable) && ~isempty(trialTable))
+    return;
+end
+if ismember("Direction", string(trialTable.Properties.VariableNames))
+    mask = strcmpi(strtrim(string(trialTable.Direction)), char(string(direction)));
+    if any(mask)
+        trialTable = trialTable(mask, :);
+    end
+end
+if isempty(trialTable)
+    return;
+end
+if ismember("IsWarmupFrame", string(trialTable.Properties.VariableNames))
+    warmMask = logical(trialTable.IsWarmupFrame);
+    if any(~warmMask)
+        trialTable = trialTable(~warmMask, :);
+    end
+end
+summary.AntennaRuntimeObjectSource = localDominantStringValue(trialTable, "RuntimeAntennaObjectSource");
+summary.ChannelArrayModel = localDominantStringValue(trialTable, "ChannelArrayModel");
+summary.ChannelObjectSource = localDominantStringValue(trialTable, "ChannelObjectSource");
+summary.ChannelObjectClass = localDominantStringValue(trialTable, "ChannelObjectClass");
+summary.ChannelArrayHandlingStatus = localDominantStringValue(trialTable, "ChannelArrayHandlingStatus");
+summary.ChannelArrayHandlingBlocker = localDominantStringValue(trialTable, "ChannelArrayHandlingBlocker");
+summary.ChannelGeometryCouplingLevel = localDominantStringValue(trialTable, "ChannelGeometryCouplingLevel");
+summary.GeometryAdapterType = localDominantStringValue(trialTable, "GeometryAdapterType");
+summary.GeometryAdapterSource = localDominantStringValue(trialTable, "GeometryAdapterSource");
+summary.GeometryAdapterLimitation = localDominantStringValue(trialTable, "GeometryAdapterLimitation");
+summary.GeometryAdapterPortMapping = localDominantStringValue(trialTable, "GeometryAdapterPortMapping");
+summary.ChannelUsesSameRuntimeAntennaAssumptions = localDominantLogicalValue(trialTable, "ChannelUsesSameRuntimeAntennaAssumptions");
+summary.InterferenceChannelObjectSource = localDominantStringValue(trialTable, "InterferenceChannelObjectSource");
+summary.InterferenceChannelObjectClass = localDominantStringValue(trialTable, "InterferenceChannelObjectClass");
+summary.InterferenceChannelArrayHandlingStatus = localDominantStringValue(trialTable, "InterferenceChannelArrayHandlingStatus");
+summary.InterferenceChannelArrayHandlingBlocker = localDominantStringValue(trialTable, "InterferenceChannelArrayHandlingBlocker");
+summary.InterferenceUsesSameRuntimeAntennaAssumptions = localDominantLogicalValue(trialTable, "InterferenceUsesSameRuntimeAntennaAssumptions");
+summary.InterferencePathUsesSameArrayAssumptions = localDominantLogicalValue(trialTable, "InterferencePathUsesSameArrayAssumptions");
+end
+
+function value = localDominantStringValue(T, varName)
+value = "";
+if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+values = strtrim(string(T.(char(varName))));
+values = values(strlength(values) > 0);
+if isempty(values)
+    return;
+end
+[uniqueValues, ~, idx] = unique(values, "stable");
+counts = accumarray(idx, 1);
+[~, bestIdx] = max(counts);
+value = char(uniqueValues(bestIdx));
+end
+
+function value = localDominantLogicalValue(T, varName)
+value = false;
+if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+values = logical(T.(char(varName)));
+if isempty(values)
+    return;
+end
+value = sum(values) >= sum(~values);
+end
+
+function tableToken = localResolveCQITable(cfg, direction)
+tableToken = string(sixgr.link.resolveConfiguredCQITable(cfg, direction));
+end
+
+function tableToken = localResolveMCSTable(cfg, direction)
+tableToken = string(sixgr.link.resolveConfiguredMCSTable(cfg, direction));
+end
+
+function tf = localRawControlTablesReady(rawTrials)
+tf = false;
+for fieldName = ["PBCH", "PRACH", "PDCCH", "PUCCH", "SRS", "CSIRS", "TRS"]
+    T = sixgr.util.structGet(rawTrials, fieldName, table());
+    if istable(T) && ~isempty(T)
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = localArtifactStructReady(artifacts, fieldName)
+T = sixgr.util.structGet(artifacts, fieldName, table());
+tf = istable(T) && ~isempty(T);
+end
+
+function tf = localLegacyHARQArtifactsReady(rootRunFolder)
+layout = sixgr.report.resultLayout(rootRunFolder);
+paths = [ ...
+    string(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv")); ...
+    string(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv")); ...
+    string(fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"))];
+tf = true;
+for i = 1:numel(paths)
+    tf = tf && exist(char(paths(i)), "file") == 2;
+end
+end
+
 function T = localGetCaseTrialTable(linkRes, caseField)
 T = table();
 caseStruct = localGetCaseStruct(linkRes, caseField);
@@ -437,31 +1902,1719 @@ catch
 end
 end
 
-function [T, constT] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, direction, nTrials, snrGrid)
+function [T, constT, csirsT] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, direction, nTrials, snrGrid, liveTablePath, liveConstellationPath, progressLabel)
 T = localEmptyLinkTrialTable(0);
 constT = table();
+csirsT = table();
 direction = upper(string(direction));
 snrGrid = unique(sort(double(snrGrid(:))));
+if nargin < 5
+    liveTablePath = "";
+end
+if nargin < 6
+    liveConstellationPath = "";
+end
+if nargin < 7
+    progressLabel = string(direction);
+end
 for i = 1:numel(snrGrid)
     snr = double(snrGrid(i));
+    liveTrialCallback = [];
+    if strlength(string(liveTablePath)) > 0 || strlength(string(liveConstellationPath)) > 0
+        baseTrials = T;
+        baseConst = constT;
+        liveTrialCallback = @(partialTrials, partialConst, meta) ...
+            localPublishLiveSweepSnapshot(baseTrials, partialTrials, baseConst, partialConst, ...
+            liveTablePath, liveConstellationPath, cfg, meta);
+    end
     if direction == "DL"
-        res = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", nTrials, "SNR_dB", snr);
+        res = sixgr.link.runDLPDSCHThroughput(cfg, ...
+            "NumFrames", nTrials, ...
+            "SNR_dB", snr, ...
+            "LiveTrialCallback", liveTrialCallback, ...
+            "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfg, nTrials));
     else
-        res = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", nTrials, "SNR_dB", snr);
+        res = sixgr.link.runULPUSCHThroughput(cfg, ...
+            "NumFrames", nTrials, ...
+            "SNR_dB", snr, ...
+            "LiveTrialCallback", liveTrialCallback, ...
+            "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfg, nTrials));
     end
     Ti = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), direction, snr, cfg);
     T = localAppendCompatTable(T, Ti);
     constT = localAppendCompatTable(constT, sixgr.util.structGet(res, "ConstellationSamples", table()));
+    if direction == "DL"
+        csirsT = localAppendCompatTable(csirsT, sixgr.util.structGet(res, "CSIRSTrialTable", table()));
+    end
+    localMaybeWritePartialTable(liveTablePath, T);
+    localMaybeAppendSweepProgressLog(progressLabel, snr, i, numel(snrGrid), height(T));
+    if strlength(string(liveConstellationPath)) > 0 && istable(constT) && ~isempty(constT)
+        if localIsMySQLWebMode(cfg)
+            sixgr.util.csvWriteTable(liveConstellationPath, localDownsampleConstellationTable(constT, 2500));
+        else
+            sixgr.util.csvWriteTable(liveConstellationPath, constT);
+        end
+    end
 end
 end
 
-function [T, summaryT] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, direction, nTrials, snrGrid)
+function [dlTrials, ulTrials, dlSummaryT, ulSummaryT, dlConstT, ulConstT, csirsT] = localCollectInterleavedMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ~, mobilityArtifacts)
+dlTrials = localEmptyLinkTrialTable(0);
+ulTrials = localEmptyLinkTrialTable(0);
+dlConstT = table();
+ulConstT = table();
+csirsT = table();
+dlParts = {};
+ulParts = {};
+if nargin < 11 || ~isstruct(mobilityArtifacts)
+    mobilityArtifacts = struct();
+end
+snrGrid = unique(sort(double(snrGrid(:))));
+numUsers = max(1, round(double(sixgr.util.structGet(multiUser, "NumUsers", 1))));
+for i = 1:numel(snrGrid)
+    snrVal = double(snrGrid(i));
+    for ueIdx = 1:numUsers
+        dlLivePublisher = @(partialTrials, partialConst, meta) localPublishLiveSweepSnapshot( ...
+            dlTrials, partialTrials, dlConstT, partialConst, ...
+            dlTablePath, dlConstellationPath, cfg, ...
+            localMergeLiveMeta(meta, ...
+            localBuildLivePublishMeta( ...
+            "DL", snrVal, i, numel(snrGrid), ueIdx, numUsers, ...
+            localBuildLiveRawTrialsAggregate(localAppendCompatTable(dlTrials, partialTrials), ulTrials, dlParts, ulParts, csirsT), ...
+            multiUser, mobilityArtifacts, ...
+            sprintf("Streaming DL user %d/%d at SNR point %d/%d (%.3f dB).", ueIdx, numUsers, i, numel(snrGrid), snrVal))));
+        [dlUserT, dlUserSummary, dlUserConst, dlUserCSIRS] = localRunSingleUserDirectionTrials( ...
+            cfg, multiUser, ueIdx, "DL", nTrials, snrVal, dlLivePublisher);
+        dlTrials = localAppendCompatTable(dlTrials, dlUserT);
+        dlConstT = localAppendCompatTable(dlConstT, dlUserConst);
+        csirsT = localAppendCompatTable(csirsT, dlUserCSIRS);
+        if istable(dlUserSummary) && ~isempty(dlUserSummary)
+            dlParts{end+1} = dlUserSummary; %#ok<AGROW>
+        end
+        localMaybeWritePartialTable(dlTablePath, dlTrials);
+        if strlength(string(dlConstellationPath)) > 0 && istable(dlConstT) && ~isempty(dlConstT)
+            sixgr.util.csvWriteTable(dlConstellationPath, localDownsampleConstellationTable(dlConstT, 2500));
+        end
+        liveRawTrials = localBuildLiveRawTrialsAggregate(dlTrials, ulTrials, dlParts, ulParts, csirsT);
+        liveDerived = sixgr.truth.exportLLSLiveDerivedTables(cfg, fileparts(char(string(runFolder))), liveRawTrials, multiUser, mobilityArtifacts);
+        localPublishWaveformBundleStageStatus(runFolder, localBuildLiveStageStatus( ...
+            liveRawTrials, struct("LiveDerived", liveDerived, "HARQ", sixgr.util.structGet(liveDerived, "HARQ", struct()), "Energy", struct()), ...
+            localBuildLivePublishMeta("DL", snrVal, i, numel(snrGrid), ueIdx, numUsers, struct(), multiUser, mobilityArtifacts, ...
+            sprintf("Completed DL user %d/%d at SNR point %d/%d (%.3f dB).", ueIdx, numUsers, i, numel(snrGrid), snrVal))));
+
+        ulLivePublisher = @(partialTrials, partialConst, meta) localPublishLiveSweepSnapshot( ...
+            ulTrials, partialTrials, ulConstT, partialConst, ...
+            ulTablePath, ulConstellationPath, cfg, ...
+            localMergeLiveMeta(meta, ...
+            localBuildLivePublishMeta( ...
+            "UL", snrVal, i, numel(snrGrid), ueIdx, numUsers, ...
+            localBuildLiveRawTrialsAggregate(dlTrials, localAppendCompatTable(ulTrials, partialTrials), dlParts, ulParts, csirsT), ...
+            multiUser, mobilityArtifacts, ...
+            sprintf("Streaming UL user %d/%d at SNR point %d/%d (%.3f dB).", ueIdx, numUsers, i, numel(snrGrid), snrVal))));
+        [ulUserT, ulUserSummary, ulUserConst] = localRunSingleUserDirectionTrials( ...
+            cfg, multiUser, ueIdx, "UL", nTrials, snrVal, ulLivePublisher);
+        ulTrials = localAppendCompatTable(ulTrials, ulUserT);
+        ulConstT = localAppendCompatTable(ulConstT, ulUserConst);
+        if istable(ulUserSummary) && ~isempty(ulUserSummary)
+            ulParts{end+1} = ulUserSummary; %#ok<AGROW>
+        end
+        localMaybeWritePartialTable(ulTablePath, ulTrials);
+        if strlength(string(ulConstellationPath)) > 0 && istable(ulConstT) && ~isempty(ulConstT)
+            sixgr.util.csvWriteTable(ulConstellationPath, localDownsampleConstellationTable(ulConstT, 2500));
+        end
+        liveRawTrials = localBuildLiveRawTrialsAggregate(dlTrials, ulTrials, dlParts, ulParts, csirsT);
+        liveDerived = sixgr.truth.exportLLSLiveDerivedTables(cfg, fileparts(char(string(runFolder))), liveRawTrials, multiUser, mobilityArtifacts);
+        localPublishWaveformBundleStageStatus(runFolder, localBuildLiveStageStatus( ...
+            liveRawTrials, struct("LiveDerived", liveDerived, "HARQ", sixgr.util.structGet(liveDerived, "HARQ", struct()), "Energy", struct()), ...
+            localBuildLivePublishMeta("UL", snrVal, i, numel(snrGrid), ueIdx, numUsers, struct(), multiUser, mobilityArtifacts, ...
+            sprintf("Completed UL user %d/%d at SNR point %d/%d (%.3f dB).", ueIdx, numUsers, i, numel(snrGrid), snrVal))));
+    end
+    localMaybeAppendSweepProgressLog("DL", snrVal, i, numel(snrGrid), height(dlTrials));
+    localMaybeAppendSweepProgressLog("UL", snrVal, i, numel(snrGrid), height(ulTrials));
+end
+
+if isempty(dlParts)
+    dlSummaryT = table();
+else
+    dlSummaryT = vertcat(dlParts{:});
+end
+if isempty(ulParts)
+    ulSummaryT = table();
+else
+    ulSummaryT = vertcat(ulParts{:});
+end
+end
+
+function [dlTrials, ulTrials, dlSummaryT, ulSummaryT, dlConstT, ulConstT, controlTrials, runtimeState] = localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, controlTrials)
+dlTrials = localEmptyLinkTrialTable(0);
+ulTrials = localEmptyLinkTrialTable(0);
+dlConstT = table();
+ulConstT = table();
+if nargin < 10 || ~isstruct(controlTrials)
+    controlTrials = struct();
+end
+
+snrGrid = unique(sort(double(snrGrid(:))));
+numUsers = max(1, round(double(sixgr.util.structGet(multiUser, "NumUsers", 1))));
+nFramesPerPoint = max(1, round(double(nTrials)));
+userCfg = cell(numUsers, 1);
+for ueIdx = 1:numUsers
+    userCfg{ueIdx} = localPrepareUserCfg(cfg, multiUser, ueIdx);
+end
+runtimeState = localInitCoupledTruthRuntimeState(cfg, runFolder, multiUser, controlTrials, nFramesPerPoint * numel(snrGrid));
+
+for sweepIdx = 1:numel(snrGrid)
+    snrVal = double(snrGrid(sweepIdx));
+    dlStates = cell(numUsers, 1);
+    ulStates = cell(numUsers, 1);
+    for frameLocal = 1:nFramesPerPoint
+        absoluteFrame = (sweepIdx - 1) * nFramesPerPoint + frameLocal;
+        runtimeState = localAdvanceCoupledRuntimeFrame(runtimeState, cfg, multiUser, absoluteFrame, snrVal);
+        runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "DL", sweepIdx, numel(snrGrid), absoluteFrame, nFramesPerPoint, snrVal);
+        runtimeState = localRunCoupledPreSchedulingControlGating(runtimeState, cfg, userCfg, snrVal);
+        [runtimeState, dlGrants, dlInfo] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(runtimeState, cfg, "DL");
+        localAppendRuntimeLog("INFO", ...
+            "Coupled DL schedule complete: sweep=%d/%d frame=%d/%d active=%d granted=%d grants=%d.", ...
+            round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+            round(double(sixgr.util.structGet(dlInfo, "ActiveUsers", NaN))), ...
+            round(double(sixgr.util.structGet(dlInfo, "GrantedUsers", NaN))), numel(dlGrants));
+        [runtimeState, dlGrants] = localQualifyCoupledGrantsWithPDCCH(runtimeState, userCfg, dlGrants, "DL", snrVal);
+        localAppendRuntimeLog("INFO", ...
+            "Coupled DL PDCCH qualification complete: sweep=%d/%d frame=%d/%d executable_grants=%d.", ...
+            round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), numel(dlGrants));
+        [runtimeState, dlTrials, dlConstT, dlStates] = localExecuteCoupledDirectionBatch( ...
+            runtimeState, cfg, runFolder, multiUser, userCfg, dlGrants, "DL", snrVal, absoluteFrame, dlStates, ...
+            dlTrials, ulTrials, dlConstT, ulConstT, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ...
+            sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
+
+        runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "UL", sweepIdx, numel(snrGrid), absoluteFrame, nFramesPerPoint, snrVal);
+        [runtimeState, ulGrants, ulInfo] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(runtimeState, cfg, "UL");
+        localAppendRuntimeLog("INFO", ...
+            "Coupled UL schedule complete: sweep=%d/%d frame=%d/%d active=%d granted=%d grants=%d.", ...
+            round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+            round(double(sixgr.util.structGet(ulInfo, "ActiveUsers", NaN))), ...
+            round(double(sixgr.util.structGet(ulInfo, "GrantedUsers", NaN))), numel(ulGrants));
+        [runtimeState, ulGrants] = localQualifyCoupledGrantsWithPDCCH(runtimeState, userCfg, ulGrants, "UL", snrVal);
+        localAppendRuntimeLog("INFO", ...
+            "Coupled UL PDCCH qualification complete: sweep=%d/%d frame=%d/%d executable_grants=%d.", ...
+            round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), numel(ulGrants));
+        [runtimeState, ulTrials, ulConstT, ulStates] = localExecuteCoupledDirectionBatch( ...
+            runtimeState, cfg, runFolder, multiUser, userCfg, ulGrants, "UL", snrVal, absoluteFrame, ulStates, ...
+            ulTrials, dlTrials, ulConstT, dlConstT, ulTablePath, dlTablePath, ulConstellationPath, dlConstellationPath, ...
+            sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
+    end
+    localMaybeAppendSweepProgressLog("DL", snrVal, sweepIdx, numel(snrGrid), height(dlTrials));
+    localMaybeAppendSweepProgressLog("UL", snrVal, sweepIdx, numel(snrGrid), height(ulTrials));
+end
+
+controlTrials = runtimeState.ControlTrials;
+finalRawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, controlTrials);
+dlSummaryT = sixgr.util.structGet(finalRawTrials, "MultiUserDL", table());
+ulSummaryT = sixgr.util.structGet(finalRawTrials, "MultiUserUL", table());
+sixgr.util.csvWriteTable(dlTablePath, dlTrials);
+sixgr.util.csvWriteTable(ulTablePath, ulTrials);
+if strlength(string(dlConstellationPath)) > 0 && istable(dlConstT) && ~isempty(dlConstT)
+    sixgr.util.csvWriteTable(dlConstellationPath, localDownsampleConstellationTable(dlConstT, 2500));
+end
+if strlength(string(ulConstellationPath)) > 0 && istable(ulConstT) && ~isempty(ulConstT)
+    sixgr.util.csvWriteTable(ulConstellationPath, localDownsampleConstellationTable(ulConstT, 2500));
+end
+localWriteCoupledRuntimeTables(runtimeState, fileparts(char(string(runFolder))));
+end
+
+function [Tu, constT, waveT, laState, res] = localRunSingleFrameDirectionTrial(cfg, multiUser, ueIdx, direction, snr_dB, frameIdx, laStateIn, trialContext)
+cfgU = cfg;
+userMeta = sixgr.util.structGet(cfgU, "lls6g.userContext", struct());
+userMeta.RuntimeCurrentDirection = upper(string(direction));
+cfgU = sixgr.util.structSet(cfgU, "lls6g.userContext", userMeta);
+if nargin < 8 || ~isstruct(trialContext)
+    trialContext = struct();
+end
+cfgU = localApplyHARQGrantContext(cfgU, upper(string(direction)), sixgr.util.structGet(trialContext, "GrantSnapshot", struct()));
+cfgU = localApplyExecutionGrantSnapshot(cfgU, upper(string(direction)), sixgr.util.structGet(trialContext, "GrantSnapshot", struct()));
+    job = sixgr.truth.buildGrantPHYJob(cfgU, upper(string(direction)), snr_dB, frameIdx, laStateIn, trialContext);
+    jobResult = sixgr.truth.executeGrantPHYJob(job);
+    res = sixgr.util.structGet(jobResult, "Result", struct());
+    laState = sixgr.util.structGet(jobResult, "LinkAdaptationState", laStateIn);
+Tu = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), upper(string(direction)), snr_dB, cfgU);
+Tu = localAnnotateUserTrials(Tu, cfgU, multiUser, ueIdx, userMeta);
+constT = localAnnotateConstellationSamples( ...
+    sixgr.util.structGet(res, "ConstellationSamples", table()), cfgU, multiUser, ueIdx, userMeta, snr_dB, direction);
+waveT = localAnnotateWaveformPreviewTable(sixgr.util.structGet(res, "WaveformPreviewTable", table()), multiUser, ueIdx);
+end
+
+function [runtimeState, primaryTrials, primaryConstT, laStates] = localExecuteCoupledDirectionBatch( ...
+        runtimeState, cfg, runFolder, multiUser, userCfg, grants, direction, snr_dB, absoluteFrame, laStates, ...
+        primaryTrials, secondaryTrials, primaryConstT, secondaryConstT, primaryTablePath, secondaryTablePath, ...
+        primaryConstellationPath, secondaryConstellationPath, sweepIdx, sweepCount, frameLocal, nFramesPerPoint)
+direction = upper(string(direction));
+localAppendRuntimeLog("INFO", ...
+    "Preparing coupled %s batches: sweep=%d/%d frame=%d/%d candidate_grants=%d batch_size=%d.", ...
+    char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+    numel(grants), max(1, round(double(sixgr.util.structGet(cfg, 'run.batchSizeLinks', numel(grants))))));
+chunkSize = max(1, round(double(sixgr.util.structGet(cfg, "run.batchSizeLinks", numel(grants)))));
+for chunkStart = 1:chunkSize:numel(grants)
+    chunkEnd = min(numel(grants), chunkStart + chunkSize - 1);
+    grantChunk = grants(chunkStart:chunkEnd);
+    chunk = localPrepareCoupledGrantBatch(runtimeState, cfg, multiUser, userCfg, grantChunk, direction, snr_dB, absoluteFrame, laStates, grants, chunkStart - 1);
+    if isempty(chunk)
+        localAppendRuntimeLog("INFO", ...
+            "Preparing coupled %s chunk yielded zero executable plans: sweep=%d/%d frame=%d/%d chunk=%d-%d.", ...
+            char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+            round(double(chunkStart)), round(double(chunkEnd)));
+        continue;
+    end
+    localAppendRuntimeLog("INFO", ...
+        "Prepared coupled %s chunk: sweep=%d/%d frame=%d/%d executable_plans=%d chunk=%d-%d of %d.", ...
+        char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+        numel(chunk), round(double(chunkStart)), round(double(chunkEnd)), round(double(numel(grants))));
+    localAppendRuntimeLog("INFO", ...
+        "Executing coupled %s chunk: sweep=%d/%d frame=%d/%d chunk=%d-%d of %d.", ...
+        char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+        round(double(chunkStart)), round(double(chunkEnd)), round(double(numel(grants))));
+    chunk = localRunCoupledGrantBatch(chunk, multiUser, direction, snr_dB, absoluteFrame);
+    chunkWaveformPreviewT = table();
+    chunkLastUEIdx = NaN;
+    chunkHadCommittedGrant = false;
+    for bi = 1:numel(chunk)
+        if ~logical(sixgr.util.structGet(chunk(bi), "Valid", false))
+            continue;
+        end
+        ueIdx = double(chunk(bi).UEIndex);
+        runtimeState = sixgr.truth.CoupledTruthRuntime.setCurrentUE(runtimeState, ueIdx, direction);
+        userT = localAnnotateGrantDrivenTrials(sixgr.util.structGet(chunk(bi), "TrialTable", table()), chunk(bi).GrantRow);
+        runtimeState = sixgr.truth.CoupledTruthRuntime.commitGrantExecution(runtimeState, ueIdx, direction, chunk(bi).GrantSnapshot);
+        [runtimeState, userT] = localCompleteCoupledRuntimeSlot(runtimeState, chunk(bi).Cfg, ueIdx, direction, userT, chunk(bi).Result);
+        primaryTrials = localAppendCompatTable(primaryTrials, userT);
+        primaryConstT = localAppendCompatTable(primaryConstT, sixgr.util.structGet(chunk(bi), "ConstellationTable", table()));
+        if direction == "DL"
+            runtimeState.ControlTrials.CSIRS = localAppendCompatTable( ...
+                sixgr.util.structGet(runtimeState.ControlTrials, "CSIRS", table()), ...
+                sixgr.util.structGet(chunk(bi).Result, "CSIRSTrialTable", table()));
+        end
+        laStates{ueIdx} = sixgr.util.structGet(chunk(bi), "LinkAdaptationState", laStates{ueIdx});
+        chunkWaveformPreviewT = localAppendCompatTable(chunkWaveformPreviewT, sixgr.util.structGet(chunk(bi), "WaveformPreviewTable", table()));
+        chunkLastUEIdx = double(ueIdx);
+        chunkHadCommittedGrant = true;
+    end
+    if ~chunkHadCommittedGrant
+        continue;
+    end
+    localAppendRuntimeLog("INFO", ...
+        "Publishing coupled %s chunk results: sweep=%d/%d frame=%d/%d committed_rows=%d current_primary_rows=%d.", ...
+        char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+        round(double(chunkEnd - chunkStart + 1)), height(primaryTrials));
+    if direction == "DL"
+        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(primaryTrials, secondaryTrials, multiUser, runtimeState.ControlTrials);
+        localPublishCoupledTruthRuntimeState(cfg, runFolder, liveRawTrials, multiUser, runtimeState, ...
+            primaryTablePath, secondaryTablePath, primaryConstellationPath, secondaryConstellationPath, primaryConstT, secondaryConstT, ...
+            direction, snr_dB, sweepIdx, sweepCount, chunkLastUEIdx, numel(userCfg), frameLocal, nFramesPerPoint, chunkWaveformPreviewT);
+    else
+        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(secondaryTrials, primaryTrials, multiUser, runtimeState.ControlTrials);
+        localPublishCoupledTruthRuntimeState(cfg, runFolder, liveRawTrials, multiUser, runtimeState, ...
+            secondaryTablePath, primaryTablePath, secondaryConstellationPath, primaryConstellationPath, secondaryConstT, primaryConstT, ...
+            direction, snr_dB, sweepIdx, sweepCount, chunkLastUEIdx, numel(userCfg), frameLocal, nFramesPerPoint, chunkWaveformPreviewT);
+    end
+end
+end
+
+function batch = localPrepareCoupledGrantBatch(runtimeState, cfg, multiUser, userCfg, grants, direction, snr_dB, absoluteFrame, laStates, allGrants, grantIndexOffset)
+direction = upper(string(direction));
+if nargin < 10 || ~(isstruct(allGrants) && ~isempty(allGrants))
+    allGrants = grants;
+end
+if nargin < 11 || ~(isnumeric(grantIndexOffset) && isscalar(grantIndexOffset) && isfinite(grantIndexOffset))
+    grantIndexOffset = 0;
+end
+batch = repmat(struct( ...
+    "Valid", false, ...
+    "UEIndex", NaN, ...
+    "Cfg", struct(), ...
+    "GrantSnapshot", struct(), ...
+    "GrantRow", table(), ...
+    "TrialContext", struct(), ...
+    "RuntimeState", struct(), ...
+    "AllUserCfg", {{}}, ...
+    "AllGrants", struct([]), ...
+    "GrantIndex", NaN, ...
+    "LinkAdaptationStateIn", struct(), ...
+    "TrialTable", table(), ...
+    "ConstellationTable", table(), ...
+    "WaveformPreviewTable", table(), ...
+    "LinkAdaptationState", struct(), ...
+    "Result", struct()), 0, 1);
+if ~(isstruct(grants) && ~isempty(grants))
+    return;
+end
+for gi = 1:numel(grants)
+    grant = grants(gi);
+    ueIdx = localResolveGrantUEIndex(grant, multiUser);
+    if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= numel(userCfg))
+        continue;
+    end
+    tempState = sixgr.truth.CoupledTruthRuntime.setCurrentUE(runtimeState, ueIdx, direction);
+    [cfgDir, tempState] = localApplyCoupledRuntimeUserContext(userCfg{ueIdx}, tempState, ueIdx, direction);
+    [tempState, trialContext, grantRow] = sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant(tempState, cfgDir, ueIdx, direction, grant);
+    [trialContext, resolvedBits] = localFinalizeGrantTrialContext(cfgDir, direction, trialContext);
+    grantResolved = sixgr.util.structGet(trialContext, "GrantSnapshot", struct());
+    grantRow = localRefreshGrantRowFromGrant(grantRow, grantResolved, resolvedBits);
+    plan = struct( ...
+        "Valid", true, ...
+        "UEIndex", double(ueIdx), ...
+        "Cfg", cfgDir, ...
+        "GrantSnapshot", grantResolved, ...
+        "GrantRow", grantRow, ...
+        "TrialContext", trialContext, ...
+        "RuntimeState", runtimeState, ...
+        "AllUserCfg", {userCfg}, ...
+        "AllGrants", allGrants, ...
+        "GrantIndex", double(grantIndexOffset + gi), ...
+        "LinkAdaptationStateIn", laStates{ueIdx}, ...
+        "TrialTable", table(), ...
+        "ConstellationTable", table(), ...
+        "WaveformPreviewTable", table(), ...
+        "LinkAdaptationState", laStates{ueIdx}, ...
+        "Result", struct());
+    batch(end + 1, 1) = plan; %#ok<AGROW>
+end
+end
+
+function batch = localRunCoupledGrantBatch(batch, multiUser, direction, snr_dB, absoluteFrame)
+if isempty(batch)
+    return;
+end
+useParallel = localCanParallelizeCoupledGrantBatch(batch, sixgr.util.structGet(batch(1), "Cfg", struct()));
+if useParallel
+    results = cell(numel(batch), 1);
+    parfor bi = 1:numel(batch)
+        results{bi} = localExecuteCoupledGrantBatchPlan(batch(bi), multiUser, direction, snr_dB, absoluteFrame);
+    end
+    for bi = 1:numel(batch)
+        batch(bi) = results{bi};
+    end
+else
+    for bi = 1:numel(batch)
+        batch(bi) = localExecuteCoupledGrantBatchPlan(batch(bi), multiUser, direction, snr_dB, absoluteFrame);
+    end
+end
+end
+
+function tf = localCanParallelizeCoupledGrantBatch(batch, cfg)
+tf = logical(sixgr.util.structGet(cfg, "run.useParallel", false)) && ...
+    double(sixgr.util.structGet(cfg, "run.numWorkers", 0)) > 1 && ...
+    ~isempty(batch) && numel(batch) > 1 && exist("gcp", "file") == 2 && ~isempty(gcp("nocreate"));
+if ~tf
+    return;
+end
+ueIdx = arrayfun(@(b) double(sixgr.util.structGet(b, "UEIndex", NaN)), batch(:));
+ueIdx = ueIdx(isfinite(ueIdx));
+tf = numel(unique(ueIdx)) == numel(ueIdx);
+end
+
+function plan = localExecuteCoupledGrantBatchPlan(plan, multiUser, direction, snr_dB, absoluteFrame)
+if ~logical(sixgr.util.structGet(plan, "Valid", false))
+    return;
+end
+trialContext = sixgr.util.structGet(plan, "TrialContext", struct());
+if ~(isstruct(trialContext) && isfield(trialContext, "InterferenceBundle"))
+    trialContext.InterferenceBundle = struct([]);
+end
+trialContext.InterferenceBundle = localBuildCoupledInterferenceBundle( ...
+    sixgr.util.structGet(plan, "Cfg", struct()), ...
+    multiUser, ...
+    sixgr.util.structGet(plan, "RuntimeState", struct()), ...
+    sixgr.util.structGet(plan, "AllUserCfg", {}), ...
+    sixgr.util.structGet(plan, "AllGrants", struct([])), ...
+    round(double(sixgr.util.structGet(plan, "GrantIndex", NaN))), ...
+    direction);
+[userT, userConst, waveT, laStateOut, res] = localRunSingleFrameDirectionTrial( ...
+    plan.Cfg, multiUser, plan.UEIndex, direction, snr_dB, absoluteFrame, plan.LinkAdaptationStateIn, trialContext);
+plan.TrialTable = userT;
+plan.GrantSnapshot = localRefreshGrantSnapshotFromTrial(plan.GrantSnapshot, userT);
+plan.GrantRow = localRefreshGrantRowFromGrant( ...
+    plan.GrantRow, ...
+    plan.GrantSnapshot, ...
+    double(sixgr.util.structGet(plan.GrantSnapshot, "TBSBits", NaN)));
+plan.ConstellationTable = userConst;
+plan.WaveformPreviewTable = waveT;
+plan.LinkAdaptationState = laStateOut;
+plan.Result = res;
+end
+
+function cfgOut = localApplyExecutionGrantSnapshot(cfgIn, direction, grant)
+cfgOut = cfgIn;
+direction = upper(string(direction));
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+if direction ~= "DL"
+    return;
+end
+nLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
+if isfinite(nLayers) && nLayers >= 1
+    cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgOut, nLayers);
+end
+precodingMatrix = sixgr.util.structGet(grant, "PrecodingMatrix", []);
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+for i = 1:numel(paths)
+    cfgOut = sixgr.util.structSet(cfgOut, paths(i), precodingMatrix);
+end
+if ~isempty(precodingMatrix)
+    nPorts = localPrecodingPortCount(precodingMatrix, nLayers);
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", nPorts);
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", nPorts);
+end
+end
+
+function [trialContext, resolvedBits] = localFinalizeGrantTrialContext(cfgIn, direction, trialContext)
+resolvedBits = NaN;
+if ~(isstruct(trialContext) && isstruct(sixgr.util.structGet(trialContext, "GrantSnapshot", struct())))
+    return;
+end
+grant = sixgr.util.structGet(trialContext, "GrantSnapshot", struct());
+direction = upper(string(direction));
+isRetx = logical(sixgr.util.structGet(sixgr.util.structGet(trialContext, "HARQContext", struct()), "IsRetransmission", false));
+queueBitsUpper = 8 * floor(max(0, double(sixgr.util.structGet(grant, "BufferBytesBefore", sixgr.util.structGet(grant, "TBSBytes", 0)))));
+if isRetx
+    replayBits = double(numel(sixgr.util.structGet(trialContext, "TransportBlockBits", [])));
+    grant = localResolveRetransmissionGrantSnapshot(cfgIn, direction, grant, replayBits);
+else
+    grant = localResolveStrictGrantSnapshot(cfgIn, direction, grant, queueBitsUpper);
+end
+trialContext.GrantSnapshot = grant;
+resolvedBits = double(sixgr.util.structGet(grant, "TransportBlockSize", sixgr.util.structGet(grant, "TBSBits", NaN)));
+if ~isRetx
+    needNewTB = isempty(sixgr.util.structGet(trialContext, "TransportBlockBits", [])) || ...
+        ~(isfinite(resolvedBits) && resolvedBits > 0 && numel(trialContext.TransportBlockBits) == round(resolvedBits));
+    if needNewTB && isfinite(resolvedBits) && resolvedBits > 0
+        trialContext.TransportBlockBits = localGenerateGrantTransportBlockBits(cfgIn, grant, direction, round(resolvedBits));
+    end
+end
+end
+
+function bundle = localBuildCoupledInterferenceBundle(cfg, multiUser, runtimeState, userCfg, grants, victimGrantIdx, direction)
+bundle = struct([]);
+mode = string(sixgr.util.structGet(cfg, "run.interferenceExecutionMode", ""));
+mode = strtrim(lower(mode));
+if mode ~= "full_per_link_channel_waveform_sum"
+    return;
+end
+if ~(isstruct(grants) && ~isempty(grants) && victimGrantIdx >= 1 && victimGrantIdx <= numel(grants))
+    return;
+end
+
+victimGrant = grants(victimGrantIdx);
+victimUEIdx = localResolveGrantUEIndex(victimGrant, multiUser);
+victimServingCell = double(sixgr.util.structGet(victimGrant, "ServingCell", NaN));
+if ~(isfinite(victimUEIdx) && victimUEIdx >= 1 && victimUEIdx <= size(runtimeState.LargeScaleState.RxPower_dBm, 1))
+    return;
+end
+
+count = 0;
+for gi = 1:numel(grants)
+    if gi == victimGrantIdx
+        continue;
+    end
+    interfererGrant = grants(gi);
+    interfererCell = double(sixgr.util.structGet(interfererGrant, "ServingCell", NaN));
+    if ~(isfinite(interfererCell) && interfererCell >= 1) || interfererCell == victimServingCell
+        continue;
+    end
+    if ~localGrantsOverlap(victimGrant, interfererGrant)
+        continue;
+    end
+    interfererUEIdx = localResolveGrantUEIndex(interfererGrant, multiUser);
+    if ~(isfinite(interfererUEIdx) && interfererUEIdx >= 1 && interfererUEIdx <= numel(userCfg))
+        continue;
+    end
+    rxPower_dBm = double(runtimeState.LargeScaleState.RxPower_dBm(victimUEIdx, interfererCell));
+    if ~isfinite(rxPower_dBm)
+        continue;
+    end
+
+    cfgI = userCfg{interfererUEIdx};
+    tempState = runtimeState;
+    [cfgI, tempState] = localApplyCoupledRuntimeUserContext(cfgI, tempState, interfererUEIdx, direction);
+    [tempState, interfererContext, ~] = sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant(tempState, cfgI, interfererUEIdx, direction, interfererGrant); %#ok<ASGLU>
+    [interfererContext, ~] = localFinalizeGrantTrialContext(cfgI, direction, interfererContext);
+    grantResolved = sixgr.util.structGet(interfererContext, "GrantSnapshot", interfererGrant);
+    cfgI = localApplyHARQGrantContext(cfgI, direction, grantResolved);
+    cfgI = localApplyExecutionGrantSnapshot(cfgI, direction, grantResolved);
+
+    count = count + 1;
+    bundle(count).Cfg = cfgI; %#ok<AGROW>
+    bundle(count).GrantSnapshot = grantResolved; %#ok<AGROW>
+    bundle(count).TransportBlockBits = sixgr.util.structGet(interfererContext, "TransportBlockBits", []); %#ok<AGROW>
+    bundle(count).RV = sixgr.util.structGet(interfererContext, "RV", []); %#ok<AGROW>
+    bundle(count).VictimUEIndex = double(victimUEIdx); %#ok<AGROW>
+    bundle(count).InterfererUEIndex = double(interfererUEIdx); %#ok<AGROW>
+    bundle(count).ServingCell = double(interfererCell); %#ok<AGROW>
+    bundle(count).VictimRxPower_dBm = double(rxPower_dBm); %#ok<AGROW>
+    bundle(count).VictimRSRP_dBm = double(runtimeState.LargeScaleState.RSRP_dBm(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).BasePathloss_dB = double(runtimeState.LargeScaleState.BasePathloss_dB(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).Pathloss_dB = double(runtimeState.LargeScaleState.Pathloss_dB(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).ShadowFading_dB = double(runtimeState.LargeScaleState.Shadow_dB(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).O2I_dB = double(runtimeState.LargeScaleState.O2I_dB(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).BeamIndex = double(runtimeState.LargeScaleState.BeamIndex(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).BeamGain_dB = double(runtimeState.LargeScaleState.BeamGain_dB(victimUEIdx, interfererCell)); %#ok<AGROW>
+    bundle(count).InterferenceMode = char(mode); %#ok<AGROW>
+    bundle(count).Frame = double(sixgr.util.structGet(interfererGrant, "Frame", sixgr.util.structGet(runtimeState, "CurrentFrame", NaN))); %#ok<AGROW>
+    bundle(count).Slot = double(sixgr.util.structGet(interfererGrant, "Slot", sixgr.util.structGet(runtimeState, "CurrentSlot", NaN))); %#ok<AGROW>
+    bundle(count).Seed = double(localDeterministicInterferenceSeed(cfg, runtimeState, victimUEIdx, interfererUEIdx, interfererCell, direction)); %#ok<AGROW>
+end
+end
+
+function tf = localGrantsOverlap(grantA, grantB)
+tf = false;
+prbA = unique(round(double(sixgr.util.structGet(grantA, "PRBSet", []))));
+prbB = unique(round(double(sixgr.util.structGet(grantB, "PRBSet", []))));
+if isempty(intersect(prbA(:), prbB(:)))
+    return;
+end
+symA = double(sixgr.util.structGet(grantA, "SymbolAllocation", [0 14]));
+symB = double(sixgr.util.structGet(grantB, "SymbolAllocation", [0 14]));
+if numel(symA) < 2 || numel(symB) < 2
+    tf = true;
+    return;
+end
+startA = double(symA(1)); stopA = startA + double(symA(2));
+startB = double(symB(1)); stopB = startB + double(symB(2));
+tf = max(startA, startB) < min(stopA, stopB);
+end
+
+function seed = localDeterministicInterferenceSeed(cfg, runtimeState, victimUEIdx, interfererUEIdx, interfererCell, direction)
+seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1));
+dirOffset = sum(double(char(upper(string(direction)))));
+slotIdx = double(sixgr.util.structGet(runtimeState, "CurrentSlot", 1));
+frameIdx = double(sixgr.util.structGet(runtimeState, "CurrentFrame", 1));
+seed = mod(seedBase + 104729 * frameIdx + 1543 * slotIdx + 313 * victimUEIdx + 571 * interfererUEIdx + 997 * interfererCell + dirOffset, 2^31 - 1);
+seed = max(1, round(double(seed)));
+end
+
+function grant = localResolveRetransmissionGrantSnapshot(cfgIn, direction, grant, replayBits)
+direction = upper(string(direction));
+hasCarrier = ~isempty(sixgr.util.structGet(grant, "CarrierConfig", []));
+if direction == "UL"
+    hasDirectionConfig = ~isempty(sixgr.util.structGet(grant, "PUSCHConfig", []));
+else
+    hasDirectionConfig = ~isempty(sixgr.util.structGet(grant, "PDSCHConfig", []));
+end
+if ~(hasCarrier && hasDirectionConfig)
+    grant = localHydrateGrantSnapshot(cfgIn, direction, grant);
+end
+if isfinite(replayBits) && replayBits > 0
+    grant.TransportBlockSize = double(replayBits);
+    grant.TBSBits = double(replayBits);
+    grant.TBSBytes = floor(double(replayBits) / 8);
+    grant.ScheduledTransportBlockSize = double(replayBits);
+end
+end
+
+function grantRow = localRefreshGrantRowFromGrant(grantRow, grant, resolvedBits)
+if ~(istable(grantRow) && ~isempty(grantRow) && isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
+tbsBits = double(sixgr.util.structGet(grant, "TransportBlockSize", sixgr.util.structGet(grant, "TBSBits", resolvedBits)));
+if ~(isfinite(tbsBits) && tbsBits >= 0)
+    tbsBits = resolvedBits;
+end
+if ismember("PRBStart", string(grantRow.Properties.VariableNames))
+    grantRow.PRBStart(1) = localFirstNumeric(prbSet, NaN);
+end
+if ismember("PRBCount", string(grantRow.Properties.VariableNames))
+    grantRow.PRBCount(1) = double(numel(prbSet));
+end
+if ismember("SymbolStart", string(grantRow.Properties.VariableNames))
+    grantRow.SymbolStart(1) = localFirstNumeric(symAlloc, NaN);
+end
+if ismember("NumSymbols", string(grantRow.Properties.VariableNames))
+    grantRow.NumSymbols(1) = localSecondNumeric(symAlloc, NaN);
+end
+if ismember("TBSBits", string(grantRow.Properties.VariableNames)) && isfinite(tbsBits)
+    grantRow.TBSBits(1) = double(tbsBits);
+end
+if ismember("TBSBytes", string(grantRow.Properties.VariableNames)) && isfinite(tbsBits)
+    grantRow.TBSBytes(1) = floor(double(tbsBits) / 8);
+end
+if ismember("MCSIndex", string(grantRow.Properties.VariableNames))
+    grantRow.MCSIndex(1) = double(sixgr.util.structGet(grant, "MCSIndex", sixgr.util.structGet(grant, "MCS", NaN)));
+end
+if ismember("Modulation", string(grantRow.Properties.VariableNames))
+    grantRow.Modulation(1) = string(sixgr.util.structGet(grant, "Modulation", ""));
+end
+if ismember("TargetCodeRate", string(grantRow.Properties.VariableNames))
+    grantRow.TargetCodeRate(1) = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
+end
+if ismember("NumLayers", string(grantRow.Properties.VariableNames))
+    grantRow.NumLayers(1) = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
+end
+if ismember("PMI", string(grantRow.Properties.VariableNames))
+    grantRow.PMI(1) = double(sixgr.util.structGet(grant, "PMI", NaN));
+end
+if ismember("CRI", string(grantRow.Properties.VariableNames))
+    grantRow.CRI(1) = double(sixgr.util.structGet(grant, "CRI", NaN));
+end
+if ismember("ConfiguredBeamSelectionStrategy", string(grantRow.Properties.VariableNames))
+    grantRow.ConfiguredBeamSelectionStrategy(1) = string(sixgr.util.structGet(grant, "ConfiguredBeamSelectionStrategy", ""));
+end
+if ismember("PrecoderSource", string(grantRow.Properties.VariableNames))
+    grantRow.PrecoderSource(1) = string(sixgr.util.structGet(grant, "PrecoderSource", ""));
+end
+if ismember("PrecodingMode", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingMode(1) = string(sixgr.util.structGet(grant, "PrecodingMode", ""));
+end
+if ismember("PrecodingApplicationStage", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingApplicationStage(1) = string(sixgr.util.structGet(grant, "PrecodingApplicationStage", ""));
+end
+if ismember("PrecodingActive", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingActive(1) = logical(sixgr.util.structGet(grant, "PrecodingActive", false));
+end
+if ismember("ExplicitBeamWeightsApplied", string(grantRow.Properties.VariableNames))
+    grantRow.ExplicitBeamWeightsApplied(1) = logical(sixgr.util.structGet(grant, "ExplicitBeamWeightsApplied", false));
+end
+if ismember("TransformPrecodingApplied", string(grantRow.Properties.VariableNames))
+    grantRow.TransformPrecodingApplied(1) = logical(sixgr.util.structGet(grant, "TransformPrecodingApplied", false));
+end
+if ismember("BeamformingApplied", string(grantRow.Properties.VariableNames))
+    grantRow.BeamformingApplied(1) = logical(sixgr.util.structGet(grant, "BeamformingApplied", false));
+end
+if ismember("AppliedBeamIndexSet", string(grantRow.Properties.VariableNames))
+    grantRow.AppliedBeamIndexSet(1) = string(sixgr.util.structGet(grant, "AppliedBeamIndexSet", ""));
+end
+if ismember("AppliedPrecoderPMI", string(grantRow.Properties.VariableNames))
+    grantRow.AppliedPrecoderPMI(1) = double(sixgr.util.structGet(grant, "AppliedPrecoderPMI", NaN));
+end
+if ismember("AppliedPrecoderPMIType", string(grantRow.Properties.VariableNames))
+    grantRow.AppliedPrecoderPMIType(1) = string(sixgr.util.structGet(grant, "AppliedPrecoderPMIType", ""));
+end
+if ismember("AppliedPrecoderCodebookMode", string(grantRow.Properties.VariableNames))
+    grantRow.AppliedPrecoderCodebookMode(1) = string(sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""));
+end
+if ismember("PrecodingNumPorts", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingNumPorts(1) = double(sixgr.util.structGet(grant, "PrecodingNumPorts", NaN));
+end
+if ismember("PrecodingNumLayers", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingNumLayers(1) = double(sixgr.util.structGet(grant, "PrecodingNumLayers", NaN));
+end
+if ismember("PrecodingMatrixRows", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingMatrixRows(1) = double(sixgr.util.structGet(grant, "PrecodingMatrixRows", NaN));
+end
+if ismember("PrecodingMatrixCols", string(grantRow.Properties.VariableNames))
+    grantRow.PrecodingMatrixCols(1) = double(sixgr.util.structGet(grant, "PrecodingMatrixCols", NaN));
+end
+if ismember("GrantContextId", string(grantRow.Properties.VariableNames))
+    grantRow.GrantContextId(1) = string(sixgr.util.structGet(grant, "GrantContextId", ""));
+end
+if ismember("GrantWorkerSafe", string(grantRow.Properties.VariableNames))
+    grantRow.GrantWorkerSafe(1) = logical(sixgr.util.structGet(grant, "GrantWorkerSafe", true));
+end
+if ismember("GrantSharedStateCommitMode", string(grantRow.Properties.VariableNames))
+    grantRow.GrantSharedStateCommitMode(1) = string(sixgr.util.structGet(grant, "GrantSharedStateCommitMode", "serial_coordinator_commit"));
+end
+end
+
+function grant = localRefreshGrantSnapshotFromTrial(grant, T)
+if ~(isstruct(grant) && istable(T) && ~isempty(T))
+    return;
+end
+vars = string(T.Properties.VariableNames);
+stringFields = [ ...
+    "ConfiguredBeamSelectionStrategy","PrecoderSource","PrecodingMode","PrecodingApplicationStage", ...
+    "AppliedBeamIndexSet","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","RequestedVsAppliedPrecoderPMIMatchStatus", ...
+    "GrantContextId","GrantSharedStateCommitMode"];
+logicalFields = [ ...
+    "PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","BeamformingApplied", ...
+    "GrantWorkerSafe"];
+numericFields = [ ...
+    "PMI","CRI","AppliedPrecoderPMI","PrecodingNumPorts","PrecodingNumLayers", ...
+    "PrecodingMatrixRows","PrecodingMatrixCols","TBSBits","TBSBytes"];
+
+for i = 1:numel(stringFields)
+    fieldName = stringFields(i);
+    if ismember(fieldName, vars)
+        grant.(char(fieldName)) = char(localTrialStructStringValue(T.(char(fieldName))(1)));
+    end
+end
+for i = 1:numel(logicalFields)
+    fieldName = logicalFields(i);
+    if ismember(fieldName, vars)
+        grant.(char(fieldName)) = logical(T.(char(fieldName))(1));
+    end
+end
+for i = 1:numel(numericFields)
+    fieldName = numericFields(i);
+    if ismember(fieldName, vars)
+        grant.(char(fieldName)) = double(T.(char(fieldName))(1));
+    end
+end
+end
+
+function token = localTrialStructStringValue(value)
+if isempty(value)
+    token = "";
+    return;
+end
+if isstring(value)
+    token = string(value(1));
+elseif iscell(value)
+    if isempty(value{1})
+        token = "";
+    else
+        token = string(value{1});
+    end
+elseif ischar(value)
+    token = string(value);
+else
+    token = string(value(1));
+end
+if any(ismissing(token))
+    token = "";
+else
+    token = strtrim(token);
+end
+end
+
+function value = localFirstNumeric(data, defaultValue)
+value = defaultValue;
+if nargin < 2
+    value = NaN;
+end
+if isempty(data)
+    return;
+end
+data = double(data(:));
+idx = find(isfinite(data), 1, "first");
+if ~isempty(idx)
+    value = double(data(idx));
+end
+end
+
+function value = localSecondNumeric(data, defaultValue)
+value = defaultValue;
+if nargin < 2
+    value = NaN;
+end
+if isempty(data)
+    return;
+end
+data = double(data(:));
+data = data(isfinite(data));
+if numel(data) >= 2
+    value = double(data(2));
+elseif numel(data) == 1
+    value = double(data(1));
+end
+end
+
+function grant = localResolveStrictGrantSnapshot(cfgIn, direction, grant, queueBitsUpper)
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+direction = upper(string(direction));
+if ~(isfinite(queueBitsUpper) && queueBitsUpper > 0)
+    queueBitsUpper = inf;
+end
+prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+if isempty(prbSet)
+    nPrb = max(1, round(double(sixgr.util.structGet(grant, "PRBs", sixgr.util.structGet(cfgIn, "phy.carrier.NSizeGrid", 1)))));
+    prbSet = 0:(nPrb - 1);
+end
+bestGrant = struct();
+bestBits = -inf;
+for nUse = 1:numel(prbSet)
+    candidate = grant;
+    candidate.PRBSet = double(prbSet(1:nUse));
+    candidate.PRBs = double(numel(candidate.PRBSet));
+    candidate = localHydrateGrantSnapshot(cfgIn, direction, candidate);
+    candBits = double(sixgr.util.structGet(candidate, "TransportBlockSize", NaN));
+    if ~(isfinite(candBits) && candBits > 0)
+        continue;
+    end
+    if candBits > queueBitsUpper
+        continue;
+    end
+    if candBits > bestBits
+        bestGrant = candidate;
+        bestBits = candBits;
+    end
+end
+if isempty(fieldnames(bestGrant))
+    bestGrant = localHydrateGrantSnapshot(cfgIn, direction, grant);
+end
+bestGrant.TBSBits = double(sixgr.util.structGet(bestGrant, "TransportBlockSize", sixgr.util.structGet(bestGrant, "TBSBits", NaN)));
+bestGrant.TBSBytes = floor(double(bestGrant.TBSBits) / 8);
+grant = bestGrant;
+end
+
+function grant = localHydrateGrantSnapshot(cfgIn, direction, grant)
+originalDLPrecodingMatrix = [];
+if upper(string(direction)) == "DL"
+    originalDLPrecodingMatrix = sixgr.util.structGet(cfgIn, "phy.pdsch.precoding.matrix", ...
+        sixgr.util.structGet(cfgIn, "phy.pdsch.precodingMatrix", ...
+        sixgr.util.structGet(cfgIn, "phy.pdsch.W", [])));
+end
+cfgGrant = localApplyHARQGrantContext(cfgIn, direction, grant);
+direction = upper(string(direction));
+if direction == "UL"
+    [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgGrant, ...
+        "NSizeGrid", max(max(1, numel(double(sixgr.util.structGet(grant, "PRBSet", [])))), double(sixgr.util.structGet(cfgGrant, "phy.carrier.NSizeGrid", 1))));
+    [~, info, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfgGrant, ...
+        "PRBSet", sixgr.util.structGet(grant, "PRBSet", []), ...
+        "SymbolAllocation", sixgr.util.structGet(grant, "SymbolAllocation", []), ...
+        "Modulation", char(string(sixgr.util.structGet(grant, "Modulation", "QPSK"))), ...
+        "NumLayers", double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", 1))));
+    nrePerPRB = localExtractGrantNREPerPRB(info, numel(pusch.PRBSet), char(string(pusch.Modulation)), double(pusch.NumLayers));
+    xOverhead = double(sixgr.util.structGet(cfgGrant, "phy.pusch.xOverhead", 0));
+    tbsBits = double(nrTBS(char(pusch.Modulation), double(pusch.NumLayers), double(numel(pusch.PRBSet)), double(nrePerPRB), ...
+        double(sixgr.util.structGet(grant, "TargetCodeRate", sixgr.util.structGet(cfgGrant, "phy.pusch.codeRate", 0.5))), double(xOverhead)));
+    grant.CarrierConfig = carrier;
+    grant.PUSCHConfig = pusch;
+    grant.TransformPrecoding = logical(sixgr.util.structGet(cfgGrant, "phy.pusch.transformPrecoding", false));
+    grant.XOverhead = xOverhead;
+    grant.NumTxAnt = double(sixgr.util.structGet(cfgGrant, "phy.nTxAnt", NaN));
+else
+    rawPrecodingMatrix = originalDLPrecodingMatrix;
+    [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgGrant, ...
+        "NSizeGrid", max(max(1, numel(double(sixgr.util.structGet(grant, "PRBSet", [])))), double(sixgr.util.structGet(cfgGrant, "phy.carrier.NSizeGrid", 1))));
+    [~, info, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfgGrant, ...
+        "PRBSet", sixgr.util.structGet(grant, "PRBSet", []), ...
+        "SymbolAllocation", sixgr.util.structGet(grant, "SymbolAllocation", []), ...
+        "Modulation", char(string(sixgr.util.structGet(grant, "Modulation", "QPSK"))), ...
+        "NumLayers", double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", 1))));
+    nrePerPRB = localExtractGrantNREPerPRB(info, numel(pdsch.PRBSet), char(string(pdsch.Modulation)), double(pdsch.NumLayers));
+    xOverhead = double(sixgr.util.structGet(cfgGrant, "phy.pdsch.xOverhead", 0));
+    tbsBits = double(nrTBS(char(pdsch.Modulation), double(pdsch.NumLayers), double(numel(pdsch.PRBSet)), double(nrePerPRB), ...
+        double(sixgr.util.structGet(grant, "TargetCodeRate", sixgr.util.structGet(cfgGrant, "phy.pdsch.codeRate", 0.5))), double(xOverhead)));
+    cfgGrant = localPruneIncompatibleDLPrecodingConfig(cfgGrant, pdsch);
+    [grant, cfgGrant] = localSanitizeDLGrantFeedback(cfgGrant, pdsch, grant);
+    prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfgGrant);
+    precMatrix = sixgr.util.structGet(prec, "MatrixPorts", sixgr.util.structGet(prec, "MatrixNR", []));
+    if isempty(precMatrix)
+        precMatrix = localAdaptDLPrecodingMatrix(rawPrecodingMatrix, double(pdsch.NumLayers));
+    end
+    numTxAnt = double(sixgr.util.structGet(cfgGrant, "phy.nTxAnt", NaN));
+    if isfinite(numTxAnt)
+        numTxAnt = max(numTxAnt, localPrecodingPortCount(precMatrix, double(pdsch.NumLayers)));
+    else
+        numTxAnt = max(localPrecodingPortCount(precMatrix, double(pdsch.NumLayers)), 1);
+    end
+    if isempty(precMatrix) && isfinite(numTxAnt) && numTxAnt >= 1 && double(pdsch.NumLayers) == 1
+        precMatrix = zeros(max(1, round(numTxAnt)), 1);
+        precMatrix(1, 1) = 1;
+    end
+    if ~isempty(precMatrix)
+        numTxAnt = max(numTxAnt, localPrecodingPortCount(precMatrix, double(pdsch.NumLayers)));
+    end
+    grant.CarrierConfig = carrier;
+    grant.PDSCHConfig = pdsch;
+    grant.XOverhead = xOverhead;
+    grant.NumTxAnt = double(numTxAnt);
+    grant.PrecodingMatrix = precMatrix;
+end
+grant.PRBSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+grant.PRBs = double(numel(grant.PRBSet));
+grant.TransportBlockSize = double(tbsBits);
+end
+
+function cfgOut = localPruneIncompatibleDLPrecodingConfig(cfgIn, pdsch)
+cfgOut = cfgIn;
+nLayers = double(sixgr.util.structGet(pdsch, "NumLayers", 1));
+if ~(isfinite(nLayers) && nLayers >= 1)
+    nLayers = 1;
+end
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+for i = 1:numel(paths)
+    path = paths(i);
+    Wcfg = sixgr.util.structGet(cfgOut, path, []);
+    if isempty(Wcfg)
+        continue;
+    end
+    sz = size(Wcfg);
+    if ndims(Wcfg) > 2 && sz(3) == 1
+        Wcfg = squeeze(Wcfg);
+        sz = size(Wcfg);
+    end
+    if ndims(Wcfg) > 2
+        cfgOut = sixgr.util.structSet(cfgOut, path, []);
+        continue;
+    end
+    if ~(numel(sz) >= 2 && (sz(1) == nLayers || sz(2) == nLayers))
+        cfgOut = sixgr.util.structSet(cfgOut, path, []);
+    end
+end
+end
+
+function [grantOut, cfgOut] = localSanitizeDLGrantFeedback(cfgIn, pdsch, grantIn)
+grantOut = grantIn;
+cfgOut = cfgIn;
+
+nLayers = max(1, round(double(sixgr.util.structGet(pdsch, "NumLayers", ...
+    sixgr.util.structGet(grantOut, "NumLayers", sixgr.util.structGet(grantOut, "Layers", 1))))));
+numTxPorts = sixgr.util.structGet(cfgOut, "phy.pdsch.numPorts", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.nPorts", ...
+    sixgr.util.structGet(cfgOut, "phy.nTxAnt", nLayers)));
+numTxPorts = max(1, round(double(numTxPorts)));
+explicitMatrix = sixgr.util.structGet(cfgOut, "phy.pdsch.precoding.matrix", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.precodingMatrix", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.W", [])));
+pmi = double(sixgr.util.structGet(grantOut, "PMI", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.PMI", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.TPMI", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.tpmi", NaN)))));
+try
+    candidates = sixgr.phy.dl.pmiCodebookCandidates(cfgOut, nLayers, numTxPorts);
+    needsDefaultPMI = isempty(explicitMatrix) && ~isempty(candidates) && (~isfinite(pmi) || pmi < 0 || pmi >= numel(candidates));
+    if needsDefaultPMI
+        grantOut.PMI = 0;
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", 0);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.TPMI", 0);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.tpmi", 0);
+    elseif isempty(candidates) && isfinite(pmi)
+        grantOut.PMI = NaN;
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", []);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.TPMI", []);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.tpmi", []);
+    end
+catch
+    if isempty(explicitMatrix)
+        grantOut.PMI = NaN;
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", []);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.TPMI", []);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.tpmi", []);
+    end
+end
+
+cri = double(sixgr.util.structGet(grantOut, "CRI", NaN));
+if isfinite(cri)
+    numCandidates = sixgr.util.structGet(cfgOut, "phy.csi.numResourceCandidates", ...
+        sixgr.util.structGet(cfgOut, "phy.csirs.numResources", ...
+        sixgr.util.structGet(cfgOut, "phy.beamManagement.trpCount", 1)));
+    numCandidates = max(1, round(double(numCandidates)));
+    if cri < 0 || cri >= numCandidates
+        grantOut.CRI = NaN;
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.beamManagement.selectedCRI", []);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.csi.selectedCRI", []);
+    end
+end
+end
+
+function Wout = localAdaptDLPrecodingMatrix(Wcfg, nLayers)
+Wout = [];
+if isempty(Wcfg)
+    return;
+end
+nLayers = max(1, round(double(nLayers)));
+sz = size(Wcfg);
+if ndims(Wcfg) > 2 && sz(3) == 1
+    Wcfg = squeeze(Wcfg);
+    sz = size(Wcfg);
+end
+if ndims(Wcfg) > 2 || numel(sz) < 2
+    return;
+end
+if sz(2) >= nLayers
+    Wout = double(Wcfg(:, 1:nLayers));
+elseif sz(1) >= nLayers
+    Wout = double(Wcfg(1:nLayers, :).');
+end
+if ~isempty(Wout)
+    colNorm = sqrt(sum(abs(Wout).^2, 1));
+    colNorm(colNorm <= eps) = 1;
+    Wout = Wout ./ colNorm;
+end
+end
+
+function nPorts = localPrecodingPortCount(Wcfg, nLayers)
+nPorts = 0;
+if isempty(Wcfg)
+    return;
+end
+nLayers = max(1, round(double(nLayers)));
+sz = size(Wcfg);
+if ndims(Wcfg) > 2 && sz(3) == 1
+    Wcfg = squeeze(Wcfg);
+    sz = size(Wcfg);
+end
+if ndims(Wcfg) > 2 || numel(sz) < 2
+    return;
+end
+if sz(2) == nLayers
+    nPorts = sz(1);
+elseif sz(1) == nLayers
+    nPorts = sz(2);
+else
+    nPorts = sz(1);
+end
+end
+
+function nrePerPRB = localExtractGrantNREPerPRB(info, nPRB, modStr, nLayers)
+nrePerPRB = [];
+if isstruct(info) && isfield(info, "IndicesInfo")
+    indInfo = info.IndicesInfo;
+else
+    indInfo = struct();
+end
+if isstruct(indInfo) && isfield(indInfo, "NREPerPRB")
+    nrePerPRB = double(indInfo.NREPerPRB);
+elseif isstruct(indInfo) && isfield(indInfo, "NRE")
+    nrePerPRB = floor(double(indInfo.NRE) / max(double(nPRB), 1));
+elseif isstruct(indInfo) && isfield(indInfo, "G")
+    qm = sixgr.l2.mac.SchedulerBase.modOrder(modStr);
+    nrePerPRB = floor(double(indInfo.G) / max(double(qm) * double(nLayers) * double(nPRB), 1));
+elseif isstruct(info) && isfield(info, "NRE")
+    nrePerPRB = floor(double(info.NRE) / max(double(nPRB), 1));
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    nrePerPRB = 144;
+end
+end
+
+function bits = localGenerateGrantTransportBlockBits(cfgIn, grant, direction, nBits)
+nBits = max(0, round(double(nBits)));
+if nBits < 1
+    bits = int8([]);
+    return;
+end
+seedBase = double(sixgr.util.structGet(cfgIn, "run.seed", 1));
+seed = mod(seedBase + 53 * round(double(sixgr.util.structGet(grant, "RNTI", 1))) + 7919 * round(double(sixgr.util.structGet(grant, "Slot", 1))) + sum(double(char(upper(string(direction))))), 2^31 - 1);
+rs = RandStream("mt19937ar", "Seed", max(1, round(seed)));
+bits = int8(randi(rs, [0 1], nBits, 1));
+end
+
+function cfgOut = localApplyHARQGrantContext(cfgIn, direction, grant)
+cfgOut = cfgIn;
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+direction = upper(string(direction));
+if direction == "UL"
+    root = "phy.pusch";
+else
+    root = "phy.pdsch";
+end
+grantMCS = double(sixgr.util.structGet(grant, "MCS", sixgr.util.structGet(grant, "MCSIndex", NaN)));
+grantMod = string(sixgr.util.structGet(grant, "Modulation", ""));
+grantRate = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
+grantLayers = double(sixgr.util.structGet(grant, "Layers", sixgr.util.structGet(grant, "NumLayers", NaN)));
+grantPRBs = double(sixgr.util.structGet(grant, "PRBs", numel(double(sixgr.util.structGet(grant, "PRBSet", [])))));
+grantPRBSet = sixgr.util.structGet(grant, "PRBSet", []);
+grantSymbolAllocation = sixgr.util.structGet(grant, "SymbolAllocation", []);
+grantMappingType = string(sixgr.util.structGet(grant, "MappingType", ""));
+grantTransformPrecoding = sixgr.util.structGet(grant, "TransformPrecoding", []);
+grantPMI = double(sixgr.util.structGet(grant, "PMI", NaN));
+grantCRI = double(sixgr.util.structGet(grant, "CRI", NaN));
+grantMCSTable = string(sixgr.util.structGet(grant, "MCSTable", ""));
+grantCQITable = string(sixgr.util.structGet(grant, "CQITable", ""));
+if isfinite(grantMCS)
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".mcsIndex", grantMCS);
+end
+if strlength(strtrim(grantMod)) > 0
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".modulation", char(grantMod));
+end
+if isfinite(grantRate) && grantRate > 0
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".codeRate", grantRate);
+end
+if isfinite(grantLayers) && grantLayers >= 1
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".numLayers", grantLayers);
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".nLayers", grantLayers);
+end
+if isfinite(grantPRBs) && grantPRBs >= 1
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".nPRB", grantPRBs);
+end
+if ~isempty(grantPRBSet)
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".prbSet", grantPRBSet);
+end
+if ~isempty(grantSymbolAllocation)
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".symbolAllocation", grantSymbolAllocation);
+end
+if strlength(strtrim(grantMappingType)) > 0
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".mappingType", char(grantMappingType));
+end
+if ~isempty(grantTransformPrecoding) && direction == "UL"
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".transformPrecoding", logical(grantTransformPrecoding));
+end
+if strlength(strtrim(grantMCSTable)) > 0
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".mcsTable", char(grantMCSTable));
+end
+if strlength(strtrim(grantCQITable)) > 0
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".cqiTable", char(grantCQITable));
+end
+if direction == "DL"
+    if isfinite(grantLayers) && grantLayers >= 1
+        cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgOut, grantLayers);
+    end
+    if isfinite(grantPMI)
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", grantPMI);
+    end
+    if isfinite(grantCRI)
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.beamManagement.selectedCRI", grantCRI);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.csi.selectedCRI", grantCRI);
+    end
+elseif direction == "UL"
+    if isfinite(grantPMI)
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.PMI", grantPMI);
+        cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.TPMI", grantPMI);
+    end
+end
+end
+
+function cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgIn, nLayers)
+cfgOut = cfgIn;
+nLayers = max(1, round(double(nLayers)));
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+for i = 1:numel(paths)
+    path = paths(i);
+    Wcfg = sixgr.util.structGet(cfgOut, path, []);
+    if isempty(Wcfg)
+        continue;
+    end
+    sz = size(Wcfg);
+    if ndims(Wcfg) > 2 && sz(3) == 1
+        Wcfg = squeeze(Wcfg);
+        sz = size(Wcfg);
+    end
+    if ndims(Wcfg) > 2 || ~(numel(sz) >= 2 && (sz(1) == nLayers || sz(2) == nLayers))
+        cfgOut = sixgr.util.structSet(cfgOut, path, []);
+    end
+end
+end
+
+function state = localInitCoupledTruthRuntimeState(cfg, runFolder, multiUser, controlTrials, totalTrafficFrames)
+if nargin < 5
+    totalTrafficFrames = max(1, round(double(sixgr.util.structGet(cfg, "run.numFrames", 1))));
+end
+state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, runFolder, multiUser, controlTrials, totalTrafficFrames);
+end
+
+function state = localAdvanceCoupledRuntimeFrame(state, cfg, multiUser, absoluteFrame, snr_dB)
+state = sixgr.truth.CoupledTruthRuntime.advanceFrame(state, cfg, multiUser, absoluteFrame, snr_dB);
+end
+
+function state = localBeginCoupledRuntimeSlot(state, cfg, userCfg, ueIdx, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB)
+state = sixgr.truth.CoupledTruthRuntime.beginSlot(state, cfg, userCfg, ueIdx, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB);
+end
+
+function [cfgU, state] = localApplyCoupledRuntimeUserContext(cfgIn, state, ueIdx, direction)
+[cfgU, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfgIn, state, ueIdx, direction);
+end
+
+function context = localResolveCoupledHARQTrialContext(state, ueIdx, direction)
+context = sixgr.truth.CoupledTruthRuntime.resolveHARQTrialContext(state, ueIdx, direction);
+end
+
+function [state, trialT] = localCompleteCoupledRuntimeSlot(state, cfgU, ueIdx, direction, trialT, res)
+[state, trialT] = sixgr.truth.CoupledTruthRuntime.completeSlot(state, cfgU, ueIdx, direction, trialT, res);
+end
+
+function state = localWriteCoupledRuntimeTables(state, runFolder)
+state = sixgr.truth.CoupledTruthRuntime.writeTables(state, runFolder);
+end
+
+function artifacts = localBuildMobilityArtifactsFromCoupledRuntime(state)
+artifacts = sixgr.truth.CoupledTruthRuntime.mobilityArtifacts(state);
+end
+
+function state = localRunCoupledPreSchedulingControlGating(state, cfg, userCfg, snr_dB)
+state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
+numUsers = numel(userCfg);
+slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+frameIdx = double(sixgr.util.structGet(state, "CurrentFrame", NaN));
+pbchPeriod = max(1, round(double(sixgr.util.structGet(state, "PBCHSlotPeriod", 20))));
+srsPeriod = max(1, round(double(sixgr.util.structGet(state, "SRSSlotPeriod", 4))));
+trsEnabled = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
+trsPeriod = max(1, round(double(sixgr.util.structGet(state, "TRSSlotPeriod", 4))));
+shouldAttemptTRS = trsEnabled && (double(sixgr.util.structGet(state, "LastTRSSlot", 0)) <= 0 || ...
+    slotIdx <= 1 || (isfinite(slotIdx) && (slotIdx - double(sixgr.util.structGet(state, "LastTRSSlot", 0))) >= trsPeriod));
+trsObservedServingCells = [];
+for ueIdx = 1:numUsers
+    rnti = double(localUserRNTI(state.MultiUser, ueIdx));
+    cfgU = userCfg{ueIdx};
+    tempState = state;
+    [cfgU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, "DL"); %#ok<ASGLU>
+    servingCell = double(sixgr.util.structGet(tempState, "CurrentServingIdx", nan(numUsers, 1)));
+    if numel(servingCell) >= ueIdx
+        servingCell = double(servingCell(ueIdx));
+    else
+        servingCell = NaN;
+    end
+
+    if shouldAttemptTRS && isfinite(servingCell) && servingCell >= 1 && ~ismember(servingCell, trsObservedServingCells)
+        trsT = localAnnotateCoupledControlTrial(localCollectTRSTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, "DL");
+        if istable(trsT) && ~isempty(trsT)
+            state = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state, servingCell, trsT);
+            trsStates = string(sixgr.util.structGet(state, "TRSValidityStateByCell", strings(0, 1)));
+            trackingEligibility = logical(sixgr.util.structGet(state, "TrackingEligibilityByCell", false(0, 1)));
+            lastTRSSuccess = double(sixgr.util.structGet(state, "LastSuccessfulTRSSlotByCell", nan(0, 1)));
+            lastTRSDoppler = double(sixgr.util.structGet(state, "LastEstimatedTRSDopplerHzByCell", nan(0, 1)));
+            trsStateToken = "unknown";
+            trackingEligible = false;
+            lastTRSSlot = NaN;
+            trackedDoppler = NaN;
+            if servingCell <= numel(trsStates)
+                trsStateToken = string(trsStates(servingCell));
+            end
+            if servingCell <= numel(trackingEligibility)
+                trackingEligible = logical(trackingEligibility(servingCell));
+            end
+            if servingCell <= numel(lastTRSSuccess)
+                lastTRSSlot = double(lastTRSSuccess(servingCell));
+            end
+            if servingCell <= numel(lastTRSDoppler)
+                trackedDoppler = double(lastTRSDoppler(servingCell));
+            end
+            trsContext = sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContextRuntime(state, cfgU, ueIdx, servingCell);
+            trsT.ServingCell = repmat(servingCell, height(trsT), 1);
+            trsT.TraceRole = repmat("runtime_shared_receiver_tracking_state_update", height(trsT), 1);
+            trsT.TRSGatingActive = repmat(logical(sixgr.util.structGet(state.ControlGating, "TRSRequired", false)), height(trsT), 1);
+            trsT.TRSValidityState = repmat(trsStateToken, height(trsT), 1);
+            trsT.TrackingEligibility = repmat(trackingEligible, height(trsT), 1);
+            trsT.LastSuccessfulTRSSlot = repmat(lastTRSSlot, height(trsT), 1);
+            trsT.LastEstimatedTRSDopplerHz = repmat(trackedDoppler, height(trsT), 1);
+            trsT.TRSAgeSlots = repmat(double(sixgr.truth.CoupledTruthRuntime.trsAgeSlotsRuntime(state, servingCell)), height(trsT), 1);
+            trsT.RuntimeStateUpdated = true(height(trsT), 1);
+            trsT.RuntimeStateConsumer = repmat(string(trsContext.TRSReceiverConsumerType), height(trsT), 1);
+            trsT.TrackingStateSource = repmat(string(trsContext.TRSStateSource), height(trsT), 1);
+            trsT.TRSStateSource = repmat(string(trsContext.TRSStateSource), height(trsT), 1);
+            trsT.TRSRuntimeConsumer = repmat(string(trsContext.TRSRuntimeConsumer), height(trsT), 1);
+            trsT.TRSInfluencedDecision = repmat(logical(trsContext.TRSInfluencedDecision), height(trsT), 1);
+            trsT.TRSInfluenceDefinition = repmat(string(trsContext.TRSInfluenceDefinition), height(trsT), 1);
+            trsT.TRSReceiverIntegrationStatus = repmat(string(trsContext.TRSReceiverIntegrationStatus), height(trsT), 1);
+            trsT.TRSReceiverIntegrationBlocker = repmat(string(trsContext.TRSReceiverIntegrationBlocker), height(trsT), 1);
+            trsT.TRSProcessed = repmat(logical(trsContext.TRSProcessed), height(trsT), 1);
+            trsT.TRSReceiverConsumerType = repmat(string(trsContext.TRSReceiverConsumerType), height(trsT), 1);
+            trsT.TRSTrackingStateBefore = repmat(string(trsContext.TRSTrackingStateBefore), height(trsT), 1);
+            trsT.TRSTrackingStateAfter = repmat(string(trsContext.TRSTrackingStateAfter), height(trsT), 1);
+            trsT.TRSTrackingUpdateTime_s = repmat(double(trsContext.TRSTrackingUpdateTime_s), height(trsT), 1);
+            trsT.TRSAssociatedCell = repmat(double(trsContext.TRSAssociatedCell), height(trsT), 1);
+            trsT.TRSUpdateOutcome = repmat(string(trsContext.TRSUpdateOutcome), height(trsT), 1);
+            trsT.TRSChannelTrackingFreshnessState = repmat(string(trsContext.TRSChannelTrackingFreshnessState), height(trsT), 1);
+            trsT.TRSFrequencyTrackingState = repmat(string(trsContext.TRSFrequencyTrackingState), height(trsT), 1);
+            trsT.TRSTimingTrackingState = repmat(string(trsContext.TRSTimingTrackingState), height(trsT), 1);
+            trsT.TRSTimingEstimateAvailable = repmat(logical(trsContext.TRSTimingEstimateAvailable), height(trsT), 1);
+            trsT.TRSTimingEstimate_samples = repmat(double(trsContext.TRSTimingEstimate_samples), height(trsT), 1);
+            trsT.TRSCFOEstimateAvailable = repmat(logical(trsContext.TRSCFOEstimateAvailable), height(trsT), 1);
+            trsT.TRSEstimatedCFO_Hz = repmat(double(trsContext.TRSEstimatedCFO_Hz), height(trsT), 1);
+            trsT.TRSRuntimeEvidenceSource = repmat(string(trsContext.TRSRuntimeEvidenceSource), height(trsT), 1);
+            state.ControlTrials.TRS = localAppendCompatTable(state.ControlTrials.TRS, trsT);
+            trsObservedServingCells(end + 1, 1) = servingCell; %#ok<AGROW>
+        end
+    end
+
+    if logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false))
+        pbchState = string(sixgr.util.structGet(state, "CellAcquisitionState", strings(numUsers,1)));
+        lastPBCHSuccess = double(sixgr.util.structGet(state, "LastSuccessfulPBCHSlotByUE", nan(numUsers,1)));
+        shouldAttemptPBCH = ueIdx > numel(pbchState) || pbchState(ueIdx) ~= "acquired";
+        if shouldAttemptPBCH
+            lastPbch = NaN;
+            if ueIdx <= numel(lastPBCHSuccess)
+                lastPbch = double(lastPBCHSuccess(ueIdx));
+            end
+            shouldAttemptPBCH = ~isfinite(lastPbch) || slotIdx <= 1 || (isfinite(slotIdx) && (slotIdx - lastPbch) >= pbchPeriod);
+        end
+        if shouldAttemptPBCH
+            pbchT = localAnnotateCoupledControlTrial(localCollectPBCHTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, "DL");
+            state.ControlTrials.PBCH = localAppendCompatTable(state.ControlTrials.PBCH, pbchT);
+            state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, ueIdx, pbchT);
+        end
+    end
+
+    if logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false))
+        accessState = string(sixgr.util.structGet(state, "AccessState", strings(numUsers,1)));
+        lastPrachAttempt = double(sixgr.util.structGet(state, "LastPRACHSlotByUE", zeros(numUsers,1)));
+        shouldAttemptPRACH = ueIdx > numel(accessState) || accessState(ueIdx) ~= "succeeded";
+        if shouldAttemptPRACH
+            lastAttempt = 0;
+            if ueIdx <= numel(lastPrachAttempt)
+                lastAttempt = double(lastPrachAttempt(ueIdx));
+            end
+            shouldAttemptPRACH = ~isfinite(lastAttempt) || slotIdx > lastAttempt;
+        end
+        if shouldAttemptPRACH
+            prachT = localAnnotateCoupledControlTrial(localCollectPRACHTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, "UL");
+            state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, prachT);
+            state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, ueIdx, prachT);
+            if ueIdx > numel(state.LastPRACHSlotByUE)
+                state.LastPRACHSlotByUE(ueIdx, 1) = 0;
+            end
+            state.LastPRACHSlotByUE(ueIdx) = slotIdx;
+        end
+    end
+
+    if logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false))
+        lastSRSAttempt = double(sixgr.util.structGet(state, "LastSRSSlotByUE", zeros(numUsers,1)));
+        lastAttempt = 0;
+        if ueIdx <= numel(lastSRSAttempt)
+            lastAttempt = double(lastSRSAttempt(ueIdx));
+        end
+        shouldAttemptSRS = ~isfinite(lastAttempt) || lastAttempt == 0 || (isfinite(slotIdx) && (slotIdx - lastAttempt) >= srsPeriod);
+        if shouldAttemptSRS
+            srsT = localAnnotateCoupledControlTrial(localCollectSRSTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, "UL");
+            state.ControlTrials.SRS = localAppendCompatTable(state.ControlTrials.SRS, srsT);
+            state = sixgr.truth.CoupledTruthRuntime.applySRSTrial(state, ueIdx, srsT);
+            if ueIdx > numel(state.LastSRSSlotByUE)
+                state.LastSRSSlotByUE(ueIdx, 1) = 0;
+            end
+            state.LastSRSSlotByUE(ueIdx) = slotIdx;
+        end
+    end
+end
+if shouldAttemptTRS && ~isempty(trsObservedServingCells)
+    state.LastTRSSlot = slotIdx;
+end
+state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
+end
+
+function [state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH(state, userCfg, grants, direction, snr_dB)
+qualifiedGrants = repmat(struct(), 0, 1);
+direction = upper(string(direction));
+if ~(isstruct(grants) && ~isempty(grants))
+    return;
+end
+if ~logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false))
+    qualifiedGrants = grants;
+    return;
+end
+for gi = 1:numel(grants)
+    grant = grants(gi);
+    ueIdx = localResolveGrantUEIndex(grant, state.MultiUser);
+    if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= numel(userCfg))
+        continue;
+    end
+    cfgU = userCfg{ueIdx};
+    tempState = state;
+    [cfgU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, direction); %#ok<ASGLU>
+    slotIdx = double(sixgr.util.structGet(grant, "Slot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
+    frameIdx = double(sixgr.util.structGet(grant, "Frame", sixgr.util.structGet(state, "CurrentFrame", NaN)));
+    rnti = double(sixgr.util.structGet(grant, "RNTI", localUserRNTI(state.MultiUser, ueIdx)));
+    pdcchT = localAnnotateCoupledControlTrial(localCollectPDCCHTrials(cfgU, snr_dB, 1, grant), slotIdx, frameIdx, ueIdx, rnti, direction);
+    [state, grant, allowExecution] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state, grant, direction, pdcchT);
+    pdcchT = localAnnotateGrantControlTrial(pdcchT, grant);
+    state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
+    if allowExecution
+        if isempty(qualifiedGrants)
+            qualifiedGrants = grant;
+        else
+            [qualifiedGrants, grant] = localHarmonizeStructArrays(qualifiedGrants, grant);
+            qualifiedGrants(end + 1, 1) = grant; %#ok<AGROW>
+        end
+    end
+end
+end
+
+function state = localCollectCanonicalCoupledControlTrials(state, cfgU, ueIdx, direction, snr_dB, trialT)
+direction = upper(string(direction));
+if ~(istable(trialT) && ~isempty(trialT))
+    return;
+end
+rnti = double(localUserRNTI(state.MultiUser, ueIdx));
+slotIdx = localTrialTableScalar(trialT, "Slot", double(sixgr.util.structGet(state, "CurrentSlot", NaN)));
+frameIdx = localTrialTableScalar(trialT, "Frame", double(sixgr.util.structGet(state, "CurrentFrame", NaN)));
+if direction == "DL"
+    state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, ...
+        localAnnotateCoupledControlTrial(localCollectPDCCHTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction));
+    pbchPeriod = max(1, round(double(sixgr.util.structGet(state, "PBCHSlotPeriod", 20))));
+    lastPBCHSlot = double(sixgr.util.structGet(state, "LastPBCHSlot", 0));
+    if lastPBCHSlot <= 0 || slotIdx == 1 || (isfinite(slotIdx) && (slotIdx - lastPBCHSlot) >= pbchPeriod)
+        state.ControlTrials.PBCH = localAppendCompatTable(state.ControlTrials.PBCH, ...
+            localAnnotateCoupledControlTrial(localCollectPBCHTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction));
+        state.LastPBCHSlot = slotIdx;
+    end
+    trsPeriod = max(1, round(double(sixgr.util.structGet(state, "TRSSlotPeriod", 4))));
+    lastTRSSlot = double(sixgr.util.structGet(state, "LastTRSSlot", 0));
+    if lastTRSSlot <= 0 || slotIdx == 1 || (isfinite(slotIdx) && (slotIdx - lastTRSSlot) >= trsPeriod)
+        state.ControlTrials.TRS = localAppendCompatTable(state.ControlTrials.TRS, ...
+            localAnnotateCoupledControlTrial(localCollectTRSTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction));
+        state.LastTRSSlot = slotIdx;
+    end
+else
+    lastPRACH = double(sixgr.util.structGet(state, "LastPRACHSlotByUE", zeros(max(1, ueIdx), 1)));
+    if ueIdx > numel(lastPRACH) || lastPRACH(ueIdx) == 0
+        state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, ...
+            localAnnotateCoupledControlTrial(localCollectPRACHTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction));
+        if ueIdx > numel(state.LastPRACHSlotByUE)
+            state.LastPRACHSlotByUE(ueIdx, 1) = 0;
+        end
+        state.LastPRACHSlotByUE(ueIdx) = slotIdx;
+    end
+    lastSRS = double(sixgr.util.structGet(state, "LastSRSSlotByUE", zeros(max(1, ueIdx), 1)));
+    srsPeriod = max(1, round(double(sixgr.util.structGet(state, "SRSSlotPeriod", 4))));
+    if ueIdx > numel(lastSRS) || lastSRS(ueIdx) == 0 || (isfinite(slotIdx) && (slotIdx - lastSRS(ueIdx)) >= srsPeriod)
+        state.ControlTrials.SRS = localAppendCompatTable(state.ControlTrials.SRS, ...
+            localAnnotateCoupledControlTrial(localCollectSRSTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction));
+        if ueIdx > numel(state.LastSRSSlotByUE)
+            state.LastSRSSlotByUE(ueIdx, 1) = 0;
+        end
+        state.LastSRSSlotByUE(ueIdx) = slotIdx;
+    end
+end
+end
+
+function value = localTrialTableScalar(T, varName, defaultValue)
+value = double(defaultValue);
+if ~(istable(T) && ~isempty(T) && ismember(string(varName), string(T.Properties.VariableNames)))
+    return;
+end
+vals = double(T.(varName));
+vals = vals(isfinite(vals));
+if ~isempty(vals)
+    value = double(vals(end));
+end
+end
+
+function T = localAnnotateCoupledControlTrial(T, slotIdx, frameIdx, ueIdx, rnti, direction)
+if ~istable(T)
+    T = table();
+    return;
+end
+n = height(T);
+if n < 1
+    return;
+end
+if ismember("Frame", string(T.Properties.VariableNames))
+    T.Frame(:) = double(frameIdx);
+else
+    T.Frame = repmat(double(frameIdx), n, 1);
+end
+if ismember("Slot", string(T.Properties.VariableNames))
+    T.Slot(:) = double(slotIdx);
+else
+    T.Slot = repmat(double(slotIdx), n, 1);
+end
+if ~ismember("UEIndex", string(T.Properties.VariableNames))
+    T.UEIndex = repmat(double(ueIdx), n, 1);
+end
+if ~ismember("RNTI", string(T.Properties.VariableNames))
+    T.RNTI = repmat(double(rnti), n, 1);
+end
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    T.Direction = repmat(string(direction), n, 1);
+end
+T.TrialDirection = repmat(string(direction), n, 1);
+T.LinkDirection = repmat(string(direction), n, 1);
+T.GrantDirection = repmat(string(direction), n, 1);
+end
+
+function rawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, controlTrials)
+if nargin < 4 || ~isstruct(controlTrials)
+    controlTrials = struct();
+end
+rawTrials = struct( ...
+    "DL", dlTrials, ...
+    "UL", ulTrials, ...
+    "SRS", sixgr.util.structGet(controlTrials, "SRS", table()), ...
+    "CSIRS", sixgr.util.structGet(controlTrials, "CSIRS", table()), ...
+    "TRS", sixgr.util.structGet(controlTrials, "TRS", table()), ...
+    "PDCCH", sixgr.util.structGet(controlTrials, "PDCCH", table()), ...
+    "PBCH", sixgr.util.structGet(controlTrials, "PBCH", table()), ...
+    "PRACH", sixgr.util.structGet(controlTrials, "PRACH", table()), ...
+    "PUCCH", sixgr.util.structGet(controlTrials, "PUCCH", table()), ...
+    "MultiUserDL", localBuildDirectionUserSummaryFromRaw(dlTrials, "DL", multiUser), ...
+    "MultiUserUL", localBuildDirectionUserSummaryFromRaw(ulTrials, "UL", multiUser));
+end
+
+function summaryT = localBuildDirectionUserSummaryFromRaw(sourceT, direction, multiUser)
+template = struct( ...
+        "UEIndex", NaN, ...
+        "RNTI", NaN, ...
+        "Direction", string(direction), ...
+        "ConfiguredLayers", NaN, ...
+        "ConfiguredTxAntennas", NaN, ...
+        "ConfiguredRxAntennas", NaN, ...
+        "BeamformingApplied", false, ...
+        "BeamSelectionStrategy", "", ...
+        "BeamIndexSet", "", ...
+        "ExecutionModel", string(sixgr.util.structGet(multiUser, "ExecutionModel", "independent_link_sweep")), ...
+        "Throughput_Mbps", NaN, ...
+        "ObservedRowCount", NaN, ...
+        "BLER", NaN, ...
+        "BER", NaN, ...
+        "PassRate", NaN, ...
+        "MeanMeasuredSINR_dB", NaN, ...
+        "MeanChannelGain_dB", NaN, ...
+        "SummaryRowValid", false, ...
+        "RuntimeDataPresent", false, ...
+        "UserHadAnySuccessfulTx", false, ...
+        "UserHadAnySuccessfulRx", false, ...
+        "PartialSuccess", false, ...
+        "AllObservedRowsSuccessful", false, ...
+        "SummaryStatus", "", ...
+        "Ok", false, ...
+        "OkDefinition", "compatibility_alias_of_summary_row_valid");
+if ~(istable(sourceT) && ~isempty(sourceT) && ismember("UEIndex", string(sourceT.Properties.VariableNames)))
+    summaryT = struct2table(repmat(template, 0, 1), "AsArray", true);
+    return;
+end
+    rows = repmat(template, 0, 1);
+    ueList = unique(double(sourceT.UEIndex), "stable");
+    ueList = ueList(isfinite(ueList));
+    for i = 1:numel(ueList)
+        mask = abs(double(sourceT.UEIndex) - ueList(i)) < 1e-9;
+        slice = sourceT(mask, :);
+        sem = sixgr.truth.deriveUserSummarySemantics(slice);
+        row = template;
+        row.UEIndex = double(ueList(i));
+        row.RNTI = localLastNumericValue(slice, "RNTI");
+        row.ConfiguredLayers = localLastNumericValue(slice, "ConfiguredLayers");
+        row.ConfiguredTxAntennas = localLastNumericValue(slice, "ConfiguredTxAntennas");
+        row.ConfiguredRxAntennas = localLastNumericValue(slice, "ConfiguredRxAntennas");
+        row.BeamformingApplied = localLastLogicalValue(slice, "BeamformingApplied");
+        row.BeamSelectionStrategy = localLastStringValue(slice, "BeamSelectionStrategy");
+        row.BeamIndexSet = localLastStringValue(slice, "BeamIndexSet");
+        row.ExecutionModel = localLastStringValue(slice, "ExecutionModel");
+        row.Throughput_Mbps = localTableMean(slice, "Goodput_Mbps");
+        row.ObservedRowCount = double(sem.ObservedRowCount);
+        if ismember("CRCPass", string(slice.Properties.VariableNames))
+            row.BLER = mean(1 - double(slice.CRCPass), "omitnan");
+        end
+        row.PassRate = double(sem.PassRate);
+        row.BER = localRatioFromSlices(slice, "BitErrors", "BitsCompared");
+        row.MeanMeasuredSINR_dB = localTableMean(slice, "MeasuredSINR_dB");
+        row.MeanChannelGain_dB = localTableMean(slice, "ChannelGain_dB");
+        row.SummaryRowValid = logical(sem.SummaryRowValid);
+        row.RuntimeDataPresent = logical(sem.RuntimeDataPresent);
+        row.UserHadAnySuccessfulTx = logical(sem.UserHadAnySuccessfulTx);
+        row.UserHadAnySuccessfulRx = logical(sem.UserHadAnySuccessfulRx);
+        row.PartialSuccess = logical(sem.PartialSuccess);
+        row.AllObservedRowsSuccessful = logical(sem.AllObservedRowsSuccessful);
+        row.SummaryStatus = string(sem.SummaryStatus);
+        row.Ok = logical(sem.Ok);
+        row.OkDefinition = string(sem.OkDefinition);
+        rows(end+1, 1) = row; %#ok<AGROW>
+    end
+    summaryT = struct2table(rows);
+end
+
+function ratio = localRatioFromSlices(T, numVar, denVar)
+ratio = NaN;
+if ~(istable(T) && ~isempty(T) && ismember(numVar, string(T.Properties.VariableNames)) && ismember(denVar, string(T.Properties.VariableNames)))
+    return;
+end
+num = sum(double(T.(numVar)), "omitnan");
+den = sum(double(T.(denVar)), "omitnan");
+if isfinite(den) && den > 0
+    ratio = double(num) / double(den);
+end
+end
+
+function value = localLastNumericValue(T, varName)
+value = NaN;
+if ~(istable(T) && ~isempty(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+vals = double(T.(varName));
+vals = vals(isfinite(vals));
+if ~isempty(vals)
+    value = vals(end);
+end
+end
+
+function value = localLastLogicalValue(T, varName)
+value = false;
+if ~(istable(T) && ~isempty(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+vals = logical(T.(varName));
+if ~isempty(vals)
+    value = vals(end);
+end
+end
+
+function value = localLastStringValue(T, varName)
+value = "";
+if ~(istable(T) && ~isempty(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+vals = string(T.(varName));
+vals = vals(strlength(vals) > 0);
+if ~isempty(vals)
+    value = vals(end);
+end
+end
+
+function liveArtifacts = localPublishCoupledTruthRuntimeState(cfg, runFolder, rawTrials, multiUser, runtimeState, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, dlConstT, ulConstT, direction, snr_dB, sweepIdx, sweepCount, ueIdx, totalUsers, frameIdx, totalFrames, waveformPreviewT)
+sixgr.util.csvWriteTable(dlTablePath, sixgr.util.structGet(rawTrials, "DL", table()));
+sixgr.util.csvWriteTable(ulTablePath, sixgr.util.structGet(rawTrials, "UL", table()));
+if strlength(string(dlConstellationPath)) > 0 && istable(dlConstT) && ~isempty(dlConstT)
+    sixgr.util.csvWriteTable(dlConstellationPath, localDownsampleConstellationTable(dlConstT, 2500));
+end
+if strlength(string(ulConstellationPath)) > 0 && istable(ulConstT) && ~isempty(ulConstT)
+    sixgr.util.csvWriteTable(ulConstellationPath, localDownsampleConstellationTable(ulConstT, 2500));
+end
+
+signalDirection = upper(string(direction));
+mergedSignalTrials = localAppendCompatTable( ...
+    sixgr.util.structGet(rawTrials, "DL", table()), ...
+    sixgr.util.structGet(rawTrials, "UL", table()));
+mergedSignalConst = localAppendCompatTable(dlConstT, ulConstT);
+sixgr.truth.exportLLSLiveSignalChainTables(fileparts(char(string(runFolder))), mergedSignalTrials, mergedSignalConst, struct( ...
+    "WaveformPreviewTable", waveformPreviewT));
+runtimeState = localWriteCoupledRuntimeTables(runtimeState, fileparts(char(string(runFolder))));
+liveArtifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, rawTrials, multiUser, ...
+    localBuildMobilityArtifactsFromCoupledRuntime(runtimeState), runtimeState);
+localPublishWaveformBundleStageStatus(runFolder, localBuildLiveStageStatus(rawTrials, liveArtifacts, struct( ...
+    "Direction", char(signalDirection), ...
+    "SNR_dB", double(snr_dB), ...
+    "SweepPointIndex", double(sweepIdx), ...
+    "SweepPointCount", double(sweepCount), ...
+    "CurrentUEIndex", double(ueIdx), ...
+    "TotalUsers", double(totalUsers), ...
+    "CompletedFrames", double(frameIdx), ...
+    "TotalFrames", double(totalFrames), ...
+    "RuntimeState", runtimeState, ...
+    "Notes", sprintf("Coupled truth streaming %s frame %d/%d for UE %d/%d at SNR point %d/%d (%.3f dB).", ...
+        char(signalDirection), round(double(frameIdx)), round(double(totalFrames)), round(double(ueIdx)), round(double(totalUsers)), ...
+        round(double(sweepIdx)), round(double(sweepCount)), double(snr_dB)))));
+dlCompletedFrames = double(sixgr.util.structGet(runtimeState, "DLCompletedFrames", NaN));
+ulCompletedFrames = double(sixgr.util.structGet(runtimeState, "ULCompletedFrames", NaN));
+localAppendRuntimeLog("INFO", ...
+    "%s coupled publish: sweep %d/%d snr=%.3f ue=%d/%d dlFrames=%s/%d ulFrames=%s/%d dlRows=%d ulRows=%d.", ...
+    char(signalDirection), round(double(sweepIdx)), round(double(sweepCount)), double(snr_dB), ...
+    round(double(ueIdx)), round(double(totalUsers)), ...
+    localDisplayProgressValue(dlCompletedFrames), round(double(totalFrames)), ...
+    localDisplayProgressValue(ulCompletedFrames), round(double(totalFrames)), ...
+    height(sixgr.util.structGet(rawTrials, "DL", table())), height(sixgr.util.structGet(rawTrials, "UL", table())));
+end
+
+function [T, summaryT, constT, csirsT] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, direction, nTrials, snrGrid, liveTablePath, liveConstellationPath, progressLabel)
 T = localEmptyLinkTrialTable(0);
+constT = table();
+csirsT = table();
 parts = {};
 snrGrid = unique(sort(double(snrGrid(:))));
+if nargin < 6
+    liveTablePath = "";
+end
+if nargin < 7
+    liveConstellationPath = "";
+end
+if nargin < 8
+    progressLabel = string(direction);
+end
 for i = 1:numel(snrGrid)
-    [Ti, Si] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, double(snrGrid(i)));
+    baseTrials = T;
+    baseConst = constT;
+    livePublisher = [];
+    if strlength(string(liveTablePath)) > 0 || strlength(string(liveConstellationPath)) > 0
+        livePublisher = @(partialTrials, partialConst, meta) localPublishLiveSweepSnapshot( ...
+            baseTrials, partialTrials, baseConst, partialConst, ...
+            liveTablePath, liveConstellationPath, cfg, ...
+            localMergeLiveMeta(meta, struct("Direction", string(direction), "SNR_dB", double(snrGrid(i)))));
+    end
+    [Ti, Si, Ci, Csi] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, double(snrGrid(i)), livePublisher);
     T = localAppendCompatTable(T, Ti);
+    constT = localAppendCompatTable(constT, Ci);
+    csirsT = localAppendCompatTable(csirsT, Csi);
+    localMaybeWritePartialTable(liveTablePath, T);
+    if strlength(string(liveConstellationPath)) > 0 && istable(constT) && ~isempty(constT)
+        if localIsMySQLWebMode(cfg)
+            sixgr.util.csvWriteTable(liveConstellationPath, localDownsampleConstellationTable(constT, 2500));
+        else
+            sixgr.util.csvWriteTable(liveConstellationPath, constT);
+        end
+    end
+    localMaybeAppendSweepProgressLog(progressLabel, double(snrGrid(i)), i, numel(snrGrid), height(T));
     if istable(Si) && ~isempty(Si)
         parts{end+1} = Si; %#ok<AGROW>
     end
@@ -473,12 +3626,191 @@ else
 end
 end
 
-function T = localCollectTrialsAcrossSweep(collectorFcn, snrGrid)
+function T = localCollectTrialsAcrossSweep(collectorFcn, snrGrid, liveTablePath, progressLabel)
 T = table();
 snrGrid = unique(sort(double(snrGrid(:))));
+if nargin < 3
+    liveTablePath = "";
+end
+if nargin < 4
+    progressLabel = "raw_trials";
+end
 for i = 1:numel(snrGrid)
     Ti = collectorFcn(double(snrGrid(i)));
     T = localAppendCompatTable(T, Ti);
+    localMaybeWritePartialTable(liveTablePath, T);
+    localMaybeAppendSweepProgressLog(progressLabel, double(snrGrid(i)), i, numel(snrGrid), height(T));
+end
+end
+
+function localMaybeWritePartialTable(pathOut, T)
+if strlength(string(pathOut)) == 0 || ~istable(T)
+    return;
+end
+sixgr.util.csvWriteTable(pathOut, T);
+end
+
+function interval = localResolveLiveFramePublishInterval(cfg, nTrials)
+interval = double(sixgr.util.structGet(cfg, "outputs.livePublishFrameInterval", NaN));
+if localIsMySQLWebMode(cfg)
+    interval = 1;
+end
+if ~(isfinite(interval) && interval >= 1)
+    interval = max(1, min(4, round(double(nTrials) / 4)));
+end
+interval = max(1, round(interval));
+end
+
+function artifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, rawTrials, multiUser, mobilityArtifacts, runtimeState)
+if nargin < 4 || ~isstruct(multiUser)
+    multiUser = struct();
+end
+if nargin < 5 || ~isstruct(mobilityArtifacts)
+    mobilityArtifacts = struct();
+end
+if nargin < 6 || ~isstruct(runtimeState)
+    runtimeState = struct();
+end
+artifacts = struct("Beam", struct(), "Energy", struct(), "LiveDerived", struct(), "HARQ", struct());
+artifacts.Beam = localExportBeamformingDiagnostics(cfg, runFolder, rawTrials, false);
+artifacts.Energy = sixgr.truth.exportLLSEnergyDiagnostics(cfg, runFolder, rawTrials);
+artifacts.LiveDerived = sixgr.truth.exportLLSLiveDerivedTables(cfg, fileparts(char(string(runFolder))), rawTrials, multiUser, mobilityArtifacts, runtimeState);
+artifacts.HARQ = sixgr.util.structGet(artifacts.LiveDerived, "HARQ", struct());
+end
+
+function localPublishLiveSweepSnapshot(baseTrials, partialTrials, baseConst, partialConst, liveTablePath, liveConstellationPath, cfg, meta)
+if nargin < 8 || ~isstruct(meta)
+    meta = struct();
+end
+mergedTrials = localAppendCompatTable(baseTrials, partialTrials);
+mergedConst = table();
+localMaybeWritePartialTable(liveTablePath, mergedTrials);
+
+if strlength(string(liveConstellationPath)) > 0
+    mergedConst = localAppendCompatTable(baseConst, partialConst);
+    if istable(mergedConst) && ~isempty(mergedConst)
+        if localIsMySQLWebMode(cfg)
+            sixgr.util.csvWriteTable(liveConstellationPath, localDownsampleConstellationTable(mergedConst, 2500));
+        else
+            sixgr.util.csvWriteTable(liveConstellationPath, mergedConst);
+        end
+    end
+end
+
+if localIsMySQLWebMode(cfg)
+    runFolder = localResolveRootRunFolderFromLivePath(liveTablePath);
+    if strlength(string(runFolder)) > 0
+        try
+            sixgr.truth.exportLLSLiveSignalChainTables(runFolder, mergedTrials, mergedConst, meta);
+        catch
+        end
+        try
+            rawTrials = sixgr.util.structGet(meta, "RawTrialsAggregate", struct());
+            if isempty(fieldnames(rawTrials))
+                direction = upper(string(sixgr.util.structGet(meta, "Direction", "")));
+                rawTrials = struct( ...
+                    "DL", table(), ...
+                    "UL", table(), ...
+                    "SRS", table(), ...
+                    "TRS", table(), ...
+                    "PDCCH", table(), ...
+                    "PBCH", table(), ...
+                    "PRACH", table(), ...
+                    "PUCCH", table(), ...
+                    "MultiUserDL", table(), ...
+                    "MultiUserUL", table());
+                switch direction
+                    case "UL"
+                        rawTrials.UL = mergedTrials;
+                    otherwise
+                        rawTrials.DL = mergedTrials;
+                end
+            end
+            multiUser = sixgr.util.structGet(meta, "MultiUserSpec", struct());
+            mobilityArtifacts = sixgr.util.structGet(meta, "MobilityArtifacts", struct());
+            liveDerived = sixgr.truth.exportLLSLiveDerivedTables(cfg, runFolder, rawTrials, multiUser, mobilityArtifacts);
+            localPublishWaveformBundleStageStatus(runFolder, localBuildLiveStageStatus( ...
+                rawTrials, struct("LiveDerived", liveDerived, "HARQ", sixgr.util.structGet(liveDerived, "HARQ", struct()), "Energy", struct()), meta));
+        catch
+        end
+    end
+end
+
+if sixgr.db.isArtifactStoreActive()
+    completedFrames = double(sixgr.util.structGet(meta, "CompletedFrames", NaN));
+    totalFrames = double(sixgr.util.structGet(meta, "TotalFrames", NaN));
+    snr_dB = double(sixgr.util.structGet(meta, "SNR_dB", NaN));
+    direction = string(sixgr.util.structGet(meta, "Direction", ""));
+    if isfinite(completedFrames) && isfinite(totalFrames)
+        message = sprintf("%s live frame publish: %d/%d frames complete at %.3f dB, rows=%d.", ...
+            char(direction), round(completedFrames), round(totalFrames), snr_dB, height(mergedTrials));
+    else
+        message = sprintf("%s live frame publish: partial update at %.3f dB, rows=%d.", ...
+            char(direction), snr_dB, height(mergedTrials));
+    end
+    sixgr.db.appendLogLine("INFO", string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'")), string(message));
+end
+end
+
+function localMaybeAppendSweepProgressLog(progressLabel, snr_dB, pointIndex, pointCount, rowCount)
+message = sprintf("%s raw trial sweep progress: point %d/%d at %.3f dB, rows=%d.", ...
+    char(string(progressLabel)), double(pointIndex), double(pointCount), double(snr_dB), double(rowCount));
+localAppendRuntimeLog("INFO", "%s", message);
+end
+
+function runFolder = localResolveRootRunFolderFromLivePath(pathIn)
+runFolder = "";
+if strlength(string(pathIn)) == 0
+    return;
+end
+try
+    csvDir = fileparts(char(string(pathIn)));
+    domainDir = fileparts(csvDir);
+    runFolder = string(fileparts(domainDir));
+catch
+    runFolder = "";
+end
+end
+
+function localAppendRuntimeLog(levelStr, messageText, varargin)
+if nargin >= 3
+    try
+        messageText = sprintf(messageText, varargin{:});
+    catch
+    end
+end
+timeStamp = string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+try
+    fprintf(1, "[%s] %s %s\n", char(timeStamp), upper(char(string(levelStr))), char(string(messageText)));
+catch
+end
+if ~sixgr.db.isArtifactStoreActive()
+    return;
+end
+try
+    sixgr.db.appendLogLine(string(levelStr), timeStamp, string(messageText));
+catch
+end
+end
+
+function meta = localMergeLiveMeta(meta, extra)
+if nargin < 1 || ~isstruct(meta)
+    meta = struct();
+end
+if nargin < 2 || ~isstruct(extra)
+    return;
+end
+names = fieldnames(extra);
+for i = 1:numel(names)
+    meta.(names{i}) = extra.(names{i});
+end
+end
+
+function T = localConcatTableParts(parts)
+if isempty(parts)
+    T = table();
+else
+    T = vertcat(parts{:});
 end
 end
 
@@ -532,8 +3864,21 @@ end
 function T = localEnsureLinkTrialTable(Tin, direction, snr_dB, cfg)
 vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Modulation','TargetCodeRate','TBSize_bits', ...
     'ChannelModel','DopplerHz','CRCPass','DecoderIterations','EVM_rms','NMSE_dB', ...
-    'DetectionMetric','MeasuredSINR_dB','WidebandCQI','RankIndicator','PMI','CRI','PMIType', ...
+    'DetectionMetric','MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
+    'LinkAdaptationMode','ConfiguredLinkAdaptationMode','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy','SchedulerGrantMCSSelectionMode', ...
+    'RequestedOperatingPointSource','CQITable','MCSTable', ...
+    'RankIndicator','PMI','CRI','PMIType', ...
     'PMICodebookMode','CSIReportMode','CSIPayloadBitLength','CSIPayloadHex', ...
+    'ConfiguredBeamSelectionStrategy','PrecoderSource','PrecodingMode','PrecodingApplicationStage', ...
+    'PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied','BeamformingApplied', ...
+    'AppliedBeamIndexSet','AppliedPrecoderPMI','AppliedPrecoderPMIType','AppliedPrecoderCodebookMode','RequestedVsAppliedPrecoderPMIMatchStatus', ...
+    'BeamSelectionStrategy','BeamSelectionAuthority','BeamSelectionPolicyType','BeamSelectionPolicyFixed','RequestedBeamIndexSet', ...
+    'RequestedPrecoderPMI','RequestedPrecoderSource','AppliedPrecoderSource', ...
+    'RequestedBeamTruthClassification','RequestedPrecoderPMITruthClassification', ...
+    'AppliedBeamApplicationSource','AppliedBeamTruthClassification', ...
+    'AppliedPrecoderPMIApplicationSource','AppliedPrecoderPMITruthClassification', ...
+    'MCSAuthority','ModulationAuthority','GrantOperatingPointSource','AppliedOperatingPointSource', ...
+    'PrecodingNumPorts','PrecodingNumLayers','PrecodingMatrixRows','PrecodingMatrixCols', ...
     'FalseAlarmFlag','BlockingFlag','BlindDecodeCount','AvailableCCECount','UsedCCECount', ...
     'NonOverlappedCCEUsage','AggregationLevel','DCISize_bits','ControlCapacityBits', ...
     'ControlCapacityUtilization','CORESETUtilization','ControlLatency_ms', ...
@@ -560,7 +3905,50 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Modula
     'InjectedDoppler_Hz','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy', ...
     'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB','AcquisitionTime_ms','TrackingFailureProbability', ...
     'Status','Crash', ...
-    'LinkAdaptationApplied','LinkAdaptationScheduled','IsWarmupFrame','Notes'};
+    'LinkAdaptationApplied','LinkAdaptationScheduled','IsWarmupFrame','Notes', ...
+    'SFN','UEID','BaseStationID','AllocatedPRBCount','PRBStart','MCSIndex','Rank', ...
+    'ConfiguredSNR_dB','ConfiguredSNRSource','SNRValueRole','AppliedAWGNSNR_dB', ...
+    'ReceiverHestSINR_dB','ReceiverHestSINRSource','DecoderTruthProxySINR_dB','DecoderTruthProxySINRSource','SINRValueRole','SINRSource', ...
+    'MeasuredTrialSINR_dB','MeasuredTrialSINRSource', ...
+    'LargeScaleSINR_dB','LargeScaleSINRSource', ...
+    'ServingRSRP_dBm','ServingRSRPSource', ...
+    'CSI_RSRP_dB','CSI_RSRPSource', ...
+    'AppliedLargeScaleGain_dB','AppliedLargeScaleLoss_dB','AppliedBasePathloss_dB','AppliedPathloss_dB', ...
+    'AppliedShadowFading_dB','AppliedO2I_dB','AppliedLargeScaleGainSource', ...
+    'TimingEstimateUsed','UseIdealTimingSync','InterferenceMode','InterferenceContributorCount','InterferenceAggregatedRxPower_dBm', ...
+    'InterferencePowerSource','FullInterfererChannelTruthUsed', ...
+    'CFOEstimateAvailability','CFOErrorDefinition','CFOValueStatus', ...
+    'TimingEstimateAvailability','TimingErrorDefinition','TimingValueStatus', ...
+    'LargeScaleSINRValueStatus','LargeScaleSINRFinalizedFlag','LargeScaleSINRNAReason', ...
+    'PrimaryTruthValueStatus','SecondaryFieldGapFlag','SecondaryFieldGapCount','SecondaryFieldGapReason', ...
+    'RowLifecycleState','PartialRowFlag','FinalizedFlag','FallbackFlag','PlaceholderFlag','NAReason', ...
+    'RunUUID','RunTag','ScenarioID','RunnerProfile','ConfigHash','SourceArtifact','SourceTable','ArtifactClass','SemanticState', ...
+    'CountsTowardCoverage','MachineReadable','HumanReadable', ...
+    'InterfererBeamformingAppliedCount','InterfererExplicitBeamWeightCount','InterfererTransformPrecodingCount', ...
+    'InterfererPrecoderSourceSet','InterfererPrecodingModeSet','InterfererBeamIndexSetSummary', ...
+    'DopplerSourceMode','DopplerValueRole', ...
+    'PBCHGatingActive','PRACHGatingActive','PDCCHGatingActive','SRSGatingActive', ...
+    'ControlEligible','ControlDecodeOk','GrantControlState', ...
+    'CellAcquisitionState','AccessState','SRSValidityState','CSIValidityState','SRSValid','SRSAgeSlots', ...
+    'TRSGatingActive','TRSValidityState','TrackingEligibility','TRSAgeSlots','LastSuccessfulTRSSlot','LastEstimatedTRSDopplerHz', ...
+    'TRSStateSource','TRSRuntimeConsumer','TRSInfluencedDecision','TRSInfluenceDefinition','TRSReceiverIntegrationStatus','TRSReceiverIntegrationBlocker', ...
+    'GrantContextId','GrantWorkerSafe','GrantSharedStateCommitMode', ...
+    'BSAntennaArrayClass','BSAntennaElementClass','BSAntennaArrayType', ...
+    'BSAntennaRows','BSAntennaCols','BSAntennaElements','BSAntennaSpacingH_lambda','BSAntennaSpacingV_lambda', ...
+    'BSAntennaPolarization','BSAntennaAzimuth_deg','BSAntennaNumPorts','BSAntennaHasPhasedArrayObject', ...
+    'UEAntennaArrayClass','UEAntennaElementClass','UEAntennaArrayType', ...
+    'UEAntennaRows','UEAntennaCols','UEAntennaElements','UEAntennaSpacingH_lambda','UEAntennaSpacingV_lambda', ...
+    'UEAntennaPolarization','UEAntennaHeading_deg','UEAntennaNumPorts','UEAntennaHasPhasedArrayObject', ...
+    'AntennaConfigSource','RuntimeAntennaObjectSource','AntennaRuntimeObjectCreated', ...
+    'ChannelArrayModel','ChannelObjectSource','ChannelObjectClass','ChannelArrayHandlingStatus','ChannelArrayHandlingBlocker', ...
+    'ChannelGeometryCouplingLevel','GeometryAdapterType','GeometryAdapterSource','GeometryAdapterLimitation','GeometryAdapterPortMapping', ...
+    'ChannelUsesCountOnlyAntennaModel','ChannelUsesSameRuntimeAntennaAssumptions', ...
+    'InterferenceChannelObjectSource','InterferenceChannelObjectClass','InterferenceChannelArrayHandlingStatus','InterferenceChannelArrayHandlingBlocker', ...
+    'InterferenceUsesSameRuntimeAntennaAssumptions','InterferencePathUsesSameArrayAssumptions', ...
+    'PropagationDistance_m','GeometricPropagationDelay_s','DominantPathDelay_s','ChannelFilterDelay_s','PropagationDelay_s', ...
+    'ToD_s','ToA_s','ToAEstimate_s', ...
+    'ToDSource','ToASource','ToAEstimateSource','ChannelDelaySource','AntennaGeometrySource', ...
+    'RuntimeTraceSource','AntennaEvidenceSource','SameFlowEvidenceSource'};
 if nargin < 1 || ~istable(Tin)
     Tin = table();
 end
@@ -572,16 +3960,52 @@ T = Tin;
 for i = 1:numel(vars)
     v = vars{i};
     if ~ismember(v, T.Properties.VariableNames)
-        switch v
-            case {'Direction','ChannelModel','Status','Notes','PMIType','PMICodebookMode','CSIReportMode','Modulation','CSIPayloadHex'}
-                T.(v) = strings(height(T),1);
-            case 'Crash'
-                T.(v) = false(height(T),1);
-            case {'LinkAdaptationApplied','LinkAdaptationScheduled','IsWarmupFrame'}
-                T.(v) = false(height(T),1);
-            otherwise
-                T.(v) = NaN(height(T),1);
-        end
+                switch v
+                    case {'Direction','ChannelModel','Status','Notes','PMIType','PMICodebookMode','CSIReportMode','Modulation', ...
+                            'CQIDerivedModulation','LinkAdaptationMode','ConfiguredLinkAdaptationMode','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy', ...
+                            'SchedulerGrantMCSSelectionMode','RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
+                            'ConfiguredSNRSource','SNRValueRole','ReceiverHestSINRSource','DecoderTruthProxySINRSource','SINRValueRole','SINRSource', ...
+                            'MeasuredTrialSINRSource','LargeScaleSINRSource','ServingRSRPSource','CSI_RSRPSource', ...
+                            'AppliedLargeScaleGainSource','InterferenceMode','InterferencePowerSource','DopplerSourceMode','DopplerValueRole','GrantControlState', ...
+                            'CellAcquisitionState','AccessState','SRSValidityState','CSIValidityState','TRSValidityState', ...
+                            'ConfiguredBeamSelectionStrategy','PrecoderSource','PrecodingMode','PrecodingApplicationStage', ...
+                            'AppliedBeamIndexSet','AppliedPrecoderPMIType','AppliedPrecoderCodebookMode','RequestedVsAppliedPrecoderPMIMatchStatus', ...
+                            'BeamSelectionStrategy','BeamSelectionAuthority','BeamSelectionPolicyType', ...
+                            'RequestedBeamIndexSet','RequestedPrecoderSource','AppliedPrecoderSource', ...
+                            'RequestedBeamTruthClassification','RequestedPrecoderPMITruthClassification', ...
+                            'AppliedBeamApplicationSource','AppliedBeamTruthClassification', ...
+                            'AppliedPrecoderPMIApplicationSource','AppliedPrecoderPMITruthClassification', ...
+                            'MCSAuthority','ModulationAuthority','GrantOperatingPointSource','AppliedOperatingPointSource', ...
+                            'CFOEstimateAvailability','CFOErrorDefinition','CFOValueStatus', ...
+                            'TimingEstimateAvailability','TimingErrorDefinition','TimingValueStatus', ...
+                            'LargeScaleSINRValueStatus','LargeScaleSINRNAReason','PrimaryTruthValueStatus','SecondaryFieldGapReason','RowLifecycleState','NAReason', ...
+                            'RunUUID','RunTag','ScenarioID','RunnerProfile','ConfigHash','SourceArtifact','SourceTable','ArtifactClass','SemanticState', ...
+                            'InterfererPrecoderSourceSet','InterfererPrecodingModeSet','InterfererBeamIndexSetSummary', ...
+                            'TRSStateSource','TRSRuntimeConsumer','TRSInfluenceDefinition','TRSReceiverIntegrationStatus','TRSReceiverIntegrationBlocker', ...
+                            'GrantContextId','GrantSharedStateCommitMode', ...
+                            'BSAntennaArrayClass','BSAntennaElementClass','BSAntennaArrayType','BSAntennaPolarization', ...
+                            'UEAntennaArrayClass','UEAntennaElementClass','UEAntennaArrayType','UEAntennaPolarization', ...
+                            'AntennaConfigSource','RuntimeAntennaObjectSource','ChannelArrayModel','ChannelObjectSource','ChannelObjectClass', ...
+                            'ChannelArrayHandlingStatus','ChannelArrayHandlingBlocker','ChannelGeometryCouplingLevel','GeometryAdapterType','GeometryAdapterSource','GeometryAdapterLimitation','GeometryAdapterPortMapping', ...
+                            'InterferenceChannelObjectSource','InterferenceChannelObjectClass','InterferenceChannelArrayHandlingStatus','InterferenceChannelArrayHandlingBlocker', ...
+                            'ToDSource','ToASource','ToAEstimateSource','ChannelDelaySource','AntennaGeometrySource', ...
+                            'RuntimeTraceSource','AntennaEvidenceSource','SameFlowEvidenceSource'}
+                        T.(v) = strings(height(T),1);
+                    case 'Crash'
+                        T.(v) = false(height(T),1);
+                    case {'LinkAdaptationApplied','LinkAdaptationScheduled','IsWarmupFrame','TimingEstimateUsed','UseIdealTimingSync', ...
+                            'PBCHGatingActive','PRACHGatingActive','PDCCHGatingActive','SRSGatingActive','TRSGatingActive','ControlEligible','ControlDecodeOk','SRSValid', ...
+                            'TrackingEligibility','TRSInfluencedDecision', ...
+                            'FullInterfererChannelTruthUsed','PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied','BeamformingApplied', ...
+                            'BeamSelectionPolicyFixed','LargeScaleSINRFinalizedFlag','SecondaryFieldGapFlag','PartialRowFlag','FinalizedFlag','FallbackFlag','PlaceholderFlag', ...
+                            'CountsTowardCoverage','MachineReadable','HumanReadable', ...
+                            'GrantWorkerSafe','BSAntennaHasPhasedArrayObject','UEAntennaHasPhasedArrayObject', ...
+                            'AntennaRuntimeObjectCreated','ChannelUsesCountOnlyAntennaModel','ChannelUsesSameRuntimeAntennaAssumptions', ...
+                            'InterferenceUsesSameRuntimeAntennaAssumptions','InterferencePathUsesSameArrayAssumptions'}
+                        T.(v) = false(height(T),1);
+                    otherwise
+                        T.(v) = NaN(height(T),1);
+                end
     end
 end
 T = T(:, vars);
@@ -591,9 +4015,35 @@ end
 if all(~isfinite(double(T.SNR_dB)))
     T.SNR_dB(:) = double(snr_dB);
 end
+if all(strlength(string(T.ConfiguredSNRSource)) == 0)
+    T.ConfiguredSNRSource(:) = "configured_runtime_operating_point_reference";
+end
+if all(strlength(string(T.SNRValueRole)) == 0)
+    T.SNRValueRole(:) = "configured_reference_metadata";
+end
 reqModel = localResolveRequestedLinkChannelModel(cfg);
 if all(strlength(string(T.ChannelModel)) == 0)
     T.ChannelModel(:) = reqModel;
+end
+if all(strlength(string(T.DopplerSourceMode)) == 0)
+    T.DopplerSourceMode(:) = localResolveDopplerSourceMode(cfg);
+end
+if all(strlength(string(T.DopplerValueRole)) == 0)
+    T.DopplerValueRole(:) = "scenario_resolved_metadata";
+end
+if all(strlength(string(T.LinkAdaptationMode)) == 0)
+    [~, policy, ~] = localResolveLinkAdaptationTokens(cfg, direction);
+    T.LinkAdaptationMode(:) = string(policy);
+end
+if all(strlength(string(T.CQITable)) == 0)
+    T.CQITable(:) = localResolveCQITable(cfg, direction);
+end
+if all(strlength(string(T.MCSTable)) == 0)
+    if strcmpi(string(direction), "UL")
+        T.MCSTable(:) = localResolveMCSTable(cfg, "UL");
+    else
+        T.MCSTable(:) = localResolveMCSTable(cfg, "DL");
+    end
 end
 uCm = upper(strtrim(string(T.ChannelModel)));
 maskTDL = (uCm == "TDL") & startsWith(reqModel, "TDL");
@@ -636,9 +4086,6 @@ end
 if all(~isfinite(double(T.EstimatedCFO_PreCorrection_Hz))) && any(isfinite(double(T.EstimatedCFO_Hz)))
     T.EstimatedCFO_PreCorrection_Hz = double(T.EstimatedCFO_Hz);
 end
-if all(~isfinite(double(T.ResidualCFO_PostCorrection_Hz))) && any(isfinite(double(T.CFOError_Hz)))
-    T.ResidualCFO_PostCorrection_Hz = double(T.CFOError_Hz);
-end
 if all(~isfinite(double(T.InjectedTimingOffset_samples))) && any(isfinite(double(T.TrueTimingOffset_samples)))
     T.InjectedTimingOffset_samples = double(T.TrueTimingOffset_samples);
 end
@@ -654,6 +4101,342 @@ if ismember("LinkAdaptationScheduled", string(T.Properties.VariableNames)) && ..
     warmMask = logical(T.LinkAdaptationScheduled) & ~logical(T.LinkAdaptationApplied);
 end
 T.IsWarmupFrame = logical(warmMask);
+if all(~isfinite(double(T.SFN)))
+    T.SFN = mod(max(0, round(double(T.Frame)) - 1), 1024);
+end
+if all(~isfinite(double(T.ConfiguredSNR_dB)))
+    T.ConfiguredSNR_dB = double(T.SNR_dB);
+end
+T = localPopulateSINRTruthColumns(T);
+if all(~isfinite(double(T.MCSIndex))) && any(isfinite(double(T.MCS)))
+    T.MCSIndex = double(T.MCS);
+end
+if all(~isfinite(double(T.AllocatedPRBCount))) && any(isfinite(double(T.PRBs)))
+    T.AllocatedPRBCount = double(T.PRBs);
+end
+if all(~isfinite(double(T.Rank))) && any(isfinite(double(T.RankIndicator)))
+    T.Rank = double(T.RankIndicator);
+end
+if all(~isfinite(double(T.BaseStationID))) && ismember("ServingCell", string(T.Properties.VariableNames)) && any(isfinite(double(T.ServingCell)))
+    T.BaseStationID = double(T.ServingCell);
+end
+if all(~isfinite(double(T.UEID))) && ismember("UEIndex", string(T.Properties.VariableNames)) && any(isfinite(double(T.UEIndex)))
+    T.UEID = double(T.UEIndex);
+end
+T = localApplyTrialTruthAnnotations(T, direction, cfg);
+end
+
+function T = localPopulateSINRTruthColumns(T)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+vars = string(T.Properties.VariableNames);
+if ~ismember("ReceiverHestSINR_dB", vars)
+    T.ReceiverHestSINR_dB = nan(n, 1);
+end
+if ~ismember("ReceiverHestSINRSource", vars)
+    T.ReceiverHestSINRSource = strings(n, 1);
+end
+if ~ismember("DecoderTruthProxySINR_dB", vars)
+    T.DecoderTruthProxySINR_dB = nan(n, 1);
+end
+if ~ismember("DecoderTruthProxySINRSource", vars)
+    T.DecoderTruthProxySINRSource = strings(n, 1);
+end
+if ~ismember("SINRValueRole", vars)
+    T.SINRValueRole = strings(n, 1);
+end
+if ~ismember("SINRSource", vars)
+    T.SINRSource = strings(n, 1);
+end
+if ~ismember("MeasuredTrialSINR_dB", vars)
+    T.MeasuredTrialSINR_dB = nan(n, 1);
+end
+if ~ismember("MeasuredTrialSINRSource", vars)
+    T.MeasuredTrialSINRSource = strings(n, 1);
+end
+if ~ismember("MeasuredSINR_dB", vars)
+    T.MeasuredSINR_dB = nan(n, 1);
+end
+
+receiverHest = double(T.ReceiverHestSINR_dB);
+if all(~isfinite(receiverHest))
+    if ismember("MeasuredTrialSINR_dB", vars) && any(isfinite(double(T.MeasuredTrialSINR_dB)))
+        receiverHest = double(T.MeasuredTrialSINR_dB);
+    elseif ismember("MeasuredSINR_dB", vars) && any(isfinite(double(T.MeasuredSINR_dB)))
+        receiverHest = double(T.MeasuredSINR_dB);
+    end
+    T.ReceiverHestSINR_dB = receiverHest;
+end
+
+if all(~isfinite(double(T.MeasuredTrialSINR_dB))) && any(isfinite(receiverHest))
+    T.MeasuredTrialSINR_dB = receiverHest;
+end
+if all(~isfinite(double(T.MeasuredSINR_dB))) && any(isfinite(receiverHest))
+    T.MeasuredSINR_dB = receiverHest;
+end
+
+receiverSource = strtrim(string(T.ReceiverHestSINRSource));
+if all(strlength(receiverSource) == 0)
+    legacySource = strtrim(string(T.MeasuredTrialSINRSource));
+    if any(strlength(legacySource) > 0)
+        receiverSource = legacySource;
+    elseif any(isfinite(receiverHest))
+        receiverSource(:) = "receiver_hest_csi_feedback_wideband_effective_sinr";
+    end
+    T.ReceiverHestSINRSource = receiverSource;
+end
+if all(strlength(strtrim(string(T.MeasuredTrialSINRSource))) == 0) && any(strlength(receiverSource) > 0)
+    T.MeasuredTrialSINRSource = receiverSource;
+end
+if all(strlength(strtrim(string(T.SINRValueRole))) == 0) && any(isfinite(receiverHest))
+    T.SINRValueRole(:) = "estimated";
+end
+if all(strlength(strtrim(string(T.SINRSource))) == 0) && any(strlength(receiverSource) > 0)
+    T.SINRSource = receiverSource;
+end
+
+decoderProxy = double(T.DecoderTruthProxySINR_dB);
+if all(~isfinite(decoderProxy)) && ismember("EVM_rms", vars)
+    evm = double(T.EVM_rms);
+    for i = 1:n
+        [decoderProxy(i), meta] = sixgr.link.deriveDecoderTruthProxySINR(struct("EVM_rms", evm(i)));
+        if strlength(strtrim(string(T.DecoderTruthProxySINRSource(i)))) == 0
+            T.DecoderTruthProxySINRSource(i) = string(sixgr.util.structGet(meta, "Source", ""));
+        end
+    end
+    T.DecoderTruthProxySINR_dB = decoderProxy;
+elseif all(strlength(strtrim(string(T.DecoderTruthProxySINRSource))) == 0) && any(isfinite(decoderProxy))
+    T.DecoderTruthProxySINRSource(:) = "post_equalization_evm_proxy";
+end
+end
+
+function T = localApplyTrialTruthAnnotations(T, direction, cfg)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+strategy = strtrim(string(T.ConfiguredBeamSelectionStrategy));
+if ismember("BeamSelectionStrategy", string(T.Properties.VariableNames)) && all(strlength(strtrim(string(T.BeamSelectionStrategy))) == 0)
+    T.BeamSelectionStrategy = strategy;
+end
+T.BeamSelectionAuthority = repmat("configured_beam_policy_reference", n, 1);
+fixedPolicyMask = startsWith(lower(strategy), "fixed");
+dynamicPolicyMask = strlength(strategy) > 0 & ~fixedPolicyMask;
+T.BeamSelectionPolicyType = repmat("", n, 1);
+T.BeamSelectionPolicyType(fixedPolicyMask) = "fixed_policy";
+T.BeamSelectionPolicyType(dynamicPolicyMask) = "dynamic_policy";
+T.BeamSelectionPolicyFixed = fixedPolicyMask;
+if ismember("BeamIndexSet", string(T.Properties.VariableNames))
+    requestedBeam = strtrim(string(T.BeamIndexSet));
+else
+    requestedBeam = strings(n, 1);
+end
+configuredBeamSet = strtrim(string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamIndexSet", "")));
+if strlength(configuredBeamSet) > 0
+    requestedBeam(strlength(requestedBeam) == 0) = configuredBeamSet;
+end
+selectedFinite = isfinite(double(T.SelectedBeamIndex));
+selectedMask = strlength(requestedBeam) == 0 & selectedFinite;
+requestedBeam(selectedMask) = string(round(double(T.SelectedBeamIndex(selectedMask))));
+T.RequestedBeamIndexSet = requestedBeam;
+requestedPMI = nan(n, 1);
+if ismember("PMI", string(T.Properties.VariableNames))
+    requestedPMI = double(T.PMI);
+end
+cfgPmiMask = ~isfinite(requestedPMI) & isfinite(double(T.ConfiguredPMI));
+ulCfgPmiMask = upper(string(direction)) == "UL" & isfinite(double(T.ConfiguredPMI));
+requestedPMI(cfgPmiMask) = double(T.ConfiguredPMI(cfgPmiMask));
+requestedPMI(ulCfgPmiMask) = double(T.ConfiguredPMI(ulCfgPmiMask));
+T.RequestedPrecoderPMI = requestedPMI;
+T.RequestedPrecoderSource = repmat("", n, 1);
+T.RequestedPrecoderSource(isfinite(double(T.PMI))) = "scheduler_grant_or_csi_feedback_request";
+T.RequestedPrecoderSource(cfgPmiMask) = "configured_pmi_reference";
+T.RequestedPrecoderSource(ulCfgPmiMask) = "configured_pusch_tpmi_runtime_request";
+precoderSource = localNormalizeULAppliedPrecoderSourceBundle( ...
+    localColumnOrDefault(T, "PrecoderSource", ""), ...
+    localColumnOrDefault(T, "PrecodingMode", ""), ...
+    localColumnOrDefault(T, "TransformPrecodingApplied", false));
+T.PrecoderSource = precoderSource;
+T.AppliedPrecoderSource = precoderSource;
+T = localDecorateBeamAndPrecoderTruthFieldsBundle(T, direction);
+configuredLinkMode = repmat("", n, 1);
+configuredSelectionMode = repmat("", n, 1);
+[configuredMode, policy, configuredActualMode] = localResolveLinkAdaptationTokens(cfg, direction);
+configuredLinkMode(:) = string(configuredMode);
+configuredSelectionMode(:) = string(configuredActualMode);
+T.ConfiguredLinkAdaptationMode = configuredLinkMode;
+T.ConfiguredMCSSelectionPolicy = configuredSelectionMode;
+T.RequestedOperatingPointSource = localResolveOperatingPointSourceColumn(configuredSelectionMode, configuredLinkMode);
+T.SchedulerGrantMCSSelectionMode = string(T.SchedulerGrantMCSSelectionMode);
+operatingPointSource = localResolveOperatingPointSourceColumn(T.ActualMCSSelectionMode, T.LinkAdaptationMode);
+T.GrantOperatingPointSource = operatingPointSource;
+T.AppliedOperatingPointSource = operatingPointSource;
+T.MCSAuthority = operatingPointSource;
+T.ModulationAuthority = operatingPointSource;
+T = sixgr.util.applyLLSRawTrialLifecycle(T);
+
+storeState = localResolveArtifactStoreState();
+T.RunUUID = repmat(string(sixgr.util.structGet(storeState, "RunUUID", "")), n, 1);
+T.RunTag = repmat(string(sixgr.util.structGet(cfg, "run.runTag", "")), n, 1);
+scenarioId = string(sixgr.util.structGet(cfg, "run.scenarioID", sixgr.util.structGet(cfg, "meta.lls6gScenarioID", sixgr.util.structGet(cfg, "meta.loadedFrom", ""))));
+T.ScenarioID = repmat(scenarioId, n, 1);
+T.RunnerProfile = repmat(string(sixgr.util.structGet(cfg, "run.runnerProfile", "waveform_bundle")), n, 1);
+T.ConfigHash = repmat(string(sixgr.util.structGet(cfg, "meta.configHash", "")), n, 1);
+sourceArtifact = repmat(localResolveDirectionalTrialArtifact(T, direction), n, 1);
+T.SourceArtifact = sourceArtifact;
+T.SourceTable = sourceArtifact;
+T.ArtifactClass = repmat("raw_runtime_trial_evidence", n, 1);
+T.SemanticState = string(T.RowLifecycleState);
+T.CountsTowardCoverage = ~logical(T.Crash) & ~logical(T.IsWarmupFrame);
+T.MachineReadable = true(n, 1);
+T.HumanReadable = true(n, 1);
+end
+
+function T = localDecorateBeamAndPrecoderTruthFieldsBundle(T, direction)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+requestedBeam = strtrim(string(localColumnOrDefault(T, "RequestedBeamIndexSet", "")));
+requestedPMI = double(localColumnOrDefault(T, "RequestedPrecoderPMI", NaN));
+appliedBeam = strtrim(string(localColumnOrDefault(T, "AppliedBeamIndexSet", "")));
+appliedPMI = double(localColumnOrDefault(T, "AppliedPrecoderPMI", NaN));
+appliedSource = strtrim(string(localColumnOrDefault(T, "AppliedPrecoderSource", localColumnOrDefault(T, "PrecoderSource", ""))));
+precodingMode = lower(strtrim(string(localColumnOrDefault(T, "PrecodingMode", ""))));
+transformApplied = logical(localColumnOrDefault(T, "TransformPrecodingApplied", false)) | precodingMode == "transform_precoding";
+explicitBeamWeights = logical(localColumnOrDefault(T, "ExplicitBeamWeightsApplied", false));
+beamformingApplied = logical(localColumnOrDefault(T, "BeamformingApplied", false));
+
+T.RequestedBeamTruthClassification = repmat("", n, 1);
+T.RequestedPrecoderPMITruthClassification = repmat("", n, 1);
+T.AppliedBeamApplicationSource = appliedSource;
+T.AppliedBeamTruthClassification = repmat("", n, 1);
+T.AppliedPrecoderPMIApplicationSource = appliedSource;
+T.AppliedPrecoderPMITruthClassification = repmat("", n, 1);
+
+requestedBeamMask = strlength(requestedBeam) > 0;
+requestedPMIMask = isfinite(requestedPMI);
+appliedBeamMask = strlength(appliedBeam) > 0;
+appliedPMIMask = isfinite(appliedPMI);
+
+T.RequestedBeamTruthClassification(requestedBeamMask) = "requested_reference";
+T.RequestedPrecoderPMITruthClassification(requestedPMIMask) = "requested_reference";
+T.AppliedBeamTruthClassification(appliedBeamMask) = "applied_runtime_value";
+T.AppliedPrecoderPMITruthClassification(appliedPMIMask) = "applied_runtime_value";
+matchStatus = strings(n, 1);
+for ii = 1:n
+    matchStatus(ii) = localRequestedVsAppliedPMIStatusBundle(requestedPMI(ii), appliedPMI(ii));
+end
+T.RequestedVsAppliedPrecoderPMIMatchStatus = matchStatus;
+
+if upper(string(direction)) ~= "UL"
+    return;
+end
+
+codebookMask = precodingMode == "ul_codebook_tpmi" | lower(appliedSource) == "ul_pusch_native_codebook_tpmi";
+directMask = ~transformApplied & ~codebookMask;
+missingAppliedBeamMask = ~appliedBeamMask & ~explicitBeamWeights;
+missingAppliedPMIMask = ~appliedPMIMask & ~explicitBeamWeights;
+nativeCodebookAppliedBeamMask = appliedBeamMask & codebookMask;
+
+beamAppSource = T.AppliedBeamApplicationSource;
+pmiAppSource = T.AppliedPrecoderPMIApplicationSource;
+beamAppSource(nativeCodebookAppliedBeamMask) = "ul_pusch_native_codebook_tpmi_port_support";
+beamAppSource(missingAppliedBeamMask & directMask) = "ul_direct_mapping_no_materialized_beam_index_set";
+beamAppSource(missingAppliedBeamMask & transformApplied) = "ul_transform_precoding_no_materialized_beam_index_set";
+beamAppSource(missingAppliedBeamMask & codebookMask) = "ul_pusch_native_codebook_no_materialized_beam_index_set";
+pmiAppSource(missingAppliedPMIMask & directMask) = "ul_direct_mapping_no_materialized_applied_pmi";
+pmiAppSource(missingAppliedPMIMask & transformApplied) = "ul_transform_precoding_no_materialized_applied_pmi";
+pmiAppSource(missingAppliedPMIMask & codebookMask) = "ul_pusch_native_codebook_no_runtime_tpmi";
+T.AppliedBeamApplicationSource = beamAppSource;
+T.AppliedPrecoderPMIApplicationSource = pmiAppSource;
+T.AppliedBeamTruthClassification(missingAppliedBeamMask) = "not_materialized_in_active_ul_path";
+T.AppliedPrecoderPMITruthClassification(missingAppliedPMIMask) = "not_materialized_in_active_ul_path";
+T.BeamformingApplied(missingAppliedBeamMask & ~beamformingApplied) = false;
+end
+
+function status = localRequestedVsAppliedPMIStatusBundle(requestedPMI, appliedPMI)
+requestedFinite = isfinite(double(requestedPMI));
+appliedFinite = isfinite(double(appliedPMI));
+if requestedFinite && appliedFinite
+    if round(double(requestedPMI)) == round(double(appliedPMI))
+        status = "requested_matches_runtime_applied";
+    else
+        status = "requested_differs_from_runtime_applied";
+    end
+elseif requestedFinite && ~appliedFinite
+    status = "requested_present_applied_unavailable";
+elseif ~requestedFinite && appliedFinite
+    status = "runtime_applied_without_request_reference";
+else
+    status = "no_requested_or_applied_pmi";
+end
+end
+
+function values = localColumnOrDefault(T, name, defaultValue)
+n = height(T);
+if ismember(name, string(T.Properties.VariableNames))
+    values = T.(name);
+    return;
+end
+if isstring(defaultValue) && numel(defaultValue) == n && ~isscalar(defaultValue)
+    values = reshape(string(defaultValue), n, 1);
+elseif islogical(defaultValue) && numel(defaultValue) == n && ~isscalar(defaultValue)
+    values = reshape(logical(defaultValue), n, 1);
+elseif isnumeric(defaultValue) && numel(defaultValue) == n && ~isscalar(defaultValue)
+    values = reshape(double(defaultValue), n, 1);
+else
+    values = repmat(defaultValue, n, 1);
+end
+end
+
+function source = localNormalizeULAppliedPrecoderSourceBundle(source, mode, transformApplied)
+source = strtrim(string(source));
+mode = lower(strtrim(string(mode)));
+transformApplied = logical(transformApplied);
+directMask = mode == "direct_mapping_no_explicit_beam_weights" | (~transformApplied & strlength(mode) == 0);
+transformMask = mode == "transform_precoding" | transformApplied;
+repairMask = strlength(source) == 0 | lower(source) == "codebook_dft";
+source(repairMask & directMask) = "ul_direct_mapping_no_explicit_beam_weights";
+source(repairMask & transformMask) = "ul_pusch_transform_precoding";
+end
+
+function token = localResolveDirectionalTrialArtifact(T, direction)
+direction = upper(strtrim(string(direction)));
+vars = strings(0, 1);
+if istable(T)
+    vars = string(T.Properties.VariableNames);
+end
+if ismember("PUCCHResourceId", vars) || (ismember("RequestedFormat", vars) && any(isfinite(double(T.RequestedFormat))))
+    token = "air_interface/csv/pucch_trials.csv";
+elseif ismember("DCISize_bits", vars) && any(isfinite(double(T.DCISize_bits)))
+    token = "air_interface/csv/pdcch_trials.csv";
+elseif ismember("TrackingEstimateSource", vars) && any(strlength(strtrim(string(T.TrackingEstimateSource))) > 0)
+    if direction == "UL"
+        token = "air_interface/csv/srs_trials.csv";
+    else
+        token = "air_interface/csv/trs_trials.csv";
+    end
+elseif ismember("AcquisitionTime_ms", vars) && direction == "DL" && all(~isfinite(double(T.TBSize_bits)))
+    token = "air_interface/csv/pbch_trials.csv";
+elseif ismember("DetectionMetric", vars) && direction == "UL" && all(~isfinite(double(T.TBSize_bits)))
+    token = "air_interface/csv/prach_trials.csv";
+elseif direction == "UL"
+    token = "air_interface/csv/ul_pusch_trials.csv";
+else
+    token = "air_interface/csv/dl_pdsch_trials.csv";
+end
+end
+
+function state = localResolveArtifactStoreState()
+state = struct();
+try
+    state = sixgr.db.artifactStore("get_state");
+catch
+    state = struct();
+end
 end
 
 function model = localResolveRequestedLinkChannelModel(cfg)
@@ -755,14 +4538,27 @@ end
 T = struct2table(rows);
 end
 
-function T = localCollectPDCCHTrials(cfg, snr_dB, nTrials)
+function T = localCollectPDCCHTrials(cfg, snr_dB, nTrials, grantContext)
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
+if nargin < 4 || ~isstruct(grantContext)
+    grantContext = struct();
+end
+dciBitsSeed = int8([]);
+if isstruct(sixgr.util.structGet(grantContext, "DCI", struct()))
+    dciBitsSeed = int8(sixgr.util.structGet(sixgr.util.structGet(grantContext, "DCI", struct()), "Bits", int8([])));
+end
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "DL", snr_dB, k);
     r.Status = "FAIL";
     try
-        [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfg, "K", 64);
+        txArgs = {};
+        if ~isempty(dciBitsSeed)
+            txArgs = [txArgs {"DCIBits", dciBitsSeed}]; %#ok<AGROW>
+        else
+            txArgs = [txArgs {"K", 64}]; %#ok<AGROW>
+        end
+        [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfg, txArgs{:});
         [rxWave, nVar] = localAddAwgn(tx.Waveform, snr_dB);
         tDecode = tic;
         [rx, rxInfo] = sixgr.phy.dl.PDCCH_Rx(rxWave, cfg, ...
@@ -805,6 +4601,9 @@ for k = 1:nTrials
         if ok
             r.Status = "PASS";
         end
+        if ~isempty(dciBitsSeed)
+            r.Notes = "Grant-coupled PDCCH gating using scheduler-built DCI bitfield payload.";
+        end
     catch ME
         r.Crash = true;
         r.CRCPass = 0;
@@ -814,6 +4613,81 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function T = localAnnotateGrantControlTrial(T, grant)
+if ~(istable(T) && ~isempty(T) && isstruct(grant))
+    return;
+end
+heightT = height(T);
+annotations = {
+    "PDCCHGatingActive", logical(sixgr.util.structGet(grant, "PDCCHGatingActive", false));
+    "GrantControlState", string(sixgr.util.structGet(grant, "GrantControlState", "control_pending"));
+    "ControlDecodeOk", logical(sixgr.util.structGet(grant, "ControlDecodeOk", false));
+    "UEID", double(sixgr.util.structGet(grant, "UEIndex", NaN));
+    "BaseStationID", double(sixgr.util.structGet(grant, "ServingCell", NaN));
+    "LastSuccessfulSRSSlot", double(sixgr.util.structGet(grant, "LastSuccessfulSRSSlot", NaN));
+    "SRSAgeSlots", double(sixgr.util.structGet(grant, "SRSAgeSlots", NaN));
+    "AllocatedPRBCount", double(numel(double(sixgr.util.structGet(grant, "PRBSet", []))));
+    "PRBStart", double(localFirstFinite(double(sixgr.util.structGet(grant, "PRBSet", [])), NaN));
+    "MCSIndex", double(sixgr.util.structGet(grant, "MCSIndex", NaN));
+    "Layers", double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
+    "Rank", double(sixgr.util.structGet(grant, "RIUsed", NaN))
+    };
+for i = 1:size(annotations, 1)
+    name = char(annotations{i, 1});
+    value = annotations{i, 2};
+    if isstring(value) || ischar(value)
+        token = string(value);
+        if ~isscalar(token)
+            token = token(1);
+        end
+        T.(name) = repmat(token, heightT, 1);
+    elseif islogical(value)
+        flag = logical(value);
+        if ~isscalar(flag)
+            flag = flag(1);
+        end
+        T.(name) = repmat(flag, heightT, 1);
+    else
+        numValue = double(value);
+        if ~isscalar(numValue)
+            numValue = localFirstFinite(numValue, NaN);
+        end
+        T.(name) = repmat(numValue, heightT, 1);
+    end
+end
+end
+
+function value = localFirstFinite(vals, defaultValue)
+vals = double(vals(:));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    value = double(defaultValue);
+else
+    value = double(vals(1));
+end
+end
+
+function [lhs, rhs] = localHarmonizeStructArrays(lhs, rhs)
+if ~isstruct(lhs)
+    lhs = struct();
+end
+if ~isstruct(rhs)
+    rhs = struct();
+end
+lhsFields = string(fieldnames(lhs));
+rhsFields = string(fieldnames(rhs));
+allFields = union(lhsFields, rhsFields, "stable");
+for i = 1:numel(allFields)
+    fieldName = char(allFields(i));
+    if ~isfield(lhs, fieldName)
+        [lhs(1:numel(lhs)).(fieldName)] = deal([]);
+    end
+    if ~isfield(rhs, fieldName)
+        [rhs(1:numel(rhs)).(fieldName)] = deal([]);
+    end
+end
 end
 
 function availCCEs = localPDCCHAvailableCCEs(pdcch)
@@ -955,6 +4829,9 @@ for k = 1:nTrials
         r.QCLAccuracy = double(sixgr.util.structGet(out, "QCLAccuracy", NaN));
         r.InterpolationLoss_dB = double(sixgr.util.structGet(out, "InterpolationLoss_dB", NaN));
         r.MismatchSensitivity_dB = double(sixgr.util.structGet(out, "MismatchSensitivity_dB", NaN));
+        r.TrackingEstimateSource = string(sixgr.util.structGet(out, "TrackingEstimateSource", ""));
+        r.ChannelModel = char(string(sixgr.util.structGet(out, "ChannelModel", r.ChannelModel)));
+        r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
         r.ComputeLatency_ms = double(sixgr.util.structGet(out, "ComputeLatency_ms", NaN));
         r.ProcedureDelay_ms = double(sixgr.util.structGet(out, "ProcedureDelay_ms", NaN));
         r.AirInterfaceObservation_ms = double(sixgr.util.structGet(out, "AirInterfaceObservation_ms", NaN));
@@ -999,7 +4876,24 @@ row.EVM_rms = NaN;
 row.NMSE_dB = NaN;
 row.DetectionMetric = NaN;
 row.MeasuredSINR_dB = NaN;
+row.ReceiverHestSINR_dB = NaN;
+row.ReceiverHestSINRSource = "";
+row.DecoderTruthProxySINR_dB = NaN;
+row.DecoderTruthProxySINRSource = "";
+row.SINRValueRole = "";
+row.SINRSource = "";
 row.WidebandCQI = NaN;
+row.CQIDerivedMCS = NaN;
+row.CQIDerivedModulation = "";
+row.CQIDerivedTargetCodeRate = NaN;
+row.LinkAdaptationMode = "";
+row.ConfiguredLinkAdaptationMode = "";
+row.ActualMCSSelectionMode = "";
+row.ConfiguredMCSSelectionPolicy = "";
+row.SchedulerGrantMCSSelectionMode = "";
+row.RequestedOperatingPointSource = "";
+row.CQITable = "";
+row.MCSTable = "";
 row.RankIndicator = NaN;
 row.PMI = NaN;
 row.CRI = NaN;
@@ -1008,6 +4902,23 @@ row.PMICodebookMode = "";
 row.CSIReportMode = "";
 row.CSIPayloadBitLength = NaN;
 row.CSIPayloadHex = "";
+row.ConfiguredBeamSelectionStrategy = "";
+row.PrecoderSource = "";
+row.PrecodingMode = "";
+row.PrecodingApplicationStage = "";
+row.PrecodingActive = false;
+row.ExplicitBeamWeightsApplied = false;
+row.TransformPrecodingApplied = false;
+row.BeamformingApplied = false;
+row.AppliedBeamIndexSet = "";
+row.AppliedPrecoderPMI = NaN;
+row.AppliedPrecoderPMIType = "";
+row.AppliedPrecoderCodebookMode = "";
+row.RequestedVsAppliedPrecoderPMIMatchStatus = "";
+row.PrecodingNumPorts = NaN;
+row.PrecodingNumLayers = NaN;
+row.PrecodingMatrixRows = NaN;
+row.PrecodingMatrixCols = NaN;
 row.FalseAlarmFlag = NaN;
 row.BlockingFlag = NaN;
 row.BlindDecodeCount = NaN;
@@ -1103,6 +5014,7 @@ row.InjectedDoppler_Hz = dopp;
 row.EstimatedDopplerHz = NaN;
 row.DopplerError_Hz = NaN;
 row.PhaseTrackingError_deg = NaN;
+row.TrackingEstimateSource = "";
 row.QCLAccuracy = NaN;
 row.ChannelAgingLoss_dB = NaN;
 row.InterpolationLoss_dB = NaN;
@@ -1114,6 +5026,83 @@ row.Crash = false;
 row.LinkAdaptationApplied = false;
 row.LinkAdaptationScheduled = false;
 row.IsWarmupFrame = false;
+row.SFN = mod(max(0, round(double(row.Frame)) - 1), 1024);
+row.UEID = NaN;
+row.BaseStationID = NaN;
+row.AllocatedPRBCount = NaN;
+row.PRBStart = NaN;
+row.MCSIndex = NaN;
+row.Rank = NaN;
+row.ConfiguredSNR_dB = double(snr_dB);
+row.ConfiguredSNRSource = "configured_runtime_operating_point_reference";
+row.SNRValueRole = "configured_reference_metadata";
+row.AppliedAWGNSNR_dB = NaN;
+row.ReceiverHestSINR_dB = NaN;
+row.ReceiverHestSINRSource = "";
+row.DecoderTruthProxySINR_dB = NaN;
+row.DecoderTruthProxySINRSource = "";
+row.SINRValueRole = "";
+row.SINRSource = "";
+row.MeasuredTrialSINR_dB = NaN;
+row.MeasuredTrialSINRSource = "";
+row.LargeScaleSINR_dB = NaN;
+row.LargeScaleSINRSource = "";
+row.ServingRSRP_dBm = NaN;
+row.ServingRSRPSource = "";
+row.CSI_RSRP_dB = NaN;
+row.CSI_RSRPSource = "";
+row.AppliedLargeScaleGain_dB = NaN;
+row.AppliedLargeScaleLoss_dB = NaN;
+row.AppliedBasePathloss_dB = NaN;
+row.AppliedPathloss_dB = NaN;
+row.AppliedShadowFading_dB = NaN;
+row.AppliedO2I_dB = NaN;
+row.AppliedLargeScaleGainSource = "";
+row.TimingEstimateUsed = false;
+row.UseIdealTimingSync = false;
+row.InterferenceMode = "";
+row.InterfererBeamformingAppliedCount = 0;
+row.InterfererExplicitBeamWeightCount = 0;
+row.InterfererTransformPrecodingCount = 0;
+row.InterfererPrecoderSourceSet = "";
+row.InterfererPrecodingModeSet = "";
+row.InterfererBeamIndexSetSummary = "";
+row.MCSAuthority = "";
+row.ModulationAuthority = "";
+row.GrantOperatingPointSource = "";
+row.AppliedOperatingPointSource = "";
+row.DopplerSourceMode = localResolveDopplerSourceMode(cfg);
+row.DopplerValueRole = "scenario_resolved_metadata";
+row.TRSGatingActive = false;
+row.TRSValidityState = "";
+row.TrackingEligibility = false;
+row.TRSAgeSlots = NaN;
+row.LastSuccessfulTRSSlot = NaN;
+row.LastEstimatedTRSDopplerHz = NaN;
+row.TRSStateSource = "";
+row.TRSRuntimeConsumer = "";
+row.TRSInfluencedDecision = false;
+row.TRSInfluenceDefinition = "";
+row.TRSReceiverIntegrationStatus = "";
+row.TRSReceiverIntegrationBlocker = "";
+row.TRSProcessed = false;
+row.TRSReceiverConsumerType = "";
+row.TRSTrackingStateBefore = "";
+row.TRSTrackingStateAfter = "";
+row.TRSTrackingUpdateTime_s = NaN;
+row.TRSAssociatedCell = NaN;
+row.TRSUpdateOutcome = "";
+row.TRSChannelTrackingFreshnessState = "";
+row.TRSFrequencyTrackingState = "";
+row.TRSTimingTrackingState = "";
+row.TRSTimingEstimateAvailable = false;
+row.TRSTimingEstimate_samples = NaN;
+row.TRSCFOEstimateAvailable = false;
+row.TRSEstimatedCFO_Hz = NaN;
+row.TRSRuntimeEvidenceSource = "";
+row.GrantContextId = "";
+row.GrantWorkerSafe = false;
+row.GrantSharedStateCommitMode = "";
 row.Notes = "";
 end
 
@@ -1121,6 +5110,13 @@ function T = localEmptyLinkTrialTable(nRows)
 nRows = max(0, round(double(nRows)));
 rows = repmat(localMakeLinkTrialRow(struct(), "", NaN, 1), nRows, 1);
 T = struct2table(rows);
+T.RequestedBeamTruthClassification = strings(nRows, 1);
+T.RequestedPrecoderPMITruthClassification = strings(nRows, 1);
+T.AppliedBeamApplicationSource = strings(nRows, 1);
+T.AppliedBeamTruthClassification = strings(nRows, 1);
+T.AppliedPrecoderPMIApplicationSource = strings(nRows, 1);
+T.AppliedPrecoderPMITruthClassification = strings(nRows, 1);
+T.RequestedVsAppliedPrecoderPMIMatchStatus = strings(nRows, 1);
 end
 
 function spec = localResolveMultiUserSpec(cfg)
@@ -1139,7 +5135,10 @@ spec.NumUsers = numUsers;
 spec.RNTIStart = max(1, round(double(sixgr.util.structGet(userCfg, "rnti_start", 1))));
 spec.SeedStride = max(1, round(double(sixgr.util.structGet(userCfg, "seed_stride", 101))));
 spec.ExecutionModel = string(sixgr.util.structGet(userCfg, "execution_model", "independent_link_sweep"));
-spec.BeamSelectionStrategy = lower(string(sixgr.util.structGet(userCfg, "beam_selection_strategy", "fixed_first_beam")));
+spec.BeamSelectionStrategy = lower(string(sixgr.util.structGet(userCfg, "beam_selection_strategy", "")));
+if strlength(strtrim(spec.BeamSelectionStrategy)) == 0
+    spec.BeamSelectionStrategy = "missing_from_config";
+end
 spec.SaveUserTables = logical(sixgr.util.structGet(userCfg, "save_user_tables", true));
 end
 
@@ -1255,31 +5254,56 @@ end
 arr = struct("Nant", double(nTx), "nRow", double(nRow), "nCol", double(nCol));
 end
 
-function [T, summaryT] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, snr_dB)
+function [T, summaryT, constT, csirsT] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, snr_dB, livePublisher)
+if nargin < 6
+    livePublisher = [];
+end
 rows = cell(max(1, round(double(multiUser.NumUsers))), 1);
+constRows = cell(max(1, round(double(multiUser.NumUsers))), 1);
+csirsRows = cell(max(1, round(double(multiUser.NumUsers))), 1);
 summaryRows = repmat(struct("UEIndex", NaN, "RNTI", NaN, "Direction", "", ...
     "ConfiguredLayers", NaN, "ConfiguredTxAntennas", NaN, "ConfiguredRxAntennas", NaN, ...
     "BeamformingApplied", false, "BeamSelectionStrategy", "", "BeamIndexSet", "", ...
-    "ExecutionModel", "", "Throughput_Mbps", NaN, "BLER", NaN, "BER", NaN, ...
-    "PassRate", NaN, "MeanMeasuredSINR_dB", NaN, "MeanChannelGain_dB", NaN, "Ok", false), ...
+    "ExecutionModel", "", "Throughput_Mbps", NaN, "ObservedRowCount", NaN, ...
+    "BLER", NaN, "BER", NaN, "PassRate", NaN, "MeanMeasuredSINR_dB", NaN, ...
+    "MeanChannelGain_dB", NaN, "SummaryRowValid", false, "RuntimeDataPresent", false, ...
+    "UserHadAnySuccessfulTx", false, "UserHadAnySuccessfulRx", false, "PartialSuccess", false, ...
+    "AllObservedRowsSuccessful", false, "SummaryStatus", "", "Ok", false, ...
+    "OkDefinition", "compatibility_alias_of_summary_row_valid"), ...
     max(1, round(double(multiUser.NumUsers))), 1);
 
 for ueIdx = 1:max(1, round(double(multiUser.NumUsers)))
     cfgU = localPrepareUserCfg(cfg, multiUser, ueIdx);
     userMeta = sixgr.util.structGet(cfgU, "lls6g.userContext", struct());
+    userLiveCallback = [];
+    if ~isempty(livePublisher)
+        userLiveCallback = @(partialTrials, partialConst, meta) localEmitMultiUserLiveSnapshot( ...
+            rows, constRows, partialTrials, partialConst, meta, ...
+            cfgU, multiUser, ueIdx, userMeta, snr_dB, direction, livePublisher);
+    end
     if upper(string(direction)) == "DL"
-        res = sixgr.link.runDLPDSCHThroughput(cfgU, "NumFrames", nTrials, "SNR_dB", snr_dB);
+        res = sixgr.link.runDLPDSCHThroughput(cfgU, ...
+            "NumFrames", nTrials, ...
+            "SNR_dB", snr_dB, ...
+            "LiveTrialCallback", userLiveCallback, ...
+            "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfgU, nTrials));
     else
-        res = sixgr.link.runULPUSCHThroughput(cfgU, "NumFrames", nTrials, "SNR_dB", snr_dB);
+        res = sixgr.link.runULPUSCHThroughput(cfgU, ...
+            "NumFrames", nTrials, ...
+            "SNR_dB", snr_dB, ...
+            "LiveTrialCallback", userLiveCallback, ...
+            "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfgU, nTrials));
     end
     Tu = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), upper(string(direction)), snr_dB, cfgU);
     Tu = localAnnotateUserTrials(Tu, cfgU, multiUser, ueIdx, userMeta);
     rows{ueIdx} = Tu;
-
-    passRate = NaN;
-    if ismember("Status", string(Tu.Properties.VariableNames)) && ~isempty(Tu)
-        passRate = mean(upper(strtrim(string(Tu.Status))) == "PASS");
+    constRows{ueIdx} = localAnnotateConstellationSamples( ...
+        sixgr.util.structGet(res, "ConstellationSamples", table()), cfgU, multiUser, ueIdx, userMeta, snr_dB, direction);
+    if upper(string(direction)) == "DL"
+        csirsRows{ueIdx} = sixgr.util.structGet(res, "CSIRSTrialTable", table());
     end
+
+    sem = sixgr.truth.deriveUserSummarySemantics(Tu);
     summaryRows(ueIdx) = struct( ...
         "UEIndex", double(ueIdx), ...
         "RNTI", double(localUserRNTI(multiUser, ueIdx)), ...
@@ -1287,17 +5311,48 @@ for ueIdx = 1:max(1, round(double(multiUser.NumUsers)))
         "ConfiguredLayers", double(localConfiguredLayerCount(cfgU, direction)), ...
         "ConfiguredTxAntennas", double(sixgr.util.structGet(cfgU, "phy.nTxAnt", 1)), ...
         "ConfiguredRxAntennas", double(sixgr.util.structGet(cfgU, "phy.nRxAnt", 1)), ...
-        "BeamformingApplied", logical(sixgr.util.structGet(userMeta, "BeamformingApplied", false)), ...
+        "BeamformingApplied", localLastLogicalValue(Tu, "BeamformingApplied"), ...
         "BeamSelectionStrategy", string(sixgr.util.structGet(userMeta, "BeamSelectionStrategy", multiUser.BeamSelectionStrategy)), ...
         "BeamIndexSet", string(sixgr.util.structGet(userMeta, "BeamIndexSet", "")), ...
         "ExecutionModel", string(multiUser.ExecutionModel), ...
         "Throughput_Mbps", double(sixgr.util.structGet(res, "Throughput_Mbps", NaN)), ...
+        "ObservedRowCount", double(sem.ObservedRowCount), ...
         "BLER", double(sixgr.util.structGet(res, "BLER", NaN)), ...
         "BER", double(sixgr.util.structGet(res, "BER", NaN)), ...
-        "PassRate", double(passRate), ...
+        "PassRate", double(sem.PassRate), ...
         "MeanMeasuredSINR_dB", double(localTableMean(Tu, "MeasuredSINR_dB")), ...
         "MeanChannelGain_dB", double(localTableMean(Tu, "ChannelGain_dB")), ...
-        "Ok", logical(sixgr.util.structGet(res, "Ok", false)));
+        "SummaryRowValid", logical(sem.SummaryRowValid), ...
+        "RuntimeDataPresent", logical(sem.RuntimeDataPresent), ...
+        "UserHadAnySuccessfulTx", logical(sem.UserHadAnySuccessfulTx), ...
+        "UserHadAnySuccessfulRx", logical(sem.UserHadAnySuccessfulRx), ...
+        "PartialSuccess", logical(sem.PartialSuccess), ...
+        "AllObservedRowsSuccessful", logical(sem.AllObservedRowsSuccessful), ...
+        "SummaryStatus", string(sem.SummaryStatus), ...
+        "Ok", logical(sem.Ok), ...
+        "OkDefinition", string(sem.OkDefinition));
+    if ~isempty(livePublisher)
+        partialRows = rows(~cellfun(@isempty, rows));
+        if isempty(partialRows)
+            partialT = localEmptyLinkTrialTable(0);
+        else
+            partialT = vertcat(partialRows{:});
+        end
+        partialConstRows = constRows(cellfun(@(x) istable(x) && ~isempty(x), constRows));
+        if isempty(partialConstRows)
+            partialConstT = table();
+        else
+            partialConstT = vertcat(partialConstRows{:});
+        end
+        try
+            feval(livePublisher, partialT, partialConstT, struct( ...
+                "Direction", string(direction), ...
+                "SNR_dB", double(snr_dB), ...
+                "CompletedUsers", double(ueIdx), ...
+                "TotalUsers", double(max(1, round(double(multiUser.NumUsers))))));
+        catch
+        end
+    end
 end
 
 rows = rows(~cellfun(@isempty, rows));
@@ -1306,7 +5361,300 @@ if isempty(rows)
 else
     T = vertcat(rows{:});
 end
+constRows = constRows(cellfun(@(x) istable(x) && ~isempty(x), constRows));
+if isempty(constRows)
+    constT = table();
+else
+    constT = vertcat(constRows{:});
+end
+csirsRows = csirsRows(cellfun(@(x) istable(x) && ~isempty(x), csirsRows));
+if isempty(csirsRows)
+    csirsT = table();
+else
+    csirsT = vertcat(csirsRows{:});
+end
 summaryT = struct2table(summaryRows);
+end
+
+function [Tu, summaryT, constT, csirsT] = localRunSingleUserDirectionTrials(cfg, multiUser, ueIdx, direction, nTrials, snr_dB, livePublisher)
+if nargin < 7
+    livePublisher = [];
+end
+cfgU = localPrepareUserCfg(cfg, multiUser, ueIdx);
+userMeta = sixgr.util.structGet(cfgU, "lls6g.userContext", struct());
+userLiveCallback = [];
+if ~isempty(livePublisher)
+    userLiveCallback = @(partialTrials, partialConst, meta) localEmitSingleUserLiveSnapshot( ...
+        partialTrials, partialConst, meta, cfgU, multiUser, ueIdx, userMeta, snr_dB, direction, livePublisher);
+end
+if upper(string(direction)) == "DL"
+    res = sixgr.link.runDLPDSCHThroughput(cfgU, ...
+        "NumFrames", nTrials, ...
+        "SNR_dB", snr_dB, ...
+        "LiveTrialCallback", userLiveCallback, ...
+        "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfgU, nTrials));
+else
+    res = sixgr.link.runULPUSCHThroughput(cfgU, ...
+        "NumFrames", nTrials, ...
+        "SNR_dB", snr_dB, ...
+        "LiveTrialCallback", userLiveCallback, ...
+        "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfgU, nTrials));
+end
+Tu = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), upper(string(direction)), snr_dB, cfgU);
+Tu = localAnnotateUserTrials(Tu, cfgU, multiUser, ueIdx, userMeta);
+constT = localAnnotateConstellationSamples( ...
+    sixgr.util.structGet(res, "ConstellationSamples", table()), cfgU, multiUser, ueIdx, userMeta, snr_dB, direction);
+csirsT = table();
+if upper(string(direction)) == "DL"
+    csirsT = sixgr.util.structGet(res, "CSIRSTrialTable", table());
+end
+sem = sixgr.truth.deriveUserSummarySemantics(Tu);
+summaryT = struct2table(struct( ...
+    "UEIndex", double(ueIdx), ...
+    "RNTI", double(localUserRNTI(multiUser, ueIdx)), ...
+    "Direction", string(direction), ...
+    "ConfiguredLayers", double(localConfiguredLayerCount(cfgU, direction)), ...
+    "ConfiguredTxAntennas", double(sixgr.util.structGet(cfgU, "phy.nTxAnt", 1)), ...
+    "ConfiguredRxAntennas", double(sixgr.util.structGet(cfgU, "phy.nRxAnt", 1)), ...
+    "BeamformingApplied", localLastLogicalValue(Tu, "BeamformingApplied"), ...
+        "BeamSelectionStrategy", string(sixgr.util.structGet(userMeta, "BeamSelectionStrategy", multiUser.BeamSelectionStrategy)), ...
+        "BeamIndexSet", string(sixgr.util.structGet(userMeta, "BeamIndexSet", "")), ...
+        "ExecutionModel", string(multiUser.ExecutionModel), ...
+        "Throughput_Mbps", double(sixgr.util.structGet(res, "Throughput_Mbps", NaN)), ...
+        "ObservedRowCount", double(sem.ObservedRowCount), ...
+        "BLER", double(sixgr.util.structGet(res, "BLER", NaN)), ...
+        "BER", double(sixgr.util.structGet(res, "BER", NaN)), ...
+        "PassRate", double(sem.PassRate), ...
+        "MeanMeasuredSINR_dB", double(localTableMean(Tu, "MeasuredSINR_dB")), ...
+        "MeanChannelGain_dB", double(localTableMean(Tu, "ChannelGain_dB")), ...
+        "SummaryRowValid", logical(sem.SummaryRowValid), ...
+        "RuntimeDataPresent", logical(sem.RuntimeDataPresent), ...
+        "UserHadAnySuccessfulTx", logical(sem.UserHadAnySuccessfulTx), ...
+        "UserHadAnySuccessfulRx", logical(sem.UserHadAnySuccessfulRx), ...
+        "PartialSuccess", logical(sem.PartialSuccess), ...
+        "AllObservedRowsSuccessful", logical(sem.AllObservedRowsSuccessful), ...
+        "SummaryStatus", string(sem.SummaryStatus), ...
+        "Ok", logical(sem.Ok), ...
+        "OkDefinition", string(sem.OkDefinition)));
+end
+
+function localEmitSingleUserLiveSnapshot(partialTrials, partialConst, meta, cfg, multiUser, ueIdx, userMeta, snr_dB, direction, livePublisher)
+if isempty(livePublisher)
+    return;
+end
+partialT = localAnnotateUserTrials(localEnsureLinkTrialTable(partialTrials, upper(string(direction)), snr_dB, cfg), cfg, multiUser, ueIdx, userMeta);
+partialConstT = localAnnotateConstellationSamples(partialConst, cfg, multiUser, ueIdx, userMeta, snr_dB, direction);
+meta = localMergeLiveMeta(meta, struct( ...
+    "Direction", string(direction), ...
+    "SNR_dB", double(snr_dB), ...
+    "CurrentUEIndex", double(ueIdx), ...
+    "TotalUsers", double(max(1, round(double(multiUser.NumUsers))))));
+if isfield(meta, "WaveformPreviewTable")
+    meta.WaveformPreviewTable = localAnnotateWaveformPreviewTable(meta.WaveformPreviewTable, multiUser, ueIdx);
+end
+try
+    feval(livePublisher, partialT, partialConstT, meta);
+catch
+end
+end
+
+function rawTrials = localBuildLiveRawTrialsAggregate(dlTrials, ulTrials, dlParts, ulParts, csirsTrials)
+if nargin < 5
+    csirsTrials = table();
+end
+rawTrials = struct( ...
+    "DL", dlTrials, ...
+    "UL", ulTrials, ...
+    "SRS", table(), ...
+    "CSIRS", csirsTrials, ...
+    "TRS", table(), ...
+    "PDCCH", table(), ...
+    "PBCH", table(), ...
+    "PRACH", table(), ...
+    "PUCCH", table(), ...
+    "MultiUserDL", localConcatTableParts(dlParts), ...
+    "MultiUserUL", localConcatTableParts(ulParts));
+end
+
+function meta = localBuildLivePublishMeta(direction, snr_dB, sweepPointIndex, sweepPointCount, currentUEIndex, totalUsers, rawTrialsAggregate, multiUser, mobilityArtifacts, notes)
+if nargin < 10
+    notes = "";
+end
+meta = struct( ...
+    "Direction", string(direction), ...
+    "SNR_dB", double(snr_dB), ...
+    "SweepPointIndex", double(sweepPointIndex), ...
+    "SweepPointCount", double(sweepPointCount), ...
+    "CurrentUEIndex", double(currentUEIndex), ...
+    "TotalUsers", double(totalUsers), ...
+    "RawTrialsAggregate", rawTrialsAggregate, ...
+    "MultiUserSpec", multiUser, ...
+    "MobilityArtifacts", mobilityArtifacts, ...
+    "Notes", string(notes));
+end
+
+function status = localBuildLiveStageStatus(rawTrials, liveArtifacts, meta)
+dlT = sixgr.util.structGet(rawTrials, "DL", table());
+ulT = sixgr.util.structGet(rawTrials, "UL", table());
+dlSummaryT = sixgr.util.structGet(rawTrials, "MultiUserDL", table());
+ulSummaryT = sixgr.util.structGet(rawTrials, "MultiUserUL", table());
+runtimeState = sixgr.util.structGet(meta, "RuntimeState", struct());
+direction = upper(string(sixgr.util.structGet(meta, "Direction", "")));
+currentSNR = double(sixgr.util.structGet(meta, "SNR_dB", NaN));
+completedFrames = double(sixgr.util.structGet(meta, "CompletedFrames", NaN));
+totalFrames = double(sixgr.util.structGet(meta, "TotalFrames", NaN));
+currentUE = double(sixgr.util.structGet(meta, "CurrentUEIndex", NaN));
+totalUsers = double(sixgr.util.structGet(meta, "TotalUsers", NaN));
+dlCompletedFrames = NaN;
+ulCompletedFrames = NaN;
+dlUsers = localUniqueUserCount(dlT);
+ulUsers = localUniqueUserCount(ulT);
+dlSummaryUsers = localUniqueUserCount(dlSummaryT);
+ulSummaryUsers = localUniqueUserCount(ulSummaryT);
+beamT = sixgr.util.structGet(sixgr.util.structGet(liveArtifacts, "LiveDerived", struct()), "BeamSelectionStats", table());
+energySummary = sixgr.util.structGet(sixgr.util.structGet(liveArtifacts, "Energy", struct()), "SummaryTable", table());
+harqInfo = sixgr.util.structGet(liveArtifacts, "HARQ", struct());
+if isstruct(runtimeState) && ~isempty(fieldnames(runtimeState))
+    currentSNR = double(sixgr.util.structGet(runtimeState, "CurrentSNR_dB", currentSNR));
+    dlCompletedFrames = double(sixgr.util.structGet(runtimeState, "DLCompletedFrames", NaN));
+    ulCompletedFrames = double(sixgr.util.structGet(runtimeState, "ULCompletedFrames", NaN));
+    totalFrames = double(sixgr.util.structGet(runtimeState, "FramesPerSweepPoint", totalFrames));
+    currentUE = double(sixgr.util.structGet(runtimeState, "CurrentUEIndex", currentUE));
+    totalUsers = double(sixgr.util.structGet(runtimeState, "NumUsers", totalUsers));
+    dlSummaryUsers = max(dlSummaryUsers, round(double(sixgr.util.structGet(runtimeState, "LastDLGrantedUsers", dlSummaryUsers))));
+    ulSummaryUsers = max(ulSummaryUsers, round(double(sixgr.util.structGet(runtimeState, "LastULGrantedUsers", ulSummaryUsers))));
+end
+if isfinite(dlCompletedFrames) && isfinite(ulCompletedFrames)
+    completedFrames = min(dlCompletedFrames, ulCompletedFrames);
+elseif isfinite(dlCompletedFrames)
+    completedFrames = dlCompletedFrames;
+elseif isfinite(ulCompletedFrames)
+    completedFrames = ulCompletedFrames;
+end
+notes = string(sixgr.util.structGet(meta, "Notes", ""));
+dlUserProgress = NaN;
+ulUserProgress = NaN;
+if isfinite(totalUsers) && totalUsers > 0
+    dlUserProgress = min(double(dlUsers) / double(totalUsers), 1);
+    ulUserProgress = min(double(ulUsers) / double(totalUsers), 1);
+end
+if strlength(notes) == 0
+    notes = sprintf("Streaming %s at %.3f dB: UE %s/%s, completed frames DL=%s/%s UL=%s/%s, bidirectional=%s/%s, DL users=%d/%s, UL users=%d/%s.", ...
+        char(direction), currentSNR, localDisplayProgressValue(currentUE), localDisplayProgressValue(totalUsers), ...
+        localDisplayProgressValue(dlCompletedFrames), localDisplayProgressValue(totalFrames), ...
+        localDisplayProgressValue(ulCompletedFrames), localDisplayProgressValue(totalFrames), ...
+        localDisplayProgressValue(completedFrames), localDisplayProgressValue(totalFrames), ...
+        dlUsers, localDisplayProgressValue(totalUsers), ulUsers, localDisplayProgressValue(totalUsers));
+end
+status = struct( ...
+    "Stage", "dl_ul_raw_trials_streaming", ...
+    "CurrentDirection", char(direction), ...
+    "CurrentSNR_dB", currentSNR, ...
+    "SweepPointIndex", double(sixgr.util.structGet(meta, "SweepPointIndex", NaN)), ...
+    "SweepPointCount", double(sixgr.util.structGet(meta, "SweepPointCount", NaN)), ...
+    "CurrentUEIndex", currentUE, ...
+    "TotalUsers", totalUsers, ...
+    "CurrentSlot", double(sixgr.util.structGet(runtimeState, "CurrentSlot", NaN)), ...
+    "DLCompletedFrames", dlCompletedFrames, ...
+    "ULCompletedFrames", ulCompletedFrames, ...
+    "CompletedFrames", completedFrames, ...
+    "TotalFrames", totalFrames, ...
+    "DLTrialRows", double(height(dlT)), ...
+    "ULTrialRows", double(height(ulT)), ...
+    "DLUniqueUsersPublished", double(dlUsers), ...
+    "ULUniqueUsersPublished", double(ulUsers), ...
+    "DLSummaryUsersPublished", double(dlSummaryUsers), ...
+    "ULSummaryUsersPublished", double(ulSummaryUsers), ...
+    "DLGrantCount", double(sixgr.util.structGet(runtimeState, "LastDLGrantCount", NaN)), ...
+    "ULGrantCount", double(sixgr.util.structGet(runtimeState, "LastULGrantCount", NaN)), ...
+    "DLActiveUsers", double(sixgr.util.structGet(runtimeState, "LastDLActiveUsers", NaN)), ...
+    "ULActiveUsers", double(sixgr.util.structGet(runtimeState, "LastULActiveUsers", NaN)), ...
+    "DLGrantedUsers", double(sixgr.util.structGet(runtimeState, "LastDLGrantedUsers", NaN)), ...
+    "ULGrantedUsers", double(sixgr.util.structGet(runtimeState, "LastULGrantedUsers", NaN)), ...
+    "DLQueueBits", double(sum(double(sixgr.util.structGet(runtimeState, "DLQueueBits", 0)), "omitnan")), ...
+    "ULQueueBits", double(sum(double(sixgr.util.structGet(runtimeState, "ULQueueBits", 0)), "omitnan")), ...
+    "DLUserProgressFraction", dlUserProgress, ...
+    "ULUserProgressFraction", ulUserProgress, ...
+    "BidirectionalInterleavingEnabled", true, ...
+    "AnchorKPIsReady", true, ...
+    "DLTrialsReady", istable(dlT) && ~isempty(dlT), ...
+    "ULTrialsReady", istable(ulT) && ~isempty(ulT), ...
+    "ControlReady", true, ...
+    "HARQReady", localArtifactStructReady(harqInfo, "SummaryTable") || localArtifactStructReady(harqInfo, "TimelineTable"), ...
+    "BeamReady", istable(beamT) && ~isempty(beamT), ...
+    "RFReady", istable(energySummary) && ~isempty(energySummary), ...
+    "SweepReady", false, ...
+    "FinalBundleReady", false, ...
+    "Notes", char(notes));
+end
+
+function n = localUniqueUserCount(T)
+n = 0;
+if ~(istable(T) && ~isempty(T) && ismember("UEIndex", string(T.Properties.VariableNames)))
+    return;
+end
+vals = unique(double(T.UEIndex), "stable");
+vals = vals(isfinite(vals));
+n = numel(vals);
+end
+
+function txt = localDisplayProgressValue(value)
+if ~(isfinite(value) && value >= 0)
+    txt = "?";
+else
+    txt = char(string(round(double(value))));
+end
+end
+
+function localEmitMultiUserLiveSnapshot(existingRows, existingConstRows, partialTrials, partialConst, meta, cfg, multiUser, ueIdx, userMeta, snr_dB, direction, livePublisher)
+if isempty(livePublisher)
+    return;
+end
+partialT = localAnnotateUserTrials(localEnsureLinkTrialTable(partialTrials, upper(string(direction)), snr_dB, cfg), cfg, multiUser, ueIdx, userMeta);
+partialConstT = localAnnotateConstellationSamples(partialConst, cfg, multiUser, ueIdx, userMeta, snr_dB, direction);
+
+completedRows = existingRows(~cellfun(@isempty, existingRows));
+if isempty(completedRows)
+    combinedT = partialT;
+else
+    combinedT = vertcat(completedRows{:}, partialT);
+end
+
+completedConstRows = existingConstRows(cellfun(@(x) istable(x) && ~isempty(x), existingConstRows));
+if isempty(completedConstRows)
+    combinedConstT = partialConstT;
+elseif istable(partialConstT) && ~isempty(partialConstT)
+    combinedConstT = vertcat(completedConstRows{:}, partialConstT);
+else
+    combinedConstT = vertcat(completedConstRows{:});
+end
+
+meta = localMergeLiveMeta(meta, struct( ...
+    "Direction", string(direction), ...
+    "SNR_dB", double(snr_dB), ...
+    "CurrentUEIndex", double(ueIdx), ...
+    "TotalUsers", double(max(1, round(double(multiUser.NumUsers))))));
+if isfield(meta, "WaveformPreviewTable")
+    meta.WaveformPreviewTable = localAnnotateWaveformPreviewTable(meta.WaveformPreviewTable, multiUser, ueIdx);
+end
+try
+    feval(livePublisher, combinedT, combinedConstT, meta);
+catch
+end
+end
+
+function T = localAnnotateWaveformPreviewTable(T, multiUser, ueIdx)
+if ~istable(T)
+    T = table();
+    return;
+end
+n = height(T);
+if ~ismember("UEIndex", string(T.Properties.VariableNames))
+    T.UEIndex = repmat(double(ueIdx), n, 1);
+end
+if ~ismember("RNTI", string(T.Properties.VariableNames))
+    T.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), n, 1);
+end
 end
 
 function T = localAnnotateUserTrials(T, cfg, multiUser, ueIdx, userMeta)
@@ -1316,15 +5664,134 @@ if ~istable(T)
 end
 n = height(T);
 T.UEIndex = repmat(double(ueIdx), n, 1);
+T.UEID = repmat(double(ueIdx), n, 1);
 T.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), n, 1);
+if ~ismember("SFN", string(T.Properties.VariableNames)) || all(~isfinite(double(T.SFN)))
+    T.SFN = mod(max(0, round(double(T.Frame)) - 1), 1024);
+end
+if ~ismember("ConfiguredSNR_dB", string(T.Properties.VariableNames)) || all(~isfinite(double(T.ConfiguredSNR_dB)))
+    T.ConfiguredSNR_dB = double(T.SNR_dB);
+end
+T = localPopulateSINRTruthColumns(T);
+if ~ismember("MCSIndex", string(T.Properties.VariableNames)) || all(~isfinite(double(T.MCSIndex)))
+    T.MCSIndex = double(T.MCS);
+end
+if ~ismember("AllocatedPRBCount", string(T.Properties.VariableNames)) || all(~isfinite(double(T.AllocatedPRBCount)))
+    T.AllocatedPRBCount = double(T.PRBs);
+end
+if ~ismember("Rank", string(T.Properties.VariableNames)) || all(~isfinite(double(T.Rank)))
+    T.Rank = double(T.RankIndicator);
+end
+T.BaseStationID = repmat(double(sixgr.util.structGet(userMeta, "RuntimeServingCell", NaN)), n, 1);
+if ~ismember("ServingCell", string(T.Properties.VariableNames))
+    T.ServingCell = double(T.BaseStationID);
+end
+if ~ismember("ServingRSRP_dBm", string(T.Properties.VariableNames)) || all(~isfinite(double(T.ServingRSRP_dBm)))
+    T.ServingRSRP_dBm = repmat(double(sixgr.util.structGet(userMeta, "RuntimeServingRSRP_dBm", NaN)), n, 1);
+end
+if (~ismember("ServingRSRPSource", string(T.Properties.VariableNames)) || all(strlength(string(T.ServingRSRPSource)) == 0)) && any(isfinite(double(T.ServingRSRP_dBm)))
+    T.ServingRSRPSource = repmat("large_scale_serving_reference_signal", n, 1);
+end
+if ~ismember("LargeScaleSINR_dB", string(T.Properties.VariableNames)) || all(~isfinite(double(T.LargeScaleSINR_dB)))
+    T.LargeScaleSINR_dB = repmat(double(sixgr.util.structGet(userMeta, "RuntimeServingLargeScaleSINR_dB", NaN)), n, 1);
+end
+if (~ismember("LargeScaleSINRSource", string(T.Properties.VariableNames)) || all(strlength(string(T.LargeScaleSINRSource)) == 0)) && any(isfinite(double(T.LargeScaleSINR_dB)))
+    T.LargeScaleSINRSource = repmat("large_scale_interference_budget_preview", n, 1);
+end
+if ~ismember("InterferenceMode", string(T.Properties.VariableNames)) || all(strlength(string(T.InterferenceMode)) == 0)
+    T.InterferenceMode = repmat(string(sixgr.util.structGet(userMeta, "RuntimeInterferenceMode", ...
+        ternaryInterferenceMode(cfg))), n, 1);
+end
 T.ConfiguredTxAntennas = repmat(double(sixgr.util.structGet(cfg, "phy.nTxAnt", 1)), n, 1);
 T.ConfiguredRxAntennas = repmat(double(sixgr.util.structGet(cfg, "phy.nRxAnt", 1)), n, 1);
 T.ConfiguredLayers = repmat(double(localConfiguredLayerCount(cfg, directionFromTable(T))), n, 1);
 T.ExecutionModel = repmat(string(multiUser.ExecutionModel), n, 1);
 T.BeamSelectionStrategy = repmat(string(sixgr.util.structGet(userMeta, "BeamSelectionStrategy", multiUser.BeamSelectionStrategy)), n, 1);
 T.BeamIndexSet = repmat(string(sixgr.util.structGet(userMeta, "BeamIndexSet", "")), n, 1);
-T.PrecoderSource = repmat(string(sixgr.util.structGet(userMeta, "PrecoderSource", "none")), n, 1);
-T.BeamformingApplied = repmat(logical(sixgr.util.structGet(userMeta, "BeamformingApplied", false)), n, 1);
+T = localApplyTrialTruthAnnotations(T, directionFromTable(T), cfg);
+end
+
+function mode = ternaryInterferenceMode(cfg)
+mode = "none";
+configuredMode = string(sixgr.util.structGet(cfg, "run.interferenceExecutionMode", ""));
+if strlength(strtrim(configuredMode)) > 0
+    mode = configuredMode;
+elseif logical(sixgr.util.structGet(cfg, "run.useAbstractInterferenceModel", false))
+    error("sixgr:truth:AbstractInterferenceModeRemoved", ...
+        "run.useAbstractInterferenceModel=true is not allowed in no-proxy waveform LLS.");
+end
+end
+
+function ueIdx = localResolveGrantUEIndex(grant, multiUser)
+ueIdx = double(sixgr.util.structGet(grant, "UEIndex", NaN));
+if isfinite(ueIdx) && ueIdx >= 1
+    return;
+end
+rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
+rntiStart = double(sixgr.util.structGet(multiUser, "RNTIStart", 1));
+if isfinite(rnti)
+    ueIdx = round(rnti - rntiStart + 1);
+else
+    ueIdx = NaN;
+end
+end
+
+function T = localAnnotateGrantDrivenTrials(T, grantRow)
+if ~(istable(T) && ~isempty(T) && istable(grantRow) && ~isempty(grantRow))
+    return;
+end
+vars = string(grantRow.Properties.VariableNames);
+for i = 1:numel(vars)
+    name = char(vars(i));
+    value = grantRow.(name)(1);
+    if ismember(name, string(T.Properties.VariableNames))
+        if isstring(T.(name))
+            T.(name)(:) = string(value);
+        elseif islogical(T.(name))
+            T.(name)(:) = logical(value);
+        else
+            T.(name)(:) = double(value);
+        end
+    else
+        if isstring(value) || ischar(value)
+            T.(name) = repmat(string(value), height(T), 1);
+        elseif islogical(value)
+            T.(name) = repmat(logical(value), height(T), 1);
+        else
+            T.(name) = repmat(double(value), height(T), 1);
+        end
+    end
+end
+end
+
+function T = localAnnotateConstellationSamples(T, cfg, multiUser, ueIdx, userMeta, snr_dB, direction)
+if ~istable(T) || isempty(T)
+    T = table();
+    return;
+end
+n = height(T);
+if ~ismember("UEIndex", string(T.Properties.VariableNames))
+    T.UEIndex = repmat(double(ueIdx), n, 1);
+end
+if ~ismember("RNTI", string(T.Properties.VariableNames))
+    T.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), n, 1);
+end
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    T.Direction = repmat(string(direction), n, 1);
+end
+if ~ismember("SNR_dB", string(T.Properties.VariableNames))
+    T.SNR_dB = repmat(double(snr_dB), n, 1);
+end
+if ~ismember("BeamSelectionStrategy", string(T.Properties.VariableNames))
+    T.BeamSelectionStrategy = repmat(string(sixgr.util.structGet(userMeta, "BeamSelectionStrategy", ...
+        sixgr.util.structGet(multiUser, "BeamSelectionStrategy", "missing_from_config"))), n, 1);
+end
+if ~ismember("ConfiguredTxAntennas", string(T.Properties.VariableNames))
+    T.ConfiguredTxAntennas = repmat(double(sixgr.util.structGet(cfg, "phy.nTxAnt", 1)), n, 1);
+end
+if ~ismember("ConfiguredRxAntennas", string(T.Properties.VariableNames))
+    T.ConfiguredRxAntennas = repmat(double(sixgr.util.structGet(cfg, "phy.nRxAnt", 1)), n, 1);
+end
 end
 
 function summary = localMergeMultiUserSummaries(dlSummary, ulSummary, multiUser)
@@ -1796,6 +6263,15 @@ end
 if ismember("EVM_rms", string(res.KPITable.Properties.VariableNames))
     res.KPITable.EVM_rms(mask) = double(sixgr.util.structGet(agg, "EVM_rms", NaN));
 end
+if ismember("PAPR_CP_dB", string(res.KPITable.Properties.VariableNames))
+    res.KPITable.PAPR_CP_dB(mask) = double(sixgr.util.structGet(agg, "PAPR_CP_dB", NaN));
+end
+if ismember("PAPR_DFTs_dB", string(res.KPITable.Properties.VariableNames))
+    res.KPITable.PAPR_DFTs_dB(mask) = double(sixgr.util.structGet(agg, "PAPR_DFTs_dB", NaN));
+end
+if ismember("PAPR_Gain_dB", string(res.KPITable.Properties.VariableNames))
+    res.KPITable.PAPR_Gain_dB(mask) = double(sixgr.util.structGet(agg, "PAPR_Gain_dB", NaN));
+end
 if ismember("NMSE_dB", string(res.KPITable.Properties.VariableNames))
     res.KPITable.NMSE_dB(mask) = double(sixgr.util.structGet(agg, "NMSE_dB", NaN));
 end
@@ -1896,9 +6372,9 @@ function plan = localResolveSweepPlan(opt, numFrames)
 if nargin < 1 || ~isstruct(opt)
     opt = struct();
 end
-baseTrials = max(8, round(double(numFrames)));
+baseTrials = max(1, round(double(numFrames)));
 plan = struct();
-defaultPrimaryTrials = max(12, min(32, 2 * baseTrials));
+defaultPrimaryTrials = baseTrials;
 explicitTrials = round(double(sixgr.util.structGet(opt, "LinkSweepTrialsPerSNR", NaN)));
 legacyIterations = round(double(sixgr.util.structGet(opt, "LinkSweepFrames", NaN)));
 if isfinite(explicitTrials) && explicitTrials >= 1
@@ -1908,14 +6384,14 @@ elseif isfinite(legacyIterations) && legacyIterations >= 1
 else
     requestedPrimaryTrials = defaultPrimaryTrials;
 end
-plan.PrimaryTrialsPerSNR = max(baseTrials, requestedPrimaryTrials);
+plan.PrimaryTrialsPerSNR = max(1, requestedPrimaryTrials);
 
-defaultReferenceTrials = max(20, min(48, 3 * baseTrials));
+defaultReferenceTrials = plan.PrimaryTrialsPerSNR;
 requestedReferenceTrials = round(double(sixgr.util.structGet(opt, "LinkReferenceSweepFrames", NaN)));
 if ~(isfinite(requestedReferenceTrials) && requestedReferenceTrials >= 1)
     requestedReferenceTrials = defaultReferenceTrials;
 end
-plan.ReferenceTrialsPerSNR = max(plan.PrimaryTrialsPerSNR, requestedReferenceTrials);
+plan.ReferenceTrialsPerSNR = max(1, requestedReferenceTrials);
 plan.MaxSweepPoints = max(3, round(double(sixgr.util.structGet(opt, "LinkSweepMaxPoints", 7))));
 plan.ReferenceSweepStep_dB = max(1, double(sixgr.util.structGet(opt, "LinkReferenceSweepStep_dB", 5)));
 plan.ReferenceSweepMargin_dB = max(plan.ReferenceSweepStep_dB * 3, double(sixgr.util.structGet(opt, "LinkReferenceSweepMargin_dB", 24)));
@@ -2038,7 +6514,9 @@ bt = max(numel(txBits), L);
 end
 
 function artifacts = localExportBeamformingDiagnostics(cfg, airInterfaceRunFolder, rawTrials, saveFigures)
-artifacts = struct("CSV", "", "SummaryCSV", "", "TraceCSV", "", "Images", {{}}, "Table", table(), "SummaryTable", table(), "TraceTable", table());
+artifacts = struct("CSV", "", "SummaryCSV", "", "TraceCSV", "", "StateTraceCSV", "", "EventTraceCSV", "", ...
+    "Images", {{}}, "Table", table(), "SummaryTable", table(), "TraceTable", table(), ...
+    "StateTraceTable", table(), "EventTraceTable", table());
 
 rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
 layout = sixgr.report.resultLayout(rootRunFolder);
@@ -2071,12 +6549,26 @@ if ~isempty(traceT)
     artifacts.TraceTable = traceT;
 end
 
+[stateTraceT, eventTraceT] = localBuildBeamManagementRuntimeTraceTables(T, cfg);
+if ~isempty(stateTraceT)
+    statePath = fullfile(layout.BeamformingCSVDir, "beam_management_state_trace.csv");
+    sixgr.util.csvWriteTable(statePath, stateTraceT);
+    artifacts.StateTraceCSV = statePath;
+    artifacts.StateTraceTable = stateTraceT;
+end
+if ~isempty(eventTraceT)
+    eventPath = fullfile(layout.BeamformingCSVDir, "beam_management_event_trace.csv");
+    sixgr.util.csvWriteTable(eventPath, eventTraceT);
+    artifacts.EventTraceCSV = eventPath;
+    artifacts.EventTraceTable = eventTraceT;
+end
+
 if ~saveFigures
     return;
 end
 
 img1 = fullfile(layout.BeamformingImageDir, "beam_channel_sinr.png");
-localWriteGroupedMetricPlot(T, "MeasuredSINR_dB", img1, "Measured SINR by Trial", "SINR (dB)");
+localWriteGroupedMetricPlot(T, "ReceiverHestSINR_dB", img1, "Receiver Hest SINR by Trial", "Receiver Hest SINR (dB)");
 if exist(img1, "file") == 2
     artifacts.Images{end+1} = img1;
 end
@@ -2119,19 +6611,21 @@ end
 
 keepVars = ["UEIndex","RNTI","Direction","SNR_dB","Frame","Slot","MCS","PRBs","Layers", ...
     "ConfiguredLayers","ConfiguredTxAntennas","ConfiguredRxAntennas", ...
-    "MeasuredSINR_dB","WidebandCQI","RankIndicator","PMI","ChannelGain_dB","ConditionNumber_dB", ...
+    "ReceiverHestSINR_dB","WidebandCQI","RankIndicator","PMI","ChannelGain_dB","ConditionNumber_dB", ...
     "RankEstimate","NumRxAntennas","NumTxPorts","SelectedBeamIndex","BestBeamIndex", ...
     "BeamHit","TopKBeamHit","BeamCandidateCount","SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB", ...
-    "BeamSelectionStrategy","BeamIndexSet", ...
-    "PrecoderSource","BeamformingApplied","ExecutionModel","Status"];
+    "BeamSelectionStrategy","BeamIndexSet","ConfiguredBeamSelectionStrategy","AppliedBeamIndexSet", ...
+    "PrecoderSource","PrecodingMode","PrecodingApplicationStage","PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","BeamformingApplied", ...
+    "AppliedPrecoderPMI","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","PrecodingNumPorts","PrecodingNumLayers","PrecodingMatrixRows","PrecodingMatrixCols", ...
+    "ExecutionModel","Status"];
 
 chunks = cell(numel(tables), 1);
 for i = 1:numel(tables)
     Ti = tables{i};
-    if ~all(ismember(["MeasuredSINR_dB","ConditionNumber_dB","ChannelGain_dB"], string(Ti.Properties.VariableNames)))
+    if ~all(ismember(["ReceiverHestSINR_dB","ConditionNumber_dB","ChannelGain_dB"], string(Ti.Properties.VariableNames)))
         continue;
     end
-    hasMetrics = isfinite(double(Ti.MeasuredSINR_dB)) | isfinite(double(Ti.ConditionNumber_dB)) | isfinite(double(Ti.ChannelGain_dB));
+    hasMetrics = isfinite(double(Ti.ReceiverHestSINR_dB)) | isfinite(double(Ti.ConditionNumber_dB)) | isfinite(double(Ti.ChannelGain_dB));
     Ti = Ti(hasMetrics, :);
     if isempty(Ti)
         continue;
@@ -2154,51 +6648,244 @@ summaryT = localEmptyProbeMetricTable();
 if ~(istable(T) && ~isempty(T))
     return;
 end
-dirs = localUniqueDirections(T);
-slotDur_s = localSlotDuration(cfg);
+[stateTraceT, eventTraceT] = localBuildBeamManagementRuntimeTraceTables(T, cfg);
+if isempty(stateTraceT)
+    return;
+end
+
+dirs = localUniqueDirections(stateTraceT);
 numTRPs = max(1, round(double(sixgr.util.structGet(cfg, "scenario.nTRP", ...
     sixgr.util.structGet(cfg, "deployment_topology.num_trps", 1)))));
 for i = 1:numel(dirs)
-    dirMask = string(T.Direction) == dirs(i);
-    Ti = T(dirMask, :);
+    dirMask = string(stateTraceT.Direction) == dirs(i);
+    stateDirT = stateTraceT(dirMask, :);
+    eventDirT = eventTraceT(string(eventTraceT.Direction) == dirs(i), :);
+    if isempty(stateDirT)
+        continue;
+    end
+
+    beamDetected = localFiniteColumn(stateDirT, "BeamDetectedFlag");
+    beamHit = localFiniteColumn(stateDirT, "BeamHit");
+    topKHit = localFiniteColumn(stateDirT, "TopKBeamHit");
+    beamGap = localFiniteColumn(stateDirT, "BeamGainGap_dB");
+    beamCount = localFiniteColumn(stateDirT, "BeamCandidateCount");
+    detectionRate = mean(beamDetected, "omitnan");
+    hitRate = mean(beamHit, "omitnan");
+    topKRate = mean(topKHit, "omitnan");
+    misalignmentRate = mean(double(beamHit < 0.5), "omitnan");
+    failureRate = mean(double(beamGap > 3), "omitnan");
+    overhead = mean(beamCount, "omitnan");
+
+    switchLatency = localFiniteColumn(eventDirT(eventDirT.SwitchEventFlag > 0, :), "SwitchLatency_s");
+    if isempty(switchLatency)
+        switchAvailability = "not_exercised";
+        switchValue = NaN;
+        switchNote = "No runtime beam-switch events were observed for this direction.";
+    else
+        switchAvailability = "observed";
+        switchValue = mean(switchLatency, "omitnan");
+        switchNote = "Measured from explicit runtime beam-switch events in the beam-management event trace.";
+    end
+
+    firstHitTrials = localFiniteColumn(eventDirT(eventDirT.FirstHitEventFlag > 0, :), "TrialsToFirstHit");
+    if isempty(firstHitTrials)
+        refinementAvailability = "not_exercised";
+        refinementValue = NaN;
+        refinementNote = "No runtime beam-refinement convergence event was observed for this direction.";
+    else
+        refinementAvailability = "observed";
+        refinementValue = mean(firstHitTrials, "omitnan");
+        refinementNote = "Measured trials-to-first-hit from the runtime beam-management event trace.";
+    end
+
+    if numTRPs <= 1
+        mtrpAvailability = "disabled";
+        mtrpGain = NaN;
+        mtrpNote = "Single-TRP runtime; mTRP beam-selection gain is not enabled for this scenario.";
+    else
+        mtrpAvailability = "observed";
+        mtrpGain = mean(max(beamGap, 0), "omitnan");
+        mtrpNote = "Measured selected-vs-best beam gain delta from runtime multi-TRP beam traces.";
+    end
+
+    summaryT = [summaryT; ... %#ok<AGROW>
+        localProbeMetricRow("beam_detection_probability", dirs(i), "rate", detectionRate, "", "fraction", ...
+            "Measured from runtime beam-detection states in the beam-management trace.", "observed"); ...
+        localProbeMetricRow("beam_index_hit_rate", dirs(i), "rate", hitRate, "", "fraction", ...
+            "Selected beam matches the best measured beam in the runtime beam-management trace.", "observed"); ...
+        localProbeMetricRow("top_k_beam_hit_rate", dirs(i), "top2_rate", topKRate, "", "fraction", ...
+            "Selected beam lies within the top-2 measured beam set in the runtime beam-management trace.", "observed"); ...
+        localProbeMetricRow("beam_switch_latency", dirs(i), "mean_between_switches", switchValue, "", "s", switchNote, switchAvailability); ...
+        localProbeMetricRow("beam_misalignment_probability", dirs(i), "rate", misalignmentRate, "", "fraction", ...
+            "Measured from runtime trials where the selected beam differs from the best measured beam.", "observed"); ...
+        localProbeMetricRow("beam_prediction_accuracy", dirs(i), "rate", hitRate, "", "fraction", ...
+            "Measured selected-beam accuracy under the active runtime beam-selection strategy.", "observed"); ...
+        localProbeMetricRow("beam_refinement_convergence", dirs(i), "mean_trials_to_first_hit", refinementValue, "", "trials", ...
+            refinementNote, refinementAvailability); ...
+        localProbeMetricRow("beam_failure_rate", dirs(i), "rate", failureRate, "", "fraction", ...
+            "Measured from runtime trials whose beam gain gap exceeds 3 dB.", "observed"); ...
+        localProbeMetricRow("mtrp_beam_selection_gain", dirs(i), "delta_dB", mtrpGain, "", "dB", mtrpNote, mtrpAvailability); ...
+        localProbeMetricRow("beam_management_overhead", dirs(i), "mean_beams_evaluated", overhead, "", "beams", ...
+            "Average candidate-beam count evaluated per runtime beam-management sample.", "observed")];
+end
+end
+
+function [stateT, eventT] = localBuildBeamManagementRuntimeTraceTables(T, cfg)
+stateT = table();
+eventT = table();
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+
+sortVars = intersect(["Direction","SNR_dB","UEIndex","RNTI","Frame","Slot"], string(T.Properties.VariableNames), "stable");
+if ~isempty(sortVars)
+    T = sortrows(T, cellstr(sortVars));
+end
+
+groupVars = intersect(["Direction","SNR_dB","UEIndex","RNTI"], string(T.Properties.VariableNames), "stable");
+if isempty(groupVars)
+    groupKey = repmat("group_1", height(T), 1);
+else
+    groupKey = strings(height(T), 1);
+    for idx = 1:numel(groupVars)
+        groupKey = groupKey + "|" + localTableColumnAsString(T, groupVars(idx));
+    end
+end
+
+slotDur_s = localSlotDuration(cfg);
+slotsPerFrame = localSlotsPerFrame(cfg);
+uniqueKeys = unique(groupKey, "stable");
+stateChunks = cell(numel(uniqueKeys), 1);
+eventChunks = cell(numel(uniqueKeys), 1);
+beamSweepEnabled = logical(sixgr.util.structGet(cfg, "phy.beamManagement.enabled", false));
+beamCountConfigured = double(sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", NaN));
+
+for idx = 1:numel(uniqueKeys)
+    Ti = T(groupKey == uniqueKeys(idx), :);
     if isempty(Ti)
         continue;
     end
-    beamDetected = isfinite(double(Ti.BestBeamIndex));
-    beamHit = localFiniteMaskValue(Ti, "BeamHit");
-    topKHit = localFiniteMaskValue(Ti, "TopKBeamHit");
-    beamGap = localFiniteColumn(Ti, "BeamGainGap_dB");
-    beamCount = localFiniteColumn(Ti, "BeamCandidateCount");
-    selectedBeam = localFiniteColumn(Ti, "SelectedBeamIndex");
-    meanSwitchSlots = localMeanBeamSwitchInterval(selectedBeam);
-    meanTrialsToHit = localMeanTrialsToFirstHit(Ti);
-    failureRate = NaN;
-    if ~isempty(beamGap)
-        failureRate = mean(beamGap > 3, "omitnan");
+
+    n = height(Ti);
+    selectedBeam = localFiniteOrNaNColumn(Ti, "SelectedBeamIndex");
+    bestBeam = localFiniteOrNaNColumn(Ti, "BestBeamIndex");
+    beamHit = localBackfillBeamHit(selectedBeam, bestBeam, localFiniteOrNaNColumn(Ti, "BeamHit"));
+    topKHit = localBackfillTopKHit(beamHit, localFiniteOrNaNColumn(Ti, "TopKBeamHit"));
+    beamGap = localFiniteOrNaNColumn(Ti, "BeamGainGap_dB");
+    beamCount = localFiniteOrNaNColumn(Ti, "BeamCandidateCount");
+    absSlot = localBeamAbsoluteSlot(Ti, slotsPerFrame);
+
+    beamDetected = isfinite(bestBeam);
+    selectedDefined = isfinite(selectedBeam);
+    misalignmentFlag = isfinite(beamHit) & beamHit < 0.5;
+    failureFlag = isfinite(beamGap) & beamGap > 3;
+
+    acquisitionFlag = false(n, 1);
+    switchFlag = false(n, 1);
+    firstHitFlag = false(n, 1);
+    switchLatencySlots = nan(n, 1);
+    switchLatency_s = nan(n, 1);
+    trialsSinceLastSwitch = nan(n, 1);
+    trialsToFirstHit = nan(n, 1);
+    stateBefore = repmat("uninitialized", n, 1);
+    stateAfter = repmat("searching", n, 1);
+    eventType = repmat("BEAM_SEARCH", n, 1);
+
+    firstHitIdx = find(beamHit > 0.5, 1, "first");
+    if ~isempty(firstHitIdx)
+        firstHitFlag(firstHitIdx) = true;
+        trialsToFirstHit(:) = double(firstHitIdx);
     end
-    overhead = NaN;
-    if ~isempty(beamCount)
-        overhead = mean(beamCount, "omitnan");
+
+    prevState = "uninitialized";
+    prevSelectedBeam = NaN;
+    prevDetected = false;
+    lastSwitchSlot = NaN;
+    lastSwitchOrdinal = NaN;
+    detectedEventFlag = false(n, 1);
+
+    for k = 1:n
+        if beamDetected(k) && ~prevDetected
+            detectedEventFlag(k) = true;
+        end
+
+        if selectedDefined(k) && ~isfinite(prevSelectedBeam)
+            acquisitionFlag(k) = true;
+            lastSwitchSlot = absSlot(k);
+            lastSwitchOrdinal = double(k);
+        elseif selectedDefined(k) && isfinite(prevSelectedBeam) && abs(selectedBeam(k) - prevSelectedBeam) > 0
+            switchFlag(k) = true;
+            if isfinite(lastSwitchSlot)
+                switchLatencySlots(k) = absSlot(k) - lastSwitchSlot;
+                if isfinite(switchLatencySlots(k))
+                    switchLatency_s(k) = switchLatencySlots(k) * slotDur_s;
+                end
+            end
+            lastSwitchSlot = absSlot(k);
+            lastSwitchOrdinal = double(k);
+        end
+
+        if isfinite(lastSwitchOrdinal)
+            trialsSinceLastSwitch(k) = double(k) - lastSwitchOrdinal;
+        end
+
+        stateBefore(k) = prevState;
+        stateAfter(k) = localBeamRuntimeStateName(selectedDefined(k), beamDetected(k), misalignmentFlag(k), failureFlag(k));
+        eventType(k) = localBeamRuntimeEventLabel(acquisitionFlag(k), switchFlag(k), firstHitFlag(k), ...
+            detectedEventFlag(k), misalignmentFlag(k), failureFlag(k), stateAfter(k));
+
+        prevState = stateAfter(k);
+        prevDetected = beamDetected(k);
+        if selectedDefined(k)
+            prevSelectedBeam = selectedBeam(k);
+        end
     end
-    predictionAccuracy = mean(beamHit, "omitnan");
-    if numTRPs <= 1
-        mtrpGain = 0;
-        mtrpNote = "Single-TRP runtime; mTRP beam-selection gain is zero by construction for this scenario.";
-    else
-        mtrpGain = mean(max(beamGap, 0), "omitnan");
-        mtrpNote = "Multi-TRP beam-selection proxy from measured selected-vs-best beam gain gap.";
-    end
-    summaryT = [summaryT; ... %#ok<AGROW>
-        localProbeMetricRow("beam_detection_probability", dirs(i), "rate", mean(beamDetected), "", "fraction", "Measured from finite best-beam detections."); ...
-        localProbeMetricRow("beam_index_hit_rate", dirs(i), "rate", mean(beamHit, "omitnan"), "", "fraction", "Selected beam matches the best measured beam."); ...
-        localProbeMetricRow("top_k_beam_hit_rate", dirs(i), "top2_rate", mean(topKHit, "omitnan"), "", "fraction", "Selected beam lies within the top-2 measured beam set."); ...
-        localProbeMetricRow("beam_switch_latency", dirs(i), "mean_between_switches", meanSwitchSlots * slotDur_s, "", "s", "Measured mean interval between selected-beam changes across runtime trials."); ...
-        localProbeMetricRow("beam_misalignment_probability", dirs(i), "rate", 1 - mean(beamHit, "omitnan"), "", "fraction", "Selected beam differs from the best measured beam."); ...
-        localProbeMetricRow("beam_prediction_accuracy", dirs(i), "rate", predictionAccuracy, "", "fraction", "Measured selected-beam accuracy under the active runtime beam-selection strategy."); ...
-        localProbeMetricRow("beam_refinement_convergence", dirs(i), "mean_trials_to_first_hit", meanTrialsToHit, "", "trials", "Measured trials-to-first-hit from the runtime beam-selection sequence."); ...
-        localProbeMetricRow("beam_failure_rate", dirs(i), "rate", failureRate, "", "fraction", "Beam gain gap exceeds 3 dB relative to the best measured beam."); ...
-        localProbeMetricRow("mtrp_beam_selection_gain", dirs(i), "delta_dB", mtrpGain, "", "dB", mtrpNote); ...
-        localProbeMetricRow("beam_management_overhead", dirs(i), "mean_beams_evaluated", overhead, "", "beams", "Average number of candidate beams evaluated per trial.")];
+
+    stateVars = intersect(["Direction","SNR_dB","Frame","Slot","UEIndex","RNTI","SelectedBeamIndex","BestBeamIndex", ...
+        "BeamHit","TopKBeamHit","BeamCandidateCount","SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB", ...
+        "BeamSelectionStrategy","ConfiguredBeamSelectionStrategy","AppliedBeamIndexSet","ExecutionModel","Status"], ...
+        string(Ti.Properties.VariableNames), "stable");
+    stateTi = Ti(:, stateVars);
+    stateTi.TrialOrdinal = (1:n).';
+    stateTi.AbsoluteSlot = absSlot;
+    stateTi.BeamDetectedFlag = double(beamDetected);
+    stateTi.MisalignmentFlag = double(misalignmentFlag);
+    stateTi.BeamFailureFlag = double(failureFlag);
+    stateTi.PredictionSuccessFlag = beamHit;
+    stateTi.TrialsSinceLastSwitch = trialsSinceLastSwitch;
+    stateTi.StateBefore = stateBefore;
+    stateTi.StateAfter = stateAfter;
+    stateTi.BeamSweepEnabled = repmat(beamSweepEnabled, n, 1);
+    stateTi.BeamCountConfigured = repmat(beamCountConfigured, n, 1);
+
+    eventVars = intersect(["Direction","SNR_dB","Frame","Slot","UEIndex","RNTI","TrialOrdinal","AbsoluteSlot", ...
+        "SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount","BeamGainGap_dB", ...
+        "BeamSelectionStrategy","ExecutionModel","Status"], string(stateTi.Properties.VariableNames), "stable");
+    eventTi = stateTi(:, eventVars);
+    eventTi.EventType = eventType;
+    eventTi.AcquisitionEventFlag = double(acquisitionFlag);
+    eventTi.SwitchEventFlag = double(switchFlag);
+    eventTi.FirstHitEventFlag = double(firstHitFlag);
+    eventTi.BeamDetectedEventFlag = double(detectedEventFlag);
+    eventTi.MisalignmentEventFlag = double(misalignmentFlag);
+    eventTi.FailureEventFlag = double(failureFlag);
+    eventTi.SwitchLatencySlots = switchLatencySlots;
+    eventTi.SwitchLatency_s = switchLatency_s;
+    eventTi.TrialsToFirstHit = trialsToFirstHit;
+    eventTi.StateBefore = stateBefore;
+    eventTi.StateAfter = stateAfter;
+
+    stateChunks{idx} = stateTi;
+    eventChunks{idx} = eventTi;
+end
+
+stateChunks = stateChunks(~cellfun(@isempty, stateChunks));
+eventChunks = eventChunks(~cellfun(@isempty, eventChunks));
+if ~isempty(stateChunks)
+    stateT = vertcat(stateChunks{:});
+end
+if ~isempty(eventChunks)
+    eventT = vertcat(eventChunks{:});
 end
 end
 
@@ -2252,8 +6939,10 @@ if ~(istable(T) && ~isempty(T))
 end
 vars = ["Direction","SNR_dB","Frame","Slot","UEIndex","RNTI","SelectedBeamIndex","BestBeamIndex", ...
     "BeamHit","TopKBeamHit","BeamCandidateCount","SelectedBeamGain_dB","BestBeamGain_dB", ...
-    "BeamGainGap_dB","MeasuredSINR_dB","ChannelGain_dB","BeamSelectionStrategy","BeamIndexSet", ...
-    "PrecoderSource","BeamformingApplied","ExecutionModel","Status"];
+    "BeamGainGap_dB","ReceiverHestSINR_dB","ChannelGain_dB","BeamSelectionStrategy","BeamIndexSet","ConfiguredBeamSelectionStrategy","AppliedBeamIndexSet", ...
+    "PrecoderSource","PrecodingMode","PrecodingApplicationStage","PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","BeamformingApplied", ...
+    "AppliedPrecoderPMI","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","PrecodingNumPorts","PrecodingNumLayers","PrecodingMatrixRows","PrecodingMatrixCols", ...
+    "ExecutionModel","Status"];
 vars = vars(ismember(vars, string(T.Properties.VariableNames)));
 traceT = T(:, vars);
 traceT.BeamSweepEnabled = repmat(logical(sixgr.util.structGet(cfg, "phy.beamManagement.enabled", false)), height(traceT), 1);
@@ -2294,7 +6983,7 @@ else
 end
 if istable(Tdl) && ~isempty(Tdl)
     img = fullfile(imgDir, "dl_trial_sinr.png");
-    localWriteTrialMetricPlot(Tdl, "MeasuredSINR_dB", img, "DL Trial SINR", "SINR (dB)");
+    localWriteTrialMetricPlot(Tdl, "ReceiverHestSINR_dB", img, "DL Receiver Hest SINR", "Receiver Hest SINR (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
@@ -2325,7 +7014,7 @@ else
 end
 if istable(Tul) && ~isempty(Tul)
     img = fullfile(imgDir, "ul_trial_sinr.png");
-    localWriteTrialMetricPlot(Tul, "MeasuredSINR_dB", img, "UL Trial SINR", "SINR (dB)");
+    localWriteTrialMetricPlot(Tul, "ReceiverHestSINR_dB", img, "UL Receiver Hest SINR", "Receiver Hest SINR (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
@@ -2374,7 +7063,7 @@ xlabel(ax, xLabel);
 ylabel(ax, yLabel);
 title(ax, plotTitle);
 localApplySweepXAxis(ax, T, xLabel);
-exportgraphics(fig, outPath, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
 end
 
 function localWriteGroupedMetricPlot(T, metricName, outPath, plotTitle, yLabel)
@@ -2446,7 +7135,7 @@ localApplySweepXAxis(ax, T, xLabel);
 if numel(groupValues) <= 12
     legend(ax, "Location", "best");
 end
-exportgraphics(fig, outPath, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
 end
 
 function [x, xLabel] = localResolveTrialPlotXAxis(T, groupIndex, groupCount)
@@ -2553,18 +7242,22 @@ xlabel(ax, "In-phase");
 ylabel(ax, "Quadrature");
 title(ax, plotTitle + " (aligned equalized / hard decision)");
 legend(ax, "Location", "best");
-exportgraphics(fig, outPath, "Resolution", 160);
+sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
 end
 
 function T = localEmptyProbeMetricTable()
-T = table('Size', [0 7], ...
-    'VariableTypes', {'string','string','string','double','string','string','string'}, ...
-    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes'});
+T = table('Size', [0 8], ...
+    'VariableTypes', {'string','string','string','double','string','string','string','string'}, ...
+    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes','Availability'});
 end
 
-function T = localProbeMetricRow(metricKey, entity, statistic, value, textValue, unit, notes)
-T = table(string(metricKey), string(entity), string(statistic), double(value), string(textValue), string(unit), string(notes), ...
-    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes'});
+function T = localProbeMetricRow(metricKey, entity, statistic, value, textValue, unit, notes, varargin)
+availability = "";
+if ~isempty(varargin)
+    availability = string(varargin{1});
+end
+T = table(string(metricKey), string(entity), string(statistic), double(value), string(textValue), string(unit), string(notes), string(availability), ...
+    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes','Availability'});
 end
 
 function dirs = localUniqueDirections(T)
@@ -2641,5 +7334,107 @@ if isempty(firstHit)
     meanTrials = numel(hits);
 else
     meanTrials = double(firstHit);
+end
+end
+
+function vals = localFiniteOrNaNColumn(T, varName)
+if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
+    vals = nan(height(T), 1);
+    return;
+end
+vals = double(T.(varName));
+vals = vals(:);
+end
+
+function out = localBackfillBeamHit(selectedBeam, bestBeam, beamHit)
+out = beamHit;
+mask = ~isfinite(out) & isfinite(selectedBeam) & isfinite(bestBeam);
+out(mask) = double(abs(selectedBeam(mask) - bestBeam(mask)) < 1e-9);
+end
+
+function out = localBackfillTopKHit(beamHit, topKHit)
+out = topKHit;
+mask = ~isfinite(out) & isfinite(beamHit);
+out(mask) = beamHit(mask);
+end
+
+function stateName = localBeamRuntimeStateName(selectedDefined, beamDetected, misalignmentFlag, failureFlag)
+if ~beamDetected
+    stateName = "searching";
+elseif failureFlag
+    stateName = "failed_alignment";
+elseif misalignmentFlag
+    stateName = "misaligned";
+elseif selectedDefined
+    stateName = "aligned";
+else
+    stateName = "detected_pending_selection";
+end
+end
+
+function label = localBeamRuntimeEventLabel(acquired, switched, firstHit, detected, misaligned, failed, stateAfter)
+parts = strings(0, 1);
+if acquired
+    parts(end+1, 1) = "BEAM_ACQUIRED"; %#ok<AGROW>
+end
+if switched
+    parts(end+1, 1) = "BEAM_SWITCH"; %#ok<AGROW>
+end
+if firstHit
+    parts(end+1, 1) = "BEAM_REFINEMENT_CONVERGED"; %#ok<AGROW>
+end
+if detected
+    parts(end+1, 1) = "BEAM_DETECTED"; %#ok<AGROW>
+end
+if misaligned
+    parts(end+1, 1) = "BEAM_MISALIGNED"; %#ok<AGROW>
+end
+if failed
+    parts(end+1, 1) = "BEAM_FAILURE"; %#ok<AGROW>
+end
+if isempty(parts)
+    if stateAfter == "searching"
+        label = "BEAM_SEARCH";
+    else
+        label = "BEAM_TRACK";
+    end
+else
+    label = strjoin(parts, "|");
+end
+end
+
+function absSlot = localBeamAbsoluteSlot(T, slotsPerFrame)
+absSlot = nan(height(T), 1);
+frame = localFiniteOrNaNColumn(T, "Frame");
+slot = localFiniteOrNaNColumn(T, "Slot");
+mask = isfinite(frame) & isfinite(slot);
+absSlot(mask) = frame(mask) * slotsPerFrame + slot(mask);
+end
+
+function slotsPerFrame = localSlotsPerFrame(cfg)
+slotDur_s = localSlotDuration(cfg);
+if ~(isfinite(slotDur_s) && slotDur_s > 0)
+    slotsPerFrame = 1;
+    return;
+end
+slotsPerFrame = max(1, round(0.01 / slotDur_s));
+end
+
+function vals = localTableColumnAsString(T, varName)
+vals = repmat("", height(T), 1);
+if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+v = T.(varName);
+if isnumeric(v) || islogical(v)
+    vals = compose("%g", double(v));
+elseif isstring(v)
+    vals = v;
+elseif ischar(v)
+    vals = string(cellstr(v));
+elseif iscellstr(v)
+    vals = string(v);
+else
+    vals = string(v);
 end
 end

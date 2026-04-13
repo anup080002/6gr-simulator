@@ -2,7 +2,8 @@ function artifacts = exportLLSHARQDiagnostics(cfg, airInterfaceRunFolder, opt)
 %EXPORTLLSHARQDIAGNOSTICS Emit measured HARQ runtime diagnostics for LLS.
 
 artifacts = struct("PacketCSV", "", "SummaryCSV", "", "TimelineCSV", "", ...
-    "PacketTable", table(), "SummaryTable", table(), "TimelineTable", table());
+    "PacketTable", table(), "SummaryTable", table(), "TimelineTable", table(), ...
+    "PreviewOnly", false);
 
 rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
 layout = sixgr.report.resultLayout(rootRunFolder);
@@ -16,6 +17,12 @@ snrAnchor = double(sixgr.util.structGet(opt, "LinkSNR_dB", sixgr.util.structGet(
 snrGrid = localReduceSweepGrid(double(sixgr.util.structGet(opt, "LinkSNRGrid_dB", snrAnchor)), ...
     min(5, max(3, round(double(sixgr.util.structGet(opt, "LinkSweepMaxPoints", 4))))), snrAnchor);
 numPackets = max(4, round(double(sixgr.util.structGet(opt, "LinkSweepFrames", max(4, ceil(double(sixgr.util.structGet(cfg, "run.numFrames", 8)) / 2))))));
+previewOnly = logical(sixgr.util.structGet(opt, "HARQLivePreview", false));
+if previewOnly
+    snrGrid = localReduceSweepGrid(snrGrid, 2, snrAnchor);
+    numPackets = min(numPackets, 2);
+    artifacts.PreviewOnly = true;
+end
 
 packetParts = cell(0, 1);
 summaryParts = cell(0, 1);
@@ -70,6 +77,7 @@ artifacts.SummaryCSV = summaryPath;
 artifacts.PacketTable = packetT;
 artifacts.TimelineTable = timelineT;
 artifacts.SummaryTable = summaryT;
+artifacts.PreviewOnly = logical(previewOnly);
 end
 
 function [packetT, summaryT] = localRunDirectionProbe(cfg, direction, snr_dB, numPackets)
@@ -157,7 +165,7 @@ end
 packetT = struct2table(packetRows);
 entity = direction + "@SNR=" + string(snr_dB) + "dB";
 retxObserved = isfinite(retxCount) & retxCount > 0;
-retxClaimAvailability = localRetxClaimAvailability(retxObserved);
+retxClaimAvailability = localRetxClaimAvailability(mode, retxObserved);
 recoveryRate = NaN;
 if any(retxObserved)
     recoveryRate = mean(finalSuccess & ~singleShotSuccess, "omitnan");
@@ -174,7 +182,7 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("retransmission_count_distribution", entity, "retx_packets_observed", "available", sum(retxObserved), "", "count", mode, ...
         localHARQModeNote(mode, "Count of packets that required at least one HARQ retransmission.", retxObserved)); ...
     localProbeMetricRow("combining_gain", entity, "recovered_after_retx_rate", retxClaimAvailability, recoveryRate, ...
-        localRetxClaimText(retxObserved), "fraction", mode, ...
+        localRetxClaimText(mode, retxObserved), "fraction", mode, ...
         localHARQRetxClaimNote(mode, "Fraction of packets only recovered after HARQ combining.", retxObserved)); ...
     localProbeMetricRow("ack_nack_dtx_distribution", entity, "first_attempt_ack_rate", "available", mean(singleShotSuccess, "omitnan"), "", "fraction", mode, ...
         localHARQModeNote(mode, "First-attempt ACK rate before any HARQ retransmission opportunity.", retxObserved)); ...
@@ -201,7 +209,7 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("parity_cb_packet_level_coding_benefits", entity, "gain_fraction", "available", 0, "", "fraction", mode, ...
         localHARQModeNote(mode, "Parity-CB and packet-level coding enhancements are disabled in the current LLS HARQ probe.", retxObserved)); ...
     localProbeMetricRow("harq_gain_per_retransmission", entity, "recovered_after_retx_rate", retxClaimAvailability, recoveryRate, ...
-        localRetxClaimText(retxObserved), "fraction", mode, ...
+        localRetxClaimText(mode, retxObserved), "fraction", mode, ...
         localHARQRetxClaimNote(mode, "Recovered packets attributable to HARQ retransmissions.", retxObserved))];
 end
 
@@ -218,7 +226,7 @@ end
 switch upper(string(direction))
     case "UL"
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfg, tbBitsArg{:}, "RV", rv);
-        chState = localInitChannelState(cfg, tx, txInfo);
+        chState = localInitChannelState(cfg, tx, txInfo, direction);
         rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfg, "Carrier", tx.Carrier, "PUSCH", tx.PUSCH, ...
             "PUSCHIndices", tx.PUSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
@@ -228,7 +236,7 @@ switch upper(string(direction))
         decIt = mean(double(sixgr.util.structGet(rx, "ActiveIterations", NaN)), "omitnan");
     otherwise
         [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, tbBitsArg{:}, "RV", rv);
-        chState = localInitChannelState(cfg, tx, txInfo);
+        chState = localInitChannelState(cfg, tx, txInfo, direction);
         rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfg, "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
@@ -414,9 +422,13 @@ be = sum(txBits(1:L) ~= rxBits(1:L));
 bt = max(numel(txBits), L);
 end
 
-function state = localInitChannelState(cfg, tx, txInfo)
+function state = localInitChannelState(cfg, tx, txInfo, direction)
 state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
     "ChannelPadSamples", 0, "ChannelTrimSamples", 0);
+
+if nargin < 4
+    direction = "";
+end
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
@@ -446,7 +458,7 @@ end
 
 fs = localResolveSampleRate(tx, txInfo);
 numTx = max(1, size(tx.Waveform, 2));
-numRx = max(1, double(sixgr.util.structGet(cfg, "phy.nRxAnt", numTx)));
+numRx = localResolveProbeNumRxAnt(cfg, direction, numTx);
 
 ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
     "Model", cfgCh.channel.model, ...
@@ -460,6 +472,30 @@ if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object")
     [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
     state.ChannelPadSamples = padSamples;
     state.ChannelTrimSamples = trimSamples;
+end
+end
+
+function numRx = localResolveProbeNumRxAnt(cfg, direction, fallback)
+if nargin < 3
+    fallback = 1;
+end
+if upper(string(direction)) == "UL"
+    candidates = [ ...
+        sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "phy.nRxAnt", NaN)];
+else
+    candidates = [ ...
+        sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "phy.nRxAnt", NaN), ...
+        fallback];
+end
+candidates = double(candidates(:));
+candidates = candidates(isfinite(candidates) & candidates >= 1);
+if isempty(candidates)
+    numRx = max(1, round(double(fallback)));
+else
+    numRx = max(1, round(candidates(1)));
 end
 end
 
@@ -679,17 +715,19 @@ if ~ismember(mode, ["observation","exercise"])
 end
 end
 
-function availability = localRetxClaimAvailability(retxObserved)
-if any(retxObserved)
+function availability = localRetxClaimAvailability(mode, retxObserved)
+if string(mode) == "exercise" && any(retxObserved)
     availability = "available";
 else
     availability = "not_exercised";
 end
 end
 
-function txt = localRetxClaimText(retxObserved)
-if any(retxObserved)
+function txt = localRetxClaimText(mode, retxObserved)
+if string(mode) == "exercise" && any(retxObserved)
     txt = "";
+elseif any(retxObserved)
+    txt = "not_exercised_observation_mode";
 else
     txt = "not_exercised_no_retransmissions_observed";
 end
@@ -704,6 +742,9 @@ end
 
 function note = localHARQRetxClaimNote(mode, baseNote, retxObserved)
 note = "HARQ " + string(mode) + " mode. " + string(baseNote);
+if string(mode) ~= "exercise"
+    note = note + " Observation mode does not claim retransmission-effectiveness gain as covered evidence, so this metric remains not exercised.";
+end
 if ~any(retxObserved)
     note = note + " No retransmissions were observed from real waveform decode outcomes at this SNR, so this retransmission-effectiveness metric remains not exercised.";
 end
@@ -728,7 +769,8 @@ if ~isstruct(csi)
     nVar = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
     if ~isempty(hEst)
         try
-            csi = sixgr.phy.dl.CSI_Feedback(hEst, nVar, cfg);
+            csiArgs = localBuildCSIFeedbackArgs(rx);
+            csi = sixgr.phy.dl.CSI_Feedback(hEst, nVar, cfg, csiArgs{:});
         catch
             csi = struct();
         end
@@ -751,6 +793,20 @@ if isstruct(csi) && ~isempty(fieldnames(csi))
         metrics.SINR_dB = double(sixgr.util.structGet(csi, "SINR_dB", NaN));
     end
 end
+end
+
+function args = localBuildCSIFeedbackArgs(rx)
+args = {};
+if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
+    return;
+end
+rxGrid = sixgr.util.structGet(rx, "RxGrid", []);
+refInd = sixgr.util.structGet(rx, "DMRSIndices", []);
+refSym = sixgr.util.structGet(rx, "DMRSSymbols", []);
+if isempty(rxGrid) || isempty(refInd) || isempty(refSym)
+    return;
+end
+args = {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym};
 end
 
 function g = localReduceSweepGrid(gridIn, maxPts, anchorSNR)
