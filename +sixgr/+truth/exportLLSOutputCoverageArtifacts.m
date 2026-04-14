@@ -10,8 +10,10 @@ sixgr.util.ensureFolder(layout.ControlCSVDir);
 sixgr.util.ensureFolder(layout.BeamformingCSVDir);
 sixgr.util.ensureFolder(fullfile(runFolder, "analytics", "csv"));
 
+localCoverageLog("start", runFolder);
 src = localLoadSourceTables(layout);
 meta = localBuildRunMeta(runFolder, scfg, cfg, src);
+localCoverageLog("sources_loaded", runFolder);
 
 tables = struct();
 tables.table_scenario_topology = localBuildScenarioTopologyTable(src, meta, scfg);
@@ -23,16 +25,38 @@ tables.table_gnb_cell = localBuildGNBCellTable(src, meta, cfg);
 tables.table_channel_summary = localBuildChannelSummaryTable(src, meta, cfg);
 tables.table_noise_interference = localBuildNoiseInterferenceTable(src, meta, cfg);
 tables.table_link_budget = localBuildLinkBudgetTable(src, meta, cfg);
+localCoverageLog("tables_core_topology_channel_built", runFolder);
+localCoverageLog("building_live_prb_allocation", runFolder);
 tables.live_prb_allocation = localBuildPRBAllocationTable(src, meta);
+localCoverageLog("built_live_prb_allocation", runFolder);
+localCoverageLog("building_scheduler_decision", runFolder);
 tables.table_scheduler_decision = localBuildSchedulerDecisionTable(src, meta);
+localCoverageLog("built_scheduler_decision", runFolder);
+localCoverageLog("building_prb_allocation_heatmap", runFolder);
 tables.prb_allocation_heatmap = localBuildPRBAllocationHeatmapTable(tables.live_prb_allocation, meta);
+localCoverageLog("built_prb_allocation_heatmap", runFolder);
+localCoverageLog("building_dl_resource_grid_heatmap", runFolder);
 tables.dl_resource_grid_heatmap = localBuildDirectionalGridHeatmapTable(tables.live_prb_allocation, "DL", meta);
+localCoverageLog("built_dl_resource_grid_heatmap", runFolder);
+localCoverageLog("building_ul_resource_grid_heatmap", runFolder);
 tables.ul_resource_grid_heatmap = localBuildDirectionalGridHeatmapTable(tables.live_prb_allocation, "UL", meta);
+localCoverageLog("built_ul_resource_grid_heatmap", runFolder);
+localCoverageLog("building_dl_transport_block", runFolder);
 tables.table_dl_transport_block = localBuildTransportBlockTable(src.DLTrials, src.DLGrants, "DL", meta);
+localCoverageLog("built_dl_transport_block", runFolder);
+localCoverageLog("building_ul_transport_block", runFolder);
 tables.table_ul_transport_block = localBuildTransportBlockTable(src.ULTrials, src.ULGrants, "UL", meta);
+localCoverageLog("built_ul_transport_block", runFolder);
+localCoverageLog("building_harq_process", runFolder);
 tables.table_harq_process = localBuildHARQProcessTable(src, meta);
+localCoverageLog("built_harq_process", runFolder);
+localCoverageLog("building_cqi_pmi_ri", runFolder);
 tables.table_cqi_pmi_ri = localBuildCQIPMIRITable(src, meta);
+localCoverageLog("built_cqi_pmi_ri", runFolder);
+localCoverageLog("building_mcs_tbs_evolution", runFolder);
 tables.table_mcs_tbs_evolution = localBuildMCSTBSEvolutionTable(src, meta);
+localCoverageLog("built_mcs_tbs_evolution", runFolder);
+localCoverageLog("tables_scheduler_transport_built", runFolder);
 tables.table_latency = localBuildLatencyTable(src, meta);
 tables.latency_cdf_plot = localBuildLatencyCDFTable(tables.table_latency, meta);
 tables.latency_root_cause_table = localBuildLatencyRootCauseTable(tables.table_latency, meta);
@@ -46,6 +70,7 @@ tables.power_analytics = localBuildPowerAnalyticsTable(tables.live_power_runtime
 tables.energy_efficiency_analytics = localBuildEnergyEfficiencyAnalyticsTable(tables.live_energy_efficiency_table, meta);
 tables.runtime_power_analytics = localBuildRuntimePowerAnalyticsTable(tables.live_power_runtime_table, tables.live_bb_power_table, meta);
 tables.sleep_state_analytics = localBuildSleepStateAnalyticsTable(tables.live_sleep_state_table, meta);
+localCoverageLog("tables_latency_energy_built", runFolder);
 tables.root_cause_candidate_table = localBuildRootCauseCandidateTable(src, meta);
 tables.cell_edge_analytics_table = localBuildCellEdgeAnalyticsTable(src, meta);
 tables.beam_stability_analytics_table = localBuildBeamStabilityAnalyticsTable(src, meta);
@@ -57,6 +82,7 @@ tables.hotspot_analytics_table = localBuildHotspotAnalyticsTable(src, meta);
 tables.control_overhead_analytics_table = localBuildControlOverheadAnalyticsTable(src, meta);
 tables.resource_overhead_analytics_table = localBuildResourceOverheadAnalyticsTable(tables.live_prb_allocation, meta);
 tables.compare_run_prerequisites = localBuildCompareRunPrerequisitesTable(meta);
+localCoverageLog("tables_root_cause_built", runFolder);
 tables.pdcch_dci_table = localBuildRuntimeMirrorTable(src.PDCCHTrials, meta, ...
     "sixgr.truth.exportControlPlaneTraces", "control/csv/pdcch_trials.csv|air_interface/csv/pdcch_trials.csv", ...
     "runtime_control_trial_rows", "DL");
@@ -84,12 +110,15 @@ tables.csi_rs_table = localBuildRuntimeMirrorTable(src.CSIRSTrials, meta, ...
 tables.trs_receiver_tracking_table = localBuildRuntimeMirrorTable(src.ReceiverTrackingTrace, meta, ...
     "sixgr.truth.CoupledTruthRuntime.writeTables", "reports/csv/live_receiver_tracking_trace.csv", ...
     "runtime_receiver_tracking_trace_rows", "DL");
+localCoverageLog("tables_control_built", runFolder);
 tables.beam_precoder_table = localBuildBeamPrecoderTable(src, meta);
 tables.beamforming_analytics_table = localBuildBeamformingAnalyticsTable(tables.beam_precoder_table, meta);
 tables.mimo_rank_utilization_table = localBuildMIMORankUtilizationTable(tables.beam_precoder_table, meta);
 tables.rank_layer_usage_histogram = localBuildRankLayerUsageHistogram(tables.mimo_rank_utilization_table, meta);
 tables.timing_synchronization_table = localBuildTimingSynchronizationTable(src, meta);
 tables.doppler_time_variation_plot = localBuildDopplerTimeVariationTable(src, meta);
+localCoverageLog("tables_beam_timing_built", runFolder);
+localCoverageLog("tables_built", runFolder);
 
 logicalPaths = struct( ...
     "table_scenario_topology", "reports/csv/table_scenario_topology.csv", ...
@@ -159,23 +188,29 @@ for i = 1:numel(names)
         localWriteTableArtifacts(runFolder, logicalPaths.(name), T);
     end
 end
+localCoverageLog("table_artifacts_written", runFolder);
 
 heatmapImagePath = "";
 energyImagePath = "";
 if ~isempty(tables.prb_allocation_heatmap)
+    localCoverageLog("writing_prb_heatmap", runFolder);
     heatmapImagePath = fullfile(layout.ReportImageDir, "prb_allocation_heatmap.png");
     localWritePRBHeatmapFigure(tables.prb_allocation_heatmap, heatmapImagePath, "reports/image/prb_allocation_heatmap.png");
 end
 if ~isempty(tables.power_energy_table)
+    localCoverageLog("writing_power_energy_figure", runFolder);
     energyImagePath = fullfile(layout.ReportImageDir, "power_energy_cumulative.png");
     localWritePowerEnergyFigure(tables.power_energy_table, energyImagePath, "reports/image/power_energy_cumulative.png");
 end
+localCoverageLog("figure_artifacts_written", runFolder);
 
 [registry, unavailable] = localBuildCoverageRegistry(runFolder, meta, src, tables, logicalPaths, heatmapImagePath, energyImagePath);
+localCoverageLog("coverage_registry_built", runFolder);
 completeness = localBuildOutputCompletenessTable(runFolder, registry, tables, logicalPaths, meta);
 instrumentation = localBuildInstrumentationCoverageTable(registry, meta);
 apiAudit = localBuildAPIExposureAuditTable(registry, meta);
 persistence = localBuildPersistenceAuditTable(runFolder, registry, logicalPaths, meta);
+localCoverageLog("coverage_audits_built", runFolder);
 
 localWriteTableArtifacts(runFolder, "reports/csv/output_coverage_registry.csv", registry);
 localWriteTableArtifacts(runFolder, "reports/csv/output_completeness_table.csv", completeness);
@@ -183,9 +218,11 @@ localWriteTableArtifacts(runFolder, "reports/csv/instrumentation_coverage_table.
 localWriteTableArtifacts(runFolder, "reports/csv/api_exposure_audit_table.csv", apiAudit);
 localWriteTableArtifacts(runFolder, "reports/csv/persistence_audit_table.csv", persistence);
 localWriteTableArtifacts(runFolder, "reports/csv/honest_unavailable_registry.csv", unavailable);
+localCoverageLog("coverage_tables_written", runFolder);
 
 inventory = localBuildArtifactInventory(runFolder);
 localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", inventory);
+localCoverageLog("inventory_written", runFolder);
 
 out = struct();
 out.Tables = tables;
@@ -197,6 +234,7 @@ out.PersistenceAuditTable = persistence;
 out.HonestUnavailableRegistry = unavailable;
 out.UpdatedArtifactInventory = inventory;
 out.ManifestUnavailableEntries = localManifestUnavailableEntries(unavailable);
+localCoverageLog("done", runFolder);
 end
 
 function src = localLoadSourceTables(layout)
@@ -635,15 +673,58 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
 end
 
 function T = localBuildPRBAllocationTable(src, meta)
-grantRows = localBuildAllocationRows(src.DLGrants, "DL", meta, "packet_flow/csv/live_dl_scheduler_grants.csv");
-grantRows = [grantRows; localBuildAllocationRows(src.ULGrants, "UL", meta, "packet_flow/csv/live_ul_scheduler_grants.csv")]; %#ok<AGROW>
-if isempty(grantRows)
+T = [ ...
+    localBuildPRBAllocationTableFromGrants(src.DLGrants, "DL", meta, "packet_flow/csv/live_dl_scheduler_grants.csv"); ...
+    localBuildPRBAllocationTableFromGrants(src.ULGrants, "UL", meta, "packet_flow/csv/live_ul_scheduler_grants.csv")];
+if isempty(T)
     T = table();
     return;
 end
-T = struct2table(grantRows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildPRBAllocationTable", ...
     "packet_flow/csv/live_dl_scheduler_grants.csv", "implemented", "runtime_grant_rows", false, true);
+end
+
+function T = localBuildPRBAllocationTableFromGrants(grants, direction, meta, sourceRef)
+if ~(istable(grants) && ~isempty(grants))
+    T = table();
+    return;
+end
+n = height(grants);
+tti = localColumnAsDouble(grants, "TTI");
+slotsPerFrame = double(meta.slots_per_frame);
+frameVal = NaN(n, 1);
+slotVal = NaN(n, 1);
+validTTI = isfinite(tti) & isfinite(slotsPerFrame) & slotsPerFrame > 0;
+frameVal(validTTI) = floor((tti(validTTI) - 1) ./ slotsPerFrame) + 1;
+slotVal(validTTI) = mod(tti(validTTI) - 1, slotsPerFrame) + 1;
+
+directionCol = repmat(string(direction), n, 1);
+isRetx = localColumnAsLogical(grants, "IsRetransmission");
+occupancyType = repmat("scheduled_allocation", n, 1);
+occupancyType(isRetx) = "retransmission";
+
+T = table();
+T.timestamp_sim_ms = 1e3 * localColumnAsDouble(grants, "Time_s");
+T.frame = frameVal;
+T.slot = slotVal;
+T.symbol_start = localColumnAsDouble(grants, "SymbolStart");
+T.symbol_len = localColumnAsDouble(grants, "NumSymbols");
+T.cell_id = localColumnAsDouble(grants, "CellID");
+T.ue_id = localColumnAsDouble(grants, "UE");
+T.direction = directionCol;
+T.bwp_id = localColumnAsDouble(grants, "BWPId");
+T.rb_start = localColumnAsDouble(grants, "PRBStart");
+T.rb_len = localColumnAsDouble(grants, "PRBCount");
+T.num_prbs = localColumnAsDouble(grants, "PRBCount");
+T.beam_id = NaN(n, 1);
+T.rank = localColumnAsDouble(grants, "NumLayers");
+T.layers = localColumnAsDouble(grants, "NumLayers");
+T.harq_id = localColumnAsDouble(grants, "HarqID");
+T.mcs = localColumnAsDouble(grants, "MCSIndex");
+T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
+T.allocation_reason = localColumnAsText(grants, "GrantReason");
+T.occupancy_type = occupancyType;
+T.source_artifact_ref = repmat(string(sourceRef), n, 1);
 end
 
 function T = localBuildPRBAllocationHeatmapTable(prbTable, meta)
@@ -676,33 +757,34 @@ for i = 1:size(groups, 1)
 end
 mask = (cellVals == bestCell) & (dirVals == bestDir);
 selected = prbTable(mask, :);
-rows = repmat(struct("cell_id", NaN, "direction", "", "frame", NaN, "slot", NaN, ...
-    "rb_index", NaN, "occupancy_count", NaN, "occupancy_fraction", NaN, ...
-    "selected_heatmap_flag", true, "source_artifact_ref", ""), 0, 1);
-for i = 1:height(selected)
-    rbStart = double(selected.rb_start(i));
-    rbLen = double(selected.rb_len(i));
-    slot = double(selected.slot(i));
-    frame = double(selected.frame(i));
-    symLen = double(selected.symbol_len(i));
-    for rb = rbStart:(rbStart + rbLen - 1)
-        rows(end+1, 1) = struct( ... %#ok<AGROW>
-            "cell_id", bestCell, ...
-            "direction", bestDir, ...
-            "frame", frame, ...
-            "slot", slot, ...
-            "rb_index", rb, ...
-            "occupancy_count", symLen, ...
-            "occupancy_fraction", symLen / max(meta.symbols_per_slot, 1), ...
-            "selected_heatmap_flag", true, ...
-            "source_artifact_ref", "packet_flow/csv/live_prb_allocation.csv");
-    end
-end
-if isempty(rows)
+rbStart = double(selected.rb_start(:));
+rbLen = double(selected.rb_len(:));
+frameVals = double(selected.frame(:));
+slotVals = double(selected.slot(:));
+symLen = double(selected.symbol_len(:));
+valid = isfinite(rbStart) & isfinite(rbLen) & rbLen > 0 & isfinite(frameVals) & isfinite(slotVals);
+if ~any(valid)
     T = table();
     return;
 end
-T = struct2table(rows);
+rbStart = rbStart(valid);
+rbLen = max(1, floor(rbLen(valid)));
+frameVals = frameVals(valid);
+slotVals = slotVals(valid);
+symLen = symLen(valid);
+rowIdx = repelem((1:numel(rbLen)).', rbLen);
+offsetCells = arrayfun(@(n) (0:(n-1)).', rbLen, 'UniformOutput', false);
+offsets = vertcat(offsetCells{:});
+T = table();
+T.cell_id = repmat(bestCell, numel(rowIdx), 1);
+T.direction = repmat(bestDir, numel(rowIdx), 1);
+T.frame = frameVals(rowIdx);
+T.slot = slotVals(rowIdx);
+T.rb_index = rbStart(rowIdx) + offsets;
+T.occupancy_count = symLen(rowIdx);
+T.occupancy_fraction = symLen(rowIdx) / max(meta.symbols_per_slot, 1);
+T.selected_heatmap_flag = true(numel(rowIdx), 1);
+T.source_artifact_ref = repmat("packet_flow/csv/live_prb_allocation.csv", numel(rowIdx), 1);
 key = string(T.cell_id) + "|" + string(T.direction) + "|" + string(T.frame) + "|" + ...
     string(T.slot) + "|" + string(T.rb_index) + "|" + string(T.selected_heatmap_flag) + "|" + ...
     string(T.source_artifact_ref);
@@ -794,33 +876,35 @@ if ~any(mask)
     return;
 end
 selected = prbTable(mask, :);
-rows = repmat(struct("cell_id", NaN, "direction", "", "frame", NaN, "slot", NaN, ...
-    "rb_index", NaN, "occupancy_count", NaN, "occupancy_fraction", NaN, ...
-    "source_artifact_ref", ""), 0, 1);
-for i = 1:height(selected)
-    rbStart = double(selected.rb_start(i));
-    rbLen = double(selected.rb_len(i));
-    symLen = double(selected.symbol_len(i));
-    if ~(isfinite(rbStart) && isfinite(rbLen) && rbLen > 0)
-        continue;
-    end
-    for rb = rbStart:(rbStart + rbLen - 1)
-        rows(end+1, 1) = struct( ... %#ok<AGROW>
-            "cell_id", double(selected.cell_id(i)), ...
-            "direction", direction, ...
-            "frame", double(selected.frame(i)), ...
-            "slot", double(selected.slot(i)), ...
-            "rb_index", rb, ...
-            "occupancy_count", symLen, ...
-            "occupancy_fraction", symLen / max(meta.symbols_per_slot, 1), ...
-            "source_artifact_ref", "packet_flow/csv/live_prb_allocation.csv");
-    end
-end
-if isempty(rows)
+rbStart = double(selected.rb_start(:));
+rbLen = double(selected.rb_len(:));
+frameVals = double(selected.frame(:));
+slotVals = double(selected.slot(:));
+cellIds = double(selected.cell_id(:));
+symLen = double(selected.symbol_len(:));
+valid = isfinite(rbStart) & isfinite(rbLen) & rbLen > 0 & isfinite(frameVals) & isfinite(slotVals) & isfinite(cellIds);
+if ~any(valid)
     T = table();
     return;
 end
-T = struct2table(rows);
+rbStart = rbStart(valid);
+rbLen = max(1, floor(rbLen(valid)));
+frameVals = frameVals(valid);
+slotVals = slotVals(valid);
+cellIds = cellIds(valid);
+symLen = symLen(valid);
+rowIdx = repelem((1:numel(rbLen)).', rbLen);
+offsetCells = arrayfun(@(n) (0:(n-1)).', rbLen, 'UniformOutput', false);
+offsets = vertcat(offsetCells{:});
+T = table();
+T.cell_id = cellIds(rowIdx);
+T.direction = repmat(direction, numel(rowIdx), 1);
+T.frame = frameVals(rowIdx);
+T.slot = slotVals(rowIdx);
+T.rb_index = rbStart(rowIdx) + offsets;
+T.occupancy_count = symLen(rowIdx);
+T.occupancy_fraction = symLen(rowIdx) / max(meta.symbols_per_slot, 1);
+T.source_artifact_ref = repmat("packet_flow/csv/live_prb_allocation.csv", numel(rowIdx), 1);
 key = string(T.cell_id) + "|" + string(T.direction) + "|" + string(T.frame) + "|" + string(T.slot) + "|" + string(T.rb_index);
 [~, firstIdx, keyIdx] = unique(key);
 base = T(firstIdx, :);
@@ -954,37 +1038,32 @@ end
 
 function T = localBuildTransportBlockTable(trials, grants, direction, meta)
 if istable(trials) && ~isempty(trials)
-    rows = repmat(struct("timestamp_sim_ms", NaN, "frame", NaN, "slot", NaN, "cell_id", NaN, ...
-        "ue_id", NaN, "harq_id", NaN, "ndi", NaN, "rv", NaN, "tb_id", 0, "mcs", NaN, ...
-        "mod_order", NaN, "code_rate", NaN, "tbs_bits", NaN, "allocated_prbs", NaN, ...
-        "allocated_symbols", NaN, "rank", NaN, "layers", NaN, "beam_id", NaN, ...
-        "crc_pass", false, "tb_bler_flag", false, "decoder_iterations", NaN, ...
-        "soft_combining_round", NaN, "goodput_bits", NaN), height(trials), 1);
-    for i = 1:height(trials)
-        rows(i).timestamp_sim_ms = localTableValue(trials(i, :), "TimestampSim_ms", NaN);
-        rows(i).frame = localTableValue(trials(i, :), "Frame", NaN);
-        rows(i).slot = localTableValue(trials(i, :), "Slot", NaN);
-        rows(i).cell_id = localTableValue(trials(i, :), "CellID", NaN);
-        rows(i).ue_id = localTableValue(trials(i, :), "UEID", localTableValue(trials(i, :), "RNTI", NaN));
-        rows(i).harq_id = localTableValue(trials(i, :), "HarqID", NaN);
-        rows(i).ndi = localTableValue(trials(i, :), "NDI", NaN);
-        rows(i).rv = localTableValue(trials(i, :), "RV", NaN);
-        rows(i).mcs = localTableValue(trials(i, :), "MCSIndex", localTableValue(trials(i, :), "MCS", NaN));
-        rows(i).mod_order = localModOrderFromText(localTableValue(trials(i, :), "Modulation", ""));
-        rows(i).code_rate = localTableValue(trials(i, :), "TargetCodeRate", NaN);
-        rows(i).tbs_bits = localTableValue(trials(i, :), "TBSBits", localTableValue(trials(i, :), "BitsCompared", NaN));
-        rows(i).allocated_prbs = localTableValue(trials(i, :), "AllocatedPRBCount", NaN);
-        rows(i).allocated_symbols = localTableValue(trials(i, :), "AllocatedSymbolCount", NaN);
-        rows(i).rank = localTableValue(trials(i, :), "Rank", NaN);
-        rows(i).layers = localTableValue(trials(i, :), "NumLayers", localTableValue(trials(i, :), "Layers", NaN));
-        rows(i).beam_id = localTableValue(trials(i, :), "AppliedBeamIndex", NaN);
-        rows(i).crc_pass = logical(localTableValue(trials(i, :), "CRCPass", false));
-        rows(i).tb_bler_flag = ~rows(i).crc_pass;
-        rows(i).decoder_iterations = localTableValue(trials(i, :), "DecoderIterations", NaN);
-        rows(i).soft_combining_round = localTableValue(trials(i, :), "HARQRound", NaN);
-        rows(i).goodput_bits = localTableValue(trials(i, :), "BitsCompared", NaN) * double(rows(i).crc_pass);
-    end
-    T = struct2table(rows);
+    n = height(trials);
+    T = table();
+    T.timestamp_sim_ms = localColumnAsDouble(trials, "TimestampSim_ms");
+    T.frame = localColumnAsDouble(trials, "Frame");
+    T.slot = localColumnAsDouble(trials, "Slot");
+    T.cell_id = localColumnAsDouble(trials, "CellID");
+    T.ue_id = localFirstAvailableColumnAsDouble(trials, ["UEID", "UEIndex", "UE", "RNTI"]);
+    T.harq_id = localColumnAsDouble(trials, "HarqID");
+    T.ndi = localColumnAsDouble(trials, "NDI");
+    T.rv = localColumnAsDouble(trials, "RV");
+    T.tb_id = zeros(n, 1);
+    T.mcs = localCoalesceColumnAsDouble(trials, "MCSIndex", "MCS");
+    T.mod_order = arrayfun(@localModOrderFromText, localColumnAsText(trials, "Modulation"));
+    T.code_rate = localColumnAsDouble(trials, "TargetCodeRate");
+    T.tbs_bits = localCoalesceColumnAsDouble(trials, "TBSBits", "BitsCompared");
+    T.allocated_prbs = localColumnAsDouble(trials, "AllocatedPRBCount");
+    T.allocated_symbols = localColumnAsDouble(trials, "AllocatedSymbolCount");
+    T.rank = localColumnAsDouble(trials, "Rank");
+    T.layers = localCoalesceColumnAsDouble(trials, "NumLayers", "Layers");
+    T.beam_id = localColumnAsDouble(trials, "AppliedBeamIndex");
+    T.crc_pass = localColumnAsLogical(trials, "CRCPass");
+    T.tb_bler_flag = ~T.crc_pass;
+    T.decoder_iterations = localColumnAsDouble(trials, "DecoderIterations");
+    T.soft_combining_round = localColumnAsDouble(trials, "HARQRound");
+    comparedBits = localColumnAsDouble(trials, "BitsCompared");
+    T.goodput_bits = comparedBits .* double(T.crc_pass);
 else
     grantRows = localBuildAllocationRows(grants, direction, meta, "");
     if isempty(grantRows)
@@ -1077,19 +1156,42 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
 end
 
 function T = localBuildMCSTBSEvolutionTable(src, meta)
-rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
-    "cqi_input", NaN, "ri_input", NaN, "pmi_input", NaN, "mcs_selected", NaN, "mod_order", NaN, ...
-    "code_rate", NaN, "tbs_bits", NaN, "olla_offset", NaN, "harq_state", "", ...
-    "scheduler_reason", "", "effective_sinr_dB", NaN), 0, 1);
-rows = [rows; localBuildMCSTBSRowsFromGrants(src.DLGrants, "DL")]; %#ok<AGROW>
-rows = [rows; localBuildMCSTBSRowsFromGrants(src.ULGrants, "UL")]; %#ok<AGROW>
-if isempty(rows)
+T = [ ...
+    localBuildMCSTBSEvolutionFromGrants(src.DLGrants, "DL"); ...
+    localBuildMCSTBSEvolutionFromGrants(src.ULGrants, "UL")];
+if isempty(T)
     T = table();
     return;
 end
-T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildMCSTBSEvolutionTable", ...
     "packet_flow/csv/live_dl_scheduler_grants.csv", "implemented", "derived_from_scheduler_grants", true, true);
+end
+
+function T = localBuildMCSTBSEvolutionFromGrants(grants, direction)
+if ~(istable(grants) && ~isempty(grants))
+    T = table();
+    return;
+end
+n = height(grants);
+isRetx = localColumnAsLogical(grants, "IsRetransmission");
+harqState = repmat("new_data", n, 1);
+harqState(isRetx) = "retransmission";
+T = table();
+T.timestamp_sim_ms = 1e3 * localColumnAsDouble(grants, "Time_s");
+T.ue_id = localColumnAsDouble(grants, "UE");
+T.cell_id = localColumnAsDouble(grants, "CellID");
+T.direction = repmat(string(direction), n, 1);
+T.cqi_input = localColumnAsDouble(grants, "CQIUsed");
+T.ri_input = NaN(n, 1);
+T.pmi_input = NaN(n, 1);
+T.mcs_selected = localColumnAsDouble(grants, "MCSIndex");
+T.mod_order = NaN(n, 1);
+T.code_rate = localColumnAsDouble(grants, "TargetCodeRate");
+T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
+T.olla_offset = NaN(n, 1);
+T.harq_state = harqState;
+T.scheduler_reason = localColumnAsText(grants, "GrantReason");
+T.effective_sinr_dB = localColumnAsDouble(grants, "SINR_dB");
 end
 
 function T = localBuildPowerEnergyTable(src, meta, cfg)
@@ -2620,6 +2722,15 @@ if jsonPath ~= string(logicalPath)
 end
 end
 
+function localCoverageLog(stepName, runFolder)
+msg = "exportLLSOutputCoverageArtifacts:" + string(stepName) + " runFolder=" + string(runFolder);
+if sixgr.db.isArtifactStoreActive()
+    sixgr.db.appendRunLog("INFO", char(msg));
+else
+    fprintf("%s\n", char(msg));
+end
+end
+
 function localWritePRBHeatmapFigure(T, filePath, logicalPath)
 if ~(istable(T) && ~isempty(T))
     return;
@@ -3520,18 +3631,23 @@ row.source_chain = "system_interference_detail";
 end
 
 function rows = localBuildAllocationRows(grants, direction, meta, sourceRef)
+if ~(istable(grants) && ~isempty(grants))
+    rows = repmat(struct("timestamp_sim_ms", NaN, "frame", NaN, "slot", NaN, "symbol_start", NaN, ...
+        "symbol_len", NaN, "cell_id", NaN, "ue_id", NaN, "direction", "", "bwp_id", NaN, ...
+        "rb_start", NaN, "rb_len", NaN, "num_prbs", NaN, "beam_id", NaN, "rank", NaN, ...
+        "layers", NaN, "harq_id", NaN, "mcs", NaN, "tbs_bits", NaN, "allocation_reason", "", ...
+        "occupancy_type", "", "source_artifact_ref", ""), 0, 1);
+    return;
+end
 rows = repmat(struct("timestamp_sim_ms", NaN, "frame", NaN, "slot", NaN, "symbol_start", NaN, ...
     "symbol_len", NaN, "cell_id", NaN, "ue_id", NaN, "direction", "", "bwp_id", NaN, ...
     "rb_start", NaN, "rb_len", NaN, "num_prbs", NaN, "beam_id", NaN, "rank", NaN, ...
     "layers", NaN, "harq_id", NaN, "mcs", NaN, "tbs_bits", NaN, "allocation_reason", "", ...
-    "occupancy_type", "", "source_artifact_ref", ""), 0, 1);
-if ~(istable(grants) && ~isempty(grants))
-    return;
-end
+    "occupancy_type", "", "source_artifact_ref", ""), height(grants), 1);
 for i = 1:height(grants)
     tti = localTableValue(grants(i, :), "TTI", NaN);
     [frameVal, slotVal] = localTTIToFrameSlot(tti, meta.slots_per_frame);
-    rows(end+1, 1) = struct( ... %#ok<AGROW>
+    rows(i) = struct( ...
         "timestamp_sim_ms", 1e3 * double(localTableValue(grants(i, :), "Time_s", NaN)), ...
         "frame", frameVal, ...
         "slot", slotVal, ...
@@ -3557,15 +3673,19 @@ end
 end
 
 function rows = localBuildCQIRowsFromGrants(grants, direction)
+if ~(istable(grants) && ~isempty(grants))
+    rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "report_id", NaN, ...
+        "report_type", "", "wideband_cqi", NaN, "subband_cqi_vector_ref", "", "pmi", NaN, "ri", NaN, ...
+        "csi_age_ms", NaN, "report_size_bits", NaN, "report_trigger", "", "based_on", "", ...
+        "feedback_delay_ms", NaN, "direction", ""), 0, 1);
+    return;
+end
 rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "report_id", NaN, ...
     "report_type", "", "wideband_cqi", NaN, "subband_cqi_vector_ref", "", "pmi", NaN, "ri", NaN, ...
     "csi_age_ms", NaN, "report_size_bits", NaN, "report_trigger", "", "based_on", "", ...
-    "feedback_delay_ms", NaN, "direction", ""), 0, 1);
-if ~(istable(grants) && ~isempty(grants))
-    return;
-end
+    "feedback_delay_ms", NaN, "direction", ""), height(grants), 1);
 for i = 1:height(grants)
-    rows(end+1, 1) = struct( ... %#ok<AGROW>
+    rows(i) = struct( ...
         "timestamp_sim_ms", 1e3 * double(localTableValue(grants(i, :), "Time_s", NaN)), ...
         "ue_id", localTableValue(grants(i, :), "UE", NaN), ...
         "cell_id", localTableValue(grants(i, :), "CellID", NaN), ...
@@ -3585,15 +3705,19 @@ end
 end
 
 function rows = localBuildMCSTBSRowsFromGrants(grants, direction)
+if ~(istable(grants) && ~isempty(grants))
+    rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
+        "cqi_input", NaN, "ri_input", NaN, "pmi_input", NaN, "mcs_selected", NaN, "mod_order", NaN, ...
+        "code_rate", NaN, "tbs_bits", NaN, "olla_offset", NaN, "harq_state", "", ...
+        "scheduler_reason", "", "effective_sinr_dB", NaN), 0, 1);
+    return;
+end
 rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
     "cqi_input", NaN, "ri_input", NaN, "pmi_input", NaN, "mcs_selected", NaN, "mod_order", NaN, ...
     "code_rate", NaN, "tbs_bits", NaN, "olla_offset", NaN, "harq_state", "", ...
-    "scheduler_reason", "", "effective_sinr_dB", NaN), 0, 1);
-if ~(istable(grants) && ~isempty(grants))
-    return;
-end
+    "scheduler_reason", "", "effective_sinr_dB", NaN), height(grants), 1);
 for i = 1:height(grants)
-    rows(end+1, 1) = struct( ... %#ok<AGROW>
+    rows(i) = struct( ...
         "timestamp_sim_ms", 1e3 * double(localTableValue(grants(i, :), "Time_s", NaN)), ...
         "ue_id", localTableValue(grants(i, :), "UE", NaN), ...
         "cell_id", localTableValue(grants(i, :), "CellID", NaN), ...
@@ -3856,12 +3980,48 @@ catch
 end
 end
 
+function arr = localFirstAvailableColumnAsDouble(T, varNames)
+arr = NaN(height(T), 1);
+for i = 1:numel(varNames)
+    name = string(varNames(i));
+    if localHasVar(T, name)
+        arr = localColumnAsDouble(T, name);
+        return;
+    end
+end
+end
+
+function arr = localCoalesceColumnAsDouble(T, primaryVar, fallbackVar)
+arr = localColumnAsDouble(T, primaryVar);
+fallback = localColumnAsDouble(T, fallbackVar);
+mask = ~isfinite(arr);
+arr(mask) = fallback(mask);
+end
+
 function arr = localColumnAsText(T, varName)
 if ~(istable(T) && ~isempty(T) && localHasVar(T, varName))
     arr = strings(height(T), 1);
     return;
 end
 arr = string(T.(varName));
+end
+
+function arr = localColumnAsLogical(T, varName)
+if ~(istable(T) && ~isempty(T) && localHasVar(T, varName))
+    arr = false(height(T), 1);
+    return;
+end
+raw = T.(varName);
+if islogical(raw)
+    arr = logical(raw(:));
+    return;
+end
+if isnumeric(raw)
+    raw = double(raw(:));
+    arr = isfinite(raw) & raw ~= 0;
+    return;
+end
+arr = strcmpi(strtrim(string(raw(:))), "true") | strcmpi(strtrim(string(raw(:))), "yes") | strcmpi(strtrim(string(raw(:))), "1");
 end
 
 function idx = localStringGroupIndex(values)
