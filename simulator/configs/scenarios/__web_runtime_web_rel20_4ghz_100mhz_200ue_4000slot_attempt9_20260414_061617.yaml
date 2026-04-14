@@ -1,0 +1,11 @@
+{
+  "inherits": [
+    "./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml"
+  ],
+  "output": {
+    "backend": "mysql_web",
+    "database_host": "localhost",
+    "database_port": 3306,
+    "database_schema": "sixgr_results"
+  }
+}

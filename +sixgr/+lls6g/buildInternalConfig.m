@@ -704,16 +704,36 @@ if isfield(s.system, "scheduler") && isstruct(s.system.scheduler)
     schedulerType = char(string(localRequireNested(s, "system.scheduler.type", "system.scheduler.type")));
     maxActiveUEsPerSlot = double(localRequireNested(s, "system.scheduler.maxActiveUEsPerSlot", "system.scheduler.maxActiveUEsPerSlot"));
     maxActiveUEsPerCellPerSlot = double(localGetNested(s, "system.scheduler.maxActiveUEsPerCellPerSlot", maxActiveUEsPerSlot));
+    maxActiveUEsPerCellPerSlotDL = double(localGetNested(s, "system.scheduler.maxActiveUEsPerCellPerSlotDL", maxActiveUEsPerCellPerSlot));
+    maxActiveUEsPerCellPerSlotUL = double(localGetNested(s, "system.scheduler.maxActiveUEsPerCellPerSlotUL", maxActiveUEsPerCellPerSlot));
     maxPRBAllocationPerUE = double(localRequireNested(s, "system.scheduler.maxPRBAllocationPerUE", "system.scheduler.maxPRBAllocationPerUE"));
     cfg = sixgr.util.structSet(cfg, "system.scheduler.type", schedulerType);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.type", schedulerType);
     cfg = sixgr.util.structSet(cfg, "system.scheduler.maxActiveUEsPerSlot", maxActiveUEsPerSlot);
     cfg = sixgr.util.structSet(cfg, "system.scheduler.maxActiveUEsPerCellPerSlot", maxActiveUEsPerCellPerSlot);
+    cfg = sixgr.util.structSet(cfg, "system.scheduler.maxActiveUEsPerCellPerSlotDL", maxActiveUEsPerCellPerSlotDL);
+    cfg = sixgr.util.structSet(cfg, "system.scheduler.maxActiveUEsPerCellPerSlotUL", maxActiveUEsPerCellPerSlotUL);
     cfg = sixgr.util.structSet(cfg, "system.scheduler.maxPRBAllocationPerUE", maxPRBAllocationPerUE);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxUEPerSlot", maxActiveUEsPerCellPerSlot);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxUEPerSlotDL", maxActiveUEsPerCellPerSlotDL);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxUEPerSlotUL", maxActiveUEsPerCellPerSlotUL);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerSlot", maxActiveUEsPerSlot);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlot", maxActiveUEsPerCellPerSlot);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlotDL", maxActiveUEsPerCellPerSlotDL);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlotUL", maxActiveUEsPerCellPerSlotUL);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxPRBAllocationPerUE", maxPRBAllocationPerUE);
+    if isfield(s.system.scheduler, "tbsMode")
+        cfg = sixgr.util.structSet(cfg, "mac.scheduler.tbsMode", ...
+            char(string(localGetNested(s, "system.scheduler.tbsMode", "approximate"))));
+    end
+    if isfield(s.system.scheduler, "fastNREApprox")
+        cfg = sixgr.util.structSet(cfg, "mac.scheduler.fastNREApprox", ...
+            logical(localGetNested(s, "system.scheduler.fastNREApprox", true)));
+    end
+    if isfield(s.system.scheduler, "allowApproximatePlanningInStrictMode")
+        cfg = sixgr.util.structSet(cfg, "mac.scheduler.allowApproximatePlanningInStrictMode", ...
+            logical(localGetNested(s, "system.scheduler.allowApproximatePlanningInStrictMode", false)));
+    end
     cfg = sixgr.util.structSet(cfg, "system.scheduler.fairnessAlpha", ...
         double(localRequireNested(s, "system.scheduler.fairnessAlpha", "system.scheduler.fairnessAlpha")));
     cfg = sixgr.util.structSet(cfg, "system.scheduler.proportionalFairWindow_ms", ...

@@ -47,7 +47,7 @@ MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
 MYSQL_USER = os.environ.get("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "root")
 MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", "sixgr_results")
-DEFAULT_SCENARIO = "lls_3gpp_4ghz_100mhz_longrun.yaml"
+DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml"
 BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS", "E2E"]
 BROWSER_EXECUTION_MODE_LABELS = {
     "LLS": "LLS",

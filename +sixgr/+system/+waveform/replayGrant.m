@@ -71,15 +71,8 @@ try
     replay.EffectiveRxAntennas = double(sixgr.util.structGet(cfgReplay, "channel.nRxAnt", NaN));
 
     if dir == "UL"
-        [tmpl, ~] = localBuildGrantAlignedPUSCHTx(cfgReplay, grant);
-        tbBits = localNormalizeTransportBits(payloadIn, double(tmpl.TransportBlockSize), opt.InputFormat);
-        [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgReplay, ...
-            "Carrier", tmpl.Carrier, ...
-            "PUSCH", tmpl.PUSCH, ...
-            "TransportBlockBits", tbBits, ...
-            "RV", tmpl.RV, ...
-            "TargetCodeRate", tmpl.TargetCodeRate, ...
-            "CompactOutput", logical(opt.CompactPHYIO));
+        tmpl = localResolveReplayTemplate(cfgReplay, "UL", grant, isempty(payloadIn));
+        [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "UL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
@@ -97,15 +90,8 @@ try
             "FastAWGNPath", fastAWGNPath, ...
             "SkipTimingEstimate", logical(chState.UseFading));
     else
-        [tmpl, ~] = localBuildGrantAlignedPDSCHTx(cfgReplay, grant);
-        tbBits = localNormalizeTransportBits(payloadIn, double(tmpl.TransportBlockSize), opt.InputFormat);
-        [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgReplay, ...
-            "Carrier", tmpl.Carrier, ...
-            "PDSCH", tmpl.PDSCH, ...
-            "TransportBlockBits", tbBits, ...
-            "RV", tmpl.RV, ...
-            "TargetCodeRate", tmpl.TargetCodeRate, ...
-            "CompactOutput", logical(opt.CompactPHYIO));
+        tmpl = localResolveReplayTemplate(cfgReplay, "DL", grant, isempty(payloadIn));
+        [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "DL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
@@ -128,6 +114,7 @@ try
     replay.BLER = double(~replay.Ok);
     replay.UsedFading = logical(sixgr.util.structGet(chState, "UseFading", false));
     replay.FastAWGNPath = logical(fastAWGNPath);
+    replay.WaveformReplayReused = logical(txTemplateReused);
     replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo);
     if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
         replay.DecoderIterations = mean(double(rx.ActiveIterations(:)), "omitnan");
@@ -151,6 +138,118 @@ catch ME
     replay.BLER = 1.0;
     replay.Notes = "waveform_replay_failed: " + string(ME.message);
 end
+end
+
+function [tx, txInfo, reused] = localResolveReplayTx(cfgReplay, dir, tmpl, payloadIn, opt)
+reused = false;
+
+if ~isempty(payloadIn)
+    tbBits = localNormalizeTransportBits(payloadIn, double(tmpl.TransportBlockSize), opt.InputFormat);
+    [tx, txInfo] = localBuildReplayTx(cfgReplay, dir, tmpl, tbBits, opt);
+    return;
+end
+
+tmpl = localNormalizePayloadlessReplayTemplate(dir, tmpl);
+tbBits = localPayloadlessTransportBits(double(tmpl.TransportBlockSize));
+cacheKey = localReplayTxCacheKey(dir, tmpl);
+[hit, cached] = localReplayTxTemplateCache("get", cacheKey);
+if hit
+    tx = cached.Tx;
+    txInfo = cached.Info;
+    reused = true;
+    return;
+end
+
+[tx, txInfo] = localBuildReplayTx(cfgReplay, dir, tmpl, tbBits, opt);
+localReplayTxTemplateCache("set", cacheKey, struct("Tx", tx, "Info", txInfo));
+end
+
+function tmpl = localResolveReplayTemplate(cfgReplay, dir, grant, allowCache)
+if nargin < 4
+    allowCache = false;
+end
+
+if allowCache
+    cacheKey = localReplayTemplateCacheKey(cfgReplay, dir, grant);
+    [hit, cached] = localReplayGrantTemplateCache("get", cacheKey);
+    if hit
+        tmpl = cached;
+        return;
+    end
+end
+
+if strcmpi(char(string(dir)), "UL")
+    [tmpl, ~] = localBuildGrantAlignedPUSCHTx(cfgReplay, grant);
+else
+    [tmpl, ~] = localBuildGrantAlignedPDSCHTx(cfgReplay, grant);
+end
+
+if allowCache
+    localReplayGrantTemplateCache("set", cacheKey, tmpl);
+end
+end
+
+function tmpl = localNormalizePayloadlessReplayTemplate(dir, tmpl)
+fieldName = "PDSCH";
+if strcmpi(char(string(dir)), "UL")
+    fieldName = "PUSCH";
+end
+if ~isfield(tmpl, fieldName)
+    return;
+end
+channelCfg = tmpl.(fieldName);
+channelCfg = localNormalizePayloadlessChannelIdentity(channelCfg);
+tmpl.(fieldName) = channelCfg;
+end
+
+function channelCfg = localNormalizePayloadlessChannelIdentity(channelCfg)
+if isempty(channelCfg) || ~isobject(channelCfg)
+    return;
+end
+identityFields = {
+    "RNTI", 1; ...
+    "NID", 1; ...
+    "NIDNSCID", 1; ...
+    "NSCID", 0; ...
+    "NRSID", 1; ...
+    "DMRSNID", 1 ...
+    };
+for i = 1:size(identityFields, 1)
+    name = char(identityFields{i, 1});
+    value = identityFields{i, 2};
+    if isprop(channelCfg, name)
+        try
+            channelCfg.(name) = value;
+        catch
+            % Keep runtime object value if the property is read-only in this release.
+        end
+    end
+end
+end
+
+function [tx, txInfo] = localBuildReplayTx(cfgReplay, dir, tmpl, tbBits, opt)
+if dir == "UL"
+    [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgReplay, ...
+        "Carrier", tmpl.Carrier, ...
+        "PUSCH", tmpl.PUSCH, ...
+        "TransportBlockBits", tbBits, ...
+        "RV", tmpl.RV, ...
+        "TargetCodeRate", tmpl.TargetCodeRate, ...
+        "CompactOutput", logical(opt.CompactPHYIO));
+else
+    [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgReplay, ...
+        "Carrier", tmpl.Carrier, ...
+        "PDSCH", tmpl.PDSCH, ...
+        "TransportBlockBits", tbBits, ...
+        "RV", tmpl.RV, ...
+        "TargetCodeRate", tmpl.TargetCodeRate, ...
+        "CompactOutput", logical(opt.CompactPHYIO));
+end
+end
+
+function bits = localPayloadlessTransportBits(expectedBits)
+expectedBits = max(0, round(double(expectedBits)));
+bits = int8(zeros(expectedBits, 1));
 end
 
 function replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo)
@@ -565,6 +664,155 @@ tx0 = struct( ...
     "TargetCodeRate", targetCodeRate, ...
     "TransportBlockSize", localComputeTBSBitsFromAlloc(pusch, puschInfo, targetCodeRate, ...
         double(sixgr.util.structGet(cfgE, "phy.pusch.xOverhead", 0))));
+end
+
+function key = localReplayTxCacheKey(dir, tmpl)
+signature = struct();
+signature.Direction = upper(char(string(dir)));
+signature.TransportBlockSize = double(sixgr.util.structGet(tmpl, "TransportBlockSize", NaN));
+signature.RV = double(sixgr.util.structGet(tmpl, "RV", NaN));
+signature.TargetCodeRate = round(double(sixgr.util.structGet(tmpl, "TargetCodeRate", NaN)) * 1e6) / 1e6;
+signature.Carrier = localObjectCacheStruct(sixgr.util.structGet(tmpl, "Carrier", []));
+if strcmpi(signature.Direction, "UL")
+    signature.Channel = localObjectCacheStruct(sixgr.util.structGet(tmpl, "PUSCH", []));
+else
+    signature.Channel = localObjectCacheStruct(sixgr.util.structGet(tmpl, "PDSCH", []));
+end
+try
+    key = char(jsonencode(signature));
+catch
+    key = sprintf("%s|TBS=%g|RV=%g|Rate=%.6f", signature.Direction, ...
+        signature.TransportBlockSize, signature.RV, signature.TargetCodeRate);
+end
+end
+
+function key = localReplayTemplateCacheKey(cfgReplay, dir, grant)
+signature = struct();
+signature.Direction = upper(char(string(dir)));
+signature.ChannelModel = char(string(localResolveChannelToken(cfgReplay)));
+signature.TxAntennas = double(sixgr.util.structGet(cfgReplay, "channel.nTxAnt", NaN));
+signature.RxAntennas = double(sixgr.util.structGet(cfgReplay, "channel.nRxAnt", NaN));
+signature.NSizeGrid = double(sixgr.util.structGet(cfgReplay, "phy.carrier.NSizeGrid", NaN));
+signature.NStartGrid = double(sixgr.util.structGet(cfgReplay, "phy.carrier.NStartGrid", NaN));
+signature.SubcarrierSpacing = double(sixgr.util.structGet(cfgReplay, "phy.carrier.SubcarrierSpacing", NaN));
+signature.PRBSet = double(localReplayPRBSet(cfgReplay, grant));
+signature.SymbolAllocation = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]));
+signature.Modulation = char(string(sixgr.util.structGet(grant, "Modulation", "")));
+signature.NumLayers = double(sixgr.util.structGet(grant, "NumLayers", NaN));
+signature.RV = double(localGrantRV(grant));
+signature.TargetCodeRate = round(double(sixgr.util.structGet(grant, "TargetCodeRate", NaN)) * 1e6) / 1e6;
+try
+    key = char(jsonencode(signature));
+catch
+    key = sprintf("%s|ch=%s|tx=%g|rx=%g|grid=%g|start=%g|layers=%g|rv=%g", ...
+        signature.Direction, signature.ChannelModel, signature.TxAntennas, ...
+        signature.RxAntennas, signature.NSizeGrid, signature.NStartGrid, ...
+        signature.NumLayers, signature.RV);
+end
+end
+
+function out = localObjectCacheStruct(value)
+if isempty(value)
+    out = struct();
+    return;
+end
+try
+    warnState = warning('off', 'MATLAB:structOnObject');
+    cleanup = onCleanup(@() warning(warnState.state, 'MATLAB:structOnObject'));
+    out = orderfields(struct(value));
+    clear cleanup;
+catch
+    out = struct("StringValue", char(string(value)));
+end
+end
+
+function varargout = localReplayGrantTemplateCache(action, key, value)
+persistent cacheMap keyOrder
+if isempty(cacheMap)
+    cacheMap = containers.Map('KeyType','char','ValueType','any');
+    keyOrder = strings(0,1);
+end
+
+switch lower(string(action))
+    case "get"
+        if isKey(cacheMap, char(key))
+            varargout = {true, cacheMap(char(key))};
+        else
+            varargout = {false, struct()};
+        end
+    case "set"
+        cacheMap(char(key)) = value;
+        keyOrder(end+1,1) = string(key);
+        maxEntries = 512;
+        if numel(cacheMap) > maxEntries
+            dropCount = max(1, floor(maxEntries / 4));
+            keyOrder = localPruneReplayCache(cacheMap, keyOrder, dropCount);
+        end
+        varargout = {};
+    case "reset"
+        remove(cacheMap, keys(cacheMap));
+        keyOrder = strings(0,1);
+        varargout = {};
+    otherwise
+        error("sixgr:system:ReplayGrant:BadTemplateCacheAction", ...
+            "Unknown replay template cache action '%s'.", char(string(action)));
+end
+end
+
+function varargout = localReplayTxTemplateCache(action, key, value)
+persistent cacheMap keyOrder
+if isempty(cacheMap)
+    cacheMap = containers.Map('KeyType','char','ValueType','any');
+    keyOrder = strings(0,1);
+end
+
+switch lower(string(action))
+    case "get"
+        if isKey(cacheMap, char(key))
+            varargout = {true, cacheMap(char(key))};
+        else
+            varargout = {false, struct()};
+        end
+    case "set"
+        cacheMap(char(key)) = value;
+        keyOrder(end+1,1) = string(key);
+        maxEntries = 256;
+        if numel(cacheMap) > maxEntries
+            dropCount = max(1, floor(maxEntries / 4));
+            keyOrder = localPruneReplayCache(cacheMap, keyOrder, dropCount);
+        end
+        varargout = {};
+    case "reset"
+        remove(cacheMap, keys(cacheMap));
+        keyOrder = strings(0,1);
+        varargout = {};
+    otherwise
+        error("sixgr:system:ReplayGrant:BadCacheAction", ...
+            "Unknown replay TX cache action '%s'.", char(string(action)));
+end
+end
+
+function keyOrder = localPruneReplayCache(cacheMap, keyOrder, dropCount)
+if isempty(keyOrder) || numel(cacheMap) == 0
+    keyOrder = strings(0,1);
+    return;
+end
+
+dropCount = min(dropCount, numel(keyOrder));
+dropKeys = unique(keyOrder(1:dropCount), 'stable');
+for i = 1:numel(dropKeys)
+    rawKey = char(dropKeys(i));
+    if isKey(cacheMap, rawKey)
+        remove(cacheMap, rawKey);
+    end
+end
+
+liveKeys = string(keys(cacheMap));
+if isempty(liveKeys)
+    keyOrder = strings(0,1);
+else
+    keyOrder = liveKeys(:);
+end
 end
 
 function tbsBits = localComputeTBSBitsFromAlloc(chCfg, chInfo, targetCodeRate, xOverhead)

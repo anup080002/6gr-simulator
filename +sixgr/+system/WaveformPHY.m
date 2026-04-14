@@ -116,7 +116,7 @@ classdef WaveformPHY < handle
             replay.PHYDecisionSource = "sixgr.system.waveform.replayGrant";
             replay.PHYDecisionReason = "waveform_replay_executed";
             replay.WaveformReplayExecuted = true;
-            replay.WaveformReplayReused = false;
+            replay.WaveformReplayReused = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
             replay.WaveformReplayKey = obj.localReplayKey(ctx);
             obj.LastReplay = replay;
         end

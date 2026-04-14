@@ -116,11 +116,12 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
 
                     nNeed = numel(g.PRBSet);
                     if nNeed <= 0
-                        nNeed = max(1, round(double(obj.MinPRBPerUE)));
+                        nNeed = max(1, round(double(sixgr.util.structGet(g, "NPRB", ...
+                            sixgr.util.structGet(g, "PRBCount", sixgr.util.structGet(g, "NumPRB", obj.MinPRBPerUE)))));
                     end
-                    nNeed = min(nNeed, nPRBAvail - cursor + 1);
-                    if nNeed <= 0
-                        break;
+                    % Retx must preserve enough PRBs to carry the stored TB honestly.
+                    if nNeed <= 0 || (nPRBAvail - cursor + 1) < nNeed
+                        continue;
                     end
                     g.PRBSet = prbAvail(cursor:(cursor + nNeed - 1));
                     cursor = cursor + nNeed;

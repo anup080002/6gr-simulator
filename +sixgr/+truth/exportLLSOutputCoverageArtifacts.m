@@ -1250,20 +1250,25 @@ end
 entityType = string(powerEnergyTable.entity_type(:));
 entityID = double(powerEnergyTable.entity_id(:));
 direction = string(powerEnergyTable.direction(:));
-keys = unique(entityType + "|" + string(entityID) + "|" + direction);
-rows = repmat(localEmptyCanonicalPowerFactRow(), numel(keys), 1);
-for i = 1:numel(keys)
-    parts = split(keys(i), "|");
-    mask = entityType == parts(1) & entityID == str2double(parts(2)) & direction == parts(3);
+entityType(ismissing(entityType)) = "";
+direction(ismissing(direction)) = "";
+groupIdx = findgroups(categorical(entityType), entityID, categorical(direction));
+groupIds = unique(groupIdx(groupIdx > 0));
+rows = repmat(localEmptyCanonicalPowerFactRow(), numel(groupIds), 1);
+for i = 1:numel(groupIds)
+    mask = groupIdx == groupIds(i);
     subset = powerEnergyTable(mask, :);
+    groupEntityType = entityType(find(mask, 1, "first"));
+    groupEntityID = entityID(find(mask, 1, "first"));
+    groupDirection = direction(find(mask, 1, "first"));
     totalEnergyJ = sum(double(subset.energy_increment_mJ), "omitnan") / 1e3;
     usefulBits = sum(double(subset.useful_bits), "omitnan");
     energyPerBitJ = localPowerEntityEnergyPerBit(totalEnergyJ, usefulBits);
     effBitsPerJ = localPowerEntityEfficiency(usefulBits, totalEnergyJ);
     row = localEmptyCanonicalPowerFactRow();
-    row.direction = string(parts(3));
-    row.ue_id = localTernary(parts(1) == "ue", str2double(parts(2)), NaN);
-    row.bs_id = localTernary(parts(1) == "cell", str2double(parts(2)), NaN);
+    row.direction = groupDirection;
+    row.ue_id = localTernary(groupEntityType == "ue", groupEntityID, NaN);
+    row.bs_id = localTernary(groupEntityType == "cell", groupEntityID, NaN);
     row.sfn = NaN;
     row.slot = NaN;
     row.symbol = NaN;
@@ -1322,8 +1327,8 @@ for i = 1:numel(keys)
     row.na_reason = localTernary(isfinite(energyPerBitJ), "", "entity_has_no_useful_bits_for_energy_efficiency");
     row.energy_per_bit_j = energyPerBitJ;
     row.joules_per_gb = localPowerJoulesPerGB(energyPerBitJ);
-    row.cell_energy_efficiency = localTernary(parts(1) == "cell", effBitsPerJ, NaN);
-    row.ue_energy_efficiency = localTernary(parts(1) == "ue", effBitsPerJ, NaN);
+    row.cell_energy_efficiency = localTernary(groupEntityType == "cell", effBitsPerJ, NaN);
+    row.ue_energy_efficiency = localTernary(groupEntityType == "ue", effBitsPerJ, NaN);
     row.sleep_state = "";
     row.thermal_state = "";
     row.throttling_flag = NaN;
@@ -1344,21 +1349,28 @@ entityID = localColumnAsDouble(src.EnergyTimeline, "EntityID");
 direction = string(localColumnAsText(src.EnergyTimeline, "Direction"));
 state = string(localColumnAsText(src.EnergyTimeline, "State"));
 duration = localColumnAsDouble(src.EnergyTimeline, "Duration_s");
-keys = unique(entityType + "|" + string(entityID) + "|" + direction + "|" + state);
-rows = repmat(localEmptyCanonicalPowerFactRow(), numel(keys), 1);
-for i = 1:numel(keys)
-    parts = split(keys(i), "|");
-    mask = entityType == parts(1) & entityID == str2double(parts(2)) & direction == parts(3) & state == parts(4);
+entityType(ismissing(entityType)) = "";
+direction(ismissing(direction)) = "";
+state(ismissing(state)) = "";
+groupIdx = findgroups(categorical(entityType), entityID, categorical(direction), categorical(state));
+groupIds = unique(groupIdx(groupIdx > 0));
+rows = repmat(localEmptyCanonicalPowerFactRow(), numel(groupIds), 1);
+for i = 1:numel(groupIds)
+    mask = groupIdx == groupIds(i);
     subset = src.EnergyTimeline(mask, :);
+    groupEntityType = entityType(find(mask, 1, "first"));
+    groupEntityID = entityID(find(mask, 1, "first"));
+    groupDirection = direction(find(mask, 1, "first"));
+    groupState = state(find(mask, 1, "first"));
     totalDuration = sum(duration(mask), "omitnan");
-    entityMask = entityType == parts(1) & entityID == str2double(parts(2)) & direction == parts(3);
+    entityMask = entityType == groupEntityType & entityID == groupEntityID & direction == groupDirection;
     entityDuration = sum(duration(entityMask), "omitnan");
     occupancy = localSafeDivide(totalDuration, entityDuration);
     totalEnergyJ = sum(localColumnAsDouble(subset, "Energy_J"), "omitnan");
     row = localEmptyCanonicalPowerFactRow();
-    row.direction = string(parts(3));
-    row.ue_id = localTernary(parts(1) == "ue", str2double(parts(2)), NaN);
-    row.bs_id = localTernary(parts(1) == "cell", str2double(parts(2)), NaN);
+    row.direction = groupDirection;
+    row.ue_id = localTernary(groupEntityType == "ue", groupEntityID, NaN);
+    row.bs_id = localTernary(groupEntityType == "cell", groupEntityID, NaN);
     row.run_id = meta.run_id;
     row.trial_id = NaN;
     row.run_uuid = "";
@@ -1400,7 +1412,7 @@ for i = 1:numel(keys)
     row.source_table = "energy_timeline_trace";
     row.source_pk = i;
     row.na_reason = localTernary(isfinite(occupancy), "", "state_occupancy_not_materialized");
-    row.sleep_state = localSleepStateToken(parts(4));
+    row.sleep_state = localSleepStateToken(groupState);
     row.energy_per_bit_j = localPowerEntityEnergyPerBit(totalEnergyJ, sum(localColumnAsDouble(subset, "SuccessfulBits"), "omitnan"));
     rows(i) = row;
 end
@@ -1474,11 +1486,13 @@ end
 entityType = string(localColumnAsText(factT, "entity_type"));
 entityID = localColumnAsDouble(factT, "entity_id");
 direction = string(localColumnAsText(factT, "direction"));
-keys = unique(entityType + "|" + string(entityID) + "|" + direction);
-rows = repmat(localEmptyCanonicalPowerAnalyticsRow(), numel(keys), 1);
-for i = 1:numel(keys)
-    parts = split(keys(i), "|");
-    mask = entityType == parts(1) & entityID == str2double(parts(2)) & direction == parts(3);
+entityType(ismissing(entityType)) = "";
+direction(ismissing(direction)) = "";
+groupIdx = findgroups(categorical(entityType), entityID, categorical(direction));
+groupIds = unique(groupIdx(groupIdx > 0));
+rows = repmat(localEmptyCanonicalPowerAnalyticsRow(), numel(groupIds), 1);
+for i = 1:numel(groupIds)
+    mask = groupIdx == groupIds(i);
     subset = factT(mask, :);
     metricVals = localColumnAsDouble(subset, "metric_value");
     validVals = metricVals(isfinite(metricVals));

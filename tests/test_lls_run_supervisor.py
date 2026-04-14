@@ -7,7 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    runner = REPO_ROOT / "scripts" / "run_lls_3gpp_4ghz_100mhz_longrun.ps1"
+    runner = REPO_ROOT / "scripts" / "run_lls_from_web_gui_equivalent.ps1"
     monitor = REPO_ROOT / "scripts" / "monitor_lls_run.ps1"
     validator = REPO_ROOT / "scripts" / "validate_lls_run_outputs.py"
     assert runner.is_file()
@@ -15,11 +15,10 @@ def main() -> None:
     assert validator.is_file()
 
     text = runner.read_text(encoding="utf-8")
-    assert r"C:\Program Files\MATLAB\R2023b\bin\matlab.exe" in text
-    assert "run_6g_phy_lls_single" in text
-    assert "lls_3gpp_4ghz_100mhz_longrun.yaml" in text
-    assert "testAll" not in text
-    assert "SkipReplay" in text
+    assert "/login" in text
+    assert "/run" in text
+    assert "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml" in text
+    assert "Invoke-WebRequest" in text
     assert "MaxAttempts = 10" in text
 
     monitor_text = monitor.read_text(encoding="utf-8")

@@ -63,6 +63,8 @@ classdef (Abstract) SchedulerBase < handle
     properties(Access=protected)
         UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{})
         TBSCache = []
+        NRECache = []
+        CacheScopeToken (1,:) char = ''
         UseMexTBS (1,1) logical = false
         UEIndexMap = []
     end
@@ -136,10 +138,16 @@ classdef (Abstract) SchedulerBase < handle
                 % ignore
             end
 
+            obj.CacheScopeToken = localSchedulerCacheScopeToken(cfg, obj.Direction, obj.Carrier, obj.SymbolsPerSlot);
             try
-                obj.TBSCache = containers.Map('KeyType','char','ValueType','any');
+                obj.TBSCache = localSharedTBSCache();
             catch
                 obj.TBSCache = [];
+            end
+            try
+                obj.NRECache = localSharedNRECache();
+            catch
+                obj.NRECache = [];
             end
             try
                 obj.UEIndexMap = containers.Map('KeyType','double','ValueType','double');
@@ -167,8 +175,8 @@ classdef (Abstract) SchedulerBase < handle
             % updateAfterRx Update scheduler statistics after RX feedback.
             %
             % rxFeedback can be:
-            %  - struct array with fields: RNTI, TBSBits, Ack (logical)
-            %  - table with variables: RNTI, TBSBits, Ack
+            %  - struct array with fields: RNTI, TBSBits, Ack (logical), and optional HarqID/HARQProcess
+            %  - table with variables: RNTI, TBSBits, Ack, and optional HarqID/HARQProcess
             if isempty(rxFeedback)
                 return;
             end
@@ -176,10 +184,27 @@ classdef (Abstract) SchedulerBase < handle
                 rntiList = rxFeedback.RNTI;
                 tbsList  = rxFeedback.TBSBits;
                 ackList  = rxFeedback.Ack;
+                if ismember("HarqID", string(rxFeedback.Properties.VariableNames))
+                    harqIdList = rxFeedback.HarqID;
+                elseif ismember("HARQProcess", string(rxFeedback.Properties.VariableNames))
+                    harqIdList = rxFeedback.HARQProcess;
+                else
+                    harqIdList = nan(height(rxFeedback), 1);
+                end
             else
                 rntiList = [rxFeedback.RNTI];
                 tbsList  = [rxFeedback.TBSBits];
                 ackList  = [rxFeedback.Ack];
+                harqIdList = nan(numel(rntiList), 1);
+                for ii = 1:numel(rntiList)
+                    if isfield(rxFeedback(ii), "HarqID") && ~isempty(rxFeedback(ii).HarqID)
+                        harqIdList(ii) = double(rxFeedback(ii).HarqID);
+                    elseif isfield(rxFeedback(ii), "HARQProcess") && ~isempty(rxFeedback(ii).HARQProcess)
+                        harqIdList(ii) = double(rxFeedback(ii).HARQProcess);
+                    elseif isfield(rxFeedback(ii), "HARQ") && isstruct(rxFeedback(ii).HARQ)
+                        harqIdList(ii) = double(sixgr.util.structGet(rxFeedback(ii).HARQ, "HarqID", NaN));
+                    end
+                end
             end
 
             for k = 1:numel(rntiList)
@@ -187,6 +212,12 @@ classdef (Abstract) SchedulerBase < handle
                 tbsBits = double(tbsList(k));
                 ack = logical(ackList(k));
                 obj.updateAvgThroughput(rnti, tbsBits, ack);
+                if ~isempty(obj.HARQ)
+                    harqId = double(harqIdList(k));
+                    if isfinite(harqId)
+                        obj.HARQ.onFeedback(rnti, harqId, ack);
+                    end
+                end
             end
         end
 
@@ -389,24 +420,52 @@ classdef (Abstract) SchedulerBase < handle
             tableName = char(sixgr.link.resolveCQIProfile(token, 1).Table);
         end
 
-        function [tbsBits, tbsBytes, nrePerPRB, info] = estimateTBS(obj, modStr, nLayers, nPRB, symAlloc, targetCodeRate)
+        function [tbsBits, tbsBytes, nrePerPRB, info] = estimateTBS(obj, modStr, nLayers, nPRB, symAlloc, targetCodeRate, varargin)
             % Estimate TB size using nrTBS. Uses NREPerPRB from nrPDSCHInfo/nrPUSCHInfo.
             if nargin < 5 || isempty(symAlloc)
                 symAlloc = [0 obj.SymbolsPerSlot];
             end
+            opt = struct("PlanningOnly", false, "ForceExact", false);
+            if ~isempty(varargin)
+                if mod(numel(varargin), 2) ~= 0
+                    error("sixgr:SchedulerBase:EstimateTBSBadNV", ...
+                        "estimateTBS name-value inputs must come in pairs.");
+                end
+                for nvIdx = 1:2:numel(varargin)
+                    key = lower(string(varargin{nvIdx}));
+                    value = varargin{nvIdx + 1};
+                    switch key
+                        case "planningonly"
+                            opt.PlanningOnly = logical(value);
+                        case "forceexact"
+                            opt.ForceExact = logical(value);
+                        otherwise
+                            error("sixgr:SchedulerBase:EstimateTBSUnknownNV", ...
+                                "Unknown estimateTBS option '%s'.", char(key));
+                    end
+                end
+            end
             nSym = double(symAlloc(2));
             info = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
-                "TBSMode", "approximate", "ViennaEquivalent", false);
+                "TBSMode", "approximate", "ViennaEquivalent", false, ...
+                "PlanningOnly", logical(opt.PlanningOnly), ...
+                "ForceExact", logical(opt.ForceExact));
 
             % Memoize repeated TBS queries (same AMC + budget) since these are
             % called very frequently in per-slot scheduling loops.
+            tbsCache = [];
+            if isa(obj.TBSCache, 'containers.Map')
+                tbsCache = true;
+            end
             key = "";
-            if ~isempty(obj.TBSCache)
-                key = sprintf("%s|%s|%d|%d|%d|%.4f", upper(char(obj.Direction)), upper(char(modStr)), ...
-                    round(double(nLayers)), round(double(nPRB)), round(double(nSym)), ...
-                    round(double(targetCodeRate) * 1e4) / 1e4);
-                if isKey(obj.TBSCache, key)
-                    v = obj.TBSCache(key);
+            if ~isempty(tbsCache)
+                symStart = round(double(symAlloc(1)));
+                key = localScopedCacheKey(obj.CacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%.4f", ...
+                    upper(char(obj.Direction)), upper(char(modStr)), ...
+                    round(double(nLayers)), round(double(nPRB)), symStart, round(double(nSym)), ...
+                    round(double(targetCodeRate) * 1e4) / 1e4));
+                [hit, v] = sixgr.l2.mac.schedulerCache('get', 'TBS', key);
+                if hit
                     tbsBits = double(v(1));
                     tbsBytes = double(v(2));
                     nrePerPRB = double(v(3));
@@ -418,37 +477,47 @@ classdef (Abstract) SchedulerBase < handle
             strictMode = logical(sixgr.util.structGet(obj.Cfg, "run.strictMode", false));
             tbsMode = lower(string(sixgr.util.structGet(obj.Cfg, "mac.scheduler.tbsMode", "approximate")));
             viennaEquivalent = logical(sixgr.util.structGet(obj.Cfg, "mac.scheduler.viennaEquivalent", false));
+            allowApproxPlanningInStrict = logical(sixgr.util.structGet(obj.Cfg, ...
+                "mac.scheduler.allowApproximatePlanningInStrictMode", false));
             info.StrictTBSMode = strictMode;
             info.ViennaEquivalent = viennaEquivalent;
             info.TBSMode = char(tbsMode);
-            if strictMode || tbsMode == "faithful" || tbsMode == "strict" || viennaEquivalent
+            planningApproxAllowed = strictMode && logical(opt.PlanningOnly) && ...
+                allowApproxPlanningInStrict && tbsMode == "approximate" && ~viennaEquivalent;
+            if logical(opt.ForceExact) || tbsMode == "faithful" || tbsMode == "strict" || ...
+                    viennaEquivalent || (strictMode && ~planningApproxAllowed)
                 useFastNRE = false;
                 info.TBSMode = "faithful";
             end
             nrePerPRB = 12*nSym; % fast approximation
             if ~useFastNRE
-                try
-                    if strcmpi(obj.Direction,'DL')
-                        [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
-                            "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
-                        [~, allocInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, obj.Cfg, ...
-                            "PRBSet", 0:(max(nPRB,1)-1), ...
-                            "SymbolAllocation", [0 nSym], ...
-                            "Modulation", char(modStr), ...
-                            "NumLayers", double(nLayers));
-                        nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
-                    else
-                        [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
-                            "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
-                        [~, allocInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, obj.Cfg, ...
-                            "PRBSet", 0:(max(nPRB,1)-1), ...
-                            "SymbolAllocation", [0 nSym], ...
-                            "Modulation", char(modStr), ...
-                            "NumLayers", double(nLayers));
-                        nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
+                nreCache = [];
+                if isa(obj.NRECache, 'containers.Map')
+                    nreCache = true;
+                end
+                nreKey = localScopedCacheKey(obj.CacheScopeToken, ...
+                    localNRECacheKey(obj.Direction, nLayers, nPRB, symAlloc));
+                nreCached = false;
+                if ~isempty(nreCache)
+                    [nreCached, cachedValue] = sixgr.l2.mac.schedulerCache('get', 'NRE', nreKey);
+                    if nreCached
+                        nrePerPRB = double(cachedValue);
                     end
-                catch
-                    % keep fallback
+                end
+                if ~nreCached
+                    try
+                        carrier = obj.Carrier;
+                        if isempty(carrier) || ~isprop(carrier, "NSizeGrid") || double(carrier.NSizeGrid) < max(double(nPRB), 1)
+                            [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
+                                "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
+                        end
+                        nrePerPRB = localComputeExactNREPerPRB(obj.Direction, carrier, obj.Cfg, nPRB, symAlloc, modStr, nLayers);
+                        if ~isempty(nreCache) && isfinite(double(nrePerPRB)) && double(nrePerPRB) > 0
+                            sixgr.l2.mac.schedulerCache('set', 'NRE', nreKey, double(nrePerPRB));
+                        end
+                    catch
+                        % keep fallback
+                    end
                 end
             end
 
@@ -478,15 +547,35 @@ classdef (Abstract) SchedulerBase < handle
                 tbsBytes = floor(tbsBits/8);
             end
 
-            if ~isempty(obj.TBSCache) && strlength(string(key)) > 0
-                obj.TBSCache(char(key)) = [double(tbsBits), double(tbsBytes), double(nrePerPRB)];
+            if ~isempty(tbsCache) && strlength(string(key)) > 0
+                sixgr.l2.mac.schedulerCache('set', 'TBS', char(key), ...
+                    [double(tbsBits), double(tbsBytes), double(nrePerPRB)]);
             end
         end
 
-        function plan = buildNewDataGrantPlan(obj, ue, prbSet, symAlloc, queueBytes)
+        function plan = buildNewDataGrantPlan(obj, ue, prbSet, symAlloc, queueBytes, varargin)
+            opt = struct("PlanningOnly", false);
+            if ~isempty(varargin)
+                if mod(numel(varargin), 2) ~= 0
+                    error("sixgr:SchedulerBase:BuildGrantPlanBadNV", ...
+                        "buildNewDataGrantPlan name-value inputs must come in pairs.");
+                end
+                for nvIdx = 1:2:numel(varargin)
+                    key = lower(string(varargin{nvIdx}));
+                    value = varargin{nvIdx + 1};
+                    switch key
+                        case "planningonly"
+                            opt.PlanningOnly = logical(value);
+                        otherwise
+                            error("sixgr:SchedulerBase:BuildGrantPlanUnknownNV", ...
+                                "Unknown buildNewDataGrantPlan option '%s'.", char(key));
+                    end
+                end
+            end
             queueBytes = max(0, floor(double(queueBytes)));
             [modStr, nLayers, targetCodeRate, amc] = obj.selectAMC(ue);
-            [rawBits, rawBytes, rawNRE] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate);
+            [rawBits, rawBytes, rawNRE] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
+                "PlanningOnly", logical(opt.PlanningOnly));
 
             plan = struct( ...
                 "Valid", false, ...
@@ -513,7 +602,20 @@ classdef (Abstract) SchedulerBase < handle
                 return;
             end
 
-            best = localFindQueueLimitedPlan(obj, amc, prbSet, symAlloc, queueBytes);
+            if logical(opt.PlanningOnly)
+                % PF probe passes only need an honest bounded estimate for
+                % ranking. Keep the final selected-grant path exact, but do
+                % not burn an exhaustive queue-limited search during
+                % planning-only metric evaluation.
+                plan.Valid = true;
+                plan.TBSBytes = double(queueBytes);
+                plan.TBSBits = double(8 * floor(double(queueBytes)));
+                plan.QueueLimited = true;
+                return;
+            end
+
+            best = localFindQueueLimitedPlan(obj, amc, prbSet, symAlloc, queueBytes, ...
+                "PlanningOnly", logical(opt.PlanningOnly));
             if ~best.Valid
                 return;
             end
@@ -834,7 +936,26 @@ else
 end
 end
 
-function best = localFindQueueLimitedPlan(obj, amc, prbSet, symAlloc, queueBytes)
+function best = localFindQueueLimitedPlan(obj, amc, prbSet, symAlloc, queueBytes, varargin)
+opt = struct("PlanningOnly", false);
+if ~isempty(varargin)
+    if mod(numel(varargin), 2) ~= 0
+        error("sixgr:SchedulerBase:QueueLimitedPlanBadNV", ...
+            "localFindQueueLimitedPlan name-value inputs must come in pairs.");
+    end
+    for nvIdx = 1:2:numel(varargin)
+        key = lower(string(varargin{nvIdx}));
+        value = varargin{nvIdx + 1};
+        switch key
+            case "planningonly"
+                opt.PlanningOnly = logical(value);
+            otherwise
+                error("sixgr:SchedulerBase:QueueLimitedPlanUnknownNV", ...
+                    "Unknown localFindQueueLimitedPlan option '%s'.", char(key));
+        end
+    end
+end
+
 best = struct("Valid", false);
 rawPRBSet = double(prbSet(:).');
 if isempty(rawPRBSet)
@@ -844,35 +965,102 @@ end
 candidateProfiles = localCandidateMCSProfiles(amc);
 bestBits = -inf;
 bestPRBCount = inf;
-for nUse = 1:numel(rawPRBSet)
-    prbSubset = rawPRBSet(1:nUse);
-    for i = 1:numel(candidateProfiles)
-        cand = candidateProfiles(i);
-        [tbsBits, tbsBytes, nrePerPRB] = obj.estimateTBS( ...
-            cand.Modulation, cand.NumLayers, numel(prbSubset), symAlloc, cand.TargetCodeRate);
-        if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
-            continue;
-        end
-        if tbsBytes > queueBytes
-            continue;
-        end
-        if tbsBits > bestBits + 1e-9 || ...
-                (abs(tbsBits - bestBits) <= 1e-9 && numel(prbSubset) < bestPRBCount)
-            best = struct( ...
-                "Valid", true, ...
-                "PRBSet", double(prbSubset), ...
-                "Modulation", char(string(cand.Modulation)), ...
-                "NumLayers", double(cand.NumLayers), ...
-                "TargetCodeRate", double(cand.TargetCodeRate), ...
-                "MCSIndex", double(cand.MCSIndex), ...
-                "NREPerPRB", double(nrePerPRB), ...
-                "TBSBits", double(tbsBits), ...
-                "TBSBytes", double(tbsBytes));
-            bestBits = double(tbsBits);
-            bestPRBCount = numel(prbSubset);
-        end
+for i = 1:numel(candidateProfiles)
+    cand = candidateProfiles(i);
+    [bestIdxForCand, bestCand] = localFindLargestQueueFit(obj, cand, rawPRBSet, symAlloc, queueBytes, opt);
+    if ~bestCand.Valid
+        continue;
+    end
+    [minIdxForCand, minCand] = localFindSmallestSubsetForBits( ...
+        obj, cand, rawPRBSet, symAlloc, queueBytes, bestIdxForCand, bestCand.TBSBits, opt);
+    if minCand.Valid
+        chosenIdx = minIdxForCand;
+        chosenCand = minCand;
+    else
+        chosenIdx = bestIdxForCand;
+        chosenCand = bestCand;
+    end
+    prbSubset = rawPRBSet(1:chosenIdx);
+    if chosenCand.TBSBits > bestBits + 1e-9 || ...
+            (abs(chosenCand.TBSBits - bestBits) <= 1e-9 && numel(prbSubset) < bestPRBCount)
+        best = struct( ...
+            "Valid", true, ...
+            "PRBSet", double(prbSubset), ...
+            "Modulation", char(string(cand.Modulation)), ...
+            "NumLayers", double(cand.NumLayers), ...
+            "TargetCodeRate", double(cand.TargetCodeRate), ...
+            "MCSIndex", double(cand.MCSIndex), ...
+            "NREPerPRB", double(chosenCand.NREPerPRB), ...
+            "TBSBits", double(chosenCand.TBSBits), ...
+            "TBSBytes", double(chosenCand.TBSBytes));
+        bestBits = double(chosenCand.TBSBits);
+        bestPRBCount = numel(prbSubset);
     end
 end
+end
+
+function [bestIdx, bestEval] = localFindLargestQueueFit(obj, cand, rawPRBSet, symAlloc, queueBytes, opt)
+bestIdx = 0;
+bestEval = localInvalidQueueEval();
+lo = 1;
+hi = numel(rawPRBSet);
+while lo <= hi
+    mid = floor((lo + hi) / 2);
+    evalMid = localEvaluateQueueLimitedCandidate(obj, cand, mid, symAlloc, queueBytes, opt);
+    if evalMid.Valid
+        bestIdx = mid;
+        bestEval = evalMid;
+        lo = mid + 1;
+    else
+        hi = mid - 1;
+    end
+end
+end
+
+function [bestIdx, bestEval] = localFindSmallestSubsetForBits(obj, cand, rawPRBSet, symAlloc, queueBytes, hiIdx, targetBits, opt)
+bestIdx = 0;
+bestEval = localInvalidQueueEval();
+if hiIdx <= 0 || ~(isfinite(targetBits) && targetBits > 0)
+    return;
+end
+lo = 1;
+hi = hiIdx;
+while lo <= hi
+    mid = floor((lo + hi) / 2);
+    evalMid = localEvaluateQueueLimitedCandidate(obj, cand, mid, symAlloc, queueBytes, opt);
+    if evalMid.Valid && abs(evalMid.TBSBits - targetBits) <= 1e-9
+        bestIdx = mid;
+        bestEval = evalMid;
+        hi = mid - 1;
+    else
+        lo = mid + 1;
+    end
+end
+end
+
+function evalOut = localEvaluateQueueLimitedCandidate(obj, cand, prbCount, symAlloc, queueBytes, opt)
+evalOut = localInvalidQueueEval();
+[tbsBits, tbsBytes, nrePerPRB] = obj.estimateTBS( ...
+    cand.Modulation, cand.NumLayers, double(prbCount), symAlloc, cand.TargetCodeRate, ...
+    "PlanningOnly", logical(opt.PlanningOnly));
+if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
+    return;
+end
+if tbsBytes > queueBytes
+    return;
+end
+evalOut.Valid = true;
+evalOut.NREPerPRB = double(nrePerPRB);
+evalOut.TBSBits = double(tbsBits);
+evalOut.TBSBytes = double(tbsBytes);
+end
+
+function evalOut = localInvalidQueueEval()
+evalOut = struct( ...
+    "Valid", false, ...
+    "NREPerPRB", NaN, ...
+    "TBSBits", NaN, ...
+    "TBSBytes", NaN);
 end
 
 function candidates = localCandidateMCSProfiles(amc)
@@ -900,6 +1088,92 @@ else
         "TargetCodeRate", double(sixgr.util.structGet(amc, "TargetCodeRate", 0.1)), ...
         "NumLayers", double(numLayers));
 end
+end
+
+function map = localSharedTBSCache()
+persistent sharedMap
+if isempty(sharedMap)
+    sharedMap = containers.Map('KeyType','char','ValueType','any');
+end
+map = sharedMap;
+end
+
+function map = localSharedNRECache()
+persistent sharedMap
+if isempty(sharedMap)
+    sharedMap = containers.Map('KeyType','char','ValueType','double');
+end
+map = sharedMap;
+end
+
+function scopedKey = localScopedCacheKey(scopeToken, rawKey)
+scopeToken = char(string(scopeToken));
+if strlength(string(scopeToken)) == 0
+    scopeToken = 'default';
+end
+rawKey = char(string(rawKey));
+scopedKey = sprintf('%s||%s', scopeToken, rawKey);
+end
+
+function token = localSchedulerCacheScopeToken(cfg, direction, carrier, symbolsPerSlot)
+scope = struct();
+scope.Direction = upper(char(string(direction)));
+scope.SymbolsPerSlot = double(symbolsPerSlot);
+scope.Carrier = sixgr.util.structGet(cfg, "phy.carrier", struct());
+scope.DMRS = sixgr.util.structGet(cfg, "phy.dmrs", struct());
+if strcmpi(direction, 'UL')
+    scope.ChannelConfig = sixgr.util.structGet(cfg, "phy.pusch", struct());
+    scope.Sounder = sixgr.util.structGet(cfg, "phy.srs", struct());
+else
+    scope.ChannelConfig = sixgr.util.structGet(cfg, "phy.pdsch", struct());
+    scope.Sounder = sixgr.util.structGet(cfg, "phy.csirs", struct());
+end
+if ~isempty(carrier) && isobject(carrier)
+    try
+        scope.RuntimeCarrier = struct( ...
+            "NSizeGrid", double(carrier.NSizeGrid), ...
+            "SymbolsPerSlot", double(carrier.SymbolsPerSlot), ...
+            "SubcarrierSpacing", double(carrier.SubcarrierSpacing), ...
+            "CyclicPrefix", char(string(carrier.CyclicPrefix)));
+    catch
+        % Keep the config-derived scope if runtime carrier fields are not readable.
+    end
+end
+try
+    token = char(jsonencode(scope));
+catch
+    token = sprintf('%s|NGrid=%g|Symbols=%g', upper(char(string(direction))), ...
+        double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)), double(symbolsPerSlot));
+end
+end
+
+function key = localNRECacheKey(direction, nLayers, nPRB, symAlloc)
+sa = double(symAlloc(:).');
+if numel(sa) < 2
+    sa = [0 14];
+end
+
+dirToken = upper(char(string(direction)));
+startSym = round(double(sa(1)));
+nSym = round(double(sa(2)));
+key = sprintf('%s|L%d|P%d|S%d|N%d', dirToken, round(double(nLayers)), round(double(nPRB)), startSym, nSym);
+end
+
+function nrePerPRB = localComputeExactNREPerPRB(direction, carrier, cfg, nPRB, symAlloc, modStr, nLayers)
+if strcmpi(direction,'DL')
+    [~, allocInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg, ...
+        "PRBSet", 0:(max(nPRB,1)-1), ...
+        "SymbolAllocation", symAlloc, ...
+        "Modulation", char(modStr), ...
+        "NumLayers", double(nLayers));
+else
+    [~, allocInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg, ...
+        "PRBSet", 0:(max(nPRB,1)-1), ...
+        "SymbolAllocation", symAlloc, ...
+        "Modulation", char(modStr), ...
+        "NumLayers", double(nLayers));
+end
+nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
 end
 
 function nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers)

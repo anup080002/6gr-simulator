@@ -171,7 +171,6 @@ deployment_topology:
   num_cells: 21
   num_sectors_per_site: 3
   num_ues: 100
-  indoor_ue_fraction: 0.0
   num_trps: 21
   trp_topology: per_cell_trp
   trp_sync_mode: synchronous

@@ -1,0 +1,31 @@
+[2026-04-14T00:29:58Z] INFO Preparing LLS run: scenario=lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot runTag=web_rel20_4ghz_100mhz_200ue_4000slot_attempt6_20260414_055927 runFolder=C:\Users\Administrator\AppData\Local\Temp\2\sixgr_mysql_web_runs\lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot\web_rel20_4ghz_100mhz_200ue_4000slot_attempt6_20260414_055927
+[2026-04-14T00:30:01Z] INFO Artifact store active=1 backend=mysql_web schema=sixgr_results
+[2026-04-14T00:30:01Z] INFO Writing resolved snapshots.
+[2026-04-14T00:30:02Z] INFO Exporting live geometry artifacts.
+[2026-04-14T00:30:03Z] INFO Executing runner profile=system_level_lls.
+[2026-04-14T00:30:03Z] INFO System-level LLS starting: NumTTI=4000 PHYBackend=waveform simulationMode=full_phy
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=0
+[2026-04-14T00:30:06Z] INFO system_level_lls_started slot=0/4000 completion=0.0000 elapsed_s=2.5 slot_direction=initializing active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:06.200] INFO  system_level_lls_started slot=0/4000 completion=0.0000 elapsed_s=2.5 slot_direction=initializing active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:30:06Z] INFO system_level_lls_slot1_post_mobility_update slot=0/4000 completion=0.0000 elapsed_s=2.6 slot_direction=slot1_post_mobility_update active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:06.332] INFO  system_level_lls_slot1_post_mobility_update slot=0/4000 completion=0.0000 elapsed_s=2.6 slot_direction=slot1_post_mobility_update active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:30:07Z] INFO system_level_lls_slot1_large_scale_ready slot=0/4000 completion=0.0000 elapsed_s=3.5 slot_direction=slot1_large_scale_ready active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:07.181] INFO  system_level_lls_slot1_large_scale_ready slot=0/4000 completion=0.0000 elapsed_s=3.5 slot_direction=slot1_large_scale_ready active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:30:07Z] INFO system_level_lls_slot1_active_ues_ready slot=0/4000 completion=0.0000 elapsed_s=3.6 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:07.284] INFO  system_level_lls_slot1_active_ues_ready slot=0/4000 completion=0.0000 elapsed_s=3.6 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:30:07Z] INFO system_level_lls_slot1_ue_by_cell_ready slot=0/4000 completion=0.0000 elapsed_s=3.6 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:07.323] INFO  system_level_lls_slot1_ue_by_cell_ready slot=0/4000 completion=0.0000 elapsed_s=3.6 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:30:07Z] INFO system_level_lls_slot1_scheduler_inputs_ready slot=0/4000 completion=0.0000 elapsed_s=3.8 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:07.494] INFO  system_level_lls_slot1_scheduler_inputs_ready slot=0/4000 completion=0.0000 elapsed_s=3.8 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:30:07Z] INFO system_level_lls_slot1_dl_scheduler_cell_1_started slot=0/4000 completion=0.0000 elapsed_s=3.8 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:00:07.519] INFO  system_level_lls_slot1_dl_scheduler_cell_1_started slot=0/4000 completion=0.0000 elapsed_s=3.8 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:01:00.675] INFO  Slot1 DL scheduler cell=1 activeUE=8 grants=4 elapsed_s=53.141
+[2026-04-14T00:31:00Z] INFO system_level_lls_slot1_dl_scheduler_cell_1_finished slot=0/4000 completion=0.0000 elapsed_s=57.0 slot_direction=DL active_ue=200 cells=21 grants=4 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:01:00.697] INFO  system_level_lls_slot1_dl_scheduler_cell_1_finished slot=0/4000 completion=0.0000 elapsed_s=57.0 slot_direction=DL active_ue=200 cells=21 grants=4 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:31:00Z] INFO system_level_lls_slot1_dl_scheduler_cell_2_started slot=0/4000 completion=0.0000 elapsed_s=57.0 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:01:00.719] INFO  system_level_lls_slot1_dl_scheduler_cell_2_started slot=0/4000 completion=0.0000 elapsed_s=57.0 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:02:07.469] INFO  Slot1 DL scheduler cell=2 activeUE=13 grants=4 elapsed_s=66.736
+[2026-04-14T00:32:07Z] INFO system_level_lls_slot1_dl_scheduler_cell_2_finished slot=0/4000 completion=0.0000 elapsed_s=123.8 slot_direction=DL active_ue=200 cells=21 grants=4 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:02:07.492] INFO  system_level_lls_slot1_dl_scheduler_cell_2_finished slot=0/4000 completion=0.0000 elapsed_s=123.8 slot_direction=DL active_ue=200 cells=21 grants=4 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14T00:32:07Z] INFO system_level_lls_slot1_dl_scheduler_cell_3_started slot=0/4000 completion=0.0000 elapsed_s=123.8 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 06:02:07.514] INFO  system_level_lls_slot1_dl_scheduler_cell_3_started slot=0/4000 completion=0.0000 elapsed_s=123.8 slot_direction=DL active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0

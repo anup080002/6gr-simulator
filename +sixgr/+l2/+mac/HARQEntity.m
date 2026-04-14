@@ -255,6 +255,10 @@ classdef HARQEntity < handle
                 grant = struct();
             end
             actualTBSBits = double(numel(tbBytes));
+            if ~(isfinite(actualTBSBits) && actualTBSBits > 0)
+                actualTBSBits = double(sixgr.util.structGet(grant, 'TBSBits', ...
+                    sixgr.util.structGet(grant, 'TransportBlockSize', NaN)));
+            end
             if isfinite(actualTBSBits) && actualTBSBits > 0
                 grant.TransportBlockSize = actualTBSBits;
                 grant.TBSBits = actualTBSBits;

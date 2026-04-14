@@ -1,0 +1,9 @@
+[2026-04-13T22:57:11Z] INFO Preparing LLS run: scenario=lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot runTag=web_rel20_4ghz_100mhz_200ue_4000slot_attempt1_20260414_042643 runFolder=C:\Users\Administrator\AppData\Local\Temp\2\sixgr_mysql_web_runs\lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot\web_rel20_4ghz_100mhz_200ue_4000slot_attempt1_20260414_042643
+[2026-04-13T22:57:14Z] INFO Artifact store active=1 backend=mysql_web schema=sixgr_results
+[2026-04-13T22:57:14Z] INFO Writing resolved snapshots.
+[2026-04-13T22:57:14Z] INFO Exporting live geometry artifacts.
+[2026-04-13T22:57:15Z] INFO Executing runner profile=system_level_lls.
+[2026-04-13T22:57:16Z] INFO System-level LLS starting: NumTTI=4000 PHYBackend=waveform simulationMode=full_phy
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=0
+[2026-04-13T22:57:18Z] INFO system_level_lls_started slot=0/4000 completion=0.0000 elapsed_s=2.3 slot_direction=initializing active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-04-14 04:27:18.687] INFO  system_level_lls_started slot=0/4000 completion=0.0000 elapsed_s=2.3 slot_direction=initializing active_ue=200 cells=21 grants=0 served_bits=0 dropped_bits=0 overflow_events=0

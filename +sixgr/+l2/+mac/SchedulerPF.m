@@ -20,8 +20,19 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
     methods
         function obj = SchedulerPF(cfg, varargin)
             obj@sixgr.l2.mac.SchedulerBase(cfg, varargin{:});
-            obj.MaxUEPerSlot = double(sixgr.util.structGet(cfg,"mac.scheduler.maxUEPerSlot", ...
-                sixgr.util.structGet(cfg,"system.scheduler.maxActiveUEsPerSlot",obj.MaxUEPerSlot)));
+            dirToken = upper(char(string(obj.Direction)));
+            if strcmp(dirToken, 'UL')
+                dirSpecificMaxUE = sixgr.util.structGet(cfg, "mac.scheduler.maxUEPerSlotUL", ...
+                    sixgr.util.structGet(cfg, "system.scheduler.maxActiveUEsPerCellPerSlotUL", []));
+            else
+                dirSpecificMaxUE = sixgr.util.structGet(cfg, "mac.scheduler.maxUEPerSlotDL", ...
+                    sixgr.util.structGet(cfg, "system.scheduler.maxActiveUEsPerCellPerSlotDL", []));
+            end
+            if isempty(dirSpecificMaxUE)
+                dirSpecificMaxUE = sixgr.util.structGet(cfg,"mac.scheduler.maxUEPerSlot", ...
+                    sixgr.util.structGet(cfg,"system.scheduler.maxActiveUEsPerSlot",obj.MaxUEPerSlot));
+            end
+            obj.MaxUEPerSlot = double(dirSpecificMaxUE);
             obj.MinPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.minPRBPerUE",obj.MinPRBPerUE));
             obj.MaxPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.maxPRBAllocationPerUE", ...
                 sixgr.util.structGet(cfg,"system.scheduler.maxPRBAllocationPerUE",obj.MaxPRBPerUE)));
@@ -31,6 +42,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             if nargin < 4
                 budget = struct();
             end
+            scheduleTimer = tic;
             [prbAvail, symAlloc] = obj.defaultBudget(budget);
 
             tmpl = localGrantTemplate(obj.Direction, slot);
@@ -92,10 +104,16 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         if isempty(prbAvail)
                             break;
                         end
-                        % Best-effort remap if needed
+                        nNeed = numel(g.PRBSet);
+                        if nNeed <= 0
+                            nNeed = max(1, round(double(sixgr.util.structGet(g, "NPRB", ...
+                                sixgr.util.structGet(g, "PRBCount", sixgr.util.structGet(g, "NumPRB", NaN))))));
+                        end
+                        % Retx must preserve enough PRBs to carry the stored TB honestly.
+                        if nNeed <= 0 || numel(prbAvail) < nNeed
+                            continue;
+                        end
                         if ~all(ismember(g.PRBSet, prbAvail))
-                            nNeed = numel(g.PRBSet);
-                            nNeed = min(nNeed, numel(prbAvail));
                             g.PRBSet = prbAvail(1:nNeed);
                         end
                         prbAvail = setdiff(prbAvail, g.PRBSet, 'stable');
@@ -144,6 +162,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
 
             metrics = -inf(1, numel(ueIdx));
             estTBS = zeros(1, numel(ueIdx));
+            probeTimer = tic;
+            probePlanElapsed_s = zeros(1, numel(ueIdx));
             for t = 1:numel(ueIdx)
                 k = ueIdx(t);
                 rnti = double(ueStates(k).RNTI);
@@ -154,10 +174,14 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 end
 
                 probePRBSet = 0:(prbChunk-1);
-                plan = obj.buildNewDataGrantPlan(ueStates(k), probePRBSet, symAlloc, bufBytes(k));
+                probePlanTimer = tic;
+                plan = obj.buildNewDataGrantPlan(ueStates(k), probePRBSet, symAlloc, bufBytes(k), ...
+                    "PlanningOnly", true);
+                probePlanElapsed_s(t) = toc(probePlanTimer);
                 estTBS(t) = double(sixgr.util.structGet(plan, "TBSBits", 0));
                 metrics(t) = obj.pfMetric(ueStates(k), estTBS(t));
             end
+            probeElapsed_s = toc(probeTimer);
 
             % Sort UEs by PF metric descending
             [~, ord] = sort(metrics, 'descend');
@@ -169,6 +193,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             ord = ord(1:min(numel(ord), maxUE));
 
             cursor = 1;
+            allocTimer = tic;
+            finalPlanElapsed_s = zeros(1, numel(ord));
             for ii = 1:numel(ord)
                 if cursor > numel(prbAvail)
                     break;
@@ -182,7 +208,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
 
                 nAlloc = min(prbChunk, numel(prbAvail)-cursor+1);
                 candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
+                finalPlanTimer = tic;
                 plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufBytes(k));
+                finalPlanElapsed_s(ii) = toc(finalPlanTimer);
                 if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
                     continue;
                 end
@@ -238,9 +266,29 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 obj.ensureUE(rnti);
                 obj.UEStats(obj.ensureUE(rnti)).LastServedSlot = slot;
             end
+            allocElapsed_s = toc(allocTimer);
 
             info.NGrants = numel(grants);
             info.PRBUnderuse = numel(prbAvail) - max(0, cursor-1);
+            info.ProbeElapsed_s = probeElapsed_s;
+            info.AllocationElapsed_s = allocElapsed_s;
+            info.ScheduleElapsed_s = toc(scheduleTimer);
+            info.ProbePlanTotalElapsed_s = sum(probePlanElapsed_s);
+            info.ProbePlanMaxElapsed_s = max([0 probePlanElapsed_s]);
+            info.FinalPlanTotalElapsed_s = sum(finalPlanElapsed_s);
+            info.FinalPlanMaxElapsed_s = max([0 finalPlanElapsed_s]);
+            if slot == 0
+                obj.log('info', sprintf([ ...
+                    'SchedulerPF[%s] slot=%d ueStates=%d activeUE=%d maxUE=%d prbAvail=%d ' ...
+                    'probe_s=%.3f probePlanTotal_s=%.3f probePlanMax_s=%.3f ' ...
+                    'alloc_s=%.3f finalPlanTotal_s=%.3f finalPlanMax_s=%.3f total_s=%.3f grants=%d'], ...
+                    char(string(obj.Direction)), double(slot), double(numel(ueStates)), ...
+                    double(numel(ueIdx)), double(maxUE), double(numel(prbAvail)), ...
+                    double(probeElapsed_s), double(info.ProbePlanTotalElapsed_s), ...
+                    double(info.ProbePlanMaxElapsed_s), double(allocElapsed_s), ...
+                    double(info.FinalPlanTotalElapsed_s), double(info.FinalPlanMaxElapsed_s), ...
+                    double(info.ScheduleElapsed_s), double(numel(grants))));
+            end
         end
     end
 end

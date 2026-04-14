@@ -31,14 +31,14 @@ def main() -> None:
         path = VARIANT_ROOT / name
         assert path.is_file(), f"Missing scenario variant YAML: {path}"
 
-    assert dash.DEFAULT_SCENARIO == "lls_3gpp_4ghz_100mhz_longrun.yaml", (
-        "Browser default scenario must point at the locked 4 GHz / 100 MHz long-run scenario."
+    assert dash.DEFAULT_SCENARIO == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml", (
+        "Browser default scenario must point at the locked 4 GHz / 100 MHz / 200 UE / 4000 slot scenario."
     )
 
     baseline, chain = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     assert chain, "Resolved baseline scenario should retain a non-empty source chain."
-    assert str(dash.path_get(baseline, "meta.scenario_group", "")) == "lls_3gpp_4ghz_100mhz_longrun"
-    assert str(dash.path_get(baseline, "meta.scenario_id", "")) == "lls_3gpp_4ghz_100mhz_longrun"
+    assert str(dash.path_get(baseline, "meta.scenario_group", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"
+    assert str(dash.path_get(baseline, "meta.scenario_id", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"
     assert int(dash.path_get(baseline, "global_radio_scope.carrier_frequency_hz", 0)) == 4_000_000_000
     assert int(dash.path_get(baseline, "global_radio_scope.channel_bandwidth_hz", 0)) == 100_000_000
     assert str(dash.path_get(baseline, "global_radio_scope.duplex_mode", "")) == "TDD"
@@ -49,20 +49,26 @@ def main() -> None:
     assert int(dash.path_get(baseline, "deployment_topology.num_sites", 0)) == 7
     assert int(dash.path_get(baseline, "deployment_topology.num_sectors_per_site", 0)) == 3
     assert int(dash.path_get(baseline, "deployment_topology.num_cells", 0)) == 21
-    assert int(dash.path_get(baseline, "deployment_topology.num_ues", 0)) == 100
+    assert int(dash.path_get(baseline, "deployment_topology.num_ues", 0)) == 200
     assert bool(dash.path_get(baseline, "deployment_topology.wraparound_enabled", False))
     assert bool(dash.path_get(baseline, "interference.inter_cell_interference_flag", False))
     assert str(dash.path_get(baseline, "interference.inter_cell_execution_mode", "")) == "full_per_link_channel_waveform_sum"
     assert str(dash.path_get(baseline, "run_control.execution_mode", "")) == "LLS"
     assert str(dash.path_get(baseline, "run_control.simulation_mode", "")) == "full_phy"
-    assert str(dash.path_get(baseline, "run_control.run_profile", "")) == "very_long_run"
-    assert int(dash.path_get(baseline, "run_control.total_slots", 0)) == 50000
-    assert int(dash.path_get(baseline, "run_control.warmup_slots", 0)) == 5000
-    assert int(dash.path_get(baseline, "run_control.measurement_slots", 0)) == 45000
+    assert str(dash.path_get(baseline, "run_control.mode", "")) == "long_run"
+    assert str(dash.path_get(baseline, "run_control.run_profile", "")) == "exhaustive"
+    assert int(dash.path_get(baseline, "run_control.total_slots", 0)) == 4000
+    assert int(dash.path_get(baseline, "run_control.warmup_slots", 0)) == 500
+    assert int(dash.path_get(baseline, "run_control.measurement_slots", 0)) == 3500
     assert int(dash.path_get(baseline, "seeds.global_seed", 0)) == 104729
+    assert int(dash.path_get(baseline, "seeds.ue_placement_seed", 0)) == 104760
     assert str(dash.path_get(baseline, "scenario.runner_profile", "")) == "system_level_lls"
     assert str(dash.path_get(baseline, "users.beam_selection_strategy", "")) == "runtime_best_beam_per_link"
     assert list(dash.path_get(baseline, "scenario.bundle_anchor_cases", [])) == ["ul_lowpapr"]
+    assert int(dash.path_get(baseline, "users.n_users", 0)) == 200
+    assert str(dash.path_get(baseline, "traffic.model", "")) == "full_buffer"
+    assert str(dash.path_get(baseline, "traffic.transport", "")) == "UDP"
+    assert str(dash.path_get(baseline, "traffic.flowDirection", "")) == "BIDIR"
     assert str(dash.path_get(baseline, "output.backend", "")) == "mysql_web"
     assert not bool(dash.path_get(baseline, "output.emit_placeholder_artifacts", True))
 
