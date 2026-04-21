@@ -1,7 +1,0 @@
-Case,Ok,Skipped,BER,BLER,Throughput_Mbps,EVM_rms,PAPR_CP_dB,PAPR_DFTs_dB,PAPR_Gain_dB,NMSE_dB,Notes
-CellSearch_MIB_SIB1,0,0,not_applicable,not_applicable,not_applicable,not_applicable,NaN,NaN,NaN,not_applicable,deferred_to_primary_raw_trials
-PRACH_Detection,0,0,not_applicable,not_applicable,not_applicable,not_applicable,NaN,NaN,NaN,not_applicable,deferred_to_primary_raw_trials
-DL_PDSCH_Throughput,0,0,not_applicable,not_applicable,not_applicable,not_applicable,NaN,NaN,NaN,not_applicable,deferred_to_primary_raw_trials
-UL_PUSCH_Throughput,0,0,not_applicable,not_applicable,not_applicable,not_applicable,NaN,NaN,NaN,not_applicable,deferred_to_primary_raw_trials
-UL_SRS_ChannelEst,0,0,not_applicable,not_applicable,not_applicable,not_applicable,NaN,NaN,NaN,not_applicable,deferred_to_primary_raw_trials
-UL_LowPAPR,1,0,not_applicable,not_applicable,not_applicable,not_applicable,10.1197779200016,2.54648297272579,7.57329494727581,not_applicable,"Avg over 10 frame(s), mod=16QAM"

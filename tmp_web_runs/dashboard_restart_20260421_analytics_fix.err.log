@@ -1,0 +1,36 @@
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63759)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12995, in do_GET
+    self.respond_json(build_live_payload(run_id, lite=lite))
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 13126, in respond_json
+    self.wfile.write(raw)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 13017, in do_GET
+    self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------

@@ -21,7 +21,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-04-19-contract-v11"
+MATERIALIZER_VERSION = "2026-04-21-contract-v14"
 MAX_PREVIEW_ROWS = 180
 
 
@@ -112,6 +112,53 @@ def _best_x_index(numeric_cols: list[tuple[int, str]]) -> int | None:
     return numeric_cols[0][0] if numeric_cols else None
 
 
+def _column_variation_score(rows: list[list[str]], idx: int) -> tuple[int, int]:
+    values = [_coerce_float(row[idx]) for row in rows if idx < len(row)]
+    values = [value for value in values if value is not None]
+    if not values:
+        return (0, 0)
+    unique_values = {round(float(value), 9) for value in values}
+    return (len(unique_values), len(values))
+
+
+def _preferred_generic_x_index(chart_name: str, header: list[str], rows: list[list[str]], numeric_cols: list[tuple[int, str]]) -> int | None:
+    if not numeric_cols:
+        return None
+    chart = str(chart_name or "").lower()
+    preferred_patterns = [
+        (r"^time_s$", 0),
+        (r"^sampleindex$", 1),
+        (r"^slot_or_sample$", 2),
+        (r"^slot$", 3),
+        (r"^frame$", 4),
+        (r"^tti$", 5),
+        (r"^trial$", 6),
+        (r"^ue_rank$|^percentile$", 7),
+        (r"sample|time|slot|frame|trial|index", 8),
+        (r"user|ue|cell|beam|rank", 20),
+        (r"snr|sinr|rsrp|cqi|mcs", 40),
+        (r"value|count", 80),
+    ]
+    ranked: list[tuple[int, int, int, int]] = []
+    for idx, name in numeric_cols:
+        token = str(name or "").strip().lower()
+        if token in {"run_id", "source_row_count", "point_index"}:
+            continue
+        unique_count, total_count = _column_variation_score(rows, idx)
+        if unique_count <= 1:
+            continue
+        pattern_rank = 99
+        for pattern, rank in preferred_patterns:
+            if re.search(pattern, token, re.IGNORECASE):
+                pattern_rank = rank
+                break
+        ranked.append((pattern_rank, -unique_count, -total_count, idx))
+    if ranked:
+        ranked.sort()
+        return ranked[0][3]
+    return _best_x_index(numeric_cols)
+
+
 def _score_column(chart_name: str, column_name: str) -> int:
     chart = str(chart_name or "").lower()
     col = str(column_name or "").lower()
@@ -143,12 +190,74 @@ def _score_column(chart_name: str, column_name: str) -> int:
 
 
 def _dataset_from_rows(chart_name: str, header: list[str], rows: list[list[str]]) -> dict[str, Any] | None:
+    lowered = [str(name or "").strip().lower() for name in header]
+    if not rows or not header:
+        return None
+    if "metric" in lowered and ("meanvalue" in lowered or "value" in lowered):
+        metric_idx = lowered.index("metric")
+        value_idx = lowered.index("meanvalue") if "meanvalue" in lowered else lowered.index("value")
+        direction_idx = lowered.index("direction") if "direction" in lowered else None
+        named_values: list[tuple[str, float]] = []
+        for row in rows[:64]:
+            if metric_idx >= len(row) or value_idx >= len(row):
+                continue
+            metric_name = str(row[metric_idx] or "").strip()
+            metric_val = _coerce_float(row[value_idx])
+            if not metric_name or metric_val is None:
+                continue
+            direction = str(row[direction_idx] or "").strip() if direction_idx is not None and direction_idx < len(row) else ""
+            label = f"{direction}:{metric_name}" if direction else metric_name
+            named_values.append((label[:48], float(metric_val)))
+        if named_values:
+            dataset, summary = _bar_dataset_from_named_values("Metric bucket", header[value_idx], named_values[:18])
+            dataset["tick_labels"] = [name for name, _value in named_values[:18]]
+            dataset["summary_lines"] = summary
+            return dataset
+    if "metrickey" in lowered and "value" in lowered:
+        key_idx = lowered.index("metrickey")
+        value_idx = lowered.index("value")
+        entity_idx = lowered.index("entity") if "entity" in lowered else None
+        stat_idx = lowered.index("statistic") if "statistic" in lowered else None
+        named_values: list[tuple[str, float]] = []
+        for row in rows[:64]:
+            key_name = str(row[key_idx] or "").strip() if key_idx < len(row) else ""
+            value = _coerce_float(row[value_idx] if value_idx < len(row) else "")
+            if not key_name or value is None:
+                continue
+            entity = str(row[entity_idx] or "").strip() if entity_idx is not None and entity_idx < len(row) else ""
+            statistic = str(row[stat_idx] or "").strip() if stat_idx is not None and stat_idx < len(row) else ""
+            label_parts = [part for part in (entity, key_name, statistic) if part]
+            named_values.append(("/".join(label_parts)[:48], float(value)))
+        if named_values:
+            dataset, summary = _bar_dataset_from_named_values("Metric bucket", header[value_idx], named_values[:18])
+            dataset["tick_labels"] = [name for name, _value in named_values[:18]]
+            dataset["summary_lines"] = summary
+            return dataset
+    if "availability" in lowered and ("measuredrowcount" in lowered or "rowcount" in lowered):
+        availability_idx = lowered.index("availability")
+        value_idx = lowered.index("measuredrowcount") if "measuredrowcount" in lowered else lowered.index("rowcount")
+        direction_idx = lowered.index("direction") if "direction" in lowered else None
+        named_values: list[tuple[str, float]] = []
+        for row in rows[:24]:
+            availability = str(row[availability_idx] or "").strip() if availability_idx < len(row) else ""
+            value = _coerce_float(row[value_idx] if value_idx < len(row) else "")
+            if not availability or value is None:
+                continue
+            direction = str(row[direction_idx] or "").strip() if direction_idx is not None and direction_idx < len(row) else ""
+            label = f"{direction}:{availability}" if direction else availability
+            named_values.append((label[:48], float(value)))
+        if named_values:
+            dataset, summary = _bar_dataset_from_named_values("Availability bucket", header[value_idx], named_values[:18])
+            dataset["tick_labels"] = [name for name, _value in named_values[:18]]
+            dataset["summary_lines"] = summary
+            return dataset
     numeric_cols = _numeric_columns(header, rows)
     if not numeric_cols:
         return None
-    x_idx = _best_x_index(numeric_cols)
+    numeric_cols = [(idx, name) for idx, name in numeric_cols if str(name or "").strip().lower() not in {"run_id", "source_row_count", "point_index"}] or numeric_cols
+    x_idx = _preferred_generic_x_index(chart_name, header, rows, numeric_cols)
     y_candidates = sorted(
-        [item for item in numeric_cols if item[0] != x_idx],
+        [item for item in numeric_cols if item[0] != x_idx and str(item[1] or "").strip().lower() not in {"run_id", "source_row_count", "point_index"}],
         key=lambda item: (_score_column(chart_name, item[1]), str(item[1])),
         reverse=True,
     )
@@ -203,6 +312,160 @@ def _dataset_from_rows(chart_name: str, header: list[str], rows: list[list[str]]
     }
 
 
+def _downsample_points(points: list[list[float]], max_points: int = MAX_PREVIEW_ROWS) -> list[list[float]]:
+    if len(points) <= max_points:
+        return points
+    step = max(1, math.ceil(len(points) / max_points))
+    sampled = points[::step]
+    if sampled and sampled[-1] != points[-1]:
+        sampled.append(points[-1])
+    return sampled[:max_points]
+
+
+def _bin_mean_points(pairs: list[tuple[float, float]], max_bins: int = 18) -> list[list[float]]:
+    filtered = [(float(x), float(y)) for x, y in pairs if math.isfinite(float(x)) and math.isfinite(float(y))]
+    if not filtered:
+        return []
+    filtered.sort(key=lambda item: item[0])
+    unique_x = sorted({round(item[0], 9) for item in filtered})
+    if len(unique_x) <= max_bins:
+        grouped: dict[float, list[float]] = defaultdict(list)
+        for x_val, y_val in filtered:
+            grouped[round(x_val, 9)].append(y_val)
+        return [[float(x_val), sum(values) / max(len(values), 1)] for x_val, values in sorted(grouped.items())]
+    min_x = min(item[0] for item in filtered)
+    max_x = max(item[0] for item in filtered)
+    if math.isclose(min_x, max_x):
+        return [[min_x, sum(item[1] for item in filtered) / len(filtered)]]
+    width = (max_x - min_x) / max(max_bins, 1)
+    buckets: list[list[float]] = [[] for _ in range(max_bins)]
+    for x_val, y_val in filtered:
+        idx = min(max_bins - 1, max(0, int((x_val - min_x) / max(width, 1e-12))))
+        buckets[idx].append(y_val)
+    points: list[list[float]] = []
+    for idx, values in enumerate(buckets):
+        if not values:
+            continue
+        center = min_x + width * (idx + 0.5)
+        points.append([center, sum(values) / len(values)])
+    return points
+
+
+def _bar_dataset_from_named_values(
+    x_label: str,
+    y_label: str,
+    named_values: list[tuple[str, float]],
+) -> tuple[dict[str, Any], list[str]]:
+    points = [[float(idx + 1), float(value)] for idx, (_name, value) in enumerate(named_values)]
+    summary = [f"bucket_{idx + 1}={name}" for idx, (name, _value) in enumerate(named_values)]
+    return {"mode": "bar", "x_label": x_label, "y_label": y_label, "points": points}, summary
+
+
+def _render_multi_series_svg(
+    title: str,
+    subtitle: str,
+    series: list[dict[str, Any]],
+    summary_lines: list[str],
+    *,
+    x_label: str,
+    y_label: str,
+    mode: str = "line",
+) -> bytes:
+    width = 1180
+    height = 700
+    left = 78
+    top = 92
+    plot_w = 700
+    plot_h = 420
+    info_x = 820
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#f8fafc"/>',
+        f'<text x="42" y="50" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
+        f'<text x="42" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(subtitle)}</text>',
+        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+        f'<rect x="{info_x}" y="{top}" width="316" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+    ]
+    prepared: list[dict[str, Any]] = []
+    palette = ["#0f766e", "#2563eb", "#dc2626", "#7c3aed", "#d97706", "#0891b2"]
+    all_points: list[tuple[float, float]] = []
+    for idx, item in enumerate(series):
+        raw_points = [
+            (float(point[0]), float(point[1]))
+            for point in (item.get("points") or [])
+            if isinstance(point, (list, tuple))
+            and len(point) >= 2
+            and _coerce_float(point[0]) is not None
+            and _coerce_float(point[1]) is not None
+        ]
+        if not raw_points:
+            continue
+        sampled = _downsample_points([[x_val, y_val] for x_val, y_val in raw_points], MAX_PREVIEW_ROWS)
+        sampled_pairs = [(float(point[0]), float(point[1])) for point in sampled]
+        prepared.append(
+            {
+                "name": str(item.get("name") or f"Series {idx + 1}"),
+                "color": str(item.get("color") or palette[idx % len(palette)]),
+                "points": sampled_pairs,
+            }
+        )
+        all_points.extend(sampled_pairs)
+    if not prepared or not all_points:
+        return _render_reason_svg(title, subtitle, summary_lines + ["No numeric multi-series rows were available for this chart."])
+    xs = [point[0] for point in all_points]
+    ys = [point[1] for point in all_points]
+    min_x = min(xs)
+    max_x = max(xs)
+    min_y = min(ys)
+    max_y = max(ys)
+    if math.isclose(min_x, max_x):
+        max_x = min_x + 1.0
+    if math.isclose(min_y, max_y):
+        max_y = min_y + 1.0
+    axis_left = left + 54
+    axis_bottom = top + plot_h - 42
+    axis_top = top + 26
+    axis_right = left + plot_w - 24
+    parts.append(f'<line x1="{axis_left}" y1="{axis_bottom}" x2="{axis_right}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
+    parts.append(f'<line x1="{axis_left}" y1="{axis_top}" x2="{axis_left}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
+    for prepared_series in prepared:
+        coords: list[tuple[float, float]] = []
+        for x_val, y_val in prepared_series["points"]:
+            x_px = axis_left + ((x_val - min_x) / (max_x - min_x)) * (axis_right - axis_left)
+            y_px = axis_bottom - ((y_val - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+            coords.append((x_px, y_px))
+        if mode == "scatter":
+            for x_px, y_px in coords:
+                parts.append(
+                    f'<circle cx="{x_px:.2f}" cy="{y_px:.2f}" r="2.6" fill="{prepared_series["color"]}" fill-opacity="0.7" />'
+                )
+        else:
+            poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
+            parts.append(
+                f'<polyline fill="none" stroke="{prepared_series["color"]}" stroke-width="2.2" points="{poly}"/>'
+            )
+            for x_px, y_px in coords[:: max(1, len(coords) // 16)]:
+                parts.append(f'<circle cx="{x_px:.2f}" cy="{y_px:.2f}" r="2.6" fill="{prepared_series["color"]}" />')
+    parts.append(
+        f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(x_label)}</text>'
+    )
+    parts.append(
+        f'<text x="{left + 6}" y="{top + 14}" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(y_label)}</text>'
+    )
+    parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
+    y_cursor = top + 58
+    for line in summary_lines[:14]:
+        parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(line)}</text>')
+        y_cursor += 22
+    y_cursor += 12
+    for prepared_series in prepared[:8]:
+        parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"/>')
+        parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(prepared_series["name"])}</text>')
+        y_cursor += 22
+    parts.append('</svg>')
+    return "".join(parts).encode("utf-8")
+
+
 def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, summary_lines: list[str]) -> bytes:
     width = 1100
     height = 620
@@ -237,6 +500,15 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
                 x_px = left + 55 + idx * max(bar_w + 4, (plot_w - 100) / max(len(points), 1))
                 y_px = top + plot_h - 38 - ((y_val - min_y) / (max_y - min_y)) * (plot_h - 80)
                 parts.append(f'<rect x="{x_px:.1f}" y="{y_px:.1f}" width="{bar_w:.1f}" height="{(top + plot_h - 38 - y_px):.1f}" fill="#0f766e" opacity="0.88"/>')
+                tick_labels = dataset.get("tick_labels") or []
+                if idx < len(tick_labels):
+                    label = str(tick_labels[idx])[:14]
+                    parts.append(f'<text x="{x_px + bar_w/2:.1f}" y="{top + plot_h - 18}" text-anchor="middle" font-family="Consolas,Segoe UI Mono,monospace" font-size="10" fill="#475569">{html.escape(label)}</text>')
+        elif dataset.get("mode") == "scatter":
+            for x_val, y_val in points:
+                x_px = left + 45 + ((x_val - min_x) / (max_x - min_x)) * (plot_w - 70)
+                y_px = top + plot_h - 38 - ((y_val - min_y) / (max_y - min_y)) * (plot_h - 62)
+                parts.append(f'<circle cx="{x_px:.1f}" cy="{y_px:.1f}" r="3.0" fill="#0f766e" fill-opacity="0.72"/>')
         else:
             coords = []
             for x_val, y_val in points:
@@ -257,6 +529,10 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
     y = top + 60
     for line in summary_lines[:16]:
         parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(line)}</text>')
+        y += 22
+    extra_lines = dataset.get("summary_lines", []) if isinstance(dataset, dict) else []
+    for line in extra_lines[: max(0, 16 - len(summary_lines))]:
+        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(str(line))}</text>')
         y += 22
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
@@ -1835,6 +2111,64 @@ def _encode_dict_rows(header: list[str], rows: list[dict[str, Any]]) -> bytes:
     return _encode_csv(header, [[row.get(col, "") for col in header] for row in rows])
 
 
+def _trial_row_bler(row: dict[str, str]) -> float | None:
+    crc_pass = _row_text(row, "CRCPass")
+    if crc_pass:
+        return 0.0 if crc_pass.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
+    codeblock_bler = _row_float(row, "CodeBlockBLER")
+    if codeblock_bler is not None:
+        return float(codeblock_bler)
+    return None
+
+
+def _trial_row_ber(row: dict[str, str]) -> float | None:
+    bit_errors = _row_float(row, "BitErrors")
+    bits_compared = _row_float(row, "BitsCompared")
+    if bit_errors is None or bits_compared is None or bits_compared <= 0:
+        return None
+    return float(bit_errors) / float(bits_compared)
+
+
+def _trial_rows_with_paths(
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    candidates: list[str] | tuple[str, ...],
+) -> list[tuple[str, dict[str, str]]]:
+    out: list[tuple[str, dict[str, str]]] = []
+    for logical_path in candidates:
+        _header, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, logical_path)
+        for row in rows:
+            out.append((str(logical_path), row))
+    return out
+
+
+def _metric_rows_by_exact_x(
+    rows: list[tuple[float, float]],
+    *,
+    x_label: str,
+    y_label: str,
+    chart_name: str,
+    run_id: int,
+    source_path: str,
+) -> tuple[bytes, dict[str, Any]]:
+    grouped: dict[float, list[float]] = defaultdict(list)
+    for x_val, y_val in rows:
+        grouped[round(float(x_val), 6)].append(float(y_val))
+    points = [[float(x_val), sum(values) / max(len(values), 1)] for x_val, values in sorted(grouped.items())]
+    csv_rows = [
+        {
+            "run_id": run_id,
+            "chart_name": chart_name,
+            x_label: point[0],
+            y_label: point[1],
+            "source_table_logical_path": source_path,
+        }
+        for point in points
+    ]
+    dataset = {"mode": "scatter" if len(points) > 18 else "line", "x_label": x_label, "y_label": y_label, "points": points}
+    return _encode_dict_rows(["run_id", "chart_name", x_label, y_label, "source_table_logical_path"], csv_rows), dataset
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -2532,7 +2866,820 @@ def _specialized_chart_materialization(
             "source_row_count": len(csv_rows),
             "note": "Constellation grouped by modulation order using runtime equalized samples.",
         }
+    if chart_name in {
+        "Tx waveform",
+        "Rx waveform",
+        "magnitude vs sample",
+        "phase vs sample",
+        "power vs sample",
+        "pre-channel waveform",
+        "post-channel waveform",
+        "post-impairment waveform",
+        "stage overlay plots",
+        "UE-wise / link-wise waveform comparison",
+    }:
+        source_path, records = _first_available_rows(
+            existing,
+            fetch_artifact_bytes,
+            ["analytics/csv/waveform_analytics.csv", "reports/csv/live_waveform_preview.csv", "reports/csv/live_tx_rx_stage_trace.csv"],
+        )
+        if records:
+            csv_rows: list[dict[str, Any]] = []
+            use_time_axis = any(_row_float(row, "Time_s") is not None for row in records)
+            x_label = "Time_s" if use_time_axis else "SampleIndex"
+            series: list[dict[str, Any]] = []
+            summary = [f"source={source_path}", f"rows={len(records)}"]
+            if chart_name in {"Tx waveform", "Rx waveform", "magnitude vs sample", "phase vs sample", "power vs sample"}:
+                metric_specs: list[tuple[str, str, Callable[[dict[str, str]], float | None]]] = []
+                if chart_name == "Tx waveform":
+                    metric_specs = [
+                        ("Tx real", "TxReal", lambda row: _row_float(row, "TxReal")),
+                        ("Tx imag", "TxImag", lambda row: _row_float(row, "TxImag")),
+                    ]
+                elif chart_name == "Rx waveform":
+                    metric_specs = [
+                        ("Rx real", "RxReal", lambda row: _row_float(row, "RxReal")),
+                        ("Rx imag", "RxImag", lambda row: _row_float(row, "RxImag")),
+                    ]
+                elif chart_name == "magnitude vs sample":
+                    metric_specs = [
+                        ("Tx magnitude", "TxMagnitude", lambda row: _row_float(row, "TxMagnitude")),
+                        ("Rx magnitude", "RxMagnitude", lambda row: _row_float(row, "RxMagnitude")),
+                    ]
+                elif chart_name == "phase vs sample":
+                    metric_specs = [
+                        ("Tx phase", "TxPhase_rad", lambda row: math.atan2(_row_float(row, "TxImag") or 0.0, _row_float(row, "TxReal") or 0.0) if _row_float(row, "TxReal", "TxImag") is not None else None),
+                        ("Rx phase", "RxPhase_rad", lambda row: math.atan2(_row_float(row, "RxImag") or 0.0, _row_float(row, "RxReal") or 0.0) if _row_float(row, "RxReal", "RxImag") is not None else None),
+                    ]
+                else:
+                    metric_specs = [
+                        ("Tx power", "TxPower", lambda row: (_row_float(row, "TxMagnitude") or 0.0) ** 2 if _row_float(row, "TxMagnitude") is not None else None),
+                        ("Rx power", "RxPower", lambda row: (_row_float(row, "RxMagnitude") or 0.0) ** 2 if _row_float(row, "RxMagnitude") is not None else None),
+                    ]
+                for series_name, metric_name, resolver in metric_specs:
+                    points: list[list[float]] = []
+                    for row in records:
+                        x_val = _row_float(row, x_label) if use_time_axis else _row_float(row, "SampleIndex")
+                        if x_val is None:
+                            continue
+                        y_val = resolver(row)
+                        if y_val is None or not math.isfinite(y_val):
+                            continue
+                        points.append([float(x_val), float(y_val)])
+                        csv_rows.append(
+                            {
+                                "run_id": run_id,
+                                "chart_name": chart_name,
+                                x_label: x_val,
+                                "series_name": series_name,
+                                "metric_name": metric_name,
+                                "metric_value": y_val,
+                                "source_table_logical_path": source_path,
+                            }
+                        )
+                    if points:
+                        series.append({"name": series_name, "points": _downsample_points(points, 256)})
+                if series:
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", x_label, "series_name", "metric_name", "metric_value", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_multi_series_svg(chart_name, "Sample-domain waveform traces rendered from persisted runtime preview samples.", series, summary, x_label=x_label, y_label="Amplitude / derived value"),
+                        "csv_status": "specialized_runtime_waveform_dataset",
+                        "image_status": "generated_specialized_runtime_waveform_svg",
+                        "source_table_path": source_path,
+                        "source_row_count": len(csv_rows),
+                        "note": "Waveform chart derived from actual exported TX/RX preview samples.",
+                    }
+            if chart_name in {"pre-channel waveform", "post-channel waveform", "post-impairment waveform", "stage overlay plots", "UE-wise / link-wise waveform comparison"}:
+                stage_rows = [row for row in records if _row_text(row, "Stage", "stage_name", "TraceStage")]
+                if stage_rows:
+                    wanted_stage_tokens = {
+                        "pre-channel waveform": ("prechannel", "tx"),
+                        "post-channel waveform": ("postchannel", "channel"),
+                        "post-impairment waveform": ("postimpairment", "impairment"),
+                    }
+                    grouped: dict[str, list[list[float]]] = defaultdict(list)
+                    for row in stage_rows:
+                        stage_name = _row_text(row, "Stage", "stage_name", "TraceStage")
+                        stage_token = re.sub(r"[^a-z0-9]+", "", stage_name.lower())
+                        if chart_name in wanted_stage_tokens and not any(token in stage_token for token in wanted_stage_tokens[chart_name]):
+                            continue
+                        x_val = _row_float(row, "Time_s", "SampleIndex", "Slot", "Frame")
+                        y_val = _row_float(row, "Magnitude", "Value", "Amplitude", "SignalValue")
+                        if x_val is None or y_val is None:
+                            continue
+                        grouped[stage_name].append([float(x_val), float(y_val)])
+                    if grouped:
+                        stage_series = [{"name": name, "points": _downsample_points(points, 180)} for name, points in list(grouped.items())[:5] if points]
+                        csv_rows = []
+                        for name, points in grouped.items():
+                            for x_val, y_val in points[:MAX_PREVIEW_ROWS]:
+                                csv_rows.append({"run_id": run_id, "chart_name": chart_name, "stage_name": name, "x_value": x_val, "metric_value": y_val, "source_table_logical_path": source_path})
+                        return {
+                            "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "stage_name", "x_value", "metric_value", "source_table_logical_path"], csv_rows),
+                            "img_bytes": _render_multi_series_svg(chart_name, "Stage-wise waveform evidence derived only from persisted stage-trace samples.", stage_series, summary, x_label="Time / sample", y_label="Magnitude"),
+                            "csv_status": "specialized_runtime_stage_waveform_dataset",
+                            "image_status": "generated_specialized_runtime_waveform_svg",
+                            "source_table_path": source_path,
+                            "source_row_count": len(csv_rows),
+                            "note": "Stage waveform chart derived from persisted stage-trace samples when exported by runtime.",
+                        }
+    if chart_name in {"pre-equalization constellation", "post-equalization constellation", "EVM RMS", "symbol decision error histogram"}:
+        dl_preview_path = "air_interface/csv/dl_constellation_preview.csv"
+        ul_preview_path = "air_interface/csv/ul_constellation_preview.csv"
+        _, dl_preview = _artifact_rows_by_path(existing, fetch_artifact_bytes, dl_preview_path)
+        _, ul_preview = _artifact_rows_by_path(existing, fetch_artifact_bytes, ul_preview_path)
+        preview_rows = [("DL", row, dl_preview_path) for row in dl_preview] + [("UL", row, ul_preview_path) for row in ul_preview]
+        if chart_name in {"pre-equalization constellation", "post-equalization constellation"} and preview_rows:
+            panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]] = []
+            csv_rows: list[dict[str, Any]] = []
+            for direction in ("DL", "UL"):
+                points: list[tuple[float, float, str]] = []
+                ideal: list[tuple[float, float]] = []
+                for row_direction, row, source_path in preview_rows:
+                    if row_direction != direction:
+                        continue
+                    if chart_name == "pre-equalization constellation":
+                        x_val = _row_float(row, "ReceivedReal", "RxReal")
+                        y_val = _row_float(row, "ReceivedImag", "RxImag")
+                    else:
+                        x_val = _row_float(row, "EqualizedReal")
+                        y_val = _row_float(row, "EqualizedImag")
+                    if x_val is None or y_val is None:
+                        continue
+                    ref_r = _row_float(row, "ReferenceSymbolReal")
+                    ref_i = _row_float(row, "ReferenceSymbolImag")
+                    points.append((float(x_val), float(y_val), direction))
+                    if ref_r is not None and ref_i is not None:
+                        ideal.append((float(ref_r), float(ref_i)))
+                    csv_rows.append(
+                        {
+                            "run_id": run_id,
+                            "chart_name": chart_name,
+                            "direction": direction,
+                            "x_value": x_val,
+                            "y_value": y_val,
+                            "reference_x": ref_r if ref_r is not None else "",
+                            "reference_y": ref_i if ref_i is not None else "",
+                            "source_table_logical_path": source_path,
+                        }
+                    )
+                if points:
+                    panels.append((f"{direction} {chart_name.replace(' constellation', '')}", points[:450], ideal[:64]))
+            if panels:
+                return {
+                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "x_value", "y_value", "reference_x", "reference_y", "source_table_logical_path"], csv_rows),
+                    "img_bytes": _render_scatter_panels_svg(chart_name, "Constellation cloud from real runtime preview samples. Grey markers show ideal reference symbols when exported.", panels, [f"dl_rows={len(dl_preview)}", f"ul_rows={len(ul_preview)}"]),
+                    "csv_status": "specialized_runtime_constellation_dataset",
+                    "image_status": "generated_specialized_runtime_constellation_svg",
+                    "source_table_path": f"{dl_preview_path}|{ul_preview_path}",
+                    "source_row_count": len(csv_rows),
+                    "note": "Constellation chart derived directly from persisted preview samples.",
+                }
+        if chart_name == "EVM RMS":
+            trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
+            named_values: list[tuple[str, float]] = []
+            csv_rows: list[dict[str, Any]] = []
+            for source_path, rows in trial_sources:
+                direction = "DL" if "dl_pdsch" in source_path else "UL"
+                evm_values = [float(value) for value in (_row_float(row, "EVM_rms") for row in rows) if value is not None]
+                if not evm_values:
+                    continue
+                mean_evm = sum(evm_values) / len(evm_values)
+                named_values.append((direction, mean_evm))
+                csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction, "mean_evm_rms": mean_evm, "sample_count": len(evm_values), "source_table_logical_path": source_path})
+            if named_values:
+                dataset, summary = _bar_dataset_from_named_values("Direction bucket", "Mean EVM RMS", named_values)
+                return {
+                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "mean_evm_rms", "sample_count", "source_table_logical_path"], csv_rows),
+                    "img_bytes": _render_svg_plot(chart_name, "Mean trial-level EVM from persisted waveform trials.", dataset, summary),
+                    "csv_status": "specialized_runtime_evm_dataset",
+                    "image_status": "generated_specialized_runtime_summary_svg",
+                    "source_table_path": "|".join(source_path for source_path, _rows in trial_sources),
+                    "source_row_count": len(csv_rows),
+                    "note": "EVM RMS chart derived from trial-level runtime EVM fields.",
+                }
+        if chart_name == "symbol decision error histogram" and preview_rows:
+            values: list[float] = []
+            csv_rows: list[dict[str, Any]] = []
+            for direction, row, source_path in preview_rows:
+                eq_r = _row_float(row, "EqualizedReal")
+                eq_i = _row_float(row, "EqualizedImag")
+                ref_r = _row_float(row, "ReferenceSymbolReal")
+                ref_i = _row_float(row, "ReferenceSymbolImag")
+                if None in {eq_r, eq_i, ref_r, ref_i}:
+                    continue
+                error_mag = math.sqrt((float(eq_r) - float(ref_r)) ** 2 + (float(eq_i) - float(ref_i)) ** 2)
+                values.append(error_mag)
+                csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction, "decision_error_magnitude": error_mag, "source_table_logical_path": source_path})
+            if values:
+                bins = _bin_mean_points([(value, 1.0) for value in values], 16)
+                dataset = {"mode": "bar", "x_label": "Decision error magnitude", "y_label": "Mean count per bin", "points": bins}
+                return {
+                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "decision_error_magnitude", "source_table_logical_path"], csv_rows),
+                    "img_bytes": _render_svg_plot(chart_name, "Histogram of equalized-symbol distance to the nearest exported reference symbol.", dataset, [f"samples={len(values)}"]),
+                    "csv_status": "specialized_runtime_symbol_error_dataset",
+                    "image_status": "generated_specialized_runtime_summary_svg",
+                    "source_table_path": f"{dl_preview_path}|{ul_preview_path}",
+                    "source_row_count": len(csv_rows),
+                    "note": "Decision-error histogram derived from preview equalized and reference symbols.",
+                }
+    if chart_name in {"BER", "BLER", "FER", "BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR", "CRC pass/fail rates", "decoder iteration distributions", "per-UE and per-cell reliability"}:
+        trial_rows = _trial_rows_with_paths(
+            existing,
+            fetch_artifact_bytes,
+            ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv", "air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv", "air_interface/csv/pbch_trials.csv"],
+        )
+        if trial_rows:
+            if chart_name in {"BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR"}:
+                pairs: list[tuple[float, float]] = []
+                used_source_path = ""
+                x_field = "ConfiguredSNR_dB" if "SNR" in chart_name and "SINR" not in chart_name else "MeasuredTrialSINR_dB"
+                x_label = "ConfiguredSNR_dB" if "SNR" in chart_name and "SINR" not in chart_name else "MeasuredTrialSINR_dB"
+                y_label = "BLER" if "BLER" in chart_name else ("FER" if "FER" in chart_name else "BER")
+                for source_path, row in trial_rows:
+                    x_val = _row_float(row, x_field, "AppliedAWGNSNR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB")
+                    if x_val is None:
+                        continue
+                    if y_label == "BER":
+                        y_val = _trial_row_ber(row)
+                    elif y_label == "FER":
+                        y_val = 0.0 if _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK").lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
+                    else:
+                        y_val = _trial_row_bler(row)
+                    if y_val is None:
+                        continue
+                    pairs.append((float(x_val), float(y_val)))
+                    used_source_path = used_source_path or source_path
+                if pairs:
+                    csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials")
+                    return {
+                        "csv_bytes": csv_bytes,
+                        "img_bytes": _render_svg_plot(chart_name, "Reliability metric aggregated from truthful trial rows.", dataset, [f"samples={len(pairs)}", f"x_axis={x_label}", f"y_axis={y_label}"]),
+                        "csv_status": "specialized_runtime_reliability_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": used_source_path or "multiple_runtime_trials",
+                        "source_row_count": len(pairs),
+                        "note": "Reliability-vs-quality curve derived from actual trial BER/BLER/FER outcomes.",
+                    }
+            if chart_name in {"BER", "BLER", "FER", "CRC pass/fail rates"}:
+                counts: Counter[str] = Counter()
+                for _source_path, row in trial_rows:
+                    if chart_name == "BER":
+                        value = _trial_row_ber(row)
+                        if value is not None:
+                            counts["Mean BER"] += value
+                            counts["BER samples"] += 1
+                    elif chart_name == "BLER":
+                        value = _trial_row_bler(row)
+                        if value is not None:
+                            counts["Mean BLER"] += value
+                            counts["BLER samples"] += 1
+                    elif chart_name == "FER":
+                        token = _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK")
+                        if token:
+                            counts["Mean FER"] += 0.0 if token.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
+                            counts["FER samples"] += 1
+                    else:
+                        token = _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK")
+                        if token:
+                            counts["Pass"] += 1 if token.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 0
+                            counts["Fail"] += 0 if token.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1
+                named_values: list[tuple[str, float]] = []
+                if chart_name == "CRC pass/fail rates":
+                    named_values = [(key, float(value)) for key, value in counts.items() if key in {"Pass", "Fail"}]
+                else:
+                    sample_key = f"{chart_name} samples"
+                    mean_key = f"Mean {chart_name}"
+                    if counts.get(sample_key, 0) > 0:
+                        named_values = [(chart_name, float(counts[mean_key]) / float(counts[sample_key]))]
+                if named_values:
+                    dataset, summary = _bar_dataset_from_named_values("Metric bucket", "Value", named_values)
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "metric_name": name, "metric_value": value, "source_table_logical_path": "multiple_runtime_trials"} for name, value in named_values]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "metric_name", "metric_value", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Summary reliability metric from persisted waveform/control trials.", dataset, summary),
+                        "csv_status": "specialized_runtime_reliability_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": "multiple_runtime_trials",
+                        "source_row_count": len(csv_rows),
+                        "note": "Reliability summary built from persisted trial rows.",
+                    }
+            if chart_name == "decoder iteration distributions":
+                values = [float(value) for _source_path, row in trial_rows for value in [_row_float(row, "DecoderIterations")] if value is not None]
+                if values:
+                    dataset = {"mode": "bar", "x_label": "Decoder iterations", "y_label": "Mean count per bin", "points": _bin_mean_points([(value, 1.0) for value in values], 14)}
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "decoder_iterations": value, "source_table_logical_path": "multiple_runtime_trials"} for value in values]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "decoder_iterations", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Decoder-iteration distribution from persisted waveform trial rows.", dataset, [f"samples={len(values)}"]),
+                        "csv_status": "specialized_runtime_decoder_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": "multiple_runtime_trials",
+                        "source_row_count": len(csv_rows),
+                        "note": "Decoder iteration histogram derived from runtime decoder-trial rows.",
+                    }
+            if chart_name == "per-UE and per-cell reliability":
+                reliability_rows: list[dict[str, Any]] = []
+                grouped: dict[str, list[float]] = defaultdict(list)
+                for source_path, row in trial_rows:
+                    key = _row_text(row, "UEID", "UEIndex", "RNTI", "BaseStationID", "CellID", "ServingCell")
+                    value = _trial_row_bler(row)
+                    if not key or value is None:
+                        continue
+                    grouped[key].append(float(value))
+                named_values = [(name, sum(values) / len(values)) for name, values in sorted(grouped.items(), key=lambda item: item[0])[:12] if values]
+                if named_values:
+                    dataset, summary = _bar_dataset_from_named_values("Entity bucket", "Mean BLER", named_values)
+                    reliability_rows = [{"run_id": run_id, "chart_name": chart_name, "entity_name": name, "mean_bler": value, "source_table_logical_path": "multiple_runtime_trials"} for name, value in named_values]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "entity_name", "mean_bler", "source_table_logical_path"], reliability_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Mean BLER by UE or serving-cell identifier from persisted trial rows.", dataset, summary),
+                        "csv_status": "specialized_runtime_reliability_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": "multiple_runtime_trials",
+                        "source_row_count": len(reliability_rows),
+                        "note": "Per-entity reliability summary derived from runtime trial outcomes.",
+                    }
+    if chart_name in {
+        "throughput",
+        "offered throughput",
+        "goodput",
+        "spectral efficiency",
+        "throughput vs SNR",
+        "throughput vs SINR",
+        "throughput vs load",
+        "goodput vs retransmissions",
+        "per-UE throughput",
+        "per-cell throughput",
+        "throughput percentile plots",
+        "throughput CDF",
+    }:
+        trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
+        _, user_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, "reports/csv/live_user_performance_snapshot.csv")
+        if trial_sources or user_rows:
+            if chart_name in {"throughput", "offered throughput", "goodput", "spectral efficiency"}:
+                named_values: list[tuple[str, float]] = []
+                csv_rows: list[dict[str, Any]] = []
+                for source_path, rows in trial_sources:
+                    direction = "DL" if "dl_pdsch" in source_path else "UL"
+                    if chart_name == "throughput":
+                        values = [float(value) for value in (_row_float(row, "Throughput_Mbps", "MeasuredThroughput_Mbps", "OfferedThroughput_Mbps") for row in rows) if value is not None]
+                    elif chart_name == "offered throughput":
+                        values = [float(value) for value in (_row_float(row, "OfferedThroughput_Mbps") for row in rows) if value is not None]
+                    elif chart_name == "goodput":
+                        values = [float(value) for value in (_row_float(row, "Goodput_Mbps") for row in rows) if value is not None]
+                    else:
+                        values = [float(value) / 100.0 for value in (_row_float(row, "Goodput_Mbps", "Throughput_Mbps") for row in rows) if value is not None]
+                    if not values:
+                        continue
+                    metric_value = sum(values) / len(values)
+                    named_values.append((direction, metric_value))
+                    csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction, "metric_value": metric_value, "sample_count": len(values), "source_table_logical_path": source_path})
+                if named_values:
+                    y_label = "Mean spectral efficiency (b/s/Hz)" if chart_name == "spectral efficiency" else f"Mean {chart_name} (Mbps)"
+                    dataset, summary = _bar_dataset_from_named_values("Direction bucket", y_label, named_values)
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "metric_value", "sample_count", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Direction-wise summary derived from persisted throughput/goodput trial rows.", dataset, summary),
+                        "csv_status": "specialized_runtime_throughput_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": "|".join(source_path for source_path, _rows in trial_sources),
+                        "source_row_count": len(csv_rows),
+                        "note": "Summary derived from truthful trial throughput/goodput fields.",
+                    }
+            if chart_name in {"throughput vs SNR", "throughput vs SINR", "throughput vs load", "goodput vs retransmissions"}:
+                pairs: list[tuple[float, float]] = []
+                source_token = ""
+                if chart_name == "throughput vs SNR":
+                    x_label = "ConfiguredSNR_dB"
+                    y_label = "Throughput_Mbps"
+                elif chart_name == "throughput vs SINR":
+                    x_label = "MeasuredTrialSINR_dB"
+                    y_label = "Throughput_Mbps"
+                elif chart_name == "throughput vs load":
+                    x_label = "AllocatedPRBCount"
+                    y_label = "Throughput_Mbps"
+                else:
+                    x_label = "HARQRetxCount"
+                    y_label = "Goodput_Mbps"
+                for source_path, rows in trial_sources:
+                    for row in rows:
+                        if chart_name == "throughput vs SNR":
+                            x_val = _row_float(row, "ConfiguredSNR_dB", "AppliedAWGNSNR_dB")
+                        elif chart_name == "throughput vs SINR":
+                            x_val = _row_float(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB", "LargeScaleSINR_dB")
+                        elif chart_name == "throughput vs load":
+                            x_val = _row_float(row, "AllocatedPRBCount", "PRBCount", "NumPRB", "ScheduledPRBs")
+                        else:
+                            x_val = _row_float(row, "HARQRetxCount", "RetxCount", "RetransmissionCount")
+                        if x_val is None:
+                            continue
+                        y_val = _row_float(row, y_label, "Goodput_Mbps", "Throughput_Mbps")
+                        if y_val is None:
+                            continue
+                        pairs.append((float(x_val), float(y_val)))
+                        source_token = source_token or source_path
+                if pairs:
+                    csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=source_token or "multiple_runtime_trials")
+                    subtitle = "Correlation view derived directly from persisted runtime throughput/goodput trials."
+                    if chart_name == "throughput vs load":
+                        subtitle = "Load view uses scheduled PRB count as the honest load proxy because this run exports one high-load operating point, not a sweep campaign."
+                    return {
+                        "csv_bytes": csv_bytes,
+                        "img_bytes": _render_svg_plot(chart_name, subtitle, dataset, [f"samples={len(pairs)}"]),
+                        "csv_status": "specialized_runtime_throughput_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": source_token or "multiple_runtime_trials",
+                        "source_row_count": len(pairs),
+                        "note": "Throughput relationship chart derived from truthful trial fields.",
+                    }
+            if chart_name in {"per-UE throughput", "throughput percentile plots", "throughput CDF"} and user_rows:
+                values: list[float] = []
+                csv_rows: list[dict[str, Any]] = []
+                for row in user_rows:
+                    ue_name = _row_text(row, "UEID", "UEIndex", "RNTI")
+                    throughput = _row_float(row, "UserThroughput_Mbps", "DL_Throughput_Mbps", "UL_Throughput_Mbps")
+                    if throughput is None:
+                        continue
+                    values.append(float(throughput))
+                    csv_rows.append({"run_id": run_id, "chart_name": chart_name, "ue_name": ue_name or f"UE{len(csv_rows)+1}", "throughput_mbps": throughput, "source_table_logical_path": "reports/csv/live_user_performance_snapshot.csv"})
+                if values:
+                    sorted_values = sorted(values)
+                    if chart_name == "per-UE throughput":
+                        dataset = {"mode": "bar", "x_label": "UE rank", "y_label": "Throughput (Mbps)", "points": [[float(idx + 1), value] for idx, value in enumerate(sorted_values[:MAX_PREVIEW_ROWS])]}
+                    elif chart_name == "throughput percentile plots":
+                        percentiles = [(5, _percentile(sorted_values, 0.05)), (25, _percentile(sorted_values, 0.25)), (50, _percentile(sorted_values, 0.50)), (75, _percentile(sorted_values, 0.75)), (95, _percentile(sorted_values, 0.95))]
+                        dataset = {"mode": "bar", "x_label": "Percentile", "y_label": "Throughput (Mbps)", "points": [[float(p), float(v)] for p, v in percentiles]}
+                    else:
+                        dataset = {"mode": "cdf", "x_label": "Throughput (Mbps)", "y_label": "CDF", "points": [[value, (idx + 1) / len(sorted_values)] for idx, value in enumerate(sorted_values[:MAX_PREVIEW_ROWS])]}
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "ue_name", "throughput_mbps", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Per-UE throughput distribution derived from the exported runtime user snapshot.", dataset, [f"ue_samples={len(values)}"]),
+                        "csv_status": "specialized_runtime_throughput_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": "reports/csv/live_user_performance_snapshot.csv",
+                        "source_row_count": len(csv_rows),
+                        "note": "User distribution view derived from truthful user-performance snapshot rows.",
+                    }
+            if chart_name == "per-cell throughput":
+                grouped: dict[str, list[float]] = defaultdict(list)
+                for source_path, rows in trial_sources:
+                    for row in rows:
+                        cell_name = _row_text(row, "BaseStationID", "ServingCell", "CellID")
+                        throughput = _row_float(row, "Throughput_Mbps", "Goodput_Mbps", "MeasuredThroughput_Mbps")
+                        if not cell_name or throughput is None:
+                            continue
+                        grouped[cell_name].append(float(throughput))
+                named_values = [(cell_name, sum(values) / len(values)) for cell_name, values in sorted(grouped.items())[:12] if values]
+                if named_values:
+                    dataset, summary = _bar_dataset_from_named_values("Cell bucket", "Mean throughput (Mbps)", named_values)
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "cell_name": name, "throughput_mbps": value, "source_table_logical_path": "multiple_runtime_trials"} for name, value in named_values]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "cell_name", "throughput_mbps", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Per-cell throughput derived from persisted runtime trials.", dataset, summary),
+                        "csv_status": "specialized_runtime_throughput_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": "multiple_runtime_trials",
+                        "source_row_count": len(csv_rows),
+                        "note": "Cell aggregation derived from truthful trial throughput rows.",
+                    }
+    if chart_name in {
+        "configured SNR vs applied AWGN SNR vs measured SINR vs large-scale SINR",
+        "configured vs applied vs measured SNR/SINR comparison",
+        "ServingRSRP / RSRP / CSI-RSRP trends",
+        "CQI / PMI / RI / CRI / SSBRI trends",
+        "CQI-to-MCS mapping plot",
+        "selected MCS distribution",
+        "selected vs derived MCS confusion matrix",
+        "quality-vs-selected-MCS mismatch plot",
+        "per-beam quality plot",
+        "per-layer quality plot",
+    }:
+        la_path, la_rows = _first_available_rows(
+            existing,
+            fetch_artifact_bytes,
+            ["reports/csv/live_link_adaptation_input_table.csv", "reports/csv/table_cqi_pmi_ri.csv", "reports/csv/live_rsrp_serving_trace.csv"],
+        )
+        if la_rows:
+            if chart_name in {"configured SNR vs applied AWGN SNR vs measured SINR vs large-scale SINR", "configured vs applied vs measured SNR/SINR comparison"}:
+                series_specs = [
+                    ("Configured SNR", "ConfiguredSNR_dB"),
+                    ("Applied AWGN SNR", "AppliedAWGNSNR_dB"),
+                    ("Measured SINR", "MeasuredTrialSINR_dB"),
+                    ("Measured wideband SINR", "MeasuredWidebandSINR_dB"),
+                    ("Large-scale SINR", "LargeScaleSINR_dB"),
+                ]
+                series: list[dict[str, Any]] = []
+                csv_rows: list[dict[str, Any]] = []
+                for series_name, field_name in series_specs:
+                    points: list[list[float]] = []
+                    for idx, row in enumerate(la_rows, start=1):
+                        x_val = _row_float(row, "Slot", "Frame")
+                        if x_val is None:
+                            x_val = float(idx)
+                        y_val = _row_float(row, field_name)
+                        if y_val is None:
+                            continue
+                        points.append([float(x_val), float(y_val)])
+                        csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot_or_sample": x_val, "series_name": series_name, "metric_value_db": y_val, "source_table_logical_path": la_path})
+                    if points:
+                        series.append({"name": series_name, "points": _downsample_points(points, 160)})
+                if series:
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot_or_sample", "series_name", "metric_value_db", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_multi_series_svg(chart_name, "Configured, applied, and measured quality metrics are kept separate and plotted directly from runtime export fields.", series, [f"rows={len(la_rows)}"], x_label="Slot / sample", y_label="dB"),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(csv_rows),
+                        "note": "Comparison chart derived from truthful configured/applied/measured quality fields.",
+                    }
+            if chart_name == "ServingRSRP / RSRP / CSI-RSRP trends":
+                rsrp_rows = la_rows
+                series_specs = [("Serving RSRP", "ServingRSRP_dBm"), ("RSRP", "RSRP_dBm"), ("CSI-RSRP", "CSI_RSRP_dB")]
+                series: list[dict[str, Any]] = []
+                csv_rows: list[dict[str, Any]] = []
+                for series_name, field_name in series_specs:
+                    points: list[list[float]] = []
+                    for idx, row in enumerate(rsrp_rows, start=1):
+                        x_val = _row_float(row, "Slot", "Frame")
+                        if x_val is None:
+                            x_val = float(idx)
+                        y_val = _row_float(row, field_name)
+                        if y_val is None:
+                            continue
+                        points.append([float(x_val), float(y_val)])
+                        csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot_or_sample": x_val, "series_name": series_name, "metric_value": y_val, "source_table_logical_path": la_path})
+                    if points:
+                        series.append({"name": series_name, "points": _downsample_points(points, 160)})
+                if series:
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot_or_sample", "series_name", "metric_value", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_multi_series_svg(chart_name, "Serving RSRP, generic RSRP, and CSI-RSRP trends from runtime measurement exports.", series, [f"rows={len(rsrp_rows)}"], x_label="Slot / sample", y_label="dB / dBm"),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(csv_rows),
+                        "note": "RSRP trend chart derived from runtime measurement rows.",
+                    }
+            if chart_name == "CQI / PMI / RI / CRI / SSBRI trends":
+                series_specs = [("CQI", "WidebandCQI"), ("PMI", "PMI"), ("RI", "RI"), ("CRI", "CRI"), ("SSBRI", "SSBRI")]
+                series: list[dict[str, Any]] = []
+                csv_rows: list[dict[str, Any]] = []
+                for series_name, field_name in series_specs:
+                    points: list[list[float]] = []
+                    for idx, row in enumerate(la_rows, start=1):
+                        x_val = _row_float(row, "Slot", "Frame")
+                        if x_val is None:
+                            x_val = float(idx)
+                        y_val = _row_float(row, field_name)
+                        if y_val is None:
+                            continue
+                        points.append([float(x_val), float(y_val)])
+                        csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot_or_sample": x_val, "series_name": series_name, "metric_value": y_val, "source_table_logical_path": la_path})
+                    if points:
+                        series.append({"name": series_name, "points": _downsample_points(points, 160)})
+                if series:
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot_or_sample", "series_name", "metric_value", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_multi_series_svg(chart_name, "CQI/PMI/RI/CRI/SSBRI trends from runtime link-adaptation inputs.", series, [f"rows={len(la_rows)}"], x_label="Slot / sample", y_label="Index / reported value"),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(csv_rows),
+                        "note": "CSI feedback trend chart derived from runtime measurement rows.",
+                    }
+            if chart_name == "CQI-to-MCS mapping plot":
+                pairs = [(float(cqi), float(mcs)) for row in la_rows for cqi, mcs in [(_row_float(row, "WidebandCQI"), _row_float(row, "CQIDerivedMCS", "MCSIndex"))] if cqi is not None and mcs is not None]
+                if pairs:
+                    csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label="WidebandCQI", y_label="DerivedOrSelectedMCS", chart_name=chart_name, run_id=run_id, source_path=la_path)
+                    return {
+                        "csv_bytes": csv_bytes,
+                        "img_bytes": _render_svg_plot(chart_name, "CQI-to-MCS mapping observed in runtime link-adaptation rows.", dataset, [f"samples={len(pairs)}"]),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(pairs),
+                        "note": "CQI-to-MCS mapping derived from runtime CQI and MCS fields.",
+                    }
+            if chart_name == "selected MCS distribution":
+                values = [float(value) for value in (_row_float(row, "MCSIndex", "CQIDerivedMCS") for row in la_rows) if value is not None]
+                if values:
+                    dataset = {"mode": "bar", "x_label": "MCS", "y_label": "Mean count per bin", "points": _bin_mean_points([(value, 1.0) for value in values], 18)}
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "mcs_index": value, "source_table_logical_path": la_path} for value in values]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "mcs_index", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Distribution of selected runtime MCS values.", dataset, [f"samples={len(values)}"]),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(csv_rows),
+                        "note": "MCS distribution derived from runtime link-adaptation rows.",
+                    }
+            if chart_name == "selected vs derived MCS confusion matrix":
+                matrix_rows: list[dict[str, Any]] = []
+                raw_rows: list[dict[str, Any]] = []
+                for row in la_rows:
+                    selected = _row_float(row, "MCSIndex")
+                    derived = _row_float(row, "CQIDerivedMCS")
+                    if selected is None or derived is None:
+                        continue
+                    raw_rows.append({"selected_mcs": int(round(selected)), "derived_mcs": int(round(derived)), "count": 1.0})
+                if raw_rows:
+                    x_labels, y_labels, matrix = _grid_rows_to_heatmap(raw_rows, "derived_mcs", "selected_mcs", "count")
+                    matrix_rows = [{"run_id": run_id, "chart_name": chart_name, "selected_mcs": row["selected_mcs"], "derived_mcs": row["derived_mcs"], "count": row["count"], "source_table_logical_path": la_path} for row in raw_rows]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "selected_mcs", "derived_mcs", "count", "source_table_logical_path"], matrix_rows),
+                        "img_bytes": _render_heatmap_svg(chart_name, "Confusion matrix between applied MCS and CQI-derived MCS from runtime rows.", x_labels, y_labels, matrix, [f"samples={len(raw_rows)}"], "Derived MCS", "Selected MCS"),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_heatmap_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(matrix_rows),
+                        "note": "Selected-versus-derived MCS matrix derived from runtime link-adaptation rows.",
+                    }
+            if chart_name == "quality-vs-selected-MCS mismatch plot":
+                pairs = [(float(quality), float(mcs)) for row in la_rows for quality, mcs in [(_row_float(row, "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "ReceiverHestSINR_dB"), _row_float(row, "MCSIndex"))] if quality is not None and mcs is not None]
+                if pairs:
+                    csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label="MeasuredQuality_dB", y_label="SelectedMCS", chart_name=chart_name, run_id=run_id, source_path=la_path)
+                    return {
+                        "csv_bytes": csv_bytes,
+                        "img_bytes": _render_svg_plot(chart_name, "Quality-to-selected-MCS trend from runtime adaptation rows.", dataset, [f"samples={len(pairs)}"]),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(pairs),
+                        "note": "Mismatch/trend plot derived from measured quality and selected MCS.",
+                    }
+            if chart_name in {"per-beam quality plot", "per-layer quality plot"}:
+                field_name = "BeamIndex" if chart_name == "per-beam quality plot" else "LayerIndex"
+                grouped: dict[int, list[float]] = defaultdict(list)
+                for row in la_rows:
+                    group_value = _row_float(row, field_name, "SelectedBeamIndex" if field_name == "BeamIndex" else "Layers")
+                    quality = _row_float(row, "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "ReceiverHestSINR_dB")
+                    if group_value is None or quality is None:
+                        continue
+                    grouped[int(round(group_value))].append(float(quality))
+                named_values = [(str(name), sum(values) / len(values)) for name, values in sorted(grouped.items()) if values]
+                if named_values:
+                    dataset, summary = _bar_dataset_from_named_values("Bucket", "Mean quality (dB)", named_values[:16])
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "bucket_name": name, "mean_quality_db": value, "source_table_logical_path": la_path} for name, value in named_values[:16]]
+                    return {
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "bucket_name", "mean_quality_db", "source_table_logical_path"], csv_rows),
+                        "img_bytes": _render_svg_plot(chart_name, "Mean quality grouped by exported beam or layer identifier.", dataset, summary),
+                        "csv_status": "specialized_runtime_measurement_dataset",
+                        "image_status": "generated_specialized_runtime_summary_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(csv_rows),
+                        "note": "Grouped quality chart derived from runtime beam/layer identifiers when exported.",
+                    }
+    if chart_name in {"BS/sector/UE topology scatter plot", "serving cell map"}:
+        site_path, site_rows = _first_available_rows(existing, fetch_artifact_bytes, ["reports/csv/sites.csv"])
+        ue_path, ue_rows = _first_available_rows(existing, fetch_artifact_bytes, ["reports/csv/live_rsrp_serving_trace.csv", "reports/csv/live_ue_table.csv"])
+        if site_rows or ue_rows:
+            use_geo = any(_row_float(row, "Lon") is not None and _row_float(row, "Lat") is not None for row in ue_rows[:8] + site_rows[:8])
+            x_names = ("Lon", "X_m") if use_geo else ("X_m", "Lon")
+            y_names = ("Lat", "Y_m") if use_geo else ("Y_m", "Lat")
+            x_label = "Longitude" if use_geo else "X (m)"
+            y_label = "Latitude" if use_geo else "Y (m)"
+            series: list[dict[str, Any]] = []
+            csv_rows: list[dict[str, Any]] = []
+            site_points: list[list[float]] = []
+            for row in site_rows:
+                x_val = _row_float(row, *x_names)
+                y_val = _row_float(row, *y_names)
+                if x_val is None or y_val is None:
+                    continue
+                site_points.append([float(x_val), float(y_val)])
+                csv_rows.append({
+                    "run_id": run_id,
+                    "chart_name": chart_name,
+                    "series_name": "Sites",
+                    "x_value": x_val,
+                    "y_value": y_val,
+                    "label": _row_text(row, "SiteID", "MapAnchorLabel"),
+                    "source_table_logical_path": site_path,
+                })
+            if site_points:
+                series.append({"name": "Sites", "points": site_points[:32]})
+            latest_ue: dict[str, dict[str, str]] = {}
+            for row in ue_rows:
+                ue_key = _row_text(row, "UEID", "UEIndex", "RNTI")
+                if ue_key:
+                    latest_ue[ue_key] = row
+            if chart_name == "BS/sector/UE topology scatter plot":
+                ue_points: list[list[float]] = []
+                for row in latest_ue.values():
+                    x_val = _row_float(row, *x_names)
+                    y_val = _row_float(row, *y_names)
+                    if x_val is None or y_val is None:
+                        continue
+                    ue_points.append([float(x_val), float(y_val)])
+                    csv_rows.append({
+                        "run_id": run_id,
+                        "chart_name": chart_name,
+                        "series_name": "UEs",
+                        "x_value": x_val,
+                        "y_value": y_val,
+                        "label": _row_text(row, "UEID", "UEIndex"),
+                        "source_table_logical_path": ue_path,
+                    })
+                if ue_points:
+                    series.append({"name": "UEs", "points": _downsample_points(ue_points, 220), "color": "#2563eb"})
+            else:
+                grouped_points: dict[str, list[list[float]]] = defaultdict(list)
+                for row in latest_ue.values():
+                    x_val = _row_float(row, *x_names)
+                    y_val = _row_float(row, *y_names)
+                    if x_val is None or y_val is None:
+                        continue
+                    cell_name = _row_text(row, "ServingCell", "ServingSector", "ServingSite") or "Unknown cell"
+                    grouped_points[cell_name].append([float(x_val), float(y_val)])
+                    csv_rows.append({
+                        "run_id": run_id,
+                        "chart_name": chart_name,
+                        "series_name": cell_name,
+                        "x_value": x_val,
+                        "y_value": y_val,
+                        "label": _row_text(row, "UEID", "UEIndex"),
+                        "source_table_logical_path": ue_path,
+                    })
+                for idx, (cell_name, points) in enumerate(sorted(grouped_points.items())[:8]):
+                    series.append({"name": f"Cell {cell_name}", "points": _downsample_points(points, 70)})
+            if series:
+                summary = [
+                    f"sites={len(site_points)}",
+                    f"ue_points={max(0, len(csv_rows) - len(site_points))}",
+                    f"coordinate_mode={'geo' if use_geo else 'projected'}",
+                ]
+                return {
+                    "csv_bytes": _encode_dict_rows(
+                        ["run_id", "chart_name", "series_name", "x_value", "y_value", "label", "source_table_logical_path"],
+                        csv_rows,
+                    ),
+                    "img_bytes": _render_multi_series_svg(
+                        chart_name,
+                        "Topology and serving-cell placement derived from persisted runtime geometry and measurement rows.",
+                        series,
+                        summary,
+                        x_label=x_label,
+                        y_label=y_label,
+                        mode="scatter",
+                    ),
+                    "csv_status": "specialized_runtime_geometry_dataset",
+                    "image_status": "generated_specialized_runtime_summary_svg",
+                    "source_table_path": "|".join(path for path in [site_path, ue_path] if path),
+                    "source_row_count": len(csv_rows),
+                    "note": "Scatter/map view derived from persisted site geometry and UE placement rows.",
+                }
+    if chart_name == "requested vs resolved format confusion matrix":
+        pucch_path, pucch_rows = _first_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/pucch_trials.csv"])
+        if pucch_rows:
+            raw_rows: list[dict[str, Any]] = []
+            csv_rows: list[dict[str, Any]] = []
+            for row in pucch_rows:
+                requested = _row_float(row, "RequestedFormat")
+                resolved = _row_text(row, "ResolvedFormat")
+                if requested is None or not resolved:
+                    continue
+                raw_rows.append({"requested_format": int(round(requested)), "resolved_format": resolved, "count": 1.0})
+                csv_rows.append({
+                    "run_id": run_id,
+                    "chart_name": chart_name,
+                    "requested_format": int(round(requested)),
+                    "resolved_format": resolved,
+                    "count": 1,
+                    "source_table_logical_path": pucch_path,
+                })
+            if raw_rows:
+                x_labels, y_labels, matrix = _grid_rows_to_heatmap(raw_rows, "requested_format", "resolved_format", "count")
+                return {
+                    "csv_bytes": _encode_dict_rows(
+                        ["run_id", "chart_name", "requested_format", "resolved_format", "count", "source_table_logical_path"],
+                        csv_rows,
+                    ),
+                    "img_bytes": _render_heatmap_svg(
+                        chart_name,
+                        "Requested-vs-resolved PUCCH format usage from persisted runtime trials.",
+                        x_labels,
+                        y_labels,
+                        matrix,
+                        [f"samples={len(raw_rows)}"],
+                        "Requested format",
+                        "Resolved format",
+                    ),
+                    "csv_status": "specialized_runtime_pucch_dataset",
+                    "image_status": "generated_specialized_runtime_heatmap_svg",
+                    "source_table_path": pucch_path,
+                    "source_row_count": len(csv_rows),
+                    "note": "PUCCH format confusion matrix derived from truthful runtime trial rows.",
+                }
     unavailable_reasons = {
+        "pre-equalization constellation": "The run does not export raw pre-equalization I/Q sample clouds, so a pre-equalization constellation plot cannot be reconstructed honestly.",
+        "pre-channel waveform": "The run does not export stage-resolved pre-channel sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",
+        "post-channel waveform": "The run does not export stage-resolved post-channel sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",
+        "post-impairment waveform": "The run does not export stage-resolved post-impairment sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",
+        "stage overlay plots": "The run does not export enough stage-resolved sample traces to build an honest overlay of internal waveform stages.",
+        "UE-wise / link-wise waveform comparison": "The run exports a single runtime waveform preview, not a full UE-by-UE waveform sample bank suitable for an honest comparison chart.",
         "constellation per codeword": "No codeword identifier is exported in the runtime constellation preview rows for this run.",
         "constellation per layer": "No per-layer equalized constellation samples are exported in the runtime preview rows for this run.",
         "EVM per symbol": "The run exports only trial-level EVM_rms plus raw sample previews; it does not export OFDM-symbol-indexed EVM rows.",
@@ -3046,12 +4193,22 @@ def materialize_run_contract_artifacts(
                 if rows:
                     source_row_count = len(rows)
                     summary_lines.append(f"source_rows={source_row_count}")
-                    dataset = _dataset_from_rows(chart_name, header, rows)
-                    csv_status = "derived_chart_dataset"
-                    chart_csv_note = (
-                        "Canonical chart CSV derived from the selected run's persisted source table. "
-                        "The full raw source table remains stored separately."
-                    )
+                    dict_rows = [{str(header[idx]): str(row[idx]) if idx < len(row) else "" for idx in range(len(header))} for row in rows]
+                    placeholder_status = _table_placeholder_summary_status(dict_rows)
+                    if placeholder_status in {"source_artifact_missing", "source_artifact_present_but_empty"}:
+                        dataset = None
+                        csv_status = placeholder_status
+                        chart_csv_note = _row_text(dict_rows[0], "lineage_note", "reason") or (
+                            "The aliased source table is itself a placeholder summary, so no truthful numeric chart was materialized."
+                        )
+                        summary_lines.append(f"placeholder_status={placeholder_status}")
+                    else:
+                        dataset = _dataset_from_rows(chart_name, header, rows)
+                        csv_status = "derived_chart_dataset"
+                        chart_csv_note = (
+                            "Canonical chart CSV derived from the selected run's persisted source table. "
+                            "The full raw source table remains stored separately."
+                        )
                 else:
                     chart_csv_note = "The source chart table exists but has no rows for this run."
                     summary_lines.append("source_rows=0")
@@ -3073,6 +4230,20 @@ def materialize_run_contract_artifacts(
                 image_kind = str(source_image.get("artifact_kind") or "image")
                 image_mime = str(source_image.get("mime_type") or "image/png")
                 image_status = "copied_source_image"
+            elif csv_status in {
+                "source_artifact_missing",
+                "source_artifact_present_but_empty",
+                "empty_source_summary",
+                "missing_source_summary",
+            }:
+                image_bytes = _render_reason_svg(
+                    chart_name,
+                    "No truthful numeric chart was materialized from the selected source table for this run.",
+                    summary_lines + [chart_csv_note],
+                )
+                image_kind = "image_svg"
+                image_mime = "image/svg+xml"
+                image_status = "generated_unavailable_reason_svg"
             else:
                 image_bytes = _render_svg_plot(
                     chart_name,

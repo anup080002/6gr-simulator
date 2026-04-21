@@ -52,7 +52,14 @@ metrics = struct( ...
     "ConfiguredPMI", NaN, ...
     "ConfiguredCRI", NaN, ...
     "CSI_RSRP_dB", NaN, ...
-    "CSI_RSRPSource", "");
+    "CSI_RSRPSource", "", ...
+    "RISource", "", ...
+    "PMISource", "", ...
+    "RuntimeAppliedPMI", NaN, ...
+    "TPMICandidateCount", NaN, ...
+    "TPMIMutualInformation", NaN, ...
+    "SRSConditionNumber_dB", NaN, ...
+    "SRSRITPMIValid", false);
 
 if isempty(Hest)
     metrics.SINRSource = "ul_receiver_hest_missing";
@@ -72,6 +79,17 @@ end
 [metrics.NumRxAnt, metrics.NumTxPorts] = size(Hwb);
 [metrics.ChannelGain_dB, metrics.RankEstimate, metrics.ConditionNumber_dB] = localWidebandChannelDescriptors(Hwb);
 metrics.RI = localResolveULRankIndicator(metrics.RankEstimate, cfg);
+metrics.RISource = "ul_wideband_rank_indicator_lab_default";
+
+srsEstimate = sixgr.phy.ul.estimateSRSRITPMI(Hest, nVar, cfg);
+metrics.SRSRITPMIValid = logical(sixgr.util.structGet(srsEstimate, "Valid", false));
+metrics.SRSConditionNumber_dB = double(sixgr.util.structGet(srsEstimate, "ConditionNumber_dB", NaN));
+metrics.TPMICandidateCount = double(sixgr.util.structGet(srsEstimate, "TPMICandidateCount", NaN));
+metrics.TPMIMutualInformation = double(sixgr.util.structGet(srsEstimate, "TPMIMutualInformation", NaN));
+if isfinite(double(sixgr.util.structGet(srsEstimate, "RI", NaN)))
+    metrics.RI = double(sixgr.util.structGet(srsEstimate, "RI", metrics.RI));
+    metrics.RISource = char(string(sixgr.util.structGet(srsEstimate, "RISource", "ul_srs_covariance_rank_estimator_lab_default")));
+end
 
 [sinr_dB, sinrSource, sinrStatus, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, ...
     opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
@@ -121,7 +139,7 @@ if isfinite(metrics.SINR_dB)
     metrics.CQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
 end
 
-metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, opt.PrecoderInfo);
+metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, opt.PrecoderInfo, srsEstimate);
 end
 
 function [gain_dB, rankEstimate, cond_dB] = localWidebandChannelDescriptors(Hwb)
@@ -169,7 +187,7 @@ else
 end
 end
 
-function metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, precInfo)
+function metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, precInfo, srsEstimate)
 configuredPMI = double(sixgr.util.structGet(cfg, "phy.pusch.TPMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN)));
 metrics.ConfiguredPMI = configuredPMI;
@@ -183,14 +201,26 @@ appliedPMI = double(sixgr.util.structGet(precInfo, "AppliedPrecoderPMI", NaN));
 if ~(isfinite(appliedPMI) && isCodebook)
     appliedPMI = configuredPMI;
 end
+metrics.RuntimeAppliedPMI = appliedPMI;
 
 if isCodebook && isfinite(appliedPMI)
-    metrics.PMI = double(round(appliedPMI));
+    estimatedTPMI = double(sixgr.util.structGet(srsEstimate, "TPMI", NaN));
+    estimatedBeamIndices = double(sixgr.util.structGet(srsEstimate, "SelectedBeamIndices", []));
+    if isfinite(estimatedTPMI)
+        metrics.PMI = double(round(estimatedTPMI));
+        metrics.PMISource = char(string(sixgr.util.structGet(srsEstimate, "TPMISource", "ul_srs_mutual_information_tpmi_estimator_lab_default")));
+    else
+        metrics.PMI = double(round(appliedPMI));
+        metrics.PMISource = "ul_runtime_applied_codebook_tpmi";
+    end
     metrics.PMIType = char(string(sixgr.util.structGet(precInfo, "AppliedPrecoderPMIType", "pusch_codebook")));
     metrics.PMICodebookMode = char(string(sixgr.util.structGet(precInfo, "AppliedPrecoderCodebookMode", ...
         sixgr.util.structGet(cfg, "phy.pusch.codebookType", "nr_pusch_codebook"))));
-    metrics.CSIReportMode = "ul_gnb_reference_measurement_with_runtime_tpmi";
+    metrics.CSIReportMode = "ul_srs_based_ri_tpmi_estimator_lab_default";
     metrics.SelectedBeamIndices = localParseIndexSet(sixgr.util.structGet(precInfo, "AppliedBeamIndexSet", []));
+    if isempty(metrics.SelectedBeamIndices) && ~isempty(estimatedBeamIndices)
+        metrics.SelectedBeamIndices = estimatedBeamIndices;
+    end
     if isempty(metrics.SelectedBeamIndices)
         metrics.SelectedBeamIndices = localResolveNativeULCodebookBeamIndices(metrics.NumTxPorts, metrics.RI, metrics.PMI, transformPrecoding);
     end
@@ -209,6 +239,7 @@ else
     metrics.PMIType = "";
     metrics.PMICodebookMode = "";
     metrics.SelectedBeamIndices = [];
+    metrics.PMISource = "ul_tpmi_not_applicable";
 end
 metrics.CSIPayloadBitLength = NaN;
 metrics.CSIPayloadHex = "";

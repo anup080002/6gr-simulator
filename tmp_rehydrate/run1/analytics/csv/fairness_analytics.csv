@@ -1,4 +1,0 @@
-run_id,direction,metric_name,sample_count,mean_mbps,p05_mbps,p50_mbps,p95_mbps,min_mbps,max_mbps,jain_fairness_index,zero_throughput_user_count,source_artifact
-1,DL,DL_Throughput_Mbps,50,3.207893333333333,1.1733333333333316,2.69866666666667,7.133866666666662,1.02933333333333,18.4693333333333,0.5179647688274658,0,reports/csv/live_user_performance_snapshot.csv
-1,UL,UL_Throughput_Mbps,50,8.9024,0.0,1.48,27.34719999999999,0.0,28.816,0.38684994185022875,17,reports/csv/live_user_performance_snapshot.csv
-1,Combined,UserThroughput_Mbps,50,12.110293333333336,1.34933333333333,4.24266666666667,32.684,1.02933333333333,41.2293333333333,0.49888008529639133,0,reports/csv/live_user_performance_snapshot.csv

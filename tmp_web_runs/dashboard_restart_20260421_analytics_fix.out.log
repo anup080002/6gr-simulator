@@ -1,0 +1,109 @@
+[lls-web] Python runtime: C:\Program Files\Python311\python.exe
+[lls-web] MATLAB runtime: C:\Program Files\MATLAB\R2023b\bin\matlab.exe
+[lls-web] Dashboard bind host: 0.0.0.0
+[lls-web] Dashboard port: 62906
+[lls-web] Windows firewall rule 'SixGR LLS Dashboard TCP 62906' already exists.
+6G LLS dashboard listening on http://10.64.253.106:62906/
+Local URL    : http://127.0.0.1:62906/
+Intranet URL : http://10.64.253.106:62906/
+LAN URL 1    : http://10.64.253.106:62906/
+LAN URL 2    : http://10.64.253.1:62906/
+LAN URL 3    : http://172.24.64.1:62906/
+MySQL target : localhost:3306/sixgr_results
+MATLAB path  : C:\Program Files\MATLAB\R2023b\bin\matlab.exe
+Repo root    : C:\Anup\6gsimulation\sixgr_foundation_v2 (2)
+Map default  : Reliance Corporate Park, Ghansoli, Navi Mumbai (19.122164, 72.999217)
+127.0.0.1 - - [21/Apr/2026 22:14:59] "GET /api/run/44/live HTTP/1.1" 401 -
+127.0.0.1 - - [21/Apr/2026 22:14:59] "GET /analytics?run_id=44 HTTP/1.1" 303 -
+127.0.0.1 - - [21/Apr/2026 22:15:00] "GET /login?next=/analytics%3Frun_id%3D44 HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 22:15:28] "POST /login HTTP/1.1" 303 -
+127.0.0.1 - - [21/Apr/2026 22:15:28] "POST /login HTTP/1.1" 303 -
+127.0.0.1 - - [21/Apr/2026 22:15:53] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:15:58] "GET /analytics/impairments-tracking-analytics HTTP/1.1" 303 -
+10.64.253.106 - - [21/Apr/2026 22:15:58] "GET /login?next=/analytics/impairments-tracking-analytics HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:00] "POST /login HTTP/1.1" 303 -
+10.64.253.106 - - [21/Apr/2026 22:16:11] "GET /analytics/impairments-tracking-analytics HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 22:16:11] "GET /analytics?run_id=44 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:12] "GET /api/runs?limit=200 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:13] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:16] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:16] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:17] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:18] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:19] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:20] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:21] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:22] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:23] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:24] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:25] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:26] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:27] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:28] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:28] "GET /api/runs?limit=200 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:29] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:30] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:31] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:32] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:33] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:34] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:35] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:36] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:37] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:38] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:39] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:40] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:41] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:41] code 500, message [WinError 10053] An established connection was aborted by the software in your host machine
+10.64.253.106 - - [21/Apr/2026 22:16:41] "GET /api/run/44/live HTTP/1.1" 500 -
+10.64.253.106 - - [21/Apr/2026 22:16:42] "GET /analytics?run_id=44 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:42] "GET /api/runs?limit=200 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:42] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:45] "GET /api/run/44/live HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 22:16:45] "POST /login HTTP/1.1" 303 -
+127.0.0.1 - - [21/Apr/2026 22:16:45] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:46] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:47] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:48] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:49] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:50] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:51] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:52] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:53] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:54] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:55] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:56] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:57] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:58] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:58] "GET /api/runs?limit=200 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:16:59] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:00] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:01] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:03] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:04] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:04] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:05] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:06] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:07] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:08] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:09] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:10] "GET /api/run/44/live HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 22:17:11] "POST /login HTTP/1.1" 303 -
+127.0.0.1 - - [21/Apr/2026 22:17:11] "POST /login HTTP/1.1" 303 -
+10.64.253.106 - - [21/Apr/2026 22:17:11] "GET /api/run/44/live HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 22:17:11] "GET /api/run/44/live HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 22:17:12] "GET /analytics?run_id=44 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:12] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:13] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:13] "GET /api/runs?limit=200 HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:14] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:15] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:16] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:17] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:18] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:19] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:20] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:21] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:22] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:23] "GET /api/run/44/live HTTP/1.1" 200 -
+10.64.253.106 - - [21/Apr/2026 22:17:24] "GET /api/run/44/live HTTP/1.1" 200 -

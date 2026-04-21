@@ -61,7 +61,9 @@ switch phase
             cfgOut = state.CurrentConfig;
             return;
         end
-        decision = sixgr.link.computeLinkAdaptationDecision(state.CurrentConfig, direction, opt.Metrics);
+        [decision, runtimeState] = sixgr.link.computeLinkAdaptationDecision(state.CurrentConfig, direction, opt.Metrics, ...
+            "AdaptationState", sixgr.util.structGet(state, "RuntimeDecisionState", struct()));
+        state.RuntimeDecisionState = runtimeState;
         if ~logical(sixgr.util.structGet(decision, "Valid", false))
             event.Decision = decision;
             event.Reason = char(string(sixgr.util.structGet(decision, "Reason", "no_valid_decision")));
@@ -93,6 +95,7 @@ state.Pending = repmat(struct("ApplyFrame", NaN, "Decision", struct()), 0, 1);
 state.LastObservedFrame = 0;
 state.LastAppliedFrame = 0;
 state.CurrentConfig = cfg;
+state.RuntimeDecisionState = struct();
 end
 
 function tf = localModeEnabled(mode)

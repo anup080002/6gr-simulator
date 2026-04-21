@@ -517,6 +517,55 @@ if strlength(bootstrapCQIMode) > 0
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", "large_scale_preview_lab_default");
 end
+cqiSmoothingAlpha = double(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
+if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", double(cqiSmoothingAlpha));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", 0.2);
+end
+ollaStepDown = double(localGetNested(s, "link_adaptation.olla_step_down", NaN));
+if isfinite(ollaStepDown) && ollaStepDown > 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", double(ollaStepDown));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 1.0);
+end
+ollaStepUp = double(localGetNested(s, "link_adaptation.olla_step_up", NaN));
+if isfinite(ollaStepUp) && ollaStepUp > 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", double(ollaStepUp));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", 0.12);
+end
+deltaMCSMin = double(localGetNested(s, "link_adaptation.delta_mcs_min", NaN));
+if isfinite(deltaMCSMin)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", double(deltaMCSMin));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", -6);
+end
+deltaMCSMax = double(localGetNested(s, "link_adaptation.delta_mcs_max", NaN));
+if isfinite(deltaMCSMax)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", double(deltaMCSMax));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 6);
+end
+resetOnRIChange = localGetNested(s, "link_adaptation.reset_on_ri_change", []);
+if ~isempty(resetOnRIChange)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnRIChange", logical(resetOnRIChange));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnRIChange", true);
+end
+cqiJumpResetThreshold = double(localGetNested(s, "link_adaptation.cqi_jump_reset_threshold", NaN));
+if isfinite(cqiJumpResetThreshold) && cqiJumpResetThreshold >= 1
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", double(cqiJumpResetThreshold));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", 4);
+end
+rankEigenThreshold_dB = double(localGetNested(s, "reference_signals.srs_rank_eigen_threshold_db", ...
+    localGetNested(s, "link_adaptation.srs_rank_eigen_threshold_db", NaN)));
+if isfinite(rankEigenThreshold_dB) && rankEigenThreshold_dB > 0
+    cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", double(rankEigenThreshold_dB));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", 10);
+end
 
 cfg = localApplySystemConfig(cfg, s);
 cfg = localApplyTrafficConfig(cfg, s);

@@ -697,14 +697,6 @@ for n = 1:numFrames
             constellationChunks{n} = constT;
         end
 
-        if isRetransmission || schedulerDrivenGrant
-            trialLAScheduled(n) = false;
-        else
-            [cfgDyn, laState, laObserveEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "DL", frameIdx, ...
-                "Phase", "after", "Metrics", metrics);
-            trialLAScheduled(n) = logical(laObserveEvent.Scheduled);
-        end
-
         txBits = int8(tx.TransportBlock(:));
         rxBits = int8(rx.TransportBlock(:));
         currentRecLLR = sixgr.util.structGet(rx, "RecLLR", []);
@@ -758,6 +750,18 @@ for n = 1:numFrames
         end
         if isfinite(trialGoodBits(n))
             trialGoodput(n) = trialGoodBits(n) / max(slotDur_s, eps) / 1e6;
+        end
+        if isRetransmission || schedulerDrivenGrant
+            trialLAScheduled(n) = false;
+        else
+            metrics.CRCPass = logical(currentDecodeOK);
+            metrics.CurrentDecodeOK = logical(currentDecodeOK);
+            metrics.CombinedDecodeOK = logical(combinedDecodeOK);
+            metrics.AckObserved = logical(combinedDecodeOK);
+            metrics.DecoderIterations = double(combinedDecodeIt);
+            [cfgDyn, laState, laObserveEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "DL", frameIdx, ...
+                "Phase", "after", "Metrics", metrics);
+            trialLAScheduled(n) = logical(laObserveEvent.Scheduled);
         end
         lastHARQ = struct( ...
             "TransportBlockBits", txBits, ...

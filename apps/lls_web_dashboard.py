@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import email.message
 import html
 import io
 import json
@@ -60,6 +61,11 @@ try:
 except Exception:
     DEFAULT_DASHBOARD_PORT = 62906
 DEFAULT_DASHBOARD_PUBLIC_HOST = os.environ.get("SIXGR_DASHBOARD_PUBLIC_HOST", "").strip()
+DEFAULT_DASHBOARD_SERVER = os.environ.get("SIXGR_DASHBOARD_SERVER", "auto").strip().lower() or "auto"
+try:
+    DEFAULT_DASHBOARD_THREADS = max(4, int(os.environ.get("SIXGR_DASHBOARD_THREADS", "32") or "32"))
+except Exception:
+    DEFAULT_DASHBOARD_THREADS = 32
 LEGACY_WAVEFORM_HONEST_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot.yaml"
 HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot.yaml"
 WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml"
@@ -129,6 +135,7 @@ PROCESS_HEARTBEAT_STALL_MINUTES = max(
     int(os.environ.get("SIXGR_PROCESS_HEARTBEAT_STALL_MINUTES", "30") or "30"),
 )
 TERMINAL_STATUS_PREFIXES = ("completed", "failed", "aborted")
+TERMINAL_STATUS_VALUES = {"completed", "completed_with_failures", "aborted", "failed", "stopped"}
 
 
 def db_connection(database: str | None = MYSQL_DATABASE):
@@ -166,11 +173,19 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     if run_id is None:
         LIVE_PAYLOAD_CACHE.clear()
         CACHED_PAYLOAD_VERSION.clear()
+        fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
         load_cached_csv_rows.cache_clear()
         return
     LIVE_PAYLOAD_CACHE.pop(int(run_id), None)
     CACHED_PAYLOAD_VERSION.pop(int(run_id), None)
+
+
+def is_terminal_status(status: Any) -> bool:
+    lowered = str(status or "").strip().lower()
+    if not lowered:
+        return False
+    return lowered in TERMINAL_STATUS_VALUES or lowered.startswith(TERMINAL_STATUS_PREFIXES)
 
 
 def matlab_process_command_lines() -> list[str]:
@@ -287,7 +302,7 @@ def infer_terminal_status_from_artifacts(run_row: dict[str, Any]) -> tuple[str, 
     if not status_text:
         return None
     lowered = status_text.lower()
-    if not lowered.startswith(TERMINAL_STATUS_PREFIXES):
+    if not is_terminal_status(lowered):
         return None
 
     def _parse_bool(raw: Any) -> bool | None:
@@ -2851,6 +2866,7 @@ def fetch_artifact_meta(artifact_id: int) -> dict[str, Any] | None:
             return rowify(cur.fetchone())
 
 
+@lru_cache(maxsize=1024)
 def fetch_artifact_bytes(artifact_id: int) -> bytes:
     with db_connection() as conn:
         with conn.cursor() as cur:
@@ -2869,6 +2885,13 @@ def fetch_artifact_bytes(artifact_id: int) -> bytes:
 def artifact_url(artifact_id: int, download: bool = False) -> str:
     suffix = "?download=1" if download else ""
     return f"/artifact/{artifact_id}/raw{suffix}"
+
+
+def artifact_etag(meta: dict[str, Any]) -> str:
+    artifact_id = int(meta.get("artifact_id") or 0)
+    byte_size = int(meta.get("byte_size") or 0)
+    created = str(meta.get("created_utc") or "")
+    return f'W/"artifact-{artifact_id}-{byte_size}-{created}"'
 
 
 def format_status(value: str | None) -> str:
@@ -4571,6 +4594,68 @@ def aggregate_points_by_x(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
         values = buckets[x_val]
         aggregated.append({"x": x_val, "y": sum(values) / max(len(values), 1)})
     return aggregated
+
+
+def _column_variation_score(rows: list[list[Any]], idx: int) -> tuple[int, int]:
+    values = [coerce_numeric(row[idx]) for row in rows if idx < len(row)]
+    values = [value for value in values if value is not None]
+    if not values:
+        return (0, 0)
+    unique_values = {round(float(value), 9) for value in values}
+    return (len(unique_values), len(values))
+
+
+def _preferred_chart_x_index(
+    artifact: dict[str, Any],
+    header: list[str],
+    rows: list[list[Any]],
+    numeric_cols: list[tuple[int, str]],
+) -> int | None:
+    if not numeric_cols:
+        return None
+    logical_path = str(artifact.get("logical_path") or "").lower()
+    waveform_like = any(token in logical_path for token in ("waveform", "constellation", "preview"))
+    preferred_patterns: list[tuple[str, int]] = []
+    if waveform_like:
+        preferred_patterns.extend(
+            [
+                (r"^sampleindex$", 0),
+                (r"^time_s$", 1),
+                (r"sample", 2),
+                (r"time", 3),
+            ]
+        )
+    preferred_patterns.extend(
+        [
+            (r"^slot_or_sample$", 4),
+            (r"^x_value$", 5),
+            (r"^slot$", 6),
+            (r"^frame$", 7),
+            (r"^tti$", 8),
+            (r"^trial$", 9),
+            (r"^ue_rank$|^percentile$", 10),
+            (r"index", 12),
+            (r"user|ue", 20),
+            (r"snr|sinr|rsrp|cqi|mcs", 40),
+            (r"metric_value", 80),
+        ]
+    )
+    ranked: list[tuple[int, int, int, int]] = []
+    for idx, name in numeric_cols:
+        token = str(name or "").strip().lower()
+        unique_count, total_count = _column_variation_score(rows, idx)
+        if unique_count <= 1:
+            continue
+        pattern_rank = 99
+        for pattern, rank in preferred_patterns:
+            if re.search(pattern, token, re.IGNORECASE):
+                pattern_rank = rank
+                break
+        ranked.append((pattern_rank, -unique_count, -total_count, idx))
+    if ranked:
+        ranked.sort()
+        return ranked[0][3]
+    return numeric_cols[0][0]
 
 
 def flatten_numeric_values(value: Any, prefix: str = "", depth: int = 0) -> dict[str, float]:
@@ -6907,6 +6992,11 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
     if len(rows) < 2 or not header:
         return None
     lowered = [str(name).strip().lower() for name in header]
+    if "series_name" in lowered and len(rows) >= MAX_ACTIVITY_POINTS:
+        expanded_header, expanded_rows = load_cached_csv_preview(int(artifact["artifact_id"]), 12000)
+        if expanded_header:
+            header, rows = expanded_header, expanded_rows
+            lowered = [str(name).strip().lower() for name in header]
     if "equalizedreal" in lowered and "equalizedimag" in lowered:
         real_idx = lowered.index("equalizedreal")
         imag_idx = lowered.index("equalizedimag")
@@ -6947,14 +7037,49 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
         values = [v for v in values if v is not None]
         if len(values) >= max(2, len(rows) // 4):
             numeric_cols.append((idx, name))
+    ignored_x_tokens = {"run_id", "source_row_count", "point_index"}
+    numeric_cols = [(idx, name) for idx, name in numeric_cols if str(name or "").strip().lower() not in ignored_x_tokens] or numeric_cols
     if not numeric_cols:
         return None
-    x_idx = None
-    for idx, name in numeric_cols:
-        if re.search(r"(time|slot|frame|trial|index|tti|snr|rb|user|sample|iteration|point|step|count|cqi|mcs)", name, re.IGNORECASE):
-            x_idx = idx
+    x_idx = _preferred_chart_x_index(artifact, header, rows, numeric_cols)
+    series_name_idx = lowered.index("series_name") if "series_name" in lowered else None
+    metric_value_idx = None
+    for candidate in ("metric_value", "metric_value_db", "throughput_mbps", "bler", "ber", "goodput_mbps", "mean_quality_db", "mean_bler"):
+        if candidate in lowered:
+            metric_value_idx = lowered.index(candidate)
             break
+    if series_name_idx is not None and metric_value_idx is not None and x_idx is not None:
+        grouped_series: dict[str, list[dict[str, Any]]] = {}
+        for row_index, row in enumerate(rows):
+            if series_name_idx >= len(row) or metric_value_idx >= len(row):
+                continue
+            series_name = str(row[series_name_idx] or "").strip() or "Series"
+            x_candidate = row[x_idx] if x_idx < len(row) else row_index + 1
+            x_val = coerce_numeric(x_candidate)
+            y_val = coerce_numeric(row[metric_value_idx])
+            if x_val is None or y_val is None:
+                continue
+            grouped_series.setdefault(series_name, []).append({"x": x_val, "y": y_val})
+        chart_series = []
+        for series_name, points in grouped_series.items():
+            if len(points) >= 8:
+                unique_x = len({point["x"] for point in points})
+                duplicate_ratio = 1.0 - (unique_x / max(len(points), 1))
+                if duplicate_ratio >= 0.25:
+                    points = aggregate_points_by_x(points)
+            chart_series.append({"name": humanize_key(series_name), "points": points})
+        if chart_series:
+            yaxis_name = humanize_key(header[metric_value_idx]) if metric_value_idx < len(header) else "Value"
+            return {
+                "title": artifact["logical_path"],
+                "artifact_id": int(artifact["artifact_id"]),
+                "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+                "xaxis_title": humanize_key(header[x_idx]) if x_idx is not None and x_idx < len(header) else "Index",
+                "yaxis_title": yaxis_name,
+                "series": chart_series[:6],
+            }
     y_columns = [item for item in numeric_cols if item[0] != x_idx]
+    y_columns = [item for item in y_columns if str(item[1] or "").strip().lower() not in {"run_id", "source_row_count", "point_index", "sample_count"}] or y_columns
     y_columns.sort(key=lambda item: chart_column_priority(str(item[1])))
     y_columns = y_columns[:4]
     if not y_columns:
@@ -6986,7 +7111,7 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
         "title": artifact["logical_path"],
         "artifact_id": int(artifact["artifact_id"]),
         "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
-        "xaxis_title": "Index / Time",
+        "xaxis_title": humanize_key(header[x_idx]) if x_idx is not None and x_idx < len(header) else "Index",
         "yaxis_title": "Value",
         "series": chart_series,
     }
@@ -7895,7 +8020,30 @@ def build_status_issue_registry_rows(run_row: dict[str, Any], runtime_context: d
     return rows
 
 
-def build_live_payload(run_id: int) -> dict[str, Any]:
+def condense_live_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
+    charts = dict(full_payload.get("charts") or {})
+    lite_charts = {
+        "artifact_activity": charts.get("artifact_activity"),
+        "log_activity": charts.get("log_activity"),
+        "progress_tabs": charts.get("progress_tabs"),
+    }
+    return {
+        "run": full_payload.get("run"),
+        "summary": full_payload.get("summary"),
+        "counts": full_payload.get("counts"),
+        "metrics": full_payload.get("metrics"),
+        "runtime_context": full_payload.get("runtime_context"),
+        "section_counts": full_payload.get("section_counts"),
+        "analysis_mode": full_payload.get("analysis_mode"),
+        "logs_recent": full_payload.get("logs_recent"),
+        "charts": lite_charts,
+        "payload_version": full_payload.get("payload_version"),
+        "artifact_version": full_payload.get("artifact_version"),
+        "lite": True,
+    }
+
+
+def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     run_row = fetch_run(run_id)
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
@@ -7906,8 +8054,7 @@ def build_live_payload(run_id: int) -> dict[str, Any]:
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
     should_materialize_contract = (
-        status_text in {"completed", "completed_with_failures", "aborted", "failed"}
-        or status_text.startswith("aborted")
+        is_terminal_status(status_text)
         or (
             status_text == "running"
             and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
@@ -7927,7 +8074,8 @@ def build_live_payload(run_id: int) -> dict[str, Any]:
     artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
     cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == cache_version and run_id in LIVE_PAYLOAD_CACHE:
-        return LIVE_PAYLOAD_CACHE[run_id]
+        cached_payload = LIVE_PAYLOAD_CACHE[run_id]
+        return condense_live_payload(cached_payload) if lite else cached_payload
     logs_recent = fetch_logs(run_id, limit=MAX_LIVE_LOG_ROWS, descending=True)
     counts = summarize_artifacts(artifacts)
     counts["logs_total"] = count_logs(run_id)
@@ -7959,10 +8107,7 @@ def build_live_payload(run_id: int) -> dict[str, Any]:
     section_counts: dict[str, int] = {}
     for item in all_tables:
         section_counts[item["section"]] = section_counts.get(item["section"], 0) + 1
-    analysis_mode = "post_run" if (
-        status_text in {"completed", "completed_with_failures", "aborted", "failed"}
-        or status_text.startswith("aborted")
-    ) else "live"
+    analysis_mode = "post_run" if is_terminal_status(status_text) else "live"
     summary_chart_artifacts = [
         art
         for art in table_artifacts
@@ -8007,10 +8152,11 @@ def build_live_payload(run_id: int) -> dict[str, Any]:
         "metric_explorer": build_metric_explorer_payload(artifacts, summary),
         "debug": build_debug_payload(run_row, artifacts, logs_recent),
         "payload_version": cache_version,
+        "artifact_version": artifact_version,
     }
     CACHED_PAYLOAD_VERSION[run_id] = cache_version
     LIVE_PAYLOAD_CACHE[run_id] = payload
-    return payload
+    return condense_live_payload(payload) if lite else payload
 
 
 def render_user_strip(user_profile: dict[str, Any] | None) -> str:
@@ -8184,8 +8330,9 @@ def page_shell(
     th {{ position: sticky; top: 0; background: rgba(242, 247, 255, 0.98); z-index: 1; }}
     .table-scroll {{ overflow: auto; max-height: 70vh; border: 1px solid var(--border); border-radius: 18px; background: rgba(255,255,255,0.76); }}
     .artifact-grid {{ display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }}
-    .artifact-card {{ border: 1px solid var(--border); border-radius: 20px; padding: 14px; background: rgba(255,255,255,0.92); box-shadow: 0 10px 22px rgba(18, 32, 51, 0.06); }}
+    .artifact-card {{ border: 1px solid var(--border); border-radius: 20px; padding: 14px; background: rgba(255,255,255,0.92); box-shadow: 0 10px 22px rgba(18, 32, 51, 0.06); content-visibility: auto; contain-intrinsic-size: 340px 300px; }}
     img {{ max-width: 100%; border-radius: 16px; border: 1px solid var(--border); background: white; }}
+    .artifact-card img {{ display: block; width: 100%; min-height: 160px; object-fit: contain; }}
     pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; background: #111b20; color: #eff8fb; padding: 16px; border-radius: 16px; overflow: auto; }}
     code {{ background: rgba(15, 139, 141, 0.1); padding: 2px 5px; border-radius: 6px; }}
     .live-dot {{
@@ -9459,7 +9606,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const heatmapItems = images.filter(item => /heatmap|prb|resource[_-]?grid/i.test(String(item.logical_path || '')));
     function cards(items, emptyReason) {
       if (!items.length) return `<div class="chart-empty">${esc(emptyReason)}</div>`;
-      return `<div class="artifact-gallery">${items.slice(0, 8).map(item => `<article class="artifact-card"><h4>${esc(item.logical_path || item.artifact_id)}</h4><a href="${esc(item.view_url || item.download_url || '#')}"><img src="${esc(item.view_url || item.download_url || '#')}" alt="${esc(item.logical_path || item.artifact_id)}"></a><div class="toolbar" style="margin-top:10px;"><a class="button-link secondary" href="${esc(item.view_url || item.download_url || '#')}">Open</a><a class="button-link secondary" href="${esc(item.download_url || item.view_url || '#')}">Download</a></div></article>`).join('')}</div>`;
+      return `<div class="artifact-gallery">${items.slice(0, 8).map(item => `<article class="artifact-card"><h4>${esc(item.logical_path || item.artifact_id)}</h4><a href="${esc(item.view_url || item.download_url || '#')}" target="_blank" rel="noopener noreferrer"><img loading="lazy" decoding="async" src="${esc(item.view_url || item.download_url || '#')}" alt="${esc(item.logical_path || item.artifact_id)}"></a><div class="toolbar" style="margin-top:10px;"><a class="button-link secondary" href="${esc(item.view_url || item.download_url || '#')}" target="_blank" rel="noopener noreferrer">Open In New Tab</a><a class="button-link secondary" href="${esc(item.download_url || item.view_url || '#')}">Download</a></div></article>`).join('')}</div>`;
     }
     return `<section class="panel"><h3>Waveform / Heatmap / Constellation Artifacts</h3><p class="subtle">These panels only render persisted waveform, heatmap, and constellation artifacts that this run actually exported. If the backend did not publish them, the browser leaves them unavailable with an exact reason.</p><h4>Waveform / Grid</h4>${cards(waveformItems, 'No persisted waveform or resource-grid image artifacts were published for this run.')}<h4 style="margin-top:16px;">Heatmaps / Resource Occupancy</h4>${cards(heatmapItems, 'No persisted heatmap or PRB-occupancy image artifacts were published for this run.')}<h4 style="margin-top:16px;">Constellation / EVM</h4>${cards(constellationItems, 'No persisted constellation or EVM image artifacts were published for this run.')}</section>`;
   }
@@ -10273,6 +10420,13 @@ let RESULT_LATEST_DATA = RESULT_INITIAL_PAYLOAD;
 let CURRENT_TABLE_ID = null;
 let RESULT_CURRENT_PREVIEW = null;
 let RESULT_CHART_STATE = {{ xKey: '', yKey: '', groupKey: '', groupValue: 'aggregate' }};
+let RESULT_IMAGE_ITEMS = [];
+let RESULT_IMAGE_SIGNATURE = '';
+let RESULT_IMAGE_LIMIT = 24;
+let RESULT_SECTION_COUNTS = {{}};
+let RESULT_REFRESH_TIMER = null;
+let RESULT_FULL_PAYLOAD = RESULT_INITIAL_PAYLOAD;
+let RESULT_ARTIFACT_VERSION = RESULT_INITIAL_PAYLOAD ? RESULT_INITIAL_PAYLOAD.artifact_version : '';
 function resultEsc(value) {{
   return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }}
@@ -10288,6 +10442,72 @@ async function resultFetchJson(url) {{
   }}
   if (!resp.ok) throw new Error(`HTTP ${{resp.status}}`);
   return resp.json();
+}}
+function mergeResultPayload(previous, incoming) {{
+  if (!previous) return incoming;
+  if (!incoming) return previous;
+  const merged = {{ ...previous, ...incoming }};
+  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'debug'];
+  stickyKeys.forEach((key) => {{
+    if (incoming[key] === undefined) merged[key] = previous[key];
+  }});
+  merged.charts = {{ ...(previous.charts || {{}}), ...(incoming.charts || {{}}) }};
+  return merged;
+}}
+function resultArtifactSignature(items) {{
+  return (items || []).map((item) => `${{item.artifact_id}}:${{item.byte_size}}`).join('|');
+}}
+function resultArtifactCard(item) {{
+  return `<div class="artifact-card"><h3>${{resultEsc(item.logical_path)}}</h3><a href="${{resultEsc(item.view_url)}}" target="_blank" rel="noopener noreferrer"><img loading="lazy" decoding="async" src="${{resultEsc(item.view_url)}}" alt="${{resultEsc(item.logical_path)}}" /></a><div class="toolbar"><a href="${{resultEsc(item.view_url)}}" target="_blank" rel="noopener noreferrer">Open In New Tab</a><a href="${{resultEsc(item.download_url)}}">Download Image</a></div></div>`;
+}}
+function renderResultImageGrid(images, sectionCounts) {{
+  const host = document.getElementById('resultImageGrid');
+  if (!host) return;
+  const signature = resultArtifactSignature(images);
+  if (signature !== RESULT_IMAGE_SIGNATURE) {{
+    RESULT_IMAGE_SIGNATURE = signature;
+    RESULT_IMAGE_LIMIT = 24;
+  }}
+  RESULT_IMAGE_ITEMS = images || [];
+  RESULT_SECTION_COUNTS = sectionCounts || {{}};
+  const visible = RESULT_IMAGE_ITEMS.slice(0, RESULT_IMAGE_LIMIT);
+  const cards = visible.map((item) => resultArtifactCard(item)).join('');
+  const emptyHtml = `<p class="muted">No image artifacts are published yet for ${{resultEsc(RESULT_SECTION.toUpperCase())}}. Section counts: ${{resultEsc(JSON.stringify(RESULT_SECTION_COUNTS))}}</p>`;
+  const more = RESULT_IMAGE_ITEMS.length > RESULT_IMAGE_LIMIT
+    ? `<div class="toolbar" style="margin-top:14px;"><button type="button" id="resultLoadMoreImages">Load More Images (${{resultEsc(RESULT_IMAGE_ITEMS.length - RESULT_IMAGE_LIMIT)}} remaining)</button></div>`
+    : '';
+  const nextState = `${{signature}}|${{RESULT_IMAGE_LIMIT}}`;
+  if (host.dataset.state === nextState) return;
+  host.dataset.state = nextState;
+  host.innerHTML = cards || emptyHtml;
+  if (more) {{
+    host.insertAdjacentHTML('beforeend', more);
+    const button = document.getElementById('resultLoadMoreImages');
+    if (button) {{
+      button.addEventListener('click', () => {{
+        RESULT_IMAGE_LIMIT = Math.min(RESULT_IMAGE_LIMIT + 24, RESULT_IMAGE_ITEMS.length);
+        renderResultImageGrid(RESULT_IMAGE_ITEMS, RESULT_SECTION_COUNTS);
+      }});
+    }}
+  }}
+}}
+function resultNextPollDelay(data) {{
+  const status = String(((data || {{}}).run || {{}}).status_text || '').toLowerCase();
+  const visible = document.visibilityState === 'visible';
+  if (status === 'running') return visible ? RESULT_POLL_MS : Math.max(RESULT_POLL_MS * 4, 4000);
+  if (status === 'completed' || status === 'completed_with_failures' || status === 'failed' || status === 'stopped' || status.startsWith('aborted')) {{
+    return visible ? 15000 : 30000;
+  }}
+  return visible ? 5000 : 15000;
+}}
+function scheduleResultRefresh(delayMs) {{
+  if (RESULT_REFRESH_TIMER) window.clearTimeout(RESULT_REFRESH_TIMER);
+  RESULT_REFRESH_TIMER = window.setTimeout(() => {{
+    refreshResult().catch((err) => {{
+      document.getElementById('resultPreview').innerHTML = `<p class="warning">Live result refresh failed: ${{resultEsc(err)}}</p>`;
+      scheduleResultRefresh(15000);
+    }});
+  }}, Math.max(750, Number(delayMs) || RESULT_POLL_MS));
 }}
 async function resolveResultRunId() {{
   if (RESULT_RUN_ID !== null && RESULT_RUN_ID !== undefined) return RESULT_RUN_ID;
@@ -10911,7 +11131,7 @@ async function applyResultData(data) {{
     document.getElementById('resultMetricGrid').innerHTML = metrics.map((item) => `<div class="metric-card"><div class="metric-value">${{resultEsc(item.value)}}</div><div class="metric-label">${{resultEsc(item.label)}}${{item.source ? ' | ' + resultEsc(item.source) : ''}}</div></div>`).join('');
   }} catch (err) {{ console.error('metric render failed', err); }}
   try {{
-    document.getElementById('resultImageGrid').innerHTML = images.map((item) => `<div class="artifact-card"><h3>${{resultEsc(item.logical_path)}}</h3><a href="${{resultEsc(item.view_url)}}"><img src="${{resultEsc(item.view_url)}}" alt="${{resultEsc(item.logical_path)}}" /></a><div class="toolbar"><a href="${{resultEsc(item.view_url)}}">Open</a><a href="${{resultEsc(item.download_url)}}">Download Image</a></div></div>`).join('') || `<p class="muted">No image artifacts are published yet for ${{resultEsc(RESULT_SECTION.toUpperCase())}}. Section counts: ${{resultEsc(JSON.stringify(sectionCounts))}}</p>`;
+    renderResultImageGrid(images, sectionCounts);
   }} catch (err) {{ console.error('image render failed', err); }}
   try {{ renderResultAuxPanels(data); }} catch (err) {{ console.error('aux panel render failed', err); }}
   const previous = CURRENT_TABLE_ID;
@@ -10931,16 +11151,26 @@ async function refreshResult() {{
   if (resolvedRunId === null) {{
     document.getElementById('resultHeadline').innerHTML = `<span class="live-dot"></span>Waiting for run tag ${{resultEsc(RESULT_RUN_TAG)}} to appear in MySQL...`;
     document.getElementById('resultMeta').innerHTML = '<span class="pill">Launch accepted</span><span class="pill">Waiting for sim_runs row</span>';
+    scheduleResultRefresh(3000);
     return;
   }}
-  const data = await resultFetchJson(`/api/run/${{resolvedRunId}}/live`);
+  let data = await resultFetchJson(`/api/run/${{resolvedRunId}}/live?lite=1`);
+  if (!RESULT_FULL_PAYLOAD || (data.artifact_version && data.artifact_version !== RESULT_ARTIFACT_VERSION)) {{
+    data = await resultFetchJson(`/api/run/${{resolvedRunId}}/live`);
+    RESULT_FULL_PAYLOAD = data;
+    RESULT_ARTIFACT_VERSION = data.artifact_version || '';
+  }} else {{
+    data = mergeResultPayload(RESULT_FULL_PAYLOAD, data);
+    RESULT_FULL_PAYLOAD = data;
+  }}
   await applyResultData(data);
+  scheduleResultRefresh(resultNextPollDelay(data));
 }}
 if (RESULT_INITIAL_PAYLOAD && RESULT_INITIAL_PAYLOAD.run) {{
   applyResultData(RESULT_INITIAL_PAYLOAD).catch((err) => {{ console.error('initial result render failed', err); }});
 }}
 refreshResult().catch((err) => {{ document.getElementById('resultPreview').innerHTML = `<p class="warning">Live result refresh failed: ${{resultEsc(err)}}</p>`; }});
-window.setInterval(() => {{ refreshResult().catch((err) => {{ document.getElementById('resultPreview').innerHTML = `<p class="warning">Live result refresh failed: ${{resultEsc(err)}}</p>`; }}); }}, RESULT_POLL_MS);
+document.addEventListener('visibilitychange', () => scheduleResultRefresh(500));
 </script>
 """
 
@@ -11035,8 +11265,8 @@ def build_images_page(run_id: int | None, user_profile: dict[str, Any] | None = 
             "<div class=\"artifact-card\">"
             f"<h3>{html.escape(str(art['logical_path']))}</h3>"
             f"<p class=\"muted\">{html.escape(str(art['created_utc']))} | {art['byte_size']} bytes</p>"
-            f"<a href=\"{artifact_url(art_id)}\"><img src=\"{artifact_url(art_id)}\" alt=\"artifact {art_id}\"></a>"
-            f"<div class=\"toolbar\"><a href=\"{artifact_url(art_id)}\">Open</a><a href=\"{artifact_url(art_id, download=True)}\">Download Image</a></div>"
+            f"<a href=\"{artifact_url(art_id)}\" target=\"_blank\" rel=\"noopener noreferrer\"><img loading=\"lazy\" decoding=\"async\" src=\"{artifact_url(art_id)}\" alt=\"artifact {art_id}\"></a>"
+            f"<div class=\"toolbar\"><a href=\"{artifact_url(art_id)}\" target=\"_blank\" rel=\"noopener noreferrer\">Open In New Tab</a><a href=\"{artifact_url(art_id, download=True)}\">Download Image</a></div>"
             "</div>"
         )
     body = f"""
@@ -11111,6 +11341,12 @@ let ANALYTICS_LAYER = null;
 let CURRENT_MAP_PAYLOAD = null;
 let CURRENT_MAP_METRIC = 'RSRP_dBm';
 let CURRENT_MAP_SLOT = null;
+let ANALYTICS_IMAGE_ITEMS = [];
+let ANALYTICS_IMAGE_SIGNATURE = '';
+let ANALYTICS_IMAGE_LIMIT = 18;
+let ANALYTICS_REFRESH_TIMER = null;
+let ANALYTICS_FULL_PAYLOAD = ANALYTICS_INITIAL_PAYLOAD;
+let ANALYTICS_ARTIFACT_VERSION = ANALYTICS_INITIAL_PAYLOAD ? ANALYTICS_INITIAL_PAYLOAD.artifact_version : '';
 function fmt(v) {{ return (v === null || v === undefined || v === '') ? 'n/a' : String(v); }}
 function esc(value) {{
   return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -11128,12 +11364,124 @@ async function analyticsFetchJson(url) {{
   if (!resp.ok) throw new Error(`HTTP ${{resp.status}}`);
   return resp.json();
 }}
+function mergeAnalyticsPayload(previous, incoming) {{
+  if (!previous) return incoming;
+  if (!incoming) return previous;
+  const merged = {{ ...previous, ...incoming }};
+  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'debug'];
+  stickyKeys.forEach((key) => {{
+    if (incoming[key] === undefined) merged[key] = previous[key];
+  }});
+  merged.charts = {{ ...(previous.charts || {{}}), ...(incoming.charts || {{}}) }};
+  return merged;
+}}
+function analyticsArtifactSignature(items) {{
+  return (items || []).map((item) => `${{item.artifact_id}}:${{item.byte_size}}`).join('|');
+}}
+function analyticsArtifactCard(item) {{
+  return `<div class="artifact-card"><h3>${{esc(item.logical_path)}}</h3><a href="${{esc(item.view_url)}}" target="_blank" rel="noopener noreferrer"><img loading="lazy" decoding="async" src="${{esc(item.view_url)}}" alt="${{esc(item.logical_path)}}" /></a><div class="toolbar"><a href="${{esc(item.view_url)}}" target="_blank" rel="noopener noreferrer">Open In New Tab</a><a href="${{esc(item.download_url)}}">Download Image</a></div></div>`;
+}}
+function analyticsFeaturedImageScore(item) {{
+  const path = String((item && item.logical_path) || '').toLowerCase();
+  if (!path) return -1;
+  const scoreTable = [
+    ['post-equalization-constellation', 100],
+    ['evm-rms', 95],
+    ['constellation-per-modulation-order', 90],
+    ['symbol-decision-error-histogram', 85],
+    ['tx-waveform', 82],
+    ['rx-waveform', 80],
+    ['resource-grid', 78],
+    ['throughput-vs-sinr', 76],
+    ['bler-vs-sinr', 74],
+    ['ber-vs-sinr', 72],
+    ['sinr', 70],
+    ['throughput', 68],
+    ['goodput', 66],
+  ];
+  for (const [token, score] of scoreTable) {{
+    if (path.includes(token)) return score;
+  }}
+  if (/(constellation|evm|waveform|resource[_-]?grid|throughput|goodput|bler|ber|sinr)/.test(path)) return 50;
+  return -1;
+}}
+function selectAnalyticsOverviewImages(items) {{
+  return [...(items || [])]
+    .map((item) => ({{ item, score: analyticsFeaturedImageScore(item) }}))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => {{
+      if (b.score !== a.score) return b.score - a.score;
+      const ar = Number(a.item.display_rank ?? 999);
+      const br = Number(b.item.display_rank ?? 999);
+      if (ar !== br) return ar - br;
+      return String(a.item.logical_path || '').localeCompare(String(b.item.logical_path || ''));
+    }})
+    .slice(0, 6)
+    .map((entry) => entry.item);
+}}
+function renderAnalyticsOverviewImages(items) {{
+  const host = document.getElementById('overviewImageGrid');
+  if (!host) return;
+  const featured = selectAnalyticsOverviewImages(items);
+  if (!featured.length) {{
+    host.innerHTML = '<p class="muted">No featured PHY visuals are available yet. Open the Images tab for the full artifact list.</p>';
+    return;
+  }}
+  host.innerHTML = featured.map((item) => analyticsArtifactCard(item)).join('') +
+    '<div class="toolbar" style="margin-top:14px;"><button type="button" id="openAnalyticsImagesTab">Open Full Image Gallery</button></div>';
+  const button = document.getElementById('openAnalyticsImagesTab');
+  if (button) {{
+    button.addEventListener('click', () => activateAnalyticsTab('images'));
+  }}
+}}
+function renderAnalyticsImageGrid(force=false) {{
+  const host = document.getElementById('imageGrid');
+  if (!host) return;
+  if (!force && CURRENT_ANALYTICS_TAB !== 'images') return;
+  const signature = analyticsArtifactSignature(ANALYTICS_IMAGE_ITEMS);
+  const nextState = `${{signature}}|${{ANALYTICS_IMAGE_LIMIT}}`;
+  if (host.dataset.state === nextState) return;
+  const visible = ANALYTICS_IMAGE_ITEMS.slice(0, ANALYTICS_IMAGE_LIMIT);
+  host.dataset.state = nextState;
+  host.innerHTML = visible.map((item) => analyticsArtifactCard(item)).join('') || '<p>No images published yet.</p>';
+  if (ANALYTICS_IMAGE_ITEMS.length > ANALYTICS_IMAGE_LIMIT) {{
+    host.insertAdjacentHTML('beforeend', `<div class="toolbar" style="margin-top:14px;"><button type="button" id="analyticsLoadMoreImages">Load More Images (${{esc(ANALYTICS_IMAGE_ITEMS.length - ANALYTICS_IMAGE_LIMIT)}} remaining)</button></div>`);
+    const button = document.getElementById('analyticsLoadMoreImages');
+    if (button) {{
+      button.addEventListener('click', () => {{
+        ANALYTICS_IMAGE_LIMIT = Math.min(ANALYTICS_IMAGE_LIMIT + 18, ANALYTICS_IMAGE_ITEMS.length);
+        renderAnalyticsImageGrid(true);
+      }});
+    }}
+  }}
+}}
+function analyticsNextPollDelay(data) {{
+  const status = String(((data || {{}}).run || {{}}).status_text || '').toLowerCase();
+  const visible = document.visibilityState === 'visible';
+  if (status === 'running') return visible ? POLL_MS : Math.max(POLL_MS * 4, 4000);
+  if (status === 'completed' || status === 'completed_with_failures' || status === 'failed' || status === 'stopped' || status.startsWith('aborted')) {{
+    return visible ? 15000 : 30000;
+  }}
+  return visible ? 5000 : 15000;
+}}
+function scheduleAnalyticsRefresh(delayMs) {{
+  if (ANALYTICS_REFRESH_TIMER) window.clearTimeout(ANALYTICS_REFRESH_TIMER);
+  ANALYTICS_REFRESH_TIMER = window.setTimeout(() => {{
+    refreshAnalytics().catch((err) => {{
+      document.getElementById('logBox').textContent = `Live refresh failed: ${{err}}`;
+      scheduleAnalyticsRefresh(15000);
+    }});
+  }}, Math.max(750, Number(delayMs) || POLL_MS));
+}}
 function activateAnalyticsTab(name) {{
   CURRENT_ANALYTICS_TAB = name;
   document.querySelectorAll('[data-analytics-tab-button]').forEach((el) => el.classList.toggle('active', el.dataset.analyticsTabButton === name));
   document.querySelectorAll('[data-analytics-tab-panel]').forEach((el) => el.classList.toggle('active', el.dataset.analyticsTabPanel === name));
   if (name === 'map' && ANALYTICS_MAP) {{
     window.setTimeout(() => ANALYTICS_MAP.invalidateSize(), 80);
+  }}
+  if (name === 'images') {{
+    renderAnalyticsImageGrid(true);
   }}
 }}
 async function resolveRunId() {{
@@ -11773,8 +12121,17 @@ async function applyAnalyticsData(data) {{
   const preferredImages = data.analysis_mode === 'post_run'
     ? ((data.images_all || []).length ? (data.images_all || []) : (data.images_recent || []))
     : (data.images_recent || []);
+  renderAnalyticsOverviewImages(preferredImages);
   document.getElementById('tableList').innerHTML = preferredTables.map((item) => `<tr><td><a href="${{esc(item.view_url)}}">${{esc(item.logical_path)}}</a></td><td>${{esc(fmt(item.byte_size))}}</td><td><a href="${{esc(item.download_url)}}">Download CSV</a></td></tr>`).join('') || '<tr><td colspan="3">No tables yet.</td></tr>';
-  document.getElementById('imageGrid').innerHTML = preferredImages.map((item) => `<div class="artifact-card"><h3>${{esc(item.logical_path)}}</h3><a href="${{esc(item.view_url)}}"><img src="${{esc(item.view_url)}}" alt="${{esc(item.logical_path)}}" /></a><div class="toolbar"><a href="${{esc(item.view_url)}}">Open</a><a href="${{esc(item.download_url)}}">Download Image</a></div></div>`).join('') || '<p>No images published yet.</p>';
+  const nextImageSignature = analyticsArtifactSignature(preferredImages);
+  if (nextImageSignature !== ANALYTICS_IMAGE_SIGNATURE) {{
+    ANALYTICS_IMAGE_SIGNATURE = nextImageSignature;
+    ANALYTICS_IMAGE_LIMIT = 18;
+  }}
+  ANALYTICS_IMAGE_ITEMS = preferredImages;
+  if (CURRENT_ANALYTICS_TAB === 'images') {{
+    renderAnalyticsImageGrid(true);
+  }}
   const logs = (data.logs_recent || []).map((row) => `[${{row.time_str || row.created_utc}}] ${{row.level_str || 'INFO'}} ${{row.message_text || ''}}`);
   document.getElementById('logBox').textContent = logs.join('\\n') || 'No logs yet.';
   const debug = data.debug || {{}};
@@ -11804,16 +12161,26 @@ async function refreshAnalytics() {{
     document.getElementById('runMeta').innerHTML = '<span class="pill">Launch accepted</span><span class="pill">Waiting for sim_runs row</span>';
     document.getElementById('metricGrid').innerHTML = '<div class="metric-card"><div class="metric-value">pending</div><div class="metric-label">Run registration</div></div>';
     document.getElementById('logBox').textContent = 'MATLAB was launched. This page will bind to the run automatically once the first database row appears.';
+    scheduleAnalyticsRefresh(3000);
     return;
   }}
-  const data = await analyticsFetchJson(`/api/run/${{resolvedRunId}}/live`);
+  let data = await analyticsFetchJson(`/api/run/${{resolvedRunId}}/live?lite=1`);
+  if (!ANALYTICS_FULL_PAYLOAD || (data.artifact_version && data.artifact_version !== ANALYTICS_ARTIFACT_VERSION)) {{
+    data = await analyticsFetchJson(`/api/run/${{resolvedRunId}}/live`);
+    ANALYTICS_FULL_PAYLOAD = data;
+    ANALYTICS_ARTIFACT_VERSION = data.artifact_version || '';
+  }} else {{
+    data = mergeAnalyticsPayload(ANALYTICS_FULL_PAYLOAD, data);
+    ANALYTICS_FULL_PAYLOAD = data;
+  }}
   await applyAnalyticsData(data);
+  scheduleAnalyticsRefresh(analyticsNextPollDelay(data));
 }}
 if (ANALYTICS_INITIAL_PAYLOAD && ANALYTICS_INITIAL_PAYLOAD.run) {{
   applyAnalyticsData(ANALYTICS_INITIAL_PAYLOAD).catch((err) => {{ console.error('initial analytics render failed', err); }});
 }}
 refreshAnalytics().catch((err) => {{ document.getElementById('logBox').textContent = `Live refresh failed: ${{err}}`; }});
-window.setInterval(() => {{ refreshAnalytics().catch((err) => {{ document.getElementById('logBox').textContent = `Live refresh failed: ${{err}}`; }}); }}, POLL_MS);
+document.addEventListener('visibilitychange', () => scheduleAnalyticsRefresh(500));
 document.querySelectorAll('[data-analytics-tab-button]').forEach((button) => {{
   button.addEventListener('click', () => activateAnalyticsTab(button.dataset.analyticsTabButton));
 }});
@@ -11869,6 +12236,11 @@ def build_analytics_page(run_id: int | None, run_tag: str | None = None, message
             <div id="truthContractPanel"><p class="muted">Loading truth-contract artifacts...</p></div>
           </section>
           <div id="metricGrid" class="metric-grid"></div>
+          <section class="panel" style="margin-top:16px;">
+            <h3>Featured PHY Visuals</h3>
+            <p class="muted">Key EVM, constellation, waveform, and link-quality visuals are surfaced here automatically from the persisted analytics image artifacts.</p>
+            <div id="overviewImageGrid" class="artifact-grid"><p class="muted">Loading featured PHY visuals...</p></div>
+          </section>
         </section>
         <div class="two-col" style="margin-top:16px;">
           <section class="panel"><h2>Summary And Analysis Tables</h2><div class="table-scroll"><table><thead><tr><th>Logical Path</th><th>Bytes</th><th>Download</th></tr></thead><tbody id="tableList"><tr><td colspan="3">Loading...</td></tr></tbody></table></div></section>
@@ -12684,7 +13056,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/api/run/") and parsed.path.endswith("/live"):
                 run_id = int(parsed.path.split("/")[3])
-                self.respond_json(build_live_payload(run_id))
+                lite = params.get("lite", ["0"])[0] in {"1", "true", "yes"}
+                self.respond_json(build_live_payload(run_id, lite=lite))
                 return
             if parsed.path.startswith("/api/run/") and parsed.path.endswith("/map"):
                 run_id = int(parsed.path.split("/")[3])
@@ -12836,11 +13209,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         mime_type = str(meta.get("mime_type") or "application/octet-stream")
         filename = Path(str(meta.get("logical_path") or artifact_id)).name
         disposition = "attachment" if download else "inline"
+        etag = artifact_etag(meta)
+        if_none_match = str(self.headers.get("If-None-Match") or "").strip()
+        if if_none_match and if_none_match == etag:
+            self.send_response(HTTPStatus.NOT_MODIFIED)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.end_headers()
+            return
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime_type)
         self.send_header("Content-Disposition", f'{disposition}; filename="{filename}"')
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -12892,26 +13274,123 @@ def resolve_dashboard_urls(bind_host: str, actual_port: int, public_host: str) -
     return local_url, intranet_url, lan_urls
 
 
+def resolve_server_backend(requested_backend: str) -> str:
+    token = str(requested_backend or DEFAULT_DASHBOARD_SERVER or "auto").strip().lower() or "auto"
+    if token not in {"auto", "threading", "waitress"}:
+        raise ValueError(f"Unsupported dashboard server backend: {requested_backend}")
+    if token == "waitress":
+        return "waitress"
+    if token == "threading":
+        return "threading"
+    try:
+        import waitress  # noqa: F401
+
+        return "waitress"
+    except Exception:
+        return "threading"
+
+
+class DashboardWSGIHandler(DashboardHandler):
+    def __init__(self, environ: dict[str, Any], start_response: Any) -> None:
+        self.environ = environ
+        self._start_response = start_response
+        self.command = str(environ.get("REQUEST_METHOD") or "GET").upper()
+        path_info = str(environ.get("PATH_INFO") or "/")
+        query = str(environ.get("QUERY_STRING") or "")
+        self.path = path_info + (f"?{query}" if query else "")
+        self.request_version = str(environ.get("SERVER_PROTOCOL") or "HTTP/1.1")
+        self.requestline = f"{self.command} {self.path} {self.request_version}"
+        self.client_address = (
+            str(environ.get("REMOTE_ADDR") or "127.0.0.1"),
+            int(environ.get("REMOTE_PORT") or 0),
+        )
+        self.server = None
+        self.connection = None
+        self.close_connection = True
+        body = b""
+        if self.command in {"POST", "PUT", "PATCH"}:
+            try:
+                content_length = int(environ.get("CONTENT_LENGTH") or 0)
+            except Exception:
+                content_length = 0
+            body = environ.get("wsgi.input").read(content_length) if content_length > 0 else b""
+        self.rfile = io.BytesIO(body)
+        self.wfile = io.BytesIO()
+        self.headers = email.message.Message()
+        if environ.get("CONTENT_TYPE"):
+            self.headers["Content-Type"] = str(environ.get("CONTENT_TYPE"))
+        if environ.get("CONTENT_LENGTH"):
+            self.headers["Content-Length"] = str(environ.get("CONTENT_LENGTH"))
+        for key, value in environ.items():
+            if not key.startswith("HTTP_"):
+                continue
+            header_name = key[5:].replace("_", "-").title()
+            self.headers[header_name] = str(value)
+        self._status_line = f"{HTTPStatus.OK.value} {HTTPStatus.OK.phrase}"
+        self._response_headers: list[tuple[str, str]] = []
+
+    def send_response(self, code: int, message: str | None = None) -> None:  # type: ignore[override]
+        try:
+            phrase = message or HTTPStatus(int(code)).phrase
+        except Exception:
+            phrase = message or "OK"
+        self._status_line = f"{int(code)} {phrase}"
+
+    def send_header(self, keyword: str, value: Any) -> None:  # type: ignore[override]
+        self._response_headers.append((str(keyword), str(value)))
+
+    def end_headers(self) -> None:  # type: ignore[override]
+        return
+
+    def finish(self) -> None:  # type: ignore[override]
+        return
+
+    def handle_exception(self, exc: Exception) -> None:
+        self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+
+    def dispatch(self) -> list[bytes]:
+        try:
+            if self.command == "POST":
+                self.do_POST()
+            elif self.command == "HEAD":
+                self.do_GET()
+            else:
+                self.do_GET()
+        except Exception as exc:  # pragma: no cover
+            self.handle_exception(exc)
+        payload = self.wfile.getvalue()
+        headers = list(self._response_headers)
+        if not any(key.lower() == "content-length" for key, _ in headers):
+            headers.append(("Content-Length", str(len(payload))))
+        self._start_response(self._status_line, headers)
+        if self.command == "HEAD":
+            return [b""]
+        return [payload]
+
+
+def dashboard_wsgi_app(environ: dict[str, Any], start_response: Any) -> list[bytes]:
+    handler = DashboardWSGIHandler(environ, start_response)
+    return handler.dispatch()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Real-time intranet dashboard for MySQL-backed 6G LLS runs.")
     parser.add_argument("--host", default=DEFAULT_DASHBOARD_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_DASHBOARD_PORT)
     parser.add_argument("--public-host", default=DEFAULT_DASHBOARD_PUBLIC_HOST)
+    parser.add_argument("--server", choices=["auto", "threading", "waitress"], default=DEFAULT_DASHBOARD_SERVER)
+    parser.add_argument("--threads", type=int, default=DEFAULT_DASHBOARD_THREADS)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
 
-    try:
-        httpd = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
-    except OSError as exc:
-        print(f"Failed to bind dashboard server: {exc}", file=sys.stderr)
-        return 1
-
-    _, actual_port = httpd.server_address[:2]
+    server_backend = resolve_server_backend(args.server)
+    actual_port = int(args.port)
     local_url, intranet_url, lan_urls = resolve_dashboard_urls(args.host, actual_port, args.public_host)
     write_dashboard_listener_file(args.host, actual_port, local_url, intranet_url, lan_urls)
     print(f"6G LLS dashboard listening on {intranet_url}")
     print(f"Local URL    : {local_url}")
     print(f"Intranet URL : {intranet_url}")
+    print(f"HTTP backend : {server_backend}")
     for idx, lan_url in enumerate(lan_urls[:5], start=1):
         print(f"LAN URL {idx}    : {lan_url}")
     print(
@@ -12926,6 +13405,32 @@ def main() -> int:
     )
     if not args.no_browser:
         webbrowser.open(local_url)
+    if server_backend == "waitress":
+        try:
+            from waitress import serve as waitress_serve
+        except Exception as exc:
+            print(f"Waitress is not available: {exc}", file=sys.stderr)
+            return 1
+        try:
+            waitress_serve(
+                dashboard_wsgi_app,
+                host=args.host,
+                port=actual_port,
+                threads=max(4, int(args.threads)),
+                connection_limit=max(512, int(args.threads) * 32),
+                channel_timeout=120,
+                cleanup_interval=30,
+                ident="SixGRDashboard/2.0",
+                expose_tracebacks=False,
+            )
+        except KeyboardInterrupt:
+            print("\\nDashboard stopped.")
+        return 0
+    try:
+        httpd = ThreadingHTTPServer((args.host, actual_port), DashboardHandler)
+    except OSError as exc:
+        print(f"Failed to bind dashboard server: {exc}", file=sys.stderr)
+        return 1
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

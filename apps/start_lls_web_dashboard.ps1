@@ -2,6 +2,9 @@ param(
     [string]$BindHost = "",
     [int]$Port = 0,
     [string]$PublicHost = "",
+    [ValidateSet("auto", "threading", "waitress")]
+    [string]$Server = "auto",
+    [int]$Threads = 32,
     [switch]$NoBrowser,
     [switch]$SkipFirewallRule,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -128,14 +131,18 @@ Write-Host "[lls-web] Python runtime: $($selected.Executable)"
 Write-Host "[lls-web] MATLAB runtime: $matlabPath"
 Write-Host "[lls-web] Dashboard bind host: $BindHost"
 Write-Host "[lls-web] Dashboard port: $Port"
+Write-Host "[lls-web] HTTP backend: $Server"
+Write-Host "[lls-web] Worker threads: $Threads"
 $env:SIXGR_DASHBOARD_HOST = $BindHost
 $env:SIXGR_DASHBOARD_PORT = [string]$Port
+$env:SIXGR_DASHBOARD_SERVER = $Server
+$env:SIXGR_DASHBOARD_THREADS = [string]$Threads
 Ensure-DashboardFirewallRule -LocalPort $Port
 $selectedPrefix = @()
 if ($selected.Command.Length -gt 1) {
     $selectedPrefix = $selected.Command[1..($selected.Command.Length - 1)]
 }
-$dashboardArgs = @("--host", $BindHost, "--port", [string]$Port)
+$dashboardArgs = @("--host", $BindHost, "--port", [string]$Port, "--server", $Server, "--threads", [string]$Threads)
 if (-not [string]::IsNullOrWhiteSpace($PublicHost)) {
     $dashboardArgs += @("--public-host", $PublicHost)
 }

@@ -1,2 +1,2 @@
 run_id,materializer_version,tables_total,tables_available,tables_policy_disabled,tables_missing,charts_total,charts_available,charts_policy_disabled,charts_missing,missing_table_paths,missing_chart_names
-1,2026-04-19-contract-v11,184,177,7,0,347,340,7,0,[],[]
+1,2026-04-21-contract-v13,184,177,7,0,347,340,7,0,[],[]

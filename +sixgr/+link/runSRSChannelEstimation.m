@@ -28,6 +28,13 @@ out.TrackingFailure = 1;
 out.InjectedDoppler_Hz = NaN;
 out.EstimatedDopplerHz = NaN;
 out.DopplerError_Hz = NaN;
+out.EstimatedRI = NaN;
+out.EstimatedTPMI = NaN;
+out.RISource = "";
+out.TPMISource = "";
+out.TPMICandidateCount = NaN;
+out.TPMIMutualInformation = NaN;
+out.SRSConditionNumber_dB = NaN;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -83,6 +90,14 @@ try
     if isfinite(out.EstimatedDopplerHz) && isfinite(out.InjectedDoppler_Hz)
         out.DopplerError_Hz = out.EstimatedDopplerHz - out.InjectedDoppler_Hz;
     end
+    srsULCSI = sixgr.phy.ul.estimateSRSRITPMI(rx.Hest, rx.NoiseVar, cfg);
+    out.EstimatedRI = double(sixgr.util.structGet(srsULCSI, "RI", NaN));
+    out.EstimatedTPMI = double(sixgr.util.structGet(srsULCSI, "TPMI", NaN));
+    out.RISource = char(string(sixgr.util.structGet(srsULCSI, "RISource", "")));
+    out.TPMISource = char(string(sixgr.util.structGet(srsULCSI, "TPMISource", "")));
+    out.TPMICandidateCount = double(sixgr.util.structGet(srsULCSI, "TPMICandidateCount", NaN));
+    out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
+    out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
     out.Ok = true;
     out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
         " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz";

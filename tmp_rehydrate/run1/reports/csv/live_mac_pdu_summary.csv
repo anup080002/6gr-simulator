@@ -1,30 +1,247 @@
-CategoryCode,CategoryKey,CategoryName,MetricKey,MetricName,Entity,Statistic,Availability,CountsTowardCoverage,ValueNumeric,ValueText,Unit,SourceArtifact,Notes
-G,pdsch_outputs,PDSCH outputs,per_layer_bler,per-layer BLER,layer_1,rate,observed,1,0.266666666666667,0.266666666666667,fraction,air_interface/csv/dl_pdsch_trials.csv,Current LLS runtime exports one-codeword TB outcome; per-layer BLER is attributed to each active layer in the configured layer map.
-G,pdsch_outputs,PDSCH outputs,per_layer_bler,per-layer BLER,layer_1,sample_count,observed,1,150,150,count,air_interface/csv/dl_pdsch_trials.csv,Current LLS runtime exports one-codeword TB outcome; per-layer BLER is attributed to each active layer in the configured layer map.
-G,pdsch_outputs,PDSCH outputs,per_layer_bler,per-layer BLER,layer_2,rate,observed,1,0.263157894736842,0.263157894736842,fraction,air_interface/csv/dl_pdsch_trials.csv,Current LLS runtime exports one-codeword TB outcome; per-layer BLER is attributed to each active layer in the configured layer map.
-G,pdsch_outputs,PDSCH outputs,per_layer_bler,per-layer BLER,layer_2,sample_count,observed,1,133,133,count,air_interface/csv/dl_pdsch_trials.csv,Current LLS runtime exports one-codeword TB outcome; per-layer BLER is attributed to each active layer in the configured layer map.
-G,pdsch_outputs,PDSCH outputs,per_codeword_bler,per-codeword BLER,codeword_1,rate,observed,1,0.266666666666667,0.266666666666667,fraction,air_interface/csv/dl_pdsch_trials.csv,Current LLS runtime exports a single-codeword PDSCH path; codeword_1 BLER equals TB failure rate.
-G,pdsch_outputs,PDSCH outputs,per_codeword_bler,per-codeword BLER,codeword_1,sample_count,observed,1,150,150,count,air_interface/csv/dl_pdsch_trials.csv,Current LLS runtime exports a single-codeword PDSCH path; codeword_1 BLER equals TB failure rate.
-G,pdsch_outputs,PDSCH outputs,per_rank_throughput,per-rank throughput,rank_1,good_bits,observed,1,70520,70520,bits,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,per_rank_throughput,per-rank throughput,rank_2,good_bits,observed,1,170072,170072,bits,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,equalizer_output_sinr,equalizer output SINR,DL,mean,observed,1,20.3604736597367,20.3604736597367,dB,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,equalizer_output_sinr,equalizer output SINR,DL,p95,observed,1,48.7242436905469,48.7242436905469,dB,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,equalizer_output_sinr,equalizer output SINR,DL,max,observed,1,62.7096763861151,62.7096763861151,dB,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,residual_interference_power,residual interference power,DL,mean,observed,1,-6.11348020820335,-6.11348020820335,dB,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,residual_interference_power,residual interference power,DL,p95,observed,1,9.99610794507509,9.99610794507509,dB,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,residual_interference_power,residual interference power,DL,max,observed,1,31.0992324666746,31.0992324666746,dB,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,harq_gain_per_retransmission,HARQ gain per retransmission,DL@SNR=12dB,recovered_after_retx_rate,observed,1,1,not_applicable,fraction,harq/csv/probe_harq_summary.csv,HARQ exercise mode. Recovered packets attributable to HARQ retransmissions.
-G,pdsch_outputs,PDSCH outputs,harq_gain_per_retransmission,HARQ gain per retransmission,UL@SNR=12dB,recovered_after_retx_rate,observed,1,1,not_applicable,fraction,harq/csv/probe_harq_summary.csv,HARQ exercise mode. Recovered packets attributable to HARQ retransmissions.
-G,pdsch_outputs,PDSCH outputs,rate_matching_overhead,rate matching overhead,DL,mean_ratio,observed,1,0,0,fraction,air_interface/csv/dl_pdsch_trials.csv,Measured from actual rate-matching puncture and repetition bit counts.
-G,pdsch_outputs,PDSCH outputs,rate_matching_overhead,rate matching overhead,DL,p95_ratio,observed,1,0,0,fraction,air_interface/csv/dl_pdsch_trials.csv,Measured from actual rate-matching puncture and repetition bit counts.
-G,pdsch_outputs,PDSCH outputs,rs_overhead_contribution,RS overhead contribution,DL,mean,observed,1,0.056969696969697,0.056969696969697,fraction,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,rs_overhead_contribution,RS overhead contribution,DL,p95,observed,1,0.0909090909090909,0.0909090909090909,fraction,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,rs_overhead_contribution,RS overhead contribution,DL,max,observed,1,0.0909090909090909,0.0909090909090909,fraction,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,beam_precoder_gain,beam / precoder gain,beamforming,mean,observed,1,-128.181308934872,-128.181308934872,dB,beamforming/csv/probe_beam_mimo.csv,
-G,pdsch_outputs,PDSCH outputs,beam_precoder_gain,beam / precoder gain,beamforming,p95,observed,1,-95.1254648693599,-95.1254648693599,dB,beamforming/csv/probe_beam_mimo.csv,
-G,pdsch_outputs,PDSCH outputs,beam_precoder_gain,beam / precoder gain,beamforming,max,observed,1,-74.6457391060075,-74.6457391060075,dB,beamforming/csv/probe_beam_mimo.csv,
-G,pdsch_outputs,PDSCH outputs,mtrp_gain,mTRP gain,DL,delta_dB,disabled,0,NaN,not_applicable,dB,beamforming/csv/probe_beam_management.csv,Single-TRP runtime; mTRP beam-selection gain is not enabled for this scenario.
-G,pdsch_outputs,PDSCH outputs,mtrp_gain,mTRP gain,UL,delta_dB,disabled,0,NaN,not_applicable,dB,beamforming/csv/probe_beam_management.csv,Single-TRP runtime; mTRP beam-selection gain is not enabled for this scenario.
-G,pdsch_outputs,PDSCH outputs,detector_complexity,detector complexity,DL,mean,observed,1,253646265.6,253646265.6,detector_ops,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,detector_complexity,detector complexity,DL,p95,observed,1,449100288,449100288,detector_ops,air_interface/csv/dl_pdsch_trials.csv,
-G,pdsch_outputs,PDSCH outputs,detector_complexity,detector complexity,DL,max,observed,1,449100288,449100288,detector_ops,air_interface/csv/dl_pdsch_trials.csv,
+run_id,direction,ue_id,frame,slot,source_artifact,tb_size_bits,mcs,modulation,crc_pass,goodput_mbps
+1,DL,3,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,5,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,7,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,9,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,14,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,19,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,26,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,27,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,43,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,47,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,4,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,6,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,10,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,29,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,35,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,41,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,45,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,50,7,7,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,2,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,12,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,13,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,15,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,16,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,18,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,23,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,24,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,33,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,34,7,7,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,20,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,22,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,32,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,37,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,38,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,40,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,42,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,44,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,49,7,7,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,1,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,8,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,11,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,17,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,21,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,25,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,28,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,30,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,31,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,36,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,39,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,46,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,48,7,7,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,26,8,8,air_interface/csv/dl_pdsch_trials.csv,21504,26,64QAM,1,43.008
+1,DL,14,8,8,air_interface/csv/dl_pdsch_trials.csv,8064,13,16QAM,1,16.128
+1,DL,3,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,0,0
+1,DL,5,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,7,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,9,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,0,0
+1,DL,19,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,27,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,43,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,47,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,10,8,8,air_interface/csv/dl_pdsch_trials.csv,54296,26,64QAM,0,0
+1,DL,50,8,8,air_interface/csv/dl_pdsch_trials.csv,54296,26,64QAM,0,0
+1,DL,6,8,8,air_interface/csv/dl_pdsch_trials.csv,24072,24,64QAM,0,0
+1,DL,4,8,8,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,29,8,8,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,35,8,8,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,41,8,8,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,45,8,8,air_interface/csv/dl_pdsch_trials.csv,2472,0,QPSK,1,4.944
+1,DL,2,8,8,air_interface/csv/dl_pdsch_trials.csv,43032,26,64QAM,0,0
+1,DL,18,8,8,air_interface/csv/dl_pdsch_trials.csv,21504,26,64QAM,0,0
+1,DL,34,8,8,air_interface/csv/dl_pdsch_trials.csv,43032,26,64QAM,0,0
+1,DL,12,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,13,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,15,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,16,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,23,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,24,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,33,8,8,air_interface/csv/dl_pdsch_trials.csv,2024,0,QPSK,1,4.048
+1,DL,22,8,8,air_interface/csv/dl_pdsch_trials.csv,48168,26,64QAM,0,0
+1,DL,38,8,8,air_interface/csv/dl_pdsch_trials.csv,24072,26,64QAM,1,48.144
+1,DL,42,8,8,air_interface/csv/dl_pdsch_trials.csv,48168,26,64QAM,0,0
+1,DL,20,8,8,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,32,8,8,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,37,8,8,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,40,8,8,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,44,8,8,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,1,4.432
+1,DL,49,8,8,air_interface/csv/dl_pdsch_trials.csv,2216,0,QPSK,0,0
+1,DL,30,8,8,air_interface/csv/dl_pdsch_trials.csv,33816,26,64QAM,0,0
+1,DL,46,8,8,air_interface/csv/dl_pdsch_trials.csv,33816,26,64QAM,0,0
+1,DL,1,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,8,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,11,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,17,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,21,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,0,0
+1,DL,25,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,28,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,31,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,0,0
+1,DL,36,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,39,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,1,3.088
+1,DL,48,8,8,air_interface/csv/dl_pdsch_trials.csv,1544,0,QPSK,0,0
+1,DL,3,9,9,air_interface/csv/dl_pdsch_trials.csv,11016,26,64QAM,0,0
+1,DL,26,9,9,air_interface/csv/dl_pdsch_trials.csv,5504,26,64QAM,0,0
+1,DL,43,9,9,air_interface/csv/dl_pdsch_trials.csv,11016,26,64QAM,0,0
+1,DL,47,9,9,air_interface/csv/dl_pdsch_trials.csv,11016,26,64QAM,0,0
+1,DL,19,9,9,air_interface/csv/dl_pdsch_trials.csv,4224,22,64QAM,1,8.448
+1,DL,14,9,9,air_interface/csv/dl_pdsch_trials.csv,2600,15,16QAM,1,5.2
+1,DL,5,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,9,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,40,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,10,9,9,air_interface/csv/dl_pdsch_trials.csv,12552,26,64QAM,0,0
+1,DL,35,9,9,air_interface/csv/dl_pdsch_trials.csv,12552,26,64QAM,0,0
+1,DL,50,9,9,air_interface/csv/dl_pdsch_trials.csv,4032,20,64QAM,1,8.064
+1,DL,4,9,9,air_interface/csv/dl_pdsch_trials.csv,576,0,QPSK,1,1.152
+1,DL,6,9,9,air_interface/csv/dl_pdsch_trials.csv,288,0,QPSK,1,0.576
+1,DL,29,9,9,air_interface/csv/dl_pdsch_trials.csv,576,0,QPSK,0,0
+1,DL,41,9,9,air_interface/csv/dl_pdsch_trials.csv,576,0,QPSK,0,0
+1,DL,45,9,9,air_interface/csv/dl_pdsch_trials.csv,576,0,QPSK,1,1.152
+1,DL,2,9,9,air_interface/csv/dl_pdsch_trials.csv,11016,26,64QAM,0,0
+1,DL,15,9,9,air_interface/csv/dl_pdsch_trials.csv,5504,26,64QAM,0,0
+1,DL,23,9,9,air_interface/csv/dl_pdsch_trials.csv,11016,26,64QAM,0,0
+1,DL,18,9,9,air_interface/csv/dl_pdsch_trials.csv,1608,11,16QAM,1,3.216
+1,DL,12,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,13,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,16,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,24,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,33,9,9,air_interface/csv/dl_pdsch_trials.csv,504,0,QPSK,1,1.008
+1,DL,22,9,9,air_interface/csv/dl_pdsch_trials.csv,9480,26,64QAM,0,0
+1,DL,34,9,9,air_interface/csv/dl_pdsch_trials.csv,9480,26,64QAM,0,0
+1,DL,42,9,9,air_interface/csv/dl_pdsch_trials.csv,7296,22,64QAM,0,0
+1,DL,38,9,9,air_interface/csv/dl_pdsch_trials.csv,1416,11,16QAM,1,2.832
+1,DL,8,9,9,air_interface/csv/dl_pdsch_trials.csv,432,0,QPSK,1,0.864
+1,DL,20,9,9,air_interface/csv/dl_pdsch_trials.csv,432,0,QPSK,1,0.864
+1,DL,32,9,9,air_interface/csv/dl_pdsch_trials.csv,432,0,QPSK,1,0.864
+1,DL,37,9,9,air_interface/csv/dl_pdsch_trials.csv,432,0,QPSK,0,0
+1,DL,44,9,9,air_interface/csv/dl_pdsch_trials.csv,432,0,QPSK,0,0
+1,DL,49,9,9,air_interface/csv/dl_pdsch_trials.csv,432,0,QPSK,0,0
+1,DL,30,9,9,air_interface/csv/dl_pdsch_trials.csv,6656,26,64QAM,0,0
+1,DL,39,9,9,air_interface/csv/dl_pdsch_trials.csv,6656,26,64QAM,0,0
+1,DL,7,9,9,air_interface/csv/dl_pdsch_trials.csv,4992,22,64QAM,0,0
+1,DL,46,9,9,air_interface/csv/dl_pdsch_trials.csv,1800,18,64QAM,1,3.6
+1,DL,27,9,9,air_interface/csv/dl_pdsch_trials.csv,768,8,QPSK,1,1.536
+1,DL,11,9,9,air_interface/csv/dl_pdsch_trials.csv,384,4,QPSK,0,0
+1,DL,1,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,1,0.608
+1,DL,17,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,0,0
+1,DL,21,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,1,0.608
+1,DL,25,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,0,0
+1,DL,28,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,1,0.608
+1,DL,31,9,9,air_interface/csv/dl_pdsch_trials.csv,144,0,QPSK,1,0.288
+1,DL,36,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,1,0.608
+1,DL,48,9,9,air_interface/csv/dl_pdsch_trials.csv,304,0,QPSK,0,0
+1,UL,3,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,5,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,9,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,14,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,19,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,26,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,40,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,43,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,47,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,4,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,6,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,10,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,29,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,35,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,41,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,45,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,50,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,2,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,12,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,13,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,15,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,16,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,18,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,23,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,24,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,33,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,8,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,20,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,22,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,32,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,34,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,37,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,38,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,42,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,44,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,49,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,1,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,7,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,11,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,17,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,21,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,25,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,27,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,28,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,30,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,31,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,36,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,39,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,3,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,5,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,9,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,14,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,19,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,26,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,40,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,43,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,47,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,4,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,6,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,10,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,1,54.288
+1,UL,29,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,1,54.288
+1,UL,41,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,45,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,50,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,1,54.288
+1,UL,35,10,10,air_interface/csv/ul_pusch_trials.csv,17424,20,64QAM,1,34.848
+1,UL,12,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,13,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,18,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,23,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,15,10,10,air_interface/csv/ul_pusch_trials.csv,21000,24,64QAM,0,0
+1,UL,24,10,10,air_interface/csv/ul_pusch_trials.csv,18432,22,64QAM,0,0
+1,UL,2,10,10,air_interface/csv/ul_pusch_trials.csv,12808,18,64QAM,0,0
+1,UL,16,10,10,air_interface/csv/ul_pusch_trials.csv,11272,15,16QAM,0,0
+1,UL,33,10,10,air_interface/csv/ul_pusch_trials.csv,11272,15,16QAM,0,0
+1,UL,22,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,32,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,0,0
+1,UL,34,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,0,0
+1,UL,37,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,0,0
+1,UL,38,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,44,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,49,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,42,10,10,air_interface/csv/ul_pusch_trials.csv,18960,24,64QAM,0,0
+1,UL,20,10,10,air_interface/csv/ul_pusch_trials.csv,11528,18,64QAM,0,0
+1,UL,8,10,10,air_interface/csv/ul_pusch_trials.csv,8064,13,16QAM,0,0
+1,UL,7,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,11,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,25,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,27,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,28,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,30,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,31,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,36,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,21,10,10,air_interface/csv/ul_pusch_trials.csv,15624,24,64QAM,0,0
+1,UL,1,10,10,air_interface/csv/ul_pusch_trials.csv,13320,22,64QAM,0,0
+1,UL,17,10,10,air_interface/csv/ul_pusch_trials.csv,13320,22,64QAM,0,0
+1,UL,39,10,10,air_interface/csv/ul_pusch_trials.csv,13320,22,64QAM,0,0

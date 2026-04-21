@@ -13,12 +13,14 @@ scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
 
 modeToken = lower(string(sixgr.util.structGet(cfg, "phy.csi.sinrToCQIMode", "")));
-assert(strlength(strtrim(modeToken)) == 0 || modeToken == "threshold_table", ...
-    "Canonical browser-owned Rel-20 LLS scenario must keep the honest threshold-table CQI default until an effective-SINR calibration is explicitly configured.");
+assert(modeToken == "effective_sinr_bler_lut", ...
+    "Canonical browser-owned Rel-20 LLS scenario must resolve the reviewed effective-SINR plus BLER-LUT CQI mode.");
 assert(strcmpi(char(string(sixgr.util.structGet(cfg, "phy.csi.cqiTable", ""))), "table1"), ...
     "Canonical browser-owned Rel-20 LLS scenario must keep the resolved NR CQI table wiring.");
 assert(abs(double(sixgr.util.structGet(cfg, "phy.csi.targetBLER", 0.1)) - 0.1) < 1e-12, ...
-    "Canonical browser-owned Rel-20 LLS scenario must preserve the 10 percent BLER target metadata even when the threshold-table path is active.");
+    "Canonical browser-owned Rel-20 LLS scenario must preserve the 10 percent BLER target metadata for effective-SINR CQI selection.");
+assert(abs(double(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", NaN)) - 0.2) < 1e-12, ...
+    "Canonical browser-owned Rel-20 LLS scenario must resolve the reviewed CQI smoothing alpha.");
 
 ok = true;
 end

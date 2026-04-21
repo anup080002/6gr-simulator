@@ -1,31 +1,97 @@
-CategoryCode,CategoryKey,CategoryName,MetricKey,MetricName,Entity,Statistic,Availability,CountsTowardCoverage,ValueNumeric,ValueText,Unit,SourceArtifact,Notes
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,ul_bler_throughput,UL BLER / throughput,UL,rate,observed,1,0.46875,0.46875,fraction,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,ul_bler_throughput,UL BLER / throughput,UL,count,observed,1,45,45,count,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,ul_bler_throughput,UL BLER / throughput,UL_good_block_size,mean,observed,1,10880.75,10880.75,bits,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,ul_bler_throughput,UL BLER / throughput,UL_good_block_size,p95,observed,1,27144,27144,bits,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,ul_bler_throughput,UL BLER / throughput,UL_good_block_size,max,observed,1,27144,27144,bits,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,low_papr_gain,low-PAPR gain,UL,feature_enabled,observed,1,0,0,bool,air_interface/csv/ul_pusch_trials.csv,"Reported as observed UL PAPR under the configured low-PAPR mode. Lower observed PAPR implies higher low-PAPR gain relative to a comparator campaign. Feature is disabled in this scenario, so the effective gain is zero by configuration."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,low_papr_gain,low-PAPR gain,UL,mean_papr_db,observed,1,17.420086657093,17.420086657093,dB,air_interface/csv/ul_pusch_trials.csv,"Reported as observed UL PAPR under the configured low-PAPR mode. Lower observed PAPR implies higher low-PAPR gain relative to a comparator campaign. Feature is disabled in this scenario, so the effective gain is zero by configuration."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,low_papr_gain,low-PAPR gain,UL,p95_papr_db,observed,1,19.47004909211,19.47004909211,dB,air_interface/csv/ul_pusch_trials.csv,"Reported as observed UL PAPR under the configured low-PAPR mode. Lower observed PAPR implies higher low-PAPR gain relative to a comparator campaign. Feature is disabled in this scenario, so the effective gain is zero by configuration."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,pa_backoff_impact,PA backoff impact,UL,configured_backoff_db,observed,1,0,0,dB,air_interface/csv/ul_pusch_trials.csv,"Configured PA backoff is exported directly, alongside observed UL goodput efficiency from the actual waveform run."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,pa_backoff_impact,PA backoff impact,UL_goodput_efficiency,rate,observed,1,0.426134840582374,0.426134840582374,fraction,air_interface/csv/ul_pusch_trials.csv,"Configured PA backoff is exported directly, alongside observed UL goodput efficiency from the actual waveform run."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,pa_backoff_impact,PA backoff impact,UL_goodput_efficiency,numerator_sum,observed,1,445120,445120,count,air_interface/csv/ul_pusch_trials.csv,"Configured PA backoff is exported directly, alongside observed UL goodput efficiency from the actual waveform run."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,pa_backoff_impact,PA backoff impact,UL_goodput_efficiency,denominator_sum,observed,1,1044552,1044552,count,air_interface/csv/ul_pusch_trials.csv,"Configured PA backoff is exported directly, alongside observed UL goodput efficiency from the actual waveform run."
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,prep_time_related_impact,prep-time related impact,UL,policy,observed,1,NaN,baseline,,air_interface/csv/ul_pusch_trials.csv,Prep-time impact is exported through the configured prep-time policy and the observed UL compute-latency cost in the waveform loop. No separate radio/procedure delay is modeled here.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,prep_time_related_impact,prep-time related impact,UL_compute,mean,observed,1,21.183365625,21.183365625,ms,air_interface/csv/ul_pusch_trials.csv,Prep-time impact is exported through the configured prep-time policy and the observed UL compute-latency cost in the waveform loop. No separate radio/procedure delay is modeled here.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,prep_time_related_impact,prep-time related impact,UL_compute,p95,observed,1,53.94613,53.94613,ms,air_interface/csv/ul_pusch_trials.csv,Prep-time impact is exported through the configured prep-time policy and the observed UL compute-latency cost in the waveform loop. No separate radio/procedure delay is modeled here.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,prep_time_related_impact,prep-time related impact,UL_compute,max,observed,1,62.909,62.909,ms,air_interface/csv/ul_pusch_trials.csv,Prep-time impact is exported through the configured prep-time policy and the observed UL compute-latency cost in the waveform loop. No separate radio/procedure delay is modeled here.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,uci_multiplexing_efficiency,UCI multiplexing efficiency,UCI,policy,observed,1,NaN,baseline,,air_interface/csv/pucch_trials.csv,Computed as successful UCI bits over transmitted UCI bits from actual PUCCH observations under the configured multiplexing policy.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,simultaneous_pucch_pusch_behavior,simultaneous PUCCH/PUSCH behavior,UL_control,policy,observed,1,NaN,baseline,,air_interface/csv/pucch_trials.csv,Simultaneous behavior is measured from overlapping Frame/Slot observations between the actual PUSCH and PUCCH trial tables.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,power_control_convergence,power control convergence,UL,policy,observed,1,NaN,baseline,,air_interface/csv/ul_pusch_trials.csv,Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,power_control_convergence,power control convergence,UL,sinr_std_db,observed,1,12.1359708084322,12.1359708084322,dB,air_interface/csv/ul_pusch_trials.csv,Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,power_control_convergence,power control convergence,UL,mean_step_delta_db,observed,1,11.0218680988088,11.0218680988088,dB,air_interface/csv/ul_pusch_trials.csv,Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,dmrs_estimation_quality,DMRS estimation quality,UL,mean,observed,1,-31.6418413257722,-31.6418413257722,dB,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,dmrs_estimation_quality,DMRS estimation quality,UL,p95,observed,1,-26.537484302389,-26.537484302389,dB,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,dmrs_estimation_quality,DMRS estimation quality,UL,max,observed,1,-25.2038834173455,-25.2038834173455,dB,air_interface/csv/ul_pusch_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,dmrs_estimation_quality,DMRS estimation quality,SRS,mean,observed,1,-27.2655854370408,-27.2655854370408,dB,air_interface/csv/srs_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,dmrs_estimation_quality,DMRS estimation quality,SRS,p95,observed,1,-25.7648802515397,-25.7648802515397,dB,air_interface/csv/srs_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,dmrs_estimation_quality,DMRS estimation quality,SRS,max,observed,1,-25.5225200225239,-25.5225200225239,dB,air_interface/csv/srs_trials.csv,
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,msg3_specific_success_metrics,Msg3-specific success metrics,Msg3,enabled_flag,observed,1,1,1,bool,air_interface/csv/ul_pusch_trials.csv,Msg3 success is exported from the actual UL/PUSCH and PRACH execution path when Msg3 support is enabled.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,msg3_specific_success_metrics,Msg3-specific success metrics,Msg3,waveform_alignment,observed,1,NaN,inherit_ul_waveform,,air_interface/csv/ul_pusch_trials.csv,Msg3 success is exported from the actual UL/PUSCH and PRACH execution path when Msg3 support is enabled.
-H,pusch_pucch_outputs,PUSCH / PUCCH outputs,msg3_specific_success_metrics,Msg3-specific success metrics,Msg3,success_rate,observed,1,0.53125,0.53125,fraction,air_interface/csv/ul_pusch_trials.csv,Msg3 success is exported from the actual UL/PUSCH and PRACH execution path when Msg3 support is enabled.
+run_id,direction,ue_id,frame,slot,source_artifact,tb_size_bits,mcs,modulation,crc_pass,goodput_mbps
+1,UL,3,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,5,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,9,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,14,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,19,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,26,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,40,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,43,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,47,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,4,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,6,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,10,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,29,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,35,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,41,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,45,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,50,9,9,air_interface/csv/ul_pusch_trials.csv,1672,10,16QAM,1,3.344
+1,UL,2,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,12,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,13,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,15,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,16,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,18,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,23,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,1,2.96
+1,UL,24,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,33,9,9,air_interface/csv/ul_pusch_trials.csv,1480,10,16QAM,0,0
+1,UL,8,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,20,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,22,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,32,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,34,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,0,0
+1,UL,37,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,38,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,42,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,44,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,49,9,9,air_interface/csv/ul_pusch_trials.csv,1256,10,16QAM,1,2.512
+1,UL,1,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,7,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,11,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,17,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,21,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,0,0
+1,UL,25,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,27,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,28,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,30,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,31,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,36,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,39,9,9,air_interface/csv/ul_pusch_trials.csv,1064,10,16QAM,1,2.128
+1,UL,3,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,5,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,9,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,14,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,19,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,26,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,40,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,43,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,47,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,4,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,6,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,10,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,1,54.288
+1,UL,29,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,1,54.288
+1,UL,41,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,45,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,0,0
+1,UL,50,10,10,air_interface/csv/ul_pusch_trials.csv,27144,26,64QAM,1,54.288
+1,UL,35,10,10,air_interface/csv/ul_pusch_trials.csv,17424,20,64QAM,1,34.848
+1,UL,12,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,13,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,18,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,1,48.144
+1,UL,23,10,10,air_interface/csv/ul_pusch_trials.csv,24072,26,64QAM,0,0
+1,UL,15,10,10,air_interface/csv/ul_pusch_trials.csv,21000,24,64QAM,0,0
+1,UL,24,10,10,air_interface/csv/ul_pusch_trials.csv,18432,22,64QAM,0,0
+1,UL,2,10,10,air_interface/csv/ul_pusch_trials.csv,12808,18,64QAM,0,0
+1,UL,16,10,10,air_interface/csv/ul_pusch_trials.csv,11272,15,16QAM,0,0
+1,UL,33,10,10,air_interface/csv/ul_pusch_trials.csv,11272,15,16QAM,0,0
+1,UL,22,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,32,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,0,0
+1,UL,34,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,0,0
+1,UL,37,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,0,0
+1,UL,38,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,44,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,49,10,10,air_interface/csv/ul_pusch_trials.csv,21504,26,64QAM,1,43.008
+1,UL,42,10,10,air_interface/csv/ul_pusch_trials.csv,18960,24,64QAM,0,0
+1,UL,20,10,10,air_interface/csv/ul_pusch_trials.csv,11528,18,64QAM,0,0
+1,UL,8,10,10,air_interface/csv/ul_pusch_trials.csv,8064,13,16QAM,0,0
+1,UL,7,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,11,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,25,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,27,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,28,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,30,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,31,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,1,34.848
+1,UL,36,10,10,air_interface/csv/ul_pusch_trials.csv,17424,26,64QAM,0,0
+1,UL,21,10,10,air_interface/csv/ul_pusch_trials.csv,15624,24,64QAM,0,0
+1,UL,1,10,10,air_interface/csv/ul_pusch_trials.csv,13320,22,64QAM,0,0
+1,UL,17,10,10,air_interface/csv/ul_pusch_trials.csv,13320,22,64QAM,0,0
+1,UL,39,10,10,air_interface/csv/ul_pusch_trials.csv,13320,22,64QAM,0,0

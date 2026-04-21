@@ -87,7 +87,19 @@ feedback = struct( ...
     "BLERCurveSlope_dB", double(blerCurveSlope_dB), ...
     "ThresholdSource", char(string(thresholdSource)), ...
     "ThresholdValueRole", char(string(thresholdRole)), ...
-    "SINRThresholds_dB", double(thresholds_dB));
+    "SINRThresholds_dB", double(thresholds_dB), ...
+    "BLERLUTSource", char(string(localResolveBLERLUTSource(cfg, direction, tableToken, thresholds_dB, targetBLER))), ...
+    "BLERLUTValueRole", char(string(localResolveBLERLUTValueRole(cfg, direction, tableToken, thresholds_dB, targetBLER))));
+end
+
+function source = localResolveBLERLUTSource(cfg, direction, tableToken, thresholds_dB, targetBLER)
+lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER);
+source = string(sixgr.util.structGet(lut, "Source", ""));
+end
+
+function role = localResolveBLERLUTValueRole(cfg, direction, tableToken, thresholds_dB, targetBLER)
+lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER);
+role = string(sixgr.util.structGet(lut, "ValueRole", ""));
 end
 
 function [widebandSINR_dB, perRBSINR_dB] = localExtractSINRInputs(sinrInput)
@@ -328,22 +340,198 @@ end
 
 function [selectedCQI, predictedBLER, operatingPoint_dB, slope_dB] = localSelectCQIByBLER(effectiveSINR_dB, cfg, direction, tableToken, thresholds_dB, targetBLER)
 predictedBLER = nan(15, 1);
+operatingPoint_dB = nan(15, 1);
+slope_dB = nan(15, 1);
+selectedCQI = 0;
+if ~(isfinite(effectiveSINR_dB))
+    return;
+end
+
+lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER);
+for idx = 1:min(15, numel(lut.Curves))
+    curve = lut.Curves{idx};
+    if isempty(curve)
+        continue;
+    end
+    predictedBLER(idx) = localPredictBLERFromCurve(effectiveSINR_dB, curve);
+    operatingPoint_dB(idx) = double(sixgr.util.structGet(curve, "OperatingPoint_dB", NaN));
+    slope_dB(idx) = double(sixgr.util.structGet(curve, "Slope_dB", NaN));
+    if isfinite(predictedBLER(idx)) && predictedBLER(idx) <= targetBLER + 1e-12
+        selectedCQI = idx;
+    end
+end
+end
+
+function lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER)
+lut = struct( ...
+    "Curves", {cell(15, 1)}, ...
+    "Source", "", ...
+    "ValueRole", "", ...
+    "CalibrationID", "");
+
+raw = [];
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.cqiBLERLUT"
+        "phy.csi.ulCQIBLERLUT"
+        "phy.csi.cqiBLERLUT"];
+else
+    candidates = [ ...
+        "phy.pdsch.cqiBLERLUT"
+        "phy.csi.dlCQIBLERLUT"
+        "phy.csi.cqiBLERLUT"];
+end
+for i = 1:numel(candidates)
+    raw = sixgr.util.structGet(cfg, candidates(i), []);
+    curves = localParseBLERLUT(raw, targetBLER);
+    if localHasAnyCurves(curves)
+        lut.Curves = curves;
+        lut.Source = char(candidates(i));
+        lut.ValueRole = "configured_lab_default_override";
+        lut.CalibrationID = char(string(sixgr.util.structGet(raw, "CalibrationID", ...
+            sixgr.util.structGet(raw, "calibration_id", ""))));
+        return;
+    end
+end
+
+lut.Curves = localDefaultBLERLUT(tableToken, thresholds_dB, targetBLER, cfg, direction);
+lut.Source = "resolveWidebandCQI.lab_default_bler_lut";
+lut.ValueRole = "lab_default";
+lut.CalibrationID = "vendor_style_lab_default_operating_point_grid";
+end
+
+function tf = localHasAnyCurves(curves)
+tf = false;
+if ~iscell(curves)
+    return;
+end
+for i = 1:numel(curves)
+    if ~isempty(curves{i})
+        tf = true;
+        return;
+    end
+end
+end
+
+function curves = localParseBLERLUT(raw, targetBLER)
+curves = cell(15, 1);
+if isempty(raw)
+    return;
+end
+if istable(raw)
+    T = raw;
+elseif isstruct(raw)
+    try
+        T = struct2table(raw);
+    catch
+        T = table();
+    end
+else
+    T = table();
+end
+if isempty(T) || ~all(ismember(["CQI", "SINR_dB", "BLER"], string(T.Properties.VariableNames)))
+    return;
+end
+
+for idx = 1:15
+    mask = round(double(T.CQI)) == idx;
+    if ~any(mask)
+        continue;
+    end
+    curves{idx} = localFinalizeBLERCurve(double(T.SINR_dB(mask)), double(T.BLER(mask)), targetBLER);
+end
+end
+
+function curves = localDefaultBLERLUT(tableToken, thresholds_dB, targetBLER, cfg, direction)
+curves = cell(15, 1);
 operatingPoint_dB = double(thresholds_dB(:));
 if numel(operatingPoint_dB) ~= 15
     operatingPoint_dB = double(localDefaultCQIThresholds(tableToken));
     operatingPoint_dB = operatingPoint_dB(:);
 end
-slope_dB = localResolveBLERSlope(cfg, direction);
-selectedCQI = 0;
-if ~(isfinite(effectiveSINR_dB))
+supportOffset_dB = [-6 -4 -3 -2 -1 0 1 2 3 4 6];
+blerAnchor = [0.99 0.95 0.85 0.60 0.28 0.10 0.03 0.008 0.002 5e-4 1e-4];
+defaultSlope_dB = localResolveBLERSlope(cfg, direction);
+for idx = 1:min(15, numel(operatingPoint_dB))
+    opPoint = operatingPoint_dB(idx);
+    if ~isfinite(opPoint)
+        continue;
+    end
+    sinrAxis = opPoint + supportOffset_dB .* max(defaultSlope_dB / 1.5, eps);
+    curve = localFinalizeBLERCurve(sinrAxis, blerAnchor, targetBLER);
+    curve.OperatingPoint_dB = double(opPoint);
+    curve.Slope_dB = double(defaultSlope_dB);
+    curves{idx} = curve;
+end
+end
+
+function curve = localFinalizeBLERCurve(sinrAxis_dB, blerAxis, targetBLER)
+curve = struct("SINR_dB", [], "BLER", [], "OperatingPoint_dB", NaN, "Slope_dB", NaN);
+sinrAxis_dB = double(sinrAxis_dB(:));
+blerAxis = double(blerAxis(:));
+mask = isfinite(sinrAxis_dB) & isfinite(blerAxis) & blerAxis > 0 & blerAxis <= 1;
+sinrAxis_dB = sinrAxis_dB(mask);
+blerAxis = blerAxis(mask);
+if numel(sinrAxis_dB) < 2
     return;
 end
-for idx = 1:min(15, numel(operatingPoint_dB))
-    predictedBLER(idx) = localPredictBLER(effectiveSINR_dB, operatingPoint_dB(idx), targetBLER, slope_dB);
-    if isfinite(predictedBLER(idx)) && predictedBLER(idx) <= targetBLER + 1e-12
-        selectedCQI = idx;
-    end
+[sinrAxis_dB, order] = sort(sinrAxis_dB, "ascend");
+blerAxis = blerAxis(order);
+blerAxis = max(min(blerAxis, 1), 1e-6);
+
+% Enforce the physical monotonic trend: BLER decreases as effective SINR rises.
+for i = 2:numel(blerAxis)
+    blerAxis(i) = min(blerAxis(i - 1), blerAxis(i));
 end
+for i = numel(blerAxis)-1:-1:1
+    blerAxis(i) = max(blerAxis(i), blerAxis(i + 1));
+end
+
+curve.SINR_dB = sinrAxis_dB(:);
+curve.BLER = blerAxis(:);
+curve.OperatingPoint_dB = localCurveOperatingPoint(curve, targetBLER);
+curve.Slope_dB = localCurveSlope(curve, targetBLER);
+end
+
+function opPoint = localCurveOperatingPoint(curve, targetBLER)
+opPoint = NaN;
+if isempty(curve) || isempty(curve.SINR_dB) || isempty(curve.BLER)
+    return;
+end
+logBLER = log10(max(curve.BLER(:), 1e-6));
+targetLog = log10(max(min(double(targetBLER), 1), 1e-6));
+[logBLER, order] = sort(logBLER, "ascend");
+sinrAxis = double(curve.SINR_dB(order));
+if numel(unique(logBLER)) < 2
+    return;
+end
+opPoint = interp1(logBLER, sinrAxis, targetLog, "linear", "extrap");
+end
+
+function slope_dB = localCurveSlope(curve, targetBLER)
+slope_dB = NaN;
+if isempty(curve) || isempty(curve.SINR_dB) || numel(curve.SINR_dB) < 2
+    return;
+end
+opPoint = localCurveOperatingPoint(curve, targetBLER);
+if ~isfinite(opPoint)
+    return;
+end
+sinrAxis = double(curve.SINR_dB(:));
+blerAxis = max(min(double(curve.BLER(:)), 1), 1e-6);
+[~, idx] = min(abs(sinrAxis - opPoint));
+idxLo = max(1, idx - 1);
+idxHi = min(numel(sinrAxis), idx + 1);
+if idxHi == idxLo
+    return;
+end
+deltaSINR = abs(sinrAxis(idxHi) - sinrAxis(idxLo));
+deltaLogBLER = abs(log10(blerAxis(idxHi)) - log10(blerAxis(idxLo)));
+if deltaLogBLER <= 0
+    return;
+end
+slope_dB = deltaSINR / deltaLogBLER;
 end
 
 function slope_dB = localResolveBLERSlope(cfg, direction)
@@ -375,14 +563,18 @@ if ~(isfinite(slope_dB) && slope_dB > 0)
 end
 end
 
-function bler = localPredictBLER(effectiveSINR_dB, operatingPoint_dB, targetBLER, slope_dB)
+function bler = localPredictBLERFromCurve(effectiveSINR_dB, curve)
 bler = NaN;
-if ~(isfinite(effectiveSINR_dB) && isfinite(operatingPoint_dB) && isfinite(targetBLER) && targetBLER > 0)
+if ~(isfinite(effectiveSINR_dB)) || isempty(curve) || isempty(curve.SINR_dB) || isempty(curve.BLER)
     return;
 end
-delta = double(effectiveSINR_dB) - double(operatingPoint_dB);
-ratio = targetBLER .* 10.^(-delta ./ max(double(slope_dB), eps));
-bler = min(1, max(1e-6, ratio));
+sinrAxis = double(curve.SINR_dB(:));
+logBLER = log10(max(min(double(curve.BLER(:)), 1), 1e-6));
+if numel(sinrAxis) < 2 || numel(unique(sinrAxis)) < 2
+    return;
+end
+predLog = interp1(sinrAxis, logBLER, double(effectiveSINR_dB), "linear", "extrap");
+bler = max(min(10.^predLog, 1), 1e-6);
 end
 
 function [thresholds_dB, sourceToken, valueRole] = localResolveCQIThresholds(cfg, direction, tableToken)

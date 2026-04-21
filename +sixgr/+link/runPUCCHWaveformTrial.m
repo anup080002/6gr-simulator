@@ -470,6 +470,14 @@ detMetric = sixgr.util.structGet(rx, "DetMetric", []);
 if isempty(detMetric)
     return;
 end
+if isnumeric(detMetric) && ~isempty(detMetric)
+    vals = double(detMetric(:));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        metric = mean(vals, "omitnan");
+    end
+end
+end
 
 function metrics = localMeasurePUCCHLinkState(cfg, rx, rxInfo)
 metrics = struct();
@@ -489,14 +497,6 @@ try
         "ReferenceSymbols", pilotSym);
 catch
     metrics = struct();
-end
-end
-if isnumeric(detMetric) && ~isempty(detMetric)
-    vals = double(detMetric(:));
-    vals = vals(isfinite(vals));
-    if ~isempty(vals)
-        metric = mean(vals, "omitnan");
-    end
 end
 end
 
