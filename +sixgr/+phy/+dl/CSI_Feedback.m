@@ -46,14 +46,27 @@ codebookType = string(sixgr.util.structGet(cfg, "phy.csi.codebookType", localPMI
 best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode);
 criInfo = localSelectCRI(Hwb, nVar, cfg);
 
-sinrLin = best.EffectiveSINR;
-if ~isfinite(sinrLin)
-    sinrLin = 0;
+modelSinrLin = double(best.EffectiveSINR);
+if ~isfinite(modelSinrLin) || modelSinrLin < 0
+    modelSinrLin = 0;
 end
-if sinrLin <= 0
-    sinr_dB = -inf;
+if modelSinrLin <= 0
+    modelSinr_dB = -inf;
 else
-    sinr_dB = 10 * log10(sinrLin);
+    modelSinr_dB = 10 * log10(modelSinrLin);
+end
+
+[measuredSINR_dB, measuredSINRSource, measuredSINRStatus, pilotNMSE_dB] = ...
+    localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
+if isfinite(measuredSINR_dB)
+    sinr_dB = double(measuredSINR_dB);
+    sinrLin = 10 .^ (sinr_dB / 10);
+    sinrSource = string(measuredSINRSource);
+else
+    sinr_dB = double(modelSinr_dB);
+    sinrLin = double(modelSinrLin);
+    sinrSource = "receiver_hest_codebook_gain_over_noise_fallback";
+    measuredSINRStatus = "fallback_to_channel_gain_over_noise";
 end
 
 hPow = mean(abs(Hwb(:)).^2, "omitnan");
@@ -109,6 +122,11 @@ csi.CSIPayloadCRCEnabled = logical(payload.CRCEnabled);
 csi.CSIPayloadFieldCount = double(payload.FieldCount);
 csi.CSIPayloadFieldLayout = payload.FieldLayout;
 csi.RSRPSource = char(rsrpSource);
+csi.SINRSource = char(sinrSource);
+csi.ModelEffectiveSINR_dB = double(modelSinr_dB);
+csi.ReferenceMeasuredSINR_dB = double(measuredSINR_dB);
+csi.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
+csi.ReferenceSINRValueStatus = char(string(measuredSINRStatus));
 
 info = struct();
 info.Method = char(method);
@@ -132,6 +150,11 @@ info.CodebookInfo = sixgr.util.structGet(best, "CodebookInfo", struct());
 info.Payload = payload;
 info.ReferencePower = double(referencePower);
 info.RSRPSource = char(rsrpSource);
+info.ModelEffectiveSINR_dB = double(modelSinr_dB);
+info.MeasuredReferenceSINR_dB = double(measuredSINR_dB);
+info.MeasuredReferenceSINRSource = char(string(measuredSINRSource));
+info.MeasuredReferenceSINRStatus = char(string(measuredSINRStatus));
+info.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
 info.Hints = struct( ...
     "AddCSIRSBasedCQI", true, ...
     "AddPMISelection", true, ...
@@ -421,6 +444,124 @@ if isempty(vals)
 end
 powerLin = mean(vals, "omitnan");
 source = "received_reference_signal_power";
+end
+
+function [sinr_dB, source, status, pilotNMSE_dB] = localMeasureReferenceSINR(Hest, nVar, rxGrid, refInd, refSym)
+sinr_dB = NaN;
+source = "measurement_unavailable";
+status = "unavailable";
+pilotNMSE_dB = NaN;
+if isempty(Hest) || isempty(rxGrid) || isempty(refInd) || isempty(refSym)
+    return;
+end
+try
+    [rxRef, hRef] = nrExtractResources(refInd, rxGrid, Hest);
+catch
+    status = "reference_extraction_failed";
+    return;
+end
+
+[rxPilot, pilotRecon, pilotObsH, pilotEstH] = localPilotChannelObservation(rxRef, hRef, refSym);
+if isempty(rxPilot) || isempty(pilotRecon) || isempty(pilotObsH) || isempty(pilotEstH)
+    status = "reference_observation_unavailable";
+    return;
+end
+
+[signalPowLin, residualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar);
+if isfinite(signalPowLin) && signalPowLin > 0 && isfinite(residualPowLin) && residualPowLin > 0
+    sinr_dB = 10 * log10(signalPowLin / residualPowLin);
+    source = "receiver_hest_reference_signal_measurement";
+    status = "pilot_residual_signal_to_residual_power";
+end
+
+nmseLin = localNormalizedPilotMSE(pilotEstH, pilotObsH);
+if isfinite(nmseLin) && nmseLin > 0
+    pilotNMSE_dB = 10 * log10(max(nmseLin, eps));
+    if ~isfinite(sinr_dB)
+        sinr_dB = 10 * log10(1 / max(nmseLin, eps));
+        source = "receiver_hest_reference_signal_measurement";
+        status = "pilot_channel_nmse_proxy";
+    end
+end
+
+if ~isfinite(sinr_dB)
+    status = "reference_signal_measurement_unavailable";
+end
+end
+
+function [rxPilot, pilotRecon, pilotObsH, pilotEstH] = localPilotChannelObservation(rxRef, hRef, refSym)
+rxPilot = [];
+pilotRecon = [];
+pilotObsH = [];
+pilotEstH = [];
+refSym = double(refSym(:));
+L = min([size(rxRef, 1), size(hRef, 1), numel(refSym)]);
+if ~(isfinite(L) && L >= 1)
+    return;
+end
+rxRef = double(rxRef(1:L, :, :, :));
+hRef = double(hRef(1:L, :, :, :));
+refSym = reshape(refSym(1:L), [L, 1, 1, 1]);
+valid = abs(refSym) > sqrt(eps);
+if ~any(valid(:))
+    return;
+end
+rxPilot = double(rxRef(valid));
+pilotEstH = double(hRef(valid));
+pilotRecon = pilotEstH .* double(refSym(valid));
+pilotObsH = rxPilot ./ double(refSym(valid));
+end
+
+function [signalPowLin, residualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar)
+signalPowLin = NaN;
+residualPowLin = NaN;
+rxPilot = double(rxPilot(:));
+pilotRecon = double(pilotRecon(:));
+N = min(numel(rxPilot), numel(pilotRecon));
+if N == 0
+    return;
+end
+rxPilot = rxPilot(1:N);
+pilotRecon = pilotRecon(1:N);
+mask = isfinite(real(rxPilot)) & isfinite(imag(rxPilot)) & ...
+    isfinite(real(pilotRecon)) & isfinite(imag(pilotRecon));
+if ~any(mask)
+    return;
+end
+rxPilot = rxPilot(mask);
+pilotRecon = pilotRecon(mask);
+signalPowLin = mean(abs(pilotRecon).^2, "omitnan");
+residualPowLin = mean(abs(rxPilot - pilotRecon).^2, "omitnan");
+nVar = double(nVar);
+if ~(isfinite(residualPowLin) && residualPowLin > 0) && isfinite(nVar) && nVar > 0
+    residualPowLin = nVar;
+end
+end
+
+function nmseLin = localNormalizedPilotMSE(hEst, hObs)
+nmseLin = NaN;
+hEst = double(hEst(:));
+hObs = double(hObs(:));
+N = min(numel(hEst), numel(hObs));
+if N == 0
+    return;
+end
+hEst = hEst(1:N);
+hObs = hObs(1:N);
+mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(real(hObs)) & isfinite(imag(hObs));
+if ~any(mask)
+    return;
+end
+hEst = hEst(mask);
+hObs = hObs(mask);
+alpha = (hObs' * hEst) / max(hObs' * hObs, eps);
+ref = alpha * hObs;
+den = mean(abs(ref).^2, "omitnan");
+if ~(isfinite(den) && den > 0)
+    return;
+end
+err = hEst - ref;
+nmseLin = mean(abs(err).^2, "omitnan") / max(den, eps);
 end
 
 function value = localReportedScalar(value, enabled)

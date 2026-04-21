@@ -1,0 +1,80 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame
+  description: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 1 frame launched from the browser-owned MATLAB path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame
+  scenario_name: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 1 frame launched from the browser-owned MATLAB path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame
+  comparison_group_name: rel20_anchor_4ghz_100mhz_200ue_1frame
+  notes: >
+    Canonical browser-default waveform_bundle scenario for a bounded truthful single-frame run.
+    The launch contract, runtime accounting, and post-run artifact flow remain explicitly truthful:
+    waveform-backed where the MATLAB runtime really produces waveform artifacts, abstraction-labeled
+    where the simulator still aggregates, and unavailable with exact reasons when the repo does not
+    support a requested output family.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 200ue
+    - 1frame
+    - 20slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame
+  description: Strict waveform-honest NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 200 UEs and 1 frame.
+  runner_profile: waveform_bundle
+  notes: >
+    Browser-owned canonical waveform_bundle scenario. This path dispatches directly to the coupled
+    waveform truth loop and relies on the runtime's canonical slot accounting plus configured TDD duplex
+    pattern handling. Unsupported browser labels must remain explicit and truthful.
+
+run_control:
+  run_profile: exhaustive
+  total_frames: 1
+  warmup_frames: ~
+  measurement_frames: ~
+  total_slots: 20
+  warmup_slots: 10
+  measurement_slots: 1
+  checkpoint_every_frames: 1
+  snapshot_every_frames: 1
+  log_every_frames: 1
+  checkpoint_every_slots: 1
+  snapshot_every_slots: 1
+  log_every_slots: 1
+  batch_size_links: 16
+  num_workers: 8
+  warmup_time_ms: 5
+  measurement_time_ms: 0.5
+  total_time_ms: 10
+  max_runtime_guard: 3600
+
+simulation:
+  n_frames: 1
+  n_slots: 20
+  n_subframes: 10
+  min_duration_s: 0.01
+
+system:
+  scheduler:
+    maxActiveUEsPerSlot: 16
+    maxActiveUEsPerCellPerSlot: 16
+    maxActiveUEsPerCellPerSlotDL: 16
+    maxActiveUEsPerCellPerSlotUL: 12
+    maxPRBAllocationPerUE: 273
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame

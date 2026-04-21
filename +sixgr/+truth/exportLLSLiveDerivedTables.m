@@ -27,6 +27,7 @@ artifacts.RankEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_rank_est
 artifacts.BeamSelectionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv");
 artifacts.CSIFeedbackStatsPath = fullfile(layout.ReportCSVDir, "live_csi_feedback_stats.csv");
 artifacts.CSIRSStatsPath = fullfile(layout.ReportCSVDir, "live_csirs_stats.csv");
+artifacts.LinkAdaptationInputPath = fullfile(layout.ReportCSVDir, "live_link_adaptation_input_table.csv");
 artifacts.UserPerformancePath = fullfile(layout.ReportCSVDir, "live_user_performance_snapshot.csv");
 artifacts.CoverageLayerPath = fullfile(layout.ReportCSVDir, "live_coverage_layer.csv");
 artifacts.ErrorRateSummaryPath = fullfile(layout.ReportCSVDir, "live_error_rate_summary.csv");
@@ -43,6 +44,8 @@ rankT = localBuildRankStatsTable(dlT, ulT);
 beamT = localBuildBeamStatsTable(dlT, ulT);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(dlT, srsT, trsT);
+csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
+linkAdaptationT = localBuildLinkAdaptationInputTable(dlT, ulT);
 userPerfT = sixgr.util.structGet(slotTrace, "UserPerformanceTable", table());
 if ~(istable(userPerfT) && ~isempty(userPerfT))
     userPerfT = localBuildUserPerformanceTable(multiUserDL, multiUserUL, dlT, ulT);
@@ -75,6 +78,7 @@ sixgr.util.csvWriteTable(artifacts.RankEstimationStatsPath, rankT);
 sixgr.util.csvWriteTable(artifacts.BeamSelectionStatsPath, beamT);
 sixgr.util.csvWriteTable(artifacts.CSIFeedbackStatsPath, csiT);
 sixgr.util.csvWriteTable(artifacts.CSIRSStatsPath, csirsT);
+sixgr.util.csvWriteTable(artifacts.LinkAdaptationInputPath, linkAdaptationT);
 sixgr.util.csvWriteTable(artifacts.UserPerformancePath, userPerfT);
 sixgr.util.csvWriteTable(artifacts.CoverageLayerPath, coverageT);
 sixgr.util.csvWriteTable(artifacts.ErrorRateSummaryPath, errorRateT);
@@ -91,6 +95,7 @@ artifacts.RankEstimationStats = rankT;
 artifacts.BeamSelectionStats = beamT;
 artifacts.CSIFeedbackStats = csiT;
 artifacts.CSIRSStats = csirsT;
+artifacts.LinkAdaptationInput = linkAdaptationT;
 artifacts.UserPerformance = userPerfT;
 artifacts.CoverageLayer = coverageT;
 artifacts.ErrorRateSummary = errorRateT;
@@ -145,6 +150,20 @@ parts = { ...
 T = localVertcat(parts);
 if isempty(T)
     T = localEmptySummaryTable();
+end
+end
+
+function T = localBuildLinkAdaptationInputTable(dlT, ulT)
+parts = {};
+if istable(dlT) && ~isempty(dlT)
+    parts{end+1} = localDirectionLinkAdaptationRows(dlT, "DL", "air_interface/csv/dl_pdsch_trials.csv"); %#ok<AGROW>
+end
+if istable(ulT) && ~isempty(ulT)
+    parts{end+1} = localDirectionLinkAdaptationRows(ulT, "UL", "air_interface/csv/ul_pusch_trials.csv"); %#ok<AGROW>
+end
+T = localVertcat(parts);
+if isempty(T)
+    T = table();
 end
 end
 
@@ -388,8 +407,11 @@ for i = 1:numel(names)
 end
 end
 
-function value = localLastValue(T, name)
-value = NaN;
+function value = localLastValue(T, name, defaultValue)
+if nargin < 3
+    defaultValue = NaN;
+end
+value = defaultValue;
 if ~(istable(T) && ~isempty(T) && ismember(string(name), string(T.Properties.VariableNames)))
     return;
 end
@@ -861,6 +883,65 @@ else
 end
 end
 
+function T = localDirectionLinkAdaptationRows(sourceT, direction, traceSource)
+sourceT = localEnsureLinkAdaptationSourceVars(sourceT);
+if ismember("IsWarmupFrame", string(sourceT.Properties.VariableNames))
+    warmMask = logical(sourceT.IsWarmupFrame);
+    if any(~warmMask)
+        sourceT = sourceT(~warmMask, :);
+    end
+end
+vars = {'Direction','TraceSource','Slot','Frame','UEIndex','RNTI','ServingCell', ...
+    'ConfiguredSNR_dB','AppliedAWGNSNR_dB','MeasuredTrialSINR_dB','MeasuredWidebandSINR_dB', ...
+    'EstimatedWidebandSINR_dB','LargeScaleSINR_dB','LargeScaleWidebandSINR_dB', ...
+    'ReceiverHestSINR_dB','DecoderTruthProxySINR_dB','WidebandCQI','CQIDerivedMCS', ...
+    'CQIDerivedModulation','CQIDerivedTargetCodeRate','MCSIndex','Modulation','TargetCodeRate', ...
+    'PMI','CRI','RankIndicator','ValueRole','ValueSource','ValueStatus','Notes'};
+rows = cell(height(sourceT), numel(vars));
+for i = 1:height(sourceT)
+    row = sourceT(i, :);
+    rows{i,1} = string(direction);
+    rows{i,2} = string(traceSource);
+    rows{i,3} = double(localLastValue(row, "Slot"));
+    rows{i,4} = double(localLastValue(row, "Frame"));
+    rows{i,5} = double(localLastValue(row, "UEIndex"));
+    rows{i,6} = double(localLastValue(row, "RNTI"));
+    rows{i,7} = double(localLastValue(row, "BaseStationID", localLastValue(row, "ServingCell")));
+    rows{i,8} = double(localLastValue(row, "ConfiguredSNR_dB"));
+    rows{i,9} = double(localLastValue(row, "AppliedAWGNSNR_dB"));
+    rows{i,10} = double(localLastValue(row, "MeasuredTrialSINR_dB"));
+    rows{i,11} = double(localLastValue(row, "MeasuredWidebandSINR_dB", localLastValue(row, "MeasuredTrialSINR_dB")));
+    rows{i,12} = double(localLastValue(row, "EstimatedWidebandSINR_dB", localLastValue(row, "ReceiverHestSINR_dB")));
+    rows{i,13} = double(localLastValue(row, "LargeScaleSINR_dB"));
+    rows{i,14} = double(localLastValue(row, "LargeScaleWidebandSINR_dB", localLastValue(row, "LargeScaleSINR_dB")));
+    rows{i,15} = double(localLastValue(row, "ReceiverHestSINR_dB", localLastValue(row, "MeasuredTrialSINR_dB")));
+    rows{i,16} = double(localLastValue(row, "DecoderTruthProxySINR_dB"));
+    rows{i,17} = double(localLastValue(row, "WidebandCQI"));
+    rows{i,18} = double(localLastValue(row, "CQIDerivedMCS"));
+    rows{i,19} = string(localLastValue(row, "CQIDerivedModulation"));
+    rows{i,20} = double(localLastValue(row, "CQIDerivedTargetCodeRate"));
+    rows{i,21} = double(localLastValue(row, "MCSIndex", localLastValue(row, "CQIDerivedMCS")));
+    rows{i,22} = string(localLastValue(row, "Modulation", localLastValue(row, "CQIDerivedModulation")));
+    rows{i,23} = double(localLastValue(row, "TargetCodeRate", localLastValue(row, "CQIDerivedTargetCodeRate")));
+    rows{i,24} = double(localLastValue(row, "PMI"));
+    rows{i,25} = double(localLastValue(row, "CRI"));
+    rows{i,26} = double(localLastValue(row, "RankIndicator", localLastValue(row, "RI")));
+    rows{i,27} = string(localLastValue(row, "SINRValueRole", "measured_trial_vs_large_scale_separated"));
+    rows{i,28} = string(localLastValue(row, "SINRSource", "actual_runtime_trial_row"));
+    rows{i,29} = string(localLastValue(row, "Status", ""));
+    rows{i,30} = string(localLastValue(row, "Notes", ""));
+end
+T = cell2table(rows, 'VariableNames', vars);
+numericVars = ["Slot","Frame","UEIndex","RNTI","ServingCell","ConfiguredSNR_dB","AppliedAWGNSNR_dB", ...
+    "MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","EstimatedWidebandSINR_dB","LargeScaleSINR_dB", ...
+    "LargeScaleWidebandSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","WidebandCQI", ...
+    "CQIDerivedMCS","CQIDerivedTargetCodeRate","MCSIndex","TargetCodeRate","PMI","CRI","RankIndicator"];
+for i = 1:numel(numericVars)
+    name = char(numericVars(i));
+    T.(name) = double(T.(name));
+end
+end
+
 function T = localEnsureHARQSourceVars(T)
 if ismember("ConfiguredSNR_dB", string(T.Properties.VariableNames)) && ~ismember("SNR_dB", string(T.Properties.VariableNames))
     T.SNR_dB = double(T.ConfiguredSNR_dB);
@@ -901,6 +982,87 @@ for i = 1:numel(names)
     else
         T.(name) = repmat(double(value), height(T), 1);
     end
+end
+end
+
+function T = localEnsureLinkAdaptationSourceVars(T)
+if ~ismember("MeasuredWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("MeasuredTrialSINR_dB", string(T.Properties.VariableNames))
+    T.MeasuredWidebandSINR_dB = double(T.MeasuredTrialSINR_dB);
+end
+if ~ismember("EstimatedWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("ReceiverHestSINR_dB", string(T.Properties.VariableNames))
+    T.EstimatedWidebandSINR_dB = double(T.ReceiverHestSINR_dB);
+end
+if ~ismember("LargeScaleWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("LargeScaleSINR_dB", string(T.Properties.VariableNames))
+    T.LargeScaleWidebandSINR_dB = double(T.LargeScaleSINR_dB);
+end
+if ~ismember("ConfiguredSNR_dB", string(T.Properties.VariableNames)) && ismember("SNR_dB", string(T.Properties.VariableNames))
+    T.ConfiguredSNR_dB = double(T.SNR_dB);
+end
+if ~ismember("ServingCell", string(T.Properties.VariableNames)) && ismember("BaseStationID", string(T.Properties.VariableNames))
+    T.ServingCell = double(T.BaseStationID);
+end
+names = string(T.Properties.VariableNames);
+if ismember("Direction", names) && ismember("DecoderTruthProxySINR_dB", names)
+    ulMask = upper(string(T.Direction)) == "UL";
+    decoderSINR = double(T.DecoderTruthProxySINR_dB);
+    if ismember("MeasuredTrialSINR_dB", names)
+        measuredTrial = double(T.MeasuredTrialSINR_dB);
+        receiverHest = localOptionalNumericColumn(T, "ReceiverHestSINR_dB", NaN);
+        replaceMask = ulMask & isfinite(decoderSINR) & ...
+            ~isfinite(measuredTrial) & ~isfinite(receiverHest);
+        T.MeasuredTrialSINR_dB(replaceMask) = decoderSINR(replaceMask);
+        if ismember("MeasuredTrialSINRSource", names)
+            T.MeasuredTrialSINRSource(replaceMask) = "post_equalization_evm_proxy_fallback";
+        end
+    end
+    if ismember("MeasuredWidebandSINR_dB", names)
+        measuredWideband = double(T.MeasuredWidebandSINR_dB);
+        receiverHest = localOptionalNumericColumn(T, "ReceiverHestSINR_dB", NaN);
+        replaceMask = ulMask & isfinite(decoderSINR) & ...
+            ~isfinite(measuredWideband) & ~isfinite(receiverHest);
+        T.MeasuredWidebandSINR_dB(replaceMask) = decoderSINR(replaceMask);
+        if ismember("WidebandSINRSource", names)
+            T.WidebandSINRSource(replaceMask) = "post_equalization_evm_proxy_fallback";
+        end
+    end
+end
+if ismember("Direction", names)
+    ulMask = upper(string(T.Direction)) == "UL";
+    precodingMode = lower(string(localOptionalTextColumn(T, "PrecodingMode", "")));
+    appliedSource = lower(string(localOptionalTextColumn(T, "AppliedPrecoderSource", localOptionalTextColumn(T, "PrecoderSource", ""))));
+    nonCodebookMask = ulMask & ( ...
+        precodingMode == "direct_mapping_no_explicit_beam_weights" | ...
+        precodingMode == "transform_precoding" | ...
+        appliedSource == "ul_direct_mapping_no_explicit_beam_weights" | ...
+        appliedSource == "ul_pusch_transform_precoding");
+    for field = ["PMI", "CRI", "ConfiguredCRI"]
+        if ismember(field, names)
+            T.(char(field))(nonCodebookMask) = NaN;
+        end
+    end
+    for field = ["PMIType", "PMICodebookMode"]
+        if ismember(field, names)
+            vals = string(T.(char(field)));
+            vals(nonCodebookMask) = "";
+            T.(char(field)) = vals;
+        end
+    end
+end
+end
+
+function col = localOptionalNumericColumn(T, name, defaultValue)
+if ismember(string(name), string(T.Properties.VariableNames))
+    col = double(T.(char(name)));
+else
+    col = repmat(double(defaultValue), height(T), 1);
+end
+end
+
+function col = localOptionalTextColumn(T, name, defaultValue)
+if ismember(string(name), string(T.Properties.VariableNames))
+    col = string(T.(char(name)));
+else
+    col = repmat(string(defaultValue), height(T), 1);
 end
 end
 

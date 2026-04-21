@@ -99,12 +99,16 @@ ssb.Enable = true;
 ssb.BlockPattern = ssbBlockPattern;
 ssb.Period = 20; % ms
 ssb.Power = 0;
+ssbLmax = double(sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 8));
+if ~ismember(round(ssbLmax), [4 8 64])
+    ssbLmax = 8;
+end
 
 % Transmit only one SSB by default (user can override later)
 % NOTE: nrWavegenSSBurstConfig.TransmittedBlocks expects a NUMERIC binary row
 % vector (logical is rejected in some releases). Use uint8 0/1.
-ssb.TransmittedBlocks = zeros(1, 8, 'uint8');
-idx = max(0, min(7, round(opt.SSBIndex)));
+ssb.TransmittedBlocks = zeros(1, round(ssbLmax), 'uint8');
+idx = max(0, min(round(ssbLmax) - 1, round(opt.SSBIndex)));
 ssb.TransmittedBlocks(idx+1) = uint8(1);
 
 cfgDL.SSBurst = ssb;
@@ -150,6 +154,8 @@ txCfg.CarrierFrequency_Hz = double(cfgDL.CarrierFrequency);
 txCfg.SSB = struct;
 txCfg.SSB.BlockPattern = char(ssb.BlockPattern);
 txCfg.SSB.SSBIndex = idx;
+txCfg.SSB.Lmax = double(ssbLmax);
+txCfg.SSB.NumBeams = double(ssbLmax);
 txCfg.SSB.Period_ms = double(ssb.Period);
 
 % Sample rate: nrWaveformGenerator returns it in waveInfo

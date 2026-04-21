@@ -215,6 +215,9 @@ cfg = sixgr.util.structSet(cfg, "phy.waveform.experimentalDLDftsOfdmEnabled", ..
 cfg.phy.ssb.enable = logical(s.reference_signals.ssb_enabled);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", ...
     localDefaultSSBBlockPattern(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz)));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", ...
+    localDefaultSSBLmax(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz)));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", 8)));
 cfg.phy.pbch.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.mib.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.sib1.enable = logical(s.reference_signals.pbch_enabled);
@@ -351,6 +354,8 @@ cfg = sixgr.util.structSet(cfg, "phy.harq.cbgEnabled", logical(s.harq.cbg_enable
 cfg = sixgr.util.structSet(cfg, "phy.harq.validationMode", char(string(localRequireNested(s, "harq.validation_mode", "harq.validation_mode"))));
 
 cfg.phy.ldpc.maxIterations = double(s.coding.max_decoder_iterations);
+cfg = sixgr.util.structSet(cfg, "phy.ldpc.useMexBatchDecode", ...
+    ~localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile));
 cfg.phy.rx.cfoCompensation = abs(double(s.impairments.cfo_hz)) > 0;
 cfg.phy.rx.useFastChannelEstMex = false;
 cfg = sixgr.util.structSet(cfg, "phy.rx.useIdealTimingSync", logical(localRequireNested(s, ...
@@ -360,7 +365,31 @@ cfg.phy.nRxAnt = double(s.mimo.n_rx_ant);
 cfg = localApplyRuntimeAntennaConfig(cfg, s);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(s.impairments.cfo_hz));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", logical(s.impairments.phase_noise_enabled));
-cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceEnabled", logical(s.impairments.iq_imbalance_enabled));
+iqEnabled = logical(s.impairments.iq_imbalance_enabled) || logical(localGetNested(s, "impairments.iq_imbalance.enabled", false));
+iqModel = localResolveIQModelToken(s);
+iqGainImb_dB = localResolveFirstFiniteNumeric(s, [ ...
+    "power_and_rf_frontend.iq_imbalance.gain_imbalance_db"
+    "power_and_rf_frontend.iq_imbalance.amp_imbalance_db"
+    "power_and_rf_frontend.iq_imbalance.amp_imb_db"
+    "power_and_rf_frontend.iq_imbalance.amplitude_imbalance_db"
+    "impairments.iq_imbalance.gain_imbalance_db"
+    "impairments.iq_imbalance.amp_imbalance_db"
+    "impairments.iq_imbalance.amp_imb_db"
+    "impairments.iq_imbalance.amplitude_imbalance_db"], NaN);
+iqPhaseImb_deg = localResolveFirstFiniteNumeric(s, [ ...
+    "power_and_rf_frontend.iq_imbalance.phase_imbalance_deg"
+    "power_and_rf_frontend.iq_imbalance.phase_imb_deg"
+    "impairments.iq_imbalance.phase_imbalance_deg"
+    "impairments.iq_imbalance.phase_imb_deg"], NaN);
+cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceEnabled", logical(iqEnabled));
+cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.enable", logical(iqEnabled));
+cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.model", char(iqModel));
+if isfinite(iqGainImb_dB)
+    cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.ampImb_dB", double(iqGainImb_dB));
+end
+if isfinite(iqPhaseImb_deg)
+    cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.phaseImb_deg", double(iqPhaseImb_deg));
+end
 cfg = sixgr.util.structSet(cfg, "phy.impairments.paNonlinearityEnabled", logical(s.impairments.pa_nonlinearity_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.adcQuantizationBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.dacQuantizationBits", double(s.impairments.dac_quantization_bits));
@@ -457,8 +486,21 @@ cfg = sixgr.util.structSet(cfg, "lls6g.logging", s.logging);
 cfg = sixgr.util.structSet(cfg, "lls6g.scenario", s.scenario);
 cfg = sixgr.util.structSet(cfg, "lls6g.outputRunFolder", char(string(runFolder)));
 
+if localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
+    cfg = sixgr.util.structSet(cfg, "run.useMex", false);
+end
+
 cfg = sixgr.config.normalizeConfig(cfg);
 sixgr.config.validateConfig(cfg);
+end
+
+function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
+% Exact MEX kernels in this repo accelerate AWGN, LDPC batch decode, struct
+% access, and FFT/PAPR without changing truth-vs-proxy labeling. The strict
+% coupled waveform restriction is enforced separately by validateConfig when
+% a fading-channel run tries to combine run.useMex with the scalar fast
+% channel-estimation MEX path.
+tf = false;
 end
 
 function timing = localResolveRunTiming(s)
@@ -470,24 +512,50 @@ end
 slotDuration_ms = 1 / 2^double(mu);
 slotsPerFrame = 10 * 2^double(mu);
 
-configuredTotalSlots = double(localGetNested(s, "run_control.total_slots", NaN));
-if isfinite(configuredTotalSlots) && configuredTotalSlots > 0
-    totalSlots = max(1, round(configuredTotalSlots));
+configuredTotalFrames = localNumericScalarOrNaN(localGetNested(s, "run_control.total_frames", NaN));
+configuredTotalSlots = localNumericScalarOrNaN(localGetNested(s, "run_control.total_slots", NaN));
+simulationFrames = localNumericScalarOrNaN(localGetNested(s, "simulation.n_frames", NaN));
+simulationSlots = localNumericScalarOrNaN(localGetNested(s, "simulation.n_slots", NaN));
+
+if isfinite(configuredTotalFrames) && configuredTotalFrames > 0
+    totalFrames = max(1, round(configuredTotalFrames));
+elseif isfinite(simulationFrames) && simulationFrames > 0
+    totalFrames = max(1, round(simulationFrames));
 else
-    totalSlots = max(1, round(double(s.simulation.n_slots)));
+    totalFrames = NaN;
 end
 
-configuredWarmupSlots = double(localGetNested(s, "run_control.warmup_slots", NaN));
+if isfinite(configuredTotalSlots) && configuredTotalSlots > 0
+    totalSlots = max(1, round(configuredTotalSlots));
+elseif isfinite(totalFrames) && totalFrames > 0
+    totalSlots = max(1, round(totalFrames * slotsPerFrame));
+elseif isfinite(simulationSlots) && simulationSlots > 0
+    totalSlots = max(1, round(simulationSlots));
+else
+    totalSlots = max(1, round(slotsPerFrame));
+end
+
+if ~(isfinite(totalFrames) && totalFrames > 0)
+    totalFrames = max(1, ceil(double(totalSlots) / double(slotsPerFrame)));
+end
+
+configuredWarmupFrames = localNumericScalarOrNaN(localGetNested(s, "run_control.warmup_frames", NaN));
+configuredWarmupSlots = localNumericScalarOrNaN(localGetNested(s, "run_control.warmup_slots", NaN));
 if isfinite(configuredWarmupSlots) && configuredWarmupSlots >= 0
     warmupSlots = max(0, round(configuredWarmupSlots));
+elseif isfinite(configuredWarmupFrames) && configuredWarmupFrames >= 0
+    warmupSlots = max(0, round(configuredWarmupFrames * slotsPerFrame));
 else
     warmupSlots = max(0, round(double(localRequireNested(s, ...
         "run_control.warmup_time_ms", "run_control.warmup_time_ms")) / slotDuration_ms));
 end
 
-configuredMeasurementSlots = double(localGetNested(s, "run_control.measurement_slots", NaN));
+configuredMeasurementFrames = localNumericScalarOrNaN(localGetNested(s, "run_control.measurement_frames", NaN));
+configuredMeasurementSlots = localNumericScalarOrNaN(localGetNested(s, "run_control.measurement_slots", NaN));
 if isfinite(configuredMeasurementSlots) && configuredMeasurementSlots >= 0
     measurementSlots = max(0, round(configuredMeasurementSlots));
+elseif isfinite(configuredMeasurementFrames) && configuredMeasurementFrames >= 0
+    measurementSlots = max(0, round(configuredMeasurementFrames * slotsPerFrame));
 else
     measurementSlots = max(0, totalSlots - warmupSlots);
 end
@@ -503,17 +571,28 @@ timing.MeasurementSlots = measurementSlots;
 timing.TotalTime_ms = double(totalSlots) * slotDuration_ms;
 timing.WarmupTime_ms = double(warmupSlots) * slotDuration_ms;
 timing.MeasurementTime_ms = double(measurementSlots) * slotDuration_ms;
-timing.NumFrames = max(1, ceil(double(totalSlots) / double(slotsPerFrame)));
+timing.NumFrames = max(1, round(double(totalFrames)));
+checkpointEveryFrames = double(localGetNested(s, "run_control.checkpoint_every_frames", NaN));
+snapshotEveryFrames = double(localGetNested(s, "run_control.snapshot_every_frames", NaN));
+logEveryFrames = double(localGetNested(s, "run_control.log_every_frames", NaN));
 timing.CheckpointEverySlots = max(1, round(double(localGetNested(s, ...
-    "run_control.checkpoint_every_slots", max(1, totalSlots)))));
+    "run_control.checkpoint_every_slots", localFramePeriodToSlots(checkpointEveryFrames, slotsPerFrame, totalSlots)))));
 timing.SnapshotEverySlots = max(1, round(double(localGetNested(s, ...
-    "run_control.snapshot_every_slots", max(1, totalSlots)))));
+    "run_control.snapshot_every_slots", localFramePeriodToSlots(snapshotEveryFrames, slotsPerFrame, totalSlots)))));
 timing.LogEverySlots = max(1, round(double(localGetNested(s, ...
-    "run_control.log_every_slots", max(1, totalSlots)))));
+    "run_control.log_every_slots", localFramePeriodToSlots(logEveryFrames, slotsPerFrame, totalSlots)))));
 timing.SaveIntermediateArtifacts = logical(localGetNested(s, ...
     "run_control.save_intermediate_artifacts", localGetNested(s, "run_control.save_intermediate", false)));
 timing.DeterministicReplay = logical(localGetNested(s, ...
     "run_control.deterministic_replay", localGetNested(s, "run_control.deterministic_mode", false)));
+end
+
+function slots = localFramePeriodToSlots(frameCount, slotsPerFrame, totalSlots)
+if isfinite(frameCount) && frameCount > 0
+    slots = max(1, round(double(frameCount) * double(slotsPerFrame)));
+else
+    slots = max(1, round(double(totalSlots)));
+end
 end
 
 function v = localFirstValue(x)
@@ -1203,6 +1282,64 @@ function value = localGetNested(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
 end
 
+function value = localNumericScalarOrNaN(raw)
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw)) || ~isscalar(raw)
+    value = NaN;
+    return;
+end
+value = double(raw);
+if ~isfinite(value)
+    value = NaN;
+end
+end
+
+function value = localResolveFirstFiniteNumeric(s, candidatePaths, defaultValue)
+candidatePaths = string(candidatePaths(:));
+for i = 1:numel(candidatePaths)
+    raw = sixgr.util.structGet(s, candidatePaths(i), []);
+    if isempty(raw)
+        continue;
+    end
+    value = double(raw);
+    if isscalar(value) && isfinite(value)
+        return;
+    end
+end
+value = defaultValue;
+end
+
+function token = localResolveIQModelToken(s)
+token = localNormalizeStringToken(sixgr.util.structGet(s, "power_and_rf_frontend.iq_imbalance", []));
+if strlength(strtrim(token)) == 0 || any(lower(strtrim(token)) == ["none","disabled","off","false"])
+    token = localNormalizeStringToken(sixgr.util.structGet(s, "impairments.iq_imbalance", token));
+end
+if strlength(strtrim(token)) == 0
+    token = "none";
+end
+end
+
+function token = localNormalizeStringToken(value)
+if isstruct(value)
+    if isfield(value, "model")
+        value = value.model;
+    else
+        token = "";
+        return;
+    end
+end
+if isstring(value) || ischar(value)
+    token = string(value);
+elseif iscell(value) && ~isempty(value)
+    token = string(value{1});
+else
+    token = "";
+end
+if ~isscalar(token)
+    token = token(1);
+end
+token = strtrim(token);
+end
+
 function value = localTernary(condition, trueValue, falseValue)
 if condition
     value = trueValue;
@@ -1269,5 +1406,25 @@ elseif scsKHz <= 120
     pattern = "Case D";
 else
     pattern = "Case E";
+end
+end
+
+function lmax = localDefaultSSBLmax(fcHz, scsKHz)
+fcHz = double(fcHz);
+scsKHz = double(scsKHz);
+
+if ~(isfinite(fcHz) && fcHz > 0)
+    fcHz = 3.5e9;
+end
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    scsKHz = 30;
+end
+
+if scsKHz >= 120 || fcHz > 6e9
+    lmax = 64;
+elseif fcHz < 3e9
+    lmax = 4;
+else
+    lmax = 8;
 end
 end

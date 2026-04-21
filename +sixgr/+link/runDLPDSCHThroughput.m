@@ -161,6 +161,19 @@ trialAppliedPathloss = NaN(numFrames,1);
 trialAppliedShadow = NaN(numFrames,1);
 trialAppliedO2I = NaN(numFrames,1);
 trialAppliedLargeScaleGainSource = strings(numFrames,1);
+trialIQImbalanceConfigured = false(numFrames,1);
+trialIQImbalanceApplied = false(numFrames,1);
+trialIQImbalanceModel = strings(numFrames,1);
+trialConfiguredIQGainImbalance = NaN(numFrames,1);
+trialConfiguredIQPhaseImbalance = NaN(numFrames,1);
+trialIQImbalanceMirrorPowerRatio = NaN(numFrames,1);
+trialIQImbalanceImageRejection = NaN(numFrames,1);
+trialIQImbalanceIQPowerRatio = NaN(numFrames,1);
+trialIQImbalanceIQCorrelation = NaN(numFrames,1);
+trialIQImbalanceEstimatedAlphaAbs = NaN(numFrames,1);
+trialIQImbalanceEstimatedBetaAbs = NaN(numFrames,1);
+trialIQImbalanceMeasurementSource = strings(numFrames,1);
+trialIQImbalanceMeasurementStatus = strings(numFrames,1);
 trialInjectedCFO = NaN(numFrames,1);
 trialEstimatedCFOPre = NaN(numFrames,1);
 trialResidualCFOPost = NaN(numFrames,1);
@@ -470,6 +483,19 @@ for n = 1:numFrames
         trialAppliedShadow(n) = double(sixgr.util.structGet(replay, "AppliedShadowFading_dB", NaN));
         trialAppliedO2I(n) = double(sixgr.util.structGet(replay, "AppliedO2I_dB", NaN));
         trialAppliedLargeScaleGainSource(n) = string(sixgr.util.structGet(replay, "AppliedLargeScaleGainSource", ""));
+        trialIQImbalanceConfigured(n) = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
+        trialIQImbalanceApplied(n) = logical(sixgr.util.structGet(replay, "IQImbalanceApplied", false));
+        trialIQImbalanceModel(n) = string(sixgr.util.structGet(replay, "IQImbalanceModel", ""));
+        trialConfiguredIQGainImbalance(n) = double(sixgr.util.structGet(replay, "ConfiguredIQGainImbalance_dB", NaN));
+        trialConfiguredIQPhaseImbalance(n) = double(sixgr.util.structGet(replay, "ConfiguredIQPhaseImbalance_deg", NaN));
+        trialIQImbalanceMirrorPowerRatio(n) = double(sixgr.util.structGet(replay, "IQImbalanceMirrorPowerRatio_dB", NaN));
+        trialIQImbalanceImageRejection(n) = double(sixgr.util.structGet(replay, "IQImbalanceImageRejection_dB", NaN));
+        trialIQImbalanceIQPowerRatio(n) = double(sixgr.util.structGet(replay, "IQImbalanceIQPowerRatio_dB", NaN));
+        trialIQImbalanceIQCorrelation(n) = double(sixgr.util.structGet(replay, "IQImbalanceIQCorrelation", NaN));
+        trialIQImbalanceEstimatedAlphaAbs(n) = double(sixgr.util.structGet(replay, "IQImbalanceEstimatedAlphaAbs", NaN));
+        trialIQImbalanceEstimatedBetaAbs(n) = double(sixgr.util.structGet(replay, "IQImbalanceEstimatedBetaAbs", NaN));
+        trialIQImbalanceMeasurementSource(n) = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementSource", ""));
+        trialIQImbalanceMeasurementStatus(n) = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementStatus", ""));
         trialInjectedCFO(n) = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
         trialEstimatedCFOPre(n) = double(sixgr.util.structGet(replay, "EstimatedCFO_PreCorrection_Hz", NaN));
         trialResidualCFOPost(n) = double(sixgr.util.structGet(replay, "ResidualCFO_PostCorrection_Hz", NaN));
@@ -510,7 +536,11 @@ for n = 1:numFrames
         trialSINR(n) = metrics.SINR_dB;
         trialReceiverHestSINR(n) = metrics.SINR_dB;
         if isfinite(trialSINR(n))
-            trialMeasuredSINRSource(n) = "receiver_hest_csi_feedback_wideband_effective_sinr";
+            sinrSource = string(metrics.SINRSource);
+            if strlength(strtrim(sinrSource)) == 0
+                sinrSource = "receiver_hest_reference_signal_measurement";
+            end
+            trialMeasuredSINRSource(n) = sinrSource;
             trialReceiverHestSINRSource(n) = trialMeasuredSINRSource(n);
             trialSINRValueRole(n) = "estimated";
             trialSINRSource(n) = trialMeasuredSINRSource(n);
@@ -589,6 +619,29 @@ for n = 1:numFrames
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
+        if ~isfinite(trialSINR(n)) && isfinite(trialDecoderTruthProxySINR(n))
+            trialSINR(n) = double(trialDecoderTruthProxySINR(n));
+            trialMeasuredSINRSource(n) = string(localSafeCharToken( ...
+                sixgr.util.structGet(decoderTruthProxyMeta, "Source", "post_equalization_evm_proxy_fallback")));
+            trialSINRValueRole(n) = "derived_proxy";
+            trialSINRSource(n) = trialMeasuredSINRSource(n);
+        end
+        if ~(isfinite(trialCQI(n)) && trialCQI(n) >= 0)
+            cqiInputSINR = trialSINR(n);
+            if ~isfinite(cqiInputSINR)
+                cqiInputSINR = trialLargeScaleSINR(n);
+            end
+            if isfinite(cqiInputSINR)
+                cqiFeedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", cqiInputSINR), cfgFrame, "DL");
+                trialCQI(n) = double(sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN));
+            end
+        end
+        if isfinite(trialCQI(n)) && trialCQI(n) >= 0 && ~isfinite(trialCQIDerivedMCS(n))
+            [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
+            trialCQIDerivedMCS(n) = double(cqiMCS);
+            trialCQIDerivedCodeRate(n) = double(cqiRate);
+            trialCQIDerivedModulation(n) = string(cqiMod);
+        end
         trialPAPR(n) = double(sixgr.util.structGet(modTrack, "PAPR_dB", NaN));
         trialClipEvents(n) = double(sixgr.util.structGet(modTrack, "PeakClippingEvents", NaN));
         trialSymErr(n) = double(sixgr.util.structGet(modTrack, "SymbolErrors", NaN));
@@ -856,6 +909,12 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
             trialEstimatedCFO(idx), trialTrueCFO(idx), trialCFOError(idx), ...
             trialInjectedTiming(idx), trialEstimatedTimingPre(idx), trialResidualTimingPost(idx), ...
             trialTrueTiming(idx), trialTimingError(idx), ...
+            trialIQImbalanceConfigured(idx), trialIQImbalanceApplied(idx), trialIQImbalanceModel(idx), ...
+            trialConfiguredIQGainImbalance(idx), trialConfiguredIQPhaseImbalance(idx), ...
+            trialIQImbalanceMirrorPowerRatio(idx), trialIQImbalanceImageRejection(idx), ...
+            trialIQImbalanceIQPowerRatio(idx), trialIQImbalanceIQCorrelation(idx), ...
+            trialIQImbalanceEstimatedAlphaAbs(idx), trialIQImbalanceEstimatedBetaAbs(idx), ...
+            trialIQImbalanceMeasurementSource(idx), trialIQImbalanceMeasurementStatus(idx), ...
             trialEstDoppler(idx), trialDopplerErr(idx), trialPhaseTrackErr(idx), trialQCL(idx), ...
             trialAgingLoss(idx), trialInterpLoss(idx), trialMismatch(idx), ...
             trialStatus(idx), trialCrash(idx), ...
@@ -883,6 +942,12 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
             'EstimatedCFO_Hz','TrueCFO_Hz','CFOError_Hz', ...
             'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples', ...
             'TrueTimingOffset_samples','TimingError_samples', ...
+            'IQImbalanceConfigured','IQImbalanceApplied','IQImbalanceModel', ...
+            'ConfiguredIQGainImbalance_dB','ConfiguredIQPhaseImbalance_deg', ...
+            'IQImbalanceMirrorPowerRatio_dB','IQImbalanceImageRejection_dB', ...
+            'IQImbalanceIQPowerRatio_dB','IQImbalanceIQCorrelation', ...
+            'IQImbalanceEstimatedAlphaAbs','IQImbalanceEstimatedBetaAbs', ...
+            'IQImbalanceMeasurementSource','IQImbalanceMeasurementStatus', ...
             'EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy', ...
             'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB', ...
             'Status','Crash', ...
@@ -1995,6 +2060,12 @@ varNames = {'Direction','SNR_dB','SFN','UEIndex','RNTI','BaseStationID','Seed','
     'EstimatedCFO_Hz','TrueCFO_Hz','CFOError_Hz', ...
     'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples', ...
     'TrueTimingOffset_samples','TimingError_samples', ...
+    'IQImbalanceConfigured','IQImbalanceApplied','IQImbalanceModel', ...
+    'ConfiguredIQGainImbalance_dB','ConfiguredIQPhaseImbalance_deg', ...
+    'IQImbalanceMirrorPowerRatio_dB','IQImbalanceImageRejection_dB', ...
+    'IQImbalanceIQPowerRatio_dB','IQImbalanceIQCorrelation', ...
+    'IQImbalanceEstimatedAlphaAbs','IQImbalanceEstimatedBetaAbs', ...
+    'IQImbalanceMeasurementSource','IQImbalanceMeasurementStatus', ...
     'EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy', ...
     'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB', ...
     'Status','Crash','LinkAdaptationApplied','LinkAdaptationScheduled','Notes'};
@@ -2017,6 +2088,12 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'double','double','double', ...
     'double','double','double', ...
     'double','double', ...
+    'logical','logical','string', ...
+    'double','double', ...
+    'double','double', ...
+    'double','double', ...
+    'double','double', ...
+    'string','string', ...
     'double','double','double','double','double','double','double', ...
     'double','double','double','double', ...
     'double','double','double','double', ...
@@ -2045,6 +2122,19 @@ T.AppliedPathloss_dB = zeros(0,1);
 T.AppliedShadowFading_dB = zeros(0,1);
 T.AppliedO2I_dB = zeros(0,1);
 T.AppliedLargeScaleGainSource = strings(0,1);
+T.IQImbalanceConfigured = false(0,1);
+T.IQImbalanceApplied = false(0,1);
+T.IQImbalanceModel = strings(0,1);
+T.ConfiguredIQGainImbalance_dB = zeros(0,1);
+T.ConfiguredIQPhaseImbalance_deg = zeros(0,1);
+T.IQImbalanceMirrorPowerRatio_dB = zeros(0,1);
+T.IQImbalanceImageRejection_dB = zeros(0,1);
+T.IQImbalanceIQPowerRatio_dB = zeros(0,1);
+T.IQImbalanceIQCorrelation = zeros(0,1);
+T.IQImbalanceEstimatedAlphaAbs = zeros(0,1);
+T.IQImbalanceEstimatedBetaAbs = zeros(0,1);
+T.IQImbalanceMeasurementSource = strings(0,1);
+T.IQImbalanceMeasurementStatus = strings(0,1);
 T.TimingEstimateUsed = false(0,1);
 T.UseIdealTimingSync = false(0,1);
 T.InterferenceMode = strings(0,1);
@@ -2228,6 +2318,7 @@ metrics = struct( ...
     "NMSE_dB", NaN, ...
     "DetectionMetric", NaN, ...
     "SINR_dB", NaN, ...
+    "SINRSource", "", ...
     "CQI", NaN, ...
     "RI", NaN, ...
     "PMI", NaN, ...
@@ -2261,10 +2352,11 @@ if isempty(Hest)
 end
 
 try
-    csiArgs = localBuildCSIFeedbackArgs(rx);
+    csiArgs = localBuildDLSINRFeedbackArgs(rx);
     csiArgs = [{"Direction", "DL"}, csiArgs];
     csi = sixgr.phy.dl.CSI_Feedback(Hest, nVar, cfg, csiArgs{:});
     metrics.SINR_dB = double(sixgr.util.structGet(csi, "SINR_dB", NaN));
+    metrics.SINRSource = string(sixgr.util.structGet(csi, "SINRSource", ""));
     metrics.CQI = double(sixgr.util.structGet(csi, "CQI", NaN));
     metrics.RI = double(sixgr.util.structGet(csi, "RI", NaN));
     metrics.PMI = double(sixgr.util.structGet(csi, "PMI", NaN));
@@ -2277,6 +2369,17 @@ try
     metrics.CSIPayloadBitLength = double(sixgr.util.structGet(csi, "CSIPayloadBitLength", NaN));
     metrics.CSIPayloadHex = localSafeCharToken(sixgr.util.structGet(csi, "CSIPayloadHex", ""));
     metrics.SelectedBeamIndices = double(sixgr.util.structGet(csi, "SelectedBeamIndices", []));
+    rsrpArgs = localBuildDLCSIRSRPArgs(rx);
+    if ~isempty(rsrpArgs)
+        rsrpArgs = [{"Direction", "DL"}, rsrpArgs];
+        csiRSRP = sixgr.phy.dl.CSI_Feedback(Hest, nVar, cfg, rsrpArgs{:});
+        rsrpVal = double(sixgr.util.structGet(csiRSRP, "RSRP_dB", NaN));
+        rsrpSource = string(sixgr.util.structGet(csiRSRP, "RSRPSource", ""));
+        if isfinite(rsrpVal)
+            metrics.CSI_RSRP_dB = rsrpVal;
+            metrics.CSI_RSRPSource = rsrpSource;
+        end
+    end
 catch
 end
 
@@ -2320,7 +2423,27 @@ for f = 1:numel(beamFields)
 end
 end
 
-function args = localBuildCSIFeedbackArgs(rx)
+function args = localBuildDLSINRFeedbackArgs(rx)
+args = {};
+if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
+    return;
+end
+rxGrid = sixgr.util.structGet(rx, "RxGrid", []);
+refInd = sixgr.util.structGet(rx, "DMRSIndices", []);
+refSym = sixgr.util.structGet(rx, "DMRSSymbols", []);
+if ~isempty(rxGrid) && ~isempty(refInd) && ~isempty(refSym)
+    args = {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym};
+    return;
+end
+refInd = sixgr.util.structGet(rx, "CSIRSIndices", []);
+refSym = sixgr.util.structGet(rx, "CSIRSSymbols", []);
+if isempty(rxGrid) || isempty(refInd) || isempty(refSym)
+    return;
+end
+args = {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym};
+end
+
+function args = localBuildDLCSIRSRPArgs(rx)
 args = {};
 if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
     return;
@@ -2332,12 +2455,6 @@ if ~isempty(rxGrid) && ~isempty(refInd) && ~isempty(refSym)
     args = {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym};
     return;
 end
-refInd = sixgr.util.structGet(rx, "DMRSIndices", []);
-refSym = sixgr.util.structGet(rx, "DMRSSymbols", []);
-if isempty(rxGrid) || isempty(refInd) || isempty(refSym)
-    return;
-end
-args = {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym};
 end
 
 function Hwb = localWidebandChannelMatrix(Hest)
@@ -3138,6 +3255,19 @@ modulation = string(sixgr.util.structGet(grant, "Modulation", ""));
 prbSet = sixgr.util.structGet(grant, "PRBSet", []);
 symbolAllocation = sixgr.util.structGet(grant, "SymbolAllocation", []);
 
+if ~(isfinite(numLayers) && numLayers >= 1)
+    numLayers = 1;
+end
+
+txAnt = localReplayEffectiveTxAntennas(cfgOut, direction, numLayers);
+rxAnt = localReplayEffectiveRxAntennas(cfgOut, direction, numLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.nTxAnt", txAnt);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.nRxAnt", rxAnt);
+cfgOut = sixgr.util.structSet(cfgOut, "channel.nTxAnt", txAnt);
+cfgOut = sixgr.util.structSet(cfgOut, "channel.nRxAnt", rxAnt);
+
+[cfgOut, prbSet] = localAlignReplayCarrierToGrant(cfgOut, grant, prbSet);
+
 if isfinite(mcsIndex)
     cfgOut = sixgr.util.structSet(cfgOut, root + ".mcsIndex", mcsIndex);
 end
@@ -3177,6 +3307,137 @@ if direction == "DL"
         nPorts = localReplayPrecodingPortCount(precodingMatrix, numLayers);
         cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", nPorts);
         cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", nPorts);
+    end
+end
+end
+
+function [cfgOut, prbSetOut] = localAlignReplayCarrierToGrant(cfgIn, grant, prbSetIn)
+cfgOut = cfgIn;
+prbSetOut = prbSetIn;
+prbSet = double(prbSetIn(:).');
+prbSet = unique(prbSet(isfinite(prbSet) & prbSet >= 0));
+useGrantLocalGrid = logical(sixgr.util.structGet(cfgOut, "system.waveform.useGrantLocalGrid", false));
+
+requiredNSizeGrid = NaN;
+prbOffset = 0;
+if ~isempty(prbSet)
+    if useGrantLocalGrid
+        prbOffset = min(prbSet);
+        requiredNSizeGrid = max(prbSet) - prbOffset + 1;
+    else
+        requiredNSizeGrid = max(prbSet) + 1;
+    end
+else
+    nprb = double(sixgr.util.structGet(grant, "NPRB", NaN));
+    if isfinite(nprb) && nprb >= 1
+        requiredNSizeGrid = round(nprb);
+    end
+end
+
+if ~(isfinite(requiredNSizeGrid) && requiredNSizeGrid >= 1)
+    return;
+end
+
+currentNSizeGrid = double(sixgr.util.structGet(cfgOut, "phy.carrier.NSizeGrid", NaN));
+if ~(isfinite(currentNSizeGrid) && currentNSizeGrid >= 1)
+    currentNSizeGrid = requiredNSizeGrid;
+end
+
+if useGrantLocalGrid
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NSizeGrid", max(1, round(requiredNSizeGrid)));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NStartGrid", max(0, round(double(sixgr.util.structGet(cfgOut, "phy.carrier.NStartGrid", 0))) + round(prbOffset)));
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayPRBOffset", double(prbOffset));
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayGridMode", "grant_allocation");
+    if ~isempty(prbSet)
+        prbSetOut = prbSet - prbOffset;
+    end
+else
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NSizeGrid", max(round(currentNSizeGrid), round(requiredNSizeGrid)));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NStartGrid", max(0, round(double(sixgr.util.structGet(cfgOut, "phy.carrier.NStartGrid", 0)))));
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayPRBOffset", 0);
+    cfgOut = sixgr.util.structSet(cfgOut, "system.waveform.replayGridMode", "full_carrier");
+    if ~isempty(prbSet)
+        prbSetOut = prbSet;
+    end
+end
+end
+
+function n = localReplayEffectiveTxAntennas(cfg, direction, numLayers)
+direction = upper(string(direction));
+if direction == "UL"
+    explicitUL = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "channel.ul.nTxAnt", []), ...
+        sixgr.util.structGet(cfg, "phy.ul.nTxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", []));
+    if isfinite(explicitUL) && explicitUL >= 1
+        n = localApplyReplayAntennaCap(cfg, explicitUL, numLayers);
+        return;
+    end
+end
+
+explicit = double(sixgr.util.structGet(cfg, "channel.nTxAnt", ...
+    sixgr.util.structGet(cfg, "phy.nTxAnt", NaN)));
+if isfinite(explicit) && explicit >= 1
+    n = localApplyReplayAntennaCap(cfg, explicit, numLayers);
+    return;
+end
+if direction == "UL"
+    ueTx = double(sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", 1));
+    n = localApplyReplayAntennaCap(cfg, ueTx, numLayers);
+else
+    n = max(1, round(double(numLayers)));
+end
+end
+
+function n = localReplayEffectiveRxAntennas(cfg, direction, numLayers)
+direction = upper(string(direction));
+if direction == "UL"
+    explicitUL = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "channel.ul.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "phy.ul.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", []));
+    if isfinite(explicitUL) && explicitUL >= 1
+        n = localApplyReplayAntennaCap(cfg, explicitUL, numLayers);
+        return;
+    end
+end
+
+explicit = double(sixgr.util.structGet(cfg, "channel.nRxAnt", ...
+    sixgr.util.structGet(cfg, "phy.nRxAnt", NaN)));
+if isfinite(explicit) && explicit >= 1
+    n = localApplyReplayAntennaCap(cfg, explicit, numLayers);
+    return;
+end
+if direction == "UL"
+    bsRx = double(sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", ...
+        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", 1)));
+    n = localApplyReplayAntennaCap(cfg, bsRx, numLayers);
+else
+    ueRx = double(sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", 1));
+    n = localApplyReplayAntennaCap(cfg, ueRx, numLayers);
+end
+end
+
+function n = localApplyReplayAntennaCap(cfg, value, numLayers)
+n = max(1, round(double(value)));
+if logical(sixgr.util.structGet(cfg, "system.waveform.capReplayAntennasToLayers", false))
+    n = max(1, min(n, max(1, round(double(numLayers)))));
+end
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw) || ~isnumeric(raw)
+        continue;
+    end
+    raw = double(raw(:));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw(1);
+        return;
     end
 end
 end

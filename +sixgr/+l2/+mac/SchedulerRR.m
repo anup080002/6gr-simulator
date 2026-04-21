@@ -117,7 +117,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     nNeed = numel(g.PRBSet);
                     if nNeed <= 0
                         nNeed = max(1, round(double(sixgr.util.structGet(g, "NPRB", ...
-                            sixgr.util.structGet(g, "PRBCount", sixgr.util.structGet(g, "NumPRB", obj.MinPRBPerUE)))));
+                            sixgr.util.structGet(g, "PRBCount", sixgr.util.structGet(g, "NumPRB", obj.MinPRBPerUE))))));
                     end
                     % Retx must preserve enough PRBs to carry the stored TB honestly.
                     if nNeed <= 0 || (nPRBAvail - cursor + 1) < nNeed
@@ -349,11 +349,8 @@ end
 end
 
 function cqi = localUECQI(ue)
-cqi = 0;
-if isfield(ue, "CQI") && ~isempty(ue.CQI)
-    cqi = double(ue.CQI);
-end
-cqi = max(0, min(15, round(cqi)));
+cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
+    sixgr.util.structGet(ue, "CQI", NaN), 0);
 end
 
 function mcs = localCQIToMCS(cqi)
