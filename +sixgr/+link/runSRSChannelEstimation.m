@@ -21,11 +21,13 @@ out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
 out.QCLAccuracy = NaN;
 out.ComputeLatency_ms = NaN;
-out.ProcedureDelay_ms = NaN;
+out.ProcedureDelay_ms = 0;
 out.AirInterfaceObservation_ms = NaN;
 out.AcquisitionTime_ms = NaN;
-out.TrackingFailure = NaN;
+out.TrackingFailure = 1;
 out.InjectedDoppler_Hz = NaN;
+out.EstimatedDopplerHz = NaN;
+out.DopplerError_Hz = NaN;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -63,19 +65,24 @@ try
     hEst = localSRSLSEstimate(rx.Hest, rx.RxGrid, tx.SRSIndices, tx.SRSSymbols);
     [hTrue, symTimes_s, symIdx] = localReferencePilotChannel(tx.Carrier, tx.SRSIndices, tx.SRS, sampleRateHz, injectedDopplerHz);
     nmse = localNormalizedMSE(hEst, hTrue);
+    estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
 
     out.NMSE_dB = 10*log10(max(nmse, eps));
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
     out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);
     out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
     out.ComputeLatency_ms = 1e3 * toc(tStart);
-    out.ProcedureDelay_ms = NaN;
+    out.ProcedureDelay_ms = 0;
     out.AirInterfaceObservation_ms = 1e3 * (size(txWave, 1) / max(sampleRateHz, eps));
     % Legacy alias preserved for backward compatibility with older exports.
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
     out.TrackingFailure = 0;
     out.InjectedDoppler_Hz = injectedDopplerHz;
+    out.EstimatedDopplerHz = estimatedDopplerHz;
+    if isfinite(out.EstimatedDopplerHz) && isfinite(out.InjectedDoppler_Hz)
+        out.DopplerError_Hz = out.EstimatedDopplerHz - out.InjectedDoppler_Hz;
+    end
     out.Ok = true;
     out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
         " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz";
@@ -321,6 +328,32 @@ if den <= 0
     return;
 end
 qcl = abs(hTrue' * hEst) / den;
+end
+
+function dopplerHz = localEstimateDopplerHz(hEst, symTimes_s)
+dopplerHz = NaN;
+hEst = hEst(:);
+symTimes_s = double(symTimes_s(:));
+N = min(numel(hEst), numel(symTimes_s));
+if N == 0
+    return;
+end
+hEst = hEst(1:N);
+symTimes_s = symTimes_s(1:N);
+mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(symTimes_s);
+if nnz(mask) < 2
+    dopplerHz = 0;
+    return;
+end
+[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
+if numel(uTimes) < 2
+    dopplerHz = 0;
+    return;
+end
+hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
+phaseObs = unwrap(angle(hMean(:)));
+p = polyfit(uTimes(:), phaseObs(:), 1);
+dopplerHz = p(1) / (2 * pi);
 end
 
 function loss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue)

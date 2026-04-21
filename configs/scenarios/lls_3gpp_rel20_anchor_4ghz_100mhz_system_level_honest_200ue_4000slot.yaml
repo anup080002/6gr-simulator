@@ -1,0 +1,2 @@
+inherits:
+  - ../../simulator/configs/scenarios/lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot.yaml

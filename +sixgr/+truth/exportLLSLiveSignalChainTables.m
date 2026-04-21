@@ -73,6 +73,7 @@ if ~isempty(T)
     end
 end
 T = localEnsureNonEmpty(T, [fields "ConstellationSamples"]);
+T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("modulation_demodulation", T);
 end
 
 function T = localBuildChannelEstimationTable(trialT)
@@ -103,6 +104,7 @@ posMask = isfinite(nmse) & nmse > 0;
 negMask = isfinite(nmse) & nmse <= 0;
 T.NMSEInterpretation(posMask) = "positive_nmse_db_can_occur_when_estimation_error_exceeds_reference_pilot_power";
 T.NMSEInterpretation(negMask) = "negative_nmse_db_means_estimation_error_is_below_reference_pilot_power";
+T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("channel_estimation", T);
 end
 
 function T = localBuildChannelStateTable(trialT)
@@ -110,6 +112,9 @@ fields = [ ...
     "Direction","SFN","ConfiguredSNR_dB","ConfiguredSNRSource","SNRValueRole","AppliedAWGNSNR_dB","SNR_dB","UEID","UEIndex","RNTI","BaseStationID","Frame","Slot","AllocatedPRBCount","PRBStart","MCSIndex","Layers","Rank","ChannelModel","DopplerHz","DopplerSourceMode","DopplerValueRole", ...
     "InjectedCFO_Hz","EstimatedCFO_Hz","CFOError_Hz","CFOEstimateAvailability","CFOErrorDefinition","CFOValueStatus","InjectedTimingOffset_samples", ...
     "TimingError_samples","TimingEstimateUsed","UseIdealTimingSync","TimingEstimateAvailability","TimingErrorDefinition","TimingValueStatus", ...
+    "IQImbalanceConfigured","IQImbalanceApplied","IQImbalanceModel","ConfiguredIQGainImbalance_dB","ConfiguredIQPhaseImbalance_deg", ...
+    "IQImbalanceMirrorPowerRatio_dB","IQImbalanceImageRejection_dB","IQImbalanceIQPowerRatio_dB","IQImbalanceIQCorrelation", ...
+    "IQImbalanceEstimatedAlphaAbs","IQImbalanceEstimatedBetaAbs","IQImbalanceMeasurementSource","IQImbalanceMeasurementStatus", ...
     "SystemLevelSINR_dB","SystemLevelSINRSource","SystemLevelSINRValueRole","SystemLevelSINRValueStatus","SystemLevelSINRDefinition", ...
     "ReceiverHestSINR_dB","ReceiverHestSINRSource","ReceiverHestSINRValueRole","ReceiverHestSINRValueStatus","ReceiverHestSINRNAReason", ...
     "DecoderTruthProxySINR_dB","DecoderTruthProxySINRSource","DecoderTruthProxySINRValueRole","DecoderTruthProxySINRValueStatus","DecoderTruthProxySINRNAReason", ...
@@ -125,6 +130,7 @@ fields = [ ...
     "ToDSource","ToASource","ToAEstimateSource","ChannelDelaySource","AntennaGeometrySource","AntennaEvidenceSource","SameFlowEvidenceSource","RuntimeTraceSource", ...
     "ChannelAgingLoss_dB","InterpolationLoss_dB","MismatchSensitivity_dB","RowLifecycleState","PartialRowFlag","FinalizedFlag","FallbackFlag","PlaceholderFlag","NAReason","RunUUID","RunTag","ScenarioID","RunnerProfile","ConfigHash","SourceArtifact","SourceTable","ArtifactClass","SemanticState","CountsTowardCoverage","MachineReadable","HumanReadable","Status"];
 T = localEnsureNonEmpty(localProjectTable(trialT, fields), fields);
+T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("channel_state", T);
 end
 
 function T = localBuildTxRxStageTraceTable(trialT)
@@ -135,6 +141,9 @@ fields = [ ...
     "DecoderTruthProxySINR_dB","DecoderTruthProxySINRSource","DecoderTruthProxySINRValueRole","DecoderTruthProxySINRValueStatus","DecoderTruthProxySINRNAReason","SINRValueRole","SINRSource","SINRValueStatus","SINRValueDefinition","MeasuredTrialSINR_dB","MeasuredTrialSINRSource","MeasuredTrialSINRValueRole","MeasuredTrialSINRValueStatus","MeasuredTrialSINRNAReason", ...
     "DopplerHz","DopplerSourceMode","DopplerValueRole","UEID","UEIndex","RNTI","BaseStationID","Frame","Slot","AllocatedPRBCount","PRBStart", ...
     "InjectedCFO_Hz","EstimatedCFO_Hz","CFOError_Hz","InjectedTimingOffset_samples","TimingError_samples", ...
+    "IQImbalanceConfigured","IQImbalanceApplied","IQImbalanceModel","ConfiguredIQGainImbalance_dB","ConfiguredIQPhaseImbalance_deg", ...
+    "IQImbalanceMirrorPowerRatio_dB","IQImbalanceImageRejection_dB","IQImbalanceIQPowerRatio_dB","IQImbalanceIQCorrelation", ...
+    "IQImbalanceEstimatedAlphaAbs","IQImbalanceEstimatedBetaAbs","IQImbalanceMeasurementSource","IQImbalanceMeasurementStatus", ...
     "ChannelModel","TBSize_bits","TBCRCLength_bits","TBLengthWithCRC_bits","NumCodeBlocks","CodeBlockLength_bits", ...
     "SegmentationOccurred","SegmentationPaddingBits","BaseGraph","EncodedBits","RateMatchedBits","RateMatchPunctureBits","RateMatchRepetitionBits", ...
     "BitErrors","BitsCompared","SymbolErrors","SymbolsCompared","EVM_rms","DataRECount","DMRSRECount","PTRSRECount", ...
@@ -172,6 +181,7 @@ T.TxChainKernel = txKernel;
 T.RxChainKernel = rxKernel;
 T.StageEvidenceSource = repmat("derived_from_active_raw_trial_columns", height(T), 1);
 T.RawTrialTraceSource = traceSource;
+T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("tx_rx_stage_trace", T);
 end
 
 function T = localProjectTable(sourceT, fields)
@@ -200,11 +210,116 @@ for f = fields
 end
 end
 
+function T = localFinalizeProjectedTraceTable(T, scopeToken)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
+names = string(T.Properties.VariableNames);
+for i = 1:numel(names)
+    fieldName = char(names(i));
+    rawCol = T.(fieldName);
+    if ~localIsStringLikeColumn(rawCol)
+        continue;
+    end
+    values = string(rawCol);
+    blankMask = strlength(strtrim(values)) == 0;
+    if ~any(blankMask)
+        continue;
+    end
+    companionMask = localCompanionAvailabilityMask(T, fieldName);
+    fillValues = localSemanticFillValues(fieldName, scopeToken, companionMask);
+    assignMask = blankMask & strlength(fillValues) > 0;
+    if any(assignMask)
+        values(assignMask) = fillValues(assignMask);
+        T.(fieldName) = values;
+    end
+end
+end
+
+function tf = localIsStringLikeColumn(col)
+tf = isstring(col) || ischar(col) || iscell(col) || iscategorical(col);
+end
+
+function mask = localCompanionAvailabilityMask(T, fieldName)
+nRows = height(T);
+mask = false(nRows, 1);
+base = regexprep(lower(char(string(fieldName))), "(source|valuerole|valuestatus|nareason|definition)$", "");
+if strlength(string(base)) == 0
+    return;
+end
+names = string(T.Properties.VariableNames);
+for i = 1:numel(names)
+    candidate = char(names(i));
+    candidateLower = lower(candidate);
+    if strcmpi(candidate, fieldName)
+        continue;
+    end
+    if ~strcmp(candidateLower, base) && ~startsWith(candidateLower, base)
+        continue;
+    end
+    if ~isempty(regexp(candidateLower, "(source|valuerole|valuestatus|nareason|definition)$", "once"))
+        continue;
+    end
+    mask = mask | localColumnAvailabilityMask(T.(candidate));
+end
+end
+
+function mask = localColumnAvailabilityMask(col)
+if isnumeric(col)
+    mask = isfinite(double(col));
+    return;
+end
+if islogical(col)
+    mask = true(numel(col), 1);
+    return;
+end
+try
+    vals = string(col);
+    mask = strlength(strtrim(vals)) > 0;
+catch
+    mask = false(numel(col), 1);
+end
+mask = reshape(logical(mask), [], 1);
+end
+
+function fill = localSemanticFillValues(fieldName, scopeToken, companionMask)
+nRows = numel(companionMask);
+fieldName = lower(char(string(fieldName)));
+scope = string(scopeToken);
+fill = strings(nRows, 1);
+if endsWith(fieldName, "source")
+    fill(companionMask) = "active_" + scope + "_runtime_table";
+    fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
+elseif endsWith(fieldName, "valuerole")
+    fill(companionMask) = "runtime_observation";
+    fill(~companionMask) = "not_available";
+elseif endsWith(fieldName, "valuestatus")
+    fill(companionMask) = "available";
+    fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
+elseif endsWith(fieldName, "nareason") || strcmp(fieldName, "nareason")
+    fill(companionMask) = "not_required_when_metric_present";
+    fill(~companionMask) = "field_not_emitted_by_active_" + scope + "_runtime";
+elseif endsWith(fieldName, "definition")
+    fill(companionMask) = "derived_from_active_" + scope + "_runtime_table";
+    fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
+elseif contains(fieldName, "blocker")
+    fill(:) = "not_blocked_in_active_" + scope + "_runtime";
+elseif contains(fieldName, "limitation")
+    fill(:) = "no_additional_" + scope + "_limitation_recorded";
+elseif contains(fieldName, "beam") || contains(fieldName, "precoder") || ...
+        contains(fieldName, "interferer") || contains(fieldName, "antenna") || ...
+        contains(fieldName, "channelarray") || contains(fieldName, "geometryadapter") || ...
+        contains(fieldName, "authority") || contains(fieldName, "interference")
+    fill(:) = "not_recorded_by_active_" + scope + "_runtime";
+end
+end
+
 function col = localDefaultColumn(nRows, fieldName)
 name = lower(char(string(fieldName)));
-    if any(strcmp(name, ["direction","modulation","cqiderivedmodulation","status","channelmodel","nmsedefinition","nmseinterpretation","interferencemode","interferencepowersource","configuredsnrsource","snrvaluerole","systemlevelsinrsource","systemlevelsinrvaluerole","systemlevelsinrvaluestatus","systemlevelsinrdefinition","receiverhestsinrsource","receiverhestsinrvaluerole","receiverhestsinrvaluestatus","receiverhestsinrnareason","decodertruthproxysinrsource","decodertruthproxysinrvaluerole","decodertruthproxysinrvaluestatus","decodertruthproxysinrnareason","sinrvaluerole","sinrsource","sinrvaluestatus","sinrvaluedefinition","dopplersourcemode","dopplervaluerole","measuredtrialsinrsource","measuredtrialsinrvaluerole","measuredtrialsinrvaluestatus","measuredtrialsinrnareason","largescalesinrsource","largescalesinrvaluerole","servingrsrpsource","csi_rsrpsource","appliedlargescalegainsource","txchainkernel","rxchainkernel","stageevidencesource","grantcontrolstate","rawtrialtracesource","configuredbeamselectionstrategy","beamselectionstrategy","beamselectionauthority","beamselectionpolicytype","selectedbeamvaluerole","selectedbeamvaluestatus","selectedbeamnareason","requestedbeamindexset","requestedbeamvaluerole","requestedbeamvaluestatus","requestedbeamnareason","precodersource","requestedprecodersource","appliedprecodersource","precodingmode","precodingapplicationstage","appliedbeamindexset","appliedbeamvaluerole","appliedbeamvaluestatus","appliedbeamnareason","appliedprecodervaluerole","appliedprecodervaluestatus","appliedprecodernareason","explicitprecoderreplaystatus","explicitprecoderreplayblocker","appliedprecoderpmitype","appliedprecodercodebookmode","requestedvsappliedprecoderpmimatchstatus","interfererprecodersourceset","interfererprecodingmodeset","interfererbeamindexsetsummary","grantcontextid","grantsharedstatecommitmode","mcsauthority","modulationauthority","grantoperatingpointsource","appliedoperatingpointsource","cfoestimateavailability","cfoerrordefinition","cfovaluestatus","timingestimateavailability","timingerrordefinition","timingvaluestatus","largescalesinrvaluestatus","largescalesinrnareason","primarytruthvaluestatus","secondaryfieldgapreason","rowlifecyclestate","nareason","runuuid","runtag","scenarioid","runnerprofile","confighash","sourceartifact","sourcetable","artifactclass","semanticstate","bsantennaarrayclass","bsantennaelementclass","bsantennaarraytype","bsantennapolarization","ueantennaarrayclass","ueantennaelementclass","ueantennaarraytype","ueantennapolarization","antennaconfigsource","runtimeantennaobjectsource","antennaruntimeobjectvaluerole","antennaruntimeobjectvaluestatus","antennaruntimeobjectnareason","channelarraymodel","channelobjectsource","channelobjectclass","channelarrayhandlingstatus","channelarrayhandlingblocker","channelgeometrycouplinglevel","geometryadaptertype","geometryadaptersource","geometryadapterlimitation","geometryadapterportmapping","channelarrayvaluerole","channelarrayvaluestatus","interferencechannelobjectsource","interferencechannelobjectclass","interferencechannelarrayhandlingstatus","interferencechannelarrayhandlingblocker","interferencechannelarrayvaluerole","interferencechannelarrayvaluestatus","todsource","toasource","toaestimatesource","channeldelaysource","antennageometrysource","antennaevidencesource","sameflowevidencesource","runtimetracesource"]))
+    if any(strcmp(name, ["direction","modulation","cqiderivedmodulation","status","channelmodel","nmsedefinition","nmseinterpretation","interferencemode","interferencepowersource","configuredsnrsource","snrvaluerole","systemlevelsinrsource","systemlevelsinrvaluerole","systemlevelsinrvaluestatus","systemlevelsinrdefinition","receiverhestsinrsource","receiverhestsinrvaluerole","receiverhestsinrvaluestatus","receiverhestsinrnareason","decodertruthproxysinrsource","decodertruthproxysinrvaluerole","decodertruthproxysinrvaluestatus","decodertruthproxysinrnareason","sinrvaluerole","sinrsource","sinrvaluestatus","sinrvaluedefinition","dopplersourcemode","dopplervaluerole","measuredtrialsinrsource","measuredtrialsinrvaluerole","measuredtrialsinrvaluestatus","measuredtrialsinrnareason","largescalesinrsource","largescalesinrvaluerole","servingrsrpsource","csi_rsrpsource","appliedlargescalegainsource","iqimbalancemodel","iqimbalancemeasurementsource","iqimbalancemeasurementstatus","txchainkernel","rxchainkernel","stageevidencesource","grantcontrolstate","rawtrialtracesource","configuredbeamselectionstrategy","beamselectionstrategy","beamselectionauthority","beamselectionpolicytype","selectedbeamvaluerole","selectedbeamvaluestatus","selectedbeamnareason","requestedbeamindexset","requestedbeamvaluerole","requestedbeamvaluestatus","requestedbeamnareason","precodersource","requestedprecodersource","appliedprecodersource","precodingmode","precodingapplicationstage","appliedbeamindexset","appliedbeamvaluerole","appliedbeamvaluestatus","appliedbeamnareason","appliedprecodervaluerole","appliedprecodervaluestatus","appliedprecodernareason","explicitprecoderreplaystatus","explicitprecoderreplayblocker","appliedprecoderpmitype","appliedprecodercodebookmode","requestedvsappliedprecoderpmimatchstatus","interfererprecodersourceset","interfererprecodingmodeset","interfererbeamindexsetsummary","grantcontextid","grantsharedstatecommitmode","mcsauthority","modulationauthority","grantoperatingpointsource","appliedoperatingpointsource","cfoestimateavailability","cfoerrordefinition","cfovaluestatus","timingestimateavailability","timingerrordefinition","timingvaluestatus","largescalesinrvaluestatus","largescalesinrnareason","primarytruthvaluestatus","secondaryfieldgapreason","rowlifecyclestate","nareason","runuuid","runtag","scenarioid","runnerprofile","confighash","sourceartifact","sourcetable","artifactclass","semanticstate","bsantennaarrayclass","bsantennaelementclass","bsantennaarraytype","bsantennapolarization","ueantennaarrayclass","ueantennaelementclass","ueantennaarraytype","ueantennapolarization","antennaconfigsource","runtimeantennaobjectsource","antennaruntimeobjectvaluerole","antennaruntimeobjectvaluestatus","antennaruntimeobjectnareason","channelarraymodel","channelobjectsource","channelobjectclass","channelarrayhandlingstatus","channelarrayhandlingblocker","channelgeometrycouplinglevel","geometryadaptertype","geometryadaptersource","geometryadapterlimitation","geometryadapterportmapping","channelarrayvaluerole","channelarrayvaluestatus","interferencechannelobjectsource","interferencechannelobjectclass","interferencechannelarrayhandlingstatus","interferencechannelarrayhandlingblocker","interferencechannelarrayvaluerole","interferencechannelarrayvaluestatus","todsource","toasource","toaestimatesource","channeldelaysource","antennageometrysource","antennaevidencesource","sameflowevidencesource","runtimetracesource"]))
         col = strings(nRows, 1);
-    elseif any(strcmp(name, ["fullinterfererchanneltruthused","controleligible","controldecodeok","precodingactive","explicitbeamweightsapplied","transformprecodingapplied","beamformingapplied","grantworkersafe","antennaruntimeobjectcreated","channelusescountonlyantennamodel","channelusessameruntimeantennaassumptions","interferenceusessameruntimeantennaassumptions","interferencepathusessamearrayassumptions","beamselectionpolicyfixed","largescalesinrfinalizedflag","secondaryfieldgapflag","partialrowflag","finalizedflag","fallbackflag","placeholderflag","countstowardcoverage","machinereadable","humanreadable"]))
+    elseif any(strcmp(name, ["fullinterfererchanneltruthused","controleligible","controldecodeok","precodingactive","explicitbeamweightsapplied","transformprecodingapplied","beamformingapplied","grantworkersafe","antennaruntimeobjectcreated","channelusescountonlyantennamodel","channelusessameruntimeantennaassumptions","interferenceusessameruntimeantennaassumptions","interferencepathusessamearrayassumptions","beamselectionpolicyfixed","iqimbalanceconfigured","iqimbalanceapplied","largescalesinrfinalizedflag","secondaryfieldgapflag","partialrowflag","finalizedflag","fallbackflag","placeholderflag","countstowardcoverage","machinereadable","humanreadable"]))
         col = false(nRows, 1);
     else
         col = nan(nRows, 1);

@@ -292,7 +292,13 @@ classdef SystemLevelRunner
             end
 
             progressEverySlots = localResolveProgressEverySlots(cfg, nTTI);
+            [noProgressGuardEnabled, noProgressTimeout_s, noProgressSlotLimit] = ...
+                localResolveNoProgressGuard(cfg, progressEverySlots, nTTI);
             lastProgressEmit_s = -Inf;
+            lastUsefulProgress_s = 0;
+            lastUsefulProgressSlot = 0;
+            lastUsefulBitCount = 0;
+            stalledDemandSlotCount = 0;
             localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
                 "initializing", K, nCells, 0, 0, 0, 0, "system_level_lls_started");
 
@@ -1111,11 +1117,42 @@ classdef SystemLevelRunner
                 queueHist(t,:) = (queueBitsDL(:) + queueBitsUL(:)).';
 
                 elapsedNow_s = toc(runTimer);
+                totalGrantCount = grantCountDL(t) + grantCountUL(t);
+                totalServedOrDroppedBits = servedBitsTotalDL + servedBitsTotalUL + droppedBitsTotalDL + droppedBitsTotalUL;
+                backlogBitsNow = sum(queueBitsDL, "omitnan") + sum(queueBitsUL, "omitnan");
+                offeredBitsNow = offeredBitsTTI_DL(t) + offeredBitsTTI_UL(t);
+                if totalGrantCount > 0 || totalServedOrDroppedBits > lastUsefulBitCount
+                    lastUsefulProgress_s = elapsedNow_s;
+                    lastUsefulProgressSlot = t;
+                    lastUsefulBitCount = totalServedOrDroppedBits;
+                    stalledDemandSlotCount = 0;
+                elseif noProgressGuardEnabled
+                    backlogDemand = activeUECount(t) > 0 && (backlogBitsNow > 0 || offeredBitsNow > 0);
+                    if backlogDemand
+                        stalledDemandSlotCount = stalledDemandSlotCount + 1;
+                        stagnationElapsed_s = elapsedNow_s - lastUsefulProgress_s;
+                        if stalledDemandSlotCount >= noProgressSlotLimit || stagnationElapsed_s >= noProgressTimeout_s
+                            localEmitLiveProgress(cfg, log, runTimer, t, nTTI, tti_s, ...
+                                slotLabel, activeUECount(t), nCells, totalGrantCount, ...
+                                servedBitsTotalDL + servedBitsTotalUL, ...
+                                droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
+                                "system_level_lls_stalled_no_progress");
+                            error("sixgr:system:SystemLevelRunner:NoProgressTimeout", ...
+                                ['System-level LLS stalled with queued traffic but no grant/service progress ' ...
+                                 '(slot=%d, lastProductiveSlot=%d, stalledSlots=%d, elapsedSinceProgress=%.1fs, ' ...
+                                 'backlogBits=%.0f, offeredBits=%.0f).'], ...
+                                t, lastUsefulProgressSlot, stalledDemandSlotCount, ...
+                                stagnationElapsed_s, backlogBitsNow, offeredBitsNow);
+                        end
+                    else
+                        stalledDemandSlotCount = 0;
+                    end
+                end
                 if t == 1 || t == nTTI || mod(t, progressEverySlots) == 0 || ...
                         (elapsedNow_s - lastProgressEmit_s) >= 30
                     localEmitLiveProgress(cfg, log, runTimer, t, nTTI, tti_s, ...
                         slotLabel, activeUECount(t), nCells, ...
-                        grantCountDL(t) + grantCountUL(t), ...
+                        totalGrantCount, ...
                         servedBitsTotalDL + servedBitsTotalUL, ...
                         droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
                         "system_level_lls_slot_progress");
@@ -3017,6 +3054,21 @@ if isempty(nSlots) || ~isfinite(double(nSlots)) || double(nSlots) <= 0
     nSlots = max(1, floor(double(nTTI) / 100));
 end
 nSlots = max(1, round(double(nSlots)));
+end
+
+function [enabled, timeout_s, slotLimit] = localResolveNoProgressGuard(cfg, progressEverySlots, nTTI)
+enabled = logical(sixgr.util.structGet(cfg, "run.hangDetectionEnabled", ...
+    sixgr.util.structGet(cfg, "run.hangDetection.enabled", true)));
+timeout_s = double(sixgr.util.structGet(cfg, "run.noProgressTimeoutSeconds", ...
+    sixgr.util.structGet(cfg, "run.hangDetection.noProgressTimeoutSeconds", 180)));
+if ~(isfinite(timeout_s) && timeout_s > 0)
+    timeout_s = inf;
+end
+slotLimit = sixgr.util.structGet(cfg, "run.noProgressSlotLimit", []);
+if isempty(slotLimit) || ~isfinite(double(slotLimit)) || double(slotLimit) <= 0
+    slotLimit = max([50, 3 * max(1, round(double(progressEverySlots))), ceil(0.02 * max(1, double(nTTI)))]);
+end
+slotLimit = max(1, round(double(slotLimit)));
 end
 
 function localEmitLiveProgress(cfg, log, runTimer, slotIdx, totalSlots, tti_s, ...

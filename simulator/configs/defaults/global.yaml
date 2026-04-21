@@ -226,7 +226,7 @@
     "beam_clustering_enabled": false,
     "prach_format": "A1",
     "prach_sequence_family": "zadoff_chu_baseline",
-    "preamble_length_mode": "long",
+    "preamble_length_mode": "short",
     "preamble_count": 64,
     "zero_correlation_zone": 8,
     "detection_threshold": 0.5,
@@ -242,7 +242,7 @@
     "ai_beam_prediction_enabled": false,
     "msg3_waveform_alignment": "inherit_ul_waveform",
     "min_detection_trials": 4,
-    "configuration_index": 16,
+    "configuration_index": 87,
     "subcarrier_spacing_khz": 15,
     "root_sequence_index": 1,
     "preamble_index": 0

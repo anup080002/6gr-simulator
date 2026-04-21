@@ -40,9 +40,12 @@ end
 
 function result = localRunWaveformBundleScenario(cfg, scfg, runFolder)
 opt = struct();
-opt.LinkDuration_s = max(double(cfg.run.numFrames) * 1e-3, ...
+slotDuration_s = max(eps, double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 1)) / 1e3);
+totalSlots = max(1, round(double(sixgr.util.structGet(cfg, "run.totalSlots", ...
+    sixgr.util.structGet(cfg, "run.numTTI", sixgr.util.structGet(cfg, "run.numFrames", 1))))));
+opt.LinkDuration_s = max(double(totalSlots) * slotDuration_s, ...
     double(scfg.get("simulation.min_duration_s")));
-opt.LinkMaxSimFrames = double(cfg.run.numFrames);
+opt.LinkMaxSimFrames = double(totalSlots);
 opt.LinkSNR_dB = double(cfg.channel.snr_dB);
 opt.LinkSNRGrid_dB = localBuildSweepGrid(cfg.channel.snr_dB, ...
     double(scfg.get("simulation.snr_sweep_offsets_db")), ...
@@ -50,7 +53,7 @@ opt.LinkSNRGrid_dB = localBuildSweepGrid(cfg.channel.snr_dB, ...
     double(scfg.get("sweeps_and_matrix.snr_sweep.values_db")));
 mcIterations = max(1, round(double(scfg.get("simulation.monte_carlo_iterations"))));
 opt.LinkSweepFrames = mcIterations;
-opt.LinkSweepTrialsPerSNR = max(double(cfg.run.numFrames), double(cfg.run.numFrames) * mcIterations);
+opt.LinkSweepTrialsPerSNR = max(double(totalSlots), double(totalSlots) * mcIterations);
 opt.LinkReferenceSweepFrames = max(opt.LinkSweepTrialsPerSNR, ceil(1.5 * opt.LinkSweepTrialsPerSNR));
 opt.LinkSweepMaxPoints = numel(opt.LinkSNRGrid_dB);
 opt.LinkAdaptiveSweepEnabled = true;
@@ -58,9 +61,9 @@ opt.LinkAdaptiveSweepStep_dB = 2;
 opt.LinkAdaptiveSweepMaxPoints = 12;
 opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
 opt.SaveFigures = logical(scfg.get("output.save_figures"));
-localDBLog("INFO", "Waveform bundle starting: snr=%.3f dB sweepPoints=%d frames=%d monteCarlo=%d", ...
+localDBLog("INFO", "Waveform bundle starting: snr=%.3f dB sweepPoints=%d canonicalSlots=%d monteCarlo=%d slotDuration_s=%.6f", ...
     double(opt.LinkSNR_dB), double(numel(opt.LinkSNRGrid_dB)), ...
-    double(opt.LinkMaxSimFrames), double(mcIterations));
+    double(opt.LinkMaxSimFrames), double(mcIterations), double(slotDuration_s));
 link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
 localDBLog("INFO", "Waveform bundle finished: ok=%d", double(logical(sixgr.util.structGet(link, "Ok", false))));
 runtimeControl = sixgr.util.structGet(link, "RawTrials", struct());
@@ -735,38 +738,64 @@ try
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Rewriting scenario manifest with final artifact truth-gated status.");
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    optionalArtifactIssues = strings(0, 1);
+    profilerArtifacts = struct();
     localDBLog("INFO", "Writing artifact manifest.");
     manifest.ArtifactManifestPath = char(localWriteArtifactManifest(runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
     localDBLog("INFO", "Writing scenario markdown report.");
     localWriteMarkdownReport(fullfile(layout.ReportDir, "scenario_report.md"), scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus);
+    localDBLog("INFO", "Materializing canonical browser contract artifacts for the completed run.");
+    contractMaterialization = localMaterializeBrowserContractArtifacts();
+    if logical(sixgr.util.structGet(contractMaterialization, "Ok", false))
+        localDBLog("INFO", "Browser contract artifacts materialized: created=%d missingTables=%d missingCharts=%d", ...
+            double(sixgr.util.structGet(contractMaterialization, "CreatedCount", 0)), ...
+            double(sixgr.util.structGet(contractMaterialization, "MissingTableCount", 0)), ...
+            double(sixgr.util.structGet(contractMaterialization, "MissingChartCount", 0)));
+    else
+        optionalArtifactIssues(end+1, 1) = "browser_contract_materialization:" + string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"));
+        localDBLog("WARN", "Browser contract artifact materialization did not complete: %s | %s", ...
+            char(string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"))), ...
+            char(string(sixgr.util.structGet(contractMaterialization, "Message", ""))));
+    end
+    localDBLog("INFO", "Required final artifacts published; marking terminal run status before optional artifacts.");
+    localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
+        localBuildTerminalStatusPayload(scenarioStatus, "run_required_artifacts_published", optionalArtifactIssues));
     if logical(scfg.get("output.save_mat"))
-        localDBLog("INFO", "Writing MAT result bundle.");
-        sixgr.util.matSave(fullfile(layout.ReportMATDir, "scenario_result.mat"), ...
-            struct("ScenarioConfig", scfg.toStruct(), "Result", result, "Manifest", manifest, ...
-            "RuntimeSummary", runtimeSummary, "EnvironmentSummary", environmentSummary, "ReportBundle", reportBundle, ...
-            "ScenarioStatus", scenarioStatus));
+        try
+            localDBLog("INFO", "Writing MAT result bundle.");
+            localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
+                localBuildTerminalStatusPayload(scenarioStatus, "run_optional_mat_bundle", optionalArtifactIssues));
+            sixgr.util.matSave(fullfile(layout.ReportMATDir, "scenario_result.mat"), ...
+                struct("ScenarioConfig", scfg.toStruct(), "Result", result, "Manifest", manifest, ...
+                "RuntimeSummary", runtimeSummary, "EnvironmentSummary", environmentSummary, "ReportBundle", reportBundle, ...
+                "ScenarioStatus", scenarioStatus));
+        catch matME
+            optionalArtifactIssues(end+1, 1) = "mat_result_bundle:" + string(matME.identifier);
+            localDBLog("WARN", "Optional MAT result bundle did not complete: %s | %s", ...
+                char(string(matME.identifier)), char(string(matME.message)));
+        end
     end
-    localDBLog("INFO", "Pruning empty result directories.");
-    localPruneEmptyDirs(runFolder);
-    profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, "Run completed successfully.");
+    try
+        localDBLog("INFO", "Pruning empty result directories.");
+        localPruneEmptyDirs(runFolder);
+    catch pruneME
+        optionalArtifactIssues(end+1, 1) = "prune_empty_directories:" + string(pruneME.identifier);
+        localDBLog("WARN", "Optional empty-directory prune did not complete: %s | %s", ...
+            char(string(pruneME.identifier)), char(string(pruneME.message)));
+    end
+    try
+        profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, "Run completed successfully.");
+    catch profilerME
+        optionalArtifactIssues(end+1, 1) = "profiler_export:" + string(profilerME.identifier);
+        localDBLog("WARN", "Optional profiler export did not complete: %s | %s", ...
+            char(string(profilerME.identifier)), char(string(profilerME.message)));
+        localStopProfilerSession(profilerState);
+        profilerArtifacts = struct();
+    end
 
-    if sixgr.db.isArtifactStoreActive()
-        sixgr.db.markRunStatus(string(scenarioStatus.RunCompletion), struct( ...
-            "result_ok", logical(scenarioStatus.ResultOk), ...
-            "run_completion", string(scenarioStatus.RunCompletion), ...
-            "required_failure_count", double(scenarioStatus.RequiredFailureCount), ...
-            "failing_case_count", double(scenarioStatus.FailingCaseCount), ...
-            "warning_count", double(scenarioStatus.WarningCount), ...
-            "status_authority", string(scenarioStatus.StatusAuthority), ...
-            "runtime_truth_contract_ok", logical(scenarioStatus.RuntimeTruthContractOk), ...
-            "roundtrip_mismatch_count", double(scenarioStatus.RoundtripMismatchCount), ...
-            "required_runtime_evidence_missing_count", double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), ...
-            "strict_truth_failure_count", double(scenarioStatus.StrictTruthFailureCount), ...
-            "error_source", string(scenarioStatus.ErrorSource), ...
-            "error_identifier", string(scenarioStatus.ErrorIdentifier), ...
-            "error_message", string(scenarioStatus.ErrorMessage)));
-    end
+    localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
+        localBuildTerminalStatusPayload(scenarioStatus, "run_terminal_optional_artifacts_complete", optionalArtifactIssues));
     if logical(scenarioStatus.ResultOk)
         localDBLog("INFO", "Run completed successfully in %.3f seconds.", toc(runTimer));
     else
@@ -785,6 +814,7 @@ try
     execOut.ConfigOwnershipArtifacts = configOwnership;
     execOut.ScenarioStatus = scenarioStatus;
     execOut.ProfilerArtifacts = profilerArtifacts;
+    execOut.OptionalArtifactIssues = optionalArtifactIssues;
 catch ME
     localDBLog("ERROR", "Run failed: %s | %s", char(string(ME.identifier)), char(string(ME.message)));
     try
@@ -802,11 +832,41 @@ catch ME
             "MimeType", "text/plain; charset=UTF-8");
     catch
     end
-    if sixgr.db.isArtifactStoreActive()
-        sixgr.db.markRunStatus("failed", struct( ...
-            "identifier", string(ME.identifier), ...
-            "message", string(ME.message)));
+    try
+        localDBLog("INFO", "Recovering truthful report artifacts from persisted raw evidence after failure.");
+        recovery = sixgr.truth.recoverLLSRunArtifacts(runFolder, scfg.toStruct(), ...
+            "RunTag", runTag, ...
+            "PublicRunFolder", publicRunFolder, ...
+            "StatusText", "failed", ...
+            "ErrorIdentifier", string(ME.identifier), ...
+            "ErrorMessage", string(ME.message), ...
+            "SourceFiles", string(scfg.SourceFiles(:)), ...
+            "ConfigPath", string(scfg.ConfigPath), ...
+            "ConfigHash", string(scfg.ConfigHash));
+        localDBLog("INFO", "Recovered failed-run artifacts: scenario=%s profile=%s truthOk=%d", ...
+            char(string(sixgr.util.structGet(recovery, "ScenarioID", scfg.ScenarioID))), ...
+            char(string(sixgr.util.structGet(recovery, "RunnerProfile", ""))), ...
+            double(logical(sixgr.util.structGet(recovery, "ScenarioStatus.RuntimeTruthContractOk", false))));
+        contractMaterialization = localMaterializeBrowserContractArtifacts();
+        if logical(sixgr.util.structGet(contractMaterialization, "Ok", false))
+            localDBLog("INFO", "Browser contract artifacts materialized after failure recovery: created=%d missingTables=%d missingCharts=%d", ...
+                double(sixgr.util.structGet(contractMaterialization, "CreatedCount", 0)), ...
+                double(sixgr.util.structGet(contractMaterialization, "MissingTableCount", NaN)), ...
+                double(sixgr.util.structGet(contractMaterialization, "MissingChartCount", NaN)));
+        else
+            localDBLog("WARN", "Browser contract materialization after failure recovery did not complete: %s | %s", ...
+                char(string(sixgr.util.structGet(contractMaterialization, "Identifier", ""))), ...
+                char(string(sixgr.util.structGet(contractMaterialization, "Message", ""))));
+        end
+    catch recoveryME
+        localDBLog("WARN", "Failed-run artifact recovery did not complete: %s | %s", ...
+            char(string(recoveryME.identifier)), char(string(recoveryME.message)));
     end
+    localMarkRunStatusSafe("failed", struct( ...
+        "stage", "run_failed", ...
+        "identifier", string(ME.identifier), ...
+        "message", string(ME.message), ...
+        "timestamp_utc", string(localUTCStamp())));
     try
         localPruneEmptyDirs(runFolder);
     catch
@@ -1257,6 +1317,47 @@ try
         sixgr.db.appendLogLine(string(levelStr), string(localUTCStamp()), string(messageText));
     end
 catch
+end
+end
+
+function payload = localBuildTerminalStatusPayload(scenarioStatus, stageName, optionalArtifactIssues)
+if nargin < 3
+    optionalArtifactIssues = strings(0, 1);
+end
+payload = struct( ...
+    "stage", char(string(stageName)), ...
+    "result_ok", logical(scenarioStatus.ResultOk), ...
+    "run_completion", string(scenarioStatus.RunCompletion), ...
+    "required_failure_count", double(scenarioStatus.RequiredFailureCount), ...
+    "failing_case_count", double(scenarioStatus.FailingCaseCount), ...
+    "warning_count", double(scenarioStatus.WarningCount), ...
+    "status_authority", string(scenarioStatus.StatusAuthority), ...
+    "runtime_truth_contract_ok", logical(scenarioStatus.RuntimeTruthContractOk), ...
+    "roundtrip_mismatch_count", double(scenarioStatus.RoundtripMismatchCount), ...
+    "required_runtime_evidence_missing_count", double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), ...
+    "strict_truth_failure_count", double(scenarioStatus.StrictTruthFailureCount), ...
+    "strict_proxy_guard_failure_count", double(scenarioStatus.StrictProxyGuardFailureCount), ...
+    "canonical_artifact_gap_count", double(scenarioStatus.CanonicalArtifactGapCount), ...
+    "error_source", string(scenarioStatus.ErrorSource), ...
+    "error_identifier", string(scenarioStatus.ErrorIdentifier), ...
+    "error_message", string(scenarioStatus.ErrorMessage), ...
+    "optional_artifact_issue_count", double(numel(optionalArtifactIssues)), ...
+    "optional_artifact_issues", cellstr(string(optionalArtifactIssues(:))), ...
+    "timestamp_utc", string(localUTCStamp()));
+end
+
+function localMarkRunStatusSafe(statusText, payload)
+if ~sixgr.db.isArtifactStoreActive()
+    return;
+end
+try
+    sixgr.db.markRunStatus(string(statusText), payload);
+catch ME
+    try
+        fprintf(1, "[%s] WARN Run status update failed: %s | %s\n", ...
+            localUTCStamp(), char(string(ME.identifier)), char(string(ME.message)));
+    catch
+    end
 end
 end
 
@@ -1869,8 +1970,11 @@ function cfg = localEnsureExactMexAcceleration(cfg)
 requestedUseMex = sixgr.util.structGet(cfg, "run.useMex", []);
 caps = localExactMexCapabilities();
 autoEnabled = false;
+forceDisableForStrictCoupledTruth = localShouldDisableExactMexForStrictCoupledTruthWaveform(cfg);
 
-if isempty(requestedUseMex)
+if forceDisableForStrictCoupledTruth
+    requestedUseMex = false;
+elseif isempty(requestedUseMex)
     requestedUseMex = logical(caps.Any);
     autoEnabled = logical(caps.Any);
 end
@@ -1887,12 +1991,22 @@ cfg = sixgr.util.structSet(cfg, "run.exactMexCapabilities", caps);
 if requestedUseMex
     cfg = sixgr.util.structSet(cfg, "run.useMexDisabledReason", "");
 else
-    if logical(caps.Any)
+    if forceDisableForStrictCoupledTruth
+        cfg = sixgr.util.structSet(cfg, "run.useMexDisabledReason", ...
+            "exact_mex_disabled_for_strict_coupled_truth_waveform_bundle");
+    elseif logical(caps.Any)
         cfg = sixgr.util.structSet(cfg, "run.useMexDisabledReason", "exact_mex_not_requested");
     else
         cfg = sixgr.util.structSet(cfg, "run.useMexDisabledReason", "no_exact_mex_kernels_found");
     end
 end
+end
+
+function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(cfg)
+% Exact MEX kernels remain allowed for strict coupled waveform truth as long
+% as the strict config validator keeps fast scalar channel-estimation MEX
+% paths disabled on fading channels.
+tf = false;
 end
 
 function caps = localExactMexCapabilities()
@@ -2502,6 +2616,85 @@ end
 
 function root = localRepoRoot()
 root = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
+end
+
+function out = localMaterializeBrowserContractArtifacts()
+out = struct( ...
+    "Ok", false, ...
+    "Status", NaN, ...
+    "Identifier", "", ...
+    "Message", "", ...
+    "CreatedCount", 0, ...
+    "MissingTableCount", NaN, ...
+    "MissingChartCount", NaN);
+if ~sixgr.db.isArtifactStoreActive()
+    out.Identifier = "artifact_store_inactive";
+    out.Message = "MySQL artifact store is inactive, so browser contract materialization was skipped.";
+    return;
+end
+storeState = sixgr.db.artifactStore("get_state");
+runID = double(sixgr.util.structGet(storeState, "RunID", NaN));
+if ~(isfinite(runID) && runID > 0)
+    out.Identifier = "run_id_unavailable";
+    out.Message = "The active MySQL artifact store did not expose a valid run_id.";
+    return;
+end
+repoRoot = localRepoRoot();
+scriptPath = fullfile(repoRoot, "scripts", "materialize_lls_contract_artifacts.py");
+if exist(scriptPath, "file") ~= 2
+    out.Identifier = "materializer_script_missing";
+    out.Message = "scripts/materialize_lls_contract_artifacts.py was not found in the repo root.";
+    return;
+end
+pythonExe = localResolvePythonExecutable();
+cmd = sprintf('"%s" "%s" --run-id %d --strict', ...
+    localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), round(runID));
+[status, raw] = system(cmd);
+out.Status = double(status);
+payloadText = strtrim(string(raw));
+jsonStart = strfind(char(payloadText), "{");
+if ~isempty(jsonStart)
+    payloadText = extractAfter(payloadText, jsonStart(1) - 1);
+    try
+        payload = jsondecode(char(payloadText));
+        out.CreatedCount = double(sixgr.util.structGet(payload, "created_count", 0));
+        out.MissingTableCount = double(sixgr.util.structGet(payload, "tables_missing", NaN));
+        out.MissingChartCount = double(sixgr.util.structGet(payload, "charts_missing", NaN));
+    catch
+    end
+end
+if status == 0
+    out.Ok = true;
+    out.Identifier = "browser_contract_materialization_ok";
+    out.Message = char(payloadText);
+else
+    out.Identifier = "browser_contract_materialization_failed";
+    out.Message = char(string(raw));
+end
+end
+
+function exe = localResolvePythonExecutable()
+exe = "";
+try
+    runtimeInfo = sixgr.lls6g.config.ensureYAMLRuntime(ConfigurePyEnv=false);
+    exe = string(sixgr.util.structGet(runtimeInfo, "PythonExecutable", ""));
+catch
+    exe = "";
+end
+exe = strtrim(exe);
+if strlength(exe) == 0
+    [status, outTxt] = system('python -c "import sys; print(sys.executable)"');
+    if status == 0
+        exe = strtrim(string(outTxt));
+    end
+end
+if strlength(exe) == 0
+    exe = "python";
+end
+end
+
+function out = localShellEscapeArg(value)
+out = strrep(char(string(value)), '"', '""');
 end
 
 function localPruneEmptyDirs(rootFolder)

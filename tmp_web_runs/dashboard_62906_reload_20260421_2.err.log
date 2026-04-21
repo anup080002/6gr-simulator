@@ -1,0 +1,988 @@
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60615)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60616)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60617)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60618)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60619)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60620)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 60623)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63731)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63732)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63733)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63735)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12659, in do_GET
+    self.respond_json(
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63734)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63751)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63750)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63743)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+----------------------------------------
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+Exception occurred during processing of request from ('10.64.253.106', 63745)
+----------------------------------------
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63740)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+----------------------------------------
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+Exception occurred during processing of request from ('10.64.253.106', 63748)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63742)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 63744)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 51918)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 51923)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 51924)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+----------------------------------------
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+Exception occurred during processing of request from ('10.64.253.106', 51922)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+During handling of the above exception, another exception occurred:
+
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+----------------------------------------
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 51926)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.64.253.106', 51933)
+Traceback (most recent call last):
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12701, in do_GET
+    return
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12832, in respond_json
+    self.send_header("Content-Length", str(len(raw)))
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Anup\6gsimulation\sixgr_foundation_v2 (2)\apps\lls_web_dashboard.py", line 12723, in do_GET
+    username = str(fields.get("username", [""])[0]).strip().lower()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\http\server.py", line 488, in send_error
+    self.end_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Program Files\Python311\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Program Files\Python311\Lib\socketserver.py", line 834, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------

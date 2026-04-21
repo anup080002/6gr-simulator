@@ -17,7 +17,8 @@ end
 dir = upper(char(string(direction)));
 cqiTable = localResolveCQITable(cfg, dir);
 mcsTable = localResolveMCSTable(cfg, dir);
-amc = sixgr.link.resolveMCSFromCQI(cqiIn, mcsTable, cqiTable);
+normalizedCQI = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiIn, NaN);
+amc = sixgr.link.resolveMCSFromCQI(normalizedCQI, mcsTable, cqiTable);
 
 if amc.Valid
     modStr = char(string(amc.MCSProfile.Modulation));
@@ -26,7 +27,16 @@ if amc.Valid
     return;
 end
 
-fallbackCQI = max(1, min(15, round(double(cqiIn))));
+fallbackCQI = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiIn, 0);
+if fallbackCQI <= 0
+    profile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+    if profile.Valid
+        modStr = char(string(profile.Modulation));
+        targetCodeRate = double(profile.TargetCodeRate);
+        mcsIndex = 0;
+        return;
+    end
+end
 cqiProfile = sixgr.link.resolveCQIProfile(cqiTable, fallbackCQI);
 if cqiProfile.Valid && cqiProfile.CQI >= 1
     modStr = char(string(cqiProfile.Modulation));

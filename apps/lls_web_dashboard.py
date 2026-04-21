@@ -105,17 +105,17 @@ USER_PROFILES = {
         "username": "anup",
         "password": "anup",
         "display_name": "Anup",
-        "role": "Simulation Lead",
+        "role": "RAN Engineer",
         "theme": "signal",
-        "bio": "Works on truthful 6G LLS behavior, validation, and runtime analysis.",
+        "bio": "Focuses on PHY chains, scheduler behavior, and implementation detail review.",
     },
     "brijesh": {
         "username": "brijesh",
         "password": "brijesh",
         "display_name": "Brijesh",
-        "role": "RAN Engineer",
+        "role": "Simulation Lead",
         "theme": "vector",
-        "bio": "Focuses on PHY chains, scheduler behavior, and implementation detail review.",
+        "bio": "Works on truthful 6G LLS behavior, validation, and runtime analysis.",
     },
 }
 ACTIVE_SESSIONS: dict[str, dict[str, Any]] = {}
@@ -7905,18 +7905,12 @@ def build_live_payload(run_id: int) -> dict[str, Any]:
     artifacts = fetch_artifacts(run_id)
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
-    has_contract_manifest = any(
-        str(art.get("logical_path") or "") == "reports/csv/contract_materialization_manifest.csv"
-        for art in artifacts
-    )
-    has_images = any(str(art.get("mime_type") or "").startswith("image/") for art in artifacts)
     should_materialize_contract = (
         status_text in {"completed", "completed_with_failures", "aborted", "failed"}
         or status_text.startswith("aborted")
         or (
             status_text == "running"
             and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
-            and (not has_contract_manifest or not has_images)
         )
     )
     if should_materialize_contract:
@@ -7926,6 +7920,7 @@ def build_live_payload(run_id: int) -> dict[str, Any]:
             fetch_artifact_bytes=fetch_artifact_bytes,
             db_connection_factory=db_connection,
             feature_policy=feature_policy,
+            lock_timeout_seconds=0,
         )
         artifacts = fetch_artifacts(run_id)
     latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)

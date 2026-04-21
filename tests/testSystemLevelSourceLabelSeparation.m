@@ -92,7 +92,7 @@ for T = {dlEvidenceT, ulEvidenceT, channelEvidenceT}
         "System-level SINR source must not be overwritten by waveform replay receiver evidence.");
     assert(all(isfinite(double(current.ReceiverHestSINR_dB))), ...
         "Receiver-Hest SINR must be exported when per-grant waveform replay evidence exists.");
-    assert(all(strcmpi(string(current.ReceiverHestSINRSource), "receiver_hest_csi_feedback_wideband_effective_sinr")), ...
+    assert(all(strcmpi(string(current.ReceiverHestSINRSource), "receiver_hest_reference_signal_measurement")), ...
         "Receiver-Hest SINR must keep receiver Hest/CSI source lineage.");
     assert(all(strcmpi(string(current.ReceiverHestSINRValueStatus), "OK")), ...
         "Receiver-Hest SINR status must be OK for replay evidence rows.");
@@ -127,7 +127,7 @@ end
 function T = localAttachReplayEvidence(T)
 n = height(T);
 T.ReceiverHestSINR_dB = [15.25; 8.5];
-T.ReceiverHestSINRSource = repmat("receiver_hest_csi_feedback_wideband_effective_sinr", n, 1);
+T.ReceiverHestSINRSource = repmat("receiver_hest_reference_signal_measurement", n, 1);
 T.ReceiverHestSINRValueRole = repmat("estimated", n, 1);
 T.ReceiverHestSINRValueStatus = repmat("OK", n, 1);
 T.ReceiverHestSINRNAReason = repmat("", n, 1);

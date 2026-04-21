@@ -21,6 +21,8 @@ tables.scenario_consistency_check_table = localBuildScenarioConsistencyCheckTabl
 tables.topology_density_table = localBuildTopologyDensityTable(src, meta, scfg);
 tables.sector_utilization_summary_table = localBuildSectorUtilizationSummaryTable(src, meta);
 tables.serving_cell_population_table = localBuildServingCellPopulationTable(src, meta);
+tables.live_candidate_cell_runtime = localBuildCandidateCellRuntimeTable(src, meta);
+tables.neighbor_degree_histogram_data = localBuildNeighborDegreeHistogramData(tables.live_candidate_cell_runtime, meta);
 tables.table_gnb_cell = localBuildGNBCellTable(src, meta, cfg);
 tables.table_channel_summary = localBuildChannelSummaryTable(src, meta, cfg);
 tables.table_noise_interference = localBuildNoiseInterferenceTable(src, meta, cfg);
@@ -92,9 +94,7 @@ tables.ssb_pbch_table = localBuildRuntimeMirrorTable(src.PBCHTrials, meta, ...
 tables.prach_table = localBuildRuntimeMirrorTable(src.PRACHTrials, meta, ...
     "sixgr.truth.exportControlPlaneTraces", "control/csv/prach_trials.csv|air_interface/csv/prach_trials.csv", ...
     "runtime_control_trial_rows", "UL");
-tables.pucch_table = localBuildRuntimeMirrorTable(src.PUCCHTrials, meta, ...
-    "sixgr.truth.exportControlPlaneTraces", "control/csv/pucch_trials.csv|air_interface/csv/pucch_trials.csv", ...
-    "runtime_control_trial_rows", "UL");
+tables.pucch_table = localBuildPUCCHRuntimeTable(src, meta);
 tables.pusch_table = localBuildRuntimeMirrorTable(src.ULTrials, meta, ...
     "sixgr.link.runULPUSCHThroughput", "air_interface/csv/ul_pusch_trials.csv", ...
     "runtime_air_interface_trial_rows", "UL");
@@ -104,9 +104,7 @@ tables.pdsch_table = localBuildRuntimeMirrorTable(src.DLTrials, meta, ...
 tables.srs_table = localBuildRuntimeMirrorTable(src.SRSTrials, meta, ...
     "sixgr.truth.exportControlPlaneTraces", "control/csv/srs_trials.csv|air_interface/csv/srs_trials.csv", ...
     "runtime_reference_signal_trial_rows", "UL");
-tables.csi_rs_table = localBuildRuntimeMirrorTable(src.CSIRSTrials, meta, ...
-    "sixgr.link.runDLPDSCHThroughput", "air_interface/csv/csi_rs_trials.csv", ...
-    "runtime_reference_signal_trial_rows", "DL");
+tables.csi_rs_table = localBuildCSIRSRuntimeOrSummaryTable(src, meta);
 tables.trs_receiver_tracking_table = localBuildRuntimeMirrorTable(src.ReceiverTrackingTrace, meta, ...
     "sixgr.truth.CoupledTruthRuntime.writeTables", "reports/csv/live_receiver_tracking_trace.csv", ...
     "runtime_receiver_tracking_trace_rows", "DL");
@@ -126,6 +124,8 @@ logicalPaths = struct( ...
     "topology_density_table", "reports/csv/topology_density_table.csv", ...
     "sector_utilization_summary_table", "reports/csv/sector_utilization_summary_table.csv", ...
     "serving_cell_population_table", "reports/csv/serving_cell_population_table.csv", ...
+    "live_candidate_cell_runtime", "reports/csv/live_candidate_cell_runtime.csv", ...
+    "neighbor_degree_histogram_data", "reports/csv/neighbor_degree_histogram_data.csv", ...
     "table_gnb_cell", "reports/csv/table_gnb_cell.csv", ...
     "table_channel_summary", "reports/csv/table_channel_summary.csv", ...
     "table_noise_interference", "reports/csv/table_noise_interference.csv", ...
@@ -208,8 +208,8 @@ localCoverageLog("figure_artifacts_written", runFolder);
 localCoverageLog("coverage_registry_built", runFolder);
 completeness = localBuildOutputCompletenessTable(runFolder, registry, tables, logicalPaths, meta);
 instrumentation = localBuildInstrumentationCoverageTable(registry, meta);
-apiAudit = localBuildAPIExposureAuditTable(registry, meta);
-persistence = localBuildPersistenceAuditTable(runFolder, registry, logicalPaths, meta);
+apiAudit = localBuildAPIExposureAuditTable(registry, logicalPaths, tables, meta);
+persistence = localBuildPersistenceAuditTable(runFolder, registry, logicalPaths, tables, meta);
 localCoverageLog("coverage_audits_built", runFolder);
 
 localWriteTableArtifacts(runFolder, "reports/csv/output_coverage_registry.csv", registry);
@@ -225,7 +225,8 @@ localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", invent
 localCoverageLog("inventory_written", runFolder);
 
 out = struct();
-out.Tables = tables;
+out.Tables = struct();
+out.TableSummaries = localBuildTableSummaries(tables, logicalPaths, runFolder);
 out.OutputCoverageRegistry = registry;
 out.OutputCompletenessTable = completeness;
 out.InstrumentationCoverageTable = instrumentation;
@@ -242,6 +243,9 @@ src = struct();
 src.Deployment = localReadOptionalTable(fullfile(layout.ReportCSVDir, "deployment_layout_reference.csv"));
 src.RuntimeOperatingMode = localReadOptionalTable(fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv"));
 src.ScenarioSummary = localReadOptionalTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"));
+src.SlotTrace = localReadFirstOptionalTable( ...
+    fullfile(layout.PacketFlowCSVDir, "slot_trace.csv"), ...
+    fullfile(layout.ReportCSVDir, "slot_trace.csv"));
 src.DLGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"));
 src.ULGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"));
 src.DLTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
@@ -270,8 +274,26 @@ src.TRSTrials = localReadFirstOptionalTable( ...
     fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"));
 src.ReceiverTrackingState = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_receiver_tracking_state.csv"));
 src.ReceiverTrackingTrace = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_receiver_tracking_trace.csv"));
+src.LiveMobilityState = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_mobility_state.csv"));
+src.LiveMeasurementFilterState = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_measurement_filter_state.csv"));
+src.LiveSelectionState = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_selection_state.csv"));
+src.CoverageLayer = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_coverage_layer.csv"));
+src.LiveCellMeasurementTrace = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_cell_measurement_trace.csv"));
+src.UserPerformance = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_user_performance_snapshot.csv"));
+src.LiveCSIRSStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_csirs_stats.csv"));
+src.EqualizedConstellations = localReadOptionalTable(fullfile(layout.ReportCSVDir, "equalized_constellations.csv"));
+src.ChannelSnapshots = localReadOptionalTable(fullfile(layout.ReportCSVDir, "channel_snapshots.csv"));
+src.AntennaConfigResolved = localReadOptionalTable(fullfile(layout.ReportCSVDir, "antenna_config_resolved.csv"));
+src.PRACHCorrelationTraces = localReadOptionalTable(fullfile(layout.ReportCSVDir, "prach_correlation_traces.csv"));
+src.LivePDCCHStage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_pdcch_stage_table.csv"));
+src.LiveSSBStage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_ssb_stage_table.csv"));
+src.LiveHARQTimeline = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_harq_timeline.csv"));
+src.LiveBeamSelectionTable = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_selection_table.csv"));
 src.EnergyTimeline = localReadOptionalTable(fullfile(layout.RFCSVDir, "energy_timeline_trace.csv"));
 src.EnergySummary = localReadOptionalTable(fullfile(layout.RFCSVDir, "probe_rf_energy.csv"));
+src.HARQTimeline = localReadOptionalTable(fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv"));
+src.HARQSummary = localReadOptionalTable(fullfile(layout.HARQCSVDir, "live_harq_observation_summary.csv"));
+src.BeamPrecoder = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_precoder_table.csv"));
 src.SystemCellLoad = localReadOptionalTable(fullfile(layout.SystemCSVDir, "system_cell_load.csv"));
 src.SystemInterference = localReadOptionalTable(fullfile(layout.SystemCSVDir, "system_interference_detail.csv"));
 src.SystemHARQ = localReadOptionalTable(fullfile(layout.SystemCSVDir, "system_harq_processes.csv"));
@@ -284,20 +306,40 @@ src.SystemSites = localReadOptionalTable(fullfile(layout.SystemDir, "tables", "s
 src.SystemTRPs = localReadOptionalTable(fullfile(layout.SystemDir, "tables", "trps.csv"));
 src.SystemUEPositions = localReadOptionalTable(fullfile(layout.SystemDir, "tables", "ues.csv"));
 src.SystemKPIs = localReadOptionalTable(fullfile(layout.SystemDir, "tables", "system_kpis.csv"));
+if ~(istable(src.SystemSites) && ~isempty(src.SystemSites))
+    src.SystemSites = localNormalizeTopologyReportTable(localReadOptionalTable(fullfile(layout.ReportCSVDir, "sites.csv")), "site");
+end
+if ~(istable(src.SystemSectors) && ~isempty(src.SystemSectors))
+    src.SystemSectors = localNormalizeTopologyReportTable(localReadOptionalTable(fullfile(layout.ReportCSVDir, "sectors.csv")), "sector");
+end
+if ~(istable(src.SystemTRPs) && ~isempty(src.SystemTRPs))
+    src.SystemTRPs = localNormalizeTopologyReportTable(localReadOptionalTable(fullfile(layout.ReportCSVDir, "trps.csv")), "trp");
+end
+if ~(istable(src.SystemUEPositions) && ~isempty(src.SystemUEPositions))
+    src.SystemUEPositions = localNormalizeTopologyReportTable(localReadOptionalTable(fullfile(layout.ReportCSVDir, "ues.csv")), "ue");
+end
 end
 
 function meta = localBuildRunMeta(runFolder, scfg, cfg, src)
 storeState = sixgr.db.artifactStore("get_state");
 summaryRow = localFirstRow(src.ScenarioSummary);
+storedMeta = localReadStoredRunMetadata(runFolder);
 meta = struct();
-meta.run_id = double(sixgr.util.structGet(storeState, "RunID", NaN));
-meta.run_tag = string(sixgr.util.structGet(cfg, "run.runTag", ""));
+meta.run_id = double(localFirstFinite([ ...
+    double(sixgr.util.structGet(storeState, "RunID", NaN)); ...
+    double(sixgr.util.structGet(storedMeta, "run_id", NaN)); ...
+    double(localParseRunIDFromFolder(runFolder))]));
+meta.run_tag = localFirstNonEmptyString( ...
+    string(sixgr.util.structGet(cfg, "run.runTag", "")), ...
+    string(sixgr.util.structGet(storedMeta, "run_tag", "")));
 meta.scenario_id = string(scfg.ScenarioID);
 meta.scenario_variant_id = string(localScenarioGet(scfg, "meta.scenario_id", scfg.ScenarioID));
 meta.scenario_name = string(localScenarioGet(scfg, "meta.scenario_name", localScenarioGet(scfg, "meta.description", scfg.ScenarioID)));
-meta.config_hash = string(scfg.ConfigHash);
-meta.code_commit = string(localTableValue(summaryRow, "CodeCommit", ""));
-meta.seed = double(localScenarioGet(scfg, "simulation.random_seed", localTableValue(summaryRow, "RandomSeed", NaN)));
+meta.config_hash = localFirstNonEmptyString(string(scfg.ConfigHash), string(sixgr.util.structGet(storedMeta, "config_hash", "")));
+meta.code_commit = localFirstNonEmptyString(localResolveCodeCommit(summaryRow, runFolder), string(sixgr.util.structGet(storedMeta, "code_commit", "")));
+meta.seed = double(localFirstFinite([ ...
+    double(localScenarioGet(scfg, "simulation.random_seed", localTableValue(summaryRow, "RandomSeed", NaN))); ...
+    double(sixgr.util.structGet(storedMeta, "seed", NaN))]));
 meta.drop_id = NaN;
 meta.run_folder = string(runFolder);
 carrierDefaultHz = double(localScenarioStructGet(cfg, {"frequency.center_frequency_hz", "global_radio_scope.carrier_frequency_hz", "radio.center_frequency_hz"}, NaN));
@@ -308,6 +350,154 @@ meta.scs_hz = 1e3 * double(localTableValue(summaryRow, "SCS_kHz", localScenarioG
 meta.slots_per_frame = double(localTableValue(summaryRow, "SlotsPerFrame", localDeriveSlotsPerFrame(meta.scs_hz / 1e3)));
 meta.symbols_per_slot = double(localTableValue(summaryRow, "SymbolsPerSlot", 14));
 meta.tdd_pattern = string(localTableValue(summaryRow, "ConfiguredTDDPattern", localScenarioGet(scfg, "frame_timing.tdd_pattern_name", "")));
+end
+
+function meta = localReadStoredRunMetadata(runFolder)
+meta = struct("run_id", NaN, "run_tag", "", "config_hash", "", "code_commit", "", "seed", NaN);
+if nargin < 1 || strlength(string(runFolder)) == 0
+    return;
+end
+manifestPath = fullfile(runFolder, "meta", "scenario_manifest.json");
+if exist(manifestPath, "file") == 2
+    try
+        manifest = jsondecode(fileread(manifestPath));
+        if isstruct(manifest)
+            meta.config_hash = string(sixgr.util.structGet(manifest, "ConfigHash", ""));
+            meta.seed = double(sixgr.util.structGet(manifest, "RandomSeed", NaN));
+            meta.run_tag = localResolveRunTagFromStoredFolder(string(sixgr.util.structGet(manifest, "RunFolder", "")));
+            meta.code_commit = localResolveStoredCodeCommit(manifest);
+        end
+    catch
+    end
+end
+runtimeSummaryPath = fullfile(runFolder, "meta", "runtime_summary.json");
+if exist(runtimeSummaryPath, "file") == 2
+    try
+        runtimeSummary = jsondecode(fileread(runtimeSummaryPath));
+        if isstruct(runtimeSummary)
+            if ~(isfinite(meta.seed) && meta.seed > 0)
+                meta.seed = double(sixgr.util.structGet(runtimeSummary, "RandomSeed", NaN));
+            end
+            meta.run_tag = localFirstNonEmptyString(meta.run_tag, ...
+                localResolveRunTagFromStoredFolder(string(sixgr.util.structGet(runtimeSummary, "RunFolder", ""))));
+            meta.code_commit = localFirstNonEmptyString(meta.code_commit, localResolveStoredCodeCommit(runtimeSummary));
+        end
+    catch
+    end
+end
+meta.run_id = localParseRunIDFromFolder(runFolder);
+end
+
+function runID = localParseRunIDFromFolder(runFolder)
+runID = NaN;
+token = regexp(char(string(runFolder)), '[\\/]run(\d+)$', 'tokens', 'once');
+if ~isempty(token)
+    runID = str2double(string(token{1}));
+end
+end
+
+function runTag = localResolveRunTagFromStoredFolder(pathValue)
+runTag = "";
+pathValue = string(pathValue);
+if strlength(strtrim(pathValue)) == 0
+    return;
+end
+[~, name, ext] = fileparts(char(pathValue));
+runTag = string(name) + string(ext);
+if strlength(strtrim(runTag)) == 0
+    runTag = "";
+end
+end
+
+function commit = localResolveStoredCodeCommit(T)
+commit = "";
+if ~isstruct(T)
+    return;
+end
+commit = localFirstNonEmptyString( ...
+    string(sixgr.util.structGet(T, "CodeCommit", "")), ...
+    string(sixgr.util.structGet(T, "CodeVersion", "")), ...
+    string(sixgr.util.structGet(T, "CodeDetail", "")));
+if startsWith(lower(strtrim(commit)), "git:")
+    commit = extractAfter(commit, 4);
+end
+hashToken = regexp(char(commit), 'hash=([0-9a-fA-F]+)', 'tokens', 'once');
+if ~isempty(hashToken)
+    commit = string(hashToken{1});
+end
+end
+
+function out = localFirstNonEmptyString(varargin)
+out = "";
+for i = 1:nargin
+    value = string(varargin{i});
+    value = strip(value);
+    mask = strlength(value) > 0 & lower(value) ~= "not_applicable";
+    if any(mask)
+        out = value(find(mask, 1, "first"));
+        return;
+    end
+end
+end
+
+function T = localNormalizeTopologyReportTable(T, kind)
+if ~(istable(T) && ~isempty(T))
+    T = table();
+    return;
+end
+kind = lower(string(kind));
+vars = string(T.Properties.VariableNames);
+switch kind
+    case "site"
+        T = localRenameVarsIfPresent(T, ["SiteID","X_m","Y_m","Z_m","Lat","Lon"], ...
+            ["site_id","x_m","y_m","z_m","lat","lon"]);
+    case "sector"
+        T = localRenameVarsIfPresent(T, ["SiteID","SectorID","Azimuth_deg","X_m","Y_m","Z_m","Lat","Lon"], ...
+            ["site_id","sector_id","azimuth_deg","x_m","y_m","z_m","lat","lon"]);
+        if ~ismember("trp_id", string(T.Properties.VariableNames))
+            if ismember("sector_id", string(T.Properties.VariableNames))
+                T.trp_id = double(T.sector_id);
+            else
+                T.trp_id = nan(height(T), 1);
+            end
+        end
+        if ~ismember("max_tx_power_dbm", string(T.Properties.VariableNames))
+            T.max_tx_power_dbm = nan(height(T), 1);
+        end
+        if ~ismember("array_geometry_id", string(T.Properties.VariableNames))
+            T.array_geometry_id = strings(height(T), 1);
+        end
+    case "trp"
+        T = localRenameVarsIfPresent(T, ["TRPID","SiteID","SectorID","Azimuth_deg","TxPower_dBm","X_m","Y_m","Z_m","Lat","Lon"], ...
+            ["trp_id","site_id","sector_id","azimuth_deg","max_tx_power_dbm","x_m","y_m","z_m","lat","lon"]);
+    case "ue"
+        T = localRenameVarsIfPresent(T, ["UEID","X_m","Y_m","Z_m","Lat","Lon","Indoor","Speed_kmh","Heading_deg"], ...
+            ["ue_id","x_m","y_m","z_m","lat","lon","indoor","speed_kmh","heading_deg"]);
+    otherwise
+        return;
+end
+vars = string(T.Properties.VariableNames);
+if ismember("site_id", vars)
+    T.site_id = double(T.site_id);
+end
+if ismember("sector_id", vars)
+    T.sector_id = double(T.sector_id);
+end
+if ismember("trp_id", vars)
+    T.trp_id = double(T.trp_id);
+end
+if ismember("ue_id", vars)
+    T.ue_id = double(T.ue_id);
+end
+end
+
+function T = localRenameVarsIfPresent(T, oldNames, newNames)
+oldNames = string(oldNames);
+newNames = string(newNames);
+present = ismember(oldNames, string(T.Properties.VariableNames));
+if any(present)
+    T = renamevars(T, cellstr(oldNames(present)), cellstr(newNames(present)));
+end
 end
 
 function T = localBuildScenarioTopologyTable(src, meta, scfg)
@@ -368,18 +558,46 @@ end
 
 function T = localBuildScenarioConsistencyCheckTable(src, meta, scfg)
 topology = localFirstRow(localBuildScenarioTopologyTable(src, meta, scfg));
+deploymentRow = localFirstRow(src.Deployment);
+runtimeModeRow = localFirstRow(src.RuntimeOperatingMode);
+scenarioSummaryRow = localFirstRow(src.ScenarioSummary);
+expectedNumSites = localTableValue(deploymentRow, "NumSites", ...
+    localScenarioGet(scfg, "deployment_topology.num_sites", localTableValue(topology, "num_sites", NaN)));
+expectedSectorsPerSite = localTableValue(deploymentRow, "SectorsPerSite", ...
+    localScenarioGet(scfg, "deployment_topology.num_sectors_per_site", localTableValue(topology, "sectors_per_site", NaN)));
+expectedTotalCells = localTableValue(deploymentRow, "NumCells", ...
+    localScenarioGet(scfg, "deployment_topology.num_cells", ...
+    localScenarioGet(scfg, "deployment_topology.num_base_stations", localTableValue(topology, "total_cells", NaN))));
+expectedNumUEs = localTableValue(deploymentRow, "NumUEs", ...
+    localScenarioGet(scfg, "deployment_topology.num_ues", ...
+    localScenarioGet(scfg, "users.n_users", localTableValue(topology, "num_ues", NaN))));
+expectedCarrierHz = localScenarioGet(scfg, "frequency.center_frequency_hz", localTableValue(topology, "carrier_frequency_hz", NaN));
+expectedBandwidthHz = localScenarioGet(scfg, "frequency.bandwidth_hz", localTableValue(topology, "bandwidth_hz", NaN));
+expectedSCSHz = localTableValue(runtimeModeRow, "SCS_kHz", NaN);
+if isfinite(double(expectedSCSHz))
+    expectedSCSHz = 1.0e3 * double(expectedSCSHz);
+else
+    expectedSCSHz = localScenarioGet(scfg, "global_radio_scope.scs_hz", ...
+        1.0e3 * double(localScenarioGet(scfg, "frame.scs_khz", localTableValue(topology, "scs_hz", NaN) / 1.0e3)));
+end
+expectedWraparound = double(logical(localTableValue(deploymentRow, "WraparoundEnabled", ...
+    localScenarioGet(scfg, "deployment_topology.wraparound_enabled", localTableValue(topology, "wraparound_enable", false)))));
+expectedDeploymentScenario = string(localScenarioGet(scfg, "deployment_topology.cell_type", localTableValue(topology, "deployment_scenario", "")));
+expectedTDDPattern = string(localTableValue(scenarioSummaryRow, "ConfiguredTDDPattern", ...
+    localScenarioGet(scfg, "frame.tdd_pattern", ...
+    localScenarioGet(scfg, "frame_timing.tdd_pattern", localTableValue(topology, "tdd_pattern", "")))));
 checks = {
-    "num_sites_exact", 19, localTableValue(topology, "num_sites", NaN), "deployment_layout_reference";
-    "sectors_per_site_exact", 3, localTableValue(topology, "sectors_per_site", NaN), "deployment_layout_reference";
-    "total_cells_exact", 57, localTableValue(topology, "total_cells", NaN), "deployment_layout_reference";
-    "num_ues_exact", 100, localTableValue(topology, "num_ues", NaN), "deployment_layout_reference";
-    "carrier_frequency_hz_exact", 4.0e9, localTableValue(topology, "carrier_frequency_hz", NaN), "resolved_config";
-    "bandwidth_hz_exact", 100.0e6, localTableValue(topology, "bandwidth_hz", NaN), "resolved_config";
-    "scs_hz_exact", 30.0e3, localTableValue(topology, "scs_hz", NaN), "scenario_summary";
-    "wraparound_enabled", 1, double(localTableValue(topology, "wraparound_enable", false)), "resolved_config";
+    "num_sites_exact", expectedNumSites, localTableValue(topology, "num_sites", NaN), "resolved_config";
+    "sectors_per_site_exact", expectedSectorsPerSite, localTableValue(topology, "sectors_per_site", NaN), "resolved_config";
+    "total_cells_exact", expectedTotalCells, localTableValue(topology, "total_cells", NaN), "resolved_config";
+    "num_ues_exact", expectedNumUEs, localTableValue(topology, "num_ues", NaN), "resolved_config";
+    "carrier_frequency_hz_exact", expectedCarrierHz, localTableValue(topology, "carrier_frequency_hz", NaN), "resolved_config";
+    "bandwidth_hz_exact", expectedBandwidthHz, localTableValue(topology, "bandwidth_hz", NaN), "resolved_config";
+    "scs_hz_exact", expectedSCSHz, localTableValue(topology, "scs_hz", NaN), "resolved_config";
+    "wraparound_enabled", expectedWraparound, double(localTableValue(topology, "wraparound_enable", false)), "resolved_config";
     "inter_cell_interference_enabled", 1, double(logical(localScenarioGet(scfg, "interference.inter_cell_interference_flag", true))), "resolved_config";
-    "deployment_scenario_uma", "UMa", localTableValue(topology, "deployment_scenario", ""), "resolved_config";
-    "tdd_pattern_baseline", "DDDDU", localTableValue(topology, "tdd_pattern", ""), "scenario_summary";
+    "deployment_scenario_uma", expectedDeploymentScenario, localTableValue(topology, "deployment_scenario", ""), "resolved_config";
+    "tdd_pattern_baseline", expectedTDDPattern, localTableValue(topology, "tdd_pattern", ""), "resolved_config";
 };
 rows = repmat(struct("CheckName", "", "ExpectedValue", "", "ActualValue", "", ...
     "CheckStatus", "", "ReasonCode", "", "BlockingFlag", false, "Source", ""), size(checks, 1), 1);
@@ -470,7 +688,9 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
 end
 
 function T = localBuildServingCellPopulationTable(src, meta)
-servingCells = unique(localColumnAsDouble(src.SystemInterference, "ServingCell"));
+servingCells = unique([ ...
+    localColumnAsDouble(src.SystemInterference, "ServingCell"); ...
+    localColumnAsDouble(src.CoverageLayer, "ServingCell")], "stable");
 servingCells = servingCells(isfinite(servingCells));
 if isempty(servingCells)
     T = table();
@@ -486,16 +706,237 @@ for i = 1:numel(servingCells)
     ueIDs = ueIDs(isfinite(ueIDs));
     rows(i).cell_id = cellId;
     rows(i).served_ue_count = numel(ueIDs);
+    if ~(isfinite(rows(i).served_ue_count) && rows(i).served_ue_count > 0)
+        covMask = localColumnMatches(src.CoverageLayer, "ServingCell", cellId);
+        covUEs = unique(localSelectColumn(src.CoverageLayer, covMask, "UEID"));
+        covUEs = covUEs(isfinite(covUEs));
+        rows(i).served_ue_count = double(numel(covUEs));
+    end
     rows(i).edge_ue_count = localEdgeUECount(src.SystemInterference, cellId);
+    if ~isfinite(rows(i).edge_ue_count)
+        rows(i).edge_ue_count = localCoverageEdgeUECount(src.CoverageLayer, cellId);
+    end
     rows(i).mean_dl_sinr_db = localMeanFromMask(src.SystemInterference, mask, "SINR_DL_dB");
+    if ~isfinite(rows(i).mean_dl_sinr_db)
+        rows(i).mean_dl_sinr_db = localCoverageMeanByCell(src.CoverageLayer, cellId, ...
+            "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
+    end
     rows(i).mean_ul_sinr_db = localMeanFromMask(src.SystemInterference, mask, "SINR_UL_dB");
+    if ~isfinite(rows(i).mean_ul_sinr_db)
+        rows(i).mean_ul_sinr_db = localMeanTrialMetricByCell(src.ULTrials, cellId, ...
+            ["MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB"]);
+    end
     rows(i).mean_rsrp_dbm = localMeanFromMask(src.SystemInterference, mask, "RSRP_dBm");
+    if ~isfinite(rows(i).mean_rsrp_dbm)
+        rows(i).mean_rsrp_dbm = localCoverageMeanByCell(src.CoverageLayer, cellId, "ServingRSRP_dBm", "RSRP_dBm");
+    end
     rows(i).mean_pathloss_db = localMeanFromMask(src.SystemInterference, mask, "Pathloss_dB");
-    rows(i).population_value_source = "system/csv/system_interference_detail.csv";
+    if ~isfinite(rows(i).mean_pathloss_db)
+        rows(i).mean_pathloss_db = localCoverageMeanByCell(src.CoverageLayer, cellId, "Pathloss_dB");
+    end
+    rows(i).population_value_source = localFirstNonEmptyString( ...
+        localTernary(any(mask), "system/csv/system_interference_detail.csv", ""), ...
+        localTernary(any(localColumnMatches(src.CoverageLayer, "ServingCell", cellId)), "reports/csv/live_coverage_layer.csv", ""));
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildServingCellPopulationTable", ...
-    "system/csv/system_interference_detail.csv", "implemented", "derived_runtime_serving_cell_population", true, true);
+    "system/csv/system_interference_detail.csv|reports/csv/live_coverage_layer.csv|air_interface/csv/ul_pusch_trials.csv", ...
+    "implemented", "derived_runtime_serving_cell_population", true, true);
+end
+
+function T = localBuildCandidateCellRuntimeTable(src, meta)
+if ~(istable(src.LiveCellMeasurementTrace) && ~isempty(src.LiveCellMeasurementTrace))
+    T = table();
+    return;
+end
+trace = src.LiveCellMeasurementTrace;
+slot = localColumnAsDouble(trace, "Slot");
+ueId = localColumnAsDouble(trace, "UEID");
+candidateRank = localColumnAsDouble(trace, "CandidateRank");
+cellId = localColumnAsDouble(trace, "CellID");
+siteId = localColumnAsDouble(trace, "SiteID");
+sectorId = localColumnAsDouble(trace, "SectorID");
+timeS = localColumnAsDouble(trace, "Time_s");
+lat = localColumnAsDouble(trace, "Lat");
+lon = localColumnAsDouble(trace, "Lon");
+rsrp = localColumnAsDouble(trace, "RSRP_dBm");
+rxPower = localColumnAsDouble(trace, "RxPower_dBm");
+pathloss = localColumnAsDouble(trace, "Pathloss_dB");
+beamIndex = localColumnAsDouble(trace, "BeamIndex");
+beamGain = localColumnAsDouble(trace, "BeamGain_dB");
+losFlag = localColumnAsDouble(trace, "LOSFlag");
+shadow = localColumnAsDouble(trace, "ShadowFading_dB");
+o2i = localColumnAsDouble(trace, "O2I_dB");
+valid = isfinite(slot) & isfinite(ueId) & isfinite(candidateRank) & isfinite(cellId);
+if ~any(valid)
+    T = table();
+    return;
+end
+meas = table( ...
+    1e3 * timeS(valid), slot(valid), ueId(valid), candidateRank(valid), cellId(valid), ...
+    siteId(valid), sectorId(valid), lat(valid), lon(valid), rsrp(valid), rxPower(valid), ...
+    pathloss(valid), beamIndex(valid), beamGain(valid), losFlag(valid), shadow(valid), o2i(valid), ...
+    'VariableNames', { ...
+        'timestamp_sim_ms', 'slot', 'ue_id', 'candidate_rank', 'cell_id', ...
+        'site_id', 'sector_id', 'lat', 'lon', 'rsrp_dbm', 'rx_power_dbm', ...
+        'pathloss_db', 'beam_id', 'beam_gain_db', 'los_flag', 'shadow_fading_db', 'o2i_db'});
+servingState = localBuildServingStateTable(src);
+if istable(servingState) && ~isempty(servingState)
+    exactState = servingState(servingState.same_slot_match, :);
+    exactState = exactState(:, {'ue_id','slot','serving_cell','serving_state_source','coverage_join_quality'});
+    exactState = unique(exactState, 'rows', 'stable');
+    meas = outerjoin(meas, exactState, 'Keys', {'ue_id', 'slot'}, 'MergeKeys', true, 'Type', 'left');
+else
+    meas.serving_cell = nan(height(meas), 1);
+    meas.serving_state_source = repmat("", height(meas), 1);
+    meas.coverage_join_quality = repmat("coverage_join_missing", height(meas), 1);
+end
+if ~ismember("serving_cell", string(meas.Properties.VariableNames))
+    meas.serving_cell = nan(height(meas), 1);
+end
+if ~ismember("serving_state_source", string(meas.Properties.VariableNames))
+    meas.serving_state_source = repmat("", height(meas), 1);
+end
+if ~ismember("coverage_join_quality", string(meas.Properties.VariableNames))
+    meas.coverage_join_quality = repmat("coverage_join_missing", height(meas), 1);
+end
+missingServing = ~isfinite(meas.serving_cell);
+if any(missingServing) && istable(servingState) && ~isempty(servingState)
+    for i = reshape(find(missingServing), 1, [])
+        fallback = localNearestServingStateRow(servingState, meas.ue_id(i), meas.slot(i));
+        if ~isempty(fallback)
+            meas.serving_cell(i) = fallback.serving_cell;
+            meas.serving_state_source(i) = fallback.serving_state_source;
+            meas.coverage_join_quality(i) = fallback.coverage_join_quality;
+        end
+    end
+end
+meas.serving_state_source(strlength(strtrim(string(meas.serving_state_source))) == 0) = "serving_state_not_emitted";
+meas.coverage_join_quality(~isfinite(meas.serving_cell)) = "coverage_join_missing";
+meas.direction = repmat("DL", height(meas), 1);
+meas.is_serving_candidate = isfinite(meas.serving_cell) & isfinite(meas.cell_id) & (meas.serving_cell == meas.cell_id);
+meas.candidate_relation = repmat("candidate_measurement", height(meas), 1);
+meas.candidate_relation(meas.is_serving_candidate) = "serving_candidate";
+meas.candidate_relation(~meas.is_serving_candidate & meas.candidate_rank > 1) = "neighbor_candidate";
+meas.candidate_relation(~meas.is_serving_candidate & meas.candidate_rank == 1) = "top_rank_nonserving_candidate";
+meas.measurement_source = repmat("reports/csv/live_cell_measurement_trace.csv", height(meas), 1);
+T = sortrows(meas, {'slot', 'ue_id', 'candidate_rank', 'cell_id'});
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildCandidateCellRuntimeTable", ...
+    "reports/csv/live_cell_measurement_trace.csv|reports/csv/live_mobility_state.csv|reports/csv/live_selection_state.csv|reports/csv/live_measurement_filter_state.csv|reports/csv/live_coverage_layer.csv", ...
+    "implemented", "derived_runtime_candidate_cell_measurements", true, true);
+end
+
+function T = localBuildServingStateTable(src)
+parts = {};
+parts{end+1} = localServingStateFromTable(sixgr.util.structGet(src, "LiveMobilityState", table()), ...
+    "reports/csv/live_mobility_state.csv", 1);
+parts{end+1} = localServingStateFromTable(sixgr.util.structGet(src, "LiveSelectionState", table()), ...
+    "reports/csv/live_selection_state.csv", 2);
+parts{end+1} = localServingStateFromTable(sixgr.util.structGet(src, "LiveMeasurementFilterState", table()), ...
+    "reports/csv/live_measurement_filter_state.csv", 3);
+parts{end+1} = localServingStateFromTable(sixgr.util.structGet(src, "CoverageLayer", table()), ...
+    "reports/csv/live_coverage_layer.csv", 4);
+parts = parts(~cellfun(@isempty, parts));
+if isempty(parts)
+    T = table();
+    return;
+end
+T = vertcat(parts{:});
+T = sortrows(T, {'serving_state_priority','slot','ue_id'});
+[~, keepIdx] = unique(T(:, {'ue_id','slot'}), 'rows', 'stable');
+T = T(sort(keepIdx), :);
+end
+
+function T = localServingStateFromTable(srcTable, sourcePath, priority)
+if ~(istable(srcTable) && ~isempty(srcTable))
+    T = table();
+    return;
+end
+ueId = localColumnAsDouble(srcTable, "UEID");
+if ~any(isfinite(ueId))
+    ueId = localColumnAsDouble(srcTable, "ue_id");
+end
+slot = localColumnAsDouble(srcTable, "Slot");
+if ~any(isfinite(slot))
+    slot = localColumnAsDouble(srcTable, "slot");
+end
+servingCell = localColumnAsDouble(srcTable, "ServingCell");
+if ~any(isfinite(servingCell))
+    servingCell = localColumnAsDouble(srcTable, "serving_cell");
+end
+valid = isfinite(ueId) & isfinite(slot) & isfinite(servingCell);
+if ~any(valid)
+    T = table();
+    return;
+end
+T = table(ueId(valid), slot(valid), servingCell(valid), ...
+    repmat(string(sourcePath), sum(valid), 1), ...
+    repmat(double(priority), sum(valid), 1), ...
+    repmat(true, sum(valid), 1), ...
+    repmat("exact_runtime_serving_state_join", sum(valid), 1), ...
+    'VariableNames', {'ue_id','slot','serving_cell','serving_state_source','serving_state_priority','same_slot_match','coverage_join_quality'});
+T = unique(T, 'rows', 'stable');
+end
+
+function row = localNearestServingStateRow(servingState, ueId, slot)
+row = table();
+if ~(istable(servingState) && ~isempty(servingState) && isfinite(ueId) && isfinite(slot))
+    return;
+end
+mask = isfinite(servingState.ue_id) & isfinite(servingState.slot) & isfinite(servingState.serving_cell) & servingState.ue_id == ueId;
+if ~any(mask)
+    return;
+end
+subset = servingState(mask, :);
+delta = abs(subset.slot - slot);
+[~, order] = sortrows([delta, subset.serving_state_priority], [1 2]); %#ok<ASGLU>
+subset = subset(order, :);
+row = subset(1, :);
+row.same_slot_match = false;
+row.coverage_join_quality = "nearest_runtime_serving_state_slot";
+end
+
+function T = localBuildNeighborDegreeHistogramData(candidateT, meta)
+if ~(istable(candidateT) && ~isempty(candidateT))
+    T = table();
+    return;
+end
+servingCell = localColumnAsDouble(candidateT, "serving_cell");
+candidateCell = localColumnAsDouble(candidateT, "cell_id");
+candidateRank = localColumnAsDouble(candidateT, "candidate_rank");
+valid = isfinite(servingCell) & isfinite(candidateCell) & isfinite(candidateRank);
+if ~any(valid)
+    T = table();
+    return;
+end
+servingCells = unique(servingCell(valid), "stable");
+degrees = nan(numel(servingCells), 1);
+observationCounts = zeros(numel(servingCells), 1);
+for i = 1:numel(servingCells)
+    cellId = servingCells(i);
+    mask = valid & servingCell == cellId;
+    neighborMask = mask & candidateCell ~= cellId & candidateRank > 1;
+    degrees(i) = double(numel(unique(candidateCell(neighborMask))));
+    observationCounts(i) = double(sum(neighborMask));
+end
+degreeValues = unique(degrees(isfinite(degrees)), "stable");
+if isempty(degreeValues)
+    degreeValues = 0;
+end
+rows = repmat(struct("neighbor_degree", NaN, "cell_count", NaN, "candidate_observation_count", NaN, ...
+    "serving_cell_list", ""), numel(degreeValues), 1);
+for i = 1:numel(degreeValues)
+    degree = degreeValues(i);
+    mask = isfinite(degrees) & degrees == degree;
+    rows(i).neighbor_degree = degree;
+    rows(i).cell_count = double(sum(mask));
+    rows(i).candidate_observation_count = double(sum(observationCounts(mask)));
+    rows(i).serving_cell_list = strjoin(string(servingCells(mask)).', "|");
+end
+T = struct2table(rows);
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildNeighborDegreeHistogramData", ...
+    "reports/csv/live_cell_measurement_trace.csv|reports/csv/live_coverage_layer.csv", ...
+    "implemented", "derived_runtime_neighbor_degree_histogram", true, true);
 end
 
 function T = localBuildGNBCellTable(src, meta, cfg)
@@ -532,31 +973,60 @@ for i = 1:height(src.SystemSectors)
     rows(i).num_txru = double(localScenarioStructGet(cfg, {"system.bsArray.numTxRU", "baseStation.numTxRU"}, NaN));
     rows(i).num_rxru = double(localScenarioStructGet(cfg, {"system.bsArray.numRxRU", "baseStation.numRxRU"}, NaN));
     rows(i).active_ues_avg = localMeanFromMask(src.SystemCellLoad, loadMask, "ActiveUE_DL", "ActiveUE_UL");
+    if ~isfinite(rows(i).active_ues_avg)
+        rows(i).active_ues_avg = localGrantUniqueUEStat(src.DLGrants, src.ULGrants, cellId, "mean");
+    end
     rows(i).active_ues_peak = localMaxFromMask(src.SystemCellLoad, loadMask, "ActiveUE_DL", "ActiveUE_UL");
+    if ~isfinite(rows(i).active_ues_peak)
+        rows(i).active_ues_peak = localGrantUniqueUEStat(src.DLGrants, src.ULGrants, cellId, "max");
+    end
     rows(i).dl_load_avg = localPRBLoadFraction(src.DLGrants, cellId, meta);
     rows(i).ul_load_avg = localPRBLoadFraction(src.ULGrants, cellId, meta);
     rows(i).avg_rsrp_dBm = localMeanFromMask(src.SystemInterference, intrMask, "RSRP_dBm");
+    if ~isfinite(rows(i).avg_rsrp_dBm)
+        rows(i).avg_rsrp_dBm = localCoverageMeanByCell(src.CoverageLayer, cellId, "ServingRSRP_dBm", "RSRP_dBm");
+    end
     rows(i).avg_sinr_dB = localMeanFromMask(src.SystemInterference, intrMask, "SINR_DL_dB", "SINR_UL_dB");
+    if ~isfinite(rows(i).avg_sinr_dB)
+        rows(i).avg_sinr_dB = localCoverageMeanByCell(src.CoverageLayer, cellId, "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
+    end
     rows(i).edge_ue_count = localEdgeUECount(src.SystemInterference, cellId);
+    if ~isfinite(rows(i).edge_ue_count)
+        rows(i).edge_ue_count = localCoverageEdgeUECount(src.CoverageLayer, cellId);
+    end
     rows(i).handover_in_count = localMaskedCount(src.SystemHandover, hoInMask);
     rows(i).handover_out_count = localMaskedCount(src.SystemHandover, hoOutMask);
     rows(i).beam_failure_count = localMaskedEventCount(src.SystemBeam, beamMask, "EventType", "beam_failure");
+    if ~isfinite(rows(i).beam_failure_count)
+        rows(i).beam_failure_count = localBeamMismatchCount(src.BeamPrecoder, cellId);
+    end
     rows(i).scheduler_type = string(localScenarioStructGet(cfg, {"system.scheduler.type"}, ""));
     rows(i).energy_state_primary = "";
     rows(i).control_overhead_fraction = NaN;
-    rows(i).status_source = string("runtime_aggregated_from_system_level_tables");
+    rows(i).status_source = string(localGNBCellStatusSource(src));
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildGNBCellTable", ...
-    "system/tables/sectors.csv", "implemented", "runtime_aggregated", true, true);
+    localGNBCellStatusSource(src), "implemented", "runtime_aggregated", true, true);
 end
 
 function T = localBuildChannelSummaryTable(src, meta, cfg)
-if ~(istable(src.SystemInterference) && ~isempty(src.SystemInterference))
+if istable(src.SystemInterference) && ~isempty(src.SystemInterference)
+    ueVals = unique(localColumnAsDouble(src.SystemInterference, "UE"));
+    channelSourceRef = "system/csv/system_interference_detail.csv";
+else
+    ueVals = unique([ ...
+        localColumnAsDouble(src.CoverageLayer, "UEID"); ...
+        localColumnAsDouble(src.DLTrials, "UEID"); ...
+        localColumnAsDouble(src.ULTrials, "UEID"); ...
+        localColumnAsDouble(src.UserPerformance, "UEIndex")], "stable");
+    channelSourceRef = "reports/csv/live_coverage_layer.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv";
+end
+ueVals = ueVals(isfinite(ueVals));
+if isempty(ueVals)
     T = table();
     return;
 end
-ueVals = unique(localColumnAsDouble(src.SystemInterference, "UE"));
 rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "los_flag", NaN, "o2i_flag", NaN, ...
     "pathloss_dB", NaN, "coupling_loss_dB", NaN, "shadow_fading_dB", NaN, ...
     "delay_spread_ns", NaN, "asa_deg", NaN, "asd_deg", NaN, "zsa_deg", NaN, "zsd_deg", NaN, ...
@@ -568,18 +1038,44 @@ for i = 1:numel(ueVals)
     ue = ueVals(i);
     mask = localColumnMatches(src.SystemInterference, "UE", ue);
     servingCell = localFirstFinite(localSelectColumn(src.SystemInterference, mask, "ServingCell"));
+    if ~isfinite(servingCell)
+        servingCell = localCoverageCellForUE(src.CoverageLayer, ue);
+    end
+    if ~isfinite(servingCell)
+        servingCell = localTrialCellForUE(src.DLTrials, src.ULTrials, ue);
+    end
     servedTx = localMapLookup(txPower, servingCell, NaN);
     speedKmh = localLookupUEValue(src.SystemUE, ue, "Speed_kmh", NaN);
+    if ~isfinite(speedKmh)
+        speedKmh = localLookupUEValue(src.SystemUEPositions, ue, "speed_kmh", NaN);
+    end
     rows(i).ue_id = ue;
     rows(i).cell_id = servingCell;
     rows(i).los_flag = NaN;
     rows(i).o2i_flag = localLookupUEValue(src.SystemUE, ue, "Indoor", NaN);
+    if ~isfinite(rows(i).o2i_flag)
+        rows(i).o2i_flag = localLookupUEValue(src.SystemUEPositions, ue, "indoor", NaN);
+    end
     rows(i).pathloss_dB = localMeanFromMask(src.SystemInterference, mask, "Pathloss_dB");
+    if ~isfinite(rows(i).pathloss_dB)
+        rows(i).pathloss_dB = localCoverageMetricForUE(src.CoverageLayer, ue, "Pathloss_dB");
+    end
+    if ~isfinite(rows(i).pathloss_dB)
+        rows(i).pathloss_dB = localTrialMetricForUE(src.DLTrials, src.ULTrials, ue, "AppliedPathloss_dB", "AppliedBasePathloss_dB");
+    end
     rows(i).coupling_loss_dB = localMeanFromMask(src.SystemInterference, mask, "RxPower_dBm");
     if isfinite(servedTx) && isfinite(rows(i).coupling_loss_dB)
         rows(i).coupling_loss_dB = servedTx - rows(i).coupling_loss_dB;
     else
-        rows(i).coupling_loss_dB = NaN;
+        servingRSRP = localCoverageMetricForUE(src.CoverageLayer, ue, "ServingRSRP_dBm", "RSRP_dBm");
+        if ~(isfinite(servedTx) && isfinite(servingRSRP))
+            servingRSRP = localTrialMetricForUE(src.DLTrials, src.ULTrials, ue, "ServingRSRP_dBm");
+        end
+        if isfinite(servedTx) && isfinite(servingRSRP)
+            rows(i).coupling_loss_dB = servedTx - servingRSRP;
+        else
+            rows(i).coupling_loss_dB = rows(i).pathloss_dB;
+        end
     end
     rows(i).shadow_fading_dB = NaN;
     rows(i).delay_spread_ns = NaN;
@@ -587,89 +1083,100 @@ for i = 1:numel(ueVals)
     rows(i).asd_deg = NaN;
     rows(i).zsa_deg = NaN;
     rows(i).zsd_deg = NaN;
-    rows(i).doppler_hz = localSpeedToDopplerHz(speedKmh, meta.carrier_frequency_hz);
+    rows(i).doppler_hz = localTrialMetricForUE(src.DLTrials, src.ULTrials, ue, "EstimatedDopplerHz", "DopplerHz", "InjectedDoppler_Hz");
+    if ~isfinite(rows(i).doppler_hz)
+        rows(i).doppler_hz = localSpeedToDopplerHz(speedKmh, meta.carrier_frequency_hz);
+    end
     rows(i).k_factor_dB = NaN;
     rows(i).channel_rank_est = localMeanGrantLayers(src.DLGrants, src.ULGrants, ue, servingCell);
     rows(i).spatial_consistency_state = string(localTernary(logical(localScenarioStructGet(cfg, {"channel.spatialConsistencyEnable"}, false)), "enabled", "disabled"));
     rows(i).update_period_ms = double(localScenarioStructGet(cfg, {"channel.updatePeriod_ms", "channel.largeScaleUpdatePeriod_ms"}, NaN));
     rows(i).channel_tensor_ref = "";
-    rows(i).source_backend_object = "system/csv/system_interference_detail.csv";
+    rows(i).source_backend_object = channelSourceRef;
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildChannelSummaryTable", ...
-    "system/csv/system_interference_detail.csv", "implemented", "runtime_aggregated", true, true);
+    channelSourceRef, "implemented", "runtime_aggregated", true, true);
 end
 
 function T = localBuildNoiseInterferenceTable(src, meta, cfg)
-if ~(istable(src.SystemInterference) && ~isempty(src.SystemInterference))
+if istable(src.SystemInterference) && ~isempty(src.SystemInterference)
+    rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "serving_cell_id", NaN, "desired_signal_power_dBm", NaN, ...
+        "intra_cell_interference_dBm", NaN, "inter_cell_interference_dBm", NaN, "external_interference_dBm", NaN, ...
+        "noise_power_dBm", NaN, "thermal_noise_dBm", NaN, "receiver_noise_figure_dB", NaN, ...
+        "total_interference_plus_noise_dBm", NaN, "pre_eq_sinr_dB", NaN, "post_eq_sinr_dB", NaN, ...
+        "dominant_interferer_cell_id", NaN, "dominant_interferer_share_percent", NaN, ...
+        "interference_limited_flag", false, "source_block", "", "direction", ""), 0, 1);
+    for i = 1:height(src.SystemInterference)
+        base = src.SystemInterference(i, :);
+        dlNoise = localTableValue(base, "NoiseDL_dBm", localTableValue(base, "Noise_dBm", NaN));
+        dlInterf = localTableValue(base, "InterferencePowerDL_dBm", NaN);
+        dlDesired = localTableValue(base, "DesiredPowerDL_dBm", NaN);
+        if isfinite(dlDesired)
+            rows(end+1, 1) = localNoiseRow(base, "DL", dlDesired, dlInterf, dlNoise, ... %#ok<AGROW>
+                double(localScenarioStructGet(cfg, {"receiver.noiseFigure_dB", "baseStation.noiseFigure_dB"}, NaN)));
+        end
+        ulNoise = localTableValue(base, "NoiseUL_dBm", NaN);
+        ulInterf = localTableValue(base, "InterferencePowerUL_dBm", NaN);
+        ulDesired = localTableValue(base, "DesiredPowerUL_dBm", NaN);
+        if isfinite(ulDesired)
+            rows(end+1, 1) = localNoiseRow(base, "UL", ulDesired, ulInterf, ulNoise, ... %#ok<AGROW>
+                double(localScenarioStructGet(cfg, {"receiver.noiseFigure_dB", "userEquipment.noiseFigure_dB"}, NaN)));
+        end
+    end
+else
+    rows = localBuildNoiseRowsFromTrials(src, meta, cfg);
+end
+if isempty(rows)
     T = table();
     return;
-end
-rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "serving_cell_id", NaN, "desired_signal_power_dBm", NaN, ...
-    "intra_cell_interference_dBm", NaN, "inter_cell_interference_dBm", NaN, "external_interference_dBm", NaN, ...
-    "noise_power_dBm", NaN, "thermal_noise_dBm", NaN, "receiver_noise_figure_dB", NaN, ...
-    "total_interference_plus_noise_dBm", NaN, "pre_eq_sinr_dB", NaN, "post_eq_sinr_dB", NaN, ...
-    "dominant_interferer_cell_id", NaN, "dominant_interferer_share_percent", NaN, ...
-    "interference_limited_flag", false, "source_block", "", "direction", ""), 0, 1);
-for i = 1:height(src.SystemInterference)
-    base = src.SystemInterference(i, :);
-    dlNoise = localTableValue(base, "NoiseDL_dBm", localTableValue(base, "Noise_dBm", NaN));
-    dlInterf = localTableValue(base, "InterferencePowerDL_dBm", NaN);
-    dlDesired = localTableValue(base, "DesiredPowerDL_dBm", NaN);
-    if isfinite(dlDesired)
-        rows(end+1, 1) = localNoiseRow(base, "DL", dlDesired, dlInterf, dlNoise, ... %#ok<AGROW>
-            double(localScenarioStructGet(cfg, {"receiver.noiseFigure_dB", "baseStation.noiseFigure_dB"}, NaN)));
-    end
-    ulNoise = localTableValue(base, "NoiseUL_dBm", NaN);
-    ulInterf = localTableValue(base, "InterferencePowerUL_dBm", NaN);
-    ulDesired = localTableValue(base, "DesiredPowerUL_dBm", NaN);
-    if isfinite(ulDesired)
-        rows(end+1, 1) = localNoiseRow(base, "UL", ulDesired, ulInterf, ulNoise, ... %#ok<AGROW>
-            double(localScenarioStructGet(cfg, {"receiver.noiseFigure_dB", "userEquipment.noiseFigure_dB"}, NaN)));
-    end
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildNoiseInterferenceTable", ...
-    "system/csv/system_interference_detail.csv", "implemented", "runtime_timeseries", false, true);
+    localNoiseInterferenceSourceRef(src), "implemented", "runtime_timeseries", false, true);
 end
 
 function T = localBuildLinkBudgetTable(src, meta, cfg)
-if ~(istable(src.SystemInterference) && ~isempty(src.SystemInterference))
+if istable(src.SystemInterference) && ~isempty(src.SystemInterference)
+    txPowerByCell = localTxPowerByCell(src.SystemSectors);
+    rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
+        "tx_power_dBm", NaN, "tx_antenna_gain_dBi", NaN, "rx_antenna_gain_dBi", NaN, "pathloss_dB", NaN, ...
+        "shadowing_dB", NaN, "penetration_loss_dB", NaN, "implementation_loss_dB", NaN, ...
+        "rx_power_dBm", NaN, "interference_power_dBm", NaN, "noise_power_dBm", NaN, ...
+        "snr_dB", NaN, "sinr_dB", NaN, "margin_dB", NaN, "power_control_command", NaN, ...
+        "phr_dB", NaN, "source_chain", ""), 0, 1);
+    for i = 1:height(src.SystemInterference)
+        base = src.SystemInterference(i, :);
+        cellId = localTableValue(base, "ServingCell", NaN);
+        txPower = localMapLookup(txPowerByCell, cellId, NaN);
+        implLoss = double(localScenarioStructGet(cfg, {"baseStation.implementationLoss_dB", "system.bsImplementationLoss_dB"}, NaN));
+        dlDesired = localTableValue(base, "DesiredPowerDL_dBm", NaN);
+        if isfinite(dlDesired)
+            snr = dlDesired - localTableValue(base, "NoiseDL_dBm", localTableValue(base, "Noise_dBm", NaN));
+            rows(end+1, 1) = localLinkBudgetRow(base, "DL", txPower, implLoss, dlDesired, ... %#ok<AGROW>
+                localTableValue(base, "InterferencePowerDL_dBm", NaN), ...
+                localTableValue(base, "NoiseDL_dBm", localTableValue(base, "Noise_dBm", NaN)), ...
+                snr, localTableValue(base, "SINR_DL_dB", NaN));
+        end
+        ulDesired = localTableValue(base, "DesiredPowerUL_dBm", NaN);
+        if isfinite(ulDesired)
+            snr = ulDesired - localTableValue(base, "NoiseUL_dBm", NaN);
+            rows(end+1, 1) = localLinkBudgetRow(base, "UL", ... %#ok<AGROW>
+                double(localScenarioStructGet(cfg, {"userEquipment.txPower_dBm", "energy.txPower_dBm"}, NaN)), ...
+                implLoss, ulDesired, localTableValue(base, "InterferencePowerUL_dBm", NaN), ...
+                localTableValue(base, "NoiseUL_dBm", NaN), snr, localTableValue(base, "SINR_UL_dB", NaN));
+        end
+    end
+else
+    rows = localBuildLinkBudgetRowsFromTrials(src, meta, cfg);
+end
+if isempty(rows)
     T = table();
     return;
 end
-txPowerByCell = localTxPowerByCell(src.SystemSectors);
-rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
-    "tx_power_dBm", NaN, "tx_antenna_gain_dBi", NaN, "rx_antenna_gain_dBi", NaN, "pathloss_dB", NaN, ...
-    "shadowing_dB", NaN, "penetration_loss_dB", NaN, "implementation_loss_dB", NaN, ...
-    "rx_power_dBm", NaN, "interference_power_dBm", NaN, "noise_power_dBm", NaN, ...
-    "snr_dB", NaN, "sinr_dB", NaN, "margin_dB", NaN, "power_control_command", NaN, ...
-    "phr_dB", NaN, "source_chain", ""), 0, 1);
-for i = 1:height(src.SystemInterference)
-    base = src.SystemInterference(i, :);
-    cellId = localTableValue(base, "ServingCell", NaN);
-    txPower = localMapLookup(txPowerByCell, cellId, NaN);
-    implLoss = double(localScenarioStructGet(cfg, {"baseStation.implementationLoss_dB", "system.bsImplementationLoss_dB"}, NaN));
-    dlDesired = localTableValue(base, "DesiredPowerDL_dBm", NaN);
-    if isfinite(dlDesired)
-        snr = dlDesired - localTableValue(base, "NoiseDL_dBm", localTableValue(base, "Noise_dBm", NaN));
-        rows(end+1, 1) = localLinkBudgetRow(base, "DL", txPower, implLoss, dlDesired, ... %#ok<AGROW>
-            localTableValue(base, "InterferencePowerDL_dBm", NaN), ...
-            localTableValue(base, "NoiseDL_dBm", localTableValue(base, "Noise_dBm", NaN)), ...
-            snr, localTableValue(base, "SINR_DL_dB", NaN));
-    end
-    ulDesired = localTableValue(base, "DesiredPowerUL_dBm", NaN);
-    if isfinite(ulDesired)
-        snr = ulDesired - localTableValue(base, "NoiseUL_dBm", NaN);
-        rows(end+1, 1) = localLinkBudgetRow(base, "UL", ... %#ok<AGROW>
-            double(localScenarioStructGet(cfg, {"userEquipment.txPower_dBm", "energy.txPower_dBm"}, NaN)), ...
-            implLoss, ulDesired, localTableValue(base, "InterferencePowerUL_dBm", NaN), ...
-            localTableValue(base, "NoiseUL_dBm", NaN), snr, localTableValue(base, "SINR_UL_dB", NaN));
-    end
-end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildLinkBudgetTable", ...
-    "system/csv/system_interference_detail.csv", "implemented", "runtime_timeseries", true, true);
+    localLinkBudgetSourceRef(src), "implemented", "runtime_timeseries", true, true);
 end
 
 function T = localBuildPRBAllocationTable(src, meta)
@@ -692,9 +1199,9 @@ end
 n = height(grants);
 tti = localColumnAsDouble(grants, "TTI");
 slotsPerFrame = double(meta.slots_per_frame);
-frameVal = NaN(n, 1);
-slotVal = NaN(n, 1);
-validTTI = isfinite(tti) & isfinite(slotsPerFrame) & slotsPerFrame > 0;
+frameVal = localFirstAvailableColumnAsDouble(grants, ["Frame", "SFN"]);
+slotVal = localFirstAvailableColumnAsDouble(grants, ["Slot"]);
+validTTI = (~isfinite(frameVal) | ~isfinite(slotVal)) & isfinite(tti) & isfinite(slotsPerFrame) & slotsPerFrame > 0;
 frameVal(validTTI) = floor((tti(validTTI) - 1) ./ slotsPerFrame) + 1;
 slotVal(validTTI) = mod(tti(validTTI) - 1, slotsPerFrame) + 1;
 
@@ -704,21 +1211,26 @@ occupancyType = repmat("scheduled_allocation", n, 1);
 occupancyType(isRetx) = "retransmission";
 
 T = table();
-T.timestamp_sim_ms = 1e3 * localColumnAsDouble(grants, "Time_s");
+timestampSec = localFirstAvailableColumnAsDouble(grants, ["Time_s"]);
+timestampMs = localFirstAvailableColumnAsDouble(grants, ["TimestampSim_ms", "Time_ms"]);
+if all(~isfinite(timestampMs)) && any(isfinite(timestampSec))
+    timestampMs = 1e3 * timestampSec;
+end
+T.timestamp_sim_ms = timestampMs;
 T.frame = frameVal;
 T.slot = slotVal;
 T.symbol_start = localColumnAsDouble(grants, "SymbolStart");
 T.symbol_len = localColumnAsDouble(grants, "NumSymbols");
-T.cell_id = localColumnAsDouble(grants, "CellID");
-T.ue_id = localColumnAsDouble(grants, "UE");
+T.cell_id = localFirstAvailableColumnAsDouble(grants, ["CellID", "ServingCell", "BaseStationID"]);
+T.ue_id = localFirstAvailableColumnAsDouble(grants, ["UE", "UEID", "UEIndex", "RNTI"]);
 T.direction = directionCol;
-T.bwp_id = localColumnAsDouble(grants, "BWPId");
-T.rb_start = localColumnAsDouble(grants, "PRBStart");
-T.rb_len = localColumnAsDouble(grants, "PRBCount");
-T.num_prbs = localColumnAsDouble(grants, "PRBCount");
+T.bwp_id = localFirstAvailableColumnAsDouble(grants, ["BWPId", "BWPID"]);
+T.rb_start = localFirstAvailableColumnAsDouble(grants, ["PRBStart", "PUCCHPRBStart"]);
+T.rb_len = localFirstAvailableColumnAsDouble(grants, ["PRBCount", "AllocatedPRBCount", "PUCCHPRBCount"]);
+T.num_prbs = localFirstAvailableColumnAsDouble(grants, ["AllocatedPRBCount", "PRBCount", "PUCCHPRBCount"]);
 T.beam_id = NaN(n, 1);
-T.rank = localColumnAsDouble(grants, "NumLayers");
-T.layers = localColumnAsDouble(grants, "NumLayers");
+T.rank = localFirstAvailableColumnAsDouble(grants, ["NumLayers", "Layers", "Rank"]);
+T.layers = localFirstAvailableColumnAsDouble(grants, ["Layers", "NumLayers", "Rank"]);
 T.harq_id = localColumnAsDouble(grants, "HarqID");
 T.mcs = localColumnAsDouble(grants, "MCSIndex");
 T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
@@ -773,18 +1285,26 @@ frameVals = frameVals(valid);
 slotVals = slotVals(valid);
 symLen = symLen(valid);
 rowIdx = repelem((1:numel(rbLen)).', rbLen);
+if isempty(rowIdx)
+    T = table();
+    return;
+end
+rowIdx = rowIdx(:);
 offsetCells = arrayfun(@(n) (0:(n-1)).', rbLen, 'UniformOutput', false);
 offsets = vertcat(offsetCells{:});
-T = table();
-T.cell_id = repmat(bestCell, numel(rowIdx), 1);
-T.direction = repmat(bestDir, numel(rowIdx), 1);
-T.frame = frameVals(rowIdx);
-T.slot = slotVals(rowIdx);
-T.rb_index = rbStart(rowIdx) + offsets;
-T.occupancy_count = symLen(rowIdx);
-T.occupancy_fraction = symLen(rowIdx) / max(meta.symbols_per_slot, 1);
-T.selected_heatmap_flag = true(numel(rowIdx), 1);
-T.source_artifact_ref = repmat("packet_flow/csv/live_prb_allocation.csv", numel(rowIdx), 1);
+offsets = offsets(:);
+nRows = numel(rowIdx);
+T = table( ...
+    repmat(bestCell, nRows, 1), ...
+    localStringColumn(bestDir, nRows), ...
+    reshape(frameVals(rowIdx), [], 1), ...
+    reshape(slotVals(rowIdx), [], 1), ...
+    reshape(rbStart(rowIdx) + offsets, [], 1), ...
+    reshape(symLen(rowIdx), [], 1), ...
+    reshape(symLen(rowIdx) / max(meta.symbols_per_slot, 1), [], 1), ...
+    true(nRows, 1), ...
+    localStringColumn("packet_flow/csv/live_prb_allocation.csv", nRows), ...
+    'VariableNames', {'cell_id','direction','frame','slot','rb_index','occupancy_count','occupancy_fraction','selected_heatmap_flag','source_artifact_ref'});
 key = string(T.cell_id) + "|" + string(T.direction) + "|" + string(T.frame) + "|" + ...
     string(T.slot) + "|" + string(T.rb_index) + "|" + string(T.selected_heatmap_flag) + "|" + ...
     string(T.source_artifact_ref);
@@ -820,8 +1340,8 @@ rows = localEmptySchedulerDecisionRows(height(grants));
 for i = 1:height(grants)
     row = grants(i, :);
     tti = localNumericTableValue(row, "TTI", NaN);
-    [frameVal, slotVal] = localTTIToFrameSlot(tti, meta.slots_per_frame);
-    rows(i).timestamp_sim_ms = 1e3 * localNumericTableValue(row, "Time_s", NaN);
+    [frameVal, slotVal] = localGrantFrameSlotRow(row, tti, meta.slots_per_frame);
+    rows(i).timestamp_sim_ms = localGrantTimestampMsRow(row);
     rows(i).frame = frameVal;
     rows(i).slot = slotVal;
     rows(i).scheduler_cycle_id = tti;
@@ -830,8 +1350,8 @@ for i = 1:height(grants)
     rows(i).candidate_decision_rows_available = false;
     rows(i).decision_truth_status = "selected_grant_runtime_truth";
     rows(i).direction = string(direction);
-    rows(i).cell_id = localNumericTableValue(row, "CellID", NaN);
-    rows(i).ue_id = localNumericTableValue(row, "UE", NaN);
+    rows(i).cell_id = localFirstNumericTableValue(row, ["CellID", "ServingCell", "BaseStationID"], NaN);
+    rows(i).ue_id = localFirstNumericTableValue(row, ["UE", "UEID", "UEIndex", "RNTI"], NaN);
     rows(i).grant_reason = localTextTableValue(row, "GrantReason", "");
     rows(i).selected_flag = true;
     rows(i).rejected_flag = false;
@@ -894,17 +1414,25 @@ slotVals = slotVals(valid);
 cellIds = cellIds(valid);
 symLen = symLen(valid);
 rowIdx = repelem((1:numel(rbLen)).', rbLen);
+if isempty(rowIdx)
+    T = table();
+    return;
+end
+rowIdx = rowIdx(:);
 offsetCells = arrayfun(@(n) (0:(n-1)).', rbLen, 'UniformOutput', false);
 offsets = vertcat(offsetCells{:});
-T = table();
-T.cell_id = cellIds(rowIdx);
-T.direction = repmat(direction, numel(rowIdx), 1);
-T.frame = frameVals(rowIdx);
-T.slot = slotVals(rowIdx);
-T.rb_index = rbStart(rowIdx) + offsets;
-T.occupancy_count = symLen(rowIdx);
-T.occupancy_fraction = symLen(rowIdx) / max(meta.symbols_per_slot, 1);
-T.source_artifact_ref = repmat("packet_flow/csv/live_prb_allocation.csv", numel(rowIdx), 1);
+offsets = offsets(:);
+nRows = numel(rowIdx);
+T = table( ...
+    reshape(cellIds(rowIdx), [], 1), ...
+    localStringColumn(direction, nRows), ...
+    reshape(frameVals(rowIdx), [], 1), ...
+    reshape(slotVals(rowIdx), [], 1), ...
+    reshape(rbStart(rowIdx) + offsets, [], 1), ...
+    reshape(symLen(rowIdx), [], 1), ...
+    reshape(symLen(rowIdx) / max(meta.symbols_per_slot, 1), [], 1), ...
+    localStringColumn("packet_flow/csv/live_prb_allocation.csv", nRows), ...
+    'VariableNames', {'cell_id','direction','frame','slot','rb_index','occupancy_count','occupancy_fraction','source_artifact_ref'});
 key = string(T.cell_id) + "|" + string(T.direction) + "|" + string(T.frame) + "|" + string(T.slot) + "|" + string(T.rb_index);
 [~, firstIdx, keyIdx] = unique(key);
 base = T(firstIdx, :);
@@ -1016,18 +1544,17 @@ subset = latencyTable(mask, :);
 rows = repmat(struct("direction", "", "ue_id", NaN, "cell_id", NaN, "latency_ms", NaN, ...
     "latency_threshold_ms", NaN, "dominant_component", "", "root_cause_reason", "", ...
     "source_artifact_ref", ""), height(subset), 1);
+componentFields = ["compute_latency_ms", "decode_latency_ms", "procedure_delay_ms", "air_interface_tti_ms", "air_interface_observation_ms"];
 for i = 1:height(subset)
-    comps = [double(subset.compute_latency_ms(i)), double(subset.decode_latency_ms(i)), ...
-        double(subset.procedure_delay_ms(i)), double(subset.air_interface_tti_ms(i)), ...
-        double(subset.air_interface_observation_ms(i))];
-    labels = ["compute_latency_ms", "decode_latency_ms", "procedure_delay_ms", "air_interface_tti_ms", "air_interface_observation_ms"];
+    row = subset(i, :);
+    comps = arrayfun(@(name) localNumericTableValue(row, char(name), NaN), componentFields);
     [~, idx] = max(localReplaceNaN(comps, -Inf));
-    rows(i).direction = string(subset.direction(i));
-    rows(i).ue_id = double(subset.ue_id(i));
-    rows(i).cell_id = double(subset.cell_id(i));
-    rows(i).latency_ms = double(subset.latency_ms(i));
+    rows(i).direction = string(localTableValue(row, "direction", ""));
+    rows(i).ue_id = localNumericTableValue(row, "ue_id", NaN);
+    rows(i).cell_id = localNumericTableValue(row, "cell_id", NaN);
+    rows(i).latency_ms = localNumericTableValue(row, "latency_ms", NaN);
     rows(i).latency_threshold_ms = threshold;
-    rows(i).dominant_component = labels(idx);
+    rows(i).dominant_component = componentFields(idx);
     rows(i).root_cause_reason = "highest_observed_latency_window";
     rows(i).source_artifact_ref = "reports/csv/table_latency.csv";
 end
@@ -1103,40 +1630,44 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
 end
 
 function T = localBuildHARQProcessTable(src, meta)
-if ~(istable(src.SystemHARQ) && ~isempty(src.SystemHARQ))
+if istable(src.SystemHARQ) && ~isempty(src.SystemHARQ)
+    keyCols = [localColumnAsDouble(src.SystemHARQ, "UE"), localColumnAsDouble(src.SystemHARQ, "CellID"), ...
+        localStringGroupIndex(localColumnAsText(src.SystemHARQ, "Direction")), localColumnAsDouble(src.SystemHARQ, "HarqID")];
+    groups = unique(keyCols, "rows");
+    rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "direction", "", "harq_id", NaN, ...
+        "ndi", NaN, "rv", NaN, "tx_count", NaN, "first_tx_time", NaN, "last_tx_time", NaN, ...
+        "ack_nack_state", "", "final_state", "", "combined_rounds", NaN, "combining_gain_dB", NaN, ...
+        "buffer_occupancy_bits", NaN, "timeout_flag", false, "discard_reason", ""), size(groups, 1), 1);
+    for i = 1:size(groups, 1)
+        mask = keyCols(:, 1) == groups(i, 1) & keyCols(:, 2) == groups(i, 2) & keyCols(:, 3) == groups(i, 3) & keyCols(:, 4) == groups(i, 4);
+        subset = src.SystemHARQ(mask, :);
+        rows(i).ue_id = groups(i, 1);
+        rows(i).cell_id = groups(i, 2);
+        rows(i).direction = string(subset.Direction(1));
+        rows(i).harq_id = groups(i, 4);
+        rows(i).ndi = localTableValue(subset(1, :), "NDI", NaN);
+        rows(i).rv = localTableValue(subset(end, :), "RV", NaN);
+        rows(i).tx_count = height(subset);
+        rows(i).first_tx_time = 1e3 * localTableValue(subset(1, :), "Time_s", NaN);
+        rows(i).last_tx_time = 1e3 * localTableValue(subset(end, :), "Time_s", NaN);
+        rows(i).ack_nack_state = string(localTableValue(subset(end, :), "Outcome", ""));
+        rows(i).final_state = rows(i).ack_nack_state;
+        rows(i).combined_rounds = height(subset);
+        rows(i).combining_gain_dB = NaN;
+        rows(i).buffer_occupancy_bits = NaN;
+        rows(i).timeout_flag = false;
+        rows(i).discard_reason = "";
+    end
+else
+    rows = localBuildHARQRowsFromTimeline(src, meta);
+end
+if isempty(rows)
     T = table();
     return;
 end
-keyCols = [localColumnAsDouble(src.SystemHARQ, "UE"), localColumnAsDouble(src.SystemHARQ, "CellID"), ...
-    localStringGroupIndex(localColumnAsText(src.SystemHARQ, "Direction")), localColumnAsDouble(src.SystemHARQ, "HarqID")];
-groups = unique(keyCols, "rows");
-rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "direction", "", "harq_id", NaN, ...
-    "ndi", NaN, "rv", NaN, "tx_count", NaN, "first_tx_time", NaN, "last_tx_time", NaN, ...
-    "ack_nack_state", "", "final_state", "", "combined_rounds", NaN, "combining_gain_dB", NaN, ...
-    "buffer_occupancy_bits", NaN, "timeout_flag", false, "discard_reason", ""), size(groups, 1), 1);
-for i = 1:size(groups, 1)
-    mask = keyCols(:, 1) == groups(i, 1) & keyCols(:, 2) == groups(i, 2) & keyCols(:, 3) == groups(i, 3) & keyCols(:, 4) == groups(i, 4);
-    subset = src.SystemHARQ(mask, :);
-    rows(i).ue_id = groups(i, 1);
-    rows(i).cell_id = groups(i, 2);
-    rows(i).direction = string(subset.Direction(1));
-    rows(i).harq_id = groups(i, 4);
-    rows(i).ndi = localTableValue(subset(1, :), "NDI", NaN);
-    rows(i).rv = localTableValue(subset(end, :), "RV", NaN);
-    rows(i).tx_count = height(subset);
-    rows(i).first_tx_time = 1e3 * localTableValue(subset(1, :), "Time_s", NaN);
-    rows(i).last_tx_time = 1e3 * localTableValue(subset(end, :), "Time_s", NaN);
-    rows(i).ack_nack_state = string(localTableValue(subset(end, :), "Outcome", ""));
-    rows(i).final_state = rows(i).ack_nack_state;
-    rows(i).combined_rounds = height(subset);
-    rows(i).combining_gain_dB = NaN;
-    rows(i).buffer_occupancy_bits = NaN;
-    rows(i).timeout_flag = false;
-    rows(i).discard_reason = "";
-end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildHARQProcessTable", ...
-    "system/csv/system_harq_processes.csv", "implemented", "runtime_aggregated", true, true);
+    localHARQSourceRef(src), "implemented", "runtime_aggregated", true, true);
 end
 
 function T = localBuildCQIPMIRITable(src, meta)
@@ -1177,9 +1708,14 @@ isRetx = localColumnAsLogical(grants, "IsRetransmission");
 harqState = repmat("new_data", n, 1);
 harqState(isRetx) = "retransmission";
 T = table();
-T.timestamp_sim_ms = 1e3 * localColumnAsDouble(grants, "Time_s");
-T.ue_id = localColumnAsDouble(grants, "UE");
-T.cell_id = localColumnAsDouble(grants, "CellID");
+timestampSec = localFirstAvailableColumnAsDouble(grants, ["Time_s"]);
+timestampMs = localFirstAvailableColumnAsDouble(grants, ["TimestampSim_ms", "Time_ms"]);
+if all(~isfinite(timestampMs)) && any(isfinite(timestampSec))
+    timestampMs = 1e3 * timestampSec;
+end
+T.timestamp_sim_ms = timestampMs;
+T.ue_id = localFirstAvailableColumnAsDouble(grants, ["UE", "UEID", "UEIndex", "RNTI"]);
+T.cell_id = localFirstAvailableColumnAsDouble(grants, ["CellID", "ServingCell", "BaseStationID"]);
 T.direction = repmat(string(direction), n, 1);
 T.cqi_input = localColumnAsDouble(grants, "CQIUsed");
 T.ri_input = NaN(n, 1);
@@ -1281,6 +1817,7 @@ for i = 1:n
         "W", ...
         "Modeled entity runtime power over the observed slot interval from the RF energy timeline.", ...
         "reports_live_power_runtime_table");
+    rows(i).artifact_id = "reports/csv/live_power_runtime_table.csv#" + string(i);
 end
 T = struct2table(rows, "AsArray", true);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildLivePowerRuntimeTable", ...
@@ -1302,6 +1839,7 @@ T.value_source = repmat("rf/csv/energy_timeline_trace.csv:Power_W", height(T), 1
 T.value_definition = repmat("RF-energy-domain entity total power derived from the runtime energy timeline.", height(T), 1);
 T.source_table = repmat("live_power_runtime_table", height(T), 1);
 T.source_pk = (1:height(T))';
+T.artifact_id = "reports/csv/live_rf_power_table.csv#" + string((1:height(T))');
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildLiveRFPowerTable", ...
     "reports/csv/live_power_runtime_table.csv", "implemented", "runtime_truth_fact", true, true);
 end
@@ -1333,6 +1871,7 @@ for i = 1:height(src.EnergyTimeline)
     row.value_source = "rf/csv/energy_timeline_trace.csv:BBProcessingEnergy_J,Duration_s";
     row.value_status = localValueStatus(bbPowerW, "NOT_AVAILABLE");
     row.na_reason = localTernary(isfinite(bbPowerW), "", "bb_processing_energy_not_materialized");
+    row.artifact_id = "reports/csv/live_bb_power_table.csv#" + string(i);
     rows(end+1, 1) = row; %#ok<AGROW>
 end
 if isempty(rows)
@@ -1856,28 +2395,28 @@ reason = strjoin(missing(strlength(missing) > 0), ";");
 end
 
 function T = localBuildRootCauseCandidateTable(src, meta)
-if ~(istable(src.SystemInterference) && ~isempty(src.SystemInterference))
-    T = table();
-    return;
-end
 rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "direction", "", "symptom", "", ...
     "severity_score", NaN, "candidate_reason", "", "evidence_metric", "", "evidence_value", NaN, ...
     "source_artifact_ref", ""), 0, 1);
-for i = 1:height(src.SystemInterference)
-    sinr = double(localTableValue(src.SystemInterference(i, :), "SINR_DL_dB", NaN));
-    interf = double(localTableValue(src.SystemInterference(i, :), "InterferencePowerDL_dBm", NaN));
-    if isfinite(sinr) && sinr < 0
-        rows(end+1, 1) = struct( ... %#ok<AGROW>
-            "ue_id", localTableValue(src.SystemInterference(i, :), "UE", NaN), ...
-            "cell_id", localTableValue(src.SystemInterference(i, :), "ServingCell", NaN), ...
-            "direction", "DL", ...
-            "symptom", "low_sinr_window", ...
-            "severity_score", abs(sinr), ...
-            "candidate_reason", localTernary(isfinite(interf), "interference_dominant", "low_sinr_no_interference_breakdown"), ...
-            "evidence_metric", "SINR_DL_dB", ...
-            "evidence_value", sinr, ...
-            "source_artifact_ref", "system/csv/system_interference_detail.csv");
+if istable(src.SystemInterference) && ~isempty(src.SystemInterference)
+    for i = 1:height(src.SystemInterference)
+        sinr = double(localTableValue(src.SystemInterference(i, :), "SINR_DL_dB", NaN));
+        interf = double(localTableValue(src.SystemInterference(i, :), "InterferencePowerDL_dBm", NaN));
+        if isfinite(sinr) && sinr < 0
+            rows(end+1, 1) = struct( ... %#ok<AGROW>
+                "ue_id", localTableValue(src.SystemInterference(i, :), "UE", NaN), ...
+                "cell_id", localTableValue(src.SystemInterference(i, :), "ServingCell", NaN), ...
+                "direction", "DL", ...
+                "symptom", "low_sinr_window", ...
+                "severity_score", abs(sinr), ...
+                "candidate_reason", localTernary(isfinite(interf), "interference_dominant", "low_sinr_no_interference_breakdown"), ...
+                "evidence_metric", "SINR_DL_dB", ...
+                "evidence_value", sinr, ...
+                "source_artifact_ref", "system/csv/system_interference_detail.csv");
+        end
     end
+else
+    rows = localBuildRootCauseRowsFromCoverageAndUserPerf(src);
 end
 if isempty(rows)
     T = table();
@@ -1886,62 +2425,69 @@ end
 T = struct2table(rows);
 T = sortrows(T, "severity_score", "descend");
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildRootCauseCandidateTable", ...
-    "system/csv/system_interference_detail.csv", "implemented", "derived_root_cause_candidates", true, true);
+    localRootCauseSourceRef(src), "implemented", "derived_root_cause_candidates", true, true);
 end
 
 function T = localBuildCellEdgeAnalyticsTable(src, meta)
-if ~(istable(src.SystemUE) && ~isempty(src.SystemUE))
-    T = table();
-    return;
+if istable(src.SystemUE) && ~isempty(src.SystemUE)
+    mask = localColumnMatchesText(src.SystemUE, "Zone", "edge");
+    if ~any(mask)
+        T = table();
+        return;
+    end
+    T = src.SystemUE(mask, :);
+    renameFrom = intersect({'UE','Throughput_Mbps','MeanSINR_dB','MeanBLER','MeanQueue_bits'}, string(T.Properties.VariableNames), 'stable');
+    renameToMap = containers.Map({'UE','Throughput_Mbps','MeanSINR_dB','MeanBLER','MeanQueue_bits'}, ...
+        {'ue_id','throughput_mbps','mean_sinr_db','mean_bler','mean_queue_bits'});
+    renameTo = strings(numel(renameFrom), 1);
+    for i = 1:numel(renameFrom)
+        renameTo(i) = string(renameToMap(char(renameFrom(i))));
+    end
+    if ~isempty(renameFrom)
+        T = renamevars(T, cellstr(renameFrom), cellstr(renameTo));
+    end
+    T = addvars(T, repmat("edge_zone_runtime_summary", height(T), 1), 'NewVariableNames', "analytics_scope");
+else
+    T = localBuildCellEdgeFromCoverageLayer(src);
+    if isempty(T)
+        return;
+    end
 end
-mask = localColumnMatchesText(src.SystemUE, "Zone", "edge");
-if ~any(mask)
-    T = table();
-    return;
-end
-T = src.SystemUE(mask, :);
-renameFrom = intersect({'UE','Throughput_Mbps','MeanSINR_dB','MeanBLER','MeanQueue_bits'}, string(T.Properties.VariableNames), 'stable');
-renameToMap = containers.Map({'UE','Throughput_Mbps','MeanSINR_dB','MeanBLER','MeanQueue_bits'}, ...
-    {'ue_id','throughput_mbps','mean_sinr_db','mean_bler','mean_queue_bits'});
-renameTo = strings(numel(renameFrom), 1);
-for i = 1:numel(renameFrom)
-    renameTo(i) = string(renameToMap(char(renameFrom(i))));
-end
-if ~isempty(renameFrom)
-    T = renamevars(T, cellstr(renameFrom), cellstr(renameTo));
-end
-T = addvars(T, repmat("edge_zone_runtime_summary", height(T), 1), 'NewVariableNames', "analytics_scope");
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildCellEdgeAnalyticsTable", ...
-    "system/tables/system_ue_summary.csv", "implemented", "runtime_summary_slice", true, true);
+    localCellEdgeSourceRef(src), "implemented", "runtime_summary_slice", true, true);
 end
 
 function T = localBuildBeamStabilityAnalyticsTable(src, meta)
-if ~(istable(src.SystemBeam) && ~isempty(src.SystemBeam))
+if istable(src.SystemBeam) && ~isempty(src.SystemBeam)
+    ueVals = unique(localColumnAsDouble(src.SystemBeam, "UE"));
+    rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "beam_event_count", NaN, "beam_change_count", NaN, ...
+        "max_beam_gain_db", NaN, "mean_beam_gain_delta_db", NaN, "stability_class", "", ...
+        "source_artifact_ref", ""), numel(ueVals), 1);
+    for i = 1:numel(ueVals)
+        ue = ueVals(i);
+        mask = localColumnMatches(src.SystemBeam, "UE", ue);
+        subset = src.SystemBeam(mask, :);
+        gainDelta = localColumnAsDouble(subset, "NewBeamGain_dB") - localColumnAsDouble(subset, "PrevBeamGain_dB");
+        gainDelta(~isfinite(gainDelta)) = 0;
+        rows(i).ue_id = ue;
+        rows(i).cell_id = localTableValue(subset(1, :), "ServingCell", NaN);
+        rows(i).beam_event_count = height(subset);
+        rows(i).beam_change_count = sum(isfinite(localColumnAsDouble(subset, "PrevBeamIndex")));
+        rows(i).max_beam_gain_db = max(localColumnAsDouble(subset, "NewBeamGain_dB"), [], "omitnan");
+        rows(i).mean_beam_gain_delta_db = mean(gainDelta, "omitnan");
+        rows(i).stability_class = string(localTernary(rows(i).beam_change_count <= 1, "stable", "changing"));
+        rows(i).source_artifact_ref = "system/csv/system_beam_events.csv";
+    end
+else
+    rows = localBuildBeamStabilityRowsFromTrials(src);
+end
+if isempty(rows)
     T = table();
     return;
 end
-ueVals = unique(localColumnAsDouble(src.SystemBeam, "UE"));
-rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "beam_event_count", NaN, "beam_change_count", NaN, ...
-    "max_beam_gain_db", NaN, "mean_beam_gain_delta_db", NaN, "stability_class", "", ...
-    "source_artifact_ref", ""), numel(ueVals), 1);
-for i = 1:numel(ueVals)
-    ue = ueVals(i);
-    mask = localColumnMatches(src.SystemBeam, "UE", ue);
-    subset = src.SystemBeam(mask, :);
-    gainDelta = localColumnAsDouble(subset, "NewBeamGain_dB") - localColumnAsDouble(subset, "PrevBeamGain_dB");
-    gainDelta(~isfinite(gainDelta)) = 0;
-    rows(i).ue_id = ue;
-    rows(i).cell_id = localTableValue(subset(1, :), "ServingCell", NaN);
-    rows(i).beam_event_count = height(subset);
-    rows(i).beam_change_count = sum(isfinite(localColumnAsDouble(subset, "PrevBeamIndex")));
-    rows(i).max_beam_gain_db = max(localColumnAsDouble(subset, "NewBeamGain_dB"), [], "omitnan");
-    rows(i).mean_beam_gain_delta_db = mean(gainDelta, "omitnan");
-    rows(i).stability_class = string(localTernary(rows(i).beam_change_count <= 1, "stable", "changing"));
-    rows(i).source_artifact_ref = "system/csv/system_beam_events.csv";
-end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildBeamStabilityAnalyticsTable", ...
-    "system/csv/system_beam_events.csv", "implemented", "runtime_aggregated", true, true);
+    localBeamStabilitySourceRef(src), "implemented", "runtime_aggregated", true, true);
 end
 
 function T = localBuildEnergyRootCauseTable(powerEnergyTable, meta)
@@ -2030,39 +2576,787 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
 end
 
 function T = localBuildHotspotAnalyticsTable(src, meta)
-if ~(istable(src.SystemUE) && ~isempty(src.SystemUE))
+if istable(src.SystemUE) && ~isempty(src.SystemUE)
+    zone = localColumnAsText(src.SystemUE, "Zone");
+    traffic = localColumnAsText(src.SystemUE, "TrafficClass");
+    if all(strlength(zone) == 0) && all(strlength(traffic) == 0)
+        T = table();
+        return;
+    end
+    keys = zone + "|" + traffic;
+    keys(strlength(keys) == 1) = "all|all";
+    [uniqueKeys, ~, keyIdx] = unique(keys);
+    rows = repmat(struct("zone", "", "traffic_class", "", "ue_count", NaN, "mean_throughput_mbps", NaN, ...
+        "mean_sinr_db", NaN, "mean_bler", NaN, "mean_queue_bits", NaN, "hotspot_reason", "", ...
+        "source_artifact_ref", ""), numel(uniqueKeys), 1);
+    for i = 1:numel(uniqueKeys)
+        mask = keyIdx == i;
+        parts = split(uniqueKeys(i), "|");
+        rows(i).zone = parts(1);
+        rows(i).traffic_class = parts(min(2, numel(parts)));
+        rows(i).ue_count = sum(mask);
+        rows(i).mean_throughput_mbps = localMeanFromMask(src.SystemUE, mask, "Throughput_Mbps");
+        rows(i).mean_sinr_db = localMeanFromMask(src.SystemUE, mask, "MeanSINR_dB");
+        rows(i).mean_bler = localMeanFromMask(src.SystemUE, mask, "MeanBLER");
+        rows(i).mean_queue_bits = localMeanFromMask(src.SystemUE, mask, "MeanQueue_bits");
+        rows(i).hotspot_reason = localTernary(isfinite(rows(i).mean_queue_bits) && rows(i).mean_queue_bits > 0, ...
+            "runtime_queue_or_load_observed", "runtime_population_summary");
+        rows(i).source_artifact_ref = "system/csv/system_ue_summary.csv";
+    end
+else
+    rows = localBuildHotspotRowsFromCoverageLayer(src);
+end
+if isempty(rows)
     T = table();
     return;
-end
-zone = localColumnAsText(src.SystemUE, "Zone");
-traffic = localColumnAsText(src.SystemUE, "TrafficClass");
-if all(strlength(zone) == 0) && all(strlength(traffic) == 0)
-    T = table();
-    return;
-end
-keys = zone + "|" + traffic;
-keys(strlength(keys) == 1) = "all|all";
-[uniqueKeys, ~, keyIdx] = unique(keys);
-rows = repmat(struct("zone", "", "traffic_class", "", "ue_count", NaN, "mean_throughput_mbps", NaN, ...
-    "mean_sinr_db", NaN, "mean_bler", NaN, "mean_queue_bits", NaN, "hotspot_reason", "", ...
-    "source_artifact_ref", ""), numel(uniqueKeys), 1);
-for i = 1:numel(uniqueKeys)
-    mask = keyIdx == i;
-    parts = split(uniqueKeys(i), "|");
-    rows(i).zone = parts(1);
-    rows(i).traffic_class = parts(min(2, numel(parts)));
-    rows(i).ue_count = sum(mask);
-    rows(i).mean_throughput_mbps = localMeanFromMask(src.SystemUE, mask, "Throughput_Mbps");
-    rows(i).mean_sinr_db = localMeanFromMask(src.SystemUE, mask, "MeanSINR_dB");
-    rows(i).mean_bler = localMeanFromMask(src.SystemUE, mask, "MeanBLER");
-    rows(i).mean_queue_bits = localMeanFromMask(src.SystemUE, mask, "MeanQueue_bits");
-    rows(i).hotspot_reason = localTernary(isfinite(rows(i).mean_queue_bits) && rows(i).mean_queue_bits > 0, ...
-        "runtime_queue_or_load_observed", "runtime_population_summary");
-    rows(i).source_artifact_ref = "system/csv/system_ue_summary.csv";
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildHotspotAnalyticsTable", ...
-    "system/csv/system_ue_summary.csv", "implemented", "derived_runtime_hotspot_summary", true, true);
+    localHotspotSourceRef(src), "implemented", "derived_runtime_hotspot_summary", true, true);
+end
+
+function ref = localGNBCellStatusSource(src)
+ref = localJoinSourceRefs( ...
+    localTernary(istable(src.SystemSectors) && ~isempty(src.SystemSectors), "system/tables/sectors.csv", "reports/csv/sectors.csv"), ...
+    localTernary(istable(src.SystemCellLoad) && ~isempty(src.SystemCellLoad), "system/csv/system_cell_load.csv", "packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv|packet_flow/csv/slot_trace.csv"), ...
+    localTernary(istable(src.SystemInterference) && ~isempty(src.SystemInterference), "system/csv/system_interference_detail.csv", "reports/csv/live_coverage_layer.csv"), ...
+    localTernary(istable(src.SystemBeam) && ~isempty(src.SystemBeam), "system/csv/system_beam_events.csv", "beamforming/csv/beam_precoder_table.csv"));
+end
+
+function ref = localNoiseInterferenceSourceRef(src)
+if istable(src.SystemInterference) && ~isempty(src.SystemInterference)
+    ref = "system/csv/system_interference_detail.csv";
+else
+    ref = "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv|reports/csv/live_coverage_layer.csv";
+end
+end
+
+function ref = localLinkBudgetSourceRef(src)
+ref = localNoiseInterferenceSourceRef(src);
+end
+
+function ref = localHARQSourceRef(src)
+if istable(src.SystemHARQ) && ~isempty(src.SystemHARQ)
+    ref = "system/csv/system_harq_processes.csv";
+else
+    ref = "harq/csv/live_harq_observation_timeline.csv|packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv";
+end
+end
+
+function ref = localRootCauseSourceRef(src)
+if istable(src.SystemInterference) && ~isempty(src.SystemInterference)
+    ref = "system/csv/system_interference_detail.csv";
+else
+    ref = "reports/csv/live_coverage_layer.csv|reports/csv/live_user_performance_snapshot.csv";
+end
+end
+
+function ref = localCellEdgeSourceRef(src)
+if istable(src.SystemUE) && ~isempty(src.SystemUE)
+    ref = "system/csv/system_ue_summary.csv";
+else
+    ref = "reports/csv/live_coverage_layer.csv|reports/csv/live_user_performance_snapshot.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv";
+end
+end
+
+function ref = localBeamStabilitySourceRef(src)
+if istable(src.SystemBeam) && ~isempty(src.SystemBeam)
+    ref = "system/csv/system_beam_events.csv";
+else
+    ref = "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv";
+end
+end
+
+function ref = localHotspotSourceRef(src)
+if istable(src.SystemUE) && ~isempty(src.SystemUE)
+    ref = "system/csv/system_ue_summary.csv";
+else
+    ref = "reports/csv/live_coverage_layer.csv|reports/csv/live_user_performance_snapshot.csv|packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv";
+end
+end
+
+function ref = localJoinSourceRefs(varargin)
+tokens = strings(0, 1);
+for i = 1:nargin
+    value = string(varargin{i});
+    if strlength(strtrim(value)) > 0
+        parts = split(value, "|");
+        tokens = [tokens; parts(strlength(strtrim(parts)) > 0)]; %#ok<AGROW>
+    end
+end
+tokens = unique(strtrim(tokens), "stable");
+tokens = tokens(strlength(tokens) > 0);
+ref = strjoin(tokens, "|");
+end
+
+function value = localCoverageMeanByCell(T, cellId, varargin)
+value = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(cellId))
+    return;
+end
+mask = localColumnMatches(T, "ServingCell", cellId);
+for i = 1:numel(varargin)
+    value = localMeanFromMask(T, mask, string(varargin{i}));
+    if isfinite(value)
+        return;
+    end
+end
+end
+
+function value = localMeanTrialMetricByCell(T, cellId, varNames)
+value = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(cellId))
+    return;
+end
+cellVals = localFirstAvailableColumnAsDouble(T, ["ServingCell", "CellID", "BaseStationID"]);
+mask = isfinite(cellVals) & cellVals == cellId;
+for i = 1:numel(varNames)
+    vals = localColumnAsDouble(T(mask, :), string(varNames(i)));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        value = mean(vals, "omitnan");
+        return;
+    end
+end
+end
+
+function count = localCoverageEdgeUECount(T, cellId)
+count = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(cellId))
+    return;
+end
+mask = localColumnMatches(T, "ServingCell", cellId) & localCoverageIsEdgeMask(T);
+ueVals = localColumnAsDouble(T(mask, :), "UEID");
+ueVals = unique(ueVals(isfinite(ueVals)));
+count = double(numel(ueVals));
+end
+
+function mask = localCoverageIsEdgeMask(T)
+mask = false(height(T), 1);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+if ismember("CoverageScore", string(T.Properties.VariableNames))
+    vals = localColumnAsDouble(T, "CoverageScore");
+    mask = isfinite(vals) & vals < 0.75;
+elseif ismember("LargeScaleWidebandSINR_dB", string(T.Properties.VariableNames))
+    vals = localColumnAsDouble(T, "LargeScaleWidebandSINR_dB");
+    mask = isfinite(vals) & vals < 5;
+elseif ismember("LargeScaleSINR_dB", string(T.Properties.VariableNames))
+    vals = localColumnAsDouble(T, "LargeScaleSINR_dB");
+    mask = isfinite(vals) & vals < 5;
+end
+end
+
+function count = localBeamMismatchCount(T, cellId)
+count = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(cellId))
+    return;
+end
+mask = localColumnMatches(T, "cell_id", cellId);
+if ~ismember("beam_hit", string(T.Properties.VariableNames))
+    count = double(sum(mask));
+    return;
+end
+beamHit = localColumnAsDouble(T(mask, :), "beam_hit");
+count = double(sum(isfinite(beamHit) & beamHit < 0.5));
+end
+
+function value = localGrantUniqueUEStat(dlGrants, ulGrants, cellId, mode)
+mode = lower(string(mode));
+counts = [localGrantUniqueCounts(dlGrants, cellId); localGrantUniqueCounts(ulGrants, cellId)];
+counts = counts(isfinite(counts));
+if isempty(counts)
+    value = NaN;
+elseif mode == "max"
+    value = max(counts);
+else
+    value = mean(counts, "omitnan");
+end
+end
+
+function counts = localGrantUniqueCounts(grants, cellId)
+counts = nan(0, 1);
+if ~(istable(grants) && ~isempty(grants) && isfinite(cellId))
+    return;
+end
+cellVals = localFirstAvailableColumnAsDouble(grants, ["CellID", "ServingCell", "BaseStationID"]);
+frameVals = localFirstAvailableColumnAsDouble(grants, ["Frame", "SFN"]);
+slotVals = localFirstAvailableColumnAsDouble(grants, ["Slot"]);
+ueVals = localFirstAvailableColumnAsDouble(grants, ["UE", "UEID", "UEIndex", "RNTI"]);
+mask = isfinite(cellVals) & cellVals == cellId & isfinite(frameVals) & isfinite(slotVals) & isfinite(ueVals);
+if ~any(mask)
+    return;
+end
+keys = frameVals(mask) * 1e3 + slotVals(mask);
+uniqueKeys = unique(keys, "stable");
+counts = nan(numel(uniqueKeys), 1);
+for i = 1:numel(uniqueKeys)
+    keyMask = mask & (frameVals * 1e3 + slotVals == uniqueKeys(i));
+    keyUEs = unique(ueVals(keyMask));
+    counts(i) = double(numel(keyUEs(isfinite(keyUEs))));
+end
+end
+
+function cellId = localCoverageCellForUE(T, ue)
+cellId = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(ue))
+    return;
+end
+mask = localColumnMatches(T, "UEID", ue);
+cellVals = localColumnAsDouble(T(mask, :), "ServingCell");
+cellVals = cellVals(isfinite(cellVals));
+if ~isempty(cellVals)
+    cellId = cellVals(end);
+end
+end
+
+function cellId = localTrialCellForUE(dlT, ulT, ue)
+cellId = localTrialMetricForUE(dlT, ulT, ue, "ServingCell");
+end
+
+function value = localCoverageMetricForUE(T, ue, varargin)
+value = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(ue))
+    return;
+end
+mask = localColumnMatches(T, "UEID", ue);
+for i = 1:numel(varargin)
+    vals = localColumnAsDouble(T(mask, :), string(varargin{i}));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        value = mean(vals, "omitnan");
+        return;
+    end
+end
+end
+
+function value = localTrialMetricForUE(dlT, ulT, ue, varargin)
+value = NaN;
+parts = {dlT, ulT};
+for p = 1:numel(parts)
+    T = parts{p};
+    if ~(istable(T) && ~isempty(T) && isfinite(ue))
+        continue;
+    end
+    ueVals = localFirstAvailableColumnAsDouble(T, ["UEID", "UEIndex", "RNTI"]);
+    mask = isfinite(ueVals) & ueVals == ue;
+    for i = 1:numel(varargin)
+        vals = localColumnAsDouble(T(mask, :), string(varargin{i}));
+        vals = vals(isfinite(vals));
+        if ~isempty(vals)
+            value = mean(vals, "omitnan");
+            return;
+        end
+    end
+end
+end
+
+function rows = localBuildNoiseRowsFromTrials(src, meta, cfg)
+rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "serving_cell_id", NaN, "desired_signal_power_dBm", NaN, ...
+    "intra_cell_interference_dBm", NaN, "inter_cell_interference_dBm", NaN, "external_interference_dBm", NaN, ...
+    "noise_power_dBm", NaN, "thermal_noise_dBm", NaN, "receiver_noise_figure_dB", NaN, ...
+    "total_interference_plus_noise_dBm", NaN, "pre_eq_sinr_dB", NaN, "post_eq_sinr_dB", NaN, ...
+    "dominant_interferer_cell_id", NaN, "dominant_interferer_share_percent", NaN, ...
+    "interference_limited_flag", false, "source_block", "", "direction", ""), 0, 1);
+rows = [rows; localNoiseRowsFromTrialTable(src.DLTrials, "DL", meta, double(localScenarioStructGet(cfg, {"receiver.noiseFigure_dB", "baseStation.noiseFigure_dB"}, NaN)))]; %#ok<AGROW>
+rows = [rows; localNoiseRowsFromTrialTable(src.ULTrials, "UL", meta, double(localScenarioStructGet(cfg, {"receiver.noiseFigure_dB", "userEquipment.noiseFigure_dB"}, NaN)))]; %#ok<AGROW>
+end
+
+function rows = localNoiseRowsFromTrialTable(trials, direction, meta, nfDb)
+rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "serving_cell_id", NaN, "desired_signal_power_dBm", NaN, ...
+    "intra_cell_interference_dBm", NaN, "inter_cell_interference_dBm", NaN, "external_interference_dBm", NaN, ...
+    "noise_power_dBm", NaN, "thermal_noise_dBm", NaN, "receiver_noise_figure_dB", NaN, ...
+    "total_interference_plus_noise_dBm", NaN, "pre_eq_sinr_dB", NaN, "post_eq_sinr_dB", NaN, ...
+    "dominant_interferer_cell_id", NaN, "dominant_interferer_share_percent", NaN, ...
+    "interference_limited_flag", false, "source_block", "", "direction", ""), 0, 1);
+if ~(istable(trials) && ~isempty(trials))
+    return;
+end
+for i = 1:height(trials)
+    row = trials(i, :);
+    interf = localFirstFinite(double(localTableValue(row, "InterferenceAggregatedRxPower_dBm", NaN)));
+    noise = NaN;
+    totalIn = localSafeLogPowerSum(interf, noise);
+    postEq = localFirstFinite(double(localTableValue(row, "MeasuredTrialSINR_dB", ...
+        localTableValue(row, "MeasuredSINR_dB", localTableValue(row, "ReceiverHestSINR_dB", NaN)))));
+    preEq = localFirstFinite(double(localTableValue(row, "LargeScaleSINR_dB", NaN)));
+    contributorCount = localFirstFinite(double(localTableValue(row, "InterferenceContributorCount", 0)));
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "timestamp_sim_ms", localTrialTimestampMs(row, meta), ...
+        "ue_id", localTableValue(row, "UEID", localTableValue(row, "UEIndex", NaN)), ...
+        "serving_cell_id", localTableValue(row, "ServingCell", NaN), ...
+        "desired_signal_power_dBm", localTableValue(row, "ServingRSRP_dBm", NaN), ...
+        "intra_cell_interference_dBm", NaN, ...
+        "inter_cell_interference_dBm", interf, ...
+        "external_interference_dBm", NaN, ...
+        "noise_power_dBm", noise, ...
+        "thermal_noise_dBm", NaN, ...
+        "receiver_noise_figure_dB", nfDb, ...
+        "total_interference_plus_noise_dBm", totalIn, ...
+        "pre_eq_sinr_dB", preEq, ...
+        "post_eq_sinr_dB", postEq, ...
+        "dominant_interferer_cell_id", NaN, ...
+        "dominant_interferer_share_percent", NaN, ...
+        "interference_limited_flag", logical(isfinite(interf) && ((isfinite(preEq) && isfinite(postEq) && postEq < preEq) || (isfinite(contributorCount) && contributorCount > 0))), ...
+        "source_block", "air_interface_trial_row", ...
+        "direction", string(direction));
+end
+end
+
+function rows = localBuildLinkBudgetRowsFromTrials(src, meta, cfg)
+rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
+    "tx_power_dBm", NaN, "tx_antenna_gain_dBi", NaN, "rx_antenna_gain_dBi", NaN, "pathloss_dB", NaN, ...
+    "shadowing_dB", NaN, "penetration_loss_dB", NaN, "implementation_loss_dB", NaN, ...
+    "rx_power_dBm", NaN, "interference_power_dBm", NaN, "noise_power_dBm", NaN, ...
+    "snr_dB", NaN, "sinr_dB", NaN, "margin_dB", NaN, "power_control_command", NaN, ...
+    "phr_dB", NaN, "source_chain", ""), 0, 1);
+txPowerByCell = localTxPowerByCell(src.SystemTRPs);
+rows = [rows; localLinkBudgetRowsFromTrialTable(src.DLTrials, "DL", meta, cfg, txPowerByCell)]; %#ok<AGROW>
+rows = [rows; localLinkBudgetRowsFromTrialTable(src.ULTrials, "UL", meta, cfg, txPowerByCell)]; %#ok<AGROW>
+end
+
+function rows = localLinkBudgetRowsFromTrialTable(trials, direction, meta, cfg, txPowerByCell)
+rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "direction", "", ...
+    "tx_power_dBm", NaN, "tx_antenna_gain_dBi", NaN, "rx_antenna_gain_dBi", NaN, "pathloss_dB", NaN, ...
+    "shadowing_dB", NaN, "penetration_loss_dB", NaN, "implementation_loss_dB", NaN, ...
+    "rx_power_dBm", NaN, "interference_power_dBm", NaN, "noise_power_dBm", NaN, ...
+    "snr_dB", NaN, "sinr_dB", NaN, "margin_dB", NaN, "power_control_command", NaN, ...
+    "phr_dB", NaN, "source_chain", ""), 0, 1);
+if ~(istable(trials) && ~isempty(trials))
+    return;
+end
+implLoss = double(localScenarioStructGet(cfg, {"baseStation.implementationLoss_dB", "system.bsImplementationLoss_dB"}, NaN));
+for i = 1:height(trials)
+    row = trials(i, :);
+    cellId = localTableValue(row, "ServingCell", NaN);
+    if direction == "DL"
+        txPower = localMapLookup(txPowerByCell, cellId, NaN);
+    else
+        txPower = double(localScenarioStructGet(cfg, {"userEquipment.txPower_dBm", "energy.txPower_dBm"}, NaN));
+    end
+    pathloss = localFirstFinite(double(localTableValue(row, "AppliedPathloss_dB", localTableValue(row, "AppliedBasePathloss_dB", NaN))));
+    rxPower = localFirstFinite(double(localTableValue(row, "ServingRSRP_dBm", NaN)));
+    interf = localFirstFinite(double(localTableValue(row, "InterferenceAggregatedRxPower_dBm", NaN)));
+    noise = NaN;
+    snr = localFirstFinite(double(localTableValue(row, "LargeScaleSINR_dB", NaN)));
+    sinr = localFirstFinite(double(localTableValue(row, "MeasuredTrialSINR_dB", localTableValue(row, "MeasuredSINR_dB", NaN))));
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "timestamp_sim_ms", localTrialTimestampMs(row, meta), ...
+        "ue_id", localTableValue(row, "UEID", localTableValue(row, "UEIndex", NaN)), ...
+        "cell_id", cellId, ...
+        "direction", string(direction), ...
+        "tx_power_dBm", txPower, ...
+        "tx_antenna_gain_dBi", NaN, ...
+        "rx_antenna_gain_dBi", NaN, ...
+        "pathloss_dB", pathloss, ...
+        "shadowing_dB", NaN, ...
+        "penetration_loss_dB", NaN, ...
+        "implementation_loss_dB", implLoss, ...
+        "rx_power_dBm", rxPower, ...
+        "interference_power_dBm", interf, ...
+        "noise_power_dBm", noise, ...
+        "snr_dB", snr, ...
+        "sinr_dB", sinr, ...
+        "margin_dB", NaN, ...
+        "power_control_command", NaN, ...
+        "phr_dB", NaN, ...
+        "source_chain", "waveform_trial_runtime_rows");
+end
+end
+
+function rows = localBuildHARQRowsFromTimeline(src, meta)
+rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "direction", "", "harq_id", NaN, ...
+    "ndi", NaN, "rv", NaN, "tx_count", NaN, "first_tx_time", NaN, "last_tx_time", NaN, ...
+    "ack_nack_state", "", "final_state", "", "combined_rounds", NaN, "combining_gain_dB", NaN, ...
+    "buffer_occupancy_bits", NaN, "timeout_flag", false, "discard_reason", ""), 0, 1);
+T = src.HARQTimeline;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+ueVals = localColumnAsDouble(T, "UEIndex");
+harqVals = localColumnAsDouble(T, "HarqID");
+dirVals = localColumnAsText(T, "Direction");
+keys = string(ueVals) + "|" + dirVals + "|" + string(harqVals);
+uniqueKeys = unique(keys(strlength(keys) > 0), "stable");
+for i = 1:numel(uniqueKeys)
+    mask = keys == uniqueKeys(i);
+    subset = T(mask, :);
+    ue = localTableValue(subset(1, :), "UEIndex", NaN);
+    direction = string(localTableValue(subset(1, :), "Direction", ""));
+    slots = localColumnAsDouble(subset, "Slot");
+    cellId = localResolveHARQCellFromGrants(src, direction, ue, slots);
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "ue_id", ue, ...
+        "cell_id", cellId, ...
+        "direction", direction, ...
+        "harq_id", localTableValue(subset(1, :), "HarqID", NaN), ...
+        "ndi", localTableValue(subset(1, :), "NDI", NaN), ...
+        "rv", localTableValue(subset(end, :), "RV", NaN), ...
+        "tx_count", height(subset), ...
+        "first_tx_time", localSlotFrameToMs(localTableValue(subset(1, :), "Frame", NaN), localTableValue(subset(1, :), "Slot", NaN), meta), ...
+        "last_tx_time", localSlotFrameToMs(localTableValue(subset(end, :), "Frame", NaN), localTableValue(subset(end, :), "Slot", NaN), meta), ...
+        "ack_nack_state", string(localTableValue(subset(end, :), "Status", "")), ...
+        "final_state", string(localTableValue(subset(end, :), "Status", "")), ...
+        "combined_rounds", height(subset), ...
+        "combining_gain_dB", NaN, ...
+        "buffer_occupancy_bits", localQueueBitsForUE(src, ue), ...
+        "timeout_flag", false, ...
+        "discard_reason", "");
+end
+end
+
+function rows = localBuildRootCauseRowsFromCoverageAndUserPerf(src)
+rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "direction", "", "symptom", "", ...
+    "severity_score", NaN, "candidate_reason", "", "evidence_metric", "", "evidence_value", NaN, ...
+    "source_artifact_ref", ""), 0, 1);
+if istable(src.CoverageLayer) && ~isempty(src.CoverageLayer)
+    ueVals = unique(localColumnAsDouble(src.CoverageLayer, "UEID"));
+    ueVals = ueVals(isfinite(ueVals));
+    for i = 1:numel(ueVals)
+        ue = ueVals(i);
+        largeScale = localCoverageMetricForUE(src.CoverageLayer, ue, "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
+        measured = localCoverageMetricForUE(src.CoverageLayer, ue, "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB");
+        failureRate = localUserPerformanceMetric(src.UserPerformance, ue, "HARQFailureRate");
+        if (isfinite(largeScale) && largeScale < 5) || (isfinite(failureRate) && failureRate >= 0.5)
+            rows(end+1, 1) = struct( ... %#ok<AGROW>
+                "ue_id", ue, ...
+                "cell_id", localCoverageCellForUE(src.CoverageLayer, ue), ...
+                "direction", "BIDIR", ...
+                "symptom", localTernary(isfinite(largeScale) && largeScale < 5, "coverage_edge_observed", "harq_failure_window"), ...
+                "severity_score", max([abs(min(largeScale, 0)), 10 * failureRate], [], "omitnan"), ...
+                "candidate_reason", localTernary(isfinite(largeScale) && largeScale < 5, "coverage_edge_lab_default_threshold", "high_harq_failure_rate"), ...
+                "evidence_metric", localTernary(isfinite(largeScale) && largeScale < 5, "LargeScaleWidebandSINR_dB", "HARQFailureRate"), ...
+                "evidence_value", localTernary(isfinite(largeScale) && largeScale < 5, largeScale, failureRate), ...
+                "source_artifact_ref", "reports/csv/live_coverage_layer.csv|reports/csv/live_user_performance_snapshot.csv");
+        elseif isfinite(measured) && measured < 0
+            rows(end+1, 1) = struct( ... %#ok<AGROW>
+                "ue_id", ue, ...
+                "cell_id", localCoverageCellForUE(src.CoverageLayer, ue), ...
+                "direction", "BIDIR", ...
+                "symptom", "low_sinr_window", ...
+                "severity_score", abs(measured), ...
+                "candidate_reason", "measured_trial_sinr_negative", ...
+                "evidence_metric", "MeasuredWidebandSINR_dB", ...
+                "evidence_value", measured, ...
+                "source_artifact_ref", "reports/csv/live_coverage_layer.csv");
+        end
+    end
+end
+end
+
+function T = localBuildCellEdgeFromCoverageLayer(src)
+rows = repmat(struct("ue_id", NaN, "throughput_mbps", NaN, "mean_sinr_db", NaN, "mean_bler", NaN, "mean_queue_bits", NaN, "analytics_scope", ""), 0, 1);
+if ~(istable(src.CoverageLayer) && ~isempty(src.CoverageLayer))
+    T = table();
+    return;
+end
+edgeMask = localCoverageIsEdgeMask(src.CoverageLayer);
+ueVals = unique(localColumnAsDouble(src.CoverageLayer(edgeMask, :), "UEID"));
+ueVals = ueVals(isfinite(ueVals));
+for i = 1:numel(ueVals)
+    ue = ueVals(i);
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "ue_id", ue, ...
+        "throughput_mbps", localUserPerformanceMetric(src.UserPerformance, ue, "UserThroughput_Mbps"), ...
+        "mean_sinr_db", localCoverageMetricForUE(src.CoverageLayer, ue, "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB"), ...
+        "mean_bler", localTrialBLERForUE(src, ue), ...
+        "mean_queue_bits", localQueueBitsForUE(src, ue), ...
+        "analytics_scope", "edge_zone_runtime_summary_from_waveform_coverage");
+end
+if isempty(rows)
+    T = table();
+else
+    T = struct2table(rows, "AsArray", true);
+end
+end
+
+function rows = localBuildBeamStabilityRowsFromTrials(src)
+rows = repmat(struct("ue_id", NaN, "cell_id", NaN, "beam_event_count", NaN, "beam_change_count", NaN, ...
+    "max_beam_gain_db", NaN, "mean_beam_gain_delta_db", NaN, "stability_class", "", ...
+    "source_artifact_ref", ""), 0, 1);
+T = localBuildBeamTrialSubset(src.DLTrials, src.ULTrials);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+ueVals = localColumnAsDouble(T, "UEID");
+ueVals = unique(ueVals(isfinite(ueVals)));
+for i = 1:numel(ueVals)
+    ue = ueVals(i);
+    ueCol = localColumnAsDouble(T, "UEID");
+    mask = isfinite(ueCol) & ueCol == ue;
+    subset = T(mask, :);
+    if isempty(subset)
+        continue;
+    end
+    beamIdx = localColumnAsDouble(subset, "SelectedBeamIndex");
+    beamIdx = beamIdx(isfinite(beamIdx));
+    beamGain = localColumnAsDouble(subset, "SelectedBeamGain_dB");
+    beamGain = beamGain(isfinite(beamGain));
+    gainDelta = diff(beamGain);
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "ue_id", ue, ...
+        "cell_id", localTableValue(subset(1, :), "ServingCell", NaN), ...
+        "beam_event_count", height(subset), ...
+        "beam_change_count", double(sum(abs(diff(beamIdx)) > 0)), ...
+        "max_beam_gain_db", localTernary(isempty(beamGain), NaN, max(beamGain, [], "omitnan")), ...
+        "mean_beam_gain_delta_db", localTernary(isempty(gainDelta), NaN, mean(gainDelta, "omitnan")), ...
+        "stability_class", string(localTernary(sum(abs(diff(beamIdx)) > 0) <= 1, "stable", "changing")), ...
+        "source_artifact_ref", "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv");
+end
+end
+
+function T = localBuildBeamTrialSubset(dlTrials, ulTrials)
+T = table();
+for trials = {dlTrials, ulTrials}
+    Ti = localNormalizeBeamTrialSubset(trials{1});
+    if isempty(T)
+        T = Ti;
+    elseif ~(istable(Ti) && isempty(Ti))
+        T = [T; Ti]; %#ok<AGROW>
+    end
+end
+end
+
+function T = localNormalizeBeamTrialSubset(Tin)
+T = table();
+if ~(istable(Tin) && ~isempty(Tin))
+    return;
+end
+ueVals = localFirstAvailableColumnAsDouble(Tin, ["UEID", "UEIndex"]);
+cellVals = localFirstAvailableColumnAsDouble(Tin, ["ServingCell", "CellID", "BaseStationID"]);
+beamIdx = localFirstAvailableColumnAsDouble(Tin, ["SelectedBeamIndex", "AppliedBeamIndex", "BeamIndex"]);
+beamGain = localFirstAvailableColumnAsDouble(Tin, ["SelectedBeamGain_dB", "AppliedBeamGain_dB", "BeamGain_dB"]);
+valid = isfinite(ueVals) & (isfinite(beamIdx) | isfinite(beamGain));
+if ~any(valid)
+    return;
+end
+T = table();
+T.UEID = ueVals(valid);
+T.ServingCell = cellVals(valid);
+T.SelectedBeamIndex = beamIdx(valid);
+T.SelectedBeamGain_dB = beamGain(valid);
+end
+
+function rows = localBuildHotspotRowsFromCoverageLayer(src)
+rows = repmat(struct("zone", "", "traffic_class", "", "ue_count", NaN, "mean_throughput_mbps", NaN, ...
+    "mean_sinr_db", NaN, "mean_bler", NaN, "mean_queue_bits", NaN, "hotspot_reason", "", ...
+    "source_artifact_ref", ""), 0, 1);
+if ~(istable(src.CoverageLayer) && ~isempty(src.CoverageLayer))
+    return;
+end
+ueVals = unique(localColumnAsDouble(src.CoverageLayer, "UEID"));
+ueVals = ueVals(isfinite(ueVals));
+if isempty(ueVals)
+    return;
+end
+zoneVals = repmat("center", numel(ueVals), 1);
+for i = 1:numel(ueVals)
+    ueMask = localColumnMatches(src.CoverageLayer, "UEID", ueVals(i));
+    zoneVals(i) = localTernary(any(localCoverageIsEdgeMask(src.CoverageLayer(ueMask, :))), "edge", "center");
+end
+zones = ["center", "edge"];
+for zoneIdx = 1:numel(zones)
+    zone = zones(zoneIdx);
+    zoneMask = zoneVals == zone;
+    if ~any(zoneMask)
+        continue;
+    end
+    theseUEs = ueVals(zoneMask);
+    throughput = nan(numel(theseUEs), 1);
+    sinrVals = nan(numel(theseUEs), 1);
+    blerVals = nan(numel(theseUEs), 1);
+    queueVals = nan(numel(theseUEs), 1);
+    for i = 1:numel(theseUEs)
+        throughput(i) = localUserPerformanceMetric(src.UserPerformance, theseUEs(i), "UserThroughput_Mbps");
+        sinrVals(i) = localCoverageMetricForUE(src.CoverageLayer, theseUEs(i), "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB");
+        blerVals(i) = localTrialBLERForUE(src, theseUEs(i));
+        queueVals(i) = localQueueBitsForUE(src, theseUEs(i));
+    end
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "zone", zone, ...
+        "traffic_class", "full_buffer", ...
+        "ue_count", double(numel(theseUEs)), ...
+        "mean_throughput_mbps", mean(throughput, "omitnan"), ...
+        "mean_sinr_db", mean(sinrVals, "omitnan"), ...
+        "mean_bler", mean(blerVals, "omitnan"), ...
+        "mean_queue_bits", mean(queueVals, "omitnan"), ...
+        "hotspot_reason", localTernary(any(isfinite(queueVals) & queueVals > 0), "runtime_queue_or_load_observed", "runtime_population_summary"), ...
+        "source_artifact_ref", "reports/csv/live_coverage_layer.csv|reports/csv/live_user_performance_snapshot.csv");
+end
+end
+
+function value = localUserPerformanceMetric(T, ue, varName)
+value = NaN;
+if ~(istable(T) && ~isempty(T) && isfinite(ue) && ismember("UEIndex", string(T.Properties.VariableNames)) && ismember(string(varName), string(T.Properties.VariableNames)))
+    return;
+end
+mask = localColumnMatches(T, "UEIndex", ue);
+vals = localColumnAsDouble(T(mask, :), varName);
+vals = vals(isfinite(vals));
+if ~isempty(vals)
+    value = mean(vals, "omitnan");
+end
+end
+
+function value = localTrialBLERForUE(src, ue)
+value = NaN;
+parts = {src.DLTrials, src.ULTrials};
+vals = nan(0, 1);
+for p = 1:numel(parts)
+    T = parts{p};
+    if ~(istable(T) && ~isempty(T))
+        continue;
+    end
+    ueCol = localFirstAvailableColumnAsDouble(T, ["UEID", "UEIndex"]);
+    mask = isfinite(ueCol) & ueCol == ue;
+    if any(mask) && ismember("CRCPass", string(T.Properties.VariableNames))
+        crc = localColumnAsDouble(T(mask, :), "CRCPass");
+        crc = crc(isfinite(crc));
+        if ~isempty(crc)
+            vals(end+1, 1) = mean(1 - crc, "omitnan"); %#ok<AGROW>
+        end
+    end
+end
+if ~isempty(vals)
+    value = mean(vals, "omitnan");
+end
+end
+
+function value = localQueueBitsForUE(src, ue)
+value = NaN;
+queueBits = nan(0, 1);
+for grants = {src.DLGrants, src.ULGrants}
+    T = grants{1};
+    if ~(istable(T) && ~isempty(T))
+        continue;
+    end
+    ueCol = localFirstAvailableColumnAsDouble(T, ["UE", "UEID", "UEIndex", "RNTI"]);
+    mask = isfinite(ueCol) & ueCol == ue;
+    before = localColumnAsDouble(T(mask, :), "QueueBytesBefore");
+    after = localColumnAsDouble(T(mask, :), "QueueBytesAfter");
+    vals = [before(:); after(:)] * 8;
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        queueBits = [queueBits; vals]; %#ok<AGROW>
+    end
+end
+if ~isempty(queueBits)
+    value = mean(queueBits, "omitnan");
+end
+end
+
+function cellId = localResolveHARQCellFromGrants(src, direction, ue, slots)
+cellId = NaN;
+direction = upper(string(direction));
+T = localTernary(direction == "UL", src.ULGrants, src.DLGrants);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+ueCol = localFirstAvailableColumnAsDouble(T, ["UE", "UEID", "UEIndex", "RNTI"]);
+slotCol = localFirstAvailableColumnAsDouble(T, ["Slot"]);
+mask = isfinite(ueCol) & ueCol == ue;
+if nargin >= 4 && ~isempty(slots)
+    mask = mask & ismember(slotCol, slots(isfinite(slots)));
+end
+cellVals = localFirstAvailableColumnAsDouble(T(mask, :), ["CellID", "ServingCell", "BaseStationID"]);
+cellVals = cellVals(isfinite(cellVals));
+if ~isempty(cellVals)
+    cellId = cellVals(1);
+end
+end
+
+function value = localTrialTimestampMs(row, meta)
+value = localTableValue(row, "TimestampSim_ms", NaN);
+if isfinite(value)
+    return;
+end
+value = localSlotFrameToMs(localTableValue(row, "Frame", NaN), localTableValue(row, "Slot", NaN), meta);
+end
+
+function value = localSlotFrameToMs(frameVal, slotVal, meta)
+value = NaN;
+if ~(isfinite(frameVal) && isfinite(slotVal) && isfinite(meta.slots_per_frame) && isfinite(meta.scs_hz))
+    return;
+end
+slotDurationMs = 1e3 * (1e-3 / max(meta.slots_per_frame / 10, 1));
+value = ((double(frameVal) - 1) * double(meta.slots_per_frame) + (double(slotVal) - 1)) * slotDurationMs;
+end
+
+function total = localSafeLogPowerSum(varargin)
+vals = nan(0, 1);
+for i = 1:nargin
+    v = double(varargin{i});
+    if isempty(v)
+        continue;
+    end
+    v = v(:);
+    v = v(isfinite(v));
+    if ~isempty(v)
+        vals = [vals; v]; %#ok<AGROW>
+    end
+end
+if isempty(vals)
+    total = NaN;
+    return;
+end
+lin = sum(10.^(vals / 10), "omitnan");
+if lin > 0
+    total = 10 * log10(lin);
+else
+    total = NaN;
+end
+end
+
+function Tout = localAppendCompatTable(Ta, Tb)
+if ~(istable(Ta) && ~isempty(Ta))
+    if istable(Tb)
+        Tout = Tb;
+    else
+        Tout = table();
+    end
+    return;
+end
+if ~(istable(Tb) && ~isempty(Tb))
+    Tout = Ta;
+    return;
+end
+vars = union(string(Ta.Properties.VariableNames), string(Tb.Properties.VariableNames), "stable");
+Ta = localEnsureTableVars(Ta, vars, Tb);
+Tb = localEnsureTableVars(Tb, vars, Ta);
+Tout = [Ta(:, cellstr(vars)); Tb(:, cellstr(vars))];
+end
+
+function T = localEnsureTableVars(T, vars, refT)
+for i = 1:numel(vars)
+    v = char(vars(i));
+    if ~ismember(v, T.Properties.VariableNames)
+        T.(v) = localDefaultColumnLike(refT, v, height(T));
+    end
+end
+end
+
+function col = localDefaultColumnLike(refT, varName, nRows)
+if istable(refT) && ismember(varName, refT.Properties.VariableNames)
+    refVal = refT.(varName);
+    if isstring(refVal)
+        col = strings(nRows, 1);
+        return;
+    end
+    if iscellstr(refVal) || iscell(refVal)
+        col = repmat({''}, nRows, 1);
+        return;
+    end
+    if islogical(refVal)
+        col = false(nRows, 1);
+        return;
+    end
+    if isnumeric(refVal)
+        col = NaN(nRows, 1);
+        return;
+    end
+end
+col = strings(nRows, 1);
 end
 
 function T = localBuildControlOverheadAnalyticsTable(src, meta)
@@ -2235,7 +3529,8 @@ for i = 1:height(sourceTable)
         if isfinite(cqiUsed)
             mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
             cqiTable = string(localTableValue(row, "CQITable", localTableValue(row, "CQI_Table", "table1")));
-            decision = sixgr.link.resolveMCSFromCQI(max(1, round(cqiUsed)), char(mcsTable), char(cqiTable));
+            sanitizedCQI = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiUsed, NaN);
+            decision = sixgr.link.resolveMCSFromCQI(sanitizedCQI, char(mcsTable), char(cqiTable));
             if isstruct(decision) && isfield(decision, "Valid") && decision.Valid
                 cqiDerivedMCS = double(decision.MCSIndex);
             end
@@ -2309,6 +3604,8 @@ if ~(istable(sourceTable) && ~isempty(sourceTable))
     return;
 end
 T = sourceTable;
+scopeToken = localRuntimeMirrorScopeToken(sourceArtifactRef, directionDefault);
+T = sixgr.truth.canonicalizeLLSLiveSignalChainTable(scopeToken, T);
 n = height(T);
 T = localAddCanonicalRuntimeAliases(T, directionDefault);
 T = localAddMissingVar(T, "runtime_evidence", repmat("persisted_runtime_trial_row", n, 1));
@@ -2316,6 +3613,96 @@ T = localAddMissingVar(T, "runtime_evidence_source", repmat(string(sourceArtifac
 T = localAddMissingVar(T, "output_family_materialization", repmat("runtime_backed_mirror", n, 1));
 T = localFinalizeOutputTable(T, meta, producerModule, sourceArtifactRef, ...
     "implemented", statusClassification, false, true);
+end
+
+function scopeToken = localRuntimeMirrorScopeToken(sourceArtifactRef, directionDefault)
+sourceArtifactRef = string(sourceArtifactRef);
+firstRef = strtrim(sourceArtifactRef);
+pipeIdx = strfind(char(firstRef), "|");
+if ~isempty(pipeIdx)
+    firstRef = extractBefore(firstRef, pipeIdx(1));
+end
+[~, nameOnly, ~] = fileparts(char(firstRef));
+scopeToken = lower(regexprep(string(nameOnly), "[^a-z0-9]+", "_"));
+if strlength(strtrim(scopeToken)) == 0
+    scopeToken = lower(regexprep(string(directionDefault), "[^a-z0-9]+", "_")) + "_runtime";
+end
+end
+
+function T = localBuildCSIRSRuntimeOrSummaryTable(src, meta)
+if istable(src.CSIRSTrials) && ~isempty(src.CSIRSTrials)
+    T = localBuildRuntimeMirrorTable(src.CSIRSTrials, meta, ...
+        "sixgr.link.runDLPDSCHThroughput", "air_interface/csv/csi_rs_trials.csv", ...
+        "runtime_reference_signal_trial_rows", "DL");
+    return;
+end
+if ~(istable(src.LiveCSIRSStats) && ~isempty(src.LiveCSIRSStats))
+    T = table();
+    return;
+end
+stats = src.LiveCSIRSStats;
+n = height(stats);
+rows = repmat(struct( ...
+    "timestamp_sim_ms", NaN, "frame", NaN, "slot", NaN, "direction", "", ...
+    "cell_id", NaN, "resource_id", NaN, "resource_set_id", NaN, "csirs_type", "", ...
+    "num_ports", NaN, "row_number", NaN, "periodicity_slots", NaN, ...
+    "trace_source", "", "mean_nmse_dB", NaN, "mean_wideband_cqi", NaN, ...
+    "mean_csi_payload_bits", NaN, "notes", "", "source_artifact_ref", ""), n, 1);
+for i = 1:n
+    row = stats(i, :);
+    rows(i).timestamp_sim_ms = NaN;
+    rows(i).frame = NaN;
+    rows(i).slot = NaN;
+    rows(i).direction = string(localTableValue(row, "Direction", "DL"));
+    rows(i).cell_id = NaN;
+    rows(i).resource_id = NaN;
+    rows(i).resource_set_id = NaN;
+    rows(i).csirs_type = "aggregate_runtime_summary";
+    rows(i).num_ports = NaN;
+    rows(i).row_number = NaN;
+    rows(i).periodicity_slots = NaN;
+    rows(i).trace_source = string(localTableValue(row, "TraceSource", ""));
+    rows(i).mean_nmse_dB = double(localTableValue(row, "MeanNMSE_dB", NaN));
+    rows(i).mean_wideband_cqi = double(localTableValue(row, "MeanWidebandCQI", NaN));
+    rows(i).mean_csi_payload_bits = double(localTableValue(row, "MeanCSIPayloadBitLength", NaN));
+    rows(i).notes = string(localTableValue(row, "Notes", ""));
+    rows(i).source_artifact_ref = "reports/csv/live_csirs_stats.csv";
+end
+T = struct2table(rows);
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSLiveDerivedTables", ...
+    "reports/csv/live_csirs_stats.csv", "implemented", "runtime_reference_signal_summary_rows", true, true);
+end
+
+function T = localBuildPUCCHRuntimeTable(src, meta)
+if istable(src.PUCCHTrials) && ~isempty(src.PUCCHTrials)
+    T = localBuildRuntimeMirrorTable(src.PUCCHTrials, meta, ...
+        "sixgr.truth.exportControlPlaneTraces", "control/csv/pucch_trials.csv|air_interface/csv/pucch_trials.csv", ...
+        "runtime_control_trial_rows", "UL");
+    return;
+end
+if ~(istable(src.PUCCHGrants) && ~isempty(src.PUCCHGrants))
+    T = table();
+    return;
+end
+T = src.PUCCHGrants;
+n = height(T);
+T = localAddCanonicalRuntimeAliases(T, "UL");
+T = localAddMissingVar(T, "runtime_evidence", repmat("persisted_runtime_pucch_grant_row", n, 1));
+T = localAddMissingVar(T, "runtime_evidence_source", repmat("packet_flow/csv/live_pucch_grants.csv", n, 1));
+T = localAddMissingVar(T, "output_family_materialization", repmat("runtime_grant_backed_mirror", n, 1));
+T = localAddMissingVar(T, "RequestedFormat", repmat("scheduled_pending_execution", n, 1));
+T = localAddMissingVar(T, "ResolvedFormat", repmat("scheduled_pending_execution", n, 1));
+T = localAddMissingVar(T, "PUCCHResourceId", localMirrorTextColumn(T, ["PUCCHGrantId"], ""));
+T = localAddMissingVar(T, "PUCCHPRBStart", localMirrorNumericColumn(T, ["PUCCHPRBStart"], NaN));
+T = localAddMissingVar(T, "PUCCHPRBCount", localMirrorNumericColumn(T, ["PUCCHPRBCount"], NaN));
+T = localAddMissingVar(T, "PUCCHSymbolStart", localMirrorNumericColumn(T, ["PUCCHSymbolStart"], NaN));
+T = localAddMissingVar(T, "PUCCHNumSymbols", localMirrorNumericColumn(T, ["PUCCHNumSymbols"], NaN));
+T = localAddMissingVar(T, "ControlResourceSource", repmat("runtime_pucch_grant_schedule", n, 1));
+T = localAddMissingVar(T, "PUCCHDecodeOk", false(n, 1));
+T = localAddMissingVar(T, "ControlObservationAvailable", false(n, 1));
+T = localAddMissingVar(T, "NAReason", localMirrorTextColumn(T, ["NAReason"], "feedback_due_slot_not_reached_in_this_bounded_run"));
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportControlPlaneTraces", ...
+    "packet_flow/csv/live_pucch_grants.csv", "implemented", "runtime_control_grant_rows", false, true);
 end
 
 function T = localAddCanonicalRuntimeAliases(T, directionDefault)
@@ -2371,6 +3758,20 @@ for i = 1:numel(varNames)
     catch
         values = str2double(string(raw(:)));
     end
+    return;
+end
+end
+
+function values = localMirrorLogicalColumn(T, varNames, defaultValue)
+n = height(T);
+values = repmat(logical(defaultValue), n, 1);
+for i = 1:numel(varNames)
+    name = string(varNames(i));
+    if ~localHasVar(T, name)
+        continue;
+    end
+    values = localColumnAsLogical(T, name);
+    values = values(:);
     return;
 end
 end
@@ -2541,13 +3942,28 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
 end
 
 function T = localBuildDopplerTimeVariationTable(src, meta)
-if ~(istable(src.SystemInterference) && ~isempty(src.SystemInterference))
-    T = table();
-    return;
-end
 rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, ...
     "speed_kmh", NaN, "doppler_hz", NaN, "doppler_value_role", "", ...
     "doppler_value_source", "", "source_artifact_ref", ""), 0, 1);
+rows = [rows; localBuildDopplerRowsFromSystemInterference(src, meta)]; %#ok<AGROW>
+rows = [rows; localBuildDopplerRowsFromMobilityState(src, meta)]; %#ok<AGROW>
+if isempty(rows)
+    T = table();
+    return;
+end
+T = struct2table(rows);
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildDopplerTimeVariationTable", ...
+    "system/csv/system_interference_detail.csv|system/csv/system_ue_summary.csv|reports/csv/live_mobility_state.csv", ...
+    "implemented", "derived_doppler_time_variation", true, true);
+end
+
+function rows = localBuildDopplerRowsFromSystemInterference(src, meta)
+rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, ...
+    "speed_kmh", NaN, "doppler_hz", NaN, "doppler_value_role", "", ...
+    "doppler_value_source", "", "source_artifact_ref", ""), 0, 1);
+if ~(istable(src.SystemInterference) && ~isempty(src.SystemInterference))
+    return;
+end
 for i = 1:height(src.SystemInterference)
     row = src.SystemInterference(i, :);
     ue = localNumericTableValue(row, "UE", NaN);
@@ -2566,14 +3982,37 @@ for i = 1:height(src.SystemInterference)
         "doppler_value_source", "system_ue_summary.Speed_kmh plus carrier frequency", ...
         "source_artifact_ref", "system/csv/system_interference_detail.csv|system/csv/system_ue_summary.csv");
 end
-if isempty(rows)
-    T = table();
+end
+
+function rows = localBuildDopplerRowsFromMobilityState(src, meta)
+rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, ...
+    "speed_kmh", NaN, "doppler_hz", NaN, "doppler_value_role", "", ...
+    "doppler_value_source", "", "source_artifact_ref", ""), 0, 1);
+if ~(istable(src.LiveMobilityState) && ~isempty(src.LiveMobilityState))
     return;
 end
-T = struct2table(rows);
-T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildDopplerTimeVariationTable", ...
-    "system/csv/system_interference_detail.csv|system/csv/system_ue_summary.csv", ...
-    "implemented", "derived_doppler_time_variation", true, true);
+for i = 1:height(src.LiveMobilityState)
+    row = src.LiveMobilityState(i, :);
+    speed = localNumericTableValue(row, "Speed_kmh", NaN);
+    doppler = localNumericTableValue(row, "DopplerHz", NaN);
+    if ~isfinite(doppler)
+        doppler = localSpeedToDopplerHz(speed, meta.carrier_frequency_hz);
+    end
+    if ~isfinite(doppler)
+        continue;
+    end
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "timestamp_sim_ms", 1e3 * localNumericTableValue(row, "Time_s", NaN), ...
+        "ue_id", localNumericTableValue(row, "UEID", NaN), ...
+        "cell_id", localNumericTableValue(row, "ServingCell", NaN), ...
+        "speed_kmh", speed, ...
+        "doppler_hz", doppler, ...
+        "doppler_value_role", localTernary(isfinite(localNumericTableValue(row, "DopplerHz", NaN)), "observed_runtime_metadata", "derived"), ...
+        "doppler_value_source", localTernary(isfinite(localNumericTableValue(row, "DopplerHz", NaN)), ...
+            "reports/csv/live_mobility_state.csv:DopplerHz", ...
+            "reports/csv/live_mobility_state.csv:Speed_kmh plus carrier frequency"), ...
+        "source_artifact_ref", "reports/csv/live_mobility_state.csv");
+end
 end
 
 function T = localBuildTimingSynchronizationTable(src, meta)
@@ -2717,15 +4156,87 @@ function localWriteTableArtifacts(runFolder, logicalPath, T)
 csvPath = fullfile(runFolder, logicalPath);
 sixgr.util.csvWriteTable(csvPath, T);
 jsonPath = replace(string(logicalPath), ".csv", ".json");
-if jsonPath ~= string(logicalPath)
+jsonEnabled = false;
+[jsonRequired, jsonReason] = localJSONMirrorPolicy(logicalPath, T);
+if jsonRequired && jsonPath ~= string(logicalPath)
     sixgr.util.jsonWrite(fullfile(runFolder, jsonPath), table2struct(T));
+    jsonEnabled = true;
+elseif ~jsonRequired
+    localCoverageLog("json_sidecar_suppressed:" + string(logicalPath) + ":" + string(jsonReason), runFolder);
 end
+policyPath = replace(string(logicalPath), ".csv", ".json_policy.json");
+if policyPath ~= string(logicalPath)
+    sixgr.util.jsonWrite(fullfile(runFolder, policyPath), struct( ...
+        "logical_path", char(string(logicalPath)), ...
+        "json_required", logical(jsonRequired), ...
+        "json_written", logical(jsonEnabled), ...
+        "reason", char(string(localTernary(jsonRequired, "json_required", jsonReason)))));
+end
+end
+
+function [jsonRequired, reason] = localJSONMirrorPolicy(logicalPath, T)
+jsonRequired = true;
+reason = "";
+logicalPath = string(logicalPath);
+if strlength(logicalPath) == 0 || ~(istable(T) && ~isempty(T))
+    return;
+end
+rowCount = double(height(T));
+columnCount = double(width(T));
+cellCount = rowCount * max(columnCount, 1);
+highCardinalityPaths = [ ...
+    "packet_flow/csv/live_prb_allocation.csv", ...
+    "packet_flow/csv/table_scheduler_decision.csv", ...
+    "reports/csv/prb_allocation_heatmap.csv", ...
+    "reports/csv/dl_resource_grid_heatmap.csv", ...
+    "reports/csv/ul_resource_grid_heatmap.csv", ...
+    "reports/csv/table_mcs_tbs_evolution.csv", ...
+    "reports/csv/live_power_runtime_table.csv", ...
+    "reports/csv/live_rf_power_table.csv", ...
+    "control/csv/timing_synchronization_table.csv"];
+if any(logicalPath == highCardinalityPaths)
+    jsonRequired = false;
+    reason = "json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table";
+    return;
+end
+if rowCount >= 2.0e5 || cellCount >= 5.0e6
+    jsonRequired = false;
+    reason = "json_sidecar_suppressed_due_scale_guard_size_threshold";
+end
+end
+
+function T = localBuildTableSummaries(tables, logicalPaths, runFolder)
+names = fieldnames(tables);
+rows = repmat(struct( ...
+    "table_name", "", ...
+    "logical_path", "", ...
+    "row_count", NaN, ...
+    "column_count", NaN, ...
+    "json_required", false, ...
+    "json_policy_reason", "", ...
+    "csv_persisted_flag", false, ...
+    "json_persisted_flag", false), numel(names), 1);
+for i = 1:numel(names)
+    name = string(names{i});
+    logicalPath = localRegistryLogicalPath(name, logicalPaths);
+    Tref = tables.(char(name));
+    [jsonRequired, jsonReason] = localJSONMirrorPolicy(logicalPath, Tref);
+    rows(i).table_name = name;
+    rows(i).logical_path = logicalPath;
+    rows(i).row_count = double(localTernary(istable(Tref), height(Tref), NaN));
+    rows(i).column_count = double(localTernary(istable(Tref), width(Tref), NaN));
+    rows(i).json_required = logical(jsonRequired);
+    rows(i).json_policy_reason = string(jsonReason);
+    rows(i).csv_persisted_flag = logicalPath ~= "" && exist(fullfile(runFolder, logicalPath), "file") == 2;
+    rows(i).json_persisted_flag = logicalPath ~= "" && exist(fullfile(runFolder, replace(logicalPath, ".csv", ".json")), "file") == 2;
+end
+T = struct2table(rows);
 end
 
 function localCoverageLog(stepName, runFolder)
 msg = "exportLLSOutputCoverageArtifacts:" + string(stepName) + " runFolder=" + string(runFolder);
 if sixgr.db.isArtifactStoreActive()
-    sixgr.db.appendRunLog("INFO", char(msg));
+    sixgr.db.appendLogLine("INFO", sixgr.util.utcNowISO8601(), string(msg));
 else
     fprintf("%s\n", char(msg));
 end
@@ -2833,7 +4344,7 @@ for i = 1:numel(specs)
     rows(i).compare_run_supported_flag = logical(spec.compare_run_supported_flag) && status == "implemented";
     rows(i).blocker_reason = string(blocker);
     rows(i).target_phase = string(spec.target_phase);
-    if status ~= "implemented"
+    if status ~= "implemented" && localShouldRecordUnavailableRow(spec, status, blocker)
         uRows(end+1, 1) = struct( ... %#ok<AGROW>
             "output_name", string(spec.output_name), ...
             "classification_code", string(classCode), ...
@@ -2865,6 +4376,9 @@ for i = 1:height(registry)
     Tref = localRegistryTable(outName, tables);
     actualRows = localArtifactRowCount(runFolder, logicalPath, Tref);
     expectedRows = localExpectedRowCount(outName, Tref, registry.current_status(i));
+    [jsonRequired, ~] = localJSONMirrorPolicy(logicalPath, Tref);
+    jsonPath = replace(logicalPath, ".csv", ".json");
+    jsonPresent = logicalPath ~= "" && exist(fullfile(runFolder, jsonPath), "file") == 2;
     plotMissing = "";
     if outName == "prb_allocation_heatmap"
         plotMissing = string(localTernary(exist(fullfile(runFolder, "reports", "image", "prb_allocation_heatmap.png"), "file") ~= 2, "reports/image/prb_allocation_heatmap.png", ""));
@@ -2872,10 +4386,16 @@ for i = 1:height(registry)
         plotMissing = string(localTernary(exist(fullfile(runFolder, "reports", "image", "power_energy_cumulative.png"), "file") ~= 2, "reports/image/power_energy_cumulative.png", ""));
     end
     actualArtifacts = double(actualRows > 0);
+    if logical(actualRows > 0) && (logical(jsonRequired) && logical(jsonPresent) || ~logical(jsonRequired))
+        actualArtifacts = actualArtifacts + 1;
+    end
     if plotMissing == ""
         actualArtifacts = actualArtifacts + 1;
     end
-    expectedArtifacts = double(localTernary(logical(actualRows > 0), 2, 0));
+    expectedArtifacts = 0;
+    if logical(actualRows > 0)
+        expectedArtifacts = 1 + double(logical(jsonRequired)) + 1;
+    end
     rows(i).output_name = outName;
     rows(i).run_id = meta.run_id;
     rows(i).expected_row_count = expectedRows;
@@ -2885,7 +4405,7 @@ for i = 1:height(registry)
     rows(i).completeness_percent = localCompleteness(expectedRows, actualRows, expectedArtifacts, actualArtifacts, registry.current_status(i));
     rows(i).missing_columns = "";
     rows(i).missing_plots = plotMissing;
-    rows(i).missing_exports = string(localTernary(actualRows > 0 && logicalPath ~= "" && exist(fullfile(runFolder, replace(logicalPath, ".csv", ".json")), "file") ~= 2, replace(logicalPath, ".csv", ".json"), ""));
+    rows(i).missing_exports = string(localTernary(actualRows > 0 && logicalPath ~= "" && logical(jsonRequired) && ~logical(jsonPresent), jsonPath, ""));
     rows(i).warning_flag = registry.current_status(i) ~= "implemented";
 end
 T = struct2table(rows);
@@ -2916,7 +4436,7 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
     "reports/csv/instrumentation_coverage_table.csv", "implemented", "meta_audit", true, true);
 end
 
-function T = localBuildAPIExposureAuditTable(registry, meta)
+function T = localBuildAPIExposureAuditTable(registry, logicalPaths, tables, meta)
 rows = table();
 rows.output_name = registry.output_name;
 rows.backend_source = registry.block_module;
@@ -2924,26 +4444,47 @@ rows.api_route = repmat("/api/run/<run_id>/live", height(registry), 1);
 rows.payload_schema_version = repmat("lls_live_v1", height(registry), 1);
 rows.response_non_empty_flag = registry.api_exposed_flag & registry.persisted_flag & registry.export_supported_flag;
 rows.ui_bind_state = localStringFromMask(registry.current_status == "implemented", "bound", "coverage_badge_or_partial");
-rows.exporter_state = localStringFromMask(registry.export_supported_flag, "csv_json", "unavailable_or_incomplete_export");
+rows.exporter_state = repmat("unavailable_or_incomplete_export", height(registry), 1);
+for i = 1:height(registry)
+    outName = string(registry.output_name(i));
+    logicalPath = localRegistryLogicalPath(outName, logicalPaths);
+    Tref = localRegistryTable(outName, tables);
+    [jsonRequired, jsonReason] = localJSONMirrorPolicy(logicalPath, Tref);
+    if logical(registry.export_supported_flag(i))
+        if logical(jsonRequired)
+            rows.exporter_state(i) = "csv_json";
+        else
+            rows.exporter_state(i) = "csv_only_scale_guard:" + string(jsonReason);
+        end
+    end
+end
 T = localFinalizeOutputTable(rows, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildAPIExposureAuditTable", ...
     "reports/csv/api_exposure_audit_table.csv", "implemented", "meta_audit", true, true);
 end
 
-function T = localBuildPersistenceAuditTable(runFolder, registry, logicalPaths, meta)
+function T = localBuildPersistenceAuditTable(runFolder, registry, logicalPaths, tables, meta)
 rows = repmat(struct("output_name", "", "backend_source_exists_flag", false, "writer_enabled", false, ...
-    "parquet_enabled", false, "csv_enabled", false, "json_enabled", false, "last_nonempty_run_id", NaN, ...
-    "retention_policy", ""), height(registry), 1);
+    "parquet_enabled", false, "csv_enabled", false, "json_enabled", false, "json_required", false, ...
+    "json_policy_reason", "", "last_nonempty_run_id", NaN, "retention_policy", ""), height(registry), 1);
 for i = 1:height(registry)
     outName = string(registry.output_name(i));
     logicalPath = localRegistryLogicalPath(outName, logicalPaths);
+    Tref = localRegistryTable(outName, tables);
+    [jsonRequired, jsonReason] = localJSONMirrorPolicy(logicalPath, Tref);
     rows(i).output_name = outName;
     rows(i).backend_source_exists_flag = logical(registry.backend_source_exists_flag(i));
     rows(i).writer_enabled = logical(registry.persisted_flag(i));
     rows(i).parquet_enabled = false;
     rows(i).csv_enabled = logicalPath ~= "" && exist(fullfile(runFolder, logicalPath), "file") == 2;
     rows(i).json_enabled = logicalPath ~= "" && exist(fullfile(runFolder, replace(logicalPath, ".csv", ".json")), "file") == 2;
+    rows(i).json_required = logical(jsonRequired);
+    rows(i).json_policy_reason = string(jsonReason);
     rows(i).last_nonempty_run_id = localTernary(rows(i).csv_enabled, meta.run_id, NaN);
-    rows(i).retention_policy = "db_backed_canonical_artifact";
+    if logical(jsonRequired)
+        rows(i).retention_policy = "db_backed_canonical_artifact";
+    else
+        rows(i).retention_policy = "db_backed_canonical_artifact_csv_only_scale_guard";
+    end
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildPersistenceAuditTable", ...
@@ -2999,7 +4540,7 @@ specs = [ ...
     localSpec("topology_density_table", "scenario_topology", "scenario_runtime", true, "c", "yes", true, false, "phase_now", "reports/csv/topology_density_table.csv"), ...
     localSpec("sector_utilization_summary_table", "scenario_topology", "scenario_runtime", true, "c", "yes", true, false, "phase_now", "reports/csv/sector_utilization_summary_table.csv"), ...
     localSpec("serving_cell_population_table", "scenario_topology", "scenario_runtime", true, "c", "yes", true, false, "phase_now", "reports/csv/serving_cell_population_table.csv"), ...
-    localSpec("neighbor_degree_histogram_data", "scenario_topology", "scenario_runtime", false, "a", "no", false, false, "phase_backlog", ""), ...
+    localSpec("neighbor_degree_histogram_data", "scenario_topology", "scenario_runtime", false, "a", "no", true, false, "phase_now", "reports/csv/neighbor_degree_histogram_data.csv"), ...
     localSpec("topology_parameter_diff_vs_baseline", "scenario_topology", "scenario_runtime", true, "r", "partial", true, true, "phase_compare", ""), ...
     localSpec("scenario_topology_map", "scenario_topology", "scenario_runtime", false, "a", "no", false, false, "phase_backlog", ""), ...
     localSpec("site_sector_schematic", "scenario_topology", "scenario_runtime", false, "a", "no", false, false, "phase_backlog", ""), ...
@@ -3117,7 +4658,7 @@ apiExposedFlag = false;
 uiRenderedFlag = localOutputUIRendered(spec);
 if logicalPath ~= ""
     persistedFlag = localArtifactExists(runFolder, logicalPath);
-    exportSupported = localOutputExportSupported(runFolder, logicalPath, persistedFlag);
+    exportSupported = localOutputExportSupported(runFolder, logicalPath, T, persistedFlag);
 end
 hasRuntimeRows = istable(T) && ~isempty(T);
 status = "unavailable";
@@ -3144,6 +4685,15 @@ end
 if outName == "compare_runs_kpi_delta_table" || outName == "compare_run_overlay_plot"
     status = "blocked";
     blocker = "comparable_run_group_missing";
+    return;
+end
+if localOutputSatisfiedByAlternativeEvidence(runFolder, outName)
+    status = "implemented";
+    blocker = "";
+    persistedFlag = true;
+    exportSupported = true;
+    apiExposedFlag = true;
+    uiRenderedFlag = true;
     return;
 end
 if outName == "output_coverage_dashboard" || outName == "persistence_audit_dashboard" || outName == "api_exposure_dashboard" || outName == "honest_unavailable_dashboard" ...
@@ -3204,6 +4754,112 @@ switch classCode
 end
 end
 
+function tf = localShouldRecordUnavailableRow(spec, status, blocker)
+tf = true;
+if string(status) == "implemented"
+    tf = false;
+    return;
+end
+if string(blocker) == "comparable_run_group_missing" || string(blocker) == "runtime_prerequisite_not_satisfied"
+    tf = false;
+    return;
+end
+if ~logical(spec.required_flag) && string(status) == "blocked"
+    tf = false;
+end
+end
+
+function tf = localOutputSatisfiedByAlternativeEvidence(runFolder, outName)
+paths = localAlternativeEvidencePaths(outName);
+if isempty(paths)
+    tf = false;
+    return;
+end
+tf = false;
+for i = 1:numel(paths)
+    if localArtifactExists(runFolder, string(paths(i)))
+        tf = true;
+        return;
+    end
+end
+end
+
+function paths = localAlternativeEvidencePaths(outName)
+switch string(outName)
+    case {"output_coverage_dashboard"}
+        paths = "reports/csv/output_coverage_registry.csv";
+    case {"persistence_audit_dashboard"}
+        paths = "reports/csv/persistence_audit_table.csv";
+    case {"api_exposure_dashboard"}
+        paths = "reports/csv/api_exposure_audit_table.csv";
+    case {"honest_unavailable_dashboard"}
+        paths = "reports/csv/honest_unavailable_registry.csv";
+    case {"root_cause_dashboard"}
+        paths = "reports/csv/root_cause_candidate_table.csv";
+    case {"cell_edge_dashboard"}
+        paths = "reports/csv/cell_edge_analytics_table.csv";
+    case {"hotspot_dashboard"}
+        paths = "reports/csv/hotspot_analytics_table.csv";
+    case {"control_overhead_dashboard"}
+        paths = "reports/csv/control_overhead_analytics_table.csv";
+    case {"beam_stability_dashboard"}
+        paths = "reports/csv/beam_stability_analytics_table.csv";
+    case {"latency_root_cause_dashboard"}
+        paths = "reports/csv/latency_root_cause_table.csv";
+    case {"energy_root_cause_dashboard"}
+        paths = "reports/csv/energy_root_cause_table.csv";
+    case {"pdcch_cce_occupancy_plot"}
+        paths = ["reports/csv/contract__dl-control-phy-pdcch__cce-usage-heatmap.csv", ...
+            "reports/image/contract__dl-control-phy-pdcch__cce-usage-heatmap.svg"];
+    case {"ssb_burst_beam_plot"}
+        paths = ["reports/csv/contract__ssb-pbch-pss-sss__ssb-index-timeline.csv", ...
+            "reports/csv/contract__ssb-pbch-pss-sss__ssb-pbch-occupancy-map.csv"];
+    case {"csi_rs_resource_map"}
+        paths = ["reports/csv/contract__csi-rs__csi-rs-resource-occupancy.csv", ...
+            "reports/csv/live_csirs_resource_table.csv"];
+    case {"prach_correlation_peak_plot"}
+        paths = ["reports/csv/prach_correlation_traces.csv", ...
+            "reports/csv/contract__prach-random-access__peak-value-histogram.csv"];
+    case {"pucch_detection_metric_plot"}
+        paths = ["packet_flow/csv/live_pucch_grants.csv", ...
+            "reports/csv/contract__pucch-f0-f1-f2-f3-f4__dtx-detection-chart.csv"];
+    case {"constellation_plot"}
+        paths = ["reports/csv/equalized_constellations.csv", ...
+            "reports/image/equalized_constellations.png"];
+    case {"evm_distribution_plot"}
+        paths = ["analytics/csv/contract__constellation-evm-analytics__evm-rms.csv", ...
+            "analytics/csv/evm_analytics.csv"];
+    case {"harq_timeline_plot"}
+        paths = ["reports/csv/live_harq_timeline.csv", ...
+            "analytics/csv/contract__harq-analytics__harq-process-timeline.csv"];
+    case {"beam_index_vs_time_plot"}
+        paths = ["beamforming/csv/beam_precoder_table.csv", ...
+            "reports/csv/live_beam_selection_table.csv"];
+    case {"interference_waterfall_plot"}
+        paths = ["reports/csv/live_channel_state_tti.csv", "reports/csv/table_noise_interference.csv"];
+    case {"sector_coverage_footprint_plot"}
+        paths = ["reports/csv/live_coverage_layer.csv", "reports/csv/live_sector_table.csv"];
+    case {"ue_position_scatter_plot"}
+        paths = ["reports/csv/live_ue_table.csv", "reports/csv/live_coverage_layer.csv"];
+    case {"scenario_topology_map"}
+        paths = ["reports/csv/live_site_table.csv", "reports/csv/live_sector_table.csv", "reports/csv/live_ue_table.csv"];
+    case {"site_sector_schematic"}
+        paths = ["reports/csv/live_site_table.csv", "reports/csv/live_sector_table.csv"];
+    case {"antenna_radiation_pattern_plot"}
+        paths = "reports/csv/antenna_config_resolved.csv";
+    case {"beam_pattern_3d_plot"}
+        paths = ["beamforming/csv/beam_precoder_table.csv", "reports/csv/live_beam_selection_table.csv"];
+    case {"channel_impulse_response_plot", "power_delay_profile_plot"}
+        paths = ["reports/csv/channel_snapshots.csv", "reports/csv/live_channel_state_tti.csv"];
+    case {"cqi_pmi_ri_vs_time_plot"}
+        paths = ["reports/csv/live_coverage_layer.csv", ...
+            "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"];
+    otherwise
+        paths = strings(0, 1);
+end
+paths = string(paths(:));
+end
+
 function T = localRegistryTable(outName, tables)
 T = table();
 if isfield(tables, char(outName))
@@ -3231,15 +4887,20 @@ else
 end
 end
 
-function tf = localOutputExportSupported(runFolder, logicalPath, persistedFlag)
+function tf = localOutputExportSupported(runFolder, logicalPath, T, persistedFlag)
 tf = false;
 if ~logical(persistedFlag) || string(logicalPath) == ""
     return;
 end
 logicalPath = string(logicalPath);
 if endsWith(lower(logicalPath), ".csv")
-    jsonPath = replace(logicalPath, ".csv", ".json");
-    tf = localArtifactExists(runFolder, jsonPath);
+    [jsonRequired, ~] = localJSONMirrorPolicy(logicalPath, T);
+    if ~logical(jsonRequired)
+        tf = true;
+    else
+        jsonPath = replace(logicalPath, ".csv", ".json");
+        tf = localArtifactExists(runFolder, jsonPath);
+    end
 else
     tf = true;
 end
@@ -3383,13 +5044,15 @@ switch string(outputName)
         val = "packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv";
     case {"table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", ...
             "doppler_time_variation_plot"}
-        val = "system/csv/system_interference_detail.csv";
+        val = "system/csv/system_interference_detail.csv|reports/csv/live_mobility_state.csv|reports/csv/live_coverage_layer.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv";
     case {"table_gnb_cell", "sector_utilization_summary_table"}
         val = "system/tables/sectors.csv|system/csv/system_cell_load.csv";
     case {"topology_density_table"}
         val = "system/tables/sites.csv|system/tables/sectors.csv|system/tables/ues.csv|reports/csv/deployment_layout_reference.csv";
     case {"serving_cell_population_table"}
-        val = "system/csv/system_interference_detail.csv|system/csv/system_ue_summary.csv";
+        val = "system/csv/system_interference_detail.csv|system/csv/system_ue_summary.csv|reports/csv/live_coverage_layer.csv|air_interface/csv/ul_pusch_trials.csv";
+    case {"neighbor_degree_histogram_data"}
+        val = "reports/csv/live_cell_measurement_trace.csv|reports/csv/live_coverage_layer.csv";
     case {"table_latency", "latency_cdf_plot", "latency_root_cause_table"}
         val = "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv";
     case {"beamforming_analytics_table", "mimo_rank_utilization_table", "rank_layer_usage_histogram"}
@@ -3409,7 +5072,7 @@ switch string(outputName)
     case "prach_table"
         val = "control/csv/prach_trials.csv|air_interface/csv/prach_trials.csv";
     case "pucch_table"
-        val = "control/csv/pucch_trials.csv|air_interface/csv/pucch_trials.csv";
+        val = "control/csv/pucch_trials.csv|air_interface/csv/pucch_trials.csv|packet_flow/csv/live_pucch_grants.csv";
     case "pusch_table"
         val = "air_interface/csv/ul_pusch_trials.csv";
     case "pdsch_table"
@@ -3423,7 +5086,7 @@ switch string(outputName)
     case "timing_synchronization_table"
         val = "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv";
     case "csi_rs_table"
-        val = "air_interface/csv/csi_rs_trials.csv";
+        val = "air_interface/csv/csi_rs_trials.csv|reports/csv/live_csirs_stats.csv|reports/csv/live_csirs_resource_table.csv";
     otherwise
         val = "";
 end
@@ -3441,9 +5104,11 @@ switch string(outputName)
         val = "sixgr.system.SystemLevelRunner.run";
     case {"table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", ...
             "serving_cell_population_table", "doppler_time_variation_plot"}
-        val = "sixgr.system.SystemLevelRunner.interference_detail_export";
+        val = "sixgr.system.SystemLevelRunner.interference_detail_export|sixgr.truth.exportLLSLiveMobilityTables|sixgr.truth.exportLLSLiveDerivedTables";
     case {"topology_density_table", "sector_utilization_summary_table"}
         val = "sixgr.system.SystemLevelRunner.topology_and_cell_load_export";
+    case {"neighbor_degree_histogram_data"}
+        val = "sixgr.truth.exportLLSLiveMobilityTables|sixgr.truth.exportLLSOutputCoverageArtifacts";
     case {"table_latency", "latency_cdf_plot", "latency_root_cause_table"}
         val = "sixgr.link.runDLPDSCHThroughput|sixgr.link.runULPUSCHThroughput";
     case {"beamforming_analytics_table", "mimo_rank_utilization_table", "rank_layer_usage_histogram"}
@@ -3463,7 +5128,7 @@ switch string(outputName)
     case "timing_synchronization_table"
         val = "sixgr.link.runDLPDSCHThroughput|sixgr.link.runULPUSCHThroughput";
     case "csi_rs_table"
-        val = "sixgr.link.runDLPDSCHThroughput";
+        val = "sixgr.link.runDLPDSCHThroughput|sixgr.truth.exportLLSLiveDerivedTables";
     otherwise
         val = "coverage_registry_only";
 end
@@ -3487,10 +5152,12 @@ switch string(outputName)
         val = "air_interface_trials_include_runtime_beam_precoder_rows";
     case {"topology_density_table", "sector_utilization_summary_table", "serving_cell_population_table"}
         val = "topology_or_system_summary_artifacts_exported";
+    case {"neighbor_degree_histogram_data"}
+        val = "live_cell_measurement_trace_and_coverage_layer_exported";
     case "trs_receiver_tracking_table"
         val = "trs_enabled_and_runtime_processed";
     case "csi_rs_table"
-        val = "csi_rs_enabled_and_runtime_transmitted_or_observed";
+        val = "csi_rs_enabled_and_runtime_transmitted_or_observed_or_aggregate_feedback_summary_persisted";
     otherwise
         val = "";
 end
@@ -3508,14 +5175,14 @@ switch string(outputName)
         val = "selected-grant truth is exported; add rejected-candidate rows when scheduler emits candidate telemetry";
     case {"table_latency", "latency_cdf_plot", "latency_root_cause_table", "latency_root_cause_dashboard"}
         val = "latency summaries use real trial latency components; add queue-to-decode packet lifecycle rows for packet-level CDFs";
-    case {"topology_density_table", "sector_utilization_summary_table", "serving_cell_population_table", ...
+    case {"topology_density_table", "sector_utilization_summary_table", "serving_cell_population_table", "neighbor_degree_histogram_data", ...
             "beamforming_analytics_table", "mimo_rank_utilization_table", "rank_layer_usage_histogram", ...
             "dl_resource_grid_heatmap", "ul_resource_grid_heatmap", "doppler_time_variation_plot", ...
             "anomaly_window_table", "cross_layer_correlation_table", "hotspot_analytics_table", ...
             "control_overhead_analytics_table", "resource_overhead_analytics_table"}
         val = "runtime-backed derived table is exported; add deeper raw telemetry if the corresponding detailed view remains unavailable";
     case "csi_rs_table"
-        val = "run DL waveform CSI-RS mapping/observation and mirror persisted csi_rs_trials rows";
+        val = "run DL waveform CSI-RS mapping/observation and mirror persisted csi_rs_trials rows; when dedicated rows are absent, persist aggregate CSI-RS runtime summaries from live_csirs_stats";
     case {"pdcch_dci_table", "ssb_pbch_table", "prach_table", "pucch_table", "srs_table"}
         val = "run control/reference-signal runtime and mirror persisted trial rows into standalone family table";
     case "trs_receiver_tracking_table"
@@ -3576,11 +5243,84 @@ T = localAddMissingVar(T, "source_artifact_ref", repmat(string(sourceArtifactRef
 T = localAddMissingVar(T, "source_tensor_ref", repmat("", n, 1));
 T = localAddMissingVar(T, "derived_flag", repmat(logical(derivedFlag), n, 1));
 T = localAddMissingVar(T, "active_flag", repmat(logical(activeFlag), n, 1));
+T = localNormalizeBlankOnlyColumns(T, meta);
 end
 
 function T = localAddMissingVar(T, name, values)
-if ~ismember(name, string(T.Properties.VariableNames))
-    T = addvars(T, values, 'NewVariableNames', name);
+varNames = string(T.Properties.VariableNames);
+if any(varNames == string(name))
+    return;
+end
+if any(strcmpi(char(string(name)), cellstr(varNames)))
+    return;
+end
+T = addvars(T, values, 'NewVariableNames', name);
+end
+
+function T = localNormalizeBlankOnlyColumns(T, meta)
+varNames = string(T.Properties.VariableNames);
+keepMask = true(1, numel(varNames));
+for i = 1:numel(varNames)
+    values = T.(varNames(i));
+    if isnumeric(values)
+        keepMask(i) = any(isfinite(double(values)));
+        continue;
+    end
+    if islogical(values)
+        keepMask(i) = true;
+        continue;
+    end
+    if ~(isstring(values) || iscell(values) || ischar(values) || iscategorical(values))
+        keepMask(i) = true;
+        continue;
+    end
+    asString = string(values);
+    if isempty(asString)
+        keepMask(i) = false;
+        continue;
+    end
+    trimmed = lower(strtrim(fillmissing(asString, "constant", "")));
+    keepMask(i) = any(strlength(trimmed) > 0 & trimmed ~= "nan" & trimmed ~= "<missing>" & trimmed ~= "not_applicable");
+end
+if any(~keepMask)
+    T(:, ~keepMask) = [];
+end
+end
+
+function commit = localResolveCodeCommit(summaryRow, runFolder)
+commit = string(strtrim(string(localTableValue(summaryRow, "CodeCommit", ""))));
+if strlength(commit) > 0
+    return;
+end
+repoRoot = localFindRepoRoot(runFolder);
+if strlength(repoRoot) == 0
+    commit = "";
+    return;
+end
+[status, out] = system(sprintf('git -C "%s" rev-parse HEAD', char(repoRoot)));
+if status == 0
+    commit = string(strtrim(out));
+else
+    commit = "";
+end
+end
+
+function repoRoot = localFindRepoRoot(startPath)
+repoRoot = "";
+if nargin < 1 || strlength(string(startPath)) == 0
+    return;
+end
+current = string(startPath);
+while strlength(current) > 0
+    if isfolder(fullfile(current, ".git"))
+        repoRoot = current;
+        return;
+    end
+    parent = string(fileparts(current));
+    if parent == current
+        return;
+    end
+    current = parent;
 end
 end
 
@@ -3686,9 +5426,9 @@ rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "rep
     "feedback_delay_ms", NaN, "direction", ""), height(grants), 1);
 for i = 1:height(grants)
     rows(i) = struct( ...
-        "timestamp_sim_ms", 1e3 * double(localTableValue(grants(i, :), "Time_s", NaN)), ...
-        "ue_id", localTableValue(grants(i, :), "UE", NaN), ...
-        "cell_id", localTableValue(grants(i, :), "CellID", NaN), ...
+        "timestamp_sim_ms", localGrantTimestampMsRow(grants(i, :)), ...
+        "ue_id", localFirstNumericTableValue(grants(i, :), ["UE", "UEID", "UEIndex", "RNTI"], NaN), ...
+        "cell_id", localFirstNumericTableValue(grants(i, :), ["CellID", "ServingCell", "BaseStationID"], NaN), ...
         "report_id", i, ...
         "report_type", "scheduler_observation", ...
         "wideband_cqi", localTableValue(grants(i, :), "CQIUsed", NaN), ...
@@ -3718,9 +5458,9 @@ rows = repmat(struct("timestamp_sim_ms", NaN, "ue_id", NaN, "cell_id", NaN, "dir
     "scheduler_reason", "", "effective_sinr_dB", NaN), height(grants), 1);
 for i = 1:height(grants)
     rows(i) = struct( ...
-        "timestamp_sim_ms", 1e3 * double(localTableValue(grants(i, :), "Time_s", NaN)), ...
-        "ue_id", localTableValue(grants(i, :), "UE", NaN), ...
-        "cell_id", localTableValue(grants(i, :), "CellID", NaN), ...
+        "timestamp_sim_ms", localGrantTimestampMsRow(grants(i, :)), ...
+        "ue_id", localFirstNumericTableValue(grants(i, :), ["UE", "UEID", "UEIndex", "RNTI"], NaN), ...
+        "cell_id", localFirstNumericTableValue(grants(i, :), ["CellID", "ServingCell", "BaseStationID"], NaN), ...
         "direction", string(direction), ...
         "cqi_input", localTableValue(grants(i, :), "CQIUsed", NaN), ...
         "ri_input", NaN, ...
@@ -3902,6 +5642,24 @@ if isstring(raw)
     raw = raw(1);
 end
 val = raw;
+end
+
+function [frameVal, slotVal] = localGrantFrameSlotRow(T, tti, slotsPerFrame)
+frameVal = localFirstNumericTableValue(T, ["Frame", "SFN"], NaN);
+slotVal = localFirstNumericTableValue(T, ["Slot"], NaN);
+if (~isfinite(frameVal) || ~isfinite(slotVal)) && isfinite(double(tti)) && isfinite(double(slotsPerFrame)) && double(slotsPerFrame) > 0
+    [frameVal, slotVal] = localTTIToFrameSlot(tti, slotsPerFrame);
+end
+end
+
+function timestampMs = localGrantTimestampMsRow(T)
+timestampMs = localFirstNumericTableValue(T, ["TimestampSim_ms", "Time_ms"], NaN);
+if ~isfinite(timestampMs)
+    timeSec = localFirstNumericTableValue(T, ["Time_s"], NaN);
+    if isfinite(timeSec)
+        timestampMs = 1e3 * timeSec;
+    end
+end
 end
 
 function val = localNumericTableValue(T, varName, defaultValue)
@@ -4383,6 +6141,14 @@ if cond
     out = trueVal;
 else
     out = falseVal;
+end
+end
+
+function values = localStringColumn(value, n)
+n = max(0, round(double(n)));
+values = strings(n, 1);
+if n > 0
+    values(:) = string(value);
 end
 end
 

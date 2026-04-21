@@ -1,0 +1,6 @@
+{
+  "logical_path": "analytics/csv/energy_efficiency_analytics.csv",
+  "json_required": true,
+  "json_written": true,
+  "reason": "json_required"
+}

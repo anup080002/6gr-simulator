@@ -1,0 +1,22 @@
+{Error using sixgr.lls6g.config.validateScenarioConfig>localRejectUnknownTopLevel
+Unknown top-level keys in simulator\configs\scenarios\lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml: phy
+
+Error in sixgr.lls6g.config.validateScenarioConfig (line 17)
+localRejectUnknownTopLevel(cfg, schemaDef.AllowedTopLevel, ctx);
+
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 20)
+sixgr.lls6g.config.validateScenarioConfig(raw, ...
+
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 31)
+    [parentCfg, chain] = localResolveConfigTree(parentPath, chain);
+
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+
+Error in sixgr.lls6g.runners.runSingle (line 13)
+scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+
+Error in run_6g_phy_lls_single (line 14)
+out = sixgr.lls6g.runners.runSingle(configPath, outputDir, runTag);
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

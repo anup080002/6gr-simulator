@@ -1,0 +1,99 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot
+  description: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 5 gNBs, 50 randomly placed UEs, and 10 canonical slots launched from the browser-owned MATLAB path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot
+  scenario_name: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 5 gNBs, 50 randomly placed UEs, and 10 canonical slots launched from the browser-owned MATLAB path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot
+  comparison_group_name: rel20_anchor_4ghz_100mhz_5gnb_50ue_10slot
+  notes: >
+    Browser-owned canonical waveform_bundle scenario reduced to a 10-slot / 5-gNB / 50-UE truthful
+    scale probe. This remains waveform-backed where MATLAB executes grants and must keep
+    abstraction-labeled or unavailable outputs explicit when the repo does not emit a waveform-level
+    artifact.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 5gnb
+    - 50ue
+    - 10slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot
+  description: Strict waveform-honest NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 5 gNBs, 50 UEs, and 10 canonical slots.
+  runner_profile: waveform_bundle
+  notes: >
+    Browser-owned canonical waveform_bundle scenario. This path dispatches directly to the coupled
+    waveform truth loop and relies on the runtime's canonical slot accounting plus configured TDD duplex
+    pattern handling. Unsupported browser labels must remain explicit and truthful.
+
+run_control:
+  run_profile: exhaustive
+  total_slots: 10
+  warmup_slots: 2
+  measurement_slots: 8
+  checkpoint_every_slots: 1
+  snapshot_every_slots: 1
+  log_every_slots: 1
+  warmup_time_ms: 1
+  measurement_time_ms: 4
+  total_time_ms: 5
+  batch_size_links: 1
+  max_runtime_guard: 7200
+
+simulation:
+  n_frames: 1
+  n_slots: 10
+  n_subframes: 5
+  min_duration_s: 0.005
+
+random_access:
+  enabled: true
+  prach_format: A1
+  preamble_length_mode: short
+  preamble_count: 64
+  zero_correlation_zone: 8
+  detection_threshold: 0.5
+  msg3_enabled: true
+  configuration_index: 84
+  subcarrier_spacing_khz: 30
+  root_sequence_index: 1
+  preamble_index: 0
+
+deployment_topology:
+  num_sites: 5
+  num_base_stations: 5
+  num_cells: 5
+  num_sectors_per_site: 1
+  num_ues: 50
+  num_trps: 5
+  wraparound_enabled: false
+
+users:
+  enabled: true
+  n_users: 50
+  execution_model: slot_coupled_truth
+  save_user_tables: true
+
+mimo:
+  trp_count: 5
+
+traffic:
+  flows:
+    ue_count: 50
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot

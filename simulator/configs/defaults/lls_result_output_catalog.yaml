@@ -24,8 +24,8 @@ categories:
     name: Basic PHY performance outputs
     file_name: basic_phy_performance_outputs.csv
     metrics:
-      - { key: bler_vs_snr_sinr_esn0, label: BLER vs SNR/SINR/EsN0 }
-      - { key: ber_vs_snr_sinr_esn0, label: BER vs SNR/SINR/EsN0 }
+      - { key: bler_vs_snr_sinr_esn0, label: BLER vs SNR/SINR/derived EcNo }
+      - { key: ber_vs_snr_sinr_esn0, label: BER vs SNR/SINR/derived EcNo }
       - { key: fer_tb_error_rate, label: FER / TB error rate }
       - { key: code_block_bler, label: code-block BLER }
       - { key: cbg_bler, label: CBG BLER }

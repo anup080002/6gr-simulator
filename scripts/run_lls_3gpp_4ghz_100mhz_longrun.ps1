@@ -5,6 +5,7 @@ param(
     [int]$MaxAttempts = 10,
     [int]$PollSeconds = 30,
     [int]$MaxWallMinutes = 0,
+    [string]$BaseUrl = "",
     [switch]$SkipReplay
 )
 
@@ -28,6 +29,32 @@ if ([string]::IsNullOrWhiteSpace($env:MYSQL_PORT)) { $env:MYSQL_PORT = "3306" }
 if ([string]::IsNullOrWhiteSpace($env:MYSQL_USER)) { $env:MYSQL_USER = "root" }
 if ([string]::IsNullOrWhiteSpace($env:MYSQL_PASSWORD)) { $env:MYSQL_PASSWORD = "root" }
 if ([string]::IsNullOrWhiteSpace($env:MYSQL_DATABASE)) { $env:MYSQL_DATABASE = "sixgr_results" }
+
+function Resolve-DashboardBaseUrl {
+    param([string]$Candidate)
+    if (-not [string]::IsNullOrWhiteSpace($Candidate)) {
+        return $Candidate.TrimEnd('/')
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:SIXGR_DASHBOARD_BASE_URL)) {
+        return $env:SIXGR_DASHBOARD_BASE_URL.TrimEnd('/')
+    }
+    $listenerPath = Join-Path $RepoRoot "tmp_web_runs\dashboard_listener.json"
+    if (Test-Path -LiteralPath $listenerPath) {
+        try {
+            $listener = Get-Content -LiteralPath $listenerPath -Raw | ConvertFrom-Json
+            foreach ($prop in @("local_url", "intranet_url")) {
+                $value = [string]$listener.$prop
+                if (-not [string]::IsNullOrWhiteSpace($value)) {
+                    return $value.TrimEnd('/')
+                }
+            }
+        } catch {
+        }
+    }
+    return "http://127.0.0.1:62906"
+}
+
+$BaseUrl = Resolve-DashboardBaseUrl -Candidate $BaseUrl
 
 function Invoke-LongRunAttempt {
     param(
@@ -103,7 +130,7 @@ assert(ok, 'Long-run scenario returned Ok=false; inspect truth-contract artifact
         return $false
     }
 
-    python (Join-Path $PSScriptRoot "validate_lls_run_outputs.py") --base-url "http://127.0.0.1:62906" --run-tag $AttemptTag --strict
+    python (Join-Path $PSScriptRoot "validate_lls_run_outputs.py") --base-url $BaseUrl --run-tag $AttemptTag --strict
     return ($LASTEXITCODE -eq 0)
 }
 

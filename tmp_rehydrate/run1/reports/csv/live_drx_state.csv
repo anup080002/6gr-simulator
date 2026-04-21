@@ -1,0 +1,2 @@
+run_id,section_title,label_name,contract_materialization_status,source_artifact,source_row_count,lineage_note
+1,UE-Side State / UE Power / UE Control,live_drx_state,source_artifact_missing,not_published_by_runtime,0,"No direct aliased source artifact was published for this run, so this contract table records the absence explicitly."

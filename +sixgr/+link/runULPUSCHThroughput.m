@@ -352,7 +352,14 @@ for n = 1:numFrames
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
         if schedulerDrivenGrant
             trialLinkAdaptationMode(n) = "scheduler_grant_replay";
-            trialActualMCSSelectionMode(n) = "scheduler_grant";
+            grantOpSource = string(sixgr.util.structGet(grantSnapshotOverride, "GrantOperatingPointSource", ""));
+            if strlength(strtrim(grantOpSource)) > 0
+                trialActualMCSSelectionMode(n) = grantOpSource;
+            elseif strlength(strtrim(trialSchedulerGrantMCSSelectionMode(n))) > 0
+                trialActualMCSSelectionMode(n) = trialSchedulerGrantMCSSelectionMode(n);
+            else
+                trialActualMCSSelectionMode(n) = "scheduler_grant";
+            end
         end
         trialCQITable(n) = string(localResolveCQITable(cfgFrame, "UL"));
         trialMCSTable(n) = string(localResolveMCSTable(cfgFrame, "UL"));
@@ -705,7 +712,8 @@ for n = 1:numFrames
         rxBits = int8(rx.TransportBlock(:));
         currentRecLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
         combinedLLR = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR);
-        [combinedDecodeOK, combinedDecodeIt] = localDecodeCombinedLLR(tx, combinedLLR, cfgFrame);
+        combinedDecodeOK = false;
+        combinedDecodeIt = NaN;
         L = min(numel(txBits), numel(rxBits));
         if L == 0
             blockErr = blockErr + 1;
@@ -745,6 +753,15 @@ for n = 1:numFrames
         end
 
         currentDecodeOK = rx.Ok && be == 0 && numel(rxBits) == numel(txBits);
+        hasPriorHARQEvidence = ~isempty(previousCombinedLLR);
+        if hasPriorHARQEvidence && ~currentDecodeOK
+            [combinedDecodeOK, combinedDecodeIt] = localDecodeCombinedLLR(tx, combinedLLR, cfgFrame);
+        else
+            combinedDecodeOK = logical(currentDecodeOK);
+            if isfinite(trialDecIt(n))
+                combinedDecodeIt = double(trialDecIt(n));
+            end
+        end
         if currentDecodeOK
             bitGood = bitGood + double(numel(txBits));
             trialCRC(n) = 1;
@@ -763,7 +780,7 @@ for n = 1:numFrames
             "TransportBlockBits", txBits, ...
             "CombinedLLR", combinedLLR, ...
             "CurrentDecodeOK", logical(currentDecodeOK), ...
-            "CombinedDecodeOK", logical(currentDecodeOK || combinedDecodeOK), ...
+            "CombinedDecodeOK", logical(combinedDecodeOK), ...
             "DecoderIterations", combinedDecodeIt, ...
             "GrantSnapshot", grantSnapshot, ...
             "Context", harqContext);
@@ -1263,7 +1280,11 @@ actualMode = lower(strtrim(string(actualMode)));
 linkMode = lower(strtrim(string(linkMode)));
 values(actualMode == "scheduler_grant") = "scheduler_grant";
 values(actualMode == "cqi_driven") = "cqi_link_adaptation";
+values(actualMode == "cqi_table") = "cqi_link_adaptation";
 values(actualMode == "configured_fixed") = "configured_fixed_mcs";
+values(actualMode == "feedback_cqi_derived_reference") = "feedback_cqi_derived_reference";
+values(actualMode == "bootstrap_large_scale_preview_cqi_lab_default") = "bootstrap_large_scale_preview_cqi_lab_default";
+values(actualMode == "bootstrap_cqi_conservative_lab_default") = "bootstrap_cqi_conservative_lab_default";
 mask = strlength(values) == 0 & strlength(linkMode) > 0;
 values(mask) = "link_adaptation_mode_reference";
 end
@@ -3001,6 +3022,7 @@ grant = struct( ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", NaN)), ...
     "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)));
 preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode","GrantReason","Frame","Slot","HARQ", ...
+    "MCSIndexAuthority","GrantOperatingPointSource", ...
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk","GrantControlState", ...
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
     "TRSGatingActive","TRSValidityState","TrackingEligibility","TRSAgeSlots","LastSuccessfulTRSSlot","LastEstimatedTRSDopplerHz", ...

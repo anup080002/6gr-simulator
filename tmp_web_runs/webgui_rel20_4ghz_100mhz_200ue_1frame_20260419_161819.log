@@ -1,0 +1,31 @@
+{Error using sixgr.lls6g.config.validateScenarioConfig>localValidateRuleType
+run_control.warmup_frames in simulator\configs\scenarios\lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml must match catalog type 'integer'.
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateRuleValue (line 752)
+    localValidateRuleType(value, string(rule.type), fieldPath, ctx);
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateStructRules (line 746)
+    localValidateRuleValue(secStruct.(name), ruleStruct.(name), secName + "." + name, ctx, catalog, allowPartial);
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateScenarioSections (line 65)
+    localValidateStructRules(cfg.(sec), catalog.sections.(sec).parameters, sec, ctx, catalog, allowPartial);
+
+Error in sixgr.lls6g.config.validateScenarioConfig (line 20)
+        localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 20)
+sixgr.lls6g.config.validateScenarioConfig(raw, ...
+
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 31)
+    [parentCfg, chain] = localResolveConfigTree(parentPath, chain);
+
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+
+Error in sixgr.lls6g.runners.runSingle (line 13)
+scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+
+Error in run_6g_phy_lls_single (line 14)
+out = sixgr.lls6g.runners.runSingle(configPath, outputDir, runTag);
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

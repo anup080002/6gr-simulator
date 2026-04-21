@@ -31,14 +31,14 @@ def main() -> None:
         path = VARIANT_ROOT / name
         assert path.is_file(), f"Missing scenario variant YAML: {path}"
 
-    assert dash.DEFAULT_SCENARIO == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml", (
-        "Browser default scenario must point at the locked 4 GHz / 100 MHz / 200 UE / 4000 slot scenario."
+    assert dash.DEFAULT_SCENARIO == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml", (
+        "Browser default scenario must point at the locked 4 GHz / 100 MHz / 200 UE / 1 frame waveform scenario."
     )
 
     baseline, chain = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     assert chain, "Resolved baseline scenario should retain a non-empty source chain."
-    assert str(dash.path_get(baseline, "meta.scenario_group", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"
-    assert str(dash.path_get(baseline, "meta.scenario_id", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"
+    assert str(dash.path_get(baseline, "meta.scenario_group", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    assert str(dash.path_get(baseline, "meta.scenario_id", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     assert int(dash.path_get(baseline, "global_radio_scope.carrier_frequency_hz", 0)) == 4_000_000_000
     assert int(dash.path_get(baseline, "global_radio_scope.channel_bandwidth_hz", 0)) == 100_000_000
     assert str(dash.path_get(baseline, "global_radio_scope.duplex_mode", "")) == "TDD"
@@ -55,18 +55,22 @@ def main() -> None:
     assert str(dash.path_get(baseline, "interference.inter_cell_execution_mode", "")) == "full_per_link_channel_waveform_sum"
     assert str(dash.path_get(baseline, "run_control.execution_mode", "")) == "LLS"
     assert str(dash.path_get(baseline, "run_control.simulation_mode", "")) == "full_phy"
-    assert str(dash.path_get(baseline, "run_control.mode", "")) == "long_run"
     assert str(dash.path_get(baseline, "run_control.run_profile", "")) == "exhaustive"
-    assert int(dash.path_get(baseline, "run_control.total_slots", 0)) == 4000
-    assert int(dash.path_get(baseline, "run_control.warmup_slots", 0)) == 500
-    assert int(dash.path_get(baseline, "run_control.measurement_slots", 0)) == 3500
+    assert int(dash.path_get(baseline, "run_control.total_frames", 0)) == 1
+    assert dash.path_get(baseline, "run_control.warmup_frames", None) is None
+    assert dash.path_get(baseline, "run_control.measurement_frames", None) is None
+    assert int(dash.path_get(baseline, "run_control.total_slots", 0)) == 20
+    assert int(dash.path_get(baseline, "run_control.warmup_slots", 0)) == 10
+    assert int(dash.path_get(baseline, "run_control.measurement_slots", 0)) == 1
     assert int(dash.path_get(baseline, "seeds.global_seed", 0)) == 104729
-    assert int(dash.path_get(baseline, "seeds.ue_placement_seed", 0)) == 104760
-    assert str(dash.path_get(baseline, "scenario.runner_profile", "")) == "system_level_lls"
+    assert str(dash.path_get(baseline, "scenario.runner_profile", "")) == "waveform_bundle"
+    contract = dash.scenario_launch_contract(baseline, dash.DEFAULT_SCENARIO)
+    assert contract["launch_allowed"] is True
+    assert contract["launch_contract"] == "waveform_bundle_truth"
     assert str(dash.path_get(baseline, "users.beam_selection_strategy", "")) == "runtime_best_beam_per_link"
     assert list(dash.path_get(baseline, "scenario.bundle_anchor_cases", [])) == ["ul_lowpapr"]
     assert int(dash.path_get(baseline, "users.n_users", 0)) == 200
-    assert str(dash.path_get(baseline, "traffic.model", "")) == "full_buffer"
+    assert str(dash.path_get(baseline, "traffic.model", "")) == "fullBuffer"
     assert str(dash.path_get(baseline, "traffic.transport", "")) == "UDP"
     assert str(dash.path_get(baseline, "traffic.flowDirection", "")) == "BIDIR"
     assert str(dash.path_get(baseline, "output.backend", "")) == "mysql_web"
@@ -84,6 +88,18 @@ def main() -> None:
     assert abs(float(dash.path_get(browser_override, "system.scheduler.fairnessAlpha", 0.0)) - 0.5) < 1e-9
     assert dash.path_get(browser_override, "system.scheduler.max_active_ues_per_slot", dash.PATH_MISSING) is dash.PATH_MISSING
     assert dash.path_get(browser_override, "system.scheduler.fairness_alpha", dash.PATH_MISSING) is dash.PATH_MISSING
+
+    legacy, _ = dash.load_resolved_config_payload(dash.LEGACY_WAVEFORM_HONEST_SCENARIO)
+    legacy_contract = dash.scenario_launch_contract(legacy, dash.LEGACY_WAVEFORM_HONEST_SCENARIO)
+    assert legacy_contract["launch_allowed"] is False
+    assert legacy_contract["launch_contract"] == "blocked_mislabeled_waveform_truth"
+
+    promoted = dash.canonicalize_browser_config_payload(dict(legacy))
+    dash.path_set(promoted, "scenario.runner_profile", "waveform_bundle")
+    promoted_contract = dash.scenario_launch_contract(promoted, dash.LEGACY_WAVEFORM_HONEST_SCENARIO)
+    assert promoted_contract["launch_allowed"] is True
+    assert promoted_contract["launch_contract"] == "waveform_bundle_truth"
+    assert "duplex_mode=TDD" in promoted_contract["launch_reason"]
 
     scn07, _ = dash.load_resolved_config_payload("variants/SCN07_LINK_LEVEL_REFERENCE_EQUIVALENT.yaml")
     assert str(dash.path_get(scn07, "meta.scenario_id", "")) == "SCN07_LINK_LEVEL_REFERENCE_EQUIVALENT"

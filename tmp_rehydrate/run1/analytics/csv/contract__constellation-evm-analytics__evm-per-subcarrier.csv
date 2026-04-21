@@ -1,0 +1,2 @@
+run_id,chart_name,status,reason,checked_sources
+1,EVM per subcarrier,unavailable_exact_reason,The run does not export subcarrier-indexed EVM rows for DL or UL previews.,air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

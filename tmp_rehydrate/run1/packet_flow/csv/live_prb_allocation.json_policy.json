@@ -1,0 +1,6 @@
+{
+  "logical_path": "packet_flow/csv/live_prb_allocation.csv",
+  "json_required": false,
+  "json_written": false,
+  "reason": "json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table"
+}

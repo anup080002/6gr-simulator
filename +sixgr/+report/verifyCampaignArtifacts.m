@@ -221,6 +221,7 @@ if ctx.IncludeAuxiliary
     S(end+1) = localSpec("7. HARQ and Retransmissions", "harq_summary", "harq/csv/probe_harq_summary.csv", "csv", true, "HARQ summary");
     S(end+1) = localSpec("8. Latency and Timing", "harq_packets", "harq/csv/probe_harq_packets.csv", "csv", true, "RTT/processing delay proxy");
     S(end+1) = localSpec("9. Power and Energy Efficiency", "rf_energy", "rf/csv/probe_rf_energy.csv", "csv", true, "Energy/power probe");
+    S(end+1) = localSpec("9. Power and Energy Efficiency", "rf_iq_imbalance", "rf/csv/probe_rf_iq_imbalance.csv", "csv", true, "Dedicated IQ-imbalance RF probe");
     S(end+1) = localSpec("10. Synchronization and Timing Offsets", "sync", "control/csv/probe_sync_control.csv", "csv", true, "Sync metrics");
     S(end+1) = localSpec("11. Channel Coding and Decoding", "harq_packets_dup", "harq/csv/probe_harq_packets.csv", "csv", true, "Decoder iterations");
     S(end+1) = localSpec("12. Modulation and Waveform Quality", "rf_energy_dup", "rf/csv/probe_rf_energy.csv", "csv", true, "EVM/PAPR proxy");
@@ -229,6 +230,7 @@ if ctx.IncludeAuxiliary
     S(end+1) = localSpec("17. Waveform and Numerology Specifics", "numerology", "numerology/csv/probe_numerology.csv", "csv", true, "Numerology sweep");
     S(end+1) = localSpec("18. Control Channel and Random Access", "sync_dup", "control/csv/probe_sync_control.csv", "csv", true, "PDCCH/PUCCH/PRACH");
     S(end+1) = localSpec("19. Hardware Impairments", "rf_dup", "rf/csv/probe_rf_energy.csv", "csv", true, "RF impairment probe");
+    S(end+1) = localSpec("19. Hardware Impairments", "rf_iq_imbalance_timeline", "rf/csv/iq_imbalance_timeline_trace.csv", "csv", true, "RF IQ-imbalance timeline");
     S(end+1) = localSpec("20. Reliability and Outage", "harq_summary_dup", "harq/csv/probe_harq_summary.csv", "csv", true, "Residual BLER/outage proxy");
     S(end+1) = localSpec("22. V2X Metrics", "v2x", "v2x/csv/probe_v2x_sidelink.csv", "csv", true, "V2X sidelink KPIs");
     S(end+1) = localSpec("23. NTN Metrics", "ntn", "ntn/csv/probe_ntn_delay_doppler.csv", "csv", true, "NTN KPIs");

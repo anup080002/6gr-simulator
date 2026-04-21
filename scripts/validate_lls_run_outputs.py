@@ -8,6 +8,7 @@ import http.cookiejar
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 try:
@@ -25,6 +26,27 @@ REQUIRED_ARTIFACTS = {
     "reports/csv/output_coverage_registry.csv",
     "meta/scenario_config_resolved.json",
 }
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BASE_URL = "http://127.0.0.1:62906"
+
+
+def resolve_base_url(explicit_value: str) -> str:
+    if explicit_value:
+        return explicit_value.rstrip("/")
+    env_value = os.environ.get("SIXGR_DASHBOARD_BASE_URL", "").strip()
+    if env_value:
+        return env_value.rstrip("/")
+    listener_path = REPO_ROOT / "tmp_web_runs" / "dashboard_listener.json"
+    if listener_path.is_file():
+        try:
+            payload = json.loads(listener_path.read_text(encoding="utf-8"))
+            for key in ("local_url", "intranet_url"):
+                value = str(payload.get(key) or "").strip()
+                if value:
+                    return value.rstrip("/")
+        except Exception:
+            pass
+    return DEFAULT_BASE_URL
 
 
 def login_opener(base_url: str, username: str, password: str) -> urllib.request.OpenerDirector:
@@ -91,7 +113,7 @@ def validate_payload(payload: dict[str, Any], *, strict: bool, db_logical_paths:
     logical_paths = {str(item.get("logical_path") or "") for item in tables + images}
     logical_paths.update(db_logical_paths or set())
     scenario_id = str(run.get("scenario_id") or "")
-    if scenario_id != "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot":
+    if scenario_id != "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame":
         failures.append(f"scenario_id mismatch: {scenario_id}")
     if strict and str(run.get("status_text") or "").lower() != "completed":
         failures.append(f"run status is not completed: {run.get('status_text')}")
@@ -132,19 +154,20 @@ def validate_payload(payload: dict[str, Any], *, strict: bool, db_logical_paths:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the locked 4 GHz / 100 MHz / 200 UE / 4000 slot LLS run through browser APIs.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:62906")
+    parser = argparse.ArgumentParser(description="Validate the locked 4 GHz / 100 MHz / 200 UE / 1 frame waveform-honest LLS run through browser APIs.")
+    parser.add_argument("--base-url", default="")
     parser.add_argument("--run-id", type=int, default=0)
     parser.add_argument("--run-tag", default="")
     parser.add_argument("--username", default="admin")
     parser.add_argument("--password", default="admin")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
+    base_url = resolve_base_url(args.base_url)
 
     try:
-        opener = login_opener(args.base_url, args.username, args.password)
-        run_id = args.run_id or latest_run_id(opener, args.base_url, args.run_tag or None)
-        payload = fetch_json(opener, f"{args.base_url.rstrip('/')}/api/run/{run_id}/live")
+        opener = login_opener(base_url, args.username, args.password)
+        run_id = args.run_id or latest_run_id(opener, base_url, args.run_tag or None)
+        payload = fetch_json(opener, f"{base_url.rstrip('/')}/api/run/{run_id}/live")
         failures = validate_payload(
             payload,
             strict=bool(args.strict),

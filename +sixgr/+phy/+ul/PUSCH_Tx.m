@@ -87,7 +87,8 @@ prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg);
 
 numTxAnt = opt.NumTxAnt;
 if isempty(numTxAnt)
-    numTxAnt = double(sixgr.util.structGet(cfg, 'phy.nTxAnt', sixgr.util.structGet(prec, "NumPorts", 1)));
+    numTxAnt = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", ...
+        sixgr.util.structGet(prec, "NumPorts", 1)));
 end
 if logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
     numTxAnt = max(double(numTxAnt), double(sixgr.util.structGet(prec, "NumPorts", 1)));

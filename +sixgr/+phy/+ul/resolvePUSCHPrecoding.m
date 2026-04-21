@@ -22,7 +22,7 @@ isCodebook = strcmpi(char(scheme), "codebook");
 
 nPorts = double(localObjectValue(pusch, "NumAntennaPorts", NaN));
 if ~(isscalar(nPorts) && isfinite(nPorts) && nPorts >= 1)
-    nPorts = double(sixgr.util.structGet(cfg, "phy.nTxAnt", nLayers));
+    nPorts = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", nLayers));
 end
 nPorts = max(1, round(double(nPorts)));
 

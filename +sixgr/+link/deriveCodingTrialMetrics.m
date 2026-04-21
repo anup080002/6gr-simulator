@@ -69,6 +69,9 @@ if isfinite(decodeLatency_s)
     metrics.DecodeLatency_ms = metrics.ComputeLatency_ms;
     % Legacy alias preserved for backward compatibility with older exports.
     metrics.Latency_ms = metrics.ComputeLatency_ms;
+    % In the standalone PHY decode path there is no extra procedure stage
+    % beyond the observed grant processing unless a caller adds one.
+    metrics.ProcedureDelay_ms = 0;
 end
 
 if isfinite(metrics.CodeBlockLength_bits) && ~isempty(actIter)

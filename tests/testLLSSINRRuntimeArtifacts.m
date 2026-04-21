@@ -48,9 +48,9 @@ if any(receiverMask)
     assert(all(strcmp(string(coverage.WidebandSINRValueRole(receiverMask)), "estimated")), ...
         "Coverage rows with receiver Hest SINR must stay labeled as estimated.");
 end
-localAssertValueSourceRows(valueAudit, "ReceiverHestSINR_dB", "estimated", "receiver_hest_csi_feedback_wideband_effective_sinr");
+localAssertValueSourceRows(valueAudit, "ReceiverHestSINR_dB", "estimated", "receiver_hest_reference_signal_measurement");
 localAssertValueSourceRows(valueAudit, "DecoderTruthProxySINR_dB", "derived", "post_equalization_evm_proxy");
-localAssertDictionaryRows(valueDict, "ReceiverHestSINR_dB", "estimated", "receiver_hest_csi_feedback_wideband_effective_sinr");
+localAssertDictionaryRows(valueDict, "ReceiverHestSINR_dB", "estimated", "receiver_hest_reference_signal_measurement");
 localAssertDictionaryRows(valueDict, "DecoderTruthProxySINR_dB", "derived", "post_equalization_evm_proxy");
 localAssertDictionaryRows(valueDict, "LargeScaleSINR_dB", "preview", "large_scale_interference_preview");
 
@@ -82,7 +82,7 @@ assert(all(ismember(required, vars)), sprintf("%s runtime CSV must expose truthf
 mask = isfinite(double(T.ReceiverHestSINR_dB));
 assert(any(mask), sprintf("%s runtime CSV must contain finite ReceiverHestSINR_dB samples.", direction));
 assert(all(strcmp(string(T.SINRValueRole(mask)), "estimated")), sprintf("%s runtime CSV must label receiver SINR as estimated.", direction));
-assert(all(strcmp(string(T.SINRSource(mask)), "receiver_hest_csi_feedback_wideband_effective_sinr")), ...
+assert(all(strcmp(string(T.SINRSource(mask)), "receiver_hest_reference_signal_measurement")), ...
     sprintf("%s runtime CSV must label receiver SINR with the Hest/CSI source.", direction));
 mirrorMask = mask & isfinite(double(T.MeasuredTrialSINR_dB));
 assert(all(abs(double(T.ReceiverHestSINR_dB(mirrorMask)) - double(T.MeasuredTrialSINR_dB(mirrorMask))) < 1e-9), ...

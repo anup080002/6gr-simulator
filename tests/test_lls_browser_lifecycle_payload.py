@@ -15,7 +15,12 @@ def main() -> None:
         {"logical_path": "air_interface/csv/dl_pdsch_trials.csv", "artifact_id": 1, "byte_size": 512, "artifact_kind": "table_csv"},
         {"logical_path": "air_interface/csv/ul_pusch_trials.csv", "artifact_id": 2, "byte_size": 512, "artifact_kind": "table_csv"},
     ]
-    run_row = {"run_id": 88, "status_text": "completed", "config_json": "{}"}
+    run_row = {
+        "run_id": 88,
+        "status_text": "running",
+        "config_json": "{}",
+        "status_json": '{"stage":"system_level_lls_slot_progress","current_slot":4,"total_slots":100,"run_completion":0.04,"elapsed_s":220.5,"slot_direction":"S","active_ue_count":200,"grant_count_slot":311,"served_bits_total":215128,"value_source":"sixgr.system.SystemLevelRunner","value_status":"OK","timestamp_utc":"2026-04-14T17:04:21Z"}',
+    }
 
     dl_rows = [
         {
@@ -55,10 +60,17 @@ def main() -> None:
 
         runtime_context = dash.extract_runtime_context(run_row, artifacts)
         lifecycle = runtime_context["raw_trial_lifecycle"]
+        stage = runtime_context["stage"]
         assert lifecycle["dl"]["status"] == "exact"
         assert lifecycle["dl"]["finalized_rows"] == 1
         assert lifecycle["dl"]["finalized_secondary_gap_rows"] == 1
         assert lifecycle["ul"]["partial_rows"] == 1
+        assert stage["Stage"] == "system_level_lls_slot_progress"
+        assert stage["CurrentSlot"] == 4
+        assert stage["TotalSlots"] == 100
+        assert stage["GrantCountSlot"] == 311
+        assert stage["ServedBitsTotal"] == 215128
+        assert stage["ValueSource"] == "sixgr.system.SystemLevelRunner"
         assert any("SecondaryFieldGap" in note for note in runtime_context["notes"]), (
             "browser live payload notes must explain that secondary gaps no longer force finalized rows to partial"
         )

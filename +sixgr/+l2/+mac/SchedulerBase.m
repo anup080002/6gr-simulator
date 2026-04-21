@@ -292,7 +292,8 @@ classdef (Abstract) SchedulerBase < handle
             dir = upper(obj.Direction);
             mcsTable = obj.resolveMCSTable();
             cqiTable = obj.resolveCQITable();
-            cqiRaw = double(sixgr.util.structGet(ue, "CQI", NaN));
+            cqiRaw = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
+                sixgr.util.structGet(ue, "CQI", NaN), NaN);
 
             if strcmp(dir,'DL')
                 modStr = char(string(sixgr.util.structGet(obj.Cfg,"phy.pdsch.modulation","16QAM")));
@@ -308,6 +309,7 @@ classdef (Abstract) SchedulerBase < handle
                 linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.ulPolicy", "");
             end
             linkAdaptationMode = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.mode", "fixed");
+            fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
 
             if isfield(ue,'Modulation') && ~isempty(ue.Modulation)
                 modStr = char(string(ue.Modulation));
@@ -333,20 +335,31 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSProfile", sixgr.link.resolveMCSProfile(mcsTable, -1));
 
             ueMCSIndex = double(sixgr.util.structGet(ue, "MCSIndex", NaN));
+            ueMCSIndexAuthority = lower(strtrim(string(sixgr.util.structGet(ue, "MCSIndexAuthority", ""))));
             hasExplicitModulation = isfield(ue,'Modulation') && ~isempty(ue.Modulation) && ...
                 strlength(string(ue.Modulation)) > 0;
             hasExplicitTargetCodeRate = isfield(ue,'TargetCodeRate') && ~isempty(ue.TargetCodeRate) && ...
                 isfinite(double(ue.TargetCodeRate)) && double(ue.TargetCodeRate) > 0;
             hasExplicitFixedModulation = hasExplicitModulation || hasExplicitTargetCodeRate;
             useCQIForAMC = localUseCQIForAMC(linkAdaptationMode, linkAdaptationPolicy, cqiRaw);
+            useExplicitUEMCSOverride = isfinite(ueMCSIndex) && ueMCSIndex >= 0 && ...
+                (ismember(ueMCSIndexAuthority, ["explicit_fixed_override","configured_fixed_fallback","explicit","config","override","fixed"]) || ...
+                ismember(lower(strtrim(string(linkAdaptationMode))), fixedTokens) || ...
+                ismember(lower(strtrim(string(linkAdaptationPolicy))), fixedTokens));
 
-            if isfinite(ueMCSIndex) && ueMCSIndex >= 0
+            if useExplicitUEMCSOverride
                 amc.Mode = "fixed_mcs";
                 amc.MCSIndex = round(ueMCSIndex);
             elseif useCQIForAMC
                 amc.Mode = "cqi_table";
-                cqiDecision = sixgr.link.resolveMCSFromCQI(max(1, round(cqiRaw)), mcsTable, cqiTable);
-                if cqiDecision.Valid
+                if cqiRaw <= 0
+                    cqiDecision = struct("Valid", false);
+                    amc.MCSIndex = 0;
+                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+                else
+                    cqiDecision = sixgr.link.resolveMCSFromCQI(cqiRaw, mcsTable, cqiTable);
+                end
+                if isfield(cqiDecision, "Valid") && cqiDecision.Valid
                     amc.MCSIndex = double(cqiDecision.MCSIndex);
                     amc.MCSProfile = cqiDecision.MCSProfile;
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
@@ -362,12 +375,30 @@ classdef (Abstract) SchedulerBase < handle
                 amc.Mode = "fixed_modulation";
             elseif isfinite(cqiRaw)
                 amc.Mode = "cqi_table";
-                cqiDecision = sixgr.link.resolveMCSFromCQI(max(1, round(cqiRaw)), mcsTable, cqiTable);
-                if cqiDecision.Valid
+                if cqiRaw <= 0
+                    cqiDecision = struct("Valid", false);
+                    amc.MCSIndex = 0;
+                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+                else
+                    cqiDecision = sixgr.link.resolveMCSFromCQI(cqiRaw, mcsTable, cqiTable);
+                end
+                if isfield(cqiDecision, "Valid") && cqiDecision.Valid
                     amc.MCSIndex = double(cqiDecision.MCSIndex);
                     amc.MCSProfile = cqiDecision.MCSProfile;
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
+                end
+            end
+
+            if amc.Mode == "cqi_table" && isstruct(amc.MCSProfile) && ...
+                    isfield(amc.MCSProfile, "Valid") && logical(amc.MCSProfile.Valid)
+                % Keep the modulation/code-rate export aligned with the
+                % resolved CQI profile even when the CQI path legitimately
+                % falls back to MCS 0 before any richer feedback arrives.
+                modStr = char(string(amc.MCSProfile.Modulation));
+                targetCodeRate = double(amc.MCSProfile.TargetCodeRate);
+                if ~isfinite(amc.MCSIndex) && isfield(amc.MCSProfile, "MCSIndex")
+                    amc.MCSIndex = double(amc.MCSProfile.MCSIndex);
                 end
             end
 
@@ -741,6 +772,22 @@ classdef (Abstract) SchedulerBase < handle
     end
 
     methods(Static)
+        function cqi = sanitizeCQI(cqiRaw, defaultValue)
+            if nargin < 2
+                defaultValue = NaN;
+            end
+            cqi = double(defaultValue);
+            raw = double(cqiRaw);
+            if isempty(raw)
+                return;
+            end
+            raw = raw(1);
+            if ~(isscalar(raw) && isfinite(raw))
+                return;
+            end
+            cqi = max(0, min(15, round(raw)));
+        end
+
         function qm = modOrder(modStr)
             % Modulation order Qm from modulation string
             s = upper(char(string(modStr)));
@@ -774,9 +821,17 @@ classdef (Abstract) SchedulerBase < handle
             tcr = double(targetCodeRate);
             if isfinite(tcr) && tcr > 0 && strlength(string(s)) > 0
                 mcs = localMatchMCSIndex(mcsTable, s, tcr);
-            elseif isfinite(double(cqiFallback))
+            else
+                cqiFallback = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiFallback, NaN);
+            end
+            if isfinite(double(cqiFallback))
+                if double(cqiFallback) <= 0
+                    mcs = 0;
+                    mcs = max(0, min(31, round(double(mcs))));
+                    return;
+                end
                 cqiTable = localDefaultCQITable(mcsTable);
-                amc = sixgr.link.resolveMCSFromCQI(max(1, round(double(cqiFallback))), mcsTable, cqiTable);
+                amc = sixgr.link.resolveMCSFromCQI(double(cqiFallback), mcsTable, cqiTable);
                 if amc.Valid
                     mcs = double(amc.MCSIndex);
                 else

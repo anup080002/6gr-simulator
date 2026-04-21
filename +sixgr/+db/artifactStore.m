@@ -72,19 +72,21 @@ end
 host = char(string(sixgr.util.structGet(cfg, "outputs.databaseHost", "localhost")));
 port = double(sixgr.util.structGet(cfg, "outputs.databasePort", 3306));
 schemaName = char(string(sixgr.util.structGet(cfg, "outputs.databaseSchema", "sixgr_results")));
+username = localEnvOrDefault("MYSQL_USER", "root");
+password = localEnvOrDefault("MYSQL_PASSWORD", "root");
 
 adminConn = [];
 conn = [];
 try
     adminConn = sixgr.util.connectMySQLJDBC( ...
-        Host=host, Port=port, Database="", Username=getenv("MYSQL_USER"), Password=getenv("MYSQL_PASSWORD"));
+        Host=host, Port=port, Database="", Username=username, Password=password);
     localExec(adminConn, "CREATE DATABASE IF NOT EXISTS `" + localEscapeIdentifier(schemaName) + ...
         "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     adminConn.close();
     adminConn = [];
 
     conn = sixgr.util.connectMySQLJDBC( ...
-        Host=host, Port=port, Database=schemaName, Username=getenv("MYSQL_USER"), Password=getenv("MYSQL_PASSWORD"));
+        Host=host, Port=port, Database=schemaName, Username=username, Password=password);
     localEnsureSchema(conn);
 
     state = localEmptyState();
@@ -98,7 +100,17 @@ try
     state.Connection = conn;
     state.MaxAllowedPacketBytes = localQueryMaxAllowedPacket(conn);
     state.RunUUID = char(javaMethod("randomUUID", "java.util.UUID").toString());
-    state.RunID = localInsertRunRow(conn, state, cfg, meta);
+    existingRunID = double(sixgr.util.structGet(meta, "ExistingRunID", NaN));
+    [hasExistingRun, existingRunUUID] = localLookupExistingRun(conn, existingRunID);
+    if hasExistingRun
+        state.RunID = existingRunID;
+        if strlength(strtrim(existingRunUUID)) > 0
+            state.RunUUID = char(existingRunUUID);
+        end
+        localRefreshExistingRunRow(conn, state, cfg, meta);
+    else
+        state.RunID = localInsertRunRow(conn, state, cfg, meta);
+    end
 
     out = struct( ...
         "Active", true, ...
@@ -417,6 +429,44 @@ ps.executeUpdate();
 runID = localLastInsertID(conn);
 end
 
+function [tf, runUUID] = localLookupExistingRun(conn, runID)
+tf = false;
+runUUID = "";
+if ~(isfinite(runID) && runID > 0)
+    return;
+end
+ps = conn.prepareStatement("SELECT run_uuid FROM sim_runs WHERE run_id=? LIMIT 1");
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setLong(1, int64(runID));
+rs = ps.executeQuery();
+cleanupRs = onCleanup(@() rs.close()); %#ok<NASGU>
+if rs.next()
+    tf = true;
+    runUUID = string(rs.getString(1));
+end
+end
+
+function localRefreshExistingRunRow(conn, state, cfg, meta)
+scenarioID = char(string(sixgr.util.structGet(meta, "ScenarioID", sixgr.util.structGet(cfg, "meta.lls6gScenarioID", ""))));
+runTag = char(string(sixgr.util.structGet(meta, "RunTag", sixgr.util.structGet(cfg, "run.runTag", ""))));
+bucket = char(string(sixgr.util.structGet(meta, "Bucket", sixgr.util.structGet(cfg, "run.mode", ""))));
+profileName = char(string(sixgr.util.structGet(meta, "Profile", sixgr.util.structGet(cfg, "scenario.id", ""))));
+configPayload = localBuildRunConfigPayload(cfg, meta);
+ps = conn.prepareStatement([ ...
+    "UPDATE sim_runs SET scenario_id=?, run_tag=?, run_folder=?, bucket=?, profile_name=?, backend=?, config_json=?, updated_utc=UTC_TIMESTAMP() " + ...
+    "WHERE run_id=?"]);
+cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setString(1, scenarioID);
+ps.setString(2, runTag);
+ps.setString(3, char(string(state.DisplayRunFolder)));
+ps.setString(4, bucket);
+ps.setString(5, profileName);
+ps.setString(6, char(string(state.Backend)));
+ps.setString(7, char(localJSON(configPayload)));
+ps.setLong(8, int64(state.RunID));
+ps.executeUpdate();
+end
+
 function payload = localBuildRunConfigPayload(cfg, meta)
 payload = cfg;
 scenarioStruct = sixgr.util.structGet(meta, "ScenarioConfigStruct", struct());
@@ -488,6 +538,13 @@ try
         conn.setAutoCommit(true);
     end
 catch
+end
+end
+
+function value = localEnvOrDefault(name, defaultValue)
+value = char(string(getenv(char(string(name)))));
+if strlength(strtrim(string(value))) == 0
+    value = char(string(defaultValue));
 end
 end
 

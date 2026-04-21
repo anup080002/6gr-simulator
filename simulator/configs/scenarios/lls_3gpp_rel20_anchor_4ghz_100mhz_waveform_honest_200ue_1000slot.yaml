@@ -1,0 +1,61 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot
+  description: Strict waveform-labeled NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 1000 slots.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot
+  scenario_name: Strict waveform-labeled NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 1000 slots.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot
+  comparison_group_name: rel20_anchor_4ghz_100mhz_200ue_1000slot
+  notes: >
+    Browser compatibility entry for the 1000-slot waveform_honest catalog name. The browser launch
+    contract keeps this blocked while the scenario identity still claims waveform truth but the
+    resolved runner_profile remains system_level_lls. If this catalog is explicitly promoted to
+    waveform_bundle, the coupled runtime now preserves canonical slot accounting and the configured
+    TDD duplex pattern.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 200ue
+    - 1000slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot
+  description: Strict waveform-labeled NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 200 UEs and 1000 slots.
+  notes: >
+    Legacy waveform_honest browser entry kept for compatibility with existing launch URLs and stored
+    payload references. Browser /run must not present this as waveform truth while the resolved
+    runner_profile remains system_level_lls; promote it to waveform_bundle only when the scenario
+    should dispatch directly to the coupled waveform truth path.
+
+run_control:
+  total_slots: 1000
+  warmup_slots: 100
+  measurement_slots: 900
+  checkpoint_every_slots: 50
+  snapshot_every_slots: 25
+  log_every_slots: 25
+  warmup_time_ms: 50
+  measurement_time_ms: 450
+  total_time_ms: 500
+
+simulation:
+  n_frames: 50
+  n_slots: 1000
+  n_subframes: 500
+  min_duration_s: 0.5
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot

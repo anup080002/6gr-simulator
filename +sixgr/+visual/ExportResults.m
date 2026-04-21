@@ -124,7 +124,7 @@ figDir = fullfile(runFolder,'fig');
 % ---------------- Build manifest ----------------
 manifest = struct();
 manifest.runFolder = runFolder;
-manifest.generatedUTC = char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss''Z'''));
+manifest.generatedUTC = char(sixgr.util.utcNowISO8601());
 manifest.mat = {};
 manifest.csv = {};
 manifest.fig = {};

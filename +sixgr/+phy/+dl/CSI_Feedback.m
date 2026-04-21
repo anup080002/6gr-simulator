@@ -56,7 +56,7 @@ else
     modelSinr_dB = 10 * log10(modelSinrLin);
 end
 
-[measuredSINR_dB, measuredSINRSource, measuredSINRStatus, pilotNMSE_dB] = ...
+[measuredSINR_dB, measuredSINRSource, measuredSINRStatus, pilotNMSE_dB, perRBSINR_dB] = ...
     localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
 if isfinite(measuredSINR_dB)
     sinr_dB = double(measuredSINR_dB);
@@ -81,7 +81,8 @@ else
     rsrp_dB = channelGain_dB;
     rsrpSource = "channel_estimate_gain_proxy";
 end
-cqiFeedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", sinr_dB), cfg, direction);
+cqiInput = struct("WidebandSINR_dB", sinr_dB, "PerRBSINR_dB", double(perRBSINR_dB));
+cqiFeedback = sixgr.link.resolveWidebandCQI(cqiInput, cfg, direction);
 cqi = double(cqiFeedback.WidebandCQI);
 
 csi = struct();
@@ -127,6 +128,8 @@ csi.ModelEffectiveSINR_dB = double(modelSinr_dB);
 csi.ReferenceMeasuredSINR_dB = double(measuredSINR_dB);
 csi.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
 csi.ReferenceSINRValueStatus = char(string(measuredSINRStatus));
+csi.CQIEffectiveSINR_dB = double(sixgr.util.structGet(cqiFeedback, "EffectiveSINR_dB", NaN));
+csi.CQIEffectiveSINRMethod = char(string(sixgr.util.structGet(cqiFeedback, "EffectiveSINRMethod", "")));
 
 info = struct();
 info.Method = char(method);
@@ -155,6 +158,8 @@ info.MeasuredReferenceSINR_dB = double(measuredSINR_dB);
 info.MeasuredReferenceSINRSource = char(string(measuredSINRSource));
 info.MeasuredReferenceSINRStatus = char(string(measuredSINRStatus));
 info.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
+info.PerRBSINR_dB = double(perRBSINR_dB);
+info.CQIFeedback = cqiFeedback;
 info.Hints = struct( ...
     "AddCSIRSBasedCQI", true, ...
     "AddPMISelection", true, ...
@@ -446,11 +451,12 @@ powerLin = mean(vals, "omitnan");
 source = "received_reference_signal_power";
 end
 
-function [sinr_dB, source, status, pilotNMSE_dB] = localMeasureReferenceSINR(Hest, nVar, rxGrid, refInd, refSym)
+function [sinr_dB, source, status, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, rxGrid, refInd, refSym)
 sinr_dB = NaN;
 source = "measurement_unavailable";
 status = "unavailable";
 pilotNMSE_dB = NaN;
+perRBSINR_dB = [];
 if isempty(Hest) || isempty(rxGrid) || isempty(refInd) || isempty(refSym)
     return;
 end
@@ -466,6 +472,7 @@ if isempty(rxPilot) || isempty(pilotRecon) || isempty(pilotObsH) || isempty(pilo
     status = "reference_observation_unavailable";
     return;
 end
+perRBSINR_dB = localPerRBReferenceSINR(rxGrid, refInd, rxRef, hRef, refSym, nVar);
 
 [signalPowLin, residualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar);
 if isfinite(signalPowLin) && signalPowLin > 0 && isfinite(residualPowLin) && residualPowLin > 0
@@ -487,6 +494,89 @@ end
 if ~isfinite(sinr_dB)
     status = "reference_signal_measurement_unavailable";
 end
+end
+
+function perRBSINR_dB = localPerRBReferenceSINR(rxGrid, refInd, rxRef, hRef, refSym, nVar)
+perRBSINR_dB = [];
+if isempty(rxGrid) || isempty(refInd) || isempty(rxRef) || isempty(hRef) || isempty(refSym)
+    return;
+end
+subcarrier = localReferenceSubcarrierIndices(rxGrid, refInd);
+if isempty(subcarrier)
+    return;
+end
+numRE = min([numel(subcarrier), size(rxRef, 1), size(hRef, 1), numel(refSym)]);
+if numRE < 1
+    return;
+end
+subcarrier = double(subcarrier(1:numRE));
+refSym = double(refSym(1:numRE));
+rxRef = double(rxRef(1:numRE, :, :, :));
+hRef = double(hRef(1:numRE, :, :, :));
+valid = isfinite(subcarrier) & abs(refSym(:)) > sqrt(eps);
+if ~any(valid)
+    return;
+end
+subcarrier = subcarrier(valid);
+refSym = refSym(valid);
+rxRef = rxRef(valid, :, :, :);
+hRef = hRef(valid, :, :, :);
+pilotRecon = hRef .* reshape(refSym, [], 1, 1, 1);
+signalPow = localMeanAcrossNonRE(abs(pilotRecon).^2);
+residualPow = localMeanAcrossNonRE(abs(rxRef - pilotRecon).^2);
+nVar = double(nVar);
+replaceMask = ~(isfinite(residualPow) & residualPow > 0);
+if isfinite(nVar) && nVar > 0
+    residualPow(replaceMask) = nVar;
+end
+rbIndex = floor((subcarrier - 1) ./ 12) + 1;
+maxRb = max(rbIndex(isfinite(rbIndex)));
+if ~(isfinite(maxRb) && maxRb >= 1)
+    return;
+end
+perRBSINR_dB = nan(maxRb, 1);
+for rb = 1:maxRb
+    mask = rbIndex == rb & isfinite(signalPow) & signalPow > 0 & isfinite(residualPow) & residualPow > 0;
+    if ~any(mask)
+        continue;
+    end
+    sig = mean(signalPow(mask), "omitnan");
+    res = mean(residualPow(mask), "omitnan");
+    if isfinite(sig) && sig > 0 && isfinite(res) && res > 0
+        perRBSINR_dB(rb) = 10 * log10(sig / res);
+    end
+end
+end
+
+function subcarrier = localReferenceSubcarrierIndices(rxGrid, refInd)
+subcarrier = [];
+if isempty(refInd)
+    return;
+end
+if isnumeric(refInd) && ismatrix(refInd) && size(refInd, 2) >= 1 && size(refInd, 2) <= 4 && size(refInd, 1) > 1
+    if size(refInd, 2) > 1
+        subcarrier = double(refInd(:, 1));
+        return;
+    end
+end
+try
+    nSc = size(rxGrid, 1);
+    subcarrier = mod(double(refInd(:)) - 1, max(double(nSc), 1)) + 1;
+catch
+    subcarrier = [];
+end
+end
+
+function values = localMeanAcrossNonRE(x)
+values = double(x);
+for dim = ndims(values):-1:2
+    try
+        values = mean(values, dim, "omitnan");
+    catch
+        values = mean(values, dim);
+    end
+end
+values = squeeze(values);
 end
 
 function [rxPilot, pilotRecon, pilotObsH, pilotEstH] = localPilotChannelObservation(rxRef, hRef, refSym)

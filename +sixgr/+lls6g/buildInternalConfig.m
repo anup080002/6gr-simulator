@@ -300,6 +300,69 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", char(string(s.mimo.codeb
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", char(localResolveCQITableToken(s)));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.cqiTable", char(localResolveCQITableToken(s)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.cqiTable", char(localResolveCQITableToken(s)));
+sinrToCQIMode = lower(strtrim(string(localGetNested(s, "csi_acquisition_and_reporting.sinr_to_cqi_mode", ...
+    localGetNested(s, "link_adaptation.sinr_to_cqi_mode", "")))));
+if strlength(sinrToCQIMode) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.csi.sinrToCQIMode", char(sinrToCQIMode));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.sinrToCQIMode", char(sinrToCQIMode));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.sinrToCQIMode", char(sinrToCQIMode));
+end
+effectiveSINRMethod = lower(strtrim(string(localGetNested(s, "csi_acquisition_and_reporting.effective_sinr_method", ...
+    localGetNested(s, "link_adaptation.effective_sinr_method", "")))));
+if strlength(effectiveSINRMethod) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.csi.effectiveSINRMethod", char(effectiveSINRMethod));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.effectiveSINRMethod", char(effectiveSINRMethod));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.effectiveSINRMethod", char(effectiveSINRMethod));
+end
+eesmBeta_dB = double(localGetNested(s, "csi_acquisition_and_reporting.eesm_beta_db", ...
+    localGetNested(s, "link_adaptation.eesm_beta_db", NaN)));
+if isfinite(eesmBeta_dB) && eesmBeta_dB > 0
+    cfg = sixgr.util.structSet(cfg, "phy.csi.eesmBeta_dB", double(eesmBeta_dB));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBeta_dB", double(eesmBeta_dB));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBeta_dB", double(eesmBeta_dB));
+end
+targetBLER = double(localGetNested(s, "csi_acquisition_and_reporting.target_bler", ...
+    localGetNested(s, "link_adaptation.target_bler", NaN)));
+if isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1
+    cfg = sixgr.util.structSet(cfg, "phy.csi.targetBLER", double(targetBLER));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", double(targetBLER));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.targetBLER", double(targetBLER));
+end
+blerCurveSlope_dB = double(localGetNested(s, "csi_acquisition_and_reporting.bler_curve_slope_db", ...
+    localGetNested(s, "link_adaptation.bler_curve_slope_db", NaN)));
+if isfinite(blerCurveSlope_dB) && blerCurveSlope_dB > 0
+    cfg = sixgr.util.structSet(cfg, "phy.csi.blerCurveSlope_dB", double(blerCurveSlope_dB));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.blerCurveSlope_dB", double(blerCurveSlope_dB));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.blerCurveSlope_dB", double(blerCurveSlope_dB));
+end
+scenarioId = string(localGetNested(s, "meta.scenario_id", ""));
+if scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    if strlength(sinrToCQIMode) == 0
+        cfg = sixgr.util.structSet(cfg, "phy.csi.sinrToCQIMode", "effective_sinr_bler_lut");
+        cfg = sixgr.util.structSet(cfg, "phy.pdsch.sinrToCQIMode", "effective_sinr_bler_lut");
+        cfg = sixgr.util.structSet(cfg, "phy.pusch.sinrToCQIMode", "effective_sinr_bler_lut");
+    end
+    if strlength(effectiveSINRMethod) == 0
+        cfg = sixgr.util.structSet(cfg, "phy.csi.effectiveSINRMethod", "eesm");
+        cfg = sixgr.util.structSet(cfg, "phy.pdsch.effectiveSINRMethod", "eesm");
+        cfg = sixgr.util.structSet(cfg, "phy.pusch.effectiveSINRMethod", "eesm");
+    end
+    if ~(isfinite(eesmBeta_dB) && eesmBeta_dB > 0)
+        cfg = sixgr.util.structSet(cfg, "phy.csi.eesmBeta_dB", 1.5);
+        cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBeta_dB", 1.5);
+        cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBeta_dB", 1.5);
+    end
+    if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
+        cfg = sixgr.util.structSet(cfg, "phy.csi.targetBLER", 0.1);
+        cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", 0.1);
+        cfg = sixgr.util.structSet(cfg, "phy.pusch.targetBLER", 0.1);
+    end
+    if ~(isfinite(blerCurveSlope_dB) && blerCurveSlope_dB > 0)
+        cfg = sixgr.util.structSet(cfg, "phy.csi.blerCurveSlope_dB", 1.5);
+        cfg = sixgr.util.structSet(cfg, "phy.pdsch.blerCurveSlope_dB", 1.5);
+        cfg = sixgr.util.structSet(cfg, "phy.pusch.blerCurveSlope_dB", 1.5);
+    end
+end
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMIType1", reportPMI && pmiCodebookMode == "type1_su_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMIType2", reportPMI && pmiCodebookMode == "type2_mu_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMIEnhancedType2", reportPMI && pmiCodebookMode == "etype2_candidate");
@@ -448,6 +511,12 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.alPolicy", char(string(local
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.beamPolicy", char(string(localRequireNested(s, "link_adaptation.beam_adaptation_policy", "link_adaptation.beam_adaptation_policy"))));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.periodicity", char(string(localRequireNested(s, "link_adaptation.adaptation_periodicity", "link_adaptation.adaptation_periodicity"))));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.delayModel", char(string(localRequireNested(s, "link_adaptation.adaptation_delay_model", "link_adaptation.adaptation_delay_model"))));
+bootstrapCQIMode = lower(strtrim(string(localGetNested(s, "link_adaptation.bootstrap_cqi_mode", ""))));
+if strlength(bootstrapCQIMode) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", char(bootstrapCQIMode));
+elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", "large_scale_preview_lab_default");
+end
 
 cfg = localApplySystemConfig(cfg, s);
 cfg = localApplyTrafficConfig(cfg, s);

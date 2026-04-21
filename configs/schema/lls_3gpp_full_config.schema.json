@@ -3,7 +3,7 @@
   "$id": "https://local.sixgr/lls_3gpp_full_config.schema.json",
   "title": "SixGR MATLAB-first 3GPP LLS scenario",
   "type": "object",
-  "description": "External-tooling schema for the locked browser-default 4 GHz / 100 MHz / 200 UE / 4000 slot scenario. The authoritative runtime schema remains simulator/configs/schema/scenario_parameter_catalog*.yaml.",
+  "description": "External-tooling schema for the locked browser-default 4 GHz / 100 MHz / 200 UE / 1 frame waveform-honest scenario. The authoritative runtime schema remains simulator/configs/schema/scenario_parameter_catalog*.yaml.",
   "required": ["meta", "scenario", "run_control", "seeds", "simulation", "frequency", "frame", "deployment_topology", "output", "logging"],
   "properties": {
     "inherits": {
@@ -14,16 +14,16 @@
       "type": "object",
       "required": ["scenario_id", "description", "scenario_group"],
       "properties": {
-        "scenario_id": {"const": "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"},
+        "scenario_id": {"const": "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"},
         "description": {"type": "string"},
-        "scenario_group": {"const": "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"}
+        "scenario_group": {"const": "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"}
       },
       "additionalProperties": true
     },
     "scenario": {
       "type": "object",
       "properties": {
-        "name": {"const": "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot"},
+        "name": {"const": "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"},
         "honesty_mode": {"const": "strict"},
         "unsupported_output_policy": {"const": "show_unavailable_with_reason"},
         "provenance_logging": {"const": true}
@@ -35,12 +35,18 @@
       "properties": {
         "mode": {"const": "long_run"},
         "run_profile": {"const": "exhaustive"},
-        "total_slots": {"const": 4000},
-        "warmup_slots": {"const": 500},
-        "measurement_slots": {"const": 3500},
-        "checkpoint_every_slots": {"const": 100},
-        "snapshot_every_slots": {"const": 50},
-        "log_every_slots": {"const": 50},
+        "total_frames": {"const": 1},
+        "warmup_frames": {"const": null},
+        "measurement_frames": {"const": null},
+        "total_slots": {"const": 20},
+        "warmup_slots": {"const": 10},
+        "measurement_slots": {"const": 1},
+        "checkpoint_every_frames": {"const": 1},
+        "snapshot_every_frames": {"const": 1},
+        "log_every_frames": {"const": 1},
+        "checkpoint_every_slots": {"const": 1},
+        "snapshot_every_slots": {"const": 1},
+        "log_every_slots": {"const": 1},
         "deterministic_replay": {"const": true}
       },
       "additionalProperties": true
@@ -65,7 +71,8 @@
     "simulation": {
       "type": "object",
       "properties": {
-        "n_slots": {"const": 4000},
+        "n_frames": {"const": 1},
+        "n_slots": {"const": 20},
         "random_seed": {"const": 104729},
         "deterministic_mode": {"const": true}
       },

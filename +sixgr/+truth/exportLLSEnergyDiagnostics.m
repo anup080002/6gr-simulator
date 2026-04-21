@@ -12,6 +12,7 @@ if isempty(timelineT)
     return;
 end
 summaryT = localBuildEnergySummary(cfg, timelineT);
+summaryT = sixgr.truth.finalizeProbeMetricTable(summaryT);
 
 timelinePath = fullfile(layout.RFCSVDir, "energy_timeline_trace.csv");
 summaryPath = fullfile(layout.RFCSVDir, "probe_rf_energy.csv");
@@ -374,6 +375,9 @@ T = table('Size', [0 7], ...
 end
 
 function T = localProbeMetricRow(metricKey, entity, statistic, value, textValue, unit, notes)
+if strlength(strtrim(string(textValue))) == 0 && isfinite(double(value))
+    textValue = sprintf('%.12g', double(value));
+end
 T = table(string(metricKey), string(entity), string(statistic), double(value), string(textValue), string(unit), string(notes), ...
     'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes'});
 end

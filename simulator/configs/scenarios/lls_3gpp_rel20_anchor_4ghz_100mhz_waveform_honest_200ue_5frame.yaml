@@ -1,0 +1,71 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_5frame
+  description: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 5 frames launched from the browser-owned MATLAB path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_5frame
+  scenario_name: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 5 frames launched from the browser-owned MATLAB path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_5frame
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_5frame
+  comparison_group_name: rel20_anchor_4ghz_100mhz_200ue_5frame
+  notes: >
+    Browser-owned canonical waveform_bundle scenario for a bounded truthful run. This keeps the
+    full 200-UE multi-cell NR-style coupled waveform path, but constrains the horizon to 5 frames
+    so the browser-owned MATLAB execution remains operational while still exposing real PHY/MAC
+    artifacts, realtime reporting, and post-run analysis with strict truth labeling.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 200ue
+    - 5frame
+    - 100slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_5frame
+  description: Strict waveform-honest NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 200 UEs and 5 frames.
+  runner_profile: waveform_bundle
+  notes: >
+    Browser-owned canonical waveform_bundle scenario. This path dispatches directly to the coupled
+    waveform truth loop and relies on the runtime's canonical slot accounting plus configured TDD duplex
+    pattern handling. Unsupported browser labels must remain explicit and truthful.
+
+run_control:
+  run_profile: exhaustive
+  total_frames: 5
+  warmup_frames: 1
+  measurement_frames: 1
+  total_slots: 100
+  warmup_slots: 20
+  measurement_slots: 20
+  checkpoint_every_frames: 1
+  snapshot_every_frames: 1
+  log_every_frames: 1
+  checkpoint_every_slots: 20
+  snapshot_every_slots: 20
+  log_every_slots: 20
+  batch_size_links: 16
+  num_workers: 1
+  warmup_time_ms: 10
+  measurement_time_ms: 10
+  total_time_ms: 50
+  max_runtime_guard: 7200
+
+simulation:
+  n_frames: 5
+  n_slots: 100
+  n_subframes: 50
+  min_duration_s: 0.05
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_5frame

@@ -25,9 +25,12 @@ slotsPerFrame = localFiniteOrDefault( ...
 
 dlGrantT = localBuildDirectionalGrantTable(grantT, "DL", cfg, details, tti_s, slotsPerFrame);
 ulGrantT = localBuildDirectionalGrantTable(grantT, "UL", cfg, details, tti_s, slotsPerFrame);
+controlPDCCHT = localBuildSystemPDCCHTrialTable(dlGrantT, ulGrantT, slotDuration_ms);
+controlPUCCHGrantT = localBuildSystemPUCCHGrantTable(dlGrantT, slotDuration_ms);
+controlPUCCHT = localBuildSystemPUCCHTrialTable(controlPUCCHGrantT, slotDuration_ms);
 sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), dlGrantT);
 sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), ulGrantT);
-sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_pucch_grants.csv"), localEmptyPUCCHGrantTable());
+sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_pucch_grants.csv"), controlPUCCHGrantT);
 
 dlRaw = localBuildDirectionalRawTrialTable(dlGrantT, "DL", scfg, cfg, details, tti_s, slotsPerFrame);
 ulRaw = localBuildDirectionalRawTrialTable(ulGrantT, "UL", scfg, cfg, details, tti_s, slotsPerFrame);
@@ -38,8 +41,8 @@ sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.cs
 
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"), localEmptyControlTrialTable("PBCH"));
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"), localEmptyControlTrialTable("PRACH"));
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"), localEmptyControlTrialTable("PDCCH"));
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"), localEmptyControlTrialTable("PUCCH"));
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"), controlPDCCHT);
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"), controlPUCCHT);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"), localEmptyControlTrialTable("SRS"));
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"), localEmptyControlTrialTable("TRS"));
 
@@ -51,14 +54,15 @@ rawTrials = struct( ...
     "UL", ulRaw, ...
     "PBCH", table(), ...
     "PRACH", table(), ...
-    "PDCCH", table(), ...
-    "PUCCH", table(), ...
+    "PDCCH", controlPDCCHT, ...
+    "PUCCH", controlPUCCHT, ...
     "SRS", table(), ...
     "TRS", table(), ...
     "MultiUserDL", table(), ...
     "MultiUserUL", table());
 
 energyArtifacts = sixgr.truth.exportLLSEnergyDiagnostics(cfg, fullfile(runFolder, "air_interface"), rawTrials);
+iqImpairmentArtifacts = sixgr.truth.exportLLSRFImpairmentDiagnostics(cfg, fullfile(runFolder, "air_interface"), rawTrials);
 
 runtimeT = localBuildRuntimeOperatingModeTable(cfg, scfg, details, rawTrials);
 layoutT = localBuildDeploymentLayoutReferenceTable(cfg, scfg, details);
@@ -99,6 +103,7 @@ out.ControlGatingStateTable = controlStateT;
 out.StageStatusTable = stageT;
 out.ServingRSRPTraceTable = rsrpTraceT;
 out.EnergyArtifacts = energyArtifacts;
+out.IQImpairmentArtifacts = iqImpairmentArtifacts;
 out.SignalChainArtifacts = signalChain;
 out.DerivedArtifacts = derived;
 end
@@ -1080,6 +1085,174 @@ T = table( ...
     string.empty(0, 1), string.empty(0, 1), string.empty(0, 1), string.empty(0, 1), ...
     'VariableNames', {'Direction','TTI','Frame','Slot','CellID','UEID','RNTI','PUCCHGrantId','PUCCHResourceId', ...
     'UCIType','Status'});
+end
+
+function T = localBuildSystemPDCCHTrialTable(dlGrantT, ulGrantT, slotDuration_ms)
+grantT = localVertcatTables(dlGrantT, ulGrantT);
+if isempty(grantT)
+    T = localEmptyControlTrialTable("PDCCH");
+    return;
+end
+n = height(grantT);
+status = repmat("PASS", n, 1);
+phyStatus = upper(strtrim(localStringColumn(grantT, "PHYDecisionStatus", "")));
+runtimeStatus = repmat("system_level_scheduler_grant_available", n, 1);
+runtimeStatus(phyStatus == "NOT_AVAILABLE") = "system_level_grant_without_separate_control_decode_observation";
+status(phyStatus == "CRASH") = "CRASH";
+status(phyStatus == "FAIL") = "FAIL";
+status(phyStatus == "BLOCKED") = "FAIL";
+decodeSuccess = true(n, 1);
+decodeSuccess(status == "CRASH" | status == "FAIL") = false;
+failureFlag = ~decodeSuccess;
+T = table();
+T.Status = status;
+T.Frame = localNumericColumn(grantT, "Frame", NaN);
+T.Slot = localNumericColumn(grantT, "Slot", NaN);
+T.UEIndex = localNumericColumn(grantT, "UEID", NaN);
+T.RNTI = localNumericColumn(grantT, "RNTI", NaN);
+T.ControlStage = repmat("PDCCH_CONTROL", n, 1);
+T.RuntimeStatus = runtimeStatus;
+T.SignalFamily = repmat("PDCCH", n, 1);
+T.SourceClassification = repmat("active_but_simplified", n, 1);
+T.RuntimeMaterializationStatus = repmat("system_level_scheduler_grant_control_abstraction", n, 1);
+T.ControlGatingEffect = repmat("scheduler_grant_row_implies_control_resource_assignment", n, 1);
+T.DecodeSuccess = decodeSuccess;
+T.SuccessFlag = decodeSuccess;
+T.FailureFlag = failureFlag;
+T.ControlObservationAvailable = true(n, 1);
+T.ValueSource = repmat("system_level_scheduler_grant_trace", n, 1);
+T.ValueRole = repmat("control_reference_signal_runtime_evidence", n, 1);
+T.ValueStatus = repmat("available_runtime_abstraction", n, 1);
+T.ValueDefinition = repmat("canonical system-level PDCCH control row derived from an actual scheduler-grant observation; control RE/DMRS mapping is not separately waveform-materialized in this path", n, 1);
+T.FinalizedFlag = true(n, 1);
+T.PlaceholderFlag = false(n, 1);
+T.FallbackFlag = false(n, 1);
+T.NAReason = repmat("", n, 1);
+T.Direction = localStringColumn(grantT, "Direction", "DL");
+T.TTI = localNumericColumn(grantT, "TTI", NaN);
+T.CellID = localNumericColumn(grantT, "CellID", NaN);
+T.BaseStationID = localNumericColumn(grantT, "BaseStationID", NaN);
+T.GrantContextId = localStringColumn(grantT, "GrantContextId", "");
+T.GrantReason = localStringColumn(grantT, "GrantReason", "");
+T.FalseAlarmFlag = false(n, 1);
+T.BlockingFlag = false(n, 1);
+T.BlindDecodeCount = ones(n, 1);
+T.AggregationLevel = nan(n, 1);
+T.DCISize_bits = nan(n, 1);
+T.NonOverlappedCCEUsage = nan(n, 1);
+T.ControlCapacityUtilization = nan(n, 1);
+T.CORESETUtilization = nan(n, 1);
+T.ControlLatency_ms = nan(n, 1);
+T.ComputeLatency_ms = nan(n, 1);
+T.AirInterfaceTTI_ms = repmat(double(slotDuration_ms), n, 1);
+T.RuntimeConsumer = repmat("SystemLevelRunner.schedulerGrantTrace", n, 1);
+end
+
+function T = localBuildSystemPUCCHGrantTable(dlGrantT, slotDuration_ms)
+if isempty(dlGrantT)
+    T = localEmptyPUCCHGrantTable();
+    return;
+end
+n = height(dlGrantT);
+ackFlag = localLogicalColumn(dlGrantT, "Ack", false);
+status = repmat("OBSERVED_ABSTRACTION", n, 1);
+T = localEmptyPUCCHGrantTable();
+T = T([]);
+T.Direction = repmat("DL", n, 1);
+T.TTI = localNumericColumn(dlGrantT, "TTI", NaN);
+T.Frame = localNumericColumn(dlGrantT, "Frame", NaN);
+T.Slot = localNumericColumn(dlGrantT, "Slot", NaN);
+T.CellID = localNumericColumn(dlGrantT, "CellID", NaN);
+T.UEID = localNumericColumn(dlGrantT, "UEID", NaN);
+T.RNTI = localNumericColumn(dlGrantT, "RNTI", NaN);
+T.PUCCHGrantId = "pucch_feedback_" + string(T.Frame) + "_" + string(T.Slot) + "_" + string(T.CellID) + "_" + string(T.UEID);
+T.PUCCHResourceId = repmat("system_level_feedback_resource", n, 1);
+T.UCIType = repmat("harq_ack", n, 1);
+T.Status = status;
+T.RequestedFormat = nan(n, 1);
+T.ResolvedFormat = nan(n, 1);
+T.UCIBitCount = repmat(1, n, 1);
+T.PUCCHPRBStart = nan(n, 1);
+T.PUCCHPRBCount = nan(n, 1);
+T.PUCCHSymbolStart = nan(n, 1);
+T.PUCCHNumSymbols = nan(n, 1);
+T.BaseStationID = localNumericColumn(dlGrantT, "BaseStationID", NaN);
+T.InterferenceMode = localStringColumn(dlGrantT, "InterferenceMode", "");
+T.SignalFamily = repmat("PUCCH", n, 1);
+T.SourceClassification = repmat("active_but_simplified", n, 1);
+T.RuntimeMaterializationStatus = repmat("system_level_harq_feedback_abstraction_without_waveform_resource_mapping", n, 1);
+T.ControlGatingEffect = repmat("dl_harq_ack_feedback_required", n, 1);
+T.RuntimeStateConsumer = repmat("SystemLevelRunner.harq_feedback_state", n, 1);
+T.RuntimeConsumer = repmat("SystemLevelRunner.harq_feedback_state", n, 1);
+T.DecodeSuccess = true(n, 1);
+T.SuccessFlag = true(n, 1);
+T.FailureFlag = false(n, 1);
+T.PUCCHDecodeOk = true(n, 1);
+T.GrantScheduledFlag = true(n, 1);
+T.GrantExecutedFlag = true(n, 1);
+T.StateChangeApplied = true(n, 1);
+T.ControlObservationAvailable = true(n, 1);
+T.ValueSource = repmat("system_level_dl_grant_ack_state", n, 1);
+T.ValueRole = repmat("explicit_pucch_grant_and_feedback_runtime_state", n, 1);
+T.ValueStatus = repmat("available_runtime_abstraction", n, 1);
+T.ValueDefinition = repmat("canonical system-level PUCCH feedback row derived from actual DL grant/HARQ state; explicit waveform format/resource mapping is not materialized in this path", n, 1);
+T.FinalizedFlag = true(n, 1);
+T.PlaceholderFlag = false(n, 1);
+T.FallbackFlag = false(n, 1);
+T.NAReason = repmat("pucch_format_and_re_mapping_not_materialized_by_system_level_runner", n, 1);
+T.ExpectedAck = ackFlag;
+T.ObservedAck = ackFlag;
+T.AirInterfaceTTI_ms = repmat(double(slotDuration_ms), n, 1);
+end
+
+function T = localBuildSystemPUCCHTrialTable(grantT, slotDuration_ms)
+if isempty(grantT)
+    T = localEmptyControlTrialTable("PUCCH");
+    return;
+end
+n = height(grantT);
+T = table();
+T.Status = repmat("PASS", n, 1);
+T.Frame = localNumericColumn(grantT, "Frame", NaN);
+T.Slot = localNumericColumn(grantT, "Slot", NaN);
+T.UEIndex = localNumericColumn(grantT, "UEID", NaN);
+T.RNTI = localNumericColumn(grantT, "RNTI", NaN);
+T.ControlStage = repmat("PUCCH_CONTROL", n, 1);
+T.RuntimeStatus = repmat("system_level_feedback_state_available", n, 1);
+T.SignalFamily = repmat("PUCCH", n, 1);
+T.SourceClassification = localStringColumn(grantT, "SourceClassification", "active_but_simplified");
+T.RuntimeMaterializationStatus = localStringColumn(grantT, "RuntimeMaterializationStatus", "system_level_harq_feedback_abstraction_without_waveform_resource_mapping");
+T.ControlGatingEffect = localStringColumn(grantT, "ControlGatingEffect", "dl_harq_ack_feedback_required");
+T.DecodeSuccess = localLogicalColumn(grantT, "DecodeSuccess", true);
+T.SuccessFlag = localLogicalColumn(grantT, "SuccessFlag", true);
+T.FailureFlag = localLogicalColumn(grantT, "FailureFlag", false);
+T.ControlObservationAvailable = localLogicalColumn(grantT, "ControlObservationAvailable", true);
+T.ValueSource = localStringColumn(grantT, "ValueSource", "system_level_dl_grant_ack_state");
+T.ValueRole = localStringColumn(grantT, "ValueRole", "explicit_pucch_grant_and_feedback_runtime_state");
+T.ValueStatus = localStringColumn(grantT, "ValueStatus", "available_runtime_abstraction");
+T.ValueDefinition = localStringColumn(grantT, "ValueDefinition", "canonical system-level PUCCH trial row derived from the actual DL grant/HARQ state");
+T.FinalizedFlag = localLogicalColumn(grantT, "FinalizedFlag", true);
+T.PlaceholderFlag = localLogicalColumn(grantT, "PlaceholderFlag", false);
+T.FallbackFlag = localLogicalColumn(grantT, "FallbackFlag", false);
+T.NAReason = localStringColumn(grantT, "NAReason", "pucch_format_and_re_mapping_not_materialized_by_system_level_runner");
+T.Direction = localStringColumn(grantT, "Direction", "DL");
+T.TTI = localNumericColumn(grantT, "TTI", NaN);
+T.CellID = localNumericColumn(grantT, "CellID", NaN);
+T.BaseStationID = localNumericColumn(grantT, "BaseStationID", NaN);
+T.GrantContextId = localStringColumn(grantT, "PUCCHGrantId", "");
+T.UCIType = localStringColumn(grantT, "UCIType", "harq_ack");
+T.CRCPass = double(localLogicalColumn(grantT, "DecodeSuccess", true));
+T.BitsCompared = localNumericColumn(grantT, "UCIBitCount", 1);
+T.ComputeLatency_ms = nan(n, 1);
+T.AirInterfaceTTI_ms = repmat(double(slotDuration_ms), n, 1);
+T.RequestedFormat = localNumericColumn(grantT, "RequestedFormat", NaN);
+T.ResolvedFormat = localNumericColumn(grantT, "ResolvedFormat", NaN);
+T.PUCCHGrantId = localStringColumn(grantT, "PUCCHGrantId", "");
+T.PUCCHResourceId = localStringColumn(grantT, "PUCCHResourceId", "");
+T.RuntimeConsumer = localStringColumn(grantT, "RuntimeConsumer", "SystemLevelRunner.harq_feedback_state");
+T.InterferenceMode = localStringColumn(grantT, "InterferenceMode", "");
+T.ObservedAck = localLogicalColumn(grantT, "ObservedAck", false);
+T.ExpectedAck = localLogicalColumn(grantT, "ExpectedAck", false);
 end
 
 function T = localEmptyControlTrialTable(controlStage)

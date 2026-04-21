@@ -521,30 +521,34 @@ end
 function evidence = localReceiverHestSINR(Hest, nVar, cfg, direction, rxGrid, refInd, refSym)
 evidence = struct( ...
     "Value", NaN, ...
-    "Source", "unavailable_receiver_hest_csi_feedback_failed", ...
+    "Source", "unavailable_ul_receiver_measurement_failed", ...
     "ValueRole", "unavailable", ...
     "ValueStatus", "unavailable", ...
-    "NAReason", "receiver_hest_csi_feedback_metric_not_available");
+    "NAReason", "ul_receiver_measurement_not_available");
 if isempty(Hest)
-    evidence.NAReason = "receiver_hest_grid_empty";
+    evidence.NAReason = "ul_receiver_hest_grid_empty";
     return;
 end
 try
-    args = {"Direction", direction};
-    if ~isempty(rxGrid) && ~isempty(refInd) && ~isempty(refSym)
-        args = [args, {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym}];
-    end
-    csiMetric = sixgr.phy.dl.CSI_Feedback(Hest, nVar, cfg, args{:});
-    sinr = double(sixgr.util.structGet(csiMetric, "SINR_dB", NaN));
+    ulMetric = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
+        "ReceivedGrid", rxGrid, ...
+        "ReferenceIndices", refInd, ...
+        "ReferenceSymbols", refSym);
+    sinr = double(sixgr.util.structGet(ulMetric, "SINR_dB", NaN));
     if isfinite(sinr)
         evidence.Value = sinr;
-        evidence.Source = "receiver_hest_csi_feedback_wideband_effective_sinr";
-        evidence.ValueRole = "estimated";
-        evidence.ValueStatus = "OK";
+        evidence.Source = char(string(sixgr.util.structGet(ulMetric, "SINRSource", "reference_signal_pilot_residual_nmse")));
+        evidence.ValueRole = char(string(sixgr.util.structGet(ulMetric, "SINRValueRole", "estimated")));
+        evidence.ValueStatus = char(string(sixgr.util.structGet(ulMetric, "SINRValueStatus", "OK")));
         evidence.NAReason = "";
+    else
+        evidence.Source = char(string(sixgr.util.structGet(ulMetric, "SINRSource", evidence.Source)));
+        evidence.ValueRole = char(string(sixgr.util.structGet(ulMetric, "SINRValueRole", evidence.ValueRole)));
+        evidence.ValueStatus = char(string(sixgr.util.structGet(ulMetric, "SINRValueStatus", evidence.ValueStatus)));
+        evidence.NAReason = char(string(sixgr.util.structGet(ulMetric, "SINRNAReason", evidence.NAReason)));
     end
 catch ME
-    evidence.NAReason = "receiver_hest_csi_feedback_failed:" + string(ME.identifier);
+    evidence.NAReason = "ul_receiver_measurement_failed:" + string(ME.identifier);
 end
 end
 

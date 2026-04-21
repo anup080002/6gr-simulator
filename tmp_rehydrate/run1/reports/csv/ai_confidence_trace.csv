@@ -1,0 +1,2 @@
+InvocationIndex,AIEnabled,UseCase,InferenceMode,ConfidenceMetric,ConfidenceScore,FallbackRate,SourceArtifact,Status,Notes
+1,0,"channel_estimation_enhancement","disabled","none",NaN,0,"meta/scenario_config_resolved.json","disabled","AI/ML is disabled in this scenario; trace emitted only to preserve run-level auditability."

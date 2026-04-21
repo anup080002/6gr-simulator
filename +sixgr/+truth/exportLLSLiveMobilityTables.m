@@ -63,7 +63,7 @@ plModel = sixgr.channel.TR38901Plus(cfgLargeScale, "Seed", seed + 901);
 
 if sixgr.db.isArtifactStoreActive() && localLargeScaleConfigDiffers(cfgMob, cfgLargeScale)
     sixgr.db.appendLogLine("INFO", ...
-        string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'")), ...
+        sixgr.util.utcNowISO8601(), ...
         "Live mobility sidecar enabled physical large-scale propagation (pathloss/LOS/shadow) for RSRP, pathloss, and cell-selection telemetry.");
 end
 
@@ -195,7 +195,7 @@ for slotIdx = 1:numSlots
         localWriteLiveMobilityTables(layout, servingRows(1:servingCount), ...
             measurementRows(1:measurementCount), eventRows(1:eventCount));
         if sixgr.db.isArtifactStoreActive()
-            timeStamp = string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+            timeStamp = sixgr.util.utcNowISO8601();
             msg = sprintf("Live mobility preview flush: slot %d/%d, servingRows=%d, measurementRows=%d, reselectionEvents=%d.", ...
                 double(slotIdx), double(numSlots), double(servingCount), double(measurementCount), double(eventCount));
             sixgr.db.appendLogLine("INFO", timeStamp, string(msg));

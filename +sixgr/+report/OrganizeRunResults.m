@@ -118,6 +118,8 @@ localCopy("harq/csv/probe_harq_summary.csv", "phy/harq", "probe_harq_summary.csv
 localCopy("beamforming/csv/probe_beam_mimo.csv", "phy/mimo_beamforming", "probe_beam_mimo.csv", "csv", "Beam and MIMO probe");
 localCopy("numerology/csv/probe_numerology.csv", "phy/waveform_numerology", "probe_numerology.csv", "csv", "Numerology probe");
 localCopy("rf/csv/probe_rf_energy.csv", "phy/rf_impairments", "probe_rf_energy.csv", "csv", "RF impairment + energy probe");
+localCopy("rf/csv/probe_rf_iq_imbalance.csv", "phy/rf_impairments", "probe_rf_iq_imbalance.csv", "csv", "RF IQ-imbalance probe");
+localCopy("rf/csv/iq_imbalance_timeline_trace.csv", "phy/rf_impairments", "iq_imbalance_timeline_trace.csv", "csv", "RF IQ-imbalance timeline trace");
 
 localCopy("interference/csv/probe_interference_sir_bler.csv", "system/interference", "probe_interference_sir_bler.csv", "csv", "Interference probe");
 localCopy("mmtc/csv/probe_mmtc_kpis.csv", "system/mmtc", "probe_mmtc_kpis.csv", "csv", "mMTC KPIs");
@@ -602,7 +604,7 @@ out.MirrorLayout = char(string(mirrorLayout));
             fprintf(fid, "Structured folder: %s\n", structuredRoot);
             fprintf(fid, "Mirror root: %s\n", resultsRoot);
             fprintf(fid, "Mirror layout: %s\n", char(string(mirrorLayoutValue)));
-            fprintf(fid, "GeneratedUTC: %s\n", char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss''Z''')));
+            fprintf(fid, "GeneratedUTC: %s\n", char(sixgr.util.utcNowISO8601()));
         end
     end
 

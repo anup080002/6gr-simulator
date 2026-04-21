@@ -1,0 +1,6 @@
+{
+  "logical_path": "reports/csv/table_latency.csv",
+  "json_required": true,
+  "json_written": true,
+  "reason": "json_required"
+}

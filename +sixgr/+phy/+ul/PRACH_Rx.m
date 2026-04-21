@@ -45,6 +45,10 @@ function [rx, info] = PRACH_Rx(rxWaveform, cfg, varargin)
     else
         prach = opts.PRACH;
     end
+    try
+        carrier.NSlot = prach.NPRACHSlot;
+    catch
+    end
 
     % ---- Detection -------------------------------------------------------
     nv = {};

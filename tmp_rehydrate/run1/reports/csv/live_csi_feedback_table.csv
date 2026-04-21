@@ -1,0 +1,13 @@
+Direction,TraceSource,SNR_dB,Metric,MeanValue,P05Value,P95Value,SampleCount
+DL,dl_pdsch_trials,12,WidebandCQI,11.0333333333333,0,15,150
+DL,dl_pdsch_trials,12,CQIDerivedMCS,18.8733333333333,0,26,150
+DL,dl_pdsch_trials,12,CQIDerivedTargetCodeRate,0.64216796875,0.076171875,0.8525390625,150
+DL,dl_pdsch_trials,12,CSIPayloadBitLength,20.8866666666667,20,21,150
+DL,dl_pdsch_trials,12,PMI,10.1133333333333,0,31,150
+DL,dl_pdsch_trials,12,RankIndicator,1.49333333333333,1,2,150
+UL,ul_pusch_trials,12,WidebandCQI,14.2916666666667,10.75,15,96
+UL,ul_pusch_trials,12,CQIDerivedMCS,25.0104166666667,19.5,26,96
+UL,ul_pusch_trials,12,CQIDerivedTargetCodeRate,0.812215169270833,0.589599609375,0.8525390625,96
+UL,ul_pusch_trials,12,CSIPayloadBitLength,21,21,21,96
+UL,ul_pusch_trials,12,PMI,0,0,0,96
+UL,ul_pusch_trials,12,RankIndicator,1,1,1,96

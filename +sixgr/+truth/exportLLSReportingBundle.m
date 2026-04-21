@@ -141,6 +141,7 @@ ctx.Manifest = manifest;
 ctx.RuntimeSummary = runtimeSummary;
 ctx.ScenarioStatus = scenarioStatus;
 ctx.Tables = struct();
+ctx.TableSources = struct();
 ctx.Tables.ScenarioSummary = localReadOptionalTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"));
 ctx.Tables.CaseStatus = localReadOptionalTable(fullfile(layout.ReportCSVDir, "case_status.csv"));
 ctx.Tables.Sweep = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"));
@@ -148,7 +149,17 @@ ctx.Tables.ReferenceSweep = localReadOptionalTable(fullfile(layout.AirInterfaceC
 ctx.Tables.DL = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
 ctx.Tables.UL = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
 ctx.Tables.DLConstellation = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_constellation_samples.csv"));
+ctx.TableSources.DLConstellation = "air_interface/csv/dl_constellation_samples.csv";
+if ~(istable(ctx.Tables.DLConstellation) && ~isempty(ctx.Tables.DLConstellation))
+    ctx.Tables.DLConstellation = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_constellation_preview.csv"));
+    ctx.TableSources.DLConstellation = "air_interface/csv/dl_constellation_preview.csv";
+end
 ctx.Tables.ULConstellation = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_constellation_samples.csv"));
+ctx.TableSources.ULConstellation = "air_interface/csv/ul_constellation_samples.csv";
+if ~(istable(ctx.Tables.ULConstellation) && ~isempty(ctx.Tables.ULConstellation))
+    ctx.Tables.ULConstellation = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_constellation_preview.csv"));
+    ctx.TableSources.ULConstellation = "air_interface/csv/ul_constellation_preview.csv";
+end
 ctx.Tables.PBCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"));
 ctx.Tables.PRACH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"));
 ctx.Tables.PDCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"));
@@ -1330,18 +1341,151 @@ if ~(istable(trialT) && ~isempty(trialT))
     return;
 end
 vars = string(trialT.Properties.VariableNames);
-col = "";
-if ismember("Goodput_Mbps", vars)
-    col = "Goodput_Mbps";
-elseif ismember("OfferedThroughput_Mbps", vars)
-    col = "OfferedThroughput_Mbps";
+bitVar = "";
+sourcePath = localDefaultSource(entity);
+if ismember("GoodBits", vars) || ismember("Goodput_Mbps", vars)
+    bitVar = "GoodBits";
+elseif ismember("OfferedBits", vars) || ismember("OfferedThroughput_Mbps", vars)
+    bitVar = "OfferedBits";
 end
-if strlength(col) == 0
+if strlength(bitVar) == 0
     return;
 end
-T = localNumericTrialSummaryRows(cat, metric, trialT, col, entity, unit);
+samples = localSlotAggregatedBitRateSamples(trialT, bitVar);
+if isempty(samples)
+    return;
+end
+T = [T; ...
+    localMetricTableRow(cat, metric, entity, "mean", "available", mean(samples, "omitnan"), "", unit, sourcePath, ""); ...
+    localMetricTableRow(cat, metric, entity, "p95", "available", prctile(samples, 95), "", unit, sourcePath, ""); ...
+    localMetricTableRow(cat, metric, entity, "max", "available", max(samples), "", unit, sourcePath, "")];
 if ~isempty(T)
     T.Notes(:) = string(notes);
+end
+end
+
+function samples = localSlotAggregatedBitRateSamples(trialT, bitVar)
+samples = NaN(0, 1);
+if ~(istable(trialT) && ~isempty(trialT))
+    return;
+end
+bitValues = localResolvedTrialBitsForReporting(trialT, bitVar);
+if isempty(bitValues)
+    return;
+end
+slotDurDefault_s = localTrialDefaultDurationSeconds(trialT);
+slotDurByRow_s = localTrialDurationsSecondsForReporting(trialT, slotDurDefault_s);
+slotKeys = localTrialSlotKeysForReporting(trialT);
+if numel(slotKeys) ~= numel(bitValues)
+    slotKeys = strings(numel(bitValues), 1);
+end
+slotKeys = string(slotKeys(:));
+if all(strlength(strtrim(slotKeys)) == 0)
+    slotKeys = "row_" + string((1:numel(bitValues)).');
+end
+[uniqueKeys, ~, groupIdx] = unique(slotKeys, "stable");
+if isempty(uniqueKeys)
+    return;
+end
+bitSums = accumarray(groupIdx, bitValues, [numel(uniqueKeys) 1], @localNaNSumCompatForReporting, NaN);
+slotDurByGroup_s = accumarray(groupIdx, slotDurByRow_s, [numel(uniqueKeys) 1], @(x) localRepresentativePositiveDurationForReporting(x, slotDurDefault_s), NaN);
+samples = (bitSums ./ max(slotDurByGroup_s, eps)) / 1e6;
+samples = samples(isfinite(samples));
+end
+
+function total = localNaNSumCompatForReporting(x)
+x = double(x(:));
+x = x(isfinite(x));
+if isempty(x)
+    total = 0;
+    return;
+end
+total = sum(x);
+end
+
+function bitValues = localResolvedTrialBitsForReporting(trialT, bitVar)
+bitValues = NaN(0, 1);
+if ~(istable(trialT) && ~isempty(trialT))
+    return;
+end
+vars = string(trialT.Properties.VariableNames);
+bitVar = string(bitVar);
+if ismember(bitVar, vars)
+    bitValues = double(trialT.(bitVar));
+    bitValues(~isfinite(bitValues)) = NaN;
+else
+    bitValues = NaN(height(trialT), 1);
+end
+if bitVar == "GoodBits" && all(~isfinite(bitValues))
+    if ismember("TBSize_bits", vars)
+        bitTotals = double(trialT.TBSize_bits);
+        bitTotals(~isfinite(bitTotals)) = 0;
+        passMask = false(height(trialT), 1);
+        if ismember("Status", vars)
+            passMask = upper(strtrim(string(trialT.Status))) == "PASS";
+        elseif ismember("CRCPass", vars)
+            passMask = logical(trialT.CRCPass);
+        end
+        bitValues = zeros(size(bitTotals));
+        bitValues(passMask) = bitTotals(passMask);
+    end
+elseif bitVar == "OfferedBits" && all(~isfinite(bitValues)) && ismember("TBSize_bits", vars)
+    bitTotals = double(trialT.TBSize_bits);
+    bitTotals(~isfinite(bitTotals)) = NaN;
+    bitValues = bitTotals;
+end
+end
+
+function slotDur_s = localTrialDefaultDurationSeconds(trialT)
+slotDur_s = 0.5e-3;
+if ~(istable(trialT) && ~isempty(trialT) && ismember("AirInterfaceTTI_ms", string(trialT.Properties.VariableNames)))
+    return;
+end
+tti_ms = double(trialT.AirInterfaceTTI_ms);
+tti_ms = tti_ms(isfinite(tti_ms) & tti_ms > 0);
+if ~isempty(tti_ms)
+    slotDur_s = median(tti_ms, "omitnan") / 1000;
+end
+end
+
+function durations_s = localTrialDurationsSecondsForReporting(trialT, fallback_s)
+durations_s = repmat(double(fallback_s), height(trialT), 1);
+if ~(istable(trialT) && ~isempty(trialT) && ismember("AirInterfaceTTI_ms", string(trialT.Properties.VariableNames)))
+    return;
+end
+tti_ms = double(trialT.AirInterfaceTTI_ms);
+validMask = isfinite(tti_ms) & tti_ms > 0;
+durations_s(validMask) = tti_ms(validMask) / 1000;
+end
+
+function slotKeys = localTrialSlotKeysForReporting(trialT)
+slotKeys = strings(0, 1);
+if ~(istable(trialT) && ~isempty(trialT))
+    return;
+end
+vars = string(trialT.Properties.VariableNames);
+if all(ismember(["Frame","Slot"], vars))
+    slotKeys = "frame_" + string(round(double(trialT.Frame))) + "_slot_" + string(round(double(trialT.Slot)));
+elseif all(ismember(["SFN","Slot"], vars))
+    slotKeys = "sfn_" + string(round(double(trialT.SFN))) + "_slot_" + string(round(double(trialT.Slot)));
+elseif ismember("CanonicalSlot", vars)
+    slotKeys = "canonical_slot_" + string(round(double(trialT.CanonicalSlot)));
+elseif ismember("Slot", vars)
+    slotKeys = "slot_" + string(round(double(trialT.Slot)));
+else
+    slotKeys = strings(height(trialT), 1);
+end
+end
+
+function duration_s = localRepresentativePositiveDurationForReporting(x, fallback_s)
+duration_s = double(fallback_s);
+x = double(x(:));
+x = x(isfinite(x) & x > 0);
+if ~isempty(x)
+    duration_s = max(x);
+end
+if ~(isfinite(duration_s) && duration_s > 0)
+    duration_s = double(fallback_s);
 end
 end
 
@@ -3017,8 +3161,7 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
     return;
 end
-x = double(trialT.(varName));
-x = x(isfinite(x));
+x = localFiniteColumn(trialT, varName);
 if isempty(x)
     return;
 end
@@ -3628,6 +3771,16 @@ plots(end+1, 1) = localPlotSweep(ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ..
     ["DL_Throughput_Mbps","UL_Throughput_Mbps"], ["DL","UL"], "throughput_vs_snr.png", "Throughput vs SNR", "Throughput (Mbps)"); %#ok<AGROW>
 plots(end+1, 1) = localPlotSweep(ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+    "ReceiverHestSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Measured SINR", "Measured SINR (dB)", "BLER", false, true); %#ok<AGROW>
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+    "ReceiverHestSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Measured SINR", "Measured SINR (dB)", "BER", false, true); %#ok<AGROW>
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+    "BLER", "BER", "ber_vs_bler.png", "BER vs BLER", "BLER", "BER", true, true); %#ok<AGROW>
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+    "DerivedEcNo_dB", "BER", "ber_vs_ecno.png", "BER vs Derived Ec/No", "Derived Ec/No (dB)", "BER", false, true); %#ok<AGROW>
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+    "DerivedEcNo_dB", "BLER", "bler_vs_ecno.png", "BLER vs Derived Ec/No", "Derived Ec/No (dB)", "BLER", false, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotControlPassRates(ctx.Layout.ReportImageDir, ctx); %#ok<AGROW>
 plots(end+1, 1) = localPlotCoverageAvailability(ctx.Layout.ReportImageDir, coverageT); %#ok<AGROW>
 plots = plots(strlength(plots) > 0);
@@ -3709,6 +3862,166 @@ end
 legend(ax, "Location", "best");
 pathOut = string(fullfile(imgDir, fileName));
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+end
+
+function pathOut = localPlotTrialMetricRelationship(imgDir, dlT, ulT, xVar, yVar, fileName, plotTitle, xLabel, yLabel, logX, logY)
+pathOut = "";
+fig = figure("Visible", "off", "Color", "w");
+cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig);
+hold(ax, "on");
+made = false;
+made = localScatterTrialMetric(ax, dlT, xVar, yVar, "DL", [0.0000 0.4470 0.7410]) || made;
+made = localScatterTrialMetric(ax, ulT, xVar, yVar, "UL", [0.8500 0.3250 0.0980]) || made;
+if ~made
+    return;
+end
+if logical(logX)
+    set(ax, "XScale", "log");
+end
+if logical(logY)
+    set(ax, "YScale", "log");
+end
+grid(ax, "on");
+xlabel(ax, xLabel);
+ylabel(ax, yLabel);
+title(ax, plotTitle);
+legend(ax, "Location", "best");
+pathOut = string(fullfile(imgDir, fileName));
+sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+end
+
+function made = localScatterTrialMetric(ax, T, xVar, yVar, label, color)
+made = false;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+[x, xAvailable] = localResolvedTrialMetric(T, xVar);
+[y, yAvailable] = localResolvedTrialMetric(T, yVar);
+if ~(xAvailable && yAvailable)
+    return;
+end
+mask = isfinite(x) & isfinite(y);
+if strcmpi(char(string(yVar)), "BER") || strcmpi(char(string(yVar)), "BLER")
+    mask = mask & y > 0;
+end
+if strcmpi(char(string(xVar)), "BER") || strcmpi(char(string(xVar)), "BLER")
+    mask = mask & x > 0;
+end
+if ~any(mask)
+    return;
+end
+scatter(ax, x(mask), y(mask), 18, "o", ...
+    "MarkerFaceColor", color, "MarkerEdgeColor", color, ...
+    "DisplayName", char(label));
+made = true;
+end
+
+function [values, available] = localResolvedTrialMetric(T, varName)
+available = false;
+values = [];
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+token = string(varName);
+if ismember(token, string(T.Properties.VariableNames))
+    values = localCoerceNumericVector(T.(token));
+    available = numel(values) == height(T);
+    if ~available
+        values = [];
+    end
+    return;
+end
+
+switch lower(strtrim(token))
+    case {"derivedecno_db", "ecno_db", "effectiveecno_db"}
+        values = localDerivedEcNoMetric(T);
+        available = any(isfinite(values));
+    case {"derivedebno_db", "ebno_db", "effectiveebno_db"}
+        values = localDerivedEbNoMetric(T);
+        available = any(isfinite(values));
+    case {"derivedesn0_db", "esn0_db", "effectiveesn0_db"}
+        values = localDerivedEsNoMetric(T);
+        available = any(isfinite(values));
+end
+end
+
+function values = localDerivedEsNoMetric(T)
+values = localTrialMetricColumn(T, ["MeasuredTrialSINR_dB", "ReceiverHestSINR_dB", "MeasuredSINR_dB"], NaN);
+end
+
+function values = localDerivedEcNoMetric(T)
+sinr_dB = localDerivedEsNoMetric(T);
+qm = localTrialModulationOrder(T);
+layers = localTrialMetricColumn(T, ["Layers", "Rank"], 1);
+codedBitsPerSymbol = qm .* max(layers, 1);
+values = sinr_dB - 10 .* log10(max(codedBitsPerSymbol, eps));
+values(~(isfinite(sinr_dB) & isfinite(qm) & qm > 0 & isfinite(layers) & layers > 0)) = NaN;
+end
+
+function values = localDerivedEbNoMetric(T)
+sinr_dB = localDerivedEsNoMetric(T);
+qm = localTrialModulationOrder(T);
+layers = localTrialMetricColumn(T, ["Layers", "Rank"], 1);
+rate = localTrialMetricColumn(T, ["TargetCodeRate", "CQIDerivedTargetCodeRate"], NaN);
+infoBitsPerSymbol = qm .* max(layers, 1) .* rate;
+values = sinr_dB - 10 .* log10(max(infoBitsPerSymbol, eps));
+values(~(isfinite(sinr_dB) & isfinite(qm) & qm > 0 & isfinite(layers) & layers > 0 & isfinite(rate) & rate > 0)) = NaN;
+end
+
+function values = localTrialModulationOrder(T)
+modulation = strings(height(T), 1);
+names = string(T.Properties.VariableNames);
+if ismember("Modulation", names)
+    modulation = string(T.Modulation);
+elseif ismember("CQIDerivedModulation", names)
+    modulation = string(T.CQIDerivedModulation);
+end
+values = nan(height(T), 1);
+for i = 1:height(T)
+    values(i) = localModulationOrder(modulation(i));
+end
+end
+
+function value = localModulationOrder(modulation)
+token = upper(strtrim(char(string(modulation))));
+switch token
+    case "QPSK"
+        value = 2;
+    case "16QAM"
+        value = 4;
+    case "64QAM"
+        value = 6;
+    case "256QAM"
+        value = 8;
+    otherwise
+        value = NaN;
+end
+end
+
+function values = localTrialMetricColumn(T, varNames, defaultValue)
+n = height(T);
+values = repmat(double(defaultValue), n, 1);
+if ~(istable(T) && n > 0)
+    return;
+end
+vars = string(T.Properties.VariableNames);
+varNames = string(varNames);
+for i = 1:numel(varNames)
+    if ~ismember(varNames(i), vars)
+        continue;
+    end
+    candidate = localCoerceNumericVector(T.(varNames(i)));
+    if numel(candidate) ~= n
+        continue;
+    end
+    replaceMask = ~isfinite(values) & isfinite(candidate);
+    if ~any(replaceMask) && i == 1
+        values = candidate;
+    else
+        values(replaceMask) = candidate(replaceMask);
+    end
+end
 end
 
 function localPlotDiscreteSweepSeries(ax, x, y, color, displayName)
@@ -4130,8 +4443,8 @@ end
 
 function T = localBuildEqualizedConstellationTable(ctx)
 parts = { ...
-    localConstellationSlice(ctx.Tables.DLConstellation, "air_interface/csv/dl_constellation_samples.csv"), ...
-    localConstellationSlice(ctx.Tables.ULConstellation, "air_interface/csv/ul_constellation_samples.csv")};
+    localConstellationSlice(ctx.Tables.DLConstellation, string(sixgr.util.structGet(ctx, "TableSources.DLConstellation", "air_interface/csv/dl_constellation_samples.csv"))), ...
+    localConstellationSlice(ctx.Tables.ULConstellation, string(sixgr.util.structGet(ctx, "TableSources.ULConstellation", "air_interface/csv/ul_constellation_samples.csv")))};
 T = localVertcatTables(parts);
 if ~isempty(T)
     return;
@@ -4600,7 +4913,24 @@ out = nan(n, 1);
 if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
     return;
 end
-x = double(T.(varName));
+x = T.(varName);
+if iscell(x)
+    vals = nan(numel(x), 1);
+    for i = 1:numel(x)
+        try
+            vals(i) = double(x{i});
+        catch
+            vals(i) = str2double(string(x{i}));
+        end
+    end
+    x = vals;
+else
+    try
+        x = double(x);
+    catch
+        x = str2double(string(x));
+    end
+end
 out(1:min(numel(x), n)) = reshape(x(1:min(numel(x), n)), [], 1);
 end
 
@@ -5183,6 +5513,7 @@ if nargin < 10
     notes = "";
 end
 state = localNormalizeAvailabilityState(availability, source, notes);
+valueText = localResolveMetricValueText(valueNum, valueText);
 T = table( ...
     string(cat.code), string(cat.key), string(cat.name), ...
     string(metric.key), string(metric.label), ...
@@ -5196,6 +5527,18 @@ function T = localEmptyMetricTable()
 varNames = localMetricTableVarNames();
 varTypes = {'string','string','string','string','string','string','string','string','logical','double','string','string','string','string'};
 T = table('Size', [0 numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
+end
+
+function valueText = localResolveMetricValueText(valueNum, valueText)
+valueText = string(valueText);
+if strlength(strtrim(valueText)) > 0
+    return;
+end
+if isnumeric(valueNum) && isscalar(valueNum) && isfinite(double(valueNum))
+    valueText = strtrim(compose("%.15g", double(valueNum)));
+else
+    valueText = "";
+end
 end
 
 function names = localMetricTableVarNames()
@@ -5463,7 +5806,7 @@ end
 function tf = localShouldEmitAIAuditArtifacts(ctx)
 tf = localAIEnabled(ctx) || ...
     (istable(ctx.Tables.AIMetadata) && ~isempty(ctx.Tables.AIMetadata)) || ...
-    localConfigFlag(ctx, ["output.emit_disabled_audit_artifacts"], true);
+    localConfigFlag(ctx, ["output.emit_disabled_audit_artifacts"], false);
 end
 
 function tf = localShouldWriteCategoryFile(ctx, cat, Tcat)
@@ -5530,7 +5873,7 @@ end
 varNames = string(varNames);
 for i = 1:numel(varNames)
     if ismember(varNames(i), string(T.Properties.VariableNames))
-        x = double(T.(varNames(i)));
+        x = localCoerceNumericVector(T.(varNames(i)));
         if any(isfinite(x))
             tf = true;
             return;
@@ -5547,13 +5890,33 @@ end
 varNames = string(varName);
 for i = 1:numel(varNames)
     if ismember(varNames(i), string(T.Properties.VariableNames))
-        x = double(T.(varNames(i)));
+        x = localCoerceNumericVector(T.(varNames(i)));
         x = x(isfinite(x));
         if ~isempty(x)
             return;
         end
     end
 end
+end
+
+function x = localCoerceNumericVector(raw)
+if iscell(raw)
+    x = nan(numel(raw), 1);
+    for i = 1:numel(raw)
+        try
+            x(i) = double(raw{i});
+        catch
+            x(i) = str2double(string(raw{i}));
+        end
+    end
+    return;
+end
+try
+    x = double(raw);
+catch
+    x = str2double(string(raw));
+end
+x = reshape(x, [], 1);
 end
 
 function [x, label] = localFirstFiniteColumn(tables, varNames, labels)

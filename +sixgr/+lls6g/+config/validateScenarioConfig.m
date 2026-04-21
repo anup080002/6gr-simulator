@@ -230,9 +230,28 @@ end
 end
 
 function localValidateRunSlotControls(cfg, scsKHz, ctx)
-totalSlots = double(localOptionalStructValue(cfg, "run_control.total_slots", NaN));
-warmupSlots = double(localOptionalStructValue(cfg, "run_control.warmup_slots", NaN));
-measurementSlots = double(localOptionalStructValue(cfg, "run_control.measurement_slots", NaN));
+slotsPerFrame = NaN;
+if isfinite(scsKHz) && scsKHz > 0
+    slotsPerFrame = 10 * 2^round(log2(scsKHz / 15));
+end
+totalFrames = localOptionalFiniteScalarOrNaN(cfg, "run_control.total_frames");
+warmupFrames = localOptionalFiniteScalarOrNaN(cfg, "run_control.warmup_frames");
+measurementFrames = localOptionalFiniteScalarOrNaN(cfg, "run_control.measurement_frames");
+totalSlots = localOptionalFiniteScalarOrNaN(cfg, "run_control.total_slots");
+warmupSlots = localOptionalFiniteScalarOrNaN(cfg, "run_control.warmup_slots");
+measurementSlots = localOptionalFiniteScalarOrNaN(cfg, "run_control.measurement_slots");
+if isfinite(totalFrames) && abs(totalFrames - round(totalFrames)) > eps(max(abs(totalFrames), 1))
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.total_frames in %s must be an integer frame count.", localCtx(ctx));
+end
+if isfinite(warmupFrames) && abs(warmupFrames - round(warmupFrames)) > eps(max(abs(warmupFrames), 1))
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_frames in %s must be an integer frame count.", localCtx(ctx));
+end
+if isfinite(measurementFrames) && abs(measurementFrames - round(measurementFrames)) > eps(max(abs(measurementFrames), 1))
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.measurement_frames in %s must be an integer frame count.", localCtx(ctx));
+end
 if isfinite(totalSlots) && abs(totalSlots - round(totalSlots)) > eps(max(abs(totalSlots), 1))
     error("sixgr:lls6g:config:BadRunSlotControl", ...
         "run_control.total_slots in %s must be an integer slot count.", localCtx(ctx));
@@ -245,17 +264,55 @@ if isfinite(measurementSlots) && abs(measurementSlots - round(measurementSlots))
     error("sixgr:lls6g:config:BadRunSlotControl", ...
         "run_control.measurement_slots in %s must be an integer slot count.", localCtx(ctx));
 end
-if isfinite(totalSlots) && isfinite(warmupSlots) && isfinite(measurementSlots) && ...
-        round(warmupSlots) + round(measurementSlots) ~= round(totalSlots)
+if isfinite(totalFrames) && totalFrames < 1
     error("sixgr:lls6g:config:BadRunSlotControl", ...
-        "run_control.warmup_slots + run_control.measurement_slots must equal run_control.total_slots in %s.", ...
+        "run_control.total_frames in %s must be at least 1.", localCtx(ctx));
+end
+if isfinite(totalFrames) && isfinite(warmupFrames) && round(warmupFrames) > round(totalFrames)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_frames cannot exceed run_control.total_frames in %s.", ...
         localCtx(ctx));
+end
+if isfinite(totalFrames) && isfinite(warmupFrames) && isfinite(measurementFrames) && ...
+        round(warmupFrames) + round(measurementFrames) > round(totalFrames)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_frames + run_control.measurement_frames cannot exceed run_control.total_frames in %s.", ...
+        localCtx(ctx));
+end
+if isfinite(totalSlots) && isfinite(warmupSlots) && round(warmupSlots) > round(totalSlots)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_slots cannot exceed run_control.total_slots in %s.", ...
+        localCtx(ctx));
+end
+if isfinite(totalSlots) && isfinite(warmupSlots) && isfinite(measurementSlots) && ...
+        round(warmupSlots) + round(measurementSlots) > round(totalSlots)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_slots + run_control.measurement_slots cannot exceed run_control.total_slots in %s.", ...
+        localCtx(ctx));
+end
+if isfinite(totalFrames) && isfinite(totalSlots) && isfinite(slotsPerFrame) && ...
+        round(totalSlots) ~= round(totalFrames) * round(slotsPerFrame)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.total_frames=%g in %s conflicts with total_slots=%g for frame.scs_khz=%g (expected total_slots=%g).", ...
+        totalFrames, localCtx(ctx), totalSlots, scsKHz, round(totalFrames) * round(slotsPerFrame));
+end
+if isfinite(warmupFrames) && isfinite(warmupSlots) && isfinite(slotsPerFrame) && ...
+        round(warmupSlots) ~= round(warmupFrames) * round(slotsPerFrame)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.warmup_frames=%g in %s conflicts with warmup_slots=%g for frame.scs_khz=%g (expected warmup_slots=%g).", ...
+        warmupFrames, localCtx(ctx), warmupSlots, scsKHz, round(warmupFrames) * round(slotsPerFrame));
+end
+if isfinite(measurementFrames) && isfinite(measurementSlots) && isfinite(slotsPerFrame) && ...
+        round(measurementSlots) ~= round(measurementFrames) * round(slotsPerFrame)
+    error("sixgr:lls6g:config:BadRunSlotControl", ...
+        "run_control.measurement_frames=%g in %s conflicts with measurement_slots=%g for frame.scs_khz=%g (expected measurement_slots=%g).", ...
+        measurementFrames, localCtx(ctx), measurementSlots, scsKHz, round(measurementFrames) * round(slotsPerFrame));
 end
 if ~(isfinite(totalSlots) && isfinite(scsKHz))
     return;
 end
 slotDurationMs = 1 / 2^round(log2(scsKHz / 15));
-configuredTotalMs = double(localOptionalStructValue(cfg, "run_control.total_time_ms", NaN));
+configuredTotalMs = localOptionalFiniteScalarOrNaN(cfg, "run_control.total_time_ms");
 if isfinite(configuredTotalMs) && abs(configuredTotalMs - totalSlots * slotDurationMs) > 1e-9
     error("sixgr:lls6g:config:BadRunSlotControl", ...
         "run_control.total_time_ms=%g in %s conflicts with total_slots=%g and frame.scs_khz=%g (expected %.12g ms).", ...
@@ -439,6 +496,7 @@ if ~(isfinite(minDetectionTrials) && minDetectionTrials >= 1 && ...
     error("sixgr:lls6g:config:BadPrachMinTrials", ...
         "random_access.min_detection_trials in %s must be a positive integer.", localCtx(ctx));
 end
+localValidateRandomAccessCompatibility(cfg, ctx);
 
 shadowFadingStd_dB = double(cfg.channels.shadow_fading_std_db);
 if ~(isfinite(shadowFadingStd_dB) && shadowFadingStd_dB >= 0)
@@ -678,6 +736,18 @@ function value = localOptionalStructValue(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
 end
 
+function value = localOptionalFiniteScalarOrNaN(s, path)
+raw = localOptionalStructValue(s, path, NaN);
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw)) || ~isscalar(raw)
+    value = NaN;
+    return;
+end
+value = double(raw);
+if ~isfinite(value)
+    value = NaN;
+end
+end
+
 function localValidateStructRules(secStruct, ruleStruct, secName, ctx, catalog, allowPartial)
 fieldNames = string(fieldnames(ruleStruct));
 for i = 1:numel(fieldNames)
@@ -690,6 +760,14 @@ end
 end
 
 function localValidateRuleValue(value, rule, fieldPath, ctx, catalog, allowPartial)
+if localIsExplicitUnset(value, rule)
+    if isfield(rule, "required") && logical(rule.required)
+        error("sixgr:lls6g:config:MissingValue", ...
+            "%s in %s cannot be explicitly unset.", fieldPath, localCtx(ctx));
+    end
+    return;
+end
+
 if isfield(rule, "type")
     localValidateRuleType(value, string(rule.type), fieldPath, ctx);
 end
@@ -774,6 +852,21 @@ if strcmpi(string(rule.type), "struct_array") && isfield(rule, "item_nested_rule
         localValidateStructRules(value(idx), nestedRule.parameters, elemPath, ctx, catalog, allowPartial);
     end
 end
+end
+
+function tf = localIsExplicitUnset(value, rule)
+if ~isempty(value)
+    tf = false;
+    return;
+end
+
+typeName = lower(string(sixgr.util.structGet(rule, "type", "")));
+if any(typeName == ["string_list","number_list","struct_array"])
+    tf = false;
+    return;
+end
+
+tf = ~(ischar(value) || isstring(value) || iscell(value) || builtin("isstruct", value) || istable(value));
 end
 
 function localValidateRuleType(value, typeName, fieldPath, ctx)
@@ -1037,4 +1130,93 @@ end
 function tf = localIsUnsetPolicy(value)
 txt = lower(strtrim(string(value)));
 tf = strlength(txt) == 0 || any(txt == ["none", "disabled", "unspecified", "false", "off"]);
+end
+
+function localValidateRandomAccessCompatibility(cfg, ctx)
+prachFormat = upper(strtrim(string(localOptionalStructValue(cfg, "random_access.prach_format", ""))));
+preambleLengthMode = lower(strtrim(string(localOptionalStructValue(cfg, "random_access.preamble_length_mode", ""))));
+configurationIndex = double(localOptionalStructValue(cfg, "random_access.configuration_index", NaN));
+subcarrierSpacing = double(localOptionalStructValue(cfg, "random_access.subcarrier_spacing_khz", NaN));
+if strlength(prachFormat) == 0 || ~isfinite(configurationIndex) || ~isfinite(subcarrierSpacing)
+    return;
+end
+shortFormats = ["A1", "A2", "A3", "B1", "B4", "C0", "C2"];
+expectedLengthMode = "long";
+if any(prachFormat == shortFormats)
+    expectedLengthMode = "short";
+end
+if strlength(preambleLengthMode) > 0 && preambleLengthMode ~= expectedLengthMode
+    error("sixgr:lls6g:config:BadPrachLengthMode", ...
+        "random_access.prach_format=%s in %s requires preamble_length_mode=%s, but the scenario resolves to %s.", ...
+        prachFormat, localCtx(ctx), expectedLengthMode, preambleLengthMode);
+end
+if ~(exist("nrPRACHConfig", "class") == 8 || exist("nrPRACHConfig", "file") == 2)
+    return;
+end
+try
+    prach = nrPRACHConfig;
+    duplexMode = upper(strtrim(string(localOptionalStructValue(cfg, "carrier.duplex_mode", "TDD"))));
+    if duplexMode == "FDD"
+        prach.DuplexMode = "FDD";
+    else
+        prach.DuplexMode = "TDD";
+    end
+    centerFrequencyHz = double(localOptionalStructValue(cfg, "carrier.center_frequency_hz", 4e9));
+    if isfinite(centerFrequencyHz) && centerFrequencyHz >= 24.25e9
+        prach.FrequencyRange = "FR2";
+    else
+        prach.FrequencyRange = "FR1";
+    end
+    prach.SubcarrierSpacing = double(subcarrierSpacing);
+    prach.ConfigurationIndex = double(configurationIndex);
+catch ME
+    error("sixgr:lls6g:config:BadPrachConfigCompatibility", ...
+        "random_access configuration in %s is not toolbox-compatible for configuration_index=%g and subcarrier_spacing_khz=%g: %s", ...
+        localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(ME.message));
+end
+carrierScs = double(localOptionalStructValue(cfg, "carrier.subcarrier_spacing_khz", subcarrierSpacing));
+nRb = double(localOptionalStructValue(cfg, "carrier.n_rb", localOptionalStructValue(cfg, "phy.carrier.NSizeGrid", 273)));
+scanSlots = round(double(localOptionalStructValue(cfg, "run_control.total_slots", localOptionalStructValue(cfg, "simulation.n_slots", 40))));
+scanSlots = max(40, scanSlots);
+[activeSlot, effectiveFormat] = localFindMaterializedPrachOccasion(prach, carrierScs, nRb, scanSlots);
+if ~isfinite(activeSlot)
+    error("sixgr:lls6g:config:NoMaterializedPrachOccasion", ...
+        "random_access configuration in %s does not materialize a PRACH waveform occasion within the first %g slots for configuration_index=%g and subcarrier_spacing_khz=%g.", ...
+        localCtx(ctx), double(scanSlots), double(configurationIndex), double(subcarrierSpacing));
+end
+if strlength(effectiveFormat) > 0 && effectiveFormat ~= prachFormat
+    error("sixgr:lls6g:config:BadPrachFormatMapping", ...
+        "random_access configuration in %s requests prach_format=%s, but configuration_index=%g with subcarrier_spacing_khz=%g resolves to %s in nrPRACHConfig.", ...
+        localCtx(ctx), prachFormat, double(configurationIndex), double(subcarrierSpacing), effectiveFormat);
+end
+end
+
+function [activeSlot, effectiveFormat] = localFindMaterializedPrachOccasion(prach, carrierScs, nRb, scanSlots)
+activeSlot = NaN;
+effectiveFormat = upper(strtrim(string(prach.Format)));
+try
+    carrier = nrCarrierConfig;
+    carrier.SubcarrierSpacing = double(carrierScs);
+    carrier.NSizeGrid = double(nRb);
+catch
+    return;
+end
+for slotCandidate = 0:max(0, round(double(scanSlots)) - 1)
+    try
+        carrier.NSlot = double(slotCandidate);
+        prach.NPRACHSlot = double(slotCandidate);
+        prachSym = nrPRACH(carrier, prach);
+        if isempty(prachSym)
+            continue;
+        end
+        prachInd = nrPRACHIndices(carrier, prach);
+        if isempty(prachInd)
+            continue;
+        end
+        activeSlot = double(slotCandidate);
+        effectiveFormat = upper(strtrim(string(prach.Format)));
+        return;
+    catch
+    end
+end
 end

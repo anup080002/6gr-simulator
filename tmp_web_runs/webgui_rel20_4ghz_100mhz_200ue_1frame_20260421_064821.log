@@ -1,0 +1,48 @@
+[2026-04-21T01:18:52Z] INFO Preparing LLS run: scenario=lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame runTag=webgui_rel20_4ghz_100mhz_200ue_1frame_20260421_064821 runFolder=C:\Users\Administrator\AppData\Local\Temp\2\sixgr_mysql_web_runs\lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame\webgui_rel20_4ghz_100mhz_200ue_1frame_20260421_064821
+[2026-04-21T01:18:54Z] INFO Artifact store active=1 backend=mysql_web schema=sixgr_results
+[2026-04-21T01:18:54Z] INFO Writing resolved snapshots.
+[2026-04-21T01:18:55Z] INFO Exporting live geometry artifacts.
+[2026-04-21T01:18:56Z] INFO Executing runner profile=waveform_bundle.
+[2026-04-21T01:18:56Z] INFO Waveform bundle starting: snr=12.000 dB sweepPoints=1 canonicalSlots=20 monteCarlo=1 slotDuration_s=0.000500
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=1
+[2026-04-21T01:19:04Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=1/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T01:25:43Z] INFO Coupled control gating complete: slot=1 frame=1 pbch_attempts=200 prach_attempts=0 srs_attempts=0 trs_attempts=21 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T01:25:49Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T01:25:56Z] INFO Coupled DL schedule complete: sweep=1/1 slot=1/20 active=0 granted=0 grants=0.
+[2026-04-21T01:25:56Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=1/20 executable_grants=0.
+[2026-04-21T01:25:56Z] INFO Preparing coupled DL batches: sweep=1/1 slot=1/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:25:56Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=2/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T01:25:58Z] INFO Coupled control gating complete: slot=2 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T01:26:03Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T01:26:09Z] INFO Coupled DL schedule complete: sweep=1/1 slot=2/20 active=0 granted=0 grants=0.
+[2026-04-21T01:26:09Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=2/20 executable_grants=0.
+[2026-04-21T01:26:09Z] INFO Preparing coupled DL batches: sweep=1/1 slot=2/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:26:09Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=3/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T01:26:12Z] INFO Coupled control gating complete: slot=3 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T01:26:17Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T01:26:23Z] INFO Coupled DL schedule complete: sweep=1/1 slot=3/20 active=0 granted=0 grants=0.
+[2026-04-21T01:26:23Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=3/20 executable_grants=0.
+[2026-04-21T01:26:23Z] INFO Preparing coupled DL batches: sweep=1/1 slot=3/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:26:23Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=4/20 duplex=S allow_dl=1 allow_ul=1.
+[2026-04-21T01:26:26Z] INFO Coupled control gating complete: slot=4 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T01:26:31Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T01:26:37Z] INFO Coupled DL schedule complete: sweep=1/1 slot=4/20 active=0 granted=0 grants=0.
+[2026-04-21T01:26:37Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=4/20 executable_grants=0.
+[2026-04-21T01:26:37Z] INFO Preparing coupled DL batches: sweep=1/1 slot=4/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:26:43Z] INFO Coupled UL schedule complete: sweep=1/1 slot=4/20 active=0 granted=0 grants=0.
+[2026-04-21T01:26:43Z] INFO Coupled UL PDCCH qualification complete: sweep=1/1 slot=4/20 executable_grants=0.
+[2026-04-21T01:26:43Z] INFO Preparing coupled UL batches: sweep=1/1 slot=4/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:26:44Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=5/20 duplex=UL allow_dl=0 allow_ul=1.
+[2026-04-21T01:26:52Z] INFO Coupled control gating complete: slot=5 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=21 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T01:26:57Z] INFO UL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T01:27:03Z] INFO Coupled UL schedule complete: sweep=1/1 slot=5/20 active=0 granted=0 grants=0.
+[2026-04-21T01:27:03Z] INFO Coupled UL PDCCH qualification complete: sweep=1/1 slot=5/20 executable_grants=0.
+[2026-04-21T01:27:03Z] INFO Preparing coupled UL batches: sweep=1/1 slot=5/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:27:03Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=6/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T01:27:06Z] INFO Coupled control gating complete: slot=6 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T01:27:10Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T01:27:17Z] INFO Coupled DL schedule complete: sweep=1/1 slot=6/20 active=0 granted=0 grants=0.
+[2026-04-21T01:27:17Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=6/20 executable_grants=0.
+[2026-04-21T01:27:17Z] INFO Preparing coupled DL batches: sweep=1/1 slot=6/20 candidate_grants=0 batch_size=32.
+[2026-04-21T01:27:17Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=7/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T01:27:48Z] INFO Coupled control gating complete: slot=7 frame=1 pbch_attempts=0 prach_attempts=200 srs_attempts=0 trs_attempts=0 acquired=200/200 access=200/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.

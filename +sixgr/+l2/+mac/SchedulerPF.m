@@ -346,8 +346,8 @@ end
 end
 
 function cqi = localUECQI(ue)
-cqi = double(sixgr.util.structGet(ue, "CQI", 0));
-cqi = max(0, min(15, round(cqi)));
+cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
+    sixgr.util.structGet(ue, "CQI", NaN), 0);
 end
 
 function mcs = localCQIToMCS(cqi)

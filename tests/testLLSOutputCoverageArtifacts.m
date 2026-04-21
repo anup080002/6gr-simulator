@@ -32,6 +32,10 @@ cfg.channel.spatialConsistencyEnable = true;
 cfg.channel.updatePeriod_ms = 1;
 
 out = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
+assert(isfield(out, "TableSummaries") && istable(out.TableSummaries) && height(out.TableSummaries) > 0, ...
+    "Output-coverage exporter must return compact table summaries for MAT-safe post-run packaging.");
+assert(isfield(out, "Tables") && isempty(fieldnames(out.Tables)), ...
+    "Output-coverage exporter must not retain full runtime tables in its returned struct once canonical CSV artifacts have been written.");
 
 registryPath = fullfile(layout.ReportCSVDir, "output_coverage_registry.csv");
 unavailablePath = fullfile(layout.ReportCSVDir, "honest_unavailable_registry.csv");

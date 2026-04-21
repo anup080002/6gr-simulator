@@ -24,7 +24,7 @@ def main() -> None:
             "ReceiverHestWidebandSINR_dB": "31.2",
             "DecoderTruthProxyWidebandSINR_dB": "8.4",
             "LargeScaleWidebandSINR_dB": "12.1",
-            "WidebandSINRSource": "receiver_hest_csi_feedback_wideband_effective_sinr",
+            "WidebandSINRSource": "receiver_hest_reference_signal_measurement",
             "WidebandSINRValueRole": "estimated",
             "WidebandCQI": "10",
         }
@@ -93,7 +93,7 @@ def main() -> None:
         runtime_context = dash.extract_runtime_context(run_row, artifacts)
         notes = " ".join(runtime_context["notes"])
         assert "not a decoder-truth SINR measurement" in notes
-        assert "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate" in notes
+        assert "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate from Hest and reference-signal residual measurement." in notes
     finally:
         dash.load_small_csv_rows = orig_load_small
         dash.load_first_available_csv_rows = orig_load_first

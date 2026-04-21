@@ -10,10 +10,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     schema_path = REPO_ROOT / "configs" / "schema" / "lls_3gpp_full_config.schema.json"
     payload = json.loads(schema_path.read_text(encoding="utf-8"))
+    assert payload["properties"]["meta"]["properties"]["scenario_id"]["const"] == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    assert payload["properties"]["meta"]["properties"]["scenario_group"]["const"] == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
+    assert payload["properties"]["scenario"]["properties"]["name"]["const"] == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     assert payload["properties"]["scenario"]["properties"]["honesty_mode"]["const"] == "strict"
     assert payload["properties"]["run_control"]["properties"]["mode"]["const"] == "long_run"
-    assert payload["properties"]["run_control"]["properties"]["total_slots"]["const"] == 4000
-    assert payload["properties"]["run_control"]["properties"]["measurement_slots"]["const"] == 3500
+    assert payload["properties"]["run_control"]["properties"]["total_frames"]["const"] == 1
+    assert payload["properties"]["run_control"]["properties"]["warmup_frames"]["const"] is None
+    assert payload["properties"]["run_control"]["properties"]["measurement_frames"]["const"] is None
+    assert payload["properties"]["run_control"]["properties"]["total_slots"]["const"] == 20
+    assert payload["properties"]["run_control"]["properties"]["warmup_slots"]["const"] == 10
+    assert payload["properties"]["run_control"]["properties"]["measurement_slots"]["const"] == 1
     assert payload["properties"]["seeds"]["properties"]["global_seed"]["const"] == 104729
     assert payload["properties"]["seeds"]["properties"]["ue_placement_seed"]["const"] == 104760
     assert payload["properties"]["frequency"]["properties"]["center_frequency_hz"]["const"] == 4_000_000_000

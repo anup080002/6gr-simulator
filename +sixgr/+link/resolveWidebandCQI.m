@@ -3,9 +3,18 @@ function feedback = resolveWidebandCQI(sinrInput, cfg, direction)
 %
 % This helper is structured so callers can pass the same wideband SINR used
 % by the simulator today, while allowing a future per-RB SINR array to slot
-% into the same API without redesigning the feedback contract. The wideband
-% fallback applies a configurable implementation margin because a single
-% effective SINR is less informative than standards-style per-RB feedback.
+% into the same API without redesigning the feedback contract.
+%
+% Important honesty note:
+% 3GPP TS 38.214 specifies the CQI and MCS tables, but not a single
+% normative SINR-to-CQI threshold table. This helper therefore keeps the
+% threshold-table path as the default lab baseline and exposes the
+% effective-SINR plus 10% BLER operating-point LUT path only when it is
+% explicitly requested in config:
+%   per-RB SINR -> effective SINR (EESM/MIESM lab default) ->
+%   CQI operating-point BLER estimate -> highest CQI meeting target BLER.
+% This avoids silently changing canonical scenario behavior to an
+% uncalibrated BLER-LUT mode just because per-RB SINR samples are present.
 
 if nargin < 2 || isempty(cfg)
     cfg = struct();
@@ -21,21 +30,64 @@ if ~isfinite(margin_dB)
 end
 
 [widebandSINR_dB, perRBSINR_dB] = localExtractSINRInputs(sinrInput);
-widebandSE = localSINRToSpectralEfficiency(widebandSINR_dB - margin_dB);
-perRBSE = localSINRToSpectralEfficiency(perRBSINR_dB - margin_dB);
+modeToken = localResolveCQIMode(cfg, direction, ~isempty(perRBSINR_dB));
+[thresholds_dB, thresholdSource, thresholdRole] = localResolveCQIThresholds(cfg, direction, tableToken);
+targetBLER = localResolveTargetBLER(cfg, direction);
+
+widebandEffectiveSINR_dB = double(widebandSINR_dB - margin_dB);
+perRBEffectiveSINR_dB = double(perRBSINR_dB - margin_dB);
+selectionSINR_dB = double(widebandEffectiveSINR_dB);
+effectiveSINRMethod = "wideband_direct";
+effectiveSINRBeta_dB = NaN;
+if modeToken == "effective_sinr_bler_lut"
+    [selectionSINR_dB, effectiveSINRMethod, effectiveSINRBeta_dB] = ...
+        localComputeEffectiveSINR(perRBEffectiveSINR_dB, widebandEffectiveSINR_dB, cfg, direction);
+end
+widebandSE = localSINRToSpectralEfficiency(selectionSINR_dB);
+perRBSE = localSINRToSpectralEfficiency(perRBEffectiveSINR_dB);
+predictedBLER = nan(15, 1);
+operatingPoint_dB = nan(15, 1);
+blerCurveSlope_dB = NaN;
+
+if modeToken == "effective_sinr_bler_lut"
+    [widebandCQI, predictedBLER, operatingPoint_dB, blerCurveSlope_dB] = ...
+        localSelectCQIByBLER(selectionSINR_dB, cfg, direction, tableToken, thresholds_dB, targetBLER);
+    perRBCQI = double(localSelectCQIByThresholds(perRBEffectiveSINR_dB, operatingPoint_dB));
+    feedbackMode = "effective_sinr_bler_target_lut";
+elseif modeToken == "threshold_table" && ~isempty(thresholds_dB)
+    widebandCQI = double(localSelectCQIByThresholds(widebandEffectiveSINR_dB, thresholds_dB));
+    perRBCQI = double(localSelectCQIByThresholds(perRBEffectiveSINR_dB, thresholds_dB));
+    feedbackMode = "sinr_threshold_table";
+else
+    widebandCQI = double(localSelectCQIBySE(widebandSE, tableToken));
+    perRBCQI = double(localSelectCQIBySE(perRBSE, tableToken));
+    thresholdSource = "";
+    thresholdRole = "";
+    feedbackMode = "wideband_same_sinr_model";
+end
 
 feedback = struct( ...
-    "Mode", "wideband_same_sinr_model", ...
+    "Mode", char(feedbackMode), ...
     "Table", char(tableToken), ...
     "AppliedSINRMargin_dB", double(margin_dB), ...
     "WidebandSINR_dB", double(widebandSINR_dB), ...
-    "WidebandEffectiveSINR_dB", double(widebandSINR_dB - margin_dB), ...
+    "WidebandEffectiveSINR_dB", double(widebandEffectiveSINR_dB), ...
+    "EffectiveSINR_dB", double(selectionSINR_dB), ...
+    "EffectiveSINRMethod", char(string(effectiveSINRMethod)), ...
+    "EffectiveSINRBeta_dB", double(effectiveSINRBeta_dB), ...
     "WidebandSpectralEfficiency", double(widebandSE), ...
-    "WidebandCQI", double(localSelectCQIBySE(widebandSE, tableToken)), ...
+    "WidebandCQI", double(widebandCQI), ...
     "PerRBSINR_dB", double(perRBSINR_dB), ...
-    "PerRBEffectiveSINR_dB", double(perRBSINR_dB - margin_dB), ...
+    "PerRBEffectiveSINR_dB", double(perRBEffectiveSINR_dB), ...
     "PerRBSpectralEfficiency", double(perRBSE), ...
-    "PerRBCQI", double(localSelectCQIBySE(perRBSE, tableToken)));
+    "PerRBCQI", double(perRBCQI), ...
+    "TargetBLER", double(targetBLER), ...
+    "PredictedBLERByCQI", double(predictedBLER), ...
+    "CQIOperatingPointSINR_dB", double(operatingPoint_dB), ...
+    "BLERCurveSlope_dB", double(blerCurveSlope_dB), ...
+    "ThresholdSource", char(string(thresholdSource)), ...
+    "ThresholdValueRole", char(string(thresholdRole)), ...
+    "SINRThresholds_dB", double(thresholds_dB));
 end
 
 function [widebandSINR_dB, perRBSINR_dB] = localExtractSINRInputs(sinrInput)
@@ -97,6 +149,317 @@ for i = 1:numel(cqi)
 end
 end
 
+function cqi = localSelectCQIByThresholds(sinr_dB, thresholds_dB)
+cqi = zeros(size(sinr_dB));
+if isempty(thresholds_dB)
+    return;
+end
+thresholds_dB = double(thresholds_dB(:).');
+for i = 1:numel(cqi)
+    value = double(sinr_dB(i));
+    if ~(isfinite(value))
+        cqi(i) = 0;
+        continue;
+    end
+    idx = find(value >= thresholds_dB, 1, "last");
+    if isempty(idx)
+        cqi(i) = 0;
+    else
+        cqi(i) = min(15, max(0, round(double(idx))));
+    end
+end
+end
+
 function tableToken = localResolveCQITable(cfg, direction)
 tableToken = char(sixgr.link.resolveConfiguredCQITable(cfg, direction));
+end
+
+function modeToken = localResolveCQIMode(cfg, direction, hasPerRB)
+if nargin < 2 || isempty(direction)
+    direction = "DL";
+end
+if nargin < 3
+    hasPerRB = false;
+end
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.sinrToCQIMode"
+        "phy.csi.ulSINRToCQIMode"
+        "phy.csi.sinrToCQIMode"];
+else
+    candidates = [ ...
+        "phy.pdsch.sinrToCQIMode"
+        "phy.csi.dlSINRToCQIMode"
+        "phy.csi.sinrToCQIMode"];
+end
+raw = "";
+for i = 1:numel(candidates)
+    raw = string(sixgr.util.structGet(cfg, candidates(i), ""));
+    if strlength(strtrim(raw)) > 0
+        break;
+    end
+end
+raw = lower(strtrim(raw));
+switch raw
+    case {""}
+        modeToken = "threshold_table";
+    case {"threshold_table", "thresholds", "lab_default_threshold_table", "sinr_threshold_table"}
+        modeToken = "threshold_table";
+    case {"effective_sinr_bler_lut", "eesm_bler_lut", "miesm_bler_lut", "effective_sinr"}
+        modeToken = "effective_sinr_bler_lut";
+    case {"spectral_efficiency", "shannon_proxy", "wideband_same_sinr_model"}
+        modeToken = "spectral_efficiency";
+    otherwise
+        modeToken = "threshold_table";
+end
+end
+
+function targetBLER = localResolveTargetBLER(cfg, direction)
+if nargin < 2 || isempty(direction)
+    direction = "DL";
+end
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.targetBLER"
+        "phy.csi.ulTargetBLER"
+        "phy.csi.targetBLER"];
+else
+    candidates = [ ...
+        "phy.pdsch.targetBLER"
+        "phy.csi.dlTargetBLER"
+        "phy.csi.targetBLER"];
+end
+targetBLER = NaN;
+for i = 1:numel(candidates)
+    value = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+    if isfinite(value) && value > 0 && value < 1
+        targetBLER = value;
+        break;
+    end
+end
+if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
+    targetBLER = 0.1;
+end
+end
+
+function [effectiveSINR_dB, methodToken, beta_dB] = localComputeEffectiveSINR(perRBSINR_dB, widebandSINR_dB, cfg, direction)
+effectiveSINR_dB = double(widebandSINR_dB);
+methodToken = "wideband_direct";
+beta_dB = NaN;
+perRB = double(perRBSINR_dB(:));
+perRB = perRB(isfinite(perRB));
+if isempty(perRB)
+    return;
+end
+rawMethod = "";
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.effectiveSINRMethod"
+        "phy.csi.ulEffectiveSINRMethod"
+        "phy.csi.effectiveSINRMethod"];
+else
+    candidates = [ ...
+        "phy.pdsch.effectiveSINRMethod"
+        "phy.csi.dlEffectiveSINRMethod"
+        "phy.csi.effectiveSINRMethod"];
+end
+for i = 1:numel(candidates)
+    rawMethod = string(sixgr.util.structGet(cfg, candidates(i), ""));
+    if strlength(strtrim(rawMethod)) > 0
+        break;
+    end
+end
+rawMethod = lower(strtrim(rawMethod));
+if rawMethod == ""
+    rawMethod = "eesm";
+end
+switch rawMethod
+    case {"miesm", "mi", "mutual_information"}
+        methodToken = "miesm_shannon_lab_default";
+        sinrLin = 10 .^ (perRB / 10);
+        mi = log2(1 + max(sinrLin, 0));
+        avgMi = mean(mi, "omitnan");
+        if isfinite(avgMi)
+            effectiveSINR_dB = 10 * log10(max(2.^avgMi - 1, eps));
+        end
+    otherwise
+        methodToken = "eesm";
+        beta_dB = localResolveEESMBeta(cfg, direction);
+        betaLin = 10^(beta_dB / 10);
+        sinrLin = 10 .^ (perRB / 10);
+        effectiveLin = -betaLin * log(mean(exp(-sinrLin ./ max(betaLin, eps)), "omitnan"));
+        if isfinite(effectiveLin) && effectiveLin > 0
+            effectiveSINR_dB = 10 * log10(max(effectiveLin, eps));
+        end
+end
+end
+
+function beta_dB = localResolveEESMBeta(cfg, direction)
+beta_dB = NaN;
+if nargin < 2 || isempty(direction)
+    direction = "DL";
+end
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.eesmBeta_dB"
+        "phy.csi.ulEESMBeta_dB"
+        "phy.csi.eesmBeta_dB"];
+else
+    candidates = [ ...
+        "phy.pdsch.eesmBeta_dB"
+        "phy.csi.dlEESMBeta_dB"
+        "phy.csi.eesmBeta_dB"];
+end
+for i = 1:numel(candidates)
+    value = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+    if isfinite(value)
+        beta_dB = value;
+        break;
+    end
+end
+if ~(isfinite(beta_dB) && beta_dB > 0)
+    beta_dB = 1.5;
+end
+end
+
+function [selectedCQI, predictedBLER, operatingPoint_dB, slope_dB] = localSelectCQIByBLER(effectiveSINR_dB, cfg, direction, tableToken, thresholds_dB, targetBLER)
+predictedBLER = nan(15, 1);
+operatingPoint_dB = double(thresholds_dB(:));
+if numel(operatingPoint_dB) ~= 15
+    operatingPoint_dB = double(localDefaultCQIThresholds(tableToken));
+    operatingPoint_dB = operatingPoint_dB(:);
+end
+slope_dB = localResolveBLERSlope(cfg, direction);
+selectedCQI = 0;
+if ~(isfinite(effectiveSINR_dB))
+    return;
+end
+for idx = 1:min(15, numel(operatingPoint_dB))
+    predictedBLER(idx) = localPredictBLER(effectiveSINR_dB, operatingPoint_dB(idx), targetBLER, slope_dB);
+    if isfinite(predictedBLER(idx)) && predictedBLER(idx) <= targetBLER + 1e-12
+        selectedCQI = idx;
+    end
+end
+end
+
+function slope_dB = localResolveBLERSlope(cfg, direction)
+slope_dB = NaN;
+if nargin < 2 || isempty(direction)
+    direction = "DL";
+end
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.blerCurveSlope_dB"
+        "phy.csi.ulBLERCurveSlope_dB"
+        "phy.csi.blerCurveSlope_dB"];
+else
+    candidates = [ ...
+        "phy.pdsch.blerCurveSlope_dB"
+        "phy.csi.dlBLERCurveSlope_dB"
+        "phy.csi.blerCurveSlope_dB"];
+end
+for i = 1:numel(candidates)
+    value = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+    if isfinite(value)
+        slope_dB = value;
+        break;
+    end
+end
+if ~(isfinite(slope_dB) && slope_dB > 0)
+    slope_dB = 1.5;
+end
+end
+
+function bler = localPredictBLER(effectiveSINR_dB, operatingPoint_dB, targetBLER, slope_dB)
+bler = NaN;
+if ~(isfinite(effectiveSINR_dB) && isfinite(operatingPoint_dB) && isfinite(targetBLER) && targetBLER > 0)
+    return;
+end
+delta = double(effectiveSINR_dB) - double(operatingPoint_dB);
+ratio = targetBLER .* 10.^(-delta ./ max(double(slope_dB), eps));
+bler = min(1, max(1e-6, ratio));
+end
+
+function [thresholds_dB, sourceToken, valueRole] = localResolveCQIThresholds(cfg, direction, tableToken)
+thresholds_dB = [];
+sourceToken = "";
+valueRole = "";
+if nargin < 2 || isempty(direction)
+    direction = "DL";
+end
+dir = upper(string(direction));
+tableToken = lower(strtrim(string(tableToken)));
+tableField = tableToken + "Thresholds_dB";
+if dir == "UL"
+    candidatePaths = [ ...
+        "phy.pusch." + tableField
+        "phy.csi.ul." + tableField
+        "phy.csi.ulCQIThresholds_dB"
+        "phy.csi." + tableField
+        "phy.csi.cqiThresholds_dB"];
+else
+    candidatePaths = [ ...
+        "phy.pdsch." + tableField
+        "phy.csi.dl." + tableField
+        "phy.csi.dlCQIThresholds_dB"
+        "phy.csi." + tableField
+        "phy.csi.cqiThresholds_dB"];
+end
+for i = 1:numel(candidatePaths)
+    raw = sixgr.util.structGet(cfg, candidatePaths(i), []);
+    vals = localThresholdVector(raw);
+    if ~isempty(vals)
+        thresholds_dB = vals;
+        sourceToken = candidatePaths(i);
+        valueRole = "configured_lab_default_override";
+        return;
+    end
+end
+thresholds_dB = localDefaultCQIThresholds(tableToken);
+if isempty(thresholds_dB)
+    return;
+end
+sourceToken = "resolveWidebandCQI.lab_default_threshold_table";
+valueRole = "lab_default";
+end
+
+function vals = localThresholdVector(raw)
+vals = [];
+if isempty(raw)
+    return;
+end
+try
+    vals = double(raw(:).');
+catch
+    vals = [];
+    return;
+end
+vals = vals(isfinite(vals));
+if numel(vals) ~= 15
+    vals = [];
+    return;
+end
+if any(diff(vals) < 0)
+    vals = [];
+end
+end
+
+function thresholds_dB = localDefaultCQIThresholds(tableToken)
+switch lower(strtrim(string(tableToken)))
+    case "table1"
+        thresholds_dB = [ ...
+            -5.90 -4.78 -2.87 -1.02 1.00 3.05 5.08 7.25 9.46 11.81 ...
+            14.34 16.52 18.88 21.47 23.84];
+    case "table2"
+        thresholds_dB = [ ...
+            -5.90 -3.10 -0.40 2.05 4.35 6.64 8.91 11.31 13.79 16.07 ...
+            18.45 20.77 22.98 25.07 27.20];
+    otherwise
+        thresholds_dB = [];
+end
 end

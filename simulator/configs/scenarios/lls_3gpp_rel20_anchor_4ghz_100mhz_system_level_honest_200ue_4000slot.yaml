@@ -1,0 +1,43 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot
+  description: Honest browser-default NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 4000 slots using the system-level waveform-backed replay path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot
+  scenario_name: Honest browser-default NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 4000 slots using the system-level waveform-backed replay path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot
+  notes: >
+    Honest wrapper for the browser-default path. This scenario keeps the MATLAB-first
+    system_level_lls execution profile and explicitly avoids claiming waveform_bundle truth.
+    The browser may launch it because the identity and runner profile now agree.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 200ue
+    - 4000slot
+    - strict
+    - system_level_honest
+    - system_level_lls
+    - waveform_backed_replay
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot
+  description: Honest browser-default NR study-anchor scenario for 4 GHz / 100 MHz / TDD with 200 UEs and 4000 slots using system-level waveform-backed replay.
+  runner_profile: system_level_lls
+  notes: >
+    Browser-owned honest default scenario. The active execution path is system_level_lls
+    with waveform-backed replay where the repo supports it. It is not presented as
+    waveform_bundle truth.
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_4000slot

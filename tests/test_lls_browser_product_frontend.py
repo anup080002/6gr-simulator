@@ -50,6 +50,31 @@ def main() -> None:
             "variants/SCN00_BASELINE_CAPACITY.yaml",
             user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
         ).decode("utf-8")
+        realtime_page = dash.build_product_frontend_page(
+            "realtime",
+            "variants/SCN00_BASELINE_CAPACITY.yaml",
+            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
+        ).decode("utf-8")
+        analytics_page = dash.build_product_frontend_page(
+            "analytics",
+            "variants/SCN00_BASELINE_CAPACITY.yaml",
+            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
+        ).decode("utf-8")
+        reports_page = dash.build_product_frontend_page(
+            "reports",
+            "variants/SCN00_BASELINE_CAPACITY.yaml",
+            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
+        ).decode("utf-8")
+        artifacts_page = dash.build_product_frontend_page(
+            "artifacts",
+            "variants/SCN00_BASELINE_CAPACITY.yaml",
+            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
+        ).decode("utf-8")
+        parameters_page = dash.build_product_frontend_page(
+            "parameters",
+            "variants/SCN00_BASELINE_CAPACITY.yaml",
+            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
+        ).decode("utf-8")
 
         assert "Jio Platforms Limited RAN Simulator" in page
         assert "LLS" in page and "SLS" in page and "E2E" in page
@@ -65,14 +90,58 @@ def main() -> None:
         assert "Add Candidate" in page
         assert "Delete Run" in page
         assert "Download Full File" in page
-        assert "contractFilter" in page
-        assert "Sort Tables" in page
-        assert "data-contract-col" in page
         assert "window.SIXGR_PRODUCT_DATA" in page
+        assert "config_api_url" in page
+        assert "config_overview" in page
+        assert "fields_api_url" in page
+        assert "field_count" in page
+        assert '"report_sections": []' in page
+        assert '"analytics_sections": []' in page
         assert "configPreview" not in page, "front page must not expose the old raw config preview"
         assert "Backend Status" not in page, "visible backend status widget should not be rendered in the product shell"
         assert "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" in page
         assert "/api/run/${id}/live" in page or "/api/run/${state.live.run.run_id}/live" in page
+        assert "captureScrollState" in page
+        assert "restoreScrollState" in page
+        assert "function eventElement(target)" in page
+        assert "ensureFieldsLoaded" in page
+        assert "pageNeedsFieldCatalog" in page
+        assert "refreshRunsList" in page
+        assert "function runStatusRank(run, preferActive)" in page
+        assert "state.liveVersion" in page
+        assert "payload_version" in page
+        assert '"config_loaded": false' in page
+        assert "const target = eventElement(e.target);" in page
+        assert "e.target.matches('[data-run-selector=\"true\"]')" not in page
+        assert "selected_run_section_evidence_present" in analytics_page
+        assert "published in selected run" in analytics_page
+        assert 'data-scroll-key="sidebar-scroll"' in page
+        assert "Live UE Metric Explorer" in realtime_page
+        assert "liveMetricSelect" in realtime_page
+        assert "liveUESelect" in realtime_page
+        assert "liveUEScopeSelect" in realtime_page
+        assert "liveSecondaryMetricSelect" in realtime_page
+        assert "liveOverlaySelect" in realtime_page
+        assert "liveMetricExportBtn" in realtime_page
+        assert "realtimeRunSelect" in realtime_page
+        assert "All configured UEs" in realtime_page
+        assert "Selected UE" in realtime_page
+        assert "Per-cell overlay" in realtime_page
+        assert "Analytics Explorer" in analytics_page
+        assert "analyticsMetricSelect" in analytics_page
+        assert "analyticsSecondaryMetricSelect" in analytics_page
+        assert "analyticsOverlaySelect" in analytics_page
+        assert "analyticsMetricExportBtn" in analytics_page
+        assert "Waveform / Heatmap / Constellation Artifacts" in analytics_page
+        assert "Published Analytics Charts" in analytics_page
+        assert "Control Signal Runtime Evidence" in realtime_page
+        assert "Selected Run" in realtime_page
+        assert 'data-run-selector="true"' in analytics_page
+        assert 'data-run-selector="true"' in reports_page
+        assert 'data-run-selector="true"' in artifacts_page
+        assert 'data-run-selector="true"' in parameters_page
+        assert len(realtime_page) < len(analytics_page), "realtime page should not inline heavy report/analytics contract payloads"
+        assert len(page) < len(analytics_page), "home page should stay lighter than analytics-heavy pages"
         for block in (
             "Scenario",
             "Geometry",

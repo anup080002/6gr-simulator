@@ -254,7 +254,7 @@ end
 
 function replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo)
 replay.ReceiverHestSINR_dB = double(sixgr.util.structGet(rx, "ReceiverHestSINR_dB", NaN));
-replay.ReceiverHestSINRSource = string(sixgr.util.structGet(rx, "ReceiverHestSINRSource", "unavailable_receiver_hest_csi_feedback"));
+replay.ReceiverHestSINRSource = string(sixgr.util.structGet(rx, "ReceiverHestSINRSource", "unavailable_receiver_hest_reference_measurement"));
 replay.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", "unavailable"));
 replay.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", "unavailable"));
 replay.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", "receiver_hest_sinr_not_exported_by_replay_rx"));

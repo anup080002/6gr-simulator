@@ -1,0 +1,285 @@
+[2026-04-21T06:08:17Z] INFO Preparing LLS run: scenario=lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame runTag=webgui_rel20_4ghz_100mhz_200ue_1frame_20260421_114100 runFolder=C:\Users\Administrator\AppData\Local\Temp\2\sixgr_mysql_web_runs\lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame\webgui_rel20_4ghz_100mhz_200ue_1frame_20260421_114100
+[2026-04-21T06:08:19Z] INFO Artifact store active=1 backend=mysql_web schema=sixgr_results
+[2026-04-21T06:08:19Z] INFO Writing resolved snapshots.
+[2026-04-21T06:08:20Z] INFO Exporting live geometry artifacts.
+[2026-04-21T06:08:21Z] INFO Executing runner profile=waveform_bundle.
+[2026-04-21T06:08:21Z] INFO Waveform bundle starting: snr=12.000 dB sweepPoints=1 canonicalSlots=20 monteCarlo=1 slotDuration_s=0.000500
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=1
+[2026-04-21T06:08:29Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=1/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T06:08:30Z] INFO Starting coupled pre-scheduling control gating for slot 1/20 with 200 UEs.
+[2026-04-21T06:08:36Z] INFO Coupled control gating progress for slot 1/20: UE 1/200, PBCH=1 PRACH=0 SRS=0 TRS=1.
+[2026-04-21T06:08:50Z] INFO Coupled control gating progress for slot 1/20: UE 10/200, PBCH=10 PRACH=0 SRS=0 TRS=8.
+[2026-04-21T06:09:03Z] INFO Coupled control gating progress for slot 1/20: UE 20/200, PBCH=20 PRACH=0 SRS=0 TRS=14.
+[2026-04-21T06:09:15Z] INFO Coupled control gating progress for slot 1/20: UE 30/200, PBCH=30 PRACH=0 SRS=0 TRS=18.
+[2026-04-21T06:09:27Z] INFO Coupled control gating progress for slot 1/20: UE 40/200, PBCH=40 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:09:38Z] INFO Coupled control gating progress for slot 1/20: UE 50/200, PBCH=50 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:09:49Z] INFO Coupled control gating progress for slot 1/20: UE 60/200, PBCH=60 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:09:59Z] INFO Coupled control gating progress for slot 1/20: UE 70/200, PBCH=70 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:10:10Z] INFO Coupled control gating progress for slot 1/20: UE 80/200, PBCH=80 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:10:21Z] INFO Coupled control gating progress for slot 1/20: UE 90/200, PBCH=90 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:10:31Z] INFO Coupled control gating progress for slot 1/20: UE 100/200, PBCH=100 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:10:42Z] INFO Coupled control gating progress for slot 1/20: UE 110/200, PBCH=110 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:10:53Z] INFO Coupled control gating progress for slot 1/20: UE 120/200, PBCH=120 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:11:04Z] INFO Coupled control gating progress for slot 1/20: UE 130/200, PBCH=130 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:11:14Z] INFO Coupled control gating progress for slot 1/20: UE 140/200, PBCH=140 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:11:25Z] INFO Coupled control gating progress for slot 1/20: UE 150/200, PBCH=150 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:11:36Z] INFO Coupled control gating progress for slot 1/20: UE 160/200, PBCH=160 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:11:46Z] INFO Coupled control gating progress for slot 1/20: UE 170/200, PBCH=170 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:11:57Z] INFO Coupled control gating progress for slot 1/20: UE 180/200, PBCH=180 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:12:07Z] INFO Coupled control gating progress for slot 1/20: UE 190/200, PBCH=190 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:12:18Z] INFO Coupled control gating progress for slot 1/20: UE 200/200, PBCH=200 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:12:18Z] INFO Coupled control gating complete: slot=1 frame=1 pbch_attempts=200 prach_attempts=0 srs_attempts=0 trs_attempts=21 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:12:18Z] INFO Coupled control gating complete for slot 1/20: acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:12:25Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:12:36Z] INFO Coupled DL schedule complete: sweep=1/1 slot=1/20 active=0 granted=0 grants=0.
+[2026-04-21T06:12:36Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=1/20 executable_grants=0.
+[2026-04-21T06:12:36Z] INFO Preparing coupled DL batches: sweep=1/1 slot=1/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:12:36Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=2/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T06:12:36Z] INFO Starting coupled pre-scheduling control gating for slot 2/20 with 200 UEs.
+[2026-04-21T06:12:36Z] INFO Coupled control gating progress for slot 2/20: UE 1/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:37Z] INFO Coupled control gating progress for slot 2/20: UE 10/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:37Z] INFO Coupled control gating progress for slot 2/20: UE 20/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:37Z] INFO Coupled control gating progress for slot 2/20: UE 30/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:38Z] INFO Coupled control gating progress for slot 2/20: UE 40/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:38Z] INFO Coupled control gating progress for slot 2/20: UE 50/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:38Z] INFO Coupled control gating progress for slot 2/20: UE 60/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:38Z] INFO Coupled control gating progress for slot 2/20: UE 70/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:39Z] INFO Coupled control gating progress for slot 2/20: UE 80/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:39Z] INFO Coupled control gating progress for slot 2/20: UE 90/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:39Z] INFO Coupled control gating progress for slot 2/20: UE 100/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:40Z] INFO Coupled control gating progress for slot 2/20: UE 110/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:40Z] INFO Coupled control gating progress for slot 2/20: UE 120/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:40Z] INFO Coupled control gating progress for slot 2/20: UE 130/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:40Z] INFO Coupled control gating progress for slot 2/20: UE 140/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:41Z] INFO Coupled control gating progress for slot 2/20: UE 150/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:41Z] INFO Coupled control gating progress for slot 2/20: UE 160/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:41Z] INFO Coupled control gating progress for slot 2/20: UE 170/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:42Z] INFO Coupled control gating progress for slot 2/20: UE 180/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:42Z] INFO Coupled control gating progress for slot 2/20: UE 190/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:42Z] INFO Coupled control gating progress for slot 2/20: UE 200/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:12:42Z] INFO Coupled control gating complete: slot=2 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:12:42Z] INFO Coupled control gating complete for slot 2/20: acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:12:48Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:12:59Z] INFO Coupled DL schedule complete: sweep=1/1 slot=2/20 active=0 granted=0 grants=0.
+[2026-04-21T06:12:59Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=2/20 executable_grants=0.
+[2026-04-21T06:12:59Z] INFO Preparing coupled DL batches: sweep=1/1 slot=2/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:12:59Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=3/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T06:12:59Z] INFO Starting coupled pre-scheduling control gating for slot 3/20 with 200 UEs.
+[2026-04-21T06:12:59Z] INFO Coupled control gating progress for slot 3/20: UE 1/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:00Z] INFO Coupled control gating progress for slot 3/20: UE 10/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:00Z] INFO Coupled control gating progress for slot 3/20: UE 20/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:00Z] INFO Coupled control gating progress for slot 3/20: UE 30/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:00Z] INFO Coupled control gating progress for slot 3/20: UE 40/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:01Z] INFO Coupled control gating progress for slot 3/20: UE 50/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:01Z] INFO Coupled control gating progress for slot 3/20: UE 60/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:01Z] INFO Coupled control gating progress for slot 3/20: UE 70/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:02Z] INFO Coupled control gating progress for slot 3/20: UE 80/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:02Z] INFO Coupled control gating progress for slot 3/20: UE 90/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:02Z] INFO Coupled control gating progress for slot 3/20: UE 100/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:02Z] INFO Coupled control gating progress for slot 3/20: UE 110/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:03Z] INFO Coupled control gating progress for slot 3/20: UE 120/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:03Z] INFO Coupled control gating progress for slot 3/20: UE 130/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:03Z] INFO Coupled control gating progress for slot 3/20: UE 140/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:04Z] INFO Coupled control gating progress for slot 3/20: UE 150/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:04Z] INFO Coupled control gating progress for slot 3/20: UE 160/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:04Z] INFO Coupled control gating progress for slot 3/20: UE 170/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:04Z] INFO Coupled control gating progress for slot 3/20: UE 180/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:05Z] INFO Coupled control gating progress for slot 3/20: UE 190/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:05Z] INFO Coupled control gating progress for slot 3/20: UE 200/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:05Z] INFO Coupled control gating complete: slot=3 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:13:05Z] INFO Coupled control gating complete for slot 3/20: acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:13:10Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:13:19Z] INFO Coupled DL schedule complete: sweep=1/1 slot=3/20 active=0 granted=0 grants=0.
+[2026-04-21T06:13:19Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=3/20 executable_grants=0.
+[2026-04-21T06:13:19Z] INFO Preparing coupled DL batches: sweep=1/1 slot=3/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:13:19Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=4/20 duplex=S allow_dl=1 allow_ul=1.
+[2026-04-21T06:13:19Z] INFO Starting coupled pre-scheduling control gating for slot 4/20 with 200 UEs.
+[2026-04-21T06:13:19Z] INFO Coupled control gating progress for slot 4/20: UE 1/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:19Z] INFO Coupled control gating progress for slot 4/20: UE 10/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:19Z] INFO Coupled control gating progress for slot 4/20: UE 20/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:20Z] INFO Coupled control gating progress for slot 4/20: UE 30/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:20Z] INFO Coupled control gating progress for slot 4/20: UE 40/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:20Z] INFO Coupled control gating progress for slot 4/20: UE 50/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:20Z] INFO Coupled control gating progress for slot 4/20: UE 60/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:21Z] INFO Coupled control gating progress for slot 4/20: UE 70/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:21Z] INFO Coupled control gating progress for slot 4/20: UE 80/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:21Z] INFO Coupled control gating progress for slot 4/20: UE 90/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:22Z] INFO Coupled control gating progress for slot 4/20: UE 100/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:22Z] INFO Coupled control gating progress for slot 4/20: UE 110/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:22Z] INFO Coupled control gating progress for slot 4/20: UE 120/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:23Z] INFO Coupled control gating progress for slot 4/20: UE 130/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:23Z] INFO Coupled control gating progress for slot 4/20: UE 140/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:23Z] INFO Coupled control gating progress for slot 4/20: UE 150/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:23Z] INFO Coupled control gating progress for slot 4/20: UE 160/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:24Z] INFO Coupled control gating progress for slot 4/20: UE 170/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:24Z] INFO Coupled control gating progress for slot 4/20: UE 180/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:24Z] INFO Coupled control gating progress for slot 4/20: UE 190/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:25Z] INFO Coupled control gating progress for slot 4/20: UE 200/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:13:25Z] INFO Coupled control gating complete: slot=4 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:13:25Z] INFO Coupled control gating complete for slot 4/20: acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:13:30Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:13:40Z] INFO Coupled DL schedule complete: sweep=1/1 slot=4/20 active=0 granted=0 grants=0.
+[2026-04-21T06:13:40Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=4/20 executable_grants=0.
+[2026-04-21T06:13:40Z] INFO Preparing coupled DL batches: sweep=1/1 slot=4/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:13:48Z] INFO Coupled UL schedule complete: sweep=1/1 slot=4/20 active=0 granted=0 grants=0.
+[2026-04-21T06:13:48Z] INFO Coupled UL PDCCH qualification complete: sweep=1/1 slot=4/20 executable_grants=0.
+[2026-04-21T06:13:48Z] INFO Preparing coupled UL batches: sweep=1/1 slot=4/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:13:49Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=5/20 duplex=UL allow_dl=0 allow_ul=1.
+[2026-04-21T06:13:49Z] INFO Starting coupled pre-scheduling control gating for slot 5/20 with 200 UEs.
+[2026-04-21T06:13:50Z] INFO Coupled control gating progress for slot 5/20: UE 1/200, PBCH=0 PRACH=0 SRS=0 TRS=1.
+[2026-04-21T06:13:52Z] INFO Coupled control gating progress for slot 5/20: UE 10/200, PBCH=0 PRACH=0 SRS=0 TRS=7.
+[2026-04-21T06:13:53Z] INFO Coupled control gating progress for slot 5/20: UE 20/200, PBCH=0 PRACH=0 SRS=0 TRS=11.
+[2026-04-21T06:13:54Z] INFO Coupled control gating progress for slot 5/20: UE 30/200, PBCH=0 PRACH=0 SRS=0 TRS=14.
+[2026-04-21T06:13:55Z] INFO Coupled control gating progress for slot 5/20: UE 40/200, PBCH=0 PRACH=0 SRS=0 TRS=16.
+[2026-04-21T06:13:56Z] INFO Coupled control gating progress for slot 5/20: UE 50/200, PBCH=0 PRACH=0 SRS=0 TRS=18.
+[2026-04-21T06:13:56Z] INFO Coupled control gating progress for slot 5/20: UE 60/200, PBCH=0 PRACH=0 SRS=0 TRS=19.
+[2026-04-21T06:13:57Z] INFO Coupled control gating progress for slot 5/20: UE 70/200, PBCH=0 PRACH=0 SRS=0 TRS=20.
+[2026-04-21T06:13:58Z] INFO Coupled control gating progress for slot 5/20: UE 80/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:13:58Z] INFO Coupled control gating progress for slot 5/20: UE 90/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:13:58Z] INFO Coupled control gating progress for slot 5/20: UE 100/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:13:59Z] INFO Coupled control gating progress for slot 5/20: UE 110/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:13:59Z] INFO Coupled control gating progress for slot 5/20: UE 120/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:13:59Z] INFO Coupled control gating progress for slot 5/20: UE 130/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:13:59Z] INFO Coupled control gating progress for slot 5/20: UE 140/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:00Z] INFO Coupled control gating progress for slot 5/20: UE 150/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:00Z] INFO Coupled control gating progress for slot 5/20: UE 160/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:00Z] INFO Coupled control gating progress for slot 5/20: UE 170/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:01Z] INFO Coupled control gating progress for slot 5/20: UE 180/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:01Z] INFO Coupled control gating progress for slot 5/20: UE 190/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:01Z] INFO Coupled control gating progress for slot 5/20: UE 200/200, PBCH=0 PRACH=0 SRS=0 TRS=21.
+[2026-04-21T06:14:01Z] INFO Coupled control gating complete: slot=5 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=21 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:14:01Z] INFO Coupled control gating complete for slot 5/20: acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:14:07Z] INFO UL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:14:15Z] INFO Coupled UL schedule complete: sweep=1/1 slot=5/20 active=0 granted=0 grants=0.
+[2026-04-21T06:14:15Z] INFO Coupled UL PDCCH qualification complete: sweep=1/1 slot=5/20 executable_grants=0.
+[2026-04-21T06:14:15Z] INFO Preparing coupled UL batches: sweep=1/1 slot=5/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:14:15Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=6/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T06:14:15Z] INFO Starting coupled pre-scheduling control gating for slot 6/20 with 200 UEs.
+[2026-04-21T06:14:15Z] INFO Coupled control gating progress for slot 6/20: UE 1/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:15Z] INFO Coupled control gating progress for slot 6/20: UE 10/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:16Z] INFO Coupled control gating progress for slot 6/20: UE 20/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:16Z] INFO Coupled control gating progress for slot 6/20: UE 30/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:16Z] INFO Coupled control gating progress for slot 6/20: UE 40/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:17Z] INFO Coupled control gating progress for slot 6/20: UE 50/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:17Z] INFO Coupled control gating progress for slot 6/20: UE 60/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:17Z] INFO Coupled control gating progress for slot 6/20: UE 70/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:17Z] INFO Coupled control gating progress for slot 6/20: UE 80/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:18Z] INFO Coupled control gating progress for slot 6/20: UE 90/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:18Z] INFO Coupled control gating progress for slot 6/20: UE 100/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:18Z] INFO Coupled control gating progress for slot 6/20: UE 110/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:19Z] INFO Coupled control gating progress for slot 6/20: UE 120/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:19Z] INFO Coupled control gating progress for slot 6/20: UE 130/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:19Z] INFO Coupled control gating progress for slot 6/20: UE 140/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:19Z] INFO Coupled control gating progress for slot 6/20: UE 150/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:20Z] INFO Coupled control gating progress for slot 6/20: UE 160/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:20Z] INFO Coupled control gating progress for slot 6/20: UE 170/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:20Z] INFO Coupled control gating progress for slot 6/20: UE 180/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:21Z] INFO Coupled control gating progress for slot 6/20: UE 190/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:21Z] INFO Coupled control gating progress for slot 6/20: UE 200/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:14:21Z] INFO Coupled control gating complete: slot=6 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:14:21Z] INFO Coupled control gating complete for slot 6/20: acquired=200/200 access=0/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:14:26Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:14:35Z] INFO Coupled DL schedule complete: sweep=1/1 slot=6/20 active=0 granted=0 grants=0.
+[2026-04-21T06:14:35Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=6/20 executable_grants=0.
+[2026-04-21T06:14:35Z] INFO Preparing coupled DL batches: sweep=1/1 slot=6/20 candidate_grants=0 batch_size=32.
+[2026-04-21T06:14:35Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=7/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T06:14:35Z] INFO Starting coupled pre-scheduling control gating for slot 7/20 with 200 UEs.
+[2026-04-21T06:14:36Z] INFO Coupled control gating progress for slot 7/20: UE 1/200, PBCH=0 PRACH=1 SRS=0 TRS=0.
+[2026-04-21T06:14:37Z] INFO Coupled control gating progress for slot 7/20: UE 10/200, PBCH=0 PRACH=10 SRS=0 TRS=0.
+[2026-04-21T06:14:39Z] INFO Coupled control gating progress for slot 7/20: UE 20/200, PBCH=0 PRACH=20 SRS=0 TRS=0.
+[2026-04-21T06:14:41Z] INFO Coupled control gating progress for slot 7/20: UE 30/200, PBCH=0 PRACH=30 SRS=0 TRS=0.
+[2026-04-21T06:14:43Z] INFO Coupled control gating progress for slot 7/20: UE 40/200, PBCH=0 PRACH=40 SRS=0 TRS=0.
+[2026-04-21T06:14:44Z] INFO Coupled control gating progress for slot 7/20: UE 50/200, PBCH=0 PRACH=50 SRS=0 TRS=0.
+[2026-04-21T06:14:46Z] INFO Coupled control gating progress for slot 7/20: UE 60/200, PBCH=0 PRACH=60 SRS=0 TRS=0.
+[2026-04-21T06:14:48Z] INFO Coupled control gating progress for slot 7/20: UE 70/200, PBCH=0 PRACH=70 SRS=0 TRS=0.
+[2026-04-21T06:14:50Z] INFO Coupled control gating progress for slot 7/20: UE 80/200, PBCH=0 PRACH=80 SRS=0 TRS=0.
+[2026-04-21T06:14:51Z] INFO Coupled control gating progress for slot 7/20: UE 90/200, PBCH=0 PRACH=90 SRS=0 TRS=0.
+[2026-04-21T06:14:53Z] INFO Coupled control gating progress for slot 7/20: UE 100/200, PBCH=0 PRACH=100 SRS=0 TRS=0.
+[2026-04-21T06:14:55Z] INFO Coupled control gating progress for slot 7/20: UE 110/200, PBCH=0 PRACH=110 SRS=0 TRS=0.
+[2026-04-21T06:14:57Z] INFO Coupled control gating progress for slot 7/20: UE 120/200, PBCH=0 PRACH=120 SRS=0 TRS=0.
+[2026-04-21T06:14:59Z] INFO Coupled control gating progress for slot 7/20: UE 130/200, PBCH=0 PRACH=130 SRS=0 TRS=0.
+[2026-04-21T06:15:00Z] INFO Coupled control gating progress for slot 7/20: UE 140/200, PBCH=0 PRACH=140 SRS=0 TRS=0.
+[2026-04-21T06:15:02Z] INFO Coupled control gating progress for slot 7/20: UE 150/200, PBCH=0 PRACH=150 SRS=0 TRS=0.
+[2026-04-21T06:15:04Z] INFO Coupled control gating progress for slot 7/20: UE 160/200, PBCH=0 PRACH=160 SRS=0 TRS=0.
+[2026-04-21T06:15:06Z] INFO Coupled control gating progress for slot 7/20: UE 170/200, PBCH=0 PRACH=170 SRS=0 TRS=0.
+[2026-04-21T06:15:08Z] INFO Coupled control gating progress for slot 7/20: UE 180/200, PBCH=0 PRACH=180 SRS=0 TRS=0.
+[2026-04-21T06:15:09Z] INFO Coupled control gating progress for slot 7/20: UE 190/200, PBCH=0 PRACH=190 SRS=0 TRS=0.
+[2026-04-21T06:15:11Z] INFO Coupled control gating progress for slot 7/20: UE 200/200, PBCH=0 PRACH=200 SRS=0 TRS=0.
+[2026-04-21T06:15:11Z] INFO Coupled control gating complete: slot=7 frame=1 pbch_attempts=0 prach_attempts=200 srs_attempts=0 trs_attempts=0 acquired=200/200 access=200/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:15:11Z] INFO Coupled control gating complete for slot 7/20: acquired=200/200 access=200/200 valid_srs=0/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=0/200.
+[2026-04-21T06:15:18Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=0/20 ulFrames=0/20 dlRows=0 ulRows=0.
+[2026-04-21T06:15:38Z] INFO Coupled DL schedule complete: sweep=1/1 slot=7/20 active=200 granted=200 grants=200.
+[2026-04-21T06:16:15Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=7/20 executable_grants=200.
+[2026-04-21T06:16:15Z] INFO Preparing coupled DL batches: sweep=1/1 slot=7/20 candidate_grants=200 batch_size=32.
+[2026-04-21T06:16:15Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=200.
+[2026-04-21T06:16:56Z] INFO Prepared coupled DL resolved grant cache entries: 25/200.
+[2026-04-21T06:17:27Z] INFO Prepared coupled DL resolved grant cache entries: 50/200.
+[2026-04-21T06:17:57Z] INFO Prepared coupled DL resolved grant cache entries: 75/200.
+[2026-04-21T06:18:33Z] INFO Prepared coupled DL resolved grant cache entries: 100/200.
+[2026-04-21T06:19:05Z] INFO Prepared coupled DL resolved grant cache entries: 125/200.
+[2026-04-21T06:19:34Z] INFO Prepared coupled DL resolved grant cache entries: 150/200.
+[2026-04-21T06:20:12Z] INFO Prepared coupled DL resolved grant cache entries: 175/200.
+[2026-04-21T06:20:51Z] INFO Prepared coupled DL resolved grant cache entries: 200/200.
+[2026-04-21T06:20:51Z] INFO Prepared coupled DL resolved grant cache complete: entries=200 elapsed_s=276.057.
+[2026-04-21T06:21:40Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=32 chunk=1-32 of 200.
+[2026-04-21T06:21:40Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=1-32 of 200.
+[2026-04-21T06:24:19Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=32 current_primary_rows=32.
+[2026-04-21T06:24:33Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=16/200 dlFrames=1/20 ulFrames=0/20 dlRows=32 ulRows=0.
+[2026-04-21T06:25:04Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=32 chunk=33-64 of 200.
+[2026-04-21T06:25:04Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=33-64 of 200.
+[2026-04-21T06:26:55Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=32 current_primary_rows=64.
+[2026-04-21T06:27:08Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=110/200 dlFrames=1/20 ulFrames=0/20 dlRows=64 ulRows=0.
+[2026-04-21T06:27:50Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=32 chunk=65-96 of 200.
+[2026-04-21T06:27:50Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=65-96 of 200.
+[2026-04-21T06:29:44Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=32 current_primary_rows=96.
+[2026-04-21T06:29:58Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=169/200 dlFrames=1/20 ulFrames=0/20 dlRows=96 ulRows=0.
+[2026-04-21T06:30:46Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=32 chunk=97-128 of 200.
+[2026-04-21T06:30:46Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=97-128 of 200.
+[2026-04-21T06:32:40Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=32 current_primary_rows=128.
+[2026-04-21T06:32:55Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=56/200 dlFrames=1/20 ulFrames=0/20 dlRows=128 ulRows=0.
+[2026-04-21T06:33:35Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=32 chunk=129-160 of 200.
+[2026-04-21T06:33:35Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=129-160 of 200.
+[2026-04-21T06:35:28Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=32 current_primary_rows=160.
+[2026-04-21T06:35:44Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=174/200 dlFrames=1/20 ulFrames=0/20 dlRows=160 ulRows=0.
+[2026-04-21T06:36:37Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=32 chunk=161-192 of 200.
+[2026-04-21T06:36:37Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=161-192 of 200.
+[2026-04-21T06:38:40Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=32 current_primary_rows=192.
+[2026-04-21T06:38:57Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=148/200 dlFrames=1/20 ulFrames=0/20 dlRows=192 ulRows=0.
+[2026-04-21T06:39:13Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=7/20 executable_plans=8 chunk=193-200 of 200.
+[2026-04-21T06:39:13Z] INFO Executing coupled DL chunk: sweep=1/1 slot=7/20 chunk=193-200 of 200.
+[2026-04-21T06:39:46Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=7/20 committed_rows=8 current_primary_rows=200.
+[2026-04-21T06:40:03Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=192/200 dlFrames=1/20 ulFrames=0/20 dlRows=200 ulRows=0.
+[2026-04-21T06:40:04Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=8/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-04-21T06:40:04Z] INFO Starting coupled pre-scheduling control gating for slot 8/20 with 200 UEs.
+[2026-04-21T06:40:04Z] INFO Coupled control gating progress for slot 8/20: UE 1/200, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-04-21T06:40:05Z] INFO Coupled control gating progress for slot 8/20: UE 10/200, PBCH=0 PRACH=0 SRS=3 TRS=0.
+[2026-04-21T06:40:05Z] INFO Coupled control gating progress for slot 8/20: UE 20/200, PBCH=0 PRACH=0 SRS=5 TRS=0.
+[2026-04-21T06:40:06Z] INFO Coupled control gating progress for slot 8/20: UE 30/200, PBCH=0 PRACH=0 SRS=8 TRS=0.
+[2026-04-21T06:40:06Z] INFO Coupled control gating progress for slot 8/20: UE 40/200, PBCH=0 PRACH=0 SRS=10 TRS=0.
+[2026-04-21T06:40:07Z] INFO Coupled control gating progress for slot 8/20: UE 50/200, PBCH=0 PRACH=0 SRS=13 TRS=0.
+[2026-04-21T06:40:07Z] INFO Coupled control gating progress for slot 8/20: UE 60/200, PBCH=0 PRACH=0 SRS=15 TRS=0.
+[2026-04-21T06:40:08Z] INFO Coupled control gating progress for slot 8/20: UE 70/200, PBCH=0 PRACH=0 SRS=18 TRS=0.
+[2026-04-21T06:40:08Z] INFO Coupled control gating progress for slot 8/20: UE 80/200, PBCH=0 PRACH=0 SRS=20 TRS=0.
+[2026-04-21T06:40:09Z] INFO Coupled control gating progress for slot 8/20: UE 90/200, PBCH=0 PRACH=0 SRS=23 TRS=0.
+[2026-04-21T06:40:09Z] INFO Coupled control gating progress for slot 8/20: UE 100/200, PBCH=0 PRACH=0 SRS=25 TRS=0.
+[2026-04-21T06:40:10Z] INFO Coupled control gating progress for slot 8/20: UE 110/200, PBCH=0 PRACH=0 SRS=28 TRS=0.
+[2026-04-21T06:40:10Z] INFO Coupled control gating progress for slot 8/20: UE 120/200, PBCH=0 PRACH=0 SRS=30 TRS=0.
+[2026-04-21T06:40:11Z] INFO Coupled control gating progress for slot 8/20: UE 130/200, PBCH=0 PRACH=0 SRS=33 TRS=0.
+[2026-04-21T06:40:11Z] INFO Coupled control gating progress for slot 8/20: UE 140/200, PBCH=0 PRACH=0 SRS=35 TRS=0.
+[2026-04-21T06:40:11Z] INFO Coupled control gating progress for slot 8/20: UE 150/200, PBCH=0 PRACH=0 SRS=38 TRS=0.
+[2026-04-21T06:40:12Z] INFO Coupled control gating progress for slot 8/20: UE 160/200, PBCH=0 PRACH=0 SRS=40 TRS=0.
+[2026-04-21T06:40:12Z] INFO Coupled control gating progress for slot 8/20: UE 170/200, PBCH=0 PRACH=0 SRS=43 TRS=0.
+[2026-04-21T06:40:13Z] INFO Coupled control gating progress for slot 8/20: UE 180/200, PBCH=0 PRACH=0 SRS=45 TRS=0.
+[2026-04-21T06:40:13Z] INFO Coupled control gating progress for slot 8/20: UE 190/200, PBCH=0 PRACH=0 SRS=48 TRS=0.
+[2026-04-21T06:40:14Z] INFO Coupled control gating progress for slot 8/20: UE 200/200, PBCH=0 PRACH=0 SRS=50 TRS=0.
+[2026-04-21T06:40:14Z] INFO Coupled control gating complete: slot=8 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=50 trs_attempts=0 acquired=200/200 access=200/200 valid_srs=50/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=50/200.
+[2026-04-21T06:40:14Z] INFO Coupled control gating complete for slot 8/20: acquired=200/200 access=200/200 valid_srs=50/200 valid_trs_cells=21/21 tracked_serving_users=200/200 eligible=50/200.
+[2026-04-21T06:40:32Z] INFO DL coupled publish: sweep 1/1 snr=12.000 ue=0/200 dlFrames=1/20 ulFrames=0/20 dlRows=200 ulRows=0.
+[2026-04-21T06:40:44Z] INFO Coupled DL schedule complete: sweep=1/1 slot=8/20 active=200 granted=200 grants=200.
+[2026-04-21T06:41:16Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=8/20 executable_grants=200.
+[2026-04-21T06:41:16Z] INFO Preparing coupled DL batches: sweep=1/1 slot=8/20 candidate_grants=200 batch_size=32.
+[2026-04-21T06:41:16Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=200.
+[2026-04-21T06:41:52Z] INFO Prepared coupled DL resolved grant cache entries: 25/200.
+[2026-04-21T06:42:22Z] INFO Prepared coupled DL resolved grant cache entries: 50/200.
+[2026-04-21T06:42:50Z] INFO Prepared coupled DL resolved grant cache entries: 75/200.
+[2026-04-21T06:43:22Z] INFO Prepared coupled DL resolved grant cache entries: 100/200.

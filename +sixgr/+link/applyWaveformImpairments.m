@@ -29,6 +29,8 @@ if isfinite(ampGain) && ampGain > 0 && abs(ampGain - 1) > 1e-12
     y = y .* cast(ampGain, "like", y);
 end
 
+[y, replay] = localApplyIQImbalanceStage(y, replay);
+
 timingOffset = double(replay.InjectedTimingOffset_samples);
 if isfinite(timingOffset) && timingOffset ~= 0
     timingOffset = round(timingOffset);
@@ -74,6 +76,8 @@ noiseBandwidth_Hz = localResolveNoiseBandwidth(cfg, sampleRateHz);
     localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, noiseBandwidth_Hz, noiseFigure_dB, ampGain);
 [phaseNoiseConfigured, phaseNoiseBackend, phaseNoiseTruthClassification, phaseNoiseApproximationReason, phaseNoiseExecutionStatus] = ...
     localResolvePhaseNoiseTruthBoundary(cfg, sampleRateHz);
+[iqEnabled, iqModel, iqGainImbalance_dB, iqPhaseImbalance_deg, iqConfigSource, iqExecutionStatus] = ...
+    localResolveIQImbalanceRuntime(cfg);
 
 interferenceMode = localResolveInterferenceMode(cfg);
 if any(interferenceMode == ["abstract_large_scale_scheduler_context","explicit_activity_power_sum","waveform_overlap_large_scale"])
@@ -122,7 +126,21 @@ replay = struct( ...
     "PhaseNoiseAvailableBackend", char(phaseNoiseBackend), ...
     "PhaseNoiseTruthClassification", char(phaseNoiseTruthClassification), ...
     "PhaseNoiseApproximationReason", char(phaseNoiseApproximationReason), ...
-    "PhaseNoiseExecutionStatus", char(phaseNoiseExecutionStatus));
+    "PhaseNoiseExecutionStatus", char(phaseNoiseExecutionStatus), ...
+    "IQImbalanceConfigured", logical(iqEnabled), ...
+    "IQImbalanceApplied", false, ...
+    "IQImbalanceModel", char(iqModel), ...
+    "ConfiguredIQGainImbalance_dB", iqGainImbalance_dB, ...
+    "ConfiguredIQPhaseImbalance_deg", iqPhaseImbalance_deg, ...
+    "ConfiguredIQImbalanceSource", char(iqConfigSource), ...
+    "IQImbalanceMirrorPowerRatio_dB", NaN, ...
+    "IQImbalanceImageRejection_dB", NaN, ...
+    "IQImbalanceIQPowerRatio_dB", NaN, ...
+    "IQImbalanceIQCorrelation", NaN, ...
+    "IQImbalanceEstimatedAlphaAbs", NaN, ...
+    "IQImbalanceEstimatedBetaAbs", NaN, ...
+    "IQImbalanceMeasurementSource", "sample_domain_widely_linear_fit_after_iq_stage", ...
+    "IQImbalanceMeasurementStatus", char(iqExecutionStatus));
 end
 
 function mode = localResolveNoiseOperatingMode(cfg)
@@ -292,12 +310,221 @@ approximationReason = string(pn.ApproximationReason);
 executionStatus = "configured_not_materialized_in_active_waveform_truth_path";
 end
 
+function [enabled, model, gainImbalance_dB, phaseImbalance_deg, source, status] = ...
+        localResolveIQImbalanceRuntime(cfg)
+resolved = sixgr.util.structGet(cfg, "lls6g.resolvedConfig", struct());
+model = string(localFirstNonEmptyString( ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.model", ""), ...
+    sixgr.util.structGet(resolved, "power_and_rf_frontend.iq_imbalance", ""), ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.model", "")));
+source = char(localFirstNonEmptyString( ...
+    localSourceIfSet(resolved, "impairments.iq_imbalance.model"), ...
+    localSourceIfSet(resolved, "power_and_rf_frontend.iq_imbalance"), ...
+    localSourceIfSet(cfg, "rf.iqImbalance.model")));
+enabled = logical(sixgr.util.structGet(cfg, "phy.impairments.iqImbalanceEnabled", false));
+if ~enabled
+    enabled = localModelImpliesEnabled(model);
+end
+gainImbalance_dB = localFirstFiniteValue( ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.ampImb_dB", NaN), ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.gainImbalance_dB", NaN), ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.gain_imbalance_db", NaN), ...
+    sixgr.util.structGet(cfg, "phy.impairments.iqGainImbalance_dB", NaN), ...
+    sixgr.util.structGet(cfg, "phy.impairments.iqImbalanceAmpImbalance_dB", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.amp_imbalance_db", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.ampImb_dB", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.gain_imbalance_db", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.gainImbalance_dB", NaN));
+phaseImbalance_deg = localFirstFiniteValue( ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.phaseImb_deg", NaN), ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.phaseImbalance_deg", NaN), ...
+    sixgr.util.structGet(cfg, "rf.iqImbalance.phase_imbalance_deg", NaN), ...
+    sixgr.util.structGet(cfg, "phy.impairments.iqPhaseImbalance_deg", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.phase_imbalance_deg", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.phaseImbalance_deg", NaN), ...
+    sixgr.util.structGet(resolved, "impairments.iq_imbalance.phaseImb_deg", NaN));
+if ~isfinite(gainImbalance_dB)
+    gainImbalance_dB = 0;
+end
+if ~isfinite(phaseImbalance_deg)
+    phaseImbalance_deg = 0;
+end
+if strlength(strtrim(model)) == 0
+    if enabled
+        model = "configured_boolean_flag";
+    else
+        model = "none";
+    end
+end
+if ~enabled
+    status = "disabled";
+elseif abs(gainImbalance_dB) <= 1e-12 && abs(phaseImbalance_deg) <= 1e-12
+    status = "configured_zero_mismatch_noop";
+else
+    status = "configured";
+end
+end
+
 function noise_dBm = localResolveThermalNoisePower(bandwidth_Hz, noiseFigure_dB)
 noise_dBm = NaN;
 if ~(isfinite(bandwidth_Hz) && bandwidth_Hz > 0 && isfinite(noiseFigure_dB))
     return;
 end
 noise_dBm = -174 + 10 * log10(max(double(bandwidth_Hz), eps)) + double(noiseFigure_dB);
+end
+
+function [y, replay] = localApplyIQImbalanceStage(x, replay)
+y = x;
+if isempty(x)
+    replay.IQImbalanceMeasurementStatus = "empty_waveform";
+    return;
+end
+enabled = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
+gainImbalance_dB = double(sixgr.util.structGet(replay, "ConfiguredIQGainImbalance_dB", 0));
+phaseImbalance_deg = double(sixgr.util.structGet(replay, "ConfiguredIQPhaseImbalance_deg", 0));
+status = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementStatus", "disabled"));
+if enabled && (abs(gainImbalance_dB) > 1e-12 || abs(phaseImbalance_deg) > 1e-12)
+    y = localApplyIQImbalanceModel(x, gainImbalance_dB, phaseImbalance_deg);
+    replay.IQImbalanceApplied = true;
+    status = "applied";
+else
+    replay.IQImbalanceApplied = false;
+end
+metrics = localMeasureIQImbalanceRuntime(x, y);
+replay.IQImbalanceMirrorPowerRatio_dB = double(metrics.MirrorPowerRatio_dB);
+replay.IQImbalanceImageRejection_dB = double(metrics.ImageRejection_dB);
+replay.IQImbalanceIQPowerRatio_dB = double(metrics.IQPowerRatio_dB);
+replay.IQImbalanceIQCorrelation = double(metrics.IQCorrelation);
+replay.IQImbalanceEstimatedAlphaAbs = double(metrics.EstimatedAlphaAbs);
+replay.IQImbalanceEstimatedBetaAbs = double(metrics.EstimatedBetaAbs);
+replay.IQImbalanceMeasurementSource = char(metrics.MeasurementSource);
+if replay.IQImbalanceApplied
+    replay.IQImbalanceMeasurementStatus = char(metrics.MeasurementStatus);
+else
+    replay.IQImbalanceMeasurementStatus = char(status);
+end
+end
+
+function y = localApplyIQImbalanceModel(x, gainImbalance_dB, phaseImbalance_deg)
+if exist("iqimbal", "file") == 2 || exist("iqimbal", "file") == 6
+    try
+        y = iqimbal(x, gainImbalance_dB, phaseImbalance_deg);
+        return;
+    catch
+    end
+end
+g = 10.^(double(gainImbalance_dB) / 20);
+phi = double(phaseImbalance_deg) * pi / 180;
+alpha = 0.5 * (1 + g * exp(-1j * phi));
+beta = 0.5 * (1 - g * exp(1j * phi));
+y = alpha .* x + beta .* conj(x);
+end
+
+function metrics = localMeasureIQImbalanceRuntime(xRef, yObs)
+metrics = struct( ...
+    "MirrorPowerRatio_dB", NaN, ...
+    "ImageRejection_dB", NaN, ...
+    "IQPowerRatio_dB", NaN, ...
+    "IQCorrelation", NaN, ...
+    "EstimatedAlphaAbs", NaN, ...
+    "EstimatedBetaAbs", NaN, ...
+    "MeasurementSource", "sample_domain_widely_linear_fit_after_iq_stage", ...
+    "MeasurementStatus", "not_measured");
+x = double(xRef(:));
+y = double(yObs(:));
+mask = isfinite(real(x)) & isfinite(imag(x)) & isfinite(real(y)) & isfinite(imag(y));
+if nnz(mask) < 8
+    metrics.MeasurementStatus = "insufficient_samples";
+    return;
+end
+x = x(mask);
+y = y(mask);
+A = [x, conj(x)];
+if rank(A) < 2
+    metrics.MeasurementStatus = "degenerate_reference";
+    return;
+end
+coeff = A \ y;
+alpha = coeff(1);
+beta = coeff(2);
+metrics.EstimatedAlphaAbs = abs(alpha);
+metrics.EstimatedBetaAbs = abs(beta);
+desiredComp = alpha .* x;
+imageComp = beta .* conj(x);
+desiredPower = mean(abs(desiredComp).^2, "omitnan");
+imagePower = mean(abs(imageComp).^2, "omitnan");
+if isfinite(desiredPower) && desiredPower > 0 && isfinite(imagePower) && imagePower > 0
+    metrics.MirrorPowerRatio_dB = 10 * log10(imagePower / desiredPower);
+    metrics.ImageRejection_dB = 10 * log10(desiredPower / imagePower);
+    metrics.MeasurementStatus = "measured";
+elseif isfinite(desiredPower) && desiredPower > 0 && isfinite(imagePower) && imagePower == 0
+    metrics.MeasurementStatus = "below_numeric_floor";
+end
+iVar = var(real(y), 1, "omitnan");
+qVar = var(imag(y), 1, "omitnan");
+if isfinite(iVar) && isfinite(qVar) && iVar > 0 && qVar > 0
+    metrics.IQPowerRatio_dB = 10 * log10(iVar / qVar);
+end
+try
+    rho = corrcoef(real(y), imag(y));
+    if isequal(size(rho), [2 2]) && isfinite(rho(1,2))
+        metrics.IQCorrelation = rho(1,2);
+    end
+catch
+end
+end
+
+function tf = localModelImpliesEnabled(model)
+model = strtrim(lower(string(model)));
+tf = strlength(model) > 0 && ~any(model == ["none","disabled","ideal","off","false","constant_zero"]);
+end
+
+function value = localFirstFiniteValue(varargin)
+value = NaN;
+for i = 1:nargin
+    candidate = double(varargin{i});
+    if isempty(candidate)
+        continue;
+    end
+    candidate = candidate(1);
+    if isfinite(candidate)
+        value = candidate;
+        return;
+    end
+end
+end
+
+function value = localFirstNonEmptyString(varargin)
+value = "";
+for i = 1:nargin
+    candidate = strtrim(string(varargin{i}));
+    if strlength(candidate) > 0
+        value = candidate(1);
+        return;
+    end
+end
+end
+
+function source = localSourceIfSet(root, path)
+value = sixgr.util.structGet(root, path, []);
+if ischar(value) || isstring(value)
+    if strlength(strtrim(string(value))) > 0
+        source = string(path);
+        return;
+    end
+elseif isnumeric(value)
+    value = double(value);
+    if ~isempty(value) && isfinite(value(1))
+        source = string(path);
+        return;
+    end
+elseif islogical(value)
+    if ~isempty(value)
+        source = string(path);
+        return;
+    end
+end
+source = "";
 end
 
 function [loss_dB, source] = localResolveLargeScaleLoss(pathloss_dB, basePathloss_dB, shadow_dB, o2i_dB)

@@ -73,6 +73,11 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
         nslot = opts.NPRACHSlot;
     end
     try
+        carrier.NSlot = nslot;
+    catch
+        % Leave carrier slot unchanged if the property is unavailable
+    end
+    try
         prach.NPRACHSlot = nslot;
     catch
         % Leave default if property not available
@@ -92,8 +97,43 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
         end
     end
 
+    if isempty(prachSym)
+        tx = struct();
+        tx.Waveform   = [];
+        tx.Grid       = [];
+        tx.Symbols    = prachSym;
+        tx.Indices    = [];
+        tx.Carrier    = carrier;
+        tx.PRACH      = prach;
+        tx.SampleRate = NaN;
+
+        info = struct();
+        info.SymbolInfo = symInfo;
+        info.IndicesInfo = struct();
+        info.OFDMInfo = struct("SampleRate", NaN);
+        info.ActiveOccasionPresent = false;
+        return;
+    end
+
     % Indices and grid
     [prachInd, indInfo] = nrPRACHIndices(carrier, prach); % 1-based linear indices
+    if isempty(prachInd)
+        tx = struct();
+        tx.Waveform   = [];
+        tx.Grid       = [];
+        tx.Symbols    = prachSym;
+        tx.Indices    = prachInd;
+        tx.Carrier    = carrier;
+        tx.PRACH      = prach;
+        tx.SampleRate = NaN;
+
+        info = struct();
+        info.SymbolInfo = symInfo;
+        info.IndicesInfo = indInfo;
+        info.OFDMInfo = struct("SampleRate", NaN);
+        info.ActiveOccasionPresent = false;
+        return;
+    end
     prachGrid = nrPRACHGrid(carrier, prach);
     prachGrid(prachInd) = prachSym;
 
@@ -118,6 +158,7 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
     info.SymbolInfo  = symInfo;
     info.IndicesInfo = indInfo;
     info.OFDMInfo    = ofdmInfo;
+    info.ActiveOccasionPresent = true;
 end
 
 % -------------------------------------------------------------------------

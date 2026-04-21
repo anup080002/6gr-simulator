@@ -170,6 +170,7 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     info.RxGrid       = rxGrid;
     info.PUCCHIndices = pucchInd;
     info.DMRSIndices  = dmrsInd;
+    info.DMRSSymbols  = dmrsSym;
     info.Estimation   = estInfo;
     info.Equalization = eqInfo;
 end

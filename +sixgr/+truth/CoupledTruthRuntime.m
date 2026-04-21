@@ -595,6 +595,19 @@ methods(Static, Access=private)
                 if isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
                     grant.CRI = double(feedback.CRI);
                 end
+                bootstrapSource = strtrim(string(sixgr.util.structGet(feedback, "BootstrapCQISource", "")));
+                if strlength(bootstrapSource) > 0
+                    grant.MCSIndexAuthority = char(bootstrapSource);
+                    grant.GrantOperatingPointSource = char(bootstrapSource);
+                elseif logical(sixgr.util.structGet(feedback, "Valid", false)) && ...
+                        isfinite(double(sixgr.util.structGet(feedback, "CQI", NaN))) && ...
+                        double(sixgr.util.structGet(feedback, "CQI", NaN)) > 0
+                    grant.MCSIndexAuthority = "feedback_cqi_derived_reference";
+                    grant.GrantOperatingPointSource = "feedback_cqi_derived_reference";
+                else
+                    grant.MCSIndexAuthority = "scheduler_grant";
+                    grant.GrantOperatingPointSource = "scheduler_grant";
+                end
                 grantedUsers(end + 1, 1) = double(ueIdx); %#ok<AGROW>
                 nGrant = nGrant + 1;
                 grant.DCI = scheduler.buildDCIBitfield(grant);
@@ -1877,6 +1890,7 @@ methods(Static, Access=private)
         csiState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_fallback");
         controlEligible = sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "ControlEligibility", ueIdx, true);
         srsAgeSlots = sixgr.truth.CoupledTruthRuntime.srsAgeSlots(state, ueIdx);
+        bootstrapSource = lower(strtrim(string(sixgr.util.structGet(feedback, "BootstrapCQISource", ""))));
         if direction == "UL" && logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false)) && ...
                 ~(srsState == "valid" && isfinite(srsAgeSlots))
             feedback.Valid = false;
@@ -1896,7 +1910,19 @@ methods(Static, Access=private)
         schedulerMCSAuthority = "explicit_fixed_override";
         if logical(schedulerUsesCQITable)
             schedulerMCSIndex = NaN;
-            if isfinite(feedbackMCSIndex)
+            if ~logical(sixgr.util.structGet(feedback, "Valid", false))
+                if strlength(bootstrapSource) > 0 && isfinite(double(sixgr.util.structGet(feedback, "CQI", NaN))) && ...
+                        double(sixgr.util.structGet(feedback, "CQI", NaN)) > 0
+                    schedulerMCSAuthority = char(bootstrapSource);
+                else
+                    % Before the first real CSI report is available, do not
+                    % label the scheduler input as feedback-derived. The
+                    % bootstrap operating point is an explicit conservative lab
+                    % default that prevents large-scale preview SINR from being
+                    % mistaken for measured CSI.
+                    schedulerMCSAuthority = "bootstrap_cqi_conservative_lab_default";
+                end
+            elseif isfinite(feedbackMCSIndex)
                 schedulerMCSAuthority = "feedback_cqi_derived_reference";
             else
                 schedulerMCSAuthority = "runtime_cqi_path_without_explicit_mcs_override";
@@ -2600,14 +2626,75 @@ methods(Static, Access=private)
                 targetCodeRate = double(fallbackProfile.TargetCodeRate);
             end
         end
-        feedback.CQI = 0;
+        schedulerUsesCQITable = sixgr.truth.CoupledTruthRuntime.schedulerUsesCQITableForDirection(state.CfgMobility, direction);
+        if schedulerUsesCQITable
+            feedback = sixgr.truth.CoupledTruthRuntime.bootstrapCQIFeedbackFromRuntimePreview( ...
+                state, direction, ueIdx, mcsTable, feedback, rankHint);
+        else
+            feedback.CQI = 0;
+            feedback.SINR_dB = NaN;
+            feedback.Modulation = char(modulation);
+            feedback.TargetCodeRate = double(targetCodeRate);
+            feedback.MCSIndex = double(mcsIndex);
+        end
         feedback.RI = max(1, round(rankHint));
         feedback.PMI = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackPMI(state.CfgMobility, direction, feedback.RI));
         feedback.CRI = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackCRI(state.CfgMobility));
+    end
+
+    function feedback = bootstrapCQIFeedbackFromRuntimePreview(state, direction, ueIdx, mcsTable, feedback, rankHint)
+        bootstrapMode = lower(strtrim(string(sixgr.util.structGet(state.CfgMobility, "phy.linkAdaptation.bootstrapCQIMode", ""))));
+        useLargeScalePreview = any(bootstrapMode == [ ...
+            "large_scale_preview", ...
+            "large_scale_preview_lab_default", ...
+            "large_scale_preview_cqi_lab_default"]);
+
+        if useLargeScalePreview
+            servingCell = NaN;
+            if ueIdx >= 1 && ueIdx <= numel(state.CurrentServingIdx)
+                servingCell = double(state.CurrentServingIdx(ueIdx));
+            end
+            previewSINR_dB = NaN;
+            try
+                interferenceMode = sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(state.CfgMobility, state.MultiUser);
+                previewSINR_dB = double(sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR( ...
+                    state, ueIdx, servingCell, interferenceMode));
+            catch
+                previewSINR_dB = NaN;
+            end
+            if isfinite(previewSINR_dB)
+                cqiFeedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", previewSINR_dB), state.CfgMobility, direction);
+                previewCQI = double(sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN));
+                if isfinite(previewCQI) && previewCQI > 0
+                    [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(previewCQI, "", NaN, state.CfgMobility, direction);
+                    feedback.CQI = double(previewCQI);
+                    feedback.SINR_dB = NaN;
+                    feedback.Modulation = char(string(modStr));
+                    feedback.TargetCodeRate = double(targetCodeRate);
+                    feedback.MCSIndex = double(mcsIndex);
+                    feedback.BootstrapCQISource = "bootstrap_large_scale_preview_cqi_lab_default";
+                    feedback.PreviewSINR_dB = double(previewSINR_dB);
+                    feedback.RI = max(1, round(rankHint));
+                    return;
+                end
+            end
+        end
+
+        bootstrapProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+        feedback.CQI = 0;
         feedback.SINR_dB = NaN;
-        feedback.Modulation = char(modulation);
-        feedback.TargetCodeRate = double(targetCodeRate);
-        feedback.MCSIndex = double(mcsIndex);
+        if bootstrapProfile.Valid
+            feedback.Modulation = char(string(bootstrapProfile.Modulation));
+            feedback.TargetCodeRate = double(bootstrapProfile.TargetCodeRate);
+            feedback.MCSIndex = 0;
+        else
+            feedback.Modulation = "QPSK";
+            feedback.TargetCodeRate = 0.1171875;
+            feedback.MCSIndex = 0;
+        end
+        feedback.BootstrapCQISource = "bootstrap_cqi_conservative_lab_default";
+        feedback.PreviewSINR_dB = NaN;
+        feedback.RI = max(1, round(rankHint));
     end
 
     function pmi = resolveFallbackPMI(cfg, direction, rankHint)
@@ -4829,7 +4916,8 @@ methods(Static, Access=private)
             "Valid", false, "Direction", "", "Slot", NaN, ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "MCSIndex", NaN, "TargetCodeRate", NaN, ...
-            "Modulation", "", "ServingCell", NaN);
+            "Modulation", "", "ServingCell", NaN, ...
+            "BootstrapCQISource", "", "PreviewSINR_dB", NaN);
     end
 
     function row = emptyReceiverTrackingStateRow()

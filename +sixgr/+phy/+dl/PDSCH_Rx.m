@@ -592,7 +592,7 @@ try
     sinr = double(sixgr.util.structGet(csiMetric, "SINR_dB", NaN));
     if isfinite(sinr)
         evidence.Value = sinr;
-        evidence.Source = "receiver_hest_csi_feedback_wideband_effective_sinr";
+        evidence.Source = char(string(sixgr.util.structGet(csiMetric, "SINRSource", "receiver_hest_reference_signal_measurement")));
         evidence.ValueRole = "estimated";
         evidence.ValueStatus = "OK";
         evidence.NAReason = "";

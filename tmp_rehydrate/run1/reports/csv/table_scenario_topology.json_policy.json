@@ -1,0 +1,6 @@
+{
+  "logical_path": "reports/csv/table_scenario_topology.csv",
+  "json_required": true,
+  "json_written": true,
+  "reason": "json_required"
+}

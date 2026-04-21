@@ -301,9 +301,10 @@ random_access:
   ssb_periodicity_ms: 20
   ssb_beam_count: 8
   prach_format: A1
+  preamble_length_mode: short
   preamble_count: 64
   msg3_enabled: true
-  configuration_index: 16
+  configuration_index: 87
   subcarrier_spacing_khz: 15
   root_sequence_index: 1
   preamble_index: 0

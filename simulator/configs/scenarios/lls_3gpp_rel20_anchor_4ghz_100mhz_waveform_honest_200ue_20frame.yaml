@@ -1,0 +1,84 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame
+  description: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 20 frames launched from the browser-owned MATLAB path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame
+  scenario_name: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 200 randomly placed UEs, and 20 frames launched from the browser-owned MATLAB path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame
+  comparison_group_name: rel20_anchor_4ghz_100mhz_200ue_20frame
+  notes: >
+    Canonical browser-default waveform_bundle scenario for a bounded truthful run. The launch contract,
+    runtime accounting, and post-run artifact flow are all expected to remain explicitly truthful:
+    waveform-backed where the MATLAB runtime really produces waveform artifacts, abstraction-labeled where
+    the simulator still aggregates, and unavailable with exact reasons when the repo does not support a
+    requested output family.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 200ue
+    - 20frame
+    - 400slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame
+  description: Strict waveform-honest NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 200 UEs and 20 frames.
+  runner_profile: waveform_bundle
+  notes: >
+    Browser-owned canonical waveform_bundle scenario. This path dispatches directly to the coupled
+    waveform truth loop and relies on the runtime's canonical slot accounting plus configured TDD duplex
+    pattern handling. Unsupported browser labels must remain explicit and truthful.
+
+run_control:
+  run_profile: exhaustive
+  total_frames: 20
+  warmup_frames: 2
+  measurement_frames: 5
+  total_slots: 400
+  warmup_slots: 40
+  measurement_slots: 100
+  checkpoint_every_frames: 1
+  snapshot_every_frames: 1
+  log_every_frames: 1
+  checkpoint_every_slots: 20
+  snapshot_every_slots: 20
+  log_every_slots: 20
+  batch_size_links: 16
+  warmup_time_ms: 20
+  measurement_time_ms: 50
+  total_time_ms: 200
+  max_runtime_guard: 7200
+
+simulation:
+  n_frames: 20
+  n_slots: 400
+  n_subframes: 200
+  min_duration_s: 0.2
+
+random_access:
+  enabled: true
+  prach_format: A1
+  preamble_length_mode: short
+  preamble_count: 64
+  zero_correlation_zone: 8
+  detection_threshold: 0.5
+  msg3_enabled: true
+  configuration_index: 84
+  subcarrier_spacing_khz: 30
+  root_sequence_index: 1
+  preamble_index: 0
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame

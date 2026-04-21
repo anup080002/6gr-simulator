@@ -1,0 +1,527 @@
+
+
+===== PAGE 1 =====
+ 
+ 
+ 
+ 
+MU-MIMO user pairing 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+© 2021 by Radisys Corporation. All rights reserved. 
+Radisys, Network Service-Ready Platform, Quick!Start, TAPA, Trillium, Trillium+plus, Trillium Digital Systems, Trillium 
+On Board, TAPA, and the Trillium logo are trademarks or registered trademarks of Radisys Corporation. All other 
+trademarks, registered trademarks, service marks, and trade names are the property of their respective owners. 
+
+
+===== PAGE 2 =====
+ 
+ 
+Contents 
+ 
+1 
+Preface .................................................................................................................................................. 4 
+ 
+Objective ..................................................................................................................................... 4 
+ 
+Audience ..................................................................................................................................... 4 
+ 
+Document Organization .............................................................................................................. 4 
+ 
+Release History ........................................................................................................................... 4 
+2 
+Introduction .......................................................................................................................................... 5 
+ 
+Purpose and Scope ..................................................................................................................... 5 
+ 
+Definitions, Acronyms, and Abbreviations .................................................................................. 5 
+ 
+References .................................................................................................................................. 5 
+3 
+RRM and OAM configurations ............................................................................................................ 6 
+4 
+MU-MIMO candidate filtering logic..................................................................................................... 7 
+5 
+MU-MIMO user pairing and port selection ...................................................................................... 10 
+ 
+Precomputation of orthogonal ports .......................................................................................... 10 
+5.1.1 
+Orthogonality determination ........................................................................................... 11 
+5.1.2 
+Retaining only the mutually orthogonal ports ................................................................. 11 
+ 
+User pairing (phase I) ................................................................................................................ 12 
+ 
+User pairing with different MU-MIMO ranks for paired users – (Phase II) ................................ 13 
+5.3.1 
+User and port selection algorithm .................................................................................. 13 
+5.3.2 
+User and port selection for 𝑳𝒔= 𝟏 ................................................................................. 13 
+5.3.3 
+User and port selection for 𝑳𝒔> 𝟏 ................................................................................. 14 
+5.3.4 
+Flow chart ....................................................................................................................... 17 
+6 
+Sum rate maximization ..................................................................................................................... 18 
+7 
+Effective MCS determination ............................................................................................................ 19 
+8 
+Considerations for phase II scheduling .......................................................................................... 20 
+ 
+ 
+ 
+ 
+ 
+Figures 
+ 
+Figure 1 MU MIMO Filtering logic..................................................................................................................... 7 
+
+
+===== PAGE 3 =====
+ 
+ 
+Figure 2 Orthogonal ports from other users ................................................................................................... 10 
+Figure 3 Flow chart till computing mutually orthogonal ports ......................................................................... 12 
+Figure 4 Example of user and port selection for Ls=1 ................................................................................... 14 
+Figure 5 Example 1 for Ls>1 .......................................................................................................................... 15 
+Figure 6 Example 2  for Ls>1 ......................................................................................................................... 16 
+Figure 7 Flow chart for user pairing with different MU-MIMO ranks for paired users .................................... 17 
+ 
+ 
+ 
+ 
+Tables 
+ 
+Table 1: Document Organization...................................................................................................................... 4 
+Table 2: Release History .................................................................................................................................. 4 
+Table 3: An example for 8 PMI indices ............................................................................................................ 9 
+ 
+ 
+ 
+ 
+
+
+===== PAGE 4 =====
+ 
+ 
+1 Preface 
+ Objective 
+This document describes the MU MIMO scheduling and user pairing approach 
+ Audience 
+The scope of the document is limited to the Radisys’s system engineering, L2 team and Jio team.  
+ Document Organization 
+This document is organized into the following sections. 
+Table 1: Document Organization 
+Section 
+Description 
+1. Preface 
+Provides the objective, document organization, 
+and release details. 
+2. Introduction 
+This section gives the purpose of the document 
+ 
+ 
+ 
+ 
+ Release History 
+This table lists the history of changes in successive revisions to this document: 
+Table 2: Release History 
+Version Date 
+Author(s) 
+Reviewer(s) Approver 
+Description 
+0.1 
+14.12.2021 Sree Charan, 
+Narayanan, 
+Shekar 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+===== PAGE 5 =====
+ 
+ 
+2 Introduction 
+ Purpose and Scope 
+The purpose of this document is to device the algorithm for MU MIMO scheduling and user pairing. 
+ Definitions, Acronyms, and Abbreviations 
+The definitions, acronyms, and abbreviations used in this document are: 
+Acronym 
+Description  
+ 
+ 
+ 
+ 
+ 
+ 
+ References 
+ 
+ 
+
+
+===== PAGE 6 =====
+ 
+ 
+3 RRM and OAM configurations 
+a) Active User Set: A list of users whose buffer occupancy is non-zero is considered. Each user 
+may have more than one service traffic. For instance, a user with VoNR traffic can also have 
+GBR or Non-GBR traffic.  
+b) The maximum number of users to be scheduled for each service queue for both UL/DL per 
+slot is a RRM configurable parameter.  
+1. maxRetxUsersPerSlot 
+2. maxSRBUsersPerSlot 
+3. maxVoNRUsersPerSlot 
+4. maxGBRUsersPerSlot 
+5. maxNonGBRUsersPerSlot  
+c) The maximum number of DL/UL MU-MIMO layers per slot is defined. 
+d) The maximum number of DL/UL SU-MIMO layers per slot is defined.  
+e) RB allocation for GBR and Non-GBR Candidates (Three approaches can be considered) 
+1. Static Allocation: In this approach we would define a max. number of RBs for each 
+service per user. 
+2. OnDemand Allocation: In this approach there is no restriction on number of RBs 
+allocated per service or per UE.  
+3. Alternatively, we could proportionally allocate RBs for the defined number of 
+UEs/TTI 
+
+
+===== PAGE 7 =====
+ 
+ 
+4 MU-MIMO candidate filtering logic 
+ 
+Figure 1 MU MIMO Filtering logic 
+Step-1: Categorize users based on Service Priority 
+Service Priority: gNB will maintain separate queues for the following services as described 
+below.  
+a. Retransmission Queues 
+b. SRB Queues 
+c. VoNR Queues 
+d. Guaranteed Bit Rate (GBR) Queues  
+e. Non-Guaranteed Bit Rate (Non-GBR) Queues 
+As mentioned earlier a user can be part of multiple queues. 
+Step-2: Calculate user priority metric for each queue. 
+The short-listed user list is then sorted as per the utility function metric computed for each 
+user.  The MU-MIMO utility function for user 𝑖 is defined as 𝑈𝑖  
+where 𝑈𝑖= 𝑓(𝑄𝑜𝑆, 𝐵𝑂, 𝑃𝐷𝐵, 𝐶ℎ𝑎𝑛𝑛𝑒𝑙, 𝐶𝑆𝐼, 𝑆𝑦𝑠𝑡𝑒𝑚𝐾𝑃𝐼𝑠) 
+ 
+
+
+===== PAGE 8 =====
+ 
+ 
+Step-3: Compute number of UEs to be allocated. 
+1. For a given system Configuration (usersPerTTI), we first determine the number of users 
+that could be scheduled for this slot.  
+i. 𝑈𝑠𝑒𝑟𝑚𝑖𝑚𝑜= 𝑢𝑠𝑒𝑟𝑠𝑃𝑒𝑟𝑇𝑇𝐼−(𝐶𝑎𝑛𝑑𝑖𝑑𝑡𝑒𝑠(𝑅𝑒𝑡𝑟𝑎𝑛𝑠𝑚𝑖𝑠𝑠𝑖𝑜𝑛𝑠) +
+𝐶𝑎𝑛𝑑𝑖𝑑𝑎𝑡𝑒𝑠(𝑉𝑜𝑁𝑅) + 𝐶𝑎𝑛𝑑𝑖𝑑𝑎𝑡𝑒𝑠(𝑆𝑅𝐵));  
+ii. Additionally, Compute RBs remaining after allocation of retransmission, 
+VoNR and SRB.  
+        Step-4: Apply RB and CQI Constraints 
+1. For head user of the GBR queue check if the users CQI value is greater than 𝐶𝑄𝐼𝑡ℎ𝑟𝑒𝑠ℎ𝑜𝑙𝑑 
+and his RB requirement is greater than the minimum number of RBs (𝛼𝑅𝐵𝑠)  required 
+for MU-MIMO Candidacy.  
+a. If the number of RBs is below 𝛼𝑅𝐵𝑠 or/and CQI value is less than 𝐶𝑄𝐼𝑡ℎ𝑟𝑒𝑠ℎ𝑜𝑙𝑑, 
+then that UE is not considered for MIMO candidacy but scheduled for the slot  
+b. 𝑈𝑠𝑒𝑟𝑚𝑖𝑚𝑜= 𝑈𝑠𝑒𝑟𝑚𝑖𝑚𝑜−1; 
+c. RB requirement is computed from the buffer occupancy (BO) status and UE 
+reported CQI value.  
+        Step-5: SU-MIMO or MU-MIMO Candidates  
+1. 
+Assuming the head user has passed the step-4, then the UE is considered for SU-
+MIMO or MU-MIMO candidancy.  
+If the head user can support SU-MIMO for maxDLsumimoLayers, 
+The user is scheduled as SU-MIMO. 
+Else 
+The candidate is selected for MU-MIMO.  
+End 
+ 
+Step-6: Determine MU-MIMO Candidates (phase II) 
+1. 
+Using CSI Type I report: In case the UE is configured to report the CSI-Type I. We 
+define the head of the sorted list candidate as the primary candidate. With the 
+primary candidates PMI as the reference, the sorted list would be further reduced to 
+only include those UEs whose reported PMIs matrix are orthogonal with all the UEs in 
+the list.   
+
+
+===== PAGE 9 =====
+ 
+ 
+Table 3: An example for 8 PMI indices 
+PMI Index (1-8) 
+1 ⊥ 5 
+2 ⊥ 6 
+3 ⊥ 7 
+4 ⊥ 8 
+In the above example if the primary candidate is selected as 1, then all the users who reported PMI 
+index as 5 are considered as prospective candidate for user pairing.  
+Step-7: Resource allocation and Layer determination 
+1. Since scheduling two UEs whose RB requirements is different will not yield efficient 
+results, we introduce the parameter 𝛿𝑅𝐵𝑠, which ensures the following condition, 
+(𝑈𝐸𝑖_ℎ𝑒𝑎𝑑
+𝑅𝐵𝑠
+−𝑈𝐸𝑗
+𝑅𝐵𝑠) <  𝛿𝑅𝐵𝑠;  𝑤ℎ𝑒𝑟𝑒 𝑖_ℎ𝑒𝑎𝑑 ≠𝑗 𝑎𝑛𝑑 𝑖_ℎ𝑒𝑎𝑑 𝑖𝑠 𝑡ℎ𝑒 ℎ𝑒𝑎𝑑 𝑈𝐸.  
+2. Compute ideal number of RBs and layers that is used for the MU-MIMO transmission 
+1. 
+For Phase I we will consider equal number of layer {1,1,…1},{2,2,…2},{4,4}   
+Step-8: Access SRS channel coefficient from shared memory 
+1. The expected dimension of the channel coefficients from L1 per user,  
+[SRS_AVAILABLE_SYMBOL_NUM] 
+[gNB_ANTENNA] 
+[UE_ANTENNA_PORTS] 
+[MAX_NUM_OF_PRB_IN_FULL_BAND]  
+2. The channel coefficients are required for the filtered UEs 
+
+
+===== PAGE 10 =====
+ 
+ 
+5 MU-MIMO user pairing and port selection 
+Let the set 𝑆= {1, 2, … , 𝐾} be the set of 𝐾 potential MU-MIMO user indices, 𝐿𝑘 be the SU-MIMO 
+rank of the 𝑘𝑡ℎ user, and 𝑇𝑃
+𝑘= {𝑝1
+𝑘, 𝑝2
+𝑘, … , 𝑝𝐿𝑘
+𝑘} be the selected SU-MIMO port set of the 𝑘𝑡ℎ user. 
+This algorithm selects a subset of user indices from the set 𝑆 and their corresponding ports to be 
+used for MU-MIMO transmission. Following are the assumptions made in the user pairing and ports 
+selection process. 
+Note: K is pre-determined and fixed as 4 for phase 1. 
+1. User pairing is done with respect to the head of the line (HOL) user. 
+2. The maximum number of users paired is 𝑁𝑀𝐴𝑋= 8. 
+3. The overall maximum MU-MIMO layers possible are 8. 
+MU-MIMO rank of a paired user is always less than or equal to its SU-MIMO rank. 
+ Precomputation of orthogonal ports 
+ 
+Figure 2 Orthogonal ports from other users 
+At this stage, gNB has the information of SU-MIMO rank and SU-MIMO ports selected of each user 
+for ZF precoder computation. Now, for each user 𝑘 in the set 𝑆, we need to find out the sets of SU-
+MIMO ports belonging to each of the other 𝐾−1 users that are orthogonal to each of the SU-
+MIMO port of the user 𝑘. In another way,  for user 𝑘 with 𝐿𝑘 SU-MIMO ports, we need to compute 
+
+
+===== PAGE 11 =====
+ 
+ 
+𝐿𝑘 sets with each set containing the indices of orthogonal SU-MIMO ports in the other 𝐾−1 users 
+in the set 𝑆.  
+ 
+ explains an example case, where there are 3 users in the set 𝑆.  First, the SU-MIMO rank and ports 
+are selected for each user. Next, for each SU-MIMO selected port of a user, find the ports in the 
+remaining users that are orthogonal. In case of user 1, ports 1 and 2 are selected for SU-MIMO. 
+Ports 3 and 4 of user 2, and port 3 of user 3 are orthogonal to port 1 of user1. Port 4 of user 2 and 
+port 3 of user 3 are orthogonal to port 2 of user1. Similarly, compute the orthogonal port sets of 
+the selected SU-MIMO ports of user 2 and user 3. Orthogonality determination between vectors is 
+described below. 
+5.1.1 Orthogonality determination 
+The method of determining orthogonality between two channel vectors corresponding to two 
+ports of different users is same as that of the method used in SU-MIMO port selection algorithm. 
+Let us say that we need to determine whether the channel vectors ℎ𝑖
+𝑚 and ℎ𝑗
+𝑛 are orthogonal or 
+not. Here,  
+ℎ𝑖
+𝑚= The channel vector corresponding to the 𝑖𝑡ℎ port of user 𝑚 
+ℎ𝑗
+𝑛= The channel vector corresponding to the 𝑗𝑡ℎ port of user 𝑛. 
+Now, compute the correlation coefficient 𝐶(ℎ𝑖
+𝑚, ℎ𝑗
+𝑛) between the two channel vectors ℎ𝑖
+𝑚, and ℎ𝑗
+𝑛. 
+The two channel vectors ℎ𝑖
+𝑚, and ℎ𝑗
+𝑛 are orthogonal if 𝐶(ℎ𝑖
+𝑚, ℎ𝑗
+𝑛) < 𝜌𝑇𝐻, where 𝜌𝑇𝐻 is the same 
+correlation threshold used in SU-MIMO port selection algorithm. 
+5.1.2 Retaining only the mutually orthogonal ports 
+It is not guaranteed that all the ports in these computed sets are mutually orthogonal. For example, 
+in the example case considered in  
+, the ports that are orthogonal to the port 1 of user 1 are ports 3 & 4 of user 2 and port 3 of user 3. 
+However, it can be observed that they are not mutually orthogonal as port 4 of user 2 and port 3 
+of user 3 are not orthogonal. Only, mutually orthogonal ports can be paired for MU-MIMO. So, find 
+out the mutually orthogonal ports in each set and remove the ports that are not mutually 
+orthogonal. The flow chart till computing the sets with mutually orthogonal ports is shown in the 
+Figure 3. The sets 𝑄1
+𝑠, 𝑄2
+𝑠, … , 𝑄𝐿𝑠
+𝑠 with mutually orthogonal ports are given as input to the user and 
+port selection algorithm. 
+
+
+===== PAGE 12 =====
+ 
+ 
+ 
+Figure 3 Flow chart till computing mutually orthogonal ports 
+Now let us look into the user and port selection algorithm. Section 5.2 describes the algorithm for 
+user and port selection with all the paired users having one SU-MIMO rank. Section 5.2 describes 
+the algorithm for user and port selection with where the paired users can have different ranks in 
+MU-MIMO. 
+ User pairing with one SU-MIMO rank 
+We can consider that only the users with one SU-MIMO rank are eligible for MU-MIMO.  
+This section describes the user pairing algorithm for the case where the paired user can have one 
+SU-MIMO ranks. The users that are going to be paired from the set 𝑆 are dependent on the HOL 
+user. Let us assume that user 𝑠∈𝑆 is the HOL user and its SU-MIMO rank is 1.  
+An example for user pairing is given below. 
+Let us consider 3 users filtered for MU-MIMO, all with one SU-MIMO rank. The SU-MIMO ports 
+corresponding to one layer is assumed as 1, 4 and 3. Based on mutual orthogonality, the possible 
+layers can be 3, 2 or 1. In the below considered example, the MU-MIMO layers comes out to be 3 
+(max possible layers considering below example). 
+
+
+===== PAGE 13 =====
+ 
+ 
+ 
+ User pairing with different MU-MIMO ranks for paired users 
+This section describes the user pairing algorithm for the case where the paired user can have 
+different individual ranks. The users that are going to be paired from the set 𝑆 are dependent on 
+the HOL user. Let us assume that user 𝑠∈𝑆 is the HOL user and its SU-MIMO rank is 𝐿𝑠. gNB would 
+have computed the 𝐿𝑠 sets which contain the mutually orthogonal ports belonging to other users 
+as discussed in section 5.1. Let us represent those sets as 𝑄1
+𝑠, 𝑄2
+𝑠, … , 𝑎𝑛𝑑 𝑄𝐿𝑠
+𝑠. The MU-MIMO is 
+possible only when at least one of the sets is non-empty, otherwise SU-MIMO is chosen for the 
+HOL user. 
+5.3.1 User and port selection algorithm 
+Let us look at the user and port selection algorithm when the  SU-MIMO rank of the HOL user i.e., 
+𝐿𝑠= 1, 𝑎𝑛𝑑 𝐿𝑠> 1. 
+5.3.2 User and port selection for 𝑳𝒔= 𝟏 
+In this case SU-MIMO rank of the HOL user is 1, so there will be only one set with mutually 
+orthogonal ports i.e., 𝑄1
+𝑠.  Let us assume that 𝑁𝑀𝑈_𝑇𝑂𝑇 users (including the HOL user) can be paired 
+using the set 𝑄1
+𝑠. If 𝑁𝑀𝑈_𝑇𝑂𝑇≤𝑁𝑀𝐴𝑋, then all the 𝑁𝑀𝑈_𝑇𝑂𝑇 users can be paired for MU-MIMO. For 
+𝑁𝑀𝑈_𝑇𝑂𝑇> 𝑁𝑀𝐴𝑋, only 𝑁𝑀𝐴𝑋 users among 𝑁𝑀𝑈_𝑇𝑂𝑇 users are selected based on their fairness 
+metrics along with the HOL user, so that the total scheduler fairness is improved/maximized. 
+
+
+===== PAGE 14 =====
+ 
+ 
+An example for 𝐿𝑠= 1 is provided in the Figure 4. Here, user 3 is the HOL user with SU-MIMO rank 
+𝐿𝑠= 1. Users 1, 2, 3, and 4 are paired for MU-MIMO and the total MU-MIMO layers are 5. It can 
+be noticed that user 2 has MU-MIMO rank 2 (different from the HOL MU-MIMO rank). 
+ 
+Figure 4 Example of user and port selection for Ls=1 
+5.3.3 User and port selection for 𝑳𝒔> 𝟏 
+Let us look at the conditions need to be satisfied by the HOL user to have rank 𝐿ℎ in MU-MIMO. 
+The possible values of 𝐿ℎ are: 𝐿ℎ= 2, … , 𝐿𝑠. 
+Condition 1: There should at least be one common user that contributed at least one port to at 
+least 𝐿ℎ sets of 𝑄1
+𝑠, 𝑄2
+𝑠, … , 𝑎𝑛𝑑 𝑄𝐿𝑠
+𝑠 .  
+Condition 2: The ports contributed by at least one common user to at least 𝐿ℎ sets of 
+𝑄1
+𝑠, 𝑄2
+𝑠, … , 𝑎𝑛𝑑 𝑄𝐿𝑠
+𝑠 should have at least one common port. 
+All the common users and their respective common ports are selected for MU-MIMO. The number 
+of ports contributed by the selected users can be different from 𝐿ℎ.  
+Using the above two conditions, find out the total MU-MIMO layers possible for all the possible 
+values of 𝐿ℎ= 2, … , 𝐿𝑠. Choose the value of 𝐿ℎ such that the total number of MU-MIMO layers are 
+maximized. 
+
+
+===== PAGE 15 =====
+ 
+ 
+ 
+Figure 5 Example 1 for Ls>1 
+The example provided in the Figure 5, user 1 is the HOL user with 𝐿𝑠= 2. The maximum total 
+number of MU-MIMO layers possible are 4 for 𝐿ℎ= 1. However, for 𝐿ℎ= 2, the total number of 
+layers possible are 5. So, users and ports are selected for 𝐿ℎ= 2. 
+
+
+===== PAGE 16 =====
+ 
+ 
+ 
+Figure 6 Example 2  for Ls>1 
+The example provided in the Figure 6, user 1 is the HOL user with 𝐿𝑠= 2. The maximum total 
+number of MU-MIMO layers possible are 5 for 𝐿ℎ= 1 with set 𝑄2
+𝑠 (Option 2). However, for 𝐿ℎ=
+2, the total number of layers possible are 4. So, users and ports are selected from Option 2 of 𝐿ℎ=
+1. 
+
+
+===== PAGE 17 =====
+ 
+ 
+5.3.4 Flow chart 
+ 
+Figure 7 Flow chart for user pairing with different MU-MIMO ranks for paired users 
+
+
+===== PAGE 18 =====
+ 
+ 
+6 Sum rate maximization 
+After selecting the mutually orthogonal set of users and ports, to satisfy the condition that only max 8 layers 
+in MU-MIMO is supported, we need to select the subset of users among the mutually orthogonal users. The 
+users can be selected based on the following. 
+1. QOS order 
+a. The users in top of the QOS priority list will be selected 
+2. Orthogonality metric 
+a. Among the mutually orthogonal users, the users with low correlation metric corresponding to 
+the HOL user will be selected 
+3. SINR 
+a. For the different combinations of users, SINR is derived. The combination of users for which 
+SINR is higher should be selected. This approach needs precoder at L2. 
+
+
+===== PAGE 19 =====
+ 
+ 
+7 Effective MCS determination 
+In case of SU-MIMO, the CQI reported by UE is used for MCS selection. But in case of MU-MIMO, as inter 
+user interference comes into picture, the CQI reported by the user will not be accurate. Hence some offset 
+must be induced in the reported CQI based on inter user interference. Two approaches are proposed below 
+briefly. 
+1. Give some offset to the reported CQI based on the number of MU-MIMO users paired 
+2. Calculated the effective SINR considering the inter user interference and map the SINR to 
+corresponding CQI  
+a. For this approach, precoder is required at L2 
+The detailed algorithm is yet to be discussed and analyzed. 
+ 
+
+
+===== PAGE 20 =====
+ 
+ 
+8 Considerations for phase II scheduling 
+SUMIMO 
+1. Frequency selective consideration for placing the UE at right RBs for best 
+capacity 
+2. Cap on number of UEs for MU-MIMO consideration and Cap on No of layers per 
+UE 
+3. Come up with a programmatic logic for port set and elements of the sets in port  
+MU-MIMO  
+1. Scalability of SU-MIMO rank/port determination to MU-MIMO (Mandatory 
+requirement) 
+2. Other scheduling metric to be considered for scheduling is PFS and Fairness 
+3. Should paring users should be part of user scheduling criteria i.e., UE selection 
+should consider orthogonality and paring.  
+4. For MU-MIMO, scalability of PCC method for Multi-User MIMO 
+5. Frequency selective scheduling for Multi-User 
