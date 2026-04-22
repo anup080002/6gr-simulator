@@ -101,6 +101,7 @@ SESSION_TTL = timedelta(hours=12)
 DEFAULT_DASHBOARD_AUTH_MODE = os.environ.get("SIXGR_DASHBOARD_AUTH_MODE", "open").strip().lower() or "open"
 if DEFAULT_DASHBOARD_AUTH_MODE not in {"open", "login"}:
     DEFAULT_DASHBOARD_AUTH_MODE = "open"
+RAW_DASHBOARD_USERS_JSON = os.environ.get("SIXGR_DASHBOARD_USERS_JSON", "").strip()
 OPEN_ACCESS_PROFILE = {
     "username": "open",
     "display_name": "Open Access",
@@ -108,32 +109,7 @@ OPEN_ACCESS_PROFILE = {
     "theme": "signal",
     "bio": "Open intranet mode is active. The dashboard is reachable without a username or password.",
 }
-USER_PROFILES = {
-    "admin": {
-        "username": "admin",
-        "password": "admin",
-        "display_name": "Admin",
-        "role": "Administrator",
-        "theme": "aurora",
-        "bio": "Owns the full LLS intranet console and global run controls.",
-    },
-    "anup": {
-        "username": "anup",
-        "password": "anup",
-        "display_name": "Anup",
-        "role": "RAN Engineer",
-        "theme": "signal",
-        "bio": "Focuses on PHY chains, scheduler behavior, and implementation detail review.",
-    },
-    "brijesh": {
-        "username": "brijesh",
-        "password": "brijesh",
-        "display_name": "Brijesh",
-        "role": "Simulation Lead",
-        "theme": "vector",
-        "bio": "Works on truthful 6G LLS behavior, validation, and runtime analysis.",
-    },
-}
+USER_PROFILES: dict[str, dict[str, Any]] = {}
 ACTIVE_SESSIONS: dict[str, dict[str, Any]] = {}
 DB_POOLS: dict[str, pooling.MySQLConnectionPool] = {}
 LIVE_PAYLOAD_CACHE: dict[int, dict[str, Any]] = {}
@@ -147,6 +123,40 @@ PROCESS_HEARTBEAT_STALL_MINUTES = max(
 )
 TERMINAL_STATUS_PREFIXES = ("completed", "failed", "aborted")
 TERMINAL_STATUS_VALUES = {"completed", "completed_with_failures", "aborted", "failed", "stopped"}
+
+
+def load_dashboard_user_profiles() -> dict[str, dict[str, Any]]:
+    """Load protected-mode operator profiles only from environment configuration."""
+    if not RAW_DASHBOARD_USERS_JSON:
+        return {}
+    try:
+        payload = json.loads(RAW_DASHBOARD_USERS_JSON)
+    except Exception:
+        return {}
+    profiles: dict[str, dict[str, Any]] = {}
+    items = payload.values() if isinstance(payload, dict) else payload
+    if not isinstance(items, list) and not isinstance(items, tuple) and not isinstance(payload, dict):
+        return {}
+    iterable = items if not isinstance(payload, dict) else payload.values()
+    for raw in iterable:
+        if not isinstance(raw, dict):
+            continue
+        username = str(raw.get("username") or "").strip().lower()
+        password = str(raw.get("password") or "")
+        if not username or not password:
+            continue
+        profiles[username] = {
+            "username": username,
+            "password": password,
+            "display_name": str(raw.get("display_name") or username.title()),
+            "role": str(raw.get("role") or "Operator"),
+            "theme": str(raw.get("theme") or "signal"),
+            "bio": str(raw.get("bio") or "Protected intranet operator profile."),
+        }
+    return profiles
+
+
+USER_PROFILES = load_dashboard_user_profiles()
 
 
 def db_connection(database: str | None = MYSQL_DATABASE):
@@ -208,6 +218,68 @@ def is_terminal_status(status: Any) -> bool:
     if not lowered:
         return False
     return lowered in TERMINAL_STATUS_VALUES or lowered.startswith(TERMINAL_STATUS_PREFIXES)
+
+
+def regression_comparison_not_applicable_reason(artifacts: list[dict[str, Any]]) -> str | None:
+    """Return a reason when a regression analytics family has no real comparator run."""
+    change_impact_artifact = next(
+        (
+            art
+            for art in artifacts
+            if str(art.get("logical_path") or "").strip().lower().endswith("/change_impact_analytics.csv")
+            or str(art.get("logical_path") or "").strip().lower() == "analytics/csv/change_impact_analytics.csv"
+        ),
+        None,
+    )
+    if change_impact_artifact is None:
+        return "No paired baseline comparator artifacts were materialized for this run."
+    artifact_id = int(change_impact_artifact.get("artifact_id") or 0)
+    if artifact_id <= 0:
+        return "No paired baseline comparator artifacts were materialized for this run."
+    header, rows = load_cached_csv_preview(artifact_id, 16)
+    if not header or not rows:
+        return "No paired baseline comparator artifacts were materialized for this run."
+    index = {str(name): idx for idx, name in enumerate(header)}
+    status_idx = index.get("ComparisonStatus")
+    reason_idx = index.get("Reason")
+    statuses = {
+        str(row[status_idx]).strip().lower()
+        for row in rows
+        if status_idx is not None and status_idx < len(row)
+    }
+    reasons = [
+        str(row[reason_idx]).strip()
+        for row in rows
+        if reason_idx is not None and reason_idx < len(row) and str(row[reason_idx]).strip()
+    ]
+    if statuses and statuses <= {"placeholder", "not_applicable", "not-applicable"}:
+        return reasons[0] if reasons else "No paired baseline comparator artifacts were materialized for this single-run result."
+    return None
+
+
+def contract_section_not_applicable_reason(
+    *,
+    kind_token: str,
+    slug_token: str,
+    public_artifacts: list[dict[str, Any]],
+    feature_policy: dict[str, Any],
+) -> str | None:
+    if kind_token != "analytics":
+        return None
+    if slug_token == "optional-6g-extension-analytics":
+        if not (
+            feature_policy.get("ai_enabled")
+            or feature_policy.get("ntn_enabled")
+            or feature_policy.get("sensing_enabled")
+            or feature_policy.get("localization_enabled")
+            or feature_policy.get("ris_enabled")
+            or feature_policy.get("cell_free_enabled")
+            or feature_policy.get("sub_thz_enabled")
+        ):
+            return "Optional 6G extension analytics are not applicable for this NR-only run because AI/NTN/sensing/RIS/cell-free/sub-THz features were disabled."
+    if slug_token == "regression-baseline-vs-candidate-analytics":
+        return regression_comparison_not_applicable_reason(public_artifacts)
+    return None
 
 
 def matlab_process_command_lines() -> list[str]:
@@ -5594,6 +5666,33 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
     )
     if section is None:
         raise KeyError(f"{kind_token.title()} section {slug!r} was not found.")
+    not_applicable_reason = contract_section_not_applicable_reason(
+        kind_token=kind_token,
+        slug_token=slug_token,
+        public_artifacts=public_artifacts,
+        feature_policy=feature_policy,
+    )
+    if not_applicable_reason:
+        payload = {
+            "run_id": int(run_id),
+            "kind": kind_token,
+            "slug": slug_token,
+            "artifact_version": artifact_version,
+            "notApplicable": True,
+            "notApplicableReason": not_applicable_reason,
+            "section": {
+                **section,
+                "evidence_bundle": {
+                    "tableArtifacts": [],
+                    "imageArtifacts": [],
+                    "numericCharts": [],
+                    "unavailableRows": [],
+                    "kind": kind_token,
+                },
+            },
+        }
+        SECTION_PAYLOAD_CACHE[cache_key] = payload
+        return payload
     contract_table_artifacts = [
         art
         for art in public_artifacts
@@ -5672,7 +5771,7 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
     evidence_bundle = {
         "tableArtifacts": dedupe_descriptor_list(scoped_tables + contract_table_matches + chart_table_matches),
         "imageArtifacts": dedupe_descriptor_list(scoped_images + chart_image_matches),
-        "numericCharts": dedupe_numeric_chart_rows(numeric_matches),
+        "numericCharts": dedupe_numeric_chart_rows(numeric_charts + numeric_matches),
         "unavailableRows": unavailable_rows,
         "kind": kind_token,
     }
@@ -5681,6 +5780,8 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
         "kind": kind_token,
         "slug": slug_token,
         "artifact_version": artifact_version,
+        "notApplicable": False,
+        "notApplicableReason": "",
         "section": {**section_out, "evidence_bundle": evidence_bundle},
     }
     SECTION_PAYLOAD_CACHE[cache_key] = payload
@@ -7391,11 +7492,17 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
         art
         for art in artifacts
         if art["artifact_kind"] == "table_csv"
-        and art["byte_size"] <= 750_000
+        and (
+            art["byte_size"] <= 750_000
+            or (
+                "contract__" in str(art["logical_path"]).lower()
+                and art["byte_size"] <= 2_500_000
+            )
+        )
         and classify_result_section(str(art["logical_path"])) not in {"geometry", "meta"}
         and any(
             token in art["logical_path"].lower()
-            for token in ("summary", "trace", "trial", "timeline", "timeseries", "kpi", "outputs", "report", "sweep", "preview", "stage", "reference")
+            for token in ("summary", "trace", "trial", "timeline", "timeseries", "kpi", "outputs", "report", "sweep", "preview", "stage", "reference", "contract__")
         )
     ]
     candidates.sort(key=lambda art: chart_priority(str(art["logical_path"])))
@@ -8710,6 +8817,13 @@ def build_login_page(message: str = "", next_url: str = "/home") -> bytes:
             active="login",
             user_profile=dict(OPEN_ACCESS_PROFILE),
         )
+    if not USER_PROFILES:
+        return page_shell(
+            "Login",
+            '<section class="panel"><h2>Protected Access Misconfigured</h2><p class="muted">Protected login mode is enabled, but no operator profiles were supplied through <code>SIXGR_DASHBOARD_USERS_JSON</code>. Open intranet mode is the intended default for this deployment.</p></section>',
+            active="login",
+            user_profile=None,
+        )
     next_url = next_url or "/home"
     safe_next = html.escape(next_url, quote=True)
     message_html = f'<p class="warning">{html.escape(message)}</p>' if message else ""
@@ -8729,14 +8843,14 @@ def build_login_page(message: str = "", next_url: str = "/home") -> bytes:
         </div>
         <div class="login-form-panel">
           <h2>Login</h2>
-          <p class="muted">Use your configured intranet operator credentials to enter the dashboard.</p>
+          <p class="muted">Use an explicitly provisioned intranet operator account to enter the dashboard.</p>
           {message_html}
           <form method="post" action="/login">
             <input type="hidden" name="next" value="{safe_next}">
             <label for="username"><strong>Username</strong></label>
-            <input id="username" name="username" type="text" autocomplete="username" placeholder="admin">
+            <input id="username" name="username" type="text" autocomplete="username" placeholder="operator">
             <label for="password"><strong>Password</strong></label>
-            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="admin">
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••">
             <div class="toolbar" style="margin-top:8px;">
               <button type="submit">Enter Dashboard</button>
             </div>
@@ -8763,7 +8877,7 @@ def build_profile_page(user_profile: dict[str, Any]) -> bytes:
           <div>
             <h2 style="margin-bottom:4px;">{html.escape(display_name)}</h2>
             <div class="pill">{html.escape(role)}</div>
-            <div class="mini-note">Username: <code>{html.escape(username)}</code> | Theme: <code>{html.escape(theme)}</code></div>
+            <div class="mini-note">Access profile: <code>{html.escape('open_intranet' if auth_mode_open() else 'protected_intranet')}</code> | Theme: <code>{html.escape(theme)}</code></div>
           </div>
         </div>
         <form method="post" action="/logout" class="inline-form">
@@ -9633,10 +9747,20 @@ window.addEventListener('DOMContentLoaded', function () {
     if (!rows || !rows.length) return `<div class="mini-note">${esc(empty)}</div>`;
     return `<div class="table-wrap"><table><thead><tr><th>Type</th><th>Name</th><th>Exact Reason</th></tr></thead><tbody>${rows.map(row => `<tr><td>${esc(row.type)}</td><td>${esc(row.name)}</td><td>${esc(row.reason)}</td></tr>`).join('')}</tbody></table></div>`;
   }
+  function sectionNumericChartsPanel(section, evidence) {
+    const charts = (evidence.numericCharts || []).slice(0, 6);
+    if (!charts.length) return '<div class="mini-note">No directly chartable numeric tabs were matched for this family.</div>';
+    return `<div class="toolbar">${charts.map((chart, index) => `<a class="button-link secondary" href="${esc(chart.download_url || '#')}">Download ${esc(chart.title || chart.chart_id || `Chart ${index + 1}`)}</a>`).join('')}</div><div class="artifact-gallery">${charts.map((chart, index) => `<article class="artifact-card"><h4>${esc(chart.title || chart.chart_id || `Numeric Chart ${index + 1}`)}</h4><div id="sectionEvidenceChart_${esc(section.slug || 'section')}_${index}" class="chart-box" style="height:320px;"></div></article>`).join('')}</div>`;
+  }
   function sectionEvidencePanel(section, kind) {
     const evidence = sectionPublishedArtifacts(section, kind);
-    const chartButtons = evidence.numericCharts.map(chart => `<a class="button-link" href="${esc(chart.download_url || '#')}">${esc(chart.title || chart.chart_id || 'Numeric Chart')}</a>`).join('');
-    return `<section class="panel"><h3>Published Evidence For This ${esc(kind === 'analytics' ? 'Analytics' : 'Report')} Family</h3><p class="subtle">This panel shows only real persisted artifacts that match <code>${esc(section.slug || '')}</code> for the selected run. Missing rows stay explicitly unavailable with exact reasons.</p><div class="toolbar">${statusBadge(`${evidence.tableArtifacts.length} matched tables`, evidence.tableArtifacts.length ? 'good' : 'warn')}${statusBadge(`${evidence.imageArtifacts.length} matched visuals`, evidence.imageArtifacts.length ? 'good' : 'warn')}${statusBadge(`${evidence.numericCharts.length} numeric charts`, evidence.numericCharts.length ? 'good' : 'warn')}${statusBadge(`${evidence.unavailableRows.length} unavailable contract rows`, evidence.unavailableRows.length ? 'warn' : 'good')}</div><h4>Published Source Tables / Views</h4>${sectionArtifactTable(evidence.tableArtifacts, 'No persisted source tables matched this family for the selected run.')}<h4 style="margin-top:16px;">Published Visual Artifacts</h4>${sectionImageGallery(evidence.imageArtifacts, 'No persisted chart, waveform, heatmap, or image artifact matched this family for the selected run.')}<h4 style="margin-top:16px;">Numeric Chart Sources</h4>${chartButtons ? `<div class="toolbar">${chartButtons}</div>` : '<div class="mini-note">No directly chartable numeric tabs were matched for this family.</div>'}<h4 style="margin-top:16px;">Unavailable Rows</h4>${sectionUnavailableTable(evidence.unavailableRows, 'Every contract row in this family matched a real persisted source artifact or chart source.')}</section>`;
+    return `<section class="panel"><h3>Published Evidence For This ${esc(kind === 'analytics' ? 'Analytics' : 'Report')} Family</h3><p class="subtle">This panel shows only real persisted artifacts that match <code>${esc(section.slug || '')}</code> for the selected run. Missing rows stay explicitly unavailable with exact reasons.</p><div class="toolbar">${statusBadge(`${evidence.tableArtifacts.length} matched tables`, evidence.tableArtifacts.length ? 'good' : 'warn')}${statusBadge(`${evidence.imageArtifacts.length} matched visuals`, evidence.imageArtifacts.length ? 'good' : 'warn')}${statusBadge(`${evidence.numericCharts.length} numeric charts`, evidence.numericCharts.length ? 'good' : 'warn')}${statusBadge(`${evidence.unavailableRows.length} unavailable contract rows`, evidence.unavailableRows.length ? 'warn' : 'good')}</div><h4>Published Source Tables / Views</h4>${sectionArtifactTable(evidence.tableArtifacts, 'No persisted source tables matched this family for the selected run.')}<h4 style="margin-top:16px;">Published Visual Artifacts</h4>${sectionImageGallery(evidence.imageArtifacts, 'No persisted chart, waveform, heatmap, or image artifact matched this family for the selected run.')}<h4 style="margin-top:16px;">Interactive Numeric Charts</h4>${sectionNumericChartsPanel(section, evidence)}<h4 style="margin-top:16px;">Unavailable Rows</h4>${sectionUnavailableTable(evidence.unavailableRows, 'Every contract row in this family matched a real persisted source artifact or chart source.')}</section>`;
+  }
+  function renderSectionEvidenceCharts(section) {
+    const evidence = sectionPublishedArtifacts(section, state.page);
+    (evidence.numericCharts || []).slice(0, 6).forEach((chart, index) => {
+      drawPublishedAnalyticsChart(`sectionEvidenceChart_${section.slug || 'section'}_${index}`, chart);
+    });
   }
   function rows(records, empty, opts) { if (!records || !records.length) return unavailable(empty); const keys = Object.keys(records[0]).slice(0, 12); return scrollWrap(`<table><thead><tr>${keys.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${records.map(r => `<tr>${keys.map(k => `<td>${esc(text(r[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`, opts); }
   function objectTable(obj, empty, opts) { const keys = Object.keys(obj || {}); return keys.length ? scrollWrap(`<table><tbody>${keys.map(k => `<tr><th>${esc(k)}</th><td>${esc(text(obj[k]))}</td></tr>`).join('')}</tbody></table>`, opts) : unavailable(empty); }
@@ -10015,14 +10139,34 @@ window.addEventListener('DOMContentLoaded', function () {
     renderMetricExplorer('realtime');
   }
   function contractSlug(kind) { const parts = location.pathname.split('/').filter(Boolean); return parts[0] === kind ? (parts[1] || '') : ''; }
+  function sectionApplicableInLivePayload(kind, section) {
+    if (kind !== 'analytics') return true;
+    const slug = String((section || {}).slug || '');
+    const featurePolicy = ((state.live || {}).feature_policy || {});
+    if (slug === 'optional-6g-extension-analytics') {
+      return !!(featurePolicy.ai_enabled || featurePolicy.ntn_enabled || featurePolicy.sensing_enabled || featurePolicy.localization_enabled || featurePolicy.ris_enabled || featurePolicy.cell_free_enabled || featurePolicy.sub_thz_enabled);
+    }
+    if (slug === 'regression-baseline-vs-candidate-analytics') {
+      const liveTables = (state.live || {}).tables_all || [];
+      return liveTables.some(item => {
+        const path = String((item || {}).logical_path || '').toLowerCase();
+        return path.includes('baseline_candidate_delta_tables') || path.includes('per_sweep_comparison_tables');
+      });
+    }
+    return true;
+  }
   function contractSections(kind) {
     const live = ((state.live || {}).contract_surface || {});
     const baseSections = (() => {
       const sections = live[kind];
-      return Array.isArray(sections) && sections.length ? sections : (kind === 'reports' ? (root.report_sections || []) : (root.analytics_sections || []));
+      const sourceSections = Array.isArray(sections) && sections.length ? sections : (kind === 'reports' ? (root.report_sections || []) : (root.analytics_sections || []));
+      return sourceSections.filter(section => sectionApplicableInLivePayload(kind, section));
     })();
     const evidence = state.sectionEvidence;
     if (!evidence || evidence.kind !== kind || !evidence.section) return baseSections;
+    if (evidence.notApplicable) {
+      return baseSections.filter(section => String(section.slug || '') !== String(evidence.slug || ''));
+    }
     const slug = String(evidence.slug || '');
     return baseSections.map(section => String(section.slug || '') === slug ? evidence.section : section);
   }
@@ -10065,7 +10209,35 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function applyContractControls() { const table = document.querySelector('[data-contract-table]'); if (!table) return; const q = String(document.getElementById('contractFilter')?.value || '').toLowerCase(); table.querySelectorAll('tbody tr').forEach(row => { row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none'; }); document.querySelectorAll('[data-contract-col]').forEach(cb => { const idx = Number(cb.dataset.contractCol); table.querySelectorAll('tr').forEach(row => { const cell = row.children[idx]; if (cell) cell.style.display = cb.checked ? '' : 'none'; }); }); }
   function sortContractTable(col) { const table = document.querySelector('[data-contract-table]'); if (!table) return; const body = table.tBodies[0]; [...body.rows].sort((a,b) => String(a.children[col]?.textContent || '').localeCompare(String(b.children[col]?.textContent || ''))).forEach(row => body.appendChild(row)); applyContractControls(); }
-  function contractPage(kind) { const sections = contractSections(kind); const slug = contractSlug(kind); const section = sections.find(s => s.slug === slug); const titleText = kind === 'reports' ? 'Reports' : 'Analytics'; const subtitle = kind === 'reports' ? 'Real-time runtime truth only. Derived study views stay in Analytics.' : 'Derived post-processing study views only. Runtime truth stays in Reports.'; const selectorHtml = pageRunSelector(`${kind}RunSelect`, 'Selected Run', {showRunningBadge: kind === 'analytics', runningOnly: false, note: 'Switch runs here to inspect the same report or analytics family against a different truth-backed artifact set.'}); const issueHtml = kind === 'analytics' ? issueRegistryTable() : ''; title(titleText, subtitle); if (!section) { main.innerHTML = `${issueHtml}<section class="panel"><h3>${titleText}</h3>${selectorHtml}<p class="subtle">${subtitle}</p><div class="grid three">${sections.map(s => `<article class="tile"><span class="badge">${esc(s.domain)}</span><h4>${esc(s.title)}</h4><p>${esc((s.tables || []).length)} tables, ${esc((s.charts || []).length)} charts registered. Missing outputs stay unavailable.</p><a class="button-link" href="${esc(s.href)}">Open Section</a></article>`).join('')}</div></section>`; return; } const evidenceHtml = sectionEvidencePanel(section, kind); main.innerHTML = `${issueHtml}<section class="panel"><div class="toolbar"><a class="button-link" href="/${kind}">All ${titleText}</a><a class="button-link" href="/artifacts">Canonical Artifacts</a></div><h3>${esc(section.title)}</h3>${selectorHtml}<p class="subtle">${subtitle} Tables include mandatory direction/UE/BS/SFN/slot/symbol context and value_role/value_source/value_status semantics.</p><div class="toolbar">${statusBadge('no smoke data by default','good')}${statusBadge('no placeholder charts','good')}${statusBadge('lineage required','good')}</div></section>${evidenceHtml}<section class="panel"><div class="toolbar"><input id="contractFilter" placeholder="Filter tables, columns, status, lineage"><button type="button" data-contract-sort="0">Sort Tables</button><button type="button" data-contract-sort="1">Sort Status</button><label class="small"><input type="checkbox" data-contract-col="2" checked> Context</label><label class="small"><input type="checkbox" data-contract-col="3" checked> Columns</label><label class="small"><input type="checkbox" data-contract-col="4" checked> Drilldown / Export</label></div><h3>Tables / Views</h3><div class="table-wrap"><table data-contract-table><thead><tr><th>Table</th><th>Status</th><th>Mandatory Context</th><th>Columns</th><th>Drilldown / Export</th></tr></thead><tbody>${tableContractRows(section)}</tbody></table></div><h3>Charts / Graphs / Heatmaps</h3><div class="table-wrap"><table><thead><tr><th>Chart</th><th>Status</th><th>Rule</th><th>Lineage</th><th>Fake Data Guard</th></tr></thead><tbody>${chartContractRows(section)}</tbody></table></div></section>`; applyContractControls(); }
+  function contractPage(kind) {
+    const sections = contractSections(kind);
+    const slug = contractSlug(kind);
+    const section = sections.find(s => s.slug === slug);
+    const titleText = kind === 'reports' ? 'Reports' : 'Analytics';
+    const subtitle = kind === 'reports'
+      ? 'Real-time runtime truth only. Derived study views stay in Analytics.'
+      : 'Derived post-processing study views only. Runtime truth stays in Reports.';
+    const selectorHtml = pageRunSelector(`${kind}RunSelect`, 'Selected Run', {
+      showRunningBadge: kind === 'analytics',
+      runningOnly: false,
+      note: 'Switch runs here to inspect the same report or analytics family against a different truth-backed artifact set.',
+    });
+    const issueHtml = kind === 'analytics' ? issueRegistryTable() : '';
+    const evidence = state.sectionEvidence;
+    title(titleText, subtitle);
+    if (slug && evidence && evidence.kind === kind && String(evidence.slug || '') === String(slug) && evidence.notApplicable) {
+      main.innerHTML = `${issueHtml}<section class="panel"><div class="toolbar"><a class="button-link" href="/${kind}">All ${titleText}</a><a class="button-link" href="/artifacts">Canonical Artifacts</a></div><h3>${esc((evidence.section || {}).title || slug)}</h3>${selectorHtml}<p class="subtle">${subtitle}</p><div class="alert warn">This family is not applicable for the selected run: ${esc(evidence.notApplicableReason || 'no truthful source artifacts were published for this section under the selected scenario.')}</div></section>`;
+      return;
+    }
+    if (!section) {
+      main.innerHTML = `${issueHtml}<section class="panel"><h3>${titleText}</h3>${selectorHtml}<p class="subtle">${subtitle}</p><div class="grid three">${sections.map(s => `<article class="tile"><span class="badge">${esc(s.domain)}</span><h4>${esc(s.title)}</h4><p>${esc((s.tables || []).length)} tables, ${esc((s.charts || []).length)} charts registered. Missing outputs stay unavailable.</p><a class="button-link" href="${esc(s.href)}">Open Section</a></article>`).join('')}</div></section>`;
+      return;
+    }
+    const evidenceHtml = sectionEvidencePanel(section, kind);
+    main.innerHTML = `${issueHtml}<section class="panel"><div class="toolbar"><a class="button-link" href="/${kind}">All ${titleText}</a><a class="button-link" href="/artifacts">Canonical Artifacts</a></div><h3>${esc(section.title)}</h3>${selectorHtml}<p class="subtle">${subtitle} Tables include mandatory direction/UE/BS/SFN/slot/symbol context and value_role/value_source/value_status semantics.</p><div class="toolbar">${statusBadge('no smoke data by default','good')}${statusBadge('no placeholder charts','good')}${statusBadge('lineage required','good')}</div></section>${evidenceHtml}<section class="panel"><div class="toolbar"><input id="contractFilter" placeholder="Filter tables, columns, status, lineage"><button type="button" data-contract-sort="0">Sort Tables</button><button type="button" data-contract-sort="1">Sort Status</button><label class="small"><input type="checkbox" data-contract-col="2" checked> Context</label><label class="small"><input type="checkbox" data-contract-col="3" checked> Columns</label><label class="small"><input type="checkbox" data-contract-col="4" checked> Drilldown / Export</label></div><h3>Tables / Views</h3><div class="table-wrap"><table data-contract-table><thead><tr><th>Table</th><th>Status</th><th>Mandatory Context</th><th>Columns</th><th>Drilldown / Export</th></tr></thead><tbody>${tableContractRows(section)}</tbody></table></div><h3>Charts / Graphs / Heatmaps</h3><div class="table-wrap"><table><thead><tr><th>Chart</th><th>Status</th><th>Rule</th><th>Lineage</th><th>Fake Data Guard</th></tr></thead><tbody>${chartContractRows(section)}</tbody></table></div></section>`;
+    applyContractControls();
+    renderSectionEvidenceCharts(section);
+  }
   function reports() { contractPage('reports'); }
   function analytics() {
     contractPage('analytics');
