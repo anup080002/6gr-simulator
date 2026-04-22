@@ -2296,12 +2296,25 @@ if ~(istable(ctx.Tables.PRACH) && ~isempty(ctx.Tables.PRACH))
     return;
 end
 trials = max(height(ctx.Tables.PRACH), 1);
-numUEs = localConfigNumber(ctx, ["deployment_topology.num_ues", "scenario.ue.nUE"], 1);
-note = "The current waveform LLS initial-access path executes one targeted preamble attempt per PRACH trial. Observed collision count is therefore zero for this scenario unless explicit contention modeling is added.";
+numUEs = localConfigNumber(ctx, ["random_access.num_ues_per_ro", "deployment_topology.num_ues", "scenario.ue.nUE"], 1);
+collisionFlags = localFiniteColumn(ctx.Tables.PRACH, "CollisionFlag");
+activeUECount = localFiniteColumn(ctx.Tables.PRACH, "ActiveUECount");
+if isempty(activeUECount)
+    activeUECount = repmat(double(numUEs), trials, 1);
+end
+if isempty(collisionFlags)
+    collisionFlags = double(activeUECount > 1);
+end
+collisionCount = sum(collisionFlags ~= 0, "omitnan");
+collisionRate = mean(collisionFlags ~= 0, "omitnan");
+if ~isfinite(collisionRate)
+    collisionRate = 0;
+end
+note = "Preamble-collision statistics are derived from observed multi-UE PRACH random-access occasions when the runtime exports collision flags or active-UE counts.";
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "PRACH", "collision_count", "available", 0, "", "count", "air_interface/csv/prach_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "PRACH", "collision_rate", "available", 0, "", "fraction", "air_interface/csv/prach_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "PRACH", "configured_ues", "available", numUEs, "", "count", "air_interface/csv/prach_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "PRACH", "collision_count", "available", collisionCount, "", "count", "air_interface/csv/prach_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "PRACH", "collision_rate", "available", collisionRate, "", "fraction", "air_interface/csv/prach_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "PRACH", "configured_ues", "available", max(activeUECount, [], "omitnan"), "", "count", "air_interface/csv/prach_trials.csv", note); ...
     localMetricTableRow(cat, metric, "PRACH", "trial_count", "available", trials, "", "count", "air_interface/csv/prach_trials.csv", note)];
 end
 

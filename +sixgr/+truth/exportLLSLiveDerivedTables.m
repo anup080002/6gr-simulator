@@ -1139,7 +1139,167 @@ if isempty(parts)
 elseif numel(parts) == 1
     T = parts{1};
 else
+    % DL and UL truth tables can legitimately diverge in optional telemetry
+    % columns late in a run. For live-derived evidence tables we need a
+    % union-aligned concat, not a hard failure after the waveform run has
+    % already completed successfully.
+    allVars = strings(1, 0);
+    for i = 1:numel(parts)
+        partVars = string(parts{i}.Properties.VariableNames);
+        allVars = [allVars, setdiff(partVars, allVars, "stable")]; %#ok<AGROW>
+    end
+    for vi = 1:numel(allVars)
+        varName = allVars(vi);
+        prototype = localFirstDirectionalPrototype(parts, varName);
+        for pi = 1:numel(parts)
+            partVars = string(parts{pi}.Properties.VariableNames);
+            if ismember(varName, partVars)
+                parts{pi}.(char(varName)) = localCoerceDirectionalColumnForCombine(parts{pi}.(char(varName)), prototype, height(parts{pi}));
+            else
+                parts{pi}.(char(varName)) = localDirectionalDefaultColumnForCombine(prototype, height(parts{pi}));
+            end
+        end
+    end
+    for pi = 1:numel(parts)
+        parts{pi} = parts{pi}(:, cellstr(allVars));
+    end
     T = vertcat(parts{:});
+end
+end
+
+function prototype = localFirstDirectionalPrototype(parts, varName)
+prototype = [];
+for i = 1:numel(parts)
+    vars = string(parts{i}.Properties.VariableNames);
+    if ismember(varName, vars)
+        prototype = parts{i}.(char(varName));
+        return;
+    end
+end
+end
+
+function col = localCoerceDirectionalColumnForCombine(col, prototype, nRows)
+if nargin < 3
+    nRows = size(col, 1);
+end
+if isdatetime(prototype)
+    if ~isdatetime(col)
+        col = localDirectionalDefaultColumnForCombine(prototype, nRows);
+    end
+    return;
+end
+if isduration(prototype)
+    if ~isduration(col)
+        col = localDirectionalDefaultColumnForCombine(prototype, nRows);
+    end
+    return;
+end
+if isnumeric(prototype) || islogical(prototype)
+    if isnumeric(col) || islogical(col)
+        col = double(col);
+    else
+        col = str2double(localDirectionalStringifyColumn(col));
+    end
+    return;
+end
+col = localDirectionalStringifyColumn(col);
+end
+
+function col = localDirectionalDefaultColumnForCombine(prototype, nRows)
+if nargin < 2
+    nRows = 0;
+end
+if isdatetime(prototype)
+    dims = size(prototype);
+    dims(1) = nRows;
+    col = NaT(dims);
+    return;
+end
+if isduration(prototype)
+    dims = size(prototype);
+    dims(1) = nRows;
+    col = seconds(nan(dims));
+    return;
+end
+if isnumeric(prototype) || islogical(prototype) || isempty(prototype)
+    dims = size(prototype);
+    if isempty(dims)
+        dims = [nRows, 1];
+    else
+        dims(1) = nRows;
+    end
+    if numel(dims) == 1
+        dims = [dims, 1];
+    end
+    col = nan(dims);
+    return;
+end
+col = strings(nRows, 1);
+end
+
+function col = localDirectionalStringifyColumn(col)
+if isstring(col)
+    return;
+end
+if iscategorical(col)
+    col = string(col);
+    return;
+end
+if ischar(col)
+    col = string(cellstr(col));
+    return;
+end
+if iscell(col)
+    nRows = size(col, 1);
+    out = strings(nRows, 1);
+    for i = 1:nRows
+        out(i) = localDirectionalScalarToString(col{i});
+    end
+    col = out;
+    return;
+end
+if isnumeric(col) || islogical(col)
+    col = string(col);
+    return;
+end
+try
+    col = string(col);
+catch
+    col = strings(size(col, 1), 1);
+end
+end
+
+function token = localDirectionalScalarToString(value)
+if isstring(value)
+    if isscalar(value)
+        token = value;
+    else
+        token = strjoin(value(:).', "|");
+    end
+    return;
+end
+if ischar(value)
+    token = string(value);
+    return;
+end
+if isnumeric(value) || islogical(value)
+    if isempty(value)
+        token = "";
+    elseif isscalar(value)
+        token = string(value);
+    else
+        token = string(mat2str(value));
+    end
+    return;
+end
+if iscategorical(value)
+    token = string(value);
+    return;
+end
+try
+    token = string(value);
+catch
+    token = "";
 end
 end
 

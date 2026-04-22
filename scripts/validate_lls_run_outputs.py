@@ -28,6 +28,7 @@ REQUIRED_ARTIFACTS = {
 }
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE_URL = "http://127.0.0.1:62906"
+DEFAULT_SCENARIO_ID = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot"
 
 
 def resolve_base_url(explicit_value: str) -> str:
@@ -113,7 +114,7 @@ def validate_payload(payload: dict[str, Any], *, strict: bool, db_logical_paths:
     logical_paths = {str(item.get("logical_path") or "") for item in tables + images}
     logical_paths.update(db_logical_paths or set())
     scenario_id = str(run.get("scenario_id") or "")
-    if scenario_id != "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame":
+    if scenario_id != DEFAULT_SCENARIO_ID:
         failures.append(f"scenario_id mismatch: {scenario_id}")
     if strict and str(run.get("status_text") or "").lower() != "completed":
         failures.append(f"run status is not completed: {run.get('status_text')}")
@@ -154,7 +155,7 @@ def validate_payload(payload: dict[str, Any], *, strict: bool, db_logical_paths:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the locked 4 GHz / 100 MHz / 200 UE / 1 frame waveform-honest LLS run through browser APIs.")
+    parser = argparse.ArgumentParser(description="Validate the locked 4 GHz / 100 MHz / 50 UE / 14 slot waveform-honest LLS run through browser APIs.")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--run-id", type=int, default=0)
     parser.add_argument("--run-tag", default="")

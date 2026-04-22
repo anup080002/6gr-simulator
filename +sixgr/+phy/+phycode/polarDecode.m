@@ -71,25 +71,31 @@ info.ListLength = listLen;
 % Try common calling patterns
 msg = [];
 try
+    % Pattern: decbits = nrPolarDecode(in,K,E,L,nMax,iIL,CRClen)
+    msg = nrPolarDecode(x, K, E, listLen, nMax, logical(iIL), 24);
+    info.API = "nrPolarDecode(in,K,E,L,nMax,iIL,CRClen)";
+catch
+    try
     % Pattern: [msg, crcErr] = nrPolarDecode(in,K,E,L,nMax,iIL)
     [msg, crcErr] = nrPolarDecode(x, K, E, listLen, nMax, iIL);
     info.CRCError = crcErr;
     info.API = "nrPolarDecode(in,K,E,L,nMax,iIL)";
-catch
-    try
+    catch
+        try
         % Pattern: [msg, crcErr] = nrPolarDecode(in,K,E,nMax,iIL)
         [msg, crcErr] = nrPolarDecode(x, K, E, nMax, iIL);
         info.CRCError = crcErr;
         info.API = "nrPolarDecode(in,K,E,nMax,iIL)";
-    catch
-        try
+        catch
+            try
             % Pattern: msg = nrPolarDecode(in,K,E,nMax,iIL)
             msg = nrPolarDecode(x, K, E, nMax, iIL);
             info.API = "nrPolarDecode(in,K,E,nMax,iIL)->msg";
-        catch
-            % Fallback: msg = nrPolarDecode(in,K,E)
-            msg = nrPolarDecode(x, K, E);
-            info.API = "nrPolarDecode(in,K,E)";
+            catch
+                % Fallback: msg = nrPolarDecode(in,K,E,L)
+                msg = nrPolarDecode(x, K, E, listLen);
+                info.API = "nrPolarDecode(in,K,E,L)";
+            end
         end
     end
 end

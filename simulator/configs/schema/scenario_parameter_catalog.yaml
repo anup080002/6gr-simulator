@@ -14,6 +14,7 @@ top_level_order:
   - coding
   - modulation
   - control
+  - pdsch6gr
   - harq
   - random_access
   - impairments
@@ -67,7 +68,7 @@ sections:
       runner_profile:
         required: true
         type: string
-        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, prach_detection, generic_sweep, ai_benchmark]
+        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, prach_detection, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
       scale_profile:
         required: false
         type: string
@@ -466,6 +467,7 @@ sections:
         min: 0
       pdcch_payload_bits: {required: true, type: integer, min: 1}
       blind_decode_list_length: {required: true, type: integer, min: 1}
+      pdcch6gr: {required: false, type: struct}
       monitoring_mode:
         required: false
         type: string
@@ -532,10 +534,131 @@ sections:
         required: false
         type: string
         allowed_values: [observation, exercise]
+  pdsch6gr:
+    required: false
+    parameters:
+      enabled: {required: false, type: boolean}
+      rnti: {required: false, type: integer, min: 1}
+      frame_number: {required: false, type: integer, min: 0}
+      slot_number: {required: false, type: integer, min: 0}
+      numerology: {required: false, type: integer, min: 0}
+      carrier_frequency_hz: {required: false, type: number, min_exclusive: 0}
+      duplex_mode:
+        required: false
+        type: string
+        allowed_values: [FDD, TDD]
+      channel_bandwidth_mhz: {required: false, type: number, min_exclusive: 0}
+      n_size_grid: {required: false, type: integer, min: 1}
+      n_tx: {required: false, type: integer, min: 1}
+      n_rx: {required: false, type: integer, min: 1}
+      num_layers: {required: false, type: integer, min: 1}
+      num_codewords: {required: false, type: integer, min: 1}
+      modulation_per_codeword: {required: false, type: string_list}
+      target_code_rate_per_codeword: {required: false, type: number_list}
+      mcs_mode:
+        required: false
+        type: string
+        allowed_values: [fixed, amc]
+      fixed_mcs: {required: false, type: integer, min: 0}
+      link_adaptation_mode:
+        required: false
+        type: string
+        allowed_values: [actual_bler_based, calibration_only]
+      harq_enabled: {required: false, type: boolean}
+      harq_process_count: {required: false, type: integer, min: 1}
+      max_harq_tx: {required: false, type: integer, min: 1}
+      enable_cross_slot_pdsch: {required: false, type: boolean}
+      cross_slot_mode:
+        required: false
+        type: string
+        allowed_values: [disabled, contiguous, noncontiguous]
+      enable_pdsch_repetition: {required: false, type: boolean}
+      repetition_mode:
+        required: false
+        type: string
+        allowed_values: [none, intra_slot, inter_slot]
+      repetition_count: {required: false, type: integer, min: 1}
+      enable_ptrs: {required: false, type: boolean}
+      ptrs_band_policy:
+        required: false
+        type: string
+        allowed_values: [fr2_baseline, optional_fr1_7ghz, disabled]
+      channel_estimation_mode:
+        required: false
+        type: string
+        allowed_values: [realistic, ideal_calibration]
+      parameter_estimation_mode:
+        required: false
+        type: string
+        allowed_values: [practical, off]
+      receiver_type:
+        required: false
+        type: string
+        allowed_values: [MMSE_IRC, R_ML_hook, other_reported]
+      enable_mumimo_study: {required: false, type: boolean}
+      enable_mrss: {required: false, type: boolean}
+      enable_phase_noise: {required: false, type: boolean}
+      enable_wideband_uncalibrated_phase_errors: {required: false, type: boolean}
+      seed: {required: false, type: integer, min: 0}
+      snr_db: {required: false, type: number}
+      channel_model:
+        required: false
+        type: string
+        allowed_values: [AWGN, CDL-A, CDL-C, CDL-D, TDL-A, TDL-C]
+      delay_spread_s: {required: false, type: number, min: 0}
+      speed_kmh: {required: false, type: number, min: 0}
+      fdra_type:
+        required: false
+        type: string
+        allowed_values: [type0_bitmap, type1_riv, dynamic]
+      rb_bitmap: {required: false, type: number_list}
+      riv: {required: false, type: integer, min: 0}
+      num_rb: {required: false, type: integer, min: 1}
+      rb_start: {required: false, type: integer, min: 0}
+      granularity_rb: {required: false, type: integer, min: 1}
+      start_symbol: {required: false, type: integer, min: 0}
+      num_symbols: {required: false, type: integer, min: 1}
+      dmrs_config_type: {required: false, type: integer, min: 1}
+      dmrs_additional_position: {required: false, type: integer, min: 0}
+      dmrs_num_ports: {required: false, type: integer, min: 1}
+      dmrs_port_set: {required: false, type: number_list}
+      ptrs_time_density: {required: false, type: integer, min: 1}
+      ptrs_frequency_density: {required: false, type: integer, min: 1}
+      ptrs_re_offset: {required: false, type: string}
+      queue_bits: {required: false, type: integer, min: 1}
+      study_snr_db: {required: false, type: number_list}
+      study_fdra_types: {required: false, type: string_list}
+      study_start_symbols: {required: false, type: number_list}
+      study_num_symbols: {required: false, type: number_list}
+      study_channel_models: {required: false, type: string_list}
+      study_delay_spread_ns: {required: false, type: number_list}
+      study_speed_kmh: {required: false, type: number_list}
+      study_ranks: {required: false, type: number_list}
+      study_repetition_modes: {required: false, type: string_list}
+      study_ptrs_modes:
+        required: false
+        type: string_list
+        allowed_values: [enabled, disabled]
+      study_dmrs_additional_positions: {required: false, type: number_list}
+      study_num_trials: {required: false, type: integer, min: 1}
   random_access:
     required: true
     parameters:
       enabled: {required: true, type: boolean}
+      frequency_range:
+        required: false
+        type: string
+        allowed_values: [FR1, FR2]
+      duplex_mode:
+        required: false
+        type: string
+        allowed_values: [FDD, TDD]
+      carrier_frequency_hz: {required: false, type: number, min_exclusive: 0}
+      carrier_scs_khz:
+        required: false
+        type: number
+        allowed_numeric_values: [15, 30, 60, 120]
+      n_size_grid: {required: false, type: integer, min: 1}
       ssb_unit_mode:
         required: false
         type: string
@@ -549,7 +672,7 @@ sections:
       prach_format:
         required: true
         type: string
-        allowed_values: [A1, A2, A3, B1, B4, C0, C2]
+        allowed_values: [0, 1, 2, 3, A1, A2, A3, B1, B4, C0, C2]
       prach_sequence_family:
         required: false
         type: string
@@ -561,6 +684,10 @@ sections:
       preamble_count: {required: true, type: integer, min: 1}
       zero_correlation_zone: {required: true, type: integer, min: 0}
       detection_threshold: {required: true, type: number}
+      detection_threshold_mode:
+        required: false
+        type: string
+        allowed_values: [fixed, auto]
       msg3_enabled: {required: true, type: boolean}
       repetition_count: {required: false, type: integer, min: 1}
       repetition_beam_mode:
@@ -587,8 +714,51 @@ sections:
         required: true
         type: number
         allowed_numeric_values: [1.25, 5, 15, 30, 60, 120]
+      sequence_index: {required: false, type: integer, min: 0}
+      logical_root_sequence_index: {required: false, type: integer, min: 0}
       root_sequence_index: {required: true, type: integer, min: 0}
-      preamble_index: {required: true, type: integer, min: 0}
+      preamble_index: {required: true, type: number_list, min_items: 1}
+      restricted_set:
+        required: false
+        type: string
+        allowed_values: [RestrictedSet, UnrestrictedSet]
+      frequency_start: {required: false, type: integer, min: 0}
+      num_prach_occasions: {required: false, type: integer, min: 1}
+      num_slots: {required: false, type: integer, min: 1}
+      num_subframes: {required: false, type: integer, min: 1}
+      active_preamble_pattern: {required: false, type: number_list, min_items: 1}
+      num_rx_antennas: {required: false, type: integer, min: 1}
+      num_tx_antennas: {required: false, type: integer, min: 1}
+      num_ues_per_ro: {required: false, type: integer, min: 0}
+      enable_collision_mode: {required: false, type: boolean}
+      enable_inter_cell_interference: {required: false, type: boolean}
+      enable_frequency_offset: {required: false, type: boolean}
+      enable_phase_noise: {required: false, type: boolean}
+      enable_timing_uncertainty: {required: false, type: boolean}
+      enable_frequency_estimation_metric: {required: false, type: boolean}
+      snr_sweep_db: {required: false, type: number_list, min_items: 1}
+      threshold_sweep: {required: false, type: number_list, min_items: 1}
+      channel_model:
+        required: false
+        type: string
+        allowed_values: [AWGN, TDL-A, TDL-C, CDL-C]
+      delay_spread_ns:
+        required: false
+        type: number
+        allowed_numeric_values: [10, 30, 100, 300, 1000]
+      speed_kmh:
+        required: false
+        type: number
+        allowed_numeric_values: [3, 30, 120, 500, 1000]
+      cell_radius_m: {required: false, type: number, min: 0}
+      timing_uncertainty_min_us: {required: false, type: number}
+      timing_uncertainty_max_us: {required: false, type: number}
+      ue_frequency_offset_hz: {required: false, type: number}
+      trp_frequency_offset_hz: {required: false, type: number}
+      phase_noise_std_rad: {required: false, type: number, min: 0}
+      inter_cell_relative_power_db: {required: false, type: number}
+      target_false_alarm_probability: {required: false, type: number, min_exclusive: 0, max: 1}
+      timing_tolerance_us: {required: false, type: number, min: 0}
   impairments:
     required: true
     parameters:

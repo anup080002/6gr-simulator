@@ -1,0 +1,7 @@
+[lls-web] Python runtime: C:\Program Files\Python311\python.exe
+[lls-web] MATLAB runtime: C:\Program Files\MATLAB\R2023b\bin\matlab.exe
+[lls-web] Dashboard bind host: 10.64.253.106
+[lls-web] Dashboard port: 62906
+[lls-web] HTTP backend: waitress
+[lls-web] Worker threads: 32
+[lls-web] Windows firewall rule 'SixGR LLS Dashboard TCP 62906' already exists.

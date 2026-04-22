@@ -27,5 +27,26 @@
     "link_direction": "ul",
     "snr_db": 12,
     "monte_carlo_iterations": 10
+  },
+  "random_access": {
+    "frequency_range": "FR1",
+    "duplex_mode": "TDD",
+    "carrier_frequency_hz": 4000000000,
+    "carrier_scs_khz": 30,
+    "n_size_grid": 273,
+    "prach_format": "A2",
+    "subcarrier_spacing_khz": 15,
+    "configuration_index": 87,
+    "channel_model": "AWGN",
+    "num_prach_occasions": 4,
+    "num_slots": 40,
+    "num_subframes": 20,
+    "snr_sweep_db": [12],
+    "threshold_sweep": [0.5],
+    "enable_frequency_offset": false,
+    "enable_phase_noise": false,
+    "enable_timing_uncertainty": false,
+    "enable_inter_cell_interference": false,
+    "enable_collision_mode": false
   }
 }

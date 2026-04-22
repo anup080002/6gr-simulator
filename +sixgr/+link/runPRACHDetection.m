@@ -55,50 +55,51 @@ if exist("nrPRACH","file") ~= 2 || exist("nrPRACHDetect","file") ~= 2
 end
 
 try
-    [tx, txInfo] = sixgr.phy.ul.PRACH_Tx(cfg, "NPRACHSlot", carrierSlot, "PreambleIndex", preambleIndex);
-    activeOccasionPresent = logical(sixgr.util.structGet(txInfo, "ActiveOccasionPresent", ~isempty(tx.Waveform)));
-    if isempty(tx.Waveform) || isempty(sixgr.util.structGet(tx, "Symbols", [])) || ~activeOccasionPresent
+    prachCfg = sixgr.rach.PRACHConfig(cfg, "PreambleIndex", preambleIndex);
+    occasion = localResolveOccasion(prachCfg, carrierSlot);
+    if isempty(fieldnames(occasion))
         out.Skipped = true;
         out.Ok = true;
         out.Notes = "Skipped: no PRACH occasion is active for carrier slot " + string(carrierSlot) + ...
             " with configuration_index=" + string(sixgr.util.structGet(cfg, "phy.prach.configurationIndex", NaN)) + ".";
         return;
     end
+    tx = sixgr.rach.generatePRACHWaveform(prachCfg, "Occasion", occasion, "PreambleIndex", preambleIndex);
     if isinf(snr_dB) || snr_dB >= 90
         rxWave = tx.Waveform;
     else
         rxWave = localAddAwgn(tx.Waveform, snr_dB);
     end
     tDetect = tic;
-    rxArgs = {"Carrier", tx.Carrier, "PRACH", tx.PRACH};
+    detArgs = {"Occasion", occasion};
     if ~isempty(detectionThreshold)
-        rxArgs = [rxArgs {"DetectionThreshold", detectionThreshold}]; %#ok<AGROW>
+        detArgs = [detArgs {"DetectionThresholdMode", "fixed", "DetectionThreshold", detectionThreshold}]; %#ok<AGROW>
     end
     if ~isempty(preambleIndex)
-        rxArgs = [rxArgs {"PreambleIndex", preambleIndex}]; %#ok<AGROW>
+        detArgs = [detArgs {"CandidatePreambles", preambleIndex}]; %#ok<AGROW>
     end
-    [rx, ~] = sixgr.phy.ul.PRACH_Rx(rxWave, cfg, rxArgs{:});
+    rx = sixgr.rach.PRACHDetector(rxWave, prachCfg, detArgs{:});
     noiseOnlyWave = zeros(size(tx.Waveform), "like", tx.Waveform);
     if ~(isinf(snr_dB) || snr_dB >= 90)
         noiseOnlyWave = localAddAwgn(noiseOnlyWave, snr_dB);
     end
-    [rxNoise, ~] = sixgr.phy.ul.PRACH_Rx(noiseOnlyWave, cfg, rxArgs{:});
+    rxNoise = sixgr.rach.PRACHDetector(noiseOnlyWave, prachCfg, detArgs{:});
     out.ComputeLatency_ms = toc(tDetect) * 1e3;
     out.ProcedureDelay_ms = NaN;
     out.AirInterfaceObservation_ms = localWaveformDurationMs(tx, cfg);
     % Legacy alias preserved for backward compatibility with older exports.
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
-    out.Detected = logical(rx.Ok);
-    out.DetectionMetric = double(out.Detected);
-    out.PreambleIndex = rx.PreambleIndex;
-    out.TimingOffset_samples = localScalarOrNaN(rx.TimingOffset);
-    out.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Ok", false)));
+    out.Detected = logical(rx.Detected);
+    out.DetectionMetric = double(rx.PeakMetric);
+    out.PreambleIndex = rx.DetectedPreambleIndex;
+    out.TimingOffset_samples = localScalarOrNaN(rx.TimingOffsetSamples);
+    out.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Detected", false)));
 
     if out.Detected
         out.Ok = true;
         out.BLER = 0;
-        out.Notes = "DetectedIdx=" + string(localScalarOrEmpty(rx.PreambleIndex)) + ...
+        out.Notes = "DetectedIdx=" + string(localScalarOrEmpty(rx.DetectedPreambleIndex)) + ...
             "; carrier_slot=" + string(carrierSlot);
     else
         out.Ok = true;
@@ -203,33 +204,26 @@ carrierSlot = localFindFirstActiveCarrierSlot(cfg);
 end
 
 function carrierSlot = localFindFirstActiveCarrierSlot(cfg)
-persistent slotCache
-if isempty(slotCache)
-    slotCache = containers.Map('KeyType', 'char', 'ValueType', 'double');
-end
-key = sprintf('%g|%g|%g|%g', ...
-    double(sixgr.util.structGet(cfg, 'phy.prach.configurationIndex', NaN)), ...
-    double(sixgr.util.structGet(cfg, 'phy.prach.subcarrierSpacing_kHz', NaN)), ...
-    double(sixgr.util.structGet(cfg, 'phy.carrier.NSizeGrid', NaN)), ...
-    double(sixgr.util.structGet(cfg, 'channel.fc_Hz', NaN)));
-if isKey(slotCache, key)
-    carrierSlot = double(slotCache(key));
-    return;
-end
-scanSlots = max(40, round(double(sixgr.util.structGet(cfg, 'run.totalSlots', ...
-    sixgr.util.structGet(cfg, 'simulation.n_slots', sixgr.util.structGet(cfg, 'phy.numerology.slotsPerFrame', 20) * 2)))));
 carrierSlot = 0;
-for slotCandidate = 0:max(0, scanSlots - 1)
+try
+    prachCfg = sixgr.rach.PRACHConfig(cfg);
+    carrierSlot = double(prachCfg.FirstActiveOccasion.SlotIndex0);
+catch
+end
+end
+
+function occasion = localResolveOccasion(prachCfg, carrierSlot)
+occasion = struct();
+maxOccasions = max(double(prachCfg.NumPRACHOccasions), double(prachCfg.NumSlots) * max(double(prachCfg.ToolboxPRACH.NumTimeOccasions), 1));
+for occIdx = 1:max(1, round(maxOccasions))
     try
-        [tx, info] = sixgr.phy.ul.PRACH_Tx(cfg, 'NPRACHSlot', slotCandidate);
-        activeOccasionPresent = logical(sixgr.util.structGet(info, 'ActiveOccasionPresent', ~isempty(sixgr.util.structGet(tx, 'Waveform', []))));
-        if activeOccasionPresent && ~isempty(sixgr.util.structGet(tx, 'Waveform', []))
-            carrierSlot = double(slotCandidate);
-            slotCache(key) = carrierSlot;
-            return;
-        end
+        candidate = sixgr.rach.mapPRACHToOccasion(prachCfg, "OccasionIndex", occIdx);
     catch
+        continue;
+    end
+    if double(candidate.SlotIndex0) == double(carrierSlot)
+        occasion = candidate;
+        return;
     end
 end
-slotCache(key) = carrierSlot;
 end

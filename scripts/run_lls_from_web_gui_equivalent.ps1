@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "",
-    [string]$Scenario = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml",
+    [string]$Scenario = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml",
     [string]$Username = "admin",
     [string]$Password = "admin",
     [string]$RunTag = "",
@@ -36,7 +36,7 @@ function Resolve-DashboardBaseUrl {
 $BaseUrl = Resolve-DashboardBaseUrl -Candidate $BaseUrl
 
 if ([string]::IsNullOrWhiteSpace($RunTag)) {
-    $RunTag = "webgui_rel20_4ghz_100mhz_200ue_1frame_" + (Get-Date -Format "yyyyMMdd_HHmmss")
+    $RunTag = "webgui_rel20_4ghz_100mhz_50ue_14slot_" + (Get-Date -Format "yyyyMMdd_HHmmss")
 }
 
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession

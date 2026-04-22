@@ -34,29 +34,113 @@ verdict.Failures = strings(0, 1);
 
 [verdict.RequiredDL, verdict.RequiredUL] = localRequiredDirections(scfg, cfg);
 strictTruthRequired = localRequiresStrictRuntimeTruthContract(scfg, cfg);
+isPRACHOnly = localIsPRACHOnlyScenario(scfg, cfg);
+isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
+isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
+isControlOnly = isPRACHOnly || isPDCCHOnly;
+
+if isControlOnly
+    verdict.RequiredDL = false;
+    verdict.RequiredUL = false;
+end
 
 dlTrialsPath = fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv");
 ulTrialsPath = fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv");
 dlTrials = localReadTable(dlTrialsPath);
 ulTrials = localReadTable(ulTrialsPath);
-try
-    opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
-    verdict.DLTrialCount = localGetNestedDouble(opSummary, ["DL", "SampleCount"], height(dlTrials));
-    verdict.ULTrialCount = localGetNestedDouble(opSummary, ["UL", "SampleCount"], height(ulTrials));
-catch ME
-    verdict.DLTrialCount = height(dlTrials);
-    verdict.ULTrialCount = height(ulTrials);
-    verdict = localAddFailure(verdict, "effective_trial_count_summary_failed:" + string(ME.identifier), "evidence");
+if ~isControlOnly
+    try
+        opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
+        verdict.DLTrialCount = localGetNestedDouble(opSummary, ["DL", "SampleCount"], height(dlTrials));
+        verdict.ULTrialCount = localGetNestedDouble(opSummary, ["UL", "SampleCount"], height(ulTrials));
+    catch ME
+        verdict.DLTrialCount = height(dlTrials);
+        verdict.ULTrialCount = height(ulTrials);
+        verdict = localAddFailure(verdict, "effective_trial_count_summary_failed:" + string(ME.identifier), "evidence");
+    end
+else
+    verdict.DLTrialCount = 0;
+    verdict.ULTrialCount = 0;
 end
 
 requiredArtifacts = [
     fullfile(layout.ReportCSVDir, "scenario_summary.csv")
-    fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv")
     fullfile(layout.ReportCSVDir, "config_roundtrip_verification.csv")
     fullfile(layout.ReportCSVDir, "browser_runtime_db_consistency.csv")
-    fullfile(layout.ReportCSVDir, "summary_vs_raw_consistency.csv")
-    fullfile(layout.ReportCSVDir, "value_source_audit.csv")
     ];
+if ~isControlOnly
+    requiredArtifacts = [
+        requiredArtifacts
+        fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv")
+        fullfile(layout.ReportCSVDir, "summary_vs_raw_consistency.csv")
+        fullfile(layout.ReportCSVDir, "value_source_audit.csv")
+        ];
+    if isPDSCHStudy
+        requiredArtifacts = setdiff(requiredArtifacts, [ ...
+            fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv")
+            fullfile(layout.ReportCSVDir, "summary_vs_raw_consistency.csv")
+            fullfile(layout.ReportCSVDir, "value_source_audit.csv")], 'stable');
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.ReportCSVDir, "pdsch6gr_trial_level_results.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_tb_level_results.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_codeword_level_results.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_layer_mapping_trace.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_fdra_allocations.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_tdra_allocations.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_dmrs_mapping.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_channel_estimation_metrics.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_harq_trace.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_snr.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_band.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_fdra_type.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_tdra_mode.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_dmrs_setting.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_rank.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_summary_by_repetition.csv")
+            fullfile(layout.ReportCSVDir, "pdsch6gr_complexity_summary.csv")
+            ];
+    end
+elseif isPRACHOnly
+    requiredArtifacts = [
+        requiredArtifacts
+        fullfile(layout.ControlCSVDir, "prach_detection_trials.csv")
+        fullfile(layout.ControlCSVDir, "prach_trials.csv")
+        fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv")
+        fullfile(layout.ReportCSVDir, "initial_access_random_access_outputs.csv")
+        fullfile(layout.ReportCSVDir, "prach_summary_by_snr.csv")
+        fullfile(layout.ReportCSVDir, "prach_confusion_detection_types.csv")
+        fullfile(layout.ReportCSVDir, "prach_timing_error_samples.csv")
+        ];
+elseif isPDCCHOnly
+    requiredArtifacts = [
+        requiredArtifacts
+        fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv")
+        fullfile(layout.ReportCSVDir, "pdcch_control_outputs.csv")
+        ];
+    runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+    if runnerProfile == "ctrl6gr_pdcch_study"
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.ReportCSVDir, "pdcch6gr_coreset_map.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_search_space_map.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_reg_index_map.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_cce_reg_map.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_candidate_hash_trace.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_dmrs_locations.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_per_candidate_results.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_per_slot_results.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_snr.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_al.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_mapping.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_repetition.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_coreset_duration.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_frequency_allocation.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_mrss_mode.csv")
+            fullfile(layout.ReportCSVDir, "pdcch6gr_complexity_summary.csv")
+            ];
+    end
+end
 if verdict.RequiredDL
     requiredArtifacts(end + 1, 1) = dlTrialsPath;
     if strictTruthRequired
@@ -96,7 +180,7 @@ if isnan(configuredUsers)
     configuredUsers = localScenarioGetDouble(scfg, cfg, "topology.num_ues", NaN);
 end
 runtimeMode = localReadTable(fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv"));
-if configuredUsers > 0
+if ~isControlOnly && ~isPDSCHStudy && configuredUsers > 0
     if isempty(runtimeMode) || height(runtimeMode) == 0
         verdict = localAddFailure(verdict, "configured_users_missing_runtime_operating_mode_proof", "evidence");
     elseif localHasColumn(runtimeMode, "ConfiguredUsers")
@@ -109,19 +193,26 @@ if configuredUsers > 0
     end
 end
 
-[proxyFailureCount, proxyFailures] = localRuntimeModeFailures(runtimeMode, scfg, cfg);
-verdict.StrictProxyGuardFailureCount = verdict.StrictProxyGuardFailureCount + proxyFailureCount;
-for ii = 1:numel(proxyFailures)
-    verdict = localAddFailure(verdict, proxyFailures(ii), "proxy");
+if ~isControlOnly && ~isPDSCHStudy
+    [proxyFailureCount, proxyFailures] = localRuntimeModeFailures(runtimeMode, scfg, cfg);
+    verdict.StrictProxyGuardFailureCount = verdict.StrictProxyGuardFailureCount + proxyFailureCount;
+    for ii = 1:numel(proxyFailures)
+        verdict = localAddFailure(verdict, proxyFailures(ii), "proxy");
+    end
+else
+    proxyFailureCount = 0;
+    proxyFailures = strings(0, 1); %#ok<NASGU>
 end
 
 roundtripFiles = [
     fullfile(layout.ReportCSVDir, "config_roundtrip_verification.csv"), "ConsistencyStatus", "consistent"
     fullfile(layout.ReportCSVDir, "browser_runtime_db_consistency.csv"), "ConsistencyStatus", "consistent"
-    fullfile(layout.ReportCSVDir, "summary_vs_raw_consistency.csv"), "ConsistencyStatus", "consistent"
     ];
-if strictTruthRequired
-    roundtripFiles = [roundtripFiles; fullfile(layout.ReportCSVDir, "value_source_audit.csv"), "ConsistencyStatus", "observed"];
+if ~isControlOnly && ~isPDSCHStudy
+    roundtripFiles = [roundtripFiles; fullfile(layout.ReportCSVDir, "summary_vs_raw_consistency.csv"), "ConsistencyStatus", "consistent"];
+    if strictTruthRequired
+        roundtripFiles = [roundtripFiles; fullfile(layout.ReportCSVDir, "value_source_audit.csv"), "ConsistencyStatus", "observed"];
+    end
 end
 for ii = 1:size(roundtripFiles, 1)
     artifactPath = roundtripFiles(ii, 1);
@@ -136,20 +227,36 @@ if verdict.RoundtripMismatchCount > 0
     verdict = localAddFailure(verdict, "roundtrip_mismatch_count=" + string(verdict.RoundtripMismatchCount), "roundtrip");
 end
 
-[rawLifecycleStats, rawLifecycleFailures] = localRawLifecycleStats(dlTrials, ulTrials, ...
-    verdict.RequiredDL && strictTruthRequired, verdict.RequiredUL && strictTruthRequired);
-for ii = 1:numel(rawLifecycleFailures)
-    verdict = localAddFailure(verdict, rawLifecycleFailures(ii), "evidence");
-end
+if ~isControlOnly && ~isPDSCHStudy
+    [rawLifecycleStats, rawLifecycleFailures] = localRawLifecycleStats(dlTrials, ulTrials, ...
+        verdict.RequiredDL && strictTruthRequired, verdict.RequiredUL && strictTruthRequired);
+    for ii = 1:numel(rawLifecycleFailures)
+        verdict = localAddFailure(verdict, rawLifecycleFailures(ii), "evidence");
+    end
 
-[ferStats, ferFailures] = localFERScopeStats(layout);
-for ii = 1:numel(ferFailures)
-    verdict = localAddFailure(verdict, ferFailures(ii), "evidence");
-end
+    [ferStats, ferFailures] = localFERScopeStats(layout);
+    for ii = 1:numel(ferFailures)
+        verdict = localAddFailure(verdict, ferFailures(ii), "evidence");
+    end
 
-[amcStats, amcFailures] = localAMCNamingStats(runtimeMode, dlTrials, ulTrials);
-for ii = 1:numel(amcFailures)
-    verdict = localAddFailure(verdict, amcFailures(ii), "evidence");
+    [amcStats, amcFailures] = localAMCNamingStats(runtimeMode, dlTrials, ulTrials);
+    for ii = 1:numel(amcFailures)
+        verdict = localAddFailure(verdict, amcFailures(ii), "evidence");
+    end
+else
+    rawLifecycleStats = struct( ...
+        "DLRows", 0, "ULRows", 0, "DLFinalizedRows", NaN, "ULFinalizedRows", NaN, ...
+        "DLPartialRows", NaN, "ULPartialRows", NaN, "DLPrimaryOKRows", NaN, ...
+        "ULPrimaryOKRows", NaN, "DLPrimaryOKNotFinalizedRows", NaN, ...
+        "ULPrimaryOKNotFinalizedRows", NaN, "RawLifecycleOk", true, ...
+        "Applicability", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy));
+    ferStats = struct( ...
+        "FERSummaryRows", NaN, "FERRunScopeRows", NaN, "FERRunScopeIdentityLeakCount", NaN, ...
+        "FERRunScopeIdentityOk", true, "FERScopeStatus", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy));
+    amcStats = struct( ...
+        "AMCNamingOk", true, "RuntimeModeRows", NaN, "DLTrialRows", 0, "ULTrialRows", 0, ...
+        "PolicyBooleanCollapseCount", NaN, "AppliedAuthorityMissingCount", NaN, ...
+        "RawAuthorityMissingCount", NaN, "Applicability", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy));
 end
 
 hiddenDefaultStats = localHiddenDefaultStats(layout);
@@ -178,6 +285,52 @@ if strlength(direction) == 0 || direction == "all"
 end
 requiredDL = any(direction == ["both", "dl", "downlink"]);
 requiredUL = any(direction == ["both", "ul", "uplink"]);
+end
+
+function tf = localIsPRACHOnlyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+targetCases = string(localScenarioGet(scfg, cfg, "scenario.target_cases", strings(0, 1)));
+if iscell(targetCases)
+    targetCases = string(targetCases(:));
+end
+targetCases = lower(strtrim(targetCases(:)));
+targetCases = targetCases(strlength(targetCases) > 0);
+tf = runnerProfile == "prach_detection" || (~isempty(targetCases) && all(targetCases == "prach"));
+end
+
+function tf = localIsPDCCHOnlyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+targetCases = string(localScenarioGet(scfg, cfg, "scenario.target_cases", strings(0, 1)));
+if iscell(targetCases)
+    targetCases = string(targetCases(:));
+end
+targetCases = lower(strtrim(targetCases(:)));
+targetCases = targetCases(strlength(targetCases) > 0);
+tf = any(runnerProfile == ["ctrl6gr_pdcch_study", "pdcch_blind_decode_sweep"]) || ...
+    (~isempty(targetCases) && all(targetCases == "pdcch"));
+end
+
+function tf = localIsPDSCH6GRStudyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "pdsch6gr_truth_study";
+end
+
+function label = localControlApplicabilityLabel(isPRACHOnly, isPDCCHOnly)
+if isPRACHOnly
+    label = "not_applicable_for_prach_control_only";
+elseif isPDCCHOnly
+    label = "not_applicable_for_pdcch_control_only";
+else
+    label = "applicable";
+end
+end
+
+function label = localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy)
+if isPDSCHStudy
+    label = "not_applicable_for_standalone_pdsch_truth_study";
+else
+    label = localControlApplicabilityLabel(isPRACHOnly, isPDCCHOnly);
+end
 end
 
 function tf = localRequiresStrictRuntimeTruthContract(scfg, cfg)

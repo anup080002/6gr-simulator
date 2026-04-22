@@ -1,0 +1,215 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_20frame.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot
+  description: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 2 sites with 3 sectors each, 50 randomly placed UEs, and 14 canonical slots launched from the browser-owned MATLAB path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot
+  scenario_name: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 2 sites with 3 sectors each, 50 randomly placed UEs, and 14 canonical slots launched from the browser-owned MATLAB path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot
+  comparison_group_name: rel20_anchor_4ghz_100mhz_50ue_14slot
+  notes: >
+    Browser-owned canonical waveform_bundle scenario for the bounded truthful 50-UE study path.
+    This scenario preserves the current NR PHY/MAC air-interface baseline, keeps vendor-aligned
+    CQI/MCS/CSI/HARQ/PRACH integrations active where materialized in the repo, and requires all
+    unsupported outputs to stay explicitly abstraction-labeled or unavailable with exact reasons.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 2site
+    - 3sector
+    - 50ue
+    - 14slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot
+  description: Strict waveform-honest NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 2 sites, 3 sectors per site, 50 UEs, and 14 canonical slots.
+  runner_profile: waveform_bundle
+  target_cases: [bundle]
+  bundle_anchor_cases:
+    - cell_search_mib_sib1
+    - prach_detection
+    - dl_pdsch_throughput
+    - ul_pusch_throughput
+    - ul_srs_channelest
+    - ul_lowpapr
+  notes: >
+    Browser-owned canonical waveform_bundle scenario. This path dispatches directly to the coupled
+    waveform truth loop and keeps PRACH, SSB/PBCH, PDSCH, PUSCH, CSI/SRS, HARQ, and low-PAPR
+    studies bound to actual waveform/resource-grid execution wherever the repo supports them.
+
+run_control:
+  run_profile: exhaustive
+  total_frames: ~
+  warmup_frames: ~
+  measurement_frames: ~
+  total_slots: 14
+  warmup_slots: 1
+  measurement_slots: 13
+  checkpoint_every_frames: 1
+  snapshot_every_frames: 1
+  log_every_frames: 1
+  checkpoint_every_slots: 1
+  snapshot_every_slots: 1
+  log_every_slots: 1
+  batch_size_links: 16
+  num_workers: 8
+  warmup_time_ms: 0.5
+  measurement_time_ms: 6.5
+  total_time_ms: 7
+  max_runtime_guard: 7200
+
+simulation:
+  n_frames: 1
+  n_slots: 14
+  n_subframes: 7
+  min_duration_s: 0.007
+
+random_access:
+  enabled: true
+  prach_format: A1
+  preamble_length_mode: short
+  preamble_count: 64
+  zero_correlation_zone: 8
+  detection_threshold: 0.5
+  msg3_enabled: true
+  configuration_index: 84
+  subcarrier_spacing_khz: 30
+  root_sequence_index: 1
+  preamble_index: 0
+
+deployment_topology:
+  scenario_type: multi-cell
+  site_layout: hex_grid
+  layout_type: hexagonal_macro
+  cell_type: UMa
+  inter_site_distance: 600
+  num_sites: 2
+  num_base_stations: 2
+  num_cells: 6
+  num_sectors_per_site: 3
+  num_ues: 50
+  num_trps: 6
+  trp_topology: per_cell_trp
+  trp_sync_mode: synchronous
+  trp_switching_mode: disabled
+  wraparound_enabled: true
+
+users:
+  enabled: true
+  n_users: 50
+  execution_model: slot_coupled_truth
+  beam_selection_strategy: runtime_best_beam_per_link
+  save_user_tables: true
+
+mobility:
+  ue_speed_kmh: 3
+  speed_profile: rel20_anchor_random_waypoint_3_to_30_kmph
+  direction_model: random
+  trajectory_model: randomWaypoint
+  update_period_s: 0.0005
+  zigzag_segment_duration_s: 0.0025
+  zigzag_turn_angle_deg: 35
+  acceleration_profile: none
+  handover_context_flag: true
+  beam_dynamics_model: mobile_uma
+  spatial_consistency_flag: true
+
+mimo:
+  trp_count: 6
+
+system:
+  queueMaxBits: 200000000
+  largeScaleUpdatePeriod_slots: 14
+  scheduler:
+    type: PF
+    maxActiveUEsPerSlot: 16
+    maxActiveUEsPerCellPerSlot: 16
+    maxActiveUEsPerCellPerSlotDL: 16
+    maxActiveUEsPerCellPerSlotUL: 12
+    maxPRBAllocationPerUE: 273
+    tbsMode: approximate
+    fastNREApprox: true
+    allowApproximatePlanningInStrictMode: true
+    fairnessAlpha: 1.0
+    proportionalFairWindow_ms: 100
+    beamAware: true
+    energyAware: false
+    qosAware: true
+    sliceAware: false
+    starvationGuard: true
+    cellEdgeBoost: true
+  measurement:
+    periodSlots: 1
+    filterAlpha: 0.7
+  beam:
+    enable: true
+    numBeams: 32
+    updatePeriod_slots: 2
+    sectorSpan_deg: 120
+    maxGain_dB: 14
+  handover:
+    enable: true
+    a3Offset_dB: 3
+    hysteresis_dB: 2
+    timeToTrigger_slots: 8
+    minServingSlots: 4
+    preparationSlots: 1
+    interruptionSlots: 2
+    blockDuringPreparation: false
+  waveform:
+    useGrantLocalGrid: true
+    replayGridMode: grant_allocation
+    capReplayAntennasToLayers: true
+    longRunAudit:
+      enabled: false
+      periodSlots: 14
+      maxGrantsPerAuditSlot: 2
+      unsampledGrantPolicy: full_replay
+
+traffic:
+  model: fullBuffer
+  transport: UDP
+  flowDirection: BIDIR
+  dlRatio: 0.5
+  ulRatio: 0.5
+  packetDelayBudget_ms: 300
+  packetSize_bytes: 1500
+  packetInterval_ms: 1
+  targetRate_Mbps: 200
+  jitterPct: 0.0
+  fullBufferBitsPerTTI: 1000000
+  qos:
+    enable5QI: true
+    default5QI: 9
+    latencyBudget_ms: 300
+  flows:
+    - name: embb_full_buffer
+      qfi: 9
+      fiveQi: 9
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 300
+      packetSize_bytes: 1500
+      packetInterval_ms: 1
+      rate_Mbps: 200
+      weight: 1
+      jitterPct: 0.0
+      burstiness: saturation
+      service_profile: FULL_BUFFER
+      ue_class: UE_CLASS_EMBB
+      ue_count: 50
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot

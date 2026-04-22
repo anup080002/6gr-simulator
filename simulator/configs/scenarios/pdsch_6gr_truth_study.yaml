@@ -1,0 +1,37 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_2ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/tdl_c.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/pdsch_6gr_truth_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "pdsch_6gr_truth_study",
+    "description": "Truthful 6GR PDSCH link-level study using real DL-SCH, DMRS estimation, and CRC-derived KPIs.",
+    "research_class": "study_item_candidate",
+    "scenario_group": "group_b_data"
+  },
+  "scenario": {
+    "runner_profile": "pdsch6gr_truth_study",
+    "target_cases": ["pdsch"],
+    "notes": "Default truthful 6GR PDSCH study baseline. Unsupported extensions remain explicit study hooks."
+  },
+  "frequency": {
+    "bandwidth_hz": 20000000
+  },
+  "frame": {
+    "scs_khz": 15
+  },
+  "simulation": {
+    "link_direction": "dl",
+    "snr_db": 15,
+    "monte_carlo_iterations": 1
+  }
+}

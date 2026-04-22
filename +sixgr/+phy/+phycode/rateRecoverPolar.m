@@ -32,7 +32,7 @@ end
 x = in(:);
 K = double(K);
 E = double(E);
-iBIL = double(iBIL);
+iBIL = logical(iBIL);
 
 info = struct();
 info.K = K;

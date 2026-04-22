@@ -204,58 +204,230 @@ result.TrialTable = trialT;
 result.SummaryTable = summaryT;
 end
 
-function result = localRunPRACHDetectionScenario(cfg, scfg, runFolder)
-nTrials = max(double(scfg.get("random_access.min_detection_trials")), ...
-    round(double(scfg.get("simulation.monte_carlo_iterations"))));
-snr_dB = double(scfg.get("simulation.snr_db"));
-threshold = double(scfg.get("random_access.detection_threshold"));
+function result = localRun6GRPDCCHStudy(cfg, scfg, runFolder)
+studyDir = fullfile(runFolder, "control", "pdcch6gr_study");
+study = sixgr.ctrl.runPDCCHStudyLLS(cfg, ...
+    "OutputDir", studyDir, ...
+    "ScenarioID", char(string(scfg.ScenarioID)), ...
+    "WriteOutputs", true, ...
+    "Verbose", false);
 
-rows = repmat(struct("Mode","", "Trial", NaN, "Detected", false, "FalseAlarm", false, ...
-    "MissDetection", false, "PreambleIndex", NaN, "TimingOffset", NaN), 0, 1);
-detectedSignal = false(nTrials,1);
-falseAlarm = false(nTrials,1);
-
-for k = 1:nTrials
-    [tx, ~] = sixgr.phy.ul.PRACH_Tx(cfg);
-    rxSignal = localAddAwgnOnly(tx.Waveform, snr_dB);
-    rx1 = sixgr.phy.ul.PRACH_Rx(rxSignal, cfg, "Carrier", tx.Carrier, "PRACH", tx.PRACH, ...
-        "DetectionThreshold", threshold);
-    detectedSignal(k) = logical(rx1.Ok);
-    rows(end+1,1) = struct( ... %#ok<AGROW>
-        "Mode", "signal_present", ...
-        "Trial", k, ...
-        "Detected", logical(rx1.Ok), ...
-        "FalseAlarm", false, ...
-        "MissDetection", ~logical(rx1.Ok), ...
-        "PreambleIndex", double(localScalarValue(rx1.PreambleIndex)), ...
-        "TimingOffset", double(localScalarValue(rx1.TimingOffset)));
-
-    noiseOnly = localAddAwgnOnly(zeros(size(tx.Waveform), "like", tx.Waveform), snr_dB);
-    rx0 = sixgr.phy.ul.PRACH_Rx(noiseOnly, cfg, "Carrier", tx.Carrier, "PRACH", tx.PRACH, ...
-        "DetectionThreshold", threshold);
-    falseAlarm(k) = logical(rx0.Ok);
-    rows(end+1,1) = struct( ... %#ok<AGROW>
-        "Mode", "noise_only", ...
-        "Trial", k, ...
-        "Detected", logical(rx0.Ok), ...
-        "FalseAlarm", logical(rx0.Ok), ...
-        "MissDetection", false, ...
-        "PreambleIndex", double(localScalarValue(rx0.PreambleIndex)), ...
-        "TimingOffset", double(localScalarValue(rx0.TimingOffset)));
-end
-
-trialT = struct2table(rows);
-summaryT = table(mean(falseAlarm), mean(~detectedSignal), ...
-    'VariableNames', {'FalseAlarmRate','MissDetectionRate'});
+controlTrace = struct();
 if localShouldWriteCSV(scfg)
-    sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_trials.csv"), trialT);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_summary.csv"), summaryT);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"), study.PDCCHTrials);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch_control_outputs.csv"), study.SummaryByScenario);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_coreset_map.csv"), study.CORESETMap);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_search_space_map.csv"), study.SearchSpaceMap);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_reg_index_map.csv"), study.REGIndexMap);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_cce_reg_map.csv"), study.CCERegMap);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_candidate_hash_trace.csv"), study.CandidateHashTrace);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_dmrs_locations.csv"), study.DMRSLocations);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_per_candidate_results.csv"), study.PerCandidateResults);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_per_slot_results.csv"), study.PerSlotResults);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_snr.csv"), study.SummaryBySNR);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_al.csv"), study.SummaryByAL);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_mapping.csv"), study.SummaryByMapping);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_repetition.csv"), study.SummaryByRepetition);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_coreset_duration.csv"), study.SummaryByCORESETDuration);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_frequency_allocation.csv"), study.SummaryByFrequencyAllocation);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_mrss_mode.csv"), study.SummaryByMRSSMode);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_complexity_summary.csv"), study.ComplexitySummary);
+    if ~isempty(study.MRSSOverlapEvents)
+        sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_mrss_overlap_events.csv"), study.MRSSOverlapEvents);
+    end
+    controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), struct("PDCCH", study.PDCCHTrials));
 end
 
 result = struct();
-result.Ok = true;
-result.TrialTable = trialT;
-result.SummaryTable = summaryT;
+result.Ok = istable(study.PDCCHTrials) && ~isempty(study.PDCCHTrials);
+result.Control = controlTrace;
+result.Study = study;
+result.TrialTable = study.PDCCHTrials;
+result.SummaryTable = study.SummaryBySNR;
+end
+
+function result = localRun6GRPDSCHStudy(cfg, scfg, runFolder)
+studyDir = fullfile(runFolder, "air_interface", "pdsch6gr_truth");
+study = sixgr.pdsch.runPDSCHStudyLLS(cfg, ...
+    "OutputDir", studyDir, ...
+    "ScenarioID", char(string(scfg.ScenarioID)), ...
+    "WriteOutputs", true, ...
+    "Verbose", false);
+
+if localShouldWriteCSV(scfg)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "dl_pdsch_trials.csv"), study.DLTrialTable);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "packet_flow", "csv", "live_dl_scheduler_grants.csv"), study.DLGrantTrace);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_trial_level_results.csv"), study.TrialLevelResults);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_tb_level_results.csv"), study.TBLevelResults);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_codeword_level_results.csv"), study.CodewordLevelResults);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_layer_mapping_trace.csv"), study.LayerMappingTrace);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_fdra_allocations.csv"), study.FDRAAllocations);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_tdra_allocations.csv"), study.TDRAAllocations);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_dmrs_mapping.csv"), study.DMRSMapping);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_ptrs_mapping.csv"), study.PTRSMapping);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_channel_estimation_metrics.csv"), study.ChannelEstimationMetrics);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_parameter_estimation_metrics.csv"), study.ParameterEstimationMetrics);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_harq_trace.csv"), study.HARQTrace);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_snr.csv"), study.SummaryBySNR);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_band.csv"), study.SummaryByBand);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_fdra_type.csv"), study.SummaryByFDRAType);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_tdra_mode.csv"), study.SummaryByTDRAMode);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_dmrs_setting.csv"), study.SummaryByDMRSSetting);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_ptrs_setting.csv"), study.SummaryByPTRSSetting);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_rank.csv"), study.SummaryByRank);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_summary_by_repetition.csv"), study.SummaryByRepetition);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_complexity_summary.csv"), study.ComplexitySummary);
+    if ~isempty(study.MRSSOverlapEvents)
+        sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdsch6gr_mrss_overlap_events.csv"), study.MRSSOverlapEvents);
+    end
+end
+
+result = struct();
+result.Ok = istable(study.DLTrialTable) && ~isempty(study.DLTrialTable);
+result.Study = study;
+result.TrialTable = study.DLTrialTable;
+result.SummaryTable = study.SummaryBySNR;
+end
+
+function result = localRunPRACHDetectionScenario(cfg, scfg, runFolder)
+study = sixgr.rach.runPRACHLLS(cfg, ...
+    "ScenarioMatrix", struct("ScenarioName", char(string(scfg.ScenarioID))), ...
+    "WriteOutputs", false, ...
+    "Verbose", false);
+
+[controlTrialT, initialAccessT, correlationTraceT] = localBuildPRACHRunnerTables(study, cfg);
+controlTrace = struct();
+if localShouldWriteCSV(scfg)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_trials.csv"), study.TrialTable);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_summary.csv"), study.SummaryBySNR);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "prach_trials.csv"), controlTrialT);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "initial_access_random_access_outputs.csv"), initialAccessT);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv"), correlationTraceT);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_summary_by_snr.csv"), study.SummaryBySNR);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_summary_by_scenario.csv"), study.SummaryByScenario);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_confusion_detection_types.csv"), study.Confusion);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_timing_error_samples.csv"), study.TimingErrorSamples);
+    if ~isempty(study.FrequencyErrorSamples)
+        sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_frequency_error_samples.csv"), study.FrequencyErrorSamples);
+    end
+    controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), struct("PRACH", controlTrialT));
+end
+
+result = struct();
+result.Ok = istable(controlTrialT) && ~isempty(controlTrialT);
+result.Control = controlTrace;
+result.Study = study;
+result.TrialTable = controlTrialT;
+result.SummaryTable = study.SummaryBySNR;
+end
+
+function [controlTrialT, initialAccessT, correlationTraceT] = localBuildPRACHRunnerTables(study, cfg)
+roT = sixgr.util.structGet(study, "ROTable", table());
+trialT = sixgr.util.structGet(study, "TrialTable", table());
+if ~(istable(roT) && ~isempty(roT))
+    controlTrialT = table();
+    initialAccessT = table();
+    correlationTraceT = table();
+    return;
+end
+
+slotsPerFrame = max(1, round(double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", 20))));
+nRows = height(roT);
+frameCol = floor((double(roT.slot_id) - 1) / slotsPerFrame) + 1;
+slotCol = round(double(roT.slot_id));
+ueCount = localRunnerGroupedPRACHValue(trialT, roT, "preamble_tx_present", @sum, 0);
+txPreamble = localRunnerGroupedPRACHValue(trialT, roT, "transmitted_preamble_index", @localFirstFiniteOrNaN, NaN);
+
+controlTrialT = table( ...
+    string(localRunnerColumnOrDefault(roT, "Status", repmat("FAIL", nRows, 1))), ...
+    frameCol, ...
+    slotCol, ...
+    ones(nRows, 1), ...
+    ones(nRows, 1), ...
+    double(localRunnerColumnOrDefault(roT, "CRCPass", zeros(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "ComputeLatency_ms", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "ProcedureDelay_ms", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "AirInterfaceObservation_ms", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "AcquisitionTime_ms", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "TrueTimingOffset_samples", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "EstimatedTimingOffset_samples", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "TimingError_samples", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "peak_metric", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "threshold", nan(nRows, 1))), ...
+    string(localRunnerColumnOrDefault(roT, "threshold_mode", repmat("", nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "false_alarm_flag", localRunnerColumnOrDefault(roT, "FalseAlarmFlag", zeros(nRows, 1)))), ...
+    double(localRunnerColumnOrDefault(roT, "wrong_preamble_flag", localRunnerColumnOrDefault(roT, "wrong_preamble_flag", zeros(nRows, 1)))), ...
+    double(localRunnerColumnOrDefault(roT, "missed_detection_flag", localRunnerColumnOrDefault(roT, "missed_detection_flag", zeros(nRows, 1)))), ...
+    double(localRunnerColumnOrDefault(roT, "detected_preamble_index", nan(nRows, 1))), ...
+    txPreamble, ...
+    ueCount, ...
+    double(localRunnerColumnOrDefault(roT, "CollisionFlag", zeros(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "SNR_dB", localRunnerColumnOrDefault(roT, "snr_db", nan(nRows, 1)))), ...
+    string(localRunnerColumnOrDefault(roT, "Notes", localRunnerColumnOrDefault(roT, "detection_type", repmat("", nRows, 1)))), ...
+    string(localRunnerColumnOrDefault(roT, "scenario_id", repmat("", nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "seed", nan(nRows, 1))), ...
+    double(localRunnerColumnOrDefault(roT, "ro_id", nan(nRows, 1))), ...
+    'VariableNames', {'Status','Frame','Slot','UEIndex','RNTI','CRCPass','ComputeLatency_ms','ProcedureDelay_ms', ...
+    'AirInterfaceObservation_ms','AcquisitionTime_ms','TrueTimingOffset_samples','EstimatedTimingOffset_samples', ...
+    'TimingError_samples','DetectionMetric','Threshold','ThresholdMode','FalseAlarmFlag','WrongPreambleFlag', ...
+    'MissDetectionFlag','PreambleIndex','TransmittedPreambleIndex','ActiveUECount','CollisionFlag','SNR_dB','Notes', ...
+    'ScenarioID','Seed','ROID'});
+
+initialAccessT = study.SummaryBySNR;
+if istable(initialAccessT) && ~isempty(initialAccessT)
+    initialAccessT.ConfiguredUEsPerRO = repmat(max(double(ueCount), [], "omitnan"), height(initialAccessT), 1);
+    initialAccessT.CollisionModeEnabled = repmat(any(double(controlTrialT.CollisionFlag) ~= 0), height(initialAccessT), 1);
+    initialAccessT.ChannelModel = repmat(string(sixgr.util.structGet(cfg, "prach_lls.ChannelModel", "")), height(initialAccessT), 1);
+end
+
+correlationTraceT = table( ...
+    controlTrialT.Frame, ...
+    controlTrialT.Slot, ...
+    controlTrialT.SNR_dB, ...
+    controlTrialT.DetectionMetric, ...
+    controlTrialT.ComputeLatency_ms, ...
+    controlTrialT.AirInterfaceObservation_ms, ...
+    controlTrialT.TimingError_samples, ...
+    controlTrialT.Status, ...
+    controlTrialT.Notes, ...
+    repmat("air_interface/csv/prach_trials.csv", nRows, 1), ...
+    'VariableNames', {'Frame','Slot','SNR_dB','DetectionMetric','ComputeLatency_ms','AirInterfaceObservation_ms','TimingError_samples','Status','Notes','SourceArtifact'});
+end
+
+function values = localRunnerColumnOrDefault(T, varName, defaultValues)
+if istable(T) && ismember(varName, string(T.Properties.VariableNames))
+    values = T.(varName);
+else
+    values = defaultValues;
+end
+end
+
+function values = localRunnerGroupedPRACHValue(trialT, roT, varName, reducer, defaultValue)
+nRows = height(roT);
+values = repmat(defaultValue, nRows, 1);
+if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
+    return;
+end
+for iRow = 1:nRows
+    mask = string(localRunnerColumnOrDefault(trialT, "scenario_id", repmat("", height(trialT), 1))) == string(roT.scenario_id(iRow)) & ...
+        double(localRunnerColumnOrDefault(trialT, "seed", nan(height(trialT), 1))) == double(roT.seed(iRow)) & ...
+        double(localRunnerColumnOrDefault(trialT, "ro_id", nan(height(trialT), 1))) == double(roT.ro_id(iRow)) & ...
+        double(localRunnerColumnOrDefault(trialT, "slot_id", nan(height(trialT), 1))) == double(roT.slot_id(iRow));
+    if ~any(mask)
+        continue;
+    end
+    values(iRow, 1) = reducer(trialT.(varName)(mask));
+end
+end
+
+function value = localFirstFiniteOrNaN(raw)
+vals = double(raw(:));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    value = NaN;
+else
+    value = vals(1);
+end
 end
 
 function result = localRunGenericSweep(cfg, scfg, runFolder)
@@ -665,6 +837,10 @@ try
             result = localRunSystemLevelScenario(cfg, scfg, runFolder);
         case "pdcch_blind_decode_sweep"
             result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder);
+        case "ctrl6gr_pdcch_study"
+            result = localRun6GRPDCCHStudy(cfg, scfg, runFolder);
+        case "pdsch6gr_truth_study"
+            result = localRun6GRPDSCHStudy(cfg, scfg, runFolder);
         case "prach_detection"
             result = localRunPRACHDetectionScenario(cfg, scfg, runFolder);
         case "generic_sweep"

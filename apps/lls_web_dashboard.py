@@ -68,7 +68,7 @@ except Exception:
     DEFAULT_DASHBOARD_THREADS = 32
 LEGACY_WAVEFORM_HONEST_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot.yaml"
 HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot.yaml"
-WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml"
+WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml"
 DEFAULT_SCENARIO = WAVEFORM_TRUTH_DEFAULT_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
 BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS", "E2E"]
@@ -98,6 +98,16 @@ DEFAULT_MAP_CENTER = {
 }
 SESSION_COOKIE_NAME = "sixgr_session"
 SESSION_TTL = timedelta(hours=12)
+DEFAULT_DASHBOARD_AUTH_MODE = os.environ.get("SIXGR_DASHBOARD_AUTH_MODE", "open").strip().lower() or "open"
+if DEFAULT_DASHBOARD_AUTH_MODE not in {"open", "login"}:
+    DEFAULT_DASHBOARD_AUTH_MODE = "open"
+OPEN_ACCESS_PROFILE = {
+    "username": "open",
+    "display_name": "Open Access",
+    "role": "Intranet Viewer",
+    "theme": "signal",
+    "bio": "Open intranet mode is active. The dashboard is reachable without a username or password.",
+}
 USER_PROFILES = {
     "admin": {
         "username": "admin",
@@ -128,6 +138,7 @@ ACTIVE_SESSIONS: dict[str, dict[str, Any]] = {}
 DB_POOLS: dict[str, pooling.MySQLConnectionPool] = {}
 LIVE_PAYLOAD_CACHE: dict[int, dict[str, Any]] = {}
 CACHED_PAYLOAD_VERSION: dict[int, str] = {}
+SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
 DB_POOL_SIZE = max(8, int(os.environ.get("MYSQL_POOL_SIZE", "32") or "32"))
 STALE_RUNNING_MINUTES = max(5, int(os.environ.get("SIXGR_STALE_RUNNING_MINUTES", "15") or "15"))
 PROCESS_HEARTBEAT_STALL_MINUTES = max(
@@ -173,12 +184,23 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     if run_id is None:
         LIVE_PAYLOAD_CACHE.clear()
         CACHED_PAYLOAD_VERSION.clear()
+        SECTION_PAYLOAD_CACHE.clear()
         fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
         load_cached_csv_rows.cache_clear()
         return
     LIVE_PAYLOAD_CACHE.pop(int(run_id), None)
     CACHED_PAYLOAD_VERSION.pop(int(run_id), None)
+    for key in list(SECTION_PAYLOAD_CACHE.keys()):
+        if int(key[0]) == int(run_id):
+            SECTION_PAYLOAD_CACHE.pop(key, None)
+    # Artifact ids are immutable per DB row, but per-run rematerialization,
+    # deletion, or relaunch can invalidate cached bytes/previews that were
+    # generated from an older artifact set. Clear them eagerly so the browser
+    # never serves stale analytics or deleted artifact bodies after a rerun.
+    fetch_artifact_bytes.cache_clear()
+    load_cached_csv_preview.cache_clear()
+    load_cached_csv_rows.cache_clear()
 
 
 def is_terminal_status(status: Any) -> bool:
@@ -431,10 +453,16 @@ def mark_stale_running_runs() -> int:
 
 
 def clone_user_profile(username: str) -> dict[str, Any] | None:
+    if str(username or "").strip().lower() == str(OPEN_ACCESS_PROFILE["username"]):
+        return dict(OPEN_ACCESS_PROFILE)
     profile = USER_PROFILES.get(str(username or "").strip().lower())
     if profile is None:
         return None
     return dict(profile)
+
+
+def auth_mode_open() -> bool:
+    return DEFAULT_DASHBOARD_AUTH_MODE == "open"
 
 
 def prune_sessions() -> None:
@@ -475,6 +503,8 @@ def parse_cookie_value(header_value: str | None, key: str) -> str | None:
 
 
 def resolve_user_profile_from_cookie(header_value: str | None) -> tuple[str | None, dict[str, Any] | None]:
+    if auth_mode_open():
+        return None, dict(OPEN_ACCESS_PROFILE)
     prune_sessions()
     token = parse_cookie_value(header_value, SESSION_COOKIE_NAME)
     if not token:
@@ -3366,6 +3396,14 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
     "phy.pusch.cqitable": ["table1", "table2"],
     "phy.pdsch.mcstable": ["qam64_table1", "qam64_table2", "qam256_table1", "qam256_table2"],
     "phy.pusch.mcstable": ["qam64_table1", "qam64_table2", "qam256_table1", "qam256_table2"],
+    "random_access.frequency_range": ["FR1", "FR2"],
+    "random_access.duplex_mode": ["FDD", "TDD"],
+    "random_access.carrier_scs_khz": ["15", "30", "60", "120"],
+    "random_access.prach_format": ["0", "1", "2", "3", "A1", "A2", "A3", "B1", "B4", "C0", "C2"],
+    "random_access.subcarrier_spacing_khz": ["1.25", "5", "15", "30", "60", "120"],
+    "random_access.restricted_set": ["UnrestrictedSet", "RestrictedSet"],
+    "random_access.detection_threshold_mode": ["fixed", "auto"],
+    "random_access.channel_model": ["AWGN", "TDL-A", "TDL-C", "CDL-C"],
     "phy.rx.channelestimation": ["DMRS", "Perfect"],
     "phy.rx.equalizer": ["MMSE", "ZF"],
     "phy.rx.mimodetector": ["MMSE", "ZF", "ML"],
@@ -3378,6 +3416,7 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
         "system_level_lls",
         "prach_detection",
         "pdcch_blind_decode_sweep",
+        "ctrl6gr_pdcch_study",
         "generic_sweep",
         "ai_benchmark",
     ],
@@ -3398,6 +3437,28 @@ FIELD_LABEL_OVERRIDES: dict[str, str] = {
     "channel_model.doppler_hz": "Doppler (Hz)",
     "channels.doppler_source_mode": "Doppler Source Mode",
     "channel_model.doppler_source_mode": "Doppler Source Mode",
+    "random_access.configuration_index": "PRACH Config Index",
+    "random_access.sequence_index": "PRACH Sequence Index",
+    "random_access.logical_root_sequence_index": "Logical Root Sequence Index",
+    "random_access.root_sequence_index": "Legacy Root Sequence Index",
+    "random_access.frequency_start": "PRACH Frequency Start",
+    "random_access.num_prach_occasions": "PRACH Occasions",
+    "random_access.num_ues_per_ro": "UEs Per RO",
+    "random_access.enable_collision_mode": "Collision Mode",
+    "random_access.enable_inter_cell_interference": "Inter-Cell PRACH Interference",
+    "random_access.enable_frequency_offset": "Enable PRACH CFO",
+    "random_access.enable_phase_noise": "Enable Phase Noise",
+    "random_access.enable_timing_uncertainty": "Enable Timing Uncertainty",
+    "random_access.enable_frequency_estimation_metric": "Enable CFO Estimation Metric",
+    "random_access.ue_frequency_offset_hz": "UE CFO (Hz)",
+    "random_access.trp_frequency_offset_hz": "TRP CFO (Hz)",
+    "random_access.delay_spread_ns": "Delay Spread (ns)",
+    "random_access.speed_kmh": "PRACH Speed (km/h)",
+    "random_access.cell_radius_m": "Cell Radius (m)",
+    "random_access.timing_uncertainty_max_us": "Max Timing Uncertainty (us)",
+    "random_access.timing_tolerance_us": "Timing Tolerance (us)",
+    "random_access.snr_sweep_db": "PRACH SNR Sweep (dB)",
+    "random_access.threshold_sweep": "PRACH Threshold Sweep",
 }
 
 
@@ -5444,6 +5505,188 @@ def build_output_contract_surface(
     return surface
 
 
+def dedupe_descriptor_list(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("artifact_id") or item.get("logical_path") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def dedupe_numeric_chart_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("chart_id") or item.get("artifact_id") or item.get("title") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict[str, Any]:
+    kind_token = str(kind or "").strip().lower()
+    if kind_token not in {"reports", "analytics"}:
+        raise KeyError(f"Unsupported contract section kind: {kind}")
+    slug_token = str(slug or "").strip().lower()
+    if not slug_token:
+        raise KeyError("A non-empty section slug is required.")
+    run_row = fetch_run(run_id)
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    inserted_logs = sync_runtime_log_for_run(run_row)
+    if inserted_logs:
+        run_row = fetch_run(run_id) or run_row
+    artifacts = fetch_artifacts(run_id)
+    feature_policy = extract_run_feature_policy(run_row)
+    status_text = str(run_row.get("status_text") or "").strip().lower()
+    contract_prefix = f"contract__{slug_token}__"
+    has_section_contract_artifacts = any(
+        contract_prefix in str(art.get("logical_path") or "").strip().lower()
+        and (
+            str(art.get("artifact_kind") or "") == "table_csv"
+            or str(art.get("mime_type") or "").startswith("image/")
+        )
+        for art in artifacts
+    )
+    should_materialize_contract = (
+        (is_terminal_status(status_text) and not has_section_contract_artifacts)
+        or (
+            status_text == "running"
+            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        )
+    )
+    if should_materialize_contract:
+        contract_materializer.materialize_run_contract_artifacts(
+            run_row,
+            artifacts,
+            fetch_artifact_bytes=fetch_artifact_bytes,
+            db_connection_factory=db_connection,
+            feature_policy=feature_policy,
+            lock_timeout_seconds=0,
+        )
+        artifacts = fetch_artifacts(run_id)
+    latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
+    artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
+    cache_key = (int(run_id), kind_token, slug_token, artifact_version)
+    cached_payload = SECTION_PAYLOAD_CACHE.get(cache_key)
+    if cached_payload is not None:
+        return cached_payload
+    public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
+    output_coverage = build_output_coverage_context(artifacts)
+    unavailable_index = {
+        str(row.get("output_name") or ""): row
+        for row in (output_coverage.get("honest_unavailable") or [])
+        if str(row.get("output_name") or "").strip()
+    }
+    section = next(
+        (item for item in output_contract.product_sections_payload(kind_token) if str(item.get("slug") or "").strip().lower() == slug_token),
+        None,
+    )
+    if section is None:
+        raise KeyError(f"{kind_token.title()} section {slug!r} was not found.")
+    contract_table_artifacts = [
+        art
+        for art in public_artifacts
+        if str(art.get("artifact_kind") or "") == "table_csv"
+        and contract_prefix in str(art.get("logical_path") or "").strip().lower()
+    ]
+    numeric_charts = build_numeric_charts_from_artifacts(contract_table_artifacts, limit=64)
+    table_evidence: dict[str, dict[str, Any]] = {}
+    tables_out: list[dict[str, Any]] = []
+    for table_spec in section.get("tables") or []:
+        if str(table_spec.get("table_name") or "") in OPTIONAL_6G_TABLES:
+            evidence = {
+                "status": "policy_disabled",
+                "status_label": "policy disabled",
+                "status_class": "warn",
+                "reason": "feature_policy_disabled_for_this_run",
+                "lineage_note": "Optional 6G/AI/NTN-style analytics are intentionally suppressed for this NR-only honest run.",
+                "matches": [],
+            }
+        else:
+            evidence = build_contract_table_evidence(table_spec, public_artifacts, unavailable_index)
+        table_name = str(table_spec.get("table_name") or "")
+        table_evidence[table_name] = evidence
+        tables_out.append({**table_spec, "evidence": evidence})
+    charts_out: list[dict[str, Any]] = []
+    for chart_spec in section.get("charts") or []:
+        evidence = build_contract_chart_evidence(section, chart_spec, public_artifacts, numeric_charts, table_evidence)
+        charts_out.append({**chart_spec, "evidence": evidence})
+    section_out = {**section, "tables": tables_out, "charts": charts_out}
+
+    scoped_tables = [
+        build_artifact_descriptor(art)
+        for art in public_artifacts
+        if str(art.get("artifact_kind") or "") == "table_csv"
+        and contract_prefix in str(art.get("logical_path") or "").strip().lower()
+    ]
+    scoped_images = [
+        build_artifact_descriptor(art)
+        for art in public_artifacts
+        if str(art.get("mime_type") or "").startswith("image/")
+        and contract_prefix in str(art.get("logical_path") or "").strip().lower()
+    ]
+    contract_table_matches: list[dict[str, Any]] = []
+    chart_table_matches: list[dict[str, Any]] = []
+    chart_image_matches: list[dict[str, Any]] = []
+    numeric_matches: list[dict[str, Any]] = []
+    unavailable_rows: list[dict[str, Any]] = []
+    for table in tables_out:
+        evidence = dict(table.get("evidence") or {})
+        matches = [row for row in (evidence.get("matches") or []) if isinstance(row, dict)]
+        contract_table_matches.extend([row for row in matches if str(row.get("artifact_kind") or "").find("table") >= 0])
+        if not matches:
+            unavailable_rows.append(
+                {
+                    "type": "table",
+                    "name": str(table.get("table_name") or ""),
+                    "reason": str(evidence.get("reason") or evidence.get("lineage_note") or "No canonical table artifact was published for this run."),
+                }
+            )
+    for chart in charts_out:
+        evidence = dict(chart.get("evidence") or {})
+        matches = [row for row in (evidence.get("matches") or []) if isinstance(row, dict)]
+        numeric = [row for row in matches if row.get("series") is not None]
+        numeric_matches.extend(numeric)
+        chart_image_matches.extend([row for row in matches if str(row.get("mime_type") or "").startswith("image/")])
+        chart_table_matches.extend([row for row in matches if str(row.get("artifact_kind") or "").find("table") >= 0])
+        chart_table_matches.extend([row for row in (evidence.get("source_matches") or []) if isinstance(row, dict)])
+        if not matches and not evidence.get("source_matches"):
+            unavailable_rows.append(
+                {
+                    "type": "chart",
+                    "name": str(chart.get("chart_name") or ""),
+                    "reason": str(evidence.get("reason") or evidence.get("lineage_note") or "No matching chart evidence was published for this run."),
+                }
+            )
+    evidence_bundle = {
+        "tableArtifacts": dedupe_descriptor_list(scoped_tables + contract_table_matches + chart_table_matches),
+        "imageArtifacts": dedupe_descriptor_list(scoped_images + chart_image_matches),
+        "numericCharts": dedupe_numeric_chart_rows(numeric_matches),
+        "unavailableRows": unavailable_rows,
+        "kind": kind_token,
+    }
+    payload = {
+        "run_id": int(run_id),
+        "kind": kind_token,
+        "slug": slug_token,
+        "artifact_version": artifact_version,
+        "section": {**section_out, "evidence_bundle": evidence_bundle},
+    }
+    SECTION_PAYLOAD_CACHE[cache_key] = payload
+    return payload
+
+
 def localEstimatedProjectedLatLon(
     x_m: Any,
     y_m: Any,
@@ -6843,7 +7086,7 @@ def infer_relevant_chain_ids(run_row: dict[str, Any], artifacts: list[dict[str, 
     if "prach" in scenario_id or profile == "prach_detection":
         add_many(["prach_tx", "prach_rx"])
         return chain_ids
-    if "pdcch" in scenario_id or profile == "pdcch_blind_decode_sweep":
+    if "pdcch" in scenario_id or profile in {"pdcch_blind_decode_sweep", "ctrl6gr_pdcch_study"}:
         add_many(["pdcch_tx", "pdcch_rx"])
         return chain_ids
     if profile == "waveform_bundle":
@@ -8160,6 +8403,20 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
 
 
 def render_user_strip(user_profile: dict[str, Any] | None) -> str:
+    if auth_mode_open():
+        profile = user_profile or OPEN_ACCESS_PROFILE
+        display_name = str(profile.get("display_name") or "Open Access")
+        role = str(profile.get("role") or "Intranet Viewer")
+        initials = "".join(part[:1].upper() for part in display_name.split()[:2]) or "OA"
+        return (
+            '<div class="user-strip">'
+            f'<span class="profile-chip" title="{html.escape(role)}">'
+            f'<span class="profile-avatar">{html.escape(initials)}</span>'
+            f'<span><strong>{html.escape(display_name)}</strong><span class="profile-role">{html.escape(role)}</span></span>'
+            '</span>'
+            '<span class="pill">No login required</span>'
+            '</div>'
+        )
     if not user_profile:
         return '<div class="user-strip"><a class="button-link" href="/login">Sign In</a></div>'
     username = str(user_profile.get("username") or "")
@@ -8446,6 +8703,13 @@ def page_shell(
 
 
 def build_login_page(message: str = "", next_url: str = "/home") -> bytes:
+    if auth_mode_open():
+        return page_shell(
+            "Open Access",
+            '<section class="panel"><h2>Open Intranet Access</h2><p class="muted">The dashboard is configured for open intranet access. Username and password prompts are disabled.</p><div class="toolbar"><a class="button-link" href="/home">Open Dashboard</a></div></section>',
+            active="login",
+            user_profile=dict(OPEN_ACCESS_PROFILE),
+        )
     next_url = next_url or "/home"
     safe_next = html.escape(next_url, quote=True)
     message_html = f'<p class="warning">{html.escape(message)}</p>' if message else ""
@@ -8526,10 +8790,8 @@ def build_profile_page(user_profile: dict[str, Any]) -> bytes:
         </ul>
       </section>
       <section class="panel">
-        <h3>Configured Credentials</h3>
-        <div class="glass-list">
-          {"".join(f'<div class="glass-item"><strong>{html.escape(profile["display_name"])}</strong><br><span class="mini-note"><code>{html.escape(profile["username"])}</code> / <code>{html.escape(profile["password"])}</code></span></div>' for profile in USER_PROFILES.values())}
-        </div>
+        <h3>Access Model</h3>
+        <p class="muted">This intranet dashboard no longer publishes or requires username/password hints in the UI. Authentication mode is <code>{html.escape(DEFAULT_DASHBOARD_AUTH_MODE)}</code>.</p>
       </section>
     </div>
     """
@@ -8968,7 +9230,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (err) { return ''; } }, set(key, value) { try { localStorage.setItem(key, value); } catch (err) {} } };
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   const wired = root.fully_wired_mode || 'LLS';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (obj, path, fallback) => String(path || '').split('.').filter(Boolean).reduce((node, key) => node && typeof node === 'object' && key in node ? node[key] : undefined, obj) ?? fallback;
@@ -9218,49 +9480,163 @@ window.addEventListener('DOMContentLoaded', function () {
   function tokenOverlapScore(left, right) { const rightSet = new Set(right || []); return (left || []).reduce((score, token) => score + (rightSet.has(token) ? 1 : 0), 0); }
   function chartEvidenceCatalog(section) {
     const live = state.live || {};
-    const sectionTokens = evidenceTokens([section.slug, section.title, section.domain].join(' '));
+    const sectionPrefix = `contract__${String(section.slug || '').toLowerCase()}__`;
+    const sectionTokens = evidenceTokens([
+      section.slug,
+      section.title,
+      section.domain,
+      ...(section.tables || []).map(item => item.table_name || ''),
+      ...(section.charts || []).map(item => item.chart_name || ''),
+    ].join(' '));
     const sectionKey = String(section.domain || '').toLowerCase();
     const tableArtifacts = (live.tables_all || []).filter(item => {
+      const logicalPath = String(item.logical_path || '').toLowerCase();
       const haystack = [item.logical_path, item.section, item.artifact_kind].join(' ');
-      return String(item.section || '').toLowerCase() === sectionKey || tokenOverlapScore(sectionTokens, evidenceTokens(haystack)) > 0;
+      return logicalPath.includes(sectionPrefix) || String(item.section || '').toLowerCase() === sectionKey || tokenOverlapScore(sectionTokens, evidenceTokens(haystack)) > 0;
     });
     const imageArtifacts = (live.images_all || []).filter(item => {
+      const logicalPath = String(item.logical_path || '').toLowerCase();
       const haystack = [item.logical_path, item.section, item.artifact_kind].join(' ');
-      return String(item.section || '').toLowerCase() === sectionKey || tokenOverlapScore(sectionTokens, evidenceTokens(haystack)) > 0;
+      return logicalPath.includes(sectionPrefix) || String(item.section || '').toLowerCase() === sectionKey || tokenOverlapScore(sectionTokens, evidenceTokens(haystack)) > 0;
     });
-    const numericCharts = publishedAnalyticsCharts().map(chart => ({...chart, __tokens: evidenceTokens([chart.title, chart.chart_id].join(' '))})).filter(chart => tokenOverlapScore(sectionTokens, chart.__tokens) > 0);
+    const numericCharts = publishedAnalyticsCharts().map(chart => ({...chart, __tokens: evidenceTokens([chart.title, chart.chart_id].join(' '))})).filter(chart => tokenOverlapScore(sectionTokens, chart.__tokens) > 0 || String(chart.chart_id || '').toLowerCase().includes(String(section.slug || '').toLowerCase()));
     return {tableArtifacts, imageArtifacts, numericCharts};
   }
-  function chartEvidenceFor(section, chart) {
+  function dedupeArtifacts(items) {
+    const seen = new Set();
+    const out = [];
+    (items || []).forEach(item => {
+      const key = String((item || {}).artifact_id || (item || {}).logical_path || '');
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(item);
+    });
+    return out;
+  }
+  function resolveChartEvidence(section, chart) {
     const catalog = chartEvidenceCatalog(section);
     const chartTokens = evidenceTokens([chart.chart_name, chart.default_status, section.slug, section.title, section.domain].join(' '));
-    const numericMatch = catalog.numericCharts.find(item => tokenOverlapScore(chartTokens, item.__tokens) > 0);
-    if (numericMatch) {
-      const lineage = numericMatch.download_url ? `<a class="button-link" href="${esc(numericMatch.download_url)}">Download Source CSV</a>` : 'Published numeric chart rows are available in the selected run.';
-      return {status: statusBadge('published in selected run', 'good'), lineage, rule: 'selected_run_numeric_chart_rows'};
+    const numericMatches = catalog.numericCharts.filter(item => tokenOverlapScore(chartTokens, item.__tokens) > 0);
+    const imageMatches = catalog.imageArtifacts.filter(item => tokenOverlapScore(chartTokens, evidenceTokens([item.logical_path, item.section].join(' '))) > 0);
+    const tableMatches = catalog.tableArtifacts.filter(item => tokenOverlapScore(chartTokens, evidenceTokens([item.logical_path, item.section].join(' '))) > 0);
+    let statusLabel = 'unavailable until real source rows exist';
+    let statusClass = 'warn';
+    let reason = chart.default_status || 'unavailable_until_source_table_has_real_rows';
+    let lineageNote = 'No matching numeric chart rows, image artifact, or chartable source table was published for this run.';
+    if (numericMatches.length) {
+      statusLabel = 'published in selected run';
+      statusClass = 'good';
+      reason = 'selected_run_numeric_chart_rows';
+      lineageNote = 'Published numeric chart rows are available in the selected run.';
+    } else if (imageMatches.length) {
+      statusLabel = 'published image artifact';
+      statusClass = 'good';
+      reason = 'selected_run_image_artifact';
+      lineageNote = 'A persisted image artifact is available for this chart in the selected run.';
+    } else if (tableMatches.length) {
+      statusLabel = 'chartable source table present';
+      statusClass = 'good';
+      reason = 'selected_run_chart_source_table';
+      lineageNote = 'A chartable source table is available for this chart in the selected run.';
+    } else if (catalog.numericCharts.length || catalog.imageArtifacts.length || catalog.tableArtifacts.length) {
+      statusLabel = 'section evidence present';
+      statusClass = 'good';
+      reason = 'selected_run_section_evidence_present';
+      lineageNote = `This run published neighboring section evidence (${catalog.numericCharts.length} numeric charts, ${catalog.imageArtifacts.length} image artifacts, ${catalog.tableArtifacts.length} tables), but not a separately matched chart artifact for this exact row.`;
     }
-    const imageMatch = catalog.imageArtifacts.find(item => tokenOverlapScore(chartTokens, evidenceTokens([item.logical_path, item.section].join(' '))) > 0);
-    if (imageMatch) {
+    return {catalog, numericMatches, imageMatches, tableMatches, statusLabel, statusClass, reason, lineageNote};
+  }
+  function chartEvidenceFor(section, chart) {
+    const evidence = resolveChartEvidence(section, chart);
+    if (evidence.numericMatches.length) {
+      const numericMatch = evidence.numericMatches[0];
+      const lineage = numericMatch.download_url ? `<a class="button-link" href="${esc(numericMatch.download_url)}">Download Source CSV</a>` : evidence.lineageNote;
+      return {status: statusBadge(evidence.statusLabel, evidence.statusClass), lineage, rule: evidence.reason};
+    }
+    if (evidence.imageMatches.length) {
+      const imageMatch = evidence.imageMatches[0];
       const openUrl = imageMatch.view_url || imageMatch.download_url || '#';
-      return {status: statusBadge('published image artifact', 'good'), lineage: `<a class="button-link" href="${esc(openUrl)}">Open Artifact</a>`, rule: 'selected_run_image_artifact'};
+      return {status: statusBadge(evidence.statusLabel, evidence.statusClass), lineage: `<a class="button-link" href="${esc(openUrl)}">Open Artifact</a>`, rule: evidence.reason};
     }
-    const tableMatch = catalog.tableArtifacts.find(item => tokenOverlapScore(chartTokens, evidenceTokens([item.logical_path, item.section].join(' '))) > 0);
-    if (tableMatch) {
+    if (evidence.tableMatches.length) {
+      const tableMatch = evidence.tableMatches[0];
       const openUrl = tableMatch.view_url || tableMatch.download_url || '#';
-      return {status: statusBadge('chartable source table present', 'good'), lineage: `<a class="button-link" href="${esc(openUrl)}">Preview Source Table</a>`, rule: 'selected_run_chart_source_table'};
-    }
-    if (catalog.numericCharts.length || catalog.imageArtifacts.length || catalog.tableArtifacts.length) {
-      return {
-        status: statusBadge('section evidence present', 'good'),
-        lineage: `This run published neighboring section evidence (${esc(catalog.numericCharts.length)} numeric charts, ${esc(catalog.imageArtifacts.length)} image artifacts, ${esc(catalog.tableArtifacts.length)} tables), but not a separately matched chart artifact for this exact row.`,
-        rule: 'selected_run_section_evidence_present',
-      };
+      return {status: statusBadge(evidence.statusLabel, evidence.statusClass), lineage: `<a class="button-link" href="${esc(openUrl)}">Preview Source Table</a>`, rule: evidence.reason};
     }
     return {
-      status: statusBadge('unavailable until real source rows exist', 'warn'),
-      lineage: chart.lineage_required ? 'No matching numeric chart rows, image artifact, or chartable source table was published for this run.' : 'n/a',
-      rule: chart.default_status || 'unavailable_until_source_table_has_real_rows',
+      status: statusBadge(evidence.statusLabel, evidence.statusClass),
+      lineage: chart.lineage_required ? evidence.lineageNote : 'n/a',
+      rule: evidence.reason,
     };
+  }
+  function sectionPublishedArtifacts(section, kind) {
+    if (section && section.evidence_bundle) return section.evidence_bundle;
+    const catalog = chartEvidenceCatalog(section);
+    const slugToken = `contract__${String(section.slug || '').toLowerCase()}__`;
+    const live = state.live || {};
+    const scopedTables = (live.tables_all || []).filter(item => String((item || {}).logical_path || '').toLowerCase().includes(slugToken));
+    const scopedImages = (live.images_all || []).filter(item => String((item || {}).logical_path || '').toLowerCase().includes(slugToken));
+    const contractTableMatches = [];
+    const contractChartTableMatches = [];
+    const contractChartImageMatches = [];
+    (section.tables || []).forEach(table => {
+      const evidence = table.evidence || {};
+      const matches = Array.isArray(evidence.matches) && evidence.matches.length ? evidence.matches : artifactMatches(table);
+      contractTableMatches.push(...matches.filter(match => String(match.artifact_kind || '').includes('table')));
+    });
+    const chartDetails = (section.charts || []).map(chart => ({ chart, evidence: resolveChartEvidence(section, chart) }));
+    chartDetails.forEach(item => {
+      contractChartTableMatches.push(...(item.evidence.tableMatches || []).filter(match => String(match.artifact_kind || '').includes('table')));
+      contractChartImageMatches.push(...(item.evidence.imageMatches || []).filter(match => !String(match.artifact_kind || '').includes('table')));
+    });
+    const imageMatches = chartDetails.flatMap(item => item.evidence.imageMatches || []);
+    const tableMatches = chartDetails.flatMap(item => item.evidence.tableMatches || []);
+    const unavailableRows = [];
+    (section.tables || []).forEach(table => {
+      const evidence = table.evidence || {};
+      const matches = Array.isArray(evidence.matches) && evidence.matches.length ? evidence.matches : artifactMatches(table);
+      if (!matches.length) {
+        unavailableRows.push({
+          type: 'table',
+          name: table.table_name,
+          reason: evidence.reason || evidence.lineage_note || 'No canonical table artifact was published for this run.',
+        });
+      }
+    });
+    chartDetails.forEach(item => {
+      if (!(item.evidence.numericMatches.length || item.evidence.imageMatches.length || item.evidence.tableMatches.length)) {
+        unavailableRows.push({
+          type: 'chart',
+          name: item.chart.chart_name,
+          reason: item.evidence.reason || item.evidence.lineageNote || 'No matching chart evidence was published for this run.',
+        });
+      }
+    });
+    return {
+      numericCharts: catalog.numericCharts,
+      tableArtifacts: dedupeArtifacts([...scopedTables, ...catalog.tableArtifacts, ...contractTableMatches, ...contractChartTableMatches, ...tableMatches]),
+      imageArtifacts: dedupeArtifacts([...scopedImages, ...catalog.imageArtifacts, ...contractChartImageMatches, ...imageMatches]),
+      unavailableRows,
+      chartDetails,
+      kind,
+    };
+  }
+  function sectionArtifactTable(items, empty) {
+    if (!items || !items.length) return unavailable(empty);
+    return `<div class="table-wrap"><table><thead><tr><th>Artifact</th><th>Kind</th><th>Section</th><th>Bytes</th><th>Actions</th></tr></thead><tbody>${items.map(item => `<tr><td><strong>${esc(item.logical_path || item.artifact_id)}</strong><br><span class="small mono">artifact_id=${esc(item.artifact_id)}</span></td><td>${esc(item.artifact_kind || '')}</td><td>${esc(item.section || '')}</td><td>${esc(item.byte_size || '')}</td><td><a class="button-link" href="${esc(item.view_url || item.download_url || '#')}">${String(item.artifact_kind || '').includes('table') ? 'Preview Table' : 'Open'}</a> <a class="button-link" href="${esc(item.download_url || item.view_url || '#')}">Download</a></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  function sectionImageGallery(items, empty) {
+    if (!items || !items.length) return `<div class="chart-empty">${esc(empty)}</div>`;
+    return `<div class="artifact-gallery">${items.slice(0, 12).map(item => `<article class="artifact-card"><h4>${esc(item.logical_path || item.artifact_id)}</h4><a href="${esc(item.view_url || item.download_url || '#')}" target="_blank" rel="noopener noreferrer"><img loading="lazy" decoding="async" src="${esc(item.view_url || item.download_url || '#')}" alt="${esc(item.logical_path || item.artifact_id)}"></a><div class="toolbar" style="margin-top:10px;"><a class="button-link secondary" href="${esc(item.view_url || item.download_url || '#')}" target="_blank" rel="noopener noreferrer">Open In New Tab</a><a class="button-link secondary" href="${esc(item.download_url || item.view_url || '#')}">Download</a></div></article>`).join('')}</div>`;
+  }
+  function sectionUnavailableTable(rows, empty) {
+    if (!rows || !rows.length) return `<div class="mini-note">${esc(empty)}</div>`;
+    return `<div class="table-wrap"><table><thead><tr><th>Type</th><th>Name</th><th>Exact Reason</th></tr></thead><tbody>${rows.map(row => `<tr><td>${esc(row.type)}</td><td>${esc(row.name)}</td><td>${esc(row.reason)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  function sectionEvidencePanel(section, kind) {
+    const evidence = sectionPublishedArtifacts(section, kind);
+    const chartButtons = evidence.numericCharts.map(chart => `<a class="button-link" href="${esc(chart.download_url || '#')}">${esc(chart.title || chart.chart_id || 'Numeric Chart')}</a>`).join('');
+    return `<section class="panel"><h3>Published Evidence For This ${esc(kind === 'analytics' ? 'Analytics' : 'Report')} Family</h3><p class="subtle">This panel shows only real persisted artifacts that match <code>${esc(section.slug || '')}</code> for the selected run. Missing rows stay explicitly unavailable with exact reasons.</p><div class="toolbar">${statusBadge(`${evidence.tableArtifacts.length} matched tables`, evidence.tableArtifacts.length ? 'good' : 'warn')}${statusBadge(`${evidence.imageArtifacts.length} matched visuals`, evidence.imageArtifacts.length ? 'good' : 'warn')}${statusBadge(`${evidence.numericCharts.length} numeric charts`, evidence.numericCharts.length ? 'good' : 'warn')}${statusBadge(`${evidence.unavailableRows.length} unavailable contract rows`, evidence.unavailableRows.length ? 'warn' : 'good')}</div><h4>Published Source Tables / Views</h4>${sectionArtifactTable(evidence.tableArtifacts, 'No persisted source tables matched this family for the selected run.')}<h4 style="margin-top:16px;">Published Visual Artifacts</h4>${sectionImageGallery(evidence.imageArtifacts, 'No persisted chart, waveform, heatmap, or image artifact matched this family for the selected run.')}<h4 style="margin-top:16px;">Numeric Chart Sources</h4>${chartButtons ? `<div class="toolbar">${chartButtons}</div>` : '<div class="mini-note">No directly chartable numeric tabs were matched for this family.</div>'}<h4 style="margin-top:16px;">Unavailable Rows</h4>${sectionUnavailableTable(evidence.unavailableRows, 'Every contract row in this family matched a real persisted source artifact or chart source.')}</section>`;
   }
   function rows(records, empty, opts) { if (!records || !records.length) return unavailable(empty); const keys = Object.keys(records[0]).slice(0, 12); return scrollWrap(`<table><thead><tr>${keys.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${records.map(r => `<tr>${keys.map(k => `<td>${esc(text(r[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`, opts); }
   function objectTable(obj, empty, opts) { const keys = Object.keys(obj || {}); return keys.length ? scrollWrap(`<table><tbody>${keys.map(k => `<tr><th>${esc(k)}</th><td>${esc(text(obj[k]))}</td></tr>`).join('')}</tbody></table>`, opts) : unavailable(empty); }
@@ -9639,7 +10015,17 @@ window.addEventListener('DOMContentLoaded', function () {
     renderMetricExplorer('realtime');
   }
   function contractSlug(kind) { const parts = location.pathname.split('/').filter(Boolean); return parts[0] === kind ? (parts[1] || '') : ''; }
-  function contractSections(kind) { const live = ((state.live || {}).contract_surface || {}); const sections = live[kind]; return Array.isArray(sections) && sections.length ? sections : (kind === 'reports' ? (root.report_sections || []) : (root.analytics_sections || [])); }
+  function contractSections(kind) {
+    const live = ((state.live || {}).contract_surface || {});
+    const baseSections = (() => {
+      const sections = live[kind];
+      return Array.isArray(sections) && sections.length ? sections : (kind === 'reports' ? (root.report_sections || []) : (root.analytics_sections || []));
+    })();
+    const evidence = state.sectionEvidence;
+    if (!evidence || evidence.kind !== kind || !evidence.section) return baseSections;
+    const slug = String(evidence.slug || '');
+    return baseSections.map(section => String(section.slug || '') === slug ? evidence.section : section);
+  }
   function artifactMatches(table) {
     const live = state.live || {};
     const tableName = String(table.table_name || '');
@@ -9679,9 +10065,16 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function applyContractControls() { const table = document.querySelector('[data-contract-table]'); if (!table) return; const q = String(document.getElementById('contractFilter')?.value || '').toLowerCase(); table.querySelectorAll('tbody tr').forEach(row => { row.style.display = !q || row.textContent.toLowerCase().includes(q) ? '' : 'none'; }); document.querySelectorAll('[data-contract-col]').forEach(cb => { const idx = Number(cb.dataset.contractCol); table.querySelectorAll('tr').forEach(row => { const cell = row.children[idx]; if (cell) cell.style.display = cb.checked ? '' : 'none'; }); }); }
   function sortContractTable(col) { const table = document.querySelector('[data-contract-table]'); if (!table) return; const body = table.tBodies[0]; [...body.rows].sort((a,b) => String(a.children[col]?.textContent || '').localeCompare(String(b.children[col]?.textContent || ''))).forEach(row => body.appendChild(row)); applyContractControls(); }
-  function contractPage(kind) { const sections = contractSections(kind); const slug = contractSlug(kind); const section = sections.find(s => s.slug === slug); const titleText = kind === 'reports' ? 'Reports' : 'Analytics'; const subtitle = kind === 'reports' ? 'Real-time runtime truth only. Derived study views stay in Analytics.' : 'Derived post-processing study views only. Runtime truth stays in Reports.'; const selectorHtml = pageRunSelector(`${kind}RunSelect`, 'Selected Run', {showRunningBadge: kind === 'analytics', runningOnly: false, note: 'Switch runs here to inspect the same report or analytics family against a different truth-backed artifact set.'}); const issueHtml = kind === 'analytics' ? issueRegistryTable() : ''; title(titleText, subtitle); if (!section) { main.innerHTML = `${issueHtml}<section class="panel"><h3>${titleText}</h3>${selectorHtml}<p class="subtle">${subtitle}</p><div class="grid three">${sections.map(s => `<article class="tile"><span class="badge">${esc(s.domain)}</span><h4>${esc(s.title)}</h4><p>${esc((s.tables || []).length)} tables, ${esc((s.charts || []).length)} charts registered. Missing outputs stay unavailable.</p><a class="button-link" href="${esc(s.href)}">Open Section</a></article>`).join('')}</div></section>`; return; } main.innerHTML = `${issueHtml}<section class="panel"><div class="toolbar"><a class="button-link" href="/${kind}">All ${titleText}</a><a class="button-link" href="/artifacts">Canonical Artifacts</a></div><h3>${esc(section.title)}</h3>${selectorHtml}<p class="subtle">${subtitle} Tables include mandatory direction/UE/BS/SFN/slot/symbol context and value_role/value_source/value_status semantics.</p><div class="toolbar">${statusBadge('no smoke data by default','good')}${statusBadge('no placeholder charts','good')}${statusBadge('lineage required','good')}</div><div class="toolbar"><input id="contractFilter" placeholder="Filter tables, columns, status, lineage"><button type="button" data-contract-sort="0">Sort Tables</button><button type="button" data-contract-sort="1">Sort Status</button><label class="small"><input type="checkbox" data-contract-col="2" checked> Context</label><label class="small"><input type="checkbox" data-contract-col="3" checked> Columns</label><label class="small"><input type="checkbox" data-contract-col="4" checked> Drilldown / Export</label></div><h3>Tables / Views</h3><div class="table-wrap"><table data-contract-table><thead><tr><th>Table</th><th>Status</th><th>Mandatory Context</th><th>Columns</th><th>Drilldown / Export</th></tr></thead><tbody>${tableContractRows(section)}</tbody></table></div><h3>Charts / Graphs / Heatmaps</h3><div class="table-wrap"><table><thead><tr><th>Chart</th><th>Status</th><th>Rule</th><th>Lineage</th><th>Fake Data Guard</th></tr></thead><tbody>${chartContractRows(section)}</tbody></table></div></section>`; applyContractControls(); }
+  function contractPage(kind) { const sections = contractSections(kind); const slug = contractSlug(kind); const section = sections.find(s => s.slug === slug); const titleText = kind === 'reports' ? 'Reports' : 'Analytics'; const subtitle = kind === 'reports' ? 'Real-time runtime truth only. Derived study views stay in Analytics.' : 'Derived post-processing study views only. Runtime truth stays in Reports.'; const selectorHtml = pageRunSelector(`${kind}RunSelect`, 'Selected Run', {showRunningBadge: kind === 'analytics', runningOnly: false, note: 'Switch runs here to inspect the same report or analytics family against a different truth-backed artifact set.'}); const issueHtml = kind === 'analytics' ? issueRegistryTable() : ''; title(titleText, subtitle); if (!section) { main.innerHTML = `${issueHtml}<section class="panel"><h3>${titleText}</h3>${selectorHtml}<p class="subtle">${subtitle}</p><div class="grid three">${sections.map(s => `<article class="tile"><span class="badge">${esc(s.domain)}</span><h4>${esc(s.title)}</h4><p>${esc((s.tables || []).length)} tables, ${esc((s.charts || []).length)} charts registered. Missing outputs stay unavailable.</p><a class="button-link" href="${esc(s.href)}">Open Section</a></article>`).join('')}</div></section>`; return; } const evidenceHtml = sectionEvidencePanel(section, kind); main.innerHTML = `${issueHtml}<section class="panel"><div class="toolbar"><a class="button-link" href="/${kind}">All ${titleText}</a><a class="button-link" href="/artifacts">Canonical Artifacts</a></div><h3>${esc(section.title)}</h3>${selectorHtml}<p class="subtle">${subtitle} Tables include mandatory direction/UE/BS/SFN/slot/symbol context and value_role/value_source/value_status semantics.</p><div class="toolbar">${statusBadge('no smoke data by default','good')}${statusBadge('no placeholder charts','good')}${statusBadge('lineage required','good')}</div></section>${evidenceHtml}<section class="panel"><div class="toolbar"><input id="contractFilter" placeholder="Filter tables, columns, status, lineage"><button type="button" data-contract-sort="0">Sort Tables</button><button type="button" data-contract-sort="1">Sort Status</button><label class="small"><input type="checkbox" data-contract-col="2" checked> Context</label><label class="small"><input type="checkbox" data-contract-col="3" checked> Columns</label><label class="small"><input type="checkbox" data-contract-col="4" checked> Drilldown / Export</label></div><h3>Tables / Views</h3><div class="table-wrap"><table data-contract-table><thead><tr><th>Table</th><th>Status</th><th>Mandatory Context</th><th>Columns</th><th>Drilldown / Export</th></tr></thead><tbody>${tableContractRows(section)}</tbody></table></div><h3>Charts / Graphs / Heatmaps</h3><div class="table-wrap"><table><thead><tr><th>Chart</th><th>Status</th><th>Rule</th><th>Lineage</th><th>Fake Data Guard</th></tr></thead><tbody>${chartContractRows(section)}</tbody></table></div></section>`; applyContractControls(); }
   function reports() { contractPage('reports'); }
-  function analytics() { contractPage('analytics'); main.insertAdjacentHTML('afterbegin', `${analyticsExplorerPanel()}${analyticsPublishedChartsPanel()}${waveformArtifactPanel()}`); renderMetricExplorer('analytics'); renderPublishedAnalyticsPanel(); }
+  function analytics() {
+    contractPage('analytics');
+    if (!contractSlug('analytics')) {
+      main.insertAdjacentHTML('afterbegin', `${analyticsExplorerPanel()}${analyticsPublishedChartsPanel()}${waveformArtifactPanel()}`);
+      renderMetricExplorer('analytics');
+      renderPublishedAnalyticsPanel();
+    }
+  }
   function artifactTable(items, empty) { if (!items || !items.length) return unavailable(empty); return `<div class="table-wrap"><table><thead><tr><th>Artifact</th><th>Kind</th><th>Section</th><th>Bytes</th><th>Created</th><th>Actions</th></tr></thead><tbody>${items.map(a => `<tr><td><strong>${esc(a.logical_path || a.artifact_id)}</strong><br><span class="small mono">artifact_id=${esc(a.artifact_id)}</span></td><td>${esc(a.artifact_kind || '')}</td><td>${esc(a.section || '')}</td><td>${esc(a.byte_size || '')}</td><td>${esc(a.created_utc || '')}</td><td><a class="button-link" href="${esc(a.view_url || a.download_url || '#')}">${String(a.artifact_kind || '').includes('table') ? 'Preview Table' : 'Open'}</a> <a class="button-link" href="${esc(a.download_url || a.view_url || '#')}">Download Full File</a></td></tr>`).join('')}</tbody></table></div>`; }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from MySQL. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
   function parameters() { title('Parameter Catalog', 'Browser, YAML, resolved, applied, measured, source, owner, and role columns.'); const fs = state.fields; if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}${unavailable('Parameter catalog is loading from the selected scenario config and resolved field list. The page will populate automatically once both payloads arrive.')}</section>`; return; } main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}<p class="subtle">${fs.length} exposed parameters loaded from the resolved/browser config.</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${fs.map(f => `<tr><td><strong>${esc(f.label)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('')}</tbody></table></div></section>`; }
@@ -9711,6 +10104,65 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function loadComparePayloads() { if (!state.compareBaseline || !state.compareCandidate) { compare(); return; } state.compareLoading = true; compare(); Promise.all([fetch(`/api/run/${encodeURIComponent(state.compareBaseline)}/live`, {cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null), fetch(`/api/run/${encodeURIComponent(state.compareCandidate)}/live`, {cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null)]).then(([a,b]) => { state.compareBaselineLive = a; state.compareCandidateLive = b; state.compareLoading = false; state.page = 'compare'; render({preserveScroll:true}); }); }
   function compare() { title('Compare Runs', 'Baseline and candidate delta analysis from canonical live payloads and artifact counts.'); const a = state.compareBaselineLive; const b = state.compareCandidateLive; main.innerHTML = `<section class="panel"><h3>Compare Runs</h3><p class="subtle">Use Add Baseline / Add Candidate from Previous Runs, or select runs here. Comparison fetches /api/run/&lt;id&gt;/live for both runs.</p><div class="toolbar"><label>Baseline<select id="compareBaselineSelect">${compareOptions(state.compareBaseline)}</select></label><label>Candidate<select id="compareCandidateSelect">${compareOptions(state.compareCandidate)}</select></label><button type="button" id="compareRunsBtn">Compare</button><a class="button-link" href="/previous-runs">Previous Runs</a></div>${scrollWrap(`<table><thead><tr><th>Metric</th><th>Baseline</th><th>Candidate</th><th>Delta</th></tr></thead><tbody>${compareMetricRows()}</tbody></table>`, {className:'page-table', scrollKey:'compare-metrics'})}</section><section class="panel"><h3>Compared Outputs</h3><div class="split"><div><h4>Baseline ${esc(state.compareBaseline || '')}</h4>${a ? artifactTable((a.tables_all || []).slice(0,50), 'No baseline canonical tables are available.') : unavailable('Baseline payload has not been loaded.')}</div><div><h4>Candidate ${esc(state.compareCandidate || '')}</h4>${b ? artifactTable((b.tables_all || []).slice(0,50), 'No candidate canonical tables are available.') : unavailable('Candidate payload has not been loaded.')}</div></div></section>`; }
+  function mergeLivePayload(previous, incoming) {
+    if (!previous) return incoming;
+    if (!incoming) return previous;
+    const merged = { ...previous, ...incoming };
+    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'debug'];
+    stickyKeys.forEach((key) => {
+      if (incoming[key] === undefined) merged[key] = previous[key];
+    });
+    merged.charts = { ...(previous.charts || {}), ...(incoming.charts || {}) };
+    return merged;
+  }
+  async function fetchCanonicalLivePayload(runId) {
+    const lite = await fetch(`/api/run/${encodeURIComponent(runId)}/live?lite=1`, {cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!lite) return null;
+    const previousRunId = String((((state.liveFullPayload || {}).run) || {}).run_id || '');
+    const needsFull = !state.liveFullPayload || previousRunId !== String(runId) || (lite.artifact_version && lite.artifact_version !== state.liveArtifactVersion);
+    if (!needsFull) {
+      const merged = mergeLivePayload(state.liveFullPayload, lite);
+      state.liveFullPayload = merged;
+      return merged;
+    }
+    const merged = previousRunId === String(runId) ? mergeLivePayload(state.liveFullPayload, lite) : lite;
+    const fullFetchKey = `${String(runId)}|${String(lite.artifact_version || '')}`;
+    if (state.liveFullFetchPending !== fullFetchKey) {
+      state.liveFullFetchPending = fullFetchKey;
+      fetch(`/api/run/${encodeURIComponent(runId)}/live`, {cache:'no-store'})
+        .then(r => r.ok ? r.json() : null)
+        .then(full => {
+          if (!full) return;
+          state.liveFullPayload = full;
+          state.live = full;
+          state.liveVersion = String(full.payload_version || '');
+          state.liveArtifactVersion = String(full.artifact_version || '');
+          if (!interactionLocked() && ['realtime','reports','analytics','artifacts','parameters'].includes(state.page)) render({preserveScroll:true});
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (state.liveFullFetchPending === fullFetchKey) state.liveFullFetchPending = '';
+        });
+    }
+    state.liveFullPayload = merged;
+    return merged;
+  }
+  async function fetchContractSectionEvidence(kind) {
+    const slug = contractSlug(kind);
+    const runId = selectedRunId();
+    if (!slug || !runId || !['reports','analytics'].includes(String(kind || ''))) {
+      state.sectionEvidence = null;
+      state.sectionEvidenceVersion = '';
+      return null;
+    }
+    const payload = await fetch(`/api/run/${encodeURIComponent(runId)}/contract-section?kind=${encodeURIComponent(kind)}&slug=${encodeURIComponent(slug)}`, {cache:'no-store'})
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+    if (!payload) return null;
+    state.sectionEvidence = payload;
+    state.sectionEvidenceVersion = `${payload.kind || ''}|${payload.slug || ''}|${payload.artifact_version || ''}`;
+    return payload;
+  }
   function render(options) { const opts = options || {}; const scrollSnapshot = opts.preserveScroll ? captureScrollState() : null; chrome(); if (state.page === 'home' || state.page === 'architecture') home(); else if (state.page === 'reports') reports(); else if (state.page === 'runs') runsPage(); else if (state.page === 'previous_runs') previousRunsPage(); else if (state.page === 'geometry') geometry(); else if (state.page === 'l1_phy') l1(); else if (state.page === 'realtime') realtime(); else if (state.page === 'analytics') analytics(); else if (state.page === 'artifacts') artifacts(); else if (state.page === 'parameters') parameters(); else if (state.page === 'compare') compare(); else domain(state.page); renderBlock(state.selectedBlock); if (scrollSnapshot) restoreScrollState(scrollSnapshot); else window.requestAnimationFrame(() => window.scrollTo(0, 0)); }
   function refreshRunsList(shouldRender) {
     return fetch('/api/runs?limit=200', {cache:'no-store'})
@@ -9810,23 +10262,41 @@ window.addEventListener('DOMContentLoaded', function () {
   if (pageNeedsFieldCatalog(state.page)) window.setTimeout(() => { ensureFieldsLoaded(true); }, 0);
   refreshRunsList(true).then(runRows => {
     const id = preferredRunId(runRows);
-    return id ? fetch(`/api/run/${id}/live`, {cache:'no-store'}).then(x => x.ok ? x.json() : null).catch(() => null) : null;
-  }).then(live => {
+    const contractKind = state.page === 'reports' ? 'reports' : (state.page === 'analytics' ? 'analytics' : '');
+    if (contractKind) {
+      fetchContractSectionEvidence(contractKind)
+        .then(() => {
+          if (!interactionLocked() && ['reports','analytics'].includes(state.page)) render({preserveScroll:true});
+        })
+        .catch(() => {});
+    }
+    return id ? fetchCanonicalLivePayload(id) : null;
+  }).then((live) => {
     state.live = live;
     state.liveVersion = String((live || {}).payload_version || '');
+    state.liveArtifactVersion = String((live || {}).artifact_version || '');
     if (!interactionLocked()) render({preserveScroll:true});
     setInterval(() => {
       const runId = selectedRunId();
       if (!runId) return;
-      fetch(`/api/run/${runId}/live`, {cache:'no-store'})
-        .then(r => r.ok ? r.json() : null)
-        .then(x => {
+      const contractKind = state.page === 'reports' ? 'reports' : (state.page === 'analytics' ? 'analytics' : '');
+      if (contractKind) {
+        const previousSectionVersion = state.sectionEvidenceVersion;
+        fetchContractSectionEvidence(contractKind)
+          .then(() => {
+            if (state.sectionEvidenceVersion !== previousSectionVersion && !interactionLocked() && ['reports','analytics'].includes(state.page)) render({preserveScroll:true});
+          })
+          .catch(() => {});
+      }
+      fetchCanonicalLivePayload(runId)
+        .then((x) => {
           if (!x) return;
           const nextVersion = String(x.payload_version || '');
           const nextRunId = String((((x || {}).run) || {}).run_id || '');
           const changed = nextVersion !== state.liveVersion || nextRunId !== String((((state.live || {}).run) || {}).run_id || '');
           state.live = x;
           state.liveVersion = nextVersion;
+          state.liveArtifactVersion = String(x.artifact_version || '');
           if (changed && ['realtime','reports','analytics','artifacts','parameters'].includes(state.page) && !interactionLocked()) render({preserveScroll:true});
         })
         .catch(() => {});
@@ -12829,9 +13299,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
     server_version = "SixGRDashboard/2.0"
 
     def current_session(self) -> tuple[str | None, dict[str, Any] | None]:
+        if auth_mode_open():
+            return None, dict(OPEN_ACCESS_PROFILE)
         return resolve_user_profile_from_cookie(self.headers.get("Cookie"))
 
     def require_authentication(self, parsed: urllib.parse.ParseResult) -> tuple[str | None, dict[str, Any] | None] | None:
+        if auth_mode_open():
+            return None, dict(OPEN_ACCESS_PROFILE)
         token, user_profile = self.current_session()
         if user_profile is not None:
             return token, user_profile
@@ -12843,6 +13317,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return None
 
     def finish_login(self, username: str, next_url: str) -> None:
+        if auth_mode_open():
+            self.redirect(next_url or "/home")
+            return
         token = create_session(username)
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", next_url or "/home")
@@ -12850,6 +13327,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def finish_logout(self, token: str | None, next_url: str = "/login") -> None:
+        if auth_mode_open():
+            self.redirect("/home")
+            return
         clear_session(token)
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", next_url)
@@ -12861,6 +13341,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             parsed = urllib.parse.urlparse(self.path)
             params = urllib.parse.parse_qs(parsed.query)
             if parsed.path == "/login":
+                if auth_mode_open():
+                    self.redirect(params.get("next", ["/home"])[0] or "/home")
+                    return
                 _, active_profile = self.current_session()
                 if active_profile is not None:
                     self.redirect(params.get("next", ["/home"])[0] or "/home")
@@ -13059,6 +13542,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 lite = params.get("lite", ["0"])[0] in {"1", "true", "yes"}
                 self.respond_json(build_live_payload(run_id, lite=lite))
                 return
+            if parsed.path.startswith("/api/run/") and parsed.path.endswith("/contract-section"):
+                run_id = int(parsed.path.split("/")[3])
+                kind = params.get("kind", ["analytics"])[0]
+                slug = params.get("slug", [""])[0]
+                self.respond_json(build_contract_section_payload(run_id, kind=kind, slug=slug))
+                return
             if parsed.path.startswith("/api/run/") and parsed.path.endswith("/map"):
                 run_id = int(parsed.path.split("/")[3])
                 self.respond_json(build_live_payload(run_id)["map"])
@@ -13075,11 +13564,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 header, rows = load_cached_csv_preview(int(artifact_id), MAX_TABLE_PREVIEW_ROWS)
                 self.respond_json({"meta": meta, "header": header, "rows": rows})
                 return
-            self.send_error(HTTPStatus.NOT_FOUND, "Unknown route.")
+            self.respond_error(HTTPStatus.NOT_FOUND, "Unknown route.")
         except KeyError as exc:
-            self.send_error(HTTPStatus.NOT_FOUND, str(exc))
+            self.respond_error(HTTPStatus.NOT_FOUND, str(exc))
         except Exception as exc:  # pragma: no cover
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+            self.respond_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
     def do_POST(self) -> None:  # noqa: N802
         try:
@@ -13088,6 +13577,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raw = self.rfile.read(content_length).decode("utf-8")
             fields = urllib.parse.parse_qs(raw, keep_blank_values=True)
             if parsed.path == "/login":
+                if auth_mode_open():
+                    self.redirect(str(fields.get("next", ["/home"])[0] or "/home"))
+                    return
                 username = str(fields.get("username", [""])[0]).strip().lower()
                 password = str(fields.get("password", [""])[0])
                 next_url = str(fields.get("next", ["/home"])[0] or "/home")
@@ -13098,6 +13590,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.finish_login(username, next_url if next_url.startswith("/") else "/home")
                 return
             if parsed.path == "/logout":
+                if auth_mode_open():
+                    self.redirect("/home")
+                    return
                 token, _ = self.current_session()
                 self.finish_logout(token)
                 return
@@ -13128,7 +13623,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.redirect(f"{next_url}?message={urllib.parse.quote(message)}")
                 return
             if parsed.path != "/run":
-                self.send_error(HTTPStatus.NOT_FOUND, "Unknown route.")
+                self.respond_error(HTTPStatus.NOT_FOUND, "Unknown route.")
                 return
             scenario_name = fields.get("scenario", [DEFAULT_SCENARIO])[0]
             run_tag = (fields.get("run_tag", [""])[0] or timestamp_tag("web")).strip()
@@ -13201,6 +13696,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def respond_error(self, status: HTTPStatus | int, message: str) -> None:
+        try:
+            code = int(status)
+        except Exception:
+            code = int(HTTPStatus.INTERNAL_SERVER_ERROR)
+        phrase = HTTPStatus(code).phrase if code in HTTPStatus._value2member_map_ else "Error"
+        request_path = ""
+        try:
+            request_path = urllib.parse.urlparse(str(self.path or "")).path
+        except Exception:
+            request_path = str(self.path or "")
+        payload_message = str(message or phrase)
+        if request_path.startswith("/api/"):
+            raw = json_bytes({"error": payload_message, "status": code})
+            self.send_response(code, phrase)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        raw = payload_message.encode("utf-8", errors="replace")
+        self.send_response(code, phrase)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def respond_artifact(self, artifact_id: int, *, download: bool) -> None:
         meta = fetch_artifact_meta(artifact_id)
         if meta is None:
@@ -13214,7 +13738,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if if_none_match and if_none_match == etag:
             self.send_response(HTTPStatus.NOT_MODIFIED)
             self.send_header("ETag", etag)
-            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            # Require revalidation so deleted/re-materialized artifact ids do
+            # not stay pinned forever in browser caches, while still allowing
+            # fast 304 responses through the in-process byte cache.
+            self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
             self.end_headers()
             return
         self.send_response(HTTPStatus.OK)
@@ -13222,7 +13749,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Disposition", f'{disposition}; filename="{filename}"')
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("ETag", etag)
-        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -13346,7 +13873,11 @@ class DashboardWSGIHandler(DashboardHandler):
         return
 
     def handle_exception(self, exc: Exception) -> None:
-        self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+        self.respond_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:  # type: ignore[override]
+        detail = message or explain or HTTPStatus(int(code)).phrase
+        self.respond_error(int(code), str(detail))
 
     def dispatch(self) -> list[bytes]:
         try:

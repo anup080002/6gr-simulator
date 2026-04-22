@@ -231,6 +231,127 @@ cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(s.control.c
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResources", double(s.control.coreset_frequency_resources));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.searchSpace.numCandidates", double(s.control.search_space_num_candidates));
 
+cfg.ctrl6gr.enable = logical(localGetNested(s, "control.pdcch6gr.enable_6gr_pdcch", false));
+cfg.ctrl6gr.RNTI = double(localGetNested(s, "control.pdcch6gr.rnti", 4660));
+cfg.ctrl6gr.NumSlots = double(localGetNested(s, "control.pdcch6gr.num_slots", max(1, cfg.run.totalSlots)));
+cfg.ctrl6gr.NTx = double(localGetNested(s, "control.pdcch6gr.n_tx", 1));
+cfg.ctrl6gr.NRx = double(localGetNested(s, "control.pdcch6gr.n_rx", max(1, cfg.channel.nRxAnt)));
+cfg.ctrl6gr.ChannelModel = char(string(localGetNested(s, "control.pdcch6gr.channel_model", cfg.channel.model)));
+cfg.ctrl6gr.DelaySpread = double(localGetNested(s, "control.pdcch6gr.delay_spread_s", cfg.channel.fading.delaySpread_s));
+cfg.ctrl6gr.DopplerHz = double(localGetNested(s, "control.pdcch6gr.doppler_hz", cfg.channel.doppler_Hz));
+cfg.ctrl6gr.SNRdB = double(localGetNested(s, "control.pdcch6gr.snr_db", cfg.channel.snr_dB));
+cfg.ctrl6gr.NoiseVarianceMode = char(string(localGetNested(s, "control.pdcch6gr.noise_variance_mode", "from_snr_db")));
+cfg.ctrl6gr.ChannelEstimationMode = char(string(localGetNested(s, "control.pdcch6gr.channel_estimation_mode", "realistic")));
+cfg.ctrl6gr.EqualizerType = char(string(localGetNested(s, "control.pdcch6gr.equalizer_type", "MMSE")));
+cfg.ctrl6gr.BlindDetectionEnabled = logical(localGetNested(s, "control.pdcch6gr.blind_detection_enabled", true));
+cfg.ctrl6gr.MonitoringPeriodicitySlots = double(localGetNested(s, "control.pdcch6gr.monitoring_periodicity_slots", 1));
+cfg.ctrl6gr.EnableCSS = logical(localGetNested(s, "control.pdcch6gr.enable_css", true));
+cfg.ctrl6gr.EnableUSS = logical(localGetNested(s, "control.pdcch6gr.enable_uss", true));
+cfg.ctrl6gr.EnableMRSS = logical(localGetNested(s, "control.pdcch6gr.enable_mrss", false));
+cfg.ctrl6gr.EnableRepetition = logical(localGetNested(s, "control.pdcch6gr.enable_repetition", false));
+cfg.ctrl6gr.RepetitionMode = char(string(localGetNested(s, "control.pdcch6gr.repetition_mode", "none")));
+cfg.ctrl6gr.RepetitionCount = double(localGetNested(s, "control.pdcch6gr.repetition_count", 1));
+cfg.ctrl6gr.EnableTransmitDiversity = logical(localGetNested(s, "control.pdcch6gr.enable_transmit_diversity", false));
+cfg.ctrl6gr.DiversityMode = char(string(localGetNested(s, "control.pdcch6gr.diversity_mode", "single_port_baseline")));
+cfg.ctrl6gr.PrecoderGranularity = char(string(localGetNested(s, "control.pdcch6gr.precoder_granularity", "none")));
+cfg.ctrl6gr.OutputDir = char(string(runFolder));
+cfg.ctrl6gr.Seed = double(cfg.run.seed);
+cfg.ctrl6gr.PayloadLengthBits = double(localGetNested(s, "control.pdcch6gr.payload_length_bits", ...
+    localGetNested(s, "control.pdcch_payload_bits", 64)));
+cfg.ctrl6gr.Modulation = char(string(localGetNested(s, "control.pdcch6gr.modulation", "QPSK")));
+cfg.ctrl6gr.CRCPolynomial = char(string(localGetNested(s, "control.pdcch6gr.crc_polynomial", "24C")));
+cfg.ctrl6gr.CRCScramblingEnabled = logical(localGetNested(s, "control.pdcch6gr.crc_scrambling_enabled", true));
+cfg.ctrl6gr.PayloadScramblingEnabled = logical(localGetNested(s, "control.pdcch6gr.payload_scrambling_enabled", true));
+cfg.ctrl6gr.PayloadSequenceInit = double(localGetNested(s, "control.pdcch6gr.payload_sequence_init", cfg.phy.carrier.NCellID));
+cfg.ctrl6gr.WaveformMode = char(string(localGetNested(s, "control.pdcch6gr.waveform_mode", "full_ofdm")));
+cfg.ctrl6gr.RepetitionCombiningMode = char(string(localGetNested(s, "control.pdcch6gr.repetition_combining_mode", "coherent")));
+cfg.ctrl6gr.CORESET = localGetNested(s, "control.pdcch6gr.coreset", struct());
+cfg.ctrl6gr.SearchSpaces = localGetNested(s, "control.pdcch6gr.search_spaces", struct([]));
+cfg.ctrl6gr.StudyAggregationLevels = double(localGetNested(s, "control.pdcch6gr.study.aggregation_levels", [1 2 4 8 16]));
+cfg.ctrl6gr.StudyCORESETDurations = double(localGetNested(s, "control.pdcch6gr.study.coreset_durations", [1 2 3]));
+cfg.ctrl6gr.StudyMappingTypes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.mapping_types", ["noninterleaved","interleaved"])));
+cfg.ctrl6gr.StudyFrequencyAllocationModes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.frequency_allocation_modes", ["contiguous","noncontiguous"])));
+cfg.ctrl6gr.StudyRepetitionModes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.repetition_modes", ["none","intra_slot","inter_slot"])));
+cfg.ctrl6gr.StudySNRdB = double(localGetNested(s, "control.pdcch6gr.study.snr_db", cfg.ctrl6gr.SNRdB));
+cfg.ctrl6gr.StudyChannelModels = cellstr(string(localGetNested(s, "control.pdcch6gr.study.channel_models", [string(cfg.ctrl6gr.ChannelModel)])));
+cfg.ctrl6gr.StudySearchSpaceTypes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.search_space_types", ["CSS","USS"])));
+cfg.ctrl6gr.StudyDMRSVariants = cellstr(string(localGetNested(s, "control.pdcch6gr.study.dmrs_variants", ["single_port_density_3_per_rb"])));
+cfg.ctrl6gr.StudyCRCScrambling = double(localGetNested(s, "control.pdcch6gr.study.crc_scrambling", double(cfg.ctrl6gr.CRCScramblingEnabled)));
+cfg.ctrl6gr.StudyPayloadScrambling = double(localGetNested(s, "control.pdcch6gr.study.payload_scrambling", double(cfg.ctrl6gr.PayloadScramblingEnabled)));
+cfg.ctrl6gr.StudyREGBundleSizes = double(localGetNested(s, "control.pdcch6gr.study.reg_bundle_sizes", localGetNested(s, "control.pdcch6gr.coreset.reg_bundle_size", 2)));
+cfg.ctrl6gr.StudyNumREGPerCCE = double(localGetNested(s, "control.pdcch6gr.study.num_reg_per_cce", localGetNested(s, "control.pdcch6gr.coreset.num_reg_per_cce", 6)));
+cfg.ctrl6gr.StudyMRSSModes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.mrss_modes", ["exclusive_6gr"])));
+
+cfg.pdsch6gr.enable = logical(localGetNested(s, "pdsch6gr.enabled", false));
+cfg.pdsch6gr.RNTI = double(localGetNested(s, "pdsch6gr.rnti", 4660));
+cfg.pdsch6gr.FrameNumber = double(localGetNested(s, "pdsch6gr.frame_number", 0));
+cfg.pdsch6gr.SlotNumber = double(localGetNested(s, "pdsch6gr.slot_number", 0));
+cfg.pdsch6gr.Numerology = double(localGetNested(s, "pdsch6gr.numerology", cfg.phy.numerology.mu));
+cfg.pdsch6gr.CarrierFrequencyHz = double(localGetNested(s, "pdsch6gr.carrier_frequency_hz", cfg.phy.fc_Hz));
+cfg.pdsch6gr.DuplexMode = char(string(localGetNested(s, "pdsch6gr.duplex_mode", cfg.phy.duplex.mode)));
+cfg.pdsch6gr.NSizeGrid = double(localGetNested(s, "pdsch6gr.n_size_grid", cfg.phy.carrier.NSizeGrid));
+cfg.pdsch6gr.ChannelBandwidthMHz = double(localGetNested(s, "pdsch6gr.channel_bandwidth_mhz", double(s.frequency.bandwidth_hz) / 1e6));
+cfg.pdsch6gr.NTx = double(localGetNested(s, "pdsch6gr.n_tx", sixgr.util.structGet(cfg, "channel.nTxAnt", 1)));
+cfg.pdsch6gr.NRx = double(localGetNested(s, "pdsch6gr.n_rx", sixgr.util.structGet(cfg, "channel.nRxAnt", 1)));
+cfg.pdsch6gr.NumLayers = double(localGetNested(s, "pdsch6gr.num_layers", cfg.phy.pdsch.nLayers));
+cfg.pdsch6gr.NumCodewords = double(localGetNested(s, "pdsch6gr.num_codewords", 1));
+cfg.pdsch6gr.ModulationPerCodeword = cellstr(string(localGetNested(s, "pdsch6gr.modulation_per_codeword", {char(string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", "16QAM")))})));
+cfg.pdsch6gr.TargetCodeRatePerCodeword = double(localGetNested(s, "pdsch6gr.target_code_rate_per_codeword", sixgr.util.structGet(cfg, "phy.pdsch.codeRate", 0.4785)));
+cfg.pdsch6gr.MCSMode = char(string(localGetNested(s, "pdsch6gr.mcs_mode", "fixed")));
+cfg.pdsch6gr.FixedMCS = double(localGetNested(s, "pdsch6gr.fixed_mcs", sixgr.util.structGet(cfg, "phy.pdsch.configuredMCSIndex", 10)));
+cfg.pdsch6gr.LinkAdaptationMode = char(string(localGetNested(s, "pdsch6gr.link_adaptation_mode", "actual_bler_based")));
+cfg.pdsch6gr.HARQEnabled = logical(localGetNested(s, "pdsch6gr.harq_enabled", true));
+cfg.pdsch6gr.HARQProcessCount = double(localGetNested(s, "pdsch6gr.harq_process_count", 4));
+cfg.pdsch6gr.MaxHARQTx = double(localGetNested(s, "pdsch6gr.max_harq_tx", 1));
+cfg.pdsch6gr.EnableCrossSlotPDSCH = logical(localGetNested(s, "pdsch6gr.enable_cross_slot_pdsch", false));
+cfg.pdsch6gr.CrossSlotMode = char(string(localGetNested(s, "pdsch6gr.cross_slot_mode", "disabled")));
+cfg.pdsch6gr.EnablePDSCHRepetition = logical(localGetNested(s, "pdsch6gr.enable_pdsch_repetition", false));
+cfg.pdsch6gr.RepetitionMode = char(string(localGetNested(s, "pdsch6gr.repetition_mode", "none")));
+cfg.pdsch6gr.RepetitionCount = double(localGetNested(s, "pdsch6gr.repetition_count", 1));
+cfg.pdsch6gr.EnablePTRS = logical(localGetNested(s, "pdsch6gr.enable_ptrs", false));
+cfg.pdsch6gr.PTRSBandPolicy = char(string(localGetNested(s, "pdsch6gr.ptrs_band_policy", "disabled")));
+cfg.pdsch6gr.ChannelEstimationMode = char(string(localGetNested(s, "pdsch6gr.channel_estimation_mode", "realistic")));
+cfg.pdsch6gr.ParameterEstimationMode = char(string(localGetNested(s, "pdsch6gr.parameter_estimation_mode", "practical")));
+cfg.pdsch6gr.ReceiverType = char(string(localGetNested(s, "pdsch6gr.receiver_type", "MMSE_IRC")));
+cfg.pdsch6gr.EnableMUMIMOStudy = logical(localGetNested(s, "pdsch6gr.enable_mumimo_study", false));
+cfg.pdsch6gr.EnableMRSS = logical(localGetNested(s, "pdsch6gr.enable_mrss", false));
+cfg.pdsch6gr.EnablePhaseNoise = logical(localGetNested(s, "pdsch6gr.enable_phase_noise", false));
+cfg.pdsch6gr.EnableWidebandUncalibratedPhaseErrors = logical(localGetNested(s, "pdsch6gr.enable_wideband_uncalibrated_phase_errors", false));
+cfg.pdsch6gr.ChannelModel = char(string(localGetNested(s, "pdsch6gr.channel_model", cfg.channel.model)));
+cfg.pdsch6gr.DelaySpread_s = double(localGetNested(s, "pdsch6gr.delay_spread_s", cfg.channel.fading.delaySpread_s));
+cfg.pdsch6gr.SpeedKmh = double(localGetNested(s, "pdsch6gr.speed_kmh", 3));
+cfg.pdsch6gr.SNRdB = double(localGetNested(s, "pdsch6gr.snr_db", cfg.channel.snr_dB));
+cfg.pdsch6gr.FDRAType = char(string(localGetNested(s, "pdsch6gr.fdra_type", "type1_riv")));
+cfg.pdsch6gr.RBBitmap = double(localGetNested(s, "pdsch6gr.rb_bitmap", []));
+cfg.pdsch6gr.RIV = double(localGetNested(s, "pdsch6gr.riv", 0));
+cfg.pdsch6gr.NumRB = double(localGetNested(s, "pdsch6gr.num_rb", min(20, cfg.phy.carrier.NSizeGrid)));
+cfg.pdsch6gr.RBStart = double(localGetNested(s, "pdsch6gr.rb_start", 0));
+cfg.pdsch6gr.GranularityRB = double(localGetNested(s, "pdsch6gr.granularity_rb", 1));
+cfg.pdsch6gr.StartSymbol = double(localGetNested(s, "pdsch6gr.start_symbol", 2));
+cfg.pdsch6gr.NumSymbols = double(localGetNested(s, "pdsch6gr.num_symbols", 10));
+cfg.pdsch6gr.DMRSConfigType = double(localGetNested(s, "pdsch6gr.dmrs_config_type", 1));
+cfg.pdsch6gr.DMRSAdditionalPosition = double(localGetNested(s, "pdsch6gr.dmrs_additional_position", 1));
+cfg.pdsch6gr.DMRSNumPorts = double(localGetNested(s, "pdsch6gr.dmrs_num_ports", 1));
+cfg.pdsch6gr.DMRSPortSet = double(localGetNested(s, "pdsch6gr.dmrs_port_set", 0));
+cfg.pdsch6gr.PTRSTimeDensity = double(localGetNested(s, "pdsch6gr.ptrs_time_density", 2));
+cfg.pdsch6gr.PTRSFrequencyDensity = double(localGetNested(s, "pdsch6gr.ptrs_frequency_density", 2));
+cfg.pdsch6gr.PTRSREOffset = char(string(localGetNested(s, "pdsch6gr.ptrs_re_offset", "00")));
+cfg.pdsch6gr.QueueBits = double(localGetNested(s, "pdsch6gr.queue_bits", 1000000));
+cfg.pdsch6gr.Seed = double(localGetNested(s, "pdsch6gr.seed", cfg.run.seed));
+cfg.pdsch6gr.OutputDir = char(string(runFolder));
+cfg.pdsch6gr.StudySNRdB = double(localGetNested(s, "pdsch6gr.study_snr_db", cfg.pdsch6gr.SNRdB));
+cfg.pdsch6gr.StudyFDRATypes = cellstr(string(localGetNested(s, "pdsch6gr.study_fdra_types", {cfg.pdsch6gr.FDRAType})));
+cfg.pdsch6gr.StudyStartSymbols = double(localGetNested(s, "pdsch6gr.study_start_symbols", cfg.pdsch6gr.StartSymbol));
+cfg.pdsch6gr.StudyNumSymbols = double(localGetNested(s, "pdsch6gr.study_num_symbols", cfg.pdsch6gr.NumSymbols));
+cfg.pdsch6gr.StudyChannelModels = cellstr(string(localGetNested(s, "pdsch6gr.study_channel_models", {cfg.pdsch6gr.ChannelModel})));
+cfg.pdsch6gr.StudyDelaySpread_ns = double(localGetNested(s, "pdsch6gr.study_delay_spread_ns", cfg.pdsch6gr.DelaySpread_s * 1e9));
+cfg.pdsch6gr.StudySpeedKmh = double(localGetNested(s, "pdsch6gr.study_speed_kmh", cfg.pdsch6gr.SpeedKmh));
+cfg.pdsch6gr.StudyRanks = double(localGetNested(s, "pdsch6gr.study_ranks", cfg.pdsch6gr.NumLayers));
+cfg.pdsch6gr.StudyRepetitionModes = cellstr(string(localGetNested(s, "pdsch6gr.study_repetition_modes", {cfg.pdsch6gr.RepetitionMode})));
+cfg.pdsch6gr.StudyPTRSModes = cellstr(string(localGetNested(s, "pdsch6gr.study_ptrs_modes", {localPdschPTRSMode(cfg.pdsch6gr.EnablePTRS)})));
+cfg.pdsch6gr.StudyDMRSAdditionalPositions = double(localGetNested(s, "pdsch6gr.study_dmrs_additional_positions", cfg.pdsch6gr.DMRSAdditionalPosition));
+cfg.pdsch6gr.StudyNumTrials = double(localGetNested(s, "pdsch6gr.study_num_trials", 1));
+
 targetCases = lower(string(s.scenario.target_cases));
 linkAdaptationMode = lower(string(localRequireNested(s, "link_adaptation.fixed_or_amc", "link_adaptation.fixed_or_amc")));
 linkAdaptationUsesFixedMCS = ismember(linkAdaptationMode, ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"]);
@@ -405,6 +526,57 @@ cfg.phy.prach.subcarrierSpacing_kHz = double(s.random_access.subcarrier_spacing_
 cfg.phy.prach.rootSeqIndex = double(s.random_access.root_sequence_index);
 cfg.phy.prach.zeroCorrelationZone = double(s.random_access.zero_correlation_zone);
 cfg.phy.prach.preambleIndex = double(s.random_access.preamble_index);
+cfg = localStructSetIfPresent(cfg, "phy.prach.sequenceIndex", localGetNested(s, "random_access.sequence_index", []));
+cfg = localStructSetIfPresent(cfg, "phy.prach.logicalRootSequenceIndex", localGetNested(s, "random_access.logical_root_sequence_index", []));
+cfg = localStructSetIfPresent(cfg, "phy.prach.restrictedSet", localGetNested(s, "random_access.restricted_set", []));
+cfg = localStructSetIfPresent(cfg, "phy.prach.frequencyStart", localGetNested(s, "random_access.frequency_start", []));
+cfg = localStructSetIfPresent(cfg, "phy.prach.detectionThreshold", localGetNested(s, "random_access.detection_threshold", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.FrequencyRange", localGetNested(s, "random_access.frequency_range", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.DuplexMode", localGetNested(s, "random_access.duplex_mode", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.CarrierFrequencyHz", localGetNested(s, "random_access.carrier_frequency_hz", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.CarrierSCSkHz", localGetNested(s, "random_access.carrier_scs_khz", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NSizeGrid", localGetNested(s, "random_access.n_size_grid", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.PRACHConfigurationIndex", localGetNested(s, "random_access.configuration_index", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.PRACHFormat", localGetNested(s, "random_access.prach_format", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.PRACHSubcarrierSpacing", localGetNested(s, "random_access.subcarrier_spacing_khz", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.SequenceIndex", localGetNested(s, "random_access.sequence_index", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.LogicalRootSequenceIndex", localGetNested(s, "random_access.logical_root_sequence_index", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.PreambleIndex", localGetNested(s, "random_access.preamble_index", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.RestrictedSet", localGetNested(s, "random_access.restricted_set", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.ZeroCorrelationZone", localGetNested(s, "random_access.zero_correlation_zone", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.FrequencyStart", localGetNested(s, "random_access.frequency_start", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumPRACHOccasions", localGetNested(s, "random_access.num_prach_occasions", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumSlots", localGetNested(s, "random_access.num_slots", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumSubframes", localGetNested(s, "random_access.num_subframes", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumTrials", localGetNested(s, "random_access.min_detection_trials", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.ActivePreamblePattern", localGetNested(s, "random_access.active_preamble_pattern", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumRxAntennas", localGetNested(s, "random_access.num_rx_antennas", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumTxAntennas", localGetNested(s, "random_access.num_tx_antennas", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NumUEsPerRO", localGetNested(s, "random_access.num_ues_per_ro", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.EnableCollisionMode", localGetNested(s, "random_access.enable_collision_mode", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.EnableInterCellInterference", localGetNested(s, "random_access.enable_inter_cell_interference", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.EnableFrequencyOffset", localGetNested(s, "random_access.enable_frequency_offset", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.EnablePhaseNoise", localGetNested(s, "random_access.enable_phase_noise", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.EnableTimingUncertainty", localGetNested(s, "random_access.enable_timing_uncertainty", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.EnableFrequencyEstimationMetric", localGetNested(s, "random_access.enable_frequency_estimation_metric", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.DetectionThresholdMode", localGetNested(s, "random_access.detection_threshold_mode", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.DetectionThreshold", localGetNested(s, "random_access.detection_threshold", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.SNRSweep_dB", localGetNested(s, "random_access.snr_sweep_db", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.ThresholdSweep", localGetNested(s, "random_access.threshold_sweep", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.ChannelModel", localGetNested(s, "random_access.channel_model", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.DelaySpread_ns", localGetNested(s, "random_access.delay_spread_ns", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.Speed_kmh", localGetNested(s, "random_access.speed_kmh", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.CellRadius_m", localGetNested(s, "random_access.cell_radius_m", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.TimingUncertaintyMin_us", localGetNested(s, "random_access.timing_uncertainty_min_us", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.TimingUncertaintyMax_us", localGetNested(s, "random_access.timing_uncertainty_max_us", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.UEFrequencyOffsetHz", localGetNested(s, "random_access.ue_frequency_offset_hz", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.TRPFrequencyOffsetHz", localGetNested(s, "random_access.trp_frequency_offset_hz", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.PhaseNoiseStdRad", localGetNested(s, "random_access.phase_noise_std_rad", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.InterCellRelativePower_dB", localGetNested(s, "random_access.inter_cell_relative_power_db", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.TargetFalseAlarmProbability", localGetNested(s, "random_access.target_false_alarm_probability", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.TimingTolerance_us", localGetNested(s, "random_access.timing_tolerance_us", []));
+cfg = sixgr.util.structSet(cfg, "prach_lls.OutputDir", runFolder);
+cfg = sixgr.util.structSet(cfg, "prach_lls.ScenarioName", char(string(s.meta.scenario_id)));
 
 cfg.phy.harq.enable = logical(s.harq.enabled);
 cfg.phy.harq.nProcesses = double(s.harq.process_count);
@@ -1396,8 +1568,23 @@ if ~(isfinite(double(value)) && isscalar(double(value)))
 end
 end
 
+function token = localPdschPTRSMode(enabled)
+if logical(enabled)
+    token = "enabled";
+else
+    token = "disabled";
+end
+end
+
 function value = localGetNested(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
+end
+
+function s = localStructSetIfPresent(s, path, value)
+if isempty(value)
+    return;
+end
+s = sixgr.util.structSet(s, path, value);
 end
 
 function value = localNumericScalarOrNaN(raw)

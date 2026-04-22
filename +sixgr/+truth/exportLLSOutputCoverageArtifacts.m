@@ -2541,17 +2541,18 @@ rows = repmat(struct("issue_id", "", "severity", "", "issue_category", "", "dire
     "ue_id", NaN, "cell_id", NaN, "window_start_ms", NaN, "window_end_ms", NaN, ...
     "anomaly_metric", "", "anomaly_evidence", "", "source_artifact_ref", ""), height(issueRegistry), 1);
 for i = 1:height(issueRegistry)
-    rows(i).issue_id = string(issueRegistry.issue_id(i));
-    rows(i).severity = string(issueRegistry.severity(i));
-    rows(i).issue_category = string(issueRegistry.issue_category(i));
-    rows(i).direction = string(issueRegistry.direction(i));
-    rows(i).ue_id = double(issueRegistry.ue_id(i));
-    rows(i).cell_id = double(issueRegistry.cell_id(i));
+    issueRow = issueRegistry(i, :);
+    rows(i).issue_id = string(localTableValue(issueRow, "issue_id", ""));
+    rows(i).severity = string(localTableValue(issueRow, "severity", ""));
+    rows(i).issue_category = string(localTableValue(issueRow, "issue_category", ""));
+    rows(i).direction = string(localTableValue(issueRow, "direction", ""));
+    rows(i).ue_id = double(localTableValue(issueRow, "ue_id", NaN));
+    rows(i).cell_id = double(localTableValue(issueRow, "cell_id", NaN));
     rows(i).window_start_ms = double(localTableValue(issueRegistry(i, :), "timestamp_sim_ms", NaN));
     rows(i).window_end_ms = rows(i).window_start_ms;
-    rows(i).anomaly_metric = string(issueRegistry.metric_name(i));
-    rows(i).anomaly_evidence = string(issueRegistry.observed_value(i));
-    rows(i).source_artifact_ref = string(issueRegistry.evidence_artifact_ref(i));
+    rows(i).anomaly_metric = string(localTableValue(issueRow, "metric_name", ""));
+    rows(i).anomaly_evidence = string(localTableValue(issueRow, "observed_value", ""));
+    rows(i).source_artifact_ref = string(localTableValue(issueRow, "evidence_artifact_ref", ""));
 end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildAnomalyWindowTable", ...
@@ -3869,7 +3870,10 @@ if ~(istable(beamPrecoderTable) && ~isempty(beamPrecoderTable))
     T = table();
     return;
 end
-keys = string(beamPrecoderTable.direction) + "|" + string(beamPrecoderTable.cell_id) + "|" + string(beamPrecoderTable.ue_id);
+dirVals = localColumnAsText(beamPrecoderTable, "direction");
+cellVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["cell_id", "CellID", "cell", "ServingCell"]);
+ueVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["ue_id", "UEID", "UE", "ue"]);
+keys = dirVals + "|" + string(cellVals) + "|" + string(ueVals);
 [uniqueKeys, ~, keyIdx] = unique(keys);
 rows = repmat(struct("direction", "", "cell_id", NaN, "ue_id", NaN, "trial_row_count", NaN, ...
     "beamforming_applied_count", NaN, "runtime_applied_beam_rows", NaN, ...
@@ -3878,19 +3882,22 @@ rows = repmat(struct("direction", "", "cell_id", NaN, "ue_id", NaN, "trial_row_c
 for i = 1:numel(uniqueKeys)
     mask = keyIdx == i;
     subset = beamPrecoderTable(mask, :);
-    beamTruth = string(subset.applied_beam_truth_classification);
-    pmiTruth = string(subset.applied_precoder_pmi_truth_classification);
-    hit = double(subset.beam_hit);
-    rows(i).direction = string(subset.direction(1));
-    rows(i).cell_id = double(subset.cell_id(1));
-    rows(i).ue_id = double(subset.ue_id(1));
+    beamTruth = localColumnAsText(subset, "applied_beam_truth_classification");
+    pmiTruth = localColumnAsText(subset, "applied_precoder_pmi_truth_classification");
+    hit = localColumnAsDouble(subset, "beam_hit");
+    subsetDir = localColumnAsText(subset, "direction");
+    subsetCell = localFirstAvailableColumnAsDouble(subset, ["cell_id", "CellID", "cell", "ServingCell"]);
+    subsetUE = localFirstAvailableColumnAsDouble(subset, ["ue_id", "UEID", "UE", "ue"]);
+    rows(i).direction = subsetDir(1);
+    rows(i).cell_id = subsetCell(1);
+    rows(i).ue_id = subsetUE(1);
     rows(i).trial_row_count = height(subset);
-    rows(i).beamforming_applied_count = sum(logical(subset.beamforming_applied));
+    rows(i).beamforming_applied_count = sum(localColumnAsLogical(subset, "beamforming_applied"));
     rows(i).runtime_applied_beam_rows = sum(beamTruth == "applied_runtime_value");
     rows(i).runtime_applied_pmi_rows = sum(pmiTruth == "applied_runtime_value");
     rows(i).beam_hit_rate = mean(hit(isfinite(hit)), "omitnan");
-    rows(i).mean_precoding_ports = mean(double(subset.precoding_num_ports), "omitnan");
-    rows(i).mean_precoding_layers = mean(double(subset.precoding_num_layers), "omitnan");
+    rows(i).mean_precoding_ports = mean(localFirstAvailableColumnAsDouble(subset, ["precoding_num_ports", "PrecodingNumPorts"]), "omitnan");
+    rows(i).mean_precoding_layers = mean(localFirstAvailableColumnAsDouble(subset, ["precoding_num_layers", "PrecodingNumLayers", "num_layers", "NumLayers"]), "omitnan");
     rows(i).analytics_value_source = "beamforming/csv/beam_precoder_table.csv";
 end
 T = struct2table(rows);
@@ -3903,9 +3910,9 @@ if ~(istable(beamPrecoderTable) && ~isempty(beamPrecoderTable))
     T = table();
     return;
 end
-rankVals = double(beamPrecoderTable.precoding_num_layers);
-dirVals = string(beamPrecoderTable.direction);
-cellVals = double(beamPrecoderTable.cell_id);
+rankVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["precoding_num_layers", "PrecodingNumLayers", "num_layers", "NumLayers"]);
+dirVals = localColumnAsText(beamPrecoderTable, "direction");
+cellVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["cell_id", "CellID", "cell", "ServingCell"]);
 [~, ~, dirIdx] = unique(dirVals);
 groups = unique([double(dirIdx), cellVals, rankVals], "rows");
 groups = groups(isfinite(groups(:, 1)) & isfinite(groups(:, 2)) & isfinite(groups(:, 3)), :);

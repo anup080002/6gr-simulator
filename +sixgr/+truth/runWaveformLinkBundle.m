@@ -4536,7 +4536,10 @@ end
 if isempty(parts)
     summaryT = table();
 else
-    summaryT = vertcat(parts{:});
+    summaryT = table();
+    for pi = 1:numel(parts)
+        summaryT = localAppendCompatTable(summaryT, parts{pi});
+    end
 end
 end
 
@@ -6831,7 +6834,10 @@ if isempty(parts)
     summary = table();
     return;
 end
-summary = vertcat(parts{:});
+summary = table();
+for pi = 1:numel(parts)
+    summary = localAppendCompatTable(summary, parts{pi});
+end
 summary.NumUsersConfigured = repmat(double(multiUser.NumUsers), height(summary), 1);
 end
 
@@ -7825,7 +7831,9 @@ chunks = chunks(~cellfun(@isempty, chunks));
 if isempty(chunks)
     return;
 end
-T = vertcat(chunks{:});
+for i = 1:numel(chunks)
+    T = localAppendCompatTable(T, chunks{i});
+end
 end
 
 function summaryT = localBuildBeamManagementSummaryTable(T, cfg)

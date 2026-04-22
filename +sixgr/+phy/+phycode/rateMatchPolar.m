@@ -30,14 +30,14 @@ for ii = 1:2:numel(nv)
 end
 
 x = in(:);
-% Force binary logical for toolbox functions
-if ~islogical(x)
-    x = logical(x ~= 0);
+% Force binary int8 for toolbox functions.
+if ~isa(x, "int8")
+    x = int8(x ~= 0);
 end
 
 K = double(K);
 E = double(E);
-iBIL = double(iBIL);
+iBIL = logical(iBIL);
 
 info = struct();
 info.K = K;

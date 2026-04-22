@@ -1,6 +1,6 @@
 {
   "inherits": [
-    "./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml"
+    "./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml"
   ],
   "output": {
     "backend": "mysql_web",

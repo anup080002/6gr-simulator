@@ -1,0 +1,86 @@
+function rxBundle = PDSCHReceiver(rxWaveform, cfg, txCopy, varargin)
+%PDSCHReceiver Recover a truthful PDSCH copy using the canonical PHY RX chain.
+
+ip = inputParser;
+ip.addParameter("NoiseVar", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 0));
+ip.parse(varargin{:});
+opt = ip.Results;
+
+runtimeCfg = sixgr.util.structGet(txCopy, "RuntimeCfg", struct());
+if ~isstruct(runtimeCfg) || isempty(fieldnames(runtimeCfg))
+    runtimeCfg = localBuildFallbackRuntimeCfg(cfg, txCopy);
+end
+
+[rxStruct, rxInfo] = sixgr.phy.dl.PDSCH_Rx(rxWaveform, runtimeCfg, ...
+    "Carrier", txCopy.Carrier, ...
+    "PDSCH", txCopy.PDSCH, ...
+    "PDSCHIndices", txCopy.Tx.PDSCHIndices, ...
+    "TransportBlockSize", double(txCopy.TransportBlockSize), ...
+    "TargetCodeRate", double(txCopy.Tx.TargetCodeRate), ...
+    "RV", double(txCopy.Tx.RV), ...
+    "NoiseVar", opt.NoiseVar, ...
+    "FastAWGNPath", strcmpi(cfg.ChannelEstimationMode, "ideal_calibration"), ...
+    "CompactOutput", false);
+
+rxStruct.PTRSCompensationStatus = localPTRSStatus(txCopy);
+rxStruct.ChannelEstimationEngine = char(string(sixgr.util.structGet(rxInfo, "ChannelEstimation.EngineUsed", "")));
+
+rxBundle = struct();
+rxBundle.Rx = rxStruct;
+rxBundle.ChannelEstimation = sixgr.pdsch.PDSCHChannelEstimator(rxStruct);
+rxBundle.Equalizer = sixgr.pdsch.PDSCHEqualizer(cfg, rxStruct);
+rxBundle.Demodulation = sixgr.pdsch.PDSCHDemodulator(rxStruct);
+rxBundle.Decoder = sixgr.pdsch.DLSCHDecoder(rxStruct);
+rxBundle.ParameterEstimation = sixgr.pdsch.PDSCHParameterEstimator(rxStruct, struct("InjectedCFO_Hz", NaN), txCopy.Carrier);
+rxBundle.PostEqEVM = double(localPostEqEVM(rxStruct, txCopy));
+rxBundle.PTRSPhaseEstimate_rad = NaN;
+rxBundle.OFDMInfo = sixgr.util.structGet(rxInfo, "OFDM", struct());
+end
+
+function runtimeCfg = localBuildFallbackRuntimeCfg(cfg, txCopy)
+runtimeCfg = struct();
+runtimeCfg.phy = struct();
+runtimeCfg.phy.fc_Hz = double(cfg.CarrierFrequencyHz);
+runtimeCfg.phy.carrier = struct( ...
+    "NCellID", double(cfg.CellID), ...
+    "SubcarrierSpacing", double(15 * 2^double(cfg.Numerology)), ...
+    "NSizeGrid", double(cfg.NSizeGrid), ...
+    "NStartGrid", 0, ...
+    "NSlot", double(cfg.SlotNumber), ...
+    "NFrame", double(cfg.FrameNumber), ...
+    "CyclicPrefix", "normal");
+runtimeCfg.phy.numerology = struct("mu", double(cfg.Numerology), "slotsPerFrame", 10 * 2^double(cfg.Numerology));
+runtimeCfg.phy.pdsch = struct( ...
+    "modulation", char(txCopy.Tx.PDSCH.Modulation), ...
+    "numLayers", double(txCopy.Tx.PDSCH.NumLayers), ...
+    "nLayers", double(txCopy.Tx.PDSCH.NumLayers), ...
+    "RNTI", double(cfg.RNTI), ...
+    "mappingType", "A", ...
+    "prbSet", double(txCopy.Tx.PDSCH.PRBSet), ...
+    "symbolAllocation", double(txCopy.Tx.PDSCH.SymbolAllocation), ...
+    "codeRate", double(txCopy.Tx.TargetCodeRate), ...
+    "rv", double(txCopy.Tx.RV), ...
+    "enablePTRS", logical(cfg.PTRS.PTRSEnabled));
+runtimeCfg.phy.ldpc = struct("maxIterations", 8, "algorithm", "Normalized min-sum");
+runtimeCfg.channel = struct("model", char(cfg.ChannelModel));
+end
+
+function status = localPTRSStatus(txCopy)
+if isempty(sixgr.util.structGet(txCopy.PTRS, "Indices", []))
+    status = "disabled";
+else
+    status = "ptrs_present_not_compensated_in_active_truth_path";
+end
+end
+
+function evm = localPostEqEVM(rxStruct, txCopy)
+eqSym = double(sixgr.util.structGet(rxStruct, "EqualizedSymbolsForEvidence", []));
+refSym = double(sixgr.util.structGet(txCopy.Tx, "PDSCHSymbolsForEvidence", []));
+L = min(numel(eqSym), numel(refSym));
+if L < 1
+    evm = NaN;
+    return;
+end
+err = eqSym(1:L) - refSym(1:L);
+evm = sqrt(mean(abs(err).^2, "omitnan") / max(mean(abs(refSym(1:L)).^2, "omitnan"), eps));
+end

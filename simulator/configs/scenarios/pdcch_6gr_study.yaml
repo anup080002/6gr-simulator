@@ -1,0 +1,33 @@
+{
+  "inherits": [
+    "../defaults/global.yaml",
+    "../defaults/logging.yaml",
+    "../defaults/kpi.yaml",
+    "../bands/band_4ghz.yaml",
+    "../waveforms/cp_ofdm.yaml",
+    "../coding/ldpc_polar_baseline.yaml",
+    "../channels/awgn.yaml",
+    "../mimo/mimo_2x2.yaml",
+    "../control/pdcch_baseline.yaml",
+    "../control/pdcch_6gr_baseline.yaml",
+    "../control/harq_baseline.yaml",
+    "../control/ra_baseline.yaml",
+    "../ai_ml/disabled.yaml"
+  ],
+  "meta": {
+    "scenario_id": "pdcch_6gr_study",
+    "description": "6GR PDCCH study framework with explicit CORESET/search-space/CCE-REG candidate monitoring.",
+    "research_class": "study_item_candidate",
+    "scenario_group": "group_c_control"
+  },
+  "scenario": {
+    "runner_profile": "ctrl6gr_pdcch_study",
+    "target_cases": ["pdcch"],
+    "notes": "6GR control study baseline with honest FFS knobs."
+  },
+  "simulation": {
+    "link_direction": "dl",
+    "snr_db": 20,
+    "monte_carlo_iterations": 2
+  }
+}

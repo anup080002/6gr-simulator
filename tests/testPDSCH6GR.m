@@ -1,0 +1,330 @@
+function ok = testPDSCH6GR()
+%TESTPDSCH6GR Short focused regression suite for the 6GR truthful PDSCH path.
+
+setup6GRSimToolkit("Verbose", false);
+
+testType0BitmapAllocation();
+testType1RIVAllocation();
+testDynamicFDRAChangesActualResources();
+testTDRAFlexibleStartSymbolChangesOccupancy();
+testDMRSRespectsScheduledRegion();
+testPTRSMappingToggle();
+testRealisticVsIdealChannelEstimation();
+testBLERImprovesWithSNR();
+testRepetitionNoWorseInStaticCase();
+testCrossSlotFailsLoudly();
+testCodewordLayerMappingTrace();
+testQueueLimitedGrantFormation();
+testHARQOutcomeDerivedFromCRC();
+testDeterministicReproducibility();
+testRunnerIntegrationArtifacts();
+
+ok = true;
+end
+
+function testType0BitmapAllocation()
+alloc = sixgr.pdsch.FDRAAllocator(struct("FDRAType","type0_bitmap","RBBitmap",[1 0 1],"GranularityRB",4,"PhysicalCarrierID",0,"SingleCarrierOnly",true), 20);
+assert(isequal(double(alloc.PRBSet), [0:3 8:11]), "Type-0 bitmap must map the expected PRBs.");
+end
+
+function testType1RIVAllocation()
+alloc = sixgr.pdsch.FDRAAllocator(struct("FDRAType","type1_riv","RIV",520,"PhysicalCarrierID",0,"SingleCarrierOnly",true), 52);
+assert(double(alloc.RBStart) == 0 && double(alloc.NumRB) == 11, "Type-1 RIV must decode to the expected RB start/count.");
+end
+
+function testDynamicFDRAChangesActualResources()
+fdra = struct("FDRAType","dynamic","RBBitmap",[1 0 1],"GranularityRB",4,"RIV",520,"PhysicalCarrierID",0,"SingleCarrierOnly",true);
+odd = sixgr.pdsch.FDRAAllocator(fdra, 52, "TransmissionIndex", 1);
+even = sixgr.pdsch.FDRAAllocator(fdra, 52, "TransmissionIndex", 2);
+assert(~isequal(odd.PRBSet, even.PRBSet), "Dynamic FDRA must change actual materialized PRBs between Type-0 and Type-1.");
+end
+
+function testTDRAFlexibleStartSymbolChangesOccupancy()
+cfg = localBaseCfg();
+fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRA(cfg), cfg.pdsch6gr.NSizeGrid);
+amc = sixgr.pdsch.AMCSelector(sixgr.pdsch.PDSCHStudyConfig(cfg), "EstimatedSNR_dB", 20);
+
+cfgA = cfg; cfgA.pdsch6gr.StartSymbol = 2;
+txA = sixgr.pdsch.PDSCHWaveformBuilder(sixgr.pdsch.PDSCHStudyConfig(cfgA), fdraAlloc, sixgr.pdsch.TDRAAllocator(struct("StartSymbol",2,"NumSymbols",8,"MappingType","single_mapping_type_baseline","SchedulingOffsetSymbols",0,"SchedulingOffsetSlots",0), "RepetitionMode","none","RepetitionCount",1), amc);
+cfgB = cfg; cfgB.pdsch6gr.StartSymbol = 0;
+txB = sixgr.pdsch.PDSCHWaveformBuilder(sixgr.pdsch.PDSCHStudyConfig(cfgB), fdraAlloc, sixgr.pdsch.TDRAAllocator(struct("StartSymbol",0,"NumSymbols",8,"MappingType","single_mapping_type_baseline","SchedulingOffsetSymbols",0,"SchedulingOffsetSlots",0), "RepetitionMode","none","RepetitionCount",1), amc);
+
+symA = unique(double(txA.Copies{1}.DMRSTable.Symbol));
+symB = unique(double(txB.Copies{1}.DMRSTable.Symbol));
+assert(~isequal(symA, symB), "Changing start symbol must change actual occupied RE symbols.");
+end
+
+function testDMRSRespectsScheduledRegion()
+cfg = localBaseCfg();
+studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
+fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRA(cfg), studyCfg.NSizeGrid);
+tdraAlloc = sixgr.pdsch.TDRAAllocator(studyCfg.TDRA, "RepetitionMode","none","RepetitionCount",1);
+amc = sixgr.pdsch.AMCSelector(studyCfg, "EstimatedSNR_dB", 20);
+tx = sixgr.pdsch.PDSCHWaveformBuilder(studyCfg, fdraAlloc, tdraAlloc, amc);
+
+copy = tx.Copies{1};
+assert(all(copy.DMRSTable.Symbol >= copy.TDRA.SymbolAllocation(1) & ...
+    copy.DMRSTable.Symbol < copy.TDRA.SymbolAllocation(1) + copy.TDRA.SymbolAllocation(2)), ...
+    "DMRS REs must lie inside the scheduled PDSCH symbols.");
+gridSz = size(copy.Tx.Grid);
+[kd, ld, pd] = ind2sub(gridSz, double(copy.Tx.PDSCHIndices(:)));
+[km, lm, pm] = ind2sub(gridSz, double(copy.Tx.DMRSIndices(:)));
+dataKeys = string(kd) + "_" + string(ld) + "_" + string(pd);
+dmrsKeys = string(km) + "_" + string(lm) + "_" + string(pm);
+scheduledRegionRE = double(copy.FDRA.NumRB) * 12 * double(copy.TDRA.SymbolAllocation(2)) * max(1, double(copy.PDSCH.NumLayers));
+assert(numel(unique(dmrsKeys)) == numel(dmrsKeys), "DMRS RE mapping must be unique.");
+assert(numel(unique(dmrsKeys)) < scheduledRegionRE && numel(unique(dataKeys)) <= scheduledRegionRE, ...
+    "DMRS and payload mappings must fit inside the scheduled region without illegal over-occupation.");
+end
+
+function testPTRSMappingToggle()
+cfgOff = localBaseCfg();
+cfgOn = localBaseCfg();
+cfgOff.pdsch6gr.CarrierFrequencyHz = 30e9;
+cfgOff.pdsch6gr.Numerology = 3;
+cfgOff.pdsch6gr.DuplexMode = "TDD";
+cfgOff.pdsch6gr.ChannelBandwidthMHz = 100;
+cfgOff.pdsch6gr.NSizeGrid = 66;
+cfgOff.pdsch6gr.ChannelModel = "AWGN";
+cfgOff.pdsch6gr.ModulationPerCodeword = {'64QAM'};
+cfgOff.pdsch6gr.FixedMCS = 22;
+cfgOff.pdsch6gr.NumRB = 20;
+cfgOff.pdsch6gr.RIV = 1254;
+cfgOn = cfgOff;
+cfgOn.pdsch6gr.EnablePTRS = true;
+cfgOn.pdsch6gr.PTRSBandPolicy = "fr2_baseline";
+off = localOneShot(cfgOff, 20);
+on = localOneShot(cfgOn, 20);
+assert(isempty(off.Copies{1}.PTRSTable), "PTRS must be absent when disabled.");
+assert(~isempty(on.Copies{1}.PTRSTable), "PTRS must be materialized when enabled.");
+end
+
+function testRealisticVsIdealChannelEstimation()
+cfg = localBaseCfg();
+cfg.pdsch6gr.ChannelModel = "AWGN";
+studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
+tx = localOneShot(cfg, 25);
+copy = tx.Copies{1};
+rxWave = copy.Tx.Waveform + 1e-3 * (randn(size(copy.Tx.Waveform)) + 1j * randn(size(copy.Tx.Waveform)));
+
+studyCfg.ChannelEstimationMode = "realistic";
+realOut = sixgr.pdsch.PDSCHReceiver(rxWave, studyCfg, copy, "NoiseVar", 0);
+studyCfg.ChannelEstimationMode = "ideal_calibration";
+idealOut = sixgr.pdsch.PDSCHReceiver(rxWave, studyCfg, copy, "NoiseVar", 0);
+
+assert(~strcmpi(string(realOut.ChannelEstimation.Engine), string(idealOut.ChannelEstimation.Engine)), ...
+    "Realistic and ideal calibration paths must report different channel-estimation engines.");
+assert(contains(string(idealOut.ChannelEstimation.Engine), "unit-channel", IgnoreCase=true) || ...
+    contains(string(idealOut.ChannelEstimation.Engine), "unit-flat", IgnoreCase=true) || ...
+    contains(string(idealOut.ChannelEstimation.Engine), "no-dmrs", IgnoreCase=true), ...
+    "Ideal calibration path must identify itself as the unit-channel calibration engine.");
+end
+
+function testBLERImprovesWithSNR()
+cfg = localBaseCfg();
+cfg.pdsch6gr.FixedMCS = 18;
+matrix = [ ...
+    struct("ScenarioID","low","SNRdB",0,"FDRAType","type1_riv","StartSymbol",2,"NumSymbols",10,"ChannelModel","AWGN","DelaySpread_ns",30,"Rank",1,"RepetitionMode","none","PTRSMode","disabled","SpeedKmh",3,"DMRSAdditionalPosition",1,"NumTrials",2)
+    struct("ScenarioID","high","SNRdB",25,"FDRAType","type1_riv","StartSymbol",2,"NumSymbols",10,"ChannelModel","AWGN","DelaySpread_ns",30,"Rank",1,"RepetitionMode","none","PTRSMode","disabled","SpeedKmh",3,"DMRSAdditionalPosition",1,"NumTrials",2)
+    ];
+out = sixgr.pdsch.runPDSCHStudyLLS(cfg, "ScenarioMatrix", matrix, "WriteOutputs", false, "Verbose", false);
+snrSorted = sortrows(out.SummaryBySNR, "snr_db");
+assert(double(snrSorted.mean_BLER(1)) >= double(snrSorted.mean_BLER(end)), ...
+    "BLER must improve with SNR in the short sanity sweep.");
+end
+
+function testRepetitionNoWorseInStaticCase()
+cfg = localBaseCfg();
+cfg.pdsch6gr.FixedMCS = 18;
+matrix = [ ...
+    struct("ScenarioID","none","SNRdB",2,"FDRAType","type1_riv","StartSymbol",2,"NumSymbols",6,"ChannelModel","AWGN","DelaySpread_ns",30,"Rank",1,"RepetitionMode","none","PTRSMode","disabled","SpeedKmh",3,"DMRSAdditionalPosition",1,"NumTrials",2)
+    struct("ScenarioID","rep","SNRdB",2,"FDRAType","type1_riv","StartSymbol",2,"NumSymbols",6,"ChannelModel","AWGN","DelaySpread_ns",30,"Rank",1,"RepetitionMode","inter_slot","PTRSMode","disabled","SpeedKmh",3,"DMRSAdditionalPosition",1,"NumTrials",2)
+    ];
+out = sixgr.pdsch.runPDSCHStudyLLS(cfg, "ScenarioMatrix", matrix, "WriteOutputs", false, "Verbose", false);
+noneBLER = mean(double(out.TrialLevelResults.bler_flag(out.TrialLevelResults.repetition_mode == "none")));
+repBLER = mean(double(out.TrialLevelResults.bler_flag(out.TrialLevelResults.repetition_mode == "inter_slot")));
+assert(repBLER <= noneBLER + 1e-9, "Static AWGN repetition sanity case should not underperform no repetition.");
+end
+
+function testCrossSlotFailsLoudly()
+cfg = localBaseCfg();
+cfg.pdsch6gr.EnableCrossSlotPDSCH = true;
+threw = false;
+try
+    sixgr.pdsch.PDSCHStudyConfig(cfg);
+catch ME
+    threw = contains(string(ME.identifier), "CrossSlotNotMaterialized");
+end
+assert(threw, "Cross-slot requests must fail loudly until the truth path materializes them.");
+end
+
+function testCodewordLayerMappingTrace()
+cfg = localBaseCfg();
+cfg.pdsch6gr.NumLayers = 2;
+trace = sixgr.pdsch.CodewordLayerMapper(sixgr.pdsch.PDSCHStudyConfig(cfg));
+assert(height(trace) == 2 && all(double(trace.CodewordIndex) == 0), ...
+    "NR-baseline single-codeword mapping trace must materialize one row per layer.");
+end
+
+function testQueueLimitedGrantFormation()
+cfg = localBaseCfg();
+cfg.pdsch6gr.QueueBits = 256;
+tx = localOneShot(cfg, 20);
+assert(tx.PayloadBitsBeforePadding == 256, "Queue-limited grant formation must preserve the pre-TX payload size.");
+assert(any(strcmpi(string(tx.QueueFitStatus), ["queue_limited_mcs_backoff_before_tx","queue_limited_prb_backoff_before_tx","queue_smaller_than_minimum_tbs_padding_applied_before_tx"])), ...
+    "Queue-limited grant formation must adjust before encode instead of post-hoc clipping.");
+end
+
+function testHARQOutcomeDerivedFromCRC()
+cfg = localBaseCfg();
+cfg.pdsch6gr.FixedMCS = 22;
+cfg.pdsch6gr.MaxHARQTx = 2;
+matrix = struct("ScenarioID","harq_crc","SNRdB",-2,"FDRAType","type1_riv","StartSymbol",2,"NumSymbols",10,"ChannelModel","AWGN","DelaySpread_ns",30,"Rank",1,"RepetitionMode","none","PTRSMode","disabled","SpeedKmh",3,"DMRSAdditionalPosition",1,"NumTrials",1);
+out = sixgr.pdsch.runPDSCHStudyLLS(cfg, "ScenarioMatrix", matrix, "WriteOutputs", false, "Verbose", false);
+tb = out.TBLevelResults(1,:);
+harq = out.HARQTrace(1,:);
+grant = out.DLGrantTrace(1,:);
+assert(logical(tb.crc_pass) == logical(harq.crc_pass) && logical(grant.Ack) == logical(tb.crc_pass), ...
+    "HARQ and grant outcome must be derived from the actual CRC result.");
+end
+
+function testDeterministicReproducibility()
+cfg = localBaseCfg();
+matrix = struct("ScenarioID","det","SNRdB",12,"FDRAType","type1_riv","StartSymbol",2,"NumSymbols",10,"ChannelModel","AWGN","DelaySpread_ns",30,"Rank",1,"RepetitionMode","none","PTRSMode","disabled","SpeedKmh",3,"DMRSAdditionalPosition",1,"NumTrials",1);
+out1 = sixgr.pdsch.runPDSCHStudyLLS(cfg, "ScenarioMatrix", matrix, "WriteOutputs", false, "Verbose", false);
+out2 = sixgr.pdsch.runPDSCHStudyLLS(cfg, "ScenarioMatrix", matrix, "WriteOutputs", false, "Verbose", false);
+assert(isequaln(out1.TrialLevelResults, out2.TrialLevelResults), "Same seed/config must be deterministic.");
+end
+
+function testRunnerIntegrationArtifacts()
+tmp = tempname;
+mkdir(tmp);
+cleanupObj = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+
+repoRoot = fileparts(fileparts(mfilename("fullpath")));
+baseScenario = strrep(fullfile(repoRoot, "simulator", "configs", "scenarios", "pdsch_6gr_truth_study.yaml"), "\", "/");
+scenarioPath = fullfile(tmp, "pdsch6gr_runner_smoke.yaml");
+scenarioCfg = struct();
+scenarioCfg.inherits = {baseScenario};
+scenarioCfg.meta = struct("scenario_id", "pdsch6gr_runner_smoke", "description", "Short 6GR PDSCH runner integration smoke.");
+scenarioCfg.simulation = struct("monte_carlo_iterations", 1, "snr_db", 20);
+localWriteJSON(scenarioPath, scenarioCfg);
+
+out = sixgr.lls6g.runners.runSingle(scenarioPath, tmp, "pdsch6gr_runner_smoke");
+assert(logical(out.Ok), "6GR PDSCH runner integration smoke must complete successfully.");
+runFolder = char(out.RunFolder);
+assert(exist(fullfile(runFolder, "air_interface", "csv", "dl_pdsch_trials.csv"), "file") == 2, ...
+    "Runner must export canonical air_interface/csv/dl_pdsch_trials.csv.");
+assert(exist(fullfile(runFolder, "packet_flow", "csv", "live_dl_scheduler_grants.csv"), "file") == 2, ...
+    "Runner must export canonical live_dl_scheduler_grants.csv.");
+assert(exist(fullfile(runFolder, "reports", "csv", "pdsch6gr_trial_level_results.csv"), "file") == 2, ...
+    "Runner must export the detailed PDSCH study results.");
+end
+
+function tx = localOneShot(cfg, snr)
+cfg.pdsch6gr.SNRdB = snr;
+studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
+fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRA(cfg), studyCfg.NSizeGrid, "TransmissionIndex", 1);
+tdraAlloc = sixgr.pdsch.TDRAAllocator(studyCfg.TDRA, "RepetitionMode", studyCfg.RepetitionMode, "RepetitionCount", studyCfg.RepetitionCount);
+amc = sixgr.pdsch.AMCSelector(studyCfg, "EstimatedSNR_dB", snr);
+tx = sixgr.pdsch.PDSCHWaveformBuilder(studyCfg, fdraAlloc, tdraAlloc, amc, "QueueBits", studyCfg.QueueBits, "RV", 0, "TransmissionIndex", 1);
+end
+
+function fdra = localResolveFDRA(cfg)
+fdra = struct( ...
+    "FDRAType", char(string(cfg.pdsch6gr.FDRAType)), ...
+    "RBBitmap", double(cfg.pdsch6gr.RBBitmap), ...
+    "RIV", double(cfg.pdsch6gr.RIV), ...
+    "NumRB", double(cfg.pdsch6gr.NumRB), ...
+    "RBStart", double(cfg.pdsch6gr.RBStart), ...
+    "GranularityRB", double(cfg.pdsch6gr.GranularityRB), ...
+    "PhysicalCarrierID", 0, ...
+    "SingleCarrierOnly", true);
+end
+
+function cfg = localBaseCfg()
+cfg = struct();
+cfg.run = struct("seed", 77, "strictMode", true, "useMex", false, "useParallel", false);
+cfg.phy = struct();
+cfg.phy.fc_Hz = 2e9;
+cfg.phy.duplex = struct("mode", "FDD");
+cfg.phy.numerology = struct("mu", 0);
+cfg.phy.carrier = struct("NCellID", 1, "NSizeGrid", 52);
+cfg.phy.pdsch = struct("nLayers", 1, "configuredMCSIndex", 10, "modulation", "16QAM", "codeRate", 0.4785);
+cfg.channel = struct("model", "TDL-C", "nTxAnt", 2, "nRxAnt", 2, "snr_dB", 20, "doppler_Hz", 0, "fading", struct("delaySpread_s", 30e-9));
+cfg.pdsch6gr = struct( ...
+    "enable", true, ...
+    "RNTI", 4660, ...
+    "FrameNumber", 0, ...
+    "SlotNumber", 0, ...
+    "Numerology", 0, ...
+    "CarrierFrequencyHz", 2e9, ...
+    "DuplexMode", "FDD", ...
+    "ChannelBandwidthMHz", 20, ...
+    "NSizeGrid", 52, ...
+    "NTx", 2, ...
+    "NRx", 2, ...
+    "NumLayers", 1, ...
+    "NumCodewords", 1, ...
+    "ModulationPerCodeword", {{'16QAM'}}, ...
+    "TargetCodeRatePerCodeword", 0.4785, ...
+    "MCSMode", "fixed", ...
+    "FixedMCS", 10, ...
+    "LinkAdaptationMode", "actual_bler_based", ...
+    "HARQEnabled", true, ...
+    "HARQProcessCount", 4, ...
+    "MaxHARQTx", 2, ...
+    "EnableCrossSlotPDSCH", false, ...
+    "CrossSlotMode", "disabled", ...
+    "EnablePDSCHRepetition", false, ...
+    "RepetitionMode", "none", ...
+    "RepetitionCount", 1, ...
+    "EnablePTRS", false, ...
+    "PTRSBandPolicy", "disabled", ...
+    "ChannelEstimationMode", "realistic", ...
+    "ParameterEstimationMode", "practical", ...
+    "ReceiverType", "MMSE_IRC", ...
+    "EnableMUMIMOStudy", false, ...
+    "EnableMRSS", false, ...
+    "EnablePhaseNoise", false, ...
+    "EnableWidebandUncalibratedPhaseErrors", false, ...
+    "Seed", 77, ...
+    "ChannelModel", "TDL-C", ...
+    "DelaySpread_s", 30e-9, ...
+    "SpeedKmh", 3, ...
+    "SNRdB", 20, ...
+    "FDRAType", "type1_riv", ...
+    "RBBitmap", [1 1 1 0 0 0], ...
+    "RIV", 520, ...
+    "NumRB", 11, ...
+    "RBStart", 0, ...
+    "GranularityRB", 4, ...
+    "StartSymbol", 2, ...
+    "NumSymbols", 10, ...
+    "DMRSConfigType", 1, ...
+    "DMRSAdditionalPosition", 1, ...
+    "DMRSNumPorts", 1, ...
+    "DMRSPortSet", 0, ...
+    "PTRSTimeDensity", 2, ...
+    "PTRSFrequencyDensity", 2, ...
+    "PTRSREOffset", "00", ...
+    "QueueBits", 16000, ...
+    "StudySNRdB", [0 20], ...
+    "StudyFDRATypes", {{'type1_riv'}}, ...
+    "StudyStartSymbols", 2, ...
+    "StudyNumSymbols", 10, ...
+    "StudyChannelModels", {{'AWGN'}}, ...
+    "StudyDelaySpread_ns", 30, ...
+    "StudySpeedKmh", 3, ...
+    "StudyRanks", 1, ...
+    "StudyRepetitionModes", {{'none'}}, ...
+    "StudyPTRSModes", {{'disabled'}}, ...
+    "StudyDMRSAdditionalPositions", 1, ...
+    "StudyNumTrials", 1);
+end
+
+function localWriteJSON(filePath, s)
+fid = fopen(filePath, "w");
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid, "%s", jsonencode(s));
+end

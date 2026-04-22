@@ -16,7 +16,7 @@ def main() -> None:
     assert 'launch_run_from_yaml(scenario_name, yaml_text, run_tag)' in text
     assert "enforce_browser_launch_contract" in text
     assert "run_6g_phy_lls_single" in text
-    assert dash.DEFAULT_SCENARIO == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml"
+    assert dash.DEFAULT_SCENARIO == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml"
     assert dash.DEFAULT_DASHBOARD_HOST == "0.0.0.0"
     assert dash.DEFAULT_DASHBOARD_PORT == 62906
     assert 'dashboard_listener.json' in text

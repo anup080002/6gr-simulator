@@ -17,7 +17,7 @@ def main() -> None:
     text = runner.read_text(encoding="utf-8")
     assert "/login" in text
     assert "/run" in text
-    assert "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame.yaml" in text
+    assert "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml" in text
     assert "Invoke-WebRequest" in text
     assert "MaxAttempts = 10" in text
     assert "LookupTimeoutSec = 180" in text
