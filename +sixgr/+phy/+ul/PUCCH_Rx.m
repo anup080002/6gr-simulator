@@ -15,8 +15,10 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
 %     "Format"             : 0|1|2|3|4 override (default: cfg.phy.pucch.format)
 %     "NumUCIBits"         : number of uncoded UCI bits (formats 2/3/4)
 %     "ExpectedUCIBits"    : optionally provide transmitted uncoded bits
-%     "NoiseVar"           : noise variance override (default: 1e-10)
+%     "NoiseVar"           : explicit runtime noise variance metadata
+%     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %     "Equalize"           : true/false (default: true)
+%     "ChannelEstimatorFcn": channel-estimator function handle
 %     "DetectionThreshold" : forwarded to nrPUCCHDecode (optional)
 %
 %   Outputs (RX struct):
@@ -26,6 +28,8 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
 %     .DetMetric      : detection metric returned by nrPUCCHDecode
 %     .ChannelEstimate: H estimate grid (if estimated)
 %     .NoiseVar       : noise variance used
+%     .NoiseVarStatus : "OK" or "NOT_AVAILABLE"
+%     .NoiseVarSource : provenance for the used/unavailable noise variance
 %     .Ok             : true if decode succeeded
 %
 %   INFO returns intermediate artifacts for debugging.
@@ -41,8 +45,12 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     addParameter(p, "Format",  [], @(x) isempty(x) || (isscalar(x) && isnumeric(x)));
     addParameter(p, "NumUCIBits", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && x>=0));
     addParameter(p, "ExpectedUCIBits", [], @(x) isempty(x) || isnumeric(x) || islogical(x));
-    addParameter(p, "NoiseVar", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && x>=0));
+    addParameter(p, "NoiseVar", [], @(x) isempty(x) || isnumeric(x));
+    addParameter(p, "ConfiguredNoiseVariance", [], @(x) isempty(x) || isnumeric(x));
+    addParameter(p, "ConfiguredNoiseVarianceSource", "configured_awgn_derivation", @(x) ischar(x) || isstring(x));
+    addParameter(p, "StrictNoiseVarianceRequired", [], @(x) isempty(x) || islogical(x) || (isscalar(x) && isnumeric(x)));
     addParameter(p, "Equalize", true, @(x) islogical(x) || (isscalar(x) && (x==0 || x==1)));
+    addParameter(p, "ChannelEstimatorFcn", @sixgr.phy.rx.channelEstimate, @(x) isa(x, "function_handle"));
     addParameter(p, "DetectionThreshold", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && x>=0 && x<=1));
 
     parse(p, rxWaveform, cfg, varargin{:});
@@ -84,24 +92,78 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
 
     % ---- OFDM demod ------------------------------------------------------
     rxGrid = nrOFDMDemodulate(carrier, rxWaveform);
+    ofdmInfo = struct();
+    try
+        ofdmInfo = nrOFDMInfo(carrier);
+    catch
+        ofdmInfo = struct();
+    end
 
     % ---- Channel estimation / noise var ---------------------------------
     Hest = [];
-    nVar = opts.NoiseVar;
-    if isempty(nVar)
-        nVar = 1e-10; % safe default (matches your other back-to-back tests)
-    end
+    nVarEst = [];
 
     estInfo = struct();
-    if ~isempty(dmrsInd) && opts.Equalize
+    estimationAttempted = ~isempty(dmrsInd) && opts.Equalize;
+    estimationFailed = false;
+    if estimationAttempted
         try
-            [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym);
-            if isempty(opts.NoiseVar) && ~isempty(nVarEst) && isfinite(nVarEst) && nVarEst >= 0
-                nVar = nVarEst;
-            end
-        catch
+            [Hest, nVarEst, estInfo] = opts.ChannelEstimatorFcn(carrier, rxGrid, dmrsInd, dmrsSym);
+        catch ME
             Hest = [];
+            nVarEst = [];
+            estimationFailed = true;
+            estInfo = struct( ...
+                "Status", "failed", ...
+                "FailureReason", "channel_estimation_failed", ...
+                "ErrorIdentifier", string(ME.identifier), ...
+                "ErrorMessage", string(ME.message));
         end
+    end
+
+    noiseCandidate = opts.NoiseVar;
+    hasExplicitNoiseVariance = ~isempty(noiseCandidate);
+    noiseSource = "runtime_metadata";
+    if isempty(noiseCandidate)
+        noiseCandidate = nVarEst;
+        noiseSource = "runtime_channel_estimate";
+    else
+        noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
+    end
+    configuredNoiseVariance = opts.ConfiguredNoiseVariance;
+    if ~isempty(configuredNoiseVariance)
+        configuredNoiseVariance = localConvertNoiseVarToGridDomain(configuredNoiseVariance, ofdmInfo);
+    end
+    [nVar, noiseStatus] = sixgr.phy.ul.resolveULNoiseVariance(noiseCandidate, cfg, ...
+        "ChannelType", "PUCCH", ...
+        "OriginalSource", noiseSource, ...
+        "StrictRequired", opts.StrictNoiseVarianceRequired, ...
+        "ConfiguredNoiseVariance", configuredNoiseVariance, ...
+        "ConfiguredNoiseVarianceSource", opts.ConfiguredNoiseVarianceSource);
+    nVar = double(nVar);
+    if ~logical(noiseStatus.IsValid)
+        failureReason = string(noiseStatus.Reason);
+        if estimationAttempted && estimationFailed && ~hasExplicitNoiseVariance
+            failureReason = "channel_estimation_failed";
+        end
+        [rx, info] = localBuildUnavailablePUCCHRx( ...
+            carrier, pucch, pucchInfo, Hest, rxGrid, pucchInd, dmrsInd, dmrsSym, estInfo, ...
+            nVar, noiseStatus, logical(opts.Equalize), failureReason);
+        return;
+    end
+    if estimationAttempted && isempty(Hest)
+        if ~estimationFailed
+            estimationFailed = true;
+            if ~isstruct(estInfo) || numel(estInfo) ~= 1
+                estInfo = struct();
+            end
+            estInfo.Status = "failed";
+            estInfo.FailureReason = "channel_estimation_failed";
+        end
+        [rx, info] = localBuildUnavailablePUCCHRx( ...
+            carrier, pucch, pucchInfo, Hest, rxGrid, pucchInd, dmrsInd, dmrsSym, estInfo, ...
+            nVar, noiseStatus, false, "channel_estimation_failed");
+        return;
     end
 
     % ---- Extract + equalize ---------------------------------------------
@@ -112,8 +174,17 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     if opts.Equalize && ~isempty(Hest)
         try
             [eqSym, ~, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxGrid, Hest, nVar, "Indices", pucchInd);
-        catch
-            eqSym = rxSym;
+        catch ME
+            eqInfo = struct( ...
+                "Status", "failed", ...
+                "FailureReason", "equalization_failed", ...
+                "ErrorIdentifier", string(ME.identifier), ...
+                "ErrorMessage", string(ME.message));
+            [rx, info] = localBuildUnavailablePUCCHRx( ...
+                carrier, pucch, pucchInfo, Hest, rxGrid, pucchInd, dmrsInd, dmrsSym, estInfo, ...
+                nVar, noiseStatus, false, "equalization_failed");
+            info.Equalization = eqInfo;
+            return;
         end
     end
 
@@ -160,6 +231,14 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     rx.Symbols         = rxConst;
     rx.DetMetric       = detMet;
     rx.NoiseVar        = nVar;
+    rx.NoiseVarStatus  = char(string(noiseStatus.Status));
+    rx.NoiseVarSource  = char(string(noiseStatus.Source));
+    rx.NoiseVarReason  = char(string(noiseStatus.Reason));
+    rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
+    rx.ReceiverUsable  = true;
+    rx.DetectionAttempted = true;
+    rx.DetectionUsable = true;
+    rx.FailureReason   = "";
     rx.ChannelEstimate = Hest;
     rx.Carrier         = carrier;
     rx.PUCCH           = pucch;
@@ -173,6 +252,7 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     info.DMRSSymbols  = dmrsSym;
     info.Estimation   = estInfo;
     info.Equalization = eqInfo;
+    info.NoiseVariance = noiseStatus;
 end
 
 % -------------------------------------------------------------------------
@@ -237,4 +317,52 @@ function pucch = localApplyPUCCHFromCfg(pucch, cfg, carrier)
             pucch.NID0 = nid0;
         end
     end
+end
+
+% -------------------------------------------------------------------------
+function [rx, info] = localBuildUnavailablePUCCHRx( ...
+        carrier, pucch, pucchInfo, Hest, rxGrid, pucchInd, dmrsInd, dmrsSym, estInfo, nVar, noiseStatus, equalized, failureReason)
+if nargin < 13 || strlength(string(failureReason)) == 0
+    failureReason = string(noiseStatus.Reason);
+end
+rx = struct();
+rx.Ok = false;
+rx.UCISoft = {};
+rx.UCIBits = int8([]);
+rx.Symbols = complex([]);
+rx.DetMetric = NaN;
+rx.NoiseVar = double(nVar);
+rx.NoiseVarStatus = char(string(noiseStatus.Status));
+rx.NoiseVarSource = char(string(noiseStatus.Source));
+rx.NoiseVarReason = char(string(noiseStatus.Reason));
+rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
+rx.ReceiverUsable = false;
+rx.DetectionAttempted = false;
+rx.DetectionUsable = false;
+rx.FailureReason = char(string(failureReason));
+rx.ChannelEstimate = Hest;
+rx.Carrier = carrier;
+rx.PUCCH = pucch;
+rx.PUCCHInfo = pucchInfo;
+rx.Equalized = logical(equalized);
+
+info = struct();
+info.RxGrid = rxGrid;
+info.PUCCHIndices = pucchInd;
+info.DMRSIndices = dmrsInd;
+info.DMRSSymbols = dmrsSym;
+info.Estimation = estInfo;
+info.Equalization = struct();
+info.NoiseVariance = noiseStatus;
+end
+
+function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
+nVarGrid = double(nVarTime);
+if nargin < 2 || ~isstruct(ofdmInfo)
+    return;
+end
+nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+if isfinite(nfft) && nfft > 0
+    nVarGrid = nVarGrid * nfft;
+end
 end

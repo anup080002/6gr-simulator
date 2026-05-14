@@ -21,7 +21,8 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %     RX.DCIBits        : recovered DCI payload bits
 %     RX.ErrFlag        : 0 if CRC passes, 1 otherwise (when available)
 %     RX.Ok             : true when ErrFlag==0
-%     RX.TimingOffset   : sample timing offset applied
+%     RX.TimingOffset   : raw sample timing estimate
+%     RX.AppliedTimingCorrection_samples : applied waveform correction
 %     RX.NoiseVar       : noise variance used
 
 % ---------------------- Parse inputs ----------------------
@@ -99,7 +100,7 @@ if isempty(sampleRateHz)
     sampleRateHz = sixgr.util.structGet(cfg, 'phy.sampleRate_Hz', []);
 end
 
-timingOffset = 0;
+timingOffset = NaN;
 try
     if isempty(sampleRateHz)
         timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1});
@@ -107,14 +108,14 @@ try
         timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1}, 'SampleRate', sampleRateHz);
     end
 catch
-    % If timing estimation is unavailable, continue with zero offset.
-    timingOffset = 0;
+    % If timing estimation is unavailable, continue without a runtime correction.
+    timingOffset = NaN;
 end
-
-timingOffset = max(0, round(double(timingOffset)));
-if timingOffset > 0
-    rxWave = rxWave(1+timingOffset:end, :);
-end
+timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
+    "EstimateUsed", isfinite(double(timingOffset)), ...
+    "ApplicationMode", "signed_waveform_shift", ...
+    "Source", "nrTimingEstimate_pdcch_dmrs");
+rxWave = localApplyTimingCorrection(rxWave, timingResolution.AppliedCorrection_samples);
 
 % Keep one full slot available for OFDM demod even when timing estimation
 % trims a few leading samples on otherwise aligned captures.
@@ -167,7 +168,12 @@ rx.DCIBits = int8([]);
 rx.ErrFlag = 1;
 rx.Ok = false;
 rx.CandidateIndex = 0;
-rx.TimingOffset = timingOffset;
+rx.TimingOffset = double(timingResolution.RawEstimate_samples);
+rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+rx.TimingEstimateStatus = char(string(timingResolution.Status));
+rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 
 for c = 1:numel(candSymInd)
     symInd  = candSymInd{c};
@@ -233,7 +239,28 @@ info.K = K;
 info.ListLength = listLen;
 info.BlindSearch = blind;
 info.NumCandidatesTried = numel(candSymInd);
+info.TimingEstimate = timingResolution;
 
+end
+
+function y = localApplyTimingCorrection(x, timingOffset)
+timingOffset = round(double(timingOffset));
+if ~isfinite(timingOffset) || timingOffset == 0
+    y = x;
+elseif timingOffset > 0
+    if timingOffset < size(x, 1)
+        y = [x(1+timingOffset:end, :); zeros(timingOffset, size(x, 2), "like", x)];
+    else
+        y = zeros(size(x), "like", x);
+    end
+else
+    lead = abs(timingOffset);
+    if lead < size(x, 1)
+        y = [zeros(lead, size(x, 2), "like", x); x(1:end-lead, :)];
+    else
+        y = zeros(size(x), "like", x);
+    end
+end
 end
 
 function [candSymInd, candDMRSInd, candDMRSSym] = localCollectPDCCHCandidates(allSymInd, allDMRSInd, allDMRSSym)

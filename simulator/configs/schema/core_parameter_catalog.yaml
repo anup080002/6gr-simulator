@@ -189,7 +189,12 @@
       },
       "duplex": {
         "mode": {"value_type": "string", "default": "TDD", "allowed_values": ["TDD", "FDD"]},
-        "tddPattern": {"value_type": "any", "default": "DDDSU"}
+        "tddPattern": {"value_type": "any", "default": "DDDSU"},
+        "specialSlot": {
+          "numDLSymbols": {"value_type": "integer", "default": 7, "min": 0},
+          "numGuardSymbols": {"value_type": "integer", "default": 0, "min": 0},
+          "numULSymbols": {"value_type": "integer", "default": 7, "min": 0}
+        }
       },
       "waveform": {
         "dl": {"value_type": "string", "default": "CP-OFDM", "allowed_values": ["CP-OFDM"]},
@@ -387,6 +392,8 @@
       "saveFIG": {"value_type": "boolean", "default": true},
       "savePNG": {"value_type": "boolean", "default": true},
       "plotVisible": {"value_type": "boolean", "default": false},
+      "livePublishFrameInterval": {"value_type": "integer", "default": 1, "min": 1},
+      "liveHeavyRefreshFrameInterval": {"value_type": "integer", "default": 4, "min": 1},
       "kpi": {
         "enable": {"value_type": "boolean", "default": true},
         "list": {"value_type": "string_list", "default": ["throughput", "bler", "ber", "evm", "papr", "sinr", "cqi"]}

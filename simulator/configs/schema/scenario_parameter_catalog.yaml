@@ -163,6 +163,9 @@ sections:
         type: string
         allowed_values: [dl, ul, flexible, mixed]
       tdd_pattern: {required: true, type: string, nonempty: true}
+      special_slot_downlink_symbols: {required: false, type: integer, min: 0}
+      ul_dl_guard_symbols: {required: false, type: integer, min: 0}
+      special_slot_uplink_symbols: {required: false, type: integer, min: 0}
   waveform:
     required: true
     parameters:
@@ -670,7 +673,7 @@ sections:
       ssb_beam_count: {required: false, type: integer, min: 1}
       beam_clustering_enabled: {required: false, type: boolean}
       prach_format:
-        required: true
+        required: false
         type: string
         allowed_values: [0, 1, 2, 3, A1, A2, A3, B1, B4, C0, C2]
       prach_sequence_family:
@@ -920,6 +923,8 @@ sections:
       save_json_snapshot: {required: true, type: boolean}
       organize_by_block: {required: true, type: boolean}
       generate_summary_plots: {required: true, type: boolean}
+      live_publish_frame_interval: {required: false, type: integer, min: 1}
+      live_heavy_refresh_interval_frames: {required: false, type: integer, min: 1}
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}
 nested_sections:

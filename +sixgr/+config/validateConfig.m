@@ -33,6 +33,9 @@ if strcmp(duplexMode, 'TDD')
     tddPattern = sixgr.util.structGet(cfg, 'phy.duplex.tddPattern', ...
         sixgr.util.structGet(cfg, 'scenario.tddPattern', 'DDDSU'));
     localValidateTDDPattern(tddPattern, 'phy.duplex.tddPattern');
+    if contains(upper(char(string(tddPattern))), 'S')
+        sixgr.util.resolveTDDSlotPartition(cfg, 1);
+    end
 end
 
 % Traffic controls
@@ -85,6 +88,7 @@ end
 
 localValidateChannelProfiles(cfg);
 localValidateChannelIntent(cfg);
+localValidateChannelComplianceMode(cfg);
 localValidateScenarioSemantics(cfg);
 localValidatePresetMetadata(cfg, cCore);
 localValidateChannelEstimator(cfg);
@@ -268,6 +272,15 @@ end
 if localIsExplicitFlatChannelModel(model) && hasFadingClaim
     error('sixgr:config:ContradictoryChannelIntent', ...
         'channel.model=''%s'' cannot coexist with TDL/CDL fading claims in the same config.', model);
+end
+end
+
+function localValidateChannelComplianceMode(cfg)
+mode = lower(strtrim(char(string(sixgr.util.structGet(cfg, 'channel.complianceMode', 'approximate_38901_plus')))));
+allowed = {'strict_38901', 'approximate_38901_plus', 'legacy_fallback'};
+if ~any(strcmp(mode, allowed))
+    error('sixgr:config:BadChannelComplianceMode', ...
+        'channel.complianceMode must be one of: %s', strjoin(allowed, ', '));
 end
 end
 

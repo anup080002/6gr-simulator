@@ -266,6 +266,11 @@ cfg = sixgr.util.structSet(cfg, "phy.fc_Hz", ...
 cfg = sixgr.util.structSet(cfg, "channel.pathlossModel", ...
     sixgr.util.structGet(cfg, "channel.pathlossModel", ...
     sixgr.util.structGet(cfg, "channel.pathloss.model", "nrPathLoss")));
+cfg = sixgr.util.structSet(cfg, "channel.complianceMode", ...
+    localNormalizeChannelComplianceMode(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "channel.complianceMode", []), ...
+    sixgr.util.structGet(cfg, "channel.compliance.mode", []), ...
+    localDefaultChannelComplianceMode(cfg))));
 cfg = sixgr.util.structSet(cfg, "channel.shadowSigma_dB", ...
     sixgr.util.structGet(cfg, "channel.shadowSigma_dB", ...
     sixgr.util.structGet(cfg, "channel.shadowFadingStd_dB", 0)));
@@ -632,4 +637,26 @@ end
 function tf = localIsConcreteCDLProfile(profile)
 profile = localNormalizeChannelToken(profile);
 tf = startsWith(profile, 'CDL') && ~strcmp(profile, 'CDL');
+end
+
+function mode = localDefaultChannelComplianceMode(cfg)
+if logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+    mode = "strict_38901";
+else
+    mode = "approximate_38901_plus";
+end
+end
+
+function mode = localNormalizeChannelComplianceMode(value)
+token = lower(strtrim(char(string(value))));
+switch token
+    case {"", "approximate", "approximate_38901", "approximate_38901_plus", "tr38901_plus"}
+        mode = "approximate_38901_plus";
+    case {"strict", "strict_38901", "tr38901_strict"}
+        mode = "strict_38901";
+    case {"legacy", "legacy_fallback", "fallback"}
+        mode = "legacy_fallback";
+    otherwise
+        mode = string(value);
+end
 end

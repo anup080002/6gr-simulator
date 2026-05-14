@@ -25,7 +25,8 @@ function [rx, info] = PDSCH_Rx(rxWaveform, cfg, varargin)
 %     RX.CodewordLLR        : soft bits before rate recovery
 %     RX.ChannelEstimate    : H estimate
 %     RX.NoiseVar           : used noise variance
-%     RX.TimingOffset       : estimated timing offset (samples)
+%     RX.TimingOffset       : raw estimated timing offset (samples)
+%     RX.AppliedTimingCorrection_samples : applied waveform correction (samples)
 %
 %   Notes:
 %     This receiver assumes a single codeword and (by default) uses the same
@@ -170,29 +171,34 @@ elseif logical(trackingCorrection.CFOEstimateAvailable)
     trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
 end
 
-timingOffset = 0;
+rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
 if logical(trackingCorrection.TimingEstimateAvailable) && isfinite(double(trackingCorrection.TimingEstimate_samples))
-    timingOffset = round(double(trackingCorrection.TimingEstimate_samples));
+    rawTimingEstimate = double(trackingCorrection.TimingEstimate_samples);
     timingEstimateUsed = true;
     timingEstimateSource = string(trackingCorrection.Source);
     trackingCorrection.TimingCorrectionApplied = true;
 elseif ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate) && ~isempty(dmrsInd)
     try
-        timingOffset = nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym);
-        timingOffset = double(timingOffset);
+        rawTimingEstimate = double(nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym));
         timingEstimateUsed = true;
         timingEstimateSource = "nrTimingEstimate_dmrs";
     catch
-        timingOffset = 0;
+        rawTimingEstimate = NaN;
         timingEstimateUsed = false;
         timingEstimateSource = "nrTimingEstimate_failed";
     end
 end
+timingResolution = sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ...
+    "EstimateUsed", timingEstimateUsed, ...
+    "ApplicationMode", "signed_waveform_shift", ...
+    "SkipRequested", logical(opt.SkipTimingEstimate), ...
+    "Source", timingEstimateSource);
+trackingCorrection.TimingCorrectionApplied = logical(timingResolution.EstimateUsed);
 
 % Apply timing correction
-rxWave = localApplyTimingCorrection(rxWaveform, timingOffset);
+rxWave = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrection_samples);
 
 % ---------------------- OFDM demodulate ----------------------
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
@@ -221,7 +227,8 @@ elseif ~isempty(dmrsAntInd)
         "ExpectedTxPorts", numTxPorts, ...
         "ContextLabel", "PDSCH_Rx");
 else
-    hEst = ones(size(rxGrid));
+    localValidateNoDMRSUnitChannelFallback(channelModelToken, numTxPorts, max(1, size(rxGrid, 3)), "PDSCH_Rx");
+    hEst = ones(size(rxGrid), 'like', rxGrid);
     nVarEst = 0;
     estInfo = struct( ...
         "EngineUsed", "unit-channel-no-dmrs", ...
@@ -368,9 +375,14 @@ rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOk);
-rx.TimingOffset = timingOffset;
-rx.TimingEstimateUsed = logical(timingEstimateUsed);
+rx.TimingOffset = double(timingResolution.RawEstimate_samples);
+rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
 rx.TimingEstimateSource = char(timingEstimateSource);
+rx.TimingEstimateStatus = char(string(timingResolution.Status));
+rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.NoiseVar = nVar;
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
@@ -426,6 +438,7 @@ info.ChannelEstimation = estInfo;
 info.CSIRS = csirsInfo;
 info.CSIRSObservation = csirsObservation;
 info.ReceiverTrackingCorrection = trackingCorrection;
+info.TimingEstimate = timingResolution;
 
 end
 
@@ -804,6 +817,15 @@ if ~(localIsExplicitFlatChannel(channelToken) && numTxPorts <= 1 && numRxAnt <= 
         "%s requires an explicit AWGN/flat SISO validation mode. Channel='%s', TxPorts=%d, RxAnt=%d.", ...
         contextLabel, localDisplayChannelToken(channelToken), numTxPorts, numRxAnt);
 end
+end
+
+function localValidateNoDMRSUnitChannelFallback(channelToken, numTxPorts, numRxAnt, contextLabel)
+if localIsExplicitFlatChannel(channelToken) && numTxPorts <= 1 && numRxAnt <= 1
+    return;
+end
+error("sixgr:phy:rx:MissingDMRSForTruthChannelEstimate", ...
+    "%s requires DM-RS-backed resource-selective channel estimation for truthful reception. Channel='%s', TxPorts=%d, RxAnt=%d.", ...
+    contextLabel, localDisplayChannelToken(channelToken), numTxPorts, numRxAnt);
 end
 
 function channelToken = localResolveEstimatorChannelModel(cfg)

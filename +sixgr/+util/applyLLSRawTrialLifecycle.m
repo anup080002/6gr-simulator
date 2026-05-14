@@ -48,9 +48,33 @@ T.CFOValueStatus(partialCfoMask) = "PARTIAL";
 timingEstimateMask = logical(localOptionalColumn(T, "TimingEstimateUsed", false)) & ...
     isfinite(double(localOptionalColumn(T, "EstimatedTimingOffset_PreCorrection_samples", NaN)));
 idealTimingMask = logical(localOptionalColumn(T, "UseIdealTimingSync", false));
+rawTimingEstimate = double(localOptionalColumn(T, "RawTimingEstimate_samples", ...
+    localOptionalColumn(T, "EstimatedTimingOffset_PreCorrection_samples", NaN)));
+appliedTimingCorrection = double(localOptionalColumn(T, "AppliedTimingCorrection_samples", ...
+    localOptionalColumn(T, "TimingOffset_samples", NaN)));
+T.RawTimingEstimate_samples = rawTimingEstimate;
+T.AppliedTimingCorrection_samples = appliedTimingCorrection;
 T.TimingEstimateAvailability = repmat("missing", n, 1);
 T.TimingEstimateAvailability(timingEstimateMask) = "available";
 T.TimingEstimateAvailability(idealTimingMask & ~timingEstimateMask) = "ideal_sync_bypass";
+timingEstimateStatus = string(localOptionalColumn(T, "TimingEstimateStatus", ""));
+blankTimingStatusMask = strlength(strtrim(timingEstimateStatus)) == 0;
+timingEstimateStatus(blankTimingStatusMask) = "missing";
+timingEstimateStatus(blankTimingStatusMask & timingEstimateMask) = "available";
+timingEstimateStatus(blankTimingStatusMask & idealTimingMask & ~timingEstimateMask) = "ideal_sync_bypass";
+T.TimingEstimateStatus = timingEstimateStatus;
+timingPolicy = string(localOptionalColumn(T, "TimingEstimateApplicationPolicy", ""));
+blankTimingPolicyMask = strlength(strtrim(timingPolicy)) == 0;
+timingPolicy(blankTimingPolicyMask) = "timing_estimate_unavailable_no_runtime_correction";
+appliedTimingMask = timingEstimateMask & isfinite(appliedTimingCorrection);
+timingPolicy(blankTimingPolicyMask & appliedTimingMask) = "raw_timing_estimate_and_applied_correction_logged";
+timingPolicy(blankTimingPolicyMask & idealTimingMask & ~timingEstimateMask) = "timing_estimation_bypassed_no_runtime_correction";
+T.TimingEstimateApplicationPolicy = timingPolicy;
+timingWasClipped = logical(localOptionalColumn(T, "TimingEstimateWasClipped", false));
+inferredTimingClipMask = timingEstimateMask & isfinite(rawTimingEstimate) & isfinite(appliedTimingCorrection) & ...
+    (abs(rawTimingEstimate - appliedTimingCorrection) > 1e-9);
+timingWasClipped = timingWasClipped | inferredTimingClipMask;
+T.TimingEstimateWasClipped = timingWasClipped;
 T.TimingErrorDefinition = repmat("not_available_without_timing_estimate", n, 1);
 T.TimingErrorDefinition(timingEstimateMask) = "residual_post_correction_samples_relative_to_estimated_pre_correction";
 T.TimingValueStatus = repmat("NOT_AVAILABLE", n, 1);
@@ -175,6 +199,13 @@ function values = localOptionalColumn(T, name, defaultValue)
 n = height(T);
 if ismember(name, string(T.Properties.VariableNames))
     values = T.(char(name));
+    if isvector(values) && numel(values) == n && size(values, 1) ~= n
+        values = reshape(values, n, 1);
+    end
+    return;
+end
+if isvector(defaultValue) && numel(defaultValue) == n
+    values = reshape(defaultValue, n, 1);
     return;
 end
 if isstring(defaultValue) || ischar(defaultValue)

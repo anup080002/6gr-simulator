@@ -83,6 +83,8 @@ reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
 outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
 sanitizedCSVs = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
+configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
+reportBundle.ConfigOwnershipArtifacts = configOwnership;
 scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
     sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result));
 summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);

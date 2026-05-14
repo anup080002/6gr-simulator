@@ -1335,6 +1335,10 @@ end
 value = T.(varName);
 end
 
+function logicalPath = localReportChartCSVLogicalPath(fileName)
+logicalPath = "reports/csv/" + replace(string(fileName), ".png", ".csv");
+end
+
 function T = localTrialThroughputRows(cat, metric, trialT, entity, unit, notes)
 T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT))
@@ -2072,23 +2076,44 @@ end
 function T = localUCIMultiplexingEfficiencyRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pusch.uci_multiplexing_mode", "pucch.multiplexing_policy"], "baseline");
-note = "Computed as successful UCI bits over transmitted UCI bits from actual PUCCH observations under the configured multiplexing policy.";
+note = "Computed as correctly detected UCI bits over compared UCI bits from actual PUCCH observations; CRC pass is ignored when CRC is not applicable.";
 T = [T; localMetricTableRow(cat, metric, "UCI", "policy", "available", NaN, policy, "", "air_interface/csv/pucch_trials.csv", note)]; %#ok<AGROW>
-if ~(istable(ctx.Tables.PUCCH) && ~isempty(ctx.Tables.PUCCH) && all(ismember(["BitsCompared","CRCPass"], string(ctx.Tables.PUCCH.Properties.VariableNames))))
+if ~(istable(ctx.Tables.PUCCH) && ~isempty(ctx.Tables.PUCCH) && ismember("BitsCompared", string(ctx.Tables.PUCCH.Properties.VariableNames)))
     return;
 end
 bits = double(ctx.Tables.PUCCH.BitsCompared);
-crc = double(ctx.Tables.PUCCH.CRCPass);
-mask = isfinite(bits) & isfinite(crc) & bits >= 0;
+success = localPUCCHSuccessVector(ctx.Tables.PUCCH);
+mask = isfinite(bits) & isfinite(success) & bits >= 0;
 if ~any(mask)
     return;
 end
 bits = bits(mask);
-good = bits .* (crc(mask) ~= 0);
+good = bits .* success(mask);
 T = [T; ... %#ok<AGROW>
     localMetricTableRow(cat, metric, "UCI", "success_ratio", "available", sum(good) / max(sum(bits), eps), "", "fraction", "air_interface/csv/pucch_trials.csv", note); ...
     localMetricTableRow(cat, metric, "UCI", "successful_bits", "available", sum(good), "", "bits", "air_interface/csv/pucch_trials.csv", note); ...
     localMetricTableRow(cat, metric, "UCI", "transmitted_bits", "available", sum(bits), "", "bits", "air_interface/csv/pucch_trials.csv", note)];
+end
+
+function success = localPUCCHSuccessVector(T)
+n = height(T);
+success = nan(n, 1);
+if ismember("UCIContentMatch", string(T.Properties.VariableNames))
+    success = double(logical(T.UCIContentMatch));
+    return;
+end
+if ismember("CRCOutcome", string(T.Properties.VariableNames))
+    crcOutcome = lower(strtrim(string(T.CRCOutcome)));
+    success(strcmp(crcOutcome, "pass")) = 1;
+    success(strcmp(crcOutcome, "fail")) = 0;
+    return;
+end
+if ismember("CRCPass", string(T.Properties.VariableNames))
+    success = double(T.CRCPass);
+    if ismember("CRCApplicable", string(T.Properties.VariableNames))
+        success(~logical(T.CRCApplicable)) = NaN;
+    end
+end
 end
 
 function T = localSimultaneousPUSCHPUCCHRows(cat, metric, ctx)
@@ -3778,30 +3803,65 @@ end
 function plots = localExportReportPlots(ctx, coverageT)
 plots = strings(0, 1);
 sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
-plots(end+1, 1) = localPlotSweep(ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
+plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["DL_BLER","UL_BLER"], ["DL","UL"], "bler_vs_snr.png", "BLER vs SNR", "BLER"); %#ok<AGROW>
-plots(end+1, 1) = localPlotSweep(ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
+plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["DL_Throughput_Mbps","UL_Throughput_Mbps"], ["DL","UL"], "throughput_vs_snr.png", "Throughput vs SNR", "Throughput (Mbps)"); %#ok<AGROW>
-plots(end+1, 1) = localPlotSweep(ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
+plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
-plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "ReceiverHestSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Measured SINR", "Measured SINR (dB)", "BLER", false, true); %#ok<AGROW>
-plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "ReceiverHestSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Measured SINR", "Measured SINR (dB)", "BER", false, true); %#ok<AGROW>
-plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "BLER", "BER", "ber_vs_bler.png", "BER vs BLER", "BLER", "BER", true, true); %#ok<AGROW>
-plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "DerivedEcNo_dB", "BER", "ber_vs_ecno.png", "BER vs Derived Ec/No", "Derived Ec/No (dB)", "BER", false, true); %#ok<AGROW>
-plots(end+1, 1) = localPlotTrialMetricRelationship(ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
+plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "DerivedEcNo_dB", "BLER", "bler_vs_ecno.png", "BLER vs Derived Ec/No", "Derived Ec/No (dB)", "BLER", false, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotControlPassRates(ctx.Layout.ReportImageDir, ctx); %#ok<AGROW>
 plots(end+1, 1) = localPlotCoverageAvailability(ctx.Layout.ReportImageDir, coverageT); %#ok<AGROW>
 plots = plots(strlength(plots) > 0);
 end
 
-function pathOut = localPlotSweep(imgDir, sweepT, cols, labels, fileName, plotTitle, yLabel)
+function pathOut = localPlotSweep(ctx, imgDir, sweepT, cols, labels, fileName, plotTitle, yLabel)
 pathOut = "";
 if ~(istable(sweepT) && ~isempty(sweepT) && ismember("SNR_dB", string(sweepT.Properties.VariableNames)))
+    return;
+end
+chartRows = repmat(struct("SNR_dB", NaN, "MetricValue", NaN, "SeriesLabel", "", "SourceColumn", ""), 0, 1);
+for i = 1:numel(cols)
+    col = string(cols(i));
+    if ~ismember(col, string(sweepT.Properties.VariableNames))
+        continue;
+    end
+    x = double(sweepT.SNR_dB);
+    y = double(sweepT.(col));
+    mask = isfinite(x) & isfinite(y);
+    if ~any(mask)
+        continue;
+    end
+    label = string(localSweepLegendLabel(sweepT, col, labels(i)));
+    for k = find(mask(:)).'
+        chartRows(end+1, 1) = struct( ... %#ok<AGROW>
+            "SNR_dB", double(x(k)), ...
+            "MetricValue", double(y(k)), ...
+            "SeriesLabel", label, ...
+            "SourceColumn", col);
+    end
+end
+chartT = struct2table(chartRows);
+status = sixgr.visual.validatePlotData("relation", localColumnOrEmpty(chartT, "SNR_dB"), localColumnOrEmpty(chartT, "MetricValue"));
+csvLogicalPath = localReportChartCSVLogicalPath(fileName);
+if istable(chartT) && ~isempty(chartT)
+    sixgr.visual.writeChartSourceCsv(char(ctx.RunFolder), csvLogicalPath, chartT);
+end
+if status.PlotRenderStatus ~= "rendered"
+    if localShouldEmitPlaceholderArtifacts(ctx)
+        sixgr.util.ensureFolder(imgDir);
+        pathOut = string(fullfile(imgDir, fileName));
+        localExportPlaceholderFigure(pathOut, plotTitle, "Plot suppressed: " + status.PlotSuppressionReason + ".");
+    end
     return;
 end
 sixgr.util.ensureFolder(imgDir);
@@ -3877,8 +3937,25 @@ pathOut = string(fullfile(imgDir, fileName));
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
-function pathOut = localPlotTrialMetricRelationship(imgDir, dlT, ulT, xVar, yVar, fileName, plotTitle, xLabel, yLabel, logX, logY)
+function pathOut = localPlotTrialMetricRelationship(ctx, imgDir, dlT, ulT, xVar, yVar, fileName, plotTitle, xLabel, yLabel, logX, logY)
 pathOut = "";
+chartRows = repmat(struct("Direction", "", "XValue", NaN, "YValue", NaN), 0, 1);
+chartRows = localAppendRelationshipRows(chartRows, dlT, xVar, yVar, "DL");
+chartRows = localAppendRelationshipRows(chartRows, ulT, xVar, yVar, "UL");
+chartT = struct2table(chartRows);
+status = sixgr.visual.validatePlotData("relation", localColumnOrEmpty(chartT, "XValue"), localColumnOrEmpty(chartT, "YValue"));
+csvLogicalPath = localReportChartCSVLogicalPath(fileName);
+if istable(chartT) && ~isempty(chartT)
+    sixgr.visual.writeChartSourceCsv(char(ctx.RunFolder), csvLogicalPath, chartT);
+end
+if status.PlotRenderStatus ~= "rendered"
+    if localShouldEmitPlaceholderArtifacts(ctx)
+        sixgr.util.ensureFolder(imgDir);
+        pathOut = string(fullfile(imgDir, fileName));
+        localExportPlaceholderFigure(pathOut, plotTitle, "Plot suppressed: " + status.PlotSuppressionReason + ".");
+    end
+    return;
+end
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
@@ -3902,6 +3979,27 @@ title(ax, plotTitle);
 legend(ax, "Location", "best");
 pathOut = string(fullfile(imgDir, fileName));
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+end
+
+function rows = localAppendRelationshipRows(rows, T, xVar, yVar, label)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+[x, xAvailable] = localResolvedTrialMetric(T, xVar);
+[y, yAvailable] = localResolvedTrialMetric(T, yVar);
+if ~(xAvailable && yAvailable)
+    return;
+end
+mask = isfinite(x) & isfinite(y);
+if strcmpi(char(string(yVar)), "BER") || strcmpi(char(string(yVar)), "BLER")
+    mask = mask & y > 0;
+end
+if strcmpi(char(string(xVar)), "BER") || strcmpi(char(string(xVar)), "BLER")
+    mask = mask & x > 0;
+end
+for i = find(mask(:)).'
+    rows(end+1, 1) = struct("Direction", string(label), "XValue", double(x(i)), "YValue", double(y(i))); %#ok<AGROW>
+end
 end
 
 function made = localScatterTrialMetric(ax, T, xVar, yVar, label, color)
@@ -4736,6 +4834,13 @@ T = localBuildTrackingTraceTable(ctx);
 usableMask = localUsableTrackingTraceRows(T);
 if istable(T) && ~isempty(T) && any(usableMask)
     Tplot = T(usableMask, :);
+    traceStatus = sixgr.visual.validatePlotData("trace", (1:height(Tplot)).', ones(height(Tplot), 1));
+    if traceStatus.PlotRenderStatus ~= "rendered"
+        if localShouldEmitPlaceholderArtifacts(ctx)
+            localExportPlaceholderFigure(pathOut, "CFO/TO Tracking Traces", "Plot suppressed: " + traceStatus.PlotSuppressionReason + ".");
+        end
+        return;
+    end
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     tl = tiledlayout(fig, 2, 2, "Padding", "compact", "TileSpacing", "compact");
@@ -4807,6 +4912,13 @@ if localTruthCasePruned(ctx, "PRACH_Detection")
 end
 metric = localFiniteColumn(ctx.Tables.PRACH, "DetectionMetric");
 if ~isempty(metric)
+    traceStatus = sixgr.visual.validatePlotData("trace", (1:numel(metric)).', metric);
+    if traceStatus.PlotRenderStatus ~= "rendered"
+        if localShouldEmitPlaceholderArtifacts(ctx)
+            localExportPlaceholderFigure(pathOut, "PRACH Correlation Trace", "Plot suppressed: " + traceStatus.PlotSuppressionReason + ".");
+        end
+        return;
+    end
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
@@ -4826,6 +4938,13 @@ end
 
 function localPlotAIConfidenceTraceOrPlaceholder(pathOut, ctx)
 traceT = localBuildAIConfidenceTraceTable(ctx);
+status = sixgr.visual.validatePlotData("trace", (1:height(traceT)).', ones(height(traceT), 1));
+if status.PlotRenderStatus ~= "rendered"
+    if localShouldEmitPlaceholderArtifacts(ctx)
+        localExportPlaceholderFigure(pathOut, "AI Confidence Trace", "Plot suppressed: " + status.PlotSuppressionReason + ".");
+    end
+    return;
+end
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
@@ -6025,6 +6144,11 @@ sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localExportCDFFigure(pathOut, x, plotTitle, xLabel)
+status = sixgr.visual.validatePlotData("cdf", x, x);
+if status.PlotRenderStatus ~= "rendered"
+    localExportPlaceholderFigure(pathOut, plotTitle, "Plot suppressed: " + status.PlotSuppressionReason + ".");
+    return;
+end
 sixgr.util.ensureFolder(fileparts(pathOut));
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
@@ -6040,6 +6164,15 @@ sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
 function localExportLatencySemanticsCDFFigure(pathOut, series)
+sampleCount = 0;
+for i = 1:numel(series)
+    sampleCount = sampleCount + numel(double(series(i).Samples(:)));
+end
+status = sixgr.visual.validatePlotData("cdf", (1:sampleCount).', ones(sampleCount, 1));
+if status.PlotRenderStatus ~= "rendered"
+    localExportPlaceholderFigure(pathOut, "Latency Semantics CDF", "Plot suppressed: " + status.PlotSuppressionReason + ".");
+    return;
+end
 sixgr.util.ensureFolder(fileparts(pathOut));
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>

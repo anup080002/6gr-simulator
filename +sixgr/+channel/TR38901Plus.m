@@ -32,6 +32,9 @@ classdef TR38901Plus < handle
         PathlossExecutionBackend (1,1) string = ""
         PathlossTruthClassification (1,1) string = ""
         PathlossApproximationReason (1,1) string = ""
+        PathlossModelSource (1,1) string = ""
+        PathlossComplianceStatus (1,1) string = ""
+        FallbackUsedForPathloss (1,1) logical = false
 
         % ABG coefficients (used if PathlossModel="ABG")
         ABG struct
@@ -47,6 +50,15 @@ classdef TR38901Plus < handle
         % O2I model: "none" | "low" | "high" | "custom"
         O2IModel (1,1) string = "none"
         O2ICustom_dB (1,1) double = 0
+        O2IModelSource (1,1) string = ""
+        O2IComplianceStatus (1,1) string = ""
+        O2IComplianceReason (1,1) string = ""
+
+        LOSProbabilitySource (1,1) string = ""
+        LOSComplianceStatus (1,1) string = ""
+        LOSComplianceReason (1,1) string = ""
+
+        ChannelComplianceMode (1,1) string = "approximate_38901_plus"
 
         % Random stream (for LOS draw and shadowing)
         Stream
@@ -67,6 +79,8 @@ classdef TR38901Plus < handle
             obj.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", obj.PathlossEnabled));
             obj.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", obj.ShadowFadingEnabled));
             obj.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", obj.LOSEnabled));
+            obj.ChannelComplianceMode = string(localCanonicalStructGet(cfg, "channel.complianceMode", "channel.compliance.mode", ...
+                localDefaultChannelComplianceMode(cfg)));
             obj.O2IModel = string(sixgr.util.structGet(cfg, "channel.o2i.model", obj.O2IModel));
             obj.O2ICustom_dB = double(sixgr.util.structGet(cfg, "channel.o2i.custom_dB", obj.O2ICustom_dB));
 
@@ -101,6 +115,8 @@ classdef TR38901Plus < handle
                         obj.ShadowFadingEnabled = logical(val);
                     case "losenabled"
                         obj.LOSEnabled = logical(val);
+                    case {"channelcompliancemode","compliancemode"}
+                        obj.ChannelComplianceMode = string(val);
                     case "o2imodel"
                         obj.O2IModel = string(val);
                     case "o2icustom_db"
@@ -124,21 +140,30 @@ classdef TR38901Plus < handle
                 obj.Stream = RandStream("mt19937ar","Seed",double(seed));
             end
 
+            obj.ChannelComplianceMode = localNormalizeChannelComplianceMode(obj.ChannelComplianceMode);
             obj = obj.refreshPathlossTruthBoundary();
 
             localLogResolvedConfigOnce(cfg, obj);
         end
 
-        function p = losProbability(obj, d2d_m, scenarioName)
+        function [p, status] = losProbability(obj, d2d_m, scenarioName)
             if nargin < 3 || strlength(string(scenarioName))==0
                 scenarioName = obj.Scenario;
             end
-            p = sixgr.channel.LOSProbability(scenarioName, d2d_m);
+            [p, status] = sixgr.channel.LOSProbability(scenarioName, d2d_m);
+            obj.LOSProbabilitySource = string(status.Source);
+            obj.LOSComplianceStatus = string(status.ComplianceStatus);
+            obj.LOSComplianceReason = string(status.Reason);
+            if obj.ChannelComplianceMode == "strict_38901" && ~logical(status.StrictSupported)
+                error("TR38901Plus:StrictLOSUnsupported", ...
+                    "Strict 38.901 mode does not allow LOS probability fallback for scenario '%s'.", ...
+                    char(string(scenarioName)));
+            end
         end
 
         function los = drawLOS(obj, d2d_m, scenarioName)
             % Draw LOS/NLOS booleans using LOS probability
-            p = obj.losProbability(d2d_m, scenarioName);
+            [p, ~] = obj.losProbability(d2d_m, scenarioName);
             u = rand(obj.Stream, size(p));
             los = (u <= p);
         end
@@ -221,12 +246,18 @@ classdef TR38901Plus < handle
                     los = obj.drawLOS(d2d, opt.Scenario);
                 else
                     los = false(1,N);
+                    obj.LOSProbabilitySource = "los_disabled_by_config";
+                    obj.LOSComplianceStatus = "not_applicable_los_disabled";
+                    obj.LOSComplianceReason = "";
                 end
             else
                 los = opt.LOS;
                 if isscalar(los) && N > 1
                     los = repmat(los,1,N);
                 end
+                obj.LOSProbabilitySource = "runtime_metadata_override";
+                obj.LOSComplianceStatus = "runtime_provided_los_flags";
+                obj.LOSComplianceReason = "";
             end
             los = logical(double(los(:)).');
 
@@ -274,7 +305,15 @@ classdef TR38901Plus < handle
                 if isscalar(o2i) && N > 1
                     o2i = repmat(o2i, 1, N);
                 end
+                obj.O2IModelSource = "runtime_metadata_override";
+                obj.O2IComplianceStatus = "runtime_provided_o2i_loss";
+                obj.O2IComplianceReason = "";
             elseif opt.PathlossEnabled && any(indoor)
+                if obj.ChannelComplianceMode == "strict_38901"
+                    error("TR38901Plus:StrictO2IBlocked", ...
+                        "Strict 38.901 mode does not allow the active approximate O2I model '%s' for indoor receivers without explicit runtime O2I metadata.", ...
+                        char(obj.O2IModel));
+                end
                 if isempty(opt.IndoorDistance_m)
                     dIn = 10; % m
                 else
@@ -283,20 +322,43 @@ classdef TR38901Plus < handle
                 if isscalar(dIn) && N > 1
                     dIn = repmat(dIn,1,N);
                 end
+                o2iStatus = struct();
                 for k = 1:N
                     if indoor(k)
                         if lower(strtrim(obj.O2IModel)) == "custom"
                             o2i(k) = obj.O2ICustom_dB;
+                            o2iStatus = struct( ...
+                                "ModelSource", "configured_custom_o2i_loss", ...
+                                "ComplianceStatus", "configured_custom_o2i_loss_not_strict_38901", ...
+                                "Reason", "custom configured o2i loss is caller supplied and not a strict tr38901 building penetration model");
                         else
-                            o2i(k) = sixgr.channel.O2ILoss(obj.Fc_Hz, obj.O2IModel, ...
+                            [o2i(k), o2iStatus] = sixgr.channel.O2ILoss(obj.Fc_Hz, obj.O2IModel, ...
                                 "IndoorDistance_m", dIn(k), "Stream", obj.Stream);
                         end
                     end
+                end
+                if ~isempty(fieldnames(o2iStatus))
+                    obj.O2IModelSource = string(sixgr.util.structGet(o2iStatus, "ModelSource", ""));
+                    obj.O2IComplianceStatus = string(sixgr.util.structGet(o2iStatus, "ComplianceStatus", ""));
+                    obj.O2IComplianceReason = string(sixgr.util.structGet(o2iStatus, "Reason", ""));
+                end
+            else
+                if any(indoor)
+                    obj.O2IModelSource = "o2i_disabled_for_indoor_links";
+                    obj.O2IComplianceStatus = "o2i_disabled_for_indoor_links";
+                    obj.O2IComplianceReason = "indoor receivers were present but no o2i model or explicit o2i loss was active";
+                else
+                    obj.O2IModelSource = "not_applicable_outdoor_only";
+                    obj.O2IComplianceStatus = "not_applicable_outdoor_only";
+                    obj.O2IComplianceReason = "";
                 end
             end
             o2i = double(o2i(:)).';
             if ~opt.PathlossEnabled
                 o2i(:) = 0;
+                obj.O2IModelSource = "pathloss_disabled";
+                obj.O2IComplianceStatus = "not_applicable_pathloss_disabled";
+                obj.O2IComplianceReason = "";
             end
 
             pl_dB = plBase + sf + o2i;
@@ -311,6 +373,19 @@ classdef TR38901Plus < handle
             ex.scenario = opt.Scenario;
             ex.fc_Hz = obj.Fc_Hz;
             ex.model = obj.PathlossModel;
+            ex.channelComplianceMode = obj.ChannelComplianceMode;
+            ex.pathlossExecutionBackend = obj.PathlossExecutionBackend;
+            ex.pathlossTruthClassification = obj.PathlossTruthClassification;
+            ex.pathlossApproximationReason = obj.PathlossApproximationReason;
+            ex.pathlossModelSource = obj.PathlossModelSource;
+            ex.pathlossComplianceStatus = obj.PathlossComplianceStatus;
+            ex.fallbackUsedForPathloss = obj.FallbackUsedForPathloss;
+            ex.o2iModelSource = obj.O2IModelSource;
+            ex.o2iComplianceStatus = obj.O2IComplianceStatus;
+            ex.o2iComplianceReason = obj.O2IComplianceReason;
+            ex.losProbabilitySource = obj.LOSProbabilitySource;
+            ex.losComplianceStatus = obj.LOSComplianceStatus;
+            ex.losComplianceReason = obj.LOSComplianceReason;
             ex.pathlossEnabled = opt.PathlossEnabled;
             ex.shadowFadingEnabled = opt.ShadowFadingEnabled;
             ex.losEnabled = opt.LOSEnabled;
@@ -323,24 +398,49 @@ classdef TR38901Plus < handle
             obj.PathlossExecutionBackend = "";
             obj.PathlossTruthClassification = "";
             obj.PathlossApproximationReason = "";
+            obj.PathlossModelSource = "";
+            obj.PathlossComplianceStatus = "";
+            obj.FallbackUsedForPathloss = false;
 
             if any(model == ["nrpathloss","nr"])
                 if exist("nrPathLossConfig","class") == 8 && exist("nrPathLoss","file") == 2
                     obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
                     obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
+                    obj.PathlossModelSource = "nrpathloss_runtime_backend";
+                    obj.PathlossComplianceStatus = "strict_38901_runtime";
                 else
                     obj.PathlossExecutionBackend = "free_space_path_loss_fallback";
                     obj.PathlossTruthClassification = "approximate_fallback_not_tr38901_pathloss";
                     obj.PathlossApproximationReason = "nrpathloss_runtime_backend_unavailable_in_current_matlab_environment";
+                    obj.PathlossModelSource = "fallback_fspl_from_missing_nrpathloss_runtime";
+                    obj.PathlossComplianceStatus = "fallback_fspl_not_strict_38901";
+                    obj.FallbackUsedForPathloss = true;
                 end
             elseif any(model == ["abg","tr38901abg","fr3abg"])
                 obj.PathlossExecutionBackend = "abg_large_scale_model";
                 obj.PathlossTruthClassification = "approximate_abg_large_scale_pathloss_model";
                 obj.PathlossApproximationReason = "abg_pathloss_is_a_configured_large_scale_abstraction_not_nrpathloss_runtime";
+                obj.PathlossModelSource = "configured_abg_large_scale_model";
+                obj.PathlossComplianceStatus = "configured_abg_not_strict_38901";
             else
                 obj.PathlossExecutionBackend = "free_space_path_loss_shortcut";
                 obj.PathlossTruthClassification = "approximate_non_tr38901_pathloss_shortcut";
                 obj.PathlossApproximationReason = "configured_pathloss_model_is_not_nrpathloss_or_abg";
+                obj.PathlossModelSource = "configured_free_space_shortcut";
+                obj.PathlossComplianceStatus = "free_space_shortcut_not_strict_38901";
+                obj.FallbackUsedForPathloss = true;
+            end
+
+            if obj.ChannelComplianceMode == "strict_38901"
+                if ~any(model == ["nrpathloss","nr"])
+                    error("TR38901Plus:StrictPathlossModel", ...
+                        "Strict 38.901 mode requires PathlossModel='nrPathLoss'; got '%s'.", ...
+                        char(obj.PathlossModel));
+                end
+                if obj.FallbackUsedForPathloss
+                    error("TR38901Plus:StrictNrPathLossUnavailable", ...
+                        "Strict 38.901 mode requires nrPathLoss runtime support; fallback pathloss is not allowed.");
+                end
             end
         end
 
@@ -354,6 +454,13 @@ classdef TR38901Plus < handle
                 obj.PathlossExecutionBackend = "free_space_path_loss_fallback";
                 obj.PathlossTruthClassification = "approximate_fallback_not_tr38901_pathloss";
                 obj.PathlossApproximationReason = "nrpathloss_runtime_backend_unavailable_in_current_matlab_environment";
+                obj.PathlossModelSource = "fallback_fspl_from_missing_nrpathloss_runtime";
+                obj.PathlossComplianceStatus = "fallback_fspl_not_strict_38901";
+                obj.FallbackUsedForPathloss = true;
+                if obj.ChannelComplianceMode == "strict_38901"
+                    error("TR38901Plus:StrictNrPathLossUnavailable", ...
+                        "Strict 38.901 mode requires nrPathLoss runtime support; fallback pathloss is not allowed.");
+                end
                 c = 299792458;
                 lambda = c / obj.Fc_Hz;
                 d3d = sqrt(sum((txPos_m - rxPos_m).^2,1));
@@ -364,6 +471,9 @@ classdef TR38901Plus < handle
             obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
             obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
             obj.PathlossApproximationReason = "";
+            obj.PathlossModelSource = "nrpathloss_runtime_backend";
+            obj.PathlossComplianceStatus = "strict_38901_runtime";
+            obj.FallbackUsedForPathloss = false;
 
             % Try to configure nrPathLossConfig; keep minimal to avoid version issues.
             try
@@ -407,6 +517,28 @@ if isempty(value)
 end
 if isempty(value)
     value = sixgr.util.structGet(cfg, "scenario.name", defaultValue);
+end
+end
+
+function mode = localDefaultChannelComplianceMode(cfg)
+if logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+    mode = "strict_38901";
+else
+    mode = "approximate_38901_plus";
+end
+end
+
+function mode = localNormalizeChannelComplianceMode(value)
+token = lower(strtrim(char(string(value))));
+switch token
+    case {"", "approximate", "approximate_38901", "approximate_38901_plus", "tr38901_plus"}
+        mode = "approximate_38901_plus";
+    case {"strict", "strict_38901", "tr38901_strict"}
+        mode = "strict_38901";
+    case {"legacy", "legacy_fallback", "fallback"}
+        mode = "legacy_fallback";
+    otherwise
+        mode = string(value);
 end
 end
 

@@ -79,6 +79,10 @@ end
 
 % ---- 2) Timing estimate (offset to symbol preceding PSS) ----
 [timingOffset, tInfo] = sixgr.phy.sync.timingEstimate(rxF, NID2, blockPattern, sampleRateHz);
+timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
+    "EstimateUsed", isfinite(double(timingOffset)), ...
+    "ApplicationMode", "positive_crop_only", ...
+    "Source", "nrTimingEstimate_pss");
 
 % ---- 3) OFDM demodulate and SSS correlation for NID1 ----
 scsSSB_kHz = localSSBSubcarrierSpacing_kHz(blockPattern);
@@ -87,13 +91,12 @@ carrierSSB.NSizeGrid = 20;
 carrierSSB.SubcarrierSpacing = scsSSB_kHz;
 carrierSSB.CyclicPrefix = 'normal';
 
-% Guard timing offset
-timingOffset = max(0, round(double(timingOffset)));
-if timingOffset >= size(rxF,1)
-    timingOffset = 0;
+appliedTiming = double(timingResolution.AppliedCorrection_samples);
+if appliedTiming >= size(rxF,1)
+    appliedTiming = 0;
 end
 
-rxCut = rxF(1+timingOffset:end,:);
+rxCut = rxF(1+appliedTiming:end,:);
 
 % Demodulate a bit more than needed; then take symbols 2:5 as in MathWorks example
 try
@@ -138,6 +141,11 @@ info.SSSMetric = sssMetric;
 info.OFDMInfo = ofdmInfo;
 info.Freq = fInfo;
 info.Timing = tInfo;
+info.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+info.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+info.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+info.TimingEstimateStatus = char(string(timingResolution.Status));
+info.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 info.Debug = p.Results.Debug;
 
 if p.Results.Debug

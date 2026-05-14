@@ -523,8 +523,8 @@ confidenceValue = localBenchmarkConfidence(descriptor, scfg);
 
 for k = 1:nObs
     [tx, ~] = sixgr.phy.ul.SRS_Tx(cfg);
-    rxWave = localAddAwgnOnly(tx.Waveform, snr_dB);
-    rx = sixgr.phy.ul.SRS_Rx(rxWave, cfg, "Carrier", tx.Carrier, "SRS", tx.SRS);
+    [rxWave, nVar] = localAddAwgnOnly(tx.Waveform, snr_dB);
+    rx = sixgr.phy.ul.SRS_Rx(rxWave, cfg, "Carrier", tx.Carrier, "SRS", tx.SRS, "NoiseVar", nVar);
     Hbase = rx.Hest;
     baselineNmse(k) = localUnitChannelNMSE(Hbase);
     if aiEnabled
@@ -812,8 +812,13 @@ storeInfo = sixgr.db.activateArtifactStore(runFolder, cfg, struct( ...
     "Profile", localResolveRunRowProfileName(scfg), ...
     "LogicalRunFolder", publicRunFolder, ...
     "ScenarioConfigStruct", scfg.toStruct(), ...
-    "ScenarioSourceFiles", string(scfg.SourceFiles(:))));
+    "ScenarioSourceFiles", string(scfg.SourceFiles(:)), ...
+    "ScenarioConfigSourceKind", localResolveScenarioSourceKind(scfg)));
 cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
+sixgr.config.publishConfigApplicationEvidence("reset", struct( ...
+    "RunId", double(sixgr.util.structGet(storeInfo, "RunID", NaN)), ...
+    "ScenarioID", string(scfg.ScenarioID), ...
+    "RunTag", string(runTag)));
 if logical(sixgr.util.structGet(storeInfo, "Active", false))
     sixgr.db.markRunStatus("running", struct("started_utc", runStartUTC));
 end
@@ -822,13 +827,25 @@ localDBLog("INFO", "Artifact store active=%d backend=%s schema=%s", ...
     char(string(sixgr.util.structGet(storeInfo, "Backend", ""))), ...
     char(string(sixgr.util.structGet(storeInfo, "DatabaseSchema", ""))));
 
+profile = lower(string(scfg.get("scenario.runner_profile")));
+result = struct();
+manifest = struct();
+runtimeSummary = struct();
+environmentSummary = struct();
+reportBundle = struct();
+configOwnership = struct();
+scenarioStatus = struct();
+truthArtifactScan = struct();
+optionalArtifactIssues = strings(0, 1);
+profilerArtifacts = struct();
+truthGatedCompletionPublished = false;
+
 try
     localDBLog("INFO", "Writing resolved snapshots.");
     localWriteResolvedSnapshots(layout, scfg);
     localDBLog("INFO", "Exporting live geometry artifacts.");
     localExportLiveGeometryArtifacts(layout, scfg, cfg);
 
-    profile = lower(string(scfg.get("scenario.runner_profile")));
     localDBLog("INFO", "Executing runner profile=%s.", char(profile));
     switch profile
         case "waveform_bundle"
@@ -875,7 +892,7 @@ try
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Writing scenario manifest.");
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
-    localDBLog("INFO", "Exporting config-ownership and hardcoding audit artifacts.");
+    localDBLog("INFO", "Exporting initial config-ownership and hardcoding audit artifacts.");
     configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
     preTruthScenarioStatus = scenarioStatus;
     scenarioStatus = localApplyRuntimeTruthContract(scenarioStatus, result, scfg, cfg, runFolder);
@@ -901,6 +918,9 @@ try
     outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
     reportBundle.OutputCoverageArtifacts = outputCoverage;
     reportBundle.Inventory = sixgr.util.structGet(outputCoverage, "UpdatedArtifactInventory", sixgr.util.structGet(reportBundle, "Inventory", table()));
+    localDBLog("INFO", "Refreshing config-ownership artifacts after final runtime/report exports.");
+    configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
+    reportBundle.ConfigOwnershipArtifacts = configOwnership;
     scenarioStatus = localApplyRuntimeTruthContract(preTruthScenarioStatus, result, scfg, cfg, runFolder);
     result = localApplyScenarioStatus(result, scenarioStatus);
     localDBLog("INFO", "Runtime truth contract re-evaluated after final artifact exports: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
@@ -914,8 +934,7 @@ try
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Rewriting scenario manifest with final artifact truth-gated status.");
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
-    optionalArtifactIssues = strings(0, 1);
-    profilerArtifacts = struct();
+    truthGatedCompletionPublished = true;
     localDBLog("INFO", "Writing artifact manifest.");
     manifest.ArtifactManifestPath = char(localWriteArtifactManifest(runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
@@ -979,18 +998,8 @@ try
             toc(runTimer), double(scenarioStatus.RequiredFailureCount), double(scenarioStatus.StrictTruthFailureCount));
     end
 
-    execOut = struct();
-    execOut.Ok = logical(scenarioStatus.ResultOk);
-    execOut.Result = result;
-    execOut.Profile = string(profile);
-    execOut.Manifest = manifest;
-    execOut.RuntimeSummary = runtimeSummary;
-    execOut.EnvironmentSummary = environmentSummary;
-    execOut.ReportBundle = reportBundle;
-    execOut.ConfigOwnershipArtifacts = configOwnership;
-    execOut.ScenarioStatus = scenarioStatus;
-    execOut.ProfilerArtifacts = profilerArtifacts;
-    execOut.OptionalArtifactIssues = optionalArtifactIssues;
+    execOut = localBuildExecOut(profile, result, manifest, runtimeSummary, environmentSummary, ...
+        reportBundle, configOwnership, scenarioStatus, profilerArtifacts, optionalArtifactIssues);
 catch ME
     localDBLog("ERROR", "Run failed: %s | %s", char(string(ME.identifier)), char(string(ME.message)));
     try
@@ -1008,6 +1017,24 @@ catch ME
             "MimeType", "text/plain; charset=UTF-8");
     catch
     end
+    if truthGatedCompletionPublished && ...
+            sixgr.lls6g.runners.shouldPreserveCompletedRunOnPostRunFailure(scenarioStatus)
+        lateIssue = "late_postrun_exception:" + string(ME.identifier);
+        combinedIssues = [optionalArtifactIssues(:); lateIssue];
+        localDBLog("WARN", ...
+            "Late post-run failure occurred after truthful completion; preserving completed run and skipping failed-run recovery: %s | %s", ...
+            char(string(ME.identifier)), char(string(ME.message)));
+        payload = localBuildTerminalStatusPayload(scenarioStatus, ...
+            "postrun_optional_failure_after_completed_truth", combinedIssues);
+        payload.postrun_optional_failure = true;
+        payload.postrun_optional_failure_identifier = string(ME.identifier);
+        payload.postrun_optional_failure_message = string(ME.message);
+        payload.postrun_optional_failure_recovery_skipped = true;
+        localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), payload);
+        execOut = localBuildExecOut(profile, result, manifest, runtimeSummary, environmentSummary, ...
+            reportBundle, configOwnership, scenarioStatus, profilerArtifacts, combinedIssues);
+        return;
+    end
     try
         localDBLog("INFO", "Recovering truthful report artifacts from persisted raw evidence after failure.");
         recovery = sixgr.truth.recoverLLSRunArtifacts(runFolder, scfg.toStruct(), ...
@@ -1019,6 +1046,7 @@ catch ME
             "SourceFiles", string(scfg.SourceFiles(:)), ...
             "ConfigPath", string(scfg.ConfigPath), ...
             "ConfigHash", string(scfg.ConfigHash));
+        sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
         localDBLog("INFO", "Recovered failed-run artifacts: scenario=%s profile=%s truthOk=%d", ...
             char(string(sixgr.util.structGet(recovery, "ScenarioID", scfg.ScenarioID))), ...
             char(string(sixgr.util.structGet(recovery, "RunnerProfile", ""))), ...
@@ -1049,6 +1077,22 @@ catch ME
     end
     rethrow(ME);
 end
+end
+
+function execOut = localBuildExecOut(profile, result, manifest, runtimeSummary, environmentSummary, ...
+    reportBundle, configOwnership, scenarioStatus, profilerArtifacts, optionalArtifactIssues)
+execOut = struct();
+execOut.Ok = logical(sixgr.util.structGet(scenarioStatus, "ResultOk", sixgr.util.structGet(result, "Ok", false)));
+execOut.Result = result;
+execOut.Profile = string(profile);
+execOut.Manifest = manifest;
+execOut.RuntimeSummary = runtimeSummary;
+execOut.EnvironmentSummary = environmentSummary;
+execOut.ReportBundle = reportBundle;
+execOut.ConfigOwnershipArtifacts = configOwnership;
+execOut.ScenarioStatus = scenarioStatus;
+execOut.ProfilerArtifacts = profilerArtifacts;
+execOut.OptionalArtifactIssues = optionalArtifactIssues;
 end
 
 function profilerCfg = localResolveProfilerConfig(scfg)
@@ -1317,6 +1361,20 @@ end
 srcFiles = arrayfun(@(p)localPortablePath(p), string(scfg.SourceFiles(:)));
 srcT = table(srcFiles, 'VariableNames', {'SourceConfigFile'});
 sixgr.util.csvWriteTable(fullfile(metaDir, "scenario_source_chain.csv"), srcT);
+end
+
+function kind = localResolveScenarioSourceKind(scfg)
+resolved = scfg.toStruct();
+kind = string(sixgr.util.structGet(resolved, "SourceKind", ""));
+if strlength(strtrim(kind)) == 0
+    kind = string(sixgr.util.structGet(resolved, "meta.SourceKind", ""));
+end
+if strlength(strtrim(kind)) == 0
+    kind = string(sixgr.util.structGet(resolved, "config_inheritance.provenance.source_kind", ""));
+end
+if strlength(strtrim(kind)) == 0
+    kind = "scenario_config_file";
+end
 end
 
 function localExportLiveGeometryArtifacts(layout, scfg, cfg)
@@ -2297,7 +2355,7 @@ function [y, nVar] = localAddAwgn(x, snr_dB)
 [y, nVar] = sixgr.util.addAwgnComplex(x, snr_dB);
 end
 
-function y = localAddAwgnOnly(x, snr_dB)
+function [y, nVar] = localAddAwgnOnly(x, snr_dB)
 snrLin = 10.^(snr_dB/10);
 sigPow = max(mean(abs(x(:)).^2), 1);
 nVar = sigPow / max(snrLin, eps);

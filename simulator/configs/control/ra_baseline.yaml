@@ -6,7 +6,6 @@
     "carrier_frequency_hz": 4000000000,
     "carrier_scs_khz": 30,
     "n_size_grid": 273,
-    "prach_format": "A2",
     "prach_sequence_family": "zadoff_chu_baseline",
     "preamble_length_mode": "short",
     "preamble_count": 64,

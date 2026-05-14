@@ -156,6 +156,9 @@ frame_timing:
   symbols_per_slot: 14
   slots_per_frame: 20
   tdd_pattern: DDDSU
+  special_slot_downlink_symbols: 12
+  ul_dl_guard_symbols: 1
+  special_slot_uplink_symbols: 1
 
 resource_grid:
   num_rbs: 273

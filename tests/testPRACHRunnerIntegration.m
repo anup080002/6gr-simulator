@@ -39,6 +39,10 @@ reportPath = fullfile(runFolder, "reports", "csv", "initial_access_random_access
 summaryBySNRPath = fullfile(runFolder, "reports", "csv", "prach_summary_by_snr.csv");
 corrPath = fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv");
 rawTrialPath = fullfile(runFolder, "control", "csv", "prach_detection_trials.csv");
+evidencePath = fullfile(runFolder, "reports", "csv", "runtime_config_application_evidence.csv");
+bindingPath = fullfile(runFolder, "reports", "csv", "parameter_binding_matrix.csv");
+surfacePath = fullfile(runFolder, "reports", "csv", "browser_config_surface_matrix.csv");
+featureIndexPath = fullfile(runFolder, "reports", "csv", "feature_parameter_index.csv");
 
 assert(exist(ctrlPath, "file") == 2, "Runner must export control/csv/prach_trials.csv.");
 assert(exist(airPath, "file") == 2, "Runner must export air_interface/csv/prach_trials.csv.");
@@ -46,18 +50,27 @@ assert(exist(reportPath, "file") == 2, "Runner must export reports/csv/initial_a
 assert(exist(summaryBySNRPath, "file") == 2, "Runner must export reports/csv/prach_summary_by_snr.csv.");
 assert(exist(corrPath, "file") == 2, "Runner must export reports/csv/prach_correlation_traces.csv.");
 assert(exist(rawTrialPath, "file") == 2, "Runner must preserve control/csv/prach_detection_trials.csv.");
+assert(exist(evidencePath, "file") == 2, "Runner must export reports/csv/runtime_config_application_evidence.csv.");
+assert(exist(bindingPath, "file") == 2, "Runner must export reports/csv/parameter_binding_matrix.csv.");
+assert(exist(surfacePath, "file") == 2, "Runner must export reports/csv/browser_config_surface_matrix.csv.");
+assert(exist(featureIndexPath, "file") == 2, "Runner must export reports/csv/feature_parameter_index.csv.");
 
 ctrlT = readtable(ctrlPath, "VariableNamingRule", "preserve");
 airT = readtable(airPath, "VariableNamingRule", "preserve");
 reportT = readtable(reportPath, "VariableNamingRule", "preserve");
 summaryBySNRT = readtable(summaryBySNRPath, "VariableNamingRule", "preserve");
 corrT = readtable(corrPath, "VariableNamingRule", "preserve");
+evidenceT = readtable(evidencePath, "VariableNamingRule", "preserve");
+bindingT = readtable(bindingPath, "VariableNamingRule", "preserve");
+surfaceT = readtable(surfacePath, "VariableNamingRule", "preserve");
+featureIndexT = readtable(featureIndexPath, "VariableNamingRule", "preserve");
 
 assert(~isempty(ctrlT), "PRACH control trial export must not be empty.");
 assert(~isempty(airT), "PRACH air-interface trial export must not be empty.");
 assert(~isempty(reportT), "PRACH report summary export must not be empty.");
 assert(~isempty(summaryBySNRT), "PRACH summary-by-SNR export must not be empty.");
 assert(~isempty(corrT), "PRACH correlation trace export must not be empty.");
+assert(~isempty(evidenceT), "PRACH runner must publish real runtime config-application evidence.");
 assert(all(ismember(["Status","ComputeLatency_ms","AirInterfaceObservation_ms","AcquisitionTime_ms", ...
     "CRCPass","TrueTimingOffset_samples","DetectionMetric","FalseAlarmFlag","CollisionFlag"], ...
     string(ctrlT.Properties.VariableNames))), ...
@@ -70,6 +83,20 @@ assert(all(ismember(["DetectionProbability","FalseAlarmProbability","MissDetecti
     "PRACH summary-by-SNR export must expose the core PRACH KPIs.");
 assert(all(ismember(["DetectionMetric","Status","SourceArtifact"], string(corrT.Properties.VariableNames))), ...
     "PRACH correlation trace export must expose plot-ready trace columns.");
+assert(any(strcmp(string(evidenceT.ParameterId), "random_access.configuration_index") & ...
+    strcmp(string(evidenceT.ConsumerFunction), "sixgr.rach.PRACHConfig")), ...
+    "PRACH runtime evidence must prove configuration_index was applied by PRACHConfig.");
+assert(any(strcmp(string(evidenceT.ParameterId), "random_access.detection_threshold") & ...
+    strcmp(string(evidenceT.EvidenceStatus), "applied_to_runtime_object")), ...
+    "PRACH runtime evidence must prove detection_threshold was applied by the active detector path.");
+assert(any(strcmp(string(bindingT.ParameterId), "random_access.configuration_index") & ...
+    strcmp(string(bindingT.FinalBindingStatus), "browser_to_runtime_applied")), ...
+    "PRACH binding matrix must mark configuration_index as runtime applied.");
+assert(any(strcmp(string(surfaceT.ParameterId), "random_access.configuration_index") & ...
+    strcmp(string(surfaceT.ApplicationStatus), "applied_to_runtime_object")), ...
+    "Browser surface matrix must expose PRACH configuration_index as runtime applied.");
+assert(any(strcmp(string(featureIndexT.FeatureFamily), "Random_Access_PRACH")), ...
+    "Feature index must include the PRACH family.");
 
 ok = true;
 end

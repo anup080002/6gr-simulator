@@ -34,6 +34,7 @@ layout.profileName = prof.name;
 layout.layoutType = prof.layoutType;
 layout.area_m = prof.area_m;
 layout.wraparoundEnabled = prof.wraparoundEnabled;
+layout.wraparoundMode = string(sixgr.util.structGet(prof, "wraparoundMode", "disabled"));
 layout.isd_m = prof.isd_m;
 layout.nSites = prof.nSites;
 layout.nSectors = prof.nSectors;
@@ -55,6 +56,11 @@ sitePos = [siteXY, bsH * ones(nSites,1)];
 layout.sites = struct();
 layout.sites.pos_m = sitePos;
 layout.sites.id = (1:nSites).';
+layout.lattice = struct();
+layout.lattice.vectors_m = zeros(0,2);
+if contains(lower(string(prof.layoutType)), "hex")
+    layout.lattice.vectors_m = [prof.isd_m 0; 0.5 * prof.isd_m (sqrt(3)/2) * prof.isd_m];
+end
 
 % Sectorization: create TRxP per sector (co-located at site)
 azOff = double(prof.sectorization.azimOffsets_deg(:).');

@@ -119,6 +119,7 @@ trialEVM = NaN(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
+trialMeasuredTrialSINR = NaN(numFrames,1);
 trialMeasuredSINRSource = strings(numFrames,1);
 trialReceiverHestSINR = NaN(numFrames,1);
 trialReceiverHestSINRSource = strings(numFrames,1);
@@ -152,6 +153,10 @@ trialCSIPayloadHex = strings(numFrames,1);
 trialGain = NaN(numFrames,1);
 trialNoise = NaN(numFrames,1);
 trialTiming = NaN(numFrames,1);
+trialAppliedTimingCorrection = NaN(numFrames,1);
+trialTimingEstimateApplicationPolicy = strings(numFrames,1);
+trialTimingEstimateStatus = strings(numFrames,1);
+trialTimingEstimateWasClipped = false(numFrames,1);
 trialConfiguredSNR = snr_dB * ones(numFrames,1);
 trialAppliedAWGNSNR = NaN(numFrames,1);
 trialAppliedLargeScaleGain = NaN(numFrames,1);
@@ -161,6 +166,16 @@ trialAppliedPathloss = NaN(numFrames,1);
 trialAppliedShadow = NaN(numFrames,1);
 trialAppliedO2I = NaN(numFrames,1);
 trialAppliedLargeScaleGainSource = strings(numFrames,1);
+trialChannelComplianceMode = strings(numFrames,1);
+trialPathlossModelSource = strings(numFrames,1);
+trialPathlossComplianceStatus = strings(numFrames,1);
+trialFallbackUsedForPathloss = false(numFrames,1);
+trialO2IModelSource = strings(numFrames,1);
+trialO2IComplianceStatus = strings(numFrames,1);
+trialO2IComplianceReason = strings(numFrames,1);
+trialLOSProbabilitySource = strings(numFrames,1);
+trialLOSComplianceStatus = strings(numFrames,1);
+trialLOSComplianceReason = strings(numFrames,1);
 trialIQImbalanceConfigured = false(numFrames,1);
 trialIQImbalanceApplied = false(numFrames,1);
 trialIQImbalanceModel = strings(numFrames,1);
@@ -479,7 +494,16 @@ for n = 1:numFrames
             tx.Waveform, rxWave, localResolveSampleRate(tx, txInfo));
 
         trialTiming(n) = double(sixgr.util.structGet(replay, "EstimatedTimingOffset_PreCorrection_samples", ...
-            sixgr.util.structGet(rx, "TimingOffset", NaN)));
+            sixgr.util.structGet(rx, "RawTimingEstimate_samples", ...
+            sixgr.util.structGet(rx, "TimingOffset", NaN))));
+        trialAppliedTimingCorrection(n) = double(sixgr.util.structGet(replay, "AppliedTimingCorrection_samples", ...
+            sixgr.util.structGet(rx, "AppliedTimingCorrection_samples", NaN)));
+        trialTimingEstimateApplicationPolicy(n) = string(sixgr.util.structGet(replay, "TimingEstimateApplicationPolicy", ...
+            sixgr.util.structGet(rx, "TimingEstimateApplicationPolicy", "")));
+        trialTimingEstimateStatus(n) = string(sixgr.util.structGet(replay, "TimingEstimateStatus", ...
+            sixgr.util.structGet(rx, "TimingEstimateStatus", "")));
+        trialTimingEstimateWasClipped(n) = logical(sixgr.util.structGet(replay, "TimingEstimateWasClipped", ...
+            sixgr.util.structGet(rx, "TimingEstimateWasClipped", false)));
         trialNoise(n) = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", snr_dB));
@@ -490,6 +514,16 @@ for n = 1:numFrames
         trialAppliedShadow(n) = double(sixgr.util.structGet(replay, "AppliedShadowFading_dB", NaN));
         trialAppliedO2I(n) = double(sixgr.util.structGet(replay, "AppliedO2I_dB", NaN));
         trialAppliedLargeScaleGainSource(n) = string(sixgr.util.structGet(replay, "AppliedLargeScaleGainSource", ""));
+        trialChannelComplianceMode(n) = string(sixgr.util.structGet(replay, "ChannelComplianceMode", ""));
+        trialPathlossModelSource(n) = string(sixgr.util.structGet(replay, "PathlossModelSource", ""));
+        trialPathlossComplianceStatus(n) = string(sixgr.util.structGet(replay, "PathlossComplianceStatus", ""));
+        trialFallbackUsedForPathloss(n) = logical(sixgr.util.structGet(replay, "FallbackUsedForPathloss", false));
+        trialO2IModelSource(n) = string(sixgr.util.structGet(replay, "O2IModelSource", ""));
+        trialO2IComplianceStatus(n) = string(sixgr.util.structGet(replay, "O2IComplianceStatus", ""));
+        trialO2IComplianceReason(n) = string(sixgr.util.structGet(replay, "O2IComplianceReason", ""));
+        trialLOSProbabilitySource(n) = string(sixgr.util.structGet(replay, "LOSProbabilitySource", ""));
+        trialLOSComplianceStatus(n) = string(sixgr.util.structGet(replay, "LOSComplianceStatus", ""));
+        trialLOSComplianceReason(n) = string(sixgr.util.structGet(replay, "LOSComplianceReason", ""));
         trialIQImbalanceConfigured(n) = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
         trialIQImbalanceApplied(n) = logical(sixgr.util.structGet(replay, "IQImbalanceApplied", false));
         trialIQImbalanceModel(n) = string(sixgr.util.structGet(replay, "IQImbalanceModel", ""));
@@ -541,8 +575,9 @@ for n = 1:numFrames
         trialNMSE(n) = metrics.NMSE_dB;
         trialDet(n) = metrics.DetectionMetric;
         trialSINR(n) = metrics.SINR_dB;
+        trialMeasuredTrialSINR(n) = metrics.SINR_dB;
         trialReceiverHestSINR(n) = metrics.SINR_dB;
-        if isfinite(trialSINR(n))
+        if isfinite(trialMeasuredTrialSINR(n))
             sinrSource = string(metrics.SINRSource);
             if strlength(strtrim(sinrSource)) == 0
                 sinrSource = "receiver_hest_reference_signal_measurement";
@@ -559,8 +594,8 @@ for n = 1:numFrames
         if logical(csirsRow.RuntimeEventObserved)
             csirsRows(end+1, 1) = csirsRow; %#ok<AGROW>
         end
-        trialCQI(n) = metrics.CQI;
-        if isfinite(trialCQI(n)) && trialCQI(n) >= 0
+        trialCQI(n) = double(sixgr.util.normalizeReportedCQI(metrics.CQI));
+        if isfinite(trialCQI(n))
             [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
             trialCQIDerivedMCS(n) = double(cqiMCS);
             trialCQIDerivedCodeRate(n) = double(cqiRate);
@@ -628,22 +663,11 @@ for n = 1:numFrames
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
         if ~isfinite(trialSINR(n)) && isfinite(trialDecoderTruthProxySINR(n))
             trialSINR(n) = double(trialDecoderTruthProxySINR(n));
-            trialMeasuredSINRSource(n) = string(localSafeCharToken( ...
-                sixgr.util.structGet(decoderTruthProxyMeta, "Source", "post_equalization_evm_proxy_fallback")));
             trialSINRValueRole(n) = "derived_proxy";
-            trialSINRSource(n) = trialMeasuredSINRSource(n);
+            trialSINRSource(n) = string(localSafeCharToken( ...
+                sixgr.util.structGet(decoderTruthProxyMeta, "Source", "post_equalization_evm_proxy")));
         end
-        if ~(isfinite(trialCQI(n)) && trialCQI(n) >= 0)
-            cqiInputSINR = trialSINR(n);
-            if ~isfinite(cqiInputSINR)
-                cqiInputSINR = trialLargeScaleSINR(n);
-            end
-            if isfinite(cqiInputSINR)
-                cqiFeedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", cqiInputSINR), cfgFrame, "DL");
-                trialCQI(n) = double(sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN));
-            end
-        end
-        if isfinite(trialCQI(n)) && trialCQI(n) >= 0 && ~isfinite(trialCQIDerivedMCS(n))
+        if isfinite(trialCQI(n)) && ~isfinite(trialCQIDerivedMCS(n))
             [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
             trialCQIDerivedMCS(n) = double(cqiMCS);
             trialCQIDerivedCodeRate(n) = double(cqiRate);
@@ -983,7 +1007,7 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
         T.DecoderTruthProxySINRSource = trialDecoderTruthProxySINRSource(idx);
         T.SINRValueRole = trialSINRValueRole(idx);
         T.SINRSource = trialSINRSource(idx);
-        T.MeasuredTrialSINR_dB = trialSINR(idx);
+        T.MeasuredTrialSINR_dB = trialMeasuredTrialSINR(idx);
         T.MeasuredTrialSINRSource = trialMeasuredSINRSource(idx);
         T.LargeScaleSINR_dB = trialLargeScaleSINR(idx);
         T.LargeScaleSINRSource = trialLargeScaleSINRSource(idx);
@@ -998,8 +1022,22 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
         T.AppliedShadowFading_dB = trialAppliedShadow(idx);
         T.AppliedO2I_dB = trialAppliedO2I(idx);
         T.AppliedLargeScaleGainSource = trialAppliedLargeScaleGainSource(idx);
+        T.ChannelComplianceMode = trialChannelComplianceMode(idx);
+        T.PathlossModelSource = trialPathlossModelSource(idx);
+        T.PathlossComplianceStatus = trialPathlossComplianceStatus(idx);
+        T.FallbackUsedForPathloss = trialFallbackUsedForPathloss(idx);
+        T.O2IModelSource = trialO2IModelSource(idx);
+        T.O2IComplianceStatus = trialO2IComplianceStatus(idx);
+        T.O2IComplianceReason = trialO2IComplianceReason(idx);
+        T.LOSProbabilitySource = trialLOSProbabilitySource(idx);
+        T.LOSComplianceStatus = trialLOSComplianceStatus(idx);
+        T.LOSComplianceReason = trialLOSComplianceReason(idx);
         T.TimingEstimateUsed = trialTimingEstimateUsed(idx);
         T.UseIdealTimingSync = trialUseIdealTimingSync(idx);
+        T.AppliedTimingCorrection_samples = trialAppliedTimingCorrection(idx);
+        T.TimingEstimateApplicationPolicy = trialTimingEstimateApplicationPolicy(idx);
+        T.TimingEstimateStatus = trialTimingEstimateStatus(idx);
+        T.TimingEstimateWasClipped = trialTimingEstimateWasClipped(idx);
         T.InterferenceMode = trialInterferenceMode(idx);
         T.InterferenceContributorCount = trialInterferenceContributorCount(idx);
         T.InterferenceAggregatedRxPower_dBm = trialInterferenceAggregatedRxPower(idx);
@@ -1158,8 +1196,14 @@ T.AppliedPrecoderSource = string(localOptionalColumn(T, "PrecoderSource", ""));
 T = localDecorateBeamAndPrecoderTruthFields(T, direction);
 configuredLinkMode = repmat(localResolveLinkAdaptationMode(cfg, direction), n, 1);
 configuredSelectionMode = repmat(localResolveActualMCSSelectionMode(cfg, direction), n, 1);
+configuredDomain = repmat(sixgr.link.resolveLinkAdaptationDomain(cfg, direction), n, 1);
 T.ConfiguredLinkAdaptationMode = configuredLinkMode;
 T.ConfiguredMCSSelectionPolicy = configuredSelectionMode;
+T.LinkAdaptationDomain = configuredDomain;
+T.CQISource = localResolveCQISourceColumn(T, configuredDomain);
+T.MCSSelectionSource = repmat(localResolveMCSSelectionSourceToken(cfg, direction), n, 1);
+T.OLLADomain = repmat(localResolveOLLADomainToken(cfg, direction), n, 1);
+T.CalibrationProfile = repmat(localResolveLinkAdaptationCalibrationProfile(cfg, direction), n, 1);
 T.RequestedOperatingPointSource = localResolveOperatingPointSourceColumn(configuredSelectionMode, configuredLinkMode);
 T.SchedulerGrantMCSSelectionMode = string(localOptionalColumn(T, "SchedulerGrantMCSSelectionMode", ""));
 operatingPointSource = localResolveOperatingPointSourceColumn(localOptionalColumn(T, "ActualMCSSelectionMode", ""), localOptionalColumn(T, "LinkAdaptationMode", ""));
@@ -1453,6 +1497,16 @@ row.GeometryAdapterLimitation = string(channelMeta.GeometryAdapterLimitation);
 row.GeometryAdapterPortMapping = string(channelMeta.GeometryAdapterPortMapping);
 row.ChannelUsesCountOnlyAntennaModel = logical(channelMeta.ChannelUsesCountOnlyAntennaModel);
 row.ChannelUsesSameRuntimeAntennaAssumptions = logical(channelMeta.ChannelUsesSameRuntimeAntennaAssumptions);
+row.ChannelComplianceMode = string(channelMeta.ChannelComplianceMode);
+row.PathlossModelSource = string(channelMeta.PathlossModelSource);
+row.PathlossComplianceStatus = string(channelMeta.PathlossComplianceStatus);
+row.FallbackUsedForPathloss = logical(channelMeta.FallbackUsedForPathloss);
+row.O2IModelSource = string(channelMeta.O2IModelSource);
+row.O2IComplianceStatus = string(channelMeta.O2IComplianceStatus);
+row.O2IComplianceReason = string(channelMeta.O2IComplianceReason);
+row.LOSProbabilitySource = string(channelMeta.LOSProbabilitySource);
+row.LOSComplianceStatus = string(channelMeta.LOSComplianceStatus);
+row.LOSComplianceReason = string(channelMeta.LOSComplianceReason);
 row.InterferenceChannelObjectSource = string(interferenceMeta.ChannelObjectSource);
 row.InterferenceChannelObjectClass = string(interferenceMeta.ChannelObjectClass);
 row.InterferenceChannelArrayHandlingStatus = string(interferenceMeta.ChannelArrayHandlingStatus);
@@ -1558,11 +1612,12 @@ if ~(isfinite(slotStart_s) && isstruct(replay) && logical(sixgr.util.structGet(r
     return;
 end
 sampleRate = localResolveSampleRate(tx, txInfo);
-timingEstimate = double(sixgr.util.structGet(replay, "EstimatedTimingOffset_PreCorrection_samples", NaN));
+timingEstimate = double(sixgr.util.structGet(replay, "RawTimingEstimate_samples", ...
+    sixgr.util.structGet(replay, "EstimatedTimingOffset_PreCorrection_samples", NaN)));
 if ~(isfinite(sampleRate) && sampleRate > 0 && isfinite(timingEstimate))
     return;
 end
-toaEstimate_s = slotStart_s + max(0, timingEstimate) / sampleRate;
+toaEstimate_s = slotStart_s + timingEstimate / sampleRate;
 end
 
 function token = localRuntimeObjectClassToken(obj, fallback)
@@ -1578,6 +1633,26 @@ meta = sixgr.util.structGet(chState, "Meta", struct());
 if ~(isstruct(meta) && ~isempty(fieldnames(meta)))
     meta = struct();
 end
+meta.ChannelComplianceMode = string(sixgr.util.structGet(userMeta, "RuntimeChannelComplianceMode", ...
+    sixgr.util.structGet(meta, "ChannelComplianceMode", "")));
+meta.PathlossModelSource = string(sixgr.util.structGet(userMeta, "RuntimePathlossModelSource", ...
+    sixgr.util.structGet(meta, "PathlossModelSource", "")));
+meta.PathlossComplianceStatus = string(sixgr.util.structGet(userMeta, "RuntimePathlossComplianceStatus", ...
+    sixgr.util.structGet(meta, "PathlossComplianceStatus", "")));
+meta.FallbackUsedForPathloss = logical(sixgr.util.structGet(userMeta, "RuntimeFallbackUsedForPathloss", ...
+    sixgr.util.structGet(meta, "FallbackUsedForPathloss", false)));
+meta.O2IModelSource = string(sixgr.util.structGet(userMeta, "RuntimeO2IModelSource", ...
+    sixgr.util.structGet(meta, "O2IModelSource", "")));
+meta.O2IComplianceStatus = string(sixgr.util.structGet(userMeta, "RuntimeO2IComplianceStatus", ...
+    sixgr.util.structGet(meta, "O2IComplianceStatus", "")));
+meta.O2IComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeO2IComplianceReason", ...
+    sixgr.util.structGet(meta, "O2IComplianceReason", "")));
+meta.LOSProbabilitySource = string(sixgr.util.structGet(userMeta, "RuntimeLOSProbabilitySource", ...
+    sixgr.util.structGet(meta, "LOSProbabilitySource", "")));
+meta.LOSComplianceStatus = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceStatus", ...
+    sixgr.util.structGet(meta, "LOSComplianceStatus", "")));
+meta.LOSComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceReason", ...
+    sixgr.util.structGet(meta, "LOSComplianceReason", "")));
 fallbackModel = string(sixgr.util.structGet(userMeta, "RuntimeChannelArrayModel", localResolveChannelArrayModel(cfg)));
 meta = localNormalizeChannelRuntimeMeta(meta, fallbackModel);
 end
@@ -1597,6 +1672,16 @@ meta.GeometryAdapterPortMapping = string(sixgr.util.structGet(metaIn, "GeometryA
 meta.ChannelUsesCountOnlyAntennaModel = logical(sixgr.util.structGet(metaIn, "ChannelUsesCountOnlyAntennaModel", ...
     any(strcmpi(strtrim(string(meta.ChannelArrayModel)), ["nrtdl_count_only_fading_channel", "awgn_no_array_channel"]))));
 meta.ChannelUsesSameRuntimeAntennaAssumptions = logical(sixgr.util.structGet(metaIn, "ChannelUsesSameRuntimeAntennaAssumptions", false));
+meta.ChannelComplianceMode = string(sixgr.util.structGet(metaIn, "ChannelComplianceMode", ""));
+meta.PathlossModelSource = string(sixgr.util.structGet(metaIn, "PathlossModelSource", ""));
+meta.PathlossComplianceStatus = string(sixgr.util.structGet(metaIn, "PathlossComplianceStatus", ""));
+meta.FallbackUsedForPathloss = logical(sixgr.util.structGet(metaIn, "FallbackUsedForPathloss", false));
+meta.O2IModelSource = string(sixgr.util.structGet(metaIn, "O2IModelSource", ""));
+meta.O2IComplianceStatus = string(sixgr.util.structGet(metaIn, "O2IComplianceStatus", ""));
+meta.O2IComplianceReason = string(sixgr.util.structGet(metaIn, "O2IComplianceReason", ""));
+meta.LOSProbabilitySource = string(sixgr.util.structGet(metaIn, "LOSProbabilitySource", ""));
+meta.LOSComplianceStatus = string(sixgr.util.structGet(metaIn, "LOSComplianceStatus", ""));
+meta.LOSComplianceReason = string(sixgr.util.structGet(metaIn, "LOSComplianceReason", ""));
 end
 
 function meta = localResolveInterferenceChannelRuntimeMeta(replay, channelMeta)
@@ -1681,6 +1766,16 @@ row = struct( ...
     "GeometryAdapterPortMapping", "", ...
     "ChannelUsesCountOnlyAntennaModel", false, ...
     "ChannelUsesSameRuntimeAntennaAssumptions", false, ...
+    "ChannelComplianceMode", "", ...
+    "PathlossModelSource", "", ...
+    "PathlossComplianceStatus", "", ...
+    "FallbackUsedForPathloss", false, ...
+    "O2IModelSource", "", ...
+    "O2IComplianceStatus", "", ...
+    "O2IComplianceReason", "", ...
+    "LOSProbabilitySource", "", ...
+    "LOSComplianceStatus", "", ...
+    "LOSComplianceReason", "", ...
     "InterferenceChannelObjectSource", "", ...
     "InterferenceChannelObjectClass", "", ...
     "InterferenceChannelArrayHandlingStatus", "", ...
@@ -1797,8 +1892,13 @@ replay = struct( ...
     "EstimatedCFO_PreCorrection_Hz", NaN, ...
     "ResidualCFO_PostCorrection_Hz", NaN, ...
     "InjectedTimingOffset_samples", NaN, ...
+    "RawTimingEstimate_samples", NaN, ...
+    "AppliedTimingCorrection_samples", NaN, ...
     "EstimatedTimingOffset_PreCorrection_samples", NaN, ...
     "ResidualTimingError_PostCorrection_samples", NaN, ...
+    "TimingEstimateApplicationPolicy", "", ...
+    "TimingEstimateStatus", "", ...
+    "TimingEstimateWasClipped", false, ...
     "SampleRate_Hz", localResolveSampleRate(tx, txInfo), ...
     "CFOCorrectionApplied", false, ...
     "InjectedNoiseVariance", NaN, ...
@@ -1811,6 +1911,16 @@ replay = struct( ...
     "AppliedShadowFading_dB", NaN, ...
     "AppliedO2I_dB", NaN, ...
     "AppliedLargeScaleGainSource", "none", ...
+    "ChannelComplianceMode", "", ...
+    "PathlossModelSource", "", ...
+    "PathlossComplianceStatus", "", ...
+    "FallbackUsedForPathloss", false, ...
+    "O2IModelSource", "", ...
+    "O2IComplianceStatus", "", ...
+    "O2IComplianceReason", "", ...
+    "LOSProbabilitySource", "", ...
+    "LOSComplianceStatus", "", ...
+    "LOSComplianceReason", "", ...
     "ServingRSRP_dBm", NaN, ...
     "ServingRSRPSource", "", ...
     "LargeScaleSINR_dB", NaN, ...
@@ -1922,13 +2032,21 @@ if cfoCorrectionApplied && isfinite(estimatedCFO)
 end
 
 timingEstimate = double(sixgr.util.structGet(rx, "TimingOffset", NaN));
-timingEstimateUsed = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", isfinite(timingEstimate)));
+rawTimingEstimate = double(sixgr.util.structGet(rx, "RawTimingEstimate_samples", timingEstimate));
+appliedTimingCorrection = double(sixgr.util.structGet(rx, "AppliedTimingCorrection_samples", NaN));
+timingEstimateUsed = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", isfinite(rawTimingEstimate)));
 if timingEstimateUsed
     replay.UseIdealTimingSync = false;
 end
-if ~timingEstimateUsed || ~isfinite(timingEstimate)
+replay.RawTimingEstimate_samples = rawTimingEstimate;
+replay.AppliedTimingCorrection_samples = appliedTimingCorrection;
+replay.TimingEstimateApplicationPolicy = string(sixgr.util.structGet(rx, "TimingEstimateApplicationPolicy", ""));
+replay.TimingEstimateStatus = string(sixgr.util.structGet(rx, "TimingEstimateStatus", ""));
+replay.TimingEstimateWasClipped = logical(sixgr.util.structGet(rx, "TimingEstimateWasClipped", false));
+if ~timingEstimateUsed || ~isfinite(rawTimingEstimate)
     replay.TimingEstimateUsed = false;
     replay.EstimatedTimingOffset_PreCorrection_samples = NaN;
+    replay.AppliedTimingCorrection_samples = NaN;
     if isfinite(replay.InjectedTimingOffset_samples)
         replay.ResidualTimingError_PostCorrection_samples = double(replay.InjectedTimingOffset_samples);
     else
@@ -1937,9 +2055,9 @@ if ~timingEstimateUsed || ~isfinite(timingEstimate)
     return;
 end
 replay.TimingEstimateUsed = true;
-replay.EstimatedTimingOffset_PreCorrection_samples = timingEstimate;
+replay.EstimatedTimingOffset_PreCorrection_samples = rawTimingEstimate;
 if isfinite(replay.InjectedTimingOffset_samples)
-    replay.ResidualTimingError_PostCorrection_samples = double(replay.InjectedTimingOffset_samples) - timingEstimate;
+    replay.ResidualTimingError_PostCorrection_samples = double(replay.InjectedTimingOffset_samples) - appliedTimingCorrection;
 else
     replay.ResidualTimingError_PostCorrection_samples = NaN;
 end
@@ -2091,6 +2209,8 @@ varNames = {'Direction','SNR_dB','SFN','UEIndex','RNTI','BaseStationID','Seed','
     'IQImbalanceIQPowerRatio_dB','IQImbalanceIQCorrelation', ...
     'IQImbalanceEstimatedAlphaAbs','IQImbalanceEstimatedBetaAbs', ...
     'IQImbalanceMeasurementSource','IQImbalanceMeasurementStatus', ...
+    'ChannelComplianceMode','PathlossModelSource','PathlossComplianceStatus','FallbackUsedForPathloss', ...
+    'O2IModelSource','O2IComplianceStatus','O2IComplianceReason','LOSProbabilitySource','LOSComplianceStatus','LOSComplianceReason', ...
     'EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy', ...
     'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB', ...
     'Status','Crash','LinkAdaptationApplied','LinkAdaptationScheduled','Notes'};
@@ -2119,6 +2239,7 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'double','double', ...
     'double','double', ...
     'string','string', ...
+    'string','string','string','logical','string','string','string','string','string','string', ...
     'double','double','double','double','double','double','double', ...
     'double','double','double','double', ...
     'double','double','double','double', ...
@@ -2147,6 +2268,16 @@ T.AppliedPathloss_dB = zeros(0,1);
 T.AppliedShadowFading_dB = zeros(0,1);
 T.AppliedO2I_dB = zeros(0,1);
 T.AppliedLargeScaleGainSource = strings(0,1);
+T.ChannelComplianceMode = strings(0,1);
+T.PathlossModelSource = strings(0,1);
+T.PathlossComplianceStatus = strings(0,1);
+T.FallbackUsedForPathloss = false(0,1);
+T.O2IModelSource = strings(0,1);
+T.O2IComplianceStatus = strings(0,1);
+T.O2IComplianceReason = strings(0,1);
+T.LOSProbabilitySource = strings(0,1);
+T.LOSComplianceStatus = strings(0,1);
+T.LOSComplianceReason = strings(0,1);
 T.IQImbalanceConfigured = false(0,1);
 T.IQImbalanceApplied = false(0,1);
 T.IQImbalanceModel = strings(0,1);
@@ -2162,6 +2293,15 @@ T.IQImbalanceMeasurementSource = strings(0,1);
 T.IQImbalanceMeasurementStatus = strings(0,1);
 T.TimingEstimateUsed = false(0,1);
 T.UseIdealTimingSync = false(0,1);
+T.AppliedTimingCorrection_samples = zeros(0,1);
+T.TimingEstimateApplicationPolicy = strings(0,1);
+T.TimingEstimateStatus = strings(0,1);
+T.TimingEstimateWasClipped = false(0,1);
+T.LinkAdaptationDomain = strings(0,1);
+T.CQISource = strings(0,1);
+T.MCSSelectionSource = strings(0,1);
+T.OLLADomain = strings(0,1);
+T.CalibrationProfile = strings(0,1);
 T.InterferenceMode = strings(0,1);
 T.InterferenceContributorCount = zeros(0,1);
 T.InterferenceAggregatedRxPower_dBm = zeros(0,1);
@@ -2275,7 +2415,90 @@ end
 function mode = localResolveActualMCSSelectionMode(cfg, direction)
 mode = "configured_fixed";
 if localResolveLinkAdaptationMode(cfg, direction) ~= "fixed"
-    mode = "cqi_driven";
+    switch sixgr.link.resolveLinkAdaptationDomain(cfg, direction)
+        case "effective_sinr"
+            mode = "effective_sinr_driven";
+        case "bler_margin"
+            mode = "bler_margin_proxy";
+        case "legacy_mcs"
+            mode = "legacy_mcs_smoothed";
+        otherwise
+            mode = "cqi_driven";
+    end
+end
+end
+
+function source = localResolveCQISourceColumn(T, configuredDomain)
+n = height(T);
+source = repmat("unavailable", n, 1);
+widebandCQI = double(localOptionalColumn(T, "WidebandCQI", NaN));
+measuredSINR = double(localOptionalColumn(T, "MeasuredTrialSINR_dB", localOptionalColumn(T, "MeasuredSINR_dB", NaN)));
+cqiMask = isfinite(widebandCQI);
+source(cqiMask) = "runtime_reported_cqi";
+effMask = ~cqiMask & configuredDomain == "effective_sinr" & isfinite(measuredSINR);
+source(effMask) = "runtime_effective_sinr";
+blerMask = ~cqiMask & configuredDomain == "bler_margin" & isfinite(measuredSINR);
+source(blerMask) = "runtime_effective_sinr_proxy_for_bler_margin";
+end
+
+function source = localResolveMCSSelectionSourceToken(cfg, direction)
+switch sixgr.link.resolveLinkAdaptationDomain(cfg, direction)
+    case "effective_sinr"
+        source = "effective_sinr_to_cqi_to_amc";
+    case "bler_margin"
+        source = "bler_margin_proxy_to_amc";
+    case "legacy_mcs"
+        source = "legacy_mcs_domain_smoothing";
+    otherwise
+        source = "runtime_cqi_to_amc";
+end
+end
+
+function token = localResolveOLLADomainToken(cfg, direction)
+if ~logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true))
+    token = "disabled";
+    return;
+end
+if sixgr.link.resolveLinkAdaptationDomain(cfg, direction) == "bler_margin"
+    token = "bler_margin_proxy_delta_mcs";
+else
+    token = "delta_mcs";
+end
+end
+
+function profile = localResolveLinkAdaptationCalibrationProfile(cfg, direction)
+switch sixgr.link.resolveLinkAdaptationDomain(cfg, direction)
+    case "effective_sinr"
+        profile = "effective_sinr:" + localResolveSINRToCQIModeToken(cfg, direction);
+    case "bler_margin"
+        profile = "heuristic_bler_margin_proxy";
+    case "legacy_mcs"
+        profile = "legacy_mcs_domain_smoothing";
+    otherwise
+        profile = "cqi_table_amc";
+end
+end
+
+function token = localResolveSINRToCQIModeToken(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    candidates = [ ...
+        "phy.pusch.sinrToCQIMode"
+        "phy.csi.ulSINRToCQIMode"
+        "phy.csi.sinrToCQIMode"];
+else
+    candidates = [ ...
+        "phy.pdsch.sinrToCQIMode"
+        "phy.csi.dlSINRToCQIMode"
+        "phy.csi.sinrToCQIMode"];
+end
+token = "threshold_table";
+for i = 1:numel(candidates)
+    raw = lower(strtrim(string(sixgr.util.structGet(cfg, candidates(i), ""))));
+    if strlength(raw) > 0
+        token = raw;
+        return;
+    end
 end
 end
 

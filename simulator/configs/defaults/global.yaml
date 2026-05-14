@@ -58,7 +58,10 @@
     "scs_khz": 30,
     "cp_type": "normal",
     "slot_format": "flexible",
-    "tdd_pattern": "DDDSU"
+    "tdd_pattern": "DDDSU",
+    "special_slot_downlink_symbols": 7,
+    "ul_dl_guard_symbols": 0,
+    "special_slot_uplink_symbols": 7
   },
   "waveform": {
     "dl_waveform": "CP-OFDM",
@@ -224,7 +227,6 @@
     "long_ssb_periodicity_candidate_enabled": false,
     "ssb_beam_count": 4,
     "beam_clustering_enabled": false,
-    "prach_format": "A2",
     "prach_sequence_family": "zadoff_chu_baseline",
     "preamble_length_mode": "short",
     "preamble_count": 64,
@@ -381,6 +383,8 @@
     "save_mat": true,
     "save_figures": true,
     "save_png": true,
+    "live_publish_frame_interval": 1,
+    "live_heavy_refresh_interval_frames": 4,
     "profiler_enabled": false,
     "profiler_top_functions": 160,
     "profiler_top_edges": 320,

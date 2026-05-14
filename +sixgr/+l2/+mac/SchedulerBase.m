@@ -565,6 +565,15 @@ classdef (Abstract) SchedulerBase < handle
                     tbsBytes = floor(tbsBits / 8);
                 end
             else
+                if ~(isfinite(double(nrePerPRB)) && double(nrePerPRB) > 0)
+                    tbsBits = 0;
+                    tbsBytes = 0;
+                    if ~isempty(tbsCache) && strlength(string(key)) > 0
+                        sixgr.l2.mac.schedulerCache('set', 'TBS', char(key), ...
+                            [double(tbsBits), double(tbsBytes), double(nrePerPRB)]);
+                    end
+                    return;
+                end
                 try
                     tbsBits = double(nrTBS(char(modStr), double(nLayers), double(nPRB), double(nrePerPRB), double(targetCodeRate), 0));
                 catch
@@ -1232,21 +1241,5 @@ nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
 end
 
 function nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers)
-nrePerPRB = [];
-if isstruct(info) && isfield(info, "IndicesInfo")
-    indInfo = info.IndicesInfo;
-else
-    indInfo = struct();
-end
-
-if isstruct(indInfo) && isfield(indInfo, "NREPerPRB")
-    nrePerPRB = double(indInfo.NREPerPRB);
-elseif isstruct(indInfo) && isfield(indInfo, "NRE")
-    nrePerPRB = floor(double(indInfo.NRE) / max(double(nPRB), 1));
-elseif isstruct(indInfo) && isfield(indInfo, "G")
-    qm = sixgr.l2.mac.SchedulerBase.modOrder(modStr);
-    nrePerPRB = floor(double(indInfo.G) / max(double(qm) * double(nLayers) * double(nPRB), 1));
-elseif isstruct(info) && isfield(info, "NRE")
-    nrePerPRB = floor(double(info.NRE) / max(double(nPRB), 1));
-end
+[nrePerPRB, ~] = sixgr.util.resolveDataNREPerPRB(info, nPRB, modStr, nLayers);
 end

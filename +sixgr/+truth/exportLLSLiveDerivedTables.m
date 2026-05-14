@@ -46,15 +46,6 @@ csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(dlT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
 linkAdaptationT = localBuildLinkAdaptationInputTable(dlT, ulT);
-userPerfT = sixgr.util.structGet(slotTrace, "UserPerformanceTable", table());
-if ~(istable(userPerfT) && ~isempty(userPerfT))
-    userPerfT = localBuildUserPerformanceTable(multiUserDL, multiUserUL, dlT, ulT);
-end
-coverageT = sixgr.util.structGet(slotTrace, "CoverageLayerTable", table());
-if ~(istable(coverageT) && ~isempty(coverageT))
-    coverageT = localBuildCoverageLayerTable(mobilityArtifacts, userPerfT);
-end
-errorRateT = localBuildErrorRateSummaryTable(dlT, ulT);
 harqSummaryT = sixgr.util.structGet(slotTrace, "HARQSummaryTable", table());
 harqTimelineT = sixgr.util.structGet(slotTrace, "HARQTimelineTable", table());
 if ~(istable(harqSummaryT) && ismember("Direction", string(harqSummaryT.Properties.VariableNames)))
@@ -63,9 +54,20 @@ end
 if ~(istable(harqTimelineT) && ismember("Direction", string(harqTimelineT.Properties.VariableNames)))
     harqTimelineT = table();
 end
-if isempty(harqSummaryT) || isempty(harqTimelineT)
+if isempty(harqTimelineT)
     [harqSummaryT, harqTimelineT] = localBuildHARQObservationTables(dlT, ulT);
+elseif isempty(harqSummaryT)
+    harqSummaryT = localBuildHARQObservationSummaryFromTimeline(harqTimelineT);
 end
+userPerfT = sixgr.util.structGet(slotTrace, "UserPerformanceTable", table());
+if ~(istable(userPerfT) && ~isempty(userPerfT))
+    userPerfT = localBuildUserPerformanceTable(multiUserDL, multiUserUL, dlT, ulT, harqTimelineT);
+end
+coverageT = sixgr.util.structGet(slotTrace, "CoverageLayerTable", table());
+if ~(istable(coverageT) && ~isempty(coverageT))
+    coverageT = localBuildCoverageLayerTable(mobilityArtifacts, userPerfT);
+end
+errorRateT = localBuildErrorRateSummaryTable(dlT, ulT);
 trialCombinedT = localCombineDirectionalTrials(dlT, ulT);
 antennaConfigT = localBuildAntennaConfigResolvedTable(mobilityArtifacts, slotTrace);
 antennaRuntimeT = localBuildAntennaRuntimeEvidenceTable(trialCombinedT);
@@ -228,12 +230,15 @@ else
 end
 end
 
-function T = localBuildUserPerformanceTable(dlSummary, ulSummary, dlRaw, ulRaw)
+function T = localBuildUserPerformanceTable(dlSummary, ulSummary, dlRaw, ulRaw, harqTimelineT)
 if nargin < 3
     dlRaw = table();
 end
 if nargin < 4
     ulRaw = table();
+end
+if nargin < 5
+    harqTimelineT = table();
 end
 if ~(istable(dlSummary) && ~isempty(dlSummary))
     dlSummary = localBuildUserPerformanceSummaryFromRaw(dlRaw, "DL");
@@ -259,7 +264,12 @@ rows = repmat(struct( ...
     "DL_ZeroThroughputReason", "", ...
     "UL_ZeroThroughputReason", "", ...
     "UserThroughput_Mbps", NaN, ...
-    "HARQFailureRate", NaN), 0, 1);
+    "DL_HARQFailureRate", NaN, ...
+    "UL_HARQFailureRate", NaN, ...
+    "DL_HARQObservationCount", NaN, ...
+    "UL_HARQObservationCount", NaN, ...
+    "HARQFailureRate", NaN, ...
+    "HARQObservationCount", NaN), 0, 1);
 ueList = unique([localColumnVector(dlSummary, "UEIndex"); localColumnVector(ulSummary, "UEIndex")], "stable");
 for i = 1:numel(ueList)
     ueIdx = ueList(i);
@@ -284,7 +294,11 @@ for i = 1:numel(ueList)
     row.DL_ZeroThroughputReason = localLookupStringOrBlank(dlSummary, ueIdx, "ZeroThroughputReason");
     row.UL_ZeroThroughputReason = localLookupStringOrBlank(ulSummary, ueIdx, "ZeroThroughputReason");
     row.UserThroughput_Mbps = sum([row.DL_Throughput_Mbps row.UL_Throughput_Mbps], "omitnan");
-    row.HARQFailureRate = mean([row.DL_BLER row.UL_BLER], "omitnan");
+    [row.DL_HARQFailureRate, row.DL_HARQObservationCount] = localHARQFailureMetrics(harqTimelineT, ueIdx, "DL");
+    [row.UL_HARQFailureRate, row.UL_HARQObservationCount] = localHARQFailureMetrics(harqTimelineT, ueIdx, "UL");
+    [row.HARQFailureRate, row.HARQObservationCount] = localCombineDirectionalHARQFailureMetrics( ...
+        row.DL_HARQFailureRate, row.DL_HARQObservationCount, ...
+        row.UL_HARQFailureRate, row.UL_HARQObservationCount);
     rows(end+1,1) = row; %#ok<AGROW>
 end
 if isempty(rows)
@@ -670,7 +684,7 @@ if ~ismember("DecoderTruthProxySINRValueStatus", string(coverageT.Properties.Var
     coverageT.DecoderTruthProxySINRValueStatus = strings(height(coverageT), 1);
 end
 if ~ismember("MeasuredTrialSINR_dB", string(coverageT.Properties.VariableNames))
-    coverageT.MeasuredTrialSINR_dB = double(coverageT.MeasuredWidebandSINR_dB);
+    coverageT.MeasuredTrialSINR_dB = nan(height(coverageT), 1);
 end
 if ~ismember("MeasuredTrialSINRSource", string(coverageT.Properties.VariableNames))
     coverageT.MeasuredTrialSINRSource = strings(height(coverageT), 1);
@@ -883,6 +897,92 @@ else
 end
 end
 
+function summaryT = localBuildHARQObservationSummaryFromTimeline(timelineT)
+if ~(istable(timelineT) && ~isempty(timelineT) && ismember("Direction", string(timelineT.Properties.VariableNames)))
+    summaryT = localEmptyHARQObservationSummaryTable();
+    return;
+end
+rows = repmat(struct( ...
+    "Direction", "", ...
+    "TraceSource", "", ...
+    "SNR_dB", NaN, ...
+    "FramesObserved", NaN, ...
+    "CRCPassRate", NaN, ...
+    "CRCFailRate", NaN, ...
+    "CrashRate", NaN, ...
+    "MeanGoodput_Mbps", NaN, ...
+    "MeanReceiverHestSINR_dB", NaN, ...
+    "MeanDecoderTruthProxySINR_dB", NaN, ...
+    "MeanMeasuredSINR_dB", NaN, ...
+    "MeanWidebandCQI", NaN, ...
+    "MeanCQIDerivedMCS", NaN, ...
+    "Notes", ""), 0, 1);
+dirs = unique(string(timelineT.Direction), "stable");
+for i = 1:numel(dirs)
+    mask = string(timelineT.Direction) == dirs(i);
+    slice = timelineT(mask, :);
+    if isempty(slice)
+        continue;
+    end
+    ackCol = localTimelineAckColumn(slice);
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "Direction", string(dirs(i)), ...
+        "TraceSource", localDominantTimelineTraceSource(slice), ...
+        "SNR_dB", localMeanOptionalColumn(slice, "SNR_dB"), ...
+        "FramesObserved", double(height(slice)), ...
+        "CRCPassRate", mean(ackCol, "omitnan"), ...
+        "CRCFailRate", mean(1 - ackCol, "omitnan"), ...
+        "CrashRate", localMeanOptionalColumn(slice, "Crash"), ...
+        "MeanGoodput_Mbps", localMeanOptionalColumn(slice, "Goodput_Mbps"), ...
+        "MeanReceiverHestSINR_dB", localMeanOptionalColumn(slice, "ReceiverHestSINR_dB"), ...
+        "MeanDecoderTruthProxySINR_dB", localMeanOptionalColumn(slice, "DecoderTruthProxySINR_dB"), ...
+        "MeanMeasuredSINR_dB", localMeanOptionalColumn(slice, "MeasuredSINR_dB"), ...
+        "MeanWidebandCQI", localMeanOptionalColumn(slice, "WidebandCQI"), ...
+        "MeanCQIDerivedMCS", localMeanOptionalColumn(slice, "CQIDerivedMCS"), ...
+        "Notes", "Live HARQ observation summary derived from the provided runtime HARQ timeline.");
+end
+if isempty(rows)
+    summaryT = localEmptyHARQObservationSummaryTable();
+else
+    summaryT = struct2table(rows);
+end
+end
+
+function source = localDominantTimelineTraceSource(T)
+source = "runtime_harq_timeline";
+if ~(istable(T) && ismember("TraceSource", string(T.Properties.VariableNames)))
+    return;
+end
+vals = string(T.TraceSource);
+vals = strtrim(vals(:));
+vals = vals(strlength(vals) > 0);
+if isempty(vals)
+    return;
+end
+[uVals, ~, idx] = unique(vals, "stable");
+counts = accumarray(idx, 1);
+[~, bestIdx] = max(counts);
+source = uVals(bestIdx);
+end
+
+function ackCol = localTimelineAckColumn(T)
+ackCol = localOptionalNumericColumn(T, "CombinedDecodeOK", NaN);
+if any(isfinite(ackCol))
+    return;
+end
+ackCol = localOptionalNumericColumn(T, "CRCPass", NaN);
+end
+
+function value = localMeanOptionalColumn(T, name)
+vals = localOptionalNumericColumn(T, name, NaN);
+vals = vals(isfinite(vals));
+if isempty(vals)
+    value = NaN;
+else
+    value = mean(vals, "omitnan");
+end
+end
+
 function T = localDirectionLinkAdaptationRows(sourceT, direction, traceSource)
 sourceT = localEnsureLinkAdaptationSourceVars(sourceT);
 if ismember("IsWarmupFrame", string(sourceT.Properties.VariableNames))
@@ -914,7 +1014,7 @@ for i = 1:height(sourceT)
     rows{i,12} = double(localLastValue(row, "EstimatedWidebandSINR_dB", localLastValue(row, "ReceiverHestSINR_dB")));
     rows{i,13} = double(localLastValue(row, "LargeScaleSINR_dB"));
     rows{i,14} = double(localLastValue(row, "LargeScaleWidebandSINR_dB", localLastValue(row, "LargeScaleSINR_dB")));
-    rows{i,15} = double(localLastValue(row, "ReceiverHestSINR_dB", localLastValue(row, "MeasuredTrialSINR_dB")));
+    rows{i,15} = double(localLastValue(row, "ReceiverHestSINR_dB"));
     rows{i,16} = double(localLastValue(row, "DecoderTruthProxySINR_dB"));
     rows{i,17} = double(localLastValue(row, "WidebandCQI"));
     rows{i,18} = double(localLastValue(row, "CQIDerivedMCS"));
@@ -1002,30 +1102,6 @@ if ~ismember("ServingCell", string(T.Properties.VariableNames)) && ismember("Bas
     T.ServingCell = double(T.BaseStationID);
 end
 names = string(T.Properties.VariableNames);
-if ismember("Direction", names) && ismember("DecoderTruthProxySINR_dB", names)
-    ulMask = upper(string(T.Direction)) == "UL";
-    decoderSINR = double(T.DecoderTruthProxySINR_dB);
-    if ismember("MeasuredTrialSINR_dB", names)
-        measuredTrial = double(T.MeasuredTrialSINR_dB);
-        receiverHest = localOptionalNumericColumn(T, "ReceiverHestSINR_dB", NaN);
-        replaceMask = ulMask & isfinite(decoderSINR) & ...
-            ~isfinite(measuredTrial) & ~isfinite(receiverHest);
-        T.MeasuredTrialSINR_dB(replaceMask) = decoderSINR(replaceMask);
-        if ismember("MeasuredTrialSINRSource", names)
-            T.MeasuredTrialSINRSource(replaceMask) = "post_equalization_evm_proxy_fallback";
-        end
-    end
-    if ismember("MeasuredWidebandSINR_dB", names)
-        measuredWideband = double(T.MeasuredWidebandSINR_dB);
-        receiverHest = localOptionalNumericColumn(T, "ReceiverHestSINR_dB", NaN);
-        replaceMask = ulMask & isfinite(decoderSINR) & ...
-            ~isfinite(measuredWideband) & ~isfinite(receiverHest);
-        T.MeasuredWidebandSINR_dB(replaceMask) = decoderSINR(replaceMask);
-        if ismember("WidebandSINRSource", names)
-            T.WidebandSINRSource(replaceMask) = "post_equalization_evm_proxy_fallback";
-        end
-    end
-end
 if ismember("Direction", names)
     ulMask = upper(string(T.Direction)) == "UL";
     precodingMode = lower(string(localOptionalTextColumn(T, "PrecodingMode", "")));
@@ -1634,7 +1710,48 @@ row = struct( ...
     "DL_ZeroThroughputReason", "", ...
     "UL_ZeroThroughputReason", "", ...
     "UserThroughput_Mbps", NaN, ...
-    "HARQFailureRate", NaN);
+    "DL_HARQFailureRate", NaN, ...
+    "UL_HARQFailureRate", NaN, ...
+    "DL_HARQObservationCount", NaN, ...
+    "UL_HARQObservationCount", NaN, ...
+    "HARQFailureRate", NaN, ...
+    "HARQObservationCount", NaN);
+end
+
+function [failureRate, observationCount] = localHARQFailureMetrics(harqTimelineT, ueIdx, direction)
+failureRate = NaN;
+observationCount = NaN;
+if ~(istable(harqTimelineT) && ~isempty(harqTimelineT) && ...
+        all(ismember(["UEIndex","CombinedDecodeOK"], string(harqTimelineT.Properties.VariableNames))))
+    return;
+end
+mask = abs(double(harqTimelineT.UEIndex) - double(ueIdx)) < 1e-9;
+if ismember("Direction", string(harqTimelineT.Properties.VariableNames)) && strlength(strtrim(string(direction))) > 0
+    mask = mask & upper(strtrim(string(harqTimelineT.Direction))) == upper(strtrim(string(direction)));
+end
+if ~any(mask)
+    return;
+end
+vals = double(harqTimelineT.CombinedDecodeOK(mask));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    return;
+end
+observationCount = double(numel(vals));
+failureRate = mean(1 - vals, "omitnan");
+end
+
+function [failureRate, observationCount] = localCombineDirectionalHARQFailureMetrics(dlRate, dlCount, ulRate, ulCount)
+failureRate = NaN;
+observationCount = NaN;
+counts = [double(dlCount) double(ulCount)];
+rates = [double(dlRate) double(ulRate)];
+valid = isfinite(counts) & counts > 0 & isfinite(rates);
+if ~any(valid)
+    return;
+end
+observationCount = sum(counts(valid), "omitnan");
+failureRate = sum(rates(valid) .* counts(valid), "omitnan") / max(observationCount, 1);
 end
 
 function reason = localResolveZeroThroughputReason(slice)

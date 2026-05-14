@@ -40,6 +40,7 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     useFastMex = false;
     strictMode = false;
     expectedTxPorts = 1;
+    expectedTxPortsProvided = false;
     channelModel = "";
     contextLabel = "channelEstimate";
     fwd = varargin;
@@ -62,6 +63,7 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
                     continue;
                 elseif strcmpi(key, "ExpectedTxPorts")
                     expectedTxPorts = double(varargin{i+1});
+                    expectedTxPortsProvided = true;
                     keep(i:i+1) = false;
                     i = i + 2;
                     continue;
@@ -81,6 +83,9 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
         end
         fwd = varargin(keep);
     end
+    inferredReferencePortCount = localInferReferencePortCount(refInd, refSym);
+    expectedTxPortsAdjustedFromReferenceGeometry = inferredReferencePortCount > localNormalizeTxPorts(expectedTxPorts);
+    expectedTxPorts = max(localNormalizeTxPorts(expectedTxPorts), inferredReferencePortCount);
 
     policy = localResolveScalarFastPathPolicy(useFastMex, strictMode, channelModel, expectedTxPorts, rxGrid, contextLabel);
     if policy.InvalidStrictCombo
@@ -91,6 +96,9 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.ContextLabel = string(policy.ContextLabel);
     info.ChannelModel = string(policy.ChannelModel);
     info.ExpectedTxPorts = double(policy.ExpectedTxPorts);
+    info.ExpectedTxPortsProvided = logical(expectedTxPortsProvided);
+    info.InferredReferencePortCount = double(inferredReferencePortCount);
+    info.ExpectedTxPortsAdjustedFromReferenceGeometry = logical(expectedTxPortsAdjustedFromReferenceGeometry);
     info.NumRxAnt = double(policy.NumRxAnt);
     info.StrictMode = logical(policy.StrictMode);
     info.ScalarFastPathRequested = logical(useFastMex);
@@ -230,6 +238,20 @@ end
 function tf = localShouldPreserveReferencePortShape(refInd, refSym)
 tf = isnumeric(refInd) && isnumeric(refSym) && ~isvector(refInd) && ~isvector(refSym) && ...
     size(refInd, 2) == size(refSym, 2) && size(refSym, 2) > 1;
+end
+
+function numPorts = localInferReferencePortCount(refInd, refSym)
+numPorts = 1;
+if isnumeric(refSym) && ~isvector(refSym)
+    numPorts = max(numPorts, size(refSym, 2));
+end
+if isnumeric(refInd) && ~isvector(refInd)
+    numPorts = max(numPorts, size(refInd, 2));
+end
+if ~(isscalar(numPorts) && isfinite(numPorts) && numPorts >= 1)
+    numPorts = 1;
+end
+numPorts = max(1, round(double(numPorts)));
 end
 
 function policy = localResolveScalarFastPathPolicy(useFastMex, strictMode, channelModel, expectedTxPorts, rxGrid, contextLabel)

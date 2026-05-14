@@ -97,17 +97,11 @@ numTxAnt = max(1, round(numTxAnt));
 
 % Transport block size
 nPRB = numel(pusch.PRBSet);
-nrePerPRB = [];
-if isfield(puschInfo, 'NREPerPRB')
-    nrePerPRB = double(puschInfo.NREPerPRB);
-elseif isfield(puschInfo, 'NRE')
-    nrePerPRB = floor(double(puschInfo.NRE) / max(nPRB,1));
-elseif isfield(puschInfo, 'G')
-    qm = localQm(pusch.Modulation);
-    nrePerPRB = floor(double(puschInfo.G) / max(qm * pusch.NumLayers * nPRB, 1));
-end
-if isempty(nrePerPRB) || ~isfinite(nrePerPRB) || nrePerPRB <= 0
-    nrePerPRB = 144;
+[nrePerPRB, dataBitBudget] = localResolveDataNREPerPRB(puschInfo, nPRB, pusch.Modulation, pusch.NumLayers);
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    error('sixgr:phy:ul:PUSCHNoDataRE', ...
+        'PUSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
+        round(double(nPRB)), mat2str(localResolveSymbolAllocation(pusch)), char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
 end
 trBlkSize = nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 trBlkSize = double(trBlkSize);
@@ -149,11 +143,18 @@ C = size(cbs, 2);
 ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
 
 % Rate match to G bits
-if isfield(puschInfo, 'G')
+if isfinite(dataBitBudget) && dataBitBudget > 0
+    G = double(dataBitBudget);
+elseif isfield(puschInfo, 'G')
     G = double(puschInfo.G);
 else
     qm = localQm(pusch.Modulation);
     G = double(qm * pusch.NumLayers * nPRB * nrePerPRB);
+end
+if ~(isfinite(G) && G > 0)
+    error('sixgr:phy:ul:PUSCHNoDataRE', ...
+        'PUSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
+        round(double(nPRB)), mat2str(localResolveSymbolAllocation(pusch)), char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
 end
 codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pusch.NumLayers);
 codeword = int8(codeword(:));
@@ -238,6 +239,49 @@ info.PUSCHSymbols = puschSymInfo;
 info.OFDM = ofdmInfo;
 info.Precoding = prec;
 
+end
+
+function [nrePerPRB, gBits] = localResolveDataNREPerPRB(puschInfo, nPRB, modStr, nLayers)
+nrePerPRB = NaN;
+gBits = NaN;
+qm = localQm(modStr);
+if isfield(puschInfo, 'G')
+    gBits = double(puschInfo.G);
+    if isfinite(gBits)
+        if gBits <= 0
+            nrePerPRB = 0;
+            return;
+        end
+        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
+        if isfinite(nrePerPRB) && nrePerPRB > 0
+            return;
+        end
+    end
+end
+if isfield(puschInfo, 'NRE')
+    nrePerPRB = floor(double(puschInfo.NRE) / max(double(nPRB), 1));
+elseif isfield(puschInfo, 'NREPerPRB')
+    nrePerPRB = double(puschInfo.NREPerPRB);
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    nrePerPRB = NaN;
+end
+end
+
+function symAlloc = localResolveSymbolAllocation(pusch)
+symAlloc = [];
+try
+    symAlloc = double(pusch.SymbolAllocation);
+catch
+    symAlloc = [];
+end
+if isempty(symAlloc)
+    symAlloc = [NaN NaN];
+elseif numel(symAlloc) < 2
+    symAlloc = [double(symAlloc(1)) NaN];
+else
+    symAlloc = reshape(double(symAlloc(1:2)), 1, 2);
+end
 end
 
 function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)

@@ -350,10 +350,6 @@ cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
     sixgr.util.structGet(ue, "CQI", NaN), 0);
 end
 
-function mcs = localCQIToMCS(cqi)
-mcs = max(0, min(27, round((double(cqi) - 1) * (27/14))));
-end
-
 function hol = localUEHoLDelay(ue)
 hol = double(sixgr.util.structGet(ue, "HeadOfLineDelay_ms", 0));
 if ~isfinite(hol) || hol < 0

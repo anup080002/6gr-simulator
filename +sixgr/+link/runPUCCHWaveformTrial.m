@@ -28,6 +28,8 @@ out = struct( ...
     "AckObserved", false, ...
     "UCIContentMatch", false, ...
     "CRCApplicable", false, ...
+    "CRCOutcome", "not_applicable", ...
+    "DetectionOutcome", "unavailable", ...
     "BitsCompared", 0, ...
     "BitErrors", NaN, ...
     "DetectionMetric", NaN, ...
@@ -37,12 +39,30 @@ out = struct( ...
     "AirInterfaceObservation_ms", NaN, ...
     "ProcedureDelay_ms", 0, ...
     "NoiseVariance", NaN, ...
+    "NoiseVarStatus", "", ...
+    "NoiseVarSource", "", ...
+    "NoiseVarReason", "", ...
+    "NoiseVarStrictFailure", false, ...
+    "ReceiverUsable", false, ...
+    "DetectionAttempted", false, ...
+    "DetectionUsable", false, ...
+    "FailureReason", "", ...
     "ConfiguredSNR_dB", double(opt.SNR_dB), ...
     "AppliedAWGNSNR_dB", NaN, ...
     "ReceiverHestSINR_dB", NaN, ...
     "ReceiverHestSINRSource", "", ...
+    "ReceiverHestSINRValueRole", "", ...
+    "ReceiverHestSINRValueStatus", "", ...
+    "ReceiverHestSINRNAReason", "", ...
+    "SINRValueRole", "", ...
+    "SINRSource", "", ...
+    "SINRValueStatus", "", ...
+    "SINRValueDefinition", "", ...
     "MeasuredTrialSINR_dB", NaN, ...
     "MeasuredTrialSINRSource", "", ...
+    "MeasuredTrialSINRValueRole", "", ...
+    "MeasuredTrialSINRValueStatus", "", ...
+    "MeasuredTrialSINRNAReason", "", ...
     "EstimatedWidebandSINR_dB", NaN, ...
     "WidebandCQI", NaN, ...
     "RankIndicator", NaN, ...
@@ -121,6 +141,62 @@ try
         "NoiseVar", sixgr.util.structGet(replay, "InjectedNoiseVariance", []));
     decodeLatency_ms = toc(tDecode) * 1e3;
 
+    out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+    out.NoiseVarStatus = char(string(sixgr.util.structGet(rx, "NoiseVarStatus", "")));
+    out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
+    out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
+    out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
+    out.ReceiverUsable = logical(sixgr.util.structGet(rx, "ReceiverUsable", false));
+    out.DetectionAttempted = logical(sixgr.util.structGet(rx, "DetectionAttempted", false));
+    out.DetectionUsable = logical(sixgr.util.structGet(rx, "DetectionUsable", false));
+    out.FailureReason = char(string(sixgr.util.structGet(rx, "FailureReason", "")));
+    out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", opt.SNR_dB));
+    out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    out.AirInterfaceTTI_ms = localAirInterfaceTTI(tx, txInfo);
+    out.AirInterfaceObservation_ms = out.AirInterfaceTTI_ms;
+    out.ProcedureDelay_ms = 0;
+    out.TimingEstimateUsed = logical(sixgr.util.structGet(replay, "TimingEstimateUsed", false));
+    out.UseIdealTimingSync = logical(sixgr.util.structGet(replay, "UseIdealTimingSync", false));
+    out.InterferenceMode = char(string(sixgr.util.structGet(replay, "InterferenceMode", "none")));
+    out.InterferenceContributorCount = double(sixgr.util.structGet(replay, "InterferenceContributorCount", 0));
+    out.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(replay, "InterferenceAggregatedRxPower_dBm", NaN));
+    out.InterferencePowerSource = char(string(sixgr.util.structGet(replay, "InterferencePowerSource", "")));
+    out.FullInterfererChannelTruthUsed = logical(sixgr.util.structGet(replay, "FullInterfererChannelTruthUsed", false));
+    out.Replay = replay;
+    out.Tx = tx;
+    out.TxInfo = txInfo;
+    out.Rx = rx;
+    out.RxInfo = rxInfo;
+
+    if ~logical(out.DetectionUsable)
+        out.Ok = false;
+        out.Status = "NA";
+        out.UCIContentMatch = false;
+        out.BitsCompared = 0;
+        out.BitErrors = NaN;
+        out.DetectionMetric = NaN;
+        out.ComputeLatency_ms = double(decodeLatency_ms);
+        out.DecodeLatency_ms = double(decodeLatency_ms);
+        out.ReceiverHestSINR_dB = NaN;
+        out.ReceiverHestSINRSource = "";
+        out.ReceiverHestSINRValueRole = "unavailable";
+        out.ReceiverHestSINRValueStatus = "unavailable";
+        out.ReceiverHestSINRNAReason = char(string(out.FailureReason));
+        out.MeasuredTrialSINR_dB = NaN;
+        out.MeasuredTrialSINRSource = "";
+        out.MeasuredTrialSINRValueRole = "unavailable";
+        out.MeasuredTrialSINRValueStatus = "unavailable";
+        out.MeasuredTrialSINRNAReason = char(string(out.FailureReason));
+        out.SINRValueRole = "unavailable";
+        out.SINRSource = "";
+        out.SINRValueStatus = "unavailable";
+        out.SINRValueDefinition = "no_control_sinr_observation_available_in_active_runtime";
+        out.CRCOutcome = "not_applicable";
+        out.DetectionOutcome = "unavailable";
+        out.Notes = "Waveform-backed PUCCH detection unavailable: " + string(out.FailureReason);
+        return;
+    end
+
     decodedBits = localNormalizeUCIBits(sixgr.util.structGet(rx, "UCIBits", int8([])));
     [bitErrors, bitsCompared] = localBitErrors(expectedBits, decodedBits);
     detMetric = localResolveDetectionMetric(rx);
@@ -133,29 +209,55 @@ try
     out.AckObserved = localFirstLogical(decodedBits, false);
     out.UCIContentMatch = logical(bitErrors == 0 && bitsCompared == numel(expectedBits));
     out.CRCApplicable = false;
+    out.CRCOutcome = "not_applicable";
+    out.DetectionOutcome = localResolvePUCCHDetectionOutcome(out.DetectionUsable, out.UCIContentMatch);
     out.BitsCompared = double(bitsCompared);
     out.BitErrors = double(bitErrors);
     out.DetectionMetric = double(detMetric);
     out.ComputeLatency_ms = double(decodeLatency_ms);
     out.DecodeLatency_ms = double(decodeLatency_ms);
-    out.AirInterfaceTTI_ms = localAirInterfaceTTI(tx, txInfo);
-    out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
-    out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", opt.SNR_dB));
-    out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-    out.AirInterfaceObservation_ms = out.AirInterfaceTTI_ms;
-    out.ProcedureDelay_ms = 0;
-    out.TimingEstimateUsed = logical(sixgr.util.structGet(replay, "TimingEstimateUsed", false));
-    out.UseIdealTimingSync = logical(sixgr.util.structGet(replay, "UseIdealTimingSync", false));
-    out.InterferenceMode = char(string(sixgr.util.structGet(replay, "InterferenceMode", "none")));
-    out.InterferenceContributorCount = double(sixgr.util.structGet(replay, "InterferenceContributorCount", 0));
-    out.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(replay, "InterferenceAggregatedRxPower_dBm", NaN));
-    out.InterferencePowerSource = char(string(sixgr.util.structGet(replay, "InterferencePowerSource", "")));
-    out.FullInterfererChannelTruthUsed = logical(sixgr.util.structGet(replay, "FullInterfererChannelTruthUsed", false));
     measurement = localMeasurePUCCHLinkState(cfgResolved, rx, rxInfo);
     out.ReceiverHestSINR_dB = double(sixgr.util.structGet(measurement, "SINR_dB", NaN));
     out.ReceiverHestSINRSource = char(string(sixgr.util.structGet(measurement, "SINRSource", "")));
-    out.MeasuredTrialSINR_dB = double(sixgr.util.structGet(measurement, "SINR_dB", NaN));
-    out.MeasuredTrialSINRSource = char(string(sixgr.util.structGet(measurement, "SINRSource", "")));
+    out.ReceiverHestSINRValueRole = char(string(sixgr.util.structGet(measurement, "SINRValueRole", "")));
+    out.ReceiverHestSINRValueStatus = char(string(sixgr.util.structGet(measurement, "SINRValueStatus", "")));
+    out.ReceiverHestSINRNAReason = char(string(sixgr.util.structGet(measurement, "SINRNAReason", "")));
+    receiverStatus = strtrim(string(out.ReceiverHestSINRValueStatus));
+    receiverRole = strtrim(string(out.ReceiverHestSINRValueRole));
+    receiverSource = strtrim(string(out.ReceiverHestSINRSource));
+    measuredTrialAvailable = strcmpi(receiverStatus, "OK") && isfinite(double(out.ReceiverHestSINR_dB));
+    if measuredTrialAvailable
+        out.MeasuredTrialSINR_dB = double(out.ReceiverHestSINR_dB);
+        out.MeasuredTrialSINRSource = char(receiverSource);
+        out.MeasuredTrialSINRValueRole = "measured";
+        out.MeasuredTrialSINRValueStatus = "OK";
+        out.MeasuredTrialSINRNAReason = "";
+        out.SINRValueRole = "measured";
+        out.SINRSource = char(receiverSource);
+        out.SINRValueStatus = "OK";
+        out.SINRValueDefinition = "measured_trial_sinr_from_active_control_reference_signal_observation";
+    else
+        out.MeasuredTrialSINR_dB = NaN;
+        out.MeasuredTrialSINRSource = "";
+        out.MeasuredTrialSINRValueRole = "unavailable";
+        out.MeasuredTrialSINRValueStatus = "unavailable";
+        out.MeasuredTrialSINRNAReason = char(string(sixgr.util.structGet(measurement, "SINRNAReason", "control_reference_signal_measurement_unavailable")));
+        if isfinite(double(out.ReceiverHestSINR_dB))
+            out.SINRValueRole = char(receiverRole);
+            out.SINRSource = char(receiverSource);
+            out.SINRValueStatus = char(receiverStatus);
+            if strcmpi(receiverRole, "estimated_fallback") || strcmpi(receiverStatus, "fallback")
+                out.SINRValueDefinition = "receiver_hest_sinr_from_control_waveform_fallback";
+            else
+                out.SINRValueDefinition = "receiver_hest_sinr_from_control_reference_signal_observation";
+            end
+        else
+            out.SINRValueRole = "unavailable";
+            out.SINRSource = char(receiverSource);
+            out.SINRValueStatus = char(receiverStatus);
+            out.SINRValueDefinition = "no_control_sinr_observation_available_in_active_runtime";
+        end
+    end
     out.EstimatedWidebandSINR_dB = double(sixgr.util.structGet(measurement, "SINR_dB", NaN));
     out.WidebandCQI = double(sixgr.util.structGet(measurement, "CQI", NaN));
     out.RankIndicator = double(sixgr.util.structGet(measurement, "RI", NaN));
@@ -165,11 +267,6 @@ try
     out.ConditionNumber_dB = double(sixgr.util.structGet(measurement, "ConditionNumber_dB", NaN));
     out.NumRxAntennas = double(sixgr.util.structGet(measurement, "NumRxAnt", NaN));
     out.NumTxPorts = double(sixgr.util.structGet(measurement, "NumTxPorts", NaN));
-    out.Replay = replay;
-    out.Tx = tx;
-    out.TxInfo = txInfo;
-    out.Rx = rx;
-    out.RxInfo = rxInfo;
     out.Notes = "Waveform-backed PUCCH HARQ/feedback trial using active uplink PHY primitives." + ...
         ternaryFormatNote(requestedFormat, resolvedFormat);
 catch ME
@@ -246,6 +343,16 @@ else
     preview.InterferenceMode = "mixed_requested_interference_modes";
 end
 preview.FullInterfererChannelTruthUsed = any(strcmpi(modeTokens, "FULL_PER_LINK_CHANNEL_WAVEFORM_SUM"));
+end
+
+function outcome = localResolvePUCCHDetectionOutcome(detectionUsable, contentMatch)
+if ~logical(detectionUsable)
+    outcome = "unavailable";
+elseif logical(contentMatch)
+    outcome = "detected";
+else
+    outcome = "missed";
+end
 end
 
 function state = localInitULChannelState(cfg, tx, txInfo)

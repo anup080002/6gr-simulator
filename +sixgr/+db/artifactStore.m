@@ -478,7 +478,38 @@ sourceFiles = string(sixgr.util.structGet(meta, "ScenarioSourceFiles", strings(0
 if ~isempty(sourceFiles)
     payload = sixgr.util.structSet(payload, "lls6g.scenarioSourceFiles", cellstr(sourceFiles(:)));
 end
-payload = sixgr.util.structSet(payload, "lls6g.browserExecutionPath", "browser_runtime_yaml_overlay");
+sourceKind = string(sixgr.util.structGet(meta, "ScenarioConfigSourceKind", ""));
+if strlength(strtrim(sourceKind)) == 0
+    sourceKind = localInferSourceKindFromFiles(sourceFiles, sixgr.util.structGet(meta, "ScenarioConfigStruct", struct()));
+end
+payload = sixgr.util.structSet(payload, "lls6g.configSourceKind", char(sourceKind));
+if sourceKind == "browser_runtime_overlay"
+    payload = sixgr.util.structSet(payload, "lls6g.browserExecutionPath", "browser_runtime_yaml_overlay");
+else
+    payload = sixgr.util.structSet(payload, "lls6g.browserExecutionPath", "");
+end
+end
+
+function kind = localInferSourceKindFromFiles(sourceFiles, scenarioStruct)
+kind = string(sixgr.util.structGet(scenarioStruct, "SourceKind", ""));
+if strlength(strtrim(kind)) == 0
+    kind = string(sixgr.util.structGet(scenarioStruct, "meta.SourceKind", ""));
+end
+if strlength(strtrim(kind)) == 0
+    kind = string(sixgr.util.structGet(scenarioStruct, "config_inheritance.provenance.source_kind", ""));
+end
+if strlength(strtrim(kind)) > 0
+    return;
+end
+kind = "scenario_config_file";
+for i = 1:numel(sourceFiles)
+    candidate = string(sourceFiles(i));
+    [~, name, ext] = fileparts(char(candidate));
+    if startsWith(string(name), "__web_runtime_", "IgnoreCase", true) && any(strcmpi(string(ext), [".yaml",".yml",".json"]))
+        kind = "browser_runtime_overlay";
+        return;
+    end
+end
 end
 
 function artifactID = localFindArtifactID(conn, runID, logicalPath)

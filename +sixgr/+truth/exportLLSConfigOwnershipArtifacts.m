@@ -6,6 +6,19 @@ sixgr.util.ensureFolder(layout.ReportCSVDir);
 
 ctx = localBuildContext(runFolder, scfg, cfg, layout);
 registry = localParameterRegistry();
+registryHints = localBuildRegistryHints(registry);
+configEvidence = sixgr.config.exportConfigApplicationEvidence(runFolder);
+configEvidence.Table = localFilterConfigEvidence(configEvidence.Table, scfg, cfg);
+if strlength(configEvidence.Path) > 0
+    sixgr.util.csvWriteTable(char(configEvidence.Path), configEvidence.Table);
+end
+bindingT = sixgr.config.buildParameterBindingMatrix(scfg, cfg, struct( ...
+    "RunFolder", runFolder, ...
+    "OverlayStruct", ctx.OverlayStruct, ...
+    "BaseStruct", ctx.PreOverlayBaseStruct, ...
+    "DBConfigStruct", ctx.DBConfigStruct, ...
+    "ApplicationEvidence", configEvidence.Table, ...
+    "RegistryHints", registryHints));
 
 auditT = localBuildHardcodedAuditTable(scfg, cfg);
 matrixT = localBuildConfigOwnershipMatrix(ctx, registry);
@@ -16,6 +29,10 @@ roundtripT = localBuildConfigRoundtripVerification(ctx, registry);
 browserDbT = localBuildBrowserRuntimeDBConsistency(roundtripT);
 summaryRawT = localBuildSummaryVsRawConsistency(ctx);
 valueSourceAuditT = localBuildValueSourceAudit(ctx, dictT);
+featureIndexT = localBuildFeatureParameterIndex(bindingT);
+browserSurfaceT = localBuildBrowserConfigSurfaceMatrix(bindingT);
+statusSummaryT = localBuildConfigStatusSummary(bindingT);
+filterAuditT = localBuildUIFeatureFilterAudit(bindingT);
 
 auditPath = fullfile(layout.ReportCSVDir, "hardcoded_parameter_audit.csv");
 matrixPath = fullfile(layout.ReportCSVDir, "config_ownership_matrix.csv");
@@ -25,6 +42,11 @@ roundtripPath = fullfile(layout.ReportCSVDir, "config_roundtrip_verification.csv
 browserDbPath = fullfile(layout.ReportCSVDir, "browser_runtime_db_consistency.csv");
 summaryRawPath = fullfile(layout.ReportCSVDir, "summary_vs_raw_consistency.csv");
 valueSourceAuditPath = fullfile(layout.ReportCSVDir, "value_source_audit.csv");
+bindingPath = fullfile(layout.ReportCSVDir, "parameter_binding_matrix.csv");
+browserSurfacePath = fullfile(layout.ReportCSVDir, "browser_config_surface_matrix.csv");
+featureIndexPath = fullfile(layout.ReportCSVDir, "feature_parameter_index.csv");
+statusSummaryPath = fullfile(layout.ReportCSVDir, "config_status_summary.csv");
+filterAuditPath = fullfile(layout.ReportCSVDir, "ui_feature_filter_audit.csv");
 
 sixgr.util.csvWriteTable(auditPath, auditT);
 sixgr.util.csvWriteTable(matrixPath, matrixT);
@@ -34,6 +56,11 @@ sixgr.util.csvWriteTable(roundtripPath, roundtripT);
 sixgr.util.csvWriteTable(browserDbPath, browserDbT);
 sixgr.util.csvWriteTable(summaryRawPath, summaryRawT);
 sixgr.util.csvWriteTable(valueSourceAuditPath, valueSourceAuditT);
+sixgr.util.csvWriteTable(bindingPath, bindingT);
+sixgr.util.csvWriteTable(browserSurfacePath, browserSurfaceT);
+sixgr.util.csvWriteTable(featureIndexPath, featureIndexT);
+sixgr.util.csvWriteTable(statusSummaryPath, statusSummaryT);
+sixgr.util.csvWriteTable(filterAuditPath, filterAuditT);
 
 out = struct();
 out.HardcodedParameterAudit = string(auditPath);
@@ -44,6 +71,12 @@ out.ConfigRoundtripVerification = string(roundtripPath);
 out.BrowserRuntimeDBConsistency = string(browserDbPath);
 out.SummaryVsRawConsistency = string(summaryRawPath);
 out.ValueSourceAudit = string(valueSourceAuditPath);
+out.RuntimeConfigApplicationEvidence = string(configEvidence.Path);
+out.ParameterBindingMatrix = string(bindingPath);
+out.BrowserConfigSurfaceMatrix = string(browserSurfacePath);
+out.FeatureParameterIndex = string(featureIndexPath);
+out.ConfigStatusSummary = string(statusSummaryPath);
+out.UIFeatureFilterAudit = string(filterAuditPath);
 end
 
 function ctx = localBuildContext(runFolder, scfg, cfg, layout)
@@ -74,9 +107,12 @@ if isempty(ctx.SourceFiles) || all(strlength(strtrim(ctx.SourceFiles)) == 0)
         "lls6g.resolvedConfig.config_inheritance.provenance.source_files", strings(0, 1)));
     ctx.SourceFiles = ctx.SourceFiles(:);
 end
-ctx.OverlayPath = localDetectBrowserOverlayPath(ctx.ConfigPath, ctx.SourceFiles);
+ctx.DBState = localGetDBState();
+[ctx.DBRunID, ctx.DBConfigStruct] = localFetchDBConfigSnapshot(ctx.DBState, cfg, scfg);
+ctx.SourceKind = localResolveConfigSourceKind(ctx.ScenarioStruct, ctx.Config, ctx.DBConfigStruct, ctx.ConfigPath, ctx.SourceFiles);
+ctx.OverlayPath = localDetectBrowserOverlayPath(ctx.ConfigPath, ctx.SourceFiles, ctx.SourceKind);
 ctx.OverlayStruct = localReadOverlayStruct(ctx.OverlayPath);
-ctx.BrowserOwnedRun = localIsBrowserOverlayPath(ctx.ConfigPath) || strlength(ctx.OverlayPath) > 0;
+ctx.BrowserOwnedRun = ctx.SourceKind == "browser_runtime_overlay" || localIsBrowserOverlayPath(ctx.ConfigPath) || strlength(ctx.OverlayPath) > 0;
 ctx.PreOverlayBaseStruct = localReadPreOverlayBaseStruct(ctx.OverlayPath, ctx.SourceFiles);
 
 ctx.ScenarioSummary = localReadOptionalTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"));
@@ -89,8 +125,6 @@ ctx.ULTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_pu
 ctx.DLGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"));
 ctx.ULGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"));
 
-ctx.DBState = localGetDBState();
-[ctx.DBRunID, ctx.DBConfigStruct] = localFetchDBConfigSnapshot(ctx.DBState, cfg, scfg);
 end
 
 function s = localScenarioStruct(scfg)
@@ -101,9 +135,13 @@ else
 end
 end
 
-function overlayPath = localDetectBrowserOverlayPath(configPath, sourceFiles)
+function overlayPath = localDetectBrowserOverlayPath(configPath, sourceFiles, sourceKind)
 overlayPath = "";
 configPath = string(configPath);
+if nargin >= 3 && string(sourceKind) == "browser_runtime_overlay" && strlength(configPath) > 0
+    overlayPath = configPath;
+    return;
+end
 if localIsBrowserOverlayPath(configPath)
     overlayPath = configPath;
     return;
@@ -115,6 +153,40 @@ for i = numel(sourceFiles):-1:1
     candidate = string(sourceFiles(i));
     if localIsBrowserOverlayPath(candidate)
         overlayPath = candidate;
+        return;
+    end
+end
+end
+
+function kind = localResolveConfigSourceKind(scenarioStruct, cfg, dbStruct, configPath, sourceFiles)
+kind = localFirstNonBlank( ...
+    string(sixgr.util.structGet(scenarioStruct, "SourceKind", "")), ...
+    string(sixgr.util.structGet(scenarioStruct, "meta.SourceKind", "")), ...
+    string(sixgr.util.structGet(scenarioStruct, "config_inheritance.provenance.source_kind", "")), ...
+    string(sixgr.util.structGet(cfg, "lls6g.resolvedConfig.config_inheritance.provenance.source_kind", "")), ...
+    string(sixgr.util.structGet(dbStruct, "lls6g.configSourceKind", "")));
+if strlength(kind) > 0
+    return;
+end
+if localIsBrowserOverlayPath(configPath)
+    kind = "browser_runtime_overlay";
+    return;
+end
+for i = 1:numel(sourceFiles)
+    if localIsBrowserOverlayPath(sourceFiles(i))
+        kind = "browser_runtime_overlay";
+        return;
+    end
+end
+kind = "scenario_config_file";
+end
+
+function out = localFirstNonBlank(varargin)
+out = "";
+for i = 1:nargin
+    candidate = string(varargin{i});
+    if any(strlength(strtrim(candidate)) > 0)
+        out = candidate(1);
         return;
     end
 end
@@ -842,6 +914,151 @@ row = struct( ...
     "Definition", string(definition));
 end
 
+function hints = localBuildRegistryHints(registry)
+hints = repmat(localRegistryHintPrototype(), numel(registry), 1);
+for i = 1:numel(registry)
+    entry = registry(i);
+    [uiLayer, uiSection, featureFamily] = localCategoryUIBinding(entry.Category, entry.ParameterName);
+    [measuredArtifact, measuredField] = localRegistryMeasuredEvidence(entry.EvidenceArtifact, entry.EvidenceField);
+    hints(i).ParameterId = string(entry.ParameterName);
+    hints(i).Aliases = string(entry.ScenarioPaths);
+    hints(i).InternalCfgPath = string(entry.ResolvedCfgPath);
+    hints(i).MATLABConsumerFunctions = localExtractConsumerFunctions(entry.RuntimeConsumer);
+    hints(i).MeasuredArtifact = string(measuredArtifact);
+    hints(i).MeasuredField = string(measuredField);
+    hints(i).BrowserVisible = logical(entry.BrowserExposed);
+    hints(i).BrowserEditable = logical(entry.BrowserExposed);
+    hints(i).FeatureFamily = string(featureFamily);
+    hints(i).UILayer = string(uiLayer);
+    hints(i).UISection = string(uiSection);
+end
+end
+
+function row = localRegistryHintPrototype()
+row = struct( ...
+    "ParameterId", "", ...
+    "Aliases", strings(0, 1), ...
+    "InternalCfgPath", "", ...
+    "MATLABConsumerFunctions", strings(0, 1), ...
+    "MeasuredArtifact", "", ...
+    "MeasuredField", "", ...
+    "BrowserVisible", false, ...
+    "BrowserEditable", false, ...
+    "FeatureFamily", "", ...
+    "UILayer", "", ...
+    "UISection", "");
+end
+
+function funcs = localExtractConsumerFunctions(runtimeConsumer)
+consumerText = string(runtimeConsumer);
+if strlength(strtrim(consumerText)) == 0
+    funcs = strings(0, 1);
+    return;
+end
+parts = split(consumerText, ";");
+funcs = strings(0, 1);
+for i = 1:numel(parts)
+    head = split(parts(i), "->");
+    token = strtrim(head(1));
+    if strlength(token) == 0
+        continue;
+    end
+    funcs(end+1, 1) = token; %#ok<AGROW>
+end
+if ~isempty(funcs)
+    funcs = unique(funcs, "stable");
+end
+end
+
+function [uiLayer, uiSection, featureFamily] = localCategoryUIBinding(category, parameterName)
+uiLayer = "Outputs";
+uiSection = "Uncategorized";
+featureFamily = "Uncategorized";
+category = lower(string(category));
+parameterName = string(parameterName);
+switch category
+    case "topology"
+        uiLayer = "Traffic";
+        uiSection = "Scenario_Topology";
+        featureFamily = "Scenario_Topology";
+    case "radio_timing"
+        uiLayer = "PHY_L1";
+        uiSection = "Carrier_Numerology_Grid";
+        featureFamily = "Carrier_Numerology_Grid";
+    case "mobility"
+        uiLayer = "Traffic";
+        uiSection = "Mobility";
+        featureFamily = "Mobility";
+    case "antenna"
+        uiLayer = "PHY_L1";
+        uiSection = "MIMO_Beamforming";
+        featureFamily = "MIMO_Beamforming";
+    case "channel"
+        uiLayer = "PHY_L1";
+        uiSection = "Channel_Propagation";
+        featureFamily = "Channel_Propagation";
+    case "pdsch"
+        uiLayer = "PHY_L1";
+        uiSection = "DL_Data_PDSCH";
+        featureFamily = "DL_Data_PDSCH";
+    case "pusch"
+        uiLayer = "PHY_L1";
+        uiSection = "UL_Data_PUSCH";
+        featureFamily = "UL_Data_PUSCH";
+    case "pdcch"
+        uiLayer = "PHY_L1";
+        uiSection = "DL_Control_PDCCH_DCI";
+        featureFamily = "DL_Control_PDCCH_DCI";
+    case "prach"
+        uiLayer = "PHY_L1";
+        uiSection = "Random_Access_PRACH";
+        featureFamily = "Random_Access_PRACH";
+    case "srs"
+        uiLayer = "PHY_L1";
+        uiSection = "Reference_Signals_SRS";
+        featureFamily = "Reference_Signals_SRS";
+    case "pucch_trs"
+        if contains(lower(parameterName), "trs")
+            uiLayer = "PHY_L1";
+            uiSection = "Reference_Signals_TRS_PTRS";
+            featureFamily = "Reference_Signals_TRS_PTRS";
+        else
+            uiLayer = "PHY_L1";
+            uiSection = "UL_Control_PUCCH";
+            featureFamily = "UL_Control_PUCCH";
+        end
+    case "scheduler"
+        uiLayer = "MAC";
+        uiSection = "Scheduler";
+        featureFamily = "Scheduler";
+    case "harq"
+        uiLayer = "MAC";
+        uiSection = "HARQ";
+        featureFamily = "HARQ";
+    case "traffic"
+        uiLayer = "Traffic";
+        uiSection = "Traffic_Model";
+        featureFamily = "Traffic_Model";
+    case "exports"
+        uiLayer = "Outputs";
+        uiSection = "CSV_Image_Exports";
+        featureFamily = "CSV_Image_Exports";
+end
+end
+
+function [artifact, field] = localRegistryMeasuredEvidence(evidenceArtifact, evidenceField)
+artifact = "";
+field = "";
+path = lower(strtrim(string(evidenceArtifact)));
+if strlength(path) == 0 || strlength(strtrim(string(evidenceField))) == 0
+    return;
+end
+if startsWith(path, "air_interface/csv/") || contains(path, "_runtime_evidence") || contains(path, "/runtime_evidence")
+    artifact = string(evidenceArtifact);
+    field = string(evidenceField);
+end
+end
+
 function T = localBuildConfigOwnershipMatrix(ctx, registry)
 rows = repmat(localOwnershipPrototype(ctx), numel(registry), 1);
 for i = 1:numel(registry)
@@ -1449,6 +1666,7 @@ entries = [ ...
     localValueAuditSpec("DL", "ConfiguredSNR_dB", "air_interface/csv/dl_pdsch_trials.csv", "ConfiguredSNR_dB", "dl_first_non_warmup"); ...
     localValueAuditSpec("DL", "AppliedAWGNSNR_dB", "air_interface/csv/dl_pdsch_trials.csv", "AppliedAWGNSNR_dB", "dl_first_non_warmup"); ...
     localValueAuditSpec("DL", "ReceiverHestSINR_dB", "air_interface/csv/dl_pdsch_trials.csv", "ReceiverHestSINR_dB", "dl_first_non_warmup"); ...
+    localValueAuditSpec("DL", "MeasuredTrialSINR_dB", "air_interface/csv/dl_pdsch_trials.csv", "MeasuredTrialSINR_dB", "dl_first_non_warmup"); ...
     localValueAuditSpec("DL", "DecoderTruthProxySINR_dB", "air_interface/csv/dl_pdsch_trials.csv", "DecoderTruthProxySINR_dB", "dl_first_non_warmup"); ...
     localValueAuditSpec("DL", "WidebandCQI", "air_interface/csv/dl_pdsch_trials.csv", "WidebandCQI", "dl_first_non_warmup"); ...
     localValueAuditSpec("DL", "MCS", "air_interface/csv/dl_pdsch_trials.csv", "MCS", "dl_first_non_warmup"); ...
@@ -1460,6 +1678,7 @@ entries = [ ...
     localValueAuditSpec("UL", "ConfiguredSNR_dB", "air_interface/csv/ul_pusch_trials.csv", "ConfiguredSNR_dB", "ul_first_non_warmup"); ...
     localValueAuditSpec("UL", "AppliedAWGNSNR_dB", "air_interface/csv/ul_pusch_trials.csv", "AppliedAWGNSNR_dB", "ul_first_non_warmup"); ...
     localValueAuditSpec("UL", "ReceiverHestSINR_dB", "air_interface/csv/ul_pusch_trials.csv", "ReceiverHestSINR_dB", "ul_first_non_warmup"); ...
+    localValueAuditSpec("UL", "MeasuredTrialSINR_dB", "air_interface/csv/ul_pusch_trials.csv", "MeasuredTrialSINR_dB", "ul_first_non_warmup"); ...
     localValueAuditSpec("UL", "DecoderTruthProxySINR_dB", "air_interface/csv/ul_pusch_trials.csv", "DecoderTruthProxySINR_dB", "ul_first_non_warmup"); ...
     localValueAuditSpec("UL", "WidebandCQI", "air_interface/csv/ul_pusch_trials.csv", "WidebandCQI", "ul_first_non_warmup"); ...
     localValueAuditSpec("UL", "MCS", "air_interface/csv/ul_pusch_trials.csv", "MCS", "ul_first_non_warmup"); ...
@@ -1732,11 +1951,19 @@ if isempty(slice)
     return;
 end
 
-rowIdx = 1;
+fieldName = char(fieldName);
 if contains(lower(selector), "last")
-    rowIdx = height(slice);
+    rowOrder = height(slice):-1:1;
+else
+    rowOrder = 1:height(slice);
 end
-value = localScalarToString(slice{rowIdx, char(fieldName)});
+for rowIdx = rowOrder
+    candidate = localScalarToString(slice{rowIdx, fieldName});
+    if strlength(candidate) > 0
+        value = candidate;
+        return;
+    end
+end
 end
 
 function value = localResolveScenarioValue(s, scenarioPaths)
@@ -2065,8 +2292,8 @@ rows = [ ...
         "Wideband effective SINR estimated from the receiver Hest and UL/DL reference-signal residual measurement. This is not decoder-truth SINR.", true, false, false, "", "air_interface/csv/*_trials.csv"); ...
     localDictionaryRow(scfg, cfg, "DecoderTruthProxySINR_dB", "post_equalization_evm_proxy", "derived", "OK", ...
         "Post-equalization decode-side SINR proxy derived as 10log10(1/EVM_rms^2) from equalized-vs-reference symbol mismatch.", true, false, false, "", "air_interface/csv/*_trials.csv"); ...
-    localDictionaryRow(scfg, cfg, "MeasuredTrialSINR_dB", "receiver_hest_reference_signal_measurement", "estimated", "OK", ...
-        "Primary measured-trial SINR derived from the receiver-side reference-signal/Hest path, with decoder proxy used only as an explicitly labeled fallback when receiver measurements are unavailable.", true, false, false, "", "air_interface/csv/*_trials.csv"); ...
+    localDictionaryRow(scfg, cfg, "MeasuredTrialSINR_dB", "waveform_trial_measurement", "measured", "OK", ...
+        "Primary waveform-trial SINR only when an actual trial measurement is available. This field is no longer backfilled from receiver-Hest aliases or decoder-truth proxy fallback.", true, false, false, "", "air_interface/csv/*_trials.csv"); ...
     localDictionaryRow(scfg, cfg, "LargeScaleSINR_dB", "large_scale_interference_preview", "preview", "PARTIAL", ...
         "Large-scale preview SINR that may remain unavailable until finalized.", false, false, false, "preview_source_present_value_not_finalized", "air_interface/csv/*_trials.csv"); ...
     localDictionaryRow(scfg, cfg, "MobilitySpeed_kmh", "resolved_scenario_mobility_speed", "configured", "OK", ...
@@ -2245,4 +2472,151 @@ row.ScenarioID = string(scfg.ScenarioID);
 row.ConfigHash = string(scfg.ConfigHash);
 row.RunTag = string(sixgr.util.structGet(cfg, "run.runTag", ""));
 row.RunnerProfile = string(scfg.get("scenario.runner_profile"));
+end
+
+function T = localFilterConfigEvidence(T, scfg, cfg)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+scenarioID = string(scfg.ScenarioID);
+runTag = string(sixgr.util.structGet(cfg, "run.runTag", ""));
+mask = true(height(T), 1);
+if any(strcmp(string(T.Properties.VariableNames), "ScenarioID")) && strlength(strtrim(scenarioID)) > 0
+    scenarioMask = strlength(strtrim(string(T.ScenarioID))) == 0 | strcmp(string(T.ScenarioID), scenarioID);
+    mask = mask & scenarioMask;
+end
+if any(strcmp(string(T.Properties.VariableNames), "RunTag")) && strlength(strtrim(runTag)) > 0
+    tagMask = strlength(strtrim(string(T.RunTag))) == 0 | strcmp(string(T.RunTag), runTag);
+    mask = mask & tagMask;
+end
+T = T(mask, :);
+end
+
+function T = localBuildFeatureParameterIndex(bindingT)
+if ~(istable(bindingT) && ~isempty(bindingT))
+    T = table();
+    return;
+end
+
+families = unique(bindingT(:, ["FeatureFamily","UILayer","UISection"]), "rows", "stable");
+rows = repmat(struct( ...
+    "FeatureFamily", "", ...
+    "UILayer", "", ...
+    "UISection", "", ...
+    "ParameterCount", 0, ...
+    "BrowserVisibleCount", 0, ...
+    "BrowserEditableCount", 0, ...
+    "RuntimeAppliedCount", 0, ...
+    "RuntimeMeasuredCount", 0), height(families), 1);
+
+for i = 1:height(families)
+    mask = strcmp(string(bindingT.FeatureFamily), string(families.FeatureFamily(i))) & ...
+        strcmp(string(bindingT.UISection), string(families.UISection(i)));
+    rows(i).FeatureFamily = char(string(families.FeatureFamily(i)));
+    rows(i).UILayer = char(string(families.UILayer(i)));
+    rows(i).UISection = char(string(families.UISection(i)));
+    rows(i).ParameterCount = nnz(mask);
+    rows(i).BrowserVisibleCount = nnz(mask & logical(bindingT.BrowserVisible));
+    rows(i).BrowserEditableCount = nnz(mask & logical(bindingT.BrowserEditable));
+    rows(i).RuntimeAppliedCount = nnz(mask & strcmp(string(bindingT.RuntimeAppliedStatus), "applied_to_runtime_object"));
+    rows(i).RuntimeMeasuredCount = nnz(mask & strcmp(string(bindingT.RuntimeMeasuredStatus), "measured_runtime_evidence_published"));
+end
+
+T = struct2table(rows, "AsArray", true);
+end
+
+function T = localBuildBrowserConfigSurfaceMatrix(bindingT)
+if ~(istable(bindingT) && ~isempty(bindingT))
+    T = table();
+    return;
+end
+
+T = table();
+T.ParameterId = string(bindingT.ParameterId);
+T.UILabel = arrayfun(@(x) localHumanizePath(x), string(bindingT.BrowserPath), "UniformOutput", false);
+T.UILabel = string(T.UILabel);
+T.UISection = string(bindingT.UISection);
+T.FeatureFamily = string(bindingT.FeatureFamily);
+T.BrowserVisible = logical(bindingT.BrowserVisible);
+T.BrowserEditable = logical(bindingT.BrowserEditable);
+T.DisplayedValue = string(bindingT.DisplayedValue);
+T.SubmittedValue = string(bindingT.SubmittedValue);
+T.ResolvedMATLABValue = string(bindingT.ResolvedScenarioValue);
+T.RuntimeAppliedValue = string(bindingT.RuntimeAppliedEvidenceValue);
+T.RuntimeMeasuredValue = string(bindingT.RuntimeMeasuredEvidenceValue);
+T.ConfigStatus = string(bindingT.ConfigResolvedStatus);
+T.ApplicationStatus = string(bindingT.RuntimeAppliedStatus);
+T.MeasurementStatus = string(bindingT.RuntimeMeasuredStatus);
+T.DisplayStatus = string(bindingT.BrowserDisplayStatus);
+T.DisplayReason = string(bindingT.DisplayReason);
+end
+
+function T = localBuildConfigStatusSummary(bindingT)
+if ~(istable(bindingT) && ~isempty(bindingT))
+    T = table();
+    return;
+end
+
+statuses = unique(bindingT(:, ["FinalBindingStatus","ConfigResolvedStatus","RuntimeAppliedStatus","RuntimeMeasuredStatus"]), "rows", "stable");
+count = zeros(height(statuses), 1);
+for i = 1:height(statuses)
+    mask = strcmp(string(bindingT.FinalBindingStatus), string(statuses.FinalBindingStatus(i))) & ...
+        strcmp(string(bindingT.ConfigResolvedStatus), string(statuses.ConfigResolvedStatus(i))) & ...
+        strcmp(string(bindingT.RuntimeAppliedStatus), string(statuses.RuntimeAppliedStatus(i))) & ...
+        strcmp(string(bindingT.RuntimeMeasuredStatus), string(statuses.RuntimeMeasuredStatus(i)));
+    count(i) = nnz(mask);
+end
+T = statuses;
+T.ParameterCount = count;
+end
+
+function T = localBuildUIFeatureFilterAudit(bindingT)
+if ~(istable(bindingT) && ~isempty(bindingT))
+    T = table();
+    return;
+end
+
+families = unique(string(bindingT.FeatureFamily), "stable");
+rows = repmat(struct( ...
+    "FeatureFamily", "", ...
+    "ParameterId", "", ...
+    "UISection", "", ...
+    "SelectionBucket", "", ...
+    "ExclusionReason", ""), 0, 1);
+for i = 1:numel(families)
+    family = families(i);
+    if strlength(strtrim(family)) == 0 || family == "Uncategorized"
+        continue;
+    end
+    filtered = sixgr.config.filterParametersForFeature(bindingT, family, struct("IncludeExcluded", true));
+    for j = 1:height(filtered)
+        rows(end+1, 1) = struct( ... %#ok<AGROW>
+            "FeatureFamily", char(family), ...
+            "ParameterId", char(string(filtered.ParameterId(j))), ...
+            "UISection", char(string(filtered.UISection(j))), ...
+            "SelectionBucket", char(string(filtered.SelectionBucket(j))), ...
+            "ExclusionReason", char(string(filtered.ExclusionReason(j))));
+    end
+end
+T = struct2table(rows, "AsArray", true);
+end
+
+function label = localHumanizePath(path)
+parts = split(string(path), ".");
+if isempty(parts)
+    label = char(string(path));
+    return;
+end
+token = char(replace(parts(end), "_", " "));
+if isempty(token)
+    label = char(string(path));
+    return;
+end
+token(1) = upper(token(1));
+for i = 2:numel(token)
+    if token(i-1) == ' '
+        token(i) = upper(token(i));
+    end
+end
+label = token;
 end

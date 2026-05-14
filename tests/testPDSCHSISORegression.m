@@ -22,9 +22,18 @@ cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.enablePTRS = false;
 
 [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg);
+portContract = txInfo.ResourceGridPortContract;
 assert(~logical(txInfo.Precoding.Active), "SISO path must bypass explicit precoding.");
 assert(string(txInfo.Precoding.Mode) == "siso-bypass", "Unexpected SISO precoding mode.");
-assert(size(tx.Grid, 3) == 1, "SISO grid must remain single-port.");
+assert(size(tx.Grid, 3) >= 1, "SISO grid must expose at least one transmit page.");
+assert(size(tx.PDSCHAntennaIndices, 2) == 1, "SISO PDSCH mapping must remain single-port.");
+assert(size(tx.DMRSAntennaIndices, 2) == 1, "SISO DM-RS mapping must remain single-port.");
+assert(portContract.PDSCHAntennaPortCount == 1 && portContract.DMRSAntennaPortCount == 1, ...
+    "Port contract must preserve truthful single-port PDSCH and DM-RS mapping.");
+assert(~logical(portContract.ResourceSelectiveChannelEstimateRequired), ...
+    "Single-port DL mapping must not require resource-selective estimation by signal geometry alone.");
+assert(logical(portContract.ScalarOrUnitShortcutEligibleBySignalGeometry), ...
+    "Single-port DL mapping should remain scalar-shortcut eligible by signal geometry.");
 
 txDataSym = nrPDSCH(tx.Carrier, tx.PDSCH, {tx.Codeword});
 gridDataSym = tx.Grid(tx.PDSCHIndices);

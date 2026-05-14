@@ -32,6 +32,11 @@ out.ResidualCFO_PostCorrection_Hz = NaN;
 out.InjectedTimingOffset_samples = NaN;
 out.EstimatedTimingOffset_PreCorrection_samples = NaN;
 out.ResidualTimingError_PostCorrection_samples = NaN;
+out.RawTimingEstimate_samples = NaN;
+out.AppliedTimingCorrection_samples = NaN;
+out.TimingEstimateApplicationPolicy = "";
+out.TimingEstimateStatus = "";
+out.TimingEstimateWasClipped = false;
 out.Sync = struct();
 out.PBCH = struct();
 
@@ -79,14 +84,20 @@ try
     out.EstimatedCFO_PreCorrection_Hz = estimatedCFO_PreCorrection_Hz;
     out.ResidualCFO_PostCorrection_Hz = localEstimateWaveformCFO(txWave, rxWave, sampleRateHz, injectedTimingOffset);
     out.InjectedTimingOffset_samples = injectedTimingOffset;
-    out.EstimatedTimingOffset_PreCorrection_samples = double(sixgr.util.structGet(sync, "TimingOffset", NaN));
+    out.RawTimingEstimate_samples = double(sixgr.util.structGet(sync, "RawTimingEstimate_samples", ...
+        sixgr.util.structGet(sync, "TimingOffset", NaN)));
+    out.AppliedTimingCorrection_samples = double(sixgr.util.structGet(sync, "AppliedTimingCorrection_samples", NaN));
+    out.TimingEstimateApplicationPolicy = string(sixgr.util.structGet(sync, "TimingEstimateApplicationPolicy", ""));
+    out.TimingEstimateStatus = string(sixgr.util.structGet(sync, "TimingEstimateStatus", ""));
+    out.TimingEstimateWasClipped = logical(sixgr.util.structGet(sync, "TimingEstimateWasClipped", false));
+    out.EstimatedTimingOffset_PreCorrection_samples = out.RawTimingEstimate_samples;
     out.ResidualTimingError_PostCorrection_samples = localResidualTimingAfterSync(rxWave, sync, cfg, sampleRateHz);
 
     % Legacy aliases kept for backward compatibility with existing reports.
     out.FreqOffsetEstimate_Hz = out.EstimatedCFO_PreCorrection_Hz;
     out.TrueCFO_Hz = out.InjectedCFO_Hz;
     out.CFOError_Hz = out.ResidualCFO_PostCorrection_Hz;
-    out.TimingOffset_samples = out.EstimatedTimingOffset_PreCorrection_samples;
+    out.TimingOffset_samples = out.RawTimingEstimate_samples;
     out.TrueTimingOffset_samples = out.InjectedTimingOffset_samples;
     out.TimingError_samples = out.ResidualTimingError_PostCorrection_samples;
     out.Notes = "NCellID=" + string(pb.NCellID) + ...
@@ -234,7 +245,8 @@ end
 
 function residualTiming = localResidualTimingAfterSync(rxWaveCfoCorrected, sync, cfg, sampleRateHz)
 residualTiming = NaN;
-startIdx = 1 + max(0, round(double(sixgr.util.structGet(sync, "TimingOffset", 0))));
+appliedTiming = double(sixgr.util.structGet(sync, "AppliedTimingCorrection_samples", 0));
+startIdx = 1 + max(0, round(appliedTiming));
 if startIdx > size(rxWaveCfoCorrected, 1)
     residualTiming = 0;
     return;

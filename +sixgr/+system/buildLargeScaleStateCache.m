@@ -40,6 +40,17 @@ state.PropagationScenario = string(sixgr.util.structGet(cfg, "channel.propagatio
 state.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", true));
 state.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", true));
 state.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", true));
+state.ChannelComplianceMode = localObjectStringProp(plModel, "ChannelComplianceMode", ...
+    string(sixgr.util.structGet(cfg, "channel.complianceMode", "approximate_38901_plus")));
+state.PathlossModelSource = "";
+state.PathlossComplianceStatus = "";
+state.FallbackUsedForPathloss = false;
+state.O2IModelSource = "";
+state.O2IComplianceStatus = "";
+state.O2IComplianceReason = "";
+state.LOSProbabilitySource = "";
+state.LOSComplianceStatus = "";
+state.LOSComplianceReason = "";
 state.PropagationReused = logical(opt.ReusePropagation);
 
 txPower_dBm = reshape(double(layout.bs.txPower_dBm), 1, []);
@@ -87,7 +98,7 @@ if opt.ReusePropagation
     state.BasePathloss_dB = double(localRequireSize(prev, "BasePathloss_dB", K, nCells));
     state.Pathloss_dB = double(localRequireSize(prev, "Pathloss_dB", K, nCells));
 else
-    [d2d_m, dxy_m] = localDistanceAndDelta(ue.pos_m, layout.bs.pos_m, layout.wraparoundEnabled, layout.area_m);
+    [d2d_m, dxy_m] = localDistanceAndDelta(ue.pos_m, layout);
     dz_m = ue.pos_m(:,3) - layout.bs.pos_m(:,3).';
     state.d2d_m = double(d2d_m);
     state.d3d_m = double(sqrt(max(d2d_m.^2 + dz_m.^2, 0)));
@@ -121,11 +132,34 @@ end
 
 state.RxPower_dBm = state.TxPower_dBm + state.BeamGain_dB - state.Pathloss_dB;
 state.RSRP_dBm = state.RxPower_dBm - 10*log10(max(12 * max(1, round(double(opt.NumRB))), 1));
+state.PathlossModelSource = localObjectStringProp(plModel, "PathlossModelSource", ...
+    string(sixgr.util.structGet(opt.PreviousState, "PathlossModelSource", "")));
+state.PathlossComplianceStatus = localObjectStringProp(plModel, "PathlossComplianceStatus", ...
+    string(sixgr.util.structGet(opt.PreviousState, "PathlossComplianceStatus", "")));
+state.FallbackUsedForPathloss = localObjectLogicalProp(plModel, "FallbackUsedForPathloss", ...
+    logical(sixgr.util.structGet(opt.PreviousState, "FallbackUsedForPathloss", false)));
+state.O2IModelSource = localObjectStringProp(plModel, "O2IModelSource", ...
+    string(sixgr.util.structGet(opt.PreviousState, "O2IModelSource", "")));
+state.O2IComplianceStatus = localObjectStringProp(plModel, "O2IComplianceStatus", ...
+    string(sixgr.util.structGet(opt.PreviousState, "O2IComplianceStatus", "")));
+state.O2IComplianceReason = localObjectStringProp(plModel, "O2IComplianceReason", ...
+    string(sixgr.util.structGet(opt.PreviousState, "O2IComplianceReason", "")));
+state.LOSProbabilitySource = localObjectStringProp(plModel, "LOSProbabilitySource", ...
+    string(sixgr.util.structGet(opt.PreviousState, "LOSProbabilitySource", "")));
+state.LOSComplianceStatus = localObjectStringProp(plModel, "LOSComplianceStatus", ...
+    string(sixgr.util.structGet(opt.PreviousState, "LOSComplianceStatus", "")));
+state.LOSComplianceReason = localObjectStringProp(plModel, "LOSComplianceReason", ...
+    string(sixgr.util.structGet(opt.PreviousState, "LOSComplianceReason", "")));
 end
 
-function [d2d_m, dxy_m] = localDistanceAndDelta(uePos_m, bsPos_m, wrapEn, area_m)
-if wrapEn
-    [d2d_m, dxy_m] = sixgr.scenario.wraparoundDistance(uePos_m, bsPos_m, area_m);
+function [d2d_m, dxy_m] = localDistanceAndDelta(uePos_m, layout)
+bsPos_m = double(layout.bs.pos_m);
+wrapEn = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
+area_m = double(sixgr.util.structGet(layout, "area_m", [0 0]));
+wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", "rectangular_torus"));
+if wrapEn && wrapMode ~= "disabled"
+    [d2d_m, dxy_m] = sixgr.scenario.wraparoundDistance(uePos_m, bsPos_m, area_m, ...
+        "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));
     return;
 end
 
@@ -159,5 +193,19 @@ out = reshape(logical(value), [], 1);
 if numel(out) ~= K
     error("sixgr:system:buildLargeScaleStateCache:BadIndoorMask", ...
         "UE indoor mask must be scalar or Kx1.");
+end
+end
+
+function value = localObjectStringProp(obj, propName, fallback)
+value = string(fallback);
+if ~isempty(obj) && isobject(obj) && isprop(obj, propName)
+    value = string(obj.(propName));
+end
+end
+
+function value = localObjectLogicalProp(obj, propName, fallback)
+value = logical(fallback);
+if ~isempty(obj) && isobject(obj) && isprop(obj, propName)
+    value = logical(obj.(propName));
 end
 end

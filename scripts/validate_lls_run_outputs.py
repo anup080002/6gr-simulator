@@ -28,7 +28,7 @@ REQUIRED_ARTIFACTS = {
 }
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE_URL = "http://127.0.0.1:62906"
-DEFAULT_SCENARIO_ID = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot"
+DEFAULT_SCENARIO_ID = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot"
 
 
 def resolve_base_url(explicit_value: str) -> str:
@@ -155,7 +155,7 @@ def validate_payload(payload: dict[str, Any], *, strict: bool, db_logical_paths:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the locked 4 GHz / 100 MHz / 50 UE / 14 slot waveform-honest LLS run through browser APIs.")
+    parser = argparse.ArgumentParser(description="Validate the locked 4 GHz / 100 MHz / 19 site / 57 cell / 570 UE / 60 slot waveform-honest LLS run through browser APIs.")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--run-id", type=int, default=0)
     parser.add_argument("--run-tag", default="")

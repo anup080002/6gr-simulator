@@ -52,6 +52,7 @@ cfg.RepetitionMode = char(string(sixgr.util.structGet(ctrl, "RepetitionMode", "n
 cfg.RepetitionCount = max(1, round(double(sixgr.util.structGet(ctrl, "RepetitionCount", 1))));
 cfg.EnableTransmitDiversity = logical(sixgr.util.structGet(ctrl, "EnableTransmitDiversity", false));
 cfg.DiversityMode = char(string(sixgr.util.structGet(ctrl, "DiversityMode", "single_port_baseline")));
+cfg.AllowStubModes = logical(sixgr.util.structGet(ctrl, "AllowStubModes", false));
 cfg.PrecoderGranularity = char(string(sixgr.util.structGet(ctrl, "PrecoderGranularity", "none")));
 cfg.OutputDir = char(string(sixgr.util.structGet(ctrl, "OutputDir", opts.RunFolder)));
 cfg.Seed = double(sixgr.util.structGet(ctrl, "Seed", sixgr.util.structGet(fullCfg, "run.seed", 1)));
@@ -66,6 +67,13 @@ cfg.RepetitionCombiningMode = char(string(sixgr.util.structGet(ctrl, "Repetition
 cfg.StudyClassification = "study_item_candidate";
 cfg.ApproximationNotes = "6GR PDCCH baseline study framework with honest FFS hooks.";
 cfg.ScenarioID = char(string(opts.ScenarioID));
+if strcmpi(cfg.DiversityMode, "nontransparent_stub")
+    cfg.PDCCHImplementationStatus = "stub_mode_requested_not_decodable";
+    cfg.PDCCHImplementationBlocker = "nontransparent_stub_is_a_future_study_hook_without_receiver_support";
+else
+    cfg.PDCCHImplementationStatus = "waveform_baseline_decodable";
+    cfg.PDCCHImplementationBlocker = "";
+end
 
 cfg.CORESET = sixgr.ctrl.CORESETConfig(sixgr.util.structGet(ctrl, "CORESET", struct()), cfg);
 
@@ -175,6 +183,10 @@ end
 if ~ismember(lower(string(cfg.DiversityMode)), ["single_port_baseline","transparent","nontransparent_stub"])
     error("sixgr:ctrl:ControlChannelConfig:BadDiversityMode", ...
         "DiversityMode must be single_port_baseline, transparent, or nontransparent_stub.");
+end
+if strcmpi(cfg.DiversityMode, "nontransparent_stub") && ~logical(cfg.AllowStubModes)
+    error("sixgr:ctrl:ControlChannelConfig:StubModeDisabled", ...
+        "nontransparent_stub is a future-study hook. Set ctrl6gr.AllowStubModes=true to acknowledge the non-decoding stub path explicitly.");
 end
 if ~ismember(lower(string(cfg.PrecoderGranularity)), ["none","reg_bundle"])
     error("sixgr:ctrl:ControlChannelConfig:BadPrecoderGranularity", ...

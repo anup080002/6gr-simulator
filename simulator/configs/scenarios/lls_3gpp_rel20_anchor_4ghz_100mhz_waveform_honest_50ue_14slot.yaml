@@ -139,9 +139,9 @@ system:
     maxActiveUEsPerCellPerSlotDL: 16
     maxActiveUEsPerCellPerSlotUL: 12
     maxPRBAllocationPerUE: 273
-    tbsMode: approximate
-    fastNREApprox: true
-    allowApproximatePlanningInStrictMode: true
+    tbsMode: faithful
+    fastNREApprox: false
+    allowApproximatePlanningInStrictMode: false
     fairnessAlpha: 1.0
     proportionalFairWindow_ms: 100
     beamAware: true

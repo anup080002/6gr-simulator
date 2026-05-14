@@ -64,6 +64,14 @@ def main() -> None:
     assert "throughput,line,slot,throughput_mbps,1,1,12.5" in chart_csv
     assert "system/csv/system_time_series.csv" in chart_csv
 
+    metric_key_dataset = materializer._dataset_from_rows(  # noqa: SLF001
+        "Metric key fallback",
+        ["MetricKey", "MetricName", "ValueNumeric"],
+        [["bler_runtime", "", "0.25"]],
+    )
+    assert metric_key_dataset is not None
+    assert metric_key_dataset["tick_labels"] == ["bler_runtime"]
+
     impairment_section = next(
         section for section in analytics_sections if section["slug"] == "impairments-tracking-analytics"
     )
@@ -122,6 +130,136 @@ def main() -> None:
     assert "iq_imbalance_timeline_trace.csv" in special["source_table_path"]
     assert "mean_image_rejection_db" in special["csv_bytes"].decode("utf-8")
     assert b"IQ imbalance summary" in special["img_bytes"]
+
+    prach_csv = materializer._encode_csv(  # noqa: SLF001
+        ["SNR_dB", "SuccessFlag", "FalseAlarmFlag", "DetectionMetric", "Status"],
+        [
+            [0, 0, 0, 0, "FAIL"],
+            [0, 1, 0, 1, "PASS"],
+            [10, 1, 0, 1, "PASS"],
+            [10, 0, 1, 0, "FAIL"],
+        ],
+    )
+    existing = {
+        "air_interface/csv/prach_trials.csv": {
+            "artifact_id": 11,
+            "logical_path": "air_interface/csv/prach_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {11: prach_csv}
+    detection_special = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "detection rate",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        9,
+    )
+    assert detection_special is not None
+    assert detection_special["csv_status"] == "specialized_runtime_detection_dataset"
+    assert "bucket_name,snr_db,metric_value,sample_count" in detection_special["csv_bytes"].decode("utf-8")
+
+    false_alarm_special = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "false alarm rate",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        9,
+    )
+    assert false_alarm_special is not None
+    assert false_alarm_special["csv_status"] == "specialized_runtime_detection_dataset"
+    assert "false alarm rate" in false_alarm_special["csv_bytes"].decode("utf-8").lower()
+
+    csirs_csv = materializer._encode_csv(  # noqa: SLF001
+        ["CellID", "Slot", "ResourceID", "ResourceSetID", "RBOffset", "NumRB", "SymbolLocations", "NRE", "MeasurementRSRP_dB", "UEIndex"],
+        [
+            [1, 7, 0, 0, 10, 2, "2 10", 48, -95.0, 3],
+            [1, 7, 0, 0, 10, 2, "2 10", 48, -98.0, 5],
+        ],
+    )
+    existing = {
+        "air_interface/csv/csi_rs_trials.csv": {
+            "artifact_id": 21,
+            "logical_path": "air_interface/csv/csi_rs_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {21: csirs_csv}
+    csirs_special = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CSI-RS map",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        12,
+    )
+    assert csirs_special is not None
+    assert csirs_special["csv_status"] == "specialized_runtime_grid_dataset"
+    csirs_text = csirs_special["csv_bytes"].decode("utf-8")
+    assert "symbol_index,rb_index,occupancy_value" in csirs_text
+    assert csirs_text.count("\n") >= 4
+
+    srs_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "UEIndex", "NMSE_dB", "SuccessFlag", "Status"],
+        [
+            [8, 2, -27.1, 1, "PASS"],
+            [8, 6, -25.8, 1, "PASS"],
+            [9, 2, -24.0, 0, "FAIL"],
+        ],
+    )
+    existing = {
+        "air_interface/csv/srs_trials.csv": {
+            "artifact_id": 31,
+            "logical_path": "air_interface/csv/srs_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {31: srs_csv}
+    srs_special = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "SRS map",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        13,
+    )
+    assert srs_special is not None
+    assert srs_special["csv_status"] == "specialized_runtime_srs_dataset"
+    assert "ue_index,occupancy_value,nmse_db,success_flag" in srs_special["csv_bytes"].decode("utf-8")
+
+    original_loader = dash.load_cached_csv_preview
+    original_artifact_url = dash.artifact_url
+    try:
+        preview_map = {
+            101: (
+                ["slot", "rb_index", "occupancy_value"],
+                [["7", "10", "0.5"], ["7", "11", "0.5"], ["8", "10", "1.0"]],
+            ),
+            102: (
+                ["series_name", "x_value", "y_value"],
+                [["Sites", "0", "0"], ["Sites", "1", "0"], ["UEs", "0.5", "2.0"]],
+            ),
+            103: (
+                ["bucket_name", "metric_value"],
+                [["0 dB", "0.5"], ["10 dB", "1.0"]],
+            ),
+        }
+        dash.load_cached_csv_preview = lambda artifact_id, limit: preview_map[int(artifact_id)]
+        dash.artifact_url = lambda artifact_id, download=False: f"/artifact/{artifact_id}{'?download=1' if download else ''}"
+
+        heatmap_chart = dash.build_numeric_chart_from_artifact({"artifact_id": 101, "logical_path": "analytics/csv/contract__resource-grid__heatmap.csv"})
+        assert heatmap_chart is not None
+        assert heatmap_chart["series"][0]["mode"] == "heatmap"
+
+        scatter_chart = dash.build_numeric_chart_from_artifact({"artifact_id": 102, "logical_path": "reports/csv/contract__topology.csv"})
+        assert scatter_chart is not None
+        assert len(scatter_chart["series"]) == 2
+        assert scatter_chart["series"][0]["points"][0]["x"] == 0.0
+
+        bar_chart = dash.build_numeric_chart_from_artifact({"artifact_id": 103, "logical_path": "analytics/csv/contract__detection.csv"})
+        assert bar_chart is not None
+        assert bar_chart["series"][0]["trace_type"] == "bar"
+        assert bar_chart["series"][0]["points"][0]["x"] == "0 dB"
+    finally:
+        dash.load_cached_csv_preview = original_loader
+        dash.artifact_url = original_artifact_url
 
 
 if __name__ == "__main__":

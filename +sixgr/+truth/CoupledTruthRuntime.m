@@ -24,6 +24,7 @@ methods(Static)
         numHarqProc = max(double(harqDL.NumProcesses), double(harqUL.NumProcesses));
         nUsers = size(ue.pos_m, 1);
         nCells = size(layoutStruct.bs.pos_m, 1);
+        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(cfgMob, "phy.numerology.symbolsPerSlot", 14))));
 
         state = struct();
         state.RunFolder = string(runFolder);
@@ -52,6 +53,13 @@ methods(Static)
         state.CurrentSlotDLAllowed = true;
         state.CurrentSlotULAllowed = true;
         state.CurrentSlotDuplexLabel = "FDD_DLUL";
+        state.CurrentSlotIsSpecial = false;
+        state.CurrentSlotDLSymbolStart = 0;
+        state.CurrentSlotDLNumSymbols = double(symbolsPerSlot);
+        state.CurrentSlotGuardSymbolStart = double(symbolsPerSlot);
+        state.CurrentSlotGuardNumSymbols = 0;
+        state.CurrentSlotULSymbolStart = 0;
+        state.CurrentSlotULNumSymbols = double(symbolsPerSlot);
         state.DLCompletedFrames = 0;
         state.ULCompletedFrames = 0;
         state.DLCompletedSlots = 0;
@@ -299,6 +307,10 @@ methods(Static)
         T = sixgr.truth.CoupledTruthRuntime.annotatePUCCHGrantTraceTableImpl(struct(), T);
         T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("pucch_grant_trace", T);
     end
+
+    function rowOut = normalizeTelemetryRowToPrototype(rowIn, prototype)
+        rowOut = sixgr.truth.CoupledTruthRuntime.normalizeStructRowToPrototype(rowIn, prototype);
+    end
 end
 
 methods(Static, Access=private)
@@ -341,7 +353,7 @@ methods(Static, Access=private)
         if ~(isfinite(totalCanonicalSlots) && totalCanonicalSlots >= 1)
             totalCanonicalSlots = 1;
         end
-        [slotDLAllowed, slotULAllowed, slotLabel] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
+        [slotDLAllowed, slotULAllowed, slotLabel, slotPartition] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
             sixgr.util.structGet(state, "CfgMobility", struct()), canonicalSlot);
         frameIdx = sixgr.truth.CoupledTruthRuntime.frameIndexForSlot(state, canonicalSlot);
         totalSweepFrames = sixgr.truth.CoupledTruthRuntime.framesPerSweepPoint(state, totalCanonicalSlots);
@@ -356,6 +368,13 @@ methods(Static, Access=private)
         state.CurrentSlotDLAllowed = logical(slotDLAllowed);
         state.CurrentSlotULAllowed = logical(slotULAllowed);
         state.CurrentSlotDuplexLabel = char(string(slotLabel));
+        state.CurrentSlotIsSpecial = logical(sixgr.util.structGet(slotPartition, "IsSpecialSlot", false));
+        state.CurrentSlotDLSymbolStart = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(slotPartition, "DLSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotDLNumSymbols = double(sixgr.truth.CoupledTruthRuntime.secondNumeric(sixgr.util.structGet(slotPartition, "DLSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotGuardSymbolStart = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(slotPartition, "GuardSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotGuardNumSymbols = double(sixgr.truth.CoupledTruthRuntime.secondNumeric(sixgr.util.structGet(slotPartition, "GuardSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotULSymbolStart = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(slotPartition, "ULSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotULNumSymbols = double(sixgr.truth.CoupledTruthRuntime.secondNumeric(sixgr.util.structGet(slotPartition, "ULSymbolAllocation", [0 0]), 0));
         state.CurrentSNR_dB = double(snr_dB);
         state.CurrentSweepPointIndex = double(sweepIdx);
         state.CurrentSweepPointCount = double(sweepCount);
@@ -369,7 +388,7 @@ methods(Static, Access=private)
         if ~(isfinite(totalCanonicalSlots) && totalCanonicalSlots >= 1)
             totalCanonicalSlots = 1;
         end
-        [slotDLAllowed, slotULAllowed, slotLabel] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
+        [slotDLAllowed, slotULAllowed, slotLabel, slotPartition] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
             sixgr.util.structGet(state, "CfgMobility", struct()), canonicalSlot);
         frameIdx = sixgr.truth.CoupledTruthRuntime.frameIndexForSlot(state, canonicalSlot);
         totalSweepFrames = sixgr.truth.CoupledTruthRuntime.framesPerSweepPoint(state, totalCanonicalSlots);
@@ -384,6 +403,13 @@ methods(Static, Access=private)
         state.CurrentSlotDLAllowed = logical(slotDLAllowed);
         state.CurrentSlotULAllowed = logical(slotULAllowed);
         state.CurrentSlotDuplexLabel = char(string(slotLabel));
+        state.CurrentSlotIsSpecial = logical(sixgr.util.structGet(slotPartition, "IsSpecialSlot", false));
+        state.CurrentSlotDLSymbolStart = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(slotPartition, "DLSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotDLNumSymbols = double(sixgr.truth.CoupledTruthRuntime.secondNumeric(sixgr.util.structGet(slotPartition, "DLSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotGuardSymbolStart = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(slotPartition, "GuardSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotGuardNumSymbols = double(sixgr.truth.CoupledTruthRuntime.secondNumeric(sixgr.util.structGet(slotPartition, "GuardSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotULSymbolStart = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(slotPartition, "ULSymbolAllocation", [0 0]), 0));
+        state.CurrentSlotULNumSymbols = double(sixgr.truth.CoupledTruthRuntime.secondNumeric(sixgr.util.structGet(slotPartition, "ULSymbolAllocation", [0 0]), 0));
         state.CurrentSNR_dB = double(snr_dB);
         state.CurrentSweepPointIndex = double(sweepIdx);
         state.CurrentSweepPointCount = double(sweepCount);
@@ -412,6 +438,16 @@ methods(Static, Access=private)
         userMeta.RuntimeServingPathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, servingCell));
         userMeta.RuntimeServingShadowFading_dB = double(state.LargeScaleState.Shadow_dB(ueIdx, servingCell));
         userMeta.RuntimeServingO2I_dB = double(state.LargeScaleState.O2I_dB(ueIdx, servingCell));
+        userMeta.RuntimeChannelComplianceMode = char(string(sixgr.util.structGet(state.LargeScaleState, "ChannelComplianceMode", "")));
+        userMeta.RuntimePathlossModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossModelSource", "")));
+        userMeta.RuntimePathlossComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossComplianceStatus", "")));
+        userMeta.RuntimeFallbackUsedForPathloss = logical(sixgr.util.structGet(state.LargeScaleState, "FallbackUsedForPathloss", false));
+        userMeta.RuntimeO2IModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IModelSource", "")));
+        userMeta.RuntimeO2IComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IComplianceStatus", "")));
+        userMeta.RuntimeO2IComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IComplianceReason", "")));
+        userMeta.RuntimeLOSProbabilitySource = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSProbabilitySource", "")));
+        userMeta.RuntimeLOSComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceStatus", "")));
+        userMeta.RuntimeLOSComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceReason", "")));
         interferenceMode = sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(cfgU, state.MultiUser);
         userMeta.RuntimeServingLargeScaleSINR_dB = double(sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR( ...
             state, ueIdx, servingCell, interferenceMode));
@@ -1046,41 +1082,11 @@ methods(Static, Access=private)
         slotDur_s = 1e-3 / slotsPerMs;
     end
 
-    function [allowDL, allowUL, slotLabel] = slotDuplexState(cfg, canonicalSlot)
-        duplex = upper(string(sixgr.util.structGet(cfg, "frequency.duplex_mode", ...
-            sixgr.util.structGet(cfg, "global_radio_scope.duplex_mode", ...
-            sixgr.util.structGet(cfg, "phy.duplex.mode", ...
-            sixgr.util.structGet(cfg, "scenario.duplexMode", "TDD"))))));
-        if duplex == "FDD"
-            allowDL = true;
-            allowUL = true;
-            slotLabel = "FDD_DLUL";
-            return;
-        end
-        pattern = sixgr.util.structGet(cfg, "frame_timing.tdd_pattern", ...
-            sixgr.util.structGet(cfg, "frame.tdd_pattern", ...
-            sixgr.util.structGet(cfg, "phy.duplex.tddPattern", ...
-            sixgr.util.structGet(cfg, "scenario.tddPattern", "DDDSU"))));
-        tokens = sixgr.truth.CoupledTruthRuntime.expandTDDPattern(pattern);
-        if isempty(tokens)
-            tokens = 'DDDSU';
-        end
-        idx = mod(max(0, round(double(canonicalSlot)) - 1), numel(tokens)) + 1;
-        token = upper(tokens(idx));
-        switch token
-            case 'D'
-                allowDL = true;
-                allowUL = false;
-                slotLabel = "DL";
-            case 'U'
-                allowDL = false;
-                allowUL = true;
-                slotLabel = "UL";
-            otherwise
-                allowDL = true;
-                allowUL = true;
-                slotLabel = "S";
-        end
+    function [allowDL, allowUL, slotLabel, partition] = slotDuplexState(cfg, canonicalSlot)
+        partition = sixgr.util.resolveTDDSlotPartition(cfg, canonicalSlot);
+        allowDL = logical(partition.AllowDL);
+        allowUL = logical(partition.AllowUL);
+        slotLabel = string(partition.SlotLabel);
     end
 
     function tokens = expandTDDPattern(pattern)
@@ -1401,30 +1407,15 @@ methods(Static, Access=private)
         configuredInterferenceMode = sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(state.CfgMobility, state.MultiUser);
         rowDirection = upper(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Direction", sixgr.util.structGet(state, "CurrentDirection", "DL"))));
         largeScaleSINR = sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR(state, ueIdx, servingCell, configuredInterferenceMode);
-        receiverHestSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINR_dB", ...
-            sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINR_dB", ...
-            sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredSINR_dB", NaN))));
-        receiverHestSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINRSource", ...
-            sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINRSource", "")));
+        receiverHestSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINR_dB", NaN));
+        receiverHestSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINRSource", ""));
         decoderTruthProxySINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINR_dB", NaN));
         decoderTruthProxySource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINRSource", ""));
         estimatedSINR = receiverHestSINR;
         measuredTrialSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINR_dB", NaN));
         measuredTrialSINRSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINRSource", ""));
-        if ~isfinite(measuredTrialSINR)
-            if isfinite(receiverHestSINR)
-                measuredTrialSINR = double(receiverHestSINR);
-                if strlength(strtrim(measuredTrialSINRSource)) == 0
-                    measuredTrialSINRSource = strtrim(receiverHestSource);
-                end
-            elseif isfinite(decoderTruthProxySINR)
-                measuredTrialSINR = double(decoderTruthProxySINR);
-                if strlength(strtrim(decoderTruthProxySource)) > 0
-                    measuredTrialSINRSource = strtrim(decoderTruthProxySource);
-                else
-                    measuredTrialSINRSource = "post_equalization_evm_proxy_fallback";
-                end
-            end
+        if isfinite(receiverHestSINR) && strlength(strtrim(receiverHestSource)) == 0
+            receiverHestSource = "receiver_hest_reference_signal_measurement";
         end
         widebandSINRSource = "receiver_hest_reference_signal_measurement";
         widebandSINRValueRole = "estimated";
@@ -1454,22 +1445,11 @@ methods(Static, Access=private)
         csiRSRP = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSI_RSRP_dB", NaN));
         csiRSRPSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSI_RSRPSource", ""));
         interferenceMode = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "InterferenceMode", configuredInterferenceMode));
-        cqi = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN));
+        cqi = double(sixgr.util.normalizeReportedCQI( ...
+            sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN)));
         mcs = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
         rate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedTargetCodeRate", NaN));
         modStr = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedModulation", ""));
-        if ~isfinite(cqi)
-            cqiInputSINR = measuredTrialSINR;
-            if ~isfinite(cqiInputSINR)
-                cqiInputSINR = estimatedSINR;
-            end
-            feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", cqiInputSINR), state.CfgMobility, rowDirection);
-            cqi = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
-            [modOut, rateOut, mcsOut] = sixgr.link.amcFromCQI(cqi, "", NaN, state.CfgMobility, rowDirection);
-            modStr = string(modOut);
-            rate = double(rateOut);
-            mcs = double(mcsOut);
-        end
         r = sixgr.truth.CoupledTruthRuntime.emptyServingRow();
         slotStamp = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         r.Slot = double(slotStamp);
@@ -1496,6 +1476,16 @@ methods(Static, Access=private)
         r.LOSFlag = logical(state.LargeScaleState.LOS(ueIdx, servingCell));
         r.ShadowFading_dB = double(state.LargeScaleState.Shadow_dB(ueIdx, servingCell));
         r.O2I_dB = double(state.LargeScaleState.O2I_dB(ueIdx, servingCell));
+        r.ChannelComplianceMode = char(string(sixgr.util.structGet(state.LargeScaleState, "ChannelComplianceMode", "")));
+        r.PathlossModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossModelSource", "")));
+        r.PathlossComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossComplianceStatus", "")));
+        r.FallbackUsedForPathloss = logical(sixgr.util.structGet(state.LargeScaleState, "FallbackUsedForPathloss", false));
+        r.O2IModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IModelSource", "")));
+        r.O2IComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IComplianceStatus", "")));
+        r.O2IComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IComplianceReason", "")));
+        r.LOSProbabilitySource = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSProbabilitySource", "")));
+        r.LOSComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceStatus", "")));
+        r.LOSComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceReason", "")));
         r.ReceiverHestSINR_dB = double(receiverHestSINR);
         r.ReceiverHestSINRSource = char(receiverHestSource);
         r.DecoderTruthProxySINR_dB = double(decoderTruthProxySINR);
@@ -1520,7 +1510,8 @@ methods(Static, Access=private)
         r.CQIDerivedModulation = char(modStr);
         r.CQIDerivedTargetCodeRate = double(rate);
         r.CoverageScore = sixgr.truth.CoupledTruthRuntime.coverageScore(r.ServingRSRP_dBm, r.EstimatedWidebandSINR_dB);
-        state.ServingTraceTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.ServingTraceTable, struct2table(r));
+        r = sixgr.truth.CoupledTruthRuntime.normalizeStructRowToPrototype(r, sixgr.truth.CoupledTruthRuntime.emptyServingRow());
+        state.ServingTraceTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.ServingTraceTable, struct2table(r, "AsArray", true));
 
         [sortedRSRP, sortIdx] = sort(double(state.LargeScaleState.RSRP_dBm(ueIdx, :)), "descend");
         keepIdx = sortIdx(1:min(double(state.TopCellCount), numel(sortIdx)));
@@ -1538,10 +1529,20 @@ methods(Static, Access=private)
             m.LOSFlag = logical(state.LargeScaleState.LOS(ueIdx, c));
             m.ShadowFading_dB = double(state.LargeScaleState.Shadow_dB(ueIdx, c));
             m.O2I_dB = double(state.LargeScaleState.O2I_dB(ueIdx, c));
+            m.ChannelComplianceMode = char(string(sixgr.util.structGet(state.LargeScaleState, "ChannelComplianceMode", "")));
+            m.PathlossModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossModelSource", "")));
+            m.PathlossComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossComplianceStatus", "")));
+            m.FallbackUsedForPathloss = logical(sixgr.util.structGet(state.LargeScaleState, "FallbackUsedForPathloss", false));
+            m.O2IModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IModelSource", "")));
+            m.O2IComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IComplianceStatus", "")));
+            m.O2IComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "O2IComplianceReason", "")));
+            m.LOSProbabilitySource = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSProbabilitySource", "")));
+            m.LOSComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceStatus", "")));
+            m.LOSComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceReason", "")));
             rows(end+1, 1) = m; %#ok<AGROW>
         end
         if ~isempty(rows)
-            state.MeasurementTraceTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.MeasurementTraceTable, struct2table(rows));
+            state.MeasurementTraceTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.MeasurementTraceTable, struct2table(rows, "AsArray", true));
         end
         prevServing = double(state.PrevServing(ueIdx));
         if prevServing > 0 && prevServing ~= servingCell
@@ -1595,6 +1596,7 @@ methods(Static, Access=private)
         observedSlots = max(1, round(double(sixgr.util.structGet(state, "CurrentCanonicalSlot", ...
             sixgr.util.structGet(state, "CurrentSlot", 0)))));
         duration_s = max(double(state.SlotDuration_s), eps) * double(observedSlots);
+        harqTimelineT = sixgr.util.structGet(state, "HARQTimelineTable", table());
         for ueIdx = 1:double(state.NumUsers)
             dl = state.DLStats(ueIdx);
             ul = state.ULStats(ueIdx);
@@ -1611,10 +1613,17 @@ methods(Static, Access=private)
             r.DL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(dl.SINRSum, max(dl.SINRCount, 1));
             r.UL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(ul.SINRSum, max(ul.SINRCount, 1));
             r.UserThroughput_Mbps = sum([r.DL_Throughput_Mbps r.UL_Throughput_Mbps], "omitnan");
-            r.HARQFailureRate = mean([r.DL_BLER r.UL_BLER], "omitnan");
+            [r.DL_HARQFailureRate, r.DL_HARQObservationCount] = ...
+                sixgr.truth.CoupledTruthRuntime.userHARQFailureMetrics(harqTimelineT, ueIdx, "DL");
+            [r.UL_HARQFailureRate, r.UL_HARQObservationCount] = ...
+                sixgr.truth.CoupledTruthRuntime.userHARQFailureMetrics(harqTimelineT, ueIdx, "UL");
+            [r.HARQFailureRate, r.HARQObservationCount] = ...
+                sixgr.truth.CoupledTruthRuntime.combineDirectionalHARQFailureMetrics( ...
+                    r.DL_HARQFailureRate, r.DL_HARQObservationCount, ...
+                    r.UL_HARQFailureRate, r.UL_HARQObservationCount);
             rows(end+1, 1) = r; %#ok<AGROW>
         end
-        T = struct2table(rows);
+        T = struct2table(rows, "AsArray", true);
     end
 
     function T = buildCoverageLayerTable(state)
@@ -1675,8 +1684,6 @@ methods(Static, Access=private)
             end
             if ismember("ReceiverHestSINR_dB", string(servingT.Properties.VariableNames))
                 r.ReceiverHestSINR_dB = double(servingT.ReceiverHestSINR_dB(lastIdx));
-            elseif ismember("MeasuredTrialSINR_dB", string(servingT.Properties.VariableNames))
-                r.ReceiverHestSINR_dB = double(servingT.MeasuredTrialSINR_dB(lastIdx));
             end
             if ismember("ReceiverHestSINRSource", string(servingT.Properties.VariableNames))
                 r.ReceiverHestSINRSource = string(servingT.ReceiverHestSINRSource(lastIdx));
@@ -1687,7 +1694,11 @@ methods(Static, Access=private)
             if ismember("DecoderTruthProxySINRSource", string(servingT.Properties.VariableNames))
                 r.DecoderTruthProxySINRSource = string(servingT.DecoderTruthProxySINRSource(lastIdx));
             end
-            r.MeasuredTrialSINR_dB = double(r.ReceiverHestSINR_dB);
+            if ismember("MeasuredTrialSINR_dB", string(servingT.Properties.VariableNames))
+                r.MeasuredTrialSINR_dB = double(servingT.MeasuredTrialSINR_dB(lastIdx));
+            else
+                r.MeasuredTrialSINR_dB = NaN;
+            end
             r.EstimatedWidebandSINR_dB = double(servingT.EstimatedWidebandSINR_dB(lastIdx));
             if ismember("ReceiverHestWidebandSINR_dB", string(servingT.Properties.VariableNames))
                 r.ReceiverHestWidebandSINR_dB = double(servingT.ReceiverHestWidebandSINR_dB(lastIdx));
@@ -1701,8 +1712,10 @@ methods(Static, Access=private)
             end
             if ismember("MeasuredWidebandSINR_dB", string(servingT.Properties.VariableNames))
                 r.MeasuredWidebandSINR_dB = double(servingT.MeasuredWidebandSINR_dB(lastIdx));
+            elseif isfinite(double(r.MeasuredTrialSINR_dB))
+                r.MeasuredWidebandSINR_dB = double(r.MeasuredTrialSINR_dB);
             else
-                r.MeasuredWidebandSINR_dB = r.ReceiverHestWidebandSINR_dB;
+                r.MeasuredWidebandSINR_dB = NaN;
             end
             if ismember("LargeScaleWidebandSINR_dB", string(servingT.Properties.VariableNames))
                 r.LargeScaleWidebandSINR_dB = double(servingT.LargeScaleWidebandSINR_dB(lastIdx));
@@ -1755,7 +1768,7 @@ methods(Static, Access=private)
             r.Pathloss_dB = double(servingT.Pathloss_dB(lastIdx)); r.CoverageScore = double(servingT.CoverageScore(lastIdx));
             rows(end+1, 1) = r; %#ok<AGROW>
         end
-        T = struct2table(rows);
+        T = struct2table(rows, "AsArray", true);
     end
 
     function summaryT = buildHARQSummary(timelineT)
@@ -1780,7 +1793,7 @@ methods(Static, Access=private)
             r.Notes = "Canonical slot-runtime HARQ process summary.";
             rows(end+1, 1) = r; %#ok<AGROW>
         end
-        summaryT = struct2table(rows);
+        summaryT = struct2table(rows, "AsArray", true);
     end
 
     function traffic = buildRuntimeTraffic(cfg, nUsers, nFrames, slotDuration_s)
@@ -2999,16 +3012,18 @@ methods(Static, Access=private)
     end
 
     function budget = defaultSlotBudget(state)
-        budget = struct("NPRB", max(1, round(double(state.NumRB))), "SymbolAllocation", [0 14]);
-        slotLabel = upper(string(sixgr.util.structGet(state, "CurrentSlotDuplexLabel", "")));
+        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(state, "SymbolsPerSlot", ...
+            sixgr.util.structGet(sixgr.util.structGet(state, "CfgMobility", struct()), "phy.numerology.symbolsPerSlot", 14)))));
+        budget = struct("NPRB", max(1, round(double(state.NumRB))), "SymbolAllocation", [0 double(symbolsPerSlot)]);
         direction = upper(string(sixgr.util.structGet(state, "CurrentDirection", "DL")));
-        if slotLabel == "S"
-            budget.NPRB = max(1, floor(double(budget.NPRB) * 0.5));
-            if direction == "UL"
-                budget.SymbolAllocation = [7 7];
-            else
-                budget.SymbolAllocation = [0 7];
-            end
+        if direction == "UL"
+            budget.SymbolAllocation = [ ...
+                double(sixgr.util.structGet(state, "CurrentSlotULSymbolStart", 0)), ...
+                double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", symbolsPerSlot))];
+        else
+            budget.SymbolAllocation = [ ...
+                double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0)), ...
+                double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", symbolsPerSlot))];
         end
     end
 
@@ -3151,6 +3166,56 @@ methods(Static, Access=private)
                 value = raw;
             end
         end
+    end
+
+    function rowOut = normalizeStructRowToPrototype(rowIn, prototype)
+        if ~(isstruct(prototype) && isscalar(prototype))
+            rowOut = rowIn;
+            return;
+        end
+        rowOut = prototype;
+        fieldNames = string(fieldnames(prototype));
+        for idx = 1:numel(fieldNames)
+            fieldName = char(fieldNames(idx));
+            defaultValue = prototype.(fieldName);
+            rawValue = sixgr.util.structGet(rowIn, fieldName, defaultValue);
+            rowOut.(fieldName) = sixgr.truth.CoupledTruthRuntime.scalarValueLike(rawValue, defaultValue);
+        end
+    end
+
+    function value = scalarValueLike(rawValue, defaultValue)
+        if isstring(defaultValue)
+            value = string(sixgr.truth.CoupledTruthRuntime.firstString(rawValue, string(defaultValue)));
+            return;
+        end
+        if ischar(defaultValue)
+            value = sixgr.truth.CoupledTruthRuntime.firstString(rawValue, defaultValue);
+            return;
+        end
+        if islogical(defaultValue)
+            if isempty(rawValue)
+                value = logical(defaultValue);
+                return;
+            end
+            if islogical(rawValue)
+                flat = rawValue(:);
+                value = logical(flat(1));
+                return;
+            end
+            nums = double(rawValue(:));
+            nums = nums(isfinite(nums));
+            if isempty(nums)
+                value = logical(defaultValue);
+            else
+                value = logical(nums(1) ~= 0);
+            end
+            return;
+        end
+        if isnumeric(defaultValue)
+            value = double(sixgr.truth.CoupledTruthRuntime.firstNumeric(rawValue, double(defaultValue)));
+            return;
+        end
+        value = rawValue;
     end
 
     function value = rowLogical(row, name, defaultValue)
@@ -3542,8 +3607,12 @@ methods(Static, Access=private)
         row.SRSInvalidEventCount = sum(double(sixgr.util.structGet(state, "SRSInvalidEventCount", 0)), "omitnan");
         row.SchedulingOpportunitiesBlockedByGating = sum(double(sixgr.util.structGet(state, "SchedulingOpportunitiesBlockedByGatingCount", 0)), "omitnan");
         row.GrantsBlockedByGating = sum(double(sixgr.util.structGet(state, "GrantsBlockedByGatingCount", 0)), "omitnan");
-        row.UsersAcquired = sum(string(sixgr.util.structGet(state, "CellAcquisitionState", strings(0,1))) == "acquired");
-        row.UsersAccessReady = sum(string(sixgr.util.structGet(state, "AccessState", strings(0,1))) == "succeeded");
+        pbchStates = string(sixgr.util.structGet(state, "CellAcquisitionState", strings(0,1)));
+        accessStates = string(sixgr.util.structGet(state, "AccessState", strings(0,1)));
+        row.UsersAcquired = sixgr.truth.CoupledTruthRuntime.countSatisfiedControlUsers( ...
+            pbchStates, "acquired", logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false)));
+        row.UsersAccessReady = sixgr.truth.CoupledTruthRuntime.countSatisfiedControlUsers( ...
+            accessStates, "succeeded", logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false)));
         row.UsersWithValidSRS = sum(string(sixgr.util.structGet(state, "SRSValidityState", strings(0,1))) == "valid");
         servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
         trsValidUsers = 0;
@@ -3809,7 +3878,7 @@ methods(Static, Access=private)
             rows(end + 1, 1) = meta; %#ok<AGROW>
         end
 
-        resolvedT = struct2table(rows);
+        resolvedT = struct2table(rows, "AsArray", true);
     end
 
     function meta = runtimeAntennaMetadata(arr, nodeType, nodeIndex, baseStationId, ueIndex, azimuthVec, headingVec, posMat, numPorts, sourceToken)
@@ -3947,7 +4016,19 @@ methods(Static, Access=private)
         end
     end
 
+    function count = countSatisfiedControlUsers(states, successState, gatingRequired)
+        states = string(states);
+        successState = string(successState);
+        gatingRequired = logical(gatingRequired);
+        if gatingRequired
+            count = sum(states == successState);
+        else
+            count = sum(states == successState | states == "not_required");
+        end
+    end
+
     function runState = initializeRunState(cfg, multiUser, totalTrafficFrames)
+        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", 14))));
         runState = struct( ...
             "RunStateID", "coupled_truth_run_state", ...
             "ExecutionModel", string(sixgr.util.structGet(multiUser, "ExecutionModel", "slot_coupled_truth")), ...
@@ -3960,6 +4041,13 @@ methods(Static, Access=private)
             "CurrentSlotDuplexLabel", "", ...
             "CurrentSlotDLAllowed", true, ...
             "CurrentSlotULAllowed", true, ...
+            "CurrentSlotIsSpecial", false, ...
+            "CurrentSlotDLSymbolStart", 0, ...
+            "CurrentSlotDLNumSymbols", double(symbolsPerSlot), ...
+            "CurrentSlotGuardSymbolStart", double(symbolsPerSlot), ...
+            "CurrentSlotGuardNumSymbols", 0, ...
+            "CurrentSlotULSymbolStart", 0, ...
+            "CurrentSlotULNumSymbols", double(symbolsPerSlot), ...
             "ConfiguredSNR_dB", NaN, ...
             "CurrentSNR_dB", NaN, ...
             "DLCompletedFrames", 0, ...
@@ -4106,6 +4194,13 @@ methods(Static, Access=private)
         runState.CurrentSlotDuplexLabel = string(sixgr.util.structGet(state, "CurrentSlotDuplexLabel", ""));
         runState.CurrentSlotDLAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true));
         runState.CurrentSlotULAllowed = logical(sixgr.util.structGet(state, "CurrentSlotULAllowed", true));
+        runState.CurrentSlotIsSpecial = logical(sixgr.util.structGet(state, "CurrentSlotIsSpecial", false));
+        runState.CurrentSlotDLSymbolStart = double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0));
+        runState.CurrentSlotDLNumSymbols = double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 14));
+        runState.CurrentSlotGuardSymbolStart = double(sixgr.util.structGet(state, "CurrentSlotGuardSymbolStart", 14));
+        runState.CurrentSlotGuardNumSymbols = double(sixgr.util.structGet(state, "CurrentSlotGuardNumSymbols", 0));
+        runState.CurrentSlotULSymbolStart = double(sixgr.util.structGet(state, "CurrentSlotULSymbolStart", 0));
+        runState.CurrentSlotULNumSymbols = double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", 14));
         configuredSNR = double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN));
         [representativeLinkQuality, representativeLinkQualitySource] = ...
             sixgr.truth.CoupledTruthRuntime.representativeCurrentLinkQuality(state);
@@ -4116,18 +4211,18 @@ methods(Static, Access=private)
             if string(representativeLinkQualitySource) == "pending_measured_feedback"
                 runState.ValueRole = "representative_measured_feedback_pending_delivery";
                 runState.ValueSource = "CoupledTruthRuntime.refreshRunState:pending_measured_csi_report";
-                runState.ValueDefinition = "representative median UE-measured wideband SINR from the latest observed CSI reports for the active slot; delivery timing to the scheduler may still be pending";
+                runState.ValueDefinition = "representative median UE-measured wideband SINR from the latest observed CSI reports for the active slot; this is not the configured sweep anchor, and delivery timing to the scheduler may still be pending";
             else
                 runState.ValueRole = "representative_measured_feedback_proxy";
                 runState.ValueSource = "CoupledTruthRuntime.refreshRunState:representative_feedback_sinr_proxy";
-                runState.ValueDefinition = "representative median UE-reported/measured wideband SINR proxy for the active slot; ConfiguredSNR_dB preserves the configured runtime anchor";
+                runState.ValueDefinition = "representative median UE-reported/measured wideband SINR proxy for the active slot; this is not the configured sweep anchor, and ConfiguredSNR_dB preserves that configured runtime anchor separately";
             end
         else
             runState.CurrentSNR_dB = configuredSNR;
             runState.ValueRole = "configured_anchor_until_feedback";
             runState.ValueStatus = "configured_anchor_pending_runtime_feedback";
             runState.ValueSource = "CoupledTruthRuntime.refreshRunState:configured_runtime_anchor_fallback";
-            runState.ValueDefinition = "no valid runtime feedback SINR is available yet for the active slot, so CurrentSNR_dB temporarily reflects the configured runtime SNR anchor; ConfiguredSNR_dB preserves that anchor explicitly";
+            runState.ValueDefinition = "no valid runtime feedback SINR is available yet for the active slot, so CurrentSNR_dB temporarily reflects the configured runtime SNR anchor and is not a measured SINR; ConfiguredSNR_dB preserves that anchor explicitly";
         end
         runState.CanonicalSlotsPerSweepPoint = double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN));
         runState.DLCompletedFrames = double(sixgr.util.structGet(state, "DLCompletedFrames", 0));
@@ -4240,6 +4335,13 @@ methods(Static, Access=private)
             traceT = sixgr.truth.CoupledTruthRuntime.appendCompatTable(traceT, struct2table(row));
             rowIdx = height(traceT);
         end
+        traceT.SpecialSlotActive(rowIdx) = logical(sixgr.util.structGet(state, "CurrentSlotIsSpecial", false));
+        traceT.DLSymbolStart(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0));
+        traceT.DLNumSymbols(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 14));
+        traceT.GuardSymbolStart(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotGuardSymbolStart", 14));
+        traceT.GuardNumSymbols(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotGuardNumSymbols", 0));
+        traceT.ULSymbolStart(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotULSymbolStart", 0));
+        traceT.ULNumSymbols(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", 14));
     end
 
     function id = composeSlotTraceID(sweepIdx, canonicalSlot, snr_dB)
@@ -4274,6 +4376,10 @@ methods(Static, Access=private)
             "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", ...
             "CurrentSNR_dB", NaN, "CurrentSNRSource", "", "CurrentSNRValueRole", "", "CurrentSNRValueStatus", "", ...
             "SNR_dB", NaN, "SweepPointIndex", NaN, "SweepPointCount", NaN, ...
+            "SpecialSlotActive", false, ...
+            "DLSymbolStart", 0, "DLNumSymbols", 14, ...
+            "GuardSymbolStart", 14, "GuardNumSymbols", 0, ...
+            "ULSymbolStart", 0, "ULNumSymbols", 14, ...
             "DLSlot", NaN, "ULSlot", NaN, ...
             "DLStarted", false, "ULStarted", false, ...
             "DLScheduled", false, "ULScheduled", false, ...
@@ -4431,6 +4537,9 @@ methods(Static, Access=private)
             "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", "ServingRSRP_dBm", NaN, ...
             "RSRP_dBm", NaN, "RxPower_dBm", NaN, "Pathloss_dB", NaN, ...
             "LOSFlag", false, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+            "ChannelComplianceMode", "", "PathlossModelSource", "", "PathlossComplianceStatus", "", "FallbackUsedForPathloss", false, ...
+            "O2IModelSource", "", "O2IComplianceStatus", "", "O2IComplianceReason", "", ...
+            "LOSProbabilitySource", "", "LOSComplianceStatus", "", "LOSComplianceReason", "", ...
             "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
             "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
             "LargeScaleWidebandSINR_dB", NaN, "LargeScaleSINR_dB", NaN, ...
@@ -4447,7 +4556,10 @@ methods(Static, Access=private)
             "CellID", NaN, "SiteID", NaN, "SectorID", NaN, ...
             "Lat", NaN, "Lon", NaN, "RSRP_dBm", NaN, "RxPower_dBm", NaN, ...
             "Pathloss_dB", NaN, "BeamIndex", NaN, "BeamGain_dB", NaN, ...
-            "LOSFlag", false, "ShadowFading_dB", NaN, "O2I_dB", NaN);
+            "LOSFlag", false, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+            "ChannelComplianceMode", "", "PathlossModelSource", "", "PathlossComplianceStatus", "", "FallbackUsedForPathloss", false, ...
+            "O2IModelSource", "", "O2IComplianceStatus", "", "O2IComplianceReason", "", ...
+            "LOSProbabilitySource", "", "LOSComplianceStatus", "", "LOSComplianceReason", "");
     end
 
     function row = emptyReselectionRow()
@@ -4527,6 +4639,26 @@ methods(Static, Access=private)
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FallbackFlag", false(n, 1));
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "NAReason", "", false);
         T = sixgr.truth.CoupledTruthRuntime.applyRuntimeMetadataColumns(T, meta, signalName);
+        directionValues = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Direction", repmat("", n, 1)));
+        if ~ismember("Direction", string(T.Properties.VariableNames))
+            directionValues = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "LinkDirection", repmat("", n, 1)));
+            if all(strlength(strtrim(directionValues)) == 0)
+                directionValues = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "TrialDirection", repmat("", n, 1)));
+            end
+            if all(strlength(strtrim(directionValues)) == 0)
+                directionValues = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "GrantDirection", repmat("", n, 1)));
+            end
+            if any(strlength(strtrim(directionValues)) > 0)
+                T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "Direction", directionValues, false);
+            end
+        end
+        directionValues = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Direction", repmat("", n, 1)));
+        if any(strlength(strtrim(directionValues)) > 0)
+            T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TrialDirection", directionValues, false);
+            T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "LinkDirection", directionValues, false);
+            T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "GrantDirection", directionValues, false);
+        end
+        T = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceSINRColumnsImpl(signalName, T);
 
         if signalName == "TRS"
             trsCtx = sixgr.truth.CoupledTruthRuntime.resolveTRSControlAnnotationContext(state, T);
@@ -4826,8 +4958,19 @@ methods(Static, Access=private)
     end
 
     function writeMirroredTable(layout, fileName, T)
-        sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, fileName), T);
-        sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, fileName), T);
+        controlPath = fullfile(layout.ControlCSVDir, fileName);
+        airPath = fullfile(layout.AirInterfaceCSVDir, fileName);
+        if istable(T) && ~isempty(T)
+            sixgr.util.csvWriteTable(controlPath, T);
+            sixgr.util.csvWriteTable(airPath, T);
+            return;
+        end
+        if exist(controlPath, "file") ~= 2
+            sixgr.util.csvWriteTable(controlPath, T);
+        end
+        if exist(airPath, "file") ~= 2
+            sixgr.util.csvWriteTable(airPath, T);
+        end
     end
 
     function row = emptyUserPerformanceRow()
@@ -4836,7 +4979,46 @@ methods(Static, Access=private)
             "DL_Throughput_Mbps", NaN, "UL_Throughput_Mbps", NaN, ...
             "DL_BLER", NaN, "UL_BLER", NaN, ...
             "DL_MeanMeasuredSINR_dB", NaN, "UL_MeanMeasuredSINR_dB", NaN, ...
-            "UserThroughput_Mbps", NaN, "HARQFailureRate", NaN);
+            "UserThroughput_Mbps", NaN, ...
+            "DL_HARQFailureRate", NaN, "UL_HARQFailureRate", NaN, ...
+            "DL_HARQObservationCount", NaN, "UL_HARQObservationCount", NaN, ...
+            "HARQFailureRate", NaN, "HARQObservationCount", NaN);
+    end
+
+    function [failureRate, observationCount] = userHARQFailureMetrics(harqTimelineT, ueIdx, direction)
+        failureRate = NaN;
+        observationCount = NaN;
+        if ~(istable(harqTimelineT) && ~isempty(harqTimelineT) && ...
+                all(ismember(["UEIndex","CombinedDecodeOK"], string(harqTimelineT.Properties.VariableNames))))
+            return;
+        end
+        mask = abs(double(harqTimelineT.UEIndex) - double(ueIdx)) < 1e-9;
+        if ismember("Direction", string(harqTimelineT.Properties.VariableNames)) && strlength(strtrim(string(direction))) > 0
+            mask = mask & upper(strtrim(string(harqTimelineT.Direction))) == upper(strtrim(string(direction)));
+        end
+        if ~any(mask)
+            return;
+        end
+        vals = double(harqTimelineT.CombinedDecodeOK(mask));
+        vals = vals(isfinite(vals));
+        if isempty(vals)
+            return;
+        end
+        observationCount = double(numel(vals));
+        failureRate = mean(1 - vals, "omitnan");
+    end
+
+    function [failureRate, observationCount] = combineDirectionalHARQFailureMetrics(dlRate, dlCount, ulRate, ulCount)
+        failureRate = NaN;
+        observationCount = NaN;
+        counts = [double(dlCount) double(ulCount)];
+        rates = [double(dlRate) double(ulRate)];
+        valid = isfinite(counts) & counts > 0 & isfinite(rates);
+        if ~any(valid)
+            return;
+        end
+        observationCount = sum(counts(valid), "omitnan");
+        failureRate = sum(rates(valid) .* counts(valid), "omitnan") / max(observationCount, 1);
     end
 
     function row = emptyHARQTimelineRow()
@@ -5059,8 +5241,9 @@ methods(Static, Access=private)
             cfgU = sixgr.util.structSet(cfgU, "phy.pucch.format", requestedFormat);
         end
         interferenceBundle = sixgr.truth.CoupledTruthRuntime.buildPUCCHInterferenceBundle(state, row);
+        expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
         trial = sixgr.link.runPUCCHWaveformTrial(cfgU, ...
-            "ExpectedUCIBits", int8(logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Ack", false))), ...
+            "ExpectedUCIBits", int8(logical(expectedAck)), ...
             "SNR_dB", double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN)), ...
             "Format", sixgr.util.structGet(cfgU, "phy.pucch.format", []), ...
             "RNTI", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)), ...
@@ -5102,11 +5285,25 @@ methods(Static, Access=private)
         end
         ack = logical(sixgr.util.structGet(observed, "ObservedAck", false));
         decodeOk = logical(sixgr.util.structGet(observed, "DecodeOk", false));
+        detectionUsable = logical(sixgr.util.structGet(trial, "DetectionUsable", true));
+        crcApplicable = logical(sixgr.util.structGet(trial, "CRCApplicable", false));
+        if crcApplicable && detectionUsable
+            crcPassValue = double(decodeOk);
+        else
+            crcPassValue = NaN;
+        end
         uciContentMatch = logical(sixgr.util.structGet(trial, "UCIContentMatch", ...
             (double(sixgr.util.structGet(trial, "BitErrors", 1)) == 0 && ...
             double(sixgr.util.structGet(trial, "BitsCompared", 0)) == numel(sixgr.util.structGet(trial, "ExpectedBits", int8(1))))));
+        crcOutcome = string(sixgr.util.structGet(trial, "CRCOutcome", ...
+            sixgr.truth.CoupledTruthRuntime.ternaryString(crcApplicable, ...
+            sixgr.truth.CoupledTruthRuntime.ternaryString(decodeOk, "pass", "fail"), "not_applicable")));
+        detectionOutcome = string(sixgr.util.structGet(trial, "DetectionOutcome", ...
+            sixgr.truth.CoupledTruthRuntime.ternaryString(detectionUsable, ...
+            sixgr.truth.CoupledTruthRuntime.ternaryString(uciContentMatch, "detected", "missed"), "unavailable")));
         status = string(sixgr.util.structGet(trial, "Status", ...
             sixgr.truth.CoupledTruthRuntime.ternaryString(ack, "PASS", "FAIL")));
+        expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(fbRow);
         row = struct( ...
             "Direction", "UL", ...
             "Frame", double(sixgr.util.structGet(state, "CurrentFrame", NaN)), ...
@@ -5118,16 +5315,48 @@ methods(Static, Access=private)
             "TBSize_bits", double(numel(sixgr.util.structGet(trial, "ExpectedBits", int8(1)))), ...
             "BitsCompared", double(sixgr.util.structGet(trial, "BitsCompared", 1)), ...
             "BitErrors", double(sixgr.util.structGet(trial, "BitErrors", double(~ack))), ...
-            "CRCPass", double(decodeOk), ...
-            "CRCApplicable", logical(sixgr.util.structGet(trial, "CRCApplicable", false)), ...
+            "CRCPass", crcPassValue, ...
+            "CRCApplicable", crcApplicable, ...
+            "CRCOutcome", char(crcOutcome), ...
             "UCIContentMatch", logical(uciContentMatch), ...
+            "DetectionOutcome", char(detectionOutcome), ...
             "DetectionMetric", double(sixgr.util.structGet(trial, "DetectionMetric", double(ack))), ...
             "AirInterfaceTTI_ms", double(sixgr.util.structGet(trial, "AirInterfaceTTI_ms", double(state.SlotDuration_s) * 1e3)), ...
             "ComputeLatency_ms", double(sixgr.util.structGet(trial, "ComputeLatency_ms", NaN)), ...
             "DecodeLatency_ms", double(sixgr.util.structGet(trial, "DecodeLatency_ms", NaN)), ...
             "NoiseVariance", double(sixgr.util.structGet(trial, "NoiseVariance", NaN)), ...
+            "NoiseVarStatus", char(string(sixgr.util.structGet(trial, "NoiseVarStatus", ""))), ...
+            "NoiseVarSource", char(string(sixgr.util.structGet(trial, "NoiseVarSource", ""))), ...
+            "NoiseVarReason", char(string(sixgr.util.structGet(trial, "NoiseVarReason", ""))), ...
+            "NoiseVarStrictFailure", logical(sixgr.util.structGet(trial, "NoiseVarStrictFailure", false)), ...
+            "ReceiverUsable", logical(sixgr.util.structGet(trial, "ReceiverUsable", false)), ...
+            "DetectionAttempted", logical(sixgr.util.structGet(trial, "DetectionAttempted", false)), ...
+            "DetectionUsable", detectionUsable, ...
+            "FailureReason", char(string(sixgr.util.structGet(trial, "FailureReason", ""))), ...
             "ConfiguredSNR_dB", double(sixgr.util.structGet(trial, "ConfiguredSNR_dB", sixgr.util.structGet(state, "CurrentSNR_dB", NaN))), ...
+            "ConfiguredSNRSource", char(string(sixgr.util.structGet(trial, "ConfiguredSNRSource", "configured_runtime_operating_point_reference"))), ...
+            "SNRValueRole", char(string(sixgr.util.structGet(trial, "SNRValueRole", "configured_reference_metadata"))), ...
             "AppliedAWGNSNR_dB", double(sixgr.util.structGet(trial, "AppliedAWGNSNR_dB", NaN)), ...
+            "ReceiverHestSINR_dB", double(sixgr.util.structGet(trial, "ReceiverHestSINR_dB", NaN)), ...
+            "ReceiverHestSINRSource", char(string(sixgr.util.structGet(trial, "ReceiverHestSINRSource", ""))), ...
+            "ReceiverHestSINRValueRole", char(string(sixgr.util.structGet(trial, "ReceiverHestSINRValueRole", ""))), ...
+            "ReceiverHestSINRValueStatus", char(string(sixgr.util.structGet(trial, "ReceiverHestSINRValueStatus", ""))), ...
+            "ReceiverHestSINRNAReason", char(string(sixgr.util.structGet(trial, "ReceiverHestSINRNAReason", ""))), ...
+            "DecoderTruthProxySINR_dB", double(sixgr.util.structGet(trial, "DecoderTruthProxySINR_dB", NaN)), ...
+            "DecoderTruthProxySINRSource", char(string(sixgr.util.structGet(trial, "DecoderTruthProxySINRSource", ""))), ...
+            "DecoderTruthProxySINRValueRole", char(string(sixgr.util.structGet(trial, "DecoderTruthProxySINRValueRole", ""))), ...
+            "DecoderTruthProxySINRValueStatus", char(string(sixgr.util.structGet(trial, "DecoderTruthProxySINRValueStatus", ""))), ...
+            "DecoderTruthProxySINRNAReason", char(string(sixgr.util.structGet(trial, "DecoderTruthProxySINRNAReason", ""))), ...
+            "MeasuredTrialSINR_dB", double(sixgr.util.structGet(trial, "MeasuredTrialSINR_dB", NaN)), ...
+            "MeasuredTrialSINRSource", char(string(sixgr.util.structGet(trial, "MeasuredTrialSINRSource", ""))), ...
+            "MeasuredTrialSINRValueRole", char(string(sixgr.util.structGet(trial, "MeasuredTrialSINRValueRole", ""))), ...
+            "MeasuredTrialSINRValueStatus", char(string(sixgr.util.structGet(trial, "MeasuredTrialSINRValueStatus", ""))), ...
+            "MeasuredTrialSINRNAReason", char(string(sixgr.util.structGet(trial, "MeasuredTrialSINRNAReason", ""))), ...
+            "MeasuredSINR_dB", double(sixgr.util.structGet(trial, "MeasuredTrialSINR_dB", NaN)), ...
+            "SINRValueRole", char(string(sixgr.util.structGet(trial, "SINRValueRole", ""))), ...
+            "SINRSource", char(string(sixgr.util.structGet(trial, "SINRSource", ""))), ...
+            "SINRValueStatus", char(string(sixgr.util.structGet(trial, "SINRValueStatus", ""))), ...
+            "SINRValueDefinition", char(string(sixgr.util.structGet(trial, "SINRValueDefinition", ""))), ...
             "RequestedFormat", double(sixgr.util.structGet(trial, "RequestedFormat", NaN)), ...
             "ResolvedFormat", double(sixgr.util.structGet(trial, "ResolvedFormat", NaN)), ...
             "FormatAdapted", logical(sixgr.util.structGet(trial, "FormatAdapted", false)), ...
@@ -5154,7 +5383,7 @@ methods(Static, Access=private)
             "UCIType", char(string(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "UCIType", "harq_ack"))), ...
             "ControlResourceSource", char(string(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))), ...
             "ControlResourceValidity", logical(sixgr.util.structGet(trial, "ControlResourceValidity", true)), ...
-            "ExpectedAck", logical(sixgr.truth.CoupledTruthRuntime.rowLogical(fbRow, "Ack", false)), ...
+            "ExpectedAck", logical(expectedAck), ...
             "ObservedAck", logical(ack), ...
             "PUCCHDecodeOk", logical(decodeOk), ...
             "RuntimeStateUpdated", true, ...
@@ -5169,6 +5398,163 @@ methods(Static, Access=private)
             "Notes", char(string(sixgr.util.structGet(trial, "Notes", "Active waveform-backed coupled PUCCH feedback observation."))));
         state.ControlTrials.PUCCH = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
             sixgr.util.structGet(state.ControlTrials, "PUCCH", table()), struct2table(row, "AsArray", true));
+    end
+
+    function T = annotateControlReferenceSINRColumnsImpl(signalName, T)
+        if nargin < 2 || ~istable(T) || isempty(T)
+            return;
+        end
+        n = height(T);
+        signalToken = lower(strrep(string(signalName), "-", "_"));
+
+        configuredSINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ConfiguredSNR_dB", nan(n, 1)));
+        configuredSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ConfiguredSNRSource", repmat("", n, 1))));
+        configuredRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "SNRValueRole", repmat("", n, 1))));
+        mask = strlength(configuredSource) == 0 & isfinite(configuredSINR);
+        configuredSource(mask) = "configured_runtime_operating_point_reference";
+        mask = strlength(configuredRole) == 0 & isfinite(configuredSINR);
+        configuredRole(mask) = "configured_reference_metadata";
+        T.ConfiguredSNR_dB = configuredSINR;
+        T.ConfiguredSNRSource = configuredSource;
+        T.SNRValueRole = configuredRole;
+
+        receiverHestSINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINR_dB", nan(n, 1)));
+        receiverSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRSource", repmat("", n, 1))));
+        receiverRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRValueRole", repmat("", n, 1))));
+        receiverStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRValueStatus", repmat("", n, 1))));
+        receiverReason = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRNAReason", repmat("", n, 1))));
+        hasReceiver = isfinite(receiverHestSINR);
+        lowerReceiverSource = lower(receiverSource);
+        fallbackReceiver = contains(lowerReceiverSource, "fallback") | contains(lower(receiverRole), "fallback") | contains(lower(receiverStatus), "fallback");
+        mask = strlength(receiverSource) == 0 & hasReceiver;
+        receiverSource(mask) = "receiver_hest_reference_signal_measurement";
+        mask = strlength(receiverRole) == 0 & hasReceiver & ~fallbackReceiver;
+        receiverRole(mask) = "estimated";
+        mask = strlength(receiverRole) == 0 & hasReceiver & fallbackReceiver;
+        receiverRole(mask) = "estimated_fallback";
+        mask = strlength(receiverStatus) == 0 & hasReceiver & ~fallbackReceiver;
+        receiverStatus(mask) = "OK";
+        mask = strlength(receiverStatus) == 0 & hasReceiver & fallbackReceiver;
+        receiverStatus(mask) = "fallback";
+        mask = strlength(receiverReason) == 0 & ~hasReceiver;
+        receiverReason(mask) = signalToken + "_receiver_hest_sinr_unavailable";
+        mask = strlength(receiverRole) == 0 & ~hasReceiver;
+        receiverRole(mask) = "unavailable";
+        mask = strlength(receiverStatus) == 0 & ~hasReceiver;
+        receiverStatus(mask) = "unavailable";
+        T.ReceiverHestSINR_dB = receiverHestSINR;
+        T.ReceiverHestSINRSource = receiverSource;
+        T.ReceiverHestSINRValueRole = receiverRole;
+        T.ReceiverHestSINRValueStatus = receiverStatus;
+        T.ReceiverHestSINRNAReason = receiverReason;
+
+        decoderProxySINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINR_dB", nan(n, 1)));
+        decoderSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRSource", repmat("", n, 1))));
+        decoderRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRValueRole", repmat("", n, 1))));
+        decoderStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRValueStatus", repmat("", n, 1))));
+        decoderReason = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRNAReason", repmat("", n, 1))));
+        hasDecoder = isfinite(decoderProxySINR);
+        mask = strlength(decoderSource) == 0 & hasDecoder;
+        decoderSource(mask) = "post_equalization_evm_proxy";
+        mask = strlength(decoderRole) == 0 & hasDecoder;
+        decoderRole(mask) = "derived";
+        mask = strlength(decoderStatus) == 0 & hasDecoder;
+        decoderStatus(mask) = "OK";
+        mask = strlength(decoderReason) == 0 & ~hasDecoder;
+        decoderReason(mask) = signalToken + "_decoder_truth_proxy_unavailable";
+        mask = strlength(decoderRole) == 0 & ~hasDecoder;
+        decoderRole(mask) = "unavailable";
+        mask = strlength(decoderStatus) == 0 & ~hasDecoder;
+        decoderStatus(mask) = "unavailable";
+        T.DecoderTruthProxySINR_dB = decoderProxySINR;
+        T.DecoderTruthProxySINRSource = decoderSource;
+        T.DecoderTruthProxySINRValueRole = decoderRole;
+        T.DecoderTruthProxySINRValueStatus = decoderStatus;
+        T.DecoderTruthProxySINRNAReason = decoderReason;
+
+        measuredTrialSINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredTrialSINR_dB", nan(n, 1)));
+        measuredSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredTrialSINRSource", repmat("", n, 1))));
+        measuredRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredTrialSINRValueRole", repmat("", n, 1))));
+        measuredStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredTrialSINRValueStatus", repmat("", n, 1))));
+        measuredReason = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredTrialSINRNAReason", repmat("", n, 1))));
+        hasMeasured = isfinite(measuredTrialSINR);
+        mask = strlength(measuredSource) == 0 & hasMeasured & strlength(receiverSource) > 0 & ~contains(lower(receiverSource), "fallback");
+        measuredSource(mask) = receiverSource(mask);
+        mask = strlength(measuredSource) == 0 & hasMeasured;
+        measuredSource(mask) = "waveform_trial_measurement";
+        mask = strlength(measuredRole) == 0 & hasMeasured;
+        measuredRole(mask) = "measured";
+        mask = strlength(measuredStatus) == 0 & hasMeasured;
+        measuredStatus(mask) = "OK";
+        mask = strlength(measuredReason) == 0 & ~hasMeasured;
+        measuredReason(mask) = signalToken + "_measured_trial_sinr_unavailable";
+        mask = strlength(measuredRole) == 0 & ~hasMeasured;
+        measuredRole(mask) = "unavailable";
+        mask = strlength(measuredStatus) == 0 & ~hasMeasured;
+        measuredStatus(mask) = "unavailable";
+        T.MeasuredTrialSINR_dB = measuredTrialSINR;
+        T.MeasuredTrialSINRSource = measuredSource;
+        T.MeasuredTrialSINRValueRole = measuredRole;
+        T.MeasuredTrialSINRValueStatus = measuredStatus;
+        T.MeasuredTrialSINRNAReason = measuredReason;
+
+        measuredSINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredSINR_dB", nan(n, 1)));
+        mask = ~isfinite(measuredSINR) & hasMeasured;
+        measuredSINR(mask) = measuredTrialSINR(mask);
+        T.MeasuredSINR_dB = measuredSINR;
+
+        sinrRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "SINRValueRole", repmat("", n, 1))));
+        sinrSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "SINRSource", repmat("", n, 1))));
+        sinrStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "SINRValueStatus", repmat("", n, 1))));
+        sinrDefinition = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "SINRValueDefinition", repmat("", n, 1))));
+        hasMeasuredAlias = isfinite(measuredSINR);
+        genericMeasured = hasMeasuredAlias;
+        genericReceiver = ~genericMeasured & hasReceiver;
+        genericDecoder = ~genericMeasured & ~hasReceiver & hasDecoder;
+        genericMissing = ~genericMeasured & ~hasReceiver & ~hasDecoder;
+
+        mask = strlength(sinrRole) == 0 & genericMeasured;
+        sinrRole(mask) = "measured";
+        mask = strlength(sinrRole) == 0 & genericReceiver;
+        sinrRole(mask) = receiverRole(mask);
+        mask = strlength(sinrRole) == 0 & genericDecoder;
+        sinrRole(mask) = decoderRole(mask);
+        mask = strlength(sinrRole) == 0 & genericMissing;
+        sinrRole(mask) = "unavailable";
+
+        mask = strlength(sinrSource) == 0 & genericMeasured;
+        sinrSource(mask) = measuredSource(mask);
+        mask = strlength(sinrSource) == 0 & genericReceiver;
+        sinrSource(mask) = receiverSource(mask);
+        mask = strlength(sinrSource) == 0 & genericDecoder;
+        sinrSource(mask) = decoderSource(mask);
+        mask = strlength(sinrSource) == 0 & genericMissing;
+        sinrSource(mask) = "no_active_" + signalToken + "_sinr_observation";
+
+        mask = strlength(sinrStatus) == 0 & genericMeasured;
+        sinrStatus(mask) = "OK";
+        mask = strlength(sinrStatus) == 0 & genericReceiver;
+        sinrStatus(mask) = receiverStatus(mask);
+        mask = strlength(sinrStatus) == 0 & genericDecoder;
+        sinrStatus(mask) = decoderStatus(mask);
+        mask = strlength(sinrStatus) == 0 & genericMissing;
+        sinrStatus(mask) = "unavailable";
+
+        mask = strlength(sinrDefinition) == 0 & genericMeasured;
+        sinrDefinition(mask) = "measured_trial_sinr_from_control_waveform_observation";
+        mask = strlength(sinrDefinition) == 0 & genericReceiver & receiverStatus == "fallback";
+        sinrDefinition(mask) = "receiver_hest_sinr_from_control_waveform_fallback";
+        mask = strlength(sinrDefinition) == 0 & genericReceiver & receiverStatus ~= "fallback";
+        sinrDefinition(mask) = "receiver_hest_sinr_from_control_reference_signal_measurement";
+        mask = strlength(sinrDefinition) == 0 & genericDecoder;
+        sinrDefinition(mask) = "decoder_truth_proxy_sinr_from_control_waveform_observation";
+        mask = strlength(sinrDefinition) == 0 & genericMissing;
+        sinrDefinition(mask) = "no_control_sinr_observation_available_in_active_runtime";
+
+        T.SINRValueRole = sinrRole;
+        T.SINRSource = sinrSource;
+        T.SINRValueStatus = sinrStatus;
+        T.SINRValueDefinition = sinrDefinition;
     end
 
     function state = appendPUCCHGrantTraceFromFeedback(state, feedbackRow)
@@ -5319,15 +5705,17 @@ methods(Static, Access=private)
             servingCell = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ServingCell", NaN));
             rnti = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN));
             dueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DueSlot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
+            expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
             numUCIBits = max(1, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UCIBitCount", ...
-                sixgr.truth.CoupledTruthRuntime.ternaryNumeric(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Ack", false), 1, 1)))));
+                sixgr.truth.CoupledTruthRuntime.ternaryNumeric(expectedAck, 1, 1)))));
         else
             row = feedbackRow;
             servingCell = double(sixgr.util.structGet(row, "ServingCell", NaN));
             rnti = double(sixgr.util.structGet(row, "RNTI", NaN));
             dueSlot = double(sixgr.util.structGet(row, "DueSlot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
+            expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
             numUCIBits = max(1, round(double(sixgr.util.structGet(row, "UCIBitCount", ...
-                sixgr.truth.CoupledTruthRuntime.ternaryNumeric(logical(sixgr.util.structGet(row, "Ack", false)), 1, 1)))));
+                sixgr.truth.CoupledTruthRuntime.ternaryNumeric(expectedAck, 1, 1)))));
         end
         requestedFormat = double(sixgr.util.structGet(state.CfgMobility, "phy.pucch.format", 2));
         if ~(isfinite(requestedFormat) && any(round(requestedFormat) == [0 1 2 3 4]))
@@ -5417,7 +5805,7 @@ methods(Static, Access=private)
             bundle(count).Seed = double(sixgr.util.structGet(cfgI, "run.seed", NaN)) + double(dueSlot) + double(count); %#ok<AGROW>
             bundle(count).ServingCell = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ServingCell", NaN)); %#ok<AGROW>
             bundle(count).InterferenceMode = char(string(sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(cfgI, state.MultiUser))); %#ok<AGROW>
-            bundle(count).ExpectedUCIBits = int8(logical(sixgr.truth.CoupledTruthRuntime.rowLogical(peer, "Ack", false))); %#ok<AGROW>
+            bundle(count).ExpectedUCIBits = int8(logical(sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(peer))); %#ok<AGROW>
             bundle(count).RequestedFormat = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RequestedFormat", requestedFormat)); %#ok<AGROW>
             bundle(count).ResolvedFormat = double(requestedFormat); %#ok<AGROW>
             bundle(count).UCIBitCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "UCIBitCount", 1)); %#ok<AGROW>
@@ -5425,6 +5813,14 @@ methods(Static, Access=private)
             bundle(count).ControlResourceSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))); %#ok<AGROW>
             bundle(count).PUCCHResourceId = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHResourceId", ""))); %#ok<AGROW>
         end
+    end
+
+    function ack = rowExpectedPUCCHAck(row)
+        ack = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Ack", false));
+        if ack
+            return;
+        end
+        ack = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "ExpectedAck", false));
     end
 
     function fmt = resolveCompatiblePUCCHFormat(requestedFormat, numBits)

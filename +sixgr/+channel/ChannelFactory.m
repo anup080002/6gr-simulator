@@ -156,9 +156,24 @@ classdef ChannelFactory
             meta.PathlossExecutionBackend = "";
             meta.PathlossTruthClassification = "";
             meta.PathlossApproximationReason = "";
+            meta.ChannelComplianceMode = "";
+            meta.PathlossModelSource = "";
+            meta.PathlossComplianceStatus = "";
+            meta.FallbackUsedForPathloss = false;
+            meta.O2IModelSource = "";
+            meta.O2IComplianceStatus = "";
+            meta.O2IComplianceReason = "";
+            meta.LOSProbabilitySource = "";
+            meta.LOSComplianceStatus = "";
+            meta.LOSComplianceReason = "";
             meta.SpatialNonStationarityTruthClassification = "";
             meta.SpatialNonStationarityApproximationMode = "";
             meta.SpatialNonStationarityApproximationReason = "";
+            meta.SpatialNonStationarityMode = "";
+            meta.VisibilityMaskSource = "";
+            meta.GeometryInputsUsed = "";
+            meta.PlaceholderUsed = false;
+            meta.SpatialNonStationarityComplianceStatus = "";
 
             % Create channel
             if any(model == ["awgn","none","off",""])
@@ -221,6 +236,16 @@ classdef ChannelFactory
                 meta.PathlossExecutionBackend = string(chObj.PathlossExecutionBackend);
                 meta.PathlossTruthClassification = string(chObj.PathlossTruthClassification);
                 meta.PathlossApproximationReason = string(chObj.PathlossApproximationReason);
+                meta.ChannelComplianceMode = string(chObj.ChannelComplianceMode);
+                meta.PathlossModelSource = string(chObj.PathlossModelSource);
+                meta.PathlossComplianceStatus = string(chObj.PathlossComplianceStatus);
+                meta.FallbackUsedForPathloss = logical(chObj.FallbackUsedForPathloss);
+                meta.O2IModelSource = string(chObj.O2IModelSource);
+                meta.O2IComplianceStatus = string(chObj.O2IComplianceStatus);
+                meta.O2IComplianceReason = string(chObj.O2IComplianceReason);
+                meta.LOSProbabilitySource = string(chObj.LOSProbabilitySource);
+                meta.LOSComplianceStatus = string(chObj.LOSComplianceStatus);
+                meta.LOSComplianceReason = string(chObj.LOSComplianceReason);
                 ch = struct("Type","TR38901Plus","Object",chObj,"IsFading",false,"IsLargeScaleOnly",true,"Meta",meta);
             elseif any(model == ["raytracing","ray","rt"])
                 args = {"Fc_Hz", opt.Fc_Hz, "Viewer", opt.Viewer};
@@ -239,17 +264,29 @@ classdef ChannelFactory
             if opt.EnableSpatialNonStationarity
                 try
                     vis = sixgr.channel.SpatialNonStationarity(cfg, ...
-                        "NumTxAnt", opt.NumTxAnt, "NumRxAnt", opt.NumRxAnt, "Seed", opt.Seed);
+                        "NumTxAnt", opt.NumTxAnt, "NumRxAnt", opt.NumRxAnt, "Seed", opt.Seed, ...
+                        "TransmitAntennaMeta", opt.TransmitAntennaMeta, ...
+                        "ReceiveAntennaMeta", opt.ReceiveAntennaMeta);
                     ch.Meta.SpatialNonStationarity = vis;
                     ch.Meta.SpatialNonStationarityTruthClassification = string(sixgr.util.structGet(vis, "truthClassification", ""));
                     ch.Meta.SpatialNonStationarityApproximationMode = string(sixgr.util.structGet(vis, "approximationMode", ""));
                     ch.Meta.SpatialNonStationarityApproximationReason = string(sixgr.util.structGet(vis, "approximationReason", ""));
+                    ch.Meta.SpatialNonStationarityMode = string(sixgr.util.structGet(vis, "mode", ""));
+                    ch.Meta.VisibilityMaskSource = string(sixgr.util.structGet(vis, "visibilityMaskSource", ""));
+                    ch.Meta.GeometryInputsUsed = string(sixgr.util.structGet(vis, "geometryInputsUsed", ""));
+                    ch.Meta.PlaceholderUsed = logical(sixgr.util.structGet(vis, "placeholderUsed", false));
+                    ch.Meta.SpatialNonStationarityComplianceStatus = string(sixgr.util.structGet(vis, "complianceStatus", ""));
                 catch ME
                     % Non-fatal: keep channel but warn in metadata
                     ch.Meta.SpatialNonStationarity = struct("enable",true,"error",string(ME.message));
                     ch.Meta.SpatialNonStationarityTruthClassification = "unavailable_due_to_runtime_error";
                     ch.Meta.SpatialNonStationarityApproximationMode = "runtime_error";
                     ch.Meta.SpatialNonStationarityApproximationReason = string(ME.message);
+                    ch.Meta.SpatialNonStationarityMode = "runtime_error";
+                    ch.Meta.VisibilityMaskSource = "runtime_error";
+                    ch.Meta.GeometryInputsUsed = "";
+                    ch.Meta.PlaceholderUsed = false;
+                    ch.Meta.SpatialNonStationarityComplianceStatus = "runtime_error";
                 end
             end
         end

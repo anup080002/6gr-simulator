@@ -1,4 +1,4 @@
-function LdB = O2ILoss(fc_Hz, model, varargin)
+function [LdB, status] = O2ILoss(fc_Hz, model, varargin)
 % sixgr.channel.O2ILoss
 %
 % Outdoor-to-Indoor (O2I) penetration + indoor loss model.
@@ -46,14 +46,27 @@ end
 
 fc_GHz = double(fc_Hz)/1e9;
 m = lower(strtrim(string(model)));
+status = struct( ...
+    "ModelSource", "", ...
+    "ComplianceStatus", "", ...
+    "Reason", "", ...
+    "StrictSupported", false, ...
+    "IndoorLossModel", "linear_0p5_db_per_meter_proxy", ...
+    "RandomComponentApplied", false);
 
 if m == "none" || m == "off"
     LdB = 0;
+    status.ModelSource = "o2i_disabled";
+    status.ComplianceStatus = "not_applicable_o2i_disabled";
+    status.StrictSupported = true;
     return;
 end
 
 if m == "custom"
     L_pen = opt.CustomLoss_dB;
+    status.ModelSource = "configured_custom_o2i_loss";
+    status.ComplianceStatus = "configured_custom_o2i_loss_not_strict_38901";
+    status.Reason = "custom configured o2i loss is caller supplied and not a strict tr38901 building penetration model";
 else
     % Frequency-dependent penetration loss approximation.
     % These are conservative defaults:
@@ -65,14 +78,23 @@ else
         % ~ 12 dB @ 3.5 GHz, ~ 28 dB @ 28 GHz
         L_pen = 5 + 0.30*fc_GHz + 10*log10(max(fc_GHz,1e-3));
         sigma = 4;
+        status.ModelSource = "approximate_tr38901_plus_low_loss_penetration_proxy";
+        status.ComplianceStatus = "approximate_o2i_model";
+        status.Reason = "low loss o2i uses a simplified frequency-dependent proxy plus random spread rather than the exact tr38901 building penetration table";
     elseif m == "high"
         % ~ 20 dB @ 3.5 GHz, ~ 40 dB @ 28 GHz
         L_pen = 10 + 0.45*fc_GHz + 15*log10(max(fc_GHz,1e-3));
         sigma = 6;
+        status.ModelSource = "approximate_tr38901_plus_high_loss_penetration_proxy";
+        status.ComplianceStatus = "approximate_o2i_model";
+        status.Reason = "high loss o2i uses a simplified frequency-dependent proxy plus random spread rather than the exact tr38901 building penetration table";
     else
         % Unknown -> treat as low
         L_pen = 5 + 0.30*fc_GHz + 10*log10(max(fc_GHz,1e-3));
         sigma = 4;
+        status.ModelSource = "approximate_o2i_unknown_model_defaulted_to_low_loss_proxy";
+        status.ComplianceStatus = "approximate_o2i_model_unknown_token_defaulted";
+        status.Reason = sprintf("unknown o2i model '%s' defaulted to the low-loss proxy", char(m));
     end
 
     % Add random term (log-normal around penetration loss)
@@ -82,6 +104,7 @@ else
         rnd = randn;
     end
     L_pen = L_pen + sigma*rnd;
+    status.RandomComponentApplied = true;
 end
 
 % Indoor loss: simple linear loss vs indoor distance

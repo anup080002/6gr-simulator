@@ -295,6 +295,11 @@ classdef SystemLevelRunner
             [noProgressGuardEnabled, noProgressTimeout_s, noProgressSlotLimit] = ...
                 localResolveNoProgressGuard(cfg, progressEverySlots, nTTI);
             lastProgressEmit_s = -Inf;
+            replayHeartbeatEveryGrants = max(1, round(double(sixgr.util.structGet(cfg, ...
+                "outputs.liveReplayHeartbeatEveryGrants", 4))));
+            replayHeartbeatEverySeconds = max(5, double(sixgr.util.structGet(cfg, ...
+                "outputs.liveReplayHeartbeatEverySeconds", 20)));
+            lastReplayHeartbeat_s = -Inf;
             lastUsefulProgress_s = 0;
             lastUsefulProgressSlot = 0;
             lastUsefulBitCount = 0;
@@ -523,8 +528,8 @@ classdef SystemLevelRunner
 
                 [slotDL, slotUL, slotLabel] = localSlotDuplexState(cfg, t);
                 slotDirection(t) = slotLabel;
-                dlBudget = localSlotBudget(nRB, slotLabel, "DL");
-                ulBudget = localSlotBudget(nRB, slotLabel, "UL");
+                dlBudget = localSlotBudget(cfg, t, nRB, "DL");
+                ulBudget = localSlotBudget(cfg, t, nRB, "UL");
 
                 [beamEventTrace, beamEventCount] = localAppendBeamEvents( ...
                     beamEventTrace, beamEventCount, t, tti_s, servingIdx, ...
@@ -886,6 +891,15 @@ classdef SystemLevelRunner
                     if ~isempty(schedDLCells{cellId}.HARQ) && isfinite(harqIdDL)
                         schedDLCells{cellId}.HARQ.onTx(u, harqIdDL, uint8([]), g, t - 1);
                     end
+                    if localShouldEmitReplayHeartbeat(gi, numel(grantsDL), runTimer, ...
+                            lastReplayHeartbeat_s, replayHeartbeatEveryGrants, replayHeartbeatEverySeconds)
+                        localEmitLiveReplayProgress(cfg, log, runTimer, t - 1, nTTI, tti_s, ...
+                            slotLabel, activeUECount(t), nCells, numel(grantsDL) + numel(grantsUL), ...
+                            servedBitsTotalDL + servedBitsTotalUL, ...
+                            droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
+                            "system_level_lls_dl_replay_progress", "DL", gi, numel(grantsDL), cellId, u);
+                        lastReplayHeartbeat_s = toc(runTimer);
+                    end
                     if t == 1 && gi == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
                             slotLabel, activeUECount(t), nCells, numel(grantsDL) + numel(grantsUL), ...
@@ -895,6 +909,7 @@ classdef SystemLevelRunner
                     end
                     [okDL, blerDL] = phy.decode(ctxDL);
                     replayDL = localLastPHYReplay(phy);
+                    replayTbsDL = localReplayTransportBlockSize(replayDL, tbsBits);
                     decisionUnavailableDL = localPHYDecisionUnavailable(replayDL);
                     if t == 1 && gi == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
@@ -911,7 +926,7 @@ classdef SystemLevelRunner
                     if decisionUnavailableDL
                         decodeUnavailableCountDL = decodeUnavailableCountDL + 1;
                     elseif okDL
-                        servedDL = min(queueBitsDL(u), tbsBits);
+                        servedDL = min(queueBitsDL(u), replayTbsDL);
                         queueBitsDL(u) = queueBitsDL(u) - servedDL;
                         servedBitsTotalDL = servedBitsTotalDL + servedDL;
                         servedBitsTTI_DL(t) = servedBitsTTI_DL(t) + servedDL;
@@ -923,12 +938,12 @@ classdef SystemLevelRunner
                     end
                     [grantTrace, grantTraceCount] = localAppendGrantTrace( ...
                         grantTrace, grantTraceCount, t, tti_s, slotLabel, "DL", ...
-                        cellId, g, prbCount, tbsBits, cqiUsed, mcsIdx, numLayers, ...
+                        cellId, g, prbCount, replayTbsDL, cqiUsed, mcsIdx, numLayers, ...
                         tgtCodeRate, sinr_dB(u), blerDL, logical(okDL), replayDL);
                     if ~decisionUnavailableDL
                         fb = struct( ...
                             "RNTI", u, ...
-                            "TBSBits", tbsBits, ...
+                            "TBSBits", replayTbsDL, ...
                             "Ack", logical(okDL), ...
                             "HarqID", double(sixgr.util.structGet(sixgr.util.structGet(g, "HARQ", struct()), "HarqID", NaN)));
                         fbIdx = fbDLWriteIdx(cellId) + 1;
@@ -1002,6 +1017,15 @@ classdef SystemLevelRunner
                     if ~isempty(schedULCells{cellId}.HARQ) && isfinite(harqIdUL)
                         schedULCells{cellId}.HARQ.onTx(u, harqIdUL, uint8([]), g, t - 1);
                     end
+                    if localShouldEmitReplayHeartbeat(gi, numel(grantsUL), runTimer, ...
+                            lastReplayHeartbeat_s, replayHeartbeatEveryGrants, replayHeartbeatEverySeconds)
+                        localEmitLiveReplayProgress(cfg, log, runTimer, t - 1, nTTI, tti_s, ...
+                            slotLabel, activeUECount(t), nCells, numel(grantsDL) + numel(grantsUL), ...
+                            servedBitsTotalDL + servedBitsTotalUL, ...
+                            droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
+                            "system_level_lls_ul_replay_progress", "UL", gi, numel(grantsUL), cellId, u);
+                        lastReplayHeartbeat_s = toc(runTimer);
+                    end
                     if t == 1 && gi == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
                             slotLabel, activeUECount(t), nCells, numel(grantsDL) + numel(grantsUL), ...
@@ -1011,6 +1035,7 @@ classdef SystemLevelRunner
                     end
                     [okUL, blerUL] = phy.decode(ctxUL);
                     replayUL = localLastPHYReplay(phy);
+                    replayTbsUL = localReplayTransportBlockSize(replayUL, tbsBits);
                     decisionUnavailableUL = localPHYDecisionUnavailable(replayUL);
                     if t == 1 && gi == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
@@ -1027,7 +1052,7 @@ classdef SystemLevelRunner
                     if decisionUnavailableUL
                         decodeUnavailableCountUL = decodeUnavailableCountUL + 1;
                     elseif okUL
-                        servedUL = min(queueBitsUL(u), tbsBits);
+                        servedUL = min(queueBitsUL(u), replayTbsUL);
                         queueBitsUL(u) = queueBitsUL(u) - servedUL;
                         servedBitsTotalUL = servedBitsTotalUL + servedUL;
                         servedBitsTTI_UL(t) = servedBitsTTI_UL(t) + servedUL;
@@ -1039,12 +1064,12 @@ classdef SystemLevelRunner
                     end
                     [grantTrace, grantTraceCount] = localAppendGrantTrace( ...
                         grantTrace, grantTraceCount, t, tti_s, slotLabel, "UL", ...
-                        cellId, g, prbCount, tbsBits, cqiUsed, mcsIdx, numLayers, ...
+                        cellId, g, prbCount, replayTbsUL, cqiUsed, mcsIdx, numLayers, ...
                         tgtCodeRate, sinrUL_dB(u), blerUL, logical(okUL), replayUL);
                     if ~decisionUnavailableUL
                         fb = struct( ...
                             "RNTI", u, ...
-                            "TBSBits", tbsBits, ...
+                            "TBSBits", replayTbsUL, ...
                             "Ack", logical(okUL), ...
                             "HarqID", double(sixgr.util.structGet(sixgr.util.structGet(g, "HARQ", struct()), "HarqID", NaN)));
                         fbIdx = fbULWriteIdx(cellId) + 1;
@@ -1569,38 +1594,10 @@ ebno_dB = double(sinr_dB) - 10*log10(max(se, 1e-9));
 end
 
 function [allowDL, allowUL, slotLabel] = localSlotDuplexState(cfg, t)
-duplex = upper(string(sixgr.util.structGet(cfg, "phy.duplex.mode", ...
-    sixgr.util.structGet(cfg, "scenario.duplexMode", "TDD"))));
-if duplex == "FDD"
-    allowDL = true;
-    allowUL = true;
-    slotLabel = "FDD_DLUL";
-    return;
-end
-
-pattern = sixgr.util.structGet(cfg, "phy.duplex.tddPattern", ...
-    sixgr.util.structGet(cfg, "scenario.tddPattern", "DDDSU"));
-tokens = localExpandTDDPattern(pattern);
-if isempty(tokens)
-    tokens = 'DDDSU';
-end
-i = mod(max(0, round(t) - 1), numel(tokens)) + 1;
-sw = upper(tokens(i));
-switch sw
-    case 'D'
-        allowDL = true;
-        allowUL = false;
-        slotLabel = "DL";
-    case 'U'
-        allowDL = false;
-        allowUL = true;
-        slotLabel = "UL";
-    otherwise
-        % special slot: keep both enabled with reduced guard handled by scheduler budgets.
-        allowDL = true;
-        allowUL = true;
-        slotLabel = "S";
-end
+partition = sixgr.util.resolveTDDSlotPartition(cfg, t);
+allowDL = logical(partition.AllowDL);
+allowUL = logical(partition.AllowUL);
+slotLabel = string(partition.SlotLabel);
 end
 
 function sched = localCreateScheduler(cfg, schedulerName, direction, log)
@@ -1621,20 +1618,21 @@ catch
 end
 end
 
-function budget = localSlotBudget(nRB, slotLabel, direction)
-slotTag = upper(char(string(slotLabel)));
+function budget = localSlotBudget(cfg, t, nRB, direction)
+partition = sixgr.util.resolveTDDSlotPartition(cfg, t);
 dir = upper(char(string(direction)));
 nPRB = max(1, round(double(nRB)));
-symAlloc = [0 14];
-if strcmp(slotTag, "S")
-    nPRB = max(1, floor(nPRB * 0.5));
-    if strcmp(dir, "DL")
-        symAlloc = [0 7];
-    else
-        symAlloc = [7 7];
-    end
+symbolsPerSlot = max(1, round(double(sixgr.util.structGet(partition, "SymbolsPerSlot", ...
+    sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", 14)))));
+if strcmp(dir, "UL")
+    symAlloc = double(sixgr.util.structGet(partition, "ULSymbolAllocation", [0 symbolsPerSlot]));
+else
+    symAlloc = double(sixgr.util.structGet(partition, "DLSymbolAllocation", [0 symbolsPerSlot]));
 end
-budget = struct("NPRB", nPRB, "SymbolAllocation", symAlloc);
+if numel(symAlloc) < 2
+    symAlloc = [0 symbolsPerSlot];
+end
+budget = struct("NPRB", nPRB, "SymbolAllocation", reshape(symAlloc(1:2), 1, 2));
 end
 
 function mode = localResolveSINRModel(cfg)
@@ -2140,6 +2138,17 @@ B = size(M, 2);
 s = min(max(round(double(servingIdx(:))), 1), B);
 lin = sub2ind([K B], (1:K).', s);
 v = M(lin);
+end
+
+function tbsBits = localReplayTransportBlockSize(replay, fallbackTbsBits)
+tbsBits = double(fallbackTbsBits);
+replayTbs = double(sixgr.util.structGet(replay, "TransportBlockSize", NaN));
+if isfinite(replayTbs) && replayTbs > 0
+    tbsBits = replayTbs;
+end
+if ~(isfinite(tbsBits) && tbsBits > 0)
+    tbsBits = 0;
+end
 end
 
 function st = localEncodeHOState(hoPrepRemain, hoInterRemain)
@@ -3139,6 +3148,102 @@ try
 catch ME
     try
         fprintf('[%s] WARN system progress DB heartbeat failed: %s\n', nowUTC, ME.message);
+    catch
+    end
+    end
+end
+
+function tf = localShouldEmitReplayHeartbeat(grantIndex, grantTotal, runTimer, ...
+    lastHeartbeat_s, everyGrants, everySeconds)
+
+grantIndex = max(1, round(double(grantIndex)));
+grantTotal = max(1, round(double(grantTotal)));
+everyGrants = max(1, round(double(everyGrants)));
+everySeconds = max(1, double(everySeconds));
+elapsedNow_s = double(toc(runTimer));
+
+tf = grantIndex == 1 || grantIndex == grantTotal || ...
+    mod(grantIndex - 1, everyGrants) == 0 || ...
+    (elapsedNow_s - double(lastHeartbeat_s)) >= everySeconds;
+end
+
+function localEmitLiveReplayProgress(cfg, log, runTimer, slotIdx, totalSlots, tti_s, ...
+    slotLabel, activeUECount, nCells, grantCount, servedBits, droppedBits, ...
+    overflowEvents, stageName, replayDirection, grantIndex, grantTotal, cellId, ueId)
+
+slotIdx = max(0, round(double(slotIdx)));
+totalSlots = max(1, round(double(totalSlots)));
+grantIndex = max(1, round(double(grantIndex)));
+grantTotal = max(1, round(double(grantTotal)));
+cellId = max(1, round(double(cellId)));
+ueId = max(1, round(double(ueId)));
+elapsed_s = double(toc(runTimer));
+completion = min(1, max(0, double(slotIdx) / max(double(totalSlots), 1)));
+simTime_ms = 1e3 * double(tti_s) * double(slotIdx);
+stageText = char(string(stageName));
+slotText = char(string(slotLabel));
+dirText = char(upper(string(replayDirection)));
+nowUTC = localUTCStamp();
+
+msg = sprintf(['%s slot=%d/%d completion=%.4f elapsed_s=%.1f ' ...
+    'slot_direction=%s replay_direction=%s replay_grant=%d/%d ' ...
+    'cell=%d ue=%d active_ue=%d cells=%d grants=%d served_bits=%.0f ' ...
+    'dropped_bits=%.0f overflow_events=%d'], ...
+    stageText, slotIdx, totalSlots, completion, elapsed_s, slotText, dirText, ...
+    grantIndex, grantTotal, cellId, ueId, round(double(activeUECount)), ...
+    round(double(nCells)), round(double(grantCount)), double(servedBits), ...
+    double(droppedBits), round(double(overflowEvents)));
+
+try
+    fprintf('[%s] INFO %s\n', nowUTC, msg);
+catch
+end
+try
+    if ~isempty(log)
+        log.info(string(msg));
+    end
+catch
+end
+
+try
+    if sixgr.db.isArtifactStoreActive()
+        payload = struct();
+        payload.stage = stageText;
+        payload.current_slot = double(slotIdx);
+        payload.total_slots = double(totalSlots);
+        payload.run_completion = completion;
+        payload.elapsed_s = elapsed_s;
+        payload.sim_time_ms = simTime_ms;
+        payload.slot_duration_ms = 1e3 * double(tti_s);
+        payload.slot_direction = slotText;
+        payload.replay_direction = dirText;
+        payload.replay_grant_index = double(grantIndex);
+        payload.replay_grant_total = double(grantTotal);
+        payload.replay_cell_id = double(cellId);
+        payload.replay_ue_id = double(ueId);
+        payload.active_ue_count = double(activeUECount);
+        payload.cell_count = double(nCells);
+        payload.grant_count_slot = double(grantCount);
+        payload.served_bits_total = double(servedBits);
+        payload.dropped_bits_total = double(droppedBits);
+        payload.overflow_event_count = double(overflowEvents);
+        payload.scenario_id = char(string(sixgr.util.structGet(cfg, ...
+            "meta.lls6gScenarioID", sixgr.util.structGet(cfg, "scenario.id", ""))));
+        payload.run_profile = char(string(sixgr.util.structGet(cfg, "run.profile", ...
+            sixgr.util.structGet(cfg, "run.mode", ""))));
+        payload.value_role = "measured";
+        payload.value_source = "sixgr.system.SystemLevelRunner";
+        payload.value_status = "OK";
+        payload.placeholder_flag = false;
+        payload.fallback_flag = false;
+        payload.config_only_flag = false;
+        payload.timestamp_utc = nowUTC;
+        sixgr.db.markRunStatus("running", payload);
+        sixgr.db.appendLogLine("INFO", nowUTC, msg);
+    end
+catch ME
+    try
+        fprintf('[%s] WARN system replay DB heartbeat failed: %s\n', nowUTC, ME.message);
     catch
     end
 end

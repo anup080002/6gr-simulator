@@ -817,20 +817,42 @@ end
 
 function tbsBits = localComputeTBSBitsFromAlloc(chCfg, chInfo, targetCodeRate, xOverhead)
 nPRB = max(1, numel(chCfg.PRBSet));
-nrePerPRB = [];
-if isfield(chInfo, "NREPerPRB")
-    nrePerPRB = double(chInfo.NREPerPRB);
-elseif isfield(chInfo, "NRE")
-    nrePerPRB = floor(double(chInfo.NRE) / max(nPRB, 1));
-elseif isfield(chInfo, "G")
-    qm = localQmFromModulation(chCfg.Modulation);
-    nrePerPRB = floor(double(chInfo.G) / max(qm * double(chCfg.NumLayers) * nPRB, 1));
-end
-if isempty(nrePerPRB) || ~isfinite(nrePerPRB) || nrePerPRB <= 0
-    nrePerPRB = 144;
+[nrePerPRB, gBits] = localResolveDataNREPerPRB(chInfo, nPRB, chCfg.Modulation, chCfg.NumLayers);
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    error("sixgr:system:WaveformReplay:MissingExactNRE", ...
+        "Waveform replay could not derive an exact data RE budget for %s: PRBs=%d Modulation=%s Layers=%d G=%g.", ...
+        class(chCfg), round(double(nPRB)), char(string(chCfg.Modulation)), ...
+        round(double(chCfg.NumLayers)), double(gBits));
 end
 tbsBits = double(nrTBS(chCfg.Modulation, chCfg.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead));
 tbsBits = max(24, round(tbsBits));
+end
+
+function [nrePerPRB, gBits] = localResolveDataNREPerPRB(chInfo, nPRB, modStr, nLayers)
+nrePerPRB = NaN;
+gBits = NaN;
+qm = localQmFromModulation(modStr);
+if isfield(chInfo, "G")
+    gBits = double(chInfo.G);
+    if isfinite(gBits)
+        if gBits <= 0
+            nrePerPRB = 0;
+            return;
+        end
+        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
+        if isfinite(nrePerPRB) && nrePerPRB > 0
+            return;
+        end
+    end
+end
+if isfield(chInfo, "NRE")
+    nrePerPRB = floor(double(chInfo.NRE) / max(double(nPRB), 1));
+elseif isfield(chInfo, "NREPerPRB")
+    nrePerPRB = double(chInfo.NREPerPRB);
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    nrePerPRB = NaN;
+end
 end
 
 function qm = localQmFromModulation(modScheme)

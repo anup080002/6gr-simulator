@@ -51,7 +51,8 @@ run_control:
   warmup_time_ms: 1
   measurement_time_ms: 4
   total_time_ms: 5
-  batch_size_links: 1
+  batch_size_links: 16
+  num_workers: 8
   max_runtime_guard: 7200
 
 simulation:

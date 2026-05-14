@@ -13,7 +13,8 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "TransportBlockSize": expected TB size (bits)
 %     "TargetCodeRate": code rate (0..1)
 %     "RV"          : redundancy version (0..3)
-%     "NoiseVar"    : noise variance (if known)
+%     "NoiseVar"    : explicit runtime noise variance metadata
+%     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %     "MaxIterations": LDPC iterations
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %
@@ -24,7 +25,11 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     RX.CodewordLLR        : soft bits before rate recovery
 %     RX.ChannelEstimate    : H estimate
 %     RX.NoiseVar           : used noise variance
-%     RX.TimingOffset       : estimated timing offset (samples)
+%     RX.NoiseVarStatus     : "OK" or "NOT_AVAILABLE"
+%     RX.NoiseVarSource     : provenance for the used/unavailable noise variance
+%     RX.NoiseVarReason     : explicit unavailable/validation reason
+%     RX.TimingOffset       : raw estimated timing offset (samples)
+%     RX.AppliedTimingCorrection_samples : applied waveform correction (samples)
 
 % ---------------------- Parse inputs ----------------------
 ip = inputParser;
@@ -34,7 +39,10 @@ ip.addParameter('PUSCHIndices', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
 ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
-ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
+ip.addParameter('NoiseVar', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @(x) ischar(x) || isstring(x));
+ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -148,28 +156,33 @@ elseif logical(trackingCorrection.CFOEstimateAvailable)
     trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
 end
 
-toffset = 0;
+rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
 if logical(trackingCorrection.TimingEstimateAvailable) && isfinite(double(trackingCorrection.TimingEstimate_samples))
-    toffset = round(double(trackingCorrection.TimingEstimate_samples));
+    rawTimingEstimate = double(trackingCorrection.TimingEstimate_samples);
     timingEstimateUsed = true;
     timingEstimateSource = string(trackingCorrection.Source);
     trackingCorrection.TimingCorrectionApplied = true;
 elseif ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate)
     try
-        toffset = nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym);
-        toffset = max(0, double(toffset));
+        rawTimingEstimate = double(nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym));
         timingEstimateUsed = true;
         timingEstimateSource = "nrTimingEstimate_dmrs";
     catch
-        toffset = 0;
+        rawTimingEstimate = NaN;
         timingEstimateUsed = false;
         timingEstimateSource = "nrTimingEstimate_failed";
     end
 end
 
-rxWaveform = localApplyTimingCorrection(rxWaveform, toffset);
+timingResolution = sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ...
+    "EstimateUsed", timingEstimateUsed, ...
+    "ApplicationMode", "signed_waveform_shift", ...
+    "SkipRequested", logical(opt.SkipTimingEstimate), ...
+    "Source", timingEstimateSource);
+trackingCorrection.TimingCorrectionApplied = logical(timingResolution.EstimateUsed);
+rxWaveform = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrection_samples);
 
 % OFDM demod
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
@@ -199,17 +212,32 @@ else
 end
 
 % Noise variance
-nVar = opt.NoiseVar;
-if isempty(nVar)
-    if ~isempty(nVarEst) && isfinite(nVarEst) && nVarEst >= 0
-        nVar = nVarEst;
-    else
-        nVar = 1e-10;
-    end
+noiseCandidate = opt.NoiseVar;
+noiseSource = "runtime_metadata";
+if isempty(noiseCandidate)
+    noiseCandidate = nVarEst;
+    noiseSource = "runtime_channel_estimate";
 else
-    nVar = localConvertNoiseVarToGridDomain(nVar, ofdmInfo);
+    noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
 end
+configuredNoiseVariance = opt.ConfiguredNoiseVariance;
+if ~isempty(configuredNoiseVariance)
+    configuredNoiseVariance = localConvertNoiseVarToGridDomain(configuredNoiseVariance, ofdmInfo);
+end
+[nVar, noiseStatus] = sixgr.phy.ul.resolveULNoiseVariance(noiseCandidate, cfg, ...
+    "ChannelType", "PUSCH", ...
+    "OriginalSource", noiseSource, ...
+    "StrictRequired", opt.StrictNoiseVarianceRequired, ...
+    "ConfiguredNoiseVariance", configuredNoiseVariance, ...
+    "ConfiguredNoiseVarianceSource", opt.ConfiguredNoiseVarianceSource);
 nVar = double(nVar);
+if ~logical(noiseStatus.IsValid)
+    [rx, info] = localBuildUnavailableNoiseVarianceRx( ...
+        trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
+        cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
+        nVar, noiseStatus, logical(opt.CompactOutput));
+    return;
+end
 
 % Extract resources
 [rxSym, hestSym] = nrExtractResources(puschInd, rxGrid, Hest);
@@ -328,9 +356,22 @@ rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
 rx.NoiseVar = nVar;
-rx.TimingOffset = toffset;
-rx.TimingEstimateUsed = logical(timingEstimateUsed);
+rx.NoiseVarStatus = char(string(noiseStatus.Status));
+rx.NoiseVarSource = char(string(noiseStatus.Source));
+rx.NoiseVarReason = char(string(noiseStatus.Reason));
+rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
+rx.ReceiverUsable = true;
+rx.DecodeAttempted = true;
+rx.DecodeUsable = true;
+rx.FailureReason = "";
+rx.TimingOffset = double(timingResolution.RawEstimate_samples);
+rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
 rx.TimingEstimateSource = char(timingEstimateSource);
+rx.TimingEstimateStatus = char(string(timingResolution.Status));
+rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
@@ -372,6 +413,8 @@ info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
+info.NoiseVariance = noiseStatus;
+info.TimingEstimate = timingResolution;
 
 end
 
@@ -661,6 +704,76 @@ nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
 if isfinite(nfft) && nfft > 0
     nVarGrid = nVarGrid * nfft;
 end
+end
+
+function [rx, info] = localBuildUnavailableNoiseVarianceRx( ...
+        trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
+        cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
+        nVar, noiseStatus, compactOutput)
+rx = struct();
+rx.TransportBlockSize = trBlkSize;
+rx.TransportBlock = int8([]);
+rx.CRCError = true;
+rx.Ok = false;
+rx.NoiseVar = double(nVar);
+rx.NoiseVarStatus = char(string(noiseStatus.Status));
+rx.NoiseVarSource = char(string(noiseStatus.Source));
+rx.NoiseVarReason = char(string(noiseStatus.Reason));
+rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
+rx.ReceiverUsable = false;
+rx.DecodeAttempted = false;
+rx.DecodeUsable = false;
+rx.FailureReason = char(string(noiseStatus.Reason));
+rx.TimingOffset = double(timingResolution.RawEstimate_samples);
+rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
+rx.TimingEstimateSource = char(string(timingResolution.Source));
+rx.TimingEstimateStatus = char(string(timingResolution.Status));
+rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
+rx.DecodeLatency_s = NaN;
+rx.MaxDecoderIterations = NaN;
+rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
+rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
+rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
+rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
+rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
+rx.ReceiverTrackingCorrectionNAReason = char(string(trackingCorrection.NAReason));
+rx.ReceiverHestSINR_dB = NaN;
+rx.ReceiverHestSINRSource = "unavailable_ul_noise_variance_required";
+rx.ReceiverHestSINRValueRole = "unavailable";
+rx.ReceiverHestSINRValueStatus = "unavailable";
+rx.ReceiverHestSINRNAReason = char(string(noiseStatus.Reason));
+rx.EqualizedSymbolsForEvidence = complex([]);
+rx.PUSCHRxSymbolsForEvidence = complex([]);
+if ~compactOutput
+    rx.CodewordLLR = double([]);
+    rx.RateRecoveredLLR = double([]);
+    rx.DecodedCodeBlocks = int8([]);
+    rx.ActiveIterations = double([]);
+    rx.ParityChecks = double([]);
+    rx.CodeBlockCRCError = double([]);
+    rx.ChannelEstimate = Hest;
+    rx.RxGrid = rxGrid;
+    rx.DMRSIndices = dmrsInd;
+    rx.DMRSSymbols = dmrsSym;
+    rx.Carrier = carrier;
+    rx.PUSCH = pusch;
+    rx.PUSCHInfo = puschInfo;
+    rx.EqualizedSymbols = complex([]);
+    rx.PUSCHRxSymbols = complex([]);
+    rx.CSI = double([]);
+end
+
+info = struct();
+info.CarrierInfo = cinfo;
+info.OFDM = ofdmInfo;
+info.ChannelEstimation = estInfo;
+info.ReceiverTrackingCorrection = trackingCorrection;
+info.NoiseVariance = noiseStatus;
+info.TimingEstimate = timingResolution;
 end
 
 function token = localNormalizeChannelToken(rawValue)

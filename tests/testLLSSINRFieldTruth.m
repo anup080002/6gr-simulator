@@ -3,7 +3,7 @@ function ok = testLLSSINRFieldTruth()
 
 setup6GRSimToolkit("Verbose", false);
 
-scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_700mhz_20mhz_2x2_rank2_beam_truth.yaml");
+scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "lls_sinr_field_truth"));
 
@@ -43,9 +43,17 @@ assert(all(strcmp(string(T.SINRSource(receiverMask)), "receiver_hest_reference_s
 assert(all(strcmp(string(T.ReceiverHestSINRSource(receiverMask)), "receiver_hest_reference_signal_measurement")), ...
     sprintf("%s ReceiverHestSINRSource must stay explicit.", direction));
 
-legacyMask = receiverMask & isfinite(double(T.MeasuredTrialSINR_dB));
-assert(all(abs(double(T.ReceiverHestSINR_dB(legacyMask)) - double(T.MeasuredTrialSINR_dB(legacyMask))) < 1e-9), ...
-    sprintf("%s MeasuredTrialSINR_dB must remain only a compatibility mirror of ReceiverHestSINR_dB.", direction));
+measuredMask = isfinite(double(T.MeasuredTrialSINR_dB));
+assert(any(measuredMask), sprintf("%s trials must export at least one finite MeasuredTrialSINR_dB sample.", direction));
+assert(all(strlength(strtrim(string(T.MeasuredTrialSINRSource(measuredMask)))) > 0), ...
+    sprintf("%s MeasuredTrialSINR_dB rows must carry an explicit measurement source.", direction));
+assert(all(~contains(lower(string(T.MeasuredTrialSINRSource(measuredMask))), "proxy_fallback")), ...
+    sprintf("%s MeasuredTrialSINR_dB must not be relabeled from decoder-proxy fallback.", direction));
+proxyOnlyMask = ~isfinite(double(T.ReceiverHestSINR_dB)) & isfinite(double(T.DecoderTruthProxySINR_dB));
+if any(proxyOnlyMask)
+    assert(all(~isfinite(double(T.MeasuredTrialSINR_dB(proxyOnlyMask)))), ...
+        sprintf("%s proxy-only rows must keep MeasuredTrialSINR_dB unavailable instead of fabricating a measured value.", direction));
+end
 
 proxyMask = isfinite(double(T.EVM_rms)) & double(T.EVM_rms) > 0;
 assert(any(proxyMask), sprintf("%s truth probe must produce finite EVM for decoder-truth proxy derivation.", direction));

@@ -57,12 +57,16 @@ NID2 = mod(double(NID2),3);
 try
     [tOff, tinfo] = sixgr.phy.sync.timingEstimate(rxF, NID2, blockPattern, fs);
 catch
-    tOff = 0;
+    tOff = NaN;
     tinfo = struct('UsedFallback',true);
 end
+timingResolution = sixgr.phy.sync.resolveTimingApplication(tOff, ...
+    "EstimateUsed", isfinite(double(tOff)), ...
+    "ApplicationMode", "positive_crop_only", ...
+    "Source", "nrTimingEstimate_pss");
 
 % Synchronize waveform
-startIdx = 1 + max(0, round(tOff));
+startIdx = 1 + max(0, round(double(timingResolution.AppliedCorrection_samples)));
 if startIdx > size(rxF,1)
     startIdx = 1;
 end
@@ -102,7 +106,12 @@ sync.BlockPattern = blockPattern;
 sync.Lmax = Lmax;
 sync.NID2 = NID2;
 sync.FreqOffset_Hz = fOffHz;
-sync.TimingOffset = tOff;
+sync.TimingOffset = double(timingResolution.RawEstimate_samples);
+sync.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+sync.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+sync.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+sync.TimingEstimateStatus = char(string(timingResolution.Status));
+sync.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 sync.SCS_SSB_kHz = scsSSB;
 sync.nRBSSB = nrbSSB;
 

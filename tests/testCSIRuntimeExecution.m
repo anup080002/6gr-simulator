@@ -29,7 +29,7 @@ expectedMeasuredRSRP_dB = 10 * log10(mean(abs(double(rxGrid(double(refInd)))).^2
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "type1");
 csi1 = sixgr.phy.dl.CSI_Feedback(Hest, 0.02, cfg, "MaxRank", 2);
-assert(isfinite(csi1.CQI), "CQI must be finite.");
+assert(~isfinite(csi1.CQI), "CQI must remain unavailable when no measured reference-signal SINR was provided.");
 assert(isfinite(csi1.RI) && csi1.RI >= 1 && csi1.RI <= 2, "RI must be reported from the runtime channel.");
 assert(isfinite(csi1.PMI), "PMI must be reported from the runtime channel.");
 assert(isfinite(csi1.CRI) && csi1.CRI >= 0 && csi1.CRI < 4, "CRI must be reported from configured resource candidates.");
@@ -39,6 +39,8 @@ assert(csi1.CSIPayloadBitLength > 0, "Runtime CSI feedback must export a packed 
 assert(strlength(string(csi1.CSIPayloadHex)) > 0, "Runtime CSI feedback must export payload hex.");
 assert(strcmpi(string(csi1.RSRPSource), "channel_estimate_gain_proxy"), ...
     "CSI feedback must label proxy RSRP honestly when no measured RS is provided.");
+assert(strcmpi(string(csi1.ReferenceSINRValueStatus), "fallback_to_channel_gain_over_noise"), ...
+    "CSI feedback must disclose when SINR fell back to channel-gain-over-noise instead of a measured RS SINR.");
 
 cfgSISO = cfg;
 cfgSISO.phy.nTxAnt = 1;
@@ -50,12 +52,25 @@ assert(abs(double(csiGrid.SINR_dB)) < 1e-9, ...
 
 [csiMeasured, infoMeasured] = sixgr.phy.dl.CSI_Feedback(Hest, 0.02, cfg, "MaxRank", 2, ...
     "ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym);
+assert(isfinite(csiMeasured.CQI), ...
+    "CQI must be finite when measured reference-signal SINR is available.");
 assert(abs(double(csiMeasured.RSRP_dB) - expectedMeasuredRSRP_dB) < 1e-9, ...
     "CSI feedback must derive RSRP from measured reference-signal RE power.");
 assert(strcmpi(string(csiMeasured.RSRPSource), "received_reference_signal_power"), ...
     "CSI feedback must label measured RSRP honestly.");
 assert(strcmpi(string(infoMeasured.RSRPSource), "received_reference_signal_power"), ...
     "CSI feedback info must retain the measured-RSRP provenance.");
+
+ulMetricNoRef = sixgr.phy.ul.measureULLinkState(Hest, 0.02, cfg);
+assert(~isfinite(ulMetricNoRef.CQI), ...
+    "UL CQI must remain unavailable when no measured UL reference-signal SINR was provided.");
+assert(strcmpi(string(ulMetricNoRef.SINRValueStatus), "fallback"), ...
+    "UL link-state export must disclose the SINR fallback state instead of converting it into measured CQI.");
+
+ulMetricMeasured = sixgr.phy.ul.measureULLinkState(Hest, 0.02, cfg, ...
+    "ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym);
+assert(isfinite(ulMetricMeasured.CQI), ...
+    "UL CQI must be finite when measured UL reference-signal SINR is available.");
 
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "type2_mu_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "type2");

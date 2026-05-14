@@ -25,6 +25,14 @@ out.ProcedureDelay_ms = 0;
 out.AirInterfaceObservation_ms = NaN;
 out.AcquisitionTime_ms = NaN;
 out.TrackingFailure = 1;
+out.NoiseVariance = NaN;
+out.NoiseVarStatus = "";
+out.NoiseVarSource = "";
+out.NoiseVarReason = "";
+out.NoiseVarStrictFailure = false;
+out.MeasurementAttempted = false;
+out.MeasurementUsable = false;
+out.FailureReason = "";
 out.InjectedDoppler_Hz = NaN;
 out.EstimatedDopplerHz = NaN;
 out.DopplerError_Hz = NaN;
@@ -60,8 +68,26 @@ try
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
     txWave = localApplyTrackingDoppler(tx.Waveform, sampleRateHz, injectedDopplerHz);
-    rxWave = localAddAwgn(txWave, snr_dB);
-    [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfg, "Carrier", tx.Carrier, "SRS", tx.SRS);
+    [rxWave, injectedNoiseVariance] = localAddAwgn(txWave, snr_dB);
+    [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfg, ...
+        "Carrier", tx.Carrier, ...
+        "SRS", tx.SRS, ...
+        "NoiseVar", injectedNoiseVariance);
+    out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+    out.NoiseVarStatus = char(string(sixgr.util.structGet(rx, "NoiseVarStatus", "")));
+    out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
+    out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
+    out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
+    out.MeasurementAttempted = logical(sixgr.util.structGet(rx, "MeasurementAttempted", false));
+    out.MeasurementUsable = logical(sixgr.util.structGet(rx, "MeasurementUsable", false));
+    out.FailureReason = char(string(sixgr.util.structGet(rx, "FailureReason", "")));
+
+    if ~logical(out.MeasurementUsable)
+        out.Ok = false;
+        out.TrackingFailure = 1;
+        out.Notes = "SRS measurement unavailable: " + string(out.FailureReason);
+        return;
+    end
 
     if isempty(rx.Hest)
         out.Ok = false;
@@ -99,6 +125,8 @@ try
     out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
     out.Ok = true;
+    out.MeasurementAttempted = true;
+    out.MeasurementUsable = true;
     out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
         " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz";
 catch ME
@@ -111,8 +139,8 @@ catch ME
 end
 end
 
-function y = localAddAwgn(x, snr_dB)
-[y, ~] = sixgr.util.addAwgnComplex(x, snr_dB);
+function [y, nVar] = localAddAwgn(x, snr_dB)
+[y, nVar] = sixgr.util.addAwgnComplex(x, snr_dB);
 end
 
 function sampleRateHz = localResolveSampleRate(info, tx, cfg)

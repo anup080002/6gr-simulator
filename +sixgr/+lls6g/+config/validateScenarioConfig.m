@@ -187,6 +187,7 @@ if ~ismember(scs, allowedSCS)
 end
 localValidateDerivedTimingConsistency(cfg, scs, ctx);
 localValidateRunSlotControls(cfg, scs, ctx);
+localValidateSpecialSlotPartition(cfg, ctx);
 
 bw = double(cfg.frequency.bandwidth_hz);
 allowedBW = double(sixgr.util.structGet(cfg, "frequency.bandwidth_options_hz", bw));
@@ -317,6 +318,27 @@ if isfinite(configuredTotalMs) && abs(configuredTotalMs - totalSlots * slotDurat
     error("sixgr:lls6g:config:BadRunSlotControl", ...
         "run_control.total_time_ms=%g in %s conflicts with total_slots=%g and frame.scs_khz=%g (expected %.12g ms).", ...
         configuredTotalMs, localCtx(ctx), totalSlots, scsKHz, totalSlots * slotDurationMs);
+end
+end
+
+function localValidateSpecialSlotPartition(cfg, ctx)
+duplex = upper(string(localOptionalStructValue(cfg, "global_radio_scope.duplex_mode", ...
+    localOptionalStructValue(cfg, "frequency.duplex_mode", "TDD"))));
+if duplex ~= "TDD"
+    return;
+end
+
+tddPattern = string(localOptionalStructValue(cfg, "frame_timing.tdd_pattern", ...
+    localOptionalStructValue(cfg, "frame.tdd_pattern", "DDDSU")));
+if ~contains(upper(tddPattern), "S")
+    return;
+end
+
+try
+    sixgr.util.resolveTDDSlotPartition(cfg, 1);
+catch ME
+    error("sixgr:lls6g:config:BadSpecialSlotPartition", ...
+        "Special-slot symbol partition in %s is invalid: %s", localCtx(ctx), string(ME.message));
 end
 end
 
@@ -508,6 +530,14 @@ pathlossModel = lower(string(cfg.channels.pathloss_model));
 if ~ismember(pathlossModel, localCatalogAllowedStrings(catalog.sections.channels.parameters.pathloss_model))
     error("sixgr:lls6g:config:BadPathlossModel", ...
         "channels.pathloss_model in %s must be nrPathLoss, freeSpace, or none.", localCtx(ctx));
+end
+if isfield(cfg.channels, "compliance_mode")
+    complianceMode = lower(string(cfg.channels.compliance_mode));
+    if ~ismember(complianceMode, ["strict_38901", "approximate_38901_plus", "legacy_fallback"])
+        error("sixgr:lls6g:config:BadChannelComplianceMode", ...
+            "channels.compliance_mode in %s must be strict_38901, approximate_38901_plus, or legacy_fallback.", ...
+            localCtx(ctx));
+    end
 end
 
 dmrsConfigType = double(cfg.reference_signals.pdsch_dmrs_config_type);
@@ -1155,13 +1185,15 @@ if ~(exist("nrPRACHConfig", "class") == 8 || exist("nrPRACHConfig", "file") == 2
 end
 try
     prach = nrPRACHConfig;
-    duplexMode = upper(strtrim(string(localOptionalStructValue(cfg, "carrier.duplex_mode", "TDD"))));
+    duplexMode = upper(strtrim(string(localOptionalStructValue(cfg, "frequency.duplex_mode", ...
+        localOptionalStructValue(cfg, "random_access.duplex_mode", "TDD")))));
     if duplexMode == "FDD"
         prach.DuplexMode = "FDD";
     else
         prach.DuplexMode = "TDD";
     end
-    centerFrequencyHz = double(localOptionalStructValue(cfg, "carrier.center_frequency_hz", 4e9));
+    centerFrequencyHz = double(localOptionalStructValue(cfg, "frequency.center_frequency_hz", ...
+        localOptionalStructValue(cfg, "random_access.carrier_frequency_hz", 4e9)));
     if isfinite(centerFrequencyHz) && centerFrequencyHz >= 24.25e9
         prach.FrequencyRange = "FR2";
     else
@@ -1174,8 +1206,10 @@ catch ME
         "random_access configuration in %s is not toolbox-compatible for configuration_index=%g and subcarrier_spacing_khz=%g: %s", ...
         localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(ME.message));
 end
-carrierScs = double(localOptionalStructValue(cfg, "carrier.subcarrier_spacing_khz", subcarrierSpacing));
-nRb = double(localOptionalStructValue(cfg, "carrier.n_rb", localOptionalStructValue(cfg, "phy.carrier.NSizeGrid", 273)));
+carrierScs = double(localOptionalStructValue(cfg, "frame.scs_khz", ...
+    localOptionalStructValue(cfg, "random_access.carrier_scs_khz", subcarrierSpacing)));
+nRb = double(localOptionalStructValue(cfg, "frequency.n_size_grid", ...
+    localOptionalStructValue(cfg, "random_access.n_size_grid", localOptionalStructValue(cfg, "phy.carrier.NSizeGrid", 273))));
 scanSlots = round(double(localOptionalStructValue(cfg, "run_control.total_slots", localOptionalStructValue(cfg, "simulation.n_slots", 40))));
 scanSlots = max(40, scanSlots);
 [activeSlot, effectiveFormat] = localFindMaterializedPrachOccasion(prach, carrierScs, nRb, scanSlots);

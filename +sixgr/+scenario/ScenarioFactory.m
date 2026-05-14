@@ -106,6 +106,8 @@ function prof = localFromFlatConfig(cfg, scenarioName)
         prof.area_m = area_m;
     end
     prof.wraparoundEnabled = logical(sixgr.util.structGet(sc, 'geometry.wraparound', prof.wraparoundEnabled));
+    prof.wraparoundMode = char(string(sixgr.util.structGet(sc, 'geometry.wraparoundMode', ...
+        sixgr.util.structGet(sc, 'geometry.wraparound_mode', sixgr.util.structGet(prof, 'wraparoundMode', "")))));
 
     dep = lower(char(string(sixgr.util.structGet(sc, 'geometry.deployment', ''))));
     if ~isempty(dep)
@@ -142,6 +144,8 @@ function prof = localFromFlatConfig(cfg, scenarioName)
         prof.ue.count = ueCount;
     end
     prof.ue.height_m = double(sixgr.util.structGet(sc, 'ue.height_m', prof.ue.height_m));
+    prof.ue.dropMode = char(string(sixgr.util.structGet(sc, 'ue.dropMode', ...
+        sixgr.util.structGet(sc, 'ue.distribution.dropMode', sixgr.util.structGet(prof.ue, 'dropMode', "")))));
 
     indF = sixgr.util.structGet(sc, 'ue.indoorFraction', []);
     if ~isempty(indF)
@@ -174,6 +178,7 @@ function prof = localBuiltinProfile(scenarioName)
     prof.layoutType = 'hex_grid';
     prof.area_m = [2000 2000];
     prof.wraparoundEnabled = true;
+    prof.wraparoundMode = 'hex_lattice_min_image';
     prof.isd_m = 500;
     prof.nSites = 19;
     prof.nSectors = 3;
@@ -201,6 +206,7 @@ function prof = localBuiltinProfile(scenarioName)
         prof.layoutType = 'indoor_grid';
         prof.area_m = [120 50];
         prof.wraparoundEnabled = false;
+        prof.wraparoundMode = 'disabled';
         prof.isd_m = 20;
         prof.nSites = 1;
         prof.nSectors = 1;
@@ -245,6 +251,16 @@ function prof = localNormalizeProfile(prof, cfg)
     % Layout fields
     prof.layoutType = char(string(sixgr.util.structGet(prof, 'layoutType', 'hex_grid')));
     prof.wraparoundEnabled = logical(sixgr.util.structGet(prof, 'wraparoundEnabled', true));
+    prof.wraparoundMode = char(string(sixgr.util.structGet(prof, 'wraparoundMode', '')));
+    if strlength(strtrim(string(prof.wraparoundMode))) == 0
+        if ~prof.wraparoundEnabled
+            prof.wraparoundMode = 'disabled';
+        elseif contains(lower(prof.layoutType), 'hex')
+            prof.wraparoundMode = 'hex_lattice_min_image';
+        else
+            prof.wraparoundMode = 'rectangular_torus';
+        end
+    end
 
     area_m = sixgr.util.structGet(prof, 'area_m', [2000 2000]);
     area_m = double(area_m(:).');
@@ -289,6 +305,7 @@ function prof = localNormalizeProfile(prof, cfg)
     if prof.ue.count <= 0, prof.ue.count = 1; end
 
     prof.ue.height_m = double(sixgr.util.structGet(prof.ue, 'height_m', 1.5));
+    prof.ue.dropMode = char(string(sixgr.util.structGet(prof.ue, 'dropMode', 'legacy_equal_sector_drop')));
 
     if ~isfield(prof.ue, 'distribution') || ~isstruct(prof.ue.distribution)
         prof.ue.distribution = struct();

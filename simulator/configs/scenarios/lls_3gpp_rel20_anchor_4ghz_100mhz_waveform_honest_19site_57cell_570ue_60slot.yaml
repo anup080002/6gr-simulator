@@ -1,0 +1,213 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot
+  description: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 19 sites, 57 sectors, 570 randomly placed UEs, and 60 canonical slots launched from the browser-owned MATLAB path.
+  scenario_group: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot
+  scenario_name: Strict waveform-honest NR Rel-20 study-anchor LLS scenario for 4 GHz TDD, 100 MHz, 19 sites, 57 sectors, 570 randomly placed UEs, and 60 canonical slots launched from the browser-owned MATLAB path.
+  scenario_family: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot
+  comparison_group_name: rel20_anchor_4ghz_100mhz_19site_57cell_570ue_60slot
+  notes: >
+    Browser-owned canonical large-scale waveform_bundle scenario for the 19-site / 57-cell / 570-UE
+    truthful study path. The coupled traffic loop stays waveform-backed for the scheduled PDSCH/PUSCH
+    grants, while PBCH, PRACH, PUCCH, SRS, and TRS family outputs remain real waveform studies via the
+    bundle control/reference trial exports rather than synthetic placeholders. The single-user-per-cell
+    grant cap is an explicit lab_default execution policy used to keep the exact waveform replay path
+    tractable without inventing proxy rows.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 4ghz
+    - 100mhz
+    - tdd
+    - 30khz
+    - 19site
+    - 57cell
+    - 570ue
+    - 60slot
+    - strict
+    - waveform_honest
+
+scenario:
+  name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot
+  description: Strict waveform-honest NR study-anchor browser scenario for 4 GHz / 100 MHz / TDD with 19 sites, 57 sectors, 570 UEs, and 60 canonical slots.
+  runner_profile: waveform_bundle
+  target_cases: [bundle]
+  bundle_anchor_cases:
+    - cell_search_mib_sib1
+    - prach_detection
+    - dl_pdsch_throughput
+    - ul_pusch_throughput
+    - ul_srs_channelest
+    - ul_lowpapr
+  notes: >
+    This browser-owned waveform_bundle scenario dispatches directly to the coupled waveform truth loop
+    for sustained DL/UL traffic while keeping the control/reference signal families available from their
+    own real waveform trial exports. The coupled traffic loop does not force every already-attached UE
+    through repeated initial-access and sounding procedures before every data slot.
+
+reference_signals:
+  ssb_enabled: true
+  pbch_enabled: true
+  pdcch_dmrs_enabled: true
+  csi_rs_enabled: true
+  srs_enabled: true
+  trs_enabled: true
+  tracking_rs_enabled: true
+  ptrs_enabled: true
+  csi_reporting_enabled: true
+  srs_periodicity_ms: 10
+
+run_control:
+  run_profile: exhaustive
+  total_frames: ~
+  warmup_frames: ~
+  measurement_frames: ~
+  total_slots: 60
+  warmup_slots: 1
+  measurement_slots: 59
+  checkpoint_every_frames: 1
+  snapshot_every_frames: 1
+  log_every_frames: 1
+  checkpoint_every_slots: 1
+  snapshot_every_slots: 1
+  log_every_slots: 1
+  batch_size_links: 8
+  num_workers: 8
+  warmup_time_ms: 0.5
+  measurement_time_ms: 29.5
+  total_time_ms: 30
+  max_runtime_guard: 86400
+
+simulation:
+  n_frames: 3
+  n_slots: 60
+  n_subframes: 30
+  min_duration_s: 0.03
+
+deployment_topology:
+  scenario_type: multi-cell
+  site_layout: hex_grid
+  layout_type: hexagonal_macro
+  cell_type: UMa
+  inter_site_distance: 600
+  num_sites: 19
+  num_base_stations: 19
+  num_cells: 57
+  num_sectors_per_site: 3
+  num_ues: 570
+  num_trps: 57
+  trp_topology: per_cell_trp
+  trp_sync_mode: synchronous
+  trp_switching_mode: disabled
+  wraparound_enabled: true
+
+users:
+  enabled: true
+  n_users: 570
+  execution_model: slot_coupled_truth
+  beam_selection_strategy: runtime_best_beam_per_link
+  save_user_tables: true
+
+mimo:
+  trp_count: 57
+
+system:
+  queueMaxBits: 200000000
+  largeScaleUpdatePeriod_slots: 60
+  scheduler:
+    type: PF
+    maxActiveUEsPerSlot: 57
+    maxActiveUEsPerCellPerSlot: 1
+    maxActiveUEsPerCellPerSlotDL: 1
+    maxActiveUEsPerCellPerSlotUL: 1
+    maxPRBAllocationPerUE: 273
+    tbsMode: faithful
+    fastNREApprox: false
+    allowApproximatePlanningInStrictMode: false
+    fairnessAlpha: 1.0
+    proportionalFairWindow_ms: 100
+    beamAware: true
+    energyAware: false
+    qosAware: true
+    sliceAware: false
+    starvationGuard: true
+    cellEdgeBoost: true
+  measurement:
+    periodSlots: 1
+    filterAlpha: 0.7
+  beam:
+    enable: true
+    numBeams: 32
+    updatePeriod_slots: 2
+    sectorSpan_deg: 120
+    maxGain_dB: 14
+  handover:
+    enable: true
+    a3Offset_dB: 3
+    hysteresis_dB: 2
+    timeToTrigger_slots: 8
+    minServingSlots: 4
+    preparationSlots: 1
+    interruptionSlots: 2
+    blockDuringPreparation: false
+  waveform:
+    useGrantLocalGrid: true
+    replayGridMode: grant_allocation
+    capReplayAntennasToLayers: true
+    longRunAudit:
+      enabled: false
+      periodSlots: 60
+      maxGrantsPerAuditSlot: 2
+      unsampledGrantPolicy: full_replay
+
+control_gating:
+  pbch_required: false
+  prach_required: false
+  pdcch_required: false
+  srs_required: false
+  srs_max_age_slots: 4
+  trs_required: false
+  trs_max_age_slots: 4
+
+traffic:
+  model: fullBuffer
+  transport: UDP
+  flowDirection: BIDIR
+  dlRatio: 0.5
+  ulRatio: 0.5
+  packetDelayBudget_ms: 300
+  packetSize_bytes: 1500
+  packetInterval_ms: 1
+  targetRate_Mbps: 200
+  jitterPct: 0.0
+  fullBufferBitsPerTTI: 1000000
+  qos:
+    enable5QI: true
+    default5QI: 9
+    latencyBudget_ms: 300
+  flows:
+    - name: embb_full_buffer
+      qfi: 9
+      fiveQi: 9
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 300
+      packetSize_bytes: 1500
+      packetInterval_ms: 1
+      rate_Mbps: 200
+      weight: 1
+      jitterPct: 0.0
+      burstiness: saturation
+      service_profile: FULL_BUFFER
+      ue_class: UE_CLASS_EMBB
+      ue_count: 570
+
+output:
+  profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot

@@ -93,6 +93,7 @@ def main() -> None:
         runtime_context = dash.extract_runtime_context(run_row, artifacts)
         notes = " ".join(runtime_context["notes"])
         assert "not a decoder-truth SINR measurement" in notes
+        assert "it is not a measured SINR" in notes
         assert "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate from Hest and reference-signal residual measurement." in notes
     finally:
         dash.load_small_csv_rows = orig_load_small

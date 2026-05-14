@@ -21,7 +21,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-04-21-contract-v14"
+MATERIALIZER_VERSION = "2026-04-22-contract-v15"
 MAX_PREVIEW_ROWS = 180
 
 
@@ -213,20 +213,28 @@ def _dataset_from_rows(chart_name: str, header: list[str], rows: list[list[str]]
             dataset["tick_labels"] = [name for name, _value in named_values[:18]]
             dataset["summary_lines"] = summary
             return dataset
-    if "metrickey" in lowered and "value" in lowered:
-        key_idx = lowered.index("metrickey")
-        value_idx = lowered.index("value")
+    if "metrickey" in lowered and ("value" in lowered or "valuenumeric" in lowered):
+        key_idx = lowered.index("metricname") if "metricname" in lowered else lowered.index("metrickey")
+        raw_key_idx = lowered.index("metrickey")
+        value_idx = lowered.index("valuenumeric") if "valuenumeric" in lowered else lowered.index("value")
         entity_idx = lowered.index("entity") if "entity" in lowered else None
         stat_idx = lowered.index("statistic") if "statistic" in lowered else None
+        availability_idx = lowered.index("availability") if "availability" in lowered else None
         named_values: list[tuple[str, float]] = []
-        for row in rows[:64]:
+        for row in rows[:96]:
+            availability = str(row[availability_idx] or "").strip().lower() if availability_idx is not None and availability_idx < len(row) else ""
+            if availability.startswith("not_") or availability in {"missing", "unavailable"}:
+                continue
             key_name = str(row[key_idx] or "").strip() if key_idx < len(row) else ""
+            raw_key = str(row[raw_key_idx] or "").strip() if raw_key_idx < len(row) else ""
             value = _coerce_float(row[value_idx] if value_idx < len(row) else "")
+            if not key_name and raw_key:
+                key_name = raw_key
             if not key_name or value is None:
                 continue
             entity = str(row[entity_idx] or "").strip() if entity_idx is not None and entity_idx < len(row) else ""
             statistic = str(row[stat_idx] or "").strip() if stat_idx is not None and stat_idx < len(row) else ""
-            label_parts = [part for part in (entity, key_name, statistic) if part]
+            label_parts = [part for part in (key_name, entity, statistic) if part]
             named_values.append(("/".join(label_parts)[:48], float(value)))
         if named_values:
             dataset, summary = _bar_dataset_from_named_values("Metric bucket", header[value_idx], named_values[:18])
@@ -915,6 +923,39 @@ def _row_text(row: dict[str, str], *names: str) -> str:
         if value:
             return value
     return ""
+
+
+def _row_flag(row: dict[str, str], *names: str) -> bool | None:
+    truthy = {"1", "true", "pass", "passed", "ok", "success", "detected", "observed", "yes", "available"}
+    falsy = {"0", "false", "fail", "failed", "error", "miss", "missed", "no", "unavailable", "not_detected"}
+    for name in names:
+        raw_value = row.get(name)
+        if raw_value is None:
+            continue
+        text = str(raw_value).strip().lower()
+        if not text or text in {"nan", "<missing>", "missing"}:
+            continue
+        if text in truthy:
+            return True
+        if text in falsy:
+            return False
+        number = _coerce_float(raw_value)
+        if number is not None:
+            return not math.isclose(float(number), 0.0)
+    return None
+
+
+def _parse_index_tokens(value: Any) -> list[int]:
+    text = str(value or "").strip()
+    if not text or text.lower() in {"nan", "<missing>", "missing"}:
+        return []
+    tokens = []
+    for match in re.findall(r"-?\d+", text):
+        try:
+            tokens.append(int(match))
+        except Exception:
+            continue
+    return tokens
 
 
 def _render_reason_svg(title: str, subtitle: str, lines: list[str]) -> bytes:
@@ -2089,8 +2130,14 @@ def _grid_rows_to_heatmap(
     y_name: str,
     value_name: str,
 ) -> tuple[list[str], list[str], list[list[float]]]:
+    def _token_sort_key(token: str) -> tuple[int, Any, str]:
+        numeric = _coerce_float(token)
+        if numeric is not None:
+            return (0, float(numeric), token)
+        return (1, token.lower(), token)
+
     x_values = sorted({int(round(float(row[x_name]))) for row in rows if row.get(x_name) is not None})
-    y_values = sorted({str(row[y_name]) for row in rows if str(row.get(y_name, "")).strip()})
+    y_values = sorted({str(row[y_name]) for row in rows if str(row.get(y_name, "")).strip()}, key=_token_sort_key)
     if not x_values or not y_values:
         return [], [], []
     x_index = {value: idx for idx, value in enumerate(x_values)}
@@ -2142,6 +2189,407 @@ def _trial_rows_with_paths(
     return out
 
 
+def _prach_rate_chart_materialization(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    chart_key = str(chart_name or "").strip().lower()
+    metric_specs = {
+        "detection rate": {
+            "metric_label": "Detection rate",
+            "metric_keys": {"prach_detection_probability"},
+            "trial_flag": lambda row: _row_flag(row, "DecodeSuccess", "SuccessFlag")
+            if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
+            else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
+            if _row_text(row, "Status")
+            else (_row_float(row, "DetectionMetric") or 0.0) > 0.0,
+        },
+        "p_d": {
+            "metric_label": "Detection probability",
+            "metric_keys": {"prach_detection_probability"},
+            "trial_flag": lambda row: _row_flag(row, "DecodeSuccess", "SuccessFlag")
+            if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
+            else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
+            if _row_text(row, "Status")
+            else (_row_float(row, "DetectionMetric") or 0.0) > 0.0,
+        },
+        "false alarm rate": {
+            "metric_label": "False alarm rate",
+            "metric_keys": {"prach_false_alarm"},
+            "trial_flag": lambda row: _row_flag(row, "FalseAlarmFlag"),
+        },
+        "far": {
+            "metric_label": "False alarm rate",
+            "metric_keys": {"prach_false_alarm"},
+            "trial_flag": lambda row: _row_flag(row, "FalseAlarmFlag"),
+        },
+        "p_fa": {
+            "metric_label": "False alarm probability",
+            "metric_keys": {"prach_false_alarm"},
+            "trial_flag": lambda row: _row_flag(row, "FalseAlarmFlag"),
+        },
+        "missed detection rate": {
+            "metric_label": "Missed detection rate",
+            "metric_keys": {"prach_missed_detection"},
+            "trial_flag": lambda row: (
+                _row_flag(row, "MissedDetectionFlag")
+                if _row_flag(row, "MissedDetectionFlag") is not None
+                else (
+                    not bool(
+                        _row_flag(row, "DecodeSuccess", "SuccessFlag")
+                        if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
+                        else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
+                        if _row_text(row, "Status")
+                        else (_row_float(row, "DetectionMetric") or 0.0) > 0.0
+                    )
+                    and not bool(_row_flag(row, "FalseAlarmFlag"))
+                )
+            ),
+        },
+        "p_md": {
+            "metric_label": "Missed detection probability",
+            "metric_keys": {"prach_missed_detection"},
+            "trial_flag": lambda row: (
+                _row_flag(row, "MissedDetectionFlag")
+                if _row_flag(row, "MissedDetectionFlag") is not None
+                else (
+                    not bool(
+                        _row_flag(row, "DecodeSuccess", "SuccessFlag")
+                        if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
+                        else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
+                        if _row_text(row, "Status")
+                        else (_row_float(row, "DetectionMetric") or 0.0) > 0.0
+                    )
+                    and not bool(_row_flag(row, "FalseAlarmFlag"))
+                )
+            ),
+        },
+    }
+    spec = metric_specs.get(chart_key)
+    if spec is None:
+        return None
+
+    trial_path, trial_rows = _first_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["air_interface/csv/prach_trials.csv", "control/csv/prach_trials.csv", "control/csv/prach_detection_trials.csv"],
+    )
+    grouped: dict[float | None, list[float]] = defaultdict(list)
+    if trial_rows:
+        for row in trial_rows:
+            flag_value = spec["trial_flag"](row)
+            if flag_value is None:
+                continue
+            snr_value = _row_float(row, "SNR_dB", "ConfiguredSNR_dB", "AppliedAWGNSNR_dB")
+            bucket = float(snr_value) if snr_value is not None and math.isfinite(float(snr_value)) else None
+            grouped[bucket].append(1.0 if bool(flag_value) else 0.0)
+    if grouped:
+        ordered = sorted(grouped.items(), key=lambda item: (-9999.0 if item[0] is None else float(item[0])))
+        points: list[list[float]] = []
+        tick_labels: list[str] = []
+        csv_rows: list[dict[str, Any]] = []
+        total_samples = 0
+        total_positive = 0.0
+        for idx, (snr_bucket, values) in enumerate(ordered, start=1):
+            if not values:
+                continue
+            rate_value = sum(values) / len(values)
+            point_x = float(idx) if snr_bucket is None else float(snr_bucket)
+            tick_label = "Observed PRACH" if snr_bucket is None else f"{snr_bucket:.3g} dB"
+            points.append([point_x, float(rate_value)])
+            tick_labels.append(tick_label)
+            total_samples += len(values)
+            total_positive += sum(values)
+            csv_rows.append(
+                {
+                    "run_id": run_id,
+                    "chart_name": chart_name,
+                    "bucket_name": tick_label,
+                    "snr_db": "" if snr_bucket is None else snr_bucket,
+                    "metric_value": rate_value,
+                    "sample_count": len(values),
+                    "source_table_logical_path": trial_path,
+                }
+            )
+        if points:
+            dataset = {
+                "mode": "bar" if len(points) <= 8 else "line",
+                "x_label": "PRACH SNR (dB)" if any(item[0] is not None for item in ordered) else "Observation bucket",
+                "y_label": str(spec["metric_label"]),
+                "points": points,
+            }
+            if dataset["mode"] == "bar":
+                dataset["tick_labels"] = tick_labels
+            summary = [
+                f"source={trial_path}",
+                f"trial_rows={len(trial_rows)}",
+                f"samples_used={total_samples}",
+                f"mean_rate={total_positive / max(total_samples, 1):.6f}",
+            ]
+            return {
+                "csv_bytes": _encode_dict_rows(
+                    ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "source_table_logical_path"],
+                    csv_rows,
+                ),
+                "img_bytes": _render_svg_plot(
+                    chart_name,
+                    "PRACH detection statistics aggregated directly from persisted PRACH trial outcomes.",
+                    dataset,
+                    summary,
+                ),
+                "csv_status": "specialized_runtime_detection_dataset",
+                "image_status": "generated_specialized_runtime_summary_svg",
+                "source_table_path": trial_path,
+                "source_row_count": len(trial_rows),
+                "note": "Detection-rate chart derived from truthful PRACH trial flags grouped by observed SNR.",
+            }
+
+    summary_path, summary_rows = _first_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["reports/csv/initial_access_random_access_outputs.csv", "analytics/csv/random_access_analytics.csv"],
+    )
+    if not summary_rows:
+        return None
+    rate_value = None
+    count_value = None
+    for row in summary_rows:
+        metric_key = _row_text(row, "MetricKey").strip().lower()
+        metric_name = _row_text(row, "MetricName").strip().lower()
+        statistic = _row_text(row, "Statistic").strip().lower()
+        if metric_key not in spec["metric_keys"] and not any(token in metric_name for token in chart_key.split()):
+            continue
+        if statistic == "rate":
+            rate_value = _row_float(row, "ValueNumeric", "Value")
+        elif statistic == "count":
+            count_value = _row_float(row, "ValueNumeric", "Value")
+    if rate_value is None:
+        return None
+    dataset = {
+        "mode": "bar",
+        "x_label": "Observation bucket",
+        "y_label": str(spec["metric_label"]),
+        "points": [[1.0, float(rate_value)]],
+        "tick_labels": ["Observed PRACH"],
+    }
+    csv_rows = [
+        {
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "bucket_name": "Observed PRACH",
+            "snr_db": "",
+            "metric_value": float(rate_value),
+            "sample_count": "" if count_value is None else count_value,
+            "source_table_logical_path": summary_path,
+        }
+    ]
+    summary = [f"source={summary_path}", f"observed_rate={float(rate_value):.6f}"]
+    if count_value is not None:
+        summary.append(f"sample_count={int(round(count_value))}")
+    return {
+        "csv_bytes": _encode_dict_rows(
+            ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "source_table_logical_path"],
+            csv_rows,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "PRACH detection summary taken from the persisted random-access metrics artifact.",
+            dataset,
+            summary,
+        ),
+        "csv_status": "specialized_summary_detection_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": summary_path,
+        "source_row_count": len(summary_rows),
+        "note": "Detection-rate chart derived from the persisted PRACH summary metrics artifact.",
+    }
+
+
+def _csirs_map_chart_materialization(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    source_path = "air_interface/csv/csi_rs_trials.csv"
+    _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
+    if not records:
+        return None
+    chosen_cell = _selected_cell(records, "CellID", "BaseStationID", "ServingCell")
+    filtered = [row for row in records if not chosen_cell or _row_text(row, "CellID", "BaseStationID", "ServingCell") == chosen_cell]
+    slot_counts: Counter[int] = Counter()
+    for row in filtered:
+        slot_v = _row_float(row, "Slot")
+        if slot_v is None:
+            continue
+        slot_counts[int(round(slot_v))] += 1
+    if not slot_counts:
+        return None
+    selected_slot = max(slot_counts.items(), key=lambda item: (item[1], -item[0]))[0]
+    seen_resources: set[tuple[Any, ...]] = set()
+    grid_rows: list[dict[str, Any]] = []
+    rsrp_values: list[float] = []
+    for row in filtered:
+        slot_v = _row_float(row, "Slot")
+        if slot_v is None or int(round(slot_v)) != selected_slot:
+            continue
+        rb_start = _row_float(row, "RBOffset", "PRBStart")
+        num_rb = _row_float(row, "NumRB", "AllocatedPRBCount", "PRBs")
+        if rb_start is None or num_rb is None or num_rb <= 0:
+            continue
+        symbols = _parse_index_tokens(_row_text(row, "SymbolLocations")) or [0]
+        resource_key = (
+            _row_text(row, "CellID", "BaseStationID", "ServingCell"),
+            int(round(slot_v)),
+            _row_text(row, "ResourceSetID"),
+            _row_text(row, "ResourceID"),
+            int(round(rb_start)),
+            int(round(num_rb)),
+            tuple(symbols),
+        )
+        if resource_key in seen_resources:
+            continue
+        seen_resources.add(resource_key)
+        nre_value = _row_float(row, "NRE")
+        tile_value = float(nre_value) / max(int(round(num_rb)) * max(len(symbols), 1) * 12, 1) if nre_value is not None else 1.0
+        rsrp_value = _row_float(row, "MeasurementRSRP_dB")
+        if rsrp_value is not None:
+            rsrp_values.append(float(rsrp_value))
+        for symbol_index in symbols:
+            for rb_index in range(int(round(rb_start)), int(round(rb_start + num_rb))):
+                grid_rows.append(
+                    {
+                        "cell_id": chosen_cell,
+                        "slot": selected_slot,
+                        "symbol_index": int(symbol_index),
+                        "rb_index": rb_index,
+                        "occupancy_value": tile_value,
+                        "resource_id": _row_text(row, "ResourceID"),
+                        "resource_set_id": _row_text(row, "ResourceSetID"),
+                        "source_table_logical_path": source_path,
+                    }
+                )
+    if not grid_rows:
+        return None
+    x_labels, y_labels, matrix = _grid_rows_to_heatmap(grid_rows, "symbol_index", "rb_index", "occupancy_value")
+    summary = [
+        f"source={source_path}",
+        f"selected_cell={chosen_cell or 'all'}",
+        f"selected_slot={selected_slot}",
+        f"unique_resources={len(seen_resources)}",
+    ]
+    if rsrp_values:
+        summary.append(f"mean_measurement_rsrp_db={sum(rsrp_values) / len(rsrp_values):.3f}")
+    summary.append("exact_subcarrier_pattern=normalized_from_exported_nre_per_rb_symbol")
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id",
+                "chart_name",
+                "cell_id",
+                "slot",
+                "symbol_index",
+                "rb_index",
+                "occupancy_value",
+                "resource_id",
+                "resource_set_id",
+                "source_table_logical_path",
+            ],
+            [{**row, "run_id": run_id, "chart_name": chart_name} for row in grid_rows],
+        ),
+        "img_bytes": _render_heatmap_svg(
+            chart_name,
+            "CSI-RS resource occupancy for the most active cell/slot, normalized from the exported runtime mapping evidence.",
+            x_labels,
+            y_labels,
+            matrix,
+            summary,
+            "OFDM symbol",
+            "RB index",
+        ),
+        "csv_status": "specialized_runtime_grid_dataset",
+        "image_status": "generated_specialized_runtime_heatmap_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(grid_rows),
+        "note": "CSI-RS map derived from exported CSI-RS runtime rows without fabricating RE-level detail beyond the exported RB/symbol span.",
+    }
+
+
+def _srs_map_chart_materialization(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    source_path = "air_interface/csv/srs_trials.csv"
+    _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
+    if not records:
+        return None
+    chosen_cell = _selected_cell(records, "BaseStationID", "TRSAssociatedCell", "ServingCell")
+    grid_rows: list[dict[str, Any]] = []
+    nmse_values: list[float] = []
+    for row in records:
+        cell_value = _row_text(row, "BaseStationID", "TRSAssociatedCell", "ServingCell")
+        if chosen_cell and cell_value and cell_value != chosen_cell:
+            continue
+        slot_v = _row_float(row, "Slot")
+        ue_v = _row_float(row, "UEIndex", "UEID", "RNTI")
+        if slot_v is None or ue_v is None:
+            continue
+        success_flag = _row_flag(row, "SuccessFlag", "DecodeSuccess")
+        if success_flag is None:
+            status_text = _row_text(row, "Status").strip().lower()
+            success_flag = status_text in {"pass", "detected", "success"} if status_text else True
+        nmse_db = _row_float(row, "NMSE_dB")
+        if nmse_db is not None:
+            nmse_values.append(float(nmse_db))
+        grid_rows.append(
+            {
+                "slot": int(round(slot_v)),
+                "ue_index": int(round(ue_v)),
+                "occupancy_value": 1.0 if success_flag else 0.0,
+                "nmse_db": "" if nmse_db is None else nmse_db,
+                "success_flag": 1 if success_flag else 0,
+                "source_table_logical_path": source_path,
+            }
+        )
+    if not grid_rows:
+        return None
+    x_labels, y_labels, matrix = _grid_rows_to_heatmap(grid_rows, "slot", "ue_index", "occupancy_value")
+    summary = [
+        f"source={source_path}",
+        f"selected_cell={chosen_cell or 'all'}",
+        f"runtime_rows={len(grid_rows)}",
+        f"successful_rows={sum(int(row['success_flag']) for row in grid_rows)}",
+    ]
+    if nmse_values:
+        summary.append(f"mean_nmse_db={sum(nmse_values) / len(nmse_values):.3f}")
+    summary.append("exact_srs_rb_symbol_map=not_exported_by_runtime")
+    return {
+        "csv_bytes": _encode_dict_rows(
+            ["run_id", "chart_name", "slot", "ue_index", "occupancy_value", "nmse_db", "success_flag", "source_table_logical_path"],
+            [{**row, "run_id": run_id, "chart_name": chart_name} for row in grid_rows],
+        ),
+        "img_bytes": _render_heatmap_svg(
+            chart_name,
+            "Exact SRS RE placement is not exported for this run, so the map shows truthful per-UE SRS observation success by slot.",
+            x_labels,
+            y_labels,
+            matrix,
+            summary,
+            "Slot",
+            "UE index",
+        ),
+        "csv_status": "specialized_runtime_srs_dataset",
+        "image_status": "generated_specialized_runtime_heatmap_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(grid_rows),
+        "note": "SRS map derived from truthful per-UE/per-slot SRS runtime observations without inventing absent RE-level coordinates.",
+    }
+
+
 def _metric_rows_by_exact_x(
     rows: list[tuple[float, float]],
     *,
@@ -2176,6 +2624,17 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    prach_rate_chart = _prach_rate_chart_materialization(chart_name, existing, fetch_artifact_bytes, run_id)
+    if prach_rate_chart is not None:
+        return prach_rate_chart
+    if chart_name in {"CSI-RS map", "CSI-RS resource occupancy"}:
+        csirs_chart = _csirs_map_chart_materialization(chart_name, existing, fetch_artifact_bytes, run_id)
+        if csirs_chart is not None:
+            return csirs_chart
+    if chart_name == "SRS map":
+        srs_chart = _srs_map_chart_materialization(chart_name, existing, fetch_artifact_bytes, run_id)
+        if srs_chart is not None:
+            return srs_chart
     scheduler_chart_names = {
         "MCS over time",
         "CQI vs selected MCS",
@@ -3966,13 +4425,14 @@ def materialize_run_contract_artifacts(
                 or int(manifest_meta.get("source_artifact_high_watermark") or 0) >= current_source_watermark
             )
         )
-        contract_current = _existing_contract_artifacts_current(existing, db_connection_factory, feature_policy)
-        if manifest_current and contract_current and not force:
+        coverage_snapshot = coverage_summary(list(existing.values()), feature_policy)
+        contract_paths_current = not coverage_snapshot.get("missing_table_paths") and not coverage_snapshot.get("missing_chart_names")
+        if manifest_current and contract_paths_current and not force:
             return {
                 "created": created,
                 "manifest_path": manifest_logical_path(),
                 "coverage_path": coverage_logical_path(),
-                "coverage": coverage_summary(list(existing.values()), feature_policy),
+                "coverage": coverage_snapshot,
                 "skipped": True,
             }
         if manifest_art is not None:

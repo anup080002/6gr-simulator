@@ -9,17 +9,20 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
 
+SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot.yaml"
+
 
 def main() -> None:
-    resolved, _ = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
+    resolved, _ = dash.load_resolved_config_payload(SCENARIO)
     assert int(dash.path_get(resolved, "deployment_topology.num_ues", 0)) == 200
     assert int(dash.path_get(resolved, "users.n_users", 0)) == 200
     assert str(dash.path_get(resolved, "traffic.model", "")) == "fullBuffer"
     assert str(dash.path_get(resolved, "traffic.transport", "")) == "UDP"
-    assert int(dash.path_get(resolved, "run_control.total_slots", 0)) == 20
-    assert int(dash.path_get(resolved, "run_control.warmup_slots", 0)) == 10
-    assert int(dash.path_get(resolved, "run_control.measurement_slots", 0)) == 1
+    assert int(dash.path_get(resolved, "run_control.total_slots", 0)) == 4000
+    assert int(dash.path_get(resolved, "run_control.warmup_slots", 0)) == 500
+    assert int(dash.path_get(resolved, "run_control.measurement_slots", 0)) == 3500
     assert str(dash.path_get(resolved, "channel_model.scenario_label", "")) == "CDL-D"
+    assert str(dash.path_get(resolved, "scenario.runner_profile", "")) == "system_level_lls"
 
 
 if __name__ == "__main__":

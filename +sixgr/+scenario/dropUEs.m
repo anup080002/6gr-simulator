@@ -60,6 +60,9 @@ ue.indoor = indoor;
 ue.speed_kmh = speedKmh;
 ue.heading_deg = headingDeg;
 ue.drop_cell_id = servingRef(:);
+ue.drop_mode = repmat(string(localResolveDropMode(prof)), K, 1);
+ue.drop_reference_cell_id = servingRef(:);
+ue.serving_selection_method = repmat(string(localResolveServingSelectionMethod(prof)), K, 1);
 
 end
 
@@ -78,26 +81,80 @@ if isempty(bsPos) || isempty(bsAz) || size(bsPos,1) < 1
 end
 
 nCells = size(bsPos, 1);
-sectorSpanDeg = localResolveSectorSpan(layout, prof);
-radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
-radiusMin_m = min(40, max(5, 0.08 * radiusMax_m));
+switch localResolveDropMode(prof)
+    case "pathloss_based_association_drop"
+        xy = [ (rand(K,1)-0.5)*W, (rand(K,1)-0.5)*H ];
+        servingRef = localAssignByNearestCell(xy, layout, nCells);
+        for u = 1:K
+            c = servingRef(u);
+            dx = xy(u,1) - bsPos(c,1);
+            dy = xy(u,2) - bsPos(c,2);
+            if abs(dx) < eps && abs(dy) < eps
+                headingSeedDeg(u) = rand * 360;
+            else
+                headingSeedDeg(u) = mod(atan2d(-dy, -dx) + 25 * randn(), 360);
+            end
+        end
+    otherwise
+        sectorSpanDeg = localResolveSectorSpan(layout, prof);
+        radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
+        radiusMin_m = min(40, max(5, 0.08 * radiusMax_m));
 
-servingRef = repmat((1:nCells).', ceil(K / nCells), 1);
-servingRef = servingRef(1:K);
-servingRef = servingRef(randperm(K));
+        servingRef = repmat((1:nCells).', ceil(K / nCells), 1);
+        servingRef = servingRef(1:K);
+        servingRef = servingRef(randperm(K));
 
-for u = 1:K
-    c = servingRef(u);
-    az = double(bsAz(c));
-    theta = az + (rand - 0.5) * 0.92 * sectorSpanDeg;
-    rho = sqrt(rand) * (radiusMax_m - radiusMin_m) + radiusMin_m;
-    xy(u,1) = bsPos(c,1) + rho * cosd(theta);
-    xy(u,2) = bsPos(c,2) + rho * sind(theta);
-    headingSeedDeg(u) = mod(theta + 180 + 25 * randn(), 360);
+        for u = 1:K
+            c = servingRef(u);
+            az = double(bsAz(c));
+            theta = az + (rand - 0.5) * 0.92 * sectorSpanDeg;
+            rho = sqrt(rand) * (radiusMax_m - radiusMin_m) + radiusMin_m;
+            xy(u,1) = bsPos(c,1) + rho * cosd(theta);
+            xy(u,2) = bsPos(c,2) + rho * sind(theta);
+            headingSeedDeg(u) = mod(theta + 180 + 25 * randn(), 360);
+        end
+        xy(:,1) = min(max(xy(:,1), -0.5 * W), 0.5 * W);
+        xy(:,2) = min(max(xy(:,2), -0.5 * H), 0.5 * H);
+end
 end
 
-xy(:,1) = min(max(xy(:,1), -0.5 * W), 0.5 * W);
-xy(:,2) = min(max(xy(:,2), -0.5 * H), 0.5 * H);
+function servingRef = localAssignByNearestCell(xy, layout, nCells)
+wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", "rectangular_torus"));
+wrapEnabled = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
+if wrapEnabled && wrapMode ~= "disabled"
+    d = sixgr.scenario.wraparoundDistance(xy, layout.bs.pos_m, layout.area_m, ...
+        "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));
+else
+    dx = xy(:,1) - layout.bs.pos_m(:,1).';
+    dy = xy(:,2) - layout.bs.pos_m(:,2).';
+    d = sqrt(dx.^2 + dy.^2);
+end
+[~, servingRef] = min(d, [], 2);
+servingRef = min(max(round(double(servingRef)), 1), nCells);
+end
+
+function mode = localResolveDropMode(prof)
+mode = lower(strtrim(string(sixgr.util.structGet(prof, "ue.dropMode", "legacy_equal_sector_drop"))));
+if strlength(mode) == 0
+    mode = "legacy_equal_sector_drop";
+end
+switch mode
+    case {"legacy_equal_sector_drop", "legacy", "equal_sector"}
+        mode = "legacy_equal_sector_drop";
+    case {"pathloss_based_association_drop", "pathloss_based", "nearest_cell_after_drop"}
+        mode = "pathloss_based_association_drop";
+    otherwise
+        error("sixgr:scenario:UnsupportedUEDropMode", ...
+            "Unsupported UE drop mode: %s", mode);
+end
+end
+
+function method = localResolveServingSelectionMethod(prof)
+if localResolveDropMode(prof) == "pathloss_based_association_drop"
+    method = "nearest_cell_distance_after_uniform_area_drop";
+else
+    method = "legacy_equal_sector_reference";
+end
 end
 
 function p = localResolveSpeedWeights(prof, speeds)

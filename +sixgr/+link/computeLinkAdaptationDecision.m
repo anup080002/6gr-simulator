@@ -25,8 +25,10 @@ deltaMCSPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.delt
 
 base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
+adaptationDomain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
 [ackKnown, ackObserved, ackSource] = localResolveAckOutcome(metrics);
-[instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable] = localResolveInstantaneousAMC(cfg, direction, metrics);
+[instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile] = ...
+    localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain);
 [resetState, resetReason] = localShouldResetState(adaptationState, metrics, cfg);
 
 decision = struct( ...
@@ -56,6 +58,14 @@ decision = struct( ...
     "CSIReportMode", char(string(sixgr.util.structGet(metrics, "CSIReportMode", ""))), ...
     "CSIPayloadBitLength", double(sixgr.util.structGet(metrics, "CSIPayloadBitLength", NaN)), ...
     "CSIPayloadHex", char(string(sixgr.util.structGet(metrics, "CSIPayloadHex", ""))), ...
+    "LinkAdaptationDomain", char(adaptationDomain), ...
+    "LinkAdaptationDomainSource", "phy.linkAdaptation.domain", ...
+    "ResolvedCQI", double(instantCQI), ...
+    "SmoothedCQI", double(adaptationState.SmoothedCQI), ...
+    "CQISource", char(cqiSource), ...
+    "MCSSelectionSource", char(localResolveMCSSelectionSource(adaptationDomain)), ...
+    "OLLADomain", char(localResolveOLLADomain(adaptationDomain, adaptationState.OuterLoopEnabled)), ...
+    "CalibrationProfile", char(calibrationProfile), ...
     "CQITable", char(cqiTable), ...
     "MCSTable", char(mcsTable), ...
     "InstantaneousCQIMCS", double(instantMCS), ...
@@ -82,7 +92,8 @@ end
 
 if localPolicyEnabled(policy)
     [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, ...
-        instantMCS, instantMod, instantCodeRate, mcsTable, ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy);
+        instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ...
+        ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy);
     if ~decision.MCSUpdated && ~(isfinite(decision.CQIBasedMCS) || adaptationState.Initialized)
         decision.Reason = "missing_cqi";
         return;
@@ -124,28 +135,60 @@ else
 end
 end
 
-function [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, instantMCS, instantMod, instantCodeRate, mcsTable, ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy)
+function [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy)
 previousMCS = double(decision.MCSIndex);
 previousCodeRate = double(decision.TargetCodeRate);
 previousModulation = char(string(decision.Modulation));
-if isfinite(instantMCS)
-    if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS)
-        cqiBasedMCS = double(instantMCS);
-    elseif logical(adaptationState.InnerLoopEnabled)
-        alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
-        cqiBasedMCS = alpha * double(instantMCS) + (1 - alpha) * double(adaptationState.CQIBasedMCS);
+selectionAMC = struct("Valid", false, "MCSIndex", NaN, "MCSProfile", struct("Modulation", "", "TargetCodeRate", NaN));
+if adaptationDomain == "legacy_mcs"
+    if isfinite(instantMCS)
+        if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS)
+            cqiBasedMCS = double(instantMCS);
+        elseif logical(adaptationState.InnerLoopEnabled)
+            alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
+            cqiBasedMCS = alpha * double(instantMCS) + (1 - alpha) * double(adaptationState.CQIBasedMCS);
+        else
+            cqiBasedMCS = double(instantMCS);
+        end
+        adaptationState.CQIBasedMCS = double(cqiBasedMCS);
+        adaptationState.LastInstantaneousMCS = double(instantMCS);
+        adaptationState.LastInstantaneousModulation = char(instantMod);
+        adaptationState.LastInstantaneousTargetCodeRate = double(instantCodeRate);
+    elseif adaptationState.Initialized && isfinite(adaptationState.CQIBasedMCS)
+        cqiBasedMCS = double(adaptationState.CQIBasedMCS);
     else
-        cqiBasedMCS = double(instantMCS);
+        decision.Reason = "missing_cqi";
+        return;
     end
-    adaptationState.CQIBasedMCS = double(cqiBasedMCS);
-    adaptationState.LastInstantaneousMCS = double(instantMCS);
-    adaptationState.LastInstantaneousModulation = char(instantMod);
-    adaptationState.LastInstantaneousTargetCodeRate = double(instantCodeRate);
-elseif adaptationState.Initialized && isfinite(adaptationState.CQIBasedMCS)
-    cqiBasedMCS = double(adaptationState.CQIBasedMCS);
 else
-    decision.Reason = "missing_cqi";
-    return;
+    if isfinite(instantCQI)
+        if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.SmoothedCQI)
+            smoothedCQI = double(instantCQI);
+        elseif logical(adaptationState.InnerLoopEnabled)
+            alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
+            smoothedCQI = alpha * double(instantCQI) + (1 - alpha) * double(adaptationState.SmoothedCQI);
+        else
+            smoothedCQI = double(instantCQI);
+        end
+        adaptationState.SmoothedCQI = double(smoothedCQI);
+        selectionAMC = sixgr.link.resolveMCSFromCQI(smoothedCQI, mcsTable, cqiTable);
+        if ~logical(sixgr.util.structGet(selectionAMC, "Valid", false))
+            decision.Reason = "invalid_cqi_amc_mapping";
+            return;
+        end
+        cqiBasedMCS = double(selectionAMC.MCSIndex);
+        adaptationState.CQIBasedMCS = double(cqiBasedMCS);
+        adaptationState.LastInstantaneousMCS = double(instantMCS);
+        adaptationState.LastInstantaneousModulation = char(instantMod);
+        adaptationState.LastInstantaneousTargetCodeRate = double(instantCodeRate);
+    elseif adaptationState.Initialized && isfinite(adaptationState.CQIBasedMCS)
+        cqiBasedMCS = double(adaptationState.CQIBasedMCS);
+        smoothedCQI = double(adaptationState.SmoothedCQI);
+    else
+        decision.Reason = "missing_cqi";
+        return;
+    end
+    decision.SmoothedCQI = double(adaptationState.SmoothedCQI);
 end
 
 if resetState
@@ -174,6 +217,10 @@ if ~logical(sixgr.util.structGet(profile, "Valid", false))
 end
 
 decision.CQIBasedMCS = double(cqiBasedMCS);
+if adaptationDomain ~= "legacy_mcs" && logical(sixgr.util.structGet(selectionAMC, "Valid", false))
+    decision.Modulation = char(string(selectionAMC.MCSProfile.Modulation));
+    decision.TargetCodeRate = double(selectionAMC.MCSProfile.TargetCodeRate);
+end
 decision.DeltaMCS = double(adaptationState.DeltaMCS);
 decision.StaticDeltaMCS = double(adaptationState.StaticDeltaMCS);
 decision.Modulation = char(string(profile.Modulation));
@@ -191,7 +238,7 @@ decision.StateInitialized = true;
 decision.StateUpdateCount = double(adaptationState.UpdateCount + 1);
 
 adaptationState.Initialized = true;
-adaptationState.LastCQI = double(decision.CQI);
+adaptationState.LastCQI = double(decision.ResolvedCQI);
 adaptationState.LastRI = double(decision.RI);
 adaptationState.LastMCSIndex = double(selectedMCS);
 adaptationState.UpdateCount = adaptationState.UpdateCount + 1;
@@ -203,17 +250,115 @@ outerLoopFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopF
 tf = outerLoopFlag || ~(token == "" || ismember(token, ["disabled", "none", "off", "false"]));
 end
 
-function [instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable] = localResolveInstantaneousAMC(cfg, direction, metrics)
+function [instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile] = localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain)
 mcsTable = sixgr.link.resolveConfiguredMCSTable(cfg, direction);
 cqiTable = sixgr.link.resolveConfiguredCQITable(cfg, direction);
+instantCQI = NaN;
 instantMCS = NaN;
 instantMod = "";
 instantCodeRate = NaN;
-cqi = double(sixgr.util.structGet(metrics, "CQI", NaN));
-if ~(isfinite(cqi))
+cqiSource = "unavailable";
+calibrationProfile = localResolveCalibrationProfile(cfg, direction, adaptationDomain);
+[instantCQI, cqiSource, calibrationProfile] = localResolveInstantaneousCQI(cfg, direction, metrics, adaptationDomain, calibrationProfile);
+if ~(isfinite(instantCQI))
     return;
 end
-[instantMod, instantCodeRate, instantMCS] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+[instantMod, instantCodeRate, instantMCS] = sixgr.link.amcFromCQI(instantCQI, "", NaN, cfg, direction);
+end
+
+function [instantCQI, cqiSource, calibrationProfile] = localResolveInstantaneousCQI(cfg, direction, metrics, adaptationDomain, calibrationProfile)
+instantCQI = NaN;
+cqiSource = "unavailable";
+
+rawCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
+rawSINR = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
+
+switch string(adaptationDomain)
+    case "effective_sinr"
+        if isfinite(rawSINR)
+            feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", rawSINR), cfg, direction);
+            instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
+            cqiSource = "runtime_effective_sinr";
+            calibrationProfile = string(sixgr.util.structGet(feedback, "Mode", calibrationProfile));
+        end
+    case "bler_margin"
+        if isfinite(rawCQI)
+            instantCQI = rawCQI;
+            cqiSource = "runtime_reported_cqi";
+        elseif isfinite(rawSINR)
+            feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", rawSINR), cfg, direction);
+            instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
+            cqiSource = "runtime_effective_sinr_proxy_for_bler_margin";
+        end
+    otherwise
+        if isfinite(rawCQI)
+            instantCQI = rawCQI;
+            cqiSource = "runtime_reported_cqi";
+        end
+end
+end
+
+function profile = localResolveCalibrationProfile(cfg, direction, adaptationDomain)
+switch string(adaptationDomain)
+    case "effective_sinr"
+        feedbackMode = localResolveSINRToCQIMode(cfg, direction);
+        profile = "effective_sinr:" + feedbackMode;
+    case "bler_margin"
+        profile = "heuristic_bler_margin_proxy";
+    case "legacy_mcs"
+        profile = "legacy_mcs_domain_smoothing";
+    otherwise
+        profile = "cqi_table_amc";
+end
+end
+
+function token = localResolveSINRToCQIMode(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    candidates = [ ...
+        "phy.pusch.sinrToCQIMode"
+        "phy.csi.ulSINRToCQIMode"
+        "phy.csi.sinrToCQIMode"];
+else
+    candidates = [ ...
+        "phy.pdsch.sinrToCQIMode"
+        "phy.csi.dlSINRToCQIMode"
+        "phy.csi.sinrToCQIMode"];
+end
+token = "";
+for i = 1:numel(candidates)
+    token = lower(strtrim(string(sixgr.util.structGet(cfg, candidates(i), ""))));
+    if strlength(token) > 0
+        return;
+    end
+end
+token = "threshold_table";
+end
+
+function source = localResolveMCSSelectionSource(adaptationDomain)
+switch string(adaptationDomain)
+    case "effective_sinr"
+        source = "effective_sinr_to_cqi_to_amc";
+    case "bler_margin"
+        source = "bler_margin_proxy_to_amc";
+    case "legacy_mcs"
+        source = "legacy_mcs_domain_smoothing";
+    otherwise
+        source = "runtime_cqi_to_amc";
+end
+end
+
+function domain = localResolveOLLADomain(adaptationDomain, outerLoopEnabled)
+if ~logical(outerLoopEnabled)
+    domain = "disabled";
+    return;
+end
+switch string(adaptationDomain)
+    case "bler_margin"
+        domain = "bler_margin_proxy_delta_mcs";
+    otherwise
+        domain = "delta_mcs";
+end
 end
 
 function [ackKnown, ackObserved, source] = localResolveAckOutcome(metrics)
@@ -314,10 +459,12 @@ end
 function adaptationState = localInitAdaptationState(cfg, direction, previousState)
 adaptationState = struct( ...
     "Direction", char(direction), ...
+    "LinkAdaptationDomain", char(sixgr.link.resolveLinkAdaptationDomain(cfg, direction)), ...
     "Initialized", false, ...
     "InnerLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", true)), ...
     "OuterLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true)), ...
     "CQISmoothingAlpha", localResolveCQISmoothingAlpha(cfg), ...
+    "SmoothedCQI", NaN, ...
     "CQIBasedMCS", NaN, ...
     "DeltaMCS", 0, ...
     "StaticDeltaMCS", localResolveStaticDeltaMCS(cfg), ...

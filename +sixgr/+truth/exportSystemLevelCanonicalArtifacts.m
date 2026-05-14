@@ -1156,8 +1156,7 @@ end
 n = height(dlGrantT);
 ackFlag = localLogicalColumn(dlGrantT, "Ack", false);
 status = repmat("OBSERVED_ABSTRACTION", n, 1);
-T = localEmptyPUCCHGrantTable();
-T = T([]);
+T = table();
 T.Direction = repmat("DL", n, 1);
 T.TTI = localNumericColumn(dlGrantT, "TTI", NaN);
 T.Frame = localNumericColumn(dlGrantT, "Frame", NaN);

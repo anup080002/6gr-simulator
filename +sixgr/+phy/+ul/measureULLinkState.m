@@ -17,6 +17,7 @@ ip.addParameter("ReferenceSymbols", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("PrecoderInfo", struct(), @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", true));
 
 metrics = struct( ...
     "NMSE_dB", NaN, ...
@@ -93,6 +94,7 @@ end
 
 [sinr_dB, sinrSource, sinrStatus, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, ...
     opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
+measuredSINRAvailable = isfinite(sinr_dB);
 if isfinite(sinr_dB)
     metrics.SINR_dB = double(sinr_dB);
     metrics.SINRSource = char(string(sinrSource));
@@ -134,9 +136,9 @@ elseif isfinite(metrics.ChannelGain_dB)
     metrics.CSI_RSRPSource = "ul_channel_estimate_gain_proxy";
 end
 
-if isfinite(metrics.SINR_dB)
+if measuredSINRAvailable && reportCQI
     feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", metrics.SINR_dB, "PerRBSINR_dB", double(perRBSINR_dB)), cfg, "UL");
-    metrics.CQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
+    metrics.CQI = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
 end
 
 metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, opt.PrecoderInfo, srsEstimate);

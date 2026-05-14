@@ -1,0 +1,192 @@
+version: 1
+ui_groups:
+  PHY_L1:
+    sections:
+      Carrier_Numerology_Grid:
+        feature_family: Carrier_Numerology_Grid
+        include_prefixes: [frequency., frame., frame_timing., bandwidth_operation., global_radio_scope.]
+        shared_dependency: true
+      Synchronization_SSB_PBCH:
+        feature_family: Synchronization_SSB_PBCH
+        include_prefixes: [signals_and_channels_common.ssb., signals_and_channels_common.pss., signals_and_channels_common.sss., signals_and_channels_common.pbch., signals_and_channels_common.pbch_dmrs., reference_signals.pbch, pbch., ssb.]
+        shared_dependency: false
+      Common_Signals_Channels:
+        feature_family: Common_Signals_Channels
+        include_prefixes: [signals_and_channels_common.sib1_related_pdcch., signals_and_channels_common.sib1_related_pdsch., signals_and_channels_common.paging_related_resources., signals_and_channels_common.]
+        shared_dependency: false
+      DL_Control_PDCCH_DCI:
+        feature_family: DL_Control_PDCCH_DCI
+        include_prefixes: [pdcch., control.]
+        shared_dependency: false
+      DL_Data_PDSCH:
+        feature_family: DL_Data_PDSCH
+        include_prefixes: [pdsch., pdsch6gr., channel_coding.]
+        shared_dependency: false
+      UL_Data_PUSCH:
+        feature_family: UL_Data_PUSCH
+        include_prefixes: [pusch.]
+        shared_dependency: false
+      UL_Control_PUCCH:
+        feature_family: UL_Control_PUCCH
+        include_prefixes: [pucch.]
+        shared_dependency: false
+      Random_Access_PRACH:
+        feature_family: Random_Access_PRACH
+        include_prefixes: [random_access., prach.]
+        shared_dependency: false
+        show_when:
+          any: [random_access.enabled]
+        dependencies:
+          shared_sections: [Carrier_Numerology_Grid, Channel_Propagation]
+          shared_paths: [frequency.center_frequency_hz, frequency.bandwidth_hz, frequency.duplex_mode, frequency.n_size_grid, frame.scs_khz, frame.cp_type]
+        hide_prefixes: [pdcch., pucch., pusch., pdsch., reference_signals.nzp_csi_rs., reference_signals.trs., reference_signals.ptrs., csi_acquisition_and_reporting.]
+      Reference_Signals_CSI_RS:
+        feature_family: Reference_Signals_CSI_RS
+        include_prefixes: [reference_signals.nzp_csi_rs., reference_signals.zp_csi_rs., reference_signals.csi]
+        shared_dependency: false
+      Reference_Signals_SRS:
+        feature_family: Reference_Signals_SRS
+        include_prefixes: [reference_signals.srs.]
+        shared_dependency: false
+      Reference_Signals_TRS_PTRS:
+        feature_family: Reference_Signals_TRS_PTRS
+        include_prefixes: [reference_signals.trs., reference_signals.tracking_rs., reference_signals.ptrs.]
+        shared_dependency: false
+      Reference_Signals_Common:
+        feature_family: Reference_Signals_Common
+        include_prefixes: [reference_signals.self_interference_rs., reference_signals.custom_rs., reference_signals.]
+        shared_dependency: false
+      DMRS:
+        feature_family: DMRS
+        include_prefixes: [reference_signals.pdsch_dmrs., reference_signals.pusch_dmrs., reference_signals.pdcch_dmrs.]
+        shared_dependency: false
+      Link_Adaptation_CQI_PMI_RI_MCS:
+        feature_family: Link_Adaptation_CQI_PMI_RI_MCS
+        include_prefixes: [link_adaptation., csi_acquisition_and_reporting.]
+        shared_dependency: false
+      MIMO_Beamforming:
+        feature_family: MIMO_Beamforming
+        include_prefixes: [mimo., mimo_and_beam_management., antenna_and_array.]
+        shared_dependency: false
+      RF_Impairments:
+        feature_family: RF_Impairments
+        include_prefixes: [impairments., power_and_rf_frontend.]
+        shared_dependency: false
+      Channel_Propagation:
+        feature_family: Channel_Propagation
+        include_prefixes: [channels., channel_model., interference.]
+        shared_dependency: false
+      Channel_Coding:
+        feature_family: Channel_Coding
+        include_prefixes: [channel_coding., coding.]
+        shared_dependency: false
+      Modulation_Mapping:
+        feature_family: Modulation_Mapping
+        include_prefixes: [modulation_and_mapping., modulation.]
+        shared_dependency: false
+      Receiver_Algorithms:
+        feature_family: Receiver_Algorithms
+        include_prefixes: [receiver_algorithms., receiver.]
+        shared_dependency: false
+      Synchronization_Tracking:
+        feature_family: Synchronization_Tracking
+        include_prefixes: [synchronization_and_tracking.]
+        shared_dependency: false
+      Waveform_Processing:
+        feature_family: Waveform_Processing
+        include_prefixes: [waveform., processing_chains.]
+        shared_dependency: false
+  MAC:
+    sections:
+      Scheduler:
+        feature_family: Scheduler
+        include_prefixes: [system.scheduler., scheduler.]
+        shared_dependency: false
+      HARQ:
+        feature_family: HARQ
+        include_prefixes: [harq.]
+        shared_dependency: false
+      PRB_Allocation:
+        feature_family: PRB_Allocation
+        include_prefixes: [resource_grid.]
+        shared_dependency: false
+      Buffer_Model:
+        feature_family: Buffer_Model
+        include_prefixes: [system.queue, system.queueMaxBits]
+        shared_dependency: false
+      System_Control:
+        feature_family: System_Control
+        include_prefixes: [system.]
+        shared_dependency: false
+  RLC_PDCP_SDAP:
+    sections:
+      RLC:
+        feature_family: RLC
+        include_prefixes: [rlc.]
+        shared_dependency: false
+      PDCP:
+        feature_family: PDCP
+        include_prefixes: [pdcp.]
+        shared_dependency: false
+      SDAP:
+        feature_family: SDAP
+        include_prefixes: [sdap.]
+        shared_dependency: false
+      QoS_Flow:
+        feature_family: QoS_Flow
+        include_prefixes: [qos.]
+        shared_dependency: false
+  Traffic:
+    sections:
+      Traffic_Model:
+        feature_family: Traffic_Model
+        include_prefixes: [traffic.]
+        shared_dependency: false
+      Mobility:
+        feature_family: Mobility
+        include_prefixes: [mobility.]
+        shared_dependency: false
+      Scenario_Topology:
+        feature_family: Scenario_Topology
+        include_prefixes: [deployment_topology., users.]
+        shared_dependency: false
+  Outputs:
+    sections:
+      Runtime_Evidence:
+        feature_family: Runtime_Evidence
+        include_prefixes: [reporting_semantics., control_gating.]
+        shared_dependency: false
+      CSV_Image_Exports:
+        feature_family: CSV_Image_Exports
+        include_prefixes: [output_control., output., logging.]
+        shared_dependency: false
+      Database:
+        feature_family: Database
+        include_prefixes: [output.backend, output.database_]
+        shared_dependency: false
+      Truth_Contract:
+        feature_family: Truth_Contract
+        include_prefixes: [scenario.honesty_mode, scenario.unsupported_output_policy, run_control.execution_mode]
+        shared_dependency: false
+      Scenario_Metadata:
+        feature_family: Scenario_Metadata
+        include_prefixes: [meta., scenario.]
+        shared_dependency: false
+      Execution_Control:
+        feature_family: Execution_Control
+        include_prefixes: [run_control., seeds., simulation., sweeps_and_matrix., sanity_checks.]
+        shared_dependency: false
+      KPI_Definition:
+        feature_family: KPI_Definition
+        include_prefixes: [kpis., kpi_spec.]
+        shared_dependency: false
+  Advanced_Research:
+    sections:
+      AI_ML:
+        feature_family: AI_ML
+        include_prefixes: [ai_ml.]
+        shared_dependency: false
+      Energy_Complexity:
+        feature_family: Energy_Complexity
+        include_prefixes: [energy_efficiency., energy_and_complexity.]
+        shared_dependency: false

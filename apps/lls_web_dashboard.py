@@ -68,7 +68,7 @@ except Exception:
     DEFAULT_DASHBOARD_THREADS = 32
 LEGACY_WAVEFORM_HONEST_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot.yaml"
 HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot.yaml"
-WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml"
+WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
 DEFAULT_SCENARIO = WAVEFORM_TRUTH_DEFAULT_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
 BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS", "E2E"]
@@ -89,6 +89,7 @@ MAX_ACTIVITY_POINTS = 200
 POLL_INTERVAL_MS = 1000
 RUNTIME_LOG_DIR = REPO_ROOT / "tmp_web_runs"
 PROCESSING_CHAIN_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "defaults" / "processing_chains.yaml"
+UI_PARAMETER_TAXONOMY_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "ui_parameter_taxonomy.yaml"
 LLS_DOCS_ROOT = REPO_ROOT / "docs" / "6g_lls"
 DEFAULT_MAP_CENTER = {
     "lat": 19.122164,
@@ -123,6 +124,59 @@ PROCESS_HEARTBEAT_STALL_MINUTES = max(
 )
 TERMINAL_STATUS_PREFIXES = ("completed", "failed", "aborted")
 TERMINAL_STATUS_VALUES = {"completed", "completed_with_failures", "aborted", "failed", "stopped"}
+REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
+    {"id": "active_bw_vs_power", "label": "active_bw_vs_power", "chart_tokens": ["active bandwidth power"], "image_tokens": ["active_bw_vs_power"]},
+    {"id": "active_rank_vs_power", "label": "active_rank_vs_power", "chart_tokens": ["active rank power"], "image_tokens": ["active_rank_vs_power"]},
+    {"id": "antenna_element_layout", "label": "antenna_element_layout", "prefer": "image", "chart_tokens": ["antenna element layout", "array element layout"], "image_tokens": ["antenna element layout", "array element layout", "antenna_element_layout"]},
+    {"id": "antenna_radiation_pattern", "label": "antenna_radiation_pattern", "prefer": "image", "chart_tokens": ["antenna radiation pattern", "radiation pattern"], "image_tokens": ["antenna radiation pattern", "radiation pattern", "antenna_radiation_pattern"]},
+    {"id": "beam_index_vs_time", "label": "beam_index_vs_time", "chart_tokens": ["selected beam timeline", "beam id timeline", "beam index timeline"], "image_tokens": ["beam-id-timeline", "selected-beam-timeline", "beam index timeline"]},
+    {"id": "beam_pattern_3d", "label": "beam_pattern_3d", "prefer": "image", "chart_tokens": ["beam pattern 3d"], "image_tokens": ["beam pattern 3d", "beam_pattern_3d"]},
+    {"id": "tx_waveform", "label": "tx_waveform", "chart_tokens": ["tx waveform"], "image_tokens": ["tx-waveform"]},
+    {"id": "rx_waveform", "label": "rx_waveform", "chart_tokens": ["rx waveform"], "image_tokens": ["rx-waveform"]},
+    {"id": "magnitude_vs_sample", "label": "magnitude_vs_sample", "chart_tokens": ["magnitude vs sample"], "image_tokens": ["magnitude-vs-sample"]},
+    {"id": "phase_vs_sample", "label": "phase_vs_sample", "chart_tokens": ["phase vs sample"], "image_tokens": ["phase-vs-sample"]},
+    {"id": "power_vs_sample", "label": "power_vs_sample", "chart_tokens": ["power vs sample"], "image_tokens": ["power-vs-sample"]},
+    {"id": "bler_vs_mcs", "label": "bler_vs_mcs", "chart_tokens": ["bler vs mcs"], "image_tokens": ["bler-vs-mcs"]},
+    {"id": "bler_vs_sinr", "label": "bler_vs_sinr", "chart_tokens": ["bler vs sinr", "bler vs snr"], "image_tokens": ["bler-vs-sinr"]},
+    {"id": "cell_kpi_dashboard", "label": "cell_kpi_dashboard", "prefer": "image", "chart_tokens": ["per cell throughput"], "image_tokens": ["per-cell-throughput", "cell_kpi_dashboard"]},
+    {"id": "cell_load_heatmap", "label": "cell_load_heatmap", "chart_tokens": ["candidate cell rank heatmap", "cell load heatmap"], "image_tokens": ["cell load heatmap", "candidate-cell-rank-heatmap", "cell_load_heatmap"]},
+    {"id": "channel_impulse_response", "label": "channel_impulse_response", "prefer": "image", "chart_tokens": ["true h tau if available", "channel impulse response"], "image_tokens": ["estimated-hhat-tau", "true-h-tau-if-available", "channel_impulse_response"]},
+    {"id": "constellation", "label": "constellation", "chart_tokens": ["post equalization constellation", "pre equalization constellation", "constellation per modulation order"], "image_tokens": ["post-equalization-constellation", "pre-equalization-constellation", "constellation per"]},
+    {"id": "cqi_pmi_ri_vs_time", "label": "cqi_pmi_ri_vs_time", "chart_tokens": ["cqi pmi ri cri ssbri trends", "cqi pmi ri cri timeline"], "image_tokens": ["cqi-pmi-ri-cri-ssbri-trends"]},
+    {"id": "csi_rs_resource_map", "label": "csi_rs_resource_map", "chart_tokens": ["csi rs map", "csi rs resource occupancy"], "image_tokens": ["csi-rs-map", "csi-rs-resource-occupancy"]},
+    {"id": "cumulative_energy_vs_time", "label": "cumulative_energy_vs_time", "chart_tokens": ["energy per bit over time", "joules gb over time"], "image_tokens": ["energy-per-bit-over-time", "joules-gb-over-time", "cumulative_energy_vs_time"]},
+    {"id": "doppler_variation", "label": "doppler_variation", "chart_tokens": ["doppler vs speed plot", "doppler variation"], "image_tokens": ["doppler variation", "doppler", "doppler_variation"]},
+    {"id": "energy_per_bit_histogram", "label": "energy_per_bit_histogram", "chart_tokens": ["energy per bit histogram"], "image_tokens": ["energy-per-bit-histogram", "energy_per_bit_histogram"]},
+    {"id": "evm_distribution", "label": "evm_distribution", "chart_tokens": ["evm rms", "symbol decision error histogram"], "image_tokens": ["evm-rms", "symbol-decision-error-histogram", "evm_distribution"]},
+    {"id": "goodput_vs_time", "label": "goodput_vs_time", "chart_tokens": ["goodput over time", "goodput timeline", "goodput vs time"], "image_tokens": ["goodput-over-time", "goodput-vs-time"]},
+    {"id": "harq_combining_gain", "label": "harq_combining_gain", "chart_tokens": ["harq combining gain distribution"], "image_tokens": ["harq-combining-gain-distribution"]},
+    {"id": "harq_timeline", "label": "harq_timeline", "chart_tokens": ["harq process timeline", "ack nack timeline"], "image_tokens": ["harq-process-timeline"]},
+    {"id": "harq_txcount_histogram", "label": "harq_txcount_histogram", "chart_tokens": ["retransmission count histogram"], "image_tokens": ["retransmission-count-histogram", "harq_txcount_histogram"]},
+    {"id": "interference_waterfall", "label": "interference_waterfall", "chart_tokens": ["serving vs interferer decomposition"], "image_tokens": ["serving-vs-interferer-decomposition", "interference_waterfall"]},
+    {"id": "latency_cdf", "label": "latency_cdf", "chart_tokens": ["latency cdf plot", "latency cdf"], "image_tokens": ["latency-cdf", "latency_cdf"]},
+    {"id": "latency_decomposition", "label": "latency_decomposition", "chart_tokens": ["latency breakdown stacked chart"], "image_tokens": ["latency-breakdown-stacked-chart"]},
+    {"id": "mcs_vs_time", "label": "mcs_vs_time", "chart_tokens": ["mcs over time", "selected mcs distribution"], "image_tokens": ["mcs-over-time"]},
+    {"id": "pdcch_cce_occupancy", "label": "pdcch_cce_occupancy", "chart_tokens": ["cce usage heatmap", "pdcch map"], "image_tokens": ["cce-usage-heatmap"]},
+    {"id": "power_delay_profile", "label": "power_delay_profile", "chart_tokens": ["tap power profile", "power delay profile"], "image_tokens": ["tap-power-profile"]},
+    {"id": "power_vs_time", "label": "power_vs_time", "chart_tokens": ["tx power timeline per cell", "tx power timeline per ue", "dl tx power per cell beam ue", "ul tx power per ue"], "image_tokens": ["tx-power-timeline-per-cell", "tx-power-timeline-per-ue"]},
+    {"id": "prach_correlation_peak", "label": "prach_correlation_peak", "chart_tokens": ["prach peak search results", "peak value histogram"], "image_tokens": ["prach-correlation-peak", "prach-peak-search-results"]},
+    {"id": "prb_allocation_heatmap", "label": "prb_allocation_heatmap", "chart_tokens": ["prb heatmap"], "image_tokens": ["prb-heatmap"]},
+    {"id": "pucch_detection_metric", "label": "pucch_detection_metric", "chart_tokens": ["pucch dtx statistics", "pucch decode success failure trend"], "image_tokens": ["pucch-dtx-statistics", "pucch_detection_metric"]},
+    {"id": "queue_backlog_vs_time", "label": "queue_backlog_vs_time", "chart_tokens": ["queue depth over time"], "image_tokens": ["queue-depth-over-time"]},
+    {"id": "rank_layer_histogram", "label": "rank_layer_histogram", "chart_tokens": ["rank distribution"], "image_tokens": ["rank-distribution"]},
+    {"id": "resource_grid_ul", "label": "resource_grid_ul", "chart_tokens": ["pusch map", "ul resource grid equalized symbol summaries", "ul resource grid"], "image_tokens": ["pusch-map", "ul resource-grid", "resource_grid_ul"]},
+    {"id": "scheduler_timeline", "label": "scheduler_timeline", "chart_tokens": ["scheduled prbs per ue over time", "sr bsr event timeline", "scheduler fairness over time"], "image_tokens": ["scheduled-prbs-per-ue-over-time", "sr-bsr-event-timeline", "scheduler_timeline"]},
+    {"id": "sector_coverage_footprint", "label": "sector_coverage_footprint", "chart_tokens": ["serving cell map"], "image_tokens": ["serving-cell-map"]},
+    {"id": "sinr_vs_time", "label": "sinr_vs_time", "chart_tokens": ["configured vs applied vs measured snr sinr comparison", "servingrsrp rsrp csi rsrp trends", "sinr timeline"], "image_tokens": ["sinr_vs_time"]},
+    {"id": "snr_vs_time", "label": "snr_vs_time", "chart_tokens": ["configured vs applied vs measured snr sinr comparison", "configured snr vs applied awgn snr vs measured sinr vs large scale sinr", "snr timeline"], "image_tokens": ["snr_vs_time"]},
+    {"id": "ssb_burst_beam", "label": "ssb_burst_beam", "chart_tokens": ["ssb index timeline", "pbch ssb map"], "image_tokens": ["ssb-index-timeline", "ssb_burst_beam"]},
+    {"id": "state_occupancy_area", "label": "state_occupancy_area", "chart_tokens": ["sleep idle active state occupancy"], "image_tokens": ["state occupancy", "state_occupancy_area"]},
+    {"id": "throughput_vs_time", "label": "throughput_vs_time", "chart_tokens": ["throughput over time", "throughput timeline", "throughput vs time"], "image_tokens": ["throughput-over-time", "throughput-vs-time"]},
+    {"id": "topology_map", "label": "topology_map", "chart_tokens": ["serving cell map"], "image_tokens": ["serving-cell-map", "topology_map"]},
+    {"id": "transition_count_bars", "label": "transition_count_bars", "chart_tokens": ["access state transition sankey", "transition count"], "image_tokens": ["transition count", "transition_count_bars"]},
+    {"id": "ue_kpi_dashboard", "label": "ue_kpi_dashboard", "prefer": "image", "chart_tokens": ["per ue throughput"], "image_tokens": ["per-ue-throughput", "ue_kpi_dashboard"]},
+    {"id": "ue_position_scatter", "label": "ue_position_scatter", "chart_tokens": ["bs sector ue topology scatter plot", "ue trajectory overlay", "ue trajectory views"], "image_tokens": ["bs-sector-ue-topology-scatter-plot", "ue-trajectory-overlay", "ue_position_scatter"]},
+]
 
 
 def load_dashboard_user_profiles() -> dict[str, dict[str, Any]]:
@@ -195,6 +249,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
         LIVE_PAYLOAD_CACHE.clear()
         CACHED_PAYLOAD_VERSION.clear()
         SECTION_PAYLOAD_CACHE.clear()
+        build_chart_payload_for_artifact.cache_clear()
         fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
         load_cached_csv_rows.cache_clear()
@@ -208,6 +263,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     # deletion, or relaunch can invalidate cached bytes/previews that were
     # generated from an older artifact set. Clear them eagerly so the browser
     # never serves stale analytics or deleted artifact bodies after a rerun.
+    build_chart_payload_for_artifact.cache_clear()
     fetch_artifact_bytes.cache_clear()
     load_cached_csv_preview.cache_clear()
     load_cached_csv_rows.cache_clear()
@@ -373,7 +429,9 @@ def infer_terminal_status_from_artifacts(run_row: dict[str, Any]) -> tuple[str, 
         (art for art in artifacts if str(art.get("logical_path") or "").endswith("/artifact_manifest.json")),
         None,
     )
-    if summary_art is None or manifest_art is None or artifact_manifest_art is None:
+    truth_summary_art = find_artifact_by_logical_path(artifacts, "reports/csv/truth_contract_summary.csv")
+    output_coverage_art = find_artifact_by_logical_path(artifacts, "reports/csv/output_coverage_registry.csv")
+    if summary_art is None or manifest_art is None:
         return None
 
     summary_row: dict[str, str] = {}
@@ -416,26 +474,85 @@ def infer_terminal_status_from_artifacts(run_row: dict[str, Any]) -> tuple[str, 
         except Exception:
             return None
 
+    status_authority = str(
+        summary_row.get("StatusAuthority")
+        or manifest_payload.get("StatusAuthority")
+        or ""
+    ).strip()
+    truth_ok = _parse_bool(summary_row.get("RuntimeTruthContractOk") or manifest_payload.get("RuntimeTruthContractOk"))
+    required_failures = _parse_int(summary_row.get("RequiredFailureCount") or manifest_payload.get("RequiredFailureCount"))
+    summary_has_truth_terminal_evidence = (
+        "runtime_truth_contract" in status_authority.lower()
+        or truth_ok is not None
+        or required_failures is not None
+    )
+    if artifact_manifest_art is None and truth_summary_art is None and output_coverage_art is None:
+        # Preserve truly completed runs when the final truth-gated summary/manifest
+        # landed before the late coverage bundle, rather than relabeling them as stale.
+        if not summary_has_truth_terminal_evidence:
+            return None
+
     payload: dict[str, Any] = {
         "status": status_text,
         "run_completion": status_text,
         "stage": "dashboard_terminal_promotion_from_artifacts",
-        "status_authority": str(summary_row.get("StatusAuthority") or manifest_payload.get("StatusAuthority") or "dashboard_artifact_terminal_promotion"),
-        "reason": "Dashboard promoted a stale running row to the terminal scenario status because scenario_summary, scenario_manifest, and artifact_manifest were already persisted.",
+        "status_authority": status_authority or "dashboard_artifact_terminal_promotion",
+        "reason": "Dashboard promoted a stale running row to the terminal scenario status because terminal summary/manifest artifacts and supporting truth evidence were already persisted.",
         "summary_artifact": "reports/csv/scenario_summary.csv",
         "manifest_artifact": "meta/scenario_manifest.json",
-        "artifact_manifest": str(artifact_manifest_art.get("logical_path") or ""),
+        "artifact_manifest": str(artifact_manifest_art.get("logical_path") or "") if artifact_manifest_art else "",
+        "truth_contract_summary": str(truth_summary_art.get("logical_path") or "") if truth_summary_art else "",
+        "output_coverage_registry": str(output_coverage_art.get("logical_path") or "") if output_coverage_art else "",
+        "terminal_evidence_mode": (
+            "terminal_summary_manifest_plus_supporting_artifacts"
+            if artifact_manifest_art is not None or truth_summary_art is not None or output_coverage_art is not None
+            else "terminal_summary_manifest_truth_fields_only"
+        ),
     }
     result_ok = _parse_bool(summary_row.get("ResultOk") or summary_row.get("Ok") or manifest_payload.get("ResultOk"))
     if result_ok is not None:
         payload["result_ok"] = result_ok
-    required_failures = _parse_int(summary_row.get("RequiredFailureCount") or manifest_payload.get("RequiredFailureCount"))
     if required_failures is not None:
         payload["required_failure_count"] = required_failures
-    truth_ok = _parse_bool(summary_row.get("RuntimeTruthContractOk") or manifest_payload.get("RuntimeTruthContractOk"))
     if truth_ok is not None:
         payload["runtime_truth_contract_ok"] = truth_ok
     return status_text, payload
+
+
+def _status_requires_terminal_artifact_repair(row: dict[str, Any]) -> bool:
+    token = str(row.get("status_text") or "").strip().lower()
+    if token in {"queued", "launching", "running", "finalizing", "retry"}:
+        return True
+    return token.startswith("aborted") or token.startswith("stalled")
+
+
+def repair_run_row_from_terminal_artifacts(row: dict[str, Any], *, persist: bool = False) -> tuple[dict[str, Any], bool]:
+    if not row or not _status_requires_terminal_artifact_repair(row):
+        return row, False
+    terminal = infer_terminal_status_from_artifacts(row)
+    if terminal is None:
+        return row, False
+    status_text, payload = terminal
+    patched = dict(row)
+    patched["status_text"] = status_text
+    patched["status_json"] = json.dumps(payload, separators=(",", ":"))
+    changed = (
+        str(row.get("status_text") or "").strip().lower() != str(status_text).strip().lower()
+        or _status_payload(row) != payload
+    )
+    if persist and changed:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE sim_runs
+                    SET status_text=%s, status_json=%s, updated_utc=UTC_TIMESTAMP()
+                    WHERE run_id=%s
+                    """,
+                    (status_text, patched["status_json"], int(row.get("run_id") or 0)),
+                )
+        clear_dashboard_caches()
+    return patched, changed
 
 
 def mark_stale_running_runs() -> int:
@@ -460,20 +577,9 @@ def mark_stale_running_runs() -> int:
                     continue
             except Exception:
                 pass
-            terminal = infer_terminal_status_from_artifacts(row)
-            if terminal is not None:
-                status_text, payload = terminal
-                with db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            UPDATE sim_runs
-                            SET status_text=%s, status_json=%s, updated_utc=UTC_TIMESTAMP()
-                            WHERE run_id=%s AND LOWER(COALESCE(status_text,''))='running'
-                            """,
-                            (status_text, json.dumps(payload, separators=(",", ":")), run_id),
-                        )
-                        count += int(cur.rowcount or 0)
+            _, repaired = repair_run_row_from_terminal_artifacts(row, persist=True)
+            if repaired:
+                count += 1
                 continue
             updated_utc = row.get("updated_utc")
             if isinstance(updated_utc, datetime) and updated_utc.replace(tzinfo=timezone.utc) >= cutoff:
@@ -2791,8 +2897,41 @@ def latest_run_id() -> int | None:
         return None
 
 
-def _run_status_rank(status_text: Any, *, prefer_active: bool) -> int:
-    token = str(status_text or "").strip().lower()
+def _status_payload(row: dict[str, Any]) -> dict[str, Any]:
+    raw = row.get("status_json")
+    if isinstance(raw, dict):
+        return raw
+    if raw in (None, ""):
+        return {}
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _effective_run_status(row: dict[str, Any]) -> str:
+    token = str(row.get("status_text") or "").strip().lower()
+    payload = _status_payload(row)
+    completion = str(payload.get("run_completion") or payload.get("status_text") or "").strip().lower()
+    if completion in {"0", "1"}:
+        completion = ""
+    if completion and token in {"queued", "launching", "running", "finalizing", "retry"}:
+        return completion
+    return completion or token
+
+
+def _run_profile_rank(row: dict[str, Any]) -> int:
+    profile = str(row.get("profile_name") or "").strip().lower()
+    if profile == "recovery_artifact_refresh":
+        return 0
+    if profile:
+        return 1
+    return 0
+
+
+def _run_status_rank(row: dict[str, Any], *, prefer_active: bool) -> int:
+    token = _effective_run_status(row)
     if not token:
         return 0
     if any(key in token for key in ("queued", "launching", "running", "finalizing", "retry")):
@@ -2828,17 +2967,22 @@ def _date_parse_key(value: Any) -> float:
 def _select_preferred_run_row(rows: list[dict[str, Any]], *, prefer_active: bool) -> dict[str, Any] | None:
     if not rows:
         return None
-    ordered = sorted(
+    ordered = order_run_rows_for_display(rows, prefer_active=prefer_active)
+    return ordered[0] if ordered else None
+
+
+def order_run_rows_for_display(rows: list[dict[str, Any]], *, prefer_active: bool) -> list[dict[str, Any]]:
+    return sorted(
         rows,
         key=lambda row: (
-            _run_status_rank(row.get("status_text"), prefer_active=prefer_active),
+            _run_status_rank(row, prefer_active=prefer_active),
+            _run_profile_rank(row),
             _date_parse_key(row.get("updated_utc")),
             _date_parse_key(row.get("created_utc")),
             int(row.get("run_id") or 0),
         ),
         reverse=True,
     )
-    return ordered[0] if ordered else None
 
 
 def preferred_live_run_id() -> int | None:
@@ -2864,17 +3008,24 @@ def fetch_runs(limit: int = 50, run_tag: str | None = None) -> list[dict[str, An
             with conn.cursor(dictionary=True) as cur:
                 sql = """
                     SELECT run_id, scenario_id, run_tag, profile_name, bucket, backend,
-                           status_text, created_utc, updated_utc
+                           status_text, status_json, created_utc, updated_utc
                     FROM sim_runs
                 """
                 params: list[Any] = []
                 if run_tag:
                     sql += " WHERE run_tag = %s"
                     params.append(run_tag)
+                    sql += " ORDER BY run_id DESC"
+                    cur.execute(sql, tuple(params))
+                    rows = [rowify(row) for row in cur.fetchall()]
+                    rows = [repair_run_row_from_terminal_artifacts(row, persist=True)[0] for row in rows]
+                    ordered = order_run_rows_for_display(rows, prefer_active=True)
+                    return ordered[: max(1, int(limit))]
                 sql += " ORDER BY run_id DESC LIMIT %s"
                 params.append(limit)
                 cur.execute(sql, tuple(params))
-                return [rowify(row) for row in cur.fetchall()]
+                rows = [rowify(row) for row in cur.fetchall()]
+                return [repair_run_row_from_terminal_artifacts(row, persist=True)[0] for row in rows]
     except mysql.connector.Error:
         return []
 
@@ -2892,7 +3043,10 @@ def fetch_run(run_id: int) -> dict[str, Any] | None:
                 """,
                 (run_id,),
             )
-            return rowify(cur.fetchone())
+            row = rowify(cur.fetchone())
+    if row is None:
+        return None
+    return repair_run_row_from_terminal_artifacts(row, persist=True)[0]
 
 
 def fetch_logs(run_id: int, limit: int = MAX_LIVE_LOG_ROWS, descending: bool = True) -> list[dict[str, Any]]:
@@ -4244,6 +4398,224 @@ def build_artifact_descriptor(art: dict[str, Any]) -> dict[str, Any]:
     return descriptor
 
 
+def friendly_artifact_label(logical_path: str) -> str:
+    raw = str(logical_path or "").strip()
+    if not raw:
+        return "Artifact"
+    tail = raw.split("/")[-1] if "/" in raw else raw
+    label = re.sub(r"\.[^.]+$", "", tail)
+    label = re.sub(r"^contract__", "", label)
+    label = label.replace("__", " / ")
+    label = re.sub(r"[_-]+", " ", label)
+    label = re.sub(r"\s+", " ", label).strip()
+    return label or raw
+
+
+def semantic_artifact_match_labels(logical_path: str, fallback: str = "") -> list[str]:
+    raw = str(logical_path or "").strip()
+    labels: list[str] = []
+    if raw:
+        tail = raw.split("/")[-1] if "/" in raw else raw
+        stem = re.sub(r"\.[^.]+$", "", tail)
+        if stem.startswith("contract__"):
+            parts = stem.split("__")
+            if len(parts) >= 3:
+                chart_tail = re.sub(r"[_-]+", " ", str(parts[-1])).strip()
+                section_tail = re.sub(r"[_-]+", " ", str(parts[-2])).strip()
+                if chart_tail:
+                    labels.append(chart_tail)
+                if section_tail:
+                    labels.append(section_tail)
+        labels.append(friendly_artifact_label(raw))
+        labels.append(raw)
+    if fallback:
+        labels.append(str(fallback))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        token = str(label or "").strip()
+        if not token:
+            continue
+        key = token.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(token)
+    return deduped
+
+
+@lru_cache(maxsize=512)
+def build_chart_payload_for_artifact(artifact_id: int) -> dict[str, Any] | None:
+    meta = fetch_artifact_meta(int(artifact_id))
+    if meta is None or str(meta.get("artifact_kind") or "") != "table_csv":
+        return None
+    descriptor = build_artifact_descriptor(meta)
+    return build_numeric_chart_from_artifact(descriptor)
+
+
+def _build_legacy_plot_browser_items(
+    table_artifacts: list[dict[str, Any]],
+    image_artifacts: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    numeric_charts = build_numeric_charts_from_artifacts(
+        table_artifacts,
+        limit=max(len(table_artifacts), 1),
+    )
+    items: list[dict[str, Any]] = []
+    for chart in numeric_charts:
+        artifact_id = int(chart.get("artifact_id") or 0)
+        if artifact_id <= 0:
+            continue
+        source = str(chart.get("title") or chart.get("chart_id") or "")
+        items.append(
+            {
+                "id": f"chart:{artifact_id}",
+                "artifact_id": artifact_id,
+                "label": friendly_artifact_label(source),
+                "kind": "interactive",
+                "source_kind": "chart_source_table",
+                "source": source,
+                "table_view_url": f"/artifact/{artifact_id}/table",
+                "chart_view_url": f"/api/artifact/{artifact_id}/chart",
+                "download_url": str(chart.get("download_url") or artifact_url(artifact_id, download=True)),
+            }
+        )
+    for image in image_artifacts:
+        artifact_id = int(image.get("artifact_id") or 0)
+        if artifact_id <= 0:
+            continue
+        items.append(
+            {
+                "id": f"image:{artifact_id}",
+                "artifact_id": artifact_id,
+                "label": friendly_artifact_label(str(image.get("logical_path") or "")),
+                "kind": "image",
+                "source_kind": "image_artifact",
+                "source": str(image.get("logical_path") or ""),
+                "view_url": str(image.get("view_url") or artifact_url(artifact_id)),
+                "download_url": str(image.get("download_url") or artifact_url(artifact_id, download=True)),
+            }
+        )
+    kind_order = {"interactive": 0, "image": 1}
+    items.sort(key=lambda item: (kind_order.get(str(item.get("kind") or ""), 9), str(item.get("label") or "").lower(), int(item.get("artifact_id") or 0)))
+    interactive_count = sum(1 for item in items if item.get("kind") == "interactive")
+    image_count = sum(1 for item in items if item.get("kind") == "image")
+    return items, interactive_count, image_count
+
+
+def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
+    live = build_live_payload(run_id, lite=False)
+    table_artifacts = list(live.get("tables_all") or [])
+    image_artifacts = list(live.get("images_all") or [])
+    legacy_items, legacy_interactive_count, legacy_image_count = _build_legacy_plot_browser_items(table_artifacts, image_artifacts)
+    numeric_charts = build_numeric_charts_from_artifacts(
+        table_artifacts,
+        limit=max(len(table_artifacts), 1),
+    )
+    gallery = build_reference_plot_gallery(numeric_charts, image_artifacts)
+    canonical_items: list[dict[str, Any]] = []
+    for item in gallery.get("items") or []:
+        status = str(item.get("status") or "")
+        label = str(item.get("label") or item.get("reference_id") or "").strip()
+        if status == "interactive":
+            chart = item.get("chart") or {}
+            artifact_id = int(chart.get("artifact_id") or 0)
+            if artifact_id <= 0:
+                continue
+            canonical_items.append(
+                {
+                    "id": f"family:{item.get('reference_id')}:chart:{artifact_id}",
+                    "artifact_id": artifact_id,
+                    "label": label,
+                    "kind": "interactive",
+                    "source_kind": "canonical_plot_family_chart",
+                    "source": str(chart.get("title") or chart.get("chart_id") or ""),
+                    "reason": str(item.get("reason") or ""),
+                    "family_id": str(item.get("reference_id") or ""),
+                    "table_view_url": f"/artifact/{artifact_id}/table",
+                    "chart_view_url": f"/api/artifact/{artifact_id}/chart",
+                    "download_url": str(chart.get("download_url") or artifact_url(artifact_id, download=True)),
+                }
+            )
+        elif status == "image":
+            image = item.get("image") or {}
+            artifact_id = int(image.get("artifact_id") or 0)
+            if artifact_id <= 0:
+                continue
+            canonical_items.append(
+                {
+                    "id": f"family:{item.get('reference_id')}:image:{artifact_id}",
+                    "artifact_id": artifact_id,
+                    "label": label,
+                    "kind": "image",
+                    "source_kind": "canonical_plot_family_image",
+                    "source": str(image.get("logical_path") or ""),
+                    "reason": str(item.get("reason") or ""),
+                    "family_id": str(item.get("reference_id") or ""),
+                    "view_url": str(image.get("view_url") or artifact_url(artifact_id)),
+                    "download_url": str(image.get("download_url") or artifact_url(artifact_id, download=True)),
+                }
+            )
+        else:
+            canonical_items.append(
+                {
+                    "id": f"family:{item.get('reference_id')}:unavailable",
+                    "artifact_id": 0,
+                    "label": label,
+                    "kind": "unavailable",
+                    "source_kind": "canonical_plot_family_unavailable",
+                    "source": "",
+                    "reason": str(item.get("reason") or ""),
+                    "family_id": str(item.get("reference_id") or ""),
+                }
+            )
+    if canonical_items:
+        interactive_count = sum(1 for item in canonical_items if item.get("kind") == "interactive")
+        image_count = sum(1 for item in canonical_items if item.get("kind") == "image")
+        unavailable_count = sum(1 for item in canonical_items if item.get("kind") == "unavailable")
+        return {
+            "run_id": int(run_id),
+            "mode": "canonical_reference_gallery",
+            "items": canonical_items,
+            "raw_items": legacy_items,
+            "interactive_count": interactive_count,
+            "image_count": image_count,
+            "unavailable_count": unavailable_count,
+            "total_count": len(canonical_items),
+            "raw_total_count": len(legacy_items),
+            "raw_interactive_count": legacy_interactive_count,
+            "raw_image_count": legacy_image_count,
+            "suppressed_raw_count": max(0, len(legacy_items) - (interactive_count + image_count)),
+        }
+    return {
+        "run_id": int(run_id),
+        "mode": "legacy_artifact_dump",
+        "items": legacy_items,
+        "raw_items": legacy_items,
+        "interactive_count": legacy_interactive_count,
+        "image_count": legacy_image_count,
+        "unavailable_count": 0,
+        "total_count": len(legacy_items),
+        "raw_total_count": len(legacy_items),
+        "raw_interactive_count": legacy_interactive_count,
+        "raw_image_count": legacy_image_count,
+        "suppressed_raw_count": 0,
+    }
+
+
+def build_table_browser_payload(run_id: int) -> dict[str, Any]:
+    live = build_live_payload(run_id, lite=False)
+    items = sorted(
+        list(live.get("tables_all") or []),
+        key=lambda item: str(item.get("logical_path") or "").lower(),
+    )
+    return {
+        "run_id": int(run_id),
+        "items": items,
+        "table_count": len(items),
+    }
+
+
 CONTROL_TRIAL_TABLE_BASENAMES = {
     "pbch_trials.csv",
     "prach_trials.csv",
@@ -4729,6 +5101,162 @@ def aggregate_points_by_x(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return aggregated
 
 
+def series_duplicate_x_ratio(points: list[dict[str, Any]]) -> float:
+    numeric_x_values: list[float] = []
+    for point in points:
+        x_val = coerce_numeric(point.get("x"))
+        if x_val is None:
+            return 0.0
+        numeric_x_values.append(float(x_val))
+    if len(numeric_x_values) < 2:
+        return 0.0
+    unique_x = {round(value, 12) for value in numeric_x_values}
+    return max(0.0, 1.0 - (len(unique_x) / max(len(numeric_x_values), 1)))
+
+
+def points_have_discrete_integer_y(points: list[dict[str, Any]], *, max_unique: int = 96) -> bool:
+    y_values: list[float] = []
+    for point in points:
+        y_val = coerce_numeric(point.get("y"))
+        if y_val is None or not math.isfinite(float(y_val)):
+            continue
+        y_values.append(float(y_val))
+    if len(y_values) < 2:
+        return False
+    rounded = [round(value) for value in y_values]
+    if any(abs(value - rounded_value) > 1e-6 for value, rounded_value in zip(y_values, rounded)):
+        return False
+    return len(set(rounded)) <= max_unique
+
+
+def axis_is_time_like(label: Any) -> bool:
+    token = str(label or "").strip().lower()
+    return bool(re.search(r"(^|[^a-z])(time|slot|frame|sample|timeline|tti)([^a-z]|$)", token))
+
+
+def chart_is_spatial(logical_path: Any, chart_name: Any, xaxis_title: Any, yaxis_title: Any) -> bool:
+    combined = " ".join(
+        str(value or "").strip().lower()
+        for value in (logical_path, chart_name, xaxis_title, yaxis_title)
+        if str(value or "").strip()
+    )
+    if not combined:
+        return False
+    spatial_tokens = (
+        "topology",
+        "serving cell map",
+        "scatter plot",
+        "trajectory",
+        "layout",
+        "footprint",
+        "position",
+        "geometry",
+        "site",
+    )
+    return any(token in combined for token in spatial_tokens) and "timeline" not in combined
+
+
+def points_look_like_geocoordinates(points: list[dict[str, Any]]) -> bool:
+    x_values: list[float] = []
+    y_values: list[float] = []
+    for point in points:
+        x_val = coerce_numeric(point.get("x"))
+        y_val = coerce_numeric(point.get("y"))
+        if x_val is None or y_val is None:
+            continue
+        x_values.append(float(x_val))
+        y_values.append(float(y_val))
+    if len(x_values) < 2 or len(y_values) < 2:
+        return False
+    return all(-180.0 <= value <= 180.0 for value in x_values) and all(-90.0 <= value <= 90.0 for value in y_values)
+
+
+def default_scatter_mode(points: list[dict[str, Any]]) -> str:
+    return "lines" if len(points) >= 48 else "lines+markers"
+
+
+def build_count_heatmap_series(
+    points: list[dict[str, Any]],
+    *,
+    series_name: str,
+    colorbar_title: str = "Count",
+) -> dict[str, Any] | None:
+    x_tokens = sorted(
+        {
+            str(coerce_numeric(point.get("x")) if coerce_numeric(point.get("x")) is not None else point.get("x")).strip()
+            for point in points
+            if str(point.get("x") or "").strip()
+        },
+        key=lambda token: (coerce_numeric(token) is None, coerce_numeric(token) if coerce_numeric(token) is not None else token),
+    )
+    y_tokens = sorted(
+        {
+            str(int(round(coerce_numeric(point.get("y")))))
+            for point in points
+            if coerce_numeric(point.get("y")) is not None and math.isfinite(float(coerce_numeric(point.get("y"))))
+        },
+        key=lambda token: int(token),
+    )
+    if not x_tokens or not y_tokens:
+        return None
+    x_index = {token: idx for idx, token in enumerate(x_tokens)}
+    y_index = {token: idx for idx, token in enumerate(y_tokens)}
+    matrix = [[0.0 for _ in x_tokens] for _ in y_tokens]
+    populated = False
+    for point in points:
+        x_val = coerce_numeric(point.get("x"))
+        y_val = coerce_numeric(point.get("y"))
+        if x_val is None or y_val is None or not math.isfinite(float(x_val)) or not math.isfinite(float(y_val)):
+            continue
+        x_token = str(x_val).strip()
+        y_token = str(int(round(y_val)))
+        if x_token not in x_index or y_token not in y_index:
+            continue
+        matrix[y_index[y_token]][x_index[x_token]] += 1.0
+        populated = True
+    if not populated:
+        return None
+    return {
+        "name": series_name,
+        "mode": "heatmap",
+        "x_labels": x_tokens,
+        "y_labels": y_tokens,
+        "matrix": matrix,
+        "colorbar_title": colorbar_title,
+    }
+
+
+def assign_secondary_axis(chart_series: list[dict[str, Any]]) -> str:
+    maxima: list[tuple[dict[str, Any], float]] = []
+    for series in chart_series:
+        if str(series.get("trace_type") or "").lower() == "bar":
+            continue
+        y_values = [
+            abs(float(coerce_numeric(point.get("y"))))
+            for point in (series.get("points") or [])
+            if coerce_numeric(point.get("y")) is not None
+        ]
+        if not y_values:
+            continue
+        maxima.append((series, max(y_values)))
+    positive = sorted(value for _, value in maxima if value > 0)
+    if len(positive) < 2:
+        return ""
+    baseline = positive[max(0, len(positive) // 2 - 1)]
+    if baseline <= 0 or positive[-1] / baseline < 4.0:
+        return ""
+    secondary_names: list[str] = []
+    for series, max_value in maxima:
+        if max_value / baseline >= 4.0:
+            series["yaxis"] = "y2"
+            secondary_names.append(str(series.get("name") or "Series"))
+    if not secondary_names or len(secondary_names) == len(chart_series):
+        for series in chart_series:
+            series.pop("yaxis", None)
+        return ""
+    return " / ".join(secondary_names[:2]) + (" ..." if len(secondary_names) > 2 else "")
+
+
 def _column_variation_score(rows: list[list[Any]], idx: int) -> tuple[int, int]:
     values = [coerce_numeric(row[idx]) for row in rows if idx < len(row)]
     values = [value for value in values if value is not None]
@@ -5005,6 +5533,222 @@ def build_live_summary(
         ),
     }
     return summary
+
+
+CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "pbch_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("ServingCell", "Cell"),
+        ("BaseStationID", "gNB"),
+        ("CRCPass", "CRC pass"),
+        ("DetectionMetric", "Metric"),
+        ("EVM_rms", "EVM"),
+        ("NMSE_dB", "NMSE dB"),
+        ("ComputeLatency_ms", "Latency ms"),
+        ("Status", "Status"),
+    ],
+    "prach_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEID", "UE"),
+        ("RNTI", "RNTI"),
+        ("DetectionMetric", "Metric"),
+        ("FalseAlarmFlag", "False alarm"),
+        ("BlockingFlag", "Blocked"),
+        ("BitErrors", "Bit errors"),
+        ("BitsCompared", "Bits"),
+        ("Status", "Status"),
+    ],
+    "pdcch_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEID", "UE"),
+        ("RNTI", "RNTI"),
+        ("AggregationLevel", "AggLevel"),
+        ("DCISize_bits", "DCI bits"),
+        ("BlindDecodeCount", "Blind decodes"),
+        ("ControlDecodeOk", "Decode ok"),
+        ("CRCPass", "CRC pass"),
+        ("DetectionMetric", "Metric"),
+        ("Status", "Status"),
+    ],
+    "pucch_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEID", "UE"),
+        ("RNTI", "RNTI"),
+        ("ResolvedFormat", "Format"),
+        ("BitsCompared", "Bits"),
+        ("BitErrors", "Bit errors"),
+        ("PUCCHDecodeOk", "Decode ok"),
+        ("DetectionMetric", "Metric"),
+        ("Status", "Status"),
+    ],
+    "srs_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEID", "UE"),
+        ("RNTI", "RNTI"),
+        ("ServingCell", "Cell"),
+        ("DetectionMetric", "Metric"),
+        ("NMSE_dB", "NMSE dB"),
+        ("TimingOffset_samples", "Timing off"),
+        ("Status", "Status"),
+    ],
+    "trs_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEIndex", "UE"),
+        ("ServingCell", "Cell"),
+        ("DetectionMetric", "Metric"),
+        ("EstimatedDopplerHz", "Est Doppler Hz"),
+        ("DopplerError_Hz", "Doppler err Hz"),
+        ("TRSUpdateOutcome", "Update"),
+        ("Status", "Status"),
+    ],
+}
+
+
+DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "dl_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEID", "UE"),
+        ("RNTI", "RNTI"),
+        ("AllocatedPRBCount", "PRBs"),
+        ("NumSymbols", "Symbols"),
+        ("MCSIndex", "MCS"),
+        ("Modulation", "Modulation"),
+        ("TargetCodeRate", "TargetCodeRate"),
+        ("TBSize_bits", "TBS bits"),
+        ("MeasuredTrialSINR_dB", "Measured SINR dB"),
+        ("WidebandCQI", "CQI"),
+        ("Status", "Status"),
+    ],
+    "ul_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEID", "UE"),
+        ("RNTI", "RNTI"),
+        ("AllocatedPRBCount", "PRBs"),
+        ("NumSymbols", "Symbols"),
+        ("MCSIndex", "MCS"),
+        ("Modulation", "Modulation"),
+        ("TargetCodeRate", "TargetCodeRate"),
+        ("TBSize_bits", "TBS bits"),
+        ("MeasuredTrialSINR_dB", "Measured SINR dB"),
+        ("WidebandCQI", "CQI"),
+        ("Status", "Status"),
+    ],
+}
+
+
+def _is_preview_placeholder_string(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return True
+    return lowered.startswith(
+        (
+            "not_applicable_for_active_",
+            "not_recorded_by_active_",
+            "not_emitted_by_active_",
+            "field_not_emitted_by_active_",
+        )
+    )
+
+
+def normalize_preview_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if _is_preview_placeholder_string(stripped):
+            return None
+        lowered = stripped.lower()
+        if lowered.startswith("not_blocked_in_active_"):
+            return "No"
+        if lowered == "control_ok":
+            return "OK"
+        return stripped
+    numeric = coerce_numeric(value)
+    if numeric is not None:
+        return numeric
+    return value
+
+
+def summarize_control_trial_preview_rows(control_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    specs = CONTROL_TRIAL_PREVIEW_COLUMNS.get(control_key) or []
+    if not specs:
+        return rows
+    active_specs: list[tuple[str, str]] = []
+    for source_key, label in specs:
+        has_meaningful = any(normalize_preview_value(row.get(source_key)) is not None for row in rows)
+        if has_meaningful:
+            active_specs.append((source_key, label))
+    if not active_specs:
+        return rows
+    curated_rows: list[dict[str, Any]] = []
+    for row in rows:
+        curated: dict[str, Any] = {}
+        for source_key, label in active_specs:
+            normalized = normalize_preview_value(row.get(source_key))
+            curated[label] = normalized if normalized is not None else "N/A"
+        curated_rows.append(curated)
+    return curated_rows
+
+
+def summarize_data_trial_preview_rows(trial_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    specs = DATA_TRIAL_PREVIEW_COLUMNS.get(trial_key) or []
+    if not specs:
+        return rows
+    active_specs: list[tuple[str, str]] = []
+    for source_key, label in specs:
+        has_meaningful = any(normalize_preview_value(row.get(source_key)) is not None for row in rows)
+        if has_meaningful:
+            active_specs.append((source_key, label))
+    if not active_specs:
+        return rows
+    curated_rows: list[dict[str, Any]] = []
+    for row in rows:
+        curated: dict[str, Any] = {}
+        for source_key, label in active_specs:
+            normalized = normalize_preview_value(row.get(source_key))
+            curated[label] = normalized if normalized is not None else "N/A"
+        curated_rows.append(curated)
+    return curated_rows
+
+
+def annotate_control_summary_row(row: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(row, dict):
+        return {}
+    annotated = dict(row)
+    users_control = coerce_numeric(annotated.get("UsersControlEligible"))
+    users_sched = coerce_numeric(annotated.get("UsersSchedulingEligible"))
+    if users_control is not None and users_sched is not None:
+        annotated["CurrentUsersBlockedByGating"] = max(0, int(round(users_control - users_sched)))
+    blocked = coerce_numeric(annotated.get("SchedulingOpportunitiesBlockedByGating"))
+    if blocked is not None:
+        annotated["SchedulingOpportunitiesBlockedByGatingDefinition"] = (
+            "Cumulative UE scheduling opportunities blocked earlier in this run; not a current blocked-user count."
+        )
+    return annotated
 
 
 def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -5621,17 +6365,8 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
     artifacts = fetch_artifacts(run_id)
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
-    contract_prefix = f"contract__{slug_token}__"
-    has_section_contract_artifacts = any(
-        contract_prefix in str(art.get("logical_path") or "").strip().lower()
-        and (
-            str(art.get("artifact_kind") or "") == "table_csv"
-            or str(art.get("mime_type") or "").startswith("image/")
-        )
-        for art in artifacts
-    )
     should_materialize_contract = (
-        (is_terminal_status(status_text) and not has_section_contract_artifacts)
+        is_terminal_status(status_text)
         or (
             status_text == "running"
             and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
@@ -5666,6 +6401,7 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
     )
     if section is None:
         raise KeyError(f"{kind_token.title()} section {slug!r} was not found.")
+    contract_prefix = f"contract__{slug_token}__"
     not_applicable_reason = contract_section_not_applicable_reason(
         kind_token=kind_token,
         slug_token=slug_token,
@@ -6105,6 +6841,8 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 truth_modes["parallel_execution_active"] = is_truthy_value(row.get("ParallelExecutionActive"))
             if row.get("EffectiveWorkers") is not None:
                 truth_modes["effective_workers"] = coerce_numeric(row.get("EffectiveWorkers"))
+            if row.get("ConfiguredBatchSizeLinks") is not None:
+                truth_modes["configured_batch_size_links"] = coerce_numeric(row.get("ConfiguredBatchSizeLinks"))
             if row.get("CoupledGrantExecutionMode"):
                 truth_modes["coupled_grant_execution_mode"] = str(row.get("CoupledGrantExecutionMode") or "")
             if row.get("ParallelDisabledReason"):
@@ -6127,6 +6865,12 @@ def build_config_snapshot_context(run_row: dict[str, Any], artifacts: list[dict[
         "browser_runtime_db_consistency": "reports/csv/browser_runtime_db_consistency.csv",
         "summary_vs_raw_consistency": "reports/csv/summary_vs_raw_consistency.csv",
         "value_source_audit": "reports/csv/value_source_audit.csv",
+        "parameter_binding_matrix": "reports/csv/parameter_binding_matrix.csv",
+        "browser_config_surface_matrix": "reports/csv/browser_config_surface_matrix.csv",
+        "runtime_config_application_evidence": "reports/csv/runtime_config_application_evidence.csv",
+        "feature_parameter_index": "reports/csv/feature_parameter_index.csv",
+        "config_status_summary": "reports/csv/config_status_summary.csv",
+        "ui_feature_filter_audit": "reports/csv/ui_feature_filter_audit.csv",
     }.items():
         art = find_artifact_by_logical_path(artifacts, logical_path)
         if art:
@@ -6242,8 +6986,20 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
             max_rows=16,
             owner_kind=str(CANONICAL_RUNTIME_ARTIFACT_OWNERS[control_key]["owner_kind"]),
         )
-        control_trial_previews[control_key] = control_rows
+        control_trial_previews[control_key] = summarize_control_trial_preview_rows(control_key, control_rows)
         control_trial_sources[control_key] = control_source
+    data_trial_previews: dict[str, list[dict[str, Any]]] = {}
+    data_trial_sources: dict[str, dict[str, Any]] = {}
+    for trial_key in ("dl_trials", "ul_trials"):
+        trial_rows, trial_source = select_canonical_csv_rows(
+            artifacts,
+            CANONICAL_RUNTIME_ARTIFACT_OWNERS[trial_key]["canonical_path"],
+            legacy_paths=CANONICAL_RUNTIME_ARTIFACT_OWNERS[trial_key]["legacy_paths"],
+            max_rows=16,
+            owner_kind=str(CANONICAL_RUNTIME_ARTIFACT_OWNERS[trial_key]["owner_kind"]),
+        )
+        data_trial_previews[trial_key] = summarize_data_trial_preview_rows(trial_key, trial_rows)
+        data_trial_sources[trial_key] = trial_source
     trs_trial_rows = control_trial_previews.get("trs_trials", [])
     trs_trial_source = control_trial_sources.get("trs_trials", {})
     channel_array_rows = load_small_csv_rows(artifacts, "reports/csv/channel_array_consistency.csv", max_rows=8)
@@ -6562,6 +7318,14 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
                 else f"not active{': ' + str(truth_modes.get('parallel_disabled_reason')) if truth_modes.get('parallel_disabled_reason') else ''}."
             )
         )
+    if truth_modes.get("configured_batch_size_links") is not None:
+        notes.append(
+            f"Configured grant batch size: {int(truth_modes.get('configured_batch_size_links') or 0)} link(s) per coordinator chunk."
+        )
+    notes.append(
+        "ConfiguredSNR_dB is the configured runtime operating-point anchor used for sweep/progress labeling only; it is not a measured SINR. "
+        "The browser keeps MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured anchors and receiver estimates do not masquerade as measured trial SINR."
+    )
     notes.append(
         "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate from Hest and reference-signal residual measurement. "
         "DecoderTruthProxySINR_dB is only populated when the runtime emits a real decoder-truth proxy. "
@@ -6668,9 +7432,10 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         "actual_site_spacing_m": actual_site_spacing_m,
         "truth_modes": truth_modes,
         "raw_trial_lifecycle": raw_trial_lifecycle,
-        "control_summary": control_summary_rows[0] if control_summary_rows else {},
+        "control_summary": annotate_control_summary_row(control_summary_rows[0]) if control_summary_rows else {},
         "control_state_preview": control_state_rows,
         "control_trial_previews": control_trial_previews,
+        "data_trial_previews": data_trial_previews,
         "pucch_grants": pucch_grant_rows,
         "trs_trials_preview": trs_trial_rows,
         "antenna_runtime_evidence_preview": antenna_runtime_rows,
@@ -6920,6 +7685,7 @@ def extract_metric_cards(run_row: dict[str, Any], artifacts: list[dict[str, Any]
             ("Traffic Flow Mode", truth_modes.get("traffic_flow_derivation_mode")),
             ("Traffic Flow Resolved", truth_modes.get("traffic_flow_resolved_flag")),
             ("Workers", truth_modes.get("effective_workers")),
+            ("Grant Batch Size", truth_modes.get("configured_batch_size_links")),
             ("Parallel Reason", truth_modes.get("parallel_disabled_reason")),
         ]
         for label, value in truth_cards:
@@ -7333,10 +8099,20 @@ def build_debug_payload(run_row: dict[str, Any], artifacts: list[dict[str, Any]]
 
 def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any] | None:
     header, rows = load_cached_csv_preview(int(artifact["artifact_id"]), MAX_ACTIVITY_POINTS)
-    if len(rows) < 2 or not header:
+    if not rows or not header:
         return None
     lowered = [str(name).strip().lower() for name in header]
-    if "series_name" in lowered and len(rows) >= MAX_ACTIVITY_POINTS:
+    if (
+        len(rows) >= MAX_ACTIVITY_POINTS
+        and (
+            "series_name" in lowered
+            or "occupancy_value" in lowered
+            or (
+                "count" in lowered
+                and any(token in lowered for token in ("selected_mcs", "derived_mcs", "requested_format", "resolved_format", "candidate_rank"))
+            )
+        )
+    ):
         expanded_header, expanded_rows = load_cached_csv_preview(int(artifact["artifact_id"]), 12000)
         if expanded_header:
             header, rows = expanded_header, expanded_rows
@@ -7375,11 +8151,215 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
                 "yaxis_title": "Quadrature",
                 "series": traces,
             }
+    def token_sort_key(value: Any) -> tuple[int, Any, str]:
+        token = str(value or "").strip()
+        numeric = coerce_numeric(token)
+        if numeric is not None:
+            return (0, float(numeric), token)
+        return (1, token.lower(), token)
+
+    heatmap_x_idx = None
+    heatmap_y_idx = None
+    heatmap_value_idx = None
+    for candidate in ("symbol_index", "slot", "candidate_rank", "derived_mcs", "requested_format"):
+        if candidate in lowered:
+            heatmap_x_idx = lowered.index(candidate)
+            break
+    for candidate in ("rb_index", "cell_id", "ue_index", "selected_mcs", "resolved_format"):
+        if candidate in lowered:
+            heatmap_y_idx = lowered.index(candidate)
+            break
+    for candidate in ("occupancy_value", "count", "observation_count", "usedccecount"):
+        if candidate in lowered:
+            heatmap_value_idx = lowered.index(candidate)
+            break
+    if heatmap_x_idx is not None and heatmap_y_idx is not None and heatmap_value_idx is not None:
+        x_tokens = sorted(
+            {
+                str(row[heatmap_x_idx]).strip()
+                for row in rows
+                if heatmap_x_idx < len(row) and str(row[heatmap_x_idx] or "").strip()
+            },
+            key=token_sort_key,
+        )
+        y_tokens = sorted(
+            {
+                str(row[heatmap_y_idx]).strip()
+                for row in rows
+                if heatmap_y_idx < len(row) and str(row[heatmap_y_idx] or "").strip()
+            },
+            key=token_sort_key,
+        )
+        if x_tokens and y_tokens:
+            x_index = {token: idx for idx, token in enumerate(x_tokens)}
+            y_index = {token: idx for idx, token in enumerate(y_tokens)}
+            matrix = [[0.0 for _ in x_tokens] for _ in y_tokens]
+            populated = False
+            for row in rows:
+                if heatmap_x_idx >= len(row) or heatmap_y_idx >= len(row) or heatmap_value_idx >= len(row):
+                    continue
+                x_token = str(row[heatmap_x_idx] or "").strip()
+                y_token = str(row[heatmap_y_idx] or "").strip()
+                value = coerce_numeric(row[heatmap_value_idx])
+                if not x_token or not y_token or value is None:
+                    continue
+                matrix[y_index[y_token]][x_index[x_token]] += float(value)
+                populated = True
+            if populated:
+                return {
+                    "title": artifact["logical_path"],
+                    "artifact_id": int(artifact["artifact_id"]),
+                    "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+                    "xaxis_title": humanize_key(header[heatmap_x_idx]),
+                    "yaxis_title": humanize_key(header[heatmap_y_idx]),
+                    "series": [
+                        {
+                            "name": humanize_key(header[heatmap_value_idx]),
+                            "mode": "heatmap",
+                            "x_labels": x_tokens,
+                            "y_labels": y_tokens,
+                            "matrix": matrix,
+                            "colorbar_title": humanize_key(header[heatmap_value_idx]),
+                        }
+                    ],
+                }
+    chart_name_idx = lowered.index("chart_name") if "chart_name" in lowered else None
+    chart_mode_idx = lowered.index("chart_mode") if "chart_mode" in lowered else None
+    x_label_idx = lowered.index("x_label") if "x_label" in lowered else None
+    y_label_idx = lowered.index("y_label") if "y_label" in lowered else None
+    x_value_idx = lowered.index("x_value") if "x_value" in lowered else None
+    y_value_idx = lowered.index("y_value") if "y_value" in lowered else None
+    derived_series_name_idx = lowered.index("series_name") if "series_name" in lowered else None
+    derived_label_idx = lowered.index("label") if "label" in lowered else None
+    if x_value_idx is not None and y_value_idx is not None:
+        grouped_series: dict[str, list[dict[str, Any]]] = {}
+        chart_mode = ""
+        xaxis_title = ""
+        yaxis_title = ""
+        derived_chart_name = ""
+        for row in rows:
+            if x_value_idx >= len(row) or y_value_idx >= len(row):
+                continue
+            x_raw = row[x_value_idx]
+            y_val = coerce_numeric(row[y_value_idx])
+            numeric_x = coerce_numeric(x_raw)
+            x_val = numeric_x if numeric_x is not None else str(x_raw or "").strip()
+            if (x_val is None or x_val == "") or y_val is None:
+                continue
+            if not chart_mode and chart_mode_idx is not None and chart_mode_idx < len(row):
+                chart_mode = str(row[chart_mode_idx] or "").strip()
+            if not xaxis_title and x_label_idx is not None and x_label_idx < len(row):
+                xaxis_title = str(row[x_label_idx] or "").strip()
+            if not yaxis_title and y_label_idx is not None and y_label_idx < len(row):
+                yaxis_title = str(row[y_label_idx] or "").strip()
+            if not derived_chart_name and chart_name_idx is not None and chart_name_idx < len(row):
+                derived_chart_name = str(row[chart_name_idx] or "").strip()
+            series_name = ""
+            if derived_series_name_idx is not None and derived_series_name_idx < len(row):
+                series_name = str(row[derived_series_name_idx] or "").strip()
+            if not series_name and chart_name_idx is not None and chart_name_idx < len(row):
+                series_name = str(row[chart_name_idx] or "").strip()
+            point: dict[str, Any] = {"x": x_val, "y": y_val}
+            if derived_label_idx is not None and derived_label_idx < len(row):
+                label_text = str(row[derived_label_idx] or "").strip()
+                if label_text:
+                    point["text"] = label_text
+            grouped_series.setdefault(series_name or "Value", []).append(point)
+        if grouped_series:
+            chart_mode_token = chart_mode.strip().lower()
+            chart_title = derived_chart_name or str(artifact.get("logical_path") or "")
+            all_points = [point for points in grouped_series.values() for point in points]
+            spatial_chart = chart_is_spatial(artifact.get("logical_path"), chart_title, xaxis_title, yaxis_title)
+            if spatial_chart:
+                if (not xaxis_title or xaxis_title.strip().lower() in {"x value", "x"}) and points_look_like_geocoordinates(all_points):
+                    xaxis_title = "Longitude"
+                elif not xaxis_title or xaxis_title.strip().lower() in {"x value", "x"}:
+                    xaxis_title = "X Coordinate"
+                if (not yaxis_title or yaxis_title.strip().lower() in {"y value", "y"}) and points_look_like_geocoordinates(all_points):
+                    yaxis_title = "Latitude"
+                elif not yaxis_title or yaxis_title.strip().lower() in {"y value", "y"}:
+                    yaxis_title = "Y Coordinate"
+                chart_series = []
+                for series_name, points in grouped_series.items():
+                    site_like = bool(re.search(r"\b(site|sites|cell|sector)\b", str(series_name or ""), re.IGNORECASE))
+                    entry: dict[str, Any] = {
+                        "name": humanize_key(series_name),
+                        "points": points,
+                        "mode": "markers+text" if site_like and any(point.get("text") for point in points) else "markers",
+                        "marker": {
+                            "size": 11 if site_like else 8,
+                            "symbol": "diamond" if site_like else "circle",
+                            "opacity": 0.95 if site_like else 0.72,
+                        },
+                        "line": {"width": 0},
+                    }
+                    if site_like and any(point.get("text") for point in points):
+                        entry["text"] = [str(point.get("text") or "") for point in points]
+                        entry["textposition"] = "top center"
+                    chart_series.append(entry)
+                return {
+                    "title": artifact["logical_path"],
+                    "artifact_id": int(artifact["artifact_id"]),
+                    "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+                    "xaxis_title": xaxis_title or humanize_key(header[x_value_idx]),
+                    "yaxis_title": yaxis_title or humanize_key(header[y_value_idx]),
+                    "layout_hints": {"axis_equal": True, "hovermode": "closest"},
+                    "series": chart_series[:8],
+                }
+            time_like_chart = axis_is_time_like(xaxis_title or humanize_key(header[x_value_idx]))
+            duplicate_ratios = [series_duplicate_x_ratio(points) for points in grouped_series.values()]
+            max_duplicate_ratio = max(duplicate_ratios) if duplicate_ratios else 0.0
+            if time_like_chart and len(grouped_series) == 1:
+                only_name, only_points = next(iter(grouped_series.items()))
+                if max_duplicate_ratio >= 0.2 and points_have_discrete_integer_y(only_points):
+                    heatmap_series = build_count_heatmap_series(
+                        only_points,
+                        series_name=humanize_key(only_name),
+                        colorbar_title="Observation Count",
+                    )
+                    if heatmap_series is not None:
+                        return {
+                            "title": artifact["logical_path"],
+                            "artifact_id": int(artifact["artifact_id"]),
+                            "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+                            "xaxis_title": xaxis_title or humanize_key(header[x_value_idx]),
+                            "yaxis_title": yaxis_title or humanize_key(header[y_value_idx]),
+                            "layout_hints": {"hovermode": "closest"},
+                            "series": [heatmap_series],
+                        }
+            chart_series = []
+            for series_name, points in grouped_series.items():
+                series_entry: dict[str, Any] = {
+                    "name": humanize_key(series_name),
+                    "points": points,
+                }
+                if chart_mode_token in {"bar", "histogram"}:
+                    series_entry["trace_type"] = "bar"
+                elif chart_mode_token in {"scatter", "markers"}:
+                    series_entry["mode"] = "markers"
+                elif time_like_chart and max_duplicate_ratio >= 0.15:
+                    series_entry["mode"] = "markers"
+                    series_entry["marker"] = {"size": 8, "opacity": 0.68}
+                else:
+                    series_entry["mode"] = default_scatter_mode(points)
+                chart_series.append(series_entry)
+            secondary_axis_title = assign_secondary_axis(chart_series)
+            return {
+                "title": artifact["logical_path"],
+                "artifact_id": int(artifact["artifact_id"]),
+                "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+                "xaxis_title": xaxis_title or humanize_key(header[x_value_idx]),
+                "yaxis_title": yaxis_title or humanize_key(header[y_value_idx]),
+                "secondary_yaxis_title": secondary_axis_title,
+                "layout_hints": {"hovermode": "closest"},
+                "series": chart_series[:8],
+            }
     numeric_cols = []
+    min_numeric_rows = 1 if len(rows) == 1 else max(2, len(rows) // 4)
     for idx, name in enumerate(header):
         values = [coerce_numeric(row[idx]) for row in rows if idx < len(row)]
         values = [v for v in values if v is not None]
-        if len(values) >= max(2, len(rows) // 4):
+        if len(values) >= min_numeric_rows:
             numeric_cols.append((idx, name))
     ignored_x_tokens = {"run_id", "source_row_count", "point_index"}
     numeric_cols = [(idx, name) for idx, name in numeric_cols if str(name or "").strip().lower() not in ignored_x_tokens] or numeric_cols
@@ -7388,7 +8368,7 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
     x_idx = _preferred_chart_x_index(artifact, header, rows, numeric_cols)
     series_name_idx = lowered.index("series_name") if "series_name" in lowered else None
     metric_value_idx = None
-    for candidate in ("metric_value", "metric_value_db", "throughput_mbps", "bler", "ber", "goodput_mbps", "mean_quality_db", "mean_bler"):
+    for candidate in ("metric_value", "metric_value_db", "y_value", "throughput_mbps", "bler", "ber", "goodput_mbps", "mean_quality_db", "mean_bler"):
         if candidate in lowered:
             metric_value_idx = lowered.index(candidate)
             break
@@ -7399,27 +8379,72 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
                 continue
             series_name = str(row[series_name_idx] or "").strip() or "Series"
             x_candidate = row[x_idx] if x_idx < len(row) else row_index + 1
-            x_val = coerce_numeric(x_candidate)
+            numeric_x = coerce_numeric(x_candidate)
+            x_val = numeric_x if numeric_x is not None else str(x_candidate or "").strip()
             y_val = coerce_numeric(row[metric_value_idx])
-            if x_val is None or y_val is None:
+            if (x_val is None or x_val == "") or y_val is None:
                 continue
             grouped_series.setdefault(series_name, []).append({"x": x_val, "y": y_val})
         chart_series = []
+        time_like_chart = axis_is_time_like(header[x_idx] if x_idx < len(header) else "")
+        duplicate_ratios = [series_duplicate_x_ratio(points) for points in grouped_series.values()]
+        max_duplicate_ratio = max(duplicate_ratios) if duplicate_ratios else 0.0
         for series_name, points in grouped_series.items():
-            if len(points) >= 8:
-                unique_x = len({point["x"] for point in points})
-                duplicate_ratio = 1.0 - (unique_x / max(len(points), 1))
-                if duplicate_ratio >= 0.25:
-                    points = aggregate_points_by_x(points)
-            chart_series.append({"name": humanize_key(series_name), "points": points})
+            series_entry: dict[str, Any] = {"name": humanize_key(series_name), "points": points}
+            if time_like_chart and max_duplicate_ratio >= 0.15:
+                series_entry["mode"] = "markers"
+                series_entry["marker"] = {"size": 7, "opacity": 0.64}
+            else:
+                numeric_x_points = [point for point in points if isinstance(point.get("x"), (int, float))]
+                if len(numeric_x_points) >= 8 and len(numeric_x_points) == len(points):
+                    unique_x = len({point["x"] for point in points})
+                    duplicate_ratio = 1.0 - (unique_x / max(len(points), 1))
+                    if duplicate_ratio >= 0.25 and not points_have_discrete_integer_y(points):
+                        points = aggregate_points_by_x(points)
+                        series_entry["points"] = points
+                series_entry["mode"] = default_scatter_mode(series_entry["points"])
+            chart_series.append(series_entry)
         if chart_series:
             yaxis_name = humanize_key(header[metric_value_idx]) if metric_value_idx < len(header) else "Value"
+            secondary_axis_title = assign_secondary_axis(chart_series)
             return {
                 "title": artifact["logical_path"],
                 "artifact_id": int(artifact["artifact_id"]),
                 "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
                 "xaxis_title": humanize_key(header[x_idx]) if x_idx is not None and x_idx < len(header) else "Index",
                 "yaxis_title": yaxis_name,
+                "secondary_yaxis_title": secondary_axis_title,
+                "layout_hints": {"hovermode": "closest"},
+                "series": chart_series[:8],
+            }
+    category_idx = None
+    for candidate in ("bucket_name", "metric_name", "entity_name", "ue_name", "cell_name", "label"):
+        if candidate in lowered:
+            category_idx = lowered.index(candidate)
+            break
+    if category_idx is not None and metric_value_idx is not None:
+        grouped_series: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            if category_idx >= len(row) or metric_value_idx >= len(row):
+                continue
+            x_val = str(row[category_idx] or "").strip()
+            y_val = coerce_numeric(row[metric_value_idx])
+            if not x_val or y_val is None:
+                continue
+            series_name = str(row[series_name_idx] or "").strip() if series_name_idx is not None and series_name_idx < len(row) else ""
+            grouped_series.setdefault(series_name or "Value", []).append({"x": x_val, "y": y_val})
+        chart_series = []
+        for series_name, points in grouped_series.items():
+            if not points:
+                continue
+            chart_series.append({"name": humanize_key(series_name), "trace_type": "bar", "points": points})
+        if chart_series:
+            return {
+                "title": artifact["logical_path"],
+                "artifact_id": int(artifact["artifact_id"]),
+                "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+                "xaxis_title": humanize_key(header[category_idx]),
+                "yaxis_title": humanize_key(header[metric_value_idx]) if metric_value_idx < len(header) else "Value",
                 "series": chart_series[:6],
             }
     y_columns = [item for item in numeric_cols if item[0] != x_idx]
@@ -7440,23 +8465,32 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
             else:
                 x_candidate = row[x_idx] if x_idx < len(row) else row_index + 1
                 numeric_x = coerce_numeric(x_candidate)
-                x_val = numeric_x if numeric_x is not None else row_index + 1
+                x_val = numeric_x if numeric_x is not None else str(x_candidate or "").strip() or row_index + 1
             points.append({"x": x_val, "y": y_val})
-        if x_idx is not None and len(points) >= 8:
+        if x_idx is not None and len(points) >= 8 and all(isinstance(point.get("x"), (int, float)) for point in points):
             unique_x = len({point["x"] for point in points})
             duplicate_ratio = 1.0 - (unique_x / max(len(points), 1))
-            if duplicate_ratio >= 0.25 and not chart_is_coordinate_column(name):
+            if duplicate_ratio >= 0.25 and not chart_is_coordinate_column(name) and not points_have_discrete_integer_y(points):
                 points = aggregate_points_by_x(points)
         if points:
-            chart_series.append({"name": humanize_key(name), "points": points})
+            series_entry: dict[str, Any] = {"name": humanize_key(name), "points": points}
+            if x_idx is not None and axis_is_time_like(header[x_idx] if x_idx < len(header) else "") and series_duplicate_x_ratio(points) >= 0.15:
+                series_entry["mode"] = "markers"
+                series_entry["marker"] = {"size": 7, "opacity": 0.64}
+            else:
+                series_entry["mode"] = default_scatter_mode(points)
+            chart_series.append(series_entry)
     if not chart_series:
         return None
+    secondary_axis_title = assign_secondary_axis(chart_series)
     return {
         "title": artifact["logical_path"],
         "artifact_id": int(artifact["artifact_id"]),
         "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
         "xaxis_title": humanize_key(header[x_idx]) if x_idx is not None and x_idx < len(header) else "Index",
         "yaxis_title": "Value",
+        "secondary_yaxis_title": secondary_axis_title,
+        "layout_hints": {"hovermode": "closest"},
         "series": chart_series,
     }
 
@@ -7465,28 +8499,32 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
     charts: list[dict[str, Any]] = []
     def chart_priority(logical_path: str) -> tuple[int, str]:
         path = logical_path.lower()
-        if "runtime_operating_mode" in path:
+        if "contract__resource-grid-re-occupancy-analytics__" in path:
             return (0, path)
-        if "cqi_table_reference" in path:
+        if "contract__random-access-prach-analytics__" in path:
             return (1, path)
-        if "mcs_table_reference" in path:
+        if "runtime_operating_mode" in path:
             return (2, path)
-        if "live_link_snr_sweep" in path:
+        if "cqi_table_reference" in path:
             return (3, path)
-        if "lls_snr_sweep" in path:
+        if "mcs_table_reference" in path:
             return (4, path)
-        if "constellation_preview" in path:
+        if "live_link_snr_sweep" in path:
             return (5, path)
-        if "prach" in path:
+        if "lls_snr_sweep" in path:
             return (6, path)
-        if "harq" in path:
+        if "constellation_preview" in path:
             return (7, path)
-        if "energy" in path or "rf" in path:
+        if "prach" in path:
             return (8, path)
-        if "beam" in path:
+        if "harq" in path:
             return (9, path)
-        if "pdsch" in path or "pusch" in path:
+        if "energy" in path or "rf" in path:
             return (10, path)
+        if "beam" in path:
+            return (11, path)
+        if "pdsch" in path or "pusch" in path:
+            return (12, path)
         return (20, path)
     candidates = [
         art
@@ -7499,7 +8537,10 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
                 and art["byte_size"] <= 2_500_000
             )
         )
-        and classify_result_section(str(art["logical_path"])) not in {"geometry", "meta"}
+        and (
+            "contract__" in str(art["logical_path"]).lower()
+            or classify_result_section(str(art["logical_path"])) not in {"geometry", "meta"}
+        )
         and any(
             token in art["logical_path"].lower()
             for token in ("summary", "trace", "trial", "timeline", "timeseries", "kpi", "outputs", "report", "sweep", "preview", "stage", "reference", "contract__")
@@ -7513,6 +8554,170 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
         if len(charts) >= limit:
             break
     return charts
+
+
+def _normalize_gallery_text(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+
+
+def _gallery_match_score(*, haystacks: list[str], tokens: list[str]) -> int:
+    normalized_haystacks = [_normalize_gallery_text(item) for item in haystacks if str(item or "").strip()]
+    if not normalized_haystacks:
+        return 0
+    score = 0
+    for raw_token in tokens:
+        token = _normalize_gallery_text(raw_token)
+        if not token:
+            continue
+        for haystack in normalized_haystacks:
+            if token in haystack:
+                score = max(score, 10 + len(token))
+    return score
+
+
+def _reference_spec_requires_time_axis(spec: dict[str, Any]) -> bool:
+    label = str(spec.get("label") or spec.get("id") or "").strip().lower()
+    return label.endswith("_vs_time")
+
+
+def _gallery_word_tokens(values: list[Any]) -> set[str]:
+    tokens: set[str] = set()
+    for value in values:
+        text = str(value or "").strip().lower()
+        if not text:
+            continue
+        for token in re.findall(r"[a-z0-9]+", text):
+            tokens.add(token)
+    return tokens
+
+
+def _reference_chart_has_time_axis(chart: dict[str, Any]) -> bool:
+    haystacks = semantic_artifact_match_labels(
+        str(chart.get("title") or ""),
+        fallback=str(chart.get("chart_id") or ""),
+    ) + [
+        str(chart.get("xaxis_title") or ""),
+        str(chart.get("yaxis_title") or ""),
+    ]
+    return bool(_gallery_word_tokens(haystacks).intersection({"time", "slot", "frame", "sample", "timeline", "tti"}))
+
+
+def _reference_image_has_time_axis(image: dict[str, Any]) -> bool:
+    haystacks = semantic_artifact_match_labels(
+        str(image.get("logical_path") or ""),
+        fallback=str(image.get("section") or ""),
+    )
+    return bool(_gallery_word_tokens(haystacks).intersection({"time", "slot", "frame", "sample", "timeline", "tti"}))
+
+
+def build_reference_plot_gallery(
+    numeric_charts: list[dict[str, Any]],
+    image_descriptors: list[dict[str, Any]],
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for spec in REFERENCE_PLOT_GALLERY_SPECS:
+        base_tokens = [
+            str(spec.get("id") or ""),
+            str(spec.get("label") or ""),
+        ] + list(spec.get("tokens") or [])
+        chart_tokens = list(spec.get("chart_tokens") or []) + base_tokens
+        image_tokens = list(spec.get("image_tokens") or []) + base_tokens
+        if not list(spec.get("chart_tokens") or []):
+            chart_tokens += list(spec.get("image_tokens") or [])
+        best_chart: dict[str, Any] | None = None
+        best_chart_score = 0
+        for chart in numeric_charts:
+            if _reference_spec_requires_time_axis(spec) and not _reference_chart_has_time_axis(chart):
+                continue
+            score = _gallery_match_score(
+                haystacks=semantic_artifact_match_labels(
+                    str(chart.get("title") or ""),
+                    fallback=str(chart.get("chart_id") or ""),
+                ) + [
+                    str(chart.get("xaxis_title") or ""),
+                    str(chart.get("yaxis_title") or ""),
+                ],
+                tokens=chart_tokens,
+            )
+            if score > best_chart_score:
+                best_chart = chart
+                best_chart_score = score
+        best_image: dict[str, Any] | None = None
+        best_image_score = 0
+        for image in image_descriptors:
+            if _reference_spec_requires_time_axis(spec) and not _reference_image_has_time_axis(image):
+                continue
+            score = _gallery_match_score(
+                haystacks=semantic_artifact_match_labels(
+                    str(image.get("logical_path") or ""),
+                    fallback=str(image.get("section") or ""),
+                ),
+                tokens=image_tokens,
+            )
+            if score > best_image_score:
+                best_image = image
+                best_image_score = score
+        prefer = str(spec.get("prefer") or "interactive").strip().lower()
+        chosen_chart = best_chart if best_chart_score > 0 else None
+        chosen_image = best_image if best_image_score > 0 else None
+        use_image = bool(chosen_image and (prefer == "image" or chosen_chart is None))
+        status = "unavailable"
+        status_label = "Unavailable"
+        reason = "No truthful chart or image artifact was published for this family in the selected run."
+        if chosen_chart is not None and not use_image:
+            status = "interactive"
+            status_label = "Interactive"
+            reason = f"Matched interactive chart source: {chosen_chart.get('title') or chosen_chart.get('chart_id') or 'numeric chart'}."
+        elif chosen_image is not None:
+            status = "image"
+            status_label = "Image"
+            reason = f"Matched persisted image artifact: {chosen_image.get('logical_path') or 'image artifact'}."
+        items.append(
+            {
+                "reference_id": str(spec.get("id") or ""),
+                "label": str(spec.get("label") or spec.get("id") or ""),
+                "status": status,
+                "status_label": status_label,
+                "reason": reason,
+                "chart": chosen_chart if status == "interactive" else chosen_chart,
+                "image": chosen_image,
+            }
+        )
+    return {
+        "items": items,
+        "interactive_count": sum(1 for item in items if item.get("status") == "interactive"),
+        "image_count": sum(1 for item in items if item.get("status") == "image"),
+        "unavailable_count": sum(1 for item in items if item.get("status") == "unavailable"),
+    }
+
+
+def shortlist_reference_gallery_chart_artifacts(table_artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    shortlisted: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for artifact in table_artifacts:
+        artifact_id = int(artifact.get("artifact_id") or 0)
+        if artifact_id <= 0 or artifact_id in seen_ids:
+            continue
+        haystacks = [
+            str(artifact.get("logical_path") or ""),
+            str(artifact.get("section") or ""),
+        ]
+        matched = False
+        for spec in REFERENCE_PLOT_GALLERY_SPECS:
+            base_tokens = [
+                str(spec.get("id") or ""),
+                str(spec.get("label") or ""),
+            ] + list(spec.get("tokens") or [])
+            chart_tokens = list(spec.get("chart_tokens") or []) + base_tokens
+            if not list(spec.get("chart_tokens") or []):
+                chart_tokens += list(spec.get("image_tokens") or [])
+            if _gallery_match_score(haystacks=haystacks, tokens=chart_tokens) > 0:
+                matched = True
+                break
+        if matched:
+            shortlisted.append(artifact)
+            seen_ids.add(artifact_id)
+    return shortlisted
 
 
 def compact_run_row(run_row: dict[str, Any], artifacts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -7830,10 +9035,22 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
     serving_rows_raw = load_first_available_csv_rows(artifacts, ["reports/csv/live_rsrp_serving_trace.csv"], max_rows=50000)
     dl_rows_raw = load_first_available_csv_rows(artifacts, ["air_interface/csv/dl_pdsch_trials.csv"], max_rows=50000)
     ul_rows_raw = load_first_available_csv_rows(artifacts, ["air_interface/csv/ul_pusch_trials.csv"], max_rows=50000)
+    dl_grant_rows_raw = load_first_available_csv_rows(
+        artifacts,
+        ["reports/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_dl_scheduler_grants.csv"],
+        max_rows=50000,
+    )
+    ul_grant_rows_raw = load_first_available_csv_rows(
+        artifacts,
+        ["reports/csv/live_ul_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"],
+        max_rows=50000,
+    )
     user_perf_rows = load_first_available_csv_rows(artifacts, ["reports/csv/live_user_performance_snapshot.csv"], max_rows=4096)
     serving_rows, serving_raw_count = sample_rows_by_ue(serving_rows_raw, ue_key="UEID", max_per_ue=120)
     dl_rows, dl_raw_count = sample_rows_by_ue(dl_rows_raw, ue_key="UEID", max_per_ue=120)
     ul_rows, ul_raw_count = sample_rows_by_ue(ul_rows_raw, ue_key="UEID", max_per_ue=120)
+    dl_grant_rows, dl_grant_raw_count = sample_rows_by_ue(dl_grant_rows_raw, ue_key="UEID", max_per_ue=120)
+    ul_grant_rows, ul_grant_raw_count = sample_rows_by_ue(ul_grant_rows_raw, ue_key="UEID", max_per_ue=120)
     records: dict[tuple[int, int], dict[str, Any]] = {}
 
     def ensure_record(slot_value: Any, ueid_value: Any) -> dict[str, Any] | None:
@@ -7850,7 +9067,10 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
                 "time_s": None,
                 "serving_cell": None,
                 "base_station_id": None,
+                "configured_snr_dB": None,
                 "sinr_dB": None,
+                "measured_trial_sinr_dB": None,
+                "receiver_hest_sinr_dB": None,
                 "system_level_sinr_dB": None,
                 "cqi": None,
                 "rsrp_dBm": None,
@@ -7862,6 +9082,11 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
                 "ul_mcs": None,
                 "dl_prbs": None,
                 "ul_prbs": None,
+                "dl_symbol_start": None,
+                "dl_symbol_end": None,
+                "ul_symbol_start": None,
+                "ul_symbol_end": None,
+                "slot_context": "",
                 "_dl_mcs_sum": 0.0,
                 "_dl_mcs_count": 0,
                 "_ul_mcs_sum": 0.0,
@@ -7871,6 +9096,24 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             }
             records[key] = record
         return record
+
+    def update_symbol_span(record: dict[str, Any], prefix: str, row: dict[str, Any]) -> None:
+        symbol_start = coerce_numeric(row.get("SymbolStart"))
+        num_symbols = coerce_numeric(row.get("NumSymbols"))
+        if symbol_start is None or num_symbols is None:
+            return
+        start = int(symbol_start)
+        end = int(symbol_start + max(1, num_symbols) - 1)
+        start_key = f"{prefix}_symbol_start"
+        end_key = f"{prefix}_symbol_end"
+        if record.get(start_key) is None:
+            record[start_key] = start
+        else:
+            record[start_key] = min(int(record[start_key]), start)
+        if record.get(end_key) is None:
+            record[end_key] = end
+        else:
+            record[end_key] = max(int(record[end_key]), end)
 
     for row in serving_rows:
         record = ensure_record(row.get("Slot"), row.get("UEID"))
@@ -7885,12 +9128,19 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         base_station_id = coerce_numeric(row.get("BaseStationID"))
         if base_station_id is not None:
             record["base_station_id"] = int(base_station_id)
-        sinr = coerce_numeric(row.get("ReceiverHestWidebandSINR_dB", row.get("ReceiverHestSINR_dB")))
+        configured_snr = coerce_numeric(row.get("ConfiguredSNR_dB"))
+        measured_sinr = coerce_numeric(row.get("MeasuredTrialSINR_dB", row.get("MeasuredWidebandSINR_dB")))
+        receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestWidebandSINR_dB", row.get("ReceiverHestSINR_dB")))
         system_sinr = coerce_numeric(row.get("SystemLevelWidebandSINR_dB", row.get("SystemLevelSINR_dB")))
         cqi = coerce_numeric(row.get("WidebandCQI"))
         rsrp = coerce_numeric(row.get("ServingRSRP_dBm", row.get("RSRP_dBm")))
-        if sinr is not None:
-            record["sinr_dB"] = float(sinr)
+        if configured_snr is not None:
+            record["configured_snr_dB"] = float(configured_snr)
+        if measured_sinr is not None:
+            record["measured_trial_sinr_dB"] = float(measured_sinr)
+            record["sinr_dB"] = float(measured_sinr)
+        if receiver_hest_sinr is not None:
+            record["receiver_hest_sinr_dB"] = float(receiver_hest_sinr)
         if system_sinr is not None:
             record["system_level_sinr_dB"] = float(system_sinr)
         if cqi is not None:
@@ -7922,14 +9172,22 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         if mcs is not None:
             record["_dl_mcs_sum"] += float(mcs)
             record["_dl_mcs_count"] += 1
-        if record["sinr_dB"] is None:
-            trial_sinr = coerce_numeric(row.get("ReceiverHestSINR_dB", row.get("MeasuredTrialSINR_dB")))
-            if trial_sinr is not None:
-                record["sinr_dB"] = float(trial_sinr)
+        configured_snr = coerce_numeric(row.get("ConfiguredSNR_dB"))
+        measured_trial_sinr = coerce_numeric(row.get("MeasuredTrialSINR_dB", row.get("MeasuredSINR_dB")))
+        receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestSINR_dB"))
+        if configured_snr is not None and record["configured_snr_dB"] is None:
+            record["configured_snr_dB"] = float(configured_snr)
+        if measured_trial_sinr is not None:
+            record["measured_trial_sinr_dB"] = float(measured_trial_sinr)
+            if record["sinr_dB"] is None:
+                record["sinr_dB"] = float(measured_trial_sinr)
+        if receiver_hest_sinr is not None:
+            record["receiver_hest_sinr_dB"] = float(receiver_hest_sinr)
         if record["cqi"] is None:
             cqi = coerce_numeric(row.get("WidebandCQI"))
             if cqi is not None:
                 record["cqi"] = float(cqi)
+        update_symbol_span(record, "dl", row)
 
     for row in ul_rows:
         record = ensure_record(row.get("Slot"), row.get("UEID"))
@@ -7955,23 +9213,61 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         if mcs is not None:
             record["_ul_mcs_sum"] += float(mcs)
             record["_ul_mcs_count"] += 1
-        if record["sinr_dB"] is None:
-            trial_sinr = coerce_numeric(row.get("ReceiverHestSINR_dB", row.get("MeasuredTrialSINR_dB")))
-            if trial_sinr is not None:
-                record["sinr_dB"] = float(trial_sinr)
+        configured_snr = coerce_numeric(row.get("ConfiguredSNR_dB"))
+        measured_trial_sinr = coerce_numeric(row.get("MeasuredTrialSINR_dB", row.get("MeasuredSINR_dB")))
+        receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestSINR_dB"))
+        if configured_snr is not None and record["configured_snr_dB"] is None:
+            record["configured_snr_dB"] = float(configured_snr)
+        if measured_trial_sinr is not None:
+            record["measured_trial_sinr_dB"] = float(measured_trial_sinr)
+            if record["sinr_dB"] is None:
+                record["sinr_dB"] = float(measured_trial_sinr)
+        if receiver_hest_sinr is not None:
+            record["receiver_hest_sinr_dB"] = float(receiver_hest_sinr)
+        update_symbol_span(record, "ul", row)
+
+    for row in dl_grant_rows:
+        record = ensure_record(row.get("Slot"), row.get("UEID", row.get("UEIndex")))
+        if record is None:
+            continue
+        update_symbol_span(record, "dl", row)
+
+    for row in ul_grant_rows:
+        record = ensure_record(row.get("Slot"), row.get("UEID", row.get("UEIndex")))
+        if record is None:
+            continue
+        update_symbol_span(record, "ul", row)
 
     metric_rows: list[dict[str, Any]] = []
     for record in sorted(records.values(), key=lambda item: (int(item["ueid"]), int(item["slot"]))):
         record["dl_mcs"] = (record["_dl_mcs_sum"] / record["_dl_mcs_count"]) if record["_dl_mcs_count"] else None
         record["ul_mcs"] = (record["_ul_mcs_sum"] / record["_ul_mcs_count"]) if record["_ul_mcs_count"] else None
+        dl_span = (
+            f"{int(record['dl_symbol_start'])}-{int(record['dl_symbol_end'])}"
+            if record["dl_symbol_start"] is not None and record["dl_symbol_end"] is not None
+            else ""
+        )
+        ul_span = (
+            f"{int(record['ul_symbol_start'])}-{int(record['ul_symbol_end'])}"
+            if record["ul_symbol_start"] is not None and record["ul_symbol_end"] is not None
+            else ""
+        )
         if record["_has_dl"] and record["_has_ul"]:
             record["direction"] = "DL+UL"
+            record["slot_context"] = (
+                f"Special slot: DL symbols {dl_span}, UL symbols {ul_span}"
+                if dl_span and ul_span
+                else "Special slot: both DL and UL activity were scheduled in this slot."
+            )
         elif record["_has_dl"]:
             record["direction"] = "DL"
+            record["slot_context"] = f"DL symbols {dl_span}" if dl_span else "DL-only slot context"
         elif record["_has_ul"]:
             record["direction"] = "UL"
+            record["slot_context"] = f"UL symbols {ul_span}" if ul_span else "UL-only slot context"
         else:
             record["direction"] = "channel"
+            record["slot_context"] = "Measurement-only slot context"
         for private_key in ("_dl_mcs_sum", "_dl_mcs_count", "_ul_mcs_sum", "_ul_mcs_count", "_has_dl", "_has_ul"):
             record.pop(private_key, None)
         metric_rows.append(record)
@@ -8036,6 +9332,10 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
                 "dl_trial_rows_browser": len(dl_rows),
                 "ul_trial_rows_raw": ul_raw_count,
                 "ul_trial_rows_browser": len(ul_rows),
+                "dl_grant_rows_raw": dl_grant_raw_count,
+                "dl_grant_rows_browser": len(dl_grant_rows),
+                "ul_grant_rows_raw": ul_grant_raw_count,
+                "ul_grant_rows_browser": len(ul_grant_rows),
             },
             "unavailable_reason": "No slot-indexed UE runtime trace rows are available from the selected run.",
         }
@@ -8045,11 +9345,25 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         x_axes.append({"id": "time_s", "label": "Time (s)"})
     available_metrics = [
         {
+            "id": "configured_snr_dB",
+            "label": "Configured Reference SNR (dB)",
+            "unit": "dB",
+            "source_table": "reports/csv/live_rsrp_serving_trace.csv",
+            "fidelity_level": "configured_reference",
+        },
+        {
             "id": "sinr_dB",
+            "label": "Measured SINR (dB)",
+            "unit": "dB",
+            "source_table": "reports/csv/live_rsrp_serving_trace.csv",
+            "fidelity_level": "measurement_backed",
+        },
+        {
+            "id": "receiver_hest_sinr_dB",
             "label": "Receiver Hest SINR (dB)",
             "unit": "dB",
             "source_table": "reports/csv/live_rsrp_serving_trace.csv",
-            "fidelity_level": "abstraction_level",
+            "fidelity_level": "measurement_backed",
         },
         {
             "id": "system_level_sinr_dB",
@@ -8160,9 +9474,13 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             "dl_trial_rows_browser": len(dl_rows),
             "ul_trial_rows_raw": ul_raw_count,
             "ul_trial_rows_browser": len(ul_rows),
+            "dl_grant_rows_raw": dl_grant_raw_count,
+            "dl_grant_rows_browser": len(dl_grant_rows),
+            "ul_grant_rows_raw": ul_grant_raw_count,
+            "ul_grant_rows_browser": len(ul_grant_rows),
             "chart_rows_browser": len(metric_rows),
         },
-        "sampling_note": "Browser charts use sampled runtime rows for responsiveness. Source CSV artifacts remain downloadable for full-fidelity inspection.",
+        "sampling_note": "Browser charts use sampled runtime rows for responsiveness. Rows labeled DL+UL come from special-slot symbol splits; hover text shows the symbol ranges. Source CSV artifacts remain downloadable for full-fidelity inspection.",
     }
 
 
@@ -8387,6 +9705,7 @@ def condense_live_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
         "analysis_mode": full_payload.get("analysis_mode"),
         "logs_recent": full_payload.get("logs_recent"),
         "charts": lite_charts,
+        "reference_plot_gallery": full_payload.get("reference_plot_gallery"),
         "payload_version": full_payload.get("payload_version"),
         "artifact_version": full_payload.get("artifact_version"),
         "lite": True,
@@ -8465,8 +9784,13 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         or any(token in str(art["logical_path"]).lower() for token in ("summary", "sweep", "kpi", "status"))
     ]
     summary = build_live_summary(run_row, artifacts, runtime_context)
-    numeric_tabs = build_numeric_charts_from_artifacts(table_artifacts, limit=24)
+    numeric_tabs = build_numeric_charts_from_artifacts(table_artifacts, limit=48)
     summary_tabs = build_numeric_charts_from_artifacts(summary_chart_artifacts, limit=16)
+    reference_chart_artifacts = shortlist_reference_gallery_chart_artifacts(table_artifacts)
+    reference_gallery_charts = build_numeric_charts_from_artifacts(
+        reference_chart_artifacts,
+        limit=max(len(reference_chart_artifacts), 1),
+    )
     contract_surface = build_output_contract_surface(run_row, artifacts, numeric_tabs, summary_tabs, output_coverage)
     payload = {
         "run": compact_run_row(run_row, artifacts),
@@ -8497,6 +9821,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
             "numeric_tabs": numeric_tabs,
             "summary_tabs": summary_tabs,
         },
+        "reference_plot_gallery": build_reference_plot_gallery(reference_gallery_charts, all_images),
         "timing": build_timing_payload(artifacts),
         "map": build_map_payload(run_id, artifacts),
         "metric_explorer": build_metric_explorer_payload(artifacts, summary),
@@ -8544,7 +9869,7 @@ def render_user_strip(user_profile: dict[str, Any] | None) -> str:
 
 
 def render_nav(active: str, run_id: int | None = None, user_profile: dict[str, Any] | None = None) -> str:
-    latest = run_id or latest_run_id()
+    latest = run_id or preferred_analysis_run_id() or preferred_live_run_id() or latest_run_id()
     if not user_profile:
         return ""
     tab_links = [
@@ -8933,10 +10258,12 @@ PRODUCT_PAGE_ROUTES: dict[str, str] = {
     "/realtime": "realtime",
     "/runs": "runs",
     "/recent-runs": "runs",
-    "/previous-run": "previous_runs",
-    "/previous-runs": "previous_runs",
+    "/previous-run": "runs",
+    "/previous-runs": "runs",
     "/analytics": "analytics",
+    "/plots": "plots",
     "/artifacts": "artifacts",
+    "/tables": "tables",
     "/parameters": "parameters",
     "/parameter-catalog": "parameters",
     "/parameter_catalog": "parameters",
@@ -8947,7 +10274,6 @@ PRODUCT_PAGE_ROUTES: dict[str, str] = {
     "/map": "geometry",
     "/logs": "realtime",
     "/outputs": "artifacts",
-    "/tables": "artifacts",
     "/images": "artifacts",
 }
 PRODUCT_PAGE_ROUTES.update(output_contract.route_map("reports"))
@@ -8966,8 +10292,9 @@ PRODUCT_NAV = [
     ("realtime", "Real-Time Data", "/realtime"),
     ("reports", "Reports", "/reports"),
     ("analytics", "Analytics", "/analytics"),
-    ("runs", "Recent Runs", "/runs"),
-    ("previous_runs", "Previous Runs", "/previous-runs"),
+    ("plots", "Plots", "/plots"),
+    ("tables", "Tables", "/tables"),
+    ("runs", "Runs", "/runs"),
     ("artifacts", "Artifact Explorer", "/artifacts"),
     ("parameters", "Parameter Catalog", "/parameter-catalog"),
     ("compare", "Compare Runs", "/compare-runs"),
@@ -9057,25 +10384,89 @@ def product_field_domain(path: str) -> str:
     return "scenario"
 
 
+@lru_cache(maxsize=1)
+def load_ui_parameter_taxonomy() -> list[dict[str, Any]]:
+    if not UI_PARAMETER_TAXONOMY_PATH.is_file():
+        return []
+    try:
+        raw = yaml.safe_load(UI_PARAMETER_TAXONOMY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    groups = raw.get("ui_groups") if isinstance(raw, dict) else {}
+    if not isinstance(groups, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for ui_layer, group_cfg in groups.items():
+        sections = group_cfg.get("sections") if isinstance(group_cfg, dict) else {}
+        if not isinstance(sections, dict):
+            continue
+        for ui_section, section_cfg in sections.items():
+            section_cfg = section_cfg if isinstance(section_cfg, dict) else {}
+            rows.append(
+                {
+                    "ui_layer": str(ui_layer),
+                    "ui_section": str(ui_section),
+                    "feature_family": str(section_cfg.get("feature_family") or ui_section),
+                    "include_prefixes": [str(item) for item in (section_cfg.get("include_prefixes") or [])],
+                    "hide_prefixes": [str(item) for item in (section_cfg.get("hide_prefixes") or [])],
+                    "shared_dependency": bool(section_cfg.get("shared_dependency", False)),
+                }
+            )
+    return rows
+
+
+def parameter_taxonomy_entry(path: str) -> dict[str, Any]:
+    normalized = str(path or "").strip()
+    best: dict[str, Any] | None = None
+    best_len = -1
+    for row in load_ui_parameter_taxonomy():
+        hide_prefixes = [prefix for prefix in row.get("hide_prefixes", []) if prefix]
+        if any(normalized.startswith(prefix) for prefix in hide_prefixes):
+            continue
+        for prefix in row.get("include_prefixes", []):
+            if prefix and normalized.startswith(prefix) and len(prefix) > best_len:
+                best = row
+                best_len = len(prefix)
+    return best or {
+        "ui_layer": "Outputs",
+        "ui_section": "Uncategorized",
+        "feature_family": "Uncategorized",
+        "shared_dependency": False,
+    }
+
+
+def default_applied_status_text() -> str:
+    return "Resolved in MATLAB config; runtime consumer evidence is not yet instrumented."
+
+
+def default_measured_status_text() -> str:
+    return "Runtime measurement evidence is not yet published for this field."
+
+
 def product_field_records(config_payload: dict[str, Any]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for field in flatten_config_fields(config_payload):
         path = str(field.get("path") or "")
         value = field.get("value")
         domain = product_field_domain(path)
+        taxonomy = parameter_taxonomy_entry(path)
         records.append(
             {
                 "path": path,
                 "label": field.get("label") or resolve_field_label(path),
                 "domain": domain,
                 "domain_label": PRODUCT_DOMAIN_FILTERS.get(domain, {}).get("title", humanize_key(domain)),
+                "ui_layer": taxonomy.get("ui_layer", "Outputs"),
+                "ui_section": taxonomy.get("ui_section", "Uncategorized"),
+                "feature_family": taxonomy.get("feature_family", "Uncategorized"),
+                "shared_dependency": bool(taxonomy.get("shared_dependency", False)),
                 "kind": field.get("kind") or "text",
                 "value": value,
                 "current_value": value,
                 "requested_value": value,
                 "resolved_value": value,
-                "applied_value": "unavailable until runtime evidence is published",
-                "measured_value": "unavailable until runtime evidence is published",
+                "applied_value": default_applied_status_text(),
+                "measured_value": default_measured_status_text(),
                 "source": "browser + YAML resolved config",
                 "owner": field.get("group_label") or humanize_key(path.split(".")[0] if path else "scenario"),
                 "role": field.get("support_state") or "active",
@@ -9185,7 +10576,7 @@ button,.button-link,select,input,textarea{font:inherit;border-radius:8px}button,
 .product-header{padding:16px;display:grid;grid-template-columns:minmax(0,1fr)auto;gap:16px;align-items:start}.product-header h2{margin:0 0 6px;font-size:26px}.top-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:760px}.top-actions select{width:260px}#runForm{display:inline}.message{padding:12px 14px;background:#fff8e8;color:#6b4500;border:1px solid #e9c77d;border-radius:8px}.hidden{display:none!important}.grid{display:grid;gap:12px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.panel{padding:16px}.panel h3,.tile h3{margin:0 0 8px;font-size:18px}.tile{padding:14px;min-width:0}.tile h4{margin:0 0 6px;font-size:16px}.tile p{margin:0;color:var(--muted);line-height:1.45}.metric{border-left:4px solid var(--teal)}.metric .value{font-size:22px;font-weight:800;margin-top:4px}
 .workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.workflow .tile{cursor:pointer;min-height:148px}.workflow .tile:hover,.block-card:hover{border-color:var(--blue)}.badge{display:inline-flex;align-items:center;border:1px solid var(--strong);border-radius:8px;padding:4px 8px;font-size:12px;color:var(--muted);background:#f7f9fc;margin:3px 4px 3px 0}.badge.good{color:var(--green);border-color:#a9d5b7;background:#f2fbf5}.badge.warn{color:var(--amber);border-color:#e3c78d;background:#fff8e8}.badge.bad{color:var(--red);border-color:#e3a8b2;background:#fff3f5}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
-.table-wrap{overflow:auto;max-height:560px;overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:none;overflow:visible}.table-wrap.tall-scroll{max-height:min(72vh, 880px)}table{width:100%;border-collapse:collapse}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f6fa;z-index:1;color:#405469}.stream{max-height:360px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff}.log-warn{border-left:4px solid var(--amber)}.log-error{border-left:4px solid var(--red)}.warning{border-left:4px solid var(--amber);padding:10px 12px;background:#fff8e8;color:#6b4500;border-radius:8px}.map-box{min-height:500px;overflow:hidden}#geometryMap,#realtimeMap{height:500px;width:100%}.chart-box{height:380px;border:1px solid var(--line);border-radius:8px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:700;min-width:140px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:132px}.metric-explorer-note{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.artifact-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff}.artifact-card h4{margin:0 0 8px}.artifact-card img{display:block;width:100%;max-height:320px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#f7f9fc}.mini-note{font-size:12px;color:var(--muted);line-height:1.45}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:12px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:12px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}
+.table-wrap{overflow:auto;max-height:560px;overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:none;overflow:visible}.table-wrap.tall-scroll{max-height:min(72vh, 880px)}table{width:100%;border-collapse:collapse}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f6fa;z-index:1;color:#405469}.stream{max-height:360px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff}.log-warn{border-left:4px solid var(--amber)}.log-error{border-left:4px solid var(--red)}.warning{border-left:4px solid var(--amber);padding:10px 12px;background:#fff8e8;color:#6b4500;border-radius:8px}.map-box{min-height:500px;overflow:hidden}#geometryMap,#realtimeMap{height:500px;width:100%}.chart-box{height:380px;border:1px solid var(--line);border-radius:8px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:700;min-width:140px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:132px}.metric-explorer-note{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.artifact-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff}.artifact-card h4{margin:0 0 8px}.artifact-card img{display:block;width:100%;max-height:320px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:12px}.interactive-image-stage{position:relative;height:min(78vh,900px);min-height:520px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.45}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:12px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:12px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}
 @media(max-width:1280px){.app-shell{grid-template-columns:240px minmax(0,1fr)}.workflow{grid-template-columns:repeat(3,minmax(0,1fr))}.block-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:860px){.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid{display:block}.sidebar{position:static;height:auto;margin-bottom:12px}.tile,.panel,.config-dock{margin-bottom:12px}.top-actions{justify-content:flex-start}}
 </style>
 """
@@ -9344,7 +10735,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (err) { return ''; } }, set(key, value) { try { localStorage.setItem(key, value); } catch (err) {} } };
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   const wired = root.fully_wired_mode || 'LLS';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (obj, path, fallback) => String(path || '').split('.').filter(Boolean).reduce((node, key) => node && typeof node === 'object' && key in node ? node[key] : undefined, obj) ?? fallback;
@@ -9525,7 +10916,7 @@ window.addEventListener('DOMContentLoaded', function () {
   function kindFor(value) { if (typeof value === 'boolean') return 'bool'; if (Number.isInteger(value)) return 'int'; if (typeof value === 'number') return 'float'; if (value && typeof value === 'object') return 'json'; return 'text'; }
   function labelFor(path) { const leaf = String(path || 'config').split('.').pop() || 'config'; return leaf.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\b\w/g, ch => ch.toUpperCase()); }
   function domainFor(path) { const lower = String(path || '').toLowerCase(); for (const [domain, spec] of Object.entries(root.domains || {})) { if ((spec.paths || []).some(prefix => lower.startsWith(String(prefix).toLowerCase()) || lower.includes(String(prefix).toLowerCase()))) return domain; } return 'scenario'; }
-  function flattenConfig(node, prefix) { if (node && typeof node === 'object' && !Array.isArray(node)) { const keys = Object.keys(node); if (keys.length) return keys.flatMap(key => flattenConfig(node[key], prefix ? `${prefix}.${key}` : key)); } const domain = domainFor(prefix); return [{path: prefix || 'config', label: labelFor(prefix), domain, domain_label: ((root.domains || {})[domain] || {}).title || domain, kind: kindFor(node), value: node, current_value: node, requested_value: node, resolved_value: node, applied_value: 'unavailable until runtime evidence is published', measured_value: 'unavailable until runtime evidence is published', source: 'loaded config JSON', owner: labelFor(String(prefix || 'config').split('.')[0]), role: 'browser_loaded', search: `${prefix} ${labelFor(prefix)}`}]; }
+  function flattenConfig(node, prefix) { if (node && typeof node === 'object' && !Array.isArray(node)) { const keys = Object.keys(node); if (keys.length) return keys.flatMap(key => flattenConfig(node[key], prefix ? `${prefix}.${key}` : key)); } const domain = domainFor(prefix); return [{path: prefix || 'config', label: labelFor(prefix), domain, domain_label: ((root.domains || {})[domain] || {}).title || domain, kind: kindFor(node), value: node, current_value: node, requested_value: node, resolved_value: node, applied_value: 'Resolved in MATLAB config; runtime consumer evidence is not yet instrumented.', measured_value: 'Runtime measurement evidence is not yet published for this field.', source: 'loaded config JSON', owner: labelFor(String(prefix || 'config').split('.')[0]), role: 'browser_loaded', search: `${prefix} ${labelFor(prefix)}`}]; }
   function loadConfigFile(file) { const msg = document.getElementById('messageBanner'); if (!file) return; file.text().then(raw => { const parsed = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON root must be an object.'); delete parsed._download_metadata; state.config = parsed; state.configLoaded = true; state.configLoading = false; state.mode = String(get(parsed, 'run_control.execution_mode', 'LLS')).trim().toUpperCase(); if (!(root.modes || ['LLS']).includes(state.mode)) state.mode = 'LLS'; state.fields = flattenConfig(parsed, ''); state.fieldsLoaded = true; state.fieldsLoading = false; root.field_count = state.fields.length; state.selectedBlock = null; updateRunPayload(); render(); if (msg) { msg.textContent = `Loaded ${file.name}. Run Scenario will use this full config JSON payload.`; msg.classList.remove('hidden'); } }).catch(err => { if (msg) { msg.textContent = `Could not load config JSON: ${err.message}`; msg.classList.remove('hidden'); } }); }
   function inputFor(field) { const value = get(state.config, field.path, field.current_value); if (field.kind === 'bool') return `<select data-config-input data-path="${esc(field.path)}" data-kind="bool"><option value="true"${value === true ? ' selected' : ''}>true</option><option value="false"${value === false ? ' selected' : ''}>false</option></select>`; if (Array.isArray(field.options) && field.options.length) return `<select data-config-input data-path="${esc(field.path)}" data-kind="${esc(field.kind || 'text')}">${field.options.map(o => `<option value="${esc(o)}"${String(o) === String(value) ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`; return `<input data-config-input data-path="${esc(field.path)}" data-kind="${esc(field.kind || 'text')}" value="${esc(text(value))}">`; }
   function updateRunPayload() { if (state.configLoaded) { set(state.config, 'run_control.execution_mode', state.mode); document.getElementById('runConfigInput').value = JSON.stringify(state.config); } else { document.getElementById('runConfigInput').value = ''; } document.getElementById('runModeInput').value = state.mode; document.getElementById('runScenarioInput').value = root.scenario || ''; document.getElementById('runTagInput').value ||= `web_${state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`; }
@@ -9765,7 +11156,33 @@ window.addEventListener('DOMContentLoaded', function () {
   function rows(records, empty, opts) { if (!records || !records.length) return unavailable(empty); const keys = Object.keys(records[0]).slice(0, 12); return scrollWrap(`<table><thead><tr>${keys.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${records.map(r => `<tr>${keys.map(k => `<td>${esc(text(r[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`, opts); }
   function objectTable(obj, empty, opts) { const keys = Object.keys(obj || {}); return keys.length ? scrollWrap(`<table><tbody>${keys.map(k => `<tr><th>${esc(k)}</th><td>${esc(text(obj[k]))}</td></tr>`).join('')}</tbody></table>`, opts) : unavailable(empty); }
   function issueRegistryTable() { const issues = (((state.live || {}).output_coverage || {}).issue_registry || []); const cols = ['severity','issue_status','issue_category','block_name','direction','ue_id','metric_name','observed_value','root_cause_hint','fix_plan']; const body = issues.length ? scrollWrap(`<table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${issues.map(row => `<tr>${cols.map(c => `<td>${esc(text(row[c]))}</td>`).join('')}</tr>`).join('')}</tbody></table>`, {className:'tall-scroll', scrollKey:'issue-registry'}) : unavailable('No result issue registry rows are available for this run.'); return `<section class="panel"><h3>Result Issue Registry</h3><p class="subtle">Issues come from reports/csv/result_issue_registry.csv with evidence artifact references and fix plans. They are shown in both real-time result and analytics views.</p>${body}</section>`; }
-  function blockFields(block) { const params = (block.params || []).map(p => String(p).toLowerCase()); const domain = String(block.domain || '').toLowerCase(); const exact = state.fields.filter(f => (domain && f.domain === domain) || params.some(p => String(f.path || '').toLowerCase().includes(p))); if (exact.length >= 25 || domain) return exact; if (block.group || block.tests || String(block.name || '').match(/PDCCH|PDSCH|PUSCH|PUCCH|PRACH|SRS|TRS|CSI|PBCH|SSB|MIMO|PHY/i)) return state.fields.filter(f => f.domain === 'l1_phy'); return exact; }
+  function inferFeatureFamily(block) {
+    const textKey = `${String(block?.id || '')} ${String(block?.name || '')}`.toLowerCase();
+    if (textKey.includes('prach')) return 'Random_Access_PRACH';
+    if (textKey.includes('pusch')) return 'UL_Data_PUSCH';
+    if (textKey.includes('pucch')) return 'UL_Control_PUCCH';
+    if (textKey.includes('pdsch')) return 'DL_Data_PDSCH';
+    if (textKey.includes('pdcch')) return 'DL_Control_PDCCH_DCI';
+    if (textKey.includes('csi-rs') || textKey.includes('csirs')) return 'Reference_Signals_CSI_RS';
+    if (textKey.includes('srs')) return 'Reference_Signals_SRS';
+    if (textKey.includes('trs') || textKey.includes('ptrs')) return 'Reference_Signals_TRS_PTRS';
+    if (textKey.includes('pbch') || textKey.includes('ssb')) return 'Synchronization_SSB_PBCH';
+    if (textKey.includes('mimo') || textKey.includes('beam')) return 'MIMO_Beamforming';
+    return '';
+  }
+  function blockFields(block) {
+    const params = (block.params || []).map(p => String(p).toLowerCase());
+    const domain = String(block.domain || '').toLowerCase();
+    const featureFamily = inferFeatureFamily(block);
+    if (featureFamily) {
+      const featureRows = state.fields.filter(f => String(f.feature_family || '') === featureFamily || Boolean(f.shared_dependency));
+      if (featureRows.length) return featureRows;
+    }
+    const exact = state.fields.filter(f => (domain && f.domain === domain) || params.some(p => String(f.path || '').toLowerCase().includes(p)));
+    if (exact.length >= 25 || domain) return exact;
+    if (block.group || block.tests || String(block.name || '').match(/PDCCH|PDSCH|PUSCH|PUCCH|PRACH|SRS|TRS|CSI|PBCH|SSB|MIMO|PHY/i)) return state.fields.filter(f => f.domain === 'l1_phy');
+    return exact;
+  }
   function renderBlock(block) { const el = document.getElementById('blockPanel'); if (!block) { el.innerHTML = '<h3>Block Parameters</h3><p class="subtle">Select a workflow or PHY block to inspect editable parameters.</p>'; return; } if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); el.innerHTML = `<h3>${esc(block.name || block.title)}</h3>${unavailable('Block parameters are loading from the resolved scenario config and field catalog.')}`; return; } const body = blockFields(block).map(f => `<tr><td><strong>${esc(f.label || f.path)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('') || '<tr><td colspan="9">Unavailable: no browser-exposed parameter maps directly to this block.</td></tr>'; el.innerHTML = `<h3>${esc(block.name || block.title)}</h3><p class="subtle">${esc(block.purpose || block.summary || '')}</p><p class="small">${esc((block.artifacts || []).join(', ') || block.truth || 'Canonical artifacts first; missing outputs stay unavailable.')}</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${body}</tbody></table></div>`; }
   function chrome() { const contract = scenarioLaunchContract(); document.getElementById('productNav').innerHTML = (root.nav || []).map(n => `<a class="nav-item ${n.id === state.page ? 'active' : ''}" data-page="${esc(n.id)}" href="${esc(n.href)}">${esc(n.label)}</a>`).join(''); document.getElementById('modeSelector').innerHTML = (root.modes || ['LLS','SLS','E2E']).map(m => `<button type="button" class="mode-button ${m === state.mode ? 'active' : ''}" data-mode="${esc(m)}">${esc(m)}</button>`).join(''); document.getElementById('modeNote').textContent = state.mode === wired ? (contract.launchReason || (root.mode_notes || {})[state.mode] || '') : ((root.mode_notes || {})[state.mode] || ''); document.getElementById('activeModeBadge').textContent = `Mode: ${state.mode}`; document.getElementById('activeModeBadge').className = `badge ${state.mode === wired && contract.launchAllowed ? 'good' : 'warn'}`; document.getElementById('runScenarioBtn').disabled = state.mode !== wired || !contract.launchAllowed; document.getElementById('runScenarioBtn').textContent = state.mode !== wired ? `${state.mode} run unavailable` : (contract.launchAllowed ? 'Run Scenario' : 'Run blocked by scenario contract'); document.getElementById('runScenarioBtn').title = state.mode !== wired ? ((root.mode_notes || {})[state.mode] || '') : (contract.launchAllowed ? `Launch the real browser-owned LLS run via ${contract.presentationLabel || 'the configured runner'}.` : (contract.launchReason || 'Selected scenario is blocked.')); updateRunPayload(); }
   function title(t, s) { document.getElementById('pageTitle').textContent = t; document.getElementById('pageSubtitle').textContent = s; }
@@ -9937,7 +11354,8 @@ window.addEventListener('DOMContentLoaded', function () {
           y: points.map(point => point[metric.id]),
           yaxis: useSecondaryAxis ? 'y2' : 'y',
           customdata: points.map(point => [point.slot, point.direction, point.ueid, point.serving_cell]),
-          hovertemplate: `${esc(groupLabel)}<br>Slot %{customdata[0]}<br>Direction %{customdata[1]}<br>UE %{customdata[2]}<br>Cell %{customdata[3]}<br>${esc(metric.label)}: %{y}<extra></extra>`,
+          text: points.map(point => point.slot_context || ''),
+          hovertemplate: `${esc(groupLabel)}<br>Slot %{customdata[0]}<br>Direction %{customdata[1]}<br>UE %{customdata[2]}<br>Cell %{customdata[3]}<br>${esc(metric.label)}: %{y}<br>%{text}<extra></extra>`,
           line: {width: primaryMetrics.length > 1 || useSecondaryAxis ? 1.2 : 1.8},
           opacity: groupedRows.size > 24 ? 0.55 : 0.82,
         });
@@ -10018,7 +11436,22 @@ window.addEventListener('DOMContentLoaded', function () {
         : `<div class="chart-empty">No canonical ${esc(label)} runtime rows were published for this run.</div>`;
       return `<article class="artifact-card"><h4>${esc(label)} Runtime Rows</h4><p class="mini-note">${esc(rowsForKey.length)} preview row(s) loaded from the selected run.</p>${body}</article>`;
     }).join('');
-    return `<section class="panel"><h3>Control Signal Runtime Evidence</h3><p class="subtle">These tables show actual PBCH/PRACH/PDCCH/PUCCH/SRS/TRS rows only when the selected run published them. Missing rows stay missing; the browser does not synthesize control execution.</p><div class="artifact-gallery">${cardsHtml}</div></section>`;
+    return `<section class="panel"><h3>Control Signal Runtime Evidence</h3><p class="subtle">These tables show actual PBCH/PRACH/PDCCH/PUCCH/SRS/TRS rows only when the selected run published them. The browser trims placeholder-only runtime fields from the preview, but it does not synthesize or rewrite the underlying CSV evidence.</p><div class="artifact-gallery">${cardsHtml}</div></section>`;
+  }
+  function dataTrialEvidencePanel() {
+    const previews = (((state.live || {}).runtime_context || {}).data_trial_previews || {});
+    const specs = [
+      ['dl_trials', 'PDSCH'],
+      ['ul_trials', 'PUSCH'],
+    ];
+    const cardsHtml = specs.map(([key, label]) => {
+      const rowsForKey = Array.isArray(previews[key]) ? previews[key] : [];
+      const body = rowsForKey.length
+        ? rows(rowsForKey, `No ${label} rows are available.`, {className:'tall-scroll', scrollKey:`data-${key}`})
+        : `<div class="chart-empty">No canonical ${esc(label)} runtime rows were published for this run.</div>`;
+      return `<article class="artifact-card"><h4>${esc(label)} Runtime Rows</h4><p class="mini-note">${esc(rowsForKey.length)} preview row(s) loaded from the selected run.</p>${body}</article>`;
+    }).join('');
+    return `<section class="panel"><h3>Waveform Trial Runtime Evidence</h3><p class="subtle">These tables show actual waveform-backed PDSCH and PUSCH rows when the selected run published them. Missing rows stay missing; the browser does not synthesize data-plane execution.</p><div class="artifact-gallery">${cardsHtml}</div></section>`;
   }
   function publishedAnalyticsCharts() {
     const live = state.live || {};
@@ -10034,48 +11467,123 @@ window.addEventListener('DOMContentLoaded', function () {
       ...preferredNumericCharts.map(chart => ({ ...chart, chart_id: `artifact_${chart.artifact_id}` })),
     ].filter(chart => Array.isArray(chart.series) && chart.series.length);
   }
-  function drawPublishedAnalyticsChart(hostId, chart) {
+  function drawPublishedAnalyticsChart(hostId, chart, options) {
     const host = document.getElementById(hostId);
     if (!host) return;
+    const opts = options || {};
+    const layoutHints = chart.layout_hints || {};
+    const baseHeight = Math.max(320, Number(opts.height || 360));
+    const heatmapHeight = Math.max(360, Number(opts.height || 420));
+    const downloads = chart.download_url ? `<a class="button-link secondary" href="${esc(chart.download_url)}">Download Source CSV</a>` : '';
+    const heatmapSeries = (chart.series || []).find(series => String(series.mode || '').toLowerCase() === 'heatmap' && Array.isArray(series.matrix));
+    if (heatmapSeries) {
+      if (window.Plotly) {
+        host.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div style="font-weight:700;margin-bottom:8px;">${esc(chart.title || 'Published Chart')}</div><div>${downloads}</div></div><div id="${hostId}_plot" style="width:100%;height:${esc(heatmapHeight)}px;"></div>`;
+        window.Plotly.react(
+          document.getElementById(`${hostId}_plot`),
+          [{
+            type: 'heatmap',
+            x: heatmapSeries.x_labels || [],
+            y: heatmapSeries.y_labels || [],
+            z: heatmapSeries.matrix || [],
+            colorbar: { title: heatmapSeries.colorbar_title || 'Value' },
+            colorscale: 'YlGnBu',
+            hoverongaps: false,
+          }],
+          {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(255,255,255,0.95)',
+            margin: { l: 60, r: 24, t: 20, b: 54 },
+            xaxis: { title: chart.xaxis_title || 'X', gridcolor: 'rgba(133,150,178,0.18)' },
+            yaxis: { title: chart.yaxis_title || 'Y', gridcolor: 'rgba(133,150,178,0.18)', automargin: true },
+          },
+          { responsive: true, displaylogo: false, scrollZoom: true },
+        );
+        return;
+      }
+      host.innerHTML = '<div class="chart-empty">Plotly is unavailable, but the selected run already published heatmap rows. Download the source CSV instead.</div>';
+      return;
+    }
     const prepared = [];
-    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
     for (const series of (chart.series || [])) {
       const pts = [];
+      const wantsBar = String(series.trace_type || '').toLowerCase() === 'bar';
       for (const point of (series.points || [])) {
-        const x = Number(point.x);
+        const rawX = point.x;
+        const numericX = Number(rawX);
+        const x = Number.isFinite(numericX) && String(rawX ?? '').trim() !== '' ? numericX : String(rawX ?? '').trim();
         const y = Number(point.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        pts.push({x, y});
-        xmin = Math.min(xmin, x); xmax = Math.max(xmax, x);
-        ymin = Math.min(ymin, y); ymax = Math.max(ymax, y);
+        if ((typeof x === 'string' && !x) || !Number.isFinite(y)) continue;
+        pts.push({x, y, text: point.text == null ? '' : String(point.text)});
       }
-      if (pts.length) prepared.push({name: series.name, points: pts, mode: series.mode || 'lines+markers'});
+      if (pts.length) prepared.push({
+        name: series.name,
+        points: pts,
+        mode: wantsBar ? 'bar' : (series.mode || 'lines+markers'),
+        traceType: wantsBar ? 'bar' : 'scatter',
+        marker: series.marker || null,
+        line: series.line || null,
+        text: Array.isArray(series.text) ? series.text.map(value => value == null ? '' : String(value)) : null,
+        textposition: series.textposition || null,
+        opacity: series.opacity == null ? null : Number(series.opacity),
+        yaxis: series.yaxis || 'y',
+      });
     }
     if (!prepared.length) { host.innerHTML = '<div class="chart-empty">No numeric points are available yet for this published chart.</div>'; return; }
     if (window.Plotly) {
       const traces = prepared.map(series => ({
-        name: series.name,
-        x: series.points.map(pt => pt.x),
-        y: series.points.map(pt => pt.y),
-        mode: series.mode,
-        type: 'scatter',
-        line: { width: 2.5 },
-        marker: { size: 6 },
+        ...(series.traceType === 'bar'
+          ? {
+              name: series.name,
+              x: series.points.map(pt => pt.x),
+              y: series.points.map(pt => pt.y),
+              type: 'bar',
+              marker: series.marker || undefined,
+              opacity: Number.isFinite(series.opacity) ? series.opacity : undefined,
+            }
+          : {
+              name: series.name,
+              x: series.points.map(pt => pt.x),
+              y: series.points.map(pt => pt.y),
+              mode: series.mode,
+              type: 'scatter',
+              line: series.line || { width: 2.5 },
+              marker: series.marker || { size: 6 },
+              text: series.text || series.points.map(pt => pt.text || ''),
+              textposition: series.textposition || undefined,
+              opacity: Number.isFinite(series.opacity) ? series.opacity : undefined,
+              yaxis: series.yaxis || 'y',
+            })
       }));
-      const downloads = chart.download_url ? `<a class="button-link secondary" href="${esc(chart.download_url)}">Download Source CSV</a>` : '';
-      host.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div style="font-weight:700;margin-bottom:8px;">${esc(chart.title || 'Published Chart')}</div><div>${downloads}</div></div><div id="${hostId}_plot" style="width:100%;height:360px;"></div>`;
+      host.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div style="font-weight:700;margin-bottom:8px;">${esc(chart.title || 'Published Chart')}</div><div>${downloads}</div></div><div id="${hostId}_plot" style="width:100%;height:${esc(baseHeight)}px;"></div>`;
+      const hasSecondaryAxis = prepared.some(series => String(series.yaxis || 'y') === 'y2');
+      const layout = {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(255,255,255,0.95)',
+        margin: { l: 50, r: hasSecondaryAxis ? 56 : 20, t: 20, b: 42 },
+        legend: { orientation: 'h' },
+        barmode: prepared.some(series => series.traceType === 'bar') ? 'group' : undefined,
+        xaxis: { title: chart.xaxis_title || 'Index / Time', gridcolor: 'rgba(133,150,178,0.18)', automargin: true },
+        yaxis: { title: chart.yaxis_title || 'Value', gridcolor: 'rgba(133,150,178,0.18)', automargin: true },
+        hovermode: layoutHints.hovermode || 'closest',
+      };
+      if (layoutHints.axis_equal) {
+        layout.yaxis.scaleanchor = 'x';
+        layout.yaxis.scaleratio = 1;
+      }
+      if (hasSecondaryAxis) {
+        layout.yaxis2 = {
+          title: chart.secondary_yaxis_title || 'Secondary value',
+          overlaying: 'y',
+          side: 'right',
+          gridcolor: 'rgba(0,0,0,0)',
+          automargin: true,
+        };
+      }
       window.Plotly.react(
         document.getElementById(`${hostId}_plot`),
         traces,
-        {
-          paper_bgcolor: 'rgba(0,0,0,0)',
-          plot_bgcolor: 'rgba(255,255,255,0.95)',
-          margin: { l: 50, r: 20, t: 20, b: 42 },
-          legend: { orientation: 'h' },
-          xaxis: { title: chart.xaxis_title || 'Index / Time', gridcolor: 'rgba(133,150,178,0.18)' },
-          yaxis: { title: chart.yaxis_title || 'Value', gridcolor: 'rgba(133,150,178,0.18)' },
-          hovermode: 'closest',
-        },
+        layout,
         { responsive: true, displaylogo: false, scrollZoom: true },
       );
       return;
@@ -10110,6 +11618,51 @@ window.addEventListener('DOMContentLoaded', function () {
     }
     return `<section class="panel"><h3>Waveform / Heatmap / Constellation Artifacts</h3><p class="subtle">These panels only render persisted waveform, heatmap, and constellation artifacts that this run actually exported. If the backend did not publish them, the browser leaves them unavailable with an exact reason.</p><h4>Waveform / Grid</h4>${cards(waveformItems, 'No persisted waveform or resource-grid image artifacts were published for this run.')}<h4 style="margin-top:16px;">Heatmaps / Resource Occupancy</h4>${cards(heatmapItems, 'No persisted heatmap or PRB-occupancy image artifacts were published for this run.')}<h4 style="margin-top:16px;">Constellation / EVM</h4>${cards(constellationItems, 'No persisted constellation or EVM image artifacts were published for this run.')}</section>`;
   }
+  function referencePlotGalleryPanel() {
+    return `<section class="panel"><h3>Reference Plot Gallery</h3><p class="subtle">This maps the familiar plot names from the reference bundle onto the selected run's truthful persisted artifacts. If the run did not publish a real source for a family, the browser keeps that row unavailable instead of inventing a plot.</p><div class="toolbar"><label>Reference Plot<select id="referencePlotSelect"></select></label><span id="referencePlotStats" class="mini-note"></span></div><div id="referencePlotViewer" class="chart-box"></div><div id="referencePlotTable" style="margin-top:14px;"></div></section>`;
+  }
+  function renderReferencePlotGallery() {
+    const gallery = ((state.live || {}).reference_plot_gallery || {});
+    const items = Array.isArray(gallery.items) ? gallery.items : [];
+    const select = document.getElementById('referencePlotSelect');
+    const viewer = document.getElementById('referencePlotViewer');
+    const table = document.getElementById('referencePlotTable');
+    const stats = document.getElementById('referencePlotStats');
+    if (!select || !viewer || !table || !stats) return;
+    if (!items.length) {
+      select.innerHTML = '<option value="">No reference mappings</option>';
+      viewer.innerHTML = '<div class="chart-empty">No reference plot mappings were prepared for this run.</div>';
+      table.innerHTML = '';
+      stats.textContent = '';
+      return;
+    }
+    const preferred = items.find(item => item.status === 'interactive') || items.find(item => item.status === 'image') || items[0];
+    if (!state.referencePlotId || !items.some(item => item.reference_id === state.referencePlotId)) {
+      state.referencePlotId = String((preferred || {}).reference_id || '');
+    }
+    select.innerHTML = items.map(item => `<option value="${esc(item.reference_id)}"${item.reference_id === state.referencePlotId ? ' selected' : ''}>${esc(item.label)} [${esc(item.status_label)}]</option>`).join('');
+    if (!select.dataset.initialized) {
+      select.addEventListener('change', () => {
+        state.referencePlotId = select.value || '';
+        renderReferencePlotGallery();
+      });
+      select.dataset.initialized = '1';
+    }
+    stats.textContent = `${gallery.interactive_count || 0} interactive, ${gallery.image_count || 0} image-only, ${gallery.unavailable_count || 0} unavailable`;
+    const selected = items.find(item => item.reference_id === state.referencePlotId) || preferred || items[0];
+    if (selected && selected.status === 'interactive' && selected.chart) {
+      drawPublishedAnalyticsChart('referencePlotViewer', selected.chart);
+    } else if (selected && selected.image) {
+      const image = selected.image;
+      viewer.innerHTML = `<article class="artifact-card"><h4>${esc(selected.label)}</h4><p class="mini-note">${esc(selected.reason || '')}</p><a href="${esc(image.view_url || image.download_url || '#')}" target="_blank" rel="noopener noreferrer"><img loading="lazy" decoding="async" src="${esc(image.view_url || image.download_url || '#')}" alt="${esc(image.logical_path || selected.label)}"></a><div class="toolbar" style="margin-top:10px;"><a class="button-link secondary" href="${esc(image.view_url || image.download_url || '#')}" target="_blank" rel="noopener noreferrer">Open In New Tab</a><a class="button-link secondary" href="${esc(image.download_url || image.view_url || '#')}">Download</a></div></article>`;
+    } else {
+      viewer.innerHTML = `<div class="chart-empty">${esc((selected || {}).reason || 'No truthful source artifact was published for this reference plot in the selected run.')}</div>`;
+    }
+    table.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Reference Plot</th><th>Status</th><th>Selected Source</th><th>Reason</th></tr></thead><tbody>${items.map(item => {
+      const source = (item.chart && (item.chart.title || item.chart.chart_id)) || ((item.image || {}).logical_path) || 'unavailable';
+      return `<tr><td><strong>${esc(item.label)}</strong></td><td>${statusBadge(item.status_label || 'Unavailable', item.status === 'interactive' || item.status === 'image' ? 'good' : 'warn')}</td><td>${esc(source)}</td><td>${esc(item.reason || '')}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
   function analyticsPublishedChartsPanel() {
     return `<section class="panel"><h3>Published Analytics Charts</h3><p class="subtle">These charts are built only from the selected run's real numeric chart rows and persisted chart source tables. They do not replace the contract table below; they surface whatever the run genuinely published.</p><div id="analyticsPublishedChartTabs" class="toolbar" style="margin-bottom:12px;"></div><div id="analyticsPublishedChartHost" class="chart-box"></div></section>`;
   }
@@ -10135,7 +11688,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const metricOptions = (explorer.available_metrics || []).map(metric => `<option value="${esc(metric.id)}"${(viewState.metrics || []).includes(metric.id) ? ' selected' : ''}>${esc(metric.label)} [${esc(metric.fidelity_level || 'unknown')}]</option>`).join('');
     const secondaryOptions = ['<option value="">None</option>'].concat((explorer.available_metrics || []).map(metric => `<option value="${esc(metric.id)}"${String(metric.id) === String(viewState.secondaryMetric || '') ? ' selected' : ''}>${esc(metric.label)}</option>`)).join('');
     const ueOptions = (explorer.ue_ids || []).map(ueid => `<option value="${esc(ueid)}"${String(ueid) === String(viewState.selectedUE) ? ' selected' : ''}>UE ${esc(ueid)}</option>`).join('');
-    main.innerHTML = `<section class="panel"><h3>Run Selection</h3>${pageRunSelector('realtimeRunSelect', 'Selected Run', {showRunningBadge: true, runningOnly: false, note: 'Realtime defaults to an active running run when one exists. Stored runs remain selectable for post-run inspection.'})}</section><div class="grid four">${[['Run Status',(live.run || {}).status_text],['ResultOk',(live.summary || {}).result_ok],['RequiredFailureCount',(live.summary || {}).required_failure_count],['Configured UEs',(live.summary || {}).configured_users]].map(x => `<div class="tile metric"><h4>${esc(x[0])}</h4><div class="value">${esc(text(x[1] ?? 'unavailable'))}</div><p>canonical live payload</p></div>`).join('')}</div><section class="panel"><h3>Live UE Metric Explorer</h3><p class="subtle">X-axis defaults to slot. Y-axis metrics come only from the selected run's real serving-trace and waveform trial tables; missing metrics stay unavailable instead of being invented.</p><div class="toolbar"><label>X Axis<select id="liveXAxisSelect">${xAxisOptions}</select></label><label>Primary Y Metrics<select id="liveMetricSelect" multiple>${metricOptions}</select></label><label>Secondary Y<select id="liveSecondaryMetricSelect">${secondaryOptions}</select></label><label>Overlay<select id="liveOverlaySelect"><option value="per_ue_overlay"${viewState.overlayMode === 'per_ue_overlay' ? ' selected' : ''}>Per-UE overlay</option><option value="per_cell_overlay"${viewState.overlayMode === 'per_cell_overlay' ? ' selected' : ''}>Per-cell overlay</option></select></label><label>UE Scope<select id="liveUEScopeSelect"><option value="all_configured_ues"${viewState.scope === 'all_configured_ues' ? ' selected' : ''}>All configured UEs</option><option value="selected_ue_only"${viewState.scope === 'selected_ue_only' ? ' selected' : ''}>Selected UE</option></select></label><label>Selected UE<select id="liveUESelect"${viewState.scope === 'selected_ue_only' ? '' : ' disabled'}>${ueOptions}</select></label><label>Direction<select id="liveDirectionSelect"><option value="all"${viewState.direction === 'all' ? ' selected' : ''}>All</option><option value="DL"${viewState.direction === 'DL' ? ' selected' : ''}>DL</option><option value="UL"${viewState.direction === 'UL' ? ' selected' : ''}>UL</option><option value="channel"${viewState.direction === 'channel' ? ' selected' : ''}>Channel / measurement only</option></select></label><button type="button" id="liveMetricExportBtn">Export Filtered Rows</button></div><div id="liveMetricExplorer" class="chart-box"></div><div id="liveMetricSummary"></div></section><div class="split"><section class="panel"><h3>Frame / Slot / Stage</h3>${objectTable(rt.stage || {}, 'No canonical stage row is available.', {className:'tall-scroll', scrollKey:'realtime-stage'})}<h3>Live Scheduler Grants</h3>${rows([...(rt.pucch_grants || [])], 'No canonical scheduler grant rows are available in this live payload.', {className:'tall-scroll', scrollKey:'realtime-grants'})}</section><section class="panel"><h3>Control / PHY / Channel State</h3>${controlTruthNote()}${objectTable(rt.control_summary || {}, 'No control summary is available.', {className:'tall-scroll', scrollKey:'realtime-control-summary'})}${rows(rt.control_state_preview || [], 'No live control state rows are available.', {className:'tall-scroll', scrollKey:'realtime-control-state'})}${rows(rt.channel_array_consistency_preview || [], 'No channel state rows are available.', {className:'tall-scroll', scrollKey:'realtime-channel-state'})}</section></div>${controlTrialEvidencePanel()}${issueRegistryTable()}<section class="panel"><div class="toolbar"><h3 style="margin:0;">Logs / Event Stream</h3><input id="liveFilter" placeholder="Filter logs" value="${esc(state.filter)}"></div><div class="stream" data-scroll-key="realtime-logs">${logs.map(l => `<div class="stream-item ${/error/i.test(JSON.stringify(l)) ? 'log-error' : /warn/i.test(JSON.stringify(l)) ? 'log-warn' : ''}"><strong>${esc(l.source || l.module || l.created_utc || 'log')}</strong><br>${esc(l.message || l.line_text || l.log_message || JSON.stringify(l))}</div>`).join('') || unavailable('No logs are available for this run yet.')}</div></section>`;
+    main.innerHTML = `<section class="panel"><h3>Run Selection</h3>${pageRunSelector('realtimeRunSelect', 'Selected Run', {showRunningBadge: true, runningOnly: false, note: 'Realtime defaults to an active running run when one exists. Stored runs remain selectable for post-run inspection.'})}</section><div class="grid four">${[['Run Status',(live.run || {}).status_text],['ResultOk',(live.summary || {}).result_ok],['RequiredFailureCount',(live.summary || {}).required_failure_count],['Configured UEs',(live.summary || {}).configured_users]].map(x => `<div class="tile metric"><h4>${esc(x[0])}</h4><div class="value">${esc(text(x[1] ?? 'unavailable'))}</div><p>canonical live payload</p></div>`).join('')}</div><section class="panel"><h3>Live UE Metric Explorer</h3><p class="subtle">X-axis defaults to slot. Y-axis metrics come only from the selected run's real serving-trace and waveform trial tables; missing metrics stay unavailable instead of being invented.</p><div class="toolbar"><label>X Axis<select id="liveXAxisSelect">${xAxisOptions}</select></label><label>Primary Y Metrics<select id="liveMetricSelect" multiple>${metricOptions}</select></label><label>Secondary Y<select id="liveSecondaryMetricSelect">${secondaryOptions}</select></label><label>Overlay<select id="liveOverlaySelect"><option value="per_ue_overlay"${viewState.overlayMode === 'per_ue_overlay' ? ' selected' : ''}>Per-UE overlay</option><option value="per_cell_overlay"${viewState.overlayMode === 'per_cell_overlay' ? ' selected' : ''}>Per-cell overlay</option></select></label><label>UE Scope<select id="liveUEScopeSelect"><option value="all_configured_ues"${viewState.scope === 'all_configured_ues' ? ' selected' : ''}>All configured UEs</option><option value="selected_ue_only"${viewState.scope === 'selected_ue_only' ? ' selected' : ''}>Selected UE</option></select></label><label>Selected UE<select id="liveUESelect"${viewState.scope === 'selected_ue_only' ? '' : ' disabled'}>${ueOptions}</select></label><label>Direction<select id="liveDirectionSelect"><option value="all"${viewState.direction === 'all' ? ' selected' : ''}>All</option><option value="DL"${viewState.direction === 'DL' ? ' selected' : ''}>DL</option><option value="UL"${viewState.direction === 'UL' ? ' selected' : ''}>UL</option><option value="channel"${viewState.direction === 'channel' ? ' selected' : ''}>Channel / measurement only</option></select></label><button type="button" id="liveMetricExportBtn">Export Filtered Rows</button></div><div id="liveMetricExplorer" class="chart-box"></div><div id="liveMetricSummary"></div></section><div class="split"><section class="panel"><h3>Frame / Slot / Stage</h3>${objectTable(rt.stage || {}, 'No canonical stage row is available.', {className:'tall-scroll', scrollKey:'realtime-stage'})}<h3>Live Scheduler Grants</h3>${rows([...(rt.pucch_grants || [])], 'No canonical scheduler grant rows are available in this live payload.', {className:'tall-scroll', scrollKey:'realtime-grants'})}</section><section class="panel"><h3>Control / PHY / Channel State</h3>${controlTruthNote()}${objectTable(rt.control_summary || {}, 'No control summary is available.', {className:'tall-scroll', scrollKey:'realtime-control-summary'})}${rows(rt.control_state_preview || [], 'No live control state rows are available.', {className:'tall-scroll', scrollKey:'realtime-control-state'})}${rows(rt.channel_array_consistency_preview || [], 'No channel state rows are available.', {className:'tall-scroll', scrollKey:'realtime-channel-state'})}</section></div>${dataTrialEvidencePanel()}${controlTrialEvidencePanel()}${issueRegistryTable()}<section class="panel"><div class="toolbar"><h3 style="margin:0;">Logs / Event Stream</h3><input id="liveFilter" placeholder="Filter logs" value="${esc(state.filter)}"></div><div class="stream" data-scroll-key="realtime-logs">${logs.map(l => `<div class="stream-item ${/error/i.test(JSON.stringify(l)) ? 'log-error' : /warn/i.test(JSON.stringify(l)) ? 'log-warn' : ''}"><strong>${esc(l.source || l.module || l.created_utc || 'log')}</strong><br>${esc(l.message || l.line_text || l.log_message || JSON.stringify(l))}</div>`).join('') || unavailable('No logs are available for this run yet.')}</div></section>`;
     renderMetricExplorer('realtime');
   }
   function contractSlug(kind) { const parts = location.pathname.split('/').filter(Boolean); return parts[0] === kind ? (parts[1] || '') : ''; }
@@ -10242,18 +11795,305 @@ window.addEventListener('DOMContentLoaded', function () {
   function analytics() {
     contractPage('analytics');
     if (!contractSlug('analytics')) {
-      main.insertAdjacentHTML('afterbegin', `${analyticsExplorerPanel()}${analyticsPublishedChartsPanel()}${waveformArtifactPanel()}`);
+      main.insertAdjacentHTML('afterbegin', `${referencePlotGalleryPanel()}${analyticsExplorerPanel()}${analyticsPublishedChartsPanel()}${waveformArtifactPanel()}`);
       renderMetricExplorer('analytics');
+      renderReferencePlotGallery();
       renderPublishedAnalyticsPanel();
     }
   }
   function artifactTable(items, empty) { if (!items || !items.length) return unavailable(empty); return `<div class="table-wrap"><table><thead><tr><th>Artifact</th><th>Kind</th><th>Section</th><th>Bytes</th><th>Created</th><th>Actions</th></tr></thead><tbody>${items.map(a => `<tr><td><strong>${esc(a.logical_path || a.artifact_id)}</strong><br><span class="small mono">artifact_id=${esc(a.artifact_id)}</span></td><td>${esc(a.artifact_kind || '')}</td><td>${esc(a.section || '')}</td><td>${esc(a.byte_size || '')}</td><td>${esc(a.created_utc || '')}</td><td><a class="button-link" href="${esc(a.view_url || a.download_url || '#')}">${String(a.artifact_kind || '').includes('table') ? 'Preview Table' : 'Open'}</a> <a class="button-link" href="${esc(a.download_url || a.view_url || '#')}">Download Full File</a></td></tr>`).join('')}</tbody></table></div>`; }
+  function prettyArtifactLabel(logicalPath) {
+    const raw = String(logicalPath || '').trim();
+    if (!raw) return 'Artifact';
+    const tail = raw.split('/').pop() || raw;
+    return tail
+      .replace(/\.[^.]+$/, '')
+      .replace(/^contract__/, '')
+      .replace(/__/g, ' / ')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function plotBrowserViewerHeight() {
+    return Math.max(520, Math.min(window.innerHeight - 260, 900));
+  }
+  async function loadPlotBrowserPayload() {
+    const runId = selectedRunId();
+    if (!runId) {
+      state.plotBrowserRunId = '';
+      state.plotBrowserPayload = {items: [], raw_items: [], interactive_count: 0, image_count: 0, total_count: 0, unavailable_count: 0, suppressed_raw_count: 0, mode: 'canonical_reference_gallery'};
+      return state.plotBrowserPayload;
+    }
+    const runKey = String(runId);
+    if (state.plotBrowserPayload && state.plotBrowserRunId === runKey) return state.plotBrowserPayload;
+    const payload = await fetch(`/api/run/${encodeURIComponent(runId)}/plots-browser`, {cache:'no-store'})
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+    if (String(selectedRunId() || '') !== runKey) return payload;
+    state.plotBrowserRunId = runKey;
+    state.plotBrowserPayload = payload || {items: [], raw_items: [], interactive_count: 0, image_count: 0, total_count: 0, unavailable_count: 0, suppressed_raw_count: 0, mode: 'canonical_reference_gallery'};
+    state.plotBrowserChartCache = {};
+    if (state.page === 'plots') renderPlotBrowser();
+    return state.plotBrowserPayload;
+  }
+  async function loadPlotBrowserChart(artifactId) {
+    const key = String(artifactId || '');
+    if (!key) return null;
+    if (state.plotBrowserChartCache && state.plotBrowserChartCache[key]) return state.plotBrowserChartCache[key];
+    const payload = await fetch(`/api/artifact/${encodeURIComponent(artifactId)}/chart`, {cache:'no-store'})
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+    if (payload) state.plotBrowserChartCache[key] = payload;
+    return payload;
+  }
+  async function loadTableBrowserPayload() {
+    const runId = selectedRunId();
+    if (!runId) {
+      state.tableBrowserRunId = '';
+      state.tableBrowserPayload = {items: [], table_count: 0};
+      return state.tableBrowserPayload;
+    }
+    const runKey = String(runId);
+    if (state.tableBrowserPayload && state.tableBrowserRunId === runKey) return state.tableBrowserPayload;
+    const payload = await fetch(`/api/run/${encodeURIComponent(runId)}/tables-browser`, {cache:'no-store'})
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+    if (String(selectedRunId() || '') !== runKey) return payload;
+    state.tableBrowserRunId = runKey;
+    state.tableBrowserPayload = payload || {items: [], table_count: 0};
+    if (state.page === 'tables') renderTableBrowser();
+    return state.tableBrowserPayload;
+  }
+  function mountInteractiveImageViewer(hostId, selected) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const stageId = `${hostId}_stage`;
+    const imgId = `${hostId}_img`;
+    const openUrl = selected.view_url || selected.download_url || '#';
+    const downloadUrl = selected.download_url || selected.view_url || '#';
+    host.innerHTML = `<article class="interactive-image-shell"><div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(selected.label || 'Image')}</h4><p class="mini-note">${esc(selected.sourceKind || 'image artifact')}: ${esc(selected.source || '')}</p><p class="mini-note">artifact_id=${esc(selected.artifact_id || '')}. Drag to pan, wheel to zoom.</p></div><div class="toolbar" style="margin-bottom:0;"><button type="button" id="${stageId}_zoomIn">Zoom In</button><button type="button" id="${stageId}_zoomOut">Zoom Out</button><button type="button" id="${stageId}_fit">Fit</button><button type="button" id="${stageId}_actual">1:1</button><button type="button" id="${stageId}_full">Fullscreen</button><a class="button-link secondary" href="${esc(openUrl)}" target="_blank" rel="noopener noreferrer">Open</a><a class="button-link secondary" href="${esc(downloadUrl)}">Download</a></div></div><div id="${stageId}" class="interactive-image-stage"><img id="${imgId}" loading="lazy" decoding="async" src="${esc(openUrl)}" alt="${esc(selected.label || 'plot image')}"></div></article>`;
+    const stage = document.getElementById(stageId);
+    const img = document.getElementById(imgId);
+    if (!stage || !img) return;
+    let fitScale = 1;
+    let scale = 1;
+    let tx = 0;
+    let ty = 0;
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startTx = 0;
+    let startTy = 0;
+    const applyTransform = () => {
+      img.style.transform = `translate(-50%, -50%) translate(${tx}px, ${ty}px) scale(${scale})`;
+    };
+    const resetToFit = () => {
+      scale = fitScale;
+      tx = 0;
+      ty = 0;
+      applyTransform();
+    };
+    const recomputeFitScale = () => {
+      const naturalWidth = Number(img.naturalWidth || 0);
+      const naturalHeight = Number(img.naturalHeight || 0);
+      const stageWidth = Number(stage.clientWidth || 0);
+      const stageHeight = Number(stage.clientHeight || 0);
+      if (!naturalWidth || !naturalHeight || !stageWidth || !stageHeight) return;
+      fitScale = Math.min(stageWidth / naturalWidth, stageHeight / naturalHeight) || 1;
+      if (!Number.isFinite(scale) || scale <= 0) scale = fitScale;
+      if (scale < fitScale) scale = fitScale;
+      applyTransform();
+    };
+    const zoomBy = (factor) => {
+      const next = Math.max(fitScale * 0.5, Math.min((scale || fitScale) * factor, Math.max(fitScale * 24, 24)));
+      scale = next;
+      applyTransform();
+    };
+    img.addEventListener('load', () => {
+      recomputeFitScale();
+      resetToFit();
+    });
+    if (img.complete) {
+      recomputeFitScale();
+      resetToFit();
+    }
+    stage.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      zoomBy(event.deltaY < 0 ? 1.12 : (1 / 1.12));
+    }, {passive: false});
+    stage.addEventListener('pointerdown', (event) => {
+      dragging = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      startTx = tx;
+      startTy = ty;
+      stage.classList.add('dragging');
+      if (stage.setPointerCapture) stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      tx = startTx + (event.clientX - startX);
+      ty = startTy + (event.clientY - startY);
+      applyTransform();
+    });
+    const stopDrag = (event) => {
+      dragging = false;
+      stage.classList.remove('dragging');
+      if (event && stage.releasePointerCapture) {
+        try { stage.releasePointerCapture(event.pointerId); } catch (err) {}
+      }
+    };
+    stage.addEventListener('pointerup', stopDrag);
+    stage.addEventListener('pointercancel', stopDrag);
+    stage.addEventListener('dblclick', () => {
+      if (Math.abs(scale - fitScale) < 0.001) {
+        scale = 1;
+        tx = 0;
+        ty = 0;
+        applyTransform();
+      } else {
+        resetToFit();
+      }
+    });
+    const zoomInBtn = document.getElementById(`${stageId}_zoomIn`);
+    const zoomOutBtn = document.getElementById(`${stageId}_zoomOut`);
+    const fitBtn = document.getElementById(`${stageId}_fit`);
+    const actualBtn = document.getElementById(`${stageId}_actual`);
+    const fullBtn = document.getElementById(`${stageId}_full`);
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomBy(1.2));
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomBy(1 / 1.2));
+    if (fitBtn) fitBtn.addEventListener('click', () => resetToFit());
+    if (actualBtn) actualBtn.addEventListener('click', () => {
+      scale = 1;
+      tx = 0;
+      ty = 0;
+      applyTransform();
+    });
+    if (fullBtn) fullBtn.addEventListener('click', () => {
+      if (stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
+    });
+    window.setTimeout(recomputeFitScale, 0);
+  }
+  function buildPlotBrowserItems() {
+    const payload = state.plotBrowserPayload || {};
+    if (state.plotBrowserCatalogMode === 'all') {
+      return Array.isArray(payload.raw_items) ? payload.raw_items : [];
+    }
+    return Array.isArray(payload.items) ? payload.items : [];
+  }
+  function renderPlotBrowser() {
+    const items = buildPlotBrowserItems();
+    const select = document.getElementById('plotBrowserSelect');
+    const catalogSelect = document.getElementById('plotBrowserCatalogSelect');
+    const stats = document.getElementById('plotBrowserStats');
+    const viewer = document.getElementById('plotBrowserViewer');
+    if (!select || !catalogSelect || !stats || !viewer) return;
+    if (!state.plotBrowserPayload || state.plotBrowserRunId !== String(selectedRunId() || '')) {
+      select.innerHTML = '<option value="">Loading plots...</option>';
+      stats.textContent = '';
+      viewer.innerHTML = '<div class="chart-empty">Loading truthful plot artifacts from the database...</div>';
+      loadPlotBrowserPayload();
+      return;
+    }
+    if (!items.length) {
+      select.innerHTML = '<option value="">No plots available</option>';
+      stats.textContent = '';
+      viewer.innerHTML = '<div class="chart-empty">No truthful chart, graph, or image artifacts were published for the selected run.</div>';
+      return;
+    }
+    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Canonical Families</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>All Published Artifacts</option>`;
+    if (!state.plotBrowserId || !items.some(item => item.id === state.plotBrowserId)) {
+      const firstAvailable = items.find(item => item.kind === 'interactive' || item.kind === 'image');
+      state.plotBrowserId = String((firstAvailable || items[0] || {}).id || '');
+    }
+    select.innerHTML = items.map(item => {
+      const modeLabel = item.kind === 'interactive' ? 'Plotly' : (item.kind === 'image' ? 'Zoom/Pan' : 'Unavailable');
+      return `<option value="${esc(item.id)}"${String(item.id) === String(state.plotBrowserId) ? ' selected' : ''}>${esc(item.label)} [${esc(modeLabel)}]</option>`;
+    }).join('');
+    const selected = items.find(item => String(item.id) === String(state.plotBrowserId)) || items[0];
+    const interactiveCount = Number((state.plotBrowserPayload || {}).interactive_count || items.filter(item => item.kind === 'interactive').length);
+    const imageCount = Number((state.plotBrowserPayload || {}).image_count || items.filter(item => item.kind === 'image').length);
+    const unavailableCount = Number((state.plotBrowserPayload || {}).unavailable_count || 0);
+    const suppressedRawCount = Number((state.plotBrowserPayload || {}).suppressed_raw_count || 0);
+    const rawTotalCount = Number((state.plotBrowserPayload || {}).raw_total_count || items.length);
+    const rawInteractiveCount = Number((state.plotBrowserPayload || {}).raw_interactive_count || items.filter(item => item.kind === 'interactive').length);
+    const rawImageCount = Number((state.plotBrowserPayload || {}).raw_image_count || items.filter(item => item.kind === 'image').length);
+    const payloadMode = String((state.plotBrowserPayload || {}).mode || '');
+    stats.textContent = state.plotBrowserCatalogMode === 'all'
+      ? `${rawInteractiveCount} Plotly artifacts, ${rawImageCount} zoom/pan artifacts, ${rawTotalCount} total published artifacts`
+      : (payloadMode === 'canonical_reference_gallery'
+        ? `${interactiveCount} Plotly families, ${imageCount} zoom/pan families, ${items.length} canonical plot families${unavailableCount ? `, ${unavailableCount} not published for this run` : ''}${suppressedRawCount ? `, ${suppressedRawCount} raw duplicates hidden` : ''}`
+        : `${interactiveCount} Plotly charts, ${imageCount} zoom/pan images, ${items.length} total interactive truthful plot items`);
+    if (selected.kind === 'interactive') {
+      const cachedChart = ((state.plotBrowserChartCache || {})[String(selected.artifact_id || '')]) || null;
+      if (!cachedChart) {
+        viewer.innerHTML = '<div class="chart-empty">Loading truthful interactive chart from the database...</div>';
+        loadPlotBrowserChart(selected.artifact_id).then(() => {
+          if (state.page === 'plots' && String(state.plotBrowserId) === String(selected.id)) renderPlotBrowser();
+        });
+        return;
+      }
+      drawPublishedAnalyticsChart('plotBrowserViewer', cachedChart, {height: plotBrowserViewerHeight()});
+      const header = document.createElement('div');
+      header.className = 'toolbar';
+      header.style.justifyContent = 'space-between';
+      header.style.marginBottom = '10px';
+      header.innerHTML = `<span class="mini-note">${esc(selected.sourceKind || 'interactive chart')}: ${esc(selected.source || '')}</span><span class="mini-note">artifact_id=${esc(selected.artifact_id || '')}</span>`;
+      viewer.prepend(header);
+      return;
+    }
+    if (selected.kind === 'unavailable') {
+      viewer.innerHTML = `<div class="chart-empty"><strong>${esc(selected.label || 'Plot family unavailable')}</strong><br>${esc(selected.reason || 'No truthful chart or image artifact was published for this family in the selected run.')}</div>`;
+      return;
+    }
+    mountInteractiveImageViewer('plotBrowserViewer', selected);
+  }
+  function plotsPage() {
+    title('Plots', 'Truth-backed chart, graph, and image viewer for the selected run.');
+    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical Families gives the cleaned-up semantic plot view. All Published Artifacts exposes every persisted chart/image from the selected run. Table-backed families use Plotly; image-only families use zoom, pan, fit, and fullscreen controls.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Chart / Graph / Image<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
+    renderPlotBrowser();
+  }
+  function buildTableBrowserItems() {
+    return Array.isArray((state.tableBrowserPayload || {}).items) ? (state.tableBrowserPayload || {}).items : [];
+  }
+  function renderTableBrowser() {
+    const items = buildTableBrowserItems();
+    const select = document.getElementById('tableBrowserSelect');
+    const stats = document.getElementById('tableBrowserStats');
+    const viewer = document.getElementById('tableBrowserViewer');
+    if (!select || !stats || !viewer) return;
+    if (!state.tableBrowserPayload || state.tableBrowserRunId !== String(selectedRunId() || '')) {
+      select.innerHTML = '<option value="">Loading tables...</option>';
+      stats.textContent = '';
+      viewer.innerHTML = '<div class="chart-empty">Loading truthful table artifacts from the database...</div>';
+      loadTableBrowserPayload();
+      return;
+    }
+    if (!items.length) {
+      select.innerHTML = '<option value="">No tables available</option>';
+      stats.textContent = '';
+      viewer.innerHTML = '<div class="chart-empty">No truthful table artifacts were published for the selected run.</div>';
+      return;
+    }
+    if (!state.tableBrowserId || !items.some(item => String(item.artifact_id) === String(state.tableBrowserId))) {
+      state.tableBrowserId = String((items[0] || {}).artifact_id || '');
+    }
+    select.innerHTML = items.map(item => `<option value="${esc(item.artifact_id)}"${String(item.artifact_id) === String(state.tableBrowserId) ? ' selected' : ''}>${esc(prettyArtifactLabel(item.logical_path || ''))} [${esc(item.logical_path || '')}]</option>`).join('');
+    const selected = items.find(item => String(item.artifact_id) === String(state.tableBrowserId)) || items[0];
+    stats.textContent = `${Number((state.tableBrowserPayload || {}).table_count || items.length)} total truthful tables`;
+    viewer.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(prettyArtifactLabel(selected.logical_path || ''))}</h4><p class="mini-note">${esc(selected.logical_path || '')}</p></div><div><a class="button-link secondary" href="${esc(selected.view_url || selected.download_url || '#')}" target="_blank" rel="noopener noreferrer">Open</a> <a class="button-link secondary" href="${esc(selected.download_url || selected.view_url || '#')}">Download CSV</a></div></div><iframe src="${esc(selected.view_url || '#')}" title="${esc(selected.logical_path || 'table preview')}" style="width:100%;height:min(78vh,920px);border:1px solid var(--line);border-radius:8px;background:#fff;"></iframe>`;
+  }
+  function tablesPage() {
+    title('Tables', 'Truth-backed table viewer for the selected run.');
+    main.innerHTML = `<section class="panel"><h3>Tables</h3>${pageRunSelector('tablesRunSelect', 'Selected Run', {runningOnly: false, note: 'The dropdown lists every real persisted table artifact from the selected run. The viewer below shows the canonical table preview for the selected artifact only.'})}<div class="toolbar"><label>Table<select id="tableBrowserSelect"></select></label><span id="tableBrowserStats" class="mini-note"></span></div><div id="tableBrowserViewer"></div></section>`;
+    renderTableBrowser();
+  }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from MySQL. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
   function parameters() { title('Parameter Catalog', 'Browser, YAML, resolved, applied, measured, source, owner, and role columns.'); const fs = state.fields; if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}${unavailable('Parameter catalog is loading from the selected scenario config and resolved field list. The page will populate automatically once both payloads arrive.')}</section>`; return; } main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}<p class="subtle">${fs.length} exposed parameters loaded from the resolved/browser config.</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${fs.map(f => `<tr><td><strong>${esc(f.label)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('')}</tbody></table></div></section>`; }
-  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/artifacts?run_id=${id}">Show Output</a><a class="button-link" href="/artifacts?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
+  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/plots?run_id=${id}">View Plots</a><a class="button-link" href="/tables?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
   function runsTable(runList, empty, next, scrollKey) { const runRows = (runList || []).map(r => `<tr><td><strong>${esc(r.run_id)}</strong></td><td>${esc(r.run_tag || '')}<br><span class="small">${esc(r.scenario_id || r.scenario_name || '')}</span></td><td>${esc(r.profile_name || '')}</td><td>${esc(r.status_text || '')}</td><td>${esc(r.created_utc || '')}</td><td>${esc(r.updated_utc || '')}</td><td>${runActions(r, next)}</td></tr>`).join(''); return scrollWrap(`<table><thead><tr><th>Run</th><th>Tag / Scenario</th><th>Profile</th><th>Status</th><th>Created</th><th>Updated</th><th>Options</th></tr></thead><tbody>${runRows || `<tr><td colspan="7">${unavailable(empty)}</td></tr>`}</tbody></table>`, {className:'page-table', scrollKey: scrollKey || 'runs-table'}); }
-  function runsPage() { title('Recent Runs', 'Recent MySQL-backed runs with output, table, compare, and delete actions.'); const recent = (state.runs || []).slice(0,25); main.innerHTML = `<section class="panel"><h3>Recent Runs</h3><p class="subtle">${recent.length} recent run records shown. Open Previous Runs to browse the full loaded run list.</p><div class="toolbar"><a class="button-link" href="/previous-runs">Previous Runs</a><a class="button-link" href="/compare">Compare Runs</a></div><div id="recentRunsTable">${runsTable(recent, 'No recent runs are available from MySQL.', '/runs', 'recent-runs-table')}</div></section>`; }
-  function previousRunsPage() { title('Previous Runs', 'Browse previous runs, view all canonical tables, delete a run and its files, or stage runs for comparison.'); const allRuns = state.runs || []; main.innerHTML = `<section class="panel"><h3>Previous Runs</h3><p class="subtle">${allRuns.length} run records loaded from MySQL. Show Output and View Tables open canonical DB-backed artifact lists for the selected run.</p><div class="toolbar"><a class="button-link" href="/runs">Recent Runs</a><a class="button-link" href="/compare">Compare Runs</a></div><div id="previousRunsTable">${runsTable(allRuns, 'No previous runs are available from MySQL.', '/previous-runs', 'previous-runs-table')}</div></section>`; }
+  function runsPage() { title('Runs', 'MySQL-backed runs with plot, table, compare, and delete actions.'); const allRuns = state.runs || []; main.innerHTML = `<section class="panel"><h3>Runs</h3><p class="subtle">${allRuns.length} run records loaded from MySQL. Use Plots or Tables to open a dedicated viewer for any selected run.</p><div class="toolbar"><a class="button-link" href="/plots">Plots</a><a class="button-link" href="/tables">Tables</a><a class="button-link" href="/compare">Compare Runs</a></div><div id="recentRunsTable">${runsTable(allRuns, 'No runs are available from MySQL.', '/runs', 'recent-runs-table')}</div></section>`; }
+  function previousRunsPage() { runsPage(); }
   function compareOptions(selected) { return `<option value="">Select run</option>${(state.runs || []).map(r => `<option value="${esc(r.run_id)}"${String(r.run_id) === String(selected) ? ' selected' : ''}>Run ${esc(r.run_id)} - ${esc(r.run_tag || r.scenario_id || r.status_text || '')}</option>`).join('')}`; }
   function compareMetricRows() { const a = state.compareBaselineLive; const b = state.compareCandidateLive; if (!a || !b) return `<tr><td colspan="4">${state.compareLoading ? 'Loading canonical live payloads...' : 'Select baseline and candidate, then click Compare.'}</td></tr>`; const specs = [['Status','run.status_text'],['ResultOk','summary.result_ok'],['RequiredFailureCount','summary.required_failure_count'],['RuntimeTruthContractOk','summary.runtime_truth_contract_ok'],['Configured UEs','summary.configured_users'],['Artifacts','counts.artifacts_total'],['Tables','counts.tables_total'],['Images','counts.images_total'],['Logs','counts.logs_total'],['Bytes','counts.bytes_total']]; return specs.map(([label,path]) => { const av = get(a, path, 'unavailable'); const bv = get(b, path, 'unavailable'); const na = Number(av); const nb = Number(bv); const delta = Number.isFinite(na) && Number.isFinite(nb) ? (nb - na) : (String(av) === String(bv) ? 'same' : 'changed'); return `<tr><td>${esc(label)}</td><td>${esc(text(av))}</td><td>${esc(text(bv))}</td><td>${esc(text(delta))}</td></tr>`; }).join(''); }
   function refreshRunsSurfaces() {
@@ -10263,9 +12103,9 @@ window.addEventListener('DOMContentLoaded', function () {
     const homeBox = document.getElementById('homeRecentRuns');
     if (homeBox) homeBox.innerHTML = rows((state.runs || []).slice(0,10), 'No recent runs are available from MySQL.', {className:'page-table', scrollKey:'home-recent-runs'});
     const recentBox = document.getElementById('recentRunsTable');
-    if (recentBox) recentBox.innerHTML = runsTable((state.runs || []).slice(0,25), 'No recent runs are available from MySQL.', '/runs', 'recent-runs-table');
+    if (recentBox) recentBox.innerHTML = runsTable(state.runs || [], 'No runs are available from MySQL.', '/runs', 'recent-runs-table');
     const previousBox = document.getElementById('previousRunsTable');
-    if (previousBox) previousBox.innerHTML = runsTable(state.runs || [], 'No previous runs are available from MySQL.', '/previous-runs', 'previous-runs-table');
+    if (previousBox) previousBox.innerHTML = runsTable(state.runs || [], 'No runs are available from MySQL.', '/runs', 'previous-runs-table');
     document.querySelectorAll('[data-run-selector="true"]').forEach(select => {
       const selected = selectorState.get(select.id) || select.value || selectedRunId();
       const runningOnly = select.id === 'realtimeRunSelect';
@@ -10275,12 +12115,12 @@ window.addEventListener('DOMContentLoaded', function () {
     restoreScrollState(scrollSnapshot);
   }
   function loadComparePayloads() { if (!state.compareBaseline || !state.compareCandidate) { compare(); return; } state.compareLoading = true; compare(); Promise.all([fetch(`/api/run/${encodeURIComponent(state.compareBaseline)}/live`, {cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null), fetch(`/api/run/${encodeURIComponent(state.compareCandidate)}/live`, {cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null)]).then(([a,b]) => { state.compareBaselineLive = a; state.compareCandidateLive = b; state.compareLoading = false; state.page = 'compare'; render({preserveScroll:true}); }); }
-  function compare() { title('Compare Runs', 'Baseline and candidate delta analysis from canonical live payloads and artifact counts.'); const a = state.compareBaselineLive; const b = state.compareCandidateLive; main.innerHTML = `<section class="panel"><h3>Compare Runs</h3><p class="subtle">Use Add Baseline / Add Candidate from Previous Runs, or select runs here. Comparison fetches /api/run/&lt;id&gt;/live for both runs.</p><div class="toolbar"><label>Baseline<select id="compareBaselineSelect">${compareOptions(state.compareBaseline)}</select></label><label>Candidate<select id="compareCandidateSelect">${compareOptions(state.compareCandidate)}</select></label><button type="button" id="compareRunsBtn">Compare</button><a class="button-link" href="/previous-runs">Previous Runs</a></div>${scrollWrap(`<table><thead><tr><th>Metric</th><th>Baseline</th><th>Candidate</th><th>Delta</th></tr></thead><tbody>${compareMetricRows()}</tbody></table>`, {className:'page-table', scrollKey:'compare-metrics'})}</section><section class="panel"><h3>Compared Outputs</h3><div class="split"><div><h4>Baseline ${esc(state.compareBaseline || '')}</h4>${a ? artifactTable((a.tables_all || []).slice(0,50), 'No baseline canonical tables are available.') : unavailable('Baseline payload has not been loaded.')}</div><div><h4>Candidate ${esc(state.compareCandidate || '')}</h4>${b ? artifactTable((b.tables_all || []).slice(0,50), 'No candidate canonical tables are available.') : unavailable('Candidate payload has not been loaded.')}</div></div></section>`; }
+  function compare() { title('Compare Runs', 'Baseline and candidate delta analysis from canonical live payloads and artifact counts.'); const a = state.compareBaselineLive; const b = state.compareCandidateLive; main.innerHTML = `<section class="panel"><h3>Compare Runs</h3><p class="subtle">Use Add Baseline / Add Candidate from Runs, or select runs here. Comparison fetches /api/run/&lt;id&gt;/live for both runs.</p><div class="toolbar"><label>Baseline<select id="compareBaselineSelect">${compareOptions(state.compareBaseline)}</select></label><label>Candidate<select id="compareCandidateSelect">${compareOptions(state.compareCandidate)}</select></label><button type="button" id="compareRunsBtn">Compare</button><a class="button-link" href="/runs">Runs</a></div>${scrollWrap(`<table><thead><tr><th>Metric</th><th>Baseline</th><th>Candidate</th><th>Delta</th></tr></thead><tbody>${compareMetricRows()}</tbody></table>`, {className:'page-table', scrollKey:'compare-metrics'})}</section><section class="panel"><h3>Compared Outputs</h3><div class="split"><div><h4>Baseline ${esc(state.compareBaseline || '')}</h4>${a ? artifactTable((a.tables_all || []).slice(0,50), 'No baseline canonical tables are available.') : unavailable('Baseline payload has not been loaded.')}</div><div><h4>Candidate ${esc(state.compareCandidate || '')}</h4>${b ? artifactTable((b.tables_all || []).slice(0,50), 'No candidate canonical tables are available.') : unavailable('Candidate payload has not been loaded.')}</div></div></section>`; }
   function mergeLivePayload(previous, incoming) {
     if (!previous) return incoming;
     if (!incoming) return previous;
     const merged = { ...previous, ...incoming };
-    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'debug'];
+    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug'];
     stickyKeys.forEach((key) => {
       if (incoming[key] === undefined) merged[key] = previous[key];
     });
@@ -10335,7 +12175,7 @@ window.addEventListener('DOMContentLoaded', function () {
     state.sectionEvidenceVersion = `${payload.kind || ''}|${payload.slug || ''}|${payload.artifact_version || ''}`;
     return payload;
   }
-  function render(options) { const opts = options || {}; const scrollSnapshot = opts.preserveScroll ? captureScrollState() : null; chrome(); if (state.page === 'home' || state.page === 'architecture') home(); else if (state.page === 'reports') reports(); else if (state.page === 'runs') runsPage(); else if (state.page === 'previous_runs') previousRunsPage(); else if (state.page === 'geometry') geometry(); else if (state.page === 'l1_phy') l1(); else if (state.page === 'realtime') realtime(); else if (state.page === 'analytics') analytics(); else if (state.page === 'artifacts') artifacts(); else if (state.page === 'parameters') parameters(); else if (state.page === 'compare') compare(); else domain(state.page); renderBlock(state.selectedBlock); if (scrollSnapshot) restoreScrollState(scrollSnapshot); else window.requestAnimationFrame(() => window.scrollTo(0, 0)); }
+  function render(options) { const opts = options || {}; const scrollSnapshot = opts.preserveScroll ? captureScrollState() : null; chrome(); if (state.page === 'home' || state.page === 'architecture') home(); else if (state.page === 'reports') reports(); else if (state.page === 'runs' || state.page === 'previous_runs') runsPage(); else if (state.page === 'plots') plotsPage(); else if (state.page === 'tables') tablesPage(); else if (state.page === 'geometry') geometry(); else if (state.page === 'l1_phy') l1(); else if (state.page === 'realtime') realtime(); else if (state.page === 'analytics') analytics(); else if (state.page === 'artifacts') artifacts(); else if (state.page === 'parameters') parameters(); else if (state.page === 'compare') compare(); else domain(state.page); renderBlock(state.selectedBlock); if (scrollSnapshot) restoreScrollState(scrollSnapshot); else window.requestAnimationFrame(() => window.scrollTo(0, 0)); }
   function refreshRunsList(shouldRender) {
     return fetch('/api/runs?limit=200', {cache:'no-store'})
       .then(r => r.ok ? r.json() : {runs:[]})
@@ -10348,7 +12188,7 @@ window.addEventListener('DOMContentLoaded', function () {
         state.runsDigest = nextDigest;
         if (shouldRender && changed && !interactionLocked()) {
           if (state.page === 'compare') compare();
-          else if (document.querySelector('[data-run-selector="true"]') || ['home','runs','previous_runs'].includes(state.page)) refreshRunsSurfaces();
+          else if (document.querySelector('[data-run-selector="true"]') || ['home','runs','plots','tables'].includes(state.page)) refreshRunsSurfaces();
         }
         return state.runs;
       });
@@ -10417,6 +12257,9 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'analyticsUEScopeSelect') { state.analyticsExplorer.scope = target.value || 'all_configured_ues'; refreshAnalyticsExplorerUI(); return; }
     if (target.id === 'analyticsUESelect') { state.analyticsExplorer.selectedUE = target.value || ''; refreshAnalyticsExplorerUI(); return; }
     if (target.id === 'analyticsDirectionSelect') { state.analyticsExplorer.direction = target.value || 'all'; refreshAnalyticsExplorerUI(); return; }
+    if (target.id === 'plotBrowserCatalogSelect') { state.plotBrowserCatalogMode = target.value || 'canonical'; state.plotBrowserId = ''; renderPlotBrowser(); return; }
+    if (target.id === 'plotBrowserSelect') { state.plotBrowserId = target.value || ''; renderPlotBrowser(); return; }
+    if (target.id === 'tableBrowserSelect') { state.tableBrowserId = target.value || ''; renderTableBrowser(); return; }
     if (target.closest('[data-contract-col]')) { applyContractControls(); return; }
     const i = target.closest('[data-config-input]');
     if (i) { set(state.config, i.dataset.path, parseValue(i)); updateRunPayload(); }
@@ -11089,7 +12932,7 @@ function mergeResultPayload(previous, incoming) {{
   if (!previous) return incoming;
   if (!incoming) return previous;
   const merged = {{ ...previous, ...incoming }};
-  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'debug'];
+  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug'];
   stickyKeys.forEach((key) => {{
     if (incoming[key] === undefined) merged[key] = previous[key];
   }});
@@ -11280,7 +13123,7 @@ function renderRuntimeContext(runtimeContext) {{
   }});
   const snapshotLinks = [];
   const downloads = configSnapshot.downloads || {{}};
-  [['resolved_json','Resolved JSON'], ['resolved_yaml','Resolved YAML'], ['source_chain','Source Chain'], ['config_roundtrip_verification','Roundtrip CSV'], ['browser_runtime_db_consistency','Browser/DB CSV'], ['summary_vs_raw_consistency','Summary/Raw CSV'], ['value_source_audit','Value Source CSV']].forEach(([key, label]) => {{
+  [['resolved_json','Resolved JSON'], ['resolved_yaml','Resolved YAML'], ['source_chain','Source Chain'], ['config_roundtrip_verification','Roundtrip CSV'], ['browser_runtime_db_consistency','Browser/DB CSV'], ['summary_vs_raw_consistency','Summary/Raw CSV'], ['value_source_audit','Value Source CSV'], ['parameter_binding_matrix','Binding Matrix CSV'], ['browser_config_surface_matrix','Browser Surface CSV'], ['runtime_config_application_evidence','Runtime Applied Evidence CSV'], ['feature_parameter_index','Feature Index CSV'], ['config_status_summary','Config Status Summary CSV'], ['ui_feature_filter_audit','UI Feature Filter Audit CSV']].forEach(([key, label]) => {{
     const item = downloads[key];
     if (item && (item.view_url || item.download_url)) {{
       snapshotLinks.push(`<a class="button-link secondary" href="${{resultEsc(item.view_url || item.download_url)}}">${{resultEsc(label)}}</a>`);
@@ -12010,7 +13853,7 @@ function mergeAnalyticsPayload(previous, incoming) {{
   if (!previous) return incoming;
   if (!incoming) return previous;
   const merged = {{ ...previous, ...incoming }};
-  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'debug'];
+  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug'];
   stickyKeys.forEach((key) => {{
     if (incoming[key] === undefined) merged[key] = previous[key];
   }});
@@ -12693,7 +14536,7 @@ async function applyAnalyticsData(data) {{
   }});
   const snapshotLinks = [];
   const downloads = configSnapshot.downloads || {{}};
-  [['resolved_json','Resolved JSON'], ['resolved_yaml','Resolved YAML'], ['source_chain','Source Chain'], ['config_roundtrip_verification','Roundtrip CSV'], ['browser_runtime_db_consistency','Browser/DB CSV'], ['summary_vs_raw_consistency','Summary/Raw CSV'], ['value_source_audit','Value Source CSV']].forEach(([key, label]) => {{
+  [['resolved_json','Resolved JSON'], ['resolved_yaml','Resolved YAML'], ['source_chain','Source Chain'], ['config_roundtrip_verification','Roundtrip CSV'], ['browser_runtime_db_consistency','Browser/DB CSV'], ['summary_vs_raw_consistency','Summary/Raw CSV'], ['value_source_audit','Value Source CSV'], ['parameter_binding_matrix','Binding Matrix CSV'], ['browser_config_surface_matrix','Browser Surface CSV'], ['runtime_config_application_evidence','Runtime Applied Evidence CSV'], ['feature_parameter_index','Feature Index CSV'], ['config_status_summary','Config Status Summary CSV'], ['ui_feature_filter_audit','UI Feature Filter Audit CSV']].forEach(([key, label]) => {{
     const item = downloads[key];
     if (item && (item.view_url || item.download_url)) {{
       snapshotLinks.push(`<a class="button-link secondary" href="${{esc(item.view_url || item.download_url)}}">${{esc(label)}}</a>`);
@@ -12764,6 +14607,7 @@ async function applyAnalyticsData(data) {{
     ? ((data.images_all || []).length ? (data.images_all || []) : (data.images_recent || []))
     : (data.images_recent || []);
   renderAnalyticsOverviewImages(preferredImages);
+  renderReferencePlotGallery();
   document.getElementById('tableList').innerHTML = preferredTables.map((item) => `<tr><td><a href="${{esc(item.view_url)}}">${{esc(item.logical_path)}}</a></td><td>${{esc(fmt(item.byte_size))}}</td><td><a href="${{esc(item.download_url)}}">Download CSV</a></td></tr>`).join('') || '<tr><td colspan="3">No tables yet.</td></tr>';
   const nextImageSignature = analyticsArtifactSignature(preferredImages);
   if (nextImageSignature !== ANALYTICS_IMAGE_SIGNATURE) {{
@@ -13714,6 +15558,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 lite = params.get("lite", ["0"])[0] in {"1", "true", "yes"}
                 self.respond_json(build_live_payload(run_id, lite=lite))
                 return
+            if parsed.path.startswith("/api/run/") and parsed.path.endswith("/plots-browser"):
+                run_id = int(parsed.path.split("/")[3])
+                self.respond_json(build_plot_browser_payload(run_id))
+                return
+            if parsed.path.startswith("/api/run/") and parsed.path.endswith("/tables-browser"):
+                run_id = int(parsed.path.split("/")[3])
+                self.respond_json(build_table_browser_payload(run_id))
+                return
             if parsed.path.startswith("/api/run/") and parsed.path.endswith("/contract-section"):
                 run_id = int(parsed.path.split("/")[3])
                 kind = params.get("kind", ["analytics"])[0]
@@ -13735,6 +15587,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise KeyError(f"Artifact {artifact_id} was not found.")
                 header, rows = load_cached_csv_preview(int(artifact_id), MAX_TABLE_PREVIEW_ROWS)
                 self.respond_json({"meta": meta, "header": header, "rows": rows})
+                return
+            if parsed.path.startswith("/api/artifact/") and parsed.path.endswith("/chart"):
+                artifact_id = int(parsed.path.split("/")[3])
+                chart = build_chart_payload_for_artifact(artifact_id)
+                if chart is None:
+                    raise KeyError(f"Artifact {artifact_id} does not expose a truthful numeric chart.")
+                self.respond_json(chart)
                 return
             self.respond_error(HTTPStatus.NOT_FOUND, "Unknown route.")
         except KeyError as exc:

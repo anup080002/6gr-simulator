@@ -30,6 +30,9 @@ cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.cp_type", "frame
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.sample_rate_hz", "waveform.sample_rate_hz", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.fft_size", "waveform.fft_size", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.tdd_pattern", "frame.tdd_pattern", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.special_slot_downlink_symbols", "frame.special_slot_downlink_symbols", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.ul_dl_guard_symbols", "frame.ul_dl_guard_symbols", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.special_slot_uplink_symbols", "frame.special_slot_uplink_symbols", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "deployment_topology.num_ues", "users.n_users", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "mobility.ue_speed_kmh", "channels.mobility_kmph", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "mobility.spatial_consistency_flag", "channels.spatial_consistency_enabled", "identity");
@@ -107,11 +110,36 @@ prov = struct();
 prov.source_files = cellstr(sourceFiles);
 prov.config_path = char(configPath);
 prov.resolved_at_loader = true;
+prov.source_kind = char(localInferSourceKind(configPath, sourceFiles));
 cfg = sixgr.util.structSet(cfg, "config_inheritance.parents", cellstr(parents));
 cfg = sixgr.util.structSet(cfg, "config_inheritance.merge_policy", "deep_merge_last_writer_wins");
 cfg = sixgr.util.structSet(cfg, "config_inheritance.locked_fields", cell(0,1));
 cfg = sixgr.util.structSet(cfg, "config_inheritance.overridden_fields", cell(0,1));
 cfg = sixgr.util.structSet(cfg, "config_inheritance.provenance", prov);
+end
+
+function kind = localInferSourceKind(configPath, sourceFiles)
+kind = "scenario_config_file";
+if localIsBrowserOverlayPath(configPath)
+    kind = "browser_runtime_overlay";
+    return;
+end
+for i = 1:numel(sourceFiles)
+    if localIsBrowserOverlayPath(sourceFiles(i))
+        kind = "browser_runtime_overlay";
+        return;
+    end
+end
+end
+
+function tf = localIsBrowserOverlayPath(candidate)
+candidate = string(candidate);
+tf = false;
+if strlength(candidate) == 0
+    return;
+end
+[~, name, ext] = fileparts(char(candidate));
+tf = startsWith(string(name), "__web_runtime_", "IgnoreCase", true) && any(strcmpi(string(ext), [".yaml",".yml",".json"]));
 end
 
 function cfg = localSyncNestedFlag(cfg, newBase, oldBase, newPath, oldPath)

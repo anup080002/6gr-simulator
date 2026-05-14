@@ -9,6 +9,8 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
 
+DEFAULT_WAVEFORM_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
+
 
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
 VARIANT_ROOT = SCENARIO_ROOT / "variants"
@@ -31,14 +33,14 @@ def main() -> None:
         path = VARIANT_ROOT / name
         assert path.is_file(), f"Missing scenario variant YAML: {path}"
 
-    assert dash.DEFAULT_SCENARIO == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml", (
-        "Browser default scenario must point at the locked 4 GHz / 100 MHz / 50 UE / 14 slot waveform scenario."
+    assert dash.DEFAULT_SCENARIO == DEFAULT_WAVEFORM_SCENARIO, (
+        "Browser default scenario must point at the locked 4 GHz / 100 MHz / 19 site / 57 cell / 570 UE / 60 slot waveform scenario."
     )
 
     baseline, chain = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     assert chain, "Resolved baseline scenario should retain a non-empty source chain."
-    assert str(dash.path_get(baseline, "meta.scenario_group", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot"
-    assert str(dash.path_get(baseline, "meta.scenario_id", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot"
+    assert str(dash.path_get(baseline, "meta.scenario_group", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot"
+    assert str(dash.path_get(baseline, "meta.scenario_id", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot"
     assert int(dash.path_get(baseline, "global_radio_scope.carrier_frequency_hz", 0)) == 4_000_000_000
     assert int(dash.path_get(baseline, "global_radio_scope.channel_bandwidth_hz", 0)) == 100_000_000
     assert str(dash.path_get(baseline, "global_radio_scope.duplex_mode", "")) == "TDD"
@@ -46,10 +48,10 @@ def main() -> None:
     assert int(dash.path_get(baseline, "frequency.n_size_grid", 0)) == 273
     assert str(dash.path_get(baseline, "frame_timing.tdd_pattern", "")) == "DDDSU"
     assert str(dash.path_get(baseline, "deployment_topology.cell_type", "")) == "UMa"
-    assert int(dash.path_get(baseline, "deployment_topology.num_sites", 0)) == 2
+    assert int(dash.path_get(baseline, "deployment_topology.num_sites", 0)) == 19
     assert int(dash.path_get(baseline, "deployment_topology.num_sectors_per_site", 0)) == 3
-    assert int(dash.path_get(baseline, "deployment_topology.num_cells", 0)) == 6
-    assert int(dash.path_get(baseline, "deployment_topology.num_ues", 0)) == 50
+    assert int(dash.path_get(baseline, "deployment_topology.num_cells", 0)) == 57
+    assert int(dash.path_get(baseline, "deployment_topology.num_ues", 0)) == 570
     assert bool(dash.path_get(baseline, "deployment_topology.wraparound_enabled", False))
     assert bool(dash.path_get(baseline, "interference.inter_cell_interference_flag", False))
     assert str(dash.path_get(baseline, "interference.inter_cell_execution_mode", "")) == "full_per_link_channel_waveform_sum"
@@ -59,9 +61,9 @@ def main() -> None:
     assert dash.path_get(baseline, "run_control.total_frames", None) is None
     assert dash.path_get(baseline, "run_control.warmup_frames", None) is None
     assert dash.path_get(baseline, "run_control.measurement_frames", None) is None
-    assert int(dash.path_get(baseline, "run_control.total_slots", 0)) == 14
+    assert int(dash.path_get(baseline, "run_control.total_slots", 0)) == 60
     assert int(dash.path_get(baseline, "run_control.warmup_slots", 0)) == 1
-    assert int(dash.path_get(baseline, "run_control.measurement_slots", 0)) == 13
+    assert int(dash.path_get(baseline, "run_control.measurement_slots", 0)) == 59
     assert int(dash.path_get(baseline, "seeds.global_seed", 0)) == 104729
     assert str(dash.path_get(baseline, "scenario.runner_profile", "")) == "waveform_bundle"
     contract = dash.scenario_launch_contract(baseline, dash.DEFAULT_SCENARIO)
@@ -76,7 +78,7 @@ def main() -> None:
         "ul_srs_channelest",
         "ul_lowpapr",
     ]
-    assert int(dash.path_get(baseline, "users.n_users", 0)) == 50
+    assert int(dash.path_get(baseline, "users.n_users", 0)) == 570
     assert str(dash.path_get(baseline, "traffic.model", "")) == "fullBuffer"
     assert str(dash.path_get(baseline, "traffic.transport", "")) == "UDP"
     assert str(dash.path_get(baseline, "traffic.flowDirection", "")) == "BIDIR"

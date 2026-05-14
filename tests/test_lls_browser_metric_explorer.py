@@ -23,7 +23,7 @@ def main() -> None:
                 ]
             if key == "air_interface/csv/dl_pdsch_trials.csv":
                 return [
-                    {"Slot": 10, "UEID": 1, "CellID": 101, "BaseStationID": 11, "Goodput_Mbps": 12.5, "OfferedThroughput_Mbps": 18.0, "AllocatedPRBCount": 88, "MCSIndex": 10},
+                    {"Slot": 10, "UEID": 1, "CellID": 101, "BaseStationID": 11, "Goodput_Mbps": 12.5, "OfferedThroughput_Mbps": 18.0, "AllocatedPRBCount": 88, "MCSIndex": 10, "MeasuredTrialSINR_dB": -3.5, "ReceiverHestSINR_dB": -4.25},
                     {"Slot": 10, "UEID": 2, "CellID": 202, "BaseStationID": 22, "Goodput_Mbps": 24.0, "OfferedThroughput_Mbps": 24.0, "AllocatedPRBCount": 120, "MCSIndex": 14},
                 ]
             if key == "air_interface/csv/ul_pusch_trials.csv":
@@ -49,9 +49,13 @@ def main() -> None:
         first = next(row for row in payload["rows"] if int(row["slot"]) == 10 and int(row["ueid"]) == 1)
         assert first["serving_cell"] == 101
         assert first["base_station_id"] == 11
-        assert abs(float(first["sinr_dB"]) - (-4.25)) < 1e-9
+        assert abs(float(first["sinr_dB"]) - (-3.5)) < 1e-9
+        assert abs(float(first["receiver_hest_sinr_dB"]) - (-4.25)) < 1e-9
         assert abs(float(first["dl_goodput_mbps"]) - 12.5) < 1e-9
         assert abs(float(first["ul_goodput_mbps"]) - 6.0) < 1e-9
+        second = next(row for row in payload["rows"] if int(row["slot"]) == 11 and int(row["ueid"]) == 1)
+        assert second["sinr_dB"] is None
+        assert abs(float(second["receiver_hest_sinr_dB"]) - (-2.0)) < 1e-9
         assert payload["ue_summaries"]["1"]["source_table"] == "reports/csv/live_user_performance_snapshot.csv"
         assert payload["sampling"]["chart_rows_browser"] >= 2
         assert "sampled runtime rows" in payload["sampling_note"].lower()

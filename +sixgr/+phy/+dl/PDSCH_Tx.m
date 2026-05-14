@@ -21,7 +21,10 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %
 %   Outputs:
 %     TX.Waveform      : time-domain OFDM waveform
-%     TX.Grid          : frequency-domain resource grid
+%     TX.Grid          : frequency-domain transmit resource grid; may contain
+%                        more pages than the PDSCH port count when auxiliary
+%                        runtime signals such as CSI-RS reserve additional
+%                        transmit pages
 %     TX.TransportBlock: original TB bits
 %     TX.Codeword      : rate-matched codeword bits (pre-scramble)
 %     TX.Carrier       : carrier config object
@@ -33,6 +36,8 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %     TX.PTRSSymbols   : PTRS symbols (maybe empty)
 %     TX.PDSCHAntennaIndices : antenna-oriented PDSCH indices after precoding
 %     TX.DMRSAntennaIndices  : antenna-oriented DMRS indices after precoding
+%     TX.ResourceGridPortContract : truthful page-count provenance for the
+%                        full transmit grid versus the PDSCH/DM-RS signals
 %     TX.PrecodeInfo    : explicit precoding metadata / guard decisions
 %
 %   Notes:
@@ -99,18 +104,11 @@ numTxAnt = localResolveNumTxAnt(cfg, opt.NumTxAnt, prec);
 
 % Transport block size
 nPRB = numel(pdsch.PRBSet);
-nrePerPRB = [];
-if isfield(pdschInfo, 'NREPerPRB')
-    nrePerPRB = double(pdschInfo.NREPerPRB);
-elseif isfield(pdschInfo, 'NRE')
-    nrePerPRB = floor(double(pdschInfo.NRE) / max(nPRB,1));
-elseif isfield(pdschInfo, 'G')
-    qm = localQm(pdsch.Modulation);
-    nrePerPRB = floor(double(pdschInfo.G) / max(qm * pdsch.NumLayers * nPRB, 1));
-end
-if isempty(nrePerPRB) || ~isfinite(nrePerPRB) || nrePerPRB <= 0
-    % Conservative fallback for normal CP with typical DMRS overhead.
-    nrePerPRB = 144;
+[nrePerPRB, dataBitBudget] = localResolveDataNREPerPRB(pdschInfo, nPRB, pdsch.Modulation, pdsch.NumLayers);
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    error('sixgr:phy:dl:PDSCHNoDataRE', ...
+        'PDSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
+        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(string(pdsch.Modulation)), round(double(pdsch.NumLayers)));
 end
 trBlkSize = nrTBS(pdsch.Modulation, pdsch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 trBlkSize = double(trBlkSize);
@@ -153,11 +151,18 @@ C = size(cbs, 2);
 ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
 
 % Rate match to G bits
-if isfield(pdschInfo, 'G')
+if isfinite(dataBitBudget) && dataBitBudget > 0
+    G = double(dataBitBudget);
+elseif isfield(pdschInfo, 'G')
     G = double(pdschInfo.G);
 else
     qm = localQm(pdsch.Modulation);
     G = double(qm * pdsch.NumLayers * nPRB * nrePerPRB);
+end
+if ~(isfinite(G) && G > 0)
+    error('sixgr:phy:dl:PDSCHNoDataRE', ...
+        'PDSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
+        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(string(pdsch.Modulation)), round(double(pdsch.NumLayers)));
 end
 codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pdsch.Modulation, pdsch.NumLayers);
 codeword = int8(codeword(:));
@@ -223,6 +228,10 @@ if logical(sixgr.util.structGet(csirsEvent, "Scheduled", false)) && ~isempty(csi
     end
 end
 
+gridPortContract = localBuildResourceGridPortContract(txGrid, pdschAntInd, pdschAntSym, ...
+    dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, csirsInd, csirsSym, csirsEvent, numTxAnt, prec);
+localValidateResourceGridPortContract(gridPortContract, prec);
+
 % OFDM modulation
 [txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
 
@@ -262,6 +271,7 @@ if ~logical(opt.CompactOutput)
     tx.CSIRSInfo = csirsInfo;
     tx.CSIRS = csirsCfg;
     tx.CSIRSRuntimeEvent = csirsEvent;
+    tx.ResourceGridPortContract = gridPortContract;
 end
 
 info = struct();
@@ -272,9 +282,37 @@ info.PDSCHSymbols = pdschSymInfo;
 info.PTRS = ptrsInfo;
 info.CSIRS = csirsInfo;
 info.CSIRSRuntimeEvent = csirsEvent;
+info.ResourceGridPortContract = gridPortContract;
 info.OFDM = ofdmInfo;
 info.Precoding = prec;
 
+end
+
+function [nrePerPRB, gBits] = localResolveDataNREPerPRB(pdschInfo, nPRB, modStr, nLayers)
+nrePerPRB = NaN;
+gBits = NaN;
+qm = localQm(modStr);
+if isfield(pdschInfo, 'G')
+    gBits = double(pdschInfo.G);
+    if isfinite(gBits)
+        if gBits <= 0
+            nrePerPRB = 0;
+            return;
+        end
+        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
+        if isfinite(nrePerPRB) && nrePerPRB > 0
+            return;
+        end
+    end
+end
+if isfield(pdschInfo, 'NRE')
+    nrePerPRB = floor(double(pdschInfo.NRE) / max(double(nPRB), 1));
+elseif isfield(pdschInfo, 'NREPerPRB')
+    nrePerPRB = double(pdschInfo.NREPerPRB);
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    nrePerPRB = NaN;
+end
 end
 
 function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
@@ -515,4 +553,101 @@ if prec.Active && numTxAnt ~= prec.NumPorts
         "Explicit PDSCH precoding resolves to %d antenna port(s), but NumTxAnt=%d.", ...
         prec.NumPorts, numTxAnt);
 end
+end
+
+function contract = localBuildResourceGridPortContract(txGrid, pdschAntInd, pdschAntSym, ...
+    dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, csirsInd, csirsSym, csirsEvent, numTxAnt, prec)
+gridNumPages = max(1, size(txGrid, 3));
+pdschPorts = localResolveMappedPortCount(pdschAntInd, pdschAntSym, 0);
+dmrsPorts = localResolveMappedPortCount(dmrsAntInd, dmrsAntSym, 0);
+ptrsPorts = localResolveMappedPortCount(ptrsInd, ptrsSym, 0);
+csirsIndexPorts = localResolveMappedPortCount(csirsInd, csirsSym, 0);
+csirsRequestedPorts = localNormalizeNonnegativePortCount(sixgr.util.structGet(csirsEvent, "NumPorts", 0));
+primarySignalPorts = max([pdschPorts, dmrsPorts, ptrsPorts, 1]);
+channelEstimatePorts = max([pdschPorts, dmrsPorts, 1]);
+expansionSources = strings(0, 1);
+
+if gridNumPages > primarySignalPorts
+    if numTxAnt > primarySignalPorts
+        expansionSources(end+1, 1) = "configured_tx_antennas";
+    end
+    if csirsRequestedPorts > primarySignalPorts
+        expansionSources(end+1, 1) = "csirs_runtime_ports";
+    end
+    if csirsIndexPorts > primarySignalPorts
+        expansionSources(end+1, 1) = "csirs_index_pages";
+    end
+end
+if isempty(expansionSources)
+    expansionSources = "primary_signal_ports_only";
+end
+
+contract = struct();
+contract.GridNumPages = double(gridNumPages);
+contract.ConfiguredTxAntennaPages = double(max(1, round(numTxAnt)));
+contract.PDSCHAntennaPortCount = double(pdschPorts);
+contract.DMRSAntennaPortCount = double(dmrsPorts);
+contract.PTRSAntennaPortCount = double(ptrsPorts);
+contract.CSIRSRequestedPortCount = double(csirsRequestedPorts);
+contract.CSIRSIndexPageCount = double(csirsIndexPorts);
+contract.PrimarySignalPortCount = double(primarySignalPorts);
+contract.ChannelEstimateSignalPortCount = double(channelEstimatePorts);
+contract.GridPagesExceedPrimarySignalPorts = logical(gridNumPages > primarySignalPorts);
+contract.GridPageExpansionSources = expansionSources;
+contract.PDSCHDMRSPortAlignmentOk = logical(dmrsPorts <= 0 || dmrsPorts == pdschPorts);
+contract.PrecodingPortAlignmentOk = logical(~logical(prec.Active) || ...
+    (pdschPorts == double(prec.NumPorts) && dmrsPorts == double(prec.NumPorts)));
+contract.ResourceSelectiveChannelEstimateRequired = logical(channelEstimatePorts > 1);
+contract.ScalarOrUnitShortcutEligibleBySignalGeometry = logical(channelEstimatePorts <= 1);
+end
+
+function localValidateResourceGridPortContract(contract, prec)
+gridNumPages = double(contract.GridNumPages);
+primarySignalPorts = double(contract.PrimarySignalPortCount);
+configuredTxPages = double(contract.ConfiguredTxAntennaPages);
+if gridNumPages < max([primarySignalPorts, configuredTxPages, 1])
+    error("PDSCH_Tx:ResourceGridPageContractViolation", ...
+        "Transmit grid has %d page(s), but truthful DL mapping requires at least %d page(s).", ...
+        round(gridNumPages), round(max([primarySignalPorts, configuredTxPages, 1])));
+end
+if ~logical(contract.PDSCHDMRSPortAlignmentOk)
+    error("PDSCH_Tx:DMRSPortAlignmentViolation", ...
+        "PDSCH antenna port count (%d) and DM-RS antenna port count (%d) must match.", ...
+        round(double(contract.PDSCHAntennaPortCount)), round(double(contract.DMRSAntennaPortCount)));
+end
+if ~logical(contract.PrecodingPortAlignmentOk)
+    error("PDSCH_Tx:PrecodingPortAlignmentViolation", ...
+        "Precoding resolves to %d port(s), but the mapped PDSCH/DM-RS antenna ports are %d/%d.", ...
+        round(double(prec.NumPorts)), round(double(contract.PDSCHAntennaPortCount)), ...
+        round(double(contract.DMRSAntennaPortCount)));
+end
+end
+
+function numPorts = localResolveMappedPortCount(ind, sym, emptyValue)
+if nargin < 3
+    emptyValue = 0;
+end
+numPorts = emptyValue;
+if isnumeric(ind) && ~isempty(ind)
+    if ~isvector(ind)
+        numPorts = size(ind, 2);
+    else
+        numPorts = 1;
+    end
+elseif isnumeric(sym) && ~isempty(sym)
+    if ~isvector(sym)
+        numPorts = size(sym, 2);
+    else
+        numPorts = 1;
+    end
+end
+numPorts = localNormalizeNonnegativePortCount(numPorts);
+end
+
+function numPorts = localNormalizeNonnegativePortCount(value)
+numPorts = double(value);
+if ~(isscalar(numPorts) && isfinite(numPorts) && numPorts >= 0)
+    numPorts = 0;
+end
+numPorts = round(numPorts);
 end

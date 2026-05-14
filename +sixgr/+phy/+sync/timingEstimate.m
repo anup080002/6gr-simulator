@@ -89,8 +89,7 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
             'SampleRate', sampleRateHz);
     end
 
-    timingOffset = double(timingOffset);
-    timingOffset = max(0, round(timingOffset));
+    timingOffset = round(double(timingOffset));
 
     info = struct();
     info.NID2 = double(NID2);
@@ -100,6 +99,8 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
     info.InitialNSlot = initialNSlot;
     info.SampleRate_Hz = double(sampleRateHz);
     info.UseAntenna = ant;
+    info.RawTimingEstimate_samples = double(timingOffset);
+    info.TimingEstimateStatus = "available_raw_estimate";
 end
 
 function scs_kHz = localSSBSubcarrierSpacing_kHz(blockPattern)

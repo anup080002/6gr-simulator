@@ -10,6 +10,7 @@ end
 localTestAWGNFastPathAllowed();
 localTestStrictTDLDisallowsScalarShortcut();
 localTestTDLRequestedFastMexUsesSelectiveEstimator();
+localTestReferencePortInferenceDisablesScalarShortcut();
 localTestZeroReferenceSymbolsFailClosed();
 localTestMixedZeroReferenceSymbolsPrunedWithoutWarning();
 localTestPUSCHRxNoZeroReferenceWarning();
@@ -97,6 +98,44 @@ assert(~logical(estInfo.ScalarFastPathUsed), ...
     "Selective fading truth validation must not silently use the scalar fast path.");
 assert(contains(string(estInfo.ScalarFastPathDisabledReason), "Selective fading"), ...
     "Selective truth validation should record why the scalar shortcut was disabled.");
+end
+
+function localTestReferencePortInferenceDisablesScalarShortcut()
+cfg = localBasicPDSCHCfg();
+cfg.run.useMex = true;
+cfg.channel.model = "AWGN";
+cfg.channel.fading.model = "";
+cfg.channel.fading.profile = "";
+cfg.channel.awgnOnly = true;
+cfg.phy.nTxAnt = 4;
+cfg.channel.nTxAnt = 4;
+cfg.phy.pdsch.nLayers = 2;
+cfg.phy.pdsch.numLayers = 2;
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.numPorts", 4);
+W = [ ...
+    1  0; ...
+    0  1; ...
+    1  1; ...
+    1 -1];
+
+[tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, "PrecodingMatrix", W);
+[dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPDSCH(tx.Carrier, tx.PDSCH);
+rxGrid = reshape(tx.Grid(:, :, 1), size(tx.Grid, 1), size(tx.Grid, 2), 1);
+[Hest, ~, estInfo] = sixgr.phy.rx.channelEstimate(tx.Carrier, rxGrid, dmrsInd, dmrsSym, ...
+    "UseFastMex", true, ...
+    "StrictMode", false, ...
+    "ChannelModel", "AWGN", ...
+    "ContextLabel", "testChannelEstimationValidation");
+
+assert(~isempty(Hest), "Multi-port reference geometry should still produce a channel estimate.");
+assert(strcmp(string(estInfo.EngineUsed), "nrChannelEstimate"), ...
+    "Multi-port DM-RS must disable the scalar fast shortcut even if ExpectedTxPorts is omitted.");
+assert(~logical(estInfo.ScalarFastPathUsed), ...
+    "Multi-port DM-RS must not silently collapse into scalar channel estimation.");
+assert(double(estInfo.InferredReferencePortCount) >= 2, ...
+    "Channel estimator should infer the multi-port reference geometry from DM-RS shape.");
+assert(contains(string(estInfo.ScalarFastPathDisabledReason), "Multi-antenna"), ...
+    "Multi-port DM-RS should record why the scalar shortcut was disabled.");
 end
 
 function localTestZeroReferenceSymbolsFailClosed()

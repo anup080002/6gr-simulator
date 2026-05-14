@@ -14,7 +14,6 @@ SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot.yaml"
 
 
 def main() -> None:
-    assert dash.DEFAULT_SCENARIO == SCENARIO
     payload, chain = dash.load_resolved_config_payload(SCENARIO)
     assert chain, "Resolved source chain must not be empty."
 

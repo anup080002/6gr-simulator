@@ -81,9 +81,18 @@ else
     rsrp_dB = channelGain_dB;
     rsrpSource = "channel_estimate_gain_proxy";
 end
-cqiInput = struct("WidebandSINR_dB", sinr_dB, "PerRBSINR_dB", double(perRBSINR_dB));
-cqiFeedback = sixgr.link.resolveWidebandCQI(cqiInput, cfg, direction);
-cqi = double(cqiFeedback.WidebandCQI);
+if isfinite(measuredSINR_dB)
+    cqiInput = struct("WidebandSINR_dB", measuredSINR_dB, "PerRBSINR_dB", double(perRBSINR_dB));
+    cqiFeedback = sixgr.link.resolveWidebandCQI(cqiInput, cfg, direction);
+    cqi = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN)));
+    cqiFeedback.WidebandCQI = double(cqi);
+else
+    cqiFeedback = struct( ...
+        "WidebandCQI", NaN, ...
+        "EffectiveSINR_dB", NaN, ...
+        "EffectiveSINRMethod", "measurement_required_unavailable");
+    cqi = NaN;
+end
 
 csi = struct();
 csi.CQI = localReportedScalar(cqi, reportCQI);

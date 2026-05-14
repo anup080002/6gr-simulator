@@ -183,7 +183,8 @@ end
 function [waveform, rxPower_dBm, entryMeta] = localBuildOneInterferer(direction, entry, targetSize, samplePowerPerMilliwatt)
 waveform = [];
 rxPower_dBm = NaN;
-grant = sixgr.util.structGet(entry, "GrantSnapshot", struct());
+[entryResolved, cachePayload] = localResolveCachedInterferenceEntry(entry);
+grant = sixgr.util.structGet(entryResolved, "GrantSnapshot", struct());
 entryMeta = struct( ...
     "InterferenceMode", localSafeCharToken(sixgr.util.structGet(entry, "InterferenceMode", "none")), ...
     "PowerSource", "", ...
@@ -205,28 +206,28 @@ entryMeta = struct( ...
     "ExplicitBeamWeightsApplied", logical(sixgr.util.structGet(grant, "ExplicitBeamWeightsApplied", false)), ...
     "TransformPrecodingApplied", logical(sixgr.util.structGet(grant, "TransformPrecodingApplied", false)));
 
-cfg = sixgr.util.structGet(entry, "Cfg", struct());
+cfg = sixgr.util.structGet(entryResolved, "Cfg", struct());
 if ~(isstruct(cfg) && ~isempty(fieldnames(cfg)))
     return;
 end
-channelCfg = localBuildVictimLinkConfig(cfg, entry);
+channelCfg = localBuildVictimLinkConfig(cfg, entry, cachePayload);
 
 direction = upper(string(direction));
-signalType = upper(string(sixgr.util.structGet(entry, "SignalType", direction)));
+signalType = upper(string(sixgr.util.structGet(entryResolved, "SignalType", direction)));
 cfg = localApplyPerLinkSeed(cfg, double(sixgr.util.structGet(entry, "Seed", NaN)));
 channelCfg = localApplyPerLinkSeed(channelCfg, double(sixgr.util.structGet(entry, "Seed", NaN)));
-transportBlockBits = sixgr.util.structGet(entry, "TransportBlockBits", []);
-rv = sixgr.util.structGet(entry, "RV", []);
+transportBlockBits = sixgr.util.structGet(entryResolved, "TransportBlockBits", []);
+rv = sixgr.util.structGet(entryResolved, "RV", []);
 seed = double(sixgr.util.structGet(entry, "Seed", NaN));
-uciBits = int8(sixgr.util.structGet(entry, "ExpectedUCIBits", int8(1)));
-requestedFormat = double(sixgr.util.structGet(entry, "ResolvedFormat", ...
-    sixgr.util.structGet(entry, "RequestedFormat", sixgr.util.structGet(cfg, "phy.pucch.format", NaN))));
-rnti = double(sixgr.util.structGet(entry, "RNTI", sixgr.util.structGet(cfg, "phy.rnti", NaN)));
+uciBits = int8(sixgr.util.structGet(entryResolved, "ExpectedUCIBits", int8(1)));
+requestedFormat = double(sixgr.util.structGet(entryResolved, "ResolvedFormat", ...
+    sixgr.util.structGet(entryResolved, "RequestedFormat", sixgr.util.structGet(cfg, "phy.pucch.format", NaN))));
+rnti = double(sixgr.util.structGet(entryResolved, "RNTI", sixgr.util.structGet(cfg, "phy.rnti", NaN)));
 
 txWave = [];
 txInfo = struct();
-precomputedTxWave = sixgr.util.structGet(entry, "PrecomputedTxWaveform", []);
-precomputedSampleRateHz = double(sixgr.util.structGet(entry, "PrecomputedTxSampleRate_Hz", NaN));
+precomputedTxWave = sixgr.util.structGet(entryResolved, "PrecomputedTxWaveform", []);
+precomputedSampleRateHz = double(sixgr.util.structGet(entryResolved, "PrecomputedTxSampleRate_Hz", NaN));
 if ~isempty(precomputedTxWave)
     txWave = precomputedTxWave;
 else
@@ -433,8 +434,11 @@ cfgOut = sixgr.util.structSet(cfgOut, "run.seed", double(max(1, round(seed))));
 cfgOut = sixgr.util.structSet(cfgOut, "channel.seed", double(max(1, round(seed))));
 end
 
-function cfgOut = localBuildVictimLinkConfig(cfgIn, entry)
+function cfgOut = localBuildVictimLinkConfig(cfgIn, entry, cachePayload)
 cfgOut = cfgIn;
+if nargin < 3 || ~isstruct(cachePayload)
+    cachePayload = struct();
+end
 userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
 userMeta.RuntimeServingCell = double(sixgr.util.structGet(entry, "VictimServingCell", sixgr.util.structGet(entry, "ServingCell", NaN)));
 userMeta.RuntimeServingBeamIndex = double(sixgr.util.structGet(entry, "BeamIndex", NaN));
@@ -446,25 +450,101 @@ userMeta.RuntimeServingPathloss_dB = double(sixgr.util.structGet(entry, "Pathlos
 userMeta.RuntimeServingShadowFading_dB = double(sixgr.util.structGet(entry, "ShadowFading_dB", NaN));
 userMeta.RuntimeServingO2I_dB = double(sixgr.util.structGet(entry, "O2I_dB", NaN));
 victimBSAntenna = sixgr.util.structGet(entry, "VictimServingBSAntenna", struct());
+victimBSAntennaMeta = sixgr.util.structGet(entry, "VictimServingBSAntennaMeta", struct());
+victimUEAntenna = sixgr.util.structGet(entry, "VictimUEAntenna", struct());
+victimUEAntennaMeta = sixgr.util.structGet(entry, "VictimUEAntennaMeta", struct());
+[cachedBsEntry, cachedUeEntry, cachedBsPosition, cachedBSAzimuth] = localResolveCachedVictimRuntimeContext(cachePayload, entry);
+if ~(isstruct(victimBSAntenna) && ~isempty(fieldnames(victimBSAntenna)))
+    victimBSAntenna = sixgr.util.structGet(cachedBsEntry, "Antenna", struct());
+    victimBSAntennaMeta = sixgr.util.structGet(cachedBsEntry, "Metadata", victimBSAntennaMeta);
+end
 if isstruct(victimBSAntenna) && ~isempty(fieldnames(victimBSAntenna))
     userMeta.RuntimeServingBSAntenna = victimBSAntenna;
-    userMeta.RuntimeServingBSAntennaMeta = sixgr.util.structGet(entry, "VictimServingBSAntennaMeta", struct());
+    userMeta.RuntimeServingBSAntennaMeta = victimBSAntennaMeta;
 end
-victimUEAntenna = sixgr.util.structGet(entry, "VictimUEAntenna", struct());
+if ~(isstruct(victimUEAntenna) && ~isempty(fieldnames(victimUEAntenna)))
+    victimUEAntenna = sixgr.util.structGet(cachedUeEntry, "Antenna", struct());
+    victimUEAntennaMeta = sixgr.util.structGet(cachedUeEntry, "Metadata", victimUEAntennaMeta);
+end
 if isstruct(victimUEAntenna) && ~isempty(fieldnames(victimUEAntenna))
     userMeta.RuntimeUEAntenna = victimUEAntenna;
-    userMeta.RuntimeUEAntennaMeta = sixgr.util.structGet(entry, "VictimUEAntennaMeta", struct());
+    userMeta.RuntimeUEAntennaMeta = victimUEAntennaMeta;
 end
 victimBSPosition = double(sixgr.util.structGet(entry, "VictimServingBSPosition_m", nan(1, 3)));
+if isempty(victimBSPosition) || all(~isfinite(victimBSPosition))
+    victimBSPosition = cachedBsPosition;
+end
 if ~isempty(victimBSPosition)
     userMeta.RuntimeServingBSPosition_m = reshape(victimBSPosition, 1, []);
 end
 victimBSAzimuth = double(sixgr.util.structGet(entry, "VictimServingBSAzimuth_deg", NaN));
+if ~isfinite(victimBSAzimuth)
+    victimBSAzimuth = cachedBSAzimuth;
+end
 if isfinite(victimBSAzimuth)
     userMeta.RuntimeServingBSAzimuth_deg = victimBSAzimuth;
 end
 userMeta.RuntimeInterferenceMode = localSafeCharToken(sixgr.util.structGet(entry, "InterferenceMode", ""));
 cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
+end
+
+function [entryResolved, cachePayload] = localResolveCachedInterferenceEntry(entry)
+entryResolved = entry;
+cachePayload = struct();
+cacheKey = string(sixgr.util.structGet(entry, "CacheKey", ""));
+cacheIndex = double(sixgr.util.structGet(entry, "CacheIndex", NaN));
+if strlength(strtrim(cacheKey)) < 1 || ~(isfinite(cacheIndex) && cacheIndex >= 1)
+    return;
+end
+[hit, cachePayload] = sixgr.link.interferenceReplayCache("get", char(cacheKey));
+if ~hit
+    cachePayload = struct();
+    return;
+end
+resolvedGrantCache = sixgr.util.structGet(cachePayload, "ResolvedGrantCache", struct([]));
+cacheIndex = round(cacheIndex);
+if ~(isstruct(resolvedGrantCache) && cacheIndex >= 1 && cacheIndex <= numel(resolvedGrantCache))
+    cachePayload = struct();
+    return;
+end
+resolvedEntry = resolvedGrantCache(cacheIndex);
+copyFields = ["Cfg","GrantSnapshot","TransportBlockBits","RV","ExpectedUCIBits", ...
+    "ResolvedFormat","RNTI","PrecomputedTxWaveform","PrecomputedTxSampleRate_Hz","SignalType"];
+for i = 1:numel(copyFields)
+    fieldName = char(copyFields(i));
+    if isfield(resolvedEntry, fieldName)
+        entryResolved.(fieldName) = resolvedEntry.(fieldName);
+    end
+end
+end
+
+function [bsEntry, ueEntry, bsPosition, bsAzimuth] = localResolveCachedVictimRuntimeContext(cachePayload, entry)
+bsEntry = struct();
+ueEntry = struct();
+bsPosition = nan(1, 3);
+bsAzimuth = NaN;
+if ~(isstruct(cachePayload) && ~isempty(fieldnames(cachePayload)))
+    return;
+end
+victimServingCell = round(double(sixgr.util.structGet(entry, "VictimServingCell", NaN)));
+victimUEIdx = round(double(sixgr.util.structGet(entry, "VictimUEIndex", NaN)));
+bsRuntime = sixgr.util.structGet(cachePayload, "BSAntennaRuntime", repmat(struct(), 0, 1));
+ueRuntime = sixgr.util.structGet(cachePayload, "UEAntennaRuntime", repmat(struct(), 0, 1));
+layout = sixgr.util.structGet(cachePayload, "Layout", struct());
+if isfinite(victimServingCell) && victimServingCell >= 1 && victimServingCell <= numel(bsRuntime)
+    bsEntry = bsRuntime(victimServingCell);
+    bsPos = double(sixgr.util.structGet(layout, "bs.pos_m", nan(0, 0)));
+    if ~isempty(bsPos) && victimServingCell <= size(bsPos, 1)
+        bsPosition = reshape(double(bsPos(victimServingCell, :)), 1, []);
+    end
+    bsAzim = double(sixgr.util.structGet(layout, "bs.azim_deg", nan(0, 0)));
+    if ~isempty(bsAzim) && victimServingCell <= numel(bsAzim)
+        bsAzimuth = double(bsAzim(victimServingCell));
+    end
+end
+if isfinite(victimUEIdx) && victimUEIdx >= 1 && victimUEIdx <= numel(ueRuntime)
+    ueEntry = ueRuntime(victimUEIdx);
+end
 end
 
 function token = localUniqueTokenSet(values)

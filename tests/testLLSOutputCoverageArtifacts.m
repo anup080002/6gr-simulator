@@ -82,6 +82,29 @@ mimoRankPath = fullfile(layout.BeamformingCSVDir, "mimo_rank_utilization_table.c
 rankHistogramPath = fullfile(layout.BeamformingCSVDir, "rank_layer_usage_histogram.csv");
 timingPath = fullfile(layout.ControlCSVDir, "timing_synchronization_table.csv");
 dopplerPath = fullfile(layout.ReportCSVDir, "doppler_time_variation_plot.csv");
+pdschRuntimeEventPath = fullfile(layout.ReportCSVDir, "pdsch_runtime_event_table.csv");
+puschRuntimeEventPath = fullfile(layout.ReportCSVDir, "pusch_runtime_event_table.csv");
+pdcchPublicPath = fullfile(layout.ReportCSVDir, "pdcch_dci_table.csv");
+pucchPublicPath = fullfile(layout.ReportCSVDir, "pucch_uci_table.csv");
+prachDetectionPath = fullfile(layout.ReportCSVDir, "prach_detection_table.csv");
+srsMeasurementPath = fullfile(layout.ReportCSVDir, "srs_measurement_table.csv");
+csiRsRuntimePath = fullfile(layout.ReportCSVDir, "csi_rs_runtime_event_table.csv");
+csiReportPath = fullfile(layout.ReportCSVDir, "csi_report_table.csv");
+trsPublicPath = fullfile(layout.ReportCSVDir, "trs_receiver_tracking_table.csv");
+ssbPbchCellSearchPath = fullfile(layout.ReportCSVDir, "ssb_pbch_cell_search_table.csv");
+noiseEvidencePath = fullfile(layout.ReportCSVDir, "noise_variance_evidence_table.csv");
+mcsCqiDecisionPath = fullfile(layout.ReportCSVDir, "mcs_cqi_decision_trace_table.csv");
+contractPath = fullfile(layout.ReportCSVDir, "lls_output_contract.csv");
+metricCatalogPath = fullfile(layout.ReportCSVDir, "metric_definition_catalog.csv");
+metricUnitRolePath = fullfile(layout.ReportCSVDir, "metric_unit_role_catalog.csv");
+plotManifestPath = fullfile(layout.ReportCSVDir, "plot_manifest.csv");
+plotRenderStatusPath = fullfile(layout.ReportCSVDir, "plot_render_status.csv");
+chartRegistryPath = fullfile(layout.ReportCSVDir, "chart_source_registry.csv");
+plotDataQualityPath = fullfile(layout.ReportCSVDir, "plot_data_quality_table.csv");
+plotSuppressionPath = fullfile(layout.ReportCSVDir, "plot_suppression_table.csv");
+unavailablePlotCardRegistryPath = fullfile(layout.ReportCSVDir, "unavailable_plot_card_registry.csv");
+lineagePath = fullfile(layout.ReportCSVDir, "raw_to_derived_lineage.csv");
+fieldAvailabilityPath = fullfile(layout.ReportCSVDir, "table_field_availability_matrix.csv");
 
 assert(exist(registryPath, "file") == 2, "Output coverage registry must be persisted.");
 assert(exist(unavailablePath, "file") == 2, "Honest unavailable registry must be persisted.");
@@ -128,6 +151,29 @@ assert(exist(mimoRankPath, "file") == 2, "MIMO rank utilization table must be pe
 assert(exist(rankHistogramPath, "file") == 2, "Rank/layer usage histogram table must be persisted from runtime precoder rows.");
 assert(exist(timingPath, "file") == 2, "Timing synchronization table must be persisted when runtime CFO/timing rows exist.");
 assert(exist(dopplerPath, "file") == 2, "Doppler time variation table must be persisted from runtime channel and UE summary rows.");
+assert(exist(pdschRuntimeEventPath, "file") == 2, "Public PDSCH runtime event table must be persisted.");
+assert(exist(puschRuntimeEventPath, "file") == 2, "Public PUSCH runtime event table must be persisted.");
+assert(exist(pdcchPublicPath, "file") == 2, "Public PDCCH/DCI table must be persisted.");
+assert(exist(pucchPublicPath, "file") == 2, "Public PUCCH UCI table must be persisted.");
+assert(exist(prachDetectionPath, "file") == 2, "Public PRACH detection table must be persisted.");
+assert(exist(srsMeasurementPath, "file") == 2, "Public SRS measurement table must be persisted.");
+assert(exist(csiRsRuntimePath, "file") == 2, "Public CSI-RS runtime event table must be persisted.");
+assert(exist(csiReportPath, "file") == 2, "Public CSI report table must be persisted.");
+assert(exist(trsPublicPath, "file") == 2, "Public TRS receiver tracking table must be persisted.");
+assert(exist(ssbPbchCellSearchPath, "file") == 2, "Public SSB/PBCH cell-search table must be persisted.");
+assert(exist(noiseEvidencePath, "file") == 2, "Noise-variance evidence table must be persisted.");
+assert(exist(mcsCqiDecisionPath, "file") == 2, "MCS/CQI decision trace table must be persisted.");
+assert(exist(contractPath, "file") == 2, "LLS output contract CSV must be persisted.");
+assert(exist(metricCatalogPath, "file") == 2, "Metric definition catalog must be persisted.");
+assert(exist(metricUnitRolePath, "file") == 2, "Metric unit/role catalog must be persisted.");
+assert(exist(plotManifestPath, "file") == 2, "Plot manifest must be persisted.");
+assert(exist(plotRenderStatusPath, "file") == 2, "Plot render-status table must be persisted.");
+assert(exist(chartRegistryPath, "file") == 2, "Chart source registry must be persisted.");
+assert(exist(plotDataQualityPath, "file") == 2, "Plot data-quality table must be persisted.");
+assert(exist(plotSuppressionPath, "file") == 2, "Plot suppression table must be persisted.");
+assert(exist(unavailablePlotCardRegistryPath, "file") == 2, "Unavailable plot-card registry must be persisted.");
+assert(exist(lineagePath, "file") == 2, "Raw-to-derived lineage table must be persisted.");
+assert(exist(fieldAvailabilityPath, "file") == 2, "Table field-availability matrix must be persisted.");
 
 registry = readtable(registryPath, "VariableNamingRule", "preserve");
 unavailable = readtable(unavailablePath, "VariableNamingRule", "preserve");
@@ -170,6 +216,29 @@ rankHistogram = readtable(rankHistogramPath, "VariableNamingRule", "preserve");
 trsTracking = readtable(trsTrackingPath, "VariableNamingRule", "preserve");
 timingSync = readtable(timingPath, "VariableNamingRule", "preserve");
 doppler = readtable(dopplerPath, "VariableNamingRule", "preserve");
+pdschRuntimeEvent = readtable(pdschRuntimeEventPath, "VariableNamingRule", "preserve");
+puschRuntimeEvent = readtable(puschRuntimeEventPath, "VariableNamingRule", "preserve");
+pdcchPublic = readtable(pdcchPublicPath, "VariableNamingRule", "preserve");
+pucchPublic = readtable(pucchPublicPath, "VariableNamingRule", "preserve");
+prachDetection = readtable(prachDetectionPath, "VariableNamingRule", "preserve");
+srsMeasurement = readtable(srsMeasurementPath, "VariableNamingRule", "preserve");
+csiRsRuntime = readtable(csiRsRuntimePath, "VariableNamingRule", "preserve");
+csiReport = readtable(csiReportPath, "VariableNamingRule", "preserve");
+trsPublic = readtable(trsPublicPath, "VariableNamingRule", "preserve");
+ssbPbchCellSearch = readtable(ssbPbchCellSearchPath, "VariableNamingRule", "preserve");
+noiseEvidence = readtable(noiseEvidencePath, "VariableNamingRule", "preserve");
+mcsCqiDecision = readtable(mcsCqiDecisionPath, "VariableNamingRule", "preserve");
+contract = readtable(contractPath, "VariableNamingRule", "preserve");
+metricCatalog = readtable(metricCatalogPath, "VariableNamingRule", "preserve");
+metricUnitRole = readtable(metricUnitRolePath, "VariableNamingRule", "preserve");
+plotManifest = readtable(plotManifestPath, "VariableNamingRule", "preserve");
+plotRenderStatus = readtable(plotRenderStatusPath, "VariableNamingRule", "preserve");
+chartRegistry = readtable(chartRegistryPath, "VariableNamingRule", "preserve");
+plotDataQuality = readtable(plotDataQualityPath, "VariableNamingRule", "preserve");
+plotSuppression = readtable(plotSuppressionPath, "VariableNamingRule", "preserve");
+unavailablePlotCards = readtable(unavailablePlotCardRegistryPath, "VariableNamingRule", "preserve");
+lineage = readtable(lineagePath, "VariableNamingRule", "preserve");
+fieldAvailability = readtable(fieldAvailabilityPath, "VariableNamingRule", "preserve");
 
 assert(height(registry) >= 50, "Registry must cover the requested broad output surface, not a tiny subset.");
 localAssertRegistryRow(registry, "power_energy_table", "implemented", "c");
@@ -211,6 +280,22 @@ localAssertRegistryRow(registry, "mimo_rank_utilization_table", "implemented", "
 localAssertRegistryRow(registry, "rank_layer_usage_histogram", "implemented", "c");
 localAssertRegistryRow(registry, "timing_synchronization_table", "implemented", "c");
 localAssertRegistryRow(registry, "doppler_time_variation_plot", "implemented", "c");
+localAssertRegistryRow(registry, "pdsch_runtime_event_table", "implemented", "c");
+localAssertRegistryRow(registry, "pusch_runtime_event_table", "implemented", "c");
+localAssertRegistryRow(registry, "pdcch_dci_public_table", "implemented", "c");
+localAssertRegistryRow(registry, "pucch_uci_table", "implemented", "c");
+localAssertRegistryRow(registry, "prach_detection_table", "implemented", "c");
+localAssertRegistryRow(registry, "srs_measurement_table", "implemented", "c");
+localAssertRegistryRow(registry, "csi_rs_runtime_event_table", "implemented", "c");
+localAssertRegistryRow(registry, "csi_report_table", "implemented", "c");
+localAssertRegistryRow(registry, "trs_receiver_tracking_public_table", "implemented", "c");
+localAssertRegistryRow(registry, "ssb_pbch_cell_search_table", "implemented", "c");
+localAssertRegistryRow(registry, "noise_variance_evidence_table", "implemented", "c");
+localAssertRegistryRow(registry, "mcs_cqi_decision_trace_table", "implemented", "c");
+localAssertRegistryRow(registry, "plot_manifest", "implemented", "c");
+localAssertRegistryRow(registry, "chart_source_registry", "implemented", "c");
+localAssertRegistryRow(registry, "raw_to_derived_lineage", "implemented", "c");
+localAssertRegistryRow(registry, "table_field_availability_matrix", "implemented", "c");
 localAssertRegistryRow(registry, "anomaly_window_table", "implemented", "c");
 localAssertRegistryRow(registry, "cross_layer_correlation_table", "implemented", "c");
 localAssertRegistryRow(registry, "hotspot_analytics_table", "implemented", "c");
@@ -318,6 +403,62 @@ assert(~isempty(csiRs) && height(csiRs) == 1 && logical(csiRs.Transmitted(1)) &&
     "CSI-RS standalone table must mirror a persisted runtime CSI-RS trial row, not a schema placeholder.");
 assert(~isempty(beamPrecoder) && height(beamPrecoder) == 2, ...
     "Beam/precoder table must be materialized from DL and UL runtime trial rows.");
+assert(~isempty(pdschRuntimeEvent) && all(ismember(["NoiseVar","NoiseVarStatus","DecodeAttempted","DecodeUsable","SINRValueRole"], string(pdschRuntimeEvent.Properties.VariableNames))), ...
+    "Public PDSCH runtime table must expose receiver usability, noise lineage, and SINR role columns.");
+assert(~isempty(puschRuntimeEvent) && all(ismember(["AppliedPrecoderPMI","AppliedBeamIndexSet","BeamIndexSetMaterialized","NoiseVarStatus"], string(puschRuntimeEvent.Properties.VariableNames))), ...
+    "Public PUSCH runtime table must preserve runtime precoder and noise-variance lineage.");
+assert(~isempty(pdcchPublic) && ismember("DCIPayloadBits", string(pdcchPublic.Properties.VariableNames)) && ...
+    ~ismember("TBSBits", string(pdcchPublic.Properties.VariableNames)), ...
+    "Public PDCCH table must expose DCI payload bits without pretending PDCCH carries transport-block size.");
+assert(~isempty(pucchPublic) && all(strcmpi(string(pucchPublic.CRCOutcome), "not_applicable")), ...
+    "Public PUCCH UCI table must mark CRC as not applicable when CRC does not apply.");
+assert(~isempty(prachDetection) && all(ismember(["TimingOffsetSamplesRaw","TimingOffsetSamplesApplied"], string(prachDetection.Properties.VariableNames))), ...
+    "Public PRACH detection table must preserve raw and applied timing offsets separately.");
+assert(~isempty(srsMeasurement) && all(ismember(["NoiseVar","NoiseVarSource","NoiseVarStatus","MeasurementUsable"], string(srsMeasurement.Properties.VariableNames))), ...
+    "Public SRS measurement table must expose measurement usability and noise lineage.");
+assert(~isempty(csiRsRuntime) && all(logical(csiRsRuntime.Observed)) && all(ismember(["MeasurementRSRP_dB","RuntimeMaterializationStatus"], string(csiRsRuntime.Properties.VariableNames))), ...
+    "Public CSI-RS runtime table must preserve runtime observation status and measurement columns.");
+assert(~isempty(csiReport) && all(ismember(["CQI","CQIDerivedMCS","CalibrationProfile"], string(csiReport.Properties.VariableNames))), ...
+    "Public CSI report table must expose CQI-derived MCS lineage.");
+assert(~isempty(trsPublic) && all(ismember(["TimingEstimateAvailability","CFOEstimateAvailability","CorrectionLoopStatus"], string(trsPublic.Properties.VariableNames))), ...
+    "Public TRS receiver tracking table must expose timing/CFO availability and correction-loop status.");
+assert(~isempty(ssbPbchCellSearch) && all(ismember(["PBCHCRC","MIBRecovered","RuntimeEvidenceStatus"], string(ssbPbchCellSearch.Properties.VariableNames))), ...
+    "Public SSB/PBCH cell-search table must expose PBCH CRC semantics and runtime evidence state.");
+assert(~isempty(noiseEvidence) && ~any(abs(double(noiseEvidence.NoiseVar) - 1e-10) < eps(1e-10)), ...
+    "Noise-variance evidence table must never reintroduce the forbidden 1e-10 fallback.");
+assert(~isempty(noiseEvidence) && all(ismember(["NoiseVarSource","NoiseVarStatus","SNRConsistencyStatus","ReceiverUsable"], string(noiseEvidence.Properties.VariableNames))), ...
+    "Noise-variance evidence table must expose source, status, SNR consistency, and receiver usability.");
+assert(~isempty(mcsCqiDecision) && all(ismember(["SelectedMCS","CQIDerivedMCS","MCSMismatchStatus","MCSMismatchReason"], string(mcsCqiDecision.Properties.VariableNames))), ...
+    "MCS/CQI decision trace must explain mismatches instead of hiding them.");
+assert(~isempty(contract) && any(strcmp(string(contract.OutputId), "pdsch_runtime_event_table")) && ...
+    any(strcmp(string(contract.OutputId), "plot_manifest")), ...
+    "LLS output contract must register both public tables and plot/provenance outputs.");
+assert(~isempty(metricCatalog) && any(strcmp(string(metricCatalog.MetricName), "NoiseVar")) && ...
+    any(strcmp(string(metricCatalog.MetricName), "SINR_dB")), ...
+    "Metric definition catalog must register core receiver metrics.");
+assert(~isempty(metricUnitRole) && any(strcmp(string(metricUnitRole.MetricName), "NoiseVar")), ...
+    "Metric unit/role catalog must mirror the metric contract.");
+assert(~isempty(plotManifest) && any(strcmp(string(plotManifest.PlotId), "power_energy_cumulative") & logical(plotManifest.CountsAsRealPlot)), ...
+    "Plot manifest must mark real rendered plots explicitly.");
+assert(~isempty(plotManifest) && all(strlength(string(plotManifest.SourceCSV)) > 0), ...
+    "Every plot-manifest row must carry direct source CSV provenance.");
+assert(~isempty(plotRenderStatus) && any(strcmp(string(plotRenderStatus.PlotRenderStatus), "rendered_real_plot")), ...
+    "Plot render-status table must distinguish real rendered plots from suppressed or unavailable entries.");
+chartRegistryNames = lower(string(chartRegistry.Properties.VariableNames));
+assert(~isempty(chartRegistry) && numel(chartRegistryNames) >= 4, ...
+    "Chart source registry must exist as a structured nonempty provenance table.");
+assert(~isempty(plotDataQuality) && all(ismember(["RowCount","UniqueXCount","NonNaNYCount","CountsAsRealPlot"], string(plotDataQuality.Properties.VariableNames))), ...
+    "Plot data-quality table must expose row-count and validity statistics.");
+assert(~isempty(plotSuppression) && any(strcmp(string(plotSuppression.PlotRenderStatus), "suppressed")), ...
+    "Plot suppression table must capture suppressed plots instead of silently counting them as rendered.");
+if ~isempty(unavailablePlotCards)
+    assert(all(ismember(string(unavailablePlotCards.PlotId), string(plotManifest.PlotId(logical(plotManifest.IsUnavailableCard))))), ...
+        "Unavailable plot-card registry must contain only plot IDs that the manifest marked as unavailable cards.");
+end
+assert(~isempty(lineage) && any(strcmp(string(lineage.OutputId), "pdsch_runtime_event_table")) && any(strcmp(string(lineage.DerivationStatus), "derived")), ...
+    "Lineage table must describe derived public outputs from runtime-backed sources.");
+assert(~isempty(fieldAvailability) && any(strcmp(string(fieldAvailability.OutputId), "pdsch_runtime_event_table") & strcmp(string(fieldAvailability.AvailabilityStatus), "present_with_values")), ...
+    "Field-availability matrix must record required public-table fields with real values.");
 assert(~isempty(beamAnalytics) && any(double(beamAnalytics.runtime_applied_pmi_rows) > 0), ...
     "Beamforming analytics must summarize runtime applied PMI evidence.");
 assert(~isempty(mimoRank) && all(isfinite(double(mimoRank.rank_or_layer_count))), ...
@@ -335,10 +476,18 @@ assert(any(ulBeamRows & strcmpi(string(beamPrecoder.applied_precoder_pmi_truth_c
     "Beam/precoder table must preserve runtime-applied UL PUSCH TPMI evidence.");
 assert(~isempty(timingSync) && height(timingSync) == 2, ...
     "Timing synchronization table must be materialized from DL and UL runtime trial rows.");
+assert(all(ismember(["raw_timing_estimate_samples","applied_timing_correction_samples", ...
+    "timing_estimate_application_policy","timing_estimate_status","timing_estimate_was_clipped"], ...
+    string(timingSync.Properties.VariableNames))), ...
+    "Timing synchronization table must expose raw timing truth and applied-correction policy columns.");
 assert(any(strcmpi(string(timingSync.cfo_estimate_availability), "missing") & ~isfinite(double(timingSync.cfo_error_hz))), ...
     "Timing synchronization table must not backfill CFO error when no CFO estimate exists.");
 assert(any(strcmpi(string(timingSync.timing_value_status), "NOT_APPLICABLE") & logical(timingSync.use_ideal_timing_sync)), ...
     "Timing synchronization table must represent ideal timing sync as not applicable rather than a fake estimate.");
+assert(any(strcmpi(string(timingSync.timing_estimate_status), "ideal_sync_bypass") & logical(timingSync.use_ideal_timing_sync)), ...
+    "Timing synchronization table must label ideal-sync rows explicitly.");
+assert(any(strcmpi(string(timingSync.timing_estimate_application_policy), "signed_waveform_shift_negative_padding_positive_crop_supported")), ...
+    "Timing synchronization table must preserve waveform receiver timing-application policy.");
 assert(~any(strcmp(string(unavailable.output_name), "pdcch_dci_table")), ...
     "Implemented runtime-backed PDCCH/DCI output must not remain in the honest unavailable registry.");
 assert(~any(strcmp(string(unavailable.output_name), "csi_rs_table")), ...
@@ -503,18 +652,43 @@ T.EstimatedCFO_Hz = estimatedCFO;
 T.TrueCFO_Hz = trueCFO;
 T.CFOError_Hz = cfoError;
 T.InjectedTimingOffset_samples = injectedTiming;
+T.RawTimingEstimate_samples = estimatedTimingPre;
+T.AppliedTimingCorrection_samples = estimatedTimingPre;
 T.EstimatedTimingOffset_PreCorrection_samples = estimatedTimingPre;
 T.ResidualTimingError_PostCorrection_samples = residualTimingPost;
 T.TrueTimingOffset_samples = trueTiming;
 T.TimingError_samples = timingError;
 T.TimingEstimateUsed = timingEstimateUsed;
 T.UseIdealTimingSync = useIdealTimingSync;
+T.TimingEstimateApplicationPolicy = string(ternaryTimingPolicy(timingEstimateUsed, useIdealTimingSync));
+T.TimingEstimateStatus = string(ternaryTimingStatus(timingEstimateUsed, useIdealTimingSync));
+T.TimingEstimateWasClipped = false;
 T.CFOEstimateAvailability = string(cfoAvailability);
 T.CFOErrorDefinition = string(cfoDefinition);
 T.CFOValueStatus = string(cfoStatus);
 T.TimingEstimateAvailability = string(timingAvailability);
 T.TimingErrorDefinition = string(timingDefinition);
 T.TimingValueStatus = string(timingStatus);
+end
+
+function value = ternaryTimingPolicy(timingEstimateUsed, useIdealTimingSync)
+if logical(useIdealTimingSync)
+    value = "timing_estimation_bypassed_no_runtime_correction";
+elseif logical(timingEstimateUsed)
+    value = "signed_waveform_shift_negative_padding_positive_crop_supported";
+else
+    value = "timing_estimate_unavailable_no_runtime_correction";
+end
+end
+
+function value = ternaryTimingStatus(timingEstimateUsed, useIdealTimingSync)
+if logical(useIdealTimingSync)
+    value = "ideal_sync_bypass";
+elseif logical(timingEstimateUsed)
+    value = "available";
+else
+    value = "missing";
+end
 end
 
 function T = localAddLatencyLineage(T, computeLatencyMs, decodeLatencyMs, procedureDelayMs, airInterfaceTTIMs, airInterfaceObservationMs)

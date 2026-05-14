@@ -1,3 +1,32 @@
 .vscode/
 codegen/
 results/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Local Codex and scratch workspaces
+.codex*/
+codex_tmp/
+codex_empty/
+
+# MATLAB/editor scratch
+*.asv
+*.autosave
+*.mlx.autosave
+slprj/
+
+# Runtime logs and temp roots
+logs/
+tmp/
+tmp_*/
+tmp*/
+Crashpad/
+MathWorks/
+
+# Web/dashboard runtime state and generated scenarios
+tmp_web_runs/
+tmp_dashboard/
+simulator/configs/scenarios/__web_runtime_*.yaml

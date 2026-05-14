@@ -7,11 +7,14 @@ function [rx, info] = SRS_Rx(rxWaveform, cfg, varargin)
 %   Name-Value options:
 %     "Carrier"   : nrCarrierConfig override
 %     "SRS"       : nrSRSConfig override
-%     "NoiseVar"  : noise variance override (if known)
+%     "NoiseVar"  : explicit runtime noise variance metadata
+%     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %
 %   Outputs (RX struct):
 %     .Hest        : estimated channel (K-by-L-by-NRx-by-NTxPorts)
 %     .NoiseVar    : estimated or provided noise variance
+%     .NoiseVarStatus : "OK" or "NOT_AVAILABLE"
+%     .NoiseVarSource : provenance for the used/unavailable noise variance
 %     .RxGrid      : received resource grid
 %     .SRSIndices  : SRS indices
 %     .SRSSymbols  : reference SRS symbols
@@ -20,7 +23,10 @@ function [rx, info] = SRS_Rx(rxWaveform, cfg, varargin)
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('SRS', [], @(x) isempty(x) || isobject(x));
-ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
+ip.addParameter('NoiseVar', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @(x) ischar(x) || isstring(x));
+ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -66,18 +72,39 @@ catch
     end
 end
 
-nVar = opt.NoiseVar;
-if isempty(nVar)
-    if ~isempty(nVarEst) && isfinite(nVarEst) && nVarEst >= 0
-        nVar = nVarEst;
-    else
-        nVar = 1e-10;
-    end
+noiseCandidate = opt.NoiseVar;
+noiseSource = "runtime_metadata";
+if isempty(noiseCandidate)
+    noiseCandidate = nVarEst;
+    noiseSource = "runtime_channel_estimate";
+else
+    noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
 end
+configuredNoiseVariance = opt.ConfiguredNoiseVariance;
+if ~isempty(configuredNoiseVariance)
+    configuredNoiseVariance = localConvertNoiseVarToGridDomain(configuredNoiseVariance, ofdmInfo);
+end
+[nVar, noiseStatus] = sixgr.phy.ul.resolveULNoiseVariance(noiseCandidate, cfg, ...
+    "ChannelType", "SRS", ...
+    "OriginalSource", noiseSource, ...
+    "StrictRequired", opt.StrictNoiseVarianceRequired, ...
+    "ConfiguredNoiseVariance", configuredNoiseVariance, ...
+    "ConfiguredNoiseVarianceSource", opt.ConfiguredNoiseVarianceSource);
+nVar = double(nVar);
 
 rx = struct();
 rx.Hest = Hest;
-rx.NoiseVar = double(nVar);
+rx.NoiseVar = nVar;
+rx.NoiseVarStatus = char(string(noiseStatus.Status));
+rx.NoiseVarSource = char(string(noiseStatus.Source));
+rx.NoiseVarReason = char(string(noiseStatus.Reason));
+rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
+rx.MeasurementAttempted = logical(noiseStatus.IsValid);
+rx.MeasurementUsable = logical(noiseStatus.IsValid);
+rx.FailureReason = "";
+if ~logical(noiseStatus.IsValid)
+    rx.FailureReason = char(string(noiseStatus.Reason));
+end
 rx.RxGrid = rxGrid;
 rx.Carrier = carrier;
 rx.SRS = srs;
@@ -89,6 +116,7 @@ info.CarrierInfo = cinfo;
 info.OFDMInfo = ofdmInfo;
 info.SRSInfo = srsInfo;
 info.ChannelEstimation = estInfo;
+info.NoiseVariance = noiseStatus;
 
 end
 
@@ -126,4 +154,15 @@ function srs = localApplySRSFromCfg(srs, cfg)
             end
         end
     end
+end
+
+function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
+nVarGrid = double(nVarTime);
+if nargin < 2 || ~isstruct(ofdmInfo)
+    return;
+end
+nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+if isfinite(nfft) && nfft > 0
+    nVarGrid = nVarGrid * nfft;
+end
 end

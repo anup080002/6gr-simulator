@@ -1,0 +1,574 @@
+version: 1
+parameters:
+  - parameter_id: frequency.center_frequency_hz
+    browser_path: frequency.center_frequency_hz
+    scenario_path: frequency.center_frequency_hz
+    internal_cfg_path: channel.fc_Hz
+    value_type: number
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Carrier_Numerology_Grid
+    feature_family: Carrier_Numerology_Grid
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [global_radio_scope.carrier_frequency_hz, random_access.carrier_frequency_hz, prach_lls.CarrierFrequencyHz]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.CarrierFrequencyHz
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: frequency.bandwidth_hz
+    browser_path: frequency.bandwidth_hz
+    scenario_path: frequency.bandwidth_hz
+    internal_cfg_path: channel.bandwidth_Hz
+    value_type: number
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Carrier_Numerology_Grid
+    feature_family: Carrier_Numerology_Grid
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [global_radio_scope.channel_bandwidth_hz]
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: browser_editable
+    support_status: no_runtime_evidence_mapping_registered
+    unavailable_reason: runtime_consumer_not_yet_instrumented
+  - parameter_id: frequency.duplex_mode
+    browser_path: frequency.duplex_mode
+    scenario_path: frequency.duplex_mode
+    internal_cfg_path: phy.duplex.mode
+    value_type: string
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Carrier_Numerology_Grid
+    feature_family: Carrier_Numerology_Grid
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [random_access.duplex_mode, prach_lls.DuplexMode]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.DuplexMode
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: frame.scs_khz
+    browser_path: frame.scs_khz
+    scenario_path: frame.scs_khz
+    internal_cfg_path: phy.carrier.SubcarrierSpacing_kHz
+    value_type: number
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Carrier_Numerology_Grid
+    feature_family: Carrier_Numerology_Grid
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [global_radio_scope.scs_hz, random_access.carrier_scs_khz, prach_lls.CarrierSCSkHz]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.CarrierSCSkHz
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: frame.cp_type
+    browser_path: frame.cp_type
+    scenario_path: frame.cp_type
+    internal_cfg_path: phy.carrier.CyclicPrefix
+    value_type: string
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Carrier_Numerology_Grid
+    feature_family: Carrier_Numerology_Grid
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: browser_editable
+    support_status: consumer_not_instrumented
+    unavailable_reason: current_prach_backend_uses_toolbox_defaults_without_explicit_cp_evidence
+  - parameter_id: frequency.n_size_grid
+    browser_path: frequency.n_size_grid
+    scenario_path: frequency.n_size_grid
+    internal_cfg_path: phy.carrier.NSizeGrid
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Carrier_Numerology_Grid
+    feature_family: Carrier_Numerology_Grid
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [random_access.n_size_grid, prach_lls.NSizeGrid]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.NSizeGrid
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.enabled
+    browser_path: random_access.enabled
+    scenario_path: random_access.enabled
+    internal_cfg_path: phy.prach.enable
+    value_type: boolean
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach.enabled]
+    matlab_consumer_functions: [sixgr.link.runPRACHDetection, sixgr.rach.runPRACHLLS]
+    runtime_object_path: prach_cfg.enable_gate
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.prach_format
+    browser_path: random_access.prach_format
+    scenario_path: random_access.prach_format
+    internal_cfg_path: phy.prach.preambleFormat
+    value_type: string
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach.format_set, prach_lls.PRACHFormat]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.RequestedPRACHFormat
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.configuration_index
+    browser_path: random_access.configuration_index
+    scenario_path: random_access.configuration_index
+    internal_cfg_path: phy.prach.configurationIndex
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.PRACHConfigurationIndex]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.PRACHConfigurationIndex
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.subcarrier_spacing_khz
+    browser_path: random_access.subcarrier_spacing_khz
+    scenario_path: random_access.subcarrier_spacing_khz
+    internal_cfg_path: phy.prach.subcarrierSpacing_kHz
+    value_type: number
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.PRACHSubcarrierSpacing]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.PRACHSubcarrierSpacing
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.root_sequence_index
+    browser_path: random_access.root_sequence_index
+    scenario_path: random_access.root_sequence_index
+    internal_cfg_path: phy.prach.rootSeqIndex
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [random_access.sequence_index, random_access.logical_root_sequence_index, prach_lls.SequenceIndex]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.SequenceIndex
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.zero_correlation_zone
+    browser_path: random_access.zero_correlation_zone
+    scenario_path: random_access.zero_correlation_zone
+    internal_cfg_path: phy.prach.zeroCorrelationZone
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.ZeroCorrelationZone]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.ZeroCorrelationZone
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.preamble_index
+    browser_path: random_access.preamble_index
+    scenario_path: random_access.preamble_index
+    internal_cfg_path: phy.prach.preambleIndex
+    value_type: number_list
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.PreambleIndex]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.PreambleIndex
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.restricted_set
+    browser_path: random_access.restricted_set
+    scenario_path: random_access.restricted_set
+    internal_cfg_path: phy.prach.restrictedSet
+    value_type: string
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.RestrictedSet]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.RestrictedSet
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.frequency_start
+    browser_path: random_access.frequency_start
+    scenario_path: random_access.frequency_start
+    internal_cfg_path: phy.prach.frequencyStart
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.FrequencyStart]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.FrequencyStart
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.num_prach_occasions
+    browser_path: random_access.num_prach_occasions
+    scenario_path: random_access.num_prach_occasions
+    internal_cfg_path: prach_lls.NumPRACHOccasions
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.NumPRACHOccasions
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.min_detection_trials
+    browser_path: random_access.min_detection_trials
+    scenario_path: random_access.min_detection_trials
+    internal_cfg_path: prach_lls.NumTrials
+    value_type: integer
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig]
+    runtime_object_path: prachCfg.NumTrials
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.detection_threshold
+    browser_path: random_access.detection_threshold
+    scenario_path: random_access.detection_threshold
+    internal_cfg_path: phy.prach.detectionThreshold
+    value_type: number
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: [prach_lls.DetectionThreshold]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig, sixgr.link.runPRACHDetection]
+    runtime_object_path: prachCfg.DetectionThreshold
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.detection_threshold_mode
+    browser_path: random_access.detection_threshold_mode
+    scenario_path: random_access.detection_threshold_mode
+    internal_cfg_path: prach_lls.DetectionThresholdMode
+    value_type: string
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig, sixgr.link.runPRACHDetection]
+    runtime_object_path: prachCfg.DetectionThresholdMode
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
+  - parameter_id: random_access.msg1_fdm
+    browser_path: random_access.msg1_fdm
+    scenario_path: random_access.msg1_fdm
+    internal_cfg_path: ""
+    value_type: integer
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+  - parameter_id: random_access.msg1_frequency_start
+    browser_path: random_access.msg1_frequency_start
+    scenario_path: random_access.msg1_frequency_start
+    internal_cfg_path: ""
+    value_type: integer
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+  - parameter_id: random_access.response_window_slots
+    browser_path: random_access.response_window_slots
+    scenario_path: random_access.response_window_slots
+    internal_cfg_path: ""
+    value_type: integer
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+  - parameter_id: random_access.preamble_transmit_power_dbm
+    browser_path: random_access.preamble_transmit_power_dbm
+    scenario_path: random_access.preamble_transmit_power_dbm
+    internal_cfg_path: ""
+    value_type: number
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+  - parameter_id: random_access.power_ramping_step_db
+    browser_path: random_access.power_ramping_step_db
+    scenario_path: random_access.power_ramping_step_db
+    internal_cfg_path: ""
+    value_type: number
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+  - parameter_id: random_access.ra_rnti_policy
+    browser_path: random_access.ra_rnti_policy
+    scenario_path: random_access.ra_rnti_policy
+    internal_cfg_path: ""
+    value_type: string
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+  - parameter_id: random_access.prach_occasion_policy
+    browser_path: random_access.prach_occasion_policy
+    scenario_path: random_access.prach_occasion_policy
+    internal_cfg_path: ""
+    value_type: string
+    default_source: none
+    browser_visible: false
+    browser_editable: false
+    ui_layer: PHY_L1
+    ui_section: Random_Access_PRACH
+    feature_family: Random_Access_PRACH
+    applies_when:
+      features: [Random_Access_PRACH]
+    aliases: []
+    matlab_consumer_functions: []
+    runtime_object_path: ""
+    evidence_artifact: ""
+    evidence_field: ""
+    evidence_role: ""
+    classification: unsupported_backend
+    support_status: dead_parameter
+    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend

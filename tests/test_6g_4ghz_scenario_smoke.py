@@ -9,22 +9,24 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
 
+DEFAULT_WAVEFORM_SCENARIO_ID = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot"
+
 
 def main() -> None:
     baseline, _ = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     browser_payload = dash.canonicalize_browser_config_payload(baseline, keep_legacy_aliases=False)
 
-    assert str(dash.path_get(browser_payload, "meta.scenario_group", "")) == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot"
+    assert str(dash.path_get(browser_payload, "meta.scenario_group", "")) == DEFAULT_WAVEFORM_SCENARIO_ID
     assert int(dash.path_get(browser_payload, "global_radio_scope.carrier_frequency_hz", 0)) == 4_000_000_000
     assert int(dash.path_get(browser_payload, "global_radio_scope.channel_bandwidth_hz", 0)) == 100_000_000
-    assert int(dash.path_get(browser_payload, "deployment_topology.num_sites", 0)) == 2
-    assert int(dash.path_get(browser_payload, "deployment_topology.num_cells", 0)) == 6
-    assert int(dash.path_get(browser_payload, "deployment_topology.num_ues", 0)) == 50
+    assert int(dash.path_get(browser_payload, "deployment_topology.num_sites", 0)) == 19
+    assert int(dash.path_get(browser_payload, "deployment_topology.num_cells", 0)) == 57
+    assert int(dash.path_get(browser_payload, "deployment_topology.num_ues", 0)) == 570
     assert str(dash.path_get(browser_payload, "system.scheduler.type", "")) == "PF"
     assert str(dash.path_get(browser_payload, "traffic.model", "")) == "fullBuffer"
     assert str(dash.path_get(browser_payload, "run_control.simulation_mode", "")) == "full_phy"
     assert str(dash.path_get(browser_payload, "run_control.run_profile", "")) == "exhaustive"
-    assert int(dash.path_get(browser_payload, "run_control.total_slots", 0)) == 14
+    assert int(dash.path_get(browser_payload, "run_control.total_slots", 0)) == 60
     assert str(dash.path_get(browser_payload, "users.beam_selection_strategy", "")) == "runtime_best_beam_per_link"
     contract = dash.scenario_launch_contract(browser_payload, dash.DEFAULT_SCENARIO)
     assert contract["presentation_label"] == "Waveform bundle truth"
@@ -55,7 +57,7 @@ def main() -> None:
     )
 
     page = dash.build_home_page(dash.DEFAULT_SCENARIO, "", user_profile=None).decode("utf-8", errors="ignore")
-    assert "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_50ue_14slot" in page, "Home page must surface the locked scenario identity."
+    assert DEFAULT_WAVEFORM_SCENARIO_ID in page, "Home page must surface the locked scenario identity."
     assert "Waveform bundle truth" in page
     for token in (
         "run_control.study_mode",
