@@ -125,8 +125,8 @@ PROCESS_HEARTBEAT_STALL_MINUTES = max(
 TERMINAL_STATUS_PREFIXES = ("completed", "failed", "aborted")
 TERMINAL_STATUS_VALUES = {"completed", "completed_with_failures", "aborted", "failed", "stopped"}
 REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
-    {"id": "active_bw_vs_power", "label": "active_bw_vs_power", "chart_tokens": ["active bandwidth power"], "image_tokens": ["active_bw_vs_power"]},
-    {"id": "active_rank_vs_power", "label": "active_rank_vs_power", "chart_tokens": ["active rank power"], "image_tokens": ["active_rank_vs_power"]},
+    {"id": "active_bw_vs_power", "label": "active_bw_vs_power", "chart_tokens": ["active bandwidth vs power", "active bandwidth power"], "image_tokens": ["active_bw_vs_power"]},
+    {"id": "active_rank_vs_power", "label": "active_rank_vs_power", "chart_tokens": ["active rank vs power", "active rank power"], "image_tokens": ["active_rank_vs_power"]},
     {"id": "antenna_element_layout", "label": "antenna_element_layout", "prefer": "image", "chart_tokens": ["antenna element layout", "array element layout"], "image_tokens": ["antenna element layout", "array element layout", "antenna_element_layout"]},
     {"id": "antenna_radiation_pattern", "label": "antenna_radiation_pattern", "prefer": "image", "chart_tokens": ["antenna radiation pattern", "radiation pattern"], "image_tokens": ["antenna radiation pattern", "radiation pattern", "antenna_radiation_pattern"]},
     {"id": "beam_index_vs_time", "label": "beam_index_vs_time", "chart_tokens": ["selected beam timeline", "beam id timeline", "beam index timeline"], "image_tokens": ["beam-id-timeline", "selected-beam-timeline", "beam index timeline"]},
@@ -2897,6 +2897,18 @@ def latest_run_id() -> int | None:
         return None
 
 
+def quick_latest_run_id() -> int | None:
+    """Cheap run lookup for pages that must stay responsive during live writes."""
+    try:
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute("SELECT run_id FROM sim_runs ORDER BY run_id DESC LIMIT 1")
+                row = cur.fetchone()
+                return None if row is None else int(row["run_id"])
+    except mysql.connector.Error:
+        return None
+
+
 def _status_payload(row: dict[str, Any]) -> dict[str, Any]:
     raw = row.get("status_json")
     if isinstance(raw, dict):
@@ -3138,6 +3150,62 @@ def fetch_artifact_bytes(artifact_id: int) -> bytes:
             return b"".join(bytes(chunk) for (chunk,) in cur.fetchall())
 
 
+def contract_materialization_is_current(
+    artifacts: list[dict[str, Any]],
+    *,
+    run_status: str = "",
+) -> bool:
+    """Fast guard to avoid rematerializing every browser request."""
+    if str(run_status or "").strip().lower() == "running":
+        return False
+    manifest_path = contract_materializer.manifest_logical_path()
+    manifest_artifacts = [
+        art for art in artifacts
+        if str(art.get("logical_path") or "") == manifest_path
+    ]
+    if not manifest_artifacts:
+        return False
+    manifest_latest = max(manifest_artifacts, key=lambda art: int(art.get("artifact_id") or 0))
+    try:
+        manifest_meta = fetch_artifact_meta(int(manifest_latest.get("artifact_id") or 0)) or {}
+        manifest_metadata = json.loads(str(manifest_meta.get("metadata_json") or "{}"))
+    except Exception:
+        return False
+    try:
+        current_source_watermark = contract_materializer._source_artifact_high_watermark(artifacts, db_connection)
+    except Exception:
+        return False
+    if int(manifest_metadata.get("source_artifact_high_watermark") or 0) < int(current_source_watermark):
+        return False
+    coverage_path = contract_materializer.coverage_logical_path()
+    coverage_artifacts = [
+        art for art in artifacts
+        if str(art.get("logical_path") or "") == coverage_path
+    ]
+    if not coverage_artifacts:
+        return False
+    latest = max(coverage_artifacts, key=lambda art: int(art.get("artifact_id") or 0))
+    try:
+        payload = fetch_artifact_bytes(int(latest.get("artifact_id") or 0)).decode("utf-8", "replace")
+    except Exception:
+        return False
+    if contract_materializer.MATERIALIZER_VERSION not in payload:
+        return False
+    try:
+        rows = list(csv.DictReader(io.StringIO(payload)))
+    except Exception:
+        return False
+    if not rows:
+        return False
+    row = rows[-1]
+    return (
+        str(row.get("tables_missing") or "0").strip() in {"0", ""}
+        and str(row.get("charts_missing") or "0").strip() in {"0", ""}
+        and str(row.get("missing_table_paths") or "[]").strip() in {"", "[]"}
+        and str(row.get("missing_chart_names") or "[]").strip() in {"", "[]"}
+    )
+
+
 def artifact_url(artifact_id: int, download: bool = False) -> str:
     suffix = "?download=1" if download else ""
     return f"/artifact/{artifact_id}/raw{suffix}"
@@ -3342,6 +3410,77 @@ def runtime_log_cursor_file(run_tag: str | None) -> Path | None:
     if not token:
         return None
     return RUNTIME_LOG_DIR / f"{token}.offset.json"
+
+
+def safe_uploaded_scenario_name(name: str) -> str:
+    text = Path(str(name or "")).name.strip()
+    if not text:
+        raise ValueError("A target YAML filename is required.")
+    if text.startswith("__web_runtime_"):
+        raise ValueError("Uploaded catalog scenarios cannot use the reserved __web_runtime_ prefix.")
+    if not text.lower().endswith((".yaml", ".yml")):
+        text = f"{text}.yaml"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("._")
+    if not safe or not safe.lower().endswith((".yaml", ".yml")):
+        raise ValueError("Scenario filename must end in .yaml or .yml.")
+    return safe
+
+
+def validate_scenario_yaml_text(yaml_text: str) -> dict[str, Any]:
+    if not str(yaml_text or "").strip():
+        raise ValueError("Uploaded scenario YAML is empty.")
+    payload = yaml.safe_load(yaml_text)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise ValueError("Uploaded scenario YAML must decode to a mapping at the top level.")
+    return payload
+
+
+def write_uploaded_scenario(target_name: str, yaml_text: str) -> Path:
+    payload = validate_scenario_yaml_text(yaml_text)
+    safe_name = safe_uploaded_scenario_name(target_name)
+    target_path = resolve_scenario_path(safe_name)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
+    target_path.write_text(normalized, encoding="utf-8")
+    return target_path
+
+
+def build_scenario_download(scenario_name: str, fmt: str) -> tuple[bytes, str, str]:
+    fmt = str(fmt or "yaml").strip().lower()
+    if fmt == "json":
+        payload, source_chain = load_resolved_config_payload(scenario_name)
+        payload["_download_metadata"] = {
+            "scenario": scenario_name,
+            "source_chain": source_chain,
+            "note": "Resolved scenario config produced from catalog inheritance.",
+        }
+        return json_bytes(payload), "application/json; charset=utf-8", f"{Path(scenario_name).stem}_resolved.json"
+    raw = load_scenario_text(scenario_name)
+    return raw.encode("utf-8"), "text/yaml; charset=utf-8", Path(scenario_name).name
+
+
+def build_run_config_download(run_id: int, fmt: str) -> tuple[bytes, str, str]:
+    run_row = fetch_run(int(run_id))
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    payload = parse_config_json(run_row)
+    if not payload:
+        raise ValueError(f"Run {run_id} does not have a config_json payload yet.")
+    payload["_download_metadata"] = {
+        "run_id": int(run_id),
+        "run_tag": run_row.get("run_tag") or "",
+        "scenario_id": run_row.get("scenario_id") or "",
+        "status_text": run_row.get("status_text") or "",
+        "note": "Exact run config_json snapshot from MySQL. Runtime YAML overlays are generated from this launch contract.",
+    }
+    fmt = str(fmt or "yaml").strip().lower()
+    stem = safe_token(str(run_row.get("run_tag") or f"run_{run_id}")) or f"run_{run_id}"
+    if fmt == "json":
+        return json_bytes(payload), "application/json; charset=utf-8", f"{stem}_config.json"
+    raw = yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
+    return raw.encode("utf-8"), "text/yaml; charset=utf-8", f"{stem}_config.yaml"
 
 
 def dashboard_listener_file() -> Path:
@@ -4457,16 +4596,12 @@ def _build_legacy_plot_browser_items(
     table_artifacts: list[dict[str, Any]],
     image_artifacts: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], int, int]:
-    numeric_charts = build_numeric_charts_from_artifacts(
-        table_artifacts,
-        limit=max(len(table_artifacts), 1),
-    )
     items: list[dict[str, Any]] = []
-    for chart in numeric_charts:
-        artifact_id = int(chart.get("artifact_id") or 0)
+    for chart_artifact in table_artifacts:
+        artifact_id = int(chart_artifact.get("artifact_id") or 0)
         if artifact_id <= 0:
             continue
-        source = str(chart.get("title") or chart.get("chart_id") or "")
+        source = str(chart_artifact.get("logical_path") or "")
         items.append(
             {
                 "id": f"chart:{artifact_id}",
@@ -4477,7 +4612,7 @@ def _build_legacy_plot_browser_items(
                 "source": source,
                 "table_view_url": f"/artifact/{artifact_id}/table",
                 "chart_view_url": f"/api/artifact/{artifact_id}/chart",
-                "download_url": str(chart.get("download_url") or artifact_url(artifact_id, download=True)),
+                "download_url": str(chart_artifact.get("download_url") or artifact_url(artifact_id, download=True)),
             }
         )
     for image in image_artifacts:
@@ -4503,14 +4638,94 @@ def _build_legacy_plot_browser_items(
     return items, interactive_count, image_count
 
 
+def merge_plot_browser_items(canonical_items: list[dict[str, Any]], legacy_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prefer semantic family cards while still exposing every persisted artifact."""
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in [*canonical_items, *legacy_items]:
+        if not isinstance(item, dict):
+            continue
+        artifact_id = int(item.get("artifact_id") or 0)
+        kind = str(item.get("kind") or "").strip().lower()
+        if artifact_id > 0:
+            key = f"{kind}:{artifact_id}"
+        else:
+            key = f"{kind}:{item.get('family_id') or item.get('label') or item.get('reason')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
+def plot_browser_chart_table_artifacts(
+    table_artifacts: list[dict[str, Any]],
+    reference_chart_artifacts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return chart-sized table artifacts for the plot browser without raw trial-table fan-out."""
+    out: list[dict[str, Any]] = list(reference_chart_artifacts)
+    for item in table_artifacts:
+        path = str(item.get("logical_path") or "").replace("\\", "/").strip().lower()
+        if path.startswith(("analytics/csv/contract__", "reports/csv/contract__")):
+            out.append(item)
+            continue
+        if path.startswith("reports/csv/") and (
+            path.endswith("_plot.csv")
+            or "_vs_" in path
+            or path.endswith("_cdf.csv")
+            or path.endswith("_histogram.csv")
+        ):
+            out.append(item)
+    return dedupe_descriptor_list(out)
+
+
 def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
-    live = build_live_payload(run_id, lite=False)
-    table_artifacts = list(live.get("tables_all") or [])
-    image_artifacts = list(live.get("images_all") or [])
-    legacy_items, legacy_interactive_count, legacy_image_count = _build_legacy_plot_browser_items(table_artifacts, image_artifacts)
+    run_row = fetch_run(run_id)
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    inserted_logs = sync_runtime_log_for_run(run_row)
+    if inserted_logs:
+        run_row = fetch_run(run_id) or run_row
+    artifacts = fetch_artifacts(run_id)
+    feature_policy = extract_run_feature_policy(run_row)
+    status_text = str(run_row.get("status_text") or "").strip().lower()
+    should_materialize_contract = (
+        is_terminal_status(status_text)
+        or (
+            status_text == "running"
+            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        )
+    )
+    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
+        contract_materializer.materialize_run_contract_artifacts(
+            run_row,
+            artifacts,
+            fetch_artifact_bytes=fetch_artifact_bytes,
+            db_connection_factory=db_connection,
+            feature_policy=feature_policy,
+            lock_timeout_seconds=0,
+        )
+        artifacts = fetch_artifacts(run_id)
+    public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
+    sorted_artifacts = sorted(public_artifacts, key=artifact_sort_key)
+    table_artifacts = dedupe_table_descriptors_for_ui(
+        [
+            build_artifact_descriptor(art)
+            for art in sorted_artifacts
+            if str(art.get("artifact_kind") or "") == "table_csv"
+        ]
+    )
+    image_artifacts = [
+        build_artifact_descriptor(art)
+        for art in sorted_artifacts
+        if str(art.get("mime_type") or "").startswith("image/")
+    ]
+    reference_chart_artifacts = shortlist_reference_gallery_chart_artifacts(table_artifacts)
+    plot_chart_artifacts = plot_browser_chart_table_artifacts(table_artifacts, reference_chart_artifacts)
+    legacy_items, legacy_interactive_count, legacy_image_count = _build_legacy_plot_browser_items(plot_chart_artifacts, image_artifacts)
     numeric_charts = build_numeric_charts_from_artifacts(
-        table_artifacts,
-        limit=max(len(table_artifacts), 1),
+        reference_chart_artifacts,
+        limit=max(len(reference_chart_artifacts), 1),
     )
     gallery = build_reference_plot_gallery(numeric_charts, image_artifacts)
     canonical_items: list[dict[str, Any]] = []
@@ -4570,22 +4785,24 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
                 }
             )
     if canonical_items:
-        interactive_count = sum(1 for item in canonical_items if item.get("kind") == "interactive")
-        image_count = sum(1 for item in canonical_items if item.get("kind") == "image")
-        unavailable_count = sum(1 for item in canonical_items if item.get("kind") == "unavailable")
+        merged_items = merge_plot_browser_items(canonical_items, legacy_items)
+        interactive_count = sum(1 for item in merged_items if item.get("kind") == "interactive")
+        image_count = sum(1 for item in merged_items if item.get("kind") == "image")
+        unavailable_count = sum(1 for item in merged_items if item.get("kind") == "unavailable")
         return {
             "run_id": int(run_id),
-            "mode": "canonical_reference_gallery",
-            "items": canonical_items,
+            "mode": "canonical_plus_published_artifacts",
+            "items": merged_items,
+            "canonical_items": canonical_items,
             "raw_items": legacy_items,
             "interactive_count": interactive_count,
             "image_count": image_count,
             "unavailable_count": unavailable_count,
-            "total_count": len(canonical_items),
+            "total_count": len(merged_items),
             "raw_total_count": len(legacy_items),
             "raw_interactive_count": legacy_interactive_count,
             "raw_image_count": legacy_image_count,
-            "suppressed_raw_count": max(0, len(legacy_items) - (interactive_count + image_count)),
+            "suppressed_raw_count": 0,
         }
     return {
         "run_id": int(run_id),
@@ -5425,6 +5642,369 @@ def load_first_available_csv_rows(artifacts: list[dict[str, Any]], logical_paths
         if rows:
             return rows
     return []
+
+
+PHY_GRID_CHANNEL_SPECS: dict[str, dict[str, Any]] = {
+    "pbch_trials": {"channel": "SSB/PBCH", "direction": "DL", "symbol_start": 0, "symbol_count": 4, "prb_start": 0, "prb_count": 20},
+    "pdcch_trials": {"channel": "PDCCH", "direction": "DL", "symbol_start": 0, "symbol_count": 3, "prb_start": 0, "prb_count": 48},
+    "dl_trials": {"channel": "PDSCH", "direction": "DL", "symbol_start": 0, "symbol_count": 14, "prb_start": 0, "prb_count": None},
+    "trs_trials": {"channel": "TRS", "direction": "DL", "symbol_start": 10, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
+    "prach_trials": {"channel": "PRACH", "direction": "UL", "symbol_start": 0, "symbol_count": 6, "prb_start": 0, "prb_count": 12},
+    "ul_trials": {"channel": "PUSCH", "direction": "UL", "symbol_start": 0, "symbol_count": 14, "prb_start": 0, "prb_count": None},
+    "pucch_trials": {"channel": "PUCCH", "direction": "UL", "symbol_start": 12, "symbol_count": 2, "prb_start": 0, "prb_count": 1},
+    "srs_trials": {"channel": "SRS", "direction": "UL", "symbol_start": 13, "symbol_count": 1, "prb_start": 0, "prb_count": 48},
+}
+
+
+PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
+    "csirs_trials": {
+        "canonical_path": "air_interface/csv/csi_rs_trials.csv",
+        "legacy_paths": ["control/csv/csi_rs_trials.csv", "reports/csv/live_csirs_stats.csv"],
+        "owner_kind": "raw_control_trials",
+        "spec": {"channel": "CSI-RS", "direction": "DL", "symbol_start": 10, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
+    },
+    "dl_grants": {
+        "canonical_path": "packet_flow/csv/live_dl_scheduler_grants.csv",
+        "legacy_paths": ["system/csv/system_scheduler_grants.csv"],
+        "owner_kind": "scheduler_grants_dl",
+        "spec": {"channel": "DL Grant", "direction": "DL", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
+    },
+    "ul_grants": {
+        "canonical_path": "packet_flow/csv/live_ul_scheduler_grants.csv",
+        "legacy_paths": ["system/csv/system_scheduler_grants.csv"],
+        "owner_kind": "scheduler_grants_ul",
+        "spec": {"channel": "UL Grant", "direction": "UL", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
+    },
+}
+
+
+def first_present_value(row: dict[str, Any], names: list[str], default: Any = "") -> Any:
+    lowered = {str(key).strip().lower(): key for key in row.keys()}
+    for name in names:
+        key = lowered.get(str(name).strip().lower())
+        if key is None:
+            continue
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return default
+
+
+def first_present_number(row: dict[str, Any], names: list[str], default: float = math.nan) -> float:
+    value = first_present_value(row, names, "")
+    numeric = coerce_numeric(value)
+    if numeric is None:
+        return default
+    return float(numeric)
+
+
+def bounded_int(value: Any, default: int, lo: int, hi: int) -> int:
+    numeric = coerce_numeric(value)
+    if numeric is None or not math.isfinite(float(numeric)):
+        return default
+    return max(lo, min(hi, int(round(float(numeric)))))
+
+
+def phy_grid_slot_value(row: dict[str, Any]) -> int | None:
+    slot = first_present_number(
+        row,
+        [
+            "CanonicalSlot",
+            "AbsoluteSlot",
+            "AbsSlot",
+            "SlotIndex",
+            "Slot",
+            "SlotNumber",
+            "slot",
+        ],
+        math.nan,
+    )
+    if not math.isfinite(slot):
+        return None
+    return int(round(slot))
+
+
+def phy_grid_ue_value(row: dict[str, Any]) -> str:
+    value = first_present_value(
+        row,
+        ["UEID", "UEId", "UE", "UEIndex", "UserID", "RNTI", "ue_id", "UE_RNTI"],
+        "",
+    )
+    text = str(value or "").strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    return text
+
+
+def phy_grid_tdd_token(pattern: str, slot: int, one_based_slots: bool) -> str:
+    clean = "".join(ch for ch in str(pattern or "").upper() if ch in {"D", "U", "S", "F"})
+    if not clean:
+        return "?"
+    idx = slot - 1 if one_based_slots else slot
+    return clean[idx % len(clean)]
+
+
+def phy_grid_prb_count_from_set(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return math.nan
+    nums = re.findall(r"-?\d+(?:\.\d+)?", text)
+    if not nums:
+        return math.nan
+    return float(len(nums))
+
+
+def build_phy_event(
+    row: dict[str, Any],
+    table_key: str,
+    spec: dict[str, Any],
+    selected_path: str,
+    nrb: int,
+    *,
+    derived_channel: str | None = None,
+    derived_source_note: str = "",
+) -> dict[str, Any] | None:
+    slot = phy_grid_slot_value(row)
+    if slot is None:
+        return None
+    prb_start = first_present_number(
+        row,
+        ["PRBStart", "RBStart", "StartRB", "AllocatedPRBStart", "PRBStartIndex", "MinPRB"],
+        float(spec.get("prb_start", 0) or 0),
+    )
+    prb_count = first_present_number(
+        row,
+        ["PRBCount", "PRBLength", "AllocatedPRBCount", "NumRB", "NPRB", "NRB", "NumPRB"],
+        math.nan,
+    )
+    if not math.isfinite(prb_count):
+        prb_count = phy_grid_prb_count_from_set(first_present_value(row, ["PRBSet", "PRBs", "RBSet"], ""))
+    if not math.isfinite(prb_count):
+        configured = spec.get("prb_count", None)
+        prb_count = float(configured) if configured is not None else float(nrb)
+    symbol_start = first_present_number(
+        row,
+        ["SymbolStart", "StartSymbol", "StartSymbolIndex", "FirstSymbol"],
+        float(spec.get("symbol_start", 0) or 0),
+    )
+    symbol_count = first_present_number(
+        row,
+        ["NumSymbols", "SymbolCount", "SymbolLength", "DurationSymbols", "L"],
+        float(spec.get("symbol_count", 1) or 1),
+    )
+    channel = str(derived_channel or spec.get("channel") or table_key)
+    crc_value = first_present_value(row, ["CRCPass", "CRCOK", "CRC", "DecodeSuccess", "DetectionSuccess", "Pass"], "")
+    status_value = first_present_value(row, ["Status", "DecodeStatus", "DetectionStatus", "ResultStatus", "SRSValidityState"], "")
+    return {
+        "slot": int(slot),
+        "direction": str(spec.get("direction") or ""),
+        "channel": channel,
+        "table_key": table_key,
+        "ue_id": phy_grid_ue_value(row),
+        "symbol_start": bounded_int(symbol_start, int(spec.get("symbol_start", 0) or 0), 0, 13),
+        "symbol_count": bounded_int(symbol_count, int(spec.get("symbol_count", 1) or 1), 1, 14),
+        "prb_start": max(0, int(round(prb_start))) if math.isfinite(prb_start) else 0,
+        "prb_count": max(1, min(max(nrb, 1), int(round(prb_count)))) if math.isfinite(prb_count) else max(nrb, 1),
+        "status": str(status_value or ""),
+        "crc": str(crc_value or ""),
+        "mcs": first_present_value(row, ["MCS", "MCSIndex", "ScheduledMCS", "SelectedMCS"], ""),
+        "cqi": first_present_value(row, ["WidebandCQI", "CQI", "CQIIndex"], ""),
+        "sinr_dB": first_present_value(row, ["ReceiverHestSINR_dB", "SINR_dB", "LargeScaleSINR_dB", "SNRdB"], ""),
+        "rsrp_dBm": first_present_value(row, ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], ""),
+        "source_artifact": selected_path,
+        "source_note": derived_source_note or "runtime_csv_row",
+    }
+
+
+def add_reference_signal_overlay(
+    events: list[dict[str, Any]],
+    base_event: dict[str, Any],
+    row: dict[str, Any],
+    channel: str,
+    count_names: list[str],
+    symbol_default: int,
+) -> None:
+    count = first_present_number(row, count_names, math.nan)
+    if not math.isfinite(count) or count <= 0:
+        return
+    overlay = dict(base_event)
+    overlay["channel"] = channel
+    overlay["symbol_start"] = bounded_int(symbol_default, symbol_default, 0, 13)
+    overlay["symbol_count"] = 1
+    overlay["source_note"] = f"runtime_rs_count_only:{int(round(count))}_re"
+    events.append(overlay)
+
+
+def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | None = None) -> dict[str, Any]:
+    run_row = fetch_run(int(run_id))
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    cfg = parse_config_json(run_row)
+    artifacts = fetch_artifacts(int(run_id))
+    nrb = bounded_int(
+        path_get(
+            cfg,
+            "resolved_runtime_view.active_grid_num_rbs",
+            path_get(
+                cfg,
+                "phy.carrier.NSizeGrid",
+                path_get(cfg, "frequency.n_size_grid", path_get(cfg, "resource_grid.num_rbs", 273)),
+            ),
+        ),
+        273,
+        1,
+        4096,
+    )
+    symbols_per_slot = bounded_int(path_get(cfg, "frame_timing.symbols_per_slot", 14), 14, 1, 28)
+    tdd_pattern = str(
+        path_get(
+            cfg,
+            "frame_timing.tdd_pattern",
+            path_get(
+                cfg,
+                "frame.tdd_pattern",
+                path_get(
+                    cfg,
+                    "phy.duplex.tddPattern",
+                    path_get(
+                        cfg,
+                        "lls6g.resolvedConfig.frame_timing.tdd_pattern",
+                        path_get(cfg, "lls6g.frame.tdd_pattern", ""),
+                    ),
+                ),
+            ),
+        )
+        or ""
+    )
+    slot_limit = max(1, min(200, int(slot_limit or 50)))
+    table_rows: dict[str, list[dict[str, Any]]] = {}
+    table_meta: dict[str, dict[str, Any]] = {}
+    for table_key, spec in CANONICAL_RUNTIME_ARTIFACT_OWNERS.items():
+        if table_key not in PHY_GRID_CHANNEL_SPECS:
+            continue
+        rows, meta = select_canonical_csv_rows(
+            artifacts,
+            str(spec["canonical_path"]),
+            legacy_paths=list(spec.get("legacy_paths") or []),
+            max_rows=12000,
+            owner_kind=str(spec.get("owner_kind") or ""),
+        )
+        table_rows[table_key] = rows
+        table_meta[table_key] = meta
+    for table_key, info in PHY_GRID_EXTRA_TABLES.items():
+        rows, meta = select_canonical_csv_rows(
+            artifacts,
+            str(info["canonical_path"]),
+            legacy_paths=list(info.get("legacy_paths") or []),
+            max_rows=12000,
+            owner_kind=str(info.get("owner_kind") or ""),
+        )
+        table_rows[table_key] = rows
+        table_meta[table_key] = meta
+
+    ue_values = sorted(
+        {
+            phy_grid_ue_value(row)
+            for rows in table_rows.values()
+            for row in rows
+            if phy_grid_ue_value(row)
+        },
+        key=lambda item: (coerce_numeric(item) is None, float(coerce_numeric(item) or 0), item),
+    )
+    selected_ue = str(ue_id or "").strip()
+
+    raw_slots = [
+        phy_grid_slot_value(row)
+        for rows in table_rows.values()
+        for row in rows
+        if phy_grid_slot_value(row) is not None
+    ]
+    raw_slots = [int(x) for x in raw_slots if x is not None]
+    one_based_slots = bool(raw_slots and min(raw_slots) >= 1)
+    slot_start = 1 if one_based_slots else 0
+    if raw_slots:
+        slot_start = min(raw_slots)
+    slots = [
+        {
+            "slot": slot_start + idx,
+            "tdd": phy_grid_tdd_token(tdd_pattern, slot_start + idx, one_based_slots),
+        }
+        for idx in range(slot_limit)
+    ]
+    slot_set = {int(slot["slot"]) for slot in slots}
+
+    events: list[dict[str, Any]] = []
+    for table_key, rows in table_rows.items():
+        spec = PHY_GRID_CHANNEL_SPECS.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
+        selected_path = str(table_meta.get(table_key, {}).get("selected_logical_path") or "")
+        for row in rows:
+            event_ue = phy_grid_ue_value(row)
+            if selected_ue and event_ue and event_ue != selected_ue:
+                continue
+            event = build_phy_event(row, table_key, spec, selected_path, nrb)
+            if event is None or int(event["slot"]) not in slot_set:
+                continue
+            events.append(event)
+            if table_key == "pbch_trials":
+                for ch, sym in [("PSS", 0), ("PBCH", 1), ("SSS", 2), ("PBCH", 3)]:
+                    overlay = dict(event)
+                    overlay["channel"] = ch
+                    overlay["symbol_start"] = sym
+                    overlay["symbol_count"] = 1
+                    overlay["source_note"] = "ssb_component_position_relative_to_ssb_block"
+                    events.append(overlay)
+            elif table_key == "dl_trials":
+                add_reference_signal_overlay(events, event, row, "PDSCH-DMRS", ["DMRSRECount", "DMRS_RE_Count", "PDSCHDMRSRECount"], 2)
+                add_reference_signal_overlay(events, event, row, "PDSCH-PTRS", ["PTRSRECount", "PTRS_RE_Count", "PDSCHPTRSRECount"], 6)
+            elif table_key == "ul_trials":
+                add_reference_signal_overlay(events, event, row, "PUSCH-DMRS", ["DMRSRECount", "DMRS_RE_Count", "PUSCHDMRSRECount"], 2)
+
+    lane_order = [
+        "PSS", "SSS", "SSB/PBCH", "PBCH", "PDCCH", "CSI-RS", "TRS", "DL Grant", "PDSCH", "PDSCH-DMRS", "PDSCH-PTRS",
+        "PRACH", "UL Grant", "PUSCH", "PUSCH-DMRS", "PUCCH", "SRS",
+    ]
+    present_lanes = sorted({str(event.get("channel") or "") for event in events if str(event.get("channel") or "")})
+    lanes = [lane for lane in lane_order if lane in present_lanes] + [lane for lane in present_lanes if lane not in lane_order]
+    dataflow = sorted(events, key=lambda item: (int(item.get("slot") or 0), int(item.get("symbol_start") or 0), str(item.get("channel") or "")))
+    table_status = [
+        {
+            "table_key": key,
+            "path": str(meta.get("selected_logical_path") or meta.get("canonical_logical_path") or ""),
+            "selection_status": str(meta.get("selection_status") or ""),
+            "rows_loaded": len(table_rows.get(key, [])),
+            "artifact_id": meta.get("selected_artifact_id"),
+        }
+        for key, meta in sorted(table_meta.items())
+    ]
+    provenance_notes = [
+        "Grid cells are built from run CSV artifacts only; no synthetic pass/fail or fake RE positions are created.",
+        "PDSCH/PUSCH allocation rectangles use exported PRB/symbol columns when present; otherwise the runtime row and selected artifact are shown as unavailable/estimated.",
+        "DMRS/PTRS overlays are drawn only when exported RE counts are present. Exact per-RE index export is still required for full RE-level coloring.",
+        "PSS/SSS/PBCH component symbols are shown relative to each exported SSB/PBCH row.",
+    ]
+    return {
+        "run": {
+            "run_id": int(run_id),
+            "run_tag": run_row.get("run_tag") or "",
+            "scenario_id": run_row.get("scenario_id") or "",
+            "status_text": run_row.get("status_text") or "",
+        },
+        "grid": {
+            "slot_limit": slot_limit,
+            "slots": slots,
+            "nrb": nrb,
+            "symbols_per_slot": symbols_per_slot,
+            "tdd_pattern": tdd_pattern,
+            "selected_ue_id": selected_ue,
+            "ue_options": ue_values[:500],
+            "lanes": lanes,
+            "events": events[:6000],
+            "event_count": len(events),
+        },
+        "dataflow": dataflow[:1000],
+        "table_status": table_status,
+        "provenance_notes": provenance_notes,
+    }
 
 
 def count_non_consistent_rows(rows: list[dict[str, Any]]) -> int:
@@ -6372,7 +6952,7 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
             and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
         )
     )
-    if should_materialize_contract:
+    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
         contract_materializer.materialize_run_contract_artifacts(
             run_row,
             artifacts,
@@ -9729,7 +10309,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
             and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
         )
     )
-    if should_materialize_contract:
+    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
         contract_materializer.materialize_run_contract_artifacts(
             run_row,
             artifacts,
@@ -9876,9 +10456,11 @@ def render_nav(active: str, run_id: int | None = None, user_profile: dict[str, A
         ("Home", "/home", active == "home"),
         ("Runs", "/runs", active == "runs"),
         ("Result", f"/result?run_id={latest}" if latest else "/result", active == "result"),
+        ("PHY Grid", f"/phy-grid?run_id={latest}" if latest else "/phy-grid", active == "phy-grid"),
         ("Analytics", f"/analytics?run_id={latest}" if latest else "/analytics", active == "analytics"),
         ("Outputs", f"/outputs?run_id={latest}" if latest else "/outputs", active == "outputs"),
         ("Map", f"/map?run_id={latest}" if latest else "/map", active == "map"),
+        ("Scenario I/O", "/scenario-io", active == "scenario-io"),
         ("Documentation", "/documentation", active == "documentation"),
         ("Profile", "/profile", active == "profile"),
     ]
@@ -10289,6 +10871,7 @@ PRODUCT_NAV = [
     ("mac_scheduler", "MAC / Scheduler", "/mac-scheduler"),
     ("l1_phy", "L1 / PHY", "/l1-phy"),
     ("antenna_air", "Antenna / Air Interface / Channel", "/antenna-air"),
+    ("phy_grid", "PHY Grid", "/phy-grid"),
     ("realtime", "Real-Time Data", "/realtime"),
     ("reports", "Reports", "/reports"),
     ("analytics", "Analytics", "/analytics"),
@@ -10298,6 +10881,7 @@ PRODUCT_NAV = [
     ("artifacts", "Artifact Explorer", "/artifacts"),
     ("parameters", "Parameter Catalog", "/parameter-catalog"),
     ("compare", "Compare Runs", "/compare-runs"),
+    ("scenario_io", "Scenario I/O", "/scenario-io"),
 ]
 
 PRODUCT_CONFIG_MODEL_PAGES = {
@@ -12001,7 +12585,7 @@ window.addEventListener('DOMContentLoaded', function () {
       viewer.innerHTML = '<div class="chart-empty">No truthful chart, graph, or image artifacts were published for the selected run.</div>';
       return;
     }
-    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Canonical Families</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>All Published Artifacts</option>`;
+    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Canonical + Published</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>Raw Published Artifacts</option>`;
     if (!state.plotBrowserId || !items.some(item => item.id === state.plotBrowserId)) {
       const firstAvailable = items.find(item => item.kind === 'interactive' || item.kind === 'image');
       state.plotBrowserId = String((firstAvailable || items[0] || {}).id || '');
@@ -12021,8 +12605,8 @@ window.addEventListener('DOMContentLoaded', function () {
     const payloadMode = String((state.plotBrowserPayload || {}).mode || '');
     stats.textContent = state.plotBrowserCatalogMode === 'all'
       ? `${rawInteractiveCount} Plotly artifacts, ${rawImageCount} zoom/pan artifacts, ${rawTotalCount} total published artifacts`
-      : (payloadMode === 'canonical_reference_gallery'
-        ? `${interactiveCount} Plotly families, ${imageCount} zoom/pan families, ${items.length} canonical plot families${unavailableCount ? `, ${unavailableCount} not published for this run` : ''}${suppressedRawCount ? `, ${suppressedRawCount} raw duplicates hidden` : ''}`
+      : (payloadMode === 'canonical_reference_gallery' || payloadMode === 'canonical_plus_published_artifacts'
+        ? `${interactiveCount} Plotly artifacts, ${imageCount} zoom/pan artifacts, ${items.length} published plot items${unavailableCount ? `, ${unavailableCount} not published for this run` : ''}${suppressedRawCount ? `, ${suppressedRawCount} raw duplicates hidden` : ''}`
         : `${interactiveCount} Plotly charts, ${imageCount} zoom/pan images, ${items.length} total interactive truthful plot items`);
     if (selected.kind === 'interactive') {
       const cachedChart = ((state.plotBrowserChartCache || {})[String(selected.artifact_id || '')]) || null;
@@ -12050,7 +12634,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function plotsPage() {
     title('Plots', 'Truth-backed chart, graph, and image viewer for the selected run.');
-    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical Families gives the cleaned-up semantic plot view. All Published Artifacts exposes every persisted chart/image from the selected run. Table-backed families use Plotly; image-only families use zoom, pan, fit, and fullscreen controls.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Chart / Graph / Image<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
+    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical + Published exposes the semantic gallery plus every persisted chart/image from the selected run. Raw Published Artifacts shows the unmerged artifact dump. Table-backed charts use Plotly; image-only charts use zoom, pan, fit, and fullscreen controls.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Chart / Graph / Image<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
     renderPlotBrowser();
   }
   function buildTableBrowserItems() {
@@ -12548,6 +13132,194 @@ refreshConfigPreview();
 applyHomeSearch();
 </script>
 """
+
+
+def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profile: dict[str, Any] | None = None) -> bytes:
+    selected_run_id = run_id or preferred_live_run_id() or preferred_analysis_run_id() or latest_run_id()
+    runs = fetch_runs(limit=100)
+    options = []
+    for row in runs:
+        rid = int(row.get("run_id") or 0)
+        if rid <= 0:
+            continue
+        selected = ' selected="selected"' if selected_run_id == rid else ""
+        label = f"Run {rid} - {row.get('run_tag') or row.get('scenario_id') or ''} - {row.get('status_text') or ''}"
+        options.append(f'<option value="{rid}"{selected}>{html.escape(label)}</option>')
+    run_selector = (
+        f'<select id="phyRunSelect">{"".join(options)}</select>'
+        if options
+        else '<select id="phyRunSelect"><option value="">No runs available</option></select>'
+    )
+    message_html = f'<section class="panel"><strong>{html.escape(message)}</strong></section>' if message else ""
+    initial_run_json = json.dumps(int(selected_run_id or 0))
+    body = f"""
+{message_html}
+<section class="panel">
+  <h2>50-Slot PHY Grid Monitor</h2>
+  <p class="muted">Artifact-backed DL/UL grid view for SSB, PSS, SSS, PBCH, PDCCH, PDSCH, DMRS/PTRS counts, CSI-RS, TRS, PRACH, PUSCH, PUCCH, and SRS. Missing exact RE indices stay explicitly marked instead of being invented.</p>
+  <div class="toolbar">
+    <label>Run {run_selector}</label>
+    <label>UE <select id="phyUeSelect"><option value="">Auto / broadcast</option></select></label>
+    <label>Slots <input id="phySlotLimit" type="number" value="50" min="1" max="200" style="width:90px"></label>
+    <button type="button" id="phyRefresh">Refresh Grid</button>
+    <a class="button-link" id="phyRunConfigDownload" href="#">Download Running Config</a>
+  </div>
+  <div id="phySummary" class="metric-grid"></div>
+  <div class="phy-scroll"><div id="phyGridTable" class="muted">Loading PHY grid...</div></div>
+</section>
+<section class="panel">
+  <h2>Selected UE Message And Measurement Dataflow</h2>
+  <p class="muted">Chronological runtime events from the same CSV artifacts used above. This is intended for following one UE through control, reference-signal, scheduling, data, and feedback rows.</p>
+  <div class="table-wrap"><table id="phyDataflowTable"><tbody><tr><td>Loading...</td></tr></tbody></table></div>
+</section>
+<section class="panel">
+  <h2>Artifact Coverage And Provenance</h2>
+  <div id="phyProvenance" class="table-wrap"><table><tbody><tr><td>Loading...</td></tr></tbody></table></div>
+</section>
+"""
+    extra_head = """
+<style>
+.phy-scroll { overflow:auto; border:1px solid var(--border); border-radius:18px; background:rgba(255,255,255,0.66); }
+.phy-table { border-collapse:collapse; min-width:1600px; width:100%; font-size:12px; }
+.phy-table th, .phy-table td { border:1px solid rgba(133,150,178,0.24); padding:6px; vertical-align:top; min-width:92px; }
+.phy-table th { position:sticky; left:0; background:#f7fbff; z-index:2; }
+.phy-slot-head { position:sticky; top:0; background:#eef7fb; z-index:3; }
+.phy-cell { height:66px; background:rgba(255,255,255,0.78); }
+.phy-cell.tdd-D { background:rgba(15,139,141,0.08); }
+.phy-cell.tdd-U { background:rgba(255,122,89,0.08); }
+.phy-cell.tdd-S { background:rgba(243,182,64,0.16); }
+.phy-badge { display:block; margin:2px 0; padding:4px 6px; border-radius:8px; color:white; font-weight:700; line-height:1.2; box-shadow:0 4px 10px rgba(18,32,51,0.12); }
+.phy-DL { background:#0f8b8d; }
+.phy-UL { background:#ff7a59; }
+.phy-RS { background:#6759ff; }
+.phy-CTRL { background:#233b5d; }
+.phy-BCAST { background:#12a57a; }
+.phy-mini { display:block; font-weight:500; opacity:0.9; font-size:11px; }
+</style>
+"""
+    extra_script = f"""
+<script>
+const INITIAL_PHY_RUN_ID = {initial_run_json};
+function escPhy(value) {{
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
+}}
+function eventClass(event) {{
+  const ch = String(event.channel || '').toUpperCase();
+  if (['PSS','SSS','PBCH','SSB/PBCH'].includes(ch)) return 'phy-BCAST';
+  if (ch.includes('DMRS') || ch.includes('PTRS') || ch.includes('SRS') || ch.includes('CSI') || ch.includes('TRS')) return 'phy-RS';
+  if (ch.includes('PDCCH') || ch.includes('PUCCH') || ch.includes('PRACH') || ch.includes('GRANT')) return 'phy-CTRL';
+  return String(event.direction || '').toUpperCase() === 'UL' ? 'phy-UL' : 'phy-DL';
+}}
+function renderPhyGrid(payload) {{
+  const grid = payload.grid || {{}};
+  const slots = grid.slots || [];
+  const lanes = grid.lanes || [];
+  const events = grid.events || [];
+  const byKey = new Map();
+  events.forEach(event => {{
+    const key = `${{event.channel}}|${{event.slot}}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(event);
+  }});
+  const summary = document.getElementById('phySummary');
+  summary.innerHTML = [
+    ['Run', `${{payload.run?.run_id || ''}} / ${{payload.run?.status_text || ''}}`],
+    ['Scenario', payload.run?.scenario_id || 'n/a'],
+    ['Selected UE', grid.selected_ue_id || 'broadcast/all'],
+    ['Grid', `${{grid.nrb || '?'}} RB x ${{grid.symbols_per_slot || '?'}} symbols`],
+    ['TDD', grid.tdd_pattern || 'n/a'],
+    ['Events', String(grid.event_count || events.length || 0)]
+  ].map(([label, value]) => `<div class="metric-card"><div class="metric-value">${{escPhy(value)}}</div><div class="metric-label">${{escPhy(label)}}</div></div>`).join('');
+  if (!lanes.length || !slots.length) {{
+    document.getElementById('phyGridTable').innerHTML = '<p class="warning">No grid events are available yet for this run. The view will populate as MATLAB publishes the runtime CSV artifacts.</p>';
+  }} else {{
+    const head = `<tr><th class="phy-slot-head">Channel</th>${{slots.map(slot => `<th class="phy-slot-head">Slot ${{escPhy(slot.slot)}}<br><span class="mini-note">${{escPhy(slot.tdd)}}</span></th>`).join('')}}</tr>`;
+    const rows = lanes.map(lane => {{
+      const cells = slots.map(slot => {{
+        const list = byKey.get(`${{lane}}|${{slot.slot}}`) || [];
+        const badges = list.slice(0, 8).map(event => {{
+          const title = `src=${{event.source_artifact || ''}} sym=${{event.symbol_start}}+${{event.symbol_count}} prb=${{event.prb_start}}+${{event.prb_count}} note=${{event.source_note || ''}}`;
+          return `<span class="phy-badge ${{eventClass(event)}}" title="${{escPhy(title)}}">${{escPhy(event.channel)}}<span class="phy-mini">UE ${{escPhy(event.ue_id || '-')}} | PRB ${{escPhy(event.prb_start)}}+${{escPhy(event.prb_count)}} | sym ${{escPhy(event.symbol_start)}}+${{escPhy(event.symbol_count)}}</span></span>`;
+        }}).join('');
+        const more = list.length > 8 ? `<span class="mini-note">+${{list.length - 8}} more</span>` : '';
+        return `<td class="phy-cell tdd-${{escPhy(slot.tdd)}}">${{badges || '<span class="mini-note">-</span>'}}${{more}}</td>`;
+      }}).join('');
+      return `<tr><th>${{escPhy(lane)}}</th>${{cells}}</tr>`;
+    }}).join('');
+    document.getElementById('phyGridTable').innerHTML = `<table class="phy-table">${{head}}${{rows}}</table>`;
+  }}
+  const ueSelect = document.getElementById('phyUeSelect');
+  const oldUE = ueSelect.value;
+  ueSelect.innerHTML = '<option value="">Auto / broadcast</option>' + (grid.ue_options || []).map(ue => `<option value="${{escPhy(ue)}}">${{escPhy(ue)}}</option>`).join('');
+  ueSelect.value = oldUE || grid.selected_ue_id || '';
+  const flowRows = (payload.dataflow || []).slice(0, 500).map(event => `<tr><td>${{escPhy(event.slot)}}</td><td>${{escPhy(event.direction)}}</td><td>${{escPhy(event.channel)}}</td><td>${{escPhy(event.ue_id || '-')}}</td><td>${{escPhy(event.mcs)}}</td><td>${{escPhy(event.cqi)}}</td><td>${{escPhy(event.sinr_dB)}}</td><td>${{escPhy(event.rsrp_dBm)}}</td><td>${{escPhy(event.crc || event.status)}}</td><td>${{escPhy(event.source_artifact)}}</td></tr>`).join('');
+  document.getElementById('phyDataflowTable').innerHTML = `<thead><tr><th>Slot</th><th>Dir</th><th>Block</th><th>UE</th><th>MCS</th><th>CQI</th><th>SINR dB</th><th>RSRP dBm</th><th>Status</th><th>Source</th></tr></thead><tbody>${{flowRows || '<tr><td colspan="10">No UE dataflow rows yet.</td></tr>'}}</tbody>`;
+  const tableRows = (payload.table_status || []).map(row => `<tr><td>${{escPhy(row.table_key)}}</td><td>${{escPhy(row.selection_status)}}</td><td>${{escPhy(row.rows_loaded)}}</td><td>${{escPhy(row.path)}}</td><td>${{escPhy(row.artifact_id || '')}}</td></tr>`).join('');
+  const notes = (payload.provenance_notes || []).map(note => `<p class="muted">${{escPhy(note)}}</p>`).join('');
+  document.getElementById('phyProvenance').innerHTML = `${{notes}}<table><thead><tr><th>Table</th><th>Status</th><th>Rows Loaded</th><th>Path</th><th>Artifact</th></tr></thead><tbody>${{tableRows}}</tbody></table>`;
+  const dl = document.getElementById('phyRunConfigDownload');
+  if (dl && payload.run?.run_id) dl.href = `/run-config/download?run_id=${{payload.run.run_id}}&format=yaml`;
+}}
+async function refreshPhyGrid() {{
+  const runId = document.getElementById('phyRunSelect').value || INITIAL_PHY_RUN_ID;
+  if (!runId) return;
+  const ue = document.getElementById('phyUeSelect').value || '';
+  const limit = document.getElementById('phySlotLimit').value || '50';
+  const url = `/api/run/${{encodeURIComponent(runId)}}/phy-grid?slot_limit=${{encodeURIComponent(limit)}}&ue_id=${{encodeURIComponent(ue)}}`;
+  const response = await fetch(url, {{cache: 'no-store'}});
+  if (!response.ok) throw new Error(await response.text());
+  renderPhyGrid(await response.json());
+}}
+document.getElementById('phyRefresh')?.addEventListener('click', refreshPhyGrid);
+document.getElementById('phyRunSelect')?.addEventListener('change', () => {{
+  document.getElementById('phyUeSelect').value = '';
+  refreshPhyGrid();
+}});
+document.getElementById('phyUeSelect')?.addEventListener('change', refreshPhyGrid);
+setInterval(() => refreshPhyGrid().catch(console.error), 5000);
+refreshPhyGrid().catch(err => {{
+  document.getElementById('phyGridTable').innerHTML = `<p class="warning">${{escPhy(err.message || err)}}</p>`;
+}});
+</script>
+"""
+    return page_shell("PHY Grid", body, active="phy-grid", run_id=selected_run_id, extra_head=extra_head, extra_script=extra_script, user_profile=user_profile)
+
+
+def build_scenario_io_page(message: str = "", user_profile: dict[str, Any] | None = None) -> bytes:
+    scenarios = list_scenarios()
+    options = "".join(
+        f'<option value="{html.escape(item)}">{html.escape(item)}</option>'
+        for item in scenarios
+    )
+    latest = quick_latest_run_id()
+    latest_download = f"/run-config/download?run_id={latest}&format=yaml" if latest else "#"
+    message_html = f'<section class="panel"><strong>{html.escape(message)}</strong></section>' if message else ""
+    body = f"""
+{message_html}
+<section class="panel">
+  <h2>Scenario Upload / Download</h2>
+  <p class="muted">Download a catalog scenario, download the exact config for a running/completed run, or upload a new YAML scenario into the catalog. Uploaded files must be YAML mappings and stay inside <code>simulator/configs/scenarios</code>.</p>
+  <div class="toolbar">
+    <form method="get" action="/scenario/download">
+      <label>Catalog Scenario <select name="scenario">{options}</select></label>
+      <label>Format <select name="format"><option value="yaml">YAML</option><option value="json">Resolved JSON</option></select></label>
+      <button type="submit">Download Scenario</button>
+    </form>
+    <a class="button-link" href="{html.escape(latest_download)}">Download Latest Run Config</a>
+  </div>
+</section>
+<section class="panel">
+  <h2>Upload Scenario YAML</h2>
+  <form method="post" action="/scenario/upload" enctype="multipart/form-data">
+    <input type="hidden" name="next" value="/scenario-io">
+    <label>Target filename <input type="text" name="target_name" placeholder="my_truth_scenario.yaml"></label>
+    <label>YAML file <input type="file" name="scenario_file" accept=".yaml,.yml,text/yaml,application/x-yaml"></label>
+    <label>Or paste YAML <textarea name="yaml_text" rows="16" placeholder="inherits: ..."></textarea></label>
+    <button type="submit">Upload Scenario</button>
+  </form>
+</section>
+"""
+    return page_shell("Scenario I/O", body, active="scenario-io", run_id=latest, user_profile=user_profile)
 
 
 def build_home_page(selected_scenario: str, message: str = "", user_profile: dict[str, Any] | None = None) -> bytes:
@@ -15403,8 +16175,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 }
                 self.respond_json_download(payload, filename="sixgr_final_config.json")
                 return
+            if parsed.path == "/scenario/download":
+                scenario_name = params.get("scenario", [DEFAULT_SCENARIO])[0]
+                payload, content_type, filename = build_scenario_download(
+                    scenario_name,
+                    params.get("format", ["yaml"])[0],
+                )
+                self.respond_bytes_download(payload, filename=filename, content_type=content_type)
+                return
+            if parsed.path == "/run-config/download":
+                run_id = parse_optional_int(params.get("run_id", [None])[0])
+                if run_id is None:
+                    raise ValueError("run_id is required to download a run config.")
+                payload, content_type, filename = build_run_config_download(
+                    int(run_id),
+                    params.get("format", ["yaml"])[0],
+                )
+                self.respond_bytes_download(payload, filename=filename, content_type=content_type)
+                return
             if parsed.path.startswith("/run/") and parsed.path.split("/")[-1].isdigit():
                 self.redirect(f"/realtime?run_id={urllib.parse.quote(parsed.path.split('/')[-1])}")
+                return
+            if parsed.path == "/":
+                self.redirect("/plots")
                 return
             if (
                 parsed.path in PRODUCT_PAGE_ROUTES
@@ -15432,8 +16225,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     )
                 )
                 return
-            if parsed.path in {"/", "/home"}:
+            if parsed.path == "/home":
                 self.respond_html(build_home_page(params.get("scenario", [DEFAULT_SCENARIO])[0], params.get("message", [""])[0], user_profile=user_profile))
+                return
+            if parsed.path == "/phy-grid":
+                self.respond_html(
+                    build_phy_grid_page(
+                        parse_optional_int(params.get("run_id", [None])[0]),
+                        message=params.get("message", [""])[0],
+                        user_profile=user_profile,
+                    )
+                )
+                return
+            if parsed.path == "/scenario-io":
+                self.respond_html(build_scenario_io_page(params.get("message", [""])[0], user_profile=user_profile))
                 return
             if parsed.path == "/runs":
                 self.respond_html(build_runs_page(params.get("message", [""])[0], user_profile=user_profile))
@@ -15572,6 +16377,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 slug = params.get("slug", [""])[0]
                 self.respond_json(build_contract_section_payload(run_id, kind=kind, slug=slug))
                 return
+            if parsed.path.startswith("/api/run/") and parsed.path.endswith("/phy-grid"):
+                run_id = int(parsed.path.split("/")[3])
+                self.respond_json(
+                    build_phy_grid_payload(
+                        run_id,
+                        slot_limit=bounded_int(params.get("slot_limit", ["50"])[0], 50, 1, 200),
+                        ue_id=params.get("ue_id", [""])[0],
+                    )
+                )
+                return
             if parsed.path.startswith("/api/run/") and parsed.path.endswith("/map"):
                 run_id = int(parsed.path.split("/")[3])
                 self.respond_json(build_live_payload(run_id)["map"])
@@ -15601,12 +16416,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # pragma: no cover
             self.respond_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
+    def read_post_fields(self, content_length: int) -> tuple[dict[str, list[Any]], dict[str, list[dict[str, Any]]]]:
+        content_type = str(self.headers.get("Content-Type") or "")
+        if "multipart/form-data" in content_type.lower():
+            import cgi
+
+            env = {
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": content_type,
+                "CONTENT_LENGTH": str(content_length),
+            }
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ=env,
+                keep_blank_values=True,
+            )
+            fields: dict[str, list[Any]] = {}
+            files: dict[str, list[dict[str, Any]]] = {}
+            for key in form.keys():
+                items = form[key]
+                if not isinstance(items, list):
+                    items = [items]
+                for item in items:
+                    if getattr(item, "filename", None):
+                        files.setdefault(str(key), []).append(
+                            {
+                                "filename": str(item.filename or ""),
+                                "content": item.file.read(),
+                            }
+                        )
+                    else:
+                        fields.setdefault(str(key), []).append(item.value)
+            return fields, files
+        raw = self.rfile.read(content_length).decode("utf-8", errors="replace")
+        return urllib.parse.parse_qs(raw, keep_blank_values=True), {}
+
     def do_POST(self) -> None:  # noqa: N802
         try:
             parsed = urllib.parse.urlparse(self.path)
             content_length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(content_length).decode("utf-8")
-            fields = urllib.parse.parse_qs(raw, keep_blank_values=True)
+            fields, files = self.read_post_fields(content_length)
             if parsed.path == "/login":
                 if auth_mode_open():
                     self.redirect(str(fields.get("next", ["/home"])[0] or "/home"))
@@ -15652,6 +16502,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     f"{stats['runtime_yaml']} runtime YAML files, and {stats['disk_entries']} disk entries removed."
                 )
                 self.redirect(f"{next_url}?message={urllib.parse.quote(message)}")
+                return
+            if parsed.path == "/scenario/upload":
+                upload_items = files.get("scenario_file", [])
+                uploaded = upload_items[0] if upload_items else {}
+                uploaded_name = str(uploaded.get("filename") or "").strip()
+                yaml_text = str(fields.get("yaml_text", [""])[0] or "")
+                if not yaml_text and uploaded.get("content"):
+                    yaml_text = bytes(uploaded["content"]).decode("utf-8", errors="replace")
+                target_name = str(fields.get("target_name", [""])[0] or uploaded_name or "").strip()
+                target_path = write_uploaded_scenario(target_name, yaml_text)
+                rel_name = target_path.relative_to(SCENARIO_ROOT).as_posix()
+                message = f"Uploaded scenario {rel_name}. It is now available from Run Control and Scenario I/O."
+                self.redirect(f"/scenario-io?message={urllib.parse.quote(message)}")
                 return
             if parsed.path != "/run":
                 self.respond_error(HTTPStatus.NOT_FOUND, "Unknown route.")
@@ -15721,6 +16584,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", filename).strip("_") or "config.json"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def respond_bytes_download(self, payload: bytes, *, filename: str, content_type: str = "application/octet-stream") -> None:
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", filename).strip("_") or "download.bin"
+        raw = bytes(payload or b"")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(raw)))

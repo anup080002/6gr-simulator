@@ -8,9 +8,9 @@ function [ptrsInd, ptrsSym, info, pdsch] = ptrsPDSCH(carrier, cfgOrPdsch, vararg
 %   indices/symbols and info.Enabled=false.
 %
 %   Name-Value overrides:
-%     "IndexBase" - "0based" (default) or "1based"
+%     "IndexBase" - "1based" (default) or "0based"
 
-opts.IndexBase = '0based';
+opts.IndexBase = '1based';
 for i = 1:2:numel(varargin)
     if i+1 > numel(varargin), break; end
     key = varargin{i}; val = varargin{i+1};

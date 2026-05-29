@@ -1,2 +1,0 @@
-run_id,chart_name,status,reason,checked_sources
-1,constellation per layer,unavailable_exact_reason,No per-layer equalized constellation samples are exported in the runtime preview rows for this run.,air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

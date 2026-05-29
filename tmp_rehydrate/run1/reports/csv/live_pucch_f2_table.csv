@@ -1,2 +1,0 @@
-run_id,section_title,label_name,contract_materialization_status,source_artifact,source_row_count,lineage_note
-1,PUCCH F0 / F1 / F2 / F3 / F4,live_pucch_f2_table,source_artifact_present_but_empty,control/csv/pucch_table.csv,0,No runtime PUCCH rows resolved to format 2 in this bounded run.

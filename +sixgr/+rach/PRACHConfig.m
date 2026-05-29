@@ -97,6 +97,7 @@ prachCfg.NumPRACHOccasions = round(double(localResolveScalar(localFirstNonEmpty(
     localResolveField(cfg, {"prach_lls.NumPRACHOccasions", "random_access.num_prach_occasions"}, 4)))));
 prachCfg.NumSlots = round(double(localResolveScalar(localFirstNonEmpty(opts.NumSlots, ...
     localResolveField(cfg, {"prach_lls.NumSlots", "random_access.num_slots", "run.totalSlots", "simulation.n_slots"}, max(20, prachCfg.NumPRACHOccasions * 4))))));
+prachCfg.NumSlots = max(prachCfg.NumSlots, max(80, prachCfg.NumPRACHOccasions * 20));
 prachCfg.NumSubframes = round(double(localResolveScalar(localFirstNonEmpty(opts.NumSubframes, ...
     localResolveField(cfg, {"prach_lls.NumSubframes", "random_access.num_subframes"}, max(1, ceil(prachCfg.NumSlots / 2)))))));
 prachCfg.NumTrials = round(double(localResolveScalar(localFirstNonEmpty(opts.NumTrials, ...
@@ -178,6 +179,7 @@ end
 
 localValidateResolvedConfig(prachCfg);
 [carrier, prach] = localBuildToolboxConfigs(prachCfg);
+prachCfg.NumSlots = localExpandNumSlotsForRequestedOccasion(prachCfg, carrier, prach);
 [firstOccasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, prachCfg);
 
 prachCfg.ToolboxCarrier = carrier;
@@ -322,6 +324,29 @@ if strlength(cfg.RequestedPRACHFormat) > 0 && resolvedFormat ~= upper(strtrim(st
         "Requested PRACHFormat=%s resolves to toolbox format %s for configuration index %g / PRACH SCS %g kHz.", ...
         cfg.RequestedPRACHFormat, resolvedFormat, double(cfg.PRACHConfigurationIndex), double(cfg.PRACHSubcarrierSpacing));
 end
+end
+
+function numSlots = localExpandNumSlotsForRequestedOccasion(cfg, carrier, prach)
+numSlots = max(1, round(double(cfg.NumSlots)));
+targetOccasion = max(1, round(double(cfg.NumPRACHOccasions)));
+maxSlots = max([numSlots, 512, targetOccasion * 512]);
+while numSlots <= maxSlots
+    cfgTry = cfg;
+    cfgTry.NumSlots = numSlots;
+    try
+        sixgr.rach.mapPRACHToOccasion(cfgTry, "OccasionIndex", targetOccasion, ...
+            "Carrier", carrier, "PRACH", prach);
+        return;
+    catch ME
+        if ~strcmp(string(ME.identifier), "sixgr:rach:mapPRACHToOccasion:NoSuchOccasion")
+            rethrow(ME);
+        end
+    end
+    numSlots = min(maxSlots + 1, max(numSlots + 1, numSlots * 2));
+end
+error("sixgr:rach:PRACHConfig:NoRequestedOccasion", ...
+    "The resolved PRACH configuration does not materialize requested occasion %g within %g scanned slots.", ...
+    double(targetOccasion), double(maxSlots));
 end
 
 function [occasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, cfg)

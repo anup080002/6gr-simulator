@@ -228,12 +228,14 @@ cfg.CORESET.FrequencyAllocationMode = char(string(point.FrequencyAllocationMode)
 cfg.CORESET.REGBundleSize = point.REGBundleSize;
 cfg.CORESET.NumREGPerCCE = point.NumREGPerCCE;
 for i = 1:numel(cfg.SearchSpaces)
+    originalCounts = cfg.SearchSpaces(i).CandidateCountPerAL;
     cfg.SearchSpaces(i).AggregationLevels = point.AggregationLevel;
     fields = fieldnames(cfg.SearchSpaces(i).CandidateCountPerAL);
     for k = 1:numel(fields)
         cfg.SearchSpaces(i).CandidateCountPerAL.(fields{k}) = 0;
     end
-    cfg.SearchSpaces(i).CandidateCountPerAL.(sprintf("AL%d", point.AggregationLevel)) = 1;
+    fieldName = sprintf("AL%d", point.AggregationLevel);
+    cfg.SearchSpaces(i).CandidateCountPerAL.(fieldName) = max(1, round(double(sixgr.util.structGet(originalCounts, fieldName, 1))));
 end
 cfg.SearchSpaces = cfg.SearchSpaces(string({cfg.SearchSpaces.SearchSpaceType}) == string(point.SearchSpaceType));
 if isempty(cfg.SearchSpaces)

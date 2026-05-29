@@ -341,18 +341,18 @@ classdef (Abstract) SchedulerBase < handle
             hasExplicitTargetCodeRate = isfield(ue,'TargetCodeRate') && ~isempty(ue.TargetCodeRate) && ...
                 isfinite(double(ue.TargetCodeRate)) && double(ue.TargetCodeRate) > 0;
             hasExplicitFixedModulation = hasExplicitModulation || hasExplicitTargetCodeRate;
-            useCQIForAMC = localUseCQIForAMC(linkAdaptationMode, linkAdaptationPolicy, cqiRaw);
+            useConfiguredCQIAMC = localUseConfiguredCQIAMC(linkAdaptationMode, linkAdaptationPolicy);
             useExplicitUEMCSOverride = isfinite(ueMCSIndex) && ueMCSIndex >= 0 && ...
-                (ismember(ueMCSIndexAuthority, ["explicit_fixed_override","configured_fixed_fallback","explicit","config","override","fixed"]) || ...
+                (ismember(ueMCSIndexAuthority, ["explicit_fixed_override","configured_fixed_default","configured_fixed_fallback","explicit","config","override","fixed"]) || ...
                 ismember(lower(strtrim(string(linkAdaptationMode))), fixedTokens) || ...
                 ismember(lower(strtrim(string(linkAdaptationPolicy))), fixedTokens));
 
             if useExplicitUEMCSOverride
                 amc.Mode = "fixed_mcs";
                 amc.MCSIndex = round(ueMCSIndex);
-            elseif useCQIForAMC
+            elseif useConfiguredCQIAMC
                 amc.Mode = "cqi_table";
-                if cqiRaw <= 0
+                if ~(isfinite(double(cqiRaw)) && cqiRaw > 0)
                     cqiDecision = struct("Valid", false);
                     amc.MCSIndex = 0;
                     amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
@@ -364,9 +364,11 @@ classdef (Abstract) SchedulerBase < handle
                     amc.MCSProfile = cqiDecision.MCSProfile;
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
-                elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
-                    amc.Mode = "fixed_mcs";
-                    amc.MCSIndex = round(cfgMCSIndex);
+                else
+                    % In AMC mode, missing/invalid CQI must not silently
+                    % promote the configured study MCS into a scheduler grant.
+                    amc.MCSIndex = 0;
+                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
                 end
             elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
                 amc.Mode = "fixed_mcs";
@@ -952,11 +954,11 @@ isConcreteFading = startsWith(channelModel, "TDL") || startsWith(channelModel, "
 tf = strcmp(backend, "waveform") && fadingEnabled && ~awgnOnly && isConcreteFading;
 end
 
-function tf = localUseCQIForAMC(linkAdaptationMode, linkAdaptationPolicy, cqiRaw)
+function tf = localUseConfiguredCQIAMC(linkAdaptationMode, linkAdaptationPolicy)
 mode = lower(strtrim(string(linkAdaptationMode)));
 policy = lower(strtrim(string(linkAdaptationPolicy)));
 fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
-tf = isfinite(double(cqiRaw)) && ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
+tf = ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
 end
 
 function mcs = localMatchMCSIndex(mcsTable, modStr, targetCodeRate)

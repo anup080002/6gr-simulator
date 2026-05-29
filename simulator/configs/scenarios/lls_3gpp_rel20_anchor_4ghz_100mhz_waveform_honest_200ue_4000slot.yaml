@@ -94,11 +94,11 @@ run_control:
   save_link_budget_tables: true
   save_interference_breakdown: true
   save_energy_trace: true
-  batch_size_links: 1
+  batch_size_links: 32
   gpu_enable: false
   mixed_precision_enable: false
   fail_on_validation_warning: true
-  num_workers: 1
+  num_workers: 8
   max_runtime_guard: 43200
   debug_level: info
   fail_on_warning: true

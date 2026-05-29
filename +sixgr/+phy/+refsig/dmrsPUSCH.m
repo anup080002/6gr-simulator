@@ -10,9 +10,9 @@ function [dmrsInd, dmrsSym, info] = dmrsPUSCH(carrier, puschCfg, varargin)
 %   (indices only). Earlier releases may return a second info output.
 %
 %   Name-Value:
-%     "IndexBase" - "0based" (default) or "1based" (applies for subscript)
+%     "IndexBase" - "1based" (default) or "0based" (applies for subscript)
 
-    opts.IndexBase = '0based';
+    opts.IndexBase = '1based';
 
     for i = 1:2:numel(varargin)
         if i+1 > numel(varargin), break; end

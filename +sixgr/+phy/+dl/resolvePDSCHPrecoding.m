@@ -195,6 +195,9 @@ end
 if isempty(tpmi)
     return;
 end
+if isnumeric(tpmi) && isscalar(tpmi) && ~isfinite(double(tpmi))
+    return;
+end
 
 if ~(isnumeric(tpmi) && isscalar(tpmi) && isfinite(tpmi))
     error("sixgr:phy:dl:PDSCHPrecoding:BadTPMI", ...

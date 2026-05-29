@@ -145,6 +145,7 @@
     "trp_topology": "single_trp",
     "trp_sync_mode": "synchronous",
     "trp_switching_mode": "disabled",
+    "min_inter_ue_distance_m": 0,
     "cell_free_flag": false,
     "full_duplex_flag": false,
     "self_interference_path_model": "none"
@@ -175,7 +176,9 @@
       "qosAware": false,
       "sliceAware": false,
       "starvationGuard": true,
-      "cellEdgeBoost": true
+      "cellEdgeBoost": true,
+      "coverageOutageGuardEnabled": true,
+      "minSchedulingSINR_dB": -5
     },
     "measurement": {
       "periodSlots": 2,
@@ -245,6 +248,7 @@
     "panel_spacing": 0.5,
     "element_spacing_h": 0.5,
     "element_spacing_v": 0.5,
+    "bs_mechanical_tilt_deg": 0,
     "polarization": "single",
     "cross_pol_ratio": 0,
     "calibration_model": "ideal",

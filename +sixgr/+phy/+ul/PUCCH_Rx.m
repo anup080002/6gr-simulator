@@ -223,9 +223,11 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
             uciBits = [];
         end
     end
+    detectionFailureReason = localPUCCHDetectionFailureReason(fmt, ouci, uciBits, detMet);
+    detectionUsable = strlength(detectionFailureReason) == 0;
 
     rx = struct();
-    rx.Ok              = true;
+    rx.Ok              = logical(detectionUsable);
     rx.UCISoft         = uciSoft;
     rx.UCIBits         = uciBits;
     rx.Symbols         = rxConst;
@@ -235,10 +237,10 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     rx.NoiseVarSource  = char(string(noiseStatus.Source));
     rx.NoiseVarReason  = char(string(noiseStatus.Reason));
     rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
-    rx.ReceiverUsable  = true;
+    rx.ReceiverUsable  = logical(detectionUsable);
     rx.DetectionAttempted = true;
-    rx.DetectionUsable = true;
-    rx.FailureReason   = "";
+    rx.DetectionUsable = logical(detectionUsable);
+    rx.FailureReason   = char(detectionFailureReason);
     rx.ChannelEstimate = Hest;
     rx.Carrier         = carrier;
     rx.PUCCH           = pucch;
@@ -253,6 +255,9 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     info.Estimation   = estInfo;
     info.Equalization = eqInfo;
     info.NoiseVariance = noiseStatus;
+    info.DetectionValidation = struct( ...
+        "DetectionUsable", logical(detectionUsable), ...
+        "FailureReason", string(detectionFailureReason));
 end
 
 % -------------------------------------------------------------------------
@@ -317,6 +322,56 @@ function pucch = localApplyPUCCHFromCfg(pucch, cfg, carrier)
             pucch.NID0 = nid0;
         end
     end
+end
+
+% -------------------------------------------------------------------------
+function failureReason = localPUCCHDetectionFailureReason(~, ouci, uciBits, detMet)
+failureReason = "";
+if ~localHasFiniteDetectionMetric(detMet)
+    failureReason = "pucch_detection_metric_unavailable";
+    return;
+end
+expectedCount = NaN;
+if ~isempty(ouci)
+    expectedCount = max(0, round(double(ouci)));
+end
+if ~localHasUsableUCIBits(uciBits, expectedCount)
+    failureReason = "pucch_uci_bits_unavailable";
+end
+end
+
+function tf = localHasFiniteDetectionMetric(detMet)
+tf = false;
+if isempty(detMet) || ~isnumeric(detMet)
+    return;
+end
+vals = double(detMet(:));
+tf = any(isfinite(vals));
+end
+
+function tf = localHasUsableUCIBits(uciBits, expectedCount)
+tf = false;
+if iscell(uciBits)
+    if isempty(uciBits)
+        return;
+    end
+    uciBits = uciBits{1};
+end
+if ~(isnumeric(uciBits) || islogical(uciBits))
+    return;
+end
+vals = double(uciBits(:));
+if isempty(vals) && isfinite(expectedCount) && expectedCount == 0
+    tf = true;
+    return;
+end
+if isempty(vals) || any(~isfinite(vals))
+    return;
+end
+if isfinite(expectedCount) && numel(vals) < expectedCount
+    return;
+end
+tf = true;
 end
 
 % -------------------------------------------------------------------------

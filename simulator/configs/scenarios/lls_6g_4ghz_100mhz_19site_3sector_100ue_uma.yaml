@@ -51,11 +51,11 @@ run_control:
   save_link_budget_tables: true
   save_interference_breakdown: true
   save_energy_trace: true
-  batch_size_links: 1
+  batch_size_links: 16
   gpu_enable: false
   mixed_precision_enable: false
   fail_on_validation_warning: true
-  num_workers: 1
+  num_workers: 8
 
 scenario:
   runner_profile: system_level_lls
@@ -300,7 +300,7 @@ random_access:
   enabled: true
   ssb_periodicity_ms: 20
   ssb_beam_count: 8
-  prach_format: A1
+  prach_format: A2
   preamble_length_mode: short
   preamble_count: 64
   msg3_enabled: true

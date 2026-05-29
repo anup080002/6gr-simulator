@@ -142,11 +142,21 @@ previousModulation = char(string(decision.Modulation));
 selectionAMC = struct("Valid", false, "MCSIndex", NaN, "MCSProfile", struct("Modulation", "", "TargetCodeRate", NaN));
 if adaptationDomain == "legacy_mcs"
     if isfinite(instantMCS)
+        if ~resetState && adaptationState.Initialized && localMCSJumpResetEnabled(cfg) && ...
+                isfinite(adaptationState.LastMCSIndex) && abs(double(instantMCS) - double(adaptationState.LastMCSIndex)) > 5
+            resetState = true;
+            resetReason = "mcs_jump";
+        end
         if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS)
             cqiBasedMCS = double(instantMCS);
         elseif logical(adaptationState.InnerLoopEnabled)
             alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
-            cqiBasedMCS = alpha * double(instantMCS) + (1 - alpha) * double(adaptationState.CQIBasedMCS);
+            newWeightPct = alpha * 100;
+            oldWeightPct = 100 - newWeightPct;
+            % Radisys/FlexRAN-style inner loop keeps cqiBasedMCS in
+            % hundredth-MCS precision before the final floor to MCS index.
+            cqiBasedMCS = ceil((newWeightPct * double(instantMCS) * 100 + ...
+                oldWeightPct * double(adaptationState.CQIBasedMCS) * 100) / 100) / 100;
         else
             cqiBasedMCS = double(instantMCS);
         end
@@ -209,7 +219,11 @@ end
 
 dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
 dynamicMCS = max(0, min(31, dynamicMCS));
-selectedMCS = round(dynamicMCS);
+if adaptationDomain == "legacy_mcs"
+    selectedMCS = floor(dynamicMCS);
+else
+    selectedMCS = round(dynamicMCS);
+end
 profile = sixgr.link.resolveMCSProfile(mcsTable, selectedMCS);
 if ~logical(sixgr.util.structGet(profile, "Valid", false))
     decision.Reason = "invalid_mcs_profile";
@@ -568,4 +582,8 @@ threshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiJumpResetThr
 if ~(isfinite(threshold) && threshold >= 1)
     threshold = 4;
 end
+end
+
+function tf = localMCSJumpResetEnabled(cfg)
+tf = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.resetOnMCSJump", true));
 end

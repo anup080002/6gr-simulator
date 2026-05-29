@@ -1,6 +1,0 @@
-{
-  "logical_path": "reports/csv/dl_resource_grid_heatmap.csv",
-  "json_required": false,
-  "json_written": false,
-  "reason": "json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table"
-}

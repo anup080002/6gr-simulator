@@ -1,8 +1,0 @@
-run_id,trial_family,source_artifact,observed_rows,success_count,failure_count,mean_measured_sinr_db,mean_cqi,mean_mcs,modulation_set
-1,dl_pdsch,air_interface/csv/dl_pdsch_trials.csv,150,110,40,20.360473659736748,11.033333333333333,5.426666666666667,QPSK|64QAM|16QAM
-1,ul_pusch,air_interface/csv/ul_pusch_trials.csv,96,51,45,30.978570126382337,14.291666666666666,17.177083333333332,16QAM|64QAM
-1,pdcch,air_interface/csv/pdcch_trials.csv,246,246,0,,,,not_applicable
-1,pbch,air_interface/csv/pbch_trials.csv,50,50,0,,,,not_applicable
-1,prach,air_interface/csv/prach_trials.csv,50,50,0,,,,not_applicable
-1,srs,air_interface/csv/srs_trials.csv,37,0,37,,,,not_applicable
-1,trs,air_interface/csv/trs_trials.csv,15,0,15,,,,not_applicable

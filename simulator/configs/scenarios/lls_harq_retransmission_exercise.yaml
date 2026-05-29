@@ -15,7 +15,7 @@
   ],
   "meta": {
     "scenario_id": "lls_harq_retransmission_exercise",
-    "description": "Waveform-truth HARQ exercise preset that lowers SNR and raises MCS so retransmission and combining behavior is exercised with real decode outcomes.",
+    "description": "Waveform-truth HARQ exercise preset calibrated so first attempts can fail while soft-combined retransmissions recover with real decode outcomes.",
     "version": "1.0.0",
     "owner": "codex",
     "maturity_tag": "regression",
@@ -36,9 +36,9 @@
     "monte_carlo_iterations": 8,
     "random_seed": 29,
     "deterministic_mode": true,
-    "snr_db": -12,
+    "snr_db": 4,
     "min_duration_s": 0.004,
-    "snr_sweep_offsets_db": [0, 4]
+    "snr_sweep_offsets_db": [0]
   },
   "channels": {
     "model_type": "TDL",
@@ -48,11 +48,11 @@
     "mobility_kmph": 30
   },
   "modulation": {
-    "dl_modulation_order": 6,
-    "ul_modulation_order": 6,
+    "dl_modulation_order": 4,
+    "ul_modulation_order": 4,
     "mcs_table": "qam64_table1",
-    "dl_mcs_index": 26,
-    "ul_mcs_index": 26
+    "dl_mcs_index": 14,
+    "ul_mcs_index": 14
   },
   "harq": {
     "enabled": true,

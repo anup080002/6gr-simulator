@@ -1,2 +1,0 @@
-run_id,chart_name,status,reason,checked_sources
-1,pre-channel waveform,unavailable_exact_reason,"The run does not export stage-resolved pre-channel sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

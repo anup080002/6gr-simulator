@@ -371,6 +371,11 @@ sleep_capable_flag = repmat(localResolveSleepCapableFlag(cfg), nSites, 1);
 T = table(site_id, sector_id, trp_id, x_m, y_m, z_m, layer_id, carrier_id, ...
     boresight_deg, mechanical_tilt_deg, electrical_tilt_deg, max_tx_power_dbm, ...
     antenna_model_id, array_geometry_id, indoor_outdoor, sleep_capable_flag);
+T.SiteID = site_id;
+T.X_m = x_m;
+T.Y_m = y_m;
+T.Z_m = z_m;
+T.MaxTxPower_dBm = max_tx_power_dbm;
 end
 
 function T = localBuildSectorTable(cfg, results)
@@ -403,6 +408,14 @@ sleep_capable_flag = repmat(localResolveSleepCapableFlag(cfg), n, 1);
 T = table(site_id, sector_id, trp_id, x_m, y_m, z_m, layer_id, carrier_id, ...
     boresight_deg, mechanical_tilt_deg, electrical_tilt_deg, max_tx_power_dbm, ...
     antenna_model_id, array_geometry_id, indoor_outdoor, sleep_capable_flag);
+T.SiteID = site_id;
+T.SectorID = sector_id;
+T.TRPID = trp_id;
+T.Azimuth_deg = boresight_deg;
+T.X_m = x_m;
+T.Y_m = y_m;
+T.Z_m = z_m;
+T.TxPower_dBm = max_tx_power_dbm;
 end
 
 function T = localBuildTRPTable(cfg, results)
@@ -440,6 +453,13 @@ mobility_profile_id = repmat(localResolveMobilityProfileID(cfg), n, 1);
 T = table(ue_id, ue_type, service_profile, start_x_m, start_y_m, start_z_m, ...
     indoor_outdoor_state, speed_profile, heading, power_class_dbm, antenna_model_id, ...
     ai_capability_class, mobility_profile_id);
+T.UEID = ue_id;
+T.X_m = start_x_m;
+T.Y_m = start_y_m;
+T.Z_m = start_z_m;
+T.Indoor = indoor;
+T.Speed_kmh = speed_kmh;
+T.Heading_deg = heading;
 end
 
 function T = localBuildUETrajectoryTrace(results)

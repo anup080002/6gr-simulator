@@ -154,27 +154,45 @@ assert(ismember(dirField, string(pdcch.Properties.VariableNames)), ...
 pdcchDL = pdcch(strcmpi(string(pdcch.(char(dirField))), "DL"), :);
 pdcchUL = pdcch(strcmpi(string(pdcch.(char(dirField))), "UL"), :);
 pdcchDLSlots = unique(pdcchDL(:, {'Frame','Slot'}));
-pdcchULSlots = unique(pdcchUL(:, {'Frame','Slot'}));
+pdcchULGrantSlots = pdcchUL(:, {'Frame','Slot'});
+if all(ismember(["GrantFrame","GrantSlot"], string(pdcchUL.Properties.VariableNames)))
+    pdcchULGrantSlots = pdcchUL(:, {'GrantFrame','GrantSlot'});
+    pdcchULGrantSlots.Properties.VariableNames = {'Frame','Slot'};
+end
+pdcchULGrantSlots = unique(pdcchULGrantSlots);
 srsSlots = unique(srs(:, {'Frame','Slot'}));
 assert(~isempty(pdcchDL), "PDCCH trace must include DL-grant control rows.");
 assert(~isempty(pdcchUL), "PDCCH trace must include UL-grant control rows.");
 assert(all(ismember(table2array(pdcchDLSlots), table2array(dlGrantSlots), 'rows')), ...
     "DL-grant PDCCH rows must be stamped on the same Frame/Slot coordinates as DL grants.");
-assert(all(ismember(table2array(pdcchULSlots), table2array(ulGrantSlots), 'rows')), ...
-    "UL-grant PDCCH rows must be stamped on the same Frame/Slot coordinates as UL grants.");
+assert(all(ismember(table2array(pdcchULGrantSlots), table2array(ulGrantSlots), 'rows')), ...
+    "UL-grant PDCCH rows must expose GrantFrame/GrantSlot coordinates matching UL grants.");
+if all(ismember(["ControlSlot","GrantSlot","K2Slots"], string(pdcchUL.Properties.VariableNames)))
+    lineageRows = pdcchUL(isfinite(double(pdcchUL.ControlSlot)) & isfinite(double(pdcchUL.GrantSlot)) & isfinite(double(pdcchUL.K2Slots)), :);
+    assert(~isempty(lineageRows), "UL-grant PDCCH rows must expose K2 control-slot lineage.");
+    assert(all(abs((double(lineageRows.GrantSlot) - double(lineageRows.ControlSlot)) - double(lineageRows.K2Slots)) < 1e-9), ...
+        "UL-grant PDCCH K2 lineage must equal GrantSlot minus ControlSlot.");
+end
 if ~isempty(srs)
-    assert(all(ismember(["LastSuccessfulSRSSlot","SRSAgeSlots"], string(ulGrant.Properties.VariableNames))), ...
+    assert(all(ismember(["LastSuccessfulSRSSlot","SRSAgeSlots","SRSValid"], string(ulGrant.Properties.VariableNames))), ...
         "UL grants must expose SRS freshness lineage.");
     for i = 1:height(ulGrant)
         lastSRS = double(ulGrant.LastSuccessfulSRSSlot(i));
         grantSlot = double(ulGrant.Slot(i));
-        assert(isfinite(lastSRS) && lastSRS <= grantSlot, ...
-            "UL grants with valid SRS must point to an earlier or same-slot SRS observation.");
-        assert(abs(double(ulGrant.SRSAgeSlots(i)) - (grantSlot - lastSRS)) < 1e-9, ...
-            "UL grant SRS age must equal grant slot minus the last successful SRS slot.");
-        hasSRSObservation = any(double(srs.UEIndex) == double(ulGrant.UEIndex(i)) & double(srs.Slot) == lastSRS);
-        assert(hasSRSObservation, ...
-            "UL grant SRS freshness lineage must point back to an exported SRS observation.");
+        hasLineage = isfinite(lastSRS);
+        hasValidSRS = logical(ulGrant.SRSValid(i));
+        if hasValidSRS || hasLineage
+            assert(hasLineage && lastSRS <= grantSlot, ...
+                "UL grants with valid or stale SRS lineage must point to an earlier or same-slot SRS observation.");
+            assert(abs(double(ulGrant.SRSAgeSlots(i)) - (grantSlot - lastSRS)) < 1e-9, ...
+                "UL grant SRS age must equal grant slot minus the last successful SRS slot.");
+            hasSRSObservation = any(double(srs.UEIndex) == double(ulGrant.UEIndex(i)) & double(srs.Slot) == lastSRS);
+            assert(hasSRSObservation, ...
+                "UL grant SRS freshness lineage must point back to an exported SRS observation.");
+        else
+            assert(~isfinite(double(ulGrant.SRSAgeSlots(i))), ...
+                "UL grants without SRS lineage must leave SRS age unavailable rather than fabricating freshness.");
+        end
     end
 end
 

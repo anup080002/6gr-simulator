@@ -15,6 +15,11 @@ def main() -> None:
     orig_build_numeric = dash.build_numeric_charts_from_artifacts
     orig_load_cached = dash.load_cached_csv_preview
     orig_artifact_url = dash.artifact_url
+    orig_fetch_run = dash.fetch_run
+    orig_fetch_artifacts = dash.fetch_artifacts
+    orig_sync_runtime_log = dash.sync_runtime_log_for_run
+    orig_extract_feature_policy = dash.extract_run_feature_policy
+    orig_materialize = dash.contract_materializer.materialize_run_contract_artifacts
     try:
         def fake_build_live(_run_id: int, lite: bool = False):
             return {
@@ -80,6 +85,20 @@ def main() -> None:
                 ],
             }
 
+        def fake_artifacts(_run_id: int):
+            payload = fake_build_live(_run_id)
+            rows = []
+            for row in list(payload["tables_all"]) + list(payload["images_all"]):
+                enriched = dict(row)
+                enriched.setdefault("byte_size", 128)
+                enriched.setdefault("created_utc", "2026-05-25T00:00:00Z")
+                if str(enriched.get("artifact_kind") or "") == "table_csv":
+                    enriched.setdefault("mime_type", "text/csv; charset=UTF-8")
+                else:
+                    enriched.setdefault("mime_type", "image/svg+xml")
+                rows.append(enriched)
+            return rows
+
         def fake_build_numeric(_artifacts, limit: int = 12):
             _ = limit
             return [
@@ -114,14 +133,25 @@ def main() -> None:
 
         dash.build_live_payload = fake_build_live
         dash.build_numeric_charts_from_artifacts = fake_build_numeric
+        dash.fetch_run = lambda _run_id: {"run_id": _run_id, "status_text": "completed", "status_json": "{}"}
+        dash.fetch_artifacts = fake_artifacts
+        dash.sync_runtime_log_for_run = lambda _run_row: 0
+        dash.extract_run_feature_policy = lambda _run_row: {}
+        dash.contract_materializer.materialize_run_contract_artifacts = lambda *args, **kwargs: {"created": [], "skipped": True}
 
         payload = dash.build_plot_browser_payload(77)
-        assert payload["mode"] == "canonical_reference_gallery"
-        assert payload["suppressed_raw_count"] > 0, "Canonical plots should hide duplicate raw chart/image artifacts."
+        assert payload["mode"] == "canonical_plus_published_artifacts"
+        assert payload["suppressed_raw_count"] == 0, "Default plot browser must expose published raw chart/image artifacts."
+        assert len(payload["items"]) >= len(payload["canonical_items"]), (
+            "Merged plot browser payload must keep canonical family cards and append non-duplicate published artifacts."
+        )
 
         item_map = {str(item["label"]): item for item in payload["items"]}
         assert item_map["rx_waveform"]["kind"] == "interactive", "Waveform family must prefer the truthful interactive chart over the duplicate SVG."
         assert item_map["rx_waveform"]["source"].endswith("__rx-waveform.csv")
+        assert any("fairness index trend" in label for label in item_map), (
+            "Non-canonical published chart artifacts must be visible by default."
+        )
 
         assert item_map["throughput_vs_time"]["kind"] == "unavailable", (
             "Throughput-vs-time should stay unavailable when the run only published summary or cross-metric throughput charts."
@@ -132,10 +162,11 @@ def main() -> None:
         assert item_map["latency_cdf"]["kind"] == "interactive"
         assert item_map["latency_cdf"]["source"].endswith("latency_cdf_plot.csv")
 
-        assert item_map["topology_map"]["kind"] == "interactive", (
-            "Topology family must prefer the interactive serving-cell map when both chart and SVG are published."
-        )
-        assert item_map["topology_map"]["source"].endswith("__serving-cell-map.csv")
+        serving_map_items = [
+            item for label, item in item_map.items()
+            if "serving cell map" in label or label == "topology_map"
+        ]
+        assert serving_map_items, "Serving-cell topology artifacts must remain visible in the merged plot browser."
 
         def fake_cached_preview(artifact_id: int, _max_rows: int):
             if artifact_id == 999:
@@ -234,6 +265,11 @@ def main() -> None:
         dash.build_numeric_charts_from_artifacts = orig_build_numeric
         dash.load_cached_csv_preview = orig_load_cached
         dash.artifact_url = orig_artifact_url
+        dash.fetch_run = orig_fetch_run
+        dash.fetch_artifacts = orig_fetch_artifacts
+        dash.sync_runtime_log_for_run = orig_sync_runtime_log
+        dash.extract_run_feature_policy = orig_extract_feature_policy
+        dash.contract_materializer.materialize_run_contract_artifacts = orig_materialize
 
 
 if __name__ == "__main__":

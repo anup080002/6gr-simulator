@@ -13,6 +13,21 @@ assert(p.Valid && strcmpi(string(p.Modulation), "64QAM"), "CQI Table 1 CQI 10 mu
 p = sixgr.link.resolveCQIProfile("table2", 12);
 assert(p.Valid && strcmpi(string(p.Modulation), "256QAM"), "CQI Table 2 CQI 12 must resolve to 256QAM.");
 
+expectedTable1 = [0 0 2 4 6 8 11 13 15 18 20 22 24 26 28];
+expectedTable2 = [0 1 3 5 7 9 11 13 15 17 19 21 23 25 27];
+resolvedTable1 = zeros(1, 15);
+resolvedTable2 = zeros(1, 15);
+for cqiIdx = 1:15
+    amc1 = sixgr.link.resolveMCSFromCQI(cqiIdx, "qam64_table1", "table1");
+    amc2 = sixgr.link.resolveMCSFromCQI(cqiIdx, "qam256_table2", "table2");
+    resolvedTable1(cqiIdx) = double(amc1.MCSIndex);
+    resolvedTable2(cqiIdx) = double(amc2.MCSIndex);
+end
+assert(isequal(resolvedTable1, expectedTable1), ...
+    "CQI-to-MCS table1 mapping must match the Link Adaptation/TS 38.214 spectral-efficiency mapping.");
+assert(isequal(resolvedTable2, expectedTable2), ...
+    "CQI-to-MCS table2 mapping must match the Link Adaptation/TS 38.214 spectral-efficiency mapping.");
+
 cfg = sixgr.config.defaultConfig();
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", "table1");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", "qam64_table1");

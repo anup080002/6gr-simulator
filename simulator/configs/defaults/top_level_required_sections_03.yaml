@@ -16,10 +16,11 @@
     "modulation_candidate_tag": "baseline_benchmark", "high_order_modulation_stress_enabled": false, "qam4096_candidate_enabled": false
   },
   "link_adaptation": {
-    "fixed_or_amc": "amc", "cqi_table": "table1", "outer_loop_flag": false, "inner_loop_flag": true, "cqi_source": "csi_feedback",
+    "fixed_or_amc": "amc", "domain": "cqi", "cqi_table": "table1", "outer_loop_flag": false, "inner_loop_flag": true, "cqi_source": "csi_feedback",
     "dmrs_based_tracking_flag": false, "csi_rs_based_tracking_flag": true, "delta_cqi_policy": "none", "delta_mcs_policy": "none",
     "pdcch_link_adaptation_policy": "fixed", "pdsch_link_adaptation_policy": "baseline", "pusch_link_adaptation_policy": "baseline",
-    "rank_adaptation_policy": "fixed", "al_adaptation_policy": "fixed", "beam_adaptation_policy": "fixed", "adaptation_periodicity": "slot", "adaptation_delay_model": "baseline"
+    "rank_adaptation_policy": "fixed", "al_adaptation_policy": "fixed", "beam_adaptation_policy": "fixed", "adaptation_periodicity": "slot", "adaptation_delay_model": "baseline",
+    "cqi_smoothing_alpha": 0.2, "olla_step_down": 0.1, "olla_step_up": 0.01, "bootstrap_cqi_mode": "conservative"
   },
   "harq": {
     "dl_harq_enabled": true, "ul_harq_enabled": true, "asynchronous_or_synchronous": "asynchronous", "tb_cbg_mode": "tb", "parity_cb_mode": "disabled",

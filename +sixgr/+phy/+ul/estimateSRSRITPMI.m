@@ -3,11 +3,11 @@ function estimate = estimateSRSRITPMI(Hest, nVar, cfg)
 %
 % This helper keeps the estimator explicitly in the SRS / UL sounding path:
 %   1. Form PRB-averaged channel observations from the measured Hest grid.
-%   2. Derive RI from the transmit-side covariance eigen-structure.
-%   3. Score TPMI codebook candidates with an MI-style metric across PRBs.
+%   2. Derive RI from the SRS channel singular-value condition number.
+%   3. Score TPMI codebook candidates with post-equalization MI across PRBs.
 %
-% The exact thresholds and metric family are lab-default implementation
-% choices, not 3GPP-mandated constants.
+% The default RI condition-number window follows the Intel/FlexRAN SRS
+% RI/TPMI note (Th_min=1, Th_max=10) while remaining configurable.
 
 estimate = struct( ...
     "Valid", false, ...
@@ -24,8 +24,8 @@ estimate = struct( ...
     "NumRxAnt", NaN, ...
     "TransformPrecoding", false, ...
     "TransmissionScheme", "", ...
-    "MetricFamily", "mutual_information_lab_default", ...
-    "ValueRole", "estimated_lab_default");
+    "MetricFamily", "post_equalization_mutual_information", ...
+    "ValueRole", "estimated_runtime_srs");
 
 if isempty(Hest)
     estimate.RISource = "srs_hest_missing";
@@ -51,7 +51,7 @@ estimate.TransmissionScheme = char(scheme);
 [ri, cond_dB] = localEstimateRI(Hprb, cfg);
 estimate.RI = double(ri);
 estimate.ConditionNumber_dB = double(cond_dB);
-estimate.RISource = "ul_srs_covariance_rank_estimator_lab_default";
+estimate.RISource = "ul_srs_condition_number_rank_estimator";
 
 if scheme ~= "codebook" || transformPrecoding || numTxPorts < 2
     estimate.Valid = isfinite(estimate.RI);
@@ -65,7 +65,7 @@ estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
 estimate.SelectedBeamIndices = double(beamIndices);
 if isfinite(tpmi)
-    estimate.TPMISource = "ul_srs_mutual_information_tpmi_estimator_lab_default";
+    estimate.TPMISource = "ul_srs_mmse_post_equalization_mi_tpmi_estimator";
 else
     estimate.TPMISource = "ul_srs_tpmi_estimator_unavailable";
 end
@@ -160,26 +160,49 @@ eigvals = eigvals(isfinite(eigvals) & eigvals >= 0);
 if isempty(eigvals)
     return;
 end
-maxEig = max(eigvals);
-if maxEig <= 0
+singularValues = sqrt(max(eigvals, 0));
+sigma1 = max(singularValues);
+if sigma1 <= 0
     ri = 1;
     cond_dB = 0;
     return;
 end
-threshold_dB = double(sixgr.util.structGet(cfg, "phy.srs.rankEigenThreshold_dB", 10));
-thresholdLin = 10^(-threshold_dB / 10);
-ri = max(1, sum(eigvals >= maxEig * thresholdLin));
-if numel(eigvals) >= 2 && eigvals(end) > 0
-    cond_dB = 10 * log10(maxEig / eigvals(end));
-else
-    cond_dB = 0;
-end
+
 maxRank = double(sixgr.util.structGet(cfg, "phy.pusch.maxRankDefault", ...
     sixgr.util.structGet(cfg, "phy.pusch.numLayers", sixgr.util.structGet(cfg, "phy.pusch.nLayers", numTxPorts))));
 if ~(isfinite(maxRank) && maxRank >= 1)
     maxRank = numTxPorts;
 end
-ri = max(1, min(round(ri), round(maxRank)));
+maxRank = max(1, min(round(maxRank), numel(singularValues)));
+
+thMin = double(sixgr.util.structGet(cfg, "phy.srs.rankConditionMin", 1));
+thMax = double(sixgr.util.structGet(cfg, "phy.srs.rankConditionMax", ...
+    sixgr.util.structGet(cfg, "phy.srs.rankConditionNumberMax", 10)));
+if ~(isfinite(thMin) && thMin >= 1)
+    thMin = 1;
+end
+if ~(isfinite(thMax) && thMax >= thMin)
+    thMax = 10;
+end
+
+selectedCond = 1;
+for candidateRank = maxRank:-1:1
+    sigmaL = singularValues(candidateRank);
+    if sigmaL <= 0
+        continue;
+    end
+    cn = sigma1 / sigmaL;
+    if cn >= thMin && cn <= thMax
+        ri = candidateRank;
+        selectedCond = cn;
+        break;
+    end
+end
+if ~isfinite(ri)
+    ri = 1;
+    selectedCond = 1;
+end
+cond_dB = 20 * log10(max(selectedCond, eps));
 end
 
 function [tpmi, metricBest, candidateCount, beamIndices] = localEstimateTPMI(Hprb, nVar, ri, numTxPorts, transformPrecoding)
@@ -235,8 +258,16 @@ for prb = 1:size(Hprb, 3)
         continue;
     end
     Heff = H * double(W);
-    sval = svd(Heff, "econ") .^ 2;
-    acc = acc + sum(log2(1 + sval ./ max(double(nVar), eps)));
+    nLayers = size(Heff, 2);
+    regularized = eye(nLayers) + (Heff' * Heff) ./ max(double(nVar), eps);
+    if rcond(regularized) < eps
+        postEqCov = pinv(regularized);
+    else
+        postEqCov = inv(regularized); %#ok<MINV>
+    end
+    sinr = 1 ./ max(real(diag(postEqCov)), eps) - 1;
+    sinr = max(real(sinr), 0);
+    acc = acc + sum(log2(1 + sinr));
     count = count + 1;
 end
 if count > 0

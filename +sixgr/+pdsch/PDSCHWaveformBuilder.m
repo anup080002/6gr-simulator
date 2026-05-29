@@ -15,6 +15,7 @@ copyBundles = cell(height(copies), 1);
 queueFitStatus = "";
 payloadBitsOriginal = [];
 transportBlockSize = NaN;
+transportBlockBits = [];
 
 for i = 1:height(copies)
     slotNumber = cfg.SlotNumber + double(copies.SlotOffset(i)) + double(cfg.TDRA.SchedulingOffsetSlots);
@@ -23,7 +24,14 @@ for i = 1:height(copies)
     [carrier, ~] = sixgr.pdsch.CarrierConfig6GR(runtimeCfg);
     pdsch = localBuildPDSCHConfig(runtimeCfg, carrier, amc, fdraAlloc, symbolAllocation);
     [pdsch, amc, payloadBitsOriginal, queueFitStatus, transportBlockSize] = localFitGrantToQueue(cfg, carrier, pdsch, amc, double(opt.QueueBits));
-    tbBits = localMakeTransportBlock(double(transportBlockSize), payloadBitsOriginal, cfg.Seed + i);
+    if isempty(transportBlockBits)
+        transportBlockBits = localMakeTransportBlock(double(transportBlockSize), payloadBitsOriginal, cfg.Seed + double(opt.TransmissionIndex));
+    elseif numel(transportBlockBits) ~= double(transportBlockSize)
+        error("sixgr:pdsch:PDSCHWaveformBuilder:RepetitionTBSMismatch", ...
+            "PDSCH repetition copies must carry the same transport block size. First copy TBS=%d, copy %d TBS=%d.", ...
+            numel(transportBlockBits), i, round(double(transportBlockSize)));
+    end
+    tbBits = transportBlockBits;
     [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(runtimeCfg, ...
         "Carrier", carrier, ...
         "PDSCH", pdsch, ...

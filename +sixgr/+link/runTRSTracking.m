@@ -15,6 +15,12 @@ out.NMSE_dB = NaN;
 out.PhaseError_deg = NaN;
 out.EstimatedDoppler_Hz = NaN;
 out.InjectedDoppler_Hz = NaN;
+out.EstimatedCFO_Hz = NaN;
+out.EstimatedCFO_PreCorrection_Hz = NaN;
+out.InjectedCFO_Hz = NaN;
+out.CFOEstimateAvailability = "missing";
+out.CFOEstimateSource = "";
+out.CFOEstimateDefinition = "";
 out.QCLAccuracy = NaN;
 out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
@@ -67,6 +73,18 @@ try
     out.PhaseError_deg = rad2deg(phaseErr);
     out.EstimatedDoppler_Hz = localEstimateDopplerHz(symTimes_s, hEst);
     out.InjectedDoppler_Hz = injectedDopplerHz;
+    out.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
+    out.EstimatedCFO_Hz = localEstimateCommonPhaseFrequencyHz(symTimes_s, hEst);
+    out.EstimatedCFO_PreCorrection_Hz = out.EstimatedCFO_Hz;
+    if isfinite(out.EstimatedCFO_Hz)
+        out.CFOEstimateAvailability = "available";
+        out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
+        out.CFOEstimateDefinition = "common_phase_frequency_slope_hz_from_trs_reference_symbols";
+    else
+        out.CFOEstimateAvailability = "missing";
+        out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
+        out.CFOEstimateDefinition = "not_available_without_multiple_valid_trs_symbol_times";
+    end
     out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
     out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);
@@ -84,7 +102,8 @@ try
     out.Ok = true;
     out.Notes = "TRS runtime tracking measurement from active coupled-reference path. NRE=" + string(numel(trsInd)) + ...
         ", injected Doppler=" + string(round(out.InjectedDoppler_Hz, 3)) + ...
-        " Hz, estimated Doppler=" + string(round(out.EstimatedDoppler_Hz, 3)) + " Hz";
+        " Hz, estimated Doppler=" + string(round(out.EstimatedDoppler_Hz, 3)) + ...
+        " Hz, estimated CFO=" + string(round(out.EstimatedCFO_Hz, 3)) + " Hz";
 catch ME
     out.Ok = false;
     out.TrackingFailure = 1;
@@ -356,6 +375,32 @@ end
 [uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
 if numel(uTimes) < 2
     estHz = 0;
+    return;
+end
+hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
+phaseObs = unwrap(angle(hMean(:)));
+p = polyfit(uTimes(:), phaseObs(:), 1);
+estHz = p(1) / (2 * pi);
+end
+
+function estHz = localEstimateCommonPhaseFrequencyHz(symTimes_s, hEst)
+% TRS alone observes a common phase slope; this is a receiver frequency
+% tracking estimate, not a truth copy of the injected impairment.
+estHz = NaN;
+hEst = hEst(:);
+symTimes_s = symTimes_s(:);
+N = min(numel(symTimes_s), numel(hEst));
+if N < 2
+    return;
+end
+symTimes_s = symTimes_s(1:N);
+hEst = hEst(1:N);
+mask = isfinite(symTimes_s) & isfinite(real(hEst)) & isfinite(imag(hEst));
+if nnz(mask) < 2
+    return;
+end
+[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
+if numel(uTimes) < 2
     return;
 end
 hMean = accumarray(grp, hEst(mask), [], @localComplexMean);

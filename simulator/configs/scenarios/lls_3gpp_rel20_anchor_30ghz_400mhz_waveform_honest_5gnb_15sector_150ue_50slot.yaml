@@ -1,0 +1,512 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot
+  description: Strict waveform-honest FR2 NR/6G study run for 30 GHz TDD, 400 MHz, 5 gNBs, 15 sectors, 150 UEs, and 50 canonical slots.
+  scenario_group: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot
+  scenario_name: Strict waveform-honest FR2 NR/6G study run for 30 GHz TDD, 400 MHz, 5 gNBs, 15 sectors, 150 UEs, and 50 canonical slots.
+  scenario_family: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot
+  comparison_group_name: rel20_anchor_30ghz_400mhz_5gnb_15sector_150ue_50slot
+  notes: >
+    Browser-owned waveform_bundle scenario for a requested 400 MHz full-PRB run. The carrier is
+    placed in FR2 at 30 GHz with 120 kHz SCS and NSizeGrid=264, because 400 MHz is not a normal
+    FR1/4 GHz NR channel bandwidth. Scheduled PDSCH/PUSCH grants use the coupled waveform truth
+    path with full per-link waveform interference and strict no-proxy/no-fallback output labeling.
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 30ghz
+    - 400mhz
+    - fr2
+    - tdd
+    - 120khz
+    - 5gnb
+    - 15sector
+    - 150ue
+    - 50slot
+    - strict
+    - waveform_honest
+    - no-proxy
+    - coupled_truth
+    - full_per_link_channel_waveform_sum
+
+scenario:
+  name: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot
+  description: Strict waveform-honest browser scenario for 30 GHz / 400 MHz / TDD with 5 gNBs, 15 sectors, 150 UEs, and 50 slots.
+  runner_profile: waveform_bundle
+  target_cases: [bundle]
+  bundle_anchor_cases:
+    - cell_search_mib_sib1
+    - prach_detection
+    - dl_pdsch_throughput
+    - ul_pusch_throughput
+    - ul_srs_channelest
+    - ul_lowpapr
+  honesty_mode: strict
+  unsupported_output_policy: show_unavailable_with_reason
+  provenance_logging: true
+  notes: >
+    This scenario intentionally enables DL/UL data, control, reference-signal, HARQ, CSI, RF
+    impairment, and full per-link channel-interference processing. If a block is not supported by
+    the runtime, strict validation or unavailable-with-reason outputs must expose that honestly.
+
+run_control:
+  run_profile: exhaustive
+  total_frames: ~
+  warmup_frames: ~
+  measurement_frames: ~
+  total_slots: 50
+  warmup_slots: 5
+  measurement_slots: 45
+  checkpoint_every_slots: 1
+  snapshot_every_slots: 1
+  log_every_slots: 1
+  batch_size_links: 32
+  num_workers: 24
+  parallel_pool_kind: processes
+  parallel_pool_idle_timeout_minutes: 1440
+  warmup_time_ms: 0.625
+  measurement_time_ms: 5.625
+  total_time_ms: 6.25
+  max_runtime_guard: 86400
+  symbol_level_logging_enable: true
+  raw_iq_capture_enable: true
+  save_channel_tensors: true
+  save_harq_buffers: true
+  trace_capture_level: full
+
+simulation:
+  link_direction: both
+  n_frames: 1
+  n_slots: 50
+  n_subframes: 7
+  monte_carlo_iterations: 1
+  snr_db: 12
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+  min_duration_s: 0.00625
+  snr_sweep_offsets_db: [0]
+
+frequency:
+  range_name: FR2
+  band_name: fr2_30ghz_400mhz
+  center_frequency_hz: 30000000000
+  bandwidth_hz: 400000000
+  bandwidth_options_hz: [400000000]
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  numerology_options_khz: [120]
+  max_mimo_size: 64
+  max_supported_center_frequency_hz: 52600000000
+  custom_frequency_override_allowed: true
+  mobility_defaults_kmph: 3
+  channel_model_defaults: CDL-D
+  reference_signal_defaults: tracking
+  power_model_defaults: fr2
+  energy_model_defaults: fr2_energy
+  rf_impairment_defaults: fr2_tracking
+  n_size_grid: 264
+
+frame:
+  scs_khz: 120
+  cp_type: normal
+  slot_format: flexible
+  tdd_pattern: DDDSU
+  special_slot_downlink_symbols: 12
+  ul_dl_guard_symbols: 1
+  special_slot_uplink_symbols: 1
+
+global_radio_scope:
+  carrier_frequency_hz: 30000000000
+  frequency_range_label: FR2
+  channel_bandwidth_hz: 400000000
+  simulation_bandwidth_hz: 400000000
+  occupied_bandwidth_hz: 380160000
+  duplex_mode: TDD
+  scs_hz: 120000
+  numerology_mu: 3
+  cp_type: normal
+  sample_rate_hz: 491520000
+  fft_size: 4096
+  ifft_size: 4096
+  guard_band_hz: 19840000
+
+frame_timing:
+  frame_duration_ms: 10
+  subframe_duration_ms: 1
+  slot_duration_ms: 0.125
+  symbols_per_slot: 14
+  slots_per_frame: 80
+  tdd_pattern: DDDSU
+  special_slot_downlink_symbols: 12
+  ul_dl_guard_symbols: 1
+  special_slot_uplink_symbols: 1
+
+waveform:
+  fft_size: 4096
+  sample_rate_hz: 491520000
+
+resource_grid:
+  num_rbs: 264
+  rb_start: 0
+
+deployment_topology:
+  scenario_type: multi-cell
+  site_layout: hex_grid
+  layout_type: hexagonal_macro
+  cell_type: UMa
+  inter_site_distance: 200
+  num_sites: 5
+  num_base_stations: 5
+  num_cells: 15
+  num_sectors_per_site: 3
+  num_ues: 150
+  num_trps: 15
+  trp_topology: per_cell_trp
+  trp_sync_mode: synchronous
+  trp_switching_mode: disabled
+  wraparound_enabled: false
+
+users:
+  enabled: true
+  n_users: 150
+  execution_model: slot_coupled_truth
+  beam_selection_strategy: runtime_best_beam_per_link
+  save_user_tables: true
+
+channels:
+  model_type: CDL
+  profile: CDL-D
+  delay_spread_ns: 300
+  doppler_hz: 83.3333333333
+  doppler_source_mode: derive_from_ue_speed
+  mobility_kmph: 3
+  los_enabled: true
+  spatial_consistency_enabled: true
+  pathloss_enabled: true
+  shadow_fading_enabled: true
+  pathloss_model: nrPathLoss
+  shadow_fading_std_db: 6
+
+channel_model:
+  model_family: CDL
+  scenario_label: CDL-D
+  delay_spread_ns: 300
+  doppler_hz: 83.3333333333
+  doppler_source_mode: derive_from_ue_speed
+  per_trp_channel_generation: true
+
+reference_signals:
+  ssb_enabled: true
+  pbch_enabled: true
+  pdcch_dmrs_enabled: true
+  pdsch_dmrs_ports: 2
+  pusch_dmrs_ports: 2
+  csi_rs_enabled: true
+  srs_enabled: true
+  trs_enabled: true
+  tracking_rs_enabled: true
+  ptrs_enabled: true
+  csi_reporting_enabled: true
+  csi_feedback_mode: PMI+CQI+RI+CRI
+  csi_acquisition_mode: joint_dl_ul
+  operation_orientation: tdd_reciprocity
+  dmrs_csi_tracking_enabled: true
+  srs_ports: 4
+  srs_sequence_family: baseline_nr
+  srs_periodicity_ms: 5
+  channel_estimation_mode: realistic_baseline
+  receiver_example: mmse_irc
+  sgcs_reporting_enabled: true
+  nmse_reporting_enabled: true
+  cqi_reporting_enabled: true
+  pmi_reporting_enabled: true
+  ri_reporting_enabled: true
+  cri_reporting_enabled: true
+  pmi_codebook_mode: type1_su_mimo
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  zp_csi_rs:
+    enabled: true
+
+control:
+  pdcch_enabled: true
+  dci_formats: ["0_0", "0_1", "1_0", "1_1"]
+  aggregation_levels: [1, 2, 4, 8, 16]
+  candidate_aggregation_levels: [1, 2, 4, 8, 16]
+  aggregation_selection_policy: configured_scheduler_level
+  scheduler_aggregation_level: 8
+  blind_decode_candidates: 44
+  search_space_num_candidates: [8, 8, 4, 2, 1]
+  blind_decode_list_length: 16
+  repetition_enabled: true
+  detection_feedback_enabled: true
+  multi_stage_dci_enabled: true
+  pucch_enabled: true
+  pucch_format: 2
+
+random_access:
+  enabled: true
+  frequency_range: FR2
+  carrier_frequency_hz: 30000000000
+  duplex_mode: TDD
+  carrier_scs_khz: 120
+  n_size_grid: 264
+  ssb_periodicity_ms: 20
+  ssb_beam_count: 8
+  prach_format: A1
+  preamble_length_mode: short
+  preamble_count: 64
+  zero_correlation_zone: 8
+  detection_threshold: 0.5
+  msg3_enabled: true
+  configuration_index: 15
+  subcarrier_spacing_khz: 120
+  root_sequence_index: 1
+  preamble_index: 0
+
+control_gating:
+  pbch_required: true
+  prach_required: true
+  pdcch_required: true
+  srs_required: true
+  srs_max_age_slots: 4
+  trs_required: true
+  trs_max_age_slots: 4
+
+mimo:
+  n_tx_ant: 64
+  n_rx_ant: 4
+  n_layers: 2
+  precoder_type: wideband
+  codebook_type: type1
+  reciprocity_mode: TDD
+  beam_sweep_enabled: true
+  beam_count: 32
+  mtrp_ready: true
+  multi_panel_ready: true
+  panel_count: 2
+  trp_count: 15
+  precoding_granularity: prg_wideband
+
+mimo_and_beam_management:
+  beam_refinement: true
+  beam_switching: true
+  beam_tracking: true
+  beam_prediction: true
+  mtrp_coordination: true
+
+csi_acquisition_and_reporting:
+  joint_dl_ul_csi_enabled: true
+  dmrs_based_csi_flag: true
+  joint_port_mapping_policy: explicit_joint_port_map
+  joint_timeline_policy: scheduler_defined_joint_timeline
+
+link_adaptation:
+  fixed_or_amc: amc
+  outer_loop_flag: true
+  dmrs_based_tracking_flag: true
+  rank_adaptation_policy: srs_feedback
+  cqi_table: table2
+  bootstrap_cqi_mode: large_scale_preview_cqi_lab_default
+
+modulation:
+  dl_modulation_order: 8
+  ul_modulation_order: 8
+  mcs_table: qam256_table2
+  dl_mcs_index: 20
+  ul_mcs_index: 20
+
+pdsch6gr:
+  enabled: true
+  channel_bandwidth_mhz: 400
+  n_size_grid: 264
+  num_rb: 264
+  rb_start: 0
+  mcs_mode: amc
+  enable_ptrs: true
+  ptrs_band_policy: fr2_baseline
+  harq_enabled: true
+
+system:
+  queueMaxBits: 2000000000
+  largeScaleUpdatePeriod_slots: 1
+  scheduler:
+    type: PF
+    maxActiveUEsPerSlot: 60
+    maxActiveUEsPerCellPerSlot: 4
+    maxActiveUEsPerCellPerSlotDL: 4
+    maxActiveUEsPerCellPerSlotUL: 4
+    maxPRBAllocationPerUE: 264
+    tbsMode: faithful
+    fastNREApprox: false
+    allowApproximatePlanningInStrictMode: false
+    fairnessAlpha: 1.0
+    proportionalFairWindow_ms: 100
+    beamAware: true
+    energyAware: true
+    qosAware: true
+    sliceAware: true
+    starvationGuard: true
+    cellEdgeBoost: true
+  measurement:
+    periodSlots: 1
+    filterAlpha: 0.7
+  beam:
+    enable: true
+    numBeams: 32
+    updatePeriod_slots: 1
+    sectorSpan_deg: 120
+    maxGain_dB: 18
+  waveform:
+    useGrantLocalGrid: true
+    replayGridMode: grant_allocation
+    capReplayAntennasToLayers: false
+    longRunAudit:
+      enabled: true
+      periodSlots: 1
+      maxGrantsPerAuditSlot: 60
+      unsampledGrantPolicy: full_replay
+
+traffic:
+  model: fullBuffer
+  transport: UDP
+  flowDirection: BIDIR
+  dlRatio: 0.5
+  ulRatio: 0.5
+  packetDelayBudget_ms: 300
+  packetSize_bytes: 1500
+  packetInterval_ms: 1
+  targetRate_Mbps: 2000
+  jitterPct: 0.0
+  fullBufferBitsPerTTI: 2000000
+  qos:
+    enable5QI: true
+    default5QI: 9
+    latencyBudget_ms: 300
+  flows:
+    - name: embb_full_buffer
+      qfi: 9
+      fiveQi: 9
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 300
+      packetSize_bytes: 1500
+      packetInterval_ms: 1
+      rate_Mbps: 2000
+      weight: 1
+      jitterPct: 0.0
+      burstiness: saturation
+      service_profile: FULL_BUFFER
+      ue_class: UE_CLASS_EMBB
+      ue_count: 150
+
+harq:
+  enabled: true
+  process_count: 16
+  rv_sequence: [0, 2, 3, 1]
+  cbg_enabled: true
+  feedback_timing_slots: 4
+  combining_mode: incremental_redundancy
+  max_retx: 3
+  validation_mode: exercise
+
+receiver_algorithms:
+  iterative_receiver_flag: true
+  interference_cancellation: irc
+
+power_and_rf_frontend:
+  pa_model: rapp_baseline
+  pa_nonlinearity_model: rapp_baseline
+  cfr_enabled: true
+  dpd_enabled: true
+  iq_imbalance: nominal
+  dc_offset: low_nominal
+  saturation_model: rapp_baseline
+
+impairments:
+  cfo_hz: 40
+  cfo:
+    enabled: true
+    value_hz: 40
+  to:
+    enabled: true
+  phase_noise:
+    enabled: true
+    model: nominal
+  iq_imbalance:
+    enabled: true
+    model: nominal
+  dc_offset:
+    enabled: true
+    model: low_nominal
+  quantization_noise:
+    enabled: true
+    model: adc_dac_12bit
+  reciprocity_error:
+    enabled: true
+    model: calibrated
+  amplitude_phase_mismatch:
+    enabled: true
+    model: calibrated
+  srs_power_imbalance:
+    enabled: true
+    model: nominal
+  rs_collision:
+    enabled: true
+    model: baseline
+  burst_interference:
+    enabled: true
+    model: baseline
+  interference_randomization:
+    enabled: true
+    model: baseline
+  timing_jitter:
+    enabled: true
+    model: nominal
+  calibration_error:
+    enabled: true
+    model: calibrated
+  phase_noise_enabled: true
+  iq_imbalance_enabled: true
+  pa_nonlinearity_enabled: true
+
+energy_efficiency:
+  enabled: true
+  ssb_clustering_enabled: true
+  common_channel_clustering_enabled: true
+  pdcch_monitoring_adaptation_enabled: true
+  blind_decode_reduction_enabled: true
+  cross_slot_scheduling_enabled: true
+  active_sleep_tracking_enabled: true
+  race_to_sleep_enabled: true
+  per_block_processing_energy_enabled: true
+  rf_chain_energy_enabled: true
+  wideband_narrowband_tradeoff_enabled: true
+
+output_control:
+  save_raw_waveforms: true
+  save_llrs: true
+  save_channel_snapshots: true
+  save_constellations: true
+  save_debug_events: true
+  impairment_visibility: full
+
+output:
+  profile: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot
+  backend: mysql_web
+  database_host: localhost
+  database_port: 3306
+  database_schema: sixgr_results
+  live_publish_frame_interval: 1
+  live_heavy_refresh_interval_frames: 1
+  profiler_enabled: true
+  profiler_top_functions: 200
+  profiler_top_edges: 400
+  emit_placeholder_artifacts: false
+  emit_disabled_audit_artifacts: true

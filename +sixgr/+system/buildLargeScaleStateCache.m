@@ -130,8 +130,13 @@ else
     end
 end
 
+rsrpRECount = max(12 * max(1, round(double(opt.NumRB))), 1);
 state.RxPower_dBm = state.TxPower_dBm + state.BeamGain_dB - state.Pathloss_dB;
-state.RSRP_dBm = state.RxPower_dBm - 10*log10(max(12 * max(1, round(double(opt.NumRB))), 1));
+state.RSRP_dBm = state.RxPower_dBm;
+state.RSRPPerRE_dBm = state.RxPower_dBm - 10*log10(rsrpRECount);
+state.RSRPNormalizationRECount = repmat(double(rsrpRECount), K, nCells);
+state.RSRPConvention = "wideband_serving_reference_power";
+state.RSRPPerREConvention = "per_reference_resource_element_power";
 state.PathlossModelSource = localObjectStringProp(plModel, "PathlossModelSource", ...
     string(sixgr.util.structGet(opt.PreviousState, "PathlossModelSource", "")));
 state.PathlossComplianceStatus = localObjectStringProp(plModel, "PathlossComplianceStatus", ...
@@ -156,7 +161,14 @@ function [d2d_m, dxy_m] = localDistanceAndDelta(uePos_m, layout)
 bsPos_m = double(layout.bs.pos_m);
 wrapEn = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
 area_m = double(sixgr.util.structGet(layout, "area_m", [0 0]));
-wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", "rectangular_torus"));
+wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", ""));
+if strlength(strtrim(wrapMode)) == 0
+    if contains(lower(string(sixgr.util.structGet(layout, "layoutType", ""))), "hex")
+        wrapMode = "hex_lattice_min_image";
+    else
+        wrapMode = "rectangular_torus";
+    end
+end
 if wrapEn && wrapMode ~= "disabled"
     [d2d_m, dxy_m] = sixgr.scenario.wraparoundDistance(uePos_m, bsPos_m, area_m, ...
         "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));

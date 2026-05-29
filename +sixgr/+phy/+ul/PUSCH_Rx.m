@@ -257,7 +257,7 @@ end
 if iscell(cwLLR)
     cwLLR = cwLLR{1};
 end
-cwLLR = double(cwLLR(:));
+cwLLR = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation);
 
 % Rate recover (to code blocks)
 recLLR = sixgr.phy.phycode.rateRecoverLDPC(cwLLR, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers);
@@ -632,6 +632,38 @@ switch upper(char(string(modScheme)))
 end
 end
 
+function llrOut = localApplyCSIToCodewordLLR(llrIn, csi, modScheme)
+% 5G Toolbox decoders expect equalizer reliability to weight codeword LLRs.
+llrOut = double(llrIn(:));
+if isempty(csi)
+    return;
+end
+try
+    csiCW = nrLayerDemap(csi);
+    if iscell(csiCW)
+        csiVec = csiCW{1};
+    else
+        csiVec = csiCW;
+    end
+catch
+    csiVec = csi;
+end
+csiVec = double(real(csiVec(:)));
+csiVec(~isfinite(csiVec) | csiVec < 0) = 0;
+if isempty(csiVec) || ~any(csiVec > 0)
+    return;
+end
+qm = max(1, round(double(localQm(modScheme))));
+if numel(csiVec) * qm == numel(llrOut)
+    weights = repelem(csiVec, qm);
+elseif numel(csiVec) == numel(llrOut)
+    weights = csiVec;
+else
+    return;
+end
+llrOut = llrOut .* weights;
+end
+
 function x = localEnsureLLRBatch(xIn)
 % Ensure a dense 2-D floating matrix for batch LDPC decode kernels.
 x = xIn;
@@ -673,6 +705,14 @@ end
 end
 
 function channelToken = localResolveEstimatorChannelModel(cfg)
+awgnOnly = logical(sixgr.util.structGet(cfg, 'channel.awgnOnly', false));
+modelToken = localNormalizeChannelToken(sixgr.util.structGet(cfg, 'channel.model', ''));
+fadingModelToken = localNormalizeChannelToken(sixgr.util.structGet(cfg, 'channel.fading.model', ''));
+if awgnOnly || any(modelToken == ["AWGN", "NONE", "OFF"]) || any(fadingModelToken == ["AWGN", "NONE", "OFF"])
+    channelToken = "AWGN";
+    return;
+end
+
 candidates = { ...
     sixgr.util.structGet(cfg, 'channel.tdlProfile', ''), ...
     sixgr.util.structGet(cfg, 'channel.cdlProfile', ''), ...

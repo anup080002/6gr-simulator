@@ -38,7 +38,7 @@ switch raw
         domain = "effective_sinr";
     case {"bler_margin", "bler-margin", "olla_bler_margin"}
         domain = "bler_margin";
-    case {"legacy_mcs", "mcs", "mcs_domain", "legacy"}
+    case {"legacy_mcs", "mcs", "mcs_domain", "legacy", "radisys_l1_mcs", "flexran_mcs", "mcs_hundredths"}
         domain = "legacy_mcs";
     otherwise
         domain = "cqi";

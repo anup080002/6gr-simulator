@@ -68,7 +68,7 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
 
     % NPRACHSlot (controls current PRACH slot in OFDM modulator)
     if isempty(opts.NPRACHSlot)
-        nslot = carrier.NSlot;
+        nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach);
     else
         nslot = opts.NPRACHSlot;
     end
@@ -112,6 +112,7 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
         info.IndicesInfo = struct();
         info.OFDMInfo = struct("SampleRate", NaN);
         info.ActiveOccasionPresent = false;
+        info.ResolvedNPRACHSlot = double(nslot);
         return;
     end
 
@@ -132,6 +133,7 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
         info.IndicesInfo = indInfo;
         info.OFDMInfo = struct("SampleRate", NaN);
         info.ActiveOccasionPresent = false;
+        info.ResolvedNPRACHSlot = double(nslot);
         return;
     end
     prachGrid = nrPRACHGrid(carrier, prach);
@@ -159,6 +161,52 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
     info.IndicesInfo = indInfo;
     info.OFDMInfo    = ofdmInfo;
     info.ActiveOccasionPresent = true;
+    info.ResolvedNPRACHSlot = double(nslot);
+end
+
+% -------------------------------------------------------------------------
+function nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach)
+cfgSlot = sixgr.util.structGet(cfg, "phy.prach.nPrachSlot", []);
+if isempty(cfgSlot)
+    cfgSlot = sixgr.util.structGet(cfg, "phy.prach.NPRACHSlot", []);
+end
+if ~isempty(cfgSlot)
+    vals = double(cfgSlot(:));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        nslot = vals(1);
+        return;
+    end
+end
+
+startSlot = double(carrier.NSlot);
+if ~(isfinite(startSlot) && startSlot >= 0)
+    startSlot = 0;
+end
+scanSlots = 160;
+nslot = startSlot;
+for offset = 0:scanSlots
+    candidate = round(startSlot) + offset;
+    c = carrier;
+    p = prach;
+    try
+        c.NSlot = candidate;
+    catch
+    end
+    try
+        p.NPRACHSlot = candidate;
+    catch
+    end
+    try
+        sym = nrPRACH(c, p);
+        ind = nrPRACHIndices(c, p);
+        if ~isempty(sym) && ~isempty(ind)
+            nslot = candidate;
+            return;
+        end
+    catch
+    end
+end
 end
 
 % -------------------------------------------------------------------------

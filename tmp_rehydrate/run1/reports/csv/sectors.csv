@@ -1,6 +1,0 @@
-SiteID,SectorID,Azimuth_deg,X_m,Y_m,Z_m,Lat,Lon,CoordinateMode,MapAnchorLabel
-1,1,0,0,0,25,19.122164,72.999217,"projected_default_anchor","Reliance Corporate Park, Ghansoli, Navi Mumbai"
-2,1,0,600,0,25,19.122163912102,73.0049216620496,"projected_default_anchor","Reliance Corporate Park, Ghansoli, Navi Mumbai"
-3,1,0,300,-519.615242270663,25,19.1174961948879,73.0020692504667,"projected_default_anchor","Reliance Corporate Park, Ghansoli, Navi Mumbai"
-4,1,0,-300,-519.615242270663,25,19.1174961948879,72.9963647495333,"projected_default_anchor","Reliance Corporate Park, Ghansoli, Navi Mumbai"
-5,1,0,-600,0,25,19.122163912102,72.9935123379503,"projected_default_anchor","Reliance Corporate Park, Ghansoli, Navi Mumbai"

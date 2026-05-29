@@ -1,7 +1,0 @@
-Direction,TraceSource,SNR_dB,Metric,MeanValue,P05Value,P95Value,SampleCount
-"DL","dl_pdsch_trials",12,"RankIndicator",1.49333333333333,1,2,150
-"DL","dl_pdsch_trials",12,"RankEstimate",1.25333333333333,1,2,150
-"DL","dl_pdsch_trials",12,"Layers",1.88666666666667,1,2,150
-"UL","ul_pusch_trials",12,"RankIndicator",1,1,1,96
-"UL","ul_pusch_trials",12,"RankEstimate",1,1,1,96
-"UL","ul_pusch_trials",12,"Layers",1,1,1,96

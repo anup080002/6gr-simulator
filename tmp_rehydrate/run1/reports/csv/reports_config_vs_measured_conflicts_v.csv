@@ -1,4 +1,0 @@
-run_id,artifact_family,source_artifact,configured_snr_db,mean_measured_sinr_db,mean_serving_rsrp_dbm,mean_csi_rsrp_db,lineage_note
-1,dl_pdsch,air_interface/csv/dl_pdsch_trials.csv,,20.360473659736748,-87.31131696765961,-107.63956224775824,Comparison surfaces keep configured launch values separate from measured air-interface runtime values.
-1,ul_pusch,air_interface/csv/ul_pusch_trials.csv,,30.978570126382337,-86.33073444888605,-120.88122758071955,Comparison surfaces keep configured launch values separate from measured air-interface runtime values.
-1,pdcch,air_interface/csv/pdcch_trials.csv,,,,,Comparison surfaces keep configured launch values separate from measured air-interface runtime values.

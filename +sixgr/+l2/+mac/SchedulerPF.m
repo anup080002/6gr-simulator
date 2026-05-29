@@ -50,7 +50,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             info = struct();
             info.Slot = slot;
             info.Direction = obj.Direction;
-            k1 = max(0, round(double(sixgr.util.structGet(obj.Cfg, "mac.harq.k1", 4))));
+            k1 = max(1, round(double(sixgr.util.structGet(obj.Cfg, "mac.harq.k1", 4))));
             k2 = max(0, round(double(sixgr.util.structGet(obj.Cfg, "mac.harq.k2", 1))));
             ssid = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.SearchSpaceID", 0))));
             coreset = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.CORESETID", 0))));

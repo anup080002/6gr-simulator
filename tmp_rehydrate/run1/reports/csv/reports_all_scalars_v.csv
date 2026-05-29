@@ -1,7 +1,0 @@
-run_id,metric_name,metric_value,metric_unit,source_artifact
-1,run_completion,completed,ratio,sim_runs.status_json
-1,dl_trial_rows,150,rows,air_interface/csv/dl_pdsch_trials.csv
-1,ul_trial_rows,96,rows,air_interface/csv/ul_pusch_trials.csv
-1,dl_mean_measured_sinr_db,20.360473659736748,dB,air_interface/csv/dl_pdsch_trials.csv
-1,ul_mean_measured_sinr_db,30.978570126382337,dB,air_interface/csv/ul_pusch_trials.csv
-1,energy_rows,1258,rows,rf/csv/energy_timeline_trace.csv

@@ -35,7 +35,7 @@ addParameter(p, 'SSBIndex', 0);
 addParameter(p, 'SSBBlockPattern', []);
 addParameter(p, 'SubcarrierSpacingCommon_kHz', []);
 addParameter(p, 'ChannelBandwidth_MHz', []);
-addParameter(p, 'FrequencyRange', 'FR1');
+addParameter(p, 'FrequencyRange', []);
 addParameter(p, 'CarrierFrequency_Hz', sixgr.util.structGet(cfg, 'channel.fc_Hz', 3.5e9));
 addParameter(p, 'EnablePDSCH', false);
 addParameter(p, 'EnableCSIRS', false);
@@ -49,6 +49,7 @@ SCSCarrier_kHz = sixgr.util.structGet(cfg, 'phy.carrier.SubcarrierSpacing_kHz', 
 NSizeGrid = sixgr.util.structGet(cfg, 'phy.carrier.NSizeGrid', 52);
 NStartGrid = sixgr.util.structGet(cfg, 'phy.carrier.NStartGrid', 0);
 ChannelBW_MHz = sixgr.util.structGet(cfg, 'phy.channelBandwidth_MHz', 20);
+FrequencyRange = localResolveFrequencyRange(cfg, opt.FrequencyRange, opt.CarrierFrequency_Hz);
 
 if ~isempty(opt.NCellID)
     NCellID = double(opt.NCellID);
@@ -65,7 +66,7 @@ end
 % -------------------- Build waveform generator config --------------------
 
 cfgDL = nrDLCarrierConfig;
-cfgDL.FrequencyRange = string(opt.FrequencyRange);
+cfgDL.FrequencyRange = string(FrequencyRange);
 cfgDL.ChannelBandwidth = double(ChannelBW_MHz); % MHz
 cfgDL.NCellID = double(NCellID);
 cfgDL.CarrierFrequency = double(opt.CarrierFrequency_Hz);
@@ -97,6 +98,9 @@ end
 ssb = nrWavegenSSBurstConfig;
 ssb.Enable = true;
 ssb.BlockPattern = ssbBlockPattern;
+if isprop(ssb, 'SubcarrierSpacingCommon')
+    ssb.SubcarrierSpacingCommon = localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz);
+end
 ssb.Period = 20; % ms
 ssb.Power = 0;
 ssbLmax = double(sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 8));
@@ -179,6 +183,75 @@ end
 txCfg.SampleRate_Hz = sr;
 
 
+end
+
+function rangeName = localResolveFrequencyRange(cfg, requestedRange, carrierFrequencyHz)
+% Resolve the NR frequency range from the validated runtime config.
+%
+% Initial-access generation must not silently default to FR1 because FR2
+% channel bandwidths such as 400 MHz are valid only when FrequencyRange is
+% propagated into nrDLCarrierConfig.
+
+rangeName = localFirstStringScalar(requestedRange);
+if strlength(strtrim(rangeName)) == 0
+    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'phy.frequencyRange', ""));
+end
+if strlength(strtrim(rangeName)) == 0
+    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'frequency.range_name', ""));
+end
+if strlength(strtrim(rangeName)) == 0
+    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'global_radio_scope.frequency_range_label', ""));
+end
+if strlength(strtrim(rangeName)) == 0
+    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'lls6g.frequency.range_name', ""));
+end
+rangeName = upper(strtrim(rangeName));
+if rangeName ~= "FR1" && rangeName ~= "FR2"
+    fcHz = double(carrierFrequencyHz);
+    if ~(isfinite(fcHz) && fcHz > 0)
+        fcHz = double(sixgr.util.structGet(cfg, 'phy.fc_Hz', ...
+            sixgr.util.structGet(cfg, 'channel.fc_Hz', NaN)));
+    end
+    if isfinite(fcHz) && fcHz >= 24.25e9
+        rangeName = "FR2";
+    else
+        rangeName = "FR1";
+    end
+end
+rangeName = char(rangeName);
+end
+
+function value = localFirstStringScalar(raw)
+value = string(raw);
+if isempty(value)
+    value = "";
+else
+    value = value(1);
+end
+end
+
+function scs = localSSBSubcarrierSpacingCommon_kHz(blockPattern, carrierSCS_kHz)
+bp = upper(strtrim(string(blockPattern)));
+if isempty(bp)
+    bp = "";
+else
+    bp = bp(1);
+end
+switch bp
+    case {"CASE A","A"}
+        scs = 15;
+    case {"CASE B","B","CASE C","C"}
+        scs = 30;
+    case {"CASE D","D"}
+        scs = 120;
+    case {"CASE E","E","CASE F","F","CASE G","G"}
+        scs = 240;
+    otherwise
+        scs = double(carrierSCS_kHz);
+end
+if ~(isfinite(double(scs)) && double(scs) > 0)
+    scs = 30;
+end
 end
 
 % ======================================================================

@@ -3810,9 +3810,9 @@ plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Swee
 plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "ReceiverHestSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Measured SINR", "Measured SINR (dB)", "BLER", false, true); %#ok<AGROW>
+    "MeasuredTrialSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Measured SINR", "Measured SINR (dB)", "BLER", false, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "ReceiverHestSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Measured SINR", "Measured SINR (dB)", "BER", false, true); %#ok<AGROW>
+    "MeasuredTrialSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Measured SINR", "Measured SINR (dB)", "BER", false, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "BLER", "BER", "ber_vs_bler.png", "BER vs BLER", "BLER", "BER", true, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
@@ -4476,6 +4476,7 @@ sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
 sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
 
 artifacts.ChannelSnapshotsCSV = fullfile(ctx.Layout.ReportCSVDir, "channel_snapshots.csv");
+artifacts.ChannelImpulseResponseCSV = fullfile(ctx.Layout.ReportCSVDir, "channel_impulse_response.csv");
 artifacts.EqualizedConstellationsCSV = fullfile(ctx.Layout.ReportCSVDir, "equalized_constellations.csv");
 artifacts.EqualizedConstellationsImage = fullfile(ctx.Layout.ReportImageDir, "equalized_constellations.png");
 artifacts.LLRHistogramsCSV = fullfile(ctx.Layout.ReportCSVDir, "llr_histograms.csv");
@@ -4486,6 +4487,7 @@ artifacts.PRACHCorrelationCSV = fullfile(ctx.Layout.ReportCSVDir, "prach_correla
 artifacts.PRACHCorrelationImage = fullfile(ctx.Layout.ReportImageDir, "prach_correlation_traces.png");
 
 sixgr.util.csvWriteTable(artifacts.ChannelSnapshotsCSV, localBuildChannelSnapshotTable(ctx));
+sixgr.util.csvWriteTable(artifacts.ChannelImpulseResponseCSV, localBuildChannelImpulseResponseTable(ctx));
 sixgr.util.csvWriteTable(artifacts.EqualizedConstellationsCSV, localBuildEqualizedConstellationTable(ctx));
 sixgr.util.csvWriteTable(artifacts.LLRHistogramsCSV, localBuildLLRHistogramTable(ctx));
 sixgr.util.csvWriteTable(artifacts.CFOToTrackingCSV, localBuildTrackingTraceTable(ctx));
@@ -4503,6 +4505,10 @@ localPlotPRACHCorrelationTraceOrPlaceholder(artifacts.PRACHCorrelationImage, ctx
 if isfield(artifacts, "AIConfidenceImage")
     localPlotAIConfidenceTraceOrPlaceholder(artifacts.AIConfidenceImage, ctx);
 end
+end
+
+function T = localBuildChannelImpulseResponseTable(ctx)
+T = sixgr.truth.buildChannelImpulseResponseTable(ctx.InternalConfig);
 end
 
 function T = localBuildChannelSnapshotTable(ctx)

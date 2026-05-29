@@ -1,2 +1,0 @@
-run_id,chart_name,status,reason,checked_sources
-1,pre-equalization constellation,unavailable_exact_reason,"The run does not export raw pre-equalization I/Q sample clouds, so a pre-equalization constellation plot cannot be reconstructed honestly.",air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

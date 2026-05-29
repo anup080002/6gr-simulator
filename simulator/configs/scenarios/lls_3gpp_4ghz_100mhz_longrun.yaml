@@ -80,11 +80,11 @@ run_control:
   save_link_budget_tables: true
   save_interference_breakdown: true
   save_energy_trace: true
-  batch_size_links: 1
+  batch_size_links: 16
   gpu_enable: false
   mixed_precision_enable: false
   fail_on_validation_warning: true
-  num_workers: 1
+  num_workers: 8
   max_runtime_guard: 86400
   debug_level: info
   fail_on_warning: true
@@ -379,6 +379,7 @@ link_adaptation:
   beam_adaptation_policy: fixed
   adaptation_periodicity: slot
   adaptation_delay_model: baseline
+  bootstrap_cqi_mode: large_scale_preview_cqi_lab_default
 
 harq:
   enabled: true

@@ -39,7 +39,7 @@
         {"label": "increased_ssb_beam_count", "config": {"random_access": {"ssb_beam_count": 16}}},
         {"label": "beam_sweep_clustering", "config": {"random_access": {"beam_clustering_enabled": true}, "mimo": {"beam_sweep_enabled": true}}},
         {"label": "prach_zc_baseline_long", "config": {"random_access": {"prach_sequence_family": "zadoff_chu_baseline", "preamble_length_mode": "long"}}},
-        {"label": "prach_short_preamble", "config": {"random_access": {"preamble_length_mode": "short", "prach_format": "B1"}}},
+        {"label": "prach_short_preamble", "config": {"random_access": {"preamble_length_mode": "short", "prach_format": "B1", "configuration_index": 133}}},
         {"label": "prach_multisequence_occ_candidate", "config": {"random_access": {"prach_sequence_family": "multisequence_candidate"}}},
         {"label": "prach_same_beam_repetition", "config": {"random_access": {"repetition_count": 2, "repetition_beam_mode": "same_beam"}}},
         {"label": "prach_different_beam_repetition", "config": {"random_access": {"repetition_count": 2, "repetition_beam_mode": "different_beam"}}},

@@ -13,6 +13,7 @@ end
 
 artifacts = struct();
 layout = sixgr.report.resultLayout(runFolder);
+sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.HARQCSVDir);
 
 dlT = sixgr.util.structGet(rawTrials, "DL", table());
@@ -38,6 +39,7 @@ artifacts.AntennaRuntimeEvidencePath = fullfile(layout.ReportCSVDir, "antenna_ru
 artifacts.ChannelArrayConsistencyPath = fullfile(layout.ReportCSVDir, "channel_array_consistency.csv");
 artifacts.TodToaTracePath = fullfile(layout.ReportCSVDir, "tod_toa_trace.csv");
 artifacts.TimingPositioningEvidencePath = fullfile(layout.ReportCSVDir, "timing_positioning_runtime_evidence.csv");
+artifacts.ChannelImpulseResponsePath = fullfile(layout.ReportCSVDir, "channel_impulse_response.csv");
 
 channelT = localBuildChannelStatsTable(dlT, ulT, srsT, trsT);
 rankT = localBuildRankStatsTable(dlT, ulT);
@@ -74,6 +76,7 @@ antennaRuntimeT = localBuildAntennaRuntimeEvidenceTable(trialCombinedT);
 arrayConsistencyT = localBuildChannelArrayConsistencyTable(trialCombinedT);
 todToaT = localBuildTodToaTraceTable(trialCombinedT);
 timingPositioningT = localBuildTimingPositioningRuntimeEvidenceTable(trialCombinedT);
+channelImpulseT = sixgr.truth.buildChannelImpulseResponseTable(cfg);
 
 sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT);
 sixgr.util.csvWriteTable(artifacts.RankEstimationStatsPath, rankT);
@@ -91,6 +94,7 @@ sixgr.util.csvWriteTable(artifacts.AntennaRuntimeEvidencePath, antennaRuntimeT);
 sixgr.util.csvWriteTable(artifacts.ChannelArrayConsistencyPath, arrayConsistencyT);
 sixgr.util.csvWriteTable(artifacts.TodToaTracePath, todToaT);
 sixgr.util.csvWriteTable(artifacts.TimingPositioningEvidencePath, timingPositioningT);
+sixgr.util.csvWriteTable(artifacts.ChannelImpulseResponsePath, channelImpulseT);
 
 artifacts.ChannelEstimationStats = channelT;
 artifacts.RankEstimationStats = rankT;
@@ -106,6 +110,7 @@ artifacts.AntennaRuntimeEvidence = antennaRuntimeT;
 artifacts.ChannelArrayConsistency = arrayConsistencyT;
 artifacts.TodToaTrace = todToaT;
 artifacts.TimingPositioningEvidence = timingPositioningT;
+artifacts.ChannelImpulseResponse = channelImpulseT;
 artifacts.HARQ = struct( ...
     "SummaryCSV", artifacts.LiveHARQSummaryPath, ...
     "TimelineCSV", artifacts.LiveHARQTimelinePath, ...
@@ -709,7 +714,7 @@ if ~ismember("AppliedLargeScaleGain_dB", string(coverageT.Properties.VariableNam
     coverageT.AppliedLargeScaleGain_dB = nan(height(coverageT), 1);
 end
 if ~ismember("RSRPSource", string(coverageT.Properties.VariableNames))
-    coverageT.RSRPSource = repmat("large_scale_serving_reference_signal", height(coverageT), 1);
+    coverageT.RSRPSource = repmat("large_scale_wideband_serving_power", height(coverageT), 1);
 end
 if ~ismember("WidebandSINRSource", string(coverageT.Properties.VariableNames))
     coverageT.WidebandSINRSource = strings(height(coverageT), 1);
@@ -759,7 +764,7 @@ if ~ismember("InterferenceMode", string(coverageT.Properties.VariableNames))
     coverageT.InterferenceMode = repmat("unpublished_mode_label_missing", height(coverageT), 1);
 end
 if ~ismember("ServingRSRPSource", string(coverageT.Properties.VariableNames))
-    coverageT.ServingRSRPSource = repmat("large_scale_serving_reference_signal", height(coverageT), 1);
+    coverageT.ServingRSRPSource = repmat("large_scale_wideband_serving_power", height(coverageT), 1);
 end
 if ~ismember("CSI_RSRPSource", string(coverageT.Properties.VariableNames))
     coverageT.CSI_RSRPSource = strings(height(coverageT), 1);
@@ -1169,10 +1174,12 @@ end
 if ~ismember("SNR_dB", string(sourceT.Properties.VariableNames))
     sourceT.SNR_dB = nan(height(sourceT), 1);
 end
-snrList = unique(double(sourceT.SNR_dB), "stable");
-rows = repmat(struct("Direction","", "TraceSource","", "SNR_dB", NaN, "Metric", "", "MeanValue", NaN, "P05Value", NaN, "P95Value", NaN, "SampleCount", NaN), 0, 1);
+axis = localMeasuredQualityAxis(sourceT);
+snrList = unique(axis.Bin_dB, "stable");
+rows = repmat(struct("Direction","", "TraceSource","", "SNR_dB", NaN, "QualityAxis", "", "QualityValueRole", "", "QualitySource", "", ...
+    "Metric", "", "MeanValue", NaN, "P05Value", NaN, "P95Value", NaN, "SampleCount", NaN), 0, 1);
 for s = 1:numel(snrList)
-    mask = abs(double(sourceT.SNR_dB) - snrList(s)) < 1e-9;
+    mask = abs(axis.Bin_dB - snrList(s)) < 1e-9;
     for f = 1:numel(fields)
         metric = fields(f);
         if ~ismember(metric, string(sourceT.Properties.VariableNames))
@@ -1187,6 +1194,9 @@ for s = 1:numel(snrList)
             "Direction", string(direction), ...
             "TraceSource", string(traceSource), ...
             "SNR_dB", double(snrList(s)), ...
+            "QualityAxis", string(axis.AxisName), ...
+            "QualityValueRole", string(axis.ValueRole), ...
+            "QualitySource", string(axis.Source), ...
             "Metric", string(metric), ...
             "MeanValue", mean(vals, "omitnan"), ...
             "P05Value", localPercentile(vals, 5), ...
@@ -1201,10 +1211,58 @@ else
 end
 end
 
+function axis = localMeasuredQualityAxis(T)
+n = height(T);
+axisName = "SNR_dB";
+valueRole = "configured_or_sweep_reference";
+source = "SNR_dB";
+values = double(T.SNR_dB);
+preferred = [ ...
+    "MeasuredTrialSINR_dB", ...
+    "MeasuredWidebandSINR_dB", ...
+    "DecoderTruthProxySINR_dB", ...
+    "LargeScaleSINR_dB", ...
+    "AppliedAWGNSNR_dB", ...
+    "ConfiguredSNR_dB", ...
+    "SNR_dB"];
+roles = [ ...
+    "measured_data_domain_trial_sinr", ...
+    "measured_wideband_sinr", ...
+    "post_equalization_evm_proxy_sinr", ...
+    "large_scale_runtime_sinr", ...
+    "applied_awgn_equivalent_snr", ...
+    "configured_runtime_operating_point_reference", ...
+    "configured_or_sweep_reference"];
+vars = string(T.Properties.VariableNames);
+for i = 1:numel(preferred)
+    name = preferred(i);
+    if ~ismember(name, vars)
+        continue;
+    end
+    candidate = double(T.(char(name)));
+    if any(isfinite(candidate))
+        values = candidate;
+        axisName = name;
+        valueRole = roles(i);
+        source = name;
+        break;
+    end
+end
+if all(~isfinite(values))
+    values = nan(n, 1);
+end
+% Use 1 dB bins so single-SNR scenario runs still produce a measured-quality
+% distribution without pretending they are configured SNR sweep campaigns.
+binValues = nan(n, 1);
+finiteMask = isfinite(values);
+binValues(finiteMask) = round(values(finiteMask));
+axis = struct("Bin_dB", binValues, "AxisName", axisName, "ValueRole", valueRole, "Source", source);
+end
+
 function T = localEmptySummaryTable()
 T = table( ...
-    strings(0,1), strings(0,1), zeros(0,1), strings(0,1), zeros(0,1), zeros(0,1), zeros(0,1), zeros(0,1), ...
-    'VariableNames', {'Direction','TraceSource','SNR_dB','Metric','MeanValue','P05Value','P95Value','SampleCount'});
+    strings(0,1), strings(0,1), zeros(0,1), strings(0,1), strings(0,1), strings(0,1), strings(0,1), zeros(0,1), zeros(0,1), zeros(0,1), zeros(0,1), ...
+    'VariableNames', {'Direction','TraceSource','SNR_dB','QualityAxis','QualityValueRole','QualitySource','Metric','MeanValue','P05Value','P95Value','SampleCount'});
 end
 
 function T = localCombineDirectionalTrials(dlT, ulT)

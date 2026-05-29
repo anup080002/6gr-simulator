@@ -1,4 +1,0 @@
-run_id,chart_name,chart_mode,x_label,y_label,point_index,x_value,y_value,source_table_logical_path,source_row_count,materialization_status,lineage_note
-1,CSI-RS resource occupancy,line,SNR_dB,MeanNMSE_dB,1,12.0,-8.23389863827617,reports/csv/live_csirs_stats.csv,3,derived_chart_dataset,Canonical chart CSV derived from the selected run's persisted source table. The full raw source table remains stored separately.
-1,CSI-RS resource occupancy,line,SNR_dB,MeanNMSE_dB,2,12.0,25.1947269758921,reports/csv/live_csirs_stats.csv,3,derived_chart_dataset,Canonical chart CSV derived from the selected run's persisted source table. The full raw source table remains stored separately.
-1,CSI-RS resource occupancy,line,SNR_dB,MeanNMSE_dB,3,12.0,-27.2655854370409,reports/csv/live_csirs_stats.csv,3,derived_chart_dataset,Canonical chart CSV derived from the selected run's persisted source table. The full raw source table remains stored separately.

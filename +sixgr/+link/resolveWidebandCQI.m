@@ -33,6 +33,12 @@ end
 modeToken = localResolveCQIMode(cfg, direction, ~isempty(perRBSINR_dB));
 [thresholds_dB, thresholdSource, thresholdRole] = localResolveCQIThresholds(cfg, direction, tableToken);
 targetBLER = localResolveTargetBLER(cfg, direction);
+if modeToken == "effective_sinr_bler_lut" && ...
+        ~localConfiguredBLERLUTAvailable(cfg, direction, targetBLER) && ...
+        ~localAllowUncalibratedBLERLUT(cfg, direction)
+    error("sixgr:link:UncalibratedBLERLUT", ...
+        "effective_sinr_bler_lut requires a configured CQI BLER LUT. Set phy.csi.allowUncalibratedBLERLUT=true only for explicitly labeled lab-default studies.");
+end
 
 widebandEffectiveSINR_dB = double(widebandSINR_dB - margin_dB);
 perRBEffectiveSINR_dB = double(perRBSINR_dB - margin_dB);
@@ -397,8 +403,59 @@ end
 
 lut.Curves = localDefaultBLERLUT(tableToken, thresholds_dB, targetBLER, cfg, direction);
 lut.Source = "resolveWidebandCQI.lab_default_bler_lut";
-lut.ValueRole = "lab_default";
-lut.CalibrationID = "vendor_style_lab_default_operating_point_grid";
+lut.ValueRole = "uncalibrated_lab_default";
+lut.CalibrationID = "uncalibrated_vendor_style_lab_default_operating_point_grid";
+end
+
+function tf = localConfiguredBLERLUTAvailable(cfg, direction, targetBLER)
+tf = false;
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.cqiBLERLUT"
+        "phy.csi.ulCQIBLERLUT"
+        "phy.csi.cqiBLERLUT"];
+else
+    candidates = [ ...
+        "phy.pdsch.cqiBLERLUT"
+        "phy.csi.dlCQIBLERLUT"
+        "phy.csi.cqiBLERLUT"];
+end
+for i = 1:numel(candidates)
+    raw = sixgr.util.structGet(cfg, candidates(i), []);
+    if localHasAnyCurves(localParseBLERLUT(raw, targetBLER))
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = localAllowUncalibratedBLERLUT(cfg, direction)
+dir = upper(string(direction));
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.allowUncalibratedBLERLUT"
+        "phy.csi.ulAllowUncalibratedBLERLUT"
+        "phy.csi.allowUncalibratedBLERLUT"];
+else
+    candidates = [ ...
+        "phy.pdsch.allowUncalibratedBLERLUT"
+        "phy.csi.dlAllowUncalibratedBLERLUT"
+        "phy.csi.allowUncalibratedBLERLUT"];
+end
+tf = false;
+for i = 1:numel(candidates)
+    raw = sixgr.util.structGet(cfg, candidates(i), []);
+    if isempty(raw)
+        continue;
+    end
+    if ischar(raw) || isstring(raw)
+        tf = any(lower(strtrim(string(raw))) == ["true","1","yes","on"]);
+    else
+        tf = logical(raw);
+    end
+    return;
+end
 end
 
 function tf = localHasAnyCurves(curves)

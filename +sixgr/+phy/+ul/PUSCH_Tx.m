@@ -169,7 +169,7 @@ codeword = int8(codeword(:));
 ptrsInd = [];
 if ~isempty(ptrsSym)
     try
-        ptrsInd = nrPUSCHPTRSIndices(carrier, pusch);
+        ptrsInd = nrPUSCHPTRSIndices(carrier, pusch, "IndexBase", "1based");
     catch
         ptrsInd = [];
     end

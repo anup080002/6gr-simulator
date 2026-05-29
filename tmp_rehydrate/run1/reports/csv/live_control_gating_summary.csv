@@ -1,2 +1,0 @@
-ControlIntegrationMode,PBCHGatingActive,PRACHGatingActive,PDCCHGatingActive,SRSGatingActive,TRSGatingActive,PBCHFailureCount,PRACHFailureCount,ControlDecodeFailureCount,PUCCHDecodeFailureCount,TRSFailureCount,SRSInvalidEventCount,GrantsBlockedByGating,UsersAcquired,UsersAccessReady,UsersWithValidSRS,UsersWithValidTRS,UsersControlEligible,UsersSchedulingEligible
-"runtime_control_access_tracking_state_gated",1,1,1,1,1,0,0,0,0,0,0,0,50,50,37,50,50,50

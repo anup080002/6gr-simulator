@@ -146,11 +146,11 @@ classdef TR38901Plus < handle
             localLogResolvedConfigOnce(cfg, obj);
         end
 
-        function [p, status] = losProbability(obj, d2d_m, scenarioName)
+        function [p, status] = losProbability(obj, d2d_m, scenarioName, varargin)
             if nargin < 3 || strlength(string(scenarioName))==0
                 scenarioName = obj.Scenario;
             end
-            [p, status] = sixgr.channel.LOSProbability(scenarioName, d2d_m);
+            [p, status] = sixgr.channel.LOSProbability(scenarioName, d2d_m, varargin{:});
             obj.LOSProbabilitySource = string(status.Source);
             obj.LOSComplianceStatus = string(status.ComplianceStatus);
             obj.LOSComplianceReason = string(status.Reason);
@@ -161,9 +161,9 @@ classdef TR38901Plus < handle
             end
         end
 
-        function los = drawLOS(obj, d2d_m, scenarioName)
+        function los = drawLOS(obj, d2d_m, scenarioName, varargin)
             % Draw LOS/NLOS booleans using LOS probability
-            [p, ~] = obj.losProbability(d2d_m, scenarioName);
+            [p, ~] = obj.losProbability(d2d_m, scenarioName, varargin{:});
             u = rand(obj.Stream, size(p));
             los = (u <= p);
         end
@@ -243,7 +243,7 @@ classdef TR38901Plus < handle
             % LOS
             if isempty(opt.LOS)
                 if opt.LOSEnabled
-                    los = obj.drawLOS(d2d, opt.Scenario);
+                    los = obj.drawLOS(d2d, opt.Scenario, "HUT_m", rxPos_m(3, :));
                 else
                     los = false(1,N);
                     obj.LOSProbabilitySource = "los_disabled_by_config";
@@ -309,11 +309,6 @@ classdef TR38901Plus < handle
                 obj.O2IComplianceStatus = "runtime_provided_o2i_loss";
                 obj.O2IComplianceReason = "";
             elseif opt.PathlossEnabled && any(indoor)
-                if obj.ChannelComplianceMode == "strict_38901"
-                    error("TR38901Plus:StrictO2IBlocked", ...
-                        "Strict 38.901 mode does not allow the active approximate O2I model '%s' for indoor receivers without explicit runtime O2I metadata.", ...
-                        char(obj.O2IModel));
-                end
                 if isempty(opt.IndoorDistance_m)
                     dIn = 10; % m
                 else
@@ -326,6 +321,10 @@ classdef TR38901Plus < handle
                 for k = 1:N
                     if indoor(k)
                         if lower(strtrim(obj.O2IModel)) == "custom"
+                            if obj.ChannelComplianceMode == "strict_38901"
+                                error("TR38901Plus:StrictO2IBlocked", ...
+                                    "Strict 38.901 mode does not allow custom O2I loss for indoor receivers without explicit runtime O2I metadata.");
+                            end
                             o2i(k) = obj.O2ICustom_dB;
                             o2iStatus = struct( ...
                                 "ModelSource", "configured_custom_o2i_loss", ...
@@ -334,6 +333,12 @@ classdef TR38901Plus < handle
                         else
                             [o2i(k), o2iStatus] = sixgr.channel.O2ILoss(obj.Fc_Hz, obj.O2IModel, ...
                                 "IndoorDistance_m", dIn(k), "Stream", obj.Stream);
+                            if obj.ChannelComplianceMode == "strict_38901" && ...
+                                    ~logical(sixgr.util.structGet(o2iStatus, "StrictSupported", false))
+                                error("TR38901Plus:StrictO2IBlocked", ...
+                                    "Strict 38.901 mode requires O2I model 'low' or 'high'; got '%s'.", ...
+                                    char(obj.O2IModel));
+                            end
                         end
                     end
                 end

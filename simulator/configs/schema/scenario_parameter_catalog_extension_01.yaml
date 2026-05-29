@@ -69,6 +69,8 @@
       "save_interference_breakdown": {"required": false, "type": "boolean"},
       "save_energy_trace": {"required": false, "type": "boolean"},
       "batch_size_links": {"required": false, "type": "integer", "min": 1},
+      "parallel_pool_kind": {"required": false, "type": "string", "allowed_values": ["auto", "processes", "local", "threads"]},
+      "parallel_pool_idle_timeout_minutes": {"required": false, "type": "number", "min": 1},
       "gpu_enable": {"required": false, "type": "boolean"},
       "mixed_precision_enable": {"required": false, "type": "boolean"},
       "fail_on_validation_warning": {"required": false, "type": "boolean"},
@@ -225,7 +227,8 @@
       "cell_free_flag": {"required": true, "type": "boolean"},
       "full_duplex_flag": {"required": true, "type": "boolean"},
       "self_interference_path_model": {"required": true, "type": "string"},
-      "wraparound_enabled": {"required": false, "type": "boolean"}
+      "wraparound_enabled": {"required": false, "type": "boolean"},
+      "min_inter_ue_distance_m": {"required": false, "type": "number", "min": 0}
     }},
     "mobility": {"required": true, "parameters": {
       "ue_speed_kmh": {"required": true, "type": "number", "min": 0},
@@ -251,6 +254,7 @@
       "panel_spacing": {"required": true, "type": "number", "min": 0},
       "element_spacing_h": {"required": true, "type": "number", "min": 0},
       "element_spacing_v": {"required": true, "type": "number", "min": 0},
+      "bs_mechanical_tilt_deg": {"required": false, "type": "number"},
       "polarization": {"required": true, "type": "string"},
       "cross_pol_ratio": {"required": true, "type": "number", "min": 0, "recommended_values": [0, 3, 6, 9, 12, 15, 20]},
       "calibration_model": {"required": true, "type": "string"},
@@ -378,7 +382,9 @@
       "qosAware": {"required": true, "type": "boolean"},
       "sliceAware": {"required": true, "type": "boolean"},
       "starvationGuard": {"required": true, "type": "boolean"},
-      "cellEdgeBoost": {"required": true, "type": "boolean"}
+      "cellEdgeBoost": {"required": true, "type": "boolean"},
+      "coverageOutageGuardEnabled": {"required": false, "type": "boolean"},
+      "minSchedulingSINR_dB": {"required": false, "type": "number"}
     }},
     "system_measurement_object": {"parameters": {
       "periodSlots": {"required": true, "type": "integer", "min": 1},

@@ -479,7 +479,34 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         return;
     end
 end
-[y, nVar] = sixgr.util.addAwgnComplex(x, double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN)));
+appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+if isfinite(nVar) && nVar >= 0
+    if nVar > 0
+        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+        y = x + cast(n, "like", x);
+    else
+        y = x;
+    end
+    return;
+end
+[y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
+end
+
+function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
+nVar = NaN;
+snr_dB = double(snr_dB);
+if ~(isscalar(snr_dB) && isfinite(snr_dB))
+    return;
+end
+if isempty(referenceWaveform)
+    return;
+end
+refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+if ~(isfinite(refPower) && refPower >= 0)
+    return;
+end
+nVar = refPower / max(10.^(snr_dB / 10), eps);
 end
 
 function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)

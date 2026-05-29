@@ -138,6 +138,10 @@ trialServingRSRP = NaN(numFrames,1);
 trialServingRSRPSource = strings(numFrames,1);
 trialCSIRSRP = NaN(numFrames,1);
 trialCSIRSRPSource = strings(numFrames,1);
+trialCSIRSSI = NaN(numFrames,1);
+trialCSIRSSISource = strings(numFrames,1);
+trialCSIRSRQ = NaN(numFrames,1);
+trialCSIRSRQSource = strings(numFrames,1);
 trialCQI = NaN(numFrames,1);
 trialCQIDerivedMCS = NaN(numFrames,1);
 trialCQIDerivedCodeRate = NaN(numFrames,1);
@@ -378,14 +382,7 @@ for n = 1:numFrames
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
         if schedulerDrivenGrant
             trialLinkAdaptationMode(n) = "scheduler_grant_replay";
-            grantOpSource = string(sixgr.util.structGet(grantSnapshotOverride, "GrantOperatingPointSource", ""));
-            if strlength(strtrim(grantOpSource)) > 0
-                trialActualMCSSelectionMode(n) = grantOpSource;
-            elseif strlength(strtrim(trialSchedulerGrantMCSSelectionMode(n))) > 0
-                trialActualMCSSelectionMode(n) = trialSchedulerGrantMCSSelectionMode(n);
-            else
-                trialActualMCSSelectionMode(n) = "scheduler_grant";
-            end
+            trialActualMCSSelectionMode(n) = "scheduler_grant";
         end
         trialCQITable(n) = string(localResolveCQITable(cfgFrame, "UL"));
         trialMCSTable(n) = string(localResolveMCSTable(cfgFrame, "UL"));
@@ -629,11 +626,13 @@ for n = 1:numFrames
             trialReceiverHestSINRValueRole(n) = "estimated";
             trialReceiverHestSINRValueStatus(n) = "OK";
             trialReceiverHestSINRNAReason(n) = "";
-            trialMeasuredTrialSINR(n) = trialReceiverHestSINR(n);
-            trialMeasuredSINRSource(n) = receiverSource;
         end
         trialCSIRSRP(n) = metrics.CSI_RSRP_dB;
         trialCSIRSRPSource(n) = string(metrics.CSI_RSRPSource);
+        trialCSIRSSI(n) = metrics.CSI_RSSI_dB;
+        trialCSIRSSISource(n) = string(metrics.CSI_RSSISource);
+        trialCSIRSRQ(n) = metrics.CSI_RSRQ_dB;
+        trialCSIRSRQSource(n) = string(metrics.CSI_RSRQSource);
         trialCQI(n) = double(sixgr.util.normalizeReportedCQI(metrics.CQI));
         trialRI(n) = metrics.RI;
         trialPMI(n) = metrics.PMI;
@@ -700,13 +699,25 @@ for n = 1:numFrames
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
-        if isfinite(trialReceiverHestSINR(n))
-            trialSINR(n) = trialReceiverHestSINR(n);
-            trialSINRValueRole(n) = "estimated";
-            trialSINRSource(n) = trialReceiverHestSINRSource(n);
+        [dataSINR, dataSINRMeta] = localMeasuredDataDomainSINR(modTrack);
+        if isfinite(dataSINR)
+            trialMeasuredTrialSINR(n) = double(dataSINR);
+            trialMeasuredSINRSource(n) = string(dataSINRMeta.Source);
+            trialSINR(n) = double(dataSINR);
+            trialSINRValueRole(n) = "measured";
+            trialSINRSource(n) = string(dataSINRMeta.Source);
+            if localCQIReportingEnabled(cfgFrame, "UL")
+                [dataCQI, dataMod, dataRate, dataMCS] = localCQIAndMCSFromSINR(dataSINR, cfgFrame, "UL");
+                if isfinite(dataCQI)
+                    trialCQI(n) = double(dataCQI);
+                    trialCQIDerivedMCS(n) = double(dataMCS);
+                    trialCQIDerivedCodeRate(n) = double(dataRate);
+                    trialCQIDerivedModulation(n) = string(dataMod);
+                end
+            end
         elseif isfinite(trialDecoderTruthProxySINR(n))
             trialSINR(n) = double(trialDecoderTruthProxySINR(n));
-            trialSINRValueRole(n) = "derived_proxy_fallback";
+            trialSINRValueRole(n) = "derived_proxy";
             trialSINRSource(n) = string(localSafeCharToken(sixgr.util.structGet(decoderTruthProxyMeta, "Source", "post_equalization_evm_proxy")));
         else
             trialSINR(n) = NaN;
@@ -1084,6 +1095,10 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.ServingRSRPSource = trialServingRSRPSource(idx);
         T.CSI_RSRP_dB = trialCSIRSRP(idx);
         T.CSI_RSRPSource = trialCSIRSRPSource(idx);
+        T.CSI_RSSI_dB = trialCSIRSSI(idx);
+        T.CSI_RSSISource = trialCSIRSSISource(idx);
+        T.CSI_RSRQ_dB = trialCSIRSRQ(idx);
+        T.CSI_RSRQSource = trialCSIRSRQSource(idx);
         T.AppliedLargeScaleGain_dB = trialAppliedLargeScaleGain(idx);
         T.AppliedLargeScaleLoss_dB = trialAppliedLargeScaleLoss(idx);
         T.AppliedBasePathloss_dB = trialAppliedBasePathloss(idx);
@@ -1178,7 +1193,34 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         return;
     end
 end
-[y, nVar] = sixgr.util.addAwgnComplex(x, double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN)));
+appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+if isfinite(nVar) && nVar >= 0
+    if nVar > 0
+        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+        y = x + cast(n, "like", x);
+    else
+        y = x;
+    end
+    return;
+end
+[y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
+end
+
+function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
+nVar = NaN;
+snr_dB = double(snr_dB);
+if ~(isscalar(snr_dB) && isfinite(snr_dB))
+    return;
+end
+if isempty(referenceWaveform)
+    return;
+end
+refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+if ~(isfinite(refPower) && refPower >= 0)
+    return;
+end
+nVar = refPower / max(10.^(snr_dB / 10), eps);
 end
 
 function model = localResolveTrialChannelModel(cfg)
@@ -1280,6 +1322,20 @@ T.LinkAdaptationDomain = configuredDomain;
 T.CQISource = localResolveCQISourceColumn(T, configuredDomain);
 T.MCSSelectionSource = repmat(localResolveMCSSelectionSourceToken(cfg, direction), n, 1);
 T.OLLADomain = repmat(localResolveOLLADomainToken(cfg, direction), n, 1);
+outerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true));
+innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", true));
+linkModeColumn = lower(string(localOptionalColumn(T, "LinkAdaptationMode", configuredLinkMode)));
+schedulerReplayMask = linkModeColumn == "scheduler_grant_replay";
+linkAdaptationRuntimeMask = ~schedulerReplayMask & ~ismember(lower(string(configuredLinkMode)), ["fixed","disabled","none","off","false",""]);
+T.OuterLoopEnabled = repmat(outerLoopEnabled, n, 1);
+T.InnerLoopEnabled = repmat(innerLoopEnabled, n, 1);
+T.OuterLoopApplied = T.OuterLoopEnabled & linkAdaptationRuntimeMask & logical(localOptionalColumn(T, "LinkAdaptationScheduled", false));
+T.InnerLoopApplied = T.InnerLoopEnabled & linkAdaptationRuntimeMask & ...
+    (logical(localOptionalColumn(T, "LinkAdaptationApplied", false)) | logical(localOptionalColumn(T, "LinkAdaptationScheduled", false)));
+T.OLLAState = repmat("disabled", n, 1);
+T.OLLAState(T.OuterLoopEnabled & schedulerReplayMask) = "configured_enabled_not_applied_scheduler_grant_replay";
+T.OLLAState(T.OuterLoopEnabled & linkAdaptationRuntimeMask & ~T.OuterLoopApplied) = "configured_enabled_waiting_for_runtime_feedback";
+T.OLLAState(T.OuterLoopApplied) = "applied_runtime_link_adaptation_decision";
 T.CalibrationProfile = repmat(localResolveLinkAdaptationCalibrationProfile(cfg, direction), n, 1);
 T.RequestedOperatingPointSource = localResolveOperatingPointSourceColumn(configuredSelectionMode, configuredLinkMode);
 T.SchedulerGrantMCSSelectionMode = string(localOptionalColumn(T, "SchedulerGrantMCSSelectionMode", ""));
@@ -1317,6 +1373,12 @@ precodingMode = lower(strtrim(string(localOptionalColumn(T, "PrecodingMode", "")
 transformApplied = logical(localOptionalColumn(T, "TransformPrecodingApplied", false)) | precodingMode == "transform_precoding";
 explicitBeamWeights = logical(localOptionalColumn(T, "ExplicitBeamWeightsApplied", false));
 beamformingApplied = logical(localOptionalColumn(T, "BeamformingApplied", false));
+isUL = upper(string(direction)) == "UL";
+codebookMask = isUL & (precodingMode == "ul_codebook_tpmi" | lower(appliedSource) == "ul_pusch_native_codebook_tpmi");
+implicitTPMIBeamRequestMask = codebookMask & strlength(requestedBeam) == 0 & ...
+    strlength(appliedBeam) > 0 & isfinite(requestedPMI);
+requestedBeam(implicitTPMIBeamRequestMask) = appliedBeam(implicitTPMIBeamRequestMask);
+T.RequestedBeamIndexSet = requestedBeam;
 
 T.RequestedBeamTruthClassification = repmat("", n, 1);
 T.RequestedPrecoderPMITruthClassification = repmat("", n, 1);
@@ -1340,11 +1402,10 @@ for ii = 1:n
 end
 T.RequestedVsAppliedPrecoderPMIMatchStatus = matchStatus;
 
-if upper(string(direction)) ~= "UL"
+if ~isUL
     return;
 end
 
-codebookMask = precodingMode == "ul_codebook_tpmi" | lower(appliedSource) == "ul_pusch_native_codebook_tpmi";
 directMask = ~transformApplied & ~codebookMask;
 missingAppliedBeamMask = ~appliedBeamMask & ~explicitBeamWeights;
 missingAppliedPMIMask = ~appliedPMIMask & ~explicitBeamWeights;
@@ -2257,6 +2318,10 @@ T.ServingRSRP_dBm = zeros(0,1);
 T.ServingRSRPSource = strings(0,1);
 T.CSI_RSRP_dB = zeros(0,1);
 T.CSI_RSRPSource = strings(0,1);
+T.CSI_RSSI_dB = zeros(0,1);
+T.CSI_RSSISource = strings(0,1);
+T.CSI_RSRQ_dB = zeros(0,1);
+T.CSI_RSRQSource = strings(0,1);
 T.AppliedLargeScaleGain_dB = zeros(0,1);
 T.AppliedLargeScaleLoss_dB = zeros(0,1);
 T.AppliedBasePathloss_dB = zeros(0,1);
@@ -2297,6 +2362,11 @@ T.LinkAdaptationDomain = strings(0,1);
 T.CQISource = strings(0,1);
 T.MCSSelectionSource = strings(0,1);
 T.OLLADomain = strings(0,1);
+T.OuterLoopEnabled = false(0,1);
+T.InnerLoopEnabled = false(0,1);
+T.OuterLoopApplied = false(0,1);
+T.InnerLoopApplied = false(0,1);
+T.OLLAState = strings(0,1);
 T.CalibrationProfile = strings(0,1);
 T.InterferenceMode = strings(0,1);
 T.InterferenceContributorCount = zeros(0,1);
@@ -2424,13 +2494,103 @@ if localResolveLinkAdaptationMode(cfg, direction) ~= "fixed"
 end
 end
 
+function [sinr_dB, meta] = localMeasuredDataDomainSINR(modTrack)
+sinr_dB = NaN;
+meta = struct( ...
+    "Source", "post_equalization_error_vector_measurement", ...
+    "ValueRole", "measured", ...
+    "ValueStatus", "unavailable", ...
+    "Definition", "10log10(reference_symbol_power/error_vector_power)_from_equalized_data_symbols", ...
+    "NAReason", "evm_unavailable");
+evm = double(sixgr.util.structGet(modTrack, "EVM_rms", NaN));
+if ~(isscalar(evm) && isfinite(evm) && evm > 0)
+    return;
+end
+sinr_dB = 10 * log10(1 / max(evm .^ 2, eps));
+meta.ValueStatus = "OK";
+meta.NAReason = "";
+end
+
+function [cqi, modulation, targetCodeRate, mcsIndex] = localCQIAndMCSFromSINR(sinr_dB, cfg, direction)
+cqi = NaN;
+modulation = "";
+targetCodeRate = NaN;
+mcsIndex = NaN;
+if ~(isscalar(sinr_dB) && isfinite(sinr_dB))
+    return;
+end
+try
+    feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", double(sinr_dB)), cfg, direction);
+    cqi = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
+    if isfinite(cqi)
+        [modulation, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+    end
+catch
+    cqi = NaN;
+    modulation = "";
+    targetCodeRate = NaN;
+    mcsIndex = NaN;
+end
+end
+
+function tf = localCQIReportingEnabled(cfg, direction)
+tf = true;
+direction = upper(string(direction));
+if direction == "UL"
+    paths = ["phy.csi.reportULCQI", "phy.csi.ul.reportCQI", ...
+        "phy.ul.csi.reportCQI", "phy.pusch.reportCQI", "phy.csi.reportCQI"];
+else
+    paths = ["phy.csi.reportDLCQI", "phy.csi.dl.reportCQI", ...
+        "phy.dl.csi.reportCQI", "phy.pdsch.reportCQI", "phy.csi.reportCQI"];
+end
+for idx = 1:numel(paths)
+    raw = sixgr.util.structGet(cfg, paths(idx), []);
+    if isempty(raw)
+        continue;
+    end
+    [ok, value] = localParseLogicalScalar(raw);
+    if ok
+        tf = value;
+        return;
+    end
+end
+end
+
+function [ok, value] = localParseLogicalScalar(raw)
+ok = false;
+value = false;
+if islogical(raw) && isscalar(raw)
+    ok = true;
+    value = logical(raw);
+    return;
+end
+if isnumeric(raw) && isscalar(raw) && isfinite(raw)
+    ok = true;
+    value = raw ~= 0;
+    return;
+end
+if ischar(raw) || (isstring(raw) && isscalar(raw))
+    token = lower(strtrim(string(raw)));
+    if any(token == ["true", "enabled", "enable", "on", "yes", "1"])
+        ok = true;
+        value = true;
+    elseif any(token == ["false", "disabled", "disable", "off", "no", "0"])
+        ok = true;
+        value = false;
+    end
+end
+end
+
 function source = localResolveCQISourceColumn(T, configuredDomain)
 n = height(T);
 source = repmat("unavailable", n, 1);
 widebandCQI = double(localOptionalColumn(T, "WidebandCQI", NaN));
 measuredSINR = double(localOptionalColumn(T, "MeasuredTrialSINR_dB", localOptionalColumn(T, "MeasuredSINR_dB", NaN)));
+measuredSource = lower(strtrim(string(localOptionalColumn(T, "MeasuredTrialSINRSource", ""))));
 cqiMask = isfinite(widebandCQI);
 source(cqiMask) = "runtime_reported_cqi";
+dataDomainMask = cqiMask & contains(measuredSource, "post_equalization_error_vector_measurement");
+source(dataDomainMask) = "post_equalization_data_sinr_to_cqi";
 effMask = ~cqiMask & configuredDomain == "effective_sinr" & isfinite(measuredSINR);
 source(effMask) = "runtime_effective_sinr";
 blerMask = ~cqiMask & configuredDomain == "bler_margin" & isfinite(measuredSINR);

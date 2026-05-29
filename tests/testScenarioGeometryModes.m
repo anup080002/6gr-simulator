@@ -14,6 +14,10 @@ assert(dRect > 1, ...
     "Legacy rectangular torus should not collapse arbitrary hex-lattice translations to zero.");
 assert(dHex < 1e-9, ...
     "Hex wrap-around must use the nearest hex-lattice image.");
+dHexTwoRing = sixgr.scenario.wraparoundDistance([0 0 1.5], [2 * isd 0 25], area_m, ...
+    "Mode", "hex_lattice_min_image", "ISD_m", isd);
+assert(dHexTwoRing < 1e-9, ...
+    "Hex wrap-around must search beyond the immediate one-ring image set.");
 
 cfgLegacy = localBaseCfg(41);
 cfgLegacy.scenario.layout.nSites = 2;
@@ -29,6 +33,26 @@ ueLegacy = sixgr.scenario.dropUEs(cfgLegacy, layoutLegacy);
 legacyCounts = accumarray(double(ueLegacy.drop_cell_id), 1, [size(layoutLegacy.bs.pos_m,1) 1]);
 assert(max(legacyCounts) - min(legacyCounts) <= 1, ...
     "Legacy UE drop mode must retain the old nearly equal sector balancing behavior.");
+
+cfgArea = cfgLegacy;
+cfgArea.scenario.layout.nSites = 1;
+cfgArea.scenario.layout.nSectorsPerSite = 1;
+cfgArea.scenario.ue.nUE = 2000;
+cfgArea = sixgr.config.normalizeConfig(cfgArea);
+sixgr.config.validateConfig(cfgArea);
+layoutArea = sixgr.scenario.generateLayout(cfgArea);
+ueArea = sixgr.scenario.dropUEs(cfgArea, layoutArea);
+center = double(layoutArea.bs.pos_m(1, 1:2));
+r = sqrt(sum((double(ueArea.pos_m(:,1:2)) - center).^2, 2));
+rMax = double(layoutArea.isd_m) / sqrt(3);
+rMin = min(40, max(5, 0.08 * rMax));
+expectedMean = (2/3) * ((rMax^3 - rMin^3) / max(rMax^2 - rMin^2, eps));
+assert(max(r) > 0.95 * rMax, ...
+    "Equal-sector UE drop must exercise the outer hex-cell radius.");
+assert(abs(mean(r, "omitnan") - expectedMean) < 0.03 * rMax, ...
+    "Equal-sector UE radial drop must follow the uniform-area annulus distribution.");
+assert(all(string(ueArea.serving_selection_method) == "equal_sector_uniform_area_annulus_reference"), ...
+    "Equal-sector UE drop must label its corrected area-uniform placement method.");
 
 cfgPathloss = cfgLegacy;
 cfgPathloss.scenario.ue.dropMode = "pathloss_based_association_drop";

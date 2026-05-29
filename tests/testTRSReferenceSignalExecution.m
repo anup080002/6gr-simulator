@@ -40,6 +40,9 @@ assert(isfinite(out.InjectedDoppler_Hz) && abs(out.InjectedDoppler_Hz - 30) < 1e
 assert(isfinite(out.EstimatedDoppler_Hz), "TRS runtime must report a finite Doppler estimate.");
 assert(abs(out.EstimatedDoppler_Hz - out.InjectedDoppler_Hz) < 20, ...
     "TRS Doppler estimate must stay reasonably close to the injected Doppler in the smoke case.");
+assert(strcmpi(char(string(out.CFOEstimateAvailability)), "available") && ...
+    isfinite(double(out.EstimatedCFO_Hz)) && isfinite(double(out.EstimatedCFO_PreCorrection_Hz)), ...
+    "TRS runtime must expose a real CFO estimate when the reference-symbol phase slope is observable.");
 assert(out.NMSE_dB < 0, "TRS NMSE should be meaningfully below 0 dB at 20 dB SNR.");
 
 tmp = tempname;
@@ -72,6 +75,7 @@ state.CurrentSlot = 4;
 state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
 assert(~logical(state.SchedulingEligibility(1)), ...
     "TRS-required runtime state must keep scheduling ineligible before a valid TRS observation.");
+stateBeforeTRS = state;
 
 trsRow = table( ...
     1, ...
@@ -101,6 +105,14 @@ assert(~logical(state.ReceiverTrackingStateByCell(1).CFOEstimateAvailable) && ~i
     "TRS receiver tracking must not fabricate CFO estimates when the runtime row has none.");
 assert(logical(state.SchedulingEligibility(1)), ...
     "TRS runtime state must actively feed scheduler eligibility after a valid observation.");
+
+trsRuntimeCFORow = trsRow;
+trsRuntimeCFORow.EstimatedCFO_Hz = double(out.EstimatedCFO_Hz);
+trsRuntimeCFORow.EstimatedCFO_PreCorrection_Hz = double(out.EstimatedCFO_PreCorrection_Hz);
+stateRuntimeCFO = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(stateBeforeTRS, 1, trsRuntimeCFORow);
+assert(logical(stateRuntimeCFO.ReceiverTrackingStateByCell(1).CFOEstimateAvailable) && ...
+    abs(double(stateRuntimeCFO.ReceiverTrackingStateByCell(1).EstimatedCFO_Hz) - double(out.EstimatedCFO_Hz)) < 1e-9, ...
+    "TRS receiver tracking must consume real CFO estimates carried by runtime TRS trial rows.");
 
 cfgLLS = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfgLLS, state, 1, "DL");
 userMeta = sixgr.util.structGet(cfgLLS, "lls6g.userContext", struct());

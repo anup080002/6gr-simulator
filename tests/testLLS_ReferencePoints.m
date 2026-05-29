@@ -1,8 +1,7 @@
 function ok = testLLS_ReferencePoints()
 %TESTLLS_REFERENCEPOINTS Golden-style PHY reference points (AWGN baseline).
-% Reference envelopes were recalibrated on 2026-04-13 after waveform and
-% link-adaptation improvements shifted the deterministic BER/BLER operating
-% points under MATLAB R2023b. The bounds below are based on the fixed
+% Reference envelopes were recalibrated on 2026-05-29 after fixing payload
+% and DM-RS index-base alignment in the DL/UL waveform grids. The bounds below are based on the fixed
 % `rng(2026,"twister")` reference run, with a small tolerance band and an
 % additional three-seed sanity check kept outside this test.
 
@@ -25,7 +24,7 @@ if logical(dl0.Skipped) || logical(dl20.Skipped)
 else
     localAssertRange(double(dl0.BER), 0.17, 0.21, "DL BER @0dB out of reference envelope.");
     localAssertRange(double(dl20.BER), 0.0, 0.005, "DL BER @20dB out of reference envelope.");
-    localAssertRange(double(dl20.BLER), 0.75, 1.0, "DL BLER @20dB out of reference envelope.");
+    localAssertRange(double(dl20.BLER), 0.0, 0.25, "DL BLER @20dB out of reference envelope.");
     assert(double(dl20.BER) <= double(dl0.BER), "DL BER must improve with SNR.");
     assert(double(dl20.BER) <= 0.15 * max(double(dl0.BER), eps), "DL BER improvement is below reference expectation.");
     if istable(dl0.TrialTable) && istable(dl20.TrialTable) && ...
@@ -41,8 +40,8 @@ if logical(ul0.Skipped) || logical(ul20.Skipped)
         "UL reference runs must both skip or both execute.");
 else
     localAssertRange(double(ul0.BER), 0.25, 0.40, "UL BER @0dB out of reference envelope.");
-    localAssertRange(double(ul20.BER), 0.005, 0.02, "UL BER @20dB out of reference envelope.");
-    localAssertRange(double(ul20.BLER), 0.30, 0.75, "UL BLER @20dB out of reference envelope.");
+    localAssertRange(double(ul20.BER), 0.0, 0.005, "UL BER @20dB out of reference envelope.");
+    localAssertRange(double(ul20.BLER), 0.0, 0.25, "UL BLER @20dB out of reference envelope.");
     assert(double(ul20.BER) <= double(ul0.BER), "UL BER must improve with SNR.");
     assert(double(ul20.BER) <= 0.45 * max(double(ul0.BER), eps), "UL BER improvement is below reference expectation.");
     if istable(ul0.TrialTable) && istable(ul20.TrialTable) && ...

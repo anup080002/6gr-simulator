@@ -30,14 +30,19 @@
       "pbch_modulation": {"required": true, "type": "string"}, "modulation_candidate_tag": {"required": true, "type": "string"}
     }},
     "link_adaptation": {"required": true, "parameters": {
-      "fixed_or_amc": {"required": true, "type": "string"}, "cqi_table": {"required": true, "type": "string", "allowed_values": ["table1", "table2"]}, "outer_loop_flag": {"required": true, "type": "boolean"},
+      "fixed_or_amc": {"required": true, "type": "string"}, "domain": {"required": false, "type": "string", "allowed_values": ["cqi", "cqi_domain", "effective_sinr", "bler_margin", "legacy_mcs", "radisys_l1_mcs", "flexran_mcs", "mcs_hundredths"]},
+      "cqi_table": {"required": true, "type": "string", "allowed_values": ["table1", "table2"]}, "outer_loop_flag": {"required": true, "type": "boolean"},
       "inner_loop_flag": {"required": true, "type": "boolean"}, "cqi_source": {"required": true, "type": "string"},
       "dmrs_based_tracking_flag": {"required": true, "type": "boolean"}, "csi_rs_based_tracking_flag": {"required": true, "type": "boolean"},
       "delta_cqi_policy": {"required": true, "type": "string"}, "delta_mcs_policy": {"required": true, "type": "string"},
       "pdcch_link_adaptation_policy": {"required": true, "type": "string"}, "pdsch_link_adaptation_policy": {"required": true, "type": "string"},
       "pusch_link_adaptation_policy": {"required": true, "type": "string"}, "rank_adaptation_policy": {"required": true, "type": "string"},
       "al_adaptation_policy": {"required": true, "type": "string"}, "beam_adaptation_policy": {"required": true, "type": "string"},
-      "adaptation_periodicity": {"required": true, "type": "string"}, "adaptation_delay_model": {"required": true, "type": "string"}
+      "adaptation_periodicity": {"required": true, "type": "string"}, "adaptation_delay_model": {"required": true, "type": "string"},
+      "cqi_smoothing_alpha": {"required": false, "type": "number", "min": 0, "max": 1},
+      "olla_step_down": {"required": false, "type": "number", "min": 0},
+      "olla_step_up": {"required": false, "type": "number", "min": 0},
+      "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default"]}
     }},
     "harq": {"parameters": {
       "dl_harq_enabled": {"required": true, "type": "boolean"}, "ul_harq_enabled": {"required": true, "type": "boolean"},

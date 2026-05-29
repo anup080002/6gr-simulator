@@ -1,0 +1,47 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot.yaml
+
+meta:
+  scenario_id: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_2site_6sector_150ue_50slot
+  description: Strict waveform-honest FR2 NR/6G study run for 30 GHz TDD, 400 MHz, 2 sites, 6 sectors, 150 UEs, and 50 canonical slots.
+  scenario_group: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_2site_6sector_150ue_50slot
+  scenario_name: Strict waveform-honest FR2 NR/6G study run for 30 GHz TDD, 400 MHz, 2 sites, 6 sectors, 150 UEs, and 50 canonical slots.
+  scenario_family: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_2site_6sector_150ue_50slot
+  baseline_reference_name: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_2site_6sector_150ue_50slot
+  comparison_group_name: rel20_anchor_30ghz_400mhz_2site_6sector_150ue_50slot
+  tags:
+    - lls
+    - matlab-first
+    - mysql
+    - browser
+    - rel20
+    - nr-baseline
+    - 30ghz
+    - 400mhz
+    - fr2
+    - tdd
+    - 120khz
+    - 2site
+    - 6sector
+    - 150ue
+    - 50slot
+    - strict
+    - waveform_honest
+    - no-proxy
+    - coupled_truth
+    - full_per_link_channel_waveform_sum
+
+scenario:
+  name: lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_2site_6sector_150ue_50slot
+  description: Strict waveform-honest browser scenario for 30 GHz / 400 MHz / TDD with 2 sites, 6 sectors, 150 UEs, and 50 slots.
+
+deployment_topology:
+  num_sites: 2
+  num_base_stations: 2
+  num_cells: 6
+  num_sectors_per_site: 3
+  num_ues: 150
+  num_trps: 6
+
+mimo:
+  trp_count: 6

@@ -1522,7 +1522,7 @@ for i = 1:height(trials)
         localNumericTableValue(row, "ProcedureDelay_ms", NaN), ...
         localNumericTableValue(row, "AirInterfaceTTI_ms", NaN), ...
         localNumericTableValue(row, "AirInterfaceObservation_ms", NaN)];
-    finiteComponents = components(isfinite(components));
+    [latencyMs, latencyDefinition] = localNonOverlappingTrialLatency(components);
     rows(i).timestamp_sim_ms = 1e3 * localNumericTableValue(row, "Time_s", NaN);
     rows(i).frame = localNumericTableValue(row, "Frame", NaN);
     rows(i).slot = localNumericTableValue(row, "Slot", NaN);
@@ -1534,11 +1534,53 @@ for i = 1:height(trials)
     rows(i).procedure_delay_ms = components(3);
     rows(i).air_interface_tti_ms = components(4);
     rows(i).air_interface_observation_ms = components(5);
-    rows(i).latency_ms = localTernary(~isempty(finiteComponents), sum(finiteComponents), NaN);
+    rows(i).latency_ms = latencyMs;
     rows(i).latency_value_role = "measured";
     rows(i).latency_value_status = localTernary(isfinite(rows(i).latency_ms), "OK", "NOT_AVAILABLE");
-    rows(i).latency_value_definition = "sum of persisted runtime latency components in the air-interface trial row";
+    rows(i).latency_value_definition = latencyDefinition;
     rows(i).source_artifact_ref = string(sourceRef);
+end
+end
+
+function [latencyMs, definition] = localNonOverlappingTrialLatency(components)
+computeMs = components(1);
+decodeMs = components(2);
+procedureMs = components(3);
+ttiMs = components(4);
+observationMs = components(5);
+
+processingMs = localMaxFinite([computeMs, decodeMs]);
+radioMs = localFirstFinitePositive([observationMs, ttiMs]);
+procedureExtraMs = NaN;
+if isfinite(procedureMs) && procedureMs > 0
+    procedureExtraMs = procedureMs;
+end
+
+parts = [processingMs, procedureExtraMs, radioMs];
+parts = parts(isfinite(parts));
+if isempty(parts)
+    latencyMs = NaN;
+else
+    latencyMs = sum(parts);
+end
+definition = "non-overlapping runtime latency: max(compute,decode aliases) + positive procedure extra + one radio observation/TTI component";
+end
+
+function value = localMaxFinite(values)
+values = values(isfinite(values));
+if isempty(values)
+    value = NaN;
+else
+    value = max(values);
+end
+end
+
+function value = localFirstFinitePositive(values)
+idx = find(isfinite(values) & values > 0, 1, "first");
+if isempty(idx)
+    value = NaN;
+else
+    value = values(idx);
 end
 end
 

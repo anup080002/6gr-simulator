@@ -1,2 +1,0 @@
-run_id,chart_name,chart_mode,x_label,y_label,point_index,x_value,y_value,source_table_logical_path,source_row_count,materialization_status,lineage_note
-1,DL Tx power per cell / beam / UE,unavailable_reason_summary,not_available,not_available,0,not_available,not_available,reports/csv/live_power_runtime_table.csv,0,empty_source_summary,The source chart table exists but has no rows for this run.

@@ -13,6 +13,7 @@ function [dist_m, dxy_m] = wraparoundDistance(uePos_m, bsPos_m, area_m, varargin
 ip = inputParser;
 ip.addParameter("Mode", "rectangular_torus", @(x) ischar(x) || isstring(x));
 ip.addParameter("ISD_m", NaN, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("ImageRadius", 2, @(x) isnumeric(x) && isscalar(x) && x >= 1);
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -47,7 +48,8 @@ switch mode
             error("sixgr:scenario:BadHexISD", ...
                 "Hex wrap-around requires a positive ISD_m.");
         end
-        [dx, dy] = localHexNearestImage(ueXY, bsXY, isd_m, K, N);
+        imageRadius = max(1, round(double(opt.ImageRadius)));
+        [dx, dy] = localHexNearestImage(ueXY, bsXY, isd_m, K, N, imageRadius);
     otherwise
         error("sixgr:scenario:UnknownWraparoundMode", ...
             "Unknown wrap-around mode: %s", mode);
@@ -61,7 +63,7 @@ if nargout > 1
 end
 end
 
-function [bestDx, bestDy] = localHexNearestImage(ueXY, bsXY, isd_m, K, N)
+function [bestDx, bestDy] = localHexNearestImage(ueXY, bsXY, isd_m, K, N, imageRadius)
 a = [isd_m, 0];
 b = [0.5 * isd_m, (sqrt(3) / 2) * isd_m];
 
@@ -69,8 +71,8 @@ bestDist2 = inf(K, N);
 bestDx = zeros(K, N);
 bestDy = zeros(K, N);
 
-for ia = -1:1
-    for ib = -1:1
+for ia = -imageRadius:imageRadius
+    for ib = -imageRadius:imageRadius
         shift = ia * a + ib * b;
         dx = ueXY(:,1) - (bsXY(:,1).' + shift(1));
         dy = ueXY(:,2) - (bsXY(:,2).' + shift(2));

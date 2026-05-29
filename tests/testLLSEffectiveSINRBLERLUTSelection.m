@@ -9,6 +9,16 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.effectiveSINRMethod", "eesm");
 cfg = sixgr.util.structSet(cfg, "phy.csi.targetBLER", 0.1);
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", "table1");
 
+try
+    sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", 0, "PerRBSINR_dB", [-2 -1 0 1]), cfg, "DL");
+    error("sixgr:test:ExpectedUncalibratedBLERLUTRejection", ...
+        "Uncalibrated effective-SINR BLER LUT mode must be rejected by default.");
+catch ME
+    assert(strcmp(ME.identifier, "sixgr:link:UncalibratedBLERLUT"), ...
+        "Unexpected error while checking uncalibrated BLER LUT rejection: %s", ME.identifier);
+end
+
+cfg = sixgr.util.structSet(cfg, "phy.csi.allowUncalibratedBLERLUT", true);
 low = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", 0, "PerRBSINR_dB", [-2 -1 0 1]), cfg, "DL");
 high = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", 15, "PerRBSINR_dB", [12 14 15 16]), cfg, "DL");
 
@@ -16,8 +26,8 @@ assert(strcmpi(string(low.Mode), "effective_sinr_bler_target_lut"), ...
     "CQI resolver must advertise the LUT-backed BLER mode when explicitly configured.");
 assert(strcmpi(string(low.BLERLUTSource), "resolveWidebandCQI.lab_default_bler_lut"), ...
     "Default BLER LUT source must stay honestly labeled as a lab default.");
-assert(strcmpi(string(low.BLERLUTValueRole), "lab_default"), ...
-    "Default BLER LUT value role must remain lab_default.");
+assert(strcmpi(string(low.BLERLUTValueRole), "uncalibrated_lab_default"), ...
+    "Default BLER LUT value role must identify the uncalibrated lab default.");
 assert(all(isfinite(low.PredictedBLERByCQI) | isnan(low.PredictedBLERByCQI)), ...
     "Predicted BLER vector must contain numeric LUT-backed values.");
 assert(double(high.WidebandCQI) > double(low.WidebandCQI), ...

@@ -1,2 +1,0 @@
-run_id,chart_name,status,reason,checked_sources
-1,EVM per symbol,unavailable_exact_reason,The run exports only trial-level EVM_rms plus raw sample previews; it does not export OFDM-symbol-indexed EVM rows.,air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

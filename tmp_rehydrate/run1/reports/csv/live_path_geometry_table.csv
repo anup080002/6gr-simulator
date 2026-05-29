@@ -1,3 +1,0 @@
-run_id,entity_type,layout_type,n_sites,sectors_per_site,intersite_distance_m,wrap_around,source_artifact
-1,layout,hex,5,1,600,False,sim_runs.config_json
-1,ue_distribution,uniform,50,0.2,10,500,sim_runs.config_json

@@ -155,7 +155,8 @@ pdcchPayloadBits = max(1, round(double(scfg.get("control.pdcch_payload_bits"))))
 listLength = max(1, round(double(scfg.get("control.blind_decode_list_length"))));
 
 trialRows = repmat(struct("AggregationLevel", NaN, "Trial", NaN, "SNR_dB", NaN, ...
-    "BitErrors", NaN, "BitsCompared", NaN, "Pass", false, "DetectionMetric", NaN), 0, 1);
+    "BitErrors", NaN, "BitsCompared", NaN, "Pass", false, "DetectionMetric", NaN, ...
+    "BlindDecodeCount", NaN, "ComputeLatency_ms", NaN), 0, 1);
 summaryRows = repmat(struct("AggregationLevel", NaN, "PassRate", NaN, "MeanBitErrors", NaN), 0, 1);
 
 for i = 1:numel(aggLevels)
@@ -164,13 +165,16 @@ for i = 1:numel(aggLevels)
     bitErr = NaN(nTrials,1);
     detMet = NaN(nTrials,1);
     for k = 1:nTrials
+        trialTimer = tic;
         cfgK = cfg;
         cfgK.phy.pdcch.aggregationLevel = lvl;
+        cfgK.phy.pdcch.blindSearch = true;
         [tx, ~] = sixgr.phy.dl.PDCCH_Tx(cfgK, "K", pdcchPayloadBits);
         [rxWave, noiseVar] = localAddAwgn(tx.Waveform, snr_dB);
-        rx = sixgr.phy.dl.PDCCH_Rx(rxWave, cfgK, ...
+        [rx, rxInfo] = sixgr.phy.dl.PDCCH_Rx(rxWave, cfgK, ...
             "Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
             "ListLength", listLength, "NoiseVar", noiseVar);
+        computeLatency_ms = toc(trialTimer) * 1e3;
         [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
         ok = logical(sixgr.util.structGet(rx, "Ok", false)) && be == 0;
         pass(k) = ok;
@@ -183,7 +187,9 @@ for i = 1:numel(aggLevels)
             "BitErrors", be, ...
             "BitsCompared", bt, ...
             "Pass", ok, ...
-            "DetectionMetric", detMet(k));
+            "DetectionMetric", detMet(k), ...
+            "BlindDecodeCount", double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", NaN)), ...
+            "ComputeLatency_ms", computeLatency_ms);
     end
     summaryRows(end+1,1) = struct( ... %#ok<AGROW>
         "AggregationLevel", lvl, ...
@@ -196,12 +202,85 @@ summaryT = struct2table(summaryRows);
 if localShouldWriteCSV(scfg)
     sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "pdcch_blind_decode_trials.csv"), trialT);
     sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "pdcch_blind_decode_sweep.csv"), summaryT);
+    canonicalTrialT = localCanonicalizePDCCHBlindDecodeTrials(trialT, cfg, pdcchPayloadBits, listLength);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "pdcch_trials.csv"), canonicalTrialT);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"), canonicalTrialT);
 end
 
 result = struct();
 result.Ok = all(summaryT.PassRate >= 0);
 result.TrialTable = trialT;
 result.SummaryTable = summaryT;
+end
+
+function T = localCanonicalizePDCCHBlindDecodeTrials(T, cfg, pdcchPayloadBits, listLength)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+nRows = height(T);
+pass = false(nRows, 1);
+if ismember("Pass", string(T.Properties.VariableNames))
+    pass = logical(T.Pass);
+end
+if ~ismember("Status", string(T.Properties.VariableNames))
+    T.Status = repmat("FAIL", nRows, 1);
+    T.Status(pass) = "PASS";
+end
+if ~ismember("CRCPass", string(T.Properties.VariableNames))
+    T.CRCPass = pass;
+end
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    T.Direction = repmat("DL", nRows, 1);
+end
+if ~ismember("SignalFamily", string(T.Properties.VariableNames))
+    T.SignalFamily = repmat("PDCCH", nRows, 1);
+end
+if ~ismember("ControlStage", string(T.Properties.VariableNames))
+    T.ControlStage = repmat("PDCCH_DCI", nRows, 1);
+end
+if ~ismember("BlindDecodeCount", string(T.Properties.VariableNames))
+    T.BlindDecodeCount = repmat(double(listLength), nRows, 1);
+end
+if ~ismember("DCISize_bits", string(T.Properties.VariableNames))
+    T.DCISize_bits = repmat(double(pdcchPayloadBits), nRows, 1);
+end
+if ~ismember("FalseAlarmFlag", string(T.Properties.VariableNames))
+    T.FalseAlarmFlag = false(nRows, 1);
+end
+if ~ismember("BlockingFlag", string(T.Properties.VariableNames))
+    T.BlockingFlag = false(nRows, 1);
+end
+if ~ismember("NonOverlappedCCEUsage", string(T.Properties.VariableNames))
+    T.NonOverlappedCCEUsage = double(localRunnerColumnOrDefault(T, "AggregationLevel", nan(nRows, 1)));
+end
+if ~ismember("ControlCapacityUtilization", string(T.Properties.VariableNames))
+    T.ControlCapacityUtilization = double(localRunnerColumnOrDefault(T, "AggregationLevel", nan(nRows, 1))) ./ 16;
+end
+if ~ismember("CORESETUtilization", string(T.Properties.VariableNames))
+    T.CORESETUtilization = T.ControlCapacityUtilization;
+end
+if ~ismember("ControlLatency_ms", string(T.Properties.VariableNames))
+    slotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 1));
+    T.ControlLatency_ms = repmat(slotDuration_ms, nRows, 1);
+end
+if ~ismember("ComputeLatency_ms", string(T.Properties.VariableNames))
+    T.ComputeLatency_ms = nan(nRows, 1);
+end
+if ~ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
+    T.AirInterfaceTTI_ms = T.ControlLatency_ms;
+end
+if ~ismember("Source", string(T.Properties.VariableNames))
+    T.Source = repmat("pdcch_blind_decode_waveform_runtime", nRows, 1);
+end
+if ~ismember("ExecutionBackend", string(T.Properties.VariableNames))
+    T.ExecutionBackend = repmat("waveform", nRows, 1);
+end
+if ~ismember("ApproximationMode", string(T.Properties.VariableNames))
+    T.ApproximationMode = repmat("none", nRows, 1);
+end
+if ~ismember("Notes", string(T.Properties.VariableNames))
+    T.Notes = repmat("PDCCH blind-decode sweep trial from executed Tx/Rx waveform path.", nRows, 1);
+end
 end
 
 function result = localRun6GRPDCCHStudy(cfg, scfg, runFolder)
@@ -2141,6 +2220,9 @@ useParallel = logical(sixgr.util.structGet(cfg, "run.useParallel", false));
 requestedWorkers = max(0, round(double(sixgr.util.structGet(cfg, "run.numWorkers", 0))));
 cfg = sixgr.util.structSet(cfg, "run.parallelRequestedWorkers", double(requestedWorkers));
 cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "");
+idleTimeoutMinutes = max(1, double(sixgr.util.structGet(cfg, ...
+    "run.parallelPoolIdleTimeoutMinutes", 1440)));
+cfg = sixgr.util.structSet(cfg, "run.parallelPoolIdleTimeoutMinutes", double(idleTimeoutMinutes));
 parallelInstalled = localHasParallelToolboxInstalled();
 parallelLicensed = localHasParallelLicense();
 parpoolAvailable = exist("parpool", "file") == 2;
@@ -2169,35 +2251,255 @@ if ~parallelInstalled || ~parallelLicensed || ~parpoolAvailable
     return;
 end
 
-pool = gcp("nocreate");
-try
-    if isempty(pool)
-        pool = parpool("threads", requestedWorkers);
-    elseif pool.NumWorkers ~= requestedWorkers
-        delete(pool);
-        pool = parpool("threads", requestedWorkers);
+threadCandidates = localParallelWorkerCandidates(requestedWorkers, ...
+    [localSafeFeatureNumCores(), localSafeMaxNumCompThreads()]);
+processCandidates = localParallelWorkerCandidates(requestedWorkers, ...
+    localSafeLocalClusterNumWorkers());
+
+[poolOrder, poolOrderReason] = localResolveParallelPoolStartOrder(cfg);
+pool = [];
+startReason = "";
+startFailures = strings(0, 1);
+for poolKind = poolOrder(:).'
+    if poolKind == "threads"
+        candidates = threadCandidates;
+    else
+        candidates = processCandidates;
     end
-catch
-    try
-        pool = gcp("nocreate");
-        if isempty(pool)
-            pool = parpool(requestedWorkers);
-        elseif pool.NumWorkers ~= requestedWorkers
-            delete(pool);
-            pool = parpool(requestedWorkers);
-        end
-    catch
-        cfg.run.useParallel = false;
-        cfg.run.numWorkers = 0;
-        cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "parpool_start_failed");
-        return;
+    [pool, startReason, poolFailure] = localStartRequestedParpool(poolKind, candidates, idleTimeoutMinutes);
+    if strlength(string(poolFailure)) > 0
+        startFailures(end + 1, 1) = string(poolFailure); %#ok<AGROW>
     end
+    if ~isempty(pool)
+        break;
+    end
+end
+startFailure = char(strjoin(startFailures, " | "));
+
+if isempty(pool)
+    cfg.run.useParallel = false;
+    cfg.run.numWorkers = 0;
+    cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "parpool_start_failed");
+    cfg = sixgr.util.structSet(cfg, "run.parallelStartFailure", char(string(startFailure)));
+    return;
 end
 
 cfg.run.useParallel = ~isempty(pool);
 cfg.run.numWorkers = double(pool.NumWorkers);
 cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "");
+cfg = sixgr.util.structSet(cfg, "run.parallelStartMode", char(startReason));
+cfg = sixgr.util.structSet(cfg, "run.parallelPoolKindEffective", char(localPoolKindToken(pool)));
+cfg = sixgr.util.structSet(cfg, "run.parallelPoolSelectionReason", char(poolOrderReason));
+cfg = sixgr.util.structSet(cfg, "run.parallelStartFailure", char(string(startFailure)));
+cfg = sixgr.util.structSet(cfg, "run.parallelPoolIdleTimeoutEffectiveMinutes", double(idleTimeoutMinutes));
 sixgr.util.rngInit(double(sixgr.util.structGet(cfg, "run.seed", 1)), true);
+end
+
+function [order, reason] = localResolveParallelPoolStartOrder(cfg)
+requested = lower(strtrim(string(sixgr.util.structGet(cfg, "run.parallelPoolKind", "auto"))));
+requiresProcessPool = localRequiresProcessBackedParallelPool(cfg);
+if any(requested == ["process", "processes", "local"])
+    order = "processes";
+    reason = "configured_process_pool";
+elseif requested == "threads" && ~requiresProcessPool
+    order = "threads";
+    reason = "configured_thread_pool";
+elseif requested == "threads" && requiresProcessPool
+    order = "processes";
+    reason = "thread_pool_requested_but_process_pool_required_for_waveform_phy_mex_workers";
+elseif requiresProcessPool
+    order = "processes";
+    reason = "auto_process_pool_required_for_waveform_phy_mex_workers";
+else
+    order = ["threads", "processes"];
+    reason = "auto_threads_preferred_for_non_mex_parallel_work";
+end
+end
+
+function tf = localRequiresProcessBackedParallelPool(cfg)
+runnerProfile = lower(strtrim(string(sixgr.util.structGet(cfg, "run.runnerProfile", ...
+    sixgr.util.structGet(cfg, "scenario.runner_profile", "")))));
+modeToken = lower(strtrim(string(sixgr.util.structGet(cfg, "run.mode", ""))));
+channelModel = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", ""))));
+usesWaveformBundle = runnerProfile == "waveform_bundle" || modeToken == "link";
+usesPHYToolboxMex = usesWaveformBundle || any(channelModel == ["TDL", "CDL", "NRTDL", "NRCDL"]);
+tf = logical(usesPHYToolboxMex);
+end
+
+function token = localPoolKindToken(pool)
+token = "";
+if isempty(pool)
+    return;
+end
+try
+    classToken = lower(string(class(pool)));
+    if contains(classToken, "thread")
+        token = "threads";
+    elseif contains(classToken, "process")
+        token = "processes";
+    else
+        token = char(class(pool));
+    end
+catch
+    token = "";
+end
+end
+
+function candidates = localParallelWorkerCandidates(requestedWorkers, caps)
+requestedWorkers = max(0, floor(double(requestedWorkers)));
+caps = double(caps(:));
+caps = caps(isfinite(caps) & caps >= 2);
+if isempty(caps)
+    maxAllowed = requestedWorkers;
+else
+    maxAllowed = min(requestedWorkers, max(floor(caps)));
+end
+if ~(isfinite(maxAllowed) && maxAllowed >= 2)
+    candidates = [];
+    return;
+end
+
+raw = [requestedWorkers, maxAllowed, floor(maxAllowed ./ [2 4 8]), 32, 16, 12, 8, 4, 2];
+raw = floor(double(raw(:)));
+raw = raw(isfinite(raw) & raw >= 2 & raw <= maxAllowed);
+candidates = [];
+for i = 1:numel(raw)
+    if ~any(candidates == raw(i))
+        candidates(end + 1) = raw(i); %#ok<AGROW>
+    end
+end
+candidates = sort(candidates, "descend");
+end
+
+function [pool, startReason, failureText] = localStartRequestedParpool(poolKind, candidates, idleTimeoutMinutes)
+pool = [];
+startReason = "";
+failures = strings(0, 1);
+poolKind = lower(string(poolKind));
+candidates = double(candidates(:)');
+idleTimeoutMinutes = max(1, double(idleTimeoutMinutes));
+for n = candidates
+    try
+        existing = gcp("nocreate");
+        if ~isempty(existing) && ~localExistingPoolMatchesRequest(existing, poolKind, n)
+            delete(existing);
+            existing = [];
+        end
+        if ~isempty(existing)
+            pool = existing;
+        elseif poolKind == "threads"
+            pool = parpool("threads", n);
+        else
+            pool = localStartProcessParpool(n);
+        end
+        pool = localApplyParpoolIdleTimeout(pool, idleTimeoutMinutes);
+        if ~isempty(pool) && double(pool.NumWorkers) > 1
+            startReason = sprintf("%s_%d_workers", char(poolKind), double(pool.NumWorkers));
+            failureText = char(strjoin(failures, " | "));
+            return;
+        end
+        if ~isempty(pool)
+            delete(pool);
+            pool = [];
+        end
+        failures(end + 1, 1) = sprintf("%s(%d): pool_started_with_leq_1_worker", char(poolKind), n); %#ok<AGROW>
+    catch ME
+        failures(end + 1, 1) = sprintf("%s(%d): %s %s", char(poolKind), n, char(string(ME.identifier)), char(string(ME.message))); %#ok<AGROW>
+    end
+end
+
+if poolKind == "threads"
+    try
+        existing = gcp("nocreate");
+        if ~isempty(existing) && ~localExistingPoolMatchesRequest(existing, poolKind, NaN)
+            delete(existing);
+            existing = [];
+        end
+        if ~isempty(existing)
+            pool = existing;
+            pool = localApplyParpoolIdleTimeout(pool, idleTimeoutMinutes);
+            startReason = sprintf("threads_default_%d_workers", double(pool.NumWorkers));
+            failureText = char(strjoin(failures, " | "));
+            return;
+        end
+        pool = parpool("threads");
+        pool = localApplyParpoolIdleTimeout(pool, idleTimeoutMinutes);
+        if ~isempty(pool) && double(pool.NumWorkers) > 1
+            startReason = sprintf("threads_default_%d_workers", double(pool.NumWorkers));
+            failureText = char(strjoin(failures, " | "));
+            return;
+        end
+    catch ME
+        failures(end + 1, 1) = sprintf("threads(default): %s %s", char(string(ME.identifier)), char(string(ME.message))); %#ok<AGROW>
+    end
+end
+
+pool = [];
+startReason = "";
+failureText = char(strjoin(failures, " | "));
+end
+
+function tf = localExistingPoolMatchesRequest(pool, poolKind, workers)
+tf = false;
+if isempty(pool)
+    return;
+end
+if isfinite(double(workers)) && double(pool.NumWorkers) ~= double(workers)
+    return;
+end
+actualKind = lower(string(localPoolKindToken(pool)));
+requestedKind = lower(string(poolKind));
+if requestedKind == "processes"
+    tf = actualKind == "processes";
+elseif requestedKind == "threads"
+    tf = actualKind == "threads";
+else
+    tf = true;
+end
+end
+
+function pool = localStartProcessParpool(n)
+pool = [];
+try
+    pool = parpool(n);
+    return;
+catch firstME
+    firstFailure = sprintf("%s %s", char(string(firstME.identifier)), char(string(firstME.message)));
+end
+try
+    pool = parpool("local", n);
+catch secondME
+    error("sixgr:lls6g:ParpoolStartFailed", ...
+        "Process parpool(%d) failed: %s; local profile failed: %s %s", ...
+        n, firstFailure, char(string(secondME.identifier)), char(string(secondME.message)));
+end
+end
+
+function pool = localApplyParpoolIdleTimeout(pool, idleTimeoutMinutes)
+if isempty(pool)
+    return;
+end
+idleTimeoutMinutes = max(1, double(idleTimeoutMinutes));
+try
+    if isprop(pool, 'IdleTimeout')
+        pool.IdleTimeout = idleTimeoutMinutes;
+    end
+catch
+    % Older MATLAB releases or cluster profiles may keep IdleTimeout read-only.
+    % The run still proceeds; grant-level code can restart an expired pool.
+end
+end
+
+function n = localSafeLocalClusterNumWorkers()
+try
+    cluster = parcluster("local");
+    n = double(cluster.NumWorkers);
+catch
+    n = NaN;
+end
+if ~(isscalar(n) && isfinite(n) && n >= 1)
+    n = NaN;
+end
 end
 
 function cfg = localEnsureExactMexAcceleration(cfg)

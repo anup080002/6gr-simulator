@@ -224,6 +224,86 @@ def main() -> None:
     assert srs_special["csv_status"] == "specialized_runtime_srs_dataset"
     assert "ue_index,occupancy_value,nmse_db,success_flag" in srs_special["csv_bytes"].decode("utf-8")
 
+    trial_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "Slot", "MCS", "CRCPass", "Throughput_Mbps", "Goodput_Mbps", "Latency_ms"],
+        [
+            ["DL", 1, 4, 1, 10.0, 10.0, 0.4],
+            ["DL", 1, 4, 0, 12.0, 0.0, 0.6],
+            ["DL", 2, 8, 1, 20.0, 20.0, 0.5],
+        ],
+    )
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 41,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {41: trial_csv}
+    throughput_time = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "throughput over time",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        14,
+    )
+    assert throughput_time is not None
+    assert throughput_time["csv_status"] == "specialized_runtime_throughput_timeline_dataset"
+    assert "series_name,chart_mode,x_label,y_label,x_value,y_value" in throughput_time["csv_bytes"].decode("utf-8")
+
+    bler_mcs = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "BLER vs MCS",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        14,
+    )
+    assert bler_mcs is not None
+    assert "mcs,bler,sample_count" in bler_mcs["csv_bytes"].decode("utf-8")
+
+    latency_cdf = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "latency CDF",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        14,
+    )
+    assert latency_cdf is not None
+    assert "latency_ms,cdf_probability" in latency_cdf["csv_bytes"].decode("utf-8")
+
+    energy_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Energy_J", "SuccessfulBits", "ActiveBWFraction", "ActiveRank", "Power_W"],
+        [
+            [0.1, 1000, 0.25, 1, 10.0],
+            [0.2, 2000, 0.50, 2, 20.0],
+            [0.0, 0, 0.75, 2, 30.0],
+        ],
+    )
+    existing = {
+        "rf/csv/energy_timeline_trace.csv": {
+            "artifact_id": 51,
+            "logical_path": "rf/csv/energy_timeline_trace.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {51: energy_csv}
+    energy_hist = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "energy per bit histogram",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        15,
+    )
+    assert energy_hist is not None
+    assert "x_value,y_value,sample_count" in energy_hist["csv_bytes"].decode("utf-8")
+
+    bw_power = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "active bandwidth vs power",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        15,
+    )
+    assert bw_power is not None
+    assert "x_value,y_value,power_w" in bw_power["csv_bytes"].decode("utf-8")
+
     original_loader = dash.load_cached_csv_preview
     original_artifact_url = dash.artifact_url
     try:

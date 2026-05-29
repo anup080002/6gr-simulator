@@ -14,6 +14,7 @@ testBLERImprovesWithSNR();
 testRepetitionNoWorseInStaticCase();
 testCrossSlotFailsLoudly();
 testCodewordLayerMappingTrace();
+testDefaultFDRAUsesFullCarrierGrid();
 testQueueLimitedGrantFormation();
 testHARQOutcomeDerivedFromCRC();
 testDeterministicReproducibility();
@@ -164,6 +165,14 @@ cfg.pdsch6gr.NumLayers = 2;
 trace = sixgr.pdsch.CodewordLayerMapper(sixgr.pdsch.PDSCHStudyConfig(cfg));
 assert(height(trace) == 2 && all(double(trace.CodewordIndex) == 0), ...
     "NR-baseline single-codeword mapping trace must materialize one row per layer.");
+end
+
+function testDefaultFDRAUsesFullCarrierGrid()
+cfg = localBaseCfg();
+cfg.pdsch6gr = rmfield(cfg.pdsch6gr, "NumRB");
+studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
+assert(double(studyCfg.FDRA.NumRB) == double(cfg.pdsch6gr.NSizeGrid), ...
+    "PDSCH study default NumRB must use the full carrier grid unless a scenario explicitly overrides it.");
 end
 
 function testQueueLimitedGrantFormation()

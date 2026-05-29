@@ -1,2 +1,0 @@
-run_id,chart_name,status,reason,checked_sources
-1,stage overlay plots,unavailable_exact_reason,The run does not export enough stage-resolved sample traces to build an honest overlay of internal waveform stages.,air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

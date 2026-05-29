@@ -90,7 +90,7 @@ for i = 1:numel(fields)
 end
 
 constellationT = localConstellationTable(direction, modulation, ...
-    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym);
+    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym);
 end
 
 function modulation = localResolveModulation(tx, cfg, direction)
@@ -141,11 +141,19 @@ papr_dB = NaN;
 if isempty(waveform)
     return;
 end
-p = abs(waveform(:)).^2;
-if isempty(p) || ~any(isfinite(p))
+x = localWaveformPortMatrix(waveform);
+p = abs(x).^2;
+if isempty(p) || ~any(isfinite(p(:)))
     return;
 end
-papr_dB = 10 * log10(max(p) / max(mean(p, "omitnan"), eps));
+portMean = mean(p, 1, "omitnan");
+portPeak = max(p, [], 1, "omitnan");
+valid = isfinite(portMean) & portMean > 0 & isfinite(portPeak);
+if ~any(valid)
+    return;
+end
+portPAPR_dB = 10 * log10(portPeak(valid) ./ max(portMean(valid), eps));
+papr_dB = max(portPAPR_dB, [], "omitnan");
 end
 
 function count = localPeakClippingEvents(waveform, cfg)
@@ -161,9 +169,24 @@ if ~cfrEnabled
 end
 targetPAPR = double(sixgr.util.structGet(cfg, "waveform.cfr_target_papr_db", ...
     sixgr.util.structGet(cfg, "power_and_rf_frontend.cfr_target_papr_db", 8)));
-p = abs(waveform(:)).^2;
-th = mean(p, "omitnan") * 10^(targetPAPR / 10);
-count = sum(p > th);
+x = localWaveformPortMatrix(waveform);
+p = abs(x).^2;
+portMean = mean(p, 1, "omitnan");
+th = portMean .* 10^(targetPAPR / 10);
+count = sum(p > th, "all");
+end
+
+function x = localWaveformPortMatrix(waveform)
+x = waveform;
+if isempty(x)
+    return;
+end
+if isvector(x)
+    x = x(:);
+    return;
+end
+sz = size(x);
+x = reshape(x, sz(1), []);
 end
 
 function [meanAbs, stdAbs, imbalance, sensitivity] = localLLRMetrics(llr, modulation)
@@ -371,7 +394,7 @@ end
 eqAligned = eqRawUse ./ gain;
 end
 
-function constellationT = localConstellationTable(direction, modulation, snr_dB, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym)
+function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym)
 constellationT = table();
 if isempty(eqSymAligned)
     return;
@@ -413,9 +436,14 @@ else
         detUse(end+1:L,1) = complex(nan);
     end
 end
+[subcarrierIdx, ofdmSymbolIdx, layerIdx, codewordIdx] = localConstellationRECoordinates(tx, direction, L);
+errorMag = abs(eqUse - refUse);
+refPower = max(abs(refUse).^2, eps);
+evmRms = abs(eqUse - refUse) ./ sqrt(refPower);
 
 constellationT = table( ...
     repmat(direction, L, 1), repmat(string(modulation), L, 1), repmat(double(snr_dB), L, 1), (1:L).', ...
+    subcarrierIdx, ofdmSymbolIdx, layerIdx, codewordIdx, ...
     real(refUse), imag(refUse), ...
     real(refUse), imag(refUse), ...
     real(eqRawUse), imag(eqRawUse), ...
@@ -423,11 +451,58 @@ constellationT = table( ...
     real(hardUse), imag(hardUse), ...
     real(hardUse), imag(hardUse), ...
     real(detUse), imag(detUse), ...
+    errorMag, evmRms, ...
     'VariableNames', {'Direction','Modulation','SNR_dB','SampleIndex', ...
+    'SubcarrierIndex','OFDMSymbolIndex','LayerIndex','CodewordIndex', ...
     'ReferenceSymbolReal','ReferenceSymbolImag','TxReal','TxImag', ...
     'RawEqualizedReal','RawEqualizedImag','EqualizedReal','EqualizedImag', ...
     'HardDecisionReal','HardDecisionImag','DecisionReal','DecisionImag', ...
-    'DetectorOutputReal','DetectorOutputImag'});
+    'DetectorOutputReal','DetectorOutputImag','SymbolErrorMagnitude','SymbolEVM_rms'});
+end
+
+function [subcarrierIdx, ofdmSymbolIdx, layerIdx, codewordIdx] = localConstellationRECoordinates(tx, direction, L)
+subcarrierIdx = nan(L, 1);
+ofdmSymbolIdx = nan(L, 1);
+layerIdx = nan(L, 1);
+codewordIdx = zeros(L, 1);
+if nargin < 3 || L <= 0
+    return;
+end
+if direction == "UL"
+    ind = sixgr.util.structGet(tx, "PUSCHIndices", []);
+else
+    ind = sixgr.util.structGet(tx, "PDSCHIndices", []);
+end
+if isempty(ind)
+    return;
+end
+ind = double(ind);
+ind = ind(:);
+take = min(numel(ind), L);
+if take <= 0
+    return;
+end
+grid = sixgr.util.structGet(tx, "Grid", []);
+if ~isempty(grid)
+    K = size(grid, 1);
+    Nsym = size(grid, 2);
+    Nlayer = max(size(grid, 3), 1);
+else
+    K = NaN;
+    Nsym = NaN;
+    Nlayer = NaN;
+end
+if ~(isfinite(K) && K > 0 && isfinite(Nsym) && Nsym > 0)
+    return;
+end
+maxLinear = max(ind(1:take), [], "omitnan");
+if ~(isfinite(maxLinear) && maxLinear <= K * Nsym * max(Nlayer, 1))
+    return;
+end
+[sc, sym, lyr] = ind2sub([K, Nsym, max(Nlayer, 1)], ind(1:take));
+subcarrierIdx(1:take) = double(sc(:));
+ofdmSymbolIdx(1:take) = double(sym(:));
+layerIdx(1:take) = double(lyr(:));
 end
 
 function y = localHardDecisionSymbols(sym, modulation, refSym)

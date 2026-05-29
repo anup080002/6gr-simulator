@@ -1,2 +1,0 @@
-run_id,run_uuid,scenario_id,run_tag,backend,profile_name,status_text,stage,current_direction,current_frame,total_frames,current_slot,total_slots,run_completion,active_ue_count,total_users,dl_trial_rows,ul_trial_rows,notes,source_artifact
-1,ac5aaa60-f202-419a-8426-02227c779291,lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_5gnb_50ue_10slot,webgui_rel20_4ghz_100mhz_5gnb_50ue_10slot_20260417_170900,mysql_web,waveform_bundle,completed,postrun_recovery_completed,,,,,,completed,,,150,96,,sim_runs.status_json

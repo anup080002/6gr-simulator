@@ -4,6 +4,7 @@ function out = runCellSearch_MIB_SIB1(cfg, varargin)
 p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
 p.addParameter("NumSubframes", 10, @(x) isnumeric(x) && isscalar(x) && x >= 1);
+p.addParameter("SSBIndex", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numSF = round(double(p.Results.NumSubframes));
@@ -39,6 +40,8 @@ out.TimingEstimateStatus = "";
 out.TimingEstimateWasClipped = false;
 out.Sync = struct();
 out.PBCH = struct();
+out.SSBIndex = NaN;
+out.SSBBeamIndex = NaN;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.ssb.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -60,7 +63,11 @@ end
 
 try
     tStart = tic;
-    [txWave, ~, txInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", numSF);
+    ssbArgs = {"NumSubframes", numSF};
+    if ~isempty(p.Results.SSBIndex)
+        ssbArgs = [ssbArgs, {"SSBIndex", round(double(p.Results.SSBIndex))}]; %#ok<AGROW>
+    end
+    [txWave, ~, txInfo] = sixgr.phy.dl.SSB_Tx(cfg, ssbArgs{:});
     sampleRateHz = localResolveSampleRate(txInfo, cfg);
     injectedCFO_Hz = localResolveInjectedCFOHz(cfg);
     injectedTimingOffset = localResolveInjectedTimingOffsetSamples(cfg);
@@ -77,6 +84,8 @@ try
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
     out.Sync = sync;
     out.PBCH = pb;
+    out.SSBIndex = double(sixgr.util.structGet(pb, "SSBIndex", sixgr.util.structGet(txInfo, "SSB.SSBIndex", NaN)));
+    out.SSBBeamIndex = out.SSBIndex + 1;
 
     out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0);
     out.BLER = double(~out.Ok);

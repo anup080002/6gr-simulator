@@ -43,6 +43,9 @@ end
 cfg.run.numWorkers = max(0, round(double(localRequireNested(s, "run_control.num_workers", "run_control.num_workers"))));
 cfg.run.parallelRequestedWorkers = double(cfg.run.numWorkers);
 cfg.run.useParallel = logical(cfg.run.numWorkers > 1);
+cfg.run.parallelPoolKind = char(lower(strtrim(string(localGetNested(s, "run_control.parallel_pool_kind", "auto")))));
+cfg.run.parallelPoolIdleTimeoutMinutes = max(1, double(localGetNested(s, ...
+    "run_control.parallel_pool_idle_timeout_minutes", 1440)));
 cfg.run.batchSizeLinks = max(1, round(double(localRequireNested(s, "run_control.batch_size_links", "run_control.batch_size_links"))));
 cfg.run.studyMode = char(string(localRequireNested(s, "run_control.study_mode", "run_control.study_mode")));
 cfg.run.simulationMode = char(string(localRequireNested(s, "run_control.simulation_mode", "run_control.simulation_mode")));
@@ -97,6 +100,14 @@ if isfinite(indoorFraction)
     cfg.scenario.ue.indoorFraction = indoorFraction;
     cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.indoorFraction", indoorFraction);
 end
+minInterUEDistance_m = localResolveFirstFiniteNumeric(s, ...
+    ["deployment_topology.min_inter_ue_distance_m", ...
+     "users.min_inter_ue_distance_m", ...
+     "scenario.ue.min_inter_ue_distance_m"], NaN);
+if isfinite(minInterUEDistance_m) && minInterUEDistance_m > 0
+    cfg = sixgr.util.structSet(cfg, "scenario.ue.minInterUEDistance_m", double(minInterUEDistance_m));
+    cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.minInterUEDistance_m", double(minInterUEDistance_m));
+end
 
 mobilitySpeedKmh = double(localRequireFirstNested(s, ...
     ["mobility.ue_speed_kmh","channels.mobility_kmph"], ...
@@ -125,6 +136,11 @@ cfg.phy.fc_Hz = double(s.frequency.center_frequency_hz);
 cfg.channel.bandwidth_Hz = double(s.frequency.bandwidth_hz);
 cfg.channel.subcarrierSpacing_kHz = double(s.frame.scs_khz);
 cfg.phy.channelBandwidth_MHz = double(s.frequency.bandwidth_hz) / 1e6;
+cfg.phy.frequencyRange = char(upper(string(localGetNested(s, "frequency.range_name", ...
+    localGetNested(s, "global_radio_scope.frequency_range_label", "")))));
+cfg.frequency.rangeName = cfg.phy.frequencyRange;
+cfg.frequency.centerFrequencyHz = double(s.frequency.center_frequency_hz);
+cfg.frequency.bandwidthHz = double(s.frequency.bandwidth_hz);
 cfg.channel.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.channel.nRxAnt = double(s.mimo.n_rx_ant);
 cfg.channel.snr_dB = double(s.simulation.snr_db);
@@ -237,7 +253,11 @@ cfg.phy.sib1.enable = logical(s.reference_signals.pbch_enabled);
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
 cfg.phy.pdcch.searchSpaceType = char(string(s.control.search_space_type));
-cfg.phy.pdcch.aggregationLevel = double(localFirstValue(s.control.aggregation_levels));
+cfg.phy.pdcch.aggregationLevels = double(s.control.aggregation_levels);
+cfg.phy.pdcch.aggregationLevel = double(localResolveDefaultPDCCHAggregationLevel(s.control.aggregation_levels));
+cfg.phy.pdcch.candidateAggregationLevels = double(localGetNested(s, "control.candidate_aggregation_levels", cfg.phy.pdcch.aggregationLevels));
+cfg.phy.pdcch.aggregationSelectionPolicy = char(string(localGetNested(s, "control.aggregation_selection_policy", "snr_threshold")));
+cfg.phy.pdcch.schedulerAggregationLevel = double(localGetNested(s, "control.scheduler_aggregation_level", NaN));
 cfg.phy.pdcch.dciFormat = char(string(localFirstValue(s.control.dci_formats)));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindDecodeCandidates", double(s.control.blind_decode_candidates));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(s.control.coreset_duration));
@@ -337,7 +357,7 @@ cfg.pdsch6gr.SNRdB = double(localGetNested(s, "pdsch6gr.snr_db", cfg.channel.snr
 cfg.pdsch6gr.FDRAType = char(string(localGetNested(s, "pdsch6gr.fdra_type", "type1_riv")));
 cfg.pdsch6gr.RBBitmap = double(localGetNested(s, "pdsch6gr.rb_bitmap", []));
 cfg.pdsch6gr.RIV = double(localGetNested(s, "pdsch6gr.riv", 0));
-cfg.pdsch6gr.NumRB = double(localGetNested(s, "pdsch6gr.num_rb", min(20, cfg.phy.carrier.NSizeGrid)));
+cfg.pdsch6gr.NumRB = double(localGetNested(s, "pdsch6gr.num_rb", cfg.phy.carrier.NSizeGrid));
 cfg.pdsch6gr.RBStart = double(localGetNested(s, "pdsch6gr.rb_start", 0));
 cfg.pdsch6gr.GranularityRB = double(localGetNested(s, "pdsch6gr.granularity_rb", 1));
 cfg.pdsch6gr.StartSymbol = double(localGetNested(s, "pdsch6gr.start_symbol", 2));
@@ -368,6 +388,13 @@ cfg.pdsch6gr.StudyNumTrials = double(localGetNested(s, "pdsch6gr.study_num_trial
 targetCases = lower(string(s.scenario.target_cases));
 linkAdaptationMode = lower(string(localRequireNested(s, "link_adaptation.fixed_or_amc", "link_adaptation.fixed_or_amc")));
 linkAdaptationUsesFixedMCS = ismember(linkAdaptationMode, ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"]);
+explicitPDSCHMCSMode = lower(strtrim(string(localGetNested(s, "pdsch6gr.mcs_mode", ""))));
+if ~linkAdaptationUsesFixedMCS && (strlength(explicitPDSCHMCSMode) == 0 || ismember(explicitPDSCHMCSMode, ["fixed","fixed_mcs","configured_fixed"]))
+    cfg.pdsch6gr.MCSMode = 'amc';
+elseif linkAdaptationUsesFixedMCS && (strlength(explicitPDSCHMCSMode) == 0 || explicitPDSCHMCSMode == "amc")
+    cfg.pdsch6gr.MCSMode = 'fixed';
+end
+cfg.pdsch6gr.FixedMCSActive = logical(linkAdaptationUsesFixedMCS);
 dlConfiguredMCSIndex = double(s.modulation.dl_mcs_index);
 ulConfiguredMCSIndex = double(s.modulation.ul_mcs_index);
 cfg.phy.pdsch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pdsch_enable)));
@@ -472,9 +499,9 @@ end
 scenarioId = string(localGetNested(s, "meta.scenario_id", ""));
 if scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     if strlength(sinrToCQIMode) == 0
-        cfg = sixgr.util.structSet(cfg, "phy.csi.sinrToCQIMode", "effective_sinr_bler_lut");
-        cfg = sixgr.util.structSet(cfg, "phy.pdsch.sinrToCQIMode", "effective_sinr_bler_lut");
-        cfg = sixgr.util.structSet(cfg, "phy.pusch.sinrToCQIMode", "effective_sinr_bler_lut");
+        cfg = sixgr.util.structSet(cfg, "phy.csi.sinrToCQIMode", "threshold_table");
+        cfg = sixgr.util.structSet(cfg, "phy.pdsch.sinrToCQIMode", "threshold_table");
+        cfg = sixgr.util.structSet(cfg, "phy.pusch.sinrToCQIMode", "threshold_table");
     end
     if strlength(effectiveSINRMethod) == 0
         cfg = sixgr.util.structSet(cfg, "phy.csi.effectiveSINRMethod", "eesm");
@@ -696,11 +723,13 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.alPolicy", char(string(local
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.beamPolicy", char(string(localRequireNested(s, "link_adaptation.beam_adaptation_policy", "link_adaptation.beam_adaptation_policy"))));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.periodicity", char(string(localRequireNested(s, "link_adaptation.adaptation_periodicity", "link_adaptation.adaptation_periodicity"))));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.delayModel", char(string(localRequireNested(s, "link_adaptation.adaptation_delay_model", "link_adaptation.adaptation_delay_model"))));
+linkAdaptationDomain = lower(strtrim(string(localGetNested(s, "link_adaptation.domain", ""))));
+if strlength(linkAdaptationDomain) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.domain", char(linkAdaptationDomain));
+end
 bootstrapCQIMode = lower(strtrim(string(localGetNested(s, "link_adaptation.bootstrap_cqi_mode", ""))));
 if strlength(bootstrapCQIMode) > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", char(bootstrapCQIMode));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", "large_scale_preview_lab_default");
 end
 cqiSmoothingAlpha = double(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
@@ -905,6 +934,21 @@ elseif isstring(x) || isnumeric(x)
     v = x(1);
 else
     v = x;
+end
+end
+
+function v = localResolveDefaultPDCCHAggregationLevel(levels)
+levels = double(levels(:).');
+levels = unique(levels(ismember(levels, [1 2 4 8 16])), "stable");
+if isempty(levels)
+    v = 4;
+    return;
+end
+if any(levels == 4)
+    v = 4;
+else
+    [~, idx] = min(abs(levels - 4));
+    v = levels(idx);
 end
 end
 
@@ -1132,6 +1176,14 @@ if isfield(s.system, "scheduler") && isstruct(s.system.scheduler)
         logical(localRequireNested(s, "system.scheduler.starvationGuard", "system.scheduler.starvationGuard")));
     cfg = sixgr.util.structSet(cfg, "system.scheduler.cellEdgeBoost", ...
         logical(localRequireNested(s, "system.scheduler.cellEdgeBoost", "system.scheduler.cellEdgeBoost")));
+    coverageOutageGuardEnabled = logical(localGetNested(s, "system.scheduler.coverageOutageGuardEnabled", ...
+        localGetNested(s, "system.scheduler.coverage_outage_guard_enabled", false)));
+    minSchedulingSINR_dB = double(localGetNested(s, "system.scheduler.minSchedulingSINR_dB", ...
+        localGetNested(s, "system.scheduler.min_scheduling_sinr_db", -5)));
+    cfg = sixgr.util.structSet(cfg, "system.scheduler.coverageOutageGuardEnabled", coverageOutageGuardEnabled);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.coverageOutageGuardEnabled", coverageOutageGuardEnabled);
+    cfg = sixgr.util.structSet(cfg, "system.scheduler.minSchedulingSINR_dB", minSchedulingSINR_dB);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.minSchedulingSINR_dB", minSchedulingSINR_dB);
 end
 if isfield(s.system, "measurement") && isstruct(s.system.measurement)
     cfg = sixgr.util.structSet(cfg, "system.measurement.periodSlots", ...
@@ -1302,6 +1354,10 @@ spacingH = double(localRequireNested(s, "antenna_and_array.element_spacing_h", "
 spacingV = double(localRequireNested(s, "antenna_and_array.element_spacing_v", "antenna_and_array.element_spacing_v"));
 bsCount = max(1, round(double(localRequireNested(s, "antenna_and_array.bs_num_antenna_elements", "antenna_and_array.bs_num_antenna_elements"))));
 ueCount = max(1, round(double(localRequireNested(s, "antenna_and_array.ue_num_antenna_elements", "antenna_and_array.ue_num_antenna_elements"))));
+bsMechanicalTiltDeg = localResolveFirstFiniteNumeric(s, ...
+    ["antenna_and_array.bs_mechanical_tilt_deg", ...
+     "antenna_and_array.mechanical_tilt_deg", ...
+     "antenna_and_array.bs_electrical_tilt_deg"], NaN);
 
 cfg.channel.nTxAnt = double(bsCount);
 cfg.channel.nRxAnt = double(ueCount);
@@ -1315,6 +1371,11 @@ cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingLambda", [double(spacingH) do
 cfg = sixgr.util.structSet(cfg, "antenna.bs.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.numElements", double(bsCount));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.source", "browser_yaml_antenna_and_array");
+if isfinite(bsMechanicalTiltDeg)
+    cfg = sixgr.util.structSet(cfg, "antenna.bs.tilt_deg", double(bsMechanicalTiltDeg));
+    cfg = sixgr.util.structSet(cfg, "antenna.bs.mechanicalTilt_deg", double(bsMechanicalTiltDeg));
+    cfg = sixgr.util.structSet(cfg, "scenario.bs.mechanicalTilt_deg", double(bsMechanicalTiltDeg));
+end
 cfg = sixgr.util.structSet(cfg, "antenna.ue.geometry", char(lower(strtrim(ueGeom))));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingLambda", [double(spacingH) double(spacingV)]);
 cfg = sixgr.util.structSet(cfg, "antenna.ue.polarization", char(lower(strtrim(polToken))));

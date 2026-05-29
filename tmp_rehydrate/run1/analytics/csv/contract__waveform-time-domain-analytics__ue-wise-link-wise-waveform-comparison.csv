@@ -1,2 +1,0 @@
-run_id,chart_name,status,reason,checked_sources
-1,UE-wise / link-wise waveform comparison,unavailable_exact_reason,"The run exports a single runtime waveform preview, not a full UE-by-UE waveform sample bank suitable for an honest comparison chart.",air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv

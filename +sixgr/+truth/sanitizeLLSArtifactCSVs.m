@@ -48,55 +48,27 @@ end
 if ~istable(T) || isempty(T)
     return;
 end
+inputWidth = width(T);
 scope = localScopeTokenFromFile(filePath);
+canonicalized = false;
 if strlength(scope) > 0
     T = sixgr.truth.canonicalizeLLSLiveSignalChainTable(scope, T);
+    canonicalized = true;
 end
-keepMask = false(1, width(T));
-names = string(T.Properties.VariableNames);
-for i = 1:numel(names)
-    keepMask(i) = localColumnHasRuntimeContent(T.(char(names(i))));
-end
-removedCount = sum(~keepMask);
-if removedCount <= 0
+originalWidth = width(T);
+T = sixgr.util.pruneStructurallyBlankTableColumns(T);
+removedCount = max(0, inputWidth - originalWidth) + max(0, originalWidth - width(T));
+if removedCount <= 0 && ~canonicalized
     [rawChanged, rawRemoved] = localPruneRawBlankCSVColumns(filePath);
     changed = rawChanged;
     removedCount = rawRemoved;
     return;
 end
-T(:, ~keepMask) = [];
 sixgr.util.csvWriteTable(filePath, T);
 changed = true;
 [rawChanged, rawRemoved] = localPruneRawBlankCSVColumns(filePath);
 changed = changed || rawChanged;
 removedCount = removedCount + rawRemoved;
-end
-
-function tf = localColumnHasRuntimeContent(col)
-if isnumeric(col)
-    values = double(col);
-    tf = any(isfinite(values));
-    return;
-end
-if islogical(col)
-    tf = true;
-    return;
-end
-try
-    vals = string(col);
-catch
-    tf = true;
-    return;
-end
-normalized = lower(strtrim(fillmissing(vals, "constant", "")));
-mask = strlength(normalized) > 0 & normalized ~= "nan" & normalized ~= "<missing>" & normalized ~= "not_applicable";
-if ~any(mask)
-    tf = false;
-    return;
-end
-inactivePrefixes = ["not_recorded_by_active_", "not_emitted_by_active_", "field_not_emitted_by_active_", "not_applicable_for_active_"];
-uniqueVals = unique(normalized(mask), "stable");
-tf = ~all(arrayfun(@(token) any(startsWith(token, inactivePrefixes)), uniqueVals));
 end
 
 function scope = localScopeTokenFromFile(filePath)

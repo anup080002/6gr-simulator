@@ -1,7 +1,0 @@
-Block,Ok,Notes
-"CellSearch_MIB_SIB1",1,"PBCH primary sweep; snr_grid_db=12"
-"PRACH_Detection",1,"PRACH primary sweep; snr_grid_db=12"
-"DL_PDSCH_Throughput",1,"DL primary sweep; snr_grid_db=12; steady_state_warmup_rows_excluded=true"
-"UL_PUSCH_Throughput",1,"UL primary sweep; snr_grid_db=12; steady_state_warmup_rows_excluded=true"
-"UL_SRS_ChannelEst",1,"SRS primary sweep; snr_grid_db=12"
-"UL_LowPAPR",1,"Avg over 10 frame(s), mod=16QAM"

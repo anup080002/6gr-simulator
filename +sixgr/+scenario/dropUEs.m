@@ -33,6 +33,12 @@ W = prof.area_m(1);
 H = prof.area_m(2);
 
 [xy, servingRef, headingSeedDeg] = localResolveDropPositions(layout, prof, K, W, H);
+minInterUEDistance_m = localResolveMinimumInterUEDistance(cfg, prof);
+spacingStatus = "not_requested";
+if isfinite(minInterUEDistance_m) && minInterUEDistance_m > 0 && K > 1
+    [xy, servingRef, headingSeedDeg, spacingStatus] = localEnforceMinimumInterUEDistance( ...
+        xy, servingRef, headingSeedDeg, layout, prof, W, H, minInterUEDistance_m);
+end
 
 % Heights
 z = prof.ue.height_m * ones(K,1);
@@ -63,10 +69,100 @@ ue.drop_cell_id = servingRef(:);
 ue.drop_mode = repmat(string(localResolveDropMode(prof)), K, 1);
 ue.drop_reference_cell_id = servingRef(:);
 ue.serving_selection_method = repmat(string(localResolveServingSelectionMethod(prof)), K, 1);
+ue.min_inter_ue_distance_m = repmat(double(minInterUEDistance_m), K, 1);
+ue.min_inter_ue_distance_status = repmat(string(spacingStatus), K, 1);
 
 end
 
 % ---------------- Local helpers ----------------
+
+function minDistance_m = localResolveMinimumInterUEDistance(cfg, prof)
+minDistance_m = double(sixgr.util.structGet(cfg, "scenario.ue.minInterUEDistance_m", ...
+    sixgr.util.structGet(cfg, "scenario.ue.distribution.minInterUEDistance_m", ...
+    sixgr.util.structGet(prof, "ue.minInterUEDistance_m", 0))));
+if isempty(minDistance_m) || ~isscalar(minDistance_m) || ~isfinite(minDistance_m)
+    minDistance_m = 0;
+end
+minDistance_m = max(0, double(minDistance_m));
+end
+
+function [xy, servingRef, headingSeedDeg, status] = localEnforceMinimumInterUEDistance(xy, servingRef, headingSeedDeg, layout, prof, W, H, minDistance_m)
+K = size(xy, 1);
+if K <= 1
+    status = "single_ue";
+    return;
+end
+maxAttempts = max(2000, 80 * K);
+for u = 1:K
+    candidate = xy(u, :);
+    candidateServing = servingRef(u);
+    candidateHeading = headingSeedDeg(u);
+    accepted = localCandidateSpacingOK(candidate, xy(1:u-1, :), minDistance_m);
+    attempt = 0;
+    while ~accepted && attempt < maxAttempts
+        attempt = attempt + 1;
+        [candidate, candidateServing, candidateHeading] = localGenerateDropCandidate(layout, prof, W, H, candidateServing);
+        accepted = localCandidateSpacingOK(candidate, xy(1:u-1, :), minDistance_m);
+    end
+    if ~accepted
+        error("sixgr:scenario:MinimumInterUEDistanceUnfillable", ...
+            "Unable to place UE %d with min_inter_ue_distance_m=%.3f after %d attempts. Increase area/ISD or reduce UE count/distance.", ...
+            u, double(minDistance_m), maxAttempts);
+    end
+    xy(u, :) = candidate;
+    servingRef(u) = candidateServing;
+    headingSeedDeg(u) = candidateHeading;
+end
+status = "enforced_by_rejection_drop";
+end
+
+function ok = localCandidateSpacingOK(candidate, previousXY, minDistance_m)
+if isempty(previousXY)
+    ok = true;
+    return;
+end
+dx = previousXY(:, 1) - double(candidate(1));
+dy = previousXY(:, 2) - double(candidate(2));
+d = sqrt(dx.^2 + dy.^2);
+ok = all(d >= double(minDistance_m) - 1e-9);
+end
+
+function [candidate, servingCell, headingDeg] = localGenerateDropCandidate(layout, prof, W, H, preferredServingCell)
+bsPos = double(sixgr.util.structGet(layout, "bs.pos_m", zeros(0,3)));
+bsAz = double(sixgr.util.structGet(layout, "bs.azim_deg", zeros(size(bsPos,1),1)));
+nCells = size(bsPos, 1);
+if isempty(bsPos) || isempty(bsAz) || nCells < 1
+    candidate = [(rand - 0.5) * W, (rand - 0.5) * H];
+    servingCell = 1;
+    headingDeg = rand * 360;
+    return;
+end
+
+switch localResolveDropMode(prof)
+    case "pathloss_based_association_drop"
+        candidate = [(rand - 0.5) * W, (rand - 0.5) * H];
+        servingCell = localAssignByNearestCell(candidate, layout, nCells);
+        dx = candidate(1) - bsPos(servingCell,1);
+        dy = candidate(2) - bsPos(servingCell,2);
+        if abs(dx) < eps && abs(dy) < eps
+            headingDeg = rand * 360;
+        else
+            headingDeg = mod(atan2d(-dy, -dx) + 25 * randn(), 360);
+        end
+    otherwise
+        sectorSpanDeg = localResolveSectorSpan(layout, prof);
+        radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
+        radiusMin_m = min(40, max(5, 0.08 * radiusMax_m));
+        servingCell = max(1, min(nCells, round(double(preferredServingCell))));
+        az = double(bsAz(servingCell));
+        theta = az + (rand - 0.5) * sectorSpanDeg;
+        rho = sqrt(radiusMin_m^2 + rand * (radiusMax_m^2 - radiusMin_m^2));
+        candidate = [bsPos(servingCell,1) + rho * cosd(theta), bsPos(servingCell,2) + rho * sind(theta)];
+        candidate(1) = min(max(candidate(1), -0.5 * W), 0.5 * W);
+        candidate(2) = min(max(candidate(2), -0.5 * H), 0.5 * H);
+        headingDeg = mod(theta + 180 + 25 * randn(), 360);
+end
+end
 
 function [xy, servingRef, headingSeedDeg] = localResolveDropPositions(layout, prof, K, W, H)
 xy = zeros(K, 2);
@@ -107,8 +203,8 @@ switch localResolveDropMode(prof)
         for u = 1:K
             c = servingRef(u);
             az = double(bsAz(c));
-            theta = az + (rand - 0.5) * 0.92 * sectorSpanDeg;
-            rho = sqrt(rand) * (radiusMax_m - radiusMin_m) + radiusMin_m;
+            theta = az + (rand - 0.5) * sectorSpanDeg;
+            rho = sqrt(radiusMin_m^2 + rand * (radiusMax_m^2 - radiusMin_m^2));
             xy(u,1) = bsPos(c,1) + rho * cosd(theta);
             xy(u,2) = bsPos(c,2) + rho * sind(theta);
             headingSeedDeg(u) = mod(theta + 180 + 25 * randn(), 360);
@@ -119,7 +215,14 @@ end
 end
 
 function servingRef = localAssignByNearestCell(xy, layout, nCells)
-wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", "rectangular_torus"));
+wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", ""));
+if strlength(strtrim(wrapMode)) == 0
+    if contains(lower(string(sixgr.util.structGet(layout, "layoutType", ""))), "hex")
+        wrapMode = "hex_lattice_min_image";
+    else
+        wrapMode = "rectangular_torus";
+    end
+end
 wrapEnabled = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
 if wrapEnabled && wrapMode ~= "disabled"
     d = sixgr.scenario.wraparoundDistance(xy, layout.bs.pos_m, layout.area_m, ...
@@ -153,7 +256,7 @@ function method = localResolveServingSelectionMethod(prof)
 if localResolveDropMode(prof) == "pathloss_based_association_drop"
     method = "nearest_cell_distance_after_uniform_area_drop";
 else
-    method = "legacy_equal_sector_reference";
+    method = "equal_sector_uniform_area_annulus_reference";
 end
 end
 
@@ -195,7 +298,7 @@ end
 function radiusMax_m = localResolveSectorRadius(layout, prof, W, H)
 isd_m = double(sixgr.util.structGet(layout, "isd_m", sixgr.util.structGet(prof, "isd_m", NaN)));
 if isfinite(isd_m) && isd_m > 0
-    radiusMax_m = 0.42 * isd_m;
+    radiusMax_m = isd_m / sqrt(3);
 else
     radiusMax_m = 0.22 * min(double(W), double(H));
 end

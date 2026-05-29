@@ -462,6 +462,14 @@ sections:
         min_items: 0
         integer: true
         min: 1
+      scheduler_aggregation_level:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2, 4, 8, 16]
+      aggregation_selection_policy:
+        required: false
+        type: string
+        allowed_values: [snr_threshold, configured_scheduler_level, most_robust]
       search_space_num_candidates:
         required: true
         type: number_list

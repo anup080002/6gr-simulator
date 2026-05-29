@@ -1,4 +1,0 @@
-Direction,TraceSource,SNR_dB,MeanNMSE_dB,MeanWidebandCQI,MeanPMI,MeanCRI,MeanCSIPayloadBitLength,Notes
-DL,shared_dmrs_csirs_path,12,-8.23389863827617,11.0333333333333,10.1133333333333,not_applicable,20.8866666666667,Derived from the actual runtime CSI feedback path. Dedicated CSI-RS runtime events are exported separately when waveform CSI-RS is mapped and observed; this aggregate still uses the shared CSI estimator.
-DL,tracking_rs_path,12,25.1947269758921,NaN,NaN,not_applicable,NaN,Tracking-RS summary from actual TRS trials.
-UL,srs_feedback_path,12,-27.2655854370409,NaN,NaN,not_applicable,NaN,UL sounding summary from actual SRS trials.

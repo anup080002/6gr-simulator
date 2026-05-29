@@ -1,1 +1,0 @@
-{"inherits":["C:\\Anup\\6gsimulation\\sixgr_foundation_v2\\simulator\\configs\\scenarios\\ce_ai_nn.yaml"],"meta":{"scenario_id":"ce_ai_reporting","description":"ai reporting","version":"1","owner":"test","maturity_tag":"smoke"},"ai_ml":{"benchmark_observations":2},"output":{"save_figures":false,"save_mat":false}}

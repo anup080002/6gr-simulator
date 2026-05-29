@@ -42,11 +42,17 @@ function [rx, info] = PRACH_Rx(rxWaveform, cfg, varargin)
     if isempty(opts.PRACH)
         prach = nrPRACHConfig;
         prach = localApplyPRACHFromCfg(prach, cfg, carrier);
+        nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach);
+        try
+            prach.NPRACHSlot = nslot;
+        catch
+        end
     else
         prach = opts.PRACH;
+        nslot = prach.NPRACHSlot;
     end
     try
-        carrier.NSlot = prach.NPRACHSlot;
+        carrier.NSlot = nslot;
     catch
     end
 
@@ -77,6 +83,52 @@ function [rx, info] = PRACH_Rx(rxWaveform, cfg, varargin)
     info.DetectionInfo = detInfo;
     info.PreambleIndex = idx;
     info.TimingOffset  = offset;
+    info.ResolvedNPRACHSlot = double(nslot);
+end
+
+% -------------------------------------------------------------------------
+function nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach)
+cfgSlot = sixgr.util.structGet(cfg, "phy.prach.nPrachSlot", []);
+if isempty(cfgSlot)
+    cfgSlot = sixgr.util.structGet(cfg, "phy.prach.NPRACHSlot", []);
+end
+if ~isempty(cfgSlot)
+    vals = double(cfgSlot(:));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        nslot = vals(1);
+        return;
+    end
+end
+
+startSlot = double(carrier.NSlot);
+if ~(isfinite(startSlot) && startSlot >= 0)
+    startSlot = 0;
+end
+scanSlots = 160;
+nslot = startSlot;
+for offset = 0:scanSlots
+    candidate = round(startSlot) + offset;
+    c = carrier;
+    p = prach;
+    try
+        c.NSlot = candidate;
+    catch
+    end
+    try
+        p.NPRACHSlot = candidate;
+    catch
+    end
+    try
+        sym = nrPRACH(c, p);
+        ind = nrPRACHIndices(c, p);
+        if ~isempty(sym) && ~isempty(ind)
+            nslot = candidate;
+            return;
+        end
+    catch
+    end
+end
 end
 
 % -------------------------------------------------------------------------

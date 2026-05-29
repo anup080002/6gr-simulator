@@ -97,6 +97,8 @@ methods(Static)
         state.CSIValidityState = repmat(string(state.ControlGating.CSIInitialState), nUsers, 1);
         state.ControlEligibility = false(nUsers, 1);
         state.SchedulingEligibility = false(nUsers, 1);
+        state.CoverageEligibility = true(nUsers, 1);
+        state.CoverageOutageState = repmat("not_evaluated", nUsers, 1);
         state.LastSuccessfulPBCHSlotByUE = nan(nUsers, 1);
         state.LastSuccessfulPRACHSlotByUE = nan(nUsers, 1);
         state.LastSuccessfulPDCCHSlotByUE = nan(nUsers, 1);
@@ -211,6 +213,16 @@ methods(Static)
         feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
     end
 
+    function state = appendGrantTraceRuntime(state, grant, direction, feedback)
+        % Public wrapper for queued cross-slot grants built outside the class.
+        state = sixgr.truth.CoupledTruthRuntime.appendGrantTrace(state, grant, direction, feedback);
+    end
+
+    function state = recordSlotTraceScheduleRuntime(state, direction, info)
+        % Public wrapper for queued grants that execute in a later TDD slot.
+        state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceSchedule(state, direction, info);
+    end
+
     function sinr_dB = estimateRuntimeWidebandSINRRuntime(state, ueIdx, servingCell, interferenceMode)
         % Public wrapper for waveform-bundle runtime SINR resolution.
         sinr_dB = sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR(state, ueIdx, servingCell, interferenceMode);
@@ -270,6 +282,10 @@ methods(Static)
 
     function [state, grant, allowExecution] = applyPDCCHGrantTrial(state, grant, direction, trialT)
         [state, grant, allowExecution] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrialImpl(state, grant, direction, trialT);
+    end
+
+    function [state, grant] = blockPDCCHGrantTrial(state, grant, direction, reason)
+        [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrialImpl(state, grant, direction, reason);
     end
 
     function artifacts = mobilityArtifacts(state)
@@ -480,20 +496,24 @@ methods(Static, Access=private)
         userMeta.RuntimeAntennaObjectSource = "CoupledTruthRuntime.initialize:AntennaArrayFactory.build";
         userMeta.RuntimeChannelArrayModel = char(sixgr.truth.CoupledTruthRuntime.resolveChannelArrayModel(cfgU));
         feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
+        if isfinite(double(sixgr.util.structGet(feedback, "PMI", NaN)))
+            userMeta.RuntimeFeedbackPMI = double(feedback.PMI);
+        end
+        if isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
+            userMeta.RuntimeFeedbackCRI = double(feedback.CRI);
+        end
         if logical(sixgr.util.structGet(feedback, "Valid", false))
             userMeta.RuntimeFeedbackCQI = double(feedback.CQI);
             userMeta.RuntimeFeedbackRI = double(feedback.RI);
-            userMeta.RuntimeFeedbackPMI = double(feedback.PMI);
-            userMeta.RuntimeFeedbackCRI = double(feedback.CRI);
             userMeta.RuntimeFeedbackSINR_dB = double(feedback.SINR_dB);
-            if direction == "DL"
-                if isfinite(double(feedback.PMI))
-                    cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.PMI", double(feedback.PMI));
-                end
-                if isfinite(double(feedback.CRI))
-                    cfgU = sixgr.util.structSet(cfgU, "phy.beamManagement.selectedCRI", double(feedback.CRI));
-                    cfgU = sixgr.util.structSet(cfgU, "phy.csi.selectedCRI", double(feedback.CRI));
-                end
+        end
+        if direction == "DL"
+            if isfinite(double(sixgr.util.structGet(feedback, "PMI", NaN)))
+                cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.PMI", double(feedback.PMI));
+            end
+            if isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
+                cfgU = sixgr.util.structSet(cfgU, "phy.beamManagement.selectedCRI", double(feedback.CRI));
+                cfgU = sixgr.util.structSet(cfgU, "phy.csi.selectedCRI", double(feedback.CRI));
             end
         end
         trsContext = sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContext(state, cfgU, ueIdx, servingCell);
@@ -654,7 +674,7 @@ methods(Static, Access=private)
                 grant.CellAcquisitionState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CellAcquisitionState", ueIdx, "unknown"));
                 grant.AccessState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "AccessState", ueIdx, "not_attempted"));
                 grant.SRSValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "SRSValidityState", ueIdx, "unknown"));
-                grant.CSIValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_fallback"));
+                grant.CSIValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_csi_unavailable"));
                 grant.SRSValid = strcmpi(char(string(grant.SRSValidityState)), "valid");
                 grant.LastSuccessfulSRSSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulSRSSlotByUE", ueIdx, NaN));
                 grant.SRSAgeSlots = double(sixgr.truth.CoupledTruthRuntime.srsAgeSlots(state, ueIdx));
@@ -1409,36 +1429,44 @@ methods(Static, Access=private)
         largeScaleSINR = sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR(state, ueIdx, servingCell, configuredInterferenceMode);
         receiverHestSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINR_dB", NaN));
         receiverHestSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINRSource", ""));
-        decoderTruthProxySINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINR_dB", NaN));
-        decoderTruthProxySource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINRSource", ""));
-        estimatedSINR = receiverHestSINR;
         measuredTrialSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINR_dB", NaN));
         measuredTrialSINRSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINRSource", ""));
+        decoderTruthProxySINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINR_dB", NaN));
+        decoderTruthProxySource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINRSource", ""));
         if isfinite(receiverHestSINR) && strlength(strtrim(receiverHestSource)) == 0
             receiverHestSource = "receiver_hest_reference_signal_measurement";
         end
-        widebandSINRSource = "receiver_hest_reference_signal_measurement";
-        widebandSINRValueRole = "estimated";
-        if strlength(strtrim(receiverHestSource)) > 0
-            widebandSINRSource = strtrim(receiverHestSource);
-        end
-        if ~isfinite(estimatedSINR)
-            if isfinite(decoderTruthProxySINR)
-                estimatedSINR = double(decoderTruthProxySINR);
-                if strlength(strtrim(decoderTruthProxySource)) > 0
-                    widebandSINRSource = strtrim(decoderTruthProxySource);
-                else
-                    widebandSINRSource = "post_equalization_evm_proxy";
-                end
-                widebandSINRValueRole = "derived_proxy";
-            elseif isfinite(largeScaleSINR)
-                estimatedSINR = largeScaleSINR;
-                widebandSINRSource = "large_scale_interference_budget_preview";
-                widebandSINRValueRole = "derived_preview";
+        estimatedSINR = NaN;
+        widebandSINRSource = "unavailable";
+        widebandSINRValueRole = "unavailable";
+        if isfinite(measuredTrialSINR)
+            estimatedSINR = double(measuredTrialSINR);
+            if strlength(strtrim(measuredTrialSINRSource)) > 0
+                widebandSINRSource = strtrim(measuredTrialSINRSource);
             else
-                widebandSINRSource = "receiver_hest_unavailable";
-                widebandSINRValueRole = "";
+                widebandSINRSource = "post_equalization_error_vector_measurement";
             end
+            widebandSINRValueRole = "measured";
+        elseif isfinite(decoderTruthProxySINR)
+            estimatedSINR = double(decoderTruthProxySINR);
+            if strlength(strtrim(decoderTruthProxySource)) > 0
+                widebandSINRSource = strtrim(decoderTruthProxySource);
+            else
+                widebandSINRSource = "post_equalization_evm_proxy";
+            end
+            widebandSINRValueRole = "derived_proxy";
+        elseif isfinite(largeScaleSINR)
+            estimatedSINR = largeScaleSINR;
+            widebandSINRSource = "large_scale_interference_budget_preview";
+            widebandSINRValueRole = "derived_preview";
+        elseif isfinite(receiverHestSINR)
+            estimatedSINR = receiverHestSINR;
+            if strlength(strtrim(receiverHestSource)) > 0
+                widebandSINRSource = strtrim(receiverHestSource);
+            else
+                widebandSINRSource = "receiver_hest_reference_signal_measurement";
+            end
+            widebandSINRValueRole = "estimated_diagnostic";
         end
         configuredSNR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ConfiguredSNR_dB", state.CurrentSNR_dB));
         appliedLargeScaleGain = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AppliedLargeScaleGain_dB", NaN));
@@ -1500,8 +1528,8 @@ methods(Static, Access=private)
         r.CSI_RSRP_dB = double(csiRSRP);
         r.CSI_RSRPSource = char(csiRSRPSource);
         r.AppliedLargeScaleGain_dB = double(appliedLargeScaleGain);
-        r.RSRPSource = "large_scale_serving_reference_signal";
-        r.ServingRSRPSource = "large_scale_serving_reference_signal";
+        r.RSRPSource = "large_scale_wideband_serving_power";
+        r.ServingRSRPSource = "large_scale_wideband_serving_power";
         r.WidebandSINRSource = char(widebandSINRSource);
         r.WidebandSINRValueRole = char(widebandSINRValueRole);
         r.InterferenceMode = char(interferenceMode);
@@ -1739,12 +1767,12 @@ methods(Static, Access=private)
             if ismember("ServingRSRPSource", string(servingT.Properties.VariableNames))
                 r.ServingRSRPSource = string(servingT.ServingRSRPSource(lastIdx));
             else
-                r.ServingRSRPSource = "large_scale_serving_reference_signal";
+                r.ServingRSRPSource = "large_scale_wideband_serving_power";
             end
             if ismember("RSRPSource", string(servingT.Properties.VariableNames))
                 r.RSRPSource = string(servingT.RSRPSource(lastIdx));
             else
-                r.RSRPSource = "large_scale_serving_reference_signal";
+                r.RSRPSource = "large_scale_wideband_serving_power";
             end
             if ismember("WidebandSINRSource", string(servingT.Properties.VariableNames))
                 r.WidebandSINRSource = string(servingT.WidebandSINRSource(lastIdx));
@@ -1819,17 +1847,18 @@ methods(Static, Access=private)
     end
 
     function slots = resolveCSIFeedbackSlots(cfg)
+        minNRProcessingSlots = 4;
         explicitSlots = double(sixgr.util.structGet(cfg, "phy.csi.feedbackDelaySlots", NaN));
         if isfinite(explicitSlots) && explicitSlots >= 0
-            slots = round(explicitSlots);
+            slots = max(minNRProcessingSlots, round(explicitSlots));
             return;
         end
         delayModel = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.delayModel", "baseline")));
         switch delayModel
             case {"zero","none","instant","immediate"}
-                slots = 0;
+                slots = minNRProcessingSlots;
             otherwise
-                slots = 1;
+                slots = minNRProcessingSlots;
         end
     end
 
@@ -1900,10 +1929,9 @@ methods(Static, Access=private)
         cellState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CellAcquisitionState", ueIdx, "unknown");
         accessState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "AccessState", ueIdx, "not_attempted");
         srsState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "SRSValidityState", ueIdx, "unknown");
-        csiState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_fallback");
+        csiState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_csi_unavailable");
         controlEligible = sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "ControlEligibility", ueIdx, true);
         srsAgeSlots = sixgr.truth.CoupledTruthRuntime.srsAgeSlots(state, ueIdx);
-        bootstrapSource = lower(strtrim(string(sixgr.util.structGet(feedback, "BootstrapCQISource", ""))));
         if direction == "UL" && logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false)) && ...
                 ~(srsState == "valid" && isfinite(srsAgeSlots))
             feedback.Valid = false;
@@ -1914,34 +1942,34 @@ methods(Static, Access=private)
             feedback.MCSIndex = 0;
             feedback.Modulation = "QPSK";
             feedback.TargetCodeRate = 0.12;
-            feedback.RI = max(1, round(layersCfg));
+            feedback.RI = 1;
         end
         schedulingEligible = sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, direction);
         schedulerUsesCQITable = sixgr.truth.CoupledTruthRuntime.schedulerUsesCQITableForDirection(state.CfgMobility, direction);
+        feedbackValid = logical(sixgr.util.structGet(feedback, "Valid", false));
         feedbackMCSIndex = double(sixgr.util.structGet(feedback, "MCSIndex", NaN));
+        schedulerCQI = double(sixgr.util.structGet(feedback, "CQI", NaN));
+        schedulerModulation = char(string(sixgr.util.structGet(feedback, "Modulation", "")));
+        schedulerTargetCodeRate = double(sixgr.util.structGet(feedback, "TargetCodeRate", NaN));
         schedulerMCSIndex = double(feedbackMCSIndex);
         schedulerMCSAuthority = "explicit_fixed_override";
         if logical(schedulerUsesCQITable)
             schedulerMCSIndex = NaN;
-            if ~logical(sixgr.util.structGet(feedback, "Valid", false))
-                if strlength(bootstrapSource) > 0 && isfinite(double(sixgr.util.structGet(feedback, "CQI", NaN))) && ...
-                        double(sixgr.util.structGet(feedback, "CQI", NaN)) > 0
-                    schedulerMCSAuthority = char(bootstrapSource);
-                else
-                    % Before the first real CSI report is available, do not
-                    % label the scheduler input as feedback-derived. The
-                    % bootstrap operating point is an explicit conservative lab
-                    % default that prevents large-scale preview SINR from being
-                    % mistaken for measured CSI.
-                    schedulerMCSAuthority = "bootstrap_cqi_conservative_lab_default";
-                end
+            if ~feedbackValid
+                % Before the first real CSI report is available, keep any
+                % large-scale runtime preview diagnostic-only. Scheduler AMC
+                % must not consume non-measured preview CQI as live feedback.
+                schedulerCQI = 0;
+                schedulerModulation = "";
+                schedulerTargetCodeRate = NaN;
+                schedulerMCSAuthority = "bootstrap_cqi_conservative_lab_default";
             elseif isfinite(feedbackMCSIndex)
                 schedulerMCSAuthority = "feedback_cqi_derived_reference";
             else
                 schedulerMCSAuthority = "runtime_cqi_path_without_explicit_mcs_override";
             end
         elseif ~isfinite(schedulerMCSIndex)
-            schedulerMCSAuthority = "configured_fixed_fallback";
+            schedulerMCSAuthority = "configured_fixed_default";
         end
         ueState = struct();
         hasTrafficDemand = logical((queueBytes > 0) || hasRetx);
@@ -1956,7 +1984,7 @@ methods(Static, Access=private)
         ueState.UEIndex = double(ueIdx);
         ueState.ServingCell = double(servingCell);
         ueState.RNTI = double(rnti);
-        ueState.CQI = double(feedback.CQI);
+        ueState.CQI = double(schedulerCQI);
         ueState.RI = max(1, round(double(sixgr.util.structGet(feedback, "RI", layersCfg))));
         ueState.PMI = double(sixgr.util.structGet(feedback, "PMI", NaN));
         ueState.CRI = double(sixgr.util.structGet(feedback, "CRI", NaN));
@@ -1964,9 +1992,9 @@ methods(Static, Access=private)
         ueState.MCSIndex = double(schedulerMCSIndex);
         ueState.FeedbackMCSIndex = double(feedbackMCSIndex);
         ueState.MCSIndexAuthority = char(string(schedulerMCSAuthority));
-        ueState.Modulation = char(string(sixgr.util.structGet(feedback, "Modulation", "")));
-        ueState.TargetCodeRate = double(sixgr.util.structGet(feedback, "TargetCodeRate", NaN));
-        ueState.FeedbackValid = logical(sixgr.util.structGet(feedback, "Valid", false));
+        ueState.Modulation = char(string(schedulerModulation));
+        ueState.TargetCodeRate = double(schedulerTargetCodeRate);
+        ueState.FeedbackValid = logical(feedbackValid);
         ueState.ControlEligible = logical(controlEligible);
         ueState.SchedulingEligible = logical(schedulingEligible);
         ueState.CellAcquisitionState = char(cellState);
@@ -2046,8 +2074,14 @@ methods(Static, Access=private)
         nUsers = double(sixgr.util.structGet(state, "NumUsers", 0));
         controlEligibility = true(max(0, nUsers), 1);
         schedulingEligibility = true(max(0, nUsers), 1);
+        coverageEligibility = true(max(0, nUsers), 1);
+        coverageOutageState = repmat("not_evaluated", max(0, nUsers), 1);
         servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(nUsers, 1)));
         srsRequired = logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false));
+        coverageGuardEnabled = logical(sixgr.util.structGet(state.CfgMobility, "mac.scheduler.coverageOutageGuardEnabled", ...
+            sixgr.util.structGet(state.CfgMobility, "system.scheduler.coverageOutageGuardEnabled", false)));
+        minSchedulingSINR_dB = double(sixgr.util.structGet(state.CfgMobility, "mac.scheduler.minSchedulingSINR_dB", ...
+            sixgr.util.structGet(state.CfgMobility, "system.scheduler.minSchedulingSINR_dB", -5)));
         for ueIdx = 1:nUsers
             pbchRequired = logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false));
             prachRequired = logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false));
@@ -2069,17 +2103,39 @@ methods(Static, Access=private)
                 end
                 eligible = eligible && sixgr.truth.CoupledTruthRuntime.trsEligibleForServingCell(state, servingCell);
             end
+            if coverageGuardEnabled
+                servingCell = NaN;
+                if ueIdx <= numel(servingVec)
+                    servingCell = double(servingVec(ueIdx));
+                end
+                rxPowerCells = double(sixgr.util.structGet(state.LargeScaleState, "RxPower_dBm", []));
+                sinr_dB = NaN;
+                if ueIdx <= size(rxPowerCells, 1)
+                    sinr_dB = sixgr.truth.CoupledTruthRuntime.estimateWidebandSINR( ...
+                        rxPowerCells(ueIdx, :), servingCell, state.Bandwidth_Hz, state.NoiseFigure_dB);
+                end
+                coverageEligibility(ueIdx) = isfinite(sinr_dB) && sinr_dB >= minSchedulingSINR_dB;
+                if coverageEligibility(ueIdx)
+                    coverageOutageState(ueIdx) = "eligible";
+                elseif isfinite(sinr_dB)
+                    coverageOutageState(ueIdx) = "outage_below_min_sinr";
+                else
+                    coverageOutageState(ueIdx) = "outage_sinr_unavailable";
+                end
+            else
+                coverageOutageState(ueIdx) = "guard_disabled";
+            end
             controlEligibility(ueIdx) = logical(eligible);
-            schedulingEligibility(ueIdx) = logical(eligible && (~srsRequired || srsState == "valid"));
+            schedulingEligibility(ueIdx) = logical(eligible && coverageEligibility(ueIdx) && (~srsRequired || srsState == "valid"));
         end
         state.ControlEligibility = controlEligibility;
         state.SchedulingEligibility = schedulingEligibility;
+        state.CoverageEligibility = coverageEligibility;
+        state.CoverageOutageState = coverageOutageState;
     end
 
     function state = refreshSRSFreshnessImpl(state)
-        if ~logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false))
-            return;
-        end
+        srsRequired = logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false));
         maxAgeSlots = max(0, round(double(sixgr.util.structGet(state.ControlGating, "SRSMaxAgeSlots", 0))));
         nUsers = double(sixgr.util.structGet(state, "NumUsers", 0));
         currentSlot = double(sixgr.util.structGet(state, "CurrentSlot", 0));
@@ -2092,14 +2148,17 @@ methods(Static, Access=private)
             else
                 if isfinite(lastSuccess)
                     nextState = "stale";
-                    nextCSI = "stale_srs_fallback";
-                else
+                    nextCSI = "stale_srs_not_usable";
+                elseif srsRequired
                     nextState = "invalid";
                     nextCSI = "no_successful_srs";
+                else
+                    nextState = "not_required";
+                    nextCSI = "not_required";
                 end
                 state.SRSValidityState(ueIdx) = nextState;
                 state.CSIValidityState(ueIdx) = nextCSI;
-                if prevState ~= nextState
+                if srsRequired && prevState ~= nextState
                     state.SRSInvalidEventCount(ueIdx) = double(state.SRSInvalidEventCount(ueIdx)) + 1;
                 end
             end
@@ -2195,12 +2254,45 @@ methods(Static, Access=private)
             state.SRSValidityState(ueIdx) = "valid";
             state.CSIValidityState(ueIdx) = "fresh_srs";
             state.LastSuccessfulSRSSlotByUE(ueIdx) = double(slotIdx);
+            state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx);
         else
             state.SRSValidityState(ueIdx) = "invalid";
-            state.CSIValidityState(ueIdx) = "invalid_srs_fallback";
+            state.CSIValidityState(ueIdx) = "invalid_srs_not_usable";
             state.SRSInvalidEventCount(ueIdx) = double(state.SRSInvalidEventCount(ueIdx)) + 1;
         end
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
+    end
+
+    function state = updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx)
+        ri = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["RIEstimate","RankEstimate","EstimatedRI","RI"], NaN);
+        tpmi = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["TPMIEstimate","EstimatedTPMI","TPMI","PMI"], NaN);
+        condDb = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["SRSConditionNumber_dB","ConditionNumber_dB"], NaN);
+        if ~(isfinite(ri) || isfinite(tpmi) || isfinite(condDb))
+            return;
+        end
+        if ueIdx <= numel(state.LatestULFeedback)
+            latest = state.LatestULFeedback(ueIdx);
+        else
+            latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
+        end
+        latest.Valid = true;
+        latest.Direction = "UL";
+        latest.Slot = double(slotIdx);
+        if isfinite(ri)
+            latest.RI = double(max(1, round(ri)));
+        end
+        if isfinite(tpmi)
+            latest.PMI = double(round(tpmi));
+        end
+        servingCell = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["ServingCell","BaseStationID","CellID"], NaN);
+        if isfinite(servingCell)
+            latest.ServingCell = double(servingCell);
+        end
+        state.LatestULFeedback(ueIdx) = latest;
     end
 
     function state = applyTRSTrialImpl(state, servingCell, trialT)
@@ -2293,10 +2385,15 @@ methods(Static, Access=private)
             outcome = "trs_runtime_observation_failed";
             channelFreshness = "invalid_trs_runtime_observation";
         end
-        if isfinite(estDopplerHz)
+        cfoAvailable = isfinite(estimatedCFOHz);
+        if isfinite(estDopplerHz) && cfoAvailable
+            frequencyState = "doppler_and_cfo_estimates_updated_from_trs";
+        elseif cfoAvailable
+            frequencyState = "cfo_estimate_updated_from_trs";
+        elseif isfinite(estDopplerHz)
             frequencyState = "doppler_estimate_updated_from_trs";
         else
-            frequencyState = "not_updated_doppler_estimate_unavailable";
+            frequencyState = "not_updated_frequency_estimate_unavailable";
         end
         timingAvailable = isfinite(timingEstimate);
         if timingAvailable
@@ -2304,8 +2401,6 @@ methods(Static, Access=private)
         else
             timingState = "not_updated_timing_estimate_unavailable";
         end
-        cfoAvailable = isfinite(estimatedCFOHz);
-
         tracked = prev;
         tracked.ServingCell = double(servingCell);
         tracked.SourceSignal = "TRS";
@@ -2429,6 +2524,24 @@ methods(Static, Access=private)
         end
         state = sixgr.truth.CoupledTruthRuntime.updateGrantControlTrace(state, grant, direction);
         allowExecution = logical(ok);
+    end
+
+    function [state, grant] = blockPDCCHGrantTrialImpl(state, grant, direction, reason)
+        direction = upper(string(direction));
+        if nargin < 4 || strlength(strtrim(string(reason))) == 0
+            reason = "control_blocked_no_pdcch_runtime_evidence";
+        end
+        ueIdx = double(sixgr.util.structGet(grant, "UEIndex", NaN));
+        grant.PDCCHGatingActive = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
+        grant.ControlDecodeOk = false;
+        grant.GrantControlState = char(string(reason));
+        grant.ControlEligible = false;
+        if isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(state.NumUsers)
+            state.LastPDCCHStatus(ueIdx) = string(reason);
+            state.PDCCHFailureCount(ueIdx) = double(state.PDCCHFailureCount(ueIdx)) + 1;
+            state.GrantsBlockedByGatingCount(ueIdx) = double(state.GrantsBlockedByGatingCount(ueIdx)) + 1;
+        end
+        state = sixgr.truth.CoupledTruthRuntime.updateGrantControlTrace(state, grant, direction);
     end
 
     function state = recordInitialAccessGrantCompletion(state, ueIdx, direction, row)
@@ -2650,7 +2763,14 @@ methods(Static, Access=private)
             feedback.TargetCodeRate = double(targetCodeRate);
             feedback.MCSIndex = double(mcsIndex);
         end
-        feedback.RI = max(1, round(rankHint));
+        if schedulerUsesCQITable && ~logical(sixgr.util.structGet(feedback, "Valid", false))
+            % Before measured RI is available, keep bootstrap rank
+            % conservative and explicit instead of inheriting configured
+            % multi-layer study settings as if they were feedback.
+            feedback.RI = 1;
+        else
+            feedback.RI = max(1, round(rankHint));
+        end
         feedback.PMI = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackPMI(state.CfgMobility, direction, feedback.RI));
         feedback.CRI = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackCRI(state.CfgMobility));
     end
@@ -2661,13 +2781,17 @@ methods(Static, Access=private)
             "large_scale_preview", ...
             "large_scale_preview_lab_default", ...
             "large_scale_preview_cqi_lab_default"]);
+        previewSINR_dB = NaN;
+        previewCQI = NaN;
+        previewMCSIndex = NaN;
+        previewModulation = "";
+        previewTargetCodeRate = NaN;
 
         if useLargeScalePreview
             servingCell = NaN;
             if ueIdx >= 1 && ueIdx <= numel(state.CurrentServingIdx)
                 servingCell = double(state.CurrentServingIdx(ueIdx));
             end
-            previewSINR_dB = NaN;
             try
                 interferenceMode = sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(state.CfgMobility, state.MultiUser);
                 previewSINR_dB = double(sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR( ...
@@ -2680,15 +2804,9 @@ methods(Static, Access=private)
                 previewCQI = double(sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN));
                 if isfinite(previewCQI) && previewCQI > 0
                     [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(previewCQI, "", NaN, state.CfgMobility, direction);
-                    feedback.CQI = double(previewCQI);
-                    feedback.SINR_dB = NaN;
-                    feedback.Modulation = char(string(modStr));
-                    feedback.TargetCodeRate = double(targetCodeRate);
-                    feedback.MCSIndex = double(mcsIndex);
-                    feedback.BootstrapCQISource = "bootstrap_large_scale_preview_cqi_lab_default";
-                    feedback.PreviewSINR_dB = double(previewSINR_dB);
-                    feedback.RI = max(1, round(rankHint));
-                    return;
+                    previewMCSIndex = double(mcsIndex);
+                    previewModulation = char(string(modStr));
+                    previewTargetCodeRate = double(targetCodeRate);
                 end
             end
         end
@@ -2706,8 +2824,17 @@ methods(Static, Access=private)
             feedback.MCSIndex = 0;
         end
         feedback.BootstrapCQISource = "bootstrap_cqi_conservative_lab_default";
-        feedback.PreviewSINR_dB = NaN;
-        feedback.RI = max(1, round(rankHint));
+        feedback.PreviewSINR_dB = double(previewSINR_dB);
+        feedback.PreviewCQI = double(previewCQI);
+        feedback.PreviewMCSIndex = double(previewMCSIndex);
+        feedback.PreviewModulation = char(string(previewModulation));
+        feedback.PreviewTargetCodeRate = double(previewTargetCodeRate);
+        if isfinite(previewCQI) && previewCQI > 0
+            feedback.PreviewCQISource = "bootstrap_large_scale_preview_diagnostic_only";
+        else
+            feedback.PreviewCQISource = "";
+        end
+        feedback.RI = 1;
     end
 
     function pmi = resolveFallbackPMI(cfg, direction, rankHint)
@@ -3652,13 +3779,15 @@ methods(Static, Access=private)
             rows(ueIdx).AccessState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "AccessState", ueIdx, "not_attempted"));
             rows(ueIdx).LastPDCCHStatus = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "LastPDCCHStatus", ueIdx, "not_attempted"));
             rows(ueIdx).SRSValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "SRSValidityState", ueIdx, "unknown"));
-            rows(ueIdx).CSIValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_fallback"));
+            rows(ueIdx).CSIValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_csi_unavailable"));
             rows(ueIdx).TRSValidityState = char(sixgr.truth.CoupledTruthRuntime.trsStateForUE(state, ueIdx));
             rows(ueIdx).ControlEligibility = logical(sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "ControlEligibility", ueIdx, false));
             rows(ueIdx).SharedSchedulingEligibility = logical(sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "SchedulingEligibility", ueIdx, false));
             rows(ueIdx).DLSchedulingEligibility = logical(sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, "DL"));
             rows(ueIdx).ULSchedulingEligibility = logical(sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, "UL"));
             rows(ueIdx).SchedulingEligibility = logical(sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, currentDirection));
+            rows(ueIdx).CoverageEligibility = logical(sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "CoverageEligibility", ueIdx, true));
+            rows(ueIdx).CoverageOutageState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CoverageOutageState", ueIdx, "not_evaluated"));
             rows(ueIdx).SchedulingBlockedBySRS = logical(rows(ueIdx).ControlEligibility && ~rows(ueIdx).SchedulingEligibility && ...
                 sixgr.truth.CoupledTruthRuntime.srsGatingActiveForDirection(state, currentDirection));
             rows(ueIdx).SRSValid = strcmpi(rows(ueIdx).SRSValidityState, "valid");
@@ -3850,6 +3979,8 @@ methods(Static, Access=private)
 
         nCells = size(sixgr.util.structGet(layoutStruct, "bs.pos_m", zeros(0, 3)), 1);
         bsRuntime = repmat(struct(), max(0, nCells), 1);
+        bsTiltDeg = double(sixgr.util.structGet(cfg, "antenna.bs.tilt_deg", ...
+            sixgr.util.structGet(cfg, "scenario.bs.mechanicalTilt_deg", 0)));
         for cellIdx = 1:nCells
             meta = sixgr.truth.CoupledTruthRuntime.runtimeAntennaMetadata(bsTemplate, ...
                 "BS", cellIdx, double(cellIdx), NaN, ...
@@ -3858,6 +3989,9 @@ methods(Static, Access=private)
                 double(sixgr.util.structGet(layoutStruct, "bs.pos_m", zeros(nCells, 3))), ...
                 double(sixgr.util.structGet(cfg, "phy.nTxAnt", bsTemplate.Nant)), ...
                 char(sixgr.util.structGet(cfg, "antenna.bs.source", "runtime_default")));
+            if isfinite(bsTiltDeg)
+                meta.Tilt_deg = double(bsTiltDeg);
+            end
             bsRuntime(cellIdx).Antenna = bsTemplate;
             bsRuntime(cellIdx).Metadata = meta;
             rows(end + 1, 1) = meta; %#ok<AGROW>
@@ -4923,6 +5057,25 @@ methods(Static, Access=private)
         T.(char(name)) = current;
     end
 
+    function T = setStringValueAt(T, name, idx, value)
+        n = height(T);
+        idx = round(double(idx));
+        if ~(idx >= 1 && idx <= n)
+            return;
+        end
+        field = char(name);
+        if ismember(string(name), string(T.Properties.VariableNames))
+            current = reshape(string(T.(field)), [], 1);
+            if numel(current) ~= n
+                current = repmat("", n, 1);
+            end
+        else
+            current = strings(n, 1);
+        end
+        current(idx) = string(value);
+        T.(field) = current;
+    end
+
     function T = setLogicalColumn(T, name, value)
         n = height(T);
         if isscalar(value)
@@ -5099,7 +5252,10 @@ methods(Static, Access=private)
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "MCSIndex", NaN, "TargetCodeRate", NaN, ...
             "Modulation", "", "ServingCell", NaN, ...
-            "BootstrapCQISource", "", "PreviewSINR_dB", NaN);
+            "BootstrapCQISource", "", "PreviewSINR_dB", NaN, ...
+            "PreviewCQI", NaN, "PreviewMCSIndex", NaN, ...
+            "PreviewModulation", "", "PreviewTargetCodeRate", NaN, ...
+            "PreviewCQISource", "");
     end
 
     function row = emptyReceiverTrackingStateRow()
@@ -5200,6 +5356,7 @@ methods(Static, Access=private)
             "SRSValidityState", "", "CSIValidityState", "", "TRSValidityState", "", ...
             "SharedSchedulingEligibility", false, "DLSchedulingEligibility", false, "ULSchedulingEligibility", false, ...
             "SchedulingEligibility", false, "ControlEligibility", false, "SchedulingBlockedBySRS", false, ...
+            "CoverageEligibility", true, "CoverageOutageState", "", ...
             "SRSValid", false, "SRSAgeSlots", NaN, "TrackingEligibility", false, "TRSAgeSlots", NaN, ...
             "LastSuccessfulPBCHSlot", NaN, "LastSuccessfulPRACHSlot", NaN, ...
             "LastSuccessfulPDCCHSlot", NaN, "LastSuccessfulPUCCHSlot", NaN, "LastSuccessfulSRSSlot", NaN, ...
@@ -5647,39 +5804,47 @@ methods(Static, Access=private)
         traceT.CombinedDecodeOK(idx) = decodeOk;
         traceT.GrantExecutedFlag(idx) = true;
         traceT.RuntimeStateUpdated(idx) = true;
-        traceT.RuntimeStateConsumer(idx) = "HARQEntity.onFeedback";
+        traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "RuntimeStateConsumer", idx, "HARQEntity.onFeedback");
         traceT.ControlStateChanged(idx) = decodeOk;
         traceT.StateChangeApplied(idx) = decodeOk;
         if decodeOk
-            traceT.PUCCHGrantState(idx) = "waveform_observed_feedback_applied";
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "PUCCHGrantState", idx, "waveform_observed_feedback_applied");
         else
-            traceT.PUCCHGrantState(idx) = "waveform_observed_feedback_decode_failed";
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "PUCCHGrantState", idx, "waveform_observed_feedback_decode_failed");
         end
         if ~(istable(trialRow) && height(trialRow) >= 1)
-            traceT.Status(idx) = string(sixgr.truth.CoupledTruthRuntime.ternaryString(decodeOk, "PASS", "FAIL"));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "Status", idx, ...
+                sixgr.truth.CoupledTruthRuntime.ternaryString(decodeOk, "PASS", "FAIL"));
         else
             traceT.BitsCompared(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "BitsCompared", NaN));
             traceT.BitErrors(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "BitErrors", NaN));
             traceT.DetectionMetric(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "DetectionMetric", NaN));
             traceT.ConfiguredSNR_dB(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "ConfiguredSNR_dB", traceT.ConfiguredSNR_dB(idx)));
             traceT.AppliedAWGNSNR_dB(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "AppliedAWGNSNR_dB", NaN));
-            traceT.ChannelModel(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "ChannelModel", ""));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "ChannelModel", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "ChannelModel", ""));
             traceT.DopplerHz(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "DopplerHz", NaN));
             traceT.TimingEstimateUsed(idx) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(trialRow, "TimingEstimateUsed", false));
             traceT.UseIdealTimingSync(idx) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(trialRow, "UseIdealTimingSync", false));
-            traceT.InterferenceMode(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "InterferenceMode", ""));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "InterferenceMode", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "InterferenceMode", ""));
             traceT.InterferenceContributorCount(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "InterferenceContributorCount", 0));
             traceT.InterferenceAggregatedRxPower_dBm(idx) = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "InterferenceAggregatedRxPower_dBm", NaN));
-            traceT.InterferencePowerSource(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "InterferencePowerSource", ""));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "InterferencePowerSource", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "InterferencePowerSource", ""));
             traceT.FullInterfererChannelTruthUsed(idx) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(trialRow, "FullInterfererChannelTruthUsed", false));
             traceT.UCIContentMatch(idx) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(trialRow, "UCIContentMatch", false));
-            traceT.Status(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "Status", sixgr.truth.CoupledTruthRuntime.ternaryString(decodeOk, "PASS", "FAIL")));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "Status", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "Status", sixgr.truth.CoupledTruthRuntime.ternaryString(decodeOk, "PASS", "FAIL")));
             traceT.Crash(idx) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(trialRow, "Crash", false));
-            traceT.CrashSource(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "CrashSource", ""));
-            traceT.CrashMessage(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "CrashMessage", ""));
-            traceT.Notes(idx) = string(sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "Notes", traceT.Notes(idx)));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "CrashSource", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "CrashSource", ""));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "CrashMessage", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "CrashMessage", ""));
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "Notes", idx, ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(trialRow, "Notes", traceT.Notes(idx)));
             if traceT.Crash(idx)
-                traceT.PUCCHGrantState(idx) = "waveform_execution_crashed";
+                traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "PUCCHGrantState", idx, "waveform_execution_crashed");
             end
         end
         state.PUCCHGrantTraceTable = traceT;

@@ -11,6 +11,7 @@ cleanupTmp = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>
 sixgr.util.ensureDir(tmpPath);
 
 try
+    T = sixgr.util.pruneStructurallyBlankTableColumns(T);
     try
         writetable(T, tmpPath, "Delimiter", ",", "QuoteStrings", true);
     catch

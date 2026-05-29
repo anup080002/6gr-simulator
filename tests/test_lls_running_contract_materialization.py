@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -39,6 +40,34 @@ def main() -> None:
             "byte_size": 4096,
         },
     ]
+    artifacts_with_current_coverage = [
+        *artifacts,
+        {
+            "artifact_id": 13,
+            "logical_path": "reports/csv/contract_materialization_coverage.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+            "byte_size": 1024,
+        },
+    ]
+    assert not dash.contract_materialization_is_current(
+        artifacts_with_current_coverage,
+        run_status="running",
+    ), "running runs must refresh contract materialization because source tables can grow after early coverage rows"
+    original_fetch_artifact_meta = dash.fetch_artifact_meta
+    original_source_high_watermark = dash.contract_materializer._source_artifact_high_watermark
+    try:
+        dash.fetch_artifact_meta = lambda _artifact_id: {
+            "metadata_json": json.dumps({"source_artifact_high_watermark": 10})
+        }
+        dash.contract_materializer._source_artifact_high_watermark = lambda _artifacts, _db_factory: 11
+        assert not dash.contract_materialization_is_current(
+            artifacts_with_current_coverage,
+            run_status="aborted_live_integrity_failure",
+        ), "terminal/aborted runs must rematerialize when newer source artifacts arrived after the manifest"
+    finally:
+        dash.fetch_artifact_meta = original_fetch_artifact_meta
+        dash.contract_materializer._source_artifact_high_watermark = original_source_high_watermark
 
     calls: list[tuple[int, int]] = []
     original = {

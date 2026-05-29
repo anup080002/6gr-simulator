@@ -25,6 +25,8 @@ refInd = uint32([1; 9; 17]);
 rxGrid(double(refInd)) = [1+1j; 2; 0.5-0.5j];
 refSym = ones(numel(refInd), 1);
 expectedMeasuredRSRP_dB = 10 * log10(mean(abs(double(rxGrid(double(refInd)))).^2));
+expectedRSSI_dB = 10 * log10(sum(abs(double(rxGrid(:, 1, :))).^2, "all"));
+expectedRSRQ_dB = 10 * log10(2 * 10^(expectedMeasuredRSRP_dB/10) / 10^(expectedRSSI_dB/10));
 
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "type1");
@@ -60,6 +62,12 @@ assert(strcmpi(string(csiMeasured.RSRPSource), "received_reference_signal_power"
     "CSI feedback must label measured RSRP honestly.");
 assert(strcmpi(string(infoMeasured.RSRPSource), "received_reference_signal_power"), ...
     "CSI feedback info must retain the measured-RSRP provenance.");
+assert(abs(double(csiMeasured.RSSI_dB) - expectedRSSI_dB) < 1e-9 && ...
+    strcmpi(string(csiMeasured.RSSISource), "received_signal_strength_indicator_measurement_bandwidth"), ...
+    "CSI feedback must derive RSSI from the received measurement bandwidth.");
+assert(abs(double(csiMeasured.RSRQ_dB) - expectedRSRQ_dB) < 1e-9 && ...
+    strcmpi(string(csiMeasured.RSRQSource), "ts38215_n_times_rsrp_over_rssi"), ...
+    "CSI feedback must compute RSRQ as N times RSRP over RSSI.");
 
 ulMetricNoRef = sixgr.phy.ul.measureULLinkState(Hest, 0.02, cfg);
 assert(~isfinite(ulMetricNoRef.CQI), ...
@@ -71,6 +79,8 @@ ulMetricMeasured = sixgr.phy.ul.measureULLinkState(Hest, 0.02, cfg, ...
     "ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym);
 assert(isfinite(ulMetricMeasured.CQI), ...
     "UL CQI must be finite when measured UL reference-signal SINR is available.");
+assert(isfinite(ulMetricMeasured.CSI_RSSI_dB) && isfinite(ulMetricMeasured.CSI_RSRQ_dB), ...
+    "UL link-state metrics must include RSSI and RSRQ when measured reference evidence is available.");
 
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "type2_mu_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", "type2");
@@ -94,7 +104,7 @@ cfgRun.phy.csirs.rowNumber = 1;
 cfgRun.phy.nRxAnt = 1;
 dl = sixgr.link.runDLPDSCHThroughput(cfgRun, "NumFrames", 2, "SNR_dB", 20);
 assert(istable(dl.TrialTable), "DL runtime must return a trial table.");
-assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex"], string(dl.TrialTable.Properties.VariableNames))), ...
+assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex","CSI_RSSI_dB","CSI_RSRQ_dB"], string(dl.TrialTable.Properties.VariableNames))), ...
     "DL trial tables must export CSI runtime fields.");
 assert(istable(dl.CSIRSTrialTable) && height(dl.CSIRSTrialTable) == 2, ...
     "DL runtime must emit one dedicated CSI-RS runtime row per waveform trial when CSI-RS is enabled.");
@@ -111,7 +121,7 @@ assert(istable(dlNoCSIRS.CSIRSTrialTable) && isempty(dlNoCSIRS.CSIRSTrialTable),
 
 ul = sixgr.link.runULPUSCHThroughput(cfgRun, "NumFrames", 2, "SNR_dB", 20);
 assert(istable(ul.TrialTable), "UL runtime must return a trial table.");
-assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex"], string(ul.TrialTable.Properties.VariableNames))), ...
+assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex","CSI_RSSI_dB","CSI_RSRQ_dB"], string(ul.TrialTable.Properties.VariableNames))), ...
     "UL trial tables must export CSI runtime fields.");
 
 ok = true;

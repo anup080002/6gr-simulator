@@ -1192,9 +1192,12 @@ try
     else
         prach.DuplexMode = "TDD";
     end
-    centerFrequencyHz = double(localOptionalStructValue(cfg, "frequency.center_frequency_hz", ...
-        localOptionalStructValue(cfg, "random_access.carrier_frequency_hz", 4e9)));
-    if isfinite(centerFrequencyHz) && centerFrequencyHz >= 24.25e9
+    configuredFrequencyRange = upper(strtrim(string(localOptionalStructValue(cfg, "random_access.frequency_range", ""))));
+    centerFrequencyHz = double(localOptionalStructValue(cfg, "random_access.carrier_frequency_hz", ...
+        localOptionalStructValue(cfg, "frequency.center_frequency_hz", 4e9)));
+    if configuredFrequencyRange == "FR1" || configuredFrequencyRange == "FR2"
+        prach.FrequencyRange = char(configuredFrequencyRange);
+    elseif isfinite(centerFrequencyHz) && centerFrequencyHz >= 24.25e9
         prach.FrequencyRange = "FR2";
     else
         prach.FrequencyRange = "FR1";
@@ -1206,12 +1209,14 @@ catch ME
         "random_access configuration in %s is not toolbox-compatible for configuration_index=%g and subcarrier_spacing_khz=%g: %s", ...
         localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(ME.message));
 end
-carrierScs = double(localOptionalStructValue(cfg, "frame.scs_khz", ...
-    localOptionalStructValue(cfg, "random_access.carrier_scs_khz", subcarrierSpacing)));
-nRb = double(localOptionalStructValue(cfg, "frequency.n_size_grid", ...
-    localOptionalStructValue(cfg, "random_access.n_size_grid", localOptionalStructValue(cfg, "phy.carrier.NSizeGrid", 273))));
+carrierScs = double(localOptionalStructValue(cfg, "random_access.carrier_scs_khz", ...
+    localOptionalStructValue(cfg, "frame.scs_khz", subcarrierSpacing)));
+nRb = double(localOptionalStructValue(cfg, "random_access.n_size_grid", ...
+    localOptionalStructValue(cfg, "phy.carrier.NSizeGrid", localOptionalStructValue(cfg, "frequency.n_size_grid", 273))));
+numPrachOccasions = round(double(localOptionalStructValue(cfg, "random_access.num_prach_occasions", 4)));
 scanSlots = round(double(localOptionalStructValue(cfg, "run_control.total_slots", localOptionalStructValue(cfg, "simulation.n_slots", 40))));
-scanSlots = max(40, scanSlots);
+scanSlots = max(scanSlots, max(80, numPrachOccasions * 20));
+scanSlots = max(1, scanSlots);
 [activeSlot, effectiveFormat] = localFindMaterializedPrachOccasion(prach, carrierScs, nRb, scanSlots);
 if ~isfinite(activeSlot)
     error("sixgr:lls6g:config:NoMaterializedPrachOccasion", ...
