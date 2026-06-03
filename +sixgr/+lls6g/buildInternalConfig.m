@@ -91,6 +91,25 @@ cfg.scenario.profileName = char(profileName);
 cfg.run.scenario = char(propagationScenario);
 cfg.scenario.bs.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.scenario.bs.txPower_dBm = double(s.energy_efficiency.tx_power_dbm);
+bsHeight_m = localResolveFirstFiniteNumeric(s, ...
+    ["scenario.bs.height_m", ...
+     "scenario.tx.height_m", ...
+     "base_station.height_m", ...
+     "deployment_topology.bs_height_m"], NaN);
+if isfinite(bsHeight_m)
+    cfg = sixgr.util.structSet(cfg, "scenario.bs.height_m", double(bsHeight_m));
+    cfg = sixgr.util.structSet(cfg, "scenario.tx.height_m", double(bsHeight_m));
+end
+sectorAzimuths_deg = localGetNested(s, "scenario.sectorization.azimOffsets_deg", ...
+    localGetNested(s, "deployment_topology.sector_azimuths_deg", []));
+if ~isempty(sectorAzimuths_deg)
+    sectorAzimuths_deg = double(sectorAzimuths_deg(:).');
+    if any(~isfinite(sectorAzimuths_deg))
+        error("sixgr:lls6g:config:InvalidSectorAzimuths", ...
+            "scenario.sectorization.azimOffsets_deg must contain finite azimuth values in degrees.");
+    end
+    cfg = sixgr.util.structSet(cfg, "scenario.sectorization.azimOffsets_deg", sectorAzimuths_deg);
+end
 cfg.scenario.ue.nRxAnt = double(s.mimo.n_rx_ant);
 cfg.scenario.ue.nTxAnt = double(s.mimo.n_rx_ant);
 cfg.scenario.ue.noiseFigure_dB = double(localResolveUENoiseFigure_dB(s));

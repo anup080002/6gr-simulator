@@ -89,6 +89,8 @@ sections:
           - ul_srs_channelest
           - ul_lowpapr
       notes: {required: true, type: string}
+      bs: {required: false, type: struct, nested_rule: scenario_bs}
+      sectorization: {required: false, type: struct, nested_rule: scenario_sectorization}
       sweep: {required: false, type: struct}
       ai_benchmark: {required: false, type: struct}
       expected_outputs: {required: false, type: string_list}
@@ -970,6 +972,14 @@ sections:
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}
 nested_sections:
+  scenario_bs:
+    path: scenario.bs
+    parameters:
+      height_m: {required: false, type: number, min: 0}
+  scenario_sectorization:
+    path: scenario.sectorization
+    parameters:
+      azimOffsets_deg: {required: false, type: number_list, min_items: 1}
   scenario_sweep:
     path: scenario.sweep
     parameters:
