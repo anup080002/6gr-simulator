@@ -110,6 +110,15 @@ if ~isempty(sectorAzimuths_deg)
     end
     cfg = sixgr.util.structSet(cfg, "scenario.sectorization.azimOffsets_deg", sectorAzimuths_deg);
 end
+geometryArea_m = localGetNested(s, "scenario.geometry.area_m", []);
+if ~isempty(geometryArea_m)
+    geometryArea_m = double(geometryArea_m(:).');
+    if numel(geometryArea_m) ~= 2 || any(~isfinite(geometryArea_m)) || any(geometryArea_m <= 0)
+        error("sixgr:lls6g:config:InvalidScenarioArea", ...
+            "scenario.geometry.area_m must contain two positive finite dimensions in meters.");
+    end
+    cfg = sixgr.util.structSet(cfg, "scenario.geometry.area_m", geometryArea_m);
+end
 cfg.scenario.ue.nRxAnt = double(s.mimo.n_rx_ant);
 cfg.scenario.ue.nTxAnt = double(s.mimo.n_rx_ant);
 cfg.scenario.ue.noiseFigure_dB = double(localResolveUENoiseFigure_dB(s));

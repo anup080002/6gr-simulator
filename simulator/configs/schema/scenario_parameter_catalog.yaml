@@ -90,6 +90,7 @@ sections:
           - ul_lowpapr
       notes: {required: true, type: string}
       bs: {required: false, type: struct, nested_rule: scenario_bs}
+      geometry: {required: false, type: struct, nested_rule: scenario_geometry}
       sectorization: {required: false, type: struct, nested_rule: scenario_sectorization}
       sweep: {required: false, type: struct}
       ai_benchmark: {required: false, type: struct}
@@ -976,6 +977,10 @@ nested_sections:
     path: scenario.bs
     parameters:
       height_m: {required: false, type: number, min: 0}
+  scenario_geometry:
+    path: scenario.geometry
+    parameters:
+      area_m: {required: false, type: number_list, min_items: 2}
   scenario_sectorization:
     path: scenario.sectorization
     parameters:
