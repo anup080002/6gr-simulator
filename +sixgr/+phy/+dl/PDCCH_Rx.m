@@ -32,6 +32,7 @@ ip.addParameter('PDCCH', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('K', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.addParameter('ListLength', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
+ip.addParameter('NoiseOnlyWaveform', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.parse(varargin{:});
 opt = ip.Results;
@@ -91,8 +92,12 @@ else
 end
 
 % ---------------------- Timing estimation ----------------------
-% Use the first candidate DMRS for timing.
-% Some MATLAB versions expose multiple timing APIs; we keep it simple.
+% Known-location PDCCH can use its configured DM-RS for timing.  In blind
+% search, however, the first monitored candidate is not guaranteed to be the
+% transmitted candidate.  Applying timing from an arbitrary absent candidate
+% corrupts the whole slot before the real candidate is decoded, especially
+% for AL2/AL4 searches.  Blind mode therefore requires timing from an
+% external synchronization/tracking block unless explicitly enabled.
 rxWave = rxWaveform;
 
 sampleRateHz = opt.SampleRate_Hz;
@@ -100,21 +105,31 @@ if isempty(sampleRateHz)
     sampleRateHz = sixgr.util.structGet(cfg, 'phy.sampleRate_Hz', []);
 end
 
+allowBlindCandidateTiming = logical(sixgr.util.structGet(cfg, ...
+    'phy.pdcch.allowBlindCandidateTimingEstimate', ...
+    sixgr.util.structGet(cfg, 'phy.pdcch.blindTimingFromCandidateDMRS', false)));
+skipTimingEstimate = logical(blind) && ~allowBlindCandidateTiming;
 timingOffset = NaN;
-try
-    if isempty(sampleRateHz)
-        timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1});
-    else
-        timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1}, 'SampleRate', sampleRateHz);
+timingSource = "nrTimingEstimate_pdcch_dmrs";
+if ~skipTimingEstimate
+    try
+        if isempty(sampleRateHz)
+            timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1});
+        else
+            timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1}, 'SampleRate', sampleRateHz);
+        end
+    catch
+        % If timing estimation is unavailable, continue without a runtime correction.
+        timingOffset = NaN;
     end
-catch
-    % If timing estimation is unavailable, continue without a runtime correction.
-    timingOffset = NaN;
+else
+    timingSource = "external_sync_required_for_blind_pdcch_no_candidate_timing";
 end
 timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
-    "EstimateUsed", isfinite(double(timingOffset)), ...
+    "EstimateUsed", isfinite(double(timingOffset)) && ~skipTimingEstimate, ...
     "ApplicationMode", "signed_waveform_shift", ...
-    "Source", "nrTimingEstimate_pdcch_dmrs");
+    "SkipRequested", skipTimingEstimate, ...
+    "Source", timingSource);
 rxWave = localApplyTimingCorrection(rxWave, timingResolution.AppliedCorrection_samples);
 
 % Keep one full slot available for OFDM demod even when timing estimation
@@ -157,6 +172,41 @@ elseif size(rxGrid, 2) < slotSymbols
     rxGrid = cat(2, rxGrid, pad);
 end
 
+noiseGrid = [];
+if ~isempty(opt.NoiseOnlyWaveform)
+    noiseWave = localApplyTimingCorrection(opt.NoiseOnlyWaveform, timingResolution.AppliedCorrection_samples);
+    try
+        ofdmInfo = nrOFDMInfo(carrier);
+        slotSymbolsNoise = max(1, round(double(ofdmInfo.SymbolsPerSlot)));
+        symbolLengthsNoise = double(ofdmInfo.SymbolLengths(:).');
+        if numel(symbolLengthsNoise) >= slotSymbolsNoise
+            expectedSamplesNoise = sum(symbolLengthsNoise(1:slotSymbolsNoise));
+        else
+            expectedSamplesNoise = sum(symbolLengthsNoise);
+        end
+        if size(noiseWave, 1) > expectedSamplesNoise
+            noiseWave = noiseWave(1:expectedSamplesNoise, :);
+        end
+        if size(noiseWave, 1) < expectedSamplesNoise
+            noiseWave(end+1:expectedSamplesNoise, :) = 0; %#ok<AGROW>
+        end
+        try
+            noiseGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, noiseWave);
+        catch
+            noiseGrid = nrOFDMDemodulate(carrier, noiseWave);
+        end
+        if size(noiseGrid, 2) > slotSymbols
+            noiseGrid = noiseGrid(:, 1:slotSymbols, :);
+        elseif size(noiseGrid, 2) < slotSymbols
+            padNoise = complex(zeros(size(noiseGrid, 1), slotSymbols - size(noiseGrid, 2), size(noiseGrid, 3), ...
+                'like', noiseGrid));
+            noiseGrid = cat(2, noiseGrid, padNoise);
+        end
+    catch
+        noiseGrid = [];
+    end
+end
+
 % ---------------------- Try candidates ----------------------
 noiseVarUsed = opt.NoiseVar;
 if isempty(noiseVarUsed)
@@ -174,6 +224,20 @@ rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_s
 rx.TimingEstimateStatus = char(string(timingResolution.Status));
 rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
+rx.ReceiverHestSINR_dB = NaN;
+rx.ReceiverHestSINRSource = "pdcch_candidate_dmrs_unavailable";
+rx.ReceiverHestSINRValueRole = "unavailable";
+rx.ReceiverHestSINRValueStatus = "unavailable";
+rx.ReceiverHestSINRNAReason = "no_candidate_channel_estimate_attempted";
+rx.EVM_rms = NaN;
+rx.NoiseVar = NaN;
+rx.NoiseVarStatus = "unavailable";
+rx.NoiseVarSource = "pdcch_receiver_not_attempted";
+rx.NoiseVarReason = "no_candidate_channel_estimate_attempted";
+rx.ChannelEstimate = [];
+rx.RxGrid = rxGrid;
+rx.EqualizedSymbols = complex([]);
+candidateRows = repmat(localEmptyCandidateRow(), 0, 1);
 
 for c = 1:numel(candSymInd)
     symInd  = candSymInd{c};
@@ -192,15 +256,14 @@ for c = 1:numel(candSymInd)
     else
         nVar = double(noiseVarUsed);
     end
+    noiseGridNVar = localPDCCHNoiseGridVariance(noiseGrid, dmrsInd);
+    [nVar, nVarStatus, nVarSource, nVarReason] = localResolvePDCCHNoiseVariance( ...
+        nVar, nVarEst, noiseGridNVar, hEst, dmrsInd, dmrsSym, rxGrid);
 
     % Extract + equalize
     [rxSym, hSym] = nrExtractResources(symInd, rxGrid, hEst);
     [eqSym, csi] = nrEqualizeMMSE(rxSym, hSym, nVar);
-
-    % CSI weighting (as in MathWorks examples)
-    if ~isempty(csi)
-        eqSym = eqSym .* csi;
-    end
+    [candidateSINR_dB, candidateSINRStatus, candidateSINRReason] = localPDCCHReferenceSINR(hEst, nVar, dmrsInd, dmrsSym, rxGrid);
 
     % PDCCH decode -> soft bits
     try
@@ -208,6 +271,7 @@ for c = 1:numel(candSymInd)
     catch
         rxCW = nrPDCCHDecode(eqSym, nCellID, rnti);
     end
+    rxCW = localApplyPDCCHCSIWeighting(rxCW, csi);
 
     % DCI decode (polar list)
     errFlag = 1;
@@ -225,6 +289,34 @@ for c = 1:numel(candSymInd)
     rx.Ok = (rx.ErrFlag == 0);
     rx.CandidateIndex = c;
     rx.NoiseVar = nVar;
+    rx.NoiseVarStatus = char(string(nVarStatus));
+    rx.NoiseVarSource = char(string(nVarSource));
+    rx.NoiseVarReason = char(string(nVarReason));
+    rx.ChannelEstimate = hEst;
+    rx.EqualizedSymbols = eqSym;
+    rx.ReceiverHestSINR_dB = double(candidateSINR_dB);
+    rx.ReceiverHestSINRSource = "pdcch_dmrs_hest_noise_variance";
+    rx.ReceiverHestSINRValueRole = "estimated";
+    rx.ReceiverHestSINRValueStatus = char(string(candidateSINRStatus));
+    rx.ReceiverHestSINRNAReason = char(string(candidateSINRReason));
+    rx.EVM_rms = localPDCCHSymbolEVM(eqSym);
+
+    row = localEmptyCandidateRow();
+    row.CandidateIndex = double(c);
+    row.DecodeAttempted = true;
+    row.DecodeOK = logical(rx.Ok);
+    row.ErrFlag = double(errFlag);
+    row.NoiseVariance = double(nVar);
+    row.NoiseVarStatus = string(nVarStatus);
+    row.NoiseVarSource = string(nVarSource);
+    row.NoiseVarReason = string(nVarReason);
+    row.ReceiverHestSINR_dB = double(candidateSINR_dB);
+    row.ReceiverHestSINRValueStatus = string(candidateSINRStatus);
+    row.ReceiverHestSINRNAReason = string(candidateSINRReason);
+    row.EVM_rms = double(rx.EVM_rms);
+    row.PDCCHRECount = double(numel(symInd));
+    row.DMRSRECount = double(numel(dmrsInd));
+    candidateRows(end+1, 1) = row; %#ok<AGROW>
 
     if rx.Ok
         break;
@@ -238,9 +330,234 @@ info.RNTI = rnti;
 info.K = K;
 info.ListLength = listLen;
 info.BlindSearch = blind;
-info.NumCandidatesTried = numel(candSymInd);
+info.NumCandidatesAvailable = numel(candSymInd);
+info.NumCandidatesTried = numel(candidateRows);
 info.TimingEstimate = timingResolution;
+if ~isempty(candidateRows)
+    info.CandidateResults = struct2table(candidateRows, "AsArray", true);
+end
+info.ReceiverHestSINR_dB = double(rx.ReceiverHestSINR_dB);
+info.ReceiverHestSINRSource = char(string(rx.ReceiverHestSINRSource));
+info.ReceiverHestSINRValueStatus = char(string(rx.ReceiverHestSINRValueStatus));
+info.ReceiverHestSINRNAReason = char(string(rx.ReceiverHestSINRNAReason));
+info.EVM_rms = double(rx.EVM_rms);
 
+end
+
+function row = localEmptyCandidateRow()
+row = struct( ...
+    "CandidateIndex", NaN, ...
+    "DecodeAttempted", false, ...
+    "DecodeOK", false, ...
+    "ErrFlag", NaN, ...
+    "NoiseVariance", NaN, ...
+    "NoiseVarStatus", "", ...
+    "NoiseVarSource", "", ...
+    "NoiseVarReason", "", ...
+    "ReceiverHestSINR_dB", NaN, ...
+    "ReceiverHestSINRValueStatus", "", ...
+    "ReceiverHestSINRNAReason", "", ...
+    "EVM_rms", NaN, ...
+    "PDCCHRECount", NaN, ...
+    "DMRSRECount", NaN);
+end
+
+function [nVar, status, source, reason] = localResolvePDCCHNoiseVariance(nVar, nVarEst, noiseGridNVar, hEst, dmrsInd, dmrsSym, rxGrid)
+status = "unavailable";
+source = "pdcch_noise_variance_unresolved";
+reason = "missing_positive_noise_variance";
+overrideNVar = double(nVar);
+noiseGridNVar = double(noiseGridNVar);
+if isscalar(noiseGridNVar) && isfinite(noiseGridNVar) && noiseGridNVar > 0
+    nVar = noiseGridNVar;
+    status = "OK";
+    source = "noise_only_waveform_ofdm_grid_variance";
+    reason = "";
+    return;
+end
+
+nVarEst = double(nVarEst);
+if isscalar(nVarEst) && isfinite(nVarEst) && nVarEst > 0
+    nVar = nVarEst;
+    status = "OK";
+    source = "nrChannelEstimate_grid_noise_variance";
+    reason = "";
+    return;
+end
+
+if isscalar(overrideNVar) && isfinite(overrideNVar) && overrideNVar > 0
+    nVar = overrideNVar;
+    status = "OK";
+    source = "pdcch_receiver_noise_variance_override_waveform_domain";
+    reason = "grid_domain_noise_estimate_unavailable";
+    return;
+end
+
+[residualVar, residualOk] = localPDCCHDMRSResidualVariance(hEst, dmrsInd, dmrsSym, rxGrid);
+if residualOk && isfinite(residualVar) && residualVar > 0
+    nVar = residualVar;
+    status = "OK";
+    source = "pdcch_dmrs_residual_noise_variance";
+    reason = "";
+    return;
+end
+
+rxPower = mean(abs(double(rxGrid(:))).^2, "omitnan");
+if ~(isfinite(rxPower) && rxPower > 0)
+    rxPower = 1;
+end
+nVar = max(eps(rxPower), realmin("double"));
+status = "REVIEW_REQUIRED";
+source = "positive_numeric_floor_from_rx_grid_power";
+reason = "pdcch_noise_variance_estimate_missing_or_zero";
+end
+
+function nVar = localPDCCHNoiseGridVariance(noiseGrid, refInd)
+nVar = NaN;
+if isempty(noiseGrid) || isempty(refInd)
+    return;
+end
+try
+    noiseRef = nrExtractResources(refInd, noiseGrid);
+catch
+    try
+        noiseRef = noiseGrid(refInd);
+    catch
+        return;
+    end
+end
+if isempty(noiseRef)
+    return;
+end
+v = mean(abs(double(noiseRef(:))).^2, "omitnan");
+if isfinite(v) && v > 0
+    nVar = double(v);
+end
+end
+
+function [residualVar, ok] = localPDCCHDMRSResidualVariance(hEst, dmrsInd, dmrsSym, rxGrid)
+residualVar = NaN;
+ok = false;
+if isempty(hEst) || isempty(dmrsInd) || isempty(dmrsSym) || isempty(rxGrid)
+    return;
+end
+try
+    [rxRef, hRef] = nrExtractResources(dmrsInd, rxGrid, hEst);
+catch
+    return;
+end
+refSym = double(dmrsSym(:));
+numRE = min([size(rxRef, 1), size(hRef, 1), numel(refSym)]);
+if numRE < 1
+    return;
+end
+rxRef = double(rxRef(1:numRE, :, :, :));
+hRef = double(hRef(1:numRE, :, :, :));
+refSym = reshape(refSym(1:numRE), [], 1, 1, 1);
+valid = abs(refSym) > sqrt(eps);
+if ~any(valid(:))
+    return;
+end
+validVec = reshape(valid, [], 1);
+recon = hRef(validVec, :, :, :) .* reshape(refSym(validVec), [], 1, 1, 1);
+residual = rxRef(validVec, :, :, :) - recon;
+residualVar = mean(abs(residual(:)).^2, "omitnan");
+ok = isfinite(residualVar) && residualVar > 0;
+end
+
+function [sinr_dB, status, reason] = localPDCCHReferenceSINR(hEst, nVar, dmrsInd, dmrsSym, rxGrid)
+sinr_dB = NaN;
+status = "unavailable";
+reason = "missing_dmrs_reference_measurement";
+if isempty(hEst) || isempty(dmrsInd) || isempty(dmrsSym) || isempty(rxGrid)
+    return;
+end
+try
+    [rxRef, hRef] = nrExtractResources(dmrsInd, rxGrid, hEst);
+catch
+    reason = "dmrs_resource_extraction_failed";
+    return;
+end
+refSym = double(dmrsSym(:));
+numRE = min([size(rxRef, 1), size(hRef, 1), numel(refSym)]);
+if numRE < 1
+    return;
+end
+rxRef = double(rxRef(1:numRE, :, :, :));
+hRef = double(hRef(1:numRE, :, :, :));
+refSym = reshape(refSym(1:numRE), [], 1, 1, 1);
+valid = abs(refSym) > sqrt(eps);
+if ~any(valid(:))
+    reason = "zero_dmrs_reference_symbols";
+    return;
+end
+validVec = reshape(valid, [], 1);
+recon = hRef(validVec, :, :, :) .* reshape(refSym(validVec), [], 1, 1, 1);
+signalPow = mean(abs(recon(:)).^2, "omitnan");
+nVar = double(nVar);
+if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
+    residual = rxRef(validVec, :, :, :) - recon;
+    nVar = mean(abs(residual(:)).^2, "omitnan");
+end
+if isfinite(signalPow) && signalPow > 0 && isfinite(nVar) && nVar > 0
+    sinr_dB = 10 * log10(signalPow / nVar);
+    status = "OK";
+    reason = "";
+else
+    reason = "nonfinite_signal_or_noise_power";
+end
+end
+
+function evm = localPDCCHSymbolEVM(eqSym)
+evm = NaN;
+if isempty(eqSym)
+    return;
+end
+x = double(eqSym(:));
+x = x(isfinite(real(x)) & isfinite(imag(x)));
+if isempty(x)
+    return;
+end
+ref = sign(real(x)) + 1i * sign(imag(x));
+zeroMask = real(ref) == 0;
+ref(zeroMask) = ref(zeroMask) + 1;
+zeroMask = imag(ref) == 0;
+ref(zeroMask) = ref(zeroMask) + 1i;
+ref = ref ./ sqrt(2);
+evm = sqrt(mean(abs(x - ref).^2, "omitnan") / max(mean(abs(ref).^2, "omitnan"), eps));
+end
+
+function rxCW = localApplyPDCCHCSIWeighting(rxCW, csi)
+% Apply symbol reliability to PDCCH soft bits after demodulation.
+%
+% The 5G Toolbox PDCCH receiver examples weight the decoded codeword LLRs,
+% not the equalized QPSK symbols. Weighting the constellation directly
+% changes the decision geometry and can turn a high-SINR control channel
+% into random-looking DCI bits.
+if isempty(rxCW) || isempty(csi)
+    return;
+end
+llr = double(rxCW(:));
+rel = double(real(csi(:)));
+rel = rel(isfinite(rel));
+if isempty(rel)
+    return;
+end
+rel = max(rel, 0);
+meanRel = mean(rel, "omitnan");
+if ~(isfinite(meanRel) && meanRel > 0)
+    return;
+end
+rel = rel ./ meanRel;
+rel = min(max(rel, 0), 10);
+if numel(llr) == 2 * numel(rel)
+    w = repelem(rel, 2);
+elseif numel(llr) == numel(rel)
+    w = rel;
+else
+    return;
+end
+rxCW = reshape(llr .* double(w(:)), size(rxCW));
 end
 
 function y = localApplyTimingCorrection(x, timingOffset)
@@ -274,11 +591,65 @@ for i = 1:numel(allSymInd)
     s = allSymInd{i};
     dIdx = allDMRSInd{i};
     dSym = allDMRSSym{i};
-    if ~isempty(s) && ~isempty(dIdx) && ~isempty(dSym)
-        candSymInd{end+1,1} = s; %#ok<AGROW>
-        candDMRSInd{end+1,1} = dIdx; %#ok<AGROW>
-        candDMRSSym{end+1,1} = dSym; %#ok<AGROW>
+    if isempty(s) || isempty(dIdx) || isempty(dSym)
+        continue;
     end
+    [sList, dIdxList, dSymList] = localSplitPDCCHSpaceCandidates(s, dIdx, dSym);
+    for j = 1:numel(sList)
+        if ~isempty(sList{j}) && ~isempty(dIdxList{j}) && ~isempty(dSymList{j})
+            candSymInd{end+1,1} = sList{j}; %#ok<AGROW>
+            candDMRSInd{end+1,1} = dIdxList{j}; %#ok<AGROW>
+            candDMRSSym{end+1,1} = dSymList{j}; %#ok<AGROW>
+        end
+    end
+end
+end
+
+function [sList, dIdxList, dSymList] = localSplitPDCCHSpaceCandidates(s, dIdx, dSym)
+% nrPDCCHSpace returns one cell per aggregation level. Within each cell, the
+% second dimension enumerates candidates. Treating the full matrix as one
+% candidate causes the receiver to combine unrelated CCEs and makes the DCI
+% bits random even at high SINR.
+sList = {};
+dIdxList = {};
+dSymList = {};
+try
+    nCand = max([size(s, 2), size(dIdx, 2), size(dSym, 2)]);
+catch
+    nCand = 1;
+end
+if nCand <= 1
+    sList = {s(:)};
+    dIdxList = {dIdx(:)};
+    dSymList = {dSym(:)};
+    return;
+end
+for c = 1:nCand
+    sCol = localCandidateColumn(s, c);
+    dIdxCol = localCandidateColumn(dIdx, c);
+    dSymCol = localCandidateColumn(dSym, c);
+    if isempty(sCol) || isempty(dIdxCol) || isempty(dSymCol)
+        continue;
+    end
+    sList{end+1,1} = sCol(:); %#ok<AGROW>
+    dIdxList{end+1,1} = dIdxCol(:); %#ok<AGROW>
+    dSymList{end+1,1} = dSymCol(:); %#ok<AGROW>
+end
+end
+
+function col = localCandidateColumn(x, c)
+col = [];
+if isempty(x)
+    return;
+end
+if isvector(x)
+    if c == 1
+        col = x(:);
+    end
+    return;
+end
+if c <= size(x, 2)
+    col = x(:, c);
 end
 end
 

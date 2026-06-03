@@ -50,6 +50,10 @@ metrics = struct( ...
     "SelectedBeamGain_dB", NaN, ...
     "BestBeamGain_dB", NaN, ...
     "BeamGainGap_dB", NaN, ...
+    "BeamScoreVector_dB", "", ...
+    "TopBeamIndexSet", "", ...
+    "TopBeamGainSet_dB", "", ...
+    "BeamScoreSource", "", ...
     "ConfiguredPMI", NaN, ...
     "ConfiguredCRI", NaN, ...
     "CSI_RSRP_dB", NaN, ...
@@ -106,38 +110,26 @@ if isfinite(sinr_dB)
     metrics.SINRValueStatus = "OK";
     metrics.SINRNAReason = "";
 else
-    fallbackSINR_dB = localGainOverNoiseSINR(metrics.ChannelGain_dB, nVar);
-    if isfinite(fallbackSINR_dB)
-        metrics.SINR_dB = double(fallbackSINR_dB);
-        metrics.SINRSource = "ul_receiver_hest_channel_gain_over_noise_fallback";
-        metrics.SINRValueRole = "estimated_fallback";
-        metrics.SINRValueStatus = "fallback";
-        metrics.SINRNAReason = char(string(sinrStatus));
-    else
-        metrics.SINRSource = char(string(sinrSource));
-        metrics.SINRValueStatus = char(string(sinrStatus));
-        metrics.SINRNAReason = "ul_reference_sinr_unavailable";
+    metrics.SINRSource = char(string(sinrSource));
+    if strlength(strtrim(string(metrics.SINRSource))) == 0
+        metrics.SINRSource = "ul_reference_signal_sinr_unavailable";
     end
+    metrics.SINRValueRole = "unavailable";
+    metrics.SINRValueStatus = "unavailable";
+    metrics.SINRNAReason = "ul_reference_signal_sinr_not_available_from_receiver_evidence";
 end
 
 if isfinite(pilotNMSE_dB)
     metrics.NMSE_dB = double(pilotNMSE_dB);
     metrics.DetectionMetric = 1 / (1 + 10.^(pilotNMSE_dB / 10));
-else
-    nmseLin = localResidualNMSEFallback(metrics.ChannelGain_dB, nVar);
-    if isfinite(nmseLin)
-        metrics.NMSE_dB = 10 * log10(max(nmseLin, eps));
-        metrics.DetectionMetric = 1 / (1 + nmseLin);
-    end
 end
 
 [referencePower, rsrpSource] = localMeasureReferencePower(opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
 if isfinite(referencePower) && referencePower > 0
     metrics.CSI_RSRP_dB = 10 * log10(max(referencePower, eps));
     metrics.CSI_RSRPSource = char(string(rsrpSource));
-elseif isfinite(metrics.ChannelGain_dB)
-    metrics.CSI_RSRP_dB = double(metrics.ChannelGain_dB);
-    metrics.CSI_RSRPSource = "ul_channel_estimate_gain_proxy";
+else
+    metrics.CSI_RSRPSource = "measurement_unavailable";
 end
 [rssiPower, rssiNRB, rssiSource, ~] = localMeasureRSSI(opt.ReceivedGrid, opt.ReferenceIndices);
 if isfinite(rssiPower) && rssiPower > 0
@@ -696,26 +688,4 @@ value = double(value);
 if ~(isscalar(value) && isfinite(value) && value > 0)
     value = 0;
 end
-end
-
-function sinr_dB = localGainOverNoiseSINR(channelGain_dB, nVar)
-sinr_dB = NaN;
-nVar = double(nVar);
-if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0 && isfinite(channelGain_dB))
-    return;
-end
-sinr_dB = double(channelGain_dB) - 10 * log10(max(nVar, eps));
-end
-
-function nmseLin = localResidualNMSEFallback(channelGain_dB, nVar)
-nmseLin = NaN;
-nVar = double(nVar);
-if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0 && isfinite(channelGain_dB))
-    return;
-end
-gainLin = 10.^(double(channelGain_dB) / 10);
-if ~(isfinite(gainLin) && gainLin > 0)
-    return;
-end
-nmseLin = max(nVar, eps) / max(gainLin, eps);
 end

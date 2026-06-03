@@ -142,6 +142,11 @@ useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pusch);
+FastShortcutDisabledInTruth = sixgr.link.resolveTruthMode(cfg) == "full_waveform" && useFastAWGNPath; %#ok<NASGU>
+if FastShortcutDisabledInTruth
+    error("sixgr:phy:rx:FastShortcutDisabledInTruth", ...
+        "PUSCH_Rx forbids FastAWGNPath when TruthMode='full_waveform'.");
+end
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PUSCH_Rx");
 
 % Timing estimate
@@ -243,7 +248,13 @@ end
 [rxSym, hestSym] = nrExtractResources(puschInd, rxGrid, Hest);
 
 % Equalize
-[eqSym, csi] = nrEqualizeMMSE(rxSym, hestSym, nVar);
+[equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL");
+[Rint, rintInfo] = localEstimateDMRSInterferenceCovariance(rxGrid, Hest, dmrsInd, dmrsSym, nVar);
+if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
+    equalizerAlg = "MMSE";
+end
+[eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
+    "Algorithm", equalizerAlg, "Rint", Rint);
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 
 % Decode PUSCH to codeword LLR
@@ -386,6 +397,12 @@ rx.ReceiverHestSINRSource = char(receiverSINR.Source);
 rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
 rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
 rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
+rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
+rx.EqualizerRequestedType = char(equalizerRequested);
+rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
+rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
+rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
+rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
 if ~logical(opt.CompactOutput)
@@ -406,6 +423,9 @@ if ~logical(opt.CompactOutput)
     rx.EqualizedSymbols = eqSym;
     rx.PUSCHRxSymbols = puschRxSym;
     rx.CSI = csi;
+    rx.EqualizerInfo = equalizerInfo;
+    rx.InterferenceCovariance = Rint;
+    rx.InterferenceCovarianceInfo = rintInfo;
 end
 
 info = struct();
@@ -415,7 +435,89 @@ info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = noiseStatus;
 info.TimingEstimate = timingResolution;
+info.Equalizer = equalizerInfo;
+info.InterferenceCovariance = rintInfo;
 
+end
+
+function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    requested = string(sixgr.util.structGet(cfg, "phy.pusch.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.algorithm", "MMSE"))));
+else
+    requested = string(sixgr.util.structGet(cfg, "phy.pdsch.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.algorithm", "MMSE"))));
+end
+requested = upper(strtrim(requested));
+if strlength(requested) == 0
+    requested = "MMSE";
+end
+if contains(requested, "IRC")
+    alg = "IRC";
+elseif contains(requested, "ZF")
+    alg = "ZF";
+else
+    alg = "MMSE";
+end
+end
+
+function [Rint, info] = localEstimateDMRSInterferenceCovariance(rxGrid, hEst, dmrsInd, dmrsSym, nVar)
+Rint = [];
+info = struct("Available", false, "Source", "dmrs_residual_covariance_unavailable", ...
+    "Status", "NOT_AVAILABLE", "NumSamples", 0);
+if isempty(rxGrid) || isempty(hEst) || isempty(dmrsInd) || isempty(dmrsSym)
+    return;
+end
+try
+    [rxRef, hRef] = nrExtractResources(dmrsInd, rxGrid, hEst);
+catch
+    info.Status = "dmrs_resource_extraction_failed";
+    return;
+end
+if isempty(rxRef) || isempty(hRef)
+    return;
+end
+if ndims(hRef) == 2
+    hRef = reshape(hRef, size(hRef,1), size(hRef,2), 1);
+end
+nRE = min([size(rxRef, 1), size(hRef, 1), numel(dmrsSym)]);
+if nRE < 2
+    info.Status = "insufficient_dmrs_residual_samples";
+    return;
+end
+nRx = size(rxRef, 2);
+nLayer = size(hRef, 3);
+residual = complex(zeros(nRE, nRx));
+dmrsSym = dmrsSym(:);
+for k = 1:nRE
+    Hk = squeeze(hRef(k, :, :));
+    if isvector(Hk)
+        Hk = reshape(Hk, nRx, nLayer);
+    end
+    sk = repmat(dmrsSym(k), nLayer, 1);
+    residual(k, :) = double(rxRef(k, :)) - (Hk * sk).';
+end
+residual = residual(all(isfinite(real(residual)) & isfinite(imag(residual)), 2), :);
+if size(residual, 1) < 2
+    info.Status = "dmrs_residual_not_finite";
+    return;
+end
+R = (residual' * residual) ./ max(1, size(residual, 1));
+R = (R + R') ./ 2;
+noiseFloor = max(double(nVar), eps);
+R = R + noiseFloor * eye(size(R, 1));
+if any(~isfinite(R(:))) || rcond(double(R)) < 1e-12
+    info.Status = "dmrs_residual_covariance_singular";
+    return;
+end
+Rint = R;
+info.Available = true;
+info.Source = "dmrs_residual_interference_plus_noise_covariance";
+info.Status = "OK";
+info.NumSamples = double(size(residual, 1));
 end
 
 function tracking = localResolveReceiverTrackingCorrection(explicitState, cfg)

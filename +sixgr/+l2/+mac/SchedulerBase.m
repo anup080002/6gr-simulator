@@ -683,9 +683,13 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function dci = buildDCIBitfield(obj, grant)
-            % buildDCIBitfield Build compact simulator DCI bitfield payload.
+            % buildDCIBitfield Build NR-style DCI intent fields for a grant.
             dci = struct("Format", "", "Bits", uint8([]), "Hex", "", ...
-                "FieldMap", struct(), "RIV", 0, "RBStart", 0, "RBLength", 0);
+                "FieldMap", struct(), "FieldValues", struct(), ...
+                "RIV", 0, "RBStart", 0, "RBLength", 0, ...
+                "SLIV", NaN, "TimeDomainAssignmentIndex", NaN, ...
+                "StandardProfile", "ts38212_semantic_field_layout", ...
+                "BitExactPDCCHPayload", false);
             if nargin < 2 || isempty(grant) || ~isstruct(grant)
                 return;
             end
@@ -717,48 +721,81 @@ classdef (Abstract) SchedulerBase < handle
             dai = max(0, min(3, round(double(sixgr.util.structGet(grant, "DAI", 1)))));
             k1 = max(0, min(7, round(double(sixgr.util.structGet(grant, "K1", 4)))));
             k2 = max(0, min(7, round(double(sixgr.util.structGet(grant, "K2", 1)))));
-            tda = localTimeDomainAssignIndex(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]));
-            tda = max(0, min(15, round(double(tda))));
+            sliv = localTimeDomainAssignIndex(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]), obj.SymbolsPerSlot);
+            tdaIndex = max(0, min(15, round(double(sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", ...
+                sixgr.util.structGet(grant, "TDRAIndex", 0))))));
 
-            if strcmpi(char(string(sixgr.util.structGet(grant, "Direction", obj.Direction))), "DL")
-                fmt = "DCI_1_0";
-                fmtBit = 1;
-            else
-                fmt = "DCI_0_0";
-                fmtBit = 0;
-            end
+            direction = upper(string(sixgr.util.structGet(grant, "Direction", obj.Direction)));
+            fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
+            fmtBit = double(direction == "DL");
 
-            bits = [ ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(fmtBit, 1); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(riv, freqBits); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(tda, 4); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(mcs, 5); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(ndi, 1); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(rv, 2); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(harqId, 4); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(dai, 2); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(k1, 3); ...
-                sixgr.l2.mac.SchedulerBase.uintToBits(k2, 3)];
-
+            bits = uint8([]);
             fmap = struct();
-            fmap.FormatIndicator_bits = 1;
-            fmap.FrequencyDomainResource_bits = freqBits;
-            fmap.TimeDomainAssignment_bits = 4;
-            fmap.MCS_bits = 5;
-            fmap.NDI_bits = 1;
-            fmap.RV_bits = 2;
-            fmap.HARQProcess_bits = 4;
-            fmap.DAI_bits = 2;
-            fmap.K1_bits = 3;
-            fmap.K2_bits = 3;
+            fvals = struct();
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FormatIndicator", fmtBit, 1);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FrequencyDomainResourceAssignment_RIV", riv, freqBits);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TimeDomainResourceAssignmentIndex", tdaIndex, 4);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TimeDomainResourceAssignmentSLIV", sliv, 8);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "MCS", mcs, 5);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "NDI", ndi, 1);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "RV", rv, 2);
+            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "HARQProcessNumber", harqId, 4);
+
+            if fmt == "DCI_1_1"
+                tci = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.pdsch.TCIState", 0)), 3);
+                srsReq = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
+                csiReq = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", ...
+                    double(isfinite(double(sixgr.util.structGet(grant, "CRI", NaN))))), 2);
+                antennaPorts = localDLAntennaPortField(grant);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "DAI", dai, 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PDSCHToHARQFeedbackTimingIndicator_K1", k1, 3);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "VRBToPRBMapping", sixgr.util.structGet(grant, "VRBToPRBMapping", 0), 1);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PRBBundlingSizeIndicator", sixgr.util.structGet(grant, "PRBBundlingSizeIndicator", 0), 1);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "RateMatchingIndicator", sixgr.util.structGet(grant, "RateMatchingIndicator", 0), 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "ZP_CSIRS_Trigger", sixgr.util.structGet(grant, "ZPCSIRSTrigger", 0), 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "AntennaPorts", antennaPorts, 5);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TransmissionConfigurationIndication", tci, 3);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "SRSRequest", srsReq, 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CSIRequest", csiReq, 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CBGTransmissionInformation", sixgr.util.structGet(grant, "CBGTI", 0), 8);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CBGFlushingInformation", sixgr.util.structGet(grant, "CBGFI", 0), 1);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "DMRSSequenceInitialization", sixgr.util.structGet(grant, "DMRSSequenceInitialization", 0), 1);
+            elseif fmt == "DCI_0_1"
+                tpmi = localClampDCIValue(sixgr.util.structGet(grant, "TPMI", ...
+                    sixgr.util.structGet(grant, "PMI", NaN)), 6);
+                numLayers = localClampDCIValue(sixgr.util.structGet(grant, "NumLayers", 1), 2) - 1;
+                sri = localClampDCIValue(sixgr.util.structGet(grant, "SRSResourceIndicator", ...
+                    sixgr.util.structGet(grant, "SRSResourceID", 0)), 4);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FrequencyHoppingFlag", sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FirstDAI", dai, 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TPCCommandForPUSCH", sixgr.util.structGet(grant, "TPCCommandForPUSCH", 1), 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "SRSResourceIndicator", sri, 4);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PrecodingInformationAndNumberOfLayers_TPMI", tpmi, 6);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PrecodingInformationAndNumberOfLayers_RankMinus1", numLayers, 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "AntennaPorts", localULAntennaPortField(grant), 5);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "SRSRequest", sixgr.util.structGet(grant, "SRSRequest", 0), 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CSIRequest", sixgr.util.structGet(grant, "CSIRequest", 0), 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "K2", k2, 3);
+            else
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "DAI", dai, 2);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "K1", k1, 3);
+                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "K2", k2, 3);
+            end
 
             dci.Format = fmt;
             dci.Bits = uint8(bits(:));
             dci.Hex = sixgr.l2.mac.SchedulerBase.bitsToHex(dci.Bits);
             dci.FieldMap = fmap;
+            dci.FieldValues = fvals;
             dci.RIV = double(riv);
             dci.RBStart = double(rbStart);
             dci.RBLength = double(rbLen);
+            dci.SLIV = double(sliv);
+            dci.TimeDomainAssignmentIndex = double(tdaIndex);
+            dci.BitLength = double(numel(dci.Bits));
+            dci.NRFieldLayoutSource = "3gpp_ts_38_212_dci_field_semantics";
+            dci.NRResourceAssignmentSource = "3gpp_ts_38_214_riv_sliv";
         end
 
         function log(obj, level, msg, varargin)
@@ -926,14 +963,96 @@ classdef (Abstract) SchedulerBase < handle
     end
 end
 
-function idx = localTimeDomainAssignIndex(symAlloc)
+function idx = localTimeDomainAssignIndex(symAlloc, symbolsPerSlot)
+% TS 38.214 SLIV encoding for a start symbol S and length L.
+if nargin < 2 || isempty(symbolsPerSlot)
+    symbolsPerSlot = 14;
+end
+N = max(1, min(14, round(double(symbolsPerSlot))));
 sa = double(symAlloc(:).');
 if numel(sa) < 2
-    sa = [0 14];
+    sa = [0 N];
 end
-s = max(0, min(13, round(sa(1))));
-l = max(1, min(14, round(sa(2))));
-idx = s*14 + (l-1);
+s = max(0, min(N - 1, round(sa(1))));
+l = max(1, min(N - s, round(sa(2))));
+if (l - 1) <= floor(N / 2)
+    idx = N * (l - 1) + s;
+else
+    idx = N * (N - l + 1) + (N - 1 - s);
+end
+idx = max(0, round(double(idx)));
+end
+
+function [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, name, value, width)
+width = max(1, round(double(width)));
+value = localClampDCIValue(value, width);
+bits = [bits; sixgr.l2.mac.SchedulerBase.uintToBits(value, width)]; %#ok<AGROW>
+fieldName = char(matlab.lang.makeValidName(char(string(name))));
+fmap.([fieldName '_bits']) = double(width);
+fvals.(fieldName) = double(value);
+end
+
+function value = localClampDCIValue(value, width)
+raw = double(value);
+if isempty(raw) || ~(isscalar(raw) && isfinite(raw))
+    raw = 0;
+end
+maxValue = 2 ^ max(1, round(double(width))) - 1;
+value = max(0, min(maxValue, round(raw)));
+end
+
+function fmt = localResolveDCIFormat(cfg, grant, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    if localNeedsAdvancedULDci(cfg, grant)
+        fmt = "DCI_0_1";
+    else
+        fmt = "DCI_0_0";
+    end
+else
+    if localNeedsAdvancedDLDci(cfg, grant)
+        fmt = "DCI_1_1";
+    else
+        fmt = "DCI_1_0";
+    end
+end
+end
+
+function tf = localNeedsAdvancedDLDci(cfg, grant)
+numLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)));
+pmi = double(sixgr.util.structGet(grant, "PMI", NaN));
+cri = double(sixgr.util.structGet(grant, "CRI", NaN));
+tciConfigured = isfinite(double(sixgr.util.structGet(grant, "TCIState", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.TCIState", NaN))));
+forceDCI11 = logical(sixgr.util.structGet(cfg, "phy.pdcch.forceDCI11", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.forceDCI11", false)));
+tf = (isfinite(numLayers) && numLayers > 1) || isfinite(pmi) || isfinite(cri) || ...
+    tciConfigured || forceDCI11;
+end
+
+function tf = localNeedsAdvancedULDci(cfg, grant)
+numLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)));
+tpmi = double(sixgr.util.structGet(grant, "TPMI", sixgr.util.structGet(grant, "PMI", NaN)));
+sri = double(sixgr.util.structGet(grant, "SRSResourceIndicator", sixgr.util.structGet(grant, "SRSResourceID", NaN)));
+forceDCI01 = logical(sixgr.util.structGet(cfg, "phy.pdcch.forceDCI01", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.forceDCI01", false)));
+tf = (isfinite(numLayers) && numLayers > 1) || isfinite(tpmi) || isfinite(sri) || forceDCI01;
+end
+
+function field = localDLAntennaPortField(grant)
+numLayers = double(sixgr.util.structGet(grant, "NumLayers", 1));
+if ~(isscalar(numLayers) && isfinite(numLayers) && numLayers >= 1)
+    numLayers = 1;
+end
+field = max(0, min(31, round(numLayers) - 1));
+end
+
+function field = localULAntennaPortField(grant)
+numLayers = double(sixgr.util.structGet(grant, "NumLayers", 1));
+if ~(isscalar(numLayers) && isfinite(numLayers) && numLayers >= 1)
+    numLayers = 1;
+end
+field = max(0, min(31, round(numLayers) - 1));
 end
 
 function tf = localUseWaveformULSingleLayerSafety(cfg)

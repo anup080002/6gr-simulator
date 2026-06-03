@@ -59,6 +59,21 @@ if ~isempty(requestedPorts)
     requestedPorts = max(1, round(double(requestedPorts)));
 end
 
+if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
+    if localHasFinitePMI(cfg)
+        % A grant replay can carry a stale rank-1 explicit beam from an
+        % earlier snapshot while the current grant has a higher RI.  Do not
+        % reshape that matrix; regenerate the rank-consistent codebook
+        % precoder from the grant PMI/TPMI and requested port count.
+        Wcfg = [];
+    else
+        sz = size(Wcfg);
+        error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixLayerMismatch", ...
+            "Explicit PDSCH precoding matrix must be Nports-by-Nlayers or Nlayers-by-Nports. Got %dx%d for %d layer(s), with no finite PMI/TPMI to regenerate it.", ...
+            sz(1), sz(2), nLayers);
+    end
+end
+
 if isempty(Wcfg)
     [Wcfg, pmiMeta] = localResolvePMIPrecodingMatrix(cfg, nLayers, requestedPorts);
 else
@@ -165,6 +180,33 @@ nCodewords = 1 + (nLayers > 4);
 try
     nCodewords = double(pdsch.NumCodewords);
 catch
+end
+end
+
+function tf = localExplicitMatrixHasLayerShape(Wcfg, nLayers)
+tf = false;
+if isempty(Wcfg)
+    return;
+end
+if ndims(Wcfg) > 2 && size(Wcfg, 3) == 1
+    Wcfg = squeeze(Wcfg);
+end
+if ~ismatrix(Wcfg)
+    return;
+end
+sz = size(Wcfg);
+tf = sz(2) == nLayers || sz(1) == nLayers;
+end
+
+function tf = localHasFinitePMI(cfg)
+tf = false;
+paths = ["phy.pdsch.tpmi", "phy.pdsch.TPMI", "phy.pdsch.pmi", "phy.pdsch.PMI"];
+for i = 1:numel(paths)
+    v = sixgr.util.structGet(cfg, paths(i), []);
+    if isnumeric(v) && isscalar(v) && isfinite(double(v))
+        tf = true;
+        return;
+    end
 end
 end
 

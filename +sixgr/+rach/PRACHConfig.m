@@ -230,7 +230,16 @@ value = defaultValue;
 end
 
 function value = localResolveText(rawValue)
-value = char(string(rawValue));
+if isempty(rawValue)
+    value = '';
+    return;
+end
+txt = string(rawValue);
+if isempty(txt)
+    value = '';
+else
+    value = char(txt(1));
+end
 end
 
 function value = localResolveScalar(rawValue)
@@ -319,10 +328,16 @@ prach.ZeroCorrelationZone = double(cfg.ZeroCorrelationZone);
 prach.FrequencyStart = double(cfg.FrequencyStart);
 
 resolvedFormat = upper(strtrim(string(prach.Format)));
-if strlength(cfg.RequestedPRACHFormat) > 0 && resolvedFormat ~= upper(strtrim(string(cfg.RequestedPRACHFormat)))
+requestedFormat = upper(strtrim(string(sixgr.util.structGet(cfg, "RequestedPRACHFormat", ""))));
+if isempty(requestedFormat)
+    requestedFormat = "";
+else
+    requestedFormat = requestedFormat(1);
+end
+if strlength(requestedFormat) > 0 && resolvedFormat ~= requestedFormat
     error("sixgr:rach:PRACHConfig:FormatMismatch", ...
         "Requested PRACHFormat=%s resolves to toolbox format %s for configuration index %g / PRACH SCS %g kHz.", ...
-        cfg.RequestedPRACHFormat, resolvedFormat, double(cfg.PRACHConfigurationIndex), double(cfg.PRACHSubcarrierSpacing));
+        requestedFormat, resolvedFormat, double(cfg.PRACHConfigurationIndex), double(cfg.PRACHSubcarrierSpacing));
 end
 end
 

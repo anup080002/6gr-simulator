@@ -33,6 +33,12 @@ out = struct( ...
     "BitsCompared", 0, ...
     "BitErrors", NaN, ...
     "DetectionMetric", NaN, ...
+    "DetectionThreshold", NaN, ...
+    "DetectionMetricStatus", "", ...
+    "DetectorPeakMetric", NaN, ...
+    "DetectorNoiseFloor", NaN, ...
+    "DTXFlag", false, ...
+    "DTXReason", "", ...
     "ComputeLatency_ms", NaN, ...
     "DecodeLatency_ms", NaN, ...
     "AirInterfaceTTI_ms", NaN, ...
@@ -150,6 +156,12 @@ try
     out.DetectionAttempted = logical(sixgr.util.structGet(rx, "DetectionAttempted", false));
     out.DetectionUsable = logical(sixgr.util.structGet(rx, "DetectionUsable", false));
     out.FailureReason = char(string(sixgr.util.structGet(rx, "FailureReason", "")));
+    out.DetectionThreshold = double(sixgr.util.structGet(rx, "DetectionThreshold", NaN));
+    out.DetectionMetricStatus = char(string(sixgr.util.structGet(rx, "DetectionMetricStatus", "")));
+    out.DetectorPeakMetric = double(sixgr.util.structGet(rx, "DetectorPeakMetric", NaN));
+    out.DetectorNoiseFloor = double(sixgr.util.structGet(rx, "DetectorNoiseFloor", NaN));
+    out.DTXFlag = logical(sixgr.util.structGet(rx, "DTXFlag", false));
+    out.DTXReason = char(string(sixgr.util.structGet(rx, "DTXReason", "")));
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", opt.SNR_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
     out.AirInterfaceTTI_ms = localAirInterfaceTTI(tx, txInfo);
@@ -174,7 +186,7 @@ try
         out.UCIContentMatch = false;
         out.BitsCompared = 0;
         out.BitErrors = NaN;
-        out.DetectionMetric = NaN;
+        out.DetectionMetric = double(sixgr.util.structGet(rx, "DetectorPeakMetric", localResolveDetectionMetric(rx)));
         out.ComputeLatency_ms = double(decodeLatency_ms);
         out.DecodeLatency_ms = double(decodeLatency_ms);
         out.ReceiverHestSINR_dB = NaN;
@@ -225,6 +237,18 @@ try
     receiverStatus = strtrim(string(out.ReceiverHestSINRValueStatus));
     receiverRole = strtrim(string(out.ReceiverHestSINRValueRole));
     receiverSource = strtrim(string(out.ReceiverHestSINRSource));
+    receiverUsesFallbackEstimate = contains(lower(receiverSource), "fallback") || ...
+        contains(lower(receiverRole), "fallback") || contains(lower(receiverStatus), "fallback");
+    if receiverUsesFallbackEstimate
+        out.ReceiverHestSINR_dB = NaN;
+        out.ReceiverHestSINRSource = "";
+        out.ReceiverHestSINRValueRole = "unavailable";
+        out.ReceiverHestSINRValueStatus = "unavailable";
+        out.ReceiverHestSINRNAReason = "control_reference_signal_sinr_not_available_from_receiver_evidence";
+        receiverStatus = "unavailable";
+        receiverRole = "unavailable";
+        receiverSource = "";
+    end
     measuredTrialAvailable = strcmpi(receiverStatus, "OK") && isfinite(double(out.ReceiverHestSINR_dB));
     if measuredTrialAvailable
         out.MeasuredTrialSINR_dB = double(out.ReceiverHestSINR_dB);
@@ -246,11 +270,7 @@ try
             out.SINRValueRole = char(receiverRole);
             out.SINRSource = char(receiverSource);
             out.SINRValueStatus = char(receiverStatus);
-            if strcmpi(receiverRole, "estimated_fallback") || strcmpi(receiverStatus, "fallback")
-                out.SINRValueDefinition = "receiver_hest_sinr_from_control_waveform_fallback";
-            else
-                out.SINRValueDefinition = "receiver_hest_sinr_from_control_reference_signal_observation";
-            end
+            out.SINRValueDefinition = "receiver_hest_sinr_from_control_reference_signal_observation";
         else
             out.SINRValueRole = "unavailable";
             out.SINRSource = char(receiverSource);

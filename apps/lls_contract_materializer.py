@@ -980,6 +980,29 @@ def _row_float(row: dict[str, str], *names: str) -> float | None:
     return _coerce_float(value)
 
 
+def _row_quality_axis_value(row: dict[str, str], *, allow_receiver_hest: bool = False) -> tuple[float | None, str]:
+    """Return the best runtime-quality x-axis value.
+
+    ConfiguredSNR_dB/SNR_dB are scenario metadata, not measurements. Strict
+    chart materialization must not use them as a last-resort axis because that
+    creates constant "curves" from incomplete evidence.
+    """
+    candidates = [
+        ("MeasuredTrialSINR_dB", "MeasuredTrialSINR_dB"),
+        ("MeasuredSINR_dB", "MeasuredSINR_dB"),
+        ("DecoderTruthProxySINR_dB", "DecoderTruthProxySINR_dB"),
+        ("LargeScaleSINR_dB", "LargeScaleSINR_dB"),
+        ("AppliedAWGNSNR_dB", "AppliedAWGNSNR_dB"),
+    ]
+    if allow_receiver_hest:
+        candidates.insert(2, ("ReceiverHestSINR_dB", "ReceiverHestSINR_dB"))
+    for field_name, label in candidates:
+        value = _row_float(row, field_name)
+        if value is not None:
+            return float(value), label
+    return None, ""
+
+
 def _percentile(sorted_vals: list[float], fraction: float) -> float:
     if not sorted_vals:
         return float("nan")
@@ -1464,7 +1487,7 @@ def _run_allows_placeholder_artifacts(run_row: dict[str, Any]) -> bool:
             return bool(value)
         if isinstance(value, str) and value.strip():
             return value.strip().lower() in {"1", "true", "yes", "on"}
-    return True
+    return False
 
 
 def _is_placeholder_materialization_status(status: str) -> bool:
@@ -1719,7 +1742,7 @@ def _specialized_live_report_table(
                 "observed_rows": len(family_rows),
                 "success_count": _count_trueish(family_rows, "CRCPass", "CombinedDecodeOK", "CurrentDecodeOK", "Detected", "DetectedFlag"),
                 "failure_count": len(family_rows) - _count_trueish(family_rows, "CRCPass", "CombinedDecodeOK", "CurrentDecodeOK", "Detected", "DetectedFlag"),
-                "mean_measured_sinr_db": _mean_numeric(family_rows, "MeasuredSINR_dB", "ReceiverHestSINR_dB"),
+                "mean_measured_sinr_db": _mean_numeric(family_rows, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
                 "mean_cqi": _mean_numeric(family_rows, "WidebandCQI"),
                 "mean_mcs": _mean_numeric(family_rows, "MCS", "CQIDerivedMCS"),
                 "modulation_set": _distinct_join(family_rows, "Modulation"),
@@ -1731,6 +1754,162 @@ def _specialized_live_report_table(
                 "note": "Trial-family overview aggregated from persisted waveform/control trial artifacts.",
                 "source_logical_path": "|".join(logical_path for logical_path, family_rows in ((raw_sources[key], raw_rows[key]) for key in raw_sources) if family_rows),
                 "source_row_count": sum(int(row["observed_rows"]) for row in rows),
+            }
+    if table_name == "live_pdsch_code_block_table" and raw_rows["dl_pdsch"]:
+        rows = [{
+            "run_id": run_id,
+            "direction": "DL",
+            "frame": _row_text(row, "Frame", "SFN"),
+            "slot": _row_text(row, "Slot"),
+            "ue_id": _row_text(row, "UEID", "UEIndex", "RNTI"),
+            "rnti": _row_text(row, "RNTI"),
+            "cell_id": _row_text(row, "BaseStationID", "ServingCell", "CellID"),
+            "harq_process_id": _row_text(row, "HARQProcessId", "HARQProcess", "HarqID"),
+            "rv": _row_text(row, "RV", "HARQRV"),
+            "tb_size_bits": _row_text(row, "TBSize_bits", "TBSBits"),
+            "tb_crc_length_bits": _row_text(row, "TBCRCLength_bits"),
+            "tb_length_with_crc_bits": _row_text(row, "TBLengthWithCRC_bits"),
+            "num_code_blocks": _row_text(row, "NumCodeBlocks", "CodeBlockCount"),
+            "code_block_count": _row_text(row, "CodeBlockCount", "NumCodeBlocks"),
+            "code_block_length_bits": _row_text(row, "CodeBlockLength_bits"),
+            "segmentation_occurred": _row_text(row, "SegmentationOccurred"),
+            "segmentation_padding_bits": _row_text(row, "SegmentationPaddingBits"),
+            "base_graph": _row_text(row, "BaseGraph"),
+            "encoded_bits": _row_text(row, "EncodedBits"),
+            "rate_matched_bits": _row_text(row, "RateMatchedBits"),
+            "rate_match_puncture_bits": _row_text(row, "RateMatchPunctureBits"),
+            "rate_match_repetition_bits": _row_text(row, "RateMatchRepetitionBits"),
+            "code_block_errors": _row_text(row, "CodeBlockErrors"),
+            "code_block_bler": _row_text(row, "CodeBlockBLER"),
+            "cbg_errors": _row_text(row, "CBGErrors"),
+            "cbg_count": _row_text(row, "CBGCount"),
+            "cbg_bler": _row_text(row, "CBGBLER"),
+            "crc_pass": _row_text(row, "CRCPass", "CombinedDecodeOK"),
+            "value_source": raw_sources["dl_pdsch"],
+            "value_status": "runtime_trial_code_block_segmentation_evidence",
+        } for row in raw_rows["dl_pdsch"][:2048]]
+        return {
+            "data": _encode_rows_from_dicts(rows),
+            "status": "specialized_runtime_pdsch_code_block_table",
+            "note": "PDSCH code-block table is derived from actual DL PDSCH trial rows; no grant-level TBS is synthesized.",
+            "source_logical_path": raw_sources["dl_pdsch"],
+            "source_row_count": len(rows),
+        }
+    if table_name == "live_impairment_table":
+        selected_sources = [
+            (raw_sources["dl_pdsch"], raw_rows["dl_pdsch"]),
+            (raw_sources["ul_pusch"], raw_rows["ul_pusch"]),
+            (raw_sources["srs"], raw_rows["srs"]),
+            (raw_sources["trs"], raw_rows["trs"]),
+            (raw_sources["prach"], raw_rows["prach"]),
+        ]
+        rows: list[dict[str, Any]] = []
+        for logical_path, source_rows in selected_sources:
+            for row in source_rows[:1024]:
+                rows.append({
+                    "run_id": run_id,
+                    "direction": _row_text(row, "Direction"),
+                    "frame": _row_text(row, "Frame", "SFN"),
+                    "slot": _row_text(row, "Slot"),
+                    "ue_id": _row_text(row, "UEID", "UEIndex", "RNTI"),
+                    "cell_id": _row_text(row, "BaseStationID", "ServingCell", "CellID"),
+                    "channel_model": _row_text(row, "ChannelModel"),
+                    "pathloss_db": _row_text(row, "AppliedPathloss_dB", "Pathloss_dB"),
+                    "shadowing_db": _row_text(row, "AppliedShadowFading_dB", "ShadowFading_dB"),
+                    "o2i_loss_db": _row_text(row, "AppliedO2I_dB", "O2ILoss_dB", "O2I_dB"),
+                    "large_scale_gain_db": _row_text(row, "AppliedLargeScaleGain_dB"),
+                    "large_scale_gain_source": _row_text(row, "AppliedLargeScaleGainSource"),
+                    "injected_cfo_hz": _row_text(row, "InjectedCFO_Hz"),
+                    "estimated_cfo_hz": _row_text(row, "EstimatedCFO_Hz"),
+                    "true_cfo_hz": _row_text(row, "TrueCFO_Hz"),
+                    "cfo_error_hz": _row_text(row, "CFOError_Hz"),
+                    "carrier_phase_offset_deg": _row_text(row, "InjectedCarrierPhaseOffset_deg"),
+                    "carrier_phase_offset_applied": _row_text(row, "CarrierPhaseOffsetApplied"),
+                    "carrier_phase_offset_status": _row_text(row, "CarrierPhaseOffsetExecutionStatus"),
+                    "phase_tracking_error_deg": _row_text(row, "PhaseTrackingError_deg"),
+                    "phase_noise_status": _row_text(row, "PhaseNoiseExecutionStatus"),
+                    "injected_timing_offset_samples": _row_text(row, "InjectedTimingOffset_samples"),
+                    "timing_error_samples": _row_text(row, "TimingError_samples"),
+                    "doppler_hz": _row_text(row, "DopplerHz", "InjectedDoppler_Hz"),
+                    "estimated_doppler_hz": _row_text(row, "EstimatedDopplerHz"),
+                    "doppler_error_hz": _row_text(row, "DopplerError_Hz"),
+                    "iq_imbalance_configured": _row_text(row, "IQImbalanceConfigured"),
+                    "iq_imbalance_applied": _row_text(row, "IQImbalanceApplied"),
+                    "iq_gain_imbalance_db": _row_text(row, "ConfiguredIQGainImbalance_dB"),
+                    "iq_phase_imbalance_deg": _row_text(row, "ConfiguredIQPhaseImbalance_deg"),
+                    "iq_measurement_status": _row_text(row, "IQImbalanceMeasurementStatus"),
+                    "interference_mode": _row_text(row, "InterferenceMode"),
+                    "residual_interference_power_db": _row_text(row, "ResidualInterferencePower_dB"),
+                    "source_artifact": logical_path,
+                    "value_status": "runtime_waveform_impairment_evidence",
+                })
+        if rows:
+            return {
+                "data": _encode_rows_from_dicts(rows),
+                "status": "specialized_runtime_impairment_table",
+                "note": "Impairment table is derived from persisted waveform/control trial evidence, including RF offsets, pathloss/O2I, Doppler, timing, IQ, and interference fields when measured.",
+                "source_logical_path": "|".join(path for path, source_rows in selected_sources if source_rows),
+                "source_row_count": len(rows),
+            }
+    if table_name == "live_beam_selection_table":
+        selected_sources = [
+            ("beamforming/csv/probe_beam_mimo.csv", beam_probe),
+            (raw_sources["dl_pdsch"], raw_rows["dl_pdsch"]),
+            (raw_sources["ul_pusch"], raw_rows["ul_pusch"]),
+        ]
+        rows: list[dict[str, Any]] = []
+        tci_cfg = config_payload.get("tci", {}) if isinstance(config_payload.get("tci"), dict) else {}
+        qcl_cfg = config_payload.get("qcl", {}) if isinstance(config_payload.get("qcl"), dict) else {}
+        near_field_cfg = config_payload.get("near_field", {}) if isinstance(config_payload.get("near_field"), dict) else {}
+        for logical_path, source_rows in selected_sources:
+            for row in source_rows[:1024]:
+                qcl_accuracy = _row_text(row, "QCLAccuracy")
+                tci_value = _row_text(row, "TCIState", "TCIStateID") or str(tci_cfg.get("state_id") or "")
+                rows.append({
+                    "run_id": run_id,
+                    "direction": _row_text(row, "Direction"),
+                    "frame": _row_text(row, "Frame", "SFN"),
+                    "slot": _row_text(row, "Slot"),
+                    "ue_id": _row_text(row, "UEID", "UEIndex", "RNTI"),
+                    "cell_id": _row_text(row, "BaseStationID", "ServingCell", "CellID"),
+                    "selected_beam_index": _row_text(row, "SelectedBeamIndex"),
+                    "best_beam_index": _row_text(row, "BestBeamIndex"),
+                    "beam_hit": _row_text(row, "BeamHit"),
+                    "topk_beam_hit": _row_text(row, "TopKBeamHit"),
+                    "beam_candidate_count": _row_text(row, "BeamCandidateCount"),
+                    "selected_beam_gain_db": _row_text(row, "SelectedBeamGain_dB"),
+                    "best_beam_gain_db": _row_text(row, "BestBeamGain_dB"),
+                    "beam_gain_gap_db": _row_text(row, "BeamGainGap_dB"),
+                    "beam_selection_strategy": _row_text(row, "BeamSelectionStrategy", "ConfiguredBeamSelectionStrategy"),
+                    "applied_beam_index_set": _row_text(row, "AppliedBeamIndexSet"),
+                    "beamforming_applied": _row_text(row, "BeamformingApplied"),
+                    "precoding_active": _row_text(row, "PrecodingActive"),
+                    "precoder_source": _row_text(row, "PrecoderSource", "AppliedPrecoderSource"),
+                    "precoding_mode": _row_text(row, "PrecodingMode"),
+                    "applied_precoder_pmi": _row_text(row, "AppliedPrecoderPMI"),
+                    "applied_precoder_pmi_type": _row_text(row, "AppliedPrecoderPMIType"),
+                    "applied_precoder_codebook_mode": _row_text(row, "AppliedPrecoderCodebookMode"),
+                    "qcl_accuracy": qcl_accuracy,
+                    "qcl_type": _row_text(row, "QCLType", "QCLTypes") or str(qcl_cfg.get("type") or qcl_cfg.get("types") or ""),
+                    "qcl_source_rs": _row_text(row, "QCLSourceRS") or str(qcl_cfg.get("source_rs") or ""),
+                    "qcl_status": _row_text(row, "QCLStatus") or ("runtime_qcl_accuracy_measured" if qcl_accuracy else "not_materialized_in_active_truth_path"),
+                    "tci_state_id": tci_value,
+                    "unified_tci_state_id": _row_text(row, "UnifiedTCIStateID") or str(tci_cfg.get("unified_state_id") or ""),
+                    "tci_validity_timer_slots": _row_text(row, "TCIValidityTimerSlots") or str(tci_cfg.get("validity_timer_slots") or ""),
+                    "tci_status": _row_text(row, "TCIStatus") or ("configured_or_runtime_field_present" if (tci_cfg or tci_value) else "not_materialized_in_active_truth_path"),
+                    "fraunhofer_boundary_m": _row_text(row, "FraunhoferBoundary_m") or str(near_field_cfg.get("fraunhofer_boundary_m") or ""),
+                    "near_field_focal_point_m": _row_text(row, "NearFieldFocalPoint_m", "FocalPoint_m") or str(near_field_cfg.get("focal_point_m") or ""),
+                    "near_field_status": _row_text(row, "NearFieldStatus") or ("configured" if near_field_cfg else "not_materialized_in_active_truth_path"),
+                    "source_artifact": logical_path,
+                    "value_status": "runtime_beamforming_and_precoder_evidence",
+                })
+        if rows:
+            return {
+                "data": _encode_rows_from_dicts(rows),
+                "status": "specialized_runtime_beam_selection_table",
+                "note": "Beam table is derived from runtime beam/precoder rows and includes explicit TCI/QCL/near-field status fields without fabricating unavailable behavior.",
+                "source_logical_path": "|".join(path for path, source_rows in selected_sources if source_rows),
+                "source_row_count": len(rows),
             }
     if table_name in {"live_case_status", "live_required_vs_optional_case_status", "live_truth_policy_status"}:
         block_paths = {
@@ -1832,7 +2011,7 @@ def _specialized_live_report_table(
                     "cell_id": _row_text(row, "ServingCell", "CellID", "BaseStationID"),
                     "frame": _row_text(row, "Frame"),
                     "slot": _row_text(row, "Slot"),
-                    "measured_sinr_db": _row_text(row, "MeasuredSINR_dB", "ReceiverHestSINR_dB"),
+                    "measured_sinr_db": _row_text(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
                     "wideband_cqi": _row_text(row, "WidebandCQI"),
                     "mcs": _row_text(row, "MCS", "CQIDerivedMCS"),
                     "tb_size_bits": _row_text(row, "TBSize_bits"),
@@ -1864,6 +2043,16 @@ def _specialized_live_report_table(
             "source_row_count": len(rows),
         }
     if table_name in {"live_prb_allocation_snapshot", "live_re_allocation_snapshot"}:
+        direct_path = "reports/csv/live_re_allocation_snapshot.csv" if table_name == "live_re_allocation_snapshot" else "packet_flow/csv/live_prb_allocation.csv"
+        direct_header, direct_rows = _artifact_rows_by_path(source_lookup, fetch_artifact_bytes, direct_path)
+        if direct_header and direct_rows:
+            return {
+                "data": _encode_rows_from_dicts(direct_rows),
+                "status": "direct_runtime_allocation_snapshot",
+                "note": "Allocation snapshot emitted directly by the MATLAB runtime/export path.",
+                "source_logical_path": direct_path,
+                "source_row_count": len(direct_rows),
+            }
         rows: list[dict[str, Any]] = []
         for direction, grant_rows in (("DL", dl_grants), ("UL", ul_grants)):
             for row in grant_rows:
@@ -2142,8 +2331,8 @@ def _specialized_live_report_table(
             {"run_id": run_id, "metric_name": "run_completion", "metric_value": status_payload.get("run_completion", ""), "metric_unit": "ratio", "source_artifact": "sim_runs.status_json"},
             {"run_id": run_id, "metric_name": "dl_trial_rows", "metric_value": len(raw_rows["dl_pdsch"]), "metric_unit": "rows", "source_artifact": raw_sources["dl_pdsch"]},
             {"run_id": run_id, "metric_name": "ul_trial_rows", "metric_value": len(raw_rows["ul_pusch"]), "metric_unit": "rows", "source_artifact": raw_sources["ul_pusch"]},
-            {"run_id": run_id, "metric_name": "dl_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["dl_pdsch"], "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["dl_pdsch"]},
-            {"run_id": run_id, "metric_name": "ul_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["ul_pusch"], "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["ul_pusch"]},
+            {"run_id": run_id, "metric_name": "dl_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["dl_pdsch"], "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["dl_pdsch"]},
+            {"run_id": run_id, "metric_name": "ul_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["ul_pusch"], "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["ul_pusch"]},
             {"run_id": run_id, "metric_name": "energy_rows", "metric_value": len(energy_rows), "metric_unit": "rows", "source_artifact": "rf/csv/energy_timeline_trace.csv"},
         ]
         return {
@@ -2189,7 +2378,7 @@ def _specialized_live_report_table(
                 "artifact_family": family,
                 "source_artifact": raw_sources[family],
                 "configured_snr_db": configured_snr if configured_snr is not None else "",
-                "mean_measured_sinr_db": _mean_numeric(source_rows, "MeasuredSINR_dB", "ReceiverHestSINR_dB"),
+                "mean_measured_sinr_db": _mean_numeric(source_rows, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
                 "mean_serving_rsrp_dbm": _mean_numeric(source_rows, "ServingRSRP_dBm"),
                 "mean_csi_rsrp_db": _mean_numeric(source_rows, "CSI_RSRP_dB"),
                 "lineage_note": "Comparison surfaces keep configured launch values separate from measured air-interface runtime values.",
@@ -2424,7 +2613,7 @@ def _prach_rate_chart_materialization(
             flag_value = spec["trial_flag"](row)
             if flag_value is None:
                 continue
-            snr_value = _row_float(row, "SNR_dB", "ConfiguredSNR_dB", "AppliedAWGNSNR_dB")
+            snr_value, _snr_source = _row_quality_axis_value(row, allow_receiver_hest=False)
             bucket = float(snr_value) if snr_value is not None and math.isfinite(float(snr_value)) else None
             grouped[bucket].append(1.0 if bool(flag_value) else 0.0)
     if grouped:
@@ -5026,16 +5215,14 @@ def _specialized_chart_materialization(
             if chart_name in {"BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR"}:
                 pairs: list[tuple[float, float]] = []
                 used_source_path = ""
-                x_field = "ConfiguredSNR_dB" if "SNR" in chart_name and "SINR" not in chart_name else "MeasuredTrialSINR_dB"
-                x_label = "ConfiguredSNR_dB" if "SNR" in chart_name and "SINR" not in chart_name else "MeasuredTrialSINR_dB"
+                x_label = "MeasuredTrialSINR_dB"
                 y_label = "BLER" if "BLER" in chart_name else ("FER" if "FER" in chart_name else "BER")
+                selected_x_labels: Counter[str] = Counter()
                 for source_path, row in trial_rows:
-                    if chart_name == "BLER vs SINR":
-                        x_val = _row_float(row, "MeasuredTrialSINR_dB", "DecoderTruthProxySINR_dB", "MeasuredSINR_dB", "LargeScaleSINR_dB")
-                    else:
-                        x_val = _row_float(row, x_field, "AppliedAWGNSNR_dB", "MeasuredSINR_dB", "LargeScaleSINR_dB")
+                    x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
                     if x_val is None:
                         continue
+                    selected_x_labels[row_x_label] += 1
                     if y_label == "BER":
                         y_val = _trial_row_ber(row)
                     elif y_label == "FER":
@@ -5047,12 +5234,14 @@ def _specialized_chart_materialization(
                     pairs.append((float(x_val), float(y_val)))
                     used_source_path = used_source_path or source_path
                 if pairs:
+                    if selected_x_labels:
+                        x_label = selected_x_labels.most_common(1)[0][0]
                     if chart_name == "BLER vs SINR":
                         csv_bytes, dataset = _metric_rows_by_binned_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials", bin_width=1.0)
                         chart_note = "Reliability-vs-SINR curve binned by data-domain trial SINR where available; receiver-Hest diagnostic SINR is intentionally not used as the x-axis fallback."
                     else:
                         csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials")
-                        chart_note = "Reliability-vs-quality curve derived from actual trial BER/BLER/FER outcomes."
+                        chart_note = "Reliability-vs-quality curve derived from actual trial BER/BLER/FER outcomes; measured/applied quality fields are preferred over configured SNR metadata."
                     return {
                         "csv_bytes": csv_bytes,
                         "img_bytes": _render_svg_plot(chart_name, "Reliability metric aggregated from truthful trial rows.", dataset, [f"samples={len(pairs)}", f"x_axis={x_label}", f"y_axis={y_label}"]),
@@ -5198,7 +5387,7 @@ def _specialized_chart_materialization(
                 pairs: list[tuple[float, float]] = []
                 source_token = ""
                 if chart_name == "throughput vs SNR":
-                    x_label = "ConfiguredSNR_dB"
+                    x_label = "MeasuredTrialSINR_dB"
                     y_label = "Throughput_Mbps"
                 elif chart_name == "throughput vs SINR":
                     x_label = "MeasuredTrialSINR_dB"
@@ -5209,12 +5398,17 @@ def _specialized_chart_materialization(
                 else:
                     x_label = "HARQRetxCount"
                     y_label = "Goodput_Mbps"
+                selected_x_labels: Counter[str] = Counter()
                 for source_path, rows in trial_sources:
                     for row in rows:
                         if chart_name == "throughput vs SNR":
-                            x_val = _row_float(row, "ConfiguredSNR_dB", "AppliedAWGNSNR_dB")
+                            x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
+                            if row_x_label:
+                                selected_x_labels[row_x_label] += 1
                         elif chart_name == "throughput vs SINR":
-                            x_val = _row_float(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB", "LargeScaleSINR_dB")
+                            x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
+                            if row_x_label:
+                                selected_x_labels[row_x_label] += 1
                         elif chart_name == "throughput vs load":
                             x_val = _row_float(row, "AllocatedPRBCount", "PRBCount", "NumPRB", "ScheduledPRBs")
                         else:
@@ -5227,8 +5421,12 @@ def _specialized_chart_materialization(
                         pairs.append((float(x_val), float(y_val)))
                         source_token = source_token or source_path
                 if pairs:
+                    if chart_name in {"throughput vs SNR", "throughput vs SINR"} and selected_x_labels:
+                        x_label = selected_x_labels.most_common(1)[0][0]
                     csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=source_token or "multiple_runtime_trials")
                     subtitle = "Correlation view derived directly from persisted runtime throughput/goodput trials."
+                    if chart_name == "throughput vs SNR":
+                        subtitle = "Throughput-vs-quality view prefers measured/applied runtime quality over configured SNR metadata."
                     if chart_name == "throughput vs load":
                         subtitle = "Load view uses scheduled PRB count as the honest load proxy because this run exports one high-load operating point, not a sweep campaign."
                     return {

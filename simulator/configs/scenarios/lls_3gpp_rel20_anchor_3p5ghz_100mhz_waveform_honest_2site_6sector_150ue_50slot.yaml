@@ -208,6 +208,8 @@ reference_signals:
   srs_ports: 4
   srs_sequence_family: baseline_nr
   srs_periodicity_ms: 5
+  srs_max_ues_per_slot: 150
+  srs_scheduling_policy: multiplex_due_users
   channel_estimation_mode: realistic_baseline
   receiver_example: mmse_irc
   sgcs_reporting_enabled: true
@@ -216,7 +218,7 @@ reference_signals:
   pmi_reporting_enabled: true
   ri_reporting_enabled: true
   cri_reporting_enabled: true
-  pmi_codebook_mode: type1_su_mimo
+  pmi_codebook_mode: type2_mu_mimo
   channel_state_information_mode: PMI+CQI+RI+CRI
 
 random_access:
@@ -267,7 +269,9 @@ mimo:
   n_rx_ant: 4
   n_layers: 2
   precoder_type: wideband
-  codebook_type: type1
+  codebook_type: type2
+  mu_mimo_enable: true
+  mu_mimo_max_users_per_prb: 2
   reciprocity_mode: TDD
   beam_sweep_enabled: true
   beam_count: 32
@@ -295,7 +299,7 @@ csi_acquisition_and_reporting:
   ri_policy: baseline
   cri_policy: baseline
   channel_state_information_mode: PMI+CQI+RI+CRI
-  pmi_codebook_mode: type1_su_mimo
+  pmi_codebook_mode: type2_mu_mimo
   report_payload_mode: compressed
   crc_attached_mode: true
   crc_free_mode: false
@@ -337,7 +341,7 @@ control:
   dci_formats: ["0_0", "0_1", "1_0", "1_1"]
   aggregation_levels: [1, 2, 4, 8, 16]
   candidate_aggregation_levels: [1, 2, 4, 8, 16]
-  aggregation_selection_policy: configured_scheduler_level
+  aggregation_selection_policy: snr_threshold
   scheduler_aggregation_level: 8
   blind_decode_candidates: 44
   search_space_num_candidates: [8, 8, 4, 2, 1]
@@ -393,7 +397,7 @@ control_gating:
   prach_required: true
   pdcch_required: true
   srs_required: true
-  srs_max_age_slots: 4
+  srs_max_age_slots: 20
   trs_required: true
   trs_max_age_slots: 4
 

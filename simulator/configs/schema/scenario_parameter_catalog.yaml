@@ -266,6 +266,18 @@ sections:
         required: false
         type: number
         allowed_numeric_values: [5, 10, 20, 40, 80, 160]
+      srs_periodicity_slots:
+        required: false
+        type: integer
+        min: 1
+      srs_max_ues_per_slot:
+        required: false
+        type: integer
+        min: 1
+      srs_scheduling_policy:
+        required: false
+        type: string
+        allowed_values: [round_robin_phase, multiplex_due_users]
       channel_estimation_mode:
         required: false
         type: string
@@ -314,6 +326,16 @@ sections:
         required: true
         type: string
         allowed_values: [type1, type2, etype2, noncodebook]
+      mu_mimo_enable:
+        required: false
+        type: boolean
+      ul_mu_mimo_enable:
+        required: false
+        type: boolean
+      mu_mimo_max_users_per_prb:
+        required: false
+        type: integer
+        min: 2
       reciprocity_mode:
         required: true
         type: string
@@ -917,6 +939,18 @@ sections:
         required: false
         type: string
         allowed_values: [filesystem, mysql_web]
+      persistence_mode:
+        required: false
+        type: string
+        allowed_values: [both, database, results_folder]
+      persistence_effective_mode:
+        required: false
+        type: string
+        allowed_values: [both, database, results_folder]
+      persistence_fallback_reason: {required: false, type: string}
+      persist_to_database: {required: false, type: boolean}
+      persist_to_results_folder: {required: false, type: boolean}
+      results_root: {required: false, type: string}
       database_host: {required: false, type: string}
       database_port: {required: false, type: integer, min: 1}
       database_schema: {required: false, type: string}

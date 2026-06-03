@@ -132,10 +132,11 @@ end
 
 rsrpRECount = max(12 * max(1, round(double(opt.NumRB))), 1);
 state.RxPower_dBm = state.TxPower_dBm + state.BeamGain_dB - state.Pathloss_dB;
-state.RSRP_dBm = state.RxPower_dBm;
-state.RSRPPerRE_dBm = state.RxPower_dBm - 10*log10(rsrpRECount);
+state.RSRP_dBm = state.RxPower_dBm - 10*log10(rsrpRECount);
+state.RSRPPerRE_dBm = state.RSRP_dBm;
+state.WidebandRxPower_dBm = state.RxPower_dBm;
 state.RSRPNormalizationRECount = repmat(double(rsrpRECount), K, nCells);
-state.RSRPConvention = "wideband_serving_reference_power";
+state.RSRPConvention = "per_reference_resource_element_power";
 state.RSRPPerREConvention = "per_reference_resource_element_power";
 state.PathlossModelSource = localObjectStringProp(plModel, "PathlossModelSource", ...
     string(sixgr.util.structGet(opt.PreviousState, "PathlossModelSource", "")));

@@ -193,78 +193,119 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             ord = ord(1:min(numel(ord), maxUE));
 
             cursor = 1;
+            muEnabled = localMUMIMOEnabled(obj.Cfg, obj.Direction);
+            muMaxUsers = localMUMIMOMaxUsers(obj.Cfg);
+            usedOrd = false(1, numel(ord));
             allocTimer = tic;
             finalPlanElapsed_s = zeros(1, numel(ord));
             for ii = 1:numel(ord)
+                if usedOrd(ii)
+                    continue;
+                end
                 if cursor > numel(prbAvail)
                     break;
                 end
-                k = ueIdx(ord(ii));
-                rnti = double(ueStates(k).RNTI);
-
-                if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti)
-                    continue;
-                end
-
                 nAlloc = min(prbChunk, numel(prbAvail)-cursor+1);
                 candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
-                finalPlanTimer = tic;
-                plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufBytes(k));
-                finalPlanElapsed_s(ii) = toc(finalPlanTimer);
-                if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
+                groupOrd = ord(ii);
+                if muEnabled
+                    for jj = (ii + 1):numel(ord)
+                        if usedOrd(jj) || numel(groupOrd) >= muMaxUsers
+                            continue;
+                        end
+                        if localMUMIMOCompatible(ueStates(ueIdx(groupOrd(1))), ueStates(ueIdx(ord(jj))), obj.Cfg)
+                            groupOrd(end + 1) = ord(jj); %#ok<AGROW>
+                        end
+                    end
+                end
+
+                groupGrants = repmat(tmpl, 0, 1);
+                groupValid = false(1, numel(groupOrd));
+                prbSetForGroup = [];
+                for gg = 1:numel(groupOrd)
+                    k = ueIdx(groupOrd(gg));
+                    rnti = double(ueStates(k).RNTI);
+                    if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti)
+                        continue;
+                    end
+                    finalPlanTimer = tic;
+                    plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufBytes(k));
+                    finalPlanElapsed_s(ii) = finalPlanElapsed_s(ii) + toc(finalPlanTimer);
+                    if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
+                        continue;
+                    end
+                    prbSet = double(plan.PRBSet(:).');
+                    if isempty(prbSetForGroup)
+                        prbSetForGroup = prbSet;
+                    end
+                    servedBytes = double(plan.TBSBytes);
+
+                    harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
+                    if ~isempty(obj.HARQ)
+                        txp = obj.HARQ.allocate(rnti, slot, servedBytes, 'NewData', true);
+                        harqInfo = txp.HARQ;
+                    end
+
+                    g = tmpl;
+                    g.Direction = obj.Direction;
+                    g.Slot = slot;
+                    g.RNTI = rnti;
+                    g.PRBSet = prbSet;
+                    g.SymbolAllocation = symAlloc;
+                    g.Modulation = char(string(plan.Modulation));
+                    g.NumLayers = double(plan.NumLayers);
+                    g.TargetCodeRate = double(plan.TargetCodeRate);
+                    g.TBSBits = double(plan.TBSBits);
+                    g.TBSBytes = double(plan.TBSBytes);
+                    g.EstimatedTBSBits = double(plan.RawEstimatedTBSBits);
+                    g.EstimatedTBSBytes = double(plan.RawEstimatedTBSBytes);
+                    g.NREPerPRB = double(plan.NREPerPRB);
+                    g.MCSTable = char(string(plan.MCSTable));
+                    g.CQITable = char(string(plan.CQITable));
+                    g.AMCMode = char(string(plan.AMCMode));
+                    g.QueueLimited = logical(plan.QueueLimited);
+                    g.HARQ = harqInfo;
+                    g.CQIUsed = localUECQI(ueStates(k));
+                    g.RIUsed = double(sixgr.util.structGet(ueStates(k), "RI", NaN));
+                    g.PMI = double(sixgr.util.structGet(ueStates(k), "PMI", NaN));
+                    g.CRI = double(sixgr.util.structGet(ueStates(k), "CRI", NaN));
+                    g.MCSIndex = double(plan.MCSIndex);
+                    g.DAI = 1;
+                    g.K1 = k1;
+                    g.K2 = k2;
+                    g.SearchSpaceID = ssid;
+                    g.CORESETID = coreset;
+                    g.BWPId = bwpId;
+                    g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
+                    g.BufferBytesBefore = bufBytes(k);
+                    g.BufferBytesAfter = max(bufBytes(k) - double(servedBytes), 0);
+                    g.GrantReason = localTernary(muEnabled && numel(groupOrd) > 1, "new_data_pf_mu_mimo", "new_data_pf");
+                    g.MUMIMOEnabled = logical(muEnabled);
+                    g.MUMIMOGroupSize = double(numel(groupOrd));
+                    g.MUMIMOGroupId = double(localMUMIMOGroupId(slot, cursor));
+                    g.MUMIMOPairingStatus = char(localTernary(muEnabled && numel(groupOrd) > 1, "paired_shared_prb_spatial_multiplexing", "single_user_or_mu_disabled"));
+                    g.MUMIMOPairingMetricSource = "pf_order_cqi_ri_pmi_orthogonality";
+                    g.MUMIMOPrecoderType = char(localMUMIMOPrecoderType(obj.Cfg));
+                    [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                        sprintf("%s %s RNTI=%d", class(obj), char(g.GrantReason), round(rnti)));
+                    g.TBSBytes = g.TBSBits / 8;
+                    g.DCI = obj.buildDCIBitfield(g);
+                    groupGrants(end+1) = g; %#ok<AGROW>
+                    groupValid(gg) = true;
+                end
+                if isempty(groupGrants)
+                    usedOrd(ii) = true;
                     continue;
                 end
-                prbSet = double(plan.PRBSet(:).');
-                cursor = cursor + numel(prbSet);
-                servedBytes = double(plan.TBSBytes);
-
-                harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
-                if ~isempty(obj.HARQ)
-                    txp = obj.HARQ.allocate(rnti, slot, servedBytes, 'NewData', true);
-                    harqInfo = txp.HARQ;
+                cursor = cursor + max(1, numel(prbSetForGroup));
+                usedOrd(ii) = true;
+                usedOrd(ismember(ord, groupOrd(groupValid))) = true;
+                for gg = 1:numel(groupGrants)
+                    grants(end+1) = groupGrants(gg); %#ok<AGROW>
+                    rnti = double(groupGrants(gg).RNTI);
+                    obj.ensureUE(rnti);
+                    obj.UEStats(obj.ensureUE(rnti)).LastServedSlot = slot;
                 end
-
-                g = tmpl;
-                g.Direction = obj.Direction;
-                g.Slot = slot;
-                g.RNTI = rnti;
-                g.PRBSet = prbSet;
-                g.SymbolAllocation = symAlloc;
-                g.Modulation = char(string(plan.Modulation));
-                g.NumLayers = double(plan.NumLayers);
-                g.TargetCodeRate = double(plan.TargetCodeRate);
-                g.TBSBits = double(plan.TBSBits);
-                g.TBSBytes = double(plan.TBSBytes);
-                g.EstimatedTBSBits = double(plan.RawEstimatedTBSBits);
-                g.EstimatedTBSBytes = double(plan.RawEstimatedTBSBytes);
-                g.NREPerPRB = double(plan.NREPerPRB);
-                g.MCSTable = char(string(plan.MCSTable));
-                g.CQITable = char(string(plan.CQITable));
-                g.AMCMode = char(string(plan.AMCMode));
-                g.QueueLimited = logical(plan.QueueLimited);
-                g.HARQ = harqInfo;
-                g.CQIUsed = localUECQI(ueStates(k));
-                g.MCSIndex = double(plan.MCSIndex);
-                g.DAI = 1;
-                g.K1 = k1;
-                g.K2 = k2;
-                g.SearchSpaceID = ssid;
-                g.CORESETID = coreset;
-                g.BWPId = bwpId;
-                g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
-                g.BufferBytesBefore = bufBytes(k);
-                g.BufferBytesAfter = max(bufBytes(k) - double(servedBytes), 0);
-                g.GrantReason = "new_data_pf";
-                [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
-                    sprintf("%s new_data_pf RNTI=%d", class(obj), round(rnti)));
-                g.TBSBytes = g.TBSBits / 8;
-                g.DCI = obj.buildDCIBitfield(g);
-
-                grants(end+1) = g; %#ok<AGROW>
-
-                % record served time
-                obj.ensureUE(rnti);
-                obj.UEStats(obj.ensureUE(rnti)).LastServedSlot = slot;
             end
             allocElapsed_s = toc(allocTimer);
 
@@ -315,6 +356,9 @@ g.QueueLimited = false;
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 0;
 g.CQIUsed = 0;
+g.RIUsed = NaN;
+g.PMI = NaN;
+g.CRI = NaN;
 g.DAI = 1;
 g.K1 = 4;
 g.K2 = 1;
@@ -325,7 +369,16 @@ g.HeadOfLineDelay_ms = 0;
 g.BufferBytesBefore = 0;
 g.BufferBytesAfter = 0;
 g.GrantReason = "new_data_pf";
-g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"RIV",0,"RBStart",0,"RBLength",0);
+g.MUMIMOEnabled = false;
+g.MUMIMOGroupSize = 1;
+g.MUMIMOGroupId = NaN;
+g.MUMIMOPairingStatus = "";
+g.MUMIMOPairingMetricSource = "";
+g.MUMIMOPrecoderType = "";
+g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"FieldValues",struct(), ...
+    "RIV",0,"RBStart",0,"RBLength",0,"SLIV",NaN,"TimeDomainAssignmentIndex",NaN, ...
+    "StandardProfile","","BitExactPDCCHPayload",false,"BitLength",0, ...
+    "NRFieldLayoutSource","","NRResourceAssignmentSource","");
 end
 
 function g = localNormalizeGrant(gIn, tmpl, direction, slot)
@@ -354,5 +407,78 @@ function hol = localUEHoLDelay(ue)
 hol = double(sixgr.util.structGet(ue, "HeadOfLineDelay_ms", 0));
 if ~isfinite(hol) || hol < 0
     hol = 0;
+end
+end
+
+function tf = localMUMIMOEnabled(cfg, direction)
+direction = upper(string(direction));
+tf = logical(sixgr.util.structGet(cfg, "mac.scheduler.muMimoEnabled", ...
+    sixgr.util.structGet(cfg, "phy.mimo.muMimoEnabled", ...
+    sixgr.util.structGet(cfg, "mimo.mu_mimo_enable", false))));
+if direction ~= "DL"
+    tf = tf && logical(sixgr.util.structGet(cfg, "mac.scheduler.ulMuMimoEnabled", ...
+        sixgr.util.structGet(cfg, "phy.mimo.ulMuMimoEnabled", false)));
+end
+end
+
+function n = localMUMIMOMaxUsers(cfg)
+n = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoMaxUsersPerPRB", ...
+    sixgr.util.structGet(cfg, "phy.mimo.muMimoMaxUsersPerPRB", 2)));
+if ~(isscalar(n) && isfinite(n) && n >= 2)
+    n = 2;
+end
+n = max(2, min(4, round(n)));
+end
+
+function tf = localMUMIMOCompatible(ueA, ueB, cfg)
+cqiA = localUECQI(ueA);
+cqiB = localUECQI(ueB);
+if min(cqiA, cqiB) <= 0
+    tf = false;
+    return;
+end
+maxDeltaCQI = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoMaxCQIDelta", 4));
+if abs(cqiA - cqiB) > maxDeltaCQI
+    tf = false;
+    return;
+end
+riA = double(sixgr.util.structGet(ueA, "RI", 1));
+riB = double(sixgr.util.structGet(ueB, "RI", 1));
+if ~(isfinite(riA) && isfinite(riB) && riA >= 1 && riB >= 1)
+    tf = false;
+    return;
+end
+pmiA = double(sixgr.util.structGet(ueA, "PMI", NaN));
+pmiB = double(sixgr.util.structGet(ueB, "PMI", NaN));
+if isfinite(pmiA) && isfinite(pmiB)
+    tf = round(pmiA) ~= round(pmiB);
+else
+    sinrA = double(sixgr.util.structGet(ueA, "MeasuredSINR_dB", NaN));
+    sinrB = double(sixgr.util.structGet(ueB, "MeasuredSINR_dB", NaN));
+    tf = isfinite(sinrA) && isfinite(sinrB) && abs(sinrA - sinrB) <= 6;
+end
+end
+
+function groupId = localMUMIMOGroupId(slot, cursor)
+groupId = 1.0e6 * max(0, round(double(slot))) + max(1, round(double(cursor)));
+end
+
+function token = localMUMIMOPrecoderType(cfg)
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", ...
+    sixgr.util.structGet(cfg, "phy.csi.codebookType", "type1")))));
+if contains(mode, "type2") || contains(mode, "type_2")
+    token = "type2_codebook";
+elseif contains(mode, "noncodebook")
+    token = "noncodebook";
+else
+    token = "type1_codebook";
+end
+end
+
+function out = localTernary(cond, yesVal, noVal)
+if logical(cond)
+    out = yesVal;
+else
+    out = noVal;
 end
 end

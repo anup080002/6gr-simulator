@@ -52,6 +52,13 @@ if sampleRateHz > 0 && isfinite(cfoHz) && cfoHz ~= 0
     rot = exp(1j * 2 * pi * (cfoHz / sampleRateHz) * n);
     y = y .* cast(rot, "like", y);
 end
+
+phaseOffsetRad = double(replay.InjectedCarrierPhaseOffset_rad);
+if isfinite(phaseOffsetRad) && abs(phaseOffsetRad) > 1e-12
+    y = y .* cast(exp(1j * phaseOffsetRad), "like", y);
+    replay.CarrierPhaseOffsetApplied = true;
+    replay.CarrierPhaseOffsetExecutionStatus = "applied_sample_domain_constant_rotation";
+end
 end
 
 function replay = localResolveReplayContext(cfg, sampleRateHz)
@@ -71,6 +78,15 @@ o2iComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeO2IComplianc
 losProbabilitySource = string(sixgr.util.structGet(userMeta, "RuntimeLOSProbabilitySource", ""));
 losComplianceStatus = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceStatus", ""));
 losComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceReason", ""));
+if ~isfinite(pathloss_dB) && logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", false))
+    explicitPathloss_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "channel.pathloss_dB", NaN));
+    if isfinite(explicitPathloss_dB)
+        pathloss_dB = explicitPathloss_dB;
+        pathlossModelSource = "cfg.channel.pathloss_dB";
+        pathlossComplianceStatus = "explicit_config_pathloss";
+        channelComplianceMode = localFirstNonEmptyString(channelComplianceMode, "standalone_explicit_pathloss");
+    end
+end
 
 [loss_dB, gainSource] = localResolveLargeScaleLoss(pathloss_dB, basePathloss_dB, shadow_dB, o2i_dB);
 gain_dB = -loss_dB;
@@ -78,6 +94,9 @@ ampGain = 10.^(gain_dB / 20);
 
 configuredSNR_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "channel.snr_dB", NaN));
 noiseMode = localResolveNoiseOperatingMode(cfg);
+if ~localHasExplicitNoiseOperatingMode(cfg) && gainSource ~= "none"
+    noiseMode = "configured_snr_before_large_scale_gain";
+end
 [servingRxPower_dBm, servingRxPowerSource, referenceTxPower_dBm, referenceTxPowerSource] = ...
     localResolveServingRxPower(cfg, userMeta, loss_dB);
 noiseFigure_dB = localResolveNoiseFigure(cfg);
@@ -86,6 +105,9 @@ noiseBandwidth_Hz = localResolveNoiseBandwidth(cfg, sampleRateHz);
     localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, noiseBandwidth_Hz, noiseFigure_dB, ampGain);
 [phaseNoiseConfigured, phaseNoiseBackend, phaseNoiseTruthClassification, phaseNoiseApproximationReason, phaseNoiseExecutionStatus] = ...
     localResolvePhaseNoiseTruthBoundary(cfg, sampleRateHz);
+[carrierPhaseOffset_deg, carrierPhaseOffsetSource] = localResolveInjectedCarrierPhaseOffsetDeg(cfg);
+[carrierPhaseOffsetApplied, carrierPhaseOffsetStatus] = localInitialCarrierPhaseOffsetStatus( ...
+    carrierPhaseOffset_deg, carrierPhaseOffsetSource);
 [iqEnabled, iqModel, iqGainImbalance_dB, iqPhaseImbalance_deg, iqConfigSource, iqExecutionStatus] = ...
     localResolveIQImbalanceRuntime(cfg);
 
@@ -106,6 +128,11 @@ end
 replay = struct( ...
     "InjectedCFO_Hz", localResolveInjectedCFOHz(cfg), ...
     "InjectedTimingOffset_samples", localResolveInjectedTimingOffsetSamples(cfg), ...
+    "InjectedCarrierPhaseOffset_deg", carrierPhaseOffset_deg, ...
+    "InjectedCarrierPhaseOffset_rad", carrierPhaseOffset_deg * pi / 180, ...
+    "CarrierPhaseOffsetApplied", logical(carrierPhaseOffsetApplied), ...
+    "CarrierPhaseOffsetSource", char(carrierPhaseOffsetSource), ...
+    "CarrierPhaseOffsetExecutionStatus", char(carrierPhaseOffsetStatus), ...
     "SampleRate_Hz", double(sampleRateHz), ...
     "ConfiguredSNR_dB", configuredSNR_dB, ...
     "NoiseOperatingMode", char(noiseMode), ...
@@ -138,7 +165,7 @@ replay = struct( ...
     "ReferenceTxPower_dBm", referenceTxPower_dBm, ...
     "ReferenceTxPowerSource", char(referenceTxPowerSource), ...
     "ServingRSRP_dBm", servingRSRP_dBm, ...
-    "ServingRSRPSource", "large_scale_wideband_serving_power", ...
+    "ServingRSRPSource", "large_scale_per_reference_re_power", ...
     "LargeScaleSINR_dB", largeScaleSINR_dB, ...
     "LargeScaleSINRSource", largeScaleSINRSource, ...
     "InterferenceMode", char(interferenceMode), ...
@@ -170,6 +197,15 @@ mode = strtrim(lower(mode));
 if strlength(mode) == 0
     mode = "configured_snr_anchor_after_large_scale_gain";
 end
+end
+
+function tf = localHasExplicitNoiseOperatingMode(cfg)
+tf = false;
+if ~isstruct(cfg) || ~isfield(cfg, "run") || ~isstruct(cfg.run) || ~isfield(cfg.run, "noiseOperatingMode")
+    return;
+end
+mode = string(cfg.run.noiseOperatingMode);
+tf = strlength(strtrim(mode)) > 0;
 end
 
 function [servingRxPower_dBm, source, referenceTxPower_dBm, referenceTxPowerSource] = ...
@@ -579,6 +615,55 @@ if ~isfinite(timingOffset)
     timingOffset = 0;
 end
 timingOffset = round(timingOffset);
+end
+
+function [phaseOffsetDeg, source] = localResolveInjectedCarrierPhaseOffsetDeg(cfg)
+resolved = sixgr.util.structGet(cfg, "lls6g.resolvedConfig", struct());
+[phaseOffsetDeg, source] = localFirstFiniteValueWithSource( ...
+    sixgr.util.structGet(cfg, "rf.phaseOffset_deg", NaN), "rf.phaseOffset_deg", ...
+    sixgr.util.structGet(cfg, "rf.phase_shift_deg", NaN), "rf.phase_shift_deg", ...
+    sixgr.util.structGet(cfg, "rf.carrierPhaseOffset_deg", NaN), "rf.carrierPhaseOffset_deg", ...
+    sixgr.util.structGet(cfg, "phy.impairments.phaseOffset_deg", NaN), "phy.impairments.phaseOffset_deg", ...
+    sixgr.util.structGet(cfg, "phy.impairments.phaseShift_deg", NaN), "phy.impairments.phaseShift_deg", ...
+    sixgr.util.structGet(cfg, "impairments.phase_offset_deg", NaN), "impairments.phase_offset_deg", ...
+    sixgr.util.structGet(cfg, "impairments.phase_shift_deg", NaN), "impairments.phase_shift_deg", ...
+    sixgr.util.structGet(resolved, "impairments.phase_offset_deg", NaN), "lls6g.resolvedConfig.impairments.phase_offset_deg", ...
+    sixgr.util.structGet(resolved, "impairments.phase_shift_deg", NaN), "lls6g.resolvedConfig.impairments.phase_shift_deg", ...
+    sixgr.util.structGet(resolved, "impairments.carrier_phase_offset_deg", NaN), "lls6g.resolvedConfig.impairments.carrier_phase_offset_deg");
+if ~isfinite(phaseOffsetDeg)
+    phaseOffsetDeg = 0;
+    source = "not_configured";
+end
+end
+
+function [applied, status] = localInitialCarrierPhaseOffsetStatus(phaseOffsetDeg, source)
+if string(source) == "not_configured"
+    applied = false;
+    status = "disabled";
+elseif abs(double(phaseOffsetDeg)) <= 1e-12
+    applied = false;
+    status = "configured_zero_noop";
+else
+    applied = false;
+    status = "configured_pending_sample_domain_rotation";
+end
+end
+
+function [value, source] = localFirstFiniteValueWithSource(varargin)
+value = NaN;
+source = "not_configured";
+for i = 1:2:nargin
+    candidate = double(varargin{i});
+    if isempty(candidate)
+        continue;
+    end
+    candidate = candidate(1);
+    if isfinite(candidate)
+        value = candidate;
+        source = string(varargin{i + 1});
+        return;
+    end
+end
 end
 
 function value = localFiniteOrNaN(value)

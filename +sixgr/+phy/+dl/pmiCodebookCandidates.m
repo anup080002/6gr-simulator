@@ -60,7 +60,7 @@ switch mode
     case "type2_mu_mimo"
         numBeams = max(beamCountCfg, 2 * numTxPorts);
         strides = unique(max(1, [1 2 round(numBeams / max(nLayers, 1))]));
-        phaseVariants = ones(1, nLayers);
+        phaseVariants = localPhaseVariants(nLayers);
     case "etype2_candidate"
         numBeams = max(beamCountCfg, 4 * numTxPorts);
         strides = unique(max(1, [1 2 3 round(numBeams / max(nLayers, 1))]));
@@ -70,7 +70,8 @@ switch mode
             "Unsupported PMI codebook mode '%s'.", mode);
 end
 
-B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams);
+B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams, mode);
+numBeams = size(B, 2);
 candidateList = repmat(struct( ...
     "PMI", NaN, ...
     "BeamIndices", [], ...
@@ -84,25 +85,35 @@ candidateList = repmat(struct( ...
     "Stride", 1, ...
     "StrideIndex", 0, ...
     "PhaseVariantIndex", 0, ...
-    "PhasePattern", ones(1, nLayers)), 0, 1);
+    "PhasePattern", ones(1, nLayers), ...
+    "BasisBeamCount", 1, ...
+    "CoefficientPattern", ""), 0, 1);
 seen = containers.Map("KeyType", "char", "ValueType", "logical");
 idx0 = 0;
+isType2 = any(mode == ["type2_mu_mimo", "etype2_candidate"]);
+type2BasisBeamCount = localResolveType2BasisBeamCount(cfg, mode, nLayers, numBeams);
 
 for s = 1:numel(strides)
     stride = strides(s);
     for startIdx = 1:numBeams
-        beamIdx = 1 + mod((startIdx - 1) + (0:nLayers-1) * stride, numBeams);
-        if numel(unique(beamIdx)) ~= nLayers
-            continue;
-        end
-        Wbase = B(:, beamIdx);
         for pv = 1:size(phaseVariants, 1)
-            Wcand = Wbase .* phaseVariants(pv, :);
-            Wcand = localNormalizeColumns(Wcand);
+            if isType2
+                [Wcand, beamIdx, coeffPattern] = localBuildType2CompositeCandidate( ...
+                    B, startIdx, stride, nLayers, type2BasisBeamCount, phaseVariants(pv, :), mode);
+            else
+                beamIdx = 1 + mod((startIdx - 1) + (0:nLayers-1) * stride, numBeams);
+                coeffPattern = "";
+                if numel(unique(beamIdx)) ~= nLayers
+                    continue;
+                end
+                Wbase = B(:, beamIdx);
+                Wcand = Wbase .* phaseVariants(pv, :);
+                Wcand = localNormalizeColumns(Wcand);
+            end
             if rank(Wcand) < nLayers
                 continue;
             end
-            key = localCandidateKey(beamIdx, phaseVariants(pv, :));
+            key = localCandidateKey(beamIdx, [phaseVariants(pv, :) localCoefficientTokenVector(coeffPattern)]);
             if isKey(seen, key)
                 continue;
             end
@@ -120,7 +131,9 @@ for s = 1:numel(strides)
                 "Stride", double(stride), ...
                 "StrideIndex", double(s - 1), ...
                 "PhaseVariantIndex", double(pv - 1), ...
-                "PhasePattern", phaseVariants(pv, :));
+                "PhasePattern", phaseVariants(pv, :), ...
+                "BasisBeamCount", double(localTernaryNumeric(isType2, type2BasisBeamCount, 1)), ...
+                "CoefficientPattern", char(string(coeffPattern)));
             idx0 = idx0 + 1;
         end
     end
@@ -150,7 +163,8 @@ info = struct( ...
     "NumPorts", double(numTxPorts), ...
     "NumLayers", double(nLayers), ...
     "StrideSet", double(strides(:).'), ...
-    "NumPhaseVariants", double(size(phaseVariants, 1)));
+    "NumPhaseVariants", double(size(phaseVariants, 1)), ...
+    "Type2BasisBeamCount", double(localTernaryNumeric(isType2, type2BasisBeamCount, 1)));
 end
 
 function mode = localResolveMode(cfg, overrideMode)
@@ -202,8 +216,16 @@ B = exp(-1j * 2 * pi * (n * m) / max(numBeams, 1));
 B = B ./ sqrt(max(numTxPorts, 1));
 end
 
-function B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams)
+function B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams, mode)
 B = [];
+if string(mode) == "type1_su_mimo"
+    B = localBuildType1DualPolarizedCodebook(cfg, numTxPorts, numBeams, false);
+elseif any(string(mode) == ["type2_mu_mimo", "etype2_candidate"])
+    B = localBuildType1DualPolarizedCodebook(cfg, numTxPorts, numBeams, true);
+end
+if ~isempty(B)
+    return;
+end
 arr = localResolveRuntimeBSAntenna(cfg, numTxPorts);
 if isstruct(arr) && ~isempty(fieldnames(arr))
     [nRow, nCol] = localResolveArrayDims(arr, numTxPorts);
@@ -229,6 +251,148 @@ for i = 1:size(B, 2)
     if nrm > 0
         B(:, i) = B(:, i) ./ nrm;
     end
+end
+end
+
+function B = localBuildType1DualPolarizedCodebook(cfg, numTxPorts, numBeams, forceDualPol)
+B = [];
+if nargin < 4
+    forceDualPol = false;
+end
+if mod(numTxPorts, 2) ~= 0
+    return;
+end
+if ~forceDualPol && ~localWantsDualPolarizedType1(cfg)
+    return;
+end
+numSpatialPorts = numTxPorts / 2;
+arr = localResolveRuntimeBSAntenna(cfg, numTxPorts);
+[nRow, nCol] = localResolveArrayDims(arr, numSpatialPorts);
+if nRow * nCol ~= numSpatialPorts
+    nRow = max(1, floor(sqrt(double(numSpatialPorts))));
+    nCol = max(1, ceil(double(numSpatialPorts) / max(nRow, 1)));
+    if nRow * nCol ~= numSpatialPorts
+        nRow = 1;
+        nCol = numSpatialPorts;
+    end
+end
+[nBeamsRow, nBeamsCol] = localResolveBeamGrid(nRow, nCol, max(1, ceil(double(numBeams) / 4)));
+try
+    spatial = sixgr.rf.AntennaArrayFactory.dftCodebookURA(nRow, nCol, nBeamsRow, nBeamsCol);
+catch
+    spatial = localOversampledDFTCodebook(numSpatialPorts, max(1, ceil(double(numBeams) / 4)));
+end
+if size(spatial, 1) > numSpatialPorts
+    spatial = spatial(1:numSpatialPorts, :);
+elseif size(spatial, 1) < numSpatialPorts
+    spatial(end+1:numSpatialPorts, :) = 0;
+end
+coPhase = exp(1j * [0 pi/2 pi 3*pi/2]);
+B = complex(zeros(numTxPorts, size(spatial, 2) * numel(coPhase)));
+col = 0;
+for b = 1:size(spatial, 2)
+    v = spatial(:, b);
+    nrm = norm(v);
+    if nrm > 0
+        v = v ./ nrm;
+    end
+    for p = 1:numel(coPhase)
+        col = col + 1;
+        B(:, col) = [v; coPhase(p) .* v] ./ sqrt(2);
+    end
+end
+if size(B, 2) > numBeams
+    B = B(:, 1:numBeams);
+end
+for i = 1:size(B, 2)
+    nrm = norm(B(:, i));
+    if nrm > 0
+        B(:, i) = B(:, i) ./ nrm;
+    end
+end
+end
+
+function basisCount = localResolveType2BasisBeamCount(cfg, mode, nLayers, numBeams)
+defaultCount = 2;
+if string(mode) == "etype2_candidate"
+    defaultCount = 4;
+end
+basisCount = double(sixgr.util.structGet(cfg, "phy.csi.type2BasisBeamCount", ...
+    sixgr.util.structGet(cfg, "csi_acquisition_and_reporting.type2_basis_beam_count", defaultCount)));
+basisCount = max(1, min(max(1, floor(double(numBeams) / max(1, double(nLayers)))), round(double(basisCount))));
+end
+
+function [W, beamIdx, coeffToken] = localBuildType2CompositeCandidate(B, startIdx, stride, nLayers, basisCount, layerPhase, mode)
+numBeams = size(B, 2);
+numTxPorts = size(B, 1);
+W = complex(zeros(numTxPorts, nLayers));
+beamIdx = zeros(1, nLayers * basisCount);
+coeffAll = complex(zeros(1, nLayers * basisCount));
+qpsk = exp(1j * (0:3) * pi/2);
+if string(mode) == "etype2_candidate"
+    qpsk = exp(1j * (0:7) * pi/4);
+end
+cursor = 0;
+for layer = 1:nLayers
+    group = 1 + mod((startIdx - 1) + (layer - 1) * stride + (0:basisCount-1) * max(1, nLayers), numBeams);
+    coeff = complex(zeros(1, basisCount));
+    for b = 1:basisCount
+        coeff(b) = layerPhase(layer) * qpsk(1 + mod((startIdx - 1) + (layer - 1) + (b - 1), numel(qpsk)));
+    end
+    coeff = coeff ./ sqrt(max(sum(abs(coeff).^2), eps));
+    W(:, layer) = B(:, group) * coeff(:);
+    cursorIdx = cursor + (1:basisCount);
+    beamIdx(cursorIdx) = group;
+    coeffAll(cursorIdx) = coeff;
+    cursor = cursor + basisCount;
+end
+W = localNormalizeColumns(W);
+beamIdx = double(beamIdx);
+coeffToken = localComplexVectorToken(coeffAll);
+end
+
+function token = localComplexVectorToken(x)
+parts = strings(1, numel(x));
+for i = 1:numel(x)
+    parts(i) = sprintf("%.3f%+.3fj", real(x(i)), imag(x(i)));
+end
+token = char(join(parts, ";"));
+end
+
+function v = localCoefficientTokenVector(token)
+chars = char(string(token));
+if isempty(chars)
+    v = 0;
+else
+    v = double(chars);
+end
+end
+
+function y = localTernaryNumeric(tf, whenTrue, whenFalse)
+if logical(tf)
+    y = whenTrue;
+else
+    y = whenFalse;
+end
+end
+
+function tf = localWantsDualPolarizedType1(cfg)
+tf = logical(sixgr.util.structGet(cfg, "phy.csi.dualPolarizedType1", false));
+polTokens = [
+    string(sixgr.util.structGet(cfg, "antenna.bs.polarization", "")), ...
+    string(sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""))];
+for i = 1:numel(polTokens)
+    tok = lower(strtrim(polTokens(i)));
+    if any(tok == ["dual","dual_pol","dualpolarized","dual-polarized","cross","cross_pol","cross-polarized","cross_polarized"])
+        tf = true;
+        return;
+    end
+end
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+runtimeArray = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
+if isstruct(runtimeArray)
+    nPol = double(sixgr.util.structGet(runtimeArray, "NPol", NaN));
+    tf = tf || (isfinite(nPol) && nPol > 1);
 end
 end
 

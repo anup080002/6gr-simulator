@@ -149,6 +149,11 @@ useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pdsch, prec);
+FastShortcutDisabledInTruth = sixgr.link.resolveTruthMode(cfg) == "full_waveform" && useFastAWGNPath; %#ok<NASGU>
+if FastShortcutDisabledInTruth
+    error("sixgr:phy:rx:FastShortcutDisabledInTruth", ...
+        "PDSCH_Rx forbids FastAWGNPath when TruthMode='full_waveform'.");
+end
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PDSCH_Rx");
 
 pdschAntInd = pdschInd;
@@ -203,6 +208,15 @@ rxWave = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrecti
 % ---------------------- OFDM demodulate ----------------------
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
 [csirsInd, csirsSym, csirsInfo, csirsObservation] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt);
+[csirsHest, csirsNVar, csirsEstInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, ...
+    strictMode, channelModelToken, numTxPorts);
+if ~isempty(csirsHest)
+    csirsObservation.Consumed = true;
+    csirsObservation.Consumer = "CSI_PMI_CRI_beam_metrics";
+    csirsObservation.UpdateOutcome = "observed_and_channel_estimated_after_ofdm_demodulation";
+elseif logical(sixgr.util.structGet(csirsObservation, "Observed", false))
+    csirsObservation.UpdateOutcome = "observed_but_channel_estimate_unavailable";
+end
 
 % ---------------------- Channel estimate ----------------------
 estInfo = struct();
@@ -248,7 +262,13 @@ nVar = double(max(0, nVar));
 
 % ---------------------- Extract and equalize PDSCH REs ----------------------
 [rxSym, hestSym] = nrExtractResources(pdschInd, rxGrid, hEst);
-[eqSym, csi] = nrEqualizeMMSE(rxSym, hestSym, nVar);
+[equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "DL");
+[Rint, rintInfo] = localEstimateDMRSInterferenceCovariance(rxGrid, hEst, dmrsInd, dmrsSym, nVar);
+if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
+    equalizerAlg = "MMSE";
+end
+[eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
+    "Algorithm", equalizerAlg, "Rint", Rint);
 receiverSINR = localReceiverHestSINR(hEst, nVar, cfg, "DL", rxGrid, dmrsInd, dmrsSym);
 % ---------------------- PDSCH demodulate to soft bits ----------------------
 % nrPDSCHDecode returns a cell array (one per codeword). Newer releases can
@@ -399,6 +419,12 @@ rx.ReceiverHestSINRSource = char(receiverSINR.Source);
 rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
 rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
 rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
+rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
+rx.EqualizerRequestedType = char(equalizerRequested);
+rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
+rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
+rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
+rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
 if ~logical(opt.CompactOutput)
@@ -424,7 +450,16 @@ if ~logical(opt.CompactOutput)
     rx.CSIRSSymbols = csirsSym;
     rx.CSIRSInfo = csirsInfo;
     rx.CSIRSObservation = csirsObservation;
+    rx.CSIRSChannelEstimate = csirsHest;
+    rx.CSIRSNoiseVar = csirsNVar;
+    rx.CSIRSChannelEstimation = csirsEstInfo;
+    rx.CSIChannelEstimateForPMI = csirsHest;
+    rx.CSIChannelNoiseVarForPMI = csirsNVar;
+    rx.CSIChannelEstimateSource = char(string(sixgr.util.structGet(csirsEstInfo, "Source", "")));
     rx.CSI = csi;
+    rx.EqualizerInfo = equalizerInfo;
+    rx.InterferenceCovariance = Rint;
+    rx.InterferenceCovarianceInfo = rintInfo;
     rx.PrecodeInfo = prec;
     rx.EqualizedSymbols = eqSym;
     rx.PDSCHRxSymbols = pdschRxSym;
@@ -438,9 +473,92 @@ info.Precoding = prec;
 info.ChannelEstimation = estInfo;
 info.CSIRS = csirsInfo;
 info.CSIRSObservation = csirsObservation;
+info.CSIRSChannelEstimation = csirsEstInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.TimingEstimate = timingResolution;
+info.Equalizer = equalizerInfo;
+info.InterferenceCovariance = rintInfo;
 
+end
+
+function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    requested = string(sixgr.util.structGet(cfg, "phy.pusch.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.algorithm", "MMSE"))));
+else
+    requested = string(sixgr.util.structGet(cfg, "phy.pdsch.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.equalizer", ...
+        sixgr.util.structGet(cfg, "phy.rx.algorithm", "MMSE"))));
+end
+requested = upper(strtrim(requested));
+if strlength(requested) == 0
+    requested = "MMSE";
+end
+if contains(requested, "IRC")
+    alg = "IRC";
+elseif contains(requested, "ZF")
+    alg = "ZF";
+else
+    alg = "MMSE";
+end
+end
+
+function [Rint, info] = localEstimateDMRSInterferenceCovariance(rxGrid, hEst, dmrsInd, dmrsSym, nVar)
+Rint = [];
+info = struct("Available", false, "Source", "dmrs_residual_covariance_unavailable", ...
+    "Status", "NOT_AVAILABLE", "NumSamples", 0);
+if isempty(rxGrid) || isempty(hEst) || isempty(dmrsInd) || isempty(dmrsSym)
+    return;
+end
+try
+    [rxRef, hRef] = nrExtractResources(dmrsInd, rxGrid, hEst);
+catch
+    info.Status = "dmrs_resource_extraction_failed";
+    return;
+end
+if isempty(rxRef) || isempty(hRef)
+    return;
+end
+if ndims(hRef) == 2
+    hRef = reshape(hRef, size(hRef,1), size(hRef,2), 1);
+end
+nRE = min([size(rxRef, 1), size(hRef, 1), numel(dmrsSym)]);
+if nRE < 2
+    info.Status = "insufficient_dmrs_residual_samples";
+    return;
+end
+nRx = size(rxRef, 2);
+nLayer = size(hRef, 3);
+residual = complex(zeros(nRE, nRx));
+dmrsSym = dmrsSym(:);
+for k = 1:nRE
+    Hk = squeeze(hRef(k, :, :));
+    if isvector(Hk)
+        Hk = reshape(Hk, nRx, nLayer);
+    end
+    sk = repmat(dmrsSym(k), nLayer, 1);
+    residual(k, :) = double(rxRef(k, :)) - (Hk * sk).';
+end
+residual = residual(all(isfinite(real(residual)) & isfinite(imag(residual)), 2), :);
+if size(residual, 1) < 2
+    info.Status = "dmrs_residual_not_finite";
+    return;
+end
+R = (residual' * residual) ./ max(1, size(residual, 1));
+R = (R + R') ./ 2;
+noiseFloor = max(double(nVar), eps);
+R = R + noiseFloor * eye(size(R, 1));
+if any(~isfinite(R(:))) || rcond(double(R)) < 1e-12
+    info.Status = "dmrs_residual_covariance_singular";
+    return;
+end
+Rint = R;
+info.Available = true;
+info.Source = "dmrs_residual_interference_plus_noise_covariance";
+info.Status = "OK";
+info.NumSamples = double(size(residual, 1));
 end
 
 function tracking = localResolveReceiverTrackingCorrection(explicitState, cfg)
@@ -679,6 +797,56 @@ obs.MeasurementSource = "received_csirs_reference_signal_power";
 obs.RuntimeMaterializationStatus = "runtime_observed";
 obs.UpdateOutcome = "observed_after_ofdm_demodulation";
 obs.RuntimeEvidenceSource = "sixgr.phy.dl.PDSCH_Rx:csirs_runtime_observation";
+end
+
+function [Hest, nVar, estInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, strictMode, channelModelToken, numTxPorts)
+Hest = [];
+nVar = NaN;
+numCSIRSPorts = double(sixgr.util.structGet(csirsInfo, "NumCSIRSPorts", NaN));
+expectedTxPorts = max([double(numTxPorts), numCSIRSPorts(isfinite(numCSIRSPorts)), 1]);
+estInfo = struct( ...
+    "Available", false, ...
+    "Status", "unavailable", ...
+    "Source", "", ...
+    "Reason", "", ...
+    "ExpectedTxPorts", double(expectedTxPorts), ...
+    "NumCSIRSPorts", double(numCSIRSPorts));
+if isempty(rxGrid) || isempty(csirsInd) || isempty(csirsSym)
+    estInfo.Reason = "missing_csirs_reference_evidence";
+    return;
+end
+if ~logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false))
+    estInfo.Status = "disabled";
+    estInfo.Reason = "phy.csirs.enable_false";
+    return;
+end
+try
+    [Hest, nVar, chInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, csirsInd, csirsSym, ...
+        "UseFastMex", false, ...
+        "StrictMode", strictMode, ...
+        "ChannelModel", channelModelToken, ...
+        "ExpectedTxPorts", expectedTxPorts, ...
+        "ContextLabel", "PDSCH_Rx_CSI_RS_PMI");
+    estInfo.Available = ~isempty(Hest);
+    if estInfo.Available
+        estInfo.Status = "OK";
+        estInfo.Source = "csirs_resource_selective_channel_estimate";
+        estInfo.Reason = "";
+        estInfo.HestSize = size(Hest);
+        estInfo.NoiseVar = double(nVar);
+        estInfo.ChannelEstimator = string(sixgr.util.structGet(chInfo, "EngineUsed", ""));
+        estInfo.InferredReferencePortCount = double(sixgr.util.structGet(chInfo, "InferredReferencePortCount", NaN));
+    else
+        estInfo.Status = "NOT_AVAILABLE";
+        estInfo.Reason = "empty_csirs_channel_estimate";
+    end
+catch ME
+    Hest = [];
+    nVar = NaN;
+    estInfo.Status = "NOT_AVAILABLE";
+    estInfo.Source = "csirs_resource_selective_channel_estimate";
+    estInfo.Reason = "csirs_channel_estimate_failed:" + string(ME.identifier);
+end
 end
 
 function obs = localEmptyCSIRSObservation(cfg)

@@ -257,7 +257,11 @@ for prb = 1:size(Hprb, 3)
     if ~all(isfinite(H), "all")
         continue;
     end
-    Heff = H * double(W);
+    WportsByLayer = localOrientPUSCHCodebookForChannel(W, size(H, 2));
+    if isempty(WportsByLayer)
+        continue;
+    end
+    Heff = H * WportsByLayer;
     nLayers = size(Heff, 2);
     regularized = eye(nLayers) + (Heff' * Heff) ./ max(double(nVar), eps);
     if rcond(regularized) < eps
@@ -272,6 +276,31 @@ for prb = 1:size(Hprb, 3)
 end
 if count > 0
     metric = acc / count;
+end
+end
+
+function WportsByLayer = localOrientPUSCHCodebookForChannel(W, numTxPorts)
+WportsByLayer = [];
+if isempty(W) || ~(isscalar(numTxPorts) && isfinite(numTxPorts) && numTxPorts >= 1)
+    return;
+end
+W = double(W);
+numTxPorts = max(1, round(double(numTxPorts)));
+
+% nrPUSCHCodebook returns layer-by-port weights in current 5G Toolbox
+% releases. The channel matrix is receive-antenna-by-transmit-port, so the
+% score needs a port-by-layer precoder. Preserve already-oriented custom
+% candidates and reject genuinely incompatible dimensions.
+if size(W, 1) == numTxPorts
+    WportsByLayer = W;
+elseif size(W, 2) == numTxPorts
+    WportsByLayer = W.';
+else
+    return;
+end
+
+if isempty(WportsByLayer) || size(WportsByLayer, 1) ~= numTxPorts
+    WportsByLayer = [];
 end
 end
 

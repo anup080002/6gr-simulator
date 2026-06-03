@@ -288,6 +288,10 @@ methods(Static)
         [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrialImpl(state, grant, direction, reason);
     end
 
+    function state = cancelUnexecutedHARQGrantRuntime(state, grant, direction)
+        state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantImpl(state, grant, direction);
+    end
+
     function artifacts = mobilityArtifacts(state)
         artifacts = struct("ServingTraceTable", sixgr.util.structGet(state, "ServingTraceTable", table()), ...
             "MeasurementTraceTable", sixgr.util.structGet(state, "MeasurementTraceTable", table()), ...
@@ -1258,8 +1262,10 @@ methods(Static, Access=private)
             latest.Valid = true;
             latest.CQI = double(row.CQI);
             latest.RI = double(row.RI);
-            latest.PMI = double(row.PMI);
-            latest.CRI = double(row.CRI);
+            latest.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
+                row.PMI, state.CfgMobility, direction, latest.RI));
+            latest.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
+                row.CRI, state.CfgMobility));
             latest.SINR_dB = double(row.SINR_dB);
             latest.MCSIndex = double(row.MCSIndex);
             latest.TargetCodeRate = double(row.TargetCodeRate);
@@ -1274,6 +1280,31 @@ methods(Static, Access=private)
             end
         end
         state.PendingCSITable.Processed(dueCSIMask) = true;
+    end
+
+    function state = cancelUnexecutedHARQGrantImpl(state, grant, direction)
+        direction = upper(string(direction));
+        harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
+        harqId0 = double(sixgr.util.structGet(harqStruct, "HarqID", NaN));
+        isRetx = logical(sixgr.util.structGet(harqStruct, "IsRetransmission", false));
+        rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
+        if ~(isfinite(rnti) && isfinite(harqId0)) || isRetx
+            return;
+        end
+        if direction == "UL"
+            harq = state.ULHarq;
+        else
+            harq = state.DLHarq;
+        end
+        try
+            harq.cancelTentativeTx(rnti, harqId0);
+        catch
+        end
+        if direction == "UL"
+            state.ULHarq = harq;
+        else
+            state.DLHarq = harq;
+        end
     end
 
     function [state, harqFields] = updateHARQState(state, ueIdx, direction, cfgU, row, res)
@@ -1384,6 +1415,11 @@ methods(Static, Access=private)
         t.FeedbackDueSlot = double(slotIdx + state.HARQFeedbackSlots);
         t.CurrentDecodeOK = logical(currentDecodeOK);
         t.CombinedDecodeOK = logical(combinedDecodeOK);
+        t.PreviousLLRCount = double(sixgr.util.structGet(harqOut, "PreviousLLRCount", NaN));
+        t.CurrentLLRCount = double(sixgr.util.structGet(harqOut, "CurrentLLRCount", NaN));
+        t.CombinedLLRCount = double(sixgr.util.structGet(harqOut, "CombinedLLRCount", NaN));
+        t.HARQCombiningApplied = logical(sixgr.util.structGet(harqOut, "HARQCombiningApplied", false));
+        t.LLRCombiningGain_dB = double(sixgr.util.structGet(harqOut, "LLRCombiningGain_dB", NaN));
         t.MeasuredSINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredSINR_dB", NaN));
         t.WidebandCQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN));
         t.CQIDerivedMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
@@ -1394,7 +1430,12 @@ methods(Static, Access=private)
         state.HARQTimelineTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.HARQTimelineTable, struct2table(t, "AsArray", true));
         state.HARQSummaryTable = sixgr.truth.CoupledTruthRuntime.buildHARQSummary(state.HARQTimelineTable);
 
-        harqFields = struct("HARQProcess", double(harqId0), "HARQNDI", double(ndi), "HARQRV", double(rv), "HARQIsRetransmission", logical(isRetx), "HARQFeedbackDueSlot", double(slotIdx + state.HARQFeedbackSlots), "HARQCurrentDecodeOK", logical(currentDecodeOK), "HARQCombinedDecodeOK", logical(combinedDecodeOK));
+        harqFields = struct("HARQProcess", double(harqId0), "HARQNDI", double(ndi), "HARQRV", double(rv), ...
+            "HARQIsRetransmission", logical(isRetx), "HARQFeedbackDueSlot", double(slotIdx + state.HARQFeedbackSlots), ...
+            "HARQCurrentDecodeOK", logical(currentDecodeOK), "HARQCombinedDecodeOK", logical(combinedDecodeOK), ...
+            "HARQCombiningApplied", logical(t.HARQCombiningApplied), "HARQLLRCombiningGain_dB", double(t.LLRCombiningGain_dB), ...
+            "HARQPreviousLLRCount", double(t.PreviousLLRCount), "HARQCurrentLLRCount", double(t.CurrentLLRCount), ...
+            "HARQCombinedLLRCount", double(t.CombinedLLRCount));
     end
 
     function T = annotateHARQTrialTable(T, harqFields)
@@ -1528,8 +1569,8 @@ methods(Static, Access=private)
         r.CSI_RSRP_dB = double(csiRSRP);
         r.CSI_RSRPSource = char(csiRSRPSource);
         r.AppliedLargeScaleGain_dB = double(appliedLargeScaleGain);
-        r.RSRPSource = "large_scale_wideband_serving_power";
-        r.ServingRSRPSource = "large_scale_wideband_serving_power";
+        r.RSRPSource = "large_scale_per_reference_re_power";
+        r.ServingRSRPSource = "large_scale_per_reference_re_power";
         r.WidebandSINRSource = char(widebandSINRSource);
         r.WidebandSINRValueRole = char(widebandSINRValueRole);
         r.InterferenceMode = char(interferenceMode);
@@ -1767,12 +1808,12 @@ methods(Static, Access=private)
             if ismember("ServingRSRPSource", string(servingT.Properties.VariableNames))
                 r.ServingRSRPSource = string(servingT.ServingRSRPSource(lastIdx));
             else
-                r.ServingRSRPSource = "large_scale_wideband_serving_power";
+                r.ServingRSRPSource = "large_scale_per_reference_re_power";
             end
             if ismember("RSRPSource", string(servingT.Properties.VariableNames))
                 r.RSRPSource = string(servingT.RSRPSource(lastIdx));
             else
-                r.RSRPSource = "large_scale_wideband_serving_power";
+                r.RSRPSource = "large_scale_per_reference_re_power";
             end
             if ismember("WidebandSINRSource", string(servingT.Properties.VariableNames))
                 r.WidebandSINRSource = string(servingT.WidebandSINRSource(lastIdx));
@@ -2270,8 +2311,35 @@ methods(Static, Access=private)
             ["TPMIEstimate","EstimatedTPMI","TPMI","PMI"], NaN);
         condDb = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["SRSConditionNumber_dB","ConditionNumber_dB"], NaN);
-        if ~(isfinite(ri) || isfinite(tpmi) || isfinite(condDb))
+        sinrDb = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["SINR_dB","MeasuredTrialSINR_dB","ReceiverHestSINR_dB","MeasuredSINR_dB"], NaN);
+        cqi = double(sixgr.util.normalizeReportedCQI( ...
+            sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["WidebandCQI","CQI"], NaN)));
+        mcsIndex = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["CQIDerivedMCS","MCSIndex"], NaN);
+        targetCodeRate = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["CQIDerivedTargetCodeRate","TargetCodeRate"], NaN);
+        modulation = string(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+            ["CQIDerivedModulation","Modulation"], ""));
+        if ~(isfinite(ri) || isfinite(tpmi) || isfinite(condDb) || ...
+                isfinite(sinrDb) || (isfinite(cqi) && cqi > 0) || isfinite(mcsIndex))
             return;
+        end
+        if ~(isfinite(cqi) && cqi > 0) && isfinite(sinrDb)
+            try
+                cqiFeedback = sixgr.link.resolveWidebandCQI( ...
+                    struct("WidebandSINR_dB", double(sinrDb)), state.CfgMobility, "UL");
+                cqi = double(sixgr.util.normalizeReportedCQI( ...
+                    sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN)));
+            catch
+                cqi = NaN;
+            end
+        end
+        if ~(isfinite(mcsIndex) && mcsIndex >= 0) && isfinite(cqi) && cqi > 0
+            [modFromCQI, rateFromCQI, mcsFromCQI] = sixgr.link.amcFromCQI(cqi, "", NaN, state.CfgMobility, "UL");
+            mcsIndex = double(mcsFromCQI);
+            modulation = string(modFromCQI);
+            targetCodeRate = double(rateFromCQI);
         end
         if ueIdx <= numel(state.LatestULFeedback)
             latest = state.LatestULFeedback(ueIdx);
@@ -2281,6 +2349,21 @@ methods(Static, Access=private)
         latest.Valid = true;
         latest.Direction = "UL";
         latest.Slot = double(slotIdx);
+        if isfinite(sinrDb)
+            latest.SINR_dB = double(sinrDb);
+        end
+        if isfinite(cqi) && cqi > 0
+            latest.CQI = double(cqi);
+        end
+        if isfinite(mcsIndex) && mcsIndex >= 0
+            latest.MCSIndex = double(round(mcsIndex));
+        end
+        if isfinite(targetCodeRate) && targetCodeRate > 0
+            latest.TargetCodeRate = double(targetCodeRate);
+        end
+        if strlength(strtrim(modulation)) > 0
+            latest.Modulation = char(modulation);
+        end
         if isfinite(ri)
             latest.RI = double(max(1, round(ri)));
         end
@@ -2293,6 +2376,61 @@ methods(Static, Access=private)
             latest.ServingCell = double(servingCell);
         end
         state.LatestULFeedback(ueIdx) = latest;
+
+        if sixgr.truth.CoupledTruthRuntime.srsReciprocityFeedsDLFeedback(state.CfgMobility)
+            if ueIdx <= numel(state.LatestDLFeedback)
+                dlLatest = state.LatestDLFeedback(ueIdx);
+            else
+                dlLatest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
+            end
+            dlLatest.Valid = true;
+            dlLatest.Direction = "DL";
+            dlLatest.Slot = double(slotIdx);
+            if isfinite(sinrDb)
+                dlLatest.SINR_dB = double(sinrDb);
+            end
+            dlCqi = cqi;
+            if isfinite(sinrDb)
+                try
+                    dlCqiFeedback = sixgr.link.resolveWidebandCQI( ...
+                        struct("WidebandSINR_dB", double(sinrDb)), state.CfgMobility, "DL");
+                    candidateDLCqi = double(sixgr.util.normalizeReportedCQI( ...
+                        sixgr.util.structGet(dlCqiFeedback, "WidebandCQI", NaN)));
+                    if isfinite(candidateDLCqi) && candidateDLCqi > 0
+                        dlCqi = candidateDLCqi;
+                    end
+                catch
+                end
+            end
+            if isfinite(dlCqi) && dlCqi > 0
+                dlLatest.CQI = double(dlCqi);
+                [dlMod, dlRate, dlMCS] = sixgr.link.amcFromCQI(dlCqi, "", NaN, state.CfgMobility, "DL");
+                if isfinite(dlMCS) && dlMCS >= 0
+                    dlLatest.MCSIndex = double(round(dlMCS));
+                    dlLatest.Modulation = char(string(dlMod));
+                    dlLatest.TargetCodeRate = double(dlRate);
+                end
+            end
+            if isfinite(ri)
+                dlLatest.RI = double(max(1, round(ri)));
+            end
+            if isfinite(servingCell)
+                dlLatest.ServingCell = double(servingCell);
+            end
+            state.LatestDLFeedback(ueIdx) = dlLatest;
+        end
+    end
+
+    function tf = srsReciprocityFeedsDLFeedback(cfg)
+        duplexMode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.duplex.mode", ...
+            sixgr.util.structGet(cfg, "frequency.duplex_mode", ...
+            sixgr.util.structGet(cfg, "global_radio_scope.duplex_mode", ""))))));
+        orientation = lower(strtrim(string(sixgr.util.structGet(cfg, "referenceSignals.operationOrientation", ...
+            sixgr.util.structGet(cfg, "reference_signals.operation_orientation", "")))));
+        csiMode = lower(strtrim(string(sixgr.util.structGet(cfg, "referenceSignals.csiAcquisitionMode", ...
+            sixgr.util.structGet(cfg, "reference_signals.csi_acquisition_mode", "")))));
+        tf = (duplexMode == "tdd" || contains(orientation, "tdd")) && ...
+            (contains(orientation, "reciprocity") || contains(csiMode, "joint") || contains(csiMode, "dl_ul"));
     end
 
     function state = applyTRSTrialImpl(state, servingCell, trialT)
@@ -2862,6 +3000,66 @@ methods(Static, Access=private)
         end
     end
 
+    function pmi = sanitizeFeedbackPMI(rawPMI, cfg, direction, rankHint)
+        pmi = NaN;
+        rawPMI = double(rawPMI);
+        if isempty(rawPMI)
+            rawPMI = NaN;
+        else
+            rawPMI = rawPMI(1);
+        end
+        direction = upper(string(direction));
+        rankHint = double(rankHint);
+        if ~(isscalar(rankHint) && isfinite(rankHint) && rankHint >= 1)
+            if direction == "UL"
+                rankHint = double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", ...
+                    sixgr.util.structGet(cfg, "phy.pusch.numLayers", 1)));
+            else
+                rankHint = double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", ...
+                    sixgr.util.structGet(cfg, "phy.pdsch.numLayers", 1)));
+            end
+        end
+        nLayers = max(1, round(double(rankHint)));
+        numTxPorts = sixgr.util.structGet(cfg, "phy.nTxAnt", nLayers);
+        numTxPorts = max(1, round(double(numTxPorts)));
+        try
+            candidates = sixgr.phy.dl.pmiCodebookCandidates(cfg, nLayers, numTxPorts);
+        catch
+            candidates = struct([]);
+        end
+        if isempty(candidates)
+            return;
+        end
+        if isfinite(rawPMI)
+            idx = round(rawPMI);
+            if idx >= 0 && idx < numel(candidates)
+                pmi = double(idx);
+                return;
+            end
+        end
+        pmi = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackPMI(cfg, direction, nLayers));
+    end
+
+    function cri = sanitizeFeedbackCRI(rawCRI, cfg)
+        cri = NaN;
+        rawCRI = double(rawCRI);
+        if isempty(rawCRI)
+            return;
+        end
+        rawCRI = rawCRI(1);
+        if ~(isscalar(rawCRI) && isfinite(rawCRI))
+            return;
+        end
+        numCandidates = sixgr.util.structGet(cfg, "phy.csi.numResourceCandidates", ...
+            sixgr.util.structGet(cfg, "phy.csirs.numResources", ...
+            sixgr.util.structGet(cfg, "phy.beamManagement.trpCount", 1)));
+        numCandidates = max(1, round(double(numCandidates)));
+        idx = round(double(rawCRI));
+        if idx >= 0 && idx < numCandidates
+            cri = double(idx);
+        end
+    end
+
     function cri = resolveFallbackCRI(cfg)
         cri = NaN;
         criCfg = sixgr.util.structGet(cfg, "phy.csi.selectedCRI", ...
@@ -2948,6 +3146,12 @@ methods(Static, Access=private)
         row.Rank = row.RIUsed;
         row.PMI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "PMI", sixgr.util.structGet(feedback, "PMI", NaN)), NaN);
         row.CRI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "CRI", sixgr.util.structGet(feedback, "CRI", NaN)), NaN);
+        row.MUMIMOEnabled = logical(sixgr.util.structGet(grant, "MUMIMOEnabled", false));
+        row.MUMIMOGroupSize = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOGroupSize", NaN), NaN);
+        row.MUMIMOGroupId = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOGroupId", NaN), NaN);
+        row.MUMIMOPairingStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingStatus", ""), "");
+        row.MUMIMOPairingMetricSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingMetricSource", ""), "");
+        row.MUMIMOPrecoderType = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPrecoderType", ""), "");
         row.ConfiguredBeamSelectionStrategy = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "ConfiguredBeamSelectionStrategy", ""), "");
         row.PrecoderSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "PrecoderSource", ""), "");
         row.PrecodingMode = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "PrecodingMode", ""), "");
@@ -3023,6 +3227,12 @@ methods(Static, Access=private)
         if ~isfinite(double(grant.CRI))
             grant.CRI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(feedback, "CRI", NaN), NaN);
         end
+        grant.MUMIMOEnabled = logical(sixgr.util.structGet(grant, "MUMIMOEnabled", false));
+        grant.MUMIMOGroupSize = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOGroupSize", NaN), NaN);
+        grant.MUMIMOGroupId = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOGroupId", NaN), NaN);
+        grant.MUMIMOPairingStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingStatus", ""), "");
+        grant.MUMIMOPairingMetricSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingMetricSource", ""), "");
+        grant.MUMIMOPrecoderType = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPrecoderType", ""), "");
         grant.ServingCell = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "ServingCell", NaN), NaN);
         if ~isfinite(double(grant.ServingCell))
             servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
@@ -3104,8 +3314,10 @@ methods(Static, Access=private)
         report.DueSlot = double(sourceSlot + state.CSIFeedbackSlots);
         report.CQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN));
         report.RI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RankIndicator", NaN));
-        report.PMI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PMI", NaN));
-        report.CRI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRI", NaN));
+        report.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
+            sixgr.truth.CoupledTruthRuntime.rowValue(row, "PMI", NaN), state.CfgMobility, direction, report.RI));
+        report.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
+            sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRI", NaN), state.CfgMobility));
         report.SINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredSINR_dB", NaN));
         report.MCSIndex = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
         report.TargetCodeRate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedTargetCodeRate", NaN));
@@ -3120,8 +3332,10 @@ methods(Static, Access=private)
             latest.Valid = true;
             latest.CQI = report.CQI;
             latest.RI = report.RI;
-            latest.PMI = report.PMI;
-            latest.CRI = report.CRI;
+            latest.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
+                report.PMI, state.CfgMobility, direction, latest.RI));
+            latest.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
+                report.CRI, state.CfgMobility));
             latest.SINR_dB = report.SINR_dB;
             latest.MCSIndex = report.MCSIndex;
             latest.TargetCodeRate = report.TargetCodeRate;
@@ -5181,6 +5395,8 @@ methods(Static, Access=private)
             "HarqID", NaN, "NDI", NaN, "RV", NaN, ...
             "IsRetransmission", false, "FeedbackDueSlot", NaN, ...
             "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
+            "PreviousLLRCount", NaN, "CurrentLLRCount", NaN, "CombinedLLRCount", NaN, ...
+            "HARQCombiningApplied", false, "LLRCombiningGain_dB", NaN, ...
             "MeasuredSINR_dB", NaN, "WidebandCQI", NaN, "CQIDerivedMCS", NaN, ...
             "CQIDerivedModulation", "", "Goodput_Mbps", NaN, "Status", "", "Notes", "");
     end
@@ -5229,6 +5445,9 @@ methods(Static, Access=private)
             "InterferenceAggregatedRxPower_dBm", NaN, "InterferencePowerSource", "", ...
             "FullInterfererChannelTruthUsed", false, ...
             "BitsCompared", NaN, "BitErrors", NaN, "DetectionMetric", NaN, ...
+            "DetectionThreshold", NaN, "DetectionMetricStatus", "", ...
+            "DetectorPeakMetric", NaN, "DetectorNoiseFloor", NaN, ...
+            "DTXFlag", false, "DTXReason", "", ...
             "PUCCHDecodeOk", false, "UCIContentMatch", false, ...
             "RuntimeStateUpdated", false, "RuntimeStateConsumer", "", ...
             "ControlStateChanged", false, "StateChangeApplied", false, ...
@@ -5317,6 +5536,8 @@ methods(Static, Access=private)
             "MCSIndex", NaN, "Modulation", "", "TargetCodeRate", NaN, ...
             "NumLayers", NaN, "Layers", NaN, "CQIUsed", NaN, "RIUsed", NaN, "Rank", NaN, ...
             "PMI", NaN, "CRI", NaN, ...
+            "MUMIMOEnabled", false, "MUMIMOGroupSize", NaN, "MUMIMOGroupId", NaN, ...
+            "MUMIMOPairingStatus", "", "MUMIMOPairingMetricSource", "", "MUMIMOPrecoderType", "", ...
             "ConfiguredBeamSelectionStrategy", "", "PrecoderSource", "", "PrecodingMode", "", "PrecodingApplicationStage", "", ...
             "PrecodingActive", false, "ExplicitBeamWeightsApplied", false, "TransformPrecodingApplied", false, "BeamformingApplied", false, ...
             "AppliedBeamIndexSet", "", "AppliedPrecoderPMI", NaN, "AppliedPrecoderPMIType", "", "AppliedPrecoderCodebookMode", "", ...
@@ -5478,6 +5699,12 @@ methods(Static, Access=private)
             "UCIContentMatch", logical(uciContentMatch), ...
             "DetectionOutcome", char(detectionOutcome), ...
             "DetectionMetric", double(sixgr.util.structGet(trial, "DetectionMetric", double(ack))), ...
+            "DetectionThreshold", double(sixgr.util.structGet(trial, "DetectionThreshold", NaN)), ...
+            "DetectionMetricStatus", char(string(sixgr.util.structGet(trial, "DetectionMetricStatus", ""))), ...
+            "DetectorPeakMetric", double(sixgr.util.structGet(trial, "DetectorPeakMetric", NaN)), ...
+            "DetectorNoiseFloor", double(sixgr.util.structGet(trial, "DetectorNoiseFloor", NaN)), ...
+            "DTXFlag", logical(sixgr.util.structGet(trial, "DTXFlag", false)), ...
+            "DTXReason", char(string(sixgr.util.structGet(trial, "DTXReason", ""))), ...
             "AirInterfaceTTI_ms", double(sixgr.util.structGet(trial, "AirInterfaceTTI_ms", double(state.SlotDuration_s) * 1e3)), ...
             "ComputeLatency_ms", double(sixgr.util.structGet(trial, "ComputeLatency_ms", NaN)), ...
             "DecodeLatency_ms", double(sixgr.util.structGet(trial, "DecodeLatency_ms", NaN)), ...
@@ -5583,6 +5810,14 @@ methods(Static, Access=private)
         hasReceiver = isfinite(receiverHestSINR);
         lowerReceiverSource = lower(receiverSource);
         fallbackReceiver = contains(lowerReceiverSource, "fallback") | contains(lower(receiverRole), "fallback") | contains(lower(receiverStatus), "fallback");
+        if any(fallbackReceiver)
+            receiverHestSINR(fallbackReceiver) = NaN;
+            receiverSource(fallbackReceiver) = "";
+            receiverRole(fallbackReceiver) = "unavailable";
+            receiverStatus(fallbackReceiver) = "unavailable";
+            receiverReason(fallbackReceiver) = signalToken + "_receiver_hest_sinr_not_available_from_waveform_reference_signal";
+            hasReceiver = isfinite(receiverHestSINR);
+        end
         mask = strlength(receiverSource) == 0 & hasReceiver;
         receiverSource(mask) = "receiver_hest_reference_signal_measurement";
         mask = strlength(receiverRole) == 0 & hasReceiver & ~fallbackReceiver;
@@ -5667,8 +5902,19 @@ methods(Static, Access=private)
         hasMeasuredAlias = isfinite(measuredSINR);
         genericMeasured = hasMeasuredAlias;
         genericReceiver = ~genericMeasured & hasReceiver;
-        genericDecoder = ~genericMeasured & ~hasReceiver & hasDecoder;
-        genericMissing = ~genericMeasured & ~hasReceiver & ~hasDecoder;
+        genericDecoder = false(n, 1);
+        genericMissing = ~genericMeasured & ~hasReceiver;
+
+        forbiddenGeneric = contains(lower(sinrRole), "fallback") | contains(lower(sinrRole), "proxy") | ...
+            contains(lower(sinrSource), "fallback") | contains(lower(sinrSource), "proxy") | ...
+            contains(lower(sinrStatus), "fallback") | contains(lower(sinrStatus), "proxy") | ...
+            contains(lower(sinrDefinition), "fallback") | contains(lower(sinrDefinition), "proxy");
+        if any(forbiddenGeneric)
+            sinrRole(forbiddenGeneric) = "";
+            sinrSource(forbiddenGeneric) = "";
+            sinrStatus(forbiddenGeneric) = "";
+            sinrDefinition(forbiddenGeneric) = "";
+        end
 
         mask = strlength(sinrRole) == 0 & genericMeasured;
         sinrRole(mask) = "measured";

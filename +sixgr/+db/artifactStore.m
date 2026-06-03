@@ -23,6 +23,8 @@ switch action
         varargout{1} = localStoreBinary(state, varargin{:});
     case "capture_file"
         varargout{1} = localCaptureFile(state, varargin{:});
+    case "hydrate_display_folder"
+        varargout{1} = localHydrateDisplayFolder(state, varargin{:});
     case "append_log"
         localAppendLog(state, varargin{:});
     case "mark_status"
@@ -34,6 +36,79 @@ switch action
             "Unsupported artifact-store action '%s'.", action);
 end
 
+end
+
+function out = localHydrateDisplayFolder(state, targetRoot)
+out = struct( ...
+    "Ok", false, ...
+    "RunID", NaN, ...
+    "TargetRoot", "", ...
+    "FileCount", 0, ...
+    "ByteCount", 0, ...
+    "SkippedCount", 0, ...
+    "Notes", "");
+if ~localIsActive(state)
+    out.Notes = "artifact_store_inactive";
+    return;
+end
+if nargin < 2 || strlength(strtrim(string(targetRoot))) == 0
+    targetRoot = state.DisplayRunFolder;
+end
+targetRoot = char(string(targetRoot));
+out.RunID = double(state.RunID);
+out.TargetRoot = string(targetRoot);
+if strlength(strtrim(string(targetRoot))) == 0
+    out.Notes = "display_run_folder_unavailable";
+    return;
+end
+
+sixgr.util.ensureFolder(targetRoot);
+conn = state.Connection;
+ps = conn.prepareStatement([ ...
+    "SELECT artifact_id, logical_path, byte_size FROM sim_artifacts " + ...
+    "WHERE run_id=? ORDER BY artifact_id ASC"]);
+cleanupPS = onCleanup(@() ps.close()); %#ok<NASGU>
+ps.setLong(1, int64(state.RunID));
+rs = ps.executeQuery();
+cleanupRS = onCleanup(@() rs.close()); %#ok<NASGU>
+psChunk = conn.prepareStatement([ ...
+    "SELECT chunk_data FROM sim_artifact_chunks " + ...
+    "WHERE artifact_id=? ORDER BY chunk_index ASC"]);
+cleanupChunkPS = onCleanup(@() psChunk.close()); %#ok<NASGU>
+
+while rs.next()
+    artifactID = double(rs.getLong(1));
+    logicalPath = char(string(rs.getString(2)));
+    [targetPath, okTarget] = localHydrationTargetPath(targetRoot, logicalPath);
+    if ~okTarget
+        out.SkippedCount = out.SkippedCount + 1;
+        continue;
+    end
+    sixgr.util.ensureDir(targetPath);
+    fid = fopen(targetPath, "wb");
+    if fid < 0
+        out.SkippedCount = out.SkippedCount + 1;
+        continue;
+    end
+    cleanupFID = onCleanup(@() fclose(fid)); %#ok<NASGU>
+    psChunk.setLong(1, int64(artifactID));
+    rsChunk = psChunk.executeQuery();
+    cleanupChunkRS = onCleanup(@() rsChunk.close()); %#ok<NASGU>
+    writtenBytes = 0;
+    while rsChunk.next()
+        chunkBytes = localBytesFromJava(rsChunk.getBytes(1));
+        if ~isempty(chunkBytes)
+            writtenBytes = writtenBytes + double(fwrite(fid, chunkBytes, "uint8"));
+        end
+    end
+    clear cleanupChunkRS cleanupFID
+    out.FileCount = out.FileCount + 1;
+    if isfinite(writtenBytes)
+        out.ByteCount = out.ByteCount + double(writtenBytes);
+    end
+end
+out.Ok = true;
+out.Notes = "hydrated_mysql_artifacts_to_display_run_folder";
 end
 
 function state = localEmptyState()
@@ -298,10 +373,111 @@ if ~localIsActive(state) || exist(filePath, "file") ~= 2
 end
 bytes = localReadFileBytes(filePath);
 metadata = struct("captured_from_file", true);
+sourceRefs = localInferImageSourceArtifacts(logicalPath);
+if strlength(sourceRefs) > 0
+    metadata.source_artifact_ref = sourceRefs;
+    metadata.source_logical_path = sourceRefs;
+    metadata.provenance_rule = "captured_image_companion_source_artifact";
+end
 handled = localStoreBinary(state, logicalPath, bytes, artifactKind, mimeType, metadata);
 if handled && logical(deleteAfter)
     localDeleteIfExists(filePath);
 end
+end
+
+function sourceRefs = localInferImageSourceArtifacts(logicalPath)
+sourceRefs = "";
+lp = replace(string(logicalPath), "\", "/");
+if strlength(strtrim(lp)) == 0
+    return;
+end
+[folderPath, stem, ext] = fileparts(lp);
+ext = lower(string(ext));
+if ~ismember(ext, [".png", ".svg", ".html", ".htm"])
+    return;
+end
+
+folderPath = replace(string(folderPath), "\", "/");
+stem = string(stem);
+explicitRef = localExplicitImageSourceRef(folderPath, stem);
+if strlength(explicitRef) > 0
+    sourceRefs = explicitRef;
+    return;
+end
+if contains(folderPath, "/image")
+    csvFolder = replace(folderPath, "/image", "/csv");
+    sourceRefs = localNormalizeSourceRef(csvFolder + "/" + stem + ".csv");
+    return;
+end
+if endsWith(folderPath, "image")
+    csvFolder = extractBefore(folderPath, strlength(folderPath) - strlength("image") + 1) + "csv";
+    sourceRefs = localNormalizeSourceRef(csvFolder + "/" + stem + ".csv");
+    return;
+end
+if contains(folderPath, "reports/image")
+    sourceRefs = localNormalizeSourceRef("reports/csv/" + stem + ".csv");
+    return;
+end
+if contains(folderPath, "analytics/image")
+    sourceRefs = localNormalizeSourceRef("analytics/csv/" + stem + ".csv");
+end
+end
+
+function ref = localExplicitImageSourceRef(folderPath, stem)
+ref = "";
+folderPath = string(folderPath);
+stem = string(stem);
+if endsWith(folderPath, "beamforming/image") && ismember(stem, ["beam_channel_sinr", "beam_condition_number", "beam_gain_gap"])
+    ref = "beamforming/csv/probe_beam_mimo.csv";
+    return;
+end
+if endsWith(folderPath, "air_interface/image")
+    switch stem
+        case {"dl_trial_sinr", "dl_trial_channel_gain"}
+            ref = "air_interface/csv/dl_pdsch_trials.csv";
+        case "dl_constellation_scatter"
+            ref = "air_interface/csv/dl_constellation_preview.csv";
+        case {"ul_trial_sinr", "ul_trial_channel_gain"}
+            ref = "air_interface/csv/ul_pusch_trials.csv";
+        case "ul_constellation_scatter"
+            ref = "air_interface/csv/ul_constellation_preview.csv";
+        case {"link_truth_validation_bler", "link_truth_validation_ber", "link_truth_validation_throughput"}
+            ref = "air_interface/csv/live_link_snr_sweep.csv|air_interface/csv/link_kpis.csv";
+        case "link_truth_validation_papr"
+            ref = "air_interface/csv/link_kpis.csv";
+    end
+    return;
+end
+if endsWith(folderPath, "reports/image")
+    switch stem
+        case "gains_losses_waterfall"
+            ref = "reports/csv/per_scenario_summary_tables.csv";
+        case "papr_ccdf"
+            ref = "reports/csv/energy_efficiency_outputs.csv|air_interface/csv/link_kpis.csv";
+        case "latency_cdf"
+            ref = "reports/csv/table_latency.csv";
+        case "energy_vs_throughput"
+            ref = "reports/csv/energy_efficiency_outputs.csv|reports/csv/per_scenario_summary_tables.csv";
+        case "complexity_vs_gain"
+            ref = "reports/csv/complexity_implementation_outputs.csv|reports/csv/per_scenario_summary_tables.csv";
+        case "control_pass_rates"
+            ref = "reports/csv/pdcch_control_outputs.csv|reports/csv/initial_access_random_access_outputs.csv";
+        case "metric_coverage_by_category"
+            ref = "reports/csv/output_coverage_registry.csv";
+        case "bler_vs_snr"
+            ref = "reports/csv/bler_vs_snr.csv";
+        case "throughput_vs_snr"
+            ref = "reports/csv/throughput_vs_snr.csv";
+        case {"heatmap_band_feature_kpi", "heatmap_beam_rank_trp_kpi", "heatmap_impairment_kpi"}
+            ref = "reports/csv/per_scenario_summary_tables.csv";
+    end
+end
+end
+
+function ref = localNormalizeSourceRef(ref)
+ref = replace(string(ref), "\", "/");
+ref = regexprep(ref, "/+", "/");
+ref = regexprep(ref, "^./", "");
 end
 
 function localAppendLog(state, levelStr, timeStr, msgStr)
@@ -401,6 +577,7 @@ localCreateIndexIfMissing(conn, "sim_runs", "idx_sim_runs_run_tag", "(run_tag)")
 localCreateIndexIfMissing(conn, "sim_runs", "idx_sim_runs_updated_utc", "(updated_utc)");
 localCreateIndexIfMissing(conn, "sim_artifacts", "idx_sim_artifacts_run_artifact", "(run_id, artifact_id)");
 localCreateIndexIfMissing(conn, "sim_artifacts", "idx_sim_artifacts_run_created", "(run_id, created_utc, artifact_id)");
+localCreateIndexIfMissing(conn, "sim_artifacts", "idx_sim_artifacts_run_path", "(run_id, logical_path(512), artifact_id)");
 localCreateIndexIfMissing(conn, "sim_run_logs", "idx_sim_run_logs_run_log", "(run_id, log_id)");
 end
 
@@ -700,6 +877,37 @@ end
 function bytesOut = localJavaBytes(bytesIn)
 % Preserve raw uint8 payload bits when passing bytes above 127 to Java.
 bytesOut = typecast(uint8(bytesIn(:).'), "int8");
+end
+
+function bytesOut = localBytesFromJava(bytesIn)
+if isempty(bytesIn)
+    bytesOut = uint8([]);
+    return;
+end
+bytesOut = typecast(int8(bytesIn(:).'), "uint8");
+end
+
+function [targetPath, ok] = localHydrationTargetPath(targetRoot, logicalPath)
+ok = false;
+targetPath = "";
+targetRoot = char(string(targetRoot));
+rel = replace(string(logicalPath), "\", "/");
+rel = regexprep(rel, '^/+', '');
+if strlength(strtrim(rel)) == 0 || contains(rel, ":")
+    return;
+end
+parts = split(rel, "/");
+parts = parts(strlength(parts) > 0 & parts ~= ".");
+if isempty(parts) || any(parts == "..")
+    return;
+end
+partCell = cellstr(parts(:).');
+targetPath = fullfile(targetRoot, partCell{:});
+if ~localPathStartsWith(targetPath, targetRoot)
+    targetPath = "";
+    return;
+end
+ok = true;
 end
 
 function localDeleteIfExists(filePath)

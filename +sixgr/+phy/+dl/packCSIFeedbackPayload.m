@@ -187,12 +187,22 @@ switch codebookMode
         strideSet = strideSet(:).';
         strideWidth = localRequiredBits(numel(strideSet) - 1);
         strideIdx = max(0, min(numel(strideSet) - 1, round(double(sixgr.util.structGet(candidate, "StrideIndex", 0)))));
+        numPhaseVariants = max(1, round(double(sixgr.util.structGet(codebookInfo, "NumPhaseVariants", 1))));
+        phaseWidth = localRequiredBits(numPhaseVariants - 1);
+        phaseIdx = max(0, min(numPhaseVariants - 1, round(double(sixgr.util.structGet(candidate, "PhaseVariantIndex", 0)))));
+        basisCount = max(1, round(double(sixgr.util.structGet(candidate, "BasisBeamCount", ...
+            sixgr.util.structGet(codebookInfo, "Type2BasisBeamCount", 1)))));
+        basisWidth = localRequiredBits(max(1, round(double(sixgr.util.structGet(codebookInfo, "Type2BasisBeamCount", basisCount)))) - 1);
         startBits = localUIntToBits(startBeam, beamWidth);
         strideBits = localUIntToBits(strideIdx, strideWidth);
         [fields, payloadBits] = localAppendField(fields, payloadBits, ...
             "PMI_START_BEAM", "pmi", beamWidth, startBeam, startBeam, startBits);
         [fields, payloadBits] = localAppendField(fields, payloadBits, ...
             "PMI_STRIDE_INDEX", "pmi", strideWidth, strideIdx, strideIdx, strideBits);
+        [fields, payloadBits] = localAppendField(fields, payloadBits, ...
+            "PMI_PHASE_INDEX", "pmi", phaseWidth, phaseIdx, phaseIdx, localUIntToBits(phaseIdx, phaseWidth));
+        [fields, payloadBits] = localAppendField(fields, payloadBits, ...
+            "PMI_TYPE2_BASIS_BEAM_COUNT_MINUS1", "pmi", basisWidth, basisCount - 1, basisCount - 1, localUIntToBits(basisCount - 1, basisWidth));
     case "etype2_candidate"
         numBeams = max(1, round(double(sixgr.util.structGet(codebookInfo, "NumBeams", ...
             sixgr.util.structGet(candidate, "NumBeams", sixgr.util.structGet(csi, "NumTxPorts", 1))))));

@@ -102,6 +102,9 @@ layout.PacketFlowImageDir = fullfile(layout.PacketFlowDir, "image");
 layout.PacketFlowLogDir = fullfile(layout.PacketFlowDir, "logs");
 
 layout.CalibrationDir = fullfile(runFolder, "calibration");
+layout.DatabaseDir = fullfile(runFolder, "database");
+layout.TraceDatabaseSQLite = fullfile(layout.DatabaseDir, "truth_radio_trace.sqlite");
+layout.TraceDatabaseManifestJSON = fullfile(layout.DatabaseDir, "truth_radio_trace_manifest.json");
 
 layout.ConfigResolvedJSON = fullfile(layout.MetaDir, "config_resolved_full_campaign.json");
 layout.RunManifestJSON = fullfile(layout.MetaDir, "run_manifest.json");

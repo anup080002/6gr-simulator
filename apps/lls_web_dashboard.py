@@ -45,6 +45,7 @@ from lls_contract_aliases import (
 # which can jump to a sibling canonical path on Windows.
 REPO_ROOT = Path(__file__).absolute().parent.parent
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
+PARAMETER_MATRIX_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "scenario_parameter_matrix_catalog.yaml"
 MATLAB_EXE = Path(r"C:\Program Files\MATLAB\R2023b\bin\matlab.exe")
 if not MATLAB_EXE.is_file():
     raise FileNotFoundError(
@@ -71,6 +72,7 @@ HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system
 WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
 DEFAULT_SCENARIO = WAVEFORM_TRUTH_DEFAULT_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
+OUTPUT_PERSISTENCE_OPTIONS = ["both", "database", "results_folder"]
 BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS", "E2E"]
 BROWSER_EXECUTION_MODE_LABELS = {
     "LLS": "LLS",
@@ -2123,6 +2125,7 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("output_control.save_plots", "output.save_png", "identity"),
     ("output_control.save_resolved_config", "output.save_yaml_snapshot", "identity"),
     ("output_control.save_resolved_config", "output.save_json_snapshot", "identity"),
+    ("output_control.output_persistence_mode", "output.persistence_mode", "identity"),
     ("signals_and_channels_common.ssb.enable_flag", "reference_signals.ssb_enabled", "identity"),
     ("signals_and_channels_common.pbch.enable_flag", "reference_signals.pbch_enabled", "identity"),
     ("reference_signals.pdcch_dmrs.enabled", "reference_signals.pdcch_dmrs_enabled", "identity"),
@@ -2491,6 +2494,7 @@ def canonicalize_browser_config_payload(payload: dict[str, Any], keep_legacy_ali
                 continue
             path_delete(resolved, old_path)
     apply_browser_derived_runtime_aliases(resolved, new_defaults)
+    apply_output_persistence_defaults(resolved)
     return resolved
 
 
@@ -2539,6 +2543,86 @@ def _replace_if_default_or_missing(payload: dict[str, Any], defaults: dict[str, 
         path_set(payload, path, value)
 
 
+def normalize_output_persistence_mode(value: Any) -> str:
+    token = str(value or "").strip().lower().replace("-", "_")
+    aliases = {
+        "folder": "results_folder",
+        "filesystem": "results_folder",
+        "files": "results_folder",
+        "results": "results_folder",
+        "result_folder": "results_folder",
+        "db": "database",
+        "mysql": "database",
+        "mysql_web": "database",
+        "database_only": "database",
+        "folder_and_database": "both",
+        "database_and_folder": "both",
+        "db_and_folder": "both",
+    }
+    token = aliases.get(token, token)
+    return token if token in OUTPUT_PERSISTENCE_OPTIONS else "both"
+
+
+def dashboard_mysql_available() -> tuple[bool, str]:
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return True, "connected"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def apply_output_persistence_defaults(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    output_cfg = payload.get("output")
+    if not isinstance(output_cfg, dict):
+        output_cfg = {}
+        payload["output"] = output_cfg
+    control_cfg = payload.get("output_control")
+    if not isinstance(control_cfg, dict):
+        control_cfg = {}
+        payload["output_control"] = control_cfg
+    raw_mode = output_cfg.get("persistence_mode", control_cfg.get("output_persistence_mode", ""))
+    if not raw_mode:
+        backend = str(output_cfg.get("backend") or "").strip().lower()
+        raw_mode = "both" if backend == "mysql_web" else "results_folder"
+    mode = normalize_output_persistence_mode(raw_mode)
+    output_cfg["persistence_mode"] = mode
+    control_cfg["output_persistence_mode"] = mode
+    output_cfg.setdefault("results_root", "results")
+    output_cfg.setdefault("save_csv", True)
+    output_cfg.setdefault("save_figures", True)
+    output_cfg.setdefault("save_png", True)
+    return payload
+
+
+def output_persistence_surface(config_payload: dict[str, Any]) -> dict[str, Any]:
+    cfg = apply_output_persistence_defaults(copy.deepcopy(config_payload if isinstance(config_payload, dict) else {}))
+    mode = normalize_output_persistence_mode(path_get(cfg, "output.persistence_mode", "both"))
+    backend = str(path_get(cfg, "output.backend", "filesystem") or "filesystem")
+    mysql_ok, mysql_reason = dashboard_mysql_available()
+    effective_backend = "mysql_web" if mode in {"database", "both"} and mysql_ok else "filesystem"
+    effective_mode = mode
+    fallback_reason = ""
+    if mode in {"database", "both"} and not mysql_ok:
+        effective_mode = "results_folder"
+        fallback_reason = f"MySQL is not reachable, so runtime launch will persist under /results instead: {mysql_reason}"
+    return {
+        "requested_mode": mode,
+        "effective_mode": effective_mode,
+        "configured_backend": backend,
+        "effective_backend": effective_backend,
+        "mysql_available": mysql_ok,
+        "mysql_reason": mysql_reason,
+        "results_root": str(path_get(cfg, "output.results_root", "results") or "results"),
+        "options": OUTPUT_PERSISTENCE_OPTIONS,
+        "fallback_reason": fallback_reason,
+    }
+
+
 def load_resolved_config_payload(rel_path: str) -> tuple[dict[str, Any], list[str]]:
     scenario_path = resolve_scenario_path(rel_path)
 
@@ -2561,7 +2645,7 @@ def load_resolved_config_payload(rel_path: str) -> tuple[dict[str, Any], list[st
         return merged, chain
 
     payload, chain = _resolve_tree(scenario_path, [])
-    return canonicalize_browser_config_payload(payload), chain
+    return apply_output_persistence_defaults(canonicalize_browser_config_payload(payload)), chain
 
 
 def build_runtime_overlay_payload(scenario_name: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -3119,6 +3203,34 @@ def fetch_artifacts(
     return rows
 
 
+def fetch_artifact_rollup(run_id: int) -> dict[str, int]:
+    with db_connection() as conn:
+        with conn.cursor(dictionary=True) as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) AS artifacts_total,
+                    COALESCE(MAX(artifact_id), 0) AS latest_artifact_id,
+                    COALESCE(SUM(byte_size), 0) AS bytes_total,
+                    COALESCE(SUM(CASE WHEN artifact_kind='table_csv' THEN 1 ELSE 0 END), 0) AS tables_total,
+                    COALESCE(SUM(CASE WHEN mime_type LIKE 'image/%' THEN 1 ELSE 0 END), 0) AS images_total,
+                    COALESCE(SUM(CASE WHEN artifact_kind='markdown_report' THEN 1 ELSE 0 END), 0) AS markdown_total
+                FROM sim_artifacts
+                WHERE run_id = %s
+                """,
+                (run_id,),
+            )
+            row = rowify(cur.fetchone()) or {}
+    return {
+        "artifacts_total": int(row.get("artifacts_total") or 0),
+        "latest_artifact_id": int(row.get("latest_artifact_id") or 0),
+        "bytes_total": int(row.get("bytes_total") or 0),
+        "tables_total": int(row.get("tables_total") or 0),
+        "images_total": int(row.get("images_total") or 0),
+        "markdown_total": int(row.get("markdown_total") or 0),
+    }
+
+
 def fetch_artifact_meta(artifact_id: int) -> dict[str, Any] | None:
     with db_connection() as conn:
         with conn.cursor(dictionary=True) as cur:
@@ -3304,19 +3416,56 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
         raise ValueError("Scenario YAML must decode to a mapping at the top level.")
     payload = _coerce_scalar_strings(payload)
     payload = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
+    requested_output_cfg = copy.deepcopy(payload.get("output") if isinstance(payload.get("output"), dict) else {})
+    requested_output_control_cfg = copy.deepcopy(
+        payload.get("output_control") if isinstance(payload.get("output_control"), dict) else {}
+    )
+    requested_persistence_mode = normalize_output_persistence_mode(
+        requested_output_cfg.get("persistence_mode", requested_output_control_cfg.get("output_persistence_mode", ""))
+    )
     if scenario_name:
         payload = build_runtime_overlay_payload(str(scenario_name), payload)
+        output_overlay = payload.get("output")
+        if not isinstance(output_overlay, dict):
+            output_overlay = {}
+            payload["output"] = output_overlay
+        control_overlay = payload.get("output_control")
+        if not isinstance(control_overlay, dict):
+            control_overlay = {}
+            payload["output_control"] = control_overlay
+        output_overlay["persistence_mode"] = requested_persistence_mode
+        control_overlay["output_persistence_mode"] = requested_persistence_mode
+        for key in ("results_root", "save_csv", "save_figures", "save_png", "save_mat"):
+            if key in requested_output_cfg:
+                output_overlay[key] = requested_output_cfg[key]
     for _, old_path, _ in BROWSER_ALIAS_RULES:
         if not schema_type_for_path(old_path):
             path_delete(payload, old_path)
     payload = _coerce_scalar_strings(payload)
+    apply_output_persistence_defaults(payload)
     output_cfg = payload.get("output")
     if output_cfg is None or not isinstance(output_cfg, dict):
         output_cfg = {}
-    output_cfg["backend"] = "mysql_web"
-    output_cfg["database_host"] = MYSQL_HOST
-    output_cfg["database_port"] = MYSQL_PORT
-    output_cfg["database_schema"] = MYSQL_DATABASE
+    persistence_mode = normalize_output_persistence_mode(output_cfg.get("persistence_mode"))
+    mysql_ok, mysql_reason = dashboard_mysql_available()
+    if persistence_mode in {"database", "both"} and mysql_ok:
+        output_cfg["backend"] = "mysql_web"
+        output_cfg["database_host"] = MYSQL_HOST
+        output_cfg["database_port"] = MYSQL_PORT
+        output_cfg["database_schema"] = MYSQL_DATABASE
+        output_cfg["persist_to_database"] = True
+        output_cfg["persist_to_results_folder"] = persistence_mode == "both"
+        output_cfg["persistence_effective_mode"] = persistence_mode
+        output_cfg["persistence_fallback_reason"] = ""
+    else:
+        output_cfg["backend"] = "filesystem"
+        output_cfg["persist_to_database"] = False
+        output_cfg["persist_to_results_folder"] = True
+        output_cfg["persistence_effective_mode"] = "results_folder"
+        output_cfg["persistence_fallback_reason"] = (
+            "" if persistence_mode == "results_folder"
+            else f"MySQL artifact store unavailable, so browser run will write to /results: {mysql_reason}"
+        )
     payload["output"] = output_cfg
     # Emit JSON text on disk even for .yaml runtime files. YAML parsers accept JSON as a
     # subset, and this preserves numeric types like 1e-6 without PyYAML re-emitting them
@@ -3461,26 +3610,176 @@ def build_scenario_download(scenario_name: str, fmt: str) -> tuple[bytes, str, s
     return raw.encode("utf-8"), "text/yaml; charset=utf-8", Path(scenario_name).name
 
 
+def artifact_download_descriptor_for_path(artifacts: list[dict[str, Any]], logical_path: str) -> dict[str, Any] | None:
+    art = find_artifact_by_logical_path(artifacts, logical_path)
+    return build_artifact_descriptor(art) if art else None
+
+
+def load_artifact_json_by_path(artifacts: list[dict[str, Any]], logical_path: str) -> tuple[Any, dict[str, Any]]:
+    art = find_artifact_by_logical_path(artifacts, logical_path)
+    meta = {
+        "logical_path": logical_path,
+        "artifact_id": None,
+        "status": "missing",
+        "reason": "artifact_not_found_for_run",
+    }
+    if art is None:
+        return None, meta
+    meta.update({
+        "artifact_id": int(art.get("artifact_id") or 0),
+        "status": "present",
+        "reason": "",
+    })
+    try:
+        payload = json.loads(fetch_artifact_bytes(int(art["artifact_id"])).decode("utf-8", errors="replace"))
+        meta["status"] = "parsed"
+        return payload, meta
+    except Exception as exc:
+        meta["status"] = "parse_failed"
+        meta["reason"] = str(exc)
+        return None, meta
+
+
+def load_artifact_rows_by_path(artifacts: list[dict[str, Any]], logical_path: str, *, max_rows: int = 10000) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    art = find_artifact_by_logical_path(artifacts, logical_path)
+    meta = {
+        "logical_path": logical_path,
+        "artifact_id": None,
+        "status": "missing",
+        "row_count": 0,
+        "reason": "artifact_not_found_for_run",
+    }
+    if art is None:
+        return [], meta
+    rows = load_small_csv_rows(artifacts, logical_path, max_rows=max_rows)
+    meta.update({
+        "artifact_id": int(art.get("artifact_id") or 0),
+        "status": "parsed" if rows else "empty_or_header_only",
+        "row_count": len(rows),
+        "byte_size": int(art.get("byte_size") or 0),
+        "reason": "" if rows else "artifact_has_no_data_rows",
+    })
+    return rows, meta
+
+
+def build_derived_parameter_bindings_from_config(config_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for field in product_field_records(config_payload if isinstance(config_payload, dict) else {}):
+        binding = field.get("binding") or {}
+        rows.append(
+            {
+                "ParameterId": binding.get("parameter_id") or field.get("path"),
+                "BrowserPath": field.get("path"),
+                "CurrentValue": field.get("value"),
+                "InternalCfgPath": binding.get("internal_cfg_path", ""),
+                "RuntimeObjectPath": binding.get("runtime_object_path", ""),
+                "MATLABConsumerFunctions": ";".join(binding.get("matlab_consumer_functions") or []),
+                "EvidenceArtifact": binding.get("evidence_artifact", ""),
+                "EvidenceField": binding.get("evidence_field", ""),
+                "FeatureFamily": binding.get("feature_family", field.get("feature_family", "")),
+                "SupportStatus": binding.get("support_status", ""),
+                "Source": "browser_derived_from_resolved_config_and_parameter_matrix_catalog",
+            }
+        )
+    return rows
+
+
 def build_run_config_download(run_id: int, fmt: str) -> tuple[bytes, str, str]:
     run_row = fetch_run(int(run_id))
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
-    payload = parse_config_json(run_row)
-    if not payload:
+    submitted_config = parse_config_json(run_row)
+    if not submitted_config:
         raise ValueError(f"Run {run_id} does not have a config_json payload yet.")
-    payload["_download_metadata"] = {
-        "run_id": int(run_id),
-        "run_tag": run_row.get("run_tag") or "",
-        "scenario_id": run_row.get("scenario_id") or "",
-        "status_text": run_row.get("status_text") or "",
-        "note": "Exact run config_json snapshot from MySQL. Runtime YAML overlays are generated from this launch contract.",
+    artifacts = fetch_artifacts(int(run_id))
+    resolved_config, resolved_meta = load_artifact_json_by_path(artifacts, "meta/scenario_config_resolved.json")
+    binding_rows, binding_meta = load_artifact_rows_by_path(artifacts, "reports/csv/parameter_binding_matrix.csv", max_rows=50000)
+    if not binding_rows:
+        binding_rows = build_derived_parameter_bindings_from_config(submitted_config)
+        binding_meta = {
+            "logical_path": "reports/csv/parameter_binding_matrix.csv",
+            "artifact_id": None,
+            "status": "browser_derived_fallback",
+            "row_count": len(binding_rows),
+            "reason": "run did not publish parameter_binding_matrix.csv; derived from resolved config plus scenario_parameter_matrix_catalog.yaml",
+        }
+    runtime_rows, runtime_meta = load_artifact_rows_by_path(artifacts, "reports/csv/runtime_config_application_evidence.csv", max_rows=50000)
+    feature_rows, feature_meta = load_artifact_rows_by_path(artifacts, "reports/csv/feature_parameter_index.csv", max_rows=50000)
+    surface_rows, surface_meta = load_artifact_rows_by_path(artifacts, "reports/csv/browser_config_surface_matrix.csv", max_rows=50000)
+    value_audit_rows, value_audit_meta = load_artifact_rows_by_path(artifacts, "reports/csv/value_source_audit.csv", max_rows=50000)
+    source_chain_rows, source_chain_meta = load_artifact_rows_by_path(artifacts, "meta/scenario_source_chain.csv", max_rows=512)
+    download_artifacts = {
+        key: artifact_download_descriptor_for_path(artifacts, path)
+        for key, path in {
+            "resolved_json": "meta/scenario_config_resolved.json",
+            "resolved_yaml": "meta/scenario_config_resolved.yaml",
+            "source_chain": "meta/scenario_source_chain.csv",
+            "parameter_binding_matrix": "reports/csv/parameter_binding_matrix.csv",
+            "browser_config_surface_matrix": "reports/csv/browser_config_surface_matrix.csv",
+            "runtime_config_application_evidence": "reports/csv/runtime_config_application_evidence.csv",
+            "feature_parameter_index": "reports/csv/feature_parameter_index.csv",
+            "value_source_audit": "reports/csv/value_source_audit.csv",
+        }.items()
+    }
+    payload = {
+        "_download_metadata": {
+            "run_id": int(run_id),
+            "run_tag": run_row.get("run_tag") or "",
+            "scenario_id": run_row.get("scenario_id") or "",
+            "status_text": run_row.get("status_text") or "",
+            "run_folder": run_row.get("run_folder") or "",
+            "note": "Run-scoped config evidence bundle. Submitted config comes from sim_runs.config_json; resolved/applied/binding evidence comes from this run's persisted artifacts when available.",
+        },
+        "run": {
+            "run_id": int(run_id),
+            "run_uuid": run_row.get("run_uuid") or "",
+            "run_tag": run_row.get("run_tag") or "",
+            "scenario_id": run_row.get("scenario_id") or "",
+            "profile_name": run_row.get("profile_name") or "",
+            "backend": run_row.get("backend") or "",
+            "status_text": run_row.get("status_text") or "",
+            "run_folder": run_row.get("run_folder") or "",
+            "created_utc": run_row.get("created_utc"),
+            "updated_utc": run_row.get("updated_utc"),
+        },
+        "submitted_config": submitted_config,
+        "resolved_config": {
+            "payload": resolved_config,
+            "source": resolved_meta,
+        },
+        "source_chain": {
+            "rows": source_chain_rows,
+            "source": source_chain_meta,
+        },
+        "output_persistence": output_persistence_surface(submitted_config),
+        "parameter_binding_matrix": {
+            "rows": binding_rows,
+            "source": binding_meta,
+        },
+        "browser_config_surface_matrix": {
+            "rows": surface_rows,
+            "source": surface_meta,
+        },
+        "runtime_config_application_evidence": {
+            "rows": runtime_rows,
+            "source": runtime_meta,
+        },
+        "feature_parameter_index": {
+            "rows": feature_rows,
+            "source": feature_meta,
+        },
+        "value_source_audit": {
+            "rows": value_audit_rows,
+            "source": value_audit_meta,
+        },
+        "artifact_downloads": {key: value for key, value in download_artifacts.items() if value},
     }
     fmt = str(fmt or "yaml").strip().lower()
     stem = safe_token(str(run_row.get("run_tag") or f"run_{run_id}")) or f"run_{run_id}"
     if fmt == "json":
-        return json_bytes(payload), "application/json; charset=utf-8", f"{stem}_config.json"
+        return json_bytes(payload), "application/json; charset=utf-8", f"{stem}_run_config_evidence.json"
     raw = yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
-    return raw.encode("utf-8"), "text/yaml; charset=utf-8", f"{stem}_config.yaml"
+    return raw.encode("utf-8"), "text/yaml; charset=utf-8", f"{stem}_run_config_evidence.yaml"
 
 
 def dashboard_listener_file() -> Path:
@@ -3738,6 +4037,8 @@ def format_value_with_unit(value: Any, unit: str = "") -> str:
 
 FIELD_OPTION_HINTS: dict[str, list[str]] = {
     "output.backend": ["mysql_web", "filesystem"],
+    "output.persistence_mode": OUTPUT_PERSISTENCE_OPTIONS,
+    "output_control.output_persistence_mode": OUTPUT_PERSISTENCE_OPTIONS,
     "output.bucket": ["lls", "sls", "e2e"],
     "run_control.execution_mode": BROWSER_EXECUTION_MODE_OPTIONS,
     "run_control.study_mode": ["smoke", "debug", "baseline", "campaign", "publication"],
@@ -3767,6 +4068,9 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
     "random_access.prach_format": ["0", "1", "2", "3", "A1", "A2", "A3", "B1", "B4", "C0", "C2"],
     "random_access.subcarrier_spacing_khz": ["1.25", "5", "15", "30", "60", "120"],
     "random_access.restricted_set": ["UnrestrictedSet", "RestrictedSet"],
+    "random_access.restricted_set_type": ["UnrestrictedSet", "RestrictedSet"],
+    "random_access.sequence_length": ["139", "839"],
+    "random_access.frequency_domain_multiplexing": ["1", "2", "4", "8"],
     "random_access.detection_threshold_mode": ["fixed", "auto"],
     "random_access.channel_model": ["AWGN", "TDL-A", "TDL-C", "CDL-C"],
     "phy.rx.channelestimation": ["DMRS", "Perfect"],
@@ -3789,6 +4093,8 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
 
 FIELD_LABEL_OVERRIDES: dict[str, str] = {
     "run_control.execution_mode": "Execution Mode",
+    "output.persistence_mode": "Output Persistence Mode",
+    "output_control.output_persistence_mode": "Output Persistence Mode",
     "control_gating.pbch_required": "PBCH Gating Required",
     "control_gating.prach_required": "PRACH Gating Required",
     "control_gating.pdcch_required": "PDCCH Gating Required",
@@ -3803,9 +4109,14 @@ FIELD_LABEL_OVERRIDES: dict[str, str] = {
     "channels.doppler_source_mode": "Doppler Source Mode",
     "channel_model.doppler_source_mode": "Doppler Source Mode",
     "random_access.configuration_index": "PRACH Config Index",
+    "random_access.subcarrier_spacing_khz": "PRACH Subcarrier Spacing (kHz)",
     "random_access.sequence_index": "PRACH Sequence Index",
+    "random_access.sequence_length": "PRACH Sequence Length",
     "random_access.logical_root_sequence_index": "Logical Root Sequence Index",
     "random_access.root_sequence_index": "Legacy Root Sequence Index",
+    "random_access.restricted_set": "Restricted Set Type",
+    "random_access.restricted_set_type": "Restricted Set Type",
+    "random_access.frequency_domain_multiplexing": "PRACH Freq Domain Multiplexing",
     "random_access.frequency_start": "PRACH Frequency Start",
     "random_access.num_prach_occasions": "PRACH Occasions",
     "random_access.num_ues_per_ro": "UEs Per RO",
@@ -3824,6 +4135,8 @@ FIELD_LABEL_OVERRIDES: dict[str, str] = {
     "random_access.timing_tolerance_us": "Timing Tolerance (us)",
     "random_access.snr_sweep_db": "PRACH SNR Sweep (dB)",
     "random_access.threshold_sweep": "PRACH Threshold Sweep",
+    "random_access.target_false_alarm_probability": "Target False Alarm Probability",
+    "random_access.detection_window_samples": "PRACH Detection Window (samples)",
 }
 
 
@@ -4189,12 +4502,12 @@ def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, str]:
         path_get(
             config_payload,
             "simulation.noise_operating_mode",
-            path_get(config_payload, "simulation.operating_point_mode", "configured_snr_anchor_after_large_scale_gain"),
+            path_get(config_payload, "simulation.operating_point_mode", "receiver_noise_figure_thermal_noise"),
         )
         or ""
     ).strip()
     if not noise_mode:
-        noise_mode = "configured_snr_anchor_after_large_scale_gain"
+        noise_mode = "receiver_noise_figure_thermal_noise"
     entrypoint = "run_6g_phy_lls_single" if browser_mode == "LLS" else "not_wired_from_browser_dashboard"
     browser_control_plane = "authoritative_runtime_yaml_overlay" if browser_mode == "LLS" else "selector_separated_not_launched_here"
     return {
@@ -4246,6 +4559,91 @@ RESULT_SECTION_LABELS: dict[str, str] = {
     "meta": "Meta",
     "other": "Other",
 }
+
+PLOT_BUCKET_LABELS: dict[str, str] = {
+    "all": "All Channels / Algorithms",
+    "ssb_pbch_sib": "SSB / PBCH / SIB",
+    "prach": "Random Access / PRACH",
+    "pdcch": "DL Control / PDCCH / DCI",
+    "pucch": "UL Control / PUCCH / UCI",
+    "pdsch": "DL Data / PDSCH",
+    "pusch": "UL Data / PUSCH",
+    "csi_srs_trs": "CSI-RS / SRS / TRS / DMRS",
+    "beam_mimo": "Beamforming / MIMO / PMI / RI / CRI",
+    "harq": "HARQ / ACK-NACK / Retransmission",
+    "scheduler": "Scheduler / MAC / Grants / Queues",
+    "channel_rf": "Channel / RF / Propagation / Impairments",
+    "geometry": "Geometry / Topology / Mobility",
+    "throughput_reliability": "Throughput / BLER / BER / EVM",
+    "resource_grid": "Air Interface Resource Grid",
+    "export_integrity": "Export / Integrity / Coverage",
+    "other": "Other Published Evidence",
+}
+
+
+def infer_plot_bucket(*values: Any) -> str:
+    text = " ".join(str(value or "") for value in values).lower()
+    if any(token in text for token in ("ssb", "pbch", "pss", "sss", "sib", "mib")):
+        return "ssb_pbch_sib"
+    if "prach" in text or "random-access" in text or "random_access" in text:
+        return "prach"
+    if "pdcch" in text or "dci" in text or "coreset" in text or "search-space" in text or "search_space" in text:
+        return "pdcch"
+    if "pucch" in text or "uci" in text:
+        return "pucch"
+    if "pdsch" in text or "dlsch" in text or "downlink" in text or "/dl_" in text or "_dl_" in text:
+        return "pdsch"
+    if "pusch" in text or "ulsch" in text or "uplink" in text or "/ul_" in text or "_ul_" in text:
+        return "pusch"
+    if any(token in text for token in ("csi", "srs", "trs", "dmrs", "ptrs", "tracking", "cqi", "pmi", "ri", "cri", "rank")):
+        return "csi_srs_trs"
+    if any(token in text for token in ("beam", "mimo", "precod", "tpmi", "codebook")):
+        return "beam_mimo"
+    if "harq" in text or "ack" in text or "nack" in text or "retx" in text or "retransmission" in text:
+        return "harq"
+    if any(token in text for token in ("scheduler", "grant", "queue", "fairness", "mac", "prb_allocation")):
+        return "scheduler"
+    if any(token in text for token in ("resource_element", "resource-grid", "resource_grid", "slot_symbol", "occupancy", "grid")):
+        return "resource_grid"
+    if any(token in text for token in ("pathloss", "rsrp", "sinr", "rssi", "rsrq", "channel", "doppler", "o2i", "fading", "impairment", "cfo", "phase_noise", "rf")):
+        return "channel_rf"
+    if any(token in text for token in ("throughput", "goodput", "bler", "ber", "evm", "constellation", "reliability", "latency", "cdf")):
+        return "throughput_reliability"
+    if any(token in text for token in ("geometry", "topology", "layout", "ue_trajectory", "mobility", "handover", "cell_selection")):
+        return "geometry"
+    if any(token in text for token in ("coverage", "integrity", "contract", "materialization", "manifest", "config", "artifact_inventory", "unavailable")):
+        return "export_integrity"
+    return "other"
+
+
+def attach_plot_bucket(item: dict[str, Any]) -> dict[str, Any]:
+    out = dict(item)
+    bucket = infer_plot_bucket(
+        out.get("logical_path"),
+        out.get("source"),
+        out.get("label"),
+        out.get("family_id"),
+        out.get("section"),
+    )
+    out["bucket"] = bucket
+    out["bucket_label"] = PLOT_BUCKET_LABELS.get(bucket, humanize_key(bucket))
+    return out
+
+
+def bucketize_plot_browser_items(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    enriched = [attach_plot_bucket(item) for item in items]
+    counts: dict[str, int] = {}
+    for item in enriched:
+        bucket = str(item.get("bucket") or "other")
+        counts[bucket] = counts.get(bucket, 0) + 1
+    ordered_keys = [key for key in PLOT_BUCKET_LABELS if key != "all" and counts.get(key, 0)]
+    ordered_keys.extend(sorted(key for key in counts if key not in set(ordered_keys)))
+    buckets = [{"id": "all", "label": PLOT_BUCKET_LABELS["all"], "count": len(enriched)}]
+    buckets.extend(
+        {"id": key, "label": PLOT_BUCKET_LABELS.get(key, humanize_key(key)), "count": counts.get(key, 0)}
+        for key in ordered_keys
+    )
+    return enriched, buckets
 
 
 def normalize_result_section(raw: str | None) -> str:
@@ -4534,7 +4932,7 @@ def build_artifact_descriptor(art: dict[str, Any]) -> dict[str, Any]:
         descriptor["view_url"] = f"/artifact/{art['artifact_id']}/table"
     else:
         descriptor["view_url"] = artifact_url(int(art["artifact_id"]), download=False)
-    return descriptor
+    return attach_plot_bucket(descriptor)
 
 
 def friendly_artifact_label(logical_path: str) -> str:
@@ -4663,9 +5061,31 @@ def plot_browser_chart_table_artifacts(
     reference_chart_artifacts: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Return chart-sized table artifacts for the plot browser without raw trial-table fan-out."""
+    explicit_signal_sources = {
+        "air_interface/csv/pbch_trials.csv",
+        "air_interface/csv/prach_trials.csv",
+        "air_interface/csv/pdcch_trials.csv",
+        "air_interface/csv/pucch_trials.csv",
+        "air_interface/csv/srs_trials.csv",
+        "air_interface/csv/trs_trials.csv",
+        "control/csv/pbch_trials.csv",
+        "control/csv/prach_trials.csv",
+        "control/csv/pdcch_trials.csv",
+        "control/csv/pucch_trials.csv",
+        "control/csv/srs_trials.csv",
+        "control/csv/trs_trials.csv",
+        "reports/csv/ssb_index_timeline.csv",
+        "reports/csv/ssb_pbch_occupancy_map.csv",
+        "reports/csv/sib1_scheduling_timeline.csv",
+        "reports/csv/pdcch_control_outputs.csv",
+        "reports/csv/initial_access_random_access_outputs.csv",
+    }
     out: list[dict[str, Any]] = list(reference_chart_artifacts)
     for item in table_artifacts:
         path = str(item.get("logical_path") or "").replace("\\", "/").strip().lower()
+        if path in explicit_signal_sources:
+            out.append(item)
+            continue
         if path.startswith(("analytics/csv/contract__", "reports/csv/contract__")):
             out.append(item)
             continue
@@ -4786,6 +5206,9 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
             )
     if canonical_items:
         merged_items = merge_plot_browser_items(canonical_items, legacy_items)
+        merged_items, buckets = bucketize_plot_browser_items(merged_items)
+        canonical_items, canonical_buckets = bucketize_plot_browser_items(canonical_items)
+        legacy_items, raw_buckets = bucketize_plot_browser_items(legacy_items)
         interactive_count = sum(1 for item in merged_items if item.get("kind") == "interactive")
         image_count = sum(1 for item in merged_items if item.get("kind") == "image")
         unavailable_count = sum(1 for item in merged_items if item.get("kind") == "unavailable")
@@ -4795,6 +5218,9 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
             "items": merged_items,
             "canonical_items": canonical_items,
             "raw_items": legacy_items,
+            "buckets": buckets,
+            "canonical_buckets": canonical_buckets,
+            "raw_buckets": raw_buckets,
             "interactive_count": interactive_count,
             "image_count": image_count,
             "unavailable_count": unavailable_count,
@@ -4804,11 +5230,14 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
             "raw_image_count": legacy_image_count,
             "suppressed_raw_count": 0,
         }
+    legacy_items, buckets = bucketize_plot_browser_items(legacy_items)
     return {
         "run_id": int(run_id),
         "mode": "legacy_artifact_dump",
         "items": legacy_items,
         "raw_items": legacy_items,
+        "buckets": buckets,
+        "raw_buckets": buckets,
         "interactive_count": legacy_interactive_count,
         "image_count": legacy_image_count,
         "unavailable_count": 0,
@@ -5657,6 +6086,12 @@ PHY_GRID_CHANNEL_SPECS: dict[str, dict[str, Any]] = {
 
 
 PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
+    "re_occupancy": {
+        "canonical_path": "reports/csv/live_re_allocation_snapshot.csv",
+        "legacy_paths": ["reports/csv/dl_resource_grid_heatmap.csv", "reports/csv/ul_resource_grid_heatmap.csv"],
+        "owner_kind": "live_re_allocation_snapshot",
+        "spec": {"channel": "RE Occupancy", "direction": "", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
+    },
     "csirs_trials": {
         "canonical_path": "air_interface/csv/csi_rs_trials.csv",
         "legacy_paths": ["control/csv/csi_rs_trials.csv", "reports/csv/live_csirs_stats.csv"],
@@ -5792,12 +6227,18 @@ def build_phy_event(
         ["NumSymbols", "SymbolCount", "SymbolLength", "DurationSymbols", "L"],
         float(spec.get("symbol_count", 1) or 1),
     )
-    channel = str(derived_channel or spec.get("channel") or table_key)
+    channel = str(
+        derived_channel
+        or first_present_value(row, ["channel_name", "signal_name", "ChannelName", "SignalFamily", "Channel"], "")
+        or spec.get("channel")
+        or table_key
+    )
+    direction = str(first_present_value(row, ["Direction", "direction", "LinkDirection", "Duplex"], spec.get("direction") or ""))
     crc_value = first_present_value(row, ["CRCPass", "CRCOK", "CRC", "DecodeSuccess", "DetectionSuccess", "Pass"], "")
     status_value = first_present_value(row, ["Status", "DecodeStatus", "DetectionStatus", "ResultStatus", "SRSValidityState"], "")
     return {
         "slot": int(slot),
-        "direction": str(spec.get("direction") or ""),
+        "direction": direction,
         "channel": channel,
         "table_key": table_key,
         "ue_id": phy_grid_ue_value(row),
@@ -10292,7 +10733,108 @@ def condense_live_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_lite_live_payload(run_id: int) -> dict[str, Any]:
+    run_row = fetch_run(run_id)
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    inserted_logs = sync_runtime_log_for_run(run_row)
+    if inserted_logs:
+        run_row = fetch_run(run_id) or run_row
+
+    rollup = fetch_artifact_rollup(run_id)
+    artifact_version = f"{rollup['artifacts_total']}|{rollup['latest_artifact_id']}"
+    full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
+    if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == full_cache_version and run_id in LIVE_PAYLOAD_CACHE:
+        return condense_live_payload(LIVE_PAYLOAD_CACHE[run_id])
+
+    recent_artifacts = fetch_artifacts(run_id, limit=MAX_ACTIVITY_POINTS, newest_first=True)
+    logs_recent = fetch_logs(run_id, limit=min(60, MAX_LIVE_LOG_ROWS), descending=True)
+    counts = {
+        "artifacts_total": rollup["artifacts_total"],
+        "tables_total": rollup["tables_total"],
+        "images_total": rollup["images_total"],
+        "markdown_total": rollup["markdown_total"],
+        "bytes_total": rollup["bytes_total"],
+        "logs_total": count_logs(run_id),
+    }
+
+    status_json = parse_status_json(run_row)
+    stage = infer_effective_live_stage(merge_live_status_into_stage({}, status_json), recent_artifacts)
+    config = parse_config_json(run_row)
+    runtime_context = {
+        "stage": stage,
+        "truth_modes": infer_runtime_truth_modes(config, []),
+        "notes": [
+            "Lite live payload skips heavy CSV chart/table parsing; the browser requests a full payload when the artifact version changes.",
+        ],
+    }
+    summary = {
+        "source": "sim_runs.status_json",
+        "scenario_id": run_row.get("scenario_id") or "",
+        "run_completion": status_json.get("run_completion") or "",
+        "result_ok": status_json.get("result_ok"),
+        "required_failure_count": status_json.get("required_failure_count"),
+        "failing_case_count": status_json.get("failing_case_count"),
+        "warning_count": status_json.get("warning_count"),
+        "runtime_truth_contract_ok": status_json.get("runtime_truth_contract_ok"),
+        "required_runtime_evidence_missing_count": status_json.get("required_runtime_evidence_missing_count"),
+        "strict_truth_failure_count": status_json.get("strict_truth_failure_count"),
+        "strict_proxy_guard_failure_count": status_json.get("strict_proxy_guard_failure_count"),
+        "roundtrip_mismatch_count": status_json.get("roundtrip_mismatch_count"),
+    }
+    run_compact = compact_run_row(run_row, [])
+    for summary_key, run_key in {
+        "run_completion": "run_completion",
+        "result_ok": "result_ok",
+        "required_failure_count": "required_failure_count",
+        "failing_case_count": "failing_case_count",
+        "warning_count": "warning_count",
+        "runtime_truth_contract_ok": "runtime_truth_contract_ok",
+        "roundtrip_mismatch_count": "roundtrip_mismatch_count",
+        "required_runtime_evidence_missing_count": "required_runtime_evidence_missing_count",
+        "strict_truth_failure_count": "strict_truth_failure_count",
+        "strict_proxy_guard_failure_count": "strict_proxy_guard_failure_count",
+    }.items():
+        value = summary.get(summary_key)
+        if value is not None and value != "":
+            run_compact[run_key] = value
+
+    section_counts: dict[str, int] = {}
+    for art in recent_artifacts:
+        if art.get("artifact_kind") == "table_csv":
+            section = classify_result_section(str(art.get("logical_path") or ""))
+            section_counts[section] = section_counts.get(section, 0) + 1
+
+    status_text = str(run_row.get("status_text") or "").strip().lower()
+    cache_version = f"{full_cache_version}|lite"
+    return {
+        "run": run_compact,
+        "summary": summary,
+        "counts": counts,
+        "metrics": [
+            {"label": "Artifacts", "value": counts["artifacts_total"], "unit": ""},
+            {"label": "Tables", "value": counts["tables_total"], "unit": ""},
+            {"label": "Logs", "value": counts["logs_total"], "unit": ""},
+        ],
+        "runtime_context": runtime_context,
+        "section_counts": section_counts,
+        "analysis_mode": "post_run" if is_terminal_status(status_text) else "live",
+        "logs_recent": logs_recent,
+        "charts": {
+            "artifact_activity": build_activity_series(recent_artifacts, "Artifacts"),
+            "log_activity": build_activity_series(logs_recent, "Logs"),
+            "progress_tabs": build_runtime_progress_charts(logs_recent, status_json),
+        },
+        "reference_plot_gallery": {"items": []},
+        "payload_version": cache_version,
+        "artifact_version": artifact_version,
+        "lite": True,
+    }
+
+
 def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
+    if lite:
+        return build_lite_live_payload(run_id)
     run_row = fetch_run(run_id)
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
@@ -10958,6 +11500,244 @@ def product_phy_families() -> list[dict[str, Any]]:
     ]
 
 
+@lru_cache(maxsize=1)
+def load_parameter_matrix_catalog_rows() -> list[dict[str, Any]]:
+    if not PARAMETER_MATRIX_CATALOG_PATH.is_file():
+        return []
+    try:
+        raw = yaml.safe_load(PARAMETER_MATRIX_CATALOG_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    rows = raw.get("parameters") if isinstance(raw, dict) else []
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            out.append(row)
+    return out
+
+
+def matrix_catalog_aliases(row: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("parameter_id", "browser_path", "scenario_path", "internal_cfg_path", "runtime_object_path"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            values.append(value.strip())
+    aliases = row.get("aliases")
+    if isinstance(aliases, list):
+        values.extend(str(item).strip() for item in aliases if str(item).strip())
+    return list(dict.fromkeys(values))
+
+
+@lru_cache(maxsize=1)
+def build_parameter_matrix_index() -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for row in load_parameter_matrix_catalog_rows():
+        for alias in matrix_catalog_aliases(row):
+            key = alias.strip().lower()
+            if key and key not in index:
+                index[key] = row
+    return index
+
+
+def parameter_matrix_row_for_path(path: str) -> dict[str, Any] | None:
+    normalized = str(path or "").strip().lower()
+    if not normalized:
+        return None
+    index = build_parameter_matrix_index()
+    if normalized in index:
+        return index[normalized]
+    # Last-resort suffix match is intentionally conservative and only used
+    # for top-level UI aliases such as prach.format_set.
+    matches = [
+        row for key, row in index.items()
+        if key.endswith("." + normalized) or normalized.endswith("." + key)
+    ]
+    return matches[0] if matches else None
+
+
+def matrix_list_value(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def build_matrix_binding_payload(path: str) -> dict[str, Any]:
+    row = parameter_matrix_row_for_path(path) or {}
+    return {
+        "parameter_id": str(row.get("parameter_id") or path),
+        "browser_path": str(row.get("browser_path") or path),
+        "scenario_path": str(row.get("scenario_path") or path),
+        "internal_cfg_path": str(row.get("internal_cfg_path") or ""),
+        "runtime_object_path": str(row.get("runtime_object_path") or ""),
+        "matlab_consumer_functions": matrix_list_value(row.get("matlab_consumer_functions")),
+        "evidence_artifact": str(row.get("evidence_artifact") or ""),
+        "evidence_field": str(row.get("evidence_field") or ""),
+        "feature_family": str(row.get("feature_family") or parameter_taxonomy_entry(path).get("feature_family") or "Uncategorized"),
+        "ui_section": str(row.get("ui_section") or parameter_taxonomy_entry(path).get("ui_section") or "Uncategorized"),
+        "classification": str(row.get("classification") or ""),
+        "support_status": str(row.get("support_status") or ""),
+        "unavailable_reason": str(row.get("unavailable_reason") or ""),
+        "browser_visible": bool(row.get("browser_visible", True)) if row else True,
+        "browser_editable": bool(row.get("browser_editable", True)) if row else True,
+    }
+
+
+def config_value_for_any_path(config_payload: dict[str, Any], paths: list[str]) -> tuple[Any, str, bool]:
+    for path in paths:
+        if not path:
+            continue
+        value = path_get(config_payload, path)
+        if value is not PATH_MISSING:
+            return value, path, True
+    return "", "", False
+
+
+L1_PHY_PARAMETER_GROUP_DEFS: list[dict[str, Any]] = [
+    {
+        "id": "prach",
+        "title": "PRACH / Random Access",
+        "family_ids": ["ul_control"],
+        "paths": [
+            ("random_access.enabled", "PRACH Enabled"),
+            ("random_access.subcarrier_spacing_khz", "PRACH Subcarrier Spacing"),
+            ("random_access.sequence_index", "RSI / Sequence Index"),
+            ("random_access.root_sequence_index", "Root Sequence Index"),
+            ("random_access.sequence_length", "Sequence Length"),
+            ("random_access.zero_correlation_zone", "Cyclic Shift / ZCZ Config"),
+            ("random_access.restricted_set", "Restricted Set Type"),
+            ("random_access.configuration_index", "PRACH Configuration Index"),
+            ("random_access.prach_format", "PRACH Format"),
+            ("random_access.frequency_domain_multiplexing", "Freq Domain Multiplexing"),
+            ("random_access.frequency_start", "Start PRB"),
+            ("random_access.num_prach_occasions", "PRACH Resources / Occasions"),
+            ("random_access.target_false_alarm_probability", "Target False Alarm Probability"),
+            ("random_access.detection_window_samples", "Detection Window"),
+            ("random_access.detection_threshold", "Detection Threshold"),
+            ("random_access.detection_threshold_mode", "Detection Threshold Mode"),
+        ],
+    },
+    {
+        "id": "pdcch",
+        "title": "PDCCH / DCI / CORESET",
+        "family_ids": ["dl_control"],
+        "paths": [
+            ("control.pdcch_enabled", "PDCCH Enabled"),
+            ("control.coreset_type", "CORESET Type"),
+            ("control.coreset_duration", "CORESET Duration"),
+            ("control.coreset_frequency_resources", "CORESET Frequency Resources"),
+            ("control.search_space_type", "Search Space Type"),
+            ("control.search_space_num_candidates", "Search Space Candidates"),
+            ("control.aggregation_levels", "Aggregation Levels"),
+            ("control.candidate_aggregation_levels", "Candidate Aggregation Levels"),
+            ("control.scheduler_aggregation_level", "Scheduler Aggregation Level"),
+            ("control.aggregation_selection_policy", "Aggregation Selection Policy"),
+            ("control.blind_decode_candidates", "Blind Decode Candidates"),
+            ("control.blind_decode_list_length", "Blind Decode List Length"),
+            ("control.dci_formats", "DCI Formats"),
+            ("control.pdcch_payload_bits", "DCI Payload Bits"),
+            ("control.pdcch6gr.enable_6gr_pdcch", "6GR PDCCH Study Enable"),
+            ("control.pdcch6gr.noise_variance_mode", "Noise Variance Mode"),
+            ("reference_signals.pdcch_dmrs_enabled", "PDCCH DMRS Enabled"),
+        ],
+    },
+    {
+        "id": "pucch",
+        "title": "PUCCH / UCI",
+        "family_ids": ["ul_control"],
+        "paths": [
+            ("control.pucch_enabled", "PUCCH Enabled"),
+            ("control.pucch_format", "Requested PUCCH Format"),
+            ("pucch.enabled", "PUCCH Feature Enable"),
+            ("pucch.formats", "Supported Formats"),
+            ("pucch.harq_ack_policy", "HARQ-ACK Policy"),
+            ("pucch.sr_policy", "Scheduling Request Policy"),
+            ("pucch.csi_policy", "CSI Policy"),
+            ("pucch.multiplexing_policy", "Multiplexing Policy"),
+            ("pucch.coding_policy", "Coding Policy"),
+            ("pucch.low_papr_policy", "Low-PAPR Policy"),
+            ("pucch.resource_policy", "Resource Policy"),
+            ("pucch.repetition_policy", "Repetition Policy"),
+            ("pucch.power_control", "Power Control"),
+        ],
+    },
+    {
+        "id": "ssb_pbch_sib",
+        "title": "SSB / PBCH / SIB",
+        "family_ids": ["dl_control"],
+        "paths": [
+            ("reference_signals.ssb_enabled", "SSB Enabled"),
+            ("reference_signals.pbch_enabled", "PBCH Enabled"),
+            ("signals_and_channels_common.ssb.enable_flag", "SSB Enable Alias"),
+            ("signals_and_channels_common.pbch.enable_flag", "PBCH Enable Alias"),
+            ("random_access.ssb_periodicity_ms", "SSB Periodicity"),
+            ("random_access.ssb_beam_count", "SSB Beam Count"),
+            ("random_access.ssb_ro_mapping_mode", "SSB to RO Mapping"),
+            ("reference_signals.sib1_related_pdcch.enabled", "SIB1 Related PDCCH"),
+        ],
+    },
+    {
+        "id": "csi_srs_trs",
+        "title": "CSI-RS / SRS / TRS",
+        "family_ids": ["dl_control", "reference", "ul_data"],
+        "paths": [
+            ("reference_signals.csi_rs_enabled", "CSI-RS Enabled"),
+            ("reference_signals.srs_enabled", "SRS Enabled"),
+            ("reference_signals.srs.periodicity", "SRS Periodicity"),
+            ("reference_signals.srs.num_ports", "SRS Ports"),
+            ("reference_signals.trs_enabled", "TRS Enabled"),
+            ("reference_signals.tracking_rs_enabled", "Tracking RS Enabled"),
+            ("csi_acquisition_and_reporting.cqi_policy", "CQI Policy"),
+            ("csi_acquisition_and_reporting.pmi_policy", "PMI Policy"),
+            ("csi_acquisition_and_reporting.ri_policy", "RI Policy"),
+            ("csi_acquisition_and_reporting.cri_policy", "CRI Policy"),
+            ("csi_acquisition_and_reporting.pmi_codebook_mode", "PMI Codebook Mode"),
+        ],
+    },
+]
+
+
+def build_l1_phy_parameter_surface(config_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for group in L1_PHY_PARAMETER_GROUP_DEFS:
+        rows: list[dict[str, Any]] = []
+        for path, label in group["paths"]:
+            binding = build_matrix_binding_payload(path)
+            aliases = [path]
+            aliases.extend(matrix_list_value(parameter_matrix_row_for_path(path).get("aliases") if parameter_matrix_row_for_path(path) else []))
+            aliases = list(dict.fromkeys(alias for alias in aliases if alias))
+            value, selected_path, present = config_value_for_any_path(config_payload, aliases)
+            if present:
+                status = "configured"
+            elif binding.get("support_status") == "dead_parameter":
+                status = "not_wired_in_active_backend"
+            else:
+                status = "missing_from_current_scenario"
+            rows.append(
+                {
+                    "path": path,
+                    "label": label or resolve_field_label(path),
+                    "value": value if present else "",
+                    "selected_path": selected_path,
+                    "candidate_paths": aliases,
+                    "status": status,
+                    "binding": binding,
+                }
+            )
+        groups.append(
+            {
+                "id": group["id"],
+                "title": group["title"],
+                "family_ids": group.get("family_ids", []),
+                "rows": rows,
+            }
+        )
+    return groups
+
+
 def product_field_domain(path: str) -> str:
     normalized = str(path or "").lower()
     for domain, spec in PRODUCT_DOMAIN_FILTERS.items():
@@ -11034,6 +11814,9 @@ def product_field_records(config_payload: dict[str, Any]) -> list[dict[str, Any]
         value = field.get("value")
         domain = product_field_domain(path)
         taxonomy = parameter_taxonomy_entry(path)
+        binding = build_matrix_binding_payload(path)
+        feature_family = binding.get("feature_family") or taxonomy.get("feature_family", "Uncategorized")
+        ui_section = binding.get("ui_section") or taxonomy.get("ui_section", "Uncategorized")
         records.append(
             {
                 "path": path,
@@ -11041,8 +11824,8 @@ def product_field_records(config_payload: dict[str, Any]) -> list[dict[str, Any]
                 "domain": domain,
                 "domain_label": PRODUCT_DOMAIN_FILTERS.get(domain, {}).get("title", humanize_key(domain)),
                 "ui_layer": taxonomy.get("ui_layer", "Outputs"),
-                "ui_section": taxonomy.get("ui_section", "Uncategorized"),
-                "feature_family": taxonomy.get("feature_family", "Uncategorized"),
+                "ui_section": ui_section,
+                "feature_family": feature_family,
                 "shared_dependency": bool(taxonomy.get("shared_dependency", False)),
                 "kind": field.get("kind") or "text",
                 "value": value,
@@ -11055,6 +11838,12 @@ def product_field_records(config_payload: dict[str, Any]) -> list[dict[str, Any]
                 "owner": field.get("group_label") or humanize_key(path.split(".")[0] if path else "scenario"),
                 "role": field.get("support_state") or "active",
                 "support_note": field.get("support_note") or "",
+                "binding": binding,
+                "internal_cfg_path": binding.get("internal_cfg_path", ""),
+                "runtime_object_path": binding.get("runtime_object_path", ""),
+                "matlab_consumer_functions": binding.get("matlab_consumer_functions", []),
+                "evidence_artifact": binding.get("evidence_artifact", ""),
+                "support_status": binding.get("support_status", ""),
                 "options": field.get("options"),
                 "search": field.get("search_text") or f"{path} {field.get('label') or ''}",
             }
@@ -11222,6 +12011,8 @@ def build_product_frontend_page(
         "domains": PRODUCT_DOMAIN_FILTERS,
         "architecture": product_architecture_blocks(),
         "phy_families": product_phy_families(),
+        "l1_parameter_groups": build_l1_phy_parameter_surface(config_payload),
+        "output_persistence": output_persistence_surface(config_payload),
         "report_sections": output_contract.product_sections_payload("reports") if include_contract_sections else [],
         "analytics_sections": output_contract.product_sections_payload("analytics") if include_contract_sections else [],
         "contract_context_columns": output_contract.BASE_CONTEXT_COLUMNS,
@@ -11319,7 +12110,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (err) { return ''; } }, set(key, value) { try { localStorage.setItem(key, value); } catch (err) {} } };
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   const wired = root.fully_wired_mode || 'LLS';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (obj, path, fallback) => String(path || '').split('.').filter(Boolean).reduce((node, key) => node && typeof node === 'object' && key in node ? node[key] : undefined, obj) ?? fallback;
@@ -11358,6 +12149,33 @@ window.addEventListener('DOMContentLoaded', function () {
   function downloadTextFile(filename, content, mimeType) { const anchor = document.createElement('a'); anchor.href = URL.createObjectURL(new Blob([content], {type: mimeType || 'text/plain;charset=utf-8'})); anchor.download = filename; document.body.appendChild(anchor); anchor.click(); window.setTimeout(() => { URL.revokeObjectURL(anchor.href); anchor.remove(); }, 0); }
   function csvEscape(value) { const token = value === null || value === undefined ? '' : String(value); return /[",\\n]/.test(token) ? `"${token.replace(/"/g, '""')}"` : token; }
   function downloadCsv(filename, rows) { if (!rows || !rows.length) return; const columns = [...new Set(rows.flatMap(row => Object.keys(row || {})))]; const lines = [columns.map(csvEscape).join(',')].concat(rows.map(row => columns.map(col => csvEscape(row[col])).join(','))); downloadTextFile(filename, lines.join('\\n'), 'text/csv;charset=utf-8'); }
+  function normalizeOutputPersistenceMode(value) {
+    const token = String(value || '').trim().toLowerCase().replace(/-/g, '_');
+    const aliases = {folder:'results_folder', filesystem:'results_folder', files:'results_folder', results:'results_folder', db:'database', mysql:'database', mysql_web:'database', database_only:'database', folder_and_database:'both', database_and_folder:'both'};
+    const normalized = aliases[token] || token || 'both';
+    return ['both','database','results_folder'].includes(normalized) ? normalized : 'both';
+  }
+  function applyOutputPersistenceMode() {
+    if (!state.config || typeof state.config !== 'object') state.config = {};
+    const current = normalizeOutputPersistenceMode(get(state.config, 'output.persistence_mode', get(state.config, 'output_control.output_persistence_mode', (root.output_persistence || {}).requested_mode || 'both')));
+    set(state.config, 'output.persistence_mode', current);
+    set(state.config, 'output_control.output_persistence_mode', current);
+    set(state.config, 'output.save_csv', true);
+    set(state.config, 'output.save_figures', true);
+    set(state.config, 'output.save_png', true);
+    if (current === 'results_folder') set(state.config, 'output.backend', 'filesystem');
+    else set(state.config, 'output.backend', 'mysql_web');
+    return current;
+  }
+  function outputPersistencePanel() {
+    const summary = root.output_persistence || {};
+    const current = state.configLoaded ? normalizeOutputPersistenceMode(get(state.config, 'output.persistence_mode', summary.requested_mode || 'both')) : normalizeOutputPersistenceMode(summary.requested_mode || 'both');
+    const options = (summary.options || ['both','database','results_folder']).map(mode => `<option value="${esc(mode)}"${mode === current ? ' selected' : ''}>${esc(mode.replace(/_/g, ' '))}</option>`).join('');
+    const effective = summary.effective_mode || current;
+    const mysql = summary.mysql_available ? 'connected' : (summary.mysql_reason ? `unavailable: ${summary.mysql_reason}` : 'unavailable');
+    const fallback = summary.fallback_reason ? `<div class="warning" style="margin-top:10px;">${esc(summary.fallback_reason)}</div>` : '';
+    return `<section class="panel"><h3>Output Persistence</h3><p class="subtle">Choose where CSVs, images, and resolved config snapshots are persisted for browser-launched runs. If MySQL is unavailable, the server normalizer automatically writes to <code>/results</code> and records the fallback reason in the runtime config.</p><div class="toolbar"><label>Save Outputs<select id="outputPersistenceModeSelect">${options}</select></label><span class="pill">Effective: ${esc(String(effective).replace(/_/g, ' '))}</span><span class="pill">MySQL: ${esc(mysql)}</span><span class="pill">Results Root: ${esc(summary.results_root || 'results')}</span></div>${fallback}</section>`;
+  }
   function parseValue(input) { if (input.dataset.kind === 'bool') return input.value === 'true'; if (input.dataset.kind === 'int') return parseInt(input.value, 10) || 0; if (input.dataset.kind === 'float') return parseFloat(input.value) || 0; if (input.dataset.kind === 'json') { try { return JSON.parse(input.value); } catch (err) { return input.value; } } return input.value; }
   function pageNeedsConfigModel(pageId) { return ['run_control','scenario','geometry','waveform','traffic','mac_scheduler','l1_phy','antenna_air','parameters'].includes(String(pageId || '')); }
   function pageNeedsFieldCatalog(pageId) { return pageNeedsConfigModel(pageId); }
@@ -11503,7 +12321,7 @@ window.addEventListener('DOMContentLoaded', function () {
   function flattenConfig(node, prefix) { if (node && typeof node === 'object' && !Array.isArray(node)) { const keys = Object.keys(node); if (keys.length) return keys.flatMap(key => flattenConfig(node[key], prefix ? `${prefix}.${key}` : key)); } const domain = domainFor(prefix); return [{path: prefix || 'config', label: labelFor(prefix), domain, domain_label: ((root.domains || {})[domain] || {}).title || domain, kind: kindFor(node), value: node, current_value: node, requested_value: node, resolved_value: node, applied_value: 'Resolved in MATLAB config; runtime consumer evidence is not yet instrumented.', measured_value: 'Runtime measurement evidence is not yet published for this field.', source: 'loaded config JSON', owner: labelFor(String(prefix || 'config').split('.')[0]), role: 'browser_loaded', search: `${prefix} ${labelFor(prefix)}`}]; }
   function loadConfigFile(file) { const msg = document.getElementById('messageBanner'); if (!file) return; file.text().then(raw => { const parsed = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON root must be an object.'); delete parsed._download_metadata; state.config = parsed; state.configLoaded = true; state.configLoading = false; state.mode = String(get(parsed, 'run_control.execution_mode', 'LLS')).trim().toUpperCase(); if (!(root.modes || ['LLS']).includes(state.mode)) state.mode = 'LLS'; state.fields = flattenConfig(parsed, ''); state.fieldsLoaded = true; state.fieldsLoading = false; root.field_count = state.fields.length; state.selectedBlock = null; updateRunPayload(); render(); if (msg) { msg.textContent = `Loaded ${file.name}. Run Scenario will use this full config JSON payload.`; msg.classList.remove('hidden'); } }).catch(err => { if (msg) { msg.textContent = `Could not load config JSON: ${err.message}`; msg.classList.remove('hidden'); } }); }
   function inputFor(field) { const value = get(state.config, field.path, field.current_value); if (field.kind === 'bool') return `<select data-config-input data-path="${esc(field.path)}" data-kind="bool"><option value="true"${value === true ? ' selected' : ''}>true</option><option value="false"${value === false ? ' selected' : ''}>false</option></select>`; if (Array.isArray(field.options) && field.options.length) return `<select data-config-input data-path="${esc(field.path)}" data-kind="${esc(field.kind || 'text')}">${field.options.map(o => `<option value="${esc(o)}"${String(o) === String(value) ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`; return `<input data-config-input data-path="${esc(field.path)}" data-kind="${esc(field.kind || 'text')}" value="${esc(text(value))}">`; }
-  function updateRunPayload() { if (state.configLoaded) { set(state.config, 'run_control.execution_mode', state.mode); document.getElementById('runConfigInput').value = JSON.stringify(state.config); } else { document.getElementById('runConfigInput').value = ''; } document.getElementById('runModeInput').value = state.mode; document.getElementById('runScenarioInput').value = root.scenario || ''; document.getElementById('runTagInput').value ||= `web_${state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`; }
+  function updateRunPayload() { if (state.configLoaded) { set(state.config, 'run_control.execution_mode', state.mode); applyOutputPersistenceMode(); document.getElementById('runConfigInput').value = JSON.stringify(state.config); } else { document.getElementById('runConfigInput').value = ''; } document.getElementById('runModeInput').value = state.mode; document.getElementById('runScenarioInput').value = root.scenario || ''; document.getElementById('runTagInput').value ||= `web_${state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`; }
   function runStatusToken(run) { return String((run || {}).status_text || '').toLowerCase().trim(); }
   function isActiveRun(run) { return /queued|launching|running|finalizing|retry/i.test(runStatusToken(run)) && !/completed|failed|cancelled|aborted/i.test(runStatusToken(run)); }
   function runStatusRank(run, preferActive) {
@@ -11770,12 +12588,42 @@ window.addEventListener('DOMContentLoaded', function () {
   function renderBlock(block) { const el = document.getElementById('blockPanel'); if (!block) { el.innerHTML = '<h3>Block Parameters</h3><p class="subtle">Select a workflow or PHY block to inspect editable parameters.</p>'; return; } if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); el.innerHTML = `<h3>${esc(block.name || block.title)}</h3>${unavailable('Block parameters are loading from the resolved scenario config and field catalog.')}`; return; } const body = blockFields(block).map(f => `<tr><td><strong>${esc(f.label || f.path)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('') || '<tr><td colspan="9">Unavailable: no browser-exposed parameter maps directly to this block.</td></tr>'; el.innerHTML = `<h3>${esc(block.name || block.title)}</h3><p class="subtle">${esc(block.purpose || block.summary || '')}</p><p class="small">${esc((block.artifacts || []).join(', ') || block.truth || 'Canonical artifacts first; missing outputs stay unavailable.')}</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${body}</tbody></table></div>`; }
   function chrome() { const contract = scenarioLaunchContract(); document.getElementById('productNav').innerHTML = (root.nav || []).map(n => `<a class="nav-item ${n.id === state.page ? 'active' : ''}" data-page="${esc(n.id)}" href="${esc(n.href)}">${esc(n.label)}</a>`).join(''); document.getElementById('modeSelector').innerHTML = (root.modes || ['LLS','SLS','E2E']).map(m => `<button type="button" class="mode-button ${m === state.mode ? 'active' : ''}" data-mode="${esc(m)}">${esc(m)}</button>`).join(''); document.getElementById('modeNote').textContent = state.mode === wired ? (contract.launchReason || (root.mode_notes || {})[state.mode] || '') : ((root.mode_notes || {})[state.mode] || ''); document.getElementById('activeModeBadge').textContent = `Mode: ${state.mode}`; document.getElementById('activeModeBadge').className = `badge ${state.mode === wired && contract.launchAllowed ? 'good' : 'warn'}`; document.getElementById('runScenarioBtn').disabled = state.mode !== wired || !contract.launchAllowed; document.getElementById('runScenarioBtn').textContent = state.mode !== wired ? `${state.mode} run unavailable` : (contract.launchAllowed ? 'Run Scenario' : 'Run blocked by scenario contract'); document.getElementById('runScenarioBtn').title = state.mode !== wired ? ((root.mode_notes || {})[state.mode] || '') : (contract.launchAllowed ? `Launch the real browser-owned LLS run via ${contract.presentationLabel || 'the configured runner'}.` : (contract.launchReason || 'Selected scenario is blocked.')); updateRunPayload(); }
   function title(t, s) { document.getElementById('pageTitle').textContent = t; document.getElementById('pageSubtitle').textContent = s; }
-  function home() { title(root.title, 'Clickable workflow, current scenario, warnings, recent runs, and configuration readiness.'); const cards = (root.architecture || []).map(b => `<article class="tile" data-block="${esc(b.id)}"><span class="badge">${esc(b.domain)}</span><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join(''); const fieldCount = Number(root.field_count || state.fields.length || 0); const overview = root.config_overview || {}; const contract = scenarioLaunchContract(); main.innerHTML = `<div class="grid four"><div class="tile metric"><h4>Mode</h4><div class="value">${esc(state.mode)}</div><p>${state.mode === wired && contract.launchAllowed ? 'Launch enabled' : 'Configure only'}</p></div><div class="tile metric"><h4>Launch Contract</h4><div class="value">${esc(contract.launchContract || 'unavailable')}</div><p>${esc(contract.presentationLabel || 'Runtime label pending')}</p></div><div class="tile metric"><h4>Config JSON</h4><div class="value">${state.configLoaded ? 'Ready' : 'Lazy'}</div><p>${state.configLoaded ? 'Loaded in browser memory' : 'Loaded on demand for edit pages and downloads'}</p></div><div class="tile metric"><h4>Latest Run</h4><div class="value">${esc((root.backend || {}).latest_run_id || 'none')}</div><p>Result selector</p></div></div><section class="panel"><h3>Architecture Workflow</h3><p class="subtle">Click a block to configure that subsystem.</p><div class="workflow">${cards}</div></section><div class="split"><section class="panel"><h3>Recent Runs</h3><div id="homeRecentRuns">${rows(state.runs.slice(0,10), 'No recent runs are available from MySQL.', {className:'page-table', scrollKey:'home-recent-runs'})}</div></section><section class="panel"><h3>Current Scenario Summary</h3>${objectTable({Scenario: root.scenario, Mode: state.mode, RunnerProfile: state.configLoaded ? get(state.config, 'scenario.runner_profile', overview.runner_profile || 'unavailable') : (overview.runner_profile || 'loading'), Presentation: contract.presentationLabel || overview.presentation_label || 'loading', LaunchAllowed: contract.launchAllowed, Carrier: state.configLoaded ? get(state.config, 'frequency.center_frequency_hz', get(state.config, 'global_radio_scope.carrier_frequency_hz', overview.carrier_hz || 'unavailable')) : (overview.carrier_hz || 'loading'), Bandwidth: state.configLoaded ? get(state.config, 'frequency.bandwidth_hz', get(state.config, 'global_radio_scope.channel_bandwidth_hz', overview.bandwidth_hz || 'unavailable')) : (overview.bandwidth_hz || 'loading'), Channel: state.configLoaded ? get(state.config, 'channels.profile', get(state.config, 'channel_model.scenario_label', overview.channel_profile || 'unavailable')) : (overview.channel_profile || 'loading'), UEs: overview.num_ues || 'unavailable', Slots: overview.total_slots || 'unavailable'}, '')}<h3 style="margin-top:16px;">Warnings / Completeness</h3>${warnings()}</section></div>`; }
+  function home() { title(root.title, 'Clickable workflow, current scenario, warnings, recent runs, and configuration readiness.'); const cards = (root.architecture || []).map(b => `<article class="tile" data-block="${esc(b.id)}"><span class="badge">${esc(b.domain)}</span><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join(''); const fieldCount = Number(root.field_count || state.fields.length || 0); const overview = root.config_overview || {}; const contract = scenarioLaunchContract(); main.innerHTML = `<div class="grid four"><div class="tile metric"><h4>Mode</h4><div class="value">${esc(state.mode)}</div><p>${state.mode === wired && contract.launchAllowed ? 'Launch enabled' : 'Configure only'}</p></div><div class="tile metric"><h4>Launch Contract</h4><div class="value">${esc(contract.launchContract || 'unavailable')}</div><p>${esc(contract.presentationLabel || 'Runtime label pending')}</p></div><div class="tile metric"><h4>Config JSON</h4><div class="value">${state.configLoaded ? 'Ready' : 'Lazy'}</div><p>${state.configLoaded ? 'Loaded in browser memory' : 'Loaded on demand for edit pages and downloads'}</p></div><div class="tile metric"><h4>Latest Run</h4><div class="value">${esc((root.backend || {}).latest_run_id || 'none')}</div><p>${(root.backend || {}).latest_run_id ? 'Run-wise config download is available from Recent Runs.' : 'Result selector'}</p></div></div>${outputPersistencePanel()}<section class="panel"><h3>Architecture Workflow</h3><p class="subtle">Click a block to configure that subsystem.</p><div class="workflow">${cards}</div></section><div class="split"><section class="panel"><h3>Recent Runs</h3><div id="homeRecentRuns">${rows(state.runs.slice(0,10), 'No recent runs are available from MySQL.', {className:'page-table', scrollKey:'home-recent-runs'})}</div></section><section class="panel"><h3>Current Scenario Summary</h3>${objectTable({Scenario: root.scenario, Mode: state.mode, RunnerProfile: state.configLoaded ? get(state.config, 'scenario.runner_profile', overview.runner_profile || 'unavailable') : (overview.runner_profile || 'loading'), Presentation: contract.presentationLabel || overview.presentation_label || 'loading', LaunchAllowed: contract.launchAllowed, Carrier: state.configLoaded ? get(state.config, 'frequency.center_frequency_hz', get(state.config, 'global_radio_scope.carrier_frequency_hz', overview.carrier_hz || 'unavailable')) : (overview.carrier_hz || 'loading'), Bandwidth: state.configLoaded ? get(state.config, 'frequency.bandwidth_hz', get(state.config, 'global_radio_scope.channel_bandwidth_hz', overview.bandwidth_hz || 'unavailable')) : (overview.bandwidth_hz || 'loading'), Channel: state.configLoaded ? get(state.config, 'channels.profile', get(state.config, 'channel_model.scenario_label', overview.channel_profile || 'unavailable')) : (overview.channel_profile || 'loading'), UEs: overview.num_ues || 'unavailable', Slots: overview.total_slots || 'unavailable', OutputPersistence: state.configLoaded ? get(state.config, 'output.persistence_mode', (root.output_persistence || {}).requested_mode || 'both') : ((root.output_persistence || {}).requested_mode || 'loading')}, '')}<h3 style="margin-top:16px;">Warnings / Completeness</h3>${warnings()}</section></div>`; }
   function warnings() { const w = []; const contract = scenarioLaunchContract(); if (state.mode !== wired) w.push(`${state.mode} launch is intentionally unavailable from /run; switch to LLS to execute.`); if (!(root.backend || {}).matlab_available) w.push('Pinned MATLAB R2023b executable is missing.'); if ((root.backend || {}).mysql_status !== 'connected') w.push(`MySQL unavailable: ${(root.backend || {}).mysql_reason || 'no connection'}`); if (!contract.launchAllowed) w.push(contract.launchReason || 'Selected scenario launch contract is blocked.'); else if (contract.presentationLabel) w.push(`Browser launch contract: ${contract.presentationLabel}. ${contract.launchReason || ''}`); if (!w.length) w.push('No browser-side blockers. Runtime truth still comes from MATLAB and canonical artifacts.'); return w.map(x => `<div class="stream-item log-warn">${esc(x)}</div>`).join(''); }
   function domain(name) { const spec = (root.domains || {})[name] || {title:name}; title(spec.title || name, 'Traditional controls plus block-driven editing share the same browser config model.'); const bs = (root.architecture || []).filter(b => b.domain === name); if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<div class="split"><section class="panel"><h3>${esc(spec.title || name)}</h3>${unavailable('This page is loading the resolved scenario config and field catalog. Controls will appear automatically once that payload arrives.')}</section><section class="panel"><h3>Blocks</h3><div class="grid">${bs.map(b => `<article class="tile" data-block="${esc(b.id)}"><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join('') || unavailable('No workflow blocks map to this page.')}</div></section></div>`; return; } const fs = state.fields.filter(f => f.domain === name); main.innerHTML = `<div class="split"><section class="panel"><h3>${esc(spec.title || name)}</h3><p class="subtle">${fs.length} exposed parameters on this page.</p><div class="form-grid">${fs.map(f => `<div class="param-editor"><label>${esc(f.label || f.path)}</label>${inputFor(f)}<span class="small mono">${esc(f.path)}</span></div>`).join('') || unavailable('No browser-exposed parameters map to this page.')}</div></section><section class="panel"><h3>Blocks</h3><div class="grid">${bs.map(b => `<article class="tile" data-block="${esc(b.id)}"><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join('') || unavailable('No workflow blocks map to this page.')}</div></section></div>`; }
   function geometry() { domain('geometry'); main.insertAdjacentHTML('beforeend', '<section class="panel"><h3>OpenStreetMap Deployment View</h3><p class="subtle">Sites, sectors, UEs, hotspots, serving view, coverage overlays, and mobility paths use canonical map payloads when available. Dragging a site writes deployment_topology.site_overrides into the browser config.</p><div id="geometryMap" class="map-box"></div></section>'); setTimeout(map, 0); }
   function map() { if (!window.L) return; const p = (state.live || {}).map || {}; const c = p.center || root.map_default || {lat:19.122164, lon:72.999217}; const m = L.map('geometryMap').setView([Number(c.lat), Number(c.lon)], Number(c.zoom || 14)); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(m); [...(p.site_shapes || []), ...(p.sector_shapes || []), ...(p.coverage_shapes || [])].forEach(s => s.points && L.polygon(s.points, {color:'#1f5fbf', weight:1, fillOpacity:.08}).addTo(m)); const sites = (p.sites || p.markers || [{lat:c.lat, lon:c.lon, label:c.label, site_id:1}]).filter(x => String(x.type || 'site') !== 'ue'); sites.slice(0,120).forEach((s,i) => { const mk = L.marker([Number(s.lat), Number(s.lon)], {draggable:true}).addTo(m).bindPopup(esc(s.label || `Site ${i+1}`)); mk.on('dragend', () => { const ll = mk.getLatLng(); const id = s.site_id || i+1; const o = get(state.config, 'deployment_topology.site_overrides', {}) || {}; o[String(id)] = {lat:+ll.lat.toFixed(7), lon:+ll.lng.toFixed(7), source:'browser_osm_drag'}; set(state.config, 'deployment_topology.site_overrides', o); updateRunPayload(); }); }); (p.ues || p.markers || []).filter(x => String(x.type || '') === 'ue').slice(0,300).forEach(u => L.circleMarker([Number(u.lat), Number(u.lon)], {radius:4,color:'#0b7f82',fillOpacity:.7}).addTo(m).bindPopup(esc(u.label || 'UE'))); }
-  function l1() { const fams = root.phy_families || []; const f = fams.find(x => x.id === state.activeFamily) || fams[0] || {blocks:[]}; title('L1 / PHY Explorer', 'Deep clickable DL, UL, control, reference-signal, and MIMO chains.'); main.innerHTML = `<section class="panel"><h3>L1 / PHY Explorer</h3><div class="phy-layout"><div class="family-list">${fams.map(x => `<button type="button" class="family-button ${x.id === f.id ? 'active' : ''}" data-family="${esc(x.id)}">${esc(x.title)}</button>`).join('')}</div><div><p class="subtle">${esc(f.summary || '')}</p><div class="block-grid">${(f.blocks || []).map(b => `<article class="block-card" data-phy="${esc(b.id)}"><span class="badge">${esc(b.group)}</span><h4>${esc(b.name)}</h4><p>${esc(b.purpose)}</p><p class="small">Tests: ${esc((b.tests || []).join(', '))}</p></article>`).join('')}</div><div class="panel" style="margin-top:12px;"><h3>Signal Flow</h3><div class="diagram">${(((f.blocks || [])[0] || {}).stages || []).map((s,i) => `${i ? '<span class="diagram-arrow">-></span>' : ''}<span class="diagram-step">${esc(s)}</span>`).join('')}</div></div></div></div></section>`; }
+  function l1ParameterGroupsForFamily(familyId) {
+    const groups = root.l1_parameter_groups || [];
+    if (!familyId) return groups;
+    const scoped = groups.filter(group => (group.family_ids || []).includes(familyId));
+    return scoped.length ? scoped : groups;
+  }
+  function valueFromCandidatePaths(row) {
+    const paths = Array.isArray(row.candidate_paths) && row.candidate_paths.length ? row.candidate_paths : [row.path];
+    for (const path of paths) {
+      const value = get(state.config || {}, path, undefined);
+      if (value !== undefined) return {value, path};
+    }
+    return {value: row.value || '', path: row.selected_path || ''};
+  }
+  function l1ParameterRows(group) {
+    const rowsHtml = (group.rows || []).map(row => {
+      const binding = row.binding || {};
+      const active = valueFromCandidatePaths(row);
+      const consumers = Array.isArray(binding.matlab_consumer_functions) ? binding.matlab_consumer_functions.join(', ') : String(binding.matlab_consumer_functions || '');
+      const evidence = [binding.evidence_artifact, binding.evidence_field].filter(Boolean).join(' :: ');
+      const activeStatus = active.path ? 'configured' : row.status;
+      const statusClass = activeStatus === 'configured' ? 'good' : (activeStatus === 'missing_from_current_scenario' ? 'warn' : 'bad');
+      return `<tr><td><strong>${esc(row.label || row.path)}</strong><br><span class="small mono">${esc(row.path || '')}</span></td><td>${esc(text(active.value || ''))}</td><td>${esc(active.path || row.selected_path || '')}<br><span class="small mono">${esc((row.candidate_paths || []).join(', '))}</span></td><td>${esc(binding.internal_cfg_path || '')}</td><td>${esc(binding.runtime_object_path || '')}</td><td>${esc(consumers)}</td><td>${esc(evidence)}</td><td><span class="badge ${statusClass}">${esc(activeStatus || '')}</span><br><span class="small">${esc(binding.support_status || binding.unavailable_reason || '')}</span></td></tr>`;
+    }).join('');
+    return `<section class="panel"><h3>${esc(group.title || group.id)}</h3><p class="subtle">Code-wired parameters for this signal family. The browser shows current resolved values and exact MATLAB-facing bindings from the parameter matrix catalog; missing rows stay missing instead of being invented.</p><div class="table-wrap"><table><thead><tr><th>Parameter</th><th>Current Value</th><th>Config Paths</th><th>Internal cfg path</th><th>Runtime object</th><th>MATLAB consumer</th><th>Evidence artifact</th><th>Status</th></tr></thead><tbody>${rowsHtml || '<tr><td colspan="8">No parameter rows are declared for this group.</td></tr>'}</tbody></table></div></section>`;
+  }
+  function l1ParameterSurface(family) {
+    const groups = l1ParameterGroupsForFamily(family.id);
+    return groups.map(l1ParameterRows).join('');
+  }
+  function l1() { const fams = root.phy_families || []; const f = fams.find(x => x.id === state.activeFamily) || fams[0] || {blocks:[]}; title('L1 / PHY Explorer', 'Deep clickable DL, UL, control, reference-signal, and MIMO chains.'); main.innerHTML = `<section class="panel"><h3>L1 / PHY Explorer</h3><div class="phy-layout"><div class="family-list">${fams.map(x => `<button type="button" class="family-button ${x.id === f.id ? 'active' : ''}" data-family="${esc(x.id)}">${esc(x.title)}</button>`).join('')}</div><div><p class="subtle">${esc(f.summary || '')}</p><div class="block-grid">${(f.blocks || []).map(b => `<article class="block-card" data-phy="${esc(b.id)}"><span class="badge">${esc(b.group)}</span><h4>${esc(b.name)}</h4><p>${esc(b.purpose)}</p><p class="small">Tests: ${esc((b.tests || []).join(', '))}</p></article>`).join('')}</div><div class="panel" style="margin-top:12px;"><h3>Signal Flow</h3><div class="diagram">${(((f.blocks || [])[0] || {}).stages || []).map((s,i) => `${i ? '<span class="diagram-arrow">-></span>' : ''}<span class="diagram-step">${esc(s)}</span>`).join('')}</div></div></div></div></section>${l1ParameterSurface(f)}`; }
   function metricExplorerPayload() { return ((state.live || {}).metric_explorer || {}); }
   function metricMeta(metricId) { return (metricExplorerPayload().available_metrics || []).find(metric => metric.id === metricId) || null; }
   function rowMatchesDirection(row, direction) { if (!direction || direction === 'all') return true; const token = String(row.direction || '').toUpperCase(); if (!token) return direction === 'channel'; if (direction === 'channel') return token === 'CHANNEL'; return token === direction || token === `DL+UL`; }
@@ -12560,39 +13408,50 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function buildPlotBrowserItems() {
     const payload = state.plotBrowserPayload || {};
-    if (state.plotBrowserCatalogMode === 'all') {
-      return Array.isArray(payload.raw_items) ? payload.raw_items : [];
-    }
-    return Array.isArray(payload.items) ? payload.items : [];
+    const allItems = state.plotBrowserCatalogMode === 'all'
+      ? (Array.isArray(payload.raw_items) ? payload.raw_items : [])
+      : (Array.isArray(payload.items) ? payload.items : []);
+    const bucket = String(state.plotBrowserBucket || 'all');
+    if (!bucket || bucket === 'all') return allItems;
+    return allItems.filter(item => String(item.bucket || 'other') === bucket);
   }
   function renderPlotBrowser() {
     const items = buildPlotBrowserItems();
     const select = document.getElementById('plotBrowserSelect');
     const catalogSelect = document.getElementById('plotBrowserCatalogSelect');
+    const bucketSelect = document.getElementById('plotBrowserBucketSelect');
     const stats = document.getElementById('plotBrowserStats');
     const viewer = document.getElementById('plotBrowserViewer');
-    if (!select || !catalogSelect || !stats || !viewer) return;
+    if (!select || !catalogSelect || !bucketSelect || !stats || !viewer) return;
     if (!state.plotBrowserPayload || state.plotBrowserRunId !== String(selectedRunId() || '')) {
       select.innerHTML = '<option value="">Loading plots...</option>';
+      bucketSelect.innerHTML = '<option value="all">All Channels / Algorithms</option>';
       stats.textContent = '';
       viewer.innerHTML = '<div class="chart-empty">Loading truthful plot artifacts from the database...</div>';
       loadPlotBrowserPayload();
       return;
     }
+    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Canonical + Published</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>Raw Published Artifacts</option>`;
+    const bucketRows = state.plotBrowserCatalogMode === 'all'
+      ? ((state.plotBrowserPayload || {}).raw_buckets || (state.plotBrowserPayload || {}).buckets || [])
+      : ((state.plotBrowserPayload || {}).buckets || []);
+    const bucketIds = new Set((bucketRows.length ? bucketRows : [{id:'all'}]).map(bucket => String(bucket.id || 'all')));
+    if (!bucketIds.has(String(state.plotBrowserBucket || 'all'))) state.plotBrowserBucket = 'all';
+    bucketSelect.innerHTML = (bucketRows.length ? bucketRows : [{id:'all', label:'All Channels / Algorithms', count:items.length}]).map(bucket => `<option value="${esc(bucket.id || 'all')}"${String(bucket.id || 'all') === String(state.plotBrowserBucket || 'all') ? ' selected' : ''}>${esc(bucket.label || bucket.id || 'All')} (${esc(bucket.count ?? 0)})</option>`).join('');
     if (!items.length) {
-      select.innerHTML = '<option value="">No plots available</option>';
+      select.innerHTML = '<option value="">No plots in selected bucket</option>';
       stats.textContent = '';
-      viewer.innerHTML = '<div class="chart-empty">No truthful chart, graph, or image artifacts were published for the selected run.</div>';
+      viewer.innerHTML = '<div class="chart-empty">No truthful chart, graph, image, or selected source-table artifact was published in this bucket for the selected run.</div>';
       return;
     }
-    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Canonical + Published</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>Raw Published Artifacts</option>`;
     if (!state.plotBrowserId || !items.some(item => item.id === state.plotBrowserId)) {
       const firstAvailable = items.find(item => item.kind === 'interactive' || item.kind === 'image');
       state.plotBrowserId = String((firstAvailable || items[0] || {}).id || '');
     }
     select.innerHTML = items.map(item => {
       const modeLabel = item.kind === 'interactive' ? 'Plotly' : (item.kind === 'image' ? 'Zoom/Pan' : 'Unavailable');
-      return `<option value="${esc(item.id)}"${String(item.id) === String(state.plotBrowserId) ? ' selected' : ''}>${esc(item.label)} [${esc(modeLabel)}]</option>`;
+      const bucketLabel = item.bucket_label || item.bucket || 'Other';
+      return `<option value="${esc(item.id)}"${String(item.id) === String(state.plotBrowserId) ? ' selected' : ''}>${esc(bucketLabel)} :: ${esc(item.label)} [${esc(modeLabel)}]</option>`;
     }).join('');
     const selected = items.find(item => String(item.id) === String(state.plotBrowserId)) || items[0];
     const interactiveCount = Number((state.plotBrowserPayload || {}).interactive_count || items.filter(item => item.kind === 'interactive').length);
@@ -12604,10 +13463,10 @@ window.addEventListener('DOMContentLoaded', function () {
     const rawImageCount = Number((state.plotBrowserPayload || {}).raw_image_count || items.filter(item => item.kind === 'image').length);
     const payloadMode = String((state.plotBrowserPayload || {}).mode || '');
     stats.textContent = state.plotBrowserCatalogMode === 'all'
-      ? `${rawInteractiveCount} Plotly artifacts, ${rawImageCount} zoom/pan artifacts, ${rawTotalCount} total published artifacts`
+      ? `${rawInteractiveCount} Plotly artifacts, ${rawImageCount} zoom/pan artifacts, ${rawTotalCount} total published artifacts; bucket=${state.plotBrowserBucket || 'all'}`
       : (payloadMode === 'canonical_reference_gallery' || payloadMode === 'canonical_plus_published_artifacts'
-        ? `${interactiveCount} Plotly artifacts, ${imageCount} zoom/pan artifacts, ${items.length} published plot items${unavailableCount ? `, ${unavailableCount} not published for this run` : ''}${suppressedRawCount ? `, ${suppressedRawCount} raw duplicates hidden` : ''}`
-        : `${interactiveCount} Plotly charts, ${imageCount} zoom/pan images, ${items.length} total interactive truthful plot items`);
+        ? `${interactiveCount} Plotly artifacts, ${imageCount} zoom/pan artifacts, ${items.length} published plot items in selected bucket${unavailableCount ? `, ${unavailableCount} not published for this run` : ''}${suppressedRawCount ? `, ${suppressedRawCount} raw duplicates hidden` : ''}`
+        : `${interactiveCount} Plotly charts, ${imageCount} zoom/pan images, ${items.length} total interactive truthful plot items in selected bucket`);
     if (selected.kind === 'interactive') {
       const cachedChart = ((state.plotBrowserChartCache || {})[String(selected.artifact_id || '')]) || null;
       if (!cachedChart) {
@@ -12634,7 +13493,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function plotsPage() {
     title('Plots', 'Truth-backed chart, graph, and image viewer for the selected run.');
-    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical + Published exposes the semantic gallery plus every persisted chart/image from the selected run. Raw Published Artifacts shows the unmerged artifact dump. Table-backed charts use Plotly; image-only charts use zoom, pan, fit, and fullscreen controls.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Chart / Graph / Image<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
+    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical + Published exposes the semantic gallery plus every persisted chart/image/source table from the selected run. Buckets are semantic: PRACH, PDCCH, PUCCH, SSB/PBCH/SIB, PDSCH, PUSCH, CSI/SRS/TRS, HARQ, RF/channel, scheduler, and export integrity.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Bucket<select id="plotBrowserBucketSelect"></select></label><label>Chart / Graph / Image / Source Table<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
     renderPlotBrowser();
   }
   function buildTableBrowserItems() {
@@ -12674,7 +13533,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from MySQL. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
   function parameters() { title('Parameter Catalog', 'Browser, YAML, resolved, applied, measured, source, owner, and role columns.'); const fs = state.fields; if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}${unavailable('Parameter catalog is loading from the selected scenario config and resolved field list. The page will populate automatically once both payloads arrive.')}</section>`; return; } main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}<p class="subtle">${fs.length} exposed parameters loaded from the resolved/browser config.</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${fs.map(f => `<tr><td><strong>${esc(f.label)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('')}</tbody></table></div></section>`; }
-  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/plots?run_id=${id}">View Plots</a><a class="button-link" href="/tables?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
+  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/plots?run_id=${id}">View Plots</a><a class="button-link" href="/tables?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=json">Download Config JSON</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=yaml">Download Config YAML</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
   function runsTable(runList, empty, next, scrollKey) { const runRows = (runList || []).map(r => `<tr><td><strong>${esc(r.run_id)}</strong></td><td>${esc(r.run_tag || '')}<br><span class="small">${esc(r.scenario_id || r.scenario_name || '')}</span></td><td>${esc(r.profile_name || '')}</td><td>${esc(r.status_text || '')}</td><td>${esc(r.created_utc || '')}</td><td>${esc(r.updated_utc || '')}</td><td>${runActions(r, next)}</td></tr>`).join(''); return scrollWrap(`<table><thead><tr><th>Run</th><th>Tag / Scenario</th><th>Profile</th><th>Status</th><th>Created</th><th>Updated</th><th>Options</th></tr></thead><tbody>${runRows || `<tr><td colspan="7">${unavailable(empty)}</td></tr>`}</tbody></table>`, {className:'page-table', scrollKey: scrollKey || 'runs-table'}); }
   function runsPage() { title('Runs', 'MySQL-backed runs with plot, table, compare, and delete actions.'); const allRuns = state.runs || []; main.innerHTML = `<section class="panel"><h3>Runs</h3><p class="subtle">${allRuns.length} run records loaded from MySQL. Use Plots or Tables to open a dedicated viewer for any selected run.</p><div class="toolbar"><a class="button-link" href="/plots">Plots</a><a class="button-link" href="/tables">Tables</a><a class="button-link" href="/compare">Compare Runs</a></div><div id="recentRunsTable">${runsTable(allRuns, 'No runs are available from MySQL.', '/runs', 'recent-runs-table')}</div></section>`; }
   function previousRunsPage() { runsPage(); }
@@ -12815,7 +13674,7 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'newScenarioBtn') { state.page = 'scenario'; render({preserveScroll:false}); ensureConfigLoaded(true); ensureFieldsLoaded(true); if (msg) { msg.textContent = 'New scenario draft is active in the browser. Run Scenario and Download Config JSON will use the edited config model.'; msg.classList.remove('hidden'); } }
     if (target.id === 'validateBtn') { ensureConfigLoaded(false).then(() => { const contract = scenarioLaunchContract(); if (msg) { msg.textContent = state.mode !== wired ? `${state.mode} is configurable here, but only LLS is launch-enabled from /run in this pass.` : (contract.launchAllowed ? `Browser validation passed for the editable config surface. Launch contract: ${contract.presentationLabel || contract.launchContract}. MATLAB runtime validation still occurs during /run.` : `Browser validation found a launch-contract blocker: ${contract.launchReason || 'selected scenario is blocked.'}`); msg.classList.remove('hidden'); } }); }
     if (target.id === 'saveScenarioBtn') { ensureConfigLoaded(false).then(() => { storage.set('sixgr_product_config', JSON.stringify(state.config)); if (msg) { msg.textContent = 'Scenario draft saved in browser storage.'; msg.classList.remove('hidden'); } }); }
-    if (target.id === 'downloadConfigBtn') { ensureConfigLoaded(false).then(() => { updateRunPayload(); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state.config, null, 2)], {type:'application/json'})); a.download = 'sixgr_final_config.json'; a.click(); if (msg) { msg.textContent = 'Final browser config JSON downloaded for verification.'; msg.classList.remove('hidden'); } }); }
+    if (target.id === 'downloadConfigBtn') { const runId = selectedRunId(); if (runId) { window.location.href = `/run-config/download?run_id=${encodeURIComponent(runId)}&format=json`; if (msg) { msg.textContent = `Downloading run-wise config evidence bundle for run ${runId}.`; msg.classList.remove('hidden'); } } else { ensureConfigLoaded(false).then(() => { updateRunPayload(); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state.config, null, 2)], {type:'application/json'})); a.download = 'sixgr_final_config_draft.json'; a.click(); if (msg) { msg.textContent = 'No run_id is available yet, so the current browser draft config JSON was downloaded.'; msg.classList.remove('hidden'); } }); } }
     if (target.id === 'liveMetricExportBtn') { exportMetricExplorer('realtime'); }
     if (target.id === 'analyticsMetricExportBtn') { exportMetricExplorer('analytics'); }
   });
@@ -12841,7 +13700,9 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'analyticsUEScopeSelect') { state.analyticsExplorer.scope = target.value || 'all_configured_ues'; refreshAnalyticsExplorerUI(); return; }
     if (target.id === 'analyticsUESelect') { state.analyticsExplorer.selectedUE = target.value || ''; refreshAnalyticsExplorerUI(); return; }
     if (target.id === 'analyticsDirectionSelect') { state.analyticsExplorer.direction = target.value || 'all'; refreshAnalyticsExplorerUI(); return; }
+    if (target.id === 'outputPersistenceModeSelect') { ensureConfigLoaded(false).then(() => { set(state.config, 'output.persistence_mode', normalizeOutputPersistenceMode(target.value)); set(state.config, 'output_control.output_persistence_mode', normalizeOutputPersistenceMode(target.value)); applyOutputPersistenceMode(); updateRunPayload(); root.output_persistence = Object.assign({}, root.output_persistence || {}, {requested_mode: normalizeOutputPersistenceMode(target.value)}); if (state.page === 'home') home(); }); return; }
     if (target.id === 'plotBrowserCatalogSelect') { state.plotBrowserCatalogMode = target.value || 'canonical'; state.plotBrowserId = ''; renderPlotBrowser(); return; }
+    if (target.id === 'plotBrowserBucketSelect') { state.plotBrowserBucket = target.value || 'all'; state.plotBrowserId = ''; renderPlotBrowser(); return; }
     if (target.id === 'plotBrowserSelect') { state.plotBrowserId = target.value || ''; renderPlotBrowser(); return; }
     if (target.id === 'tableBrowserSelect') { state.tableBrowserId = target.value || ''; renderTableBrowser(); return; }
     if (target.closest('[data-contract-col]')) { applyContractControls(); return; }

@@ -32,6 +32,9 @@ localCoverageLog("tables_core_topology_channel_built", runFolder);
 localCoverageLog("building_live_prb_allocation", runFolder);
 tables.live_prb_allocation = localBuildPRBAllocationTable(src, meta);
 localCoverageLog("built_live_prb_allocation", runFolder);
+localCoverageLog("building_live_re_allocation_snapshot", runFolder);
+tables.live_re_allocation_snapshot = localBuildREAllocationSnapshotTable(src, tables.live_prb_allocation, meta, cfg);
+localCoverageLog("built_live_re_allocation_snapshot", runFolder);
 localCoverageLog("building_scheduler_decision", runFolder);
 tables.table_scheduler_decision = localBuildSchedulerDecisionTable(src, meta);
 localCoverageLog("built_scheduler_decision", runFolder);
@@ -139,6 +142,7 @@ logicalPaths = struct( ...
     "doppler_time_variation_plot", "reports/csv/doppler_time_variation_plot.csv", ...
     "table_scheduler_decision", "packet_flow/csv/table_scheduler_decision.csv", ...
     "live_prb_allocation", "packet_flow/csv/live_prb_allocation.csv", ...
+    "live_re_allocation_snapshot", "reports/csv/live_re_allocation_snapshot.csv", ...
     "prb_allocation_heatmap", "reports/csv/prb_allocation_heatmap.csv", ...
     "dl_resource_grid_heatmap", "reports/csv/dl_resource_grid_heatmap.csv", ...
     "ul_resource_grid_heatmap", "reports/csv/ul_resource_grid_heatmap.csv", ...
@@ -1487,6 +1491,312 @@ base.occupancy_fraction = accumarray(keyIdx, double(T.occupancy_fraction), [], @
 T = base;
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildDirectionalGridHeatmapTable", ...
     "packet_flow/csv/live_prb_allocation.csv", "implemented", "derived_from_prb_rows", true, true);
+end
+
+function T = localBuildREAllocationSnapshotTable(src, prbTable, meta, cfg)
+parts = {};
+part = localBuildRERowsFromPRBAllocation(prbTable);
+if istable(part) && ~isempty(part)
+    parts{end+1} = part; %#ok<AGROW>
+end
+part = localBuildSSBComponentRows(src.PBCHTrials, meta, cfg);
+if istable(part) && ~isempty(part)
+    parts{end+1} = part; %#ok<AGROW>
+end
+part = localBuildPDCCHCORESETRows(src.PDCCHTrials, cfg);
+if istable(part) && ~isempty(part)
+    parts{end+1} = part; %#ok<AGROW>
+end
+trialSpecs = { ...
+    src.PDCCHTrials, "DL", "PDCCH", ["PRBStart","RBStart","CORESETRBStart"], ["AllocatedPRBCount","PRBCount","NumRB","CORESETRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/pdcch_trials.csv"; ...
+    src.PUCCHTrials, "UL", "PUCCH", ["PUCCHPRBStart","PRBStart","RBStart"], ["PUCCHPRBCount","AllocatedPRBCount","PRBCount","NumRB"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/pucch_trials.csv"; ...
+    src.SRSTrials, "UL", "SRS", ["RBOffset","PRBStart","RBStart"], ["NumRB","AllocatedPRBCount","PRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/srs_trials.csv"; ...
+    src.CSIRSTrials, "DL", "CSI-RS", ["RBOffset","PRBStart","RBStart"], ["NumRB","AllocatedPRBCount","PRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/csi_rs_trials.csv"; ...
+    src.TRSTrials, "DL", "TRS", ["RBOffset","PRBStart","RBStart"], ["NumRB","AllocatedPRBCount","PRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/trs_trials.csv"; ...
+    src.PBCHTrials, "DL", "PBCH", ["PRBStart","RBStart"], ["AllocatedPRBCount","PRBCount","NumRB"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/pbch_trials.csv"; ...
+    src.PRACHTrials, "UL", "PRACH", ["PRBStart","RBStart","FrequencyIndex"], ["AllocatedPRBCount","PRBCount","NumRB"], ["SymbolStart","TimeIndex"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/prach_trials.csv"};
+for iSpec = 1:size(trialSpecs, 1)
+    part = localBuildRERowsFromTrialAllocation(trialSpecs{iSpec, 1}, trialSpecs{iSpec, 2}, trialSpecs{iSpec, 3}, ...
+        trialSpecs{iSpec, 4}, trialSpecs{iSpec, 5}, trialSpecs{iSpec, 6}, trialSpecs{iSpec, 7}, trialSpecs{iSpec, 8}, trialSpecs{iSpec, 9});
+    if istable(part) && ~isempty(part)
+        parts{end+1} = part; %#ok<AGROW>
+    end
+end
+if isempty(parts)
+    T = table();
+    return;
+end
+T = vertcat(parts{:});
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildREAllocationSnapshotTable", ...
+    "packet_flow/csv/live_prb_allocation.csv|control/csv/*_trials.csv", "implemented", ...
+    "resource_grid_rows_from_runtime_allocation_evidence", true, true);
+end
+
+function T = localBuildRERowsFromPRBAllocation(prbTable)
+if ~(istable(prbTable) && ~isempty(prbTable))
+    T = table();
+    return;
+end
+parts = {};
+frameVals = double(prbTable.frame(:));
+slotVals = double(prbTable.slot(:));
+symStartVals = double(prbTable.symbol_start(:));
+symLenVals = double(prbTable.symbol_len(:));
+rbStartVals = double(prbTable.rb_start(:));
+rbLenVals = double(prbTable.rb_len(:));
+cellVals = double(prbTable.cell_id(:));
+ueVals = double(prbTable.ue_id(:));
+rankVals = double(prbTable.rank(:));
+dirVals = string(prbTable.direction(:));
+roleVals = string(prbTable.occupancy_type(:));
+sourceVals = string(prbTable.source_artifact_ref(:));
+for i = 1:height(prbTable)
+    if ~(isfinite(frameVals(i)) && isfinite(slotVals(i)) && isfinite(symStartVals(i)) && isfinite(symLenVals(i)) && ...
+            isfinite(rbStartVals(i)) && isfinite(rbLenVals(i)) && symLenVals(i) > 0 && rbLenVals(i) > 0)
+        continue;
+    end
+    symbols = round(symStartVals(i)) + (0:(max(1, round(symLenVals(i))) - 1));
+    rbs = round(rbStartVals(i)) + (0:(max(1, round(rbLenVals(i))) - 1));
+    channel = "PDSCH";
+    if upper(dirVals(i)) == "UL"
+        channel = "PUSCH";
+    end
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symbols, rbs, dirVals(i), channel, channel, ...
+        cellVals(i), ueVals(i), ueVals(i), "grant_allocation_" + string(i), NaN, NaN, rankVals(i), roleVals(i), ...
+        "scheduler_grant_prb_symbol_allocation", "OK", sourceVals(i)); %#ok<AGROW>
+end
+T = localVertcatTables(parts);
+end
+
+function T = localBuildRERowsFromTrialAllocation(trials, direction, channel, rbStartFields, rbLenFields, symStartFields, symLenFields, symbolListFields, sourceRef)
+if ~(istable(trials) && ~isempty(trials))
+    T = table();
+    return;
+end
+parts = {};
+rbStartVals = localFirstAvailableColumnAsDouble(trials, rbStartFields);
+rbLenVals = localFirstAvailableColumnAsDouble(trials, rbLenFields);
+frameVals = localFirstAvailableColumnAsDouble(trials, ["Frame", "SFN"]);
+slotVals = localFirstAvailableColumnAsDouble(trials, ["Slot"]);
+cellVals = localFirstAvailableColumnAsDouble(trials, ["CellID", "ServingCell", "BaseStationID"]);
+ueVals = localFirstAvailableColumnAsDouble(trials, ["UEIndex", "UEID", "UE", "RNTI"]);
+rntiVals = localFirstAvailableColumnAsDouble(trials, ["RNTI", "UEID", "UEIndex"]);
+portVals = localFirstAvailableColumnAsDouble(trials, ["NumPorts", "NumTxPorts", "NumRxAntennas"]);
+layerVals = localFirstAvailableColumnAsDouble(trials, ["Layers", "Rank", "RankIndicator"]);
+for i = 1:height(trials)
+    if ~(isfinite(frameVals(i)) && isfinite(slotVals(i)) && isfinite(rbStartVals(i)) && isfinite(rbLenVals(i)) && rbLenVals(i) > 0)
+        continue;
+    end
+    symbols = localResolveTrialSymbols(trials(i, :), symStartFields, symLenFields, symbolListFields);
+    if isempty(symbols)
+        continue;
+    end
+    rbs = round(rbStartVals(i)) + (0:(max(1, round(rbLenVals(i))) - 1));
+    valueStatus = "OK";
+    if any(symbols < 0) || any(rbs < 0)
+        valueStatus = "REVIEW_REQUIRED";
+    end
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symbols, rbs, string(direction), string(channel), string(channel), ...
+        cellVals(i), ueVals(i), rntiVals(i), string(channel) + "_trial_" + string(i), NaN, portVals(i), layerVals(i), ...
+        "runtime_trial_resource_allocation", "trial_resource_coordinates", valueStatus, string(sourceRef)); %#ok<AGROW>
+end
+T = localVertcatTables(parts);
+end
+
+function T = localBuildSSBComponentRows(pbchTrials, meta, cfg)
+if ~(istable(pbchTrials) && ~isempty(pbchTrials))
+    T = table();
+    return;
+end
+nRB = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", ...
+    sixgr.util.structGet(cfg, "frequency.n_size_grid", NaN)));
+if ~(isscalar(nRB) && isfinite(nRB) && nRB >= 20)
+    T = table();
+    return;
+end
+parts = {};
+frameVals = localFirstAvailableColumnAsDouble(pbchTrials, ["Frame", "SFN"]);
+slotVals = localFirstAvailableColumnAsDouble(pbchTrials, ["Slot"]);
+cellVals = localFirstAvailableColumnAsDouble(pbchTrials, ["CellID", "ServingCell", "BaseStationID"]);
+beamVals = localFirstAvailableColumnAsDouble(pbchTrials, ["SSBIndex", "SSBBeamIndex", "BeamIndex"]);
+rbStartVals = localFirstAvailableColumnAsDouble(pbchTrials, ["SSBPRBStart", "PRBStart", "RBStart"]);
+symStartVals = localFirstAvailableColumnAsDouble(pbchTrials, ["SSBSymbolStart", "SymbolStart"]);
+defaultRBStart = max(0, floor((round(nRB) - 20) / 2));
+for i = 1:height(pbchTrials)
+    if ~(isfinite(frameVals(i)) && isfinite(slotVals(i)))
+        continue;
+    end
+    rbStart = rbStartVals(i);
+    if ~isfinite(rbStart)
+        rbStart = defaultRBStart;
+    end
+    symStart = symStartVals(i);
+    if ~isfinite(symStart)
+        symStart = 0;
+    end
+    rbs = round(rbStart) + (0:19);
+    allocId = "ssb_occasion_" + string(i);
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symStart + (0:3), rbs, "DL", "SSB", "SSB", ...
+        cellVals(i), NaN, NaN, allocId, beamVals(i), 4, NaN, "ssb_block_240_subcarrier_4_symbol_region", ...
+        "pbch_runtime_occasion_plus_ts38211_ssb_mapping", "OK", "air_interface/csv/pbch_trials.csv"); %#ok<AGROW>
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symStart, rbs, "DL", "PSS", "SSB", ...
+        cellVals(i), NaN, NaN, allocId + "_pss", beamVals(i), 1, NaN, "pss_symbol_region", ...
+        "pbch_runtime_occasion_plus_ts38211_ssb_mapping", "OK", "air_interface/csv/pbch_trials.csv"); %#ok<AGROW>
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symStart + 2, rbs, "DL", "SSS", "SSB", ...
+        cellVals(i), NaN, NaN, allocId + "_sss", beamVals(i), 1, NaN, "sss_symbol_region", ...
+        "pbch_runtime_occasion_plus_ts38211_ssb_mapping", "OK", "air_interface/csv/pbch_trials.csv"); %#ok<AGROW>
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symStart + [1 2 3], rbs, "DL", "PBCH", "SSB", ...
+        cellVals(i), NaN, NaN, allocId + "_pbch", beamVals(i), 1, NaN, "pbch_symbol_region", ...
+        "pbch_runtime_occasion_plus_ts38211_ssb_mapping", "OK", "air_interface/csv/pbch_trials.csv"); %#ok<AGROW>
+end
+T = localVertcatTables(parts);
+end
+
+function T = localBuildPDCCHCORESETRows(pdcchTrials, cfg)
+if ~(istable(pdcchTrials) && ~isempty(pdcchTrials))
+    T = table();
+    return;
+end
+try
+    ctrlCfg = sixgr.ctrl.ControlChannelConfig(cfg);
+    coreset = ctrlCfg.CORESET;
+catch
+    T = table();
+    return;
+end
+rbList = double(sixgr.util.structGet(coreset, "RBList", []));
+if isempty(rbList)
+    rbStart = double(sixgr.util.structGet(coreset, "RBStart", NaN));
+    numRB = double(sixgr.util.structGet(coreset, "NumRB", NaN));
+    if isfinite(rbStart) && isfinite(numRB) && numRB > 0
+        rbList = rbStart + (0:(round(numRB)-1));
+    end
+end
+if isempty(rbList)
+    T = table();
+    return;
+end
+symStart = double(sixgr.util.structGet(coreset, "StartSymbol", 0));
+symLen = double(sixgr.util.structGet(coreset, "DurationSymbols", 1));
+symbols = round(symStart) + (0:(max(1, round(symLen)) - 1));
+frameVals = localFirstAvailableColumnAsDouble(pdcchTrials, ["Frame", "SFN"]);
+slotVals = localFirstAvailableColumnAsDouble(pdcchTrials, ["Slot"]);
+cellVals = localFirstAvailableColumnAsDouble(pdcchTrials, ["CellID", "ServingCell", "BaseStationID"]);
+ueVals = localFirstAvailableColumnAsDouble(pdcchTrials, ["UEIndex", "UEID", "UE", "RNTI"]);
+rntiVals = localFirstAvailableColumnAsDouble(pdcchTrials, ["RNTI", "UEID", "UEIndex"]);
+parts = {};
+for i = 1:height(pdcchTrials)
+    if ~(isfinite(frameVals(i)) && isfinite(slotVals(i)))
+        continue;
+    end
+    parts{end+1} = localBuildRETablePart(frameVals(i), slotVals(i), symbols, rbList, "DL", "PDCCH", "CORESET", ...
+        cellVals(i), ueVals(i), rntiVals(i), "pdcch_coreset_runtime_" + string(i), NaN, ...
+        numel(double(sixgr.util.structGet(coreset, "DMRSPortSet", 0))), NaN, ...
+        "coreset_search_space_occupancy", "pdcch_runtime_trial_plus_coreset_config", "OK", ...
+        "air_interface/csv/pdcch_trials.csv"); %#ok<AGROW>
+end
+T = localVertcatTables(parts);
+end
+
+function symbols = localResolveTrialSymbols(row, symStartFields, symLenFields, symbolListFields)
+symbols = [];
+for f = 1:numel(symbolListFields)
+    if ~ismember(symbolListFields(f), string(row.Properties.VariableNames))
+        continue;
+    end
+    raw = localTableValue(row, symbolListFields(f), "");
+    symbols = localParseIntegerList(raw);
+    if ~isempty(symbols)
+        symbols = unique(round(symbols(:).'), "stable");
+        return;
+    end
+end
+symStart = localFirstNumericTableValue(row, symStartFields, NaN);
+symLen = localFirstNumericTableValue(row, symLenFields, NaN);
+if isfinite(symStart) && isfinite(symLen) && symLen > 0
+    symbols = round(symStart) + (0:(max(1, round(symLen)) - 1));
+end
+end
+
+function values = localParseIntegerList(raw)
+values = [];
+if isnumeric(raw)
+    values = double(raw(:).');
+    values = values(isfinite(values));
+    return;
+end
+tokens = regexp(char(string(raw)), "-?\d+", "match");
+if isempty(tokens)
+    return;
+end
+values = str2double(tokens);
+values = values(isfinite(values));
+end
+
+function T = localBuildRETablePart(frameVal, slotVal, symbols, rbs, direction, channel, signalFamily, cellId, ueId, rnti, allocationId, portIndex, portCount, layerCount, occupancyRole, evidenceKind, valueStatus, sourceRef)
+[rbGrid, symGrid] = ndgrid(double(rbs(:)), double(symbols(:)));
+n = numel(rbGrid);
+if n == 0
+    T = table();
+    return;
+end
+T = table( ...
+    repmat(double(frameVal), n, 1), ...
+    repmat(double(slotVal), n, 1), ...
+    reshape(double(symGrid), [], 1), ...
+    reshape(double(rbGrid), [], 1), ...
+    reshape(double(rbGrid) * 12, [], 1), ...
+    repmat(12, n, 1), ...
+    repmat(double(portIndex), n, 1), ...
+    repmat(double(portCount), n, 1), ...
+    repmat(double(layerCount), n, 1), ...
+    localStringColumn(direction, n), ...
+    localStringColumn(channel, n), ...
+    localStringColumn(signalFamily, n), ...
+    repmat(double(cellId), n, 1), ...
+    repmat(double(ueId), n, 1), ...
+    repmat(double(rnti), n, 1), ...
+    localStringColumn(allocationId, n), ...
+    localStringColumn(occupancyRole, n), ...
+    localStringColumn(evidenceKind, n), ...
+    localStringColumn(valueStatus, n), ...
+    localStringColumn(sourceRef, n), ...
+    'VariableNames', {'frame','slot','symbol_index','rb_index','subcarrier_start','subcarrier_count', ...
+    'port_index','port_count','layer_count','direction','channel','signal_family','cell_id','ue_id','rnti', ...
+    'allocation_id','occupancy_role','evidence_kind','value_status','source_artifact_ref'});
+T.sfn = T.frame;
+T.symbol = T.symbol_index;
+T.bs_id = T.cell_id;
+T.channel_name = T.channel;
+T.signal_name = T.signal_family + ":" + T.channel;
+T.PRBStart = T.rb_index;
+T.PRBCount = ones(height(T), 1);
+T.SymbolStart = T.symbol_index;
+T.NumSymbols = ones(height(T), 1);
+T.occupancy_value = ones(height(T), 1);
+T.count = ones(height(T), 1);
+T.REStart = T.subcarrier_start;
+T.RECount = T.subcarrier_count;
+T.re_range = string(T.subcarrier_start) + "-" + string(T.subcarrier_start + T.subcarrier_count - 1);
+T.value_role = T.occupancy_role;
+T.value_source = T.evidence_kind;
+end
+
+function T = localVertcatTables(parts)
+if isempty(parts)
+    T = table();
+    return;
+end
+keep = false(size(parts));
+for i = 1:numel(parts)
+    keep(i) = istable(parts{i}) && ~isempty(parts{i});
+end
+parts = parts(keep);
+if isempty(parts)
+    T = table();
+else
+    T = vertcat(parts{:});
+end
 end
 
 function T = localBuildLatencyTable(src, meta)
@@ -3961,6 +4271,23 @@ for i = 1:height(trials)
     rows(i).precoding_num_layers = localNumericTableValue(row, "PrecodingNumLayers", NaN);
     rows(i).precoding_matrix_rows = localNumericTableValue(row, "PrecodingMatrixRows", NaN);
     rows(i).precoding_matrix_cols = localNumericTableValue(row, "PrecodingMatrixCols", NaN);
+    rows(i).qcl_accuracy = localNumericTableValue(row, "QCLAccuracy", NaN);
+    rows(i).qcl_type = localFirstStringTableValue(row, ["QCLType", "QCLTypes"], "");
+    rows(i).qcl_source_rs = localTextTableValue(row, "QCLSourceRS", "");
+    rows(i).qcl_status = localFirstStringTableValue(row, ["QCLStatus"], "");
+    if strlength(strtrim(rows(i).qcl_status)) == 0
+        rows(i).qcl_status = localTernary(isfinite(rows(i).qcl_accuracy), "runtime_qcl_accuracy_measured", "not_materialized_in_active_truth_path");
+    end
+    rows(i).tci_state_id = localFirstStringTableValue(row, ["TCIState", "TCIStateID"], "");
+    rows(i).unified_tci_state_id = localTextTableValue(row, "UnifiedTCIStateID", "");
+    rows(i).tci_validity_timer_slots = localNumericTableValue(row, "TCIValidityTimerSlots", NaN);
+    rows(i).tci_status = localFirstStringTableValue(row, ["TCIStatus"], "");
+    if strlength(strtrim(rows(i).tci_status)) == 0
+        rows(i).tci_status = localTernary(strlength(strtrim(rows(i).tci_state_id)) > 0, "runtime_or_configured_tci_state_present", "not_materialized_in_active_truth_path");
+    end
+    rows(i).fraunhofer_boundary_m = localNumericTableValue(row, "FraunhoferBoundary_m", NaN);
+    rows(i).near_field_focal_point_m = localFirstNumericTableValue(row, ["NearFieldFocalPoint_m", "FocalPoint_m"], NaN);
+    rows(i).near_field_status = localFirstStringTableValue(row, ["NearFieldStatus"], "not_materialized_in_active_truth_path");
     rows(i).runtime_evidence = "persisted_air_interface_trial_row";
     rows(i).source_artifact_ref = string(sourceArtifactRef);
 end
@@ -3983,7 +4310,10 @@ rows = repmat(struct("timestamp_sim_ms", NaN, "frame", NaN, "slot", NaN, "direct
     "precoding_mode", "", "precoding_application_stage", "", "precoding_active", false, ...
     "explicit_beam_weights_applied", false, "transform_precoding_applied", false, ...
     "precoding_num_ports", NaN, "precoding_num_layers", NaN, "precoding_matrix_rows", NaN, ...
-    "precoding_matrix_cols", NaN, "runtime_evidence", "", "source_artifact_ref", ""), n, 1);
+    "precoding_matrix_cols", NaN, "qcl_accuracy", NaN, "qcl_type", "", "qcl_source_rs", "", ...
+    "qcl_status", "", "tci_state_id", "", "unified_tci_state_id", "", "tci_validity_timer_slots", NaN, ...
+    "tci_status", "", "fraunhofer_boundary_m", NaN, "near_field_focal_point_m", NaN, ...
+    "near_field_status", "", "runtime_evidence", "", "source_artifact_ref", ""), n, 1);
 end
 
 function T = localBuildBeamformingAnalyticsTable(beamPrecoderTable, meta)
@@ -4336,6 +4666,7 @@ highCardinalityPaths = [ ...
     "packet_flow/csv/live_prb_allocation.csv", ...
     "packet_flow/csv/table_scheduler_decision.csv", ...
     "reports/csv/prb_allocation_heatmap.csv", ...
+    "reports/csv/live_re_allocation_snapshot.csv", ...
     "reports/csv/dl_resource_grid_heatmap.csv", ...
     "reports/csv/ul_resource_grid_heatmap.csv", ...
     "reports/csv/table_mcs_tbs_evolution.csv", ...
@@ -4752,6 +5083,7 @@ specs = [ ...
     localSpec("table_link_budget", "channel", "system_interference_detail", true, "c", "partial", true, false, "phase_now", "reports/csv/table_link_budget.csv"), ...
     localSpec("table_scheduler_decision", "scheduler", "system_scheduler", true, "c", "yes", true, false, "phase_now", "packet_flow/csv/table_scheduler_decision.csv"), ...
     localSpec("live_prb_allocation", "scheduler", "system_scheduler", true, "c", "yes", true, false, "phase_now", "packet_flow/csv/live_prb_allocation.csv"), ...
+    localSpec("live_re_allocation_snapshot", "scheduler", "grid_runtime", true, "c", "yes", true, false, "phase_now", "reports/csv/live_re_allocation_snapshot.csv"), ...
     localSpec("prb_allocation_heatmap", "scheduler", "system_scheduler", true, "c", "yes", true, false, "phase_now", "reports/csv/prb_allocation_heatmap.csv"), ...
     localSpec("table_dl_transport_block", "dl", "dl_trials", true, "c", "partial", true, false, "phase_now", "reports/csv/table_dl_transport_block.csv"), ...
     localSpec("table_ul_transport_block", "ul", "ul_trials", true, "c", "partial", true, false, "phase_now", "reports/csv/table_ul_transport_block.csv"), ...
@@ -5124,7 +5456,7 @@ tf = any(string(outName) == ["topology_density_table", "sector_utilization_summa
     "beamforming_analytics_table", "mimo_rank_utilization_table", "rank_layer_usage_histogram", ...
     "live_power_runtime_table", "live_rf_power_table", "live_bb_power_table", "live_energy_efficiency_table", "live_sleep_state_table", ...
     "power_analytics", "energy_efficiency_analytics", "runtime_power_analytics", "sleep_state_analytics", ...
-    "dl_resource_grid_heatmap", "ul_resource_grid_heatmap", "doppler_time_variation_plot", ...
+    "dl_resource_grid_heatmap", "ul_resource_grid_heatmap", "live_re_allocation_snapshot", "doppler_time_variation_plot", ...
     "anomaly_window_table", "cross_layer_correlation_table", "hotspot_analytics_table", ...
     "control_overhead_analytics_table", "resource_overhead_analytics_table", ...
     "pdcch_dci_table", "ssb_pbch_table", "prach_table", "pucch_table", ...
@@ -5254,7 +5586,7 @@ switch string(outputName)
         val = "rf/csv/energy_timeline_trace.csv|rf/csv/power_energy_table.csv";
     case {"power_analytics", "energy_efficiency_analytics", "runtime_power_analytics", "sleep_state_analytics"}
         val = "reports/csv/live_power_runtime_table.csv|reports/csv/live_energy_efficiency_table.csv|reports/csv/live_sleep_state_table.csv";
-    case {"live_prb_allocation", "prb_allocation_heatmap", "table_mcs_tbs_evolution", ...
+    case {"live_prb_allocation", "live_re_allocation_snapshot", "prb_allocation_heatmap", "table_mcs_tbs_evolution", ...
             "table_scheduler_decision", "dl_resource_grid_heatmap", "ul_resource_grid_heatmap", ...
             "resource_overhead_analytics_table"}
         val = "packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv";
@@ -5332,7 +5664,7 @@ switch string(outputName)
             "live_bb_power_table", "live_energy_efficiency_table", "live_sleep_state_table", ...
             "power_analytics", "energy_efficiency_analytics", "runtime_power_analytics", "sleep_state_analytics"}
         val = "sixgr.truth.exportLLSEnergyDiagnostics|sixgr.truth.exportLLSOutputCoverageArtifacts";
-    case {"live_prb_allocation", "prb_allocation_heatmap", "table_mcs_tbs_evolution", ...
+    case {"live_prb_allocation", "live_re_allocation_snapshot", "prb_allocation_heatmap", "table_mcs_tbs_evolution", ...
             "table_scheduler_decision", "dl_resource_grid_heatmap", "ul_resource_grid_heatmap", ...
             "resource_overhead_analytics_table"}
         val = "sixgr.system.SystemLevelRunner.run";
@@ -5385,7 +5717,7 @@ switch string(outputName)
             "live_energy_efficiency_table", "live_sleep_state_table", ...
             "power_analytics", "energy_efficiency_analytics", "runtime_power_analytics", "sleep_state_analytics"}
         val = "energy_logging_enable";
-    case "live_prb_allocation"
+    case {"live_prb_allocation", "live_re_allocation_snapshot"}
         val = "scheduler_active";
     case {"table_scheduler_decision", "dl_resource_grid_heatmap", "ul_resource_grid_heatmap", "resource_overhead_analytics_table"}
         val = "scheduler_grants_exported";
@@ -5690,9 +6022,9 @@ for i = 1:height(grants)
         "report_id", i, ...
         "report_type", "scheduler_observation", ...
         "wideband_cqi", localNormalizeReportedCQIValue(localTableValue(grants(i, :), "CQIUsed", NaN)), ...
-        "subband_cqi_vector_ref", "", ...
-        "pmi", NaN, ...
-        "ri", NaN, ...
+        "subband_cqi_vector_ref", localFirstStringTableValue(grants(i, :), ["SubbandCQIVector", "subband_cqi_vector_ref"], ""), ...
+        "pmi", localFirstNumericTableValue(grants(i, :), ["PMI", "RequestedPrecoderPMI"], NaN), ...
+        "ri", localFirstNumericTableValue(grants(i, :), ["RIUsed", "Rank", "NumLayers"], NaN), ...
         "csi_age_ms", NaN, ...
         "report_size_bits", NaN, ...
         "report_trigger", "grant_selection", ...
@@ -5946,6 +6278,20 @@ val = defaultValue;
 for i = 1:numel(varNames)
     tmp = localNumericTableValue(T, string(varNames(i)), defaultValue);
     if isfinite(double(tmp))
+        val = tmp;
+        return;
+    end
+end
+end
+
+function val = localFirstStringTableValue(T, varNames, defaultValue)
+val = string(defaultValue);
+for i = 1:numel(varNames)
+    if ~ismember(string(varNames(i)), string(T.Properties.VariableNames))
+        continue;
+    end
+    tmp = localTextTableValue(T, string(varNames(i)), "");
+    if strlength(strtrim(tmp)) > 0
         val = tmp;
         return;
     end

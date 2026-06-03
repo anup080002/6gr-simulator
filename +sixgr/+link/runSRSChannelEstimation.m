@@ -30,6 +30,19 @@ out.NoiseVarStatus = "";
 out.NoiseVarSource = "";
 out.NoiseVarReason = "";
 out.NoiseVarStrictFailure = false;
+out.ConfiguredSNR_dB = double(snr_dB);
+out.AppliedAWGNSNR_dB = NaN;
+out.AppliedLargeScaleGain_dB = NaN;
+out.AppliedLargeScaleLoss_dB = NaN;
+out.AppliedBasePathloss_dB = NaN;
+out.AppliedPathloss_dB = NaN;
+out.AppliedShadowFading_dB = NaN;
+out.AppliedO2I_dB = NaN;
+out.AppliedLargeScaleGainSource = "";
+out.InjectedCFO_Hz = NaN;
+out.InjectedTimingOffset_samples = NaN;
+out.ChannelModelApplied = "";
+out.ChannelFadingApplied = false;
 out.MeasurementAttempted = false;
 out.MeasurementUsable = false;
 out.FailureReason = "";
@@ -41,6 +54,13 @@ out.EstimatedTPMI = NaN;
 out.RankEstimate = NaN;
 out.RIEstimate = NaN;
 out.TPMIEstimate = NaN;
+out.SINR_dB = NaN;
+out.SINRSource = "";
+out.SINRValueStatus = "";
+out.CQI = NaN;
+out.MCSIndex = NaN;
+out.Modulation = "";
+out.TargetCodeRate = NaN;
 out.RISource = "";
 out.TPMISource = "";
 out.TPMICandidateCount = NaN;
@@ -70,8 +90,20 @@ try
     [tx, info] = sixgr.phy.ul.SRS_Tx(cfg);
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
-    txWave = localApplyTrackingDoppler(tx.Waveform, sampleRateHz, injectedDopplerHz);
-    [rxWave, injectedNoiseVariance] = localAddAwgn(txWave, snr_dB);
+    [rxWave, injectedNoiseVariance, replay, txWaveForReference] = localApplySRSChannelAndNoise(tx.Waveform, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB);
+    out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
+    out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    out.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
+    out.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
+    out.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
+    out.AppliedPathloss_dB = double(sixgr.util.structGet(replay, "AppliedPathloss_dB", NaN));
+    out.AppliedShadowFading_dB = double(sixgr.util.structGet(replay, "AppliedShadowFading_dB", NaN));
+    out.AppliedO2I_dB = double(sixgr.util.structGet(replay, "AppliedO2I_dB", NaN));
+    out.AppliedLargeScaleGainSource = char(string(sixgr.util.structGet(replay, "AppliedLargeScaleGainSource", "")));
+    out.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
+    out.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", NaN));
+    out.ChannelModelApplied = char(string(sixgr.util.structGet(replay, "ChannelModelApplied", "")));
+    out.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
     [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfg, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
@@ -109,7 +141,7 @@ try
     out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = 0;
-    out.AirInterfaceObservation_ms = 1e3 * (size(txWave, 1) / max(sampleRateHz, eps));
+    out.AirInterfaceObservation_ms = 1e3 * (size(txWaveForReference, 1) / max(sampleRateHz, eps));
     % Legacy alias preserved for backward compatibility with older exports.
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
@@ -130,11 +162,26 @@ try
     out.TPMICandidateCount = double(sixgr.util.structGet(srsULCSI, "TPMICandidateCount", NaN));
     out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
+    linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfg, ...
+        "ReceivedGrid", rx.RxGrid, ...
+        "ReferenceIndices", tx.SRSIndices, ...
+        "ReferenceSymbols", tx.SRSSymbols);
+    out.SINR_dB = double(sixgr.util.structGet(linkState, "SINR_dB", NaN));
+    out.SINRSource = char(string(sixgr.util.structGet(linkState, "SINRSource", "")));
+    out.SINRValueStatus = char(string(sixgr.util.structGet(linkState, "SINRValueStatus", "")));
+    out.CQI = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(linkState, "CQI", NaN)));
+    if isfinite(out.CQI) && out.CQI > 0
+        [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(out.CQI, "", NaN, cfg, "UL");
+        out.MCSIndex = double(mcsIndex);
+        out.Modulation = char(string(modStr));
+        out.TargetCodeRate = double(targetCodeRate);
+    end
     out.Ok = true;
     out.MeasurementAttempted = true;
     out.MeasurementUsable = true;
     out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
-        " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz";
+        " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz" + ...
+        ", CQI=" + string(out.CQI) + ", MCS=" + string(out.MCSIndex);
 catch ME
     out.Ok = false;
     out.TrackingFailure = 1;
@@ -145,8 +192,107 @@ catch ME
 end
 end
 
-function [y, nVar] = localAddAwgn(x, snr_dB)
-[y, nVar] = sixgr.util.addAwgnComplex(x, snr_dB);
+function [y, nVar, replay, referenceWaveform] = localApplySRSChannelAndNoise(x, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB)
+txInfo = struct("OFDM", sixgr.util.structGet(info, "OFDMInfo", struct()));
+state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
+useFading = isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
+    isfield(state, "Obj") && ~isempty(state.Obj);
+y = x;
+if useFading
+    try
+        reset(state.Obj);
+    catch
+    end
+    xIn = x;
+    padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
+    trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
+    if padSamples > 0
+        xIn = [x; zeros(padSamples, size(x, 2), "like", x)];
+    end
+    try
+        yRaw = state.Obj(xIn);
+    catch
+        [yRaw, ~] = state.Obj(xIn);
+    end
+    if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
+        y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
+    else
+        y = yRaw;
+        if size(y, 1) > size(x, 1)
+            y = y(1:size(x, 1), :);
+        elseif size(y, 1) < size(x, 1)
+            y(end+1:size(x, 1), :) = cast(0, "like", y); %#ok<AGROW>
+        end
+    end
+    referenceWaveform = y;
+else
+    y = localApplyTrackingDoppler(x, sampleRateHz, injectedDopplerHz);
+    referenceWaveform = y;
+end
+
+cfgReplay = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
+replay = impairmentReplay;
+replay.ChannelModelApplied = char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
+replay.ChannelFadingApplied = logical(useFading);
+desiredWaveform = y;
+[y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform);
+replay.InjectedNoiseVariance = double(nVar);
+if isfinite(nVar) && nVar > 0
+    replay.NoiseVarianceSource = "srs_replay_reference_waveform_awgn";
+end
+end
+
+function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+if noiseMode == "receiver_noise_figure_thermal_noise"
+    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
+    if isfinite(nVar) && nVar > 0
+        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+        y = x + cast(n, "like", x);
+        return;
+    end
+end
+appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+if isfinite(nVar) && nVar >= 0
+    if nVar > 0
+        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+        y = x + cast(n, "like", x);
+    else
+        y = x;
+    end
+    return;
+end
+[y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
+end
+
+function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
+nVar = NaN;
+snr_dB = double(snr_dB);
+if ~(isscalar(snr_dB) && isfinite(snr_dB)) || isempty(referenceWaveform)
+    return;
+end
+refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+if ~(isfinite(refPower) && refPower >= 0)
+    return;
+end
+nVar = refPower / max(10.^(snr_dB / 10), eps);
+end
+
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)
+nVar = NaN;
+thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
+servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
+if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
+    return;
+end
+refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+if ~(isfinite(refPower) && refPower >= 0)
+    return;
+end
+relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
+nVar = refPower * 10.^(relativeNoise_dB / 10);
 end
 
 function sampleRateHz = localResolveSampleRate(info, tx, cfg)

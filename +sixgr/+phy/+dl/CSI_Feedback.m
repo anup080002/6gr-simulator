@@ -60,13 +60,11 @@ end
     localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
 if isfinite(measuredSINR_dB)
     sinr_dB = double(measuredSINR_dB);
-    sinrLin = 10 .^ (sinr_dB / 10);
     sinrSource = string(measuredSINRSource);
 else
-    sinr_dB = double(modelSinr_dB);
-    sinrLin = double(modelSinrLin);
-    sinrSource = "receiver_hest_codebook_gain_over_noise_fallback";
-    measuredSINRStatus = "fallback_to_channel_gain_over_noise";
+    sinr_dB = NaN;
+    sinrSource = "reference_signal_sinr_unavailable";
+    measuredSINRStatus = "unavailable_missing_reference_signal_measurement";
 end
 
 hPow = mean(abs(Hwb(:)).^2, "omitnan");
@@ -78,8 +76,8 @@ channelGain_dB = 10 * log10(max(hPow, eps));
 if isfinite(referencePower) && referencePower > 0
     rsrp_dB = 10 * log10(max(referencePower, eps));
 else
-    rsrp_dB = channelGain_dB;
-    rsrpSource = "channel_estimate_gain_proxy";
+    rsrp_dB = NaN;
+    rsrpSource = "measurement_unavailable";
 end
 [rssiPower, rssiNRB, rssiSource, rssiStatus] = localMeasureRSSI(opt.ReceivedGrid, opt.ReferenceIndices);
 if isfinite(rssiPower) && rssiPower > 0
@@ -109,6 +107,7 @@ else
         "EffectiveSINRMethod", "measurement_required_unavailable");
     cqi = NaN;
 end
+subband = localComputeSubbandCSI(hEst, nVar, cfg, direction, perRBSINR_dB);
 
 csi = struct();
 csi.CQI = localReportedScalar(cqi, reportCQI);
@@ -137,6 +136,14 @@ csi.ReportCQI = reportCQI;
 csi.ReportPMI = reportPMI;
 csi.ReportRI = reportRI;
 csi.ReportCRI = reportCRI;
+csi.SubbandCQI = double(subband.CQI);
+csi.SubbandCQIVector = char(subband.CQIVector);
+csi.SubbandSINR_dB = char(subband.SINRVector);
+csi.SubbandSizePRB = double(subband.SubbandSizePRB);
+csi.SubbandCount = double(subband.SubbandCount);
+csi.WidebandOrSubband = char(subband.ReportMode);
+csi.SubbandCQISource = char(subband.Source);
+csi.SubbandCQIValueStatus = char(subband.ValueStatus);
 
 payload = sixgr.phy.dl.packCSIFeedbackPayload(csi, cfg, ...
     "Candidate", sixgr.util.structGet(best, "Candidate", struct()), ...
@@ -199,6 +206,7 @@ info.MeasuredReferenceSINRStatus = char(string(measuredSINRStatus));
 info.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
 info.PerRBSINR_dB = double(perRBSINR_dB);
 info.CQIFeedback = cqiFeedback;
+info.SubbandCSI = subband;
 info.Hints = struct( ...
     "AddCSIRSBasedCQI", true, ...
     "AddPMISelection", true, ...
@@ -445,6 +453,154 @@ if ~(isscalar(expectedTx) && isfinite(expectedTx) && expectedTx >= 1)
 end
 expectedRx = max(1, round(expectedRx));
 expectedTx = max(1, round(expectedTx));
+end
+
+function subband = localComputeSubbandCSI(Hest, nVar, cfg, direction, perRBSINR_dB)
+subband = struct( ...
+    "CQI", [], ...
+    "SINR_dB", [], ...
+    "CQIVector", "", ...
+    "SINRVector", "", ...
+    "SubbandSizePRB", NaN, ...
+    "SubbandCount", 0, ...
+    "ReportMode", "wideband_only", ...
+    "Source", "subband_cqi_not_requested", ...
+    "ValueStatus", "NOT_AVAILABLE");
+
+reportSubband = logical(sixgr.util.structGet(cfg, "phy.csi.reportSubbandCQI", ...
+    sixgr.util.structGet(cfg, "phy.csi.subbandCQIEnabled", ...
+    sixgr.util.structGet(cfg, "csi_acquisition_and_reporting.subband_cqi_enable", false))));
+if ~reportSubband
+    return;
+end
+
+perRB = double(perRBSINR_dB(:));
+perRB = perRB(isfinite(perRB));
+if isempty(perRB)
+    perRB = localPerRBSINRFromChannelEstimate(Hest, nVar);
+end
+if isempty(perRB)
+    subband.ReportMode = "subband";
+    subband.Source = "subband_cqi_requested_no_resource_sinr";
+    subband.ValueStatus = "NOT_AVAILABLE";
+    return;
+end
+
+numRB = numel(perRB);
+subbandSize = localResolveSubbandSizePRB(cfg, numRB);
+numSubbands = ceil(double(numRB) / double(subbandSize));
+sinrVals = nan(numSubbands, 1);
+cqiVals = nan(numSubbands, 1);
+for sb = 1:numSubbands
+    rb0 = (sb - 1) * subbandSize + 1;
+    rb1 = min(numRB, sb * subbandSize);
+    vals = perRB(rb0:rb1);
+    vals = vals(isfinite(vals));
+    if isempty(vals)
+        continue;
+    end
+    lin = 10 .^ (vals(:) / 10);
+    effSinr = 10 * log10(max(mean(lin, "omitnan"), eps));
+    sinrVals(sb) = effSinr;
+    cqiFb = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", effSinr), cfg, direction);
+    cqiVals(sb) = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(cqiFb, "WidebandCQI", NaN)));
+end
+
+valid = isfinite(sinrVals) & isfinite(cqiVals);
+if ~any(valid)
+    subband.ReportMode = "subband";
+    subband.Source = "subband_cqi_requested_no_valid_bins";
+    subband.ValueStatus = "NOT_AVAILABLE";
+    subband.SubbandSizePRB = double(subbandSize);
+    subband.SubbandCount = double(numSubbands);
+    return;
+end
+
+subband.CQI = cqiVals;
+subband.SINR_dB = sinrVals;
+subband.CQIVector = localVectorToToken(cqiVals, "%.0f");
+subband.SINRVector = localVectorToToken(sinrVals, "%.3f");
+subband.SubbandSizePRB = double(subbandSize);
+subband.SubbandCount = double(numSubbands);
+subband.ReportMode = "wideband_and_subband";
+subband.Source = "ts38214_subband_cqi_from_runtime_channel_sinr";
+subband.ValueStatus = "OK";
+end
+
+function perRB = localPerRBSINRFromChannelEstimate(Hest, nVar)
+perRB = [];
+if isempty(Hest)
+    return;
+end
+nVar = double(nVar);
+if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
+    return;
+end
+nd = ndims(Hest);
+if nd >= 4
+    K = size(Hest, 1);
+    nRB = floor(double(K) / 12);
+    if nRB < 1
+        return;
+    end
+    perRB = nan(nRB, 1);
+    for rb = 1:nRB
+        sc = (rb - 1) * 12 + (1:12);
+        vals = abs(double(Hest(sc, :, :, :))).^2;
+        vals = vals(isfinite(vals));
+        if ~isempty(vals)
+            perRB(rb) = 10 * log10(max(mean(vals, "omitnan") / nVar, eps));
+        end
+    end
+elseif nd == 3
+    K = size(Hest, 1);
+    nRB = floor(double(K) / 12);
+    if nRB < 1
+        return;
+    end
+    perRB = nan(nRB, 1);
+    for rb = 1:nRB
+        re = (rb - 1) * 12 + (1:12);
+        vals = abs(double(Hest(re, :, :))).^2;
+        vals = vals(isfinite(vals));
+        if ~isempty(vals)
+            perRB(rb) = 10 * log10(max(mean(vals, "omitnan") / nVar, eps));
+        end
+    end
+end
+perRB = perRB(isfinite(perRB));
+end
+
+function subbandSize = localResolveSubbandSizePRB(cfg, numRB)
+subbandSize = double(sixgr.util.structGet(cfg, "phy.csi.subbandSizePRB", ...
+    sixgr.util.structGet(cfg, "phy.csi.subbandSize", NaN)));
+if isscalar(subbandSize) && isfinite(subbandSize) && subbandSize >= 1
+    subbandSize = max(1, round(subbandSize));
+    return;
+end
+% TS 38.214 defines subband CQI granularity as a function of BWP size.
+% Keep the policy config-overridable, but choose the NR-like wide-BWP
+% granularity when the scenario did not explicitly select one.
+if numRB <= 24
+    subbandSize = 4;
+elseif numRB <= 72
+    subbandSize = 8;
+else
+    subbandSize = 16;
+end
+end
+
+function token = localVectorToToken(values, fmt)
+values = double(values(:).');
+parts = strings(1, numel(values));
+for i = 1:numel(values)
+    if isfinite(values(i))
+        parts(i) = string(sprintf(fmt, values(i)));
+    else
+        parts(i) = "NaN";
+    end
+end
+token = strjoin(parts, "|");
 end
 
 function B = localOversampledDFTCodebook(numTxPorts, numBeams)

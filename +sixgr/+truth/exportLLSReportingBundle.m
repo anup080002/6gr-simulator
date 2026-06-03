@@ -2643,7 +2643,7 @@ mask = isfinite(reported) & isfinite(sinr);
 if ~any(mask)
     return;
 end
-reference = arrayfun(@localMapSINRToCQI, sinr(mask));
+reference = arrayfun(@(x) sixgr.phy.dl.mapSINRToCQI(x), sinr(mask));
 T = localAccuracyRows(cat, metric, entity, reported(mask), reference, "cqi_steps", localDefaultSource(entity), note, 0);
 end
 
@@ -2972,16 +2972,6 @@ if enabled
     note = string(baseNote);
 else
     note = string(baseNote) + " Feature is disabled in this scenario, so the effective gain is zero by configuration.";
-end
-end
-
-function cqi = localMapSINRToCQI(sinr_dB)
-thresholds_dB = [-inf -5 -2 0 2 4 6 8 10 12 14 16 18 20 22 24];
-idx = find(sinr_dB >= thresholds_dB, 1, "last");
-if isempty(idx)
-    cqi = 0;
-else
-    cqi = max(0, min(15, idx - 1));
 end
 end
 
@@ -3826,31 +3816,39 @@ end
 
 function pathOut = localPlotSweep(ctx, imgDir, sweepT, cols, labels, fileName, plotTitle, yLabel)
 pathOut = "";
-if ~(istable(sweepT) && ~isempty(sweepT) && ismember("SNR_dB", string(sweepT.Properties.VariableNames)))
-    return;
-end
 chartRows = repmat(struct("SNR_dB", NaN, "MetricValue", NaN, "SeriesLabel", "", "SourceColumn", ""), 0, 1);
-for i = 1:numel(cols)
-    col = string(cols(i));
-    if ~ismember(col, string(sweepT.Properties.VariableNames))
-        continue;
-    end
-    x = double(sweepT.SNR_dB);
-    y = double(sweepT.(col));
-    mask = isfinite(x) & isfinite(y);
-    if ~any(mask)
-        continue;
-    end
-    label = string(localSweepLegendLabel(sweepT, col, labels(i)));
-    for k = find(mask(:)).'
-        chartRows(end+1, 1) = struct( ... %#ok<AGROW>
-            "SNR_dB", double(x(k)), ...
-            "MetricValue", double(y(k)), ...
-            "SeriesLabel", label, ...
-            "SourceColumn", col);
+hasSweep = istable(sweepT) && ~isempty(sweepT) && ismember("SNR_dB", string(sweepT.Properties.VariableNames));
+if hasSweep
+    for i = 1:numel(cols)
+        col = string(cols(i));
+        if ~ismember(col, string(sweepT.Properties.VariableNames))
+            continue;
+        end
+        x = double(sweepT.SNR_dB);
+        y = double(sweepT.(col));
+        mask = isfinite(x) & isfinite(y);
+        if ~any(mask)
+            continue;
+        end
+        label = string(localSweepLegendLabel(sweepT, col, labels(i)));
+        for k = find(mask(:)).'
+            chartRows(end+1, 1) = struct( ... %#ok<AGROW>
+                "SNR_dB", double(x(k)), ...
+                "MetricValue", double(y(k)), ...
+                "SeriesLabel", label, ...
+                "SourceColumn", col);
+        end
     end
 end
 chartT = struct2table(chartRows);
+useMeasuredBins = false;
+if ~localHasRenderableSweepCurve(chartT)
+    measuredChartT = localBuildMeasuredQualitySweepChart(ctx, fileName);
+    if localHasRenderableSweepCurve(measuredChartT)
+        chartT = measuredChartT;
+        useMeasuredBins = true;
+    end
+end
 status = sixgr.visual.validatePlotData("relation", localColumnOrEmpty(chartT, "SNR_dB"), localColumnOrEmpty(chartT, "MetricValue"));
 csvLogicalPath = localReportChartCSVLogicalPath(fileName);
 if istable(chartT) && ~isempty(chartT)
@@ -3869,6 +3867,20 @@ fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
 hold(ax, "on");
+if useMeasuredBins
+    made = localPlotNormalizedSweepChart(ax, chartT);
+    if ~made
+        return;
+    end
+    grid(ax, "on");
+    xlabel(ax, "Measured SINR bin center (dB)");
+    ylabel(ax, yLabel);
+    title(ax, plotTitle + " (measured-quality bins)");
+    legend(ax, "Location", "best");
+    pathOut = string(fullfile(imgDir, fileName));
+    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+    return;
+end
 made = false;
 xMin = NaN;
 xMax = NaN;
@@ -3935,6 +3947,201 @@ end
 legend(ax, "Location", "best");
 pathOut = string(fullfile(imgDir, fileName));
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+end
+
+function tf = localHasRenderableSweepCurve(chartT)
+tf = false;
+if ~(istable(chartT) && ~isempty(chartT) && all(ismember(["SNR_dB","MetricValue"], string(chartT.Properties.VariableNames))))
+    return;
+end
+x = localCoerceNumericVector(chartT.SNR_dB);
+y = localCoerceNumericVector(chartT.MetricValue);
+mask = isfinite(x) & isfinite(y);
+if nnz(mask) < 2
+    return;
+end
+tf = numel(unique(round(x(mask), 6))) >= 2;
+end
+
+function chartT = localBuildMeasuredQualitySweepChart(ctx, fileName)
+chartT = table();
+metricKind = "";
+fileToken = lower(string(fileName));
+if contains(fileToken, "bler_vs_snr")
+    metricKind = "bler";
+elseif contains(fileToken, "throughput_vs_snr")
+    metricKind = "throughput";
+else
+    return;
+end
+rows = repmat(struct( ...
+    "SNR_dB", NaN, ...
+    "MetricValue", NaN, ...
+    "SeriesLabel", "", ...
+    "SourceColumn", "", ...
+    "XAxisMetric", "", ...
+    "XAxisRole", "measured_sinr_bin_center_db", ...
+    "BinLower_dB", NaN, ...
+    "BinUpper_dB", NaN, ...
+    "SampleCount", NaN, ...
+    "SourceTable", "", ...
+    "CurveConstruction", "measured_quality_binning"), 0, 1);
+if isfield(ctx.Tables, "DL")
+    rows = localAppendMeasuredQualityRows(rows, ctx.Tables.DL, "DL", metricKind, "dl_pdsch_trials");
+end
+if isfield(ctx.Tables, "UL")
+    rows = localAppendMeasuredQualityRows(rows, ctx.Tables.UL, "UL", metricKind, "ul_pusch_trials");
+end
+if isempty(rows)
+    return;
+end
+chartT = struct2table(rows);
+end
+
+function rows = localAppendMeasuredQualityRows(rows, T, direction, metricKind, sourceTable)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+[x, xColumn] = localMeasuredQualityXAxis(T);
+if isempty(x) || strlength(xColumn) == 0
+    return;
+end
+[sample, yColumn] = localMeasuredQualitySamples(T, metricKind);
+if isempty(sample) || strlength(yColumn) == 0
+    return;
+end
+mask = isfinite(x) & isfinite(sample);
+if nnz(mask) < 2
+    return;
+end
+x = x(mask);
+sample = sample(mask);
+edges = localMeasuredQualityBinEdges(x);
+if numel(edges) < 3
+    return;
+end
+for binIdx = 1:(numel(edges) - 1)
+    if binIdx == numel(edges) - 1
+        binMask = x >= edges(binIdx) & x <= edges(binIdx + 1);
+    else
+        binMask = x >= edges(binIdx) & x < edges(binIdx + 1);
+    end
+    if ~any(binMask)
+        continue;
+    end
+    y = mean(sample(binMask), "omitnan");
+    if ~isfinite(y)
+        continue;
+    end
+    rows(end+1, 1) = struct( ... %#ok<AGROW>
+        "SNR_dB", double(mean(edges(binIdx:binIdx+1))), ...
+        "MetricValue", double(y), ...
+        "SeriesLabel", string(direction) + " measured SINR bins", ...
+        "SourceColumn", yColumn, ...
+        "XAxisMetric", xColumn, ...
+        "XAxisRole", "measured_sinr_bin_center_db", ...
+        "BinLower_dB", double(edges(binIdx)), ...
+        "BinUpper_dB", double(edges(binIdx + 1)), ...
+        "SampleCount", double(nnz(binMask)), ...
+        "SourceTable", string(sourceTable), ...
+        "CurveConstruction", "measured_quality_binning");
+end
+end
+
+function [x, columnName] = localMeasuredQualityXAxis(T)
+columnName = "";
+x = [];
+candidates = ["MeasuredTrialSINR_dB","ReceiverHestSINR_dB","MeasuredSINR_dB","DecoderTruthProxySINR_dB","LargeScaleSINR_dB"];
+for i = 1:numel(candidates)
+    if ~ismember(candidates(i), string(T.Properties.VariableNames))
+        continue;
+    end
+    candidate = localCoerceNumericVector(T.(candidates(i)));
+    if numel(candidate) ~= height(T)
+        continue;
+    end
+    if nnz(isfinite(candidate)) >= 2 && numel(unique(round(candidate(isfinite(candidate)), 6))) >= 2
+        x = candidate;
+        columnName = candidates(i);
+        return;
+    end
+end
+end
+
+function [sample, columnName] = localMeasuredQualitySamples(T, metricKind)
+columnName = "";
+sample = [];
+switch lower(string(metricKind))
+    case "bler"
+        if ~ismember("CRCPass", string(T.Properties.VariableNames))
+            return;
+        end
+        crc = localCoerceNumericVector(T.CRCPass);
+        if numel(crc) ~= height(T)
+            return;
+        end
+        valid = isfinite(crc);
+        crc(valid) = double(crc(valid) > 0);
+        sample = 1 - crc;
+        sample(~valid) = NaN;
+        columnName = "CRCPass";
+    case "throughput"
+        candidates = ["Goodput_Mbps","Throughput_Mbps","OfferedThroughput_Mbps"];
+        for i = 1:numel(candidates)
+            if ~ismember(candidates(i), string(T.Properties.VariableNames))
+                continue;
+            end
+            candidate = localCoerceNumericVector(T.(candidates(i)));
+            if numel(candidate) ~= height(T)
+                continue;
+            end
+            if any(isfinite(candidate))
+                sample = candidate;
+                columnName = candidates(i);
+                return;
+            end
+        end
+end
+end
+
+function edges = localMeasuredQualityBinEdges(x)
+x = double(x(:));
+x = x(isfinite(x));
+if numel(x) < 2
+    edges = [];
+    return;
+end
+lo = floor(min(x));
+hi = ceil(max(x));
+if ~(isfinite(lo) && isfinite(hi)) || hi <= lo
+    edges = [];
+    return;
+end
+span = hi - lo;
+targetWidth = max(1, min(3, span / 4));
+numBins = max(2, min(24, ceil(span / targetWidth)));
+edges = linspace(lo, hi, numBins + 1);
+end
+
+function made = localPlotNormalizedSweepChart(ax, chartT)
+made = false;
+if ~(istable(chartT) && ~isempty(chartT))
+    return;
+end
+series = unique(string(chartT.SeriesLabel), "stable");
+colorOrder = get(ax, "ColorOrder");
+for i = 1:numel(series)
+    mask = string(chartT.SeriesLabel) == series(i);
+    x = localCoerceNumericVector(chartT.SNR_dB(mask));
+    y = localCoerceNumericVector(chartT.MetricValue(mask));
+    finiteMask = isfinite(x) & isfinite(y);
+    if ~any(finiteMask)
+        continue;
+    end
+    seriesColor = colorOrder(1 + mod(i - 1, size(colorOrder, 1)), :);
+    localPlotDiscreteSweepSeries(ax, x(finiteMask), y(finiteMask), seriesColor, char(series(i)));
+    made = true;
+end
 end
 
 function pathOut = localPlotTrialMetricRelationship(ctx, imgDir, dlT, ulT, xVar, yVar, fileName, plotTitle, xLabel, yLabel, logX, logY)
@@ -4720,9 +4927,8 @@ end
 
 function T = localBuildPRACHCorrelationTraceTable(ctx)
 if localTruthCasePruned(ctx, "PRACH_Detection")
-    T = table(NaN, NaN, NaN, NaN, NaN, NaN, NaN, "not_supported", ...
-        "PRACH_Detection was pruned from the active truth profile.", "air_interface/csv/prach_trials.csv", ...
-        'VariableNames', {'Frame','Slot','SNR_dB','DetectionMetric','ComputeLatency_ms','AirInterfaceObservation_ms','TimingError_samples','Status','Notes','SourceArtifact'});
+    T = localUnavailablePRACHCorrelationTraceRow("not_supported", ...
+        "PRACH_Detection was pruned from the active truth profile.", "air_interface/csv/prach_trials.csv");
     return;
 end
 if istable(ctx.Tables.PRACH) && ~isempty(ctx.Tables.PRACH)
@@ -4731,18 +4937,60 @@ if istable(ctx.Tables.PRACH) && ~isempty(ctx.Tables.PRACH)
         localDebugNumericColumn(ctx.Tables.PRACH, "Frame", n), ...
         localDebugNumericColumn(ctx.Tables.PRACH, "Slot", n), ...
         localDebugNumericColumn(ctx.Tables.PRACH, "SNR_dB", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "AppliedAWGNSNR_dB", n), ...
         localDebugNumericColumn(ctx.Tables.PRACH, "DetectionMetric", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "CorrelationPeak", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "DetectionThreshold", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "DetectorNoiseFloor", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "NoiseOnlyDetectionMetric", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "NoiseVariance", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "FalseAlarmFlag", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "MissedDetection", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "RequestedPreambleIndex", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "DetectedPreambleIndex", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "PreambleIndexFromPeak", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "PRACHRootSequenceIndex", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "PRACHZeroCorrelationZone", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "PRACHConfigurationIndex", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "PRACHOccasionIndex", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "PRACHCarrierSlot", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "TimingError_samples", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "TimingAdvance_samples", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "TimingAdvance_us", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "AppliedPathloss_dB", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "AppliedO2I_dB", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "AppliedShadowFading_dB", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "InjectedCFO_Hz", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "InjectedTimingOffset_samples", n), ...
+        localDebugStringColumn(ctx.Tables.PRACH, "ChannelModelApplied", n), ...
+        localDebugNumericColumn(ctx.Tables.PRACH, "ChannelFadingApplied", n), ...
         localDebugNumericColumn(ctx.Tables.PRACH, "ComputeLatency_ms", n), ...
         localDebugNumericColumn(ctx.Tables.PRACH, "AirInterfaceObservation_ms", n), ...
-        localDebugNumericColumn(ctx.Tables.PRACH, "TimingError_samples", n), ...
         localDebugStringColumn(ctx.Tables.PRACH, "Status", n), ...
         localDebugStringColumn(ctx.Tables.PRACH, "Notes", n), ...
         repmat("air_interface/csv/prach_trials.csv", n, 1), ...
-        'VariableNames', {'Frame','Slot','SNR_dB','DetectionMetric','ComputeLatency_ms','AirInterfaceObservation_ms','TimingError_samples','Status','Notes','SourceArtifact'});
+        'VariableNames', localPRACHCorrelationTraceVariableNames());
     return;
 end
-T = table(NaN, NaN, NaN, NaN, NaN, NaN, NaN, "not_available", "No PRACH trial table was emitted by this run.", "none", ...
-    'VariableNames', {'Frame','Slot','SNR_dB','DetectionMetric','ComputeLatency_ms','AirInterfaceObservation_ms','TimingError_samples','Status','Notes','SourceArtifact'});
+T = localUnavailablePRACHCorrelationTraceRow("not_available", ...
+    "No PRACH trial table was emitted by this run.", "none");
+end
+
+function names = localPRACHCorrelationTraceVariableNames()
+names = {'Frame','Slot','SNR_dB','AppliedAWGNSNR_dB','DetectionMetric','CorrelationPeak','DetectionThreshold', ...
+    'DetectorNoiseFloor','NoiseOnlyDetectionMetric','NoiseVariance','FalseAlarmFlag','MissedDetection', ...
+    'RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
+    'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
+    'TimingError_samples','TimingAdvance_samples','TimingAdvance_us', ...
+    'AppliedPathloss_dB','AppliedO2I_dB','AppliedShadowFading_dB','InjectedCFO_Hz','InjectedTimingOffset_samples', ...
+    'ChannelModelApplied','ChannelFadingApplied','ComputeLatency_ms','AirInterfaceObservation_ms','Status','Notes','SourceArtifact'};
+end
+
+function T = localUnavailablePRACHCorrelationTraceRow(status, notes, sourceArtifact)
+T = table(NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, ...
+    NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, ...
+    "", NaN, NaN, NaN, string(status), string(notes), string(sourceArtifact), ...
+    'VariableNames', localPRACHCorrelationTraceVariableNames());
 end
 
 function T = localBuildAIConfidenceTraceTable(ctx)
@@ -5938,7 +6186,7 @@ end
 end
 
 function tf = localShouldEmitPlaceholderArtifacts(ctx)
-tf = localConfigFlag(ctx, ["output.emit_placeholder_artifacts"], true);
+tf = localConfigFlag(ctx, ["output.emit_placeholder_artifacts"], false);
 end
 
 function tf = localShouldEmitAIAuditArtifacts(ctx)

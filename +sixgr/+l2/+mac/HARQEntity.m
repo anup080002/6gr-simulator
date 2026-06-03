@@ -321,6 +321,27 @@ classdef HARQEntity < handle
             end
             tb = procs(pid).TB;
         end
+
+        function cancelled = cancelTentativeTx(obj, rnti, harqId0)
+            % cancelTentativeTx Release a new-data HARQ reservation that never
+            % reached PHY transmission, e.g. a scheduler grant blocked by
+            % PDCCH decode/gating. Retransmission state and transmitted
+            % awaiting-feedback processes are intentionally left untouched.
+            cancelled = false;
+            rnti = double(rnti);
+            pid = double(harqId0) + 1;
+            [ui, procs] = obj.getUE(rnti, false);
+            if ui < 1 || pid < 1 || pid > numel(procs)
+                return;
+            end
+            p = procs(pid);
+            if logical(p.Active) && ~logical(p.AwaitingFeedback) && ...
+                    ~logical(p.NeedsRetx) && double(p.TxCount) == 0
+                procs(pid) = obj.resetProc(p);
+                obj.UEProcs{ui} = procs;
+                cancelled = true;
+            end
+        end
     end
 
     methods(Access=private)

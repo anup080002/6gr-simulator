@@ -72,6 +72,14 @@ cfg.outputs.plotVisible = false;
 cfg.outputs.livePublishFrameInterval = double(localGetNested(s, "output.live_publish_frame_interval", 1));
 cfg.outputs.liveHeavyRefreshFrameInterval = double(localGetNested(s, "output.live_heavy_refresh_interval_frames", 4));
 cfg.outputs.storageBackend = char(string(localRequireNested(s, "output.backend", "output.backend")));
+cfg.outputs.persistenceMode = char(string(localGetNested(s, "output.persistence_mode", ...
+    localGetNested(s, "output_control.output_persistence_mode", ...
+    localResolveOutputPersistenceMode(cfg.outputs.storageBackend)))));
+cfg.outputs.persistenceEffectiveMode = char(string(localGetNested(s, "output.persistence_effective_mode", cfg.outputs.persistenceMode)));
+cfg.outputs.persistToDatabase = logical(localGetNested(s, "output.persist_to_database", lower(string(cfg.outputs.storageBackend)) == "mysql_web"));
+cfg.outputs.persistToResultsFolder = logical(localGetNested(s, "output.persist_to_results_folder", true));
+cfg.outputs.persistenceFallbackReason = char(string(localGetNested(s, "output.persistence_fallback_reason", "")));
+cfg.outputs.resultsRoot = char(string(localGetNested(s, "output.results_root", "results")));
 cfg.outputs.databaseHost = char(string(localResolveDatabaseField(s, "output.database_host", cfg.outputs.storageBackend)));
 cfg.outputs.databasePort = double(localResolveDatabaseField(s, "output.database_port", cfg.outputs.storageBackend));
 cfg.outputs.databaseSchema = char(string(localResolveDatabaseField(s, "output.database_schema", cfg.outputs.storageBackend)));
@@ -346,7 +354,23 @@ cfg.pdsch6gr.PTRSBandPolicy = char(string(localGetNested(s, "pdsch6gr.ptrs_band_
 cfg.pdsch6gr.ChannelEstimationMode = char(string(localGetNested(s, "pdsch6gr.channel_estimation_mode", "realistic")));
 cfg.pdsch6gr.ParameterEstimationMode = char(string(localGetNested(s, "pdsch6gr.parameter_estimation_mode", "practical")));
 cfg.pdsch6gr.ReceiverType = char(string(localGetNested(s, "pdsch6gr.receiver_type", "MMSE_IRC")));
-cfg.pdsch6gr.EnableMUMIMOStudy = logical(localGetNested(s, "pdsch6gr.enable_mumimo_study", false));
+muMimoEnabled = logical(localGetNested(s, "mimo.mu_mimo_enable", ...
+    localGetNested(s, "mimo.mu_mimo_enabled", ...
+    localGetNested(s, "mimo_and_beam_management.mu_mimo_enabled", ...
+    localGetNested(s, "system.scheduler.muMimoEnabled", ...
+    localGetNested(s, "pdsch6gr.enable_mumimo_study", localScenarioHasTag(s, "mu-mimo")))))));
+ulMuMimoEnabled = logical(localGetNested(s, "mimo.ul_mu_mimo_enable", ...
+    localGetNested(s, "system.scheduler.ulMuMimoEnabled", false)));
+muMimoMaxUsers = max(2, min(4, round(double(localGetNested(s, "mimo.mu_mimo_max_users_per_prb", ...
+    localGetNested(s, "system.scheduler.muMimoMaxUsersPerPRB", 2))))));
+cfg.pdsch6gr.EnableMUMIMOStudy = logical(localGetNested(s, "pdsch6gr.enable_mumimo_study", false)) || muMimoEnabled;
+cfg = sixgr.util.structSet(cfg, "mimo.mu_mimo_enable", muMimoEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoEnabled", muMimoEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.mimo.ulMuMimoEnabled", ulMuMimoEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoMaxUsersPerPRB", muMimoMaxUsers);
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoEnabled", muMimoEnabled);
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.ulMuMimoEnabled", ulMuMimoEnabled);
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoMaxUsersPerPRB", muMimoMaxUsers);
 cfg.pdsch6gr.EnableMRSS = logical(localGetNested(s, "pdsch6gr.enable_mrss", false));
 cfg.pdsch6gr.EnablePhaseNoise = logical(localGetNested(s, "pdsch6gr.enable_phase_noise", false));
 cfg.pdsch6gr.EnableWidebandUncalibratedPhaseErrors = logical(localGetNested(s, "pdsch6gr.enable_wideband_uncalibrated_phase_errors", false));
@@ -543,15 +567,52 @@ cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(string(s.modulation.mcs_table)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.nPorts", double(s.reference_signals.pusch_dmrs_ports));
+ulCodebookEnabled = ~logical(s.waveform.transform_precoding_enabled) && reportPMI && ...
+    pmiCodebookMode ~= "noncodebook" && lower(string(s.mimo.codebook_type)) ~= "noncodebook";
+if ulCodebookEnabled
+    ulNumPorts = double(localGetNested(s, "reference_signals.pusch_dmrs_ports", ...
+        localGetNested(s, "mimo.n_tx_ant", double(s.mimo.n_layers))));
+    allowedPorts = [1 2 4];
+    if ~(isfinite(ulNumPorts) && ulNumPorts >= double(s.mimo.n_layers))
+        ulNumPorts = double(s.mimo.n_layers);
+    end
+    ulNumPorts = allowedPorts(find(allowedPorts >= max(1, round(ulNumPorts)), 1, "first"));
+    if isempty(ulNumPorts)
+        ulNumPorts = allowedPorts(end);
+    end
+    initialTPMI = double(localGetNested(s, "csi_acquisition_and_reporting.initial_ul_tpmi", ...
+        localGetNested(s, "reference_signals.initial_ul_tpmi", ...
+        localGetNested(s, "mimo.initial_ul_tpmi", 0))));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.transmissionScheme", "codebook");
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.TransmissionScheme", "codebook");
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.NumAntennaPorts", double(ulNumPorts));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.numAntennaPorts", double(ulNumPorts));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.TPMI", max(0, round(initialTPMI)));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.PMI", max(0, round(initialTPMI)));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.TPMISource", "configured_initial_ul_codebook_tpmi_replaced_by_srs_dci_when_available");
+end
 cfg = sixgr.util.structSet(cfg, "phy.pusch.pi2BPSKEnabled", logical(s.modulation.pi2_bpsk_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.modulation.constellationShapingEnabled", ...
     logical(s.modulation.constellation_shaping_enabled));
 
 cfg.phy.srs.enable = logical(s.reference_signals.srs_enabled);
 cfg.phy.srs.nPorts = double(s.reference_signals.srs_ports);
-cfg = sixgr.util.structSet(cfg, "phy.srs.period_slots", max(1, round(double(localRequireFirstNested(s, ...
-    ["control_gating.srs_max_age_slots","reference_signals.srs_periodicity_ms"], ...
-    "control_gating.srs_max_age_slots or reference_signals.srs_periodicity_ms")))));
+srsPeriodSlots = double(localGetNested(s, "reference_signals.srs_periodicity_slots", ...
+    localGetNested(s, "control_gating.srs_period_slots", NaN)));
+if ~(isfinite(srsPeriodSlots) && srsPeriodSlots >= 1)
+    srsPeriodicityMs = double(localGetNested(s, "reference_signals.srs_periodicity_ms", NaN));
+    slotDurationMs = max(eps, double(runTiming.TotalTime_ms) / max(double(runTiming.TotalSlots), 1));
+    if isfinite(srsPeriodicityMs) && srsPeriodicityMs > 0
+        srsPeriodSlots = max(1, round(srsPeriodicityMs / slotDurationMs));
+    else
+        srsPeriodSlots = 4;
+    end
+end
+cfg = sixgr.util.structSet(cfg, "phy.srs.period_slots", max(1, round(double(srsPeriodSlots))));
+cfg = sixgr.util.structSet(cfg, "phy.srs.maxUEsPerSlot", max(1, round(double(localGetNested(s, ...
+    "reference_signals.srs_max_ues_per_slot", localGetNested(s, "control_gating.srs_max_ues_per_slot", 1))))));
+cfg = sixgr.util.structSet(cfg, "phy.srs.schedulingPolicy", char(string(localGetNested(s, ...
+    "reference_signals.srs_scheduling_policy", localGetNested(s, "control_gating.srs_scheduling_policy", "round_robin_phase")))));
 cfg = sixgr.util.structSet(cfg, "phy.trs.enable", logical(s.reference_signals.trs_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.trs.nPorts", double(localRequireNested(s, "reference_signals.trs.num_ports", "reference_signals.trs.num_ports")));
 cfg = sixgr.util.structSet(cfg, "phy.trs.scramblingID", double(localRequireNested(s, "reference_signals.trs.scrambling_id", "reference_signals.trs.scrambling_id")));
@@ -1617,6 +1678,15 @@ if isempty(value) && startsWith(storageBackend, "mysql")
 end
 end
 
+function mode = localResolveOutputPersistenceMode(storageBackend)
+storageBackend = lower(strtrim(string(storageBackend)));
+if startsWith(storageBackend, "mysql")
+    mode = "both";
+else
+    mode = "results_folder";
+end
+end
+
 function value = localResolveUENoiseFigure_dB(s)
 candidatePaths = [ ...
     "power_and_rf_frontend.ue_noise_figure_db"
@@ -1652,6 +1722,18 @@ end
 
 function value = localGetNested(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
+end
+
+function tf = localScenarioHasTag(s, tag)
+tags = string(sixgr.util.structGet(s, "meta.tags", ...
+    sixgr.util.structGet(s, "scenario.tags", strings(0, 1))));
+if isempty(tags)
+    tf = false;
+    return;
+end
+normTags = lower(strrep(strtrim(tags(:)), "_", "-"));
+tag = lower(strrep(strtrim(string(tag)), "_", "-"));
+tf = any(normTags == tag);
 end
 
 function s = localStructSetIfPresent(s, path, value)

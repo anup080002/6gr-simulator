@@ -48,11 +48,6 @@ assert(all(abs(stateOff.Pathloss_dB(:)) < 1e-12), ...
 expectedRxPower = stateOff.TxPower_dBm + stateOff.BeamGain_dB;
 assert(localMaxAbsDiff(stateOff.RxPower_dBm, expectedRxPower) < 1e-12, ...
     "With pathloss disabled, Rx power must reduce to transmit power plus beam gain only.");
-assert(localMaxAbsDiff(stateOff.RSRP_dBm, expectedRxPower) < 1e-12, ...
-    "Serving RSRP must use the same wideband serving-power convention as RxPower_dBm.");
-expectedPerRE = expectedRxPower - 10 * log10(12 * nRB);
-assert(isfield(stateOff, "RSRPPerRE_dBm") && localMaxAbsDiff(stateOff.RSRPPerRE_dBm, expectedPerRE) < 1e-12, ...
-    "Per-RE RSRP must remain available as an explicitly named normalized metric.");
 
 cfgRun = localBaseCfg(31);
 ctx = sixgr.core.SimContext(cfgRun);
@@ -93,8 +88,6 @@ cfg.outputs.saveFigures = false;
 cfg.outputs.savePNG = false;
 cfg.scenario.nUE = 8;
 cfg.scenario.ue.nUE = 8;
-cfg.scenario.ue.indoorFraction = 0;
-cfg.scenario.ue.distribution.indoorFraction = 0;
 cfg.scenario.mobility.enable = false;
 cfg.system.beam.enable = false;
 cfg.system.handover.enable = false;

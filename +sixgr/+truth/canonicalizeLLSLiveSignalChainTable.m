@@ -38,9 +38,18 @@ for i = 1:numel(names)
     col = T.(char(names(i)));
     keepMask(i) = any(localColumnAvailabilityMask(col)) && ~localColumnContainsOnlyInactiveSentinels(col);
 end
+if localPreserveDeclaredSchema(scopeToken)
+    keepMask(:) = true;
+end
 if any(~keepMask)
     T(:, ~keepMask) = [];
 end
+end
+
+function tf = localPreserveDeclaredSchema(scopeToken)
+scope = lower(string(scopeToken));
+tf = any(scope == ["dl_pdsch_trials", "ul_pusch_trials", "pdcch_trials", ...
+    "pucch_trials", "prach_trials", "pbch_trials", "srs_trials", "trs_trials"]);
 end
 
 function tf = localIsStringLikeColumn(col)
@@ -114,6 +123,12 @@ nRows = numel(companionMask);
 fieldName = lower(char(string(fieldName)));
 scope = string(scopeToken);
 fill = strings(nRows, 1);
+if startsWith(fieldName, "interferencechannel")
+    % These columns describe explicit runtime interferer channel objects. In
+    % a no-overlap/no-interferer slot the truthful value is blank/missing,
+    % not an inactive sentinel that looks like a measured provenance token.
+    return;
+end
 if endsWith(fieldName, "source")
     fill(companionMask) = "active_" + scope + "_runtime_table";
     fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";

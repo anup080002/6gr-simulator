@@ -225,6 +225,14 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     end
     detectionFailureReason = localPUCCHDetectionFailureReason(fmt, ouci, uciBits, detMet);
     detectionUsable = strlength(detectionFailureReason) == 0;
+    detectionThreshold = localScalarOrNaN(opts.DetectionThreshold);
+    detectorPeakMetric = localFiniteDetectionMetric(detMet);
+    detectionMetricStatus = "OK";
+    if ~isfinite(detectorPeakMetric)
+        detectionMetricStatus = "NOT_AVAILABLE";
+    elseif ~logical(detectionUsable)
+        detectionMetricStatus = "REVIEW_REQUIRED";
+    end
 
     rx = struct();
     rx.Ok              = logical(detectionUsable);
@@ -232,6 +240,12 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     rx.UCIBits         = uciBits;
     rx.Symbols         = rxConst;
     rx.DetMetric       = detMet;
+    rx.DetectionThreshold = detectionThreshold;
+    rx.DetectionMetricStatus = char(detectionMetricStatus);
+    rx.DetectorPeakMetric = detectorPeakMetric;
+    rx.DetectorNoiseFloor = nVar;
+    rx.DTXFlag = ~logical(detectionUsable);
+    rx.DTXReason = char(detectionFailureReason);
     rx.NoiseVar        = nVar;
     rx.NoiseVarStatus  = char(string(noiseStatus.Status));
     rx.NoiseVarSource  = char(string(noiseStatus.Source));
@@ -257,7 +271,12 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     info.NoiseVariance = noiseStatus;
     info.DetectionValidation = struct( ...
         "DetectionUsable", logical(detectionUsable), ...
-        "FailureReason", string(detectionFailureReason));
+        "FailureReason", string(detectionFailureReason), ...
+        "DetectionThreshold", detectionThreshold, ...
+        "DetectionMetricStatus", detectionMetricStatus, ...
+        "DetectorPeakMetric", detectorPeakMetric, ...
+        "DetectorNoiseFloor", nVar, ...
+        "DTXFlag", ~logical(detectionUsable));
 end
 
 % -------------------------------------------------------------------------
@@ -349,6 +368,34 @@ vals = double(detMet(:));
 tf = any(isfinite(vals));
 end
 
+function metric = localFiniteDetectionMetric(detMet)
+metric = NaN;
+if isempty(detMet) || ~isnumeric(detMet)
+    return;
+end
+vals = double(detMet(:));
+vals = vals(isfinite(vals));
+if ~isempty(vals)
+    metric = vals(1);
+end
+end
+
+function value = localScalarOrNaN(raw)
+value = NaN;
+if isempty(raw)
+    return;
+end
+try
+    vals = double(raw(:));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        value = vals(1);
+    end
+catch
+    value = NaN;
+end
+end
+
 function tf = localHasUsableUCIBits(uciBits, expectedCount)
 tf = false;
 if iscell(uciBits)
@@ -386,6 +433,12 @@ rx.UCISoft = {};
 rx.UCIBits = int8([]);
 rx.Symbols = complex([]);
 rx.DetMetric = NaN;
+rx.DetectionThreshold = NaN;
+rx.DetectionMetricStatus = "NOT_AVAILABLE";
+rx.DetectorPeakMetric = NaN;
+rx.DetectorNoiseFloor = double(nVar);
+rx.DTXFlag = true;
+rx.DTXReason = char(string(failureReason));
 rx.NoiseVar = double(nVar);
 rx.NoiseVarStatus = char(string(noiseStatus.Status));
 rx.NoiseVarSource = char(string(noiseStatus.Source));
@@ -409,6 +462,14 @@ info.DMRSSymbols = dmrsSym;
 info.Estimation = estInfo;
 info.Equalization = struct();
 info.NoiseVariance = noiseStatus;
+info.DetectionValidation = struct( ...
+    "DetectionUsable", false, ...
+    "FailureReason", string(failureReason), ...
+    "DetectionThreshold", NaN, ...
+    "DetectionMetricStatus", "NOT_AVAILABLE", ...
+    "DetectorPeakMetric", NaN, ...
+    "DetectorNoiseFloor", double(nVar), ...
+    "DTXFlag", true);
 end
 
 function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)

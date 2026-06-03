@@ -214,10 +214,14 @@ tDetect = tic;
 det = sixgr.rach.PRACHDetector(rxWave, cfg, "Occasion", occasion, ...
     "DetectionThresholdMode", cfg.DetectionThresholdMode, "DetectionThreshold", threshold, ...
     "EnableFrequencyEstimationMetric", cfg.EnableFrequencyEstimationMetric);
+noiseOnlyWave = localNoiseOnlyWaveform(size(rxWave), noiseVar, trialSeed + 9100);
+noiseDet = sixgr.rach.PRACHDetector(noiseOnlyWave, cfg, "Occasion", occasion, ...
+    "DetectionThresholdMode", cfg.DetectionThresholdMode, "DetectionThreshold", threshold, ...
+    "EnableFrequencyEstimationMetric", cfg.EnableFrequencyEstimationMetric);
 computeLatencyMs = toc(tDetect) * 1e3;
 airInterfaceObservationMs = 1e3 * (size(rxWave, 1) / max(double(refTx.SampleRate_Hz), eps));
 
-simOut.ROSummary = localClassifyRO(cfg, det, servingTruth, interfererTruth, occasion, snrDb, threshold, noiseVar, trialSeed, ...
+simOut.ROSummary = localClassifyRO(cfg, det, noiseDet, servingTruth, interfererTruth, occasion, snrDb, threshold, noiseVar, trialSeed, ...
     computeLatencyMs, airInterfaceObservationMs);
 simOut.UERows = localExpandUERows(cfg, simOut.ROSummary, servingTruth, occasion, snrDb, threshold);
 end
@@ -413,7 +417,15 @@ noise = sqrt(noiseVar/2) * (randn(size(rxWave)) + 1i * randn(size(rxWave)));
 rxOut = rxWave + noise;
 end
 
-function roSummary = localClassifyRO(cfg, det, servingTruth, interfererTruth, occasion, snrDb, threshold, noiseVar, trialSeed, computeLatencyMs, airInterfaceObservationMs)
+function noiseWave = localNoiseOnlyWaveform(waveSize, noiseVar, seed)
+rng(double(seed), "twister");
+noiseWave = complex(zeros(waveSize));
+if isfinite(double(noiseVar)) && double(noiseVar) > 0
+    noiseWave = sqrt(double(noiseVar)/2) .* (randn(waveSize) + 1i * randn(waveSize));
+end
+end
+
+function roSummary = localClassifyRO(cfg, det, noiseDet, servingTruth, interfererTruth, occasion, snrDb, threshold, noiseVar, trialSeed, computeLatencyMs, airInterfaceObservationMs)
 servingPreambles = unique(localStructFieldVector(servingTruth, "PreambleIndex"));
 interfererPreambles = unique(localStructFieldVector(interfererTruth, "PreambleIndex"));
 hasServingTx = ~isempty(servingPreambles);
@@ -490,6 +502,12 @@ roSummary.slot_id = round(double(occasion.SlotIndex1));
 roSummary.snr_db = double(snrDb);
 roSummary.threshold = double(threshold);
 roSummary.peak_metric = double(det.PeakMetric);
+roSummary.correlation_peak = double(det.PeakMetric);
+roSummary.noise_only_peak_metric = double(sixgr.util.structGet(noiseDet, "PeakMetric", NaN));
+roSummary.noise_only_detected = logical(sixgr.util.structGet(noiseDet, "Detected", false));
+roSummary.noise_only_detected_flag = double(roSummary.noise_only_detected);
+roSummary.detector_noise_floor = double(noiseVar);
+roSummary.preamble_index_from_peak = double(sixgr.util.structGet(det, "PreambleIndexFromPeak", NaN));
 roSummary.detected = logical(detected);
 roSummary.detected_flag = double(detected);
 roSummary.detected_preamble_index = detectedPreamble;

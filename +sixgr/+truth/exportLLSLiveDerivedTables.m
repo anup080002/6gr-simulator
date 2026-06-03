@@ -47,7 +47,7 @@ beamT = localBuildBeamStatsTable(dlT, ulT);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(dlT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
-linkAdaptationT = localBuildLinkAdaptationInputTable(dlT, ulT);
+linkAdaptationT = localBuildLinkAdaptationInputTable(cfg, dlT, ulT);
 harqSummaryT = sixgr.util.structGet(slotTrace, "HARQSummaryTable", table());
 harqTimelineT = sixgr.util.structGet(slotTrace, "HARQTimelineTable", table());
 if ~(istable(harqSummaryT) && ismember("Direction", string(harqSummaryT.Properties.VariableNames)))
@@ -122,7 +122,7 @@ function T = localBuildChannelStatsTable(dlT, ulT, srsT, trsT)
 parts = { ...
     localAggregateByDirectionAndSNR(dlT, "DL", ["ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "dl_pdsch_trials"), ...
     localAggregateByDirectionAndSNR(ulT, "UL", ["ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "ul_pusch_trials"), ...
-    localAggregateByDirectionAndSNR(srsT, "SRS", ["NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","QCLAccuracy","TrackingFailureProbability"], "srs_trials"), ...
+    localAggregateByDirectionAndSNR(srsT, "SRS", ["SINR_dB","CQI","MCSIndex","RankEstimate","EstimatedRI","NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","QCLAccuracy","TrackingFailureProbability"], "srs_trials"), ...
     localAggregateByDirectionAndSNR(trsT, "TRS", ["NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","PhaseTrackingError_deg","QCLAccuracy"], "trs_trials")};
 T = localVertcat(parts);
 if isempty(T)
@@ -160,13 +160,13 @@ if isempty(T)
 end
 end
 
-function T = localBuildLinkAdaptationInputTable(dlT, ulT)
+function T = localBuildLinkAdaptationInputTable(cfg, dlT, ulT)
 parts = {};
 if istable(dlT) && ~isempty(dlT)
-    parts{end+1} = localDirectionLinkAdaptationRows(dlT, "DL", "air_interface/csv/dl_pdsch_trials.csv"); %#ok<AGROW>
+    parts{end+1} = localDirectionLinkAdaptationRows(dlT, "DL", "air_interface/csv/dl_pdsch_trials.csv", cfg); %#ok<AGROW>
 end
 if istable(ulT) && ~isempty(ulT)
-    parts{end+1} = localDirectionLinkAdaptationRows(ulT, "UL", "air_interface/csv/ul_pusch_trials.csv"); %#ok<AGROW>
+    parts{end+1} = localDirectionLinkAdaptationRows(ulT, "UL", "air_interface/csv/ul_pusch_trials.csv", cfg); %#ok<AGROW>
 end
 T = localVertcat(parts);
 if isempty(T)
@@ -220,11 +220,11 @@ if istable(srsT) && ~isempty(srsT)
         "TraceSource", "srs_feedback_path", ...
         "SNR_dB", localMean(srsT, "SNR_dB"), ...
         "MeanNMSE_dB", localMean(srsT, "NMSE_dB"), ...
-        "MeanWidebandCQI", NaN, ...
-        "MeanPMI", NaN, ...
+        "MeanWidebandCQI", localMeanFirstExisting(srsT, ["WidebandCQI","CQI"]), ...
+        "MeanPMI", localMeanFirstExisting(srsT, ["PMI","EstimatedTPMI","TPMI"]), ...
         "MeanCRI", NaN, ...
         "MeanCSIPayloadBitLength", NaN, ...
-        "Notes", "UL sounding summary from actual SRS trials.");
+        "Notes", "UL sounding summary from actual SRS receiver evidence.");
 end
 if isempty(rows)
     T = table( ...
@@ -714,7 +714,7 @@ if ~ismember("AppliedLargeScaleGain_dB", string(coverageT.Properties.VariableNam
     coverageT.AppliedLargeScaleGain_dB = nan(height(coverageT), 1);
 end
 if ~ismember("RSRPSource", string(coverageT.Properties.VariableNames))
-    coverageT.RSRPSource = repmat("large_scale_wideband_serving_power", height(coverageT), 1);
+    coverageT.RSRPSource = repmat("large_scale_per_reference_re_power", height(coverageT), 1);
 end
 if ~ismember("WidebandSINRSource", string(coverageT.Properties.VariableNames))
     coverageT.WidebandSINRSource = strings(height(coverageT), 1);
@@ -764,7 +764,7 @@ if ~ismember("InterferenceMode", string(coverageT.Properties.VariableNames))
     coverageT.InterferenceMode = repmat("unpublished_mode_label_missing", height(coverageT), 1);
 end
 if ~ismember("ServingRSRPSource", string(coverageT.Properties.VariableNames))
-    coverageT.ServingRSRPSource = repmat("large_scale_wideband_serving_power", height(coverageT), 1);
+    coverageT.ServingRSRPSource = repmat("large_scale_per_reference_re_power", height(coverageT), 1);
 end
 if ~ismember("CSI_RSRPSource", string(coverageT.Properties.VariableNames))
     coverageT.CSI_RSRPSource = strings(height(coverageT), 1);
@@ -988,8 +988,11 @@ else
 end
 end
 
-function T = localDirectionLinkAdaptationRows(sourceT, direction, traceSource)
-sourceT = localEnsureLinkAdaptationSourceVars(sourceT);
+function T = localDirectionLinkAdaptationRows(sourceT, direction, traceSource, cfg)
+if nargin < 4
+    cfg = struct();
+end
+sourceT = localEnsureLinkAdaptationSourceVars(sourceT, cfg, direction);
 if ismember("IsWarmupFrame", string(sourceT.Properties.VariableNames))
     warmMask = logical(sourceT.IsWarmupFrame);
     if any(~warmMask)
@@ -999,7 +1002,7 @@ end
 vars = {'Direction','TraceSource','Slot','Frame','UEIndex','RNTI','ServingCell', ...
     'ConfiguredSNR_dB','AppliedAWGNSNR_dB','MeasuredTrialSINR_dB','MeasuredWidebandSINR_dB', ...
     'EstimatedWidebandSINR_dB','LargeScaleSINR_dB','LargeScaleWidebandSINR_dB', ...
-    'ReceiverHestSINR_dB','DecoderTruthProxySINR_dB','WidebandCQI','CQIDerivedMCS', ...
+    'ReceiverHestSINR_dB','DecoderTruthProxySINR_dB','WidebandCQI','CQIValueSource','CQIValueStatus','CQIDerivedMCS', ...
     'CQIDerivedModulation','CQIDerivedTargetCodeRate','MCSIndex','Modulation','TargetCodeRate', ...
     'PMI','CRI','RankIndicator','ValueRole','ValueSource','ValueStatus','Notes'};
 rows = cell(height(sourceT), numel(vars));
@@ -1022,19 +1025,21 @@ for i = 1:height(sourceT)
     rows{i,15} = double(localLastValue(row, "ReceiverHestSINR_dB"));
     rows{i,16} = double(localLastValue(row, "DecoderTruthProxySINR_dB"));
     rows{i,17} = double(localLastValue(row, "WidebandCQI"));
-    rows{i,18} = double(localLastValue(row, "CQIDerivedMCS"));
-    rows{i,19} = string(localLastValue(row, "CQIDerivedModulation"));
-    rows{i,20} = double(localLastValue(row, "CQIDerivedTargetCodeRate"));
-    rows{i,21} = double(localLastValue(row, "MCSIndex", localLastValue(row, "CQIDerivedMCS")));
-    rows{i,22} = string(localLastValue(row, "Modulation", localLastValue(row, "CQIDerivedModulation")));
-    rows{i,23} = double(localLastValue(row, "TargetCodeRate", localLastValue(row, "CQIDerivedTargetCodeRate")));
-    rows{i,24} = double(localLastValue(row, "PMI"));
-    rows{i,25} = double(localLastValue(row, "CRI"));
-    rows{i,26} = double(localLastValue(row, "RankIndicator", localLastValue(row, "RI")));
-    rows{i,27} = string(localLastValue(row, "SINRValueRole", "measured_trial_vs_large_scale_separated"));
-    rows{i,28} = string(localLastValue(row, "SINRSource", "actual_runtime_trial_row"));
-    rows{i,29} = string(localLastValue(row, "Status", ""));
-    rows{i,30} = string(localLastValue(row, "Notes", ""));
+    rows{i,18} = string(localLastValue(row, "CQIValueSource", ""));
+    rows{i,19} = string(localLastValue(row, "CQIValueStatus", ""));
+    rows{i,20} = double(localLastValue(row, "CQIDerivedMCS"));
+    rows{i,21} = string(localLastValue(row, "CQIDerivedModulation"));
+    rows{i,22} = double(localLastValue(row, "CQIDerivedTargetCodeRate"));
+    rows{i,23} = double(localLastValue(row, "MCSIndex", localLastValue(row, "CQIDerivedMCS")));
+    rows{i,24} = string(localLastValue(row, "Modulation", localLastValue(row, "CQIDerivedModulation")));
+    rows{i,25} = double(localLastValue(row, "TargetCodeRate", localLastValue(row, "CQIDerivedTargetCodeRate")));
+    rows{i,26} = double(localLastValue(row, "PMI"));
+    rows{i,27} = double(localLastValue(row, "CRI"));
+    rows{i,28} = double(localLastValue(row, "RankIndicator", localLastValue(row, "RI")));
+    rows{i,29} = string(localLastValue(row, "SINRValueRole", "measured_trial_vs_large_scale_separated"));
+    rows{i,30} = string(localLastValue(row, "SINRSource", "actual_runtime_trial_row"));
+    rows{i,31} = string(localLastValue(row, "Status", ""));
+    rows{i,32} = string(localLastValue(row, "Notes", ""));
 end
 T = cell2table(rows, 'VariableNames', vars);
 numericVars = ["Slot","Frame","UEIndex","RNTI","ServingCell","ConfiguredSNR_dB","AppliedAWGNSNR_dB", ...
@@ -1090,7 +1095,13 @@ for i = 1:numel(names)
 end
 end
 
-function T = localEnsureLinkAdaptationSourceVars(T)
+function T = localEnsureLinkAdaptationSourceVars(T, cfg, direction)
+if nargin < 2
+    cfg = struct();
+end
+if nargin < 3 || strlength(string(direction)) == 0
+    direction = "DL";
+end
 if ~ismember("MeasuredWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("MeasuredTrialSINR_dB", string(T.Properties.VariableNames))
     T.MeasuredWidebandSINR_dB = double(T.MeasuredTrialSINR_dB);
 end
@@ -1106,6 +1117,8 @@ end
 if ~ismember("ServingCell", string(T.Properties.VariableNames)) && ismember("BaseStationID", string(T.Properties.VariableNames))
     T.ServingCell = double(T.BaseStationID);
 end
+T = localBackfillWidebandCQIFromMeasuredEvidence(T, cfg, direction);
+T = localBackfillCQIDerivedAMC(T, cfg, direction);
 names = string(T.Properties.VariableNames);
 if ismember("Direction", names)
     ulMask = upper(string(T.Direction)) == "UL";
@@ -1131,9 +1144,122 @@ if ismember("Direction", names)
 end
 end
 
+function T = localBackfillWidebandCQIFromMeasuredEvidence(T, cfg, direction)
+n = height(T);
+vars = string(T.Properties.VariableNames);
+if ~ismember("WidebandCQI", vars)
+    T.WidebandCQI = nan(n, 1);
+    vars = string(T.Properties.VariableNames);
+end
+if ~ismember("CQIValueSource", vars)
+    T.CQIValueSource = repmat("", n, 1);
+    vars = string(T.Properties.VariableNames);
+end
+if ~ismember("CQIValueStatus", vars)
+    T.CQIValueStatus = repmat("", n, 1);
+    vars = string(T.Properties.VariableNames);
+end
+
+widebandCQI = localOptionalNumericColumn(T, "WidebandCQI", NaN);
+cqiSource = string(T.CQIValueSource);
+cqiStatus = string(T.CQIValueStatus);
+if ismember("CQI", vars)
+    rawCQI = localOptionalNumericColumn(T, "CQI", NaN);
+    fillMask = ~isfinite(widebandCQI) & isfinite(rawCQI);
+    if any(fillMask)
+        widebandCQI(fillMask) = double(sixgr.util.normalizeReportedCQI(rawCQI(fillMask)));
+        cqiSource(fillMask) = "raw_trial_cqi";
+        cqiStatus(fillMask) = "reported_by_receiver_path";
+    end
+end
+
+[sinrEvidence, sinrSource] = localMeasuredCQISINREvidence(T);
+fillIdx = find(~isfinite(widebandCQI) & isfinite(sinrEvidence));
+for k = 1:numel(fillIdx)
+    idx = fillIdx(k);
+    feedback = sixgr.link.resolveWidebandCQI( ...
+        struct("WidebandSINR_dB", double(sinrEvidence(idx))), cfg, direction);
+    widebandCQI(idx) = double(sixgr.util.normalizeReportedCQI( ...
+        sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
+    cqiSource(idx) = "derived_from_" + sinrSource(idx);
+    cqiStatus(idx) = "legacy_row_backfill_from_measured_receiver_evidence";
+end
+
+T.WidebandCQI = widebandCQI;
+T.CQIValueSource = cqiSource;
+T.CQIValueStatus = cqiStatus;
+end
+
+function [sinrEvidence, sinrSource] = localMeasuredCQISINREvidence(T)
+n = height(T);
+sinrEvidence = nan(n, 1);
+sinrSource = repmat("", n, 1);
+evidenceFields = [ ...
+    "MeasuredWidebandSINR_dB", ...
+    "MeasuredTrialSINR_dB", ...
+    "SINR_dB", ...
+    "ReceiverHestSINR_dB", ...
+    "EstimatedWidebandSINR_dB"];
+for i = 1:numel(evidenceFields)
+    fieldName = evidenceFields(i);
+    if ~ismember(fieldName, string(T.Properties.VariableNames))
+        continue;
+    end
+    candidate = localOptionalNumericColumn(T, fieldName, NaN);
+    mask = ~isfinite(sinrEvidence) & isfinite(candidate);
+    if any(mask)
+        sinrEvidence(mask) = candidate(mask);
+        sinrSource(mask) = fieldName;
+    end
+end
+end
+
+function T = localBackfillCQIDerivedAMC(T, cfg, direction)
+n = height(T);
+vars = string(T.Properties.VariableNames);
+if ~ismember("CQIDerivedMCS", vars)
+    T.CQIDerivedMCS = nan(n, 1);
+    vars = string(T.Properties.VariableNames);
+end
+if ~ismember("CQIDerivedModulation", vars)
+    T.CQIDerivedModulation = repmat("", n, 1);
+    vars = string(T.Properties.VariableNames);
+end
+if ~ismember("CQIDerivedTargetCodeRate", vars)
+    T.CQIDerivedTargetCodeRate = nan(n, 1);
+end
+cqi = localOptionalNumericColumn(T, "WidebandCQI", NaN);
+mcs = localOptionalNumericColumn(T, "CQIDerivedMCS", NaN);
+modulation = string(T.CQIDerivedModulation);
+targetCodeRate = localOptionalNumericColumn(T, "CQIDerivedTargetCodeRate", NaN);
+idxList = find(isfinite(cqi) & ( ...
+    ~isfinite(mcs) | strlength(strtrim(modulation)) == 0 | ~isfinite(targetCodeRate)));
+for k = 1:numel(idxList)
+    idx = idxList(k);
+    [modStr, tcr, mcsIdx] = sixgr.link.amcFromCQI(cqi(idx), "", NaN, cfg, direction);
+    if ~isfinite(mcs(idx)) && isfinite(mcsIdx)
+        mcs(idx) = double(mcsIdx);
+    end
+    if strlength(strtrim(modulation(idx))) == 0
+        modulation(idx) = string(modStr);
+    end
+    if ~isfinite(targetCodeRate(idx)) && isfinite(tcr)
+        targetCodeRate(idx) = double(tcr);
+    end
+end
+T.CQIDerivedMCS = mcs;
+T.CQIDerivedModulation = modulation;
+T.CQIDerivedTargetCodeRate = targetCodeRate;
+end
+
 function col = localOptionalNumericColumn(T, name, defaultValue)
 if ismember(string(name), string(T.Properties.VariableNames))
-    col = double(T.(char(name)));
+    raw = T.(char(name));
+    if isnumeric(raw) || islogical(raw)
+        col = double(raw);
+    else
+        col = str2double(string(raw));
+    end
 else
     col = repmat(double(defaultValue), height(T), 1);
 end
@@ -1213,26 +1339,22 @@ end
 
 function axis = localMeasuredQualityAxis(T)
 n = height(T);
-axisName = "SNR_dB";
-valueRole = "configured_or_sweep_reference";
-source = "SNR_dB";
-values = double(T.SNR_dB);
+axisName = "unavailable_measured_quality";
+valueRole = "measured_receiver_quality_unavailable";
+source = "";
+values = nan(n, 1);
 preferred = [ ...
     "MeasuredTrialSINR_dB", ...
     "MeasuredWidebandSINR_dB", ...
-    "DecoderTruthProxySINR_dB", ...
-    "LargeScaleSINR_dB", ...
-    "AppliedAWGNSNR_dB", ...
-    "ConfiguredSNR_dB", ...
-    "SNR_dB"];
+    "SINR_dB", ...
+    "ReceiverHestSINR_dB", ...
+    "EstimatedWidebandSINR_dB"];
 roles = [ ...
     "measured_data_domain_trial_sinr", ...
     "measured_wideband_sinr", ...
-    "post_equalization_evm_proxy_sinr", ...
-    "large_scale_runtime_sinr", ...
-    "applied_awgn_equivalent_snr", ...
-    "configured_runtime_operating_point_reference", ...
-    "configured_or_sweep_reference"];
+    "measured_receiver_sounding_sinr", ...
+    "receiver_channel_estimate_sinr", ...
+    "estimated_receiver_wideband_sinr"];
 vars = string(T.Properties.VariableNames);
 for i = 1:numel(preferred)
     name = preferred(i);
@@ -1681,6 +1803,21 @@ if isempty(vals)
     return;
 end
 value = mean(vals, "omitnan");
+end
+
+function value = localMeanFirstExisting(T, names, mask)
+if nargin < 3
+    mask = [];
+end
+value = NaN;
+names = string(names);
+for i = 1:numel(names)
+    candidate = localMean(T, names(i), mask);
+    if isfinite(candidate)
+        value = candidate;
+        return;
+    end
+end
 end
 
 function values = localColumnVector(T, name)

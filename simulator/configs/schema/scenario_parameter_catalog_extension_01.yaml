@@ -142,6 +142,7 @@
     }},
     "output_control": {"required": true, "parameters": {
       "output_dir": {"required": true, "type": "string", "nonempty": true},
+      "output_persistence_mode": {"required": false, "type": "string", "allowed_values": ["both", "database", "results_folder"]},
       "artifact_formats": {"required": true, "type": "string_list", "min_items": 1},
       "save_resolved_config": {"required": true, "type": "boolean"},
       "save_raw_waveforms": {"required": true, "type": "boolean"},
