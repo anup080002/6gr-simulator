@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -34,6 +35,16 @@ def main() -> None:
     assert "_download_metadata" not in normalized
     assert '"total_slots": 100' in normalized
     assert '"n_slots": 100' in normalized
+    original_mysql_available = dash.dashboard_mysql_available
+    try:
+        dash.dashboard_mysql_available = lambda: (True, "connected")
+        catalog_runtime = json.loads(dash.normalize_run_yaml("", dash.DEFAULT_SCENARIO))
+    finally:
+        dash.dashboard_mysql_available = original_mysql_available
+    assert catalog_runtime["inherits"] == [f"./{dash.DEFAULT_SCENARIO}"]
+    assert catalog_runtime["output"]["backend"] == "mysql_web"
+    assert catalog_runtime["output"]["persistence_mode"] == "both"
+    assert catalog_runtime["output"]["persist_to_database"] is True
 
     honest_payload, _ = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     honest_contract = dash.scenario_launch_contract(honest_payload, dash.DEFAULT_SCENARIO)

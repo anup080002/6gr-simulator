@@ -3411,9 +3411,12 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
                     return value
         return value
 
-    payload = yaml.safe_load(raw_text) or {}
-    if not isinstance(payload, dict):
-        raise ValueError("Scenario YAML must decode to a mapping at the top level.")
+    if not str(raw_text or "").strip() and scenario_name:
+        payload, _ = load_resolved_config_payload(str(scenario_name))
+    else:
+        payload = yaml.safe_load(raw_text) or {}
+        if not isinstance(payload, dict):
+            raise ValueError("Scenario YAML must decode to a mapping at the top level.")
     payload = _coerce_scalar_strings(payload)
     payload = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
     requested_output_cfg = copy.deepcopy(payload.get("output") if isinstance(payload.get("output"), dict) else {})
@@ -17470,11 +17473,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if requested_mode not in BROWSER_EXECUTION_MODE_OPTIONS:
                     requested_mode = "LLS"
                 yaml_text = fields.get("yaml_text", [""])[0]
-                raw_payload = yaml.safe_load(yaml_text) if yaml_text else {}
-                if raw_payload is None:
-                    raw_payload = {}
-                if not isinstance(raw_payload, dict):
-                    raise ValueError("Scenario YAML must decode to a mapping at the top level.")
+                if yaml_text:
+                    raw_payload = yaml.safe_load(yaml_text)
+                    if raw_payload is None:
+                        raw_payload = {}
+                    if not isinstance(raw_payload, dict):
+                        raise ValueError("Scenario YAML must decode to a mapping at the top level.")
+                else:
+                    raw_payload, _ = load_resolved_config_payload(str(scenario_name))
+                    yaml_text = yaml.safe_dump(raw_payload, sort_keys=False, allow_unicode=False)
                 requested_payload = canonicalize_browser_config_payload(raw_payload)
             if requested_mode != FULLY_WIRED_BROWSER_EXECUTION_MODE:
                 raise ValueError(
