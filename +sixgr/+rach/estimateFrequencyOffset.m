@@ -1,16 +1,18 @@
 function freq = estimateFrequencyOffset(rxWaveform, refWaveform, sampleRateHz)
-%ESTIMATEFREQUENCYOFFSET Estimate residual CFO from aligned PRACH samples.
-%
-% This auxiliary estimator uses the phase increment of the reference-removed
-% received sequence. It is a lab-default metric, not a 3GPP-mandated
-% algorithm.
+%ESTIMATEFREQUENCYOFFSET Robust residual CFO estimate from aligned PRACH samples.
 
 rx = localVectorize(rxWaveform);
 ref = localVectorize(refWaveform);
 L = min(numel(rx), numel(ref));
 
-freq = struct("Valid", false, "EstimateHz", NaN, "Estimator", "phase_increment_lab_default");
-if L < 4
+freq = struct( ...
+    "Valid", false, ...
+    "EstimateHz", NaN, ...
+    "Estimator", "mlr_multilag_ls", ...
+    "AmbiguityRange_Hz", NaN);
+
+sampleRateHz = double(sampleRateHz);
+if L < 8 || ~(isfinite(sampleRateHz) && sampleRateHz > 0)
     return;
 end
 
@@ -19,14 +21,38 @@ ref = ref(1:L);
 post = rx .* conj(ref);
 valid = isfinite(real(post)) & isfinite(imag(post));
 post = post(valid);
-if numel(post) < 4
+N = numel(post);
+if N < 8
     return;
 end
 
-delta = post(2:end) .* conj(post(1:end-1));
-phaseStep = angle(sum(delta));
-freq.Valid = true;
-freq.EstimateHz = double(phaseStep) * double(sampleRateHz) / (2*pi);
+maxLag = max(1, min(floor(N/4), 16));
+lags = (1:maxLag).';
+phases = nan(maxLag, 1);
+weights = nan(maxLag, 1);
+for iLag = 1:maxLag
+    m = lags(iLag);
+    Rm = mean(post(m+1:end) .* conj(post(1:end-m)));
+    phases(iLag) = angle(Rm);
+    weights(iLag) = max(abs(Rm), eps);
+end
+
+finite = isfinite(phases) & isfinite(weights) & weights > 0;
+if ~any(finite)
+    return;
+end
+lags = lags(finite);
+phases = unwrap(phases(finite));
+weights = weights(finite);
+den = sum(weights .* (double(lags).^2));
+if ~(isfinite(den) && den > 0)
+    return;
+end
+
+phaseStep = sum(weights .* double(lags) .* phases) ./ den;
+freq.Valid = isfinite(phaseStep);
+freq.EstimateHz = double(phaseStep) * sampleRateHz / (2*pi);
+freq.AmbiguityRange_Hz = sampleRateHz / (2 * maxLag);
 end
 
 function vec = localVectorize(x)

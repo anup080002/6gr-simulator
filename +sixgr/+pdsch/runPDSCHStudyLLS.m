@@ -223,7 +223,8 @@ for h = 1:attempts
     for c = 1:numel(txBundle.Copies)
         copy = txBundle.Copies{c};
         [rxWave, noiseVar] = localApplyChannelAndNoise(copy.Tx.Waveform, cfg, copy.TxInfo, seed + 100 * h + c);
-        rxOut = sixgr.pdsch.PDSCHReceiver(rxWave, cfg, copy, "NoiseVar", noiseVar);
+        rxOut = sixgr.pdsch.PDSCHReceiver(rxWave, cfg, copy, ...
+            "NoiseVar", noiseVar, "NoiseVarDomain", "time");
         copyLLRs{c} = double(rxOut.Rx.CodewordLLR(:));
         postEqEVM(c) = double(rxOut.PostEqEVM);
         sinrEst(c) = double(sixgr.util.structGet(rxOut.Rx, "ReceiverHestSINR_dB", NaN));

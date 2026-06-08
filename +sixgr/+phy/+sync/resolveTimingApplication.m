@@ -42,11 +42,10 @@ applied = 0;
 wasClipped = false;
 
 if estimateUsed
-    rounded = round(raw);
     switch mode
         case "positive_crop_only"
-            applied = max(0, rounded);
-            wasClipped = (applied ~= rounded);
+            applied = max(0, double(raw));
+            wasClipped = (applied ~= double(raw));
             policy = "positive_crop_only_negative_offsets_preserved_but_not_applied";
             if wasClipped
                 status = "available_raw_negative_not_applied";
@@ -54,8 +53,8 @@ if estimateUsed
                 status = "available_applied_positive_crop_only";
             end
         otherwise
-            applied = rounded;
-            policy = "signed_waveform_shift_negative_padding_positive_crop_supported";
+            applied = double(raw);
+            policy = "signed_waveform_shift_fractional_phase_ramp_supported";
             status = "available_applied_signed_correction";
     end
 elseif logical(opt.SkipRequested)

@@ -268,7 +268,7 @@ noiseOnlyWave = localNoiseOnlyWaveformLike(y, nVar);
 end
 
 function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
@@ -276,6 +276,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);

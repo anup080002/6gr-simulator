@@ -621,7 +621,7 @@ if ~ismember("ConfiguredSNR_dB", string(coverageT.Properties.VariableNames))
     end
 end
 if ~ismember("ConfiguredSNRSource", string(coverageT.Properties.VariableNames))
-    coverageT.ConfiguredSNRSource = repmat("configured_runtime_operating_point_reference", height(coverageT), 1);
+    coverageT.ConfiguredSNRSource = repmat("configured_operating_point_metadata", height(coverageT), 1);
 end
 if ~ismember("ServingRSRP_dBm", string(coverageT.Properties.VariableNames))
     if ismember("RSRP_dBm", string(coverageT.Properties.VariableNames))

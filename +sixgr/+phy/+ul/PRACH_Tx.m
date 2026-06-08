@@ -49,7 +49,7 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
 
     if isempty(opts.PRACH)
         prach = nrPRACHConfig;
-        prach = localApplyPRACHFromCfg(prach, cfg, carrier);
+        prach = sixgr.phy.ul.applyPRACHCfgToObject(prach, cfg, carrier);
     else
         prach = opts.PRACH;
     end
@@ -207,82 +207,4 @@ for offset = 0:scanSlots
     catch
     end
 end
-end
-
-% -------------------------------------------------------------------------
-function prach = localApplyPRACHFromCfg(prach, cfg, carrier)
-% Apply cfg.phy.prach fields into an nrPRACHConfig object (best-effort).
-%
-% We keep this "forgiving": unknown/missing fields just fall back to default
-% object values. This lets you evolve cfg without breaking callers.
-
-    % Duplex mode mapping (cfg.phy.duplex.mode -> prach.DuplexMode)
-    duplex = sixgr.util.structGet(cfg, "phy.duplex.mode", "TDD");
-    try
-        if strcmpi(duplex, "FDD")
-            prach.DuplexMode = "FDD";
-        else
-            prach.DuplexMode = "TDD";
-        end
-    catch
-    end
-
-    % Frequency range heuristic (FR2 if fc >= 24.25 GHz)
-    fc = sixgr.util.structGet(cfg, "channel.fc_Hz", 3.5e9);
-    try
-        if fc >= 24.25e9
-            prach.FrequencyRange = "FR2";
-        else
-            prach.FrequencyRange = "FR1";
-        end
-    catch
-    end
-
-    % Configuration index (drives PRACH format and occasions)
-    cfgIdx = sixgr.util.structGet(cfg, "phy.prach.configurationIndex", []);
-    if ~isempty(cfgIdx)
-        try
-            prach.ConfigurationIndex = cfgIdx;
-        catch
-        end
-    end
-
-    % PRACH subcarrier spacing in kHz (can be 1.25/5/15/30/60/120 depending on FR)
-    scs = sixgr.util.structGet(cfg, "phy.prach.subcarrierSpacing_kHz", []);
-    if ~isempty(scs)
-        try
-            prach.SubcarrierSpacing = scs;
-        catch
-        end
-    end
-
-    % Root sequence index (SequenceIndex in nrPRACHConfig)
-    seqIdx = sixgr.util.structGet(cfg, "phy.prach.rootSeqIndex", []);
-    if ~isempty(seqIdx)
-        try
-            prach.SequenceIndex = seqIdx;
-        catch
-        end
-    end
-
-    % Zero-correlation zone configuration index
-    zcz = sixgr.util.structGet(cfg, "phy.prach.zeroCorrelationZone", []);
-    if ~isempty(zcz)
-        try
-            prach.ZeroCorrelationZone = zcz;
-        catch
-        end
-    end
-
-    % Optionally align carrier numerology used by PRACH OFDM functions
-    % (They only use NSizeGrid/SubcarrierSpacing/CyclicPrefix)
-    try
-        prachSlots = sixgr.util.structGet(cfg, "phy.prach.nPrachSlot", []);
-        if ~isempty(prachSlots)
-            prach.NPRACHSlot = prachSlots;
-        else
-            prach.NPRACHSlot = carrier.NSlot;
-        end
-    catch
-    end
 end

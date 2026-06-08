@@ -189,6 +189,8 @@ prachCfg.PreambleCount = 64;
 prachCfg.FirstActiveOccasion = firstOccasion;
 prachCfg.SampleRate_Hz = double(sampleRateHz);
 prachCfg.TimingTolerance_us = localResolveTimingTolerance(prachCfg);
+prachCfg.ZCDPE = sixgr.rach.ZCDPEConfig(baseCfg, "NumSymbols", localResolveZCDPENumSymbols(prachCfg, baseCfg));
+prachCfg.ZCDPEEnabled = localResolveZCDPEEnabled(baseCfg);
 prachCfg.ConfigExport = localMakeSerializable(prachCfg);
 localPublishConfigEvidence(prachCfg, cfg);
 end
@@ -291,6 +293,20 @@ if ~any(strcmpi(cfg.ChannelModel, allowedChannels))
     error("sixgr:rach:PRACHConfig:UnsupportedChannelModel", ...
         "ChannelModel must be one of %s.", strjoin(cellstr(allowedChannels), ", "));
 end
+zcz = double(cfg.ZeroCorrelationZone);
+if ~isfinite(zcz) || zcz < 0 || zcz > 15 || zcz ~= round(zcz)
+    error("sixgr:rach:PRACHConfig:InvalidZCZ", ...
+        "ZeroCorrelationZone must be an integer in [0..15] per TS 38.211 Table 6.3.3.2-2/3. Got: %g", zcz);
+end
+if zcz == 0
+    warning("sixgr:rach:PRACHConfig:ZCZZero", ...
+        "ZeroCorrelationZone=0 gives N_CS=0 with no cyclic-shift guard interval; use ZCZ >= 1 for non-zero cell-radius studies.");
+end
+if strcmpi(cfg.RestrictedSet, "UnrestrictedSet") && isfield(cfg, "Speed_kmh") && double(cfg.Speed_kmh) > 120
+    warning("sixgr:rach:PRACHConfig:RestrictedSetRecommended", ...
+        "Speed_kmh=%g exceeds 120 km/h while RestrictedSet='UnrestrictedSet'; consider a restricted set for high-Doppler PRACH studies.", ...
+        double(cfg.Speed_kmh));
+end
 if ~(strcmpi(cfg.DetectionThresholdMode, "fixed") || strcmpi(cfg.DetectionThresholdMode, "auto"))
     error("sixgr:rach:PRACHConfig:BadThresholdMode", ...
         "DetectionThresholdMode must be 'fixed' or 'auto'.");
@@ -370,16 +386,35 @@ sampleRateHz = NaN;
 for occIdx = 1:max(cfg.NumPRACHOccasions, cfg.NumSlots)
     try
         occasion = sixgr.rach.mapPRACHToOccasion(cfg, "OccasionIndex", occIdx, "Carrier", carrier, "PRACH", prach);
-        tx = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
-            "PreambleIndex", localFirstPreamble(cfg.PreambleIndex));
-        sampleRateHz = double(tx.SampleRate_Hz);
+        sampleRateHz = localEstimatePRACHSampleRate(cfg, prach);
         return;
-    catch
+    catch ME
+        if ~strcmp(string(ME.identifier), "sixgr:rach:mapPRACHToOccasion:NoSuchOccasion")
+            rethrow(ME);
+        end
     end
 end
 error("sixgr:rach:PRACHConfig:NoOccasion", ...
     "The resolved PRACH configuration does not materialize %g valid PRACH occasions within %g slots.", ...
     double(cfg.NumPRACHOccasions), double(cfg.NumSlots));
+end
+
+function sampleRateHz = localEstimatePRACHSampleRate(cfg, prach)
+lra = NaN;
+try
+    lra = double(prach.LRA);
+catch
+end
+if ~(isfinite(lra) && lra >= 1)
+    lra = 839;
+end
+nGridRE = max(12, round(double(cfg.NSizeGrid)) * 12);
+nfft = 2 ^ nextpow2(max([lra, nGridRE, 128]));
+scsHz = double(prach.SubcarrierSpacing) * 1e3;
+if ~(isfinite(scsHz) && scsHz > 0)
+    scsHz = double(cfg.PRACHSubcarrierSpacing) * 1e3;
+end
+sampleRateHz = double(nfft * scsHz);
 end
 
 function value = localFirstPreamble(preambleSpec)
@@ -399,6 +434,56 @@ if isfinite(cfg.TimingTolerance_us)
 end
 samplePeriodUs = 1e6 / max(cfg.SampleRate_Hz, eps);
 timingTolUs = max(2 * samplePeriodUs, 0.25);
+end
+
+function numSymbols = localResolveZCDPENumSymbols(cfg, baseCfg)
+[actualSymbols, actualKnown] = localActualZCDPENumSymbols(cfg);
+configured = [];
+try
+    baseStruct = localStructFromInput(baseCfg);
+    configured = localResolveField(baseStruct, ...
+        {"ZCDPE.NumSymbols", "zcdpe.num_symbols", "random_access.zcdpe_num_symbols"}, []);
+catch
+end
+if ~isempty(configured)
+    numSymbols = round(double(configured(1)));
+    if actualKnown && numSymbols > actualSymbols
+        error("sixgr:rach:PRACHConfig:ZCDPENumSymbolsUnavailable", ...
+            "ZC-DPE NumSymbols=%g exceeds the %g repeated PRACH symbol group(s) available for the resolved PRACH format/configuration.", ...
+            numSymbols, actualSymbols);
+    end
+    return;
+end
+numSymbols = actualSymbols;
+end
+
+function [numSymbols, known] = localActualZCDPENumSymbols(cfg)
+numSymbols = 1;
+known = false;
+try
+    lra = double(cfg.ToolboxPRACH.LRA);
+    symbols = nrPRACH(cfg.FirstActiveOccasion.Carrier, cfg.FirstActiveOccasion.PRACH);
+    if isfinite(lra) && lra > 0 && ~isempty(symbols)
+        numSymbols = max(1, round(numel(symbols) / lra));
+        known = true;
+    end
+catch
+    try
+        val = double(cfg.ToolboxPRACH.NumOccupiedSymbols);
+        if isfinite(val) && val > 0
+            numSymbols = round(val);
+            known = true;
+        end
+    catch
+    end
+end
+end
+
+function tf = localResolveZCDPEEnabled(baseCfg)
+design = lower(string(sixgr.util.structGet(baseCfg, "random_access.prach_design", "")));
+tf = logical(sixgr.util.structGet(baseCfg, "ZCDPE.Enable", ...
+    sixgr.util.structGet(baseCfg, "zcdpe.enable", ...
+    sixgr.util.structGet(baseCfg, "random_access.zcdpe_enabled", design == "zcdpe"))));
 end
 
 function serializable = localMakeSerializable(cfg)

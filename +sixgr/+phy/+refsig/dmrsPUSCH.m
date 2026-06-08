@@ -41,4 +41,9 @@ function [dmrsInd, dmrsSym, info] = dmrsPUSCH(carrier, puschCfg, varargin)
     info.Channel = 'PUSCH';
     info.IndexBase = opts.IndexBase;
     info.DMRSIndicesInfo = dmrsIndInfo;
+    try
+        info.CDMLengths = reshape(double(dmrsIndInfo.CDMLengths), 1, []);
+    catch
+        info.CDMLengths = [];
+    end
 end

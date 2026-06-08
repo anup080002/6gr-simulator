@@ -2323,12 +2323,12 @@ def classify_browser_field_support(path: str) -> tuple[str, str]:
     if normalized in {"simulation.noise_operating_mode", "simulation.operating_point_mode"}:
         return (
             "active",
-            "Actively used in the browser run. The truthful LLS browser scenario now defaults to receiver-noise-figure thermal noise; configured snr_db remains available only as an explicit alternate operating mode.",
+            "Actively used in the browser run. The truthful LLS browser scenario uses receiver-noise-figure thermal noise; configured snr_db is retained only as a resolved scenario operating-point label, not as measured SINR.",
         )
     if normalized in {"simulation.snr_db", "simulation.snr_sweep_offsets_db"}:
         return (
             "secondary",
-            "Retained in the payload for optional anchor-SNR and sweep-style LLS studies, but the main honest browser LLS scenario can now run with receiver-noise-derived noise instead.",
+            "Retained in the payload for legacy study compatibility and chart grouping. In strict browser LLS receiver-noise mode, SNR sweep offsets are ignored and receiver evidence drives SINR/CQI.",
         )
     if normalized == "scenario.bundle_anchor_cases":
         return (
@@ -3540,6 +3540,25 @@ def launch_run_from_yaml(scenario_name: str, yaml_text: str, run_tag: str) -> tu
     return token, log_file, runtime_path
 
 
+def launch_prach_design_comparison(run_tag_prefix: str | None = None) -> dict[str, Any]:
+    baseline = "prach_detection.yaml"
+    candidate = "prach_detection_zcdpe.yaml"
+    prefix = safe_token(run_tag_prefix or timestamp_tag("prach_compare"))
+    launched: list[dict[str, str]] = []
+    for label, scenario_name in (("baseline", baseline), ("zcdpe", candidate)):
+        yaml_text = load_scenario_text(scenario_name)
+        tag = safe_token(f"{prefix}_{label}")
+        launch_tag, log_file, runtime_path = launch_run_from_yaml(scenario_name, yaml_text, tag)
+        launched.append({
+            "label": label,
+            "scenario": scenario_name,
+            "run_tag": launch_tag,
+            "log_file": str(log_file),
+            "runtime_yaml": str(runtime_path.name),
+        })
+    return {"baseline": launched[0], "candidate": launched[1], "launched": launched}
+
+
 def runtime_log_file(run_tag: str | None) -> Path | None:
     token = safe_token(str(run_tag or ""))
     if not token:
@@ -4047,7 +4066,7 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
     "mobility.trajectory_model": ["randomWaypoint", "straightLine", "zigzag", "trace", "linear"],
     "channels.doppler_source_mode": ["configured", "derive_from_ue_speed"],
     "channel_model.doppler_source_mode": ["configured", "derive_from_ue_speed"],
-    "simulation.noise_operating_mode": ["receiver_noise_figure_thermal_noise", "configured_snr_anchor_after_large_scale_gain"],
+    "simulation.noise_operating_mode": ["receiver_noise_figure_thermal_noise"],
     "interference.inter_cell_execution_mode": ["full_per_link_channel_waveform_sum", "none"],
     "simulation.link_direction": ["DL", "UL", "BIDIR"],
     "traffic.flowdirection": ["DL", "UL", "BIDIR"],
@@ -4066,6 +4085,10 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
     "random_access.duplex_mode": ["FDD", "TDD"],
     "random_access.carrier_scs_khz": ["15", "30", "60", "120"],
     "random_access.prach_format": ["0", "1", "2", "3", "A1", "A2", "A3", "B1", "B4", "C0", "C2"],
+    "random_access.prach_design": ["nr_baseline", "zcdpe"],
+    "random_access.prach_sequence_family": ["zadoff_chu_baseline", "zcdpe_candidate", "multisequence_candidate", "occ_candidate", "optimized_candidate"],
+    "random_access.zcdpe_dpi_D": ["1", "2", "3", "4", "5", "6", "8", "12"],
+    "random_access.zcdpe_num_symbols": ["1", "2", "4", "6", "12"],
     "random_access.subcarrier_spacing_khz": ["1.25", "5", "15", "30", "60", "120"],
     "random_access.restricted_set": ["UnrestrictedSet", "RestrictedSet"],
     "random_access.restricted_set_type": ["UnrestrictedSet", "RestrictedSet"],
@@ -4109,6 +4132,13 @@ FIELD_LABEL_OVERRIDES: dict[str, str] = {
     "channels.doppler_source_mode": "Doppler Source Mode",
     "channel_model.doppler_source_mode": "Doppler Source Mode",
     "random_access.configuration_index": "PRACH Config Index",
+    "random_access.prach_design": "PRACH Design",
+    "random_access.zcdpe_enabled": "Enable ZC-DPE",
+    "random_access.zcdpe_dpi_D": "ZC-DPE DPI Hypotheses D",
+    "random_access.zcdpe_dpi_d": "ZC-DPE DPI Index d",
+    "random_access.zcdpe_num_symbols": "ZC-DPE Repeated Symbols M",
+    "random_access.zcdpe_freq_search_points": "ZC-DPE Joint CFO Grid Points",
+    "random_access.zcdpe_residual_freq_bound_hz": "ZC-DPE Joint CFO Bound (Hz)",
     "random_access.subcarrier_spacing_khz": "PRACH Subcarrier Spacing (kHz)",
     "random_access.sequence_index": "PRACH Sequence Index",
     "random_access.sequence_length": "PRACH Sequence Length",
@@ -5353,6 +5383,26 @@ CANONICAL_RUNTIME_ARTIFACT_OWNERS: dict[str, dict[str, Any]] = {
         "legacy_paths": ["control/csv/prach_trials.csv"],
         "owner_kind": "raw_control_trials",
     },
+    "zcdpe_dpi_confusion_matrix": {
+        "canonical_path": "reports/csv/zcdpe_dpi_confusion_matrix.csv",
+        "legacy_paths": ["dpi_confusion_matrix.csv"],
+        "owner_kind": "prach_zcdpe_metrics",
+    },
+    "zcdpe_dpi_error_probability": {
+        "canonical_path": "reports/csv/zcdpe_dpi_error_probability_by_snr.csv",
+        "legacy_paths": ["dpi_error_probability_by_snr.csv"],
+        "owner_kind": "prach_zcdpe_metrics",
+    },
+    "zcdpe_doppler_rmse": {
+        "canonical_path": "reports/csv/zcdpe_doppler_rmse_by_snr.csv",
+        "legacy_paths": ["doppler_rmse_by_snr.csv"],
+        "owner_kind": "prach_zcdpe_metrics",
+    },
+    "zcdpe_pool_analysis": {
+        "canonical_path": "reports/csv/zcdpe_pool_analysis.csv",
+        "legacy_paths": ["pool_analysis.csv"],
+        "owner_kind": "prach_zcdpe_metrics",
+    },
     "pucch_trials": {
         "canonical_path": "air_interface/csv/pucch_trials.csv",
         "legacy_paths": ["control/csv/pucch_trials.csv"],
@@ -6577,6 +6627,11 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("UEID", "UE"),
         ("RNTI", "RNTI"),
         ("DetectionMetric", "Metric"),
+        ("PRACHDesign", "Design"),
+        ("DPI_d_true", "d true"),
+        ("DPI_d_detected", "d detected"),
+        ("DPICorrect", "DPI ok"),
+        ("DPIConfusionScore", "DPI confusion"),
         ("FalseAlarmFlag", "False alarm"),
         ("BlockingFlag", "Blocked"),
         ("BitErrors", "Bit errors"),
@@ -8344,8 +8399,8 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
             f"Configured grant batch size: {int(truth_modes.get('configured_batch_size_links') or 0)} link(s) per coordinator chunk."
         )
     notes.append(
-        "ConfiguredSNR_dB is the configured runtime operating-point anchor used for sweep/progress labeling only; it is not a measured SINR. "
-        "The browser keeps MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured anchors and receiver estimates do not masquerade as measured trial SINR."
+        "ConfiguredSNR_dB is retained as resolved scenario operating-point metadata for grouping/progress only; it is not a measured SINR. "
+        "The browser keeps MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured labels and receiver estimates do not masquerade as measured trial SINR."
     )
     notes.append(
         "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate from Hest and reference-signal residual measurement. "
@@ -14381,6 +14436,13 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
             <a class="button-link secondary" href="{latest_analytics}">Open Latest Analytics</a>
           </div>
         </form>
+        <form method="post" action="/run-prach-comparison" class="inline-form" style="margin-top:12px;">
+          <input type="hidden" name="next" value="/runs">
+          <label for="prachCompareTag"><strong>PRACH Compare Tag Prefix</strong></label>
+          <input id="prachCompareTag" name="run_tag_prefix" type="text" value="{html.escape(timestamp_tag('prach_compare'))}">
+          <div class="mini-note">Launches <code>prach_detection.yaml</code> as the NR baseline and <code>prach_detection_zcdpe.yaml</code> as the ZC-DPE candidate. Use <a href="/compare">Compare Runs</a> after both run rows appear.</div>
+          <button type="submit">Run Baseline + ZC-DPE PRACH Comparison</button>
+        </form>
         <form method="post" action="/admin/clear" class="inline-form" onsubmit="return confirm('Clear all stored runs, MySQL rows, runtime YAML files, and repo results folders? Use this only when no run is active.');">
           <input type="hidden" name="next" value="/home">
           <button type="submit" class="danger">Clear Previous Runs</button>
@@ -17376,6 +17438,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 rel_name = target_path.relative_to(SCENARIO_ROOT).as_posix()
                 message = f"Uploaded scenario {rel_name}. It is now available from Run Control and Scenario I/O."
                 self.redirect(f"/scenario-io?message={urllib.parse.quote(message)}")
+                return
+            if parsed.path == "/run-prach-comparison":
+                prefix = str(fields.get("run_tag_prefix", [""])[0] or "").strip()
+                launched = launch_prach_design_comparison(prefix or None)
+                message = (
+                    "Launched PRACH comparison runs: baseline "
+                    f"{launched['baseline']['run_tag']} and ZC-DPE {launched['candidate']['run_tag']}. "
+                    "Open Compare Runs and select the baseline and candidate run IDs once MATLAB records them."
+                )
+                self.redirect(f"/runs?message={urllib.parse.quote(message)}")
                 return
             if parsed.path != "/run":
                 self.respond_error(HTTPStatus.NOT_FOUND, "Unknown route.")

@@ -89,6 +89,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 maxUE = numel(ueIdx);
             end
             maxUE = min(maxUE, numel(ueIdx));
+            for t = 1:numel(ueIdx)
+                obj.prewarmUEAverage(ueStates(ueIdx(t)), maxUE);
+            end
 
             % ------------------ 1) HARQ retransmissions first ------------------
             if ~isempty(obj.HARQ)
@@ -153,12 +156,17 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             nPRBAvail = numel(prbAvail);
             nSym = double(symAlloc(2));
 
-            % Choose an initial chunk size.
-            prbChunk = max(obj.MinPRBPerUE, floor(nPRBAvail / maxUE));
+            % Choose a common reference budget for PF probing. The PF metric
+            % must compare every UE on the same active-UE PRB chunk; MinPRB is
+            % enforced only on the final grant allocation.
+            probeChunk = max(1, floor(nPRBAvail / max(maxUE, 1)));
+            prbChunk = max(obj.MinPRBPerUE, probeChunk);
             if isfinite(obj.MaxPRBPerUE) && obj.MaxPRBPerUE > 0
                 prbChunk = min(prbChunk, floor(obj.MaxPRBPerUE));
+                probeChunk = min(probeChunk, floor(obj.MaxPRBPerUE));
             end
             prbChunk = max(prbChunk, 1);
+            probeChunk = max(probeChunk, 1);
 
             metrics = -inf(1, numel(ueIdx));
             estTBS = zeros(1, numel(ueIdx));
@@ -172,8 +180,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti)
                     continue;
                 end
+                if ~isempty(obj.HARQ) && ~obj.HARQ.hasFreeProcess(rnti)
+                    continue;
+                end
 
-                probePRBSet = 0:(prbChunk-1);
+                probePRBSet = prbAvail(1:min(probeChunk, numel(prbAvail)));
                 probePlanTimer = tic;
                 plan = obj.buildNewDataGrantPlan(ueStates(k), probePRBSet, symAlloc, bufBytes(k), ...
                     "PlanningOnly", true);
@@ -206,6 +217,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     break;
                 end
                 nAlloc = min(prbChunk, numel(prbAvail)-cursor+1);
+                if nAlloc < obj.MinPRBPerUE
+                    break;
+                end
                 candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
                 groupOrd = ord(ii);
                 if muEnabled
@@ -228,6 +242,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti)
                         continue;
                     end
+                    if ~isempty(obj.HARQ) && ~obj.HARQ.hasFreeProcess(rnti)
+                        continue;
+                    end
                     finalPlanTimer = tic;
                     plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufBytes(k));
                     finalPlanElapsed_s(ii) = finalPlanElapsed_s(ii) + toc(finalPlanTimer);
@@ -235,15 +252,18 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         continue;
                     end
                     prbSet = double(plan.PRBSet(:).');
-                    if isempty(prbSetForGroup)
-                        prbSetForGroup = prbSet;
-                    end
                     servedBytes = double(plan.TBSBytes);
 
                     harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
                     if ~isempty(obj.HARQ)
                         txp = obj.HARQ.allocate(rnti, slot, servedBytes, 'NewData', true);
+                        if logical(sixgr.util.structGet(txp, "NoFreeProcess", false))
+                            continue;
+                        end
                         harqInfo = txp.HARQ;
+                    end
+                    if isempty(prbSetForGroup)
+                        prbSetForGroup = prbSet;
                     end
 
                     g = tmpl;

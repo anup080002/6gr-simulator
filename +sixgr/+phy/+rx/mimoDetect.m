@@ -78,7 +78,8 @@ function [layerSym, csi, info] = mimoDetect(rx, hEst, nVar, varargin)
 
     switch algLower
         case "mmse"
-            [layerSym, csi, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxSym, hSym, nVar);
+            nVarSafe = localSafeNoiseVariance(nVar, rxSym);
+            [layerSym, csi, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxSym, hSym, nVarSafe);
             engine = eqInfo.EngineUsed;
 
         case "zf"
@@ -89,18 +90,19 @@ function [layerSym, csi, info] = mimoDetect(rx, hEst, nVar, varargin)
 
                 % ZF: s = (H'*H)\(H'*r)
                 G = (H' * H);
-                if rcond(G) < 1e-12
+                if rcond(double(G)) < 1e-12
                     W = pinv(H);               % robust fallback
                     s = W * r;
                 else
-                    s = G \ (H' * r);
+                    W = localRobustSolve(G, H');
+                    s = W * r;
                 end
                 layerSym(k,:) = s.';
 
                 % Approx CSI for ZF (diagonal of post-eq gain)
-                % Use inverse of diag(G^-1) if well-conditioned
-                if rcond(G) >= 1e-12
-                    Gi = inv(G); %#ok<MINV>
+                % Use inverse of diag(G^-1) if well-conditioned.
+                if rcond(double(G)) >= 1e-12
+                    Gi = localRobustSolve(G, eye(nP));
                     csi(k,:) = 1 ./ max(real(diag(Gi)).', eps);
                 else
                     csi(k,:) = 0;
@@ -110,35 +112,50 @@ function [layerSym, csi, info] = mimoDetect(rx, hEst, nVar, varargin)
         case "irc"
             if isempty(Rint)
                 % Hook point: if Rint not supplied, fall back to MMSE
-                [layerSym, csi, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxSym, hSym, nVar);
+                nVarSafe = localSafeNoiseVariance(nVar, rxSym);
+                [layerSym, csi, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxSym, hSym, nVarSafe);
                 engine = "IRC_fallback_MMSE_" + eqInfo.EngineUsed;
                 alg = "MMSE";
             else
                 engine = "manualIRC";
                 % Support constant or per-RE covariance
                 perRE = (ndims(Rint) == 3);
+                nVarSafe = localSafeNoiseVariance(nVar, rxSym);
+                if ~perRE
+                    if ~isequal(size(Rint,1), nR) || ~isequal(size(Rint,2), nR)
+                        error("sixgr:phy:mimoDetect:BadRint", "Rint must be Nr-by-Nr.");
+                    end
+                    RinvConst = localRobustInverse(Rint, nVarSafe, nR);
+                    RcovConst = double(Rint) + nVarSafe * eye(nR);
+                end
 
                 for k = 1:nRE
                     H = squeeze(hSym(k,:,:));  % nR-by-nP
                     r = rxSym(k,:).';          % nR-by-1
                     if perRE
                         Rk = squeeze(Rint(k,:,:)); % nR-by-nR
+                        if ~isequal(size(Rk,1), nR) || ~isequal(size(Rk,2), nR)
+                            error("sixgr:phy:mimoDetect:BadRint", "Rint must be Nr-by-Nr.");
+                        end
+                        Rinv = localRobustInverse(Rk, nVarSafe, nR);
+                        Rcov = double(Rk) + nVarSafe * eye(nR);
                     else
-                        Rk = Rint;
-                    end
-                    if ~isequal(size(Rk,1), nR) || ~isequal(size(Rk,2), nR)
-                        error("sixgr:phy:mimoDetect:BadRint", "Rint must be Nr-by-Nr.");
+                        Rinv = RinvConst;
+                        Rcov = RcovConst;
                     end
 
-                    % W = (H' * inv(R) * H + nVar*I)^(-1) * H' * inv(R)
-                    Rinv = inv(Rk); %#ok<MINV>
-                    A = (H' * Rinv * H) + (nVar * eye(nP));
+                    % MMSE-IRC weight matrix using regularized covariance.
+                    A = (H' * Rinv * H) + (nVarSafe * eye(nP));
                     B = (H' * Rinv);
-                    s = A \ (B * r);
+                    W = localRobustSolve(A, B);
+                    s = W * r;
                     layerSym(k,:) = s.';
 
-                    % Approx CSI (diagonal of A, higher is better)
-                    csi(k,:) = real(diag(A)).';
+                    for l = 1:nP
+                        num = abs(W(l,:) * H(:,l))^2;
+                        den = real(W(l,:) * Rcov * W(l,:)') + eps;
+                        csi(k,l) = num / den;
+                    end
                 end
             end
 
@@ -154,4 +171,34 @@ function [layerSym, csi, info] = mimoDetect(rx, hEst, nVar, varargin)
     info.HEstSize = size(hSym);
     info.LayerSymSize = size(layerSym);
     info.NVar = nVar;
+end
+
+function nVarSafe = localSafeNoiseVariance(nVar, rxSym)
+nVarSafe = double(nVar);
+if ~(isfinite(nVarSafe) && nVarSafe > 0)
+    p = mean(abs(rxSym(:)).^2 + eps, "omitnan");
+    if ~(isfinite(p) && p > 0)
+        p = 1;
+    end
+    nVarSafe = 1e-12 * p;
+end
+end
+
+function Rinv = localRobustInverse(R, nVar, nR)
+Rreg = double(R) + max(double(nVar), 1e-10) * eye(nR);
+if rcond(Rreg) < 1e-12
+    Rinv = pinv(Rreg);
+else
+    Rinv = Rreg \ eye(nR);
+end
+end
+
+function X = localRobustSolve(A, B)
+A = double(A);
+B = double(B);
+if rcond(A) < 1e-12
+    X = pinv(A) * B;
+else
+    X = A \ B;
+end
 end

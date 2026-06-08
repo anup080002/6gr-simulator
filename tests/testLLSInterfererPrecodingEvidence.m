@@ -14,7 +14,7 @@ cfgVictim.run.numFrames = 1;
 cfgVictim.channel.snr_dB = 10;
 cfgVictim.channel.model = "AWGN";
 cfgVictim.channel.awgnOnly = true;
-cfgVictim.run.noiseOperatingMode = "configured_snr_anchor_after_large_scale_gain";
+cfgVictim.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
 cfgVictim.run.interferenceExecutionMode = "full_per_link_channel_waveform_sum";
 
 cfgInterferer = cfgVictim;

@@ -14,6 +14,7 @@ function [rx, info] = PDSCH_Rx(rxWaveform, cfg, varargin)
 %     "TargetCodeRate": code rate (0..1)
 %     "RV"          : redundancy version (0..3)
 %     "NoiseVar"    : noise variance (if known)
+%     "NoiseVarDomain": "time", "grid", "frequency", or "auto"
 %     "MaxIterations": LDPC iterations (default from cfg)
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %     "PrecodingMatrix": wideband PDSCH precoder used by the transmitter
@@ -45,6 +46,7 @@ ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || (isnumeric(x) && is
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
 ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
+ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'time','grid','frequency','auto'})));
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
@@ -116,18 +118,7 @@ trBlkSize = opt.TransportBlockSize;
 if isempty(trBlkSize)
     xOverhead = double(sixgr.util.structGet(cfg, 'phy.pdsch.xOverhead', 0));
     nPRB = numel(pdsch.PRBSet);
-    nrePerPRB = [];
-    if isfield(pdschInfo, 'NREPerPRB')
-        nrePerPRB = double(pdschInfo.NREPerPRB);
-    elseif isfield(pdschInfo, 'NRE')
-        nrePerPRB = floor(double(pdschInfo.NRE) / max(nPRB,1));
-    elseif isfield(pdschInfo, 'G')
-        qm = localQm(pdsch.Modulation);
-        nrePerPRB = floor(double(pdschInfo.G) / max(qm * pdsch.NumLayers * nPRB, 1));
-    end
-    if isempty(nrePerPRB) || ~isfinite(nrePerPRB) || nrePerPRB <= 0
-        nrePerPRB = 144;
-    end
+    nrePerPRB = localResolvePDSCHNREPerPRBOrError(carrier, pdsch, pdschInfo, nPRB);
     trBlkSize = nrTBS(pdsch.Modulation, pdsch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 end
 trBlkSize = double(trBlkSize);
@@ -144,16 +135,11 @@ catch
 end
 
 % DMRS
-[dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
+[dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
 useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pdsch, prec);
-FastShortcutDisabledInTruth = sixgr.link.resolveTruthMode(cfg) == "full_waveform" && useFastAWGNPath; %#ok<NASGU>
-if FastShortcutDisabledInTruth
-    error("sixgr:phy:rx:FastShortcutDisabledInTruth", ...
-        "PDSCH_Rx forbids FastAWGNPath when TruthMode='full_waveform'.");
-end
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PDSCH_Rx");
 
 pdschAntInd = pdschInd;
@@ -224,7 +210,7 @@ useFastChEstMex = logical(sixgr.util.structGet(cfg, 'phy.rx.useFastChannelEstMex
     && logical(sixgr.util.structGet(cfg, 'run.useMex', false));
 if useFastAWGNPath
     hEst = ones(size(rxGrid), 'like', rxGrid);
-    nVarEst = 0;
+    nVarEst = 10^(-double(sixgr.util.structGet(cfg, 'channel.snr_dB', 20))/10);
     estInfo = struct( ...
         "EngineUsed", "unit-flat-shortcut", ...
         "ChannelModel", string(channelModelToken), ...
@@ -235,6 +221,7 @@ elseif ~isempty(dmrsAntInd)
     % Under explicit precoding, the reference ports already define the
     % effective layer-domain channel seen by the receiver.
     [hEst, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
+        "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
         "UseFastMex", useFastChEstMex, ...
         "StrictMode", strictMode, ...
         "ChannelModel", channelModelToken, ...
@@ -252,12 +239,17 @@ else
         "ScalarFastPathUsed", true);
 end
 
-nVar = opt.NoiseVar;
-if isempty(nVar)
-    nVar = nVarEst;
+noiseCandidate = opt.NoiseVar;
+if isempty(noiseCandidate)
+    % nrChannelEstimate returns grid-domain noise variance.
+    noiseCandidate = nVarEst;
 else
-    nVar = localConvertNoiseVarToGridDomain(nVar, ofdmInfo);
+    domain = lower(strtrim(char(string(opt.NoiseVarDomain))));
+    if strcmp(domain, 'auto') || strcmp(domain, 'time')
+        noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
+    end
 end
+nVar = noiseCandidate;
 nVar = double(max(0, nVar));
 
 % ---------------------- Extract and equalize PDSCH REs ----------------------
@@ -405,6 +397,14 @@ rx.TimingEstimateStatus = char(string(timingResolution.Status));
 rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.NoiseVar = nVar;
+rx.NoiseVarStatus = "OK";
+rx.NoiseVarSource = "runtime_metadata";
+rx.NoiseVarReason = "";
+rx.NoiseVarStrictFailure = false;
+rx.ReceiverUsable = true;
+rx.DecodeAttempted = true;
+rx.DecodeUsable = true;
+rx.FailureReason = "";
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
@@ -633,23 +633,35 @@ y = x .* cast(rot, "like", x);
 end
 
 function y = localApplyTimingCorrection(x, timingOffset)
-timingOffset = round(double(timingOffset));
-if ~isfinite(timingOffset) || timingOffset == 0
+timingOffset = double(timingOffset);
+if ~isfinite(timingOffset) || abs(timingOffset) < 1e-9
     y = x;
-elseif timingOffset > 0
-    if timingOffset < size(x, 1)
-        y = [x(1+timingOffset:end, :); zeros(timingOffset, size(x, 2), "like", x)];
-    else
-        y = zeros(size(x), "like", x);
+    return;
+end
+N = size(x, 1);
+intPart = round(timingOffset);
+fracPart = timingOffset - intPart;
+if intPart ~= 0
+    x = circshift(x, -intPart, 1);
+end
+if abs(fracPart) > 1e-12
+    k = (0:N-1).';
+    H = exp(-1j * 2 * pi * fracPart * k / max(N, 1));
+    if isreal(x) && N > 2
+        half = floor(N/2);
+        if half >= 1 && half + 2 <= N
+            H(half+2:end) = conj(flipud(H(2:half)));
+        end
     end
-else
-    lead = abs(timingOffset);
-    if lead < size(x, 1)
-        y = [zeros(lead, size(x, 2), "like", x); x(1:end-lead, :)];
-    else
-        y = zeros(size(x), "like", x);
+    for col = 1:size(x, 2)
+        corrected = ifft(fft(x(:, col)) .* H);
+        if isreal(x)
+            corrected = real(corrected);
+        end
+        x(:, col) = corrected;
     end
 end
+y = x;
 end
 
 function fs = localCarrierSampleRateHz(carrier)
@@ -927,6 +939,55 @@ switch upper(char(string(modScheme)))
         qm = 12;
     otherwise
         qm = 2;
+end
+end
+
+function nrePerPRB = localResolvePDSCHNREPerPRBOrError(carrier, pdsch, pdschInfo, nPRB)
+nrePerPRB = localResolveNREFromInfo(pdschInfo, nPRB, pdsch.Modulation, pdsch.NumLayers);
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    try
+        [~, pdschInfoFull] = nrPDSCHIndices(carrier, pdsch);
+        nrePerPRB = localResolveNREFromInfo(pdschInfoFull, nPRB, pdsch.Modulation, pdsch.NumLayers);
+    catch
+    end
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    error('sixgr:phy:dl:PDSCHRx:CannotResolveTBS', ...
+        ['Cannot determine nrePerPRB for TBS calculation. Provide TransportBlockSize explicitly. ' ...
+         'PRBSet=%s, SymbolAllocation=%s, Modulation=%s, NumLayers=%d.'], ...
+        mat2str(double(pdsch.PRBSet)), mat2str(localSymAlloc(pdsch)), ...
+        char(string(pdsch.Modulation)), round(double(pdsch.NumLayers)));
+end
+end
+
+function nrePerPRB = localResolveNREFromInfo(info, nPRB, modStr, nLayers)
+nrePerPRB = NaN;
+if isempty(info) || ~isstruct(info)
+    return;
+end
+if isfield(info, 'NREPerPRB')
+    nrePerPRB = double(info.NREPerPRB);
+elseif isfield(info, 'NRE')
+    nrePerPRB = floor(double(info.NRE) / max(double(nPRB), 1));
+elseif isfield(info, 'G')
+    qm = localQm(modStr);
+    nrePerPRB = floor(double(info.G) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    nrePerPRB = NaN;
+end
+end
+
+function sa = localSymAlloc(pdsch)
+try
+    sa = double(pdsch.SymbolAllocation);
+catch
+    sa = [0 14];
+end
+if numel(sa) < 2
+    sa = [0 14];
+else
+    sa = reshape(sa(1:2), 1, 2);
 end
 end
 

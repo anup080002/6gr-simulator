@@ -111,6 +111,19 @@ classdef HARQEntity < handle
             tf = any([procs.NeedsRetx]);
         end
 
+        function tf = hasFreeProcess(obj, rnti)
+            % New-data grants must be blocked cleanly when every HARQ
+            % process is active/awaiting feedback. TS 38.321 HARQ process
+            % exhaustion is a scheduler gating condition, not a runtime
+            % exception path.
+            [ui, procs] = obj.getUE(double(rnti), false);
+            if ui < 1
+                tf = true;
+                return;
+            end
+            tf = any(~[procs.Active]);
+        end
+
         function retx = peekRetx(obj, rnti)
             % Return information for the first pending retransmission, or [].
             retx = [];
@@ -176,15 +189,19 @@ classdef HARQEntity < handle
                     txp.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
                     txp.ProcessIndex = [];
                     txp.ExpectTBSizeBytes = 0;
+                    txp.NoFreeProcess = false;
                     return;
                 end
 
                 % 2) Otherwise pick an idle process for new data
                 pid = find(~[procs.Active], 1, 'first');
                 if isempty(pid)
-                    % No free process: simplest policy is to refuse new data.
-                    % More advanced policies may drop oldest awaiting-feedback.
-                    error('sixgr:HARQEntity:NoFreeProcess','No free HARQ process for RNTI=%d.', rnti);
+                    txp = struct();
+                    txp.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
+                    txp.ProcessIndex = [];
+                    txp.ExpectTBSizeBytes = 0;
+                    txp.NoFreeProcess = true;
+                    return;
                 end
 
                 % Initialize new TB
@@ -204,7 +221,7 @@ classdef HARQEntity < handle
             % Prepare output
             p = procs(pid);
             harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'RV', p.RV, 'IsRetransmission', isRetx);
-            txp = struct('HARQ',harq,'ProcessIndex',pid,'ExpectTBSizeBytes',p.TBSBytes);
+            txp = struct('HARQ',harq,'ProcessIndex',pid,'ExpectTBSizeBytes',p.TBSBytes,'NoFreeProcess',false);
 
             % Write back
             obj.UEProcs{ui} = procs;

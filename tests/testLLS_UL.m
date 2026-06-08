@@ -7,6 +7,7 @@ cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 
 papr = sixgr.link.runULLowPAPR(cfg, "NumFrames", 4);
 assert(isfield(papr, "PAPR_CP_dB") && isfield(papr, "PAPR_DFTs_dB"), "PAPR metrics missing");

@@ -213,7 +213,7 @@
         "enable": {"value_type": "boolean", "default": true},
         "configurationIndex": {"value_type": "integer", "default": 16, "min": 0},
         "subcarrierSpacing_kHz": {"value_type": "number", "default": 1.25, "min": 0},
-        "preambleFormat": {"value_type": "string", "default": "A1"},
+        "preambleFormat": {"value_type": "string", "default": "0"},
         "rootSeqIndex": {"value_type": "integer", "default": 1, "min": 0},
         "zeroCorrelationZone": {"value_type": "integer", "default": 8, "min": 0}
       },

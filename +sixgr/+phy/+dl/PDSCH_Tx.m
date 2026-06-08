@@ -531,9 +531,10 @@ if isnumeric(ind) && size(ind,1) == numel(symLin) && size(ind,2) >= 1
 end
 
 L = min(numel(indLin), numel(symLin));
-if L > 0
-    grid(indLin(1:L)) = symLin(1:L);
-end
+error('sixgr:phy:dl:PDSCHGridMappingMismatch', ...
+    ['PDSCH grid mapping requires one symbol per resource element. ' ...
+     'IndexCount=%d SymbolCount=%d IndexShape=%s SymbolShape=%s.'], ...
+    numel(indLin), numel(symLin), mat2str(size(ind)), mat2str(size(sym)));
 end
 
 function numTxAnt = localResolveNumTxAnt(cfg, requested, prec)

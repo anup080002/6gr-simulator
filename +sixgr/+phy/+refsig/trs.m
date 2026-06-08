@@ -49,7 +49,18 @@ end
 
 [scGrid, symGrid, portGrid] = ndgrid(subcarriers, symbolLoc, 1:numPorts);
 linInd = sub2ind([K, L, numPorts], scGrid(:), symGrid(:), portGrid(:));
-seq = localQPSKSequence(numel(linInd), scramblingID);
+try
+    slotsPerFrame = max(1, round(double(carrier.SlotsPerFrame)));
+catch
+    slotsPerFrame = 10;
+end
+slotInFrame = mod(round(double(carrier.NSlot)), slotsPerFrame);
+seq = complex(zeros(numel(linInd), 1));
+for ii = 1:numel(symbolLoc)
+    sym = double(symbolLoc(ii));
+    mask = symGrid(:) == sym;
+    seq(mask) = localQPSKSequence(nnz(mask), scramblingID, slotInFrame, sym - 1);
+end
 
 trsInd = linInd;
 if strcmpi(opts.IndexBase, "0based")
@@ -111,9 +122,37 @@ end
 symbolLoc = unique(max(1, min(L, round(double(symbolLoc(:).')))));
 end
 
-function sym = localQPSKSequence(N, seed)
-idx = (0:(N-1)).' + double(seed);
-re = 1 - 2 * mod(idx, 2);
-im = 1 - 2 * mod(floor(idx / 2), 2);
-sym = (re + 1j * im) / sqrt(2);
+function sym = localQPSKSequence(N, scramblingID, slotInFrame, symbolInSlot)
+% TS 38.211 7.4.1.6 CSI-RS/TRS QPSK sequence with TS 38.211 5.2.1 Gold bits.
+if nargin < 3 || isempty(slotInFrame)
+    slotInFrame = 0;
+end
+if nargin < 4 || isempty(symbolInSlot)
+    symbolInSlot = 0;
+end
+n_s = round(double(slotInFrame));
+l = round(double(symbolInSlot));
+N_ID = round(double(scramblingID));
+cInit = mod(2^10 * (14 * n_s + l + 1) * (2 * N_ID + 1) + 2 * N_ID + 1, 2^31);
+c = localGoldSequence(2 * N, cInit);
+re = 1 - 2 * double(c(1:2:end));
+im = 1 - 2 * double(c(2:2:end));
+sym = (re(:) + 1j * im(:)) / sqrt(2);
+sym = sym(1:N);
+end
+
+function c = localGoldSequence(Nout, cInit)
+Nc = 1600;
+M = Nout + Nc;
+x1 = zeros(1, M + 31);
+x2 = zeros(1, M + 31);
+x1(1) = 1;
+for n = 1:31
+    x2(n) = mod(floor(double(cInit) / 2^(n - 1)), 2);
+end
+for n = 1:M
+    x1(n + 31) = mod(x1(n + 3) + x1(n), 2);
+    x2(n + 31) = mod(x2(n + 3) + x2(n + 2) + x2(n + 1) + x2(n), 2);
+end
+c = mod(x1(Nc + 1:Nc + Nout) + x2(Nc + 1:Nc + Nout), 2);
 end

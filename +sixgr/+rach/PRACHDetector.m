@@ -32,8 +32,7 @@ explicitThreshold = double(localFirstNonEmpty(opts.DetectionThreshold, ...
 enableFreq = logical(localFirstNonEmpty(opts.EnableFrequencyEstimationMetric, ...
     sixgr.util.structGet(cfg, "EnableFrequencyEstimationMetric", false)));
 
-[idx0, offset0, detInfo] = nrPRACHDetect(occasion.Carrier, occasion.PRACH, rxWaveform, ...
-    "DetectionThreshold", 0, "PreambleIndex", candidateSet);
+[idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet);
 
 peaks = double(detInfo.CorrelationPeaks(:));
 if isempty(peaks)
@@ -50,8 +49,12 @@ threshold = localResolveThreshold(peaks, thresholdMode, explicitThreshold, cfg);
 detected = isfinite(peakMetric) && peakMetric >= threshold && ~isempty(idx0);
 
 if detected
-    idx = double(idx0(1));
-    offset = double(offset0(1));
+    idx = double(candidateDetected);
+    if numel(offset0) >= maxIdx
+        offset = double(offset0(maxIdx));
+    else
+        offset = double(offset0(1));
+    end
 else
     idx = NaN;
     offset = NaN;
@@ -60,7 +63,8 @@ end
 freqEst = struct("Valid", false, "EstimateHz", NaN, "Estimator", "disabled");
 if detected && enableFreq
     ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, "PreambleIndex", idx);
-    aligned = localAlignWaveforms(rxWaveform, ref.Waveform, round(offset));
+    cpLen = localFirstCPLength(ref);
+    aligned = localAlignWaveforms(rxWaveform, ref.Waveform, round(offset), cpLen);
     freqEst = sixgr.rach.estimateFrequencyOffset(aligned.RxAligned, aligned.RefAligned, ref.SampleRate_Hz);
 end
 
@@ -81,6 +85,102 @@ det.FrequencyEstimate = freqEst;
 det.Occasion = occasion;
 end
 
+function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet)
+rx = localVector(rxWaveform);
+peaks = nan(numel(candidateSet), 1);
+offsets = nan(numel(candidateSet), 1);
+for iCand = 1:numel(candidateSet)
+    ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
+        "PreambleIndex", double(candidateSet(iCand)));
+    [peaks(iCand), offsets(iCand)] = localCorrelationPeak(rx, localVector(ref.Waveform));
+end
+[bestPeak, bestIdx] = max(peaks, [], "omitnan");
+if isempty(bestIdx) || ~isfinite(bestPeak)
+    idx0 = [];
+else
+    idx0 = double(candidateSet(bestIdx));
+end
+offset0 = offsets(:);
+detInfo = struct();
+detInfo.CorrelationPeaks = peaks;
+detInfo.CorrelationOffsets = offsets;
+detInfo.DetectorBackend = "inrepo_waveform_correlation_from_nrPRACH_symbols";
+end
+
+function [peakMetric, offsetSamples] = localCorrelationPeak(rx, ref)
+peakMetric = NaN;
+offsetSamples = NaN;
+rx = complex(rx(:));
+ref = complex(ref(:));
+if isempty(rx) || isempty(ref)
+    return;
+end
+metrics = localNormalizedCorrelationPower(rx, ref);
+if isempty(metrics)
+    return;
+end
+corrVals = conv(rx, flipud(conj(ref)), "full");
+[peakMetric, peakIdx] = max(metrics, [], "omitnan");
+if isempty(peakIdx) || ~isfinite(peakMetric)
+    return;
+end
+fracOffset = localParabolicPeakOffset(metrics, peakIdx);
+offsetSamples = double(peakIdx) - numel(ref) + fracOffset;
+end
+
+function metrics = localNormalizedCorrelationPower(rx, ref)
+rx = complex(rx(:));
+ref = complex(ref(:));
+nRx = numel(rx);
+nRef = numel(ref);
+corrVals = conv(rx, flipud(conj(ref)), "full");
+metrics = nan(size(corrVals));
+rxPower = abs(rx).^2;
+refPower = abs(ref).^2;
+minOverlap = max(16, ceil(0.75 * double(nRef)));
+for k = 1:numel(corrVals)
+    lag = k - nRef;
+    if lag < 0
+        continue;
+    end
+    refStart = max(1, 1 - lag);
+    refEnd = min(nRef, nRx - lag);
+    if refEnd < refStart
+        continue;
+    end
+    if (refEnd - refStart + 1) < minOverlap
+        continue;
+    end
+    rxStart = lag + refStart;
+    rxEnd = lag + refEnd;
+    rxEnergy = sum(rxPower(rxStart:rxEnd), "omitnan");
+    refEnergy = sum(refPower(refStart:refEnd), "omitnan");
+    denom = double(rxEnergy) * double(refEnergy);
+    if isfinite(denom) && denom > 0
+        metrics(k) = double(abs(corrVals(k)).^2) / max(denom, eps);
+    end
+end
+end
+
+function fracOffset = localParabolicPeakOffset(metrics, peakIdx)
+fracOffset = 0;
+if peakIdx <= 1 || peakIdx >= numel(metrics)
+    return;
+end
+yPrev = sqrt(max(0, double(metrics(peakIdx - 1))));
+y0 = sqrt(max(0, double(metrics(peakIdx))));
+yNext = sqrt(max(0, double(metrics(peakIdx + 1))));
+if ~(isfinite(yPrev) && isfinite(y0) && isfinite(yNext))
+    return;
+end
+denom = yPrev - 2 * y0 + yNext;
+if abs(denom) <= eps
+    return;
+end
+fracOffset = 0.5 * (yPrev - yNext) / denom;
+fracOffset = max(-0.5, min(0.5, double(fracOffset)));
+end
+
 function threshold = localResolveThreshold(peaks, modeToken, explicitThreshold, cfg)
 if modeToken == "fixed"
     threshold = explicitThreshold;
@@ -99,19 +199,41 @@ gaussQuantile = max(1, sqrt(-2 * log(max(targetPfa, eps))));
 threshold = max(explicitThreshold, robustCenter + gaussQuantile * robustSigma);
 end
 
-function aligned = localAlignWaveforms(rxWave, refWave, offsetSamples)
+function aligned = localAlignWaveforms(rxWave, refWave, offsetSamples, cpLength)
+if nargin < 4 || isempty(cpLength) || ~isfinite(double(cpLength)) || double(cpLength) < 0
+    cpLength = 0;
+end
 rx = localVector(rxWave);
 ref = localVector(refWave);
 offsetSamples = max(0, round(double(offsetSamples)));
-if offsetSamples + 1 > numel(rx)
+cpLength = max(0, round(double(cpLength)));
+startIdx = offsetSamples + cpLength + 1;
+if startIdx > numel(rx)
     aligned.RxAligned = complex([]);
     aligned.RefAligned = complex([]);
     return;
 end
-rx = rx(offsetSamples + 1:end);
+rx = rx(startIdx:end);
+if cpLength + 1 <= numel(ref)
+    ref = ref(cpLength + 1:end);
+else
+    ref = complex([]);
+end
 L = min(numel(rx), numel(ref));
 aligned.RxAligned = rx(1:L);
 aligned.RefAligned = ref(1:L);
+end
+
+function cpLen = localFirstCPLength(ref)
+cpLen = 0;
+try
+    cp = double(ref.OFDMInfo.CyclicPrefixLengths(:));
+    cp = cp(isfinite(cp) & cp >= 0);
+    if ~isempty(cp)
+        cpLen = cp(1);
+    end
+catch
+end
 end
 
 function value = localScalarOrNaN(x)

@@ -17,7 +17,7 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
 %     'UseAntenna' : scalar antenna index for timing (default: 1)
 %
 %   Outputs
-%     timingOffset : integer sample offset
+%     timingOffset : sample offset returned by nrTimingEstimate
 %     info         : struct with debug fields
 
     % Parse positional args in a robust way.
@@ -66,16 +66,31 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
     Nr = size(rxWaveform, 2);
     ant = min(max(1, round(opt.UseAntenna)), Nr);
 
-    % Use PSS as timing reference.
-    % Match the 5G Toolbox cell-search example: place the PSS in the *second*
-    % OFDM symbol of a 2-symbol reference grid to avoid the special CP length
-    % of the first OFDM symbol.
+    % Use a 4-symbol SSB-shaped reference grid. PSS occupies symbol 2 of the
+    % SS/PBCH block per TS 38.211 7.4.3.1; using a 2-symbol shortcut biases
+    % timing against the actual SSB OFDM symbol layout.
     nrbSSB = 20;
     scsSSB_kHz = localSSBSubcarrierSpacing_kHz(blockPattern);
     initialNSlot = 0;
 
-    refGrid = zeros([nrbSSB*12 2]);
-    refGrid(nrPSSIndices, 2) = nrPSS(NID2);
+    refGrid = complex(zeros(nrbSSB*12, 4));
+    pssSym = nrPSS(NID2);
+    try
+        pssSub = nrPSSIndices('IndexStyle', 'subscript', 'IndexBase', '1based');
+        if size(pssSub, 2) >= 2
+            refGrid(sub2ind(size(refGrid), pssSub(:,1), pssSub(:,2))) = pssSym;
+        else
+            refGrid(double(pssSub(:)), 2) = pssSym;
+        end
+    catch
+        pssInd = nrPSSIndices();
+        try
+            [row_pss, col_pss] = ind2sub(size(refGrid), pssInd);
+            refGrid(sub2ind(size(refGrid), row_pss(:), col_pss(:))) = pssSym;
+        catch
+            refGrid(double(pssInd(:)), 2) = pssSym;
+        end
+    end
 
     % Provide SampleRate to match the input waveform.
     % Prefer the refGrid syntax; fall back to refInd/refSym if required.
@@ -83,13 +98,18 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
         timingOffset = nrTimingEstimate(rxWaveform(:, ant), nrbSSB, scsSSB_kHz, initialNSlot, refGrid, ...
             'SampleRate', sampleRateHz);
     catch
-        pssSym = nrPSS(NID2);
         pssInd = nrPSSIndices();
         timingOffset = nrTimingEstimate(rxWaveform(:, ant), nrbSSB, scsSSB_kHz, initialNSlot, pssInd, pssSym, ...
             'SampleRate', sampleRateHz);
     end
 
-    timingOffset = round(double(timingOffset));
+    timingOffset = double(timingOffset);
+    if ~isfinite(timingOffset) || timingOffset < 0 || timingOffset > size(rxWaveform,1)/2
+        warning('sixgr:sync:BadTimingEstimate', ...
+            'SSB timing estimate %.3f is out of range for waveform length %d. Clamped to 0.', ...
+            double(timingOffset), size(rxWaveform,1));
+        timingOffset = 0;
+    end
 
     info = struct();
     info.NID2 = double(NID2);

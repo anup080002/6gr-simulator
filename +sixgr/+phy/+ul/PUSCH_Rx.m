@@ -14,6 +14,7 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "TargetCodeRate": code rate (0..1)
 %     "RV"          : redundancy version (0..3)
 %     "NoiseVar"    : explicit runtime noise variance metadata
+%     "NoiseVarDomain": "time", "grid", "frequency", or "auto"
 %     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %     "MaxIterations": LDPC iterations
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
@@ -40,6 +41,7 @@ ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || (isnumeric(x) && is
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
 ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'time','grid','frequency','auto'})));
 ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @(x) ischar(x) || isstring(x));
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -65,6 +67,7 @@ if isempty(opt.PUSCH)
     [puschInd, puschInfo, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg);
 else
     pusch = opt.PUSCH;
+    pusch = localEnsureTransformPrecodingOwnership(pusch, cfg);
     if isempty(opt.PUSCHIndices)
         try
             [puschInd, puschInfo] = nrPUSCHIndices(carrier, pusch, 'IndexStyle', 'index');
@@ -107,20 +110,9 @@ alg = char(string(alg));
 % Determine TB size
 trBlkSize = opt.TransportBlockSize;
 if isempty(trBlkSize)
-    xOverhead = double(sixgr.util.structGet(cfg, 'phy.pusch.xOverhead', 0));
+    xOverhead = localResolvePUSCHXOverhead(pusch, cfg);
     nPRB = numel(pusch.PRBSet);
-    nrePerPRB = [];
-    if isfield(puschInfo, 'NREPerPRB')
-        nrePerPRB = double(puschInfo.NREPerPRB);
-    elseif isfield(puschInfo, 'NRE')
-        nrePerPRB = floor(double(puschInfo.NRE) / max(nPRB,1));
-    elseif isfield(puschInfo, 'G')
-        qm = localQm(pusch.Modulation);
-        nrePerPRB = floor(double(puschInfo.G) / max(qm * pusch.NumLayers * nPRB, 1));
-    end
-    if isempty(nrePerPRB) || ~isfinite(nrePerPRB) || nrePerPRB <= 0
-        nrePerPRB = 144;
-    end
+    nrePerPRB = localResolvePUSCHNREPerPRBOrError(carrier, pusch, puschInfo, nPRB);
     trBlkSize = nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 end
 trBlkSize = double(trBlkSize);
@@ -137,16 +129,11 @@ catch
 end
 
 % DMRS
-[dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
+[dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
 useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pusch);
-FastShortcutDisabledInTruth = sixgr.link.resolveTruthMode(cfg) == "full_waveform" && useFastAWGNPath; %#ok<NASGU>
-if FastShortcutDisabledInTruth
-    error("sixgr:phy:rx:FastShortcutDisabledInTruth", ...
-        "PUSCH_Rx forbids FastAWGNPath when TruthMode='full_waveform'.");
-end
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PUSCH_Rx");
 
 % Timing estimate
@@ -200,7 +187,7 @@ useFastChEstMex = logical(sixgr.util.structGet(cfg, 'phy.rx.useFastChannelEstMex
     && logical(sixgr.util.structGet(cfg, 'run.useMex', false));
 if useFastAWGNPath
     Hest = ones(size(rxGrid), 'like', rxGrid);
-    nVarEst = 0;
+    nVarEst = 10^(-double(sixgr.util.structGet(cfg, 'channel.snr_dB', 20))/10);
     estInfo = struct( ...
         "EngineUsed", "unit-flat-shortcut", ...
         "ChannelModel", string(channelModelToken), ...
@@ -209,6 +196,7 @@ if useFastAWGNPath
         "ScalarFastPathUsed", true);
 else
     [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
+        "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
         "UseFastMex", useFastChEstMex, ...
         "StrictMode", strictMode, ...
         "ChannelModel", channelModelToken, ...
@@ -220,10 +208,14 @@ end
 noiseCandidate = opt.NoiseVar;
 noiseSource = "runtime_metadata";
 if isempty(noiseCandidate)
+    % nrChannelEstimate returns grid-domain noise variance.
     noiseCandidate = nVarEst;
     noiseSource = "runtime_channel_estimate";
 else
-    noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
+    domain = lower(strtrim(char(string(opt.NoiseVarDomain))));
+    if strcmp(domain, 'auto') || strcmp(domain, 'time')
+        noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
+    end
 end
 configuredNoiseVariance = opt.ConfiguredNoiseVariance;
 if ~isempty(configuredNoiseVariance)
@@ -592,23 +584,35 @@ y = x .* cast(rot, "like", x);
 end
 
 function y = localApplyTimingCorrection(x, timingOffset)
-timingOffset = round(double(timingOffset));
-if ~isfinite(timingOffset) || timingOffset == 0
+timingOffset = double(timingOffset);
+if ~isfinite(timingOffset) || abs(timingOffset) < 1e-9
     y = x;
-elseif timingOffset > 0
-    if timingOffset < size(x, 1)
-        y = [x(1+timingOffset:end, :); zeros(timingOffset, size(x, 2), "like", x)];
-    else
-        y = zeros(size(x), "like", x);
+    return;
+end
+N = size(x, 1);
+intPart = round(timingOffset);
+fracPart = timingOffset - intPart;
+if intPart ~= 0
+    x = circshift(x, -intPart, 1);
+end
+if abs(fracPart) > 1e-12
+    k = (0:N-1).';
+    H = exp(-1j * 2 * pi * fracPart * k / max(N, 1));
+    if isreal(x) && N > 2
+        half = floor(N/2);
+        if half >= 1 && half + 2 <= N
+            H(half+2:end) = conj(flipud(H(2:half)));
+        end
     end
-else
-    lead = abs(timingOffset);
-    if lead < size(x, 1)
-        y = [zeros(lead, size(x, 2), "like", x); x(1:end-lead, :)];
-    else
-        y = zeros(size(x), "like", x);
+    for col = 1:size(x, 2)
+        corrected = ifft(fft(x(:, col)) .* H);
+        if isreal(x)
+            corrected = real(corrected);
+        end
+        x(:, col) = corrected;
     end
 end
+y = x;
 end
 
 function fs = localCarrierSampleRateHz(carrier)
@@ -731,6 +735,92 @@ switch upper(char(string(modScheme)))
         qm = 12;
     otherwise
         qm = 2;
+end
+end
+
+function pusch = localEnsureTransformPrecodingOwnership(pusch, cfg)
+try
+    modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
+catch
+    modToken = upper(strrep(char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', ''))), ' ', ''));
+end
+required = strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK') || ...
+    logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
+if required
+    try
+        pusch.TransformPrecoding = true;
+    catch ME
+        error('sixgr:phy:ul:PUSCHTransformPrecodingUnavailable', ...
+            'PUSCH requires TransformPrecoding=true for modulation/config but nrPUSCHConfig rejected it: %s', ME.message);
+    end
+end
+end
+
+function xOverhead = localResolvePUSCHXOverhead(pusch, cfg)
+xOverhead = double(sixgr.util.structGet(cfg, 'phy.pusch.xOverhead', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.XOverhead', 0)));
+try
+    tpEnabled = logical(pusch.TransformPrecoding);
+catch
+    tpEnabled = false;
+end
+try
+    modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
+catch
+    modToken = "";
+end
+if tpEnabled || strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK')
+    xOverhead = max(double(xOverhead), 6);
+end
+xOverhead = max(0, round(double(xOverhead)));
+end
+
+function nrePerPRB = localResolvePUSCHNREPerPRBOrError(carrier, pusch, puschInfo, nPRB)
+nrePerPRB = localResolveNREFromInfo(puschInfo, nPRB, pusch.Modulation, pusch.NumLayers);
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    try
+        [~, puschInfoFull] = nrPUSCHIndices(carrier, pusch);
+        nrePerPRB = localResolveNREFromInfo(puschInfoFull, nPRB, pusch.Modulation, pusch.NumLayers);
+    catch
+    end
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    error('sixgr:phy:ul:PUSCHRx:CannotResolveTBS', ...
+        ['Cannot determine nrePerPRB for TBS calculation. Provide TransportBlockSize explicitly. ' ...
+         'PRBSet=%s, SymbolAllocation=%s, Modulation=%s, NumLayers=%d.'], ...
+        mat2str(double(pusch.PRBSet)), mat2str(localSymAlloc(pusch)), ...
+        char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
+end
+end
+
+function nrePerPRB = localResolveNREFromInfo(info, nPRB, modStr, nLayers)
+nrePerPRB = NaN;
+if isempty(info) || ~isstruct(info)
+    return;
+end
+if isfield(info, 'NREPerPRB')
+    nrePerPRB = double(info.NREPerPRB);
+elseif isfield(info, 'NRE')
+    nrePerPRB = floor(double(info.NRE) / max(double(nPRB), 1));
+elseif isfield(info, 'G')
+    qm = localQm(modStr);
+    nrePerPRB = floor(double(info.G) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    nrePerPRB = NaN;
+end
+end
+
+function sa = localSymAlloc(pusch)
+try
+    sa = double(pusch.SymbolAllocation);
+catch
+    sa = [0 14];
+end
+if numel(sa) < 2
+    sa = [0 14];
+else
+    sa = reshape(sa(1:2), 1, 2);
 end
 end
 

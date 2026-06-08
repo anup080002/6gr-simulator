@@ -92,6 +92,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 maxUE = numel(ueIdx);
             end
             maxUE = min(maxUE, numel(ueIdx));
+            for t = 1:numel(ueIdx)
+                obj.prewarmUEAverage(ueStates(ueIdx(t)), maxUE);
+            end
             maxGrantsEst = maxUE + numel(ueIdx);
             grants = repmat(tmpl, maxGrantsEst, 1);
             nGrant = 0;
@@ -204,8 +207,14 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 if hasHARQ && pendingRetx(k)
                     continue;
                 end
+                if hasHARQ && ~obj.HARQ.hasFreeProcess(rnti)
+                    continue;
+                end
 
                 nAlloc = min(prbPerUE, nPRBAvail - cursor + 1);
+                if nAlloc < obj.MinPRBPerUE
+                    break;
+                end
                 if nAlloc <= 0
                     break;
                 end
@@ -224,6 +233,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 harqInfo = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
                 if hasHARQ
                     txp = obj.HARQ.allocate(rnti, slot, servedBytes, 'NewData', true);
+                    if logical(sixgr.util.structGet(txp, "NoFreeProcess", false))
+                        continue;
+                    end
                     harqInfo = txp.HARQ;
                 end
 

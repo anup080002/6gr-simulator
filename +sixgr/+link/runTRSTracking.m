@@ -97,7 +97,7 @@ try
     out.TrackingFailure = 0;
     out.DetectionMetric = -out.NMSE_dB;
     out.ChannelModel = char(localResolveTrialChannelModel(cfg));
-    out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", snr_dB));
+    out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
     out.TrackingEstimateSource = "trs_reference_waveform_estimator";
     out.Ok = true;
     out.Notes = "TRS runtime tracking measurement from active coupled-reference path. NRE=" + string(numel(trsInd)) + ...
@@ -119,7 +119,7 @@ function [y, nVar] = localAddAwgn(x, snr_dB)
 end
 
 function [y, replay] = localApplyTrackingChannelAndNoise(txWave, cfg, sampleRateHz, snr_dB, nPorts)
-replay = struct("AppliedAWGNSNR_dB", double(snr_dB), "ConfiguredSNR_dB", double(snr_dB), "InjectedNoiseVariance", NaN);
+replay = struct("AppliedAWGNSNR_dB", NaN, "ConfiguredSNR_dB", double(snr_dB), "InjectedNoiseVariance", NaN);
 y = txWave;
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
@@ -171,7 +171,7 @@ end
 end
 
 function [y, nVar] = localAddTrackingNoise(x, replay, snr_dB)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localResolveThermalNoiseVariance(replay, x);
     if isfinite(nVar) && nVar > 0
@@ -179,6 +179,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 [y, nVar] = localAddAwgn(x, double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", snr_dB)));
 end

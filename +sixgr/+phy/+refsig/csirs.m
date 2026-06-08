@@ -67,8 +67,10 @@ csirs = nrCSIRSConfig;
 % Desired ports -> choose a RowNumber that matches
 nPorts = double(sixgr.util.structGet(cfg, 'phy.csirs.nPorts', 2));
 row = sixgr.util.structGet(cfg, 'phy.csirs.rowNumber', []);
+densityReq = sixgr.util.structGet(cfg, 'phy.csirs.density', '');
+cdmReq = sixgr.util.structGet(cfg, 'phy.csirs.cdmType', '');
 if isempty(row)
-    row = localFindRowForPorts(nPorts);
+    row = localFindRowForPorts(nPorts, densityReq, cdmReq);
 end
 csirs.RowNumber = double(row);
 
@@ -79,10 +81,16 @@ csirs.SubcarrierLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.subcarri
 csirs.NumRB = double(sixgr.util.structGet(cfg, 'phy.csirs.numRB', carrier.NSizeGrid));
 csirs.RBOffset = double(sixgr.util.structGet(cfg, 'phy.csirs.rbOffset', 0));
 try
-    csirs.Density = char(string(sixgr.util.structGet(cfg, 'phy.csirs.density', localDefaultDensity(row))));
+    if isempty(densityReq)
+        densityReq = localDefaultDensity(row);
+    end
+    csirs.Density = char(string(densityReq));
 catch
 end
-cdm = sixgr.util.structGet(cfg, 'phy.csirs.cdmType', 'FD-CDM2');
+cdm = cdmReq;
+if isempty(cdm)
+    cdm = localDefaultCDMType(row);
+end
 try
     csirs.CDMType = char(cdm);
 catch
@@ -99,24 +107,84 @@ end
 
 end
 
-function row = localFindRowForPorts(nPorts)
-row = [];
-for r = 1:18
-    try
-        tmp = nrCSIRSConfig;
-        tmp.RowNumber = r;
-        if isprop(tmp, 'NumCSIRSPorts')
-            if double(tmp.NumCSIRSPorts) == double(nPorts)
-                row = r;
-                return;
-            end
-        end
-    catch
-        % ignore
+function row = localFindRowForPorts(nPorts, density, cdmType)
+% TS 38.211 Table 7.4.1.5.3-1: CSI-RS row mapping.
+rows = localCSIRSRowTable();
+ports = [rows.NumPorts];
+nPorts = max(1, round(double(nPorts)));
+validPorts = unique(ports);
+idxPort = find(validPorts >= nPorts, 1, 'first');
+if isempty(idxPort)
+    actualPorts = max(validPorts);
+    warning('sixgr:phy:csirs:PortCountUnsupported', ...
+        'nPorts=%d is not supported by NR CSI-RS rows; using maximum %d.', nPorts, actualPorts);
+else
+    actualPorts = validPorts(idxPort);
+    if actualPorts ~= nPorts
+        warning('sixgr:phy:csirs:PortCountRoundedUp', ...
+            'nPorts=%d rounded up to %d (nearest NR CSI-RS configuration).', nPorts, actualPorts);
     end
 end
-if isempty(row)
-    error('csirs:NoMatchingRow', 'No nrCSIRSConfig.RowNumber found for nPorts=%d.', nPorts);
+candidates = rows(ports == actualPorts);
+
+densityToken = localNormalizeDensityToken(density);
+if strlength(densityToken) > 0
+    mask = strcmpi({candidates.Density}, char(densityToken));
+    if any(mask)
+        candidates = candidates(mask);
+    end
+end
+cdmToken = lower(strtrim(string(cdmType)));
+if strlength(cdmToken) > 0
+    mask = strcmpi({candidates.CDMType}, char(cdmToken));
+    if any(mask)
+        candidates = candidates(mask);
+    end
+end
+row = double(candidates(1).RowNumber);
+try
+    probe = nrCSIRSConfig;
+    probe.RowNumber = row;
+catch ME
+    error('csirs:NoMatchingRow', 'Chosen CSI-RS row %d is not valid in this MATLAB release: %s', row, ME.message);
+end
+end
+
+function rows = localCSIRSRowTable()
+rows = struct('RowNumber',{},'NumPorts',{},'Density',{},'CDMType',{});
+rows(end+1) = struct('RowNumber',1,  'NumPorts',1,  'Density','three', 'CDMType','NoCDM');
+rows(end+1) = struct('RowNumber',2,  'NumPorts',1,  'Density','one',   'CDMType','NoCDM');
+rows(end+1) = struct('RowNumber',3,  'NumPorts',2,  'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',4,  'NumPorts',4,  'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',5,  'NumPorts',4,  'Density','one',   'CDMType','CDM4-FD2-TD2');
+rows(end+1) = struct('RowNumber',6,  'NumPorts',8,  'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',7,  'NumPorts',8,  'Density','one',   'CDMType','CDM4-FD2-TD2');
+rows(end+1) = struct('RowNumber',8,  'NumPorts',8,  'Density','one',   'CDMType','CDM8-FD2-TD4');
+rows(end+1) = struct('RowNumber',9,  'NumPorts',12, 'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',10, 'NumPorts',12, 'Density','one',   'CDMType','CDM4-FD2-TD2');
+rows(end+1) = struct('RowNumber',11, 'NumPorts',16, 'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',12, 'NumPorts',16, 'Density','one',   'CDMType','CDM4-FD2-TD2');
+rows(end+1) = struct('RowNumber',13, 'NumPorts',24, 'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',14, 'NumPorts',24, 'Density','one',   'CDMType','CDM4-FD2-TD2');
+rows(end+1) = struct('RowNumber',15, 'NumPorts',32, 'Density','one',   'CDMType','FD-CDM2');
+rows(end+1) = struct('RowNumber',16, 'NumPorts',32, 'Density','one',   'CDMType','CDM4-FD2-TD2');
+rows(end+1) = struct('RowNumber',17, 'NumPorts',32, 'Density','one',   'CDMType','CDM8-FD2-TD4');
+rows(end+1) = struct('RowNumber',18, 'NumPorts',32, 'Density','one',   'CDMType','CDM8-FD2-TD4');
+end
+
+function token = localNormalizeDensityToken(raw)
+if isempty(raw)
+    token = "";
+    return;
+end
+if isnumeric(raw)
+    if abs(double(raw) - 3) < 1e-9
+        token = "three";
+    else
+        token = "one";
+    end
+else
+    token = lower(strtrim(string(raw)));
 end
 end
 
@@ -149,6 +217,16 @@ if double(row) == 1
     density = "three";
 else
     density = "one";
+end
+end
+
+function cdm = localDefaultCDMType(row)
+rows = localCSIRSRowTable();
+match = find([rows.RowNumber] == round(double(row)), 1, 'first');
+if isempty(match)
+    cdm = 'FD-CDM2';
+else
+    cdm = rows(match).CDMType;
 end
 end
 

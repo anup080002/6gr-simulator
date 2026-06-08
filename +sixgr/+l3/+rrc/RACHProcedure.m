@@ -37,7 +37,11 @@ classdef RACHProcedure < handle
     end
 
     properties
-        % Timers expressed in slots (abstracted)
+        % Timers configured in milliseconds per TS 38.321/38.331 and
+        % materialized into slots using the active UL numerology.
+        RAResponseWindow_ms (1,1) double = 10
+        ContentionResolutionTimer_ms (1,1) double = 64
+        SlotDuration_ms (1,1) double = 1
         RAResponseWindow_slots (1,1) double = 10
         ContentionResolutionTimer_slots (1,1) double = 64
         PreambleTransMax (1,1) double = 4
@@ -51,6 +55,20 @@ classdef RACHProcedure < handle
             obj.Cfg = cfg;
 
             obj.CellID = double(sixgr.util.structGet(cfg,'phy.carrier.NCellID',obj.CellID));
+            [slotsPerMs, slotDurationMs] = localResolveSlotsPerMs(cfg);
+            obj.SlotDuration_ms = double(slotDurationMs);
+            obj.RAResponseWindow_ms = double(sixgr.util.structGet(cfg,'rrc.rach.raResponseWindow_ms',obj.RAResponseWindow_ms));
+            obj.ContentionResolutionTimer_ms = double(sixgr.util.structGet(cfg,'rrc.rach.contentionResolutionTimer_ms',obj.ContentionResolutionTimer_ms));
+            legacyRASlots = sixgr.util.structGet(cfg,'rrc.rach.raResponseWindow_slots',[]);
+            legacyCRSlots = sixgr.util.structGet(cfg,'rrc.rach.contentionResolutionTimer_slots',[]);
+            raSlotsExplicit = ~isempty(legacyRASlots) && isempty(sixgr.util.structGet(cfg,'rrc.rach.raResponseWindow_ms',[]));
+            crSlotsExplicit = ~isempty(legacyCRSlots) && isempty(sixgr.util.structGet(cfg,'rrc.rach.contentionResolutionTimer_ms',[]));
+            if raSlotsExplicit
+                obj.RAResponseWindow_slots = double(legacyRASlots);
+            end
+            if crSlotsExplicit
+                obj.ContentionResolutionTimer_slots = double(legacyCRSlots);
+            end
 
             % Parse name-value
             if ~isempty(varargin)
@@ -71,8 +89,16 @@ classdef RACHProcedure < handle
                             obj.Logger = v;
                         case 'raresponsewindow_slots'
                             obj.RAResponseWindow_slots = double(v);
+                            raSlotsExplicit = true;
+                        case 'raresponsewindow_ms'
+                            obj.RAResponseWindow_ms = double(v);
+                            raSlotsExplicit = false;
                         case 'contentionresolutiontimer_slots'
                             obj.ContentionResolutionTimer_slots = double(v);
+                            crSlotsExplicit = true;
+                        case 'contentionresolutiontimer_ms'
+                            obj.ContentionResolutionTimer_ms = double(v);
+                            crSlotsExplicit = false;
                         case 'preambletransmax'
                             obj.PreambleTransMax = max(1, round(double(v)));
                         otherwise
@@ -81,9 +107,13 @@ classdef RACHProcedure < handle
                 end
             end
 
-            % If cfg provides RACH timers, use them (best effort)
-            obj.RAResponseWindow_slots = double(sixgr.util.structGet(cfg,'rrc.rach.raResponseWindow_slots',obj.RAResponseWindow_slots));
-            obj.ContentionResolutionTimer_slots = double(sixgr.util.structGet(cfg,'rrc.rach.contentionResolutionTimer_slots',obj.ContentionResolutionTimer_slots));
+            localValidateRAResponseWindow(obj.RAResponseWindow_ms);
+            if ~raSlotsExplicit
+                obj.RAResponseWindow_slots = max(1, round(double(obj.RAResponseWindow_ms) * double(slotsPerMs)));
+            end
+            if ~crSlotsExplicit
+                obj.ContentionResolutionTimer_slots = max(1, round(double(obj.ContentionResolutionTimer_ms) * double(slotsPerMs)));
+            end
             obj.PreambleTransMax = max(1, round(double(sixgr.util.structGet(cfg,'rrc.rach.preambleTransMax',obj.PreambleTransMax))));
         end
 
@@ -243,7 +273,7 @@ classdef RACHProcedure < handle
 
             if strcmp(obj.Role,'UE')
                 if strcmp(obj.State,'MSG1_SENT')
-                    if (slot - obj.StartSlot) > obj.RAResponseWindow_slots
+                    if (slot - obj.StartSlot) >= obj.RAResponseWindow_slots
                         if obj.Msg1Attempts < obj.PreambleTransMax
                             obj.State = 'RETRY_PENDING';
                             obj.FailureCause = 'RAR_TIMEOUT_RETRY';
@@ -257,7 +287,7 @@ classdef RACHProcedure < handle
                     if refSlot < 0
                         refSlot = obj.StartSlot;
                     end
-                    if (slot - refSlot) > obj.ContentionResolutionTimer_slots
+                    if (slot - refSlot) >= obj.ContentionResolutionTimer_slots
                         obj.State = 'FAILED';
                         obj.FailureCause = 'CONTENTION_RESOLUTION_TIMEOUT';
                     end
@@ -296,4 +326,26 @@ classdef RACHProcedure < handle
             end
         end
     end
+end
+
+function [slotsPerMs, slotDurationMs] = localResolveSlotsPerMs(cfg)
+scs_kHz = double(sixgr.util.structGet(cfg,'phy.carrier.SubcarrierSpacing', ...
+    sixgr.util.structGet(cfg,'phy.pusch.subcarrierSpacing', 15)));
+if ~(isscalar(scs_kHz) && isfinite(scs_kHz) && scs_kHz > 0)
+    scs_kHz = 15;
+end
+mu = round(log2(max(scs_kHz, 15) / 15));
+mu = max(0, mu);
+slotsPerMs = 2 ^ mu;
+slotDurationMs = 1.0 / slotsPerMs;
+end
+
+function localValidateRAResponseWindow(valueMs)
+validRaWindow_ms = [1 2 4 8 10 20 40 80];
+valueMs = double(valueMs);
+if ~(isscalar(valueMs) && isfinite(valueMs)) || ~any(abs(valueMs - validRaWindow_ms) < 0.5)
+    warning('sixgr:rrc:RACHProcedure:InvalidRAWindow', ...
+        'ra-ResponseWindow_ms=%.1f is not a standard NR value. Valid: %s ms.', ...
+        valueMs, mat2str(validRaWindow_ms));
+end
 end

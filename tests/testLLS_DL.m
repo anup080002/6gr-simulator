@@ -7,6 +7,7 @@ cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 
 resLow = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, "SNR_dB", 0);
 resHigh = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, "SNR_dB", 18);

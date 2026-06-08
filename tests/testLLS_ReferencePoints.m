@@ -11,6 +11,7 @@ cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 
 rng(2026, "twister");
 dl0 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 0);

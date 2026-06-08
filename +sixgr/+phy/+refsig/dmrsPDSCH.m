@@ -56,5 +56,10 @@ end
 info.NRE = size(dmrsInd, 1);
 % dmrsIndInfo may be empty on newer toolbox releases
 info.DMRSIndicesInfo = dmrsIndInfo;
+try
+    info.CDMLengths = reshape(double(dmrsIndInfo.CDMLengths), 1, []);
+catch
+    info.CDMLengths = [];
+end
 
 end

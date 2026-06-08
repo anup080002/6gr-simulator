@@ -54,6 +54,38 @@
     "dl_mcs_index": 14,
     "ul_mcs_index": 14
   },
+  "energy_efficiency": {
+    "tx_power_dbm": -35
+  },
+  "power_and_rf_frontend": {
+    "bs_tx_power_dbm": -35,
+    "ue_tx_power_dbm": -35,
+    "ue_noise_figure_db": 9,
+    "power_backoff_db": 0,
+    "pa_model": "ideal",
+    "pa_efficiency_model": "constant",
+    "pa_nonlinearity_model": "none",
+    "cfr_enabled": false,
+    "dpd_enabled": false,
+    "dac_resolution_bits": 12,
+    "adc_resolution_bits": 12,
+    "iq_imbalance": "none",
+    "dc_offset": "none",
+    "lo_phase_noise_model": "none",
+    "cfo_model": "constant_zero",
+    "drift_rate_model": "none",
+    "rf_switching_latency": 0,
+    "noise_figure": 9,
+    "rx_gain_control": "fixed",
+    "saturation_model": "none"
+  },
+  "link_adaptation": {
+    "fixed_or_amc": "fixed",
+    "pdsch_link_adaptation_policy": "fixed",
+    "pusch_link_adaptation_policy": "fixed",
+    "rank_adaptation_policy": "fixed",
+    "beam_adaptation_policy": "fixed"
+  },
   "harq": {
     "enabled": true,
     "process_count": 8,

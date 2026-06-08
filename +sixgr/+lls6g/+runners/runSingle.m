@@ -47,23 +47,41 @@ opt.LinkDuration_s = max(double(totalSlots) * slotDuration_s, ...
     double(scfg.get("simulation.min_duration_s")));
 opt.LinkMaxSimFrames = double(totalSlots);
 opt.LinkSNR_dB = double(cfg.channel.snr_dB);
-opt.LinkSNRGrid_dB = localBuildSweepGrid(cfg.channel.snr_dB, ...
-    double(scfg.get("simulation.snr_sweep_offsets_db")), ...
-    logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled")), ...
-    double(scfg.get("sweeps_and_matrix.snr_sweep.values_db")));
+receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfg);
+if receiverNoiseMode
+    opt.LinkSNRGrid_dB = localBuildPhysicalOperatingPointGrid(cfg.channel.snr_dB);
+else
+    opt.LinkSNRGrid_dB = localBuildSweepGrid(cfg.channel.snr_dB, ...
+        double(scfg.get("simulation.snr_sweep_offsets_db")), ...
+        logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled")), ...
+        double(scfg.get("sweeps_and_matrix.snr_sweep.values_db")));
+end
+opt.LinkQualityMode = char(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ...
+    "receiver_noise_figure_thermal_noise")));
 mcIterations = max(1, round(double(scfg.get("simulation.monte_carlo_iterations"))));
 opt.LinkSweepFrames = mcIterations;
 opt.LinkSweepTrialsPerSNR = max(double(totalSlots), double(totalSlots) * mcIterations);
-opt.LinkReferenceSweepFrames = max(opt.LinkSweepTrialsPerSNR, ceil(1.5 * opt.LinkSweepTrialsPerSNR));
-opt.LinkSweepMaxPoints = numel(opt.LinkSNRGrid_dB);
-opt.LinkAdaptiveSweepEnabled = true;
+if receiverNoiseMode
+    opt.LinkReferenceSweepFrames = 0;
+    opt.LinkSweepMaxPoints = 1;
+else
+    opt.LinkReferenceSweepFrames = max(opt.LinkSweepTrialsPerSNR, ceil(1.5 * opt.LinkSweepTrialsPerSNR));
+    opt.LinkSweepMaxPoints = numel(opt.LinkSNRGrid_dB);
+end
+opt.LinkAdaptiveSweepEnabled = ~receiverNoiseMode;
 opt.LinkAdaptiveSweepStep_dB = 2;
-opt.LinkAdaptiveSweepMaxPoints = 12;
+opt.LinkAdaptiveSweepMaxPoints = ternaryDouble(receiverNoiseMode, 1, 12);
 opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
 opt.SaveFigures = logical(scfg.get("output.save_figures"));
-localDBLog("INFO", "Waveform bundle starting: snr=%.3f dB sweepPoints=%d canonicalSlots=%d monteCarlo=%d slotDuration_s=%.6f", ...
+if receiverNoiseMode
+    localDBLog("INFO", "Waveform bundle starting: qualityMode=%s operatingPointLabel=%.3f dB physicalPoints=%d canonicalSlots=%d monteCarlo=%d slotDuration_s=%.6f", ...
+        char(string(opt.LinkQualityMode)), double(opt.LinkSNR_dB), double(numel(opt.LinkSNRGrid_dB)), ...
+        double(opt.LinkMaxSimFrames), double(mcIterations), double(slotDuration_s));
+else
+    localDBLog("INFO", "Waveform bundle starting: snr=%.3f dB sweepPoints=%d canonicalSlots=%d monteCarlo=%d slotDuration_s=%.6f", ...
     double(opt.LinkSNR_dB), double(numel(opt.LinkSNRGrid_dB)), ...
     double(opt.LinkMaxSimFrames), double(mcIterations), double(slotDuration_s));
+end
 link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
 localDBLog("INFO", "Waveform bundle finished: ok=%d", double(logical(sixgr.util.structGet(link, "Ok", false))));
 runtimeControl = sixgr.util.structGet(link, "RawTrials", struct());
@@ -414,6 +432,13 @@ if localShouldWriteCSV(scfg)
     if ~isempty(study.FrequencyErrorSamples)
         sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_frequency_error_samples.csv"), study.FrequencyErrorSamples);
     end
+    z = sixgr.util.structGet(study, "ZCDPEMetrics", struct());
+    if isstruct(z)
+        localWriteOptionalTable(fullfile(runFolder, "reports", "csv", "zcdpe_dpi_confusion_matrix.csv"), sixgr.util.structGet(z, "DPIConfusionMatrix", table()));
+        localWriteOptionalTable(fullfile(runFolder, "reports", "csv", "zcdpe_dpi_error_probability_by_snr.csv"), sixgr.util.structGet(z, "DPIErrorBySnr", table()));
+        localWriteOptionalTable(fullfile(runFolder, "reports", "csv", "zcdpe_doppler_rmse_by_snr.csv"), sixgr.util.structGet(z, "DopplerRMSEBySnr", table()));
+        localWriteOptionalTable(fullfile(runFolder, "reports", "csv", "zcdpe_pool_analysis.csv"), sixgr.util.structGet(z, "PoolAnalysis", table()));
+    end
     controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), struct("PRACH", controlTrialT));
 end
 
@@ -462,6 +487,16 @@ zeroCorr = repmat(double(sixgr.util.structGet(cfg, "phy.prach.zeroCorrelationZon
     sixgr.util.structGet(cfg, "random_access.zero_correlation_zone", NaN))), nRows, 1);
 cfgIndex = repmat(double(sixgr.util.structGet(cfg, "phy.prach.configurationIndex", ...
     sixgr.util.structGet(cfg, "random_access.configuration_index", NaN))), nRows, 1);
+prachDesign = string(localRunnerColumnOrDefault(roT, "prach_design", repmat("nr_baseline", nRows, 1)));
+zcdpeEnabled = double(localRunnerColumnOrDefault(roT, "zcdpe_enabled", zeros(nRows, 1)));
+dpiD = double(localRunnerColumnOrDefault(roT, "dpi_D", nan(nRows, 1)));
+dpiTrue = double(localRunnerColumnOrDefault(roT, "dpi_d_true", nan(nRows, 1)));
+dpiDetected = double(localRunnerColumnOrDefault(roT, "dpi_d_detected", nan(nRows, 1)));
+dpiCorrect = double(localRunnerColumnOrDefault(roT, "dpi_correct_flag", nan(nRows, 1)));
+dpiConfusion = double(localRunnerColumnOrDefault(roT, "dpi_confusion_score", nan(nRows, 1)));
+dopplerEst = double(localRunnerColumnOrDefault(roT, "doppler_est_hz", nan(nRows, 1)));
+dopplerError = double(localRunnerColumnOrDefault(roT, "doppler_error_hz", nan(nRows, 1)));
+poolGain = double(localRunnerColumnOrDefault(roT, "pool_gain_factor", nan(nRows, 1)));
 
 controlTrialT = table( ...
     string(localRunnerColumnOrDefault(roT, "Status", repmat("FAIL", nRows, 1))), ...
@@ -513,6 +548,16 @@ controlTrialT = table( ...
     timingAdvanceUs, ...
     channelModelApplied, ...
     channelFadingApplied, ...
+    prachDesign, ...
+    zcdpeEnabled, ...
+    dpiD, ...
+    dpiTrue, ...
+    dpiDetected, ...
+    dpiCorrect, ...
+    dpiConfusion, ...
+    dopplerEst, ...
+    dopplerError, ...
+    poolGain, ...
     true(nRows, 1), ...
     isfinite(peakMetric), ...
     true(nRows, 1), ...
@@ -526,6 +571,8 @@ controlTrialT = table( ...
     'RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
     'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
     'TimingAdvance_samples','TimingAdvance_us','ChannelModelApplied','ChannelFadingApplied', ...
+    'PRACHDesign','ZCDPEEnabled','DPI_D','DPI_d_true','DPI_d_detected','DPICorrect', ...
+    'DPIConfusionScore','DopplerEstimate_Hz','DopplerError_Hz','PoolGainFactor', ...
     'DetectionAttempted','DetectionUsable','MeasurementAttempted','MeasurementUsable'});
 
 initialAccessT = study.SummaryBySNR;
@@ -2841,6 +2888,29 @@ end
 grid = unique(sort(snr_dB + offsets_dB));
 end
 
+function tf = localUsesReceiverNoiseMeasurement(cfg)
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ...
+    "receiver_noise_figure_thermal_noise"))));
+tf = mode == "receiver_noise_figure_thermal_noise";
+end
+
+function grid = localBuildPhysicalOperatingPointGrid(snr_dB)
+snr_dB = double(snr_dB);
+if ~(isscalar(snr_dB) && isfinite(snr_dB))
+    grid = NaN;
+else
+    grid = snr_dB;
+end
+end
+
+function value = ternaryDouble(condition, trueValue, falseValue)
+if logical(condition)
+    value = double(trueValue);
+else
+    value = double(falseValue);
+end
+end
+
 function [y, nVar, replay, noiseOnlyWave] = localRunnerApplyPDCCHChannelAndNoise(x, cfg, tx, txInfo, snr_dB)
 if nargin < 4 || ~isstruct(txInfo)
     txInfo = struct();
@@ -2932,7 +3002,7 @@ end
 end
 
 function [y, nVar] = localRunnerAddAwgnFromReplay(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localRunnerResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
@@ -2940,6 +3010,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localRunnerResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
@@ -3488,6 +3561,12 @@ if exist(candidate, "file") == 2
     return;
 end
 p = char(modelPath);
+end
+
+function localWriteOptionalTable(filePath, T)
+if istable(T) && ~isempty(T)
+    sixgr.util.csvWriteTable(filePath, T);
+end
 end
 
 function root = localRepoRoot()

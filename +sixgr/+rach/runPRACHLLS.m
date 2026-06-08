@@ -42,7 +42,15 @@ for iScenario = 1:numel(scenarioMatrix)
             for iTrial = 1:scenarioCfg.NumTrials
                 for iRO = 1:numel(occasions)
                     trialSeed = localTrialSeed(scenarioCfg.Seed, iScenario, iSNR, iThreshold, iTrial, iRO);
+                    if verbose
+                        fprintf("PRACH simulate start: scenario=%s snr=%.3f threshold=%.6g trial=%d ro=%d\n", ...
+                            scenarioCfg.ScenarioID, snrDb, threshold, iTrial, iRO);
+                    end
                     simOut = localSimulateOccasion(scenarioCfg, occasions(iRO), snrDb, threshold, trialSeed);
+                    if verbose
+                        fprintf("PRACH simulate complete: scenario=%s trial=%d ro=%d detected=%d\n", ...
+                            scenarioCfg.ScenarioID, iTrial, iRO, logical(simOut.ROSummary.detected));
+                    end
                     roCount = roCount + 1;
                     roRows{roCount, 1} = simOut.ROSummary;
                     for iRow = 1:numel(simOut.UERows)
@@ -58,9 +66,22 @@ for iScenario = 1:numel(scenarioMatrix)
     end
 end
 
+if verbose
+    fprintf("PRACH materialize tables: trialRows=%d roRows=%d\n", trialCount, roCount);
+end
 trialTable = localStructArrayToTable(localCellStructArray(trialRows));
 roTable = localStructArrayToTable(localCellStructArray(roRows));
+if verbose
+    fprintf("PRACH metrics start: trialRows=%d roRows=%d\n", height(trialTable), height(roTable));
+end
 metrics = sixgr.rach.PRACHMetrics(trialTable, roTable, firstResolved, "WriteOutputs", false);
+if verbose
+    fprintf("PRACH zcdpe metrics start\n");
+end
+zcdpeMetrics = sixgr.rach.ZCDPEMetrics(trialTable, roTable, firstResolved, "WriteOutputs", false);
+if verbose
+    fprintf("PRACH metrics complete\n");
+end
 
 out = struct();
 out.Config = localSerializableBase(baseStruct);
@@ -72,11 +93,13 @@ out.SummaryByScenario = metrics.SummaryByScenario;
 out.Confusion = metrics.Confusion;
 out.TimingErrorSamples = metrics.TimingErrorSamples;
 out.FrequencyErrorSamples = metrics.FrequencyErrorSamples;
+out.ZCDPEMetrics = zcdpeMetrics;
 out.OutputDir = outputDir;
 
 if writeOutputs
     localWriteOutputs(out);
     sixgr.rach.PRACHMetrics(trialTable, roTable, firstResolved, "WriteOutputs", true);
+    sixgr.rach.ZCDPEMetrics(trialTable, roTable, firstResolved, "WriteOutputs", true);
 end
 end
 
@@ -176,8 +199,8 @@ rng(double(trialSeed), "twister");
 servingPlan = localResolveServingPlan(cfg, occasion.Ordinal);
 interfererPlan = localResolveInterfererPlan(cfg, occasion.Ordinal);
 
-refTx = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
-    "PreambleIndex", localReferencePreamble(servingPlan, interfererPlan));
+refTx = localGeneratePRACHLikeWaveform(cfg, occasion, localReferencePreamble(servingPlan, interfererPlan), ...
+    localReferenceDPI(cfg, servingPlan, interfererPlan));
 rxWave = complex(zeros(size(refTx.Waveform, 1), cfg.NumRxAntennas));
 servingTruth = cell(0, 1);
 interfererTruth = cell(0, 1);
@@ -186,7 +209,7 @@ for iUE = 1:numel(servingPlan)
     if ~servingPlan(iUE).Active
         continue;
     end
-    ueTx = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, "PreambleIndex", servingPlan(iUE).PreambleIndex);
+    ueTx = localGeneratePRACHLikeWaveform(cfg, occasion, servingPlan(iUE).PreambleIndex, servingPlan(iUE).DPI_d);
     servingTruth{end+1, 1} = localApplyChannelAndImpairments(cfg, ueTx, servingPlan(iUE), trialSeed + iUE);
     rxWave = rxWave + servingTruth{end}.RxWaveform;
 end
@@ -195,7 +218,7 @@ for iUE = 1:numel(interfererPlan)
     if ~interfererPlan(iUE).Active
         continue;
     end
-    ueTx = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, "PreambleIndex", interfererPlan(iUE).PreambleIndex);
+    ueTx = localGeneratePRACHLikeWaveform(cfg, occasion, interfererPlan(iUE).PreambleIndex, interfererPlan(iUE).DPI_d);
     interfererTruth{end+1, 1} = localApplyChannelAndImpairments(cfg, ueTx, interfererPlan(iUE), trialSeed + 100 + iUE);
     rxWave = rxWave + 10^(cfg.InterCellRelativePower_dB / 20) * interfererTruth{end}.RxWaveform;
 end
@@ -211,11 +234,11 @@ sixgr.config.publishConfigApplicationEvidence("record", ...
     "RuntimeObjectPath", "cfg.DetectionThreshold", ...
     "ApplicationScope", "prach_lls_trial");
 tDetect = tic;
-det = sixgr.rach.PRACHDetector(rxWave, cfg, "Occasion", occasion, ...
+det = localDetectPRACHLike(rxWave, cfg, occasion, ...
     "DetectionThresholdMode", cfg.DetectionThresholdMode, "DetectionThreshold", threshold, ...
     "EnableFrequencyEstimationMetric", cfg.EnableFrequencyEstimationMetric);
 noiseOnlyWave = localNoiseOnlyWaveform(size(rxWave), noiseVar, trialSeed + 9100);
-noiseDet = sixgr.rach.PRACHDetector(noiseOnlyWave, cfg, "Occasion", occasion, ...
+noiseDet = localDetectPRACHLike(noiseOnlyWave, cfg, occasion, ...
     "DetectionThresholdMode", cfg.DetectionThresholdMode, "DetectionThreshold", threshold, ...
     "EnableFrequencyEstimationMetric", cfg.EnableFrequencyEstimationMetric);
 computeLatencyMs = toc(tDetect) * 1e3;
@@ -226,6 +249,24 @@ simOut.ROSummary = localClassifyRO(cfg, det, noiseDet, servingTruth, interfererT
 simOut.UERows = localExpandUERows(cfg, simOut.ROSummary, servingTruth, occasion, snrDb, threshold);
 end
 
+function tx = localGeneratePRACHLikeWaveform(cfg, occasion, preambleIndex, dpiIndex)
+if localZCDPEEnabled(cfg)
+    tx = sixgr.rach.generateZCDPEWaveform(cfg, "Occasion", occasion, ...
+        "PreambleIndex", preambleIndex, "DPI_d", dpiIndex);
+else
+    tx = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
+        "PreambleIndex", preambleIndex);
+end
+end
+
+function det = localDetectPRACHLike(rxWave, cfg, occasion, varargin)
+if localZCDPEEnabled(cfg)
+    det = sixgr.rach.ZCDPEDetector(rxWave, cfg, "Occasion", occasion, varargin{:});
+else
+    det = sixgr.rach.PRACHDetector(rxWave, cfg, "Occasion", occasion, varargin{:});
+end
+end
+
 function preamble = localReferencePreamble(servingPlan, interfererPlan)
 if ~isempty(servingPlan) && any([servingPlan.Active])
     preamble = servingPlan(find([servingPlan.Active], 1, "first")).PreambleIndex;
@@ -233,6 +274,15 @@ elseif ~isempty(interfererPlan) && any([interfererPlan.Active])
     preamble = interfererPlan(find([interfererPlan.Active], 1, "first")).PreambleIndex;
 else
     preamble = 0;
+end
+end
+
+function dpi = localReferenceDPI(cfg, servingPlan, interfererPlan)
+dpi = localFirstDPIFromConfig(cfg);
+if ~isempty(servingPlan) && any([servingPlan.Active])
+    dpi = servingPlan(find([servingPlan.Active], 1, "first")).DPI_d;
+elseif ~isempty(interfererPlan) && any([interfererPlan.Active])
+    dpi = interfererPlan(find([interfererPlan.Active], 1, "first")).DPI_d;
 end
 end
 
@@ -255,14 +305,36 @@ function plan = localBuildUEPlan(cfg, occasionOrdinal, isInterferer)
 numUE = max(1, cfg.NumUEsPerRO);
 activePattern = localResolveActivePattern(cfg.ActivePreamblePattern, occasionOrdinal, numUE);
 preambleSpec = localResolvePreambleSpec(cfg.PreambleIndex, occasionOrdinal, numUE, cfg.EnableCollisionMode && ~isInterferer);
-plan = repmat(struct("UEId",0,"Active",false,"PreambleIndex",0,"TimingOffsetTrue_us",0, ...
+dpiSpec = localResolveDPISpec(cfg, occasionOrdinal, numUE);
+plan = repmat(struct("UEId",0,"Active",false,"PreambleIndex",0,"DPI_d",0,"TimingOffsetTrue_us",0, ...
     "CFOTrue_Hz",0,"IsInterferer",isInterferer), numUE, 1);
 for iUE = 1:numUE
     plan(iUE).UEId = iUE;
     plan(iUE).Active = logical(activePattern(iUE));
     plan(iUE).PreambleIndex = double(preambleSpec(iUE));
+    plan(iUE).DPI_d = double(dpiSpec(iUE));
     plan(iUE).TimingOffsetTrue_us = localDrawTimingOffsetUs(cfg, plan(iUE).Active);
     plan(iUE).CFOTrue_Hz = localDrawCFO(cfg, plan(iUE).Active);
+end
+end
+
+function dpiSpec = localResolveDPISpec(cfg, occasionOrdinal, numUE)
+if ~localZCDPEEnabled(cfg)
+    dpiSpec = zeros(1, numUE);
+    return;
+end
+raw = sixgr.util.structGet(cfg, "ZCDPE.DPI_d", localFirstDPIFromConfig(cfg));
+arr = double(raw);
+D = double(sixgr.util.structGet(cfg, "ZCDPE.DPI_D", 4));
+if isscalar(arr)
+    dpiSpec = repmat(mod(round(arr), D), 1, numUE);
+elseif isvector(arr) && numel(arr) == numUE
+    dpiSpec = mod(round(arr(:).'), D);
+elseif ismatrix(arr) && size(arr, 2) >= numUE
+    dpiSpec = mod(round(arr(min(size(arr, 1), occasionOrdinal), 1:numUE)), D);
+else
+    error("sixgr:rach:runPRACHLLS:BadDPISpec", ...
+        "ZCDPE.DPI_d must be scalar, length-NumUEs vector, or NumOccasions-by-NumUEs matrix.");
 end
 end
 
@@ -366,6 +438,7 @@ truth = struct();
 truth.UEId = plan.UEId;
 truth.Active = plan.Active;
 truth.PreambleIndex = plan.PreambleIndex;
+truth.DPI_d = double(sixgr.util.structGet(plan, "DPI_d", 0));
 truth.RxWaveform = rxWave;
 truth.TimingOffsetTrue_us = plan.TimingOffsetTrue_us;
 truth.TimingOffsetTrue_samples = timingSamples + double(channelInfo.ChannelFilterDelay);
@@ -384,20 +457,28 @@ waveOut = repmat(mean(waveIn, 2), 1, numRxAnt);
 end
 
 function waveOut = localApplyFractionalDelay(waveIn, delaySamples)
+delaySamples = double(delaySamples);
 if abs(delaySamples) < 1e-9
     waveOut = waveIn;
     return;
 end
-n = (0:size(waveIn, 1)-1).';
-waveOut = complex(zeros(size(waveIn)));
-for iCol = 1:size(waveIn, 2)
-    waveOut(:, iCol) = interp1(n, waveIn(:, iCol), n - delaySamples, "linear", 0);
-end
+N = size(waveIn, 1);
+pad = max(128, ceil(abs(delaySamples)) + 64);
+nfft = 2^nextpow2(N + pad);
+bins = (0:nfft-1).';
+bins(bins > floor(nfft/2)) = bins(bins > floor(nfft/2)) - nfft;
+phaseShift = exp(-1i * 2*pi * delaySamples .* bins ./ nfft);
+wavePad = [waveIn; zeros(nfft - N, size(waveIn, 2), "like", waveIn)];
+shifted = ifft(fft(wavePad, nfft, 1) .* phaseShift, nfft, 1);
+waveOut = shifted(1:N, :);
 end
 
 function waveOut = localApplyFrequencyOffset(waveIn, cfoHz, sampleRateHz)
+cfoHz = double(cfoHz);
+sampleRateHz = max(double(sampleRateHz), eps);
 n = (0:size(waveIn, 1)-1).';
-waveOut = waveIn .* exp(1i * 2*pi * double(cfoHz) * n / max(double(sampleRateHz), eps));
+phaseRamp = exp(1i * 2*pi * cfoHz * n / sampleRateHz);
+waveOut = waveIn .* repmat(phaseRamp, 1, size(waveIn, 2));
 end
 
 function waveOut = localApplyPhaseNoise(waveIn, stdRad, seed)
@@ -406,13 +487,15 @@ phaseWalk = cumsum(stdRad * randn(size(waveIn, 1), 1));
 waveOut = waveIn .* exp(1i * phaseWalk);
 end
 
-function [rxOut, noiseVar] = localAddNoise(rxWave, refWave, snrDb, seed)
+function [rxOut, noiseVar] = localAddNoise(rxWave, singleUERefWave, snrDb, seed)
 rng(double(seed), "twister");
-signalPow = mean(abs(rxWave(:)).^2);
-if ~(isfinite(signalPow) && signalPow > 0)
-    signalPow = max(mean(abs(refWave(:)).^2), 1);
+refPow = mean(abs(singleUERefWave(:)).^2);
+if ~(isfinite(refPow) && refPow > 0)
+    refPow = 1;
+    warning("sixgr:rach:runPRACHLLS:ZeroRefPower", ...
+        "Single-UE reference waveform has zero/NaN power. Noise variance set to 1.");
 end
-noiseVar = signalPow / max(10^(double(snrDb)/10), eps);
+noiseVar = refPow / max(10^(double(snrDb)/10), eps);
 noise = sqrt(noiseVar/2) * (randn(size(rxWave)) + 1i * randn(size(rxWave)));
 rxOut = rxWave + noise;
 end
@@ -456,14 +539,20 @@ if ~isempty(matchedTruth)
     timingEst = sixgr.rach.estimateTimingOffset(det.TimingOffsetSamples, matchedTruth.SampleRate_Hz, matchedTruth.TimingOffsetTrue_samples);
 end
 
-wrongPreamble = detected && (~hasServingTx || ~any(servingPreambles == detectedPreamble));
+wrongPreamble = detected && hasServingTx && ~any(servingPreambles == detectedPreamble);
 falseAlarm = detected && ~hasServingTx;
 missed = ~detected && hasServingTx;
-wrongTiming = detected && ~isempty(matchedTruth) && abs(double(timingEst.Error_us)) > double(cfg.TimingTolerance_us);
-correct = detected && ~wrongPreamble && ~wrongTiming && ~falseAlarm && hasServingTx;
+numAbove = sum(double(det.CorrelationPeaks) >= double(det.Threshold));
+mixedFalse = detected && hasServingTx && (numAbove > 1);
+timingTolUs = double(cfg.TimingTolerance_us);
+wrongTiming = false;
+if detected && ~isempty(matchedTruth) && isfinite(timingTolUs) && ...
+        isfield(timingEst, "TruthAvailable") && logical(timingEst.TruthAvailable)
+    wrongTiming = abs(double(timingEst.Error_us)) > timingTolUs;
+end
+correct = detected && hasServingTx && ~wrongPreamble && ~wrongTiming;
 type1False = detected && ~hasServingTx && ~hasInterfererTx;
-type2False = detected && ((~hasServingTx && hasInterfererTx) || (hasServingTx && any(interfererPreambles == detectedPreamble) && ~any(servingPreambles == detectedPreamble)));
-mixedFalse = logical(det.MultiCandidateAboveThreshold) && detected;
+type2False = detected && ~hasServingTx && hasInterfererTx;
 
 if falseAlarm
     if type1False
@@ -479,7 +568,7 @@ elseif wrongPreamble
     detectionType = "wrong_preamble";
 elseif wrongTiming
     detectionType = "wrong_timing";
-elseif mixedFalse
+elseif mixedFalse && ~correct
     detectionType = "mixed_detection";
 else
     detectionType = "correct_detection";
@@ -493,6 +582,15 @@ end
 if logical(sixgr.util.structGet(det.FrequencyEstimate, "Valid", false))
     cfoEst = double(det.FrequencyEstimate.EstimateHz);
 end
+zcdpe = sixgr.util.structGet(det, "ZCDPE", struct());
+zcdpeEnabled = localZCDPEEnabled(cfg);
+dpiTrue = NaN;
+if ~isempty(matchedTruth) && isfield(matchedTruth, "DPI_d")
+    dpiTrue = double(matchedTruth.DPI_d);
+end
+dpiDetected = double(sixgr.util.structGet(zcdpe, "DPI_Detected", NaN));
+dpiCorrect = zcdpeEnabled && isfinite(dpiTrue) && isfinite(dpiDetected) && (round(dpiTrue) == round(dpiDetected));
+dopplerEst = double(sixgr.util.structGet(zcdpe, "DopplerEstimate_Hz", NaN));
 
 roSummary = struct();
 roSummary.scenario_id = string(sixgr.util.structGet(cfg, "ScenarioID", "scenario_1"));
@@ -535,6 +633,19 @@ roSummary.cfo_true_hz = double(cfoTrue);
 roSummary.cfo_est_hz = double(cfoEst);
 roSummary.frequency_error_hz = double(cfoEst - cfoTrue);
 roSummary.frequency_error_abs_hz = abs(double(cfoEst - cfoTrue));
+roSummary.zcdpe_enabled = logical(zcdpeEnabled);
+roSummary.prach_design = string(localPRACHDesign(cfg));
+roSummary.dpi_D = double(sixgr.util.structGet(cfg, "ZCDPE.DPI_D", NaN));
+roSummary.dpi_d_true = double(dpiTrue);
+roSummary.dpi_d_detected = double(dpiDetected);
+roSummary.dpi_correct = logical(dpiCorrect);
+roSummary.dpi_correct_flag = double(dpiCorrect);
+roSummary.dpi_confusion_score = double(sixgr.util.structGet(zcdpe, "DPI_ConfusionScore", NaN));
+roSummary.doppler_est_hz = double(dopplerEst);
+roSummary.doppler_error_hz = double(dopplerEst - cfoTrue);
+roSummary.is_backward_compat = logical(sixgr.util.structGet(cfg, "ZCDPE.IsBackwardCompat", false));
+roSummary.is_orthogonal_config = logical(sixgr.util.structGet(cfg, "ZCDPE.IsOrthogonal", false));
+roSummary.pool_gain_factor = double(sixgr.util.structGet(cfg, "ZCDPE.PoolGainFactor", NaN));
 roSummary.channel_model = string(cfg.ChannelModel);
 roSummary.delay_spread_ns = double(cfg.DelaySpread_ns);
 roSummary.speed_kmh = double(cfg.Speed_kmh);
@@ -575,6 +686,13 @@ if isempty(servingTruth)
         "correct_detection", false, "wrong_preamble", logical(roSummary.wrong_preamble), "false_alarm", logical(roSummary.false_alarm), ...
         "missed_detection", false, "timing_offset_true_us", NaN, "timing_offset_est_us", double(roSummary.timing_offset_est_us), ...
         "timing_error_us", NaN, "cfo_true_hz", NaN, "cfo_est_hz", double(roSummary.cfo_est_hz), ...
+        "zcdpe_enabled", logical(roSummary.zcdpe_enabled), "prach_design", string(roSummary.prach_design), ...
+        "dpi_d_true", NaN, "dpi_d_detected", double(roSummary.dpi_d_detected), ...
+        "dpi_correct", false, "dpi_confusion_score", double(roSummary.dpi_confusion_score), ...
+        "doppler_est_hz", double(roSummary.doppler_est_hz), "doppler_error_hz", NaN, ...
+        "is_backward_compat", logical(roSummary.is_backward_compat), ...
+        "dpi_D", double(roSummary.dpi_D), "is_orthogonal_config", logical(roSummary.is_orthogonal_config), ...
+        "pool_gain_factor", double(roSummary.pool_gain_factor), ...
         "channel_model", string(cfg.ChannelModel), "delay_spread_ns", double(cfg.DelaySpread_ns), ...
         "speed_kmh", double(cfg.Speed_kmh), "threshold", double(threshold), "peak_metric", double(roSummary.peak_metric));
     return;
@@ -588,6 +706,13 @@ ueRows = repmat(struct( ...
     "correct_detection", false, "wrong_preamble", false, "false_alarm", false, ...
     "missed_detection", false, "timing_offset_true_us", NaN, "timing_offset_est_us", double(roSummary.timing_offset_est_us), ...
     "timing_error_us", NaN, "cfo_true_hz", NaN, "cfo_est_hz", double(roSummary.cfo_est_hz), ...
+    "zcdpe_enabled", logical(roSummary.zcdpe_enabled), "prach_design", string(roSummary.prach_design), ...
+    "dpi_d_true", NaN, "dpi_d_detected", double(roSummary.dpi_d_detected), ...
+    "dpi_correct", false, "dpi_confusion_score", double(roSummary.dpi_confusion_score), ...
+    "doppler_est_hz", double(roSummary.doppler_est_hz), "doppler_error_hz", NaN, ...
+    "is_backward_compat", logical(roSummary.is_backward_compat), ...
+    "dpi_D", double(roSummary.dpi_D), "is_orthogonal_config", logical(roSummary.is_orthogonal_config), ...
+    "pool_gain_factor", double(roSummary.pool_gain_factor), ...
     "channel_model", string(cfg.ChannelModel), "delay_spread_ns", double(cfg.DelaySpread_ns), ...
     "speed_kmh", double(cfg.Speed_kmh), "threshold", double(threshold), "peak_metric", double(roSummary.peak_metric)), numel(servingTruth), 1);
 
@@ -601,6 +726,10 @@ for iUE = 1:numel(servingTruth)
     ueRows(iUE).timing_offset_true_us = double(servingTruth(iUE).TimingOffsetTrue_us);
     ueRows(iUE).timing_error_us = double(roSummary.timing_offset_est_us) - double(servingTruth(iUE).TimingOffsetTrue_us);
     ueRows(iUE).cfo_true_hz = double(servingTruth(iUE).CFOTrue_Hz);
+    ueRows(iUE).dpi_d_true = double(servingTruth(iUE).DPI_d);
+    ueRows(iUE).dpi_correct = logical(roSummary.zcdpe_enabled && isfinite(roSummary.dpi_d_detected) && ...
+        round(double(roSummary.dpi_d_detected)) == round(double(servingTruth(iUE).DPI_d)));
+    ueRows(iUE).doppler_error_hz = double(roSummary.doppler_est_hz) - double(servingTruth(iUE).CFOTrue_Hz);
 end
 end
 
@@ -640,6 +769,21 @@ sixgr.util.csvWriteTable(fullfile(outDir, "timing_error_samples.csv"), out.Timin
 if ~isempty(out.FrequencyErrorSamples) && any(isfinite(double(out.FrequencyErrorSamples.frequency_error_hz)))
     sixgr.util.csvWriteTable(fullfile(outDir, "optional_frequency_error_samples.csv"), out.FrequencyErrorSamples);
 end
+if isfield(out, "ZCDPEMetrics") && isstruct(out.ZCDPEMetrics)
+    z = out.ZCDPEMetrics;
+    if isfield(z, "DPIConfusionMatrix") && istable(z.DPIConfusionMatrix)
+        sixgr.util.csvWriteTable(fullfile(outDir, "dpi_confusion_matrix.csv"), z.DPIConfusionMatrix);
+    end
+    if isfield(z, "DPIErrorBySnr") && istable(z.DPIErrorBySnr)
+        sixgr.util.csvWriteTable(fullfile(outDir, "dpi_error_probability_by_snr.csv"), z.DPIErrorBySnr);
+    end
+    if isfield(z, "DopplerRMSEBySnr") && istable(z.DopplerRMSEBySnr)
+        sixgr.util.csvWriteTable(fullfile(outDir, "doppler_rmse_by_snr.csv"), z.DopplerRMSEBySnr);
+    end
+    if isfield(z, "PoolAnalysis") && istable(z.PoolAnalysis)
+        sixgr.util.csvWriteTable(fullfile(outDir, "pool_analysis.csv"), z.PoolAnalysis);
+    end
+end
 end
 
 function localWriteJSON(filePath, s)
@@ -671,6 +815,30 @@ for iArg = 1:nargin
     end
     value = candidate;
     return;
+end
+end
+
+function tf = localZCDPEEnabled(cfg)
+tf = logical(sixgr.util.structGet(cfg, "ZCDPEEnabled", ...
+    sixgr.util.structGet(cfg, "ZCDPE.Enable", false)));
+end
+
+function dpi = localFirstDPIFromConfig(cfg)
+dpi = sixgr.util.structGet(cfg, "ZCDPE.DPI_d", 0);
+dpi = double(dpi(:));
+dpi = dpi(isfinite(dpi));
+if isempty(dpi)
+    dpi = 0;
+else
+    dpi = dpi(1);
+end
+end
+
+function design = localPRACHDesign(cfg)
+if localZCDPEEnabled(cfg)
+    design = "zcdpe";
+else
+    design = "nr_baseline";
 end
 end
 

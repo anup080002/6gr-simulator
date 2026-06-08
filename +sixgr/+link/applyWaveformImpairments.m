@@ -7,9 +7,11 @@ function [y, replay] = applyWaveformImpairments(x, cfg, sampleRateHz)
 %   AppliedLargeScaleGain_dB = -AppliedLargeScaleLoss_dB
 %   amplitudeGain = 10^(AppliedLargeScaleGain_dB/20)
 %
-% The downstream AWGN helper can either:
-%   - anchor noise to a configured SNR operating point, or
-%   - inject thermal noise derived from bandwidth and receiver noise figure.
+% The downstream AWGN helper injects thermal noise derived from bandwidth and
+% receiver noise figure. Configured SNR is retained only as operating-point
+% metadata and must not be converted into measured SINR or AWGN. Standalone
+% link-reference tests may explicitly request "standalone_awgn_snr_argument",
+% which is exported as an AWGN baseline mode rather than receiver truth.
 %
 % In the thermal-noise mode we keep an explicit absolute-power bridge between
 % the normalized waveform and the large-scale link budget by using the
@@ -94,15 +96,13 @@ ampGain = 10.^(gain_dB / 20);
 
 configuredSNR_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "channel.snr_dB", NaN));
 noiseMode = localResolveNoiseOperatingMode(cfg);
-if ~localHasExplicitNoiseOperatingMode(cfg) && gainSource ~= "none"
-    noiseMode = "configured_snr_before_large_scale_gain";
-end
 [servingRxPower_dBm, servingRxPowerSource, referenceTxPower_dBm, referenceTxPowerSource] = ...
-    localResolveServingRxPower(cfg, userMeta, loss_dB);
+    localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB);
 noiseFigure_dB = localResolveNoiseFigure(cfg);
 noiseBandwidth_Hz = localResolveNoiseBandwidth(cfg, sampleRateHz);
 [appliedAWGNSNR_dB, targetNoiseVariance, thermalNoisePower_dBm, noiseSource] = ...
-    localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, noiseBandwidth_Hz, noiseFigure_dB, ampGain);
+    localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, ...
+    servingRxPowerSource, noiseBandwidth_Hz, noiseFigure_dB, ampGain);
 [phaseNoiseConfigured, phaseNoiseBackend, phaseNoiseTruthClassification, phaseNoiseApproximationReason, phaseNoiseExecutionStatus] = ...
     localResolvePhaseNoiseTruthBoundary(cfg, sampleRateHz);
 [carrierPhaseOffset_deg, carrierPhaseOffsetSource] = localResolveInjectedCarrierPhaseOffsetDeg(cfg);
@@ -192,10 +192,10 @@ end
 
 function mode = localResolveNoiseOperatingMode(cfg)
 mode = string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ...
-    "configured_snr_anchor_after_large_scale_gain"));
+    "receiver_noise_figure_thermal_noise"));
 mode = strtrim(lower(mode));
 if strlength(mode) == 0
-    mode = "configured_snr_anchor_after_large_scale_gain";
+    mode = "receiver_noise_figure_thermal_noise";
 end
 end
 
@@ -209,7 +209,7 @@ tf = strlength(strtrim(mode)) > 0;
 end
 
 function [servingRxPower_dBm, source, referenceTxPower_dBm, referenceTxPowerSource] = ...
-        localResolveServingRxPower(cfg, userMeta, loss_dB)
+        localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB)
 servingRxPower_dBm = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingRxPower_dBm", NaN));
 source = "runtime_serving_rx_power";
 referenceTxPower_dBm = NaN;
@@ -219,6 +219,10 @@ if isfinite(servingRxPower_dBm)
 end
 if ~(isfinite(loss_dB) && loss_dB >= 0)
     source = "unavailable";
+    return;
+end
+if ~(isfinite(pathloss_dB) || isfinite(basePathloss_dB))
+    source = "unavailable_missing_pathloss_or_runtime_rx_power";
     return;
 end
 [referenceTxPower_dBm, referenceTxPowerSource] = localResolveReferenceTxPower(cfg, userMeta);
@@ -271,31 +275,25 @@ end
 source = "unavailable";
 end
 
-function appliedAWGNSNR_dB = localResolveAppliedAWGNSNR(noiseMode, configuredSNR_dB, loss_dB)
+function appliedAWGNSNR_dB = localResolveAppliedAWGNSNR(noiseMode, configuredSNR_dB, ~)
 if ~isfinite(configuredSNR_dB)
     appliedAWGNSNR_dB = NaN;
     return;
 end
 switch strtrim(lower(string(noiseMode)))
-    case "configured_snr_anchor_after_large_scale_gain"
-        % Preserve the requested receive-side SNR after large-scale
-        % attenuation has already been applied to the waveform samples.
+    case "standalone_awgn_snr_argument"
         appliedAWGNSNR_dB = configuredSNR_dB;
-    case {"configured_snr_before_large_scale_gain", "configured_launch_snr_before_pathloss"}
-        % Interpret the configured SNR as a launch-point value before the
-        % large-scale attenuation is applied.
-        appliedAWGNSNR_dB = configuredSNR_dB - loss_dB;
     otherwise
-        % Fail closed to the existing browser-visible operating mode.
-        appliedAWGNSNR_dB = configuredSNR_dB;
+        % Configured SNR is metadata only in strict LLS.
+        appliedAWGNSNR_dB = NaN;
 end
 end
 
 function [appliedAWGNSNR_dB, targetNoiseVariance, thermalNoisePower_dBm, source] = ...
-        localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, noiseBandwidth_Hz, noiseFigure_dB, ampGain)
+        localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, servingRxPowerSource, noiseBandwidth_Hz, noiseFigure_dB, ampGain)
 targetNoiseVariance = NaN;
 thermalNoisePower_dBm = NaN;
-source = "configured_snr";
+source = "unavailable";
 appliedAWGNSNR_dB = localResolveAppliedAWGNSNR(noiseMode, configuredSNR_dB, loss_dB);
 
 switch strtrim(lower(string(noiseMode)))
@@ -306,14 +304,19 @@ switch strtrim(lower(string(noiseMode)))
             appliedAWGNSNR_dB = servingRxPower_dBm - thermalNoisePower_dBm;
         else
             appliedAWGNSNR_dB = NaN;
+            if strcmpi(char(string(servingRxPowerSource)), "unavailable_missing_pathloss_or_runtime_rx_power")
+                source = "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
+            end
         end
         % Bridge the absolute thermal-noise power into the normalized
         % waveform domain inside the DL/UL kernels, where the desired
         % reference waveform power is still available after fading,
         % large-scale scaling, and interference synthesis.
         targetNoiseVariance = NaN;
+    case "standalone_awgn_snr_argument"
+        source = "standalone_awgn_snr_argument";
     otherwise
-        source = "configured_snr";
+        source = "unsupported_noise_operating_mode_no_configured_snr_awgn";
 end
 end
 

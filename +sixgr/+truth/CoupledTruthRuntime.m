@@ -31,6 +31,7 @@ methods(Static)
         state.MultiUser = multiUser;
         state.CfgMobility = cfgMob;
         state.CfgLargeScale = cfgLargeScale;
+        state.NoiseOperatingMode = char(sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(cfgMob));
         state.Layout = layoutStruct;
         state.UE = ue;
         state.BSAntennaRuntime = bsAntennaRuntime;
@@ -334,6 +335,32 @@ methods(Static)
 end
 
 methods(Static, Access=private)
+    function mode = noiseOperatingModeFromConfig(cfgOrState)
+        mode = "";
+        cfg = cfgOrState;
+        if isstruct(cfgOrState)
+            if isfield(cfgOrState, "NoiseOperatingMode")
+                mode = string(cfgOrState.NoiseOperatingMode);
+            end
+            if strlength(strtrim(mode)) == 0 && isfield(cfgOrState, "CfgMobility")
+                cfg = cfgOrState.CfgMobility;
+            end
+        end
+        if strlength(strtrim(mode)) == 0
+            mode = string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ...
+                "receiver_noise_figure_thermal_noise"));
+        end
+        mode = lower(strtrim(mode));
+        if strlength(mode) == 0
+            mode = "receiver_noise_figure_thermal_noise";
+        end
+    end
+
+    function tf = usesReceiverNoiseMeasurementMode(cfgOrState)
+        tf = sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(cfgOrState) == ...
+            "receiver_noise_figure_thermal_noise";
+    end
+
     function state = advanceFrameImpl(state, absoluteFrame, snr_dB)
         canonicalSlot = max(1, round(double(absoluteFrame(1))));
         snr_dB = double(snr_dB(1));
@@ -1537,7 +1564,7 @@ methods(Static, Access=private)
         r.ServingBeamIndex = double(state.LargeScaleState.BeamIndex(ueIdx, servingCell));
         r.ServingBeamGain_dB = double(state.LargeScaleState.BeamGain_dB(ueIdx, servingCell));
         r.ConfiguredSNR_dB = double(configuredSNR);
-        r.ConfiguredSNRSource = "configured_runtime_operating_point_reference";
+        r.ConfiguredSNRSource = "configured_operating_point_metadata";
         r.ServingRSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
         r.RSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
         r.RxPower_dBm = double(state.LargeScaleState.RxPower_dBm(ueIdx, servingCell));
@@ -1742,7 +1769,7 @@ methods(Static, Access=private)
             if ismember("ConfiguredSNRSource", string(servingT.Properties.VariableNames))
                 r.ConfiguredSNRSource = string(servingT.ConfiguredSNRSource(lastIdx));
             else
-                r.ConfiguredSNRSource = "configured_runtime_operating_point_reference";
+                r.ConfiguredSNRSource = "configured_operating_point_metadata";
             end
             if ismember("ServingRSRP_dBm", string(servingT.Properties.VariableNames))
                 r.ServingRSRP_dBm = double(servingT.ServingRSRP_dBm(lastIdx));
@@ -4396,6 +4423,7 @@ methods(Static, Access=private)
             "CurrentSlotGuardNumSymbols", 0, ...
             "CurrentSlotULSymbolStart", 0, ...
             "CurrentSlotULNumSymbols", double(symbolsPerSlot), ...
+            "NoiseOperatingMode", char(sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(cfg)), ...
             "ConfiguredSNR_dB", NaN, ...
             "CurrentSNR_dB", NaN, ...
             "DLCompletedFrames", 0, ...
@@ -4411,11 +4439,17 @@ methods(Static, Access=private)
             "PHYSource", "runWaveformLinkBundle.executeGrantPHYJob", ...
             "ReportSource", "CoupledTruthRuntime.SlotTraceTable", ...
             "StateStatus", "initialized", ...
-            "ValueRole", "configured_anchor_until_feedback", ...
-            "ValueStatus", "configured_anchor_pending_runtime_feedback", ...
-            "ValueSource", "CoupledTruthRuntime.initialize:configured_runtime_anchor", ...
-            "ValueDefinition", "canonical run state for the slot-coupled LLS truth loop; CurrentSNR_dB starts as the configured runtime anchor and is promoted to representative measured UE feedback after valid runtime observations arrive", ...
+            "ValueRole", "configured_quality_until_feedback", ...
+            "ValueStatus", "configured_quality_pending_runtime_feedback", ...
+            "ValueSource", "CoupledTruthRuntime.initialize:configured_operating_point", ...
+            "ValueDefinition", "canonical run state for the slot-coupled LLS truth loop; CurrentSNR_dB starts as explicit configured operating-point quality only when legacy configured-SNR mode is selected and is promoted to representative measured UE feedback after valid runtime observations arrive", ...
             "NAReason", "");
+        if sixgr.truth.CoupledTruthRuntime.usesReceiverNoiseMeasurementMode(cfg)
+            runState.ValueRole = "runtime_receiver_measurement_pending";
+            runState.ValueStatus = "unavailable_pending_runtime_feedback";
+            runState.ValueSource = "CoupledTruthRuntime.initialize:receiver_measurement_pending";
+            runState.ValueDefinition = "canonical run state for the slot-coupled LLS truth loop; CurrentSNR_dB remains unavailable until receiver/reference-signal measurements or valid CSI feedback arrive; ConfiguredSNR_dB is operating-point metadata only";
+        end
         if isstruct(cfg)
             if logical(sixgr.truth.CoupledTruthRuntime.scalarOrDefault( ...
                     sixgr.util.structGet(cfg, "run.controlGating.trsRequired", false), false))
@@ -4515,14 +4549,20 @@ methods(Static, Access=private)
         end
         configuredSNR = double(configuredSNR);
         currentSNR = double(sixgr.util.structGet(runState, "CurrentSNR_dB", configuredSNR));
+        valueRole = string(sixgr.util.structGet(runState, "ValueRole", ""));
+        receiverNoiseMode = sixgr.truth.CoupledTruthRuntime.usesReceiverNoiseMeasurementMode(runState);
         if ~(isfinite(currentSNR))
-            currentSNR = configuredSNR;
+            if receiverNoiseMode || contains(lower(valueRole), "pending")
+                currentSNR = NaN;
+            else
+                currentSNR = configuredSNR;
+            end
         end
         traceT.ConfiguredSNR_dB(rowIdx) = configuredSNR;
-        traceT.ConfiguredSNRSource(rowIdx) = string("configured_runtime_operating_point_reference");
+        traceT.ConfiguredSNRSource(rowIdx) = string("configured_operating_point_metadata");
         traceT.CurrentSNR_dB(rowIdx) = currentSNR;
         traceT.CurrentSNRSource(rowIdx) = string(sixgr.util.structGet(runState, "ValueSource", ""));
-        traceT.CurrentSNRValueRole(rowIdx) = string(sixgr.util.structGet(runState, "ValueRole", ""));
+        traceT.CurrentSNRValueRole(rowIdx) = valueRole;
         traceT.CurrentSNRValueStatus(rowIdx) = string(sixgr.util.structGet(runState, "ValueStatus", ""));
         traceT.SNR_dB(rowIdx) = currentSNR;
     end
@@ -4550,6 +4590,7 @@ methods(Static, Access=private)
         runState.CurrentSlotULSymbolStart = double(sixgr.util.structGet(state, "CurrentSlotULSymbolStart", 0));
         runState.CurrentSlotULNumSymbols = double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", 14));
         configuredSNR = double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN));
+        runState.NoiseOperatingMode = char(sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(state));
         [representativeLinkQuality, representativeLinkQualitySource] = ...
             sixgr.truth.CoupledTruthRuntime.representativeCurrentLinkQuality(state);
         runState.ConfiguredSNR_dB = configuredSNR;
@@ -4559,18 +4600,24 @@ methods(Static, Access=private)
             if string(representativeLinkQualitySource) == "pending_measured_feedback"
                 runState.ValueRole = "representative_measured_feedback_pending_delivery";
                 runState.ValueSource = "CoupledTruthRuntime.refreshRunState:pending_measured_csi_report";
-                runState.ValueDefinition = "representative median UE-measured wideband SINR from the latest observed CSI reports for the active slot; this is not the configured sweep anchor, and delivery timing to the scheduler may still be pending";
+                runState.ValueDefinition = "representative median UE-measured wideband SINR from the latest observed CSI reports for the active slot; this is not configured operating-point metadata, and delivery timing to the scheduler may still be pending";
             else
-                runState.ValueRole = "representative_measured_feedback_proxy";
-                runState.ValueSource = "CoupledTruthRuntime.refreshRunState:representative_feedback_sinr_proxy";
-                runState.ValueDefinition = "representative median UE-reported/measured wideband SINR proxy for the active slot; this is not the configured sweep anchor, and ConfiguredSNR_dB preserves that configured runtime anchor separately";
+                runState.ValueRole = "representative_measured_feedback";
+                runState.ValueSource = "CoupledTruthRuntime.refreshRunState:representative_feedback_sinr";
+                runState.ValueDefinition = "representative median UE-reported/measured wideband SINR for the active slot; ConfiguredSNR_dB preserves configured operating-point metadata separately";
             end
+        elseif sixgr.truth.CoupledTruthRuntime.usesReceiverNoiseMeasurementMode(state)
+            runState.CurrentSNR_dB = NaN;
+            runState.ValueRole = "runtime_receiver_measurement_pending";
+            runState.ValueStatus = "unavailable_pending_runtime_feedback";
+            runState.ValueSource = "CoupledTruthRuntime.refreshRunState:receiver_measurement_pending";
+            runState.ValueDefinition = "no valid runtime receiver/reference-signal SINR or CSI feedback is available yet for the active slot; CurrentSNR_dB is unavailable and ConfiguredSNR_dB is operating-point metadata only";
         else
             runState.CurrentSNR_dB = configuredSNR;
-            runState.ValueRole = "configured_anchor_until_feedback";
-            runState.ValueStatus = "configured_anchor_pending_runtime_feedback";
-            runState.ValueSource = "CoupledTruthRuntime.refreshRunState:configured_runtime_anchor_fallback";
-            runState.ValueDefinition = "no valid runtime feedback SINR is available yet for the active slot, so CurrentSNR_dB temporarily reflects the configured runtime SNR anchor and is not a measured SINR; ConfiguredSNR_dB preserves that anchor explicitly";
+            runState.ValueRole = "configured_quality_until_feedback";
+            runState.ValueStatus = "configured_quality_pending_runtime_feedback";
+            runState.ValueSource = "CoupledTruthRuntime.refreshRunState:configured_operating_point";
+            runState.ValueDefinition = "no valid runtime feedback SINR is available yet for the active slot, so CurrentSNR_dB reflects explicit configured operating-point quality and is not a measured SINR; ConfiguredSNR_dB preserves that metadata separately";
         end
         runState.CanonicalSlotsPerSweepPoint = double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN));
         runState.DLCompletedFrames = double(sixgr.util.structGet(state, "DLCompletedFrames", 0));
@@ -4635,6 +4682,65 @@ methods(Static, Access=private)
         end
     end
 
+    function snr_dB = resolveRuntimeSignalSNRForUE(state, cfg, ueIdx, direction)
+        snr_dB = NaN;
+        direction = upper(string(direction));
+        if ~(isfinite(double(ueIdx)) && double(ueIdx) >= 1)
+            return;
+        end
+        feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
+        feedbackSINR = double(sixgr.util.structGet(feedback, "SINR_dB", NaN));
+        if logical(sixgr.util.structGet(feedback, "Valid", false)) && isfinite(feedbackSINR)
+            snr_dB = feedbackSINR;
+            return;
+        end
+        pendingT = sixgr.util.structGet(state, "PendingCSITable", table());
+        if istable(pendingT) && ~isempty(pendingT) && ...
+                all(ismember(["UEIndex", "Direction", "SINR_dB"], string(pendingT.Properties.VariableNames)))
+            pendingMask = isfinite(double(pendingT.UEIndex)) & ...
+                double(pendingT.UEIndex) == double(ueIdx) & ...
+                upper(string(pendingT.Direction)) == direction & ...
+                isfinite(double(pendingT.SINR_dB));
+            if any(pendingMask)
+                pendingSlice = pendingT(pendingMask, :);
+                if ismember("SourceSlot", string(pendingSlice.Properties.VariableNames))
+                    [~, order] = sort(double(pendingSlice.SourceSlot), "descend");
+                    pendingSlice = pendingSlice(order, :);
+                end
+                snr_dB = double(pendingSlice.SINR_dB(1));
+                return;
+            end
+        end
+        servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", []));
+        servingCell = NaN;
+        if double(ueIdx) <= numel(servingVec)
+            servingCell = double(servingVec(ueIdx));
+        end
+        cfgEval = cfg;
+        if ~(isstruct(cfgEval) && ~isempty(fieldnames(cfgEval)))
+            cfgEval = sixgr.util.structGet(state, "CfgMobility", struct());
+        end
+        interferenceMode = string(sixgr.util.structGet(cfgEval, "run.interferenceExecutionMode", ...
+            sixgr.util.structGet(cfgEval, "interference.inter_cell_execution_mode", "")));
+        if strlength(strtrim(interferenceMode)) > 0 && isfinite(servingCell)
+            estimatedSINR = sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR(state, ueIdx, servingCell, interferenceMode);
+            if isfinite(estimatedSINR)
+                snr_dB = estimatedSINR;
+                return;
+            end
+        end
+        runState = sixgr.util.structGet(state, "RunState", struct());
+        representativeSNR = double(sixgr.util.structGet(runState, "CurrentSNR_dB", NaN));
+        valueRole = lower(string(sixgr.util.structGet(runState, "ValueRole", "")));
+        if isfinite(representativeSNR) && ~contains(valueRole, "configured")
+            snr_dB = representativeSNR;
+            return;
+        end
+        if ~sixgr.truth.CoupledTruthRuntime.usesReceiverNoiseMeasurementMode(state)
+            snr_dB = double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN));
+        end
+    end
+
     function [traceT, rowIdx] = ensureCurrentSlotTraceRow(state)
         traceT = sixgr.util.structGet(state, "SlotTraceTable", table());
         rowIdx = [];
@@ -4670,12 +4776,20 @@ methods(Static, Access=private)
             row.Frame = double(frameIdx);
             row.FrameLocal = 1 + mod(double(frameIdx) - 1, max(1, round(double(totalSweepFrames))));
             row.ConfiguredSNR_dB = double(snr_dB);
-            row.ConfiguredSNRSource = "configured_runtime_operating_point_reference";
-            row.CurrentSNR_dB = double(snr_dB);
-            row.CurrentSNRSource = "configured_runtime_operating_point_reference";
-            row.CurrentSNRValueRole = "configured_anchor_until_feedback";
-            row.CurrentSNRValueStatus = "configured_anchor_pending_runtime_feedback";
-            row.SNR_dB = double(snr_dB);
+            row.ConfiguredSNRSource = "configured_operating_point_metadata";
+            if sixgr.truth.CoupledTruthRuntime.usesReceiverNoiseMeasurementMode(state)
+                row.CurrentSNR_dB = NaN;
+                row.CurrentSNRSource = "receiver_measurement_pending";
+                row.CurrentSNRValueRole = "runtime_receiver_measurement_pending";
+                row.CurrentSNRValueStatus = "unavailable_pending_runtime_feedback";
+                row.SNR_dB = NaN;
+            else
+                row.CurrentSNR_dB = double(snr_dB);
+                row.CurrentSNRSource = "configured_operating_point_metadata";
+                row.CurrentSNRValueRole = "configured_quality_until_feedback";
+                row.CurrentSNRValueStatus = "configured_quality_pending_runtime_feedback";
+                row.SNR_dB = double(snr_dB);
+            end
             row.SweepPointIndex = double(sweepIdx);
             row.SweepPointCount = double(sweepCount);
             row.ValueSource = "CoupledTruthRuntime.recordSlotTraceStart";
@@ -5620,9 +5734,10 @@ methods(Static, Access=private)
         end
         interferenceBundle = sixgr.truth.CoupledTruthRuntime.buildPUCCHInterferenceBundle(state, row);
         expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
+        pucchSNR_dB = sixgr.truth.CoupledTruthRuntime.resolveRuntimeSignalSNRForUE(state, cfgU, ueIdx, "UL");
         trial = sixgr.link.runPUCCHWaveformTrial(cfgU, ...
             "ExpectedUCIBits", int8(logical(expectedAck)), ...
-            "SNR_dB", double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN)), ...
+            "SNR_dB", double(pucchSNR_dB), ...
             "Format", sixgr.util.structGet(cfgU, "phy.pucch.format", []), ...
             "RNTI", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)), ...
             "InterferenceBundle", interferenceBundle);
@@ -5718,8 +5833,8 @@ methods(Static, Access=private)
             "DetectionUsable", detectionUsable, ...
             "FailureReason", char(string(sixgr.util.structGet(trial, "FailureReason", ""))), ...
             "ConfiguredSNR_dB", double(sixgr.util.structGet(trial, "ConfiguredSNR_dB", sixgr.util.structGet(state, "CurrentSNR_dB", NaN))), ...
-            "ConfiguredSNRSource", char(string(sixgr.util.structGet(trial, "ConfiguredSNRSource", "configured_runtime_operating_point_reference"))), ...
-            "SNRValueRole", char(string(sixgr.util.structGet(trial, "SNRValueRole", "configured_reference_metadata"))), ...
+            "ConfiguredSNRSource", char(string(sixgr.util.structGet(trial, "ConfiguredSNRSource", "configured_operating_point_metadata"))), ...
+            "SNRValueRole", char(string(sixgr.util.structGet(trial, "SNRValueRole", "configured_operating_point_metadata"))), ...
             "AppliedAWGNSNR_dB", double(sixgr.util.structGet(trial, "AppliedAWGNSNR_dB", NaN)), ...
             "ReceiverHestSINR_dB", double(sixgr.util.structGet(trial, "ReceiverHestSINR_dB", NaN)), ...
             "ReceiverHestSINRSource", char(string(sixgr.util.structGet(trial, "ReceiverHestSINRSource", ""))), ...
@@ -5795,9 +5910,9 @@ methods(Static, Access=private)
         configuredSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ConfiguredSNRSource", repmat("", n, 1))));
         configuredRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "SNRValueRole", repmat("", n, 1))));
         mask = strlength(configuredSource) == 0 & isfinite(configuredSINR);
-        configuredSource(mask) = "configured_runtime_operating_point_reference";
+        configuredSource(mask) = "configured_operating_point_metadata";
         mask = strlength(configuredRole) == 0 & isfinite(configuredSINR);
-        configuredRole(mask) = "configured_reference_metadata";
+        configuredRole(mask) = "configured_operating_point_metadata";
         T.ConfiguredSNR_dB = configuredSINR;
         T.ConfiguredSNRSource = configuredSource;
         T.SNRValueRole = configuredRole;

@@ -139,66 +139,48 @@ function [decision, adaptationState] = localResolveMCSDecision(decision, adaptat
 previousMCS = double(decision.MCSIndex);
 previousCodeRate = double(decision.TargetCodeRate);
 previousModulation = char(string(decision.Modulation));
-selectionAMC = struct("Valid", false, "MCSIndex", NaN, "MCSProfile", struct("Modulation", "", "TargetCodeRate", NaN));
-if adaptationDomain == "legacy_mcs"
-    if isfinite(instantMCS)
-        if ~resetState && adaptationState.Initialized && localMCSJumpResetEnabled(cfg) && ...
-                isfinite(adaptationState.LastMCSIndex) && abs(double(instantMCS) - double(adaptationState.LastMCSIndex)) > 5
-            resetState = true;
-            resetReason = "mcs_jump";
-        end
-        if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS)
-            cqiBasedMCS = double(instantMCS);
-        elseif logical(adaptationState.InnerLoopEnabled)
-            alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
-            newWeightPct = alpha * 100;
-            oldWeightPct = 100 - newWeightPct;
-            % Radisys/FlexRAN-style inner loop keeps cqiBasedMCS in
-            % hundredth-MCS precision before the final floor to MCS index.
-            cqiBasedMCS = ceil((newWeightPct * double(instantMCS) * 100 + ...
-                oldWeightPct * double(adaptationState.CQIBasedMCS) * 100) / 100) / 100;
-        else
-            cqiBasedMCS = double(instantMCS);
-        end
-        adaptationState.CQIBasedMCS = double(cqiBasedMCS);
-        adaptationState.LastInstantaneousMCS = double(instantMCS);
-        adaptationState.LastInstantaneousModulation = char(instantMod);
-        adaptationState.LastInstantaneousTargetCodeRate = double(instantCodeRate);
-    elseif adaptationState.Initialized && isfinite(adaptationState.CQIBasedMCS)
-        cqiBasedMCS = double(adaptationState.CQIBasedMCS);
+
+if adaptationDomain ~= "legacy_mcs" && isfinite(instantCQI)
+    if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.SmoothedCQI)
+        smoothedCQI = double(instantCQI);
+    elseif logical(adaptationState.InnerLoopEnabled)
+        alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
+        smoothedCQI = alpha * double(instantCQI) + (1 - alpha) * double(adaptationState.SmoothedCQI);
     else
-        decision.Reason = "missing_cqi";
-        return;
+        smoothedCQI = double(instantCQI);
     end
+    adaptationState.SmoothedCQI = double(smoothedCQI);
+end
+decision.SmoothedCQI = double(adaptationState.SmoothedCQI);
+
+if isfinite(instantMCS)
+    mcsJumpReset = false;
+    if ~resetState && adaptationState.Initialized && localMCSJumpResetEnabled(cfg) && ...
+            isfinite(adaptationState.LastMCSIndex) && ...
+            abs(double(instantMCS) - double(adaptationState.LastMCSIndex)) > localMCSJumpThreshold(cfg)
+        mcsJumpReset = true;
+        resetState = true;
+        resetReason = "mcs_jump";
+    end
+
+    initializeCQIMCS = ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS) || ...
+        (resetState && ~mcsJumpReset);
+    if initializeCQIMCS
+        cqiBasedMCS = double(instantMCS);
+    elseif logical(adaptationState.InnerLoopEnabled)
+        cqiBasedMCS = localSmoothCQIBasedMCS(adaptationState.CQIBasedMCS, instantMCS, adaptationState.CQISmoothingAlpha);
+    else
+        cqiBasedMCS = double(instantMCS);
+    end
+    adaptationState.CQIBasedMCS = double(cqiBasedMCS);
+    adaptationState.LastInstantaneousMCS = double(instantMCS);
+    adaptationState.LastInstantaneousModulation = char(instantMod);
+    adaptationState.LastInstantaneousTargetCodeRate = double(instantCodeRate);
+elseif adaptationState.Initialized && isfinite(adaptationState.CQIBasedMCS)
+    cqiBasedMCS = double(adaptationState.CQIBasedMCS);
 else
-    if isfinite(instantCQI)
-        if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.SmoothedCQI)
-            smoothedCQI = double(instantCQI);
-        elseif logical(adaptationState.InnerLoopEnabled)
-            alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
-            smoothedCQI = alpha * double(instantCQI) + (1 - alpha) * double(adaptationState.SmoothedCQI);
-        else
-            smoothedCQI = double(instantCQI);
-        end
-        adaptationState.SmoothedCQI = double(smoothedCQI);
-        selectionAMC = sixgr.link.resolveMCSFromCQI(smoothedCQI, mcsTable, cqiTable);
-        if ~logical(sixgr.util.structGet(selectionAMC, "Valid", false))
-            decision.Reason = "invalid_cqi_amc_mapping";
-            return;
-        end
-        cqiBasedMCS = double(selectionAMC.MCSIndex);
-        adaptationState.CQIBasedMCS = double(cqiBasedMCS);
-        adaptationState.LastInstantaneousMCS = double(instantMCS);
-        adaptationState.LastInstantaneousModulation = char(instantMod);
-        adaptationState.LastInstantaneousTargetCodeRate = double(instantCodeRate);
-    elseif adaptationState.Initialized && isfinite(adaptationState.CQIBasedMCS)
-        cqiBasedMCS = double(adaptationState.CQIBasedMCS);
-        smoothedCQI = double(adaptationState.SmoothedCQI);
-    else
-        decision.Reason = "missing_cqi";
-        return;
-    end
-    decision.SmoothedCQI = double(adaptationState.SmoothedCQI);
+    decision.Reason = "missing_cqi";
+    return;
 end
 
 if resetState
@@ -218,11 +200,14 @@ if adaptationState.OuterLoopEnabled && localDeltaPolicyEnabled(deltaMCSPolicy, c
 end
 
 dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
-dynamicMCS = max(0, min(31, dynamicMCS));
-if adaptationDomain == "legacy_mcs"
-    selectedMCS = floor(dynamicMCS);
-else
-    selectedMCS = round(dynamicMCS);
+maxMCS = localMaxValidMCS(mcsTable);
+selectedMCS = floor(dynamicMCS);
+if selectedMCS > maxMCS
+    selectedMCS = maxMCS;
+    adaptationState.DeltaMCS = double(maxMCS) - double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
+elseif selectedMCS < 0
+    selectedMCS = 0;
+    adaptationState.DeltaMCS = -double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
 end
 profile = sixgr.link.resolveMCSProfile(mcsTable, selectedMCS);
 if ~logical(sixgr.util.structGet(profile, "Valid", false))
@@ -231,10 +216,6 @@ if ~logical(sixgr.util.structGet(profile, "Valid", false))
 end
 
 decision.CQIBasedMCS = double(cqiBasedMCS);
-if adaptationDomain ~= "legacy_mcs" && logical(sixgr.util.structGet(selectionAMC, "Valid", false))
-    decision.Modulation = char(string(selectionAMC.MCSProfile.Modulation));
-    decision.TargetCodeRate = double(selectionAMC.MCSProfile.TargetCodeRate);
-end
 decision.DeltaMCS = double(adaptationState.DeltaMCS);
 decision.StaticDeltaMCS = double(adaptationState.StaticDeltaMCS);
 decision.Modulation = char(string(profile.Modulation));
@@ -414,16 +395,6 @@ if logical(adaptationState.ResetOnRIChange) && isfinite(ri) && isfinite(adaptati
     resetReason = "ri_change";
     return;
 end
-
-cqi = double(sixgr.util.structGet(metrics, "CQI", NaN));
-jumpThreshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", adaptationState.CQIJumpResetThreshold));
-if ~(isfinite(jumpThreshold) && jumpThreshold >= 1)
-    jumpThreshold = adaptationState.CQIJumpResetThreshold;
-end
-if isfinite(cqi) && isfinite(adaptationState.LastCQI) && abs(cqi - adaptationState.LastCQI) >= jumpThreshold
-    resetState = true;
-    resetReason = "cqi_jump";
-end
 end
 
 function tf = localPolicyEnabled(token)
@@ -468,6 +439,33 @@ else
         sixgr.util.structGet(cfg, "phy.pusch.nLayers", sixgr.util.structGet(cfg, "phy.nTxAnt", 1))));
 end
 maxLayers = max(1, round(maxLayers));
+end
+
+function cqiBasedMCS = localSmoothCQIBasedMCS(previousCQIBasedMCS, instantMCS, alpha)
+alpha = min(max(double(alpha), 0), 1);
+newWeightPct = alpha * 100;
+oldWeightPct = 100 - newWeightPct;
+% Radisys-style inner loop keeps hundredth-MCS precision before the final
+% floor to the integer MCS used by the grant.
+cqiBasedMCS = ceil((newWeightPct * double(instantMCS) * 100 + ...
+    oldWeightPct * double(previousCQIBasedMCS) * 100) / 100) / 100;
+end
+
+function threshold = localMCSJumpThreshold(cfg)
+threshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.mcsJumpResetThreshold", 5));
+if ~(isfinite(threshold) && threshold >= 0)
+    threshold = 5;
+end
+end
+
+function maxMCS = localMaxValidMCS(mcsTable)
+maxMCS = 0;
+for idx = 0:31
+    profile = sixgr.link.resolveMCSProfile(mcsTable, idx);
+    if logical(sixgr.util.structGet(profile, "Valid", false))
+        maxMCS = idx;
+    end
+end
 end
 
 function adaptationState = localInitAdaptationState(cfg, direction, previousState)
@@ -546,16 +544,31 @@ end
 if isfinite(value) && value > 0
     return;
 end
-targetBLER = double(sixgr.util.structGet(cfg, "phy.csi.targetBLER", ...
-    sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", sixgr.util.structGet(cfg, "phy.pusch.targetBLER", 0.1))));
-if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
-    targetBLER = 0.1;
-end
 if stepDirection == "up"
-    value = targetBLER / max(1 - targetBLER, eps);
+    stepDown = localResolveConfiguredOLLAStepDown(cfg);
+    ackNackRatio = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ackNackTDDPatternRatio", 1));
+    if ~(isfinite(ackNackRatio) && ackNackRatio > 0)
+        ackNackRatio = 1;
+    end
+    value = (stepDown * ackNackRatio) / 10;
 else
     value = 1.0;
 end
+end
+
+function value = localResolveConfiguredOLLAStepDown(cfg)
+candidates = [ ...
+    "phy.linkAdaptation.ollaStepDown"
+    "phy.linkAdaptation.stepDownMCS"];
+value = NaN;
+for i = 1:numel(candidates)
+    raw = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+    if isfinite(raw) && raw > 0
+        value = raw;
+        return;
+    end
+end
+value = 1.0;
 end
 
 function value = localResolveDeltaBound(cfg, boundDirection)

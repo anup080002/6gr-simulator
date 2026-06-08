@@ -14,7 +14,7 @@ cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 35;
 cfg.phy.pucch.format = 2;
-cfg.run.noiseOperatingMode = "configured_snr_anchor_after_large_scale_gain";
+cfg.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
 cfg.run.interferenceExecutionMode = "full_per_link_channel_waveform_sum";
 
 multiUserRuntime = struct( ...

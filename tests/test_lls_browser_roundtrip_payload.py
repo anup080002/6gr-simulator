@@ -80,7 +80,7 @@ def main() -> None:
         {
             "FieldName": "ConfiguredSNR_dB",
             "ObservedValue": "8",
-            "ValueSource": "configured_reference_metadata",
+            "ValueSource": "configured_operating_point_metadata",
             "ValueRole": "configured",
             "ValueStatus": "OK",
             "ConsistencyStatus": "observed",

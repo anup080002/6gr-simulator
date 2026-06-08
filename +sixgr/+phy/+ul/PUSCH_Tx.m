@@ -60,6 +60,7 @@ if isempty(opt.PUSCH)
     [puschInd, puschInfo, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg);
 else
     pusch = opt.PUSCH;
+    pusch = localEnsureTransformPrecodingOwnership(pusch, cfg);
     try
         [puschInd, puschInfo] = nrPUSCHIndices(carrier, pusch, 'IndexStyle', 'index');
     catch
@@ -238,6 +239,7 @@ info.Segmentation = segInfo;
 info.PUSCHSymbols = puschSymInfo;
 info.OFDM = ofdmInfo;
 info.Precoding = prec;
+info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
 
 end
 
@@ -336,6 +338,37 @@ catch
 end
 end
 
+function pusch = localEnsureTransformPrecodingOwnership(pusch, cfg)
+try
+    modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
+catch
+    modToken = upper(strrep(char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', ''))), ' ', ''));
+end
+required = strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK') || ...
+    logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
+if required
+    try
+        pusch.TransformPrecoding = true;
+    catch ME
+        error('sixgr:phy:ul:PUSCHTransformPrecodingUnavailable', ...
+            'PUSCH requires TransformPrecoding=true for modulation/config but nrPUSCHConfig rejected it: %s', ME.message);
+    end
+end
+end
+
+function source = localTransformPrecodingSource(pusch, cfg)
+source = "disabled";
+try
+    if logical(pusch.TransformPrecoding)
+        source = "nrPUSCH_native_transform_precoding";
+    end
+catch
+end
+if source == "disabled" && logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false))
+    source = "configured_but_not_runtime_applied";
+end
+end
+
 function qm = localQm(modScheme)
 switch upper(char(string(modScheme)))
     case {'PI/2-BPSK','BPSK'}
@@ -379,11 +412,10 @@ if isnumeric(ind) && size(ind,1) == numel(sym(:)) && size(ind,2) >= 1
     return;
 end
 
-% Last-resort safe truncation.
 indLin = ind(:);
 symLin = sym(:);
-L = min(numel(indLin), numel(symLin));
-if L > 0
-    grid(indLin(1:L)) = symLin(1:L);
-end
+error('sixgr:phy:ul:PUSCHGridMappingMismatch', ...
+    ['PUSCH grid mapping requires one symbol per resource element. ' ...
+     'IndexCount=%d SymbolCount=%d IndexShape=%s SymbolShape=%s.'], ...
+    numel(indLin), numel(symLin), mat2str(size(ind)), mat2str(size(sym)));
 end

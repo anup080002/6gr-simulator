@@ -41,7 +41,7 @@ function [rx, info] = PRACH_Rx(rxWaveform, cfg, varargin)
 
     if isempty(opts.PRACH)
         prach = nrPRACHConfig;
-        prach = localApplyPRACHFromCfg(prach, cfg, carrier);
+        prach = sixgr.phy.ul.applyPRACHCfgToObject(prach, cfg, carrier);
         nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach);
         try
             prach.NPRACHSlot = nslot;
@@ -129,66 +129,4 @@ for offset = 0:scanSlots
     catch
     end
 end
-end
-
-% -------------------------------------------------------------------------
-function prach = localApplyPRACHFromCfg(prach, cfg, carrier)
-% Keep consistent with PRACH_Tx local helper (duplicated intentionally).
-
-    duplex = sixgr.util.structGet(cfg, "phy.duplex.mode", "TDD");
-    try
-        if strcmpi(duplex, "FDD")
-            prach.DuplexMode = "FDD";
-        else
-            prach.DuplexMode = "TDD";
-        end
-    catch
-    end
-
-    fc = sixgr.util.structGet(cfg, "channel.fc_Hz", 3.5e9);
-    try
-        if fc >= 24.25e9
-            prach.FrequencyRange = "FR2";
-        else
-            prach.FrequencyRange = "FR1";
-        end
-    catch
-    end
-
-    cfgIdx = sixgr.util.structGet(cfg, "phy.prach.configurationIndex", []);
-    if ~isempty(cfgIdx)
-        try
-            prach.ConfigurationIndex = cfgIdx;
-        catch
-        end
-    end
-
-    scs = sixgr.util.structGet(cfg, "phy.prach.subcarrierSpacing_kHz", []);
-    if ~isempty(scs)
-        try
-            prach.SubcarrierSpacing = scs;
-        catch
-        end
-    end
-
-    seqIdx = sixgr.util.structGet(cfg, "phy.prach.rootSeqIndex", []);
-    if ~isempty(seqIdx)
-        try
-            prach.SequenceIndex = seqIdx;
-        catch
-        end
-    end
-
-    zcz = sixgr.util.structGet(cfg, "phy.prach.zeroCorrelationZone", []);
-    if ~isempty(zcz)
-        try
-            prach.ZeroCorrelationZone = zcz;
-        catch
-        end
-    end
-
-    try
-        prach.NPRACHSlot = carrier.NSlot;
-    catch
-    end
 end

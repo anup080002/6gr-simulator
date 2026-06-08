@@ -47,7 +47,8 @@ classdef (Abstract) SchedulerBase < handle
     properties
         Cfg (1,1) struct
         Direction (1,:) char = 'DL'  % 'DL' or 'UL'
-        Alpha (1,1) double = 0.9     % PF averaging factor (exp)
+        Alpha (1,1) double = 0.995   % PF averaging factor; default resolved from AvgWindowMs
+        AvgWindowMs (1,1) double = 100
         MetricAveraging (1,:) char = 'exp' % 'exp'|'simple'
         Logger = []                  % optional sixgr.core.Logger
         HARQ = []                    % optional sixgr.l2.mac.HARQEntity
@@ -61,7 +62,8 @@ classdef (Abstract) SchedulerBase < handle
     end
 
     properties(Access=protected)
-        UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{})
+        UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{}, ...
+            'LastAck',{},'NumScheduledSlots',{},'NumUnscheduledSlots',{})
         TBSCache = []
         NRECache = []
         CacheScopeToken (1,:) char = ''
@@ -79,7 +81,12 @@ classdef (Abstract) SchedulerBase < handle
             % Defaults from cfg
             obj.Direction = char(string(sixgr.util.structGet(cfg,"mac.scheduler.direction",obj.Direction)));
             obj.MetricAveraging = char(string(sixgr.util.structGet(cfg,"mac.scheduler.metricAveraging",obj.MetricAveraging)));
-            obj.Alpha = double(sixgr.util.structGet(cfg,"mac.scheduler.alpha",obj.Alpha));
+            alphaCfg = sixgr.util.structGet(cfg,"mac.scheduler.alpha",[]);
+            alphaExplicit = ~isempty(alphaCfg);
+            if alphaExplicit
+                obj.Alpha = double(alphaCfg);
+            end
+            obj.AvgWindowMs = double(sixgr.util.structGet(cfg,"mac.scheduler.avgWindowMs",obj.AvgWindowMs));
 
             % Parse name-value overrides
             if ~isempty(varargin)
@@ -95,6 +102,10 @@ classdef (Abstract) SchedulerBase < handle
                             obj.Direction = upper(char(string(val)));
                         case 'alpha'
                             obj.Alpha = double(val);
+                            alphaExplicit = true;
+                        case 'avgwindowms'
+                            obj.AvgWindowMs = double(val);
+                            alphaExplicit = false;
                         case 'metricaveraging'
                             obj.MetricAveraging = char(string(val));
                         case 'logger'
@@ -127,6 +138,15 @@ classdef (Abstract) SchedulerBase < handle
                 obj.SymbolsPerSlot = 14;
                 obj.SlotDuration_s = 1e-3;
             end
+
+            if ~alphaExplicit
+                % PF implementations normally average over O(100ms), not a
+                % handful of slots. alpha = exp(-Tslot/tau) per R1-062478
+                % proportional-fair scheduler guidance.
+                tauMs = max(1, double(obj.AvgWindowMs));
+                obj.Alpha = exp(-double(obj.SlotDuration_s) * 1e3 / tauMs);
+            end
+            localWarnIfPFAlphaOutOfRange(obj.Alpha, obj.SlotDuration_s);
 
             % HARQ default (optional)
             try
@@ -163,7 +183,8 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function resetStats(obj)
-            obj.UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{});
+            obj.UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{}, ...
+                'LastAck',{},'NumScheduledSlots',{},'NumUnscheduledSlots',{});
             try
                 obj.UEIndexMap = containers.Map('KeyType','double','ValueType','double');
             catch
@@ -239,6 +260,37 @@ classdef (Abstract) SchedulerBase < handle
                     obj.UEStats(i).AvgThroughput_bps = 0.5*old + 0.5*inst_bps;
             end
             obj.UEStats(i).LastTBSBits = double(tbsBits);
+            obj.UEStats(i).LastAck = logical(ack);
+            obj.UEStats(i).NumScheduledSlots = double(obj.UEStats(i).NumScheduledSlots) + 1;
+        end
+
+        function prewarmUEAverage(obj, ue, nActiveUE)
+            if nargin < 3 || isempty(nActiveUE)
+                nActiveUE = 1;
+            end
+            if ~isstruct(ue) || ~isfield(ue, "RNTI") || isempty(ue.RNTI)
+                return;
+            end
+            idx = obj.ensureUE(double(ue.RNTI));
+            if isfinite(double(obj.UEStats(idx).LastServedSlot))
+                return;
+            end
+            cqi = double(sixgr.util.structGet(ue, "CQI", NaN));
+            if ~(isscalar(cqi) && isfinite(cqi) && cqi > 0)
+                return;
+            end
+            try
+                [modStr, nLayers, targetCodeRate] = obj.selectAMC(ue);
+                refPRB = max(1, floor(double(obj.NSizeGrid) / max(1, round(double(nActiveUE)))));
+                [initTBS, ~] = obj.estimateTBS(modStr, nLayers, refPRB, [0 obj.SymbolsPerSlot], targetCodeRate, ...
+                    "PlanningOnly", true);
+                if isfinite(initTBS) && initTBS > 0
+                    obj.UEStats(idx).AvgThroughput_bps = double(initTBS) / max(obj.SlotDuration_s, eps);
+                end
+            catch
+                % Prewarm is only an initialization hint; scheduling remains
+                % driven by runtime grants if a toolbox release cannot size it.
+            end
         end
 
         function idx = ensureUE(obj, rnti)
@@ -257,6 +309,9 @@ classdef (Abstract) SchedulerBase < handle
                 obj.UEStats(end).AvgThroughput_bps = 1; % avoid div-by-zero
                 obj.UEStats(end).LastServedSlot = -inf;
                 obj.UEStats(end).LastTBSBits = 0;
+                obj.UEStats(end).LastAck = false;
+                obj.UEStats(end).NumScheduledSlots = 0;
+                obj.UEStats(end).NumUnscheduledSlots = 0;
                 idx = numel(obj.UEStats);
             end
             if ~isempty(obj.UEIndexMap)
@@ -479,10 +534,12 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
             nSym = double(symAlloc(2));
+            xOverhead = localResolveTBSXOverhead(obj.Direction, obj.Cfg);
             info = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
                 "TBSMode", "approximate", "ViennaEquivalent", false, ...
                 "PlanningOnly", logical(opt.PlanningOnly), ...
-                "ForceExact", logical(opt.ForceExact));
+                "ForceExact", logical(opt.ForceExact), ...
+                "XOverhead", double(xOverhead));
 
             % Memoize repeated TBS queries (same AMC + budget) since these are
             % called very frequently in per-slot scheduling loops.
@@ -522,7 +579,7 @@ classdef (Abstract) SchedulerBase < handle
                 useFastNRE = false;
                 info.TBSMode = "faithful";
             end
-            nrePerPRB = 12*nSym; % fast approximation
+            nrePerPRB = localFastNREPerPRB(obj.Direction, obj.Cfg, nSym);
             if ~useFastNRE
                 nreCache = [];
                 if isa(obj.NRECache, 'containers.Map')
@@ -558,11 +615,20 @@ classdef (Abstract) SchedulerBase < handle
             if useFastNRE
                 info.UsedFastNREApprox = true;
                 if obj.UseMexTBS && exist("sixgr_l2_mac_estimateTBSApprox_entry_mex", "file") == 3
-                    [tbsBits, tbsBytes, nrePerPRB] = sixgr_l2_mac_estimateTBSApprox_entry_mex( ...
-                        double(qm), double(nLayers), double(nPRB), double(nSym), double(targetCodeRate));
+                    if abs(double(nrePerPRB) - 12*double(nSym)) <= 1e-9 && double(xOverhead) == 0
+                        [tbsBits, tbsBytes, nrePerPRB] = sixgr_l2_mac_estimateTBSApprox_entry_mex( ...
+                            double(qm), double(nLayers), double(nPRB), double(nSym), double(targetCodeRate));
+                    else
+                        eff = qm * targetCodeRate;
+                        effectiveNRE = max(1, double(nrePerPRB) - double(xOverhead));
+                        tbsBits = floor(double(nPRB) * effectiveNRE * eff);
+                        tbsBits = 8 * floor(tbsBits / 8);
+                        tbsBytes = floor(tbsBits / 8);
+                    end
                 else
                     eff = qm * targetCodeRate;
-                    tbsBits = floor(double(nPRB) * double(nrePerPRB) * eff);
+                    effectiveNRE = max(1, double(nrePerPRB) - double(xOverhead));
+                    tbsBits = floor(double(nPRB) * effectiveNRE * eff);
                     tbsBits = 8 * floor(tbsBits / 8);
                     tbsBytes = floor(tbsBits / 8);
                 end
@@ -577,7 +643,7 @@ classdef (Abstract) SchedulerBase < handle
                     return;
                 end
                 try
-                    tbsBits = double(nrTBS(char(modStr), double(nLayers), double(nPRB), double(nrePerPRB), double(targetCodeRate), 0));
+                    tbsBits = double(nrTBS(char(modStr), double(nLayers), double(nPRB), double(nrePerPRB), double(targetCodeRate), double(xOverhead)));
                 catch
                     if strictMode
                         error("sixgr:SchedulerBase:TBSFallback", ...
@@ -963,6 +1029,22 @@ classdef (Abstract) SchedulerBase < handle
     end
 end
 
+function localWarnIfPFAlphaOutOfRange(alpha, slotDuration_s)
+alpha = double(alpha);
+slotDuration_s = double(slotDuration_s);
+if ~(isscalar(alpha) && isfinite(alpha) && alpha > 0 && alpha < 1)
+    warning('sixgr:scheduler:AlphaOutOfRange', ...
+        'PF alpha=%.4g is outside the stable EWMA interval (0,1).', alpha);
+    return;
+end
+tauMs = -slotDuration_s * 1e3 / log(alpha);
+if alpha < 0.9 || alpha > 0.9999
+    warning('sixgr:scheduler:AlphaOutOfRange', ...
+        'PF alpha=%.4f corresponds to averaging window tau=%.1f ms; expected approximately 50-500 ms.', ...
+        alpha, tauMs);
+end
+end
+
 function idx = localTimeDomainAssignIndex(symAlloc, symbolsPerSlot)
 % TS 38.214 SLIV encoding for a start symbol S and length L.
 if nargin < 2 || isempty(symbolsPerSlot)
@@ -981,6 +1063,95 @@ else
     idx = N * (N - l + 1) + (N - 1 - s);
 end
 idx = max(0, round(double(idx)));
+end
+
+function nrePerPRB = localFastNREPerPRB(direction, cfg, nSym)
+% TS 38.214 Table 5.1.3.2-1: subtract DMRS RE even in scheduler fast mode.
+nSym = max(1, round(double(nSym)));
+dmrsSym = localResolveDMRSSymbolCount(direction, cfg, nSym);
+dmrsREPerPRB = localResolveDMRSREPerPRB(direction, cfg);
+nrePerPRB = max(1, 12 * nSym - dmrsREPerPRB * dmrsSym);
+end
+
+function nSym = localResolveDMRSSymbolCount(direction, cfg, allocSymbols)
+if upper(string(direction)) == "UL"
+    basePath = "phy.pusch";
+else
+    basePath = "phy.pdsch";
+end
+addPos = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, basePath + ".dmrs.additionalPositions", []), ...
+    sixgr.util.structGet(cfg, basePath + ".DMRSAdditionalPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.additionalPositions", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSAdditionalPosition", []), ...
+    0);
+maxFrontLoaded = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, basePath + ".dmrs.maxLength", []), ...
+    sixgr.util.structGet(cfg, basePath + ".DMRSLength", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.maxLength", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSLength", []), ...
+    1);
+nSym = max(1, min(round(double(allocSymbols)), round(double(maxFrontLoaded)) + max(0, round(double(addPos)))));
+end
+
+function rePerPRB = localResolveDMRSREPerPRB(direction, cfg)
+if upper(string(direction)) == "UL"
+    basePath = "phy.pusch";
+else
+    basePath = "phy.pdsch";
+end
+dmrsType = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, basePath + ".dmrs.configurationType", []), ...
+    sixgr.util.structGet(cfg, basePath + ".DMRSConfigurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.configurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSConfigurationType", []), ...
+    1);
+if round(double(dmrsType)) == 2
+    rePerPRB = 8;
+else
+    rePerPRB = 6;
+end
+end
+
+function xOverhead = localResolveTBSXOverhead(direction, cfg)
+if upper(string(direction)) == "UL"
+    xOverhead = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "phy.pusch.xOverhead", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.XOverhead", []), ...
+        0);
+    modToken = upper(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", ""))));
+    tpEnabled = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false)) || ...
+        strcmp(modToken, "PI/2-BPSK") || strcmp(modToken, "PI2-BPSK");
+    if tpEnabled
+        xOverhead = max(double(xOverhead), 6);
+    end
+else
+    xOverhead = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "phy.pdsch.xOverhead", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.XOverhead", []), ...
+        0);
+end
+xOverhead = max(0, round(double(xOverhead)));
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:numel(varargin)
+    raw = varargin{i};
+    if isempty(raw)
+        continue;
+    end
+    try
+        v = double(raw);
+    catch
+        continue;
+    end
+    v = v(isfinite(v));
+    if ~isempty(v)
+        value = v(1);
+        return;
+    end
+end
 end
 
 function [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, name, value, width)

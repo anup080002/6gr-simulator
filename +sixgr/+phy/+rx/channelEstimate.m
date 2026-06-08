@@ -110,6 +110,13 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.ReferenceSymbolsUsedCount = double(refPruneInfo.RetainedCount);
     info.ZeroReferenceSymbolCount = double(refPruneInfo.ZeroReferenceSymbolCount);
     info.PrunedZeroReferenceSymbols = logical(refPruneInfo.PrunedZeroReferenceSymbols);
+    cdmLengths = localNormalizeCDMLengths(localResolveCDMLengths(refInd, refSym, fwd));
+    info.CDMLengths = double(cdmLengths);
+    if isempty(cdmLengths)
+        fwd = localRemoveFwdNameValue(fwd, "CDMLengths");
+    elseif any(double(cdmLengths) > 1)
+        fwd = localSetFwdNameValue(fwd, "CDMLengths", double(cdmLengths));
+    end
 
     if policy.UseFastMexEffective && ...
             (exist("sixgr_channel_est_ls_kernel_mex","file") == 3 || exist("sixgr_channel_est_ls_kernel","file") == 2)
@@ -190,6 +197,88 @@ end
 if ~any(abs(refValues) > 0)
     error("sixgr:phy:channelEstimate:InvalidReference", ...
         "refSym contains no non-zero reference symbols; channel estimation requires real DMRS/CSI-RS evidence.");
+end
+end
+
+function cdm = localResolveCDMLengths(refInd, refSym, fwd)
+cdm = [];
+for i = 1:2:numel(fwd)-1
+    if strcmpi(char(string(fwd{i})), 'CDMLengths')
+        cdm = localNormalizeCDMLengths(fwd{i+1});
+        return;
+    end
+end
+cdm = localNormalizeCDMLengths(localDetectCDMLengths(refInd, refSym));
+end
+
+function fwd = localSetFwdNameValue(fwd, name, value)
+updated = false;
+for i = 1:2:numel(fwd)-1
+    if strcmpi(char(string(fwd{i})), char(string(name)))
+        fwd{i+1} = value;
+        updated = true;
+        return;
+    end
+end
+if ~updated
+    fwd = [fwd, {char(string(name)), value}]; %#ok<AGROW>
+end
+end
+
+function fwd = localRemoveFwdNameValue(fwd, name)
+if isempty(fwd)
+    return;
+end
+keep = true(size(fwd));
+for i = 1:2:numel(fwd)-1
+    if strcmpi(char(string(fwd{i})), char(string(name)))
+        keep(i:i+1) = false;
+    end
+end
+fwd = fwd(keep);
+end
+
+function cdm = localNormalizeCDMLengths(raw)
+if isempty(raw)
+    cdm = [];
+    return;
+end
+cdm = double(raw);
+cdm = cdm(:).';
+cdm = cdm(isfinite(cdm));
+if isempty(cdm)
+    cdm = [];
+    return;
+end
+cdm = max(1, round(cdm));
+if numel(cdm) == 1
+    cdm = [cdm 1];
+elseif numel(cdm) > 2
+    cdm = cdm(1:2);
+end
+end
+
+function cdm = localDetectCDMLengths(refInd, refSym)
+cdm = [];
+try
+    if ~isvector(refSym) && size(refSym, 2) >= 2
+        a = refSym(:, 1);
+        b = refSym(:, 2);
+        corrVal = abs(sum(a(:) .* conj(b(:)), "omitnan"));
+        energy = sqrt(sum(abs(a(:)).^2, "omitnan") * sum(abs(b(:)).^2, "omitnan"));
+        if energy > 0
+            ratio = corrVal / energy;
+            if ratio < 0.1
+                cdm = [2 1];
+            elseif ratio > 0.9
+                cdm = [1 1];
+            end
+        end
+    elseif ~isempty(refInd) && numel(refInd) >= 2
+        cdm = [1 1];
+    end
+catch
+    cdm = [];
 end
 end
 

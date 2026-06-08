@@ -89,7 +89,7 @@ bitGood = 0;
 frameCrash = 0;
 firstCrashMsg = "";
 chState = struct("Initialized", false, "UseFading", false, "Obj", [], ...
-    "ChannelPadSamples", 0, "ChannelTrimSamples", 0);
+    "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "WarmupSamples", 0);
 seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1));
 chanModel = localResolveTrialChannelModel(cfg);
 dopplerHz = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
@@ -143,6 +143,7 @@ trialCSIRSSISource = strings(numFrames,1);
 trialCSIRSRQ = NaN(numFrames,1);
 trialCSIRSRQSource = strings(numFrames,1);
 trialCQI = NaN(numFrames,1);
+trialCQISource = strings(numFrames,1);
 trialCQIDerivedMCS = NaN(numFrames,1);
 trialCQIDerivedCodeRate = NaN(numFrames,1);
 trialRI = NaN(numFrames,1);
@@ -168,6 +169,14 @@ trialSubbandCQISource = strings(numFrames,1);
 trialSubbandCQIStatus = strings(numFrames,1);
 trialGain = NaN(numFrames,1);
 trialNoise = NaN(numFrames,1);
+trialNoiseVarStatus = strings(numFrames,1);
+trialNoiseVarSource = strings(numFrames,1);
+trialNoiseVarReason = strings(numFrames,1);
+trialNoiseVarStrictFailure = false(numFrames,1);
+trialReceiverUsable = false(numFrames,1);
+trialDecodeAttempted = false(numFrames,1);
+trialDecodeUsable = false(numFrames,1);
+trialFailureReason = strings(numFrames,1);
 trialEqualizerType = strings(numFrames,1);
 trialEqualizerRequestedType = strings(numFrames,1);
 trialEqualizerEngine = strings(numFrames,1);
@@ -377,6 +386,7 @@ lastHARQ = struct();
 for n = 1:numFrames
     frameIdx = double(trialFrame(n));
     trialSeed(n) = seedBase + frameIdx - 1;
+    rng(localRNGSeed(trialSeed(n)), 'twister');
     try
         if isRetransmission || schedulerDrivenGrant
             cfgFrame = cfgDyn;
@@ -506,13 +516,12 @@ for n = 1:numFrames
             trialCodeRate(n) = double(tx.TargetCodeRate);
         end
         if ~chState.Initialized
-            chState = localInitChannelState(cfgFrame, tx, txInfo);
+            chState = localInitChannelState(cfgFrame, tx, txInfo, snr_dB, trialSeed(n));
         end
         useIdealTimingSync = localUseIdealTimingSync(cfgFrame);
         [rxWave, replay] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrame, tx, txInfo, interferenceBundle);
 
-        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, ...
-            "Carrier", tx.Carrier, ...
+        rxArgs = {"Carrier", tx.Carrier, ...
             "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, ...
             "CSIRSIndices", sixgr.util.structGet(tx, "CSIRSIndices", []), ...
@@ -522,8 +531,12 @@ for n = 1:numFrames
             "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, ...
             "RV", tx.RV, ...
-            "NoiseVar", sixgr.util.structGet(replay, "InjectedNoiseVariance", []), ...
-            "SkipTimingEstimate", useIdealTimingSync);
+            "SkipTimingEstimate", useIdealTimingSync};
+        injectedNoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
+        if isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
+            rxArgs = [rxArgs {"NoiseVar", injectedNoiseVariance, "NoiseVarDomain", "time"}]; %#ok<AGROW>
+        end
+        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, rxArgs{:});
         replay = localFinalizeImpairmentReplay(replay, cfgFrame, rx, tx, txInfo, useIdealTimingSync);
         waveformChunks{n} = sixgr.link.buildWaveformPreviewTable("DL", snr_dB, trialFrame(n), trialSlot(n), ...
             tx.Waveform, rxWave, localResolveSampleRate(tx, txInfo));
@@ -540,14 +553,22 @@ for n = 1:numFrames
         trialTimingEstimateWasClipped(n) = logical(sixgr.util.structGet(replay, "TimingEstimateWasClipped", ...
             sixgr.util.structGet(rx, "TimingEstimateWasClipped", false)));
         trialNoise(n) = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+        trialNoiseVarStatus(n) = string(sixgr.util.structGet(rx, "NoiseVarStatus", ""));
+        trialNoiseVarSource(n) = string(sixgr.util.structGet(rx, "NoiseVarSource", ""));
+        trialNoiseVarReason(n) = string(sixgr.util.structGet(rx, "NoiseVarReason", ""));
+        trialNoiseVarStrictFailure(n) = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
         trialEqualizerType(n) = string(sixgr.util.structGet(rx, "EqualizerType", ""));
         trialEqualizerRequestedType(n) = string(sixgr.util.structGet(rx, "EqualizerRequestedType", ""));
         trialEqualizerEngine(n) = string(sixgr.util.structGet(rx, "EqualizerEngine", ""));
         trialInterferenceCovarianceAvailable(n) = logical(sixgr.util.structGet(rx, "InterferenceCovarianceAvailable", false));
         trialInterferenceCovarianceSource(n) = string(sixgr.util.structGet(rx, "InterferenceCovarianceSource", ""));
         trialInterferenceCovarianceStatus(n) = string(sixgr.util.structGet(rx, "InterferenceCovarianceStatus", ""));
+        trialReceiverUsable(n) = logical(sixgr.util.structGet(rx, "ReceiverUsable", false));
+        trialDecodeAttempted(n) = logical(sixgr.util.structGet(rx, "DecodeAttempted", false));
+        trialDecodeUsable(n) = logical(sixgr.util.structGet(rx, "DecodeUsable", false));
+        trialFailureReason(n) = string(sixgr.util.structGet(rx, "FailureReason", ""));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
-        trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", snr_dB));
+        trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
         trialAppliedLargeScaleGain(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
         trialAppliedLargeScaleLoss(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
         trialAppliedBasePathloss(n) = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -616,6 +637,27 @@ for n = 1:numFrames
         trialLargeScaleSINRSource(n) = string(sixgr.util.structGet(replay, "LargeScaleSINRSource", ""));
         trialServingRSRP(n) = double(sixgr.util.structGet(replay, "ServingRSRP_dBm", NaN));
         trialServingRSRPSource(n) = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
+        trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("DL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay);
+        if ~trialDecodeUsable(n)
+            blockErr = blockErr + 1;
+            trialStatus(n) = "NA";
+            trialCRC(n) = NaN;
+            if strlength(strtrim(trialFailureReason(n))) == 0
+                trialFailureReason(n) = "dl_receiver_decode_unavailable";
+            end
+            trialNotes(n) = "PDSCH decode unavailable: " + trialFailureReason(n);
+            trialGoodBits(n) = NaN;
+            trialGoodput(n) = NaN;
+            lastHARQ = struct( ...
+                "TransportBlockBits", int8(tx.TransportBlock(:)), ...
+                "CombinedLLR", previousCombinedLLR, ...
+                "CurrentDecodeOK", false, ...
+                "CombinedDecodeOK", false, ...
+                "DecoderIterations", NaN, ...
+                "GrantSnapshot", grantSnapshot, ...
+                "Context", harqContext);
+            continue;
+        end
         pilotTrack = localPilotTrackingMetrics(rx);
         metrics = localAnalyzeChannelMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), trialNoise(n), cfgFrame, rx);
         trialNMSE(n) = metrics.NMSE_dB;
@@ -641,6 +683,10 @@ for n = 1:numFrames
         end
         trialCQI(n) = double(sixgr.util.normalizeReportedCQI(metrics.CQI));
         if isfinite(trialCQI(n))
+            trialCQISource(n) = string(sixgr.util.structGet(metrics, "CQISource", "receiver_csi_feedback"));
+            if strlength(strtrim(trialCQISource(n))) == 0
+                trialCQISource(n) = "receiver_csi_feedback";
+            end
             [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
             trialCQIDerivedMCS(n) = double(cqiMCS);
             trialCQIDerivedCodeRate(n) = double(cqiRate);
@@ -678,8 +724,6 @@ for n = 1:numFrames
         trialTopBeamIndexSet(n) = string(metrics.TopBeamIndexSet);
         trialTopBeamGainSet(n) = string(metrics.TopBeamGainSet_dB);
         trialBeamScoreSource(n) = string(metrics.BeamScoreSource);
-        trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("DL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay);
-
         coding = sixgr.link.deriveCodingTrialMetrics(tx, txInfo, rx, cfgFrame);
         trialDecIt(n) = double(sixgr.util.structGet(coding, "DecoderIterations", NaN));
         trialOfferedBits(n) = double(sixgr.util.structGet(coding, "OfferedBits", NaN));
@@ -729,10 +773,11 @@ for n = 1:numFrames
             trialSINR(n) = double(dataSINR);
             trialSINRValueRole(n) = "measured";
             trialSINRSource(n) = string(dataSINRMeta.Source);
-            if localCQIReportingEnabled(cfgFrame, "DL")
+            if localCQIReportingEnabled(cfgFrame, "DL") && ~isfinite(trialCQI(n))
                 [dataCQI, dataMod, dataRate, dataMCS] = localCQIAndMCSFromSINR(dataSINR, cfgFrame, "DL");
                 if isfinite(dataCQI)
                     trialCQI(n) = double(dataCQI);
+                    trialCQISource(n) = "post_equalization_data_sinr_to_cqi";
                     trialCQIDerivedMCS(n) = double(dataMCS);
                     trialCQIDerivedCodeRate(n) = double(dataRate);
                     trialCQIDerivedModulation(n) = string(dataMod);
@@ -861,6 +906,8 @@ for n = 1:numFrames
         if isRetransmission || schedulerDrivenGrant
             trialLAScheduled(n) = false;
         else
+            metrics.CQI = double(trialCQI(n));
+            metrics.SINR_dB = double(trialSINR(n));
             metrics.CRCPass = logical(currentDecodeOK);
             metrics.CurrentDecodeOK = logical(currentDecodeOK);
             metrics.CombinedDecodeOK = logical(combinedDecodeOK);
@@ -912,6 +959,10 @@ out.Throughput_Mbps = (bitGood / max(simDur_s, eps)) / 1e6;
 out.Goodput_Mbps = out.Throughput_Mbps;
 offeredBits = sum(trialOfferedBits(isfinite(trialOfferedBits)), "omitnan");
 out.OfferedThroughput_Mbps = (offeredBits / max(simDur_s, eps)) / 1e6;
+out.TotalTTIs = double(numFrames);
+out.TotalRetxTTIs = double(nnz(trialHARQIsRetransmission));
+out.HARQ_IR_Overhead = out.TotalRetxTTIs / max(double(numFrames), 1);
+out.GoodputDenominator_s = double(simDur_s);
 cbErrSum = sum(trialCBErr(isfinite(trialCBErr)), "omitnan");
 cbCntSum = sum(trialCBCount(isfinite(trialCBCount)), "omitnan");
 if cbCntSum > 0
@@ -1087,6 +1138,27 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
             'Status','Crash', ...
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ConfiguredSNR_dB = trialConfiguredSNR(idx);
+        configuredLayers = localFirstFiniteScalar( ...
+            sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN), ...
+            sixgr.util.structGet(cfg, "phy.pdsch.numLayers", NaN), ...
+            sixgr.util.structGet(cfg, "pdsch6gr.NumLayers", NaN), ...
+            trialLayers(idx), 1);
+        configuredLayers = max(1, round(double(configuredLayers)));
+        configuredTxAnt = localFirstFiniteScalar( ...
+            sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", NaN), ...
+            sixgr.util.structGet(cfg, "channel.nTxAnt", NaN), ...
+            sixgr.util.structGet(cfg, "phy.nTxAnt", NaN), ...
+            trialTxPorts(idx), 1);
+        configuredTxAnt = max(1, round(double(configuredTxAnt)));
+        configuredRxAnt = localFirstFiniteScalar( ...
+            sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", NaN), ...
+            sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
+            sixgr.util.structGet(cfg, "phy.nRxAnt", NaN), ...
+            trialRxAnt(idx), 1);
+        configuredRxAnt = max(1, round(double(configuredRxAnt)));
+        T.ConfiguredLayers = repmat(configuredLayers, stopIdx, 1);
+        T.ConfiguredTxAntennas = repmat(configuredTxAnt, stopIdx, 1);
+        T.ConfiguredRxAntennas = repmat(configuredRxAnt, stopIdx, 1);
         T.UEID = T.UEIndex;
         T.RV = trialRV(idx);
         T.HARQProcess = trialHARQProcess(idx);
@@ -1108,6 +1180,7 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
         T.CarrierPhaseOffsetExecutionStatus = trialCarrierPhaseOffsetStatus(idx);
         T.ReceiverHestSINR_dB = trialReceiverHestSINR(idx);
         T.ReceiverHestSINRSource = trialReceiverHestSINRSource(idx);
+        T.CQISource = trialCQISource(idx);
         T.DecoderTruthProxySINR_dB = trialDecoderTruthProxySINR(idx);
         T.DecoderTruthProxySINRSource = trialDecoderTruthProxySINRSource(idx);
         T.SINRValueRole = trialSINRValueRole(idx);
@@ -1135,6 +1208,14 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
         T.InterferenceCovarianceAvailable = trialInterferenceCovarianceAvailable(idx);
         T.InterferenceCovarianceSource = trialInterferenceCovarianceSource(idx);
         T.InterferenceCovarianceStatus = trialInterferenceCovarianceStatus(idx);
+        T.NoiseVarStatus = trialNoiseVarStatus(idx);
+        T.NoiseVarSource = trialNoiseVarSource(idx);
+        T.NoiseVarReason = trialNoiseVarReason(idx);
+        T.NoiseVarStrictFailure = trialNoiseVarStrictFailure(idx);
+        T.ReceiverUsable = trialReceiverUsable(idx);
+        T.DecodeAttempted = trialDecodeAttempted(idx);
+        T.DecodeUsable = trialDecodeUsable(idx);
+        T.FailureReason = trialFailureReason(idx);
         T.BeamScoreVector_dB = trialBeamScoreVector(idx);
         T.TopBeamIndexSet = trialTopBeamIndexSet(idx);
         T.TopBeamGainSet_dB = trialTopBeamGainSet(idx);
@@ -1223,7 +1304,7 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
 end
 
 function [y, nVar] = localAddAwgn(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
@@ -1231,6 +1312,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
@@ -1992,9 +2076,16 @@ else
 end
 end
 
-function state = localInitChannelState(cfg, tx, txInfo)
+function state = localInitChannelState(cfg, tx, txInfo, snr_dB, trialSeed)
+if nargin < 4
+    snr_dB = NaN;
+end
+if nargin < 5
+    trialSeed = NaN;
+end
 state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
     "ChannelPadSamples", 0, "ChannelTrimSamples", 0, ...
+    "WarmupSamples", 0, ...
     "Meta", localNormalizeChannelRuntimeMeta(struct(), localResolveChannelArrayModel(cfg)));
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
@@ -2033,7 +2124,7 @@ ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
     "SampleRate", fs, ...
     "NumTxAnt", numTx, ...
     "NumRxAnt", numRx, ...
-    "Seed", sixgr.util.structGet(cfg, "run.seed", 1), ...
+    "Seed", localChannelSeed(cfg, snr_dB, trialSeed), ...
     "TransmitAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct()), ...
     "ReceiveAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct()), ...
     "TransmitAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct()), ...
@@ -2045,10 +2136,28 @@ if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object")
     [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
     state.ChannelPadSamples = padSamples;
     state.ChannelTrimSamples = trimSamples;
+    state.WarmupSamples = max(256, padSamples);
+    try
+        reset(state.Obj);
+    catch
+    end
+    try
+        warmup = zeros(state.WarmupSamples, numTx, 'like', tx.Waveform);
+        try
+            state.Obj(warmup);
+        catch
+            [~, ~] = state.Obj(warmup);
+        end
+    catch
+        state.WarmupSamples = 0;
+    end
 end
 end
 
 function [y, replay] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)
+% Channel state (state.Obj) is NOT reset between calls.
+% Temporal correlation is preserved per TR 38.901 7.7.3.
+% The channel was reset once during localInitChannelState.
 y = x;
 replay = struct( ...
     "RawWaveform", x, ...
@@ -2068,7 +2177,7 @@ replay = struct( ...
     "CFOCorrectionApplied", false, ...
     "InjectedNoiseVariance", NaN, ...
     "ConfiguredSNR_dB", double(snr_dB), ...
-    "AppliedAWGNSNR_dB", double(snr_dB), ...
+    "AppliedAWGNSNR_dB", NaN, ...
     "AppliedLargeScaleLoss_dB", 0, ...
     "AppliedLargeScaleGain_dB", 0, ...
     "AppliedBasePathloss_dB", NaN, ...
@@ -2102,10 +2211,6 @@ replay = struct( ...
     "InterferenceUsesSameRuntimeAntennaAssumptions", false);
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
-    try
-        reset(state.Obj);
-    catch
-    end
     xIn = x;
     padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
     trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
@@ -2136,7 +2241,8 @@ for fi = 1:numel(impairFields)
     replay.(impairFields{fi}) = impairmentReplay.(impairFields{fi});
 end
 appliedSNR = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-if ~(isscalar(appliedSNR) && isfinite(appliedSNR))
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
+if ~(isscalar(appliedSNR) && isfinite(appliedSNR)) && noiseMode ~= "receiver_noise_figure_thermal_noise"
     replay.AppliedAWGNSNR_dB = double(snr_dB);
 end
 replay.RawWaveform = y;
@@ -2413,6 +2519,9 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'string','logical','logical','logical','string'};
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConfiguredSNR_dB = zeros(0,1);
+T.ConfiguredLayers = zeros(0,1);
+T.ConfiguredTxAntennas = zeros(0,1);
+T.ConfiguredRxAntennas = zeros(0,1);
 T.UEID = zeros(0,1);
 T.RV = zeros(0,1);
 T.HARQProcess = zeros(0,1);
@@ -2450,6 +2559,14 @@ T.EqualizerEngine = strings(0,1);
 T.InterferenceCovarianceAvailable = false(0,1);
 T.InterferenceCovarianceSource = strings(0,1);
 T.InterferenceCovarianceStatus = strings(0,1);
+T.NoiseVarStatus = strings(0,1);
+T.NoiseVarSource = strings(0,1);
+T.NoiseVarReason = strings(0,1);
+T.NoiseVarStrictFailure = false(0,1);
+T.ReceiverUsable = false(0,1);
+T.DecodeAttempted = false(0,1);
+T.DecodeUsable = false(0,1);
+T.FailureReason = strings(0,1);
 T.AppliedLargeScaleGain_dB = zeros(0,1);
 T.AppliedLargeScaleLoss_dB = zeros(0,1);
 T.AppliedBasePathloss_dB = zeros(0,1);
@@ -2712,16 +2829,19 @@ end
 function source = localResolveCQISourceColumn(T, configuredDomain)
 n = height(T);
 source = repmat("unavailable", n, 1);
+existingSource = string(localOptionalColumn(T, "CQISource", ""));
+existingMask = strlength(strtrim(existingSource)) > 0 & lower(strtrim(existingSource)) ~= "unavailable";
 widebandCQI = double(localOptionalColumn(T, "WidebandCQI", NaN));
 measuredSINR = double(localOptionalColumn(T, "MeasuredTrialSINR_dB", localOptionalColumn(T, "MeasuredSINR_dB", NaN)));
 measuredSource = lower(strtrim(string(localOptionalColumn(T, "MeasuredTrialSINRSource", ""))));
 cqiMask = isfinite(widebandCQI);
 source(cqiMask) = "runtime_reported_cqi";
-dataDomainMask = cqiMask & contains(measuredSource, "post_equalization_error_vector_measurement");
+source(existingMask) = existingSource(existingMask);
+dataDomainMask = cqiMask & ~existingMask & contains(measuredSource, "post_equalization_error_vector_measurement");
 source(dataDomainMask) = "post_equalization_data_sinr_to_cqi";
-effMask = ~cqiMask & configuredDomain == "effective_sinr" & isfinite(measuredSINR);
+effMask = ~existingMask & ~cqiMask & configuredDomain == "effective_sinr" & isfinite(measuredSINR);
 source(effMask) = "runtime_effective_sinr";
-blerMask = ~cqiMask & configuredDomain == "bler_margin" & isfinite(measuredSINR);
+blerMask = ~existingMask & ~cqiMask & configuredDomain == "bler_margin" & isfinite(measuredSINR);
 source(blerMask) = "runtime_effective_sinr_proxy_for_bler_margin";
 end
 
@@ -2870,6 +2990,7 @@ metrics = struct( ...
     "SINR_dB", NaN, ...
     "SINRSource", "", ...
     "CQI", NaN, ...
+    "CQISource", "", ...
     "RI", NaN, ...
     "PMI", NaN, ...
     "CRI", NaN, ...
@@ -2931,6 +3052,7 @@ try
     metrics.SINR_dB = double(sixgr.util.structGet(csi, "SINR_dB", NaN));
     metrics.SINRSource = string(sixgr.util.structGet(csi, "SINRSource", ""));
     metrics.CQI = double(sixgr.util.structGet(csi, "CQI", NaN));
+    metrics.CQISource = "dl_csi_feedback:" + csiChannelSource;
     metrics.RI = double(sixgr.util.structGet(csi, "RI", NaN));
     metrics.PMI = double(sixgr.util.structGet(csi, "PMI", NaN));
     metrics.CRI = double(sixgr.util.structGet(csi, "CRI", NaN));
@@ -3717,19 +3839,23 @@ end
 
 function combined = localCombineRateRecoveredLLR(prev, cur)
 if isempty(prev)
-    combined = cur;
+    combined = double(cur);
     return;
 end
 if isempty(cur)
-    combined = prev;
+    combined = double(prev);
     return;
 end
-X = localEnsureLLRMatrix(prev);
-Y = localEnsureLLRMatrix(cur);
-nRow = max(size(X, 1), size(Y, 1));
-nCol = max(size(X, 2), size(Y, 2));
-X(end+1:nRow, end+1:nCol) = 0;
-Y(end+1:nRow, end+1:nCol) = 0;
+X = double(prev);
+Y = double(cur);
+if ~isequal(size(X), size(Y))
+    warning('sixgr:link:HARQ:IR_LengthMismatch', ...
+        ['HARQ LLR arrays have sizes %s and %s. TBS/allocation changed across HARQ rounds; ' ...
+         'incremental-redundancy combining is aborted and the current transmission is used.'], ...
+        mat2str(size(X)), mat2str(size(Y)));
+    combined = Y;
+    return;
+end
 combined = X + Y;
 end
 
@@ -3738,7 +3864,7 @@ diag = struct( ...
     "PreviousLLRCount", double(numel(prev)), ...
     "CurrentLLRCount", double(numel(cur)), ...
     "CombinedLLRCount", double(numel(combined)), ...
-    "CombiningApplied", ~isempty(prev) && ~isempty(cur), ...
+    "CombiningApplied", ~isempty(prev) && ~isempty(cur) && isequal(size(prev), size(cur)), ...
     "LLRCombiningGain_dB", NaN);
 if isempty(cur) || isempty(combined)
     return;
@@ -3803,6 +3929,30 @@ X = double(v);
 if isvector(X)
     X = X(:);
 end
+end
+
+function seed = localRNGSeed(seedValue)
+seed = double(seedValue);
+if ~(isfinite(seed) && seed >= 0)
+    seed = 1;
+end
+seed = mod(round(seed), 2^32);
+end
+
+function seed = localChannelSeed(cfg, snr_dB, trialSeed)
+baseSeed = double(sixgr.util.structGet(cfg, "run.seed", 1));
+if ~(isfinite(baseSeed) && baseSeed >= 0)
+    baseSeed = 1;
+end
+snrKey = 0;
+if isfinite(double(snr_dB))
+    snrKey = round((double(snr_dB) + 200) * 1000);
+end
+trialKey = 0;
+if isfinite(double(trialSeed))
+    trialKey = round(double(trialSeed));
+end
+seed = mod(round(baseSeed) + snrKey * 7919 + trialKey * 104729, 2^31 - 1);
 end
 
 function grant = localBuildHARQGrantSnapshot(tx, mcsIndex, cfg, seedGrant)

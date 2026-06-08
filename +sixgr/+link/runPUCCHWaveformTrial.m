@@ -55,6 +55,11 @@ out = struct( ...
     "FailureReason", "", ...
     "ConfiguredSNR_dB", double(opt.SNR_dB), ...
     "AppliedAWGNSNR_dB", NaN, ...
+    "NoiseOperatingMode", "", ...
+    "NoisePowerSource", "", ...
+    "ThermalNoisePower_dBm", NaN, ...
+    "ServingRxPower_dBm", NaN, ...
+    "ServingRxPowerSource", "", ...
     "ReceiverHestSINR_dB", NaN, ...
     "ReceiverHestSINRSource", "", ...
     "ReceiverHestSINRValueRole", "", ...
@@ -138,13 +143,15 @@ try
     [rxWave, replay] = localApplyULChannelAndNoise(tx.Waveform, double(opt.SNR_dB), chState, cfgResolved, tx, txInfo, opt.InterferenceBundle);
 
     tDecode = tic;
+    strictNoiseVarianceRequired = ~localThermalNoiseSINRUnavailable(replay);
     [rx, rxInfo] = sixgr.phy.ul.PUCCH_Rx(rxWave, cfgResolved, ...
         "Carrier", tx.Carrier, ...
         "PUCCH", tx.PUCCH, ...
         "Format", resolvedFormat, ...
         "NumUCIBits", numel(expectedBits), ...
         "ExpectedUCIBits", expectedBits, ...
-        "NoiseVar", sixgr.util.structGet(replay, "InjectedNoiseVariance", []));
+        "NoiseVar", sixgr.util.structGet(replay, "InjectedNoiseVariance", []), ...
+        "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     decodeLatency_ms = toc(tDecode) * 1e3;
 
     out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
@@ -164,6 +171,11 @@ try
     out.DTXReason = char(string(sixgr.util.structGet(rx, "DTXReason", "")));
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", opt.SNR_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    out.NoiseOperatingMode = char(string(sixgr.util.structGet(replay, "NoiseOperatingMode", "")));
+    out.NoisePowerSource = char(string(sixgr.util.structGet(replay, "NoisePowerSource", "")));
+    out.ThermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
+    out.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
+    out.ServingRxPowerSource = char(string(sixgr.util.structGet(replay, "ServingRxPowerSource", "")));
     out.AirInterfaceTTI_ms = localAirInterfaceTTI(tx, txInfo);
     out.AirInterfaceObservation_ms = out.AirInterfaceTTI_ms;
     out.ProcedureDelay_ms = 0;
@@ -237,14 +249,20 @@ try
     receiverStatus = strtrim(string(out.ReceiverHestSINRValueStatus));
     receiverRole = strtrim(string(out.ReceiverHestSINRValueRole));
     receiverSource = strtrim(string(out.ReceiverHestSINRSource));
+    unanchoredThermalSINR = localThermalNoiseSINRUnavailable(replay);
     receiverUsesFallbackEstimate = contains(lower(receiverSource), "fallback") || ...
-        contains(lower(receiverRole), "fallback") || contains(lower(receiverStatus), "fallback");
+        contains(lower(receiverRole), "fallback") || contains(lower(receiverStatus), "fallback") || ...
+        unanchoredThermalSINR;
     if receiverUsesFallbackEstimate
         out.ReceiverHestSINR_dB = NaN;
         out.ReceiverHestSINRSource = "";
         out.ReceiverHestSINRValueRole = "unavailable";
         out.ReceiverHestSINRValueStatus = "unavailable";
-        out.ReceiverHestSINRNAReason = "control_reference_signal_sinr_not_available_from_receiver_evidence";
+        if unanchoredThermalSINR
+            out.ReceiverHestSINRNAReason = "thermal_noise_sinr_unavailable_without_runtime_rx_power_or_pathloss";
+        else
+            out.ReceiverHestSINRNAReason = "control_reference_signal_sinr_not_available_from_receiver_evidence";
+        end
         receiverStatus = "unavailable";
         receiverRole = "unavailable";
         receiverSource = "";
@@ -280,6 +298,10 @@ try
     end
     out.EstimatedWidebandSINR_dB = double(sixgr.util.structGet(measurement, "SINR_dB", NaN));
     out.WidebandCQI = double(sixgr.util.structGet(measurement, "CQI", NaN));
+    if unanchoredThermalSINR
+        out.EstimatedWidebandSINR_dB = NaN;
+        out.WidebandCQI = NaN;
+    end
     out.RankIndicator = double(sixgr.util.structGet(measurement, "RI", NaN));
     out.PMI = double(sixgr.util.structGet(measurement, "PMI", NaN));
     out.CRI = double(sixgr.util.structGet(measurement, "CRI", NaN));
@@ -297,6 +319,18 @@ catch ME
     out.CrashMessage = string(ME.message);
     out.Notes = string(ME.message);
 end
+end
+
+function tf = localThermalNoiseSINRUnavailable(replay)
+noiseMode = lower(strtrim(string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""))));
+if noiseMode ~= "receiver_noise_figure_thermal_noise"
+    tf = false;
+    return;
+end
+servingSource = lower(strtrim(string(sixgr.util.structGet(replay, "ServingRxPowerSource", ""))));
+noiseSource = lower(strtrim(string(sixgr.util.structGet(replay, "NoisePowerSource", ""))));
+tf = servingSource == "unavailable_missing_pathloss_or_runtime_rx_power" || ...
+    noiseSource == "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
 end
 
 function fmt = localResolveCompatiblePUCCHFormat(requestedFormat, numBits)
@@ -429,7 +463,7 @@ replay = struct( ...
     "CorrectedWaveform", x, ...
     "InjectedNoiseVariance", NaN, ...
     "ConfiguredSNR_dB", double(snr_dB), ...
-    "AppliedAWGNSNR_dB", double(snr_dB), ...
+    "AppliedAWGNSNR_dB", NaN, ...
     "InterferenceMode", "none", ...
     "InterferenceContributorCount", 0, ...
     "InterferenceAggregatedRxPower_dBm", NaN, ...
@@ -490,7 +524,7 @@ end
 end
 
 function [y, nVar] = localAddAwgn(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
@@ -498,6 +532,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);

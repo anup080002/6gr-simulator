@@ -10,8 +10,8 @@ addParameter(p, "PRACH", [], @(x) isempty(x) || isa(x, "nrPRACHConfig"));
 parse(p, cfg, varargin{:});
 opts = p.Results;
 
-if isfield(cfg, "ToolboxCarrier") && isempty(opts.Carrier)
-    carrier = cfg.ToolboxCarrier;
+if ~isempty(opts.Carrier)
+    carrier = opts.Carrier;
 else
     carrier = nrCarrierConfig;
     carrier.SubcarrierSpacing = double(sixgr.util.structGet(cfg, "CarrierSCSkHz", 15));
@@ -20,8 +20,8 @@ else
     carrier.NCellID = 1;
 end
 
-if isfield(cfg, "ToolboxPRACH") && isempty(opts.PRACH)
-    prach = cfg.ToolboxPRACH;
+if ~isempty(opts.PRACH)
+    prach = opts.PRACH;
 else
     prach = nrPRACHConfig;
     prach.FrequencyRange = char(string(sixgr.util.structGet(cfg, "FrequencyRange", "FR1")));
@@ -71,8 +71,8 @@ for slotIdx = 0:max(0, numSlots - 1)
         occasion.SymbolLocation = double(prach.SymbolLocation);
         occasion.PRACHDuration = double(prach.PRACHDuration);
         occasion.NumTimeOccasions = double(prach.NumTimeOccasions);
-        occasion.Carrier = carrier;
-        occasion.PRACH = prach;
+        occasion.Carrier = localCarrierSnapshot(carrier);
+        occasion.PRACH = localPRACHSnapshot(prach);
         occasion.Indices = prachInd;
         occasion.Symbols = prachSym;
         return;
@@ -81,6 +81,36 @@ end
 
 error("sixgr:rach:mapPRACHToOccasion:NoSuchOccasion", ...
     "Could not materialize PRACH occasion %g within %g scanned slots.", ordinalTarget, numSlots);
+end
+
+function s = localCarrierSnapshot(carrier)
+s = struct();
+s.SubcarrierSpacing = double(carrier.SubcarrierSpacing);
+s.NSizeGrid = double(carrier.NSizeGrid);
+s.NStartGrid = double(carrier.NStartGrid);
+s.NCellID = double(carrier.NCellID);
+s.NSlot = double(carrier.NSlot);
+s.CyclicPrefix = char(string(carrier.CyclicPrefix));
+end
+
+function s = localPRACHSnapshot(prach)
+s = struct();
+s.FrequencyRange = char(string(prach.FrequencyRange));
+s.DuplexMode = char(string(prach.DuplexMode));
+s.ConfigurationIndex = double(prach.ConfigurationIndex);
+s.SubcarrierSpacing = double(prach.SubcarrierSpacing);
+s.SequenceIndex = double(prach.SequenceIndex);
+s.PreambleIndex = double(prach.PreambleIndex);
+s.RestrictedSet = char(string(prach.RestrictedSet));
+s.ZeroCorrelationZone = double(prach.ZeroCorrelationZone);
+s.FrequencyStart = double(prach.FrequencyStart);
+s.NPRACHSlot = double(prach.NPRACHSlot);
+s.TimeIndex = double(prach.TimeIndex);
+s.Format = char(string(prach.Format));
+s.LRA = double(prach.LRA);
+s.SymbolLocation = double(prach.SymbolLocation);
+s.PRACHDuration = double(prach.PRACHDuration);
+s.NumTimeOccasions = double(prach.NumTimeOccasions);
 end
 
 function value = localFirstPreamble(spec)

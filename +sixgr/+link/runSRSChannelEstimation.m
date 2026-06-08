@@ -30,8 +30,14 @@ out.NoiseVarStatus = "";
 out.NoiseVarSource = "";
 out.NoiseVarReason = "";
 out.NoiseVarStrictFailure = false;
+out.ChannelEstimateUsable = false;
 out.ConfiguredSNR_dB = double(snr_dB);
 out.AppliedAWGNSNR_dB = NaN;
+out.NoiseOperatingMode = "";
+out.NoisePowerSource = "";
+out.ThermalNoisePower_dBm = NaN;
+out.ServingRxPower_dBm = NaN;
+out.ServingRxPowerSource = "";
 out.AppliedLargeScaleGain_dB = NaN;
 out.AppliedLargeScaleLoss_dB = NaN;
 out.AppliedBasePathloss_dB = NaN;
@@ -58,6 +64,8 @@ out.SINR_dB = NaN;
 out.SINRSource = "";
 out.SINRValueStatus = "";
 out.CQI = NaN;
+out.CQISource = "";
+out.CQIValueStatus = "";
 out.MCSIndex = NaN;
 out.Modulation = "";
 out.TargetCodeRate = NaN;
@@ -93,6 +101,11 @@ try
     [rxWave, injectedNoiseVariance, replay, txWaveForReference] = localApplySRSChannelAndNoise(tx.Waveform, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB);
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    out.NoiseOperatingMode = char(string(sixgr.util.structGet(replay, "NoiseOperatingMode", "")));
+    out.NoisePowerSource = char(string(sixgr.util.structGet(replay, "NoisePowerSource", "")));
+    out.ThermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
+    out.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
+    out.ServingRxPowerSource = char(string(sixgr.util.structGet(replay, "ServingRxPowerSource", "")));
     out.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
     out.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
     out.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -104,10 +117,12 @@ try
     out.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", NaN));
     out.ChannelModelApplied = char(string(sixgr.util.structGet(replay, "ChannelModelApplied", "")));
     out.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
+    strictNoiseVarianceRequired = ~localThermalNoiseSINRUnavailable(replay);
     [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfg, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
-        "NoiseVar", injectedNoiseVariance);
+        "NoiseVar", injectedNoiseVariance, ...
+        "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
     out.NoiseVarStatus = char(string(sixgr.util.structGet(rx, "NoiseVarStatus", "")));
     out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
@@ -117,18 +132,12 @@ try
     out.MeasurementUsable = logical(sixgr.util.structGet(rx, "MeasurementUsable", false));
     out.FailureReason = char(string(sixgr.util.structGet(rx, "FailureReason", "")));
 
-    if ~logical(out.MeasurementUsable)
-        out.Ok = false;
-        out.TrackingFailure = 1;
-        out.Notes = "SRS measurement unavailable: " + string(out.FailureReason);
-        return;
-    end
-
     if isempty(rx.Hest)
         out.Ok = false;
         out.Notes = "SRS channel estimate is empty.";
         return;
     end
+    out.ChannelEstimateUsable = true;
 
     hEst = localSRSLSEstimate(rx.Hest, rx.RxGrid, tx.SRSIndices, tx.SRSSymbols);
     [hTrue, symTimes_s, symIdx] = localReferencePilotChannel(tx.Carrier, tx.SRSIndices, tx.SRS, sampleRateHz, injectedDopplerHz);
@@ -169,8 +178,24 @@ try
     out.SINR_dB = double(sixgr.util.structGet(linkState, "SINR_dB", NaN));
     out.SINRSource = char(string(sixgr.util.structGet(linkState, "SINRSource", "")));
     out.SINRValueStatus = char(string(sixgr.util.structGet(linkState, "SINRValueStatus", "")));
-    out.CQI = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(linkState, "CQI", NaN)));
-    if isfinite(out.CQI) && out.CQI > 0
+    if localThermalNoiseSINRUnavailable(replay)
+        out.SINR_dB = NaN;
+        out.SINRSource = "ul_srs_sinr_unavailable_without_runtime_rx_power_or_pathloss";
+        out.SINRValueStatus = "unavailable";
+        out.CQI = NaN;
+        out.CQISource = "";
+        out.CQIValueStatus = "unavailable";
+    else
+        rawCQI = double(sixgr.util.structGet(linkState, "CQI", NaN));
+        if isfinite(rawCQI)
+            out.CQI = double(max(0, min(15, round(rawCQI))));
+        else
+            out.CQI = NaN;
+        end
+        out.CQISource = char(string(sixgr.util.structGet(linkState, "CQISource", "")));
+        out.CQIValueStatus = char(string(sixgr.util.structGet(linkState, "CQIValueStatus", "")));
+    end
+    if isfinite(out.CQI) && out.CQI >= 0
         [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(out.CQI, "", NaN, cfg, "UL");
         out.MCSIndex = double(mcsIndex);
         out.Modulation = char(string(modStr));
@@ -178,10 +203,15 @@ try
     end
     out.Ok = true;
     out.MeasurementAttempted = true;
-    out.MeasurementUsable = true;
-    out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
-        " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz" + ...
-        ", CQI=" + string(out.CQI) + ", MCS=" + string(out.MCSIndex);
+    out.MeasurementUsable = isfinite(out.SINR_dB) && strcmpi(string(out.SINRValueStatus), "OK");
+    if logical(out.MeasurementUsable)
+        out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
+            " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz" + ...
+            ", CQI=" + string(out.CQI) + ", MCS=" + string(out.MCSIndex);
+    else
+        out.Notes = "SRS channel estimate available; SINR/CQI unavailable from receiver noise evidence: " + ...
+            string(out.NoiseVarReason);
+    end
 catch ME
     out.Ok = false;
     out.TrackingFailure = 1;
@@ -190,6 +220,18 @@ catch ME
         log.warn("runSRSChannelEstimation failed: " + string(ME.message));
     end
 end
+end
+
+function tf = localThermalNoiseSINRUnavailable(replay)
+noiseMode = lower(strtrim(string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""))));
+if noiseMode ~= "receiver_noise_figure_thermal_noise"
+    tf = false;
+    return;
+end
+servingSource = lower(strtrim(string(sixgr.util.structGet(replay, "ServingRxPowerSource", ""))));
+noiseSource = lower(strtrim(string(sixgr.util.structGet(replay, "NoisePowerSource", ""))));
+tf = servingSource == "unavailable_missing_pathloss_or_runtime_rx_power" || ...
+    noiseSource == "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
 end
 
 function [y, nVar, replay, referenceWaveform] = localApplySRSChannelAndNoise(x, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB)
@@ -244,7 +286,7 @@ end
 end
 
 function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
@@ -252,6 +294,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);

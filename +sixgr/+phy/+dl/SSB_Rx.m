@@ -87,13 +87,15 @@ if ndims(rxGrid) == 2
 end
 
 
-% Ensure we have at least 5 OFDM symbols available for extraction of 2:5
-if size(rxGrid,2) < 5
-    rxGrid(:, end+1:5, :) = 0;
+% nrTimingEstimate used above is driven by a 4-symbol SSB reference grid, so
+% the synchronized waveform starts at the SS/PBCH block boundary. Extract the
+% first four demodulated symbols; shifting to 2:5 corrupts PBCH DM-RS/BCH.
+if size(rxGrid,2) < 4
+    rxGrid(:, end+1:4, :) = 0;
 end
 
-% Extract SS/PBCH block (symbols 2..5)
-rxSSBGrid = rxGrid(:, 2:5, :);
+% Extract SS/PBCH block (symbols 1..4 after synchronization)
+rxSSBGrid = rxGrid(:, 1:4, :);
 
 % Ensure 240-by-4-by-Nr
 if ndims(rxSSBGrid) == 2

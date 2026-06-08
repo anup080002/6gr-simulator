@@ -36,23 +36,29 @@ stageRows = repmat(localEmptyRuntimeStageRow(), 0, 1);
 stageOrder = 0;
 saveFigures = logical(sixgr.util.structGet(opt, "SaveFigures", true));
 anchorCaseNames = localResolveBundleAnchorCases(opt);
+receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfgExec, opt);
 
-localLogStage(ctx, "Starting strict waveform LLS bundle: slot_steps=" + string(numFrames) + ...
-    ", snr_anchor_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
+if receiverNoiseMode
+    localLogStage(ctx, "Starting strict waveform LLS bundle: slot_steps=" + string(numFrames) + ...
+        ", quality_mode=receiver_noise_figure_thermal_noise, operating_point_label_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
+else
+    localLogStage(ctx, "Starting strict waveform LLS bundle: slot_steps=" + string(numFrames) + ...
+        ", configured_snr_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
+end
 stageStart = tic;
 if isCoupledTruth
-    localLogStage(ctx, "Coupled truth mode defers legacy anchor cases to the canonical slot runtime.");
+    localLogStage(ctx, "Coupled truth mode defers legacy preflight cases to the canonical slot runtime.");
     res = localRunConfiguredBundleAnchorCases(cfgExec, ctx, numFrames, ...
         double(sixgr.util.structGet(opt, "LinkSNR_dB", 30)), strings(0, 1));
 elseif isempty(anchorCaseNames)
     res = sixgr.link.LinkLevelRunner.run(ctx, params);
 else
-    localLogStage(ctx, "Bundle anchor cases constrained by config: " + strjoin(anchorCaseNames, ", "));
+    localLogStage(ctx, "Bundle preflight cases constrained by config: " + strjoin(anchorCaseNames, ", "));
     res = localRunConfiguredBundleAnchorCases(cfgExec, ctx, numFrames, ...
         double(sixgr.util.structGet(opt, "LinkSNR_dB", 30)), anchorCaseNames);
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-    "anchor_link_run", toc(stageStart), toc(bundleStart), "Initial anchor waveform run completed.");
+    "anchor_link_run", toc(stageStart), toc(bundleStart), "Initial waveform preflight run completed.");
 unsupportedCases = table();
 [res, unsupportedCases] = localPruneUnsupportedTruthCases(res);
 localPublishWaveformBundleStageStatus(runFolder, struct( ...
@@ -66,7 +72,7 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "RFReady", false, ...
     "SweepReady", false, ...
     "FinalBundleReady", false, ...
-    "Notes", "Initial anchor link run completed."));
+    "Notes", "Initial waveform preflight completed; configured SNR is metadata only in receiver-noise mode."));
 stageStart = tic;
 localPublishAnchorKPIArtifacts(runFolder, res);
 localPublishRuntimeReferenceArtifacts(runFolder, cfgL, multiUser);
@@ -104,12 +110,20 @@ if istable(unsupportedCases) && ~isempty(unsupportedCases)
     localLogStage(ctx, "Pruned unsupported truth-only cases from KPI table: " + string(height(unsupportedCases)));
 end
 sweepPlan = localResolveSweepPlan(opt, numFrames);
-snrGrid = localReduceSweepGrid( ...
-    double(sixgr.util.structGet(opt, "LinkSNRGrid_dB", [-30 -20 -10 0 10 20 30 40])), ...
-    double(sweepPlan.MaxSweepPoints), ...
-    double(sixgr.util.structGet(opt, "LinkSNR_dB", 30)));
-localLogStage(ctx, "Exporting raw truth trial tables across SNR grid [" + ...
-    strjoin(string(round(snrGrid(:).', 6)), ", ") + "].");
+if receiverNoiseMode
+    sweepPlan.MaxSweepPoints = 1;
+    sweepPlan.ReferenceTrialsPerSNR = 0;
+    snrGrid = localResolvePhysicalOperatingPointGrid(cfgExec, opt);
+    localLogStage(ctx, "Exporting raw truth trial tables at receiver-noise operating point label [" + ...
+        strjoin(string(round(snrGrid(:).', 6)), ", ") + "] dB.");
+else
+    snrGrid = localReduceSweepGrid( ...
+        double(sixgr.util.structGet(opt, "LinkSNRGrid_dB", [-30 -20 -10 0 10 20 30 40])), ...
+        double(sweepPlan.MaxSweepPoints), ...
+        double(sixgr.util.structGet(opt, "LinkSNR_dB", 30)));
+    localLogStage(ctx, "Exporting raw truth trial tables across SNR grid [" + ...
+        strjoin(string(round(snrGrid(:).', 6)), ", ") + "].");
+end
 stageStart = tic;
 rawTrials = localExportLinkRawTrialTables(cfgExec, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser, saveFigures, liveMobilityArtifacts);
 slotTrace = struct();
@@ -142,13 +156,25 @@ if isstruct(sixgr.util.structGet(liveDerivedArtifacts, "HARQ", struct()))
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "live_derived_tables_initial", toc(stageStart), toc(bundleStart), "Initial live derived channel, beam, CSI, and coverage tables published.");
-localLogStage(ctx, "Building primary SNR sweep from raw truth trials.");
+if receiverNoiseMode
+    localLogStage(ctx, "Building primary receiver-noise operating-point summary from raw truth trials.");
+else
+    localLogStage(ctx, "Building primary SNR sweep from raw truth trials.");
+end
 stageStart = tic;
 res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-    "primary_sweep_from_raw_trials", toc(stageStart), toc(bundleStart), "Primary SNR sweep summary constructed from raw trials.");
-refinedGrid = localBuildAdaptiveRefinedGrid(res.SNRSweep, snrGrid(:), cfgExec, opt);
-if isCoupledTruth
+    "primary_sweep_from_raw_trials", toc(stageStart), toc(bundleStart), "Primary operating-point summary constructed from raw trials.");
+if receiverNoiseMode
+    refinedGrid = [];
+else
+    refinedGrid = localBuildAdaptiveRefinedGrid(res.SNRSweep, snrGrid(:), cfgExec, opt);
+end
+if receiverNoiseMode
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "refined_sweep_skipped_for_receiver_noise", 0, toc(bundleStart), ...
+        "Receiver-noise mode uses measured runtime evidence at the configured operating point and skips adaptive configured-SNR sweeps.");
+elseif isCoupledTruth
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
         "refined_sweep_skipped_for_coupled_truth", 0, toc(bundleStart), ...
         "Coupled truth uses the canonical slot runtime as the authoritative source and skips legacy refined sweeps.");
@@ -162,7 +188,12 @@ elseif ~isempty(refinedGrid)
     snrGrid = unique(sort([double(snrGrid(:)); double(refinedGrid(:))]));
     res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
 end
-if isCoupledTruth
+if receiverNoiseMode
+    res.ReferenceSweep = table();
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "reference_sweep_skipped_for_receiver_noise", 0, toc(bundleStart), ...
+        "Receiver-noise mode forbids fixed-reference SNR sweeps; runtime receiver evidence remains authoritative.");
+elseif isCoupledTruth
     res.ReferenceSweep = table();
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
         "reference_sweep_skipped_for_coupled_truth", 0, toc(bundleStart), ...
@@ -191,7 +222,7 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "RFReady", false, ...
     "SweepReady", true, ...
     "FinalBundleReady", false, ...
-    "Notes", "Primary sweep summary is available for live charts."));
+    "Notes", "Primary operating-point summary is available for live charts."));
 localLogStage(ctx, "Refreshing live derived tables after primary sweep consolidation.");
 stageStart = tic;
 liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgL, rootRunFolder, rawTrials, multiUser, liveMobilityArtifacts, slotTrace);
@@ -1389,7 +1420,7 @@ rows = repmat(struct( ...
     "UserExecutionModel", "", ...
     "ConfiguredLayers", NaN, ...
     "NoiseOperatingMode", "", ...
-    "ConfiguredSNRAnchorEnabled", false, ...
+    "ConfiguredSNRMetadataOnly", false, ...
     "DopplerSourceMode", "", ...
     "ResolvedDopplerHz", NaN, ...
     "MobilitySpeed_kmh", NaN, ...
@@ -1552,7 +1583,7 @@ for i = 1:2
     rows(i).BrowserExecutionMode = char(browserExecutionMode);
     rows(i).UserExecutionModel = char(userExecutionModel);
     rows(i).NoiseOperatingMode = char(noiseMode);
-    rows(i).ConfiguredSNRAnchorEnabled = noiseMode == "configured_snr_anchor_after_large_scale_gain";
+    rows(i).ConfiguredSNRMetadataOnly = noiseMode == "receiver_noise_figure_thermal_noise";
     rows(i).DopplerSourceMode = char(dopplerMode);
     rows(i).ResolvedDopplerHz = double(dopplerHz);
     rows(i).MobilitySpeed_kmh = double(mobilitySpeedKmh);
@@ -1665,9 +1696,38 @@ T = struct2table(rows);
 end
 
 function mode = localResolveNoiseOperatingMode(cfg)
-mode = string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+mode = string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if strlength(strtrim(mode)) == 0
-    mode = "configured_snr_anchor_after_large_scale_gain";
+    mode = "receiver_noise_figure_thermal_noise";
+end
+end
+
+function tf = localUsesReceiverNoiseMeasurement(cfg, opt)
+if nargin < 2 || ~isstruct(opt)
+    opt = struct();
+end
+mode = string(sixgr.util.structGet(opt, "LinkQualityMode", ""));
+if strlength(strtrim(mode)) == 0
+    mode = localResolveNoiseOperatingMode(cfg);
+end
+mode = lower(strtrim(mode));
+tf = mode == "receiver_noise_figure_thermal_noise";
+end
+
+function grid = localResolvePhysicalOperatingPointGrid(cfg, opt)
+grid = double(sixgr.util.structGet(opt, "LinkSNRGrid_dB", NaN));
+grid = grid(:);
+grid = grid(isfinite(grid));
+if isempty(grid)
+    grid = double(sixgr.util.structGet(opt, "LinkSNR_dB", ...
+        sixgr.util.structGet(cfg, "channel.snr_dB", NaN)));
+end
+grid = grid(:);
+grid = grid(isfinite(grid));
+if isempty(grid)
+    grid = NaN;
+else
+    grid = grid(1);
 end
 end
 
@@ -5287,8 +5347,16 @@ end
 end
 
 function linkSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfg, ueIdx, direction, fallbackSNR_dB)
-linkSNR_dB = double(fallbackSNR_dB);
 direction = upper(string(direction));
+cfgEval = cfg;
+if ~(isstruct(cfgEval) && ~isempty(fieldnames(cfgEval)))
+    cfgEval = sixgr.util.structGet(state, "CfgMobility", struct());
+end
+if localUsesReceiverNoiseMeasurement(cfgEval, struct())
+    linkSNR_dB = NaN;
+else
+    linkSNR_dB = double(fallbackSNR_dB);
+end
 if ~(isfinite(double(ueIdx)) && ueIdx >= 1)
     return;
 end
@@ -5323,10 +5391,6 @@ servingCell = NaN;
 if ueIdx <= numel(servingVec)
     servingCell = double(servingVec(ueIdx));
 end
-cfgEval = cfg;
-if ~(isstruct(cfgEval) && ~isempty(fieldnames(cfgEval)))
-    cfgEval = sixgr.util.structGet(state, "CfgMobility", struct());
-end
 interferenceMode = string(sixgr.util.structGet(cfgEval, "run.interferenceExecutionMode", ...
     sixgr.util.structGet(cfgEval, "interference.inter_cell_execution_mode", "")));
 if strlength(strtrim(interferenceMode)) > 0 && isfinite(servingCell)
@@ -5340,7 +5404,7 @@ end
 runState = sixgr.util.structGet(state, "RunState", struct());
 representativeSNR_dB = double(sixgr.util.structGet(runState, "CurrentSNR_dB", NaN));
 valueRole = string(sixgr.util.structGet(runState, "ValueRole", ""));
-if isfinite(representativeSNR_dB) && valueRole ~= "configured_anchor_until_feedback"
+if isfinite(representativeSNR_dB) && ~contains(lower(valueRole), "configured")
     linkSNR_dB = double(representativeSNR_dB);
 end
 end
@@ -5536,7 +5600,7 @@ meta = struct( ...
     "SlotComplete", logical(opt.SlotComplete), ...
     "FinalDirectionChunk", logical(opt.FinalDirectionChunk), ...
     "PublishReason", char(string(opt.PublishReason)), ...
-    "Notes", sprintf("Coupled truth streaming %s slot %d/%d for UE %d/%d at configured runtime SNR anchor point %d/%d (%.3f dB, not a measured SINR). MeasuredTrialSINR_dB and ReceiverHestSINR_dB carry the live waveform/receiver SINR evidence when available.", ...
+    "Notes", sprintf("Coupled truth streaming %s slot %d/%d for UE %d/%d at receiver-noise operating point label %d/%d (%.3f dB, not a measured SINR). MeasuredTrialSINR_dB and ReceiverHestSINR_dB carry the live waveform/receiver SINR evidence when available.", ...
         char(signalDirection), round(double(frameIdx)), round(double(totalFrames)), round(double(ueIdx)), round(double(totalUsers)), ...
         round(double(sweepIdx)), round(double(sweepCount)), double(snr_dB)));
 
@@ -5584,7 +5648,7 @@ end
 dlCompletedFrames = double(sixgr.util.structGet(runtimeState, "DLCompletedFrames", NaN));
 ulCompletedFrames = double(sixgr.util.structGet(runtimeState, "ULCompletedFrames", NaN));
 localAppendRuntimeLog("INFO", ...
-    "%s coupled publish: sweep %d/%d configured_ref_snr_dB=%.3f ue=%d/%d dlDirectionalFrames=%s/%d ulDirectionalFrames=%s/%d dlRows=%d ulRows=%d.", ...
+    "%s coupled publish: operating_point %d/%d configured_label_snr_dB=%.3f ue=%d/%d dlDirectionalFrames=%s/%d ulDirectionalFrames=%s/%d dlRows=%d ulRows=%d.", ...
     char(signalDirection), round(double(sweepIdx)), round(double(sweepCount)), double(snr_dB), ...
     round(double(ueIdx)), round(double(totalUsers)), ...
     localDisplayProgressValue(dlCompletedFrames), round(double(totalFrames)), ...
@@ -5786,7 +5850,7 @@ if sixgr.db.isArtifactStoreActive()
     totalFrames = double(sixgr.util.structGet(meta, "TotalFrames", NaN));
     snr_dB = double(sixgr.util.structGet(meta, "SNR_dB", NaN));
     direction = string(sixgr.util.structGet(meta, "Direction", ""));
-    sinrSummary = localFormatConfiguredAnchorSINRSummary(mergedTrials, snr_dB);
+    sinrSummary = localFormatOperatingPointSINRObservabilitySummary(mergedTrials, snr_dB);
     if isfinite(completedFrames) && isfinite(totalFrames)
         message = sprintf("%s live frame publish: %d/%d directional frames complete, %s, rows=%d.", ...
             char(direction), round(completedFrames), round(totalFrames), char(sinrSummary), height(mergedTrials));
@@ -6005,7 +6069,7 @@ col = strings(nRows, 1);
 end
 
 function T = localEnsureLinkTrialTable(Tin, direction, snr_dB, cfg)
-vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Modulation','TargetCodeRate','TBSize_bits', ...
+vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','ConfiguredLayers','ConfiguredTxAntennas','ConfiguredRxAntennas','Modulation','TargetCodeRate','TBSize_bits', ...
     'ChannelModel','ChannelModelApplied','ChannelFadingApplied','DopplerHz','CRCPass','DecoderIterations','EVM_rms','NMSE_dB', ...
     'DetectionMetric','CorrelationPeak','DetectionThreshold','DetectionThresholdMode','DetectionMetricStatus', ...
     'DetectorPeakMetric','DetectorNoiseFloor','NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','DTXFlag','DTXReason', ...
@@ -6187,10 +6251,19 @@ if all(~isfinite(double(T.SNR_dB)))
     T.SNR_dB(:) = double(snr_dB);
 end
 if all(strlength(string(T.ConfiguredSNRSource)) == 0)
-    T.ConfiguredSNRSource(:) = "configured_runtime_operating_point_reference";
+    T.ConfiguredSNRSource(:) = "configured_operating_point_metadata";
 end
 if all(strlength(string(T.SNRValueRole)) == 0)
-    T.SNRValueRole(:) = "configured_reference_metadata";
+    T.SNRValueRole(:) = "configured_operating_point_metadata";
+end
+if all(~isfinite(double(T.ConfiguredLayers)))
+    T.ConfiguredLayers(:) = double(localConfiguredLayerCount(cfg, direction));
+end
+if all(~isfinite(double(T.ConfiguredTxAntennas)))
+    T.ConfiguredTxAntennas(:) = double(localConfiguredTxAntennaCount(cfg, direction));
+end
+if all(~isfinite(double(T.ConfiguredRxAntennas)))
+    T.ConfiguredRxAntennas(:) = double(localConfiguredRxAntennaCount(cfg, direction));
 end
 reqModel = localResolveRequestedLinkChannelModel(cfg);
 if all(strlength(string(T.ChannelModel)) == 0)
@@ -6877,14 +6950,20 @@ for k = 1:nTrials
         [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfgTrial, txArgs{:});
         [rxWave, nVar, replay, noiseOnly] = localApplyPDCCHChannelAndNoise(tx.Waveform, cfgTrial, tx, txInfo, snr_dB);
         tDecode = tic;
-        [rx, rxInfo] = sixgr.phy.dl.PDCCH_Rx(rxWave, cfgTrial, ...
-            "Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", 16, "NoiseVar", nVar, "NoiseOnlyWaveform", noiseOnly);
+        rxArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
+            "ListLength", 16, "NoiseOnlyWaveform", noiseOnly};
+        if isfinite(double(nVar)) && double(nVar) >= 0
+            rxArgs = [rxArgs {"NoiseVar", nVar}]; %#ok<AGROW>
+        end
+        [rx, rxInfo] = sixgr.phy.dl.PDCCH_Rx(rxWave, cfgTrial, rxArgs{:});
         controlLatency_ms = toc(tDecode) * 1e3;
         radioTTI_ms = localSlotDuration(cfgTrial) * 1e3;
-        [rxNoise, ~] = sixgr.phy.dl.PDCCH_Rx(noiseOnly, cfgTrial, ...
-            "Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", 16, "NoiseVar", nVar);
+        noiseArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
+            "ListLength", 16};
+        if isfinite(double(nVar)) && double(nVar) >= 0
+            noiseArgs = [noiseArgs {"NoiseVar", nVar}]; %#ok<AGROW>
+        end
+        [rxNoise, ~] = sixgr.phy.dl.PDCCH_Rx(noiseOnly, cfgTrial, noiseArgs{:});
         [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
         ok = logical(sixgr.util.structGet(rx, "Ok", false)) && (be == 0);
         aggLevel = localPDCCHScalar(tx.PDCCH, "AggregationLevel", NaN);
@@ -6953,13 +7032,17 @@ for k = 1:nTrials
         elseif r.NoiseVarStatus ~= "OK"
             r.NoiseVarStrictFailure = true;
         end
+        if localThermalNoiseSINRUnavailable(replay)
+            r = localMarkControlSINRUnavailable(r, ...
+                "thermal_noise_sinr_unavailable_without_runtime_rx_power_or_pathloss");
+        end
         r.EVM_rms = double(sixgr.util.structGet(rx, "EVM_rms", NaN));
         r.DecodeAttempted = true;
         r.DecodeUsable = true;
         r.DetectionAttempted = true;
         r.DetectionUsable = isfinite(r.DetectionMetric);
         r.MeasurementAttempted = true;
-        r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB);
+        r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && strcmpi(string(r.ReceiverHestSINRValueStatus), "OK");
         r.ReceiverUsable = logical(r.DecodeUsable && r.MeasurementUsable);
         r.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Ok", false)));
         r.BlockingFlag = double(isfinite(aggLevel) && isfinite(availCCEs) && aggLevel > availCCEs);
@@ -6994,6 +7077,37 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function tf = localThermalNoiseSINRUnavailable(replay)
+noiseMode = lower(strtrim(string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""))));
+if noiseMode ~= "receiver_noise_figure_thermal_noise"
+    tf = false;
+    return;
+end
+servingSource = lower(strtrim(string(sixgr.util.structGet(replay, "ServingRxPowerSource", ""))));
+noiseSource = lower(strtrim(string(sixgr.util.structGet(replay, "NoisePowerSource", ""))));
+tf = servingSource == "unavailable_missing_pathloss_or_runtime_rx_power" || ...
+    noiseSource == "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
+end
+
+function r = localMarkControlSINRUnavailable(r, reason)
+reason = string(reason);
+r.ReceiverHestSINR_dB = NaN;
+r.ReceiverHestSINRSource = "";
+r.ReceiverHestSINRValueRole = "unavailable";
+r.ReceiverHestSINRValueStatus = "unavailable";
+r.ReceiverHestSINRNAReason = reason;
+r.MeasuredTrialSINR_dB = NaN;
+r.MeasuredTrialSINRSource = "";
+r.MeasuredTrialSINRValueRole = "unavailable";
+r.MeasuredTrialSINRValueStatus = "unavailable";
+r.MeasuredTrialSINRNAReason = reason;
+r.MeasuredSINR_dB = NaN;
+r.SINRValueRole = "unavailable";
+r.SINRSource = "";
+r.SINRValueStatus = "unavailable";
+r.SINRValueDefinition = "no_control_sinr_observation_available_without_runtime_noise_power_anchor";
 end
 
 function [y, nVar, replay, noiseOnlyWave] = localApplyPDCCHChannelAndNoise(x, cfg, tx, txInfo, snr_dB)
@@ -7087,7 +7201,7 @@ end
 end
 
 function [y, nVar] = localPDCCHAddAwgnFromReplay(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "configured_snr_anchor_after_large_scale_gain"));
+noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
@@ -7095,6 +7209,9 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
+    y = x;
+    nVar = NaN;
+    return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
@@ -7934,8 +8051,8 @@ row.PRBStart = NaN;
 row.MCSIndex = NaN;
 row.Rank = NaN;
 row.ConfiguredSNR_dB = double(snr_dB);
-row.ConfiguredSNRSource = "configured_runtime_operating_point_reference";
-row.SNRValueRole = "configured_reference_metadata";
+row.ConfiguredSNRSource = "configured_operating_point_metadata";
+row.SNRValueRole = "configured_operating_point_metadata";
 row.AppliedAWGNSNR_dB = NaN;
 row.ReceiverHestSINR_dB = NaN;
 row.ReceiverHestSINRSource = "";
@@ -8563,14 +8680,14 @@ if istable(trialRowsOrTable)
 elseif isnumeric(trialRowsOrTable) && isscalar(trialRowsOrTable) && isfinite(trialRowsOrTable)
     rowCount = double(trialRowsOrTable);
 end
-summary = localFormatConfiguredAnchorSINRSummary(trialT, configuredSNR_dB);
+summary = localFormatOperatingPointSINRObservabilitySummary(trialT, configuredSNR_dB);
 end
 
-function summary = localFormatConfiguredAnchorSINRSummary(trialT, configuredSNR_dB)
+function summary = localFormatOperatingPointSINRObservabilitySummary(trialT, configuredSNR_dB)
 if isfinite(configuredSNR_dB)
-    configuredText = sprintf("configured runtime anchor %.3f dB (not a measured SINR)", double(configuredSNR_dB));
+    configuredText = sprintf("configured operating-point label %.3f dB (not a measured SINR)", double(configuredSNR_dB));
 else
-    configuredText = "configured runtime anchor unavailable";
+    configuredText = "configured operating-point label unavailable";
 end
 measuredText = localFormatLiveSINRStatistic(trialT, "MeasuredTrialSINR_dB", "MeasuredTrialSINR_dB");
 receiverText = localFormatLiveSINRStatistic(trialT, "ReceiverHestSINR_dB", "ReceiverHestSINR_dB");
@@ -9538,6 +9655,34 @@ end
 nLayers = max(1, round(nLayers));
 end
 
+function nTx = localConfiguredTxAntennaCount(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    nTx = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", 1));
+else
+    nTx = double(sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", ...
+        sixgr.util.structGet(cfg, "channel.nTxAnt", sixgr.util.structGet(cfg, "phy.nTxAnt", 1))));
+end
+if ~(isscalar(nTx) && isfinite(nTx) && nTx >= 1)
+    nTx = 1;
+end
+nTx = max(1, round(nTx));
+end
+
+function nRx = localConfiguredRxAntennaCount(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    nRx = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", 1));
+else
+    nRx = double(sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", ...
+        sixgr.util.structGet(cfg, "channel.nRxAnt", sixgr.util.structGet(cfg, "phy.nRxAnt", 1))));
+end
+if ~(isscalar(nRx) && isfinite(nRx) && nRx >= 1)
+    nRx = 1;
+end
+nRx = max(1, round(nRx));
+end
+
 function direction = directionFromTable(T)
 direction = "DL";
 if istable(T) && ~isempty(T) && ismember("Direction", string(T.Properties.VariableNames))
@@ -9878,6 +10023,13 @@ for i = 1:numel(tables)
         continue;
     end
     Ti = Ti(:, keepVars(ismember(keepVars, string(Ti.Properties.VariableNames))));
+    if ~ismember("BeamIndexSet", string(Ti.Properties.VariableNames))
+        appliedBeamSet = strings(height(Ti), 1);
+        if ismember("AppliedBeamIndexSet", string(Ti.Properties.VariableNames))
+            appliedBeamSet = string(Ti.AppliedBeamIndexSet);
+        end
+        Ti.BeamIndexSet = appliedBeamSet;
+    end
     Ti.BeamSweepEnabled = repmat(beamSweepEnabled, height(Ti), 1);
     Ti.BeamCount = repmat(beamCount, height(Ti), 1);
     chunks{i} = Ti;

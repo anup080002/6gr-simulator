@@ -130,7 +130,10 @@ function prof = localFromFlatConfig(cfg, scenarioName)
 
     % gNB / TRxP parameters (tx)
     prof.bs.height_m    = double(sixgr.util.structGet(sc, 'tx.height_m', prof.bs.height_m));
-    prof.bs.txPower_dBm = double(sixgr.util.structGet(sc, 'tx.txPower_dBm', prof.bs.txPower_dBm));
+    prof.bs.txPower_dBm = double(sixgr.util.structGet(sc, 'bs.txPower_dBm', ...
+        sixgr.util.structGet(sc, 'tx.txPower_dBm', ...
+        sixgr.util.structGet(cfg, 'lls6g.resolvedConfig.power_and_rf_frontend.bs_tx_power_dbm', ...
+        prof.bs.txPower_dBm))));
 
     % Sectorization
     az = sixgr.util.structGet(sc, 'sectorization.azimOffsets_deg', prof.sectorization.azimOffsets_deg);
@@ -279,7 +282,9 @@ function prof = localNormalizeProfile(prof, cfg)
     % bs
     if ~isfield(prof, 'bs') || ~isstruct(prof.bs), prof.bs = struct(); end
     prof.bs.height_m = double(sixgr.util.structGet(prof.bs, 'height_m', 25));
-    prof.bs.txPower_dBm = double(sixgr.util.structGet(prof.bs, 'txPower_dBm', 46));
+    prof.bs.txPower_dBm = double(sixgr.util.structGet(cfg, 'scenario.bs.txPower_dBm', ...
+        sixgr.util.structGet(cfg, 'lls6g.resolvedConfig.power_and_rf_frontend.bs_tx_power_dbm', ...
+        sixgr.util.structGet(prof.bs, 'txPower_dBm', 46))));
 
     % sectorization
     if ~isfield(prof, 'sectorization') || ~isstruct(prof.sectorization)

@@ -131,6 +131,10 @@ end
 if ~numAntennaPortsExplicit && (~isfinite(numAntennaPorts) || numAntennaPorts < nl)
     numAntennaPorts = nl;
 end
+if strcmpi(strrep(char(string(mod)), ' ', ''), 'PI/2-BPSK') || strcmpi(strrep(char(string(mod)), ' ', ''), 'PI2-BPSK')
+    % TS 38.211 6.3.1.4 / TS 38.214 6.1.3: pi/2-BPSK PUSCH is DFT-s-OFDM.
+    tp = true;
+end
 
 pusch.Modulation = mod;
 pusch.NumLayers = nl;

@@ -15,9 +15,7 @@ if isempty(fieldnames(occasion))
 end
 
 seq = sixgr.rach.generatePRACHSequence(cfg, "Occasion", occasion, "PreambleIndex", opts.PreambleIndex);
-grid = nrPRACHGrid(seq.Carrier, seq.PRACH);
-grid(seq.Indices) = seq.Symbols;
-[waveform, ofdmInfo] = nrPRACHOFDMModulate(seq.Carrier, seq.PRACH, grid);
+[waveform, grid, ofdmInfo] = sixgr.rach.modulatePRACHSymbols(seq.Symbols, seq, cfg);
 
 numTxAnt = round(double(sixgr.util.structGet(cfg, "NumTxAntennas", 1)));
 if numTxAnt > 1
@@ -33,6 +31,7 @@ tx.Carrier = seq.Carrier;
 tx.PRACH = seq.PRACH;
 tx.SampleRate_Hz = double(ofdmInfo.SampleRate);
 tx.OFDMInfo = ofdmInfo;
+tx.WaveformGenerationBackend = "inrepo_nrPRACH_symbol_ofdm";
 tx.Occasion = occasion;
 tx.PreambleIndex = seq.PreambleIndex;
 tx.SequenceIndex = seq.SequenceIndex;

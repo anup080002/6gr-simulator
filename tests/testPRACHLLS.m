@@ -6,6 +6,10 @@ setup6GRSimToolkit("Verbose", false);
 testNoNoiseSanityDetection();
 testFalseAlarmModeWithPrachDisabled();
 testTimingOffsetRecovery();
+testPRACHOccasionSnapshotIsolation();
+testZCDPEBackwardCompatibleWaveform();
+testZCDPENonzeroDPIDetection();
+testZCDPERunnerExports();
 testMultipleSNRMonotonicitySanity();
 testWrongPreambleClassification();
 testCollisionModeTwoUEs();
@@ -50,6 +54,54 @@ timing = sixgr.rach.estimateTimingOffset(det.TimingOffsetSamples, tx.SampleRate_
 assert(logical(det.Detected), "Timing-offset recovery case must detect the preamble.");
 assert(abs(double(timing.Error_us)) < 0.1, ...
     "Timing-offset recovery error must stay below 0.1 us for the deterministic fractional-delay case.");
+end
+
+function testPRACHOccasionSnapshotIsolation()
+cfg = sixgr.rach.PRACHConfig(localScenario("ScenarioName", "occasion_snapshot", ...
+    "PreambleIndex", 5), "PreambleIndex", 5);
+occ = sixgr.rach.mapPRACHToOccasion(cfg, "OccasionIndex", 1);
+originalPreamble = double(occ.PRACH.PreambleIndex);
+sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", 12);
+assert(double(occ.PRACH.PreambleIndex) == originalPreamble, ...
+    "PRACH occasion snapshots must not be mutated by later waveform generation.");
+end
+
+function testZCDPEBackwardCompatibleWaveform()
+cfg = sixgr.rach.PRACHConfig(localScenario("ScenarioName", "zcdpe_compat", ...
+    "ZCDPE", struct("Enable", true, "DPI_D", 1, "DPI_d", 0, "NumSymbols", 1), ...
+    "PreambleIndex", 3), "PreambleIndex", 3);
+occ = sixgr.rach.mapPRACHToOccasion(cfg, "OccasionIndex", 1);
+baseline = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", 3);
+candidate = sixgr.rach.generateZCDPEWaveform(cfg, "Occasion", occ, "PreambleIndex", 3, "DPI_d", 0);
+relErr = norm(candidate.Waveform(:) - baseline.Waveform(:)) / max(norm(baseline.Waveform(:)), eps);
+assert(relErr < 1e-6, "ZC-DPE d=0 must be waveform-compatible with baseline NR PRACH.");
+end
+
+function testZCDPENonzeroDPIDetection()
+cfg = sixgr.rach.PRACHConfig(localShortPRACHScenario("zcdpe_nonzero_dpi", ...
+    "ZCDPE", struct("Enable", true, "DPI_D", 2, "DPI_d", 1, "NumSymbols", 2), ...
+    "PreambleIndex", 3), "PreambleIndex", 3);
+occ = sixgr.rach.mapPRACHToOccasion(cfg, "OccasionIndex", 1);
+tx = sixgr.rach.generateZCDPEWaveform(cfg, "Occasion", occ, "PreambleIndex", 3, "DPI_d", 1);
+det = sixgr.rach.ZCDPEDetector(tx.Waveform, cfg, "Occasion", occ, ...
+    "CandidatePreambles", 3, "DetectionThresholdMode", "fixed", "DetectionThreshold", 0.7);
+assert(logical(det.Detected), "ZC-DPE detector must detect a no-noise nonzero-DPI PRACH waveform.");
+assert(double(det.DetectedPreambleIndex) == 3, "ZC-DPE detector must preserve the detected preamble index.");
+assert(double(det.ZCDPE.DPI_Detected) == 1, "ZC-DPE detector must recover the transmitted DPI index.");
+end
+
+function testZCDPERunnerExports()
+cfg = localShortPRACHScenario("zcdpe_runner", ...
+    "ZCDPE", struct("Enable", true, "DPI_D", 2, "DPI_d", 1, "NumSymbols", 2), ...
+    "PreambleIndex", 3, "SNRSweep_dB", 100, "ThresholdSweep", 0.7, "NumTrials", 1);
+out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+assert(all(ismember(["zcdpe_enabled","prach_design","dpi_D","dpi_d_true","dpi_d_detected","dpi_correct"], ...
+    string(out.ROTable.Properties.VariableNames))), ...
+    "ZC-DPE PRACH runner must export design and DPI evidence columns.");
+assert(all(logical(out.ROTable.zcdpe_enabled)), "ZC-DPE runner rows must mark ZC-DPE as enabled.");
+assert(all(string(out.ROTable.prach_design) == "zcdpe"), "ZC-DPE runner rows must export the candidate design name.");
+assert(all(double(out.ROTable.dpi_d_true) == 1), "ZC-DPE runner must preserve transmitted DPI truth.");
+assert(all(logical(out.ROTable.dpi_correct)), "No-noise ZC-DPE runner smoke must recover DPI correctly.");
 end
 
 function testMultipleSNRMonotonicitySanity()
@@ -120,6 +172,25 @@ cfg = struct( ...
     "NumUEsPerRO", 1, ...
     "ActivePreamblePattern", true, ...
     "Seed", 101);
+for iArg = 1:2:numel(varargin)
+    cfg.(varargin{iArg}) = varargin{iArg + 1};
+end
+end
+
+function cfg = localShortPRACHScenario(name, varargin)
+cfg = localScenario("ScenarioName", name, ...
+    "CarrierFrequencyHz", 4e9, ...
+    "DuplexMode", "TDD", ...
+    "CarrierSCSkHz", 30, ...
+    "NSizeGrid", 273, ...
+    "PRACHConfigurationIndex", 87, ...
+    "PRACHSubcarrierSpacing", 15, ...
+    "PRACHFormat", "A2", ...
+    "NumPRACHOccasions", 1, ...
+    "NumTrials", 1, ...
+    "SNRSweep_dB", 100, ...
+    "ThresholdSweep", 0.7, ...
+    "ChannelModel", "AWGN");
 for iArg = 1:2:numel(varargin)
     cfg.(varargin{iArg}) = varargin{iArg + 1};
 end

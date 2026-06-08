@@ -58,7 +58,7 @@ def _bounded_roundtrip_payload() -> dict:
             "random_seed": 73040,
             "snr_db": 8,
             "snr_sweep_offsets_db": [0],
-            "noise_operating_mode": "configured_snr_anchor_after_large_scale_gain",
+            "noise_operating_mode": "receiver_noise_figure_thermal_noise",
         }
     )
     payload.setdefault("run_control", {}).update(

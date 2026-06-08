@@ -1,0 +1,23 @@
+{
+  "inherits": [
+    "./prach_detection.yaml"
+  ],
+  "meta": {
+    "scenario_id": "prach_detection_zcdpe",
+    "description": "ZC-DPE PRACH detection scenario for baseline-vs-candidate comparison.",
+    "research_class": "study_item_candidate",
+    "scenario_group": "group_c_control"
+  },
+  "scenario": {
+    "runner_profile": "prach_detection",
+    "target_cases": ["prach"]
+  },
+  "random_access": {
+    "prach_sequence_family": "zcdpe_candidate",
+    "prach_design": "zcdpe",
+    "zcdpe_enabled": true,
+    "zcdpe_dpi_D": 4,
+    "zcdpe_dpi_d": [1],
+    "zcdpe_num_symbols": 2
+  }
+}

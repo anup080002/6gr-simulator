@@ -7849,6 +7849,7 @@ cfgS.outputs.saveCSV = false;
 cfgS.outputs.saveMAT = false;
 cfgS.outputs.saveFigures = false;
 cfgS.outputs.saveFIG = false;
+cfgS.outputs.exportSLSOutputCatalog = false;
 cfgS.outputs.detailedSystemTrace = false;
 cfgS.system.phyBackend = "waveform";
 cfgS.scenario.ue.nUE = nUE;
