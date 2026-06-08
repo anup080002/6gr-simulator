@@ -48,6 +48,8 @@ scenario:
   honesty_mode: strict
   unsupported_output_policy: show_unavailable_with_reason
   provenance_logging: true
+  geometry:
+    area_m: [3600, 2400]
   bs:
     height_m: 24
   sectorization:

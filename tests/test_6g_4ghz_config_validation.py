@@ -138,6 +138,7 @@ def main() -> None:
     assert int(dash.path_get(webgui_2site, "deployment_topology.inter_site_distance", 0)) == 1000
     assert int(dash.path_get(webgui_2site, "deployment_topology.min_inter_ue_distance_m", 0)) == 80
     assert int(dash.path_get(webgui_2site, "scenario.bs.height_m", 0)) == 24
+    assert list(dash.path_get(webgui_2site, "scenario.geometry.area_m", [])) == [3600, 2400]
     assert list(dash.path_get(webgui_2site, "scenario.sectorization.azimOffsets_deg", [])) == [0, 120, 240]
     assert str(dash.path_get(webgui_2site, "simulation.noise_operating_mode", "")) == "receiver_noise_figure_thermal_noise"
     assert str(dash.path_get(webgui_2site, "channel_model.scenario_label", "")) == "CDL-D"
