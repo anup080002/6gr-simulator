@@ -123,6 +123,8 @@ methods(Static)
         state.PUCCHFailureCount = zeros(nUsers, 1);
         state.PUCCHCrashCount = zeros(nUsers, 1);
         state.SRSInvalidEventCount = zeros(nUsers, 1);
+        state.PUCCHChannelStateByUE = cell(nUsers, 1);
+        state.SRSChannelStateByUE = cell(nUsers, 1);
         state.SchedulingOpportunitiesBlockedByGatingCount = zeros(nUsers, 1);
         state.GrantsBlockedByGatingCount = zeros(nUsers, 1);
         state.ServingTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyServingRow(), 0, 1));
@@ -5735,12 +5737,19 @@ methods(Static, Access=private)
         interferenceBundle = sixgr.truth.CoupledTruthRuntime.buildPUCCHInterferenceBundle(state, row);
         expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
         pucchSNR_dB = sixgr.truth.CoupledTruthRuntime.resolveRuntimeSignalSNRForUE(state, cfgU, ueIdx, "UL");
+        if ~isfield(state, "PUCCHChannelStateByUE") || numel(state.PUCCHChannelStateByUE) < ueIdx
+            state.PUCCHChannelStateByUE{ueIdx, 1} = [];
+        end
+        trialIdx = max(1, round(double(sixgr.util.structGet(state, "CurrentSlot", 1))));
         trial = sixgr.link.runPUCCHWaveformTrial(cfgU, ...
             "ExpectedUCIBits", int8(logical(expectedAck)), ...
             "SNR_dB", double(pucchSNR_dB), ...
             "Format", sixgr.util.structGet(cfgU, "phy.pucch.format", []), ...
             "RNTI", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)), ...
-            "InterferenceBundle", interferenceBundle);
+            "InterferenceBundle", interferenceBundle, ...
+            "TrialIndex", trialIdx, ...
+            "ChannelState", state.PUCCHChannelStateByUE{ueIdx});
+        state.PUCCHChannelStateByUE{ueIdx, 1} = sixgr.util.structGet(trial, "ChannelState", state.PUCCHChannelStateByUE{ueIdx});
         observed.DecodeOk = logical(sixgr.util.structGet(trial, "Ok", false));
         observed.ObservedAck = logical(observed.DecodeOk && sixgr.util.structGet(trial, "AckObserved", false));
         trialCrashed = logical(sixgr.util.structGet(trial, "Crash", false));

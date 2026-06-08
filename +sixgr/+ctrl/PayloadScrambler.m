@@ -14,33 +14,16 @@ if ~logical(ctrlCfg.PayloadScramblingEnabled)
     return;
 end
 
-cinit = uint32(mod(double(ctrlCfg.PayloadSequenceInit) + ...
-    17 * double(sixgr.util.structGet(context, "SlotNumber", ctrlCfg.SlotNumber)) + ...
-    31 * double(sixgr.util.structGet(context, "SearchSpaceID", 0)) + ...
-    13 * double(ctrlCfg.RNTI), 2^31 - 1));
+nID = round(double(sixgr.util.structGet(ctrlCfg, "PayloadSequenceInit", ctrlCfg.CellID)));
+nID = mod(nID, 65536);
+rnti = mod(round(double(ctrlCfg.RNTI)), 65536);
+cinit = uint32(mod(double(rnti) * 2^16 + double(nID), 2^31));
 
-seq = localPRBS(cinit, numel(inBits));
+seq = sixgr.ctrl.GoldSequence(numel(inBits), cinit);
 outBits = bitxor(inBits, int8(seq(:)));
 out = struct();
 out.Bits = int8(outBits(:));
 out.Sequence = int8(seq(:));
 out.Enabled = true;
 out.SequenceInit = double(cinit);
-end
-
-function seq = localPRBS(cinit, N)
-state = false(31,1);
-for i = 1:31
-    state(i) = bitget(uint32(cinit), i) ~= 0;
-end
-if ~any(state)
-    state(1) = true;
-end
-seq = false(N,1);
-for n = 1:N
-    newBit = xor(state(31), state(28));
-    seq(n) = state(end);
-    state(2:end) = state(1:end-1);
-    state(1) = newBit;
-end
 end

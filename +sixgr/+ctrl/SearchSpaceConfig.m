@@ -33,6 +33,11 @@ if any(~ismember(ss.AggregationLevels, [1 2 4 8 16 32]))
     error("sixgr:ctrl:SearchSpaceConfig:BadAL", ...
         "AggregationLevels must be chosen from {1,2,4,8,16,32}.");
 end
+validPeriods = [1 2 4 5 8 10 16 20 40 80 160 320 640 1280 2560];
+if ~any(ss.MonitoringSlotsPeriodicity == validPeriods)
+    warning("sixgr:ctrl:SearchSpaceConfig:InvalidPeriodicity", ...
+        "MonitoringSlotsPeriodicity=%d is not a standard NR monitoring periodicity.", ss.MonitoringSlotsPeriodicity);
+end
 end
 
 function out = localResolveCandidateMap(raw)

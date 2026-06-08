@@ -4991,7 +4991,13 @@ for ueIdx = 1:numUsers
         shouldAttemptSRS = shouldAttemptSRS && srsResourceOpportunity && srsScheduledThisSlot < srsMaxUEsPerSlot;
         if shouldAttemptSRS
             srsSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
-            srsT = localAnnotateCoupledControlTrial(localCollectSRSTrials(cfgU, srsSNR_dB, 1), slotIdx, frameIdx, ueIdx, rnti, "UL");
+            if ~isfield(state, "SRSChannelStateByUE") || numel(state.SRSChannelStateByUE) < ueIdx
+                state.SRSChannelStateByUE{ueIdx, 1} = [];
+            end
+            [srsRawT, srsChState] = localCollectSRSTrials( ...
+                cfgU, srsSNR_dB, 1, state.SRSChannelStateByUE{ueIdx}, slotIdx);
+            state.SRSChannelStateByUE{ueIdx, 1} = srsChState;
+            srsT = localAnnotateCoupledControlTrial(srsRawT, slotIdx, frameIdx, ueIdx, rnti, "UL");
             srsAttemptCount = srsAttemptCount + 1;
             srsScheduledThisSlot = srsScheduledThisSlot + 1;
             state.ControlTrials.SRS = localAppendCompatTable(state.ControlTrials.SRS, srsT);
@@ -5324,8 +5330,14 @@ else
     srsPeriod = max(1, round(double(sixgr.util.structGet(state, "SRSSlotPeriod", 4))));
     if ueIdx > numel(lastSRS) || lastSRS(ueIdx) == 0 || (isfinite(slotIdx) && (slotIdx - lastSRS(ueIdx)) >= srsPeriod)
         srsSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
+        if ~isfield(state, "SRSChannelStateByUE") || numel(state.SRSChannelStateByUE) < ueIdx
+            state.SRSChannelStateByUE{ueIdx, 1} = [];
+        end
+        [srsRawT, srsChState] = localCollectSRSTrials( ...
+            cfgU, srsSNR_dB, 1, state.SRSChannelStateByUE{ueIdx}, slotIdx);
+        state.SRSChannelStateByUE{ueIdx, 1} = srsChState;
         state.ControlTrials.SRS = localAppendCompatTable(state.ControlTrials.SRS, ...
-            localAnnotateCoupledControlTrial(localCollectSRSTrials(cfgU, srsSNR_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction));
+            localAnnotateCoupledControlTrial(srsRawT, slotIdx, frameIdx, ueIdx, rnti, direction));
         if ueIdx > numel(state.LastSRSSlotByUE)
             state.LastSRSSlotByUE(ueIdx, 1) = 0;
         end
@@ -7562,6 +7574,7 @@ end
 function T = localCollectPUCCHTrials(cfg, snr_dB, nTrials)
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "UL", snr_dB, 1), nTrials, 1);
+chState = [];
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "UL", snr_dB, k);
     r.Status = "FAIL";
@@ -7570,7 +7583,10 @@ for k = 1:nTrials
         out = sixgr.link.runPUCCHWaveformTrial(cfg, ...
             "ExpectedUCIBits", uci, ...
             "Format", 2, ...
-            "SNR_dB", snr_dB);
+            "SNR_dB", snr_dB, ...
+            "TrialIndex", k, ...
+            "ChannelState", chState);
+        chState = sixgr.util.structGet(out, "ChannelState", chState);
         ok = logical(sixgr.util.structGet(out, "Ok", false)) && ~logical(sixgr.util.structGet(out, "Skipped", false));
         r.TBSize_bits = double(numel(uci));
         r.BitsCompared = double(sixgr.util.structGet(out, "BitsCompared", NaN));
@@ -7654,14 +7670,22 @@ end
 T = struct2table(rows);
 end
 
-function T = localCollectSRSTrials(cfg, snr_dB, nTrials)
+function [T, chState] = localCollectSRSTrials(cfg, snr_dB, nTrials, chState, trialOffset)
+if nargin < 4
+    chState = [];
+end
+if nargin < 5
+    trialOffset = 0;
+end
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "UL", snr_dB, 1), nTrials, 1);
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "UL", snr_dB, k);
     r.Status = "FAIL";
     try
-        outSRS = sixgr.link.runSRSChannelEstimation(cfg, "SNR_dB", snr_dB);
+        outSRS = sixgr.link.runSRSChannelEstimation(cfg, "SNR_dB", snr_dB, ...
+            "TrialIndex", double(trialOffset) + k, "ChannelState", chState);
+        chState = sixgr.util.structGet(outSRS, "ChannelState", chState);
         ok = logical(sixgr.util.structGet(outSRS, "Ok", false)) && ~logical(sixgr.util.structGet(outSRS, "Skipped", false));
         r.NMSE_dB = double(sixgr.util.structGet(outSRS, "NMSE_dB", NaN));
         r.DetectionMetric = -r.NMSE_dB;

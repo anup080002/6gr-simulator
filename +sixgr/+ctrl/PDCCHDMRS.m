@@ -36,10 +36,14 @@ for i = 1:numel(sel)
 end
 locT = struct2table(locRows);
 
-cinit = uint32(mod(double(ctrlCfg.CellID) + 17 * double(ctrlCfg.RNTI) + ...
-    29 * double(sixgr.util.structGet(context, "SlotNumber", ctrlCfg.SlotNumber)) + ...
-    37 * double(sixgr.util.structGet(context, "CandidateIndex", 0)), 2^31 - 1));
-seq = localPRBS(cinit, 2 * height(locT));
+nID = round(double(sixgr.util.structGet(ctrlCfg, "DMRSScramblingID", ctrlCfg.CellID)));
+nID = mod(nID, 65536);
+slotsPerFrame = round(double(sixgr.util.structGet(ctrlCfg, "SlotsPerFrame", 10 * 2^max(0, round(double(sixgr.util.structGet(ctrlCfg, "Numerology", 0)))))));
+slotsPerFrame = max(1, slotsPerFrame);
+nSlotFrame = mod(round(double(sixgr.util.structGet(context, "SlotNumber", ctrlCfg.SlotNumber))), slotsPerFrame);
+dmrsSymbol = round(double(sixgr.util.structGet(ctrlCfg, "CORESET.StartSymbol", 0)));
+cinit = uint32(mod(2^17 * (14 * nSlotFrame + dmrsSymbol + 1) * (2 * nID + 1) + 2 * nID, 2^31));
+seq = sixgr.ctrl.GoldSequence(2 * height(locT), cinit);
 bits = reshape(int8(seq(:)), 2, []).';
 sym = ((1 - 2*double(bits(:,1))) + 1j * (1 - 2*double(bits(:,2)))) ./ sqrt(2);
 
@@ -50,21 +54,4 @@ dmrs.PayloadREMask = ~dmrsMask;
 dmrs.Context = context;
 dmrs.SequenceInit = double(cinit);
 dmrs.PatternDescription = "single_port_density_3_per_rb study baseline";
-end
-
-function seq = localPRBS(cinit, N)
-state = false(31,1);
-for i = 1:31
-    state(i) = bitget(uint32(cinit), i) ~= 0;
-end
-if ~any(state)
-    state(1) = true;
-end
-seq = false(N,1);
-for n = 1:N
-    newBit = xor(state(31), state(28));
-    seq(n) = state(end);
-    state(2:end) = state(1:end-1);
-    state(1) = newBit;
-end
 end

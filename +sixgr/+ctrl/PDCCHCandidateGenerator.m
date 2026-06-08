@@ -1,7 +1,20 @@
 function [candidateTable, hashTrace] = PDCCHCandidateGenerator(ctrlCfg, searchSpace, cceMap, slotNumber)
 %PDCCHCandidateGenerator Enumerate monitored blind-decode candidates.
 
-if mod(slotNumber - searchSpace.MonitoringSlotOffset, searchSpace.MonitoringSlotsPeriodicity) ~= 0
+slotsPerFrame = max(1, round(double(sixgr.util.structGet(ctrlCfg, "SlotsPerFrame", 10 * 2^max(0, round(double(sixgr.util.structGet(ctrlCfg, "Numerology", 0))))))));
+nSlotFrame = mod(round(double(slotNumber)), slotsPerFrame);
+periodSlots = max(1, round(double(searchSpace.MonitoringSlotsPeriodicity)));
+slotOffset = max(0, round(double(searchSpace.MonitoringSlotOffset)));
+if mod(nSlotFrame - slotOffset, periodSlots) ~= 0
+    candidateTable = table();
+    hashTrace = table();
+    return;
+end
+
+monitoringSymbols = double(sixgr.util.structGet(searchSpace, "MonitoringSymbolsWithinSlot", []));
+coresetSymbols = double(sixgr.util.structGet(ctrlCfg, "CORESET.StartSymbol", 0)) + ...
+    (0:max(0, round(double(sixgr.util.structGet(ctrlCfg, "CORESET.DurationSymbols", 1))) - 1));
+if ~isempty(monitoringSymbols) && isempty(intersect(monitoringSymbols(:).', coresetSymbols(:).'))
     candidateTable = table();
     hashTrace = table();
     return;

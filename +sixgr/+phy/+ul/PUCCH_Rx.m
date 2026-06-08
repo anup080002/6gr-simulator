@@ -52,6 +52,7 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     addParameter(p, "Equalize", true, @(x) islogical(x) || (isscalar(x) && (x==0 || x==1)));
     addParameter(p, "ChannelEstimatorFcn", @sixgr.phy.rx.channelEstimate, @(x) isa(x, "function_handle"));
     addParameter(p, "DetectionThreshold", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && x>=0 && x<=1));
+    addParameter(p, "DTXThreshold", sixgr.util.structGet(cfg, "phy.pucch.DTXThreshold", 0.2), @(x) isempty(x) || (isscalar(x) && isnumeric(x) && x>=0 && x<=1));
 
     parse(p, rxWaveform, cfg, varargin{:});
     opts = p.Results;
@@ -109,6 +110,9 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     if estimationAttempted
         try
             [Hest, nVarEst, estInfo] = opts.ChannelEstimatorFcn(carrier, rxGrid, dmrsInd, dmrsSym);
+            if ~isempty(Hest) && size(Hest, 2) > 1
+                Hest = localInterpolateChannelInTime(Hest);
+            end
         catch ME
             Hest = [];
             nVarEst = [];
@@ -223,9 +227,16 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
             uciBits = [];
         end
     end
-    detectionFailureReason = localPUCCHDetectionFailureReason(fmt, ouci, uciBits, detMet);
+    dtxThreshold = localScalarOrNaN(opts.DTXThreshold);
+    detectionFailureReason = localPUCCHDetectionFailureReason(fmt, ouci, uciBits, detMet, dtxThreshold);
+    if double(fmt) == 0 && string(detectionFailureReason) == "correlation_metric_below_dtx_threshold"
+        uciBits = int8([]);
+    end
     detectionUsable = strlength(detectionFailureReason) == 0;
     detectionThreshold = localScalarOrNaN(opts.DetectionThreshold);
+    if ~isfinite(detectionThreshold) && double(fmt) == 0
+        detectionThreshold = dtxThreshold;
+    end
     detectorPeakMetric = localFiniteDetectionMetric(detMet);
     detectionMetricStatus = "OK";
     if ~isfinite(detectorPeakMetric)
@@ -344,11 +355,18 @@ function pucch = localApplyPUCCHFromCfg(pucch, cfg, carrier)
 end
 
 % -------------------------------------------------------------------------
-function failureReason = localPUCCHDetectionFailureReason(~, ouci, uciBits, detMet)
+function failureReason = localPUCCHDetectionFailureReason(fmt, ouci, uciBits, detMet, dtxThreshold)
 failureReason = "";
 if ~localHasFiniteDetectionMetric(detMet)
     failureReason = "pucch_detection_metric_unavailable";
     return;
+end
+if nargin >= 5 && double(fmt) == 0 && isfinite(double(dtxThreshold))
+    detectorPeak = localFiniteDetectionMetric(detMet);
+    if ~(isfinite(detectorPeak) && detectorPeak >= double(dtxThreshold))
+        failureReason = "correlation_metric_below_dtx_threshold";
+        return;
+    end
 end
 expectedCount = NaN;
 if ~isempty(ouci)
@@ -419,6 +437,55 @@ if isfinite(expectedCount) && numel(vals) < expectedCount
     return;
 end
 tf = true;
+end
+
+function Hout = localInterpolateChannelInTime(H)
+Hout = H;
+sz = size(H);
+if numel(sz) < 2 || sz(2) <= 1
+    return;
+end
+K = sz(1);
+L = sz(2);
+nRx = 1;
+nTx = 1;
+if numel(sz) >= 3
+    nRx = sz(3);
+end
+if numel(sz) >= 4
+    nTx = sz(4);
+end
+for rxIdx = 1:nRx
+    for txIdx = 1:nTx
+        if numel(sz) >= 4
+            hSlice = squeeze(H(:, :, rxIdx, txIdx));
+        elseif numel(sz) == 3
+            hSlice = squeeze(H(:, :, rxIdx));
+        else
+            hSlice = H;
+        end
+        if isempty(hSlice)
+            continue;
+        end
+        hasPilot = any(abs(hSlice) > 0 & isfinite(real(hSlice)) & isfinite(imag(hSlice)), 1);
+        pilotSyms = find(hasPilot);
+        if numel(pilotSyms) < 2
+            continue;
+        end
+        allSyms = 1:L;
+        interpSlice = complex(zeros(K, L, "like", hSlice));
+        for k = 1:K
+            interpSlice(k, :) = interp1(pilotSyms, hSlice(k, pilotSyms), allSyms, "linear", "extrap");
+        end
+        if numel(sz) >= 4
+            Hout(:, :, rxIdx, txIdx) = interpSlice;
+        elseif numel(sz) == 3
+            Hout(:, :, rxIdx) = interpSlice;
+        else
+            Hout = interpSlice;
+        end
+    end
+end
 end
 
 % -------------------------------------------------------------------------

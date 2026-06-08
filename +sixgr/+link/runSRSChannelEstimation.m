@@ -4,9 +4,12 @@ function out = runSRSChannelEstimation(cfg, varargin)
 p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) isnumeric(x) && isscalar(x));
+p.addParameter("ChannelState", [], @(x) isempty(x) || isstruct(x));
+p.addParameter("TrialIndex", 1, @(x) isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 snr_dB = double(p.Results.SNR_dB);
+trialIdx = max(1, round(double(p.Results.TrialIndex)));
 
 out = struct();
 out.Ok = false;
@@ -55,6 +58,7 @@ out.FailureReason = "";
 out.InjectedDoppler_Hz = NaN;
 out.EstimatedDopplerHz = NaN;
 out.DopplerError_Hz = NaN;
+out.DopplerEstimateCRLB_Hz = NaN;
 out.EstimatedRI = NaN;
 out.EstimatedTPMI = NaN;
 out.RankEstimate = NaN;
@@ -74,6 +78,7 @@ out.TPMISource = "";
 out.TPMICandidateCount = NaN;
 out.TPMIMutualInformation = NaN;
 out.SRSConditionNumber_dB = NaN;
+out.ChannelState = p.Results.ChannelState;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -98,7 +103,10 @@ try
     [tx, info] = sixgr.phy.ul.SRS_Tx(cfg);
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
-    [rxWave, injectedNoiseVariance, replay, txWaveForReference] = localApplySRSChannelAndNoise(tx.Waveform, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB);
+    rng(localTrialSeed(cfg, trialIdx), "twister");
+    [rxWave, injectedNoiseVariance, replay, txWaveForReference, chState] = ...
+        localApplySRSChannelAndNoise(tx.Waveform, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, p.Results.ChannelState, trialIdx);
+    out.ChannelState = chState;
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
     out.NoiseOperatingMode = char(string(sixgr.util.structGet(replay, "NoiseOperatingMode", "")));
@@ -143,6 +151,7 @@ try
     [hTrue, symTimes_s, symIdx] = localReferencePilotChannel(tx.Carrier, tx.SRSIndices, tx.SRS, sampleRateHz, injectedDopplerHz);
     nmse = localNormalizedMSE(hEst, hTrue);
     estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
+    out.DopplerEstimateCRLB_Hz = localDopplerCRLBHz(hEst, symTimes_s, rx.NoiseVar);
 
     out.NMSE_dB = 10*log10(max(nmse, eps));
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
@@ -234,17 +243,23 @@ tf = servingSource == "unavailable_missing_pathloss_or_runtime_rx_power" || ...
     noiseSource == "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
 end
 
-function [y, nVar, replay, referenceWaveform] = localApplySRSChannelAndNoise(x, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB)
+function [y, nVar, replay, referenceWaveform, state] = localApplySRSChannelAndNoise(x, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, state, trialIdx)
+if nargin < 8
+    state = [];
+end
+if nargin < 9
+    trialIdx = 1;
+end
 txInfo = struct("OFDM", sixgr.util.structGet(info, "OFDMInfo", struct()));
-state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
+if ~(isstruct(state) && logical(sixgr.util.structGet(state, "Initialized", false)))
+    state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
+    state.ChannelSeed = localTrialSeed(cfg, trialIdx);
+    localResetChannelOnce(sixgr.util.structGet(state, "Obj", []), state.ChannelSeed);
+end
 useFading = isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
     isfield(state, "Obj") && ~isempty(state.Obj);
 y = x;
 if useFading
-    try
-        reset(state.Obj);
-    catch
-    end
     xIn = x;
     padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
     trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
@@ -272,7 +287,7 @@ else
     referenceWaveform = y;
 end
 
-cfgReplay = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
+cfgReplay = localPrepareSRSReplayCfg(cfg, snr_dB);
 [y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
 replay = impairmentReplay;
 replay.ChannelModelApplied = char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
@@ -282,6 +297,52 @@ desiredWaveform = y;
 replay.InjectedNoiseVariance = double(nVar);
 if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "srs_replay_reference_waveform_awgn";
+end
+end
+
+function cfgOut = localPrepareSRSReplayCfg(cfg, snr_dB)
+cfgOut = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
+if localShouldUseStandaloneAWGN(cfgOut, snr_dB)
+    cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
+end
+end
+
+function tf = localShouldUseStandaloneAWGN(cfg, snr_dB)
+if ~(isfinite(double(snr_dB)))
+    tf = false;
+    return;
+end
+model = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+if ~(awgnOnly || model == "AWGN" || model == "NONE" || model == "OFF")
+    tf = false;
+    return;
+end
+noiseMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ""))));
+tf = strlength(noiseMode) == 0 || noiseMode == "receiver_noise_figure_thermal_noise";
+end
+
+function seed = localTrialSeed(cfg, trialIdx)
+seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1));
+if ~isfinite(seedBase)
+    seedBase = 1;
+end
+seed = mod(round(seedBase) + max(1, round(double(trialIdx))) - 1, 2^31 - 2) + 1;
+end
+
+function localResetChannelOnce(chObj, seed)
+if isempty(chObj)
+    return;
+end
+try
+    if isprop(chObj, "Seed")
+        chObj.Seed = double(seed);
+    end
+catch
+end
+try
+    reset(chObj);
+catch
 end
 end
 
@@ -585,6 +646,11 @@ if nnz(mask) < 2
     dopplerHz = 0;
     return;
 end
+maxTime = max(symTimes_s(mask), [], "omitnan");
+if isfinite(maxTime) && maxTime >= 1e-2
+    error("sixgr:link:SRS:DopplerEstimateUnexpectedTimescale", ...
+        "SRS symbol times appear to be in wrong units (max %.6g s). Expected less than 10 ms.", maxTime);
+end
 [uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
 if numel(uTimes) < 2
     dopplerHz = 0;
@@ -592,8 +658,44 @@ if numel(uTimes) < 2
 end
 hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
 phaseObs = unwrap(angle(hMean(:)));
+phaseRange = max(phaseObs) - min(phaseObs);
+if isfinite(phaseRange) && phaseRange > 0.9 * pi
+    warning("sixgr:link:SRS:PhaseUnwrapRisk", ...
+        "SRS phase range %.2f rad exceeds 90%% of pi; Doppler estimation may wrap.", phaseRange);
+end
 p = polyfit(uTimes(:), phaseObs(:), 1);
 dopplerHz = p(1) / (2 * pi);
+end
+
+function crlbHz = localDopplerCRLBHz(hEst, symTimes_s, nVar)
+crlbHz = NaN;
+hEst = hEst(:);
+symTimes_s = double(symTimes_s(:));
+N = min(numel(hEst), numel(symTimes_s));
+if N < 2
+    return;
+end
+hEst = hEst(1:N);
+symTimes_s = symTimes_s(1:N);
+mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(symTimes_s);
+if nnz(mask) < 2
+    return;
+end
+[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
+if numel(uTimes) < 2
+    return;
+end
+hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
+if numel(hMean) < 2
+    return;
+end
+snrLin = mean(abs(hMean).^2, "omitnan") / max(double(nVar), eps);
+Lpilots = numel(hMean);
+trep = mean(diff(uTimes), "omitnan");
+if ~(isfinite(snrLin) && snrLin > 0 && isfinite(trep) && trep > 0 && Lpilots > 1)
+    return;
+end
+crlbHz = sqrt(6 / (snrLin * Lpilots * (Lpilots^2 - 1) * (2 * pi * trep)^2));
 end
 
 function loss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue)

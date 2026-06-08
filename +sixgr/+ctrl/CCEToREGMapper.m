@@ -15,8 +15,25 @@ bundleIDs = double(bundleTable.BundleID(:).');
 bundleOrder = bundleIDs;
 if strcmpi(coreset.MappingType, "interleaved") || logical(coreset.InterleavingEnabled)
     interleaverSize = max(1, round(double(coreset.InterleaverSize)));
-    shift = max(0, round(double(coreset.ShiftIndex)));
-    perm = mod((0:numel(bundleIDs)-1) * interleaverSize + shift, numel(bundleIDs)) + 1;
+    if ~ismember(interleaverSize, [2 3 6])
+        error("sixgr:ctrl:CCEToREGMapper:BadInterleaverSize", ...
+            "InterleaverSize=%d is invalid; NR PDCCH interleaving uses {2,3,6}.", interleaverSize);
+    end
+    nBundles = numel(bundleIDs);
+    if mod(nBundles, interleaverSize) ~= 0
+        error("sixgr:ctrl:CCEToREGMapper:InterleaverSizeMismatch", ...
+            "N_REG_Bundles=%d is not divisible by InterleaverSize=%d.", nBundles, interleaverSize);
+    end
+    shift = mod(round(double(coreset.ShiftIndex)), max(nBundles, 1));
+    rowsInInterleaver = nBundles / interleaverSize;
+    perm = zeros(1, nBundles);
+    idx = 1;
+    for c = 0:(interleaverSize - 1)
+        for r = 0:(rowsInInterleaver - 1)
+            perm(idx) = mod(r * interleaverSize + c + shift, nBundles) + 1;
+            idx = idx + 1;
+        end
+    end
     bundleOrder = bundleIDs(perm);
 end
 

@@ -58,10 +58,11 @@ Hest = [];
 nVarEst = [];
 estInfo = struct();
 try
-    if isfield(srsInfo,'CDMLengths')
-        [Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym, 'CDMLengths', srsInfo.CDMLengths);
+    [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo);
+    if localSRSFrequencyHoppingEnabled(srs) && numel(srsSymbols) > 1
+        [Hest, nVarEst, estInfo] = localEstimateSRSHopped(carrier, rxGrid, srsInd, srsSym, srsSymbols, srsInfo);
     else
-        [Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym);
+        [Hest, nVarEst, estInfo] = localEstimateSRSNoHop(carrier, rxGrid, srsInd, srsSym, srsInfo, avgWindow);
     end
 catch
     try
@@ -118,6 +119,106 @@ info.SRSInfo = srsInfo;
 info.ChannelEstimation = estInfo;
 info.NoiseVariance = noiseStatus;
 
+end
+
+function [Hest, nVarEst, estInfo] = localEstimateSRSNoHop(carrier, rxGrid, srsInd, srsSym, srsInfo, avgWindow)
+if isfield(srsInfo,'CDMLengths')
+    [Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym, ...
+        'CDMLengths', srsInfo.CDMLengths, 'AveragingWindow', avgWindow);
+else
+    [Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym, ...
+        'AveragingWindow', avgWindow);
+end
+if isstruct(estInfo)
+    estInfo.AveragingWindow = avgWindow;
+    estInfo.FrequencyHoppingHandled = false;
+end
+end
+
+function [Hest, nVarEst, estInfo] = localEstimateSRSHopped(carrier, rxGrid, srsInd, srsSym, srsSymbols, srsInfo)
+Hest = [];
+nVals = [];
+estInfo = struct("AveragingWindow", [0 0], "FrequencyHoppingHandled", true, "HopCount", numel(srsSymbols));
+if isempty(srsInd)
+    nVarEst = NaN;
+    return;
+end
+K = double(carrier.NSizeGrid) * 12;
+L = double(carrier.SymbolsPerSlot);
+nPorts = max(1, ceil(max(double(srsInd(:))) / max(K * L, 1)));
+[~, symIdx, ~] = ind2sub([K, L, max(1, nPorts)], double(srsInd(:)));
+srsSymVec = srsSym(:);
+for ii = 1:numel(srsSymbols)
+    sym = double(srsSymbols(ii));
+    mask = symIdx == sym;
+    if ~any(mask)
+        continue;
+    end
+    [Hpart, nPart, infoPart] = localEstimateSRSNoHop(carrier, rxGrid, srsInd(mask), srsSymVec(mask), srsInfo, [0 0]);
+    if isempty(Hpart)
+        continue;
+    end
+    if isempty(Hest)
+        Hest = complex(zeros(size(Hpart), "like", Hpart));
+    end
+    if ndims(Hpart) >= 2 && sym >= 1 && sym <= size(Hpart, 2)
+        Hest(:, sym, :, :) = Hpart(:, sym, :, :);
+    else
+        Hest = Hpart;
+    end
+    if isfinite(double(nPart)) && double(nPart) >= 0
+        nVals(end+1, 1) = double(nPart); %#ok<AGROW>
+    end
+    if ii == 1 && isstruct(infoPart)
+        estInfo.FirstHopInfo = infoPart;
+    end
+end
+if isempty(nVals)
+    nVarEst = NaN;
+else
+    nVarEst = mean(nVals, "omitnan");
+end
+end
+
+function [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo)
+combSize = double(sixgr.util.structGet(srsInfo, "CombSize", sixgr.util.structGet(srsInfo, "KSRS", NaN)));
+if ~isfinite(combSize)
+    combSize = double(sixgr.util.structGet(srs, "CombSize", NaN));
+end
+if ~isfinite(combSize)
+    combSize = 2;
+end
+srsSymbols = [];
+if ~isempty(srsInd)
+    K = double(carrier.NSizeGrid) * 12;
+    L = double(carrier.SymbolsPerSlot);
+    nPorts = max(1, round(double(sixgr.util.structGet(srs, "NumSRSPorts", 1))));
+    [~, symIdx, ~] = ind2sub([K, L, nPorts], double(srsInd(:)));
+    srsSymbols = unique(double(symIdx(:)), "stable");
+end
+if combSize >= 4 || numel(srsSymbols) <= 1
+    avgWindow = [0 0];
+else
+    avgWindow = [0 max(0, numel(srsSymbols) - 1)];
+end
+end
+
+function tf = localSRSFrequencyHoppingEnabled(srs)
+raw = [];
+try
+    raw = srs.FrequencyHopping;
+catch
+    tf = false;
+    return;
+end
+if ischar(raw) || isstring(raw)
+    token = lower(strtrim(string(raw)));
+    tf = ~(token == "" || token == "neither" || token == "disabled" || token == "off" || token == "none");
+elseif isnumeric(raw) || islogical(raw)
+    tf = any(double(raw(:)) ~= 0);
+else
+    tf = false;
+end
 end
 
 % -------------------------------------------------------------------------

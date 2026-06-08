@@ -10,8 +10,11 @@ addParameter(p, "SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", NaN), @(x)
 addParameter(p, "Format", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x)));
 addParameter(p, "RNTI", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x)));
 addParameter(p, "InterferenceBundle", struct([]), @(x) isstruct(x));
+addParameter(p, "ChannelState", [], @(x) isempty(x) || isstruct(x));
+addParameter(p, "TrialIndex", 1, @(x) isnumeric(x) && isscalar(x));
 parse(p, cfg, varargin{:});
 opt = p.Results;
+trialIdx = max(1, round(double(opt.TrialIndex)));
 
 expectedBits = int8(logical(opt.ExpectedUCIBits(:)));
 if isempty(expectedBits)
@@ -102,6 +105,7 @@ out = struct( ...
     "Replay", struct(), ...
     "Tx", struct(), ...
     "TxInfo", struct(), ...
+    "ChannelState", opt.ChannelState, ...
     "Rx", struct(), ...
     "RxInfo", struct(), ...
     "Notes", "");
@@ -139,8 +143,13 @@ try
         txArgs = [txArgs {"RNTI", double(opt.RNTI)}]; %#ok<AGROW>
     end
     [tx, txInfo] = sixgr.phy.ul.PUCCH_Tx(cfgResolved, expectedBits, txArgs{:});
-    chState = localInitULChannelState(cfgResolved, tx, txInfo);
+    rng(localTrialSeed(cfgResolved, trialIdx), "twister");
+    chState = opt.ChannelState;
+    if ~(isstruct(chState) && logical(sixgr.util.structGet(chState, "Initialized", false)))
+        chState = localInitULChannelState(cfgResolved, tx, txInfo, trialIdx);
+    end
     [rxWave, replay] = localApplyULChannelAndNoise(tx.Waveform, double(opt.SNR_dB), chState, cfgResolved, tx, txInfo, opt.InterferenceBundle);
+    out.ChannelState = chState;
 
     tDecode = tic;
     strictNoiseVarianceRequired = ~localThermalNoiseSINRUnavailable(replay);
@@ -409,9 +418,12 @@ else
 end
 end
 
-function state = localInitULChannelState(cfg, tx, txInfo)
+function state = localInitULChannelState(cfg, tx, txInfo, trialIdx)
+if nargin < 4
+    trialIdx = 1;
+end
 state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
-    "ChannelPadSamples", 0, "ChannelTrimSamples", 0);
+    "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "ChannelSeed", localTrialSeed(cfg, trialIdx));
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
@@ -446,10 +458,11 @@ ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
     "SampleRate", fs, ...
     "NumTxAnt", numTx, ...
     "NumRxAnt", numRx, ...
-    "Seed", sixgr.util.structGet(cfg, "run.seed", 1));
+    "Seed", state.ChannelSeed);
 if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
     state.UseFading = true;
     state.Obj = ch.Object;
+    localResetChannelOnce(state.Obj, state.ChannelSeed);
     [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
     state.ChannelPadSamples = padSamples;
     state.ChannelTrimSamples = trimSamples;
@@ -472,10 +485,6 @@ replay = struct( ...
 
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
-    try
-        reset(state.Obj);
-    catch
-    end
     xIn = x;
     padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
     trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
@@ -500,7 +509,8 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
 end
 
 sampleRateHz = localResolveSampleRate(tx, txInfo);
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfg, sampleRateHz);
+cfgReplay = localPrepareControlReplayCfg(cfg, snr_dB);
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
 impairFields = fieldnames(impairmentReplay);
 for fi = 1:numel(impairFields)
     replay.(impairFields{fi}) = impairmentReplay.(impairFields{fi});
@@ -521,6 +531,52 @@ if strlength(strtrim(string(replay.InterferencePowerSource))) == 0 && replay.Int
     replay.InterferencePowerSource = "sample_domain_interference_sum";
 end
 [y, replay.InjectedNoiseVariance] = localAddAwgn(y, replay, desiredWaveform);
+end
+
+function cfgOut = localPrepareControlReplayCfg(cfg, snr_dB)
+cfgOut = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
+if localShouldUseStandaloneAWGN(cfgOut, snr_dB)
+    cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
+end
+end
+
+function tf = localShouldUseStandaloneAWGN(cfg, snr_dB)
+if ~(isfinite(double(snr_dB)))
+    tf = false;
+    return;
+end
+model = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+if ~(awgnOnly || model == "AWGN" || model == "NONE" || model == "OFF")
+    tf = false;
+    return;
+end
+noiseMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ""))));
+tf = strlength(noiseMode) == 0 || noiseMode == "receiver_noise_figure_thermal_noise";
+end
+
+function seed = localTrialSeed(cfg, trialIdx)
+seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1));
+if ~isfinite(seedBase)
+    seedBase = 1;
+end
+seed = mod(round(seedBase) + max(1, round(double(trialIdx))) - 1, 2^31 - 2) + 1;
+end
+
+function localResetChannelOnce(chObj, seed)
+if isempty(chObj)
+    return;
+end
+try
+    if isprop(chObj, "Seed")
+        chObj.Seed = double(seed);
+    end
+catch
+end
+try
+    reset(chObj);
+catch
+end
 end
 
 function [y, nVar] = localAddAwgn(x, replay, referenceWaveform)
