@@ -47,9 +47,13 @@ out.TimingOffset_samples = NaN;
 out.TimingAdvance_samples = NaN;
 out.TimingAdvance_us = NaN;
 out.ComputeLatency_ms = NaN;
+out.AccessDelay_ms = NaN;
 out.ProcedureDelay_ms = NaN;
 out.AirInterfaceObservation_ms = NaN;
 out.AcquisitionTime_ms = NaN;
+out.RAResponseWindow_slots = NaN;
+out.ContentionResolutionTimer_slots = NaN;
+out.SlotDuration_ms = NaN;
 out.FalseAlarmFlag = 0;
 out.NoiseVariance = NaN;
 out.NoiseVarStatus = "NOT_AVAILABLE";
@@ -165,8 +169,9 @@ try
     rx = sixgr.rach.PRACHDetector(rxWave, prachCfg, detArgs{:});
     rxNoise = sixgr.rach.PRACHDetector(noiseOnlyWave, prachCfg, detArgs{:});
     out.ComputeLatency_ms = toc(tDetect) * 1e3;
-    out.ProcedureDelay_ms = NaN;
     out.AirInterfaceObservation_ms = localWaveformDurationMs(tx, cfg);
+    [out.AccessDelay_ms, out.ProcedureDelay_ms, out.RAResponseWindow_slots, ...
+        out.ContentionResolutionTimer_slots, out.SlotDuration_ms] = localRACHProcedureDelayMs(cfg, tx);
     % Legacy alias preserved for backward compatibility with older exports.
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
@@ -428,6 +433,39 @@ if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
     return;
 end
 durMs = 1e3 * (size(wave, 1) / sampleRateHz);
+end
+
+function [accessDelayMs, procedureDelayMs, raWindowSlots, crTimerSlots, slotDurationMs] = localRACHProcedureDelayMs(cfg, tx)
+scsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.subcarrierSpacing_kHz", NaN)));
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    carrier = sixgr.util.structGet(tx, "Carrier", []);
+    if ~isempty(carrier)
+        try
+            scsKHz = double(carrier.SubcarrierSpacing);
+        catch
+            scsKHz = NaN;
+        end
+    end
+end
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    scsKHz = 15;
+end
+mu = max(0, round(log2(max(scsKHz, 15) / 15)));
+slotsPerMs = 2^mu;
+slotDurationMs = 1 / max(slotsPerMs, eps);
+raWindowSlots = double(sixgr.util.structGet(cfg, "rrc.rach.raResponseWindow_slots", NaN));
+if ~isfinite(raWindowSlots)
+    raWindowMs = double(sixgr.util.structGet(cfg, "rrc.rach.raResponseWindow_ms", 10));
+    raWindowSlots = max(1, round(raWindowMs * slotsPerMs));
+end
+crTimerSlots = double(sixgr.util.structGet(cfg, "rrc.rach.contentionResolutionTimer_slots", NaN));
+if ~isfinite(crTimerSlots)
+    crTimerMs = double(sixgr.util.structGet(cfg, "rrc.rach.contentionResolutionTimer_ms", 64));
+    crTimerSlots = max(1, round(crTimerMs * slotsPerMs));
+end
+accessDelayMs = (raWindowSlots + crTimerSlots) * slotDurationMs;
+procedureDelayMs = accessDelayMs;
 end
 
 function threshold = localResolveDetectionThreshold(cfg, explicitThreshold)

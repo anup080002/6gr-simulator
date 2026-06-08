@@ -170,6 +170,39 @@ if strlength(noiseReason) == 0 && (~isfinite(noiseVar) || noiseVar <= 0)
 end
 end
 
+function [evmPercent, evmSource] = iEVMPercent(row)
+evmPercent = NaN;
+evmSource = "";
+evmPct = iFirstNum(row, ["EVM_percent","EVM_rms_percent"], NaN);
+if isfinite(evmPct) && evmPct >= 0
+    evmPercent = evmPct;
+    evmSource = "explicit_percent";
+    return;
+end
+evmRaw = iFirstNum(row, ["EVM_rms","EVM","PostEqEVM"], NaN);
+if ~(isfinite(evmRaw) && evmRaw >= 0)
+    return;
+end
+if evmRaw <= 1.0
+    evmPercent = 100 * evmRaw;
+    evmSource = "fractional_rms";
+elseif evmRaw <= 100
+    evmPercent = evmRaw;
+    evmSource = "percent_rms";
+else
+    persistent warnedAmbiguous;
+    if isempty(warnedAmbiguous)
+        warning("sixgr:output:EVMUnitAmbiguous", ...
+            "EVM value is outside the expected fractional/percent range. Emitting NaN for ambiguous EVM units.");
+        warnedAmbiguous = true;
+    end
+end
+explicitSource = iFirstText(row, ["EVMSource"], "");
+if strlength(strtrim(string(explicitSource))) > 0
+    evmSource = explicitSource;
+end
+end
+
 function outcome = iCRCOutcome(applicable, passFlag)
 if ~logical(applicable)
     outcome = "not_applicable";
@@ -210,10 +243,10 @@ rows = repmat(struct( ...
     "OutputId", lower(channelType) + "_runtime_event_table", "RunId", meta.run_id, "TrialId", NaN, ...
     "SFN", NaN, "Slot", NaN, "UEId", NaN, "RNTI", NaN, "BWPId", NaN, "CellId", NaN, ...
     "PRBStart", NaN, "PRBLength", NaN, "SymbolStart", NaN, "SymbolLength", NaN, "NumLayers", NaN, ...
-    "Modulation", "", "TargetCodeRate", NaN, "MCS", NaN, "TBSBits", NaN, "DMRSConfigId", "", ...
+    "Modulation", "", "TargetCodeRate", NaN, "MCS", NaN, "TBSBits", NaN, "NREPerPRB", NaN, "DMRSConfigId", "", ...
     "PTRSConfigId", "", "NoiseVar", NaN, "NoiseVarSource", "", "NoiseVarStatus", "", "NoiseVarReason", "", ...
     "ConfiguredSNR_dB", NaN, "AppliedAWGNSNR_dB", NaN, "ChannelEstimationSource", "", "EqualizerType", "", ...
-    "EVM_dB", NaN, "EVM_percent", NaN, "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", ...
+    "EVM_dB", NaN, "EVM_percent", NaN, "EVMSource", "", "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", ...
     "CRCApplicable", false, "CRCPass", NaN, "DecodeAttempted", false, "DecodeUsable", false, ...
     "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, "TPMI", NaN, "AppliedPrecoderPMI", NaN, ...
     "AppliedPrecoderSource", "", "AppliedBeamIndexSet", "", "BeamIndexSetMaterialized", false, ...
@@ -224,13 +257,7 @@ for i = 1:n
     row = sourceT(i, :);
     [sinrValue, sinrSource] = iSINR(row);
     [noiseVar, noiseSource, noiseStatus, noiseReason] = iNoise(row);
-    evmPercent = iFirstNum(row, ["EVM_percent"], NaN);
-    if ~isfinite(evmPercent)
-        evmRms = iFirstNum(row, ["EVM_rms"], NaN);
-        if isfinite(evmRms)
-            evmPercent = 100 * evmRms;
-        end
-    end
+    [evmPercent, evmSource] = iEVMPercent(row);
     evmDb = iFirstNum(row, ["EVM_dB"], NaN);
     if ~isfinite(evmDb) && isfinite(evmPercent) && evmPercent > 0
         evmDb = 20 * log10(evmPercent / 100);
@@ -249,9 +276,10 @@ for i = 1:n
     rows(i).SymbolLength = iFirstNum(row, ["NumSymbols"], NaN);
     rows(i).NumLayers = iFirstNum(row, ["NumLayers", "Layers", "PrecodingNumLayers"], NaN);
     rows(i).Modulation = iFirstText(row, ["Modulation"], "");
-    rows(i).TargetCodeRate = iFirstNum(row, ["TargetCodeRate", "target_code_rate"], NaN);
+    rows(i).TargetCodeRate = iFirstNum(row, ["TargetCodeRate", "target_code_rate", "CodeRate"], NaN);
     rows(i).MCS = iFirstNum(row, ["MCSIndex", "mcs_selected"], NaN);
-    rows(i).TBSBits = iFirstNum(row, ["TBSBits", "TBSize_bits", "BitsCompared"], NaN);
+    rows(i).TBSBits = iFirstNum(row, ["TBSBits", "TBSize_bits", "TransportBlockSize", "TB_size_bits"], NaN);
+    rows(i).NREPerPRB = iFirstNum(row, ["NREPerPRB", "nrePerPRB", "NRE_per_PRB"], NaN);
     rows(i).DMRSConfigId = iFirstText(row, ["DMRSConfigId"], "");
     rows(i).PTRSConfigId = iFirstText(row, ["PTRSConfigId"], "");
     rows(i).NoiseVar = noiseVar;
@@ -264,6 +292,7 @@ for i = 1:n
     rows(i).EqualizerType = iFirstText(row, ["EqualizerType"], "");
     rows(i).EVM_dB = evmDb;
     rows(i).EVM_percent = evmPercent;
+    rows(i).EVMSource = evmSource;
     rows(i).SINR_dB = sinrValue;
     rows(i).SINRSource = sinrSource;
     rows(i).SINRValueRole = iSINRRole(sinrSource);
@@ -347,11 +376,14 @@ rows = repmat(struct("OutputId", "pucch_uci_table", "RunId", meta.run_id, "Trial
     "SRBitTx", NaN, "SRBitRx", NaN, "CSIBitsTx", NaN, "CSIBitsRx", NaN, "UCIContentMatch", false, ...
     "DetectionAttempted", false, "DetectionUsable", false, "DetectionOutcome", "", "DetectionMetric", NaN, "NoiseVar", NaN, ...
     "NoiseVarSource", "", "NoiseVarStatus", "", "NoiseVarReason", "", "CRCApplicable", false, "CRCOutcome", "", ...
+    "SINR_dB", NaN, "SINRSource", "", "DTXFlag", false, "DTXReason", "", "BitErrors", NaN, "BitsCompared", NaN, ...
+    "ChannelGain_dB", NaN, "ConditionNumber_dB", NaN, "AirInterfaceTTI_ms", NaN, "ComputeLatency_ms", NaN, ...
     "RuntimeEvidenceStatus", "", "FailureReason", "", "ReceiverUsable", false, "run_id", meta.run_id, ...
     "producer_module", "sixgr.truth.buildLLSPublicOutputTables", "source_artifact_ref", "", "runtime_evidence", ""), height(sourceT), 1);
 for i = 1:height(sourceT)
     row = sourceT(i, :);
     [noiseVar, noiseSource, noiseStatus, noiseReason] = iNoise(row);
+    [sinrValue, sinrSource] = iSINR(row);
     crcApplicable = iFirstLogical(row, ["CRCApplicable"], false);
     crcPass = iFirstLogical(row, ["CRCPass","DecodeSuccess"], false);
     rawCRCOutcome = iFirstText(row, ["CRCOutcome"], "");
@@ -384,6 +416,16 @@ for i = 1:height(sourceT)
     rows(i).NoiseVarSource = noiseSource;
     rows(i).NoiseVarStatus = noiseStatus;
     rows(i).NoiseVarReason = noiseReason;
+    rows(i).SINR_dB = sinrValue;
+    rows(i).SINRSource = sinrSource;
+    rows(i).DTXFlag = iFirstLogical(row, ["DTXFlag"], false);
+    rows(i).DTXReason = iFirstText(row, ["DTXReason"], "");
+    rows(i).BitErrors = iFirstNum(row, ["BitErrors"], NaN);
+    rows(i).BitsCompared = iFirstNum(row, ["BitsCompared"], NaN);
+    rows(i).ChannelGain_dB = iFirstNum(row, ["ChannelGain_dB"], NaN);
+    rows(i).ConditionNumber_dB = iFirstNum(row, ["ConditionNumber_dB"], NaN);
+    rows(i).AirInterfaceTTI_ms = iFirstNum(row, ["AirInterfaceTTI_ms"], NaN);
+    rows(i).ComputeLatency_ms = iFirstNum(row, ["ComputeLatency_ms", "DecodeLatency_ms"], NaN);
     rows(i).CRCApplicable = crcApplicable;
     if strlength(rawCRCOutcome) > 0
         rows(i).CRCOutcome = rawCRCOutcome;
@@ -408,6 +450,9 @@ T = iBuildMinimalTable(sourceT, meta, "prach_detection_table", { ...
     "Detected", ["Detected","DecodeSuccess","CRCPass"]; "MissedDetection", ["MissedDetection"]; "FalseAlarm", ["FalseAlarm","FalseAlarmFlag"]; ...
     "CollisionDetected", ["CollisionDetected"]; "TimingOffsetSamplesRaw", ["RawTimingEstimate_samples","TimingOffsetSamplesRaw"]; ...
     "TimingOffsetSamplesApplied", ["AppliedTimingCorrection_samples","TimingOffsetSamplesApplied"]; "RA_RNTI", ["RA_RNTI"]; ...
+    "AccessDelay_ms", ["AccessDelay_ms"]; "ProcedureDelay_ms", ["ProcedureDelay_ms"]; ...
+    "RAResponseWindow_slots", ["RAResponseWindow_slots"]; "ContentionResolutionTimer_slots", ["ContentionResolutionTimer_slots"]; ...
+    "SlotDuration_ms", ["SlotDuration_ms"]; "AirInterfaceObservation_ms", ["AirInterfaceObservation_ms"]; ...
     "RuntimeEvidenceStatus", ["RuntimeEvidenceStatus","runtime_evidence"]});
 end
 
@@ -420,6 +465,9 @@ rows = repmat(struct("OutputId", "srs_measurement_table", "RunId", meta.run_id, 
     "UEId", NaN, "RNTI", NaN, "SRSResourceId", NaN, "SRSResourceSetId", NaN, "NumPorts", NaN, "CombSize", NaN, ...
     "CyclicShift", NaN, "SequenceId", NaN, "Bandwidth", NaN, "StartRB", NaN, "ChannelEstimateAvailable", false, ...
     "NMSE_dB", NaN, "RSRP_dB", NaN, "SINR_dB", NaN, "NoiseVar", NaN, "NoiseVarSource", "", "NoiseVarStatus", "", ...
+    "RIEstimate", NaN, "TPMIEstimate", NaN, "RISource", "", "TPMISource", "", "DopplerEstimate_Hz", NaN, ...
+    "DopplerError_Hz", NaN, "ConditionNumber_dB", NaN, "QCLAccuracy", NaN, "InterpolationLoss_dB", NaN, ...
+    "MismatchSensitivity_dB", NaN, "AcquisitionTime_ms", NaN, "TrackingFailure", NaN, ...
     "NoiseVarReason", "", "MeasurementAttempted", false, "MeasurementUsable", false, "RuntimeEvidenceStatus", "", ...
     "run_id", meta.run_id, "producer_module", "sixgr.truth.buildLLSPublicOutputTables", "source_artifact_ref", "", "runtime_evidence", ""), height(sourceT), 1);
 for i = 1:height(sourceT)
@@ -447,6 +495,18 @@ for i = 1:height(sourceT)
     rows(i).NoiseVarSource = noiseSource;
     rows(i).NoiseVarStatus = noiseStatus;
     rows(i).NoiseVarReason = noiseReason;
+    rows(i).RIEstimate = iFirstNum(row, ["RIEstimate", "EstimatedRI", "RI"], NaN);
+    rows(i).TPMIEstimate = iFirstNum(row, ["TPMIEstimate", "EstimatedTPMI", "TPMI"], NaN);
+    rows(i).RISource = iFirstText(row, ["RISource"], "");
+    rows(i).TPMISource = iFirstText(row, ["TPMISource"], "");
+    rows(i).DopplerEstimate_Hz = iFirstNum(row, ["EstimatedDopplerHz", "DopplerEstimate_Hz"], NaN);
+    rows(i).DopplerError_Hz = iFirstNum(row, ["DopplerError_Hz"], NaN);
+    rows(i).ConditionNumber_dB = iFirstNum(row, ["SRSConditionNumber_dB", "ConditionNumber_dB"], NaN);
+    rows(i).QCLAccuracy = iFirstNum(row, ["QCLAccuracy"], NaN);
+    rows(i).InterpolationLoss_dB = iFirstNum(row, ["InterpolationLoss_dB"], NaN);
+    rows(i).MismatchSensitivity_dB = iFirstNum(row, ["MismatchSensitivity_dB"], NaN);
+    rows(i).AcquisitionTime_ms = iFirstNum(row, ["AcquisitionTime_ms", "AirInterfaceObservation_ms"], NaN);
+    rows(i).TrackingFailure = iFirstNum(row, ["TrackingFailure", "TrackingFailureProbability"], NaN);
     rows(i).MeasurementAttempted = iFirstLogical(row, ["MeasurementAttempted","DecodeAttempted"], false);
     rows(i).MeasurementUsable = iFirstLogical(row, ["MeasurementUsable","ReceiverUsable"], false);
     rows(i).RuntimeEvidenceStatus = iFirstText(row, ["RuntimeEvidenceStatus","runtime_evidence"], "persisted_runtime_trial_row");
@@ -475,7 +535,8 @@ end
 rows = repmat(struct("OutputId", "csi_report_table", "RunId", meta.run_id, "TrialId", NaN, "SFN", NaN, "Slot", NaN, ...
     "UEId", NaN, "RNTI", NaN, "CQI", NaN, "PMI", NaN, "RI", NaN, "LI", NaN, "CRI", NaN, "ReportType", "", ...
     "ReportQuantity", "", "WidebandOrSubband", "", "MeasurementSource", "", "CSIRSResourceId", NaN, ...
-    "CQIDerivedMCS", NaN, "CQIDerivedModulation", "", "CalibrationProfile", "", "RuntimeEvidenceStatus", "", ...
+    "CQIDerivedMCS", NaN, "CQIDerivedModulation", "", "SubbandCQIVector", "", "SubbandPMIVector", "", ...
+    "EffectiveSINR_dB", NaN, "CalibrationProfile", "", "RuntimeEvidenceStatus", "", ...
     "run_id", meta.run_id, "producer_module", "sixgr.truth.buildLLSPublicOutputTables", "source_artifact_ref", "reports/csv/table_cqi_pmi_ri.csv", ...
     "runtime_evidence", "derived_from_runtime_feedback_rows"), height(cqiTable), 1);
 for i = 1:height(cqiTable)
@@ -493,11 +554,14 @@ for i = 1:height(cqiTable)
     rows(i).CRI = iFirstNum(row, ["cri","CRI"], NaN);
     rows(i).ReportType = iFirstText(row, ["report_type"], "scheduler_observation");
     rows(i).ReportQuantity = "CQI_PMI_RI";
-    rows(i).WidebandOrSubband = iIf(strlength(iFirstText(row, ["subband_cqi_vector_ref"], "")) > 0, "subband", "wideband");
+    rows(i).WidebandOrSubband = iIf(strlength(iFirstText(row, ["subband_cqi_vector_ref", "subband_cqi_vector", "SubbandCQI", "subbandCQI"], "")) > 0, "subband", "wideband");
     rows(i).MeasurementSource = iFirstText(row, ["based_on"], "");
     rows(i).CSIRSResourceId = NaN;
     rows(i).CQIDerivedMCS = iCQIDerivedMCS(cqi, mcsTrace, rows(i).UEId);
     rows(i).CQIDerivedModulation = iModulationFromMCS(rows(i).CQIDerivedMCS);
+    rows(i).SubbandCQIVector = iFirstText(row, ["subband_cqi_vector", "SubbandCQI", "subbandCQI"], "");
+    rows(i).SubbandPMIVector = iFirstText(row, ["subband_pmi_vector", "SubbandPMI"], "");
+    rows(i).EffectiveSINR_dB = iFirstNum(row, ["EffectiveSINR_dB", "ReceiverHestSINR_dB", "SINR_dB"], NaN);
     rows(i).CalibrationProfile = iFirstText(row, ["calibration_profile"], "heuristic_cqi_scheduler_observation");
     rows(i).RuntimeEvidenceStatus = "derived_from_runtime_feedback_rows";
 end
@@ -668,15 +732,35 @@ value = NaN;
 if ~(isfinite(cqi) && istable(mcsTrace) && ~isempty(mcsTrace))
     return;
 end
-if ~ismember("CQI", string(mcsTrace.Properties.VariableNames)) || ~ismember("CQIDerivedMCS", string(mcsTrace.Properties.VariableNames))
+cqiCol = iFirstPresentVar(mcsTrace, ["CQI", "wideband_cqi", "cqi_input", "cqi"]);
+mcsCol = iFirstPresentVar(mcsTrace, ["CQIDerivedMCS", "cqi_derived_mcs", "mcs_selected", "MCSIndex"]);
+if strlength(cqiCol) == 0 || strlength(mcsCol) == 0
     return;
 end
-mask = abs(double(mcsTrace.CQI) - double(cqi)) < 0.5;
+mask = abs(double(mcsTrace.(cqiCol)) - double(cqi)) < 0.5;
 if isfinite(ueId) && ismember("UEId", string(mcsTrace.Properties.VariableNames))
     mask = mask & abs(double(mcsTrace.UEId) - double(ueId)) < 0.5;
+elseif isfinite(ueId) && ismember("ue_id", string(mcsTrace.Properties.VariableNames))
+    mask = mask & abs(double(mcsTrace.ue_id) - double(ueId)) < 0.5;
 end
 if any(mask)
-    value = double(mcsTrace.CQIDerivedMCS(find(mask, 1, "first")));
+    mcsVals = mcsTrace.(mcsCol);
+    value = double(mcsVals(find(mask, 1, "first")));
+end
+end
+
+function col = iFirstPresentVar(T, candidates)
+col = "";
+if ~istable(T)
+    return;
+end
+vars = string(T.Properties.VariableNames);
+candidates = string(candidates);
+for i = 1:numel(candidates)
+    if ismember(candidates(i), vars)
+        col = candidates(i);
+        return;
+    end
 end
 end
 

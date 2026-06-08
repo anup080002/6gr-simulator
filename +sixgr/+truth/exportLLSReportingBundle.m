@@ -413,17 +413,19 @@ switch key
             localRatioSummaryRows(cat, metric, ctx.Tables.UL, "CBGErrors", "CBGCount", "UL", "fraction", "air_interface/csv/ul_pusch_trials.csv", "Derived from TB-equivalent grouping when explicit CBG mode is disabled.")];
     case "throughput"
         T = localSweepMetricRowsPreferred(cat, metric, ctx.Tables.Sweep, ...
-            [["DL_OfferedThroughput_Mbps","DL_Throughput_Mbps"]; ["UL_OfferedThroughput_Mbps","UL_Throughput_Mbps"]], ...
+            [["DL_OfferedThroughput_Mbps","DL_Throughput_Mbps","Throughput_Mbps","DL_Tput_Mbps"]; ...
+             ["UL_OfferedThroughput_Mbps","UL_Throughput_Mbps","Throughput_Mbps","UL_Tput_Mbps"]], ...
             ["DL","UL"], "Mbps");
     case "goodput"
         T = localSweepMetricRowsPreferred(cat, metric, ctx.Tables.Sweep, ...
-            [["DL_Goodput_Mbps","DL_Throughput_Mbps"]; ["UL_Goodput_Mbps","UL_Throughput_Mbps"]], ...
+            [["DL_Goodput_Mbps","Goodput_Mbps","DL_Throughput_Mbps"]; ...
+             ["UL_Goodput_Mbps","Goodput_Mbps","UL_Throughput_Mbps"]], ...
             ["DL","UL"], "Mbps");
     case "spectral_efficiency"
         bwHz = double(ctx.ScenarioConfig.get("global_radio_scope.channel_bandwidth_hz", NaN));
         T = [T; ...
-            localSpectralEfficiencyRows(cat, metric, ctx.Tables.Sweep, "DL_Throughput_Mbps", "DL", bwHz); ...
-            localSpectralEfficiencyRows(cat, metric, ctx.Tables.Sweep, "UL_Throughput_Mbps", "UL", bwHz)];
+            localSpectralEfficiencyRows(cat, metric, ctx.Tables.Sweep, ["DL_Throughput_Mbps", "DL_Goodput_Mbps", "Throughput_Mbps"], "DL", bwHz); ...
+            localSpectralEfficiencyRows(cat, metric, ctx.Tables.Sweep, ["UL_Throughput_Mbps", "UL_Goodput_Mbps", "Throughput_Mbps"], "UL", bwHz)];
     case "user_perceived_throughput"
         T = [T; ...
             localTrialThroughputRows(cat, metric, ctx.Tables.DL, "DL", "Mbps", "LLS has no application-layer perception model; emitted as PHY goodput equivalent."); ...
@@ -890,7 +892,7 @@ switch key
         hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_BLER","UL_BLER"]);
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/bler_vs_snr.png", "", "reports/image/bler_vs_snr.png", localAggregateAvailabilityNote(hasData, "No BLER sweep data available; placeholder figure emitted."));
     case "curves_throughput_vs_snr"
-        hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_Throughput_Mbps","UL_Throughput_Mbps"]);
+        hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_Throughput_Mbps","UL_Throughput_Mbps","DL_Goodput_Mbps","UL_Goodput_Mbps","Throughput_Mbps","Goodput_Mbps"]);
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/throughput_vs_snr.png", "", "reports/image/throughput_vs_snr.png", localAggregateAvailabilityNote(hasData, "No throughput sweep data available; placeholder figure emitted."));
     case "curves_nmse_vs_snr"
         hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["SRS_NMSE_dB"]);
@@ -986,6 +988,9 @@ for i = 1:size(colCandidates, 1)
         end
     end
     if strlength(col) == 0
+        warning("sixgr:output:SweepColumnNotFound", ...
+            "No throughput/goodput column found in sweep table. Available columns: %s", ...
+            strjoin(vars, ", "));
         continue;
     end
     x = double(sweepT.(col));
@@ -1495,7 +1500,11 @@ end
 
 function T = localSpectralEfficiencyRows(cat, metric, sweepT, colName, entity, bwHz)
 T = localEmptyMetricTable();
-if ~(isfinite(bwHz) && bwHz > 0 && istable(sweepT) && ~isempty(sweepT) && ismember(colName, string(sweepT.Properties.VariableNames)))
+if ~(isfinite(bwHz) && bwHz > 0 && istable(sweepT) && ~isempty(sweepT))
+    return;
+end
+colName = localFirstPresentColumn(sweepT, colName);
+if strlength(colName) == 0
     return;
 end
 x = double(sweepT.(colName));
@@ -1540,17 +1549,47 @@ if ~(istable(sweepT) && ~isempty(sweepT) && all(ismember(["SNR_dB", blerCol], st
 end
 snr = double(sweepT.SNR_dB);
 bler = double(sweepT.(blerCol));
+trialCounts = localSweepTrialCounts(sweepT, blerCol);
 mask = isfinite(snr) & isfinite(bler);
 snr = snr(mask);
 bler = bler(mask);
+if ~isempty(trialCounts)
+    trialCounts = trialCounts(mask);
+else
+    trialCounts = nan(size(snr));
+end
 [snr, order] = sort(snr);
 bler = bler(order);
+trialCounts = trialCounts(order);
 trialCountText = localSweepCountNote(sweepT, blerCol);
 for i = 1:numel(targets)
     [snrReq, methodTag, reasonTag] = localEstimateRequiredSNRMeasuredOrFit(snr, bler, targets(i));
     if isfinite(snrReq)
-        note = strtrim(notePrefix + " " + localRequiredSNRMethodNote(methodTag, targets(i), trialCountText));
+        [ciLow, ciHigh, nNear] = localRequiredSNRCI95(snr, bler, trialCounts, targets(i));
+        ciNote = localRequiredSNRCINote(ciLow, ciHigh, nNear);
+        note = strtrim(notePrefix + " " + localRequiredSNRMethodNote(methodTag, targets(i), trialCountText) + " " + ciNote);
         T = [T; localMetricTableRow(cat, metric, entity, labels(i), "available", snrReq, "", "dB", sourcePath, note)]; %#ok<AGROW>
+        if isfinite(ciLow)
+            T = [T; localMetricTableRow(cat, metric, entity, labels(i) + "_ci95_low", "available", ciLow, "", "dB", sourcePath, note)]; %#ok<AGROW>
+        end
+        if isfinite(ciHigh)
+            T = [T; localMetricTableRow(cat, metric, entity, labels(i) + "_ci95_high", "available", ciHigh, "", "dB", sourcePath, note)]; %#ok<AGROW>
+        end
+        if isfinite(nNear)
+            if nNear >= 30
+                availability = "available";
+                trialNote = "";
+            else
+                availability = "derived";
+                trialNote = "Required SNR estimate uses fewer than 30 trials near the target; CI may be wide.";
+            end
+            T = [T; localMetricTableRow(cat, metric, entity, labels(i) + "_num_trials_near_target", availability, nNear, "", "count", sourcePath, trialNote)]; %#ok<AGROW>
+            if nNear < 30
+                warning("sixgr:output:RequiredSNRLowConfidence", ...
+                    "Required SNR at BLER=%.4f estimated from only %d trials near target; CI may be wide.", ...
+                    targets(i), round(double(nNear)));
+            end
+        end
     else
         note = strtrim(notePrefix + " " + localRequiredSNRUnavailableNote(reasonTag, targets(i), trialCountText));
         T = [T; localMetricTableRow(cat, metric, entity, labels(i), "not_available", NaN, string(reasonTag), "dB", sourcePath, note)]; %#ok<AGROW>
@@ -1615,6 +1654,97 @@ methodTag = "unavailable";
 reasonTag = "not_enough_data_no_bracketing_segment";
 end
 
+function [ciLow, ciHigh, nNear] = localRequiredSNRCI95(snr, bler, trialCounts, target)
+ciLow = NaN;
+ciHigh = NaN;
+nNear = localTrialsNearTarget(snr, bler, trialCounts, target);
+trialCounts = double(trialCounts(:));
+if numel(trialCounts) ~= numel(bler) || ~any(isfinite(trialCounts) & trialCounts > 0)
+    return;
+end
+blerLow = nan(size(bler));
+blerHigh = nan(size(bler));
+for i = 1:numel(bler)
+    nTotal = round(double(trialCounts(i)));
+    if ~(isfinite(nTotal) && nTotal > 0 && isfinite(double(bler(i))))
+        continue;
+    end
+    nFail = round(max(0, min(1, double(bler(i)))) * nTotal);
+    [blerLow(i), blerHigh(i)] = localBLERConfidenceInterval(nFail, nTotal, 0.05);
+end
+ciFromLow = localEstimateRequiredSNR(snr, blerLow, target);
+ciFromHigh = localEstimateRequiredSNR(snr, blerHigh, target);
+finiteVals = [ciFromLow, ciFromHigh];
+finiteVals = finiteVals(isfinite(finiteVals));
+if isempty(finiteVals)
+    return;
+end
+ciLow = min(finiteVals);
+ciHigh = max(finiteVals);
+end
+
+function [blerLow, blerHigh] = localBLERConfidenceInterval(nFail, nTotal, alpha)
+if nargin < 3 || ~(isfinite(alpha) && alpha > 0 && alpha < 1)
+    alpha = 0.05;
+end
+nFail = max(0, min(round(double(nFail)), round(double(nTotal))));
+nTotal = max(0, round(double(nTotal)));
+if nTotal <= 0
+    blerLow = 0;
+    blerHigh = 1;
+    return;
+end
+try
+    if nFail == 0
+        blerLow = 0;
+    else
+        blerLow = betainv(alpha / 2, nFail, nTotal - nFail + 1);
+    end
+    if nFail == nTotal
+        blerHigh = 1;
+    else
+        blerHigh = betainv(1 - alpha / 2, nFail + 1, nTotal - nFail);
+    end
+catch
+    pHat = nFail / nTotal;
+    z = 1.95996398454005;
+    halfWidth = z * sqrt(max(pHat * (1 - pHat) / nTotal, 0));
+    blerLow = pHat - halfWidth;
+    blerHigh = pHat + halfWidth;
+end
+blerLow = max(0, min(1, double(blerLow)));
+blerHigh = max(0, min(1, double(blerHigh)));
+end
+
+function nNear = localTrialsNearTarget(snr, bler, trialCounts, target)
+nNear = NaN;
+trialCounts = double(trialCounts(:));
+if numel(trialCounts) ~= numel(bler)
+    return;
+end
+mask = isfinite(snr) & isfinite(bler) & isfinite(trialCounts) & trialCounts > 0;
+if ~any(mask)
+    return;
+end
+exactMask = mask & abs(bler - target) <= eps(max(target, 1e-9));
+if any(exactMask)
+    nNear = trialCounts(find(exactMask, 1, "first"));
+    return;
+end
+for i = 1:(numel(bler) - 1)
+    if ~(mask(i) && mask(i + 1))
+        continue;
+    end
+    if (bler(i) - target) * (bler(i + 1) - target) <= 0
+        nNear = min(trialCounts(i), trialCounts(i + 1));
+        return;
+    end
+end
+[~, idx] = min(abs(bler(mask) - target));
+vals = trialCounts(mask);
+nNear = vals(idx);
+end
+
 function snrReq = localEstimateRequiredSNRByLogFit(snr, bler, target)
 snrReq = NaN;
 mask = isfinite(snr) & isfinite(bler) & bler > 0;
@@ -1645,6 +1775,20 @@ switch string(methodTag)
         note = "Measured BLER sweep crossed the target and the required SNR was obtained by linear interpolation at BLER=" + string(target) + "." + trialCountText;
     otherwise
         note = "";
+end
+end
+
+function note = localRequiredSNRCINote(ciLow, ciHigh, nNear)
+note = "";
+parts = strings(0, 1);
+if isfinite(ciLow) && isfinite(ciHigh)
+    parts(end + 1, 1) = "CI95=[" + string(round(ciLow, 3)) + "," + string(round(ciHigh, 3)) + "] dB.";
+end
+if isfinite(nNear)
+    parts(end + 1, 1) = "Trials near target=" + string(round(nNear)) + ".";
+end
+if ~isempty(parts)
+    note = strjoin(parts, " ");
 end
 end
 
@@ -1680,6 +1824,16 @@ if all(abs(counts - counts(1)) < eps)
 else
     txt = " Sample count per SNR: n=" + string(round(min(counts))) + "-" + string(round(max(counts)));
 end
+end
+
+function counts = localSweepTrialCounts(sweepT, metricCol)
+counts = [];
+countCol = localSweepTrialCountColumn(metricCol);
+if strlength(countCol) == 0 || ~(istable(sweepT) && ismember(countCol, string(sweepT.Properties.VariableNames)))
+    return;
+end
+counts = double(sweepT.(countCol));
+counts = counts(:);
 end
 
 function countCol = localSweepTrialCountColumn(metricCol)
@@ -3219,13 +3373,14 @@ costs.DecoderOps = sum(decoderDL, "omitnan") + sum(decoderUL, "omitnan");
 nfft = max(localConfigNumber(ctx, ["global_radio_scope.fft_size", "waveform.fft_size"], 1024), 2);
 nrb = max(localConfigNumber(ctx, ["resource_grid.num_rbs", "frequency.n_size_grid"], 1), 1);
 activeSubcarriers = max(12 * nrb, 1);
-observedSymbols = (sum(dataRE, "omitnan") + sum(dmrsRE, "omitnan") + sum(ptrsRE, "omitnan")) / activeSubcarriers;
 rxFactor = max(1, round(localFiniteMeanOrDefault(numRx, localConfigNumber(ctx, ["antenna_and_array.ue_num_antenna_elements", "mimo.n_rx_ant"], 1))));
 portFactor = max(1, round(localFiniteMeanOrDefault(numPorts, localConfigNumber(ctx, ["antenna_and_array.bs_num_txrus", "mimo.n_tx_ant"], 1))));
+totalREPerAntenna = (sum(dataRE, "omitnan") + sum(dmrsRE, "omitnan") + sum(ptrsRE, "omitnan")) / max(rxFactor, 1);
+observedSymbols = totalREPerAntenna / activeSubcarriers;
 
 costs.FFTOps = observedSymbols * rxFactor * nfft * log2(nfft);
-costs.CEOps = (sum(dmrsRE, "omitnan") + sum(ptrsRE, "omitnan")) * rxFactor * portFactor;
-costs.EqualizerOps = sum(dataRE, "omitnan") * rxFactor * portFactor;
+costs.CEOps = (sum(dmrsRE, "omitnan") + sum(ptrsRE, "omitnan")) / max(rxFactor, 1) * portFactor;
+costs.EqualizerOps = sum(dataRE, "omitnan") / max(rxFactor, 1) * rxFactor * portFactor;
 
 blindDecodeCount = localFiniteColumn(ctx.Tables.PDCCH, "BlindDecodeCount");
 dciSizeBits = localFiniteColumn(ctx.Tables.PDCCH, "DCISize_bits");
@@ -3648,8 +3803,32 @@ end
 end
 
 function bytes = localValueBytes(value)
-info = whos("value");
-bytes = double(info.bytes);
+try
+    if istable(value)
+        bytes = 0;
+        vars = string(value.Properties.VariableNames);
+        for i = 1:numel(vars)
+            col = value.(vars(i));
+            try
+                s = whos("col");
+                bytes = bytes + double(s.bytes);
+            catch
+                bytes = bytes + double(numel(col)) * 8;
+            end
+        end
+        return;
+    end
+    if isnumeric(value) || islogical(value)
+        bytes = double(numel(value)) * 8;
+    elseif isstring(value) || iscellstr(value)
+        bytes = double(numel(string(value))) * 32;
+    else
+        s = whos("value");
+        bytes = double(s.bytes);
+    end
+catch
+    bytes = 0;
+end
 end
 
 function mb = localProcessMemorySnapshotMB()
@@ -3796,7 +3975,9 @@ sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
 plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["DL_BLER","UL_BLER"], ["DL","UL"], "bler_vs_snr.png", "BLER vs SNR", "BLER"); %#ok<AGROW>
 plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
-    ["DL_Throughput_Mbps","UL_Throughput_Mbps"], ["DL","UL"], "throughput_vs_snr.png", "Throughput vs SNR", "Throughput (Mbps)"); %#ok<AGROW>
+    ["DL_Throughput_Mbps","UL_Throughput_Mbps","DL_Goodput_Mbps","UL_Goodput_Mbps","Throughput_Mbps","Goodput_Mbps"], ...
+    ["DL throughput","UL throughput","DL goodput","UL goodput","Aggregate throughput","Aggregate goodput"], ...
+    "throughput_vs_snr.png", "Throughput vs SNR", "Throughput (Mbps)"); %#ok<AGROW>
 plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
@@ -3907,9 +4088,12 @@ for i = 1:numel(cols)
         if any(ciMask)
             yErrLow = max(y(ciMask) - lo(ciMask), 0);
             yErrHigh = max(hi(ciMask) - y(ciMask), 0);
+            if contains(lower(string(yLabel)), "bler") || contains(lower(col), "bler")
+                yErrLow = min(yErrLow, max(y(ciMask) * 0.9, 0));
+            end
             localPlotDiscreteSweepSeries(ax, x(ciMask), y(ciMask), seriesColor, displayName);
             errorbar(ax, x(ciMask), y(ciMask), yErrLow, yErrHigh, "LineStyle", "none", ...
-                "LineWidth", 1.0, "Marker", "none", "HandleVisibility", "off", "Color", seriesColor);
+                "LineWidth", 1.2, "CapSize", 4, "Marker", "none", "HandleVisibility", "off", "Color", seriesColor);
             plotted = true;
         end
         plainMask = mask & ~ciMask;
@@ -4051,7 +4235,23 @@ end
 function [x, columnName] = localMeasuredQualityXAxis(T)
 columnName = "";
 x = [];
-candidates = ["MeasuredTrialSINR_dB","ReceiverHestSINR_dB","MeasuredSINR_dB","DecoderTruthProxySINR_dB","LargeScaleSINR_dB"];
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+truthAvailable = false;
+if ismember("TruthAvailable", string(T.Properties.VariableNames))
+    try
+        truthAvailable = any(logical(T.TruthAvailable));
+    catch
+        truthAvailable = any(strlength(strtrim(string(T.TruthAvailable))) > 0 & ...
+            ~strcmpi(strtrim(string(T.TruthAvailable)), "false"));
+    end
+end
+if truthAvailable
+    candidates = ["MeasuredTrialSINR_dB","ReceiverHestSINR_dB","MeasuredSINR_dB","DecoderTruthProxySINR_dB","LargeScaleSINR_dB"];
+else
+    candidates = ["ReceiverHestSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB","LargeScaleSINR_dB"];
+end
 for i = 1:numel(candidates)
     if ~ismember(candidates(i), string(T.Properties.VariableNames))
         continue;
@@ -4229,9 +4429,53 @@ end
 if ~any(mask)
     return;
 end
-scatter(ax, x(mask), y(mask), 18, "o", ...
-    "MarkerFaceColor", color, "MarkerEdgeColor", color, ...
-    "DisplayName", char(label));
+vars = string(T.Properties.VariableNames);
+modCol = "";
+for cand = ["Modulation", "modulation", "PDSCHModulation", "PUSCHModulation"]
+    if ismember(cand, vars)
+        modCol = cand;
+        break;
+    end
+end
+if strlength(modCol) == 0
+    scatter(ax, x(mask), y(mask), 18, "o", ...
+        "MarkerFaceColor", color, "MarkerEdgeColor", color, ...
+        "DisplayName", char(label));
+    made = true;
+    return;
+end
+mods = upper(strtrim(string(T.(modCol))));
+mods = regexprep(mods, "[^A-Z0-9/]", "");
+paletteMods = ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM", "4096QAM"];
+palette = [
+    0.10 0.35 0.85;
+    0.90 0.45 0.10;
+    0.15 0.60 0.25;
+    0.75 0.15 0.15;
+    0.45 0.25 0.70;
+    0.10 0.55 0.60];
+plotted = false;
+for k = 1:numel(paletteMods)
+    mk = mask & mods == paletteMods(k);
+    if any(mk)
+        scatter(ax, x(mk), y(mk), 20, "o", ...
+            "MarkerFaceColor", palette(k, :), "MarkerEdgeColor", palette(k, :), ...
+            "DisplayName", char(string(label) + " " + paletteMods(k)));
+        plotted = true;
+    end
+end
+otherMask = mask & ~ismember(mods, paletteMods);
+if any(otherMask)
+    scatter(ax, x(otherMask), y(otherMask), 18, "o", ...
+        "MarkerFaceColor", color, "MarkerEdgeColor", color, ...
+        "DisplayName", char(string(label) + " other/unknown"));
+    plotted = true;
+end
+if ~plotted
+    scatter(ax, x(mask), y(mask), 18, "o", ...
+        "MarkerFaceColor", color, "MarkerEdgeColor", color, ...
+        "DisplayName", char(label));
+end
 made = true;
 end
 
@@ -4415,21 +4659,28 @@ ticks = unique([xMin, interior, xMax], "stable");
 end
 
 function [ciLowCol, ciHighCol] = localResolveSweepCIColumns(sweepT, metricCol)
-vars = string(sweepT.Properties.VariableNames);
-metricCol = string(metricCol);
-candidates = [metricCol + "_CI_Low", metricCol + "_CI_High"];
-if endsWith(metricCol, "_dB")
-    base = extractBefore(metricCol, strlength(metricCol) - 2);
-    candidates = [candidates, base + "_CI_Low", base + "_CI_High"];
-end
 ciLowCol = "";
 ciHighCol = "";
-for i = 1:2:numel(candidates)
-    lowCand = candidates(i);
-    highCand = candidates(i + 1);
-    if ismember(lowCand, vars) && ismember(highCand, vars)
-        ciLowCol = lowCand;
-        ciHighCol = highCand;
+if ~istable(sweepT)
+    return;
+end
+vars = string(sweepT.Properties.VariableNames);
+base = string(metricCol);
+baseNoUnit = base;
+if endsWith(base, "_dB")
+    baseNoUnit = extractBefore(base, strlength(base) - 2);
+end
+patterns = [
+    base + "_CI95_Low", base + "_CI95_High";
+    base + "_CI_Low", base + "_CI_High";
+    baseNoUnit + "_CI95_Low", baseNoUnit + "_CI95_High";
+    baseNoUnit + "_CI_Low", baseNoUnit + "_CI_High";
+    base + "_lo", base + "_hi";
+    base + "_lower", base + "_upper"];
+for i = 1:size(patterns, 1)
+    if ismember(patterns(i, 1), vars) && ismember(patterns(i, 2), vars)
+        ciLowCol = patterns(i, 1);
+        ciHighCol = patterns(i, 2);
         return;
     end
 end
@@ -4505,10 +4756,12 @@ sixgr.util.ensureFolder(imgDir);
 cats = unique(string(coverageT.CategoryCode), "stable");
 states = ["observed","derived","config_only","disabled","placeholder","not_supported","not_available","not_exercised"];
 stateCounts = zeros(numel(cats), numel(states));
+availLower = lower(strtrim(string(coverageT.Availability)));
+statesLower = lower(strtrim(string(states)));
 for i = 1:numel(cats)
     mask = coverageT.CategoryCode == cats(i);
     for j = 1:numel(states)
-        stateCounts(i, j) = sum(mask & coverageT.Availability == states(j));
+        stateCounts(i, j) = sum(mask & (availLower == statesLower(j)));
     end
 end
 fig = figure("Visible", "off", "Color", "w");
@@ -4566,6 +4819,10 @@ end
 [runtimeCount, configCount, reportCount] = localMetricProvenanceCounts(rows);
 coveredCount = sum(localCoverageStateCountsTowardCoverage(string(coverageT.Availability)));
 opSummary = localContextOperatingPointSummary(ctx);
+availLower = lower(strtrim(string(coverageT.Availability)));
+targetSNR_dB = localConfigNumber(ctx, ["channel.snr_dB", "global_radio_scope.target_snr_db", "scenario.snr_dB"], NaN);
+dlBlerAtTarget = localBLERAtTargetSNR(ctx.Tables.Sweep, "DL_BLER", targetSNR_dB);
+ulBlerAtTarget = localBLERAtTargetSNR(ctx.Tables.Sweep, "UL_BLER", targetSNR_dB);
 T = table( ...
     string(ctx.ScenarioConfig.ScenarioID), ...
     string(ctx.Manifest.RunnerProfile), ...
@@ -4580,22 +4837,29 @@ T = table( ...
     string(ctx.Manifest.DeterministicMode), ...
     double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)), ...
     double(coveredCount), ...
-    double(sum(string(coverageT.Availability) == "observed")), ...
-    double(sum(string(coverageT.Availability) == "derived")), ...
-    double(sum(string(coverageT.Availability) == "config_only")), ...
-    double(sum(string(coverageT.Availability) == "disabled")), ...
-    double(sum(string(coverageT.Availability) == "placeholder")), ...
-    double(sum(string(coverageT.Availability) == "not_supported")), ...
-    double(sum(string(coverageT.Availability) == "not_available")), ...
-    double(sum(string(coverageT.Availability) == "not_exercised")), ...
+    double(sum(availLower == "observed")), ...
+    double(sum(availLower == "derived")), ...
+    double(sum(availLower == "config_only")), ...
+    double(sum(availLower == "disabled")), ...
+    double(sum(availLower == "placeholder")), ...
+    double(sum(availLower == "not_supported")), ...
+    double(sum(availLower == "not_available")), ...
+    double(sum(availLower == "not_exercised")), ...
     double(height(coverageT)), ...
     double(runtimeCount), ...
     double(configCount), ...
     double(reportCount), ...
-    double(localMeanColumn(ctx.Tables.Sweep, "DL_Throughput_Mbps")), ...
-    double(localMeanColumn(ctx.Tables.Sweep, "UL_Throughput_Mbps")), ...
+    double(localMeanColumnFallback(ctx.Tables.Sweep, ["DL_Throughput_Mbps", "DL_Goodput_Mbps", "Throughput_Mbps"])), ...
+    double(localMeanColumnFallback(ctx.Tables.Sweep, ["UL_Throughput_Mbps", "UL_Goodput_Mbps", "Throughput_Mbps"])), ...
     double(localMeanColumn(ctx.Tables.Sweep, "DL_BLER")), ...
     double(localMeanColumn(ctx.Tables.Sweep, "UL_BLER")), ...
+    double(targetSNR_dB), ...
+    double(dlBlerAtTarget), ...
+    double(ulBlerAtTarget), ...
+    double(localMinColumn(ctx.Tables.Sweep, "DL_BLER")), ...
+    double(localMaxColumn(ctx.Tables.Sweep, "DL_BLER")), ...
+    double(localMinColumn(ctx.Tables.Sweep, "UL_BLER")), ...
+    double(localMaxColumn(ctx.Tables.Sweep, "UL_BLER")), ...
     string(opSummary.RuntimeQualifiedDescription), ...
     string(opSummary.Configured.MIMOText), ...
     string(opSummary.Configured.DL.OperatingPointText), ...
@@ -4623,6 +4887,7 @@ T = table( ...
         'NotSupportedMetricCount','NotAvailableMetricCount','NotExercisedMetricCount','SpecifiedMetricCount', ...
         'ObservedRuntimeMetricCount','ConfigOnlyMetricRollupCount','DerivedMetricRollupCount', ...
         'DL_Throughput_Mbps_mean','UL_Throughput_Mbps_mean','DL_BLER_mean','UL_BLER_mean', ...
+        'TargetSNR_dB','DL_BLER_at_target','UL_BLER_at_target','DL_BLER_sweep_min','DL_BLER_sweep_max','UL_BLER_sweep_min','UL_BLER_sweep_max', ...
         'RuntimeQualifiedDescription', ...
         'ConfiguredMIMO','ConfiguredDLNominalOperatingPoint','ConfiguredULNominalOperatingPoint', ...
         'ActiveGridNumRBs','ActiveGridSource','ActiveDuplexMode','ActiveTDDPattern', ...
@@ -5422,18 +5687,19 @@ if fid < 0
 end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 coveredCount = sum(localCoverageStateCountsTowardCoverage(string(coverageT.Availability)));
+availability = lower(strtrim(string(coverageT.Availability)));
 fprintf(fid, "# Automatic LLS Markdown Summary\n\n");
 fprintf(fid, "- Scenario ID: `%s`\n", string(ctx.ScenarioConfig.ScenarioID));
 fprintf(fid, "- Runner profile: `%s`\n", string(ctx.Manifest.RunnerProfile));
 fprintf(fid, "- Runtime-qualified description: `%s`\n", string(localContextOperatingPointSummary(ctx).RuntimeQualifiedDescription));
 fprintf(fid, "- Covered metrics: `%d / %d`\n", coveredCount, height(coverageT));
-fprintf(fid, "- Observed metrics: `%d`\n", sum(string(coverageT.Availability) == "observed"));
-fprintf(fid, "- Derived metrics: `%d`\n", sum(string(coverageT.Availability) == "derived"));
-fprintf(fid, "- Config-only metrics: `%d`\n", sum(string(coverageT.Availability) == "config_only"));
-fprintf(fid, "- Disabled metrics: `%d`\n", sum(string(coverageT.Availability) == "disabled"));
-fprintf(fid, "- Placeholder metrics: `%d`\n", sum(string(coverageT.Availability) == "placeholder"));
-fprintf(fid, "- Not supported in this truth profile: `%d`\n", sum(string(coverageT.Availability) == "not_supported"));
-fprintf(fid, "- Not exercised metrics: `%d`\n", sum(string(coverageT.Availability) == "not_exercised"));
+fprintf(fid, "- Observed metrics: `%d`\n", sum(availability == "observed"));
+fprintf(fid, "- Derived metrics: `%d`\n", sum(availability == "derived"));
+fprintf(fid, "- Config-only metrics: `%d`\n", sum(availability == "config_only"));
+fprintf(fid, "- Disabled metrics: `%d`\n", sum(availability == "disabled"));
+fprintf(fid, "- Placeholder metrics: `%d`\n", sum(availability == "placeholder"));
+fprintf(fid, "- Not supported in this truth profile: `%d`\n", sum(availability == "not_supported"));
+fprintf(fid, "- Not exercised metrics: `%d`\n", sum(availability == "not_exercised"));
 fprintf(fid, "- Runtime seconds: `%.3f`\n", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
 fprintf(fid, "\n## Aggregate Tables\n\n");
 fprintf(fid, "- `%s`\n", localRelativeToRunFolder(artifacts.PerScenarioSummaryTable, ctx.RunFolder));
@@ -5465,7 +5731,8 @@ sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charse
 end
 
 function localPlotWaterfallOrPlaceholder(pathOut, ctx)
-thr = [localMeanColumn(ctx.Tables.Sweep, "DL_Throughput_Mbps"), localMeanColumn(ctx.Tables.Sweep, "UL_Throughput_Mbps")];
+thr = [localMeanColumnFallback(ctx.Tables.Sweep, ["DL_Throughput_Mbps", "DL_Goodput_Mbps", "Throughput_Mbps"]), ...
+    localMeanColumnFallback(ctx.Tables.Sweep, ["UL_Throughput_Mbps", "UL_Goodput_Mbps", "Throughput_Mbps"])];
 bler = [localMeanColumn(ctx.Tables.Sweep, "DL_BLER"), localMeanColumn(ctx.Tables.Sweep, "UL_BLER")];
 if any(isfinite(thr)) || any(isfinite(bler))
     fig = figure("Visible", "off", "Color", "w");
@@ -5487,18 +5754,36 @@ localExportPlaceholderFigure(pathOut, "Key Gains/Losses Summary", "No throughput
 end
 
 function localPlotPAPRCCDFOrPlaceholder(pathOut, ctx)
-[x, label] = localFirstFiniteColumn({ctx.Tables.UL, ctx.Tables.DL}, "PAPR_dB", ["UL","DL"]);
-if ~isempty(x)
+sixgr.util.ensureFolder(fileparts(pathOut));
+dlPAPR = localFiniteColumn(ctx.Tables.DL, "PAPR_dB");
+ulPAPR = localFiniteColumn(ctx.Tables.UL, "PAPR_dB");
+if ~isempty(dlPAPR) || ~isempty(ulPAPR)
+    csvPath = regexprep(string(pathOut), "\.png$", ".csv", "ignorecase");
+    paprRows = repmat(struct("Direction", "", "PAPR_dB", NaN, "CCDF", NaN), 0, 1);
+    paprRows = localAppendPAPRCCDFRows(paprRows, dlPAPR, "DL");
+    paprRows = localAppendPAPRCCDFRows(paprRows, ulPAPR, "UL");
+    if ~isempty(paprRows)
+        sixgr.util.csvWriteTable(csvPath, struct2table(paprRows));
+    end
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
-    x = sort(x(:));
-    y = 1 - ((1:numel(x))' ./ numel(x));
-    semilogy(ax, x, max(y, 1e-6), "LineWidth", 1.25);
+    hold(ax, "on");
+    if ~isempty(dlPAPR)
+        sorted = sort(dlPAPR(:), "descend");
+        semilogy(ax, sorted, max((1:numel(sorted)).' ./ numel(sorted), eps), "b-o", ...
+            "LineWidth", 1.1, "MarkerSize", 4, "DisplayName", "DL");
+    end
+    if ~isempty(ulPAPR)
+        sorted = sort(ulPAPR(:), "descend");
+        semilogy(ax, sorted, max((1:numel(sorted)).' ./ numel(sorted), eps), "r-s", ...
+            "LineWidth", 1.1, "MarkerSize", 4, "DisplayName", "UL");
+    end
     xlabel(ax, "PAPR (dB)");
-    ylabel(ax, "CCDF");
-    title(ax, "PAPR CCDF (" + label + ")");
+    ylabel(ax, "CCDF P(PAPR > x)");
+    title(ax, "PAPR CCDF");
     grid(ax, "on");
+    legend(ax, "Location", "best");
     sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
     return;
 end
@@ -5506,6 +5791,20 @@ if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "PAPR CCDF", "No PAPR samples were emitted by the current LLS path.");
+end
+
+function rows = localAppendPAPRCCDFRows(rows, paprVec, direction)
+paprVec = double(paprVec(:));
+paprVec = paprVec(isfinite(paprVec));
+if isempty(paprVec)
+    return;
+end
+sorted = sort(paprVec, "descend");
+n = numel(sorted);
+ccdf = (1:n).' ./ n;
+for k = 1:n
+    rows(end + 1, 1) = struct("Direction", string(direction), "PAPR_dB", double(sorted(k)), "CCDF", double(ccdf(k))); %#ok<AGROW>
+end
 end
 
 function localPlotLatencyCDFOrPlaceholder(pathOut, ctx)
@@ -5666,14 +5965,15 @@ if fid < 0
 end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 availableCount = sum(localCoverageStateCountsTowardCoverage(string(coverageT.Availability)));
-observedCount = sum(string(coverageT.Availability) == "observed");
-derivedCount = sum(string(coverageT.Availability) == "derived");
-configOnlyCount = sum(string(coverageT.Availability) == "config_only");
-disabledCount = sum(string(coverageT.Availability) == "disabled");
-placeholderCount = sum(string(coverageT.Availability) == "placeholder");
-notSupportedCount = sum(string(coverageT.Availability) == "not_supported");
-notAvailableCount = sum(string(coverageT.Availability) == "not_available");
-notExercisedCount = sum(string(coverageT.Availability) == "not_exercised");
+availability = lower(strtrim(string(coverageT.Availability)));
+observedCount = sum(availability == "observed");
+derivedCount = sum(availability == "derived");
+configOnlyCount = sum(availability == "config_only");
+disabledCount = sum(availability == "disabled");
+placeholderCount = sum(availability == "placeholder");
+notSupportedCount = sum(availability == "not_supported");
+notAvailableCount = sum(availability == "not_available");
+notExercisedCount = sum(availability == "not_exercised");
 specifiedCount = height(coverageT);
 [runtimeCount, configCount, reportCount] = localMetricProvenanceCounts(rows);
 opSummary = localContextOperatingPointSummary(ctx);
@@ -5715,13 +6015,26 @@ fprintf(fid, "- Active duplex mode: `%s`\n", string(opSummary.Radio.ActiveDuplex
 fprintf(fid, "- Active TDD pattern: `%s`\n", string(opSummary.Radio.ActiveTDDPattern));
 if logical(opSummary.DL.HasSamples)
     fprintf(fid, "- Effective DL dominant operating point: `%s`\n", string(opSummary.DL.DominantOperatingPointText));
-    fprintf(fid, "- Effective DL layer histogram: `%s`\n", string(opSummary.DL.LayerHistogram));
+    localWriteHistogramMarkdownTable(fid, opSummary.DL.LayerHistogram, "DL Layer Distribution", "Layers");
+    localWriteHistogramMarkdownTable(fid, opSummary.DL.ModulationHistogram, "DL Modulation Distribution", "Modulation");
 end
 if logical(opSummary.UL.HasSamples)
     fprintf(fid, "- Effective UL dominant operating point: `%s`\n", string(opSummary.UL.DominantOperatingPointText));
-    fprintf(fid, "- Effective UL layer histogram: `%s`\n", string(opSummary.UL.LayerHistogram));
+    localWriteHistogramMarkdownTable(fid, opSummary.UL.LayerHistogram, "UL Layer Distribution", "Layers");
+    localWriteHistogramMarkdownTable(fid, opSummary.UL.ModulationHistogram, "UL Modulation Distribution", "Modulation");
 end
 fprintf(fid, "- Effective runtime note: `%s`\n", string(opSummary.RuntimeNarrative));
+fprintf(fid, "\n## Key Performance Indicators\n\n");
+targetSNR_dB = localConfigNumber(ctx, ["channel.snr_dB", "global_radio_scope.target_snr_db", "scenario.snr_dB"], NaN);
+fprintf(fid, "| Metric | DL | UL |\n");
+fprintf(fid, "|---|---:|---:|\n");
+fprintf(fid, "| BLER at target SNR | %.6g | %.6g |\n", ...
+    localBLERAtTargetSNR(ctx.Tables.Sweep, "DL_BLER", targetSNR_dB), ...
+    localBLERAtTargetSNR(ctx.Tables.Sweep, "UL_BLER", targetSNR_dB));
+fprintf(fid, "| Goodput/throughput (Mbps) | %.6g | %.6g |\n", ...
+    localMeanColumnFallback(ctx.Tables.Sweep, ["DL_Goodput_Mbps", "Goodput_Mbps", "DL_Throughput_Mbps", "Throughput_Mbps"]), ...
+    localMeanColumnFallback(ctx.Tables.Sweep, ["UL_Goodput_Mbps", "Goodput_Mbps", "UL_Throughput_Mbps", "Throughput_Mbps"]));
+fprintf(fid, "| Target SNR (dB) | %.6g | %.6g |\n", targetSNR_dB, targetSNR_dB);
 fprintf(fid, "\n## Highlights\n\n");
 localWriteMetricHighlight(fid, ctx.Tables.Sweep, "DL_BLER", "DL BLER sweep");
 localWriteMetricHighlight(fid, ctx.Tables.Sweep, "UL_BLER", "UL BLER sweep");
@@ -5771,15 +6084,16 @@ if strlength(string(sixgr.util.structGet(ctx.Manifest, "StatusNotes", sixgr.util
 end
 fprintf(fid, "- Runtime seconds: `%.3f`\n", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
 [runtimeCount, configCount, reportCount] = localMetricProvenanceCounts(rows);
-fprintf(fid, "- Covered metrics: `%d / %d`\n", sum(localCoverageStateCountsTowardCoverage(string(coverageT.Availability))), height(coverageT));
-fprintf(fid, "- Observed runtime metrics: `%d`\n", sum(string(coverageT.Availability) == "observed"));
-fprintf(fid, "- Derived metrics: `%d`\n", sum(string(coverageT.Availability) == "derived"));
-fprintf(fid, "- Config-only metrics: `%d`\n", sum(string(coverageT.Availability) == "config_only"));
-fprintf(fid, "- Disabled metrics: `%d`\n", sum(string(coverageT.Availability) == "disabled"));
-fprintf(fid, "- Placeholder artifacts/metrics: `%d`\n", sum(string(coverageT.Availability) == "placeholder"));
-fprintf(fid, "- Not-supported metrics: `%d`\n", sum(string(coverageT.Availability) == "not_supported"));
-fprintf(fid, "- Not-available metrics: `%d`\n", sum(string(coverageT.Availability) == "not_available"));
-fprintf(fid, "- Not-exercised metrics: `%d`\n", sum(string(coverageT.Availability) == "not_exercised"));
+availability = lower(strtrim(string(coverageT.Availability)));
+fprintf(fid, "- Covered metrics: `%d / %d`\n", sum(localCoverageStateCountsTowardCoverage(availability)), height(coverageT));
+fprintf(fid, "- Observed runtime metrics: `%d`\n", sum(availability == "observed"));
+fprintf(fid, "- Derived metrics: `%d`\n", sum(availability == "derived"));
+fprintf(fid, "- Config-only metrics: `%d`\n", sum(availability == "config_only"));
+fprintf(fid, "- Disabled metrics: `%d`\n", sum(availability == "disabled"));
+fprintf(fid, "- Placeholder artifacts/metrics: `%d`\n", sum(availability == "placeholder"));
+fprintf(fid, "- Not-supported metrics: `%d`\n", sum(availability == "not_supported"));
+fprintf(fid, "- Not-available metrics: `%d`\n", sum(availability == "not_available"));
+fprintf(fid, "- Not-exercised metrics: `%d`\n", sum(availability == "not_exercised"));
 fprintf(fid, "- Observed-runtime rollup count: `%d`\n", runtimeCount);
 fprintf(fid, "- Config-only rollup count: `%d`\n", configCount);
 fprintf(fid, "- Report-derived rollup count: `%d`\n", reportCount);
@@ -5813,20 +6127,26 @@ end
 fprintf(fid, "- Effective runtime note: `%s`\n", string(opSummary.RuntimeNarrative));
 fprintf(fid, "\n## Category Coverage\n\n");
 cats = unique(string(coverageT.CategoryCode), "stable");
+coverageAvailLower = lower(strtrim(string(coverageT.Availability)));
 for i = 1:numel(cats)
     mask = coverageT.CategoryCode == cats(i);
-    availableCount = sum(mask & localCoverageStateCountsTowardCoverage(string(coverageT.Availability)));
-    observedCount = sum(mask & string(coverageT.Availability) == "observed");
-    derivedCount = sum(mask & string(coverageT.Availability) == "derived");
-    configOnlyCount = sum(mask & string(coverageT.Availability) == "config_only");
-    disabledCount = sum(mask & string(coverageT.Availability) == "disabled");
-    placeholderCount = sum(mask & string(coverageT.Availability) == "placeholder");
-    notSupportedCount = sum(mask & string(coverageT.Availability) == "not_supported");
+    availableCount = sum(mask & localCoverageStateCountsTowardCoverage(coverageAvailLower));
+    observedCount = sum(mask & (coverageAvailLower == "observed"));
+    derivedCount = sum(mask & (coverageAvailLower == "derived"));
+    configOnlyCount = sum(mask & (coverageAvailLower == "config_only"));
+    disabledCount = sum(mask & (coverageAvailLower == "disabled"));
+    placeholderCount = sum(mask & (coverageAvailLower == "placeholder"));
+    notSupportedCount = sum(mask & (coverageAvailLower == "not_supported"));
     totalCount = sum(mask);
     catName = string(coverageT.CategoryName(find(mask, 1, "first")));
     fprintf(fid, "- `%s` %s: `%d / %d` covered, `%d` observed, `%d` derived, `%d` config-only, `%d` disabled, `%d` placeholder, `%d` not supported\n", ...
         cats(i), catName, availableCount, totalCount, observedCount, derivedCount, configOnlyCount, disabledCount, placeholderCount, notSupportedCount);
 end
+localWriteSweepPerformanceSection(fid, "## 2. DL PDSCH Performance", ctx.Tables.Sweep, ...
+    ["DL_BLER", "BLER"], ["DL_BER", "BER"], ["DL_Goodput_Mbps", "DL_Throughput_Mbps", "Goodput_Mbps", "Throughput_Mbps"], ["DL_TrialCount", "TrialCount"]);
+localWriteSweepPerformanceSection(fid, "## 3. UL PUSCH Performance", ctx.Tables.Sweep, ...
+    ["UL_BLER", "BLER"], ["UL_BER", "BER"], ["UL_Goodput_Mbps", "UL_Throughput_Mbps", "Goodput_Mbps", "Throughput_Mbps"], ["UL_TrialCount", "TrialCount"]);
+localWriteControlPerformanceSection(fid, ctx);
 fprintf(fid, "\n## Key Artifacts\n\n");
 fprintf(fid, "- `air_interface/csv/lls_kpi_summary.csv`\n");
 fprintf(fid, "- `air_interface/csv/lls_snr_sweep.csv`\n");
@@ -5863,6 +6183,109 @@ if ~isempty(plots)
 end
 clear cleanupObj
 sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
+end
+
+function localWriteHistogramMarkdownTable(fid, histStr, titleText, dimension)
+tableText = localHistogramToMarkdownTable(histStr, dimension);
+if strlength(tableText) == 0
+    return;
+end
+fprintf(fid, "\n### %s\n\n%s\n\n", char(string(titleText)), char(tableText));
+end
+
+function mdTable = localHistogramToMarkdownTable(histStr, dimension)
+mdTable = "";
+histStr = strtrim(string(histStr));
+if strlength(histStr) == 0
+    return;
+end
+entries = split(histStr, ",");
+rows = strings(0, 1);
+for i = 1:numel(entries)
+    kv = split(strtrim(entries(i)), ":");
+    if numel(kv) < 2
+        continue;
+    end
+    rows(end + 1, 1) = "| " + strtrim(kv(1)) + " | " + strtrim(kv(2)) + " |"; %#ok<AGROW>
+end
+if isempty(rows)
+    return;
+end
+mdTable = strjoin(["| " + string(dimension) + " | Fraction |"; "| --- | ---: |"; rows], newline);
+end
+
+function localWriteSweepPerformanceSection(fid, sectionTitle, sweepT, blerCandidates, berCandidates, tputCandidates, countCandidates)
+fprintf(fid, "\n%s\n\n", string(sectionTitle));
+fprintf(fid, "| SNR (dB) | BLER | BER | Goodput/throughput (Mbps) | Trials |\n");
+fprintf(fid, "|---:|---:|---:|---:|---:|\n");
+if ~(istable(sweepT) && ~isempty(sweepT) && ismember("SNR_dB", string(sweepT.Properties.VariableNames)))
+    fprintf(fid, "| NaN | NaN | NaN | NaN | 0 |\n");
+    return;
+end
+for r = 1:height(sweepT)
+    fprintf(fid, "| %.3g | %.6g | %.6g | %.6g | %.0f |\n", ...
+        localTableNumericAtRow(sweepT, r, "SNR_dB"), ...
+        localTableNumericAtRow(sweepT, r, blerCandidates), ...
+        localTableNumericAtRow(sweepT, r, berCandidates), ...
+        localTableNumericAtRow(sweepT, r, tputCandidates), ...
+        localTableNumericAtRow(sweepT, r, countCandidates));
+end
+end
+
+function localWriteControlPerformanceSection(fid, ctx)
+fprintf(fid, "\n## 4. Control And Initial-Access Performance\n\n");
+fprintf(fid, "| Channel | Detection/pass rate | False alarm rate | Trials |\n");
+fprintf(fid, "|---|---:|---:|---:|\n");
+localWriteControlPerformanceRow(fid, "PDCCH", ctx.Tables.PDCCH);
+localWriteControlPerformanceRow(fid, "PUCCH", ctx.Tables.PUCCH);
+localWriteControlPerformanceRow(fid, "PRACH", ctx.Tables.PRACH);
+end
+
+function localWriteControlPerformanceRow(fid, label, T)
+if ~(istable(T) && ~isempty(T))
+    fprintf(fid, "| %s | NaN | NaN | 0 |\n", string(label));
+    return;
+end
+fprintf(fid, "| %s | %.6g | %.6g | %d |\n", string(label), localPassRateScalar(T), localFalseAlarmRateScalar(T), height(T));
+end
+
+function rate = localFalseAlarmRateScalar(T)
+rate = NaN;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+vars = string(T.Properties.VariableNames);
+flagCol = "";
+for cand = ["FalseAlarmFlag", "FalseAlarm", "type1_false_detection_flag", "type2_false_detection_flag"]
+    if ismember(cand, vars)
+        flagCol = cand;
+        break;
+    end
+end
+if strlength(flagCol) == 0
+    return;
+end
+x = localCoerceNumericVector(T.(flagCol));
+x = x(isfinite(x));
+if isempty(x)
+    return;
+end
+rate = mean(x ~= 0);
+end
+
+function value = localTableNumericAtRow(T, rowIdx, candidates)
+value = NaN;
+candidates = string(candidates);
+vars = string(T.Properties.VariableNames);
+for i = 1:numel(candidates)
+    if ismember(candidates(i), vars)
+        col = localCoerceNumericVector(T.(candidates(i)));
+        if numel(col) >= rowIdx && isfinite(col(rowIdx))
+            value = double(col(rowIdx));
+            return;
+        end
+    end
+end
 end
 
 function localWriteMetricHighlight(fid, T, varName, label)
@@ -6326,13 +6749,13 @@ end
 
 function series = localLatencyCDFFigureSeries(ctx)
 series = repmat(struct("Label", "", "Samples", zeros(0, 1)), 0, 1);
-series = localAppendLatencySeries(series, "ComputeLatency_ms", ...
-    localCollectFiniteColumns({ctx.Tables.DL, ctx.Tables.UL, ctx.Tables.PDCCH, ctx.Tables.PBCH, ctx.Tables.PRACH, ctx.Tables.SRS, ctx.Tables.TRS}, "ComputeLatency_ms"));
-series = localAppendLatencySeries(series, "AirInterfaceTTI_ms", ...
+series = localAppendLatencySeries(series, "Radio TTI (AirInterfaceTTI_ms)", ...
     localCollectFiniteColumns({ctx.Tables.DL, ctx.Tables.UL, ctx.Tables.PDCCH}, "AirInterfaceTTI_ms"));
-series = localAppendLatencySeries(series, "AirInterfaceObservation_ms", ...
+series = localAppendLatencySeries(series, "Radio observation (AirInterfaceObservation_ms)", ...
     localCollectFiniteColumns({ctx.Tables.PBCH, ctx.Tables.PRACH, ctx.Tables.SRS, ctx.Tables.TRS}, "AirInterfaceObservation_ms"));
-series = localAppendLatencySeries(series, "ProcedureDelay_ms", localProcedureDelaySamplesForLatencyCDF(ctx));
+series = localAppendLatencySeries(series, "Procedure delay (ProcedureDelay_ms)", localProcedureDelaySamplesForLatencyCDF(ctx));
+series = localAppendLatencySeries(series, "Compute runtime (ComputeLatency_ms)", ...
+    localCollectFiniteColumns({ctx.Tables.DL, ctx.Tables.UL, ctx.Tables.PDCCH, ctx.Tables.PBCH, ctx.Tables.PRACH, ctx.Tables.SRS, ctx.Tables.TRS}, "ComputeLatency_ms"));
 end
 
 function series = localAppendLatencySeries(series, label, samples)
@@ -6376,6 +6799,74 @@ if isempty(x)
     return;
 end
 m = mean(x, "omitnan");
+end
+
+function col = localFirstPresentColumn(T, candidates)
+col = "";
+if ~istable(T)
+    return;
+end
+vars = string(T.Properties.VariableNames);
+candidates = string(candidates);
+for i = 1:numel(candidates)
+    if ismember(candidates(i), vars)
+        col = candidates(i);
+        return;
+    end
+end
+end
+
+function m = localMeanColumnFallback(T, candidates)
+m = NaN;
+candidates = string(candidates);
+for i = 1:numel(candidates)
+    m = localMeanColumn(T, candidates(i));
+    if isfinite(m)
+        return;
+    end
+end
+end
+
+function v = localMinColumn(T, varName)
+v = NaN;
+x = localFiniteColumn(T, varName);
+if isempty(x)
+    return;
+end
+v = min(x);
+end
+
+function v = localMaxColumn(T, varName)
+v = NaN;
+x = localFiniteColumn(T, varName);
+if isempty(x)
+    return;
+end
+v = max(x);
+end
+
+function bler = localBLERAtTargetSNR(sweepT, blerCol, targetSNR_dB)
+bler = NaN;
+if ~(istable(sweepT) && ~isempty(sweepT))
+    return;
+end
+if ~(ismember("SNR_dB", string(sweepT.Properties.VariableNames)) && ismember(string(blerCol), string(sweepT.Properties.VariableNames)))
+    return;
+end
+snr = double(sweepT.SNR_dB);
+blerVec = double(sweepT.(string(blerCol)));
+mask = isfinite(snr) & isfinite(blerVec);
+if ~any(mask)
+    return;
+end
+snr = snr(mask);
+blerVec = blerVec(mask);
+if isfinite(double(targetSNR_dB))
+    [~, idx] = min(abs(snr - double(targetSNR_dB)));
+else
+    [~, idx] = min(blerVec);
+end
+bler = blerVec(idx);
 end
 
 function v = localSafeZero(x)

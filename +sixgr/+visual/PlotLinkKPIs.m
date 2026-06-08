@@ -72,6 +72,12 @@ madeAny = made || madeAny;
     "Throughput (Mbps)", false);
 madeAny = made || madeAny;
 
+% Plot goodput when present; this is the primary successful-user-bit KPI.
+[figs, made] = localMaybePlotSweepMetric(figs, "Goodput", opt, T, x, xname, ...
+    {'DL_Goodput_Mbps','UL_Goodput_Mbps','Goodput_Mbps'}, {'DL','UL','Aggregate'}, ...
+    "Goodput (Mbps)", false);
+madeAny = made || madeAny;
+
 % Plot EVM
 [figs, made] = localMaybePlotSweepMetric(figs, "EVM", opt, T, x, xname, ...
     {'DL_EVM_rms','UL_EVM_rms','EVM_rms','EVM','EVM_percent','EVM_rms_percent'}, {'DL','UL','Aggregate','Aggregate','Aggregate','Aggregate'}, ...
@@ -114,7 +120,7 @@ if ~madeAny
             madeAny = true;
         end
 
-        [yThr, yThrName] = localFindNumericVar(T, {'Throughput_Mbps','ThroughputGbps','Tput_Mbps','Tput'});
+        [yThr, yThrName] = localFindNumericVar(T, {'Goodput_Mbps','Throughput_Mbps','ThroughputGbps','Tput_Mbps','Tput'});
         if ~isempty(yThr)
             figs.Throughput_ByCase = localMakeFig(opt, sprintf('%s_Throughput_ByCase', opt.FigurePrefix));
             ax = axes(figs.Throughput_ByCase);
@@ -301,21 +307,23 @@ if ~istable(T)
     return;
 end
 vars = string(T.Properties.VariableNames);
-metricVar = string(metricVar);
-lowCand = metricVar + "_CI_Low";
-highCand = metricVar + "_CI_High";
-if ismember(lowCand, vars) && ismember(highCand, vars)
-    ciLowVar = lowCand;
-    ciHighVar = highCand;
-    return;
+base = string(metricVar);
+baseNoUnit = base;
+if endsWith(base, "_dB")
+    baseNoUnit = extractBefore(base, strlength(base) - 2);
 end
-if endsWith(metricVar, "_dB")
-    base = extractBefore(metricVar, strlength(metricVar) - 2);
-    lowCand = base + "_CI_Low";
-    highCand = base + "_CI_High";
-    if ismember(lowCand, vars) && ismember(highCand, vars)
-        ciLowVar = lowCand;
-        ciHighVar = highCand;
+patterns = [
+    base + "_CI95_Low", base + "_CI95_High";
+    base + "_CI_Low", base + "_CI_High";
+    baseNoUnit + "_CI95_Low", baseNoUnit + "_CI95_High";
+    baseNoUnit + "_CI_Low", baseNoUnit + "_CI_High";
+    base + "_lo", base + "_hi";
+    base + "_lower", base + "_upper"];
+for i = 1:size(patterns, 1)
+    if ismember(patterns(i, 1), vars) && ismember(patterns(i, 2), vars)
+        ciLowVar = patterns(i, 1);
+        ciHighVar = patterns(i, 2);
+        return;
     end
 end
 end
