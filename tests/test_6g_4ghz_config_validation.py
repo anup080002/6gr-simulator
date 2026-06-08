@@ -10,6 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 DEFAULT_WAVEFORM_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
+WEBGUI_2SITE_WAVEFORM_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_2site_6sector_150ue_60slot.yaml"
 
 
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
@@ -116,6 +117,48 @@ def main() -> None:
     assert int(dash.path_get(scn07, "users.n_users", 0)) == 1
     assert str(dash.path_get(scn07, "channel_model.scenario_label", "")) == "TDL-C"
     assert str(dash.path_get(scn07, "interference.inter_cell_execution_mode", "")) == "full_per_link_channel_waveform_sum"
+
+    scenarios = dash.list_scenarios()
+    assert WEBGUI_2SITE_WAVEFORM_SCENARIO in scenarios, (
+        "The exact 2-site / 6-sector / 150-UE Web GUI LLS scenario must remain selectable from the browser catalog."
+    )
+    webgui_2site, chain = dash.load_resolved_config_payload(WEBGUI_2SITE_WAVEFORM_SCENARIO)
+    assert chain and chain[-1].endswith(WEBGUI_2SITE_WAVEFORM_SCENARIO)
+    assert dash.scenario_launch_contract(webgui_2site, WEBGUI_2SITE_WAVEFORM_SCENARIO)["launch_contract"] == "waveform_bundle_truth"
+    assert int(dash.path_get(webgui_2site, "global_radio_scope.carrier_frequency_hz", 0)) == 4_000_000_000
+    assert int(dash.path_get(webgui_2site, "global_radio_scope.channel_bandwidth_hz", 0)) == 100_000_000
+    assert str(dash.path_get(webgui_2site, "global_radio_scope.duplex_mode", "")) == "TDD"
+    assert str(dash.path_get(webgui_2site, "frame_timing.tdd_pattern", "")) == "DDDSU"
+    assert int(dash.path_get(webgui_2site, "run_control.total_slots", 0)) == 60
+    assert int(dash.path_get(webgui_2site, "deployment_topology.num_sites", 0)) == 2
+    assert int(dash.path_get(webgui_2site, "deployment_topology.num_cells", 0)) == 6
+    assert int(dash.path_get(webgui_2site, "deployment_topology.num_sectors_per_site", 0)) == 3
+    assert int(dash.path_get(webgui_2site, "deployment_topology.num_ues", 0)) == 150
+    assert int(dash.path_get(webgui_2site, "users.n_users", 0)) == 150
+    assert int(dash.path_get(webgui_2site, "deployment_topology.inter_site_distance", 0)) == 1000
+    assert int(dash.path_get(webgui_2site, "deployment_topology.min_inter_ue_distance_m", 0)) == 80
+    assert int(dash.path_get(webgui_2site, "scenario.bs.height_m", 0)) == 24
+    assert list(dash.path_get(webgui_2site, "scenario.sectorization.azimOffsets_deg", [])) == [0, 120, 240]
+    assert str(dash.path_get(webgui_2site, "simulation.noise_operating_mode", "")) == "receiver_noise_figure_thermal_noise"
+    assert str(dash.path_get(webgui_2site, "channel_model.scenario_label", "")) == "CDL-D"
+    assert bool(dash.path_get(webgui_2site, "mobility.spatial_consistency_flag", False))
+    assert bool(dash.path_get(webgui_2site, "channels.pathloss_enabled", False))
+    assert bool(dash.path_get(webgui_2site, "channels.shadow_fading_enabled", False))
+    assert bool(dash.path_get(webgui_2site, "reference_signals.nzp_csi_rs.enabled", False))
+    assert bool(dash.path_get(webgui_2site, "reference_signals.srs.enabled", False))
+    assert bool(dash.path_get(webgui_2site, "reference_signals.trs.enabled", False))
+    assert bool(dash.path_get(webgui_2site, "reference_signals.ptrs.enabled", False))
+    assert bool(dash.path_get(webgui_2site, "mimo.mu_mimo_enable", False))
+    assert bool(dash.path_get(webgui_2site, "mimo_and_beam_management.beam_sweeping", False))
+    assert bool(dash.path_get(webgui_2site, "mimo_and_beam_management.beam_refinement", False))
+    assert bool(dash.path_get(webgui_2site, "mimo_and_beam_management.beam_tracking", False))
+    assert int(dash.path_get(webgui_2site, "antenna_and_array.bs_num_antenna_elements", 0)) == 64
+    assert int(dash.path_get(webgui_2site, "antenna_and_array.ue_num_antenna_elements", 0)) == 4
+    assert int(dash.path_get(webgui_2site, "antenna_and_array.bs_mechanical_tilt_deg", 0)) == -6
+    assert str(dash.path_get(webgui_2site, "link_adaptation.fixed_or_amc", "")) == "amc"
+    assert str(dash.path_get(webgui_2site, "link_adaptation.bootstrap_cqi_mode", "")) == "conservative"
+    assert str(dash.path_get(webgui_2site, "output.backend", "")) == "mysql_web"
+    assert not bool(dash.path_get(webgui_2site, "output.emit_placeholder_artifacts", True))
 
 
 if __name__ == "__main__":
