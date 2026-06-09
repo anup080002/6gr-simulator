@@ -21,6 +21,9 @@ estimate = struct( ...
     "SelectedBeamIndices", [], ...
     "PRBCount", NaN, ...
     "NumTxPorts", NaN, ...
+    "SRSNumTxPorts", NaN, ...
+    "PUSCHCodebookNumPorts", NaN, ...
+    "PortSelectionSource", "", ...
     "NumRxAnt", NaN, ...
     "TransformPrecoding", false, ...
     "TransmissionScheme", "", ...
@@ -37,6 +40,7 @@ end
 estimate.PRBCount = double(size(Hprb, 3));
 estimate.NumRxAnt = double(numRxAnt);
 estimate.NumTxPorts = double(numTxPorts);
+estimate.SRSNumTxPorts = double(numTxPorts);
 if isempty(Hprb) || numTxPorts < 1 || numRxAnt < 1
     estimate.RISource = "srs_prb_channel_unavailable";
     estimate.TPMISource = "srs_prb_channel_unavailable";
@@ -59,7 +63,15 @@ if scheme ~= "codebook" || transformPrecoding || numTxPorts < 2
     return;
 end
 
-[tpmi, metric, candidateCount, beamIndices] = localEstimateTPMI(Hprb, max(double(nVar), eps), estimate.RI, numTxPorts, transformPrecoding);
+[Htpmi, tpmiNumPorts, portSource] = localRestrictToPUSCHCodebookPorts(Hprb, cfg, numTxPorts);
+estimate.NumTxPorts = double(tpmiNumPorts);
+estimate.PUSCHCodebookNumPorts = double(tpmiNumPorts);
+estimate.PortSelectionSource = char(portSource);
+if isfinite(estimate.RI)
+    estimate.RI = double(max(1, min(round(double(estimate.RI)), max(1, round(double(tpmiNumPorts))))));
+end
+
+[tpmi, metric, candidateCount, beamIndices] = localEstimateTPMI(Htpmi, max(double(nVar), eps), estimate.RI, tpmiNumPorts, transformPrecoding);
 estimate.TPMI = double(tpmi);
 estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
@@ -70,6 +82,56 @@ else
     estimate.TPMISource = "ul_srs_tpmi_estimator_unavailable";
 end
 estimate.Valid = isfinite(estimate.RI) || isfinite(estimate.TPMI);
+end
+
+function [Hout, numPortsOut, source] = localRestrictToPUSCHCodebookPorts(Hprb, cfg, measuredNumPorts)
+Hout = Hprb;
+numPortsOut = max(1, round(double(measuredNumPorts)));
+source = "srs_port_count_matches_pusch_codebook";
+
+configuredPorts = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", NaN), ...
+    sixgr.util.structGet(cfg, "phy.pusch.numAntennaPorts", NaN), ...
+    sixgr.util.structGet(cfg, "phy.pusch.dmrs.nPorts", NaN), ...
+    sixgr.util.structGet(cfg, "phy.pusch.nPorts", NaN));
+if ~(isfinite(configuredPorts) && configuredPorts >= 1)
+    configuredPorts = numPortsOut;
+    source = "pusch_codebook_ports_inferred_from_srs_ports";
+end
+configuredPorts = max(1, round(double(configuredPorts)));
+
+% nrPUSCH codebook precoding is defined only for 1, 2, or 4 antenna ports.
+% If SRS sounds more ports than the active PUSCH port set, score only the
+% ports the grant can actually transmit on instead of passing a wider-port
+% TPMI into nrPUSCHConfig later.
+allowedPorts = [1 2 4];
+if ~ismember(configuredPorts, allowedPorts)
+    idx = find(allowedPorts >= configuredPorts, 1, "first");
+    if isempty(idx)
+        idx = numel(allowedPorts);
+    end
+    configuredPorts = allowedPorts(idx);
+    source = "pusch_codebook_ports_normalized_to_nr_allowed_set";
+end
+
+if configuredPorts < numPortsOut
+    Hout = Hprb(:, 1:configuredPorts, :);
+    numPortsOut = configuredPorts;
+    source = "srs_ports_restricted_to_active_pusch_codebook_ports";
+elseif configuredPorts > numPortsOut
+    source = "pusch_codebook_ports_limited_by_available_srs_ports";
+end
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for ii = 1:nargin
+    candidate = varargin{ii};
+    if isnumeric(candidate) && isscalar(candidate) && isfinite(candidate)
+        value = double(candidate);
+        return;
+    end
+end
 end
 
 function [Hprb, numRxAnt, numTxPorts] = localPRBAveragedChannel(Hest)

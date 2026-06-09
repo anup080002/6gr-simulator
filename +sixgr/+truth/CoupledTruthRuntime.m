@@ -1287,12 +1287,13 @@ methods(Static, Access=private)
             if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= state.NumUsers)
                 continue;
             end
+            rowDirection = upper(string(row.Direction));
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
             latest.Valid = true;
             latest.CQI = double(row.CQI);
             latest.RI = double(row.RI);
             latest.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
-                row.PMI, state.CfgMobility, direction, latest.RI));
+                row.PMI, state.CfgMobility, rowDirection, latest.RI));
             latest.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
                 row.CRI, state.CfgMobility));
             latest.SINR_dB = double(row.SINR_dB);
@@ -1301,8 +1302,8 @@ methods(Static, Access=private)
             latest.ServingCell = double(row.ServingCell);
             latest.Slot = double(row.SourceSlot);
             latest.Modulation = char(string(row.Modulation));
-            latest.Direction = char(string(row.Direction));
-            if upper(string(row.Direction)) == "UL"
+            latest.Direction = char(rowDirection);
+            if rowDirection == "UL"
                 state.LatestULFeedback(ueIdx) = latest;
             else
                 state.LatestDLFeedback(ueIdx) = latest;
@@ -2397,7 +2398,11 @@ methods(Static, Access=private)
             latest.RI = double(max(1, round(ri)));
         end
         if isfinite(tpmi)
-            latest.PMI = double(round(tpmi));
+            sanitizedTPMI = sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
+                tpmi, state.CfgMobility, "UL", latest.RI);
+            if isfinite(sanitizedTPMI)
+                latest.PMI = double(round(sanitizedTPMI));
+            end
         end
         servingCell = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["ServingCell","BaseStationID","CellID"], NaN);
@@ -3008,7 +3013,16 @@ methods(Static, Access=private)
         pmi = NaN;
         direction = upper(string(direction));
         if direction == "UL"
-            pmiCfg = sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN);
+            [nLayers, numTxPorts, transformPrecoding] = sixgr.truth.CoupledTruthRuntime.resolveULPUSCHCodebookTuple(cfg, rankHint);
+            pmiCfg = sixgr.truth.CoupledTruthRuntime.firstFiniteScalar( ...
+                sixgr.util.structGet(cfg, "phy.pusch.TPMI", NaN), ...
+                sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN));
+            if sixgr.truth.CoupledTruthRuntime.isValidULTPMI(pmiCfg, nLayers, numTxPorts, transformPrecoding)
+                pmi = double(round(double(pmiCfg)));
+                return;
+            end
+            pmi = sixgr.truth.CoupledTruthRuntime.firstValidULTPMI(nLayers, numTxPorts, transformPrecoding);
+            return;
         else
             pmiCfg = sixgr.util.structGet(cfg, "phy.pdsch.PMI", NaN);
         end
@@ -3049,6 +3063,15 @@ methods(Static, Access=private)
             end
         end
         nLayers = max(1, round(double(rankHint)));
+        if direction == "UL"
+            [~, numTxPorts, transformPrecoding] = sixgr.truth.CoupledTruthRuntime.resolveULPUSCHCodebookTuple(cfg, nLayers);
+            if sixgr.truth.CoupledTruthRuntime.isValidULTPMI(rawPMI, nLayers, numTxPorts, transformPrecoding)
+                pmi = double(round(rawPMI));
+                return;
+            end
+            pmi = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackPMI(cfg, direction, nLayers));
+            return;
+        end
         numTxPorts = sixgr.util.structGet(cfg, "phy.nTxAnt", nLayers);
         numTxPorts = max(1, round(double(numTxPorts)));
         try
@@ -3067,6 +3090,86 @@ methods(Static, Access=private)
             end
         end
         pmi = double(sixgr.truth.CoupledTruthRuntime.resolveFallbackPMI(cfg, direction, nLayers));
+    end
+
+    function [nLayers, numTxPorts, transformPrecoding] = resolveULPUSCHCodebookTuple(cfg, rankHint)
+        transformPrecoding = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false));
+        nLayers = double(rankHint);
+        if ~(isscalar(nLayers) && isfinite(nLayers) && nLayers >= 1)
+            nLayers = double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", ...
+                sixgr.util.structGet(cfg, "phy.pusch.numLayers", 1)));
+        end
+        if ~(isscalar(nLayers) && isfinite(nLayers) && nLayers >= 1)
+            nLayers = 1;
+        end
+        nLayers = max(1, round(double(nLayers)));
+
+        numTxPorts = sixgr.truth.CoupledTruthRuntime.firstFiniteScalar( ...
+            sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", NaN), ...
+            sixgr.util.structGet(cfg, "phy.pusch.numAntennaPorts", NaN), ...
+            sixgr.util.structGet(cfg, "phy.pusch.dmrs.nPorts", NaN), ...
+            sixgr.util.structGet(cfg, "phy.pusch.nPorts", NaN), ...
+            nLayers);
+        allowedPorts = [1 2 4];
+        numTxPorts = max(1, round(double(numTxPorts)));
+        if ~ismember(numTxPorts, allowedPorts)
+            idx = find(allowedPorts >= numTxPorts, 1, "first");
+            if isempty(idx)
+                idx = numel(allowedPorts);
+            end
+            numTxPorts = allowedPorts(idx);
+        end
+        if numTxPorts < nLayers
+            idx = find(allowedPorts >= nLayers, 1, "first");
+            if isempty(idx)
+                idx = numel(allowedPorts);
+            end
+            numTxPorts = allowedPorts(idx);
+        end
+        nLayers = min(nLayers, numTxPorts);
+    end
+
+    function tf = isValidULTPMI(rawPMI, nLayers, numTxPorts, transformPrecoding)
+        tf = false;
+        try
+            rawPMI = double(rawPMI);
+        catch
+            return;
+        end
+        if ~(isscalar(rawPMI) && isfinite(rawPMI))
+            return;
+        end
+        if logical(transformPrecoding)
+            return;
+        end
+        if exist("nrPUSCHCodebook", "file") ~= 2
+            return;
+        end
+        try
+            W = nrPUSCHCodebook(max(1, round(double(nLayers))), max(1, round(double(numTxPorts))), ...
+                round(double(rawPMI)), logical(transformPrecoding));
+        catch
+            try
+                W = nrPUSCHCodebook(max(1, round(double(nLayers))), max(1, round(double(numTxPorts))), ...
+                    round(double(rawPMI)));
+            catch
+                W = [];
+            end
+        end
+        tf = ~isempty(W);
+    end
+
+    function pmi = firstValidULTPMI(nLayers, numTxPorts, transformPrecoding)
+        pmi = NaN;
+        if logical(transformPrecoding) || exist("nrPUSCHCodebook", "file") ~= 2
+            return;
+        end
+        for candidate = 0:255
+            if sixgr.truth.CoupledTruthRuntime.isValidULTPMI(candidate, nLayers, numTxPorts, transformPrecoding)
+                pmi = double(candidate);
+                return;
+            end
+        end
     end
 
     function cri = sanitizeFeedbackCRI(rawCRI, cfg)
@@ -6430,6 +6533,17 @@ methods(Static, Access=private)
             value = double(defaultValue);
         else
             value = double(vals(1));
+        end
+    end
+
+    function value = firstFiniteScalar(varargin)
+        value = NaN;
+        for ii = 1:nargin
+            candidate = varargin{ii};
+            if isnumeric(candidate) && isscalar(candidate) && isfinite(candidate)
+                value = double(candidate);
+                return;
+            end
         end
     end
 
