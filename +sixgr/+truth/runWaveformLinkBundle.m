@@ -2603,6 +2603,18 @@ if localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
 end
 
 planState = sixgr.truth.CoupledTruthRuntime.startSlot(state, cfg, "UL", sweepIdx, sweepCount, dueSlot, nFramesPerPoint, snr_dB);
+pucchDueUEs = sixgr.truth.CoupledTruthRuntime.pucchFeedbackDueUEsRuntime(state, dueSlot);
+if ~isempty(pucchDueUEs)
+    queueLen = numel(sixgr.util.structGet(planState, "ULQueueBits", []));
+    pucchDueUEs = unique(round(double(pucchDueUEs(:))));
+    pucchDueUEs = pucchDueUEs(isfinite(pucchDueUEs) & pucchDueUEs >= 1 & pucchDueUEs <= queueLen);
+    if ~isempty(pucchDueUEs)
+        planState.ULQueueBits(pucchDueUEs) = 0;
+        localAppendRuntimeLog("INFO", ...
+            "Deferred same-slot PUSCH candidates with due HARQ-ACK PUCCH before UL scheduling: control_slot=%d due_slot=%d deferred_ues=%d policy=avoid_standalone_pusch_without_uci_on_pusch_multiplexing.", ...
+            round(double(controlSlot)), round(double(dueSlot)), numel(pucchDueUEs));
+    end
+end
 [planState, grants, info] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(planState, cfg, "UL"); %#ok<ASGLU>
 localAppendRuntimeLog("INFO", ...
     "Coupled UL K2 preschedule complete: control_slot=%d due_slot=%d k2=%d active=%d granted=%d grants=%d.", ...
@@ -2628,6 +2640,16 @@ if isempty(qualifiedGrants)
     localAppendRuntimeLog("INFO", ...
         "Coupled UL K2 preschedule produced no executable grants after PDCCH: control_slot=%d due_slot=%d.", ...
         round(double(controlSlot)), round(double(dueSlot)));
+    return;
+end
+[qualifiedGrants, pucchCollisionBlocked] = sixgr.truth.CoupledTruthRuntime.excludeULGrantsCollidingWithPUCCHRuntime( ...
+    state, qualifiedGrants, dueSlot);
+if istable(pucchCollisionBlocked) && ~isempty(pucchCollisionBlocked)
+    localAppendRuntimeLog("INFO", ...
+        "Suppressed standalone PUSCH grants that collide with due HARQ-ACK PUCCH: control_slot=%d due_slot=%d blocked=%d remaining=%d policy=avoid_standalone_pusch_without_uci_on_pusch_multiplexing.", ...
+        round(double(controlSlot)), round(double(dueSlot)), height(pucchCollisionBlocked), numel(qualifiedGrants));
+end
+if isempty(qualifiedGrants)
     return;
 end
 for gi = 1:numel(qualifiedGrants)

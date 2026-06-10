@@ -290,6 +290,15 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.appendPUCCHGrantTraceFromFeedback(state, feedbackRow);
     end
 
+    function [grantsOut, blockedT] = excludeULGrantsCollidingWithPUCCHRuntime(state, grantsIn, dueSlot)
+        [grantsOut, blockedT] = sixgr.truth.CoupledTruthRuntime.excludeULGrantsCollidingWithPUCCHImpl(state, grantsIn, dueSlot);
+    end
+
+    function dueUEs = pucchFeedbackDueUEsRuntime(state, dueSlot)
+        [dueUEs, ~, ~, ~, ~] = sixgr.truth.CoupledTruthRuntime.collectPUCCHDueIdentityImpl(state, dueSlot);
+        dueUEs = unique(dueUEs(isfinite(dueUEs) & dueUEs >= 1));
+    end
+
     function [state, grant, allowExecution] = applyPDCCHGrantTrial(state, grant, direction, trialT)
         [state, grant, allowExecution] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrialImpl(state, grant, direction, trialT);
     end
@@ -5892,6 +5901,129 @@ methods(Static, Access=private)
         end
         observationCount = sum(counts(valid), "omitnan");
         failureRate = sum(rates(valid) .* counts(valid), "omitnan") / max(observationCount, 1);
+    end
+
+    function [dueUEs, dueRNTIs, dueSourceSlots, dueGrantIds, dueEvidenceSources] = collectPUCCHDueIdentityImpl(state, dueSlot)
+        dueUEs = [];
+        dueRNTIs = [];
+        dueSourceSlots = [];
+        dueGrantIds = strings(0, 1);
+        dueEvidenceSources = strings(0, 1);
+        dueSlot = round(double(dueSlot));
+        if ~(isfinite(dueSlot) && dueSlot >= 1)
+            return;
+        end
+
+        pendingFeedback = sixgr.util.structGet(state, "PendingFeedbackTable", table());
+        if istable(pendingFeedback) && ~isempty(pendingFeedback)
+            for ri = 1:height(pendingFeedback)
+                row = pendingFeedback(ri, :);
+                rowDueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DueSlot", ...
+                    sixgr.truth.CoupledTruthRuntime.rowValue(row, "ScheduledAbsoluteSlot", NaN)));
+                if ~(isfinite(rowDueSlot) && abs(rowDueSlot - dueSlot) < 1e-9)
+                    continue;
+                end
+                if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Processed", false))
+                    continue;
+                end
+                uciType = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UCIType", "harq_ack"))));
+                if strlength(uciType) > 0 && ~contains(uciType, "harq")
+                    continue;
+                end
+                dueUEs(end + 1, 1) = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UEIndex", NaN)); %#ok<AGROW>
+                dueRNTIs(end + 1, 1) = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)); %#ok<AGROW>
+                dueSourceSlots(end + 1, 1) = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SourceSlot", NaN)); %#ok<AGROW>
+                dueGrantIds(end + 1, 1) = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHGrantId", "")); %#ok<AGROW>
+                dueEvidenceSources(end + 1, 1) = "pending_feedback_table"; %#ok<AGROW>
+            end
+        end
+
+        pucchGrants = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
+        if istable(pucchGrants) && ~isempty(pucchGrants)
+            for ri = 1:height(pucchGrants)
+                row = pucchGrants(ri, :);
+                rowDueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ScheduledAbsoluteSlot", ...
+                    sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", NaN)));
+                if ~(isfinite(rowDueSlot) && abs(rowDueSlot - dueSlot) < 1e-9)
+                    continue;
+                end
+                if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "GrantExecutedFlag", false))
+                    continue;
+                end
+                uciType = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UCIType", "harq_ack"))));
+                if strlength(uciType) > 0 && ~contains(uciType, "harq")
+                    continue;
+                end
+                dueUEs(end + 1, 1) = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UEIndex", NaN)); %#ok<AGROW>
+                dueRNTIs(end + 1, 1) = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)); %#ok<AGROW>
+                dueSourceSlots(end + 1, 1) = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SourceSlot", NaN)); %#ok<AGROW>
+                dueGrantIds(end + 1, 1) = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHGrantId", "")); %#ok<AGROW>
+                dueEvidenceSources(end + 1, 1) = "pucch_grant_trace"; %#ok<AGROW>
+            end
+        end
+    end
+
+    function [grantsOut, blockedT] = excludeULGrantsCollidingWithPUCCHImpl(state, grantsIn, dueSlot)
+        grantsOut = grantsIn;
+        blockedPrototype = sixgr.truth.CoupledTruthRuntime.emptyPUSCHPUCCHCollisionRow();
+        blockedT = struct2table(repmat(blockedPrototype, 0, 1));
+        if ~(isstruct(grantsIn) && ~isempty(grantsIn))
+            return;
+        end
+        [dueUEs, dueRNTIs, dueSourceSlots, dueGrantIds, dueEvidenceSources] = ...
+            sixgr.truth.CoupledTruthRuntime.collectPUCCHDueIdentityImpl(state, dueSlot);
+        if isempty(dueUEs) && isempty(dueRNTIs)
+            return;
+        end
+        dueSlot = round(double(dueSlot));
+
+        keep = true(1, numel(grantsIn));
+        blockedRows = repmat(blockedPrototype, max(1, numel(grantsIn)), 1);
+        blockedCount = 0;
+        for gi = 1:numel(grantsIn)
+            grant = grantsIn(gi);
+            ueIdx = double(sixgr.util.structGet(grant, "UEIndex", NaN));
+            rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
+            if ~(isfinite(ueIdx) && ueIdx >= 1) && isfinite(rnti)
+                ueIdx = sixgr.truth.CoupledTruthRuntime.resolveUEIndexFromRNTI(state, rnti);
+            end
+            match = false(size(dueUEs));
+            if isfinite(ueIdx)
+                match = match | (isfinite(dueUEs) & abs(dueUEs - ueIdx) < 1e-9);
+            end
+            if isfinite(rnti)
+                match = match | (isfinite(dueRNTIs) & abs(dueRNTIs - rnti) < 1e-9);
+            end
+            matchIdx = find(match, 1, "first");
+            if isempty(matchIdx)
+                continue;
+            end
+            keep(gi) = false;
+            blockedCount = blockedCount + 1;
+            blockedRows(blockedCount).Direction = "UL";
+            blockedRows(blockedCount).DueSlot = double(dueSlot);
+            blockedRows(blockedCount).UEIndex = double(ueIdx);
+            blockedRows(blockedCount).RNTI = double(rnti);
+            blockedRows(blockedCount).PUSCHGrantSlot = double(sixgr.util.structGet(grant, "ScheduledAbsoluteSlot", ...
+                sixgr.util.structGet(grant, "Slot", NaN)));
+            blockedRows(blockedCount).PUCCHSourceSlot = double(dueSourceSlots(matchIdx));
+            blockedRows(blockedCount).PUCCHGrantId = char(dueGrantIds(matchIdx));
+            blockedRows(blockedCount).CollisionEvidenceSource = char(dueEvidenceSources(matchIdx));
+            blockedRows(blockedCount).Reason = "harq_ack_pucch_due_same_slot_same_ue";
+            blockedRows(blockedCount).Policy = "avoid_standalone_pusch_without_uci_on_pusch_multiplexing";
+        end
+
+        grantsOut = grantsIn(keep);
+        if blockedCount > 0
+            blockedT = struct2table(blockedRows(1:blockedCount), "AsArray", true);
+        end
+    end
+
+    function row = emptyPUSCHPUCCHCollisionRow()
+        row = struct( ...
+            "Direction", "", "DueSlot", NaN, "UEIndex", NaN, "RNTI", NaN, ...
+            "PUSCHGrantSlot", NaN, "PUCCHSourceSlot", NaN, "PUCCHGrantId", "", ...
+            "CollisionEvidenceSource", "", "Reason", "", "Policy", "");
     end
 
     function row = emptyHARQTimelineRow()
