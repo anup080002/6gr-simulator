@@ -9,6 +9,11 @@ ip.addParameter("Direction", "DL", @(s) ischar(s) || isstring(s));
 ip.addParameter("ReceivedGrid", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("ReferenceIndices", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("ReferenceSymbols", [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter("PostEqSINR_dB", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("PostEqSINRSource", "", @(s) ischar(s) || isstring(s));
+ip.addParameter("PostEqSINRValueRole", "", @(s) ischar(s) || isstring(s));
+ip.addParameter("PostEqSINRValueStatus", "", @(s) ischar(s) || isstring(s));
+ip.addParameter("PostEqSINRNAReason", "", @(s) ischar(s) || isstring(s));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -58,12 +63,32 @@ end
 
 [measuredSINR_dB, measuredSINRSource, measuredSINRStatus, pilotNMSE_dB, perRBSINR_dB] = ...
     localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols, cfg);
-if isfinite(measuredSINR_dB)
+[postEqSINR_dB, postEqSINRSource, postEqSINRRole, postEqSINRStatus, postEqSINRReason] = ...
+    localResolveSchedulerEligiblePostEqSINR(opt);
+if isfinite(postEqSINR_dB)
+    sinr_dB = double(postEqSINR_dB);
+    sinrSource = string(postEqSINRSource);
+    sinrRole = string(postEqSINRRole);
+    sinrStatus = string(postEqSINRStatus);
+    sinrReason = string(postEqSINRReason);
+elseif isfinite(measuredSINR_dB)
     sinr_dB = double(measuredSINR_dB);
-    sinrSource = string(measuredSINRSource);
+    sinrSource = "measured_csi_rs_sinr";
+    sinrRole = "measured_csi_rs_cqi_input";
+    if contains(lower(string(measuredSINRStatus)), "dynamic_range_limited")
+        sinrStatus = "OK_dynamic_range_limited";
+    else
+        sinrStatus = "OK";
+    end
+    sinrReason = "";
 else
     sinr_dB = NaN;
     sinrSource = "reference_signal_sinr_unavailable";
+    sinrRole = "unavailable";
+    sinrStatus = "unavailable";
+    sinrReason = "reference_signal_sinr_not_available_from_receiver_evidence";
+end
+if ~isfinite(measuredSINR_dB)
     measuredSINRStatus = "unavailable_missing_reference_signal_measurement";
 end
 
@@ -95,8 +120,12 @@ else
     rsrqSource = "measurement_unavailable";
     rsrqStatus = "unavailable_missing_rsrp_or_rssi";
 end
-if isfinite(measuredSINR_dB)
-    cqiInput = struct("WidebandSINR_dB", measuredSINR_dB, "PerRBSINR_dB", double(perRBSINR_dB));
+if isfinite(sinr_dB)
+    cqiInput = struct( ...
+        "WidebandSINR_dB", sinr_dB, ...
+        "SINRSource", char(sinrSource), ...
+        "SINRValueRole", char(sinrRole), ...
+        "SINRValueStatus", char(sinrStatus));
     cqiFeedback = sixgr.link.resolveWidebandCQI(cqiInput, cfg, direction);
     cqi = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(cqiFeedback, "WidebandCQI", NaN)));
     cqiFeedback.WidebandCQI = double(cqi);
@@ -107,7 +136,7 @@ else
         "EffectiveSINRMethod", "measurement_required_unavailable");
     cqi = NaN;
 end
-subband = localComputeSubbandCSI(hEst, nVar, cfg, direction, perRBSINR_dB);
+subband = localComputeSubbandCSI(hEst, nVar, cfg, direction, []);
 
 csi = struct();
 csi.CQI = localReportedScalar(cqi, reportCQI);
@@ -163,6 +192,18 @@ csi.RSSIValueStatus = char(rssiStatus);
 csi.RSRQSource = char(rsrqSource);
 csi.RSRQValueStatus = char(rsrqStatus);
 csi.SINRSource = char(sinrSource);
+csi.SINRValueRole = char(sinrRole);
+csi.SINRValueStatus = char(sinrStatus);
+csi.SINRNAReason = char(sinrReason);
+csi.PostEqSINR_dB = double(postEqSINR_dB);
+csi.PostEqSINRSource = char(postEqSINRSource);
+csi.PostEqSINRValueRole = char(postEqSINRRole);
+csi.PostEqSINRValueStatus = char(postEqSINRStatus);
+csi.PostEqSINRNAReason = char(postEqSINRReason);
+csi.PilotSINR_dB = double(measuredSINR_dB);
+csi.PilotSINRSource = char(string(measuredSINRSource));
+csi.PilotSINRValueStatus = char(string(measuredSINRStatus));
+csi.PilotSINRValueRole = "diagnostic_reference_signal_quality_not_for_scheduling";
 csi.ModelEffectiveSINR_dB = double(modelSinr_dB);
 csi.ReferenceMeasuredSINR_dB = double(measuredSINR_dB);
 csi.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
@@ -203,6 +244,11 @@ info.ModelEffectiveSINR_dB = double(modelSinr_dB);
 info.MeasuredReferenceSINR_dB = double(measuredSINR_dB);
 info.MeasuredReferenceSINRSource = char(string(measuredSINRSource));
 info.MeasuredReferenceSINRStatus = char(string(measuredSINRStatus));
+info.PostEqSINR_dB = double(postEqSINR_dB);
+info.PostEqSINRSource = char(postEqSINRSource);
+info.PostEqSINRValueRole = char(postEqSINRRole);
+info.PostEqSINRValueStatus = char(postEqSINRStatus);
+info.PostEqSINRNAReason = char(postEqSINRReason);
 info.ReferencePilotNMSE_dB = double(pilotNMSE_dB);
 info.PerRBSINR_dB = double(perRBSINR_dB);
 info.CQIFeedback = cqiFeedback;
@@ -212,6 +258,44 @@ info.Hints = struct( ...
     "AddPMISelection", true, ...
     "AddRISelection", true, ...
     "AddCRISelection", true);
+end
+
+function [value, source, role, status, reason] = localResolveSchedulerEligiblePostEqSINR(opt)
+value = double(opt.PostEqSINR_dB);
+source = string(opt.PostEqSINRSource);
+role = string(opt.PostEqSINRValueRole);
+status = string(opt.PostEqSINRValueStatus);
+reason = string(opt.PostEqSINRNAReason);
+if strlength(strtrim(source)) == 0
+    source = "post_equalization_sinr_from_equalizer_channel_estimate";
+end
+if strlength(strtrim(role)) == 0
+    role = "measured_post_equalization_scheduling_input";
+end
+if strlength(strtrim(status)) == 0
+    status = "unavailable";
+end
+if ~(isscalar(value) && isfinite(value)) || ~localSINRProvenanceIsSchedulerEligible(source, role)
+    value = NaN;
+    if status == "OK"
+        status = "rejected";
+    elseif status ~= "failed"
+        status = "unavailable";
+    end
+    if strlength(strtrim(reason)) == 0
+        reason = "post_equalization_sinr_missing_or_not_scheduler_eligible";
+    end
+    return;
+end
+status = "OK";
+reason = "";
+end
+
+function tf = localSINRProvenanceIsSchedulerEligible(source, role)
+token = lower(strjoin([string(source), string(role)], " "));
+blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep"];
+tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
 end
 
 function direction = localNormalizeDirection(rawDirection)

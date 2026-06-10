@@ -87,6 +87,7 @@ BROWSER_EXECUTION_MODE_NOTES = {
 }
 FULLY_WIRED_BROWSER_EXECUTION_MODE = "LLS"
 MAX_TABLE_PREVIEW_ROWS = 200
+MAX_TABLE_FULL_VIEW_ROWS = 50000
 MAX_LIVE_LOG_ROWS = 160
 MAX_ACTIVITY_POINTS = 200
 POLL_INTERVAL_MS = 1000
@@ -120,6 +121,7 @@ LIVE_PAYLOAD_CACHE: dict[int, dict[str, Any]] = {}
 CACHED_PAYLOAD_VERSION: dict[int, str] = {}
 SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
 PHY_GRID_PAYLOAD_CACHE: dict[tuple[int, int, str], dict[str, Any]] = {}
+TABLE_BROWSER_PAYLOAD_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
 DB_POOL_SIZE = max(8, int(os.environ.get("MYSQL_POOL_SIZE", "32") or "32"))
 STALE_RUNNING_MINUTES = max(5, int(os.environ.get("SIXGR_STALE_RUNNING_MINUTES", "15") or "15"))
 PROCESS_HEARTBEAT_STALL_MINUTES = max(
@@ -254,6 +256,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
         CACHED_PAYLOAD_VERSION.clear()
         SECTION_PAYLOAD_CACHE.clear()
         PHY_GRID_PAYLOAD_CACHE.clear()
+        TABLE_BROWSER_PAYLOAD_CACHE.clear()
         build_chart_payload_for_artifact.cache_clear()
         fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
@@ -267,6 +270,9 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     for key in list(PHY_GRID_PAYLOAD_CACHE.keys()):
         if int(key[0]) == int(run_id):
             PHY_GRID_PAYLOAD_CACHE.pop(key, None)
+    for key in list(TABLE_BROWSER_PAYLOAD_CACHE.keys()):
+        if int(key[0]) == int(run_id):
+            TABLE_BROWSER_PAYLOAD_CACHE.pop(key, None)
     # Artifact ids are immutable per DB row, but per-run rematerialization,
     # deletion, or relaunch can invalidate cached bytes/previews that were
     # generated from an older artifact set. Clear them eagerly so the browser
@@ -2192,11 +2198,15 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("reference_signals.srs.periodicity", "reference_signals.srs_periodicity_ms", "identity"),
     ("pdcch.enabled", "control.pdcch_enabled", "identity"),
     ("pdcch.coreset_id", "control.coreset_id", "identity"),
+    ("pdcch.coreset_duration_symbols", "control.coreset_duration", "identity"),
     ("pdcch.aggregation_levels", "control.aggregation_levels", "identity"),
+    ("pdsch.start_symbol", "pdsch6gr.start_symbol", "identity"),
+    ("pdsch.num_symbols", "pdsch6gr.num_symbols", "identity"),
     ("pucch.enabled", "control.pucch_enabled", "identity"),
     ("prach.enabled", "random_access.enabled", "identity"),
     ("prach.enable", "random_access.enabled", "identity"),
     ("prach.format", "random_access.prach_format", "identity"),
+    ("prach.configuration_index", "random_access.configuration_index", "identity"),
     ("prach.zero_correlation_zone", "random_access.zero_correlation_zone", "identity"),
     ("prach.detection_threshold_mode", "random_access.detection_threshold_mode", "identity"),
     ("prach.sequence_family", "random_access.prach_sequence_family", "identity"),
@@ -2969,6 +2979,12 @@ def scenario_catalog_label(scenario_name: str) -> str:
         return str(scenario_name)
 
 
+def scenario_dropdown_label(scenario_name: str) -> str:
+    """Cheap label for page chrome; do not resolve every scenario contract here."""
+    stem = Path(str(scenario_name or "")).stem
+    return humanize_key(stem or scenario_name)
+
+
 def resolve_requested_launch_payload(
     scenario_name: str,
     payload: dict[str, Any] | None = None,
@@ -3388,13 +3404,10 @@ def contract_materialization_is_current(
         return False
     if not rows:
         return False
-    row = rows[-1]
-    return (
-        str(row.get("tables_missing") or "0").strip() in {"0", ""}
-        and str(row.get("charts_missing") or "0").strip() in {"0", ""}
-        and str(row.get("missing_table_paths") or "[]").strip() in {"", "[]"}
-        and str(row.get("missing_chart_names") or "[]").strip() in {"", "[]"}
-    )
+    # Missing rows in the coverage artifact can be an honest "not published by
+    # this run" state.  The source watermark above is what tells us whether new
+    # runtime artifacts arrived and materialization should be attempted again.
+    return True
 
 
 def artifact_url(artifact_id: int, download: bool = False) -> str:
@@ -4067,12 +4080,25 @@ def build_table_preview_payload(artifact_id: int) -> dict[str, Any] | None:
     if meta is None:
         return None
     header, rows = load_cached_csv_preview(int(artifact_id), MAX_TABLE_PREVIEW_ROWS)
-    return {"meta": meta, "header": header, "rows": rows}
+    return {
+        "meta": meta,
+        "header": header,
+        "rows": rows,
+        "row_count": count_cached_csv_data_rows(int(artifact_id)),
+        "row_limit": MAX_TABLE_PREVIEW_ROWS,
+    }
 
 
 @lru_cache(maxsize=512)
 def load_cached_csv_preview(artifact_id: int, max_rows: int) -> tuple[list[str], list[list[str]]]:
     return parse_csv_bytes(fetch_artifact_bytes(int(artifact_id)), max_rows=max_rows)
+
+
+@lru_cache(maxsize=512)
+def count_cached_csv_data_rows(artifact_id: int) -> int:
+    text = fetch_artifact_bytes(int(artifact_id)).decode("utf-8", errors="replace")
+    total = sum(1 for _ in csv.reader(io.StringIO(text)))
+    return max(0, total - 1)
 
 
 @lru_cache(maxsize=1024)
@@ -5042,6 +5068,7 @@ def build_artifact_descriptor(art: dict[str, Any]) -> dict[str, Any]:
     }
     if art["artifact_kind"] == "table_csv":
         descriptor["view_url"] = f"/artifact/{art['artifact_id']}/table"
+        descriptor["full_table_view_url"] = f"/artifact/{art['artifact_id']}/table?rows=all"
     else:
         descriptor["view_url"] = artifact_url(int(art["artifact_id"]), download=False)
     return attach_plot_bucket(descriptor)
@@ -5362,16 +5389,62 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
 
 
 def build_table_browser_payload(run_id: int) -> dict[str, Any]:
-    live = build_live_payload(run_id, lite=False)
-    items = sorted(
-        list(live.get("tables_all") or []),
-        key=lambda item: str(item.get("logical_path") or "").lower(),
+    run_row = fetch_run(run_id)
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    inserted_logs = sync_runtime_log_for_run(run_row)
+    if inserted_logs:
+        run_row = fetch_run(run_id) or run_row
+
+    artifacts = fetch_artifacts(run_id)
+    latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
+    artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
+    cache_key = (int(run_id), artifact_version)
+    cached = TABLE_BROWSER_PAYLOAD_CACHE.get(cache_key)
+    if cached is not None:
+        return copy.deepcopy(cached)
+
+    feature_policy = extract_run_feature_policy(run_row)
+    status_text = str(run_row.get("status_text") or "").strip().lower()
+    should_materialize_contract = (
+        is_terminal_status(status_text)
+        or (
+            status_text == "running"
+            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        )
     )
-    return {
+    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
+        contract_materializer.materialize_run_contract_artifacts(
+            run_row,
+            artifacts,
+            fetch_artifact_bytes=fetch_artifact_bytes,
+            db_connection_factory=db_connection,
+            feature_policy=feature_policy,
+            lock_timeout_seconds=0,
+        )
+        artifacts = fetch_artifacts(run_id)
+        latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
+        artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
+
+    public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
+    sorted_artifacts = sorted(public_artifacts, key=artifact_sort_key)
+    raw_items = [
+        build_artifact_descriptor(art)
+        for art in sorted_artifacts
+        if str(art.get("artifact_kind") or "") == "table_csv"
+    ]
+    items = dedupe_table_descriptors_for_ui(raw_items)
+    payload = {
         "run_id": int(run_id),
         "items": items,
         "table_count": len(items),
+        "raw_table_count": len(raw_items),
+        "suppressed_duplicate_count": max(0, len(raw_items) - len(items)),
+        "artifact_version": artifact_version,
+        "source": "direct_sim_artifacts_table_query",
     }
+    TABLE_BROWSER_PAYLOAD_CACHE[(int(run_id), artifact_version)] = copy.deepcopy(payload)
+    return payload
 
 
 CONTROL_TRIAL_TABLE_BASENAMES = {
@@ -5521,6 +5594,27 @@ def artifact_runtime_family_key(logical_path: str) -> str | None:
     if not path:
         return None
     if path in {
+        "reports/csv/live_dl_scheduler_grants.csv",
+        "packet_flow/csv/live_dl_scheduler_grants.csv",
+        "system/csv/system_scheduler_grants.csv",
+    }:
+        return "scheduler_grants::dl"
+    if path in {
+        "reports/csv/live_ul_scheduler_grants.csv",
+        "packet_flow/csv/live_ul_scheduler_grants.csv",
+    }:
+        return "scheduler_grants::ul"
+    if path in {
+        "reports/csv/initial_access_lifecycle_trace.csv",
+        "control/csv/initial_access_lifecycle_trace.csv",
+    }:
+        return "initial_access_lifecycle_trace"
+    if path in {
+        "reports/csv/slot_trace.csv",
+        "packet_flow/csv/slot_trace.csv",
+    }:
+        return "slot_trace"
+    if path in {
         "reports/csv/live_control_gating_summary.csv",
         "control/csv/control_gating_summary.csv",
     }:
@@ -5543,6 +5637,13 @@ def artifact_runtime_family_key(logical_path: str) -> str | None:
 
 def artifact_canonical_preference_score(logical_path: str) -> int:
     path = str(logical_path or "").strip().lower()
+    if path in {
+        "reports/csv/live_dl_scheduler_grants.csv",
+        "reports/csv/live_ul_scheduler_grants.csv",
+        "reports/csv/initial_access_lifecycle_trace.csv",
+        "reports/csv/slot_trace.csv",
+    }:
+        return 60
     if path == "reports/csv/live_control_gating_summary.csv":
         return 50
     if path == "reports/csv/live_control_gating_state.csv":
@@ -5552,7 +5653,9 @@ def artifact_canonical_preference_score(logical_path: str) -> int:
     if path in CANONICAL_CONTROL_TRIAL_PATHS:
         return 50
     if path.startswith("packet_flow/csv/live_") and "scheduler_grants" in path:
-        return 50
+        return 40
+    if path in {"packet_flow/csv/slot_trace.csv", "control/csv/initial_access_lifecycle_trace.csv"}:
+        return 10
     if path.startswith("control/csv/"):
         return 10
     if path == "air_interface/reports/csv/live_stage_status.csv":
@@ -6282,8 +6385,8 @@ def load_first_available_csv_rows(artifacts: list[dict[str, Any]], logical_paths
 
 PHY_GRID_CHANNEL_SPECS: dict[str, dict[str, Any]] = {
     "pbch_trials": {"channel": "SSB/PBCH", "direction": "DL", "symbol_start": 0, "symbol_count": 4, "prb_start": 0, "prb_count": 20},
-    "pdcch_trials": {"channel": "PDCCH", "direction": "DL", "symbol_start": 0, "symbol_count": 3, "prb_start": 0, "prb_count": 48},
-    "dl_trials": {"channel": "PDSCH", "direction": "DL", "symbol_start": 0, "symbol_count": 14, "prb_start": 0, "prb_count": None},
+    "pdcch_trials": {"channel": "PDCCH", "direction": "DL", "symbol_start": 0, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
+    "dl_trials": {"channel": "PDSCH", "direction": "DL", "symbol_start": 2, "symbol_count": 12, "prb_start": 0, "prb_count": None},
     "trs_trials": {"channel": "TRS", "direction": "DL", "symbol_start": 10, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
     "prach_trials": {"channel": "PRACH", "direction": "UL", "symbol_start": 0, "symbol_count": 6, "prb_start": 0, "prb_count": 12},
     "ul_trials": {"channel": "PUSCH", "direction": "UL", "symbol_start": 0, "symbol_count": 14, "prb_start": 0, "prb_count": None},
@@ -6424,6 +6527,8 @@ def build_phy_event(
     if not math.isfinite(prb_count):
         configured = spec.get("prb_count", None)
         prb_count = float(configured) if configured is not None else float(nrb)
+    symbol_start_present = first_present_value(row, ["SymbolStart", "StartSymbol", "StartSymbolIndex", "FirstSymbol"], "")
+    symbol_count_present = first_present_value(row, ["NumSymbols", "SymbolCount", "SymbolLength", "DurationSymbols", "L"], "")
     symbol_start = first_present_number(
         row,
         ["SymbolStart", "StartSymbol", "StartSymbolIndex", "FirstSymbol"],
@@ -6443,6 +6548,9 @@ def build_phy_event(
     direction = str(first_present_value(row, ["Direction", "direction", "LinkDirection", "Duplex"], spec.get("direction") or ""))
     crc_value = first_present_value(row, ["CRCPass", "CRCOK", "CRC", "DecodeSuccess", "DetectionSuccess", "Pass"], "")
     status_value = first_present_value(row, ["Status", "DecodeStatus", "DetectionStatus", "ResultStatus", "SRSValidityState"], "")
+    source_note = derived_source_note or "runtime_csv_row"
+    if symbol_start_present in (None, "") or symbol_count_present in (None, ""):
+        source_note = f"{source_note};symbol_span_from_resolved_frame_fallback"
     return {
         "slot": int(slot),
         "direction": direction,
@@ -6457,11 +6565,48 @@ def build_phy_event(
         "crc": str(crc_value or ""),
         "mcs": first_present_value(row, ["MCS", "MCSIndex", "ScheduledMCS", "SelectedMCS"], ""),
         "cqi": first_present_value(row, ["WidebandCQI", "CQI", "CQIIndex"], ""),
-        "sinr_dB": first_present_value(row, ["MeasuredTrialSINR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB"], ""),
+        "sinr_dB": first_present_value(row, ["PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB"], ""),
         "rsrp_dBm": first_present_value(row, ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], ""),
         "source_artifact": selected_path,
-        "source_note": derived_source_note or "runtime_csv_row",
+        "source_note": source_note,
     }
+
+
+def phy_grid_dynamic_specs(cfg: dict[str, Any], nrb: int, symbols_per_slot: int) -> dict[str, dict[str, Any]]:
+    specs = copy.deepcopy(PHY_GRID_CHANNEL_SPECS)
+    coreset_symbols = bounded_int(
+        path_get(
+            cfg,
+            "phy.frameStructure.CORESETDuration",
+            path_get(cfg, "phy.pdcch.coreset.duration", path_get(cfg, "control.coreset_duration", 2)),
+        ),
+        2,
+        1,
+        max(1, min(3, symbols_per_slot)),
+    )
+    pdsch_start = bounded_int(
+        path_get(
+            cfg,
+            "phy.frameStructure.PDSCHStartSymbol",
+            path_get(cfg, "phy.pdsch.startSymbol", coreset_symbols),
+        ),
+        coreset_symbols,
+        1,
+        max(1, symbols_per_slot - 1),
+    )
+    specs["pdcch_trials"]["symbol_count"] = coreset_symbols
+    specs["pdcch_trials"]["prb_count"] = min(max(nrb, 1), int(specs["pdcch_trials"].get("prb_count") or 48))
+    specs["dl_trials"]["symbol_start"] = pdsch_start
+    specs["dl_trials"]["symbol_count"] = max(1, symbols_per_slot - pdsch_start)
+    prach_start = coerce_numeric(path_get(cfg, "phy.frameStructure.PRACHStartSymbol", path_get(cfg, "phy.prach.startSymbol", None)))
+    prach_len = coerce_numeric(path_get(cfg, "phy.frameStructure.PRACHDurationSymbols", path_get(cfg, "phy.prach.durationSymbols", None)))
+    if prach_start is not None and math.isfinite(float(prach_start)):
+        specs["prach_trials"]["symbol_start"] = max(0, min(symbols_per_slot - 1, int(round(float(prach_start)))))
+    if prach_len is not None and math.isfinite(float(prach_len)):
+        specs["prach_trials"]["symbol_count"] = max(1, min(symbols_per_slot, int(round(float(prach_len)))))
+    specs["srs_trials"]["symbol_start"] = max(0, symbols_per_slot - 1)
+    specs["ul_trials"]["symbol_count"] = symbols_per_slot
+    return specs
 
 
 def add_reference_signal_overlay(
@@ -6511,8 +6656,16 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             "resolved_runtime_view.active_grid_num_rbs",
             path_get(
                 cfg,
-                "phy.carrier.NSizeGrid",
-                path_get(cfg, "frequency.n_size_grid", path_get(cfg, "resource_grid.num_rbs", 273)),
+                "phy.numerology.activeGridNumRBs",
+                path_get(
+                    cfg,
+                    "phy.frameStructure.NRB",
+                    path_get(
+                        cfg,
+                        "phy.carrier.NSizeGrid",
+                        path_get(cfg, "frequency.n_size_grid", path_get(cfg, "resource_grid.num_rbs", 273)),
+                    ),
+                ),
             ),
         ),
         273,
@@ -6540,10 +6693,11 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         )
         or ""
     )
+    channel_specs = phy_grid_dynamic_specs(cfg, nrb, symbols_per_slot)
     table_rows: dict[str, list[dict[str, Any]]] = {}
     table_meta: dict[str, dict[str, Any]] = {}
     for table_key, spec in CANONICAL_RUNTIME_ARTIFACT_OWNERS.items():
-        if table_key not in PHY_GRID_CHANNEL_SPECS:
+        if table_key not in channel_specs:
             continue
         rows, meta = select_canonical_csv_rows(
             artifacts,
@@ -6596,7 +6750,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
 
     events: list[dict[str, Any]] = []
     for table_key, rows in table_rows.items():
-        spec = PHY_GRID_CHANNEL_SPECS.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
+        spec = channel_specs.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
         selected_path = str(table_meta.get(table_key, {}).get("selected_logical_path") or "")
         for row in rows:
             event_ue = phy_grid_ue_value(row)
@@ -6881,7 +7035,7 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Modulation", "Modulation"),
         ("TargetCodeRate", "TargetCodeRate"),
         ("TBSize_bits", "TBS bits"),
-        ("MeasuredTrialSINR_dB", "Measured SINR dB"),
+        ("PostEqSINR_dB", "Post-eq SINR dB"),
         ("WidebandCQI", "CQI"),
         ("Status", "Status"),
     ],
@@ -6897,7 +7051,7 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Modulation", "Modulation"),
         ("TargetCodeRate", "TargetCodeRate"),
         ("TBSize_bits", "TBS bits"),
-        ("MeasuredTrialSINR_dB", "Measured SINR dB"),
+        ("PostEqSINR_dB", "Post-eq SINR dB"),
         ("WidebandCQI", "CQI"),
         ("Status", "Status"),
     ],
@@ -8576,10 +8730,10 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         )
     notes.append(
         "ConfiguredSNR_dB is retained as resolved scenario operating-point metadata for grouping/progress only; it is not a measured SINR. "
-        "The browser keeps MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured labels and receiver estimates do not masquerade as measured trial SINR."
+        "The browser keeps PostEqSINR_dB and MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured labels and receiver estimates do not masquerade as scheduler-quality SINR."
     )
     notes.append(
-        "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate from Hest and reference-signal residual measurement. "
+        "ReceiverHestSINR_dB is a receiver-side diagnostic from Hest/reference-signal residual measurement and is not a scheduler-quality post-equalization SINR. "
         "DecoderTruthProxySINR_dB is only populated when the runtime emits a real decoder-truth proxy. "
         "SystemLevelSINR_dB is a desired/interference/noise budget estimate for coupled system-level views, and LargeScaleSINR_dB remains a large-scale preview."
     )
@@ -9091,6 +9245,7 @@ def build_runtime_progress_charts(log_rows: list[dict[str, Any]], status_json: d
 MAP_METRIC_SPECS: list[dict[str, str]] = [
     {"key": "CellThroughput_Mbps", "label": "Cell Throughput", "kind": "numeric"},
     {"key": "RSRP_dBm", "label": "RSRP", "kind": "numeric"},
+    {"key": "PostEqWidebandSINR_dB", "label": "Post-Eq SINR", "kind": "numeric"},
     {"key": "ReceiverHestWidebandSINR_dB", "label": "Receiver Hest SINR", "kind": "numeric"},
     {"key": "DecoderTruthProxyWidebandSINR_dB", "label": "Decoder Truth Proxy SINR", "kind": "numeric"},
     {"key": "SystemLevelWidebandSINR_dB", "label": "System-Level SINR Estimate", "kind": "numeric"},
@@ -10084,6 +10239,7 @@ def build_coverage_points(coverage_rows: list[dict[str, Any]]) -> list[dict[str,
             "serving_cell": coerce_numeric(row.get("ServingCell")),
             "serving_site": coerce_numeric(row.get("ServingSite")),
             "serving_sector": coerce_numeric(row.get("ServingSector")),
+            "PostEqWidebandSINR_dB": row.get("PostEqWidebandSINR_dB", row.get("PostEqSINR_dB")),
             "ReceiverHestWidebandSINR_dB": row.get("ReceiverHestWidebandSINR_dB"),
             "DecoderTruthProxyWidebandSINR_dB": row.get("DecoderTruthProxyWidebandSINR_dB", row.get("DecoderTruthProxySINR_dB")),
             "MeasuredWidebandSINR_dB": row.get("MeasuredWidebandSINR_dB"),
@@ -10126,6 +10282,7 @@ def build_coverage_points_from_serving_rows(serving_rows: list[dict[str, Any]]) 
                 "CellThroughput_Mbps": row.get("CellThroughput_Mbps"),
                 "RSRP_dBm": row.get("RSRP_dBm"),
                 "EstimatedWidebandSINR_dB": row.get("EstimatedWidebandSINR_dB"),
+                "PostEqWidebandSINR_dB": row.get("PostEqWidebandSINR_dB", row.get("PostEqSINR_dB")),
                 "ReceiverHestWidebandSINR_dB": row.get("ReceiverHestWidebandSINR_dB"),
                 "DecoderTruthProxyWidebandSINR_dB": row.get("DecoderTruthProxyWidebandSINR_dB", row.get("DecoderTruthProxySINR_dB")),
                 "MeasuredWidebandSINR_dB": row.get("MeasuredWidebandSINR_dB"),
@@ -10169,6 +10326,7 @@ def build_coverage_points_from_measurement_rows(measurement_rows: list[dict[str,
                 "CellThroughput_Mbps": row.get("CellThroughput_Mbps"),
                 "RSRP_dBm": row.get("RSRP_dBm"),
                 "EstimatedWidebandSINR_dB": row.get("EstimatedWidebandSINR_dB"),
+                "PostEqWidebandSINR_dB": row.get("PostEqWidebandSINR_dB", row.get("PostEqSINR_dB")),
                 "ReceiverHestWidebandSINR_dB": row.get("ReceiverHestWidebandSINR_dB"),
                 "DecoderTruthProxyWidebandSINR_dB": row.get("DecoderTruthProxyWidebandSINR_dB", row.get("DecoderTruthProxySINR_dB")),
                 "MeasuredWidebandSINR_dB": row.get("MeasuredWidebandSINR_dB"),
@@ -10242,7 +10400,7 @@ def build_movement_payload(serving_rows: list[dict[str, Any]]) -> dict[str, Any]
                 "ueid": int(ueid),
                 "serving_cell": coerce_numeric(row.get("ServingCell")),
                 "rsrp_dBm": coerce_numeric(row.get("RSRP_dBm")),
-                "sinr_dB": coerce_numeric(row.get("ReceiverHestWidebandSINR_dB")),
+                "sinr_dB": coerce_numeric(row.get("PostEqWidebandSINR_dB", row.get("MeasuredWidebandSINR_dB"))),
                 "system_level_sinr_dB": coerce_numeric(row.get("SystemLevelWidebandSINR_dB", row.get("SystemLevelSINR_dB"))),
                 "cqi": coerce_numeric(row.get("WidebandCQI")),
             }
@@ -10381,7 +10539,7 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         if base_station_id is not None:
             record["base_station_id"] = int(base_station_id)
         configured_snr = coerce_numeric(row.get("ConfiguredSNR_dB"))
-        measured_sinr = coerce_numeric(row.get("MeasuredTrialSINR_dB", row.get("MeasuredWidebandSINR_dB")))
+        measured_sinr = coerce_numeric(row.get("PostEqSINR_dB", row.get("MeasuredTrialSINR_dB", row.get("MeasuredWidebandSINR_dB"))))
         receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestWidebandSINR_dB", row.get("ReceiverHestSINR_dB")))
         system_sinr = coerce_numeric(row.get("SystemLevelWidebandSINR_dB", row.get("SystemLevelSINR_dB")))
         cqi = coerce_numeric(row.get("WidebandCQI"))
@@ -10425,7 +10583,7 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             record["_dl_mcs_sum"] += float(mcs)
             record["_dl_mcs_count"] += 1
         configured_snr = coerce_numeric(row.get("ConfiguredSNR_dB"))
-        measured_trial_sinr = coerce_numeric(row.get("MeasuredTrialSINR_dB", row.get("MeasuredSINR_dB")))
+        measured_trial_sinr = coerce_numeric(row.get("PostEqSINR_dB", row.get("MeasuredTrialSINR_dB", row.get("MeasuredSINR_dB"))))
         receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestSINR_dB"))
         if configured_snr is not None and record["configured_snr_dB"] is None:
             record["configured_snr_dB"] = float(configured_snr)
@@ -10466,7 +10624,7 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             record["_ul_mcs_sum"] += float(mcs)
             record["_ul_mcs_count"] += 1
         configured_snr = coerce_numeric(row.get("ConfiguredSNR_dB"))
-        measured_trial_sinr = coerce_numeric(row.get("MeasuredTrialSINR_dB", row.get("MeasuredSINR_dB")))
+        measured_trial_sinr = coerce_numeric(row.get("PostEqSINR_dB", row.get("MeasuredTrialSINR_dB", row.get("MeasuredSINR_dB"))))
         receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestSINR_dB"))
         if configured_snr is not None and record["configured_snr_dB"] is None:
             record["configured_snr_dB"] = float(configured_snr)
@@ -10605,7 +10763,7 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         },
         {
             "id": "sinr_dB",
-            "label": "Measured SINR (dB)",
+            "label": "Post-eq SINR (dB)",
             "unit": "dB",
             "source_table": "reports/csv/live_rsrp_serving_trace.csv",
             "fidelity_level": "measurement_backed",
@@ -11720,7 +11878,7 @@ def product_phy_families() -> list[dict[str, Any]]:
             b("prach", "PRACH", "UL Control", "Zadoff-Chu preamble detection with correlation, IFFT, normalization, power combining, noise floor estimate, and peak search.", ["prach.enabled", "random_access.enabled", "prach.sequence_family", "random_access.prach_format"], ["AccessState", "PRACHFailureCount", "CorrelationPeak", "TAEstimate"], ["air_interface/csv/prach_trials.csv", "reports/csv/live_control_gating_state.csv"], ["PRACH IQ", "ZC sequence", "Correlation", "IFFT", "Normalize", "Power combine", "Noise floor", "Peak search", "MAC payload"]),
         ]},
         {"id": "ul_data", "title": "UL Data", "summary": "PUSCH, UL chain, and uplink spatial filtering.", "blocks": [
-            b("pusch", "PUSCH", "UL Data", "DMRS generation, MMSE channel estimation, equalization, RE demapping, layer demap, demodulation, descrambling, HARQ combining, LDPC decode, and CRC.", ["waveform.ul_waveform", "reference_signals.pusch_dmrs.num_ports", "mimo.n_layers", "receiver.use_ideal_timing_sync"], ["MeasuredTrialSINR_dB", "NMSE_dB", "EVM_rms", "DecoderIterations", "CRCPass"], ["air_interface/csv/ul_pusch_trials.csv", "reports/csv/live_tx_rx_stage_trace.csv"], ["UL IQ", "DMRS", "MMSE CE", "Equalize", "RE demap", "Layer demap", "Demodulate", "Descramble", "HARQ combine", "LDPC", "CRC"]),
+            b("pusch", "PUSCH", "UL Data", "DMRS generation, MMSE channel estimation, equalization, RE demapping, layer demap, demodulation, descrambling, HARQ combining, LDPC decode, and CRC.", ["waveform.ul_waveform", "reference_signals.pusch_dmrs.num_ports", "mimo.n_layers", "receiver.use_ideal_timing_sync"], ["PostEqSINR_dB", "MeasuredTrialSINR_dB", "NMSE_dB", "EVM_rms", "DecoderIterations", "CRCPass"], ["air_interface/csv/ul_pusch_trials.csv", "reports/csv/live_tx_rx_stage_trace.csv"], ["UL IQ", "DMRS", "MMSE CE", "Equalize", "RE demap", "Layer demap", "Demodulate", "Descramble", "HARQ combine", "LDPC", "CRC"]),
             b("ul_chain", "UL Chain", "UL Data", "Full uplink path from UE payload through UL IQ samples, channel, receiver, decoder, and MAC payload.", ["simulation.link_direction", "waveform.ul_waveform", "traffic.flowdirection", "control_gating.srs_required"], ["ULTrialsReady", "EffectiveULTrialCount", "ULGoodput_Mbps"], ["air_interface/csv/ul_pusch_trials.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], ["MAC payload", "UL grant", "PUSCH TX", "UL channel", "PUSCH RX", "Decoder", "CRC", "DB artifact"]),
             b("ul_beam_mimo", "UL Spatial Filter / Antenna Combining", "MIMO", "UL beam-weight generation from SRS estimate, user buffer selection, ZF beam generation, spatial filtering, and antenna combining.", ["reference_signals.srs.num_ports", "mimo.n_layers", "antenna_and_array.ue_num_antenna_elements"], ["ULBeamWeightsActive", "SpatialFilterApplied", "InterfererBeamformingAppliedCount"], ["reports/csv/beamforming_runtime_evidence.csv", "reports/csv/channel_array_consistency.csv"], ["FFT", "RE map", "UL spatial filter", "SRS estimate", "User buffer", "ZF weights", "UL beam weights", "Antenna combine"]),
         ]},
@@ -12316,7 +12474,7 @@ def build_product_frontend_page(
     }
     product_json = json.dumps(product_data, ensure_ascii=False).replace("</", "<\\/")
     scenario_options = "\n".join(
-        f'<option value="{html.escape(item)}"{" selected" if item == scenario_name else ""}>{html.escape(scenario_catalog_label(item))}</option>'
+        f'<option value="{html.escape(item)}"{" selected" if item == scenario_name else ""}>{html.escape(scenario_dropdown_label(item))}</option>'
         for item in scenarios
     )
     user_strip = render_user_strip(user_profile)
@@ -13811,12 +13969,17 @@ window.addEventListener('DOMContentLoaded', function () {
     }
     select.innerHTML = items.map(item => `<option value="${esc(item.artifact_id)}"${String(item.artifact_id) === String(state.tableBrowserId) ? ' selected' : ''}>${esc(prettyArtifactLabel(item.logical_path || ''))} [${esc(item.logical_path || '')}]</option>`).join('');
     const selected = items.find(item => String(item.artifact_id) === String(state.tableBrowserId)) || items[0];
-    stats.textContent = `${Number((state.tableBrowserPayload || {}).table_count || items.length)} total truthful tables`;
-    viewer.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(prettyArtifactLabel(selected.logical_path || ''))}</h4><p class="mini-note">${esc(selected.logical_path || '')}</p></div><div><a class="button-link secondary" href="${esc(selected.view_url || selected.download_url || '#')}" target="_blank" rel="noopener noreferrer">Open</a> <a class="button-link secondary" href="${esc(selected.download_url || selected.view_url || '#')}">Download CSV</a></div></div><iframe src="${esc(selected.view_url || '#')}" title="${esc(selected.logical_path || 'table preview')}" style="width:100%;height:min(78vh,920px);border:1px solid var(--line);border-radius:8px;background:#fff;"></iframe>`;
+    const tableCount = Number((state.tableBrowserPayload || {}).table_count || items.length);
+    const suppressedCount = Number((state.tableBrowserPayload || {}).suppressed_duplicate_count || 0);
+    stats.textContent = `${tableCount} canonical truthful tables${suppressedCount ? `, ${suppressedCount} mirror duplicates hidden` : ''}`;
+    const fullViewUrl = selected.full_table_view_url || (selected.view_url ? `${selected.view_url}?rows=all` : '#');
+    viewer.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(prettyArtifactLabel(selected.logical_path || ''))}</h4><p class="mini-note">${esc(selected.logical_path || '')}</p><p class="mini-note">Canonical table view streams the persisted artifact from MySQL; mirror/legacy duplicates are hidden from this selector.</p></div><div><a class="button-link secondary" href="${esc(fullViewUrl)}" target="_blank" rel="noopener noreferrer">Open Full Table</a> <a class="button-link secondary" href="${esc(selected.download_url || selected.view_url || '#')}">Download CSV</a></div></div><iframe src="${esc(fullViewUrl)}" title="${esc(selected.logical_path || 'table preview')}" style="width:100%;height:min(78vh,920px);border:1px solid var(--line);border-radius:8px;background:#fff;"></iframe>`;
   }
   function tablesPage() {
+    state.tableBrowserPayload = null;
+    state.tableBrowserRunId = '';
     title('Tables', 'Truth-backed table viewer for the selected run.');
-    main.innerHTML = `<section class="panel"><h3>Tables</h3>${pageRunSelector('tablesRunSelect', 'Selected Run', {runningOnly: false, note: 'The dropdown lists every real persisted table artifact from the selected run. The viewer below shows the canonical table preview for the selected artifact only.'})}<div class="toolbar"><label>Table<select id="tableBrowserSelect"></select></label><span id="tableBrowserStats" class="mini-note"></span></div><div id="tableBrowserViewer"></div></section>`;
+    main.innerHTML = `<section class="panel"><h3>Tables</h3>${pageRunSelector('tablesRunSelect', 'Selected Run', {runningOnly: false, note: 'The dropdown lists canonical persisted table artifacts from the selected run. The viewer below opens the full stored CSV table when it fits the browser safety limit; Download CSV always retrieves the complete artifact.'})}<div class="toolbar"><label>Table<select id="tableBrowserSelect"></select></label><span id="tableBrowserStats" class="mini-note"></span></div><div id="tableBrowserViewer"></div></section>`;
     renderTableBrowser();
   }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from MySQL. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
@@ -14285,6 +14448,13 @@ applyHomeSearch();
 
 def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profile: dict[str, Any] | None = None) -> bytes:
     selected_run_id = run_id or preferred_live_run_id() or preferred_analysis_run_id() or latest_run_id()
+    initial_payload: dict[str, Any] | None = None
+    initial_error = ""
+    if selected_run_id:
+        try:
+            initial_payload = build_phy_grid_payload(int(selected_run_id), slot_limit=50)
+        except Exception as exc:
+            initial_error = str(exc)
     runs = fetch_runs(limit=100)
     options = []
     for row in runs:
@@ -14300,9 +14470,17 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
         else '<select id="phyRunSelect"><option value="">No runs available</option></select>'
     )
     message_html = f'<section class="panel"><strong>{html.escape(message)}</strong></section>' if message else ""
+    initial_error_html = (
+        f'<section class="panel"><div class="alert warn">Initial PHY-grid load failed: {html.escape(initial_error)}</div></section>'
+        if initial_error
+        else ""
+    )
     initial_run_json = json.dumps(int(selected_run_id or 0))
+    initial_payload_literal = json_for_script(initial_payload) if initial_payload is not None else "null"
+    initial_error_literal = json.dumps(initial_error)
     body = f"""
 {message_html}
+{initial_error_html}
 <section class="panel">
   <h2>50-Slot PHY Grid Monitor</h2>
   <p class="muted">Artifact-backed DL/UL grid view for SSB, PSS, SSS, PBCH, PDCCH, PDSCH, DMRS/PTRS counts, CSI-RS, TRS, PRACH, PUSCH, PUCCH, and SRS. Missing exact RE indices stay explicitly marked instead of being invented.</p>
@@ -14312,7 +14490,10 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
     <label>Slots <input id="phySlotLimit" type="number" value="50" min="1" max="200" style="width:90px"></label>
     <button type="button" id="phyRefresh">Refresh Grid</button>
     <a class="button-link" id="phyRunConfigDownload" href="#">Download Running Config</a>
+    <a class="button-link secondary" id="phyTablesLink" href="/tables">Open Source Tables</a>
+    <a class="button-link secondary" id="phyApiLink" href="#">Open Grid JSON</a>
   </div>
+  <div id="phyLoadState" class="muted">Rendering initial artifact-backed grid...</div>
   <div id="phySummary" class="metric-grid"></div>
   <div class="phy-scroll"><div id="phyGridTable" class="muted">Loading PHY grid...</div></div>
 </section>
@@ -14349,6 +14530,8 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
     extra_script = f"""
 <script>
 const INITIAL_PHY_RUN_ID = {initial_run_json};
+const INITIAL_PHY_PAYLOAD = {initial_payload_literal};
+const INITIAL_PHY_ERROR = {initial_error_literal};
 function escPhy(value) {{
   return String(value ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
 }}
@@ -14371,7 +14554,7 @@ function renderPhyGrid(payload) {{
     byKey.get(key).push(event);
   }});
   const summary = document.getElementById('phySummary');
-  summary.innerHTML = [
+  if (summary) summary.innerHTML = [
     ['Run', `${{payload.run?.run_id || ''}} / ${{payload.run?.status_text || ''}}`],
     ['Scenario', payload.run?.scenario_id || 'n/a'],
     ['Selected UE', grid.selected_ue_id || 'broadcast/all'],
@@ -14379,8 +14562,12 @@ function renderPhyGrid(payload) {{
     ['TDD', grid.tdd_pattern || 'n/a'],
     ['Events', String(grid.event_count || events.length || 0)]
   ].map(([label, value]) => `<div class="metric-card"><div class="metric-value">${{escPhy(value)}}</div><div class="metric-label">${{escPhy(label)}}</div></div>`).join('');
+  const loadState = document.getElementById('phyLoadState');
+  if (loadState) loadState.textContent = `${{events.length}} rendered grid events from ${{(payload.table_status || []).filter(row => Number(row.rows_loaded || 0) > 0).length}} source tables.`;
+  const gridTable = document.getElementById('phyGridTable');
+  if (!gridTable) return;
   if (!lanes.length || !slots.length) {{
-    document.getElementById('phyGridTable').innerHTML = '<p class="warning">No grid events are available yet for this run. The view will populate as MATLAB publishes the runtime CSV artifacts.</p>';
+    gridTable.innerHTML = '<p class="warning">No grid events are available yet for this run. The view will populate as MATLAB publishes the runtime CSV artifacts.</p>';
   }} else {{
     const head = `<tr><th class="phy-slot-head">Channel</th>${{slots.map(slot => `<th class="phy-slot-head">Slot ${{escPhy(slot.slot)}}<br><span class="mini-note">${{escPhy(slot.tdd)}}</span></th>`).join('')}}</tr>`;
     const rows = lanes.map(lane => {{
@@ -14395,19 +14582,27 @@ function renderPhyGrid(payload) {{
       }}).join('');
       return `<tr><th>${{escPhy(lane)}}</th>${{cells}}</tr>`;
     }}).join('');
-    document.getElementById('phyGridTable').innerHTML = `<table class="phy-table">${{head}}${{rows}}</table>`;
+    gridTable.innerHTML = `<table class="phy-table">${{head}}${{rows}}</table>`;
   }}
   const ueSelect = document.getElementById('phyUeSelect');
-  const oldUE = ueSelect.value;
-  ueSelect.innerHTML = '<option value="">Auto / broadcast</option>' + (grid.ue_options || []).map(ue => `<option value="${{escPhy(ue)}}">${{escPhy(ue)}}</option>`).join('');
-  ueSelect.value = oldUE || grid.selected_ue_id || '';
+  if (ueSelect) {{
+    const oldUE = ueSelect.value;
+    ueSelect.innerHTML = '<option value="">Auto / broadcast</option>' + (grid.ue_options || []).map(ue => `<option value="${{escPhy(ue)}}">${{escPhy(ue)}}</option>`).join('');
+    ueSelect.value = oldUE || grid.selected_ue_id || '';
+  }}
   const flowRows = (payload.dataflow || []).slice(0, 500).map(event => `<tr><td>${{escPhy(event.slot)}}</td><td>${{escPhy(event.direction)}}</td><td>${{escPhy(event.channel)}}</td><td>${{escPhy(event.ue_id || '-')}}</td><td>${{escPhy(event.mcs)}}</td><td>${{escPhy(event.cqi)}}</td><td>${{escPhy(event.sinr_dB)}}</td><td>${{escPhy(event.rsrp_dBm)}}</td><td>${{escPhy(event.crc || event.status)}}</td><td>${{escPhy(event.source_artifact)}}</td></tr>`).join('');
-  document.getElementById('phyDataflowTable').innerHTML = `<thead><tr><th>Slot</th><th>Dir</th><th>Block</th><th>UE</th><th>MCS</th><th>CQI</th><th>SINR dB</th><th>RSRP dBm</th><th>Status</th><th>Source</th></tr></thead><tbody>${{flowRows || '<tr><td colspan="10">No UE dataflow rows yet.</td></tr>'}}</tbody>`;
+  const dataflowTable = document.getElementById('phyDataflowTable');
+  if (dataflowTable) dataflowTable.innerHTML = `<thead><tr><th>Slot</th><th>Dir</th><th>Block</th><th>UE</th><th>MCS</th><th>CQI</th><th>SINR dB</th><th>RSRP dBm</th><th>Status</th><th>Source</th></tr></thead><tbody>${{flowRows || '<tr><td colspan="10">No UE dataflow rows yet.</td></tr>'}}</tbody>`;
   const tableRows = (payload.table_status || []).map(row => `<tr><td>${{escPhy(row.table_key)}}</td><td>${{escPhy(row.selection_status)}}</td><td>${{escPhy(row.rows_loaded)}}</td><td>${{escPhy(row.path)}}</td><td>${{escPhy(row.artifact_id || '')}}</td></tr>`).join('');
   const notes = (payload.provenance_notes || []).map(note => `<p class="muted">${{escPhy(note)}}</p>`).join('');
-  document.getElementById('phyProvenance').innerHTML = `${{notes}}<table><thead><tr><th>Table</th><th>Status</th><th>Rows Loaded</th><th>Path</th><th>Artifact</th></tr></thead><tbody>${{tableRows}}</tbody></table>`;
+  const provenance = document.getElementById('phyProvenance');
+  if (provenance) provenance.innerHTML = `${{notes}}<table><thead><tr><th>Table</th><th>Status</th><th>Rows Loaded</th><th>Path</th><th>Artifact</th></tr></thead><tbody>${{tableRows}}</tbody></table>`;
   const dl = document.getElementById('phyRunConfigDownload');
   if (dl && payload.run?.run_id) dl.href = `/run-config/download?run_id=${{payload.run.run_id}}&format=yaml`;
+  const tableLink = document.getElementById('phyTablesLink');
+  if (tableLink && payload.run?.run_id) tableLink.href = `/tables?run_id=${{payload.run.run_id}}`;
+  const apiLink = document.getElementById('phyApiLink');
+  if (apiLink && payload.run?.run_id) apiLink.href = `/api/run/${{payload.run.run_id}}/phy-grid?slot_limit=${{encodeURIComponent(grid.slot_limit || 50)}}&ue_id=${{encodeURIComponent(grid.selected_ue_id || '')}}`;
 }}
 async function refreshPhyGrid() {{
   const runId = document.getElementById('phyRunSelect').value || INITIAL_PHY_RUN_ID;
@@ -14426,8 +14621,19 @@ document.getElementById('phyRunSelect')?.addEventListener('change', () => {{
 }});
 document.getElementById('phyUeSelect')?.addEventListener('change', refreshPhyGrid);
 setInterval(() => refreshPhyGrid().catch(console.error), 5000);
+if (INITIAL_PHY_PAYLOAD && INITIAL_PHY_PAYLOAD.grid) {{
+  try {{
+    renderPhyGrid(INITIAL_PHY_PAYLOAD);
+  }} catch (err) {{
+    console.error('initial PHY grid render failed', err);
+  }}
+}} else if (INITIAL_PHY_ERROR) {{
+  const gridTable = document.getElementById('phyGridTable');
+  if (gridTable) gridTable.innerHTML = `<p class="warning">${{escPhy(INITIAL_PHY_ERROR)}}</p>`;
+}}
 refreshPhyGrid().catch(err => {{
-  document.getElementById('phyGridTable').innerHTML = `<p class="warning">${{escPhy(err.message || err)}}</p>`;
+  const gridTable = document.getElementById('phyGridTable');
+  if (gridTable) gridTable.innerHTML = `<p class="warning">${{escPhy(err.message || err)}}</p>`;
 }});
 </script>
 """
@@ -14591,7 +14797,7 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
     options = []
     for item in scenarios:
         selected_attr = ' selected="selected"' if item == selected_scenario else ""
-        label = scenario_catalog_label(item)
+        label = scenario_dropdown_label(item)
         options.append(f'<option value="{html.escape(item)}"{selected_attr}>{html.escape(label)}</option>')
     latest = latest_run_id()
     latest_result = f'/result?run_id={latest}' if latest else "/result"
@@ -15663,7 +15869,10 @@ def build_result_page(run_id: int | None, run_tag: str | None = None, message: s
 
 
 def build_tables_page(run_id: int | None, user_profile: dict[str, Any] | None = None) -> bytes:
-    return build_result_page(run_id, section="all", user_profile=user_profile)
+    # Tables use the lightweight product shell and fetch run-specific artifact
+    # metadata on demand. Do not embed the full result payload here; that made
+    # /tables slow and duplicated unrelated result-preview data.
+    return build_product_frontend_page("tables", DEFAULT_SCENARIO, user_profile=user_profile)
 
 
 def build_images_page(run_id: int | None, user_profile: dict[str, Any] | None = None) -> bytes:
@@ -15708,18 +15917,37 @@ def build_logs_page(run_id: int | None, user_profile: dict[str, Any] | None = No
     return page_shell(f"Logs {run_id}", body, active="logs", run_id=run_id, user_profile=user_profile)
 
 
-def build_table_preview_page(artifact_id: int, user_profile: dict[str, Any] | None = None) -> bytes:
+def build_table_preview_page(
+    artifact_id: int,
+    user_profile: dict[str, Any] | None = None,
+    *,
+    rows_mode: str = "preview",
+) -> bytes:
     meta = fetch_artifact_meta(artifact_id)
     if meta is None:
         raise KeyError(f"Artifact {artifact_id} was not found.")
-    header, rows = load_cached_csv_preview(int(artifact_id), MAX_TABLE_PREVIEW_ROWS)
+    mode = str(rows_mode or "preview").strip().lower()
+    row_limit = MAX_TABLE_FULL_VIEW_ROWS if mode in {"all", "full", "complete"} else MAX_TABLE_PREVIEW_ROWS
+    header, rows = load_cached_csv_preview(int(artifact_id), row_limit)
+    stored_row_count = count_cached_csv_data_rows(int(artifact_id))
+    displayed_row_count = len(rows)
+    capped = stored_row_count > displayed_row_count
+    mode_label = "Full Table" if mode in {"all", "full", "complete"} and not capped else "Table Preview"
     head_html = "".join(f"<th>{html.escape(cell)}</th>" for cell in header)
     body_rows = ["<tr>" + "".join(f"<td>{html.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows]
+    cap_note = (
+        f"Showing {displayed_row_count} of {stored_row_count} stored data rows "
+        f"(browser safety cap {row_limit}); use Download CSV for the complete artifact."
+        if capped
+        else f"Showing all {stored_row_count} stored data rows."
+    )
     body = f"""
     <section class="panel">
-      <h2>Table Preview</h2>
+      <h2>{html.escape(mode_label)}</h2>
       <p class="muted"><strong>{html.escape(str(meta['logical_path']))}</strong></p>
+      <p class="muted">{html.escape(cap_note)}</p>
       <div class="toolbar">
+        <a class="button-link secondary" href="/artifact/{artifact_id}/table?rows=all">Open Full Table View</a>
         <a class="button-link secondary" href="{artifact_url(artifact_id, download=True)}">Download CSV</a>
         <a class="button-link secondary" href="/result?run_id={int(meta['run_id'])}">Back To Result</a>
       </div>
@@ -16344,6 +16572,7 @@ function refreshMapPanel(mapPayload) {{
       `<strong>UE ${{esc(point.ueid)}}</strong><br>` +
       `Metric: ${{esc(activeMetricSpec.label)}} = ${{esc(metricDisplayValue(point, CURRENT_MAP_METRIC))}}<br>` +
       `RSRP: ${{esc(metricDisplayValue(point, 'RSRP_dBm'))}} dBm<br>` +
+      `${{point.PostEqWidebandSINR_dB !== undefined && point.PostEqWidebandSINR_dB !== null && point.PostEqWidebandSINR_dB !== '' ? `Post-eq SINR: ${{esc(metricDisplayValue(point, 'PostEqWidebandSINR_dB'))}} dB<br>` : ''}}` +
       `Receiver Hest SINR: ${{esc(metricDisplayValue(point, 'ReceiverHestWidebandSINR_dB'))}} dB<br>` +
       `${{point.DecoderTruthProxyWidebandSINR_dB !== undefined && point.DecoderTruthProxyWidebandSINR_dB !== null && point.DecoderTruthProxyWidebandSINR_dB !== '' ? `Decoder-truth proxy SINR: ${{esc(metricDisplayValue(point, 'DecoderTruthProxyWidebandSINR_dB'))}} dB<br>` : ''}}` +
       `${{point.SystemLevelWidebandSINR_dB !== undefined && point.SystemLevelWidebandSINR_dB !== null && point.SystemLevelWidebandSINR_dB !== '' ? `System-level SINR estimate: ${{esc(metricDisplayValue(point, 'SystemLevelWidebandSINR_dB'))}} dB<br>` : ''}}` +
@@ -16376,7 +16605,7 @@ function refreshMapPanel(mapPayload) {{
       `Slot: ${{esc(point.slot)}}<br>` +
       `Serving Cell: ${{esc(point.serving_cell)}}<br>` +
       `RSRP: ${{esc(point.rsrp_dBm)}} dBm<br>` +
-      `Receiver Hest SINR: ${{esc(point.sinr_dB)}} dB<br>` +
+      `Post-eq SINR: ${{esc(point.sinr_dB)}} dB<br>` +
       `System-level SINR estimate: ${{esc(point.system_level_sinr_dB)}} dB<br>` +
       `CQI: ${{esc(point.cqi)}}`
     );
@@ -17199,7 +17428,7 @@ async function refreshMap() {{
   }}
   for (const point of (payload.coverage_points || [])) {{
     const marker = L.circleMarker([point.lat, point.lon], {{ radius: 7, color: '#f59e0b', weight: 1.2, fillColor: '#fbbf24', fillOpacity: 0.28 }});
-    marker.bindPopup(`<strong>UE ${{esc(point.ueid)}}</strong><br>RSRP: ${{esc(point.RSRP_dBm)}} dBm<br>Receiver Hest SINR: ${{esc(point.ReceiverHestWidebandSINR_dB ?? '')}} dB<br>System-level SINR estimate: ${{esc(point.SystemLevelWidebandSINR_dB ?? '')}} dB<br>CQI: ${{esc(point.WidebandCQI)}}`);
+    marker.bindPopup(`<strong>UE ${{esc(point.ueid)}}</strong><br>RSRP: ${{esc(point.RSRP_dBm)}} dBm<br>Post-eq SINR: ${{esc(point.PostEqWidebandSINR_dB ?? '')}} dB<br>Receiver Hest SINR: ${{esc(point.ReceiverHestWidebandSINR_dB ?? '')}} dB<br>System-level SINR estimate: ${{esc(point.SystemLevelWidebandSINR_dB ?? '')}} dB<br>CQI: ${{esc(point.WidebandCQI)}}`);
     marker.addTo(layerRef);
   }}
   for (const item of (payload.markers || [])) {{
@@ -17462,7 +17691,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/artifact/") and parsed.path.endswith("/table"):
                 artifact_id = int(parsed.path.split("/")[2])
-                self.respond_html(build_table_preview_page(artifact_id, user_profile=user_profile))
+                self.respond_html(build_table_preview_page(
+                    artifact_id,
+                    user_profile=user_profile,
+                    rows_mode=params.get("rows", ["preview"])[0],
+                ))
                 return
             if parsed.path.startswith("/artifact/") and parsed.path.endswith("/raw"):
                 artifact_id = int(parsed.path.split("/")[2])
@@ -17562,8 +17795,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 meta = fetch_artifact_meta(artifact_id)
                 if meta is None:
                     raise KeyError(f"Artifact {artifact_id} was not found.")
-                header, rows = load_cached_csv_preview(int(artifact_id), MAX_TABLE_PREVIEW_ROWS)
-                self.respond_json({"meta": meta, "header": header, "rows": rows})
+                if str(params.get("rows", [""])[0]).strip().lower() in {"all", "full", "complete"}:
+                    row_limit = MAX_TABLE_FULL_VIEW_ROWS
+                else:
+                    try:
+                        requested = int(params.get("max_rows", [str(MAX_TABLE_PREVIEW_ROWS)])[0])
+                        row_limit = max(1, min(MAX_TABLE_FULL_VIEW_ROWS, requested))
+                    except Exception:
+                        row_limit = MAX_TABLE_PREVIEW_ROWS
+                header, rows = load_cached_csv_preview(int(artifact_id), row_limit)
+                self.respond_json({
+                    "meta": meta,
+                    "header": header,
+                    "rows": rows,
+                    "row_count": count_cached_csv_data_rows(int(artifact_id)),
+                    "row_limit": row_limit,
+                })
                 return
             if parsed.path.startswith("/api/artifact/") and parsed.path.endswith("/chart"):
                 artifact_id = int(parsed.path.split("/")[3])

@@ -30,6 +30,12 @@ if ~isfinite(margin_dB)
 end
 
 [widebandSINR_dB, perRBSINR_dB] = localExtractSINRInputs(sinrInput);
+[sinrInputAccepted, sinrInputRejectionReason, sinrInputSource, sinrInputRole, sinrInputStatus] = ...
+    localValidateSINRInputProvenance(sinrInput);
+if ~sinrInputAccepted
+    widebandSINR_dB = NaN;
+    perRBSINR_dB = [];
+end
 modeToken = localResolveCQIMode(cfg, direction, ~isempty(perRBSINR_dB));
 [thresholds_dB, thresholdSource, thresholdRole] = localResolveCQIThresholds(cfg, direction, tableToken);
 targetBLER = localResolveTargetBLER(cfg, direction);
@@ -55,7 +61,13 @@ predictedBLER = nan(15, 1);
 operatingPoint_dB = nan(15, 1);
 blerCurveSlope_dB = NaN;
 
-if modeToken == "effective_sinr_bler_lut"
+if ~sinrInputAccepted
+    widebandCQI = NaN;
+    perRBCQI = NaN(size(perRBEffectiveSINR_dB));
+    predictedBLER = nan(15, 1);
+    operatingPoint_dB = nan(15, 1);
+    feedbackMode = "sinr_input_rejected_non_scheduling_provenance";
+elseif modeToken == "effective_sinr_bler_lut"
     [widebandCQI, predictedBLER, operatingPoint_dB, blerCurveSlope_dB] = ...
         localSelectCQIByBLER(selectionSINR_dB, cfg, direction, tableToken, thresholds_dB, targetBLER);
     perRBCQI = double(localSelectCQIByThresholds(perRBEffectiveSINR_dB, operatingPoint_dB));
@@ -94,8 +106,49 @@ feedback = struct( ...
     "ThresholdSource", char(string(thresholdSource)), ...
     "ThresholdValueRole", char(string(thresholdRole)), ...
     "SINRThresholds_dB", double(thresholds_dB), ...
+    "SINRInputAccepted", logical(sinrInputAccepted), ...
+    "SINRInputRejectionReason", char(string(sinrInputRejectionReason)), ...
+    "SINRInputSource", char(string(sinrInputSource)), ...
+    "SINRInputValueRole", char(string(sinrInputRole)), ...
+    "SINRInputValueStatus", char(string(sinrInputStatus)), ...
     "BLERLUTSource", char(string(localResolveBLERLUTSource(cfg, direction, tableToken, thresholds_dB, targetBLER))), ...
     "BLERLUTValueRole", char(string(localResolveBLERLUTValueRole(cfg, direction, tableToken, thresholds_dB, targetBLER))));
+end
+
+function [accepted, reason, source, role, status] = localValidateSINRInputProvenance(sinrInput)
+accepted = true;
+reason = "";
+source = "";
+role = "";
+status = "";
+if ~isstruct(sinrInput)
+    return;
+end
+source = string(sixgr.util.structGet(sinrInput, "SINRSource", ...
+    sixgr.util.structGet(sinrInput, "WidebandSINRSource", ...
+    sixgr.util.structGet(sinrInput, "Source", ""))));
+role = string(sixgr.util.structGet(sinrInput, "SINRValueRole", ...
+    sixgr.util.structGet(sinrInput, "WidebandSINRValueRole", ...
+    sixgr.util.structGet(sinrInput, "ValueRole", ""))));
+status = string(sixgr.util.structGet(sinrInput, "SINRValueStatus", ...
+    sixgr.util.structGet(sinrInput, "WidebandSINRValueStatus", ...
+    sixgr.util.structGet(sinrInput, "ValueStatus", ""))));
+provenanceToken = lower(strjoin([source, role], " "));
+statusToken = lower(strtrim(string(status)));
+if strlength(strtrim(strjoin([source, role, status], " "))) == 0
+    return;
+end
+blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep"];
+if any(contains(provenanceToken, blocked))
+    accepted = false;
+    reason = "sinr_input_role_or_source_is_not_scheduler_eligible";
+    return;
+end
+if contains(statusToken, "unavailable") || contains(statusToken, "failed") || contains(statusToken, "rejected")
+    accepted = false;
+    reason = "sinr_input_status_is_not_ok";
+end
 end
 
 function source = localResolveBLERLUTSource(cfg, direction, tableToken, thresholds_dB, targetBLER)

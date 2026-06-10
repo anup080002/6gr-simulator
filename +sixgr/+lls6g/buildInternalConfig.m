@@ -503,6 +503,14 @@ crcFreeMode = logical(localRequireNested(s, "csi_acquisition_and_reporting.crc_f
 cfg.phy.csi.enable = logical(s.reference_signals.csi_rs_enabled) || reportCSI;
 cfg.phy.csi.feedbackMode = char(csiMode);
 cfg = sixgr.util.structSet(cfg, "phy.csi.channelStateInformationMode", char(csiMode));
+csiAcquisitionMode = string(localGetNested(s, "reference_signals.csi_acquisition_mode", ""));
+operationOrientation = string(localGetNested(s, "reference_signals.operation_orientation", ""));
+cfg = sixgr.util.structSet(cfg, "phy.csi.acquisitionMode", char(csiAcquisitionMode));
+cfg = sixgr.util.structSet(cfg, "phy.csi.operationOrientation", char(operationOrientation));
+cfg = sixgr.util.structSet(cfg, "referenceSignals.csiAcquisitionMode", char(csiAcquisitionMode));
+cfg = sixgr.util.structSet(cfg, "referenceSignals.operationOrientation", char(operationOrientation));
+cfg = sixgr.util.structSet(cfg, "reference_signals.csi_acquisition_mode", char(csiAcquisitionMode));
+cfg = sixgr.util.structSet(cfg, "reference_signals.operation_orientation", char(operationOrientation));
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportCSI", reportCSI);
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportCQI", reportCQI);
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMI", reportPMI);
@@ -939,6 +947,7 @@ if localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
     cfg = sixgr.util.structSet(cfg, "run.useMex", false);
 end
 
+cfg = localApplyFrameStructureEngine(cfg);
 cfg = sixgr.config.normalizeConfig(cfg);
 sixgr.config.validateConfig(cfg);
 end
@@ -950,6 +959,104 @@ function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerP
 % a fading-channel run tries to combine run.useMex with the scalar fast
 % channel-estimation MEX path.
 tf = false;
+end
+
+function cfg = localApplyFrameStructureEngine(cfg)
+fs = sixgr.phy.FrameStructureEngine(cfg);
+fsStruct = fs.toStruct();
+
+cfg = sixgr.util.structSet(cfg, "phy.frameStructure", fsStruct);
+cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.frame_structure", fsStruct);
+
+cfg.phy.carrier.SubcarrierSpacing = double(fs.SCSkHz);
+cfg.phy.carrier.SubcarrierSpacing_kHz = double(fs.SCSkHz);
+cfg.phy.carrier.CyclicPrefix = char(fs.CyclicPrefix);
+cfg.phy.carrier.NSizeGrid = double(fs.NRB);
+
+cfg = sixgr.util.structSet(cfg, "phy.numerology.mu", double(fs.Mu));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.scs_kHz", double(fs.SCSkHz));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.slotsPerFrame", double(fs.SlotsPerFrame));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.slotDuration_ms", double(fs.SlotDuration_ms));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.symbolsPerSlot", double(fs.SymbolsPerSlot));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", double(fs.NRB));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", double(fs.ConfiguredGridNumRBs));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridSource", char(fs.ActiveGridSource));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.numerologySource", "frame_structure_engine_scs");
+cfg = sixgr.util.structSet(cfg, "phy.numerology.timingInterpretationSource", "nr_mu_from_frame_structure_engine");
+cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.active_grid_num_rbs", double(fs.NRB));
+cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.configured_grid_num_rbs", double(fs.ConfiguredGridNumRBs));
+cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.active_grid_source", char(fs.ActiveGridSource));
+
+cfg = sixgr.util.structSet(cfg, "phy.waveform.fftSize", double(fs.FFTSize));
+cfg = sixgr.util.structSet(cfg, "phy.waveform.sampleRate_Hz", double(fs.SampleRate_Hz));
+cfg = sixgr.util.structSet(cfg, "waveform.fft_size", double(fs.FFTSize));
+cfg = sixgr.util.structSet(cfg, "waveform.sample_rate_hz", double(fs.SampleRate_Hz));
+
+cfg.phy.duplex.mode = char(fs.DuplexMode);
+cfg.phy.duplex.tddPattern = char(fs.TDDPattern);
+cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", char(fs.TDDPattern));
+cfg = sixgr.util.structSet(cfg, "frame_timing.symbols_per_slot", double(fs.SymbolsPerSlot));
+cfg = sixgr.util.structSet(cfg, "frame_timing.slots_per_frame", double(fs.SlotsPerFrame));
+cfg = sixgr.util.structSet(cfg, "frame_timing.slot_duration_ms", double(fs.SlotDuration_ms));
+cfg = sixgr.util.structSet(cfg, "frame_timing.special_slot_downlink_symbols", double(fs.SpecialSlotDLSymbols));
+cfg = sixgr.util.structSet(cfg, "frame_timing.ul_dl_guard_symbols", double(fs.SpecialSlotGuardSymbols));
+cfg = sixgr.util.structSet(cfg, "frame_timing.special_slot_uplink_symbols", double(fs.SpecialSlotULSymbols));
+cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numDLSymbols", double(fs.SpecialSlotDLSymbols));
+cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numGuardSymbols", double(fs.SpecialSlotGuardSymbols));
+cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numULSymbols", double(fs.SpecialSlotULSymbols));
+
+cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", char("Case " + string(fs.SSBCase)));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.case", char(fs.SSBCase));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", double(fs.SSBLmax));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.lmax", double(fs.SSBLmax));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(fs.SSBLmax));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.candidateSymbols", double(fs.SSBCandidateSymbols));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.candidateSlots1Based", double(fs.SSBCandidateSlots1Based));
+
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(fs.CORESETDuration));
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.numSymbols", double(fs.CORESETDuration));
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.bandwidthRB", double(fs.CORESETBandwidth_RB));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.startSymbol", double(fs.PDSCHStartSymbol));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.numSymbols", double(fs.PDSCHNumSymbols));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.symbolAllocation", [double(fs.PDSCHStartSymbol) double(fs.PDSCHNumSymbols)]);
+if isfield(cfg, "pdsch6gr")
+    cfg.pdsch6gr.NSizeGrid = double(fs.NRB);
+    cfg.pdsch6gr.NumRB = min(double(fs.NRB), max(1, localFiniteScalar(sixgr.util.structGet(cfg, "pdsch6gr.NumRB", fs.NRB), fs.NRB)));
+    cfg.pdsch6gr.StartSymbol = max(double(fs.PDSCHStartSymbol), localFiniteScalar(sixgr.util.structGet(cfg, "pdsch6gr.StartSymbol", fs.PDSCHStartSymbol), fs.PDSCHStartSymbol));
+    cfg.pdsch6gr.NumSymbols = min(localFiniteScalar(sixgr.util.structGet(cfg, "pdsch6gr.NumSymbols", fs.PDSCHNumSymbols), fs.PDSCHNumSymbols), ...
+        double(fs.SymbolsPerSlot) - double(cfg.pdsch6gr.StartSymbol));
+    cfg.pdsch6gr.NumSymbols = max(1, double(cfg.pdsch6gr.NumSymbols));
+    cfg.pdsch6gr.StudyStartSymbols = max(double(fs.PDSCHStartSymbol), double(sixgr.util.structGet(cfg, "pdsch6gr.StudyStartSymbols", cfg.pdsch6gr.StartSymbol)));
+end
+
+cfg = sixgr.util.structSet(cfg, "phy.pusch.symbolAllocation", [0 double(fs.SymbolsPerSlot)]);
+cfg = sixgr.util.structSet(cfg, "phy.srs.bandwidthRB", double(min(fs.NRB, max(1, localFiniteScalar(sixgr.util.structGet(cfg, "phy.srs.bandwidthRB", fs.NRB), fs.NRB)))));
+cfg = sixgr.util.structSet(cfg, "phy.csirs.startRB", 0);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.numRB", double(fs.NRB));
+
+cfg = sixgr.util.structSet(cfg, "phy.prach.preambleFormat", char(fs.PRACHFormat));
+cfg = sixgr.util.structSet(cfg, "phy.prach.startSymbol", double(fs.PRACHStartSymbol));
+cfg = sixgr.util.structSet(cfg, "phy.prach.durationSymbols", double(fs.PRACHDurationSymbols));
+cfg = sixgr.util.structSet(cfg, "phy.prach.validSlots1Based", double(fs.PRACHValidSlots1Based));
+cfg = sixgr.util.structSet(cfg, "phy.prach.validSlots0Based", double(fs.PRACHValidSlots0Based));
+cfg = sixgr.util.structSet(cfg, "phy.prach.validationStatus", char(fs.PRACHValidationStatus));
+cfg = sixgr.util.structSet(cfg, "prach_lls.NSizeGrid", double(fs.NRB));
+cfg = sixgr.util.structSet(cfg, "prach_lls.PRACHFormat", char(fs.PRACHFormat));
+cfg = sixgr.util.structSet(cfg, "prach_lls.ValidSlots1Based", double(fs.PRACHValidSlots1Based));
+cfg = sixgr.util.structSet(cfg, "prach_lls.ValidSlots0Based", double(fs.PRACHValidSlots0Based));
+end
+
+function value = localFiniteScalar(valueIn, defaultValue)
+value = double(defaultValue);
+try
+    candidate = double(valueIn);
+    candidate = candidate(isfinite(candidate));
+    if ~isempty(candidate)
+        value = double(candidate(1));
+    end
+catch
+    value = double(defaultValue);
+end
 end
 
 function timing = localResolveRunTiming(s)

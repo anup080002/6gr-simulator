@@ -1507,8 +1507,13 @@ methods(Static, Access=private)
         largeScaleSINR = sixgr.truth.CoupledTruthRuntime.estimateRuntimeWidebandSINR(state, ueIdx, servingCell, configuredInterferenceMode);
         receiverHestSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINR_dB", NaN));
         receiverHestSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ReceiverHestSINRSource", ""));
+        postEqSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PostEqSINR_dB", NaN));
+        postEqSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PostEqSINRSource", ""));
+        postEqRole = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PostEqSINRValueRole", ""));
+        postEqStatus = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PostEqSINRValueStatus", ""));
         measuredTrialSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINR_dB", NaN));
         measuredTrialSINRSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINRSource", ""));
+        measuredTrialSINRRole = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredTrialSINRValueRole", ""));
         decoderTruthProxySINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINR_dB", NaN));
         decoderTruthProxySource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DecoderTruthProxySINRSource", ""));
         if isfinite(receiverHestSINR) && strlength(strtrim(receiverHestSource)) == 0
@@ -1517,34 +1522,26 @@ methods(Static, Access=private)
         estimatedSINR = NaN;
         widebandSINRSource = "unavailable";
         widebandSINRValueRole = "unavailable";
-        if isfinite(measuredTrialSINR)
+        if isfinite(postEqSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible(postEqSource, postEqRole, postEqStatus)
+            estimatedSINR = double(postEqSINR);
+            if strlength(strtrim(postEqSource)) > 0
+                widebandSINRSource = strtrim(postEqSource);
+            else
+                widebandSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
+            end
+            widebandSINRValueRole = "measured_post_equalization_scheduling_input";
+        elseif isfinite(measuredTrialSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible(measuredTrialSINRSource, measuredTrialSINRRole, "")
             estimatedSINR = double(measuredTrialSINR);
             if strlength(strtrim(measuredTrialSINRSource)) > 0
                 widebandSINRSource = strtrim(measuredTrialSINRSource);
             else
-                widebandSINRSource = "post_equalization_error_vector_measurement";
+                widebandSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
             end
-            widebandSINRValueRole = "measured";
-        elseif isfinite(decoderTruthProxySINR)
-            estimatedSINR = double(decoderTruthProxySINR);
-            if strlength(strtrim(decoderTruthProxySource)) > 0
-                widebandSINRSource = strtrim(decoderTruthProxySource);
-            else
-                widebandSINRSource = "post_equalization_evm_proxy";
-            end
-            widebandSINRValueRole = "derived_proxy";
+            widebandSINRValueRole = "measured_post_equalization_scheduling_input";
         elseif isfinite(largeScaleSINR)
             estimatedSINR = largeScaleSINR;
             widebandSINRSource = "large_scale_interference_budget_preview";
             widebandSINRValueRole = "derived_preview";
-        elseif isfinite(receiverHestSINR)
-            estimatedSINR = receiverHestSINR;
-            if strlength(strtrim(receiverHestSource)) > 0
-                widebandSINRSource = strtrim(receiverHestSource);
-            else
-                widebandSINRSource = "receiver_hest_reference_signal_measurement";
-            end
-            widebandSINRValueRole = "estimated_diagnostic";
         end
         configuredSNR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ConfiguredSNR_dB", state.CurrentSNR_dB));
         appliedLargeScaleGain = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AppliedLargeScaleGain_dB", NaN));
@@ -1594,11 +1591,16 @@ methods(Static, Access=private)
         r.LOSComplianceReason = char(string(sixgr.util.structGet(state.LargeScaleState, "LOSComplianceReason", "")));
         r.ReceiverHestSINR_dB = double(receiverHestSINR);
         r.ReceiverHestSINRSource = char(receiverHestSource);
+        r.PostEqSINR_dB = double(postEqSINR);
+        r.PostEqSINRSource = char(postEqSource);
+        r.PostEqSINRValueRole = char(postEqRole);
+        r.PostEqSINRValueStatus = char(postEqStatus);
         r.DecoderTruthProxySINR_dB = double(decoderTruthProxySINR);
         r.DecoderTruthProxySINRSource = char(decoderTruthProxySource);
         r.MeasuredTrialSINR_dB = double(measuredTrialSINR);
         r.EstimatedWidebandSINR_dB = double(estimatedSINR);
         r.ReceiverHestWidebandSINR_dB = double(receiverHestSINR);
+        r.PostEqWidebandSINR_dB = double(postEqSINR);
         r.DecoderTruthProxyWidebandSINR_dB = double(decoderTruthProxySINR);
         r.MeasuredWidebandSINR_dB = double(measuredTrialSINR);
         r.LargeScaleWidebandSINR_dB = double(largeScaleSINR);
@@ -1809,11 +1811,28 @@ methods(Static, Access=private)
             else
                 r.MeasuredTrialSINR_dB = NaN;
             end
+            if ismember("PostEqSINR_dB", string(servingT.Properties.VariableNames))
+                r.PostEqSINR_dB = double(servingT.PostEqSINR_dB(lastIdx));
+            end
+            if ismember("PostEqSINRSource", string(servingT.Properties.VariableNames))
+                r.PostEqSINRSource = string(servingT.PostEqSINRSource(lastIdx));
+            end
+            if ismember("PostEqSINRValueRole", string(servingT.Properties.VariableNames))
+                r.PostEqSINRValueRole = string(servingT.PostEqSINRValueRole(lastIdx));
+            end
+            if ismember("PostEqSINRValueStatus", string(servingT.Properties.VariableNames))
+                r.PostEqSINRValueStatus = string(servingT.PostEqSINRValueStatus(lastIdx));
+            end
             r.EstimatedWidebandSINR_dB = double(servingT.EstimatedWidebandSINR_dB(lastIdx));
             if ismember("ReceiverHestWidebandSINR_dB", string(servingT.Properties.VariableNames))
                 r.ReceiverHestWidebandSINR_dB = double(servingT.ReceiverHestWidebandSINR_dB(lastIdx));
             else
                 r.ReceiverHestWidebandSINR_dB = double(r.ReceiverHestSINR_dB);
+            end
+            if ismember("PostEqWidebandSINR_dB", string(servingT.Properties.VariableNames))
+                r.PostEqWidebandSINR_dB = double(servingT.PostEqWidebandSINR_dB(lastIdx));
+            else
+                r.PostEqWidebandSINR_dB = double(r.PostEqSINR_dB);
             end
             if ismember("DecoderTruthProxyWidebandSINR_dB", string(servingT.Properties.VariableNames))
                 r.DecoderTruthProxyWidebandSINR_dB = double(servingT.DecoderTruthProxyWidebandSINR_dB(lastIdx));
@@ -1858,15 +1877,23 @@ methods(Static, Access=private)
             end
             if ismember("WidebandSINRSource", string(servingT.Properties.VariableNames))
                 r.WidebandSINRSource = string(servingT.WidebandSINRSource(lastIdx));
-            else
+            elseif isfinite(double(r.PostEqWidebandSINR_dB)) || isfinite(double(r.MeasuredWidebandSINR_dB))
+                r.WidebandSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
+            elseif isfinite(double(r.LargeScaleWidebandSINR_dB))
                 r.WidebandSINRSource = "large_scale_interference_budget_preview";
+            elseif isfinite(double(r.ReceiverHestWidebandSINR_dB))
+                r.WidebandSINRSource = "receiver_hest_diagnostic_not_scheduling_input";
+            else
+                r.WidebandSINRSource = "unavailable";
             end
             if ismember("WidebandSINRValueRole", string(servingT.Properties.VariableNames))
                 r.WidebandSINRValueRole = string(servingT.WidebandSINRValueRole(lastIdx));
-            elseif isfinite(double(r.ReceiverHestWidebandSINR_dB))
-                r.WidebandSINRValueRole = "estimated";
+            elseif isfinite(double(r.PostEqWidebandSINR_dB)) || isfinite(double(r.MeasuredWidebandSINR_dB))
+                r.WidebandSINRValueRole = "measured_post_equalization_scheduling_input";
             elseif isfinite(double(r.LargeScaleWidebandSINR_dB))
                 r.WidebandSINRValueRole = "derived_preview";
+            elseif isfinite(double(r.ReceiverHestWidebandSINR_dB))
+                r.WidebandSINRValueRole = "diagnostic_estimate_not_scheduling_input";
             end
             if ismember("InterferenceMode", string(servingT.Properties.VariableNames))
                 r.InterferenceMode = string(servingT.InterferenceMode(lastIdx));
@@ -2355,7 +2382,7 @@ methods(Static, Access=private)
         condDb = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["SRSConditionNumber_dB","ConditionNumber_dB"], NaN);
         sinrDb = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
-            ["SINR_dB","MeasuredTrialSINR_dB","ReceiverHestSINR_dB","MeasuredSINR_dB"], NaN);
+            ["SINR_dB","PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredSINR_dB"], NaN);
         cqi = double(sixgr.util.normalizeReportedCQI( ...
             sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["WidebandCQI","CQI"], NaN)));
         mcsIndex = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
@@ -2424,7 +2451,8 @@ methods(Static, Access=private)
         end
         state.LatestULFeedback(ueIdx) = latest;
 
-        if sixgr.truth.CoupledTruthRuntime.srsReciprocityFeedsDLFeedback(state.CfgMobility)
+        feedsDLFromSRS = sixgr.truth.CoupledTruthRuntime.srsReciprocityFeedsDLFeedback(state.CfgMobility);
+        if feedsDLFromSRS
             if ueIdx <= numel(state.LatestDLFeedback)
                 dlLatest = state.LatestDLFeedback(ueIdx);
             else
@@ -2469,15 +2497,34 @@ methods(Static, Access=private)
     end
 
     function tf = srsReciprocityFeedsDLFeedback(cfg)
-        duplexMode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.duplex.mode", ...
-            sixgr.util.structGet(cfg, "frequency.duplex_mode", ...
-            sixgr.util.structGet(cfg, "global_radio_scope.duplex_mode", ""))))));
-        orientation = lower(strtrim(string(sixgr.util.structGet(cfg, "referenceSignals.operationOrientation", ...
-            sixgr.util.structGet(cfg, "reference_signals.operation_orientation", "")))));
-        csiMode = lower(strtrim(string(sixgr.util.structGet(cfg, "referenceSignals.csiAcquisitionMode", ...
-            sixgr.util.structGet(cfg, "reference_signals.csi_acquisition_mode", "")))));
-        tf = (duplexMode == "tdd" || contains(orientation, "tdd")) && ...
-            (contains(orientation, "reciprocity") || contains(csiMode, "joint") || contains(csiMode, "dl_ul"));
+        duplexMode = sixgr.truth.CoupledTruthRuntime.normalizedConfigString(cfg, ...
+            ["phy.duplex.mode","frequency.duplex_mode","global_radio_scope.duplex_mode"]);
+        orientation = sixgr.truth.CoupledTruthRuntime.normalizedConfigString(cfg, ...
+            ["lls6g.reference_signals.operation_orientation","referenceSignals.operationOrientation", ...
+            "reference_signals.operation_orientation","phy.csi.operationOrientation"]);
+        csiMode = sixgr.truth.CoupledTruthRuntime.normalizedConfigString(cfg, ...
+            ["lls6g.reference_signals.csi_acquisition_mode","referenceSignals.csiAcquisitionMode", ...
+            "reference_signals.csi_acquisition_mode","phy.csi.acquisitionMode", ...
+            "phy.csi.channelStateInformationMode"]);
+        reciprocityMode = sixgr.truth.CoupledTruthRuntime.normalizedConfigString(cfg, ...
+            ["lls6g.mimo.reciprocity_mode","mimo.reciprocity_mode"]);
+
+        hasTDDReciprocity = duplexMode == "tdd" || reciprocityMode == "tdd" || contains(orientation, "tdd");
+        hasJointCSI = contains(orientation, "reciprocity") || contains(csiMode, "joint") || contains(csiMode, "dl_ul");
+        tf = logical(hasTDDReciprocity && hasJointCSI);
+    end
+
+    function value = normalizedConfigString(cfg, paths)
+        value = "";
+        for i = 1:numel(paths)
+            candidate = string(sixgr.util.structGet(cfg, paths(i), ""));
+            candidate = lower(strtrim(candidate(:)));
+            candidate = candidate(strlength(candidate) > 0);
+            if ~isempty(candidate)
+                value = candidate(1);
+                return;
+            end
+        end
     end
 
     function state = applyTRSTrialImpl(state, servingCell, trialT)
@@ -3760,6 +3807,14 @@ methods(Static, Access=private)
         rsrpTerm = 1 ./ (1 + exp(-(double(rsrp_dBm) + 100) / 6));
         sinrTerm = 1 ./ (1 + exp(-(double(sinr_dB) - 1) / 4));
         score = max(0, min(1, 0.55 * rsrpTerm + 0.45 * sinrTerm));
+    end
+
+    function tf = schedulerSINRProvenanceIsEligible(source, role, status)
+        token = lower(strjoin([string(source), string(role), string(status)], " "));
+        blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+            "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+            "unavailable", "failed", "rejected"];
+        tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
     end
 
     function value = rowValue(row, name, defaultValue)
@@ -5311,8 +5366,10 @@ methods(Static, Access=private)
             "ChannelComplianceMode", "", "PathlossModelSource", "", "PathlossComplianceStatus", "", "FallbackUsedForPathloss", false, ...
             "O2IModelSource", "", "O2IComplianceStatus", "", "O2IComplianceReason", "", ...
             "LOSProbabilitySource", "", "LOSComplianceStatus", "", "LOSComplianceReason", "", ...
-            "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
-            "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
+            "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", ...
+            "PostEqSINR_dB", NaN, "PostEqSINRSource", "", "PostEqSINRValueRole", "", "PostEqSINRValueStatus", "", ...
+            "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
+            "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "PostEqWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
             "LargeScaleWidebandSINR_dB", NaN, "LargeScaleSINR_dB", NaN, ...
             "CSI_RSRP_dB", NaN, "CSI_RSRPSource", "", "AppliedLargeScaleGain_dB", NaN, ...
             "RSRPSource", "", "ServingRSRPSource", "", "WidebandSINRSource", "", "WidebandSINRValueRole", "", "InterferenceMode", "", ...
@@ -5346,8 +5403,10 @@ methods(Static, Access=private)
             "Lat", NaN, "Lon", NaN, ...
             "ServingCell", NaN, "ServingSite", NaN, "ServingSector", NaN, ...
             "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", "ServingRSRP_dBm", NaN, "RSRP_dBm", NaN, ...
-            "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
-            "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
+            "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", ...
+            "PostEqSINR_dB", NaN, "PostEqSINRSource", "", "PostEqSINRValueRole", "", "PostEqSINRValueStatus", "", ...
+            "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
+            "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "PostEqWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
             "LargeScaleWidebandSINR_dB", NaN, "LargeScaleSINR_dB", NaN, ...
             "CSI_RSRP_dB", NaN, "CSI_RSRPSource", "", "AppliedLargeScaleGain_dB", NaN, ...
             "RSRPSource", "", "ServingRSRPSource", "", "WidebandSINRSource", "", "WidebandSINRValueRole", "", "InterferenceMode", "", "WidebandCQI", NaN, ...
@@ -5361,8 +5420,10 @@ methods(Static, Access=private)
             "Lat", NaN, "Lon", NaN, ...
             "ServingCell", NaN, "ServingSite", NaN, "ServingSector", NaN, ...
             "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", "ServingRSRP_dBm", NaN, "RSRP_dBm", NaN, ...
-            "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
-            "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
+            "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", ...
+            "PostEqSINR_dB", NaN, "PostEqSINRSource", "", "PostEqSINRValueRole", "", "PostEqSINRValueStatus", "", ...
+            "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
+            "MeasuredTrialSINR_dB", NaN, "EstimatedWidebandSINR_dB", NaN, "ReceiverHestWidebandSINR_dB", NaN, "PostEqWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, "MeasuredWidebandSINR_dB", NaN, ...
             "LargeScaleWidebandSINR_dB", NaN, "LargeScaleSINR_dB", NaN, ...
             "CSI_RSRP_dB", NaN, "CSI_RSRPSource", "", "AppliedLargeScaleGain_dB", NaN, ...
             "RSRPSource", "", "ServingRSRPSource", "", "WidebandSINRSource", "", "WidebandSINRValueRole", "", "InterferenceMode", "", "WidebandCQI", NaN, ...
@@ -6391,6 +6452,71 @@ methods(Static, Access=private)
         T.SINRSource = sinrSource;
         T.SINRValueStatus = sinrStatus;
         T.SINRValueDefinition = sinrDefinition;
+        T = sixgr.truth.CoupledTruthRuntime.repairControlReferenceEvidenceColumnsImpl(signalToken, T);
+    end
+
+    function T = repairControlReferenceEvidenceColumnsImpl(signalToken, T)
+        if ~(istable(T) && ~isempty(T))
+            return;
+        end
+        n = height(T);
+        signalToken = lower(strrep(string(signalToken), "-", "_"));
+        signalBase = regexprep(signalToken, "_trials$", "");
+        status = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Status", repmat("", n, 1)))));
+        crash = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Crash", false(n, 1)));
+        crcPass = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "CRCPass", nan(n, 1)));
+        detectionMetric = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DetectionMetric", nan(n, 1)));
+        correlationPeak = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "CorrelationPeak", nan(n, 1)));
+        detectorPeak = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DetectorPeakMetric", nan(n, 1)));
+        detectedPreamble = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DetectedPreambleIndex", nan(n, 1)));
+        preambleFromPeak = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "PreambleIndexFromPeak", nan(n, 1)));
+        bitsCompared = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "BitsCompared", nan(n, 1)));
+        bitErrors = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "BitErrors", nan(n, 1)));
+
+        activeOutcome = ~crash & any(status == ["pass","fail"], 2);
+        detectionEvidence = activeOutcome | isfinite(crcPass) | isfinite(detectionMetric) | ...
+            isfinite(correlationPeak) | isfinite(detectorPeak) | isfinite(detectedPreamble) | ...
+            isfinite(preambleFromPeak) | isfinite(bitsCompared) | isfinite(bitErrors);
+        detectionSignals = ["pbch","prach","pdcch","pucch"];
+        if any(signalBase == detectionSignals)
+            if ismember("DetectionAttempted", string(T.Properties.VariableNames))
+                T.DetectionAttempted = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DetectionAttempted", false(n, 1)) | detectionEvidence);
+            end
+            if ismember("DetectionUsable", string(T.Properties.VariableNames))
+                T.DetectionUsable = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DetectionUsable", false(n, 1)) | ...
+                    (~crash & (isfinite(detectionMetric) | isfinite(correlationPeak) | isfinite(detectorPeak) | isfinite(crcPass))));
+            end
+        end
+
+        receiverSINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINR_dB", nan(n, 1)));
+        measuredSINR = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasuredTrialSINR_dB", nan(n, 1)));
+        noiseVar = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "NoiseVariance", nan(n, 1)));
+        nmse = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "NMSE_dB", nan(n, 1)));
+        measurementEvidence = ~crash & (isfinite(receiverSINR) | isfinite(measuredSINR) | isfinite(noiseVar) | isfinite(nmse));
+        if ismember("MeasurementAttempted", string(T.Properties.VariableNames))
+            T.MeasurementAttempted = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasurementAttempted", false(n, 1)) | measurementEvidence);
+        end
+        if ismember("MeasurementUsable", string(T.Properties.VariableNames))
+            T.MeasurementUsable = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasurementUsable", false(n, 1)) | ...
+                (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR))));
+        end
+        if ismember("ReceiverUsable", string(T.Properties.VariableNames))
+            T.ReceiverUsable = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverUsable", false(n, 1)) | ...
+                (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR))));
+        end
+
+        if ismember("ChannelFadingApplied", string(T.Properties.VariableNames))
+            channelModel = upper(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelModel", repmat("", n, 1)))));
+            channelModelApplied = upper(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelModelApplied", repmat("", n, 1)))));
+            channelClass = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelObjectClass", repmat("", n, 1)))));
+            channelSource = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelObjectSource", repmat("", n, 1)))));
+            concreteFadingModel = startsWith(channelModel, "TDL") | startsWith(channelModel, "CDL") | ...
+                startsWith(channelModelApplied, "TDL") | startsWith(channelModelApplied, "CDL");
+            fadingRuntimeEvidence = concreteFadingModel | contains(channelClass, "nrtdl") | contains(channelClass, "nrcdl") | ...
+                contains(channelSource, "tdl") | contains(channelSource, "cdl");
+            T.ChannelFadingApplied = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelFadingApplied", false(n, 1)) | ...
+                (~crash & fadingRuntimeEvidence));
+        end
     end
 
     function state = appendPUCCHGrantTraceFromFeedback(state, feedbackRow)

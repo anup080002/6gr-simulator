@@ -263,6 +263,21 @@ if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
 end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint);
+try
+    [postEqSINR_dB, ~, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
+        hestSym, nVar, ...
+        "Method", char(lower(string(equalizerAlg))), ...
+        "Rint", Rint, ...
+        "Layers", double(localObjectValue(pdsch, "NumLayers", min(size(hestSym, 2), max(1, size(hestSym, 3))))));
+catch ME
+    postEqSINR_dB = NaN;
+    postEqSINRInfo = struct( ...
+        "ValueStatus", "failed", ...
+        "NAReason", string(ME.identifier), ...
+        "PerLayerSINR_dB", NaN, ...
+        "Source", "post_equalization_sinr_from_equalizer_channel_estimate", ...
+        "ValueRole", "measured_post_equalization_scheduling_input");
+end
 receiverSINR = localReceiverHestSINR(hEst, nVar, cfg, "DL", rxGrid, dmrsInd, dmrsSym);
 % ---------------------- PDSCH demodulate to soft bits ----------------------
 % nrPDSCHDecode returns a cell array (one per codeword). Newer releases can
@@ -427,6 +442,12 @@ rx.ReceiverHestSINRSource = char(receiverSINR.Source);
 rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
 rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
 rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
+rx.PostEqSINR_dB = double(postEqSINR_dB);
+rx.PostEqSINRSource = char(string(sixgr.util.structGet(postEqSINRInfo, "Source", "post_equalization_sinr_from_equalizer_channel_estimate")));
+rx.PostEqSINRValueRole = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueRole", "measured_post_equalization_scheduling_input")));
+rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueStatus", "unavailable")));
+rx.PostEqSINRNAReason = char(string(sixgr.util.structGet(postEqSINRInfo, "NAReason", "")));
+rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayerSINR_dB", NaN));
 rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
 rx.EqualizerRequestedType = char(equalizerRequested);
 rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
@@ -730,10 +751,11 @@ try
         args = [args, {"ReceivedGrid", rxGrid, "ReferenceIndices", refInd, "ReferenceSymbols", refSym}];
     end
     csiMetric = sixgr.phy.dl.CSI_Feedback(hEst, nVar, cfg, args{:});
-    sinr = double(sixgr.util.structGet(csiMetric, "SINR_dB", NaN));
+    sinr = double(sixgr.util.structGet(csiMetric, "PilotSINR_dB", ...
+        sixgr.util.structGet(csiMetric, "ReferenceMeasuredSINR_dB", NaN)));
     if isfinite(sinr)
         evidence.Value = sinr;
-        evidence.Source = char(string(sixgr.util.structGet(csiMetric, "SINRSource", "receiver_hest_reference_signal_measurement")));
+        evidence.Source = char(string(sixgr.util.structGet(csiMetric, "PilotSINRSource", "receiver_hest_reference_signal_measurement")));
         evidence.ValueRole = "estimated";
         measurementStatus = string(sixgr.util.structGet(csiMetric, "ReferenceSINRValueStatus", "OK"));
         if contains(lower(measurementStatus), "dynamic_range_limited")

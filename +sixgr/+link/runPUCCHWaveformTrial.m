@@ -276,37 +276,24 @@ try
         receiverRole = "unavailable";
         receiverSource = "";
     end
-    measuredTrialAvailable = strcmpi(receiverStatus, "OK") && isfinite(double(out.ReceiverHestSINR_dB));
-    if measuredTrialAvailable
-        out.MeasuredTrialSINR_dB = double(out.ReceiverHestSINR_dB);
-        out.MeasuredTrialSINRSource = char(receiverSource);
-        out.MeasuredTrialSINRValueRole = "measured";
-        out.MeasuredTrialSINRValueStatus = "OK";
-        out.MeasuredTrialSINRNAReason = "";
-        out.SINRValueRole = "measured";
+    out.MeasuredTrialSINR_dB = NaN;
+    out.MeasuredTrialSINRSource = "";
+    out.MeasuredTrialSINRValueRole = "unavailable";
+    out.MeasuredTrialSINRValueStatus = "unavailable";
+    out.MeasuredTrialSINRNAReason = "pucch_has_no_data_post_equalization_sinr_measurement";
+    if isfinite(double(out.ReceiverHestSINR_dB))
+        out.SINRValueRole = char(receiverRole);
         out.SINRSource = char(receiverSource);
-        out.SINRValueStatus = "OK";
-        out.SINRValueDefinition = "measured_trial_sinr_from_active_control_reference_signal_observation";
+        out.SINRValueStatus = char(receiverStatus);
+        out.SINRValueDefinition = "diagnostic_receiver_hest_sinr_from_control_reference_signal_observation_not_scheduling_input";
     else
-        out.MeasuredTrialSINR_dB = NaN;
-        out.MeasuredTrialSINRSource = "";
-        out.MeasuredTrialSINRValueRole = "unavailable";
-        out.MeasuredTrialSINRValueStatus = "unavailable";
-        out.MeasuredTrialSINRNAReason = char(string(sixgr.util.structGet(measurement, "SINRNAReason", "control_reference_signal_measurement_unavailable")));
-        if isfinite(double(out.ReceiverHestSINR_dB))
-            out.SINRValueRole = char(receiverRole);
-            out.SINRSource = char(receiverSource);
-            out.SINRValueStatus = char(receiverStatus);
-            out.SINRValueDefinition = "receiver_hest_sinr_from_control_reference_signal_observation";
-        else
-            out.SINRValueRole = "unavailable";
-            out.SINRSource = char(receiverSource);
-            out.SINRValueStatus = char(receiverStatus);
-            out.SINRValueDefinition = "no_control_sinr_observation_available_in_active_runtime";
-        end
+        out.SINRValueRole = "unavailable";
+        out.SINRSource = char(receiverSource);
+        out.SINRValueStatus = char(receiverStatus);
+        out.SINRValueDefinition = "no_control_sinr_observation_available_in_active_runtime";
     end
-    out.EstimatedWidebandSINR_dB = double(sixgr.util.structGet(measurement, "SINR_dB", NaN));
-    out.WidebandCQI = double(sixgr.util.structGet(measurement, "CQI", NaN));
+    out.EstimatedWidebandSINR_dB = NaN;
+    out.WidebandCQI = NaN;
     if unanchoredThermalSINR
         out.EstimatedWidebandSINR_dB = NaN;
         out.WidebandCQI = NaN;

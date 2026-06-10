@@ -267,11 +267,25 @@ cqiSource = "unavailable";
 
 rawCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
 rawSINR = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
+rawSINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
+rawSINRRole = string(sixgr.util.structGet(metrics, "SINRValueRole", ""));
+rawSINRStatus = string(sixgr.util.structGet(metrics, "SINRValueStatus", ""));
+if localSINRProvenanceBlockedForAMC(rawSINRSource, rawSINRRole, rawSINRStatus)
+    rawSINR = NaN;
+    if strlength(strtrim(cqiSource)) == 0 || cqiSource == "unavailable"
+        cqiSource = "sinr_input_rejected_non_scheduling_provenance";
+    end
+end
+sinrInput = struct( ...
+    "WidebandSINR_dB", rawSINR, ...
+    "SINRSource", char(rawSINRSource), ...
+    "SINRValueRole", char(rawSINRRole), ...
+    "SINRValueStatus", char(rawSINRStatus));
 
 switch string(adaptationDomain)
     case "effective_sinr"
         if isfinite(rawSINR)
-            feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", rawSINR), cfg, direction);
+            feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
             instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
             cqiSource = "runtime_effective_sinr";
             calibrationProfile = string(sixgr.util.structGet(feedback, "Mode", calibrationProfile));
@@ -281,7 +295,7 @@ switch string(adaptationDomain)
             instantCQI = rawCQI;
             cqiSource = "runtime_reported_cqi";
         elseif isfinite(rawSINR)
-            feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", rawSINR), cfg, direction);
+            feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
             instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
             cqiSource = "runtime_effective_sinr_proxy_for_bler_margin";
         end
@@ -291,6 +305,18 @@ switch string(adaptationDomain)
             cqiSource = "runtime_reported_cqi";
         end
 end
+end
+
+function tf = localSINRProvenanceBlockedForAMC(source, role, status)
+token = lower(strjoin([string(source), string(role), string(status)], " "));
+if strlength(strtrim(token)) == 0
+    tf = false;
+    return;
+end
+blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+    "unavailable", "failed", "rejected"];
+tf = any(contains(token, blocked));
 end
 
 function profile = localResolveCalibrationProfile(cfg, direction, adaptationDomain)

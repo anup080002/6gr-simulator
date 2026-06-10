@@ -117,11 +117,11 @@ end
 end
 
 function [value, source] = iSINR(row)
-value = iFirstNum(row, ["SINR_dB","ReceiverHestSINR_dB","MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","LargeScaleSINR_dB"], NaN);
-if isfinite(iFirstNum(row, ["ReceiverHestSINR_dB"], NaN))
-    source = "receiver_hest_estimate";
-elseif isfinite(iFirstNum(row, ["MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB"], NaN))
-    source = "decoder_internal";
+value = iFirstNum(row, ["PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","SINR_dB","LargeScaleSINR_dB"], NaN);
+if isfinite(iFirstNum(row, ["PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB"], NaN))
+    source = "post_equalization_receiver_measurement";
+elseif isfinite(iFirstNum(row, ["SINR_dB"], NaN))
+    source = "runtime_primary_sinr";
 elseif isfinite(iFirstNum(row, ["LargeScaleSINR_dB"], NaN))
     source = "large_scale_model";
 else
@@ -561,7 +561,7 @@ for i = 1:height(cqiTable)
     rows(i).CQIDerivedModulation = iModulationFromMCS(rows(i).CQIDerivedMCS);
     rows(i).SubbandCQIVector = iFirstText(row, ["subband_cqi_vector", "SubbandCQI", "subbandCQI"], "");
     rows(i).SubbandPMIVector = iFirstText(row, ["subband_pmi_vector", "SubbandPMI"], "");
-    rows(i).EffectiveSINR_dB = iFirstNum(row, ["EffectiveSINR_dB", "ReceiverHestSINR_dB", "SINR_dB"], NaN);
+    rows(i).EffectiveSINR_dB = iFirstNum(row, ["EffectiveSINR_dB", "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "SINR_dB"], NaN);
     rows(i).CalibrationProfile = iFirstText(row, ["calibration_profile"], "heuristic_cqi_scheduler_observation");
     rows(i).RuntimeEvidenceStatus = "derived_from_runtime_feedback_rows";
 end

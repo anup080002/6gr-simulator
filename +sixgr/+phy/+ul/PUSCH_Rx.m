@@ -248,6 +248,26 @@ if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
 end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint);
+try
+    numLayersForSINR = double(pusch.NumLayers);
+catch
+    numLayersForSINR = min(size(hestSym, 2), max(1, size(hestSym, 3)));
+end
+try
+    [postEqSINR_dB, ~, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
+        hestSym, nVar, ...
+        "Method", char(lower(string(equalizerAlg))), ...
+        "Rint", Rint, ...
+        "Layers", double(numLayersForSINR));
+catch ME
+    postEqSINR_dB = NaN;
+    postEqSINRInfo = struct( ...
+        "ValueStatus", "failed", ...
+        "NAReason", string(ME.identifier), ...
+        "PerLayerSINR_dB", NaN, ...
+        "Source", "post_equalization_sinr_from_equalizer_channel_estimate", ...
+        "ValueRole", "measured_post_equalization_scheduling_input");
+end
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 
 % Decode PUSCH to codeword LLR
@@ -395,6 +415,12 @@ rx.ReceiverHestSINRSource = char(receiverSINR.Source);
 rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
 rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
 rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
+rx.PostEqSINR_dB = double(postEqSINR_dB);
+rx.PostEqSINRSource = char(string(sixgr.util.structGet(postEqSINRInfo, "Source", "post_equalization_sinr_from_equalizer_channel_estimate")));
+rx.PostEqSINRValueRole = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueRole", "measured_post_equalization_scheduling_input")));
+rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueStatus", "unavailable")));
+rx.PostEqSINRNAReason = char(string(sixgr.util.structGet(postEqSINRInfo, "NAReason", "")));
+rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayerSINR_dB", NaN));
 rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
 rx.EqualizerRequestedType = char(equalizerRequested);
 rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
@@ -678,18 +704,23 @@ try
         "ReceivedGrid", rxGrid, ...
         "ReferenceIndices", refInd, ...
         "ReferenceSymbols", refSym);
-    sinr = double(sixgr.util.structGet(ulMetric, "SINR_dB", NaN));
+    sinr = double(sixgr.util.structGet(ulMetric, "PilotSINR_dB", ...
+        sixgr.util.structGet(ulMetric, "SINR_dB", NaN)));
     if isfinite(sinr)
         evidence.Value = sinr;
-        evidence.Source = char(string(sixgr.util.structGet(ulMetric, "SINRSource", "reference_signal_pilot_residual_nmse")));
-        evidence.ValueRole = char(string(sixgr.util.structGet(ulMetric, "SINRValueRole", "estimated")));
-        evidence.ValueStatus = char(string(sixgr.util.structGet(ulMetric, "SINRValueStatus", "OK")));
+        evidence.Source = char(string(sixgr.util.structGet(ulMetric, "PilotSINRSource", "receiver_hest_reference_signal_measurement")));
+        evidence.ValueRole = "estimated";
+        evidence.ValueStatus = char(string(sixgr.util.structGet(ulMetric, "PilotSINRValueStatus", "OK")));
         evidence.NAReason = "";
     else
-        evidence.Source = char(string(sixgr.util.structGet(ulMetric, "SINRSource", evidence.Source)));
-        evidence.ValueRole = char(string(sixgr.util.structGet(ulMetric, "SINRValueRole", evidence.ValueRole)));
-        evidence.ValueStatus = char(string(sixgr.util.structGet(ulMetric, "SINRValueStatus", evidence.ValueStatus)));
-        evidence.NAReason = char(string(sixgr.util.structGet(ulMetric, "SINRNAReason", evidence.NAReason)));
+        evidence.Source = char(string(sixgr.util.structGet(ulMetric, "PilotSINRSource", ...
+            sixgr.util.structGet(ulMetric, "SINRSource", evidence.Source))));
+        evidence.ValueRole = char(string(sixgr.util.structGet(ulMetric, "PilotSINRValueRole", ...
+            sixgr.util.structGet(ulMetric, "SINRValueRole", evidence.ValueRole))));
+        evidence.ValueStatus = char(string(sixgr.util.structGet(ulMetric, "PilotSINRValueStatus", ...
+            sixgr.util.structGet(ulMetric, "SINRValueStatus", evidence.ValueStatus))));
+        evidence.NAReason = char(string(sixgr.util.structGet(ulMetric, "PilotSINRNAReason", ...
+            sixgr.util.structGet(ulMetric, "SINRNAReason", evidence.NAReason))));
     end
 catch ME
     evidence.NAReason = "ul_receiver_measurement_failed:" + string(ME.identifier);
@@ -995,6 +1026,12 @@ rx.ReceiverHestSINRSource = "unavailable_ul_noise_variance_required";
 rx.ReceiverHestSINRValueRole = "unavailable";
 rx.ReceiverHestSINRValueStatus = "unavailable";
 rx.ReceiverHestSINRNAReason = char(string(noiseStatus.Reason));
+rx.PostEqSINR_dB = NaN;
+rx.PostEqSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
+rx.PostEqSINRValueRole = "measured_post_equalization_scheduling_input";
+rx.PostEqSINRValueStatus = "unavailable";
+rx.PostEqSINRNAReason = char(string(noiseStatus.Reason));
+rx.PostEqSINRPerLayer_dB = NaN;
 rx.EqualizedSymbolsForEvidence = complex([]);
 rx.PUSCHRxSymbolsForEvidence = complex([]);
 if ~compactOutput

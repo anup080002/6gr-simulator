@@ -123,11 +123,25 @@ trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
 trialMeasuredTrialSINR = NaN(numFrames,1);
 trialMeasuredSINRSource = strings(numFrames,1);
+trialMeasuredTrialSINRValueRole = strings(numFrames,1);
+trialMeasuredTrialSINRValueStatus = strings(numFrames,1);
+trialMeasuredTrialSINRNAReason = strings(numFrames,1);
 trialReceiverHestSINR = NaN(numFrames,1);
 trialReceiverHestSINRSource = strings(numFrames,1);
 trialReceiverHestSINRValueRole = strings(numFrames,1);
 trialReceiverHestSINRValueStatus = strings(numFrames,1);
 trialReceiverHestSINRNAReason = strings(numFrames,1);
+trialPostEqSINR = NaN(numFrames,1);
+trialPostEqSINRSource = strings(numFrames,1);
+trialPostEqSINRValueRole = strings(numFrames,1);
+trialPostEqSINRValueStatus = strings(numFrames,1);
+trialPostEqSINRNAReason = strings(numFrames,1);
+trialPostEqSINRPerLayer = strings(numFrames,1);
+trialEVMProxySINR = NaN(numFrames,1);
+trialEVMProxySINRSource = strings(numFrames,1);
+trialEVMProxySINRValueRole = strings(numFrames,1);
+trialEVMProxySINRValueStatus = strings(numFrames,1);
+trialEVMProxySINRNAReason = strings(numFrames,1);
 trialDecoderTruthProxySINR = NaN(numFrames,1);
 trialDecoderTruthProxySINRSource = strings(numFrames,1);
 trialSINRValueRole = strings(numFrames,1);
@@ -572,6 +586,12 @@ for n = 1:numFrames
         trialReceiverHestSINRValueRole(n) = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", ""));
         trialReceiverHestSINRValueStatus(n) = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", ""));
         trialReceiverHestSINRNAReason(n) = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", ""));
+        trialPostEqSINR(n) = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+        trialPostEqSINRSource(n) = string(sixgr.util.structGet(rx, "PostEqSINRSource", ""));
+        trialPostEqSINRValueRole(n) = string(sixgr.util.structGet(rx, "PostEqSINRValueRole", ""));
+        trialPostEqSINRValueStatus(n) = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
+        trialPostEqSINRNAReason(n) = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
+        trialPostEqSINRPerLayer(n) = localFormatNumericVector(sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
@@ -671,16 +691,15 @@ for n = 1:numFrames
         metrics = localAnalyzeChannelMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), trialNoise(n), cfgFrame, rx, ulPrecoding);
         trialNMSE(n) = metrics.NMSE_dB;
         trialDet(n) = metrics.DetectionMetric;
-        trialReceiverHestSINR(n) = metrics.SINR_dB;
-        if isfinite(trialReceiverHestSINR(n))
-            receiverSource = string(metrics.SINRSource);
-            if strlength(strtrim(receiverSource)) == 0
-                receiverSource = "reference_signal_pilot_residual_nmse";
-            end
-            trialReceiverHestSINRSource(n) = receiverSource;
-            trialReceiverHestSINRValueRole(n) = "estimated";
-            trialReceiverHestSINRValueStatus(n) = "OK";
-            trialReceiverHestSINRNAReason(n) = "";
+        if isfinite(trialPostEqSINR(n))
+            trialSINR(n) = double(trialPostEqSINR(n));
+            trialSINRValueRole(n) = string(trialPostEqSINRValueRole(n));
+            trialSINRSource(n) = string(trialPostEqSINRSource(n));
+            trialMeasuredTrialSINR(n) = double(trialPostEqSINR(n));
+            trialMeasuredSINRSource(n) = string(trialPostEqSINRSource(n));
+            trialMeasuredTrialSINRValueRole(n) = string(trialPostEqSINRValueRole(n));
+            trialMeasuredTrialSINRValueStatus(n) = string(trialPostEqSINRValueStatus(n));
+            trialMeasuredTrialSINRNAReason(n) = string(trialPostEqSINRNAReason(n));
         end
         trialCSIRSRP(n) = metrics.CSI_RSRP_dB;
         trialCSIRSRPSource(n) = string(metrics.CSI_RSRPSource);
@@ -774,32 +793,18 @@ for n = 1:numFrames
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
-        [dataSINR, dataSINRMeta] = localMeasuredDataDomainSINR(modTrack);
+        [dataSINR, dataSINRMeta] = localEVMProxySINR(modTrack);
         if isfinite(dataSINR)
-            trialMeasuredTrialSINR(n) = double(dataSINR);
-            trialMeasuredSINRSource(n) = string(dataSINRMeta.Source);
-            trialSINR(n) = double(dataSINR);
-            trialSINRValueRole(n) = "measured";
-            trialSINRSource(n) = string(dataSINRMeta.Source);
-            if localCQIReportingEnabled(cfgFrame, "UL") && ~isfinite(trialCQI(n))
-                [dataCQI, dataMod, dataRate, dataMCS] = localCQIAndMCSFromSINR(dataSINR, cfgFrame, "UL");
-                if isfinite(dataCQI)
-                    trialCQI(n) = double(dataCQI);
-                    trialCQISource(n) = "post_equalization_data_sinr_to_cqi";
-                    trialCQIDerivedMCS(n) = double(dataMCS);
-                    trialCQIDerivedCodeRate(n) = double(dataRate);
-                    trialCQIDerivedModulation(n) = string(dataMod);
-                end
-            end
-        elseif isfinite(trialDecoderTruthProxySINR(n))
-            trialSINR(n) = double(trialDecoderTruthProxySINR(n));
-            trialSINRValueRole(n) = "derived_proxy";
-            trialSINRSource(n) = string(localSafeCharToken(sixgr.util.structGet(decoderTruthProxyMeta, "Source", "post_equalization_evm_proxy")));
+            trialEVMProxySINR(n) = double(dataSINR);
+            trialEVMProxySINRSource(n) = string(dataSINRMeta.Source);
+            trialEVMProxySINRValueRole(n) = string(dataSINRMeta.ValueRole);
+            trialEVMProxySINRValueStatus(n) = string(dataSINRMeta.ValueStatus);
+            trialEVMProxySINRNAReason(n) = string(dataSINRMeta.NAReason);
         else
-            trialSINR(n) = NaN;
-            trialMeasuredSINRSource(n) = "";
-            trialSINRValueRole(n) = "";
-            trialSINRSource(n) = "";
+            trialEVMProxySINRSource(n) = string(dataSINRMeta.Source);
+            trialEVMProxySINRValueRole(n) = string(dataSINRMeta.ValueRole);
+            trialEVMProxySINRValueStatus(n) = string(dataSINRMeta.ValueStatus);
+            trialEVMProxySINRNAReason(n) = string(dataSINRMeta.NAReason);
         end
         if isfinite(trialCQI(n))
             [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "UL");
@@ -1200,6 +1205,12 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.ReceiverHestSINRValueRole = trialReceiverHestSINRValueRole(idx);
         T.ReceiverHestSINRValueStatus = trialReceiverHestSINRValueStatus(idx);
         T.ReceiverHestSINRNAReason = trialReceiverHestSINRNAReason(idx);
+        T.PostEqSINR_dB = trialPostEqSINR(idx);
+        T.PostEqSINRSource = trialPostEqSINRSource(idx);
+        T.PostEqSINRValueRole = trialPostEqSINRValueRole(idx);
+        T.PostEqSINRValueStatus = trialPostEqSINRValueStatus(idx);
+        T.PostEqSINRNAReason = trialPostEqSINRNAReason(idx);
+        T.PostEqSINRPerLayer_dB = trialPostEqSINRPerLayer(idx);
         T.CQISource = trialCQISource(idx);
         T.DecoderTruthProxySINR_dB = trialDecoderTruthProxySINR(idx);
         T.DecoderTruthProxySINRSource = trialDecoderTruthProxySINRSource(idx);
@@ -1207,6 +1218,14 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.SINRSource = trialSINRSource(idx);
         T.MeasuredTrialSINR_dB = trialMeasuredTrialSINR(idx);
         T.MeasuredTrialSINRSource = trialMeasuredSINRSource(idx);
+        T.MeasuredTrialSINRValueRole = trialMeasuredTrialSINRValueRole(idx);
+        T.MeasuredTrialSINRValueStatus = trialMeasuredTrialSINRValueStatus(idx);
+        T.MeasuredTrialSINRNAReason = trialMeasuredTrialSINRNAReason(idx);
+        T.EVMProxySINR_dB = trialEVMProxySINR(idx);
+        T.EVMProxySINRSource = trialEVMProxySINRSource(idx);
+        T.EVMProxySINRValueRole = trialEVMProxySINRValueRole(idx);
+        T.EVMProxySINRValueStatus = trialEVMProxySINRValueStatus(idx);
+        T.EVMProxySINRNAReason = trialEVMProxySINRNAReason(idx);
         T.AirInterfaceObservation_ms = trialAirInterfaceObservation(idx);
         T.LargeScaleSINR_dB = trialLargeScaleSINR(idx);
         T.LargeScaleSINRSource = trialLargeScaleSINRSource(idx);
@@ -2628,12 +2647,26 @@ T.ReceiverHestSINRSource = strings(0,1);
 T.ReceiverHestSINRValueRole = strings(0,1);
 T.ReceiverHestSINRValueStatus = strings(0,1);
 T.ReceiverHestSINRNAReason = strings(0,1);
+T.PostEqSINR_dB = zeros(0,1);
+T.PostEqSINRSource = strings(0,1);
+T.PostEqSINRValueRole = strings(0,1);
+T.PostEqSINRValueStatus = strings(0,1);
+T.PostEqSINRNAReason = strings(0,1);
+T.PostEqSINRPerLayer_dB = strings(0,1);
 T.DecoderTruthProxySINR_dB = zeros(0,1);
 T.DecoderTruthProxySINRSource = strings(0,1);
 T.SINRValueRole = strings(0,1);
 T.SINRSource = strings(0,1);
 T.MeasuredTrialSINR_dB = zeros(0,1);
 T.MeasuredTrialSINRSource = strings(0,1);
+T.MeasuredTrialSINRValueRole = strings(0,1);
+T.MeasuredTrialSINRValueStatus = strings(0,1);
+T.MeasuredTrialSINRNAReason = strings(0,1);
+T.EVMProxySINR_dB = zeros(0,1);
+T.EVMProxySINRSource = strings(0,1);
+T.EVMProxySINRValueRole = strings(0,1);
+T.EVMProxySINRValueStatus = strings(0,1);
+T.EVMProxySINRNAReason = strings(0,1);
 T.LargeScaleSINR_dB = zeros(0,1);
 T.LargeScaleSINRSource = strings(0,1);
 T.ServingRSRP_dBm = zeros(0,1);
@@ -2823,13 +2856,14 @@ if localResolveLinkAdaptationMode(cfg, direction) ~= "fixed"
 end
 end
 
-function [sinr_dB, meta] = localMeasuredDataDomainSINR(modTrack)
+function [sinr_dB, meta] = localEVMProxySINR(modTrack)
 sinr_dB = NaN;
 meta = struct( ...
-    "Source", "post_equalization_error_vector_measurement", ...
-    "ValueRole", "measured", ...
+    "Source", "evm_proxy_not_true_post_equalization_sinr", ...
+    "ValueRole", "diagnostic_evm_proxy_not_scheduling_input", ...
     "ValueStatus", "unavailable", ...
-    "Definition", "10log10(reference_symbol_power/error_vector_power)_from_equalized_data_symbols", ...
+    "Definition", "10log10(1/EVM_rms^2)_post_decode_diagnostic_proxy_not_ts38214_post_equalization_sinr", ...
+    "SchedulingEligible", false, ...
     "NAReason", "evm_unavailable");
 evm = double(sixgr.util.structGet(modTrack, "EVM_rms", NaN));
 if ~(isscalar(evm) && isfinite(evm) && evm > 0)
@@ -2849,7 +2883,11 @@ if ~(isscalar(sinr_dB) && isfinite(sinr_dB))
     return;
 end
 try
-    feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", double(sinr_dB)), cfg, direction);
+    feedback = sixgr.link.resolveWidebandCQI(struct( ...
+        "WidebandSINR_dB", double(sinr_dB), ...
+        "SINRSource", "post_equalization_sinr_from_equalizer_channel_estimate", ...
+        "SINRValueRole", "measured_post_equalization_scheduling_input", ...
+        "SINRValueStatus", "OK"), cfg, direction);
     cqi = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
     if isfinite(cqi)
         [modulation, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
@@ -2916,16 +2954,16 @@ source = repmat("unavailable", n, 1);
 existingSource = string(localOptionalColumn(T, "CQISource", ""));
 existingMask = strlength(strtrim(existingSource)) > 0 & lower(strtrim(existingSource)) ~= "unavailable";
 widebandCQI = double(localOptionalColumn(T, "WidebandCQI", NaN));
-measuredSINR = double(localOptionalColumn(T, "MeasuredTrialSINR_dB", localOptionalColumn(T, "MeasuredSINR_dB", NaN)));
-measuredSource = lower(strtrim(string(localOptionalColumn(T, "MeasuredTrialSINRSource", ""))));
+postEqSINR = double(localOptionalColumn(T, "PostEqSINR_dB", localOptionalColumn(T, "MeasuredTrialSINR_dB", localOptionalColumn(T, "MeasuredSINR_dB", NaN))));
+postEqSource = lower(strtrim(string(localOptionalColumn(T, "PostEqSINRSource", localOptionalColumn(T, "MeasuredTrialSINRSource", "")))));
 cqiMask = isfinite(widebandCQI);
 source(cqiMask) = "runtime_reported_cqi";
 source(existingMask) = existingSource(existingMask);
-dataDomainMask = cqiMask & ~existingMask & contains(measuredSource, "post_equalization_error_vector_measurement");
-source(dataDomainMask) = "post_equalization_data_sinr_to_cqi";
-effMask = ~existingMask & ~cqiMask & configuredDomain == "effective_sinr" & isfinite(measuredSINR);
+dataDomainMask = cqiMask & ~existingMask & contains(postEqSource, "post_equalization");
+source(dataDomainMask) = "post_equalization_sinr_to_cqi";
+effMask = ~existingMask & ~cqiMask & configuredDomain == "effective_sinr" & isfinite(postEqSINR);
 source(effMask) = "runtime_effective_sinr";
-blerMask = ~existingMask & ~cqiMask & configuredDomain == "bler_margin" & isfinite(measuredSINR);
+blerMask = ~existingMask & ~cqiMask & configuredDomain == "bler_margin" & isfinite(postEqSINR);
 source(blerMask) = "runtime_effective_sinr_proxy_for_bler_margin";
 end
 
@@ -3127,9 +3165,49 @@ metrics = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
     "ReferenceIndices", sixgr.util.structGet(rx, "DMRSIndices", []), ...
     "ReferenceSymbols", sixgr.util.structGet(rx, "DMRSSymbols", []), ...
     "PrecoderInfo", precoderTrace);
-if isfinite(double(sixgr.util.structGet(metrics, "CQI", NaN))) && ...
-        strlength(strtrim(string(sixgr.util.structGet(metrics, "CQISource", "")))) == 0
-    metrics.CQISource = "ul_link_state_reference_signal_cqi";
+metrics.PilotSINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
+metrics.PilotSINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
+postEqSINR = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+postEqSource = string(sixgr.util.structGet(rx, "PostEqSINRSource", ""));
+postEqRole = string(sixgr.util.structGet(rx, "PostEqSINRValueRole", ""));
+postEqStatus = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
+reportCQI = localCQIReportingEnabled(cfg, "UL");
+if isfinite(postEqSINR) && localPostEqSINRIsSchedulerEligible(postEqSource, postEqRole, postEqStatus)
+    metrics.SINR_dB = postEqSINR;
+    metrics.SINRSource = char(postEqSource);
+    metrics.SINRValueRole = char(postEqRole);
+    metrics.SINRValueStatus = char(postEqStatus);
+    metrics.SINRNAReason = char(string(sixgr.util.structGet(rx, "PostEqSINRNAReason", "")));
+    if reportCQI
+        feedback = sixgr.link.resolveWidebandCQI(struct( ...
+            "WidebandSINR_dB", postEqSINR, ...
+            "SINRSource", char(postEqSource), ...
+            "SINRValueRole", char(postEqRole), ...
+            "SINRValueStatus", char(postEqStatus)), cfg, "UL");
+        rawCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
+        if isfinite(rawCQI)
+            metrics.CQI = double(max(0, min(15, round(rawCQI))));
+            metrics.CQISource = "ul_post_equalization_sinr_to_cqi:" + string(sixgr.util.structGet(feedback, "Mode", "sinr_threshold_table"));
+            metrics.CQIValueStatus = "OK";
+        else
+            metrics.CQI = NaN;
+            metrics.CQISource = "ul_post_equalization_sinr_to_cqi_unavailable";
+            metrics.CQIValueStatus = "unavailable";
+        end
+    else
+        metrics.CQI = NaN;
+        metrics.CQISource = "cqi_reporting_disabled";
+        metrics.CQIValueStatus = "disabled";
+    end
+else
+    metrics.SINR_dB = NaN;
+    metrics.SINRSource = "post_equalization_sinr_unavailable";
+    metrics.SINRValueRole = "unavailable";
+    metrics.SINRValueStatus = "unavailable";
+    metrics.SINRNAReason = "post_equalization_sinr_missing_or_not_scheduler_eligible";
+    metrics.CQI = NaN;
+    metrics.CQISource = "ul_post_equalization_sinr_unavailable_no_cqi";
+    metrics.CQIValueStatus = "unavailable";
 end
 
 if isempty(Hest)
@@ -3174,6 +3252,14 @@ beamFields = fieldnames(beamMetrics);
 for f = 1:numel(beamFields)
     metrics.(beamFields{f}) = beamMetrics.(beamFields{f});
 end
+end
+
+function tf = localPostEqSINRIsSchedulerEligible(source, role, status)
+token = lower(strjoin([string(source), string(role), string(status)], " "));
+blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+    "unavailable", "failed", "rejected"];
+tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
 end
 
 function args = localBuildCSIFeedbackArgs(rx)

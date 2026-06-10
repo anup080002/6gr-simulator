@@ -769,12 +769,12 @@ for i = 1:numel(servingCells)
     rows(i).mean_dl_sinr_db = localMeanFromMask(src.SystemInterference, mask, "SINR_DL_dB");
     if ~isfinite(rows(i).mean_dl_sinr_db)
         rows(i).mean_dl_sinr_db = localCoverageMeanByCell(src.CoverageLayer, cellId, ...
-            "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
+            "PostEqWidebandSINR_dB", "PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
     end
     rows(i).mean_ul_sinr_db = localMeanFromMask(src.SystemInterference, mask, "SINR_UL_dB");
     if ~isfinite(rows(i).mean_ul_sinr_db)
         rows(i).mean_ul_sinr_db = localMeanTrialMetricByCell(src.ULTrials, cellId, ...
-            ["MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB"]);
+            ["PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB"]);
     end
     rows(i).mean_rsrp_dbm = localMeanFromMask(src.SystemInterference, mask, "RSRP_dBm");
     if ~isfinite(rows(i).mean_rsrp_dbm)
@@ -1038,7 +1038,7 @@ for i = 1:height(src.SystemSectors)
     end
     rows(i).avg_sinr_dB = localMeanFromMask(src.SystemInterference, intrMask, "SINR_DL_dB", "SINR_UL_dB");
     if ~isfinite(rows(i).avg_sinr_dB)
-        rows(i).avg_sinr_dB = localCoverageMeanByCell(src.CoverageLayer, cellId, "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
+        rows(i).avg_sinr_dB = localCoverageMeanByCell(src.CoverageLayer, cellId, "PostEqWidebandSINR_dB", "PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
     end
     rows(i).edge_ue_count = localEdgeUECount(src.SystemInterference, cellId);
     if ~isfinite(rows(i).edge_ue_count)
@@ -3277,8 +3277,8 @@ for i = 1:height(trials)
     interf = localFirstFinite(double(localTableValue(row, "InterferenceAggregatedRxPower_dBm", NaN)));
     noise = NaN;
     totalIn = localSafeLogPowerSum(interf, noise);
-    postEq = localFirstFinite(double(localTableValue(row, "MeasuredTrialSINR_dB", ...
-        localTableValue(row, "MeasuredSINR_dB", localTableValue(row, "ReceiverHestSINR_dB", NaN)))));
+    postEq = localFirstFinite(double(localTableValue(row, "PostEqSINR_dB", ...
+        localTableValue(row, "MeasuredTrialSINR_dB", localTableValue(row, "MeasuredSINR_dB", NaN)))));
     preEq = localFirstFinite(double(localTableValue(row, "LargeScaleSINR_dB", NaN)));
     contributorCount = localFirstFinite(double(localTableValue(row, "InterferenceContributorCount", 0)));
     rows(end+1, 1) = struct( ... %#ok<AGROW>
@@ -3339,7 +3339,8 @@ for i = 1:height(trials)
     interf = localFirstFinite(double(localTableValue(row, "InterferenceAggregatedRxPower_dBm", NaN)));
     noise = NaN;
     snr = localFirstFinite(double(localTableValue(row, "LargeScaleSINR_dB", NaN)));
-    sinr = localFirstFinite(double(localTableValue(row, "MeasuredTrialSINR_dB", localTableValue(row, "MeasuredSINR_dB", NaN))));
+    sinr = localFirstFinite(double(localTableValue(row, "PostEqSINR_dB", ...
+        localTableValue(row, "MeasuredTrialSINR_dB", localTableValue(row, "MeasuredSINR_dB", NaN)))));
     rows(end+1, 1) = struct( ... %#ok<AGROW>
         "timestamp_sim_ms", localTrialTimestampMs(row, meta), ...
         "ue_id", localTableValue(row, "UEID", localTableValue(row, "UEIndex", NaN)), ...
@@ -3415,7 +3416,7 @@ if istable(src.CoverageLayer) && ~isempty(src.CoverageLayer)
     for i = 1:numel(ueVals)
         ue = ueVals(i);
         largeScale = localCoverageMetricForUE(src.CoverageLayer, ue, "LargeScaleWidebandSINR_dB", "LargeScaleSINR_dB");
-        measured = localCoverageMetricForUE(src.CoverageLayer, ue, "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB");
+        measured = localCoverageMetricForUE(src.CoverageLayer, ue, "PostEqWidebandSINR_dB", "PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB");
         failureRate = localUserPerformanceMetric(src.UserPerformance, ue, "HARQFailureRate");
         harqObs = localUserPerformanceMetric(src.UserPerformance, ue, "HARQObservationCount");
         failureEvidenceReady = isfinite(failureRate) && failureRate >= 0.5 && isfinite(harqObs) && harqObs >= 3;
@@ -3460,7 +3461,7 @@ for i = 1:numel(ueVals)
     rows(end+1, 1) = struct( ... %#ok<AGROW>
         "ue_id", ue, ...
         "throughput_mbps", localUserPerformanceMetric(src.UserPerformance, ue, "UserThroughput_Mbps"), ...
-        "mean_sinr_db", localCoverageMetricForUE(src.CoverageLayer, ue, "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB"), ...
+        "mean_sinr_db", localCoverageMetricForUE(src.CoverageLayer, ue, "PostEqWidebandSINR_dB", "PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB"), ...
         "mean_bler", localTrialBLERForUE(src, ue), ...
         "mean_queue_bits", localQueueBitsForUE(src, ue), ...
         "analytics_scope", "edge_zone_runtime_summary_from_waveform_coverage");
@@ -3570,7 +3571,7 @@ for zoneIdx = 1:numel(zones)
     queueVals = nan(numel(theseUEs), 1);
     for i = 1:numel(theseUEs)
         throughput(i) = localUserPerformanceMetric(src.UserPerformance, theseUEs(i), "UserThroughput_Mbps");
-        sinrVals(i) = localCoverageMetricForUE(src.CoverageLayer, theseUEs(i), "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB");
+        sinrVals(i) = localCoverageMetricForUE(src.CoverageLayer, theseUEs(i), "PostEqWidebandSINR_dB", "PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "LargeScaleWidebandSINR_dB");
         blerVals(i) = localTrialBLERForUE(src, theseUEs(i));
         queueVals(i) = localQueueBitsForUE(src, theseUEs(i));
     end

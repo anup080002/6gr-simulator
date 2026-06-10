@@ -69,13 +69,13 @@ simulation:
 
 random_access:
   enabled: true
-  prach_format: A1
+  prach_format: B4
   preamble_length_mode: short
   preamble_count: 64
   zero_correlation_zone: 8
   detection_threshold: 0.5
   msg3_enabled: true
-  configuration_index: 84
+  configuration_index: 167
   subcarrier_spacing_khz: 30
   root_sequence_index: 1
   preamble_index: 0

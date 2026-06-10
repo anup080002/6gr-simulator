@@ -5,6 +5,15 @@ if nargin < 2 || ~(isnumeric(canonicalSlot) && isscalar(canonicalSlot) && isfini
     canonicalSlot = 1;
 end
 
+try
+    fs = sixgr.phy.FrameStructureEngine(cfg);
+    partition = fs.SlotPartition(canonicalSlot);
+    return;
+catch
+    % Keep the legacy minimal resolver available for tests/utilities that
+    % only provide TDD fields and no bandwidth/grid metadata.
+end
+
 symbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", ...
     sixgr.util.structGet(cfg, "frame.symbols_per_slot", ...
     sixgr.util.structGet(cfg, "frame_timing.symbols_per_slot", 14))));

@@ -4392,6 +4392,24 @@ end
 token = join(string(round(values)), "|");
 end
 
+function token = localFormatNumericVector(values)
+if isstring(values) || ischar(values)
+    token = string(values);
+    return;
+end
+values = double(values(:).');
+values = values(isfinite(values));
+if isempty(values)
+    token = "";
+    return;
+end
+parts = strings(1, numel(values));
+for ii = 1:numel(values)
+    parts(ii) = string(sprintf("%.6g", values(ii)));
+end
+token = join(parts, "|");
+end
+
 function cfgOut = localPruneIncompatibleDLPrecodingConfig(cfgIn, pdsch)
 cfgOut = cfgIn;
 nLayers = double(sixgr.util.structGet(pdsch, "NumLayers", 1));
@@ -5185,6 +5203,29 @@ function tf = localIsActivePRACHOccasion(cfg, slotIdx)
 tf = false;
 if ~(isfinite(double(slotIdx)) && double(slotIdx) >= 1)
     return;
+end
+validSlots1 = double(sixgr.util.structGet(cfg, "phy.prach.validSlots1Based", []));
+validSlots1 = validSlots1(isfinite(validSlots1) & validSlots1 >= 1);
+if ~isempty(validSlots1)
+    slotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", ...
+        sixgr.util.structGet(cfg, "frame_timing.slots_per_frame", max(validSlots1))));
+    slotsPerFrame = max(1, round(double(slotsPerFrame)));
+    canonicalSlotInFrame = mod(round(double(slotIdx)) - 1, slotsPerFrame) + 1;
+    if ~ismember(canonicalSlotInFrame, round(validSlots1(:).'))
+        return;
+    end
+else
+    try
+        fs = sixgr.phy.FrameStructureEngine(cfg);
+        if ~fs.IsPRACHSlot(slotIdx)
+            return;
+        end
+    catch
+        partition = sixgr.util.resolveTDDSlotPartition(cfg, slotIdx);
+        if ~(logical(partition.AllowUL) && ~logical(partition.IsSpecialSlot))
+            return;
+        end
+    end
 end
 carrierSlot = max(0, round(double(slotIdx)) - 1);
 try
@@ -6152,8 +6193,12 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'LinkAdaptationApplied','LinkAdaptationScheduled','IsWarmupFrame','Notes', ...
     'SFN','UEID','UEIndex','RNTI','BaseStationID','AllocatedPRBCount','PRBStart','MCSIndex','Rank', ...
     'ConfiguredSNR_dB','ConfiguredSNRSource','SNRValueRole','AppliedAWGNSNR_dB', ...
-    'ReceiverHestSINR_dB','ReceiverHestSINRSource','DecoderTruthProxySINR_dB','DecoderTruthProxySINRSource','SINRValueRole','SINRSource', ...
-    'MeasuredTrialSINR_dB','MeasuredTrialSINRSource', ...
+    'ReceiverHestSINR_dB','ReceiverHestSINRSource','ReceiverHestSINRValueRole','ReceiverHestSINRValueStatus','ReceiverHestSINRNAReason', ...
+    'PostEqSINR_dB','PostEqSINRSource','PostEqSINRValueRole','PostEqSINRValueStatus','PostEqSINRNAReason','PostEqSINRPerLayer_dB', ...
+    'EVMProxySINR_dB','EVMProxySINRSource','EVMProxySINRValueRole','EVMProxySINRValueStatus','EVMProxySINRNAReason', ...
+    'DecoderTruthProxySINR_dB','DecoderTruthProxySINRSource','DecoderTruthProxySINRValueRole','DecoderTruthProxySINRValueStatus','DecoderTruthProxySINRNAReason', ...
+    'SINRValueRole','SINRSource','SINRValueStatus','SINRValueDefinition', ...
+    'MeasuredTrialSINR_dB','MeasuredTrialSINRSource','MeasuredTrialSINRValueRole','MeasuredTrialSINRValueStatus','MeasuredTrialSINRNAReason', ...
     'LargeScaleSINR_dB','LargeScaleSINRSource', ...
     'ServingRSRP_dBm','ServingRSRPSource', ...
     'CSI_RSRP_dB','CSI_RSRPSource', ...
@@ -6214,8 +6259,12 @@ for i = 1:numel(vars)
                             'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
                             'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason', ...
-                            'ConfiguredSNRSource','SNRValueRole','ReceiverHestSINRSource','DecoderTruthProxySINRSource','SINRValueRole','SINRSource', ...
-                            'MeasuredTrialSINRSource','LargeScaleSINRSource','ServingRSRPSource','CSI_RSRPSource', ...
+                            'ConfiguredSNRSource','SNRValueRole','ReceiverHestSINRSource','ReceiverHestSINRValueRole','ReceiverHestSINRValueStatus','ReceiverHestSINRNAReason', ...
+                            'PostEqSINRSource','PostEqSINRValueRole','PostEqSINRValueStatus','PostEqSINRNAReason','PostEqSINRPerLayer_dB', ...
+                            'EVMProxySINRSource','EVMProxySINRValueRole','EVMProxySINRValueStatus','EVMProxySINRNAReason', ...
+                            'DecoderTruthProxySINRSource','DecoderTruthProxySINRValueRole','DecoderTruthProxySINRValueStatus','DecoderTruthProxySINRNAReason', ...
+                            'SINRValueRole','SINRSource','SINRValueStatus','SINRValueDefinition', ...
+                            'MeasuredTrialSINRSource','MeasuredTrialSINRValueRole','MeasuredTrialSINRValueStatus','MeasuredTrialSINRNAReason','LargeScaleSINRSource','ServingRSRPSource','CSI_RSRPSource', ...
                             'AppliedLargeScaleGainSource','ChannelComplianceMode','PathlossModelSource','PathlossComplianceStatus', ...
                             'O2IModelSource','O2IComplianceStatus','O2IComplianceReason', ...
                             'LOSProbabilitySource','LOSComplianceStatus','LOSComplianceReason', ...
@@ -6392,6 +6441,7 @@ if all(~isfinite(double(T.ConfiguredSNR_dB)))
     T.ConfiguredSNR_dB = double(T.SNR_dB);
 end
 T = localPopulateSINRTruthColumns(T);
+T = localRepairLinkTrialEvidenceColumns(T, direction, cfg);
 if all(~isfinite(double(T.MCSIndex))) && any(isfinite(double(T.MCS)))
     T.MCSIndex = double(T.MCS);
 end
@@ -6440,14 +6490,57 @@ end
 if ~ismember("MeasuredTrialSINRSource", vars)
     T.MeasuredTrialSINRSource = strings(n, 1);
 end
+if ~ismember("MeasuredTrialSINRValueRole", vars)
+    T.MeasuredTrialSINRValueRole = strings(n, 1);
+end
+if ~ismember("MeasuredTrialSINRValueStatus", vars)
+    T.MeasuredTrialSINRValueStatus = strings(n, 1);
+end
+if ~ismember("MeasuredTrialSINRNAReason", vars)
+    T.MeasuredTrialSINRNAReason = strings(n, 1);
+end
+if ~ismember("PostEqSINR_dB", vars)
+    T.PostEqSINR_dB = nan(n, 1);
+end
+if ~ismember("PostEqSINRSource", vars)
+    T.PostEqSINRSource = strings(n, 1);
+end
+if ~ismember("PostEqSINRValueRole", vars)
+    T.PostEqSINRValueRole = strings(n, 1);
+end
+if ~ismember("PostEqSINRValueStatus", vars)
+    T.PostEqSINRValueStatus = strings(n, 1);
+end
 if ~ismember("MeasuredSINR_dB", vars)
     T.MeasuredSINR_dB = nan(n, 1);
 end
 vars = string(T.Properties.VariableNames);
 
 receiverHest = double(T.ReceiverHestSINR_dB);
+postEqSINR = double(T.PostEqSINR_dB);
 measuredTrial = double(T.MeasuredTrialSINR_dB);
 measuredSINR = double(T.MeasuredSINR_dB);
+postEqSource = strtrim(string(T.PostEqSINRSource));
+postEqRole = strtrim(string(T.PostEqSINRValueRole));
+postEqStatus = strtrim(string(T.PostEqSINRValueStatus));
+postEqEligible = isfinite(postEqSINR) & localPostEqSINRProvenanceEligible(postEqSource, postEqRole, postEqStatus);
+fillMeasuredTrialFromPostEq = ~isfinite(measuredTrial) & postEqEligible;
+if any(fillMeasuredTrialFromPostEq)
+    measuredTrial(fillMeasuredTrialFromPostEq) = postEqSINR(fillMeasuredTrialFromPostEq);
+    T.MeasuredTrialSINR_dB = measuredTrial;
+    measuredSource = strtrim(string(T.MeasuredTrialSINRSource));
+    measuredRole = strtrim(string(T.MeasuredTrialSINRValueRole));
+    measuredStatus = strtrim(string(T.MeasuredTrialSINRValueStatus));
+    fillSourceMask = fillMeasuredTrialFromPostEq & (strlength(measuredSource) == 0);
+    fillRoleMask = fillMeasuredTrialFromPostEq & (strlength(measuredRole) == 0);
+    fillStatusMask = fillMeasuredTrialFromPostEq & (strlength(measuredStatus) == 0);
+    measuredSource(fillSourceMask) = postEqSource(fillSourceMask);
+    measuredRole(fillRoleMask) = "measured_post_equalization_scheduling_input";
+    measuredStatus(fillStatusMask) = "OK";
+    T.MeasuredTrialSINRSource = measuredSource;
+    T.MeasuredTrialSINRValueRole = measuredRole;
+    T.MeasuredTrialSINRValueStatus = measuredStatus;
+end
 fillMeasuredAliasMask = ~isfinite(measuredSINR) & isfinite(measuredTrial);
 if any(fillMeasuredAliasMask)
     measuredSINR(fillMeasuredAliasMask) = measuredTrial(fillMeasuredAliasMask);
@@ -6461,15 +6554,15 @@ if any(fillReceiverSourceMask)
     T.ReceiverHestSINRSource = receiverSource;
 end
 sinrValueRole = strtrim(string(T.SINRValueRole));
-fillRoleMask = strlength(sinrValueRole) == 0 & isfinite(receiverHest);
+fillRoleMask = strlength(sinrValueRole) == 0 & postEqEligible;
 if any(fillRoleMask)
-    sinrValueRole(fillRoleMask) = "estimated";
+    sinrValueRole(fillRoleMask) = "measured_post_equalization_scheduling_input";
     T.SINRValueRole = sinrValueRole;
 end
 sinrSource = strtrim(string(T.SINRSource));
-fillSINRSourceMask = strlength(sinrSource) == 0 & isfinite(receiverHest) & strlength(receiverSource) > 0;
+fillSINRSourceMask = strlength(sinrSource) == 0 & postEqEligible & strlength(postEqSource) > 0;
 if any(fillSINRSourceMask)
-    sinrSource(fillSINRSourceMask) = receiverSource(fillSINRSourceMask);
+    sinrSource(fillSINRSourceMask) = postEqSource(fillSINRSourceMask);
     T.SINRSource = sinrSource;
 end
 
@@ -6485,6 +6578,135 @@ if all(~isfinite(decoderProxy)) && ismember("EVM_rms", vars)
     T.DecoderTruthProxySINR_dB = decoderProxy;
 elseif all(strlength(strtrim(string(T.DecoderTruthProxySINRSource))) == 0) && any(isfinite(decoderProxy))
     T.DecoderTruthProxySINRSource(:) = "post_equalization_evm_proxy";
+end
+end
+
+function tf = localPostEqSINRProvenanceEligible(source, role, status)
+token = lower(strjoin([string(source), string(role), string(status)], " "));
+blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+    "unavailable", "failed", "rejected"];
+tf = contains(token, "post_equalization") & ~arrayfun(@(s) any(contains(s, blocked)), token);
+end
+
+function T = localRepairLinkTrialEvidenceColumns(T, direction, cfg)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+status = lower(strtrim(string(localColumnOrDefault(T, "Status", repmat("", n, 1)))));
+crash = logical(localColumnOrDefault(T, "Crash", false(n, 1)));
+crcPass = double(localColumnOrDefault(T, "CRCPass", nan(n, 1)));
+decodeAttempted = logical(localColumnOrDefault(T, "DecodeAttempted", false(n, 1)));
+decodeUsable = logical(localColumnOrDefault(T, "DecodeUsable", false(n, 1)));
+receiverUsable = logical(localColumnOrDefault(T, "ReceiverUsable", false(n, 1)));
+
+receiverSINR = double(localColumnOrDefault(T, "ReceiverHestSINR_dB", nan(n, 1)));
+measuredSINR = double(localColumnOrDefault(T, "MeasuredTrialSINR_dB", nan(n, 1)));
+evm = double(localColumnOrDefault(T, "EVM_rms", nan(n, 1)));
+nmse = double(localColumnOrDefault(T, "NMSE_dB", nan(n, 1)));
+noiseVar = double(localColumnOrDefault(T, "NoiseVariance", nan(n, 1)));
+bitErrors = double(localColumnOrDefault(T, "BitErrors", nan(n, 1)));
+bitsCompared = double(localColumnOrDefault(T, "BitsCompared", nan(n, 1)));
+decoderIterations = double(localColumnOrDefault(T, "DecoderIterations", nan(n, 1)));
+tbBits = double(localColumnOrDefault(T, "TBSize_bits", nan(n, 1)));
+
+activeOutcome = ~crash & any(status == ["pass","fail"], 2);
+decodeEvidence = ~crash & (decodeAttempted | activeOutcome | isfinite(crcPass) | ...
+    isfinite(bitErrors) | isfinite(bitsCompared) | isfinite(decoderIterations) | isfinite(tbBits));
+if ismember("DecodeAttempted", string(T.Properties.VariableNames))
+    T.DecodeAttempted = logical(decodeAttempted | decodeEvidence);
+end
+decodeUsableEvidence = decodeEvidence & (receiverUsable | isfinite(crcPass) | isfinite(bitErrors) | ...
+    isfinite(bitsCompared) | isfinite(evm) | isfinite(nmse));
+if ismember("DecodeUsable", string(T.Properties.VariableNames))
+    T.DecodeUsable = logical(decodeUsable | decodeUsableEvidence);
+end
+
+detMetric = double(localColumnOrDefault(T, "DetectionMetric", nan(n, 1)));
+corrPeak = double(localColumnOrDefault(T, "CorrelationPeak", nan(n, 1)));
+detectorPeak = double(localColumnOrDefault(T, "DetectorPeakMetric", nan(n, 1)));
+detectEvidence = decodeEvidence | isfinite(detMetric) | isfinite(corrPeak) | isfinite(detectorPeak);
+if ismember("DetectionAttempted", string(T.Properties.VariableNames))
+    T.DetectionAttempted = logical(localColumnOrDefault(T, "DetectionAttempted", false(n, 1)) | detectEvidence);
+end
+if ismember("DetectionUsable", string(T.Properties.VariableNames))
+    T.DetectionUsable = logical(localColumnOrDefault(T, "DetectionUsable", false(n, 1)) | ...
+        (detectEvidence & (isfinite(detMetric) | decodeUsableEvidence | receiverUsable)));
+end
+
+widebandCQI = double(localColumnOrDefault(T, "WidebandCQI", nan(n, 1)));
+channelGain = double(localColumnOrDefault(T, "ChannelGain_dB", nan(n, 1)));
+conditionNumber = double(localColumnOrDefault(T, "ConditionNumber_dB", nan(n, 1)));
+measurementEvidence = ~crash & (isfinite(receiverSINR) | isfinite(measuredSINR) | isfinite(noiseVar) | ...
+    isfinite(evm) | isfinite(nmse) | isfinite(widebandCQI) | isfinite(channelGain) | isfinite(conditionNumber));
+if ismember("MeasurementAttempted", string(T.Properties.VariableNames))
+    T.MeasurementAttempted = logical(localColumnOrDefault(T, "MeasurementAttempted", false(n, 1)) | measurementEvidence);
+end
+if ismember("MeasurementUsable", string(T.Properties.VariableNames))
+    T.MeasurementUsable = logical(localColumnOrDefault(T, "MeasurementUsable", false(n, 1)) | ...
+        (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR) | receiverUsable)));
+end
+if ismember("ReceiverUsable", string(T.Properties.VariableNames))
+    T.ReceiverUsable = logical(receiverUsable | (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR))));
+end
+
+if ismember("ChannelModelApplied", string(T.Properties.VariableNames))
+    modelApplied = strtrim(string(T.ChannelModelApplied));
+    model = strtrim(string(localColumnOrDefault(T, "ChannelModel", repmat("", n, 1))));
+    blankApplied = strlength(modelApplied) == 0 & strlength(model) > 0;
+    modelApplied(blankApplied) = model(blankApplied);
+    T.ChannelModelApplied = modelApplied;
+end
+if ismember("ChannelFadingApplied", string(T.Properties.VariableNames))
+    channelModel = upper(strtrim(string(localColumnOrDefault(T, "ChannelModel", repmat("", n, 1)))));
+    channelModelApplied = upper(strtrim(string(localColumnOrDefault(T, "ChannelModelApplied", repmat("", n, 1)))));
+    channelClass = lower(strtrim(string(localColumnOrDefault(T, "ChannelObjectClass", repmat("", n, 1)))));
+    channelSource = lower(strtrim(string(localColumnOrDefault(T, "ChannelObjectSource", repmat("", n, 1)))));
+    arrayStatus = lower(strtrim(string(localColumnOrDefault(T, "ChannelArrayHandlingStatus", repmat("", n, 1)))));
+    configuredAWGNOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+    fadingModel = startsWith(channelModel, "TDL") | startsWith(channelModel, "CDL") | ...
+        startsWith(channelModelApplied, "TDL") | startsWith(channelModelApplied, "CDL");
+    fadingRuntimeEvidence = contains(channelClass, "nrtdl") | contains(channelClass, "nrcdl") | ...
+        contains(channelSource, "tdl") | contains(channelSource, "cdl") | contains(arrayStatus, "runtime_array");
+    T.ChannelFadingApplied = logical(localColumnOrDefault(T, "ChannelFadingApplied", false(n, 1)) | ...
+        (~configuredAWGNOnly & fadingModel & fadingRuntimeEvidence));
+end
+
+if ismember("LinkAdaptationScheduled", string(T.Properties.VariableNames))
+    mcsIdx = double(localColumnOrDefault(T, "MCSIndex", localColumnOrDefault(T, "MCS", nan(n, 1))));
+    mcsAuthority = strtrim(string(localColumnOrDefault(T, "MCSAuthority", repmat("", n, 1))));
+    grantSource = strtrim(string(localColumnOrDefault(T, "GrantOperatingPointSource", repmat("", n, 1))));
+    laEvidence = ~crash & (isfinite(mcsIdx) | strlength(mcsAuthority) > 0 | strlength(grantSource) > 0);
+    T.LinkAdaptationScheduled = logical(localColumnOrDefault(T, "LinkAdaptationScheduled", false(n, 1)) | laEvidence);
+end
+if ismember("LinkAdaptationApplied", string(T.Properties.VariableNames))
+    modulation = strtrim(string(localColumnOrDefault(T, "Modulation", repmat("", n, 1))));
+    mcsIdx = double(localColumnOrDefault(T, "MCSIndex", localColumnOrDefault(T, "MCS", nan(n, 1))));
+    appliedEvidence = ~crash & isfinite(mcsIdx) & strlength(modulation) > 0 & decodeEvidence;
+    T.LinkAdaptationApplied = logical(localColumnOrDefault(T, "LinkAdaptationApplied", false(n, 1)) | appliedEvidence);
+end
+
+if ismember("AppliedPrecoderPMIType", string(T.Properties.VariableNames))
+    pmiType = strtrim(string(T.AppliedPrecoderPMIType));
+    codebookMode = strtrim(string(localColumnOrDefault(T, "AppliedPrecoderCodebookMode", repmat("", n, 1))));
+    precoderSource = lower(strtrim(string(localColumnOrDefault(T, "PrecoderSource", repmat("", n, 1)))));
+    precodingMode = lower(strtrim(string(localColumnOrDefault(T, "PrecodingMode", repmat("", n, 1)))));
+    precodingActive = logical(localColumnOrDefault(T, "PrecodingActive", false(n, 1)));
+    beamformingApplied = logical(localColumnOrDefault(T, "BeamformingApplied", false(n, 1)));
+    appliedBeam = strtrim(string(localColumnOrDefault(T, "AppliedBeamIndexSet", repmat("", n, 1))));
+    dftMask = (precodingActive | beamformingApplied) & (contains(precoderSource, "codebook_dft") | strlength(appliedBeam) > 0);
+    transformMask = logical(localColumnOrDefault(T, "TransformPrecodingApplied", false(n, 1))) | contains(precodingMode, "transform");
+    pmiType(strlength(pmiType) == 0 & dftMask) = "dft_beam_index_precoder";
+    pmiType(strlength(pmiType) == 0 & transformMask) = "transform_precoding_no_pmi";
+    pmiType(strlength(pmiType) == 0 & (precodingActive | beamformingApplied)) = "runtime_precoder_no_pmi_index";
+    T.AppliedPrecoderPMIType = pmiType;
+    if ismember("AppliedPrecoderCodebookMode", string(T.Properties.VariableNames))
+        codebookMode(strlength(codebookMode) == 0 & dftMask) = "dft_beam_codebook";
+        codebookMode(strlength(codebookMode) == 0 & transformMask) = "transform_precoding";
+        codebookMode(strlength(codebookMode) == 0 & (precodingActive | beamformingApplied)) = "runtime_precoder_mode";
+        T.AppliedPrecoderCodebookMode = codebookMode;
+    end
 end
 end
 
@@ -7049,11 +7271,11 @@ for k = 1:nTrials
         r.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", ""));
         r.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", ""));
         r.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", ""));
-        r.MeasuredTrialSINR_dB = r.ReceiverHestSINR_dB;
-        r.MeasuredTrialSINRSource = r.ReceiverHestSINRSource;
-        r.MeasuredTrialSINRValueRole = r.ReceiverHestSINRValueRole;
-        r.MeasuredTrialSINRValueStatus = r.ReceiverHestSINRValueStatus;
-        r.MeasuredTrialSINRNAReason = r.ReceiverHestSINRNAReason;
+        r.MeasuredTrialSINR_dB = NaN;
+        r.MeasuredTrialSINRSource = "";
+        r.MeasuredTrialSINRValueRole = "unavailable";
+        r.MeasuredTrialSINRValueStatus = "unavailable";
+        r.MeasuredTrialSINRNAReason = "pdcch_has_no_data_post_equalization_sinr_measurement";
         r.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
         r.NoiseVarStatus = string(sixgr.util.structGet(rx, "NoiseVarStatus", ""));
         r.NoiseVarSource = string(sixgr.util.structGet(rx, "NoiseVarSource", ""));
@@ -7728,6 +7950,12 @@ for k = 1:nTrials
         r.ReceiverHestSINRValueRole = string(sixgr.util.structGet(out, "ReceiverHestSINRValueRole", ""));
         r.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(out, "ReceiverHestSINRValueStatus", ""));
         r.ReceiverHestSINRNAReason = string(sixgr.util.structGet(out, "ReceiverHestSINRNAReason", ""));
+        r.PostEqSINR_dB = double(sixgr.util.structGet(out, "PostEqSINR_dB", NaN));
+        r.PostEqSINRSource = string(sixgr.util.structGet(out, "PostEqSINRSource", ""));
+        r.PostEqSINRValueRole = string(sixgr.util.structGet(out, "PostEqSINRValueRole", ""));
+        r.PostEqSINRValueStatus = string(sixgr.util.structGet(out, "PostEqSINRValueStatus", ""));
+        r.PostEqSINRNAReason = string(sixgr.util.structGet(out, "PostEqSINRNAReason", ""));
+        r.PostEqSINRPerLayer_dB = localFormatNumericVector(sixgr.util.structGet(out, "PostEqSINRPerLayer_dB", ""));
         r.MeasuredTrialSINR_dB = double(sixgr.util.structGet(out, "MeasuredTrialSINR_dB", NaN));
         r.MeasuredTrialSINRSource = string(sixgr.util.structGet(out, "MeasuredTrialSINRSource", ""));
         r.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(out, "MeasuredTrialSINRValueRole", ""));
@@ -7985,6 +8213,12 @@ row.ReceiverHestSINRSource = "";
 row.ReceiverHestSINRValueRole = "";
 row.ReceiverHestSINRValueStatus = "";
 row.ReceiverHestSINRNAReason = "";
+row.PostEqSINR_dB = NaN;
+row.PostEqSINRSource = "";
+row.PostEqSINRValueRole = "";
+row.PostEqSINRValueStatus = "";
+row.PostEqSINRNAReason = "";
+row.PostEqSINRPerLayer_dB = "";
 row.MeasuredTrialSINR_dB = NaN;
 row.MeasuredTrialSINRSource = "";
 row.MeasuredTrialSINRValueRole = "";
@@ -8194,6 +8428,15 @@ row.SNRValueRole = "configured_operating_point_metadata";
 row.AppliedAWGNSNR_dB = NaN;
 row.ReceiverHestSINR_dB = NaN;
 row.ReceiverHestSINRSource = "";
+row.ReceiverHestSINRValueRole = "";
+row.ReceiverHestSINRValueStatus = "";
+row.ReceiverHestSINRNAReason = "";
+row.PostEqSINR_dB = NaN;
+row.PostEqSINRSource = "";
+row.PostEqSINRValueRole = "";
+row.PostEqSINRValueStatus = "";
+row.PostEqSINRNAReason = "";
+row.PostEqSINRPerLayer_dB = "";
 row.DecoderTruthProxySINR_dB = NaN;
 row.DecoderTruthProxySINRSource = "";
 row.SINRValueRole = "";
@@ -8827,9 +9070,10 @@ if isfinite(configuredSNR_dB)
 else
     configuredText = "configured operating-point label unavailable";
 end
+postEqText = localFormatLiveSINRStatistic(trialT, "PostEqSINR_dB", "PostEqSINR_dB");
 measuredText = localFormatLiveSINRStatistic(trialT, "MeasuredTrialSINR_dB", "MeasuredTrialSINR_dB");
 receiverText = localFormatLiveSINRStatistic(trialT, "ReceiverHestSINR_dB", "ReceiverHestSINR_dB");
-summary = string(sprintf("%s; %s; %s", configuredText, measuredText, receiverText));
+summary = string(sprintf("%s; %s; %s; %s", configuredText, postEqText, measuredText, receiverText));
 end
 
 function txt = localFormatLiveSINRStatistic(trialT, varName, label)
@@ -10098,7 +10342,7 @@ if ~saveFigures
 end
 
 img1 = fullfile(layout.BeamformingImageDir, "beam_channel_sinr.png");
-localWriteGroupedMetricPlot(T, "ReceiverHestSINR_dB", img1, "Receiver Hest SINR by Trial", "Receiver Hest SINR (dB)");
+localWriteGroupedMetricPlot(T, "PostEqSINR_dB", img1, "Post-Eq SINR by Trial", "Post-equalization SINR (dB)");
 if exist(img1, "file") == 2
     artifacts.Images{end+1} = img1;
 end
@@ -10141,7 +10385,7 @@ end
 
 keepVars = ["UEIndex","RNTI","Direction","SNR_dB","Frame","Slot","MCS","PRBs","Layers", ...
     "ConfiguredLayers","ConfiguredTxAntennas","ConfiguredRxAntennas", ...
-    "ReceiverHestSINR_dB","WidebandCQI","RankIndicator","PMI","ChannelGain_dB","ConditionNumber_dB", ...
+    "PostEqSINR_dB","ReceiverHestSINR_dB","WidebandCQI","RankIndicator","PMI","ChannelGain_dB","ConditionNumber_dB", ...
     "RankEstimate","NumRxAntennas","NumTxPorts","SelectedBeamIndex","BestBeamIndex", ...
     "BeamHit","TopKBeamHit","BeamCandidateCount","SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB", ...
     "BeamSelectionStrategy","BeamIndexSet","ConfiguredBeamSelectionStrategy","AppliedBeamIndexSet", ...
@@ -10152,10 +10396,10 @@ keepVars = ["UEIndex","RNTI","Direction","SNR_dB","Frame","Slot","MCS","PRBs","L
 chunks = cell(numel(tables), 1);
 for i = 1:numel(tables)
     Ti = tables{i};
-    if ~all(ismember(["ReceiverHestSINR_dB","ConditionNumber_dB","ChannelGain_dB"], string(Ti.Properties.VariableNames)))
+    if ~all(ismember(["PostEqSINR_dB","ConditionNumber_dB","ChannelGain_dB"], string(Ti.Properties.VariableNames)))
         continue;
     end
-    hasMetrics = isfinite(double(Ti.ReceiverHestSINR_dB)) | isfinite(double(Ti.ConditionNumber_dB)) | isfinite(double(Ti.ChannelGain_dB));
+    hasMetrics = isfinite(double(Ti.PostEqSINR_dB)) | isfinite(double(Ti.ConditionNumber_dB)) | isfinite(double(Ti.ChannelGain_dB));
     Ti = Ti(hasMetrics, :);
     if isempty(Ti)
         continue;
@@ -10673,7 +10917,7 @@ else
 end
 if istable(Tdl) && ~isempty(Tdl)
     img = fullfile(imgDir, "dl_trial_sinr.png");
-    localWriteTrialMetricPlot(Tdl, "ReceiverHestSINR_dB", img, "DL Receiver Hest SINR", "Receiver Hest SINR (dB)");
+    localWriteTrialMetricPlot(Tdl, "PostEqSINR_dB", img, "DL Post-Eq SINR", "Post-equalization SINR (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
@@ -10704,7 +10948,7 @@ else
 end
 if istable(Tul) && ~isempty(Tul)
     img = fullfile(imgDir, "ul_trial_sinr.png");
-    localWriteTrialMetricPlot(Tul, "ReceiverHestSINR_dB", img, "UL Receiver Hest SINR", "Receiver Hest SINR (dB)");
+    localWriteTrialMetricPlot(Tul, "PostEqSINR_dB", img, "UL Post-Eq SINR", "Post-equalization SINR (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end

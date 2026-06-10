@@ -21,25 +21,27 @@ def main() -> None:
             "Lat": "12.0",
             "Lon": "77.0",
             "RSRP_dBm": "-82.5",
+            "PostEqWidebandSINR_dB": "9.7",
             "ReceiverHestWidebandSINR_dB": "31.2",
             "DecoderTruthProxyWidebandSINR_dB": "8.4",
             "LargeScaleWidebandSINR_dB": "12.1",
-            "WidebandSINRSource": "receiver_hest_reference_signal_measurement",
-            "WidebandSINRValueRole": "estimated",
+            "WidebandSINRSource": "post_equalization_sinr_from_equalizer_channel_estimate",
+            "WidebandSINRValueRole": "measured_post_equalization_scheduling_input",
             "WidebandCQI": "10",
         }
     ]
     points = dash.build_coverage_points(coverage_rows)
+    assert points[0]["PostEqWidebandSINR_dB"] == "9.7"
     assert points[0]["ReceiverHestWidebandSINR_dB"] == "31.2"
     assert points[0]["DecoderTruthProxyWidebandSINR_dB"] == "8.4"
-    assert points[0]["WidebandSINRValueRole"] == "estimated"
+    assert points[0]["WidebandSINRValueRole"] == "measured_post_equalization_scheduling_input"
 
     movement = dash.build_movement_payload(coverage_rows)
-    assert movement["points"][0]["sinr_dB"] == 31.2
+    assert movement["points"][0]["sinr_dB"] == 9.7
 
-    assert dash.MAP_METRIC_SPECS[2]["key"] == "ReceiverHestWidebandSINR_dB"
-    assert dash.MAP_METRIC_SPECS[3]["key"] == "DecoderTruthProxyWidebandSINR_dB"
-    assert dash.MAP_METRIC_SPECS[4]["key"] == "SystemLevelWidebandSINR_dB"
+    assert dash.MAP_METRIC_SPECS[2]["key"] == "PostEqWidebandSINR_dB"
+    assert dash.MAP_METRIC_SPECS[3]["key"] == "ReceiverHestWidebandSINR_dB"
+    assert dash.MAP_METRIC_SPECS[4]["key"] == "DecoderTruthProxyWidebandSINR_dB"
 
     system_estimate_rows = [
         {
@@ -94,7 +96,7 @@ def main() -> None:
         notes = " ".join(runtime_context["notes"])
         assert "not a decoder-truth SINR measurement" in notes
         assert "it is not a measured SINR" in notes
-        assert "ReceiverHestSINR_dB is a receiver-side wideband effective SINR estimate from Hest and reference-signal residual measurement." in notes
+        assert "ReceiverHestSINR_dB is a receiver-side diagnostic from Hest/reference-signal residual measurement" in notes
     finally:
         dash.load_small_csv_rows = orig_load_small
         dash.load_first_available_csv_rows = orig_load_first

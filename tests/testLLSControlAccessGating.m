@@ -12,6 +12,11 @@ scfg = sixgr.lls6g.config.loadScenarioConfig( ...
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", false);
 cfg = sixgr.util.structSet(cfg, "control_gating.trs_required", false);
+cfg = sixgr.util.structSet(cfg, "phy.duplex.mode", "TDD");
+cfg = sixgr.util.structSet(cfg, "referenceSignals.operationOrientation", "");
+cfg = sixgr.util.structSet(cfg, "referenceSignals.csiAcquisitionMode", "");
+cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.operation_orientation", "tdd_reciprocity");
+cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.csi_acquisition_mode", "joint_dl_ul");
 
 multiUser = struct( ...
     "Enabled", true, ...
@@ -46,16 +51,27 @@ assert(string(state.AccessState(1)) == "succeeded", ...
 srsPass = localControlTrial("PASS", double(state.CurrentSlot), double(state.CurrentFrame));
 srsPass.RIEstimate = 1;
 srsPass.TPMIEstimate = 0;
+srsPass.MeasuredTrialSINR_dB = 18;
+srsPass.WidebandCQI = 10;
+srsPass.CQIDerivedMCS = 11;
+srsPass.CQIDerivedModulation = "64QAM";
+srsPass.CQIDerivedTargetCodeRate = 0.455078125;
 state = sixgr.truth.CoupledTruthRuntime.applySRSTrial(state, 1, srsPass);
 assert(string(state.SRSValidityState(1)) == "valid", ...
     "SRS pass must move the UE into valid SRS state.");
 assert(logical(state.LatestULFeedback(1).Valid) && double(state.LatestULFeedback(1).RI) == 1, ...
     "SRS RI/TPMI evidence must feed the latest UL feedback state.");
+assert(logical(state.LatestDLFeedback(1).Valid) && double(state.LatestDLFeedback(1).CQI) > 0 && ...
+        isfinite(double(state.LatestDLFeedback(1).MCSIndex)), ...
+    "TDD reciprocal SRS evidence from lls6g.reference_signals must feed measured DL AMC feedback.");
 
 [stateReady, dlGrantsReady, ~] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
 assert(~isempty(dlGrantsReady), ...
     "DL grants must appear once PBCH/PRACH gating is satisfied.");
 grant = dlGrantsReady(1);
+assert(double(sixgr.util.structGet(grant, "MCSIndex", NaN)) > 1 && ...
+        strcmpi(char(string(sixgr.util.structGet(grant, "GrantOperatingPointSource", ""))), "feedback_cqi_derived_reference"), ...
+    "DL grants after reciprocal SRS feedback must consume measured CQI-derived AMC before PHY execution.");
 assert(strcmpi(char(string(sixgr.util.structGet(grant, "GrantControlState", ""))), "control_pending"), ...
     "Scheduled grants must start in the control_pending state when PDCCH gating is active.");
 

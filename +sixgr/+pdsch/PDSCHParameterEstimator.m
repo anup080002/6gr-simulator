@@ -2,7 +2,14 @@ function est = PDSCHParameterEstimator(rx, replay, carrier)
 %PDSCHParameterEstimator Practical parameter-estimation study hook.
 
 est = struct();
-est.EstimatedSNR_dB = double(sixgr.util.structGet(rx, "ReceiverHestSINR_dB", NaN));
+[estimatedSNR, estimatedSource, estimatedRole] = localBestEstimatedSNR(rx);
+est.EstimatedSNR_dB = double(estimatedSNR);
+est.EstimatedSNRSource = char(estimatedSource);
+est.EstimatedSNRValueRole = char(estimatedRole);
+est.PostEqSINR_dB = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+est.PostEqSINRSource = char(string(sixgr.util.structGet(rx, "PostEqSINRSource", "")));
+est.ReceiverHestSINR_dB = double(sixgr.util.structGet(rx, "ReceiverHestSINR_dB", NaN));
+est.ReceiverHestSINRSource = char(string(sixgr.util.structGet(rx, "ReceiverHestSINRSource", "")));
 est.EstimatedDelay_samples = double(sixgr.util.structGet(rx, "TimingOffset", NaN));
 est.EstimatedDelaySpread_s = NaN;
 est.EstimatedDoppler_Hz = NaN;
@@ -25,3 +32,20 @@ if isstruct(replay)
 end
 end
 
+function [sinr, source, role] = localBestEstimatedSNR(rx)
+sinr = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+source = string(sixgr.util.structGet(rx, "PostEqSINRSource", ""));
+role = string(sixgr.util.structGet(rx, "PostEqSINRValueRole", ""));
+if isfinite(sinr)
+    if strlength(strtrim(source)) == 0
+        source = "post_equalization_sinr_from_equalizer_channel_estimate";
+    end
+    if strlength(strtrim(role)) == 0
+        role = "measured_post_equalization_scheduling_input";
+    end
+    return;
+end
+sinr = NaN;
+source = "post_equalization_sinr_unavailable";
+role = "unavailable";
+end

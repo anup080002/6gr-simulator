@@ -51,14 +51,14 @@ localAssertRuntimeSINR(dl, "DL");
 localAssertRuntimeSINR(ul, "UL");
 
 coverageVars = string(coverage.Properties.VariableNames);
-assert(all(ismember(["ReceiverHestWidebandSINR_dB","DecoderTruthProxyWidebandSINR_dB","MeasuredWidebandSINR_dB","WidebandSINRSource","WidebandSINRValueRole"], coverageVars)), ...
-    "Live coverage layer must expose receiver-estimate, decoder-proxy, and source-role SINR fields.");
+assert(all(ismember(["PostEqWidebandSINR_dB","ReceiverHestWidebandSINR_dB","DecoderTruthProxyWidebandSINR_dB","MeasuredWidebandSINR_dB","WidebandSINRSource","WidebandSINRValueRole"], coverageVars)), ...
+    "Live coverage layer must expose post-eq, receiver diagnostic, decoder-proxy, and source-role SINR fields.");
 localAssertCoverageSINR(coverage);
 localAssertValueSourceRows(valueAudit, "ReceiverHestSINR_dB", "estimated", "receiver_hest_reference_signal_measurement");
-localAssertValueSourceRows(valueAudit, "MeasuredTrialSINR_dB", "measured", "post_equalization_error_vector_measurement");
+localAssertValueSourceRows(valueAudit, "MeasuredTrialSINR_dB", "measured_post_equalization_scheduling_input", "post_equalization_sinr_from_equalizer_channel_estimate");
 localAssertValueSourceRows(valueAudit, "DecoderTruthProxySINR_dB", "derived", "post_equalization_evm_proxy");
 localAssertDictionaryRows(valueDict, "ReceiverHestSINR_dB", "estimated", "receiver_hest_reference_signal_measurement");
-localAssertDictionaryRows(valueDict, "MeasuredTrialSINR_dB", "measured", "waveform_trial_measurement");
+localAssertDictionaryRows(valueDict, "MeasuredTrialSINR_dB", "measured_post_equalization_scheduling_input", "post_equalization_sinr_from_equalizer_channel_estimate");
 localAssertDictionaryRows(valueDict, "DecoderTruthProxySINR_dB", "derived", "post_equalization_evm_proxy");
 localAssertDictionaryRows(valueDict, "LargeScaleSINR_dB", "preview", "large_scale_interference_preview");
 
@@ -66,12 +66,12 @@ ok = true;
 end
 
 function localAssertCoverageSINR(T)
-measuredMask = isfinite(double(T.MeasuredWidebandSINR_dB));
+measuredMask = isfinite(double(T.PostEqWidebandSINR_dB)) | isfinite(double(T.MeasuredWidebandSINR_dB));
 if any(measuredMask)
-    assert(all(strcmp(string(T.WidebandSINRValueRole(measuredMask)), "measured")), ...
-        "Coverage rows with measured data-domain SINR must be labeled measured.");
-    assert(all(strcmp(string(T.WidebandSINRSource(measuredMask)), "post_equalization_error_vector_measurement")), ...
-        "Coverage rows with measured data-domain SINR must use the post-equalization measurement source.");
+    assert(all(strcmp(string(T.WidebandSINRValueRole(measuredMask)), "measured_post_equalization_scheduling_input")), ...
+        "Coverage rows with post-eq SINR must be labeled as scheduler-quality post-eq measurements.");
+    assert(all(strcmp(string(T.WidebandSINRSource(measuredMask)), "post_equalization_sinr_from_equalizer_channel_estimate")), ...
+        "Coverage rows with measured data-domain SINR must use the post-equalization receiver source.");
 end
 proxyMask = ~measuredMask & isfinite(double(T.DecoderTruthProxyWidebandSINR_dB));
 if any(proxyMask)
@@ -82,10 +82,8 @@ if any(proxyMask)
 end
 receiverOnlyMask = ~measuredMask & ~proxyMask & isfinite(double(T.ReceiverHestWidebandSINR_dB));
 if any(receiverOnlyMask)
-    assert(all(strcmp(string(T.WidebandSINRValueRole(receiverOnlyMask)), "estimated_diagnostic")), ...
-        "Coverage rows with only receiver Hest SINR must be labeled estimated_diagnostic.");
-    assert(all(strcmp(string(T.WidebandSINRSource(receiverOnlyMask)), "receiver_hest_reference_signal_measurement")), ...
-        "Coverage rows with only receiver Hest SINR must keep the Hest/CSI source.");
+    assert(all(~strcmp(string(T.WidebandSINRSource(receiverOnlyMask)), "receiver_hest_reference_signal_measurement")), ...
+        "Coverage rows with only receiver Hest SINR must not promote the Hest/CSI source as wideband scheduling SINR.");
 end
 end
 
@@ -109,7 +107,7 @@ end
 
 function localAssertRuntimeSINR(T, direction)
 vars = string(T.Properties.VariableNames);
-required = ["ReceiverHestSINR_dB","ReceiverHestSINRSource","DecoderTruthProxySINR_dB","DecoderTruthProxySINRSource","SINRValueRole","SINRSource","MeasuredTrialSINR_dB","MeasuredTrialSINRSource"];
+required = ["ReceiverHestSINR_dB","ReceiverHestSINRSource","PostEqSINR_dB","PostEqSINRSource","DecoderTruthProxySINR_dB","DecoderTruthProxySINRSource","SINRValueRole","SINRSource","MeasuredTrialSINR_dB","MeasuredTrialSINRSource"];
 assert(all(ismember(required, vars)), sprintf("%s runtime CSV must expose truthful SINR fields.", direction));
 mask = isfinite(double(T.ReceiverHestSINR_dB));
 assert(any(mask), sprintf("%s runtime CSV must contain finite ReceiverHestSINR_dB samples.", direction));
@@ -117,14 +115,16 @@ assert(all(strcmp(string(T.ReceiverHestSINRSource(mask)), "receiver_hest_referen
     sprintf("%s runtime CSV must label receiver Hest diagnostics with the Hest/CSI source.", direction));
 measuredMask = isfinite(double(T.MeasuredTrialSINR_dB));
 if any(measuredMask)
+    assert(all(abs(double(T.MeasuredTrialSINR_dB(measuredMask)) - double(T.PostEqSINR_dB(measuredMask))) < 1e-9), ...
+        sprintf("%s runtime CSV measured trial SINR must mirror PostEqSINR_dB.", direction));
     assert(all(strlength(strtrim(string(T.MeasuredTrialSINRSource(measuredMask)))) > 0), ...
         sprintf("%s runtime CSV must keep MeasuredTrialSINRSource explicit when a measured trial SINR exists.", direction));
     assert(all(~contains(lower(string(T.MeasuredTrialSINRSource(measuredMask))), "proxy_fallback")), ...
         sprintf("%s runtime CSV must not relabel MeasuredTrialSINR_dB from decoder-proxy fallback.", direction));
-    assert(all(strcmp(string(T.MeasuredTrialSINRSource(measuredMask)), "post_equalization_error_vector_measurement")), ...
-        sprintf("%s runtime CSV measured trial SINR must come from post-equalization data-symbol error vectors.", direction));
-    assert(all(strcmp(string(T.SINRValueRole(measuredMask)), "measured")), ...
-        sprintf("%s runtime CSV must publish measured trial SINR as the primary SINR when available.", direction));
+    assert(all(strcmp(string(T.MeasuredTrialSINRSource(measuredMask)), "post_equalization_sinr_from_equalizer_channel_estimate")), ...
+        sprintf("%s runtime CSV measured trial SINR must come from post-equalization receiver evidence.", direction));
+    assert(all(strcmp(string(T.SINRValueRole(measuredMask)), "measured_post_equalization_scheduling_input")), ...
+        sprintf("%s runtime CSV must publish measured trial SINR as post-eq scheduling input when available.", direction));
     assert(all(strcmp(string(T.SINRSource(measuredMask)), string(T.MeasuredTrialSINRSource(measuredMask)))), ...
         sprintf("%s runtime CSV primary SINR source must match the measured trial source.", direction));
 end

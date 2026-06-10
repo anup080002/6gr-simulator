@@ -630,7 +630,7 @@ switch key
     case "per_rank_throughput"
         T = localPerRankThroughputRows(cat, metric, ctx.Tables.DL);
     case "equalizer_output_sinr"
-        T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ReceiverHestSINR_dB", "DL", "dB");
+        T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "PostEqSINR_dB", "DL", "dB");
     case "residual_interference_power"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ResidualInterferencePower_dB", "DL", "dB");
     case "beam_precoder_gain"
@@ -929,7 +929,7 @@ switch key
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No joint energy/throughput samples available; placeholder figure emitted."));
     case "curves_complexity_vs_gain"
         aggPath = localAggregateArtifactPath(ctx, "ComplexityVsGainPlot");
-        hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["DecoderIterations","ReceiverHestSINR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["DecoderIterations","ReceiverHestSINR_dB"]);
+        hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["DecoderIterations","PostEqSINR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["DecoderIterations","PostEqSINR_dB"]);
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No complexity/gain sample pairs available; placeholder figure emitted."));
     case "heatmaps_band_feature_kpi"
         aggPath = localAggregateArtifactPath(ctx, "BandFeatureKPIHeatmap");
@@ -2309,7 +2309,7 @@ T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pusch.power_control"], "baseline");
 note = "Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.";
 T = [T; localMetricTableRow(cat, metric, "UL", "policy", "available", NaN, policy, "", localDefaultSource("UL"), note)]; %#ok<AGROW>
-sinr = localFiniteColumn(ctx.Tables.UL, "ReceiverHestSINR_dB");
+    sinr = localFiniteColumn(ctx.Tables.UL, "PostEqSINR_dB");
 if isempty(sinr)
     return;
 end
@@ -2788,11 +2788,11 @@ end
 
 function T = localCQIAccuracyRowsForTable(cat, metric, trialT, entity, note)
 T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["WidebandCQI","ReceiverHestSINR_dB"], string(trialT.Properties.VariableNames))))
-    return;
-end
-reported = double(trialT.WidebandCQI);
-sinr = double(trialT.ReceiverHestSINR_dB);
+    if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["WidebandCQI","PostEqSINR_dB"], string(trialT.Properties.VariableNames))))
+        return;
+    end
+    reported = double(trialT.WidebandCQI);
+    sinr = double(trialT.PostEqSINR_dB);
 mask = isfinite(reported) & isfinite(sinr);
 if ~any(mask)
     return;
@@ -3981,9 +3981,9 @@ plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Swee
 plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
     ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "MeasuredTrialSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Measured SINR", "Measured SINR (dB)", "BLER", false, true); %#ok<AGROW>
+    "PostEqSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Post-Eq SINR", "Post-equalization SINR (dB)", "BLER", false, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "MeasuredTrialSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Measured SINR", "Measured SINR (dB)", "BER", false, true); %#ok<AGROW>
+    "PostEqSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Post-Eq SINR", "Post-equalization SINR (dB)", "BER", false, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
     "BLER", "BER", "ber_vs_bler.png", "BER vs BLER", "BLER", "BER", true, true); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
@@ -4248,9 +4248,9 @@ if ismember("TruthAvailable", string(T.Properties.VariableNames))
     end
 end
 if truthAvailable
-    candidates = ["MeasuredTrialSINR_dB","ReceiverHestSINR_dB","MeasuredSINR_dB","DecoderTruthProxySINR_dB","LargeScaleSINR_dB"];
+    candidates = ["PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","MeasuredSINR_dB","LargeScaleSINR_dB"];
 else
-    candidates = ["ReceiverHestSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB","LargeScaleSINR_dB"];
+    candidates = ["PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","MeasuredSINR_dB","LargeScaleSINR_dB"];
 end
 for i = 1:numel(candidates)
     if ~ismember(candidates(i), string(T.Properties.VariableNames))
@@ -4509,7 +4509,7 @@ end
 end
 
 function values = localDerivedEsNoMetric(T)
-values = localTrialMetricColumn(T, ["MeasuredTrialSINR_dB", "ReceiverHestSINR_dB", "MeasuredSINR_dB"], NaN);
+values = localTrialMetricColumn(T, ["PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredSINR_dB"], NaN);
 end
 
 function values = localDerivedEcNoMetric(T)
@@ -4996,8 +4996,8 @@ if ~isempty(T)
     return;
 end
 T = table( ...
-    "not_available", "", NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, "not_available", "none", ...
-    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','ReceiverHestSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
+    "not_available", "", NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, "not_available", "none", ...
+    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','PostEqSINR_dB','ReceiverHestSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
     'EstimatedCFO_Hz','CFOError_Hz','TimingError_samples','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy','Status','SourceArtifact'});
 end
 
@@ -5013,6 +5013,7 @@ T = table( ...
     localDebugNumericColumn(sourceT, "Frame", n), ...
     localDebugNumericColumn(sourceT, "Slot", n), ...
     localDebugNumericColumn(sourceT, "SNR_dB", n), ...
+    localDebugNumericColumn(sourceT, "PostEqSINR_dB", n), ...
     localDebugNumericColumn(sourceT, "ReceiverHestSINR_dB", n), ...
     localDebugNumericColumn(sourceT, "NMSE_dB", n), ...
     localDebugNumericColumn(sourceT, "ChannelGain_dB", n), ...
@@ -5026,7 +5027,7 @@ T = table( ...
     localDebugNumericColumn(sourceT, "QCLAccuracy", n), ...
     localDebugStringColumn(sourceT, "Status", n), ...
     repmat(string(sourceArtifact), n, 1), ...
-    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','ReceiverHestSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
+    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB','PostEqSINR_dB','ReceiverHestSINR_dB','NMSE_dB','ChannelGain_dB','ConditionNumber_dB', ...
     'EstimatedCFO_Hz','CFOError_Hz','TimingError_samples','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','QCLAccuracy','Status','SourceArtifact'});
 end
 
@@ -5870,14 +5871,14 @@ x = localFiniteColumn(ctx.Tables.DL, "DecoderComplexityUnits");
 if isempty(x)
     x = localFiniteColumn(ctx.Tables.DL, "DecoderIterations");
 end
-y = localFiniteColumn(ctx.Tables.DL, "ReceiverHestSINR_dB");
+y = localFiniteColumn(ctx.Tables.DL, "PostEqSINR_dB");
 if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
     scatter(ax, x, y, 36, "filled");
     xlabel(ax, "Decoder complexity");
-    ylabel(ax, "Receiver Hest SINR (dB)");
+    ylabel(ax, "Post-equalization SINR (dB)");
     title(ax, "Complexity vs Gain");
     grid(ax, "on");
     sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);

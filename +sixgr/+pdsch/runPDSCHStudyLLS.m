@@ -227,7 +227,7 @@ for h = 1:attempts
             "NoiseVar", noiseVar, "NoiseVarDomain", "time");
         copyLLRs{c} = double(rxOut.Rx.CodewordLLR(:));
         postEqEVM(c) = double(rxOut.PostEqEVM);
-        sinrEst(c) = double(sixgr.util.structGet(rxOut.Rx, "ReceiverHestSINR_dB", NaN));
+        sinrEst(c) = localBestStudySINR(rxOut.Rx);
         dmrsT = localVertcat(dmrsT, localAnnotateMap(copy.DMRSTable, point, trialIndex, h, c, "DMRS"));
         ptrsT = localVertcat(ptrsT, localAnnotateMap(copy.PTRSTable, point, trialIndex, h, c, "PTRS"));
         chRows(end+1,1) = localBuildChEstRow(point, trialIndex, h, c, rxOut); %#ok<AGROW>
@@ -555,11 +555,14 @@ row = struct("scenario_id","","trial_index",NaN,"harq_tx",NaN,"copy_index",NaN,"
 end
 
 function row = localEmptyChEstRow()
-row = struct("scenario_id","","trial_index",NaN,"harq_tx",NaN,"copy_index",NaN,"nmse_channel_est",NaN,"estimated_sinr_db",NaN,"post_eq_evm",NaN);
+row = struct("scenario_id","","trial_index",NaN,"harq_tx",NaN,"copy_index",NaN,"nmse_channel_est",NaN, ...
+    "estimated_sinr_db",NaN,"estimated_sinr_source","","receiver_hest_sinr_db",NaN,"receiver_hest_sinr_source","", ...
+    "post_eq_evm",NaN);
 end
 
 function row = localEmptyParamRow()
-row = struct("scenario_id","","trial_index",NaN,"harq_tx",NaN,"copy_index",NaN,"estimated_delay_spread",NaN,"estimated_doppler",NaN,"estimated_delay",NaN,"estimated_snr",NaN);
+row = struct("scenario_id","","trial_index",NaN,"harq_tx",NaN,"copy_index",NaN,"estimated_delay_spread",NaN, ...
+    "estimated_doppler",NaN,"estimated_delay",NaN,"estimated_snr",NaN,"estimated_snr_source","");
 end
 
 function row = localEmptyHARQRow()
@@ -694,7 +697,10 @@ row.trial_index = double(trialIndex);
 row.harq_tx = double(harqTx);
 row.copy_index = double(copyIndex);
 row.nmse_channel_est = double(sixgr.util.structGet(rxOut.ChannelEstimation, "NMSEProxy", NaN));
-row.estimated_sinr_db = double(sixgr.util.structGet(rxOut.Rx, "ReceiverHestSINR_dB", NaN));
+row.estimated_sinr_db = localBestStudySINR(rxOut.Rx);
+row.estimated_sinr_source = char(localBestStudySINRSource(rxOut.Rx));
+row.receiver_hest_sinr_db = double(sixgr.util.structGet(rxOut.Rx, "ReceiverHestSINR_dB", NaN));
+row.receiver_hest_sinr_source = char(string(sixgr.util.structGet(rxOut.Rx, "ReceiverHestSINRSource", "")));
 row.post_eq_evm = double(rxOut.PostEqEVM);
 end
 
@@ -708,6 +714,27 @@ row.estimated_delay_spread = double(sixgr.util.structGet(rxOut.ParameterEstimati
 row.estimated_doppler = double(sixgr.util.structGet(rxOut.ParameterEstimation, "EstimatedDoppler_Hz", NaN));
 row.estimated_delay = double(sixgr.util.structGet(rxOut.ParameterEstimation, "EstimatedDelay_samples", NaN));
 row.estimated_snr = double(sixgr.util.structGet(rxOut.ParameterEstimation, "EstimatedSNR_dB", NaN));
+row.estimated_snr_source = char(string(sixgr.util.structGet(rxOut.ParameterEstimation, "EstimatedSNRSource", "")));
+end
+
+function sinr = localBestStudySINR(rx)
+sinr = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+if isfinite(sinr)
+    return;
+end
+sinr = NaN;
+end
+
+function source = localBestStudySINRSource(rx)
+sinr = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+if isfinite(sinr)
+    source = string(sixgr.util.structGet(rx, "PostEqSINRSource", "post_equalization_sinr_from_equalizer_channel_estimate"));
+    if strlength(strtrim(source)) == 0
+        source = "post_equalization_sinr_from_equalizer_channel_estimate";
+    end
+else
+    source = "post_equalization_sinr_unavailable";
+end
 end
 
 function row = localBuildHARQRow(point, trialIndex, harqTx, rv, crcPass, txBundle)

@@ -34,11 +34,15 @@
     frame: {
       numerology_mu: 1,
       scs_khz: 30,
-      cp_type: "normal"
+      cp_type: "normal",
+      tdd_pattern: "DDDSU",
+      special_slot_downlink_symbols: 12,
+      ul_dl_guard_symbols: 1,
+      special_slot_uplink_symbols: 1
     },
     phy: {
       carrier: { NSizeGrid: 273 },
-      duplex: { mode: "TDD", tddPattern: "DDDDU" }
+      duplex: { mode: "TDD", tddPattern: "DDDSU" }
     },
     waveform: {
       dl: "CP-OFDM",
@@ -132,7 +136,8 @@
     },
     prach: {
       enable: true,
-      format: "A1",
+      format: "B4",
+      configuration_index: 167,
       sequence_length: 139,
       periodicity_ms: 20,
       preamble_count: 64,
@@ -482,6 +487,21 @@
       }
       const ulWaveform = String(getPath(config, "waveform.ul", "")).toUpperCase();
       setPath(config, "waveform.transform_precoding_enabled", ulWaveform.includes("DFT"));
+      const scs = Number(getPath(config, "frame.scs_khz", NaN));
+      const nfft = Number(getPath(config, "waveform.fft_size", NaN));
+      if (Number.isFinite(scs) && scs > 0 && Number.isFinite(nfft) && nfft > 0) {
+        setPath(config, "waveform.sample_rate_hz", Math.round(nfft * scs * 1000));
+      }
+      const coresetSymbols = Math.max(1, Math.min(3, Math.round(Number(
+        getPath(config, "pdcch.coreset_duration_symbols", getPath(config, "control.coreset_duration", 2))
+      ) || 2)));
+      setPath(config, "pdcch.coreset_duration_symbols", coresetSymbols);
+      setPath(config, "pdsch.start_symbol", coresetSymbols);
+      setPath(config, "pdsch.num_symbols", Math.max(1, 14 - coresetSymbols));
+      setPath(config, "frame_timing.tdd_pattern", getPath(config, "frame.tdd_pattern", getPath(config, "phy.duplex.tddPattern", "DDDSU")));
+      setPath(config, "frame_timing.special_slot_downlink_symbols", Number(getPath(config, "frame.special_slot_downlink_symbols", 12)));
+      setPath(config, "frame_timing.ul_dl_guard_symbols", Number(getPath(config, "frame.ul_dl_guard_symbols", 1)));
+      setPath(config, "frame_timing.special_slot_uplink_symbols", Number(getPath(config, "frame.special_slot_uplink_symbols", 1)));
       return config;
     }
 

@@ -27,6 +27,11 @@ metrics = struct( ...
     "SINRValueRole", "", ...
     "SINRValueStatus", "", ...
     "SINRNAReason", "", ...
+    "PilotSINR_dB", NaN, ...
+    "PilotSINRSource", "", ...
+    "PilotSINRValueRole", "diagnostic_reference_signal_quality_not_for_scheduling", ...
+    "PilotSINRValueStatus", "", ...
+    "PilotSINRNAReason", "", ...
     "CQI", NaN, ...
     "CQISource", "", ...
     "CQIValueStatus", "", ...
@@ -105,15 +110,15 @@ end
 [sinr_dB, sinrSource, sinrStatus, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, ...
     opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols, cfg);
 measuredSINRAvailable = isfinite(sinr_dB);
+metrics.PilotSINR_dB = double(sinr_dB);
+metrics.PilotSINRSource = char(string(sinrSource));
+metrics.PilotSINRValueRole = "diagnostic_reference_signal_quality_not_for_scheduling";
+metrics.PilotSINRValueStatus = char(string(sinrStatus));
 if isfinite(sinr_dB)
     metrics.SINR_dB = double(sinr_dB);
-    metrics.SINRSource = char(string(sinrSource));
-    metrics.SINRValueRole = "estimated";
-    if contains(lower(string(sinrStatus)), "dynamic_range_limited")
-        metrics.SINRValueStatus = char(string(sinrStatus));
-    else
-        metrics.SINRValueStatus = "OK";
-    end
+    metrics.SINRSource = "measured_ul_rs_sinr";
+    metrics.SINRValueRole = "measured_ul_rs_cqi_input";
+    metrics.SINRValueStatus = char(string(sinrStatus));
     metrics.SINRNAReason = "";
 else
     metrics.SINRSource = char(string(sinrSource));
@@ -123,6 +128,7 @@ else
     metrics.SINRValueRole = "unavailable";
     metrics.SINRValueStatus = "unavailable";
     metrics.SINRNAReason = "ul_reference_signal_sinr_not_available_from_receiver_evidence";
+    metrics.PilotSINRNAReason = metrics.SINRNAReason;
 end
 
 if isfinite(pilotNMSE_dB)
@@ -149,16 +155,25 @@ if isfinite(referencePower) && referencePower > 0 && isfinite(rssiPower) && rssi
 end
 
 if measuredSINRAvailable && reportCQI
-    feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", metrics.SINR_dB, "PerRBSINR_dB", double(perRBSINR_dB)), cfg, "UL");
+    feedback = sixgr.link.resolveWidebandCQI(struct( ...
+        "WidebandSINR_dB", metrics.SINR_dB, ...
+        "PerRBSINR_dB", double(perRBSINR_dB), ...
+        "SINRSource", metrics.SINRSource, ...
+        "SINRValueRole", metrics.SINRValueRole, ...
+        "SINRValueStatus", metrics.SINRValueStatus), cfg, "UL");
     rawCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
     if isfinite(rawCQI)
         metrics.CQI = double(max(0, min(15, round(rawCQI))));
-        metrics.CQISource = "ul_reference_signal_sinr_to_cqi:" + string(sixgr.util.structGet(feedback, "Mode", "sinr_threshold_table"));
+        metrics.CQISource = "ul_measured_rs_sinr_to_cqi:" + string(sixgr.util.structGet(feedback, "Mode", "sinr_threshold_table"));
         if metrics.CQI == 0
             metrics.CQIValueStatus = "out_of_range_cqi0_from_measured_ul_sinr";
         else
             metrics.CQIValueStatus = "OK";
         end
+    else
+        metrics.CQI = NaN;
+        metrics.CQISource = "ul_measured_rs_sinr_rejected_for_cqi:" + string(sixgr.util.structGet(feedback, "SINRInputRejectionReason", ""));
+        metrics.CQIValueStatus = "unavailable_non_scheduling_sinr_input";
     end
 end
 

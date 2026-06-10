@@ -69,6 +69,7 @@ coverageT = sixgr.util.structGet(slotTrace, "CoverageLayerTable", table());
 if ~(istable(coverageT) && ~isempty(coverageT))
     coverageT = localBuildCoverageLayerTable(mobilityArtifacts, userPerfT);
 end
+coverageT = localEnsureCoverageLayerSINRContract(coverageT);
 errorRateT = localBuildErrorRateSummaryTable(dlT, ulT);
 trialCombinedT = localCombineDirectionalTrials(dlT, ulT);
 antennaConfigT = localBuildAntennaConfigResolvedTable(mobilityArtifacts, slotTrace);
@@ -120,8 +121,8 @@ end
 
 function T = localBuildChannelStatsTable(dlT, ulT, srsT, trsT)
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "dl_pdsch_trials"), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "ul_pusch_trials"), ...
+    localAggregateByDirectionAndSNR(dlT, "DL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "dl_pdsch_trials"), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "ul_pusch_trials"), ...
     localAggregateByDirectionAndSNR(srsT, "SRS", ["SINR_dB","CQI","MCSIndex","RankEstimate","EstimatedRI","NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","QCLAccuracy","TrackingFailureProbability"], "srs_trials"), ...
     localAggregateByDirectionAndSNR(trsT, "TRS", ["NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","PhaseTrackingError_deg","QCLAccuracy"], "trs_trials")};
 T = localVertcat(parts);
@@ -262,6 +263,8 @@ rows = repmat(struct( ...
     "UL_BLER", NaN, ...
     "DL_FER", NaN, ...
     "UL_FER", NaN, ...
+    "DL_MeanPostEqSINR_dB", NaN, ...
+    "UL_MeanPostEqSINR_dB", NaN, ...
     "DL_MeanReceiverHestSINR_dB", NaN, ...
     "UL_MeanReceiverHestSINR_dB", NaN, ...
     "DL_MeanMeasuredSINR_dB", NaN, ...
@@ -292,6 +295,8 @@ for i = 1:numel(ueList)
     row.UL_BLER = localLookup(ulSummary, ueIdx, "BLER");
     row.DL_FER = localLookup(dlSummary, ueIdx, "FER");
     row.UL_FER = localLookup(ulSummary, ueIdx, "FER");
+    row.DL_MeanPostEqSINR_dB = localLookup(dlSummary, ueIdx, "MeanPostEqSINR_dB");
+    row.UL_MeanPostEqSINR_dB = localLookup(ulSummary, ueIdx, "MeanPostEqSINR_dB");
     row.DL_MeanReceiverHestSINR_dB = localLookup(dlSummary, ueIdx, "MeanReceiverHestSINR_dB");
     row.UL_MeanReceiverHestSINR_dB = localLookup(ulSummary, ueIdx, "MeanReceiverHestSINR_dB");
     row.DL_MeanMeasuredSINR_dB = localLookup(dlSummary, ueIdx, "MeanMeasuredSINR_dB");
@@ -338,6 +343,7 @@ rows = repmat(struct( ...
     "FER", NaN, ...
     "BER", NaN, ...
     "PassRate", NaN, ...
+    "MeanPostEqSINR_dB", NaN, ...
     "MeanReceiverHestSINR_dB", NaN, ...
     "MeanMeasuredSINR_dB", NaN, ...
     "MeanChannelGain_dB", NaN, ...
@@ -372,6 +378,7 @@ for i = 1:numel(ueList)
         "FER", localFrameErrorRate(slice), ...
         "BER", localRatio(sum(double(slice.BitErrors), "omitnan"), sum(double(slice.BitsCompared), "omitnan")), ...
         "PassRate", double(sem.PassRate), ...
+        "MeanPostEqSINR_dB", localMeanOptionalColumn(slice, "PostEqSINR_dB"), ...
         "MeanReceiverHestSINR_dB", mean(double(slice.ReceiverHestSINR_dB), "omitnan"), ...
         "MeanMeasuredSINR_dB", mean(double(slice.MeasuredSINR_dB), "omitnan"), ...
         "MeanChannelGain_dB", mean(double(slice.ChannelGain_dB), "omitnan"), ...
@@ -406,6 +413,7 @@ defaults = struct( ...
     "BitErrors", NaN, ...
     "BitsCompared", NaN, ...
     "Status", "", ...
+    "PostEqSINR_dB", NaN, ...
     "ReceiverHestSINR_dB", NaN, ...
     "MeasuredSINR_dB", NaN, ...
     "ChannelGain_dB", NaN);
@@ -591,6 +599,96 @@ end
 fer = localRatio(double(frameFailCount), double(numel(frames)));
 end
 
+function T = localEnsureCoverageLayerSINRContract(T)
+if ~istable(T)
+    T = table();
+end
+n = height(T);
+if ~ismember("PostEqSINR_dB", string(T.Properties.VariableNames))
+    T.PostEqSINR_dB = nan(n, 1);
+end
+if ~ismember("PostEqWidebandSINR_dB", string(T.Properties.VariableNames))
+    T.PostEqWidebandSINR_dB = double(T.PostEqSINR_dB);
+end
+if ~ismember("ReceiverHestSINR_dB", string(T.Properties.VariableNames))
+    T.ReceiverHestSINR_dB = nan(n, 1);
+end
+if ~ismember("ReceiverHestWidebandSINR_dB", string(T.Properties.VariableNames))
+    T.ReceiverHestWidebandSINR_dB = double(T.ReceiverHestSINR_dB);
+end
+if ~ismember("DecoderTruthProxySINR_dB", string(T.Properties.VariableNames))
+    T.DecoderTruthProxySINR_dB = nan(n, 1);
+end
+if ~ismember("DecoderTruthProxyWidebandSINR_dB", string(T.Properties.VariableNames))
+    T.DecoderTruthProxyWidebandSINR_dB = double(T.DecoderTruthProxySINR_dB);
+end
+if ~ismember("MeasuredTrialSINR_dB", string(T.Properties.VariableNames))
+    T.MeasuredTrialSINR_dB = nan(n, 1);
+end
+if ~ismember("MeasuredWidebandSINR_dB", string(T.Properties.VariableNames))
+    T.MeasuredWidebandSINR_dB = double(T.MeasuredTrialSINR_dB);
+end
+if ~ismember("WidebandSINRSource", string(T.Properties.VariableNames))
+    T.WidebandSINRSource = strings(n, 1);
+end
+if ~ismember("WidebandSINRValueRole", string(T.Properties.VariableNames))
+    T.WidebandSINRValueRole = strings(n, 1);
+end
+if ~ismember("WidebandSINRValueStatus", string(T.Properties.VariableNames))
+    T.WidebandSINRValueStatus = strings(n, 1);
+end
+
+postEqWideband = double(T.PostEqWidebandSINR_dB);
+postEqAlias = double(T.PostEqSINR_dB);
+fillPostEq = ~isfinite(postEqWideband) & isfinite(postEqAlias);
+if any(fillPostEq)
+    postEqWideband(fillPostEq) = postEqAlias(fillPostEq);
+    T.PostEqWidebandSINR_dB = postEqWideband;
+end
+measuredWideband = double(T.MeasuredWidebandSINR_dB);
+trialMeasured = double(T.MeasuredTrialSINR_dB);
+fillMeasured = ~isfinite(measuredWideband) & isfinite(trialMeasured);
+measuredWideband(fillMeasured) = trialMeasured(fillMeasured);
+fillMeasured = ~isfinite(measuredWideband) & isfinite(postEqWideband);
+measuredWideband(fillMeasured) = postEqWideband(fillMeasured);
+T.MeasuredWidebandSINR_dB = measuredWideband;
+
+widebandSource = strtrim(string(T.WidebandSINRSource));
+widebandRole = strtrim(string(T.WidebandSINRValueRole));
+widebandStatus = strtrim(string(T.WidebandSINRValueStatus));
+
+measuredMask = isfinite(postEqWideband) | isfinite(measuredWideband);
+if any(measuredMask)
+    widebandSource(measuredMask) = "post_equalization_sinr_from_equalizer_channel_estimate";
+    widebandRole(measuredMask) = "measured_post_equalization_scheduling_input";
+    widebandStatus(measuredMask) = "available_post_equalization_measurement";
+end
+
+proxyMask = ~measuredMask & isfinite(double(T.DecoderTruthProxyWidebandSINR_dB));
+if any(proxyMask)
+    widebandSource(proxyMask) = "post_equalization_evm_proxy";
+    widebandRole(proxyMask) = "derived_proxy";
+    widebandStatus(proxyMask) = "available_diagnostic_proxy";
+end
+
+receiverOnlyMask = ~measuredMask & ~proxyMask & isfinite(double(T.ReceiverHestWidebandSINR_dB));
+if any(receiverOnlyMask)
+    receiverSourcePromoted = strcmp(widebandSource(receiverOnlyMask), "receiver_hest_reference_signal_measurement") | ...
+        strlength(widebandSource(receiverOnlyMask)) == 0;
+    receiverIdx = find(receiverOnlyMask);
+    replaceIdx = receiverIdx(receiverSourcePromoted);
+    widebandSource(replaceIdx) = "receiver_hest_diagnostic_not_scheduling_input";
+    widebandRole(replaceIdx) = "diagnostic_estimate_not_scheduling_input";
+    widebandStatus(replaceIdx) = "available_receiver_hest_diagnostic";
+end
+
+blankMask = strlength(widebandStatus) == 0;
+widebandStatus(blankMask) = "unavailable";
+T.WidebandSINRSource = widebandSource;
+T.WidebandSINRValueRole = widebandRole;
+T.WidebandSINRValueStatus = widebandStatus;
+end
+
 function T = localBuildCoverageLayerTable(mobilityArtifacts, userPerfT)
 coverageT = sixgr.util.structGet(mobilityArtifacts, "CoverageLayerTable", table());
 if ~(istable(coverageT) && ~isempty(coverageT))
@@ -601,10 +699,11 @@ if ~(istable(coverageT) && ~isempty(coverageT))
         "UEID", NaN, "Slot", NaN, "Time_s", NaN, "Lat", NaN, "Lon", NaN, ...
         "ServingCell", NaN, "ServingSite", NaN, "ServingSector", NaN, ...
         "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", "ServingRSRP_dBm", NaN, "RSRP_dBm", NaN, ...
-        "EstimatedWidebandSINR_dB", NaN, "SystemLevelWidebandSINR_dB", NaN, ...
+        "EstimatedWidebandSINR_dB", NaN, "SystemLevelWidebandSINR_dB", NaN, "PostEqWidebandSINR_dB", NaN, ...
         "ReceiverHestWidebandSINR_dB", NaN, "DecoderTruthProxyWidebandSINR_dB", NaN, ...
         "MeasuredWidebandSINR_dB", NaN, "LargeScaleWidebandSINR_dB", NaN, ...
         "SystemLevelSINR_dB", NaN, "SystemLevelSINRSource", "", "SystemLevelSINRValueRole", "", "SystemLevelSINRValueStatus", "", ...
+        "PostEqSINR_dB", NaN, "PostEqSINRSource", "", "PostEqSINRValueStatus", "", ...
         "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", "DecoderTruthProxySINR_dB", NaN, "DecoderTruthProxySINRSource", "", ...
         "ReceiverHestSINRValueStatus", "", "DecoderTruthProxySINRValueStatus", "", ...
         "MeasuredTrialSINR_dB", NaN, "MeasuredTrialSINRSource", "", "MeasuredTrialSINRValueStatus", "", ...
@@ -656,6 +755,12 @@ if ~ismember("ReceiverHestWidebandSINR_dB", string(coverageT.Properties.Variable
         coverageT.ReceiverHestWidebandSINR_dB = nan(height(coverageT), 1);
     end
 end
+if ~ismember("PostEqSINR_dB", string(coverageT.Properties.VariableNames))
+    coverageT.PostEqSINR_dB = nan(height(coverageT), 1);
+end
+if ~ismember("PostEqWidebandSINR_dB", string(coverageT.Properties.VariableNames))
+    coverageT.PostEqWidebandSINR_dB = double(coverageT.PostEqSINR_dB);
+end
 if ~ismember("DecoderTruthProxyWidebandSINR_dB", string(coverageT.Properties.VariableNames))
     if ismember("DecoderTruthProxySINR_dB", string(coverageT.Properties.VariableNames))
         coverageT.DecoderTruthProxyWidebandSINR_dB = double(coverageT.DecoderTruthProxySINR_dB);
@@ -667,7 +772,24 @@ if ~ismember("MeasuredWidebandSINR_dB", string(coverageT.Properties.VariableName
     if ismember("MeasuredTrialSINR_dB", string(coverageT.Properties.VariableNames))
         coverageT.MeasuredWidebandSINR_dB = double(coverageT.MeasuredTrialSINR_dB);
     else
-        coverageT.MeasuredWidebandSINR_dB = nan(height(coverageT), 1);
+        coverageT.MeasuredWidebandSINR_dB = double(coverageT.PostEqSINR_dB);
+    end
+end
+measuredCoverage = double(coverageT.MeasuredWidebandSINR_dB);
+postEqCoverage = double(coverageT.PostEqSINR_dB);
+fillCoverageMeasured = ~isfinite(measuredCoverage) & isfinite(postEqCoverage);
+if any(fillCoverageMeasured)
+    measuredCoverage(fillCoverageMeasured) = postEqCoverage(fillCoverageMeasured);
+    coverageT.MeasuredWidebandSINR_dB = measuredCoverage;
+end
+if ~ismember("EstimatedWidebandSINR_dB", string(coverageT.Properties.VariableNames))
+    coverageT.EstimatedWidebandSINR_dB = double(coverageT.PostEqSINR_dB);
+else
+    estimatedCoverage = double(coverageT.EstimatedWidebandSINR_dB);
+    fillCoverageEstimated = ~isfinite(estimatedCoverage) & isfinite(postEqCoverage);
+    if any(fillCoverageEstimated)
+        estimatedCoverage(fillCoverageEstimated) = postEqCoverage(fillCoverageEstimated);
+        coverageT.EstimatedWidebandSINR_dB = estimatedCoverage;
     end
 end
 if ~ismember("ReceiverHestSINR_dB", string(coverageT.Properties.VariableNames))
@@ -726,9 +848,19 @@ if ~ismember("WidebandSINRValueStatus", string(coverageT.Properties.VariableName
     coverageT.WidebandSINRValueStatus = strings(height(coverageT), 1);
 end
 widebandRole = strtrim(string(coverageT.WidebandSINRValueRole));
-widebandRole(strlength(widebandRole) == 0 & isfinite(double(coverageT.ReceiverHestWidebandSINR_dB))) = "estimated";
-widebandRole(strlength(widebandRole) == 0 & ~isfinite(double(coverageT.ReceiverHestWidebandSINR_dB)) & isfinite(double(coverageT.SystemLevelWidebandSINR_dB))) = "runtime_state_derived";
-widebandRole(strlength(widebandRole) == 0 & ~isfinite(double(coverageT.ReceiverHestWidebandSINR_dB)) & ~isfinite(double(coverageT.SystemLevelWidebandSINR_dB)) & isfinite(double(coverageT.LargeScaleWidebandSINR_dB))) = "derived_preview";
+postEqWideband = double(coverageT.PostEqWidebandSINR_dB);
+measuredWideband = double(coverageT.MeasuredWidebandSINR_dB);
+systemWideband = double(coverageT.SystemLevelWidebandSINR_dB);
+largeScaleWideband = double(coverageT.LargeScaleWidebandSINR_dB);
+receiverWideband = double(coverageT.ReceiverHestWidebandSINR_dB);
+measuredWidebandMask = isfinite(postEqWideband) | isfinite(measuredWideband);
+systemWidebandMask = ~measuredWidebandMask & isfinite(systemWideband);
+largeScaleWidebandMask = ~measuredWidebandMask & ~systemWidebandMask & isfinite(largeScaleWideband);
+receiverDiagnosticMask = ~measuredWidebandMask & ~systemWidebandMask & ~largeScaleWidebandMask & isfinite(receiverWideband);
+widebandRole(strlength(widebandRole) == 0 & measuredWidebandMask) = "measured_post_equalization_scheduling_input";
+widebandRole(strlength(widebandRole) == 0 & systemWidebandMask) = "runtime_state_derived";
+widebandRole(strlength(widebandRole) == 0 & largeScaleWidebandMask) = "derived_preview";
+widebandRole(strlength(widebandRole) == 0 & receiverDiagnosticMask) = "diagnostic_estimate_not_scheduling_input";
 coverageT.WidebandSINRValueRole = widebandRole;
 if height(coverageT) == 0
     widebandSource = strings(0, 1);
@@ -745,19 +877,23 @@ else
     end
 end
 blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
-fillMask = blankOrUnavailableSource & isfinite(double(coverageT.ReceiverHestWidebandSINR_dB)) & strlength(receiverSource) > 0;
-widebandSource(fillMask) = receiverSource(fillMask);
+fillMask = blankOrUnavailableSource & measuredWidebandMask;
+widebandSource(fillMask) = "post_equalization_sinr_from_equalizer_channel_estimate";
 blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
-fillMask = blankOrUnavailableSource & isfinite(double(coverageT.SystemLevelWidebandSINR_dB)) & strlength(systemSource) > 0;
+fillMask = blankOrUnavailableSource & systemWidebandMask & strlength(systemSource) > 0;
 widebandSource(fillMask) = systemSource(fillMask);
 blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
-fillMask = blankOrUnavailableSource & isfinite(double(coverageT.LargeScaleWidebandSINR_dB)) & strlength(largeScaleSource) > 0;
+fillMask = blankOrUnavailableSource & largeScaleWidebandMask & strlength(largeScaleSource) > 0;
 widebandSource(fillMask) = largeScaleSource(fillMask);
+blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
+fillMask = blankOrUnavailableSource & receiverDiagnosticMask & strlength(receiverSource) > 0;
+widebandSource(fillMask) = "receiver_hest_diagnostic_not_scheduling_input";
 coverageT.WidebandSINRSource = widebandSource;
 widebandStatus = strtrim(string(coverageT.WidebandSINRValueStatus));
-widebandStatus(strlength(widebandStatus) == 0 & isfinite(double(coverageT.ReceiverHestWidebandSINR_dB))) = "available_receiver_hest";
-widebandStatus(strlength(widebandStatus) == 0 & ~isfinite(double(coverageT.ReceiverHestWidebandSINR_dB)) & isfinite(double(coverageT.SystemLevelWidebandSINR_dB))) = "available_system_level_estimate";
-widebandStatus(strlength(widebandStatus) == 0 & ~isfinite(double(coverageT.ReceiverHestWidebandSINR_dB)) & ~isfinite(double(coverageT.SystemLevelWidebandSINR_dB)) & isfinite(double(coverageT.LargeScaleWidebandSINR_dB))) = "available_large_scale_preview";
+widebandStatus(strlength(widebandStatus) == 0 & measuredWidebandMask) = "available_post_equalization_measurement";
+widebandStatus(strlength(widebandStatus) == 0 & systemWidebandMask) = "available_system_level_estimate";
+widebandStatus(strlength(widebandStatus) == 0 & largeScaleWidebandMask) = "available_large_scale_preview";
+widebandStatus(strlength(widebandStatus) == 0 & receiverDiagnosticMask) = "available_receiver_hest_diagnostic";
 widebandStatus(strlength(widebandStatus) == 0) = "unavailable";
 coverageT.WidebandSINRValueStatus = widebandStatus;
 if ~ismember("InterferenceMode", string(coverageT.Properties.VariableNames))
@@ -1000,7 +1136,7 @@ if ismember("IsWarmupFrame", string(sourceT.Properties.VariableNames))
     end
 end
 vars = {'Direction','TraceSource','Slot','Frame','UEIndex','RNTI','ServingCell', ...
-    'ConfiguredSNR_dB','AppliedAWGNSNR_dB','MeasuredTrialSINR_dB','MeasuredWidebandSINR_dB', ...
+    'ConfiguredSNR_dB','AppliedAWGNSNR_dB','PostEqSINR_dB','MeasuredTrialSINR_dB','MeasuredWidebandSINR_dB', ...
     'EstimatedWidebandSINR_dB','LargeScaleSINR_dB','LargeScaleWidebandSINR_dB', ...
     'ReceiverHestSINR_dB','DecoderTruthProxySINR_dB','WidebandCQI','CQIValueSource','CQIValueStatus','CQIDerivedMCS', ...
     'CQIDerivedModulation','CQIDerivedTargetCodeRate','MCSIndex','Modulation','TargetCodeRate', ...
@@ -1017,33 +1153,39 @@ for i = 1:height(sourceT)
     rows{i,7} = double(localLastValue(row, "BaseStationID", localLastValue(row, "ServingCell")));
     rows{i,8} = double(localLastValue(row, "ConfiguredSNR_dB"));
     rows{i,9} = double(localLastValue(row, "AppliedAWGNSNR_dB"));
-    rows{i,10} = double(localLastValue(row, "MeasuredTrialSINR_dB"));
-    rows{i,11} = double(localLastValue(row, "MeasuredWidebandSINR_dB", localLastValue(row, "MeasuredTrialSINR_dB")));
-    rows{i,12} = double(localLastValue(row, "EstimatedWidebandSINR_dB", localLastValue(row, "ReceiverHestSINR_dB")));
-    rows{i,13} = double(localLastValue(row, "LargeScaleSINR_dB"));
-    rows{i,14} = double(localLastValue(row, "LargeScaleWidebandSINR_dB", localLastValue(row, "LargeScaleSINR_dB")));
-    rows{i,15} = double(localLastValue(row, "ReceiverHestSINR_dB"));
-    rows{i,16} = double(localLastValue(row, "DecoderTruthProxySINR_dB"));
-    rows{i,17} = double(localLastValue(row, "WidebandCQI"));
-    rows{i,18} = string(localLastValue(row, "CQIValueSource", ""));
-    rows{i,19} = string(localLastValue(row, "CQIValueStatus", ""));
-    rows{i,20} = double(localLastValue(row, "CQIDerivedMCS"));
-    rows{i,21} = string(localLastValue(row, "CQIDerivedModulation"));
-    rows{i,22} = double(localLastValue(row, "CQIDerivedTargetCodeRate"));
-    rows{i,23} = double(localLastValue(row, "MCSIndex", localLastValue(row, "CQIDerivedMCS")));
-    rows{i,24} = string(localLastValue(row, "Modulation", localLastValue(row, "CQIDerivedModulation")));
-    rows{i,25} = double(localLastValue(row, "TargetCodeRate", localLastValue(row, "CQIDerivedTargetCodeRate")));
-    rows{i,26} = double(localLastValue(row, "PMI"));
-    rows{i,27} = double(localLastValue(row, "CRI"));
-    rows{i,28} = double(localLastValue(row, "RankIndicator", localLastValue(row, "RI")));
-    rows{i,29} = string(localLastValue(row, "SINRValueRole", "measured_trial_vs_large_scale_separated"));
-    rows{i,30} = string(localLastValue(row, "SINRSource", "actual_runtime_trial_row"));
-    rows{i,31} = string(localLastValue(row, "Status", ""));
-    rows{i,32} = string(localLastValue(row, "Notes", ""));
+    postEq = localLastValue(row, "PostEqSINR_dB");
+    estimated = double(localLastValue(row, "EstimatedWidebandSINR_dB", postEq));
+    if isfinite(double(postEq))
+        estimated = double(postEq);
+    end
+    rows{i,10} = double(postEq);
+    rows{i,11} = double(localLastValue(row, "MeasuredTrialSINR_dB", postEq));
+    rows{i,12} = double(localLastValue(row, "MeasuredWidebandSINR_dB", localLastValue(row, "MeasuredTrialSINR_dB", postEq)));
+    rows{i,13} = double(estimated);
+    rows{i,14} = double(localLastValue(row, "LargeScaleSINR_dB"));
+    rows{i,15} = double(localLastValue(row, "LargeScaleWidebandSINR_dB", localLastValue(row, "LargeScaleSINR_dB")));
+    rows{i,16} = double(localLastValue(row, "ReceiverHestSINR_dB"));
+    rows{i,17} = double(localLastValue(row, "DecoderTruthProxySINR_dB"));
+    rows{i,18} = double(localLastValue(row, "WidebandCQI"));
+    rows{i,19} = string(localLastValue(row, "CQIValueSource", ""));
+    rows{i,20} = string(localLastValue(row, "CQIValueStatus", ""));
+    rows{i,21} = double(localLastValue(row, "CQIDerivedMCS"));
+    rows{i,22} = string(localLastValue(row, "CQIDerivedModulation"));
+    rows{i,23} = double(localLastValue(row, "CQIDerivedTargetCodeRate"));
+    rows{i,24} = double(localLastValue(row, "MCSIndex", localLastValue(row, "CQIDerivedMCS")));
+    rows{i,25} = string(localLastValue(row, "Modulation", localLastValue(row, "CQIDerivedModulation")));
+    rows{i,26} = double(localLastValue(row, "TargetCodeRate", localLastValue(row, "CQIDerivedTargetCodeRate")));
+    rows{i,27} = double(localLastValue(row, "PMI"));
+    rows{i,28} = double(localLastValue(row, "CRI"));
+    rows{i,29} = double(localLastValue(row, "RankIndicator", localLastValue(row, "RI")));
+    rows{i,30} = string(localLastValue(row, "SINRValueRole", "post_equalization_sinr_required"));
+    rows{i,31} = string(localLastValue(row, "SINRSource", "post_equalization_sinr_from_equalizer_channel_estimate"));
+    rows{i,32} = string(localLastValue(row, "Status", ""));
+    rows{i,33} = string(localLastValue(row, "Notes", ""));
 end
 T = cell2table(rows, 'VariableNames', vars);
 numericVars = ["Slot","Frame","UEIndex","RNTI","ServingCell","ConfiguredSNR_dB","AppliedAWGNSNR_dB", ...
-    "MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","EstimatedWidebandSINR_dB","LargeScaleSINR_dB", ...
+    "PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredWidebandSINR_dB","EstimatedWidebandSINR_dB","LargeScaleSINR_dB", ...
     "LargeScaleWidebandSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","WidebandCQI", ...
     "CQIDerivedMCS","CQIDerivedTargetCodeRate","MCSIndex","TargetCodeRate","PMI","CRI","RankIndicator"];
 for i = 1:numel(numericVars)
@@ -1102,11 +1244,33 @@ end
 if nargin < 3 || strlength(string(direction)) == 0
     direction = "DL";
 end
-if ~ismember("MeasuredWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("MeasuredTrialSINR_dB", string(T.Properties.VariableNames))
-    T.MeasuredWidebandSINR_dB = double(T.MeasuredTrialSINR_dB);
+vars = string(T.Properties.VariableNames);
+if ~ismember("PostEqSINR_dB", vars)
+    T.PostEqSINR_dB = nan(height(T), 1);
 end
-if ~ismember("EstimatedWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("ReceiverHestSINR_dB", string(T.Properties.VariableNames))
-    T.EstimatedWidebandSINR_dB = double(T.ReceiverHestSINR_dB);
+postEq = double(T.PostEqSINR_dB);
+if ~ismember("MeasuredWidebandSINR_dB", string(T.Properties.VariableNames))
+    if ismember("MeasuredTrialSINR_dB", string(T.Properties.VariableNames))
+        T.MeasuredWidebandSINR_dB = double(T.MeasuredTrialSINR_dB);
+    else
+        T.MeasuredWidebandSINR_dB = postEq;
+    end
+end
+measuredWideband = double(T.MeasuredWidebandSINR_dB);
+fillMeasured = ~isfinite(measuredWideband) & isfinite(postEq);
+if any(fillMeasured)
+    measuredWideband(fillMeasured) = postEq(fillMeasured);
+    T.MeasuredWidebandSINR_dB = measuredWideband;
+end
+if ~ismember("EstimatedWidebandSINR_dB", string(T.Properties.VariableNames))
+    T.EstimatedWidebandSINR_dB = postEq;
+else
+    estimatedWideband = double(T.EstimatedWidebandSINR_dB);
+    fillEstimated = ~isfinite(estimatedWideband) & isfinite(postEq);
+    if any(fillEstimated)
+        estimatedWideband(fillEstimated) = postEq(fillEstimated);
+        T.EstimatedWidebandSINR_dB = estimatedWideband;
+    end
 end
 if ~ismember("LargeScaleWidebandSINR_dB", string(T.Properties.VariableNames)) && ismember("LargeScaleSINR_dB", string(T.Properties.VariableNames))
     T.LargeScaleWidebandSINR_dB = double(T.LargeScaleSINR_dB);
@@ -1178,7 +1342,10 @@ fillIdx = find(~isfinite(widebandCQI) & isfinite(sinrEvidence));
 for k = 1:numel(fillIdx)
     idx = fillIdx(k);
     feedback = sixgr.link.resolveWidebandCQI( ...
-        struct("WidebandSINR_dB", double(sinrEvidence(idx))), cfg, direction);
+        struct("WidebandSINR_dB", double(sinrEvidence(idx)), ...
+        "SINRSource", char(sinrSource(idx)), ...
+        "SINRValueRole", "measured_post_equalization_scheduling_input", ...
+        "SINRValueStatus", "OK"), cfg, direction);
     widebandCQI(idx) = double(sixgr.util.normalizeReportedCQI( ...
         sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
     cqiSource(idx) = "derived_from_" + sinrSource(idx);
@@ -1195,11 +1362,10 @@ n = height(T);
 sinrEvidence = nan(n, 1);
 sinrSource = repmat("", n, 1);
 evidenceFields = [ ...
+    "PostEqSINR_dB", ...
     "MeasuredWidebandSINR_dB", ...
     "MeasuredTrialSINR_dB", ...
-    "SINR_dB", ...
-    "ReceiverHestSINR_dB", ...
-    "EstimatedWidebandSINR_dB"];
+    "SINR_dB"];
 for i = 1:numel(evidenceFields)
     fieldName = evidenceFields(i);
     if ~ismember(fieldName, string(T.Properties.VariableNames))
@@ -1344,17 +1510,15 @@ valueRole = "measured_receiver_quality_unavailable";
 source = "";
 values = nan(n, 1);
 preferred = [ ...
-    "MeasuredTrialSINR_dB", ...
+    "PostEqSINR_dB", ...
     "MeasuredWidebandSINR_dB", ...
-    "SINR_dB", ...
-    "ReceiverHestSINR_dB", ...
-    "EstimatedWidebandSINR_dB"];
+    "MeasuredTrialSINR_dB", ...
+    "SINR_dB"];
 roles = [ ...
-    "measured_data_domain_trial_sinr", ...
+    "measured_post_equalization_scheduling_input", ...
     "measured_wideband_sinr", ...
-    "measured_receiver_sounding_sinr", ...
-    "receiver_channel_estimate_sinr", ...
-    "estimated_receiver_wideband_sinr"];
+    "measured_post_equalization_trial_sinr", ...
+    "measured_post_equalization_runtime_sinr"];
 vars = string(T.Properties.VariableNames);
 for i = 1:numel(preferred)
     name = preferred(i);

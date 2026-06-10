@@ -988,11 +988,11 @@ def _row_quality_axis_value(row: dict[str, str], *, allow_receiver_hest: bool = 
     creates constant "curves" from incomplete evidence.
     """
     candidates = [
+        ("PostEqSINR_dB", "PostEqSINR_dB"),
         ("MeasuredTrialSINR_dB", "MeasuredTrialSINR_dB"),
         ("MeasuredSINR_dB", "MeasuredSINR_dB"),
-        ("DecoderTruthProxySINR_dB", "DecoderTruthProxySINR_dB"),
+        ("MeasuredWidebandSINR_dB", "MeasuredWidebandSINR_dB"),
         ("LargeScaleSINR_dB", "LargeScaleSINR_dB"),
-        ("AppliedAWGNSNR_dB", "AppliedAWGNSNR_dB"),
     ]
     if allow_receiver_hest:
         candidates.insert(2, ("ReceiverHestSINR_dB", "ReceiverHestSINR_dB"))
@@ -1742,7 +1742,7 @@ def _specialized_live_report_table(
                 "observed_rows": len(family_rows),
                 "success_count": _count_trueish(family_rows, "CRCPass", "CombinedDecodeOK", "CurrentDecodeOK", "Detected", "DetectedFlag"),
                 "failure_count": len(family_rows) - _count_trueish(family_rows, "CRCPass", "CombinedDecodeOK", "CurrentDecodeOK", "Detected", "DetectedFlag"),
-                "mean_measured_sinr_db": _mean_numeric(family_rows, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
+                "mean_measured_sinr_db": _mean_numeric(family_rows, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
                 "mean_cqi": _mean_numeric(family_rows, "WidebandCQI"),
                 "mean_mcs": _mean_numeric(family_rows, "MCS", "CQIDerivedMCS"),
                 "modulation_set": _distinct_join(family_rows, "Modulation"),
@@ -2011,7 +2011,7 @@ def _specialized_live_report_table(
                     "cell_id": _row_text(row, "ServingCell", "CellID", "BaseStationID"),
                     "frame": _row_text(row, "Frame"),
                     "slot": _row_text(row, "Slot"),
-                    "measured_sinr_db": _row_text(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
+                    "measured_sinr_db": _row_text(row, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
                     "wideband_cqi": _row_text(row, "WidebandCQI"),
                     "mcs": _row_text(row, "MCS", "CQIDerivedMCS"),
                     "tb_size_bits": _row_text(row, "TBSize_bits"),
@@ -2331,8 +2331,8 @@ def _specialized_live_report_table(
             {"run_id": run_id, "metric_name": "run_completion", "metric_value": status_payload.get("run_completion", ""), "metric_unit": "ratio", "source_artifact": "sim_runs.status_json"},
             {"run_id": run_id, "metric_name": "dl_trial_rows", "metric_value": len(raw_rows["dl_pdsch"]), "metric_unit": "rows", "source_artifact": raw_sources["dl_pdsch"]},
             {"run_id": run_id, "metric_name": "ul_trial_rows", "metric_value": len(raw_rows["ul_pusch"]), "metric_unit": "rows", "source_artifact": raw_sources["ul_pusch"]},
-            {"run_id": run_id, "metric_name": "dl_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["dl_pdsch"], "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["dl_pdsch"]},
-            {"run_id": run_id, "metric_name": "ul_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["ul_pusch"], "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["ul_pusch"]},
+            {"run_id": run_id, "metric_name": "dl_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["dl_pdsch"], "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["dl_pdsch"]},
+            {"run_id": run_id, "metric_name": "ul_mean_measured_sinr_db", "metric_value": _mean_numeric(raw_rows["ul_pusch"], "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), "metric_unit": "dB", "source_artifact": raw_sources["ul_pusch"]},
             {"run_id": run_id, "metric_name": "energy_rows", "metric_value": len(energy_rows), "metric_unit": "rows", "source_artifact": "rf/csv/energy_timeline_trace.csv"},
         ]
         return {
@@ -2378,7 +2378,7 @@ def _specialized_live_report_table(
                 "artifact_family": family,
                 "source_artifact": raw_sources[family],
                 "configured_snr_db": configured_snr if configured_snr is not None else "",
-                "mean_measured_sinr_db": _mean_numeric(source_rows, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
+                "mean_measured_sinr_db": _mean_numeric(source_rows, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
                 "mean_serving_rsrp_dbm": _mean_numeric(source_rows, "ServingRSRP_dBm"),
                 "mean_csi_rsrp_db": _mean_numeric(source_rows, "CSI_RSRP_dB"),
                 "lineage_note": "Comparison surfaces keep configured launch values separate from measured air-interface runtime values.",
@@ -5215,7 +5215,7 @@ def _specialized_chart_materialization(
             if chart_name in {"BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR"}:
                 pairs: list[tuple[float, float]] = []
                 used_source_path = ""
-                x_label = "MeasuredTrialSINR_dB"
+                x_label = "PostEqSINR_dB"
                 y_label = "BLER" if "BLER" in chart_name else ("FER" if "FER" in chart_name else "BER")
                 selected_x_labels: Counter[str] = Counter()
                 for source_path, row in trial_rows:
@@ -5387,10 +5387,10 @@ def _specialized_chart_materialization(
                 pairs: list[tuple[float, float]] = []
                 source_token = ""
                 if chart_name == "throughput vs SNR":
-                    x_label = "MeasuredTrialSINR_dB"
+                    x_label = "PostEqSINR_dB"
                     y_label = "Throughput_Mbps"
                 elif chart_name == "throughput vs SINR":
-                    x_label = "MeasuredTrialSINR_dB"
+                    x_label = "PostEqSINR_dB"
                     y_label = "Throughput_Mbps"
                 elif chart_name == "throughput vs load":
                     x_label = "AllocatedPRBCount"
@@ -5525,7 +5525,7 @@ def _specialized_chart_materialization(
             if chart_name in {"applied AWGN SNR vs measured runtime SINR comparison", "applied vs measured runtime SNR/SINR comparison"}:
                 series_specs = [
                     ("Applied AWGN SNR", "AppliedAWGNSNR_dB"),
-                    ("Measured SINR", "MeasuredTrialSINR_dB"),
+                    ("Post-eq SINR", "PostEqSINR_dB"),
                     ("Measured wideband SINR", "MeasuredWidebandSINR_dB"),
                 ]
                 series: list[dict[str, Any]] = []
@@ -5657,7 +5657,7 @@ def _specialized_chart_materialization(
                         "note": "Selected-versus-derived MCS matrix derived from runtime link-adaptation rows.",
                     }
             if chart_name == "quality-vs-selected-MCS mismatch plot":
-                pairs = [(float(quality), float(mcs)) for row in la_rows for quality, mcs in [(_row_float(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), _row_float(row, "MCSIndex"))] if quality is not None and mcs is not None]
+                pairs = [(float(quality), float(mcs)) for row in la_rows for quality, mcs in [(_row_float(row, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), _row_float(row, "MCSIndex"))] if quality is not None and mcs is not None]
                 if pairs:
                     csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label="MeasuredQuality_dB", y_label="SelectedMCS", chart_name=chart_name, run_id=run_id, source_path=la_path)
                     return {
@@ -5674,7 +5674,7 @@ def _specialized_chart_materialization(
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in la_rows:
                     group_value = _row_float(row, field_name, "SelectedBeamIndex" if field_name == "BeamIndex" else "Layers")
-                    quality = _row_float(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB")
+                    quality = _row_float(row, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB")
                     if group_value is None or quality is None:
                         continue
                     grouped[int(round(group_value))].append(float(quality))
@@ -6232,9 +6232,11 @@ def materialize_run_contract_artifacts(
             and manifest_meta_json.find(MATERIALIZER_VERSION) >= 0
             and int(manifest_meta.get("source_artifact_high_watermark") or 0) >= current_source_watermark
         )
+        coverage_art = existing.get(coverage_logical_path())
+        coverage_meta_json = _artifact_metadata_json(coverage_art, db_connection_factory)
+        coverage_current = bool(coverage_art) and coverage_meta_json.find(MATERIALIZER_VERSION) >= 0
         coverage_snapshot = coverage_summary(list(existing.values()), feature_policy)
-        contract_paths_current = not coverage_snapshot.get("missing_table_paths") and not coverage_snapshot.get("missing_chart_names")
-        if manifest_current and contract_paths_current and not force:
+        if manifest_current and coverage_current and not force:
             return {
                 "created": created,
                 "manifest_path": manifest_logical_path(),
