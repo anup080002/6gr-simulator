@@ -608,12 +608,13 @@ random_access:
   detection_threshold_mode: auto
   false_alarm_candidate_scope: requested_preamble
 output:
-  persistence_mode: results_folder
+  backend: mysql_web
+  persistence_mode: both
   results_root: results
   save_csv: true
   save_figures: true
   save_png: true
 output_control:
-  output_persistence_mode: results_folder
+  output_persistence_mode: both
 inherits:
 - ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml
