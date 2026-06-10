@@ -50,16 +50,29 @@ direction.Direction = dirName;
 direction.Layers = double(layers);
 direction.Rank = double(layers);
 if dirName == "DL"
-    direction.MCS = double(sixgr.util.structGet(s, "modulation.dl_mcs_index", ...
+    direction.MCS = localFirstFiniteNumericScalar(sixgr.util.structGet(s, "modulation.dl_mcs_index", ...
         sixgr.util.structGet(s, "pdsch.mcs_index", NaN)));
     direction.Modulation = localConfiguredModulation(s, ...
         ["modulation.dl_modulation_order", "pdsch.modulation", "modulation_and_mapping.pdsch_modulation"]);
 else
-    direction.MCS = double(sixgr.util.structGet(s, "modulation.ul_mcs_index", ...
+    direction.MCS = localFirstFiniteNumericScalar(sixgr.util.structGet(s, "modulation.ul_mcs_index", ...
         sixgr.util.structGet(s, "pusch.mcs_index", NaN)));
     direction.Modulation = localConfiguredULModulation(s);
 end
 direction.OperatingPointText = localConfiguredOperatingPointText(direction);
+end
+
+function value = localFirstFiniteNumericScalar(valueIn)
+value = NaN;
+raw = double(valueIn);
+if isempty(raw)
+    return;
+end
+raw = raw(:);
+idx = find(isfinite(raw), 1, "first");
+if ~isempty(idx)
+    value = double(raw(idx));
+end
 end
 
 function modText = localConfiguredModulation(s, paths)

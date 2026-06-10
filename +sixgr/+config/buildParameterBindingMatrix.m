@@ -783,8 +783,25 @@ if isempty(value)
     text = "";
     return;
 end
-if isstring(value) && isscalar(value)
-    text = value;
+try
+    if all(ismissing(value), "all")
+        text = "";
+        return;
+    end
+catch
+end
+if isstring(value)
+    value = value(:);
+    value(ismissing(value)) = "";
+    if isscalar(value)
+        text = value;
+    else
+        try
+            text = string(jsonencode(cellstr(value)));
+        catch
+            text = "[" + strjoin(value(:).', ",") + "]";
+        end
+    end
     return;
 end
 if ischar(value)

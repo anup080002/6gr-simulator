@@ -31,11 +31,15 @@ sinr_per_re_dB = [];
 
 if isempty(hEstSym) || ~isnumeric(hEstSym)
     info.NAReason = "empty_or_non_numeric_channel_estimate";
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+        "post_equalization_sinr", info.NAReason);
     return;
 end
 nVar = double(nVar);
 if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
     info.NAReason = "invalid_or_unavailable_noise_variance";
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+        "post_equalization_sinr", info.NAReason);
     return;
 end
 
@@ -58,17 +62,24 @@ switch ndims(H)
         H = reshape(H, nRE, nRx, nTx);
     otherwise
         info.NAReason = "unsupported_channel_estimate_rank";
+        sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+            "post_equalization_sinr", info.NAReason);
         return;
 end
 if nRE < 1 || nRx < 1 || nTx < 1
     info.NAReason = "empty_channel_estimate_dimensions";
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+        "post_equalization_sinr", info.NAReason);
     return;
 end
-
 nLayers = min(nRx, nTx);
 if ~isempty(opt.Layers)
     nLayers = max(1, min(round(double(opt.Layers)), min(nRx, nTx)));
 end
+profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.rx.computePostEqSINR", ...
+    "Stage", "post_equalization_sinr", ...
+    "Metadata", struct("NRE", double(nRE), "NRx", double(nRx), "NTx", double(nTx), ...
+    "NLayers", double(nLayers))); %#ok<NASGU>
 method = lower(string(opt.Method));
 rint = opt.Rint;
 usePerRERint = ~isempty(rint) && ndims(rint) == 3 && size(rint, 1) == nRE && size(rint, 2) == nRx && size(rint, 3) == nRx;

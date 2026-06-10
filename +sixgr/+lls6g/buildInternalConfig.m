@@ -83,6 +83,15 @@ cfg.outputs.resultsRoot = char(string(localGetNested(s, "output.results_root", "
 cfg.outputs.databaseHost = char(string(localResolveDatabaseField(s, "output.database_host", cfg.outputs.storageBackend)));
 cfg.outputs.databasePort = double(localResolveDatabaseField(s, "output.database_port", cfg.outputs.storageBackend));
 cfg.outputs.databaseSchema = char(string(localResolveDatabaseField(s, "output.database_schema", cfg.outputs.storageBackend)));
+timeProfileEnabled = logical(localGetNested(s, "run_control.time_profiling_enable", ...
+    localGetNested(s, "analytics.export_time_profile", ...
+    localGetNested(s, "output.profiler_enabled", false))));
+cfg = sixgr.util.structSet(cfg, "perf.timeProfilingEnabled", timeProfileEnabled);
+cfg = sixgr.util.structSet(cfg, "perf.timeProfilingGranularity", ...
+    char(string(localGetNested(s, "run_control.time_profiling_granularity", "function"))));
+cfg = sixgr.util.structSet(cfg, "perf.exportTimeProfile", logical(localGetNested(s, ...
+    "analytics.export_time_profile", timeProfileEnabled)));
+cfg = sixgr.util.structSet(cfg, "run.timeProfilingEnabled", timeProfileEnabled);
 
 [profileName, propagationScenario] = localResolveScenarioSemantics(s);
 cfg.scenario.id = char(string(s.meta.scenario_id));
@@ -120,7 +129,11 @@ if ~isempty(geometryArea_m)
     cfg = sixgr.util.structSet(cfg, "scenario.geometry.area_m", geometryArea_m);
 end
 cfg.scenario.ue.nRxAnt = double(s.mimo.n_rx_ant);
-cfg.scenario.ue.nTxAnt = double(s.mimo.n_rx_ant);
+ueTxAnt = localResolveFirstFiniteNumeric(s, ["scenario.ue.nTxAnt","mimo.ue_n_tx_ant","mimo.n_ue_tx_ant"], NaN);
+if ~(isfinite(ueTxAnt) && ueTxAnt >= 1)
+    ueTxAnt = min(double(s.mimo.n_rx_ant), double(s.mimo.n_tx_ant));
+end
+cfg.scenario.ue.nTxAnt = double(max(1, round(ueTxAnt)));
 cfg.scenario.ue.noiseFigure_dB = double(localResolveUENoiseFigure_dB(s));
 
 ueCount = max(1, round(double(localRequireFirstNested(s, ...
@@ -145,9 +158,12 @@ if isfinite(minInterUEDistance_m) && minInterUEDistance_m > 0
     cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.minInterUEDistance_m", double(minInterUEDistance_m));
 end
 
-mobilitySpeedKmh = double(localRequireFirstNested(s, ...
-    ["mobility.ue_speed_kmh","channels.mobility_kmph"], ...
-    "mobility.ue_speed_kmh or channels.mobility_kmph"));
+mobilitySpeedKmh = localResolveFirstFiniteNumeric(s, ...
+    ["mobility.ue_speed_kmh","channels.mobility_kmph"], NaN);
+if ~isfinite(mobilitySpeedKmh)
+    error("sixgr:lls6g:config:MissingResolvedConfigValue", ...
+        "Resolved scenario config is missing required value 'mobility.ue_speed_kmh or channels.mobility_kmph'.");
+end
 cfg.scenario.mobility.enable = mobilitySpeedKmh > 0;
 cfg.scenario.mobility.speed_kmh = [mobilitySpeedKmh mobilitySpeedKmh];
 cfg.scenario.mobility.speed_mps = [mobilitySpeedKmh mobilitySpeedKmh] ./ 3.6;
@@ -179,7 +195,7 @@ cfg.frequency.centerFrequencyHz = double(s.frequency.center_frequency_hz);
 cfg.frequency.bandwidthHz = double(s.frequency.bandwidth_hz);
 cfg.channel.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.channel.nRxAnt = double(s.mimo.n_rx_ant);
-cfg.channel.snr_dB = double(s.simulation.snr_db);
+cfg.channel.snr_dB = localNumericScalarOrNaN(localGetNested(s, "simulation.snr_db", NaN));
 cfg = sixgr.util.structSet(cfg, "run.noiseOperatingMode", char(localResolveNoiseOperatingMode(s)));
 dopplerSourceMode = localResolveDopplerSourceMode(s);
 resolvedDopplerHz = localResolveChannelDopplerHz(s, mobilitySpeedKmh, dopplerSourceMode);
@@ -288,7 +304,7 @@ cfg.phy.mib.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.sib1.enable = logical(s.reference_signals.pbch_enabled);
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
-cfg.phy.pdcch.searchSpaceType = char(string(s.control.search_space_type));
+cfg.phy.pdcch.searchSpaceType = char(localNormalizePDCCHSearchSpaceType(s.control.search_space_type));
 cfg.phy.pdcch.aggregationLevels = double(s.control.aggregation_levels);
 cfg.phy.pdcch.aggregationLevel = double(localResolveDefaultPDCCHAggregationLevel(s.control.aggregation_levels));
 cfg.phy.pdcch.candidateAggregationLevels = double(localGetNested(s, "control.candidate_aggregation_levels", cfg.phy.pdcch.aggregationLevels));
@@ -449,8 +465,8 @@ elseif linkAdaptationUsesFixedMCS && (strlength(explicitPDSCHMCSMode) == 0 || ex
     cfg.pdsch6gr.MCSMode = 'fixed';
 end
 cfg.pdsch6gr.FixedMCSActive = logical(linkAdaptationUsesFixedMCS);
-dlConfiguredMCSIndex = double(s.modulation.dl_mcs_index);
-ulConfiguredMCSIndex = double(s.modulation.ul_mcs_index);
+dlConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, "modulation.dl_mcs_index", NaN));
+ulConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, "modulation.ul_mcs_index", NaN));
 cfg.phy.pdsch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pdsch_enable)));
 cfg.phy.pdsch.nLayers = double(s.mimo.n_layers);
 cfg.phy.pdsch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
@@ -521,7 +537,7 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.pmiPolicy", char(localPolicyTokenString
 cfg = sixgr.util.structSet(cfg, "phy.csi.riPolicy", char(localPolicyTokenString(riPolicy)));
 cfg = sixgr.util.structSet(cfg, "phy.csi.criPolicy", char(localPolicyTokenString(criPolicy)));
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", char(pmiCodebookMode));
-cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", char(string(s.mimo.codebook_type)));
+cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", char(localNormalizeCoreCodebookType(s.mimo.codebook_type)));
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", char(localResolveCQITableToken(s)));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.cqiTable", char(localResolveCQITableToken(s)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.cqiTable", char(localResolveCQITableToken(s)));
@@ -678,6 +694,7 @@ cfg = localStructSetIfPresent(cfg, "phy.prach.logicalRootSequenceIndex", localGe
 cfg = localStructSetIfPresent(cfg, "phy.prach.restrictedSet", localGetNested(s, "random_access.restricted_set", []));
 cfg = localStructSetIfPresent(cfg, "phy.prach.frequencyStart", localGetNested(s, "random_access.frequency_start", []));
 cfg = localStructSetIfPresent(cfg, "phy.prach.detectionThreshold", localGetNested(s, "random_access.detection_threshold", []));
+cfg = localStructSetIfPresent(cfg, "phy.prach.falseAlarmCandidateScope", localGetNested(s, "random_access.false_alarm_candidate_scope", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.FrequencyRange", localGetNested(s, "random_access.frequency_range", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.DuplexMode", localGetNested(s, "frequency.duplex_mode", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.CarrierFrequencyHz", localGetNested(s, "frequency.center_frequency_hz", []));
@@ -708,6 +725,7 @@ cfg = localStructSetIfPresent(cfg, "prach_lls.EnableTimingUncertainty", localGet
 cfg = localStructSetIfPresent(cfg, "prach_lls.EnableFrequencyEstimationMetric", localGetNested(s, "random_access.enable_frequency_estimation_metric", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.DetectionThresholdMode", localGetNested(s, "random_access.detection_threshold_mode", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.DetectionThreshold", localGetNested(s, "random_access.detection_threshold", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.FalseAlarmCandidateScope", localGetNested(s, "random_access.false_alarm_candidate_scope", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.SNRSweep_dB", localGetNested(s, "random_access.snr_sweep_db", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.ThresholdSweep", localGetNested(s, "random_access.threshold_sweep", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.ChannelModel", localGetNested(s, "random_access.channel_model", []));
@@ -851,24 +869,24 @@ bootstrapCQIMode = lower(strtrim(string(localGetNested(s, "link_adaptation.boots
 if strlength(bootstrapCQIMode) > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", char(bootstrapCQIMode));
 end
-bootstrapMCSIndex = double(localGetNested(s, "link_adaptation.bootstrap_mcs_index", ...
+bootstrapMCSIndex = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.bootstrap_mcs_index", ...
     localGetNested(s, "link_adaptation.bootstrapMCSIndex", NaN)));
 if isfinite(bootstrapMCSIndex) && bootstrapMCSIndex >= 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", max(0, min(31, round(double(bootstrapMCSIndex)))));
 end
-cqiSmoothingAlpha = double(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
+cqiSmoothingAlpha = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", double(cqiSmoothingAlpha));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", 0.2);
 end
-ollaStepDown = double(localGetNested(s, "link_adaptation.olla_step_down", NaN));
+ollaStepDown = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_down", NaN));
 if isfinite(ollaStepDown) && ollaStepDown > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", double(ollaStepDown));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 1.0);
 end
-ollaStepUp = double(localGetNested(s, "link_adaptation.olla_step_up", NaN));
+ollaStepUp = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_up", NaN));
 if isfinite(ollaStepUp) && ollaStepUp > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", double(ollaStepUp));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
@@ -1176,6 +1194,18 @@ else
 end
 end
 
+function token = localNormalizePDCCHSearchSpaceType(value)
+raw = lower(strtrim(string(value)));
+switch raw
+    case {"uss", "ue_specific", "ue-specific", "ue"}
+        token = "ue";
+    case {"css", "common"}
+        token = "common";
+    otherwise
+        token = char(raw);
+end
+end
+
 function modStr = localOrderToModulation(order)
 catalog = sixgr.lls6g.config.loadParameterCatalog("scenario");
 entries = sixgr.util.structGet(catalog, "value_maps.modulation_order_to_name", struct([]));
@@ -1195,7 +1225,7 @@ if ~isfield(s, "traffic") || ~(isstruct(s.traffic) && isscalar(s.traffic))
     return;
 end
 
-trafficModel = char(string(localRequireNested(s, "traffic.model", "traffic.model")));
+trafficModel = char(localNormalizeTrafficModel(localRequireNested(s, "traffic.model", "traffic.model")));
 cfg = sixgr.util.structSet(cfg, "traffic.model", trafficModel);
 cfg = sixgr.util.structSet(cfg, "traffic.transport", char(string(localRequireNested(s, "traffic.transport", "traffic.transport"))));
 cfg = sixgr.util.structSet(cfg, "traffic.flowDirection", upper(char(string(localRequireNested(s, "traffic.flowDirection", "traffic.flowDirection")))));
@@ -1297,6 +1327,19 @@ out = struct( ...
     "Source", "traffic.scalar_profile_fields", ...
     "DerivationMode", "derived_from_scalar_traffic_config", ...
     "ResolvedFlag", true);
+end
+
+function token = localNormalizeTrafficModel(value)
+raw = string(value);
+normalized = lower(strtrim(raw));
+switch normalized
+    case {"full_buffer", "fullbuffer"}
+        token = "fullBuffer";
+    case {"tracereplay", "trace_replay"}
+        token = "traceReplay";
+    otherwise
+        token = char(raw);
+end
 end
 
 function flows = localNormalizeTrafficFlowArray(raw)
@@ -1416,12 +1459,24 @@ if isfield(s.system, "measurement") && isstruct(s.system.measurement)
         double(localRequireNested(s, "system.measurement.filterAlpha", "system.measurement.filterAlpha")));
 end
 if isfield(s.system, "beam") && isstruct(s.system.beam)
+    beamUpdatePeriodSlots = double(localRequireNested(s, "system.beam.updatePeriod_slots", "system.beam.updatePeriod_slots"));
+    beamUpdatePeriodMs = localNumericScalarOrNaN(localGetNested(s, "system.beam.updatePeriod_ms", NaN));
+    if isfinite(beamUpdatePeriodMs) && beamUpdatePeriodMs > 0
+        slotDurationForBeamMs = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
+        if ~isfinite(slotDurationForBeamMs) || slotDurationForBeamMs <= 0
+            slotDurationForBeamMs = localNumericScalarOrNaN(localGetNested(s, "frame_timing.slot_duration_ms", NaN));
+        end
+        if isfinite(slotDurationForBeamMs) && slotDurationForBeamMs > 0
+            beamUpdatePeriodSlots = max(1, round(beamUpdatePeriodMs / slotDurationForBeamMs));
+        end
+        cfg = sixgr.util.structSet(cfg, "system.beam.updatePeriod_ms", double(beamUpdatePeriodMs));
+    end
     cfg = sixgr.util.structSet(cfg, "system.beam.enable", ...
         logical(localRequireNested(s, "system.beam.enable", "system.beam.enable")));
     cfg = sixgr.util.structSet(cfg, "system.beam.numBeams", ...
         double(localRequireNested(s, "system.beam.numBeams", "system.beam.numBeams")));
     cfg = sixgr.util.structSet(cfg, "system.beam.updatePeriod_slots", ...
-        double(localRequireNested(s, "system.beam.updatePeriod_slots", "system.beam.updatePeriod_slots")));
+        double(beamUpdatePeriodSlots));
     cfg = sixgr.util.structSet(cfg, "system.beam.sectorSpan_deg", ...
         double(localRequireNested(s, "system.beam.sectorSpan_deg", "system.beam.sectorSpan_deg")));
     cfg = sixgr.util.structSet(cfg, "system.beam.maxGain_dB", ...
@@ -1925,7 +1980,10 @@ for i = 1:numel(candidatePaths)
         continue;
     end
     value = double(raw);
-    if isscalar(value) && isfinite(value)
+    value = value(:);
+    value = value(isfinite(value));
+    if ~isempty(value)
+        value = double(value(1));
         return;
     end
 end
@@ -2004,6 +2062,19 @@ switch lower(string(codebookType))
         mode = "etype2_candidate";
     otherwise
         mode = "noncodebook";
+end
+end
+
+function token = localNormalizeCoreCodebookType(codebookType)
+switch lower(strtrim(string(codebookType)))
+    case {"type1_su_mimo", "type1"}
+        token = "type1";
+    case {"type2_mu_mimo", "type2"}
+        token = "type2";
+    case {"etype2_candidate", "etype2"}
+        token = "etype2";
+    otherwise
+        token = "noncodebook";
 end
 end
 

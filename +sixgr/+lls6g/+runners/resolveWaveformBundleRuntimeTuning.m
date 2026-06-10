@@ -32,7 +32,7 @@ tuning.AdaptiveSweepMaxPoints = 12;
 tuning.MaxRawRowsPerSweep = NaN;
 tuning.Notes = "";
 
-if requestedRawRowsPerSweep <= 4096
+if requestedRawRowsPerSweep <= 4096 && numUsers < 32
     return;
 end
 

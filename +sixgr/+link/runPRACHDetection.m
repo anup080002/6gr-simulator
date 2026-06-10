@@ -37,6 +37,8 @@ out.FalseAlarm = false;
 out.NoiseFalseAlarm = false;
 out.CollisionFalseAlarm = NaN;
 out.FalseAlarmClassification = "";
+out.FalseAlarmCandidateScope = "";
+out.FalseAlarmCandidateCount = NaN;
 out.CollisionFalseAlarmClassification = "not_measured_without_collision_occasion";
 out.PreambleIndex = [];
 out.RequestedPreambleIndex = localScalarOrNaN(preambleIndex);
@@ -178,6 +180,10 @@ try
     if ~isempty(detectionThreshold)
         faArgs = [faArgs {"DetectionThresholdMode", "fixed", "DetectionThreshold", detectionThreshold}]; %#ok<AGROW>
     end
+    [faScope, faCandidates] = localResolveFalseAlarmCandidateSet(cfg, preambleIndex);
+    if ~isempty(faCandidates)
+        faArgs = [faArgs {"CandidatePreambles", faCandidates}]; %#ok<AGROW>
+    end
     rx = sixgr.rach.PRACHDetector(rxWave, prachCfg, detArgs{:});
     rxNoise = sixgr.rach.PRACHDetector(noiseOnlyWave, prachCfg, detArgs{:});
     rxNoPreambleOccasion = sixgr.rach.PRACHDetector(noiseOnlyWave, prachCfg, faArgs{:});
@@ -205,8 +211,14 @@ try
     out.NoiseFalseAlarm = logical(out.NoiseFalseAlarmFlag);
     out.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoPreambleOccasion, "Detected", false)));
     out.FalseAlarm = logical(out.FalseAlarmFlag);
+    out.FalseAlarmCandidateScope = char(faScope);
+    out.FalseAlarmCandidateCount = double(numel(faCandidates));
     out.FalseAlarmProbability = double(out.FalseAlarmFlag);
-    out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_any_preamble_detected";
+    if faScope == "all_preambles"
+        out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_any_preamble_detected";
+    else
+        out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_requested_preamble_detected";
+    end
     out.MissedDetection = ~logical(out.Detected);
 
     if out.Detected
@@ -225,6 +237,34 @@ catch ME
     if ~isempty(log)
         log.warn("runPRACHDetection failed: " + string(ME.message));
     end
+end
+end
+
+function [scope, candidates] = localResolveFalseAlarmCandidateSet(cfg, preambleIndex)
+scope = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.prach.falseAlarmCandidateScope", ...
+    sixgr.util.structGet(cfg, "random_access.false_alarm_candidate_scope", "")))));
+if strlength(scope) == 0
+    scope = lower(strtrim(string(sixgr.util.structGet(cfg, "prach_lls.FalseAlarmCandidateScope", ""))));
+end
+if strlength(scope) == 0
+    scope = "requested_preamble";
+end
+if any(scope == ["all", "all_preambles", "occasion", "occasion_all_preambles"])
+    scope = "all_preambles";
+    candidates = 0:63;
+    return;
+end
+scope = "requested_preamble";
+if isempty(preambleIndex)
+    scope = "all_preambles";
+    candidates = 0:63;
+    return;
+end
+candidates = unique(round(double(preambleIndex(:).')));
+candidates = candidates(candidates >= 0 & candidates <= 63);
+if isempty(candidates)
+    scope = "all_preambles";
+    candidates = 0:63;
 end
 end
 

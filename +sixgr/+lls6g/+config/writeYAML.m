@@ -84,7 +84,8 @@ for i = 1:numel(f)
             lines = [lines; splitlines(string(localSerializeCell(value, indentLevel+1)))]; %#ok<AGROW>
         end
     else
-        lines(end+1,1) = indent + key + ": " + localSerializeValue(value, indentLevel+1, true); %#ok<AGROW>
+        scalarText = localEnsureScalarYAMLText(localSerializeValue(value, indentLevel+1, true));
+        lines(end+1,1) = indent + key + ": " + scalarText; %#ok<AGROW>
     end
 end
 txt = strjoin(lines, newline);
@@ -103,15 +104,26 @@ for i = 1:numel(c)
         lines(end+1,1) = indent + "-"; %#ok<AGROW>
         lines = [lines; splitlines(string(localSerializeStruct(value, indentLevel+1)))]; %#ok<AGROW>
     else
-        lines(end+1,1) = indent + "- " + localSerializeValue(value, indentLevel+1, true); %#ok<AGROW>
+        lines(end+1,1) = indent + "- " + localEnsureScalarYAMLText(localSerializeValue(value, indentLevel+1, true)); %#ok<AGROW>
     end
 end
 txt = strjoin(lines, newline);
 end
 
+function txt = localEnsureScalarYAMLText(txt)
+txt = string(txt);
+if isempty(txt)
+    txt = "null";
+elseif ~isscalar(txt)
+    txt = "[" + strjoin(txt(:).', ", ") + "]";
+end
+end
+
 function txt = localScalarString(v, ~)
 v = string(v);
-if strlength(v) == 0
+if isempty(v) || ismissing(v)
+    txt = "null";
+elseif strlength(v) == 0
     txt = '""';
 else
     escaped = replace(v, "\", "\\");

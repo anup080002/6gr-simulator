@@ -67,6 +67,8 @@ out.HARQ = struct();
 if ~logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.pdsch.enable=true for PDSCH coverage.");
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.link.runDLPDSCHThroughput", "dl_pdsch", ...
+        "phy.pdsch.enable=false");
     out.Skipped = true;
     out.Ok = true;
     out.Notes = "Skipped: cfg.phy.pdsch.enable=false";
@@ -76,11 +78,23 @@ end
 if exist("nrPDSCH","file") ~= 2 || exist("nrPDSCHDecode","file") ~= 2
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnavailable", ...
         "Strict mode requires nrPDSCH/nrPDSCHDecode for PDSCH coverage.");
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.link.runDLPDSCHThroughput", "dl_pdsch", ...
+        "nrPDSCH_or_nrPDSCHDecode_unavailable");
     out.Skipped = true;
     out.Ok = true;
     out.Notes = "Skipped: nrPDSCH APIs unavailable.";
     return;
 end
+
+profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.runDLPDSCHThroughput", ...
+    "Stage", "dl_pdsch", ...
+    "Metadata", struct( ...
+    "NumFrames", double(numFrames), ...
+    "NSubcarriers", double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)) * 12, ...
+    "NSymbols", 14, ...
+    "NRx", double(sixgr.util.structGet(cfg, "channel.nRxAnt", 1)), ...
+    "NTx", double(sixgr.util.structGet(cfg, "channel.nTxAnt", 1)), ...
+    "NLayers", double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)))); %#ok<NASGU>
 
 blockErr = 0;
 bitErr = 0;
@@ -424,6 +438,7 @@ for n = 1:numFrames
         trialLinkAdaptationMode(n) = string(localResolveLinkAdaptationMode(cfgFrame, "DL"));
         trialActualMCSSelectionMode(n) = string(localResolveActualMCSSelectionMode(cfgFrame, "DL"));
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
+        grantCQIUsed = double(sixgr.util.structGet(grantSnapshotOverride, "CQIUsed", NaN));
         if schedulerDrivenGrant
             trialLinkAdaptationMode(n) = "scheduler_grant_replay";
             trialActualMCSSelectionMode(n) = "scheduler_grant";
@@ -729,6 +744,21 @@ for n = 1:numFrames
             trialCQIDerivedMCS(n) = double(cqiMCS);
             trialCQIDerivedCodeRate(n) = double(cqiRate);
             trialCQIDerivedModulation(n) = string(cqiMod);
+        end
+        if schedulerDrivenGrant && isfinite(grantCQIUsed)
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            if isfinite(trialCQI(n))
+                trialCQISource(n) = "scheduler_grant_cqi_used";
+                [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
+                trialCQIDerivedMCS(n) = double(cqiMCS);
+                trialCQIDerivedCodeRate(n) = double(cqiRate);
+                trialCQIDerivedModulation(n) = string(cqiMod);
+            else
+                trialCQISource(n) = "scheduler_grant_cqi_used_out_of_range";
+                trialCQIDerivedMCS(n) = NaN;
+                trialCQIDerivedCodeRate(n) = NaN;
+                trialCQIDerivedModulation(n) = "";
+            end
         end
         trialRI(n) = metrics.RI;
         trialPMI(n) = metrics.PMI;

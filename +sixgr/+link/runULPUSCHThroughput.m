@@ -67,6 +67,8 @@ out.HARQ = struct();
 if ~logical(sixgr.util.structGet(cfg, "phy.pusch.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.pusch.enable=true for PUSCH coverage.");
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.link.runULPUSCHThroughput", "ul_pusch", ...
+        "phy.pusch.enable=false");
     out.Skipped = true;
     out.Ok = true;
     out.Notes = "Skipped: cfg.phy.pusch.enable=false";
@@ -76,11 +78,23 @@ end
 if exist("nrPUSCH","file") ~= 2 || exist("nrPUSCHDecode","file") ~= 2
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnavailable", ...
         "Strict mode requires nrPUSCH/nrPUSCHDecode for PUSCH coverage.");
+    sixgr.perf.TimeProfiler.markSkipped("sixgr.link.runULPUSCHThroughput", "ul_pusch", ...
+        "nrPUSCH_or_nrPUSCHDecode_unavailable");
     out.Skipped = true;
     out.Ok = true;
     out.Notes = "Skipped: nrPUSCH APIs unavailable.";
     return;
 end
+
+profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.runULPUSCHThroughput", ...
+    "Stage", "ul_pusch", ...
+    "Metadata", struct( ...
+    "NumFrames", double(numFrames), ...
+    "NSubcarriers", double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)) * 12, ...
+    "NSymbols", 14, ...
+    "NRx", double(sixgr.util.structGet(cfg, "channel.nRxAnt", 1)), ...
+    "NTx", double(sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", 1)), ...
+    "NLayers", double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)))); %#ok<NASGU>
 
 cfgUL = cfg;
 
@@ -422,6 +436,7 @@ for n = 1:numFrames
         trialLinkAdaptationMode(n) = string(localResolveLinkAdaptationMode(cfgFrame, "UL"));
         trialActualMCSSelectionMode(n) = string(localResolveActualMCSSelectionMode(cfgFrame, "UL"));
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
+        grantCQIUsed = double(sixgr.util.structGet(grantSnapshotOverride, "CQIUsed", NaN));
         if schedulerDrivenGrant
             trialLinkAdaptationMode(n) = "scheduler_grant_replay";
             trialActualMCSSelectionMode(n) = "scheduler_grant";
@@ -717,6 +732,14 @@ for n = 1:numFrames
             trialCQISource(n) = string(sixgr.util.structGet(metrics, "CQISource", "ul_link_state_reference_signal_cqi"));
             if strlength(strtrim(trialCQISource(n))) == 0
                 trialCQISource(n) = "ul_link_state_reference_signal_cqi";
+            end
+        end
+        if schedulerDrivenGrant && isfinite(grantCQIUsed)
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            if isfinite(trialCQI(n))
+                trialCQISource(n) = "scheduler_grant_cqi_used";
+            else
+                trialCQISource(n) = "scheduler_grant_cqi_used_out_of_range";
             end
         end
         trialRI(n) = metrics.RI;

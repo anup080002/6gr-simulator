@@ -195,7 +195,8 @@ if ~ismatrix(Wcfg)
     return;
 end
 sz = size(Wcfg);
-tf = sz(2) == nLayers || sz(1) == nLayers;
+tf = (sz(2) == nLayers && sz(1) >= nLayers) || ...
+    (sz(1) == nLayers && sz(2) >= nLayers);
 end
 
 function tf = localHasFinitePMI(cfg)
@@ -397,6 +398,9 @@ if sz(2) ~= nLayers && sz(1) == nLayers
     Wtry = Wtry.';
 end
 if size(Wtry, 2) ~= nLayers
+    return;
+end
+if size(Wtry, 1) < nLayers
     return;
 end
 try

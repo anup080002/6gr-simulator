@@ -12,6 +12,10 @@ addParameter(p, "DetectionThreshold", [], @(x) isempty(x) || (isscalar(x) && isn
 addParameter(p, "EnableFrequencyEstimationMetric", [], @(x) isempty(x) || islogical(x) || isnumeric(x));
 parse(p, rxWaveform, cfg, varargin{:});
 opts = p.Results;
+profScope = sixgr.perf.TimeProfiler.scope("sixgr.rach.PRACHDetector", ...
+    "Stage", "prach_detection", ...
+    "Metadata", struct("NSamples", double(numel(rxWaveform)), ...
+    "CandidatePreambles", double(numel(opts.CandidatePreambles)))); %#ok<NASGU>
 
 occasion = opts.Occasion;
 if isempty(fieldnames(occasion))

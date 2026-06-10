@@ -53,6 +53,17 @@ ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) 
 ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.ul.PUSCH_Rx", ...
+    "Stage", "ul_pusch_rx", ...
+    "Metadata", struct( ...
+    "NSamples", double(numel(rxWaveform)), ...
+    "NSubcarriers", double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)) * 12, ...
+    "NSymbols", 14, ...
+    "NRx", double(max(1, size(rxWaveform, 2))), ...
+    "NTx", double(sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", 1)), ...
+    "NLayers", double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)), ...
+    "TBSBits", double(localScalarOrNaN(opt.TransportBlockSize)), ...
+    "MaxIterations", double(localScalarOrNaN(opt.MaxIterations)))); %#ok<NASGU>
 
 % Carrier
 if isempty(opt.Carrier)
@@ -1074,5 +1085,19 @@ function token = localDisplayChannelToken(channelToken)
 token = char(string(channelToken));
 if isempty(token)
     token = '<unspecified>';
+end
+end
+
+function value = localScalarOrNaN(raw)
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    value = NaN;
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if isempty(raw)
+    value = NaN;
+else
+    value = double(raw(1));
 end
 end

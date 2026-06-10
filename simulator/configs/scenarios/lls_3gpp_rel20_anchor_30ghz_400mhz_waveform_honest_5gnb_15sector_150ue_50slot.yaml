@@ -364,8 +364,8 @@ system:
     sectorSpan_deg: 120
     maxGain_dB: 18
   waveform:
-    useGrantLocalGrid: true
-    replayGridMode: grant_allocation
+    useGrantLocalGrid: false
+    replayGridMode: full_carrier
     capReplayAntennasToLayers: false
     longRunAudit:
       enabled: true

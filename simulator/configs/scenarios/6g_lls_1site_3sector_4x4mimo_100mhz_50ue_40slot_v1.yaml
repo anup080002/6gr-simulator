@@ -1,0 +1,619 @@
+meta:
+  scenario_id: 6g_lls_1site_3sector_4x4mimo_100mhz_50ue_40slot_v1
+  description: "6G Phase-1 anchor LLS: 1 site, 3 sectors, 4\xD74 MIMO, 100 MHz TDD,\
+    \ MU-MIMO CSI-RS/SRS, 50 UEs, 40 slots. No AI/ML. Baseline for waveform, coding,\
+    \ MIMO, CSI, PRACH, HARQ and EE KPIs.\n"
+  version: '1.0'
+  owner: ran_study_team
+  maturity_tag: baseline_v1
+  research_class: phase1_anchor
+  frequency_tag: 4ghz_fr1
+  notes: Primary Phase-1 6G LLS reference point per IMT-2020 evaluation framework.
+  tags:
+  - lls
+  - 6g
+  - 4ghz
+  - 100mhz
+  - tdd
+  - 30khz
+  - 1site
+  - 3sector
+  - 4t4r
+  - mu-mimo
+  - csi-rs
+  - srs
+  - 50ue
+  - 40slot
+  - no-aiml
+  - phase1
+run_control:
+  seed: 42
+  deterministic_mode: true
+  execution_mode: LLS
+  study_mode: baseline
+  run_profile: exhaustive
+  total_slots: 40
+  warmup_slots: 5
+  measurement_slots: 35
+  checkpoint_every_slots: 10
+  snapshot_every_slots: 10
+  log_every_slots: 1
+  batch_size_links: 50
+  num_workers: 4
+  symbol_level_logging_enable: true
+  raw_iq_capture_enable: true
+  save_channel_tensors: false
+  save_harq_buffers: true
+  trace_capture_level: full
+  time_profiling_enable: true
+  time_profiling_granularity: function
+  fail_on_warning: false
+  debug_level: INFO
+  max_runtime_guard: 7200
+  random_seed_master: 42
+  num_drops: 1
+simulation:
+  link_direction: both
+  n_slots: 40
+  n_subframes: 20
+  n_frames: 2
+  monte_carlo_iterations: 1
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+  min_duration_s: 0.02
+  snr_sweep_offsets_db:
+  - 0
+  snr_db: null
+  random_seed: 42
+  deterministic_mode: true
+frequency:
+  range_name: FR1
+  center_frequency_hz: 4000000000
+  band_name: n77
+  bandwidth_hz: 100000000
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: flexible
+  tdd_pattern: DDDSU
+  special_slot_downlink_symbols: 12
+  ul_dl_guard_symbols: 1
+  special_slot_uplink_symbols: 1
+frame_timing:
+  frame_duration_ms: 10.0
+  subframe_duration_ms: 1.0
+  slot_duration_ms: 0.5
+  symbols_per_slot: 14
+  slots_per_frame: 20
+  tdd_pattern: DDDSU
+  special_slot_downlink_symbols: 12
+  ul_dl_guard_symbols: 1
+  special_slot_uplink_symbols: 1
+  dl_fraction_pct: 77.1
+  ul_fraction_pct: 21.4
+global_radio_scope:
+  numerology_mu: 1
+  slots_per_subframe: 2
+  symbols_per_subframe: 28
+  carrier_frequency_hz: 4000000000
+  frequency_range_label: FR1
+  channel_bandwidth_hz: 100000000
+  simulation_bandwidth_hz: 100000000
+  duplex_mode: TDD
+  scs_hz: 30000.0
+  cp_type: normal
+  sample_rate_hz: 122880000
+  fft_size: 4096
+resource_grid:
+  subcarriers_per_rb: 12
+  total_subcarriers: 3276
+waveform:
+  dl_waveform: CP-OFDM
+  ul_waveform: CP-OFDM
+  ul_waveform_dft_s_ofdm_enable: false
+  fft_size: 4096
+  sample_rate_hz: 122880000
+  cp_length_normal_ts: 144
+  cp_length_normal_us: 1.17
+  oversampling_factor: 1
+  windowing_enabled: true
+  windowing_percent: 0.025
+  transform_precoding_enabled: false
+  low_papr_mode: none
+  tone_reservation_enabled: false
+  dl: CP-OFDM
+  ul: CP-OFDM
+  transform_precoding: false
+  windowing: true
+modulation:
+  dl_max_modulation: 256QAM
+  ul_max_modulation: 256QAM
+  dl_mcs_table: qam256_table2
+  ul_mcs_table: qam256_table2
+  dl_mcs_index: null
+  ul_mcs_index: null
+  pi2_bpsk_enable: false
+  constellation_shaping_enable: false
+  cqi_table: table2
+coding:
+  dl_coding_scheme: LDPC
+  ul_coding_scheme: LDPC
+  control_coding_scheme: Polar
+  small_uci_coding: repetition
+  ldpc_base_graph_selection: automatic
+  ldpc_max_iterations: 50
+  ldpc_algorithm: Normalized min-sum
+  ldpc_scaling_factor: 0.75
+  ldpc_early_termination: true
+  polar_list_size: 8
+  crc_type_tb: CRC24A
+  crc_type_cb: CRC24B
+  cb_segmentation: automatic
+deployment_topology:
+  scenario_type: single-site-multi-sector
+  site_layout: single
+  cell_type: UMa
+  num_sites: 1
+  num_cells: 3
+  num_sectors_per_site: 3
+  sector_azimuth_offsets_deg:
+  - 0
+  - 120
+  - 240
+  inter_site_distance_m: null
+  cell_radius_m: 500
+  num_ues: 50
+  ues_per_sector: 17
+scenario:
+  bs:
+    height_m: 25.0
+    downtilt_deg: 6.0
+    txPower_dBm: 46.0
+    noiseFigure_dB: 7.0
+    nTxAnt: 4
+    nRxAnt: 4
+    antenna:
+      type: ULA
+      n_elements: 4
+      element_spacing_wavelengths: 0.5
+      element_gain_dBi: 18.0
+      hpbw_horizontal_deg: 65.0
+      hpbw_vertical_deg: 6.0
+      front_to_back_ratio_dB: 25.0
+      cross_pol_discrimination_dB: 25.0
+      feeder_loss_dB: 0.5
+      array_scan_range_az_deg:
+      - -60
+      - 60
+      array_scan_range_el_deg:
+      - -15
+      - 15
+      polarization: dual_slant_45
+      pattern_model: 3GPP_UMa_18dBi
+  ue:
+    height_m: 1.5
+    txPower_dBm: 23.0
+    noiseFigure_dB: 9.0
+    nTxAnt: 1
+    nRxAnt: 4
+    antenna:
+      type: isotropic_4rx
+      element_gain_dBi: 0.0
+      inter_element_spacing_mm: 40.0
+    distribution:
+      type: uniform_random
+      indoor_fraction: 0.2
+      min_bs_dist_m: 20.0
+      max_bs_dist_m: 500.0
+      height_distribution: fixed
+      ue_clustering: false
+    nUE: 50
+  mobility:
+    enable: true
+    model: random_waypoint
+    speed_kmh: &id001
+    - 3
+    - 30
+    update_period_s: 0.1
+    direction_change_deg: 30.0
+    boundary_behavior: reflect
+  layout:
+    nSites: 1
+    nSectorsPerSite: 3
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 300
+  doppler_hz: null
+  doppler_source_mode: derive_from_ue_speed
+  normalize_path_gains: true
+  normalize_channel_outputs: false
+  spatial_consistency_enabled: false
+  pathloss_enabled: true
+  shadow_fading_enabled: true
+  los_enabled: true
+  pathloss_model: nrPathLoss
+  pathloss_scenario: UMa
+  pathloss_los_mode: probabilistic
+  shadow_fading_std_db_los: 4.0
+  shadow_fading_std_db_nlos: 6.0
+  o2i_loss_model: low_loss
+  o2i_loss_db: null
+  carrier_frequency_hz: 4000000000
+  max_doppler_hz: 111.0
+  num_clusters: 24
+  angular_spread_azimuth_tx_deg: 35.0
+  angular_spread_elevation_tx_deg: 5.0
+  angular_spread_azimuth_rx_deg: 35.0
+  angular_spread_elevation_rx_deg: 5.0
+  mobility_kmph: *id001
+  model: CDL
+  spatial_consistency: false
+  shadowing_enabled: true
+mimo:
+  mode: mu_mimo
+  max_dl_layers: 4
+  max_ul_layers: 1
+  max_simultaneous_ue_dl: 4
+  max_simultaneous_ue_ul: 4
+  beam_management_enable: true
+  beam_codebook_type: type1_su_mimo
+  beam_codebook_size_dl: 32
+  beam_update_period_ms: 20.0
+  digital_precoder_family: subband
+  hybrid_beamforming_flag: false
+  reciprocity_assumption: tdd_reciprocity
+  amplitude_phase_mismatch: none
+  rank_adaptation_enable: true
+  rank_adaptation_policy: srs_rank_indicator
+  max_rank_dl: 4
+  max_rank_ul: 1
+  tpmi_codebook_type: type1
+  su_mu_selection_policy: proportional_fair_mu
+  n_tx_ant: 4
+  n_rx_ant: 4
+  precoder_type: subband
+reference_signals:
+  ssb_enabled: true
+  pbch_enabled: true
+  ssb_case: C
+  ssb_Lmax: 8
+  ssb_periodicity_ms: 20
+  ssb_beam_count: 8
+  ssb_subcarrier_offset: 0
+  pdcch_dmrs_enabled: true
+  pdcch_scrambling_id: null
+  pdsch_dmrs_type: 1
+  pdsch_dmrs_typeA_position: 2
+  pdsch_dmrs_additional_positions: 0
+  pdsch_dmrs_ports: 4
+  pdsch_dmrs_max_length: 1
+  pusch_dmrs_type: 1
+  pusch_dmrs_typeA_position: 2
+  pusch_dmrs_additional_positions: 0
+  pusch_dmrs_ports: 1
+  csi_rs_enabled: true
+  csi_rs_port_count: 4
+  csi_rs_cdm_type: FD-CDM2
+  csi_rs_density: 1
+  csi_rs_periodicity_ms: 5
+  csi_rs_scrambling_id: null
+  csi_rs_power_offset_dB: 0.0
+  csi_rs_slot_offset:
+  - 6
+  - 11
+  - 16
+  - 21
+  srs_enabled: true
+  srs_ports: 1
+  srs_periodicity_ms: 5
+  srs_bandwidth_config: full
+  srs_sequence_family: baseline_nr
+  srs_frequency_hopping: groupOrSequenceHopping
+  srs_max_ues_per_slot: 50
+  srs_slot_within_period:
+  - 5
+  - 10
+  - 15
+  - 20
+  srs_power_imbalance_model: none
+  trs_enabled: true
+  trs_periodicity_ms: 10
+  trs_max_age_slots: 4
+  ptrs_enabled: true
+  ptrs_dl_density: KptRS_2
+  ptrs_ul_density: KptRS_2
+  ptrs_min_mcs_threshold: 6
+  channel_estimation_mode: realistic_baseline
+  receiver_type: mmse_irc
+  csi_feedback_mode: PMI+CQI+RI
+  csi_acquisition_mode: dl_based
+  operation_orientation: tdd_reciprocity
+  dmrs_csi_tracking_enabled: true
+  pdcch_dmrs:
+    enabled: true
+  nzp_csi_rs:
+    enabled: true
+  srs:
+    enabled: true
+    num_ports: 1
+    sequence_type: baseline_nr
+    periodicity: 5
+  trs:
+    enabled: true
+  ptrs:
+    enabled: true
+  pdsch_dmrs:
+    num_ports: 4
+  pusch_dmrs:
+    num_ports: 1
+link_adaptation:
+  fixed_or_amc: amc
+  domain: cqi
+  cqi_table: table2
+  cqi_source: srs_based
+  outer_loop_flag: true
+  inner_loop_flag: true
+  target_bler_dl: 0.1
+  target_bler_ul: 0.1
+  olla_step_up_db: 0.1
+  olla_step_down_db: 0.9
+  bootstrap_cqi_mode: large_scale_preview
+  pdsch_la_policy: cqi_feedback_closed_loop
+  pusch_la_policy: srs_reciprocity_closed_loop
+  pdcch_la_policy: measured_sinr_based_al
+  rank_adaptation_policy: srs_rank_indicator
+  beam_adaptation_policy: beam_management
+  adaptation_periodicity: slot
+  cqi_smoothing_alpha: null
+  effective_sinr_method: miesm
+  target_bler: 0.1
+harq:
+  enable: true
+  n_harq_processes_dl: 16
+  n_harq_processes_ul: 16
+  max_retransmissions: 4
+  rv_sequence:
+  - 0
+  - 2
+  - 3
+  - 1
+  k1: null
+  k2: null
+  soft_combining_enable: true
+  combining_type: IR
+  harq_timing_feedback: asynchronous
+  cbg_enable: false
+  harq_disable_mode: none
+  enabled: true
+  max_retx: 4
+prach:
+  enable: true
+  configuration_index: 167
+  format: B4
+  subcarrier_spacing_khz: 30
+  sequence_length: 139
+  zero_correlation_zone: 5
+  root_sequence_index: 1
+  preamble_count: 64
+  periodicity_ms: 2.5
+  contention_based: true
+  msg3_enabled: true
+  ra_response_window_slots: 10
+  contention_resolution_timer_ms: 64.0
+  detection_threshold_mode: fa_probability_calibrated
+  false_alarm_candidate_scope: requested_preamble
+  target_false_alarm_probability: 0.001
+  preamble_tx_power_dBm: 23.0
+  format_set: B4
+pdcch:
+  coreset_duration_symbols: 1
+  coreset_bandwidth_rb: 96
+  aggregation_levels: &id002
+  - 1
+  - 2
+  - 4
+  - 8
+  - 16
+  dci_format_dl: '1_1'
+  dci_format_ul: '0_1'
+  search_space_type: USS
+  al_policy: measured_sinr_based
+  target_pdcch_bler: 0.01
+  scrambling_id: null
+control_gating:
+  pbch_required: true
+  prach_required: true
+  pdcch_required: true
+  srs_required: true
+  srs_max_age_slots: 20
+  trs_required: true
+  trs_max_age_slots: 4
+scheduler:
+  type: proportional_fair
+  dl_max_ues_per_slot: 4
+  ul_max_ues_per_slot: 4
+  dl_prb_allocation: dynamic
+  ul_prb_allocation: dynamic
+  min_prbs_per_grant: 1
+  max_prbs_per_grant: 273
+  scheduling_periodicity_slots: 1
+  pf_alpha: 0.9
+  mu_mimo_pairing_policy: sinr_based_orthogonality
+power_control:
+  ul_open_loop_enable: true
+  p0_pusch_dBm: -80.0
+  alpha_pusch: 0.8
+  delta_tf_enable: true
+  f_closed_loop_enable: true
+  tpc_command_bits: 2
+  ue_max_power_dBm: 23.0
+  pcmax_dBm: 23.0
+  phr_report_enable: true
+impairments:
+  phase_noise_enabled: true
+  phase_noise_model: Lorentzian
+  phase_noise_L0_dBcHz: -94.0
+  phase_noise_f3dB_Hz: 10000
+  phase_noise_floor_dBcHz: -140.0
+  phase_noise_apply_to:
+  - tx
+  - rx
+  cfo_enabled: true
+  cfo_model: gaussian
+  cfo_std_ppm: 0.1
+  cfo_max_hz: 400.0
+  cfo_correction_enable: true
+  cfo_estimation_method: dmrs_two_symbol
+  timing_offset_enabled: true
+  timing_offset_model: uniform
+  timing_offset_max_samples: 10
+  timing_correction_enable: true
+  timing_correction_clip_to_cp: true
+  iq_imbalance_enabled: false
+  iq_amplitude_imbalance_dB: 0.5
+  iq_phase_imbalance_deg: 1.0
+  pa_nonlinearity_enabled: false
+  pa_model: rapp
+  pa_output_backoff_dB: 8.0
+  pa_smoothness: 2.0
+  evm_limit_qpsk_pct: 17.5
+  evm_limit_16qam_pct: 12.5
+  evm_limit_64qam_pct: 8.0
+  evm_limit_256qam_pct: 3.5
+air_interface:
+  bs_tx_power_per_sector_dBm: 46.0
+  bs_tx_power_per_port_dBm: 40.0
+  ue_tx_power_dBm: 23.0
+  bs_noise_figure_dB: 7.0
+  ue_noise_figure_dB: 9.0
+  thermal_noise_density_dBm_Hz: -174.0
+  thermal_noise_floor_dBm: -87.0
+  pathloss_cell_edge_500m_dB: 131.1
+  dl_rx_power_cell_edge_dBm: -67.1
+  dl_snr_cell_edge_dB: 19.9
+  ul_rx_power_cell_edge_dBm: -90.1
+  ul_snr_cell_edge_dB: -3.1
+  interference_model: intra_site
+  inter_sector_isolation_dB: 30.0
+  intra_sector_sinr_offset_dB: 0.0
+  coherence_time_3kmh_ms: 38.2
+  coherence_time_30kmh_ms: 3.8
+  coherence_bandwidth_hz: 333333
+  coherence_bandwidth_rbs: 11
+  papr_ofdm_typical_dB: 11.5
+  papr_dft_s_ofdm_typical_dB: 7.5
+  papr_target_dB: 12.0
+  arfcn_dl: 640000
+  gscn_ssb: 7499
+  guard_band_khz: 845.0
+  occupied_bandwidth_mhz: 98.31
+traffic:
+  model: full_buffer
+  transport: UDP
+  flow_direction: BIDIR
+  dl_load_fraction: 0.77
+  ul_load_fraction: 0.21
+  service_class: embb
+  packet_delay_budget_ms: 50.0
+  target_rate_mbps: 500.0
+  packet_size_bytes: 1500
+csi_acquisition_and_reporting:
+  dl_csi_mode: type1_codebook
+  ul_csi_mode: srs_reciprocity
+  csi_report_type: periodic
+  csi_report_periodicity_slots: 5
+  csi_reporting_delay_slots: 4
+  pmilayour: rank_adaptive
+  max_feedback_overhead_pct: 5.0
+  cqi_table: table2
+  effective_sinr_method: miesm
+  channel_state_information_mode: PMI+CQI+RI
+energy_efficiency:
+  enable: true
+  bs_power_model: 3gpp_uma_macro
+  ue_power_model: 3gpp_ue_class3
+  bs_tx_power_active_w: 40.0
+  bs_static_power_w: 150.0
+  bs_sleep_power_w: 10.0
+  ue_tx_power_active_w: 0.2
+  ue_rx_power_active_w: 0.05
+  ue_sleep_power_w: 0.002
+  log_per_slot_active_state: true
+  log_bandwidth_rank_duty_cycle: true
+  log_antenna_count_indicators: true
+  log_transition_events: true
+  log_control_monitoring_load: true
+  tx_power_dbm: 46.0
+analytics:
+  export_throughput: true
+  export_bler: true
+  export_sinr_cdf: true
+  export_cqi_mcs_distribution: true
+  export_harq_combining: true
+  export_prach_detection: true
+  export_beam_analytics: true
+  export_evm: true
+  export_papr_cdf: true
+  export_spectral_efficiency: true
+  export_fairness: true
+  export_energy_efficiency: true
+  export_frame_structure_map: true
+  export_resource_grid: true
+  export_mimo_analytics: true
+  export_precoder_analytics: true
+  export_channel_estimation: true
+  export_time_profile: true
+  export_waveform_samples: true
+  per_ue_analytics: true
+  per_slot_analytics: true
+mobility:
+  ue_speed_kmh: *id001
+  spatial_consistency_flag: false
+power_and_rf_frontend:
+  ue_noise_figure_db: 9.0
+  bs_tx_power_dbm: 46.0
+antenna_and_array:
+  bs_num_antenna_elements: 4
+  ue_num_antenna_elements: 4
+  num_phy_antenna_elements: 4
+channel_model:
+  model_family: CDL
+  scenario_label: CDL-C
+  delay_spread_ns: 300
+  doppler_source_mode: derive_from_ue_speed
+system:
+  beam:
+    enable: true
+    updatePeriod_ms: 20.0
+  waveform:
+    useGrantLocalGrid: false
+    replayGridMode: full_carrier
+    capReplayAntennasToLayers: false
+signals_and_channels_common:
+  ssb:
+    enable_flag: true
+  pbch:
+    enable_flag: true
+control:
+  coreset_duration: 1
+  aggregation_levels: *id002
+random_access:
+  enabled: true
+  prach_format: B4
+  configuration_index: 167
+  zero_correlation_zone: 5
+  detection_threshold_mode: auto
+  false_alarm_candidate_scope: requested_preamble
+output:
+  persistence_mode: results_folder
+  results_root: results
+  save_csv: true
+  save_figures: true
+  save_png: true
+output_control:
+  output_persistence_mode: results_folder
+inherits:
+- ./lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml

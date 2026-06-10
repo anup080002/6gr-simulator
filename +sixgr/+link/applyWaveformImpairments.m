@@ -22,6 +22,9 @@ if nargin < 3 || ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
 else
     sampleRateHz = double(sampleRateHz);
 end
+profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.applyWaveformImpairments", ...
+    "Stage", "rf_impairments", ...
+    "Metadata", struct("NSamples", double(numel(x)))); %#ok<NASGU>
 
 replay = localResolveReplayContext(cfg, sampleRateHz);
 y = x;

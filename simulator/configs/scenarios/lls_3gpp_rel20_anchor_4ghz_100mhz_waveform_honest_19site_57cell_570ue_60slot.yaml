@@ -158,9 +158,9 @@ system:
     interruptionSlots: 2
     blockDuringPreparation: false
   waveform:
-    useGrantLocalGrid: true
-    replayGridMode: grant_allocation
-    capReplayAntennasToLayers: true
+    useGrantLocalGrid: false
+    replayGridMode: full_carrier
+    capReplayAntennasToLayers: false
     longRunAudit:
       enabled: false
       periodSlots: 60

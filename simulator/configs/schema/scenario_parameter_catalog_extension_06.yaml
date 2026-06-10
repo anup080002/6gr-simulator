@@ -1,0 +1,388 @@
+{
+  "top_level_order": [
+    "scheduler", "power_control", "air_interface", "analytics"
+  ],
+  "sections": {
+    "meta": {"parameters": {
+      "frequency_tag": {"required": false},
+      "maturity_tag": {"required": false, "type": "string", "allowed_values": ["baseline", "smoke", "regression", "stress", "experimental", "lab", "baseline_v1", "baseline_benchmark", "study_item_candidate", "optional_research_experiment"]},
+      "research_class": {"required": false, "type": "string", "allowed_values": ["baseline", "smoke", "regression", "stress", "experimental", "lab", "phase1_anchor", "baseline_benchmark", "agreed_starting_point", "study_item_candidate", "optional_research_experiment"]}
+    }},
+    "run_control": {"parameters": {
+      "time_profiling_enable": {"required": false, "type": "boolean"},
+      "time_profiling_granularity": {"required": false, "type": "string"}
+    }},
+    "simulation": {"parameters": {
+      "snr_db": {"required": false, "type": "number"}
+    }},
+    "frame_timing": {"parameters": {
+      "dl_fraction_pct": {"required": false, "type": "number", "min": 0, "max": 100},
+      "ul_fraction_pct": {"required": false, "type": "number", "min": 0, "max": 100}
+    }},
+    "global_radio_scope": {"parameters": {
+      "slots_per_subframe": {"required": false, "type": "integer", "min": 1},
+      "symbols_per_subframe": {"required": false, "type": "integer", "min": 1}
+    }},
+    "resource_grid": {"parameters": {
+      "subcarriers_per_rb": {"required": false, "type": "integer", "min": 1},
+      "total_subcarriers": {"required": false, "type": "integer", "min": 1}
+    }},
+    "waveform": {"parameters": {
+      "dl": {"required": false, "type": "string"},
+      "ul": {"required": false, "type": "string"},
+      "ul_waveform_dft_s_ofdm_enable": {"required": false, "type": "boolean"},
+      "cp_length_normal_ts": {"required": false, "type": "number"},
+      "cp_length_normal_us": {"required": false, "type": "number"},
+      "oversampling_factor": {"required": false, "type": "number", "min_exclusive": 0},
+      "windowing_percent": {"required": false, "type": "number", "min": 0}
+    }},
+    "modulation": {"parameters": {
+      "dl_max_modulation": {"required": false, "type": "string"},
+      "ul_max_modulation": {"required": false, "type": "string"},
+      "dl_mcs_index": {"required": false, "type": "integer"},
+      "ul_mcs_index": {"required": false, "type": "integer"},
+      "dl_mcs_table": {"required": false, "type": "string"},
+      "ul_mcs_table": {"required": false, "type": "string"},
+      "pi2_bpsk_enable": {"required": false, "type": "boolean"},
+      "constellation_shaping_enable": {"required": false, "type": "boolean"},
+      "cqi_table": {"required": false, "type": "string"}
+    }},
+    "coding": {"parameters": {
+      "dl_coding_scheme": {"required": false, "type": "string"},
+      "ul_coding_scheme": {"required": false, "type": "string"},
+      "control_coding_scheme": {"required": false, "type": "string"},
+      "small_uci_coding": {"required": false, "type": "string"},
+      "ldpc_base_graph_selection": {"required": false, "type": "string"},
+      "ldpc_max_iterations": {"required": false, "type": "integer", "min": 1},
+      "ldpc_algorithm": {"required": false, "type": "string"},
+      "ldpc_scaling_factor": {"required": false, "type": "number"},
+      "ldpc_early_termination": {"required": false, "type": "boolean"},
+      "polar_list_size": {"required": false, "type": "integer", "min": 1},
+      "crc_type_tb": {"required": false, "type": "string"},
+      "crc_type_cb": {"required": false, "type": "string"},
+      "cb_segmentation": {"required": false}
+    }},
+    "deployment_topology": {"parameters": {
+      "scenario_type": {"required": false, "type": "string", "allowed_values": ["single-link", "single-cell", "multi-cell", "single-site-multi-sector"]},
+      "sector_azimuth_offsets_deg": {"required": false, "type": "number_list"},
+      "sector_azimuths_deg": {"required": false, "type": "number_list"},
+      "inter_site_distance_m": {"required": false, "type": "number", "min": 0},
+      "cell_radius_m": {"required": false, "type": "number", "min": 0},
+      "ues_per_sector": {"required": false, "type": "integer", "min": 1},
+      "indoor_ue_fraction": {"required": false, "type": "number", "min": 0, "max": 1},
+      "min_ue_distance_from_bs_m": {"required": false, "type": "number", "min": 0},
+      "max_ue_distance_from_bs_m": {"required": false, "type": "number", "min": 0}
+    }},
+    "antenna_and_array": {"parameters": {
+      "num_phy_antenna_elements": {"required": false, "type": "integer", "min": 1}
+    }},
+    "power_and_rf_frontend": {"parameters": {
+      "bs_noise_figure_db": {"required": false, "type": "number", "min": 0},
+      "ue_max_power_dbm": {"required": false, "type": "number"}
+    }},
+    "scenario": {"parameters": {
+      "ue": {"required": false, "type": "struct"},
+      "mobility": {"required": false, "type": "struct"},
+      "layout": {"required": false, "type": "struct"}
+    }},
+    "channels": {"parameters": {
+      "model": {"required": false, "type": "string"},
+      "mobility_kmph": {"required": false, "type": "number_list"},
+      "doppler_hz": {"required": false, "type": "number"},
+      "spatial_consistency": {"required": false, "type": "boolean"},
+      "shadowing_enabled": {"required": false, "type": "boolean"},
+      "normalize_path_gains": {"required": false, "type": "boolean"},
+      "normalize_channel_outputs": {"required": false, "type": "boolean"},
+      "pathloss_scenario": {"required": false, "type": "string"},
+      "pathloss_los_mode": {"required": false, "type": "string"},
+      "shadow_fading_std_db_los": {"required": false, "type": "number", "min": 0},
+      "shadow_fading_std_db_nlos": {"required": false, "type": "number", "min": 0},
+      "o2i_model": {"required": false, "type": "string"},
+      "o2i_loss_model": {"required": false, "type": "string"},
+      "o2i_loss_db": {"required": false},
+      "carrier_frequency_hz": {"required": false, "type": "number", "min_exclusive": 0},
+      "max_doppler_hz": {"required": false, "type": "number", "min": 0},
+      "num_clusters": {"required": false, "type": "integer", "min": 1},
+      "angular_spread_azimuth_tx_deg": {"required": false, "type": "number", "min": 0},
+      "angular_spread_elevation_tx_deg": {"required": false, "type": "number", "min": 0},
+      "angular_spread_azimuth_rx_deg": {"required": false, "type": "number", "min": 0},
+      "angular_spread_elevation_rx_deg": {"required": false, "type": "number", "min": 0}
+    }},
+    "mimo": {"parameters": {
+      "mode": {"required": false, "type": "string"},
+      "max_dl_layers": {"required": false, "type": "integer", "min": 1},
+      "max_ul_layers": {"required": false, "type": "integer", "min": 1},
+      "max_simultaneous_ue_dl": {"required": false, "type": "integer", "min": 1},
+      "max_simultaneous_ue_ul": {"required": false, "type": "integer", "min": 1},
+      "beam_management_enable": {"required": false, "type": "boolean"},
+      "beam_codebook_type": {"required": false, "type": "string"},
+      "codebook_type": {"required": false, "type": "string", "allowed_values": ["type1", "type2", "etype2", "noncodebook", "type1_su_mimo", "type2_mu_mimo", "etype2_candidate"]},
+      "beam_codebook_size_dl": {"required": false, "type": "integer", "min": 1},
+      "beam_update_period_ms": {"required": false, "type": "number", "min": 0},
+      "digital_precoder_family": {"required": false, "type": "string"},
+      "hybrid_beamforming_flag": {"required": false, "type": "boolean"},
+      "reciprocity_assumption": {"required": false, "type": "string"},
+      "amplitude_phase_mismatch": {"required": false, "type": "string"},
+      "rank_adaptation_enable": {"required": false, "type": "boolean"},
+      "rank_adaptation_policy": {"required": false, "type": "string"},
+      "max_rank_dl": {"required": false, "type": "integer", "min": 1},
+      "max_rank_ul": {"required": false, "type": "integer", "min": 1},
+      "tpmi_codebook_type": {"required": false, "type": "string"},
+      "su_mu_selection_policy": {"required": false, "type": "string"}
+    }},
+    "mobility": {"parameters": {
+      "ue_speed_kmh": {"required": false, "type": "number_list"}
+    }},
+    "reference_signals": {"parameters": {
+      "ssb_case": {"required": false, "type": "string"},
+      "ssb_Lmax": {"required": false, "type": "integer", "min": 1},
+      "ssb_lmax": {"required": false, "type": "integer", "min": 1},
+      "ssb_periodicity_ms": {"required": false, "type": "number", "min": 0},
+      "ssb_beam_count": {"required": false, "type": "integer", "min": 1},
+      "ssb_subcarrier_offset": {"required": false, "type": "integer", "min": 0},
+      "pdcch_scrambling_id": {"required": false, "type": "integer", "min": 0},
+      "pdsch_dmrs_type": {"required": false, "type": "integer", "min": 1},
+      "pdsch_dmrs_typeA_position": {"required": false, "type": "integer", "min": 2},
+      "pdsch_dmrs_additional_positions": {"required": false, "type": "integer", "min": 0},
+      "pdsch_dmrs_max_length": {"required": false, "type": "integer", "min": 1},
+      "pusch_dmrs_type": {"required": false, "type": "integer", "min": 1},
+      "pusch_dmrs_typeA_position": {"required": false, "type": "integer", "min": 2},
+      "pusch_dmrs_additional_positions": {"required": false, "type": "integer", "min": 0},
+      "csi_rs_port_count": {"required": false, "type": "integer", "min": 1},
+      "csi_rs_ports": {"required": false, "type": "integer", "min": 1},
+      "csi_rs_cdm_type": {"required": false, "type": "string"},
+      "csi_rs_density": {"required": false},
+      "csi_rs_periodicity_ms": {"required": false, "type": "number", "min": 0},
+      "csi_rs_power_offset_dB": {"required": false, "type": "number"},
+      "csi_rs_slot_offset": {"required": false, "type": "number_list"},
+      "srs_bandwidth_config": {"required": false},
+      "srs_frequency_hopping": {"required": false},
+      "srs_slot_within_period": {"required": false, "type": "number_list"},
+      "srs_power_imbalance_model": {"required": false, "type": "string"},
+      "trs_periodicity_ms": {"required": false, "type": "number", "min": 0},
+      "trs_max_age_slots": {"required": false, "type": "integer", "min": 0},
+      "ptrs_dl_density": {"required": false, "type": "string"},
+      "ptrs_ul_density": {"required": false, "type": "string"},
+      "ptrs_min_mcs_threshold": {"required": false, "type": "integer", "min": 0},
+      "csi_report_periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "csi_reporting_delay_slots": {"required": false, "type": "integer", "min": 0},
+      "cqi_table": {"required": false, "type": "string"},
+      "receiver_type": {"required": false, "type": "string"}
+    }},
+    "link_adaptation": {"parameters": {
+      "target_bler": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+      "target_bler_dl": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+      "target_bler_ul": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+      "olla_step_up_db": {"required": false, "type": "number"},
+      "olla_step_down_db": {"required": false, "type": "number"},
+      "pdsch_la_policy": {"required": false, "type": "string"},
+      "pusch_la_policy": {"required": false, "type": "string"},
+      "pdcch_la_policy": {"required": false, "type": "string"},
+      "effective_sinr_method": {"required": false, "type": "string"}
+    }},
+    "harq": {"parameters": {
+      "enable": {"required": false, "type": "boolean"},
+      "n_harq_processes_dl": {"required": false, "type": "integer", "min": 1},
+      "n_harq_processes_ul": {"required": false, "type": "integer", "min": 1},
+      "max_retransmissions": {"required": false, "type": "integer", "min": 0},
+      "k1": {"required": false, "type": "integer", "min": 0},
+      "k2": {"required": false, "type": "integer", "min": 0},
+      "soft_combining_enable": {"required": false, "type": "boolean"},
+      "combining_mode": {"required": false, "type": "string", "allowed_values": ["soft", "chase", "incremental_redundancy", "ir", "IR"]},
+      "combining_type": {"required": false, "type": "string"},
+      "harq_timing_feedback": {"required": false, "type": "string"},
+      "cbg_enable": {"required": false, "type": "boolean"},
+      "harq_disable_mode": {"required": false, "type": "string"}
+    }},
+    "random_access": {"parameters": {
+      "false_alarm_candidate_scope": {"required": false, "type": "string", "allowed_values": ["requested_preamble", "all_preambles"]}
+    }},
+    "prach": {"parameters": {
+      "enable": {"required": false, "type": "boolean"},
+      "configuration_index": {"required": false, "type": "integer", "min": 0},
+      "format": {"required": false, "type": "string"},
+      "subcarrier_spacing_khz": {"required": false, "type": "number", "min_exclusive": 0},
+      "sequence_length": {"required": false, "type": "integer", "min": 1},
+      "zero_correlation_zone": {"required": false, "type": "integer", "min": 0},
+      "root_sequence_index": {"required": false, "type": "integer", "min": 0},
+      "preamble_count": {"required": false, "type": "integer", "min": 1},
+      "periodicity_ms": {"required": false, "type": "number", "min": 0},
+      "contention_based": {"required": false, "type": "boolean"},
+      "msg3_enabled": {"required": false, "type": "boolean"},
+      "ra_response_window_slots": {"required": false, "type": "integer", "min": 1},
+      "contention_resolution_timer_ms": {"required": false, "type": "number", "min": 0},
+      "detection_threshold_mode": {"required": false, "type": "string"},
+      "false_alarm_candidate_scope": {"required": false, "type": "string", "allowed_values": ["requested_preamble", "all_preambles"]},
+      "target_false_alarm_probability": {"required": false, "type": "number", "min": 0, "max": 1},
+      "preamble_tx_power_dBm": {"required": false, "type": "number"}
+    }},
+    "pdcch": {"parameters": {
+      "coreset_duration_symbols": {"required": false, "type": "integer", "min": 1},
+      "coreset_bandwidth_rb": {"required": false, "type": "integer", "min": 1},
+      "dci_format_dl": {"required": false, "type": "string"},
+      "dci_format_ul": {"required": false, "type": "string"},
+      "search_space_type": {"required": false, "type": "string"},
+      "al_policy": {"required": false, "type": "string"},
+      "target_pdcch_bler": {"required": false, "type": "number", "min": 0, "max": 1},
+      "scrambling_id": {"required": false, "type": "integer", "min": 0}
+    }},
+    "control": {"parameters": {
+      "search_space_type": {"required": false, "type": "string", "allowed_values": ["common", "ue", "ue_specific", "uss", "css", "USS", "CSS"]}
+    }},
+    "scheduler": {"required": false, "parameters": {
+      "type": {"required": false, "type": "string"},
+      "dl_max_ues_per_slot": {"required": false, "type": "integer", "min": 1},
+      "ul_max_ues_per_slot": {"required": false, "type": "integer", "min": 1},
+      "dl_prb_allocation": {"required": false, "type": "string"},
+      "ul_prb_allocation": {"required": false, "type": "string"},
+      "min_prbs_per_grant": {"required": false, "type": "integer", "min": 1},
+      "max_prbs_per_grant": {"required": false, "type": "integer", "min": 1},
+      "scheduling_periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "pf_alpha": {"required": false, "type": "number", "min": 0},
+      "mu_mimo_pairing_policy": {"required": false, "type": "string"}
+    }},
+    "power_control": {"required": false, "parameters": {
+      "ul_open_loop_enable": {"required": false, "type": "boolean"},
+      "p0_pusch_dBm": {"required": false, "type": "number"},
+      "alpha_pusch": {"required": false, "type": "number", "min": 0},
+      "delta_tf_enable": {"required": false, "type": "boolean"},
+      "f_closed_loop_enable": {"required": false, "type": "boolean"},
+      "tpc_command_bits": {"required": false, "type": "integer", "min": 0},
+      "ue_max_power_dBm": {"required": false, "type": "number"},
+      "pcmax_dBm": {"required": false, "type": "number"},
+      "phr_report_enable": {"required": false, "type": "boolean"}
+    }},
+    "impairments": {"parameters": {
+      "phase_noise_model": {"required": false, "type": "string"},
+      "phase_noise_L0_dBcHz": {"required": false, "type": "number"},
+      "phase_noise_f3dB_Hz": {"required": false, "type": "number", "min": 0},
+      "phase_noise_floor_dBcHz": {"required": false, "type": "number"},
+      "phase_noise_apply_to": {"required": false, "type": "string_list"},
+      "cfo_enabled": {"required": false, "type": "boolean"},
+      "cfo_model": {"required": false, "type": "string"},
+      "cfo_std_ppm": {"required": false, "type": "number", "min": 0},
+      "cfo_max_hz": {"required": false, "type": "number", "min": 0},
+      "cfo_correction_enable": {"required": false, "type": "boolean"},
+      "cfo_estimation_method": {"required": false, "type": "string"},
+      "timing_offset_enabled": {"required": false, "type": "boolean"},
+      "timing_offset_model": {"required": false, "type": "string"},
+      "timing_offset_max_samples": {"required": false, "type": "number", "min": 0},
+      "timing_correction_enable": {"required": false, "type": "boolean"},
+      "timing_correction_clip_to_cp": {"required": false, "type": "boolean"},
+      "iq_amplitude_imbalance_dB": {"required": false, "type": "number"},
+      "iq_phase_imbalance_deg": {"required": false, "type": "number"},
+      "pa_model": {"required": false, "type": "string"},
+      "pa_output_backoff_dB": {"required": false, "type": "number"},
+      "pa_smoothness": {"required": false, "type": "number"},
+      "evm_limit_qpsk_pct": {"required": false, "type": "number", "min": 0},
+      "evm_limit_16qam_pct": {"required": false, "type": "number", "min": 0},
+      "evm_limit_64qam_pct": {"required": false, "type": "number", "min": 0},
+      "evm_limit_256qam_pct": {"required": false, "type": "number", "min": 0}
+    }},
+    "air_interface": {"required": false, "parameters": {
+      "bs_tx_power_per_sector_dBm": {"required": false, "type": "number"},
+      "bs_tx_power_per_port_dBm": {"required": false, "type": "number"},
+      "ue_tx_power_dBm": {"required": false, "type": "number"},
+      "bs_noise_figure_dB": {"required": false, "type": "number", "min": 0},
+      "ue_noise_figure_dB": {"required": false, "type": "number", "min": 0},
+      "thermal_noise_density_dBm_Hz": {"required": false, "type": "number"},
+      "thermal_noise_floor_dBm": {"required": false, "type": "number"},
+      "pathloss_cell_edge_500m_dB": {"required": false, "type": "number"},
+      "dl_rx_power_cell_edge_dBm": {"required": false, "type": "number"},
+      "dl_snr_cell_edge_dB": {"required": false, "type": "number"},
+      "ul_rx_power_cell_edge_dBm": {"required": false, "type": "number"},
+      "ul_snr_cell_edge_dB": {"required": false, "type": "number"},
+      "interference_model": {"required": false, "type": "string"},
+      "inter_sector_isolation_dB": {"required": false, "type": "number"},
+      "intra_sector_sinr_offset_dB": {"required": false, "type": "number"},
+      "coherence_time_3kmh_ms": {"required": false, "type": "number", "min": 0},
+      "coherence_time_30kmh_ms": {"required": false, "type": "number", "min": 0},
+      "coherence_bandwidth_hz": {"required": false, "type": "number", "min": 0},
+      "coherence_bandwidth_rbs": {"required": false, "type": "number", "min": 0},
+      "papr_ofdm_typical_dB": {"required": false, "type": "number"},
+      "papr_dft_s_ofdm_typical_dB": {"required": false, "type": "number"},
+      "papr_target_dB": {"required": false, "type": "number"},
+      "arfcn_dl": {"required": false, "type": "integer", "min": 0},
+      "gscn_ssb": {"required": false, "type": "integer", "min": 0},
+      "guard_band_khz": {"required": false, "type": "number", "min": 0},
+      "occupied_bandwidth_mhz": {"required": false, "type": "number", "min": 0}
+    }},
+    "traffic": {"parameters": {
+      "model": {"required": false, "type": "string", "allowed_values": ["fullBuffer", "full_buffer", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
+      "flow_direction": {"required": false, "type": "string"},
+      "dl_load_fraction": {"required": false, "type": "number", "min": 0, "max": 1},
+      "ul_load_fraction": {"required": false, "type": "number", "min": 0, "max": 1},
+      "service_class": {"required": false, "type": "string"},
+      "packet_delay_budget_ms": {"required": false, "type": "number", "min": 0},
+      "target_rate_mbps": {"required": false, "type": "number", "min": 0},
+      "packet_size_bytes": {"required": false, "type": "integer", "min": 1}
+    }},
+    "csi_acquisition_and_reporting": {"parameters": {
+      "dl_csi_mode": {"required": false, "type": "string"},
+      "ul_csi_mode": {"required": false, "type": "string"},
+      "csi_report_type": {"required": false, "type": "string"},
+      "csi_report_periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "csi_reporting_delay_slots": {"required": false, "type": "integer", "min": 0},
+      "pmilayour": {"required": false, "type": "string"},
+      "max_feedback_overhead_pct": {"required": false, "type": "number", "min": 0},
+      "cqi_table": {"required": false, "type": "string"},
+      "effective_sinr_method": {"required": false, "type": "string"}
+    }},
+    "energy_efficiency": {"parameters": {
+      "enable": {"required": false, "type": "boolean"},
+      "bs_power_model": {"required": false, "type": "string"},
+      "ue_power_model": {"required": false, "type": "string"},
+      "bs_tx_power_active_w": {"required": false, "type": "number", "min": 0},
+      "bs_static_power_w": {"required": false, "type": "number", "min": 0},
+      "bs_sleep_power_w": {"required": false, "type": "number", "min": 0},
+      "ue_tx_power_active_w": {"required": false, "type": "number", "min": 0},
+      "ue_rx_power_active_w": {"required": false, "type": "number", "min": 0},
+      "ue_sleep_power_w": {"required": false, "type": "number", "min": 0},
+      "log_per_slot_active_state": {"required": false, "type": "boolean"},
+      "log_bandwidth_rank_duty_cycle": {"required": false, "type": "boolean"},
+      "log_antenna_count_indicators": {"required": false, "type": "boolean"},
+      "log_transition_events": {"required": false, "type": "boolean"},
+      "log_control_monitoring_load": {"required": false, "type": "boolean"}
+    }},
+    "analytics": {"required": false, "parameters": {
+      "export_throughput": {"required": false, "type": "boolean"},
+      "export_bler": {"required": false, "type": "boolean"},
+      "export_sinr_cdf": {"required": false, "type": "boolean"},
+      "export_cqi_mcs_distribution": {"required": false, "type": "boolean"},
+      "export_harq_combining": {"required": false, "type": "boolean"},
+      "export_prach_detection": {"required": false, "type": "boolean"},
+      "export_beam_analytics": {"required": false, "type": "boolean"},
+      "export_evm": {"required": false, "type": "boolean"},
+      "export_papr_cdf": {"required": false, "type": "boolean"},
+      "export_spectral_efficiency": {"required": false, "type": "boolean"},
+      "export_fairness": {"required": false, "type": "boolean"},
+      "export_energy_efficiency": {"required": false, "type": "boolean"},
+      "export_frame_structure_map": {"required": false, "type": "boolean"},
+      "export_resource_grid": {"required": false, "type": "boolean"},
+      "export_mimo_analytics": {"required": false, "type": "boolean"},
+      "export_precoder_analytics": {"required": false, "type": "boolean"},
+      "export_channel_estimation": {"required": false, "type": "boolean"},
+      "export_time_profile": {"required": false, "type": "boolean"},
+      "export_waveform_samples": {"required": false, "type": "boolean"},
+      "per_ue_analytics": {"required": false, "type": "boolean"},
+      "per_slot_analytics": {"required": false, "type": "boolean"}
+    }}
+  },
+  "nested_sections": {
+    "reference_signal_object": {"parameters": {
+      "periodicity": {"required": false, "type": "string_or_number"}
+    }},
+    "system_beam_object": {"parameters": {
+      "updatePeriod_ms": {"required": false, "type": "number", "min": 0}
+    }},
+    "scenario_bs": {"parameters": {
+      "height_m": {"required": false, "type": "number", "min": 0},
+      "downtilt_deg": {"required": false, "type": "number"},
+      "txPower_dBm": {"required": false, "type": "number"},
+      "noiseFigure_dB": {"required": false, "type": "number", "min": 0},
+      "nTxAnt": {"required": false, "type": "integer", "min": 1},
+      "nRxAnt": {"required": false, "type": "integer", "min": 1},
+      "antenna": {"required": false, "type": "struct"}
+    }}
+  }
+}

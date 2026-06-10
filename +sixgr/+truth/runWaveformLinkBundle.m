@@ -250,7 +250,18 @@ end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "sweep_csv_export", toc(stageStart), toc(bundleStart), "Primary and reference sweep CSV artifacts written.");
 legacyHARQReady = localLegacyHARQArtifactsReady(rootRunFolder);
-if ~localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
+runtimeHARQReady = localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
+    localArtifactStructReady(harqArtifacts, "TimelineTable");
+harqDiagnosticsEnabled = logical(sixgr.util.structGet(opt, "HARQDiagnosticsEnabled", true));
+if ~harqDiagnosticsEnabled && runtimeHARQReady
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "harq_export_runtime_observation_reuse", 0, toc(bundleStart), ...
+        "Live runtime HARQ observation artifacts reused; optional standalone HARQ probe disabled by runtime tuning.");
+elseif ~harqDiagnosticsEnabled
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "harq_export_disabled_no_runtime_observation", 0, toc(bundleStart), ...
+        "Optional standalone HARQ probe disabled by runtime tuning and no runtime HARQ observation table was available.");
+elseif ~localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
         logical(sixgr.util.structGet(harqArtifacts, "PreviewOnly", false)) || ~legacyHARQReady
     localLogStage(ctx, "Exporting HARQ diagnostics.");
     stageStart = tic;
@@ -3029,12 +3040,13 @@ precodingMatrix = sixgr.util.structGet(grant, "PrecodingMatrix", []);
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
 if localGrantCarriesActiveDLPrecoding(grant, precodingMatrix)
     nPorts = localPrecodingPortCount(precodingMatrix, nLayers);
-    expectedPorts = localFirstFiniteNumeric( ...
+    expectedPorts = localFirstFiniteAtLeastNumeric(max(1, round(double(nLayers))), ...
         sixgr.util.structGet(grant, "PrecodingNumPorts", NaN), ...
         sixgr.util.structGet(grant, "NumTxAnt", NaN), ...
         sixgr.util.structGet(cfgOut, "phy.nTxAnt", NaN), ...
         sixgr.util.structGet(cfgOut, "channel.nTxAnt", NaN));
-    if isfinite(expectedPorts) && expectedPorts >= 1 && nPorts ~= round(double(expectedPorts))
+    if ~(isfinite(nPorts) && nPorts >= max(1, round(double(nLayers)))) || ...
+            (isfinite(expectedPorts) && expectedPorts >= 1 && nPorts ~= round(double(expectedPorts)))
         % The grant may still carry a PMI; do not replay a dimensionally
         % invalid explicit matrix as if it were a physical precoder.
         for i = 1:numel(paths)
@@ -3055,7 +3067,7 @@ else
     for i = 1:numel(paths)
         cfgOut = sixgr.util.structSet(cfgOut, paths(i), []);
     end
-    expectedPorts = localFirstFiniteNumeric( ...
+    expectedPorts = localFirstFiniteAtLeastNumeric(max(1, round(double(nLayers))), ...
         sixgr.util.structGet(grant, "PrecodingNumPorts", NaN), ...
         sixgr.util.structGet(grant, "NumTxAnt", NaN), ...
         sixgr.util.structGet(cfgOut, "phy.nTxAnt", NaN), ...
@@ -4335,6 +4347,15 @@ else
         sixgr.util.structGet(cfgIn, "channel.nTxAnt", NaN), ...
         sixgr.util.structGet(cfgIn, "phy.nTxAnt", NaN), ...
         sixgr.util.structGet(cfgIn, "scenario.bs.nTxAnt", NaN));
+    explicitAtLeastRank = localFirstFiniteAtLeastNumeric(numLayers, ...
+        sixgr.util.structGet(grant, "PrecodingNumPorts", NaN), ...
+        sixgr.util.structGet(grant, "NumTxAnt", NaN), ...
+        sixgr.util.structGet(cfgIn, "channel.nTxAnt", NaN), ...
+        sixgr.util.structGet(cfgIn, "phy.nTxAnt", NaN), ...
+        sixgr.util.structGet(cfgIn, "scenario.bs.nTxAnt", NaN));
+    if isfinite(explicitAtLeastRank)
+        explicit = explicitAtLeastRank;
+    end
     n = localApplyGrantReplayAntennaCap(cfgIn, explicit, numLayers);
 end
 end
@@ -4373,6 +4394,19 @@ for i = 1:nargin
     candidate = candidate(isfinite(candidate));
     if ~isempty(candidate)
         value = candidate(1);
+        return;
+    end
+end
+end
+
+function value = localFirstFiniteAtLeastNumeric(minValue, varargin)
+value = NaN;
+minValue = max(1, round(double(minValue)));
+for i = 1:nargin-1
+    candidate = double(varargin{i});
+    candidate = candidate(isfinite(candidate) & candidate >= minValue);
+    if ~isempty(candidate)
+        value = double(candidate(1));
         return;
     end
 end
@@ -4552,11 +4586,15 @@ if ndims(Wcfg) > 2 || numel(sz) < 2
 end
 if sz(2) >= nLayers
     Wout = double(Wcfg(:, 1:nLayers));
-elseif sz(1) == nLayers
+    elseif sz(1) == nLayers && sz(2) >= nLayers
     % Accept the documented transposed convention Nlayers-by-Nports only
     % when the row count exactly matches the requested layer count.  A stale
     % Nports-by-1 rank-1 beam must not be reshaped into a rank-2 precoder.
     Wout = double(Wcfg.');
+end
+if ~isempty(Wout) && size(Wout, 1) < nLayers
+    Wout = [];
+    return;
 end
 if ~isempty(Wout)
     colNorm = sqrt(sum(abs(Wout).^2, 1));
@@ -4699,7 +4737,8 @@ for i = 1:numel(paths)
         continue;
     end
     nPorts = localPrecodingPortCount(Wcfg, nLayers);
-    if isfinite(expectedPorts) && expectedPorts >= 1 && nPorts ~= round(double(expectedPorts))
+    if ~(isfinite(nPorts) && nPorts >= nLayers) || ...
+            (isfinite(expectedPorts) && expectedPorts >= 1 && nPorts ~= round(double(expectedPorts)))
         cfgOut = sixgr.util.structSet(cfgOut, path, []);
         continue;
     end
@@ -5680,15 +5719,17 @@ if logical(opt.WriteRawTables)
 end
 
 refreshHeavyArtifacts = localShouldRefreshHeavyLiveArtifacts(cfg, meta);
+rootRunFolder = fileparts(char(string(runFolder)));
+if localShouldMirrorCoupledRuntimeTables(cfg, opt)
+    runtimeState = localWriteCoupledRuntimeTables(runtimeState, rootRunFolder);
+end
 if refreshHeavyArtifacts
-    rootRunFolder = fileparts(char(string(runFolder)));
     mergedSignalTrials = localAppendCompatTable( ...
         sixgr.util.structGet(rawTrials, "DL", table()), ...
         sixgr.util.structGet(rawTrials, "UL", table()));
     mergedSignalConst = localAppendCompatTable(dlConstT, ulConstT);
     sixgr.truth.exportLLSLiveSignalChainTables(rootRunFolder, mergedSignalTrials, mergedSignalConst, struct( ...
         "WaveformPreviewTable", waveformPreviewT));
-    runtimeState = localWriteCoupledRuntimeTables(runtimeState, rootRunFolder);
     liveArtifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, rawTrials, multiUser, ...
         localBuildMobilityArtifactsFromCoupledRuntime(runtimeState), runtimeState);
     localAppendRuntimeLog("INFO", ...
@@ -5817,6 +5858,18 @@ if ~(isfinite(interval) && interval >= 1)
     end
 end
 interval = max(1, round(interval));
+end
+
+function tf = localShouldMirrorCoupledRuntimeTables(cfg, opt)
+tf = false;
+if ~(isstruct(opt) && localIsMySQLWebMode(cfg))
+    return;
+end
+reason = lower(strtrim(string(sixgr.util.structGet(opt, "PublishReason", ""))));
+tf = logical(sixgr.util.structGet(opt, "WriteRawTables", false)) || ...
+    logical(sixgr.util.structGet(opt, "SlotComplete", false)) || ...
+    logical(sixgr.util.structGet(opt, "FinalDirectionChunk", false)) || ...
+    any(reason == ["post_grant_chunk", "slot_pre_schedule_status"]);
 end
 
 function artifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, rawTrials, multiUser, mobilityArtifacts, runtimeState)
@@ -6136,7 +6189,7 @@ function T = localEnsureLinkTrialTable(Tin, direction, snr_dB, cfg)
 vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','ConfiguredLayers','ConfiguredTxAntennas','ConfiguredRxAntennas','Modulation','TargetCodeRate','TBSize_bits', ...
     'ChannelModel','ChannelModelApplied','ChannelFadingApplied','DopplerHz','CRCPass','DecoderIterations','EVM_rms','NMSE_dB', ...
     'DetectionMetric','CorrelationPeak','DetectionThreshold','DetectionThresholdMode','DetectionMetricStatus', ...
-    'DetectorPeakMetric','DetectorNoiseFloor','NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','DTXFlag','DTXReason', ...
+    'DetectorPeakMetric','DetectorNoiseFloor','NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','FalseAlarmCandidateScope','FalseAlarmCandidateCount','DTXFlag','DTXReason', ...
     'PreambleIndex','RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
     'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
     'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
@@ -7117,6 +7170,8 @@ for k = 1:nTrials
         r.NoiseFalseAlarmFlag = double(sixgr.util.structGet(out, "NoiseFalseAlarmFlag", NaN));
         r.CollisionFalseAlarmFlag = double(sixgr.util.structGet(out, "CollisionFalseAlarmFlag", NaN));
         r.FalseAlarmClassification = string(sixgr.util.structGet(out, "FalseAlarmClassification", ""));
+        r.FalseAlarmCandidateScope = string(sixgr.util.structGet(out, "FalseAlarmCandidateScope", ""));
+        r.FalseAlarmCandidateCount = double(sixgr.util.structGet(out, "FalseAlarmCandidateCount", NaN));
         r.PreambleIndex = localFirstFinite(sixgr.util.structGet(out, "PreambleIndex", NaN), NaN);
         r.RequestedPreambleIndex = localFirstFinite(sixgr.util.structGet(out, "RequestedPreambleIndex", NaN), NaN);
         r.DetectedPreambleIndex = localFirstFinite(sixgr.util.structGet(out, "DetectedPreambleIndex", NaN), NaN);
@@ -8196,6 +8251,8 @@ row.CorrelationPeak = NaN;
 row.NoiseOnlyDetectionMetric = NaN;
 row.MissedDetection = false;
 row.FalseAlarm = false;
+row.FalseAlarmCandidateScope = "";
+row.FalseAlarmCandidateCount = NaN;
 row.DTXFlag = false;
 row.DTXReason = "";
 row.PreambleIndex = NaN;

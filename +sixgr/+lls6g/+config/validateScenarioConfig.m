@@ -409,6 +409,8 @@ if ~(isfinite(benchmarkObs) && benchmarkObs >= 1 && abs(benchmarkObs - round(ben
 end
 
 nLayers = double(cfg.mimo.n_layers);
+dlLayers = double(localOptionalStructValue(cfg, "mimo.max_dl_layers", nLayers));
+ulLayers = double(localOptionalStructValue(cfg, "mimo.max_ul_layers", nLayers));
 nTx = double(cfg.mimo.n_tx_ant);
 nRx = double(cfg.mimo.n_rx_ant);
 beamCount = double(cfg.mimo.beam_count);
@@ -484,18 +486,27 @@ if usersEnabled && linkDir == "dl" && ~logical(cfg.reference_signals.csi_rs_enab
     error("sixgr:lls6g:config:UsersRequireBeamReferenceSignals", ...
         "Beamformed multi-user DL sweeps in %s require CSI-RS or SRS enabled.", localCtx(ctx));
 end
+if localRequiresFullCarrierReferenceReplay(cfg, linkDir)
+    useGrantLocalGrid = logical(localOptionalStructValue(cfg, "system.waveform.useGrantLocalGrid", false));
+    replayGridMode = lower(strtrim(string(localOptionalStructValue(cfg, "system.waveform.replayGridMode", "full_carrier"))));
+    if useGrantLocalGrid || replayGridMode == "grant_allocation"
+        error("sixgr:lls6g:config:GrantLocalGridCSIRSIncompatible", ...
+            "system.waveform.useGrantLocalGrid/replayGridMode='grant_allocation' in %s is incompatible with strict DL CSI-RS truth replay. Use full_carrier replay so CSI-RS, PDSCH, and measured CQI/PMI share the same carrier grid.", ...
+            localCtx(ctx));
+    end
+end
 
 pdschDmrsPorts = double(cfg.reference_signals.pdsch_dmrs_ports);
 puschDmrsPorts = double(cfg.reference_signals.pusch_dmrs_ports);
-if nLayers > max(pdschDmrsPorts, 1) && ismember(linkDir, ["dl","both"])
+if dlLayers > max(pdschDmrsPorts, 1) && ismember(linkDir, ["dl","both"])
     error("sixgr:lls6g:config:BadPDSCHDMRSPorts", ...
-        "mimo.n_layers=%g in %s exceeds reference_signals.pdsch_dmrs_ports=%g.", ...
-        nLayers, localCtx(ctx), pdschDmrsPorts);
+        "DL layers=%g in %s exceeds reference_signals.pdsch_dmrs_ports=%g.", ...
+        dlLayers, localCtx(ctx), pdschDmrsPorts);
 end
-if nLayers > max(puschDmrsPorts, 1) && ismember(linkDir, ["ul","both"])
+if ulLayers > max(puschDmrsPorts, 1) && ismember(linkDir, ["ul","both"])
     error("sixgr:lls6g:config:BadPUSCHDMRSPorts", ...
-        "mimo.n_layers=%g in %s exceeds reference_signals.pusch_dmrs_ports=%g.", ...
-        nLayers, localCtx(ctx), puschDmrsPorts);
+        "UL layers=%g in %s exceeds reference_signals.pusch_dmrs_ports=%g.", ...
+        ulLayers, localCtx(ctx), puschDmrsPorts);
 end
 
 pdcchPayloadBits = double(cfg.control.pdcch_payload_bits);
@@ -584,7 +595,8 @@ if modelType == "CDL" && ~startsWith(profile, "CDL-")
 end
 
 studyStatus = localScenarioStudyStatus(cfg);
-ulLayerCount = max(double(localOptionalStructValue(cfg, "pusch.layer_count", 1)), double(cfg.mimo.n_layers));
+ulLayerCount = max(double(localOptionalStructValue(cfg, "pusch.layer_count", 1)), ...
+    double(localOptionalStructValue(cfg, "mimo.max_ul_layers", cfg.mimo.n_layers)));
 if ulWf == "DFT-S-OFDM" && ulLayerCount > 1
     if ~logical(localOptionalStructValue(cfg, "waveform.multi_layer_dfts_ofdm_candidate_enabled", false))
         error("sixgr:lls6g:config:MultiLayerDFTSOFDMCandidateRequired", ...
@@ -865,7 +877,7 @@ if isfield(rule, "nested_rule")
     localValidateStructRules(value, nestedRule.parameters, fieldPath, ctx, catalog, allowPartial);
 end
 
-if strcmpi(string(rule.type), "struct_array") && isfield(rule, "item_nested_rule")
+if isfield(rule, "type") && strcmpi(string(rule.type), "struct_array") && isfield(rule, "item_nested_rule")
     nestedKey = char(string(rule.item_nested_rule));
     if ~isfield(catalog, "nested_sections") || ~isfield(catalog.nested_sections, nestedKey)
         error("sixgr:lls6g:config:MissingNestedRule", ...
@@ -903,6 +915,9 @@ function localValidateRuleType(value, typeName, fieldPath, ctx)
 switch lower(typeName)
     case "string"
         ok = ischar(value) || (isstring(value) && isscalar(value));
+    case "string_or_number"
+        ok = ischar(value) || (isstring(value) && isscalar(value)) || ...
+            (isnumeric(value) && isscalar(value) && isfinite(double(value)));
     case "string_list"
         ok = ischar(value) || isstring(value) || iscellstr(value) || ...
             (isempty(value) && (isnumeric(value) || iscell(value)));
@@ -1125,6 +1140,17 @@ tf = honestyMode == "strict" || ...
     any(contains(scenarioGroup, "truth"));
 end
 
+function tf = localRequiresFullCarrierReferenceReplay(cfg, linkDir)
+linkDir = lower(string(linkDir));
+if ~ismember(linkDir, ["dl", "both"])
+    tf = false;
+    return;
+end
+csirsEnabled = logical(localOptionalStructValue(cfg, "reference_signals.csi_rs_enabled", false)) || ...
+    logical(localOptionalStructValue(cfg, "reference_signals.nzp_csi_rs.enabled", false));
+tf = csirsEnabled && localRequiresSlotCoupledTruth(cfg);
+end
+
 function localValidateDirectionModulationMCSConsistency(cfg, direction, ctx)
 direction = upper(string(direction));
 tableName = string(localOptionalStructValue(cfg, "modulation.mcs_table", ""));
@@ -1227,6 +1253,33 @@ if strlength(effectiveFormat) > 0 && effectiveFormat ~= prachFormat
     error("sixgr:lls6g:config:BadPrachFormatMapping", ...
         "random_access configuration in %s requests prach_format=%s, but configuration_index=%g with subcarrier_spacing_khz=%g resolves to %s in nrPRACHConfig.", ...
         localCtx(ctx), prachFormat, double(configurationIndex), double(subcarrierSpacing), effectiveFormat);
+end
+localValidatePrachHasULSafeOccasion(cfg, ctx, configurationIndex, subcarrierSpacing);
+end
+
+function localValidatePrachHasULSafeOccasion(cfg, ctx, configurationIndex, subcarrierSpacing)
+prachEnabled = logical(localOptionalStructValue(cfg, "random_access.enabled", true));
+prachRequired = logical(localOptionalStructValue(cfg, "control_gating.prach_required", ...
+    localOptionalStructValue(cfg, "run.controlGating.prachRequired", false)));
+if ~(prachEnabled && prachRequired)
+    return;
+end
+try
+    fs = sixgr.phy.FrameStructureEngine(cfg);
+catch ME
+    error("sixgr:lls6g:config:PrachULSafeOccasionValidationFailed", ...
+        "Cannot validate PRACH/TDD slot ownership in %s for configuration_index=%g and subcarrier_spacing_khz=%g: %s", ...
+        localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(ME.message));
+end
+validSlots = double(fs.PRACHValidSlots1Based);
+validSlots = validSlots(isfinite(validSlots) & validSlots >= 1);
+if isempty(validSlots)
+    status = string(fs.PRACHValidationStatus);
+    error("sixgr:lls6g:config:NoULSafePrachOccasion", ...
+        "control_gating.prach_required=true in %s, but PRACH configuration_index=%g/subcarrier_spacing_khz=%g has no UL-safe PRACH occasion in TDD pattern %s with special slot %gDL/%gG/%gUL symbols. Validation status: %s.", ...
+        localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(fs.TDDPattern), ...
+        double(fs.SpecialSlotDLSymbols), double(fs.SpecialSlotGuardSymbols), ...
+        double(fs.SpecialSlotULSymbols), status);
 end
 end
 

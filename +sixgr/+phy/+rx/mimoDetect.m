@@ -70,6 +70,9 @@ function [layerSym, csi, info] = mimoDetect(rx, hEst, nVar, varargin)
     nRE = size(rxSym, 1);
     nR  = size(rxSym, 2);
     nP  = size(hSym, 3);
+    profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.rx.mimoDetect", ...
+        "Stage", "mimo_detection", ...
+        "Metadata", struct("NRE", double(nRE), "NRx", double(nR), "NTx", double(nP), "NLayers", double(nP))); %#ok<NASGU>
 
     layerSym = zeros(nRE, nP, "like", rxSym);
     csi      = zeros(nRE, nP, "like", real(rxSym));

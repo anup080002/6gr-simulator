@@ -73,6 +73,14 @@ opt.LinkAdaptiveSweepStep_dB = 2;
 opt.LinkAdaptiveSweepMaxPoints = ternaryDouble(receiverNoiseMode, 1, 12);
 opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
 opt.SaveFigures = logical(scfg.get("output.save_figures"));
+tuning = sixgr.lls6g.runners.resolveWaveformBundleRuntimeTuning(scfg, cfg, opt.LinkSNRGrid_dB);
+opt.RuntimeTuning = tuning;
+opt.HARQDiagnosticsEnabled = logical(sixgr.util.structGet(tuning, "HARQDiagnosticsEnabled", true));
+if strlength(strtrim(string(sixgr.util.structGet(tuning, "Notes", "")))) > 0
+    localDBLog("INFO", "Waveform bundle runtime tuning: policy=%s notes=%s", ...
+        char(string(sixgr.util.structGet(tuning, "Policy", ""))), ...
+        char(string(sixgr.util.structGet(tuning, "Notes", ""))));
+end
 if receiverNoiseMode
     localDBLog("INFO", "Waveform bundle starting: qualityMode=%s operatingPointLabel=%.3f dB physicalPoints=%d canonicalSlots=%d monteCarlo=%d slotDuration_s=%.6f", ...
         char(string(opt.LinkQualityMode)), double(opt.LinkSNR_dB), double(numel(opt.LinkSNRGrid_dB)), ...
@@ -1036,6 +1044,7 @@ cfg.meta.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.configHash = char(string(scfg.ConfigHash));
 cfg = localEnsureExactMexAcceleration(cfg);
 cfg = localEnsureParallelExecution(cfg);
+sixgr.perf.TimeProfiler.configure(cfg);
 profilerCfg = localResolveProfilerConfig(scfg);
 profilerState = localStartProfilerIfEnabled(profilerCfg);
 storeInfo = sixgr.db.activateArtifactStore(runFolder, cfg, struct( ...
@@ -1103,6 +1112,10 @@ try
     end
     localDBLog("INFO", "Runner profile completed. result.Ok=%d", ...
         double(logical(sixgr.util.structGet(result, "Ok", false))));
+    if logical(sixgr.util.structGet(cfg, "perf.exportTimeProfile", false))
+        localDBLog("INFO", "Exporting TX/RX chain time-profile and complexity coverage artifacts.");
+        sixgr.perf.TimeProfiler.export(runFolder, cfg);
+    end
 
     scenarioStatus = localAggregateScenarioStatus(result);
     result = localApplyScenarioStatus(result, scenarioStatus);
@@ -1251,6 +1264,14 @@ try
 catch ME
     localDBLog("ERROR", "Run failed: %s | %s", char(string(ME.identifier)), char(string(ME.message)));
     try
+        if logical(sixgr.util.structGet(cfg, "perf.exportTimeProfile", false))
+            sixgr.perf.TimeProfiler.export(runFolder, cfg);
+        end
+    catch timeProfileME
+        localDBLog("WARN", "Time-profile export after failure did not complete: %s", ...
+            char(string(timeProfileME.message)));
+    end
+    try
         localExportProfilerArtifacts(layout, profilerCfg, profilerState, ...
             "Run failed before completion; partial MATLAB profiler capture exported.");
     catch profilerME
@@ -1345,8 +1366,11 @@ execOut.OptionalArtifactIssues = optionalArtifactIssues;
 end
 
 function profilerCfg = localResolveProfilerConfig(scfg)
+enabled = logical(scfg.get("output.profiler_enabled", false)) || ...
+    logical(scfg.get("run_control.time_profiling_enable", false)) || ...
+    logical(scfg.get("analytics.export_time_profile", false));
 profilerCfg = struct( ...
-    "Enabled", logical(scfg.get("output.profiler_enabled", false)), ...
+    "Enabled", enabled, ...
     "TopFunctions", max(1, round(double(scfg.get("output.profiler_top_functions", 160)))), ...
     "TopEdges", max(1, round(double(scfg.get("output.profiler_top_edges", 320)))));
 end

@@ -99,6 +99,46 @@ state.CurrentSlot = 5;
 state.CurrentFrame = 1;
 state.CurrentSNR_dB = 40;
 
+stateTdd = state;
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "frequency.duplex_mode", "TDD");
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "phy.duplex.mode", "TDD");
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "global_radio_scope.duplex_mode", "TDD");
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "frame_timing.tdd_pattern", "DDDSU");
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "phy.duplex.tddPattern", "DDDSU");
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "frame_timing.symbols_per_slot", 14);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "frame_timing.special_slot_downlink_symbols", 10);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "frame_timing.ul_dl_guard_symbols", 3);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "frame_timing.special_slot_uplink_symbols", 1);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "phy.duplex.specialSlot.numDLSymbols", 10);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "phy.duplex.specialSlot.numGuardSymbols", 3);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "phy.duplex.specialSlot.numULSymbols", 1);
+stateTdd.CfgMobility = sixgr.util.structSet(stateTdd.CfgMobility, "phy.pucch.format", 2);
+stateTdd.HARQFeedbackSlots = 4;
+dueSlot = sixgr.truth.CoupledTruthRuntime.resolveHARQFeedbackDueSlotRuntime(stateTdd, 7, 1);
+assert(double(dueSlot) == 15, ...
+    "DDDSU HARQ feedback must skip DL-only slots and special slots without enough UL symbols for the resolved PUCCH format.");
+specialFeedback = localEmptyFeedbackRow();
+specialFeedback.Direction = "DL";
+specialFeedback.UEIndex = 1;
+specialFeedback.RNTI = double(multiUserRuntime.RNTIStart);
+specialFeedback.HarqID = 0;
+specialFeedback.SourceSlot = 7;
+specialFeedback.DueSlot = 14;
+specialFeedback.Ack = true;
+specialFeedback.ServingCell = 1;
+specialFeedback.BaseStationID = 1;
+specialFeedback.UCIBitCount = 1;
+specialResource = sixgr.truth.CoupledTruthRuntime.resolvePUCCHResourceAssignmentRuntime( ...
+    stateTdd, struct2table(specialFeedback, "AsArray", true));
+assert(~logical(specialResource.ControlResourceValidity), ...
+    "PUCCH resource assignment must not mark a one-symbol special slot as valid for four-symbol HARQ-ACK feedback.");
+validFeedback = specialFeedback;
+validFeedback.DueSlot = dueSlot;
+validResource = sixgr.truth.CoupledTruthRuntime.resolvePUCCHResourceAssignmentRuntime( ...
+    stateTdd, struct2table(validFeedback, "AsArray", true));
+assert(logical(validResource.ControlResourceValidity) && double(validResource.SymbolStart) == 10 && double(validResource.NumSymbols) == 4, ...
+    "Resolved HARQ feedback due slot must produce a valid full-UL PUCCH resource for one-bit HARQ-ACK.");
+
 feedbackRows = repmat(localEmptyFeedbackRow(), 2, 1);
 for ueIdx = 1:2
     feedbackRows(ueIdx).Direction = "DL";
@@ -161,8 +201,9 @@ grantIdx = find(strcmp(string(state.PUCCHGrantTraceTable.PUCCHGrantId), string(r
 assert(~isempty(grantIdx), ...
     "Observed PUCCH trial rows must point at an existing explicit runtime PUCCH grant row.");
 grantObserved = state.PUCCHGrantTraceTable(grantIdx, :);
-assert(strlength(string(row.PUCCHResourceId(1))) > 0 && strcmpi(char(string(row.ControlResourceSource(1))), "runtime_deterministic_pucch_resource_assignment"), ...
-    "Coupled PUCCH rows must expose the runtime resource identity and source.");
+assert(strlength(string(row.PUCCHResourceId(1))) > 0 && ...
+    strcmpi(char(string(row.ControlResourceSource(1))), "runtime_deterministic_pucch_resource_assignment_tdd_ul_symbol_checked"), ...
+    "Coupled PUCCH rows must expose the runtime resource identity and TDD-checked source.");
 assert(all(ismember(["NoiseVariance","NoiseVarStatus","NoiseVarSource","NoiseVarReason","NoiseVarStrictFailure", ...
     "ReceiverUsable","DetectionAttempted","DetectionUsable","FailureReason"], string(state.ControlTrials.PUCCH.Properties.VariableNames))), ...
     "Coupled PUCCH runtime tables must carry explicit noise-variance and receiver-availability provenance.");

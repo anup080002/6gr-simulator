@@ -44,6 +44,10 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             end
             scheduleTimer = tic;
             [prbAvail, symAlloc] = obj.defaultBudget(budget);
+            profScope = sixgr.perf.TimeProfiler.scope("sixgr.l2.mac.SchedulerPF.schedule", ...
+                "Stage", "mac_pf_scheduler", ...
+                "Metadata", struct("NumUE", double(numel(ueStates)), ...
+                "NumPRB", double(numel(prbAvail)))); %#ok<NASGU>
 
             tmpl = localGrantTemplate(obj.Direction, slot);
             grants = repmat(tmpl, 0, 1);

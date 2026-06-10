@@ -2208,10 +2208,21 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("prach.format", "random_access.prach_format", "identity"),
     ("prach.configuration_index", "random_access.configuration_index", "identity"),
     ("prach.zero_correlation_zone", "random_access.zero_correlation_zone", "identity"),
-    ("prach.detection_threshold_mode", "random_access.detection_threshold_mode", "identity"),
+    ("prach.detection_threshold_mode", "random_access.detection_threshold_mode", "threshold_mode"),
     ("prach.sequence_family", "random_access.prach_sequence_family", "identity"),
     ("prach.format_set", "random_access.prach_format", "first_string"),
 ]
+PRESERVED_BROWSER_LEGACY_PATHS = {
+    "antenna_and_array.bs_num_antenna_elements",
+    "channels.shadow_fading_enabled",
+    "channels.spatial_consistency_enabled",
+    "deployment_topology.num_sites",
+    "deployment_topology.num_sectors_per_site",
+    "deployment_topology.inter_site_distance",
+    "deployment_topology.wraparound_enabled",
+    "deployment_topology.num_ues",
+    "frequency.n_size_grid",
+}
 BROWSER_OPTION_SOURCE_ALIASES: dict[str, list[str]] = {
     "mobility.trajectory_model": ["scenario.mobility.model"],
     "mobility.direction_model": ["scenario.mobility.model"],
@@ -2291,6 +2302,10 @@ def path_delete(node: dict[str, Any], path: str) -> None:
             parent.pop(key, None)
         else:
             break
+
+
+def alias_value_missing(value: Any) -> bool:
+    return value is PATH_MISSING or value is None
 
 
 def values_equal(left: Any, right: Any) -> bool:
@@ -2472,6 +2487,11 @@ def convert_alias_value(value: Any, mode: str, direction: str) -> Any:
         return value
     if mode == "identity":
         return value
+    if mode == "threshold_mode":
+        token = str(value or "").strip().lower()
+        if token == "fa_probability_calibrated":
+            return "auto"
+        return value
     if mode == "hz_to_khz":
         if direction == "new_to_old":
             return float(value) / 1e3
@@ -2544,24 +2564,28 @@ def sync_browser_alias_value(
     new_base = path_get(new_defaults, new_path)
     old_base = path_get(legacy_defaults, old_path)
 
-    new_diff = not values_equal(new_val, new_base)
-    old_diff = not values_equal(old_val, old_base)
+    new_missing = alias_value_missing(new_val)
+    old_missing = alias_value_missing(old_val)
+    new_diff = (not new_missing) and not values_equal(new_val, new_base)
+    old_diff = (not old_missing) and not values_equal(old_val, old_base)
+    if new_missing and old_missing:
+        return
     new_to_old = convert_alias_value(new_val, mode, "new_to_old")
     old_to_new = convert_alias_value(old_val, mode, "old_to_new")
 
-    if new_val is not PATH_MISSING and old_val is PATH_MISSING and new_to_old is not PATH_MISSING:
+    if not new_missing and old_missing and not alias_value_missing(new_to_old):
         path_set(payload, old_path, new_to_old)
         return
-    if old_val is not PATH_MISSING and new_val is PATH_MISSING and old_to_new is not PATH_MISSING:
+    if not old_missing and new_missing and not alias_value_missing(old_to_new):
         path_set(payload, new_path, old_to_new)
         return
-    if new_diff and not old_diff and new_to_old is not PATH_MISSING:
+    if new_diff and not old_diff and not alias_value_missing(new_to_old):
         path_set(payload, old_path, new_to_old)
         return
-    if old_diff and not new_diff and old_to_new is not PATH_MISSING:
+    if old_diff and not new_diff and not alias_value_missing(old_to_new):
         path_set(payload, new_path, old_to_new)
         return
-    if new_diff and old_diff and old_to_new is not PATH_MISSING:
+    if new_diff and old_diff and not alias_value_missing(old_to_new):
         if not values_equal(old_val, new_to_old) and not values_equal(new_val, old_to_new):
             path_set(payload, new_path, old_to_new)
 
@@ -2580,6 +2604,8 @@ def canonicalize_browser_config_payload(payload: dict[str, Any], keep_legacy_ali
     if not keep_legacy_aliases:
         for new_path, old_path, _ in BROWSER_ALIAS_RULES:
             if new_path == old_path:
+                continue
+            if old_path in PRESERVED_BROWSER_LEGACY_PATHS:
                 continue
             path_delete(resolved, old_path)
     apply_browser_derived_runtime_aliases(resolved, new_defaults)
@@ -3702,6 +3728,10 @@ def validate_scenario_yaml_text(yaml_text: str) -> dict[str, Any]:
 
 def write_uploaded_scenario(target_name: str, yaml_text: str) -> Path:
     payload = validate_scenario_yaml_text(yaml_text)
+    payload = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
+    payload.pop("phy", None)
+    if "inherits" not in payload:
+        payload["inherits"] = [f"./{DEFAULT_SCENARIO}"]
     safe_name = safe_uploaded_scenario_name(target_name)
     target_path = resolve_scenario_path(safe_name)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4797,7 +4827,7 @@ def classify_result_section(logical_path: str) -> str:
         return "meta"
     if any(token in path for token in ("debug", "validation_messages", "artifact_inventory", "live_stage_status", "failure_debug_report")):
         return "debug"
-    if any(token in path for token in ("summary", "manifest", "catalog", "checktable", "kpi_summary", "runtime_operating_mode", "truth_contract", "mcs_table_reference", "cqi_table_reference", "multiuser_user_summary", "runtime_stage_profile", "runtime_profiler_summary", "runtime_function_profile", "runtime_function_call_edges", "user_performance", "output_coverage_registry", "output_completeness", "instrumentation_coverage", "api_exposure_audit", "persistence_audit", "honest_unavailable_registry", "compare_run_prerequisites", "result_issue_registry", "table_scenario_topology", "scenario_consistency_check", "table_gnb_cell", "table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", "cell_edge_analytics_table", "beam_stability_analytics_table", "energy_root_cause_table")):
+    if any(token in path for token in ("summary", "manifest", "catalog", "checktable", "kpi_summary", "runtime_operating_mode", "truth_contract", "mcs_table_reference", "cqi_table_reference", "multiuser_user_summary", "runtime_stage_profile", "runtime_profiler_summary", "runtime_function_profile", "runtime_function_call_edges", "time_profile", "user_performance", "output_coverage_registry", "output_completeness", "instrumentation_coverage", "api_exposure_audit", "persistence_audit", "honest_unavailable_registry", "compare_run_prerequisites", "result_issue_registry", "table_scenario_topology", "scenario_consistency_check", "table_gnb_cell", "table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", "cell_edge_analytics_table", "energy_root_cause_table")):
         return "summary"
     if any(token in path for token in ("sites.csv", "sectors.csv", "trps.csv", "ues.csv", "deployment_layout_reference", "layout", "geometry")):
         return "geometry"
@@ -6512,31 +6542,90 @@ def build_phy_event(
     slot = phy_grid_slot_value(row)
     if slot is None:
         return None
+    prb_start_columns = [
+        "PUCCHPRBStart",
+        "PUSCHPRBStart",
+        "PDSCHPRBStart",
+        "PDCCHPRBStart",
+        "PRACHPRBStart",
+        "SRSPRBStart",
+        "CSIRSPRBStart",
+        "PRBStart",
+        "RBStart",
+        "StartRB",
+        "AllocatedPRBStart",
+        "PRBStartIndex",
+        "MinPRB",
+    ]
+    prb_count_columns = [
+        "PUCCHPRBCount",
+        "PUSCHPRBCount",
+        "PDSCHPRBCount",
+        "PDCCHPRBCount",
+        "PRACHPRBCount",
+        "SRSPRBCount",
+        "CSIRSPRBCount",
+        "PRBCount",
+        "PRBLength",
+        "AllocatedPRBCount",
+        "NumRB",
+        "NPRB",
+        "NRB",
+        "NumPRB",
+    ]
+    symbol_start_columns = [
+        "PUCCHSymbolStart",
+        "PUSCHSymbolStart",
+        "PDSCHSymbolStart",
+        "PDCCHSymbolStart",
+        "PRACHSymbolStart",
+        "SRSSymbolStart",
+        "CSIRSSymbolStart",
+        "SymbolStart",
+        "StartSymbol",
+        "StartSymbolIndex",
+        "FirstSymbol",
+    ]
+    symbol_count_columns = [
+        "PUCCHNumSymbols",
+        "PUSCHNumSymbols",
+        "PDSCHNumSymbols",
+        "PDCCHNumSymbols",
+        "PRACHNumSymbols",
+        "SRSNumSymbols",
+        "CSIRSNumSymbols",
+        "NumSymbols",
+        "SymbolCount",
+        "SymbolLength",
+        "DurationSymbols",
+        "L",
+    ]
     prb_start = first_present_number(
         row,
-        ["PRBStart", "RBStart", "StartRB", "AllocatedPRBStart", "PRBStartIndex", "MinPRB"],
+        prb_start_columns,
         float(spec.get("prb_start", 0) or 0),
     )
     prb_count = first_present_number(
         row,
-        ["PRBCount", "PRBLength", "AllocatedPRBCount", "NumRB", "NPRB", "NRB", "NumPRB"],
+        prb_count_columns,
         math.nan,
     )
+    prb_set_present = first_present_value(row, ["PUCCHPRBSet", "PUSCHPRBSet", "PDSCHPRBSet", "PRBSet", "PRBs", "RBSet"], "")
     if not math.isfinite(prb_count):
-        prb_count = phy_grid_prb_count_from_set(first_present_value(row, ["PRBSet", "PRBs", "RBSet"], ""))
+        prb_count = phy_grid_prb_count_from_set(prb_set_present)
     if not math.isfinite(prb_count):
         configured = spec.get("prb_count", None)
         prb_count = float(configured) if configured is not None else float(nrb)
-    symbol_start_present = first_present_value(row, ["SymbolStart", "StartSymbol", "StartSymbolIndex", "FirstSymbol"], "")
-    symbol_count_present = first_present_value(row, ["NumSymbols", "SymbolCount", "SymbolLength", "DurationSymbols", "L"], "")
+    symbol_start_present = first_present_value(row, symbol_start_columns, "")
+    symbol_count_present = first_present_value(row, symbol_count_columns, "")
     symbol_start = first_present_number(
         row,
-        ["SymbolStart", "StartSymbol", "StartSymbolIndex", "FirstSymbol"],
+        symbol_start_columns,
         float(spec.get("symbol_start", 0) or 0),
     )
     symbol_count = first_present_number(
         row,
-        ["NumSymbols", "SymbolCount", "SymbolLength", "DurationSymbols", "L"],
+        symbol_count_columns,
         float(spec.get("symbol_count", 1) or 1),
     )
     channel = str(
@@ -10995,7 +11084,11 @@ def build_timing_payload(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
     profiler_summary_rows = load_first_available_csv_rows(artifacts, ["reports/csv/runtime_profiler_summary.csv"], max_rows=8)
     function_rows = load_first_available_csv_rows(artifacts, ["reports/csv/runtime_function_profile.csv"], max_rows=256)
     edge_rows = load_first_available_csv_rows(artifacts, ["reports/csv/runtime_function_call_edges.csv"], max_rows=160)
+    txrx_summary_rows = load_first_available_csv_rows(artifacts, ["reports/csv/time_profile_summary.csv"], max_rows=8)
+    txrx_call_rows = load_first_available_csv_rows(artifacts, ["reports/csv/time_profile_calls.csv", "analytics/csv/time_profile_analytics.csv"], max_rows=256)
+    txrx_coverage_rows = load_first_available_csv_rows(artifacts, ["reports/csv/time_profile_coverage.csv"], max_rows=64)
     profiler_summary = profiler_summary_rows[0] if profiler_summary_rows else {}
+    txrx_summary = txrx_summary_rows[0] if txrx_summary_rows else {}
     total_elapsed = max(
         [float(value) for value in (coerce_numeric(row.get("BundleElapsed_s")) for row in rows) if value is not None],
         default=None,
@@ -11004,6 +11097,9 @@ def build_timing_payload(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
     profiler_summary_art = find_artifact_by_logical_path(artifacts, "reports/csv/runtime_profiler_summary.csv")
     function_art = find_artifact_by_logical_path(artifacts, "reports/csv/runtime_function_profile.csv")
     edge_art = find_artifact_by_logical_path(artifacts, "reports/csv/runtime_function_call_edges.csv")
+    txrx_summary_art = find_artifact_by_logical_path(artifacts, "reports/csv/time_profile_summary.csv")
+    txrx_calls_art = find_artifact_by_logical_path(artifacts, "reports/csv/time_profile_calls.csv") or find_artifact_by_logical_path(artifacts, "analytics/csv/time_profile_analytics.csv")
+    txrx_coverage_art = find_artifact_by_logical_path(artifacts, "reports/csv/time_profile_coverage.csv")
     return {
         "rows": rows,
         "total_elapsed_s": total_elapsed,
@@ -11011,11 +11107,17 @@ def build_timing_payload(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
         "profiler_summary": profiler_summary,
         "function_rows": function_rows,
         "edge_rows": edge_rows,
+        "txrx_summary": txrx_summary,
+        "txrx_call_rows": txrx_call_rows,
+        "txrx_coverage_rows": txrx_coverage_rows,
         "downloads": {
             "stage": build_artifact_descriptor(stage_art) if stage_art else None,
             "summary": build_artifact_descriptor(profiler_summary_art) if profiler_summary_art else None,
             "functions": build_artifact_descriptor(function_art) if function_art else None,
             "edges": build_artifact_descriptor(edge_art) if edge_art else None,
+            "txrx_summary": build_artifact_descriptor(txrx_summary_art) if txrx_summary_art else None,
+            "txrx_calls": build_artifact_descriptor(txrx_calls_art) if txrx_calls_art else None,
+            "txrx_coverage": build_artifact_descriptor(txrx_coverage_art) if txrx_coverage_art else None,
         },
     }
 
