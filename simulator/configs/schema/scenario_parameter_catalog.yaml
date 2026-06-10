@@ -239,6 +239,8 @@ sections:
       pdsch_dmrs_ports: {required: true, type: integer, min: 1}
       pusch_dmrs_ports: {required: true, type: integer, min: 1}
       csi_rs_enabled: {required: true, type: boolean}
+      csi_rs_scrambling_id: {required: false, type: integer, min: 0}
+      csirs_scrambling_id: {required: false, type: integer, min: 0}
       srs_enabled: {required: true, type: boolean}
       trs_enabled: {required: true, type: boolean}
       tracking_rs_enabled: {required: false, type: boolean}

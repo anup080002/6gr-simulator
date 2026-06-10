@@ -46,6 +46,7 @@ from lls_contract_aliases import (
 REPO_ROOT = Path(__file__).absolute().parent.parent
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
 PARAMETER_MATRIX_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "scenario_parameter_matrix_catalog.yaml"
+PARAMETER_CONSTRAINT_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "parameter_constraints.json"
 MATLAB_EXE = Path(r"C:\Program Files\MATLAB\R2023b\bin\matlab.exe")
 if not MATLAB_EXE.is_file():
     raise FileNotFoundError(
@@ -118,6 +119,7 @@ DB_POOLS: dict[str, pooling.MySQLConnectionPool] = {}
 LIVE_PAYLOAD_CACHE: dict[int, dict[str, Any]] = {}
 CACHED_PAYLOAD_VERSION: dict[int, str] = {}
 SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
+PHY_GRID_PAYLOAD_CACHE: dict[tuple[int, int, str], dict[str, Any]] = {}
 DB_POOL_SIZE = max(8, int(os.environ.get("MYSQL_POOL_SIZE", "32") or "32"))
 STALE_RUNNING_MINUTES = max(5, int(os.environ.get("SIXGR_STALE_RUNNING_MINUTES", "15") or "15"))
 PROCESS_HEARTBEAT_STALL_MINUTES = max(
@@ -169,8 +171,8 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "resource_grid_ul", "label": "resource_grid_ul", "chart_tokens": ["pusch map", "ul resource grid equalized symbol summaries", "ul resource grid"], "image_tokens": ["pusch-map", "ul resource-grid", "resource_grid_ul"]},
     {"id": "scheduler_timeline", "label": "scheduler_timeline", "chart_tokens": ["scheduled prbs per ue over time", "sr bsr event timeline", "scheduler fairness over time"], "image_tokens": ["scheduled-prbs-per-ue-over-time", "sr-bsr-event-timeline", "scheduler_timeline"]},
     {"id": "sector_coverage_footprint", "label": "sector_coverage_footprint", "chart_tokens": ["serving cell map"], "image_tokens": ["serving-cell-map"]},
-    {"id": "sinr_vs_time", "label": "sinr_vs_time", "chart_tokens": ["configured vs applied vs measured snr sinr comparison", "servingrsrp rsrp csi rsrp trends", "sinr timeline"], "image_tokens": ["sinr_vs_time"]},
-    {"id": "snr_vs_time", "label": "snr_vs_time", "chart_tokens": ["configured vs applied vs measured snr sinr comparison", "configured snr vs applied awgn snr vs measured sinr vs large scale sinr", "snr timeline"], "image_tokens": ["snr_vs_time"]},
+    {"id": "sinr_vs_time", "label": "sinr_vs_time", "chart_tokens": ["applied vs measured runtime snr sinr comparison", "servingrsrp rsrp csi rsrp trends", "sinr timeline"], "image_tokens": ["sinr_vs_time"]},
+    {"id": "snr_vs_time", "label": "snr_vs_time", "chart_tokens": ["applied vs measured runtime snr sinr comparison", "applied awgn snr vs measured runtime sinr comparison", "snr timeline"], "image_tokens": ["snr_vs_time"]},
     {"id": "ssb_burst_beam", "label": "ssb_burst_beam", "chart_tokens": ["ssb index timeline", "pbch ssb map"], "image_tokens": ["ssb-index-timeline", "ssb_burst_beam"]},
     {"id": "state_occupancy_area", "label": "state_occupancy_area", "chart_tokens": ["sleep idle active state occupancy"], "image_tokens": ["state occupancy", "state_occupancy_area"]},
     {"id": "throughput_vs_time", "label": "throughput_vs_time", "chart_tokens": ["throughput over time", "throughput timeline", "throughput vs time"], "image_tokens": ["throughput-over-time", "throughput-vs-time"]},
@@ -251,6 +253,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
         LIVE_PAYLOAD_CACHE.clear()
         CACHED_PAYLOAD_VERSION.clear()
         SECTION_PAYLOAD_CACHE.clear()
+        PHY_GRID_PAYLOAD_CACHE.clear()
         build_chart_payload_for_artifact.cache_clear()
         fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
@@ -261,6 +264,9 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     for key in list(SECTION_PAYLOAD_CACHE.keys()):
         if int(key[0]) == int(run_id):
             SECTION_PAYLOAD_CACHE.pop(key, None)
+    for key in list(PHY_GRID_PAYLOAD_CACHE.keys()):
+        if int(key[0]) == int(run_id):
+            PHY_GRID_PAYLOAD_CACHE.pop(key, None)
     # Artifact ids are immutable per DB row, but per-run rematerialization,
     # deletion, or relaunch can invalidate cached bytes/previews that were
     # generated from an older artifact set. Clear them eagerly so the browser
@@ -2066,7 +2072,11 @@ def diff_config_value(base: Any, current: Any) -> Any:
 PATH_MISSING = object()
 BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("run_control.seed", "simulation.random_seed", "identity"),
+    ("run_control.random_seed_master", "simulation.random_seed", "identity"),
     ("run_control.deterministic_mode", "simulation.deterministic_mode", "identity"),
+    ("run_control.warmup_ms", "run_control.warmup_time_ms", "identity"),
+    ("run_control.measurement_ms", "run_control.measurement_time_ms", "identity"),
+    ("run_control.num_drops", "simulation.monte_carlo_iterations", "identity"),
     ("global_radio_scope.carrier_frequency_hz", "frequency.center_frequency_hz", "identity"),
     ("global_radio_scope.frequency_range_label", "frequency.range_name", "identity"),
     ("global_radio_scope.channel_bandwidth_hz", "frequency.bandwidth_hz", "identity"),
@@ -2076,11 +2086,27 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("global_radio_scope.cp_type", "frame.cp_type", "identity"),
     ("global_radio_scope.sample_rate_hz", "waveform.sample_rate_hz", "identity"),
     ("global_radio_scope.fft_size", "waveform.fft_size", "identity"),
+    ("phy.duplex.mode", "frequency.duplex_mode", "identity"),
+    ("phy.duplex.tddPattern", "frame.tdd_pattern", "identity"),
+    ("phy.carrier.NSizeGrid", "frequency.n_size_grid", "identity"),
     ("frame_timing.tdd_pattern", "frame.tdd_pattern", "identity"),
+    ("scenario.layout.nSites", "deployment_topology.num_sites", "identity"),
+    ("scenario.layout.nSectorsPerSite", "deployment_topology.num_sectors_per_site", "identity"),
+    ("scenario.layout.interSiteDistance_m", "deployment_topology.inter_site_distance", "identity"),
+    ("scenario.layout.wrapAround", "deployment_topology.wraparound_enabled", "identity"),
+    ("scenario.ue.nUE", "deployment_topology.num_ues", "identity"),
+    ("scenario.ue.distribution.indoorFraction", "deployment_topology.indoor_ue_fraction", "identity"),
+    ("scenario.mobility.speed_kmh", "mobility.ue_speed_kmh", "identity"),
     ("mobility.ue_speed_kmh", "channels.mobility_kmph", "identity"),
     ("mobility.spatial_consistency_flag", "channels.spatial_consistency_enabled", "identity"),
+    ("scenario.bs.nTxAnt", "mimo.n_tx_ant", "identity"),
+    ("scenario.ue.nRxAnt", "mimo.n_rx_ant", "identity"),
+    ("scenario.bs.txPower_dBm", "energy_efficiency.tx_power_dbm", "identity"),
+    ("scenario.ue.noiseFigure_dB", "power_and_rf_frontend.ue_noise_figure_db", "identity"),
     ("antenna_and_array.bs_num_antenna_elements", "mimo.n_tx_ant", "identity"),
     ("antenna_and_array.ue_num_antenna_elements", "mimo.n_rx_ant", "identity"),
+    ("antenna_and_array.num_phy_antenna_elements", "antenna_and_array.bs_num_antenna_elements", "identity"),
+    ("antenna_and_array.bs_array_type", "antenna_and_array.bs_array_geometry", "identity"),
     ("antenna_and_array.digital_precoder_family", "mimo.precoder_type", "identity"),
     ("power_and_rf_frontend.bs_tx_power_dbm", "energy_efficiency.tx_power_dbm", "identity"),
     ("system.scheduler.maxActiveUEsPerSlot", "system.scheduler.max_active_ues_per_slot", "identity"),
@@ -2093,19 +2119,36 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("system.scheduler.sliceAware", "system.scheduler.slice_aware_enable", "identity"),
     ("system.scheduler.starvationGuard", "system.scheduler.starvation_guard_enable", "identity"),
     ("system.scheduler.cellEdgeBoost", "system.scheduler.cell_edge_boost_enable", "identity"),
+    ("scheduler.scheduler_type", "system.scheduler.type", "identity"),
+    ("scheduler.beam_aware_scheduler_enable", "system.scheduler.beamAware", "identity"),
+    ("scheduler.fairness_window_ms", "system.scheduler.proportionalFairWindow_ms", "identity"),
     ("waveform.dl_waveform", "waveform.dl_waveform", "identity"),
     ("waveform.ul_waveform", "waveform.ul_waveform", "identity"),
+    ("waveform.dl", "waveform.dl_waveform", "identity"),
+    ("waveform.ul", "waveform.ul_waveform", "identity"),
     ("waveform.transform_precoding", "waveform.transform_precoding_enabled", "identity"),
     ("waveform.windowing", "waveform.windowing_enabled", "identity"),
+    ("channels.model", "channels.model_type", "identity"),
     ("channel_model.model_family", "channels.model_type", "identity"),
+    ("channels.pathloss_model", "channels.pathloss_model", "identity"),
     ("channel_model.scenario_label", "channels.profile", "identity"),
     ("channel_model.delay_spread_ns", "channels.delay_spread_ns", "identity"),
     ("channel_model.doppler_hz", "channels.doppler_hz", "identity"),
     ("channel_model.doppler_source_mode", "channels.doppler_source_mode", "identity"),
+    ("channels.spatial_consistency", "channels.spatial_consistency_enabled", "identity"),
+    ("channels.o2i_enabled", "channels.o2i_enabled", "identity"),
+    ("channels.shadowing_enabled", "channels.shadow_fading_enabled", "identity"),
     ("mimo_and_beam_management.beam_sweeping", "mimo.beam_sweep_enabled", "identity"),
     ("mimo_and_beam_management.rank_set", "mimo.n_layers", "first_numeric"),
+    ("mimo.max_ul_layers", "mimo.max_ul_layers", "identity"),
+    ("mimo.beam_management_enable", "system.beam.enable", "identity"),
+    ("mimo.beam_codebook_size", "system.beam.numBeams", "identity"),
+    ("mimo.beam_update_period_ms", "system.beam.updatePeriod_ms", "identity"),
+    ("mimo.digital_precoder_family", "mimo.precoder_type", "identity"),
     ("mimo_and_beam_management.codebook_family", "mimo.codebook_type", "identity"),
     ("mimo_and_beam_management.mtrp_coordination", "mimo.mtrp_ready", "identity"),
+    ("modulation.dl_modulation", "modulation.dl_modulation_order", "modulation_to_order"),
+    ("modulation.ul_modulation", "modulation.ul_modulation_order", "modulation_to_order"),
     ("csi_acquisition_and_reporting.cqi_policy", "reference_signals.cqi_reporting_enabled", "policy_to_bool"),
     ("csi_acquisition_and_reporting.pmi_policy", "reference_signals.pmi_reporting_enabled", "policy_to_bool"),
     ("csi_acquisition_and_reporting.ri_policy", "reference_signals.ri_reporting_enabled", "policy_to_bool"),
@@ -2116,10 +2159,17 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("channel_coding.data_channel_family", "coding.data_code_type", "identity"),
     ("channel_coding.control_channel_family", "coding.control_code_type", "identity"),
     ("channel_coding.ldpc_base_graph", "coding.base_graph", "identity"),
+    ("harq.enable", "harq.enabled", "identity"),
+    ("harq.n_harq_processes", "harq.process_count", "identity"),
+    ("harq.max_retransmissions", "harq.max_retx", "identity"),
+    ("harq.k1", "harq.feedback_timing_slots", "identity"),
+    ("link_adaptation.target_bler_dl", "link_adaptation.target_bler", "identity"),
+    ("link_adaptation.target_bler_ul", "link_adaptation.target_bler", "identity"),
     ("ai_ml.model_name", "ai_ml.model_id", "identity"),
     ("ai_ml.fallback_mode", "ai_ml.fallback_enabled", "string_to_bool"),
     ("energy_and_complexity.throughput_per_watt", "kpis.energy_per_bit", "bool_to_metric"),
     ("kpi_spec.mandatory_kpis", "kpis", "kpi_list_to_struct"),
+    ("output.persistence_mode", "output_control.output_persistence_mode", "identity"),
     ("output_control.save_intermediate", "logging.save_intermediate", "identity"),
     ("output_control.save_plots", "output.save_figures", "identity"),
     ("output_control.save_plots", "output.save_png", "identity"),
@@ -2137,12 +2187,18 @@ BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("reference_signals.pdsch_dmrs.num_ports", "reference_signals.pdsch_dmrs_ports", "identity"),
     ("reference_signals.pusch_dmrs.num_ports", "reference_signals.pusch_dmrs_ports", "identity"),
     ("reference_signals.srs.num_ports", "reference_signals.srs_ports", "identity"),
+    ("reference_signals.srs_periodicity_ms", "reference_signals.srs_periodicity_ms", "identity"),
     ("reference_signals.srs.sequence_type", "reference_signals.srs_sequence_family", "identity"),
     ("reference_signals.srs.periodicity", "reference_signals.srs_periodicity_ms", "identity"),
     ("pdcch.enabled", "control.pdcch_enabled", "identity"),
+    ("pdcch.coreset_id", "control.coreset_id", "identity"),
     ("pdcch.aggregation_levels", "control.aggregation_levels", "identity"),
     ("pucch.enabled", "control.pucch_enabled", "identity"),
     ("prach.enabled", "random_access.enabled", "identity"),
+    ("prach.enable", "random_access.enabled", "identity"),
+    ("prach.format", "random_access.prach_format", "identity"),
+    ("prach.zero_correlation_zone", "random_access.zero_correlation_zone", "identity"),
+    ("prach.detection_threshold_mode", "random_access.detection_threshold_mode", "identity"),
     ("prach.sequence_family", "random_access.prach_sequence_family", "identity"),
     ("prach.format_set", "random_access.prach_format", "first_string"),
 ]
@@ -2429,6 +2485,29 @@ def convert_alias_value(value: Any, mode: str, direction: str) -> Any:
         if direction == "new_to_old":
             return str(value).strip().lower() not in {"disabled", "none", "off", "false"}
         return "baseline" if bool(value) else "disabled"
+    if mode == "modulation_to_order":
+        names_to_order = {
+            "pi/2-bpsk": 1,
+            "pi2-bpsk": 1,
+            "bpsk": 1,
+            "qpsk": 2,
+            "4qam": 2,
+            "qam4": 2,
+            "16qam": 4,
+            "qam16": 4,
+            "64qam": 6,
+            "qam64": 6,
+            "256qam": 8,
+            "qam256": 8,
+        }
+        order_to_name = {1: "pi/2-BPSK", 2: "QPSK", 4: "16QAM", 6: "64QAM", 8: "256QAM"}
+        if direction == "new_to_old":
+            token = str(value).strip().lower().replace("_", "-").replace(" ", "")
+            return names_to_order.get(token, value)
+        try:
+            return order_to_name.get(int(round(float(value))), value)
+        except (TypeError, ValueError):
+            return value
     if mode == "kpi_list_to_struct":
         if direction == "new_to_old":
             if isinstance(value, (list, tuple)):
@@ -3713,7 +3792,7 @@ def build_run_config_download(run_id: int, fmt: str) -> tuple[bytes, str, str]:
     submitted_config = parse_config_json(run_row)
     if not submitted_config:
         raise ValueError(f"Run {run_id} does not have a config_json payload yet.")
-    artifacts = fetch_artifacts(int(run_id))
+    artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(int(run_id)), run_row)
     resolved_config, resolved_meta = load_artifact_json_by_path(artifacts, "meta/scenario_config_resolved.json")
     binding_rows, binding_meta = load_artifact_rows_by_path(artifacts, "reports/csv/parameter_binding_matrix.csv", max_rows=50000)
     if not binding_rows:
@@ -5332,13 +5411,13 @@ CANONICAL_RUNTIME_ARTIFACT_OWNERS: dict[str, dict[str, Any]] = {
         "owner_kind": "live_stage_status",
     },
     "dl_scheduler_grants": {
-        "canonical_path": "packet_flow/csv/live_dl_scheduler_grants.csv",
-        "legacy_paths": ["system/csv/system_scheduler_grants.csv"],
+        "canonical_path": "reports/csv/live_dl_scheduler_grants.csv",
+        "legacy_paths": ["packet_flow/csv/live_dl_scheduler_grants.csv", "system/csv/system_scheduler_grants.csv"],
         "owner_kind": "scheduler_grants_dl",
     },
     "ul_scheduler_grants": {
-        "canonical_path": "packet_flow/csv/live_ul_scheduler_grants.csv",
-        "legacy_paths": ["system/csv/system_scheduler_grants.csv"],
+        "canonical_path": "reports/csv/live_ul_scheduler_grants.csv",
+        "legacy_paths": ["packet_flow/csv/live_ul_scheduler_grants.csv", "system/csv/system_scheduler_grants.csv"],
         "owner_kind": "scheduler_grants_ul",
     },
     "pucch_grants": {
@@ -6051,11 +6130,86 @@ def find_artifact_by_logical_path(artifacts: list[dict[str, Any]], logical_path:
     return matches[-1]
 
 
+def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]]:
+    run_folder = str((run_row or {}).get("run_folder") or "").strip()
+    if not run_folder:
+        return []
+    root = Path(run_folder)
+    if not root.is_absolute():
+        root = (REPO_ROOT / root).absolute()
+    if not root.is_dir():
+        return []
+    artifacts: list[dict[str, Any]] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix().lower()
+        suffix = path.suffix.lower()
+        if suffix == ".csv":
+            artifact_kind = "table_csv"
+            mime_type = "text/csv"
+        elif suffix == ".json":
+            artifact_kind = "json"
+            mime_type = "application/json"
+        else:
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        artifacts.append(
+            {
+                "artifact_id": 0,
+                "run_id": int((run_row or {}).get("run_id") or 0),
+                "logical_path": rel,
+                "artifact_kind": artifact_kind,
+                "mime_type": mime_type,
+                "byte_size": int(stat.st_size),
+                "created_utc": datetime.fromtimestamp(stat.st_mtime, timezone.utc),
+                "filesystem_path": str(path),
+            }
+        )
+    return artifacts
+
+
+def merge_db_and_filesystem_artifacts(
+    db_artifacts: list[dict[str, Any]],
+    run_row: dict[str, Any],
+) -> list[dict[str, Any]]:
+    artifacts = list(db_artifacts or [])
+    present = {
+        str(art.get("logical_path") or "").strip().lower()
+        for art in artifacts
+        if str(art.get("logical_path") or "").strip()
+    }
+    for art in filesystem_artifacts_for_run(run_row):
+        logical_path = str(art.get("logical_path") or "").strip().lower()
+        if logical_path and logical_path not in present:
+            artifacts.append(art)
+            present.add(logical_path)
+    return artifacts
+
+
 def load_small_csv_rows(artifacts: list[dict[str, Any]], logical_path: str, *, max_rows: int = 64) -> list[dict[str, Any]]:
     art = find_artifact_by_logical_path(artifacts, logical_path)
     if art is None:
         return []
-    header, rows = load_cached_csv_rows(int(art["artifact_id"]), max_rows)
+    filesystem_path = str(art.get("filesystem_path") or "").strip()
+    if filesystem_path:
+        try:
+            header, rows_raw = parse_csv_bytes(Path(filesystem_path).read_bytes(), max_rows=max_rows)
+        except OSError:
+            return []
+        rows = []
+        for raw_row in rows_raw:
+            values: list[Any] = []
+            for idx, _name in enumerate(header):
+                raw = raw_row[idx] if idx < len(raw_row) else ""
+                numeric = coerce_numeric(raw)
+                values.append(numeric if numeric is not None else raw)
+            rows.append(tuple(values))
+    else:
+        header, rows = load_cached_csv_rows(int(art["artifact_id"]), max_rows)
     if not header:
         return []
     out: list[dict[str, Any]] = []
@@ -6152,14 +6306,14 @@ PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
         "spec": {"channel": "CSI-RS", "direction": "DL", "symbol_start": 10, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
     },
     "dl_grants": {
-        "canonical_path": "packet_flow/csv/live_dl_scheduler_grants.csv",
-        "legacy_paths": ["system/csv/system_scheduler_grants.csv"],
+        "canonical_path": "reports/csv/live_dl_scheduler_grants.csv",
+        "legacy_paths": ["packet_flow/csv/live_dl_scheduler_grants.csv", "system/csv/system_scheduler_grants.csv"],
         "owner_kind": "scheduler_grants_dl",
         "spec": {"channel": "DL Grant", "direction": "DL", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
     },
     "ul_grants": {
-        "canonical_path": "packet_flow/csv/live_ul_scheduler_grants.csv",
-        "legacy_paths": ["system/csv/system_scheduler_grants.csv"],
+        "canonical_path": "reports/csv/live_ul_scheduler_grants.csv",
+        "legacy_paths": ["packet_flow/csv/live_ul_scheduler_grants.csv", "system/csv/system_scheduler_grants.csv"],
         "owner_kind": "scheduler_grants_ul",
         "spec": {"channel": "UL Grant", "direction": "UL", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
     },
@@ -6303,7 +6457,7 @@ def build_phy_event(
         "crc": str(crc_value or ""),
         "mcs": first_present_value(row, ["MCS", "MCSIndex", "ScheduledMCS", "SelectedMCS"], ""),
         "cqi": first_present_value(row, ["WidebandCQI", "CQI", "CQIIndex"], ""),
-        "sinr_dB": first_present_value(row, ["ReceiverHestSINR_dB", "SINR_dB", "LargeScaleSINR_dB", "SNRdB"], ""),
+        "sinr_dB": first_present_value(row, ["MeasuredTrialSINR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB"], ""),
         "rsrp_dBm": first_present_value(row, ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], ""),
         "source_artifact": selected_path,
         "source_note": derived_source_note or "runtime_csv_row",
@@ -6334,7 +6488,23 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
     cfg = parse_config_json(run_row)
-    artifacts = fetch_artifacts(int(run_id))
+    slot_limit = max(1, min(200, int(slot_limit or 50)))
+    selected_ue = str(ue_id or "").strip()
+    cache_key = (int(run_id), int(slot_limit), selected_ue)
+    cache_version = "|".join(
+        [
+            str(run_row.get("updated_utc") or ""),
+            str(run_row.get("status_text") or ""),
+            str(run_row.get("status_json") or "")[:2048],
+        ]
+    )
+    cached = PHY_GRID_PAYLOAD_CACHE.get(cache_key)
+    now_utc = datetime.now(timezone.utc)
+    if cached and cached.get("version") == cache_version:
+        cached_at = cached.get("cached_at")
+        if isinstance(cached_at, datetime) and (now_utc - cached_at).total_seconds() <= 5:
+            return copy.deepcopy(cached.get("payload") or {})
+    artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(int(run_id)), run_row)
     nrb = bounded_int(
         path_get(
             cfg,
@@ -6370,7 +6540,6 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         )
         or ""
     )
-    slot_limit = max(1, min(200, int(slot_limit or 50)))
     table_rows: dict[str, list[dict[str, Any]]] = {}
     table_meta: dict[str, dict[str, Any]] = {}
     for table_key, spec in CANONICAL_RUNTIME_ARTIFACT_OWNERS.items():
@@ -6405,8 +6574,6 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         },
         key=lambda item: (coerce_numeric(item) is None, float(coerce_numeric(item) or 0), item),
     )
-    selected_ue = str(ue_id or "").strip()
-
     raw_slots = [
         phy_grid_slot_value(row)
         for rows in table_rows.values()
@@ -6476,7 +6643,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         "DMRS/PTRS overlays are drawn only when exported RE counts are present. Exact per-RE index export is still required for full RE-level coloring.",
         "PSS/SSS/PBCH component symbols are shown relative to each exported SSB/PBCH row.",
     ]
-    return {
+    payload = {
         "run": {
             "run_id": int(run_id),
             "run_tag": run_row.get("run_tag") or "",
@@ -6499,6 +6666,12 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         "table_status": table_status,
         "provenance_notes": provenance_notes,
     }
+    PHY_GRID_PAYLOAD_CACHE[cache_key] = {
+        "version": cache_version,
+        "cached_at": now_utc,
+        "payload": copy.deepcopy(payload),
+    }
+    return payload
 
 
 def count_non_consistent_rows(rows: list[dict[str, Any]]) -> int:
@@ -11440,8 +11613,8 @@ PRODUCT_PAGE_ROUTES: dict[str, str] = {
     "/realtime": "realtime",
     "/runs": "runs",
     "/recent-runs": "runs",
-    "/previous-run": "runs",
-    "/previous-runs": "runs",
+    "/previous-run": "previous_runs",
+    "/previous-runs": "previous_runs",
     "/analytics": "analytics",
     "/plots": "plots",
     "/artifacts": "artifacts",
@@ -11478,6 +11651,7 @@ PRODUCT_NAV = [
     ("plots", "Plots", "/plots"),
     ("tables", "Tables", "/tables"),
     ("runs", "Runs", "/runs"),
+    ("previous_runs", "Previous Runs", "/previous-runs"),
     ("artifacts", "Artifact Explorer", "/artifacts"),
     ("parameters", "Parameter Catalog", "/parameter-catalog"),
     ("compare", "Compare Runs", "/compare-runs"),
@@ -11574,6 +11748,59 @@ def load_parameter_matrix_catalog_rows() -> list[dict[str, Any]]:
         if isinstance(row, dict):
             out.append(row)
     return out
+
+
+@lru_cache(maxsize=1)
+def load_parameter_constraints_catalog() -> dict[str, Any]:
+    if not PARAMETER_CONSTRAINT_CATALOG_PATH.is_file():
+        return {
+            "schema_version": "unavailable",
+            "rules": [],
+            "status": "missing",
+            "catalog_path": str(PARAMETER_CONSTRAINT_CATALOG_PATH),
+        }
+    try:
+        raw = json.loads(PARAMETER_CONSTRAINT_CATALOG_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {
+            "schema_version": "unavailable",
+            "rules": [],
+            "status": "invalid_json",
+            "catalog_path": str(PARAMETER_CONSTRAINT_CATALOG_PATH),
+            "error": str(exc),
+        }
+    if not isinstance(raw, dict):
+        return {
+            "schema_version": "unavailable",
+            "rules": [],
+            "status": "invalid_shape",
+            "catalog_path": str(PARAMETER_CONSTRAINT_CATALOG_PATH),
+        }
+    rules = raw.get("rules")
+    if not isinstance(rules, list):
+        raw["rules"] = []
+    raw.setdefault("status", "loaded")
+    raw.setdefault("catalog_path", str(PARAMETER_CONSTRAINT_CATALOG_PATH))
+    return raw
+
+
+def parameter_constraints_summary() -> dict[str, Any]:
+    catalog = load_parameter_constraints_catalog()
+    rules = catalog.get("rules") if isinstance(catalog, dict) else []
+    rules = rules if isinstance(rules, list) else []
+    categories = sorted(
+        {
+            str(rule.get("category")).strip()
+            for rule in rules
+            if isinstance(rule, dict) and str(rule.get("category", "")).strip()
+        }
+    )
+    return {
+        "status": str(catalog.get("status", "loaded") if isinstance(catalog, dict) else "unavailable"),
+        "schema_version": str(catalog.get("schema_version", "") if isinstance(catalog, dict) else ""),
+        "rule_count": len(rules),
+        "categories": categories,
+    }
 
 
 def matrix_catalog_aliases(row: dict[str, Any]) -> list[str]:
@@ -12066,6 +12293,8 @@ def build_product_frontend_page(
         "scenario_contract": scenario_contract,
         "field_count": product_field_count(config_payload),
         "fields_api_url": f"/api/scenario-fields?scenario={urllib.parse.quote(scenario_name)}",
+        "parameter_constraints_api_url": "/api/parameter-constraints",
+        "parameter_constraints_summary": parameter_constraints_summary(),
         "domains": PRODUCT_DOMAIN_FILTERS,
         "architecture": product_architecture_blocks(),
         "phy_families": product_phy_families(),
@@ -12168,6 +12397,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (err) { return ''; } }, set(key, value) { try { localStorage.setItem(key, value); } catch (err) {} } };
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
+  const LIVE_API_TEMPLATE = "/api/run/${id}/live";
   const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   const wired = root.fully_wired_mode || 'LLS';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13591,7 +13821,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from MySQL. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
   function parameters() { title('Parameter Catalog', 'Browser, YAML, resolved, applied, measured, source, owner, and role columns.'); const fs = state.fields; if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}${unavailable('Parameter catalog is loading from the selected scenario config and resolved field list. The page will populate automatically once both payloads arrive.')}</section>`; return; } main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}<p class="subtle">${fs.length} exposed parameters loaded from the resolved/browser config.</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${fs.map(f => `<tr><td><strong>${esc(f.label)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('')}</tbody></table></div></section>`; }
-  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/plots?run_id=${id}">View Plots</a><a class="button-link" href="/tables?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=json">Download Config JSON</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=yaml">Download Config YAML</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
+  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/outputs?run_id=${id}">Show Output</a><a class="button-link" href="/plots?run_id=${id}">View Plots</a><a class="button-link" href="/tables?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=json">Download Config JSON</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=yaml">Download Config YAML</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
   function runsTable(runList, empty, next, scrollKey) { const runRows = (runList || []).map(r => `<tr><td><strong>${esc(r.run_id)}</strong></td><td>${esc(r.run_tag || '')}<br><span class="small">${esc(r.scenario_id || r.scenario_name || '')}</span></td><td>${esc(r.profile_name || '')}</td><td>${esc(r.status_text || '')}</td><td>${esc(r.created_utc || '')}</td><td>${esc(r.updated_utc || '')}</td><td>${runActions(r, next)}</td></tr>`).join(''); return scrollWrap(`<table><thead><tr><th>Run</th><th>Tag / Scenario</th><th>Profile</th><th>Status</th><th>Created</th><th>Updated</th><th>Options</th></tr></thead><tbody>${runRows || `<tr><td colspan="7">${unavailable(empty)}</td></tr>`}</tbody></table>`, {className:'page-table', scrollKey: scrollKey || 'runs-table'}); }
   function runsPage() { title('Runs', 'MySQL-backed runs with plot, table, compare, and delete actions.'); const allRuns = state.runs || []; main.innerHTML = `<section class="panel"><h3>Runs</h3><p class="subtle">${allRuns.length} run records loaded from MySQL. Use Plots or Tables to open a dedicated viewer for any selected run.</p><div class="toolbar"><a class="button-link" href="/plots">Plots</a><a class="button-link" href="/tables">Tables</a><a class="button-link" href="/compare">Compare Runs</a></div><div id="recentRunsTable">${runsTable(allRuns, 'No runs are available from MySQL.', '/runs', 'recent-runs-table')}</div></section>`; }
   function previousRunsPage() { runsPage(); }
@@ -17246,6 +17476,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     limit = 50
                 self.respond_json({"runs": fetch_runs(limit=limit, run_tag=params.get("run_tag", [None])[0])})
                 return
+            if parsed.path == "/api/parameter-constraints":
+                self.respond_json(load_parameter_constraints_catalog())
+                return
             if parsed.path == "/api/scenario-fields":
                 scenarios = list_scenarios()
                 scenario_name = params.get("scenario", [DEFAULT_SCENARIO])[0]
@@ -17259,6 +17492,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "field_count": len(fields),
                         "fields": fields,
                         "source_chain": source_chain,
+                        "parameter_constraints_api_url": "/api/parameter-constraints",
                     }
                 )
                 return
@@ -17281,6 +17515,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "scenario_contract": scenario_launch_contract(config_payload, scenario_name),
                         "field_count": product_field_count(config_payload),
                         "source_chain": source_chain,
+                        "parameter_constraints_api_url": "/api/parameter-constraints",
+                        "parameter_constraints_summary": parameter_constraints_summary(),
                     }
                 )
                 return
@@ -17630,20 +17866,59 @@ def detect_lan_ipv4_addresses() -> list[str]:
     return addresses
 
 
+def dashboard_url_for_host(host_or_url: str, actual_port: int) -> str:
+    token = str(host_or_url or "").strip().rstrip("/")
+    if not token:
+        return f"http://127.0.0.1:{actual_port}/"
+    if token.lower().startswith(("http://", "https://")):
+        try:
+            parsed = urllib.parse.urlsplit(token)
+        except Exception:
+            return f"http://{token}:{actual_port}/"
+        netloc = parsed.netloc or parsed.path
+        try:
+            has_port = parsed.port is not None
+        except Exception:
+            has_port = False
+        host_part = netloc.rsplit("@", 1)[-1]
+        if not has_port and ":" not in host_part:
+            netloc = f"{netloc}:{actual_port}"
+        path = parsed.path if parsed.path and parsed.path != netloc else "/"
+        return urllib.parse.urlunsplit((parsed.scheme or "http", netloc, path or "/", "", ""))
+    try:
+        parsed_host = urllib.parse.urlsplit(f"//{token}")
+        if parsed_host.port is not None:
+            return f"http://{token}/"
+    except Exception:
+        pass
+    return f"http://{token}:{actual_port}/"
+
+
+def is_loopback_dashboard_host(bind_host: str) -> bool:
+    token = str(bind_host or "").strip().lower()
+    return token == "localhost" or token.startswith("127.") or token in {"::1", "[::1]"}
+
+
 def resolve_dashboard_urls(bind_host: str, actual_port: int, public_host: str) -> tuple[str, str, list[str]]:
     local_url = f"http://127.0.0.1:{actual_port}/"
     lan_urls = [f"http://{addr}:{actual_port}/" for addr in detect_lan_ipv4_addresses()]
     bind_host = str(bind_host or "").strip()
     public_host = str(public_host or "").strip()
     if public_host:
-        intranet_url = f"http://{public_host}:{actual_port}/"
-    elif bind_host.startswith("127.") or bind_host.lower() == "localhost":
+        intranet_url = dashboard_url_for_host(public_host, actual_port)
+    elif is_loopback_dashboard_host(bind_host):
         intranet_url = local_url
     elif bind_host in {"0.0.0.0", "::", ""}:
         intranet_url = lan_urls[0] if lan_urls else local_url
     else:
-        intranet_url = f"http://{bind_host}:{actual_port}/"
+        intranet_url = dashboard_url_for_host(bind_host, actual_port)
     return local_url, intranet_url, lan_urls
+
+
+def dashboard_browser_url(bind_host: str, local_url: str, intranet_url: str, public_host: str = "") -> str:
+    if str(public_host or "").strip():
+        return intranet_url
+    return local_url if is_loopback_dashboard_host(bind_host) else intranet_url
 
 
 def resolve_server_backend(requested_backend: str) -> str:
@@ -17762,10 +18037,12 @@ def main() -> int:
     server_backend = resolve_server_backend(args.server)
     actual_port = int(args.port)
     local_url, intranet_url, lan_urls = resolve_dashboard_urls(args.host, actual_port, args.public_host)
+    browser_url = dashboard_browser_url(args.host, local_url, intranet_url, args.public_host)
     write_dashboard_listener_file(args.host, actual_port, local_url, intranet_url, lan_urls)
     print(f"6G LLS dashboard listening on {intranet_url}")
     print(f"Local URL    : {local_url}")
     print(f"Intranet URL : {intranet_url}")
+    print(f"Browser URL  : {browser_url}")
     print(f"HTTP backend : {server_backend}")
     for idx, lan_url in enumerate(lan_urls[:5], start=1):
         print(f"LAN URL {idx}    : {lan_url}")
@@ -17780,7 +18057,7 @@ def main() -> int:
         ).strip()
     )
     if not args.no_browser:
-        webbrowser.open(local_url)
+        webbrowser.open(browser_url)
     if server_backend == "waitress":
         try:
             from waitress import serve as waitress_serve

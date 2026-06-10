@@ -2538,8 +2538,8 @@ for sweepIdx = 1:numel(snrGrid)
                 "Coupled UL queued grant lookup complete: sweep=%d/%d slot=%d/%d due_grants=%d pending_grants=%d.", ...
                 round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
                 numel(ulGrants), numel(pendingULGrants));
+            runtimeState = localRecordQueuedULScheduleForCurrentSlot(runtimeState, ulGrants);
             if ~isempty(ulGrants)
-                runtimeState = localRecordQueuedULScheduleForCurrentSlot(runtimeState, ulGrants);
                 [runtimeState, ulTrials, ulConstT, ulStates] = localExecuteCoupledDirectionBatch( ...
                     runtimeState, cfg, runFolder, multiUser, userCfg, ulGrants, "UL", snrVal, absoluteFrame, ulStates, ...
                     ulTrials, dlTrials, ulConstT, dlConstT, ulTablePath, dlTablePath, ulConstellationPath, dlConstellationPath, ...
@@ -2682,19 +2682,25 @@ end
 
 function state = localRecordQueuedULScheduleForCurrentSlot(state, grants)
 if ~(isstruct(grants) && ~isempty(grants))
-    return;
+    grants = repmat(struct(), 0, 1);
 end
 ueIdx = arrayfun(@(g) double(sixgr.util.structGet(g, "UEIndex", NaN)), grants(:));
 ueIdx = ueIdx(isfinite(ueIdx));
+queueBitsByUE = double(sixgr.util.structGet(state, "ULQueueBits", 0));
+if isempty(ueIdx)
+    activeUsers = sum(isfinite(queueBitsByUE(:)) & queueBitsByUE(:) > 0);
+else
+    activeUsers = numel(unique(ueIdx));
+end
 info = struct( ...
     "Direction", "UL", ...
-    "ActiveUsers", numel(unique(ueIdx)), ...
+    "ActiveUsers", activeUsers, ...
     "GrantedUsers", numel(unique(ueIdx)), ...
     "GrantCount", numel(grants), ...
-    "QueueBits", sum(double(sixgr.util.structGet(state, "ULQueueBits", 0)), "omitnan"));
+    "QueueBits", sum(queueBitsByUE, "omitnan"));
 state.LastULGrantCount = numel(grants);
 state.LastULGrantedUsers = numel(unique(ueIdx));
-state.LastULActiveUsers = numel(unique(ueIdx));
+state.LastULActiveUsers = activeUsers;
 state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceScheduleRuntime(state, "UL", info);
 end
 
@@ -6108,10 +6114,11 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'AppliedPrecoderPMIApplicationSource','AppliedPrecoderPMITruthClassification', ...
     'MCSAuthority','ModulationAuthority','GrantOperatingPointSource','AppliedOperatingPointSource', ...
     'PrecodingNumPorts','PrecodingNumLayers','PrecodingMatrixRows','PrecodingMatrixCols', ...
-    'FalseAlarmFlag','BlockingFlag','BlindDecodeCount','AvailableCCECount','UsedCCECount', ...
+    'FalseAlarmFlag','NoiseFalseAlarmFlag','CollisionFalseAlarmFlag','FalseAlarmClassification','BlockingFlag','BlindDecodeCount','AvailableCCECount','UsedCCECount', ...
     'NonOverlappedCCEUsage','AggregationLevel','DCISize_bits','ControlCapacityBits', ...
     'ControlCapacityUtilization','CORESETUtilization','ControlLatency_ms', ...
-    'ChannelGain_dB','NoiseVariance','NoiseVarStatus','NoiseVarSource','NoiseVarReason','NoiseVarStrictFailure', ...
+    'ChannelGain_dB','NoiseVariance','DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
+    'NoiseVarStatus','NoiseVarSource','NoiseVarReason','NoiseVarStrictFailure', ...
     'ReceiverUsable','DecodeAttempted','DecodeUsable','DetectionAttempted','DetectionUsable', ...
     'MeasurementAttempted','MeasurementUsable','FailureReason','TimingOffset_samples','TimingAdvance_samples','TimingAdvance_us','RankEstimate', ...
     'ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
@@ -6206,7 +6213,7 @@ for i = 1:numel(vars)
                             'CQIDerivedModulation','LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy', ...
                             'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
-                            'NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason', ...
+                            'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason', ...
                             'ConfiguredSNRSource','SNRValueRole','ReceiverHestSINRSource','DecoderTruthProxySINRSource','SINRValueRole','SINRSource', ...
                             'MeasuredTrialSINRSource','LargeScaleSINRSource','ServingRSRPSource','CSI_RSRPSource', ...
                             'AppliedLargeScaleGainSource','ChannelComplianceMode','PathlossModelSource','PathlossComplianceStatus', ...
@@ -6885,6 +6892,9 @@ for k = 1:nTrials
         r.MissedDetection = logical(sixgr.util.structGet(out, "MissedDetection", ~detected));
         r.FalseAlarm = logical(sixgr.util.structGet(out, "FalseAlarm", false));
         r.FalseAlarmFlag = double(sixgr.util.structGet(out, "FalseAlarmFlag", NaN));
+        r.NoiseFalseAlarmFlag = double(sixgr.util.structGet(out, "NoiseFalseAlarmFlag", NaN));
+        r.CollisionFalseAlarmFlag = double(sixgr.util.structGet(out, "CollisionFalseAlarmFlag", NaN));
+        r.FalseAlarmClassification = string(sixgr.util.structGet(out, "FalseAlarmClassification", ""));
         r.PreambleIndex = localFirstFinite(sixgr.util.structGet(out, "PreambleIndex", NaN), NaN);
         r.RequestedPreambleIndex = localFirstFinite(sixgr.util.structGet(out, "RequestedPreambleIndex", NaN), NaN);
         r.DetectedPreambleIndex = localFirstFinite(sixgr.util.structGet(out, "DetectedPreambleIndex", NaN), NaN);
@@ -6900,6 +6910,10 @@ for k = 1:nTrials
         r.TimingAdvance_us = double(sixgr.util.structGet(out, "TimingAdvance_us", NaN));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(out, "ConfiguredSNR_dB", snr_dB));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
+        r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "DesiredSignalPowerBeforeNoise", NaN));
+        r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "CompositeSignalPowerBeforeNoise", NaN));
+        r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(out, "AppliedNoiseSNR_dB", NaN));
+        r.NoiseVarianceSource = string(sixgr.util.structGet(out, "NoiseVarianceSource", ""));
         r.ChannelModelApplied = string(sixgr.util.structGet(out, "ChannelModelApplied", ""));
         r.ChannelFadingApplied = logical(sixgr.util.structGet(out, "ChannelFadingApplied", false));
         r.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(out, "AppliedLargeScaleGain_dB", NaN));
@@ -6995,6 +7009,10 @@ for k = 1:nTrials
         r.DetectionMetric = 1 - (double(be) / max(double(bt), 1));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+        r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+        r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+        r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+        r.NoiseVarianceSource = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
         r.ChannelModelApplied = string(sixgr.util.structGet(replay, "ChannelModelApplied", ""));
         r.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
         r.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
@@ -7189,9 +7207,13 @@ replay.ChannelModelApplied = string(sixgr.util.structGet(cfg, "channel.model", r
 replay.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false)) || ...
     logical(sixgr.util.structGet(state, "UseFading", false));
 desiredWaveform = y;
-[y, nVar] = localPDCCHAddAwgnFromReplay(y, replay, desiredWaveform);
+[y, nVar, noiseInfo] = localPDCCHAddAwgnFromReplay(y, replay, desiredWaveform, txInfo);
 replay.InjectedNoiseVariance = double(nVar);
-if isfinite(nVar) && nVar > 0
+noiseFields = fieldnames(noiseInfo);
+for ni = 1:numel(noiseFields)
+    replay.(noiseFields{ni}) = noiseInfo.(noiseFields{ni});
+end
+if isfinite(nVar) && nVar > 0 && strlength(strtrim(string(sixgr.util.structGet(replay, "NoiseVarianceSource", "")))) == 0
     replay.NoiseVarianceSource = "pdcch_replay_reference_waveform_awgn";
 end
 noiseOnlyWave = localPDCCHNoiseOnlyWaveformLike(y, nVar);
@@ -7217,10 +7239,12 @@ else
 end
 end
 
-function [y, nVar] = localPDCCHAddAwgnFromReplay(x, replay, referenceWaveform)
+function [y, nVar, noiseInfo] = localPDCCHAddAwgnFromReplay(x, replay, referenceWaveform, txInfo)
+noiseInfo = localPDCCHNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", replay);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform);
+    nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
+    noiseInfo = localPDCCHNoiseCalibrationInfo(x, referenceWaveform, nVar, "thermal_noise_plus_receiver_nf", replay);
     if isfinite(nVar) && nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
@@ -7231,7 +7255,8 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
+noiseInfo = localPDCCHNoiseCalibrationInfo(x, referenceWaveform, nVar, "standalone_awgn_snr_argument_post_channel_units", replay);
 if isfinite(nVar) && nVar >= 0
     if nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
@@ -7242,34 +7267,90 @@ if isfinite(nVar) && nVar >= 0
     return;
 end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
+noiseInfo = localPDCCHNoiseCalibrationInfo(x, referenceWaveform, nVar, "legacy_addAwgnComplex_last_resort", replay);
 end
 
-function nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
+function info = localPDCCHNoiseCalibrationInfo(compositeWaveform, desiredWaveform, nVar, source, replay)
+desiredPower = NaN;
+compositePower = NaN;
+if ~isempty(desiredWaveform)
+    desiredPower = mean(abs(double(desiredWaveform(:))).^2, "omitnan");
+end
+if ~isempty(compositeWaveform)
+    compositePower = mean(abs(double(compositeWaveform(:))).^2, "omitnan");
+end
+appliedSNR = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+if isfinite(desiredPower) && desiredPower > 0 && isfinite(nVar) && nVar > 0
+    appliedSNR = 10 * log10(desiredPower / nVar);
+end
+info = struct( ...
+    "DesiredSignalPowerBeforeNoise", double(desiredPower), ...
+    "CompositeSignalPowerBeforeNoise", double(compositePower), ...
+    "AppliedNoiseSNR_dB", double(appliedSNR), ...
+    "NoiseVarianceSource", char(string(source)));
+end
+
+function nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB, txInfo)
 nVar = NaN;
 snr_dB = double(snr_dB);
 if ~(isscalar(snr_dB) && isfinite(snr_dB)) || isempty(referenceWaveform)
     return;
 end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+refPower = localPDCCHUsefulOFDMReferencePower(referenceWaveform, txInfo);
 if ~(isfinite(refPower) && refPower >= 0)
     return;
 end
 nVar = refPower / max(10.^(snr_dB / 10), eps);
 end
 
-function nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform)
+function nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
 nVar = NaN;
 thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
 servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
 if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
     return;
 end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+refPower = localPDCCHUsefulOFDMReferencePower(referenceWaveform, txInfo);
 if ~(isfinite(refPower) && refPower >= 0)
     return;
 end
 relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
 nVar = refPower * 10.^(relativeNoise_dB / 10);
+end
+
+function refPower = localPDCCHUsefulOFDMReferencePower(waveform, txInfo)
+refPower = NaN;
+if isempty(waveform)
+    return;
+end
+ofdmInfo = sixgr.util.structGet(txInfo, "OFDM", struct());
+nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+cpLens = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
+if ~(isfinite(nfft) && nfft > 0 && ~isempty(cpLens))
+    refPower = mean(abs(double(waveform(:))).^2, "omitnan");
+    return;
+end
+cpLens = cpLens(:);
+idx = [];
+offset = 0;
+nSamp = size(waveform, 1);
+while offset < nSamp
+    for s = 1:numel(cpLens)
+        cp = max(0, round(double(cpLens(s))));
+        useful = offset + cp + (1:round(nfft));
+        useful = useful(useful <= nSamp);
+        idx = [idx useful]; %#ok<AGROW>
+        offset = offset + cp + round(nfft);
+        if offset >= nSamp
+            break;
+        end
+    end
+end
+if isempty(idx)
+    refPower = mean(abs(double(waveform(:))).^2, "omitnan");
+else
+    refPower = mean(abs(double(waveform(idx, :))).^2, "all", "omitnan");
+end
 end
 
 function noiseOnlyWave = localPDCCHNoiseOnlyWaveformLike(referenceWaveform, nVar)
@@ -7368,6 +7449,15 @@ end
 end
 
 function aggLevel = localResolveGrantPDCCHAggregationLevelForCapacity(cfg, snr_dB, grantContext)
+grantAggLevel = double(sixgr.util.structGet(grantContext, "PDCCHAggregationLevel", NaN));
+policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
+grantAggAuthority = lower(strtrim(string(sixgr.util.structGet(grantContext, "PDCCHAggregationLevelAuthority", ""))));
+trustedGrantAL = any(grantAggAuthority == ["runtime_pdcch_decode", "measured_pdcch_decode", "explicit_grant_control"]);
+if isfinite(grantAggLevel) && any(grantAggLevel == [1 2 4 8 16]) && ...
+        (trustedGrantAL || policy == "configured_scheduler_level")
+    aggLevel = double(grantAggLevel);
+    return;
+end
 cfgTrial = localResolvePDCCHTrialConfig(cfg, snr_dB, 1, 1, grantContext);
 aggLevel = double(sixgr.util.structGet(cfgTrial, "phy.pdcch.aggregationLevel", NaN));
 if ~(isfinite(aggLevel) && any(aggLevel == [1 2 4 8 16]))
@@ -7629,6 +7719,10 @@ for k = 1:nTrials
         r.FailureReason = string(sixgr.util.structGet(out, "FailureReason", ""));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(out, "ConfiguredSNR_dB", snr_dB));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
+        r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "DesiredSignalPowerBeforeNoise", NaN));
+        r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "CompositeSignalPowerBeforeNoise", NaN));
+        r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(out, "AppliedNoiseSNR_dB", NaN));
+        r.NoiseVarianceSource = string(sixgr.util.structGet(out, "NoiseVarianceSource", ""));
         r.ReceiverHestSINR_dB = double(sixgr.util.structGet(out, "ReceiverHestSINR_dB", NaN));
         r.ReceiverHestSINRSource = string(sixgr.util.structGet(out, "ReceiverHestSINRSource", ""));
         r.ReceiverHestSINRValueRole = string(sixgr.util.structGet(out, "ReceiverHestSINRValueRole", ""));
@@ -7712,6 +7806,10 @@ for k = 1:nTrials
         r.NoiseVarStrictFailure = logical(sixgr.util.structGet(outSRS, "NoiseVarStrictFailure", false));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(outSRS, "ConfiguredSNR_dB", snr_dB));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(outSRS, "AppliedAWGNSNR_dB", NaN));
+        r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(outSRS, "DesiredSignalPowerBeforeNoise", NaN));
+        r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(outSRS, "CompositeSignalPowerBeforeNoise", NaN));
+        r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(outSRS, "AppliedNoiseSNR_dB", NaN));
+        r.NoiseVarianceSource = string(sixgr.util.structGet(outSRS, "NoiseVarianceSource", ""));
         r.ChannelModelApplied = string(sixgr.util.structGet(outSRS, "ChannelModelApplied", ""));
         r.ChannelFadingApplied = logical(sixgr.util.structGet(outSRS, "ChannelFadingApplied", false));
         r.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(outSRS, "AppliedLargeScaleGain_dB", NaN));
@@ -7784,6 +7882,10 @@ for k = 1:nTrials
         r.TrackingEstimateSource = string(sixgr.util.structGet(out, "TrackingEstimateSource", ""));
         r.ChannelModel = char(string(sixgr.util.structGet(out, "ChannelModel", r.ChannelModel)));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
+        r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "DesiredSignalPowerBeforeNoise", NaN));
+        r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "CompositeSignalPowerBeforeNoise", NaN));
+        r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(out, "AppliedNoiseSNR_dB", NaN));
+        r.NoiseVarianceSource = string(sixgr.util.structGet(out, "NoiseVarianceSource", ""));
         r.InjectedCFO_Hz = double(sixgr.util.structGet(out, "InjectedCFO_Hz", NaN));
         r.TrueCFO_Hz = double(sixgr.util.structGet(out, "TrueCFO_Hz", r.InjectedCFO_Hz));
         r.EstimatedCFO_Hz = double(sixgr.util.structGet(out, "EstimatedCFO_Hz", NaN));
@@ -7932,6 +8034,9 @@ row.PrecodingNumLayers = NaN;
 row.PrecodingMatrixRows = NaN;
 row.PrecodingMatrixCols = NaN;
 row.FalseAlarmFlag = NaN;
+row.NoiseFalseAlarmFlag = NaN;
+row.CollisionFalseAlarmFlag = NaN;
+row.FalseAlarmClassification = "";
 row.BlockingFlag = NaN;
 row.BlindDecodeCount = NaN;
 row.AvailableCCECount = NaN;
@@ -7945,6 +8050,10 @@ row.CORESETUtilization = NaN;
 row.ControlLatency_ms = NaN;
 row.ChannelGain_dB = NaN;
 row.NoiseVariance = NaN;
+row.DesiredSignalPowerBeforeNoise = NaN;
+row.CompositeSignalPowerBeforeNoise = NaN;
+row.AppliedNoiseSNR_dB = NaN;
+row.NoiseVarianceSource = "";
 row.NoiseVarStatus = "";
 row.NoiseVarSource = "";
 row.NoiseVarReason = "";

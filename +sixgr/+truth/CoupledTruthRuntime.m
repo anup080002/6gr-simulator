@@ -334,6 +334,11 @@ methods(Static)
     function rowOut = normalizeTelemetryRowToPrototype(rowIn, prototype)
         rowOut = sixgr.truth.CoupledTruthRuntime.normalizeStructRowToPrototype(rowIn, prototype);
     end
+
+    function grant = realignGrantAMCFromMeasuredFeedbackRuntime(grant, feedback, scheduler, cfg, direction)
+        grant = sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrant( ...
+            grant, feedback, scheduler, cfg, direction);
+    end
 end
 
 methods(Static, Access=private)
@@ -697,6 +702,8 @@ methods(Static, Access=private)
                     grant.MCSIndexAuthority = "scheduler_grant";
                     grant.GrantOperatingPointSource = "scheduler_grant";
                 end
+                grant = sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrant( ...
+                    grant, feedback, scheduler, state.CfgMobility, direction);
                 grantedUsers(end + 1, 1) = double(ueIdx); %#ok<AGROW>
                 nGrant = nGrant + 1;
                 grant.DCI = scheduler.buildDCIBitfield(grant);
@@ -1705,12 +1712,16 @@ methods(Static, Access=private)
             if ~isfinite(r.RNTI)
                 r.RNTI = double(ul.RNTI);
             end
-            r.DL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.safeDivide(dl.GoodBitsSum, duration_s) / 1e6;
-            r.UL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.safeDivide(ul.GoodBitsSum, duration_s) / 1e6;
-            r.DL_BLER = 1 - sixgr.truth.CoupledTruthRuntime.safeDivide(dl.CRCSum, max(dl.Frames, 1));
-            r.UL_BLER = 1 - sixgr.truth.CoupledTruthRuntime.safeDivide(ul.CRCSum, max(ul.Frames, 1));
-            r.DL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(dl.SINRSum, max(dl.SINRCount, 1));
-            r.UL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(ul.SINRSum, max(ul.SINRCount, 1));
+            r.DL_FrameCount = double(dl.Frames);
+            r.UL_FrameCount = double(ul.Frames);
+            r.DL_CoverageStatus = sixgr.truth.CoupledTruthRuntime.directionExecutionStatus(dl.Frames);
+            r.UL_CoverageStatus = sixgr.truth.CoupledTruthRuntime.directionExecutionStatus(ul.Frames);
+            r.DL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(dl.GoodBitsSum, duration_s, dl.Frames);
+            r.UL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(ul.GoodBitsSum, duration_s, ul.Frames);
+            r.DL_BLER = sixgr.truth.CoupledTruthRuntime.directionBLER(dl.CRCSum, dl.Frames);
+            r.UL_BLER = sixgr.truth.CoupledTruthRuntime.directionBLER(ul.CRCSum, ul.Frames);
+            r.DL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(dl.SINRSum, dl.SINRCount);
+            r.UL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(ul.SINRSum, ul.SINRCount);
             r.UserThroughput_Mbps = sum([r.DL_Throughput_Mbps r.UL_Throughput_Mbps], "omitnan");
             [r.DL_HARQFailureRate, r.DL_HARQObservationCount] = ...
                 sixgr.truth.CoupledTruthRuntime.userHARQFailureMetrics(harqTimelineT, ueIdx, "DL");
@@ -2010,9 +2021,9 @@ methods(Static, Access=private)
             feedback.SINR_dB = NaN;
             feedback.PMI = NaN;
             feedback.CRI = NaN;
-            feedback.MCSIndex = 0;
-            feedback.Modulation = "QPSK";
-            feedback.TargetCodeRate = 0.12;
+            feedback.MCSIndex = NaN;
+            feedback.Modulation = "";
+            feedback.TargetCodeRate = NaN;
             feedback.RI = 1;
         end
         schedulingEligible = sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, direction);
@@ -2060,6 +2071,8 @@ methods(Static, Access=private)
         ueState.PMI = double(sixgr.util.structGet(feedback, "PMI", NaN));
         ueState.CRI = double(sixgr.util.structGet(feedback, "CRI", NaN));
         ueState.MeasuredSINR_dB = double(sixgr.util.structGet(feedback, "SINR_dB", NaN));
+        ueState.PDCCHAggregationLevel = double(sixgr.truth.CoupledTruthRuntime.resolveSchedulerPDCCHAggregationLevel( ...
+            state.CfgMobility, ueState.MeasuredSINR_dB));
         ueState.MCSIndex = double(schedulerMCSIndex);
         ueState.FeedbackMCSIndex = double(feedbackMCSIndex);
         ueState.MCSIndexAuthority = char(string(schedulerMCSAuthority));
@@ -2708,10 +2721,14 @@ methods(Static, Access=private)
         grant.ControlDecodeOk = false;
         grant.GrantControlState = char(string(reason));
         grant.ControlEligible = false;
+        resourceDeferred = any(startsWith(lower(strtrim(string(reason))), ...
+            ["control_blocked_coreset_cce_capacity_exhausted", "control_blocked_no_dl_control_symbols_in_tdd_slot"]));
         if isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(state.NumUsers)
             state.LastPDCCHStatus(ueIdx) = string(reason);
-            state.PDCCHFailureCount(ueIdx) = double(state.PDCCHFailureCount(ueIdx)) + 1;
-            state.GrantsBlockedByGatingCount(ueIdx) = double(state.GrantsBlockedByGatingCount(ueIdx)) + 1;
+            if ~resourceDeferred
+                state.PDCCHFailureCount(ueIdx) = double(state.PDCCHFailureCount(ueIdx)) + 1;
+                state.GrantsBlockedByGatingCount(ueIdx) = double(state.GrantsBlockedByGatingCount(ueIdx)) + 1;
+            end
         end
         state = sixgr.truth.CoupledTruthRuntime.updateGrantControlTrace(state, grant, direction);
     end
@@ -2983,17 +3000,19 @@ methods(Static, Access=private)
             end
         end
 
-        bootstrapProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+        bootstrapMCS = max(0, round(double(sixgr.util.structGet(state.CfgMobility, ...
+            "phy.linkAdaptation.bootstrapMCSIndex", 1))));
+        bootstrapProfile = sixgr.link.resolveMCSProfile(mcsTable, bootstrapMCS);
         feedback.CQI = 0;
         feedback.SINR_dB = NaN;
         if bootstrapProfile.Valid
             feedback.Modulation = char(string(bootstrapProfile.Modulation));
             feedback.TargetCodeRate = double(bootstrapProfile.TargetCodeRate);
-            feedback.MCSIndex = 0;
+            feedback.MCSIndex = double(bootstrapMCS);
         else
             feedback.Modulation = "QPSK";
             feedback.TargetCodeRate = 0.1171875;
-            feedback.MCSIndex = 0;
+            feedback.MCSIndex = 1;
         end
         feedback.BootstrapCQISource = "bootstrap_cqi_conservative_lab_default";
         feedback.PreviewSINR_dB = double(previewSINR_dB);
@@ -3436,6 +3455,59 @@ methods(Static, Access=private)
         scheduler.updateAfterRx(rxFeedback);
     end
 
+    function grant = applyMeasuredFeedbackAMCToGrant(grant, feedback, scheduler, cfg, direction)
+        if ~(isstruct(grant) && isstruct(feedback) && logical(sixgr.util.structGet(feedback, "Valid", false)))
+            return;
+        end
+        cqi = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(feedback, "CQI", NaN)));
+        if ~(isfinite(cqi) && cqi > 0)
+            return;
+        end
+        [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+        if ~(isfinite(mcsIndex) && mcsIndex >= 0 && isfinite(targetCodeRate) && targetCodeRate > 0)
+            return;
+        end
+        grant.CQIUsed = double(cqi);
+        grant.MCSIndex = double(round(mcsIndex));
+        grant.MCS = double(round(mcsIndex));
+        grant.Modulation = char(string(modStr));
+        grant.TargetCodeRate = double(targetCodeRate);
+        grant.MCSIndexAuthority = "feedback_cqi_derived_reference";
+        grant.GrantOperatingPointSource = "feedback_cqi_derived_reference";
+        grant.AMCMode = "cqi_table";
+
+        prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+        symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
+        if isempty(symAlloc)
+            symStart = double(sixgr.util.structGet(grant, "SymbolStart", 0));
+            nSym = double(sixgr.util.structGet(grant, "NumSymbols", NaN));
+            if isfinite(nSym) && nSym > 0
+                symAlloc = [symStart nSym];
+            end
+        end
+        nLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", 1)));
+        if isempty(prbSet) || isempty(symAlloc) || ~(isfinite(nLayers) && nLayers >= 1) || isempty(scheduler)
+            return;
+        end
+        try
+            [tbsBits, tbsBytes, nrePerPRB] = scheduler.estimateTBS( ...
+                char(string(modStr)), max(1, round(nLayers)), numel(prbSet), symAlloc, targetCodeRate, ...
+                "ForceExact", true);
+            if isfinite(tbsBits) && tbsBits > 0
+                grant.TBSBits = double(tbsBits);
+                grant.TransportBlockSize = double(tbsBits);
+                grant.TBSBytes = double(tbsBytes);
+                grant.NREPerPRB = double(nrePerPRB);
+                grant.EstimatedTBSBits = double(tbsBits);
+                grant.EstimatedTBSBytes = double(tbsBytes);
+            end
+        catch
+            % Keep the already scheduled allocation if the toolbox TBS helper
+            % cannot evaluate this exact grant shape; the MCS authority still
+            % reflects measured CQI and the PHY runner will enforce validity.
+        end
+    end
+
     function state = enqueueCSIReport(state, ueIdx, direction, row)
         report = sixgr.truth.CoupledTruthRuntime.emptyCSIReportRow();
         report.Direction = char(upper(string(direction)));
@@ -3497,6 +3569,109 @@ methods(Static, Access=private)
             budget.SymbolAllocation = [ ...
                 double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0)), ...
                 double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", symbolsPerSlot))];
+            dlWindowStart = max(0, round(double(budget.SymbolAllocation(1))));
+            dlWindowEnd = min(double(symbolsPerSlot), dlWindowStart + max(0, round(double(budget.SymbolAllocation(2)))));
+            pdcchSymbols = double(sixgr.util.structGet(state.CfgMobility, "phy.pdcch.coreset.duration", ...
+                sixgr.util.structGet(state.CfgMobility, "phy.pdcch.numSymbols", ...
+                sixgr.util.structGet(state.CfgMobility, "ctrl6gr.CORESET.DurationSymbols", 1))));
+            if ~(isscalar(pdcchSymbols) && isfinite(pdcchSymbols) && pdcchSymbols >= 0)
+                pdcchSymbols = 1;
+            end
+            pdcchRuntimeRequired = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
+            reserveCoresetSymbols = pdcchRuntimeRequired || logical(sixgr.util.structGet(state.CfgMobility, ...
+                "phy.pdcch.reserveCoresetSymbolsForData", false));
+            if reserveCoresetSymbols && pdcchSymbols > 0
+                startSym = max(dlWindowStart, ceil(pdcchSymbols));
+                startSym = min(max(0, startSym), dlWindowEnd);
+                remainingDLSymbols = max(0, dlWindowEnd - startSym);
+                budget.SymbolAllocation = [startSym remainingDLSymbols];
+                if remainingDLSymbols <= 0
+                    budget.NPRB = 0;
+                    budget.PRBSet = zeros(1, 0);
+                end
+            end
+        end
+        if logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false))
+            pdcchCCEBudget = sixgr.truth.CoupledTruthRuntime.resolveSchedulerPDCCHCCEBudget(state.CfgMobility);
+            if isfinite(pdcchCCEBudget) && pdcchCCEBudget > 0
+                defaultAL = sixgr.truth.CoupledTruthRuntime.resolveSchedulerPDCCHPlanningAggregationLevel(state.CfgMobility);
+                budget.PDCCHCCEBudget = double(pdcchCCEBudget);
+                budget.DefaultPDCCHAggregationLevel = double(defaultAL);
+                budget.MaxUEPerSlot = max(1, floor(double(pdcchCCEBudget) / max(1, double(defaultAL))));
+            end
+        end
+    end
+
+    function availCCEs = resolveSchedulerPDCCHCCEBudget(cfg)
+        freqResources = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.frequencyResources", []));
+        if isempty(freqResources)
+            freqResources = ones(1, 6);
+        end
+        duration = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.duration", 2));
+        if ~(isfinite(duration) && duration > 0)
+            availCCEs = NaN;
+            return;
+        end
+        numREG = 6 * sum(freqResources(:) ~= 0) * duration;
+        availCCEs = floor(numREG / 6);
+    end
+
+    function aggLevel = resolveSchedulerPDCCHAggregationLevel(cfg, snr_dB)
+        levels = double(sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevels", ...
+            sixgr.util.structGet(cfg, "control.aggregation_levels", ...
+            sixgr.util.structGet(cfg, "ctrl6gr.StudyAggregationLevels", ...
+            sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevel", 4)))));
+        levels = unique(levels(ismember(levels, [1 2 4 8 16])), "stable");
+        if isempty(levels)
+            levels = 4;
+        end
+        policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
+        configuredAL = double(sixgr.util.structGet(cfg, "phy.pdcch.schedulerAggregationLevel", NaN));
+        if policy == "configured_scheduler_level" && isfinite(configuredAL)
+            [~, idx] = min(abs(levels - configuredAL));
+            aggLevel = double(levels(idx));
+            return;
+        end
+        if policy == "most_robust"
+            aggLevel = max(levels);
+            return;
+        end
+        snr_dB = double(snr_dB);
+        if ~isfinite(snr_dB)
+            target = 4;
+        elseif snr_dB < 0
+            target = 16;
+        elseif snr_dB < 5
+            target = 8;
+        elseif snr_dB < 10
+            target = 4;
+        elseif snr_dB < 15
+            target = 2;
+        else
+            target = 1;
+        end
+        [~, idx] = min(abs(double(levels(:)) - double(target)));
+        aggLevel = double(levels(idx));
+    end
+
+    function aggLevel = resolveSchedulerPDCCHPlanningAggregationLevel(cfg)
+        levels = double(sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevels", ...
+            sixgr.util.structGet(cfg, "control.aggregation_levels", ...
+            sixgr.util.structGet(cfg, "ctrl6gr.StudyAggregationLevels", ...
+            sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevel", 4)))));
+        levels = unique(levels(ismember(levels, [1 2 4 8 16])), "stable");
+        if isempty(levels)
+            levels = 4;
+        end
+        policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
+        configuredAL = double(sixgr.util.structGet(cfg, "phy.pdcch.schedulerAggregationLevel", NaN));
+        if policy == "configured_scheduler_level" && isfinite(configuredAL)
+            [~, idx] = min(abs(levels - configuredAL));
+            aggLevel = double(levels(idx));
+        elseif policy == "most_robust"
+            aggLevel = double(max(levels));
+        else
+            aggLevel = double(min(levels));
         end
     end
 
@@ -5090,6 +5265,35 @@ methods(Static, Access=private)
         end
     end
 
+    function mbps = directionThroughputMbps(goodBits, duration_s, frames)
+        if ~(isfinite(double(frames)) && double(frames) > 0)
+            mbps = NaN;
+            return;
+        end
+        mbps = sixgr.truth.CoupledTruthRuntime.safeDivide(goodBits, duration_s) / 1e6;
+    end
+
+    function bler = directionBLER(crcSum, frames)
+        if ~(isfinite(double(frames)) && double(frames) > 0)
+            bler = NaN;
+            return;
+        end
+        passRate = sixgr.truth.CoupledTruthRuntime.safeDivide(crcSum, frames);
+        if isfinite(passRate)
+            bler = 1 - passRate;
+        else
+            bler = NaN;
+        end
+    end
+
+    function status = directionExecutionStatus(frames)
+        if isfinite(double(frames)) && double(frames) > 0
+            status = "executed";
+        else
+            status = "not_executed";
+        end
+    end
+
     function row = emptyDirectionStatRow()
         row = struct("RNTI", NaN, "Frames", 0, "CRCSum", 0, "GoodBitsSum", 0, "SINRSum", 0, "SINRCount", 0);
     end
@@ -5562,6 +5766,8 @@ methods(Static, Access=private)
     function row = emptyUserPerformanceRow()
         row = struct( ...
             "UEIndex", NaN, "RNTI", NaN, ...
+            "DL_FrameCount", NaN, "UL_FrameCount", NaN, ...
+            "DL_CoverageStatus", "", "UL_CoverageStatus", "", ...
             "DL_Throughput_Mbps", NaN, "UL_Throughput_Mbps", NaN, ...
             "DL_BLER", NaN, "UL_BLER", NaN, ...
             "DL_MeanMeasuredSINR_dB", NaN, "UL_MeanMeasuredSINR_dB", NaN, ...

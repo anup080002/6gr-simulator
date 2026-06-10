@@ -128,6 +128,7 @@
       "channel_state_information_mode": {"required": true, "type": "string", "allowed_values": ["none", "CQI", "PMI", "RI", "CRI", "PMI+CQI", "PMI+CQI+RI", "PMI+CQI+RI+CRI"]},
       "pmi_codebook_mode": {"required": true, "type": "string", "allowed_values": ["type1_su_mimo", "type2_mu_mimo", "etype2_candidate", "noncodebook"]},
       "l1_sinr_policy": {"required": true, "type": "string"},
+      "max_trusted_reference_sinr_db": {"required": false, "type": "number", "min": 0},
       "rsrp_policy": {"required": true, "type": "string"}, "delta_mcs_policy": {"required": true, "type": "string"},
       "dmrs_port_selection_policy": {"required": true, "type": "string"}, "report_trigger": {"required": true, "type": "string"},
       "report_periodicity": {"required": true, "type": "string"}, "report_payload_mode": {"required": true, "type": "string"},

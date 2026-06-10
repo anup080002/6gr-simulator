@@ -55,6 +55,8 @@ cfg.RepetitionCount = max(1, round(double(sixgr.util.structGet(ctrl, "Repetition
 cfg.EnableTransmitDiversity = logical(sixgr.util.structGet(ctrl, "EnableTransmitDiversity", false));
 cfg.DiversityMode = char(string(sixgr.util.structGet(ctrl, "DiversityMode", "single_port_baseline")));
 cfg.AllowStubModes = logical(sixgr.util.structGet(ctrl, "AllowStubModes", false));
+cfg.AllowUndefined6GNumerologyCandidateLimit = logical(sixgr.util.structGet(ctrl, ...
+    "AllowUndefined6GNumerologyCandidateLimit", false));
 cfg.PrecoderGranularity = char(string(sixgr.util.structGet(ctrl, "PrecoderGranularity", "none")));
 cfg.OutputDir = char(string(sixgr.util.structGet(ctrl, "OutputDir", opts.RunFolder)));
 cfg.Seed = double(sixgr.util.structGet(ctrl, "Seed", sixgr.util.structGet(fullCfg, "run.seed", 1)));
@@ -64,6 +66,9 @@ cfg.CRCPolynomial = char(string(sixgr.util.structGet(ctrl, "CRCPolynomial", "24C
 cfg.CRCScramblingEnabled = logical(sixgr.util.structGet(ctrl, "CRCScramblingEnabled", true));
 cfg.PayloadScramblingEnabled = logical(sixgr.util.structGet(ctrl, "PayloadScramblingEnabled", true));
 cfg.PayloadSequenceInit = double(sixgr.util.structGet(ctrl, "PayloadSequenceInit", cfg.CellID));
+cfg.PDCCHScramblingID = double(sixgr.util.structGet(ctrl, "PDCCHScramblingID", ...
+    sixgr.util.structGet(ctrl, "CORESETScramblingID", ...
+    sixgr.util.structGet(ctrl, "DataScramblingIdentityPDCCH", cfg.PayloadSequenceInit))));
 cfg.DMRSScramblingID = double(sixgr.util.structGet(ctrl, "DMRSScramblingID", cfg.CellID));
 cfg.WaveformMode = char(string(sixgr.util.structGet(ctrl, "WaveformMode", "full_ofdm")));
 cfg.RepetitionCombiningMode = char(string(sixgr.util.structGet(ctrl, "RepetitionCombiningMode", "coherent")));

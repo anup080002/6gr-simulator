@@ -73,7 +73,9 @@ end
 txGrid(srsInd) = srsSym;
 
 % OFDM modulation
-[waveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
+[windowingSamples, windowingInfo] = sixgr.phy.waveform.resolveOFDMWindowing(cfg, carrier);
+[waveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid, ...
+    "Windowing", double(windowingSamples));
 
 % Outputs
 tex = struct();
@@ -83,11 +85,15 @@ tex.Carrier = carrier;
 tex.SRS = srs;
 tex.SRSIndices = srsInd;
 tex.SRSSymbols = srsSym;
+tex.OFDMWindowingSamples = double(windowingSamples);
+tex.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
+tex.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
 
 info = struct();
 info.CarrierInfo = cinfo;
 info.SRSInfo = srsInfo;
 info.OFDMInfo = ofdmInfo;
+info.OFDMWindowing = windowingInfo;
 
 tx = tex;
 end

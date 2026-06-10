@@ -5505,8 +5505,8 @@ def _specialized_chart_materialization(
         if power_chart is not None:
             return power_chart
     if chart_name in {
-        "configured SNR vs applied AWGN SNR vs measured SINR vs large-scale SINR",
-        "configured vs applied vs measured SNR/SINR comparison",
+        "applied AWGN SNR vs measured runtime SINR comparison",
+        "applied vs measured runtime SNR/SINR comparison",
         "ServingRSRP / RSRP / CSI-RSRP trends",
         "CQI / PMI / RI / CRI / SSBRI trends",
         "CQI-to-MCS mapping plot",
@@ -5522,13 +5522,11 @@ def _specialized_chart_materialization(
             ["reports/csv/live_link_adaptation_input_table.csv", "reports/csv/table_cqi_pmi_ri.csv", "reports/csv/live_rsrp_serving_trace.csv"],
         )
         if la_rows:
-            if chart_name in {"configured SNR vs applied AWGN SNR vs measured SINR vs large-scale SINR", "configured vs applied vs measured SNR/SINR comparison"}:
+            if chart_name in {"applied AWGN SNR vs measured runtime SINR comparison", "applied vs measured runtime SNR/SINR comparison"}:
                 series_specs = [
-                    ("Configured SNR", "ConfiguredSNR_dB"),
                     ("Applied AWGN SNR", "AppliedAWGNSNR_dB"),
                     ("Measured SINR", "MeasuredTrialSINR_dB"),
                     ("Measured wideband SINR", "MeasuredWidebandSINR_dB"),
-                    ("Large-scale SINR", "LargeScaleSINR_dB"),
                 ]
                 series: list[dict[str, Any]] = []
                 csv_rows: list[dict[str, Any]] = []
@@ -5548,12 +5546,12 @@ def _specialized_chart_materialization(
                 if series:
                     return {
                         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot_or_sample", "series_name", "metric_value_db", "source_table_logical_path"], csv_rows),
-                        "img_bytes": _render_multi_series_svg(chart_name, "Configured, applied, and measured quality metrics are kept separate and plotted directly from runtime export fields.", series, [f"rows={len(la_rows)}"], x_label="Slot / sample", y_label="dB"),
+                        "img_bytes": _render_multi_series_svg(chart_name, "Runtime-applied noise calibration and measured SINR are plotted from execution export fields; configured and large-scale preview values are excluded from this quality chart.", series, [f"rows={len(la_rows)}"], x_label="Slot / sample", y_label="dB"),
                         "csv_status": "specialized_runtime_measurement_dataset",
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": la_path,
                         "source_row_count": len(csv_rows),
-                        "note": "Comparison chart derived from truthful configured/applied/measured quality fields.",
+                        "note": "Comparison chart derived only from runtime-applied noise calibration and measured SINR fields; configured, proxy, and large-scale preview values are not charted as quality.",
                     }
             if chart_name == "ServingRSRP / RSRP / CSI-RSRP trends":
                 rsrp_rows = la_rows
@@ -5659,7 +5657,7 @@ def _specialized_chart_materialization(
                         "note": "Selected-versus-derived MCS matrix derived from runtime link-adaptation rows.",
                     }
             if chart_name == "quality-vs-selected-MCS mismatch plot":
-                pairs = [(float(quality), float(mcs)) for row in la_rows for quality, mcs in [(_row_float(row, "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "DecoderTruthProxySINR_dB", "LargeScaleSINR_dB"), _row_float(row, "MCSIndex"))] if quality is not None and mcs is not None]
+                pairs = [(float(quality), float(mcs)) for row in la_rows for quality, mcs in [(_row_float(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB"), _row_float(row, "MCSIndex"))] if quality is not None and mcs is not None]
                 if pairs:
                     csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label="MeasuredQuality_dB", y_label="SelectedMCS", chart_name=chart_name, run_id=run_id, source_path=la_path)
                     return {
@@ -5669,14 +5667,14 @@ def _specialized_chart_materialization(
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": la_path,
                         "source_row_count": len(pairs),
-                        "note": "Mismatch/trend plot derived from measured quality and selected MCS.",
+                        "note": "Mismatch/trend plot derived only from measured trial SINR and selected MCS; proxy, configured, and large-scale SINR values are not used as chart fallbacks.",
                     }
             if chart_name in {"per-beam quality plot", "per-layer quality plot"}:
                 field_name = "BeamIndex" if chart_name == "per-beam quality plot" else "LayerIndex"
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in la_rows:
                     group_value = _row_float(row, field_name, "SelectedBeamIndex" if field_name == "BeamIndex" else "Layers")
-                    quality = _row_float(row, "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "DecoderTruthProxySINR_dB", "LargeScaleSINR_dB")
+                    quality = _row_float(row, "MeasuredTrialSINR_dB", "MeasuredSINR_dB")
                     if group_value is None or quality is None:
                         continue
                     grouped[int(round(group_value))].append(float(quality))
@@ -5691,7 +5689,7 @@ def _specialized_chart_materialization(
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": la_path,
                         "source_row_count": len(csv_rows),
-                        "note": "Grouped quality chart derived from runtime beam/layer identifiers when exported.",
+                        "note": "Grouped quality chart derived from measured trial SINR plus runtime beam/layer identifiers; proxy, configured, and large-scale SINR values are not used as chart fallbacks.",
                     }
     if chart_name in {"BS/sector/UE topology scatter plot", "serving cell map"}:
         site_path, site_rows = _first_available_rows(existing, fetch_artifact_bytes, ["reports/csv/sites.csv"])

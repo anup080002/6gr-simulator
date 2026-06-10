@@ -91,10 +91,17 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             if ~isfinite(maxUE) || maxUE <= 0
                 maxUE = numel(ueIdx);
             end
+            if isfield(budget, 'MaxUEPerSlot') && ~isempty(budget.MaxUEPerSlot)
+                budgetMaxUE = double(budget.MaxUEPerSlot);
+                if isfinite(budgetMaxUE) && budgetMaxUE > 0
+                    maxUE = min(maxUE, floor(budgetMaxUE));
+                end
+            end
             maxUE = min(maxUE, numel(ueIdx));
             for t = 1:numel(ueIdx)
                 obj.prewarmUEAverage(ueStates(ueIdx(t)), maxUE);
             end
+            [controlBudgetActive, controlCCERemaining] = localPDCCHCCEBudget(budget);
             maxGrantsEst = maxUE + numel(ueIdx);
             grants = repmat(tmpl, maxGrantsEst, 1);
             nGrant = 0;
@@ -113,6 +120,10 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     end
                     retx = obj.HARQ.peekRetx(rnti);
                     if isempty(retx) || cursor > nPRBAvail
+                        continue;
+                    end
+                    neededCCE = localUEPDCCHCCE(ueStates(k), budget);
+                    if controlBudgetActive && neededCCE > controlCCERemaining
                         continue;
                     end
                     g = localNormalizeGrant(retx.LastGrant, tmpl, obj.Direction, slot);
@@ -137,6 +148,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     end
                     g.HARQ = retx.HARQ;
                     g.CQIUsed = double(sixgr.util.structGet(g, "CQIUsed", localUECQI(ueStates(k))));
+                    g.PDCCHAggregationLevel = double(neededCCE);
                     g.DAI = 1;
                     g.K1 = k1;
                     g.K2 = k2;
@@ -159,6 +171,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                         grants = [grants; repmat(tmpl, max(32, round(0.5*numel(grants))+1), 1)]; %#ok<AGROW>
                     end
                     grants(nGrant) = g;
+                    if controlBudgetActive
+                        controlCCERemaining = max(0, controlCCERemaining - neededCCE);
+                    end
 
                     if cursor > nPRBAvail
                         break;
@@ -220,6 +235,10 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 end
 
                 bufB = localUEBufferByFlag(ueStates(k), isDL);
+                neededCCE = localUEPDCCHCCE(ueStates(k), budget);
+                if controlBudgetActive && neededCCE > controlCCERemaining
+                    continue;
+                end
                 candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
                 plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufB);
                 if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
@@ -257,8 +276,11 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.CQITable = char(string(plan.CQITable));
                 g.AMCMode = char(string(plan.AMCMode));
                 g.QueueLimited = logical(plan.QueueLimited);
+                g.QueuePaddingBits = double(sixgr.util.structGet(plan, "QueuePaddingBits", 0));
+                g.QueuePaddingBytes = double(sixgr.util.structGet(plan, "QueuePaddingBytes", 0));
                 g.HARQ = harqInfo;
                 g.CQIUsed = localUECQI(ueStates(k));
+                g.PDCCHAggregationLevel = double(neededCCE);
                 g.MCSIndex = double(plan.MCSIndex);
                 g.DAI = 1;
                 g.K1 = k1;
@@ -283,6 +305,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     grants = [grants; repmat(tmpl, max(32, round(0.5*numel(grants))+1), 1)]; %#ok<AGROW>
                 end
                 grants(nGrant) = g;
+                if controlBudgetActive
+                    controlCCERemaining = max(0, controlCCERemaining - neededCCE);
+                end
 
                 servedCount = servedCount + 1;
                 servedRNTI(servedCount) = rnti;
@@ -327,9 +352,12 @@ g.MCSTable = 'qam64_table1';
 g.CQITable = 'table1';
 g.AMCMode = 'fixed_modulation';
 g.QueueLimited = false;
+g.QueuePaddingBits = 0;
+g.QueuePaddingBytes = 0;
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 0;
 g.CQIUsed = 0;
+g.PDCCHAggregationLevel = NaN;
 g.DAI = 1;
 g.K1 = 4;
 g.K2 = 1;
@@ -341,6 +369,22 @@ g.BufferBytesBefore = 0;
 g.BufferBytesAfter = 0;
 g.GrantReason = "new_data_rr";
 g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"RIV",0,"RBStart",0,"RBLength",0);
+end
+
+function [active, remainingCCE] = localPDCCHCCEBudget(budget)
+remainingCCE = double(sixgr.util.structGet(budget, "PDCCHCCEBudget", NaN));
+active = isfinite(remainingCCE) && remainingCCE > 0;
+if ~active
+    remainingCCE = inf;
+end
+end
+
+function neededCCE = localUEPDCCHCCE(ue, budget)
+neededCCE = double(sixgr.util.structGet(ue, "PDCCHAggregationLevel", ...
+    sixgr.util.structGet(budget, "DefaultPDCCHAggregationLevel", 1)));
+if ~(isfinite(neededCCE) && any(neededCCE == [1 2 4 8 16]))
+    neededCCE = 1;
+end
 end
 
 function g = localNormalizeGrant(gIn, tmpl, direction, slot)

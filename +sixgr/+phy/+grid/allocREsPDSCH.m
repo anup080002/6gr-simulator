@@ -47,6 +47,7 @@ opts.RNTI = [];
 opts.NumLayers = [];
 opts.Modulation = "";
 opts.MappingType = "";
+opts.MappingTypeExplicit = false;
 
 if mod(numel(varargin),2) ~= 0
     error("sixgr:allocREsPDSCH:InvalidNV", "Name-Value arguments must come in pairs.");
@@ -74,6 +75,7 @@ for i = 1:2:numel(varargin)
             opts.Modulation = string(val);
         case "mappingtype"
             opts.MappingType = string(val);
+            opts.MappingTypeExplicit = true;
     end
 end
 
@@ -99,12 +101,17 @@ rnti = 1;
 mapType = "A";
 prbSetCfg = [];
 symAllocCfg = [0 14];
+mapTypeExplicit = false;
 
 if isstruct(cfg)
     modStr = string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", modStr));
     numLayers = double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", numLayers));
     rnti = double(sixgr.util.structGet(cfg, "phy.pdsch.RNTI", rnti));
-    mapType = string(sixgr.util.structGet(cfg, "phy.pdsch.mappingType", mapType));
+    rawMapType = string(sixgr.util.structGet(cfg, "phy.pdsch.mappingType", ""));
+    if strlength(strtrim(rawMapType)) > 0
+        mapType = rawMapType;
+        mapTypeExplicit = true;
+    end
     prbSetCfg = sixgr.util.structGet(cfg, "phy.pdsch.prbSet", prbSetCfg);
     symAllocCfg = sixgr.util.structGet(cfg, "phy.pdsch.symbolAllocation", symAllocCfg);
 end
@@ -113,7 +120,10 @@ end
 if strlength(opts.Modulation) > 0, modStr = opts.Modulation; end
 if ~isempty(opts.NumLayers), numLayers = double(opts.NumLayers); end
 if ~isempty(opts.RNTI), rnti = double(opts.RNTI); end
-if strlength(opts.MappingType) > 0, mapType = opts.MappingType; end
+if strlength(opts.MappingType) > 0
+    mapType = opts.MappingType;
+    mapTypeExplicit = logical(opts.MappingTypeExplicit);
+end
 if ~isempty(opts.PRBSet), prbSetCfg = opts.PRBSet; end
 if ~isempty(opts.SymbolAllocation), symAllocCfg = opts.SymbolAllocation; end
 
@@ -121,12 +131,13 @@ if ~isempty(opts.SymbolAllocation), symAllocCfg = opts.SymbolAllocation; end
 pdsch.Modulation = char(modStr);
 pdsch.NumLayers = numLayers;
 pdsch.RNTI = rnti;
-pdsch.MappingType = char(mapType);
 
 prbVec = localExpandPRBSet(prbSetCfg, carrier.NSizeGrid);
 pdsch.PRBSet = prbVec;
 
 pdsch.SymbolAllocation = double(symAllocCfg(:).');
+pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg);
+pdsch = localNormalizePDSCHMapping(pdsch, mapType, mapTypeExplicit);
 
 % Optional NID (scrambling)
 try
@@ -164,6 +175,129 @@ else
     prbVec = prbSetCfg;
 end
 
+end
+
+function pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg)
+if ~(isstruct(cfg) && isprop(pdsch, "DMRS"))
+    return;
+end
+
+dmrs = pdsch.DMRS;
+
+typeAPos = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.typeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.typeApos", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSTypeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.typeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.typeApos", []), ...
+    []);
+if ~isempty(typeAPos) && isprop(dmrs, "DMRSTypeAPosition")
+    dmrs.DMRSTypeAPosition = max(2, min(3, round(double(typeAPos))));
+end
+
+configType = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.configurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.configType", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSConfigurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.configurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.configType", []), ...
+    []);
+if ~isempty(configType) && isprop(dmrs, "DMRSConfigurationType")
+    dmrs.DMRSConfigurationType = max(1, min(2, round(double(configType))));
+end
+
+addPos = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.additionalPositions", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.additionalPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSAdditionalPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.additionalPositions", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSAdditionalPosition", []), ...
+    []);
+if ~isempty(addPos) && isprop(dmrs, "DMRSAdditionalPosition")
+    dmrs.DMRSAdditionalPosition = max(0, min(3, round(double(addPos))));
+end
+
+dmrsLength = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.maxLength", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.length", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSLength", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.maxLength", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSLength", []), ...
+    []);
+if ~isempty(dmrsLength) && isprop(dmrs, "DMRSLength")
+    dmrs.DMRSLength = max(1, min(2, round(double(dmrsLength))));
+end
+
+numCDM = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.numCDMGroupsWithoutData", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.NumCDMGroupsWithoutData", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.numCDMGroupsWithoutData", []), ...
+    []);
+if ~isempty(numCDM) && isprop(dmrs, "NumCDMGroupsWithoutData")
+    dmrs.NumCDMGroupsWithoutData = max(1, min(3, round(double(numCDM))));
+end
+
+pdsch.DMRS = dmrs;
+end
+
+function pdsch = localNormalizePDSCHMapping(pdsch, mapType, explicitMapType)
+if nargin < 2 || strlength(string(mapType)) == 0
+    mapType = "A";
+end
+if nargin < 3
+    explicitMapType = false;
+end
+
+mapType = upper(strtrim(string(mapType)));
+if strlength(mapType) == 0
+    mapType = "A";
+end
+
+symAlloc = double(pdsch.SymbolAllocation(:).');
+if numel(symAlloc) < 2
+    symAlloc = [0 14];
+end
+startSym = max(0, round(double(symAlloc(1))));
+typeAPos = 2;
+try
+    if isprop(pdsch, "DMRS") && isprop(pdsch.DMRS, "DMRSTypeAPosition")
+        typeAPos = round(double(pdsch.DMRS.DMRSTypeAPosition));
+    end
+catch
+end
+typeAPos = max(2, min(3, round(double(typeAPos))));
+
+if mapType == "A" && startSym > typeAPos
+    if logical(explicitMapType)
+        error("sixgr:phy:grid:allocREsPDSCH:InvalidTypeADMRSSymbol", ...
+            "PDSCH MappingType A starts at symbol %d after configured DMRSTypeAPosition=%d. Configure DMRSTypeAPosition=3 when legal, choose MappingType B, or move PDSCH earlier.", ...
+            round(double(startSym)), round(double(typeAPos)));
+    end
+    mapType = "B";
+end
+
+try
+    if isprop(pdsch, "MappingType")
+        pdsch.MappingType = char(mapType);
+    end
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:BadMappingType", ...
+        "Invalid PDSCH MappingType '%s': %s", char(mapType), ME.message);
+end
+end
+
+function val = localFirstFiniteScalar(varargin)
+val = [];
+for i = 1:numel(varargin)
+    candidate = varargin{i};
+    if isempty(candidate)
+        continue;
+    end
+    if isnumeric(candidate) && isscalar(candidate) && isfinite(double(candidate))
+        val = double(candidate);
+        return;
+    end
+end
 end
 
 function pdsch = localReserveCSIRSResources(carrier, pdsch, cfg)

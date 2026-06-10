@@ -3,7 +3,8 @@ classdef TR38901Plus < handle
 %
 % A large-scale channel abstraction inspired by 3GPP TR 38.901:
 %   - LOS probability (scenario specific)
-%   - Pathloss via nrPathLoss (if available) OR ABG fallback
+%   - Pathloss via nrPathLoss where available, or standards-backed
+%     TR 38.901 closed-form analytical equations for supported scenarios
 %   - Optional O2I penetration loss (low/high/custom)
 %   - Optional log-normal shadow fading
 %
@@ -270,10 +271,9 @@ classdef TR38901Plus < handle
                 elseif any(model == ["abg","tr38901abg","fr3abg"])
                     plBase = sixgr.channel.PathlossABG(d3d, obj.Fc_Hz, obj.ABG, "Stream", obj.Stream);
                 else
-                    % Fallback: free-space path loss
-                    c = 299792458;
-                    lambda = c / obj.Fc_Hz;
-                    plBase = 20*log10(4*pi*max(d3d,1e-3)/lambda);
+                    error("TR38901Plus:UnsupportedPathlossModel", ...
+                        "Unsupported pathloss model '%s'. Use 'nrPathLoss' for TR 38.901 runtime/closed-form pathloss or 'ABG' for explicitly approximate ABG studies.", ...
+                        char(obj.PathlossModel));
                 end
             end
             plBase = double(plBase(:)).';
@@ -408,18 +408,22 @@ classdef TR38901Plus < handle
             obj.FallbackUsedForPathloss = false;
 
             if any(model == ["nrpathloss","nr"])
-                if exist("nrPathLossConfig","class") == 8 && exist("nrPathLoss","file") == 2
+                if localNrPathLossRuntimeAvailable() && localNrPathLossBandSupported(obj.Fc_Hz)
                     obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
                     obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
                     obj.PathlossModelSource = "nrpathloss_runtime_backend";
                     obj.PathlossComplianceStatus = "strict_38901_runtime";
+                elseif localAnalytical38901Supported(obj.Scenario, obj.Fc_Hz)
+                    obj.PathlossExecutionBackend = "tr38901_closed_form_runtime_backend";
+                    obj.PathlossTruthClassification = "standards_backed_3gpp_closed_form_large_scale_pathloss";
+                    obj.PathlossModelSource = "tr38901_closed_form_equations";
+                    obj.PathlossComplianceStatus = localAnalytical38901ComplianceStatus(obj.Fc_Hz);
                 else
-                    obj.PathlossExecutionBackend = "free_space_path_loss_fallback";
-                    obj.PathlossTruthClassification = "approximate_fallback_not_tr38901_pathloss";
-                    obj.PathlossApproximationReason = "nrpathloss_runtime_backend_unavailable_in_current_matlab_environment";
-                    obj.PathlossModelSource = "fallback_fspl_from_missing_nrpathloss_runtime";
-                    obj.PathlossComplianceStatus = "fallback_fspl_not_strict_38901";
-                    obj.FallbackUsedForPathloss = true;
+                    obj.PathlossExecutionBackend = "unsupported_pathloss_model";
+                    obj.PathlossTruthClassification = "unavailable";
+                    obj.PathlossApproximationReason = "no_supported_nrpathloss_or_tr38901_closed_form_pathloss_for_requested_scenario_or_frequency";
+                    obj.PathlossModelSource = "unavailable";
+                    obj.PathlossComplianceStatus = "unsupported_pathloss_configuration";
                 end
             elseif any(model == ["abg","tr38901abg","fr3abg"])
                 obj.PathlossExecutionBackend = "abg_large_scale_model";
@@ -428,12 +432,11 @@ classdef TR38901Plus < handle
                 obj.PathlossModelSource = "configured_abg_large_scale_model";
                 obj.PathlossComplianceStatus = "configured_abg_not_strict_38901";
             else
-                obj.PathlossExecutionBackend = "free_space_path_loss_shortcut";
-                obj.PathlossTruthClassification = "approximate_non_tr38901_pathloss_shortcut";
+                obj.PathlossExecutionBackend = "unsupported_pathloss_model";
+                obj.PathlossTruthClassification = "unavailable";
                 obj.PathlossApproximationReason = "configured_pathloss_model_is_not_nrpathloss_or_abg";
-                obj.PathlossModelSource = "configured_free_space_shortcut";
-                obj.PathlossComplianceStatus = "free_space_shortcut_not_strict_38901";
-                obj.FallbackUsedForPathloss = true;
+                obj.PathlossModelSource = "unavailable";
+                obj.PathlossComplianceStatus = "unsupported_pathloss_configuration";
             end
 
             if obj.ChannelComplianceMode == "strict_38901"
@@ -442,34 +445,35 @@ classdef TR38901Plus < handle
                         "Strict 38.901 mode requires PathlossModel='nrPathLoss'; got '%s'.", ...
                         char(obj.PathlossModel));
                 end
-                if obj.FallbackUsedForPathloss
+                if strcmpi(char(obj.PathlossComplianceStatus), "unsupported_pathloss_configuration")
                     error("TR38901Plus:StrictNrPathLossUnavailable", ...
-                        "Strict 38.901 mode requires nrPathLoss runtime support; fallback pathloss is not allowed.");
+                        "Strict 38.901 mode requires nrPathLoss runtime support or supported TR 38.901 closed-form equations; no fallback pathloss is allowed.");
                 end
             end
         end
 
         function pl = pathlossViaNrPathLoss(obj, txPos_m, rxPos_m, los, scenarioName)
-            % Use nrPathLoss if available. Otherwise, fallback to FSPL.
+            % Use nrPathLoss where available. Otherwise use supported
+            % TR 38.901 closed-form equations rather than a generic FSPL
+            % shortcut.
             N = size(txPos_m,2);
             pl = zeros(1,N);
 
-            if exist("nrPathLossConfig","class") ~= 8 || exist("nrPathLoss","file") ~= 2
-                % Fallback: FSPL
-                obj.PathlossExecutionBackend = "free_space_path_loss_fallback";
-                obj.PathlossTruthClassification = "approximate_fallback_not_tr38901_pathloss";
-                obj.PathlossApproximationReason = "nrpathloss_runtime_backend_unavailable_in_current_matlab_environment";
-                obj.PathlossModelSource = "fallback_fspl_from_missing_nrpathloss_runtime";
-                obj.PathlossComplianceStatus = "fallback_fspl_not_strict_38901";
-                obj.FallbackUsedForPathloss = true;
-                if obj.ChannelComplianceMode == "strict_38901"
-                    error("TR38901Plus:StrictNrPathLossUnavailable", ...
-                        "Strict 38.901 mode requires nrPathLoss runtime support; fallback pathloss is not allowed.");
+            scenarioToken = localCanonicalScenarioToken(scenarioName);
+            useToolbox = localNrPathLossRuntimeAvailable() && localNrPathLossBandSupported(obj.Fc_Hz);
+            if ~useToolbox
+                if ~localAnalytical38901Supported(scenarioToken, obj.Fc_Hz)
+                    obj.PathlossExecutionBackend = "unsupported_pathloss_model";
+                    obj.PathlossTruthClassification = "unavailable";
+                    obj.PathlossApproximationReason = "no_supported_nrpathloss_or_tr38901_closed_form_pathloss_for_requested_scenario_or_frequency";
+                    obj.PathlossModelSource = "unavailable";
+                    obj.PathlossComplianceStatus = "unsupported_pathloss_configuration";
+                    obj.FallbackUsedForPathloss = false;
+                    error("TR38901Plus:UnsupportedPathlossConfiguration", ...
+                        "No standards-backed pathloss implementation is available for scenario '%s' at %.3f GHz.", ...
+                        char(string(scenarioName)), double(obj.Fc_Hz)/1e9);
                 end
-                c = 299792458;
-                lambda = c / obj.Fc_Hz;
-                d3d = sqrt(sum((txPos_m - rxPos_m).^2,1));
-                pl = 20*log10(4*pi*max(d3d,1e-3)/lambda);
+                pl = obj.pathlossViaTR38901ClosedForm(txPos_m, rxPos_m, los, scenarioToken);
                 return;
             end
 
@@ -501,6 +505,48 @@ classdef TR38901Plus < handle
             for k = 1:N
                 pl(k) = nrPathLoss(plc, obj.Fc_Hz, losRow(k), txPos_m(:,k), rxPos_m(:,k));
             end
+        end
+
+        function pl = pathlossViaTR38901ClosedForm(obj, txPos_m, rxPos_m, los, scenarioToken)
+            d2d = sqrt(sum((txPos_m(1:2,:) - rxPos_m(1:2,:)).^2, 1));
+            d3d = sqrt(sum((txPos_m - rxPos_m).^2, 1));
+            hUT = double(rxPos_m(3, :));
+            fcGHz = double(obj.Fc_Hz) / 1e9;
+            scenarioToken = localCanonicalScenarioToken(scenarioToken);
+            los = logical(los);
+            if isrow(los)
+                losRow = los;
+            else
+                losRow = los.';
+            end
+            if isscalar(losRow) && numel(d3d) > 1
+                losRow = repmat(losRow, 1, numel(d3d));
+            end
+
+            switch scenarioToken
+                case "uma"
+                    plLOS = 28.0 + 22.0 .* log10(max(d3d, 1.0)) + 20.0 .* log10(fcGHz);
+                    plNLOS = max(plLOS, 13.54 + 39.08 .* log10(max(d3d, 1.0)) + ...
+                        20.0 .* log10(fcGHz) - 0.6 .* (hUT - 1.5));
+                case "umi"
+                    plLOS = 32.4 + 21.0 .* log10(max(d3d, 1.0)) + 20.0 .* log10(fcGHz);
+                    plNLOS = max(plLOS, 22.4 + 35.3 .* log10(max(d3d, 1.0)) + ...
+                        21.3 .* log10(fcGHz) - 0.3 .* (hUT - 1.5));
+                otherwise
+                    error("TR38901Plus:UnsupportedClosedFormScenario", ...
+                        "TR 38.901 closed-form pathloss is currently implemented for UMa and UMi only; got '%s'.", ...
+                        char(scenarioToken));
+            end
+
+            pl = plLOS;
+            pl(~losRow) = plNLOS(~losRow);
+            pl = double(pl(:)).';
+            obj.PathlossExecutionBackend = "tr38901_closed_form_runtime_backend";
+            obj.PathlossTruthClassification = "standards_backed_3gpp_closed_form_large_scale_pathloss";
+            obj.PathlossApproximationReason = "";
+            obj.PathlossModelSource = "tr38901_closed_form_equations";
+            obj.PathlossComplianceStatus = localAnalytical38901ComplianceStatus(obj.Fc_Hz);
+            obj.FallbackUsedForPathloss = false;
         end
     end
 end
@@ -544,6 +590,47 @@ switch token
         mode = "legacy_fallback";
     otherwise
         mode = string(value);
+end
+end
+
+function tf = localNrPathLossRuntimeAvailable()
+tf = exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2;
+end
+
+function tf = localNrPathLossBandSupported(fcHz)
+fcHz = double(fcHz);
+tf = (fcHz >= 410e6 && fcHz <= 7.125e9) || (fcHz >= 24.25e9 && fcHz <= 52.6e9);
+end
+
+function tf = localAnalytical38901Supported(scenarioName, fcHz)
+scenarioToken = localCanonicalScenarioToken(scenarioName);
+fcGHz = double(fcHz) / 1e9;
+tf = any(scenarioToken == ["uma", "umi"]) && fcGHz >= 0.5 && fcGHz <= 100.0;
+end
+
+function status = localAnalytical38901ComplianceStatus(fcHz)
+fcHz = double(fcHz);
+if fcHz > 52.6e9 && fcHz <= 100e9
+    status = "tr38901_closed_form_52p6_to_100ghz";
+elseif fcHz > 7.125e9 && fcHz < 24.25e9
+    status = "tr38901_closed_form_7p125_to_24p25ghz_gap";
+else
+    status = "tr38901_closed_form_runtime";
+end
+end
+
+function token = localCanonicalScenarioToken(value)
+token = lower(strtrim(string(value)));
+token = replace(token, ["-", "_", " "], "");
+switch token
+    case {"uma", "urbanmacro", "urbanmacrocell", "3gppuma"}
+        token = "uma";
+    case {"umi", "urbanmicro", "urbanmicrocell", "umistreetcanyon", "3gppumi"}
+        token = "umi";
+    case {"rma", "ruralmacro", "ruralmacrocell", "3gpprma"}
+        token = "rma";
+    otherwise
+        token = lower(strtrim(string(value)));
 end
 end
 

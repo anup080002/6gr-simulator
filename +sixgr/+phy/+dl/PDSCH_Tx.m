@@ -94,7 +94,7 @@ end
 
 xOverhead = opt.XOverhead;
 if isempty(xOverhead)
-    xOverhead = double(sixgr.util.structGet(cfg, 'phy.pdsch.xOverhead', 0));
+    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14]));
 end
 
 prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
@@ -233,7 +233,9 @@ gridPortContract = localBuildResourceGridPortContract(txGrid, pdschAntInd, pdsch
 localValidateResourceGridPortContract(gridPortContract, prec);
 
 % OFDM modulation
-[txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
+[windowingSamples, windowingInfo] = sixgr.phy.waveform.resolveOFDMWindowing(cfg, carrier);
+[txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid, ...
+    "Windowing", double(windowingSamples));
 
 % ---------------------- Outputs ----------------------
 tx = struct();
@@ -245,7 +247,11 @@ tx.Carrier = carrier;
 tx.PDSCH = pdsch;
 tx.PDSCHIndices = pdschInd;
 tx.PDSCHSymbolsForEvidence = pdschSym;
+tx.XOverhead = double(xOverhead);
 tx.PrecodeInfo = prec;
+tx.OFDMWindowingSamples = double(windowingSamples);
+tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
+tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlock = trBlk;
@@ -284,7 +290,9 @@ info.CSIRS = csirsInfo;
 info.CSIRSRuntimeEvent = csirsEvent;
 info.ResourceGridPortContract = gridPortContract;
 info.OFDM = ofdmInfo;
+info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
+info.XOverhead = double(xOverhead);
 
 end
 

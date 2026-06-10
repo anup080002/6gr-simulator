@@ -428,7 +428,7 @@ switch upper(cfg.ChannelModel)
 end
 
 if cfg.EnablePhaseNoise
-    rxWave = localApplyPhaseNoise(rxWave, cfg.PhaseNoiseStdRad, seed + 17);
+    rxWave = localApplyPhaseNoise(rxWave, sampleRateHz, cfg.CarrierFrequencyHz, seed + 17);
 end
 if cfg.EnableFrequencyOffset && abs(plan.CFOTrue_Hz) > 0
     rxWave = localApplyFrequencyOffset(rxWave, plan.CFOTrue_Hz, sampleRateHz);
@@ -481,10 +481,13 @@ phaseRamp = exp(1i * 2*pi * cfoHz * n / sampleRateHz);
 waveOut = waveIn .* repmat(phaseRamp, 1, size(waveIn, 2));
 end
 
-function waveOut = localApplyPhaseNoise(waveIn, stdRad, seed)
-rng(double(seed), "twister");
-phaseWalk = cumsum(stdRad * randn(size(waveIn, 1), 1));
-waveOut = waveIn .* exp(1i * phaseWalk);
+function waveOut = localApplyPhaseNoise(waveIn, sampleRateHz, carrierFrequencyHz, seed)
+cfgPN = struct();
+cfgPN.run.seed = double(seed);
+cfgPN.phy.fc_Hz = double(carrierFrequencyHz);
+cfgPN.rf.phaseNoise.enable = true;
+pn = sixgr.rf.PhaseNoiseModel(cfgPN, double(sampleRateHz), double(seed));
+waveOut = pn.apply(waveIn, double(sampleRateHz));
 end
 
 function [rxOut, noiseVar] = localAddNoise(rxWave, singleUERefWave, snrDb, seed)

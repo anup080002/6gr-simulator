@@ -33,19 +33,13 @@ end
 
 [y, replay] = localApplyIQImbalanceStage(y, replay);
 
+if logical(replay.PhaseNoiseConfigured)
+    [y, replay] = localApplyPhaseNoiseStage(y, replay, cfg, sampleRateHz);
+end
+
 timingOffset = double(replay.InjectedTimingOffset_samples);
 if isfinite(timingOffset) && timingOffset ~= 0
-    timingOffset = round(timingOffset);
-    if timingOffset > 0
-        y = [zeros(timingOffset, size(y, 2), "like", y); y];
-    else
-        shift = abs(timingOffset);
-        if shift >= size(y, 1)
-            y = zeros(size(y), "like", y);
-        else
-            y = [y(shift+1:end, :); zeros(shift, size(y, 2), "like", y)];
-        end
-    end
+    y = sixgr.util.applyFractionalSampleDelay(y, timingOffset);
 end
 
 cfoHz = double(replay.InjectedCFO_Hz);
@@ -174,6 +168,9 @@ replay = struct( ...
     "PhaseNoiseTruthClassification", char(phaseNoiseTruthClassification), ...
     "PhaseNoiseApproximationReason", char(phaseNoiseApproximationReason), ...
     "PhaseNoiseExecutionStatus", char(phaseNoiseExecutionStatus), ...
+    "PhaseNoiseApplied", false, ...
+    "PhaseNoiseRMS_rad", NaN, ...
+    "PhaseNoiseSeed", NaN, ...
     "IQImbalanceConfigured", logical(iqEnabled), ...
     "IQImbalanceApplied", false, ...
     "IQImbalanceModel", char(iqModel), ...
@@ -353,6 +350,9 @@ end
 function [configured, backend, truthClassification, approximationReason, executionStatus] = ...
         localResolvePhaseNoiseTruthBoundary(cfg, sampleRateHz)
 configured = logical(sixgr.util.structGet(cfg, "rf.phaseNoise.enable", false));
+configured = configured || logical(sixgr.util.structGet(cfg, "phy.impairments.phaseNoiseEnabled", false)) || ...
+    logical(sixgr.util.structGet(cfg, "impairments.phase_noise_enabled", false)) || ...
+    logical(sixgr.util.structGet(cfg, "lls6g.resolvedConfig.impairments.phase_noise_enabled", false));
 backend = "disabled";
 truthClassification = "disabled";
 approximationReason = "";
@@ -366,7 +366,38 @@ pn = sixgr.rf.PhaseNoiseModel(cfg, sampleRateHz, seed);
 backend = string(pn.Backend);
 truthClassification = string(pn.TruthClassification);
 approximationReason = string(pn.ApproximationReason);
-executionStatus = "configured_not_materialized_in_active_waveform_truth_path";
+executionStatus = "configured_pending_sample_domain_phase_noise";
+end
+
+function [y, replay] = localApplyPhaseNoiseStage(x, replay, cfg, sampleRateHz)
+y = x;
+if isempty(x)
+    replay.PhaseNoiseExecutionStatus = "empty_waveform";
+    return;
+end
+if ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
+    replay.PhaseNoiseExecutionStatus = "configured_but_sample_rate_unavailable";
+    return;
+end
+seed = double(sixgr.util.structGet(cfg, "run.seed", 1)) + 3001;
+pn = sixgr.rf.PhaseNoiseModel(cfg, double(sampleRateHz), seed);
+if ~logical(pn.Enable)
+    replay.PhaseNoiseExecutionStatus = "disabled";
+    return;
+end
+y = pn.apply(x, double(sampleRateHz));
+replay.PhaseNoiseApplied = true;
+replay.PhaseNoiseSeed = double(seed);
+replay.PhaseNoiseAvailableBackend = char(pn.Backend);
+replay.PhaseNoiseTruthClassification = char(pn.TruthClassification);
+replay.PhaseNoiseApproximationReason = char(pn.ApproximationReason);
+replay.PhaseNoiseExecutionStatus = "applied_sample_domain_phase_noise";
+try
+    phaseDelta = angle(double(y(:)) .* conj(double(x(:))));
+    replay.PhaseNoiseRMS_rad = sqrt(mean(double(unwrap(phaseDelta)).^2, "omitnan"));
+catch
+    replay.PhaseNoiseRMS_rad = NaN;
+end
 end
 
 function [enabled, model, gainImbalance_dB, phaseImbalance_deg, source, status] = ...
@@ -512,12 +543,27 @@ desiredComp = alpha .* x;
 imageComp = beta .* conj(x);
 desiredPower = mean(abs(desiredComp).^2, "omitnan");
 imagePower = mean(abs(imageComp).^2, "omitnan");
+numericImageFloor = max(realmin, eps(max(1, abs(double(desiredPower)))));
 if isfinite(desiredPower) && desiredPower > 0 && isfinite(imagePower) && imagePower > 0
-    metrics.MirrorPowerRatio_dB = 10 * log10(imagePower / desiredPower);
-    metrics.ImageRejection_dB = 10 * log10(desiredPower / imagePower);
-    metrics.MeasurementStatus = "measured";
+    rawMirrorRatio_dB = 10 * log10(imagePower / desiredPower);
+    rawImageRejection_dB = 10 * log10(desiredPower / imagePower);
+    if abs(beta) < 1e-9 || rawImageRejection_dB > 100
+        metrics.MirrorPowerRatio_dB = -100;
+        metrics.ImageRejection_dB = 100;
+        metrics.MeasurementStatus = "below_numeric_floor_capped";
+    else
+        metrics.MirrorPowerRatio_dB = rawMirrorRatio_dB;
+        metrics.ImageRejection_dB = max(-100, min(100, rawImageRejection_dB));
+        metrics.MeasurementStatus = "measured";
+    end
 elseif isfinite(desiredPower) && desiredPower > 0 && isfinite(imagePower) && imagePower == 0
-    metrics.MeasurementStatus = "below_numeric_floor";
+    metrics.MirrorPowerRatio_dB = -100;
+    metrics.ImageRejection_dB = 100;
+    metrics.MeasurementStatus = "below_numeric_floor_capped";
+elseif isfinite(desiredPower) && desiredPower > 0 && isfinite(imagePower) && imagePower <= numericImageFloor
+    metrics.MirrorPowerRatio_dB = -100;
+    metrics.ImageRejection_dB = 100;
+    metrics.MeasurementStatus = "below_numeric_floor_capped";
 end
 iVar = var(real(y), 1, "omitnan");
 qVar = var(imag(y), 1, "omitnan");
@@ -617,7 +663,6 @@ timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSam
 if ~isfinite(timingOffset)
     timingOffset = 0;
 end
-timingOffset = round(timingOffset);
 end
 
 function [phaseOffsetDeg, source] = localResolveInjectedCarrierPhaseOffsetDeg(cfg)

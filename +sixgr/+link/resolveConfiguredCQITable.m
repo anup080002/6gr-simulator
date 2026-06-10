@@ -29,14 +29,76 @@ for i = 1:numel(candidatePaths)
 end
 
 if strlength(strtrim(rawToken)) == 0
+    rawToken = localInferCQITableFromConfiguredMCS(cfg, dir);
+end
+
+if strlength(strtrim(rawToken)) == 0
     error("sixgr:link:MissingCQITableConfig", ...
-        "Missing explicit CQI table config for direction '%s'.", dir);
+        "Missing CQI table config for direction '%s'. Configure phy.csi.*CQITable or a matching MCS/maxModulation table.", dir);
 end
 
 tableToken = string(sixgr.link.resolveCQIProfile(rawToken, 1).Table);
 if ~ismember(lower(strtrim(tableToken)), ["table1","table2"])
     error("sixgr:link:InvalidCQITableConfig", ...
         "Unsupported CQI table '%s' for direction '%s'.", rawToken, dir);
+end
+
+function tableToken = localInferCQITableFromConfiguredMCS(cfg, direction)
+if upper(string(direction)) == "UL"
+    rawMCS = localScalarToken(sixgr.util.structGet(cfg, "phy.pusch.mcsTable", []));
+    rawMod = localScalarToken(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.pusch.maxModulation", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.modulation", [])));
+else
+    rawMCS = localScalarToken(sixgr.util.structGet(cfg, "phy.pdsch.mcsTable", []));
+    rawMod = localScalarToken(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.pdsch.maxModulation", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.modulation", [])));
+end
+token = lower(strtrim(rawMCS));
+if contains(token, "256") || contains(token, "table2")
+    tableToken = "table2";
+    return;
+end
+if contains(token, "64") || contains(token, "table1")
+    tableToken = "table1";
+    return;
+end
+modToken = upper(strrep(strtrim(rawMod), " ", ""));
+if any(modToken == ["256QAM","1024QAM","4096QAM"])
+    tableToken = "table2";
+elseif strlength(modToken) > 0
+    tableToken = "table1";
+else
+    tableToken = "";
+end
+end
+
+function value = localFirstNonEmpty(varargin)
+value = [];
+for i = 1:numel(varargin)
+    candidate = varargin{i};
+    if isempty(candidate)
+        continue;
+    end
+    if isstring(candidate)
+        candidate = candidate(strlength(strtrim(candidate)) > 0);
+        if isempty(candidate)
+            continue;
+        end
+        value = candidate(1);
+        return;
+    elseif ischar(candidate)
+        if strlength(strtrim(string(candidate))) == 0
+            continue;
+        end
+        value = candidate;
+        return;
+    else
+        value = candidate;
+        return;
+    end
+end
 end
 end
 

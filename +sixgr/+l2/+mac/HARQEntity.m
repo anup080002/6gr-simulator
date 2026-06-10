@@ -298,10 +298,12 @@ classdef HARQEntity < handle
 
             [ui, procs] = obj.getUE(rnti, false);
             if ui < 1
-                return;
+                error('sixgr:HARQEntity:UnknownRNTI', ...
+                    'RNTI %d not registered.', round(rnti));
             end
             if pid < 1 || pid > numel(procs)
-                return;
+                error('sixgr:HARQEntity:BadHarqId', ...
+                    'Bad HarqID=%d for UE RNTI=%d.', harqId0, round(rnti));
             end
 
             procs(pid).AwaitingFeedback = false;

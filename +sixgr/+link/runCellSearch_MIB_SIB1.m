@@ -163,20 +163,12 @@ timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSam
 if ~isfinite(timingOffset)
     timingOffset = 0;
 end
-timingOffset = round(timingOffset);
 end
 
 function y = localApplyCellSearchImpairments(x, sampleRateHz, cfoHz, timingOffset)
 y = x;
-if timingOffset > 0
-    y = [zeros(timingOffset, size(y, 2), "like", y); y];
-elseif timingOffset < 0
-    shift = abs(timingOffset);
-    if shift >= size(y, 1)
-        y = zeros(size(y), "like", y);
-    else
-        y = [y(shift+1:end, :); zeros(shift, size(y, 2), "like", y)];
-    end
+if isfinite(timingOffset) && timingOffset ~= 0
+    y = sixgr.util.applyFractionalSampleDelay(y, timingOffset);
 end
 if sampleRateHz > 0 && isfinite(cfoHz) && cfoHz ~= 0
     n = (0:size(y, 1)-1).';

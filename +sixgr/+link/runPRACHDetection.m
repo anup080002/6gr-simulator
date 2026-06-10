@@ -34,6 +34,10 @@ out.NoiseOnlyDetectionMetric = NaN;
 out.DetectorNoiseFloor = NaN;
 out.MissedDetection = false;
 out.FalseAlarm = false;
+out.NoiseFalseAlarm = false;
+out.CollisionFalseAlarm = NaN;
+out.FalseAlarmClassification = "";
+out.CollisionFalseAlarmClassification = "not_measured_without_collision_occasion";
 out.PreambleIndex = [];
 out.RequestedPreambleIndex = localScalarOrNaN(preambleIndex);
 out.DetectedPreambleIndex = NaN;
@@ -53,8 +57,12 @@ out.AirInterfaceObservation_ms = NaN;
 out.AcquisitionTime_ms = NaN;
 out.RAResponseWindow_slots = NaN;
 out.ContentionResolutionTimer_slots = NaN;
+out.PRACHSubcarrierSpacing_kHz = NaN;
 out.SlotDuration_ms = NaN;
 out.FalseAlarmFlag = 0;
+out.NoiseFalseAlarmFlag = 0;
+out.CollisionFalseAlarmFlag = NaN;
+out.FalseAlarmProbability = NaN;
 out.NoiseVariance = NaN;
 out.NoiseVarStatus = "NOT_AVAILABLE";
 out.NoiseVarSource = "";
@@ -166,12 +174,17 @@ try
     if ~isempty(preambleIndex)
         detArgs = [detArgs {"CandidatePreambles", preambleIndex}]; %#ok<AGROW>
     end
+    faArgs = {"Occasion", occasion};
+    if ~isempty(detectionThreshold)
+        faArgs = [faArgs {"DetectionThresholdMode", "fixed", "DetectionThreshold", detectionThreshold}]; %#ok<AGROW>
+    end
     rx = sixgr.rach.PRACHDetector(rxWave, prachCfg, detArgs{:});
     rxNoise = sixgr.rach.PRACHDetector(noiseOnlyWave, prachCfg, detArgs{:});
+    rxNoPreambleOccasion = sixgr.rach.PRACHDetector(noiseOnlyWave, prachCfg, faArgs{:});
     out.ComputeLatency_ms = toc(tDetect) * 1e3;
     out.AirInterfaceObservation_ms = localWaveformDurationMs(tx, cfg);
     [out.AccessDelay_ms, out.ProcedureDelay_ms, out.RAResponseWindow_slots, ...
-        out.ContentionResolutionTimer_slots, out.SlotDuration_ms] = localRACHProcedureDelayMs(cfg, tx);
+        out.ContentionResolutionTimer_slots, out.SlotDuration_ms, out.PRACHSubcarrierSpacing_kHz] = localRACHProcedureDelayMs(cfg, tx);
     % Legacy alias preserved for backward compatibility with older exports.
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
@@ -188,8 +201,12 @@ try
     out.TimingOffset_samples = localScalarOrNaN(rx.TimingOffsetSamples);
     out.TimingAdvance_samples = out.TimingOffset_samples;
     out.TimingAdvance_us = localSamplesToMicroseconds(out.TimingOffset_samples, tx.SampleRate_Hz);
-    out.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Detected", false)));
+    out.NoiseFalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Detected", false)));
+    out.NoiseFalseAlarm = logical(out.NoiseFalseAlarmFlag);
+    out.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoPreambleOccasion, "Detected", false)));
     out.FalseAlarm = logical(out.FalseAlarmFlag);
+    out.FalseAlarmProbability = double(out.FalseAlarmFlag);
+    out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_any_preamble_detected";
     out.MissedDetection = ~logical(out.Detected);
 
     if out.Detected
@@ -222,15 +239,27 @@ replay = struct( ...
     "InjectedNoiseVariance", NaN, ...
     "NoiseVarianceSource", "", ...
     "ChannelModelApplied", string(sixgr.util.structGet(cfg, "channel.model", "AWGN")), ...
-    "ChannelFadingApplied", false);
+    "ChannelFadingApplied", false, ...
+    "NoiseOperatingMode", "prach_receiver_esn0_awgn", ...
+    "AppliedLargeScaleGain_dB", NaN, ...
+    "AppliedLargeScaleLoss_dB", NaN, ...
+    "AppliedBasePathloss_dB", NaN, ...
+    "AppliedPathloss_dB", NaN, ...
+    "AppliedShadowFading_dB", NaN, ...
+    "AppliedO2I_dB", NaN, ...
+    "AppliedLargeScaleGainSource", "not_applied_prach_receiver_esn0_axis", ...
+    "ServingRSRP_dBm", NaN, ...
+    "ServingRSRPSource", "not_applicable_prach_receiver_esn0_axis", ...
+    "LargeScaleSINR_dB", NaN, ...
+    "LargeScaleSINRSource", "not_applicable_prach_receiver_esn0_axis", ...
+    "InjectedCFO_Hz", localResolveInjectedCFOHz(cfg), ...
+    "InjectedTimingOffset_samples", localResolveInjectedTimingOffsetSamples(cfg), ...
+    "InjectedCarrierPhaseOffset_deg", localResolveInjectedCarrierPhaseOffsetDeg(cfg), ...
+    "CarrierPhaseOffsetApplied", false);
 
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
     replay.ChannelFadingApplied = true;
-    try
-        reset(state.Obj);
-    catch
-    end
     xIn = x;
     padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
     trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
@@ -254,37 +283,70 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
     end
 end
 
-cfgReplay = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
-fields = fieldnames(impairmentReplay);
-for ii = 1:numel(fields)
-    replay.(fields{ii}) = impairmentReplay.(fields{ii});
-end
-replay.ChannelModelApplied = string(sixgr.util.structGet(cfg, "channel.model", replay.ChannelModelApplied));
-replay.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false)) || ...
-    logical(sixgr.util.structGet(state, "UseFading", false));
+[y, replay] = localApplyPRACHSampleImpairments(y, replay, sampleRateHz, cfg);
 desiredWaveform = y;
 [y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform);
 replay.InjectedNoiseVariance = double(nVar);
 if isfinite(nVar) && nVar > 0
-    replay.NoiseVarianceSource = "prach_replay_reference_waveform_awgn";
+    replay.NoiseVarianceSource = "prach_receiver_input_esn0_awgn";
 end
 noiseOnlyWave = localNoiseOnlyWaveformLike(y, nVar);
 end
 
-function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
-noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
-if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
-    if isfinite(nVar) && nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
-        y = x + cast(n, "like", x);
-        return;
-    end
-    y = x;
-    nVar = NaN;
-    return;
+function [y, replay] = localApplyPRACHSampleImpairments(y, replay, sampleRateHz, cfg)
+% PRACH detection curves use receiver Es/N0, so only sample-domain RF
+% impairments are applied here. Large-scale loss and data-channel AWGN replay
+% are intentionally excluded from the PRACH SNR axis.
+iqGain_dB = double(sixgr.util.structGet(cfg, "phy.impairments.iqGainImbalance_dB", ...
+    sixgr.util.structGet(cfg, "impairments.iq_gain_imbalance_db", 0)));
+iqPhase_deg = double(sixgr.util.structGet(cfg, "phy.impairments.iqPhaseImbalance_deg", ...
+    sixgr.util.structGet(cfg, "impairments.iq_phase_imbalance_deg", 0)));
+if ~isfinite(iqGain_dB)
+    iqGain_dB = 0;
 end
+if ~isfinite(iqPhase_deg)
+    iqPhase_deg = 0;
+end
+replay.ConfiguredIQGainImbalance_dB = iqGain_dB;
+replay.ConfiguredIQPhaseImbalance_deg = iqPhase_deg;
+replay.IQImbalanceApplied = false;
+if abs(iqGain_dB) > 1e-12 || abs(iqPhase_deg) > 1e-12
+    y = localApplyIQImbalance(y, iqGain_dB, iqPhase_deg);
+    replay.IQImbalanceApplied = true;
+end
+
+timingOffset = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", 0));
+if isfinite(timingOffset) && abs(timingOffset) > 1e-12
+    y = sixgr.util.applyFractionalSampleDelay(y, timingOffset);
+end
+
+cfoHz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", 0));
+if isfinite(sampleRateHz) && sampleRateHz > 0 && isfinite(cfoHz) && cfoHz ~= 0
+    n = (0:size(y, 1)-1).';
+    rot = exp(1j * 2 * pi * (cfoHz / sampleRateHz) * n);
+    y = y .* cast(rot, "like", y);
+end
+
+phaseOffsetDeg = double(sixgr.util.structGet(replay, "InjectedCarrierPhaseOffset_deg", 0));
+if isfinite(phaseOffsetDeg) && abs(phaseOffsetDeg) > 1e-12
+    y = y .* cast(exp(1j * phaseOffsetDeg * pi / 180), "like", y);
+    replay.CarrierPhaseOffsetApplied = true;
+end
+end
+
+function y = localApplyIQImbalance(x, gainImbalance_dB, phaseImbalance_deg)
+gainLin = 10.^(double(gainImbalance_dB) / 20);
+phaseRad = double(phaseImbalance_deg) * pi / 180;
+iPart = real(x) .* gainLin;
+qPart = imag(x) ./ max(gainLin, eps);
+qRot = qPart .* cos(phaseRad) + iPart .* sin(phaseRad);
+y = complex(iPart, qRot);
+if ~isa(y, class(x))
+    y = cast(y, "like", x);
+end
+end
+
+function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
 if isfinite(nVar) && nVar >= 0
@@ -310,21 +372,6 @@ if ~(isfinite(refPower) && refPower >= 0)
     return;
 end
 nVar = refPower / max(10.^(snr_dB / 10), eps);
-end
-
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)
-nVar = NaN;
-thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
-    return;
-end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
-if ~(isfinite(refPower) && refPower >= 0)
-    return;
-end
-relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
-nVar = refPower * 10.^(relativeNoise_dB / 10);
 end
 
 function noiseOnlyWave = localNoiseOnlyWaveformLike(referenceWaveform, nVar)
@@ -368,6 +415,30 @@ end
 fs = double(fs);
 if ~(isfinite(fs) && fs > 0)
     fs = 30.72e6;
+end
+end
+
+function cfoHz = localResolveInjectedCFOHz(cfg)
+cfoHz = double(sixgr.util.structGet(cfg, "phy.impairments.cfoHz", ...
+    sixgr.util.structGet(cfg, "impairments.cfo_hz", 0)));
+if ~isfinite(cfoHz)
+    cfoHz = 0;
+end
+end
+
+function timingOffset = localResolveInjectedTimingOffsetSamples(cfg)
+timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSamples", ...
+    sixgr.util.structGet(cfg, "impairments.timing_offset_samples", 0)));
+if ~isfinite(timingOffset)
+    timingOffset = 0;
+end
+end
+
+function phaseOffsetDeg = localResolveInjectedCarrierPhaseOffsetDeg(cfg)
+phaseOffsetDeg = double(sixgr.util.structGet(cfg, "phy.impairments.carrierPhaseOffset_deg", ...
+    sixgr.util.structGet(cfg, "impairments.carrier_phase_offset_deg", 0)));
+if ~isfinite(phaseOffsetDeg)
+    phaseOffsetDeg = 0;
 end
 end
 
@@ -435,36 +506,54 @@ end
 durMs = 1e3 * (size(wave, 1) / sampleRateHz);
 end
 
-function [accessDelayMs, procedureDelayMs, raWindowSlots, crTimerSlots, slotDurationMs] = localRACHProcedureDelayMs(cfg, tx)
-scsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
-    sixgr.util.structGet(cfg, "phy.carrier.subcarrierSpacing_kHz", NaN)));
-if ~(isfinite(scsKHz) && scsKHz > 0)
+function [accessDelayMs, procedureDelayMs, raWindowSlots, crTimerSlots, slotDurationMs, prachScsKHz] = localRACHProcedureDelayMs(cfg, tx)
+prachScsKHz = double(sixgr.util.structGet(cfg, "phy.prach.subcarrierSpacing_kHz", ...
+    sixgr.util.structGet(cfg, "phy.prach.SubcarrierSpacing", NaN)));
+if ~(isfinite(prachScsKHz) && prachScsKHz > 0)
+    prachScsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+        sixgr.util.structGet(cfg, "phy.carrier.subcarrierSpacing_kHz", NaN)));
+end
+if ~(isfinite(prachScsKHz) && prachScsKHz > 0)
     carrier = sixgr.util.structGet(tx, "Carrier", []);
     if ~isempty(carrier)
         try
-            scsKHz = double(carrier.SubcarrierSpacing);
+            prachScsKHz = double(carrier.SubcarrierSpacing);
         catch
-            scsKHz = NaN;
+            prachScsKHz = NaN;
         end
     end
 end
-if ~(isfinite(scsKHz) && scsKHz > 0)
-    scsKHz = 15;
+if ~(isfinite(prachScsKHz) && prachScsKHz > 0)
+    prachScsKHz = 15;
 end
-mu = max(0, round(log2(max(scsKHz, 15) / 15)));
-slotsPerMs = 2^mu;
-slotDurationMs = 1 / max(slotsPerMs, eps);
+dataScsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.subcarrierSpacing_kHz", prachScsKHz)));
+if ~(isfinite(dataScsKHz) && dataScsKHz > 0)
+    dataScsKHz = prachScsKHz;
+end
+muPrach = max(0, round(log2(max(prachScsKHz, 15) / 15)));
+muData = max(0, round(log2(max(dataScsKHz, 15) / 15)));
+slotsPerMsPrach = 2^muPrach;
+slotsPerMsData = 2^muData;
+slotDurationMs = 1 / max(slotsPerMsPrach, eps);
+dataSlotDurationMs = 1 / max(slotsPerMsData, eps);
 raWindowSlots = double(sixgr.util.structGet(cfg, "rrc.rach.raResponseWindow_slots", NaN));
 if ~isfinite(raWindowSlots)
     raWindowMs = double(sixgr.util.structGet(cfg, "rrc.rach.raResponseWindow_ms", 10));
-    raWindowSlots = max(1, round(raWindowMs * slotsPerMs));
+    raWindowSlots = max(1, round(raWindowMs * slotsPerMsData));
 end
 crTimerSlots = double(sixgr.util.structGet(cfg, "rrc.rach.contentionResolutionTimer_slots", NaN));
+crTimerMs = double(sixgr.util.structGet(cfg, "rrc.rach.contentionResolutionTimer_ms", 64));
 if ~isfinite(crTimerSlots)
-    crTimerMs = double(sixgr.util.structGet(cfg, "rrc.rach.contentionResolutionTimer_ms", 64));
-    crTimerSlots = max(1, round(crTimerMs * slotsPerMs));
+    allowedMs = [8 16 24 32 40 48 56 64];
+    if ~(isfinite(crTimerMs) && any(round(crTimerMs) == allowedMs))
+        crTimerMs = 64;
+    end
+    crTimerSlots = max(1, round(crTimerMs * slotsPerMsPrach));
+else
+    crTimerMs = crTimerSlots * slotDurationMs;
 end
-accessDelayMs = (raWindowSlots + crTimerSlots) * slotDurationMs;
+accessDelayMs = raWindowSlots * dataSlotDurationMs + crTimerMs;
 procedureDelayMs = accessDelayMs;
 end
 

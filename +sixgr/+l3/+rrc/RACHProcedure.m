@@ -55,7 +55,7 @@ classdef RACHProcedure < handle
             obj.Cfg = cfg;
 
             obj.CellID = double(sixgr.util.structGet(cfg,'phy.carrier.NCellID',obj.CellID));
-            [slotsPerMs, slotDurationMs] = localResolveSlotsPerMs(cfg);
+            [prachSlotsPerMs, slotDurationMs, pdcchSlotsPerMs] = localResolveSlotsPerMs(cfg);
             obj.SlotDuration_ms = double(slotDurationMs);
             obj.RAResponseWindow_ms = double(sixgr.util.structGet(cfg,'rrc.rach.raResponseWindow_ms',obj.RAResponseWindow_ms));
             obj.ContentionResolutionTimer_ms = double(sixgr.util.structGet(cfg,'rrc.rach.contentionResolutionTimer_ms',obj.ContentionResolutionTimer_ms));
@@ -108,11 +108,12 @@ classdef RACHProcedure < handle
             end
 
             localValidateRAResponseWindow(obj.RAResponseWindow_ms);
+            localValidateContentionResolutionTimer(obj.ContentionResolutionTimer_ms);
             if ~raSlotsExplicit
-                obj.RAResponseWindow_slots = max(1, round(double(obj.RAResponseWindow_ms) * double(slotsPerMs)));
+                obj.RAResponseWindow_slots = max(1, round(double(obj.RAResponseWindow_ms) * double(pdcchSlotsPerMs)));
             end
             if ~crSlotsExplicit
-                obj.ContentionResolutionTimer_slots = max(1, round(double(obj.ContentionResolutionTimer_ms) * double(slotsPerMs)));
+                obj.ContentionResolutionTimer_slots = max(1, round(double(obj.ContentionResolutionTimer_ms) * double(prachSlotsPerMs)));
             end
             obj.PreambleTransMax = max(1, round(double(sixgr.util.structGet(cfg,'rrc.rach.preambleTransMax',obj.PreambleTransMax))));
         end
@@ -328,16 +329,25 @@ classdef RACHProcedure < handle
     end
 end
 
-function [slotsPerMs, slotDurationMs] = localResolveSlotsPerMs(cfg)
-scs_kHz = double(sixgr.util.structGet(cfg,'phy.carrier.SubcarrierSpacing', ...
-    sixgr.util.structGet(cfg,'phy.pusch.subcarrierSpacing', 15)));
-if ~(isscalar(scs_kHz) && isfinite(scs_kHz) && scs_kHz > 0)
-    scs_kHz = 15;
+function [prachSlotsPerMs, slotDurationMs, pdcchSlotsPerMs] = localResolveSlotsPerMs(cfg)
+prachScs_kHz = double(sixgr.util.structGet(cfg,'phy.prach.subcarrierSpacing_kHz', ...
+    sixgr.util.structGet(cfg,'phy.prach.SubcarrierSpacing', ...
+    sixgr.util.structGet(cfg,'phy.prach.subcarrierSpacing', ...
+    sixgr.util.structGet(cfg,'phy.carrier.SubcarrierSpacing', ...
+    sixgr.util.structGet(cfg,'phy.pusch.subcarrierSpacing', 15))))));
+if ~(isscalar(prachScs_kHz) && isfinite(prachScs_kHz) && prachScs_kHz > 0)
+    prachScs_kHz = 15;
 end
-mu = round(log2(max(scs_kHz, 15) / 15));
-mu = max(0, mu);
-slotsPerMs = 2 ^ mu;
-slotDurationMs = 1.0 / slotsPerMs;
+pdcchScs_kHz = double(sixgr.util.structGet(cfg,'phy.carrier.SubcarrierSpacing', ...
+    sixgr.util.structGet(cfg,'phy.carrier.subcarrierSpacing_kHz', prachScs_kHz)));
+if ~(isscalar(pdcchScs_kHz) && isfinite(pdcchScs_kHz) && pdcchScs_kHz > 0)
+    pdcchScs_kHz = prachScs_kHz;
+end
+muPrach = max(0, round(log2(max(prachScs_kHz, 15) / 15)));
+muPdcch = max(0, round(log2(max(pdcchScs_kHz, 15) / 15)));
+prachSlotsPerMs = 2 ^ muPrach;
+pdcchSlotsPerMs = 2 ^ muPdcch;
+slotDurationMs = 1.0 / prachSlotsPerMs;
 end
 
 function localValidateRAResponseWindow(valueMs)
@@ -347,5 +357,15 @@ if ~(isscalar(valueMs) && isfinite(valueMs)) || ~any(abs(valueMs - validRaWindow
     warning('sixgr:rrc:RACHProcedure:InvalidRAWindow', ...
         'ra-ResponseWindow_ms=%.1f is not a standard NR value. Valid: %s ms.', ...
         valueMs, mat2str(validRaWindow_ms));
+end
+end
+
+function localValidateContentionResolutionTimer(valueMs)
+validTimer_ms = [8 16 24 32 40 48 56 64];
+valueMs = double(valueMs);
+if ~(isscalar(valueMs) && isfinite(valueMs)) || ~any(abs(valueMs - validTimer_ms) < 0.5)
+    error('sixgr:rrc:RACHProcedure:InvalidContentionResolutionTimer', ...
+        'mac-ContentionResolutionTimer_ms=%.1f is not a standard NR value. Valid: %s ms.', ...
+        valueMs, mat2str(validTimer_ms));
 end
 end

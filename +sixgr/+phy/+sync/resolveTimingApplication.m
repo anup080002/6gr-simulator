@@ -9,6 +9,7 @@ function timing = resolveTimingApplication(rawEstimate, varargin)
 %     "ApplicationMode" : "signed_waveform_shift" or "positive_crop_only"
 %     "SkipRequested"   : true when timing estimation was intentionally bypassed
 %     "Source"          : optional provenance token
+%     "MaxCorrectionSamples" : optional CP/window bound for applied shift
 %
 %   Returned fields:
 %     RawEstimate_samples
@@ -25,6 +26,7 @@ ip.addParameter("EstimateUsed", [], @(x) isempty(x) || islogical(x) || (isnumeri
 ip.addParameter("ApplicationMode", "signed_waveform_shift", @(x) ischar(x) || isstring(x));
 ip.addParameter("SkipRequested", false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter("Source", "", @(x) ischar(x) || isstring(x));
+ip.addParameter("MaxCorrectionSamples", inf, @(x) isnumeric(x) && isscalar(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -40,6 +42,10 @@ policy = "";
 status = "";
 applied = 0;
 wasClipped = false;
+maxCorrection = double(opt.MaxCorrectionSamples);
+if ~(isfinite(maxCorrection) && maxCorrection >= 0)
+    maxCorrection = inf;
+end
 
 if estimateUsed
     switch mode
@@ -57,6 +63,12 @@ if estimateUsed
             policy = "signed_waveform_shift_fractional_phase_ramp_supported";
             status = "available_applied_signed_correction";
     end
+    if isfinite(maxCorrection) && abs(applied) > maxCorrection
+        applied = sign(applied) * maxCorrection;
+        wasClipped = true;
+        policy = policy + "_cp_window_bounded";
+        status = "available_applied_clipped_to_cp_window";
+    end
 elseif logical(opt.SkipRequested)
     policy = "timing_estimation_bypassed_no_runtime_correction";
     status = "bypassed";
@@ -71,6 +83,7 @@ timing = struct( ...
     "EstimateAvailable", logical(estimateAvailable), ...
     "EstimateUsed", logical(estimateUsed), ...
     "WasClipped", logical(wasClipped), ...
+    "MaxCorrectionSamples", double(maxCorrection), ...
     "ApplicationPolicy", char(string(policy)), ...
     "Status", char(string(status)), ...
     "Source", char(string(opt.Source)));

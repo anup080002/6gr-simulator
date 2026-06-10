@@ -188,11 +188,72 @@ prachCfg.ResolvedPRACHFormat = upper(strtrim(string(prach.Format)));
 prachCfg.PreambleCount = 64;
 prachCfg.FirstActiveOccasion = firstOccasion;
 prachCfg.SampleRate_Hz = double(sampleRateHz);
+prachCfg = localValidateZCZRuntimeGuard(prachCfg);
 prachCfg.TimingTolerance_us = localResolveTimingTolerance(prachCfg);
 prachCfg.ZCDPE = sixgr.rach.ZCDPEConfig(baseCfg, "NumSymbols", localResolveZCDPENumSymbols(prachCfg, baseCfg));
 prachCfg.ZCDPEEnabled = localResolveZCDPEEnabled(baseCfg);
 prachCfg.ConfigExport = localMakeSerializable(prachCfg);
 localPublishConfigEvidence(prachCfg, cfg);
+end
+
+function cfg = localValidateZCZRuntimeGuard(cfg)
+lra = NaN;
+try
+    lra = double(cfg.ToolboxPRACH.LRA);
+catch
+end
+if ~(isscalar(lra) && isfinite(lra) && lra > 0)
+    cfg.ZCZNCS = NaN;
+    cfg.ZCZMaxCyclicShiftsPerRoot = NaN;
+    cfg.ZCZValidationStatus = "not_available_no_lra";
+    return;
+end
+ncs = localResolveNCS(lra, cfg.ZeroCorrelationZone, cfg.RestrictedSet);
+cfg.ZCZNCS = double(ncs);
+if ncs <= 0
+    maxPerRoot = 1;
+else
+    maxPerRoot = max(1, floor(double(lra) / double(ncs)));
+end
+cfg.ZCZMaxCyclicShiftsPerRoot = double(maxPerRoot);
+activeCount = localActivePreambleCountForOneRoot(cfg);
+if activeCount > maxPerRoot
+    error("sixgr:rach:PRACHConfig:ZCZGuardInsufficient", ...
+        "ZeroCorrelationZone=%g gives N_CS=%g for L_RA=%g, allowing %g cyclic shifts per root; configured active preambles per root=%g exceeds that guard.", ...
+        double(cfg.ZeroCorrelationZone), double(ncs), double(lra), double(maxPerRoot), double(activeCount));
+end
+cfg.ZCZValidationStatus = "OK";
+end
+
+function count = localActivePreambleCountForOneRoot(cfg)
+p = unique(double(cfg.PreambleIndex(:)));
+p = p(isfinite(p) & p >= 0);
+count = max(1, numel(p));
+if logical(cfg.EnableCollisionMode)
+    % Collision mode intentionally maps several UEs to the same preamble.
+    count = max(1, count);
+else
+    count = max(count, max(1, round(double(cfg.NumUEsPerRO))));
+end
+end
+
+function ncs = localResolveNCS(lra, zcz, restrictedSet)
+zcz = max(0, min(15, round(double(zcz))));
+restrictedSet = lower(string(restrictedSet));
+if restrictedSet ~= "unrestrictedset"
+    error("sixgr:rach:PRACHConfig:RestrictedSetNCSMissing", ...
+        "Restricted-set PRACH N_CS validation is not implemented in this runtime; use UnrestrictedSet or add the restricted-set table before running strict PRACH studies.");
+end
+if round(double(lra)) == 839
+    tableVals = [0 13 15 18 22 26 32 38 46 59 76 93 119 167 279 419];
+elseif round(double(lra)) == 139
+    tableVals = [0 2 4 6 8 10 12 13 15 17 19 23 27 34 46 69];
+else
+    error("sixgr:rach:PRACHConfig:UnsupportedLRAForZCZValidation", ...
+        "No runtime N_CS/ZCZ validation table is implemented for L_RA=%g. Add the concrete table before enabling this PRACH sequence length.", ...
+        double(lra));
+end
+ncs = double(tableVals(zcz + 1));
 end
 
 function cfg = localStructFromInput(baseCfg)

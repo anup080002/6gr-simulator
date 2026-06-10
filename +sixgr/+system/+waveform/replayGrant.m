@@ -1094,27 +1094,15 @@ trimSamples = max(0, round(filterDelay));
 end
 
 function maxIter = localLDPCMaxIterations(snr_dB, cfg, opt)
-cfgMaxIter = round(double(sixgr.util.structGet(cfg, "phy.ldpc.maxIterations", 8)));
+cfgMaxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg);
 cfgMaxIter = max(1, cfgMaxIter);
 hardMax = round(double(opt.LDPCMaxIterations));
 if hardMax > 0
     maxIter = max(1, min(cfgMaxIter, hardMax));
     return;
 end
-if ~logical(opt.AdaptiveLDPC)
-    maxIter = cfgMaxIter;
-    return;
-end
-if snr_dB >= 20
-    maxIter = min(cfgMaxIter, 4);
-elseif snr_dB >= 12
-    maxIter = min(cfgMaxIter, 5);
-elseif snr_dB >= 8
-    maxIter = min(cfgMaxIter, 6);
-elseif snr_dB >= 4
-    maxIter = min(cfgMaxIter, 7);
-else
-    maxIter = cfgMaxIter;
-end
+% Truth replay must not silently reduce decoder iterations from SNR. A lower
+% cap is allowed only through the explicit LDPCMaxIterations input above.
+maxIter = cfgMaxIter;
 maxIter = max(1, round(maxIter));
 end

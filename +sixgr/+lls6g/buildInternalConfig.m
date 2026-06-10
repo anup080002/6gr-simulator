@@ -332,6 +332,8 @@ cfg.ctrl6gr.CRCPolynomial = char(string(localGetNested(s, "control.pdcch6gr.crc_
 cfg.ctrl6gr.CRCScramblingEnabled = logical(localGetNested(s, "control.pdcch6gr.crc_scrambling_enabled", true));
 cfg.ctrl6gr.PayloadScramblingEnabled = logical(localGetNested(s, "control.pdcch6gr.payload_scrambling_enabled", true));
 cfg.ctrl6gr.PayloadSequenceInit = double(localGetNested(s, "control.pdcch6gr.payload_sequence_init", cfg.phy.carrier.NCellID));
+cfg.ctrl6gr.PDCCHScramblingID = double(localGetNested(s, "control.pdcch6gr.pdcch_scrambling_id", ...
+    localGetNested(s, "control.pdcch6gr.coreset_scrambling_id", cfg.ctrl6gr.PayloadSequenceInit)));
 cfg.ctrl6gr.WaveformMode = char(string(localGetNested(s, "control.pdcch6gr.waveform_mode", "full_ofdm")));
 cfg.ctrl6gr.RepetitionCombiningMode = char(string(localGetNested(s, "control.pdcch6gr.repetition_combining_mode", "coherent")));
 cfg.ctrl6gr.CORESET = localGetNested(s, "control.pdcch6gr.coreset", struct());
@@ -462,6 +464,8 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.nPorts", double(s.reference_sign
 
 cfg.phy.csirs.enable = logical(s.reference_signals.csi_rs_enabled);
 cfg.phy.csirs.nPorts = double(s.reference_signals.pdsch_dmrs_ports);
+cfg.phy.csirs.scramblingID = double(localGetNested(s, "reference_signals.csirs_scrambling_id", ...
+    localGetNested(s, "reference_signals.csi_rs_scrambling_id", cfg.phy.carrier.NCellID)));
 cfg = sixgr.util.structSet(cfg, "phy.csirs.numResources", ...
     double(localRequireFirstNested(s, ["deployment_topology.num_trps","mimo.trp_count"], ...
     "deployment_topology.num_trps or mimo.trp_count")));
@@ -513,6 +517,12 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", char(string(s.mimo.codeb
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", char(localResolveCQITableToken(s)));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.cqiTable", char(localResolveCQITableToken(s)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.cqiTable", char(localResolveCQITableToken(s)));
+maxTrustedReferenceSINR = double(localGetNested(s, "csi_acquisition_and_reporting.max_trusted_reference_sinr_db", ...
+    localGetNested(s, "csi_acquisition_and_reporting.maxTrustedReferenceSINR_dB", ...
+    localGetNested(s, "reference_signals.max_trusted_reference_sinr_db", NaN))));
+if isfinite(maxTrustedReferenceSINR) && maxTrustedReferenceSINR > 0
+    cfg = sixgr.util.structSet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", double(maxTrustedReferenceSINR));
+end
 sinrToCQIMode = lower(strtrim(string(localGetNested(s, "csi_acquisition_and_reporting.sinr_to_cqi_mode", ...
     localGetNested(s, "link_adaptation.sinr_to_cqi_mode", "")))));
 if strlength(sinrToCQIMode) > 0
@@ -832,6 +842,11 @@ end
 bootstrapCQIMode = lower(strtrim(string(localGetNested(s, "link_adaptation.bootstrap_cqi_mode", ""))));
 if strlength(bootstrapCQIMode) > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapCQIMode", char(bootstrapCQIMode));
+end
+bootstrapMCSIndex = double(localGetNested(s, "link_adaptation.bootstrap_mcs_index", ...
+    localGetNested(s, "link_adaptation.bootstrapMCSIndex", NaN)));
+if isfinite(bootstrapMCSIndex) && bootstrapMCSIndex >= 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", max(0, min(31, round(double(bootstrapMCSIndex)))));
 end
 cqiSmoothingAlpha = double(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1

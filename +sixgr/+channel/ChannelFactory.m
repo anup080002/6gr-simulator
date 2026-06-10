@@ -384,6 +384,9 @@ classdef ChannelFactory
             tdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
             tdl.NumTransmitAntennas = opt.NumTxAnt;
             tdl.NumReceiveAntennas  = opt.NumRxAnt;
+            if isprop(tdl, "NormalizePathGains")
+                tdl.NormalizePathGains = true;
+            end
 
             if ~isempty(opt.SampleRate)
                 tdl.SampleRate = opt.SampleRate;
@@ -616,6 +619,9 @@ classdef ChannelFactory
             cdl.DelayProfile = delayProfile;
             cdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
             cdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
+            if isprop(cdl, "NormalizePathGains")
+                cdl.NormalizePathGains = true;
+            end
             [cdl.TransmitAntennaArray, txRuntimeCoupled] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.TransmitAntennaArray, opt.NumTxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.bs_array_geometry", "ura"), ...

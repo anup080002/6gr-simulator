@@ -100,7 +100,7 @@ end
 
 maxIter = opt.MaxIterations;
 if isempty(maxIter)
-    maxIter = double(sixgr.util.structGet(cfg, 'phy.ldpc.maxIterations', 8));
+    maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL");
 end
 
 alg = opt.Algorithm;
@@ -116,7 +116,7 @@ prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
 % Expected TB size
 trBlkSize = opt.TransportBlockSize;
 if isempty(trBlkSize)
-    xOverhead = double(sixgr.util.structGet(cfg, 'phy.pdsch.xOverhead', 0));
+    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14]));
     nPRB = numel(pdsch.PRBSet);
     nrePerPRB = localResolvePDSCHNREPerPRBOrError(carrier, pdsch, pdschInfo, nPRB);
     trBlkSize = nrTBS(pdsch.Modulation, pdsch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
@@ -133,6 +133,7 @@ try
 catch
     bgn = 2;
 end
+ldpcSeg = localResolveExpectedLDPCSegmentation(trBlkSize, bgn, tbCRCType);
 
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
@@ -185,7 +186,8 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ..
     "EstimateUsed", timingEstimateUsed, ...
     "ApplicationMode", "signed_waveform_shift", ...
     "SkipRequested", logical(opt.SkipTimingEstimate), ...
-    "Source", timingEstimateSource);
+    "Source", timingEstimateSource, ...
+    "MaxCorrectionSamples", localMaxTimingCorrectionSamples(carrier));
 trackingCorrection.TimingCorrectionApplied = logical(timingResolution.EstimateUsed);
 
 % Apply timing correction
@@ -279,7 +281,7 @@ end
 llr = localApplyCSIToCodewordLLR(llr, csi, pdsch.Modulation);
 
 % ---------------------- DL-SCH decode (rate recovery + LDPC decode) ----------------------
-recLLR = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers);
+[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ldpcSeg.NumCodeBlocks);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
@@ -376,8 +378,8 @@ if ~useMexLDPC
 end
 decodeLatency_s = toc(decodeTic);
 
-% Desegment to TB+CRC using the CRC selected by nrDLSCHInfo for this TBS.
-B = trBlkSize + tbCRCLen;
+% Desegment to TB+CRC using the exact segmentation implied by this TBS.
+B = ldpcSeg.TransportBlockLenWithCRC;
 [tbCrcRx, cbCrcErr] = sixgr.phy.tb.desegmentLDPC(decCbs, bgn, B);
 
 % CRC check must match the transmitter's TB CRC type for this TBS.
@@ -407,6 +409,12 @@ rx.DecodeUsable = true;
 rx.FailureReason = "";
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
+rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
+rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
+rx.TransportBlockCRCLength = double(tbCRCLen);
+rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
+rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
+rx.XOverhead = double(sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14])));
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
@@ -638,30 +646,19 @@ if ~isfinite(timingOffset) || abs(timingOffset) < 1e-9
     y = x;
     return;
 end
-N = size(x, 1);
-intPart = round(timingOffset);
-fracPart = timingOffset - intPart;
-if intPart ~= 0
-    x = circshift(x, -intPart, 1);
+y = sixgr.util.applyFractionalSampleDelay(x, -timingOffset);
 end
-if abs(fracPart) > 1e-12
-    k = (0:N-1).';
-    H = exp(-1j * 2 * pi * fracPart * k / max(N, 1));
-    if isreal(x) && N > 2
-        half = floor(N/2);
-        if half >= 1 && half + 2 <= N
-            H(half+2:end) = conj(flipud(H(2:half)));
-        end
+
+function maxCorrection = localMaxTimingCorrectionSamples(carrier)
+maxCorrection = inf;
+try
+    ofdmInfo = nrOFDMInfo(carrier);
+    cpLens = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
+    if ~isempty(cpLens)
+        maxCorrection = max(0, max(cpLens(:)));
     end
-    for col = 1:size(x, 2)
-        corrected = ifft(fft(x(:, col)) .* H);
-        if isreal(x)
-            corrected = real(corrected);
-        end
-        x(:, col) = corrected;
-    end
+catch
 end
-y = x;
 end
 
 function fs = localCarrierSampleRateHz(carrier)
@@ -738,7 +735,12 @@ try
         evidence.Value = sinr;
         evidence.Source = char(string(sixgr.util.structGet(csiMetric, "SINRSource", "receiver_hest_reference_signal_measurement")));
         evidence.ValueRole = "estimated";
-        evidence.ValueStatus = "OK";
+        measurementStatus = string(sixgr.util.structGet(csiMetric, "ReferenceSINRValueStatus", "OK"));
+        if contains(lower(measurementStatus), "dynamic_range_limited")
+            evidence.ValueStatus = char(measurementStatus);
+        else
+            evidence.ValueStatus = "OK";
+        end
         evidence.NAReason = "";
     end
 catch ME
@@ -898,6 +900,28 @@ if isfinite(rawLen) && rawLen >= 0
 end
 end
 
+function seg = localResolveExpectedLDPCSegmentation(trBlkSize, bgn, tbCRCType)
+% Mirror the Tx-side TB CRC + 38.212 code-block segmentation to recover C.
+trBlkSize = double(trBlkSize);
+bgn = double(bgn);
+if ~(isscalar(trBlkSize) && isfinite(trBlkSize) && trBlkSize > 0)
+    error("sixgr:phy:dl:PDSCHInvalidTBSForLDPC", ...
+        "PDSCH_Rx cannot resolve LDPC segmentation for invalid TBS %.6g.", trBlkSize);
+end
+if ~(isscalar(bgn) && isfinite(bgn) && any(round(bgn) == [1 2]))
+    error("sixgr:phy:dl:PDSCHInvalidBaseGraphForLDPC", ...
+        "PDSCH_Rx cannot resolve LDPC segmentation for base graph %.6g.", bgn);
+end
+tb = zeros(round(trBlkSize), 1, 'int8');
+tbCrc = sixgr.phy.tb.attachCRC(tb, tbCRCType);
+[cbs, segInfo] = sixgr.phy.tb.segmentLDPC(tbCrc, round(bgn));
+seg = struct( ...
+    "TransportBlockLenWithCRC", double(numel(tbCrc)), ...
+    "NumCodeBlocks", double(size(cbs, 2)), ...
+    "CodeBlockLength", double(size(cbs, 1)), ...
+    "SegmentationInfo", segInfo);
+end
+
 function localGuardUnsupportedNumLayers(cfg, pdsch)
 nLayers = 1;
 if isempty(pdsch)
@@ -1050,6 +1074,19 @@ end
 function antInd = localPrecodeIndices(carrier, portInd, Wnr)
 dummySym = complex(zeros(size(portInd)));
 [~, antInd] = nrPDSCHPrecode(carrier, dummySym, portInd, Wnr);
+end
+
+function value = localObjectValue(obj, propName, defaultValue)
+value = defaultValue;
+try
+    if isobject(obj) && isprop(obj, char(propName))
+        value = obj.(char(propName));
+    elseif isstruct(obj) && isfield(obj, char(propName))
+        value = obj.(char(propName));
+    end
+catch
+    value = defaultValue;
+end
 end
 
 function numTxPorts = localExpectedTxPorts(pdsch, prec)

@@ -338,7 +338,7 @@ classdef (Abstract) SchedulerBase < handle
             if isfield(budget,'SymbolAllocation') && ~isempty(budget.SymbolAllocation)
                 symAlloc = double(budget.SymbolAllocation(:).');
             else
-                symAlloc = [0 double(obj.SymbolsPerSlot)];
+                symAlloc = localDefaultSymbolAllocation(obj.Cfg, obj.Direction, obj.SymbolsPerSlot);
             end
         end
 
@@ -409,8 +409,8 @@ classdef (Abstract) SchedulerBase < handle
                 amc.Mode = "cqi_table";
                 if ~(isfinite(double(cqiRaw)) && cqiRaw > 0)
                     cqiDecision = struct("Valid", false);
-                    amc.MCSIndex = 0;
-                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+                    amc.MCSIndex = localResolveBootstrapMCSIndex(obj.Cfg);
+                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
                 else
                     cqiDecision = sixgr.link.resolveMCSFromCQI(cqiRaw, mcsTable, cqiTable);
                 end
@@ -422,8 +422,10 @@ classdef (Abstract) SchedulerBase < handle
                 else
                     % In AMC mode, missing/invalid CQI must not silently
                     % promote the configured study MCS into a scheduler grant.
-                    amc.MCSIndex = 0;
-                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+                    % Use a conservative live-bootstrap MCS so connected UEs
+                    % with traffic can still obtain feedback-bearing grants.
+                    amc.MCSIndex = localResolveBootstrapMCSIndex(obj.Cfg);
+                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
                 end
             elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
                 amc.Mode = "fixed_mcs";
@@ -434,8 +436,8 @@ classdef (Abstract) SchedulerBase < handle
                 amc.Mode = "cqi_table";
                 if cqiRaw <= 0
                     cqiDecision = struct("Valid", false);
-                    amc.MCSIndex = 0;
-                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, 0);
+                    amc.MCSIndex = localResolveBootstrapMCSIndex(obj.Cfg);
+                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
                 else
                     cqiDecision = sixgr.link.resolveMCSFromCQI(cqiRaw, mcsTable, cqiTable);
                 end
@@ -496,15 +498,7 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function tableName = resolveCQITable(obj)
-            if strcmpi(obj.Direction, 'UL')
-                token = sixgr.util.structGet(obj.Cfg, "phy.pusch.cqiTable", ...
-                    sixgr.util.structGet(obj.Cfg, "phy.csi.ulCQITable", ...
-                    sixgr.util.structGet(obj.Cfg, "phy.csi.cqiTable", "table1")));
-            else
-                token = sixgr.util.structGet(obj.Cfg, "phy.pdsch.cqiTable", ...
-                    sixgr.util.structGet(obj.Cfg, "phy.csi.dlCQITable", ...
-                    sixgr.util.structGet(obj.Cfg, "phy.csi.cqiTable", "table1")));
-            end
+            token = sixgr.link.resolveConfiguredCQITable(obj.Cfg, obj.Direction);
             tableName = char(sixgr.link.resolveCQIProfile(token, 1).Table);
         end
 
@@ -534,7 +528,7 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
             nSym = double(symAlloc(2));
-            xOverhead = localResolveTBSXOverhead(obj.Direction, obj.Cfg);
+            xOverhead = localResolveTBSXOverhead(obj.Direction, obj.Cfg, symAlloc);
             info = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
                 "TBSMode", "approximate", "ViennaEquivalent", false, ...
                 "PlanningOnly", logical(opt.PlanningOnly), ...
@@ -550,9 +544,10 @@ classdef (Abstract) SchedulerBase < handle
             key = "";
             if ~isempty(tbsCache)
                 symStart = round(double(symAlloc(1)));
-                key = localScopedCacheKey(obj.CacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%.4f", ...
+                key = localScopedCacheKey(obj.CacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%d|%.4f", ...
                     upper(char(obj.Direction)), upper(char(modStr)), ...
                     round(double(nLayers)), round(double(nPRB)), symStart, round(double(nSym)), ...
+                    round(double(xOverhead)), ...
                     round(double(targetCodeRate) * 1e4) / 1e4));
                 [hit, v] = sixgr.l2.mac.schedulerCache('get', 'TBS', key);
                 if hit
@@ -700,7 +695,9 @@ classdef (Abstract) SchedulerBase < handle
                 "TBSBytes", double(rawBytes), ...
                 "RawEstimatedTBSBits", double(rawBits), ...
                 "RawEstimatedTBSBytes", double(rawBytes), ...
-                "QueueLimited", false);
+                "QueueLimited", false, ...
+                "QueuePaddingBits", 0, ...
+                "QueuePaddingBytes", 0);
 
             if queueBytes <= 0 || rawBits <= 0 || rawBytes <= 0 || isempty(prbSet)
                 return;
@@ -738,6 +735,8 @@ classdef (Abstract) SchedulerBase < handle
             plan.TBSBits = double(best.TBSBits);
             plan.TBSBytes = double(best.TBSBytes);
             plan.QueueLimited = true;
+            plan.QueuePaddingBits = double(sixgr.util.structGet(best, "QueuePaddingBits", 0));
+            plan.QueuePaddingBytes = double(sixgr.util.structGet(best, "QueuePaddingBytes", 0));
         end
 
         function metric = pfMetric(obj, ue, tbsBits)
@@ -1113,12 +1112,17 @@ else
 end
 end
 
-function xOverhead = localResolveTBSXOverhead(direction, cfg)
+function xOverhead = localResolveTBSXOverhead(direction, cfg, symAlloc)
+if nargin < 3 || isempty(symAlloc)
+    symAlloc = [0 14];
+end
 if upper(string(direction)) == "UL"
-    xOverhead = localFirstFiniteScalar( ...
+    [xOverhead, explicit] = localFirstFiniteScalarWithPresence( ...
         sixgr.util.structGet(cfg, "phy.pusch.xOverhead", []), ...
-        sixgr.util.structGet(cfg, "phy.pusch.XOverhead", []), ...
-        0);
+        sixgr.util.structGet(cfg, "phy.pusch.XOverhead", []));
+    if ~explicit
+        xOverhead = 0;
+    end
     modToken = upper(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", ""))));
     tpEnabled = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false)) || ...
         strcmp(modToken, "PI/2-BPSK") || strcmp(modToken, "PI2-BPSK");
@@ -1126,12 +1130,18 @@ if upper(string(direction)) == "UL"
         xOverhead = max(double(xOverhead), 6);
     end
 else
-    xOverhead = localFirstFiniteScalar( ...
+    [xOverhead, explicit] = localFirstFiniteScalarWithPresence( ...
         sixgr.util.structGet(cfg, "phy.pdsch.xOverhead", []), ...
-        sixgr.util.structGet(cfg, "phy.pdsch.XOverhead", []), ...
-        0);
+        sixgr.util.structGet(cfg, "phy.pdsch.XOverhead", []));
+    if ~explicit
+        xOverhead = localResolveDLReferenceSignalXOverhead(cfg, symAlloc);
+    end
 end
 xOverhead = max(0, round(double(xOverhead)));
+end
+
+function xOverhead = localResolveDLReferenceSignalXOverhead(cfg, symAlloc)
+xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, symAlloc);
 end
 
 function value = localFirstFiniteScalar(varargin)
@@ -1149,6 +1159,28 @@ for i = 1:numel(varargin)
     v = v(isfinite(v));
     if ~isempty(v)
         value = v(1);
+        return;
+    end
+end
+end
+
+function [value, found] = localFirstFiniteScalarWithPresence(varargin)
+value = NaN;
+found = false;
+for i = 1:numel(varargin)
+    raw = varargin{i};
+    if isempty(raw)
+        continue;
+    end
+    try
+        v = double(raw);
+    catch
+        continue;
+    end
+    v = v(isfinite(v));
+    if ~isempty(v)
+        value = v(1);
+        found = true;
         return;
     end
 end
@@ -1251,6 +1283,31 @@ fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","f
 tf = ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
 end
 
+function mcs = localResolveBootstrapMCSIndex(cfg)
+mcs = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.bootstrapMCSIndex", 1)));
+if ~(isscalar(mcs) && isfinite(mcs))
+    mcs = 1;
+end
+mcs = max(0, min(31, round(mcs)));
+end
+
+function symAlloc = localDefaultSymbolAllocation(cfg, direction, symbolsPerSlot)
+symbolsPerSlot = max(1, round(double(symbolsPerSlot)));
+if strcmpi(char(string(direction)), 'DL')
+    pdcchSymbols = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.duration", ...
+        sixgr.util.structGet(cfg, "phy.pdcch.numSymbols", ...
+        sixgr.util.structGet(cfg, "ctrl6gr.CORESET.DurationSymbols", 1))));
+    if ~(isscalar(pdcchSymbols) && isfinite(pdcchSymbols) && pdcchSymbols >= 0)
+        pdcchSymbols = 1;
+    end
+    startSym = min(max(0, ceil(pdcchSymbols)), max(0, symbolsPerSlot - 1));
+    symAlloc = [double(startSym) double(max(1, symbolsPerSlot - startSym))];
+else
+    symAlloc = [0 double(symbolsPerSlot)];
+end
+end
+
 function mcs = localMatchMCSIndex(mcsTable, modStr, targetCodeRate)
 targetQM = sixgr.l2.mac.SchedulerBase.modOrder(modStr);
 targetSE = double(targetQM) * double(targetCodeRate);
@@ -1319,6 +1376,15 @@ if isempty(rawPRBSet)
 end
 
 candidateProfiles = localCandidateMCSProfiles(amc);
+if localPreserveAMCMCSForQueueLimit(amc) && ~isempty(candidateProfiles)
+    cand = candidateProfiles(1);
+    [chosenIdx, chosenCand] = localFindSmallestPositiveTB(obj, cand, rawPRBSet, symAlloc, opt);
+    if chosenCand.Valid
+        prbSubset = rawPRBSet(1:chosenIdx);
+        best = localBuildQueueLimitedBest(cand, prbSubset, chosenCand, queueBytes);
+        return;
+    end
+end
 bestBits = -inf;
 bestPRBCount = inf;
 for i = 1:numel(candidateProfiles)
@@ -1339,20 +1405,35 @@ for i = 1:numel(candidateProfiles)
     prbSubset = rawPRBSet(1:chosenIdx);
     if chosenCand.TBSBits > bestBits + 1e-9 || ...
             (abs(chosenCand.TBSBits - bestBits) <= 1e-9 && numel(prbSubset) < bestPRBCount)
-        best = struct( ...
-            "Valid", true, ...
-            "PRBSet", double(prbSubset), ...
-            "Modulation", char(string(cand.Modulation)), ...
-            "NumLayers", double(cand.NumLayers), ...
-            "TargetCodeRate", double(cand.TargetCodeRate), ...
-            "MCSIndex", double(cand.MCSIndex), ...
-            "NREPerPRB", double(chosenCand.NREPerPRB), ...
-            "TBSBits", double(chosenCand.TBSBits), ...
-            "TBSBytes", double(chosenCand.TBSBytes));
+        best = localBuildQueueLimitedBest(cand, prbSubset, chosenCand, queueBytes);
         bestBits = double(chosenCand.TBSBits);
         bestPRBCount = numel(prbSubset);
     end
 end
+end
+
+function tf = localPreserveAMCMCSForQueueLimit(amc)
+mode = lower(string(sixgr.util.structGet(amc, "Mode", "fixed_modulation")));
+mcsIndex = double(sixgr.util.structGet(amc, "MCSIndex", NaN));
+tf = isfinite(mcsIndex) && mcsIndex >= 0 && (mode == "cqi_table" || mode == "fixed_mcs");
+end
+
+function best = localBuildQueueLimitedBest(cand, prbSubset, evalOut, queueBytes)
+tbsBits = double(evalOut.TBSBits);
+tbsBytes = double(evalOut.TBSBytes);
+payloadBytes = max(0, floor(double(queueBytes)));
+best = struct( ...
+    "Valid", true, ...
+    "PRBSet", double(prbSubset(:).'), ...
+    "Modulation", char(string(cand.Modulation)), ...
+    "NumLayers", double(cand.NumLayers), ...
+    "TargetCodeRate", double(cand.TargetCodeRate), ...
+    "MCSIndex", double(cand.MCSIndex), ...
+    "NREPerPRB", double(evalOut.NREPerPRB), ...
+    "TBSBits", tbsBits, ...
+    "TBSBytes", tbsBytes, ...
+    "QueuePaddingBits", max(0, tbsBits - 8 * payloadBytes), ...
+    "QueuePaddingBytes", max(0, tbsBytes - payloadBytes));
 end
 
 function [bestIdx, bestEval] = localFindLargestQueueFit(obj, cand, rawPRBSet, symAlloc, queueBytes, opt)
@@ -1369,6 +1450,24 @@ while lo <= hi
         lo = mid + 1;
     else
         hi = mid - 1;
+    end
+end
+end
+
+function [bestIdx, bestEval] = localFindSmallestPositiveTB(obj, cand, rawPRBSet, symAlloc, opt)
+bestIdx = 0;
+bestEval = localInvalidQueueEval();
+lo = 1;
+hi = numel(rawPRBSet);
+while lo <= hi
+    mid = floor((lo + hi) / 2);
+    evalMid = localEvaluatePositiveCandidate(obj, cand, mid, symAlloc, opt);
+    if evalMid.Valid
+        bestIdx = mid;
+        bestEval = evalMid;
+        hi = mid - 1;
+    else
+        lo = mid + 1;
     end
 end
 end
@@ -1403,6 +1502,20 @@ if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
     return;
 end
 if tbsBytes > queueBytes
+    return;
+end
+evalOut.Valid = true;
+evalOut.NREPerPRB = double(nrePerPRB);
+evalOut.TBSBits = double(tbsBits);
+evalOut.TBSBytes = double(tbsBytes);
+end
+
+function evalOut = localEvaluatePositiveCandidate(obj, cand, prbCount, symAlloc, opt)
+evalOut = localInvalidQueueEval();
+[tbsBits, tbsBytes, nrePerPRB] = obj.estimateTBS( ...
+    cand.Modulation, cand.NumLayers, double(prbCount), symAlloc, cand.TargetCodeRate, ...
+    "PlanningOnly", logical(opt.PlanningOnly));
+if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
     return;
 end
 evalOut.Valid = true;

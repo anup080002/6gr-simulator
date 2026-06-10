@@ -275,7 +275,16 @@ switch round(scs)
         maxCand = 22;
     case 120
         maxCand = 20;
+    case {480, 960}
+        if ~logical(sixgr.util.structGet(ctrlCfg, "AllowUndefined6GNumerologyCandidateLimit", false))
+            error("sixgr:ctrl:PDCCH:Undefined6GNumerologyCandidateLimit", ...
+                "SCS %.0f kHz has no TS 38.213 blind-candidate limit. Set ctrl6gr.AllowUndefined6GNumerologyCandidateLimit=true only for an explicitly tagged 6G study placeholder.", scs);
+        end
+        warning("sixgr:ctrl:PDCCH:Undefined6GNumerologyCandidateLimitPlaceholder", ...
+            "SCS %.0f kHz has no TS 38.213 blind-candidate limit; using the 120 kHz limit only because the study placeholder was explicitly enabled.", scs);
+        maxCand = 20;
     otherwise
-        maxCand = 44;
+        error("sixgr:ctrl:PDCCH:UnsupportedSubcarrierSpacing", ...
+            "Unsupported PDCCH SCS %.0f kHz. Configure a standards-defined SCS or explicitly model a 6G study limit.", scs);
 end
 end

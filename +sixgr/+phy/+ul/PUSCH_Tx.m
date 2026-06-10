@@ -197,7 +197,9 @@ if ~isempty(ptrsInd)
 end
 
 % OFDM modulation
-[txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
+[windowingSamples, windowingInfo] = sixgr.phy.waveform.resolveOFDMWindowing(cfg, carrier);
+[txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid, ...
+    "Windowing", double(windowingSamples));
 
 % ---------------------- Outputs ----------------------
 tx = struct();
@@ -210,6 +212,9 @@ tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
 tx.PUSCHSymbolsForEvidence = puschSym;
 tx.PrecodeInfo = prec;
+tx.OFDMWindowingSamples = double(windowingSamples);
+tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
+tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlock = trBlk;
@@ -238,6 +243,7 @@ info.CRC = crcInfo;
 info.Segmentation = segInfo;
 info.PUSCHSymbols = puschSymInfo;
 info.OFDM = ofdmInfo;
+info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
 

@@ -42,6 +42,7 @@
       "cqi_smoothing_alpha": {"required": false, "type": "number", "min": 0, "max": 1},
       "olla_step_down": {"required": false, "type": "number", "min": 0},
       "olla_step_up": {"required": false, "type": "number", "min": 0},
+      "bootstrap_mcs_index": {"required": false, "type": "integer", "min": 0, "max": 31},
       "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default"]}
     }},
     "harq": {"parameters": {

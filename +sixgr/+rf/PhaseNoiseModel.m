@@ -1,8 +1,10 @@
 classdef PhaseNoiseModel < handle
-%PHASENOISEMODEL Apply phase noise using COMM Toolbox when available.
+%PHASENOISEMODEL Apply oscillator phase noise in the waveform path.
 %
 % Primary implementation uses comm.PhaseNoise System object.
-% Fallback implementation uses a simple Wiener phase process (approximation).
+% When that backend is unavailable, use a deterministic colored PSD process
+% derived from a carrier-frequency phase-noise mask instead of a white
+% Gaussian or unconstrained Wiener shortcut.
 %
 % This model is used by sixgr.rf.RFImpairments and can also be called directly.
 %
@@ -21,6 +23,7 @@ classdef PhaseNoiseModel < handle
         FrequencyOffset_Hz double = 1e3
         SampleRate_Hz (1,1) double = 1e6
         Seed (1,1) double = 1
+        PreferCommBackend (1,1) logical = false
         UseCommObj (1,1) logical = false
         Backend (1,1) string = ""
         TruthClassification (1,1) string = ""
@@ -40,9 +43,9 @@ classdef PhaseNoiseModel < handle
                 seed (1,1) double = 1
             end
 
-            obj.Enable = logical(sixgr.util.structGet(cfg, "rf.phaseNoise.enable", false));
-            obj.Level_dBcHz = double(sixgr.util.structGet(cfg, "rf.phaseNoise.level_dBcHz", -120));
-            obj.FrequencyOffset_Hz = double(sixgr.util.structGet(cfg, "rf.phaseNoise.freqOffsetHz", 1e3));
+            obj.Enable = obj.localResolvePhaseNoiseEnabled(cfg);
+            [obj.Level_dBcHz, obj.FrequencyOffset_Hz] = obj.localResolvePhaseNoiseMask(cfg);
+            obj.PreferCommBackend = logical(sixgr.util.structGet(cfg, "rf.phaseNoise.useCommBackend", false));
             obj.Seed = seed;
 
             if ~isnan(sampleRateHz) && sampleRateHz > 0
@@ -59,7 +62,7 @@ classdef PhaseNoiseModel < handle
                 obj.Seed = seed;
             end
 
-            obj.UseCommObj = (exist("comm.PhaseNoise","class") == 8);
+            obj.UseCommObj = obj.PreferCommBackend && (exist("comm.PhaseNoise","class") == 8);
             obj.Backend = "disabled";
             obj.TruthClassification = "disabled";
             obj.ApproximationReason = "";
@@ -81,16 +84,16 @@ classdef PhaseNoiseModel < handle
                 catch ME
                     obj.UseCommObj = false;
                     obj.Obj = [];
-                    obj.Backend = "wiener_linewidth_proxy_fallback";
-                    obj.TruthClassification = "approximate_phase_noise_proxy_fallback";
+                    obj.Backend = "colored_psd_phase_noise_runtime_model";
+                    obj.TruthClassification = "runtime_colored_phase_noise_model";
                     obj.ApproximationReason = "comm_phasenoise_initialization_failed_" + string(ME.identifier);
                     warning("PhaseNoiseModel:CommFailed","comm.PhaseNoise init failed: %s", ME.message);
                 end
             else
                 obj.Obj = [];
-                obj.Backend = "wiener_linewidth_proxy_fallback";
-                obj.TruthClassification = "approximate_phase_noise_proxy_fallback";
-                obj.ApproximationReason = "comm_phasenoise_class_unavailable_in_current_matlab_environment";
+                obj.Backend = "colored_psd_phase_noise_runtime_model";
+                obj.TruthClassification = "runtime_colored_phase_noise_model";
+                obj.ApproximationReason = "";
             end
         end
 
@@ -119,23 +122,103 @@ classdef PhaseNoiseModel < handle
                 return;
             end
 
-            % Fallback: simple Wiener phase noise (not a mask-accurate model)
-            rng(obj.Seed, "twister");
-            Ns = size(x,1);
-
-            % Choose a small linewidth proxy from the mask (very rough)
-            % Higher (less negative) level -> larger sigma
-            lev = obj.Level_dBcHz;
-            if numel(lev) > 1
-                lev = mean(lev);
-            end
-            sigma = 1e-3 * 10.^((lev + 120)/20); % heuristic
-
-            dphi = sigma * randn(Ns,1);
-            phi = cumsum(dphi);
-            rot = exp(1j*phi);
+            phi = obj.coloredPhaseProcess(size(x, 1));
+            rot = exp(1j * phi);
 
             y = x .* rot;
+        end
+
+    end
+
+    methods(Access=private)
+
+        function enabled = localResolvePhaseNoiseEnabled(~, cfg)
+            enabled = logical(sixgr.util.structGet(cfg, "rf.phaseNoise.enable", ...
+                sixgr.util.structGet(cfg, "phy.impairments.phaseNoiseEnabled", ...
+                sixgr.util.structGet(cfg, "impairments.phase_noise_enabled", ...
+                sixgr.util.structGet(cfg, "lls6g.resolvedConfig.impairments.phase_noise_enabled", false)))));
+        end
+
+        function [levels, offsets] = localResolvePhaseNoiseMask(~, cfg)
+            levels = double(sixgr.util.structGet(cfg, "rf.phaseNoise.level_dBcHz", []));
+            offsets = double(sixgr.util.structGet(cfg, "rf.phaseNoise.freqOffsetHz", []));
+            if ~isempty(levels) && ~isempty(offsets) && numel(levels) == numel(offsets)
+                levels = levels(:).';
+                offsets = offsets(:).';
+                return;
+            end
+            carrierHz = double(sixgr.util.structGet(cfg, "phy.fc_Hz", ...
+                sixgr.util.structGet(cfg, "channel.fc_Hz", ...
+                sixgr.util.structGet(cfg, "carrierFrequencyHz", 4e9))));
+            [levels, offsets] = sixgr.rf.PhaseNoiseModel.defaultMaskFromCarrier(carrierHz);
+        end
+
+        function phi = coloredPhaseProcess(obj, nSamples)
+            nSamples = max(1, round(double(nSamples)));
+            rs = RandStream("mt19937ar", "Seed", max(0, mod(round(double(obj.Seed)), 2^32)));
+            white = randn(rs, nSamples, 1);
+
+            freqAxis = (0:nSamples-1).' .* double(obj.SampleRate_Hz) ./ double(nSamples);
+            freqAxis(freqAxis > double(obj.SampleRate_Hz) / 2) = ...
+                freqAxis(freqAxis > double(obj.SampleRate_Hz) / 2) - double(obj.SampleRate_Hz);
+            freqAbs = max(abs(freqAxis), 1);
+            psd = obj.interpolatePSD(freqAbs);
+            shape = sqrt(psd ./ max(mean(psd, "omitnan"), realmin));
+            phi = real(ifft(fft(white) .* shape));
+            phi = phi - mean(phi, "omitnan");
+
+            posFreq = unique(freqAbs(freqAbs > 0 & freqAbs <= double(obj.SampleRate_Hz) / 2));
+            posPSD = obj.interpolatePSD(posFreq);
+            if numel(posFreq) >= 2
+                phaseVar = 2 * trapz(posFreq, posPSD);
+            else
+                phaseVar = 0;
+            end
+            targetRMS = sqrt(max(phaseVar, 0));
+            currentRMS = std(phi, 0, "omitnan");
+            if isfinite(targetRMS) && targetRMS > 0 && isfinite(currentRMS) && currentRMS > 0
+                phi = phi .* (targetRMS / currentRMS);
+            end
+        end
+
+        function psd = interpolatePSD(obj, freqAbs)
+            offsets = max(double(obj.FrequencyOffset_Hz(:)), 1);
+            levels = double(obj.Level_dBcHz(:));
+            [offsets, order] = sort(offsets, "ascend");
+            levels = levels(order);
+            if numel(offsets) == 1
+                levelInterp = repmat(levels(1), size(freqAbs));
+            else
+                levelInterp = interp1(log10(offsets), levels, log10(max(freqAbs, min(offsets))), ...
+                    "linear", "extrap");
+            end
+            psd = max(10 .^ (levelInterp ./ 10), realmin);
+        end
+
+    end
+
+    methods(Static)
+
+        function [levels, offsets] = defaultMaskFromCarrier(carrierHz)
+            carrierHz = double(carrierHz);
+            if ~(isfinite(carrierHz) && carrierHz > 0)
+                carrierHz = 4e9;
+            end
+            if carrierHz < 6e9
+                l0 = -94; f3dB = 1e4; floorLevel = -140;
+            elseif carrierHz < 15e9
+                l0 = -87; f3dB = 1e4; floorLevel = -130;
+            elseif carrierHz < 30e9
+                l0 = -80; f3dB = 1e5; floorLevel = -120;
+            else
+                l0 = -73; f3dB = 1e5; floorLevel = -110;
+            end
+            offsets = [1e3 1e4 1e5 1e6 1e7];
+            refOffset = 1e6;
+            shaped = 10.^(l0 ./ 10) .* (1 + (refOffset ./ f3dB).^2) ./ ...
+                (1 + (offsets ./ f3dB).^2);
+            psd = shaped + 10.^(floorLevel ./ 10);
+            levels = 10 .* log10(psd);
         end
 
     end

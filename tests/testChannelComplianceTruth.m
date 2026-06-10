@@ -99,6 +99,25 @@ assert(strcmpi(char(string(state.ChannelComplianceMode)), "approximate_38901_plu
     strcmpi(char(string(state.LOSProbabilitySource)), "tr38901_uma_closed_form_los_probability"), ...
     "Large-scale state cache must retain the pathloss, O2I, and LOS compliance provenance.");
 
+cfgFR3 = sixgr.config.defaultConfig();
+cfgFR3.channel.model = "TR38901";
+cfgFR3.channel.pathlossModel = "nrPathLoss";
+cfgFR3.channel.pathloss.model = "nrPathLoss";
+cfgFR3.channel.complianceMode = "strict_38901";
+cfgFR3.channel.shadowFadingEnabled = false;
+cfgFR3.channel.shadowSigma_dB = 0;
+cfgFR3.channel.o2i.model = "none";
+cfgFR3.channel.propagationScenario = "UMa";
+cfgFR3.phy.fc_Hz = 12e9;
+plFR3 = sixgr.channel.TR38901Plus(cfgFR3, "Scenario", "UMa", "Fc_Hz", 12e9, "Seed", 15);
+[plFR3dB, ~, exFR3] = plFR3.pathloss([0; 0; 25], [250; 0; 1.5], "LOS", true);
+expectedFR3 = 28.0 + 22.0 * log10(sqrt(250^2 + 23.5^2)) + 20.0 * log10(12.0);
+assert(abs(double(plFR3dB) - expectedFR3) < 1e-9 && ...
+    strcmpi(char(string(exFR3.pathlossExecutionBackend)), "tr38901_closed_form_runtime_backend") && ...
+    strcmpi(char(string(exFR3.pathlossComplianceStatus)), "tr38901_closed_form_7p125_to_24p25ghz_gap") && ...
+    ~logical(exFR3.fallbackUsedForPathloss), ...
+    "FR3/gap pathloss must use standards-backed TR 38.901 closed-form equations, not an FSPL fallback.");
+
 haveNrPathLoss = exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2;
 if haveNrPathLoss
     cfgStrictNR = sixgr.config.defaultConfig();

@@ -70,7 +70,7 @@ decCbs = zeros(nRow, nCB, 'int8');
 itVec = NaN(nCB, 1);
 maxLen = 0;
 alg = char(string(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum")));
-maxIter = double(sixgr.util.structGet(cfg, "phy.ldpc.maxIterations", 8));
+maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg);
 
 for c = 1:nCB
     [d, it] = sixgr.phy.phycode.ldpcDecode(X(:, c), double(tx.BaseGraph), maxIter, alg);

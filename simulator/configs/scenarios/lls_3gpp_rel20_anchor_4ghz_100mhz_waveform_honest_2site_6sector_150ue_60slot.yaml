@@ -238,7 +238,7 @@ csi_acquisition_and_reporting:
 
 link_adaptation:
   fixed_or_amc: amc
-  domain: radisys_l1_mcs
+  domain: cqi
   cqi_table: table2
   outer_loop_flag: true
   inner_loop_flag: true

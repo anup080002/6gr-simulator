@@ -23,14 +23,15 @@ replay = struct( ...
     "O2ILoss_dB", double(sixgr.util.structGet(state, "O2ILoss_dB", NaN)), ...
     "LOS", double(sixgr.util.structGet(state, "LOS", NaN)), ...
     "InterferenceSIR_dB", double(sixgr.util.structGet(state, "InterferenceSIR_dB", NaN)), ...
-    "InjectedInterferenceVariance", NaN);
+    "InjectedInterferenceVariance", NaN, ...
+    "PhaseNoiseConfigured", localPhaseNoiseConfigured(cfg), ...
+    "PhaseNoiseApplied", false, ...
+    "PhaseNoiseBackend", "disabled", ...
+    "PhaseNoiseTruthClassification", "disabled", ...
+    "PhaseNoiseExecutionStatus", "not_configured");
 
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
-    try
-        reset(state.Obj);
-    catch
-    end
     xIn = x;
     padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
     trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
@@ -69,6 +70,9 @@ cfoHz = localResolveInjectedCFOHz(cfg);
 replay.InjectedCFO_Hz = cfoHz;
 if isfinite(cfoHz) && cfoHz ~= 0
     y = localApplyCFO(y, fs, cfoHz);
+end
+if localPhaseNoiseConfigured(cfg)
+    [y, replay] = localApplyPhaseNoise(y, replay, cfg, fs);
 end
 replay.RawWaveform = y;
 
@@ -146,22 +150,10 @@ timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSam
 if ~isfinite(timingOffset)
     timingOffset = 0;
 end
-timingOffset = round(timingOffset);
 end
 
 function y = localApplyTimingOffset(x, timingOffset)
-y = x;
-if timingOffset > 0
-    y = [zeros(timingOffset, size(y, 2), "like", y); y];
-    y = y(1:size(x, 1), :);
-elseif timingOffset < 0
-    shift = abs(timingOffset);
-    if shift >= size(y, 1)
-        y = zeros(size(x), "like", x);
-    else
-        y = [y(shift+1:end, :); zeros(shift, size(y, 2), "like", y)];
-    end
-end
+y = sixgr.util.applyFractionalSampleDelay(x, timingOffset);
 end
 
 function y = localApplyCFO(x, sampleRateHz, cfoHz)
@@ -172,6 +164,32 @@ end
 n = (0:size(y, 1)-1).';
 rot = exp(1j * 2 * pi * (cfoHz / sampleRateHz) * n);
 y = y .* cast(rot, "like", y);
+end
+
+function tf = localPhaseNoiseConfigured(cfg)
+tf = logical(sixgr.util.structGet(cfg, "rf.phaseNoise.enable", false)) || ...
+    logical(sixgr.util.structGet(cfg, "phy.impairments.phaseNoiseEnabled", false)) || ...
+    logical(sixgr.util.structGet(cfg, "impairments.phase_noise_enabled", false)) || ...
+    logical(sixgr.util.structGet(cfg, "lls6g.resolvedConfig.impairments.phase_noise_enabled", false));
+end
+
+function [y, replay] = localApplyPhaseNoise(x, replay, cfg, fs)
+y = x;
+if ~(isfinite(double(fs)) && double(fs) > 0)
+    replay.PhaseNoiseExecutionStatus = "configured_but_sample_rate_unavailable";
+    return;
+end
+seed = double(sixgr.util.structGet(cfg, "run.seed", 1)) + 3001;
+pn = sixgr.rf.PhaseNoiseModel(cfg, double(fs), seed);
+if ~logical(pn.Enable)
+    replay.PhaseNoiseExecutionStatus = "disabled";
+    return;
+end
+y = pn.apply(x, double(fs));
+replay.PhaseNoiseApplied = true;
+replay.PhaseNoiseBackend = char(pn.Backend);
+replay.PhaseNoiseTruthClassification = char(pn.TruthClassification);
+replay.PhaseNoiseExecutionStatus = "applied_sample_domain_phase_noise";
 end
 
 function estCFO_Hz = localEstimateWaveformCFO(txWave, rxWave, sampleRateHz, timingOffset)

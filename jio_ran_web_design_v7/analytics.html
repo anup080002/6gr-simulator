@@ -6,6 +6,10 @@
   <title>Jio Platforms Limited RAN Simulator — Analytics</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="data.js"></script>
+  <script src="config-store.js"></script>
+  <script src="config-form-renderer.js"></script>
+  <script src="analytics-data.js"></script>
+  <script src="chart-engine.js"></script>
   <script src="app.js" defer></script>
 </head>
 <body data-page="analytics">
@@ -14,8 +18,8 @@
     <div class="main-wrap">
       <header class="topbar" id="topbar"></header>
       <main class="main">
-<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Analytics workspace</h3><p class="panel-subtitle">Post-run reporting for KPI overview, PHY, MAC, control, channel, beam, latency, energy, compare-runs, output coverage, and root cause.</p></div><span class="badge green">After run completion</span></div><div class="panel-body" id="analyticsCards"></div></section>
-<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Report panels</h3><p class="panel-subtitle">Multiple reports are generated after run completion from canonical artifacts.</p></div></div><div class="panel-body" id="analyticsCharts"></div></section>
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Analytics Dashboard</h3><p class="panel-subtitle">All charts read from loaded result CSVs or show an explicit unavailable state.</p></div><span class="badge green">Runtime CSV Evidence</span></div><div class="panel-body"><div class="analytics-kpi-strip" id="analyticsKpiStrip"></div><div id="analyticsCards"></div></div></section>
+<section class="panel"><div class="panel-header"><div><h3 class="panel-title">Performance Charts</h3><p class="panel-subtitle">Evidence-backed LLS plots with the source CSV shown per chart.</p></div></div><div class="panel-body" id="analyticsCharts"><div class="loading-state">Waiting for analytics CSV load.</div></div></section>
 </main>
     </div>
     <aside class="rightbar" id="rightbar"></aside>

@@ -1,0 +1,329 @@
+{
+  "schema_version": "1.0",
+  "description": "Parent-child parameter constraint rules for 6GR Simulator v2 browser configuration. NR benchmark rules cite the relevant 3GPP baseline; candidate 6G rules are explicitly marked as study items.",
+  "rules": [
+    {
+      "id": "fr_range_to_bandwidth",
+      "parent": "frequency.range_name",
+      "child": "frequency.bandwidth_hz",
+      "type": "allowed_values",
+      "reference": "TS 38.101-1 Table 5.3.5-1; TS 38.101-2 Table 5.3.5-1",
+      "cases": {
+        "FR1": {"allowed": [5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 40000000, 50000000, 60000000, 70000000, 80000000, 90000000, 100000000], "labels": ["5 MHz", "10 MHz", "15 MHz", "20 MHz", "25 MHz", "30 MHz", "40 MHz", "50 MHz", "60 MHz", "70 MHz", "80 MHz", "90 MHz", "100 MHz"], "note": "FR1 benchmark bandwidth set."},
+        "FR2": {"allowed": [50000000, 100000000, 200000000, 400000000], "labels": ["50 MHz", "100 MHz", "200 MHz", "400 MHz"], "note": "FR2 benchmark bandwidth set."},
+        "FR3": {"allowed": [100000000, 200000000, 400000000, 800000000, 1600000000, 2000000000], "labels": ["100 MHz", "200 MHz", "400 MHz", "800 MHz", "1600 MHz", "2 GHz"], "note": "6G candidate study bandwidth set, not an NR conformance band."}
+      }
+    },
+    {
+      "id": "bandwidth_fr_to_scs",
+      "parent": ["frequency.range_name", "frequency.bandwidth_hz"],
+      "child": "frame.scs_khz",
+      "type": "allowed_values_matrix",
+      "reference": "TS 38.101-1 Table 5.3.5-1; TS 38.101-2 Table 5.3.5-1",
+      "matrix": {
+        "FR1": {
+          "5000000": {"allowed": [15, 30], "note": "60 kHz is not valid for 5 MHz FR1."},
+          "10000000": {"allowed": [15, 30, 60]},
+          "15000000": {"allowed": [15, 30, 60]},
+          "20000000": {"allowed": [15, 30, 60]},
+          "25000000": {"allowed": [15, 30, 60]},
+          "30000000": {"allowed": [15, 30, 60]},
+          "40000000": {"allowed": [15, 30, 60]},
+          "50000000": {"allowed": [15, 30, 60]},
+          "60000000": {"allowed": [30, 60], "note": "15 kHz at 60 MHz exceeds the benchmark NRB table in this catalog."},
+          "70000000": {"allowed": [30], "note": "60 kHz is not a standard FR1 70 MHz combination in this catalog."},
+          "80000000": {"allowed": [30, 60]},
+          "90000000": {"allowed": [30, 60]},
+          "100000000": {"allowed": [30, 60]}
+        },
+        "FR2": {
+          "50000000": {"allowed": [60, 120]},
+          "100000000": {"allowed": [60, 120]},
+          "200000000": {"allowed": [60, 120]},
+          "400000000": {"allowed": [120], "note": "400 MHz FR2 is represented with 120 kHz SCS in the benchmark table."}
+        },
+        "FR3": {
+          "100000000": {"allowed": [60, 120], "note": "6G candidate."},
+          "200000000": {"allowed": [60, 120], "note": "6G candidate."},
+          "400000000": {"allowed": [120, 480], "note": "6G candidate high-SCS study item."},
+          "800000000": {"allowed": [120, 480, 960], "note": "6G candidate high-SCS study item."},
+          "1600000000": {"allowed": [480, 960], "note": "6G candidate high-SCS study item."},
+          "2000000000": {"allowed": [480, 960], "note": "6G candidate high-SCS study item."}
+        }
+      }
+    },
+    {
+      "id": "bw_scs_to_nrb",
+      "parent": ["frequency.bandwidth_hz", "frame.scs_khz"],
+      "child": "phy.carrier.NSizeGrid",
+      "type": "computed_lookup",
+      "readonly": true,
+      "reference": "TS 38.101-1 Table 5.3.2-1; TS 38.101-2 Table 5.3.2-1",
+      "lookup_table": {
+        "5000000": {"15": 25, "30": 11, "60": null},
+        "10000000": {"15": 52, "30": 24, "60": 11},
+        "15000000": {"15": 79, "30": 38, "60": 18},
+        "20000000": {"15": 106, "30": 51, "60": 24},
+        "25000000": {"15": 133, "30": 65, "60": 31},
+        "30000000": {"15": 160, "30": 78, "60": 38},
+        "40000000": {"15": 216, "30": 106, "60": 51},
+        "50000000": {"15": 270, "30": 133, "60": 65},
+        "60000000": {"15": null, "30": 162, "60": 79},
+        "70000000": {"15": null, "30": 189, "60": null},
+        "80000000": {"15": null, "30": 217, "60": 107},
+        "90000000": {"15": null, "30": 245, "60": 121},
+        "100000000": {"15": null, "30": 273, "60": 135},
+        "50000000_FR2": {"60": 66, "120": 32},
+        "100000000_FR2": {"60": 132, "120": 66},
+        "200000000_FR2": {"60": 264, "120": 132},
+        "400000000_FR2": {"60": null, "120": 264}
+      },
+      "note": "NRB is browser-computed and read-only; change bandwidth or SCS to update it."
+    },
+    {
+      "id": "scs_nrb_to_fft",
+      "parent": ["frame.scs_khz", "phy.carrier.NSizeGrid"],
+      "child": "waveform.fft_size",
+      "type": "min_power_of_2",
+      "readonly": true,
+      "reference": "TS 38.211 Section 4.1",
+      "formula": "fft_size = next_power_of_two(NSizeGrid * 12)",
+      "standard_values": {"25": 512, "52": 1024, "106": 2048, "132": 2048, "162": 4096, "217": 4096, "273": 4096}
+    },
+    {
+      "id": "duplex_to_tdd_pattern",
+      "parent": "phy.duplex.mode",
+      "child": "phy.duplex.tddPattern",
+      "type": "conditional_enable",
+      "reference": "TS 38.211 frame structure",
+      "cases": {
+        "TDD": {"enabled": true, "required": true},
+        "FDD": {"enabled": false, "required": false, "force_value": null, "note": "TDD pattern is not applicable for FDD."}
+      }
+    },
+    {
+      "id": "scs_to_prach_format",
+      "parent": "frame.scs_khz",
+      "child": "prach.format",
+      "type": "allowed_values",
+      "reference": "TS 38.211 Tables 6.3.3.2-2 and 6.3.3.2-3",
+      "cases": {
+        "15": {"allowed": ["Format0", "Format1", "Format2", "Format3", "A1", "A2", "A3", "B1", "B2", "B3", "B4", "C0", "C2"]},
+        "30": {"allowed": ["Format0", "Format1", "Format2", "Format3", "A1", "A2", "A3", "B1", "B2", "B3", "B4", "C0", "C2"]},
+        "60": {"allowed": ["A1", "A2", "A3", "B1", "B2", "B3", "B4", "C0", "C2"]},
+        "120": {"allowed": ["A1", "A2", "A3", "B1", "B4"]},
+        "240": {"allowed": ["A1", "A2", "A3", "B4"]},
+        "480": {"allowed": ["A1", "C0_6G", "C2_6G"], "note": "6G candidate study format."},
+        "960": {"allowed": ["A1", "C0_6G"], "note": "6G candidate study format."}
+      }
+    },
+    {
+      "id": "antenna_to_mimo_layers",
+      "parent": ["scenario.bs.nTxAnt", "scenario.ue.nRxAnt"],
+      "child": "mimo.n_layers",
+      "type": "max_value_formula",
+      "reference": "TS 38.214 Section 5.2.2.2",
+      "formula": "max_layers = min(bs_nTxAnt, ue_nRxAnt, 8)"
+    },
+    {
+      "id": "layers_to_mcs_table",
+      "parent": "mimo.n_layers",
+      "child": "modulation.mcs_table",
+      "type": "allowed_values",
+      "reference": "TS 38.214 Section 5.1.3.1",
+      "cases": {
+        "1": {"allowed": ["qam64_table1", "qam256_table2", "qam64_low_se_table3", "transform_precoding_table4"]},
+        "2": {"allowed": ["qam64_table1", "qam256_table2", "qam64_low_se_table3"]},
+        "3": {"allowed": ["qam64_table1", "qam256_table2"]},
+        "4": {"allowed": ["qam64_table1", "qam256_table2"]},
+        "8": {"allowed": ["qam64_table1", "qam256_table2"]}
+      }
+    },
+    {
+      "id": "transform_precoding_to_modulation",
+      "parent": "waveform.transform_precoding_enabled",
+      "child": "modulation.ul_modulation",
+      "type": "allowed_values",
+      "reference": "TS 38.214 Section 6.1.4.1",
+      "cases": {
+        "true": {"allowed": ["PI/2-BPSK", "QPSK", "16QAM", "64QAM"], "blocked": ["256QAM"], "note": "DFT-s-OFDM transform precoding exposes PI/2-BPSK/QPSK/16QAM/64QAM and blocks 256QAM in this benchmark UI."},
+        "false": {"allowed": ["QPSK", "16QAM", "64QAM", "256QAM"]}
+      }
+    },
+    {
+      "id": "cp_to_scs",
+      "parent": "frame.cp_type",
+      "child": "frame.scs_khz",
+      "type": "allowed_values",
+      "reference": "TS 38.211 Section 4.2",
+      "cases": {
+        "normal": {"allowed": [15, 30, 60, 120, 240, 480, 960]},
+        "extended": {"allowed": [60], "note": "Extended CP is supported for 60 kHz in NR benchmark mode."}
+      }
+    },
+    {
+      "id": "array_type_to_element_count",
+      "parent": "antenna_and_array.bs_array_type",
+      "child": "antenna_and_array.num_phy_antenna_elements",
+      "type": "allowed_values",
+      "reference": "Antenna implementation constraint",
+      "cases": {
+        "omni": {"allowed": [1]},
+        "ula": {"allowed": [2, 4, 8, 16, 32, 64]},
+        "upa": {"allowed": [4, 8, 16, 32, 64, 128, 256]},
+        "massive_mimo_panel": {"allowed": [32, 64, 128, 256, 512]}
+      }
+    },
+    {
+      "id": "harq_process_count_limit",
+      "parent": "frame.scs_khz",
+      "child": "harq.n_harq_processes",
+      "type": "max_value",
+      "reference": "TS 38.321 Section 5.4.1",
+      "cases": {"15": {"max": 16}, "30": {"max": 16}, "60": {"max": 16}, "120": {"max": 16}, "240": {"max": 16}, "480": {"max": 16}, "960": {"max": 16}}
+    },
+    {
+      "id": "scs_to_harq_k1",
+      "parent": "frame.scs_khz",
+      "child": "harq.k1",
+      "type": "min_value",
+      "reference": "TS 38.214 Table 5.3-1",
+      "cases": {"15": {"min": 8}, "30": {"min": 10}, "60": {"min": 17}, "120": {"min": 20}, "240": {"min": 20}, "480": {"min": 20}, "960": {"min": 20}}
+    },
+    {
+      "id": "channel_model_to_profile",
+      "parent": "channels.model",
+      "child": "channels.profile",
+      "type": "allowed_values",
+      "reference": "TR 38.901 Section 7.7",
+      "cases": {
+        "AWGN": {"allowed": ["AWGN"], "note": "No fading profile applies."},
+        "TDL": {"allowed": ["TDL-A", "TDL-B", "TDL-C", "TDL-D", "TDL-E"]},
+        "CDL": {"allowed": ["CDL-A", "CDL-B", "CDL-C", "CDL-D", "CDL-E"]},
+        "TR38901": {"allowed": ["UMa", "UMi", "RMa", "InH", "InF"]}
+      }
+    },
+    {
+      "id": "freq_range_to_channel_model",
+      "parent": "frequency.range_name",
+      "child": "channels.model",
+      "type": "allowed_values",
+      "reference": "TR 38.901 Section 7.4",
+      "cases": {
+        "FR1": {"allowed": ["AWGN", "TDL", "CDL", "TR38901"]},
+        "FR2": {"allowed": ["AWGN", "TDL", "CDL", "TR38901"]},
+        "FR3": {"allowed": ["AWGN", "CDL", "TR38901"], "note": "FR3 is a 6G candidate study surface; TDL is hidden unless explicitly implemented."}
+      }
+    },
+    {
+      "id": "pdcch_enabled_to_coreset",
+      "parent": "pdcch.enabled",
+      "child": "pdcch.coreset_id",
+      "type": "conditional_required",
+      "reference": "TS 38.211 Section 7.3.2",
+      "cases": {"true": {"required": true}, "false": {"required": false, "force_value": null}}
+    },
+    {
+      "id": "srs_enabled_to_ports",
+      "parent": ["reference_signals.srs_enabled", "scenario.ue.nTxAnt"],
+      "child": "reference_signals.srs_ports",
+      "type": "max_value_formula",
+      "reference": "TS 38.211 Table 6.4.1.4.3-1",
+      "formula": "max_srs_ports = ue_nTxAnt when SRS is enabled; zero otherwise"
+    },
+    {
+      "id": "waveform_to_ptrs",
+      "parent": "waveform.ul",
+      "child": "reference_signals.ptrs_enabled",
+      "type": "conditional_enable",
+      "reference": "TS 38.211 Section 7.4.1.2",
+      "cases": {
+        "CP-OFDM": {"enabled": true},
+        "DFT-s-OFDM": {"enabled": true, "note": "Allowed only when corresponding transform-precoding PT-RS support is implemented."}
+      }
+    },
+    {
+      "id": "target_bler_to_olla_steps",
+      "parent": "link_adaptation.target_bler_dl",
+      "child": ["link_adaptation.olla_step_up", "link_adaptation.olla_step_down"],
+      "type": "recommended_formula",
+      "reference": "Outer-loop link adaptation control law",
+      "formula": "step_down = step_up * target_bler / max(1 - target_bler, eps)"
+    },
+    {
+      "id": "service_class_to_target_bler",
+      "parent": "traffic.service_class",
+      "child": "link_adaptation.target_bler_dl",
+      "type": "recommended_values",
+      "reference": "TS 22.261 service requirements mapped to simulator policy",
+      "cases": {
+        "eMBB": {"recommended": 0.1},
+        "URLLC": {"recommended": 0.01},
+        "XR": {"recommended": 0.05},
+        "mMTC": {"recommended": 0.1}
+      }
+    },
+    {
+      "id": "mimo_mode_to_beam_mgmt",
+      "parent": "mimo.mode",
+      "child": "mimo.beam_management_enable",
+      "type": "conditional_required",
+      "reference": "Simulator MIMO/beam-management consistency",
+      "cases": {
+        "SISO": {"required": false, "recommended": false},
+        "SU-MIMO": {"required": false},
+        "MU-MIMO": {"required": true, "recommended": true},
+        "Massive-MIMO": {"required": true, "recommended": true}
+      }
+    },
+    {
+      "id": "max_modulation_to_cqi_table",
+      "parent": "modulation.max_modulation_dl",
+      "child": "link_adaptation.cqi_table",
+      "type": "allowed_values",
+      "reference": "TS 38.214 Section 5.2.2.1",
+      "cases": {
+        "QPSK": {"allowed": ["table1"]},
+        "16QAM": {"allowed": ["table1"]},
+        "64QAM": {"allowed": ["table1", "table3"]},
+        "256QAM": {"allowed": ["table2"]}
+      }
+    },
+    {
+      "id": "freq_to_pathloss_model",
+      "parent": "frequency.range_name",
+      "child": "channels.pathloss_model",
+      "type": "allowed_values",
+      "reference": "TR 38.901 Section 7.4.1",
+      "cases": {
+        "FR1": {"allowed": ["nrPathLoss", "TR38901_UMa", "TR38901_UMi", "TR38901_RMa", "ABG_explicit_study"]},
+        "FR2": {"allowed": ["nrPathLoss", "TR38901_UMa", "TR38901_UMi", "TR38901_InH", "ABG_explicit_study"]},
+        "FR3": {"allowed": ["TR38901_candidate_extrapolation", "ABG_explicit_study"], "note": "FR3 pathloss is a candidate study surface, not NR conformance truth."}
+      }
+    },
+    {
+      "id": "sites_to_wraparound",
+      "parent": "scenario.layout.nSites",
+      "child": "scenario.layout.wrapAround",
+      "type": "recommended_enable",
+      "reference": "3GPP evaluation methodology",
+      "cases": {"1": {"recommended": false}, "2+": {"recommended": true, "note": "Multi-site layouts should use wrap-around for edge-bias controlled studies."}}
+    },
+    {
+      "id": "scs_to_prach_sequence_length",
+      "parent": "frame.scs_khz",
+      "child": "prach.sequence_length",
+      "type": "allowed_values",
+      "reference": "TS 38.211 Section 6.3.3.1",
+      "cases": {
+        "15": {"allowed": [839, 139]},
+        "30": {"allowed": [839, 139]},
+        "60": {"allowed": [139]},
+        "120": {"allowed": [139]},
+        "240": {"allowed": [139]},
+        "480": {"allowed": [139], "note": "6G candidate study surface."},
+        "960": {"allowed": [139], "note": "6G candidate study surface."}
+      }
+    }
+  ]
+}

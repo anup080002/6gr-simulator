@@ -97,8 +97,7 @@ end
 
 maxIter = opt.MaxIterations;
 if isempty(maxIter)
-    maxIter = double(sixgr.util.structGet(cfg, 'phy.ldpc.maxIterations', ...
-        sixgr.util.structGet(cfg, 'phy.ldpc.maxIter', 12)));
+    maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "UL");
 end
 
 alg = opt.Algorithm;
@@ -127,6 +126,7 @@ try
 catch
     bgn = 2;
 end
+ldpcSeg = localResolveExpectedLDPCSegmentation(trBlkSize, bgn, tbCRCType);
 
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
@@ -172,7 +172,8 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ..
     "EstimateUsed", timingEstimateUsed, ...
     "ApplicationMode", "signed_waveform_shift", ...
     "SkipRequested", logical(opt.SkipTimingEstimate), ...
-    "Source", timingEstimateSource);
+    "Source", timingEstimateSource, ...
+    "MaxCorrectionSamples", localMaxTimingCorrectionSamples(carrier));
 trackingCorrection.TimingCorrectionApplied = logical(timingResolution.EstimateUsed);
 rxWaveform = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrection_samples);
 
@@ -263,7 +264,7 @@ end
 cwLLR = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation);
 
 % Rate recover (to code blocks)
-recLLR = sixgr.phy.phycode.rateRecoverLDPC(cwLLR, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers);
+[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLR, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
@@ -349,7 +350,7 @@ end
 decodeLatency_s = toc(decodeTic);
 
 % Code block desegmentation + TB CRC check
-B = trBlkSize + tbCRCLen;
+B = ldpcSeg.TransportBlockLenWithCRC;
 [tbCrc, cbCrcErr] = sixgr.phy.tb.desegmentLDPC(decCbs, bgn, B);
 [tbBits, crcOK, crcErr] = sixgr.phy.tb.checkCRC(tbCrc, tbCRCType);
 
@@ -377,6 +378,11 @@ rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPol
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
+rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
+rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
+rx.TransportBlockCRCLength = double(tbCRCLen);
+rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
+rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
@@ -589,30 +595,19 @@ if ~isfinite(timingOffset) || abs(timingOffset) < 1e-9
     y = x;
     return;
 end
-N = size(x, 1);
-intPart = round(timingOffset);
-fracPart = timingOffset - intPart;
-if intPart ~= 0
-    x = circshift(x, -intPart, 1);
+y = sixgr.util.applyFractionalSampleDelay(x, -timingOffset);
 end
-if abs(fracPart) > 1e-12
-    k = (0:N-1).';
-    H = exp(-1j * 2 * pi * fracPart * k / max(N, 1));
-    if isreal(x) && N > 2
-        half = floor(N/2);
-        if half >= 1 && half + 2 <= N
-            H(half+2:end) = conj(flipud(H(2:half)));
-        end
+
+function maxCorrection = localMaxTimingCorrectionSamples(carrier)
+maxCorrection = inf;
+try
+    ofdmInfo = nrOFDMInfo(carrier);
+    cpLens = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
+    if ~isempty(cpLens)
+        maxCorrection = max(0, max(cpLens(:)));
     end
-    for col = 1:size(x, 2)
-        corrected = ifft(fft(x(:, col)) .* H);
-        if isreal(x)
-            corrected = real(corrected);
-        end
-        x(:, col) = corrected;
-    end
+catch
 end
-y = x;
 end
 
 function fs = localCarrierSampleRateHz(carrier)
@@ -715,6 +710,28 @@ rawLen = double(sixgr.util.structGet(schInfo, 'L', defaultLen));
 if isfinite(rawLen) && rawLen >= 0
     crcLen = rawLen;
 end
+end
+
+function seg = localResolveExpectedLDPCSegmentation(trBlkSize, bgn, tbCRCType)
+% Mirror the Tx-side TB CRC + 38.212 code-block segmentation to recover C.
+trBlkSize = double(trBlkSize);
+bgn = double(bgn);
+if ~(isscalar(trBlkSize) && isfinite(trBlkSize) && trBlkSize > 0)
+    error("sixgr:phy:ul:PUSCHInvalidTBSForLDPC", ...
+        "PUSCH_Rx cannot resolve LDPC segmentation for invalid TBS %.6g.", trBlkSize);
+end
+if ~(isscalar(bgn) && isfinite(bgn) && any(round(bgn) == [1 2]))
+    error("sixgr:phy:ul:PUSCHInvalidBaseGraphForLDPC", ...
+        "PUSCH_Rx cannot resolve LDPC segmentation for base graph %.6g.", bgn);
+end
+tb = zeros(round(trBlkSize), 1, 'int8');
+tbCrc = sixgr.phy.tb.attachCRC(tb, tbCRCType);
+[cbs, segInfo] = sixgr.phy.tb.segmentLDPC(tbCrc, round(bgn));
+seg = struct( ...
+    "TransportBlockLenWithCRC", double(numel(tbCrc)), ...
+    "NumCodeBlocks", double(size(cbs, 2)), ...
+    "CodeBlockLength", double(size(cbs, 1)), ...
+    "SegmentationInfo", segInfo);
 end
 
 function qm = localQm(modScheme)

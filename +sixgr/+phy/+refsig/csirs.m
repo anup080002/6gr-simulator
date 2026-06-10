@@ -101,10 +101,21 @@ end
 
 % Scrambling identity
 try
-    csirs.NID = carrier.NCellID;
+    csirs.NID = localResolveCSIRSScramblingID(cfg, carrier);
 catch
 end
 
+end
+
+function nID = localResolveCSIRSScramblingID(cfg, carrier)
+nID = double(sixgr.util.structGet(cfg, 'phy.csirs.scramblingID', ...
+    sixgr.util.structGet(cfg, 'phy.csirs.ScramblingID', ...
+    sixgr.util.structGet(cfg, 'reference_signals.csirs_scrambling_id', ...
+    sixgr.util.structGet(cfg, 'reference_signals.csi_rs_scrambling_id', carrier.NCellID)))));
+if ~(isscalar(nID) && isfinite(nID))
+    nID = double(carrier.NCellID);
+end
+nID = mod(round(nID), 1024);
 end
 
 function row = localFindRowForPorts(nPorts, density, cdmType)

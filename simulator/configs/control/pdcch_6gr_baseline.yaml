@@ -31,6 +31,7 @@
       "crc_scrambling_enabled": true,
       "payload_scrambling_enabled": true,
       "payload_sequence_init": 1,
+      "pdcch_scrambling_id": 1,
       "waveform_mode": "full_ofdm",
       "coreset": {
         "CORESETID": 0,

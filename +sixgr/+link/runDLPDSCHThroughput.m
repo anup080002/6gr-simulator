@@ -190,6 +190,10 @@ trialTimingEstimateStatus = strings(numFrames,1);
 trialTimingEstimateWasClipped = false(numFrames,1);
 trialConfiguredSNR = snr_dB * ones(numFrames,1);
 trialAppliedAWGNSNR = NaN(numFrames,1);
+trialDesiredSignalPowerBeforeNoise = NaN(numFrames,1);
+trialCompositeSignalPowerBeforeNoise = NaN(numFrames,1);
+trialAppliedNoiseSNR = NaN(numFrames,1);
+trialNoiseVarianceSource = strings(numFrames,1);
 trialAppliedLargeScaleGain = NaN(numFrames,1);
 trialAppliedLargeScaleLoss = NaN(numFrames,1);
 trialAppliedBasePathloss = NaN(numFrames,1);
@@ -569,6 +573,10 @@ for n = 1:numFrames
         trialFailureReason(n) = string(sixgr.util.structGet(rx, "FailureReason", ""));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+        trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+        trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+        trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+        trialNoiseVarianceSource(n) = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
         trialAppliedLargeScaleGain(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
         trialAppliedLargeScaleLoss(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
         trialAppliedBasePathloss(n) = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -1076,7 +1084,8 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
             trialRI(idx), trialPMI(idx), trialCRI(idx), ...
             trialPMIType(idx), trialPMICodebookMode(idx), trialCSIReportMode(idx), trialCSIPayloadBits(idx), trialCSIPayloadHex(idx), ...
             trialSubbandCQI(idx), trialSubbandSINR(idx), trialSubbandSizePRB(idx), trialSubbandCount(idx), trialWidebandOrSubband(idx), trialSubbandCQISource(idx), trialSubbandCQIStatus(idx), ...
-            trialGain(idx), trialNoise(idx), trialTiming(idx), trialRank(idx), trialCond(idx), trialRxAnt(idx), trialTxPorts(idx), ...
+            trialGain(idx), trialNoise(idx), trialDesiredSignalPowerBeforeNoise(idx), trialCompositeSignalPowerBeforeNoise(idx), trialAppliedNoiseSNR(idx), trialNoiseVarianceSource(idx), ...
+            trialTiming(idx), trialRank(idx), trialCond(idx), trialRxAnt(idx), trialTxPorts(idx), ...
             trialSelectedBeam(idx), trialBestBeam(idx), trialBeamHit(idx), trialTopKBeamHit(idx), trialBeamCount(idx), ...
             trialSelectedBeamGain(idx), trialBestBeamGain(idx), trialBeamGap(idx), ...
             trialCfgPMI(idx), trialCfgCRI(idx), trialBitErr(idx), trialBitTot(idx), ...
@@ -1109,6 +1118,7 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
             'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
             'LinkAdaptationMode','ActualMCSSelectionMode','SchedulerGrantMCSSelectionMode','CQITable','MCSTable','RankIndicator','PMI','CRI','PMIType','PMICodebookMode', ...
             'CSIReportMode','CSIPayloadBitLength','CSIPayloadHex','SubbandCQIVector','SubbandSINRVector_dB','SubbandSizePRB','SubbandCount','WidebandOrSubband','SubbandCQISource','SubbandCQIValueStatus','ChannelGain_dB','NoiseVariance', ...
+            'DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
             'TimingOffset_samples','RankEstimate','ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
             'SelectedBeamIndex','BestBeamIndex','BeamHit','TopKBeamHit','BeamCandidateCount', ...
             'SelectedBeamGain_dB','BestBeamGain_dB','BeamGainGap_dB', ...
@@ -1303,10 +1313,12 @@ out.CSIRSTrialTable = localBuildCSIRSTrialTable(csirsRows);
     end
 end
 
-function [y, nVar] = localAddAwgn(x, replay, referenceWaveform)
+function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo)
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", txInfo);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
+    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
+    noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "thermal_noise_plus_receiver_nf", txInfo);
     if isfinite(nVar) && nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
@@ -1317,7 +1329,8 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "standalone_awgn_snr_argument_post_channel_units", txInfo);
 if isfinite(nVar) && nVar >= 0
     if nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
@@ -1328,9 +1341,24 @@ if isfinite(nVar) && nVar >= 0
     return;
 end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "legacy_addAwgnComplex_last_resort", txInfo);
 end
 
-function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
+function info = localNoiseCalibrationInfo(compositeWaveform, desiredWaveform, nVar, source, txInfo)
+desiredPower = localUsefulOFDMReferencePower(desiredWaveform, txInfo);
+compositePower = localUsefulOFDMReferencePower(compositeWaveform, txInfo);
+appliedSNR = NaN;
+if isfinite(desiredPower) && desiredPower > 0 && isfinite(nVar) && nVar > 0
+    appliedSNR = 10 * log10(desiredPower / nVar);
+end
+info = struct( ...
+    "DesiredSignalPowerBeforeNoise", double(desiredPower), ...
+    "CompositeSignalPowerBeforeNoise", double(compositePower), ...
+    "AppliedNoiseSNR_dB", double(appliedSNR), ...
+    "NoiseVarianceSource", char(string(source)));
+end
+
+function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB, txInfo)
 nVar = NaN;
 snr_dB = double(snr_dB);
 if ~(isscalar(snr_dB) && isfinite(snr_dB))
@@ -1339,11 +1367,46 @@ end
 if isempty(referenceWaveform)
     return;
 end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+refPower = localUsefulOFDMReferencePower(referenceWaveform, txInfo);
 if ~(isfinite(refPower) && refPower >= 0)
     return;
 end
 nVar = refPower / max(10.^(snr_dB / 10), eps);
+end
+
+function refPower = localUsefulOFDMReferencePower(waveform, txInfo)
+refPower = NaN;
+if isempty(waveform)
+    return;
+end
+ofdmInfo = sixgr.util.structGet(txInfo, "OFDM", struct());
+nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+cpLens = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
+if ~(isfinite(nfft) && nfft > 0 && ~isempty(cpLens))
+    refPower = mean(abs(double(waveform(:))).^2, "omitnan");
+    return;
+end
+cpLens = cpLens(:);
+idx = [];
+offset = 0;
+nSamp = size(waveform, 1);
+while offset < nSamp
+    for s = 1:numel(cpLens)
+        cp = max(0, round(double(cpLens(s))));
+        useful = offset + cp + (1:round(nfft));
+        useful = useful(useful <= nSamp);
+        idx = [idx useful]; %#ok<AGROW>
+        offset = offset + cp + round(nfft);
+        if offset >= nSamp
+            break;
+        end
+    end
+end
+if isempty(idx)
+    refPower = mean(abs(double(waveform(:))).^2, "omitnan");
+else
+    refPower = mean(abs(double(waveform(idx, :))).^2, "all", "omitnan");
+end
 end
 
 function model = localResolveTrialChannelModel(cfg)
@@ -2208,9 +2271,15 @@ replay = struct( ...
     "InterferenceChannelObjectClass", "", ...
     "InterferenceChannelArrayHandlingStatus", "", ...
     "InterferenceChannelArrayHandlingBlocker", "", ...
-    "InterferenceUsesSameRuntimeAntennaAssumptions", false);
+    "InterferenceUsesSameRuntimeAntennaAssumptions", false, ...
+    "ChannelFadingApplied", false, ...
+    "ChannelFadingExecutionStatus", "not_requested", ...
+    "ChannelFadingObjectClass", "", ...
+    "ChannelPathGainsAvailable", false);
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
+    replay.ChannelFadingExecutionStatus = "attempted";
+    replay.ChannelFadingObjectClass = class(state.Obj);
     xIn = x;
     padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
     trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
@@ -2218,10 +2287,14 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
         xIn = [x; zeros(padSamples, size(x,2), 'like', x)];
     end
     try
-        yRaw = state.Obj(xIn);
+        [yRaw, pathGains] = state.Obj(xIn);
     catch
-        [yRaw, ~] = state.Obj(xIn);
+        yRaw = state.Obj(xIn);
+        pathGains = [];
     end
+    replay.ChannelFadingApplied = true;
+    replay.ChannelFadingExecutionStatus = "applied_runtime_channel_object";
+    replay.ChannelPathGainsAvailable = ~isempty(pathGains);
     if trimSamples > 0 && size(yRaw,1) >= (trimSamples + size(x,1))
         y = yRaw(1+trimSamples:trimSamples+size(x,1), :);
     else
@@ -2271,7 +2344,11 @@ replay.InterfererBeamIndexSetSummary = localSafeCharToken(sixgr.util.structGet(i
 if strlength(strtrim(string(replay.InterferencePowerSource))) == 0 && replay.InterferenceContributorCount > 0
     replay.InterferencePowerSource = "sample_domain_interference_sum";
 end
-[y, replay.InjectedNoiseVariance] = localAddAwgn(y, replay, desiredWaveform);
+[y, replay.InjectedNoiseVariance, noiseInfo] = localAddAwgn(y, replay, desiredWaveform, txInfo);
+noiseFields = fieldnames(noiseInfo);
+for ni = 1:numel(noiseFields)
+    replay.(noiseFields{ni}) = noiseInfo.(noiseFields{ni});
+end
 end
 
 function replay = localFinalizeImpairmentReplay(replay, cfg, rx, tx, txInfo, useIdealTimingSync)
@@ -2348,7 +2425,6 @@ timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSam
 if ~isfinite(timingOffset)
     timingOffset = 0;
 end
-timingOffset = round(timingOffset);
 end
 
 function useIdealTimingSync = localUseIdealTimingSync(cfg)
@@ -2367,14 +2443,14 @@ if strlength(mode) == 0
 end
 end
 
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
 nVar = NaN;
 servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
 thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
 if ~(isfinite(servingRxPower_dBm) && isfinite(thermalNoisePower_dBm))
     return;
 end
-referencePower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+referencePower = localUsefulOFDMReferencePower(referenceWaveform, txInfo);
 if ~(isfinite(referencePower) && referencePower > 0)
     return;
 end
@@ -2456,6 +2532,7 @@ varNames = {'Direction','SNR_dB','SFN','UEIndex','RNTI','BaseStationID','Seed','
     'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
     'LinkAdaptationMode','ActualMCSSelectionMode','CQITable','MCSTable','RankIndicator','PMI','CRI','PMIType','PMICodebookMode', ...
     'CSIReportMode','CSIPayloadBitLength','CSIPayloadHex','SubbandCQIVector','SubbandSINRVector_dB','SubbandSizePRB','SubbandCount','WidebandOrSubband','SubbandCQISource','SubbandCQIValueStatus','ChannelGain_dB','NoiseVariance', ...
+    'DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
     'TimingOffset_samples','RankEstimate','ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
     'SelectedBeamIndex','BestBeamIndex','BeamHit','TopKBeamHit','BeamCandidateCount', ...
     'SelectedBeamGain_dB','BestBeamGain_dB','BeamGainGap_dB', ...
@@ -2490,6 +2567,7 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'string','double','double','double','double','double','double', ...
     'double','double','double','string','double','string','string','string','string','double','double','double','string','string', ...
     'string','double','string','string','string','double','double','string','string','string','double','double', ...
+    'double','double','double','string', ...
     'double','double','double','double','double', ...
     'double','double','double','double','double','double','double','double', ...
     'string','string','string','string', ...
@@ -3846,17 +3924,23 @@ if isempty(cur)
     combined = double(prev);
     return;
 end
-X = double(prev);
-Y = double(cur);
-if ~isequal(size(X), size(Y))
-    warning('sixgr:link:HARQ:IR_LengthMismatch', ...
-        ['HARQ LLR arrays have sizes %s and %s. TBS/allocation changed across HARQ rounds; ' ...
-         'incremental-redundancy combining is aborted and the current transmission is used.'], ...
-        mat2str(size(X)), mat2str(size(Y)));
-    combined = Y;
+X = double(prev(:));
+Y = double(cur(:));
+lp = numel(X);
+lc = numel(Y);
+if lp == lc
+    combined = X + Y;
     return;
 end
-combined = X + Y;
+lmin = min(lp, lc);
+lmax = max(lp, lc);
+combined = zeros(lmax, 1, "double");
+combined(1:lmin) = X(1:lmin) + Y(1:lmin);
+if lp > lc
+    combined(lmin+1:end) = X(lmin+1:end);
+else
+    combined(lmin+1:end) = Y(lmin+1:end);
+end
 end
 
 function diag = localHARQCombiningDiagnostics(prev, cur, combined)
@@ -3864,7 +3948,7 @@ diag = struct( ...
     "PreviousLLRCount", double(numel(prev)), ...
     "CurrentLLRCount", double(numel(cur)), ...
     "CombinedLLRCount", double(numel(combined)), ...
-    "CombiningApplied", ~isempty(prev) && ~isempty(cur) && isequal(size(prev), size(cur)), ...
+    "CombiningApplied", ~isempty(prev) && ~isempty(cur) && ~isempty(combined), ...
     "LLRCombiningGain_dB", NaN);
 if isempty(cur) || isempty(combined)
     return;
@@ -3899,7 +3983,7 @@ decCbs = zeros(nRow, nCB, 'int8');
 itVec = NaN(nCB, 1);
 maxLen = 0;
 alg = localSafeCharToken(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum"));
-maxIter = double(sixgr.util.structGet(cfg, "phy.ldpc.maxIterations", 8));
+maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL");
 for c = 1:nCB
     [d, it] = sixgr.phy.phycode.ldpcDecode(X(:, c), double(tx.BaseGraph), maxIter, alg);
     d = int8(d(:));

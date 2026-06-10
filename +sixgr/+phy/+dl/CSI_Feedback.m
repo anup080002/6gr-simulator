@@ -57,7 +57,7 @@ else
 end
 
 [measuredSINR_dB, measuredSINRSource, measuredSINRStatus, pilotNMSE_dB, perRBSINR_dB] = ...
-    localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
+    localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols, cfg);
 if isfinite(measuredSINR_dB)
     sinr_dB = double(measuredSINR_dB);
     sinrSource = string(measuredSINRSource);
@@ -737,7 +737,7 @@ subcarrier = mod(idx - 1, max(nSc, 1)) + 1;
 symbol = mod(floor((idx - 1) ./ max(nSc, 1)), max(nSym, 1)) + 1;
 end
 
-function [sinr_dB, source, status, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, rxGrid, refInd, refSym)
+function [sinr_dB, source, status, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, rxGrid, refInd, refSym, cfg)
 sinr_dB = NaN;
 source = "measurement_unavailable";
 status = "unavailable";
@@ -759,6 +759,10 @@ if isempty(rxPilot) || isempty(pilotRecon) || isempty(pilotObsH) || isempty(pilo
     return;
 end
 perRBSINR_dB = localPerRBReferenceSINR(rxGrid, refInd, rxRef, hRef, refSym, nVar);
+maxTrustedSINR = localMaxTrustedReferenceSINR(cfg);
+if isfinite(maxTrustedSINR) && ~isempty(perRBSINR_dB)
+    perRBSINR_dB = min(double(perRBSINR_dB), double(maxTrustedSINR));
+end
 
 [signalPowLin, noisePowLin] = localHestNoiseSignalPowers(hRef, refSym, nVar);
 [pilotSignalPowLin, pilotResidualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar);
@@ -772,6 +776,10 @@ if isfinite(signalPowLin) && signalPowLin > 0 && isfinite(noisePowLin) && noiseP
     sinr_dB = 10 * log10(signalPowLin / noisePowLin);
     source = "receiver_hest_reference_signal_measurement";
     status = "pilot_reconstruction_residual_reference_re_sinr";
+    if isfinite(maxTrustedSINR) && sinr_dB > maxTrustedSINR
+        sinr_dB = double(maxTrustedSINR);
+        status = "pilot_reconstruction_residual_reference_re_sinr_dynamic_range_limited";
+    end
 end
 
 nmseLin = localNormalizedPilotMSE(pilotEstH, pilotObsH);
@@ -781,6 +789,13 @@ end
 
 if ~isfinite(sinr_dB)
     status = "reference_signal_measurement_unavailable";
+end
+end
+
+function maxSINR = localMaxTrustedReferenceSINR(cfg)
+maxSINR = double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", 80));
+if ~(isscalar(maxSINR) && isfinite(maxSINR) && maxSINR > 0)
+    maxSINR = inf;
 end
 end
 

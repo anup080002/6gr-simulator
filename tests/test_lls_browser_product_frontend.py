@@ -94,6 +94,8 @@ def main() -> None:
         assert "config_api_url" in page
         assert "config_overview" in page
         assert "fields_api_url" in page
+        assert "parameter_constraints_api_url" in page
+        assert "parameter_constraints_summary" in page
         assert "field_count" in page
         assert '"report_sections": []' in page
         assert '"analytics_sections": []' in page
@@ -218,7 +220,7 @@ def main() -> None:
             "/outputs": "artifacts",
             "/map": "geometry",
             "/logs": "realtime",
-            "/tables": "artifacts",
+            "/tables": "tables",
             "/images": "artifacts",
         }
         for route, page_id in route_expectations.items():

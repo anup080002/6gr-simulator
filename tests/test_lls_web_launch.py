@@ -23,6 +23,14 @@ def main() -> None:
     assert dash.DEFAULT_DASHBOARD_HOST == "0.0.0.0"
     assert dash.DEFAULT_DASHBOARD_PORT == 62906
     assert 'dashboard_listener.json' in text
+    assert '"/api/parameter-constraints"' in text
+    assert "dashboard_browser_url" in text
+    assert "webbrowser.open(browser_url)" in text
+    local_url, intranet_url, _ = dash.resolve_dashboard_urls("0.0.0.0", dash.DEFAULT_DASHBOARD_PORT, "10.64.253.106")
+    assert local_url == "http://127.0.0.1:62906/"
+    assert intranet_url == "http://10.64.253.106:62906/"
+    assert dash.dashboard_browser_url("0.0.0.0", local_url, intranet_url, "") == intranet_url
+    assert dash.dashboard_browser_url("localhost", local_url, intranet_url, "") == local_url
     payload = {
         "run_control": {"execution_mode": "LLS", "total_slots": 100},
         "simulation": {"n_slots": 100, "n_frames": 5},
