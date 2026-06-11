@@ -2098,13 +2098,19 @@ methods(Static, Access=private)
         if logical(schedulerUsesCQITable)
             schedulerMCSIndex = NaN;
             if ~feedbackValid
-                % Before the first real CSI report is available, keep any
-                % large-scale runtime preview diagnostic-only. Scheduler AMC
-                % must not consume non-measured preview CQI as live feedback.
-                schedulerCQI = 0;
-                schedulerModulation = "";
-                schedulerTargetCodeRate = NaN;
-                schedulerMCSAuthority = "bootstrap_cqi_conservative_lab_default";
+                bootstrapCQIUsable = logical(sixgr.util.structGet(feedback, "BootstrapCQIUsableForScheduling", false));
+                if bootstrapCQIUsable && isfinite(schedulerCQI) && schedulerCQI > 0
+                    schedulerMCSAuthority = char(string(sixgr.util.structGet(feedback, ...
+                        "BootstrapCQISource", "bootstrap_large_scale_interference_preview_cqi")));
+                else
+                    % Before any usable measured or explicitly enabled
+                    % bootstrap CSI exists, stay conservative rather than
+                    % inheriting a configured fixed MCS.
+                    schedulerCQI = 0;
+                    schedulerModulation = "";
+                    schedulerTargetCodeRate = NaN;
+                    schedulerMCSAuthority = "bootstrap_cqi_conservative_lab_default";
+                end
             elseif isfinite(feedbackMCSIndex)
                 schedulerMCSAuthority = "feedback_cqi_derived_reference";
             else
@@ -3099,6 +3105,7 @@ methods(Static, Access=private)
             feedback.TargetCodeRate = 0.1171875;
             feedback.MCSIndex = 1;
         end
+        feedback.BootstrapCQIUsableForScheduling = false;
         feedback.BootstrapCQISource = "bootstrap_cqi_conservative_lab_default";
         feedback.PreviewSINR_dB = double(previewSINR_dB);
         feedback.PreviewCQI = double(previewCQI);
@@ -3106,7 +3113,13 @@ methods(Static, Access=private)
         feedback.PreviewModulation = char(string(previewModulation));
         feedback.PreviewTargetCodeRate = double(previewTargetCodeRate);
         if isfinite(previewCQI) && previewCQI > 0
-            feedback.PreviewCQISource = "bootstrap_large_scale_preview_diagnostic_only";
+            feedback.PreviewCQISource = "bootstrap_large_scale_interference_preview_cqi";
+            feedback.CQI = double(previewCQI);
+            feedback.Modulation = char(string(previewModulation));
+            feedback.TargetCodeRate = double(previewTargetCodeRate);
+            feedback.MCSIndex = double(previewMCSIndex);
+            feedback.BootstrapCQIUsableForScheduling = true;
+            feedback.BootstrapCQISource = "bootstrap_large_scale_interference_preview_cqi";
         else
             feedback.PreviewCQISource = "";
         end
@@ -3549,6 +3562,27 @@ methods(Static, Access=private)
             return;
         end
         [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+        ollaDelta = 0;
+        ollaCount = 0;
+        ollaEnabled = false;
+        if ~isempty(scheduler) && ismethod(scheduler, "getOLLAMCSDelta")
+            try
+                [ollaDelta, ollaCount, ollaEnabled] = scheduler.getOLLAMCSDelta(double(sixgr.util.structGet(grant, "RNTI", NaN)));
+            catch
+                ollaDelta = 0;
+                ollaCount = 0;
+                ollaEnabled = false;
+            end
+        end
+        if logical(ollaEnabled) && isfinite(mcsIndex) && isfinite(ollaDelta) && ollaCount > 0
+            adjustedMCS = max(0, min(31, round(double(mcsIndex) + double(ollaDelta))));
+            prof = sixgr.link.resolveMCSProfile(sixgr.link.resolveConfiguredMCSTable(cfg, direction), adjustedMCS);
+            if prof.Valid
+                mcsIndex = double(adjustedMCS);
+                modStr = char(string(prof.Modulation));
+                targetCodeRate = double(prof.TargetCodeRate);
+            end
+        end
         if ~(isfinite(mcsIndex) && mcsIndex >= 0 && isfinite(targetCodeRate) && targetCodeRate > 0)
             return;
         end
@@ -3560,6 +3594,17 @@ methods(Static, Access=private)
         grant.MCSIndexAuthority = "feedback_cqi_derived_reference";
         grant.GrantOperatingPointSource = "feedback_cqi_derived_reference";
         grant.AMCMode = "cqi_table";
+        grant.OuterLoopEnabled = logical(ollaEnabled);
+        grant.OuterLoopApplied = logical(ollaEnabled && ollaCount > 0);
+        grant.OLLADeltaMCS = double(ollaDelta);
+        grant.OLLAUpdateCount = double(ollaCount);
+        if logical(grant.OuterLoopApplied)
+            grant.OLLAState = "applied_scheduler_ack_nack_delta";
+        elseif logical(grant.OuterLoopEnabled)
+            grant.OLLAState = "configured_waiting_for_ack_feedback";
+        else
+            grant.OLLAState = "disabled";
+        end
 
         prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
         symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
@@ -6194,7 +6239,7 @@ methods(Static, Access=private)
             "BootstrapCQISource", "", "PreviewSINR_dB", NaN, ...
             "PreviewCQI", NaN, "PreviewMCSIndex", NaN, ...
             "PreviewModulation", "", "PreviewTargetCodeRate", NaN, ...
-            "PreviewCQISource", "");
+            "PreviewCQISource", "", "BootstrapCQIUsableForScheduling", false);
     end
 
     function row = emptyReceiverTrackingStateRow()

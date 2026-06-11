@@ -78,6 +78,12 @@ out.TPMISource = "";
 out.TPMICandidateCount = NaN;
 out.TPMIMutualInformation = NaN;
 out.SRSConditionNumber_dB = NaN;
+out.SRSOccupiedPRBCount = NaN;
+out.SRSCarrierPRBCount = NaN;
+out.SRSBandwidthFraction = NaN;
+out.SRSFrequencyPRBStart = NaN;
+out.SRSFrequencyPRBEnd = NaN;
+out.SRSBandwidthCoverageStatus = "";
 out.ChannelState = p.Results.ChannelState;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
@@ -101,6 +107,12 @@ end
 try
     tStart = tic;
     [tx, info] = sixgr.phy.ul.SRS_Tx(cfg);
+    out.SRSOccupiedPRBCount = double(sixgr.util.structGet(tx, "SRSOccupiedPRBCount", NaN));
+    out.SRSCarrierPRBCount = double(sixgr.util.structGet(tx, "SRSCarrierPRBCount", NaN));
+    out.SRSBandwidthFraction = double(sixgr.util.structGet(tx, "SRSBandwidthFraction", NaN));
+    out.SRSFrequencyPRBStart = double(sixgr.util.structGet(tx, "SRSFrequencyPRBStart", NaN));
+    out.SRSFrequencyPRBEnd = double(sixgr.util.structGet(tx, "SRSFrequencyPRBEnd", NaN));
+    out.SRSBandwidthCoverageStatus = char(string(sixgr.util.structGet(tx, "SRSBandwidthCoverageStatus", "")));
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
     rng(localTrialSeed(cfg, trialIdx), "twister");
@@ -126,10 +138,15 @@ try
     out.ChannelModelApplied = char(string(sixgr.util.structGet(replay, "ChannelModelApplied", "")));
     out.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
     strictNoiseVarianceRequired = ~localThermalNoiseSINRUnavailable(replay);
+    noiseVarArgs = {};
+    if isnumeric(injectedNoiseVariance) && isscalar(injectedNoiseVariance) && ...
+            isfinite(double(injectedNoiseVariance)) && double(injectedNoiseVariance) >= 0
+        noiseVarArgs = {"NoiseVar", double(injectedNoiseVariance)};
+    end
     [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfg, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
-        "NoiseVar", injectedNoiseVariance, ...
+        noiseVarArgs{:}, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
     out.NoiseVarStatus = char(string(sixgr.util.structGet(rx, "NoiseVarStatus", "")));

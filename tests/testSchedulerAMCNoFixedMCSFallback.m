@@ -31,6 +31,22 @@ ue.CQI = 3;
 assert(double(amcCQI.MCSIndex) < 26, ...
     "CQI-driven AMC must not reuse the configured fixed MCS override.");
 
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.outerLoopFlag", true);
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSPolicy", "olla");
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", 0.2);
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 1.0);
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", -6);
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 6);
+ollaScheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL");
+ueOLLA = struct("RNTI", 9001, "CQI", 12, "RI", 1);
+[~, ~, ~, amcBeforeNack] = ollaScheduler.selectAMC(ueOLLA);
+ollaScheduler.updateAfterRx(struct("RNTI", 9001, "TBSBits", 2048, "Ack", false));
+[~, ~, ~, amcAfterNack] = ollaScheduler.selectAMC(ueOLLA);
+assert(logical(amcAfterNack.OuterLoopApplied) && double(amcAfterNack.OLLAUpdateCount) >= 1, ...
+    "Scheduler OLLA must be applied only after ACK/NACK feedback updates the per-UE loop state.");
+assert(double(amcAfterNack.MCSIndex) < double(amcBeforeNack.MCSIndex), ...
+    "A scheduler-side NACK must reduce the next CQI-table MCS through the OLLA delta.");
+
 ulScheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "UL");
 grant = struct( ...
     "Direction", "UL", ...

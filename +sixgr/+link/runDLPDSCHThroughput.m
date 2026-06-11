@@ -1590,11 +1590,15 @@ innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLo
 linkModeColumn = lower(string(localOptionalColumn(T, "LinkAdaptationMode", configuredLinkMode)));
 schedulerReplayMask = linkModeColumn == "scheduler_grant_replay";
 linkAdaptationRuntimeMask = ~schedulerReplayMask & ~ismember(lower(string(configuredLinkMode)), ["fixed","disabled","none","off","false",""]);
+existingOuterLoopApplied = logical(localOptionalColumn(T, "OuterLoopApplied", false));
+existingInnerLoopApplied = logical(localOptionalColumn(T, "InnerLoopApplied", false));
 T.OuterLoopEnabled = repmat(outerLoopEnabled, n, 1);
 T.InnerLoopEnabled = repmat(innerLoopEnabled, n, 1);
-T.OuterLoopApplied = T.OuterLoopEnabled & linkAdaptationRuntimeMask & logical(localOptionalColumn(T, "LinkAdaptationScheduled", false));
-T.InnerLoopApplied = T.InnerLoopEnabled & linkAdaptationRuntimeMask & ...
-    (logical(localOptionalColumn(T, "LinkAdaptationApplied", false)) | logical(localOptionalColumn(T, "LinkAdaptationScheduled", false)));
+T.OuterLoopApplied = (T.OuterLoopEnabled & schedulerReplayMask & existingOuterLoopApplied) | ...
+    (T.OuterLoopEnabled & linkAdaptationRuntimeMask & logical(localOptionalColumn(T, "LinkAdaptationScheduled", false)));
+T.InnerLoopApplied = (T.InnerLoopEnabled & schedulerReplayMask & existingInnerLoopApplied) | ...
+    (T.InnerLoopEnabled & linkAdaptationRuntimeMask & ...
+    (logical(localOptionalColumn(T, "LinkAdaptationApplied", false)) | logical(localOptionalColumn(T, "LinkAdaptationScheduled", false))));
 T.OLLAState = repmat("disabled", n, 1);
 T.OLLAState(T.OuterLoopEnabled & schedulerReplayMask) = "configured_enabled_not_applied_scheduler_grant_replay";
 T.OLLAState(T.OuterLoopEnabled & linkAdaptationRuntimeMask & ~T.OuterLoopApplied) = "configured_enabled_waiting_for_runtime_feedback";

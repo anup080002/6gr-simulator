@@ -71,6 +71,15 @@ out.NoiseVarSource = "";
 out.NoiseVarReason = "";
 out.ConfiguredSNR_dB = double(snr_dB);
 out.AppliedAWGNSNR_dB = NaN;
+out.AppliedAWGNSNRSource = "";
+out.SNRValueRole = "prach_receiver_esn0_detection_axis";
+out.DesiredSignalPowerBeforeNoise = NaN;
+out.CompositeSignalPowerBeforeNoise = NaN;
+out.AppliedNoiseSNR_dB = NaN;
+out.PRACHSNRCalibrationStatus = "";
+out.PRACHSNRCalibrationSource = "";
+out.PRACHSNRCalibrationError_dB = NaN;
+out.PRACHNoiseReferencePower = NaN;
 out.AppliedLargeScaleGain_dB = NaN;
 out.AppliedLargeScaleLoss_dB = NaN;
 out.AppliedBasePathloss_dB = NaN;
@@ -127,6 +136,15 @@ try
     out.NoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    out.AppliedAWGNSNRSource = char(string(sixgr.util.structGet(replay, "AppliedAWGNSNRSource", "")));
+    out.SNRValueRole = char(string(sixgr.util.structGet(replay, "SNRValueRole", out.SNRValueRole)));
+    out.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+    out.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+    out.AppliedNoiseSNR_dB = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+    out.PRACHSNRCalibrationStatus = char(string(sixgr.util.structGet(replay, "PRACHSNRCalibrationStatus", "")));
+    out.PRACHSNRCalibrationSource = char(string(sixgr.util.structGet(replay, "PRACHSNRCalibrationSource", "")));
+    out.PRACHSNRCalibrationError_dB = double(sixgr.util.structGet(replay, "PRACHSNRCalibrationError_dB", NaN));
+    out.PRACHNoiseReferencePower = double(sixgr.util.structGet(replay, "PRACHNoiseReferencePower", NaN));
     out.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
     out.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
     out.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -276,8 +294,17 @@ y = x;
 replay = struct( ...
     "ConfiguredSNR_dB", double(snr_dB), ...
     "AppliedAWGNSNR_dB", double(snr_dB), ...
+    "AppliedAWGNSNRSource", "prach_receiver_esn0_detection_axis", ...
+    "SNRValueRole", "prach_receiver_esn0_detection_axis_not_data_channel_sinr", ...
     "InjectedNoiseVariance", NaN, ...
     "NoiseVarianceSource", "", ...
+    "DesiredSignalPowerBeforeNoise", NaN, ...
+    "CompositeSignalPowerBeforeNoise", NaN, ...
+    "AppliedNoiseSNR_dB", NaN, ...
+    "PRACHSNRCalibrationStatus", "pending_noise_application", ...
+    "PRACHSNRCalibrationSource", "reference_waveform_power_before_awgn", ...
+    "PRACHSNRCalibrationError_dB", NaN, ...
+    "PRACHNoiseReferencePower", NaN, ...
     "ChannelModelApplied", string(sixgr.util.structGet(cfg, "channel.model", "AWGN")), ...
     "ChannelFadingApplied", false, ...
     "NoiseOperatingMode", "prach_receiver_esn0_awgn", ...
@@ -327,6 +354,24 @@ end
 desiredWaveform = y;
 [y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform);
 replay.InjectedNoiseVariance = double(nVar);
+desiredPower = localEstimateWaveformPower(desiredWaveform);
+replay.DesiredSignalPowerBeforeNoise = double(desiredPower);
+replay.CompositeSignalPowerBeforeNoise = double(desiredPower);
+replay.PRACHNoiseReferencePower = double(desiredPower);
+if isfinite(desiredPower) && desiredPower >= 0 && isfinite(nVar) && nVar > 0
+    replay.AppliedNoiseSNR_dB = 10 * log10(max(desiredPower, eps) / double(nVar));
+    replay.PRACHSNRCalibrationError_dB = double(replay.AppliedNoiseSNR_dB) - double(replay.AppliedAWGNSNR_dB);
+    if abs(double(replay.PRACHSNRCalibrationError_dB)) <= 0.1
+        replay.PRACHSNRCalibrationStatus = "calibrated_to_reference_waveform_power";
+    else
+        replay.PRACHSNRCalibrationStatus = "mismatch_between_requested_esn0_and_injected_noise";
+    end
+elseif isfinite(nVar) && nVar == 0
+    replay.AppliedNoiseSNR_dB = Inf;
+    replay.PRACHSNRCalibrationStatus = "noise_free_reference_trial";
+else
+    replay.PRACHSNRCalibrationStatus = "unavailable_noise_variance_not_resolved";
+end
 if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "prach_receiver_input_esn0_awgn";
 end

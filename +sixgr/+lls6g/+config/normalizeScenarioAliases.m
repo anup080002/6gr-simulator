@@ -531,6 +531,10 @@ switch token
         order = 6;
     case {"256qam","qam256"}
         order = 8;
+    case {"1024qam","qam1024"}
+        order = 10;
+    case {"4096qam","qam4096"}
+        order = 12;
     otherwise
         if isnumeric(value) && isscalar(value)
             order = double(value);
@@ -556,6 +560,10 @@ switch round(double(value))
         token = "64QAM";
     case 8
         token = "256QAM";
+    case 10
+        token = "1024QAM";
+    case 12
+        token = "4096QAM";
     otherwise
         token = value;
 end

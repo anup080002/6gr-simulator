@@ -32,6 +32,11 @@ if isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1e-4
     maxIter = max(maxIter, 200);
 end
 
+fadingFloor = localResolveFadingIterationFloor(cfg);
+if isfinite(fadingFloor) && fadingFloor > 0 && localIsConcreteFadingChannel(cfg)
+    maxIter = max(maxIter, fadingFloor);
+end
+
 maxIter = max(1, round(double(maxIter)));
 end
 
@@ -47,6 +52,32 @@ else
     target = localFirstFiniteScalar( ...
         sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", []), target);
 end
+end
+
+function value = localResolveFadingIterationFloor(cfg)
+value = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.ldpc.fadingMinIterations", []), ...
+    sixgr.util.structGet(cfg, "phy.ldpc.fadingMinDecoderIterations", []), ...
+    sixgr.util.structGet(cfg, "coding.fading_min_decoder_iterations", []));
+if ~isfinite(value)
+    value = 100;
+end
+end
+
+function tf = localIsConcreteFadingChannel(cfg)
+model = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", ""))));
+delayProfile = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.delayProfile", ""))));
+tdlProfile = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.tdlProfile", ""))));
+cdlProfile = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.cdlProfile", ""))));
+fadingProfile = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.fading.profile", ""))));
+fadingModel = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.fading.model", ""))));
+tf = startsWith(model, "TDL-") || startsWith(model, "CDL-") || ...
+    startsWith(delayProfile, "TDL-") || startsWith(delayProfile, "CDL-") || ...
+    startsWith(tdlProfile, "TDL-") || startsWith(cdlProfile, "CDL-") || ...
+    startsWith(fadingProfile, "TDL-") || startsWith(fadingProfile, "CDL-") || ...
+    ((fadingModel == "TDL" || fadingModel == "CDL") && ...
+    (startsWith(tdlProfile, "TDL-") || startsWith(cdlProfile, "CDL-") || ...
+    startsWith(fadingProfile, "TDL-") || startsWith(fadingProfile, "CDL-")));
 end
 
 function value = localFirstFiniteScalar(varargin)

@@ -203,12 +203,13 @@ for i = 1:numel(aggLevels)
         cfgK.phy.pdcch.blindSearch = true;
         [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfgK, "K", pdcchPayloadBits);
         [rxWave, noiseVar, replay, noiseOnlyWave] = localRunnerApplyPDCCHChannelAndNoise(tx.Waveform, cfgK, tx, txInfo, snr_dB);
+        noiseVarArgs = localRunnerNoiseVarArgs(noiseVar);
         [rx, rxInfo] = sixgr.phy.dl.PDCCH_Rx(rxWave, cfgK, ...
             "Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", listLength, "NoiseVar", noiseVar, "NoiseOnlyWaveform", noiseOnlyWave);
+            "ListLength", listLength, noiseVarArgs{:}, "NoiseOnlyWaveform", noiseOnlyWave);
         [rxNoise, ~] = sixgr.phy.dl.PDCCH_Rx(noiseOnlyWave, cfgK, ...
             "Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", listLength, "NoiseVar", noiseVar);
+            "ListLength", listLength, noiseVarArgs{:});
         computeLatency_ms = toc(trialTimer) * 1e3;
         [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
         ok = logical(sixgr.util.structGet(rx, "Ok", false)) && be == 0;
@@ -765,7 +766,8 @@ confidenceValue = localBenchmarkConfidence(descriptor, scfg);
 for k = 1:nObs
     [tx, ~] = sixgr.phy.ul.SRS_Tx(cfg);
     [rxWave, nVar] = localAddAwgnOnly(tx.Waveform, snr_dB);
-    rx = sixgr.phy.ul.SRS_Rx(rxWave, cfg, "Carrier", tx.Carrier, "SRS", tx.SRS, "NoiseVar", nVar);
+    noiseVarArgs = localRunnerNoiseVarArgs(nVar);
+    rx = sixgr.phy.ul.SRS_Rx(rxWave, cfg, "Carrier", tx.Carrier, "SRS", tx.SRS, noiseVarArgs{:});
     Hbase = rx.Hest;
     baselineNmse(k) = localUnitChannelNMSE(Hbase);
     if aiEnabled
@@ -3087,6 +3089,13 @@ if isfinite(double(nVar)) && double(nVar) > 0
         (randn(size(referenceWaveform), "like", real(referenceWaveform)) + ...
         1i * randn(size(referenceWaveform), "like", real(referenceWaveform)));
     noiseOnlyWave = cast(n, "like", referenceWaveform);
+end
+end
+
+function args = localRunnerNoiseVarArgs(nVar)
+args = {};
+if isnumeric(nVar) && isscalar(nVar) && isfinite(double(nVar)) && double(nVar) >= 0
+    args = {"NoiseVar", double(nVar)};
 end
 end
 

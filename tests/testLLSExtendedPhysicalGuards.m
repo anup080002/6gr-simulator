@@ -25,6 +25,12 @@ assert(sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL") >= 50,
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", 1e-5);
 assert(sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL") >= 200, ...
     "High-reliability BLER targets must raise LDPC max iterations.");
+cfgFading = sixgr.config.defaultConfig();
+cfgFading = sixgr.util.structSet(cfgFading, "channel.model", "CDL-C");
+cfgFading = sixgr.util.structSet(cfgFading, "channel.cdlProfile", "CDL-C");
+cfgFading = sixgr.util.structSet(cfgFading, "phy.ldpc.maxIterations", 50);
+assert(sixgr.phy.phycode.resolveLDPCMaxIterations(cfgFading, "Direction", "DL") >= 100, ...
+    "Concrete CDL/TDL fading channels must lift a low configured LDPC iteration budget.");
 end
 
 function testCQITableInferenceFollowsMCS()

@@ -55,6 +55,7 @@ end
 % Indices and symbols
 [srsInd, srsInfo] = nrSRSIndices(carrier, srs);
 srsSym = nrSRS(carrier, srs);
+srsCoverage = localSRSFrequencyCoverage(carrier, srs, srsInd);
 
 % Grid mapping
 K = carrier.NSizeGrid*12;
@@ -88,12 +89,19 @@ tex.SRSSymbols = srsSym;
 tex.OFDMWindowingSamples = double(windowingSamples);
 tex.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
 tex.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
+tex.SRSOccupiedPRBCount = double(srsCoverage.OccupiedPRBCount);
+tex.SRSCarrierPRBCount = double(srsCoverage.CarrierPRBCount);
+tex.SRSBandwidthFraction = double(srsCoverage.BandwidthFraction);
+tex.SRSFrequencyPRBStart = double(srsCoverage.PRBStart);
+tex.SRSFrequencyPRBEnd = double(srsCoverage.PRBEnd);
+tex.SRSBandwidthCoverageStatus = char(string(srsCoverage.CoverageStatus));
 
 info = struct();
 info.CarrierInfo = cinfo;
 info.SRSInfo = srsInfo;
 info.OFDMInfo = ofdmInfo;
 info.OFDMWindowing = windowingInfo;
+info.SRSBandwidth = srsCoverage;
 
 tx = tex;
 end
@@ -136,4 +144,51 @@ function srs = localApplySRSFromCfg(srs, cfg)
             end
         end
     end
+end
+
+function coverage = localSRSFrequencyCoverage(carrier, srs, srsInd)
+K = max(1, round(double(carrier.NSizeGrid)) * 12);
+L = max(1, round(double(carrier.SymbolsPerSlot)));
+P = 1;
+if isprop(srs, "NumSRSPorts")
+    P = max(1, round(double(srs.NumSRSPorts)));
+end
+nCarrierPRB = max(1, round(double(carrier.NSizeGrid)));
+coverage = struct( ...
+    "OccupiedPRBCount", NaN, ...
+    "CarrierPRBCount", double(nCarrierPRB), ...
+    "BandwidthFraction", NaN, ...
+    "PRBStart", NaN, ...
+    "PRBEnd", NaN, ...
+    "CoverageStatus", "unavailable_no_srs_indices");
+if isempty(srsInd)
+    coverage.OccupiedPRBCount = 0;
+    coverage.BandwidthFraction = 0;
+    coverage.CoverageStatus = "no_srs_re_mapped";
+    return;
+end
+idx = round(double(srsInd(:)));
+idx = idx(isfinite(idx) & idx >= 1 & idx <= K * L * P);
+if isempty(idx)
+    coverage.OccupiedPRBCount = 0;
+    coverage.BandwidthFraction = 0;
+    coverage.CoverageStatus = "no_valid_srs_re_indices";
+    return;
+end
+[kSub, ~, ~] = ind2sub([K L P], idx);
+prb = unique(floor((double(kSub(:)) - 1) / 12));
+prb = prb(prb >= 0 & prb < nCarrierPRB);
+coverage.OccupiedPRBCount = double(numel(prb));
+coverage.BandwidthFraction = double(numel(prb)) / double(nCarrierPRB);
+if ~isempty(prb)
+    coverage.PRBStart = double(min(prb));
+    coverage.PRBEnd = double(max(prb));
+end
+if coverage.OccupiedPRBCount >= nCarrierPRB
+    coverage.CoverageStatus = "full_carrier_bandwidth";
+elseif coverage.OccupiedPRBCount > 0
+    coverage.CoverageStatus = "partial_carrier_bandwidth";
+else
+    coverage.CoverageStatus = "no_srs_prb_occupied";
+end
 end
