@@ -519,10 +519,10 @@ end
 if isfinite(signalPowLin) && signalPowLin > 0 && isfinite(noisePowLin) && noisePowLin > 0
     sinr_dB = 10 * log10(signalPowLin / noisePowLin);
     source = "receiver_hest_reference_signal_measurement";
-    status = "pilot_reconstruction_residual_reference_re_sinr";
+    status = "OK";
     if isfinite(maxTrustedSINR) && sinr_dB > maxTrustedSINR
         sinr_dB = double(maxTrustedSINR);
-        status = "pilot_reconstruction_residual_reference_re_sinr_dynamic_range_limited";
+        status = "OK_dynamic_range_limited";
     end
 end
 

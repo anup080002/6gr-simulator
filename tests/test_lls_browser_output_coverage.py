@@ -21,9 +21,12 @@ def main() -> None:
         'data-analytics-tab-panel="coverage"',
         'data-analytics-tab-panel="rootcause"',
         "coverageRegistryBody",
+        "coverageImplementationBody",
         "coverageUnavailableBody",
         "coverageCompareBody",
         "coverageOutputCards",
+        "kpiHealthBody",
+        "KPI Health Flags",
         "rootCauseBody",
         "powerEnergyPreviewBody",
         "prbPreviewBody",
@@ -38,17 +41,20 @@ def main() -> None:
         assert token in page, f"Analytics page must expose output coverage/root-cause UI token: {token}"
 
     assert dash.classify_result_section("reports/csv/output_coverage_registry.csv") == "summary"
+    assert dash.classify_result_section("reports/csv/lls_implementation_register.csv") == "summary"
     assert dash.classify_result_section("reports/csv/honest_unavailable_registry.csv") == "summary"
     assert dash.classify_result_section("reports/csv/root_cause_candidate_table.csv") == "summary"
 
     empty = dash.build_output_coverage_context([])
     for key in (
         "registry",
+        "implementation_register",
         "completeness",
         "api_audit",
         "persistence_audit",
         "honest_unavailable",
         "compare_prerequisites",
+        "kpi_health_flags",
         "dashboard_cards",
         "output_family_cards",
         "artifact_links",
@@ -57,8 +63,10 @@ def main() -> None:
 
     labels = {str(card.get("label")) for card in empty["dashboard_cards"]}
     assert "Registry Rows" in labels
+    assert "Implementation Rows" in labels
     assert "Unavailable Reasons" in labels
     assert "Overstated Implemented" in labels
+    assert "KPI Health Rows" in labels
     assert empty["overstated_implemented_count"] == 0
 
     cards = dash.build_output_family_cards(

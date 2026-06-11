@@ -178,7 +178,10 @@
       "pdsch_la_policy": {"required": false, "type": "string"},
       "pusch_la_policy": {"required": false, "type": "string"},
       "pdcch_la_policy": {"required": false, "type": "string"},
-      "effective_sinr_method": {"required": false, "type": "string"}
+      "effective_sinr_method": {"required": false, "type": "string"},
+      "eesm_beta_db": {"required": false, "type": "number", "min": 0},
+      "eesm_beta_by_mcs_db": {"required": false, "type": "array"},
+      "eesm_beta_mcs_index": {"required": false, "type": "array"}
     }},
     "harq": {"parameters": {
       "enable": {"required": false, "type": "boolean"},
@@ -326,7 +329,10 @@
       "pmilayour": {"required": false, "type": "string"},
       "max_feedback_overhead_pct": {"required": false, "type": "number", "min": 0},
       "cqi_table": {"required": false, "type": "string"},
-      "effective_sinr_method": {"required": false, "type": "string"}
+      "effective_sinr_method": {"required": false, "type": "string"},
+      "eesm_beta_db": {"required": false, "type": "number", "min": 0},
+      "eesm_beta_by_mcs_db": {"required": false, "type": "array"},
+      "eesm_beta_mcs_index": {"required": false, "type": "array"}
     }},
     "energy_efficiency": {"parameters": {
       "enable": {"required": false, "type": "boolean"},

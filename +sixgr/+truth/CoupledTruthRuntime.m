@@ -102,6 +102,17 @@ methods(Static)
         state.CoverageOutageState = repmat("not_evaluated", nUsers, 1);
         state.LastSuccessfulPBCHSlotByUE = nan(nUsers, 1);
         state.LastSuccessfulPRACHSlotByUE = nan(nUsers, 1);
+        state.LastTimingAdvanceSamplesByUE = nan(nUsers, 1);
+        state.LastTimingAdvanceUsByUE = nan(nUsers, 1);
+        state.TimeAlignmentState = repmat("not_time_aligned", nUsers, 1);
+        state.LastTimingAdvanceSourceByUE = repmat("", nUsers, 1);
+        state.LastTimingAdvanceUpdateSlotByUE = nan(nUsers, 1);
+        state.LastTimingAdvanceServingCellByUE = nan(nUsers, 1);
+        state.LastTimingAdvanceServingDistanceMByUE = nan(nUsers, 1);
+        state.TimingAdvanceDriftSamplesByUE = nan(nUsers, 1);
+        state.TimingAdvanceDriftUsByUE = nan(nUsers, 1);
+        state.TimingAdvanceUpdateRequiredByUE = false(nUsers, 1);
+        state.TimingAdvanceUpdateStatusByUE = repmat("not_evaluated", nUsers, 1);
         state.LastSuccessfulPDCCHSlotByUE = nan(nUsers, 1);
         state.LastSuccessfulPUCCHSlotByUE = nan(nUsers, 1);
         state.LastSuccessfulSRSSlotByUE = nan(nUsers, 1);
@@ -414,6 +425,7 @@ methods(Static, Access=private)
             state.CfgLargeScale, state.Layout, state.UE, state.BeamIdx, state.BeamGain_dB, state.PLModel, ...
             "NumRB", state.NumRB, "PreviousState", state.LargeScaleState, "ReusePropagation", reuseProp);
         [state.CurrentServingIdx, state.CurrentServingMetric_dBm] = sixgr.system.selectServingCellsFromPower(state.LargeScaleState.RSRP_dBm);
+        state = sixgr.truth.CoupledTruthRuntime.refreshTimingAdvanceMobilityDriftImpl(state);
         [state.CurrentUELat, state.CurrentUELon] = sixgr.util.projectLocalXYToGeo(state.UE.pos_m(:,1), state.UE.pos_m(:,2), 19.122164, 72.999217);
         state.CurrentCanonicalSlot = double(canonicalSlot);
         state.CurrentFrame = double(sixgr.truth.CoupledTruthRuntime.frameIndexForSlot(state, canonicalSlot));
@@ -1236,6 +1248,10 @@ methods(Static, Access=private)
         state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport(state, ueIdx, direction, trialT(end, :));
         state = sixgr.truth.CoupledTruthRuntime.appendTelemetry(state, ueIdx, trialT(end, :));
         state = sixgr.truth.CoupledTruthRuntime.updateUserStats(state, ueIdx, direction, trialT(end, :));
+        if upper(string(direction)) == "UL"
+            state = sixgr.truth.CoupledTruthRuntime.updateTimingAdvanceFromReceiverTrialImpl( ...
+                state, ueIdx, trialT(end, :), "ul_data_receiver_timing_estimate");
+        end
         state.UserPerformanceTable = sixgr.truth.CoupledTruthRuntime.buildUserPerformanceTable(state);
         state.CoverageLayerTable = sixgr.truth.CoupledTruthRuntime.buildCoverageLayerTable(state);
         frameLocal = double(sixgr.util.structGet(state, "CurrentFrameLocal", NaN));
@@ -2382,6 +2398,16 @@ methods(Static, Access=private)
         if ok
             state.AccessState(ueIdx) = "succeeded";
             state.LastSuccessfulPRACHSlotByUE(ueIdx) = double(slotIdx);
+            taSamples = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                ["TimingAdvance_samples","TimingOffset_samples","TimingOffsetSamplesApplied","TimingOffsetSamplesRaw"], NaN);
+            taUs = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["TimingAdvance_us"], NaN);
+            if isfinite(taSamples)
+                state = sixgr.truth.CoupledTruthRuntime.updateTimingAdvanceMeasurementImpl( ...
+                    state, ueIdx, taSamples, taUs, "prach_receiver_measurement", slotIdx, "time_aligned_from_prach");
+            else
+                state.TimeAlignmentState(ueIdx) = "access_succeeded_ta_unavailable";
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "prach_access_succeeded_ta_unavailable";
+            end
             state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "PRACH_MSG1_DETECTED", "UL", ...
                 "control/csv/prach_trials.csv", "PRACH", slotIdx, ...
                 "slot_coupled_prach_detection_observation", "Msg1 PRACH detection observed in the coupled PRACH runtime gate.");
@@ -2390,6 +2416,156 @@ methods(Static, Access=private)
             state.PRACHFailureCount(ueIdx) = double(state.PRACHFailureCount(ueIdx)) + 1;
         end
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
+    end
+
+    function state = updateTimingAdvanceFromReceiverTrialImpl(state, ueIdx, row, sourceLabel)
+        if ~(istable(row) && height(row) >= 1)
+            return;
+        end
+        taSamples = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["TimingAdvance_samples","TimingOffset_samples","EstimatedTimingOffset_PreCorrection_samples","TimingError_samples"], NaN);
+        taUs = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["TimingAdvance_us"], NaN);
+        if ~isfinite(taSamples)
+            return;
+        end
+        slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", ...
+            sixgr.util.structGet(state, "CurrentSlot", NaN)));
+        alignedState = "time_aligned_from_ul_receiver_measurement";
+        if contains(lower(string(sourceLabel)), "srs")
+            alignedState = "time_aligned_from_srs_receiver_measurement";
+        end
+        state = sixgr.truth.CoupledTruthRuntime.updateTimingAdvanceMeasurementImpl( ...
+            state, ueIdx, taSamples, taUs, sourceLabel, slotIdx, alignedState);
+    end
+
+    function state = updateTimingAdvanceMeasurementImpl(state, ueIdx, taSamples, taUs, sourceLabel, slotIdx, alignedState)
+        ueIdx = round(double(ueIdx));
+        if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(sixgr.util.structGet(state, "NumUsers", 0)))
+            return;
+        end
+        taSamples = double(taSamples);
+        if ~isfinite(taSamples)
+            return;
+        end
+        fsHz = sixgr.truth.CoupledTruthRuntime.timingAdvanceSampleRateHz(state);
+        taUs = double(taUs);
+        if ~(isfinite(taUs) && isscalar(taUs)) && isfinite(fsHz) && fsHz > 0
+            taUs = taSamples / fsHz * 1e6;
+        end
+        slotIdx = double(slotIdx);
+        if ~(isfinite(slotIdx) && isscalar(slotIdx))
+            slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+        end
+        servingCell = sixgr.truth.CoupledTruthRuntime.currentServingCellForUE(state, ueIdx);
+        servingDistanceM = sixgr.truth.CoupledTruthRuntime.currentServingDistanceM(state, ueIdx, servingCell);
+        state.LastTimingAdvanceSamplesByUE(ueIdx) = double(taSamples);
+        state.LastTimingAdvanceUsByUE(ueIdx) = double(taUs);
+        state.LastTimingAdvanceSourceByUE(ueIdx) = string(sourceLabel);
+        state.LastTimingAdvanceUpdateSlotByUE(ueIdx) = double(slotIdx);
+        state.LastTimingAdvanceServingCellByUE(ueIdx) = double(servingCell);
+        state.LastTimingAdvanceServingDistanceMByUE(ueIdx) = double(servingDistanceM);
+        state.TimingAdvanceDriftSamplesByUE(ueIdx) = 0;
+        state.TimingAdvanceDriftUsByUE(ueIdx) = 0;
+        state.TimingAdvanceUpdateRequiredByUE(ueIdx) = false;
+        state.TimingAdvanceUpdateStatusByUE(ueIdx) = "updated_from_runtime_receiver_timing_measurement";
+        if nargin >= 7 && strlength(strtrim(string(alignedState))) > 0
+            state.TimeAlignmentState(ueIdx) = string(alignedState);
+        else
+            state.TimeAlignmentState(ueIdx) = "time_aligned_from_runtime_receiver_measurement";
+        end
+    end
+
+    function state = refreshTimingAdvanceMobilityDriftImpl(state)
+        mode = lower(strtrim(string(sixgr.util.structGet(state.ControlGating, "TimingAdvanceUpdateMode", "measurement_only"))));
+        if mode == "disabled"
+            return;
+        end
+        thresholdSamples = double(sixgr.util.structGet(state.ControlGating, "TimingAdvanceUpdateThresholdSamples", 1));
+        if ~(isfinite(thresholdSamples) && isscalar(thresholdSamples) && thresholdSamples >= 0)
+            thresholdSamples = 1;
+        end
+        fsHz = sixgr.truth.CoupledTruthRuntime.timingAdvanceSampleRateHz(state);
+        nUsers = double(sixgr.util.structGet(state, "NumUsers", 0));
+        for ueIdx = 1:nUsers
+            lastTA = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceSamplesByUE", ueIdx, NaN));
+            if ~isfinite(lastTA)
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "not_evaluated_no_timing_advance_baseline";
+                continue;
+            end
+            baselineDistanceM = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceServingDistanceMByUE", ueIdx, NaN));
+            baselineCell = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceServingCellByUE", ueIdx, NaN));
+            servingCell = sixgr.truth.CoupledTruthRuntime.currentServingCellForUE(state, ueIdx);
+            if isfinite(baselineCell) && isfinite(servingCell) && round(baselineCell) ~= round(servingCell)
+                state.TimingAdvanceUpdateRequiredByUE(ueIdx) = true;
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "ta_update_required_serving_cell_changed_after_mobility";
+                state.TimeAlignmentState(ueIdx) = "ta_update_required_serving_cell_changed";
+                continue;
+            end
+            currentDistanceM = sixgr.truth.CoupledTruthRuntime.currentServingDistanceM(state, ueIdx, servingCell);
+            if ~(isfinite(fsHz) && fsHz > 0)
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "not_evaluated_sample_rate_unavailable";
+                continue;
+            end
+            if ~(isfinite(baselineDistanceM) && isfinite(currentDistanceM))
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "not_evaluated_serving_geometry_unavailable";
+                continue;
+            end
+            driftSamples = 2 * (double(currentDistanceM) - double(baselineDistanceM)) / 299792458.0 * double(fsHz);
+            driftUs = driftSamples / double(fsHz) * 1e6;
+            state.TimingAdvanceDriftSamplesByUE(ueIdx) = double(driftSamples);
+            state.TimingAdvanceDriftUsByUE(ueIdx) = double(driftUs);
+            if abs(double(driftSamples)) < double(thresholdSamples)
+                state.TimingAdvanceUpdateRequiredByUE(ueIdx) = false;
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "within_configured_ta_drift_threshold";
+                continue;
+            end
+            if mode == "geometry_predictive"
+                state.LastTimingAdvanceSamplesByUE(ueIdx) = double(lastTA) + double(driftSamples);
+                state.LastTimingAdvanceUsByUE(ueIdx) = double(state.LastTimingAdvanceSamplesByUE(ueIdx)) / double(fsHz) * 1e6;
+                state.LastTimingAdvanceSourceByUE(ueIdx) = "geometry_propagation_mobility_delta";
+                state.LastTimingAdvanceUpdateSlotByUE(ueIdx) = double(sixgr.util.structGet(state, "CurrentCanonicalSlot", NaN));
+                state.LastTimingAdvanceServingCellByUE(ueIdx) = double(servingCell);
+                state.LastTimingAdvanceServingDistanceMByUE(ueIdx) = double(currentDistanceM);
+                state.TimingAdvanceUpdateRequiredByUE(ueIdx) = false;
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "updated_from_geometry_mobility_delta";
+                state.TimeAlignmentState(ueIdx) = "time_aligned_from_geometry_mobility_update";
+            else
+                state.TimingAdvanceUpdateRequiredByUE(ueIdx) = true;
+                state.TimingAdvanceUpdateStatusByUE(ueIdx) = "ta_update_required_waiting_for_receiver_timing_measurement";
+                state.TimeAlignmentState(ueIdx) = "ta_update_required_after_mobility";
+            end
+        end
+    end
+
+    function fsHz = timingAdvanceSampleRateHz(state)
+        cfg = sixgr.util.structGet(state, "CfgMobility", struct());
+        fsHz = double(sixgr.util.structGet(cfg, "phy.waveform.sampleRate_Hz", ...
+            sixgr.util.structGet(cfg, "waveform.sample_rate_hz", NaN)));
+        if ~(isfinite(fsHz) && isscalar(fsHz) && fsHz > 0)
+            fsHz = NaN;
+        end
+    end
+
+    function servingCell = currentServingCellForUE(state, ueIdx)
+        servingCell = NaN;
+        vec = double(sixgr.util.structGet(state, "CurrentServingIdx", []));
+        if ueIdx >= 1 && ueIdx <= numel(vec)
+            servingCell = double(vec(ueIdx));
+        end
+    end
+
+    function distanceM = currentServingDistanceM(state, ueIdx, servingCell)
+        distanceM = NaN;
+        if ~(isfinite(double(servingCell)) && servingCell >= 1)
+            return;
+        end
+        uePos = double(sixgr.util.structGet(sixgr.util.structGet(state, "UE", struct()), "pos_m", []));
+        bsPos = double(sixgr.util.structGet(sixgr.util.structGet(sixgr.util.structGet(state, "Layout", struct()), "bs", struct()), "pos_m", []));
+        if ueIdx < 1 || ueIdx > size(uePos, 1) || servingCell > size(bsPos, 1)
+            return;
+        end
+        delta = uePos(ueIdx, :) - bsPos(round(double(servingCell)), :);
+        distanceM = sqrt(sum(double(delta(:)).^2));
     end
 
     function state = applySRSTrialImpl(state, ueIdx, trialT)
@@ -2405,6 +2581,8 @@ methods(Static, Access=private)
             state.CSIValidityState(ueIdx) = "fresh_srs";
             state.LastSuccessfulSRSSlotByUE(ueIdx) = double(slotIdx);
             state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx);
+            state = sixgr.truth.CoupledTruthRuntime.updateTimingAdvanceFromReceiverTrialImpl( ...
+                state, ueIdx, row, "srs_receiver_timing_estimate");
         else
             state.SRSValidityState(ueIdx) = "invalid";
             state.CSIValidityState(ueIdx) = "invalid_srs_not_usable";
@@ -4342,6 +4520,18 @@ methods(Static, Access=private)
         trsMaxAgeSlots = double(sixgr.util.structGet(cfg, "run.controlGating.trsMaxAgeSlots", ...
             sixgr.util.structGet(cfg, "control_gating.trs_max_age_slots", [])));
         trsMaxAgeSlots = max(0, round(trsMaxAgeSlots));
+        timingAdvanceUpdateMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.controlGating.timingAdvanceUpdateMode", ...
+            sixgr.util.structGet(cfg, "control_gating.timing_advance_update_mode", "measurement_only")))));
+        if ~ismember(timingAdvanceUpdateMode, ["measurement_only","geometry_predictive","disabled"])
+            error("sixgr:truth:InvalidTimingAdvanceUpdateMode", ...
+                "Invalid timing advance update mode '%s'.", char(timingAdvanceUpdateMode));
+        end
+        timingAdvanceUpdateThresholdSamples = double(sixgr.util.structGet(cfg, "run.controlGating.timingAdvanceUpdateThresholdSamples", ...
+            sixgr.util.structGet(cfg, "control_gating.timing_advance_update_threshold_samples", 1)));
+        if ~(isfinite(timingAdvanceUpdateThresholdSamples) && isscalar(timingAdvanceUpdateThresholdSamples) && timingAdvanceUpdateThresholdSamples >= 0)
+            error("sixgr:truth:InvalidTimingAdvanceUpdateThreshold", ...
+                "Timing advance update threshold must be a finite nonnegative scalar.");
+        end
         if any(cellfun(@isempty, {sixgr.util.structGet(cfg, "run.controlGating.pbchRequired", sixgr.util.structGet(cfg, "control_gating.pbch_required", [])), ...
                 sixgr.util.structGet(cfg, "run.controlGating.prachRequired", sixgr.util.structGet(cfg, "control_gating.prach_required", [])), ...
                 sixgr.util.structGet(cfg, "run.controlGating.pdcchRequired", sixgr.util.structGet(cfg, "control_gating.pdcch_required", [])), ...
@@ -4360,6 +4550,8 @@ methods(Static, Access=private)
             "TRSRequired", logical(trsRequired), ...
             "SRSMaxAgeSlots", double(srsMaxAgeSlots), ...
             "TRSMaxAgeSlots", double(trsMaxAgeSlots), ...
+            "TimingAdvanceUpdateMode", char(timingAdvanceUpdateMode), ...
+            "TimingAdvanceUpdateThresholdSamples", double(timingAdvanceUpdateThresholdSamples), ...
             "PBCHInitialState", "searching", ...
             "PRACHInitialState", sixgr.truth.CoupledTruthRuntime.ternaryString(logical(prachRequired), "pending", "not_required"), ...
             "SRSInitialState", sixgr.truth.CoupledTruthRuntime.ternaryString(logical(srsRequired), "invalid", "not_required"), ...
@@ -4436,6 +4628,10 @@ methods(Static, Access=private)
             end
             rows(ueIdx).CellAcquisitionState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CellAcquisitionState", ueIdx, "unknown"));
             rows(ueIdx).AccessState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "AccessState", ueIdx, "not_attempted"));
+            rows(ueIdx).TimeAlignmentState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "TimeAlignmentState", ueIdx, "not_time_aligned"));
+            rows(ueIdx).LastTimingAdvanceSource = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "LastTimingAdvanceSourceByUE", ueIdx, ""));
+            rows(ueIdx).TimingAdvanceUpdateStatus = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "TimingAdvanceUpdateStatusByUE", ueIdx, "not_evaluated"));
+            rows(ueIdx).TimingAdvanceUpdateRequired = logical(sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "TimingAdvanceUpdateRequiredByUE", ueIdx, false));
             rows(ueIdx).LastPDCCHStatus = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "LastPDCCHStatus", ueIdx, "not_attempted"));
             rows(ueIdx).SRSValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "SRSValidityState", ueIdx, "unknown"));
             rows(ueIdx).CSIValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_csi_unavailable"));
@@ -4456,6 +4652,13 @@ methods(Static, Access=private)
             rows(ueIdx).TRSAgeSlots = double(sixgr.truth.CoupledTruthRuntime.trsAgeSlotsForServingCell(state, servingCell));
             rows(ueIdx).LastSuccessfulPBCHSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulPBCHSlotByUE", ueIdx, NaN));
             rows(ueIdx).LastSuccessfulPRACHSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulPRACHSlotByUE", ueIdx, NaN));
+            rows(ueIdx).LastTimingAdvance_samples = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceSamplesByUE", ueIdx, NaN));
+            rows(ueIdx).LastTimingAdvance_us = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceUsByUE", ueIdx, NaN));
+            rows(ueIdx).LastTimingAdvanceUpdateSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceUpdateSlotByUE", ueIdx, NaN));
+            rows(ueIdx).LastTimingAdvanceServingCell = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceServingCellByUE", ueIdx, NaN));
+            rows(ueIdx).LastTimingAdvanceServingDistance_m = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastTimingAdvanceServingDistanceMByUE", ueIdx, NaN));
+            rows(ueIdx).TimingAdvanceDrift_samples = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "TimingAdvanceDriftSamplesByUE", ueIdx, NaN));
+            rows(ueIdx).TimingAdvanceDrift_us = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "TimingAdvanceDriftUsByUE", ueIdx, NaN));
             rows(ueIdx).LastSuccessfulPDCCHSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulPDCCHSlotByUE", ueIdx, NaN));
             rows(ueIdx).LastSuccessfulPUCCHSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulPUCCHSlotByUE", ueIdx, NaN));
             rows(ueIdx).LastSuccessfulSRSSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulSRSSlotByUE", ueIdx, NaN));
@@ -6339,6 +6542,11 @@ methods(Static, Access=private)
         row = struct( ...
             "UEIndex", NaN, "RNTI", NaN, "ServingCell", NaN, "CurrentSchedulingDirection", "", ...
             "CellAcquisitionState", "", "AccessState", "", "LastPDCCHStatus", "", ...
+            "TimeAlignmentState", "", "LastTimingAdvance_samples", NaN, "LastTimingAdvance_us", NaN, ...
+            "LastTimingAdvanceSource", "", "LastTimingAdvanceUpdateSlot", NaN, ...
+            "LastTimingAdvanceServingCell", NaN, "LastTimingAdvanceServingDistance_m", NaN, ...
+            "TimingAdvanceDrift_samples", NaN, "TimingAdvanceDrift_us", NaN, ...
+            "TimingAdvanceUpdateRequired", false, "TimingAdvanceUpdateStatus", "", ...
             "SRSValidityState", "", "CSIValidityState", "", "TRSValidityState", "", ...
             "SharedSchedulingEligibility", false, "DLSchedulingEligibility", false, "ULSchedulingEligibility", false, ...
             "SchedulingEligibility", false, "ControlEligibility", false, "SchedulingBlockedBySRS", false, ...
@@ -6618,18 +6826,19 @@ methods(Static, Access=private)
         decoderRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRValueRole", repmat("", n, 1))));
         decoderStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRValueStatus", repmat("", n, 1))));
         decoderReason = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRNAReason", repmat("", n, 1))));
-        hasDecoder = isfinite(decoderProxySINR);
-        mask = strlength(decoderSource) == 0 & hasDecoder;
-        decoderSource(mask) = "post_equalization_evm_proxy";
-        mask = strlength(decoderRole) == 0 & hasDecoder;
-        decoderRole(mask) = "derived";
-        mask = strlength(decoderStatus) == 0 & hasDecoder;
-        decoderStatus(mask) = "OK";
-        mask = strlength(decoderReason) == 0 & ~hasDecoder;
-        decoderReason(mask) = signalToken + "_decoder_truth_proxy_unavailable";
-        mask = strlength(decoderRole) == 0 & ~hasDecoder;
+        proxyLike = isfinite(decoderProxySINR) | contains(lower(decoderSource), "evm_proxy") | ...
+            contains(lower(decoderSource), "proxy") | contains(lower(decoderRole), "proxy");
+        decoderProxySINR(proxyLike) = NaN;
+        mask = proxyLike;
+        decoderSource(mask) = "evm_proxy_quarantined_not_decoder_truth";
+        decoderReason(mask) = "decoder_truth_sinr_requires_receiver_or_decoder_evidence_not_evm_proxy";
+        mask = strlength(decoderSource) == 0;
+        decoderSource(mask) = "unavailable_decoder_truth_proxy_not_materialized";
+        mask = strlength(decoderReason) == 0;
+        decoderReason(mask) = signalToken + "_decoder_truth_proxy_not_materialized";
+        mask = strlength(decoderRole) == 0 | proxyLike;
         decoderRole(mask) = "unavailable";
-        mask = strlength(decoderStatus) == 0 & ~hasDecoder;
+        mask = strlength(decoderStatus) == 0 | proxyLike;
         decoderStatus(mask) = "unavailable";
         T.DecoderTruthProxySINR_dB = decoderProxySINR;
         T.DecoderTruthProxySINRSource = decoderSource;

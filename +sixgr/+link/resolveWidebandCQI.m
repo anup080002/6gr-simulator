@@ -51,8 +51,10 @@ perRBEffectiveSINR_dB = double(perRBSINR_dB - margin_dB);
 selectionSINR_dB = double(widebandEffectiveSINR_dB);
 effectiveSINRMethod = "wideband_direct";
 effectiveSINRBeta_dB = NaN;
+effectiveSINRBetaSource = "";
+effectiveSINRBetaValueRole = "";
 if modeToken == "effective_sinr_bler_lut"
-    [selectionSINR_dB, effectiveSINRMethod, effectiveSINRBeta_dB] = ...
+    [selectionSINR_dB, effectiveSINRMethod, effectiveSINRBeta_dB, effectiveSINRBetaSource, effectiveSINRBetaValueRole] = ...
         localComputeEffectiveSINR(perRBEffectiveSINR_dB, widebandEffectiveSINR_dB, cfg, direction);
 end
 widebandSE = localSINRToSpectralEfficiency(selectionSINR_dB);
@@ -93,6 +95,8 @@ feedback = struct( ...
     "EffectiveSINR_dB", double(selectionSINR_dB), ...
     "EffectiveSINRMethod", char(string(effectiveSINRMethod)), ...
     "EffectiveSINRBeta_dB", double(effectiveSINRBeta_dB), ...
+    "EffectiveSINRBetaSource", char(string(effectiveSINRBetaSource)), ...
+    "EffectiveSINRBetaValueRole", char(string(effectiveSINRBetaValueRole)), ...
     "WidebandSpectralEfficiency", double(widebandSE), ...
     "WidebandCQI", double(widebandCQI), ...
     "PerRBSINR_dB", double(perRBSINR_dB), ...
@@ -315,10 +319,12 @@ if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
 end
 end
 
-function [effectiveSINR_dB, methodToken, beta_dB] = localComputeEffectiveSINR(perRBSINR_dB, widebandSINR_dB, cfg, direction)
+function [effectiveSINR_dB, methodToken, beta_dB, betaSource, betaValueRole] = localComputeEffectiveSINR(perRBSINR_dB, widebandSINR_dB, cfg, direction)
 effectiveSINR_dB = double(widebandSINR_dB);
 methodToken = "wideband_direct";
 beta_dB = NaN;
+betaSource = "";
+betaValueRole = "";
 perRB = double(perRBSINR_dB(:));
 perRB = perRB(isfinite(perRB));
 if isempty(perRB)
@@ -358,7 +364,7 @@ switch rawMethod
         end
     otherwise
         methodToken = "eesm";
-        beta_dB = localResolveEESMBeta(cfg, direction);
+        [beta_dB, betaSource, betaValueRole] = localResolveEESMBeta(cfg, direction);
         betaLin = 10^(beta_dB / 10);
         sinrLin = 10 .^ (perRB / 10);
         effectiveLin = -betaLin * log(mean(exp(-sinrLin ./ max(betaLin, eps)), "omitnan"));
@@ -368,12 +374,21 @@ switch rawMethod
 end
 end
 
-function beta_dB = localResolveEESMBeta(cfg, direction)
+function [beta_dB, source, valueRole] = localResolveEESMBeta(cfg, direction)
 beta_dB = NaN;
+source = "";
+valueRole = "";
 if nargin < 2 || isempty(direction)
     direction = "DL";
 end
 dir = upper(string(direction));
+[catalogBeta, catalogSource, catalogRole] = localResolveEESMBetaFromMCSCatalog(cfg, dir);
+if isfinite(catalogBeta) && catalogBeta > 0
+    beta_dB = catalogBeta;
+    source = catalogSource;
+    valueRole = catalogRole;
+    return;
+end
 if dir == "UL"
     candidates = [ ...
         "phy.pusch.eesmBeta_dB"
@@ -389,11 +404,93 @@ for i = 1:numel(candidates)
     value = double(sixgr.util.structGet(cfg, candidates(i), NaN));
     if isfinite(value)
         beta_dB = value;
+        source = string(candidates(i));
+        valueRole = "configured_scalar_beta";
         break;
     end
 end
 if ~(isfinite(beta_dB) && beta_dB > 0)
     beta_dB = 1.5;
+    source = "resolveWidebandCQI.lab_default_scalar_beta";
+    valueRole = "uncalibrated_lab_default";
+end
+end
+
+function [beta_dB, source, valueRole] = localResolveEESMBetaFromMCSCatalog(cfg, dir)
+beta_dB = NaN;
+source = "";
+valueRole = "";
+mcsIndex = localResolveConfiguredMCSForBeta(cfg, dir);
+if ~(isfinite(mcsIndex) && mcsIndex >= 0)
+    return;
+end
+if dir == "UL"
+    catalogPaths = [ ...
+        "phy.pusch.eesmBetaByMCS_dB"
+        "phy.csi.ulEESMBetaByMCS_dB"
+        "phy.csi.eesmBetaByMCS_dB"];
+    indexPaths = [ ...
+        "phy.pusch.eesmBetaMCSIndex"
+        "phy.csi.ulEESMBetaMCSIndex"
+        "phy.csi.eesmBetaMCSIndex"];
+else
+    catalogPaths = [ ...
+        "phy.pdsch.eesmBetaByMCS_dB"
+        "phy.csi.dlEESMBetaByMCS_dB"
+        "phy.csi.eesmBetaByMCS_dB"];
+    indexPaths = [ ...
+        "phy.pdsch.eesmBetaMCSIndex"
+        "phy.csi.dlEESMBetaMCSIndex"
+        "phy.csi.eesmBetaMCSIndex"];
+end
+for i = 1:numel(catalogPaths)
+    betaVec = double(sixgr.util.structGet(cfg, catalogPaths(i), []));
+    betaVec = betaVec(:);
+    if isempty(betaVec)
+        continue;
+    end
+    indexVec = double(sixgr.util.structGet(cfg, indexPaths(min(i, numel(indexPaths))), []));
+    indexVec = indexVec(:);
+    if numel(indexVec) == numel(betaVec)
+        matchIdx = find(round(indexVec) == round(mcsIndex), 1, "first");
+    else
+        matchIdx = round(double(mcsIndex)) + 1;
+        if matchIdx < 1 || matchIdx > numel(betaVec)
+            matchIdx = [];
+        end
+    end
+    if ~isempty(matchIdx)
+        candidate = double(betaVec(matchIdx(1)));
+        if isfinite(candidate) && candidate > 0
+            beta_dB = candidate;
+            source = string(catalogPaths(i));
+            valueRole = "configured_mcs_index_beta_catalog";
+            return;
+        end
+    end
+end
+end
+
+function mcsIndex = localResolveConfiguredMCSForBeta(cfg, dir)
+if dir == "UL"
+    candidates = [ ...
+        "phy.pusch.mcsIndex"
+        "phy.pusch.configuredMCSIndex"
+        "phy.linkAdaptation.configuredULMCSIndex"];
+else
+    candidates = [ ...
+        "phy.pdsch.mcsIndex"
+        "phy.pdsch.configuredMCSIndex"
+        "phy.linkAdaptation.configuredDLMCSIndex"];
+end
+mcsIndex = NaN;
+for i = 1:numel(candidates)
+    raw = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        mcsIndex = round(double(raw(1)));
+        return;
+    end
 end
 end
 

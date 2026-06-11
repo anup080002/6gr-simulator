@@ -365,7 +365,9 @@
     "srs_required": true,
     "srs_max_age_slots": 4,
     "trs_required": false,
-    "trs_max_age_slots": 4
+    "trs_max_age_slots": 4,
+    "timing_advance_update_mode": "measurement_only",
+    "timing_advance_update_threshold_samples": 1
   },
   "receiver": {
     "use_ideal_timing_sync": false

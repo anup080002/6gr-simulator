@@ -52,7 +52,17 @@ end
 if ~(isfinite(targetCodeRate) && targetCodeRate > 0)
     targetCodeRate = 78 / 1024;
 end
-mcsIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, targetCodeRate, fallbackCQI, char(mcsTable));
+decision = sixgr.link.resolveMCSIndexFromProfile(modStr, targetCodeRate, ...
+    "MCSTable", char(mcsTable), ...
+    "CQI", fallbackCQI, ...
+    "CQITable", char(cqiTable));
+if decision.Valid
+    mcsIndex = double(decision.MCSIndex);
+    modStr = char(string(decision.MCSProfile.Modulation));
+    targetCodeRate = double(decision.MCSProfile.TargetCodeRate);
+else
+    mcsIndex = NaN;
+end
 end
 
 function tableToken = localResolveCQITable(cfg, direction)

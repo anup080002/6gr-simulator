@@ -1413,6 +1413,7 @@ rows = repmat(struct( ...
     "CQITable", "", ...
     "MCSTable", "", ...
     "MCSSelectionSource", "", ...
+    "MCSValueStatus", "", ...
     "OLLADomain", "", ...
     "CalibrationProfile", "", ...
     "FixedMCSIndex", NaN, ...
@@ -1578,6 +1579,7 @@ for i = 1:2
     rows(i).CQITable = char(localResolveCQITable(cfg, direction));
     rows(i).MCSTable = char(localResolveMCSTable(cfg, direction));
     rows(i).MCSSelectionSource = char(localResolveOperatingPointSourceToken(configuredSelectionMode, policy));
+    rows(i).MCSValueStatus = "";
     rows(i).OLLADomain = char(localResolveRuntimeOLLADomainToken(cfg, direction));
     rows(i).CalibrationProfile = char(localResolveRuntimeCalibrationProfileToken(cfg, direction));
     rows(i).Numerology_mu = double(sixgr.util.structGet(cfg, "phy.numerology.mu", NaN));
@@ -1689,6 +1691,9 @@ for i = 1:2
     end
     if strlength(strtrim(string(runtimeEvidence.MCSSelectionSource))) > 0
         rows(i).MCSSelectionSource = char(string(runtimeEvidence.MCSSelectionSource));
+    end
+    if isfield(runtimeEvidence, "MCSValueStatus") && strlength(strtrim(string(runtimeEvidence.MCSValueStatus))) > 0
+        rows(i).MCSValueStatus = char(string(runtimeEvidence.MCSValueStatus));
     end
     if strlength(strtrim(string(runtimeEvidence.OLLADomain))) > 0
         rows(i).OLLADomain = char(string(runtimeEvidence.OLLADomain));
@@ -2124,6 +2129,7 @@ summary = struct( ...
     "SchedulerGrantMCSSelectionMode", "", ...
     "AppliedOperatingPointSource", "", ...
     "MCSSelectionSource", "", ...
+    "MCSValueStatus", "", ...
     "OLLADomain", "", ...
     "CalibrationProfile", "");
 if ~(isstruct(rawTrials) && ~isempty(fieldnames(rawTrials)))
@@ -2154,6 +2160,7 @@ summary.ActualMCSSelectionMode = localDominantStringValue(trialTable, "ActualMCS
 summary.SchedulerGrantMCSSelectionMode = localDominantStringValue(trialTable, "SchedulerGrantMCSSelectionMode");
 summary.AppliedOperatingPointSource = localDominantStringValue(trialTable, "AppliedOperatingPointSource");
 summary.MCSSelectionSource = localDominantStringValue(trialTable, "MCSSelectionSource");
+summary.MCSValueStatus = localDominantStringValue(trialTable, "MCSValueStatus");
 summary.OLLADomain = localDominantStringValue(trialTable, "OLLADomain");
 summary.CalibrationProfile = localDominantStringValue(trialTable, "CalibrationProfile");
 end
@@ -6270,7 +6277,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
     'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
     'LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy','SchedulerGrantMCSSelectionMode', ...
-    'CQISource','MCSSelectionSource','OLLADomain','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied','OLLADeltaMCS','OLLAUpdateCount','OLLAState','CalibrationProfile', ...
+    'CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied','OLLADeltaMCS','OLLAUpdateCount','OLLAState','CalibrationProfile', ...
     'RequestedOperatingPointSource','CQITable','MCSTable', ...
     'RankIndicator','PMI','CRI','PMIType', ...
     'PMICodebookMode','CSIReportMode','CSIPayloadBitLength','CSIPayloadHex', ...
@@ -6387,7 +6394,7 @@ for i = 1:numel(vars)
                 switch v
                     case {'Direction','ChannelModel','ChannelModelApplied','Status','Notes','PMIType','PMICodebookMode','CSIReportMode','Modulation', ...
                             'CQIDerivedModulation','LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy', ...
-                            'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','OLLADomain','OLLAState','CalibrationProfile', ...
+                            'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
                             'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason', ...
                             'ConfiguredSNRSource','SNRValueRole','AppliedAWGNSNRSource','PRACHSNRCalibrationStatus','PRACHSNRCalibrationSource', ...
@@ -6610,6 +6617,15 @@ end
 if ~ismember("DecoderTruthProxySINRSource", vars)
     T.DecoderTruthProxySINRSource = strings(n, 1);
 end
+if ~ismember("DecoderTruthProxySINRValueRole", vars)
+    T.DecoderTruthProxySINRValueRole = strings(n, 1);
+end
+if ~ismember("DecoderTruthProxySINRValueStatus", vars)
+    T.DecoderTruthProxySINRValueStatus = strings(n, 1);
+end
+if ~ismember("DecoderTruthProxySINRNAReason", vars)
+    T.DecoderTruthProxySINRNAReason = strings(n, 1);
+end
 if ~ismember("SINRValueRole", vars)
     T.SINRValueRole = strings(n, 1);
 end
@@ -6699,18 +6715,32 @@ if any(fillSINRSourceMask)
 end
 
 decoderProxy = double(T.DecoderTruthProxySINR_dB);
-if all(~isfinite(decoderProxy)) && ismember("EVM_rms", vars)
-    evm = double(T.EVM_rms);
-    for i = 1:n
-        [decoderProxy(i), meta] = sixgr.link.deriveDecoderTruthProxySINR(struct("EVM_rms", evm(i)));
-        if strlength(strtrim(string(T.DecoderTruthProxySINRSource(i)))) == 0
-            T.DecoderTruthProxySINRSource(i) = string(sixgr.util.structGet(meta, "Source", ""));
-        end
-    end
-    T.DecoderTruthProxySINR_dB = decoderProxy;
-elseif all(strlength(strtrim(string(T.DecoderTruthProxySINRSource))) == 0) && any(isfinite(decoderProxy))
-    T.DecoderTruthProxySINRSource(:) = "post_equalization_evm_proxy";
+decoderSource = strtrim(string(T.DecoderTruthProxySINRSource));
+decoderRole = strtrim(string(T.DecoderTruthProxySINRValueRole));
+decoderStatus = strtrim(string(T.DecoderTruthProxySINRValueStatus));
+decoderReason = strtrim(string(T.DecoderTruthProxySINRNAReason));
+proxyLike = isfinite(decoderProxy) | contains(lower(decoderSource), "evm_proxy") | ...
+    contains(lower(decoderRole), "proxy") | contains(lower(decoderSource), "proxy");
+if any(proxyLike)
+    decoderProxy(proxyLike) = NaN;
+    decoderSource(proxyLike) = "evm_proxy_quarantined_not_decoder_truth";
+    decoderRole(proxyLike) = "unavailable";
+    decoderStatus(proxyLike) = "unavailable";
+    decoderReason(proxyLike) = "decoder_truth_sinr_requires_receiver_or_decoder_evidence_not_evm_proxy";
 end
+blankSource = strlength(decoderSource) == 0;
+decoderSource(blankSource) = "unavailable_decoder_truth_proxy_not_materialized";
+blankRole = strlength(decoderRole) == 0;
+decoderRole(blankRole) = "unavailable";
+blankStatus = strlength(decoderStatus) == 0;
+decoderStatus(blankStatus) = "unavailable";
+blankReason = strlength(decoderReason) == 0;
+decoderReason(blankReason) = "decoder_truth_proxy_not_materialized";
+T.DecoderTruthProxySINR_dB = decoderProxy;
+T.DecoderTruthProxySINRSource = decoderSource;
+T.DecoderTruthProxySINRValueRole = decoderRole;
+T.DecoderTruthProxySINRValueStatus = decoderStatus;
+T.DecoderTruthProxySINRNAReason = decoderReason;
 end
 
 function tf = localPostEqSINRProvenanceEligible(source, role, status)
@@ -8401,6 +8431,7 @@ row.ConfiguredMCSSelectionPolicy = "";
 row.SchedulerGrantMCSSelectionMode = "";
 row.CQISource = "";
 row.MCSSelectionSource = "";
+row.MCSValueStatus = "";
 row.OLLADomain = "";
 row.OuterLoopEnabled = false;
 row.InnerLoopEnabled = false;
@@ -9447,6 +9478,9 @@ end
 if ~ismember("SNR_dB", string(T.Properties.VariableNames))
     T.SNR_dB = repmat(double(snr_dB), n, 1);
 end
+if ~ismember("Modulation", string(T.Properties.VariableNames))
+    T.Modulation = strings(n, 1);
+end
 if ~ismember("BeamSelectionStrategy", string(T.Properties.VariableNames))
     T.BeamSelectionStrategy = repmat(string(sixgr.util.structGet(userMeta, "BeamSelectionStrategy", ...
         sixgr.util.structGet(multiUser, "BeamSelectionStrategy", "missing_from_config"))), n, 1);
@@ -9456,6 +9490,102 @@ if ~ismember("ConfiguredTxAntennas", string(T.Properties.VariableNames))
 end
 if ~ismember("ConfiguredRxAntennas", string(T.Properties.VariableNames))
     T.ConfiguredRxAntennas = repmat(double(sixgr.util.structGet(cfg, "phy.nRxAnt", 1)), n, 1);
+end
+T = localCanonicalizeConstellationSampleTable(T, direction, snr_dB);
+end
+
+function T = localCanonicalizeConstellationSampleTable(T, direction, snr_dB)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    T.Direction = repmat(string(direction), n, 1);
+end
+if ~ismember("SNR_dB", string(T.Properties.VariableNames))
+    T.SNR_dB = repmat(double(snr_dB), n, 1);
+end
+if ~ismember("TBId", string(T.Properties.VariableNames))
+    if all(ismember(["Frame","Slot"], string(T.Properties.VariableNames)))
+        T.TBId = double(T.Frame) .* 10000 + double(T.Slot);
+    else
+        T.TBId = nan(n, 1);
+    end
+end
+if ismember("TxReal", string(T.Properties.VariableNames)) && ~ismember("ReferenceSymbolReal", string(T.Properties.VariableNames))
+    T.ReferenceSymbolReal = T.TxReal;
+end
+if ismember("TxImag", string(T.Properties.VariableNames)) && ~ismember("ReferenceSymbolImag", string(T.Properties.VariableNames))
+    T.ReferenceSymbolImag = T.TxImag;
+end
+if ~ismember("MCSIndex", string(T.Properties.VariableNames)) && ismember("MCS", string(T.Properties.VariableNames))
+    T.MCSIndex = double(T.MCS);
+end
+if ~ismember("PostEqSINR_dB", string(T.Properties.VariableNames)) && ismember("MeasuredSINR_dB", string(T.Properties.VariableNames))
+    T.PostEqSINR_dB = double(T.MeasuredSINR_dB);
+end
+if ~ismember("EVM_rms_pct", string(T.Properties.VariableNames))
+    if ismember("EVM_rms", string(T.Properties.VariableNames))
+        T.EVM_rms_pct = double(T.EVM_rms) .* 100;
+    elseif ismember("SymbolEVM_rms", string(T.Properties.VariableNames))
+        T.EVM_rms_pct = double(T.SymbolEVM_rms) .* 100;
+    else
+        T.EVM_rms_pct = nan(n, 1);
+    end
+end
+if ~ismember("EVM_dB", string(T.Properties.VariableNames))
+    if ismember("EVM_rms", string(T.Properties.VariableNames))
+        T.EVM_dB = 20 .* log10(max(double(T.EVM_rms), realmin));
+    elseif ismember("SymbolEVM_rms", string(T.Properties.VariableNames))
+        T.EVM_dB = 20 .* log10(max(double(T.SymbolEVM_rms), realmin));
+    else
+        T.EVM_dB = nan(n, 1);
+    end
+end
+if ~ismember("Normalization", string(T.Properties.VariableNames))
+    T.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", n, 1);
+end
+if ~ismember("TruthStatus", string(T.Properties.VariableNames))
+    T.TruthStatus = repmat("real_lls_evidence", n, 1);
+end
+
+T.direction = string(T.Direction);
+T.ue_id = localConstellationNumericColumn(T, ["UEIndex","UEId","RNTI"]);
+T.slot = localConstellationNumericColumn(T, "Slot");
+T.tb_id = localConstellationNumericColumn(T, "TBId");
+T.layer = localConstellationNumericColumn(T, "LayerIndex");
+T.modulation = string(T.Modulation);
+T.mcs_index = localConstellationNumericColumn(T, "MCSIndex");
+T.snr_db = localConstellationNumericColumn(T, "SNR_dB");
+T.posteq_sinr_db = localConstellationNumericColumn(T, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"]);
+T.symbol_index = localConstellationNumericColumn(T, "SampleIndex");
+T.reference_symbol_i = localConstellationNumericColumn(T, ["ReferenceSymbolReal","TxReal"]);
+T.reference_symbol_q = localConstellationNumericColumn(T, ["ReferenceSymbolImag","TxImag"]);
+T.equalized_i = localConstellationNumericColumn(T, "EqualizedReal");
+T.equalized_q = localConstellationNumericColumn(T, "EqualizedImag");
+T.evm_rms_pct = localConstellationNumericColumn(T, "EVM_rms_pct");
+T.evm_db = localConstellationNumericColumn(T, "EVM_dB");
+T.normalization = string(T.Normalization);
+T.truth_status = string(T.TruthStatus);
+end
+
+function values = localConstellationNumericColumn(T, names)
+values = nan(height(T), 1);
+names = string(names);
+for i = 1:numel(names)
+    if ~ismember(names(i), string(T.Properties.VariableNames))
+        continue;
+    end
+    try
+        candidate = double(T.(names(i)));
+    catch
+        candidate = str2double(string(T.(names(i))));
+    end
+    candidate = reshape(candidate, [], 1);
+    if numel(candidate) == height(T)
+        values = candidate;
+        return;
+    end
 end
 end
 
@@ -11098,20 +11228,26 @@ else
     TdlConst = table();
 end
 if istable(Tdl) && ~isempty(Tdl)
-    img = fullfile(imgDir, "dl_trial_sinr.png");
-    localWriteTrialMetricPlot(Tdl, "PostEqSINR_dB", img, "DL Post-Eq SINR", "Post-equalization SINR (dB)");
+    localDeleteIfExists(fullfile(imgDir, "dl_trial_sinr.png"));
+    localDeleteIfExists(fullfile(imgDir, "dl_trial_channel_gain.png"));
+    localWriteTrialMetricSummaryTable(airInterfaceRunFolder, Tdl, "PostEqSINR_dB", "DL", "posteq_sinr", "dl_posteq_sinr_by_trial_summary.csv");
+    localWriteTrialMetricSummaryTable(airInterfaceRunFolder, Tdl, "ChannelGain_dB", "DL", "channel_gain", "dl_channel_gain_distribution_summary.csv");
+
+    img = fullfile(imgDir, "dl_posteq_sinr_by_trial_scatter.png");
+    localWriteTrialMetricScatterPlot(Tdl, "PostEqSINR_dB", img, "DL Post-Eq SINR by Trial", "Post-equalization SINR (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
 
-    img = fullfile(imgDir, "dl_trial_channel_gain.png");
-    localWriteTrialMetricPlot(Tdl, "ChannelGain_dB", img, "DL Trial Channel Gain", "Gain (dB)");
+    img = fullfile(imgDir, "dl_channel_gain_distribution.png");
+    localWriteTrialMetricDistributionPlot(Tdl, "ChannelGain_dB", img, "DL Channel Gain Distribution", "Gain (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
 end
 if istable(TdlConst) && ~isempty(TdlConst)
     img = fullfile(imgDir, "dl_constellation_scatter.png");
+    localDeleteIfExists(img);
     localWriteConstellationScatterPlot(TdlConst, img, "DL Constellation Scatter");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
@@ -11129,20 +11265,26 @@ else
     TulConst = table();
 end
 if istable(Tul) && ~isempty(Tul)
-    img = fullfile(imgDir, "ul_trial_sinr.png");
-    localWriteTrialMetricPlot(Tul, "PostEqSINR_dB", img, "UL Post-Eq SINR", "Post-equalization SINR (dB)");
+    localDeleteIfExists(fullfile(imgDir, "ul_trial_sinr.png"));
+    localDeleteIfExists(fullfile(imgDir, "ul_trial_channel_gain.png"));
+    localWriteTrialMetricSummaryTable(airInterfaceRunFolder, Tul, "PostEqSINR_dB", "UL", "posteq_sinr", "ul_posteq_sinr_by_trial_summary.csv");
+    localWriteTrialMetricSummaryTable(airInterfaceRunFolder, Tul, "ChannelGain_dB", "UL", "channel_gain", "ul_channel_gain_distribution_summary.csv");
+
+    img = fullfile(imgDir, "ul_posteq_sinr_by_trial_scatter.png");
+    localWriteTrialMetricScatterPlot(Tul, "PostEqSINR_dB", img, "UL Post-Eq SINR by Trial", "Post-equalization SINR (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
 
-    img = fullfile(imgDir, "ul_trial_channel_gain.png");
-    localWriteTrialMetricPlot(Tul, "ChannelGain_dB", img, "UL Trial Channel Gain", "Gain (dB)");
+    img = fullfile(imgDir, "ul_channel_gain_distribution.png");
+    localWriteTrialMetricDistributionPlot(Tul, "ChannelGain_dB", img, "UL Channel Gain Distribution", "Gain (dB)");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
 end
 if istable(TulConst) && ~isempty(TulConst)
     img = fullfile(imgDir, "ul_constellation_scatter.png");
+    localDeleteIfExists(img);
     localWriteConstellationScatterPlot(TulConst, img, "UL Constellation Scatter");
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
@@ -11150,36 +11292,123 @@ if istable(TulConst) && ~isempty(TulConst)
 end
 end
 
-function localWriteTrialMetricPlot(T, metricName, outPath, plotTitle, yLabel)
+function localWriteTrialMetricSummaryTable(airInterfaceRunFolder, T, metricName, direction, metricLabel, fileName)
 if ~(istable(T) && ~isempty(T) && ismember(metricName, string(T.Properties.VariableNames)))
     return;
 end
-if ismember("UEIndex", string(T.Properties.VariableNames)) && numel(unique(double(T.UEIndex))) > 1
-    localWriteGroupedMetricPlot(T, metricName, outPath, plotTitle, yLabel);
+csvDir = fullfile(airInterfaceRunFolder, "csv");
+sixgr.util.ensureFolder(csvDir);
+values = localNumericColumn(T, metricName);
+ue = localNumericColumnOrDefault(T, ["UEIndex","UEId","UEID"], NaN);
+layer = localLayerGroupColumn(T);
+if isempty(ue)
+    ue = nan(height(T), 1);
+end
+if isempty(layer)
+    layer = repmat("all_layers", height(T), 1);
+end
+ueKeys = unique(ue(isfinite(ue)));
+if isempty(ueKeys)
+    ueKeys = NaN;
+end
+rows = repmat(struct("Direction", "", "MetricName", "", "MetricColumn", "", "UEIndex", NaN, "Layer", "", ...
+    "p5", NaN, "p50", NaN, "p95", NaN, "mean", NaN, "std", NaN, "n_samples", 0), 0, 1);
+for i = 1:numel(ueKeys)
+    if isfinite(ueKeys(i))
+        ueMask = ue == ueKeys(i);
+    else
+        ueMask = true(height(T), 1);
+    end
+    layerKeys = unique(layer(ueMask), "stable");
+    for j = 1:numel(layerKeys)
+        mask = ueMask & layer == layerKeys(j) & isfinite(values);
+        samples = values(mask);
+        samples = samples(isfinite(samples));
+        if isempty(samples)
+            continue;
+        end
+        rows(end + 1, 1) = struct( ... %#ok<AGROW>
+            "Direction", string(direction), ...
+            "MetricName", string(metricLabel), ...
+            "MetricColumn", string(metricName), ...
+            "UEIndex", double(ueKeys(i)), ...
+            "Layer", string(layerKeys(j)), ...
+            "p5", localPercentile(samples, 5), ...
+            "p50", localPercentile(samples, 50), ...
+            "p95", localPercentile(samples, 95), ...
+            "mean", mean(samples, "omitnan"), ...
+            "std", std(samples, "omitnan"), ...
+            "n_samples", double(numel(samples)));
+    end
+end
+if isempty(rows)
     return;
 end
-[x, xLabel] = localResolveTrialPlotXAxis(T, 1, 1);
-y = double(T.(metricName));
+sixgr.util.csvWriteTable(fullfile(csvDir, fileName), struct2table(rows));
+end
+
+function localWriteTrialMetricScatterPlot(T, metricName, outPath, plotTitle, yLabel)
+if ~(istable(T) && ~isempty(T) && ismember(metricName, string(T.Properties.VariableNames)))
+    return;
+end
+[x, xLabel] = localResolveTrialScatterXAxis(T);
+y = localNumericColumn(T, metricName);
 mask = isfinite(x) & isfinite(y);
 if ~any(mask)
     return;
 end
-multiSweep = localHasMultipleSweepPoints(T);
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
-if multiSweep
-    scatter(ax, x(mask), y(mask), 16, "MarkerEdgeColor", [0 0.447 0.741], ...
-        "MarkerFaceColor", "none", "DisplayName", plotTitle);
-else
-    plot(ax, x(mask), y(mask), "o-", "LineWidth", 1.25, "MarkerSize", 4);
+hold(ax, "on");
+group = localTrialGroupLabels(T);
+groups = unique(group(mask), "stable");
+colorOrder = get(ax, "ColorOrder");
+for i = 1:numel(groups)
+    gm = mask & group == groups(i);
+    if ~any(gm)
+        continue;
+    end
+    scatter(ax, x(gm), y(gm), 18, "MarkerEdgeColor", colorOrder(1 + mod(i - 1, size(colorOrder, 1)), :), ...
+        "MarkerFaceColor", "none", "DisplayName", char(groups(i)));
 end
 grid(ax, "on");
 xlabel(ax, xLabel);
 ylabel(ax, yLabel);
-title(ax, plotTitle);
-localApplySweepXAxis(ax, T, xLabel);
+title(ax, plotTitle + " (scatter; no implied temporal continuity)");
+if numel(groups) <= 12
+    legend(ax, "Location", "best");
+end
 sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
+end
+
+function localWriteTrialMetricDistributionPlot(T, metricName, outPath, plotTitle, yLabel)
+if ~(istable(T) && ~isempty(T) && ismember(metricName, string(T.Properties.VariableNames)))
+    return;
+end
+y = localNumericColumn(T, metricName);
+y = y(isfinite(y));
+if isempty(y)
+    return;
+end
+fig = figure("Visible", "off", "Color", "w");
+cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig);
+histogram(ax, y, "Normalization", "probability");
+grid(ax, "on");
+xlabel(ax, yLabel);
+ylabel(ax, "Probability");
+title(ax, plotTitle);
+text(ax, 0.98, 0.95, sprintf("n=%d, p50=%.3g", numel(y), localPercentile(y, 50)), ...
+    "Units", "normalized", "HorizontalAlignment", "right", "VerticalAlignment", "top");
+sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
+end
+
+function localWriteTrialMetricPlot(T, metricName, outPath, plotTitle, yLabel)
+if ~(istable(T) && ~isempty(T) && ismember(metricName, string(T.Properties.VariableNames)))
+    return;
+end
+localWriteTrialMetricScatterPlot(T, metricName, outPath, plotTitle, yLabel);
 end
 
 function localWriteGroupedMetricPlot(T, metricName, outPath, plotTitle, yLabel)
@@ -11219,25 +11448,21 @@ else
     return;
 end
 
-multiSweep = localHasMultipleSweepPoints(T);
 made = false;
 xLabel = "Frame";
 for i = 1:numel(groupValues)
     maskDir = groupMask{i};
-    [xAll, xLabel] = localResolveTrialPlotXAxis(T, i, numel(groupValues));
+    [xAll, xLabel] = localResolveTrialScatterXAxis(T);
     x = xAll(maskDir);
-    y = double(T.(metricName)(maskDir));
+    yAll = localNumericColumn(T, metricName);
+    y = yAll(maskDir);
     mask = isfinite(x) & isfinite(y);
     if ~any(mask)
         continue;
     end
     seriesColor = ax.ColorOrder(1 + mod(i - 1, size(ax.ColorOrder, 1)), :);
-    if multiSweep
-        scatter(ax, x(mask), y(mask), 16, "MarkerEdgeColor", seriesColor, ...
-            "MarkerFaceColor", "none", "DisplayName", char(groupValues(i)));
-    else
-        plot(ax, x(mask), y(mask), "o-", "LineWidth", 1.25, "MarkerSize", 4, "DisplayName", char(groupValues(i)));
-    end
+    scatter(ax, x(mask), y(mask), 16, "MarkerEdgeColor", seriesColor, ...
+        "MarkerFaceColor", "none", "DisplayName", char(groupValues(i)));
     made = true;
 end
 if ~made
@@ -11247,11 +11472,123 @@ grid(ax, "on");
 xlabel(ax, xLabel);
 ylabel(ax, yLabel);
 title(ax, plotTitle);
-localApplySweepXAxis(ax, T, xLabel);
+if strcmpi(xLabel, "Configured SNR (dB)")
+    localApplySweepXAxis(ax, T, xLabel);
+end
 if numel(groupValues) <= 12
     legend(ax, "Location", "best");
 end
 sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
+end
+
+function [x, xLabel] = localResolveTrialScatterXAxis(T)
+vars = string(T.Properties.VariableNames);
+for name = ["TrialId","TrialID","TrialIndex","TransportBlockID","Slot","SampleIndex"]
+    if ismember(name, vars)
+        candidate = localNumericColumn(T, name);
+        if numel(candidate) == height(T) && any(isfinite(candidate))
+            x = candidate;
+            xLabel = char(name);
+            return;
+        end
+    end
+end
+x = (1:height(T)).';
+xLabel = "Trial row index";
+end
+
+function labels = localTrialGroupLabels(T)
+labels = repmat("all_trials", height(T), 1);
+vars = string(T.Properties.VariableNames);
+if ismember("UEIndex", vars)
+    ue = localNumericColumn(T, "UEIndex");
+    labels = "UE" + string(ue);
+elseif ismember("UEId", vars)
+    ue = localNumericColumn(T, "UEId");
+    labels = "UE" + string(ue);
+end
+if ismember("Direction", vars)
+    labels = string(T.Direction) + " " + labels;
+end
+labels = strtrim(labels);
+labels(strlength(labels) == 0 | labels == "UE" | contains(labels, "NaN")) = "all_trials";
+end
+
+function values = localNumericColumn(T, name)
+values = nan(height(T), 1);
+if ~(istable(T) && ismember(string(name), string(T.Properties.VariableNames)))
+    return;
+end
+try
+    values = double(T.(string(name)));
+catch
+    values = str2double(string(T.(string(name))));
+end
+values = reshape(values, [], 1);
+if numel(values) ~= height(T)
+    values = nan(height(T), 1);
+end
+end
+
+function values = localNumericColumnOrDefault(T, names, fallback)
+values = [];
+names = string(names);
+for i = 1:numel(names)
+    if ismember(names(i), string(T.Properties.VariableNames))
+        values = localNumericColumn(T, names(i));
+        return;
+    end
+end
+if nargin >= 3
+    values = repmat(double(fallback), height(T), 1);
+end
+end
+
+function layer = localLayerGroupColumn(T)
+layer = strings(0, 1);
+vars = string(T.Properties.VariableNames);
+for name = ["LayerIndex","Layer","NumLayers","Layers","n_layers"]
+    if ismember(name, vars)
+        raw = T.(name);
+        layer = string(raw);
+        layer = reshape(layer, [], 1);
+        if numel(layer) == height(T)
+            layer = string(name) + "=" + layer;
+            return;
+        end
+    end
+end
+layer = repmat("all_layers", height(T), 1);
+end
+
+function value = localPercentile(samples, pct)
+samples = sort(double(samples(:)));
+samples = samples(isfinite(samples));
+if isempty(samples)
+    value = NaN;
+    return;
+end
+if numel(samples) == 1
+    value = samples(1);
+    return;
+end
+pos = 1 + (double(pct) / 100) * (numel(samples) - 1);
+lo = floor(pos);
+hi = ceil(pos);
+if lo == hi
+    value = samples(lo);
+else
+    value = samples(lo) + (pos - lo) * (samples(hi) - samples(lo));
+end
+end
+
+function localDeleteIfExists(path)
+try
+    if exist(path, "file") == 2
+        delete(path);
+    end
+catch
+end
 end
 
 function [x, xLabel] = localResolveTrialPlotXAxis(T, groupIndex, groupCount)
@@ -11312,53 +11649,165 @@ snrVals = unique(snrVals(isfinite(snrVals)));
 tf = numel(snrVals) > 1;
 end
 
-function localWriteConstellationScatterPlot(T, outPath, plotTitle)
-vars = ["EqualizedReal","EqualizedImag"];
-if ~(istable(T) && ~isempty(T) && all(ismember(vars, string(T.Properties.VariableNames))))
+function rendered = localWriteConstellationScatterPlot(T, outPath, plotTitle)
+rendered = false;
+T = localCanonicalizeConstellationSampleTable(T, "", NaN);
+[Tplot, reason] = localSelectConstellationPlotSlice(T);
+if isempty(Tplot)
+    localDeleteIfExists(outPath);
+    if strlength(reason) > 0
+        fprintf("Suppressing %s: %s\n", string(outPath), reason);
+    end
     return;
 end
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
 hold(ax, "on");
-eqMask = isfinite(double(T.EqualizedReal)) & isfinite(double(T.EqualizedImag));
+eqMask = isfinite(double(Tplot.equalized_i)) & isfinite(double(Tplot.equalized_q));
 if any(eqMask)
-    scatter(ax, double(T.EqualizedReal(eqMask)), double(T.EqualizedImag(eqMask)), 12, ...
+    scatter(ax, double(Tplot.equalized_i(eqMask)), double(Tplot.equalized_q(eqMask)), 12, ...
         "filled", "MarkerFaceAlpha", 0.35, "DisplayName", "Aligned equalized");
 end
-hardRealName = "HardDecisionReal";
-hardImagName = "HardDecisionImag";
-if ~ismember(hardRealName, string(T.Properties.VariableNames))
-    hardRealName = "DecisionReal";
+hardRealName = localFirstExistingConstellationVar(Tplot, ["HardDecisionReal","DecisionReal"]);
+hardImagName = localFirstExistingConstellationVar(Tplot, ["HardDecisionImag","DecisionImag"]);
+decMask = false(height(Tplot), 1);
+if strlength(hardRealName) > 0 && strlength(hardImagName) > 0
+    decMask = isfinite(double(Tplot.(hardRealName))) & isfinite(double(Tplot.(hardImagName)));
 end
-if ~ismember(hardImagName, string(T.Properties.VariableNames))
-    hardImagName = "DecisionImag";
-end
-decMask = isfinite(double(T.(hardRealName))) & isfinite(double(T.(hardImagName)));
 if any(decMask)
-    scatter(ax, double(T.(hardRealName)(decMask)), double(T.(hardImagName)(decMask)), 18, ...
+    scatter(ax, double(Tplot.(hardRealName)(decMask)), double(Tplot.(hardImagName)(decMask)), 18, ...
         "x", "DisplayName", "Hard decision");
 end
-refRealName = "ReferenceSymbolReal";
-refImagName = "ReferenceSymbolImag";
-if ~ismember(refRealName, string(T.Properties.VariableNames))
-    refRealName = "TxReal";
-end
-if ~ismember(refImagName, string(T.Properties.VariableNames))
-    refImagName = "TxImag";
-end
-refMask = isfinite(double(T.(refRealName))) & isfinite(double(T.(refImagName)));
+refMask = isfinite(double(Tplot.reference_symbol_i)) & isfinite(double(Tplot.reference_symbol_q));
 if any(refMask)
-    scatter(ax, double(T.(refRealName)(refMask)), double(T.(refImagName)(refMask)), 14, ...
+    scatter(ax, double(Tplot.reference_symbol_i(refMask)), double(Tplot.reference_symbol_q(refMask)), 14, ...
         "+", "DisplayName", "Reference");
+end
+[idealI, idealQ] = localIdealConstellationPoints(string(Tplot.modulation(1)), ...
+    double(Tplot.reference_symbol_i), double(Tplot.reference_symbol_q));
+if ~isempty(idealI)
+    scatter(ax, idealI, idealQ, 36, "kd", "LineWidth", 1.1, "DisplayName", "Ideal constellation");
+    localDrawConstellationDecisionBoundaries(ax, idealI, idealQ);
 end
 grid(ax, "on");
 axis(ax, "equal");
 xlabel(ax, "In-phase");
 ylabel(ax, "Quadrature");
-title(ax, plotTitle + " (aligned equalized / hard decision)");
+evmPct = mean(double(Tplot.evm_rms_pct), "omitnan");
+evmDb = mean(double(Tplot.evm_db), "omitnan");
+ctxLine = sprintf("%s | mod=%s | layer=%g | SNR=%.3g dB | MCS=%g | N=%d | EVM=%.3g%% / %.3g dB", ...
+    char(string(Tplot.direction(1))), char(string(Tplot.modulation(1))), double(Tplot.layer(1)), ...
+    double(Tplot.snr_db(1)), double(Tplot.mcs_index(1)), height(Tplot), evmPct, evmDb);
+title(ax, string(plotTitle) + newline + string(ctxLine));
+text(ax, 0.02, 0.02, string(ctxLine), "Units", "normalized", "Interpreter", "none", ...
+    "FontSize", 8, "BackgroundColor", [1 1 1], "Margin", 4, "VerticalAlignment", "bottom");
 legend(ax, "Location", "best");
 sixgr.util.exportFigureArtifact(fig, outPath, "Resolution", 160);
+rendered = exist(outPath, "file") == 2;
+end
+
+function [Tplot, reason] = localSelectConstellationPlotSlice(T)
+Tplot = table();
+reason = "";
+if ~(istable(T) && ~isempty(T))
+    reason = "missing_constellation_table";
+    return;
+end
+required = ["direction","modulation","layer","snr_db","mcs_index","posteq_sinr_db", ...
+    "reference_symbol_i","reference_symbol_q","equalized_i","equalized_q","truth_status"];
+if ~all(ismember(required, string(T.Properties.VariableNames)))
+    reason = "missing_constellation_lineage_columns";
+    return;
+end
+mask = isfinite(double(T.equalized_i)) & isfinite(double(T.equalized_q)) & ...
+    isfinite(double(T.reference_symbol_i)) & isfinite(double(T.reference_symbol_q)) & ...
+    isfinite(double(T.layer)) & isfinite(double(T.snr_db)) & ...
+    isfinite(double(T.mcs_index)) & isfinite(double(T.posteq_sinr_db)) & ...
+    strlength(strtrim(string(T.modulation))) > 0 & ...
+    ismember(lower(strtrim(string(T.truth_status))), ["real_lls_evidence","truth","runtime_measured"]);
+if ~any(mask)
+    reason = "no_constellation_rows_with_modulation_layer_snr_lineage";
+    return;
+end
+Tv = T(mask, :);
+key = string(Tv.direction) + "|" + string(Tv.modulation) + "|layer=" + string(double(Tv.layer)) + "|snr=" + string(double(Tv.snr_db));
+[keys, ~, g] = unique(key, "stable");
+counts = accumarray(g, 1);
+[~, best] = max(counts);
+Tplot = Tv(key == keys(best), :);
+if height(Tplot) > 2000
+    idx = unique(round(linspace(1, height(Tplot), 2000)));
+    Tplot = Tplot(idx, :);
+end
+end
+
+function name = localFirstExistingConstellationVar(T, names)
+name = "";
+names = string(names);
+for i = 1:numel(names)
+    if ismember(names(i), string(T.Properties.VariableNames))
+        name = names(i);
+        return;
+    end
+end
+end
+
+function [idealI, idealQ] = localIdealConstellationPoints(modulation, refI, refQ)
+modToken = upper(regexprep(char(strtrim(string(modulation))), "[^A-Z0-9/]", ""));
+pts = [];
+if contains(modToken, "BPSK") && ~contains(modToken, "QPSK")
+    pts = [-1; 1];
+else
+    m = NaN;
+    if contains(modToken, "QPSK")
+        m = 4;
+    else
+        tok = regexp(modToken, "(\d+)QAM", "tokens", "once");
+        if ~isempty(tok)
+            m = str2double(tok{1});
+        end
+    end
+    if isfinite(m) && m >= 4
+        side = sqrt(m);
+        if abs(side - round(side)) < 1e-9
+            levels = (-(side - 1):2:(side - 1)).';
+            [ii, qq] = meshgrid(levels, levels);
+            pts = ii(:) + 1i .* qq(:);
+            pts = pts ./ sqrt(mean(abs(pts).^2, "omitnan"));
+        end
+    end
+end
+if isempty(pts)
+    ref = complex(refI(:), refQ(:));
+    ref = ref(isfinite(real(ref)) & isfinite(imag(ref)));
+    pts = complex(round(real(ref) .* 1e6) ./ 1e6, round(imag(ref) .* 1e6) ./ 1e6);
+    pts = unique(pts, "stable");
+    if numel(pts) > 64
+        pts = pts(1:64);
+    end
+end
+idealI = real(pts);
+idealQ = imag(pts);
+end
+
+function localDrawConstellationDecisionBoundaries(ax, idealI, idealQ)
+levelsI = unique(round(double(idealI(:)), 8));
+levelsQ = unique(round(double(idealQ(:)), 8));
+levelsI = sort(levelsI(isfinite(levelsI)));
+levelsQ = sort(levelsQ(isfinite(levelsQ)));
+if numel(levelsI) > 1
+    mids = (levelsI(1:end-1) + levelsI(2:end)) ./ 2;
+    for i = 1:numel(mids)
+        xline(ax, mids(i), ":", "Color", [0.65 0.65 0.65], "HandleVisibility", "off");
+    end
+end
+if numel(levelsQ) > 1
+    mids = (levelsQ(1:end-1) + levelsQ(2:end)) ./ 2;
+    for i = 1:numel(mids)
+        yline(ax, mids(i), ":", "Color", [0.65 0.65 0.65], "HandleVisibility", "off");
+    end
+end
 end
 
 function T = localEmptyProbeMetricTable()

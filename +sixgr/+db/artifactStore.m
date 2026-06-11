@@ -433,11 +433,11 @@ if endsWith(folderPath, "beamforming/image") && ismember(stem, ["beam_channel_si
 end
 if endsWith(folderPath, "air_interface/image")
     switch stem
-        case {"dl_trial_sinr", "dl_trial_channel_gain"}
+        case {"dl_trial_sinr", "dl_trial_channel_gain", "dl_posteq_sinr_by_trial_scatter", "dl_channel_gain_distribution"}
             ref = "air_interface/csv/dl_pdsch_trials.csv";
         case "dl_constellation_scatter"
             ref = "air_interface/csv/dl_constellation_preview.csv";
-        case {"ul_trial_sinr", "ul_trial_channel_gain"}
+        case {"ul_trial_sinr", "ul_trial_channel_gain", "ul_posteq_sinr_by_trial_scatter", "ul_channel_gain_distribution"}
             ref = "air_interface/csv/ul_pusch_trials.csv";
         case "ul_constellation_scatter"
             ref = "air_interface/csv/ul_constellation_preview.csv";
@@ -465,9 +465,11 @@ if endsWith(folderPath, "reports/image")
         case "metric_coverage_by_category"
             ref = "reports/csv/output_coverage_registry.csv";
         case "bler_vs_snr"
-            ref = "reports/csv/bler_vs_snr.csv";
+            ref = "air_interface/csv/lls_snr_sweep.csv";
         case "throughput_vs_snr"
-            ref = "reports/csv/throughput_vs_snr.csv";
+            ref = "air_interface/csv/lls_snr_sweep.csv";
+        case "bler_vs_measured_posteq_sinr_bins_diagnostic"
+            ref = "reports/csv/bler_vs_measured_posteq_sinr_bins_diagnostic.csv";
         case {"heatmap_band_feature_kpi", "heatmap_beam_rank_trp_kpi", "heatmap_impairment_kpi"}
             ref = "reports/csv/per_scenario_summary_tables.csv";
     end

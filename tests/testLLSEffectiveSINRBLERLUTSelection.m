@@ -33,5 +33,15 @@ assert(all(isfinite(low.PredictedBLERByCQI) | isnan(low.PredictedBLERByCQI)), ..
 assert(double(high.WidebandCQI) > double(low.WidebandCQI), ...
     "Higher effective SINR must produce a higher CQI under the LUT-backed selector.");
 
+cfgCatalog = sixgr.util.structSet(cfg, "phy.pdsch.configuredMCSIndex", 10);
+cfgCatalog = sixgr.util.structSet(cfgCatalog, "phy.pdsch.eesmBetaMCSIndex", [9 10 11]);
+cfgCatalog = sixgr.util.structSet(cfgCatalog, "phy.pdsch.eesmBetaByMCS_dB", [2.0 4.0 6.0]);
+catalog = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", 8, "PerRBSINR_dB", [4 8 10 12]), cfgCatalog, "DL");
+assert(abs(double(catalog.EffectiveSINRBeta_dB) - 4.0) < 1e-12, ...
+    "EESM beta must resolve from the configured MCS-index catalog when MCS context is available.");
+assert(strcmpi(string(catalog.EffectiveSINRBetaSource), "phy.pdsch.eesmBetaByMCS_dB") && ...
+    strcmpi(string(catalog.EffectiveSINRBetaValueRole), "configured_mcs_index_beta_catalog"), ...
+    "EESM beta catalog rows must carry explicit calibrated-catalog provenance.");
+
 ok = true;
 end

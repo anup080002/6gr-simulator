@@ -128,7 +128,9 @@
       "srs_required": {"required": false, "type": "boolean"},
       "srs_max_age_slots": {"required": false, "type": "integer", "min": 0},
       "trs_required": {"required": false, "type": "boolean"},
-      "trs_max_age_slots": {"required": false, "type": "integer", "min": 0}
+      "trs_max_age_slots": {"required": false, "type": "integer", "min": 0},
+      "timing_advance_update_mode": {"required": false, "type": "string", "allowed_values": ["measurement_only", "geometry_predictive", "disabled"]},
+      "timing_advance_update_threshold_samples": {"required": false, "type": "number", "min": 0}
     }},
     "receiver": {"required": false, "parameters": {
       "use_ideal_timing_sync": {"required": false, "type": "boolean"}

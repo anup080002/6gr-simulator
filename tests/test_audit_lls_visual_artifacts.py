@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+import csv
+import subprocess
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+AUDIT_TOOL = REPO_ROOT / "tools" / "audit_lls_visual_artifacts.py"
+PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+
+def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def read_audit_codes(path: Path) -> set[str]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    codes: set[str] = set()
+    for row in rows:
+        for code in str(row.get("failure_code", "")).split("|"):
+            code = code.strip()
+            if code:
+                codes.add(code)
+    return codes
+
+
+def test_visual_artifact_audit_rejects_negative_fixture(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "reports" / "image"
+    csv_dir = run / "reports" / "csv"
+    analytics_csv_dir = run / "analytics" / "csv"
+    image_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+    analytics_csv_dir.mkdir(parents=True)
+
+    (image_dir / "stale_plot.png").write_bytes(PNG_BYTES)
+    (image_dir / "png_bytes.svg").write_bytes(PNG_BYTES)
+    (image_dir / "bler_vs_snr.png").write_bytes(PNG_BYTES)
+    (image_dir / "short_line.png").write_bytes(PNG_BYTES)
+    (image_dir / "heatmap_bad.png").write_bytes(PNG_BYTES)
+    (image_dir / "fallback_plot.png").write_bytes(PNG_BYTES)
+
+    manifest_fields = [
+        "PlotId",
+        "ImagePath",
+        "SourceCSV",
+        "XVariable",
+        "YVariables",
+        "PlotType",
+        "PlotRenderStatus",
+        "VisualValidity",
+        "IsUnavailableCard",
+    ]
+    write_csv(
+        csv_dir / "plot_manifest.csv",
+        manifest_fields,
+        [
+            {
+                "PlotId": "stale_plot",
+                "ImagePath": "reports/image/stale_plot.png",
+                "SourceCSV": "reports/csv/stale_source.csv",
+                "XVariable": "x",
+                "YVariables": "y",
+                "PlotType": "line",
+                "PlotRenderStatus": "suppressed",
+                "VisualValidity": "unavailable",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "png_bytes_svg",
+                "ImagePath": "reports/image/png_bytes.svg",
+                "SourceCSV": "reports/csv/svg_source.csv",
+                "XVariable": "x",
+                "YVariables": "y",
+                "PlotType": "scatter",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "bler_vs_snr",
+                "ImagePath": "reports/image/bler_vs_snr.png",
+                "SourceCSV": "reports/csv/bler_vs_snr.csv",
+                "XVariable": "snr_db",
+                "YVariables": "bler",
+                "PlotType": "line",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "short_line",
+                "ImagePath": "reports/image/short_line.png",
+                "SourceCSV": "reports/csv/short_line.csv",
+                "XVariable": "Frame",
+                "YVariables": "Value",
+                "PlotType": "line",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "bad_heatmap",
+                "ImagePath": "reports/image/heatmap_bad.png",
+                "SourceCSV": "reports/csv/heatmap_bad.csv",
+                "XVariable": "x_value",
+                "YVariables": "z_value",
+                "PlotType": "heatmap",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "contract__fake-heatmap",
+                "ImagePath": "analytics/image/contract__fake-heatmap.svg",
+                "SourceCSV": "analytics/csv/contract__fake-heatmap.csv",
+                "XVariable": "x_value",
+                "YVariables": "y_value",
+                "PlotType": "line",
+                "PlotRenderStatus": "rendered_diagnostic_plot",
+                "VisualValidity": "diagnostic_only",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "fallback_plot",
+                "ImagePath": "reports/image/fallback_plot.png",
+                "SourceCSV": "reports/csv/fallback_source.csv",
+                "XVariable": "x",
+                "YVariables": "y",
+                "PlotType": "scatter",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+        ],
+    )
+
+    write_csv(csv_dir / "stale_source.csv", ["x", "y", "truth_status"], [{"x": 1, "y": 2, "truth_status": "real_lls_evidence"}])
+    write_csv(csv_dir / "svg_source.csv", ["x", "y", "truth_status"], [{"x": 1, "y": 2, "truth_status": "real_lls_evidence"}])
+    write_csv(
+        csv_dir / "bler_vs_snr.csv",
+        ["snr_db", "bler", "CurveConstruction", "truth_status"],
+        [
+            {"snr_db": 0, "bler": 0.8, "CurveConstruction": "measured_quality_binning", "truth_status": "real_lls_evidence"},
+            {"snr_db": 5, "bler": 0.4, "CurveConstruction": "measured_quality_binning", "truth_status": "real_lls_evidence"},
+            {"snr_db": 10, "bler": 0.1, "CurveConstruction": "measured_quality_binning", "truth_status": "real_lls_evidence"},
+        ],
+    )
+    write_csv(
+        csv_dir / "short_line.csv",
+        ["Frame", "Value", "truth_status"],
+        [
+            {"Frame": 1, "Value": 10, "truth_status": "real_lls_evidence"},
+            {"Frame": 2, "Value": 11, "truth_status": "real_lls_evidence"},
+        ],
+    )
+    write_csv(
+        csv_dir / "heatmap_bad.csv",
+        ["x_value", "y_value", "z_value", "units", "truth_status"],
+        [
+            {"x_value": "band_a", "y_value": "kpi_a", "z_value": 10, "units": "Mbps", "truth_status": "real_lls_evidence"},
+            {"x_value": "band_b", "y_value": "kpi_b", "z_value": 4, "units": "ms", "truth_status": "real_lls_evidence"},
+        ],
+    )
+    write_csv(
+        analytics_csv_dir / "contract__fake-heatmap.csv",
+        ["chart_name", "chart_mode", "x_value", "y_value", "source_mapping_status"],
+        [{"chart_name": "fake heatmap", "chart_mode": "line", "x_value": 1, "y_value": 2, "source_mapping_status": "unavailable"}],
+    )
+    write_csv(csv_dir / "fallback_source.csv", ["x", "y", "truth_status"], [{"x": 1, "y": 2, "truth_status": "fallback"}])
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode != 0
+    audit_csv = csv_dir / "visual_artifact_audit.csv"
+    audit_md = run / "reports" / "visual_artifact_audit.md"
+    assert audit_csv.exists()
+    assert audit_md.exists()
+
+    codes = read_audit_codes(audit_csv)
+    assert "stale_suppressed_normal_artifact" in codes
+    assert "png_bytes_in_svg" in codes
+    assert "snr_sweep_from_measured_quality_bins" in codes
+    assert "line_plot_insufficient_unique_x" in codes
+    assert "heatmap_mixed_units" in codes
+    assert "chart_source_mapping_not_exact" in codes
+    assert "generic_chart_materializer_output" in codes
+    assert "plot_source_forbidden_truth_status" in codes

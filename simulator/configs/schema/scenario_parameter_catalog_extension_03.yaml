@@ -40,10 +40,11 @@
       "al_adaptation_policy": {"required": true, "type": "string"}, "beam_adaptation_policy": {"required": true, "type": "string"},
       "adaptation_periodicity": {"required": true, "type": "string"}, "adaptation_delay_model": {"required": true, "type": "string"},
       "cqi_smoothing_alpha": {"required": false, "type": "number", "min": 0, "max": 1},
+      "cqi_smoothing_mode": {"required": false, "type": "string", "allowed_values": ["fixed", "doppler_adaptive"]},
       "olla_step_down": {"required": false, "type": "number", "min": 0},
       "olla_step_up": {"required": false, "type": "number", "min": 0},
       "bootstrap_mcs_index": {"required": false, "type": "integer", "min": 0, "max": 31},
-      "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default"]}
+      "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default", "require_measured_cqi", "measured_only", "strict_measured_cqi", "none", "disabled", "off"]}
     }},
     "harq": {"parameters": {
       "dl_harq_enabled": {"required": true, "type": "boolean"}, "ul_harq_enabled": {"required": true, "type": "boolean"},

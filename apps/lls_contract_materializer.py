@@ -21,8 +21,40 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-05-29-contract-v21-suppress-production-placeholders"
+MATERIALIZER_VERSION = "2026-06-11-contract-v23-strict-chart-source-mapping"
 MAX_PREVIEW_ROWS = 180
+EXACT_CHART_FAMILY_CONTRACTS: dict[str, dict[str, Any]] = {
+    "heatmap": {
+        "source_table": "explicit_direct_alias_only",
+        "required_columns": ("x_value", "y_value", "z_value"),
+        "allowed_modes": ("heatmap",),
+    },
+    "timeline": {
+        "source_table": "explicit_direct_alias_only",
+        "required_columns": ("x_value", "y_value"),
+        "allowed_modes": ("line", "scatter"),
+    },
+    "cdf": {
+        "source_table": "explicit_direct_alias_only",
+        "required_columns": ("x_value", "y_value"),
+        "allowed_modes": ("cdf", "line"),
+    },
+    "distribution": {
+        "source_table": "explicit_direct_alias_only",
+        "required_columns": ("x_value", "y_value"),
+        "allowed_modes": ("bar", "histogram", "cdf"),
+    },
+    "scatter": {
+        "source_table": "explicit_direct_alias_only",
+        "required_columns": ("x_value", "y_value"),
+        "allowed_modes": ("scatter",),
+    },
+    "summary": {
+        "source_table": "explicit_direct_alias_only",
+        "required_columns": ("x_value", "y_value"),
+        "allowed_modes": ("bar", "scatter"),
+    },
+}
 
 
 def slugify(value: str) -> str:
@@ -92,232 +124,213 @@ def _column_values(rows: list[list[str]], idx: int) -> list[str]:
     return [row[idx] if idx < len(row) else "" for row in rows]
 
 
-def _numeric_columns(header: list[str], rows: list[list[str]]) -> list[tuple[int, str]]:
-    out: list[tuple[int, str]] = []
-    if not rows:
-        return out
-    for idx, name in enumerate(header):
-        values = _column_values(rows, idx)
-        numeric = [_coerce_float(value) for value in values]
-        valid = [value for value in numeric if value is not None]
-        if len(valid) >= max(3, len(values) // 5):
-            out.append((idx, str(name)))
+def _column_index(header: list[str], *names: str) -> int | None:
+    exact = {str(name or "").strip().lower(): idx for idx, name in enumerate(header)}
+    normalized = {_normalized_header_token(name): idx for idx, name in enumerate(header)}
+    for name in names:
+        key = str(name or "").strip().lower()
+        if key in exact:
+            return exact[key]
+        norm_key = _normalized_header_token(name)
+        if norm_key in normalized:
+            return normalized[norm_key]
+    return None
+
+
+def _normalized_header_token(name: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(name or "").strip().lower())
+
+
+def _chart_family(chart_name: str) -> str:
+    text = str(chart_name or "").strip().lower()
+    if "heatmap" in text or re.search(r"(^|[^a-z])map([^a-z]|$)", text):
+        return "heatmap"
+    if "timeline" in text or "over time" in text or "trend" in text or "time series" in text:
+        return "timeline"
+    if "cdf" in text:
+        return "cdf"
+    if "histogram" in text or "distribution" in text:
+        return "distribution"
+    if "scatter" in text or " vs " in text or " plot" in text or text.endswith("plot"):
+        return "scatter"
+    return "summary"
+
+
+def _dataset_from_exact_chart_contract(
+    chart_name: str,
+    source_table_path: str,
+    header: list[str],
+    rows: list[list[str]],
+) -> tuple[dict[str, Any] | None, str, str]:
+    """Build a chart only from declared canonical chart columns.
+
+    The materializer intentionally refuses free-form numeric-column discovery in
+    strict/conformance output. A direct source may render only when it already
+    exposes a canonical chart dataset schema; otherwise the caller emits an
+    unavailable/invalid reason card.
+    """
+    if not header or not rows:
+        return None, "unavailable", "The direct chart source table is missing or empty."
+
+    family = _chart_family(chart_name)
+    contract = EXACT_CHART_FAMILY_CONTRACTS.get(family, EXACT_CHART_FAMILY_CONTRACTS["summary"])
+    required_columns = tuple(str(name) for name in contract["required_columns"])
+    missing_columns = [name for name in required_columns if _column_index(header, name) is None]
+    if missing_columns:
+        return None, "invalid", (
+            f"{family} charts require an explicit direct source table with exact columns "
+            f"{', '.join(required_columns)}. Missing: {', '.join(missing_columns)}. "
+            "Generic numeric-column inference is disabled."
+        )
+    x_idx = _column_index(header, "x_value")
+    y_idx = _column_index(header, "y_value")
+    z_idx = _column_index(header, "z_value")
+    mode_idx = _column_index(header, "chart_mode")
+    label_x_idx = _column_index(header, "x_label")
+    label_y_idx = _column_index(header, "y_label")
+    label_z_idx = _column_index(header, "z_label")
+
+    if family == "heatmap":
+        if x_idx is None or y_idx is None or z_idx is None:
+            return None, "invalid", (
+                "Heatmap/map charts require an exact direct source with x_value, "
+                "y_value, and z_value columns; generic numeric table columns are not accepted."
+            )
+        raw_rows: list[dict[str, Any]] = []
+        for row in rows:
+            x_raw = row[x_idx] if x_idx < len(row) else ""
+            y_raw = row[y_idx] if y_idx < len(row) else ""
+            z_val = _coerce_float(row[z_idx] if z_idx < len(row) else "")
+            if not str(x_raw).strip() or not str(y_raw).strip() or z_val is None:
+                continue
+            raw_rows.append({"x_value": str(x_raw), "y_value": str(y_raw), "z_value": float(z_val)})
+        if not raw_rows:
+            return None, "invalid", "The exact heatmap source columns exist, but no finite z_value samples were present."
+        x_labels, y_labels, matrix = _grid_rows_to_heatmap(raw_rows, "x_value", "y_value", "z_value")
+        if not x_labels or not y_labels or not matrix:
+            return None, "invalid", "The exact heatmap source could not form a non-empty x/y/z grid."
+        x_label = _first_nonblank_column_value(rows, label_x_idx) or "x_value"
+        y_label = _first_nonblank_column_value(rows, label_y_idx) or "y_value"
+        z_label = _first_nonblank_column_value(rows, label_z_idx) or "z_value"
+        points = [[row["x_value"], row["y_value"], row["z_value"]] for row in raw_rows[:MAX_PREVIEW_ROWS]]
+        return {
+            "mode": "heatmap",
+            "x_label": x_label,
+            "y_label": y_label,
+            "z_label": z_label,
+            "x_labels": x_labels,
+            "y_labels": y_labels,
+            "matrix": matrix,
+            "points": points,
+        }, "exact", f"Exact heatmap/map source mapping from {source_table_path}."
+
+    points: list[list[float]] = []
+    for row in rows:
+        x_val = _coerce_float(row[x_idx] if x_idx < len(row) else "")
+        y_val = _coerce_float(row[y_idx] if y_idx < len(row) else "")
+        if x_val is None or y_val is None:
+            continue
+        points.append([float(x_val), float(y_val)])
+    if not points:
+        return None, "invalid", "The exact x_value/y_value source columns exist, but no finite samples were present."
+
+    unique_y = {round(point[1], 12) for point in points}
+    if len(unique_y) <= 1 and len(points) > 1:
+        return None, "invalid", "The exact source has a constant/single y-series, so it is not rendered as a real chart."
+
+    mode = _first_nonblank_column_value(rows, mode_idx).lower()
+    if not mode:
+        mode = "line" if family == "timeline" else "scatter"
+    allowed_modes = set(str(mode) for mode in contract["allowed_modes"])
+    if mode not in allowed_modes:
+        mode = "scatter" if "scatter" in allowed_modes else sorted(allowed_modes)[0]
+    if mode == "line":
+        unique_x = {round(point[0], 12) for point in points}
+        if len(points) < 3 or len(unique_x) < 3:
+            return None, "invalid", "Line charts require at least three finite points and three unique x values."
+
+    x_label = _first_nonblank_column_value(rows, label_x_idx) or "x_value"
+    y_label = _first_nonblank_column_value(rows, label_y_idx) or "y_value"
+    return {
+        "mode": mode,
+        "x_label": x_label,
+        "y_label": y_label,
+        "points": points[:MAX_PREVIEW_ROWS],
+    }, "exact", f"Exact canonical x/y source mapping from {source_table_path}."
+
+
+def _first_nonblank_column_value(rows: list[list[str]], idx: int | None) -> str:
+    if idx is None:
+        return ""
+    for row in rows:
+        if idx < len(row):
+            value = str(row[idx] or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _source_mapping_status_for_status(*statuses: str) -> str:
+    text = " ".join(str(status or "").strip().lower() for status in statuses)
+    if "invalid" in text:
+        return "invalid"
+    if (
+        "unavailable" in text
+        or "missing" in text
+        or "empty" in text
+        or "placeholder" in text
+        or "reason_svg" in text
+        or "source_artifact_present_but_empty" in text
+    ):
+        return "unavailable"
+    return "exact"
+
+
+def _ensure_source_mapping_status_csv(data: bytes, source_mapping_status: str) -> bytes:
+    header, rows = _decode_csv(data)
+    if not header:
+        return data
+    status = str(source_mapping_status or "unavailable").strip().lower()
+    if status not in {"exact", "unavailable", "invalid"}:
+        status = "unavailable"
+    lower = [str(name or "").strip().lower() for name in header]
+    if "source_mapping_status" in lower:
+        idx = lower.index("source_mapping_status")
+        for row in rows:
+            while len(row) <= idx:
+                row.append("")
+            if not str(row[idx] or "").strip():
+                row[idx] = status
+        return _encode_csv(header, rows)
+    return _encode_csv(header + ["source_mapping_status"], [row + [status] for row in rows])
+
+
+def _finalize_chart_materialization_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    out = dict(result)
+    source_mapping_status = str(out.get("source_mapping_status") or "").strip().lower()
+    if source_mapping_status not in {"exact", "unavailable", "invalid"}:
+        source_mapping_status = _source_mapping_status_for_status(out.get("csv_status", ""), out.get("image_status", ""))
+    out["source_mapping_status"] = source_mapping_status
+    if "csv_bytes" in out:
+        out["csv_bytes"] = _ensure_source_mapping_status_csv(bytes(out["csv_bytes"]), source_mapping_status)
     return out
 
 
-def _best_x_index(numeric_cols: list[tuple[int, str]]) -> int | None:
-    for idx, name in numeric_cols:
-        if re.search(r"(time|slot|frame|tti|trial|sample|index|step|ue|cell|beam|rank|cqi|mcs)", str(name), re.IGNORECASE):
-            return idx
-    return numeric_cols[0][0] if numeric_cols else None
-
-
-def _column_variation_score(rows: list[list[str]], idx: int) -> tuple[int, int]:
-    values = [_coerce_float(row[idx]) for row in rows if idx < len(row)]
-    values = [value for value in values if value is not None]
-    if not values:
-        return (0, 0)
-    unique_values = {round(float(value), 9) for value in values}
-    return (len(unique_values), len(values))
-
-
-def _preferred_generic_x_index(chart_name: str, header: list[str], rows: list[list[str]], numeric_cols: list[tuple[int, str]]) -> int | None:
-    if not numeric_cols:
-        return None
-    chart = str(chart_name or "").lower()
-    preferred_patterns = [
-        (r"^time_s$", 0),
-        (r"^sampleindex$", 1),
-        (r"^slot_or_sample$", 2),
-        (r"^slot$", 3),
-        (r"^frame$", 4),
-        (r"^tti$", 5),
-        (r"^trial$", 6),
-        (r"^ue_rank$|^percentile$", 7),
-        (r"sample|time|slot|frame|trial|index", 8),
-        (r"user|ue|cell|beam|rank", 20),
-        (r"snr|sinr|rsrp|cqi|mcs", 40),
-        (r"value|count", 80),
-    ]
-    ranked: list[tuple[int, int, int, int]] = []
-    for idx, name in numeric_cols:
-        token = str(name or "").strip().lower()
-        if token in {"run_id", "source_row_count", "point_index"}:
-            continue
-        unique_count, total_count = _column_variation_score(rows, idx)
-        if unique_count <= 1:
-            continue
-        pattern_rank = 99
-        for pattern, rank in preferred_patterns:
-            if re.search(pattern, token, re.IGNORECASE):
-                pattern_rank = rank
-                break
-        ranked.append((pattern_rank, -unique_count, -total_count, idx))
-    if ranked:
-        ranked.sort()
-        return ranked[0][3]
-    return _best_x_index(numeric_cols)
-
-
-def _score_column(chart_name: str, column_name: str) -> int:
-    chart = str(chart_name or "").lower()
-    col = str(column_name or "").lower()
-    score = 0
-    if col in chart or chart in col:
-        score += 8
-    keyword_groups = {
-        "throughput": ("throughput", "goodput", "served", "rate"),
-        "goodput": ("goodput", "throughput", "served"),
-        "sinr": ("sinr", "snr", "rsrp", "quality"),
-        "bler": ("bler", "ber", "fer", "crc", "error"),
-        "queue": ("queue", "buffer", "hol", "delay"),
-        "latency": ("latency", "delay", "tti", "compute"),
-        "beam": ("beam", "pmi", "cri", "ri", "rank"),
-        "power": ("power", "energy", "papr", "dbm"),
-        "channel": ("channel", "nmse", "pathloss", "shadow", "doppler", "cfo", "timing"),
-        "prach": ("prach", "peak", "noise", "preamble"),
-        "control": ("aggregation", "cce", "dci", "decode", "control"),
-        "resource": ("prb", "rb", "re", "symbol", "resource"),
-    }
-    for token, aliases in keyword_groups.items():
-        if token in chart:
-            for alias in aliases:
-                if alias in col:
-                    score += 4
-    if any(alias in col for alias in re.findall(r"[a-z0-9]+", chart)):
-        score += 1
-    return score
-
-
-def _dataset_from_rows(chart_name: str, header: list[str], rows: list[list[str]]) -> dict[str, Any] | None:
-    lowered = [str(name or "").strip().lower() for name in header]
-    if not rows or not header:
-        return None
-    if "metric" in lowered and ("meanvalue" in lowered or "value" in lowered):
-        metric_idx = lowered.index("metric")
-        value_idx = lowered.index("meanvalue") if "meanvalue" in lowered else lowered.index("value")
-        direction_idx = lowered.index("direction") if "direction" in lowered else None
-        named_values: list[tuple[str, float]] = []
-        for row in rows[:64]:
-            if metric_idx >= len(row) or value_idx >= len(row):
-                continue
-            metric_name = str(row[metric_idx] or "").strip()
-            metric_val = _coerce_float(row[value_idx])
-            if not metric_name or metric_val is None:
-                continue
-            direction = str(row[direction_idx] or "").strip() if direction_idx is not None and direction_idx < len(row) else ""
-            label = f"{direction}:{metric_name}" if direction else metric_name
-            named_values.append((label[:48], float(metric_val)))
-        if named_values:
-            dataset, summary = _bar_dataset_from_named_values("Metric bucket", header[value_idx], named_values[:18])
-            dataset["tick_labels"] = [name for name, _value in named_values[:18]]
-            dataset["summary_lines"] = summary
-            return dataset
-    if "metrickey" in lowered and ("value" in lowered or "valuenumeric" in lowered):
-        key_idx = lowered.index("metricname") if "metricname" in lowered else lowered.index("metrickey")
-        raw_key_idx = lowered.index("metrickey")
-        value_idx = lowered.index("valuenumeric") if "valuenumeric" in lowered else lowered.index("value")
-        entity_idx = lowered.index("entity") if "entity" in lowered else None
-        stat_idx = lowered.index("statistic") if "statistic" in lowered else None
-        availability_idx = lowered.index("availability") if "availability" in lowered else None
-        named_values: list[tuple[str, float]] = []
-        for row in rows[:96]:
-            availability = str(row[availability_idx] or "").strip().lower() if availability_idx is not None and availability_idx < len(row) else ""
-            if availability.startswith("not_") or availability in {"missing", "unavailable"}:
-                continue
-            key_name = str(row[key_idx] or "").strip() if key_idx < len(row) else ""
-            raw_key = str(row[raw_key_idx] or "").strip() if raw_key_idx < len(row) else ""
-            value = _coerce_float(row[value_idx] if value_idx < len(row) else "")
-            if not key_name and raw_key:
-                key_name = raw_key
-            if not key_name or value is None:
-                continue
-            entity = str(row[entity_idx] or "").strip() if entity_idx is not None and entity_idx < len(row) else ""
-            statistic = str(row[stat_idx] or "").strip() if stat_idx is not None and stat_idx < len(row) else ""
-            label_parts = [part for part in (key_name, entity, statistic) if part]
-            named_values.append(("/".join(label_parts)[:48], float(value)))
-        if named_values:
-            dataset, summary = _bar_dataset_from_named_values("Metric bucket", header[value_idx], named_values[:18])
-            dataset["tick_labels"] = [name for name, _value in named_values[:18]]
-            dataset["summary_lines"] = summary
-            return dataset
-    if "availability" in lowered and ("measuredrowcount" in lowered or "rowcount" in lowered):
-        availability_idx = lowered.index("availability")
-        value_idx = lowered.index("measuredrowcount") if "measuredrowcount" in lowered else lowered.index("rowcount")
-        direction_idx = lowered.index("direction") if "direction" in lowered else None
-        named_values: list[tuple[str, float]] = []
-        for row in rows[:24]:
-            availability = str(row[availability_idx] or "").strip() if availability_idx < len(row) else ""
-            value = _coerce_float(row[value_idx] if value_idx < len(row) else "")
-            if not availability or value is None:
-                continue
-            direction = str(row[direction_idx] or "").strip() if direction_idx is not None and direction_idx < len(row) else ""
-            label = f"{direction}:{availability}" if direction else availability
-            named_values.append((label[:48], float(value)))
-        if named_values:
-            dataset, summary = _bar_dataset_from_named_values("Availability bucket", header[value_idx], named_values[:18])
-            dataset["tick_labels"] = [name for name, _value in named_values[:18]]
-            dataset["summary_lines"] = summary
-            return dataset
-    numeric_cols = _numeric_columns(header, rows)
-    if not numeric_cols:
-        return None
-    numeric_cols = [(idx, name) for idx, name in numeric_cols if str(name or "").strip().lower() not in {"run_id", "source_row_count", "point_index"}] or numeric_cols
-    x_idx = _preferred_generic_x_index(chart_name, header, rows, numeric_cols)
-    y_candidates = sorted(
-        [item for item in numeric_cols if item[0] != x_idx and str(item[1] or "").strip().lower() not in {"run_id", "source_row_count", "point_index"}],
-        key=lambda item: (_score_column(chart_name, item[1]), str(item[1])),
-        reverse=True,
-    )
-    if not y_candidates:
-        return None
-    name_l = str(chart_name or "").lower()
-    best_idx, best_name = y_candidates[0]
-    values = [_coerce_float(row[best_idx] if best_idx < len(row) else "") for row in rows]
-    values = [value for value in values if value is not None]
-    if not values:
-        return None
-    if "cdf" in name_l:
-        sorted_vals = sorted(values)
-        points = [[value, (i + 1) / len(sorted_vals)] for i, value in enumerate(sorted_vals)]
-        return {"mode": "cdf", "x_label": best_name, "y_label": "CDF", "points": points}
-    if "hist" in name_l or "distribution" in name_l:
-        bins = 10 if len(values) >= 10 else max(3, len(values))
-        min_v = min(values)
-        max_v = max(values)
-        if math.isclose(min_v, max_v):
-            points = [[min_v, len(values)]]
-        else:
-            width = (max_v - min_v) / max(bins, 1)
-            counts = [0] * bins
-            for value in values:
-                idx = min(bins - 1, max(0, int((value - min_v) / max(width, 1e-12))))
-                counts[idx] += 1
-            points = [[min_v + width * (i + 0.5), counts[i]] for i in range(bins)]
-        return {"mode": "bar", "x_label": best_name, "y_label": "Count", "points": points}
-    x_values: list[float] = []
-    y_values: list[float] = []
-    for row_idx, row in enumerate(rows):
-        y_val = _coerce_float(row[best_idx] if best_idx < len(row) else "")
-        if y_val is None:
-            continue
-        if x_idx is None:
-            x_val = float(row_idx + 1)
-        else:
-            x_val = _coerce_float(row[x_idx] if x_idx < len(row) else row_idx + 1)
-            if x_val is None:
-                x_val = float(row_idx + 1)
-        x_values.append(float(x_val))
-        y_values.append(float(y_val))
-    if not x_values or not y_values:
-        return None
-    points = [[x, y] for x, y in zip(x_values[:MAX_PREVIEW_ROWS], y_values[:MAX_PREVIEW_ROWS])]
-    return {
-        "mode": "line",
-        "x_label": header[x_idx] if x_idx is not None and x_idx < len(header) else "Index",
-        "y_label": best_name,
-        "points": points,
-    }
+def _chart_image_from_dataset(chart_name: str, subtitle: str, dataset: dict[str, Any] | None, summary_lines: list[str]) -> bytes:
+    if dataset and dataset.get("mode") == "heatmap":
+        return _render_heatmap_svg(
+            chart_name,
+            subtitle,
+            [str(value) for value in dataset.get("x_labels", [])],
+            [str(value) for value in dataset.get("y_labels", [])],
+            dataset.get("matrix", []),
+            summary_lines,
+            str(dataset.get("x_label") or "x_value"),
+            str(dataset.get("y_label") or "y_value"),
+        )
+    return _render_svg_plot(chart_name, subtitle, dataset, summary_lines)
 
 
 def _downsample_points(points: list[list[float]], max_points: int = MAX_PREVIEW_ROWS) -> list[list[float]]:
@@ -357,6 +370,24 @@ def _bin_mean_points(pairs: list[tuple[float, float]], max_bins: int = 18) -> li
         center = min_x + width * (idx + 0.5)
         points.append([center, sum(values) / len(values)])
     return points
+
+
+def _honest_chart_mode(points: list[list[float]], preferred: str = "line", min_line_points: int = 3) -> str:
+    """Avoid implying a time/quality trend when only sparse samples exist."""
+    if preferred != "line":
+        return preferred
+    numeric_points = [
+        (float(point[0]), float(point[1]))
+        for point in points
+        if isinstance(point, (list, tuple))
+        and len(point) >= 2
+        and _coerce_float(point[0]) is not None
+        and _coerce_float(point[1]) is not None
+    ]
+    distinct_x = {round(point[0], 9) for point in numeric_points}
+    if len(numeric_points) < min_line_points or len(distinct_x) < min_line_points:
+        return "scatter"
+    return "line"
 
 
 def _bar_dataset_from_named_values(
@@ -554,7 +585,11 @@ def _chart_dataset_csv(
     source_row_count: int,
     materialization_status: str,
     note: str,
+    source_mapping_status: str | None = None,
 ) -> bytes:
+    mapping_status = str(source_mapping_status or _source_mapping_status_for_status(materialization_status)).strip().lower()
+    if mapping_status not in {"exact", "unavailable", "invalid"}:
+        mapping_status = "unavailable"
     header = [
         "run_id",
         "chart_name",
@@ -564,16 +599,20 @@ def _chart_dataset_csv(
         "point_index",
         "x_value",
         "y_value",
+        "z_label",
+        "z_value",
         "source_table_logical_path",
         "source_row_count",
         "materialization_status",
         "lineage_note",
+        "source_mapping_status",
     ]
     rows: list[list[Any]] = []
     if dataset and dataset.get("points"):
         for idx, point in enumerate(dataset.get("points", []), start=1):
             x_val = point[0] if len(point) > 0 else ""
             y_val = point[1] if len(point) > 1 else ""
+            z_val = point[2] if len(point) > 2 else ""
             rows.append(
                 [
                     run_id,
@@ -584,10 +623,13 @@ def _chart_dataset_csv(
                     idx,
                     x_val,
                     y_val,
+                    str(dataset.get("z_label") or ""),
+                    z_val,
                     source_table_path,
                     source_row_count,
                     materialization_status,
                     note,
+                    mapping_status,
                 ]
             )
     else:
@@ -601,10 +643,13 @@ def _chart_dataset_csv(
                 0,
                 "not_available",
                 "not_available",
+                str(dataset.get("z_label") or "not_available") if isinstance(dataset, dict) else "not_available",
+                "not_available",
                 source_table_path or "not_published_by_runtime",
                 source_row_count,
                 materialization_status,
                 note,
+                mapping_status,
             ]
         )
     return _encode_csv(header, rows)
@@ -917,6 +962,7 @@ _ROW_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "isretransmission": ("is_retransmission", "newtx_or_retx", "new_tx_or_retx", "tx_type"),
     "layers": ("numlayers", "num_layers", "rank", "rankindicator", "rank_indicator", "precodingnumlayers", "precoding_num_layers"),
     "mcsindex": ("mcs", "mcs_index", "selectedmcs", "selected_mcs", "mcsselected", "mcs_selected"),
+    "occupancyfraction": ("occupancy_fraction", "occupancycount", "occupancy_count", "reoccupancyfraction", "re_occupancy_fraction", "allocationfraction", "allocation_fraction", "value", "metricvalue", "metric_value"),
     "pmi": ("appliedprecoderpmi", "applied_precoder_pmi", "requestedprecoderpmi", "requested_precoder_pmi"),
     "rankindicator": ("rank_indicator", "rank", "layers", "precodingnumlayers", "precoding_num_layers"),
     "rv": ("redundancyversion", "redundancy_version"),
@@ -2507,6 +2553,33 @@ def _trial_row_ber(row: dict[str, str]) -> float | None:
     return float(bit_errors) / float(bits_compared)
 
 
+def _trial_row_fer(row: dict[str, str]) -> float | None:
+    token = _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK", "CurrentDecodeOK")
+    if not token:
+        return None
+    return 0.0 if token.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
+
+
+def _parse_float_vector(value: Any) -> list[float]:
+    text = str(value or "").strip()
+    if not text or text.lower() in {"nan", "<missing>", "missing", "unavailable"}:
+        return []
+    out: list[float] = []
+    for token in re.findall(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", text):
+        number = _coerce_float(token)
+        if number is not None:
+            out.append(float(number))
+    return out
+
+
+def _data_channel_trial_rows(trial_rows: list[tuple[str, dict[str, str]]]) -> list[tuple[str, dict[str, str]]]:
+    return [
+        (source_path, row)
+        for source_path, row in trial_rows
+        if "dl_pdsch_trials.csv" in source_path or "ul_pusch_trials.csv" in source_path
+    ]
+
+
 def _trial_rows_with_paths(
     existing: dict[str, dict[str, Any]],
     fetch_artifact_bytes: Callable[[int], bytes],
@@ -2757,7 +2830,12 @@ def _prach_peak_chart_materialization(
     source_path, records = _first_available_rows(
         existing,
         fetch_artifact_bytes,
-        ["reports/csv/prach_correlation_traces.csv", "air_interface/csv/prach_trials.csv", "control/csv/prach_trials.csv"],
+        [
+            "reports/csv/prach_correlation_trace.csv",
+            "reports/csv/prach_correlation_traces.csv",
+            "air_interface/csv/prach_trials.csv",
+            "control/csv/prach_trials.csv",
+        ],
     )
     if not records:
         return None
@@ -2765,11 +2843,11 @@ def _prach_peak_chart_materialization(
     values: list[float] = []
     points: list[list[float]] = []
     for idx, row in enumerate(records, start=1):
-        slot = _row_float(row, "Slot")
+        slot = _row_float(row, "trial_id", "Slot")
         if slot is None:
             slot = float(idx)
-        peak_value = _row_float(row, "PeakValue", "peak_value", "DetectionMetric", "detection_metric")
-        noise_floor = _row_float(row, "NoiseFloor", "noise_floor", "NoiseVariance", "noise_variance")
+        peak_value = _row_float(row, "correlation_abs", "PeakValue", "peak_value", "DetectionMetric", "detection_metric")
+        noise_floor = _row_float(row, "noise_floor", "NoiseFloor", "NoiseVariance", "noise_variance")
         metric = noise_floor if "noise floor" in chart_key else peak_value
         if metric is None or not math.isfinite(float(metric)):
             continue
@@ -2780,11 +2858,11 @@ def _prach_peak_chart_materialization(
                 "run_id": run_id,
                 "chart_name": chart_name,
                 "slot": slot,
-                "peak_index": _row_float(row, "PeakIndex", "peak_index"),
+                "peak_index": _row_float(row, "peak_lag_samples", "lag_samples", "PeakIndex", "peak_index"),
                 "peak_value": peak_value,
                 "noise_floor": noise_floor,
-                "detection_metric": _row_float(row, "DetectionMetric", "detection_metric"),
-                "timing_error_samples": _row_float(row, "TimingError_samples", "timing_error_samples"),
+                "detection_metric": _row_float(row, "correlation_abs", "DetectionMetric", "detection_metric"),
+                "timing_error_samples": _row_float(row, "timing_advance_samples", "TimingError_samples", "timing_error_samples"),
                 "status": _row_text(row, "Status", "DetectionOutcome"),
                 "source_table_logical_path": source_path,
             }
@@ -2826,14 +2904,24 @@ def _pucch_dtx_chart_materialization(
         outcome = _row_text(row, "DetectionOutcome", "Status").strip().lower()
         bits_compared = _row_float(row, "BitsCompared")
         detection_attempted = _row_flag(row, "DetectionAttempted")
-        if outcome in {"unavailable", "dtx", "not_detected"} or (bits_compared is not None and float(bits_compared) <= 0.0) or detection_attempted is False:
-            bucket = "DTX/unobserved"
-        elif outcome in {"missed", "miss", "failed", "fail"}:
-            bucket = "Missed"
-        elif outcome in {"detected", "pass", "ok", "success"}:
-            bucket = "Detected"
+        dtx_flag = _row_flag(row, "DTXFlag", "DTX", "DtxDetected")
+        missed_flag = _row_flag(row, "MissedDetection", "MissedDetectionFlag")
+        false_alarm_flag = _row_flag(row, "FalseAlarm", "FalseAlarmFlag")
+        decode_ok = _row_flag(row, "CRCPass", "DecodeSuccess", "PUCCHDecodeOk", "DetectionUsable")
+        if dtx_flag is True or outcome in {"dtx", "not_detected", "no_signal"}:
+            bucket = "DTX"
+        elif false_alarm_flag is True:
+            bucket = "False alarm"
+        elif missed_flag is True or outcome in {"missed", "miss"}:
+            bucket = "Missed detection"
+        elif detection_attempted is False:
+            bucket = "Detection not attempted"
+        elif decode_ok is True or outcome in {"detected", "pass", "ok", "success", "ack", "nack"}:
+            bucket = "Decoded/observed"
+        elif decode_ok is False or outcome in {"failed", "fail", "crc_fail", "decode_fail"}:
+            bucket = "Decode failure"
         else:
-            bucket = outcome or "unknown"
+            bucket = "Unavailable"
         counts[bucket] += 1
         csv_rows.append(
             {
@@ -2844,19 +2932,23 @@ def _pucch_dtx_chart_materialization(
                 "dtx_bucket": bucket,
                 "detection_outcome": outcome,
                 "bits_compared": bits_compared,
+                "dtx_flag": "" if dtx_flag is None else int(bool(dtx_flag)),
+                "missed_detection_flag": "" if missed_flag is None else int(bool(missed_flag)),
+                "false_alarm_flag": "" if false_alarm_flag is None else int(bool(false_alarm_flag)),
+                "decode_ok": "" if decode_ok is None else int(bool(decode_ok)),
                 "source_table_logical_path": source_path,
             }
         )
     dataset, summary = _bar_dataset_from_named_values("PUCCH feedback bucket", "Count", [(key, float(value)) for key, value in counts.items()])
     summary.append(f"source={source_path}")
     return {
-        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ue_id", "dtx_bucket", "detection_outcome", "bits_compared", "source_table_logical_path"], csv_rows),
+        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ue_id", "dtx_bucket", "detection_outcome", "bits_compared", "dtx_flag", "missed_detection_flag", "false_alarm_flag", "decode_ok", "source_table_logical_path"], csv_rows),
         "img_bytes": _render_svg_plot(chart_name, "PUCCH DTX/miss/detect statistics from persisted PUCCH waveform trials.", dataset, summary),
         "csv_status": "specialized_runtime_pucch_dtx_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": source_path,
         "source_row_count": len(records),
-        "note": "DTX is inferred only from exported unavailable/not-detected outcomes, zero compared bits, or explicit non-attempted detection flags.",
+        "note": "PUCCH buckets are derived from explicit DTX/missed/false-alarm/decode fields; zero compared bits alone is not treated as a DTX event.",
     }
 
 
@@ -2934,17 +3026,22 @@ def _beam_mimo_chart_materialization(
         values: list[float] = []
         for source_path, row in flat_rows:
             gap = _row_float(row, "BeamGainGap_dB", "beam_gain_gap_db", "SelectedVsBestBeamGap_dB")
-            selected = _row_float(row, "SelectedBeamIndex", "selected_beam_index")
-            best = _row_float(row, "BestBeamIndex", "best_beam_index")
-            if gap is None and selected is not None and best is not None:
-                gap = abs(float(best) - float(selected))
             if gap is None or not math.isfinite(float(gap)):
                 continue
             values.append(float(gap))
             csv_rows.append({"run_id": run_id, "chart_name": chart_name, "beam_gap_value": float(gap), "source_table_logical_path": source_path})
         if not csv_rows:
-            return None
-        dataset = {"mode": "bar", "x_label": "Beam gain gap dB (or beam-index gap if gain not exported)", "y_label": "Count", "points": _histogram_points(values, 18)}
+            reason = "No physical BeamGainGap_dB field was exported. Beam-index distance is not a dB gain gap, so this chart is unavailable rather than substituted."
+            return {
+                "csv_bytes": _encode_csv(["run_id", "chart_name", "status", "reason", "checked_sources"], [[run_id, chart_name, "unavailable_exact_reason", reason, "|".join(sorted({path for path, _row in flat_rows}))]]),
+                "img_bytes": _render_reason_svg(chart_name, "Beam gain gap needs measured selected-vs-best beam gain evidence.", [reason]),
+                "csv_status": "unavailable_exact_reason",
+                "image_status": "generated_unavailable_reason_svg",
+                "source_table_path": "|".join(sorted({path for path, _row in flat_rows})),
+                "source_row_count": len(flat_rows),
+                "note": reason,
+            }
+        dataset = {"mode": "bar", "x_label": "Beam gain gap dB", "y_label": "Count", "points": _histogram_points(values, 18)}
         return {
             "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "beam_gap_value", "source_table_logical_path"], csv_rows),
             "img_bytes": _render_svg_plot(chart_name, "Beam gap distribution from exported runtime beam metrics.", dataset, [f"samples={len(values)}"]),
@@ -2952,7 +3049,7 @@ def _beam_mimo_chart_materialization(
             "image_status": "generated_specialized_runtime_summary_svg",
             "source_table_path": "|".join(sorted({row["source_table_logical_path"] for row in csv_rows})),
             "source_row_count": len(csv_rows),
-            "note": "Uses physical BeamGainGap_dB when exported; otherwise reports selected-vs-best beam-index separation, not gain.",
+            "note": "Uses only physical BeamGainGap_dB exported by runtime beam evidence.",
         }
     if chart_key in {"beam hit rate / top-k hit rate", "beam hit rate timeline"}:
         grouped: dict[int, list[float]] = defaultdict(list)
@@ -3366,7 +3463,8 @@ def _metric_rows_by_exact_x(
         }
         for point in points
     ]
-    dataset = {"mode": "scatter" if len(points) > 18 else "line", "x_label": x_label, "y_label": y_label, "points": points}
+    preferred_mode = "scatter" if len(points) > 18 else "line"
+    dataset = {"mode": _honest_chart_mode(points, preferred_mode), "x_label": x_label, "y_label": y_label, "points": points}
     return _encode_dict_rows(["run_id", "chart_name", x_label, y_label, "source_table_logical_path"], csv_rows), dataset
 
 
@@ -3426,7 +3524,7 @@ def _metric_rows_by_binned_x(
                 "source_table_logical_path": source_path,
             }
         )
-    dataset = {"mode": "line", "x_label": x_label, "y_label": y_label, "points": points}
+    dataset = {"mode": _honest_chart_mode(points), "x_label": x_label, "y_label": y_label, "points": points}
     header = ["run_id", "chart_name", x_label, y_label, "x_bin_min", "x_bin_max", "sample_count", "source_table_logical_path"]
     return _encode_dict_rows(header, csv_rows), dataset
 
@@ -3513,6 +3611,9 @@ def _runtime_throughput_timeline_chart(
     ]
     if not series:
         return None
+    render_mode = _honest_chart_mode([point for item in series for point in item["points"]])
+    for row in rows:
+        row["chart_mode"] = render_mode
     return {
         "csv_bytes": _encode_dict_rows(
             [
@@ -3540,6 +3641,7 @@ def _runtime_throughput_timeline_chart(
             [f"samples={samples}", f"source={ '|'.join(source_paths) }"],
             x_label="Slot / time sample",
             y_label=y_label,
+            mode=render_mode,
         ),
         "csv_status": "specialized_runtime_throughput_timeline_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
@@ -3581,7 +3683,7 @@ def _runtime_bler_vs_mcs_chart(
                 "source_table_logical_path": source_token or "multiple_runtime_trials",
             }
         )
-    dataset = {"mode": "line", "x_label": "MCS", "y_label": "BLER", "points": points}
+    dataset = {"mode": _honest_chart_mode(points), "x_label": "MCS", "y_label": "BLER", "points": points}
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "mcs", "bler", "sample_count", "source_table_logical_path"], csv_rows),
         "img_bytes": _render_svg_plot("BLER vs MCS", "BLER by selected runtime MCS from persisted waveform trials.", dataset, [f"samples={sample_count}"]),
@@ -4254,7 +4356,7 @@ def _specialized_chart_materialization(
             note = "Scheduler chart derived from persisted scheduler-cycle or grant runtime rows."
             if chart_name == "MCS over time":
                 points = [[idx + 1, float(_row_float(row, "MCSIndex") or 0.0)] for idx, row in enumerate(records[:MAX_PREVIEW_ROWS]) if _row_float(row, "MCSIndex") is not None]
-                dataset = {"mode": "line", "x_label": "Grant sample", "y_label": "MCSIndex", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Grant sample", "y_label": "MCSIndex", "points": points}
             elif chart_name == "CQI vs selected MCS":
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in records:
@@ -4264,7 +4366,7 @@ def _specialized_chart_materialization(
                         continue
                     grouped[int(round(cqi))].append(float(mcs))
                 points = [[float(cqi), sum(vals) / len(vals)] for cqi, vals in sorted(grouped.items())]
-                dataset = {"mode": "line", "x_label": "CQI", "y_label": "Mean selected MCS", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "CQI", "y_label": "Mean selected MCS", "points": points}
             elif chart_name == "queue depth over time":
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in records:
@@ -4274,7 +4376,7 @@ def _specialized_chart_materialization(
                         continue
                     grouped[int(round(slot))].append(float(q_bytes))
                 points = [[float(slot), sum(vals) / len(vals)] for slot, vals in sorted(grouped.items())]
-                dataset = {"mode": "line", "x_label": "Slot", "y_label": "Queue bytes", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot", "y_label": "Queue bytes", "points": points}
             elif chart_name == "SR/BSR event timeline":
                 grouped: Counter[int] = Counter()
                 for row in records:
@@ -4284,7 +4386,7 @@ def _specialized_chart_materialization(
                     if _row_text(row, "sr_state") or (_row_float(row, "bsr_amount") or 0.0) > 0.0:
                         grouped[int(round(slot))] += 1
                 points = [[float(slot), float(count)] for slot, count in sorted(grouped.items())]
-                dataset = {"mode": "line", "x_label": "Slot", "y_label": "SR/BSR events", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot", "y_label": "SR/BSR events", "points": points}
             elif chart_name == "power control command timeline":
                 grouped: Counter[int] = Counter()
                 for row in records:
@@ -4294,7 +4396,7 @@ def _specialized_chart_materialization(
                     if _row_text(row, "power_control_command"):
                         grouped[int(round(slot))] += 1
                 points = [[float(slot), float(count)] for slot, count in sorted(grouped.items())]
-                dataset = {"mode": "line", "x_label": "Slot", "y_label": "Power-control commands", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot", "y_label": "Power-control commands", "points": points}
             elif chart_name == "PHR distribution":
                 values = [float(value) for value in (_row_float(row, "phr_db") for row in records) if value is not None]
                 if values:
@@ -4348,10 +4450,12 @@ def _specialized_chart_materialization(
                 if tx_count_values:
                     counts = Counter(max(value - 1, 0) for value in tx_count_values)
                 else:
-                    per_process: Counter[str] = Counter()
-                    for row in records:
-                        if _row_text(row, "IsRetransmission", "new_tx_or_retx").lower() in {"1", "true", "retx", "retransmission"}:
-                            key = f"{_row_text(row, 'UEIndex', 'RNTI')}|{_row_text(row, 'HarqID', 'HARQProcess')}"
+                    per_process: dict[str, int] = defaultdict(int)
+                    for idx, row in enumerate(records):
+                        key = f"{_row_text(row, 'UEIndex', 'UEID', 'RNTI') or idx}|{_row_text(row, 'HarqID', 'HARQProcess') or idx}"
+                        is_retx = _row_text(row, "IsRetransmission", "new_tx_or_retx").lower() in {"1", "true", "retx", "retransmission"}
+                        per_process.setdefault(key, 0)
+                        if is_retx:
                             per_process[key] += 1
                     counts = Counter(per_process.values())
                 points = [[float(count_value), float(bucket_count)] for count_value, bucket_count in sorted(counts.items())]
@@ -4368,7 +4472,7 @@ def _specialized_chart_materialization(
                         is_retx = float(tx_count) > 1.0
                     grouped[int(round(slot))].append(1.0 if is_retx else 0.0)
                 points = [[float(slot), sum(vals) / len(vals)] for slot, vals in sorted(grouped.items()) if vals]
-                dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "Retransmission rate", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot/sample", "y_label": "Retransmission rate", "points": points}
             elif chart_name == "HARQ RTT distribution":
                 values: list[float] = []
                 for row in records:
@@ -4403,7 +4507,7 @@ def _specialized_chart_materialization(
                         continue
                     grouped[int(round(slot))].append(1.0 if decode_ok.lower() in {"1", "true", "ack", "ok"} else 0.0)
                 points = [[float(slot), sum(vals) / len(vals)] for slot, vals in sorted(grouped.items())]
-                dataset = {"mode": "line", "x_label": "Slot", "y_label": "ACK ratio", "points": points}
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot", "y_label": "ACK ratio", "points": points}
             elif chart_name == "residual BLER by HARQ process":
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in records:
@@ -4890,7 +4994,18 @@ def _specialized_chart_materialization(
         x_labels, y_labels, matrix = _grid_rows_to_heatmap(grid_rows, "slot", "rb_index", "occupancy_value")
         mean_evm = [row for row in trial_records if _row_float(row, "EVM_rms") is not None]
         mean_evm_value = sum(_row_float(row, "EVM_rms") or 0.0 for row in mean_evm) / max(len(mean_evm), 1)
-        panels = [("UL equalized symbols", [((_row_float(r, "EqualizedReal") or 0.0), (_row_float(r, "EqualizedImag") or 0.0), "UL") for r in preview_records[:600]], [((_row_float(r, "ReferenceSymbolReal") or 0.0), (_row_float(r, "ReferenceSymbolImag") or 0.0)) for r in preview_records[:64]])]
+        ul_points = []
+        ul_reference = []
+        for r in preview_records:
+            eq_r = _row_float(r, "EqualizedReal")
+            eq_i = _row_float(r, "EqualizedImag")
+            if eq_r is not None and eq_i is not None:
+                ul_points.append((float(eq_r), float(eq_i), "UL"))
+            ref_r = _row_float(r, "ReferenceSymbolReal")
+            ref_i = _row_float(r, "ReferenceSymbolImag")
+            if ref_r is not None and ref_i is not None:
+                ul_reference.append((float(ref_r), float(ref_i)))
+        panels = [("UL equalized symbols", ul_points[:600], ul_reference[:64])]
         summary = ["grid_source=reports/csv/ul_resource_grid_heatmap.csv", "preview_source=air_interface/csv/ul_constellation_preview.csv", f"selected_cell={chosen_cell or 'all'}", f"trial_rows={len(trial_records)}", f"mean_evm_rms={mean_evm_value:.6f}"]
         image = _render_scatter_panels_svg(chart_name, "UL resource occupancy plus equalized-symbol preview from real waveform runtime exports.", panels, summary)
         csv_rows = []
@@ -5208,8 +5323,10 @@ def _specialized_chart_materialization(
             ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv", "air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv", "air_interface/csv/pbch_trials.csv"],
         )
         if trial_rows:
+            data_trial_rows = _data_channel_trial_rows(trial_rows)
+            reliability_rows = data_trial_rows if chart_name in {"BER", "BLER", "BLER vs SNR", "BLER vs SINR", "BLER vs MCS", "BER vs SNR"} else trial_rows
             if chart_name == "BLER vs MCS":
-                mcs_chart = _runtime_bler_vs_mcs_chart(trial_rows, run_id)
+                mcs_chart = _runtime_bler_vs_mcs_chart(data_trial_rows, run_id)
                 if mcs_chart is not None:
                     return mcs_chart
             if chart_name in {"BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR"}:
@@ -5218,7 +5335,7 @@ def _specialized_chart_materialization(
                 x_label = "PostEqSINR_dB"
                 y_label = "BLER" if "BLER" in chart_name else ("FER" if "FER" in chart_name else "BER")
                 selected_x_labels: Counter[str] = Counter()
-                for source_path, row in trial_rows:
+                for source_path, row in reliability_rows:
                     x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
                     if x_val is None:
                         continue
@@ -5226,7 +5343,7 @@ def _specialized_chart_materialization(
                     if y_label == "BER":
                         y_val = _trial_row_ber(row)
                     elif y_label == "FER":
-                        y_val = 0.0 if _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK").lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
+                        y_val = _trial_row_fer(row)
                     else:
                         y_val = _trial_row_bler(row)
                     if y_val is None:
@@ -5242,6 +5359,7 @@ def _specialized_chart_materialization(
                     else:
                         csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials")
                         chart_note = "Reliability-vs-quality curve derived from actual trial BER/BLER/FER outcomes; measured/applied quality fields are preferred over configured SNR metadata."
+                    dataset["mode"] = _honest_chart_mode(dataset.get("points", []), str(dataset.get("mode") or "line"))
                     return {
                         "csv_bytes": csv_bytes,
                         "img_bytes": _render_svg_plot(chart_name, "Reliability metric aggregated from truthful trial rows.", dataset, [f"samples={len(pairs)}", f"x_axis={x_label}", f"y_axis={y_label}"]),
@@ -5253,7 +5371,9 @@ def _specialized_chart_materialization(
                     }
             if chart_name in {"BER", "BLER", "FER", "CRC pass/fail rates"}:
                 counts: Counter[str] = Counter()
-                for _source_path, row in trial_rows:
+                source_counter: Counter[str] = Counter()
+                for source_path, row in reliability_rows:
+                    source_counter[source_path] += 1
                     if chart_name == "BER":
                         value = _trial_row_ber(row)
                         if value is not None:
@@ -5265,9 +5385,9 @@ def _specialized_chart_materialization(
                             counts["Mean BLER"] += value
                             counts["BLER samples"] += 1
                     elif chart_name == "FER":
-                        token = _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK")
-                        if token:
-                            counts["Mean FER"] += 0.0 if token.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
+                        value = _trial_row_fer(row)
+                        if value is not None:
+                            counts["Mean FER"] += value
                             counts["FER samples"] += 1
                     else:
                         token = _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK")
@@ -5284,15 +5404,17 @@ def _specialized_chart_materialization(
                         named_values = [(chart_name, float(counts[mean_key]) / float(counts[sample_key]))]
                 if named_values:
                     dataset, summary = _bar_dataset_from_named_values("Metric bucket", "Value", named_values)
-                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "metric_name": name, "metric_value": value, "source_table_logical_path": "multiple_runtime_trials"} for name, value in named_values]
+                    summary.extend([f"{path}={count}" for path, count in source_counter.most_common(4)])
+                    source_path_text = "|".join(source_counter.keys()) if source_counter else "multiple_runtime_trials"
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "metric_name": name, "metric_value": value, "sample_count": int(counts.get(f'{chart_name} samples', counts.get('BER samples', counts.get('BLER samples', counts.get('FER samples', 0))))), "source_table_logical_path": source_path_text} for name, value in named_values]
                     return {
-                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "metric_name", "metric_value", "source_table_logical_path"], csv_rows),
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "metric_name", "metric_value", "sample_count", "source_table_logical_path"], csv_rows),
                         "img_bytes": _render_svg_plot(chart_name, "Summary reliability metric from persisted waveform/control trials.", dataset, summary),
                         "csv_status": "specialized_runtime_reliability_dataset",
                         "image_status": "generated_specialized_runtime_summary_svg",
-                        "source_table_path": "multiple_runtime_trials",
-                        "source_row_count": len(csv_rows),
-                        "note": "Reliability summary built from persisted trial rows.",
+                        "source_table_path": source_path_text,
+                        "source_row_count": sum(source_counter.values()),
+                        "note": "BER/BLER use data-channel PDSCH/PUSCH trials with real bit/CRC evidence; FER/CRC summaries use rows that explicitly export decode/CRC outcomes.",
                     }
             if chart_name == "decoder iteration distributions":
                 values = [float(value) for _source_path, row in trial_rows for value in [_row_float(row, "DecoderIterations")] if value is not None]
@@ -5673,7 +5795,17 @@ def _specialized_chart_materialization(
                 field_name = "BeamIndex" if chart_name == "per-beam quality plot" else "LayerIndex"
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in la_rows:
-                    group_value = _row_float(row, field_name, "SelectedBeamIndex" if field_name == "BeamIndex" else "Layers")
+                    if chart_name == "per-layer quality plot":
+                        vector_values = _parse_float_vector(
+                            _row_value(row, "PostEqSINRPerLayer_dB", "PerLayerSINR_dB", "LayerSINR_dB", "MeasuredPerLayerSINR_dB")
+                        )
+                        if vector_values:
+                            for layer_idx, quality in enumerate(vector_values, start=1):
+                                grouped[layer_idx].append(float(quality))
+                            continue
+                        group_value = _row_float(row, "LayerIndex")
+                    else:
+                        group_value = _row_float(row, field_name, "SelectedBeamIndex")
                     quality = _row_float(row, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB")
                     if group_value is None or quality is None:
                         continue
@@ -5689,7 +5821,18 @@ def _specialized_chart_materialization(
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": la_path,
                         "source_row_count": len(csv_rows),
-                        "note": "Grouped quality chart derived from measured trial SINR plus runtime beam/layer identifiers; proxy, configured, and large-scale SINR values are not used as chart fallbacks.",
+                        "note": "Grouped quality chart derived from measured trial SINR plus runtime beam identifiers or explicit per-layer SINR vectors; proxy, configured, large-scale SINR, and rank-as-layer substitutes are not used.",
+                    }
+                if chart_name == "per-layer quality plot":
+                    reason = "No explicit LayerIndex or per-layer SINR vector was exported. Rank/Layers is not a per-layer quality measurement, so the chart is unavailable."
+                    return {
+                        "csv_bytes": _encode_csv(["run_id", "chart_name", "status", "reason", "checked_source"], [[run_id, chart_name, "unavailable_exact_reason", reason, la_path]]),
+                        "img_bytes": _render_reason_svg(chart_name, "Per-layer quality requires layer-indexed runtime receiver evidence.", [reason]),
+                        "csv_status": "unavailable_exact_reason",
+                        "image_status": "generated_unavailable_reason_svg",
+                        "source_table_path": la_path,
+                        "source_row_count": len(la_rows),
+                        "note": reason,
                     }
     if chart_name in {"BS/sector/UE topology scatter plot", "serving cell map"}:
         site_path, site_rows = _first_available_rows(existing, fetch_artifact_bytes, ["reports/csv/sites.csv"])
@@ -6342,10 +6485,6 @@ def materialize_run_contract_artifacts(
             existing[target_path] = new_artifact
             source_lookup[target_path] = new_artifact
 
-        section_tables: dict[str, list[str]] = {}
-        for table_spec in _table_specs():
-            section_tables.setdefault(str(table_spec.get("section_slug") or ""), []).append(table_contract_path(table_spec))
-
         for chart_spec in _chart_specs():
             chart_name = str(chart_spec.get("chart_name") or "")
             if chart_name in OPTIONAL_6G_CHARTS and not any(feature_policy.values()):
@@ -6354,13 +6493,16 @@ def materialize_run_contract_artifacts(
             target_img = chart_contract_image_path(chart_spec)
             if target_csv in existing and target_img in existing:
                 continue
-            special = _specialized_chart_materialization(chart_name, source_lookup, fetch_artifact_bytes, run_id)
+            special = _finalize_chart_materialization_result(
+                _specialized_chart_materialization(chart_name, source_lookup, fetch_artifact_bytes, run_id)
+            )
             if special is not None:
                 chart_csv_bytes = bytes(special["csv_bytes"])
                 image_bytes = bytes(special["img_bytes"])
                 csv_status = str(special.get("csv_status") or "specialized_contract_dataset")
                 image_status = str(special.get("image_status") or "generated_specialized_contract_image")
                 source_table_path = str(special.get("source_table_path") or "")
+                source_mapping_status = str(special.get("source_mapping_status") or _source_mapping_status_for_status(csv_status, image_status))
                 source_row_count = int(special.get("source_row_count") or 0)
                 chart_csv_note = str(special.get("note") or "")
                 image_kind = "image_svg"
@@ -6374,6 +6516,7 @@ def materialize_run_contract_artifacts(
                     "source_table_logical_path": source_table_path,
                     "source_row_count": source_row_count,
                     "materialization_status": csv_status,
+                    "source_mapping_status": source_mapping_status,
                 }
                 img_meta = {
                     "materializer_version": MATERIALIZER_VERSION,
@@ -6382,6 +6525,7 @@ def materialize_run_contract_artifacts(
                     "source_image_logical_path": "",
                     "source_table_logical_path": source_table_path,
                     "materialization_status": image_status,
+                    "source_mapping_status": source_mapping_status,
                 }
                 if (
                     not allow_placeholder_artifacts
@@ -6450,12 +6594,6 @@ def materialize_run_contract_artifacts(
                 ),
                 None,
             )
-            if source_table is None:
-                for logical_path in section_tables.get(str(chart_spec.get("section_slug") or ""), []):
-                    art = source_lookup.get(logical_path)
-                    if art and str(art.get("artifact_kind") or "") == "table_csv":
-                        source_table = art
-                        break
             summary_lines = [
                 f"chart={chart_name}",
                 f"section={chart_spec.get('section_title') or ''}",
@@ -6468,6 +6606,7 @@ def materialize_run_contract_artifacts(
             csv_status = "lineage_summary"
             source_table_path = str(source_table.get("logical_path") or "") if source_table else ""
             source_row_count = 0
+            source_mapping_status = "unavailable"
             chart_csv_note = "No direct source table was published for this chart family in the selected run."
             if source_table:
                 source_table_bytes = fetch_artifact_bytes(int(source_table["artifact_id"]))
@@ -6485,12 +6624,14 @@ def materialize_run_contract_artifacts(
                         )
                         summary_lines.append(f"placeholder_status={placeholder_status}")
                     else:
-                        dataset = _dataset_from_rows(chart_name, header, rows)
-                        csv_status = "derived_chart_dataset"
-                        chart_csv_note = (
-                            "Canonical chart CSV derived from the selected run's persisted source table. "
-                            "The full raw source table remains stored separately."
+                        dataset, source_mapping_status, chart_csv_note = _dataset_from_exact_chart_contract(
+                            chart_name,
+                            source_table_path,
+                            header,
+                            rows,
                         )
+                        csv_status = "derived_exact_chart_dataset" if source_mapping_status == "exact" else "invalid_source_mapping"
+                        summary_lines.append(f"source_mapping_status={source_mapping_status}")
                 else:
                     chart_csv_note = "The source chart table exists but has no rows for this run."
                     summary_lines.append("source_rows=0")
@@ -6498,6 +6639,10 @@ def materialize_run_contract_artifacts(
             else:
                 summary_lines.append("source_rows=0")
                 csv_status = "missing_source_summary"
+                if source_image:
+                    source_mapping_status = "exact"
+                    csv_status = "copied_source_image_lineage"
+                    chart_csv_note = "A direct source image mapping exists; no numeric contract dataset was inferred."
             chart_csv_bytes = _chart_dataset_csv(
                 run_id,
                 chart_name,
@@ -6506,6 +6651,7 @@ def materialize_run_contract_artifacts(
                 source_row_count,
                 csv_status,
                 chart_csv_note,
+                source_mapping_status,
             )
             if source_image:
                 image_bytes = fetch_artifact_bytes(int(source_image["artifact_id"]))
@@ -6517,6 +6663,7 @@ def materialize_run_contract_artifacts(
                 "source_artifact_present_but_empty",
                 "empty_source_summary",
                 "missing_source_summary",
+                "invalid_source_mapping",
             }:
                 image_bytes = _render_reason_svg(
                     chart_name,
@@ -6527,7 +6674,7 @@ def materialize_run_contract_artifacts(
                 image_mime = "image/svg+xml"
                 image_status = "generated_unavailable_reason_svg"
             else:
-                image_bytes = _render_svg_plot(
+                image_bytes = _chart_image_from_dataset(
                     chart_name,
                     "Canonical post-run chart materialized from the selected run's persisted source artifacts.",
                     dataset,
@@ -6544,6 +6691,7 @@ def materialize_run_contract_artifacts(
                 "source_table_logical_path": source_table_path,
                 "source_row_count": source_row_count,
                 "materialization_status": csv_status,
+                "source_mapping_status": source_mapping_status,
             }
             img_meta = {
                 "materializer_version": MATERIALIZER_VERSION,
@@ -6552,6 +6700,7 @@ def materialize_run_contract_artifacts(
                 "source_image_logical_path": str(source_image.get("logical_path") or "") if source_image else "",
                 "source_table_logical_path": str(source_table.get("logical_path") or "") if source_table else "",
                 "materialization_status": image_status,
+                "source_mapping_status": source_mapping_status,
             }
             if (
                 not allow_placeholder_artifacts

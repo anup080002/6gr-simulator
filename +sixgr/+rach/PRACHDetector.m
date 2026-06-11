@@ -85,6 +85,7 @@ det.CorrelationPeaks = peaks;
 det.CandidatePreambles = candidateSet(:);
 det.MultiCandidateAboveThreshold = sum(peaks >= threshold) > 1;
 det.DetInfo = detInfo;
+det.CorrelationTrace = localSelectedCorrelationTrace(detInfo, candidateDetected, threshold, offset);
 det.FrequencyEstimate = freqEst;
 det.Occasion = occasion;
 end
@@ -93,14 +94,20 @@ function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform,
 rx = localVector(rxWaveform);
 peaks = nan(numel(candidateSet), 1);
 offsets = nan(numel(candidateSet), 1);
+traceCells = cell(numel(candidateSet), 1);
 for iCand = 1:numel(candidateSet)
     ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
         "PreambleIndex", double(candidateSet(iCand)));
-    [peaks(iCand), offsets(iCand)] = localCorrelationPeak(rx, localVector(ref.Waveform));
+    [peaks(iCand), offsets(iCand), lags, metrics] = localCorrelationPeak(rx, localVector(ref.Waveform));
+    traceCells{iCand} = struct( ...
+        "PreambleIndex", double(candidateSet(iCand)), ...
+        "LagSamples", double(lags(:)), ...
+        "CorrelationAbs", double(metrics(:)));
 end
 [bestPeak, bestIdx] = max(peaks, [], "omitnan");
 if isempty(bestIdx) || ~isfinite(bestPeak)
     idx0 = [];
+    bestIdx = 1;
 else
     idx0 = double(candidateSet(bestIdx));
 end
@@ -108,22 +115,25 @@ offset0 = offsets(:);
 detInfo = struct();
 detInfo.CorrelationPeaks = peaks;
 detInfo.CorrelationOffsets = offsets;
+detInfo.BestCandidateIndex = double(bestIdx);
+detInfo.BestCorrelationTrace = traceCells{bestIdx};
 detInfo.DetectorBackend = "inrepo_waveform_correlation_from_nrPRACH_symbols";
 end
 
-function [peakMetric, offsetSamples] = localCorrelationPeak(rx, ref)
+function [peakMetric, offsetSamples, lags, metrics] = localCorrelationPeak(rx, ref)
 peakMetric = NaN;
 offsetSamples = NaN;
+lags = [];
+metrics = [];
 rx = complex(rx(:));
 ref = complex(ref(:));
 if isempty(rx) || isempty(ref)
     return;
 end
-metrics = localNormalizedCorrelationPower(rx, ref);
+[metrics, lags] = localNormalizedCorrelationPower(rx, ref);
 if isempty(metrics)
     return;
 end
-corrVals = conv(rx, flipud(conj(ref)), "full");
 [peakMetric, peakIdx] = max(metrics, [], "omitnan");
 if isempty(peakIdx) || ~isfinite(peakMetric)
     return;
@@ -132,13 +142,14 @@ fracOffset = localParabolicPeakOffset(metrics, peakIdx);
 offsetSamples = double(peakIdx) - numel(ref) + fracOffset;
 end
 
-function metrics = localNormalizedCorrelationPower(rx, ref)
+function [metrics, lags] = localNormalizedCorrelationPower(rx, ref)
 rx = complex(rx(:));
 ref = complex(ref(:));
 nRx = numel(rx);
 nRef = numel(ref);
 corrVals = conv(rx, flipud(conj(ref)), "full");
 metrics = nan(size(corrVals));
+lags = (1:numel(corrVals)).' - nRef;
 rxPower = abs(rx).^2;
 refPower = abs(ref).^2;
 minOverlap = max(16, ceil(0.75 * double(nRef)));
@@ -163,6 +174,69 @@ for k = 1:numel(corrVals)
     if isfinite(denom) && denom > 0
         metrics(k) = double(abs(corrVals(k)).^2) / max(denom, eps);
     end
+end
+end
+
+function trace = localSelectedCorrelationTrace(detInfo, preambleIndex, threshold, peakLagSamples)
+emptyVec = zeros(0, 1);
+trace = struct( ...
+    "PreambleIndex", double(preambleIndex), ...
+    "LagSamples", emptyVec, ...
+    "CorrelationAbs", emptyVec, ...
+    "Threshold", double(threshold), ...
+    "NoiseFloor", NaN, ...
+    "PeakLagSamples", double(peakLagSamples), ...
+    "TraceStatus", "unavailable");
+if ~(isstruct(detInfo) && isfield(detInfo, "BestCorrelationTrace") && isstruct(detInfo.BestCorrelationTrace))
+    return;
+end
+src = detInfo.BestCorrelationTrace;
+if isfield(src, "PreambleIndex")
+    trace.PreambleIndex = double(src.PreambleIndex);
+end
+if isfield(src, "LagSamples")
+    trace.LagSamples = double(src.LagSamples(:));
+end
+if isfield(src, "CorrelationAbs")
+    trace.CorrelationAbs = double(src.CorrelationAbs(:));
+end
+finiteVals = trace.CorrelationAbs(isfinite(trace.CorrelationAbs));
+if ~isempty(finiteVals)
+    trace.NoiseFloor = localCorrelationNoiseFloor(finiteVals);
+    trace.TraceStatus = "real_lls_evidence";
+end
+end
+
+function noiseFloor = localCorrelationNoiseFloor(vals)
+vals = double(vals(:));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    noiseFloor = NaN;
+    return;
+end
+% Use a robust lower-tail statistic so the dominant PRACH peak does not
+% inflate the displayed noise floor.
+noiseFloor = median(vals(vals <= localPercentile(vals, 70)), "omitnan");
+if ~isfinite(noiseFloor)
+    noiseFloor = median(vals, "omitnan");
+end
+end
+
+function p = localPercentile(vals, pct)
+vals = sort(double(vals(:)));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    p = NaN;
+    return;
+end
+idx = 1 + (numel(vals) - 1) * double(pct) / 100;
+lo = floor(idx);
+hi = ceil(idx);
+if lo == hi
+    p = vals(lo);
+else
+    frac = idx - lo;
+    p = vals(lo) * (1 - frac) + vals(hi) * frac;
 end
 end
 

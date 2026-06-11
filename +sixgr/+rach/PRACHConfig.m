@@ -24,7 +24,7 @@ addParameter(p, "PRACHSubcarrierSpacing", [], @(x) isempty(x) || (isscalar(x) &&
 addParameter(p, "SequenceIndex", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "LogicalRootSequenceIndex", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "PreambleIndex", [], @(x) isempty(x) || isnumeric(x));
-addParameter(p, "RestrictedSet", [], @(x) isempty(x) || any(strcmpi(string(x), ["RestrictedSet","UnrestrictedSet"])));
+addParameter(p, "RestrictedSet", [], @(x) isempty(x) || any(strcmpi(string(x), ["RestrictedSet","RestrictedSetTypeA","RestrictedSetTypeB","UnrestrictedSet"])));
 addParameter(p, "ZeroCorrelationZone", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "FrequencyStart", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "NumPRACHOccasions", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
@@ -197,6 +197,10 @@ localPublishConfigEvidence(prachCfg, cfg);
 end
 
 function cfg = localValidateZCZRuntimeGuard(cfg)
+if ~strcmpi(string(cfg.RestrictedSet), "UnrestrictedSet")
+    error("sixgr:rach:PRACHConfig:RestrictedSetNCSMissing", ...
+        "Restricted-set PRACH N_CS validation is not implemented in this runtime; use UnrestrictedSet or add the restricted-set table before running strict PRACH studies.");
+end
 lra = NaN;
 try
     lra = double(cfg.ToolboxPRACH.LRA);
@@ -353,6 +357,10 @@ allowedChannels = ["AWGN","TDL-A","TDL-C","CDL-C"];
 if ~any(strcmpi(cfg.ChannelModel, allowedChannels))
     error("sixgr:rach:PRACHConfig:UnsupportedChannelModel", ...
         "ChannelModel must be one of %s.", strjoin(cellstr(allowedChannels), ", "));
+end
+if ~strcmpi(string(cfg.RestrictedSet), "UnrestrictedSet")
+    error("sixgr:rach:PRACHConfig:RestrictedSetNCSMissing", ...
+        "Restricted-set PRACH N_CS validation is not implemented in this runtime; use UnrestrictedSet or add the restricted-set table before running strict PRACH studies.");
 end
 zcz = double(cfg.ZeroCorrelationZone);
 if ~isfinite(zcz) || zcz < 0 || zcz > 15 || zcz ~= round(zcz)

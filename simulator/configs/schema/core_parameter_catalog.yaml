@@ -254,7 +254,7 @@
         "dlCQITable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "ulCQITable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "widebandSINRMargin_dB": {"value_type": "number", "default": 5},
-        "maxTrustedReferenceSINR_dB": {"value_type": "number", "default": 80},
+        "maxTrustedReferenceSINR_dB": {"value_type": "number", "default": 45},
         "channelStateInformationMode": {"value_type": "string", "default": "PMI+CQI+RI", "allowed_values": ["PMI+CQI", "PMI+CQI+RI", "PMI+CQI+RI+CRI", "CRI", "none"]},
         "pmiCodebookMode": {"value_type": "string", "default": "type1_su_mimo", "allowed_values": ["type1_su_mimo", "type2_mu_mimo", "etype2_candidate", "noncodebook"]},
         "codebookType": {"value_type": "string", "default": "type1", "allowed_values": ["type1", "type2", "etype2", "noncodebook"]},

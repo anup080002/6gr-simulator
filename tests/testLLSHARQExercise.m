@@ -10,6 +10,7 @@ c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_harq_retransmission_exercise.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+localAssertHARQTimingReachesScheduler(scfg, tmp);
 
 assert(logical(sixgr.util.structGet(cfg, "phy.harq.enable", false)), ...
     "HARQ exercise preset must keep HARQ enabled.");
@@ -72,4 +73,37 @@ assert(all(ismember(["first_attempt_ack_rate","first_attempt_nack_rate","final_a
     "HARQ exercise summary must export first-attempt and final ACK/NACK statistics explicitly.");
 
 ok = true;
+end
+
+function localAssertHARQTimingReachesScheduler(scfg, tmp)
+data = scfg.toStruct();
+data = sixgr.util.structSet(data, "meta.scenario_id", "HARQ_TIMING_REGRESSION");
+data = sixgr.util.structSet(data, "harq.feedback_timing_slots", 2);
+data = sixgr.util.structSet(data, "harq.k2", 3);
+scfgTiming = sixgr.lls6g.config.ScenarioConfig(data, ...
+    "SourceFiles", scfg.SourceFiles, ...
+    "ConfigPath", scfg.ConfigPath, ...
+    "ConfigHash", "harq_timing_regression");
+cfgTiming = sixgr.lls6g.buildInternalConfig(scfgTiming, fullfile(tmp, "timing_run"));
+
+assert(double(sixgr.util.structGet(cfgTiming, "phy.harq.feedbackTimingSlots", NaN)) == 2, ...
+    "HARQ feedback_timing_slots must reach cfg.phy.harq.feedbackTimingSlots.");
+assert(double(sixgr.util.structGet(cfgTiming, "mac.harq.k1", NaN)) == 2, ...
+    "HARQ feedback_timing_slots must drive scheduler K1 instead of the hardcoded default.");
+assert(double(sixgr.util.structGet(cfgTiming, "mac.harq.k2", NaN)) == 3 && ...
+    double(sixgr.util.structGet(cfgTiming, "phy.pusch.k2_slots", NaN)) == 3 && ...
+    double(sixgr.util.structGet(cfgTiming, "phy.ul.grantK2Slots", NaN)) == 3, ...
+    "HARQ k2 must reach scheduler and UL grant timing aliases.");
+
+ueDL = struct("RNTI", 101, "DLBufferBytes", 4096, "ULBufferBytes", 0, "CQI", 10, "RI", 1);
+ueUL = struct("RNTI", 102, "DLBufferBytes", 0, "ULBufferBytes", 4096, "CQI", 10, "RI", 1);
+budget = struct("NPRB", 24, "SymbolAllocation", [2 10]);
+schDL = sixgr.l2.mac.SchedulerPF(cfgTiming, "Direction", "DL");
+schUL = sixgr.l2.mac.SchedulerPF(cfgTiming, "Direction", "UL");
+dlGrant = schDL.schedule(0, ueDL, budget);
+ulGrant = schUL.schedule(0, ueUL, budget);
+assert(~isempty(dlGrant) && all([dlGrant.K1] == 2) && all([dlGrant.K2] == 3), ...
+    "DL scheduler grants must carry configured HARQ K1/K2 timing.");
+assert(~isempty(ulGrant) && all([ulGrant.K1] == 2) && all([ulGrant.K2] == 3), ...
+    "UL scheduler grants must carry configured HARQ K1/K2 timing.");
 end

@@ -8,6 +8,7 @@ testCQITableInferenceFollowsMCS();
 testDynamicPDSCHXOverhead();
 testPhaseNoiseMaterializes();
 testOFDMWindowingMaterializesInTxPath();
+testPUSCHPi2BPSKTransformPrecodingMaterializes();
 testPDCCHHighSCSFailsClosed();
 testTimingCorrectionBoundedByCP();
 testIQImageRejectionMeasurementFloor();
@@ -94,6 +95,23 @@ assert(logical(txUL.OFDMWindowingEnabled) && double(txUL.OFDMWindowingSamples) =
     "PUSCH_Tx must pass the same configured OFDM windowing into the UL waveform path.");
 end
 
+function testPUSCHPi2BPSKTransformPrecodingMaterializes()
+cfg = sixgr.config.defaultConfig();
+cfg = sixgr.config.normalizeConfig(cfg);
+cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", 24);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.prbSet", 0:5);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", "pi/2-BPSK");
+cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", false);
+
+[txUL, infoUL] = sixgr.phy.ul.PUSCH_Tx(cfg, "CompactOutput", true);
+assert(strcmpi(char(string(txUL.PUSCH.Modulation)), "pi/2-BPSK"), ...
+    "PUSCH_Tx must preserve configured pi/2-BPSK modulation semantics.");
+assert(logical(txUL.PUSCH.TransformPrecoding) && ~isempty(txUL.Waveform), ...
+    "pi/2-BPSK PUSCH must materialize a transform-precoded DFT-s-OFDM waveform.");
+assert(strcmpi(char(string(infoUL.TransformPrecodingAppliedBy)), "nrPUSCH_native_transform_precoding"), ...
+    "pi/2-BPSK transform-precoding evidence must come from the native nrPUSCH runtime path.");
+end
+
 function testPDCCHHighSCSFailsClosed()
 cfg120 = localBasePDCCHCfg();
 cfg120.phy.numerology.mu = 3;
@@ -149,7 +167,7 @@ csi = sixgr.phy.dl.CSI_Feedback(Hest, 1e-20, cfg, ...
     "ReferenceIndices", refInd, ...
     "ReferenceSymbols", refSym);
 assert(abs(double(csi.SINR_dB) - 42) < 1e-9 && ...
-    strcmpi(char(string(csi.ReferenceSINRValueStatus)), "pilot_reconstruction_residual_reference_re_sinr_dynamic_range_limited"), ...
+    strcmpi(char(string(csi.ReferenceSINRValueStatus)), "OK_dynamic_range_limited"), ...
     "DL CSI feedback must cap receiver-reference SINR at the configured trusted dynamic range.");
 
 ul = sixgr.phy.ul.measureULLinkState(Hest, 1e-20, cfg, ...
@@ -157,7 +175,7 @@ ul = sixgr.phy.ul.measureULLinkState(Hest, 1e-20, cfg, ...
     "ReferenceIndices", refInd, ...
     "ReferenceSymbols", refSym);
 assert(abs(double(ul.SINR_dB) - 42) < 1e-9 && ...
-    strcmpi(char(string(ul.SINRValueStatus)), "pilot_reconstruction_residual_reference_re_sinr_dynamic_range_limited"), ...
+    strcmpi(char(string(ul.SINRValueStatus)), "OK_dynamic_range_limited"), ...
     "UL link-state feedback must use the same configured trusted dynamic range for measured SINR.");
 end
 

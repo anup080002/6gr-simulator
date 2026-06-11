@@ -5,7 +5,7 @@ setup6GRSimToolkit("Verbose", false);
 
 tmp = tempname;
 mkdir(tmp);
-cleanupObj = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+cleanupObj = onCleanup(@() rmdir(tmp, "s"));
 
 repoRoot = fileparts(fileparts(mfilename("fullpath")));
 baseScenario = strrep(fullfile(repoRoot, "simulator", "configs", "scenarios", "prach_detection.yaml"), "\", "/");
@@ -23,7 +23,7 @@ scenarioCfg.random_access = struct( ...
     "num_prach_occasions", 1, ...
     "num_slots", 40, ...
     "num_subframes", 20, ...
-    "snr_sweep_db", 18, ...
+    "snr_sweep_db", [12 18], ...
     "threshold_sweep", 0.5, ...
     "detection_threshold", 0.5, ...
     "active_preamble_pattern", 1);
@@ -37,7 +37,9 @@ ctrlPath = fullfile(runFolder, "control", "csv", "prach_trials.csv");
 airPath = fullfile(runFolder, "air_interface", "csv", "prach_trials.csv");
 reportPath = fullfile(runFolder, "reports", "csv", "initial_access_random_access_outputs.csv");
 summaryBySNRPath = fullfile(runFolder, "reports", "csv", "prach_summary_by_snr.csv");
-corrPath = fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv");
+corrPath = fullfile(runFolder, "reports", "csv", "prach_correlation_trace.csv");
+corrLegacyPath = fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv");
+probabilitySweepPath = fullfile(runFolder, "reports", "csv", "prach_probability_sweeps.csv");
 rawTrialPath = fullfile(runFolder, "control", "csv", "prach_detection_trials.csv");
 evidencePath = fullfile(runFolder, "reports", "csv", "runtime_config_application_evidence.csv");
 bindingPath = fullfile(runFolder, "reports", "csv", "parameter_binding_matrix.csv");
@@ -48,7 +50,9 @@ assert(exist(ctrlPath, "file") == 2, "Runner must export control/csv/prach_trial
 assert(exist(airPath, "file") == 2, "Runner must export air_interface/csv/prach_trials.csv.");
 assert(exist(reportPath, "file") == 2, "Runner must export reports/csv/initial_access_random_access_outputs.csv.");
 assert(exist(summaryBySNRPath, "file") == 2, "Runner must export reports/csv/prach_summary_by_snr.csv.");
-assert(exist(corrPath, "file") == 2, "Runner must export reports/csv/prach_correlation_traces.csv.");
+assert(exist(corrPath, "file") == 2, "Runner must export reports/csv/prach_correlation_trace.csv.");
+assert(exist(corrLegacyPath, "file") == 2, "Runner must preserve legacy reports/csv/prach_correlation_traces.csv mirror.");
+assert(exist(probabilitySweepPath, "file") == 2, "Runner must export probability sweeps when a real PRACH sweep axis exists.");
 assert(exist(rawTrialPath, "file") == 2, "Runner must preserve control/csv/prach_detection_trials.csv.");
 assert(exist(evidencePath, "file") == 2, "Runner must export reports/csv/runtime_config_application_evidence.csv.");
 assert(exist(bindingPath, "file") == 2, "Runner must export reports/csv/parameter_binding_matrix.csv.");
@@ -60,6 +64,8 @@ airT = readtable(airPath, "VariableNamingRule", "preserve");
 reportT = readtable(reportPath, "VariableNamingRule", "preserve");
 summaryBySNRT = readtable(summaryBySNRPath, "VariableNamingRule", "preserve");
 corrT = readtable(corrPath, "VariableNamingRule", "preserve");
+corrLegacyT = readtable(corrLegacyPath, "VariableNamingRule", "preserve");
+probabilitySweepT = readtable(probabilitySweepPath, "VariableNamingRule", "preserve");
 evidenceT = readtable(evidencePath, "VariableNamingRule", "preserve");
 bindingT = readtable(bindingPath, "VariableNamingRule", "preserve");
 surfaceT = readtable(surfacePath, "VariableNamingRule", "preserve");
@@ -70,6 +76,9 @@ assert(~isempty(airT), "PRACH air-interface trial export must not be empty.");
 assert(~isempty(reportT), "PRACH report summary export must not be empty.");
 assert(~isempty(summaryBySNRT), "PRACH summary-by-SNR export must not be empty.");
 assert(~isempty(corrT), "PRACH correlation trace export must not be empty.");
+assert(isequaln(corrT, corrLegacyT), ...
+    "Legacy PRACH correlation trace CSV must mirror the canonical lag-domain table.");
+assert(~isempty(probabilitySweepT), "PRACH probability sweep export must not be empty for a two-point SNR sweep.");
 assert(~isempty(evidenceT), "PRACH runner must publish real runtime config-application evidence.");
 assert(all(ismember(["Status","ComputeLatency_ms","AirInterfaceObservation_ms","AcquisitionTime_ms", ...
     "CRCPass","TrueTimingOffset_samples","DetectionMetric","FalseAlarmFlag","CollisionFlag"], ...
@@ -81,8 +90,18 @@ assert(all(ismember(["CategoryKey","MetricKey","Availability","SourceArtifact"],
 assert(all(ismember(["DetectionProbability","FalseAlarmProbability","MissDetectionProbability"], ...
     string(summaryBySNRT.Properties.VariableNames))), ...
     "PRACH summary-by-SNR export must expose the core PRACH KPIs.");
-assert(all(ismember(["DetectionMetric","Status","SourceArtifact"], string(corrT.Properties.VariableNames))), ...
-    "PRACH correlation trace export must expose plot-ready trace columns.");
+assert(all(ismember(localCorrelationTraceColumns(), string(corrT.Properties.VariableNames))), ...
+    "PRACH correlation trace export must expose the canonical lag-domain trace schema.");
+assert(any(isfinite(double(corrT.lag_samples))) && any(isfinite(double(corrT.correlation_abs))), ...
+    "PRACH correlation trace export must contain finite lag and correlation-magnitude samples.");
+assert(all(string(corrT.truth_status) == "real_lls_evidence"), ...
+    "PRACH correlation trace rows produced by the runner must be measured LLS evidence.");
+assert(all(ismember(["sweep_axis","x_value","n_trials","detection_probability", ...
+    "miss_detection_probability","false_alarm_probability","truth_status"], ...
+    string(probabilitySweepT.Properties.VariableNames))), ...
+    "PRACH probability sweep export must expose detection, miss, and false-alarm probability columns.");
+assert(any(string(probabilitySweepT.sweep_axis) == "SNR_dB"), ...
+    "PRACH probability sweep export must include SNR_dB when snr_sweep_db has multiple values.");
 assert(any(strcmp(string(evidenceT.ParameterId), "random_access.configuration_index") & ...
     strcmp(string(evidenceT.ConsumerFunction), "sixgr.rach.PRACHConfig")), ...
     "PRACH runtime evidence must prove configuration_index was applied by PRACHConfig.");
@@ -103,6 +122,13 @@ end
 
 function localWriteJSON(filePath, s)
 fid = fopen(filePath, "w");
-cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+cleanupObj = onCleanup(@() fclose(fid));
 fprintf(fid, "%s", jsonencode(s));
+end
+
+function cols = localCorrelationTraceColumns()
+cols = ["trial_id","preamble_index","root_sequence_index","restricted_set_type","n_cs", ...
+    "zero_correlation_zone_config","lag_samples","lag_us","correlation_abs","threshold", ...
+    "noise_floor","peak_lag_samples","timing_advance_samples","detection_result", ...
+    "false_alarm","missed_detection","snr_db","cfo_hz","seed","truth_status"];
 end

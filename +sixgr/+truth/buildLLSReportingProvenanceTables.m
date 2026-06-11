@@ -18,51 +18,88 @@ rows = repmat(sixgr.visual.writePlotManifestRow("", "", "", "", "", "", struct()
 for i = 1:numel(specs)
     spec = specs(i);
     imagePath = fullfile(runFolder, char(spec.ImagePath));
+    unavailableImagePath = char(sixgr.visual.unavailableArtifactPath(imagePath));
     sourceCsvPath = fullfile(runFolder, char(spec.SourceCSV));
-    stats = struct("RowCount", NaN, "UniqueXCount", NaN, "NonNaNYCount", NaN, "PlotType", spec.PlotType, "PlotRenderStatus", "not_rendered", "PlotSuppressionReason", "");
+    stats = struct("RowCount", NaN, "UniqueXCount", NaN, "UniqueYCount", NaN, "NonNaNYCount", NaN, ...
+        "PlotType", spec.PlotType, "PlotRenderStatus", "not_rendered", "PlotSuppressionReason", "", ...
+        "CountsAsRealPlot", false, "VisualValidity", "unavailable", "WarningBannerText", "");
     if exist(sourceCsvPath, "file") == 2
         try
             sourceT = readtable(sourceCsvPath, "VariableNamingRule", "preserve");
         catch
             sourceT = table();
         end
-        x = iResolveColumn(sourceT, spec.XVariable);
-        y = iResolveColumn(sourceT, spec.YVariable);
-        stats = sixgr.visual.validatePlotData(spec.PlotType, x, y);
+        stats = sixgr.visual.evaluateVisualArtifactContract(spec, sourceT);
     else
         sourceT = table();
         stats.PlotRenderStatus = "source_csv_missing";
         stats.PlotSuppressionReason = "source_csv_missing";
         stats.CountsAsRealPlot = false;
+        stats.VisualValidity = "unavailable";
+        stats.WarningBannerText = "";
     end
     imageExists = exist(imagePath, "file") == 2;
+    unavailableImageExists = exist(unavailableImagePath, "file") == 2;
     isUnavailableCard = false;
     countsAsRealPlot = false;
     renderStatus = string(stats.PlotRenderStatus);
     suppressionReason = string(stats.PlotSuppressionReason);
+    visualValidity = string(iStructField(stats, "VisualValidity", "unavailable"));
+    warningBannerText = string(iStructField(stats, "WarningBannerText", ""));
+    manifestImagePath = string(spec.ImagePath);
     if imageExists && renderStatus == "rendered"
-        countsAsRealPlot = true;
-        renderStatus = "rendered_real_plot";
-    elseif imageExists
+        if visualValidity == "diagnostic_only"
+            countsAsRealPlot = false;
+            renderStatus = "rendered_diagnostic_plot";
+            if strlength(warningBannerText) == 0
+                warningBannerText = "DIAGNOSTIC ONLY - not counted as real LLS evidence";
+            end
+        else
+            countsAsRealPlot = true;
+            visualValidity = "real_lls_evidence";
+            renderStatus = "rendered_real_plot";
+        end
+    elseif imageExists && renderStatus ~= "rendered"
+        countsAsRealPlot = false;
+        visualValidity = "invalid_stale";
+        renderStatus = "invalid_stale_artifact";
+        if strlength(suppressionReason) == 0
+            suppressionReason = "stale_artifact_source_contract_failed";
+        end
+    elseif unavailableImageExists
         isUnavailableCard = true;
         renderStatus = "rendered_unavailable_card";
+        visualValidity = "unavailable";
+        manifestImagePath = sixgr.visual.unavailableArtifactPath(spec.ImagePath);
         if strlength(suppressionReason) == 0
             suppressionReason = "insufficient_source_data";
         end
     elseif renderStatus ~= "rendered"
         renderStatus = "suppressed";
+        visualValidity = "unavailable";
+    else
+        renderStatus = "not_rendered";
+        countsAsRealPlot = false;
     end
+    artifactInfo = sixgr.visual.inspectVisualArtifactFile(fullfile(runFolder, char(manifestImagePath)));
     rows(end + 1, 1) = sixgr.visual.writePlotManifestRow( ... %#ok<AGROW>
-        spec.PlotId, spec.ImagePath, spec.SourceCSV, spec.SourceCSV, spec.XVariable, spec.YVariable, stats, ...
+        spec.PlotId, manifestImagePath, spec.SourceCSV, spec.SourceCSV, spec.XVariable, spec.YVariable, stats, ...
         "PlotType", spec.PlotType, ...
         "PlotRenderStatus", renderStatus, ...
         "PlotSuppressionReason", suppressionReason, ...
         "IsUnavailableCard", isUnavailableCard, ...
         "CountsAsRealPlot", countsAsRealPlot, ...
+        "VisualValidity", visualValidity, ...
+        "WarningBannerText", warningBannerText, ...
         "AggregationMethod", spec.AggregationMethod, ...
         "RawRowCount", double(height(sourceT)), ...
         "AggregatedRowCount", double(height(sourceT)), ...
-        "DuplicateRowCount", double(iDuplicateRowCount(sourceT)));
+        "DuplicateRowCount", double(iDuplicateRowCount(sourceT)), ...
+        "ActualMimeType", artifactInfo.actual_mime_type, ...
+        "DeclaredMimeType", artifactInfo.declared_mime_type, ...
+        "Extension", artifactInfo.extension, ...
+        "SHA256", artifactInfo.sha256, ...
+        "ByteCount", artifactInfo.byte_count);
 end
 T = struct2table(rows);
 end
@@ -72,7 +109,8 @@ if ~(istable(manifestT) && ~isempty(manifestT))
     T = table();
     return;
 end
-T = manifestT(:, intersect(["PlotId","ImagePath","PlotRenderStatus","PlotSuppressionReason","IsUnavailableCard","CountsAsRealPlot"], string(manifestT.Properties.VariableNames), 'stable'));
+T = manifestT(:, intersect(["PlotId","ImagePath","PlotRenderStatus","PlotSuppressionReason","IsUnavailableCard","CountsAsRealPlot","VisualValidity","WarningBannerText", ...
+    "actual_mime_type","declared_mime_type","extension","sha256","byte_count"], string(manifestT.Properties.VariableNames), 'stable'));
 end
 
 function T = iBuildChartSourceRegistryTable(manifestT)
@@ -85,8 +123,8 @@ T = table( ...
     repmat("sixgr.truth.buildLLSReportingProvenanceTables", height(manifestT), 1), ...
     repmat("+sixgr/+truth/buildLLSReportingProvenanceTables.m", height(manifestT), 1), ...
     repmat("plot_source_csv", height(manifestT), 1), ...
-    string(manifestT.XVariable), string(manifestT.YVariables), string(manifestT.PlotRenderStatus), ...
-    'VariableNames', ["PlotId","SourceCSV","SourceTable","SourceFunction","SourceMATLABFile","RuntimeEvidenceStatus","XVariable","YVariables","DerivationStatus"]);
+    string(manifestT.XVariable), string(manifestT.YVariables), string(manifestT.PlotRenderStatus), string(manifestT.VisualValidity), ...
+    'VariableNames', ["PlotId","SourceCSV","SourceTable","SourceFunction","SourceMATLABFile","RuntimeEvidenceStatus","XVariable","YVariables","DerivationStatus","VisualValidity"]);
 end
 
 function T = iBuildPlotSuppressionTable(manifestT)
@@ -95,7 +133,7 @@ if ~(istable(manifestT) && ~isempty(manifestT))
     return;
 end
 mask = string(manifestT.PlotRenderStatus) ~= "rendered_real_plot";
-T = manifestT(mask, intersect(["PlotId","ImagePath","PlotRenderStatus","PlotSuppressionReason","IsUnavailableCard"], string(manifestT.Properties.VariableNames), 'stable'));
+T = manifestT(mask, intersect(["PlotId","ImagePath","PlotRenderStatus","PlotSuppressionReason","IsUnavailableCard","VisualValidity","WarningBannerText"], string(manifestT.Properties.VariableNames), 'stable'));
 end
 
 function T = iBuildUnavailablePlotCardRegistryTable(manifestT)
@@ -104,7 +142,7 @@ if ~(istable(manifestT) && ~isempty(manifestT))
     return;
 end
 mask = logical(manifestT.IsUnavailableCard);
-T = manifestT(mask, intersect(["PlotId","ImagePath","SourceCSV","PlotSuppressionReason"], string(manifestT.Properties.VariableNames), 'stable'));
+T = manifestT(mask, intersect(["PlotId","ImagePath","SourceCSV","PlotSuppressionReason","VisualValidity"], string(manifestT.Properties.VariableNames), 'stable'));
 end
 
 function T = iBuildPlotDataQualityTable(manifestT)
@@ -112,7 +150,7 @@ if ~(istable(manifestT) && ~isempty(manifestT))
     T = table();
     return;
 end
-T = manifestT(:, intersect(["PlotId","SourceCSV","RowCount","UniqueXCount","NonNaNYCount","PlotType","PlotRenderStatus","CountsAsRealPlot"], string(manifestT.Properties.VariableNames), 'stable'));
+T = manifestT(:, intersect(["PlotId","SourceCSV","RowCount","UniqueXCount","UniqueYCount","NonNaNYCount","PlotType","PlotRenderStatus","CountsAsRealPlot","VisualValidity"], string(manifestT.Properties.VariableNames), 'stable'));
 end
 
 function T = iBuildLineageTable(currentTables, logicalPaths, contractRows, meta)
@@ -230,6 +268,14 @@ catch
 end
 end
 
+function value = iStructField(s, name, fallback)
+if isstruct(s) && isfield(s, name)
+    value = s.(name);
+else
+    value = fallback;
+end
+end
+
 function values = iResolveColumn(T, columnName)
 values = [];
 if ~(istable(T) && ~isempty(T))
@@ -260,6 +306,11 @@ end
 end
 
 function specs = iPlotSpecs()
+contractSpecs = sixgr.visual.loadVisualArtifactContract();
+if ~isempty(contractSpecs)
+    specs = contractSpecs;
+    return;
+end
 specs = [ ...
     iSpec("bler_vs_snr", "reports/image/bler_vs_snr.png", "reports/csv/bler_vs_snr.csv", "SNR_dB", "MetricValue", "relation", "none"), ...
     iSpec("throughput_vs_snr", "reports/image/throughput_vs_snr.png", "reports/csv/throughput_vs_snr.csv", "SNR_dB", "MetricValue", "relation", "none"), ...
@@ -280,10 +331,10 @@ specs = [ ...
     iSpec("heatmap_band_feature_kpi", "reports/image/heatmap_band_feature_kpi.png", "reports/csv/per_scenario_summary_tables.csv", "ScenarioID", "DL_Throughput_Mbps_mean", "heatmap", "summary_heatmap"), ...
     iSpec("heatmap_impairment_kpi", "reports/image/heatmap_impairment_kpi.png", "reports/csv/per_scenario_summary_tables.csv", "ScenarioID", "DL_BLER_mean", "heatmap", "summary_heatmap"), ...
     iSpec("heatmap_beam_rank_trp_kpi", "reports/image/heatmap_beam_rank_trp_kpi.png", "reports/csv/per_scenario_summary_tables.csv", "ScenarioID", "UL_Throughput_Mbps_mean", "heatmap", "summary_heatmap"), ...
-    iSpec("equalized_constellations", "reports/image/equalized_constellations.png", "reports/csv/equalized_constellations.csv", "SampleIndex", "EqualizedReal", "relation", "runtime_samples"), ...
+    iSpec("equalized_constellations", "reports/image/equalized_constellations.png", "reports/csv/equalized_constellations.csv", "equalized_i", "equalized_q", "scatter", "runtime_constellation_by_direction_modulation_layer_snr"), ...
     iSpec("llr_histograms", "reports/image/llr_histograms.png", "reports/csv/llr_histograms.csv", "BinStart", "Count", "histogram", "binned_summary"), ...
     iSpec("cfo_to_tracking_traces", "reports/image/cfo_to_tracking_traces.png", "reports/csv/cfo_to_tracking_traces.csv", "Frame", "ResidualCFO_PostCorrection_Hz", "trace", "runtime_trace"), ...
-    iSpec("prach_correlation_traces", "reports/image/prach_correlation_traces.png", "reports/csv/prach_correlation_traces.csv", "PRACHTrialIndex", "DetectionMetric", "trace", "runtime_trace"), ...
+    iSpec("prach_correlation_traces", "reports/image/prach_correlation_traces.png", "reports/csv/prach_correlation_trace.csv", "lag_samples", "correlation_abs", "trace", "runtime_prach_lag_correlation_trace"), ...
     iSpec("ai_confidence_trace", "reports/image/ai_confidence_trace.png", "reports/csv/ai_confidence_trace.csv", "InvocationIndex", "ConfidenceScore", "trace", "runtime_trace"), ...
     iSpec("prb_allocation_heatmap", "reports/image/prb_allocation_heatmap.png", "reports/csv/prb_allocation_heatmap.csv", "slot", "occupancy_count", "heatmap", "aggregated_heatmap"), ...
     iSpec("power_energy_cumulative", "reports/image/power_energy_cumulative.png", "rf/csv/power_energy_table.csv", "timestamp_sim_ms", "cumulative_energy_J", "trace", "runtime_trace") ...
@@ -292,7 +343,15 @@ end
 
 function spec = iSpec(plotId, imagePath, sourceCsv, xVariable, yVariable, plotType, aggregationMethod)
 spec = struct("PlotId", string(plotId), "ImagePath", string(imagePath), "SourceCSV", string(sourceCsv), ...
-    "XVariable", string(xVariable), "YVariable", string(yVariable), "PlotType", string(plotType), "AggregationMethod", string(aggregationMethod));
+    "FilePath", string(imagePath), ...
+    "RequiredColumns", [string(xVariable); string(yVariable)], ...
+    "XVariable", string(xVariable), "YVariable", string(yVariable), ...
+    "XSemantics", "", "YSemantics", "", "Units", "", ...
+    "MinRows", 2, "MinUniqueX", 1, "MinUniqueY", 1, ...
+    "AllowedTruthStatus", "real_lls_evidence", "AllowedCurveConstruction", string(aggregationMethod), ...
+    "PlotType", string(plotType), "PlotKind", string(plotType), ...
+    "LLSValidity", "real_lls_evidence", ...
+    "AggregationMethod", string(aggregationMethod));
 end
 
 function out = iIf(cond, a, b)

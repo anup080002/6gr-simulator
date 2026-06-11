@@ -38,6 +38,7 @@ assert(isfield(out, "Tables") && isempty(fieldnames(out.Tables)), ...
     "Output-coverage exporter must not retain full runtime tables in its returned struct once canonical CSV artifacts have been written.");
 
 registryPath = fullfile(layout.ReportCSVDir, "output_coverage_registry.csv");
+implementationRegisterPath = fullfile(layout.ReportCSVDir, "lls_implementation_register.csv");
 unavailablePath = fullfile(layout.ReportCSVDir, "honest_unavailable_registry.csv");
 energyPath = fullfile(layout.RFCSVDir, "power_energy_table.csv");
 livePowerPath = fullfile(layout.ReportCSVDir, "live_power_runtime_table.csv");
@@ -61,6 +62,7 @@ latencyPath = fullfile(layout.ReportCSVDir, "table_latency.csv");
 latencyCDFPath = fullfile(layout.ReportCSVDir, "latency_cdf_plot.csv");
 comparePath = fullfile(layout.ReportCSVDir, "compare_run_prerequisites.csv");
 issuePath = fullfile(layout.ReportCSVDir, "result_issue_registry.csv");
+kpiHealthPath = fullfile(layout.ReportCSVDir, "kpi_health_flags.csv");
 anomalyPath = fullfile(layout.ReportCSVDir, "anomaly_window_table.csv");
 crossLayerPath = fullfile(layout.ReportCSVDir, "cross_layer_correlation_table.csv");
 hotspotPath = fullfile(layout.ReportCSVDir, "hotspot_analytics_table.csv");
@@ -98,6 +100,8 @@ contractPath = fullfile(layout.ReportCSVDir, "lls_output_contract.csv");
 metricCatalogPath = fullfile(layout.ReportCSVDir, "metric_definition_catalog.csv");
 metricUnitRolePath = fullfile(layout.ReportCSVDir, "metric_unit_role_catalog.csv");
 plotManifestPath = fullfile(layout.ReportCSVDir, "plot_manifest.csv");
+visualArtifactAuditPath = fullfile(layout.ReportCSVDir, "visual_artifact_audit.csv");
+visualArtifactAuditMDPath = fullfile(layout.ReportDir, "visual_artifact_audit.md");
 plotRenderStatusPath = fullfile(layout.ReportCSVDir, "plot_render_status.csv");
 chartRegistryPath = fullfile(layout.ReportCSVDir, "chart_source_registry.csv");
 plotDataQualityPath = fullfile(layout.ReportCSVDir, "plot_data_quality_table.csv");
@@ -107,6 +111,7 @@ lineagePath = fullfile(layout.ReportCSVDir, "raw_to_derived_lineage.csv");
 fieldAvailabilityPath = fullfile(layout.ReportCSVDir, "table_field_availability_matrix.csv");
 
 assert(exist(registryPath, "file") == 2, "Output coverage registry must be persisted.");
+assert(exist(implementationRegisterPath, "file") == 2, "LLS implementation register must be persisted.");
 assert(exist(unavailablePath, "file") == 2, "Honest unavailable registry must be persisted.");
 assert(exist(energyPath, "file") == 2, "Power/energy table must be persisted when energy telemetry exists.");
 assert(exist(livePowerPath, "file") == 2, "Canonical live power runtime table must be persisted when energy telemetry exists.");
@@ -130,6 +135,7 @@ assert(exist(latencyPath, "file") == 2, "Latency table must be persisted when ru
 assert(exist(latencyCDFPath, "file") == 2, "Latency CDF table must be derived from runtime latency rows.");
 assert(exist(comparePath, "file") == 2, "Compare-run prerequisite table must be persisted.");
 assert(exist(issuePath, "file") == 2, "Result issue registry must be persisted when runtime issue evidence exists.");
+assert(exist(kpiHealthPath, "file") == 2, "KPI health flags table must be persisted for reporting integrity.");
 assert(exist(anomalyPath, "file") == 2, "Anomaly window table must be derived from issue registry rows.");
 assert(exist(crossLayerPath, "file") == 2, "Cross-layer correlation table must be derived from runtime scheduler rows.");
 assert(exist(hotspotPath, "file") == 2, "Hotspot analytics table must be derived from runtime UE summary rows.");
@@ -167,6 +173,8 @@ assert(exist(contractPath, "file") == 2, "LLS output contract CSV must be persis
 assert(exist(metricCatalogPath, "file") == 2, "Metric definition catalog must be persisted.");
 assert(exist(metricUnitRolePath, "file") == 2, "Metric unit/role catalog must be persisted.");
 assert(exist(plotManifestPath, "file") == 2, "Plot manifest must be persisted.");
+assert(exist(visualArtifactAuditPath, "file") == 2, "Visual artifact audit CSV must be persisted.");
+assert(exist(visualArtifactAuditMDPath, "file") == 2, "Visual artifact audit markdown must be persisted.");
 assert(exist(plotRenderStatusPath, "file") == 2, "Plot render-status table must be persisted.");
 assert(exist(chartRegistryPath, "file") == 2, "Chart source registry must be persisted.");
 assert(exist(plotDataQualityPath, "file") == 2, "Plot data-quality table must be persisted.");
@@ -176,6 +184,7 @@ assert(exist(lineagePath, "file") == 2, "Raw-to-derived lineage table must be pe
 assert(exist(fieldAvailabilityPath, "file") == 2, "Table field-availability matrix must be persisted.");
 
 registry = readtable(registryPath, "VariableNamingRule", "preserve");
+implementationRegister = readtable(implementationRegisterPath, "VariableNamingRule", "preserve");
 unavailable = readtable(unavailablePath, "VariableNamingRule", "preserve");
 energy = readtable(energyPath, "VariableNamingRule", "preserve");
 livePower = readtable(livePowerPath, "VariableNamingRule", "preserve");
@@ -199,6 +208,7 @@ latency = readtable(latencyPath, "VariableNamingRule", "preserve");
 latencyCDF = readtable(latencyCDFPath, "VariableNamingRule", "preserve");
 compare = readtable(comparePath, "VariableNamingRule", "preserve");
 issues = readtable(issuePath, "VariableNamingRule", "preserve");
+kpiHealth = readtable(kpiHealthPath, "VariableNamingRule", "preserve");
 anomaly = readtable(anomalyPath, "VariableNamingRule", "preserve");
 crossLayer = readtable(crossLayerPath, "VariableNamingRule", "preserve");
 hotspot = readtable(hotspotPath, "VariableNamingRule", "preserve");
@@ -232,6 +242,7 @@ contract = readtable(contractPath, "VariableNamingRule", "preserve");
 metricCatalog = readtable(metricCatalogPath, "VariableNamingRule", "preserve");
 metricUnitRole = readtable(metricUnitRolePath, "VariableNamingRule", "preserve");
 plotManifest = readtable(plotManifestPath, "VariableNamingRule", "preserve");
+visualArtifactAudit = readtable(visualArtifactAuditPath, "VariableNamingRule", "preserve");
 plotRenderStatus = readtable(plotRenderStatusPath, "VariableNamingRule", "preserve");
 chartRegistry = readtable(chartRegistryPath, "VariableNamingRule", "preserve");
 plotDataQuality = readtable(plotDataQualityPath, "VariableNamingRule", "preserve");
@@ -251,7 +262,9 @@ localAssertRegistryRow(registry, "power_analytics", "implemented", "c");
 localAssertRegistryRow(registry, "energy_efficiency_analytics", "implemented", "c");
 localAssertRegistryRow(registry, "runtime_power_analytics", "implemented", "c");
 localAssertRegistryRow(registry, "sleep_state_analytics", "implemented", "c");
+localAssertRegistryRow(registry, "lls_implementation_register", "implemented", "c");
 localAssertRegistryRow(registry, "result_issue_registry", "implemented", "c");
+localAssertRegistryRow(registry, "kpi_health_flags", "implemented", "c");
 localAssertRegistryRow(registry, "live_prb_allocation", "implemented", "c");
 localAssertRegistryRow(registry, "prb_allocation_heatmap", "implemented", "c");
 localAssertRegistryRow(registry, "dl_resource_grid_heatmap", "implemented", "c");
@@ -293,6 +306,7 @@ localAssertRegistryRow(registry, "ssb_pbch_cell_search_table", "implemented", "c
 localAssertRegistryRow(registry, "noise_variance_evidence_table", "implemented", "c");
 localAssertRegistryRow(registry, "mcs_cqi_decision_trace_table", "implemented", "c");
 localAssertRegistryRow(registry, "plot_manifest", "implemented", "c");
+localAssertRegistryRow(registry, "visual_artifact_audit", "implemented", "c");
 localAssertRegistryRow(registry, "chart_source_registry", "implemented", "c");
 localAssertRegistryRow(registry, "raw_to_derived_lineage", "implemented", "c");
 localAssertRegistryRow(registry, "table_field_availability_matrix", "implemented", "c");
@@ -320,6 +334,26 @@ assert(ismember("status_code", string(registry.Properties.VariableNames)), ...
     "Coverage registry must expose row-level status_code.");
 assert(all(strcmp(string(registry.status_code), string(registry.current_status))), ...
     "Coverage registry status_code must reflect each row's current_status, not a blanket export status.");
+assert(~isempty(implementationRegister) && height(implementationRegister) == height(registry), ...
+    "Implementation register must provide one machine-readable status row for every coverage-registry output.");
+assert(all(ismember(["implementation_status","evidence_status","conformance_claim_allowed","runtime_row_count","source_artifact_ref","next_implementation_step"], ...
+    string(implementationRegister.Properties.VariableNames))), ...
+    "Implementation register must expose status, evidence, source, and next-action columns.");
+implementedRegisterMask = strcmp(string(implementationRegister.implementation_status), "implemented");
+assert(all(localAsLogical(implementationRegister.conformance_claim_allowed(implementedRegisterMask))), ...
+    "Implemented register rows must be claimable only after evidence gates are satisfied.");
+nonImplementedRegisterMask = ~strcmp(string(implementationRegister.implementation_status), "implemented");
+assert(~any(localAsLogical(implementationRegister.conformance_claim_allowed(nonImplementedRegisterMask))), ...
+    "Partial, blocked, unavailable, and schema-only rows must not allow conformance claims.");
+assert(any(strcmp(string(implementationRegister.output_name), "csi_rs_table") & ...
+    strcmp(string(implementationRegister.implementation_status), "implemented") & ...
+    contains(string(implementationRegister.evidence_status), "runtime_evidence_complete")), ...
+    "Implementation register must capture runtime evidence for implemented CSI-RS output.");
+assert(~isempty(kpiHealth) && all(ismember(["kpi_name","health_status","runtime_row_count","finite_sample_count","proxy_fallback_sample_count","recommended_action"], ...
+    string(kpiHealth.Properties.VariableNames))), ...
+    "KPI health flags must expose source-row health, finite counts, proxy/fallback counts, and remediation text.");
+assert(any(strcmp(string(kpiHealth.kpi_name), "dl_mcs_index") & double(kpiHealth.finite_sample_count) > 0), ...
+    "KPI health flags must audit DL MCS values from runtime trial rows.");
 
 assert(~isempty(unavailable), "Unavailable output metadata must exist for backend gaps.");
 assert(~any(strcmp(string(unavailable.output_name), "table_latency")), ...
@@ -440,14 +474,21 @@ assert(~isempty(metricUnitRole) && any(strcmp(string(metricUnitRole.MetricName),
     "Metric unit/role catalog must mirror the metric contract.");
 assert(~isempty(plotManifest) && any(strcmp(string(plotManifest.PlotId), "power_energy_cumulative") & logical(plotManifest.CountsAsRealPlot)), ...
     "Plot manifest must mark real rendered plots explicitly.");
+assert(~isempty(plotManifest) && ismember("VisualValidity", string(plotManifest.Properties.VariableNames)) && ...
+    all(ismember(string(plotManifest.VisualValidity), ["real_lls_evidence","diagnostic_only","unavailable","invalid_stale"])), ...
+    "Plot manifest must expose strict visual validity for every plot.");
+assert(~isempty(visualArtifactAudit) && all(ismember(["plot_id","artifact_path","audit_ok","failure_code","failure_reason"], string(visualArtifactAudit.Properties.VariableNames))), ...
+    "Visual artifact audit must expose strict audit status and failure details.");
 assert(~isempty(plotManifest) && all(strlength(string(plotManifest.SourceCSV)) > 0), ...
     "Every plot-manifest row must carry direct source CSV provenance.");
 assert(~isempty(plotRenderStatus) && any(strcmp(string(plotRenderStatus.PlotRenderStatus), "rendered_real_plot")), ...
     "Plot render-status table must distinguish real rendered plots from suppressed or unavailable entries.");
+assert(~isempty(plotRenderStatus) && ismember("VisualValidity", string(plotRenderStatus.Properties.VariableNames)), ...
+    "Plot render-status table must carry visual validity.");
 chartRegistryNames = lower(string(chartRegistry.Properties.VariableNames));
 assert(~isempty(chartRegistry) && numel(chartRegistryNames) >= 4, ...
     "Chart source registry must exist as a structured nonempty provenance table.");
-assert(~isempty(plotDataQuality) && all(ismember(["RowCount","UniqueXCount","NonNaNYCount","CountsAsRealPlot"], string(plotDataQuality.Properties.VariableNames))), ...
+assert(~isempty(plotDataQuality) && all(ismember(["RowCount","UniqueXCount","UniqueYCount","NonNaNYCount","CountsAsRealPlot","VisualValidity"], string(plotDataQuality.Properties.VariableNames))), ...
     "Plot data-quality table must expose row-count and validity statistics.");
 assert(~isempty(plotSuppression) && any(strcmp(string(plotSuppression.PlotRenderStatus), "suppressed")), ...
     "Plot suppression table must capture suppressed plots instead of silently counting them as rendered.");

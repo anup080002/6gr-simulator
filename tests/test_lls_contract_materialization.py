@@ -63,14 +63,68 @@ def main() -> None:
     assert "chart_name,chart_mode,x_label,y_label,point_index,x_value,y_value" in chart_csv
     assert "throughput,line,slot,throughput_mbps,1,1,12.5" in chart_csv
     assert "system/csv/system_time_series.csv" in chart_csv
+    assert "source_mapping_status" in chart_csv
+    assert "exact" in chart_csv
 
-    metric_key_dataset = materializer._dataset_from_rows(  # noqa: SLF001
-        "Metric key fallback",
-        ["MetricKey", "MetricName", "ValueNumeric"],
-        [["bler_runtime", "", "0.25"]],
+    assert materializer.EXACT_CHART_FAMILY_CONTRACTS["heatmap"]["required_columns"] == ("x_value", "y_value", "z_value")
+    assert materializer.EXACT_CHART_FAMILY_CONTRACTS["timeline"]["required_columns"] == ("x_value", "y_value")
+
+    for unsafe_chart_name in ["fake heatmap", "fake serving map", "fake beam timeline"]:
+        exact_dataset, mapping_status, reason = materializer._dataset_from_exact_chart_contract(  # noqa: SLF001
+            unsafe_chart_name,
+            "reports/csv/generic_numeric_source.csv",
+            ["Frame", "SomeMetric"],
+            [["1", "5"], ["2", "6"], ["3", "7"]],
+        )
+        assert exact_dataset is None
+        assert mapping_status == "invalid"
+        assert "Generic numeric-column inference is disabled" in reason or "exact direct source" in reason
+        invalid_csv = materializer._chart_dataset_csv(  # noqa: SLF001
+            37,
+            unsafe_chart_name,
+            exact_dataset,
+            "reports/csv/generic_numeric_source.csv",
+            3,
+            "invalid_source_mapping",
+            reason,
+            mapping_status,
+        ).decode("utf-8")
+        assert "source_mapping_status" in invalid_csv
+        assert "invalid" in invalid_csv
+        assert ",line," not in invalid_csv, "Unsafe chart families must not become generic line plots."
+
+    exact_timeline, mapping_status, _reason = materializer._dataset_from_exact_chart_contract(  # noqa: SLF001
+        "real runtime timeline",
+        "reports/csv/exact_chart_dataset.csv",
+        ["chart_mode", "x_label", "y_label", "x_value", "y_value"],
+        [["line", "slot", "metric", "1", "5"], ["line", "slot", "metric", "2", "6"], ["line", "slot", "metric", "3", "7"]],
     )
-    assert metric_key_dataset is not None
-    assert metric_key_dataset["tick_labels"] == ["bler_runtime"]
+    assert exact_timeline is not None
+    assert mapping_status == "exact"
+    assert exact_timeline["mode"] == "line"
+
+    constant_timeline, mapping_status, reason = materializer._dataset_from_exact_chart_contract(  # noqa: SLF001
+        "constant runtime timeline",
+        "reports/csv/exact_chart_dataset.csv",
+        ["chart_mode", "x_label", "y_label", "x_value", "y_value"],
+        [["line", "slot", "metric", "1", "5"], ["line", "slot", "metric", "2", "5"], ["line", "slot", "metric", "3", "5"]],
+    )
+    assert constant_timeline is None
+    assert mapping_status == "invalid"
+    assert "constant/single y-series" in reason
+
+    finalized = materializer._finalize_chart_materialization_result(  # noqa: SLF001
+        {
+            "csv_bytes": materializer._encode_csv(["run_id", "chart_name"], [[1, "unavailable chart"]]),  # noqa: SLF001
+            "img_bytes": b"<svg></svg>",
+            "csv_status": "unavailable_exact_reason",
+            "image_status": "generated_unavailable_reason_svg",
+        }
+    )
+    assert finalized is not None
+    finalized_csv = finalized["csv_bytes"].decode("utf-8")
+    assert "source_mapping_status" in finalized_csv
+    assert "unavailable" in finalized_csv
 
     impairment_section = next(
         section for section in analytics_sections if section["slug"] == "impairments-tracking-analytics"
@@ -249,7 +303,9 @@ def main() -> None:
     )
     assert throughput_time is not None
     assert throughput_time["csv_status"] == "specialized_runtime_throughput_timeline_dataset"
-    assert "series_name,chart_mode,x_label,y_label,x_value,y_value" in throughput_time["csv_bytes"].decode("utf-8")
+    throughput_time_text = throughput_time["csv_bytes"].decode("utf-8")
+    assert "series_name,chart_mode,x_label,y_label,x_value,y_value" in throughput_time_text
+    assert ",scatter," in throughput_time_text, "Two-slot throughput evidence must not be rendered as a fake line trend."
 
     bler_mcs = materializer._specialized_chart_materialization(  # noqa: SLF001
         "BLER vs MCS",
@@ -260,6 +316,125 @@ def main() -> None:
     assert bler_mcs is not None
     assert "mcs,bler,sample_count" in bler_mcs["csv_bytes"].decode("utf-8")
 
+    mixed_reliability_csv = materializer._encode_csv(  # noqa: SLF001
+        ["CRCPass", "BitsCompared", "BitErrors", "PostEqSINR_dB"],
+        [[1, 1000, 0, 18.0], [1, 1000, 10, 19.0]],
+    )
+    pucch_reliability_csv = materializer._encode_csv(  # noqa: SLF001
+        ["CRCPass", "DetectionAttempted", "BitsCompared"],
+        [[0, 1, 0]],
+    )
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 411,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        },
+        "air_interface/csv/pucch_trials.csv": {
+            "artifact_id": 412,
+            "logical_path": "air_interface/csv/pucch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        },
+    }
+    payloads = {411: mixed_reliability_csv, 412: pucch_reliability_csv}
+    bler_summary = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "BLER",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        16,
+    )
+    assert bler_summary is not None
+    bler_summary_text = bler_summary["csv_bytes"].decode("utf-8")
+    assert "BLER,0.0,2,air_interface/csv/dl_pdsch_trials.csv" in bler_summary_text
+    assert "pucch_trials" not in bler_summary_text, "Data-channel BLER must not mix PUCCH control decode failures into the denominator."
+
+    pucch_dtx_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "UEID", "CRCPass", "DetectionAttempted", "BitsCompared", "DTXFlag", "MissedDetection", "FalseAlarmFlag"],
+        [
+            [1, 7, 1, 1, 0, 0, 0, 0],
+            [2, 7, 0, 1, 0, 1, 0, 0],
+            [3, 7, 0, 1, 0, 0, 1, 0],
+        ],
+    )
+    existing = {
+        "air_interface/csv/pucch_trials.csv": {
+            "artifact_id": 421,
+            "logical_path": "air_interface/csv/pucch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {421: pucch_dtx_csv}
+    pucch_dtx = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "PUCCH DTX statistics",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        17,
+    )
+    assert pucch_dtx is not None
+    pucch_dtx_text = pucch_dtx["csv_bytes"].decode("utf-8")
+    assert "Decoded/observed" in pucch_dtx_text
+    assert "DTX" in pucch_dtx_text
+    assert "Missed detection" in pucch_dtx_text
+    assert "1.0,7,Decoded/observed" in pucch_dtx_text, "Zero compared bits alone must not convert a decoded PUCCH row into DTX."
+
+    beam_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "SelectedBeamIndex", "BestBeamIndex"],
+        [[1, 3, 5], [2, 4, 4]],
+    )
+    existing = {
+        "beamforming/csv/beam_precoder_table.csv": {
+            "artifact_id": 431,
+            "logical_path": "beamforming/csv/beam_precoder_table.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {431: beam_csv}
+    beam_gap = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "beam gain gap histogram",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        18,
+    )
+    assert beam_gap is not None
+    assert beam_gap["csv_status"] == "unavailable_exact_reason"
+    assert "Beam-index distance is not a dB gain gap" in beam_gap["csv_bytes"].decode("utf-8")
+
+    layer_quality_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "WidebandCQI", "MCSIndex", "Layers", "PostEqSINRPerLayer_dB"],
+        [[1, 12, 18, 2, "[14.5 11.25]"], [2, 10, 15, 2, "[12.0, 10.0]"]],
+    )
+    existing = {
+        "reports/csv/live_link_adaptation_input_table.csv": {
+            "artifact_id": 441,
+            "logical_path": "reports/csv/live_link_adaptation_input_table.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {441: layer_quality_csv}
+    layer_quality = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "per-layer quality plot",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        19,
+    )
+    assert layer_quality is not None
+    layer_text = layer_quality["csv_bytes"].decode("utf-8")
+    assert "1,13.25" in layer_text and "2,10.625" in layer_text
+
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 41,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {41: trial_csv}
     latency_cdf = materializer._specialized_chart_materialization(  # noqa: SLF001
         "latency CDF",
         existing,

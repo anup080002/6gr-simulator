@@ -48,6 +48,8 @@ assert(any(double(dl.ConfiguredLayers) == 2), "DL trials must preserve the confi
 assert(any(double(ul.ConfiguredLayers) == 2), "UL trials must preserve the configured layer count.");
 assert(all(double(dl.Layers) == 2), "DL waveform trials must execute at two layers in this scenario.");
 assert(all(double(ul.Layers) == 2), "UL waveform trials must execute at two layers in this scenario.");
+localAssertPerLayerSINR(dl, "DL", 2);
+localAssertPerLayerSINR(ul, "UL", 2);
 assert(ismember("BeamIndexSet", beam.Properties.VariableNames), "Beam diagnostics must export selected beam indices.");
 assert(ismember("PrecoderSource", beam.Properties.VariableNames), "Beam diagnostics must expose precoder provenance.");
 assert(any(strlength(string(beam.BeamIndexSet)) > 0), "Beam diagnostics must include selected beam indices.");
@@ -66,4 +68,42 @@ assert(isfield(manifest, "BeamSelectionStrategy"), ...
 assert(~isempty(summary), "Multi-user summary must not be empty.");
 
 ok = true;
+end
+
+function localAssertPerLayerSINR(T, linkLabel, expectedLayers)
+vars = string(T.Properties.VariableNames);
+assert(ismember("PostEqSINRPerLayer_dB", vars), ...
+    "%s trials must export per-layer post-equalization SINR.", linkLabel);
+
+if ismember("Layers", vars)
+    rows = find(double(T.Layers) == expectedLayers);
+else
+    rows = (1:height(T)).';
+end
+assert(~isempty(rows), "%s trials must include %d-layer rows.", linkLabel, expectedLayers);
+
+tokens = string(T.PostEqSINRPerLayer_dB);
+for ii = reshape(rows, 1, [])
+    values = localParseNumericVector(tokens(ii));
+    assert(numel(values) == expectedLayers, ...
+        "%s row %d must expose one post-equalization SINR value per layer; got '%s'.", ...
+        linkLabel, ii, char(tokens(ii)));
+    assert(all(isfinite(values)), ...
+        "%s row %d per-layer post-equalization SINR must be finite.", linkLabel, ii);
+end
+end
+
+function values = localParseNumericVector(token)
+token = string(token);
+if ismissing(token) || strlength(strtrim(token)) == 0
+    values = [];
+    return;
+end
+
+raw = char(token);
+raw = strrep(raw, "[", "");
+raw = strrep(raw, "]", "");
+parts = regexp(raw, "[\|\s,;]+", "split");
+parts = parts(~cellfun(@isempty, parts));
+values = str2double(parts);
 end

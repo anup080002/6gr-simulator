@@ -427,13 +427,18 @@ study = sixgr.rach.runPRACHLLS(cfg, ...
     "Verbose", false);
 
 [controlTrialT, initialAccessT, correlationTraceT] = localBuildPRACHRunnerTables(study, cfg);
+probabilitySweepT = localBuildPRACHProbabilitySweepTable(study);
 controlTrace = struct();
 if localShouldWriteCSV(scfg)
     sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_trials.csv"), controlTrialT);
     sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_summary.csv"), study.SummaryBySNR);
     sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "prach_trials.csv"), controlTrialT);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "initial_access_random_access_outputs.csv"), initialAccessT);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_correlation_trace.csv"), correlationTraceT);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv"), correlationTraceT);
+    if istable(probabilitySweepT) && ~isempty(probabilitySweepT)
+        sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_probability_sweeps.csv"), probabilitySweepT);
+    end
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_summary_by_snr.csv"), study.SummaryBySNR);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_summary_by_scenario.csv"), study.SummaryByScenario);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "prach_confusion_detection_types.csv"), study.Confusion);
@@ -591,49 +596,90 @@ if istable(initialAccessT) && ~isempty(initialAccessT)
     initialAccessT.ChannelModel = repmat(string(sixgr.util.structGet(cfg, "prach_lls.ChannelModel", "")), height(initialAccessT), 1);
 end
 
-correlationTraceT = table( ...
-    controlTrialT.Frame, ...
-    controlTrialT.Slot, ...
-    controlTrialT.SNR_dB, ...
-    controlTrialT.AppliedAWGNSNR_dB, ...
-    controlTrialT.DetectionMetric, ...
-    controlTrialT.CorrelationPeak, ...
-    controlTrialT.DetectionThreshold, ...
-    controlTrialT.DetectorNoiseFloor, ...
-    controlTrialT.NoiseOnlyDetectionMetric, ...
-    controlTrialT.NoiseVariance, ...
-    controlTrialT.FalseAlarmFlag, ...
-    controlTrialT.MissedDetection, ...
-    controlTrialT.RequestedPreambleIndex, ...
-    controlTrialT.DetectedPreambleIndex, ...
-    controlTrialT.PreambleIndexFromPeak, ...
-    controlTrialT.PRACHRootSequenceIndex, ...
-    controlTrialT.PRACHZeroCorrelationZone, ...
-    controlTrialT.PRACHConfigurationIndex, ...
-    controlTrialT.PRACHOccasionIndex, ...
-    controlTrialT.PRACHCarrierSlot, ...
-    controlTrialT.TimingError_samples, ...
-    controlTrialT.TimingAdvance_samples, ...
-    controlTrialT.TimingAdvance_us, ...
-    nan(nRows, 1), ...
-    nan(nRows, 1), ...
-    nan(nRows, 1), ...
-    nan(nRows, 1), ...
-    nan(nRows, 1), ...
-    controlTrialT.ChannelModelApplied, ...
-    controlTrialT.ChannelFadingApplied, ...
-    controlTrialT.ComputeLatency_ms, ...
-    controlTrialT.AirInterfaceObservation_ms, ...
-    controlTrialT.Status, ...
-    controlTrialT.Notes, ...
-    repmat("air_interface/csv/prach_trials.csv", nRows, 1), ...
-    'VariableNames', {'Frame','Slot','SNR_dB','AppliedAWGNSNR_dB','DetectionMetric','CorrelationPeak','DetectionThreshold', ...
-    'DetectorNoiseFloor','NoiseOnlyDetectionMetric','NoiseVariance','FalseAlarmFlag','MissedDetection', ...
-    'RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
-    'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
-    'TimingError_samples','TimingAdvance_samples','TimingAdvance_us', ...
-    'AppliedPathloss_dB','AppliedO2I_dB','AppliedShadowFading_dB','InjectedCFO_Hz','InjectedTimingOffset_samples', ...
-    'ChannelModelApplied','ChannelFadingApplied','ComputeLatency_ms','AirInterfaceObservation_ms','Status','Notes','SourceArtifact'});
+correlationTraceT = sixgr.util.structGet(study, "CorrelationTraceTable", table());
+if istable(correlationTraceT) && ~isempty(correlationTraceT)
+    correlationTraceT = localNormalizePRACHCorrelationTraceTable(correlationTraceT);
+else
+    correlationTraceT = table();
+end
+end
+
+function T = localNormalizePRACHCorrelationTraceTable(T)
+requiredNames = ["trial_id","preamble_index","root_sequence_index","restricted_set_type","n_cs", ...
+    "zero_correlation_zone_config","lag_samples","lag_us","correlation_abs","threshold", ...
+    "noise_floor","peak_lag_samples","timing_advance_samples","detection_result", ...
+    "false_alarm","missed_detection","snr_db","cfo_hz","seed","truth_status"];
+for i = 1:numel(requiredNames)
+    name = requiredNames(i);
+    if ismember(name, string(T.Properties.VariableNames))
+        continue;
+    end
+    if any(name == ["restricted_set_type","detection_result","truth_status"])
+        T.(name) = strings(height(T), 1);
+    elseif any(name == ["false_alarm","missed_detection"])
+        T.(name) = false(height(T), 1);
+    else
+        T.(name) = nan(height(T), 1);
+    end
+end
+T = T(:, requiredNames);
+end
+
+function T = localBuildPRACHProbabilitySweepTable(study)
+roT = sixgr.util.structGet(study, "ROTable", table());
+if ~(istable(roT) && ~isempty(roT))
+    T = table();
+    return;
+end
+parts = { ...
+    localPRACHProbabilitySweepAxis(roT, "snr_db", "SNR_dB"), ...
+    localPRACHProbabilitySweepAxis(roT, "cfo_true_hz", "CFO_Hz"), ...
+    localPRACHProbabilitySweepAxis(roT, "timing_error_us", "TimingError_us")};
+T = localVertcatTables(parts);
+end
+
+function T = localPRACHProbabilitySweepAxis(roT, sourceColumn, axisName)
+T = table();
+if ~ismember(sourceColumn, string(roT.Properties.VariableNames))
+    return;
+end
+x = double(roT.(sourceColumn));
+valid = isfinite(x);
+if numel(unique(x(valid))) < 2
+    return;
+end
+detected = localRunnerColumnOrDefault(roT, "detected_flag", zeros(height(roT), 1));
+missed = localRunnerColumnOrDefault(roT, "missed_detection_flag", zeros(height(roT), 1));
+falseAlarm = localRunnerColumnOrDefault(roT, "false_alarm_flag", zeros(height(roT), 1));
+vals = unique(x(valid));
+rows = repmat(struct("sweep_axis", "", "x_value", NaN, "n_trials", 0, ...
+    "detection_probability", NaN, "miss_detection_probability", NaN, ...
+    "false_alarm_probability", NaN, "truth_status", "real_lls_evidence"), numel(vals), 1);
+for i = 1:numel(vals)
+    mask = valid & x == vals(i);
+    rows(i).sweep_axis = string(axisName);
+    rows(i).x_value = double(vals(i));
+    rows(i).n_trials = double(sum(mask));
+    rows(i).detection_probability = mean(double(detected(mask)), "omitnan");
+    rows(i).miss_detection_probability = mean(double(missed(mask)), "omitnan");
+    rows(i).false_alarm_probability = mean(double(falseAlarm(mask)), "omitnan");
+end
+T = struct2table(rows);
+end
+
+function T = localVertcatTables(parts)
+T = table();
+for i = 1:numel(parts)
+    Ti = parts{i};
+    if ~(istable(Ti) && ~isempty(Ti))
+        continue;
+    end
+    if isempty(T)
+        T = Ti;
+    else
+        T = [T; Ti]; %#ok<AGROW>
+    end
+end
 end
 
 function values = localRunnerColumnOrDefault(T, varName, defaultValues)
@@ -1170,6 +1216,8 @@ try
     configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
     reportBundle.ConfigOwnershipArtifacts = configOwnership;
     scenarioStatus = localApplyRuntimeTruthContract(preTruthScenarioStatus, result, scfg, cfg, runFolder);
+    scenarioStatus = localApplyVisualArtifactIntegrityStatus(scenarioStatus, ...
+        sixgr.util.structGet(outputCoverage, "VisualArtifactIntegrity", table()));
     result = localApplyScenarioStatus(result, scenarioStatus);
     localDBLog("INFO", "Runtime truth contract re-evaluated after final artifact exports: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
         double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
@@ -1803,6 +1851,9 @@ manifest.StrictTruthFailureCount = double(scenarioStatus.StrictTruthFailureCount
 manifest.StrictProxyGuardFailureCount = double(scenarioStatus.StrictProxyGuardFailureCount);
 manifest.CanonicalArtifactGapCount = double(scenarioStatus.CanonicalArtifactGapCount);
 manifest.RuntimeTruthContractFailures = cellstr(string(scenarioStatus.RuntimeTruthContractFailures(:)));
+manifest.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true));
+manifest.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0));
+manifest.VisualArtifactIntegrityFailures = cellstr(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1))));
 end
 
 function txt = localUTCStamp()
@@ -1847,6 +1898,8 @@ payload = struct( ...
     "strict_truth_failure_count", double(scenarioStatus.StrictTruthFailureCount), ...
     "strict_proxy_guard_failure_count", double(scenarioStatus.StrictProxyGuardFailureCount), ...
     "canonical_artifact_gap_count", double(scenarioStatus.CanonicalArtifactGapCount), ...
+    "visual_artifact_integrity_ok", logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true)), ...
+    "visual_artifact_integrity_failure_count", double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0)), ...
     "error_source", string(scenarioStatus.ErrorSource), ...
     "error_identifier", string(scenarioStatus.ErrorIdentifier), ...
     "error_message", string(scenarioStatus.ErrorMessage), ...
@@ -2070,6 +2123,9 @@ T = table( ...
     double(scenarioStatus.StrictTruthFailureCount), ...
     double(scenarioStatus.StrictProxyGuardFailureCount), ...
     double(scenarioStatus.CanonicalArtifactGapCount), ...
+    logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true)), ...
+    double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0)), ...
+    string(strjoin(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1))), "; ")), ...
     string(strjoin(string(scenarioStatus.RuntimeTruthContractFailures(:)), "; ")), ...
     string(scfg.get("meta.description", "")), ...
     string(opSummary.RuntimeQualifiedDescription), ...
@@ -2117,7 +2173,7 @@ T = table( ...
     'RunScope','RunCompletion','Ok','ResultOk','PartialOk','ArtifactsGenerated', ...
     'RequiredCaseCount','RequiredFailureCount','OptionalPrunedCount','StatusAuthority', ...
     'RuntimeTruthContractOk','RoundtripMismatchCount','RequiredRuntimeEvidenceMissingCount', ...
-    'StrictTruthFailureCount','StrictProxyGuardFailureCount','CanonicalArtifactGapCount','RuntimeTruthContractFailures','Description', ...
+    'StrictTruthFailureCount','StrictProxyGuardFailureCount','CanonicalArtifactGapCount','VisualArtifactIntegrityOk','VisualArtifactIntegrityFailureCount','VisualArtifactIntegrityFailures','RuntimeTruthContractFailures','Description', ...
     'RuntimeQualifiedDescription', ...
     'ConfiguredParameterSemantics','ConfiguredMIMO','ConfiguredDLNominalOperatingPoint','ConfiguredULNominalOperatingPoint', ...
     'ActiveGridNumRBs','ConfiguredGridNumRBs','ActiveGridSource','Numerology_mu','SCS_kHz','SlotDuration_ms','SlotsPerFrame','SymbolsPerSlot','NumerologySource','TimingInterpretationSource','ActiveDuplexMode','ConfiguredTDDPattern','ActiveTDDPattern','TDDPatternApplicable', ...
@@ -2386,6 +2442,7 @@ dirs = { ...
 for i = 1:numel(dirs)
     sixgr.util.ensureFolder(dirs{i});
 end
+sixgr.visual.clearRunImageDirectories(layout.Root);
 end
 
 function leaf = localResolveLeaf(runTag)
@@ -3205,6 +3262,9 @@ status.StrictTruthFailureCount = 0;
 status.StrictProxyGuardFailureCount = 0;
 status.CanonicalArtifactGapCount = 0;
 status.RuntimeTruthContractFailures = strings(0, 1);
+status.VisualArtifactIntegrityOk = true;
+status.VisualArtifactIntegrityFailureCount = 0;
+status.VisualArtifactIntegrityFailures = strings(0, 1);
 status.WarningCount = 0;
 status.FailingCaseCount = 0;
 status.CaseOk = logical(status.ResultOk);
@@ -3280,6 +3340,64 @@ else
 end
 end
 
+function status = localApplyVisualArtifactIntegrityStatus(status, visualIntegrity)
+if ~(istable(visualIntegrity) && ~isempty(visualIntegrity) && ismember("IntegrityOk", string(visualIntegrity.Properties.VariableNames)))
+    status.VisualArtifactIntegrityOk = true;
+    status.VisualArtifactIntegrityFailureCount = 0;
+    status.VisualArtifactIntegrityFailures = strings(0, 1);
+    return;
+end
+okMask = logical(visualIntegrity.IntegrityOk);
+bad = visualIntegrity(~okMask, :);
+status.VisualArtifactIntegrityOk = isempty(bad);
+status.VisualArtifactIntegrityFailureCount = double(height(bad));
+status.VisualArtifactIntegrityFailures = localVisualArtifactFailureStrings(bad);
+if isempty(bad)
+    return;
+end
+status.ResultOk = false;
+status.CaseOk = false;
+status.PartialOk = logical(status.ArtifactsGenerated);
+status.RunCompletion = "completed_with_failures";
+status.RequiredFailureCount = double(status.RequiredFailureCount) + double(height(bad));
+status.RequiredFailedCases = unique([string(status.RequiredFailedCases(:)); status.VisualArtifactIntegrityFailures(:)], "stable");
+status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+status.AuthoritativeStatusSource = "visual_artifact_integrity";
+status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+    "Run-level success is gated by visual artifact byte/signature integrity; extension/mime mismatches or stale suppressed PNGs force ResultOk=false.");
+if strlength(string(status.ErrorIdentifier)) == 0
+    status.ErrorSource = "visual_artifact_integrity";
+    status.ErrorIdentifier = "visual_artifact_integrity_failed";
+    status.ErrorMessage = char(strjoin(status.VisualArtifactIntegrityFailures, "; "));
+end
+end
+
+function failures = localVisualArtifactFailureStrings(T)
+if ~(istable(T) && ~isempty(T))
+    failures = strings(0, 1);
+    return;
+end
+paths = localStatusColumnAsString(T, "ArtifactPath", height(T));
+codes = localStatusColumnAsString(T, "FailureCode", height(T));
+reasons = localStatusColumnAsString(T, "FailureReason", height(T));
+failures = "visual_artifact_integrity:" + codes + ":" + paths;
+hasReason = strlength(strtrim(reasons)) > 0;
+failures(hasReason) = failures(hasReason) + ":" + reasons(hasReason);
+failures = unique(failures(:), "stable");
+end
+
+function values = localStatusColumnAsString(T, name, n)
+if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
+    values = string(T.(char(name)));
+else
+    values = strings(n, 1);
+end
+values = values(:);
+if numel(values) < n
+    values(end+1:n, 1) = "";
+end
+end
+
 function result = localApplyScenarioStatus(result, scenarioStatus)
 result.ProfileReportedOk = logical(sixgr.util.structGet(result, "Ok", true));
 result.Ok = logical(scenarioStatus.ResultOk);
@@ -3301,6 +3419,9 @@ result.StrictTruthFailureCount = double(scenarioStatus.StrictTruthFailureCount);
 result.StrictProxyGuardFailureCount = double(scenarioStatus.StrictProxyGuardFailureCount);
 result.CanonicalArtifactGapCount = double(scenarioStatus.CanonicalArtifactGapCount);
 result.RuntimeTruthContractFailures = string(scenarioStatus.RuntimeTruthContractFailures(:));
+result.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true));
+result.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0));
+result.VisualArtifactIntegrityFailures = string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1)));
 result.WarningCount = double(scenarioStatus.WarningCount);
 result.FailingCaseCount = double(scenarioStatus.FailingCaseCount);
 result.CaseOk = logical(scenarioStatus.CaseOk);

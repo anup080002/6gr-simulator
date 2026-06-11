@@ -568,6 +568,22 @@ if isfinite(eesmBeta_dB) && eesmBeta_dB > 0
     cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBeta_dB", double(eesmBeta_dB));
     cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBeta_dB", double(eesmBeta_dB));
 end
+eesmBetaByMCS_dB = double(localGetNested(s, "csi_acquisition_and_reporting.eesm_beta_by_mcs_db", ...
+    localGetNested(s, "link_adaptation.eesm_beta_by_mcs_db", [])));
+if ~isempty(eesmBetaByMCS_dB)
+    eesmBetaByMCS_dB = reshape(double(eesmBetaByMCS_dB), 1, []);
+    cfg = sixgr.util.structSet(cfg, "phy.csi.eesmBetaByMCS_dB", eesmBetaByMCS_dB);
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBetaByMCS_dB", eesmBetaByMCS_dB);
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBetaByMCS_dB", eesmBetaByMCS_dB);
+end
+eesmBetaMCSIndex = double(localGetNested(s, "csi_acquisition_and_reporting.eesm_beta_mcs_index", ...
+    localGetNested(s, "link_adaptation.eesm_beta_mcs_index", [])));
+if ~isempty(eesmBetaMCSIndex)
+    eesmBetaMCSIndex = reshape(double(eesmBetaMCSIndex), 1, []);
+    cfg = sixgr.util.structSet(cfg, "phy.csi.eesmBetaMCSIndex", eesmBetaMCSIndex);
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBetaMCSIndex", eesmBetaMCSIndex);
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBetaMCSIndex", eesmBetaMCSIndex);
+end
 targetBLER = double(localGetNested(s, "csi_acquisition_and_reporting.target_bler", ...
     localGetNested(s, "link_adaptation.target_bler", NaN)));
 if isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1
@@ -761,7 +777,20 @@ cfg.phy.harq.nProcesses = double(s.harq.process_count);
 cfg.phy.harq.rvSequence = double(s.harq.rv_sequence);
 cfg.mac.harq.enable = logical(s.harq.enabled);
 cfg.mac.harq.maxRetx = double(localRequireNested(s, "harq.max_retx", "harq.max_retx"));
-cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", double(s.harq.feedback_timing_slots));
+harqFeedbackTimingSlots = max(0, round(double(s.harq.feedback_timing_slots)));
+harqK2Slots = localNumericScalarOrNaN(localGetNested(s, "harq.k2", NaN));
+if ~(isfinite(harqK2Slots) && harqK2Slots >= 0)
+    harqK2Slots = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "mac.harq.k2", NaN));
+end
+if ~(isfinite(harqK2Slots) && harqK2Slots >= 0)
+    harqK2Slots = 1;
+end
+harqK2Slots = max(0, round(double(harqK2Slots)));
+cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", double(harqFeedbackTimingSlots));
+cfg = sixgr.util.structSet(cfg, "mac.harq.k1", double(harqFeedbackTimingSlots));
+cfg = sixgr.util.structSet(cfg, "mac.harq.k2", double(harqK2Slots));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.k2_slots", double(harqK2Slots));
+cfg = sixgr.util.structSet(cfg, "phy.ul.grantK2Slots", double(harqK2Slots));
 cfg = sixgr.util.structSet(cfg, "phy.harq.combiningMode", char(string(s.harq.combining_mode)));
 cfg = sixgr.util.structSet(cfg, "phy.harq.cbgEnabled", logical(s.harq.cbg_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.harq.validationMode", char(string(localRequireNested(s, "harq.validation_mode", "harq.validation_mode"))));
@@ -829,6 +858,22 @@ cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", logical(localRe
     "control_gating.trs_required", "control_gating.trs_required")));
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", max(0, round(double(localRequireNested(s, ...
     "control_gating.trs_max_age_slots", "control_gating.trs_max_age_slots")))));
+taUpdateMode = lower(strtrim(string(localGetNested(s, "control_gating.timing_advance_update_mode", "measurement_only"))));
+allowedTAUpdateModes = ["measurement_only","geometry_predictive","disabled"];
+if ~ismember(taUpdateMode, allowedTAUpdateModes)
+    error("sixgr:lls6g:config:InvalidTimingAdvanceUpdateMode", ...
+        "control_gating.timing_advance_update_mode='%s' is invalid. Allowed values are: %s.", ...
+        char(taUpdateMode), strjoin(allowedTAUpdateModes, ", "));
+end
+taUpdateThresholdSamples = double(localGetNested(s, "control_gating.timing_advance_update_threshold_samples", 1));
+if ~(isfinite(taUpdateThresholdSamples) && isscalar(taUpdateThresholdSamples) && taUpdateThresholdSamples >= 0)
+    error("sixgr:lls6g:config:InvalidTimingAdvanceUpdateThreshold", ...
+        "control_gating.timing_advance_update_threshold_samples must be a finite nonnegative scalar.");
+end
+cfg = sixgr.util.structSet(cfg, "run.controlGating.timingAdvanceUpdateMode", char(taUpdateMode));
+cfg = sixgr.util.structSet(cfg, "run.controlGating.timingAdvanceUpdateThresholdSamples", double(taUpdateThresholdSamples));
+cfg = sixgr.util.structSet(cfg, "control_gating.timing_advance_update_mode", char(taUpdateMode));
+cfg = sixgr.util.structSet(cfg, "control_gating.timing_advance_update_threshold_samples", double(taUpdateThresholdSamples));
 
 [dlModulation, dlCodeRate] = localResolveFixedMCSProfile(s, "DL");
 cfg.phy.pdsch.modulation = char(dlModulation);
@@ -875,6 +920,10 @@ if isfinite(bootstrapMCSIndex) && bootstrapMCSIndex >= 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", max(0, min(31, round(double(bootstrapMCSIndex)))));
 end
 cqiSmoothingAlpha = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
+cqiSmoothingMode = lower(strtrim(string(localGetNested(s, "link_adaptation.cqi_smoothing_mode", ""))));
+if strlength(cqiSmoothingMode) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingMode", char(cqiSmoothingMode));
+end
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", double(cqiSmoothingAlpha));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"

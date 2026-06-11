@@ -433,7 +433,10 @@ classdef (Abstract) SchedulerBase < handle
                 "OuterLoopApplied", false, ...
                 "OLLADeltaMCS", 0, ...
                 "OLLAUpdateCount", 0, ...
-                "OLLAState", "not_applicable");
+                "OLLAState", "not_applicable", ...
+                "MCSSelectionSource", "configured_profile", ...
+                "CQIProvenance", "unavailable", ...
+                "MCSValueStatus", "unresolved");
 
             ueMCSIndex = double(sixgr.util.structGet(ue, "MCSIndex", NaN));
             ueMCSIndexAuthority = lower(strtrim(string(sixgr.util.structGet(ue, "MCSIndexAuthority", ""))));
@@ -451,55 +454,69 @@ classdef (Abstract) SchedulerBase < handle
             if useExplicitUEMCSOverride
                 amc.Mode = "fixed_mcs";
                 amc.MCSIndex = round(ueMCSIndex);
+                amc.MCSSelectionSource = "explicit_ue_or_configured_fixed_mcs";
+                amc.CQIProvenance = "not_used_fixed_mcs";
+                amc.MCSValueStatus = "configured";
             elseif useConfiguredCQIAMC
                 amc.Mode = "cqi_table";
                 if ~(isfinite(double(cqiRaw)) && cqiRaw > 0)
                     cqiDecision = struct("Valid", false);
-                    amc.MCSIndex = localResolveBootstrapMCSIndex(obj.Cfg);
-                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_runtime_cqi");
                 else
                     cqiDecision = sixgr.link.resolveMCSFromCQI(cqiRaw, mcsTable, cqiTable);
                 end
                 if isfield(cqiDecision, "Valid") && cqiDecision.Valid
+                    amc.Mode = "cqi_table";
                     amc.MCSIndex = double(cqiDecision.MCSIndex);
                     amc.MCSProfile = cqiDecision.MCSProfile;
+                    amc.MCSSelectionSource = "runtime_cqi_table";
+                    amc.CQIProvenance = "runtime_reported_cqi";
+                    amc.MCSValueStatus = "measured_cqi_mapped";
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 else
                     % In AMC mode, missing/invalid CQI must not silently
                     % promote the configured study MCS into a scheduler grant.
-                    % Use a conservative live-bootstrap MCS so connected UEs
-                    % with traffic can still obtain feedback-bearing grants.
-                    amc.MCSIndex = localResolveBootstrapMCSIndex(obj.Cfg);
-                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
+                    % Conservative scenarios can still request a labeled
+                    % bootstrap MCS. Measured-only scenarios fail closed and
+                    % block the grant until runtime CQI evidence arrives.
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_or_invalid_runtime_cqi");
                 end
             elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
                 amc.Mode = "fixed_mcs";
                 amc.MCSIndex = round(cfgMCSIndex);
+                amc.MCSSelectionSource = "configured_fixed_mcs";
+                amc.CQIProvenance = "not_used_fixed_mcs";
+                amc.MCSValueStatus = "configured";
             elseif hasExplicitFixedModulation
                 amc.Mode = "fixed_modulation";
+                amc.MCSSelectionSource = "configured_modulation_code_rate";
+                amc.CQIProvenance = "not_used_fixed_modulation";
+                amc.MCSValueStatus = "configured";
             elseif isfinite(cqiRaw)
                 amc.Mode = "cqi_table";
                 if cqiRaw <= 0
                     cqiDecision = struct("Valid", false);
-                    amc.MCSIndex = localResolveBootstrapMCSIndex(obj.Cfg);
-                    amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "invalid_runtime_cqi");
                 else
                     cqiDecision = sixgr.link.resolveMCSFromCQI(cqiRaw, mcsTable, cqiTable);
                 end
                 if isfield(cqiDecision, "Valid") && cqiDecision.Valid
+                    amc.Mode = "cqi_table";
                     amc.MCSIndex = double(cqiDecision.MCSIndex);
                     amc.MCSProfile = cqiDecision.MCSProfile;
+                    amc.MCSSelectionSource = "runtime_cqi_table";
+                    amc.CQIProvenance = "runtime_reported_cqi";
+                    amc.MCSValueStatus = "measured_cqi_mapped";
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 end
             end
 
-            if amc.Mode == "cqi_table" && isstruct(amc.MCSProfile) && ...
+            if ismember(string(amc.Mode), ["cqi_table","bootstrap_cqi_conservative"]) && isstruct(amc.MCSProfile) && ...
                     isfield(amc.MCSProfile, "Valid") && logical(amc.MCSProfile.Valid)
                 % Keep the modulation/code-rate export aligned with the
-                % resolved CQI profile even when the CQI path legitimately
-                % falls back to MCS 0 before any richer feedback arrives.
+                % resolved CQI or explicitly labeled bootstrap profile.
                 modStr = char(string(amc.MCSProfile.Modulation));
                 targetCodeRate = double(amc.MCSProfile.TargetCodeRate);
                 if ~isfinite(amc.MCSIndex) && isfield(amc.MCSProfile, "MCSIndex")
@@ -514,9 +531,17 @@ classdef (Abstract) SchedulerBase < handle
                     modStr = char(string(prof.Modulation));
                     targetCodeRate = double(prof.TargetCodeRate);
                 end
-            elseif ~isfinite(amc.MCSIndex)
-                amc.MCSIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, targetCodeRate, cqiRaw, mcsTable);
-                amc.MCSProfile = sixgr.link.resolveMCSProfile(mcsTable, amc.MCSIndex);
+            elseif ~isfinite(amc.MCSIndex) && ~localAMCBlocksGrant(amc)
+                mcsDecision = sixgr.link.resolveMCSIndexFromProfile(modStr, targetCodeRate, ...
+                    "MCSTable", mcsTable, ...
+                    "CQI", cqiRaw, ...
+                    "CQITable", cqiTable);
+                if mcsDecision.Valid
+                    amc.MCSIndex = double(mcsDecision.MCSIndex);
+                    amc.MCSProfile = mcsDecision.MCSProfile;
+                    modStr = char(string(mcsDecision.MCSProfile.Modulation));
+                    targetCodeRate = double(mcsDecision.MCSProfile.TargetCodeRate);
+                end
             end
 
             if amc.Mode == "cqi_table" && localSchedulerOLLAEnabled(obj.Cfg)
@@ -744,8 +769,14 @@ classdef (Abstract) SchedulerBase < handle
             end
             queueBytes = max(0, floor(double(queueBytes)));
             [modStr, nLayers, targetCodeRate, amc] = obj.selectAMC(ue);
-            [rawBits, rawBytes, rawNRE] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
-                "PlanningOnly", logical(opt.PlanningOnly));
+            if localAMCBlocksGrant(amc)
+                rawBits = 0;
+                rawBytes = 0;
+                rawNRE = NaN;
+            else
+                [rawBits, rawBytes, rawNRE] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
+                    "PlanningOnly", logical(opt.PlanningOnly));
+            end
 
             plan = struct( ...
                 "Valid", false, ...
@@ -762,6 +793,10 @@ classdef (Abstract) SchedulerBase < handle
                 "OLLADeltaMCS", double(sixgr.util.structGet(amc, "OLLADeltaMCS", 0)), ...
                 "OLLAUpdateCount", double(sixgr.util.structGet(amc, "OLLAUpdateCount", 0)), ...
                 "OLLAState", char(string(sixgr.util.structGet(amc, "OLLAState", ""))), ...
+                "MCSSelectionSource", char(string(sixgr.util.structGet(amc, "MCSSelectionSource", ""))), ...
+                "CQIProvenance", char(string(sixgr.util.structGet(amc, "CQIProvenance", ""))), ...
+                "MCSValueStatus", char(string(sixgr.util.structGet(amc, "MCSValueStatus", ""))), ...
+                "GrantBlocker", char(localAMCBlockerReason(amc)), ...
                 "NREPerPRB", double(rawNRE), ...
                 "TBSBits", double(rawBits), ...
                 "TBSBytes", double(rawBytes), ...
@@ -995,38 +1030,21 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function mcs = approxMCSIndex(modStr, targetCodeRate, cqiFallback, mcsTable)
+            % Deprecated compatibility shim. The implementation is now
+            % table-driven and returns NaN instead of fabricating MCS 0 when
+            % neither CQI nor an explicit modulation/code-rate profile maps
+            % to a valid standards-table row.
             if nargin < 3
                 cqiFallback = NaN;
             end
             if nargin < 4 || isempty(mcsTable)
                 mcsTable = localDefaultMCSTable(modStr);
             end
-
-            s = upper(char(string(modStr)));
-            tcr = double(targetCodeRate);
-            if isfinite(tcr) && tcr > 0 && strlength(string(s)) > 0
-                mcs = localMatchMCSIndex(mcsTable, s, tcr);
-            else
-                cqiFallback = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiFallback, NaN);
-            end
-            if isfinite(double(cqiFallback))
-                if double(cqiFallback) <= 0
-                    mcs = 0;
-                    mcs = max(0, min(31, round(double(mcs))));
-                    return;
-                end
-                cqiTable = localDefaultCQITable(mcsTable);
-                amc = sixgr.link.resolveMCSFromCQI(double(cqiFallback), mcsTable, cqiTable);
-                if amc.Valid
-                    mcs = double(amc.MCSIndex);
-                else
-                    mcs = 0;
-                end
-            else
-                mcs = 0;
-            end
-
-            mcs = max(0, min(31, round(double(mcs))));
+            decision = sixgr.link.resolveMCSIndexFromProfile(modStr, targetCodeRate, ...
+                "MCSTable", mcsTable, ...
+                "CQI", cqiFallback, ...
+                "CQITable", localDefaultCQITable(mcsTable));
+            mcs = double(decision.MCSIndex);
         end
 
         function profile = resolveMCSProfileForGrant(obj, grant, cqiFallback)
@@ -1045,8 +1063,11 @@ classdef (Abstract) SchedulerBase < handle
             end
 
             tcr = double(sixgr.util.structGet(grant, "TargetCodeRate", 0.5));
-            mcsIndex = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, tcr, cqiFallback, mcsTable);
-            profile = sixgr.link.resolveMCSProfile(mcsTable, mcsIndex);
+            decision = sixgr.link.resolveMCSIndexFromProfile(modStr, tcr, ...
+                "MCSTable", mcsTable, ...
+                "CQI", cqiFallback, ...
+                "CQITable", localDefaultCQITable(mcsTable));
+            profile = decision.MCSProfile;
         end
 
         function bits = uintToBits(val, width)
@@ -1362,6 +1383,43 @@ if ~(isscalar(mcs) && isfinite(mcs))
     mcs = 1;
 end
 mcs = max(0, min(31, round(mcs)));
+end
+
+function amc = localMarkMissingRuntimeCQI(amc, cfg, provenance)
+if localSchedulerRequiresMeasuredCQI(cfg)
+    amc.Mode = "cqi_required_no_runtime_feedback";
+    amc.MCSIndex = NaN;
+    amc.MCSProfile = sixgr.link.resolveMCSProfile(char(string(amc.MCSTable)), -1);
+    amc.MCSSelectionSource = "blocked_missing_runtime_cqi";
+    amc.CQIProvenance = char(string(provenance));
+    amc.MCSValueStatus = "unavailable_missing_runtime_cqi";
+else
+    amc.Mode = "bootstrap_cqi_conservative";
+    amc.MCSIndex = localResolveBootstrapMCSIndex(cfg);
+    amc.MCSProfile = sixgr.link.resolveMCSProfile(char(string(amc.MCSTable)), amc.MCSIndex);
+    amc.MCSSelectionSource = "bootstrap_cqi_conservative_lab_default";
+    amc.CQIProvenance = char(string(provenance));
+    amc.MCSValueStatus = "bootstrap_not_measured_cqi";
+end
+end
+
+function tf = localSchedulerRequiresMeasuredCQI(cfg)
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.bootstrapCQIMode", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.bootstrapCQIMode", "conservative")))));
+tf = ismember(mode, ["require_measured_cqi","measured_only","strict_measured_cqi","none","disabled","off"]);
+end
+
+function tf = localAMCBlocksGrant(amc)
+tf = strcmpi(char(string(sixgr.util.structGet(amc, "Mode", ""))), "cqi_required_no_runtime_feedback") || ...
+    strcmpi(char(string(sixgr.util.structGet(amc, "MCSValueStatus", ""))), "unavailable_missing_runtime_cqi");
+end
+
+function reason = localAMCBlockerReason(amc)
+if localAMCBlocksGrant(amc)
+    reason = "blocked_until_runtime_cqi_feedback";
+else
+    reason = "";
+end
 end
 
 function tf = localSchedulerOLLAEnabled(cfg)

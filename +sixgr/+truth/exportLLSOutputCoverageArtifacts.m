@@ -82,6 +82,7 @@ tables.cell_edge_analytics_table = localBuildCellEdgeAnalyticsTable(src, meta);
 tables.beam_stability_analytics_table = localBuildBeamStabilityAnalyticsTable(src, meta);
 tables.energy_root_cause_table = localBuildEnergyRootCauseTable(tables.power_energy_table, meta);
 tables.result_issue_registry = localBuildResultIssueRegistry(src, meta, tables);
+tables.kpi_health_flags = localBuildKPIHealthFlags(src, meta);
 tables.anomaly_window_table = localBuildAnomalyWindowTable(tables.result_issue_registry, meta);
 tables.cross_layer_correlation_table = localBuildCrossLayerCorrelationTable(src, meta);
 tables.hotspot_analytics_table = localBuildHotspotAnalyticsTable(src, meta);
@@ -189,6 +190,7 @@ logicalPaths = struct( ...
     "beam_stability_analytics_table", "reports/csv/beam_stability_analytics_table.csv", ...
     "latency_root_cause_table", "reports/csv/latency_root_cause_table.csv", ...
     "energy_root_cause_table", "reports/csv/energy_root_cause_table.csv", ...
+    "kpi_health_flags", "reports/csv/kpi_health_flags.csv", ...
     "result_issue_registry", "reports/csv/result_issue_registry.csv", ...
     "compare_run_prerequisites", "reports/csv/compare_run_prerequisites.csv", ...
     "pdcch_dci_table", "control/csv/pdcch_dci_table.csv", ...
@@ -231,6 +233,7 @@ end
 localCoverageLog("figure_artifacts_written", runFolder);
 
 provenanceTables = sixgr.truth.buildLLSReportingProvenanceTables(runFolder, tables, logicalPaths, contract.Outputs, meta);
+provenanceTables.visual_artifact_integrity = sixgr.visual.verifyVisualArtifacts(runFolder, provenanceTables.plot_manifest);
 provenanceNames = fieldnames(provenanceTables);
 for iProv = 1:numel(provenanceNames)
     tables.(provenanceNames{iProv}) = provenanceTables.(provenanceNames{iProv});
@@ -242,6 +245,7 @@ lateLogicalPaths = struct( ...
     "plot_suppression_table", "reports/csv/plot_suppression_table.csv", ...
     "unavailable_plot_card_registry", "reports/csv/unavailable_plot_card_registry.csv", ...
     "plot_data_quality_table", "reports/csv/plot_data_quality_table.csv", ...
+    "visual_artifact_integrity", "reports/csv/visual_artifact_integrity.csv", ...
     "raw_to_derived_lineage", "reports/csv/raw_to_derived_lineage.csv", ...
     "table_field_availability_matrix", "reports/csv/table_field_availability_matrix.csv");
 lateNames = fieldnames(lateLogicalPaths);
@@ -253,16 +257,28 @@ for i = 1:numel(lateNames)
         localWriteTableArtifacts(runFolder, lateLogicalPaths.(name), T);
     end
 end
+tables.visual_artifact_audit = localRunVisualArtifactAuditTool(runFolder);
+logicalPaths.visual_artifact_audit = "reports/csv/visual_artifact_audit.csv";
+if istable(tables.visual_artifact_audit)
+    localWriteTableArtifacts(runFolder, logicalPaths.visual_artifact_audit, tables.visual_artifact_audit);
+end
+tables.visual_artifact_integrity = localMergeVisualArtifactAuditFailures(tables.visual_artifact_integrity, tables.visual_artifact_audit);
+localWriteTableArtifacts(runFolder, "reports/csv/visual_artifact_integrity.csv", tables.visual_artifact_integrity);
 
+logicalPaths.lls_implementation_register = "reports/csv/lls_implementation_register.csv";
 [registry, unavailable] = localBuildCoverageRegistry(runFolder, meta, src, tables, logicalPaths, heatmapImagePath, energyImagePath);
 localCoverageLog("coverage_registry_built", runFolder);
+tables.lls_implementation_register = localBuildImplementationRegister(registry, table(), table(), table(), unavailable, meta, logicalPaths);
 completeness = localBuildOutputCompletenessTable(runFolder, registry, tables, logicalPaths, meta);
 instrumentation = localBuildInstrumentationCoverageTable(registry, meta);
 apiAudit = localBuildAPIExposureAuditTable(registry, logicalPaths, tables, meta);
 persistence = localBuildPersistenceAuditTable(runFolder, registry, logicalPaths, tables, meta);
+implementationRegister = localBuildImplementationRegister(registry, completeness, apiAudit, persistence, unavailable, meta, logicalPaths);
+tables.lls_implementation_register = implementationRegister;
 localCoverageLog("coverage_audits_built", runFolder);
 
 localWriteTableArtifacts(runFolder, "reports/csv/output_coverage_registry.csv", registry);
+localWriteTableArtifacts(runFolder, "reports/csv/lls_implementation_register.csv", implementationRegister);
 localWriteTableArtifacts(runFolder, "reports/csv/output_completeness_table.csv", completeness);
 localWriteTableArtifacts(runFolder, "reports/csv/instrumentation_coverage_table.csv", instrumentation);
 localWriteTableArtifacts(runFolder, "reports/csv/api_exposure_audit_table.csv", apiAudit);
@@ -278,11 +294,14 @@ out = struct();
 out.Tables = struct();
 out.TableSummaries = localBuildTableSummaries(tables, logicalPaths, runFolder);
 out.OutputCoverageRegistry = registry;
+out.ImplementationRegister = implementationRegister;
 out.OutputCompletenessTable = completeness;
 out.InstrumentationCoverageTable = instrumentation;
 out.APIExposureAuditTable = apiAudit;
 out.PersistenceAuditTable = persistence;
 out.HonestUnavailableRegistry = unavailable;
+out.VisualArtifactIntegrity = tables.visual_artifact_integrity;
+out.VisualArtifactIntegrityOk = all(logical(tables.visual_artifact_integrity.IntegrityOk));
 out.UpdatedArtifactInventory = inventory;
 out.ManifestUnavailableEntries = localManifestUnavailableEntries(unavailable);
 localCoverageLog("done", runFolder);
@@ -334,7 +353,9 @@ src.LiveCSIRSStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_
 src.EqualizedConstellations = localReadOptionalTable(fullfile(layout.ReportCSVDir, "equalized_constellations.csv"));
 src.ChannelSnapshots = localReadOptionalTable(fullfile(layout.ReportCSVDir, "channel_snapshots.csv"));
 src.AntennaConfigResolved = localReadOptionalTable(fullfile(layout.ReportCSVDir, "antenna_config_resolved.csv"));
-src.PRACHCorrelationTraces = localReadOptionalTable(fullfile(layout.ReportCSVDir, "prach_correlation_traces.csv"));
+src.PRACHCorrelationTraces = localReadFirstOptionalTable( ...
+    fullfile(layout.ReportCSVDir, "prach_correlation_trace.csv"), ...
+    fullfile(layout.ReportCSVDir, "prach_correlation_traces.csv"));
 src.LivePDCCHStage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_pdcch_stage_table.csv"));
 src.LiveSSBStage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_ssb_stage_table.csv"));
 src.LiveHARQTimeline = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_harq_timeline.csv"));
@@ -1538,18 +1559,20 @@ if ~(istable(prbTable) && ~isempty(prbTable))
     return;
 end
 parts = {};
-frameVals = double(prbTable.frame(:));
-slotVals = double(prbTable.slot(:));
-symStartVals = double(prbTable.symbol_start(:));
-symLenVals = double(prbTable.symbol_len(:));
-rbStartVals = double(prbTable.rb_start(:));
-rbLenVals = double(prbTable.rb_len(:));
-cellVals = double(prbTable.cell_id(:));
-ueVals = double(prbTable.ue_id(:));
-rankVals = double(prbTable.rank(:));
-dirVals = string(prbTable.direction(:));
-roleVals = string(prbTable.occupancy_type(:));
-sourceVals = string(prbTable.source_artifact_ref(:));
+frameVals = localFirstAvailableColumnAsDouble(prbTable, ["frame", "Frame", "SFN"]);
+slotVals = localFirstAvailableColumnAsDouble(prbTable, ["slot", "Slot"]);
+symStartVals = localFirstAvailableColumnAsDouble(prbTable, ["symbol_start", "SymbolStart"]);
+symLenVals = localFirstAvailableColumnAsDouble(prbTable, ["symbol_len", "NumSymbols", "SymbolLength"]);
+rbStartVals = localFirstAvailableColumnAsDouble(prbTable, ["rb_start", "PRBStart", "RBStart"]);
+rbLenVals = localFirstAvailableColumnAsDouble(prbTable, ["rb_len", "PRBCount", "AllocatedPRBCount"]);
+cellVals = localFirstAvailableColumnAsDouble(prbTable, ["cell_id", "CellID", "ServingCell", "BaseStationID"]);
+ueVals = localFirstAvailableColumnAsDouble(prbTable, ["ue_id", "UE", "UEID", "UEIndex", "RNTI"]);
+rankVals = localFirstAvailableColumnAsDouble(prbTable, ["rank", "layers", "NumLayers", "Layers", "Rank"]);
+dirVals = localColumnAsText(prbTable, "direction");
+roleVals = localColumnAsText(prbTable, "occupancy_type");
+sourceVals = localColumnAsText(prbTable, "source_artifact_ref");
+roleVals(strlength(strtrim(roleVals)) == 0) = "scheduled_allocation";
+sourceVals(strlength(strtrim(sourceVals)) == 0) = "packet_flow/csv/live_prb_allocation.csv";
 for i = 1:height(prbTable)
     if ~(isfinite(frameVals(i)) && isfinite(slotVals(i)) && isfinite(symStartVals(i)) && isfinite(symLenVals(i)) && ...
             isfinite(rbStartVals(i)) && isfinite(rbLenVals(i)) && symLenVals(i) > 0 && rbLenVals(i) > 0)
@@ -2116,6 +2139,12 @@ T.ue_id = localFirstAvailableColumnAsDouble(grants, ["UE", "UEID", "UEIndex", "R
 T.cell_id = localFirstAvailableColumnAsDouble(grants, ["CellID", "ServingCell", "BaseStationID"]);
 T.direction = repmat(string(direction), n, 1);
 T.cqi_input = localColumnAsReportedCQI(grants, "CQIUsed");
+[cqiSampleCount, cqiDistinctCount, cqiSaturationFraction, cqiDynamicRangeStatus] = ...
+    localCQIDynamicRangeDiagnostics(T.cqi_input);
+T.cqi_window_sample_count = repmat(cqiSampleCount, n, 1);
+T.cqi_distinct_count = repmat(cqiDistinctCount, n, 1);
+T.cqi_saturation_fraction = repmat(cqiSaturationFraction, n, 1);
+T.cqi_dynamic_range_status = repmat(cqiDynamicRangeStatus, n, 1);
 T.ri_input = NaN(n, 1);
 T.pmi_input = NaN(n, 1);
 T.mcs_selected = localColumnAsDouble(grants, "MCSIndex");
@@ -2126,6 +2155,28 @@ T.olla_offset = NaN(n, 1);
 T.harq_state = harqState;
 T.scheduler_reason = localColumnAsText(grants, "GrantReason");
 T.effective_sinr_dB = localColumnAsDouble(grants, "SINR_dB");
+end
+
+function [sampleCount, distinctCount, saturationFraction, status] = localCQIDynamicRangeDiagnostics(cqiValues)
+cqi = double(cqiValues(:));
+valid = isfinite(cqi) & cqi >= 1 & cqi <= 15;
+sampleCount = double(nnz(valid));
+if sampleCount == 0
+    distinctCount = 0;
+    saturationFraction = NaN;
+    status = "unavailable_no_valid_cqi";
+    return;
+end
+validCQI = round(cqi(valid));
+distinctCount = double(numel(unique(validCQI)));
+saturationFraction = double(nnz(validCQI >= 15)) / sampleCount;
+if distinctCount <= 1 && saturationFraction >= 0.95 && sampleCount >= 4
+    status = "saturated_at_cqi15_window";
+elseif distinctCount <= 1 && sampleCount >= 4
+    status = "low_dynamic_range_window";
+else
+    status = "dynamic_range_observed";
+end
 end
 
 function T = localBuildPowerEnergyTable(src, meta, cfg)
@@ -3831,6 +3882,112 @@ T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifa
     "packet_flow/csv/live_prb_allocation.csv", "implemented", "derived_resource_occupancy", true, true);
 end
 
+function T = localBuildKPIHealthFlags(src, meta)
+rows = [ ...
+    localKPIHealthRow("dl_mcs_index", "link_adaptation", "DL", src.DLTrials, ["MCSIndex","MCS"], ...
+        "air_interface/csv/dl_pdsch_trials.csv", ["MCSSelectionSource","AMCMode","MCSValueStatus"]); ...
+    localKPIHealthRow("ul_mcs_index", "link_adaptation", "UL", src.ULTrials, ["MCSIndex","MCS"], ...
+        "air_interface/csv/ul_pusch_trials.csv", ["MCSSelectionSource","AMCMode","MCSValueStatus"]); ...
+    localKPIHealthRow("dl_wideband_cqi", "cqi_feedback", "DL", src.DLTrials, ["WidebandCQI","CQI","CQIUsed"], ...
+        "air_interface/csv/dl_pdsch_trials.csv", ["CQISource","SINRSource","MCSValueStatus"]); ...
+    localKPIHealthRow("ul_wideband_cqi", "cqi_feedback", "UL", src.ULTrials, ["WidebandCQI","CQI","CQIUsed"], ...
+        "air_interface/csv/ul_pusch_trials.csv", ["CQISource","SINRSource","MCSValueStatus"]); ...
+    localKPIHealthRow("dl_post_eq_sinr_db", "receiver_measurement", "DL", src.DLTrials, ["PostEqSINR_dB","MeasuredTrialSINR_dB"], ...
+        "air_interface/csv/dl_pdsch_trials.csv", ["PostEqSINRSource","MeasuredTrialSINRSource","SINRValueRole"]); ...
+    localKPIHealthRow("ul_post_eq_sinr_db", "receiver_measurement", "UL", src.ULTrials, ["PostEqSINR_dB","MeasuredTrialSINR_dB"], ...
+        "air_interface/csv/ul_pusch_trials.csv", ["PostEqSINRSource","MeasuredTrialSINRSource","SINRValueRole"]); ...
+    localKPIHealthRow("dl_goodput_mbps", "throughput", "DL", src.UserPerformance, ["DLGoodput_Mbps","DL_Goodput_Mbps","UserThroughput_Mbps"], ...
+        "reports/csv/live_user_performance_snapshot.csv", ["ValueSource","Source"]); ...
+    localKPIHealthRow("ul_goodput_mbps", "throughput", "UL", src.UserPerformance, ["ULGoodput_Mbps","UL_Goodput_Mbps","UserThroughput_Mbps"], ...
+        "reports/csv/live_user_performance_snapshot.csv", ["ValueSource","Source"]); ...
+    localKPIHealthRow("pucch_trial_rows", "control_runtime", "UL", src.PUCCHTrials, ["DecodeSuccess","CRCPass","UCIContentMatch"], ...
+        "control/csv/pucch_trials.csv|air_interface/csv/pucch_trials.csv", ["FailureReason","DecodeStatus"]); ...
+    localKPIHealthRow("pusch_trial_rows", "air_interface_runtime", "UL", src.ULTrials, ["CRCPass","TBSBits","MCSIndex"], ...
+        "air_interface/csv/ul_pusch_trials.csv", ["FailureReason","MCSSelectionSource"]); ...
+    localKPIHealthRow("srs_measurement_rows", "reference_signal_runtime", "UL", src.SRSTrials, ["SRSOccupiedPRBCount","BandwidthFraction","ReceiverHestSINR_dB"], ...
+        "control/csv/srs_trials.csv|air_interface/csv/srs_trials.csv", ["CoverageStatus","SINRValueStatus"]); ...
+    localKPIHealthRow("pdcch_decode_rows", "control_runtime", "DL", src.PDCCHTrials, ["DecodeSuccess","DetectionAttempted","BlindDecodeCandidateCount"], ...
+        "control/csv/pdcch_trials.csv|air_interface/csv/pdcch_trials.csv", ["FailureReason","DecodeStatus"]) ...
+    ];
+
+T = struct2table(rows);
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildKPIHealthFlags", ...
+    "air_interface/csv/*_trials.csv|control/csv/*_trials.csv|reports/csv/live_user_performance_snapshot.csv", ...
+    "implemented", "derived_kpi_health_audit", true, true);
+end
+
+function row = localKPIHealthRow(kpiName, domain, direction, sourceTable, metricVars, sourceArtifactRef, provenanceVars)
+rowCount = 0;
+finiteCount = 0;
+unavailableCount = 0;
+diagnosticCount = 0;
+proxyFallbackCount = 0;
+distinctFiniteCount = 0;
+healthStatus = "missing_runtime_rows";
+blocker = "source_table_missing_or_empty";
+action = "Ensure the runtime producer writes the source table before accepting this KPI.";
+
+if istable(sourceTable) && ~isempty(sourceTable)
+    rowCount = height(sourceTable);
+    vals = nan(rowCount, numel(metricVars));
+    for i = 1:numel(metricVars)
+        vals(:, i) = localColumnAsDouble(sourceTable, metricVars(i));
+    end
+    finiteMask = any(isfinite(vals), 2);
+    finiteCount = sum(finiteMask);
+    finiteVals = vals(isfinite(vals));
+    if ~isempty(finiteVals)
+        distinctFiniteCount = numel(unique(round(double(finiteVals(:)) * 1e6) / 1e6));
+    end
+    statusText = strings(rowCount, 0);
+    for i = 1:numel(provenanceVars)
+        if localHasVar(sourceTable, provenanceVars(i))
+            statusText(:, end+1) = localColumnAsText(sourceTable, provenanceVars(i)); %#ok<AGROW>
+        end
+    end
+    if size(statusText, 2) > 0
+        joined = lower(join(statusText, " ", 2));
+    else
+        joined = strings(rowCount, 1);
+    end
+    unavailableCount = sum(contains(joined, "unavailable") | contains(joined, "not_materialized") | contains(joined, "missing"));
+    diagnosticCount = sum(contains(joined, "diagnostic"));
+    proxyFallbackCount = sum(contains(joined, "proxy") | contains(joined, "fallback") | contains(joined, "bootstrap"));
+    if finiteCount == 0
+        healthStatus = "no_finite_values";
+        blocker = "source_rows_present_without_finite_metric_values";
+        action = "Inspect metric field names and producer wiring; do not populate charts from placeholders.";
+    elseif proxyFallbackCount > 0 || diagnosticCount > 0
+        healthStatus = "review_required";
+        blocker = "diagnostic_proxy_fallback_or_bootstrap_provenance_present";
+        action = "Keep diagnostic/proxy/bootstrap rows out of conformance KPIs unless explicitly filtered and labeled.";
+    elseif unavailableCount > 0
+        healthStatus = "review_required";
+        blocker = "some_rows_disclose_unavailable_metric_state";
+        action = "Review unavailable rows before using aggregate KPI charts.";
+    else
+        healthStatus = "ok";
+        blocker = "";
+        action = "KPI has finite runtime source values and no proxy/fallback/unavailable provenance markers.";
+    end
+end
+
+row = struct( ...
+    "kpi_name", string(kpiName), ...
+    "domain", string(domain), ...
+    "direction", string(direction), ...
+    "source_artifact_ref", string(sourceArtifactRef), ...
+    "runtime_row_count", double(rowCount), ...
+    "finite_sample_count", double(finiteCount), ...
+    "unavailable_sample_count", double(unavailableCount), ...
+    "diagnostic_sample_count", double(diagnosticCount), ...
+    "proxy_fallback_sample_count", double(proxyFallbackCount), ...
+    "distinct_finite_value_count", double(distinctFiniteCount), ...
+    "health_status", string(healthStatus), ...
+    "blocker_reason", string(blocker), ...
+    "recommended_action", string(action));
+end
+
 function T = localBuildResultIssueRegistry(src, meta, tables)
 rows = repmat(struct("issue_id", "", "severity", "", "issue_status", "", "issue_category", "", ...
     "direction", "", "ue_id", NaN, "cell_id", NaN, "block_name", "", "metric_name", "", ...
@@ -4653,6 +4810,232 @@ if policyPath ~= string(logicalPath)
 end
 end
 
+function T = localRunVisualArtifactAuditTool(runFolder)
+auditCSV = fullfile(runFolder, "reports", "csv", "visual_artifact_audit.csv");
+repoRoot = localFindRepoRoot(runFolder);
+if strlength(repoRoot) == 0
+    repoRoot = localRepoRootFromThisFile();
+end
+toolPath = fullfile(repoRoot, "tools", "audit_lls_visual_artifacts.py");
+if exist(toolPath, "file") ~= 2
+    T = localVisualArtifactAuditToolFailure("audit_tool_missing", ...
+        "tools/audit_lls_visual_artifacts.py is missing.");
+    sixgr.util.csvWriteTable(auditCSV, T);
+    localWriteVisualArtifactAuditMarkdown(runFolder, T);
+    return;
+end
+pythonExe = localResolvePythonExecutableForAudit();
+cmd = sprintf("%s %s %s", localShellQuote(pythonExe), localShellQuote(toolPath), localShellQuote(runFolder));
+[status, outTxt] = system(cmd);
+T = localReadOptionalTable(auditCSV);
+if istable(T) && ~isempty(T)
+    return;
+end
+if status == 0
+    T = localVisualArtifactAuditToolFailure("audit_output_missing", ...
+        "Visual audit tool exited successfully but did not write visual_artifact_audit.csv.");
+else
+    T = localVisualArtifactAuditToolFailure("audit_tool_failed_without_csv", ...
+        "Visual audit tool failed before writing CSV: " + string(strtrim(outTxt)));
+end
+sixgr.util.csvWriteTable(auditCSV, T);
+localWriteVisualArtifactAuditMarkdown(runFolder, T);
+end
+
+function T = localMergeVisualArtifactAuditFailures(visualIntegrity, auditT)
+T = visualIntegrity;
+failureRows = localVisualIntegrityRowsFromAudit(auditT);
+if ~(istable(failureRows) && ~isempty(failureRows))
+    return;
+end
+if ~(istable(T) && ~isempty(T))
+    T = failureRows;
+    return;
+end
+missingInT = setdiff(string(failureRows.Properties.VariableNames), string(T.Properties.VariableNames), "stable");
+for i = 1:numel(missingInT)
+    T.(missingInT(i)) = strings(height(T), 1);
+end
+missingInFailures = setdiff(string(T.Properties.VariableNames), string(failureRows.Properties.VariableNames), "stable");
+for i = 1:numel(missingInFailures)
+    name = missingInFailures(i);
+    sample = T.(name);
+    if islogical(sample)
+        failureRows.(name) = false(height(failureRows), 1);
+    elseif isnumeric(sample)
+        failureRows.(name) = nan(height(failureRows), 1);
+    else
+        failureRows.(name) = strings(height(failureRows), 1);
+    end
+end
+failureRows = failureRows(:, string(T.Properties.VariableNames));
+T = [T; failureRows];
+end
+
+function T = localVisualIntegrityRowsFromAudit(auditT)
+T = table();
+if ~(istable(auditT) && ~isempty(auditT))
+    return;
+end
+vars = string(auditT.Properties.VariableNames);
+if ~ismember("audit_ok", vars)
+    return;
+end
+ok = localAuditColumnAsLogical(auditT, "audit_ok", true);
+bad = auditT(~ok, :);
+if isempty(bad)
+    return;
+end
+n = height(bad);
+T = table( ...
+    localColumnAsString(bad, "plot_id", n), ...
+    localColumnAsString(bad, "artifact_path", n), ...
+    true(n, 1), ...
+    localColumnAsString(bad, "manifest_status", n), ...
+    localColumnAsString(bad, "visual_validity", n), ...
+    false(n, 1), ...
+    localColumnAsString(bad, "declared_mime_type", n), ...
+    localColumnAsString(bad, "actual_mime_type", n), ...
+    localColumnAsString(bad, "extension", n), ...
+    localColumnAsString(bad, "sha256", n), ...
+    localAuditColumnAsDouble(bad, "byte_count", n), ...
+    false(n, 1), ...
+    localColumnAsString(bad, "failure_code", n), ...
+    localColumnAsString(bad, "failure_reason", n), ...
+    'VariableNames', ["PlotId","ArtifactPath","IsManifestRow","PlotRenderStatus","VisualValidity","IsUnavailableCard", ...
+    "DeclaredMimeType","ActualMimeType","Extension","SHA256","ByteCount","IntegrityOk","FailureCode","FailureReason"]);
+end
+
+function T = localVisualArtifactAuditToolFailure(code, reason)
+T = table( ...
+    "visual_artifact_audit", "", "audit_tool", false, "", "", "", "", "", "", "", "", "", "", false, false, "", "", "", "", "", "", "", 0, false, string(code), string(reason), ...
+    'VariableNames', ["plot_id","artifact_path","artifact_kind","is_manifest_row","manifest_status","visual_validity", ...
+    "source_csv","x_column","y_column","plot_kind","row_count","unique_x_count","unique_y_count","non_nan_y_count", ...
+    "nan_only_y","mixed_units","source_mapping_status","curve_construction","truth_status_tokens", ...
+    "actual_mime_type","declared_mime_type","extension","sha256","byte_count","audit_ok","failure_code","failure_reason"]);
+end
+
+function repoRoot = localRepoRootFromThisFile()
+thisFile = string(mfilename("fullpath"));
+repoRoot = string(fileparts(fileparts(fileparts(char(thisFile)))));
+if exist(fullfile(repoRoot, ".git"), "dir") ~= 7 && exist(fullfile(repoRoot, "tools", "audit_lls_visual_artifacts.py"), "file") ~= 2
+    repoRoot = "";
+end
+end
+
+function localWriteVisualArtifactAuditMarkdown(runFolder, auditT)
+mdPath = fullfile(runFolder, "reports", "visual_artifact_audit.md");
+sixgr.util.ensureFolder(fileparts(mdPath));
+fid = fopen(mdPath, "w");
+if fid < 0
+    return;
+end
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid, "# Visual Artifact Audit\n\n");
+fprintf(fid, "- Run folder: `%s`\n", char(string(runFolder)));
+if istable(auditT)
+    fprintf(fid, "- Audited rows: %d\n", height(auditT));
+    ok = localAuditColumnAsLogical(auditT, "audit_ok", true);
+    fprintf(fid, "- Strict failures: %d\n\n", sum(~ok));
+    if any(~ok)
+        bad = auditT(~ok, :);
+        fprintf(fid, "| Plot | Artifact | Failure | Reason |\n");
+        fprintf(fid, "|---|---|---|---|\n");
+        for i = 1:height(bad)
+            fprintf(fid, "| %s | %s | %s | %s |\n", ...
+                char(localMarkdownEscape(localColumnAsString(bad(i, :), "plot_id", 1))), ...
+                char(localMarkdownEscape(localColumnAsString(bad(i, :), "artifact_path", 1))), ...
+                char(localMarkdownEscape(localColumnAsString(bad(i, :), "failure_code", 1))), ...
+                char(localMarkdownEscape(localColumnAsString(bad(i, :), "failure_reason", 1))));
+        end
+    end
+end
+end
+
+function exe = localResolvePythonExecutableForAudit()
+exe = "python";
+try
+    runtime = sixgr.lls6g.config.ensureYAMLRuntime("RequireYAML", false, "ConfigurePyEnv", false);
+    candidate = string(sixgr.util.structGet(runtime, "PythonExecutable", ""));
+    if strlength(strtrim(candidate)) > 0
+        exe = candidate;
+    end
+catch
+end
+end
+
+function out = localShellQuote(value)
+value = char(string(value));
+out = '"' + string(strrep(value, '"', '\"')) + '"';
+end
+
+function values = localColumnAsString(T, name, n)
+if nargin < 3
+    n = height(T);
+end
+name = string(name);
+if istable(T) && ismember(name, string(T.Properties.VariableNames))
+    values = string(T.(name));
+else
+    values = strings(n, 1);
+end
+values = values(:);
+if numel(values) < n
+    values(end + 1:n, 1) = "";
+elseif numel(values) > n
+    values = values(1:n);
+end
+end
+
+function values = localAuditColumnAsDouble(T, name, n)
+if nargin < 3
+    n = height(T);
+end
+if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
+    raw = T.(string(name));
+    try
+        values = double(raw);
+    catch
+        values = str2double(string(raw));
+    end
+else
+    values = nan(n, 1);
+end
+values = values(:);
+if numel(values) < n
+    values(end + 1:n, 1) = NaN;
+elseif numel(values) > n
+    values = values(1:n);
+end
+end
+
+function values = localAuditColumnAsLogical(T, name, defaultValue)
+n = height(T);
+if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
+    raw = T.(string(name));
+    if islogical(raw)
+        values = raw(:);
+    elseif isnumeric(raw)
+        values = raw(:) ~= 0;
+    else
+        txt = lower(strtrim(string(raw(:))));
+        values = ismember(txt, ["1","true","yes","y"]);
+    end
+else
+    values = repmat(logical(defaultValue), n, 1);
+end
+if numel(values) < n
+    values(end + 1:n, 1) = logical(defaultValue);
+elseif numel(values) > n
+    values = values(1:n);
+end
+end
+
+function value = localMarkdownEscape(value)
+value = replace(string(value), "|", "\|");
+value = replace(value, newline, " ");
+end
+
 function [jsonRequired, reason] = localJSONMirrorPolicy(logicalPath, T)
 jsonRequired = true;
 reason = "";
@@ -4746,10 +5129,8 @@ xlabel("Slot");
 ylabel("RB Index");
 title("PRB Allocation Heatmap");
 colorbar;
-sixgr.util.ensureDir(filePath);
-saveas(fig, filePath);
-close(fig);
-sixgr.db.captureFileArtifact(filePath, "figure", "image/png", false, logicalPath);
+cleanupFig = onCleanup(@() close(fig)); %#ok<NASGU>
+sixgr.util.exportFigureArtifact(fig, filePath, "Resolution", 160, "LogicalPath", logicalPath);
 end
 
 function localWritePowerEnergyFigure(T, filePath, logicalPath)
@@ -4789,10 +5170,8 @@ xlabel("Timestamp (ms)");
 ylabel("Cumulative Energy (J)");
 title("Cumulative Energy");
 legend("Location", "best");
-sixgr.util.ensureDir(filePath);
-saveas(fig, filePath);
-close(fig);
-sixgr.db.captureFileArtifact(filePath, "figure", "image/png", false, logicalPath);
+cleanupFig = onCleanup(@() close(fig)); %#ok<NASGU>
+sixgr.util.exportFigureArtifact(fig, filePath, "Resolution", 160, "LogicalPath", logicalPath);
 end
 
 function [registry, unavailable] = localBuildCoverageRegistry(runFolder, meta, src, tables, logicalPaths, heatmapImagePath, energyImagePath)
@@ -4916,6 +5295,133 @@ end
 T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildOutputCompletenessTable", ...
     "reports/csv/output_completeness_table.csv", "implemented", "meta_audit", true, true);
+end
+
+function T = localBuildImplementationRegister(registry, completeness, apiAudit, persistence, unavailable, meta, logicalPaths)
+rows = repmat(struct("output_name", "", "feature_family", "", "block_module", "", "required_flag", false, ...
+    "implementation_status", "", "evidence_status", "", "conformance_claim_allowed", false, ...
+    "runtime_row_count", NaN, "direct_artifact_status", "", "persisted_flag", false, ...
+    "api_exposed_flag", false, "export_supported_flag", false, "ui_rendered_flag", false, ...
+    "writer_enabled", false, "json_required", false, "json_enabled", false, ...
+    "blocker_reason", "", "unavailable_reason", "", "required_backend_sources", "", ...
+    "required_capture_point", "", "required_runtime_condition", "", "next_implementation_step", "", ...
+    "owner_tag", "", "source_artifact_ref", "", "audit_source", ""), height(registry), 1);
+for i = 1:height(registry)
+    outName = string(registry.output_name(i));
+    cRow = localSingleMatchingRow(completeness, "output_name", outName);
+    aRow = localSingleMatchingRow(apiAudit, "output_name", outName);
+    pRow = localSingleMatchingRow(persistence, "output_name", outName);
+    uRow = localSingleMatchingRow(unavailable, "output_name", outName);
+
+    implementationStatus = string(registry.current_status(i));
+    runtimeRows = double(localTableValue(cRow, "actual_row_count", NaN));
+    persistedFlag = localLogicalTableValue(registry(i, :), "persisted_flag", false);
+    apiFlag = localLogicalTableValue(registry(i, :), "api_exposed_flag", false);
+    exportFlag = localLogicalTableValue(registry(i, :), "export_supported_flag", false);
+    uiFlag = localLogicalTableValue(registry(i, :), "ui_rendered_flag", false);
+    blocker = string(localTableValue(registry(i, :), "blocker_reason", ""));
+    unavailableReason = string(localTableValue(uRow, "unavailable_reason", ""));
+    if strlength(blocker) == 0
+        blocker = unavailableReason;
+    end
+
+    conformanceAllowed = implementationStatus == "implemented" && ...
+        persistedFlag && apiFlag && exportFlag && uiFlag && ...
+        (isfinite(runtimeRows) && runtimeRows > 0 || localIsMetaRegisterOutput(outName));
+    evidenceStatus = localImplementationEvidenceStatus(implementationStatus, runtimeRows, ...
+        persistedFlag, apiFlag, exportFlag, uiFlag, blocker);
+
+    rows(i).output_name = outName;
+    rows(i).feature_family = string(registry.ui_section(i));
+    rows(i).block_module = string(registry.block_module(i));
+    rows(i).required_flag = localLogicalTableValue(registry(i, :), "required_flag", false);
+    rows(i).implementation_status = implementationStatus;
+    rows(i).evidence_status = evidenceStatus;
+    rows(i).conformance_claim_allowed = logical(conformanceAllowed);
+    rows(i).runtime_row_count = runtimeRows;
+    rows(i).direct_artifact_status = string(localTableValue(cRow, "direct_artifact_status", ""));
+    rows(i).persisted_flag = persistedFlag;
+    rows(i).api_exposed_flag = apiFlag;
+    rows(i).export_supported_flag = exportFlag;
+    rows(i).ui_rendered_flag = uiFlag;
+    rows(i).writer_enabled = localLogicalTableValue(pRow, "writer_enabled", persistedFlag);
+    rows(i).json_required = localLogicalTableValue(pRow, "json_required", false);
+    rows(i).json_enabled = localLogicalTableValue(pRow, "json_enabled", false);
+    rows(i).blocker_reason = blocker;
+    rows(i).unavailable_reason = unavailableReason;
+    rows(i).required_backend_sources = string(localFirstNonBlankString( ...
+        localTableValue(uRow, "required_backend_sources", ""), localRequiredSourcesForOutput(outName)));
+    rows(i).required_capture_point = string(localFirstNonBlankString( ...
+        localTableValue(uRow, "required_capture_point", ""), localRequiredCapturePoint(outName)));
+    rows(i).required_runtime_condition = string(localRequiredRuntimeCondition(outName));
+    rows(i).next_implementation_step = string(localFirstNonBlankString( ...
+        localTableValue(uRow, "next_implementation_step", ""), localNextImplementationStep(outName)));
+    rows(i).owner_tag = string(localFirstNonBlankString( ...
+        localTableValue(uRow, "owner_tag", ""), localOwnerTag(outName)));
+    rows(i).source_artifact_ref = string(localFirstNonBlankString( ...
+        localTableValue(cRow, "alternative_evidence_artifact", ""), ...
+        localTableValue(aRow, "api_route", ""), ...
+        localRegistryLogicalPath(outName, logicalPaths)));
+    rows(i).audit_source = "output_coverage_registry|output_completeness_table|api_exposure_audit_table|persistence_audit_table|honest_unavailable_registry";
+end
+T = struct2table(rows);
+T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildImplementationRegister", ...
+    "reports/csv/lls_implementation_register.csv", "implemented", "machine_readable_implementation_audit", true, true);
+end
+
+function row = localSingleMatchingRow(T, keyName, keyValue)
+row = table();
+if ~(istable(T) && ~isempty(T) && localHasVar(T, keyName))
+    return;
+end
+values = string(T.(keyName));
+idx = find(values == string(keyValue), 1, "first");
+if ~isempty(idx)
+    row = T(idx, :);
+end
+end
+
+function out = localFirstNonBlankString(varargin)
+out = "";
+for i = 1:nargin
+    candidate = string(varargin{i});
+    if isempty(candidate)
+        continue;
+    end
+    candidate = strtrim(candidate(1));
+    if strlength(candidate) > 0 && lower(candidate) ~= "nan" && lower(candidate) ~= "<missing>"
+        out = candidate;
+        return;
+    end
+end
+end
+
+function tf = localIsMetaRegisterOutput(outName)
+tf = any(string(outName) == ["output_coverage_registry", "lls_implementation_register", ...
+    "output_completeness_table", "instrumentation_coverage_table", "api_exposure_audit_table", ...
+    "persistence_audit_table", "honest_unavailable_registry", "lls_output_contract", ...
+    "metric_definition_catalog", "metric_unit_role_catalog", "plot_manifest", ...
+    "visual_artifact_audit", "plot_render_status", "chart_source_registry", "plot_data_quality_table", ...
+    "plot_suppression_table", "unavailable_plot_card_registry", "raw_to_derived_lineage", ...
+    "table_field_availability_matrix"]);
+end
+
+function status = localImplementationEvidenceStatus(implementationStatus, runtimeRows, persistedFlag, apiFlag, exportFlag, uiFlag, blocker)
+implementationStatus = string(implementationStatus);
+if implementationStatus == "implemented" && persistedFlag && apiFlag && exportFlag && uiFlag && ...
+        (isfinite(runtimeRows) && runtimeRows > 0)
+    status = "runtime_evidence_complete";
+elseif implementationStatus == "implemented" && persistedFlag && apiFlag && exportFlag && uiFlag
+    status = "meta_evidence_complete";
+elseif implementationStatus == "blocked"
+    status = "blocked_by_runtime_prerequisite";
+elseif implementationStatus == "schema_only"
+    status = "schema_declared_without_runtime_rows";
+elseif strlength(string(blocker)) > 0
+    status = "not_conformant:" + string(blocker);
+else
+    status = "not_conformant:no_runtime_evidence";
+end
 end
 
 function status = localCompletenessStatus(currentStatus, expectedRows, actualRows)
@@ -5052,6 +5558,7 @@ end
 function specs = localRequestedOutputSpecs()
 specs = [ ...
     localSpec("output_coverage_registry", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/output_coverage_registry.csv"), ...
+    localSpec("lls_implementation_register", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/lls_implementation_register.csv"), ...
     localSpec("output_completeness_table", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/output_completeness_table.csv"), ...
     localSpec("instrumentation_coverage_table", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/instrumentation_coverage_table.csv"), ...
     localSpec("api_exposure_audit_table", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/api_exposure_audit_table.csv"), ...
@@ -5061,6 +5568,7 @@ specs = [ ...
     localSpec("metric_definition_catalog", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/metric_definition_catalog.csv"), ...
     localSpec("metric_unit_role_catalog", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/metric_unit_role_catalog.csv"), ...
     localSpec("plot_manifest", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/plot_manifest.csv"), ...
+    localSpec("visual_artifact_audit", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/visual_artifact_audit.csv"), ...
     localSpec("plot_render_status", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/plot_render_status.csv"), ...
     localSpec("chart_source_registry", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/chart_source_registry.csv"), ...
     localSpec("plot_data_quality_table", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/plot_data_quality_table.csv"), ...
@@ -5068,6 +5576,7 @@ specs = [ ...
     localSpec("unavailable_plot_card_registry", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/unavailable_plot_card_registry.csv"), ...
     localSpec("raw_to_derived_lineage", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/raw_to_derived_lineage.csv"), ...
     localSpec("table_field_availability_matrix", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/table_field_availability_matrix.csv"), ...
+    localSpec("kpi_health_flags", "coverage", "coverage_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/kpi_health_flags.csv"), ...
     localSpec("result_issue_registry", "root_cause", "cross_layer_issue_registry", true, "c", "yes", true, false, "phase_now", "reports/csv/result_issue_registry.csv"), ...
     localSpec("table_scenario_topology", "scenario_topology", "scenario_runtime", true, "c", "yes", true, false, "phase_now", "reports/csv/table_scenario_topology.csv"), ...
     localSpec("scenario_consistency_check_table", "scenario_topology", "scenario_runtime", true, "c", "yes", true, false, "phase_now", "reports/csv/scenario_consistency_check_table.csv"), ...
@@ -5219,8 +5728,9 @@ if outName == "power_energy_table" && energyImagePath ~= ""
     exportSupported = exportSupported && persistedFlag;
 end
 apiExposedFlag = localOutputAPIExposed(spec, persistedFlag, exportSupported, hasRuntimeRows);
-if any(outName == ["output_coverage_registry", "output_completeness_table", "instrumentation_coverage_table", ...
-        "api_exposure_audit_table", "persistence_audit_table", "honest_unavailable_registry"])
+if any(outName == ["output_coverage_registry", "lls_implementation_register", "output_completeness_table", ...
+        "instrumentation_coverage_table", "api_exposure_audit_table", "persistence_audit_table", ...
+        "honest_unavailable_registry"])
     status = "implemented";
     blocker = "";
     persistedFlag = true;
@@ -5363,7 +5873,8 @@ switch string(outName)
         paths = ["reports/csv/contract__csi-rs__csi-rs-resource-occupancy.csv", ...
             "reports/csv/live_csirs_resource_table.csv"];
     case {"prach_correlation_peak_plot"}
-        paths = ["reports/csv/prach_correlation_traces.csv", ...
+        paths = ["reports/csv/prach_correlation_trace.csv", ...
+            "reports/csv/prach_correlation_traces.csv", ...
             "reports/csv/contract__prach-random-access__peak-value-histogram.csv"];
     case {"pucch_detection_metric_plot"}
         paths = ["packet_flow/csv/live_pucch_grants.csv", ...
@@ -5614,8 +6125,8 @@ switch string(outputName)
         val = "system/csv/system_ue_summary.csv";
     case {"control_overhead_analytics_table"}
         val = "control/csv/pdcch_trials.csv|control/csv/pucch_trials.csv|control/csv/prach_trials.csv|packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv";
-    case {"lls_output_contract", "metric_definition_catalog", "metric_unit_role_catalog", ...
-            "plot_manifest", "plot_render_status", "chart_source_registry", ...
+    case {"lls_implementation_register", "lls_output_contract", "metric_definition_catalog", "metric_unit_role_catalog", ...
+            "plot_manifest", "visual_artifact_audit", "plot_render_status", "chart_source_registry", ...
             "plot_data_quality_table", "plot_suppression_table", "unavailable_plot_card_registry", ...
             "raw_to_derived_lineage", "table_field_availability_matrix"}
         val = "reports/csv/output_coverage_registry.csv";
@@ -5682,8 +6193,8 @@ switch string(outputName)
         val = "sixgr.link.runDLPDSCHThroughput|sixgr.link.runULPUSCHThroughput";
     case {"anomaly_window_table", "cross_layer_correlation_table", "hotspot_analytics_table", "control_overhead_analytics_table"}
         val = "sixgr.truth.exportLLSOutputCoverageArtifacts";
-    case {"lls_output_contract", "metric_definition_catalog", "metric_unit_role_catalog", ...
-            "plot_manifest", "plot_render_status", "chart_source_registry", ...
+    case {"lls_implementation_register", "lls_output_contract", "metric_definition_catalog", "metric_unit_role_catalog", ...
+            "plot_manifest", "visual_artifact_audit", "plot_render_status", "chart_source_registry", ...
             "plot_data_quality_table", "plot_suppression_table", "unavailable_plot_card_registry", ...
             "raw_to_derived_lineage", "table_field_availability_matrix", ...
             "pdsch_runtime_event_table", "pusch_runtime_event_table", "pdcch_dci_public_table", ...
@@ -5744,8 +6255,8 @@ switch string(outputName)
         val = "scheduler_feedback_trace_exported";
     case "noise_variance_evidence_table"
         val = "runtime_receiver_public_tables_exported";
-    case {"lls_output_contract", "metric_definition_catalog", "metric_unit_role_catalog", ...
-            "plot_manifest", "plot_render_status", "chart_source_registry", ...
+    case {"lls_implementation_register", "lls_output_contract", "metric_definition_catalog", "metric_unit_role_catalog", ...
+            "plot_manifest", "visual_artifact_audit", "plot_render_status", "chart_source_registry", ...
             "plot_data_quality_table", "plot_suppression_table", "unavailable_plot_card_registry", ...
             "raw_to_derived_lineage", "table_field_availability_matrix"}
         val = "reporting_bundle_or_output_coverage_exported";

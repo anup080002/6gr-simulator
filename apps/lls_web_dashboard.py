@@ -4827,7 +4827,7 @@ def classify_result_section(logical_path: str) -> str:
         return "meta"
     if any(token in path for token in ("debug", "validation_messages", "artifact_inventory", "live_stage_status", "failure_debug_report")):
         return "debug"
-    if any(token in path for token in ("summary", "manifest", "catalog", "checktable", "kpi_summary", "runtime_operating_mode", "truth_contract", "mcs_table_reference", "cqi_table_reference", "multiuser_user_summary", "runtime_stage_profile", "runtime_profiler_summary", "runtime_function_profile", "runtime_function_call_edges", "time_profile", "user_performance", "output_coverage_registry", "output_completeness", "instrumentation_coverage", "api_exposure_audit", "persistence_audit", "honest_unavailable_registry", "compare_run_prerequisites", "result_issue_registry", "table_scenario_topology", "scenario_consistency_check", "table_gnb_cell", "table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", "cell_edge_analytics_table", "energy_root_cause_table")):
+    if any(token in path for token in ("summary", "manifest", "catalog", "checktable", "kpi_summary", "runtime_operating_mode", "truth_contract", "mcs_table_reference", "cqi_table_reference", "multiuser_user_summary", "runtime_stage_profile", "runtime_profiler_summary", "runtime_function_profile", "runtime_function_call_edges", "time_profile", "user_performance", "output_coverage_registry", "lls_implementation_register", "output_completeness", "instrumentation_coverage", "api_exposure_audit", "persistence_audit", "honest_unavailable_registry", "compare_run_prerequisites", "result_issue_registry", "table_scenario_topology", "scenario_consistency_check", "table_gnb_cell", "table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", "cell_edge_analytics_table", "energy_root_cause_table")):
         return "summary"
     if any(token in path for token in ("sites.csv", "sectors.csv", "trps.csv", "ues.csv", "deployment_layout_reference", "layout", "geometry")):
         return "geometry"
@@ -7248,6 +7248,7 @@ def annotate_control_summary_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
     registry_rows = load_small_csv_rows(artifacts, "reports/csv/output_coverage_registry.csv", max_rows=512)
+    implementation_rows = load_small_csv_rows(artifacts, "reports/csv/lls_implementation_register.csv", max_rows=512)
     completeness_rows = load_small_csv_rows(artifacts, "reports/csv/output_completeness_table.csv", max_rows=512)
     instrumentation_rows = load_small_csv_rows(artifacts, "reports/csv/instrumentation_coverage_table.csv", max_rows=256)
     api_audit_rows = load_small_csv_rows(artifacts, "reports/csv/api_exposure_audit_table.csv", max_rows=512)
@@ -7255,6 +7256,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
     unavailable_rows = load_small_csv_rows(artifacts, "reports/csv/honest_unavailable_registry.csv", max_rows=512)
     compare_rows = load_small_csv_rows(artifacts, "reports/csv/compare_run_prerequisites.csv", max_rows=128)
     issue_rows = load_small_csv_rows(artifacts, "reports/csv/result_issue_registry.csv", max_rows=256)
+    kpi_health_rows = load_small_csv_rows(artifacts, "reports/csv/kpi_health_flags.csv", max_rows=128)
     root_cause_rows = load_small_csv_rows(artifacts, "reports/csv/root_cause_candidate_table.csv", max_rows=128)
     cell_edge_rows = load_small_csv_rows(artifacts, "reports/csv/cell_edge_analytics_table.csv", max_rows=128)
     beam_stability_rows = load_small_csv_rows(artifacts, "reports/csv/beam_stability_analytics_table.csv", max_rows=128)
@@ -7320,6 +7322,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
     artifact_links: dict[str, dict[str, Any]] = {}
     for logical_path in (
         "reports/csv/output_coverage_registry.csv",
+        "reports/csv/lls_implementation_register.csv",
         "reports/csv/output_completeness_table.csv",
         "reports/csv/instrumentation_coverage_table.csv",
         "reports/csv/api_exposure_audit_table.csv",
@@ -7327,6 +7330,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
         "reports/csv/honest_unavailable_registry.csv",
         "reports/csv/compare_run_prerequisites.csv",
         "reports/csv/result_issue_registry.csv",
+        "reports/csv/kpi_health_flags.csv",
         "rf/csv/power_energy_table.csv",
         "packet_flow/csv/live_prb_allocation.csv",
         "reports/csv/prb_allocation_heatmap.csv",
@@ -7337,6 +7341,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
 
     dashboard_cards = [
         {"label": "Registry Rows", "value": len(registry_rows)},
+        {"label": "Implementation Rows", "value": len(implementation_rows)},
         {"label": "Implemented", "value": status_counts.get("implemented", 0)},
         {"label": "Partial", "value": status_counts.get("partial", 0)},
         {"label": "Blocked", "value": status_counts.get("blocked", 0)},
@@ -7347,6 +7352,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
         {"label": "Overstated Implemented", "value": overstated_implemented_count},
         {"label": "Unavailable Reasons", "value": len(unavailable_rows)},
         {"label": "Issue Rows", "value": len(issue_rows)},
+        {"label": "KPI Health Rows", "value": len(kpi_health_rows)},
     ]
     if contract_fallback_active and materialization_coverage_rows:
         coverage_row = materialization_coverage_rows[0]
@@ -7367,6 +7373,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
         output_family_cards = []
     return {
         "registry": registry_rows,
+        "implementation_register": implementation_rows,
         "completeness": completeness_rows,
         "instrumentation": instrumentation_rows,
         "api_audit": api_audit_rows,
@@ -7374,6 +7381,7 @@ def build_output_coverage_context(artifacts: list[dict[str, Any]]) -> dict[str, 
         "honest_unavailable": unavailable_rows,
         "compare_prerequisites": compare_rows,
         "issue_registry": issue_rows,
+        "kpi_health_flags": kpi_health_rows,
         "root_cause_candidates": root_cause_rows,
         "cell_edge_analytics": cell_edge_rows,
         "beam_stability_analytics": beam_stability_rows,
@@ -7401,6 +7409,7 @@ def output_family_candidate_paths(output_name: str) -> list[str]:
         "compare_runs_kpi_delta_table": ["reports/csv/compare_run_prerequisites.csv"],
         "compare_run_overlay_plot": ["reports/csv/compare_run_prerequisites.csv"],
         "result_issue_registry": ["reports/csv/result_issue_registry.csv"],
+        "kpi_health_flags": ["reports/csv/kpi_health_flags.csv"],
         "output_coverage_dashboard": ["reports/csv/output_coverage_registry.csv"],
         "persistence_audit_dashboard": ["reports/csv/persistence_audit_table.csv"],
         "api_exposure_dashboard": ["reports/csv/api_exposure_audit_table.csv"],
@@ -16527,6 +16536,7 @@ function renderCoveragePanel(coverage) {{
   document.getElementById('coverageLinks').innerHTML = links.join('') || '<span class="mini-note">Coverage artifacts are not persisted yet.</span>';
   renderOutputFamilyCards(coverage || {{}});
   renderGenericRows('coverageRegistryBody', coverage.registry || [], ['output_name','ui_section','current_status','classification_code','backend_source_exists_flag','persisted_flag','api_exposed_flag','export_supported_flag','ui_rendered_flag','blocker_reason'], 'Coverage registry is not available yet.');
+  renderGenericRows('coverageImplementationBody', coverage.implementation_register || [], ['output_name','implementation_status','evidence_status','conformance_claim_allowed','runtime_row_count','source_artifact_ref','blocker_reason','next_implementation_step'], 'Implementation register is not available yet.');
   renderGenericRows('coverageCompletenessBody', coverage.completeness || [], ['output_name','actual_row_count','actual_artifact_count','completeness_percent','missing_columns','warning_flag'], 'Completeness table is not available yet.');
   renderGenericRows('coveragePersistenceBody', coverage.persistence_audit || [], ['output_name','backend_source_exists_flag','writer_enabled','csv_enabled','json_enabled','retention_policy'], 'Persistence audit is not available yet.');
   renderGenericRows('coverageAPIBody', coverage.api_audit || [], ['output_name','backend_source','api_route','payload_schema_version','response_non_empty_flag','ui_bind_state','exporter_state'], 'API exposure audit is not available yet.');
@@ -16535,6 +16545,7 @@ function renderCoveragePanel(coverage) {{
 }}
 function renderRootCausePanel(coverage) {{
   renderGenericRows('issueRegistryBody', coverage.issue_registry || [], ['severity','issue_status','issue_category','block_name','direction','ue_id','metric_name','observed_value','root_cause_hint','fix_plan'], 'No result issue registry rows are available yet.');
+  renderGenericRows('kpiHealthBody', coverage.kpi_health_flags || [], ['kpi_name','domain','direction','health_status','runtime_row_count','finite_sample_count','proxy_fallback_sample_count','diagnostic_sample_count','blocker_reason','recommended_action'], 'KPI health flags are not available yet.');
   renderGenericRows('rootCauseBody', coverage.root_cause_candidates || [], ['ue_id','cell_id','direction','symptom','severity_score','candidate_reason','evidence_metric','evidence_value'], 'Root-cause candidates are not available yet.');
   renderGenericRows('cellEdgeBody', coverage.cell_edge_analytics || [], ['ue_id','Zone','throughput_mbps','mean_sinr_db','mean_bler','mean_queue_bits'], 'Cell-edge analytics are not available yet.');
   renderGenericRows('beamStabilityBody', coverage.beam_stability_analytics || [], ['ue_id','cell_id','beam_event_count','beam_change_count','max_beam_gain_db','stability_class'], 'Beam-stability analytics are not available yet.');
@@ -17085,6 +17096,18 @@ def build_analytics_page(run_id: int | None, run_tag: str | None = None, message
               </div>
             </section>
             <section class="panel">
+              <h3>Implementation Register</h3>
+              <p class="muted">Conformance claims are allowed only when runtime evidence, artifact persistence, API exposure, export support, and UI rendering all agree.</p>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>Output</th><th>Status</th><th>Evidence</th><th>Claim OK</th><th>Rows</th><th>Source</th><th>Blocker</th><th>Next Step</th></tr></thead>
+                  <tbody id="coverageImplementationBody"><tr><td colspan="8">Loading...</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+          <div class="two-col" style="margin-top:16px;">
+            <section class="panel">
               <h3>Completeness</h3>
               <div class="table-scroll">
                 <table>
@@ -17146,6 +17169,16 @@ def build_analytics_page(run_id: int | None, run_tag: str | None = None, message
               <table>
                 <thead><tr><th>Severity</th><th>Status</th><th>Category</th><th>Block</th><th>Direction</th><th>UE</th><th>Metric</th><th>Observed</th><th>Root Cause Hint</th><th>Fix Plan</th></tr></thead>
                 <tbody id="issueRegistryBody"><tr><td colspan="10">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel">
+            <h3>KPI Health Flags</h3>
+            <p class="muted">Rows come from <code>reports/csv/kpi_health_flags.csv</code>. They summarize whether KPI source rows are finite, missing, unavailable, diagnostic, proxy, fallback, or bootstrap-tagged.</p>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>KPI</th><th>Domain</th><th>Direction</th><th>Health</th><th>Rows</th><th>Finite</th><th>Proxy/Fallback</th><th>Diagnostic</th><th>Blocker</th><th>Action</th></tr></thead>
+                <tbody id="kpiHealthBody"><tr><td colspan="10">Loading...</td></tr></tbody>
               </table>
             </div>
           </section>

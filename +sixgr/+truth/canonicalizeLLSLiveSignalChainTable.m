@@ -49,7 +49,8 @@ end
 function tf = localPreserveDeclaredSchema(scopeToken)
 scope = lower(string(scopeToken));
 tf = any(scope == ["dl_pdsch_trials", "ul_pusch_trials", "pdcch_trials", ...
-    "pucch_trials", "prach_trials", "pbch_trials", "srs_trials", "trs_trials"]);
+    "pucch_trials", "prach_trials", "pbch_trials", "srs_trials", "trs_trials", ...
+    "channel_state", "channel_estimation", "modulation_demodulation", "tx_rx_stage_trace"]);
 end
 
 function tf = localIsStringLikeColumn(col)

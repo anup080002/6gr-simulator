@@ -6,6 +6,9 @@ setup6GRSimToolkit("Verbose", false);
 testNoNoiseSanityDetection();
 testFalseAlarmModeWithPrachDisabled();
 testTimingOffsetRecovery();
+testCorrelationTraceMissCase();
+testCorrelationTraceFalseAlarmCase();
+testRestrictedSetNCSValidation();
 testPRACHOccasionSnapshotIsolation();
 testZCDPEBackwardCompatibleWaveform();
 testZCDPENonzeroDPIDetection();
@@ -54,6 +57,59 @@ timing = sixgr.rach.estimateTimingOffset(det.TimingOffsetSamples, tx.SampleRate_
 assert(logical(det.Detected), "Timing-offset recovery case must detect the preamble.");
 assert(abs(double(timing.Error_us)) < 0.1, ...
     "Timing-offset recovery error must stay below 0.1 us for the deterministic fractional-delay case.");
+assert(isfield(det, "CorrelationTrace") && isstruct(det.CorrelationTrace), ...
+    "PRACH detector must expose lag-domain correlation trace evidence.");
+assert(all(ismember(["LagSamples","CorrelationAbs","PeakLagSamples","Threshold","NoiseFloor"], ...
+    string(fieldnames(det.CorrelationTrace)))), ...
+    "PRACH correlation trace must include lag, magnitude, peak, threshold, and noise-floor evidence.");
+assert(numel(det.CorrelationTrace.LagSamples) == numel(det.CorrelationTrace.CorrelationAbs) && ...
+    any(isfinite(double(det.CorrelationTrace.CorrelationAbs))), ...
+    "PRACH correlation trace must contain finite per-lag correlation samples.");
+assert(abs(double(det.CorrelationTrace.PeakLagSamples) - delaySamples) < 1.0, ...
+    "PRACH correlation trace peak lag must track the known injected preamble delay.");
+end
+
+function testCorrelationTraceMissCase()
+cfg = localScenario("ScenarioName", "trace_miss", "SNRSweep_dB", 100, ...
+    "NumTrials", 1, "ThresholdSweep", 2.0);
+out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+assert(istable(out.CorrelationTraceTable) && ~isempty(out.CorrelationTraceTable), ...
+    "PRACH miss case must still export measured lag-domain correlation samples.");
+assert(all(ismember(localCorrelationTraceColumns(), string(out.CorrelationTraceTable.Properties.VariableNames))), ...
+    "PRACH correlation trace export must use the canonical lag-domain schema.");
+assert(any(logical(out.CorrelationTraceTable.missed_detection)), ...
+    "PRACH miss case must mark missed_detection in correlation trace evidence.");
+assert(all(string(out.CorrelationTraceTable.truth_status) == "real_lls_evidence"), ...
+    "Measured PRACH correlation trace rows must be marked as real LLS evidence.");
+end
+
+function testCorrelationTraceFalseAlarmCase()
+cfg = localScenario("ScenarioName", "trace_false_alarm", "SNRSweep_dB", -20, ...
+    "NumTrials", 1, "NumUEsPerRO", 0, "ActivePreamblePattern", false, "ThresholdSweep", 0.0);
+out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+assert(istable(out.CorrelationTraceTable) && ~isempty(out.CorrelationTraceTable), ...
+    "PRACH false-alarm case must export measured lag-domain correlation samples.");
+assert(any(logical(out.CorrelationTraceTable.false_alarm)), ...
+    "PRACH false-alarm case must mark false_alarm in correlation trace evidence.");
+assert(any(isfinite(double(out.CorrelationTraceTable.correlation_abs))), ...
+    "PRACH false-alarm trace must retain the measured noise correlation samples.");
+end
+
+function testRestrictedSetNCSValidation()
+unrestricted = sixgr.rach.PRACHConfig(localScenario("ScenarioName", "ncs_unrestricted", ...
+    "ZeroCorrelationZone", 8), "RestrictedSet", "UnrestrictedSet");
+assert(isfinite(double(unrestricted.ZCZNCS)), ...
+    "Unrestricted PRACH N_CS must resolve from the concrete 3GPP ZCZ table.");
+
+failedClosed = false;
+try
+    sixgr.rach.PRACHConfig(localScenario("ScenarioName", "ncs_restricted", ...
+        "ZeroCorrelationZone", 8), "RestrictedSet", "RestrictedSet");
+catch ME
+    failedClosed = strcmp(string(ME.identifier), "sixgr:rach:PRACHConfig:RestrictedSetNCSMissing");
+end
+assert(failedClosed, ...
+    "Restricted-set PRACH must fail closed until the restricted-set N_CS validation table is implemented.");
 end
 
 function testPRACHOccasionSnapshotIsolation()
@@ -197,8 +253,15 @@ end
 end
 
 function T = localDropRuntimeLatencyColumns(T)
-drop = intersect(["ComputeLatency_ms"], string(T.Properties.VariableNames));
+drop = intersect("ComputeLatency_ms", string(T.Properties.VariableNames));
 if ~isempty(drop)
     T = removevars(T, cellstr(drop));
 end
+end
+
+function cols = localCorrelationTraceColumns()
+cols = ["trial_id","preamble_index","root_sequence_index","restricted_set_type","n_cs", ...
+    "zero_correlation_zone_config","lag_samples","lag_us","correlation_abs","threshold", ...
+    "noise_floor","peak_lag_samples","timing_advance_samples","detection_result", ...
+    "false_alarm","missed_detection","snr_db","cfo_hz","seed","truth_status"];
 end

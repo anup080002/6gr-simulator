@@ -20,9 +20,11 @@ outputDir = localResolveOutputDir(baseStruct);
 
 trialRows = cell(0, 1);
 roRows = cell(0, 1);
+corrRows = cell(0, 1);
 scenarioExports = cell(0, 1);
 trialCount = 0;
 roCount = 0;
+corrCount = 0;
 firstResolved = struct();
 
 for iScenario = 1:numel(scenarioMatrix)
@@ -53,6 +55,12 @@ for iScenario = 1:numel(scenarioMatrix)
                     end
                     roCount = roCount + 1;
                     roRows{roCount, 1} = simOut.ROSummary;
+                    if isfield(simOut, "CorrelationTraceRows") && ~isempty(simOut.CorrelationTraceRows)
+                        for iCorr = 1:numel(simOut.CorrelationTraceRows)
+                            corrCount = corrCount + 1;
+                            corrRows{corrCount, 1} = simOut.CorrelationTraceRows(iCorr);
+                        end
+                    end
                     for iRow = 1:numel(simOut.UERows)
                         trialCount = trialCount + 1;
                         trialRows{trialCount, 1} = simOut.UERows(iRow);
@@ -71,6 +79,7 @@ if verbose
 end
 trialTable = localStructArrayToTable(localCellStructArray(trialRows));
 roTable = localStructArrayToTable(localCellStructArray(roRows));
+correlationTraceTable = localStructArrayToTable(localCellStructArray(corrRows));
 if verbose
     fprintf("PRACH metrics start: trialRows=%d roRows=%d\n", height(trialTable), height(roTable));
 end
@@ -88,6 +97,7 @@ out.Config = localSerializableBase(baseStruct);
 out.ScenarioConfigs = localCellStructArray(scenarioExports);
 out.TrialTable = trialTable;
 out.ROTable = roTable;
+out.CorrelationTraceTable = correlationTraceTable;
 out.SummaryBySNR = metrics.SummaryBySNR;
 out.SummaryByScenario = metrics.SummaryByScenario;
 out.Confusion = metrics.Confusion;
@@ -246,6 +256,7 @@ airInterfaceObservationMs = 1e3 * (size(rxWave, 1) / max(double(refTx.SampleRate
 
 simOut.ROSummary = localClassifyRO(cfg, det, noiseDet, servingTruth, interfererTruth, occasion, snrDb, threshold, noiseVar, trialSeed, ...
     computeLatencyMs, airInterfaceObservationMs);
+simOut.CorrelationTraceRows = localBuildCorrelationTraceRows(cfg, det, simOut.ROSummary, servingTruth, occasion, snrDb, threshold, noiseVar, trialSeed);
 simOut.UERows = localExpandUERows(cfg, simOut.ROSummary, servingTruth, occasion, snrDb, threshold);
 end
 
@@ -736,6 +747,79 @@ for iUE = 1:numel(servingTruth)
 end
 end
 
+function rows = localBuildCorrelationTraceRows(cfg, det, roSummary, servingTruth, ~, snrDb, threshold, ~, trialSeed)
+trace = sixgr.util.structGet(det, "CorrelationTrace", struct());
+lags = double(sixgr.util.structGet(trace, "LagSamples", zeros(0, 1)));
+corrAbs = double(sixgr.util.structGet(trace, "CorrelationAbs", zeros(0, 1)));
+lags = lags(:);
+corrAbs = corrAbs(:);
+n = min(numel(lags), numel(corrAbs));
+if n == 0
+    rows = struct([]);
+    return;
+end
+lags = lags(1:n);
+corrAbs = corrAbs(1:n);
+validSamples = isfinite(lags) & isfinite(corrAbs);
+lags = lags(validSamples);
+corrAbs = corrAbs(validSamples);
+n = numel(lags);
+if n == 0
+    rows = struct([]);
+    return;
+end
+sampleRateHz = localCorrelationTraceSampleRate(cfg, servingTruth);
+lagUs = lags ./ max(sampleRateHz, eps) .* 1e6;
+cfoHz = double(localFirstFinite([roSummary.cfo_true_hz; roSummary.cfo_est_hz]));
+if ~isfinite(cfoHz)
+    cfoHz = 0;
+end
+preambleIndex = double(sixgr.util.structGet(trace, "PreambleIndex", ...
+    sixgr.util.structGet(det, "PreambleIndexFromPeak", NaN)));
+noiseFloor = double(sixgr.util.structGet(trace, "NoiseFloor", NaN));
+peakLagSamples = double(sixgr.util.structGet(trace, "PeakLagSamples", sixgr.util.structGet(det, "TimingOffsetSamples", NaN)));
+truthStatus = string(sixgr.util.structGet(trace, "TraceStatus", "real_lls_evidence"));
+if strlength(truthStatus) == 0
+    truthStatus = "real_lls_evidence";
+end
+rows = repmat(struct( ...
+    "trial_id", round(double(trialSeed)), ...
+    "preamble_index", double(preambleIndex), ...
+    "root_sequence_index", double(cfg.SequenceIndex), ...
+    "restricted_set_type", string(cfg.RestrictedSet), ...
+    "n_cs", double(sixgr.util.structGet(cfg, "ZCZNCS", NaN)), ...
+    "zero_correlation_zone_config", double(cfg.ZeroCorrelationZone), ...
+    "lag_samples", NaN, ...
+    "lag_us", NaN, ...
+    "correlation_abs", NaN, ...
+    "threshold", double(threshold), ...
+    "noise_floor", double(noiseFloor), ...
+    "peak_lag_samples", double(peakLagSamples), ...
+    "timing_advance_samples", double(roSummary.EstimatedTimingOffset_samples), ...
+    "detection_result", string(roSummary.detection_type), ...
+    "false_alarm", logical(roSummary.false_alarm), ...
+    "missed_detection", logical(roSummary.missed_detection), ...
+    "snr_db", double(snrDb), ...
+    "cfo_hz", double(cfoHz), ...
+    "seed", round(double(trialSeed)), ...
+    "truth_status", truthStatus), n, 1);
+for i = 1:n
+    rows(i).lag_samples = double(lags(i));
+    rows(i).lag_us = double(lagUs(i));
+    rows(i).correlation_abs = double(corrAbs(i));
+end
+end
+
+function sampleRateHz = localCorrelationTraceSampleRate(cfg, servingTruth)
+sampleRateHz = double(sixgr.util.structGet(cfg, "SampleRate_Hz", NaN));
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0) && ~isempty(servingTruth)
+    sampleRateHz = double(sixgr.util.structGet(servingTruth(1), "SampleRate_Hz", NaN));
+end
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    sampleRateHz = 30.72e6;
+end
+end
+
 function T = localStructArrayToTable(rows)
 if isempty(rows)
     T = table();
@@ -765,6 +849,10 @@ outDir = out.OutputDir;
 sixgr.util.ensureDir(fullfile(outDir, "stub.txt"));
 localWriteJSON(fullfile(outDir, "scenario_config.json"), struct("base_config", out.Config, "scenario_configs", {out.ScenarioConfigs}));
 sixgr.util.csvWriteTable(fullfile(outDir, "trial_level_results.csv"), out.TrialTable);
+if isfield(out, "CorrelationTraceTable") && istable(out.CorrelationTraceTable) && ~isempty(out.CorrelationTraceTable)
+    sixgr.util.csvWriteTable(fullfile(outDir, "prach_correlation_trace.csv"), out.CorrelationTraceTable);
+    sixgr.util.csvWriteTable(fullfile(outDir, "prach_correlation_traces.csv"), out.CorrelationTraceTable);
+end
 sixgr.util.csvWriteTable(fullfile(outDir, "summary_by_snr.csv"), out.SummaryBySNR);
 sixgr.util.csvWriteTable(fullfile(outDir, "summary_by_scenario.csv"), out.SummaryByScenario);
 sixgr.util.csvWriteTable(fullfile(outDir, "confusion_detection_types.csv"), out.Confusion);
@@ -818,6 +906,16 @@ for iArg = 1:nargin
     end
     value = candidate;
     return;
+end
+end
+
+function value = localFirstFinite(values)
+values = double(values(:));
+values = values(isfinite(values));
+if isempty(values)
+    value = NaN;
+else
+    value = values(1);
 end
 end
 

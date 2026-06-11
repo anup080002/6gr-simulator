@@ -897,8 +897,55 @@ for n = 1:numFrames
             trialDopplerErr(n) = NaN;
         end
         if istable(constT) && ~isempty(constT)
+            nConst = height(constT);
+            snrLineage_dB = NaN;
+            if isfinite(double(trialAppliedNoiseSNR(n)))
+                snrLineage_dB = double(trialAppliedNoiseSNR(n));
+            elseif isfinite(double(trialAppliedAWGNSNR(n)))
+                snrLineage_dB = double(trialAppliedAWGNSNR(n));
+            elseif isfinite(double(trialConfiguredSNR(n)))
+                snrLineage_dB = double(trialConfiguredSNR(n));
+            elseif isfinite(double(snr_dB))
+                snrLineage_dB = double(snr_dB);
+            end
             constT.Frame = repmat(double(trialFrame(n)), height(constT), 1);
             constT.Slot = repmat(double(trialSlot(n)), height(constT), 1);
+            if ismember("SNR_dB", string(constT.Properties.VariableNames))
+                sampleSNR = double(constT.SNR_dB);
+                sampleSNR(~isfinite(sampleSNR)) = snrLineage_dB;
+                constT.SNR_dB = sampleSNR;
+            else
+                constT.SNR_dB = repmat(snrLineage_dB, nConst, 1);
+            end
+            constT.TBId = repmat(double(n), nConst, 1);
+            constT.MCSIndex = repmat(double(trialMCS(n)), nConst, 1);
+            constT.MCS = repmat(double(trialMCS(n)), nConst, 1);
+            constT.Layers = repmat(double(trialLayers(n)), nConst, 1);
+            constT.PostEqSINR_dB = repmat(double(trialSINR(n)), nConst, 1);
+            constT.MeasuredSINR_dB = repmat(double(trialSINR(n)), nConst, 1);
+            constT.EVM_rms = repmat(double(trialEVM(n)), nConst, 1);
+            constT.EVM_rms_pct = repmat(double(trialEVM(n)) * 100, nConst, 1);
+            constT.EVM_dB = repmat(20 * log10(max(double(trialEVM(n)), realmin)), nConst, 1);
+            constT.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", nConst, 1);
+            constT.TruthStatus = repmat("real_lls_evidence", nConst, 1);
+            constT.direction = string(constT.Direction);
+            constT.ue_id = nan(nConst, 1);
+            constT.slot = double(constT.Slot);
+            constT.tb_id = double(constT.TBId);
+            constT.layer = double(constT.LayerIndex);
+            constT.modulation = string(constT.Modulation);
+            constT.mcs_index = double(constT.MCSIndex);
+            constT.snr_db = double(constT.SNR_dB);
+            constT.posteq_sinr_db = double(constT.PostEqSINR_dB);
+            constT.symbol_index = double(constT.SampleIndex);
+            constT.reference_symbol_i = double(constT.ReferenceSymbolReal);
+            constT.reference_symbol_q = double(constT.ReferenceSymbolImag);
+            constT.equalized_i = double(constT.EqualizedReal);
+            constT.equalized_q = double(constT.EqualizedImag);
+            constT.evm_rms_pct = double(constT.EVM_rms_pct);
+            constT.evm_db = double(constT.EVM_dB);
+            constT.normalization = string(constT.Normalization);
+            constT.truth_status = string(constT.TruthStatus);
             constellationChunks{n} = constT;
         end
 
@@ -1583,7 +1630,9 @@ T.ConfiguredLinkAdaptationMode = configuredLinkMode;
 T.ConfiguredMCSSelectionPolicy = configuredSelectionMode;
 T.LinkAdaptationDomain = configuredDomain;
 T.CQISource = localResolveCQISourceColumn(T, configuredDomain);
-T.MCSSelectionSource = repmat(localResolveMCSSelectionSourceToken(cfg, direction), n, 1);
+[mcsSelectionSource, mcsValueStatus] = localResolveMCSSelectionEvidenceColumns(T, cfg, direction);
+T.MCSSelectionSource = mcsSelectionSource;
+T.MCSValueStatus = mcsValueStatus;
 T.OLLADomain = repmat(localResolveOLLADomainToken(cfg, direction), n, 1);
 outerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true));
 innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", true));
@@ -2792,6 +2841,7 @@ T.TimingEstimateWasClipped = false(0,1);
 T.LinkAdaptationDomain = strings(0,1);
 T.CQISource = strings(0,1);
 T.MCSSelectionSource = strings(0,1);
+T.MCSValueStatus = strings(0,1);
 T.OLLADomain = strings(0,1);
 T.OuterLoopEnabled = false(0,1);
 T.InnerLoopEnabled = false(0,1);
@@ -3047,6 +3097,28 @@ switch sixgr.link.resolveLinkAdaptationDomain(cfg, direction)
     otherwise
         source = "runtime_cqi_to_amc";
 end
+end
+
+function [source, status] = localResolveMCSSelectionEvidenceColumns(T, cfg, direction)
+n = height(T);
+source = repmat(localResolveMCSSelectionSourceToken(cfg, direction), n, 1);
+status = repmat("configured_runtime_policy", n, 1);
+if ~(istable(T) && n > 0)
+    return;
+end
+mode = lower(strtrim(string(localOptionalColumn(T, "SchedulerGrantMCSSelectionMode", ""))));
+bootstrapMask = mode == "bootstrap_cqi_conservative";
+source(bootstrapMask) = "bootstrap_cqi_conservative_lab_default";
+status(bootstrapMask) = "bootstrap_not_measured_cqi";
+cqiMask = mode == "cqi_table";
+source(cqiMask) = "runtime_cqi_table";
+status(cqiMask) = "measured_cqi_mapped";
+fixedMCSMask = mode == "fixed_mcs";
+source(fixedMCSMask) = "configured_fixed_mcs";
+status(fixedMCSMask) = "configured";
+fixedModMask = mode == "fixed_modulation";
+source(fixedModMask) = "configured_modulation_code_rate";
+status(fixedModMask) = "configured";
 end
 
 function token = localResolveOLLADomainToken(cfg, direction)

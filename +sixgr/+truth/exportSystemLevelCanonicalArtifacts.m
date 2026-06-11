@@ -123,6 +123,15 @@ cellId = localNumericColumn(grantT, "CellID", NaN);
 [frameIdx, slotIdx] = localFrameSlotFromTTI(tti, slotsPerFrame);
 cfgMode = localConfiguredLinkMode(cfg);
 schedulerMode = localConfiguredSchedulerGrantMode(cfg);
+schedulerModeColumn = localStringColumn(grantT, "AMCMode", schedulerMode);
+mcsSelectionSourceColumn = localStringColumn(grantT, "MCSSelectionSource", "");
+mcsSelectionSourceMissing = strlength(strtrim(mcsSelectionSourceColumn)) == 0;
+mcsSelectionSourceFallback = localMCSSelectionSourceFromMode(schedulerModeColumn);
+mcsSelectionSourceColumn(mcsSelectionSourceMissing) = mcsSelectionSourceFallback(mcsSelectionSourceMissing);
+mcsValueStatusColumn = localStringColumn(grantT, "MCSValueStatus", "");
+mcsValueStatusMissing = strlength(strtrim(mcsValueStatusColumn)) == 0;
+mcsValueStatusFallback = localMCSValueStatusFromMode(schedulerModeColumn);
+mcsValueStatusColumn(mcsValueStatusMissing) = mcsValueStatusFallback(mcsValueStatusMissing);
 requestedSource = localRequestedOperatingPointSource(cfgMode);
 interferenceMode = localConfiguredInterferenceMode(cfg);
 status = repmat("FAIL", n, 1);
@@ -147,8 +156,8 @@ T = table( ...
     ack, localNumericColumn(grantT, "HarqID", NaN), localNumericColumn(grantT, "RV", NaN), localNumericColumn(grantT, "NDI", NaN), ...
     localLogicalColumn(grantT, "IsRetransmission", false), localStringColumn(grantT, "GrantReason", ""), ...
     localNumericColumn(grantT, "HeadOfLineDelay_ms", NaN), localNumericColumn(grantT, "BufferBytesBefore", NaN), localNumericColumn(grantT, "BufferBytesAfter", NaN), ...
-    localSyntheticGrantId(direction, tti, cellId, ueIdx), repmat(cfgMode, n, 1), repmat(schedulerMode, n, 1), ...
-    repmat(requestedSource, n, 1), repmat("scheduler_grant", n, 1), repmat("scheduler_grant", n, 1), ...
+    localSyntheticGrantId(direction, tti, cellId, ueIdx), repmat(cfgMode, n, 1), schedulerModeColumn, ...
+    mcsSelectionSourceColumn, mcsValueStatusColumn, repmat(requestedSource, n, 1), repmat("scheduler_grant", n, 1), repmat("scheduler_grant", n, 1), ...
     repmat(interferenceMode, n, 1), status, ...
     localStringColumn(grantT, "PHYDecisionRole", ""), phyDecisionStatus, ...
     localStringColumn(grantT, "PHYDecisionSource", ""), localStringColumn(grantT, "PHYDecisionReason", ""), ...
@@ -158,7 +167,7 @@ T = table( ...
     'SlotDirection','PRBStart','PRBCount','SymbolStart','NumSymbols','TBSBits','TBSBytes','CQIUsed','MCSIndex','Modulation', ...
     'NumLayers','TargetCodeRate','SINR_dB','BLER','Ack','HarqID','RV','NDI','IsRetransmission','GrantReason', ...
     'HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantContextId','LinkAdaptationMode', ...
-    'SchedulerGrantMCSSelectionMode','RequestedOperatingPointSource','AppliedOperatingPointSource','ActualMCSSelectionMode', ...
+    'SchedulerGrantMCSSelectionMode','MCSSelectionSource','MCSValueStatus','RequestedOperatingPointSource','AppliedOperatingPointSource','ActualMCSSelectionMode', ...
     'InterferenceMode','Status','PHYDecisionRole','PHYDecisionStatus','PHYDecisionSource','PHYDecisionReason', ...
     'WaveformReplayExecuted','WaveformReplayReused','WaveformReplayKey'});
 T = localAppendSystemGrantReplayEvidence(T, grantT);
@@ -251,7 +260,15 @@ T.CQIDerivedTargetCodeRate = cqiDerivedRate;
 T.LinkAdaptationMode = repmat(cfgMode, n, 1);
 T.ConfiguredLinkAdaptationMode = repmat(cfgMode, n, 1);
 T.ConfiguredMCSSelectionPolicy = repmat(configuredPolicy, n, 1);
-T.SchedulerGrantMCSSelectionMode = repmat(localConfiguredSchedulerGrantMode(cfg), n, 1);
+T.SchedulerGrantMCSSelectionMode = localStringColumn(grantT, "AMCMode", localConfiguredSchedulerGrantMode(cfg));
+T.MCSSelectionSource = localStringColumn(grantT, "MCSSelectionSource", "");
+missingMCSSelectionSource = strlength(strtrim(T.MCSSelectionSource)) == 0;
+fallbackMCSSelectionSource = localMCSSelectionSourceFromMode(T.SchedulerGrantMCSSelectionMode);
+T.MCSSelectionSource(missingMCSSelectionSource) = fallbackMCSSelectionSource(missingMCSSelectionSource);
+T.MCSValueStatus = localStringColumn(grantT, "MCSValueStatus", "");
+missingMCSValueStatus = strlength(strtrim(T.MCSValueStatus)) == 0;
+fallbackMCSValueStatus = localMCSValueStatusFromMode(T.SchedulerGrantMCSSelectionMode);
+T.MCSValueStatus(missingMCSValueStatus) = fallbackMCSValueStatus(missingMCSValueStatus);
 T.RequestedOperatingPointSource = repmat(requestedSource, n, 1);
 T.AppliedOperatingPointSource = repmat("scheduler_grant", n, 1);
 T.ActualMCSSelectionMode = repmat("scheduler_grant", n, 1);
@@ -283,6 +300,7 @@ T.DecoderTruthProxySINRSource = localStringColumn(grantT, "DecoderTruthProxySINR
 T.DecoderTruthProxySINRValueRole = localStringColumn(grantT, "DecoderTruthProxySINRValueRole", "unavailable");
 T.DecoderTruthProxySINRValueStatus = localStringColumn(grantT, "DecoderTruthProxySINRValueStatus", "unavailable");
 T.DecoderTruthProxySINRNAReason = localStringColumn(grantT, "DecoderTruthProxySINRNAReason", "system_level_sinr_budget_is_not_decoder_truth_proxy");
+T = localQuarantineDecoderTruthProxy(T);
 T.SINRValueRole = repmat("runtime_state_derived", n, 1);
 T.SINRSource = repmat(sinrSource, n, 1);
 T.SINRValueStatus = repmat("available_system_level_estimate", n, 1);
@@ -1068,17 +1086,17 @@ ctx.ExecutionModel = char(string(sixgr.util.structGet(scfg.toStruct(), "users.ex
 end
 
 function T = localEmptySchedulerGrantTable()
-T = table('Size', [0 48], ...
+T = table('Size', [0 50], ...
     'VariableTypes', {'string','double','double','double','double','double','double','double','double','double', ...
     'string','double','double','double','double','double','double','double','double','string', ...
     'double','double','double','double','logical','double','double','double','logical','string', ...
-    'double','double','double','string','string','string','string','string','string','string','string', ...
+    'double','double','double','string','string','string','string','string','string','string','string','string','string', ...
     'string','string','string','string','logical','logical','string'}, ...
     'VariableNames', {'Direction','TTI','Time_s','Frame','Slot','CellID','BaseStationID','UE','UEID','RNTI', ...
     'SlotDirection','PRBStart','PRBCount','SymbolStart','NumSymbols','TBSBits','TBSBytes','CQIUsed','MCSIndex','Modulation', ...
     'NumLayers','TargetCodeRate','SINR_dB','BLER','Ack','HarqID','RV','NDI','IsRetransmission','GrantReason', ...
     'HeadOfLineDelay_ms','BufferBytesBefore','BufferBytesAfter','GrantContextId','LinkAdaptationMode', ...
-    'SchedulerGrantMCSSelectionMode','RequestedOperatingPointSource','AppliedOperatingPointSource','ActualMCSSelectionMode', ...
+    'SchedulerGrantMCSSelectionMode','MCSSelectionSource','MCSValueStatus','RequestedOperatingPointSource','AppliedOperatingPointSource','ActualMCSSelectionMode', ...
     'InterferenceMode','Status','PHYDecisionRole','PHYDecisionStatus','PHYDecisionSource','PHYDecisionReason', ...
     'WaveformReplayExecuted','WaveformReplayReused','WaveformReplayKey'});
 end
@@ -1284,6 +1302,9 @@ T.MCSIndex = zeros(0, 1);
 T.Modulation = string.empty(0, 1);
 T.TargetCodeRate = zeros(0, 1);
 T.AllocatedPRBCount = zeros(0, 1);
+T.SchedulerGrantMCSSelectionMode = string.empty(0, 1);
+T.MCSSelectionSource = string.empty(0, 1);
+T.MCSValueStatus = string.empty(0, 1);
 end
 
 function row = localEmptyMultiUserSummaryRow()
@@ -1346,6 +1367,64 @@ if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
     return;
 end
 values = string(T.(char(varName)));
+end
+
+function source = localMCSSelectionSourceFromMode(modeValues)
+mode = lower(strtrim(string(modeValues)));
+source = repmat("configured_runtime_policy", size(mode));
+source(mode == "cqi_table") = "runtime_cqi_table";
+source(mode == "bootstrap_cqi_conservative") = "bootstrap_cqi_conservative_lab_default";
+source(mode == "fixed_mcs") = "configured_fixed_mcs";
+source(mode == "fixed_modulation") = "configured_modulation_code_rate";
+end
+
+function status = localMCSValueStatusFromMode(modeValues)
+mode = lower(strtrim(string(modeValues)));
+status = repmat("configured_runtime_policy", size(mode));
+status(mode == "cqi_table") = "measured_cqi_mapped";
+status(mode == "bootstrap_cqi_conservative") = "bootstrap_not_measured_cqi";
+status(mode == "fixed_mcs" | mode == "fixed_modulation") = "configured";
+end
+
+function T = localQuarantineDecoderTruthProxy(T)
+if ~istable(T) || ~ismember("DecoderTruthProxySINR_dB", string(T.Properties.VariableNames))
+    return;
+end
+n = height(T);
+if ~ismember("DecoderTruthProxySINRSource", string(T.Properties.VariableNames))
+    T.DecoderTruthProxySINRSource = repmat("unavailable_system_level_no_decoder_truth_proxy", n, 1);
+end
+if ~ismember("DecoderTruthProxySINRValueRole", string(T.Properties.VariableNames))
+    T.DecoderTruthProxySINRValueRole = repmat("unavailable", n, 1);
+end
+if ~ismember("DecoderTruthProxySINRValueStatus", string(T.Properties.VariableNames))
+    T.DecoderTruthProxySINRValueStatus = repmat("unavailable", n, 1);
+end
+if ~ismember("DecoderTruthProxySINRNAReason", string(T.Properties.VariableNames))
+    T.DecoderTruthProxySINRNAReason = repmat("system_level_sinr_budget_is_not_decoder_truth_proxy", n, 1);
+end
+decoderProxy = double(T.DecoderTruthProxySINR_dB);
+source = strtrim(string(T.DecoderTruthProxySINRSource));
+role = strtrim(string(T.DecoderTruthProxySINRValueRole));
+proxyLike = isfinite(decoderProxy) | contains(lower(source), "proxy") | contains(lower(role), "proxy");
+if any(proxyLike)
+    decoderProxy(proxyLike) = NaN;
+    source(proxyLike) = "evm_proxy_quarantined_not_decoder_truth";
+    role(proxyLike) = "unavailable";
+    T.DecoderTruthProxySINRValueStatus(proxyLike) = "unavailable";
+    T.DecoderTruthProxySINRNAReason(proxyLike) = "decoder_truth_sinr_requires_receiver_or_decoder_evidence_not_evm_proxy";
+end
+blankSource = strlength(source) == 0;
+source(blankSource) = "unavailable_system_level_no_decoder_truth_proxy";
+blankRole = strlength(role) == 0;
+role(blankRole) = "unavailable";
+blankStatus = strlength(strtrim(string(T.DecoderTruthProxySINRValueStatus))) == 0;
+T.DecoderTruthProxySINRValueStatus(blankStatus) = "unavailable";
+blankReason = strlength(strtrim(string(T.DecoderTruthProxySINRNAReason))) == 0;
+T.DecoderTruthProxySINRNAReason(blankReason) = "system_level_sinr_budget_is_not_decoder_truth_proxy";
+T.DecoderTruthProxySINR_dB = decoderProxy;
+T.DecoderTruthProxySINRSource = source;
+T.DecoderTruthProxySINRValueRole = role;
 end
 
 function T = localAppendSystemGrantReplayEvidence(T, sourceT)

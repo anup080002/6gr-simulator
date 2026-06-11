@@ -72,6 +72,7 @@ decision = struct( ...
     "InstantaneousCQIModulation", char(instantMod), ...
     "InstantaneousCQITargetCodeRate", double(instantCodeRate), ...
     "CQISmoothingAlpha", double(adaptationState.CQISmoothingAlpha), ...
+    "CQISmoothingAlphaSource", char(string(sixgr.util.structGet(adaptationState, "CQISmoothingAlphaSource", ""))), ...
     "CQIBasedMCS", double(adaptationState.CQIBasedMCS), ...
     "DeltaMCS", double(adaptationState.DeltaMCS), ...
     "StaticDeltaMCS", double(adaptationState.StaticDeltaMCS), ...
@@ -442,17 +443,38 @@ if direction == "DL"
     base.TargetCodeRate = double(sixgr.util.structGet(cfg, "phy.pdsch.codeRate", 0.5));
     base.NumLayers = max(1, round(double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
         sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)))));
-    base.MCSIndex = double(sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", ...
-        sixgr.l2.mac.SchedulerBase.approxMCSIndex(base.Modulation, base.TargetCodeRate, NaN, ...
-        sixgr.link.resolveConfiguredMCSTable(cfg, "DL"))));
+    configuredMCS = localFiniteScalar(sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", NaN), NaN);
+    if isfinite(configuredMCS)
+        base.MCSIndex = double(configuredMCS);
+    else
+        decision = sixgr.link.resolveMCSIndexFromProfile(base.Modulation, base.TargetCodeRate, ...
+            "MCSTable", sixgr.link.resolveConfiguredMCSTable(cfg, "DL"));
+        base.MCSIndex = double(decision.MCSIndex);
+    end
 else
     base.Modulation = char(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", "QPSK")));
     base.TargetCodeRate = double(sixgr.util.structGet(cfg, "phy.pusch.codeRate", 0.5));
     base.NumLayers = max(1, round(double(sixgr.util.structGet(cfg, "phy.pusch.numLayers", ...
         sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)))));
-    base.MCSIndex = double(sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", ...
-        sixgr.l2.mac.SchedulerBase.approxMCSIndex(base.Modulation, base.TargetCodeRate, NaN, ...
-        sixgr.link.resolveConfiguredMCSTable(cfg, "UL"))));
+    configuredMCS = localFiniteScalar(sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", NaN), NaN);
+    if isfinite(configuredMCS)
+        base.MCSIndex = double(configuredMCS);
+    else
+        decision = sixgr.link.resolveMCSIndexFromProfile(base.Modulation, base.TargetCodeRate, ...
+            "MCSTable", sixgr.link.resolveConfiguredMCSTable(cfg, "UL"));
+        base.MCSIndex = double(decision.MCSIndex);
+    end
+end
+end
+
+function value = localFiniteScalar(raw, defaultValue)
+value = defaultValue;
+try
+    candidate = double(raw);
+    if isscalar(candidate) && isfinite(candidate)
+        value = candidate;
+    end
+catch
 end
 end
 
@@ -495,13 +517,15 @@ end
 end
 
 function adaptationState = localInitAdaptationState(cfg, direction, previousState)
+[cqiSmoothingAlpha, cqiSmoothingAlphaSource] = localResolveCQISmoothingAlpha(cfg);
 adaptationState = struct( ...
     "Direction", char(direction), ...
     "LinkAdaptationDomain", char(sixgr.link.resolveLinkAdaptationDomain(cfg, direction)), ...
     "Initialized", false, ...
     "InnerLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", true)), ...
     "OuterLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true)), ...
-    "CQISmoothingAlpha", localResolveCQISmoothingAlpha(cfg), ...
+    "CQISmoothingAlpha", double(cqiSmoothingAlpha), ...
+    "CQISmoothingAlphaSource", char(cqiSmoothingAlphaSource), ...
     "SmoothedCQI", NaN, ...
     "CQIBasedMCS", NaN, ...
     "DeltaMCS", 0, ...
@@ -531,10 +555,85 @@ for i = 1:numel(prevFields)
 end
 end
 
-function alpha = localResolveCQISmoothingAlpha(cfg)
+function [alpha, source] = localResolveCQISmoothingAlpha(cfg)
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiSmoothingMode", ...
+    sixgr.util.structGet(cfg, "link_adaptation.cqi_smoothing_mode", "")))));
+if mode == "doppler_adaptive"
+    [alpha, source] = localDopplerAdaptiveCQISmoothingAlpha(cfg);
+    return;
+end
+
 alpha = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", NaN));
-if ~(isfinite(alpha) && alpha >= 0 && alpha <= 1)
+if isfinite(alpha) && alpha >= 0 && alpha <= 1
+    source = "configured_fixed_alpha";
+    return;
+end
+
+[alpha, source] = localDopplerAdaptiveCQISmoothingAlpha(cfg);
+if source ~= "doppler_unavailable_default_alpha"
+    return;
+end
+alpha = 0.2;
+source = "default_fixed_alpha";
+end
+
+function [alpha, source] = localDopplerAdaptiveCQISmoothingAlpha(cfg)
+dopplerHz = localFirstFiniteConfigValue(cfg, [ ...
+    "channel.doppler_Hz"
+    "channel.dopplerHz"
+    "channel.fading.maxDoppler_Hz"
+    "phy.channel.doppler_Hz"], NaN);
+slotDuration_s = localFirstFiniteConfigValue(cfg, [ ...
+    "phy.numerology.slotDuration_s"
+    "phy.numerology.slotDurationSeconds"], NaN);
+if ~(isfinite(slotDuration_s) && slotDuration_s > 0)
+    slotDuration_ms = localFirstFiniteConfigValue(cfg, [ ...
+        "phy.numerology.slotDuration_ms"
+        "frame_timing.slot_duration_ms"], NaN);
+    if isfinite(slotDuration_ms) && slotDuration_ms > 0
+        slotDuration_s = slotDuration_ms * 1e-3;
+    end
+end
+if ~(isfinite(slotDuration_s) && slotDuration_s > 0)
+    scsKHz = localFirstFiniteConfigValue(cfg, [ ...
+        "phy.carrier.SubcarrierSpacing"
+        "phy.numerology.scs_kHz"], 30);
+    mu = round(log2(max(double(scsKHz), 15) / 15));
+    slotDuration_s = 1e-3 / max(1, 2 ^ max(0, mu));
+end
+if ~(isfinite(dopplerHz) && dopplerHz >= 0 && isfinite(slotDuration_s) && slotDuration_s > 0)
     alpha = 0.2;
+    source = "doppler_unavailable_default_alpha";
+    return;
+end
+if dopplerHz == 0
+    alpha = 0.05;
+    source = "doppler_adaptive_zero_doppler_floor";
+    return;
+end
+coherenceTime_s = 0.423 / max(double(dopplerHz), eps);
+alpha = 1 - exp(-double(slotDuration_s) / max(coherenceTime_s, eps));
+alpha = min(0.85, max(0.05, double(alpha)));
+source = "doppler_adaptive_coherence_time";
+end
+
+function value = localFirstFiniteConfigValue(cfg, paths, defaultValue)
+value = defaultValue;
+for i = 1:numel(paths)
+    raw = sixgr.util.structGet(cfg, paths(i), []);
+    if isempty(raw)
+        continue;
+    end
+    try
+        candidate = double(raw);
+    catch
+        continue;
+    end
+    candidate = candidate(isfinite(candidate));
+    if ~isempty(candidate)
+        value = double(candidate(1));
+        return;
+    end
 end
 end
 

@@ -368,10 +368,10 @@ for i = 1:numel(ueList)
         "ConfiguredLayers", double(localLastValue(slice, "ConfiguredLayers")), ...
         "ConfiguredTxAntennas", double(localLastValue(slice, "ConfiguredTxAntennas")), ...
         "ConfiguredRxAntennas", double(localLastValue(slice, "ConfiguredRxAntennas")), ...
-        "BeamformingApplied", logical(localLastValue(slice, "BeamformingApplied")), ...
-        "BeamSelectionStrategy", char(string(localLastValue(slice, "BeamSelectionStrategy"))), ...
-        "BeamIndexSet", char(string(localLastValue(slice, "BeamIndexSet"))), ...
-        "ExecutionModel", char(string(localLastValue(slice, "ExecutionModel"))), ...
+        "BeamformingApplied", localLastLogicalValue(slice, "BeamformingApplied", false), ...
+        "BeamSelectionStrategy", char(localLastStringValue(slice, "BeamSelectionStrategy", "")), ...
+        "BeamIndexSet", char(localLastStringValue(slice, "BeamIndexSet", "")), ...
+        "ExecutionModel", char(localLastStringValue(slice, "ExecutionModel", "")), ...
         "Throughput_Mbps", mean(double(slice.Goodput_Mbps), "omitnan"), ...
         "ObservedRowCount", double(height(slice)), ...
         "BLER", mean(1 - double(slice.CRCPass), "omitnan"), ...
@@ -450,6 +450,54 @@ elseif islogical(col)
 else
     value = double(col(end));
 end
+end
+
+function value = localLastLogicalValue(T, name, defaultValue)
+if nargin < 3
+    defaultValue = false;
+end
+value = logical(defaultValue);
+if ~(istable(T) && ~isempty(T) && ismember(string(name), string(T.Properties.VariableNames)))
+    return;
+end
+col = T.(name);
+if islogical(col)
+    value = logical(col(end));
+    return;
+end
+if isnumeric(col)
+    raw = double(col(end));
+    if isfinite(raw)
+        value = raw ~= 0;
+    end
+    return;
+end
+raw = lower(strtrim(string(col(end))));
+if ismember(raw, ["true","1","yes","y","on","enabled","applied"])
+    value = true;
+elseif ismember(raw, ["false","0","no","n","off","disabled","not_applied",""])
+    value = false;
+end
+end
+
+function value = localLastStringValue(T, name, defaultValue)
+if nargin < 3
+    defaultValue = "";
+end
+value = string(defaultValue);
+if ~(istable(T) && ~isempty(T) && ismember(string(name), string(T.Properties.VariableNames)))
+    return;
+end
+col = T.(name);
+if iscell(col)
+    raw = string(col{end});
+else
+    raw = string(col(end));
+end
+if isempty(raw) || ismissing(raw) || strlength(strtrim(raw)) == 0
+    return;
+end
+value = raw;
 end
 
 function ratio = localRatio(num, den)
@@ -622,6 +670,15 @@ end
 if ~ismember("DecoderTruthProxyWidebandSINR_dB", string(T.Properties.VariableNames))
     T.DecoderTruthProxyWidebandSINR_dB = double(T.DecoderTruthProxySINR_dB);
 end
+decoderWideband = double(T.DecoderTruthProxyWidebandSINR_dB);
+decoderTrial = double(T.DecoderTruthProxySINR_dB);
+quarantineDecoder = isfinite(decoderWideband) | isfinite(decoderTrial);
+if any(quarantineDecoder)
+    decoderWideband(quarantineDecoder) = NaN;
+    decoderTrial(quarantineDecoder) = NaN;
+    T.DecoderTruthProxyWidebandSINR_dB = decoderWideband;
+    T.DecoderTruthProxySINR_dB = decoderTrial;
+end
 if ~ismember("MeasuredTrialSINR_dB", string(T.Properties.VariableNames))
     T.MeasuredTrialSINR_dB = nan(n, 1);
 end
@@ -664,14 +721,7 @@ if any(measuredMask)
     widebandStatus(measuredMask) = "available_post_equalization_measurement";
 end
 
-proxyMask = ~measuredMask & isfinite(double(T.DecoderTruthProxyWidebandSINR_dB));
-if any(proxyMask)
-    widebandSource(proxyMask) = "post_equalization_evm_proxy";
-    widebandRole(proxyMask) = "derived_proxy";
-    widebandStatus(proxyMask) = "available_diagnostic_proxy";
-end
-
-receiverOnlyMask = ~measuredMask & ~proxyMask & isfinite(double(T.ReceiverHestWidebandSINR_dB));
+receiverOnlyMask = ~measuredMask & isfinite(double(T.ReceiverHestWidebandSINR_dB));
 if any(receiverOnlyMask)
     receiverSourcePromoted = strcmp(widebandSource(receiverOnlyMask), "receiver_hest_reference_signal_measurement") | ...
         strlength(widebandSource(receiverOnlyMask)) == 0;

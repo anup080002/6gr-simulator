@@ -1931,7 +1931,11 @@ else
 end
 modStr = char(string(sixgr.util.structGet(grant, "Modulation", "QPSK")));
 tcr = double(sixgr.util.structGet(grant, "TargetCodeRate", 0.5));
-mcs = sixgr.l2.mac.SchedulerBase.approxMCSIndex(modStr, tcr, cqiUsed, mcsTable);
+decision = sixgr.link.resolveMCSIndexFromProfile(modStr, tcr, ...
+    "MCSTable", mcsTable, ...
+    "CQI", cqiUsed, ...
+    "CQITable", localResolveDirectionCQITable(cfg, direction, mcsTable));
+mcs = double(decision.MCSIndex);
 end
 
 function tableName = localResolveDirectionMCSTable(cfg, direction, modulation)
@@ -1946,6 +1950,26 @@ if strlength(string(token)) == 0
         token = "qam256_table2";
     else
         token = "qam64_table1";
+    end
+end
+tableName = char(lower(string(token)));
+end
+
+function tableName = localResolveDirectionCQITable(cfg, direction, mcsTable)
+dir = upper(char(string(direction)));
+if strcmp(dir, "UL")
+    token = sixgr.util.structGet(cfg, "phy.pusch.cqiTable", []);
+else
+    token = sixgr.util.structGet(cfg, "phy.pdsch.cqiTable", []);
+end
+if strlength(string(token)) == 0
+    token = sixgr.link.resolveConfiguredCQITable(cfg, dir);
+end
+if strlength(string(token)) == 0
+    if contains(lower(string(mcsTable)), "256") || contains(lower(string(mcsTable)), "table2")
+        token = "table2";
+    else
+        token = "table1";
     end
 end
 tableName = char(lower(string(token)));

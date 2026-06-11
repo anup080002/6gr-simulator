@@ -1,0 +1,681 @@
+#!/usr/bin/env python3
+"""Post-run LLS visual artifact truth audit.
+
+This tool is intentionally stdlib-only so CI can run it without MATLAB.
+It audits rendered visual artifacts after a run has completed and writes:
+
+  reports/csv/visual_artifact_audit.csv
+  reports/visual_artifact_audit.md
+
+Exit code is non-zero when strict visual truth rules fail.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import math
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+
+
+VISUAL_EXTENSIONS = {".png", ".svg", ".html", ".htm"}
+SUPPRESSED_STATUSES = {
+    "suppressed",
+    "source_csv_missing",
+    "not_rendered",
+    "invalid_stale_artifact",
+}
+FORBIDDEN_TRUTH_TOKENS = (
+    "proxy",
+    "fallback",
+    "synthetic",
+    "fast_proxy",
+    "lut",
+    "logistic",
+    "configured_sinr",
+    "reference_sinr",
+    "anchor_sinr",
+    "configured_cqi",
+    "reference_cqi",
+    "unavailable",
+    "placeholder",
+)
+CURVE_COLUMNS = (
+    "CurveConstruction",
+    "curve_construction",
+    "CurveConstructionMode",
+    "curve_construction_mode",
+    "CurveConstructionSource",
+    "curve_construction_source",
+    "ChartConstruction",
+    "chart_construction",
+    "AggregationMethod",
+    "aggregation_method",
+    "SourceCurveConstruction",
+    "source_curve_construction",
+    "SeriesConstruction",
+    "series_construction",
+)
+TRUTH_COLUMNS = (
+    "VisualTruthStatus",
+    "TruthStatus",
+    "RuntimeEvidenceStatus",
+    "RuntimeMaterializationStatus",
+    "truth_status",
+    "runtime_evidence_status",
+    "Source",
+    "SourceType",
+    "SourceKind",
+    "ValueRole",
+    "SINRValueRole",
+    "ReceiverHestSINRValueRole",
+    "ApproximationMode",
+    "approximation_mode",
+    "ExecutionBackend",
+    "execution_backend",
+    "E2EAirModel",
+    "Notes",
+    "notes",
+)
+UNIT_COLUMNS = (
+    "unit",
+    "units",
+    "Unit",
+    "Units",
+    "x_unit",
+    "y_unit",
+    "z_unit",
+    "value_unit",
+    "MetricUnit",
+    "metric_unit",
+)
+SOURCE_MAPPING_COLUMNS = ("source_mapping_status", "SourceMappingStatus")
+CHART_MODE_COLUMNS = ("chart_mode", "ChartMode", "mode", "Mode")
+UNSAFE_GENERIC_FAMILIES = ("heatmap", "map", "timeline")
+
+
+@dataclass
+class FileInfo:
+    rel_path: str
+    exists: bool = False
+    extension: str = ""
+    declared_mime_type: str = ""
+    actual_mime_type: str = "missing"
+    sha256: str = ""
+    byte_count: int = 0
+    signature_status: str = "missing_file"
+    signature_ok: bool = False
+
+
+@dataclass
+class SourceStats:
+    source_exists: bool = False
+    row_count: int = 0
+    unique_x_count: int = 0
+    unique_y_count: int = 0
+    non_nan_y_count: int = 0
+    nan_only_y: bool = False
+    mixed_units: bool = False
+    units: list[str] = field(default_factory=list)
+    curve_construction: list[str] = field(default_factory=list)
+    truth_tokens: list[str] = field(default_factory=list)
+    source_mapping_status: list[str] = field(default_factory=list)
+    chart_modes: list[str] = field(default_factory=list)
+    chart_names: list[str] = field(default_factory=list)
+    x_missing: bool = False
+    y_missing: bool = False
+
+
+@dataclass
+class AuditRow:
+    plot_id: str
+    artifact_path: str
+    artifact_kind: str
+    is_manifest_row: bool
+    manifest_status: str
+    visual_validity: str
+    source_csv: str
+    x_column: str
+    y_column: str
+    plot_kind: str
+    row_count: int | str
+    unique_x_count: int | str
+    unique_y_count: int | str
+    non_nan_y_count: int | str
+    nan_only_y: bool
+    mixed_units: bool
+    source_mapping_status: str
+    curve_construction: str
+    truth_status_tokens: str
+    actual_mime_type: str
+    declared_mime_type: str
+    extension: str
+    sha256: str
+    byte_count: int
+    audit_ok: bool
+    failure_code: str
+    failure_reason: str
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Audit LLS visual artifacts for truth/lineage defects.")
+    parser.add_argument("run_folder", help="Completed LLS run folder")
+    parser.add_argument("--non-strict", action="store_true", help="Always exit zero after writing audit artifacts")
+    args = parser.parse_args(argv)
+
+    run_folder = Path(args.run_folder).resolve()
+    rows = audit_run_folder(run_folder)
+    write_outputs(run_folder, rows)
+    has_failures = any(not r.audit_ok for r in rows)
+    return 0 if args.non_strict or not has_failures else 1
+
+
+def audit_run_folder(run_folder: Path) -> list[AuditRow]:
+    rows: list[AuditRow] = []
+    manifest_path = run_folder / "reports" / "csv" / "plot_manifest.csv"
+    manifest_rows = read_csv_dicts(manifest_path)
+    seen_visuals: set[str] = set()
+
+    if not manifest_path.exists():
+        rows.append(
+            make_row(
+                run_folder,
+                plot_id="plot_manifest",
+                artifact_path="reports/csv/plot_manifest.csv",
+                artifact_kind="manifest",
+                failure_code="plot_manifest_missing",
+                failure_reason="plot_manifest.csv is required for post-run visual truth audit.",
+            )
+        )
+
+    for manifest_row in manifest_rows:
+        row = audit_manifest_row(run_folder, manifest_row)
+        rows.append(row)
+        if row.artifact_path:
+            seen_visuals.add(normalize_rel_path(row.artifact_path))
+        rows.extend(audit_stale_normal_siblings(run_folder, manifest_row))
+
+    for visual_path in inventory_visual_files(run_folder):
+        rel = relative_path(run_folder, visual_path)
+        if normalize_rel_path(rel) in seen_visuals:
+            continue
+        rows.append(audit_unmanifested_visual(run_folder, rel))
+
+    rows.extend(audit_contract_source_csvs(run_folder, manifest_rows))
+    return rows
+
+
+def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditRow:
+    plot_id = get_field(manifest_row, "PlotId", "plot_id")
+    image_path = get_field(manifest_row, "ImagePath", "file_path", "ArtifactPath")
+    source_csv = get_field(manifest_row, "SourceCSV", "source_csv")
+    x_col = get_field(manifest_row, "XVariable", "x_column", "x")
+    y_col = get_field(manifest_row, "YVariables", "YVariable", "y_column", "y")
+    plot_kind = lower_token(get_field(manifest_row, "PlotType", "plot_kind", "PlotKind"))
+    manifest_status = lower_token(get_field(manifest_row, "PlotRenderStatus", "render_status"))
+    visual_validity = lower_token(get_field(manifest_row, "VisualValidity", "visual_validity"))
+    is_unavailable_card = parse_bool(get_field(manifest_row, "IsUnavailableCard", "is_unavailable_card"))
+    normal_rendered = (
+        is_rendered_status(manifest_status)
+        and not is_unavailable_card
+        and visual_validity != "unavailable"
+        and not image_path.endswith("_unavailable.svg")
+    )
+    file_info = inspect_file(run_folder, image_path)
+    source_stats = inspect_source_csv(run_folder, source_csv, x_col, y_col)
+
+    failures: list[tuple[str, str]] = []
+    if file_info.exists and not file_info.signature_ok:
+        failures.append((file_info.signature_status, "visual artifact file extension does not match its byte signature"))
+    if file_info.extension == ".svg" and file_info.actual_mime_type == "image/png":
+        failures.append(("png_bytes_in_svg", ".svg artifact contains PNG bytes"))
+    if is_suppressed_status(manifest_status) and file_info.exists and not image_path.endswith("_unavailable.svg"):
+        failures.append(("stale_suppressed_normal_artifact", "normal plot file exists but manifest says suppressed/not rendered"))
+    if normal_rendered and not source_stats.source_exists:
+        failures.append(("rendered_plot_source_csv_missing", "rendered plot cannot be traced to its source CSV"))
+    if source_stats.x_missing and x_col:
+        failures.append(("plot_source_x_column_missing", f"source CSV is missing x column '{x_col}'"))
+    if source_stats.y_missing and y_col:
+        failures.append(("plot_source_y_column_missing", f"source CSV is missing y column '{y_col}'"))
+    if source_stats.nan_only_y and normal_rendered:
+        failures.append(("nan_only_chart", "rendered chart y-series is NaN/blank-only"))
+    if normal_rendered and plot_kind == "line" and source_stats.source_exists and source_stats.unique_x_count < 3:
+        failures.append(("line_plot_insufficient_unique_x", "line plot uses fewer than 3 unique x values"))
+    if plot_kind == "heatmap" and source_stats.mixed_units:
+        failures.append(("heatmap_mixed_units", "heatmap source mixes unrelated units"))
+    if source_has_bad_mapping(source_csv, source_stats):
+        failures.append(("chart_source_mapping_not_exact", "chart source has no exact source mapping"))
+    if is_generic_materializer_output(plot_id, image_path, source_csv, source_stats):
+        failures.append(("generic_chart_materializer_output", "generic chart materializer output is not allowed in strict audit"))
+    if is_mislabeled_snr_sweep(plot_id, image_path, source_stats):
+        failures.append(("snr_sweep_from_measured_quality_bins", "SNR plot uses measured SINR/quality binning instead of controlled SNR sweep"))
+    if source_uses_forbidden_truth(source_stats):
+        failures.append(("plot_source_forbidden_truth_status", "plot source uses proxy/fallback/unavailable truth status"))
+
+    return make_row(
+        run_folder,
+        plot_id=plot_id,
+        artifact_path=image_path,
+        artifact_kind="manifest_plot",
+        is_manifest_row=True,
+        manifest_status=manifest_status,
+        visual_validity=visual_validity,
+        source_csv=source_csv,
+        x_column=x_col,
+        y_column=y_col,
+        plot_kind=plot_kind,
+        file_info=file_info,
+        source_stats=source_stats,
+        failures=failures,
+    )
+
+
+def audit_stale_normal_siblings(run_folder: Path, manifest_row: dict[str, str]) -> list[AuditRow]:
+    image_path = get_field(manifest_row, "ImagePath", "file_path", "ArtifactPath")
+    manifest_status = lower_token(get_field(manifest_row, "PlotRenderStatus", "render_status"))
+    is_unavailable_card = parse_bool(get_field(manifest_row, "IsUnavailableCard", "is_unavailable_card"))
+    if not (is_unavailable_card or image_path.endswith("_unavailable.svg") or is_suppressed_status(manifest_status)):
+        return []
+    image_rel = Path(image_path.replace("\\", "/"))
+    stem = image_rel.stem
+    if stem.endswith("_unavailable"):
+        stem = stem[: -len("_unavailable")]
+    folder = run_folder / image_rel.parent
+    rows: list[AuditRow] = []
+    for ext in (".png", ".svg", ".html"):
+        sibling = folder / f"{stem}{ext}"
+        if not sibling.exists():
+            continue
+        rel = relative_path(run_folder, sibling)
+        rows.append(
+            make_row(
+                run_folder,
+                plot_id=get_field(manifest_row, "PlotId", "plot_id"),
+                artifact_path=rel,
+                artifact_kind="stale_normal_sibling",
+                is_manifest_row=False,
+                manifest_status=manifest_status,
+                visual_validity="invalid_stale",
+                file_info=inspect_file(run_folder, rel),
+                failures=[("stale_suppressed_normal_artifact", "suppressed/unavailable plot left a normal visual artifact sibling")],
+            )
+        )
+    return rows
+
+
+def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
+    info = inspect_file(run_folder, rel_path)
+    failures: list[tuple[str, str]] = []
+    if not info.signature_ok:
+        failures.append((info.signature_status, "unmanifested visual artifact has invalid byte signature"))
+    if info.extension == ".svg" and info.actual_mime_type == "image/png":
+        failures.append(("png_bytes_in_svg", ".svg artifact contains PNG bytes"))
+    return make_row(
+        run_folder,
+        plot_id="",
+        artifact_path=rel_path,
+        artifact_kind="unmanifested_visual_file",
+        is_manifest_row=False,
+        file_info=info,
+        failures=failures,
+    )
+
+
+def audit_contract_source_csvs(run_folder: Path, manifest_rows: list[dict[str, str]]) -> list[AuditRow]:
+    referenced = {normalize_rel_path(get_field(r, "SourceCSV", "source_csv")) for r in manifest_rows}
+    rows: list[AuditRow] = []
+    for csv_path in (run_folder / "analytics" / "csv").glob("contract__*.csv"):
+        rel = normalize_rel_path(relative_path(run_folder, csv_path))
+        if rel in referenced:
+            continue
+        stats = inspect_source_csv(run_folder, rel, "", "")
+        failures: list[tuple[str, str]] = []
+        if source_has_bad_mapping(rel, stats):
+            failures.append(("chart_source_mapping_not_exact", "contract chart CSV has no exact source mapping"))
+        if is_generic_materializer_output("", "", rel, stats):
+            failures.append(("generic_chart_materializer_output", "contract chart CSV looks like generic materializer output"))
+        rows.append(
+            make_row(
+                run_folder,
+                plot_id=Path(rel).stem,
+                artifact_path=rel,
+                artifact_kind="contract_source_csv",
+                source_csv=rel,
+                source_stats=stats,
+                failures=failures,
+            )
+        )
+    return rows
+
+
+def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str) -> SourceStats:
+    stats = SourceStats()
+    if not source_csv:
+        return stats
+    path = run_folder / source_csv.replace("\\", "/")
+    if not path.exists() or not path.is_file():
+        return stats
+    stats.source_exists = True
+    x_values: set[str] = set()
+    y_values: set[str] = set()
+    unit_values: set[str] = set()
+    curve_values: set[str] = set()
+    truth_values: set[str] = set()
+    mapping_values: set[str] = set()
+    chart_modes: set[str] = set()
+    chart_names: set[str] = set()
+    saw_y_column = not y_col
+    saw_x_column = not x_col
+
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = list(reader.fieldnames or [])
+            saw_x_column = saw_x_column or x_col in fieldnames
+            saw_y_column = saw_y_column or y_col in fieldnames
+            for row in reader:
+                stats.row_count += 1
+                if x_col and x_col in row:
+                    value = normalize_cell(row.get(x_col, ""))
+                    if value and not is_nan_token(value):
+                        x_values.add(value)
+                if y_col and y_col in row:
+                    value = normalize_cell(row.get(y_col, ""))
+                    if value and not is_nan_token(value):
+                        stats.non_nan_y_count += 1
+                        y_values.add(value)
+                collect_values(row, UNIT_COLUMNS, unit_values)
+                collect_values(row, CURVE_COLUMNS, curve_values)
+                collect_values(row, TRUTH_COLUMNS, truth_values)
+                collect_values(row, SOURCE_MAPPING_COLUMNS, mapping_values)
+                collect_values(row, CHART_MODE_COLUMNS, chart_modes)
+                collect_values(row, ("chart_name", "ChartName"), chart_names)
+    except UnicodeDecodeError:
+        return stats
+
+    stats.unique_x_count = len(x_values)
+    stats.unique_y_count = len(y_values)
+    stats.nan_only_y = bool(y_col and saw_y_column and stats.row_count > 0 and stats.non_nan_y_count == 0)
+    stats.units = sorted(unit_values)
+    stats.mixed_units = len(unit_values) > 1
+    stats.curve_construction = sorted(curve_values)
+    stats.truth_tokens = sorted(truth_values)
+    stats.source_mapping_status = sorted(mapping_values)
+    stats.chart_modes = sorted(chart_modes)
+    stats.chart_names = sorted(chart_names)
+    stats.x_missing = bool(x_col and not saw_x_column)
+    stats.y_missing = bool(y_col and not saw_y_column)
+    return stats
+
+
+def inspect_file(run_folder: Path, rel_path: str) -> FileInfo:
+    rel_path = normalize_rel_path(rel_path)
+    path = run_folder / rel_path
+    ext = path.suffix.lower()
+    info = FileInfo(
+        rel_path=rel_path,
+        exists=path.exists(),
+        extension=ext,
+        declared_mime_type=declared_mime(ext),
+    )
+    if not path.exists() or not path.is_file():
+        return info
+    data = path.read_bytes()
+    info.byte_count = len(data)
+    info.sha256 = hashlib.sha256(data).hexdigest()
+    info.actual_mime_type = detect_mime(data)
+    expected = expected_extension(info.actual_mime_type)
+    info.signature_ok = bool(expected and (ext == expected or (info.actual_mime_type == "text/html" and ext == ".htm")))
+    if info.signature_ok:
+        info.signature_status = "ok"
+    elif info.actual_mime_type == "unknown":
+        info.signature_status = "unknown_signature"
+    else:
+        info.signature_status = "extension_mime_mismatch"
+    return info
+
+
+def inventory_visual_files(run_folder: Path) -> Iterable[Path]:
+    for path in run_folder.rglob("*"):
+        if path.is_file() and path.suffix.lower() in VISUAL_EXTENSIONS:
+            yield path
+
+
+def write_outputs(run_folder: Path, rows: list[AuditRow]) -> None:
+    csv_dir = run_folder / "reports" / "csv"
+    report_dir = run_folder / "reports"
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = list(AuditRow.__dataclass_fields__.keys())
+    with (csv_dir / "visual_artifact_audit.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({name: getattr(row, name) for name in fieldnames})
+
+    failures = [r for r in rows if not r.audit_ok]
+    with (report_dir / "visual_artifact_audit.md").open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write("# Visual Artifact Audit\n\n")
+        handle.write(f"- Run folder: `{run_folder}`\n")
+        handle.write(f"- Audited rows: {len(rows)}\n")
+        handle.write(f"- Strict failures: {len(failures)}\n\n")
+        if failures:
+            handle.write("| Plot | Artifact | Failure | Reason |\n")
+            handle.write("|---|---|---|---|\n")
+            for row in failures:
+                handle.write(
+                    f"| {md_escape(row.plot_id)} | {md_escape(row.artifact_path)} | "
+                    f"{md_escape(row.failure_code)} | {md_escape(row.failure_reason)} |\n"
+                )
+        else:
+            handle.write("No strict visual artifact audit failures were found.\n")
+
+
+def make_row(
+    run_folder: Path,
+    *,
+    plot_id: str = "",
+    artifact_path: str = "",
+    artifact_kind: str = "",
+    is_manifest_row: bool = False,
+    manifest_status: str = "",
+    visual_validity: str = "",
+    source_csv: str = "",
+    x_column: str = "",
+    y_column: str = "",
+    plot_kind: str = "",
+    file_info: FileInfo | None = None,
+    source_stats: SourceStats | None = None,
+    failures: list[tuple[str, str]] | None = None,
+    failure_code: str = "",
+    failure_reason: str = "",
+) -> AuditRow:
+    if file_info is None:
+        file_info = inspect_file(run_folder, artifact_path) if artifact_path else FileInfo(rel_path="")
+    if source_stats is None:
+        source_stats = SourceStats()
+    all_failures = list(failures or [])
+    if failure_code:
+        all_failures.append((failure_code, failure_reason))
+    audit_ok = len(all_failures) == 0
+    codes = "|".join(dict.fromkeys(code for code, _ in all_failures if code))
+    reasons = "|".join(dict.fromkeys(reason for _, reason in all_failures if reason))
+    return AuditRow(
+        plot_id=str(plot_id),
+        artifact_path=normalize_rel_path(artifact_path or file_info.rel_path),
+        artifact_kind=str(artifact_kind),
+        is_manifest_row=bool(is_manifest_row),
+        manifest_status=str(manifest_status),
+        visual_validity=str(visual_validity),
+        source_csv=normalize_rel_path(source_csv),
+        x_column=str(x_column),
+        y_column=str(y_column),
+        plot_kind=str(plot_kind),
+        row_count=source_stats.row_count if source_stats.source_exists else "",
+        unique_x_count=source_stats.unique_x_count if source_stats.source_exists else "",
+        unique_y_count=source_stats.unique_y_count if source_stats.source_exists else "",
+        non_nan_y_count=source_stats.non_nan_y_count if source_stats.source_exists else "",
+        nan_only_y=source_stats.nan_only_y,
+        mixed_units=source_stats.mixed_units,
+        source_mapping_status="|".join(source_stats.source_mapping_status),
+        curve_construction="|".join(source_stats.curve_construction),
+        truth_status_tokens="|".join(source_stats.truth_tokens),
+        actual_mime_type=file_info.actual_mime_type,
+        declared_mime_type=file_info.declared_mime_type,
+        extension=file_info.extension,
+        sha256=file_info.sha256,
+        byte_count=file_info.byte_count,
+        audit_ok=audit_ok,
+        failure_code=codes,
+        failure_reason=reasons,
+    )
+
+
+def read_csv_dicts(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def collect_values(row: dict[str, str], columns: Iterable[str], target: set[str]) -> None:
+    for column in columns:
+        if column not in row:
+            continue
+        value = lower_token(row.get(column, ""))
+        if value and value not in {"nan", "<missing>", "not_applicable"}:
+            target.add(value)
+
+
+def get_field(row: dict[str, str], *names: str) -> str:
+    lower_map = {k.lower(): k for k in row}
+    for name in names:
+        if name in row:
+            return normalize_cell(row.get(name, ""))
+        key = lower_map.get(name.lower())
+        if key is not None:
+            return normalize_cell(row.get(key, ""))
+    return ""
+
+
+def parse_bool(value: str) -> bool:
+    return lower_token(value) in {"1", "true", "yes", "y"}
+
+
+def normalize_cell(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def lower_token(value: object) -> str:
+    return normalize_cell(value).lower()
+
+
+def normalize_rel_path(path: str) -> str:
+    return str(path or "").replace("\\", "/").lstrip("/")
+
+
+def relative_path(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def is_nan_token(value: str) -> bool:
+    text = lower_token(value)
+    if text in {"", "nan", "<missing>", "missing", "none"}:
+        return True
+    try:
+        return math.isnan(float(text))
+    except ValueError:
+        return False
+
+
+def is_suppressed_status(status: str) -> bool:
+    status = lower_token(status)
+    return status in SUPPRESSED_STATUSES or "suppressed" in status
+
+
+def is_rendered_status(status: str) -> bool:
+    return "rendered" in lower_token(status)
+
+
+def declared_mime(ext: str) -> str:
+    return {
+        ".png": "image/png",
+        ".svg": "image/svg+xml",
+        ".html": "text/html",
+        ".htm": "text/html",
+    }.get(ext.lower(), "application/octet-stream")
+
+
+def expected_extension(mime: str) -> str:
+    return {
+        "image/png": ".png",
+        "image/svg+xml": ".svg",
+        "text/html": ".html",
+    }.get(mime.lower(), "")
+
+
+def detect_mime(data: bytes) -> str:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    prefix = data[:4096].decode("utf-8", errors="ignore").lstrip("\ufeff").strip().lower()
+    if prefix.startswith("<svg") or (prefix.startswith("<?xml") and "<svg" in prefix):
+        return "image/svg+xml"
+    if prefix.startswith("<!doctype html") or prefix.startswith("<html") or "<html" in prefix[:256]:
+        return "text/html"
+    return "unknown"
+
+
+def source_has_bad_mapping(source_csv: str, stats: SourceStats) -> bool:
+    if not stats.source_exists:
+        return False
+    mapping = {lower_token(v) for v in stats.source_mapping_status if v}
+    is_contract = "contract__" in lower_token(source_csv)
+    if mapping:
+        return any(value != "exact" for value in mapping)
+    return is_contract
+
+
+def is_generic_materializer_output(plot_id: str, image_path: str, source_csv: str, stats: SourceStats) -> bool:
+    if not stats.source_exists:
+        return False
+    identity = " ".join([plot_id, image_path, source_csv, " ".join(stats.chart_names)]).lower()
+    modes = {lower_token(v) for v in stats.chart_modes}
+    unsafe_family = any(token in identity for token in UNSAFE_GENERIC_FAMILIES)
+    if unsafe_family and ("line" in modes or "generic" in " ".join(stats.truth_tokens + stats.curve_construction)):
+        return True
+    if "contract__" in lower_token(source_csv) and source_has_bad_mapping(source_csv, stats):
+        return True
+    return False
+
+
+def is_mislabeled_snr_sweep(plot_id: str, image_path: str, stats: SourceStats) -> bool:
+    identity = f"{plot_id} {image_path}".lower()
+    if "_vs_snr" not in identity and "vs_snr" not in identity:
+        return False
+    tokens = " ".join(stats.curve_construction + stats.truth_tokens).lower()
+    return "measured_quality_binning" in tokens or "measured_sinr_bin" in tokens or "measured_bin" in tokens
+
+
+def source_uses_forbidden_truth(stats: SourceStats) -> bool:
+    tokens = " ".join(stats.truth_tokens).lower()
+    if not tokens:
+        return False
+    return any(token in tokens for token in FORBIDDEN_TRUTH_TOKENS)
+
+
+def md_escape(value: object) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

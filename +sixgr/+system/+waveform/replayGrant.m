@@ -237,6 +237,8 @@ if dir == "UL"
         "TransportBlockBits", tbBits, ...
         "RV", tmpl.RV, ...
         "TargetCodeRate", tmpl.TargetCodeRate, ...
+        "XOverhead", double(sixgr.util.structGet(tmpl, "XOverhead", ...
+            sixgr.util.structGet(cfgReplay, "phy.pusch.xOverhead", 0))), ...
         "CompactOutput", logical(opt.CompactPHYIO));
 else
     [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgReplay, ...
@@ -245,6 +247,8 @@ else
         "TransportBlockBits", tbBits, ...
         "RV", tmpl.RV, ...
         "TargetCodeRate", tmpl.TargetCodeRate, ...
+        "XOverhead", double(sixgr.util.structGet(tmpl, "XOverhead", ...
+            sixgr.phy.dl.resolvePDSCHXOverhead(cfgReplay, localObjectValue(tmpl.PDSCH, "SymbolAllocation", [0 14])))), ...
         "CompactOutput", logical(opt.CompactPHYIO));
 end
 end
@@ -601,6 +605,7 @@ end
 rv = localGrantRV(grant);
 targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", ...
     sixgr.util.structGet(cfgE, "phy.pdsch.codeRate", 0.5)));
+xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfgE, localObjectValue(pdsch, "SymbolAllocation", [0 14]));
 try
     [~, pdschInfo] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
 catch
@@ -611,8 +616,8 @@ tx0 = struct( ...
     "PDSCH", pdsch, ...
     "RV", rv, ...
     "TargetCodeRate", targetCodeRate, ...
-    "TransportBlockSize", localComputeTBSBitsFromAlloc(pdsch, pdschInfo, targetCodeRate, ...
-        double(sixgr.util.structGet(cfgE, "phy.pdsch.xOverhead", 0))));
+    "XOverhead", double(xOverhead), ...
+    "TransportBlockSize", localComputeTBSBitsFromAlloc(pdsch, pdschInfo, targetCodeRate, double(xOverhead)));
 end
 
 function prbSet = localReplayPRBSet(cfgE, grant)
@@ -654,6 +659,7 @@ end
 rv = localGrantRV(grant);
 targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", ...
     sixgr.util.structGet(cfgE, "phy.pusch.codeRate", 0.5)));
+xOverhead = double(sixgr.util.structGet(cfgE, "phy.pusch.xOverhead", 0));
 try
     [~, puschInfo] = nrPUSCHIndices(carrier, pusch, "IndexStyle", "index");
 catch
@@ -664,8 +670,8 @@ tx0 = struct( ...
     "PUSCH", pusch, ...
     "RV", rv, ...
     "TargetCodeRate", targetCodeRate, ...
-    "TransportBlockSize", localComputeTBSBitsFromAlloc(pusch, puschInfo, targetCodeRate, ...
-        double(sixgr.util.structGet(cfgE, "phy.pusch.xOverhead", 0))));
+    "XOverhead", double(xOverhead), ...
+    "TransportBlockSize", localComputeTBSBitsFromAlloc(pusch, puschInfo, targetCodeRate, double(xOverhead)));
 end
 
 function key = localReplayTxCacheKey(dir, tmpl)
@@ -674,6 +680,7 @@ signature.Direction = upper(char(string(dir)));
 signature.TransportBlockSize = double(sixgr.util.structGet(tmpl, "TransportBlockSize", NaN));
 signature.RV = double(sixgr.util.structGet(tmpl, "RV", NaN));
 signature.TargetCodeRate = round(double(sixgr.util.structGet(tmpl, "TargetCodeRate", NaN)) * 1e6) / 1e6;
+signature.XOverhead = double(sixgr.util.structGet(tmpl, "XOverhead", NaN));
 signature.Carrier = localObjectCacheStruct(sixgr.util.structGet(tmpl, "Carrier", []));
 if strcmpi(signature.Direction, "UL")
     signature.Channel = localObjectCacheStruct(sixgr.util.structGet(tmpl, "PUSCH", []));
@@ -725,6 +732,22 @@ try
     clear cleanup;
 catch
     out = struct("StringValue", char(string(value)));
+end
+end
+
+function value = localObjectValue(obj, propName, defaultValue)
+value = defaultValue;
+if isempty(obj)
+    return;
+end
+try
+    if isobject(obj) && isprop(obj, char(propName))
+        value = obj.(char(propName));
+    elseif isstruct(obj) && isfield(obj, char(propName))
+        value = obj.(char(propName));
+    end
+catch
+    value = defaultValue;
 end
 end
 

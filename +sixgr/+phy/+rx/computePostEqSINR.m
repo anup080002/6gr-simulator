@@ -10,6 +10,7 @@ ip = inputParser;
 ip.addParameter("Method", "mmse", @(s) any(strcmpi(char(string(s)), ["mmse","irc","zf","mrc"])));
 ip.addParameter("Rint", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("Layers", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 1));
+ip.addParameter("MaxTrustedSINR_dB", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -26,6 +27,9 @@ info = struct( ...
     "NumTxPorts", NaN, ...
     "NumLayers", NaN, ...
     "NoiseVariance", NaN, ...
+    "RawSINR_dB", NaN, ...
+    "RawPerLayerSINR_dB", NaN, ...
+    "MaxTrustedSINR_dB", NaN, ...
     "ImpairmentCovarianceUsed", false, ...
     "ImpairmentCovarianceSource", "");
 sinr_dB = NaN;
@@ -187,14 +191,33 @@ if isempty(validLayers)
     return;
 end
 
-sinr_dB = mean(validLayers);
+rawPerLayer = double(perLayer);
+rawSINR_dB = mean(validLayers);
+sinr_dB = double(rawSINR_dB);
 sinr_per_re_dB = 10 * log10(max(sinrLin, eps));
 sinr_per_re_dB(~valid) = NaN;
+maxTrustedSINR = double(opt.MaxTrustedSINR_dB);
+if ~(isscalar(maxTrustedSINR) && isfinite(maxTrustedSINR) && maxTrustedSINR > 0)
+    maxTrustedSINR = inf;
+end
+if isfinite(maxTrustedSINR)
+    sinr_dB = min(double(sinr_dB), double(maxTrustedSINR));
+    perLayer = min(double(perLayer), double(maxTrustedSINR));
+    sinr_per_re_dB = min(double(sinr_per_re_dB), double(maxTrustedSINR));
+end
 
 info.SINR_dB = double(sinr_dB);
 info.ValueStatus = "OK";
 info.NAReason = "";
 info.PerLayerSINR_dB = double(perLayer);
+info.RawSINR_dB = double(rawSINR_dB);
+info.RawPerLayerSINR_dB = double(rawPerLayer);
+info.MaxTrustedSINR_dB = double(maxTrustedSINR);
+if isfinite(maxTrustedSINR) && isfinite(rawSINR_dB) && rawSINR_dB > maxTrustedSINR
+    info.ValueStatus = "OK_dynamic_range_limited";
+    info.NAReason = sprintf("raw_post_eq_sinr_%.6g_dB_limited_to_max_trusted_%.6g_dB", ...
+        double(rawSINR_dB), double(maxTrustedSINR));
+end
 info.NRE = double(nRE);
 info.NumRxAnt = double(nRx);
 info.NumTxPorts = double(nTx);

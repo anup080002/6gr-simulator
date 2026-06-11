@@ -185,13 +185,8 @@ pat = ['(^|[^A-Za-z0-9])' regexptranslate('escape', lower(token)) '([^A-Za-z0-9]
 tf = ~isempty(regexpi(lower(value), pat, 'once'));
 end
 
-function tf = localAllowedTruthDisclosure(value, fieldName)
+function tf = localAllowedTruthDisclosure(value, ~)
 v = lower(strtrim(char(string(value))));
-field = lower(strtrim(char(string(fieldName))));
-if strcmp(field, "decodertruthproxysinrsource") && strcmp(v, "post_equalization_evm_proxy")
-    tf = true;
-    return;
-end
 allowedNeedles = { ...
     'unavailable', 'not_', 'not-', 'not ', 'no_', 'no-', 'no ', ...
     'without', 'blocked', 'removed', 'disabled', 'false', ...
