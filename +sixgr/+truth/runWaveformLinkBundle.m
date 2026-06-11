@@ -2604,7 +2604,8 @@ end
 
 planState = sixgr.truth.CoupledTruthRuntime.startSlot(state, cfg, "UL", sweepIdx, sweepCount, dueSlot, nFramesPerPoint, snr_dB);
 pucchDueUEs = sixgr.truth.CoupledTruthRuntime.pucchFeedbackDueUEsRuntime(state, dueSlot);
-if ~isempty(pucchDueUEs)
+uciOnPUSCHAvailable = localPUSCHUCIOnPUSCHAvailable(cfg);
+if ~isempty(pucchDueUEs) && ~uciOnPUSCHAvailable
     queueLen = numel(sixgr.util.structGet(planState, "ULQueueBits", []));
     pucchDueUEs = unique(round(double(pucchDueUEs(:))));
     pucchDueUEs = pucchDueUEs(isfinite(pucchDueUEs) & pucchDueUEs >= 1 & pucchDueUEs <= queueLen);
@@ -2614,8 +2615,15 @@ if ~isempty(pucchDueUEs)
             "Deferred same-slot PUSCH candidates with due HARQ-ACK PUCCH before UL scheduling: control_slot=%d due_slot=%d deferred_ues=%d policy=avoid_standalone_pusch_without_uci_on_pusch_multiplexing.", ...
             round(double(controlSlot)), round(double(dueSlot)), numel(pucchDueUEs));
     end
+elseif ~isempty(pucchDueUEs)
+    localAppendRuntimeLog("INFO", ...
+        "Retained PUSCH candidates with due HARQ-ACK because UCI-on-PUSCH multiplexing is available: control_slot=%d due_slot=%d due_ues=%d policy=nrULSCHMultiplex_harq_ack_on_pusch.", ...
+        round(double(controlSlot)), round(double(dueSlot)), numel(unique(round(double(pucchDueUEs(:))))));
 end
 [planState, grants, info] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(planState, cfg, "UL"); %#ok<ASGLU>
+if uciOnPUSCHAvailable
+    grants = localAttachDueHARQACKToULGrants(state, grants, dueSlot);
+end
 localAppendRuntimeLog("INFO", ...
     "Coupled UL K2 preschedule complete: control_slot=%d due_slot=%d k2=%d active=%d granted=%d grants=%d.", ...
     round(double(controlSlot)), round(double(dueSlot)), round(double(k2Slots)), ...
@@ -2673,6 +2681,56 @@ k2Slots = localFirstFiniteNumeric( ...
     sixgr.util.structGet(cfg, "phy.ul.grantK2Slots", NaN), ...
     1);
 k2Slots = max(1, round(double(k2Slots)));
+end
+
+function tf = localPUSCHUCIOnPUSCHAvailable(cfg)
+tf = exist("nrULSCHMultiplex", "file") == 2 && exist("nrULSCHDemultiplex", "file") == 2 && ...
+    exist("nrUCIEncode", "file") == 2 && exist("nrUCIDecode", "file") == 2;
+if ~tf
+    return;
+end
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.uciMultiplexingMode", ...
+    sixgr.util.structGet(cfg, "pusch.uci_multiplexing_mode", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.uciMultiplexingMode", "harq_ack_on_pusch_when_pucch_collides"))))));
+if any(mode == ["disabled","off","none","pucch_only"])
+    tf = false;
+end
+end
+
+function grants = localAttachDueHARQACKToULGrants(state, grants, dueSlot)
+if ~(isstruct(grants) && ~isempty(grants))
+    return;
+end
+due = sixgr.truth.CoupledTruthRuntime.pucchFeedbackDueHARQACKRuntime(state, dueSlot);
+if ~(isstruct(due) && ~isempty(due))
+    return;
+end
+for gi = 1:numel(grants)
+    ueIdx = double(sixgr.util.structGet(grants(gi), "UEIndex", NaN));
+    rnti = double(sixgr.util.structGet(grants(gi), "RNTI", NaN));
+    matchIdx = [];
+    for di = 1:numel(due)
+        dueUE = double(sixgr.util.structGet(due(di), "UEIndex", NaN));
+        dueRNTI = double(sixgr.util.structGet(due(di), "RNTI", NaN));
+        if (isfinite(ueIdx) && isfinite(dueUE) && abs(ueIdx - dueUE) < 1e-9) || ...
+                (isfinite(rnti) && isfinite(dueRNTI) && abs(rnti - dueRNTI) < 1e-9)
+            matchIdx = di;
+            break;
+        end
+    end
+    if isempty(matchIdx)
+        continue;
+    end
+    ackBit = int8(logical(sixgr.util.structGet(due(matchIdx), "AckBit", int8(0))));
+    grants(gi).ExpectedUCIBits = ackBit;
+    grants(gi).MultiplexedHARQACKBits = ackBit;
+    grants(gi).UCIOnPUSCHApplied = true;
+    grants(gi).UCIOnPUSCHSource = "pending_harq_ack_nrULSCHMultiplex";
+    grants(gi).PUCCHCollisionPolicy = "harq_ack_multiplexed_on_pusch";
+    grants(gi).PUCCHSourceSlot = double(sixgr.util.structGet(due(matchIdx), "SourceSlot", NaN));
+    grants(gi).PUCCHGrantId = char(string(sixgr.util.structGet(due(matchIdx), "PUCCHGrantId", "")));
+    grants(gi).UCIOnPUSCHEvidenceSource = char(string(sixgr.util.structGet(due(matchIdx), "EvidenceSource", "")));
+end
 end
 
 function tf = localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
@@ -3713,13 +3771,8 @@ for gi = 1:numel(resolvedGrantCache)
     bundle(count).InterfererUEIndex = double(interfererUEIdx); %#ok<AGROW>
     bundle(count).ServingCell = double(interfererCell); %#ok<AGROW>
     bundle(count).VictimServingCell = double(victimServingCell); %#ok<AGROW>
-    if direction == "UL"
-        bundle(count).VictimRxPower_dBm = NaN; %#ok<AGROW>
-        bundle(count).VictimRSRP_dBm = NaN; %#ok<AGROW>
-    else
-        bundle(count).VictimRxPower_dBm = double(runtimeState.LargeScaleState.RxPower_dBm(metricUE, metricCell)); %#ok<AGROW>
-        bundle(count).VictimRSRP_dBm = double(runtimeState.LargeScaleState.RSRP_dBm(metricUE, metricCell)); %#ok<AGROW>
-    end
+    bundle(count).VictimRxPower_dBm = double(runtimeState.LargeScaleState.RxPower_dBm(metricUE, metricCell)); %#ok<AGROW>
+    bundle(count).VictimRSRP_dBm = double(runtimeState.LargeScaleState.RSRP_dBm(metricUE, metricCell)); %#ok<AGROW>
     bundle(count).BasePathloss_dB = double(runtimeState.LargeScaleState.BasePathloss_dB(metricUE, metricCell)); %#ok<AGROW>
     bundle(count).Pathloss_dB = double(runtimeState.LargeScaleState.Pathloss_dB(metricUE, metricCell)); %#ok<AGROW>
     bundle(count).ShadowFading_dB = double(runtimeState.LargeScaleState.Shadow_dB(metricUE, metricCell)); %#ok<AGROW>
@@ -4024,13 +4077,14 @@ vars = string(T.Properties.VariableNames);
 stringFields = [ ...
     "ConfiguredBeamSelectionStrategy","PrecoderSource","PrecodingMode","PrecodingApplicationStage", ...
     "AppliedBeamIndexSet","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","RequestedVsAppliedPrecoderPMIMatchStatus", ...
+    "UCIOnPUSCHSource","HARQACKDecodeStatus","HARQACKDecodeReason", ...
     "GrantContextId","GrantSharedStateCommitMode"];
 logicalFields = [ ...
     "PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","BeamformingApplied", ...
-    "GrantWorkerSafe"];
+    "UCIOnPUSCHApplied","HARQACKContentMatch","GrantWorkerSafe"];
 numericFields = [ ...
     "PMI","CRI","AppliedPrecoderPMI","PrecodingNumPorts","PrecodingNumLayers", ...
-    "PrecodingMatrixRows","PrecodingMatrixCols","TBSBits","TBSBytes"];
+    "PrecodingMatrixRows","PrecodingMatrixCols","TBSBits","TBSBytes","HARQACKBitCount"];
 
 for i = 1:numel(stringFields)
     fieldName = stringFields(i);
@@ -6863,6 +6917,17 @@ T.SourceTable = sourceArtifact;
 T.ArtifactClass = repmat("raw_runtime_trial_evidence", n, 1);
 T.SemanticState = string(T.RowLifecycleState);
 T.CountsTowardCoverage = ~logical(T.Crash) & ~logical(T.IsWarmupFrame);
+runtimeStatus = strtrim(string(localColumnOrDefault(T, "RuntimeMaterializationStatus", "")));
+runtimeEvidence = strtrim(string(localColumnOrDefault(T, "RuntimeEvidenceSource", "")));
+runtimeToken = repmat("active_waveform_pdsch_runtime", n, 1);
+if strcmpi(string(direction), "UL")
+    runtimeToken(:) = "active_waveform_pusch_runtime";
+end
+activeRuntimeMask = ~logical(localColumnOrDefault(T, "Crash", false));
+runtimeStatus(activeRuntimeMask & strlength(runtimeStatus) == 0) = runtimeToken(activeRuntimeMask & strlength(runtimeStatus) == 0);
+runtimeEvidence(activeRuntimeMask & strlength(runtimeEvidence) == 0) = "sixgr.truth.runWaveformLinkBundle";
+T.RuntimeMaterializationStatus = runtimeStatus;
+T.RuntimeEvidenceSource = runtimeEvidence;
 T.MachineReadable = true(n, 1);
 T.HumanReadable = true(n, 1);
 end

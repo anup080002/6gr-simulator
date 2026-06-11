@@ -17,9 +17,30 @@ assert(isfinite(double(sinr2_dB)) && size(perRE2, 2) == 2, ...
     "2x2 post-eq SINR must return finite wideband and two layer columns.");
 assert(all(isfinite(double(info2.PerLayerSINR_dB))), "2x2 post-eq SINR must expose finite per-layer means.");
 
+Rint = 10 * eye(2);
+[sinrCov_dB, ~, infoCov] = sixgr.phy.rx.computePostEqSINR(H2, 0.1, "Method", "mmse", "Rint", Rint, "Layers", 2);
+assert(isfinite(double(sinrCov_dB)) && double(sinrCov_dB) < double(sinr2_dB), ...
+    "MMSE post-eq SINR must account for observed DMRS residual impairment covariance.");
+assert(logical(infoCov.ImpairmentCovarianceUsed) && strcmp(string(infoCov.ImpairmentCovarianceSource), "dmrs_residual_impairment_covariance"), ...
+    "PostEqSINR metadata must disclose observed residual covariance usage.");
+
 [badSINR, ~, badInfo] = sixgr.phy.rx.computePostEqSINR(H, NaN);
 assert(~isfinite(double(badSINR)) && strcmp(string(badInfo.ValueStatus), "unavailable"), ...
     "Invalid noise variance must fail closed instead of fabricating post-eq SINR.");
+
+[nVarEff, nVarInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(1e-9, ...
+    "PostEqSINRPerRE_dB", repmat(20, 16, 1));
+assert(abs(double(nVarEff) - 1e-2) < 1e-12 && strcmp(string(nVarInfo.Source), "post_equalization_sinr_per_re"), ...
+    "Decoder noise variance must be derived in the post-equalization unit-symbol domain.");
+
+[nVarCSI, csiInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(1e-9, ...
+    "CSI", repmat(100 / 101, 16, 1));
+assert(abs(double(nVarCSI) - 1e-2) < 1e-9 && strcmp(string(csiInfo.Source), "equalizer_csi_weights"), ...
+    "Bounded MMSE CSI reliability weights must map to equivalent post-eq noise variance.");
+
+cqiLegacy = arrayfun(@(x) sixgr.phy.dl.mapSINRToCQI(x, "table1"), [-5.2 -3.5 0.5 10.5]);
+assert(isequal(double(cqiLegacy(:)).', [1 2 4 9]), ...
+    "Legacy mapSINRToCQI must use the non-uniform table thresholds, not a 2 dB ladder.");
 
 cfg = struct();
 cfg.phy.csi.cqiTable = "table1";

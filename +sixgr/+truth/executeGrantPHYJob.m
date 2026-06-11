@@ -23,6 +23,10 @@ rv = sixgr.util.structGet(job, "RV", []);
 if ~isempty(rv)
     args = [args {"RV", rv}]; %#ok<AGROW>
 end
+expectedUCIBits = sixgr.util.structGet(job, "ExpectedUCIBits", []);
+if ~isempty(expectedUCIBits)
+    args = [args {"ExpectedUCIBits", expectedUCIBits}]; %#ok<AGROW>
+end
 grant = sixgr.util.structGet(job, "GrantSnapshot", struct());
 if isstruct(grant) && ~isempty(fieldnames(grant))
     args = [args {"GrantSnapshot", grant}]; %#ok<AGROW>

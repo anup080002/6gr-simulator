@@ -16,6 +16,7 @@ p.addParameter("HARQContext", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("GrantSnapshot", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("PreviousCombinedLLR", [], @(x) isempty(x) || isnumeric(x));
 p.addParameter("InterferenceBundle", struct([]), @(x) isempty(x) || isstruct(x));
+p.addParameter("ExpectedUCIBits", [], @(x) isempty(x) || isnumeric(x) || islogical(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numFrames = max(1, round(double(p.Results.NumFrames)));
@@ -36,6 +37,7 @@ if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverrid
     grantSnapshotOverride = sixgr.util.structGet(harqContext, "GrantSnapshot", struct());
 end
 schedulerDrivenGrant = isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride));
+expectedUCIBits = localResolveExpectedUCIBits(p.Results.ExpectedUCIBits, grantSnapshotOverride, harqContext);
 
 out = struct();
 out.Ok = false;
@@ -194,6 +196,12 @@ trialNoiseVarStatus = strings(numFrames,1);
 trialNoiseVarSource = strings(numFrames,1);
 trialNoiseVarReason = strings(numFrames,1);
 trialNoiseVarStrictFailure = false(numFrames,1);
+trialUCIOnPUSCHApplied = false(numFrames,1);
+trialUCIOnPUSCHSource = strings(numFrames,1);
+trialHARQACKBitCount = zeros(numFrames,1);
+trialHARQACKContentMatch = false(numFrames,1);
+trialHARQACKDecodeStatus = strings(numFrames,1);
+trialHARQACKDecodeReason = strings(numFrames,1);
 trialEqualizerType = strings(numFrames,1);
 trialEqualizerRequestedType = strings(numFrames,1);
 trialEqualizerEngine = strings(numFrames,1);
@@ -460,6 +468,9 @@ for n = 1:numFrames
         if ~isempty(rvOverride)
             txArgs = [txArgs {"RV", rvOverride}]; %#ok<AGROW>
         end
+        if ~isempty(expectedUCIBits)
+            txArgs = [txArgs {"HARQACKBits", expectedUCIBits}]; %#ok<AGROW>
+        end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
         trialPBCHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PBCHGatingActive", false));
@@ -561,6 +572,9 @@ for n = 1:numFrames
             "TargetCodeRate", tx.TargetCodeRate, ...
             "RV", tx.RV, ...
             "SkipTimingEstimate", useIdealTimingSync};
+        if ~isempty(expectedUCIBits)
+            rxArgs = [rxArgs {"ExpectedHARQACKBits", expectedUCIBits}]; %#ok<AGROW>
+        end
         injectedNoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
         if isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
             rxArgs = [rxArgs {"NoiseVar", injectedNoiseVariance, "NoiseVarDomain", "time"}]; %#ok<AGROW>
@@ -586,6 +600,12 @@ for n = 1:numFrames
         trialNoiseVarSource(n) = string(sixgr.util.structGet(rx, "NoiseVarSource", ""));
         trialNoiseVarReason(n) = string(sixgr.util.structGet(rx, "NoiseVarReason", ""));
         trialNoiseVarStrictFailure(n) = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
+        trialUCIOnPUSCHApplied(n) = logical(sixgr.util.structGet(rx, "UCIOnPUSCHApplied", false));
+        trialUCIOnPUSCHSource(n) = string(sixgr.util.structGet(rx, "UCIOnPUSCHSource", ""));
+        trialHARQACKBitCount(n) = double(sixgr.util.structGet(rx, "HARQACKBitCount", numel(expectedUCIBits)));
+        trialHARQACKContentMatch(n) = logical(sixgr.util.structGet(rx, "HARQACKContentMatch", false));
+        trialHARQACKDecodeStatus(n) = string(sixgr.util.structGet(rx, "HARQACKDecodeStatus", ""));
+        trialHARQACKDecodeReason(n) = string(sixgr.util.structGet(rx, "HARQACKDecodeReason", ""));
         trialEqualizerType(n) = string(sixgr.util.structGet(rx, "EqualizerType", ""));
         trialEqualizerRequestedType(n) = string(sixgr.util.structGet(rx, "EqualizerRequestedType", ""));
         trialEqualizerEngine(n) = string(sixgr.util.structGet(rx, "EqualizerEngine", ""));
@@ -706,15 +726,20 @@ for n = 1:numFrames
         metrics = localAnalyzeChannelMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), trialNoise(n), cfgFrame, rx, ulPrecoding);
         trialNMSE(n) = metrics.NMSE_dB;
         trialDet(n) = metrics.DetectionMetric;
-        if isfinite(trialPostEqSINR(n))
-            trialSINR(n) = double(trialPostEqSINR(n));
-            trialSINRValueRole(n) = string(trialPostEqSINRValueRole(n));
-            trialSINRSource(n) = string(trialPostEqSINRSource(n));
-            trialMeasuredTrialSINR(n) = double(trialPostEqSINR(n));
-            trialMeasuredSINRSource(n) = string(trialPostEqSINRSource(n));
-            trialMeasuredTrialSINRValueRole(n) = string(trialPostEqSINRValueRole(n));
-            trialMeasuredTrialSINRValueStatus(n) = string(trialPostEqSINRValueStatus(n));
-            trialMeasuredTrialSINRNAReason(n) = string(trialPostEqSINRNAReason(n));
+        selectedSINR = localSelectULMeasuredTrialSINRFromEvidence( ...
+            trialPostEqSINR(n), trialPostEqSINRSource(n), trialPostEqSINRValueRole(n), ...
+            trialPostEqSINRValueStatus(n), trialPostEqSINRNAReason(n), ...
+            trialReceiverHestSINR(n), trialReceiverHestSINRSource(n), trialReceiverHestSINRValueRole(n), ...
+            trialReceiverHestSINRValueStatus(n), trialReceiverHestSINRNAReason(n));
+        if isfinite(double(selectedSINR.Value))
+            trialSINR(n) = double(selectedSINR.Value);
+            trialSINRValueRole(n) = string(selectedSINR.ValueRole);
+            trialSINRSource(n) = string(selectedSINR.Source);
+            trialMeasuredTrialSINR(n) = double(selectedSINR.Value);
+            trialMeasuredSINRSource(n) = string(selectedSINR.Source);
+            trialMeasuredTrialSINRValueRole(n) = string(selectedSINR.ValueRole);
+            trialMeasuredTrialSINRValueStatus(n) = string(selectedSINR.ValueStatus);
+            trialMeasuredTrialSINRNAReason(n) = string(selectedSINR.NAReason);
         end
         trialCSIRSRP(n) = metrics.CSI_RSRP_dB;
         trialCSIRSRPSource(n) = string(metrics.CSI_RSRPSource);
@@ -724,7 +749,7 @@ for n = 1:numFrames
         trialCSIRSRQSource(n) = string(metrics.CSI_RSRQSource);
         rawMeasuredCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
         if isfinite(rawMeasuredCQI)
-            trialCQI(n) = double(max(0, min(15, round(rawMeasuredCQI))));
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(rawMeasuredCQI));
         else
             trialCQI(n) = NaN;
         end
@@ -735,11 +760,12 @@ for n = 1:numFrames
             end
         end
         if schedulerDrivenGrant && isfinite(grantCQIUsed)
-            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
-            if isfinite(trialCQI(n))
-                trialCQISource(n) = "scheduler_grant_cqi_used";
-            else
-                trialCQISource(n) = "scheduler_grant_cqi_used_out_of_range";
+            grantCQI = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            if ~isfinite(trialCQI(n)) && isfinite(grantCQI)
+                trialCQI(n) = grantCQI;
+                trialCQISource(n) = "scheduler_grant_cqi_used_no_current_receiver_cqi";
+            elseif ~isfinite(trialCQI(n))
+                trialCQISource(n) = "current_receiver_cqi_unavailable_scheduler_grant_cqi_used_out_of_range";
             end
         end
         trialRI(n) = metrics.RI;
@@ -926,9 +952,11 @@ for n = 1:numFrames
                 refSym = double(tx.PUSCHSymbols(:));
                 eqSym = double(rx.EqualizedSymbols(:));
                 Lsym = min(numel(refSym), numel(eqSym));
-                e = eqSym(1:Lsym) - refSym(1:Lsym);
-                p = max(mean(abs(refSym(1:Lsym)).^2), eps);
-                trialEVM(n) = sqrt(mean(abs(e).^2) / p);
+                [eqNorm, refNorm] = localNormalizeEVMInputs(eqSym(1:Lsym), refSym(1:Lsym));
+                if ~isempty(eqNorm)
+                    e = eqNorm - refNorm;
+                    trialEVM(n) = sqrt(mean(abs(e).^2, "omitnan"));
+                end
             catch
             end
         end
@@ -1213,6 +1241,12 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.NoiseVarSource = trialNoiseVarSource(idx);
         T.NoiseVarReason = trialNoiseVarReason(idx);
         T.NoiseVarStrictFailure = trialNoiseVarStrictFailure(idx);
+        T.UCIOnPUSCHApplied = trialUCIOnPUSCHApplied(idx);
+        T.UCIOnPUSCHSource = trialUCIOnPUSCHSource(idx);
+        T.HARQACKBitCount = trialHARQACKBitCount(idx);
+        T.HARQACKContentMatch = trialHARQACKContentMatch(idx);
+        T.HARQACKDecodeStatus = trialHARQACKDecodeStatus(idx);
+        T.HARQACKDecodeReason = trialHARQACKDecodeReason(idx);
         T.EqualizerType = trialEqualizerType(idx);
         T.EqualizerRequestedType = trialEqualizerRequestedType(idx);
         T.EqualizerEngine = trialEqualizerEngine(idx);
@@ -1359,23 +1393,24 @@ function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInf
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", txInfo);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
-    noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "thermal_noise_plus_receiver_nf", txInfo);
-    if isfinite(nVar) && nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+    thermalNVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
+    [nVar, source] = localReceiverEffectiveNoiseVariance(thermalNVar, replay, "thermal_noise_plus_receiver_nf");
+    noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+    if isfinite(thermalNVar) && thermalNVar > 0
+        n = sqrt(thermalNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
         return;
     end
     y = x;
-    nVar = NaN;
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
-noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "standalone_awgn_snr_argument_post_channel_units", txInfo);
-if isfinite(nVar) && nVar >= 0
-    if nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+awgnNVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
+[nVar, source] = localReceiverEffectiveNoiseVariance(awgnNVar, replay, "standalone_awgn_snr_argument_post_channel_units");
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+if isfinite(awgnNVar) && awgnNVar >= 0
+    if awgnNVar > 0
+        n = sqrt(awgnNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
     else
         y = x;
@@ -1383,7 +1418,22 @@ if isfinite(nVar) && nVar >= 0
     return;
 end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
-noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "legacy_addAwgnComplex_last_resort", txInfo);
+[nVar, source] = localReceiverEffectiveNoiseVariance(nVar, replay, "legacy_addAwgnComplex_last_resort");
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+end
+
+function [effectiveNVar, source] = localReceiverEffectiveNoiseVariance(baseNVar, replay, baseSource)
+effectiveNVar = double(baseNVar);
+source = string(baseSource);
+interferenceNVar = double(sixgr.util.structGet(replay, "InterferenceWaveformVariance", NaN));
+if isfinite(interferenceNVar) && interferenceNVar > 0
+    if isfinite(effectiveNVar) && effectiveNVar >= 0
+        effectiveNVar = effectiveNVar + interferenceNVar;
+    else
+        effectiveNVar = interferenceNVar;
+    end
+    source = source + "_plus_full_waveform_interference_power";
+end
 end
 
 function info = localNoiseCalibrationInfo(compositeWaveform, desiredWaveform, nVar, source, txInfo)
@@ -1583,6 +1633,13 @@ T.SourceTable = repmat("air_interface/csv/ul_pusch_trials.csv", n, 1);
 T.ArtifactClass = repmat("raw_runtime_trial_evidence", n, 1);
 T.SemanticState = string(T.RowLifecycleState);
 T.CountsTowardCoverage = ~logical(localOptionalColumn(T, "Crash", false)) & ~logical(localOptionalColumn(T, "IsWarmupFrame", false));
+runtimeStatus = strtrim(string(localOptionalColumn(T, "RuntimeMaterializationStatus", "")));
+runtimeEvidence = strtrim(string(localOptionalColumn(T, "RuntimeEvidenceSource", "")));
+activeRuntimeMask = ~logical(localOptionalColumn(T, "Crash", false));
+runtimeStatus(activeRuntimeMask & strlength(runtimeStatus) == 0) = "active_waveform_pusch_runtime";
+runtimeEvidence(activeRuntimeMask & strlength(runtimeEvidence) == 0) = "sixgr.link.runULPUSCHThroughput";
+T.RuntimeMaterializationStatus = runtimeStatus;
+T.RuntimeEvidenceSource = runtimeEvidence;
 T.MachineReadable = true(n, 1);
 T.HumanReadable = true(n, 1);
 end
@@ -2373,9 +2430,12 @@ replay.RawWaveform = y;
 replay.CorrectedWaveform = y;
 desiredWaveform = y;
 [interferenceWaveform, interferenceMeta] = sixgr.link.synthesizeInterferenceWaveform("UL", desiredWaveform, replay, interferenceBundle);
+interferenceWaveformVariance = NaN;
 if ~isempty(interferenceWaveform)
+    interferenceWaveformVariance = localUsefulOFDMReferencePower(interferenceWaveform, txInfo);
     y = y + cast(interferenceWaveform, "like", y);
 end
+replay.InterferenceWaveformVariance = double(interferenceWaveformVariance);
 replay.InterferenceMode = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferenceMode", replay.InterferenceMode));
 replay.InterferenceContributorCount = double(sixgr.util.structGet(interferenceMeta, "Contributors", 0));
 replay.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(interferenceMeta, "AggregatedRxPower_dBm", NaN));
@@ -2576,6 +2636,36 @@ end
 slotDur_s = 1e-3 / (2^mu);
 end
 
+function bits = localResolveExpectedUCIBits(inputBits, grantSnapshot, harqContext)
+bits = localNormalizeUCIInput(inputBits);
+if ~isempty(bits)
+    return;
+end
+candidatePaths = ["ExpectedUCIBits","MultiplexedUCIBits","HARQACKBits","MultiplexedHARQACKBits"];
+for i = 1:numel(candidatePaths)
+    raw = sixgr.util.structGet(grantSnapshot, char(candidatePaths(i)), []);
+    bits = localNormalizeUCIInput(raw);
+    if ~isempty(bits)
+        return;
+    end
+end
+for i = 1:numel(candidatePaths)
+    raw = sixgr.util.structGet(harqContext, char(candidatePaths(i)), []);
+    bits = localNormalizeUCIInput(raw);
+    if ~isempty(bits)
+        return;
+    end
+end
+end
+
+function bits = localNormalizeUCIInput(raw)
+if isempty(raw)
+    bits = int8([]);
+    return;
+end
+bits = int8(logical(raw(:)));
+end
+
 function T = localEmptyTrialTable()
 varNames = {'Direction','SNR_dB','SFN','UEIndex','RNTI','BaseStationID','Seed','Frame','Slot','MCS','PRBs','Layers','Modulation','TargetCodeRate','TBSize_bits', ...
     'ChannelModel','DopplerHz','CRCPass','DecoderIterations','EVM_rms','NMSE_dB','DetectionMetric', ...
@@ -2655,6 +2745,12 @@ T.NoiseVarStatus = strings(0,1);
 T.NoiseVarSource = strings(0,1);
 T.NoiseVarReason = strings(0,1);
 T.NoiseVarStrictFailure = false(0,1);
+T.UCIOnPUSCHApplied = false(0,1);
+T.UCIOnPUSCHSource = strings(0,1);
+T.HARQACKBitCount = zeros(0,1);
+T.HARQACKContentMatch = false(0,1);
+T.HARQACKDecodeStatus = strings(0,1);
+T.HARQACKDecodeReason = strings(0,1);
 T.EqualizerType = strings(0,1);
 T.EqualizerRequestedType = strings(0,1);
 T.EqualizerEngine = strings(0,1);
@@ -3190,31 +3286,40 @@ metrics = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
     "PrecoderInfo", precoderTrace);
 metrics.PilotSINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
 metrics.PilotSINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
+referenceSINR = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
+referenceSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
+referenceRole = string(sixgr.util.structGet(metrics, "SINRValueRole", ""));
+referenceStatus = string(sixgr.util.structGet(metrics, "SINRValueStatus", ""));
+referenceReason = string(sixgr.util.structGet(metrics, "SINRNAReason", ""));
 postEqSINR = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
 postEqSource = string(sixgr.util.structGet(rx, "PostEqSINRSource", ""));
 postEqRole = string(sixgr.util.structGet(rx, "PostEqSINRValueRole", ""));
 postEqStatus = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
+postEqReason = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
 reportCQI = localCQIReportingEnabled(cfg, "UL");
-if isfinite(postEqSINR) && localPostEqSINRIsSchedulerEligible(postEqSource, postEqRole, postEqStatus)
-    metrics.SINR_dB = postEqSINR;
-    metrics.SINRSource = char(postEqSource);
-    metrics.SINRValueRole = char(postEqRole);
-    metrics.SINRValueStatus = char(postEqStatus);
-    metrics.SINRNAReason = char(string(sixgr.util.structGet(rx, "PostEqSINRNAReason", "")));
+selectedSINR = localSelectULMeasuredTrialSINRFromEvidence( ...
+    postEqSINR, postEqSource, postEqRole, postEqStatus, postEqReason, ...
+    referenceSINR, referenceSource, referenceRole, referenceStatus, referenceReason);
+if isfinite(double(selectedSINR.Value))
+    metrics.SINR_dB = double(selectedSINR.Value);
+    metrics.SINRSource = char(string(selectedSINR.Source));
+    metrics.SINRValueRole = char(string(selectedSINR.ValueRole));
+    metrics.SINRValueStatus = char(string(selectedSINR.ValueStatus));
+    metrics.SINRNAReason = char(string(selectedSINR.NAReason));
     if reportCQI
         feedback = sixgr.link.resolveWidebandCQI(struct( ...
-            "WidebandSINR_dB", postEqSINR, ...
-            "SINRSource", char(postEqSource), ...
-            "SINRValueRole", char(postEqRole), ...
-            "SINRValueStatus", char(postEqStatus)), cfg, "UL");
+            "WidebandSINR_dB", double(selectedSINR.Value), ...
+            "SINRSource", char(string(selectedSINR.Source)), ...
+            "SINRValueRole", char(string(selectedSINR.ValueRole)), ...
+            "SINRValueStatus", char(string(selectedSINR.ValueStatus))), cfg, "UL");
         rawCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
         if isfinite(rawCQI)
             metrics.CQI = double(max(0, min(15, round(rawCQI))));
-            metrics.CQISource = "ul_post_equalization_sinr_to_cqi:" + string(sixgr.util.structGet(feedback, "Mode", "sinr_threshold_table"));
+            metrics.CQISource = "ul_selected_receiver_evidence_sinr_to_cqi:" + string(sixgr.util.structGet(feedback, "Mode", "sinr_threshold_table"));
             metrics.CQIValueStatus = "OK";
         else
             metrics.CQI = NaN;
-            metrics.CQISource = "ul_post_equalization_sinr_to_cqi_unavailable";
+            metrics.CQISource = "ul_selected_receiver_evidence_sinr_to_cqi_unavailable";
             metrics.CQIValueStatus = "unavailable";
         end
     else
@@ -3277,12 +3382,77 @@ for f = 1:numel(beamFields)
 end
 end
 
+function selected = localSelectULMeasuredTrialSINRFromEvidence(postEqSINR, postEqSource, postEqRole, postEqStatus, postEqReason, ...
+    referenceSINR, referenceSource, referenceRole, referenceStatus, referenceReason)
+selected = struct( ...
+    "Value", NaN, ...
+    "Source", "", ...
+    "ValueRole", "unavailable", ...
+    "ValueStatus", "unavailable", ...
+    "NAReason", "no_scheduler_eligible_ul_receiver_sinr");
+postEqSINR = double(postEqSINR);
+referenceSINR = double(referenceSINR);
+postEqSource = string(postEqSource);
+postEqRole = string(postEqRole);
+postEqStatus = string(postEqStatus);
+postEqReason = string(postEqReason);
+referenceSource = string(referenceSource);
+referenceRole = string(referenceRole);
+referenceStatus = string(referenceStatus);
+referenceReason = string(referenceReason);
+
+postEqAvailable = isfinite(postEqSINR) && localPostEqSINRIsSchedulerEligible(postEqSource, postEqRole, postEqStatus);
+referenceAvailable = isfinite(referenceSINR) && localULReferenceSINRIsReceiverMeasured(referenceSource, referenceRole, referenceStatus);
+if postEqAvailable && referenceAvailable
+    if referenceSINR < postEqSINR
+        selected.Value = double(referenceSINR);
+        selected.Source = "ul_receiver_evidence_limited_post_equalization_sinr";
+        selected.ValueRole = "measured_post_equalization_scheduling_input";
+        selected.ValueStatus = "OK";
+        selected.NAReason = sprintf("post_eq_sinr_%.6g_dB_limited_by_measured_ul_rs_sinr_%.6g_dB", ...
+            double(postEqSINR), double(referenceSINR));
+    else
+        selected.Value = double(postEqSINR);
+        selected.Source = char(postEqSource);
+        selected.ValueRole = char(postEqRole);
+        selected.ValueStatus = char(postEqStatus);
+        selected.NAReason = char(postEqReason);
+    end
+elseif postEqAvailable
+    selected.Value = double(postEqSINR);
+    selected.Source = char(postEqSource);
+    selected.ValueRole = char(postEqRole);
+    selected.ValueStatus = char(postEqStatus);
+    selected.NAReason = char(postEqReason);
+elseif referenceAvailable
+    selected.Value = double(referenceSINR);
+    selected.Source = "measured_ul_rs_sinr";
+    selected.ValueRole = "measured_ul_rs_cqi_input";
+    selected.ValueStatus = char(referenceStatus);
+    selected.NAReason = char(referenceReason);
+end
+end
+
 function tf = localPostEqSINRIsSchedulerEligible(source, role, status)
 token = lower(strjoin([string(source), string(role), string(status)], " "));
 blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
     "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
     "unavailable", "failed", "rejected"];
 tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
+end
+
+function tf = localULReferenceSINRIsReceiverMeasured(source, role, status)
+source = lower(strtrim(string(source)));
+role = lower(strtrim(string(role)));
+status = lower(strtrim(string(status)));
+if contains(status, "unavailable") || contains(status, "failed") || contains(status, "rejected")
+    tf = false;
+    return;
+end
+isMeasuredULRS = source == "measured_ul_rs_sinr" && role == "measured_ul_rs_cqi_input";
+isReceiverHestMeasurement = source == "receiver_hest_reference_signal_measurement" && ...
+    (role == "estimated" || role == "measured" || role == "diagnostic_reference_signal_quality_not_for_scheduling");
+tf = isMeasuredULRS || isReceiverHestMeasurement;
 end
 
 function args = localBuildCSIFeedbackArgs(rx)
@@ -3920,38 +4090,47 @@ end
 
 function combined = localCombineRateRecoveredLLR(prev, cur)
 if isempty(prev)
-    combined = double(cur);
+    combined = localEnsureLLRMatrix(cur);
     return;
 end
 if isempty(cur)
-    combined = double(prev);
+    combined = localEnsureLLRMatrix(prev);
     return;
 end
-X = double(prev(:));
-Y = double(cur(:));
-lp = numel(X);
-lc = numel(Y);
-if lp == lc
+X = localEnsureLLRMatrix(prev);
+Y = localEnsureLLRMatrix(cur);
+if isequal(size(X), size(Y))
     combined = X + Y;
     return;
 end
-lmin = min(lp, lc);
-lmax = max(lp, lc);
-combined = zeros(lmax, 1, "double");
-combined(1:lmin) = X(1:lmin) + Y(1:lmin);
-if lp > lc
-    combined(lmin+1:end) = X(lmin+1:end);
-else
-    combined(lmin+1:end) = Y(lmin+1:end);
-end
+% HARQ soft combining is valid only when the retransmission preserves the
+% same LDPC code-block layout. Keep the current observation if the stored
+% buffer is incompatible instead of manufacturing a malformed combined CB.
+combined = Y;
 end
 
 function diag = localHARQCombiningDiagnostics(prev, cur, combined)
+prevShape = localLLRShape(prev);
+curShape = localLLRShape(cur);
+combinedShape = localLLRShape(combined);
+compatibleShape = ~isempty(prev) && ~isempty(cur) && ...
+    isequal(prevShape, curShape) && isequal(curShape, combinedShape);
+skipReason = "";
+if ~isempty(prev) && ~isempty(cur) && ~compatibleShape
+    skipReason = "code_block_layout_mismatch";
+end
 diag = struct( ...
     "PreviousLLRCount", double(numel(prev)), ...
     "CurrentLLRCount", double(numel(cur)), ...
     "CombinedLLRCount", double(numel(combined)), ...
-    "CombiningApplied", ~isempty(prev) && ~isempty(cur) && ~isempty(combined), ...
+    "CombiningApplied", compatibleShape, ...
+    "CombiningSkipReason", char(skipReason), ...
+    "PreviousLLRRows", double(prevShape(1)), ...
+    "PreviousLLRCodeBlocks", double(prevShape(2)), ...
+    "CurrentLLRRows", double(curShape(1)), ...
+    "CurrentLLRCodeBlocks", double(curShape(2)), ...
+    "CombinedLLRRows", double(combinedShape(1)), ...
+    "CombinedLLRCodeBlocks", double(combinedShape(2)), ...
     "LLRCombiningGain_dB", NaN);
 if isempty(cur) || isempty(combined)
     return;
@@ -3982,6 +4161,9 @@ if isempty(X)
 end
 nRow = size(X, 1);
 nCB = size(X, 2);
+if ~localIsValidLDPCDecodeRows(nRow, double(tx.BaseGraph))
+    return;
+end
 decCbs = zeros(nRow, nCB, 'int8');
 itVec = NaN(nCB, 1);
 maxLen = 0;
@@ -4016,6 +4198,31 @@ X = double(v);
 if isvector(X)
     X = X(:);
 end
+end
+
+function shape = localLLRShape(v)
+if isempty(v)
+    shape = [0 0];
+    return;
+end
+X = localEnsureLLRMatrix(v);
+shape = [size(X, 1) size(X, 2)];
+end
+
+function tf = localIsValidLDPCDecodeRows(nRows, bgn)
+tf = false;
+if ~(isscalar(nRows) && isfinite(nRows) && nRows > 0 && isscalar(bgn) && isfinite(bgn))
+    return;
+end
+if round(bgn) == 1
+    zc = double(nRows) / 66;
+elseif round(bgn) == 2
+    zc = double(nRows) / 50;
+else
+    return;
+end
+validZc = [2:16 18:2:32 36:4:64 72:8:128 144:16:256 288:32:384];
+tf = abs(zc - round(zc)) < 1e-9 && any(abs(validZc - round(zc)) < 1e-9);
 end
 
 function seed = localRNGSeed(seedValue)
@@ -4110,6 +4317,8 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
     "TRSGatingActive","TRSValidityState","TrackingEligibility","TRSAgeSlots","LastSuccessfulTRSSlot","LastEstimatedTRSDopplerHz", ...
     "TRSStateSource","TRSRuntimeConsumer","TRSInfluencedDecision","TRSInfluenceDefinition","TRSReceiverIntegrationStatus","TRSReceiverIntegrationBlocker", ...
+    "ExpectedUCIBits","MultiplexedUCIBits","HARQACKBits","MultiplexedHARQACKBits","UCIOnPUSCHApplied","UCIOnPUSCHSource", ...
+    "PUCCHCollisionPolicy","PUCCHSourceSlot","PUCCHGrantId","UCIOnPUSCHEvidenceSource", ...
     "GrantContextId","GrantWorkerSafe","GrantSharedStateCommitMode"];
 for i = 1:numel(preserveFields)
     fieldName = char(preserveFields(i));
@@ -4413,6 +4622,27 @@ for i = 1:nargin
         return;
     end
 end
+end
+
+function [eqNorm, refNorm] = localNormalizeEVMInputs(eqSym, refSym)
+eqNorm = [];
+refNorm = [];
+eqSym = eqSym(:);
+refSym = refSym(:);
+valid = isfinite(real(eqSym)) & isfinite(imag(eqSym)) & ...
+    isfinite(real(refSym)) & isfinite(imag(refSym));
+eqSym = eqSym(valid);
+refSym = refSym(valid);
+if isempty(eqSym) || isempty(refSym)
+    return;
+end
+eqPower = mean(abs(eqSym).^2, "omitnan");
+refPower = mean(abs(refSym).^2, "omitnan");
+if ~(isfinite(eqPower) && eqPower > eps && isfinite(refPower) && refPower > eps)
+    return;
+end
+eqNorm = eqSym ./ sqrt(eqPower);
+refNorm = refSym ./ sqrt(refPower);
 end
 
 function value = localObjectValue(obj, propName, defaultValue)

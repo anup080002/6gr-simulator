@@ -19,6 +19,8 @@ job.StartSlotIndex = double(grantSlotIdx);
 job.InitialLinkAdaptationState = laStateIn;
 job.TransportBlockBits = sixgr.util.structGet(trialContext, "TransportBlockBits", []);
 job.RV = sixgr.util.structGet(trialContext, "RV", []);
+job.ExpectedUCIBits = sixgr.util.structGet(trialContext, "ExpectedUCIBits", ...
+    sixgr.util.structGet(grant, "ExpectedUCIBits", []));
 job.HARQContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
 job.GrantSnapshot = grant;
 job.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", ""));

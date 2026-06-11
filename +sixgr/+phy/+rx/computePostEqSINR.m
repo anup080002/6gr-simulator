@@ -25,7 +25,9 @@ info = struct( ...
     "NumRxAnt", NaN, ...
     "NumTxPorts", NaN, ...
     "NumLayers", NaN, ...
-    "NoiseVariance", NaN);
+    "NoiseVariance", NaN, ...
+    "ImpairmentCovarianceUsed", false, ...
+    "ImpairmentCovarianceSource", "");
 sinr_dB = NaN;
 sinr_per_re_dB = [];
 
@@ -101,30 +103,56 @@ for k = 1:nRE
 
     switch method
         case {"mmse","irc"}
+            whiteCov = nVar * eye(nRx);
+            actualCov = whiteCov;
+            impairmentCovUsed = false;
             if method == "irc" && usePerRERint
-                Rnn = double(squeeze(rint(k, :, :))) + nVar * eye(nRx);
+                Rnn = localRegularizeCovariance(squeeze(rint(k, :, :)), nVar);
+                actualCov = Rnn;
+                impairmentCovUsed = true;
             elseif method == "irc" && useStaticRint
-                Rnn = double(rint) + nVar * eye(nRx);
+                Rnn = localRegularizeCovariance(rint, nVar);
+                actualCov = Rnn;
+                impairmentCovUsed = true;
             else
-                Rnn = nVar * eye(nRx);
+                Rnn = whiteCov;
+                if usePerRERint
+                    actualCov = localRegularizeCovariance(squeeze(rint(k, :, :)), nVar);
+                    impairmentCovUsed = true;
+                elseif useStaticRint
+                    actualCov = localRegularizeCovariance(rint, nVar);
+                    impairmentCovUsed = true;
+                end
             end
             W = localStableRightSolve(Hk', Hk * Hk' + Rnn);
             if isempty(W)
                 continue;
             end
             G = W * Hk;
-            noiseCov = W * Rnn * W';
+            noiseCov = W * actualCov * W';
             for layer = 1:nLayers
                 signalPower = abs(G(layer, layer)) .^ 2;
                 interferencePower = sum(abs(G(layer, :)) .^ 2) - signalPower;
                 noisePower = real(noiseCov(layer, layer));
                 sinrLin(k, layer) = signalPower / max(interferencePower + noisePower, eps);
             end
+            if impairmentCovUsed
+                info.ImpairmentCovarianceUsed = true;
+            end
 
         case "zf"
             W = pinv(Hk);
             G = W * Hk;
-            noiseCov = nVar * (W * W');
+            if usePerRERint
+                actualCov = localRegularizeCovariance(squeeze(rint(k, :, :)), nVar);
+                info.ImpairmentCovarianceUsed = true;
+            elseif useStaticRint
+                actualCov = localRegularizeCovariance(rint, nVar);
+                info.ImpairmentCovarianceUsed = true;
+            else
+                actualCov = nVar * eye(nRx);
+            end
+            noiseCov = W * actualCov * W';
             for layer = 1:nLayers
                 signalPower = abs(G(layer, layer)) .^ 2;
                 interferencePower = sum(abs(G(layer, :)) .^ 2) - signalPower;
@@ -172,6 +200,23 @@ info.NumRxAnt = double(nRx);
 info.NumTxPorts = double(nTx);
 info.NumLayers = double(nLayers);
 info.NoiseVariance = double(nVar);
+if logical(info.ImpairmentCovarianceUsed)
+    info.ImpairmentCovarianceSource = "dmrs_residual_impairment_covariance";
+end
+end
+
+function R = localRegularizeCovariance(Rin, nVar)
+R = double(Rin);
+R = (R + R') ./ 2;
+if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+    R = max(double(nVar), eps) * eye(size(R, 1));
+    return;
+end
+diagonalFloor = max(double(nVar) * 1e-6, eps);
+R = R + diagonalFloor * eye(size(R, 1));
+if rcond(R) < 1e-12
+    R = R + max(diagonalFloor, norm(R, "fro") * 1e-10) * eye(size(R, 1));
+end
 end
 
 function X = localStableRightSolve(B, A)

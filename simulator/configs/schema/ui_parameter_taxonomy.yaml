@@ -70,7 +70,7 @@ ui_groups:
         shared_dependency: false
       RF_Impairments:
         feature_family: RF_Impairments
-        include_prefixes: [impairments., power_and_rf_frontend.]
+        include_prefixes: [impairments., power_and_rf_frontend., air_interface.bs_tx_power_per_sector_dBm, air_interface.bs_noise_figure_dB, air_interface.ue_tx_power_dBm, air_interface.ue_noise_figure_dB, power_control.]
         shared_dependency: false
       Channel_Propagation:
         feature_family: Channel_Propagation

@@ -314,8 +314,9 @@ switch mode
         victimCfg = channelCfg;
         [waveform, ~] = sixgr.link.applyWaveformImpairments(waveformBase, victimCfg, fs);
         waveform = localMatchWaveformLength(waveform, targetSize(1));
-        rxPower_dBm = localResolveWaveformPowerdBm(waveform, samplePowerPerMilliwatt, ...
-            double(sixgr.util.structGet(entry, "VictimRxPower_dBm", NaN)));
+        targetRxPower_dBm = double(sixgr.util.structGet(entry, "VictimRxPower_dBm", NaN));
+        [waveform, rxPower_dBm] = localNormalizeWaveformToRuntimeRxPower( ...
+            waveform, samplePowerPerMilliwatt, targetRxPower_dBm);
         entryMeta.PowerSource = "sample_domain_full_per_link_channel_waveform_sum";
         entryMeta.FullPerLinkChannelTruthUsed = true;
         entryMeta.ChannelObjectSource = localSafeCharToken(sixgr.util.structGet(channelMeta, "ChannelObjectSource", ""));
@@ -858,4 +859,20 @@ milliwatt = samplePower / samplePowerPerMilliwatt;
 if isfinite(milliwatt) && milliwatt > 0
     power_dBm = 10 * log10(milliwatt);
 end
+end
+
+function [waveformOut, power_dBm] = localNormalizeWaveformToRuntimeRxPower(waveformIn, samplePowerPerMilliwatt, targetRxPower_dBm)
+waveformOut = waveformIn;
+targetRxPower_dBm = double(targetRxPower_dBm);
+if isfinite(targetRxPower_dBm) && isfinite(samplePowerPerMilliwatt) && samplePowerPerMilliwatt > 0
+    samplePower = mean(abs(double(waveformIn(:))).^2, "omitnan");
+    targetSamplePower = samplePowerPerMilliwatt * 10.^(targetRxPower_dBm / 10);
+    if isfinite(samplePower) && samplePower > 0 && isfinite(targetSamplePower) && targetSamplePower >= 0
+        scale = sqrt(targetSamplePower / samplePower);
+        waveformOut = waveformIn .* cast(scale, "like", waveformIn);
+        power_dBm = targetRxPower_dBm;
+        return;
+    end
+end
+power_dBm = localResolveWaveformPowerdBm(waveformOut, samplePowerPerMilliwatt, targetRxPower_dBm);
 end

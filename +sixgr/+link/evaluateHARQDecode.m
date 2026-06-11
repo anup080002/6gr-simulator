@@ -37,20 +37,20 @@ end
 
 function combined = localCombineRateRecoveredLLR(prev, cur)
 if isempty(prev)
-    combined = cur;
+    combined = localEnsureLLRMatrix(cur);
     return;
 end
 if isempty(cur)
-    combined = prev;
+    combined = localEnsureLLRMatrix(prev);
     return;
 end
 X = localEnsureLLRMatrix(prev);
 Y = localEnsureLLRMatrix(cur);
-nRow = max(size(X, 1), size(Y, 1));
-nCol = max(size(X, 2), size(Y, 2));
-X(end+1:nRow, end+1:nCol) = 0;
-Y(end+1:nRow, end+1:nCol) = 0;
-combined = X + Y;
+if isequal(size(X), size(Y))
+    combined = X + Y;
+else
+    combined = Y;
+end
 end
 
 function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg)
@@ -66,6 +66,9 @@ end
 
 nRow = size(X, 1);
 nCB = size(X, 2);
+if ~localIsValidLDPCDecodeRows(nRow, double(tx.BaseGraph))
+    return;
+end
 decCbs = zeros(nRow, nCB, 'int8');
 itVec = NaN(nCB, 1);
 maxLen = 0;
@@ -102,6 +105,22 @@ X = double(v);
 if isvector(X)
     X = X(:);
 end
+end
+
+function tf = localIsValidLDPCDecodeRows(nRows, bgn)
+tf = false;
+if ~(isscalar(nRows) && isfinite(nRows) && nRows > 0 && isscalar(bgn) && isfinite(bgn))
+    return;
+end
+if round(bgn) == 1
+    zc = double(nRows) / 66;
+elseif round(bgn) == 2
+    zc = double(nRows) / 50;
+else
+    return;
+end
+validZc = [2:16 18:2:32 36:4:64 72:8:128 144:16:256 288:32:384];
+tf = abs(zc - round(zc)) < 1e-9 && any(abs(validZc - round(zc)) < 1e-9);
 end
 
 function sinr_dB = localExtractSINR(rx)

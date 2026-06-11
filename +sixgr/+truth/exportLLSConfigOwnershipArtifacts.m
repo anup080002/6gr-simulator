@@ -1561,6 +1561,10 @@ for i = 1:height(roundtripT)
     dbValue = string(roundtripT.DBSnapshotValue(i));
     exportValue = string(roundtripT.ExportedCSVValue(i));
     browserValue = string(roundtripT.BrowserDisplayedValue(i));
+    roundtripStatus = "";
+    if istable(roundtripT) && ismember("ConsistencyStatus", string(roundtripT.Properties.VariableNames))
+        roundtripStatus = lower(strtrim(string(roundtripT.ConsistencyStatus(i))));
+    end
     dbSource = "";
     if istable(roundtripT) && ismember("DBSnapshotSource", string(roundtripT.Properties.VariableNames))
         dbSource = lower(strtrim(string(roundtripT.DBSnapshotSource(i))));
@@ -1569,7 +1573,9 @@ for i = 1:height(roundtripT)
     if istable(roundtripT) && ismember("RuntimeDerived", string(roundtripT.Properties.VariableNames))
         runtimeDerived = logical(roundtripT.RuntimeDerived(i));
     end
-    if strlength(dbValue) == 0 && runtimeDerived
+    if strlength(dbValue) == 0 && startsWith(roundtripStatus, "consistent")
+        status = string(roundtripT.ConsistencyStatus(i));
+    elseif strlength(dbValue) == 0 && runtimeDerived
         status = "consistent_runtime_derived_db_unavailable";
     elseif strlength(dbValue) == 0 && dbSource == "db_inactive"
         status = "consistent_db_inactive";

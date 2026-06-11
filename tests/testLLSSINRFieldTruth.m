@@ -44,16 +44,47 @@ measuredMask = isfinite(double(T.MeasuredTrialSINR_dB));
 assert(any(measuredMask), sprintf("%s trials must export at least one finite MeasuredTrialSINR_dB sample.", direction));
 postEqMask = isfinite(double(T.PostEqSINR_dB));
 assert(any(postEqMask), sprintf("%s trials must export true post-equalization SINR samples.", direction));
-assert(all(abs(double(T.MeasuredTrialSINR_dB(measuredMask)) - double(T.PostEqSINR_dB(measuredMask))) < 1e-9), ...
-    sprintf("%s MeasuredTrialSINR_dB must mirror PostEqSINR_dB, not EVM proxy.", direction));
+if strcmpi(direction, "UL")
+    ulLimitedMask = measuredMask & strcmp(string(T.MeasuredTrialSINRSource), "ul_receiver_evidence_limited_post_equalization_sinr");
+    ulPostEqMask = measuredMask & ~ulLimitedMask;
+    if any(ulLimitedMask)
+        expectedLimitedSINR = min(double(T.PostEqSINR_dB(ulLimitedMask)), double(T.ReceiverHestSINR_dB(ulLimitedMask)));
+        assert(all(abs(double(T.MeasuredTrialSINR_dB(ulLimitedMask)) - expectedLimitedSINR) < 1e-9), ...
+            "UL receiver-evidence-limited MeasuredTrialSINR_dB must equal the lower of post-eq and measured UL RS SINR.");
+        assert(all(double(T.MeasuredTrialSINR_dB(ulLimitedMask)) <= double(T.PostEqSINR_dB(ulLimitedMask)) + 1e-9), ...
+            "UL MeasuredTrialSINR_dB must not exceed post-eq SINR when receiver evidence limits it.");
+    end
+    if any(ulPostEqMask)
+        assert(all(abs(double(T.MeasuredTrialSINR_dB(ulPostEqMask)) - double(T.PostEqSINR_dB(ulPostEqMask))) < 1e-9), ...
+            "UL post-eq-selected rows must mirror PostEqSINR_dB.");
+    end
+else
+    assert(all(abs(double(T.MeasuredTrialSINR_dB(measuredMask)) - double(T.PostEqSINR_dB(measuredMask))) < 1e-9), ...
+        sprintf("%s MeasuredTrialSINR_dB must mirror PostEqSINR_dB, not EVM proxy.", direction));
+end
 assert(all(strlength(strtrim(string(T.MeasuredTrialSINRSource(measuredMask)))) > 0), ...
     sprintf("%s MeasuredTrialSINR_dB rows must carry an explicit measurement source.", direction));
 assert(all(~contains(lower(string(T.MeasuredTrialSINRSource(measuredMask))), "proxy_fallback")), ...
     sprintf("%s MeasuredTrialSINR_dB must not be relabeled from decoder-proxy fallback.", direction));
-assert(all(strcmp(string(T.MeasuredTrialSINRSource(measuredMask)), "post_equalization_sinr_from_equalizer_channel_estimate")), ...
-    sprintf("%s MeasuredTrialSINR_dB must come from true post-equalization receiver evidence.", direction));
-assert(all(strcmp(string(T.SINRValueRole(measuredMask)), "measured_post_equalization_scheduling_input")), ...
-    sprintf("%s rows with measured trial SINR must publish primary SINR as post-eq scheduling input.", direction));
+if strcmpi(direction, "UL")
+    allowedULSources = ["post_equalization_sinr_from_equalizer_channel_estimate", ...
+        "ul_receiver_evidence_limited_post_equalization_sinr", "measured_ul_rs_sinr"];
+    assert(all(ismember(string(T.MeasuredTrialSINRSource(measuredMask)), allowedULSources)), ...
+        "UL MeasuredTrialSINR_dB must come from post-eq or explicitly receiver-evidence-limited measured UL RS evidence.");
+else
+    assert(all(strcmp(string(T.MeasuredTrialSINRSource(measuredMask)), "post_equalization_sinr_from_equalizer_channel_estimate")), ...
+        sprintf("%s MeasuredTrialSINR_dB must come from true post-equalization receiver evidence.", direction));
+end
+if strcmpi(direction, "UL")
+    measuredSources = string(T.MeasuredTrialSINRSource(measuredMask));
+    measuredRoles = string(T.SINRValueRole(measuredMask));
+    assert(all((measuredSources == "measured_ul_rs_sinr" & measuredRoles == "measured_ul_rs_cqi_input") | ...
+        (measuredSources ~= "measured_ul_rs_sinr" & measuredRoles == "measured_post_equalization_scheduling_input")), ...
+        "UL rows with measured trial SINR must publish a role consistent with the selected receiver evidence.");
+else
+    assert(all(strcmp(string(T.SINRValueRole(measuredMask)), "measured_post_equalization_scheduling_input")), ...
+        sprintf("%s rows with measured trial SINR must publish primary SINR as post-eq scheduling input.", direction));
+end
 assert(all(strcmp(string(T.SINRSource(measuredMask)), string(T.MeasuredTrialSINRSource(measuredMask)))), ...
     sprintf("%s rows with measured trial SINR must use the measured source for primary SINR.", direction));
 proxyOnlyMask = ~isfinite(double(T.ReceiverHestSINR_dB)) & isfinite(double(T.DecoderTruthProxySINR_dB));

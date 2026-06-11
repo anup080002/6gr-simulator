@@ -47,6 +47,7 @@ ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
+ip.addParameter('ExpectedHARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -265,13 +266,14 @@ catch
     numLayersForSINR = min(size(hestSym, 2), max(1, size(hestSym, 3)));
 end
 try
-    [postEqSINR_dB, ~, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
+    [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
         hestSym, nVar, ...
         "Method", char(lower(string(equalizerAlg))), ...
         "Rint", Rint, ...
         "Layers", double(numLayersForSINR));
 catch ME
     postEqSINR_dB = NaN;
+    postEqSINRPerRE_dB = [];
     postEqSINRInfo = struct( ...
         "ValueStatus", "failed", ...
         "NAReason", string(ME.identifier), ...
@@ -280,22 +282,29 @@ catch ME
         "ValueRole", "measured_post_equalization_scheduling_input");
 end
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
+[nVarDecode, nVarDecodeInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
+    "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
+    "PostEqSINR_dB", postEqSINR_dB, ...
+    "CSI", csi);
 
 % Decode PUSCH to codeword LLR
 puschRxSym = [];
 try
-    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, eqSym, nVar);
+    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, eqSym, nVarDecode);
 catch
-    cwLLR = nrPUSCHDecode(carrier, pusch, eqSym, nVar);
+    cwLLR = nrPUSCHDecode(carrier, pusch, eqSym, nVarDecode);
 end
 
 if iscell(cwLLR)
     cwLLR = cwLLR{1};
 end
 cwLLR = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation);
+expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
+[cwLLRForULSCH, uciOnPUSCH] = localDemultiplexHARQACKFromPUSCH( ...
+    cwLLR, pusch, targetCodeRate, trBlkSize, expectedHARQACKBits);
 
 % Rate recover (to code blocks)
-[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLR, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks);
+[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLRForULSCH, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
@@ -390,11 +399,18 @@ rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
-rx.NoiseVar = nVar;
+rx.NoiseVar = nVarDecode;
 rx.NoiseVarStatus = char(string(noiseStatus.Status));
 rx.NoiseVarSource = char(string(noiseStatus.Source));
 rx.NoiseVarReason = char(string(noiseStatus.Reason));
 rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
+rx.NoiseVarDomain = "post_equalization_decoder_symbol";
+rx.PreEqualizationNoiseVar = double(nVar);
+rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
+rx.DecoderNoiseVar = double(nVarDecode);
+rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
+rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
+rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
 rx.ReceiverUsable = true;
 rx.DecodeAttempted = true;
 rx.DecodeUsable = true;
@@ -440,9 +456,19 @@ rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
+rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
+rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
+rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
+rx.ExpectedHARQACKBits = int8(uciOnPUSCH.ExpectedHARQACKBits(:));
+rx.DecodedHARQACKBits = int8(uciOnPUSCH.DecodedHARQACKBits(:));
+rx.HARQACKContentMatch = logical(uciOnPUSCH.ContentMatch);
+rx.HARQACKDecodeStatus = char(string(uciOnPUSCH.Status));
+rx.HARQACKDecodeReason = char(string(uciOnPUSCH.Reason));
 if ~logical(opt.CompactOutput)
     rx.TransportBlock = int8(tbBits(:));
     rx.CodewordLLR = cwLLR;
+    rx.ULSCHCodewordLLR = cwLLRForULSCH;
+    rx.HARQACKLLR = uciOnPUSCH.HARQACKLLR;
     rx.RateRecoveredLLR = recLLR;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
@@ -469,6 +495,8 @@ info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = noiseStatus;
+info.PreEqualizationNoiseVariance = double(nVar);
+info.PostEqualizationNoiseVariance = nVarDecodeInfo;
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
@@ -883,6 +911,57 @@ else
 end
 end
 
+function bits = localNormalizeHARQACKBits(rawBits)
+if isempty(rawBits)
+    bits = int8([]);
+    return;
+end
+bits = int8(logical(rawBits(:)));
+end
+
+function [ulschLLR, info] = localDemultiplexHARQACKFromPUSCH(cwLLR, pusch, targetCodeRate, trBlkSize, expectedBits)
+ulschLLR = double(cwLLR(:));
+expectedBits = localNormalizeHARQACKBits(expectedBits);
+oack = numel(expectedBits);
+info = struct( ...
+    "Applied", false, ...
+    "Source", "no_harq_ack_payload_expected", ...
+    "HARQACKBitCount", double(oack), ...
+    "ExpectedHARQACKBits", expectedBits, ...
+    "DecodedHARQACKBits", int8([]), ...
+    "HARQACKLLR", double([]), ...
+    "ContentMatch", false, ...
+    "Status", "not_requested", ...
+    "Reason", "");
+if oack <= 0
+    return;
+end
+if exist("nrULSCHDemultiplex", "file") ~= 2 || exist("nrUCIDecode", "file") ~= 2
+    info.Status = "unavailable";
+    info.Reason = "nrULSCHDemultiplex_or_nrUCIDecode_unavailable";
+    return;
+end
+try
+    [ulschLLR, ackLLR] = nrULSCHDemultiplex( ...
+        pusch, targetCodeRate, trBlkSize, oack, 0, 0, double(cwLLR(:)));
+    decoded = int8(logical(nrUCIDecode(ackLLR, oack)));
+    info.Applied = true;
+    info.Source = "nrULSCHDemultiplex_ts38212_6_2_7_harq_ack_on_pusch";
+    info.DecodedHARQACKBits = decoded(:);
+    info.HARQACKLLR = double(ackLLR(:));
+    info.ContentMatch = numel(decoded) == oack && isequal(decoded(:), expectedBits(:));
+    if info.ContentMatch
+        info.Status = "decoded_match";
+    else
+        info.Status = "decoded_mismatch";
+    end
+catch ME
+    ulschLLR = double(cwLLR(:));
+    info.Status = "failed";
+    info.Reason = char(string(ME.identifier));
+end
+end
+
 function llrOut = localApplyCSIToCodewordLLR(llrIn, csi, modScheme)
 % 5G Toolbox decoders expect equalizer reliability to weight codeword LLRs.
 llrOut = double(llrIn(:));
@@ -904,6 +983,7 @@ csiVec(~isfinite(csiVec) | csiVec < 0) = 0;
 if isempty(csiVec) || ~any(csiVec > 0)
     return;
 end
+csiVec = localCSIToReliabilityWeights(csiVec);
 qm = max(1, round(double(localQm(modScheme))));
 if numel(csiVec) * qm == numel(llrOut)
     weights = repelem(csiVec, qm);
@@ -913,6 +993,15 @@ else
     return;
 end
 llrOut = llrOut .* weights;
+end
+
+function weights = localCSIToReliabilityWeights(csiVec)
+weights = double(csiVec(:));
+if any(weights > 1 + sqrt(eps))
+    weights = weights ./ max(1 + weights, eps);
+else
+    weights = min(max(weights, 0), 1);
+end
 end
 
 function x = localEnsureLLRBatch(xIn)
@@ -1047,6 +1136,8 @@ rx.EqualizedSymbolsForEvidence = complex([]);
 rx.PUSCHRxSymbolsForEvidence = complex([]);
 if ~compactOutput
     rx.CodewordLLR = double([]);
+    rx.ULSCHCodewordLLR = double([]);
+    rx.HARQACKLLR = double([]);
     rx.RateRecoveredLLR = double([]);
     rx.DecodedCodeBlocks = int8([]);
     rx.ActiveIterations = double([]);

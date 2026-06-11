@@ -4,6 +4,8 @@ function [metrics, constellationT] = deriveModulationTrackingMetrics(tx, rx, cfg
 direction = upper(string(direction));
 metrics = struct( ...
     "EVM_rms", NaN, ...
+    "EVMStatus", "unavailable", ...
+    "EVMComputationDomain", "", ...
     "SymbolErrors", NaN, ...
     "SymbolsCompared", NaN, ...
     "SymbolErrorRate", NaN, ...
@@ -43,9 +45,18 @@ end
 
 if ~isempty(eqSymAligned) && ~isempty(refSym)
     L = min(numel(eqSymAligned), numel(refSym));
-    err = eqSymAligned(1:L) - refSym(1:L);
-    pRef = max(mean(abs(refSym(1:L)).^2, "omitnan"), eps);
-    metrics.EVM_rms = sqrt(mean(abs(err).^2, "omitnan") / pRef);
+    [eqNorm, refNorm, evmStatus] = localNormalizeEVMInputs(eqSymAligned(1:L), refSym(1:L));
+    if ~isempty(eqNorm) && ~isempty(refNorm)
+        err = eqNorm - refNorm;
+        metrics.EVM_rms = sqrt(mean(abs(err).^2, "omitnan"));
+        metrics.EVMStatus = evmStatus;
+        if isfinite(metrics.EVM_rms) && metrics.EVM_rms > 1
+            metrics.EVMStatus = "warning_gt_100pct_check_timing_or_channel_estimate";
+        end
+        metrics.EVMComputationDomain = "post_equalized_and_reference_unit_power_constellation";
+    else
+        metrics.EVMStatus = evmStatus;
+    end
 end
 
 if ~isempty(refSym) && ~isempty(hardSym)
@@ -115,6 +126,31 @@ if iscell(x)
     end
 end
 x = x(:);
+end
+
+function [eqNorm, refNorm, status] = localNormalizeEVMInputs(eqSym, refSym)
+eqNorm = [];
+refNorm = [];
+status = "unavailable";
+eqSym = eqSym(:);
+refSym = refSym(:);
+valid = isfinite(real(eqSym)) & isfinite(imag(eqSym)) & ...
+    isfinite(real(refSym)) & isfinite(imag(refSym));
+eqSym = eqSym(valid);
+refSym = refSym(valid);
+if isempty(eqSym) || isempty(refSym)
+    status = "unavailable_no_finite_symbol_pairs";
+    return;
+end
+eqPower = mean(abs(eqSym).^2, "omitnan");
+refPower = mean(abs(refSym).^2, "omitnan");
+if ~(isfinite(eqPower) && eqPower > eps && isfinite(refPower) && refPower > eps)
+    status = "unavailable_invalid_symbol_power";
+    return;
+end
+eqNorm = eqSym ./ sqrt(eqPower);
+refNorm = refSym ./ sqrt(refPower);
+status = "OK";
 end
 
 function txSym = localReferenceSymbols(tx, direction)

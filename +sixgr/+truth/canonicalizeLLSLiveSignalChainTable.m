@@ -138,7 +138,11 @@ elseif endsWith(fieldName, "valuerole")
 elseif endsWith(fieldName, "valuestatus")
     fill(companionMask) = "available";
     fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
-elseif endsWith(fieldName, "nareason") || strcmp(fieldName, "nareason")
+elseif strcmp(fieldName, "nareason")
+    % Row-level lifecycle NAReason is intentionally blank for finalized
+    % rows; only field-specific *NAReason columns should receive sentinels.
+    return;
+elseif endsWith(fieldName, "nareason")
     fill(companionMask) = "not_required_when_metric_present";
     fill(~companionMask) = "field_not_emitted_by_active_" + scope + "_runtime";
 elseif endsWith(fieldName, "definition")

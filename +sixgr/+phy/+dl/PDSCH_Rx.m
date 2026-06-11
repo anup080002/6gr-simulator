@@ -275,13 +275,14 @@ end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint);
 try
-    [postEqSINR_dB, ~, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
+    [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
         hestSym, nVar, ...
         "Method", char(lower(string(equalizerAlg))), ...
         "Rint", Rint, ...
         "Layers", double(localObjectValue(pdsch, "NumLayers", min(size(hestSym, 2), max(1, size(hestSym, 3))))));
 catch ME
     postEqSINR_dB = NaN;
+    postEqSINRPerRE_dB = [];
     postEqSINRInfo = struct( ...
         "ValueStatus", "failed", ...
         "NAReason", string(ME.identifier), ...
@@ -290,14 +291,18 @@ catch ME
         "ValueRole", "measured_post_equalization_scheduling_input");
 end
 receiverSINR = localReceiverHestSINR(hEst, nVar, cfg, "DL", rxGrid, dmrsInd, dmrsSym);
+[nVarDecode, nVarDecodeInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
+    "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
+    "PostEqSINR_dB", postEqSINR_dB, ...
+    "CSI", csi);
 % ---------------------- PDSCH demodulate to soft bits ----------------------
 % nrPDSCHDecode returns a cell array (one per codeword). Newer releases can
 % also return the sliced symbol estimates used during demodulation.
 pdschRxSym = [];
 try
-    [llrCW, pdschRxSym] = nrPDSCHDecode(carrier, pdsch, eqSym, nVar);
+    [llrCW, pdschRxSym] = nrPDSCHDecode(carrier, pdsch, eqSym, nVarDecode);
 catch
-    llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVar);
+    llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVarDecode);
 end
 if iscell(llrCW)
     llr = llrCW{1};
@@ -424,11 +429,18 @@ rx.TimingEstimateSource = char(timingEstimateSource);
 rx.TimingEstimateStatus = char(string(timingResolution.Status));
 rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
-rx.NoiseVar = nVar;
+rx.NoiseVar = nVarDecode;
 rx.NoiseVarStatus = "OK";
-rx.NoiseVarSource = "runtime_metadata";
+rx.NoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "post_equalization_noise_variance")));
 rx.NoiseVarReason = "";
 rx.NoiseVarStrictFailure = false;
+rx.NoiseVarDomain = "post_equalization_decoder_symbol";
+rx.PreEqualizationNoiseVar = double(nVar);
+rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
+rx.DecoderNoiseVar = double(nVarDecode);
+rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
+rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
+rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
 rx.ReceiverUsable = true;
 rx.DecodeAttempted = true;
 rx.DecodeUsable = true;
@@ -515,6 +527,9 @@ info.CSIRS = csirsInfo;
 info.CSIRSObservation = csirsObservation;
 info.CSIRSChannelEstimation = csirsEstInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
+info.NoiseVariance = nVarDecodeInfo;
+info.PreEqualizationNoiseVariance = double(nVar);
+info.PostEqualizationNoiseVariance = double(nVarDecode);
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
@@ -1069,6 +1084,7 @@ csiVec(~isfinite(csiVec) | csiVec < 0) = 0;
 if isempty(csiVec) || ~any(csiVec > 0)
     return;
 end
+csiVec = localCSIToReliabilityWeights(csiVec);
 qm = max(1, round(double(localQm(modScheme))));
 if numel(csiVec) * qm == numel(llrOut)
     weights = repelem(csiVec, qm);
@@ -1078,6 +1094,17 @@ else
     return;
 end
 llrOut = llrOut .* weights;
+end
+
+function weights = localCSIToReliabilityWeights(csiVec)
+weights = double(csiVec(:));
+if any(weights > 1 + sqrt(eps))
+    % Manual IRC/ZF paths expose CSI as SINR. Convert to the bounded MMSE
+    % reliability convention used by nrEqualizeMMSE examples.
+    weights = weights ./ max(1 + weights, eps);
+else
+    weights = min(max(weights, 0), 1);
+end
 end
 
 function x = localEnsureLLRBatch(xIn)

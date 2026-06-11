@@ -43,6 +43,7 @@ ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
 ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
 ip.addParameter('NumTxAnt', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
+ip.addParameter('HARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
@@ -142,6 +143,16 @@ C = size(cbs, 2);
 % LDPC encode all code blocks in one toolbox call to avoid repeated
 % per-code-block MATLAB loop overhead.
 ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
+harqAckBits = localNormalizeHARQACKBits(opt.HARQACKBits);
+oack = numel(harqAckBits);
+uciInfo = struct( ...
+    "UCIOnPUSCHApplied", false, ...
+    "HARQACKBitCount", double(oack), ...
+    "HARQACKBits", harqAckBits, ...
+    "GULSCH", NaN, ...
+    "GACK", NaN, ...
+    "GACKReserved", NaN, ...
+    "Source", "no_uci_payload_requested");
 
 % Rate match to G bits
 if isfinite(dataBitBudget) && dataBitBudget > 0
@@ -157,7 +168,32 @@ if ~(isfinite(G) && G > 0)
         'PUSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
         round(double(nPRB)), mat2str(localResolveSymbolAllocation(pusch)), char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
 end
-codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pusch.NumLayers);
+if oack > 0
+    if exist("nrULSCHMultiplex", "file") ~= 2
+        error('sixgr:phy:ul:PUSCHUCIUnavailable', ...
+            'HARQ-ACK on PUSCH requires nrULSCHMultiplex from 5G Toolbox.');
+    end
+    rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, oack, 0, 0);
+    gULSCH = double(rmInfo.GULSCH);
+    gACK = double(rmInfo.GACK);
+    if ~(isfinite(gULSCH) && gULSCH > 0 && isfinite(gACK) && gACK > 0)
+        error('sixgr:phy:ul:PUSCHUCIInvalidAllocation', ...
+            'PUSCH UCI multiplexing has invalid bit allocation: GULSCH=%g GACK=%g OACK=%d.', ...
+            gULSCH, gACK, oack);
+    end
+    ulSchCodeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, gULSCH, rv, pusch.Modulation, pusch.NumLayers);
+    codedAck = nrUCIEncode(harqAckBits, gACK, pusch.Modulation);
+    [codeword, muxInfo] = nrULSCHMultiplex(pusch, targetCodeRate, trBlkSize, ulSchCodeword(:), codedAck(:), [], []);
+    codeword = int8(codeword(:));
+    uciInfo.UCIOnPUSCHApplied = true;
+    uciInfo.GULSCH = gULSCH;
+    uciInfo.GACK = gACK;
+    uciInfo.GACKReserved = double(sixgr.util.structGet(rmInfo, "GACKRvd", NaN));
+    uciInfo.MultiplexInfo = muxInfo;
+    uciInfo.Source = "nrULSCHMultiplex_ts38212_6_2_7_harq_ack_on_pusch";
+else
+    codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pusch.NumLayers);
+end
 codeword = int8(codeword(:));
 
 % ---------------------- PUSCH modulation & mapping ----------------------
@@ -212,6 +248,10 @@ tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
 tx.PUSCHSymbolsForEvidence = puschSym;
 tx.PrecodeInfo = prec;
+tx.UCIOnPUSCHApplied = logical(uciInfo.UCIOnPUSCHApplied);
+tx.HARQACKBitCount = double(uciInfo.HARQACKBitCount);
+tx.HARQACKBits = harqAckBits;
+tx.UCIOnPUSCHSource = char(string(uciInfo.Source));
 tx.OFDMWindowingSamples = double(windowingSamples);
 tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
 tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
@@ -245,8 +285,17 @@ info.PUSCHSymbols = puschSymInfo;
 info.OFDM = ofdmInfo;
 info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
+info.UCIOnPUSCH = uciInfo;
 info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
 
+end
+
+function bits = localNormalizeHARQACKBits(rawBits)
+if isempty(rawBits)
+    bits = int8([]);
+    return;
+end
+bits = int8(logical(rawBits(:)));
 end
 
 function [nrePerPRB, gBits] = localResolveDataNREPerPRB(puschInfo, nPRB, modStr, nLayers)

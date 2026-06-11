@@ -746,15 +746,16 @@ for n = 1:numFrames
             trialCQIDerivedModulation(n) = string(cqiMod);
         end
         if schedulerDrivenGrant && isfinite(grantCQIUsed)
-            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
-            if isfinite(trialCQI(n))
-                trialCQISource(n) = "scheduler_grant_cqi_used";
+            grantCQI = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            if ~isfinite(trialCQI(n)) && isfinite(grantCQI)
+                trialCQI(n) = grantCQI;
+                trialCQISource(n) = "scheduler_grant_cqi_used_no_current_receiver_cqi";
                 [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
                 trialCQIDerivedMCS(n) = double(cqiMCS);
                 trialCQIDerivedCodeRate(n) = double(cqiRate);
                 trialCQIDerivedModulation(n) = string(cqiMod);
-            else
-                trialCQISource(n) = "scheduler_grant_cqi_used_out_of_range";
+            elseif ~isfinite(trialCQI(n))
+                trialCQISource(n) = "current_receiver_cqi_unavailable_scheduler_grant_cqi_used_out_of_range";
                 trialCQIDerivedMCS(n) = NaN;
                 trialCQIDerivedCodeRate(n) = NaN;
                 trialCQIDerivedModulation(n) = "";
@@ -1384,23 +1385,24 @@ function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInf
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", txInfo);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
-    noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "thermal_noise_plus_receiver_nf", txInfo);
-    if isfinite(nVar) && nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+    thermalNVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
+    [nVar, source] = localReceiverEffectiveNoiseVariance(thermalNVar, replay, "thermal_noise_plus_receiver_nf");
+    noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+    if isfinite(thermalNVar) && thermalNVar > 0
+        n = sqrt(thermalNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
         return;
     end
     y = x;
-    nVar = NaN;
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
-noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "standalone_awgn_snr_argument_post_channel_units", txInfo);
-if isfinite(nVar) && nVar >= 0
-    if nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+awgnNVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
+[nVar, source] = localReceiverEffectiveNoiseVariance(awgnNVar, replay, "standalone_awgn_snr_argument_post_channel_units");
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+if isfinite(awgnNVar) && awgnNVar >= 0
+    if awgnNVar > 0
+        n = sqrt(awgnNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
     else
         y = x;
@@ -1408,7 +1410,22 @@ if isfinite(nVar) && nVar >= 0
     return;
 end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
-noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, "legacy_addAwgnComplex_last_resort", txInfo);
+[nVar, source] = localReceiverEffectiveNoiseVariance(nVar, replay, "legacy_addAwgnComplex_last_resort");
+noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+end
+
+function [effectiveNVar, source] = localReceiverEffectiveNoiseVariance(baseNVar, replay, baseSource)
+effectiveNVar = double(baseNVar);
+source = string(baseSource);
+interferenceNVar = double(sixgr.util.structGet(replay, "InterferenceWaveformVariance", NaN));
+if isfinite(interferenceNVar) && interferenceNVar > 0
+    if isfinite(effectiveNVar) && effectiveNVar >= 0
+        effectiveNVar = effectiveNVar + interferenceNVar;
+    else
+        effectiveNVar = interferenceNVar;
+    end
+    source = source + "_plus_full_waveform_interference_power";
+end
 end
 
 function info = localNoiseCalibrationInfo(compositeWaveform, desiredWaveform, nVar, source, txInfo)
@@ -2389,9 +2406,12 @@ replay.RawWaveform = y;
 replay.CorrectedWaveform = y;
 desiredWaveform = y;
 [interferenceWaveform, interferenceMeta] = sixgr.link.synthesizeInterferenceWaveform("DL", desiredWaveform, replay, interferenceBundle);
+interferenceWaveformVariance = NaN;
 if ~isempty(interferenceWaveform)
+    interferenceWaveformVariance = localUsefulOFDMReferencePower(interferenceWaveform, txInfo);
     y = y + cast(interferenceWaveform, "like", y);
 end
+replay.InterferenceWaveformVariance = double(interferenceWaveformVariance);
 replay.InterferenceMode = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferenceMode", replay.InterferenceMode));
 replay.InterferenceContributorCount = double(sixgr.util.structGet(interferenceMeta, "Contributors", 0));
 replay.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(interferenceMeta, "AggregatedRxPower_dBm", NaN));
@@ -3266,6 +3286,32 @@ try
 catch
 end
 
+if ~isfinite(double(metrics.CQI)) && localCQIReportingEnabled(cfg, "DL")
+    postEqSINR = double(sixgr.util.structGet(rx, "PostEqSINR_dB", ...
+        sixgr.util.structGet(metrics, "PostEqSINR_dB", NaN)));
+    postEqSource = string(sixgr.util.structGet(rx, "PostEqSINRSource", ...
+        sixgr.util.structGet(metrics, "PostEqSINRSource", "")));
+    postEqRole = string(sixgr.util.structGet(rx, "PostEqSINRValueRole", ...
+        sixgr.util.structGet(metrics, "PostEqSINRValueRole", "")));
+    postEqStatus = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ...
+        sixgr.util.structGet(metrics, "PostEqSINRValueStatus", "")));
+    if isfinite(postEqSINR) && localDLSINRIsCQIEligible(postEqSource, postEqRole, postEqStatus)
+        try
+            feedback = sixgr.link.resolveWidebandCQI(struct( ...
+                "WidebandSINR_dB", double(postEqSINR), ...
+                "SINRSource", char(postEqSource), ...
+                "SINRValueRole", char(postEqRole), ...
+                "SINRValueStatus", char(postEqStatus)), cfg, "DL");
+            rawCQI = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
+            if isfinite(rawCQI)
+                metrics.CQI = double(rawCQI);
+                metrics.CQISource = "dl_post_equalization_sinr_to_cqi:" + string(sixgr.util.structGet(feedback, "Mode", "sinr_threshold_table"));
+            end
+        catch
+        end
+    end
+end
+
 gain = mean(abs(Hcsi(:)).^2, "omitnan");
 if isfinite(gain) && gain > 0
     metrics.ChannelGain_dB = 10 * log10(gain);
@@ -3944,6 +3990,14 @@ else
 end
 end
 
+function tf = localDLSINRIsCQIEligible(source, role, status)
+token = lower(strjoin([string(source), string(role), string(status)], " "));
+blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+    "unavailable", "failed", "rejected"];
+tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
+end
+
 function selectedSet = localResolveBeamSetFromPMI(cfg, metrics, nTx, beamCount)
 selectedSet = [];
 pmi = double(sixgr.util.structGet(metrics, "PMI", NaN));
@@ -4027,38 +4081,47 @@ end
 
 function combined = localCombineRateRecoveredLLR(prev, cur)
 if isempty(prev)
-    combined = double(cur);
+    combined = localEnsureLLRMatrix(cur);
     return;
 end
 if isempty(cur)
-    combined = double(prev);
+    combined = localEnsureLLRMatrix(prev);
     return;
 end
-X = double(prev(:));
-Y = double(cur(:));
-lp = numel(X);
-lc = numel(Y);
-if lp == lc
+X = localEnsureLLRMatrix(prev);
+Y = localEnsureLLRMatrix(cur);
+if isequal(size(X), size(Y))
     combined = X + Y;
     return;
 end
-lmin = min(lp, lc);
-lmax = max(lp, lc);
-combined = zeros(lmax, 1, "double");
-combined(1:lmin) = X(1:lmin) + Y(1:lmin);
-if lp > lc
-    combined(lmin+1:end) = X(lmin+1:end);
-else
-    combined(lmin+1:end) = Y(lmin+1:end);
-end
+% HARQ soft combining is only valid for retransmissions of the same TB code
+% block layout. If the stored buffer shape differs, keep the current
+% observation and let HARQ state record a failed current decode naturally.
+combined = Y;
 end
 
 function diag = localHARQCombiningDiagnostics(prev, cur, combined)
+prevShape = localLLRShape(prev);
+curShape = localLLRShape(cur);
+combinedShape = localLLRShape(combined);
+compatibleShape = ~isempty(prev) && ~isempty(cur) && ...
+    isequal(prevShape, curShape) && isequal(curShape, combinedShape);
+skipReason = "";
+if ~isempty(prev) && ~isempty(cur) && ~compatibleShape
+    skipReason = "code_block_layout_mismatch";
+end
 diag = struct( ...
     "PreviousLLRCount", double(numel(prev)), ...
     "CurrentLLRCount", double(numel(cur)), ...
     "CombinedLLRCount", double(numel(combined)), ...
-    "CombiningApplied", ~isempty(prev) && ~isempty(cur) && ~isempty(combined), ...
+    "CombiningApplied", compatibleShape, ...
+    "CombiningSkipReason", char(skipReason), ...
+    "PreviousLLRRows", double(prevShape(1)), ...
+    "PreviousLLRCodeBlocks", double(prevShape(2)), ...
+    "CurrentLLRRows", double(curShape(1)), ...
+    "CurrentLLRCodeBlocks", double(curShape(2)), ...
+    "CombinedLLRRows", double(combinedShape(1)), ...
+    "CombinedLLRCodeBlocks", double(combinedShape(2)), ...
     "LLRCombiningGain_dB", NaN);
 if isempty(cur) || isempty(combined)
     return;
@@ -4089,6 +4152,9 @@ if isempty(X)
 end
 nRow = size(X, 1);
 nCB = size(X, 2);
+if ~localIsValidLDPCDecodeRows(nRow, double(tx.BaseGraph))
+    return;
+end
 decCbs = zeros(nRow, nCB, 'int8');
 itVec = NaN(nCB, 1);
 maxLen = 0;
@@ -4123,6 +4189,31 @@ X = double(v);
 if isvector(X)
     X = X(:);
 end
+end
+
+function shape = localLLRShape(v)
+if isempty(v)
+    shape = [0 0];
+    return;
+end
+X = localEnsureLLRMatrix(v);
+shape = [size(X, 1) size(X, 2)];
+end
+
+function tf = localIsValidLDPCDecodeRows(nRows, bgn)
+tf = false;
+if ~(isscalar(nRows) && isfinite(nRows) && nRows > 0 && isscalar(bgn) && isfinite(bgn))
+    return;
+end
+if round(bgn) == 1
+    zc = double(nRows) / 66;
+elseif round(bgn) == 2
+    zc = double(nRows) / 50;
+else
+    return;
+end
+validZc = [2:16 18:2:32 36:4:64 72:8:128 144:16:256 288:32:384];
+tf = abs(zc - round(zc)) < 1e-9 && any(abs(validZc - round(zc)) < 1e-9);
 end
 
 function seed = localRNGSeed(seedValue)

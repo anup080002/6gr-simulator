@@ -174,6 +174,9 @@ classdef ChannelFactory
             meta.GeometryInputsUsed = "";
             meta.PlaceholderUsed = false;
             meta.SpatialNonStationarityComplianceStatus = "";
+            meta.ChannelNormalizePathGains = false;
+            meta.ChannelNormalizationMode = "";
+            meta.ChannelNormalizationSource = "";
 
             % Create channel
             if any(model == ["awgn","none","off",""])
@@ -187,6 +190,9 @@ classdef ChannelFactory
                 [chObj, arrayRuntimeMeta] = sixgr.channel.ChannelFactory.localCreateTDL(cfg, opt);
                 meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
                     meta, "tdl", class(chObj), "sixgr.channel.ChannelFactory.localCreateTDL");
+                meta.ChannelNormalizePathGains = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizePathGains", false));
+                meta.ChannelNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationMode", ""));
+                meta.ChannelNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationSource", ""));
                 if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeGeometryCorrelationApplied", false))
                     meta.ChannelArrayModel = "nrtdl_runtime_geometry_correlation_channel";
                     meta.ChannelArrayHandlingStatus = "adapted_geometry_backed_reduced_representation";
@@ -209,6 +215,9 @@ classdef ChannelFactory
                 [chObj, arrayRuntimeMeta] = sixgr.channel.ChannelFactory.localCreateCDL(cfg, opt);
                 meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
                     meta, "cdl", class(chObj), "sixgr.channel.ChannelFactory.localCreateCDL");
+                meta.ChannelNormalizePathGains = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizePathGains", false));
+                meta.ChannelNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationMode", ""));
+                meta.ChannelNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationSource", ""));
                 if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false))
                     meta.ChannelArrayModel = "nrcdl_runtime_array_geometry_channel";
                     meta.ChannelArrayHandlingStatus = "runtime_array_shape_spacing_orientation_coupled";
@@ -384,9 +393,14 @@ classdef ChannelFactory
             tdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
             tdl.NumTransmitAntennas = opt.NumTxAnt;
             tdl.NumReceiveAntennas  = opt.NumRxAnt;
+            [normalizePathGains, normalizationMode, normalizationSource] = ...
+                sixgr.channel.ChannelFactory.localResolveNormalizePathGains(cfg, "TDL");
             if isprop(tdl, "NormalizePathGains")
-                tdl.NormalizePathGains = true;
+                tdl.NormalizePathGains = normalizePathGains;
             end
+            arrayRuntimeMeta.NormalizePathGains = normalizePathGains;
+            arrayRuntimeMeta.ChannelNormalizationMode = normalizationMode;
+            arrayRuntimeMeta.ChannelNormalizationSource = normalizationSource;
 
             if ~isempty(opt.SampleRate)
                 tdl.SampleRate = opt.SampleRate;
@@ -421,7 +435,10 @@ classdef ChannelFactory
                 "ReceiveCorrelationMatrixSource", "", ...
                 "TransmitCorrelationMatrixSize", "", ...
                 "ReceiveCorrelationMatrixSize", "", ...
-                "GeometryCorrelationDistance_lambda", NaN);
+                "GeometryCorrelationDistance_lambda", NaN, ...
+                "NormalizePathGains", false, ...
+                "ChannelNormalizationMode", "", ...
+                "ChannelNormalizationSource", "");
         end
 
         function [tdl, meta] = localConfigureTDLGeometryAdapter(tdl, cfg, opt, meta)
@@ -619,9 +636,14 @@ classdef ChannelFactory
             cdl.DelayProfile = delayProfile;
             cdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
             cdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
+            [normalizePathGains, normalizationMode, normalizationSource] = ...
+                sixgr.channel.ChannelFactory.localResolveNormalizePathGains(cfg, "CDL");
             if isprop(cdl, "NormalizePathGains")
-                cdl.NormalizePathGains = true;
+                cdl.NormalizePathGains = normalizePathGains;
             end
+            arrayRuntimeMeta.NormalizePathGains = normalizePathGains;
+            arrayRuntimeMeta.ChannelNormalizationMode = normalizationMode;
+            arrayRuntimeMeta.ChannelNormalizationSource = normalizationSource;
             [cdl.TransmitAntennaArray, txRuntimeCoupled] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.TransmitAntennaArray, opt.NumTxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.bs_array_geometry", "ura"), ...
@@ -817,6 +839,82 @@ classdef ChannelFactory
                 angles = [currentAngles(1), -currentAngles(1)];
             else
                 angles = [45, -45];
+            end
+        end
+
+        function [normalizePathGains, mode, source] = localResolveNormalizePathGains(cfg, family)
+            familyToken = lower(strtrim(char(string(family))));
+            explicitPaths = { ...
+                "channel.normalizePathGains", ...
+                "channel.NormalizePathGains", ...
+                "channel.normalize_path_gains", ...
+                "channel.fading.normalizePathGains", ...
+                "channel.fading.normalize_path_gains", ...
+                sprintf("channel.%s.normalizePathGains", familyToken), ...
+                sprintf("channel.%s.normalize_path_gains", familyToken) ...
+                };
+            for i = 1:numel(explicitPaths)
+                path = char(explicitPaths{i});
+                raw = sixgr.util.structGet(cfg, path, []);
+                if isempty(raw)
+                    continue;
+                end
+                [normalizePathGains, ok] = sixgr.channel.ChannelFactory.localParseLogical(raw);
+                if ~ok
+                    error("ChannelFactory:BadNormalizePathGains", ...
+                        "%s must be a boolean-like value; got '%s'.", path, char(string(raw)));
+                end
+                if normalizePathGains
+                    mode = "normalized_path_gains_config_explicit";
+                else
+                    mode = "absolute_power_tracking_config_explicit";
+                end
+                source = string(path);
+                return;
+            end
+
+            noiseMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ""))));
+            if strlength(noiseMode) == 0
+                noiseMode = lower(strtrim(string(sixgr.util.structGet(cfg, "simulation.noise_operating_mode", ""))));
+            end
+            if strlength(noiseMode) == 0
+                noiseMode = lower(strtrim(string(sixgr.util.structGet( ...
+                    cfg, "lls6g.resolvedConfig.simulation.noise_operating_mode", ""))));
+            end
+
+            if noiseMode == "receiver_noise_figure_thermal_noise"
+                normalizePathGains = false;
+                mode = "absolute_power_tracking_receiver_noise_figure";
+                source = "default_for_receiver_noise_figure_thermal_noise";
+            else
+                normalizePathGains = true;
+                mode = "normalized_path_gains_operating_point";
+                if strlength(noiseMode) == 0
+                    source = "default_without_noise_operating_mode";
+                else
+                    source = "default_for_" + noiseMode;
+                end
+            end
+        end
+
+        function [tf, ok] = localParseLogical(value)
+            ok = true;
+            if islogical(value)
+                tf = logical(value(1));
+                return;
+            end
+            if isnumeric(value)
+                tf = double(value(1)) ~= 0;
+                return;
+            end
+            token = lower(strtrim(char(string(value))));
+            if any(strcmp(token, {'true','t','yes','y','on','1','enable','enabled'}))
+                tf = true;
+            elseif any(strcmp(token, {'false','f','no','n','off','0','disable','disabled'}))
+                tf = false;
+            else
+                tf = false;
+                ok = false;
             end
         end
 

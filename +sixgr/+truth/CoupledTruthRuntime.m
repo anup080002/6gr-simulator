@@ -299,6 +299,10 @@ methods(Static)
         dueUEs = unique(dueUEs(isfinite(dueUEs) & dueUEs >= 1));
     end
 
+    function due = pucchFeedbackDueHARQACKRuntime(state, dueSlot)
+        due = sixgr.truth.CoupledTruthRuntime.collectPUCCHDueHARQACKImpl(state, dueSlot);
+    end
+
     function [state, grant, allowExecution] = applyPDCCHGrantTrial(state, grant, direction, trialT)
         [state, grant, allowExecution] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrialImpl(state, grant, direction, trialT);
     end
@@ -870,6 +874,11 @@ methods(Static, Access=private)
                 "FeedbackDelaySlots", double(state.HARQFeedbackSlots), ...
                 "RV", double(sixgr.util.structGet(harq, "RV", 0)), ...
                 "GrantSnapshot", grant);
+        end
+        expectedUCI = sixgr.truth.CoupledTruthRuntime.resolveGrantExpectedUCIBits(grant);
+        if ~isempty(expectedUCI)
+            context.ExpectedUCIBits = int8(expectedUCI(:));
+            context.HARQContext.ExpectedUCIBits = int8(expectedUCI(:));
         end
         grantRow = sixgr.truth.CoupledTruthRuntime.buildGrantTraceRow( ...
             sixgr.util.structGet(context, "GrantSnapshot", grant), direction, ...
@@ -1546,15 +1555,7 @@ methods(Static, Access=private)
         estimatedSINR = NaN;
         widebandSINRSource = "unavailable";
         widebandSINRValueRole = "unavailable";
-        if isfinite(postEqSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible(postEqSource, postEqRole, postEqStatus)
-            estimatedSINR = double(postEqSINR);
-            if strlength(strtrim(postEqSource)) > 0
-                widebandSINRSource = strtrim(postEqSource);
-            else
-                widebandSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
-            end
-            widebandSINRValueRole = "measured_post_equalization_scheduling_input";
-        elseif isfinite(measuredTrialSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible(measuredTrialSINRSource, measuredTrialSINRRole, "")
+        if isfinite(measuredTrialSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible(measuredTrialSINRSource, measuredTrialSINRRole, "")
             estimatedSINR = double(measuredTrialSINR);
             if strlength(strtrim(measuredTrialSINRSource)) > 0
                 widebandSINRSource = strtrim(measuredTrialSINRSource);
@@ -1562,10 +1563,18 @@ methods(Static, Access=private)
                 widebandSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
             end
             widebandSINRValueRole = "measured_post_equalization_scheduling_input";
+        elseif isfinite(postEqSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible(postEqSource, postEqRole, postEqStatus)
+            estimatedSINR = double(postEqSINR);
+            if strlength(strtrim(postEqSource)) > 0
+                widebandSINRSource = strtrim(postEqSource);
+            else
+                widebandSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
+            end
+            widebandSINRValueRole = "measured_post_equalization_scheduling_input";
         elseif isfinite(largeScaleSINR)
             estimatedSINR = largeScaleSINR;
-            widebandSINRSource = "large_scale_interference_budget_preview";
-            widebandSINRValueRole = "derived_preview";
+            widebandSINRSource = "large_scale_interference_budget_fallback_not_receiver_measured";
+            widebandSINRValueRole = "derived_bootstrap_or_missing_receiver_evidence";
         end
         configuredSNR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ConfiguredSNR_dB", state.CurrentSNR_dB));
         appliedLargeScaleGain = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AppliedLargeScaleGain_dB", NaN));
@@ -5963,6 +5972,72 @@ methods(Static, Access=private)
         end
     end
 
+    function bits = resolveGrantExpectedUCIBits(grant)
+        bits = int8([]);
+        if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+            return;
+        end
+        paths = ["ExpectedUCIBits","MultiplexedUCIBits","HARQACKBits","MultiplexedHARQACKBits"];
+        for i = 1:numel(paths)
+            raw = sixgr.util.structGet(grant, char(paths(i)), []);
+            if isempty(raw)
+                continue;
+            end
+            bits = int8(logical(raw(:)));
+            return;
+        end
+    end
+
+    function due = collectPUCCHDueHARQACKImpl(state, dueSlot)
+        proto = struct("UEIndex", NaN, "RNTI", NaN, "SourceSlot", NaN, ...
+            "PUCCHGrantId", "", "AckBit", int8(0), "EvidenceSource", "");
+        due = repmat(proto, 0, 1);
+        dueSlot = round(double(dueSlot));
+        if ~(isfinite(dueSlot) && dueSlot >= 1)
+            return;
+        end
+        pendingFeedback = sixgr.util.structGet(state, "PendingFeedbackTable", table());
+        if istable(pendingFeedback) && ~isempty(pendingFeedback)
+            for ri = 1:height(pendingFeedback)
+                row = pendingFeedback(ri, :);
+                rowDueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DueSlot", ...
+                    sixgr.truth.CoupledTruthRuntime.rowValue(row, "ScheduledAbsoluteSlot", NaN)));
+                if ~(isfinite(rowDueSlot) && abs(rowDueSlot - dueSlot) < 1e-9)
+                    continue;
+                end
+                if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Processed", false))
+                    continue;
+                end
+                due(end + 1, 1) = sixgr.truth.CoupledTruthRuntime.buildDueHARQACKStruct(row, "pending_feedback_table"); %#ok<AGROW>
+            end
+        end
+        pucchGrants = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
+        if istable(pucchGrants) && ~isempty(pucchGrants)
+            for ri = 1:height(pucchGrants)
+                row = pucchGrants(ri, :);
+                rowDueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "ScheduledAbsoluteSlot", ...
+                    sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", NaN)));
+                if ~(isfinite(rowDueSlot) && abs(rowDueSlot - dueSlot) < 1e-9)
+                    continue;
+                end
+                if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "GrantExecutedFlag", false))
+                    continue;
+                end
+                due(end + 1, 1) = sixgr.truth.CoupledTruthRuntime.buildDueHARQACKStruct(row, "pucch_grant_trace"); %#ok<AGROW>
+            end
+        end
+    end
+
+    function due = buildDueHARQACKStruct(row, source)
+        due = struct("UEIndex", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UEIndex", NaN)), ...
+            "RNTI", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)), ...
+            "SourceSlot", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SourceSlot", NaN)), ...
+            "PUCCHGrantId", char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHGrantId", ""))), ...
+            "AckBit", int8(logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Ack", ...
+                sixgr.truth.CoupledTruthRuntime.rowValue(row, "ExpectedAck", false)))), ...
+            "EvidenceSource", char(string(source)));
+    end
+
     function [grantsOut, blockedT] = excludeULGrantsCollidingWithPUCCHImpl(state, grantsIn, dueSlot)
         grantsOut = grantsIn;
         blockedPrototype = sixgr.truth.CoupledTruthRuntime.emptyPUSCHPUCCHCollisionRow();
@@ -5996,6 +6071,12 @@ methods(Static, Access=private)
             end
             matchIdx = find(match, 1, "first");
             if isempty(matchIdx)
+                continue;
+            end
+            if ~isempty(sixgr.truth.CoupledTruthRuntime.resolveGrantExpectedUCIBits(grant))
+                grantsIn(gi).PUCCHCollisionPolicy = "harq_ack_multiplexed_on_pusch";
+                grantsIn(gi).PUCCHSourceSlot = double(dueSourceSlots(matchIdx));
+                grantsIn(gi).PUCCHGrantId = char(dueGrantIds(matchIdx));
                 continue;
             end
             keep(gi) = false;
@@ -6975,6 +7056,7 @@ methods(Static, Access=private)
         end
         currentRow = feedbackRow(1, :);
         currentUE = double(sixgr.truth.CoupledTruthRuntime.rowValue(currentRow, "UEIndex", NaN));
+        currentServingCell = double(sixgr.truth.CoupledTruthRuntime.rowValue(currentRow, "ServingCell", NaN));
         dueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(currentRow, "ScheduledAbsoluteSlot", ...
             sixgr.truth.CoupledTruthRuntime.rowValue(currentRow, "DueSlot", NaN)));
         if ~isfinite(dueSlot)
@@ -6991,10 +7073,22 @@ methods(Static, Access=private)
         count = 0;
         for i = 1:height(peers)
             peer = peers(i, :);
+            if ~sixgr.truth.CoupledTruthRuntime.pucchResourcesOverlap(currentRow, peer)
+                continue;
+            end
             ueIdx = round(double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "UEIndex", NaN)));
             if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(sixgr.util.structGet(state, "NumUsers", 0)))
                 continue;
             end
+            if ~(isfinite(currentServingCell) && currentServingCell >= 1 && ...
+                    currentServingCell <= size(state.LargeScaleState.Pathloss_dB, 2))
+                continue;
+            end
+            if ~(ueIdx <= size(state.LargeScaleState.Pathloss_dB, 1))
+                continue;
+            end
+            [victimBsEntry, victimUeEntry] = sixgr.truth.CoupledTruthRuntime.runtimeAntennaEntriesForLink( ...
+                state, max(1, round(double(currentUE))), currentServingCell);
             cfgI = state.CfgMobility;
             [cfgI, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgI, state, ueIdx, "UL");
             cfgI = sixgr.util.structSet(cfgI, "phy.rnti", double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RNTI", NaN)));
@@ -7019,6 +7113,21 @@ methods(Static, Access=private)
             bundle(count).Cfg = cfgI; %#ok<AGROW>
             bundle(count).Seed = double(sixgr.util.structGet(cfgI, "run.seed", NaN)) + double(dueSlot) + double(count); %#ok<AGROW>
             bundle(count).ServingCell = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ServingCell", NaN)); %#ok<AGROW>
+            bundle(count).VictimUEIndex = double(currentUE); %#ok<AGROW>
+            bundle(count).InterfererUEIndex = double(ueIdx); %#ok<AGROW>
+            bundle(count).VictimServingCell = double(currentServingCell); %#ok<AGROW>
+            bundle(count).VictimRxPower_dBm = double(state.LargeScaleState.RxPower_dBm(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).VictimRSRP_dBm = double(state.LargeScaleState.RSRP_dBm(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).BasePathloss_dB = double(state.LargeScaleState.BasePathloss_dB(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).Pathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).ShadowFading_dB = double(state.LargeScaleState.Shadow_dB(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).O2I_dB = double(state.LargeScaleState.O2I_dB(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).BeamIndex = double(state.LargeScaleState.BeamIndex(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).BeamGain_dB = double(state.LargeScaleState.BeamGain_dB(ueIdx, currentServingCell)); %#ok<AGROW>
+            bundle(count).VictimServingBSAntenna = sixgr.util.structGet(victimBsEntry, "Antenna", struct()); %#ok<AGROW>
+            bundle(count).VictimServingBSAntennaMeta = sixgr.util.structGet(victimBsEntry, "Metadata", struct()); %#ok<AGROW>
+            bundle(count).VictimUEAntenna = sixgr.util.structGet(victimUeEntry, "Antenna", struct()); %#ok<AGROW>
+            bundle(count).VictimUEAntennaMeta = sixgr.util.structGet(victimUeEntry, "Metadata", struct()); %#ok<AGROW>
             bundle(count).InterferenceMode = char(string(sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(cfgI, state.MultiUser))); %#ok<AGROW>
             bundle(count).ExpectedUCIBits = int8(logical(sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(peer))); %#ok<AGROW>
             bundle(count).RequestedFormat = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RequestedFormat", requestedFormat)); %#ok<AGROW>
@@ -7028,6 +7137,29 @@ methods(Static, Access=private)
             bundle(count).ControlResourceSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))); %#ok<AGROW>
             bundle(count).PUCCHResourceId = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHResourceId", ""))); %#ok<AGROW>
         end
+    end
+
+    function tf = pucchResourcesOverlap(a, b)
+        tf = false;
+        [aPrb0, aPrbCount, aSym0, aSymCount] = sixgr.truth.CoupledTruthRuntime.pucchResourceExtents(a);
+        [bPrb0, bPrbCount, bSym0, bSymCount] = sixgr.truth.CoupledTruthRuntime.pucchResourceExtents(b);
+        vals = [aPrb0, aPrbCount, aSym0, aSymCount, bPrb0, bPrbCount, bSym0, bSymCount];
+        if any(~isfinite(vals)) || any([aPrbCount, aSymCount, bPrbCount, bSymCount] <= 0)
+            return;
+        end
+        aPrbEnd = aPrb0 + aPrbCount;
+        bPrbEnd = bPrb0 + bPrbCount;
+        aSymEnd = aSym0 + aSymCount;
+        bSymEnd = bSym0 + bSymCount;
+        tf = max(aPrb0, bPrb0) < min(aPrbEnd, bPrbEnd) && ...
+            max(aSym0, bSym0) < min(aSymEnd, bSymEnd);
+    end
+
+    function [prbStart, prbCount, symStart, symCount] = pucchResourceExtents(row)
+        prbStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHPRBStart", NaN));
+        prbCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHPRBCount", NaN));
+        symStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHSymbolStart", NaN));
+        symCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHNumSymbols", NaN));
     end
 
     function ack = rowExpectedPUCCHAck(row)

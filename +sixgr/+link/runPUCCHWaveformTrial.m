@@ -58,6 +58,10 @@ out = struct( ...
     "FailureReason", "", ...
     "ConfiguredSNR_dB", double(opt.SNR_dB), ...
     "AppliedAWGNSNR_dB", NaN, ...
+    "DesiredSignalPowerBeforeNoise", NaN, ...
+    "CompositeSignalPowerBeforeNoise", NaN, ...
+    "AppliedNoiseSNR_dB", NaN, ...
+    "NoiseVarianceSource", "", ...
     "NoiseOperatingMode", "", ...
     "NoisePowerSource", "", ...
     "ThermalNoisePower_dBm", NaN, ...
@@ -180,6 +184,10 @@ try
     out.DTXReason = char(string(sixgr.util.structGet(rx, "DTXReason", "")));
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", opt.SNR_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    out.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+    out.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+    out.AppliedNoiseSNR_dB = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+    out.NoiseVarianceSource = char(string(sixgr.util.structGet(replay, "NoiseVarianceSource", "")));
     out.NoiseOperatingMode = char(string(sixgr.util.structGet(replay, "NoiseOperatingMode", "")));
     out.NoisePowerSource = char(string(sixgr.util.structGet(replay, "NoisePowerSource", "")));
     out.ThermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
@@ -506,9 +514,12 @@ replay.RawWaveform = y;
 replay.CorrectedWaveform = y;
 desiredWaveform = y;
 [interferenceWaveform, interferenceMeta] = sixgr.link.synthesizeInterferenceWaveform("UL", desiredWaveform, replay, interferenceBundle);
+interferenceWaveformVariance = NaN;
 if ~isempty(interferenceWaveform)
+    interferenceWaveformVariance = mean(abs(double(interferenceWaveform(:))).^2, "omitnan");
     y = y + cast(interferenceWaveform, "like", y);
 end
+replay.InterferenceWaveformVariance = double(interferenceWaveformVariance);
 replay.InterferenceMode = char(string(sixgr.util.structGet(interferenceMeta, "InterferenceMode", replay.InterferenceMode)));
 replay.InterferenceContributorCount = double(sixgr.util.structGet(interferenceMeta, "Contributors", 0));
 replay.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(interferenceMeta, "AggregatedRxPower_dBm", NaN));
@@ -517,7 +528,16 @@ replay.FullInterfererChannelTruthUsed = logical(sixgr.util.structGet(interferenc
 if strlength(strtrim(string(replay.InterferencePowerSource))) == 0 && replay.InterferenceContributorCount > 0
     replay.InterferencePowerSource = "sample_domain_interference_sum";
 end
-[y, replay.InjectedNoiseVariance] = localAddAwgn(y, replay, desiredWaveform);
+preNoiseWaveform = y;
+[y, replay.InjectedNoiseVariance, replay.NoiseVarianceSource] = localAddAwgn(y, replay, desiredWaveform);
+replay.DesiredSignalPowerBeforeNoise = localMeanSamplePower(desiredWaveform);
+replay.CompositeSignalPowerBeforeNoise = localMeanSamplePower(preNoiseWaveform);
+if isfinite(replay.DesiredSignalPowerBeforeNoise) && replay.DesiredSignalPowerBeforeNoise > 0 && ...
+        isfinite(replay.InjectedNoiseVariance) && replay.InjectedNoiseVariance > 0
+    replay.AppliedNoiseSNR_dB = 10 * log10(replay.DesiredSignalPowerBeforeNoise / replay.InjectedNoiseVariance);
+else
+    replay.AppliedNoiseSNR_dB = NaN;
+end
 end
 
 function cfgOut = localPrepareControlReplayCfg(cfg, snr_dB)
@@ -566,24 +586,25 @@ catch
 end
 end
 
-function [y, nVar] = localAddAwgn(x, replay, referenceWaveform)
+function [y, nVar, source] = localAddAwgn(x, replay, referenceWaveform)
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
-    if isfinite(nVar) && nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+    thermalNVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
+    [nVar, source] = localReceiverEffectiveNoiseVariance(thermalNVar, replay, "thermal_noise_plus_receiver_nf");
+    if isfinite(thermalNVar) && thermalNVar > 0
+        n = sqrt(thermalNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
         return;
     end
     y = x;
-    nVar = NaN;
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
-if isfinite(nVar) && nVar >= 0
-    if nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
+awgnNVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+[nVar, source] = localReceiverEffectiveNoiseVariance(awgnNVar, replay, "standalone_awgn_snr_argument_post_channel_units");
+if isfinite(awgnNVar) && awgnNVar >= 0
+    if awgnNVar > 0
+        n = sqrt(awgnNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
     else
         y = x;
@@ -591,6 +612,29 @@ if isfinite(nVar) && nVar >= 0
     return;
 end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
+[nVar, source] = localReceiverEffectiveNoiseVariance(nVar, replay, "legacy_addAwgnComplex_last_resort");
+end
+
+function [effectiveNVar, source] = localReceiverEffectiveNoiseVariance(baseNVar, replay, baseSource)
+effectiveNVar = double(baseNVar);
+source = string(baseSource);
+interferenceNVar = double(sixgr.util.structGet(replay, "InterferenceWaveformVariance", NaN));
+if isfinite(interferenceNVar) && interferenceNVar > 0
+    if isfinite(effectiveNVar) && effectiveNVar >= 0
+        effectiveNVar = effectiveNVar + interferenceNVar;
+    else
+        effectiveNVar = interferenceNVar;
+    end
+    source = source + "_plus_full_waveform_interference_power";
+end
+end
+
+function p = localMeanSamplePower(x)
+p = NaN;
+if isempty(x)
+    return;
+end
+p = mean(abs(double(x(:))).^2, "omitnan");
 end
 
 function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
