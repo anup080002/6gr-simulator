@@ -88,7 +88,13 @@ methods(Static)
         state.NBeams = max(1, round(double(sixgr.util.structGet(cfgMob, "system.beam.numBeams", sixgr.util.structGet(cfgMob, "phy.ssb.nBeams", 8)))));
         state.BeamSpanDeg = max(30, min(240, double(sixgr.util.structGet(cfgMob, "system.beam.sectorSpan_deg", 120))));
         state.BeamMaxGain_dB = double(sixgr.util.structGet(cfgMob, "system.beam.maxGain_dB", 12));
-        state.ControlTrials = struct("PBCH", sixgr.util.structGet(controlTrials, "PBCH", table()), "PRACH", sixgr.util.structGet(controlTrials, "PRACH", table()), "PDCCH", sixgr.util.structGet(controlTrials, "PDCCH", table()), "PUCCH", sixgr.util.structGet(controlTrials, "PUCCH", table()), "SRS", sixgr.util.structGet(controlTrials, "SRS", table()), "TRS", sixgr.util.structGet(controlTrials, "TRS", table()));
+        state.ControlTrials = struct("PBCH", sixgr.util.structGet(controlTrials, "PBCH", table()), ...
+            "PRACH", sixgr.util.structGet(controlTrials, "PRACH", table()), ...
+            "PRACHCorrelationTrace", sixgr.util.structGet(controlTrials, "PRACHCorrelationTrace", table()), ...
+            "PDCCH", sixgr.util.structGet(controlTrials, "PDCCH", table()), ...
+            "PUCCH", sixgr.util.structGet(controlTrials, "PUCCH", table()), ...
+            "SRS", sixgr.util.structGet(controlTrials, "SRS", table()), ...
+            "TRS", sixgr.util.structGet(controlTrials, "TRS", table()));
         state.InitialAccessLifecycleTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyInitialAccessLifecycleRow(), 0, 1));
         state.ControlGating = sixgr.truth.CoupledTruthRuntime.resolveControlGatingConfig(cfgMob, multiUser);
         state.CellAcquisitionState = repmat(string(state.ControlGating.PBCHInitialState), nUsers, 1);
@@ -937,6 +943,11 @@ methods(Static, Access=private)
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "pucch_trials.csv", sixgr.util.structGet(state.ControlTrials, "PUCCH", table()));
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "srs_trials.csv", sixgr.util.structGet(state.ControlTrials, "SRS", table()));
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "trs_trials.csv", sixgr.util.structGet(state.ControlTrials, "TRS", table()));
+        prachCorrelationTrace = sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table());
+        if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
+            sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "prach_correlation_trace.csv"), prachCorrelationTrace);
+            sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "prach_correlation_traces.csv"), prachCorrelationTrace);
+        end
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_rsrp_serving_trace.csv"), state.ServingTraceTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_cell_measurement_trace.csv"), state.MeasurementTraceTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_cell_reselection_events.csv"), state.ReselectionEventTable);
@@ -3566,6 +3577,17 @@ methods(Static, Access=private)
         row.MCSIndex = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MCSIndex", NaN), NaN);
         row.Modulation = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "Modulation", ""), "");
         row.TargetCodeRate = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "TargetCodeRate", NaN), NaN);
+        row.AMCMode = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "AMCMode", ""), "");
+        row.OuterLoopEnabled = logical(sixgr.util.structGet(grant, "OuterLoopEnabled", false));
+        row.OuterLoopApplied = logical(sixgr.util.structGet(grant, "OuterLoopApplied", false));
+        row.OLLADeltaMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLADeltaMCS", NaN), NaN);
+        row.OLLAUpdateCount = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLAUpdateCount", NaN), NaN);
+        row.OLLAState = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "OLLAState", ""), "");
+        row.MCSSelectionSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MCSSelectionSource", ""), "");
+        row.CQIProvenance = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "CQIProvenance", ""), "");
+        row.MCSValueStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MCSValueStatus", ""), "");
+        row.MCSIndexAuthority = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MCSIndexAuthority", ""), "");
+        row.GrantOperatingPointSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "GrantOperatingPointSource", ""), "");
         row.NumLayers = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "NumLayers", NaN), NaN);
         row.Layers = row.NumLayers;
         row.CQIUsed = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "CQIUsed", sixgr.util.structGet(feedback, "CQI", NaN)), NaN);
@@ -4072,10 +4094,11 @@ methods(Static, Access=private)
 
     function tf = schedulerSINRProvenanceIsEligible(source, role, status)
         token = lower(strjoin([string(source), string(role), string(status)], " "));
-        blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+        words = string(regexp(char(token), '[a-z0-9]+', 'match'));
+        blocked = ["receiverhest", "receiver_hest", "pilot", ...
             "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
             "unavailable", "failed", "rejected"];
-        tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
+        tf = contains(token, "post_equalization") && ~any(words == "hest") && ~any(contains(token, blocked));
     end
 
     function value = rowValue(row, name, defaultValue)
@@ -6502,6 +6525,10 @@ methods(Static, Access=private)
             "SymbolStart", NaN, "NumSymbols", NaN, ...
             "TBSBits", NaN, "TBSBytes", NaN, ...
             "MCSIndex", NaN, "Modulation", "", "TargetCodeRate", NaN, ...
+            "AMCMode", "", "OuterLoopEnabled", false, "OuterLoopApplied", false, ...
+            "OLLADeltaMCS", NaN, "OLLAUpdateCount", NaN, "OLLAState", "", ...
+            "MCSSelectionSource", "", "CQIProvenance", "", "MCSValueStatus", "", ...
+            "MCSIndexAuthority", "", "GrantOperatingPointSource", "", ...
             "NumLayers", NaN, "Layers", NaN, "CQIUsed", NaN, "RIUsed", NaN, "Rank", NaN, ...
             "PMI", NaN, "CRI", NaN, ...
             "MUMIMOEnabled", false, "MUMIMOGroupSize", NaN, "MUMIMOGroupId", NaN, ...

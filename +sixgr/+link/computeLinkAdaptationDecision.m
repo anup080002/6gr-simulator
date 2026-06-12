@@ -314,10 +314,11 @@ if strlength(strtrim(token)) == 0
     tf = false;
     return;
 end
-blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+words = string(regexp(char(token), '[a-z0-9]+', 'match'));
+blocked = ["receiverhest", "receiver_hest", "pilot", ...
     "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
     "unavailable", "failed", "rejected"];
-tf = any(contains(token, blocked));
+tf = any(words == "hest") || any(contains(token, blocked));
 end
 
 function profile = localResolveCalibrationProfile(cfg, direction, adaptationDomain)

@@ -293,9 +293,10 @@ end
 
 function tf = localSINRProvenanceIsSchedulerEligible(source, role)
 token = lower(strjoin([string(source), string(role)], " "));
-blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+words = string(regexp(char(token), '[a-z0-9]+', 'match'));
+blocked = ["receiverhest", "receiver_hest", "pilot", ...
     "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep"];
-tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
+tf = contains(token, "post_equalization") && ~any(words == "hest") && ~any(contains(token, blocked));
 end
 
 function direction = localNormalizeDirection(rawDirection)

@@ -96,6 +96,7 @@ out.InjectedTimingOffset_samples = NaN;
 out.ChannelModelApplied = "";
 out.ChannelFadingApplied = false;
 out.Notes = "";
+out.CorrelationTraceTable = table();
 
 if ~logical(sixgr.util.structGet(cfg, "phy.prach.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -235,9 +236,10 @@ try
     if faScope == "all_preambles"
         out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_any_preamble_detected";
     else
-        out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_requested_preamble_detected";
+    out.FalseAlarmClassification = "ts38321_no_preamble_transmitted_requested_preamble_detected";
     end
     out.MissedDetection = ~logical(out.Detected);
+    out.CorrelationTraceTable = localBuildCorrelationTraceTable(cfg, prachCfg, tx, rx, out, snr_dB);
 
     if out.Detected
         out.Ok = true;
@@ -256,6 +258,97 @@ catch ME
         log.warn("runPRACHDetection failed: " + string(ME.message));
     end
 end
+end
+
+function T = localBuildCorrelationTraceTable(cfg, prachCfg, tx, rx, out, snr_dB)
+trace = sixgr.util.structGet(rx, "CorrelationTrace", struct());
+lags = double(sixgr.util.structGet(trace, "LagSamples", zeros(0, 1)));
+corrAbs = double(sixgr.util.structGet(trace, "CorrelationAbs", zeros(0, 1)));
+lags = lags(:);
+corrAbs = corrAbs(:);
+n = min(numel(lags), numel(corrAbs));
+if n == 0
+    T = table();
+    return;
+end
+lags = lags(1:n);
+corrAbs = corrAbs(1:n);
+valid = isfinite(lags) & isfinite(corrAbs);
+lags = lags(valid);
+corrAbs = corrAbs(valid);
+n = numel(lags);
+if n == 0
+    T = table();
+    return;
+end
+sampleRateHz = double(sixgr.util.structGet(tx, "SampleRate_Hz", ...
+    sixgr.util.structGet(prachCfg, "SampleRate_Hz", 30.72e6)));
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    sampleRateHz = 30.72e6;
+end
+preambleIndex = double(sixgr.util.structGet(trace, "PreambleIndex", ...
+    sixgr.util.structGet(out, "PreambleIndexFromPeak", NaN)));
+rootSequenceIndex = double(sixgr.util.structGet(prachCfg, "SequenceIndex", ...
+    sixgr.util.structGet(out, "PRACHRootSequenceIndex", NaN)));
+restrictedSetType = string(sixgr.util.structGet(prachCfg, "RestrictedSet", ...
+    sixgr.util.structGet(cfg, "phy.prach.restrictedSet", "UnrestrictedSet")));
+ncs = double(sixgr.util.structGet(prachCfg, "ZCZNCS", NaN));
+zcz = double(sixgr.util.structGet(prachCfg, "ZeroCorrelationZone", ...
+    sixgr.util.structGet(out, "PRACHZeroCorrelationZone", NaN)));
+threshold = double(sixgr.util.structGet(trace, "Threshold", ...
+    sixgr.util.structGet(out, "DetectionThreshold", NaN)));
+noiseFloor = double(sixgr.util.structGet(trace, "NoiseFloor", ...
+    sixgr.util.structGet(out, "DetectorNoiseFloor", NaN)));
+peakLagSamples = double(sixgr.util.structGet(trace, "PeakLagSamples", ...
+    sixgr.util.structGet(out, "TimingOffset_samples", NaN)));
+taSamples = double(sixgr.util.structGet(out, "TimingAdvance_samples", NaN));
+cfoHz = double(sixgr.util.structGet(out, "InjectedCFO_Hz", NaN));
+if ~isfinite(cfoHz)
+    cfoHz = 0;
+end
+seed = round(double(sixgr.util.structGet(prachCfg, "Seed", sixgr.util.structGet(cfg, "run.seed", 1))));
+detectionResult = "not_detected";
+if logical(sixgr.util.structGet(out, "FalseAlarm", false))
+    detectionResult = "false_alarm";
+elseif logical(sixgr.util.structGet(out, "Detected", false))
+    detectionResult = "detected";
+elseif logical(sixgr.util.structGet(out, "MissedDetection", false))
+    detectionResult = "missed_detection";
+end
+truthStatus = string(sixgr.util.structGet(trace, "TraceStatus", "real_lls_evidence"));
+if strlength(truthStatus) == 0
+    truthStatus = "real_lls_evidence";
+end
+lagUs = lags ./ sampleRateHz .* 1e6;
+T = table( ...
+    repmat(double(seed), n, 1), ...
+    repmat(double(preambleIndex), n, 1), ...
+    repmat(double(rootSequenceIndex), n, 1), ...
+    repmat(restrictedSetType, n, 1), ...
+    repmat(double(ncs), n, 1), ...
+    repmat(double(zcz), n, 1), ...
+    double(lags), ...
+    double(lagUs), ...
+    double(corrAbs), ...
+    repmat(double(threshold), n, 1), ...
+    repmat(double(noiseFloor), n, 1), ...
+    repmat(double(peakLagSamples), n, 1), ...
+    repmat(double(taSamples), n, 1), ...
+    repmat(detectionResult, n, 1), ...
+    repmat(logical(sixgr.util.structGet(out, "FalseAlarm", false)), n, 1), ...
+    repmat(logical(sixgr.util.structGet(out, "MissedDetection", false)), n, 1), ...
+    repmat(double(snr_dB), n, 1), ...
+    repmat(double(cfoHz), n, 1), ...
+    repmat(double(seed), n, 1), ...
+    repmat(truthStatus, n, 1), ...
+    'VariableNames', localPRACHCorrelationTraceVariableNames());
+end
+
+function names = localPRACHCorrelationTraceVariableNames()
+names = {'trial_id','preamble_index','root_sequence_index','restricted_set_type','n_cs', ...
+    'zero_correlation_zone_config','lag_samples','lag_us','correlation_abs','threshold', ...
+    'noise_floor','peak_lag_samples','timing_advance_samples','detection_result', ...
+    'false_alarm','missed_detection','snr_db','cfo_hz','seed','truth_status'};
 end
 
 function [scope, candidates] = localResolveFalseAlarmCandidateSet(cfg, preambleIndex)

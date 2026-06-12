@@ -742,47 +742,65 @@ end
 
 pbchTrials = localEmptyLinkTrialTable(0);
 prachTrials = localEmptyLinkTrialTable(0);
+prachCorrelationTrace = table();
 pdcchTrials = localEmptyLinkTrialTable(0);
 pucchTrials = localEmptyLinkTrialTable(0);
 srsTrials = localEmptyLinkTrialTable(0);
 csirsTrials = table();
 trsTrials = localEmptyLinkTrialTable(0);
 coupledRuntime = struct();
-exportStandaloneControlDiagnostics = logical(sixgr.util.structGet(cfg, "outputs.exportStandaloneControlDiagnostics", false));
+standaloneFallbackForDisabledGating = coupledTruth && localCoupledControlGatingDisabled(cfg);
+exportStandaloneControlDiagnostics = logical(sixgr.util.structGet(cfg, "outputs.exportStandaloneControlDiagnostics", false)) || ...
+    standaloneFallbackForDisabledGating;
 
 if coupledTruth
     if exportStandaloneControlDiagnostics
         diagDir = localStandaloneControlDiagnosticDir(runFolder, csvDir);
         standalonePBCH = localCollectTrialsAcrossSweep(@(snr) localCollectPBCHTrials(cfg, snr, max(1, ceil(nTrials/4))), snrGrid, ...
             fullfile(diagDir, "pbch_standalone_trials.csv"), "PBCH standalone diagnostic");
-        sixgr.util.csvWriteTable(fullfile(diagDir, "pbch_standalone_trials.csv"), localMarkStandaloneControlDiagnostic("PBCH", standalonePBCH));
+        standalonePBCH = localCanonicalizeControlTrialTable("PBCH", localMarkStandaloneControlDiagnostic("PBCH", standalonePBCH));
+        sixgr.util.csvWriteTable(fullfile(diagDir, "pbch_standalone_trials.csv"), standalonePBCH);
 
         standalonePRACH = localCollectTrialsAcrossSweep(@(snr) localCollectPRACHTrials(cfg, snr, max(1, ceil(nTrials/4))), snrGrid, ...
             fullfile(diagDir, "prach_standalone_trials.csv"), "PRACH standalone diagnostic");
-        sixgr.util.csvWriteTable(fullfile(diagDir, "prach_standalone_trials.csv"), localMarkStandaloneControlDiagnostic("PRACH", standalonePRACH));
+        standalonePRACH = localCanonicalizeControlTrialTable("PRACH", localMarkStandaloneControlDiagnostic("PRACH", standalonePRACH));
+        sixgr.util.csvWriteTable(fullfile(diagDir, "prach_standalone_trials.csv"), standalonePRACH);
 
         standalonePDCCH = localCollectTrialsAcrossSweep(@(snr) localCollectPDCCHTrials(cfg, snr, max(1, ceil(nTrials/2))), snrGrid, ...
             fullfile(diagDir, "pdcch_aggregation_sweep_trials.csv"), "PDCCH aggregation sweep diagnostic");
-        sixgr.util.csvWriteTable(fullfile(diagDir, "pdcch_aggregation_sweep_trials.csv"), localMarkStandaloneControlDiagnostic("PDCCH", standalonePDCCH));
+        standalonePDCCH = localCanonicalizeControlTrialTable("PDCCH", localMarkStandaloneControlDiagnostic("PDCCH", standalonePDCCH));
+        sixgr.util.csvWriteTable(fullfile(diagDir, "pdcch_aggregation_sweep_trials.csv"), standalonePDCCH);
 
         standalonePUCCH = localCollectTrialsAcrossSweep(@(snr) localCollectPUCCHTrials(cfg, snr, max(1, ceil(nTrials/2))), snrGrid, ...
             fullfile(diagDir, "pucch_standalone_trials.csv"), "PUCCH standalone diagnostic");
-        sixgr.util.csvWriteTable(fullfile(diagDir, "pucch_standalone_trials.csv"), localMarkStandaloneControlDiagnostic("PUCCH", standalonePUCCH));
+        standalonePUCCH = localCanonicalizeControlTrialTable("PUCCH", localMarkStandaloneControlDiagnostic("PUCCH", standalonePUCCH));
+        sixgr.util.csvWriteTable(fullfile(diagDir, "pucch_standalone_trials.csv"), standalonePUCCH);
 
         standaloneSRS = localCollectTrialsAcrossSweep(@(snr) localCollectSRSTrials(cfg, snr, max(1, ceil(nTrials/3))), snrGrid, ...
             fullfile(diagDir, "srs_standalone_trials.csv"), "SRS standalone diagnostic");
-        sixgr.util.csvWriteTable(fullfile(diagDir, "srs_standalone_trials.csv"), localMarkStandaloneControlDiagnostic("SRS", standaloneSRS));
+        standaloneSRS = localCanonicalizeControlTrialTable("SRS", localMarkStandaloneControlDiagnostic("SRS", standaloneSRS));
+        sixgr.util.csvWriteTable(fullfile(diagDir, "srs_standalone_trials.csv"), standaloneSRS);
 
         standaloneTRS = localCollectTrialsAcrossSweep(@(snr) localCollectTRSTrials(cfg, snr, max(1, ceil(nTrials/3))), snrGrid, ...
             fullfile(diagDir, "trs_standalone_trials.csv"), "TRS standalone diagnostic");
-        sixgr.util.csvWriteTable(fullfile(diagDir, "trs_standalone_trials.csv"), localMarkStandaloneControlDiagnostic("TRS", standaloneTRS));
+        standaloneTRS = localCanonicalizeControlTrialTable("TRS", localMarkStandaloneControlDiagnostic("TRS", standaloneTRS));
+        sixgr.util.csvWriteTable(fullfile(diagDir, "trs_standalone_trials.csv"), standaloneTRS);
+
+        if standaloneFallbackForDisabledGating
+            pbchTrials = standalonePBCH;
+            prachTrials = standalonePRACH;
+            pdcchTrials = standalonePDCCH;
+            pucchTrials = standalonePUCCH;
+            srsTrials = standaloneSRS;
+            trsTrials = standaloneTRS;
+        end
     end
 else
     pbchTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPBCHTrials(cfg, snr, max(1, ceil(nTrials/4))), snrGrid, fPBCH, "PBCH");
     pbchTrials = localCanonicalizeControlTrialTable("PBCH", pbchTrials);
     sixgr.util.csvWriteTable(fPBCH, pbchTrials);
 
-    prachTrials = localCollectTrialsAcrossSweep(@(snr) localCollectPRACHTrials(cfg, snr, max(1, ceil(nTrials/4))), snrGrid, fPRACH, "PRACH");
+    [prachTrials, prachCorrelationTrace] = localCollectPRACHTrialsAcrossSweep(cfg, snrGrid, max(1, ceil(nTrials/4)), fPRACH, "PRACH");
     prachTrials = localCanonicalizeControlTrialTable("PRACH", prachTrials);
     sixgr.util.csvWriteTable(fPRACH, prachTrials);
 
@@ -830,6 +848,7 @@ if coupledTruth
         fDL, fUL, dlLiveConstellationPath, ulLiveConstellationPath, struct());
     pbchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PBCH", table())), pbchTrials);
     prachTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACH", table())), prachTrials);
+    prachCorrelationTrace = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACHCorrelationTrace", table()));
     pdcchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PDCCH", table())), pdcchTrials);
     pucchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PUCCH", table())), pucchTrials);
     srsTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "SRS", table())), srsTrials);
@@ -938,6 +957,21 @@ else
 end
 end
 
+function tf = localCoupledControlGatingDisabled(cfg)
+flags = [ ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.pbchRequired", ...
+        sixgr.util.structGet(cfg, "control_gating.pbch_required", false))), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.prachRequired", ...
+        sixgr.util.structGet(cfg, "control_gating.prach_required", false))), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.pdcchRequired", ...
+        sixgr.util.structGet(cfg, "control_gating.pdcch_required", false))), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.srsRequired", ...
+        sixgr.util.structGet(cfg, "control_gating.srs_required", false))), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.trsRequired", ...
+        sixgr.util.structGet(cfg, "control_gating.trs_required", false)))];
+tf = ~any(flags);
+end
+
 function diagDir = localStandaloneControlDiagnosticDir(airInterfaceRunFolder, fallbackCsvDir)
 diagDir = fullfile(char(string(fallbackCsvDir)), "standalone_control_diagnostics");
 rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
@@ -999,6 +1033,12 @@ srsTrials = localCanonicalizeControlTrialTable("SRS", srsTrials);
 trsTrials = localCanonicalizeControlTrialTable("TRS", trsTrials);
 sixgr.util.csvWriteTable(fPBCH, pbchTrials);
 sixgr.util.csvWriteTable(fPRACH, prachTrials);
+if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
+    rootRunFolderForPRACHTrace = fileparts(char(string(runFolder)));
+    layoutForPRACHTrace = sixgr.report.resultLayout(rootRunFolderForPRACHTrace);
+    sixgr.util.csvWriteTable(fullfile(layoutForPRACHTrace.ReportCSVDir, "prach_correlation_trace.csv"), prachCorrelationTrace);
+    sixgr.util.csvWriteTable(fullfile(layoutForPRACHTrace.ReportCSVDir, "prach_correlation_traces.csv"), prachCorrelationTrace);
+end
 sixgr.util.csvWriteTable(fPDCCH, pdcchTrials);
 sixgr.util.csvWriteTable(fPUCCH, pucchTrials);
 sixgr.util.csvWriteTable(fSRS, srsTrials);
@@ -1050,6 +1090,7 @@ out.DL = dlTrials;
 out.UL = ulTrials;
 out.PBCH = pbchTrials;
 out.PRACH = prachTrials;
+out.PRACHCorrelationTrace = prachCorrelationTrace;
 out.PDCCH = pdcchTrials;
 out.PUCCH = pucchTrials;
 out.SRS = srsTrials;
@@ -1063,6 +1104,13 @@ out.DLConstellationPath = outDLConst;
 out.ULConstellationPath = outULConst;
 out.PBCHPath = fPBCH;
 out.PRACHPath = fPRACH;
+if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
+    rootRunFolderForPRACHTrace = fileparts(char(string(runFolder)));
+    layoutForPRACHTrace = sixgr.report.resultLayout(rootRunFolderForPRACHTrace);
+    out.PRACHCorrelationTracePath = fullfile(layoutForPRACHTrace.ReportCSVDir, "prach_correlation_trace.csv");
+else
+    out.PRACHCorrelationTracePath = "";
+end
 out.PDCCHPath = fPDCCH;
 out.PUCCHPath = fPUCCH;
 out.SRSPath = fSRS;
@@ -5104,9 +5152,13 @@ for ueIdx = 1:numUsers
         if shouldAttemptPRACH
             cfgU = localApplyDeterministicPrachUserContext(cfgU, ueIdx);
             prachSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
-            prachT = localAnnotateCoupledControlTrial(localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx), slotIdx, frameIdx, ueIdx, rnti, "UL");
+            [prachRawT, prachCorrT] = localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx);
+            prachT = localAnnotateCoupledControlTrial(prachRawT, slotIdx, frameIdx, ueIdx, rnti, "UL");
+            prachCorrT = localAnnotateCoupledControlTrial(prachCorrT, slotIdx, frameIdx, ueIdx, rnti, "UL");
             prachAttemptCount = prachAttemptCount + 1;
             state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, prachT);
+            state.ControlTrials.PRACHCorrelationTrace = localAppendCompatTable( ...
+                sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table()), prachCorrT);
             state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, ueIdx, prachT);
             if ueIdx > numel(state.LastPRACHSlotByUE)
                 state.LastPRACHSlotByUE(ueIdx, 1) = 0;
@@ -5493,8 +5545,12 @@ else
     if ueIdx > numel(lastPRACH) || lastPRACH(ueIdx) == 0
         cfgU = localApplyDeterministicPrachUserContext(cfgU, ueIdx);
         prachSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
+        [prachRawT, prachCorrT] = localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx);
         state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, ...
-            localAnnotateCoupledControlTrial(localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx), slotIdx, frameIdx, ueIdx, rnti, direction));
+            localAnnotateCoupledControlTrial(prachRawT, slotIdx, frameIdx, ueIdx, rnti, direction));
+        state.ControlTrials.PRACHCorrelationTrace = localAppendCompatTable( ...
+            sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table()), ...
+            localAnnotateCoupledControlTrial(prachCorrT, slotIdx, frameIdx, ueIdx, rnti, direction));
         if ueIdx > numel(state.LastPRACHSlotByUE)
             state.LastPRACHSlotByUE(ueIdx, 1) = 0;
         end
@@ -5577,6 +5633,11 @@ servingCell = NaN;
 if ueIdx <= numel(servingVec)
     servingCell = double(servingVec(ueIdx));
 end
+largeScaleSINR_dB = localEstimateCoupledRuntimeLargeScaleSINR(state, ueIdx, servingCell);
+if isfinite(largeScaleSINR_dB)
+    linkSNR_dB = double(largeScaleSINR_dB);
+    return;
+end
 interferenceMode = string(sixgr.util.structGet(cfgEval, "run.interferenceExecutionMode", ...
     sixgr.util.structGet(cfgEval, "interference.inter_cell_execution_mode", "")));
 if strlength(strtrim(interferenceMode)) > 0 && isfinite(servingCell)
@@ -5592,6 +5653,39 @@ representativeSNR_dB = double(sixgr.util.structGet(runState, "CurrentSNR_dB", Na
 valueRole = string(sixgr.util.structGet(runState, "ValueRole", ""));
 if isfinite(representativeSNR_dB) && ~contains(lower(valueRole), "configured")
     linkSNR_dB = double(representativeSNR_dB);
+end
+end
+
+function sinr_dB = localEstimateCoupledRuntimeLargeScaleSINR(state, ueIdx, servingCell)
+sinr_dB = NaN;
+ueIdx = double(ueIdx);
+servingCell = double(servingCell);
+largeScale = sixgr.util.structGet(state, "LargeScaleState", struct());
+rxPower = sixgr.util.structGet(largeScale, "RxPower_dBm", []);
+if isempty(rxPower) || ~(isfinite(ueIdx) && ueIdx >= 1) || ~(isfinite(servingCell) && servingCell >= 1)
+    return;
+end
+rxPower = double(rxPower);
+if ueIdx > size(rxPower, 1) || servingCell > size(rxPower, 2)
+    return;
+end
+bandwidthHz = double(sixgr.util.structGet(state, "Bandwidth_Hz", NaN));
+noiseFigure_dB = double(sixgr.util.structGet(state, "NoiseFigure_dB", NaN));
+if ~(isfinite(bandwidthHz) && bandwidthHz > 0 && isfinite(noiseFigure_dB))
+    return;
+end
+rxPowerRow = double(rxPower(ueIdx, :));
+desired_dBm = double(rxPowerRow(servingCell));
+desired_mW = 10.^(desired_dBm / 10);
+interfererMask = true(size(rxPowerRow));
+interfererMask(servingCell) = false;
+interferer_mW = 10.^(rxPowerRow(interfererMask) / 10);
+interferer_mW = interferer_mW(isfinite(interferer_mW) & interferer_mW >= 0);
+noise_dBm = -174 + 10 * log10(max(bandwidthHz, eps)) + noiseFigure_dB;
+noise_mW = 10.^(noise_dBm / 10);
+denom_mW = sum(interferer_mW, "omitnan") + noise_mW;
+if isfinite(desired_mW) && desired_mW > 0 && isfinite(denom_mW) && denom_mW > 0
+    sinr_dB = 10 * log10(desired_mW / denom_mW);
 end
 end
 
@@ -5908,6 +6002,25 @@ end
 for i = 1:numel(snrGrid)
     Ti = collectorFcn(double(snrGrid(i)));
     T = localAppendCompatTable(T, Ti);
+    localMaybeWritePartialTable(liveTablePath, T);
+    localMaybeAppendSweepProgressLog(progressLabel, double(snrGrid(i)), i, numel(snrGrid), T);
+end
+end
+
+function [T, correlationTraceT] = localCollectPRACHTrialsAcrossSweep(cfg, snrGrid, nTrials, liveTablePath, progressLabel)
+T = table();
+correlationTraceT = table();
+snrGrid = unique(sort(double(snrGrid(:))));
+if nargin < 4
+    liveTablePath = "";
+end
+if nargin < 5
+    progressLabel = "PRACH";
+end
+for i = 1:numel(snrGrid)
+    [Ti, Ci] = localCollectPRACHTrials(cfg, double(snrGrid(i)), nTrials);
+    T = localAppendCompatTable(T, Ti);
+    correlationTraceT = localAppendCompatTable(correlationTraceT, Ci);
     localMaybeWritePartialTable(liveTablePath, T);
     localMaybeAppendSweepProgressLog(progressLabel, double(snrGrid(i)), i, numel(snrGrid), T);
 end
@@ -6745,10 +6858,11 @@ end
 
 function tf = localPostEqSINRProvenanceEligible(source, role, status)
 token = lower(strjoin([string(source), string(role), string(status)], " "));
-blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+hasBareHest = arrayfun(@(s) any(string(regexp(char(s), '[a-z0-9]+', 'match')) == "hest"), token);
+blocked = ["receiverhest", "receiver_hest", "pilot", ...
     "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
     "unavailable", "failed", "rejected"];
-tf = contains(token, "post_equalization") & ~arrayfun(@(s) any(contains(s, blocked)), token);
+tf = contains(token, "post_equalization") & ~hasBareHest & ~arrayfun(@(s) any(contains(s, blocked)), token);
 end
 
 function T = localRepairLinkTrialEvidenceColumns(T, direction, cfg)
@@ -7260,17 +7374,25 @@ end
 beamCount = max(1, round(double(beamCount)));
 end
 
-function T = localCollectPRACHTrials(cfg, snr_dB, nTrials, slotIdx)
+function [T, correlationTraceT] = localCollectPRACHTrials(cfg, snr_dB, nTrials, slotIdx)
 nTrials = max(1, round(double(nTrials)));
 if nargin < 4
     slotIdx = NaN;
 end
 rows = repmat(localMakeLinkTrialRow(cfg, "UL", snr_dB, 1), nTrials, 1);
+correlationTraceT = table();
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "UL", snr_dB, k);
     r.Status = "FAIL";
     try
         out = sixgr.link.runPRACHDetection(cfg, "SNR_dB", snr_dB, "CanonicalSlot", slotIdx);
+        corrT = sixgr.util.structGet(out, "CorrelationTraceTable", table());
+        if istable(corrT) && ~isempty(corrT)
+            if ismember("trial_id", string(corrT.Properties.VariableNames))
+                corrT.trial_id(:) = double(k);
+            end
+            correlationTraceT = localAppendCompatTable(correlationTraceT, corrT);
+        end
         completed = logical(sixgr.util.structGet(out, "Ok", false)) && ~logical(sixgr.util.structGet(out, "Skipped", false));
         detected = logical(sixgr.util.structGet(out, "Detected", false));
         r.CRCPass = double(detected);

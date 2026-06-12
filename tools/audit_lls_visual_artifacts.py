@@ -219,8 +219,14 @@ def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditR
     manifest_status = lower_token(get_field(manifest_row, "PlotRenderStatus", "render_status"))
     visual_validity = lower_token(get_field(manifest_row, "VisualValidity", "visual_validity"))
     is_unavailable_card = parse_bool(get_field(manifest_row, "IsUnavailableCard", "is_unavailable_card"))
+    unavailable_card_visual = (
+        is_unavailable_card
+        or manifest_status == "rendered_unavailable_card"
+        or image_path.endswith("_unavailable.svg")
+    )
+    source_semantics_required = is_rendered_status(manifest_status) and not unavailable_card_visual and visual_validity != "unavailable"
     normal_rendered = (
-        is_rendered_status(manifest_status)
+        source_semantics_required
         and not is_unavailable_card
         and visual_validity != "unavailable"
         and not image_path.endswith("_unavailable.svg")
@@ -235,6 +241,29 @@ def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditR
         failures.append(("png_bytes_in_svg", ".svg artifact contains PNG bytes"))
     if is_suppressed_status(manifest_status) and file_info.exists and not image_path.endswith("_unavailable.svg"):
         failures.append(("stale_suppressed_normal_artifact", "normal plot file exists but manifest says suppressed/not rendered"))
+    if unavailable_card_visual and not image_path.endswith("_unavailable.svg"):
+        failures.append(("unavailable_card_bad_name", "unavailable visual artifacts must end with _unavailable.svg"))
+    if unavailable_card_visual and image_path and not file_info.exists:
+        failures.append(("unavailable_card_missing", "manifest declares an unavailable visual card but the card file is missing"))
+
+    if not source_semantics_required:
+        return make_row(
+            run_folder,
+            plot_id=plot_id,
+            artifact_path=image_path,
+            artifact_kind="manifest_plot",
+            is_manifest_row=True,
+            manifest_status=manifest_status,
+            visual_validity=visual_validity,
+            source_csv=source_csv,
+            x_column=x_col,
+            y_column=y_col,
+            plot_kind=plot_kind,
+            file_info=file_info,
+            source_stats=source_stats,
+            failures=failures,
+        )
+
     if normal_rendered and not source_stats.source_exists:
         failures.append(("rendered_plot_source_csv_missing", "rendered plot cannot be traced to its source CSV"))
     if source_stats.x_missing and x_col:

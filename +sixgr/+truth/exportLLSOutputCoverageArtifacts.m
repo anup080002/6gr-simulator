@@ -1940,6 +1940,8 @@ n = numel(vals);
 T = table(vals(:), (1:n)' ./ n, repmat("reports/csv/table_latency.csv", n, 1), ...
     'VariableNames', {'latency_ms','cdf_probability','source_artifact_ref'});
 T.latency_value_definition = repmat("empirical CDF from real latency rows", n, 1);
+T.truth_status = repmat("real_lls_evidence", n, 1);
+T.curve_construction = repmat("empirical_cdf", n, 1);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildLatencyCDFTable", ...
     "reports/csv/table_latency.csv", "implemented", "derived_latency_cdf", true, true);
 end
@@ -2337,9 +2339,9 @@ if ~(istable(powerEnergyTable) && ~isempty(powerEnergyTable))
     T = table();
     return;
 end
-entityType = string(powerEnergyTable.entity_type(:));
-entityID = double(powerEnergyTable.entity_id(:));
-direction = string(powerEnergyTable.direction(:));
+entityType = string(localColumnAsText(powerEnergyTable, "entity_type"));
+entityID = localColumnAsDouble(powerEnergyTable, "entity_id");
+direction = string(localColumnAsText(powerEnergyTable, "direction"));
 entityType(ismissing(entityType)) = "";
 direction(ismissing(direction)) = "";
 groupIdx = findgroups(categorical(entityType), entityID, categorical(direction));
@@ -2351,8 +2353,8 @@ for i = 1:numel(groupIds)
     groupEntityType = entityType(find(mask, 1, "first"));
     groupEntityID = entityID(find(mask, 1, "first"));
     groupDirection = direction(find(mask, 1, "first"));
-    totalEnergyJ = sum(double(subset.energy_increment_mJ), "omitnan") / 1e3;
-    usefulBits = sum(double(subset.useful_bits), "omitnan");
+    totalEnergyJ = sum(localColumnAsDouble(subset, "energy_increment_mJ"), "omitnan") / 1e3;
+    usefulBits = sum(localColumnAsDouble(subset, "useful_bits"), "omitnan");
     energyPerBitJ = localPowerEntityEnergyPerBit(totalEnergyJ, usefulBits);
     effBitsPerJ = localPowerEntityEfficiency(usefulBits, totalEnergyJ);
     row = localEmptyCanonicalPowerFactRow();
@@ -2944,8 +2946,8 @@ if ~(istable(powerEnergyTable) && ~isempty(powerEnergyTable))
     T = table();
     return;
 end
-entityType = string(powerEnergyTable.entity_type(:));
-entityID = double(powerEnergyTable.entity_id(:));
+entityType = string(localColumnAsText(powerEnergyTable, "entity_type"));
+entityID = localColumnAsDouble(powerEnergyTable, "entity_id");
 keyStrings = entityType + ":" + string(entityID);
 validRows = strlength(entityType) > 0 & isfinite(entityID);
 keys = unique(keyStrings(validRows));
@@ -2962,12 +2964,12 @@ for i = 1:numel(keys)
     if isempty(subset)
         continue;
     end
-    rows(i).entity_type = string(subset.entity_type(1));
-    rows(i).entity_id = double(subset.entity_id(1));
-    rows(i).total_energy_j = sum(double(subset.energy_increment_mJ), "omitnan") / 1e3;
-    rows(i).useful_bits = sum(double(subset.useful_bits), "omitnan");
+    rows(i).entity_type = string(localTableValue(subset(1, :), "entity_type", ""));
+    rows(i).entity_id = double(localTableValue(subset(1, :), "entity_id", NaN));
+    rows(i).total_energy_j = sum(localColumnAsDouble(subset, "energy_increment_mJ"), "omitnan") / 1e3;
+    rows(i).useful_bits = sum(localColumnAsDouble(subset, "useful_bits"), "omitnan");
     rows(i).energy_per_bit_nj = localEnergyPerBit(rows(i).total_energy_j, rows(i).useful_bits);
-    states = string(subset.state);
+    states = string(localColumnAsText(subset, "state"));
     if isempty(states)
         rows(i).dominant_state = "";
     else
@@ -4828,6 +4830,10 @@ pythonExe = localResolvePythonExecutableForAudit();
 cmd = sprintf("%s %s %s", localShellQuote(pythonExe), localShellQuote(toolPath), localShellQuote(runFolder));
 [status, outTxt] = system(cmd);
 T = localReadOptionalTable(auditCSV);
+if istable(T)
+    T = localNormalizeVisualArtifactAuditTable(T);
+    sixgr.util.csvWriteTable(auditCSV, T);
+end
 if istable(T) && ~isempty(T)
     return;
 end
@@ -4840,6 +4846,74 @@ else
 end
 sixgr.util.csvWriteTable(auditCSV, T);
 localWriteVisualArtifactAuditMarkdown(runFolder, T);
+end
+
+function T = localNormalizeVisualArtifactAuditTable(T)
+required = ["plot_id","artifact_path","artifact_kind","is_manifest_row","manifest_status","visual_validity", ...
+    "source_csv","x_column","y_column","plot_kind","row_count","unique_x_count","unique_y_count","non_nan_y_count", ...
+    "nan_only_y","mixed_units","source_mapping_status","curve_construction","truth_status_tokens", ...
+    "actual_mime_type","declared_mime_type","extension","sha256","byte_count","audit_ok","failure_code","failure_reason"];
+if ~istable(T)
+    T = localVisualArtifactAuditToolFailure("audit_table_invalid", "Visual audit tool did not return a table.");
+    return;
+end
+aliases = struct( ...
+    "plot_id", "PlotId", ...
+    "artifact_path", "ArtifactPath", ...
+    "audit_ok", "IntegrityOk", ...
+    "failure_code", "FailureCode", ...
+    "failure_reason", "FailureReason", ...
+    "visual_validity", "VisualValidity", ...
+    "manifest_status", "PlotRenderStatus", ...
+    "actual_mime_type", "ActualMimeType", ...
+    "declared_mime_type", "DeclaredMimeType", ...
+    "extension", "Extension", ...
+    "sha256", "SHA256", ...
+    "byte_count", "ByteCount");
+vars = string(T.Properties.VariableNames);
+for i = 1:numel(required)
+    name = required(i);
+    if any(vars == name)
+        continue;
+    end
+    alias = "";
+    if isfield(aliases, char(name))
+        alias = string(aliases.(char(name)));
+    end
+    if strlength(alias) > 0 && any(vars == alias)
+        T.(name) = T.(alias);
+    else
+        T.(name) = localDefaultVisualAuditColumn(name, height(T));
+    end
+    vars = string(T.Properties.VariableNames);
+end
+if isempty(T)
+    T = localVisualArtifactAuditToolSuccess("no_manifest_rows", ...
+        "Visual audit completed with no manifest rows to audit.");
+    return;
+end
+T = T(:, required);
+end
+
+function col = localDefaultVisualAuditColumn(name, n)
+name = string(name);
+if any(name == ["is_manifest_row","nan_only_y","mixed_units","audit_ok"])
+    col = false(n, 1);
+    if name == "audit_ok"
+        col = true(n, 1);
+    end
+elseif any(name == ["row_count","unique_x_count","unique_y_count","non_nan_y_count","byte_count"])
+    col = nan(n, 1);
+else
+    col = strings(n, 1);
+end
+end
+
+function T = localVisualArtifactAuditToolSuccess(code, reason)
+T = localVisualArtifactAuditToolFailure("", "");
+T.audit_ok(:) = true;
+T.failure_code(:) = string(code);
+T.failure_reason(:) = string(reason);
 end
 
 function T = localMergeVisualArtifactAuditFailures(visualIntegrity, auditT)
@@ -5137,12 +5211,13 @@ function localWritePowerEnergyFigure(T, filePath, logicalPath)
 if ~(istable(T) && ~isempty(T))
     return;
 end
-mask = string(T.entity_type) == "cell" | string(T.entity_type) == "site";
+entityTypeAll = string(localColumnAsText(T, "entity_type"));
+mask = entityTypeAll == "cell" | entityTypeAll == "site";
 if any(mask)
     T = T(mask, :);
 end
-entityType = string(T.entity_type(:));
-entityID = double(T.entity_id(:));
+entityType = string(localColumnAsText(T, "entity_type"));
+entityID = localColumnAsDouble(T, "entity_id");
 validKeyRows = ~ismissing(entityType) & strlength(entityType) > 0 & isfinite(entityID);
 if ~any(validKeyRows)
     return;
@@ -5150,14 +5225,16 @@ end
 T = T(validKeyRows, :);
 fig = figure("Visible", "off", "Color", "w");
 hold on;
-entityType = string(T.entity_type(:));
-entityID = double(T.entity_id(:));
+entityType = string(localColumnAsText(T, "entity_type"));
+entityID = localColumnAsDouble(T, "entity_id");
 keys = unique(entityType + ":" + string(entityID));
 for i = 1:numel(keys)
     key = keys(i);
     mask = (entityType + ":" + string(entityID)) == key;
-    x = double(T.timestamp_sim_ms(mask));
-    y = double(T.cumulative_energy_J(mask));
+    xAll = localColumnAsDouble(T, "timestamp_sim_ms");
+    yAll = localColumnAsDouble(T, "cumulative_energy_J");
+    x = double(xAll(mask));
+    y = double(yAll(mask));
     keep = isfinite(x) & isfinite(y);
     if ~any(keep)
         continue;
@@ -5522,19 +5599,233 @@ end
 
 function inventory = localBuildArtifactInventory(runFolder)
 files = dir(fullfile(runFolder, "**", "*"));
-rows = repmat(struct("RelativePath", "", "Extension", "", "Bytes", NaN, "ArtifactState", "", "SchemaVersion", "v1"), 0, 1);
+coverageRows = localReadOptionalTable(fullfile(runFolder, "reports", "csv", "lls_output_spec_coverage.csv"));
+plotStatusRows = localReadOptionalTable(fullfile(runFolder, "reports", "csv", "plot_render_status.csv"));
+metricRows = localReadOptionalTable(fullfile(runFolder, "reports", "csv", "lls_output_metric_rows.csv"));
+rows = repmat(localArtifactInventoryRow("", "", NaN, "", "", false, false, false, "", ""), 0, 1);
 for i = 1:numel(files)
     if files(i).isdir
         continue;
     end
     rel = localPortablePath(string(erase(fullfile(files(i).folder, files(i).name), string(runFolder) + filesep)));
     [~, ~, ext] = fileparts(files(i).name);
-    rows(end+1, 1) = struct("RelativePath", rel, "Extension", string(ext), ... %#ok<AGROW>
-        "Bytes", double(files(i).bytes), "ArtifactState", "present", "SchemaVersion", "v1");
+    ext = lower(string(ext));
+    semanticState = localInventorySemanticState(rel, coverageRows, metricRows, plotStatusRows);
+    artifactClass = localArtifactClassForInventory(rel, ext);
+    rows(end+1, 1) = localArtifactInventoryRow(rel, ext, double(files(i).bytes), "present", ... %#ok<AGROW>
+        artifactClass, semanticState, any(ext == [".csv" ".json" ".mat" ".yaml" ".yml"]), ...
+        any(ext == [".md" ".png" ".jpg" ".jpeg" ".svg" ".html"]), files(i).datenum, "");
 end
+
+rows = localAppendUnavailablePlotAliases(rows, plotStatusRows, coverageRows, metricRows);
 inventory = struct2table(rows);
 if ~isempty(inventory)
     inventory = sortrows(inventory, "RelativePath");
+end
+end
+
+function row = localArtifactInventoryRow(rel, ext, bytes, artifactState, artifactClass, semanticState, machineReadable, humanReadable, datenumValue, notes)
+if nargin < 10
+    notes = "";
+end
+if strlength(string(semanticState)) == 0
+    semanticState = "observed";
+end
+modifiedUTC = "";
+if isnumeric(datenumValue) && isfinite(datenumValue)
+    modifiedUTC = string(datetime(datenumValue, "ConvertFrom", "datenum", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+end
+row = struct( ...
+    "RelativePath", string(rel), ...
+    "Extension", string(ext), ...
+    "Bytes", double(bytes), ...
+    "ModifiedUTC", modifiedUTC, ...
+    "ArtifactState", string(artifactState), ...
+    "ArtifactClass", string(artifactClass), ...
+    "SemanticState", string(semanticState), ...
+    "CountsTowardCoverage", logical(localInventoryStateCountsTowardCoverage(semanticState)), ...
+    "MachineReadable", logical(machineReadable), ...
+    "HumanReadable", logical(humanReadable), ...
+    "SchemaVersion", "v2", ...
+    "Notes", string(notes));
+end
+
+function rows = localAppendUnavailablePlotAliases(rows, plotStatusRows, coverageRows, metricRows)
+if ~(istable(plotStatusRows) && ~isempty(plotStatusRows) && localHasVar(plotStatusRows, "PlotId") && localHasVar(plotStatusRows, "ImagePath"))
+    return;
+end
+isCard = false(height(plotStatusRows), 1);
+if localHasVar(plotStatusRows, "IsUnavailableCard")
+    isCard = localColumnAsLogical(plotStatusRows, "IsUnavailableCard");
+end
+status = strings(height(plotStatusRows), 1);
+if localHasVar(plotStatusRows, "PlotRenderStatus")
+    status = lower(strtrim(string(plotStatusRows.PlotRenderStatus)));
+end
+mask = isCard | status == "rendered_unavailable_card";
+for i = find(mask(:).')
+    plotId = strtrim(string(plotStatusRows.PlotId(i)));
+    if strlength(plotId) == 0
+        continue;
+    end
+    aliasPath = "reports/image/" + plotId + ".png";
+    if any(string({rows.RelativePath}) == aliasPath)
+        continue;
+    end
+    cardPath = localPortablePath(string(plotStatusRows.ImagePath(i)));
+    semanticState = localSemanticStateForPlotId(plotId, coverageRows, metricRows);
+    rows(end+1, 1) = localArtifactInventoryRow(aliasPath, ".png", 0, "unavailable_card_alias", ... %#ok<AGROW>
+        "report_image", semanticState, false, true, NaN, ...
+        "logical plot path is represented by unavailable card " + cardPath + "; no normal PNG was written");
+end
+end
+
+function state = localSemanticStateForPlotId(plotId, coverageRows, metricRows)
+metricKey = localPlotIdToMetricKey(plotId);
+state = localMetricAvailabilityState(metricKey, coverageRows);
+if state == "not_available"
+    state = localMetricAvailabilityState(metricKey, metricRows);
+end
+end
+
+function metricKey = localPlotIdToMetricKey(plotId)
+plotId = lower(strtrim(string(plotId)));
+switch plotId
+    case "ai_confidence_trace"
+        metricKey = "ai_confidence_traces";
+    case "access_delay_cdf"
+        metricKey = "curves_access_delay_cdf";
+    otherwise
+        metricKey = plotId;
+end
+end
+
+function state = localInventorySemanticState(relPath, coverageRows, metricRows, plotStatusRows)
+relPath = localPortablePath(string(relPath));
+state = localInferInventoryStateFromPath(relPath);
+
+stateFromMetricRows = localAvailabilityStateForSource(relPath, metricRows);
+if stateFromMetricRows ~= "not_available"
+    state = stateFromMetricRows;
+end
+stateFromCoverage = localAvailabilityStateForSource(relPath, coverageRows);
+if stateFromCoverage ~= "not_available"
+    state = stateFromCoverage;
+end
+
+plotState = localAvailabilityStateForPlotPath(relPath, plotStatusRows, coverageRows, metricRows);
+if plotState ~= "not_available"
+    state = plotState;
+end
+end
+
+function state = localAvailabilityStateForPlotPath(relPath, plotStatusRows, coverageRows, metricRows)
+state = "not_available";
+if ~(istable(plotStatusRows) && ~isempty(plotStatusRows) && localHasVar(plotStatusRows, "ImagePath") && localHasVar(plotStatusRows, "PlotId"))
+    return;
+end
+paths = localPortablePath(string(plotStatusRows.ImagePath));
+mask = paths == localPortablePath(relPath);
+if ~any(mask)
+    return;
+end
+plotIds = string(plotStatusRows.PlotId(mask));
+states = strings(numel(plotIds), 1);
+for i = 1:numel(plotIds)
+    states(i) = localSemanticStateForPlotId(plotIds(i), coverageRows, metricRows);
+end
+state = localRollupInventoryState(states);
+if state == "not_available" && localHasVar(plotStatusRows, "VisualValidity")
+    visualStates = lower(strtrim(string(plotStatusRows.VisualValidity(mask))));
+    if any(visualStates == "diagnostic_only")
+        state = "diagnostic_only";
+    elseif any(visualStates == "unavailable")
+        state = "unavailable";
+    end
+end
+end
+
+function state = localAvailabilityStateForSource(relPath, rows)
+state = "not_available";
+if ~(istable(rows) && ~isempty(rows) && localHasVar(rows, "SourceArtifact") && localHasVar(rows, "Availability"))
+    return;
+end
+sources = localPortablePath(string(rows.SourceArtifact));
+mask = strlength(sources) > 0 & sources == localPortablePath(relPath);
+if any(mask)
+    state = localRollupInventoryState(string(rows.Availability(mask)));
+end
+end
+
+function state = localMetricAvailabilityState(metricKey, rows)
+state = "not_available";
+if ~(istable(rows) && ~isempty(rows) && localHasVar(rows, "MetricKey") && localHasVar(rows, "Availability"))
+    return;
+end
+mask = lower(strtrim(string(rows.MetricKey))) == lower(strtrim(string(metricKey)));
+if any(mask)
+    state = localRollupInventoryState(string(rows.Availability(mask)));
+end
+end
+
+function state = localInferInventoryStateFromPath(relPath)
+relPath = lower(strtrim(localPortablePath(relPath)));
+if strlength(relPath) == 0
+    state = "not_available";
+elseif startsWith(relPath, "reports/") || contains(relPath, "/reports/")
+    state = "derived";
+elseif startsWith(relPath, "meta/") || contains(relPath, "/meta/")
+    state = "config_only";
+else
+    state = "observed";
+end
+end
+
+function state = localRollupInventoryState(states)
+states = lower(strtrim(string(states(:))));
+states = states(strlength(states) > 0);
+if isempty(states)
+    state = "not_available";
+    return;
+end
+states(states == "available") = "observed";
+states(states == "not_enabled") = "disabled";
+precedence = ["observed","derived","config_only","disabled","placeholder","diagnostic_only","unavailable","not_supported","not_exercised","not_available"];
+for i = 1:numel(precedence)
+    if any(states == precedence(i))
+        state = precedence(i);
+        return;
+    end
+end
+state = "not_available";
+end
+
+function tf = localInventoryStateCountsTowardCoverage(state)
+state = lower(strtrim(string(state)));
+tf = state == "observed" | state == "derived" | state == "real_lls_evidence";
+end
+
+function className = localArtifactClassForInventory(rel, ext)
+rel = lower(string(rel));
+if startsWith(rel, "meta/")
+    className = "metadata";
+elseif startsWith(rel, "reports/")
+    className = "report";
+elseif startsWith(rel, "air_interface/")
+    className = "air_interface";
+elseif startsWith(rel, "control/")
+    className = "control";
+elseif startsWith(rel, "beamforming/")
+    className = "beamforming";
+elseif startsWith(rel, "logs/")
+    className = "log";
+else
+    className = "other";
+end
+if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg"
+    className = className + "_image";
+elseif ext == ".csv"
+    className = className + "_csv";
 end
 end
 
@@ -6362,7 +6653,12 @@ end
 function T = localNormalizeBlankOnlyColumns(T, meta)
 varNames = string(T.Properties.VariableNames);
 keepMask = true(1, numel(varNames));
+schemaCritical = localSchemaCriticalBlankColumns();
 for i = 1:numel(varNames)
+    if any(strcmpi(varNames(i), schemaCritical))
+        keepMask(i) = true;
+        continue;
+    end
     values = T.(varNames(i));
     if isnumeric(values)
         keepMask(i) = any(isfinite(double(values)));
@@ -6387,6 +6683,15 @@ end
 if any(~keepMask)
     T(:, ~keepMask) = [];
 end
+end
+
+function names = localSchemaCriticalBlankColumns()
+names = ["run_id","run_tag","scenario_id","scenario_variant_id","config_hash","code_commit","seed","drop_id", ...
+    "timestamp_sim_ms","frame","slot","symbol","site_id","sector_id","cell_id","ue_id","entity_type","entity_id", ...
+    "direction","bwp_id","carrier_id","beam_id","layer_id","stream_id","harq_id","block_id","pipeline_id", ...
+    "producer_module","status_code","status_classification","source_artifact_ref","source_tensor_ref", ...
+    "derived_flag","active_flag","metric_name","metric_value","metric_unit","value_status","value_source", ...
+    "artifact_id","source_table","source_pk"];
 end
 
 function commit = localResolveCodeCommit(summaryRow, runFolder)

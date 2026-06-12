@@ -48,28 +48,28 @@ mustExist = {
     fullfile(runFolder, "reports", "csv", "cfo_to_tracking_traces.csv")
     fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv")
     fullfile(runFolder, "reports", "csv", "ai_confidence_trace.csv")
-    fullfile(runFolder, "reports", "image", "bler_vs_snr.png")
-    fullfile(runFolder, "reports", "image", "bler_vs_sinr.png")
-    fullfile(runFolder, "reports", "image", "throughput_vs_snr.png")
-    fullfile(runFolder, "reports", "image", "nmse_vs_snr.png")
-    fullfile(runFolder, "reports", "image", "ber_vs_sinr.png")
-    fullfile(runFolder, "reports", "image", "ber_vs_bler.png")
-    fullfile(runFolder, "reports", "image", "ber_vs_ecno.png")
-    fullfile(runFolder, "reports", "image", "bler_vs_ecno.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_snr_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "bler_vs_sinr_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "throughput_vs_snr_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "nmse_vs_snr_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "ber_vs_sinr_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "ber_vs_bler_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "ber_vs_ecno_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "bler_vs_ecno_unavailable.svg")
     fullfile(runFolder, "reports", "image", "gains_losses_waterfall.png")
-    fullfile(runFolder, "reports", "image", "papr_ccdf.png")
+    fullfile(runFolder, "reports", "image", "papr_ccdf_unavailable.svg")
     fullfile(runFolder, "reports", "image", "latency_cdf.png")
-    fullfile(runFolder, "reports", "image", "access_delay_cdf.png")
-    fullfile(runFolder, "reports", "image", "energy_vs_throughput.png")
+    fullfile(runFolder, "reports", "image", "access_delay_cdf_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "energy_vs_throughput_unavailable.svg")
     fullfile(runFolder, "reports", "image", "complexity_vs_gain.png")
     fullfile(runFolder, "reports", "image", "equalized_constellations.png")
     fullfile(runFolder, "reports", "image", "llr_histograms.png")
     fullfile(runFolder, "reports", "image", "cfo_to_tracking_traces.png")
     fullfile(runFolder, "reports", "image", "prach_correlation_traces.png")
-    fullfile(runFolder, "reports", "image", "ai_confidence_trace.png")
-    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi.png")
-    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi.png")
-    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi.png")
+    fullfile(runFolder, "reports", "image", "ai_confidence_trace_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi_unavailable.svg")
     fullfile(runFolder, "reports", "automatic_markdown_summary.md")
     fullfile(runFolder, "reports", "executive_summary.md")
     fullfile(runFolder, "reports", "technical_report.md")
@@ -103,6 +103,30 @@ mustExist = {
     };
 for i = 1:numel(mustExist)
     assert(exist(mustExist{i}, "file") == 2, "Missing expected LLS report artifact: %s", mustExist{i});
+end
+
+mustNotExist = {
+    fullfile(runFolder, "reports", "image", "bler_vs_snr.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_sinr.png")
+    fullfile(runFolder, "reports", "image", "throughput_vs_snr.png")
+    fullfile(runFolder, "reports", "image", "nmse_vs_snr.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_sinr.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_bler.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_ecno.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_ecno.png")
+    fullfile(runFolder, "reports", "image", "papr_ccdf.png")
+    fullfile(runFolder, "reports", "image", "latency_cdf_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "access_delay_cdf.png")
+    fullfile(runFolder, "reports", "image", "energy_vs_throughput.png")
+    fullfile(runFolder, "reports", "image", "prach_correlation_traces_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "ai_confidence_trace.png")
+    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi.png")
+    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi.png")
+    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi.png")
+    };
+for i = 1:numel(mustNotExist)
+    assert(exist(mustNotExist{i}, "file") ~= 2, ...
+        "Strict visual artifact gate must not leave stale normal PNG/SVG for suppressed plot: %s", mustNotExist{i});
 end
 
 catalogPath = fullfile(pwd, "simulator", "configs", "defaults", "lls_result_output_catalog.yaml");
@@ -632,12 +656,12 @@ assert(localCoverageAvailable(coverage, "curves_energy_vs_throughput"), ...
     "Aggregated reporting coverage must mark energy-vs-throughput as available.");
 assert(localCoverageAvailable(coverage, "executive_one_page_summary"), ...
     "Aggregated reporting coverage must mark the executive summary as available.");
-assert(localCoverageAvailable(coverage, "heatmaps_band_feature_kpi"), ...
-    "Aggregated reporting coverage must mark band/feature/KPI heatmaps as available.");
-assert(localCoverageAvailable(coverage, "heatmaps_impairment_kpi"), ...
-    "Aggregated reporting coverage must mark impairment/KPI heatmaps as available.");
-assert(localCoverageAvailable(coverage, "heatmaps_beam_rank_trp_kpi"), ...
-    "Aggregated reporting coverage must mark beam/rank/TRP heatmaps as available.");
+assert(localCoverageUnavailable(coverage, "heatmaps_band_feature_kpi"), ...
+    "Aggregated reporting coverage must mark band/feature/KPI heatmaps unavailable when strict visual source validation suppresses the heatmap.");
+assert(localCoverageUnavailable(coverage, "heatmaps_impairment_kpi"), ...
+    "Aggregated reporting coverage must mark impairment/KPI heatmaps unavailable when strict visual source validation suppresses the heatmap.");
+assert(localCoverageUnavailable(coverage, "heatmaps_beam_rank_trp_kpi"), ...
+    "Aggregated reporting coverage must mark beam/rank/TRP heatmaps unavailable when strict visual source validation suppresses the heatmap.");
 assert(localCoverageAvailable(coverage, "runtime_per_block"), ...
     "Complexity coverage must mark runtime-per-block reporting as available.");
 assert(localCoverageAvailable(coverage, "peak_memory"), ...

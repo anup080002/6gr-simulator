@@ -32,6 +32,64 @@ def read_audit_codes(path: Path) -> set[str]:
     return codes
 
 
+def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "reports" / "image"
+    csv_dir = run / "reports" / "csv"
+    image_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+
+    unavailable_svg = "<svg xmlns='http://www.w3.org/2000/svg'><text>Unavailable</text></svg>"
+    (image_dir / "prach_correlation_traces_unavailable.svg").write_text(unavailable_svg, encoding="utf-8")
+
+    write_csv(
+        csv_dir / "plot_manifest.csv",
+        [
+            "PlotId",
+            "ImagePath",
+            "SourceCSV",
+            "XVariable",
+            "YVariables",
+            "PlotType",
+            "PlotRenderStatus",
+            "VisualValidity",
+            "IsUnavailableCard",
+        ],
+        [
+            {
+                "PlotId": "prach_correlation_traces",
+                "ImagePath": "reports/image/prach_correlation_traces_unavailable.svg",
+                "SourceCSV": "reports/csv/prach_correlation_trace.csv",
+                "XVariable": "lag_samples",
+                "YVariables": "correlation_abs",
+                "PlotType": "trace",
+                "PlotRenderStatus": "rendered_unavailable_card",
+                "VisualValidity": "unavailable",
+                "IsUnavailableCard": "true",
+            },
+        ],
+    )
+    write_csv(
+        csv_dir / "prach_correlation_trace.csv",
+        ["truth_status", "Reason"],
+        [{"truth_status": "unavailable", "Reason": "PRACH trace not produced by this run"}],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    codes = read_audit_codes(csv_dir / "visual_artifact_audit.csv")
+    assert "plot_source_x_column_missing" not in codes
+    assert "plot_source_y_column_missing" not in codes
+    assert "plot_source_forbidden_truth_status" not in codes
+
+
 def test_visual_artifact_audit_rejects_negative_fixture(tmp_path: Path) -> None:
     run = tmp_path / "run"
     image_dir = run / "reports" / "image"

@@ -6149,6 +6149,7 @@ end
 function localPlotLatencyCDFOrPlaceholder(pathOut, ctx)
 series = localLatencyCDFFigureSeries(ctx);
 if ~isempty(series)
+    localWriteLatencyCDFContractSource(ctx, series);
     localExportLatencySemanticsCDFFigure(pathOut, series);
     return;
 end
@@ -7103,6 +7104,49 @@ series = localAppendLatencySeries(series, "Radio observation (AirInterfaceObserv
 series = localAppendLatencySeries(series, "Procedure delay (ProcedureDelay_ms)", localProcedureDelaySamplesForLatencyCDF(ctx));
 series = localAppendLatencySeries(series, "Compute runtime (ComputeLatency_ms)", ...
     localCollectFiniteColumns({ctx.Tables.DL, ctx.Tables.UL, ctx.Tables.PDCCH, ctx.Tables.PBCH, ctx.Tables.PRACH, ctx.Tables.SRS, ctx.Tables.TRS}, "ComputeLatency_ms"));
+end
+
+function localWriteLatencyCDFContractSource(ctx, series)
+if isempty(series)
+    return;
+end
+T = localBuildLatencyCDFContractSourceTable(series);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "latency_cdf_plot.csv"), T);
+end
+
+function T = localBuildLatencyCDFContractSourceTable(series)
+rows = repmat(struct( ...
+    "latency_ms", NaN, ...
+    "cdf_probability", NaN, ...
+    "latency_series", "", ...
+    "source_artifact_ref", "reports/csv/table_latency.csv", ...
+    "latency_value_definition", "empirical CDF from real latency rows", ...
+    "truth_status", "real_lls_evidence", ...
+    "curve_construction", "empirical_cdf"), 0, 1);
+for i = 1:numel(series)
+    samples = sort(double(series(i).Samples(:)));
+    samples = samples(isfinite(samples));
+    n = numel(samples);
+    for k = 1:n
+        rows(end + 1, 1) = struct( ...
+            "latency_ms", double(samples(k)), ...
+            "cdf_probability", double(k) / max(double(n), 1), ...
+            "latency_series", string(series(i).Label), ...
+            "source_artifact_ref", "reports/csv/table_latency.csv", ...
+            "latency_value_definition", "empirical CDF from real latency rows", ...
+            "truth_status", "real_lls_evidence", ...
+            "curve_construction", "empirical_cdf"); %#ok<AGROW>
+    end
+end
+if isempty(rows)
+    T = table();
+else
+    T = struct2table(rows, "AsArray", true);
+end
 end
 
 function series = localAppendLatencySeries(series, label, samples)

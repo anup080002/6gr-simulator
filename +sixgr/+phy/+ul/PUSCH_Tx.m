@@ -11,6 +11,7 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     "Carrier"            : nrCarrierConfig override
 %     "PUSCH"              : nrPUSCHConfig override
 %     "TransportBlockBits" : column vector of bits (int8/double/logical)
+%     "TransportBlockSizeOverride" : stored HARQ TB size to preserve during replay
 %     "RV"                 : redundancy version (0..3)
 %     "TargetCodeRate"     : code rate (0..1)
 %     "XOverhead"          : xOverhead for nrTBS (default 0)
@@ -39,6 +40,7 @@ ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PUSCH', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('TransportBlockBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+ip.addParameter('TransportBlockSizeOverride', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
 ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
@@ -105,8 +107,15 @@ if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
         'PUSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
         round(double(nPRB)), mat2str(localResolveSymbolAllocation(pusch)), char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
 end
-trBlkSize = nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
-trBlkSize = double(trBlkSize);
+scheduledTrBlkSize = double(nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead));
+trBlkSize = scheduledTrBlkSize;
+if ~isempty(opt.TransportBlockSizeOverride)
+    replayTrBlkSize = round(double(opt.TransportBlockSizeOverride));
+    if ~(isfinite(replayTrBlkSize) && replayTrBlkSize > 0)
+        error('PUSCH_Tx:BadReplayTBSize', 'TransportBlockSizeOverride must be a positive finite scalar.');
+    end
+    trBlkSize = replayTrBlkSize;
+end
 
 % Transport block bits
 if isempty(opt.TransportBlockBits)
@@ -241,6 +250,12 @@ end
 tx = struct();
 tx.Waveform = txWaveform;
 tx.TransportBlockSize = trBlkSize;
+tx.ScheduledTransportBlockSize = scheduledTrBlkSize;
+if isempty(opt.TransportBlockSizeOverride)
+    tx.TransportBlockSizeSource = 'nrTBS_from_current_allocation';
+else
+    tx.TransportBlockSizeSource = 'harq_replay_stored_transport_block';
+end
 tx.RV = rv;
 tx.TargetCodeRate = targetCodeRate;
 tx.Carrier = carrier;

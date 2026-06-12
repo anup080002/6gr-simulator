@@ -1845,6 +1845,9 @@ end
 function names = localSemanticBaseNames(fieldName)
 name = string(fieldName);
 names = name;
+if strcmpi(name, "WidebandCQI")
+    names(end + 1, 1) = "CQI";
+end
 stripped = string(regexprep(char(name), '_(dB|Hz|kHz|MHz|Mbps|ms|s|bits|bytes)$', '', 'ignorecase'));
 if strlength(stripped) > 0 && stripped ~= name
     names(end + 1, 1) = stripped;
@@ -1894,6 +1897,16 @@ if string(spec.FieldName) == "ConfiguredSNR_dB" && strlength(string(row.Observed
     row.ValueStatus = "NOT_AVAILABLE";
     row.ValueDefinition = "Configured SNR is intentionally unavailable when receiver thermal-noise/noise-figure mode is authoritative.";
     row.NAReason = "configured_snr_not_used_when_receiver_noise_mode_active";
+end
+
+if string(spec.FieldName) == "WidebandCQI" && strlength(string(row.ObservedValue)) == 0
+    cqiSource = lower(strtrim(string(row.ValueSource)));
+    if contains(cqiSource, "unavailable") || contains(cqiSource, "out_of_range") || contains(cqiSource, "no_current_receiver_cqi")
+        row.ValueRole = "unavailable";
+        row.ValueStatus = "NOT_AVAILABLE";
+        row.ValueDefinition = "Wideband CQI is only exported as a finite 1..15 quality report; measured out-of-range CQI 0 remains unavailable in primary trial tables.";
+        row.NAReason = "measured_cqi_out_of_range_or_not_reportable";
+    end
 end
 end
 

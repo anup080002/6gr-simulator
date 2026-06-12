@@ -1431,6 +1431,9 @@ outerFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag"
 fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false",""];
 policyUnspecified = strlength(dlPolicy) == 0 && strlength(ulPolicy) == 0;
 policyEnabled = ~ismember(mode, fixedTokens) && (policyUnspecified || ~ismember(dlPolicy, fixedTokens) || ~ismember(ulPolicy, fixedTokens));
+if any(deltaPolicy == ["","baseline","default","auto"]) && outerFlag && policyEnabled
+    deltaPolicy = "ack_nack_olla";
+end
 tf = outerFlag && policyEnabled && any(deltaPolicy == ["olla","outer_loop","outerloop","ack_nack","ack_nack_olla"]);
 end
 

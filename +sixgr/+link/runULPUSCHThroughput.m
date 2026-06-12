@@ -182,6 +182,11 @@ trialCRI = NaN(numFrames,1);
 trialLinkAdaptationMode = strings(numFrames,1);
 trialActualMCSSelectionMode = strings(numFrames,1);
 trialSchedulerGrantMCSSelectionMode = strings(numFrames,1);
+trialOuterLoopEnabled = false(numFrames,1);
+trialOuterLoopAppliedFromGrant = false(numFrames,1);
+trialOLLADeltaMCS = NaN(numFrames,1);
+trialOLLAUpdateCount = NaN(numFrames,1);
+trialOLLAState = strings(numFrames,1);
 trialCQITable = strings(numFrames,1);
 trialMCSTable = strings(numFrames,1);
 trialCQIDerivedModulation = strings(numFrames,1);
@@ -473,6 +478,11 @@ for n = 1:numFrames
         end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
+        trialOuterLoopEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopEnabled", false));
+        trialOuterLoopAppliedFromGrant(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopApplied", false));
+        trialOLLADeltaMCS(n) = double(sixgr.util.structGet(grantSnapshot, "OLLADeltaMCS", NaN));
+        trialOLLAUpdateCount(n) = double(sixgr.util.structGet(grantSnapshot, "OLLAUpdateCount", NaN));
+        trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
         trialPBCHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PBCHGatingActive", false));
         trialPRACHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PRACHGatingActive", false));
         trialPDCCHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHGatingActive", false));
@@ -759,14 +769,8 @@ for n = 1:numFrames
                 trialCQISource(n) = "ul_link_state_reference_signal_cqi";
             end
         end
-        if schedulerDrivenGrant && isfinite(grantCQIUsed)
-            grantCQI = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
-            if ~isfinite(trialCQI(n)) && isfinite(grantCQI)
-                trialCQI(n) = grantCQI;
-                trialCQISource(n) = "scheduler_grant_cqi_used_no_current_receiver_cqi";
-            elseif ~isfinite(trialCQI(n))
-                trialCQISource(n) = "current_receiver_cqi_unavailable_scheduler_grant_cqi_used_out_of_range";
-            end
+        if schedulerDrivenGrant && ~isfinite(trialCQI(n))
+            trialCQISource(n) = "current_receiver_cqi_unavailable_no_scheduler_grant_backfill";
         end
         trialRI(n) = metrics.RI;
         trialPMI(n) = metrics.PMI;
@@ -1316,6 +1320,11 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.PostEqSINRNAReason = trialPostEqSINRNAReason(idx);
         T.PostEqSINRPerLayer_dB = trialPostEqSINRPerLayer(idx);
         T.CQISource = trialCQISource(idx);
+        T.OuterLoopEnabled = trialOuterLoopEnabled(idx);
+        T.OuterLoopApplied = trialOuterLoopAppliedFromGrant(idx);
+        T.OLLADeltaMCS = trialOLLADeltaMCS(idx);
+        T.OLLAUpdateCount = trialOLLAUpdateCount(idx);
+        T.OLLAState = trialOLLAState(idx);
         T.DecoderTruthProxySINR_dB = trialDecoderTruthProxySINR(idx);
         T.DecoderTruthProxySINRSource = trialDecoderTruthProxySINRSource(idx);
         T.SINRValueRole = trialSINRValueRole(idx);
@@ -1654,19 +1663,27 @@ innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLo
 linkModeColumn = lower(string(localOptionalColumn(T, "LinkAdaptationMode", configuredLinkMode)));
 schedulerReplayMask = linkModeColumn == "scheduler_grant_replay";
 linkAdaptationRuntimeMask = ~schedulerReplayMask & ~ismember(lower(string(configuredLinkMode)), ["fixed","disabled","none","off","false",""]);
+existingOuterLoopEnabled = logical(localOptionalColumn(T, "OuterLoopEnabled", outerLoopEnabled));
 existingOuterLoopApplied = logical(localOptionalColumn(T, "OuterLoopApplied", false));
 existingInnerLoopApplied = logical(localOptionalColumn(T, "InnerLoopApplied", false));
-T.OuterLoopEnabled = repmat(outerLoopEnabled, n, 1);
+existingOLLADeltaMCS = double(localOptionalColumn(T, "OLLADeltaMCS", NaN));
+existingOLLAUpdateCount = double(localOptionalColumn(T, "OLLAUpdateCount", NaN));
+existingOLLAState = string(localOptionalColumn(T, "OLLAState", ""));
+T.OuterLoopEnabled = repmat(outerLoopEnabled, n, 1) | existingOuterLoopEnabled;
 T.InnerLoopEnabled = repmat(innerLoopEnabled, n, 1);
 T.OuterLoopApplied = (T.OuterLoopEnabled & schedulerReplayMask & existingOuterLoopApplied) | ...
     (T.OuterLoopEnabled & linkAdaptationRuntimeMask & logical(localOptionalColumn(T, "LinkAdaptationScheduled", false)));
 T.InnerLoopApplied = (T.InnerLoopEnabled & schedulerReplayMask & existingInnerLoopApplied) | ...
     (T.InnerLoopEnabled & linkAdaptationRuntimeMask & ...
     (logical(localOptionalColumn(T, "LinkAdaptationApplied", false)) | logical(localOptionalColumn(T, "LinkAdaptationScheduled", false))));
+T.OLLADeltaMCS = existingOLLADeltaMCS;
+T.OLLAUpdateCount = existingOLLAUpdateCount;
 T.OLLAState = repmat("disabled", n, 1);
-T.OLLAState(T.OuterLoopEnabled & schedulerReplayMask) = "configured_enabled_not_applied_scheduler_grant_replay";
+T.OLLAState(T.OuterLoopEnabled & schedulerReplayMask) = "configured_enabled_waiting_for_scheduler_ack_nack_feedback";
 T.OLLAState(T.OuterLoopEnabled & linkAdaptationRuntimeMask & ~T.OuterLoopApplied) = "configured_enabled_waiting_for_runtime_feedback";
 T.OLLAState(T.OuterLoopApplied) = "applied_runtime_link_adaptation_decision";
+preserveStateMask = strlength(strtrim(existingOLLAState)) > 0 & lower(strtrim(existingOLLAState)) ~= "disabled";
+T.OLLAState(preserveStateMask) = existingOLLAState(preserveStateMask);
 T.CalibrationProfile = repmat(localResolveLinkAdaptationCalibrationProfile(cfg, direction), n, 1);
 T.RequestedOperatingPointSource = localResolveOperatingPointSourceColumn(configuredSelectionMode, configuredLinkMode);
 T.SchedulerGrantMCSSelectionMode = string(localOptionalColumn(T, "SchedulerGrantMCSSelectionMode", ""));
@@ -3511,10 +3528,11 @@ end
 
 function tf = localPostEqSINRIsSchedulerEligible(source, role, status)
 token = lower(strjoin([string(source), string(role), string(status)], " "));
-blocked = ["receiverhest", "receiver_hest", "hest", "pilot", ...
+words = string(regexp(char(token), '[a-z0-9]+', 'match'));
+blocked = ["receiverhest", "receiver_hest", "pilot", ...
     "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
     "unavailable", "failed", "rejected"];
-tf = contains(token, "post_equalization") && ~any(contains(token, blocked));
+tf = contains(token, "post_equalization") && ~any(words == "hest") && ~any(contains(token, blocked));
 end
 
 function tf = localULReferenceSINRIsReceiverMeasured(source, role, status)
@@ -4387,7 +4405,9 @@ grant = struct( ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", puschLayers)), ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", NaN)), ...
     "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)));
-preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode","GrantReason","Frame","Slot","HARQ", ...
+preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode", ...
+    "OuterLoopEnabled","OuterLoopApplied","OLLADeltaMCS","OLLAUpdateCount","OLLAState", ...
+    "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ", ...
     "MCSIndexAuthority","GrantOperatingPointSource", ...
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk","GrantControlState", ...
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
@@ -4440,11 +4460,16 @@ pusch = sixgr.util.structGet(grant, "PUSCHConfig", []);
 targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
 xOverhead = double(sixgr.util.structGet(grant, "XOverhead", NaN));
 numTxAnt = double(sixgr.util.structGet(grant, "NumTxAnt", NaN));
+storedTBSize = double(sixgr.util.structGet(grant, "TBSBits", ...
+    sixgr.util.structGet(grant, "TransportBlockSize", NaN)));
 if ~isempty(carrier)
     txArgs = [txArgs {"Carrier", carrier}]; %#ok<AGROW>
 end
 if ~isempty(pusch)
     txArgs = [txArgs {"PUSCH", pusch}]; %#ok<AGROW>
+end
+if isfinite(storedTBSize) && storedTBSize > 0
+    txArgs = [txArgs {"TransportBlockSizeOverride", round(storedTBSize)}]; %#ok<AGROW>
 end
 if isfinite(targetCodeRate) && targetCodeRate > 0
     txArgs = [txArgs {"TargetCodeRate", targetCodeRate}]; %#ok<AGROW>
