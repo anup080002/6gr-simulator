@@ -61,6 +61,7 @@ dlTrialsPath = fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv");
 ulTrialsPath = fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv");
 dlTrials = localReadTable(dlTrialsPath);
 ulTrials = localReadTable(ulTrialsPath);
+opSummary = struct();
 if ~isControlOnly
     try
         opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
@@ -278,13 +279,29 @@ if double(hiddenDefaultStats.DangerousHiddenFallbackCount) > 0
 end
 
 proxyStats = localProxySummaryStats(runtimeMode);
+issueRegistryStats = localIssueRegistryStats(layout);
+if strictTruthRequired && double(issueRegistryStats.BlockingIssueCount) > 0
+    verdict = localAddFailure(verdict, ...
+        "active_result_issue_registry_blockers=" + string(issueRegistryStats.BlockingIssueCount) + ...
+        ";critical=" + string(issueRegistryStats.ActiveCriticalCount) + ...
+        ";high=" + string(issueRegistryStats.ActiveHighCount) + ...
+        ";medium=" + string(issueRegistryStats.ActiveMediumCount), ...
+        "evidence");
+end
+
+[scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
+for ii = 1:numel(scenarioObjectiveFailures)
+    verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
+end
 
 verdict.CheckDetails = struct( ...
     "RawLifecycle", rawLifecycleStats, ...
     "FER", ferStats, ...
     "AMC", amcStats, ...
     "HiddenDefaults", hiddenDefaultStats, ...
-    "Proxy", proxyStats);
+    "Proxy", proxyStats, ...
+    "IssueRegistry", issueRegistryStats, ...
+    "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
 verdict.RuntimeTruthContractOk = verdict.Ok;
@@ -806,6 +823,130 @@ stats.NoProxyPHYOk = stats.ProxyPHYActiveRows == 0 && stats.FallbackUsedRows == 
 stats.SyntheticBLERFallbackOk = stats.SyntheticBLERFallbackTokenRows == 0;
 end
 
+function stats = localIssueRegistryStats(layout)
+stats = struct( ...
+    "RegistryRows", 0, ...
+    "BlockingIssueCount", 0, ...
+    "ActiveCriticalCount", 0, ...
+    "ActiveHighCount", 0, ...
+    "ActiveMediumCount", 0, ...
+    "ActiveLowCount", 0, ...
+    "BlockingIssueIds", strings(0, 1), ...
+    "IssueRegistryStatus", "missing");
+T = localReadTable(fullfile(layout.ReportCSVDir, "result_issue_registry.csv"));
+if isempty(T) || height(T) == 0
+    return;
+end
+stats.RegistryRows = height(T);
+severity = lower(strtrim(string(localOptionalColumn(T, "severity", ""))));
+if all(strlength(severity) == 0)
+    severity = lower(strtrim(string(localOptionalColumn(T, "Severity", ""))));
+end
+status = lower(strtrim(string(localOptionalColumn(T, "issue_status", ""))));
+if all(strlength(status) == 0)
+    status = lower(strtrim(string(localOptionalColumn(T, "fix_status", ""))));
+end
+if all(strlength(status) == 0)
+    status = lower(strtrim(string(localOptionalColumn(T, "status", ""))));
+end
+issueIDs = string(localOptionalColumn(T, "issue_id", ""));
+if all(strlength(strtrim(issueIDs)) == 0)
+    issueIDs = string(localOptionalColumn(T, "IssueID", ""));
+end
+
+active = localActiveIssueStatusMask(status);
+critical = severity == "critical";
+high = severity == "high";
+medium = severity == "medium";
+low = severity == "low";
+blocking = active & (critical | high | medium);
+stats.ActiveCriticalCount = sum(active & critical);
+stats.ActiveHighCount = sum(active & high);
+stats.ActiveMediumCount = sum(active & medium);
+stats.ActiveLowCount = sum(active & low);
+stats.BlockingIssueCount = sum(blocking);
+stats.BlockingIssueIds = unique(strtrim(issueIDs(blocking)), "stable");
+stats.BlockingIssueIds = stats.BlockingIssueIds(strlength(stats.BlockingIssueIds) > 0);
+if stats.BlockingIssueCount > 0
+    stats.IssueRegistryStatus = "active_mandatory_blockers_present";
+else
+    stats.IssueRegistryStatus = "no_active_mandatory_blockers";
+end
+end
+
+function mask = localActiveIssueStatusMask(status)
+status = lower(strtrim(string(status(:))));
+status(ismissing(status)) = "";
+resolved = ["", "ok", "fixed", "verified", "closed", "resolved", "not_applicable", ...
+    "waived_non_blocking", "non_blocking", "informational", "info"];
+mask = ~ismember(status, resolved);
+end
+
+function [stats, failures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy)
+stats = struct( ...
+    "Applicability", "not_applicable", ...
+    "FixedOperatingPoint", false, ...
+    "RequiredConfiguredMatchRate", NaN, ...
+    "DLConfiguredMatchRate", NaN, ...
+    "ULConfiguredMatchRate", NaN, ...
+    "ScenarioObjectiveOk", true);
+failures = strings(0, 1);
+if ~strictTruthRequired || isControlOnly || isPDSCHStudy || isempty(opSummary)
+    return;
+end
+[isFixed, fixedReason] = localIsFixedOperatingPointScenario(scfg, cfg);
+stats.FixedOperatingPoint = isFixed;
+stats.Applicability = string(ternary(isFixed, "fixed_operating_point", "adaptive_or_not_fixed"));
+if ~isFixed
+    return;
+end
+threshold = localScenarioGetDouble(scfg, cfg, "scenario.required_configured_match_rate", NaN);
+if isnan(threshold)
+    threshold = localScenarioGetDouble(scfg, cfg, "validation.required_configured_match_rate", NaN);
+end
+if isnan(threshold)
+    threshold = 0.999;
+end
+stats.RequiredConfiguredMatchRate = threshold;
+stats.DLConfiguredMatchRate = localGetNestedDouble(opSummary, ["DL", "ConfiguredMatchRate"], NaN);
+stats.ULConfiguredMatchRate = localGetNestedDouble(opSummary, ["UL", "ConfiguredMatchRate"], NaN);
+
+for direction = ["DL", "UL"]
+    rate = double(stats.(direction + "ConfiguredMatchRate"));
+    sampleCount = localGetNestedDouble(opSummary, [direction, "SampleCount"], 0);
+    if sampleCount > 0 && isfinite(rate) && rate + eps < threshold
+        failures(end + 1, 1) = lower(direction) + "_configured_effective_match_rate_below_required:" + ...
+            "rate=" + string(sprintf("%.6g", rate)) + ...
+            ";required=" + string(sprintf("%.6g", threshold)) + ...
+            ";policy=" + fixedReason;
+    end
+end
+failures = failures(strlength(failures) > 0);
+stats.ScenarioObjectiveOk = isempty(failures);
+end
+
+function [tf, reason] = localIsFixedOperatingPointScenario(scfg, cfg)
+tokens = lower(strtrim(string([ ...
+    localScenarioGet(scfg, cfg, "link_adaptation.fixed_or_amc", ""), ...
+    localScenarioGet(scfg, cfg, "phy.linkAdaptation.mode", ""), ...
+    localScenarioGet(scfg, cfg, "link_adaptation.pdsch_link_adaptation_policy", ""), ...
+    localScenarioGet(scfg, cfg, "link_adaptation.pusch_link_adaptation_policy", ""), ...
+    localScenarioGet(scfg, cfg, "phy.linkAdaptation.dlPolicy", ""), ...
+    localScenarioGet(scfg, cfg, "phy.linkAdaptation.ulPolicy", ""), ...
+    localScenarioGet(scfg, cfg, "mimo.rank_adaptation_policy", ""), ...
+    localScenarioGet(scfg, cfg, "phy.linkAdaptation.rankPolicy", "") ...
+    ])));
+tokens = tokens(strlength(tokens) > 0);
+fixedTokens = ["fixed", "fixed_mcs", "configured_fixed", "disabled", "off", "none", "false"];
+adaptiveTokens = ["amc", "adaptive", "cqi", "cqi_driven", "baseline", "actual_bler_based"];
+tf = any(ismember(tokens, fixedTokens)) && ~any(ismember(tokens, adaptiveTokens));
+if tf
+    reason = strjoin(tokens, "|");
+else
+    reason = strjoin(tokens, "|");
+end
+end
+
 function count = localTokenRowCount(T, columns, tokens)
 count = 0;
 if isempty(T) || height(T) == 0
@@ -834,6 +975,8 @@ fer = sixgr.util.structGet(details, "FER", struct());
 amc = sixgr.util.structGet(details, "AMC", struct());
 hidden = sixgr.util.structGet(details, "HiddenDefaults", struct());
 proxy = sixgr.util.structGet(details, "Proxy", struct());
+issueRegistry = sixgr.util.structGet(details, "IssueRegistry", struct());
+scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
 [scenarioID, runTag, configHash] = localTruthMetadata(layout, scfg, cfg);
@@ -866,6 +1009,17 @@ summaryT = table( ...
     string(sixgr.util.structGet(hidden, "HiddenDefaultAuditStatus", "")), ...
     double(sixgr.util.structGet(hidden, "HistoricalDangerousHiddenFallbackRows", NaN)), ...
     double(sixgr.util.structGet(hidden, "DangerousHiddenFallbackCount", NaN)), ...
+    string(sixgr.util.structGet(issueRegistry, "IssueRegistryStatus", "")), ...
+    double(sixgr.util.structGet(issueRegistry, "RegistryRows", NaN)), ...
+    double(sixgr.util.structGet(issueRegistry, "BlockingIssueCount", NaN)), ...
+    double(sixgr.util.structGet(issueRegistry, "ActiveCriticalCount", NaN)), ...
+    double(sixgr.util.structGet(issueRegistry, "ActiveHighCount", NaN)), ...
+    double(sixgr.util.structGet(issueRegistry, "ActiveMediumCount", NaN)), ...
+    logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
+    string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
+    double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
+    double(sixgr.util.structGet(scenarioObjective, "DLConfiguredMatchRate", NaN)), ...
+    double(sixgr.util.structGet(scenarioObjective, "ULConfiguredMatchRate", NaN)), ...
     string(strjoin(failures, "; ")), ...
     string(localRelativePath(runFolder, summaryPath)), ...
     string(localRelativePath(runFolder, failuresPath)), ...
@@ -875,6 +1029,8 @@ summaryT = table( ...
     'NoProxyPHYOk','SyntheticBLERFallbackOk','RawLifecycleOk','DLFinalizedRows','ULFinalizedRows', ...
     'DLPartialRows','ULPartialRows','FERRunScopeIdentityOk','FERRunScopeIdentityLeakCount', ...
     'AMCNamingOk','AMCPolicyBooleanCollapseCount','HiddenDefaultAuditStatus','HistoricalDangerousHiddenFallbackRows','DangerousHiddenFallbackCount', ...
+    'IssueRegistryStatus','IssueRegistryRows','ActiveMandatoryIssueCount','ActiveCriticalIssueCount','ActiveHighIssueCount','ActiveMediumIssueCount', ...
+    'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);
 
@@ -916,6 +1072,10 @@ function category = localClassifyFailure(failure)
 failure = lower(string(failure));
 if contains(failure, "proxy") || contains(failure, "fallback") || contains(failure, "abstract") || contains(failure, "bler")
     category = "proxy_or_fallback";
+elseif contains(failure, "result_issue_registry")
+    category = "active_issue_registry";
+elseif contains(failure, "configured_effective_match")
+    category = "scenario_objective";
 elseif contains(failure, "roundtrip") || contains(failure, "consistent")
     category = "roundtrip";
 elseif contains(failure, "artifact")

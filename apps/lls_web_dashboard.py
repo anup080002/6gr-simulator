@@ -27,8 +27,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-import mysql.connector
-from mysql.connector import pooling
+try:
+    import mysql.connector as mysql_connector
+    from mysql.connector import pooling as mysql_pooling
+    MYSQL_IMPORT_ERROR = ""
+except Exception as exc:  # pragma: no cover - exercised by import-shim regression tests
+    mysql_connector = None
+    mysql_pooling = None
+    MYSQL_IMPORT_ERROR = str(exc)
 import yaml
 
 import lls_output_contract as output_contract
@@ -116,7 +122,7 @@ OPEN_ACCESS_PROFILE = {
 }
 USER_PROFILES: dict[str, dict[str, Any]] = {}
 ACTIVE_SESSIONS: dict[str, dict[str, Any]] = {}
-DB_POOLS: dict[str, pooling.MySQLConnectionPool] = {}
+DB_POOLS: dict[str, object] = {}
 LIVE_PAYLOAD_CACHE: dict[int, dict[str, Any]] = {}
 CACHED_PAYLOAD_VERSION: dict[int, str] = {}
 SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
@@ -219,7 +225,36 @@ def load_dashboard_user_profiles() -> dict[str, dict[str, Any]]:
 USER_PROFILES = load_dashboard_user_profiles()
 
 
+class DashboardMySQLUnavailable(RuntimeError):
+    """Raised when a database-only operation is requested without MySQL support."""
+
+
+if mysql_connector is None:
+    MYSQL_CONNECTOR_ERRORS = (DashboardMySQLUnavailable,)
+    MYSQL_POOL_ERRORS = (DashboardMySQLUnavailable,)
+else:
+    MYSQL_CONNECTOR_ERRORS = (mysql_connector.Error, DashboardMySQLUnavailable)
+    MYSQL_POOL_ERRORS = (mysql_connector.errors.PoolError,)
+
+
+def mysql_dependency_available() -> tuple[bool, str]:
+    if mysql_connector is None or mysql_pooling is None:
+        reason = MYSQL_IMPORT_ERROR or "mysql-connector-python is not installed"
+        return False, reason
+    return True, "available"
+
+
+def require_mysql_connector() -> None:
+    ok, reason = mysql_dependency_available()
+    if not ok:
+        raise DashboardMySQLUnavailable(
+            "MySQL persistence is unavailable because mysql-connector-python could not be imported: "
+            + str(reason)
+        )
+
+
 def db_connection(database: str | None = MYSQL_DATABASE):
+    require_mysql_connector()
     pool_key = str(database or "__default__")
     kwargs: dict[str, Any] = {
         "host": MYSQL_HOST,
@@ -239,15 +274,15 @@ def db_connection(database: str | None = MYSQL_DATABASE):
             "pool_reset_session": True,
         })
         pool_name = re.sub(r"[^A-Za-z0-9_]+", "_", f"sixgr_{pool_key}")[:48]
-        pool = pooling.MySQLConnectionPool(pool_name=pool_name, **pool_kwargs)
+        pool = mysql_pooling.MySQLConnectionPool(pool_name=pool_name, **pool_kwargs)
         DB_POOLS[pool_key] = pool
     try:
         return pool.get_connection()
-    except mysql.connector.errors.PoolError:
+    except MYSQL_POOL_ERRORS:
         # The live dashboard can issue many nested metadata reads while users
         # poll /api/run/<id>/live in parallel. Fall back to a direct
         # connection instead of failing the whole request with a 500.
-        return mysql.connector.connect(**kwargs)
+        return mysql_connector.connect(**kwargs)
 
 
 def clear_dashboard_caches(run_id: int | None = None) -> None:
@@ -640,7 +675,7 @@ def mark_stale_running_runs() -> int:
         if count > 0:
             clear_dashboard_caches()
         return count
-    except mysql.connector.Error:
+    except MYSQL_CONNECTOR_ERRORS:
         return 0
 
 
@@ -3098,7 +3133,7 @@ def latest_run_id() -> int | None:
                 cur.execute("SELECT run_id FROM sim_runs ORDER BY run_id DESC LIMIT 1")
                 row = cur.fetchone()
                 return None if row is None else int(row["run_id"])
-    except mysql.connector.Error:
+    except MYSQL_CONNECTOR_ERRORS:
         return None
 
 
@@ -3110,7 +3145,7 @@ def quick_latest_run_id() -> int | None:
                 cur.execute("SELECT run_id FROM sim_runs ORDER BY run_id DESC LIMIT 1")
                 row = cur.fetchone()
                 return None if row is None else int(row["run_id"])
-    except mysql.connector.Error:
+    except MYSQL_CONNECTOR_ERRORS:
         return None
 
 
@@ -3243,7 +3278,7 @@ def fetch_runs(limit: int = 50, run_tag: str | None = None) -> list[dict[str, An
                 cur.execute(sql, tuple(params))
                 rows = [rowify(row) for row in cur.fetchall()]
                 return [repair_run_row_from_terminal_artifacts(row, persist=True)[0] for row in rows]
-    except mysql.connector.Error:
+    except MYSQL_CONNECTOR_ERRORS:
         return []
 
 
@@ -5795,7 +5830,7 @@ def clear_dashboard_storage() -> dict[str, int]:
             for table_name in ("sim_runs", "sim_artifacts", "sim_run_logs"):
                 try:
                     cur.execute(f"ALTER TABLE {table_name} AUTO_INCREMENT = 1")
-                except mysql.connector.Error:
+                except MYSQL_CONNECTOR_ERRORS:
                     pass
 
     def _clear_children(root: Path) -> int:

@@ -1,0 +1,21 @@
+# Standards Conformance Matrix
+
+This matrix separates implemented NR-like baseline behavior from partial or
+experimental study features. It must not be read as a claim of normative 6G
+conformance. Strict-anchor runs may pass only when every enabled mandatory row is
+`implemented`, proxy-free, and backed by the listed tests and artifacts.
+
+| Subsystem | Feature | Spec Reference | Supported Release/Profile | Implementation Files | Test Files | Result Artifacts | Status | Proxy Allowed? | Strict-Anchor Allowed? |
+|---|---|---|---|---|---|---|---|---|---|
+| PHY data DL | PDSCH modulation/coding/LDPC path | TS 38.211, TS 38.212, TS 38.214 | NR baseline/study | `+sixgr/+phy/+dl/PDSCH_Tx.m`, `+sixgr/+phy/+dl/PDSCH_Rx.m` | `tests/testLLS_DL.m`, `tests/testPDSCH6GR.m` | `air_interface/csv/dl_pdsch_trials.csv` | partial | no | no until raw BLER/BER and MCS/rank objectives pass |
+| PHY data UL | PUSCH modulation/coding/LDPC path | TS 38.211, TS 38.212, TS 38.214 | NR baseline/study | `+sixgr/+phy/+ul/PUSCH_Tx.m`, `+sixgr/+phy/+ul/PUSCH_Rx.m` | `tests/testLLS_UL.m`, `tests/testPostEqSINR.m` | `air_interface/csv/ul_pusch_trials.csv` | partial | no | no until post-eq SINR and goodput consistency are verified |
+| Control DL | PDCCH blind detection | TS 38.211, TS 38.212, TS 38.213 | NR baseline/study | PDCCH runtime/export modules | `tests/testCSIRuntimeExecution.m` and planned negative-candidate tests | `air_interface/csv/pdcch_trials.csv` | partial | no | no until wrong-RNTI/no-signal false-alarm evidence exists |
+| Control UL | PUCCH/UCI feedback | TS 38.211, TS 38.212, TS 38.213 | NR baseline/study | `+sixgr/+phy/+ul/PUCCH_Rx.m`, UCI scheduling modules | `tests/testLLSPUCCHWaveformFeedback.m` | `air_interface/csv/pucch_trials.csv` | partial | no | no until scheduled PUCCH grants consume waveform trial rows |
+| Initial access | SSB/PBCH/MIB/SIB1 | TS 38.211, TS 38.212, TS 38.213, TS 38.331 | NR baseline/study | PBCH/SSB runtime modules; SIB1 ASN.1 waveform path pending | `tests/testTruthValidationControlCoverage.m` | `air_interface/csv/pbch_trials.csv`, SIB1 artifacts pending | unavailable | no | no |
+| Initial access | PRACH and 4-step RA | TS 38.211, TS 38.213, TS 38.321 | NR baseline/study | PRACH preamble detection path; full RA pending | `tests/testTruthValidationControlCoverage.m` | `control/csv/prach_trials.csv` | partial | no | no |
+| Reference signals | DMRS/CSI-RS/SRS/TRS/PTRS | TS 38.211, TS 38.214 | NR baseline/study | reference-signal runtime modules | `tests/test6GCSIReportingCoverage.m`, `tests/testTRSReferenceSignalExecution.m` | reference-signal CSVs | partial | no | no until coverage and attempted/available tracking gates pass |
+| MIMO and beam | Rank/layer/beam evidence | TS 38.214, TR 38.901 | NR advanced/study | MIMO, beam sweep, and channel modules | `tests/test6GLLSMultiUserBeamforming.m` | `beamforming/csv/*`, `air_interface/csv/*` | partial | no | no until configured claim matches runtime evidence |
+| Channel/RF | TDL/CDL/O2I/Doppler/impairments | TR 38.901 plus RF impairment models | NR baseline/study | channel and impairment modules | `tests/testConfig.m`, `tests/testLLS_ReferencePoints.m` | `rf/csv/*`, raw trial impairment fields | partial | no | no until configured impairments are actually applied or fail closed |
+| MAC/HARQ | Scheduling, HARQ, ACK/NACK timing | TS 38.321, TS 38.214 | NR baseline/study | scheduler, HARQ, grant exporters | `tests/testSchedulerGrantConsistency.m`, `tests/testLLSCoupledTruthHARQRoundTrip.m` | scheduler and HARQ CSVs | partial | no | no until retransmission and K1/K2 evidence is exercised |
+| Reporting | Truth/proxy/artifact contracts | Repo contract, no spec claim | Simulator conformance infrastructure | `+sixgr/+truth`, `+sixgr/+visual`, `tools/audit/*` | `tests/test_audit_lls_visual_artifacts.py`, `testLLSRuntimeTruthContractGates.m` | `truth_contract_summary.csv`, `visual_artifact_audit.csv` | implemented | no | yes |
+| Dashboard | Filesystem and optional MySQL browsing | Repo UI contract | Simulator operations | `apps/lls_web_dashboard.py`, `apps/start_lls_web_dashboard.ps1` | `tests/test_lls_dashboard_optional_mysql.py` | Web routes and DB artifacts | implemented for optional dependency handling | no | yes |

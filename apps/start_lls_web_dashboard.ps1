@@ -69,7 +69,7 @@ function Test-WebDashboardPython {
         [string[]]$Command
     )
 
-    $probe = "import sys; import yaml; import mysql.connector; print(sys.executable)"
+    $probe = "import sys; import yaml; print(sys.executable)"
     $prefix = @()
     if ($Command.Length -gt 1) {
         $prefix = $Command[1..($Command.Length - 1)]
@@ -116,18 +116,32 @@ foreach ($candidate in $pythonCandidates) {
 
 if (-not $selected) {
     $installHint = if ($env:PYTHON_EXE) {
-        "`"$($env:PYTHON_EXE)`" -m pip install mysql-connector-python pyyaml"
+        "`"$($env:PYTHON_EXE)`" -m pip install pyyaml"
     }
     elseif (Get-Command py -ErrorAction SilentlyContinue) {
-        "py -3 -m pip install mysql-connector-python pyyaml"
+        "py -3 -m pip install pyyaml"
     }
     else {
-        "python -m pip install mysql-connector-python pyyaml"
+        "python -m pip install pyyaml"
     }
-    throw "No Python runtime with both PyYAML and mysql-connector-python was found for the web dashboard. Install the dependencies with: $installHint"
+    throw "No Python runtime with PyYAML was found for the web dashboard. Install the dependency with: $installHint"
 }
 
 Write-Host "[lls-web] Python runtime: $($selected.Executable)"
+$selectedPrefix = @()
+if ($selected.Command.Length -gt 1) {
+    $selectedPrefix = $selected.Command[1..($selected.Command.Length - 1)]
+}
+$mysqlProbe = "import mysql.connector"
+try {
+    & $selected.Command[0] $selectedPrefix -c $mysqlProbe 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "mysql-connector-python is not installed for this Python runtime. The dashboard will still start in results-folder/filesystem mode; database-backed pages will report MySQL unavailable until installed."
+    }
+}
+catch {
+    Write-Warning "Could not probe mysql-connector-python. The dashboard will still start; database-backed pages may report MySQL unavailable."
+}
 Write-Host "[lls-web] MATLAB runtime: $matlabPath"
 Write-Host "[lls-web] Dashboard bind host: $BindHost"
 Write-Host "[lls-web] Dashboard port: $Port"
@@ -138,10 +152,6 @@ $env:SIXGR_DASHBOARD_PORT = [string]$Port
 $env:SIXGR_DASHBOARD_SERVER = $Server
 $env:SIXGR_DASHBOARD_THREADS = [string]$Threads
 Ensure-DashboardFirewallRule -LocalPort $Port
-$selectedPrefix = @()
-if ($selected.Command.Length -gt 1) {
-    $selectedPrefix = $selected.Command[1..($selected.Command.Length - 1)]
-}
 $dashboardArgs = @("--host", $BindHost, "--port", [string]$Port, "--server", $Server, "--threads", [string]$Threads)
 if (-not [string]::IsNullOrWhiteSpace($PublicHost)) {
     $dashboardArgs += @("--public-host", $PublicHost)
