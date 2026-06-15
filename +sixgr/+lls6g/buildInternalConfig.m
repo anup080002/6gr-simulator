@@ -313,7 +313,9 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.scs_kHz", ...
     double(localDefaultSSBSubcarrierSpacing_kHz(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz))));
 cfg.phy.pbch.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.mib.enable = logical(s.reference_signals.pbch_enabled);
-cfg.phy.sib1.enable = logical(s.reference_signals.pbch_enabled);
+cfg.phy.sib1.enable = logical(localGetNested(s, "phy.sib1.enable", ...
+    localGetNested(s, "signals_and_channels_common.sib1_related_pdcch.enable_flag", false) && ...
+    localGetNested(s, "signals_and_channels_common.sib1_related_pdsch.enable_flag", false)));
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
 cfg.phy.pdcch.searchSpaceType = char(localNormalizePDCCHSearchSpaceType(s.control.search_space_type));

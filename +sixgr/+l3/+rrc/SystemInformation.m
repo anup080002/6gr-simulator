@@ -1,15 +1,11 @@
 classdef SystemInformation < handle
 % sixgr.l3.rrc.SystemInformation
-% Stores and serves MIB/SIB1-like information for the simulator.
+% Stores and serves MIB/SIB1 information for the simulator.
 %
 % This class provides:
 %  - A single place to store serving cell MIB and SIB1 data
 %  - Accessors for PRACH-related parameters used by RACHProcedure
-%  - Encoder/decoder for SIB1/MIB as JSON bytes (simulation-friendly)
-%
-% Important:
-%   This is NOT a 3GPP ASN.1 implementation. It is a structured holder so
-%   your PHY -> RRC handover of decoded information is consistent.
+%  - Encoder/decoder for the repository's constrained SIB1 ASN.1 profile.
 %
 % This file is ASCII-only.
 
@@ -117,12 +113,21 @@ classdef SystemInformation < handle
                 bytes = uint8([]);
                 return;
             end
-            bytes = localEncode_(obj.SIB1);
+            sib1Tree = obj.SIB1;
+            if ~(isstruct(sib1Tree) && isfield(sib1Tree, "message"))
+                sib1Tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(obj.Cfg_, "CellID", obj.CellID);
+            end
+            [bits, ~] = sixgr.rrc.asn1.encodeSIB1UPER(sib1Tree);
+            bytes = localBitsToBytes_(bits);
         end
 
         function ok = decodeSIB1(obj, bytes)
             ok = false;
-            s = localDecode_(bytes);
+            try
+                [s, ~] = sixgr.rrc.asn1.decodeSIB1UPER(uint8(bytes(:)));
+            catch
+                s = struct();
+            end
             if isstruct(s) && ~isempty(fieldnames(s))
                 obj.SIB1 = s;
                 obj.HasSIB1 = true;
@@ -169,9 +174,9 @@ classdef SystemInformation < handle
 
     methods(Access=private)
         function loadDefaultsFromConfig_(obj, cfg)
-            % Provide a reasonable SIB1 default for simulation.
-            % This keeps attach/RACH usable even when you haven't implemented
-            % full SIB1 decoding/broadcast yet.
+            % Provide an abstract SI object for the attach state machine. Strict
+            % SIB1 conformance evidence must come from the PHY broadcast path,
+            % not from this holder.
             sib1 = struct();
             sib1.cellID = double(sixgr.util.structGet(cfg,'phy.carrier.NCellID',obj.CellID));
             sib1.plmn = sixgr.util.structGet(cfg,'rrc.sib1.plmn','00101');
@@ -235,4 +240,20 @@ function s = localDecode_(bytes)
     catch
         s = struct();
     end
+end
+
+function bytes = localBitsToBytes_(bits)
+bits = int8(bits(:));
+pad = mod(8 - mod(numel(bits), 8), 8);
+if pad > 0
+    bits = [bits; zeros(pad, 1, "int8")];
+end
+bytes = zeros(numel(bits)/8, 1, "uint8");
+for i = 1:numel(bytes)
+    v = uint8(0);
+    for b = 1:8
+        v = bitor(bitshift(v, 1), uint8(bits((i-1)*8+b) ~= 0));
+    end
+    bytes(i) = v;
+end
 end

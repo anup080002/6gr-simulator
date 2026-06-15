@@ -1,0 +1,40 @@
+function ok = testSIB1ArtifactSchemas()
+%TESTSIB1ARTIFACTSCHEMAS Mini-run must export SIB1 evidence artifacts.
+
+setup6GRSimToolkit("Verbose", false);
+if exist("nrWaveformGenerator", "file") ~= 2
+    ok = true;
+    return;
+end
+[supported, ~] = sixgr.phy.broadcast.siRNTIWaveformSupported();
+if ~supported
+    ok = true;
+    return;
+end
+runFolder = fullfile(tempdir, "sixgr_test_sib1_artifacts");
+if exist(runFolder, "dir")
+    rmdir(runFolder, "s");
+end
+out = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(runFolder, sixgr.config.defaultConfig());
+assert(logical(out.Ok), "SIB1 strict mini-run must pass before artifact schema checks.");
+required = [ ...
+    "control/csv/sib1_recovery_trials.csv"
+    "control/csv/sib1_pdcch_candidates.csv"
+    "control/csv/sib1_negative_trials.csv"
+    "control/csv/sib1_asn1_roundtrip.csv"
+    "air_interface/csv/pbch_mib_sib1_trials.csv"
+    "reports/csv/sib1_conformance_summary.csv"
+    "reports/json/sib1_tx_tree.json"
+    "reports/json/sib1_rx_tree.json"
+    "reports/binary/sib1_tx_payload.bin"
+    "reports/binary/sib1_rx_payload.bin"
+    "reports/figures/sib1_decode_flow.svg"];
+for i = 1:numel(required)
+    assert(exist(fullfile(runFolder, required(i)), "file") == 2, "Missing SIB1 artifact: " + required(i));
+end
+T = readtable(fullfile(runFolder, "control/csv/sib1_recovery_trials.csv"), "VariableNamingRule", "preserve");
+assert(height(T) == 1 && logical(T.StrictOk(1)), "SIB1 recovery CSV must contain one strict passing positive row.");
+N = readtable(fullfile(runFolder, "control/csv/sib1_negative_trials.csv"), "VariableNamingRule", "preserve");
+assert(height(N) >= 3 && ~any(logical(N.StrictOk)), "Negative SIB1 rows must not pass strict.");
+ok = true;
+end

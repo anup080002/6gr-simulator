@@ -289,6 +289,13 @@ if strictTruthRequired && double(issueRegistryStats.BlockingIssueCount) > 0
         "evidence");
 end
 
+sib1Stats = localSIB1EvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(sib1Stats.SIB1Required) && ~logical(sib1Stats.SIB1StrictOk)
+    verdict = localAddFailure(verdict, ...
+        "sib1_strict_waveform_evidence_missing_or_failing:" + string(sib1Stats.SIB1Status), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -301,6 +308,7 @@ verdict.CheckDetails = struct( ...
     "HiddenDefaults", hiddenDefaultStats, ...
     "Proxy", proxyStats, ...
     "IssueRegistry", issueRegistryStats, ...
+    "SIB1", sib1Stats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -882,6 +890,90 @@ resolved = ["", "ok", "fixed", "verified", "closed", "resolved", "not_applicable
 mask = ~ismember(status, resolved);
 end
 
+function stats = localSIB1EvidenceStats(layout, scfg, cfg)
+required = localScenarioGetBool(scfg, cfg, "phy.sib1.enable", false) || ...
+    localScenarioHasObjective(scfg, cfg, "cell_search_mib_sib1");
+summaryPath = fullfile(layout.ReportCSVDir, "sib1_conformance_summary.csv");
+recoveryPath = fullfile(layout.ControlCSVDir, "sib1_recovery_trials.csv");
+candidatePath = fullfile(layout.ControlCSVDir, "sib1_pdcch_candidates.csv");
+roundtripPath = fullfile(layout.ControlCSVDir, "sib1_asn1_roundtrip.csv");
+airPath = fullfile(layout.AirInterfaceCSVDir, "pbch_mib_sib1_trials.csv");
+stats = struct( ...
+    "SIB1Required", logical(required), ...
+    "SIB1StrictOk", false, ...
+    "SIB1Status", "not_required", ...
+    "SIB1RecoveryRows", 0, ...
+    "SIB1CandidateRows", 0, ...
+    "SIB1ASN1RoundtripRows", 0, ...
+    "SIB1AirInterfaceRows", 0);
+if ~required
+    return;
+end
+summaryT = localReadTable(summaryPath);
+recoveryT = localReadTable(recoveryPath);
+candidateT = localReadTable(candidatePath);
+roundtripT = localReadTable(roundtripPath);
+airT = localReadTable(airPath);
+stats.SIB1RecoveryRows = height(recoveryT);
+stats.SIB1CandidateRows = height(candidateT);
+stats.SIB1ASN1RoundtripRows = height(roundtripT);
+stats.SIB1AirInterfaceRows = height(airT);
+if isempty(summaryT) || height(summaryT) == 0
+    stats.SIB1Status = "missing_sib1_conformance_summary";
+    return;
+end
+strictOk = localHasColumn(summaryT, "StrictOk") && any(localColumnBool(summaryT, "StrictOk"));
+hashOk = localHasColumn(summaryT, "TxPayloadHash") && localHasColumn(summaryT, "RxPayloadHash") && ...
+    any(strlength(strtrim(string(summaryT.TxPayloadHash))) > 0 & ...
+    string(summaryT.TxPayloadHash) == string(summaryT.RxPayloadHash));
+treeOk = localHasColumn(summaryT, "TreeEqual") && any(localColumnBool(summaryT, "TreeEqual"));
+artifactsOk = stats.SIB1RecoveryRows > 0 && stats.SIB1CandidateRows > 0 && ...
+    stats.SIB1ASN1RoundtripRows > 0 && stats.SIB1AirInterfaceRows > 0;
+stats.SIB1StrictOk = strictOk && hashOk && treeOk && artifactsOk;
+if stats.SIB1StrictOk
+    stats.SIB1Status = "strict_sib1_waveform_evidence_present";
+else
+    stats.SIB1Status = "strict_sib1_waveform_evidence_incomplete";
+end
+end
+
+function tf = localScenarioHasObjective(scfg, cfg, objectiveToken)
+objectiveToken = lower(strtrim(string(objectiveToken)));
+values = strings(0, 1);
+for pathValue = ["scenario.bundle_anchor_cases", "scenario.objectives", "scenario_objectives", ...
+        "objectives", "meta.objectives", "validation.objectives"]
+    raw = localScenarioGet(scfg, cfg, pathValue, strings(0, 1));
+    values = [values; localStringList(raw)]; %#ok<AGROW>
+end
+if isempty(values)
+    tf = false;
+    return;
+end
+values = lower(strtrim(values(:)));
+tf = any(values == objectiveToken);
+end
+
+function values = localStringList(raw)
+if isempty(raw)
+    values = strings(0, 1);
+elseif isstring(raw)
+    values = raw(:);
+elseif ischar(raw)
+    values = string(raw);
+elseif iscell(raw)
+    values = strings(numel(raw), 1);
+    for ii = 1:numel(raw)
+        values(ii) = string(raw{ii});
+    end
+else
+    try
+        values = string(raw(:));
+    catch
+        values = strings(0, 1);
+    end
+end
+end
+
 function [stats, failures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy)
 stats = struct( ...
     "Applicability", "not_applicable", ...
@@ -976,6 +1068,7 @@ amc = sixgr.util.structGet(details, "AMC", struct());
 hidden = sixgr.util.structGet(details, "HiddenDefaults", struct());
 proxy = sixgr.util.structGet(details, "Proxy", struct());
 issueRegistry = sixgr.util.structGet(details, "IssueRegistry", struct());
+sib1 = sixgr.util.structGet(details, "SIB1", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
@@ -1015,6 +1108,10 @@ summaryT = table( ...
     double(sixgr.util.structGet(issueRegistry, "ActiveCriticalCount", NaN)), ...
     double(sixgr.util.structGet(issueRegistry, "ActiveHighCount", NaN)), ...
     double(sixgr.util.structGet(issueRegistry, "ActiveMediumCount", NaN)), ...
+    logical(sixgr.util.structGet(sib1, "SIB1Required", false)), ...
+    logical(sixgr.util.structGet(sib1, "SIB1StrictOk", false)), ...
+    string(sixgr.util.structGet(sib1, "SIB1Status", "")), ...
+    double(sixgr.util.structGet(sib1, "SIB1RecoveryRows", NaN)), ...
     logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
     string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
     double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
@@ -1030,6 +1127,7 @@ summaryT = table( ...
     'DLPartialRows','ULPartialRows','FERRunScopeIdentityOk','FERRunScopeIdentityLeakCount', ...
     'AMCNamingOk','AMCPolicyBooleanCollapseCount','HiddenDefaultAuditStatus','HistoricalDangerousHiddenFallbackRows','DangerousHiddenFallbackCount', ...
     'IssueRegistryStatus','IssueRegistryRows','ActiveMandatoryIssueCount','ActiveCriticalIssueCount','ActiveHighIssueCount','ActiveMediumIssueCount', ...
+    'SIB1Required','SIB1StrictOk','SIB1EvidenceStatus','SIB1RecoveryRows', ...
     'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);

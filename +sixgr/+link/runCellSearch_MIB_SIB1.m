@@ -61,6 +61,52 @@ if exist("nrWaveformGenerator","file") ~= 2
     return;
 end
 
+wantSIB1 = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
+if wantSIB1
+    try
+        tStart = tic;
+        tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, ...
+            "SNRdB", double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf)), ...
+            "Seed", double(sixgr.util.structGet(cfg, "run.seed", 1501)));
+        rec = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, ...
+            "ExpectedTxTree", tx.TxTree, ...
+            "ExpectedPayloadHash", tx.SIB1PayloadHash, ...
+            "ExpectedTreeHash", tx.TxTreeHash);
+        out.ComputeLatency_ms = 1e3 * toc(tStart);
+        out.ProcedureDelay_ms = NaN;
+        out.AirInterfaceObservation_ms = localResolvePBCHObservationDurationMs(cfg);
+        out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
+        out.Ok = logical(rec.StrictOk);
+        out.BLER = double(~out.Ok);
+        out.Sync = struct("NCellID", double(rec.NCellID), "TimingOffset", double(rec.TimingOffset), ...
+            "FreqOffset_Hz", double(rec.FrequencyOffsetHz));
+        out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.BCHCrcPass)), ...
+            "NCellID", double(rec.NCellID), "SSBIndex", double(rec.SSBIndex));
+        out.SIB1 = rec;
+        out.SSBIndex = double(rec.SSBIndex);
+        out.SSBBeamIndex = out.SSBIndex + 1;
+        out.FreqOffsetEstimate_Hz = double(rec.FrequencyOffsetHz);
+        out.TrueCFO_Hz = 0;
+        out.CFOError_Hz = double(rec.FrequencyOffsetHz);
+        out.TimingOffset_samples = double(rec.TimingOffset);
+        out.TrueTimingOffset_samples = 0;
+        out.TimingError_samples = double(rec.TimingOffset);
+        out.Notes = "Strict SIB1 waveform path: " + string(rec.Status) + ...
+            "; DCI=" + string(rec.DCIPayloadHex) + ...
+            "; SIB1TreeEqual=" + string(logical(rec.SIB1TreeEqual));
+        return;
+    catch ME
+        out.Ok = false;
+        out.BLER = 1;
+        out.Skipped = false;
+        out.Notes = "Strict SIB1 waveform failure: " + string(ME.message);
+        if ~isempty(log)
+            log.warn("runCellSearch_MIB_SIB1 strict SIB1 failed: " + string(ME.message));
+        end
+        return;
+    end
+end
+
 try
     tStart = tic;
     ssbArgs = {"NumSubframes", numSF};
@@ -135,6 +181,12 @@ catch ME
         log.warn("runCellSearch_MIB_SIB1 failed: " + string(ME.message));
     end
 end
+end
+
+function durationMs = localResolvePBCHObservationDurationMs(cfg)
+durationMs = double(sixgr.util.structGet(cfg, "phy.sib1.ssbObservationSubframes", ...
+    sixgr.util.structGet(cfg, "phy.ssb.pbchObservationSubframes", 5)));
+durationMs = max(1, round(durationMs));
 end
 
 function sampleRateHz = localResolveSampleRate(txInfo, cfg)
