@@ -464,6 +464,45 @@ result.TrialTable = controlTrialT;
 result.SummaryTable = study.SummaryBySNR;
 end
 
+function result = localRunFourStepRAScenario(cfg, scfg, runFolder)
+ra = sixgr.phy.ra.runFourStepRA(cfg, ...
+    "RunFolder", runFolder, ...
+    "RunId", string(scfg.ScenarioID), ...
+    "ScenarioName", string(scfg.ScenarioID), ...
+    "UEId", 1, ...
+    "CellId", sixgr.util.structGet(cfg, "phy.carrier.NCellID", 1), ...
+    "AttemptId", 1, ...
+    "WriteArtifacts", true);
+
+if logical(ra.StrictOk)
+    note = "strict MSG1-MSG4 waveform RA completed";
+else
+    note = string(ra.FailureReason);
+end
+kpitable = table( ...
+    string("RandomAccess_FourStep"), ...
+    logical(ra.StrictOk), ...
+    false, ...
+    note, ...
+    'VariableNames', {'Case','Ok','Skipped','Notes'});
+if localShouldWriteCSV(scfg)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "case_status.csv"), kpitable);
+end
+
+link = struct();
+link.Ok = logical(ra.StrictOk);
+link.Result = struct("Ok", logical(ra.StrictOk));
+link.KPITable = kpitable;
+link.UnsupportedCases = table();
+link.RawTrials = struct("RandomAccess", ra.ArtifactTables.ra_attempts);
+
+result = struct();
+result.Ok = logical(ra.StrictOk);
+result.Link = link;
+result.RandomAccess = ra;
+result.Control = struct();
+end
+
 function [controlTrialT, initialAccessT, correlationTraceT] = localBuildPRACHRunnerTables(study, cfg)
 roT = sixgr.util.structGet(study, "ROTable", table());
 trialT = sixgr.util.structGet(study, "TrialTable", table());
@@ -1150,6 +1189,8 @@ try
             result = localRun6GRPDSCHStudy(cfg, scfg, runFolder);
         case "prach_detection"
             result = localRunPRACHDetectionScenario(cfg, scfg, runFolder);
+        case "random_access_four_step"
+            result = localRunFourStepRAScenario(cfg, scfg, runFolder);
         case "generic_sweep"
             result = localRunGenericSweep(cfg, scfg, runFolder);
         case "ai_benchmark"

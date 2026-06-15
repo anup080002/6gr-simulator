@@ -36,9 +36,10 @@ verdict.Failures = strings(0, 1);
 strictTruthRequired = localRequiresStrictRuntimeTruthContract(scfg, cfg);
 isPRACHOnly = localIsPRACHOnlyScenario(scfg, cfg);
 isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
+isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
 isProxyOnlyStudy = localIsProxyOnlyStudyScenario(scfg, cfg);
-isControlOnly = isPRACHOnly || isPDCCHOnly;
+isControlOnly = isPRACHOnly || isPDCCHOnly || isRAOnly;
 verdict.ContractApplicability = "applicable";
 
 if isProxyOnlyStudy
@@ -154,6 +155,19 @@ elseif isPDCCHOnly
             fullfile(layout.ReportCSVDir, "pdcch6gr_complexity_summary.csv")
             ];
     end
+elseif isRAOnly
+    requiredArtifacts = [
+        requiredArtifacts
+        fullfile(layout.ControlCSVDir, "ra_attempts.csv")
+        fullfile(layout.ControlCSVDir, "ra_state_transitions.csv")
+        fullfile(layout.ControlCSVDir, "msg1_prach_detection.csv")
+        fullfile(layout.ControlCSVDir, "msg2_rar_trials.csv")
+        fullfile(layout.ControlCSVDir, "msg2_pdcch_candidates.csv")
+        fullfile(layout.ControlCSVDir, "msg3_pusch_trials.csv")
+        fullfile(layout.ControlCSVDir, "msg4_contention_resolution.csv")
+        fullfile(layout.ControlCSVDir, "ra_timer_events.csv")
+        fullfile(layout.ControlCSVDir, "ra_oracle_guard.csv")
+        ];
 end
 if verdict.RequiredDL
     requiredArtifacts(end + 1, 1) = dlTrialsPath;
@@ -263,14 +277,14 @@ else
         "DLPartialRows", NaN, "ULPartialRows", NaN, "DLPrimaryOKRows", NaN, ...
         "ULPrimaryOKRows", NaN, "DLPrimaryOKNotFinalizedRows", NaN, ...
         "ULPrimaryOKNotFinalizedRows", NaN, "RawLifecycleOk", true, ...
-        "Applicability", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy));
+        "Applicability", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isRAOnly, isPDSCHStudy));
     ferStats = struct( ...
         "FERSummaryRows", NaN, "FERRunScopeRows", NaN, "FERRunScopeIdentityLeakCount", NaN, ...
-        "FERRunScopeIdentityOk", true, "FERScopeStatus", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy));
+        "FERRunScopeIdentityOk", true, "FERScopeStatus", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isRAOnly, isPDSCHStudy));
     amcStats = struct( ...
         "AMCNamingOk", true, "RuntimeModeRows", NaN, "DLTrialRows", 0, "ULTrialRows", 0, ...
         "PolicyBooleanCollapseCount", NaN, "AppliedAuthorityMissingCount", NaN, ...
-        "RawAuthorityMissingCount", NaN, "Applicability", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy));
+        "RawAuthorityMissingCount", NaN, "Applicability", localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isRAOnly, isPDSCHStudy));
 end
 
 hiddenDefaultStats = localHiddenDefaultStats(layout);
@@ -296,6 +310,13 @@ if strictTruthRequired && logical(sib1Stats.SIB1Required) && ~logical(sib1Stats.
         "evidence");
 end
 
+raStats = localRAEvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(raStats.RARequired) && ~logical(raStats.RAStrictOk)
+    verdict = localAddFailure(verdict, ...
+        "ra_strict_four_step_evidence_missing_or_failing:" + string(raStats.RAStatus), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -309,6 +330,7 @@ verdict.CheckDetails = struct( ...
     "Proxy", proxyStats, ...
     "IssueRegistry", issueRegistryStats, ...
     "SIB1", sib1Stats, ...
+    "RandomAccess", raStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -348,6 +370,18 @@ tf = any(runnerProfile == ["ctrl6gr_pdcch_study", "pdcch_blind_decode_sweep"]) |
     (~isempty(targetCases) && all(targetCases == "pdcch"));
 end
 
+function tf = localIsRAOnlyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+targetCases = string(localScenarioGet(scfg, cfg, "scenario.target_cases", strings(0, 1)));
+if iscell(targetCases)
+    targetCases = string(targetCases(:));
+end
+targetCases = lower(strtrim(targetCases(:)));
+targetCases = targetCases(strlength(targetCases) > 0);
+tf = runnerProfile == "random_access_four_step" || ...
+    (~isempty(targetCases) && all(ismember(targetCases, ["ra", "rach", "random_access", "four_step_ra"])));
+end
+
 function tf = localIsPDSCH6GRStudyScenario(scfg, cfg)
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
 tf = runnerProfile == "pdsch6gr_truth_study";
@@ -382,21 +416,23 @@ details = struct( ...
         "Applicability", applicability));
 end
 
-function label = localControlApplicabilityLabel(isPRACHOnly, isPDCCHOnly)
+function label = localControlApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isRAOnly)
 if isPRACHOnly
     label = "not_applicable_for_prach_control_only";
 elseif isPDCCHOnly
     label = "not_applicable_for_pdcch_control_only";
+elseif isRAOnly
+    label = "not_applicable_for_random_access_control_only";
 else
     label = "applicable";
 end
 end
 
-function label = localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isPDSCHStudy)
+function label = localStudyApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isRAOnly, isPDSCHStudy)
 if isPDSCHStudy
     label = "not_applicable_for_standalone_pdsch_truth_study";
 else
-    label = localControlApplicabilityLabel(isPRACHOnly, isPDCCHOnly);
+    label = localControlApplicabilityLabel(isPRACHOnly, isPDCCHOnly, isRAOnly);
 end
 end
 
@@ -937,6 +973,93 @@ else
 end
 end
 
+function stats = localRAEvidenceStats(layout, scfg, cfg)
+required = localScenarioGetBool(scfg, cfg, "random_access.enabled", false) || ...
+    localScenarioHasObjective(scfg, cfg, "random_access_four_step") || ...
+    localScenarioHasObjective(scfg, cfg, "four_step_ra") || ...
+    localScenarioHasObjective(scfg, cfg, "initial_access_ra");
+attemptPath = fullfile(layout.ControlCSVDir, "ra_attempts.csv");
+statePath = fullfile(layout.ControlCSVDir, "ra_state_transitions.csv");
+msg1Path = fullfile(layout.ControlCSVDir, "msg1_prach_detection.csv");
+msg2Path = fullfile(layout.ControlCSVDir, "msg2_rar_trials.csv");
+pdcchPath = fullfile(layout.ControlCSVDir, "msg2_pdcch_candidates.csv");
+msg3Path = fullfile(layout.ControlCSVDir, "msg3_pusch_trials.csv");
+msg4Path = fullfile(layout.ControlCSVDir, "msg4_contention_resolution.csv");
+timerPath = fullfile(layout.ControlCSVDir, "ra_timer_events.csv");
+oraclePath = fullfile(layout.ControlCSVDir, "ra_oracle_guard.csv");
+stats = struct( ...
+    "RARequired", logical(required), ...
+    "RAStrictOk", false, ...
+    "RAStatus", "not_required", ...
+    "RAAttemptRows", 0, ...
+    "RAStateRows", 0, ...
+    "Msg1Rows", 0, ...
+    "Msg2Rows", 0, ...
+    "Msg2PDCCHCandidateRows", 0, ...
+    "Msg3Rows", 0, ...
+    "Msg4Rows", 0, ...
+    "RATimerRows", 0, ...
+    "OracleGuardRows", 0, ...
+    "OracleGuardViolationCount", NaN);
+if ~required
+    return;
+end
+attemptT = localReadTable(attemptPath);
+stateT = localReadTable(statePath);
+msg1T = localReadTable(msg1Path);
+msg2T = localReadTable(msg2Path);
+pdcchT = localReadTable(pdcchPath);
+msg3T = localReadTable(msg3Path);
+msg4T = localReadTable(msg4Path);
+timerT = localReadTable(timerPath);
+oracleT = localReadTable(oraclePath);
+stats.RAAttemptRows = height(attemptT);
+stats.RAStateRows = height(stateT);
+stats.Msg1Rows = height(msg1T);
+stats.Msg2Rows = height(msg2T);
+stats.Msg2PDCCHCandidateRows = height(pdcchT);
+stats.Msg3Rows = height(msg3T);
+stats.Msg4Rows = height(msg4T);
+stats.RATimerRows = height(timerT);
+stats.OracleGuardRows = height(oracleT);
+if isempty(attemptT) || height(attemptT) == 0
+    stats.RAStatus = "missing_ra_attempts";
+    return;
+end
+requiredColumns = ["StrictOk","RACompleted","PreambleDetected","Msg2RARNTIDetected", ...
+    "Msg2DCICrcPass","Msg2PDSCHCrcPass","RAPIDMatches","RARULGrantValid", ...
+    "Msg3PUSCHCrcPass","Msg4PDCCHCrcPass","Msg4PDSCHCrcPass", ...
+    "ContentionIdentityMatches","ProxyUsed","Skipped","ToolboxMissing","UsedOracleFields"];
+missing = requiredColumns(~arrayfun(@(c) localHasColumn(attemptT, c), requiredColumns));
+if ~isempty(missing)
+    stats.RAStatus = "ra_attempts_missing_columns:" + strjoin(missing, "|");
+    return;
+end
+oracleViolations = 0;
+if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
+    oracleViolations = sum(localColumnBool(oracleT, "Violation"));
+end
+stats.OracleGuardViolationCount = double(oracleViolations);
+artifactRowsOk = stats.RAStateRows > 0 && stats.Msg1Rows > 0 && stats.Msg2Rows > 0 && ...
+    stats.Msg2PDCCHCandidateRows > 0 && stats.Msg3Rows > 0 && stats.Msg4Rows > 0 && ...
+    stats.RATimerRows > 0 && stats.OracleGuardRows > 0;
+noOracleFieldsUsed = localBlankOrMissingMask(attemptT.UsedOracleFields);
+strictRows = localColumnBool(attemptT, "StrictOk") & localColumnBool(attemptT, "RACompleted") & ...
+    localColumnBool(attemptT, "PreambleDetected") & localColumnBool(attemptT, "Msg2RARNTIDetected") & ...
+    localColumnBool(attemptT, "Msg2DCICrcPass") & localColumnBool(attemptT, "Msg2PDSCHCrcPass") & ...
+    localColumnBool(attemptT, "RAPIDMatches") & localColumnBool(attemptT, "RARULGrantValid") & ...
+    localColumnBool(attemptT, "Msg3PUSCHCrcPass") & localColumnBool(attemptT, "Msg4PDCCHCrcPass") & ...
+    localColumnBool(attemptT, "Msg4PDSCHCrcPass") & localColumnBool(attemptT, "ContentionIdentityMatches") & ...
+    ~localColumnBool(attemptT, "ProxyUsed") & ~localColumnBool(attemptT, "Skipped") & ...
+    ~localColumnBool(attemptT, "ToolboxMissing") & noOracleFieldsUsed;
+stats.RAStrictOk = artifactRowsOk && oracleViolations == 0 && any(strictRows);
+if stats.RAStrictOk
+    stats.RAStatus = "strict_four_step_ra_waveform_evidence_present";
+else
+    stats.RAStatus = "strict_four_step_ra_evidence_incomplete";
+end
+end
+
 function tf = localScenarioHasObjective(scfg, cfg, objectiveToken)
 objectiveToken = lower(strtrim(string(objectiveToken)));
 values = strings(0, 1);
@@ -1069,6 +1192,7 @@ hidden = sixgr.util.structGet(details, "HiddenDefaults", struct());
 proxy = sixgr.util.structGet(details, "Proxy", struct());
 issueRegistry = sixgr.util.structGet(details, "IssueRegistry", struct());
 sib1 = sixgr.util.structGet(details, "SIB1", struct());
+ra = sixgr.util.structGet(details, "RandomAccess", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
@@ -1112,6 +1236,13 @@ summaryT = table( ...
     logical(sixgr.util.structGet(sib1, "SIB1StrictOk", false)), ...
     string(sixgr.util.structGet(sib1, "SIB1Status", "")), ...
     double(sixgr.util.structGet(sib1, "SIB1RecoveryRows", NaN)), ...
+    logical(sixgr.util.structGet(ra, "RARequired", false)), ...
+    logical(sixgr.util.structGet(ra, "RAStrictOk", false)), ...
+    string(sixgr.util.structGet(ra, "RAStatus", "")), ...
+    double(sixgr.util.structGet(ra, "RAAttemptRows", NaN)), ...
+    double(sixgr.util.structGet(ra, "Msg3Rows", NaN)), ...
+    double(sixgr.util.structGet(ra, "Msg4Rows", NaN)), ...
+    double(sixgr.util.structGet(ra, "OracleGuardViolationCount", NaN)), ...
     logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
     string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
     double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
@@ -1128,6 +1259,7 @@ summaryT = table( ...
     'AMCNamingOk','AMCPolicyBooleanCollapseCount','HiddenDefaultAuditStatus','HistoricalDangerousHiddenFallbackRows','DangerousHiddenFallbackCount', ...
     'IssueRegistryStatus','IssueRegistryRows','ActiveMandatoryIssueCount','ActiveCriticalIssueCount','ActiveHighIssueCount','ActiveMediumIssueCount', ...
     'SIB1Required','SIB1StrictOk','SIB1EvidenceStatus','SIB1RecoveryRows', ...
+    'RARequired','RAStrictOk','RAEvidenceStatus','RAAttemptRows','RAMsg3Rows','RAMsg4Rows','RAOracleGuardViolationCount', ...
     'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);
@@ -1170,6 +1302,8 @@ function category = localClassifyFailure(failure)
 failure = lower(string(failure));
 if contains(failure, "proxy") || contains(failure, "fallback") || contains(failure, "abstract") || contains(failure, "bler")
     category = "proxy_or_fallback";
+elseif contains(failure, "ra_strict") || contains(failure, "random_access")
+    category = "random_access";
 elseif contains(failure, "result_issue_registry")
     category = "active_issue_registry";
 elseif contains(failure, "configured_effective_match")
@@ -1244,6 +1378,15 @@ elseif islogical(defaultValue)
 else
     value = repmat(defaultValue, n, 1);
 end
+end
+
+function mask = localBlankOrMissingMask(raw)
+if isnumeric(raw)
+    mask = isnan(raw);
+    return;
+end
+values = lower(strtrim(string(raw)));
+mask = ismissing(values) | values == "" | values == "nan" | values == "<missing>";
 end
 
 function out = ternary(condition, a, b)

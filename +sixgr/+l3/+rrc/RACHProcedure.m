@@ -2,16 +2,18 @@ classdef RACHProcedure < handle
 % sixgr.l3.rrc.RACHProcedure
 % Random Access (RACH) context helper for UE and gNB.
 %
-% This class models the essential information and timers around the 4-step
-% contention-based random access procedure:
+% This legacy class models the essential information and timers around the
+% 4-step contention-based random access procedure for non-strict attach
+% tests:
 %   Msg1: PRACH preamble
 %   Msg2: RAR (Random Access Response) - MAC CE (abstracted here)
 %   Msg3: UE message on UL-CCCH (RRCSetupRequest in this simulator)
 %   Msg4: Contention resolution (RRCSetup / RRCReject in this simulator)
 %
-% In your current build, Msg1 uses your PHY PRACH_Tx/PRACH_Rx blocks. Msg2 is
-% produced/consumed as a struct (RAR) because you may not yet carry RAR as a
-% MAC CE through PDSCH/PUSCH. Msg3/Msg4 are carried on SRB0 using RLC TM.
+% Strict waveform truth runs must use sixgr.mac.ra.RandomAccessProcedure /
+% sixgr.phy.ra.runFourStepRA instead. This helper still produces abstract
+% RAR structs for the legacy RRC attach harness, and therefore it is
+% explicitly forbidden from building RAR in strict mode.
 %
 % This file is ASCII-only.
 
@@ -225,6 +227,11 @@ classdef RACHProcedure < handle
             % buildRAR_gNB (gNB) Build an abstract RAR struct.
             if ~strcmp(obj.Role,'GNB')
                 error('sixgr:RACHProcedure:Role','buildRAR_gNB is for gNB role.');
+            end
+            if logical(sixgr.util.structGet(obj.Cfg, 'run.strictMode', false)) || ...
+                    logical(sixgr.util.structGet(obj.Cfg, 'validation.strict', false))
+                error('sixgr:RACHProcedure:AbstractRARForbiddenInStrict', ...
+                    'Legacy abstract RAR structs cannot contribute to strict four-step RA success; use sixgr.mac.ra.RandomAccessProcedure.');
             end
 
             ta = 0;

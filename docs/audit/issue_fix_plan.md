@@ -25,7 +25,7 @@ schema and preserve its original issue IDs.
 |---|---|---|---|
 | Run status and truth gates | AUD-001, AUD-002, AUD-PDSCH-001 | `+sixgr/+truth/evaluateLLSRuntimeTruthContract.m`, `+sixgr/+lls6g/+runners/runSingle.m` | `testLLSRuntimeTruthContractGates`, `testLLSStrictConformanceIssueGates`, `reports/csv/truth_contract_summary.csv` |
 | Configured-vs-effective operating point | AUD-002, AUD-MIMO-RANK-001 | `+sixgr/+truth/summarizeEffectiveOperatingPoint.m`, scheduler AMC/rank selection | `testLLSEffectiveOperatingPointSummary`, `reports/csv/scenario_summary.csv` |
-| RRC and initial access | AUD-015, AUD-RA-001, AUD-PRACH-001 | SSB/PBCH/SIB1/PRACH producers and control CSV exporters | `testTruthValidationControlCoverage`, `control/csv/prach_trials.csv` |
+| RRC and initial access | AUD-015, AUD-RA-001, AUD-PRACH-001 | SSB/PBCH/SIB1/PRACH producers and control CSV exporters | `testTruthValidationControlCoverage`, RA focused tests, `control/csv/ra_attempts.csv` |
 | Control channels and reference signals | AUD-PDCCH-001, AUD-TRS-001, AUD-SRS-001 | PDCCH/PUCCH/SRS/TRS runtime paths and exporters | `testTRSReferenceSignalExecution`, `test6GCSIReportingCoverage`, `air_interface/csv/pdcch_trials.csv` |
 | Data-plane receiver and KPIs | AUD-KPI-UL-GOODPUT, AUD-UL-SINR-001 | PDSCH/PUSCH RX, HARQ, KPI summary/raw consistency | `testPostEqSINR`, `testLLSSummaryRawConsistency`, `air_interface/csv/ul_pusch_trials.csv` |
 | Visual and artifact integrity | AUD-PLOT-001, AUD-ARTIFACT-DUP-001 | `+sixgr/+visual`, `tools/audit/audit_lls_visual_artifacts.py`, report bundle writers | `tests/test_audit_lls_visual_artifacts.py`, `reports/csv/visual_artifact_audit.csv` |
@@ -44,3 +44,15 @@ schema and preserve its original issue IDs.
 Critical issues cannot be waived. High and medium issues block strict anchor
 conformance unless explicitly marked `waived_non_blocking` with a justification
 and the scenario declares that the affected block is not part of the objective.
+
+## Current Initial-Access Closure Notes
+
+`AUD-RA-001` is closed for the explicit unrestricted contention-based four-step
+anchor profile only. The implementation exercises MSG1 PRACH detection, MSG2
+RA-RNTI PDCCH plus MAC RAR over PDSCH, Msg3 PUSCH from the decoded RAR UL
+grant, and Msg4 contention resolution using the temporary C-RNTI. Exported
+evidence lives under `control/csv/ra_*.csv` and `reports/json/msg*_*.json`.
+
+`AUD-PRACH-001` remains open. Restricted-set PRACH and full N_CS validation are
+not relabeled as fixed by the four-step RA work; strict RA config rejects
+unsupported restricted-set operation instead of fabricating evidence.

@@ -1,0 +1,19 @@
+function [rx, msg3] = recoverMsg3PUSCH(rxWaveform, cfg, raCfg, grant, tx)
+%RECOVERMSG3PUSCH Decode Msg3 PUSCH/UL-SCH at gNB.
+cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
+[puschRx, info] = sixgr.phy.ul.PUSCH_Rx(rxWaveform, cfgRx, ...
+    "Carrier", tx.Carrier, ...
+    "PUSCH", tx.PUSCH, ...
+    "TransportBlockSize", double(tx.TransportBlockSize), ...
+    "TargetCodeRate", double(grant.TargetCodeRate), ...
+    "RV", double(grant.RV), ...
+    "SkipTimingEstimate", true);
+rx = puschRx;
+rx.Info = info;
+if logical(puschRx.Ok)
+    payloadBits = int8(puschRx.TransportBlock(1:double(tx.Msg3BitLength)));
+    msg3 = sixgr.mac.ra.parseMsg3Payload(payloadBits);
+else
+    msg3 = struct();
+end
+end

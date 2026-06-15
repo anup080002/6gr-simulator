@@ -711,6 +711,7 @@ cfg = sixgr.util.structSet(cfg, "phy.trs.scramblingID", double(localRequireNeste
 cfg = sixgr.util.structSet(cfg, "phy.ptrs.enable", logical(s.reference_signals.ptrs_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.trackingRS.enable", logical(s.reference_signals.tracking_rs_enabled));
 
+cfg.random_access = s.random_access;
 cfg.phy.prach.enable = logical(s.random_access.enabled);
 cfg.phy.prach.preambleFormat = char(string(localGetNested(s, "random_access.prach_format", "")));
 cfg = sixgr.util.structSet(cfg, "phy.prach.preambleCount", double(s.random_access.preamble_count));

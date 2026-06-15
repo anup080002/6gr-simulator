@@ -57,7 +57,9 @@ def matlab_literal(value: str) -> str:
 def run_one(test_name: str, timeout_s: int, log_dir: Path) -> dict:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = log_dir / f"{timestamp}_{test_name}.log"
+    root_literal = matlab_literal(str(repo_root()))
     batch = (
+        f"cd({root_literal}); "
         "setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false); "
         f"try, feval({matlab_literal(test_name)}); "
         "catch ME, disp(getReport(ME,'extended','hyperlinks','off')); exit(1); end; exit(0);"
@@ -66,24 +68,27 @@ def run_one(test_name: str, timeout_s: int, log_dir: Path) -> dict:
     started = datetime.now(timezone.utc)
     timed_out = False
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=repo_root(),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=timeout_s,
-            check=False,
-        )
-        output = proc.stdout or ""
+        with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
+            proc = subprocess.run(
+                cmd,
+                cwd=repo_root(),
+                text=True,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                timeout=timeout_s,
+                check=False,
+            )
+        output = log_path.read_text(encoding="utf-8", errors="replace")
         return_code = int(proc.returncode)
     except subprocess.TimeoutExpired as exc:
         timed_out = True
-        output = (exc.stdout or "") + "\nTIMEOUT: MATLAB test exceeded timeout.\n"
+        output = ""
+        if log_path.exists():
+            output = log_path.read_text(encoding="utf-8", errors="replace")
+        output = output + "\nTIMEOUT: MATLAB test exceeded timeout.\n"
         return_code = 124
 
     ended = datetime.now(timezone.utc)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(output, encoding="utf-8", errors="replace")
     lower_output = output.lower()
     crashed = any(pattern in lower_output for pattern in CRASH_PATTERNS)

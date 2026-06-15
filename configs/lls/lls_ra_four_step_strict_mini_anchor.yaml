@@ -1,0 +1,206 @@
+inherits:
+  - ../../simulator/configs/defaults/global.yaml
+  - ../../simulator/configs/defaults/logging.yaml
+  - ../../simulator/configs/defaults/kpi.yaml
+  - ../../simulator/configs/bands/band_4ghz.yaml
+  - ../../simulator/configs/waveforms/cp_ofdm.yaml
+  - ../../simulator/configs/coding/ldpc_polar_baseline.yaml
+  - ../../simulator/configs/channels/awgn.yaml
+  - ../../simulator/configs/mimo/mimo_2x2.yaml
+  - ../../simulator/configs/control/pdcch_baseline.yaml
+  - ../../simulator/configs/control/harq_baseline.yaml
+  - ../../simulator/configs/control/ra_baseline.yaml
+  - ../../simulator/configs/ai_ml/disabled.yaml
+
+meta:
+  scenario_id: lls_ra_four_step_strict_mini_anchor
+  description: Strict NR-like contention-based four-step random-access anchor.
+  version: "1.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: initial_access
+  tags: [random_access, four_step_ra, strict]
+
+scenario:
+  name: lls_ra_four_step_strict_mini_anchor
+  description: Strict MSG1-MSG4 random-access validation using explicit scenario RACH config.
+  runner_profile: random_access_four_step
+  target_cases: [prach, pdcch, pusch]
+  bundle_anchor_cases: [random_access_four_step]
+  honesty_mode: strict
+  notes: "AUD-RA-001 strict mini-run; SIB1 binding is scenario_config_pending_sib1 until full SIB1-to-RA binding is enabled."
+
+run_control:
+  num_workers: 1
+  parallel_pool_kind: auto
+  parallel_pool_idle_timeout_minutes: 5
+
+simulation:
+  link_direction: both
+  n_frames: 1
+  n_slots: 4
+  n_subframes: 1
+  monte_carlo_iterations: 1
+  random_seed: 240611
+  deterministic_mode: true
+  snr_db: 30
+  min_duration_s: 0.001
+  snr_sweep_offsets_db: [0]
+
+frequency:
+  range_name: FR1
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 10000000
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  band_name: n77
+  bandwidth_options_hz: [10000000]
+  numerology_options_khz: [30]
+  max_mimo_size: 1
+  mobility_defaults_kmph: 3
+  channel_model_defaults: AWGN
+  reference_signal_defaults: baseline
+  power_model_defaults: baseline
+  energy_model_defaults: disabled
+  rf_impairment_defaults: disabled
+  n_size_grid: 52
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: mixed
+  tdd_pattern: DDDSU
+
+channels:
+  model_type: AWGN
+  profile: AWGN
+  delay_spread_ns: 0
+  doppler_hz: 0
+  mobility_kmph: 0
+  los_enabled: true
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  pathloss_model: none
+  shadow_fading_std_db: 0
+
+mimo:
+  n_tx_ant: 1
+  n_rx_ant: 1
+  n_layers: 1
+  precoder_type: none
+  codebook_type: type1
+  reciprocity_mode: TDD
+  beam_sweep_enabled: false
+  beam_count: 1
+  mtrp_ready: false
+  multi_panel_ready: false
+  panel_count: 1
+
+random_access:
+  enabled: true
+  binding_source: scenario_config_pending_sib1
+  procedure_type: contention_based_four_step
+  prach_format: A2
+  preamble_length_mode: short
+  configuration_index: 87
+  subcarrier_spacing_khz: 15
+  root_sequence_index: 1
+  logical_root_sequence_index: 1
+  sequence_index: 1
+  zero_correlation_zone: 8
+  restricted_set: UnrestrictedSet
+  frequency_start: 0
+  preamble_count: 64
+  preamble_index: [7]
+  min_detection_trials: 1
+  msg3_enabled: true
+  num_prach_occasions: 1
+  num_slots: 4
+  num_subframes: 1
+  active_preamble_pattern: [7]
+  num_rx_antennas: 1
+  num_tx_antennas: 1
+  num_ues_per_ro: 1
+  enable_collision_mode: false
+  enable_inter_cell_interference: false
+  enable_frequency_offset: false
+  enable_phase_noise: false
+  enable_timing_uncertainty: false
+  enable_frequency_estimation_metric: false
+  channel_model: AWGN
+  delay_spread_ns: 30
+  speed_kmh: 3
+  cell_radius_m: 500
+  timing_uncertainty_min_us: 0
+  timing_uncertainty_max_us: 0
+  ue_frequency_offset_hz: 0
+  trp_frequency_offset_hz: 0
+  phase_noise_std_rad: 0.001
+  inter_cell_relative_power_db: -3
+  target_false_alarm_probability: 0.001
+  timing_tolerance_us: 0.25
+  detection_threshold_mode: fixed
+  detection_threshold: 0.02
+  threshold_sweep: [0.02]
+  snr_sweep_db: [30]
+  occasion:
+    frame: 0
+    slot: 0
+    symbol: 0
+    frequency_index: 0
+  ra_response_window_slots: 8
+  ra_contention_resolution_timer_slots: 64
+  preamble_trans_max: 1
+  power_ramping_step_db: 2
+  preamble_received_target_power_dbm: -100
+  temp_crnti: 4660
+  final_crnti: 4660
+  msg2_slot: 1
+  msg3_slot: 2
+  msg4_slot: 3
+  dci_payload_bits: 32
+  msg2_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+  msg3_pusch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 0
+    num_symbols: 14
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+  msg4_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+
+output:
+  bucket: lls
+  profile: strict_ra_four_step
+  save_csv: true
+  save_mat: false
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: false

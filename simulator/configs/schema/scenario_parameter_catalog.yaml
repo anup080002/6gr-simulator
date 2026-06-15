@@ -70,7 +70,7 @@ sections:
       runner_profile:
         required: true
         type: string
-        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, prach_detection, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
+        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, prach_detection, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
       scale_profile:
         required: false
         type: string
@@ -86,6 +86,7 @@ sections:
         allowed_values:
           - cell_search_mib_sib1
           - prach_detection
+          - random_access_four_step
           - dl_pdsch_throughput
           - ul_pusch_throughput
           - ul_srs_channelest
@@ -685,6 +686,11 @@ sections:
     required: true
     parameters:
       enabled: {required: true, type: boolean}
+      binding_source: {required: false, type: string}
+      procedure_type:
+        required: false
+        type: string
+        allowed_values: [contention_based_four_step]
       frequency_range:
         required: false
         type: string
@@ -788,6 +794,21 @@ sections:
       enable_frequency_estimation_metric: {required: false, type: boolean}
       snr_sweep_db: {required: false, type: number_list, min_items: 1}
       threshold_sweep: {required: false, type: number_list, min_items: 1}
+      occasion: {required: false, type: struct}
+      ra_response_window_slots: {required: false, type: integer, min: 1}
+      ra_contention_resolution_timer_slots: {required: false, type: integer, min: 1}
+      preamble_trans_max: {required: false, type: integer, min: 1}
+      power_ramping_step_db: {required: false, type: number, min: 0}
+      preamble_received_target_power_dbm: {required: false, type: number}
+      temp_crnti: {required: false, type: integer, min: 1}
+      final_crnti: {required: false, type: integer, min: 1}
+      msg2_slot: {required: false, type: integer, min: 0}
+      msg3_slot: {required: false, type: integer, min: 0}
+      msg4_slot: {required: false, type: integer, min: 0}
+      dci_payload_bits: {required: false, type: integer, min: 1}
+      msg2_pdsch: {required: false, type: struct}
+      msg3_pusch: {required: false, type: struct}
+      msg4_pdsch: {required: false, type: struct}
       channel_model:
         required: false
         type: string
