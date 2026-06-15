@@ -72,6 +72,7 @@ classdef RRC < handle
 
         % gNB multi-context: map rnti -> ctx struct
         GNB_UeCtx
+        A3TTTCount (1,1) double = 0
     end
 
     methods
@@ -125,6 +126,7 @@ classdef RRC < handle
         function reset(obj)
             obj.State = 'IDLE';
             obj.CRNTI = -1;
+            obj.A3TTTCount = 0;
             obj.SI = sixgr.l3.rrc.SystemInformation(obj.Cfg,'CellID',obj.CellID);
 
             if strcmp(obj.Role,'UE')
@@ -360,6 +362,42 @@ classdef RRC < handle
             if ~isempty(obj.Logger) && isa(obj.Logger,'sixgr.core.Logger')
                 obj.Logger.info(sprintf('RRC: MeasurementReport from RNTI=%d', double(rnti)));
             end
+        end
+
+        function [trigger, eventData] = checkMeasurementEventA3(obj, servingRSRP, neighbourRSRP, a3Offset_dB, hysteresis_dB, tttSlots)
+            % checkMeasurementEventA3 Evaluate TS 38.331 event A3 with TTT.
+            if nargin < 4 || isempty(a3Offset_dB)
+                a3Offset_dB = double(sixgr.util.structGet(obj.Cfg, "system.handover.a3Offset_dB", 3));
+            end
+            if nargin < 5 || isempty(hysteresis_dB)
+                hysteresis_dB = double(sixgr.util.structGet(obj.Cfg, "system.handover.hysteresis_dB", 1));
+            end
+            if nargin < 6 || isempty(tttSlots)
+                tttSlots = double(sixgr.util.structGet(obj.Cfg, "system.handover.timeToTrigger_slots", 4));
+            end
+            servingRSRP = double(servingRSRP);
+            neighbourRSRP = double(neighbourRSRP);
+            a3Offset_dB = double(a3Offset_dB);
+            hysteresis_dB = double(hysteresis_dB);
+            tttSlots = max(1, round(double(tttSlots)));
+            entry = isfinite(servingRSRP) && isfinite(neighbourRSRP) && ...
+                (neighbourRSRP + a3Offset_dB) > (servingRSRP + hysteresis_dB);
+            if entry
+                obj.A3TTTCount = obj.A3TTTCount + 1;
+            else
+                obj.A3TTTCount = 0;
+            end
+            trigger = logical(obj.A3TTTCount >= tttSlots);
+            eventData = struct("Event", "A3", ...
+                "EntryCondition", logical(entry), ...
+                "ConditionMet", logical(entry), ...
+                "ServingRSRP_dBm", double(servingRSRP), ...
+                "NeighbourRSRP_dBm", double(neighbourRSRP), ...
+                "A3Offset_dB", double(a3Offset_dB), ...
+                "Hysteresis_dB", double(hysteresis_dB), ...
+                "TTTSlots", double(tttSlots), ...
+                "TTTCount", double(obj.A3TTTCount), ...
+                "Trigger", logical(trigger));
         end
     end
 

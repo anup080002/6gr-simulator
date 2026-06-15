@@ -14,9 +14,9 @@ parityHead = zeros(C, 1);
 for c = 1:C
     llr = recLLR(:,c);
     if useNormMinSum ~= 0
-        [d, it, pc] = nrLDPCDecode(llr, bgn, maxNumIter, 'Algorithm', 'Normalized min-sum');
+        [d, it, pc] = localDecodeOneCB(llr, bgn, maxNumIter, 'Algorithm', 'Normalized min-sum');
     else
-        [d, it, pc] = nrLDPCDecode(llr, bgn, maxNumIter);
+        [d, it, pc] = localDecodeOneCB(llr, bgn, maxNumIter);
     end
 
     d = d(:);
@@ -36,6 +36,18 @@ for c = 1:C
         parityHead(c) = 0;
     else
         parityHead(c) = pc(1);
+    end
+end
+end
+
+function [d, it, pc] = localDecodeOneCB(llr, bgn, maxNumIter, varargin)
+try
+    [d, it, pc] = nrLDPCDecode(llr, bgn, maxNumIter, varargin{:}, 'EarlyTermination', true);
+catch ME
+    if contains(string(ME.message), "EarlyTermination") || contains(string(ME.identifier), "EarlyTermination")
+        [d, it, pc] = nrLDPCDecode(llr, bgn, maxNumIter, varargin{:});
+    else
+        rethrow(ME);
     end
 end
 end

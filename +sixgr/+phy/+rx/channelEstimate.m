@@ -20,6 +20,9 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
 %     "ChannelModel"    : normalized channel token/profile for validation
 %     "ExpectedTxPorts" : expected TX port count for truth validation
 %     "ContextLabel"    : caller label for diagnostics
+%     "Method"          : "LS" (default), "wiener", or "ideal"
+%     "TrueChannel"     : channel tensor required by Method="ideal"
+%     "Config"          : simulator cfg used for ideal nVar / DMRS defaults
 %
 %   Outputs
 %     Hest : K-by-L-by-R-by-P channel estimate
@@ -43,6 +46,10 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     expectedTxPortsProvided = false;
     channelModel = "";
     contextLabel = "channelEstimate";
+    estimationMethod = "LS";
+    trueChannel = [];
+    methodCfg = struct();
+    dmrsConfigType = [];
     fwd = varargin;
     if ~isempty(varargin)
         keep = true(size(varargin));
@@ -77,12 +84,33 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
                     keep(i:i+1) = false;
                     i = i + 2;
                     continue;
+                elseif strcmpi(key, "Method")
+                    estimationMethod = string(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "TrueChannel")
+                    trueChannel = varargin{i+1};
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "Config") || strcmpi(key, "Cfg")
+                    methodCfg = varargin{i+1};
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "DMRSConfigType")
+                    dmrsConfigType = varargin{i+1};
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
                 end
             end
             i = i + 2;
         end
         fwd = varargin(keep);
     end
+    estimationMethod = localNormalizeEstimationMethod(estimationMethod);
     inferredReferencePortCount = localInferReferencePortCount(refInd, refSym);
     expectedTxPortsAdjustedFromReferenceGeometry = inferredReferencePortCount > localNormalizeTxPorts(expectedTxPorts);
     expectedTxPorts = max(localNormalizeTxPorts(expectedTxPorts), inferredReferencePortCount);
@@ -105,17 +133,35 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.ScalarFastPathAllowed = logical(policy.ScalarFastPathAllowed);
     info.ScalarFastPathUsed = false;
     info.ScalarFastPathDisabledReason = string(policy.DisabledReason);
+    info.Method = char(estimationMethod);
     info.RxGridSize = size(rxGrid);
     info.ReferenceSymbolsOriginalCount = double(refPruneInfo.OriginalCount);
     info.ReferenceSymbolsUsedCount = double(refPruneInfo.RetainedCount);
     info.ZeroReferenceSymbolCount = double(refPruneInfo.ZeroReferenceSymbolCount);
     info.PrunedZeroReferenceSymbols = logical(refPruneInfo.PrunedZeroReferenceSymbols);
-    cdmLengths = localNormalizeCDMLengths(localResolveCDMLengths(refInd, refSym, fwd));
+    cdmLengths = localNormalizeCDMLengths(localResolveCDMLengths(refInd, refSym, fwd, methodCfg, dmrsConfigType));
     info.CDMLengths = double(cdmLengths);
     if isempty(cdmLengths)
         fwd = localRemoveFwdNameValue(fwd, "CDMLengths");
     elseif any(double(cdmLengths) > 1)
         fwd = localSetFwdNameValue(fwd, "CDMLengths", double(cdmLengths));
+    end
+
+    if estimationMethod == "ideal"
+        if isempty(trueChannel)
+            error("sixgr:phy:channelEstimate:IdealChannelMissing", ...
+                "Method='ideal' requires non-empty TrueChannel runtime evidence.");
+        end
+        Hest = trueChannel;
+        nVar = localNoiseVarianceFromConfig(methodCfg);
+        info.EngineUsed = "ideal_true_channel_runtime_evidence";
+        info.HestSize = size(Hest);
+        info.NoiseVar = nVar;
+        info.IdealChannelSource = "TrueChannel_name_value";
+        return;
+    elseif estimationMethod == "wiener"
+        fwd = localSetFwdNameValue(fwd, "Interpolation", "linear");
+        fwd = localSetFwdNameValue(fwd, "AveragingWindow", [0 0]);
     end
 
     if policy.UseFastMexEffective && ...
@@ -200,7 +246,39 @@ if ~any(abs(refValues) > 0)
 end
 end
 
-function cdm = localResolveCDMLengths(refInd, refSym, fwd)
+function method = localNormalizeEstimationMethod(raw)
+method = lower(strtrim(string(raw)));
+if strlength(method) == 0
+    method = "ls";
+end
+switch method
+    case {"ls","least_squares","least-squares"}
+        method = "LS";
+    case {"wiener","wiener_interpolation","wiener_interpolated"}
+        method = "wiener";
+    case {"ideal","true","true_channel"}
+        method = "ideal";
+    otherwise
+        error("sixgr:phy:channelEstimate:UnknownMethod", ...
+            "Unknown channel estimation Method '%s'. Use LS, wiener, or ideal.", char(method));
+end
+end
+
+function nVar = localNoiseVarianceFromConfig(cfg)
+nVar = NaN;
+if isstruct(cfg)
+    snr_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", ...
+        sixgr.util.structGet(cfg, "simulation.snr_db", NaN)));
+    if isscalar(snr_dB) && isfinite(snr_dB)
+        nVar = 10 .^ (-snr_dB ./ 10);
+    end
+end
+if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
+    nVar = 0;
+end
+end
+
+function cdm = localResolveCDMLengths(refInd, refSym, fwd, cfg, dmrsConfigType)
 cdm = [];
 for i = 1:2:numel(fwd)-1
     if strcmpi(char(string(fwd{i})), 'CDMLengths')
@@ -208,7 +286,44 @@ for i = 1:2:numel(fwd)-1
         return;
     end
 end
+dmrsType = localResolveDMRSConfigType(cfg, dmrsConfigType);
+if dmrsType == 1
+    cdm = [2 1];
+    return;
+elseif dmrsType == 2
+    cdm = [2 2];
+    return;
+end
 cdm = localNormalizeCDMLengths(localDetectCDMLengths(refInd, refSym));
+end
+
+function dmrsType = localResolveDMRSConfigType(cfg, explicitValue)
+dmrsType = NaN;
+raw = explicitValue;
+if isempty(raw) && isstruct(cfg)
+    raw = sixgr.util.structGet(cfg, "phy.dmrs.configType", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.dmrs.configType", ...
+        sixgr.util.structGet(cfg, "phy.pusch.dmrs.configType", [])));
+end
+if isempty(raw)
+    return;
+end
+if isnumeric(raw) || islogical(raw)
+    val = double(raw);
+    if ~isempty(val) && isfinite(val(1))
+        dmrsType = round(val(1));
+    end
+else
+    token = lower(strtrim(string(raw)));
+    if any(token == ["1","type1","type_1","configurationtype1"])
+        dmrsType = 1;
+    elseif any(token == ["2","type2","type_2","configurationtype2"])
+        dmrsType = 2;
+    end
+end
+if ~ismember(dmrsType, [1 2])
+    dmrsType = NaN;
+end
 end
 
 function fwd = localSetFwdNameValue(fwd, name, value)

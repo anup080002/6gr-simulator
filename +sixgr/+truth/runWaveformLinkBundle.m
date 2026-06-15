@@ -5476,6 +5476,29 @@ for gi = 1:numel(grants)
         state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
         continue;
     end
+    if localPDCCHPreAttachAssumptionApplies(state, cfgU, ueIdx, controlSlotIdx)
+        grant.PDCCHGatingActive = true;
+        grant.ControlDecodeOk = true;
+        grant.ControlEligible = true;
+        grant.GrantControlState = "pre_attach_assumed_ok_no_trial_in_warmup";
+        grant.CellAcquisitionState = "pre_attach_assumed_ok";
+        grant.AccessState = "pre_attach_assumed_ok";
+        grant.PDCCHControlEvidenceSource = "run.controlGating.preAttachUEsBeforeMeasurement";
+        if isfield(state, "LastPDCCHStatus") && ueIdx <= numel(state.LastPDCCHStatus)
+            state.LastPDCCHStatus(ueIdx) = "pre_attach_assumed_ok_no_trial_in_warmup";
+        end
+        if isfield(state, "LastSuccessfulPDCCHSlotByUE") && ueIdx <= numel(state.LastSuccessfulPDCCHSlotByUE)
+            state.LastSuccessfulPDCCHSlotByUE(ueIdx) = controlSlotIdx;
+        end
+        state = sixgr.truth.CoupledTruthRuntime.updateGrantControlTrace(state, grant, direction);
+        if isempty(qualifiedGrants)
+            qualifiedGrants = grant;
+        else
+            [qualifiedGrants, grant] = localHarmonizeStructArrays(qualifiedGrants, grant);
+            qualifiedGrants(end + 1, 1) = grant; %#ok<AGROW>
+        end
+        continue;
+    end
     pdcchT = localAnnotateCoupledControlTrial(localCollectPDCCHTrials(cfgU, pdcchSNR_dB, 1, grant), controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction);
     attemptedCCEs = localTrialTableScalar(pdcchT, "UsedCCECount", plannedAggLevel);
     attemptedBudget = localTrialTableScalar(pdcchT, "AvailableCCECount", pdcchCCEBudgetThisSlot);
@@ -5502,6 +5525,30 @@ for gi = 1:numel(grants)
         end
     end
 end
+end
+
+function tf = localPDCCHPreAttachAssumptionApplies(state, cfgU, ueIdx, controlSlotIdx)
+tf = false;
+if ~logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false))
+    return;
+end
+if ~logical(sixgr.util.structGet(state.ControlGating, "PreAttachUEsBeforeMeasurement", ...
+        sixgr.util.structGet(cfgU, "run.controlGating.preAttachUEsBeforeMeasurement", false)))
+    return;
+end
+warmupSlots = double(sixgr.util.structGet(cfgU, "run.warmupSlots", ...
+    sixgr.util.structGet(cfgU, "run_control.warmup_slots", 0)));
+if ~(isfinite(warmupSlots) && warmupSlots >= 0)
+    warmupSlots = 0;
+end
+if ~(isfinite(controlSlotIdx) && controlSlotIdx >= warmupSlots)
+    return;
+end
+lastSlot = NaN;
+if isfield(state, "LastSuccessfulPDCCHSlotByUE") && ueIdx <= numel(state.LastSuccessfulPDCCHSlotByUE)
+    lastSlot = double(state.LastSuccessfulPDCCHSlotByUE(ueIdx));
+end
+tf = ~(isfinite(lastSlot) && lastSlot >= 0 && lastSlot < warmupSlots);
 end
 
 function state = localCollectCanonicalCoupledControlTrials(state, cfgU, ueIdx, direction, snr_dB, trialT)
@@ -6410,7 +6457,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'ChannelGain_dB','NoiseVariance','DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
     'NoiseVarStatus','NoiseVarSource','NoiseVarReason','NoiseVarStrictFailure', ...
     'ReceiverUsable','DecodeAttempted','DecodeUsable','DetectionAttempted','DetectionUsable', ...
-    'MeasurementAttempted','MeasurementUsable','FailureReason','TimingOffset_samples','TimingAdvance_samples','TimingAdvance_us','RankEstimate', ...
+    'MeasurementAttempted','MeasurementUsable','FailureReason','TimingOffset_samples','TimingAdvance_samples','TimingAdvance_us','TAOutOfRangeFlag','TAOutOfRangeReason','TAMaxValid_samples','TAMaxValid_us','RankEstimate', ...
     'SRSOccupiedPRBCount','SRSCarrierPRBCount','SRSBandwidthFraction','SRSFrequencyPRBStart','SRSFrequencyPRBEnd','SRSBandwidthCoverageStatus', ...
     'ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
     'SelectedBeamIndex','BestBeamIndex','BeamHit','TopKBeamHit','BeamCandidateCount', ...
@@ -6509,7 +6556,7 @@ for i = 1:numel(vars)
                             'CQIDerivedModulation','LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy', ...
                             'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
-                            'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason', ...
+                            'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason','TAOutOfRangeReason', ...
                             'ConfiguredSNRSource','SNRValueRole','AppliedAWGNSNRSource','PRACHSNRCalibrationStatus','PRACHSNRCalibrationSource', ...
                             'ReceiverHestSINRSource','ReceiverHestSINRValueRole','ReceiverHestSINRValueStatus','ReceiverHestSINRNAReason', ...
                             'PostEqSINRSource','PostEqSINRValueRole','PostEqSINRValueStatus','PostEqSINRNAReason','PostEqSINRPerLayer_dB', ...
@@ -6551,7 +6598,7 @@ for i = 1:numel(vars)
                     case {'LinkAdaptationApplied','LinkAdaptationScheduled','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied', ...
                             'IsWarmupFrame','TimingEstimateUsed','UseIdealTimingSync','TimingEstimateWasClipped', ...
                             'NoiseVarStrictFailure','ReceiverUsable','DecodeAttempted','DecodeUsable','DetectionAttempted','DetectionUsable', ...
-                            'MeasurementAttempted','MeasurementUsable', ...
+                            'MeasurementAttempted','MeasurementUsable','TAOutOfRangeFlag', ...
                             'PBCHGatingActive','PRACHGatingActive','PDCCHGatingActive','SRSGatingActive','TRSGatingActive','ControlEligible','ControlDecodeOk','SRSValid', ...
                             'TrackingEligibility','TRSInfluencedDecision', ...
                             'IQImbalanceConfigured','IQImbalanceApplied', ...
@@ -7427,6 +7474,10 @@ for k = 1:nTrials
         r.TimingOffset_samples = r.TimingError_samples;
         r.TimingAdvance_samples = double(sixgr.util.structGet(out, "TimingAdvance_samples", r.TimingOffset_samples));
         r.TimingAdvance_us = double(sixgr.util.structGet(out, "TimingAdvance_us", NaN));
+        r.TAOutOfRangeFlag = logical(sixgr.util.structGet(out, "TAOutOfRangeFlag", false));
+        r.TAOutOfRangeReason = string(sixgr.util.structGet(out, "TAOutOfRangeReason", ""));
+        r.TAMaxValid_samples = double(sixgr.util.structGet(out, "TAMaxValid_samples", NaN));
+        r.TAMaxValid_us = double(sixgr.util.structGet(out, "TAMaxValid_us", NaN));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(out, "ConfiguredSNR_dB", snr_dB));
         r.SNRValueRole = string(sixgr.util.structGet(out, "SNRValueRole", r.SNRValueRole));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
@@ -8627,6 +8678,10 @@ row.FailureReason = "";
 row.TimingOffset_samples = NaN;
 row.TimingAdvance_samples = NaN;
 row.TimingAdvance_us = NaN;
+row.TAOutOfRangeFlag = false;
+row.TAOutOfRangeReason = "";
+row.TAMaxValid_samples = NaN;
+row.TAMaxValid_us = NaN;
 row.RankEstimate = NaN;
 row.SRSOccupiedPRBCount = NaN;
 row.SRSCarrierPRBCount = NaN;

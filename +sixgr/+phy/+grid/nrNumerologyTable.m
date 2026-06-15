@@ -1,0 +1,6 @@
+function T = nrNumerologyTable()
+%NRNUMEROLOGYTABLE Return NR numerology parameters from TS 38.211.
+T = table((0:4).', [15; 30; 60; 120; 240], ...
+    [10; 20; 40; 80; 160], repmat(14, 5, 1), ...
+    'VariableNames', {'mu','scs_kHz','slots_per_frame','symbols_per_slot'});
+end

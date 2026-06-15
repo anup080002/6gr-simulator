@@ -13,6 +13,7 @@ kind = lower(string(opt.Kind));
 schemaDef = sixgr.lls6g.config.schema(kind);
 catalog = sixgr.lls6g.config.loadParameterCatalog(kind);
 ctx = string(opt.Context);
+localWarnSchemaVersionMismatch(cfg, logical(opt.AllowPartial), ctx);
 
 localRejectUnknownTopLevel(cfg, schemaDef.AllowedTopLevel, ctx);
 switch kind
@@ -26,6 +27,20 @@ switch kind
     otherwise
         error("sixgr:lls6g:config:UnknownValidationKind", ...
             "Unsupported validation kind '%s'.", kind);
+end
+end
+
+function localWarnSchemaVersionMismatch(cfg, allowPartial, ctx)
+if allowPartial || ~isfield(cfg, "meta")
+    return;
+end
+current = string(sixgr.lls6g.config.currentVersion());
+version = string(sixgr.util.structGet(cfg, "meta.schema_version", ...
+    sixgr.util.structGet(cfg, "meta.schemaVersion", current)));
+if strlength(strtrim(version)) > 0 && version ~= current
+    warning("sixgr:lls6g:config:SchemaVersionMismatch", ...
+        "Scenario schema_version '%s' in %s differs from current '%s'.", ...
+        char(version), localCtx(ctx), char(current));
 end
 end
 
@@ -88,7 +103,7 @@ if isfield(cfg, "scenario") && isfield(cfg.scenario, "sweep") && ~isempty(cfg.sc
                     "Kind", "scenario", "AllowPartial", true, "Context", ctx + "::sweep_override");
             end
         end
-    end
+end
 end
 end
 
@@ -1176,9 +1191,14 @@ resolvedOrder = localQAMOrderFromValue(string(profile.Modulation));
 if ~(isfinite(resolvedOrder) && resolvedOrder > 0)
     return;
 end
-if round(double(configuredOrder)) ~= round(double(resolvedOrder))
+% The configured *_modulation_order is a capability/upper-bound knob in the
+% scenario schema. In fixed-MCS operation the actual scheduled modulation is
+% authoritative from TS 38.214 MCS table/index, so a 256QAM-capable scenario
+% may legally schedule a 64QAM MCS. The invalid case is the inverse: the
+% configured capability is lower than the selected MCS profile requires.
+if round(double(configuredOrder)) < round(double(resolvedOrder))
     error("sixgr:lls6g:config:ModulationMCSConsistencyRequired", ...
-        "%s modulation order %g in %s conflicts with modulation.mcs_table=%s, %s_mcs_index=%g, which resolves to %s per TS 38.214.", ...
+        "%s modulation capability/order %g in %s is lower than modulation.mcs_table=%s, %s_mcs_index=%g, which resolves to %s per TS 38.214.", ...
         direction, double(configuredOrder), localCtx(ctx), tableName, lower(direction), double(mcsIndex), string(profile.Modulation));
     end
 end

@@ -45,7 +45,7 @@
     "gpu_enable": false,
     "mixed_precision_enable": false,
     "fail_on_validation_warning": true,
-    "num_workers": 1,
+    "num_workers": 24,
     "device_target": "cpu",
     "precision_mode": "fp64",
     "max_runtime_guard": 3600,

@@ -12,6 +12,7 @@ newBase = localNewDefaults();
 oldBase = localLegacyDefaults();
 
 cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
+cfg = localEnsureScenarioSchemaVersion(cfg);
 
 cfg = localSyncValue(cfg, newBase, oldBase, "meta.scenario_id", "meta.scenario_id", "identity");
 cfg = localSyncMetadataAlias(cfg, "meta.scenario_name", "meta.description");
@@ -147,6 +148,13 @@ cfg = localSyncValue(cfg, newBase, oldBase, "output_control.save_plots", "output
 cfg = localSyncValue(cfg, newBase, oldBase, "output_control.save_plots", "output.save_png", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "output_control.save_resolved_config", "output.save_yaml_snapshot", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "output_control.save_resolved_config", "output.save_json_snapshot", "identity");
+if isempty(sixgr.util.structGet(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", []))
+    cfg = sixgr.util.structSet(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", false);
+end
+if isempty(sixgr.util.structGet(cfg, "control_gating.pre_attach_ues_before_measurement", []))
+    cfg = sixgr.util.structSet(cfg, "control_gating.pre_attach_ues_before_measurement", ...
+        logical(sixgr.util.structGet(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", false)));
+end
 
 cfg = localSyncNestedFlag(cfg, newBase, oldBase, "signals_and_channels_common.ssb.enable_flag", "reference_signals.ssb_enabled");
 cfg = localSyncNestedFlag(cfg, newBase, oldBase, "signals_and_channels_common.pbch.enable_flag", "reference_signals.pbch_enabled");
@@ -314,6 +322,16 @@ activeMode = lower(strtrim(string(sixgr.util.structGet(cfg, "bandwidth_operation
 supportsPartial = logical(sixgr.util.structGet(cfg, "bandwidth_operation.supports_partial_band_activation", false));
 if isfinite(carrierGrid) && carrierGrid > 0 && (~supportsPartial || activeMode == "fullband")
     cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "resource_grid.num_rbs", round(carrierGrid));
+end
+end
+
+function cfg = localEnsureScenarioSchemaVersion(cfg)
+current = sixgr.lls6g.config.currentVersion();
+if isempty(sixgr.util.structGet(cfg, "meta.schema_version", []))
+    cfg = sixgr.util.structSet(cfg, "meta.schema_version", char(current));
+end
+if isempty(sixgr.util.structGet(cfg, "meta.schemaVersion", []))
+    cfg = sixgr.util.structSet(cfg, "meta.schemaVersion", char(current));
 end
 end
 

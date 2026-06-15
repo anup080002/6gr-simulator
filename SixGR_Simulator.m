@@ -12,9 +12,18 @@ if nargin < 2 || isempty(params)
     params = struct();
 end
 
-warning("sixgr:deprecated:SixGR_Simulator", ...
-    ["SixGR_Simulator is deprecated and kept as a compatibility shim. " ...
-     "Use sixgr_run_3gpp_full_campaign instead."]);
+id = "sixgr:deprecated:SixGR_Simulator";
+if datetime("now") > datetime(2026,9,1)
+    error(id, "SixGR_Simulator removed after 2026-09-01; use sixgr_run_3gpp_full_campaign.");
+end
+ws = warning("query", id);
+warning("on", id);
+warning(id, ...
+    ["SixGR_Simulator is DEPRECATED (kept for backward compatibility only). " ...
+     "Migrate all call sites to sixgr_run_3gpp_full_campaign. " ...
+     "This shim will be removed on 2026-09-01."]);
+warning(ws.state, id);
+localWarnMigration(mfilename("fullpath"));
 
 if isa(ctx, "sixgr.core.SimContext")
     cfg = ctx.Cfg;
@@ -42,6 +51,13 @@ out.Hybrid = struct();
 out.ExecutedStages = "full_campaign";
 out.Report = report;
 
+end
+
+function localWarnMigration(callerFile)
+if nargin < 1 || isempty(callerFile)
+    return;
+end
+fprintf("[MIGRATION] SixGR_Simulator called from: %s\n  Replace with: sixgr_run_3gpp_full_campaign(cfg)\n", callerFile);
 end
 
 function nv = localBuildCampaignNV(params, cfg)

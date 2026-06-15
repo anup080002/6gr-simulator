@@ -13,6 +13,7 @@ candidateOverflowCount = 0;
 
 for ssIdx = 1:numel(searchSpaces)
     searchSpace = searchSpaces(ssIdx);
+    searchSpace = localApplyAggregationLevelPruning(ctrlCfg, searchSpace, truth);
     [candTable, hashTrace] = sixgr.ctrl.PDCCHCandidateGenerator(ctrlCfg, searchSpace, cceMap, truth.BaseSlot);
     if istable(hashTrace) && ~isempty(hashTrace)
         hashTraceAll = [hashTraceAll; hashTrace]; %#ok<AGROW>
@@ -165,7 +166,75 @@ row = struct( ...
     "search_space_id", searchSpace.SearchSpaceID, ...
     "search_space_type", string(searchSpace.SearchSpaceType), ...
     "slot_number", cand.SlotNumber, ...
+    "aggregation_level_selection_mode", string(sixgr.util.structGet(searchSpace, "AggregationLevelSelectionMode", "")), ...
+    "aggregation_level_selection_source", string(sixgr.util.structGet(searchSpace, "AggregationLevelSelectionSource", "")), ...
+    "aggregation_level_selection_sinr_db", double(sixgr.util.structGet(searchSpace, "AggregationLevelSelectionSINR_dB", NaN)), ...
+    "configured_aggregation_levels", string(sixgr.util.structGet(searchSpace, "ConfiguredAggregationLevelsText", "")), ...
+    "effective_aggregation_levels", string(strjoin(string(double(searchSpace.AggregationLevels(:).')), " ")), ...
     "decoded_payload_match", false);
+end
+
+function searchSpace = localApplyAggregationLevelPruning(ctrlCfg, searchSpace, truth)
+allLevels = unique(round(double(searchSpace.AggregationLevels(:).')), "stable");
+searchSpace.ConfiguredAggregationLevelsText = string(strjoin(string(allLevels), " "));
+[sinr_dB, source] = localResolveAggregationSelectionSINR(ctrlCfg, truth);
+searchSpace.AggregationLevelSelectionSINR_dB = double(sinr_dB);
+searchSpace.AggregationLevelSelectionSource = string(source);
+if ~(isfinite(sinr_dB))
+    searchSpace.AggregationLevelSelectionMode = "configured_all_levels_no_measured_sinr";
+    return;
+end
+levels = localEffectiveAggregationLevels(allLevels, sinr_dB);
+searchSpace.AggregationLevels = levels;
+searchSpace.AggregationLevelSelectionMode = "measured_sinr_gated";
+end
+
+function [sinr_dB, source] = localResolveAggregationSelectionSINR(ctrlCfg, truth)
+sinr_dB = NaN;
+source = "measured_control_sinr_unavailable";
+candidates = {
+    "PostEqSINR_dB", "post_equalization_sinr";
+    "MeasuredSINR_dB", "measured_control_sinr";
+    "ReceiverHestSINR_dB", "receiver_hest_control_sinr";
+    "EstimatedSINR_dB", "estimated_control_sinr"};
+for i = 1:size(candidates, 1)
+    value = double(sixgr.util.structGet(truth, candidates{i, 1}, NaN));
+    if isfinite(value)
+        sinr_dB = value;
+        source = candidates{i, 2};
+        return;
+    end
+end
+if logical(sixgr.util.structGet(ctrlCfg, "AggregationLevelSelectionAllowConfiguredSNR", false))
+    value = double(sixgr.util.structGet(ctrlCfg, "SNRdB", NaN));
+    if isfinite(value)
+        sinr_dB = value;
+        source = "configured_control_snr_explicitly_allowed";
+    end
+end
+end
+
+function levels = localEffectiveAggregationLevels(allLevels, sinr_dB)
+allLevels = unique(round(double(allLevels(:).')), "stable");
+allLevels = allLevels(isfinite(allLevels) & allLevels > 0);
+if isempty(allLevels)
+    allLevels = [1 2 4 8 16];
+end
+if sinr_dB > 10
+    maxAL = 1;
+elseif sinr_dB > 5
+    maxAL = 2;
+elseif sinr_dB > 0
+    maxAL = 4;
+elseif sinr_dB > -5
+    maxAL = 8;
+else
+    maxAL = 16;
+end
+levels = allLevels(allLevels <= maxAL);
+if isempty(levels)
+    levels = min(allLevels);
+end
 end
 
 function resources = localCandidateResources(cand, regTable, reTable, cceMap, ctrlCfg, truth)

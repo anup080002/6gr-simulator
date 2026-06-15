@@ -1,6 +1,6 @@
 {
   "top_level_order": [
-    "scheduler", "power_control", "air_interface", "analytics"
+    "scheduler", "power_control", "air_interface", "analytics", "run"
   ],
   "sections": {
     "meta": {"parameters": {
@@ -11,6 +11,12 @@
     "run_control": {"parameters": {
       "time_profiling_enable": {"required": false, "type": "boolean"},
       "time_profiling_granularity": {"required": false, "type": "string"}
+    }},
+    "run": {"parameters": {
+      "controlGating": {"required": false, "type": "struct", "nested_rule": "run_control_gating"}
+    }},
+    "control_gating": {"parameters": {
+      "pre_attach_ues_before_measurement": {"required": false, "type": "boolean"}
     }},
     "simulation": {"parameters": {
       "snr_db": {"required": false, "type": "number"}
@@ -375,6 +381,9 @@
     }}
   },
   "nested_sections": {
+    "run_control_gating": {"parameters": {
+      "preAttachUEsBeforeMeasurement": {"required": false, "type": "boolean"}
+    }},
     "reference_signal_object": {"parameters": {
       "periodicity": {"required": false, "type": "string_or_number"}
     }},

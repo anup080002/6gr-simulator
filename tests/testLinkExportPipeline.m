@@ -26,7 +26,7 @@ artFallback = sixgr.link.exportLinkKPIs(tmp, T, struct(), ...
 assert(isfield(art, "csv") && ~isempty(art.csv), "CSV artifacts missing.");
 assert(isfield(art, "mat") && ~isempty(art.mat), "MAT artifacts missing.");
 assert(isfield(art, "fig") && ~isempty(art.fig), "FIG artifacts missing.");
-assert(numel(artFallback.csv) == 2, "Fallback CSV sidecars were not written.");
+assert(numel(artFallback.csv) >= 3, "Fallback CSV sidecars were not written.");
 
 for i = 1:numel(art.csv)
     assert(exist(art.csv{i}, "file") == 2, "Missing CSV artifact: %s", art.csv{i});
@@ -38,7 +38,20 @@ for i = 1:numel(art.fig)
     assert(exist(art.fig{i}, "file") == 2, "Missing FIG artifact: %s", art.fig{i});
 end
 assert(exist(fullfile(tmp, "csv", "link_kpis_fallback.csv"), "file") == 2, "Missing fallback link KPI CSV.");
+assert(exist(fullfile(tmp, "csv", "lls_snr_sweep_fallback.csv"), "file") == 2, "Missing fallback SNR sweep status CSV.");
 assert(exist(fullfile(tmp, "csv", "lls_kpi_summary_fallback.csv"), "file") == 2, "Missing fallback summary CSV.");
+assert(exist(fullfile(tmp, "csv", "metric_unit_catalog_fallback.csv"), "file") == 2, ...
+    "Missing fallback metric unit catalog CSV.");
+
+sweepFallback = readtable(fullfile(tmp, "csv", "lls_snr_sweep_fallback.csv"), "VariableNamingRule", "preserve");
+assert(ismember("Status", string(sweepFallback.Properties.VariableNames)), ...
+    "Fallback SNR sweep CSV must include a Status sentinel column.");
+assert(any(string(sweepFallback.Status) == "skipped_single_point_run"), ...
+    "Fallback SNR sweep CSV must include skipped_single_point_run sentinel.");
+
+unitT = readtable(fullfile(tmp, "csv", "metric_unit_catalog_fallback.csv"), "VariableNamingRule", "preserve");
+assert(all(ismember(["csv_path","column_name","unit"], string(unitT.Properties.VariableNames))), ...
+    "Metric unit catalog must include csv_path, column_name, and unit columns.");
 
 ok = true;
 end

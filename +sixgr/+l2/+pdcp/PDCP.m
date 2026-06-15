@@ -63,6 +63,7 @@ classdef PDCP < handle
         SNBits (1,1) double = 12          % 12 or 18
         CipheringEnabled (1,1) logical = false
         IntegrityEnabled (1,1) logical = false
+        ROHCEnabled (1,1) logical = false
         StrictMode (1,1) logical = false
         CipherAlgorithm (1,:) char = 'SIM_XOR_SHA256'
         IntegrityAlgorithm (1,:) char = 'SIM_SHA256_4B'
@@ -95,6 +96,7 @@ classdef PDCP < handle
         RxDropMetaQueue cell = {}
         RxSDUCount (1,1) double = 0
         RxDropCount (1,1) double = 0
+        ROHCContextHeader uint8 = uint8([])
     end
 
     methods
@@ -110,6 +112,8 @@ classdef PDCP < handle
 
             obj.CipheringEnabled = logical(sixgr.util.structGet(cfg,"l2.pdcp.ciphering.enable",obj.CipheringEnabled));
             obj.IntegrityEnabled = logical(sixgr.util.structGet(cfg,"l2.pdcp.integrity.enable",obj.IntegrityEnabled));
+            obj.ROHCEnabled = logical(sixgr.util.structGet(cfg,"l2.pdcp.rohc.enable", ...
+                sixgr.util.structGet(cfg,"l2.pdcp.rohc.enabled",obj.ROHCEnabled)));
             obj.StrictMode = logical(sixgr.util.structGet(cfg,"run.strictMode",obj.StrictMode));
             obj.CipherAlgorithm = upper(char(string(sixgr.util.structGet(cfg,"l2.pdcp.ciphering.algorithm",obj.CipherAlgorithm))));
             obj.IntegrityAlgorithm = upper(char(string(sixgr.util.structGet(cfg,"l2.pdcp.integrity.algorithm",obj.IntegrityAlgorithm))));
@@ -150,6 +154,8 @@ classdef PDCP < handle
                             obj.CipheringEnabled = logical(v);
                         case 'integrityenabled'
                             obj.IntegrityEnabled = logical(v);
+                        case 'rohcenabled'
+                            obj.ROHCEnabled = logical(v);
                         case 'strictmode'
                             obj.StrictMode = logical(v);
                         case 'cipheralgorithm'
@@ -176,11 +182,40 @@ classdef PDCP < handle
             obj.initOutputQueues_();
         end
 
+        function compressedBytes = compress(obj, ipBytes)
+            % compress Apply a stateful simulator ROHC hook to an IP packet.
+            ipBytes = localToU8(ipBytes);
+            if ~obj.ROHCEnabled || numel(ipBytes) < 21
+                compressedBytes = ipBytes;
+                return;
+            end
+            obj.ROHCContextHeader = ipBytes(1:20);
+            payload = ipBytes(21:end);
+            % 0xF0 marks this simulator ROHC packet and the second octet
+            % carries the compressed-header byte count.
+            compressedBytes = uint8([240; 2; payload(:)]);
+        end
+
+        function ipBytes = decompress(obj, pduBytes)
+            % decompress Reconstruct an IP packet from the simulator ROHC hook.
+            pduBytes = localToU8(pduBytes);
+            if ~obj.ROHCEnabled || numel(pduBytes) < 2 || pduBytes(1) ~= 240
+                ipBytes = pduBytes;
+                return;
+            end
+            if isempty(obj.ROHCContextHeader)
+                error("sixgr:PDCP:ROHCContextMissing", ...
+                    "ROHC-compressed packet cannot be decompressed before a header context is established.");
+            end
+            ipBytes = uint8([obj.ROHCContextHeader(:); pduBytes(3:end)]);
+        end
+
         function reset(obj)
             obj.TxNextSN = 0;
             obj.RxExpectedSN = 0;
             obj.initRxArrays_();
             obj.initOutputQueues_();
+            obj.ROHCContextHeader = uint8([]);
             obj.Stats = struct('TxSDU',0,'TxPDU',0,'TxBytes',0,'RxPDU',0,'RxSDU',0,'RxBytes',0,'DropDup',0,'IntegrityFail',0);
         end
 

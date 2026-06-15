@@ -74,7 +74,8 @@ rxSync = rxF(startIdx:end, :);
 
 % OFDM demodulation at SSB numerology (nrbSSB=20)
 nrbSSB = 20;
-scsSSB = localSSBSubcarrierSpacing_kHz(blockPattern);
+scsSSB = double(sixgr.util.structGet(cfg, 'phy.ssb.scs_kHz', ...
+    localSSBSubcarrierSpacing_kHz(blockPattern)));
 nSlot = 0;
 
 % Use the numeric-argument syntax from MathWorks examples for maximum

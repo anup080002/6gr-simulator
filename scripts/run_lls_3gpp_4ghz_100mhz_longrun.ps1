@@ -11,10 +11,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$MatlabExe = "C:\Program Files\MATLAB\R2023b\bin\matlab.exe"
+$MatlabExe = if ([string]::IsNullOrWhiteSpace($env:SIXGR_MATLAB_EXE)) { "C:\Program Files\MATLAB\R2024a\bin\matlab.exe" } else { $env:SIXGR_MATLAB_EXE }
 
 if (!(Test-Path -LiteralPath $MatlabExe)) {
-    throw "Pinned MATLAB R2023b executable not found: $MatlabExe"
+    throw "Pinned MATLAB R2024a executable not found: $MatlabExe"
 }
 
 if ([string]::IsNullOrWhiteSpace($RunTag)) {

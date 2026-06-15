@@ -30,6 +30,8 @@ sections:
       scenario_id: {required: true, type: string, nonempty: true}
       description: {required: true, type: string, nonempty: true}
       version: {required: true, type: string, nonempty: true}
+      schema_version: {required: false, type: string}
+      schemaVersion: {required: false, type: string}
       owner: {required: true, type: string, nonempty: true}
       research_class:
         required: false

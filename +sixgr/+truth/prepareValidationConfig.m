@@ -104,6 +104,28 @@ cfg = localSetNestedField(cfg, "phy.ul.srs.Enable", true);
 cfg = localSetNestedField(cfg, "phy.ul.prach.Enable", true);
 cfg = localSetNestedField(cfg, "phy.dl.csirs.Enable", false);
 
+% Coupled truth runtimes must receive explicit gating policy. These values
+% are not inferred from enabled signals because PBCH/PRACH/PDCCH/SRS/TRS
+% are separate access-state gates with different age semantics.
+cfg = localSetNestedField(cfg, "control_gating.pbch_required", true);
+cfg = localSetNestedField(cfg, "control_gating.prach_required", true);
+cfg = localSetNestedField(cfg, "control_gating.pdcch_required", true);
+cfg = localSetNestedField(cfg, "control_gating.srs_required", true);
+cfg = localSetNestedField(cfg, "control_gating.srs_max_age_slots", 4);
+cfg = localSetNestedField(cfg, "control_gating.trs_required", false);
+cfg = localSetNestedField(cfg, "control_gating.trs_max_age_slots", 4);
+cfg = localSetNestedField(cfg, "control_gating.timing_advance_update_mode", "measurement_only");
+cfg = localSetNestedField(cfg, "control_gating.timing_advance_update_threshold_samples", 1);
+cfg = localSetNestedField(cfg, "control_gating.pre_attach_ues_before_measurement", false);
+cfg = localSetNestedField(cfg, "run.controlGating.pbchRequired", true);
+cfg = localSetNestedField(cfg, "run.controlGating.prachRequired", true);
+cfg = localSetNestedField(cfg, "run.controlGating.pdcchRequired", true);
+cfg = localSetNestedField(cfg, "run.controlGating.srsRequired", true);
+cfg = localSetNestedField(cfg, "run.controlGating.srsMaxAgeSlots", 4);
+cfg = localSetNestedField(cfg, "run.controlGating.trsRequired", false);
+cfg = localSetNestedField(cfg, "run.controlGating.trsMaxAgeSlots", 4);
+cfg = localSetNestedField(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", false);
+
 cfg = sixgr.config.normalizeConfig(cfg);
 sixgr.config.validateConfig(cfg);
 end

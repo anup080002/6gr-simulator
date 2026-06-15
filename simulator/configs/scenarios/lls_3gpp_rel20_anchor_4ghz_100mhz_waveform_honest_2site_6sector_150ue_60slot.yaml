@@ -333,6 +333,7 @@ system:
       unsampledGrantPolicy: full_replay
 
 control_gating:
+  pre_attach_ues_before_measurement: true
   pbch_required: true
   prach_required: true
   pdcch_required: true

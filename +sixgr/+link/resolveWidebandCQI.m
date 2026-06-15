@@ -29,7 +29,7 @@ if ~isfinite(margin_dB)
     margin_dB = 0;
 end
 
-[widebandSINR_dB, perRBSINR_dB] = localExtractSINRInputs(sinrInput);
+[widebandSINR_dB, perRBSINR_dB, rankIndicator, perLayerSINR_dB] = localExtractSINRInputs(sinrInput);
 [sinrInputAccepted, sinrInputRejectionReason, sinrInputSource, sinrInputRole, sinrInputStatus] = ...
     localValidateSINRInputProvenance(sinrInput);
 if ~sinrInputAccepted
@@ -86,6 +86,15 @@ else
     feedbackMode = "wideband_same_sinr_model";
 end
 
+[perCodewordCQI, perCodewordSINR_dB] = localPerCodewordCQI(rankIndicator, perLayerSINR_dB, tableToken);
+if ~isempty(perCodewordCQI) && all(isfinite(perCodewordCQI))
+    if isfinite(double(widebandCQI))
+        widebandCQI = min(double(widebandCQI), min(double(perCodewordCQI)));
+    else
+        widebandCQI = min(double(perCodewordCQI));
+    end
+end
+
 feedback = struct( ...
     "Mode", char(feedbackMode), ...
     "Table", char(tableToken), ...
@@ -99,6 +108,8 @@ feedback = struct( ...
     "EffectiveSINRBetaValueRole", char(string(effectiveSINRBetaValueRole)), ...
     "WidebandSpectralEfficiency", double(widebandSE), ...
     "WidebandCQI", double(widebandCQI), ...
+    "PerCodewordCQI", double(perCodewordCQI), ...
+    "PerCodewordSINR_dB", double(perCodewordSINR_dB), ...
     "PerRBSINR_dB", double(perRBSINR_dB), ...
     "PerRBEffectiveSINR_dB", double(perRBEffectiveSINR_dB), ...
     "PerRBSpectralEfficiency", double(perRBSE), ...
@@ -166,15 +177,21 @@ lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER)
 role = string(sixgr.util.structGet(lut, "ValueRole", ""));
 end
 
-function [widebandSINR_dB, perRBSINR_dB] = localExtractSINRInputs(sinrInput)
+function [widebandSINR_dB, perRBSINR_dB, rankIndicator, perLayerSINR_dB] = localExtractSINRInputs(sinrInput)
 widebandSINR_dB = [];
 perRBSINR_dB = [];
+rankIndicator = NaN;
+perLayerSINR_dB = [];
 
 if isnumeric(sinrInput)
     widebandSINR_dB = double(sinrInput);
 elseif isstruct(sinrInput)
     widebandSINR_dB = double(sixgr.util.structGet(sinrInput, "WidebandSINR_dB", []));
     perRBSINR_dB = double(sixgr.util.structGet(sinrInput, "PerRBSINR_dB", []));
+    rankIndicator = double(sixgr.util.structGet(sinrInput, "RankIndicator", ...
+        sixgr.util.structGet(sinrInput, "RI", NaN)));
+    perLayerSINR_dB = double(sixgr.util.structGet(sinrInput, "PostEqSINRPerLayer_dB", ...
+        sixgr.util.structGet(sinrInput, "PerLayerSINR_dB", [])));
 end
 
 if isempty(widebandSINR_dB) && ~isempty(perRBSINR_dB)
@@ -188,6 +205,31 @@ end
 if isempty(widebandSINR_dB)
     widebandSINR_dB = NaN;
 end
+end
+
+function [perCodewordCQI, perCodewordSINR_dB] = localPerCodewordCQI(ri, perLayerSINR_dB, cqiTable)
+perCodewordCQI = [];
+perCodewordSINR_dB = [];
+ri = double(ri);
+if ~(isscalar(ri) && isfinite(ri) && ri > 1)
+    return;
+end
+ri = max(1, round(ri));
+vals = double(perLayerSINR_dB(:).');
+vals = vals(isfinite(vals));
+if numel(vals) < ri
+    return;
+end
+vals = vals(1:ri);
+nCW0 = max(1, floor(ri / 2));
+nCW1 = max(1, ri - nCW0);
+lin = 10 .^ (vals ./ 10);
+cw0 = 10 * log10(max(mean(lin(1:nCW0), "omitnan"), eps));
+cw1 = 10 * log10(max(mean(lin((nCW0+1):(nCW0+nCW1)), "omitnan"), eps));
+perCodewordSINR_dB = [cw0 cw1];
+perCodewordCQI = [ ...
+    sixgr.phy.dl.mapSINRToCQI(cw0, cqiTable), ...
+    sixgr.phy.dl.mapSINRToCQI(cw1, cqiTable)];
 end
 
 function spectralEfficiency = localSINRToSpectralEfficiency(sinr_dB)

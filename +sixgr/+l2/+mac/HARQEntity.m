@@ -26,6 +26,10 @@ classdef HARQEntity < handle
 %    DCI conventions, while internal indexing is 1-based.
 %  - RV sequence follows the common 0,2,3,1 cycling.
 %  - MaxRetx is "max retransmissions" (excluding initial transmission).
+%  - Soft combining is intentionally not performed here. The PHY/link
+%    receiver owns rate-recovered LLR capture and combining; HARQEntity
+%    provides the process ID, NDI, RV, TB identity, and retransmission
+%    scheduling contract needed to pair those PHY observations correctly.
 %
 % Keep this file ASCII-only.
 

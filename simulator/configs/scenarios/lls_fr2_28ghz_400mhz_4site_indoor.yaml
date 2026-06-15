@@ -1,0 +1,50 @@
+inherits:
+  - ./lls_3gpp_rel20_anchor_30ghz_400mhz_waveform_honest_5gnb_15sector_150ue_50slot.yaml
+
+meta:
+  scenario_id: lls_fr2_28ghz_400mhz_4site_indoor
+  scenario_name: FR2 28 GHz 400 MHz 4-site indoor waveform-honest LLS preset
+  scenario_family: lls_fr2_indoor_waveform_honest
+  description: Strict FR2 28 GHz / 400 MHz / 120 kHz SCS preset using CDL-C and FR2 SSB defaults.
+  schema_version: "2.0.0"
+  tags: [lls, fr2, 28ghz, 400mhz, indoor, cdl-c, strict, waveform_honest]
+
+frequency:
+  range_name: FR2
+  band_name: fr2_28ghz_400mhz
+  center_frequency_hz: 28000000000
+  bandwidth_hz: 400000000
+  bandwidth_options_hz: [400000000]
+  numerology_options_khz: [120]
+  channel_model_defaults: CDL-C
+  n_size_grid: 264
+
+frame:
+  scs_khz: 120
+  cp_type: normal
+  tdd_pattern: DDDSU
+
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 100
+  mobility_kmph: 3
+  los_enabled: true
+  pathloss_enabled: true
+  shadow_fading_enabled: true
+  spatial_consistency_enabled: true
+  o2i_model: high
+  pathloss_model: nrPathLoss
+
+deployment_topology:
+  num_sites: 4
+  sectors_per_site: 3
+  indoor_ue_fraction: 1.0
+
+reference_signals:
+  ssb_enabled: true
+  ssb_beam_count: 64
+  ssb_lmax: 64
+  csi_rs_enabled: true
+  srs_enabled: true
+  ptrs_enabled: true

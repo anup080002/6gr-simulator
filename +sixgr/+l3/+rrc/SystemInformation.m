@@ -23,6 +23,7 @@ classdef SystemInformation < handle
     properties(SetAccess=private)
         HasMIB (1,1) logical = false
         HasSIB1 (1,1) logical = false
+        Cfg_ (1,1) struct = struct()
     end
 
     methods
@@ -54,6 +55,7 @@ classdef SystemInformation < handle
 
             % Populate default SI from cfg if present
             obj.loadDefaultsFromConfig_(cfg);
+            obj.Cfg_ = cfg;
         end
 
         function updateFromPBCH(obj, pb)
@@ -118,12 +120,31 @@ classdef SystemInformation < handle
             bytes = localEncode_(obj.SIB1);
         end
 
-        function decodeAndSetSIB1(obj, bytes)
+        function ok = decodeSIB1(obj, bytes)
+            ok = false;
             s = localDecode_(bytes);
-            if isstruct(s)
+            if isstruct(s) && ~isempty(fieldnames(s))
                 obj.SIB1 = s;
                 obj.HasSIB1 = true;
+                ok = true;
             end
+        end
+
+        function decodeAndSetSIB1(obj, bytes)
+            obj.decodeSIB1(bytes);
+        end
+
+        function ok = validateSIB1RoundTrip(obj)
+            ok = false;
+            if ~obj.HasSIB1
+                return;
+            end
+            bytes = obj.encodeSIB1();
+            objCopy = sixgr.l3.rrc.SystemInformation(obj.Cfg_);
+            if ~objCopy.decodeSIB1(bytes)
+                return;
+            end
+            ok = isequaln(obj.SIB1, objCopy.SIB1);
         end
 
         function bytes = encodeMIB(obj)
@@ -190,8 +211,10 @@ function bytes = localEncode_(s)
     catch
         js = jsonencode(struct('encodeFail',true));
     end
-    bytes = uint8(unicode2native(js,'UTF-8'));
-    bytes = bytes(:);
+    payload = uint8(unicode2native(js,'UTF-8'));
+    L = uint32(numel(payload));
+    hdr = typecast(swapbytes(L), 'uint8');
+    bytes = [hdr(:); payload(:)];
 end
 
 function s = localDecode_(bytes)
@@ -200,7 +223,14 @@ function s = localDecode_(bytes)
         return;
     end
     try
-        js = native2unicode(uint8(bytes(:)).','UTF-8');
+        raw = uint8(bytes(:)).';
+        if numel(raw) >= 4
+            L = double(swapbytes(typecast(raw(1:4), 'uint32')));
+            if isfinite(L) && L >= 0 && numel(raw) >= 4 + L
+                raw = raw(5:(4+L));
+            end
+        end
+        js = native2unicode(raw,'UTF-8');
         s = jsondecode(js);
     catch
         s = struct();

@@ -30,10 +30,10 @@ if ([string]::IsNullOrWhiteSpace($PublicHost)) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $scriptPath = Join-Path $PSScriptRoot "lls_web_dashboard.py"
-$matlabPath = "C:\Program Files\MATLAB\R2023b\bin\matlab.exe"
+$matlabPath = if ([string]::IsNullOrWhiteSpace($env:SIXGR_MATLAB_EXE)) { "C:\Program Files\MATLAB\R2024a\bin\matlab.exe" } else { $env:SIXGR_MATLAB_EXE }
 
 if (-not (Test-Path $matlabPath)) {
-    throw "Required MATLAB R2023b executable is missing: $matlabPath"
+    throw "Required MATLAB R2024a executable is missing: $matlabPath"
 }
 
 function Ensure-DashboardFirewallRule {

@@ -75,8 +75,15 @@ if ~isempty(wf)
     metrics.PeakClippingEvents = localPeakClippingEvents(wf, cfg);
 end
 
+llrForMetrics = sixgr.util.structGet(rx, "RecLLR", []);
+if isempty(llrForMetrics)
+    llrForMetrics = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
+end
+if isempty(llrForMetrics)
+    llrForMetrics = sixgr.util.structGet(rx, "CodewordLLR", []);
+end
 [metrics.LLRMeanAbs, metrics.LLRStdAbs, metrics.LLRImbalance, metrics.ModulationMappingSensitivity] = ...
-    localLLRMetrics(sixgr.util.structGet(rx, "CodewordLLR", []), modulation);
+    localLLRMetrics(llrForMetrics, modulation);
 
 [metrics.ShapingRateLoss, metrics.DistributionMatchingLatency_ms] = localShapingMetrics(cfg, tx, modulation);
 metrics.DetectorComplexityUnits = localDetectorComplexity(rx, eqSymAligned);

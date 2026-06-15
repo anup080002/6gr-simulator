@@ -52,6 +52,10 @@ out.PRACHCarrierSlot = double(carrierSlot);
 out.TimingOffset_samples = NaN;
 out.TimingAdvance_samples = NaN;
 out.TimingAdvance_us = NaN;
+out.TAOutOfRangeFlag = false;
+out.TAOutOfRangeReason = "";
+out.TAMaxValid_samples = NaN;
+out.TAMaxValid_us = NaN;
 out.ComputeLatency_ms = NaN;
 out.AccessDelay_ms = NaN;
 out.ProcedureDelay_ms = NaN;
@@ -226,6 +230,7 @@ try
     out.TimingOffset_samples = localScalarOrNaN(rx.TimingOffsetSamples);
     out.TimingAdvance_samples = out.TimingOffset_samples;
     out.TimingAdvance_us = localSamplesToMicroseconds(out.TimingOffset_samples, tx.SampleRate_Hz);
+    out = localValidatePRACHTimingAdvanceRange(out, cfg, tx.SampleRate_Hz);
     out.NoiseFalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Detected", false)));
     out.NoiseFalseAlarm = logical(out.NoiseFalseAlarmFlag);
     out.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoPreambleOccasion, "Detected", false)));
@@ -606,9 +611,59 @@ end
 
 function timingOffset = localResolveInjectedTimingOffsetSamples(cfg)
 timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSamples", ...
-    sixgr.util.structGet(cfg, "impairments.timing_offset_samples", 0)));
+    sixgr.util.structGet(cfg, "impairments.timing_offset_samples", ...
+    sixgr.util.structGet(cfg, "impairments.to.value_samples", NaN))));
+if ~isfinite(timingOffset)
+    distance_m = double(sixgr.util.structGet(cfg, "channel.propagationDistance_m", ...
+        sixgr.util.structGet(cfg, "channel.distance_m", NaN)));
+    sampleRateHz = double(sixgr.util.structGet(cfg, "global_radio_scope.sample_rate_hz", ...
+        sixgr.util.structGet(cfg, "phy.carrier.SampleRate", 122.88e6)));
+    if isfinite(distance_m) && distance_m >= 0 && isfinite(sampleRateHz) && sampleRateHz > 0
+        timingOffset = (double(distance_m) ./ 299792458) .* double(sampleRateHz);
+    end
+end
 if ~isfinite(timingOffset)
     timingOffset = 0;
+end
+end
+
+function out = localValidatePRACHTimingAdvanceRange(out, cfg, sampleRateHz)
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    sampleRateHz = double(sixgr.util.structGet(cfg, "global_radio_scope.sample_rate_hz", ...
+        sixgr.util.structGet(cfg, "phy.carrier.SampleRate", 122.88e6)));
+end
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    sampleRateHz = 122.88e6;
+end
+maxTA_us = localPRACHMaxTimingAdvanceUs(cfg);
+maxTA_samp = double(maxTA_us) * 1e-6 * double(sampleRateHz);
+out.TAMaxValid_us = double(maxTA_us);
+out.TAMaxValid_samples = double(maxTA_samp);
+timingOffset = double(sixgr.util.structGet(out, "TimingOffset_samples", NaN));
+if isfinite(timingOffset) && timingOffset > maxTA_samp
+    out.TAOutOfRangeFlag = true;
+    out.TAOutOfRangeReason = sprintf( ...
+        "TimingOffset_samples=%.1f exceeds maxTA_samp=%.1f (%.1f us); check geometry units and PRACH reference slot.", ...
+        timingOffset, maxTA_samp, maxTA_us);
+else
+    out.TAOutOfRangeFlag = false;
+    out.TAOutOfRangeReason = "";
+end
+end
+
+function maxTA_us = localPRACHMaxTimingAdvanceUs(cfg)
+fmt = upper(strtrim(string(sixgr.util.structGet(cfg, "phy.prach.preambleFormat", ...
+    sixgr.util.structGet(cfg, "random_access.prach_format", "0")))));
+fmt = erase(fmt, "FORMAT");
+switch fmt
+    case "0"
+        maxTA_us = 1.1 * 103.1;
+    case {"1", "3"}
+        maxTA_us = 1.1 * 684.4;
+    case "2"
+        maxTA_us = 1.1 * 203.1;
+    otherwise
+        maxTA_us = 1.1 * 103.1;
 end
 end
 

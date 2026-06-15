@@ -1,6 +1,15 @@
 function artifacts = exportLinkKPIs(runFolder, kpiTable, details, varargin)
 %EXPORTLINKKPIS Unified link-level CSV/MAT/FIG export.
 
+if nargin >= 3 && istable(runFolder) && (ischar(details) || (isstring(details) && isscalar(details)))
+    legacyKpiTable = runFolder;
+    legacyDetails = kpiTable;
+    runFolder = details;
+    kpiTable = legacyKpiTable;
+    details = legacyDetails;
+end
+runFolder = char(string(runFolder));
+
 p = inputParser;
 p.addParameter("SaveCSV", true, @(x) islogical(x) && isscalar(x));
 p.addParameter("SaveMAT", true, @(x) islogical(x) && isscalar(x));
@@ -30,8 +39,11 @@ if opt.SaveCSV
     artifacts.csv{end+1} = csvFile;
 
     sweep = sixgr.util.structGet(details, "SNRSweep", table());
-    if istable(sweep) && ~isempty(sweep)
-        sweepFile = fullfile(runFolder, "csv", localAppendFileSuffix("lls_snr_sweep.csv", fileSuffix));
+    sweepFile = fullfile(runFolder, "csv", localAppendFileSuffix("lls_snr_sweep.csv", fileSuffix));
+    if istable(sweep)
+        if isempty(sweep) || height(sweep) == 0
+            sweep = localEmptySweepStatusTable();
+        end
         sweep = localPreserveExistingTableColumns(sweepFile, sweep);
         sixgr.util.csvWriteTable(sweepFile, sweep);
         artifacts.csv{end+1} = sweepFile;
@@ -48,6 +60,11 @@ if opt.SaveCSV
     csvSummary = fullfile(runFolder, "csv", localAppendFileSuffix("lls_kpi_summary.csv", fileSuffix));
     sixgr.util.csvWriteTable(csvSummary, localBuildSingleRowSummary(kpiTable, sweep));
     artifacts.csv{end+1} = csvSummary;
+
+    unitFile = fullfile(runFolder, "csv", localAppendFileSuffix("metric_unit_catalog.csv", fileSuffix));
+    unitCatalog = sixgr.truth.buildMetricUnitCatalogue(runFolder);
+    sixgr.util.csvWriteTable(unitFile, unitCatalog);
+    artifacts.csv{end+1} = unitFile;
 end
 
 if opt.SaveMAT
@@ -166,11 +183,21 @@ function T = localBuildSingleRowSummary(kpiTable, sweepT)
 row = struct();
 row.BLER_DL_min = localTableMin(kpiTable, ["DL_BLER", "BLER_DL", "BLER"]);
 row.BLER_UL_min = localTableMin(kpiTable, ["UL_BLER", "BLER_UL"]);
-row.Goodput_DL_max_Mbps = localTableMax(kpiTable, ["DL_Goodput_Mbps", "DL_Throughput_Mbps", "Goodput_Mbps", "Throughput_Mbps"]);
-row.Goodput_UL_max_Mbps = localTableMax(kpiTable, ["UL_Goodput_Mbps", "UL_Throughput_Mbps", "Goodput_Mbps", "Throughput_Mbps"]);
+row.Goodput_DL_max_Mbps = localTableMax(kpiTable, ["DL_Goodput_Mbps", "DL_Throughput_Mbps"]);
+if ~isfinite(row.Goodput_DL_max_Mbps)
+    row.Goodput_DL_max_Mbps = localTableMax(kpiTable, ["Goodput_Mbps", "Throughput_Mbps"]);
+end
+row.Goodput_UL_max_Mbps = localTableMax(kpiTable, ["UL_Goodput_Mbps", "UL_Throughput_Mbps"]);
 row.RequiredSNR_DL_10pctBLER = localRequiredSNRFromSweep(sweepT, "DL_BLER", 0.1);
 row.RequiredSNR_UL_10pctBLER = localRequiredSNRFromSweep(sweepT, "UL_BLER", 0.1);
 T = struct2table(row);
+end
+
+function T = localEmptySweepStatusTable()
+T = table( ...
+    string("skipped_single_point_run"), ...
+    NaN, NaN, NaN, NaN, NaN, ...
+    'VariableNames', {'Status','SNR_dB','DL_BLER','UL_BLER','DL_Throughput_Mbps','UL_Throughput_Mbps'});
 end
 
 function v = localTableMin(T, candidates)

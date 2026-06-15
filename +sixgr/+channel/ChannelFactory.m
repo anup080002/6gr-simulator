@@ -30,7 +30,7 @@ classdef ChannelFactory
 % See also: sixgr.channel.TR38901Plus, sixgr.channel.RayTracingAdapter
 
     methods(Static)
-        function ch = create(cfg, varargin)
+        function [ch, metaOut] = create(cfg, varargin)
             % Parse options (lightweight name-value parsing)
             opt = struct();
             opt.Model = "";
@@ -153,6 +153,7 @@ classdef ChannelFactory
             meta.GeometryAdapterSource = "";
             meta.GeometryAdapterLimitation = "";
             meta.GeometryAdapterPortMapping = "";
+            meta.RuntimeArrayGeometryCoupled = false;
             meta.PathlossExecutionBackend = "";
             meta.PathlossTruthClassification = "";
             meta.PathlossApproximationReason = "";
@@ -183,6 +184,7 @@ classdef ChannelFactory
                 meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
                     meta, "awgn", "none", "sixgr.channel.ChannelFactory.create:awgn_shortcut");
                 ch = struct("Type","AWGN","Object",[],"IsFading",false,"IsLargeScaleOnly",false,"Meta",meta);
+                metaOut = ch.Meta;
                 return;
             end
 
@@ -218,6 +220,13 @@ classdef ChannelFactory
                 meta.ChannelNormalizePathGains = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizePathGains", false));
                 meta.ChannelNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationMode", ""));
                 meta.ChannelNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationSource", ""));
+                meta.LOSProbabilitySource = string(sixgr.util.structGet(arrayRuntimeMeta, "LOSProbabilitySource", ""));
+                meta.LOSComplianceStatus = string(sixgr.util.structGet(arrayRuntimeMeta, "LOSComplianceStatus", ""));
+                meta.LOSComplianceReason = string(sixgr.util.structGet(arrayRuntimeMeta, "LOSComplianceReason", ""));
+                meta.CDLDelayProfileBeforeLOSGating = string(sixgr.util.structGet(arrayRuntimeMeta, "CDLDelayProfileBeforeLOSGating", ""));
+                meta.CDLDelayProfileAfterLOSGating = string(sixgr.util.structGet(arrayRuntimeMeta, "CDLDelayProfileAfterLOSGating", ""));
+                meta.CDLLOSDraw = double(sixgr.util.structGet(arrayRuntimeMeta, "CDLLOSDraw", NaN));
+                meta.RuntimeArrayGeometryCoupled = logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false));
                 if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false))
                     meta.ChannelArrayModel = "nrcdl_runtime_array_geometry_channel";
                     meta.ChannelArrayHandlingStatus = "runtime_array_shape_spacing_orientation_coupled";
@@ -232,6 +241,10 @@ classdef ChannelFactory
                     meta.ChannelRuntimeGeometrySource = string(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometrySource", ""));
                     meta.TransmitArrayOrientation_deg = sixgr.util.structGet(arrayRuntimeMeta, "TransmitArrayOrientation_deg", [NaN; NaN; NaN]);
                     meta.ReceiveArrayOrientation_deg = sixgr.util.structGet(arrayRuntimeMeta, "ReceiveArrayOrientation_deg", [NaN; NaN; NaN]);
+                    meta.TransmitAntennaArraySize = string(sixgr.util.structGet(arrayRuntimeMeta, "TransmitAntennaArraySize", ""));
+                    meta.ReceiveAntennaArraySize = string(sixgr.util.structGet(arrayRuntimeMeta, "ReceiveAntennaArraySize", ""));
+                    meta.TransmitAntennaElementSpacing_lambda = string(sixgr.util.structGet(arrayRuntimeMeta, "TransmitAntennaElementSpacing_lambda", ""));
+                    meta.ReceiveAntennaElementSpacing_lambda = string(sixgr.util.structGet(arrayRuntimeMeta, "ReceiveAntennaElementSpacing_lambda", ""));
                 end
                 ch = struct("Type","nrCDLChannel","Object",chObj,"IsFading",true,"IsLargeScaleOnly",false,"Meta",meta);
             elseif any(model == ["tr38901","tr38.901","tr38_901","abg","large","abstract"])
@@ -298,6 +311,7 @@ classdef ChannelFactory
                     ch.Meta.SpatialNonStationarityComplianceStatus = "runtime_error";
                 end
             end
+            metaOut = ch.Meta;
         end
     end
 
@@ -631,7 +645,22 @@ classdef ChannelFactory
                 "RuntimeArrayGeometryCoupled", false, ...
                 "RuntimeArrayGeometrySource", "", ...
                 "TransmitArrayOrientation_deg", [NaN; NaN; NaN], ...
-                "ReceiveArrayOrientation_deg", [NaN; NaN; NaN]);
+                "ReceiveArrayOrientation_deg", [NaN; NaN; NaN], ...
+                "TransmitAntennaArraySize", "", ...
+                "ReceiveAntennaArraySize", "", ...
+                "TransmitAntennaElementSpacing_lambda", "", ...
+                "ReceiveAntennaElementSpacing_lambda", "", ...
+                "LOSProbabilitySource", "", ...
+                "LOSComplianceStatus", "", ...
+                "LOSComplianceReason", "", ...
+                "CDLDelayProfileBeforeLOSGating", string(delayProfile), ...
+                "CDLDelayProfileAfterLOSGating", string(delayProfile), ...
+                "CDLLOSDraw", NaN);
+            [delayProfile, losMeta] = sixgr.channel.ChannelFactory.localApplyCDLLOSProbabilityGating(delayProfile, cfg, opt);
+            losFields = fieldnames(losMeta);
+            for losIdx = 1:numel(losFields)
+                arrayRuntimeMeta.(losFields{losIdx}) = losMeta.(losFields{losIdx});
+            end
             cdl = nrCDLChannel;
             cdl.DelayProfile = delayProfile;
             cdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
@@ -654,6 +683,16 @@ classdef ChannelFactory
                 sixgr.util.structGet(cfg, "antenna_and_array.ue_array_geometry", "ula"), ...
                 sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""), ...
                 opt.ReceiveAntennaRuntime, opt.ReceiveAntennaMeta);
+            arrayRuntimeMeta.TransmitAntennaArraySize = mat2str(double(cdl.TransmitAntennaArray.Size));
+            arrayRuntimeMeta.ReceiveAntennaArraySize = mat2str(double(cdl.ReceiveAntennaArray.Size));
+            arrayRuntimeMeta.TransmitAntennaElementSpacing_lambda = mat2str(double(cdl.TransmitAntennaArray.ElementSpacing));
+            arrayRuntimeMeta.ReceiveAntennaElementSpacing_lambda = mat2str(double(cdl.ReceiveAntennaArray.ElementSpacing));
+            if ~(txRuntimeCoupled && rxRuntimeCoupled)
+                arrayRuntimeMeta.RuntimeArrayGeometryCoupled = true;
+                arrayRuntimeMeta.RuntimeArrayGeometrySource = "ChannelFactory.configured_antenna_array_to_nrCDLChannel";
+                arrayRuntimeMeta.TransmitArrayOrientation_deg = [NaN; NaN; NaN];
+                arrayRuntimeMeta.ReceiveArrayOrientation_deg = [NaN; NaN; NaN];
+            end
             if txRuntimeCoupled && rxRuntimeCoupled
                 txOrientation = sixgr.channel.ChannelFactory.localResolveRuntimeAntennaOrientation( ...
                     opt.TransmitAntennaMeta, "Azimuth_deg");
@@ -685,6 +724,75 @@ classdef ChannelFactory
                 cdl.RandomStream = "mt19937ar with seed";
                 cdl.Seed = double(seed);
             end
+        end
+
+        function [profile, meta] = localApplyCDLLOSProbabilityGating(profile, cfg, opt)
+            profile = char(string(profile));
+            meta = struct( ...
+                "LOSProbabilitySource", "not_evaluated_distance_unavailable", ...
+                "LOSComplianceStatus", "not_evaluated", ...
+                "LOSComplianceReason", "", ...
+                "CDLDelayProfileBeforeLOSGating", string(profile), ...
+                "CDLDelayProfileAfterLOSGating", string(profile), ...
+                "CDLLOSDraw", NaN);
+            pLOS = double(sixgr.util.structGet(cfg, "channel.losProbability", NaN));
+            status = struct("Source", "configured_channel_los_probability", ...
+                "ComplianceStatus", "configured_probability", "Reason", "", "StrictSupported", true);
+            if ~isfinite(pLOS)
+                d2d_m = double(sixgr.util.structGet(cfg, "channel.propagationDistance2D_m", ...
+                    sixgr.util.structGet(cfg, "channel.distance2D_m", ...
+                    sixgr.util.structGet(cfg, "channel.distance_m", NaN))));
+                if ~isfinite(d2d_m)
+                    d3d_m = double(sixgr.util.structGet(cfg, "channel.propagationDistance_m", NaN));
+                    hBS_m = double(sixgr.util.structGet(cfg, "scenario.bs.height_m", ...
+                        sixgr.util.structGet(cfg, "deployment_topology.bs_height_m", 25)));
+                    hUE_m = double(sixgr.util.structGet(cfg, "ue.heightAboveGround_m", ...
+                        sixgr.util.structGet(cfg, "scenario.ue.height_m", 1.5)));
+                    if isfinite(d3d_m) && isfinite(hBS_m) && isfinite(hUE_m)
+                        d2d_m = sqrt(max(double(d3d_m).^2 - (double(hBS_m) - double(hUE_m)).^2, 0));
+                    end
+                end
+                if isfinite(d2d_m) && d2d_m > 0
+                    scenarioName = string(sixgr.util.structGet(cfg, "channel.scenario", ""));
+                    if strlength(strtrim(scenarioName)) == 0
+                        scenarioName = string(sixgr.util.structGet(cfg, "channels.pathloss_scenario", ""));
+                    end
+                    if strlength(strtrim(scenarioName)) == 0
+                        scenarioName = string(sixgr.util.structGet(cfg, "deployment_topology.cell_type", ""));
+                    end
+                    if strlength(strtrim(scenarioName)) == 0
+                        scenarioName = "UMa";
+                    end
+                    hUE_m = double(sixgr.util.structGet(cfg, "ue.heightAboveGround_m", ...
+                        sixgr.util.structGet(cfg, "scenario.ue.height_m", 1.5)));
+                    [pLOS, status] = sixgr.channel.LOSProbability(scenarioName, d2d_m, "HUT_m", hUE_m);
+                    pLOS = double(pLOS(1));
+                end
+            end
+            if ~isfinite(pLOS)
+                return;
+            end
+            pLOS = max(0, min(1, double(pLOS)));
+            seed = double(sixgr.util.structGet(cfg, "channel.losSeed", ...
+                sixgr.util.structGet(cfg, "run.seed", sixgr.util.structGet(cfg, "channel.seed", 1))));
+            if ~(isfinite(seed) && isscalar(seed))
+                seed = 1;
+            end
+            stream = RandStream("mt19937ar", "Seed", max(0, mod(round(seed), 2^32 - 1)));
+            draw = rand(stream);
+            isLOS = draw < pLOS;
+            if ~isLOS && any(upper(string(profile)) == ["CDL-D", "CDL-E"])
+                profile = "CDL-C";
+            end
+            meta.LOSProbabilitySource = string(sixgr.util.structGet(status, "Source", "tr38901_los_probability"));
+            meta.LOSComplianceStatus = string(sixgr.util.structGet(status, "ComplianceStatus", "evaluated"));
+            meta.LOSComplianceReason = sprintf("losProbability=%.6f losDraw=%.6f isLOS=%d", pLOS, draw, isLOS);
+            extraReason = string(sixgr.util.structGet(status, "Reason", ""));
+            if strlength(strtrim(extraReason)) > 0
+                meta.LOSComplianceReason = meta.LOSComplianceReason + "; " + extraReason;
+            end
+            meta.CDLDelayProfileAfterLOSGating = string(profile);
+            meta.CDLLOSDraw = double(draw);
         end
 
         function [arr, usedRuntimeGeometry] = localConfigureCDLAntennaArray(arr, numAnt, geometry, polarization, runtimeAntenna, runtimeMeta)
@@ -928,8 +1036,18 @@ classdef ChannelFactory
                 cfgOut = sixgr.channel.ChannelFactory.localAssignConcreteProfile(cfgOut, "CDL", modelToken);
                 model = "cdl";
             elseif any(strcmp(modelToken, {'NRTDL', 'TDL'}))
+                tdlProfile = sixgr.channel.ChannelFactory.localNormalizeToken( ...
+                    sixgr.util.structGet(cfgOut, "channel.tdlProfile", ""));
+                if sixgr.channel.ChannelFactory.localIsConcreteTDLProfile(tdlProfile)
+                    cfgOut = sixgr.channel.ChannelFactory.localAssignConcreteProfile(cfgOut, "TDL", tdlProfile);
+                end
                 model = "tdl";
             elseif any(strcmp(modelToken, {'NRCDL', 'CDL'}))
+                cdlProfile = sixgr.channel.ChannelFactory.localNormalizeToken( ...
+                    sixgr.util.structGet(cfgOut, "channel.cdlProfile", ""));
+                if sixgr.channel.ChannelFactory.localIsConcreteCDLProfile(cdlProfile)
+                    cfgOut = sixgr.channel.ChannelFactory.localAssignConcreteProfile(cfgOut, "CDL", cdlProfile);
+                end
                 model = "cdl";
             else
                 model = lower(string(modelToken));
@@ -959,6 +1077,18 @@ classdef ChannelFactory
                 "channel.fading.model" ...
                 };
 
+            ownProfileValue = sixgr.channel.ChannelFactory.localNormalizeToken( ...
+                sixgr.util.structGet(cfg, char(ownProfilePath), ""));
+            if strcmp(family, 'TDL')
+                hasExplicitOwnProfile = sixgr.channel.ChannelFactory.localIsConcreteTDLProfile(ownProfileValue);
+            else
+                hasExplicitOwnProfile = sixgr.channel.ChannelFactory.localIsConcreteCDLProfile(ownProfileValue);
+            end
+            modelToken = sixgr.channel.ChannelFactory.localNormalizeToken( ...
+                sixgr.util.structGet(cfg, "channel.model", ""));
+            fadingModelToken = sixgr.channel.ChannelFactory.localNormalizeToken( ...
+                sixgr.util.structGet(cfg, "channel.fading.model", ""));
+
             ownProfiles = strings(0, 1);
             ownFields = strings(0, 1);
             otherProfiles = strings(0, 1);
@@ -972,6 +1102,10 @@ classdef ChannelFactory
                         ownProfiles(end+1, 1) = string(value); %#ok<AGROW>
                         ownFields(end+1, 1) = string(path); %#ok<AGROW>
                     elseif sixgr.channel.ChannelFactory.localIsConcreteCDLProfile(value)
+                        if sixgr.channel.ChannelFactory.localIsStaleGenericFadingProfile( ...
+                                path, hasExplicitOwnProfile, modelToken, fadingModelToken, family)
+                            continue;
+                        end
                         otherProfiles(end+1, 1) = string(value); %#ok<AGROW>
                         otherFields(end+1, 1) = string(path); %#ok<AGROW>
                     end
@@ -980,6 +1114,10 @@ classdef ChannelFactory
                         ownProfiles(end+1, 1) = string(value); %#ok<AGROW>
                         ownFields(end+1, 1) = string(path); %#ok<AGROW>
                     elseif sixgr.channel.ChannelFactory.localIsConcreteTDLProfile(value)
+                        if sixgr.channel.ChannelFactory.localIsStaleGenericFadingProfile( ...
+                                path, hasExplicitOwnProfile, modelToken, fadingModelToken, family)
+                            continue;
+                        end
                         otherProfiles(end+1, 1) = string(value); %#ok<AGROW>
                         otherFields(end+1, 1) = string(path); %#ok<AGROW>
                     end
@@ -1015,6 +1153,19 @@ classdef ChannelFactory
             profile = char(ownProfiles(1));
         end
 
+        function tf = localIsStaleGenericFadingProfile(path, hasExplicitOwnProfile, modelToken, fadingModelToken, family)
+            tf = false;
+            if ~hasExplicitOwnProfile || ~strcmp(char(path), "channel.fading.profile")
+                return;
+            end
+            family = upper(string(family));
+            modelToken = upper(string(modelToken));
+            fadingModelToken = upper(string(fadingModelToken));
+            tf = modelToken == family || ...
+                (strlength(modelToken) == 0 && ...
+                (fadingModelToken == family || strlength(fadingModelToken) == 0));
+        end
+
         function localRejectBareDelayProfile(rawValue, fieldName, family, exampleProfile)
             value = sixgr.channel.ChannelFactory.localNormalizeToken(rawValue);
             if strcmp(value, 'TDL') || strcmp(value, 'CDL')
@@ -1035,6 +1186,11 @@ classdef ChannelFactory
             else
                 cfgOut.channel.cdlProfile = char(profile);
             end
+            if ~isfield(cfgOut.channel, "fading") || ~isstruct(cfgOut.channel.fading)
+                cfgOut.channel.fading = struct();
+            end
+            cfgOut.channel.fading.model = char(upper(string(family)));
+            cfgOut.channel.fading.profile = char(profile);
         end
 
         function token = localNormalizeToken(rawValue)

@@ -55,8 +55,22 @@ function [decCB, actNumIter, finalParityChecks] = ldpcDecode(llr, bgn, maxNumIte
 
     if ~isempty(algorithm)
         if isstring(algorithm), algorithm = char(algorithm); end
-        [decCB, actNumIter, finalParityChecks] = nrLDPCDecode(llr, bgn, maxNumIter, 'Algorithm', algorithm);
+        [decCB, actNumIter, finalParityChecks] = localNRLDPCDecode(llr, bgn, maxNumIter, ...
+            'Algorithm', algorithm);
     else
-        [decCB, actNumIter, finalParityChecks] = nrLDPCDecode(llr, bgn, maxNumIter);
+        [decCB, actNumIter, finalParityChecks] = localNRLDPCDecode(llr, bgn, maxNumIter);
     end
+end
+
+function [decCB, actNumIter, finalParityChecks] = localNRLDPCDecode(llr, bgn, maxNumIter, varargin)
+try
+    [decCB, actNumIter, finalParityChecks] = nrLDPCDecode(llr, bgn, maxNumIter, ...
+        varargin{:}, 'EarlyTermination', true);
+catch ME
+    if contains(string(ME.message), "EarlyTermination") || contains(string(ME.identifier), "EarlyTermination")
+        [decCB, actNumIter, finalParityChecks] = nrLDPCDecode(llr, bgn, maxNumIter, varargin{:});
+    else
+        rethrow(ME);
+    end
+end
 end

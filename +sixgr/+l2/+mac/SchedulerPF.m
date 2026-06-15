@@ -54,7 +54,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             info = struct();
             info.Slot = slot;
             info.Direction = obj.Direction;
-            k1 = max(1, round(double(sixgr.util.structGet(obj.Cfg, "mac.harq.k1", 4))));
+            k1 = localResolveGrantK1(obj.Cfg, slot);
             k2 = max(0, round(double(sixgr.util.structGet(obj.Cfg, "mac.harq.k2", 1))));
             ssid = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.SearchSpaceID", 0))));
             coreset = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.CORESETID", 0))));
@@ -365,6 +365,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     grants(end+1) = groupGrants(gg); %#ok<AGROW>
                     rnti = double(groupGrants(gg).RNTI);
                     obj.ensureUE(rnti);
+                    obj.updateAvgThroughput(rnti, groupGrants(gg).TBSBits, true);
                     obj.UEStats(obj.ensureUE(rnti)).LastServedSlot = slot;
                 end
             end
@@ -393,6 +394,39 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             end
         end
     end
+
+    methods(Static)
+        function rate_bps = cqiToApproxThroughputBps(cqi, nPRB, slotDuration_s)
+            if nargin < 2 || isempty(nPRB)
+                nPRB = 1;
+            end
+            if nargin < 3 || isempty(slotDuration_s)
+                slotDuration_s = 1e-3;
+            end
+            cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqi, 1);
+            nPRB = max(1, round(double(nPRB)));
+            slotDuration_s = max(double(slotDuration_s), eps);
+            profile = sixgr.link.resolveCQIProfile("table2", cqi);
+            se = double(sixgr.util.structGet(profile, "SpectralEfficiency", NaN));
+            if ~(isfinite(se) && se > 0)
+                se = max(0.15, 0.15 * double(cqi));
+            end
+            rate_bps = double(nPRB) * 12 * 14 * se / slotDuration_s;
+        end
+    end
+end
+
+function k1 = localResolveGrantK1(cfg, slot)
+explicit = sixgr.util.structGet(cfg, "mac.harq.k1", []);
+if ~isempty(explicit)
+    k1 = max(1, round(double(explicit)));
+    return;
+end
+pattern = sixgr.util.structGet(cfg, "frame_timing.tdd_pattern", ...
+    sixgr.util.structGet(cfg, "frame.tdd_pattern", "DDDSU"));
+mu = double(sixgr.util.structGet(cfg, "global_radio_scope.numerology_mu", ...
+    sixgr.util.structGet(cfg, "phy.numerology.mu", 1)));
+k1 = sixgr.l2.mac.resolveHARQFeedbackK1(slot, pattern, mu);
 end
 
 function g = localGrantTemplate(direction, slot)
@@ -425,8 +459,8 @@ g.QueueLimited = false;
 g.QueuePaddingBits = 0;
 g.QueuePaddingBytes = 0;
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
-g.MCSIndex = 0;
-g.CQIUsed = 0;
+g.MCSIndex = 1;
+g.CQIUsed = 1;
 g.PDCCHAggregationLevel = NaN;
 g.RIUsed = NaN;
 g.PMI = NaN;
@@ -487,8 +521,9 @@ end
 end
 
 function cqi = localUECQI(ue)
+raw = double(sixgr.util.structGet(ue, "CQI", NaN));
 cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
-    sixgr.util.structGet(ue, "CQI", NaN), 0);
+    raw, 1);
 end
 
 function hol = localUEHoLDelay(ue)
@@ -515,7 +550,7 @@ n = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoMaxUsersPerPRB", ...
 if ~(isscalar(n) && isfinite(n) && n >= 2)
     n = 2;
 end
-n = max(2, min(4, round(n)));
+n = max(2, min(2, round(n)));
 end
 
 function tf = localMUMIMOCompatible(ueA, ueB, cfg)
@@ -536,6 +571,16 @@ if ~(isfinite(riA) && isfinite(riB) && riA >= 1 && riB >= 1)
     tf = false;
     return;
 end
+[hasPrec, leakage_dB] = localPrecoderLeakage_dB(ueA, ueB);
+if hasPrec
+    threshold_dB = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoPrecoderLeakageThreshold_dB", ...
+        sixgr.util.structGet(cfg, "phy.mimo.muMimoPrecoderLeakageThreshold_dB", -15)));
+    if ~(isfinite(threshold_dB) && threshold_dB < 0)
+        threshold_dB = -15;
+    end
+    tf = leakage_dB <= threshold_dB;
+    return;
+end
 pmiA = double(sixgr.util.structGet(ueA, "PMI", NaN));
 pmiB = double(sixgr.util.structGet(ueB, "PMI", NaN));
 if isfinite(pmiA) && isfinite(pmiB)
@@ -544,6 +589,39 @@ else
     sinrA = double(sixgr.util.structGet(ueA, "MeasuredSINR_dB", NaN));
     sinrB = double(sixgr.util.structGet(ueB, "MeasuredSINR_dB", NaN));
     tf = isfinite(sinrA) && isfinite(sinrB) && abs(sinrA - sinrB) <= 6;
+end
+end
+
+function [tf, leakage_dB] = localPrecoderLeakage_dB(ueA, ueB)
+tf = false;
+leakage_dB = NaN;
+wA = localPrecoderVector(ueA);
+wB = localPrecoderVector(ueB);
+if isempty(wA) || isempty(wB)
+    return;
+end
+n = min(numel(wA), numel(wB));
+wA = wA(1:n);
+wB = wB(1:n);
+na = norm(wA);
+nb = norm(wB);
+if ~(isfinite(na) && isfinite(nb) && na > 0 && nb > 0)
+    return;
+end
+leakage = abs((wA(:)' * wB(:)) ./ (na * nb)).^2;
+leakage_dB = 10 * log10(max(double(leakage), realmin));
+tf = isfinite(leakage_dB);
+end
+
+function w = localPrecoderVector(ue)
+w = [];
+fields = ["PrecoderVector","SelectedPrecoder","Precoder","PMIVector","BeamWeights"];
+for i = 1:numel(fields)
+    raw = sixgr.util.structGet(ue, fields(i), []);
+    if isnumeric(raw) && ~isempty(raw)
+        w = double(raw(:));
+        return;
+    end
 end
 end
 

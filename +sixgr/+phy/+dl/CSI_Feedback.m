@@ -38,6 +38,8 @@ if isempty(maxRank)
 else
     maxRank = max(1, min([double(maxRank), numRxAnt, numTxPorts]));
 end
+svdRank = localEstimateRIFromSVD(hEst, cfg, maxRank);
+maxRank = max(1, min(maxRank, svdRank));
 
 reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", true));
 reportPMI = logical(sixgr.util.structGet(cfg, "phy.csi.reportPMI", true));
@@ -143,6 +145,8 @@ csi.CQI = localReportedScalar(cqi, reportCQI);
 csi.RI = localReportedScalar(best.Rank, reportRI);
 csi.PMI = localReportedScalar(best.PMI, reportPMI);
 csi.CRI = localReportedScalar(criInfo.CRI, reportCRI);
+csi.RankSelectionMethod = "wideband_channel_svd_singular_value_gap";
+csi.SVDRankEstimate = double(svdRank);
 csi.SINR_dB = double(sinr_dB);
 csi.Direction = char(direction);
 csi.RSRP_dB = double(rsrp_dB);
@@ -167,6 +171,8 @@ csi.ReportRI = reportRI;
 csi.ReportCRI = reportCRI;
 csi.SubbandCQI = double(subband.CQI);
 csi.SubbandCQIVector = char(subband.CQIVector);
+csi.SubbandPMI = double(subband.PMI);
+csi.SubbandPMIVector = char(subband.PMIVector);
 csi.SubbandSINR_dB = char(subband.SINRVector);
 csi.SubbandSizePRB = double(subband.SubbandSizePRB);
 csi.SubbandCount = double(subband.SubbandCount);
@@ -221,6 +227,8 @@ info.WidebandChannel = Hwb;
 info.SelectedMetric = double(best.Metric);
 info.SelectedEffectiveSINR = double(best.EffectiveSINR);
 info.SelectedRank = double(best.Rank);
+info.SVDRankEstimate = double(svdRank);
+info.RankSelectionMethod = "wideband_channel_svd_singular_value_gap";
 info.SelectedPMI = double(best.PMI);
 info.SelectedCRI = double(criInfo.CRI);
 info.Config = struct( ...
@@ -258,6 +266,38 @@ info.Hints = struct( ...
     "AddPMISelection", true, ...
     "AddRISelection", true, ...
     "AddCRISelection", true);
+end
+
+function ri = localEstimateRIFromSVD(hEst, cfg, maxRank)
+ri = 1;
+if nargin < 3 || isempty(maxRank) || ~(isfinite(double(maxRank)) && double(maxRank) >= 1)
+    maxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", 1));
+end
+maxRank = max(1, round(double(maxRank)));
+if isempty(hEst)
+    return;
+end
+try
+    Hwb = localWidebandChannelMatrix(hEst, cfg);
+    if isempty(Hwb)
+        return;
+    end
+    sv = svd(double(Hwb));
+    sv = sv(isfinite(sv) & sv > 0);
+    if isempty(sv)
+        return;
+    end
+    threshold_dB = double(sixgr.util.structGet(cfg, "phy.mimo.rankSelectionSVGap_dB", ...
+        sixgr.util.structGet(cfg, "phy.csi.rankSelectionSVGap_dB", 3)));
+    if ~(isfinite(threshold_dB) && threshold_dB >= 0)
+        threshold_dB = 3;
+    end
+    sv_dB = 20 .* log10(sv ./ max(sv));
+    ri = sum(sv_dB >= -threshold_dB);
+    ri = max(1, min(maxRank, ri));
+catch
+    ri = 1;
+end
 end
 
 function [value, source, role, status, reason] = localResolveSchedulerEligiblePostEqSINR(opt)
@@ -557,8 +597,10 @@ end
 function subband = localComputeSubbandCSI(Hest, nVar, cfg, direction, perRBSINR_dB)
 subband = struct( ...
     "CQI", [], ...
+    "PMI", [], ...
     "SINR_dB", [], ...
     "CQIVector", "", ...
+    "PMIVector", "", ...
     "SINRVector", "", ...
     "SubbandSizePRB", NaN, ...
     "SubbandCount", 0, ...
@@ -569,6 +611,9 @@ subband = struct( ...
 reportSubband = logical(sixgr.util.structGet(cfg, "phy.csi.reportSubbandCQI", ...
     sixgr.util.structGet(cfg, "phy.csi.subbandCQIEnabled", ...
     sixgr.util.structGet(cfg, "csi_acquisition_and_reporting.subband_cqi_enable", false))));
+reportMode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.csi.reportingMode", ...
+    sixgr.util.structGet(cfg, "csi_acquisition_and_reporting.reporting_mode", "wideband")))));
+reportSubband = reportSubband || reportMode == "subband";
 if ~reportSubband
     return;
 end
@@ -590,6 +635,7 @@ subbandSize = localResolveSubbandSizePRB(cfg, numRB);
 numSubbands = ceil(double(numRB) / double(subbandSize));
 sinrVals = nan(numSubbands, 1);
 cqiVals = nan(numSubbands, 1);
+pmiVals = nan(numSubbands, 1);
 for sb = 1:numSubbands
     rb0 = (sb - 1) * subbandSize + 1;
     rb1 = min(numRB, sb * subbandSize);
@@ -603,6 +649,13 @@ for sb = 1:numSubbands
     sinrVals(sb) = effSinr;
     cqiFb = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", effSinr), cfg, direction);
     cqiVals(sb) = double(sixgr.util.normalizeReportedCQI(sixgr.util.structGet(cqiFb, "WidebandCQI", NaN)));
+    Hsb = localSubbandWidebandChannelMatrix(Hest, rb0, rb1);
+    if ~isempty(Hsb)
+        maxRank = max(1, round(double(sixgr.util.structGet(cfg, "phy.csi.maxRank", min(size(Hsb))))));
+        codebookMode = string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo"));
+        bestSB = localSelectBestWidebandPrecoder(Hsb, nVar, cfg, maxRank, codebookMode);
+        pmiVals(sb) = double(sixgr.util.structGet(bestSB, "PMI", NaN));
+    end
 end
 
 valid = isfinite(sinrVals) & isfinite(cqiVals);
@@ -616,14 +669,43 @@ if ~any(valid)
 end
 
 subband.CQI = cqiVals;
+subband.PMI = pmiVals;
 subband.SINR_dB = sinrVals;
 subband.CQIVector = localVectorToToken(cqiVals, "%.0f");
+subband.PMIVector = localVectorToToken(pmiVals, "%.0f");
 subband.SINRVector = localVectorToToken(sinrVals, "%.3f");
 subband.SubbandSizePRB = double(subbandSize);
 subband.SubbandCount = double(numSubbands);
 subband.ReportMode = "wideband_and_subband";
 subband.Source = "ts38214_subband_cqi_from_runtime_channel_sinr";
 subband.ValueStatus = "OK";
+end
+
+function Hsb = localSubbandWidebandChannelMatrix(Hest, rb0, rb1)
+Hsb = [];
+if isempty(Hest)
+    return;
+end
+K0 = max(1, (rb0 - 1) * 12 + 1);
+K1 = min(size(Hest, 1), rb1 * 12);
+if K1 < K0
+    return;
+end
+try
+    H = Hest(K0:K1, :, :, :);
+    if ndims(H) >= 4
+        Hsb = squeeze(mean(mean(H, 1, "omitnan"), 2, "omitnan"));
+    elseif ndims(H) == 3
+        Hsb = squeeze(mean(H, 1, "omitnan"));
+    elseif ismatrix(H)
+        Hsb = double(H);
+    end
+    if isempty(Hsb) || ~ismatrix(Hsb)
+        Hsb = [];
+    end
+catch
+    Hsb = [];
+end
 end
 
 function perRB = localPerRBSINRFromChannelEstimate(Hest, nVar)

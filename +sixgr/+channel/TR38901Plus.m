@@ -366,13 +366,20 @@ classdef TR38901Plus < handle
                 obj.O2IComplianceReason = "";
             end
 
-            pl_dB = plBase + sf + o2i;
+            oxygenAbsorption_dB = zeros(1, N);
+            if opt.PathlossEnabled && obj.Fc_Hz > 6e9
+                oxygenAbsorption_dB = sixgr.channel.OxygenAbsorption.pathLoss_dB(obj.Fc_Hz, d3d);
+            end
+            oxygenAbsorption_dB = double(oxygenAbsorption_dB(:)).';
+
+            pl_dB = plBase + sf + o2i + oxygenAbsorption_dB;
 
             ex = struct();
             ex.d2d_m = d2d(:);
             ex.d3d_m = d3d(:);
             ex.los = los(:);
             ex.o2i_dB = o2i(:);
+            ex.oxygenAbsorption_dB = oxygenAbsorption_dB(:);
             ex.shadow_dB = sf(:);
             ex.base_dB = plBase(:);
             ex.scenario = opt.Scenario;
@@ -525,7 +532,17 @@ classdef TR38901Plus < handle
 
             switch scenarioToken
                 case "uma"
-                    plLOS = 28.0 + 22.0 .* log10(max(d3d, 1.0)) + 20.0 .* log10(fcGHz);
+                    hBS = double(txPos_m(3, :));
+                    hBS = max(hBS, 1.0);
+                    hUT = max(hUT, 1.0);
+                    dBP = max(1.0, 4 .* hBS .* hUT .* double(obj.Fc_Hz) ./ 3e8);
+                    d3dSafe = max(d3d, 1.0);
+                    pl1 = 28.0 + 22.0 .* log10(d3dSafe) + 20.0 .* log10(fcGHz);
+                    plAtBP = 28.0 + 22.0 .* log10(max(dBP, 1.0)) + 20.0 .* log10(fcGHz);
+                    pl2 = plAtBP + 40.0 .* log10(max(d3dSafe ./ max(dBP, 1.0), 1.0));
+                    plLOS = pl1;
+                    beyondBP = d2d > dBP;
+                    plLOS(beyondBP) = pl2(beyondBP);
                     plNLOS = max(plLOS, 13.54 + 39.08 .* log10(max(d3d, 1.0)) + ...
                         20.0 .* log10(fcGHz) - 0.6 .* (hUT - 1.5));
                 case "umi"

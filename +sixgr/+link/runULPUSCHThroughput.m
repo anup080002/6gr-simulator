@@ -2335,8 +2335,14 @@ pathloss_dB = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "channel.largeScale.pathloss_dB", []));
 pc.Pathloss_dB = double(pathloss_dB);
 if ~(isfinite(pathloss_dB) && pathloss_dB >= 0)
-    pc.Status = "pathloss_unavailable_no_power_control_applied";
-    return;
+    [pathloss_dB, derivedSource] = localDeriveULPathlossFromConfiguredSNR(cfg);
+    pc.Pathloss_dB = double(pathloss_dB);
+    if ~(isfinite(pathloss_dB) && pathloss_dB >= 0)
+        pc.Status = "pathloss_unavailable_no_power_control_applied";
+        return;
+    end
+    pc.Status = "pathloss_derived_from_configured_snr_for_olpc_only";
+    pc.PathlossSource = char(derivedSource);
 end
 
 try
@@ -2385,6 +2391,9 @@ else
     scale = 1;
 end
 
+if ~isfield(pc, "PathlossSource")
+    pc.PathlossSource = "runtime_pathloss_evidence";
+end
 pc.Status = "applied_open_loop_ts38213_fractional_pathloss";
 pc.TxPower_dBm = double(txPower);
 pc.Pcmax_dBm = double(pcmax);
@@ -2393,6 +2402,33 @@ pc.AmplitudeScale = double(scale);
 
 cfgOut = sixgr.util.structSet(cfgOut, "powerAndRF.ueTxPower_dBm", double(txPower));
 cfgOut = sixgr.util.structSet(cfgOut, "lls6g.resolvedConfig.power_and_rf_frontend.ue_tx_power_dbm", double(txPower));
+end
+
+function [pathloss_dB, source] = localDeriveULPathlossFromConfiguredSNR(cfg)
+pathloss_dB = NaN;
+source = "unavailable";
+snr_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", NaN));
+if ~(isscalar(snr_dB) && isfinite(snr_dB))
+    return;
+end
+txPower_dBm = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "powerAndRF.ueTxPower_dBm", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.powerControl.referenceTxPower_dBm", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.powerControl.pcmax_dBm", []), ...
+    23);
+bwHz = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "channel.bandwidth_Hz", []), ...
+    sixgr.util.structGet(cfg, "frequency.bandwidthHz", []), ...
+    sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", []) .* 1e6, ...
+    20e6);
+nf_dB = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", []), ...
+    sixgr.util.structGet(cfg, "powerAndRF.bsNoiseFigure_dB", []), ...
+    5);
+noiseFloor_dBm = -174 + 10 .* log10(max(double(bwHz), 1)) + double(nf_dB);
+rxSignal_dBm = noiseFloor_dBm + double(snr_dB);
+pathloss_dB = double(txPower_dBm) - rxSignal_dBm;
+source = "configured_snr_thermal_noise_link_budget";
 end
 
 function [y, replay] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)

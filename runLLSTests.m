@@ -31,7 +31,7 @@ for i = 1:numel(testNames)
 end
 
 if logical(opt.Verbose)
-    fprintf("[lls-tests] Running %d focused LLS tests under R2023b-compatible MATLAB path setup.\n", numel(testPaths));
+    fprintf("[lls-tests] Running %d focused LLS tests under R2024a-compatible MATLAB path setup.\n", numel(testPaths));
 end
 
 suite = matlab.unittest.TestSuite.empty;

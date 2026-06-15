@@ -11,6 +11,10 @@ catalog = sixgr.lls6g.config.loadParameterCatalog("scenario");
 cfg = sixgr.config.defaultConfig();
 
 cfg.meta.loadedFrom = char(string(s.meta.scenario_id));
+schemaVersionText = char(string(localGetNested(s, "meta.schema_version", ...
+    localGetNested(s, "meta.schemaVersion", sixgr.lls6g.config.currentVersion()))));
+cfg.meta.schema_version = schemaVersionText;
+cfg.meta.schemaVersion = localSchemaMajorVersion(schemaVersionText);
 cfg.meta.configHash = char(string(localGetNested(s, "meta.config_hash", localGetNested(s, "meta.configHash", ""))));
 cfg.run.seed = double(localRequireFirstNested(s, ...
     ["seeds.global_seed","simulation.random_seed"], ...
@@ -271,6 +275,8 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.scs_kHz", double(scsKHz));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotsPerFrame", double(slotsPerFrame));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotDuration_ms", double(slotDuration_ms));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.symbolsPerSlot", 14);
+cfg = sixgr.util.structSet(cfg, "frame_timing.slots_per_frame", double(slotsPerFrame));
+cfg = sixgr.util.structSet(cfg, "frame_timing.slot_duration_ms", double(slotDuration_ms));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", double(cfg.phy.carrier.NSizeGrid));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", double(s.frequency.n_size_grid));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridSource", "configured_n_size_grid");
@@ -292,6 +298,10 @@ cfg.phy.waveform.ul = char(string(s.waveform.ul_waveform));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingEnabled", logical(s.waveform.windowing_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.experimentalDLDftsOfdmEnabled", ...
     logical(s.waveform.experimental_dl_dfts_ofdm_enabled));
+cfg = sixgr.util.structSet(cfg, "phy.channelEstimation.method", char(string(localGetNested(s, ...
+    "phy.channelEstimation.method", localGetNested(s, "receiver_algorithms.channel_estimation_method", "LS")))));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.enableCPECorrection", logical(localGetNested(s, ...
+    "phy.pdsch.ptrs.enableCPECorrection", true)));
 
 cfg.phy.ssb.enable = logical(s.reference_signals.ssb_enabled);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", ...
@@ -299,6 +309,8 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", ...
 cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", ...
     localDefaultSSBLmax(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz)));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", 8)));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.scs_kHz", ...
+    double(localDefaultSSBSubcarrierSpacing_kHz(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz))));
 cfg.phy.pbch.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.mib.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.sib1.enable = logical(s.reference_signals.pbch_enabled);
@@ -858,6 +870,10 @@ cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", logical(localRe
     "control_gating.trs_required", "control_gating.trs_required")));
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", max(0, round(double(localRequireNested(s, ...
     "control_gating.trs_max_age_slots", "control_gating.trs_max_age_slots")))));
+preAttachBeforeMeasurement = logical(localGetNested(s, "control_gating.pre_attach_ues_before_measurement", ...
+    localGetNested(s, "run.controlGating.preAttachUEsBeforeMeasurement", false)));
+cfg = sixgr.util.structSet(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", preAttachBeforeMeasurement);
+cfg = sixgr.util.structSet(cfg, "control_gating.pre_attach_ues_before_measurement", preAttachBeforeMeasurement);
 taUpdateMode = lower(strtrim(string(localGetNested(s, "control_gating.timing_advance_update_mode", "measurement_only"))));
 allowedTAUpdateModes = ["measurement_only","geometry_predictive","disabled"];
 if ~ismember(taUpdateMode, allowedTAUpdateModes)
@@ -2171,4 +2187,32 @@ elseif fcHz < 3e9
 else
     lmax = 8;
 end
+end
+
+function scs = localDefaultSSBSubcarrierSpacing_kHz(fcHz, scsKHz)
+fcHz = double(fcHz);
+scsKHz = double(scsKHz);
+if isfinite(fcHz) && fcHz >= 24.25e9
+    scs = 120;
+elseif isfinite(scsKHz) && scsKHz <= 15
+    scs = 15;
+else
+    scs = 30;
+end
+end
+
+function major = localSchemaMajorVersion(versionText)
+tokens = regexp(char(string(versionText)), '^\s*(\d+)', 'tokens', 'once');
+if isempty(tokens)
+    tokens = regexp(char(string(sixgr.lls6g.config.currentVersion())), '^\s*(\d+)', 'tokens', 'once');
+end
+if isempty(tokens)
+    major = 1;
+else
+    major = str2double(tokens{1});
+    if ~(isfinite(major) && major >= 1)
+        major = 1;
+    end
+end
+major = round(double(major));
 end

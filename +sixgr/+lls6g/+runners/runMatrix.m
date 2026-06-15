@@ -29,9 +29,21 @@ repeatCount = max(1, round(double(matrixCfg.execution.repeat_count)));
 stopOnFailure = logical(matrixCfg.execution.stop_on_failure);
 requestedParallelJobs = max(1, round(double(matrixCfg.execution.max_parallel_jobs)));
 saveCombinedSummary = logical(matrixCfg.execution.save_combined_summary);
+parallelAvailable = localParallelComputingToolboxAvailable();
+parallelUnavailableWarningIssued = false;
+parallelUnavailableReason = "";
+if requestedParallelJobs > 1 && ~parallelAvailable
+    warning("sixgr:runtime:NoParallelToolbox", ...
+        ["Parallel Computing Toolbox licence unavailable. " ...
+         "Simulation will run single-threaded (%d workers requested). " ...
+         "Expected wall-clock time may be approximately %dx longer."], ...
+        double(requestedParallelJobs), double(requestedParallelJobs));
+    parallelUnavailableWarningIssued = true;
+    parallelUnavailableReason = "parallel_computing_toolbox_license_unavailable";
+end
 rows = repmat(struct("ScenarioID","", "ConfigPath","", "Repeat", NaN, "RunFolder","", "Ok", false), 0, 1);
 executionMode = "sequential";
-if requestedParallelJobs > 1 && repeatCount == 1 && ~stopOnFailure && numel(scenarioList) > 1
+if requestedParallelJobs > 1 && parallelAvailable && repeatCount == 1 && ~stopOnFailure && numel(scenarioList) > 1
     executionMode = "parallel";
     rows(1:numel(scenarioList),1) = struct("ScenarioID","", "ConfigPath","", "Repeat", NaN, "RunFolder","", "Ok", false); %#ok<AGROW>
     parfor (i = 1:numel(scenarioList), requestedParallelJobs)
@@ -45,6 +57,9 @@ if requestedParallelJobs > 1 && repeatCount == 1 && ~stopOnFailure && numel(scen
             "Ok", logical(result.Ok));
     end
 else
+    if requestedParallelJobs > 1 && ~parallelAvailable
+        executionMode = "sequential_parallel_toolbox_unavailable";
+    end
     for r = 1:repeatCount
         for i = 1:numel(scenarioList)
             scenarioPath = localResolveScenarioPath(configPath, scenarioList(i));
@@ -83,7 +98,10 @@ sixgr.util.jsonWrite(fullfile(layout.MetaDir, "matrix_manifest.json"), struct( .
     "ScenarioCount", numel(scenarioList), ...
     "RepeatCount", repeatCount, ...
     "RequestedParallelJobs", requestedParallelJobs, ...
+    "EffectiveWorkers", localEffectiveWorkers(executionMode, requestedParallelJobs), ...
     "ExecutionMode", executionMode, ...
+    "ParallelUnavailableWarningIssued", logical(parallelUnavailableWarningIssued), ...
+    "ParallelUnavailableReason", char(string(parallelUnavailableReason)), ...
     "SaveCombinedSummary", saveCombinedSummary, ...
     "CodeVersion", char(string(codeVersion)), ...
     "CodeDetail", char(string(codeDetail)), ...
@@ -107,6 +125,23 @@ out.SummaryCSV = string(summaryCsv);
 out.ScenarioSummaryCSV = string(scenarioSummaryCsv);
 out.PointSummaryCSV = string(pointSummaryCsv);
 out.SuiteSummaryCSV = string(suiteSummaryCsv);
+end
+
+function tf = localParallelComputingToolboxAvailable()
+tf = false;
+try
+    tf = license("test", "Distrib_Computing_Toolbox") && ~isempty(ver("parallel"));
+catch
+    tf = false;
+end
+end
+
+function n = localEffectiveWorkers(executionMode, requestedParallelJobs)
+if string(executionMode) == "parallel"
+    n = double(requestedParallelJobs);
+else
+    n = 1;
+end
 end
 
 function completion = localMatrixCompletion(summaryT)

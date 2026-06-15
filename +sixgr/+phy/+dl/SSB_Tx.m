@@ -46,6 +46,7 @@ opt = p.Results;
 % Carrier parameters from cfg (with optional overrides)
 NCellID = sixgr.util.structGet(cfg, 'phy.carrier.NCellID', 1);
 SCSCarrier_kHz = sixgr.util.structGet(cfg, 'phy.carrier.SubcarrierSpacing_kHz', 30);
+SSBCommonSCS_kHz = sixgr.util.structGet(cfg, 'phy.ssb.scs_kHz', []);
 NSizeGrid = sixgr.util.structGet(cfg, 'phy.carrier.NSizeGrid', 52);
 NStartGrid = sixgr.util.structGet(cfg, 'phy.carrier.NStartGrid', 0);
 ChannelBW_MHz = sixgr.util.structGet(cfg, 'phy.channelBandwidth_MHz', 20);
@@ -57,6 +58,7 @@ end
 
 if ~isempty(opt.SubcarrierSpacingCommon_kHz)
     SCSCarrier_kHz = double(opt.SubcarrierSpacingCommon_kHz);
+    SSBCommonSCS_kHz = double(opt.SubcarrierSpacingCommon_kHz);
 end
 
 if ~isempty(opt.ChannelBandwidth_MHz)
@@ -99,7 +101,8 @@ ssb = nrWavegenSSBurstConfig;
 ssb.Enable = true;
 ssb.BlockPattern = ssbBlockPattern;
 if isprop(ssb, 'SubcarrierSpacingCommon')
-    ssb.SubcarrierSpacingCommon = localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz);
+    ssb.SubcarrierSpacingCommon = localFirstFiniteScalar(SSBCommonSCS_kHz, ...
+        localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz));
 end
 ssb.Period = 20; % ms
 ssb.Power = 0;
@@ -161,6 +164,8 @@ txCfg.SSB.SSBIndex = idx;
 txCfg.SSB.Lmax = double(ssbLmax);
 txCfg.SSB.NumBeams = double(ssbLmax);
 txCfg.SSB.Period_ms = double(ssb.Period);
+txCfg.SSB.SCS_kHz = double(localFirstFiniteScalar(SSBCommonSCS_kHz, ...
+    localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz)));
 
 % Sample rate: nrWaveformGenerator returns it in waveInfo
 sr = [];
@@ -251,6 +256,17 @@ switch bp
 end
 if ~(isfinite(double(scs)) && double(scs) > 0)
     scs = 30;
+end
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = double(varargin{i});
+    if ~isempty(raw) && isscalar(raw) && isfinite(raw) && raw > 0
+        value = raw;
+        return;
+    end
 end
 end
 

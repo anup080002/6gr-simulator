@@ -1,0 +1,48 @@
+inherits:
+  - ./lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml
+
+meta:
+  scenario_id: lls_fr1_700mhz_20mhz_rural_baseline
+  scenario_name: FR1 700 MHz 20 MHz rural baseline waveform-honest LLS preset
+  scenario_family: lls_fr1_rural_waveform_honest
+  description: Strict FR1 700 MHz / 20 MHz / 15 kHz SCS rural baseline preset with 1732 m ISD.
+  schema_version: "2.0.0"
+  tags: [lls, fr1, 700mhz, 20mhz, rural, tdl-c, strict, waveform_honest]
+
+frequency:
+  range_name: FR1
+  band_name: fr1_700mhz_20mhz
+  center_frequency_hz: 700000000
+  bandwidth_hz: 20000000
+  bandwidth_options_hz: [20000000]
+  numerology_options_khz: [15]
+  channel_model_defaults: TDL-C
+  n_size_grid: 106
+
+frame:
+  scs_khz: 15
+  cp_type: normal
+  tdd_pattern: DDDSU
+
+channels:
+  model_type: TDL
+  profile: TDL-C
+  delay_spread_ns: 300
+  mobility_kmph: 30
+  los_enabled: true
+  pathloss_enabled: true
+  shadow_fading_enabled: true
+  spatial_consistency_enabled: true
+  pathloss_model: nrPathLoss
+  pathloss_scenario: RMa
+
+deployment_topology:
+  inter_site_distance_m: 1732
+  cell_type: RMa
+
+reference_signals:
+  ssb_enabled: true
+  ssb_beam_count: 4
+  ssb_lmax: 4
+  csi_rs_enabled: true
+  srs_enabled: true

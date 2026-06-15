@@ -9,6 +9,7 @@ arguments
 end
 
 filePath = char(filePath);
+s = localJsonSafeValue(s);
 
 % Pretty print if supported
 try
@@ -40,4 +41,33 @@ function mustBeTextScalar(x)
 if ~(ischar(x) || (isstring(x) && isscalar(x)))
     error("sixgr:util:jsonWrite:BadType","Input must be a char vector or string scalar.");
 end
+end
+
+function out = localJsonSafeValue(value)
+if isa(value, "function_handle")
+    out = struct("json_type", "function_handle", "text", func2str(value));
+    return;
+end
+if istable(value)
+    out = table2struct(value);
+    return;
+end
+if iscell(value)
+    out = value;
+    for i = 1:numel(value)
+        out{i} = localJsonSafeValue(value{i});
+    end
+    return;
+end
+if isstruct(value)
+    out = value;
+    fields = fieldnames(value);
+    for idx = 1:numel(value)
+        for f = 1:numel(fields)
+            out(idx).(fields{f}) = localJsonSafeValue(value(idx).(fields{f}));
+        end
+    end
+    return;
+end
+out = value;
 end

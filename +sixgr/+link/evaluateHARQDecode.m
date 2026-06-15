@@ -18,6 +18,7 @@ rxBits = rxBits(:);
 combinedLLR = localCombineRateRecoveredLLR(combinedPrev, recLLR);
 [combinedOK, combinedDecIt] = localDecodeCombinedLLR(tx, combinedLLR, cfg);
 [bitErr, bitsCompared] = localBitErrors(txBits, rxBits);
+[cbgFailMask, cbgErrors, cbgCount, cbgBLER] = localCBGFailureStats(rx, tx);
 
 currentOK = logical(sixgr.util.structGet(rx, "Ok", false)) && ...
     bitErr == 0 && numel(rxBits) == numel(txBits);
@@ -29,10 +30,40 @@ diag.CurrentDecodeOK = currentOK;
 diag.CombinedDecodeOK = logical(combinedOK);
 diag.BitErrors = double(bitErr);
 diag.BitsCompared = double(bitsCompared);
+diag.CBGFailureMask = cbgFailMask;
+diag.CBGErrors = double(cbgErrors);
+diag.CBGCount = double(cbgCount);
+diag.CBGBLER = double(cbgBLER);
 diag.DecoderIterations = double(mean(double(sixgr.util.structGet(rx, "ActiveIterations", NaN)), "omitnan"));
 diag.CombinedDecoderIterations = double(combinedDecIt);
 diag.MeasuredSINR_dB = localExtractSINR(rx);
 diag.Notes = "";
+end
+
+function [mask, errCount, cbgCount, cbgBLER] = localCBGFailureStats(rx, tx)
+mask = false(0, 1);
+errCount = NaN;
+cbgCount = NaN;
+cbgBLER = NaN;
+cbCrc = double(sixgr.util.structGet(rx, "CodeBlockCRCError", []));
+cbCrc = cbCrc(:);
+cbCrc = cbCrc(isfinite(cbCrc));
+if isempty(cbCrc)
+    nCB = double(sixgr.util.structGet(rx, "NumCodeBlocks", ...
+        sixgr.util.structGet(tx, "NumCodeBlocks", NaN)));
+    if isfinite(nCB) && nCB >= 1
+        mask = repmat(logical(sixgr.util.structGet(rx, "CRCError", true)), round(nCB), 1);
+    else
+        return;
+    end
+else
+    mask = cbCrc ~= 0;
+end
+errCount = double(sum(mask));
+cbgCount = double(numel(mask));
+if cbgCount > 0
+    cbgBLER = errCount ./ cbgCount;
+end
 end
 
 function combined = localCombineRateRecoveredLLR(prev, cur)

@@ -214,6 +214,8 @@ else
         "StrictMode", strictMode, ...
         "ChannelModel", channelModelToken, ...
         "ExpectedTxPorts", numTxPorts, ...
+        "Method", localResolveChannelEstimationMethod(cfg), ...
+        "Config", cfg, ...
         "ContextLabel", "PUSCH_Rx");
 end
 
@@ -254,7 +256,13 @@ end
 
 % Equalize
 [equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL");
-[Rint, rintInfo] = localEstimateDMRSInterferenceCovariance(rxGrid, Hest, dmrsInd, dmrsSym, nVar);
+if equalizerAlg == "IRC"
+    [Rint, rintInfo] = sixgr.phy.rx.estimateInterferenceCovarianceIRC(rxGrid, Hest, dmrsInd, dmrsSym, nVar);
+else
+    Rint = [];
+    rintInfo = struct("Available", false, "Source", "irc_not_requested", ...
+        "Status", "not_applicable", "NAReason", "equalizer_algorithm_is_not_irc");
+end
 if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
     equalizerAlg = "MMSE";
 end
@@ -290,10 +298,11 @@ receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmr
 
 % Decode PUSCH to codeword LLR
 puschRxSym = [];
+nVarForDecode = double(max(nVar, eps));
 try
-    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, eqSym, nVarDecode);
+    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, eqSym, nVarForDecode);
 catch
-    cwLLR = nrPUSCHDecode(carrier, pusch, eqSym, nVarDecode);
+    cwLLR = nrPUSCHDecode(carrier, pusch, eqSym, nVarForDecode);
 end
 
 if iscell(cwLLR)
@@ -400,15 +409,16 @@ rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
-rx.NoiseVar = nVarDecode;
+rx.NoiseVar = nVarForDecode;
 rx.NoiseVarStatus = char(string(noiseStatus.Status));
 rx.NoiseVarSource = char(string(noiseStatus.Source));
 rx.NoiseVarReason = char(string(noiseStatus.Reason));
 rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
-rx.NoiseVarDomain = "post_equalization_decoder_symbol";
+rx.NoiseVarDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
-rx.DecoderNoiseVar = double(nVarDecode);
+rx.DecoderNoiseVar = double(nVarForDecode);
+rx.PostEqualizationNoiseVar = double(nVarDecode);
 rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
 rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
 rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
@@ -457,6 +467,8 @@ rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
+rx.RecLLR = recLLR;
+rx.RateRecoveredLLR = recLLR;
 rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
 rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
@@ -470,7 +482,6 @@ if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
     rx.ULSCHCodewordLLR = cwLLRForULSCH;
     rx.HARQACKLLR = uciOnPUSCH.HARQACKLLR;
-    rx.RateRecoveredLLR = recLLR;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
     rx.ParityChecks = parity;
@@ -502,6 +513,14 @@ info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
 
+end
+
+function method = localResolveChannelEstimationMethod(cfg)
+method = char(string(sixgr.util.structGet(cfg, "phy.channelEstimation.method", ...
+    sixgr.util.structGet(cfg, "phy.rx.channelEstimationMethod", "LS"))));
+if isempty(strtrim(method))
+    method = 'LS';
+end
 end
 
 function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction)

@@ -103,7 +103,41 @@ end
 cfg.SearchSpaces = vertcat(searchSpacesResolved{:});
 
 cfg.StudySweep = localResolveStudySweep(ctrl, cfg);
+cfg.AggregationLevels = unique(double([cfg.SearchSpaces.AggregationLevels]), "stable");
+cfg.AggregationLevelSelectionMode = char(string(sixgr.util.structGet(ctrl, ...
+    "AggregationLevelSelectionMode", "measured_sinr_gated")));
+cfg.AggregationLevelSelectionSource = "search_space_configured_levels_plus_measured_control_sinr";
+cfg.AggregationLevelSelectionAllowConfiguredSNR = logical(sixgr.util.structGet(ctrl, ...
+    "AggregationLevelSelectionAllowConfiguredSNR", false));
+cfg.effectiveAggregationLevels = @(sinr_dB) localEffectiveAggregationLevels(cfg.AggregationLevels, sinr_dB);
 localValidate(cfg);
+end
+
+function levels = localEffectiveAggregationLevels(allLevels, sinr_dB)
+allLevels = unique(round(double(allLevels(:).')), "stable");
+allLevels = allLevels(isfinite(allLevels) & allLevels > 0);
+if isempty(allLevels)
+    allLevels = [1 2 4 8 16];
+end
+if ~(isnumeric(sinr_dB) && isscalar(sinr_dB) && isfinite(sinr_dB))
+    levels = allLevels;
+    return;
+end
+if sinr_dB > 10
+    maxAL = 1;
+elseif sinr_dB > 5
+    maxAL = 2;
+elseif sinr_dB > 0
+    maxAL = 4;
+elseif sinr_dB > -5
+    maxAL = 8;
+else
+    maxAL = 16;
+end
+levels = allLevels(allLevels <= maxAL);
+if isempty(levels)
+    levels = min(allLevels);
+end
 end
 
 function out = localDefaultSearchSpaces(cfg)

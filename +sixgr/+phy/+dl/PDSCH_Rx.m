@@ -206,6 +206,13 @@ rxWave = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrecti
 
 % ---------------------- OFDM demodulate ----------------------
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
+[ptrsInd, ptrsSym, ptrsInfo] = localResolvePDSCHPTRS(carrier, pdsch, cfg);
+cpeCorrInfo = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
+    'MeanCPE_deg', NaN, 'NAReason', "ptrs_cpe_correction_disabled_or_unavailable");
+if logical(sixgr.util.structGet(cfg, "phy.pdsch.ptrs.enableCPECorrection", ...
+        sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true))) && ~isempty(ptrsInd)
+    [rxGrid, ~, cpeCorrInfo] = sixgr.phy.rx.correctCPEFromPTRS(rxGrid, ptrsInd, ptrsSym, carrier);
+end
 [csirsInd, csirsSym, csirsInfo, csirsObservation] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt);
 [csirsHest, csirsNVar, csirsEstInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, ...
     strictMode, channelModelToken, numTxPorts);
@@ -239,6 +246,8 @@ elseif ~isempty(dmrsAntInd)
         "StrictMode", strictMode, ...
         "ChannelModel", channelModelToken, ...
         "ExpectedTxPorts", numTxPorts, ...
+        "Method", localResolveChannelEstimationMethod(cfg), ...
+        "Config", cfg, ...
         "ContextLabel", "PDSCH_Rx");
 else
     localValidateNoDMRSUnitChannelFallback(channelModelToken, numTxPorts, max(1, size(rxGrid, 3)), "PDSCH_Rx");
@@ -268,7 +277,13 @@ nVar = double(max(0, nVar));
 % ---------------------- Extract and equalize PDSCH REs ----------------------
 [rxSym, hestSym] = nrExtractResources(pdschInd, rxGrid, hEst);
 [equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "DL");
-[Rint, rintInfo] = localEstimateDMRSInterferenceCovariance(rxGrid, hEst, dmrsInd, dmrsSym, nVar);
+if equalizerAlg == "IRC"
+    [Rint, rintInfo] = sixgr.phy.rx.estimateInterferenceCovarianceIRC(rxGrid, hEst, dmrsInd, dmrsSym, nVar);
+else
+    Rint = [];
+    rintInfo = struct("Available", false, "Source", "irc_not_requested", ...
+        "Status", "not_applicable", "NAReason", "equalizer_algorithm_is_not_irc");
+end
 if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
     equalizerAlg = "MMSE";
 end
@@ -300,10 +315,11 @@ receiverSINR = localReceiverHestSINR(hEst, nVar, cfg, "DL", rxGrid, dmrsInd, dmr
 % nrPDSCHDecode returns a cell array (one per codeword). Newer releases can
 % also return the sliced symbol estimates used during demodulation.
 pdschRxSym = [];
+nVarForDecode = double(max(nVar, eps));
 try
-    [llrCW, pdschRxSym] = nrPDSCHDecode(carrier, pdsch, eqSym, nVarDecode);
+    [llrCW, pdschRxSym] = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
 catch
-    llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVarDecode);
+    llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
 end
 if iscell(llrCW)
     llr = llrCW{1};
@@ -430,15 +446,16 @@ rx.TimingEstimateSource = char(timingEstimateSource);
 rx.TimingEstimateStatus = char(string(timingResolution.Status));
 rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
-rx.NoiseVar = nVarDecode;
+rx.NoiseVar = nVarForDecode;
 rx.NoiseVarStatus = "OK";
-rx.NoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "post_equalization_noise_variance")));
+rx.NoiseVarSource = "pre_equalization_grid_domain_noise_variance";
 rx.NoiseVarReason = "";
 rx.NoiseVarStrictFailure = false;
-rx.NoiseVarDomain = "post_equalization_decoder_symbol";
+rx.NoiseVarDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
-rx.DecoderNoiseVar = double(nVarDecode);
+rx.DecoderNoiseVar = double(nVarForDecode);
+rx.PostEqualizationNoiseVar = double(nVarDecode);
 rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
 rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
 rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
@@ -458,6 +475,10 @@ rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
 rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
+rx.CPECorrectionApplied = logical(cpeCorrInfo.Enabled);
+rx.CPECorrectedSymbols = double(sixgr.util.structGet(cpeCorrInfo, "NumSymbolsCorrected", 0));
+rx.CPEMeanCorrection_deg = double(sixgr.util.structGet(cpeCorrInfo, "MeanCPE_deg", NaN));
+rx.CPECorrectionNAReason = char(string(sixgr.util.structGet(cpeCorrInfo, "NAReason", "")));
 rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
 rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
 rx.ReceiverTrackingCorrectionNAReason = char(string(trackingCorrection.NAReason));
@@ -480,10 +501,10 @@ rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
+rx.RecLLR = recLLR;
 if ~logical(opt.CompactOutput)
     rx.TransportBlock = tbRx;
     rx.CodewordLLR = llr;
-    rx.RecLLR = recLLR;
     rx.BaseGraph = bgn;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
@@ -503,6 +524,10 @@ if ~logical(opt.CompactOutput)
     rx.CSIRSSymbols = csirsSym;
     rx.CSIRSInfo = csirsInfo;
     rx.CSIRSObservation = csirsObservation;
+    rx.PTRSIndices = ptrsInd;
+    rx.PTRSSymbols = ptrsSym;
+    rx.PTRSInfo = ptrsInfo;
+    rx.CPECorrectionInfo = cpeCorrInfo;
     rx.CSIRSChannelEstimate = csirsHest;
     rx.CSIRSNoiseVar = csirsNVar;
     rx.CSIRSChannelEstimation = csirsEstInfo;
@@ -527,6 +552,8 @@ info.ChannelEstimation = estInfo;
 info.CSIRS = csirsInfo;
 info.CSIRSObservation = csirsObservation;
 info.CSIRSChannelEstimation = csirsEstInfo;
+info.PTRS = ptrsInfo;
+info.CPECorrection = cpeCorrInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = nVarDecodeInfo;
 info.PreEqualizationNoiseVariance = double(nVar);
@@ -535,6 +562,44 @@ info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
 
+end
+
+function method = localResolveChannelEstimationMethod(cfg)
+method = char(string(sixgr.util.structGet(cfg, "phy.channelEstimation.method", ...
+    sixgr.util.structGet(cfg, "phy.rx.channelEstimationMethod", "LS"))));
+if isempty(strtrim(method))
+    method = 'LS';
+end
+end
+
+function [ptrsInd, ptrsSym, info] = localResolvePDSCHPTRS(carrier, pdsch, cfg)
+ptrsInd = [];
+ptrsSym = [];
+info = struct("Available", false, "Enabled", false, "Source", "not_requested", ...
+    "NAReason", "");
+enabled = logical(sixgr.util.structGet(cfg, "phy.pdsch.enablePTRS", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.enable", ...
+    sixgr.util.structGet(cfg, "pdsch6gr.EnablePTRS", false))));
+info.Enabled = enabled;
+if ~enabled
+    info.NAReason = "ptrs_disabled_by_config";
+    return;
+end
+try
+    ptrsInd = nrPDSCHPTRSIndices(carrier, pdsch, "IndexStyle", "index");
+    ptrsSym = nrPDSCHPTRS(carrier, pdsch);
+    info.Available = ~isempty(ptrsInd) && ~isempty(ptrsSym);
+    info.Source = "nrPDSCHPTRS_runtime_symbols";
+    if ~info.Available
+        info.NAReason = "toolbox_returned_empty_ptrs";
+    end
+catch ME
+    ptrsInd = [];
+    ptrsSym = [];
+    info.Available = false;
+    info.Source = "nrPDSCHPTRS_unavailable";
+    info.NAReason = string(ME.identifier);
+end
 end
 
 function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction)

@@ -192,6 +192,32 @@ classdef RLC_AM < handle
             obj.Stats.TxSDU = obj.Stats.TxSDU + 1;
         end
 
+        function [pdus, metas] = txSegment(obj, sduBytes, maxPDUBytes)
+            % txSegment Segment one SDU into AMD PDUs with AM SI/SO headers.
+            if nargin < 3 || isempty(maxPDUBytes)
+                maxPDUBytes = obj.MaxPDUBytes;
+            end
+            maxPDUBytes = max(5, floor(double(maxPDUBytes)));
+            if obj.hasData() || obj.hasCtrl()
+                error("sixgr:RLC_AM:TxSegmentBusy", ...
+                    "txSegment requires an idle RLC AM entity so it can segment exactly one SDU.");
+            end
+            obj.addSDU(sduBytes);
+            pdus = {};
+            metaTemplate = localMakeRLCMeta(localDefaultTraceMeta());
+            metas = repmat(metaTemplate, 0, 1);
+            while obj.hasData()
+                [onePDU, oneMeta] = obj.buildPDUs(maxPDUBytes);
+                if isempty(onePDU)
+                    break;
+                end
+                for i = 1:numel(onePDU)
+                    pdus{end+1, 1} = onePDU{i}; %#ok<AGROW>
+                    metas(end+1, 1) = oneMeta(i); %#ok<AGROW>
+                end
+            end
+        end
+
         function tf = hasData(obj)
             tf = obj.TxSeg.Active || (obj.TxQCount > 0) || obj.hasPendingRetx();
         end

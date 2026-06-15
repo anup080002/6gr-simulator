@@ -50,6 +50,7 @@ for i = 1:n
 end
 
 T = struct2table(rows);
+T = localValidateSNRSweepInventory(runFolder, T);
 reqMask = logical(T.Required);
 reqCov = 1;
 if any(reqMask)
@@ -95,6 +96,35 @@ if strictMode && ~out.Ok
     end
     error("sixgr:report:ArtifactCompletenessFailed", ...
         "Strict artifact completeness check failed: %s", strjoin(cellstr(issues), " | "));
+end
+end
+
+function T = localValidateSNRSweepInventory(runFolder, T)
+sweepFile = fullfile(runFolder, "air_interface", "csv", "lls_snr_sweep.csv");
+if ~isfile(sweepFile)
+    return;
+end
+idx = find(strcmp(string(T.ArtifactID), "lls_snr") | strcmp(string(T.ArtifactID), "snr_sweep"));
+try
+    sweepT = readtable(sweepFile, "VariableNamingRule", "preserve");
+catch ME
+    if ~isempty(idx)
+        T.Status(idx) = "invalid_unreadable";
+        T.Notes(idx) = "lls_snr_sweep.csv unreadable: " + string(ME.identifier);
+    end
+    return;
+end
+if height(sweepT) == 0
+    if ~isempty(idx)
+        T.Status(idx) = "invalid_empty_sweep";
+        T.Notes(idx) = "lls_snr_sweep.csv is empty; expected controlled sweep rows or skipped_single_point_run status.";
+    end
+elseif ismember("Status", string(sweepT.Properties.VariableNames)) && height(sweepT) == 1
+    status = strtrim(string(sweepT.Status(1)));
+    if status == "skipped_single_point_run" && ~isempty(idx)
+        T.Status(idx) = "skipped_single_point_run";
+        T.Notes(idx) = "Single operating-point run; controlled SNR sweep intentionally unavailable.";
+    end
 end
 end
 

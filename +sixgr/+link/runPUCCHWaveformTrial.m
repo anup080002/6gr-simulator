@@ -126,6 +126,20 @@ fmt = sixgr.util.structGet(cfg, "phy.pucch.format", 2);
 if ~isempty(opt.Format)
     fmt = double(opt.Format);
 end
+fmt = localNormalizePUCCHFormatNumber(fmt);
+if ~(isfinite(fmt) && any(fmt == [0 1 2 3 4]))
+    fmt = 2;
+end
+uciPayloadBits = double(sixgr.util.structGet(cfg, "phy.pucch.uciPayloadBits", numel(expectedBits)));
+if isfinite(uciPayloadBits) && uciPayloadBits > numel(expectedBits)
+    rng(localTrialSeed(cfg, trialIdx) + 17, "twister");
+    expectedBits = int8(logical(randi([0 1], max(1, round(uciPayloadBits)), 1)));
+end
+if isfinite(uciPayloadBits) && uciPayloadBits > 2
+    if ~any(double(fmt) == [2 3 4])
+        fmt = 2;
+    end
+end
 requestedFormat = double(fmt);
 resolvedFormat = localResolveCompatiblePUCCHFormat(requestedFormat, numel(expectedBits));
 cfgResolved = sixgr.util.structSet(cfg, "phy.pucch.format", resolvedFormat);
@@ -249,8 +263,8 @@ try
     out.DecodedBits = decodedBits;
     out.AckObserved = localFirstLogical(decodedBits, false);
     out.UCIContentMatch = logical(bitErrors == 0 && bitsCompared == numel(expectedBits));
-    out.CRCApplicable = false;
-    out.CRCOutcome = "not_applicable";
+    out.CRCApplicable = logical(resolvedFormat >= 2 && numel(expectedBits) > 2);
+    out.CRCOutcome = char(localResolvePUCCHCRCOutcome(out.CRCApplicable, out.UCIContentMatch));
     out.DetectionOutcome = localResolvePUCCHDetectionOutcome(out.DetectionUsable, out.UCIContentMatch);
     out.BitsCompared = double(bitsCompared);
     out.BitErrors = double(bitErrors);
@@ -355,6 +369,26 @@ elseif numBits > 2 && any(fmt == [0 1])
 end
 end
 
+function fmt = localNormalizePUCCHFormatNumber(raw)
+if isnumeric(raw) && isscalar(raw)
+    fmt = double(raw);
+    return;
+end
+if isempty(raw)
+    fmt = NaN;
+    return;
+end
+if ismissing(string(raw))
+    fmt = NaN;
+    return;
+end
+token = lower(strrep(strtrim(char(string(raw))), "format", ""));
+fmt = str2double(token);
+if ~(isfinite(fmt) && any(fmt == [0 1 2 3 4]))
+    fmt = NaN;
+end
+end
+
 function note = ternaryFormatNote(requestedFormat, resolvedFormat)
 if isfinite(double(requestedFormat)) && isfinite(double(resolvedFormat)) && double(requestedFormat) ~= double(resolvedFormat)
     note = " Requested format " + string(requestedFormat) + " was adapted to " + string(resolvedFormat) + ...
@@ -410,6 +444,16 @@ elseif logical(contentMatch)
     outcome = "detected";
 else
     outcome = "missed";
+end
+end
+
+function outcome = localResolvePUCCHCRCOutcome(crcApplicable, contentMatch)
+if ~logical(crcApplicable)
+    outcome = "not_applicable";
+elseif logical(contentMatch)
+    outcome = "pass";
+else
+    outcome = "fail_or_uci_decode_mismatch";
 end
 end
 

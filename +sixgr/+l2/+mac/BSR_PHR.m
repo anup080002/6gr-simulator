@@ -129,6 +129,51 @@ classdef BSR_PHR < handle
     end
 
     methods(Static)
+        function ce = buildBSR(lcgBufferMap, maxPaddingBytes)
+            % buildBSR Select Short, Short-Truncated, or Long BSR by payload budget.
+            if nargin < 2 || isempty(maxPaddingBytes)
+                maxPaddingBytes = inf;
+            end
+            lcgBytes = sixgr.l2.mac.BSR_PHR.localLCGBufferVector(lcgBufferMap);
+            active = find(lcgBytes > 0);
+            if isempty(active)
+                ce = struct([]);
+                return;
+            end
+            maxPaddingBytes = double(maxPaddingBytes);
+            if ~(isscalar(maxPaddingBytes) && isfinite(maxPaddingBytes))
+                maxPaddingBytes = inf;
+            end
+
+            if numel(active) == 1
+                fmt = "short";
+                lcgId = active(1) - 1;
+                payload = sixgr.l2.mac.BSR_PHR.encodeShortBSR(lcgId, lcgBytes(active(1)));
+                lcid = 61;
+                name = "ShortBSR";
+                truncated = false;
+            elseif maxPaddingBytes < 3
+                fmt = "short_truncated";
+                [~, ord] = max(lcgBytes(active));
+                lcgId = active(ord) - 1;
+                payload = sixgr.l2.mac.BSR_PHR.encodeShortBSR(lcgId, lcgBytes(active(ord)));
+                lcid = 60;
+                name = "ShortTruncatedBSR";
+                truncated = true;
+            else
+                fmt = "long";
+                payload = sixgr.l2.mac.BSR_PHR.encodeLongBSR(lcgBytes);
+                lcid = 62;
+                name = "LongBSR";
+                truncated = false;
+            end
+
+            ce = struct('LCID', lcid, 'Payload', uint8(payload(:)), ...
+                'IsFixed', fmt ~= "long", 'Name', char(name), ...
+                'Format', char(fmt), 'Truncated', logical(truncated), ...
+                'ActiveLCGCount', double(numel(active)));
+        end
+
         function payload = encodeShortBSR(lcgId, bufferBytes)
             % Short BSR MAC CE payload (1 octet):
             %   bits[7:5] LCG ID (3 bits)
@@ -318,6 +363,38 @@ classdef BSR_PHR < handle
         function pc_dBm = dequantizePCMAX(pcIdx)
             pcIdx = max(0, min(63, round(double(pcIdx))));
             pc_dBm = pcIdx - 30;
+        end
+
+        function lcgBytes = localLCGBufferVector(lcgBufferMap)
+            lcgBytes = zeros(1, 8);
+            if isempty(lcgBufferMap)
+                return;
+            end
+            if isnumeric(lcgBufferMap)
+                vals = double(lcgBufferMap(:).');
+                lcgBytes(1:min(8, numel(vals))) = vals(1:min(8, numel(vals)));
+            elseif isa(lcgBufferMap, 'containers.Map')
+                keysList = keys(lcgBufferMap);
+                for i = 1:numel(keysList)
+                    key = double(keysList{i});
+                    if key >= 0 && key <= 7
+                        lcgBytes(key + 1) = double(lcgBufferMap(keysList{i}));
+                    end
+                end
+            elseif isstruct(lcgBufferMap)
+                names = fieldnames(lcgBufferMap);
+                for i = 1:numel(names)
+                    tok = regexp(names{i}, '\d+', 'match', 'once');
+                    if isempty(tok)
+                        continue;
+                    end
+                    key = str2double(tok);
+                    if isfinite(key) && key >= 0 && key <= 7
+                        lcgBytes(key + 1) = double(lcgBufferMap.(names{i}));
+                    end
+                end
+            end
+            lcgBytes(~isfinite(lcgBytes) | lcgBytes < 0) = 0;
         end
     end
 end

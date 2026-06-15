@@ -51,7 +51,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             info.Direction = obj.Direction;
             nPRBAvail = numel(prbAvail);
             info.NPRBAvail = nPRBAvail;
-            k1 = obj.HarqK1;
+            k1 = localResolveGrantK1(obj.Cfg, slot, obj.HarqK1);
             k2 = obj.HarqK2;
             ssid = obj.SearchSpaceID;
             coreset = obj.CORESETID;
@@ -371,8 +371,8 @@ g.QueueLimited = false;
 g.QueuePaddingBits = 0;
 g.QueuePaddingBytes = 0;
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
-g.MCSIndex = 0;
-g.CQIUsed = 0;
+g.MCSIndex = 1;
+g.CQIUsed = 1;
 g.PDCCHAggregationLevel = NaN;
 g.DAI = 1;
 g.K1 = 4;
@@ -422,7 +422,23 @@ end
 
 function cqi = localUECQI(ue)
 cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
-    sixgr.util.structGet(ue, "CQI", NaN), 0);
+    sixgr.util.structGet(ue, "CQI", NaN), 1);
+end
+
+function k1 = localResolveGrantK1(cfg, slot, fallback)
+explicit = sixgr.util.structGet(cfg, "mac.harq.k1", []);
+if ~isempty(explicit)
+    k1 = max(1, round(double(explicit)));
+    return;
+end
+pattern = sixgr.util.structGet(cfg, "frame_timing.tdd_pattern", ...
+    sixgr.util.structGet(cfg, "frame.tdd_pattern", "DDDSU"));
+mu = double(sixgr.util.structGet(cfg, "global_radio_scope.numerology_mu", ...
+    sixgr.util.structGet(cfg, "phy.numerology.mu", 1)));
+k1 = sixgr.l2.mac.resolveHARQFeedbackK1(slot, pattern, mu);
+if ~(isfinite(k1) && k1 >= 1)
+    k1 = max(1, round(double(fallback)));
+end
 end
 
 function hol = localUEHoLDelay(ue)
