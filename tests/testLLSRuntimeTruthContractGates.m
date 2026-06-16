@@ -91,8 +91,39 @@ trialT = table((0:1).', [1; 1], [1; 1], ["QPSK"; "QPSK"], [4; 4], [false; false]
     'VariableNames', {'Slot','Layers','RankIndicator','Modulation','MCS','IsWarmupFrame', ...
     'RowLifecycleState','FinalizedFlag','PartialRowFlag','PrimaryTruthValueStatus', ...
     'MCSAuthority','ModulationAuthority','AppliedOperatingPointSource','ConfiguredMCSSelectionPolicy'});
+trialT.Direction = repmat("DL", height(trialT), 1);
+trialT.TBSize_bits = [1000; 1000];
+trialT.CRCPass = [true; true];
+trialT.BitErrors = [0; 0];
+trialT.BitsCompared = [1000; 1000];
+trialT.StrictReceiverEvidenceOk = [true; true];
+trialT.TruthStatus = repmat("real_lls_evidence", height(trialT), 1);
+trialT.ChannelEstimateAttempted = [true; true];
+trialT.ChannelEstimateAvailable = [true; true];
+trialT.ResourceExtractionAttempted = [true; true];
+trialT.ResourceExtractionAvailable = [true; true];
+trialT.EqualizationAttempted = [true; true];
+trialT.EqualizationAvailable = [true; true];
+trialT.DLSCHDecodeAttempted = [true; true];
+trialT.DLSCHDecodeAvailable = [true; true];
+trialT.DecodeAttempted = [true; true];
+trialT.DecodeUsable = [true; true];
+trialT.LLRAvailable = [true; true];
+trialT.LLRFinite = [true; true];
+trialT.PostEqSINRWidebanddB = [24; 25];
+trialT.PostEqSINRSource = repmat("post_equalization_sinr_from_equalizer_channel_estimate", height(trialT), 1);
+trialT.PostEqSINRValueRole = repmat("measured_post_equalization_scheduling_input", height(trialT), 1);
+trialT.PostEqSINRValueStatus = repmat("OK", height(trialT), 1);
+trialT.PostEqSINRAvailable = [true; true];
+trialT.PostEqSINRReceiverDerived = [true; true];
+trialT.SINRValidationStatus = repmat("pass", height(trialT), 1);
+trialT.SINRComputationMethod = repmat("mmse", height(trialT), 1);
+trialT.ChannelComplianceMode = repmat("strict_38901_runtime", height(trialT), 1);
+trialT.AppliedLargeScaleGainSource = repmat("truth_contract_test_fixture_channel_reference", height(trialT), 1);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), trialT);
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), trialT);
+ulTrialT = trialT;
+ulTrialT.Direction = repmat("UL", height(ulTrialT), 1);
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ulTrialT);
 
 ferT = table( ...
     ["run"; "run"; "ue"], ...

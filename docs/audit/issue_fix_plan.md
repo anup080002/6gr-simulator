@@ -63,6 +63,24 @@ operating-point scenarios fail `ScenarioObjectiveOk` when the configured-match
 rate from raw DL/UL trial rows is below the required threshold. Adaptive
 CQI-driven scenarios are not forced through this exact-match gate.
 
+`AUD-PDSCH-001` is closed for the NR-baseline DL PDSCH/DL-SCH receiver evidence
+and raw BLER/BER objective gate. `PDSCH_Rx` now emits strict receiver-stage
+evidence for channel estimation, PDSCH resource extraction, equalization,
+DL-SCH decode, LLR availability, and receiver-derived post-equalization SINR.
+`evaluatePDSCHObjectiveStrict` computes raw BLER and weighted raw BER only from
+`dl_pdsch_trials.csv` decoder rows, fails strict/no-proxy objectives on degraded
+BLER/BER, proxy/skipped/unavailable evidence, missing CRC/BER denominators, and
+fixed-anchor configured/effective MCS/modulation/layer/rank mismatch, and writes
+`dl_pdsch_raw_bler_ber_objective.csv`, `dl_pdsch_objective_failures.csv`,
+`dl_pdsch_receiver_evidence_audit.csv`, and
+`dl_pdsch_toolbox_capabilities.json`.
+
+This closure is intentionally scoped. It does not mark scheduled PDCCH grant
+conformance, advanced MIMO, broad Channel/RF lineage, full MAC/HARQ procedure
+timing, KPI/goodput reconciliation, or Rel-17/18/19/20 PDSCH extensions as
+fixed unless those dependent issue rows have their own runtime artifacts and
+tests.
+
 ## Current UL Data-Plane Closure Notes
 
 `AUD-UL-SINR-001` is in progress. The current working-tree patch adds a strict

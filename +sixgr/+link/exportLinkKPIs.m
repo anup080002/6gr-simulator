@@ -26,7 +26,7 @@ if nargin < 3 || isempty(details)
     details = struct();
 end
 
-artifacts = struct('csv',{{}},'mat',{{}},'fig',{{}});
+artifacts = struct('csv',{{}},'mat',{{}},'fig',{{}},'json',{{}});
 
 sixgr.util.ensureFolder(fullfile(runFolder, "csv"));
 sixgr.util.ensureFolder(fullfile(runFolder, "mat"));
@@ -95,6 +95,23 @@ if opt.SaveCSV
     if isstruct(mimoArtifacts)
         for mi = 1:numel(mimoArtifacts.csv)
             artifacts.csv{end+1} = mimoArtifacts.csv{mi}; %#ok<AGROW>
+        end
+    end
+
+    pdschArtifacts = sixgr.truth.exportPDSCHObjectiveArtifacts(localRunRootFolder(runFolder), ...
+        localConfig(details), rawKPI.DL, ...
+        "RunId", localRunId(details), ...
+        "ScenarioName", localScenarioName(details), ...
+        "StrictMode", localStrictMode(details), ...
+        "SourceTable", rawKPI.Paths.DL);
+    if isstruct(pdschArtifacts)
+        for pi = 1:numel(pdschArtifacts.csv)
+            artifacts.csv{end+1} = pdschArtifacts.csv{pi}; %#ok<AGROW>
+        end
+        if isfield(pdschArtifacts, "json")
+            for pi = 1:numel(pdschArtifacts.json)
+                artifacts.json{end+1} = pdschArtifacts.json{pi}; %#ok<AGROW>
+            end
         end
     end
 

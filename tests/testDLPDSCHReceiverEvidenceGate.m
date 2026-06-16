@@ -1,0 +1,125 @@
+function ok = testDLPDSCHReceiverEvidenceGate()
+%TESTDLPDSCHRECEIVEREVIDENCEGATE Validate strict DL PDSCH receiver evidence.
+
+setup6GRSimToolkit("Verbose", false);
+
+if ~localHaveRequired5G()
+    ok = true;
+    return;
+end
+
+cfg = localBasicStrictPDSCHCfg();
+res = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 2, "SNR_dB", 30);
+assert(logical(res.Ok), "High-SNR strict DL PDSCH run must satisfy raw receiver objective.");
+assert(istable(res.TrialTable) && height(res.TrialTable) == 2, ...
+    "Strict DL PDSCH helper must export row-level receiver evidence.");
+
+T = res.TrialTable;
+required = ["StrictReceiverEvidenceOk","StrictOk","TruthStatus", ...
+    "ChannelEstimateAttempted","ChannelEstimateAvailable", ...
+    "ResourceExtractionAttempted","ResourceExtractionAvailable", ...
+    "EqualizationAttempted","EqualizationAvailable", ...
+    "DLSCHDecodeAttempted","DLSCHDecodeAvailable", ...
+    "LLRAvailable","LLRFinite", ...
+    "PostEqSINRWidebanddB","PostEqSINRAvailable","PostEqSINRReceiverDerived", ...
+    "SINRValidationStatus","SINRValidationReason","SINRComputationMethod", ...
+    "ConfiguredSNRLikeSourceRejected", ...
+    "ConfiguredMCSIndex","ConfiguredModulation","ConfiguredLayers","ConfiguredRank", ...
+    "EffectiveMCSIndex","EffectiveModulation","EffectiveLayers","EffectiveRank"];
+assert(all(ismember(required, string(T.Properties.VariableNames))), ...
+    "DL PDSCH trial table must expose the strict receiver/objective evidence contract.");
+
+assert(all(logical(T.StrictReceiverEvidenceOk)), ...
+    "High-SNR strict AWGN PDSCH rows must have complete receiver evidence.");
+assert(all(logical(T.ChannelEstimateAttempted) & logical(T.ChannelEstimateAvailable)), ...
+    "Passing strict PDSCH rows must include DM-RS channel-estimation evidence.");
+assert(all(logical(T.ResourceExtractionAttempted) & logical(T.ResourceExtractionAvailable)), ...
+    "Passing strict PDSCH rows must include PDSCH resource-extraction evidence.");
+assert(all(logical(T.EqualizationAttempted) & logical(T.EqualizationAvailable)), ...
+    "Passing strict PDSCH rows must include equalization evidence.");
+assert(all(logical(T.DLSCHDecodeAttempted) & logical(T.DLSCHDecodeAvailable)), ...
+    "Passing strict PDSCH rows must include DL-SCH decoder evidence.");
+assert(all(logical(T.LLRAvailable) & logical(T.LLRFinite)), ...
+    "Passing strict PDSCH rows must include finite LLR evidence.");
+assert(all(isfinite(double(T.PostEqSINRWidebanddB))) && all(logical(T.PostEqSINRReceiverDerived)), ...
+    "Passing strict PDSCH rows must include finite receiver-derived post-eq SINR.");
+assert(all(strcmpi(string(T.SINRValidationStatus), "pass")), ...
+    "Strict PDSCH post-eq SINR validation must pass for high-SNR real receiver rows.");
+assert(~any(contains(lower(string(T.PostEqSINRSource)), ["configured","fallback","proxy","oracle","cqi","mcs"])), ...
+    "Post-eq SINR source must not be configured/proxy/oracle-backed.");
+
+fake = localMinimalEvidenceRx();
+fake.PostEqSINRSource = "configured_snr_shortcut";
+fake.SINRComputationMethod = "configured_snr";
+bad = sixgr.phy.dl.validatePDSCHReceiverEvidence(fake, "StrictMode", true);
+assert(~logical(bad.StrictReceiverEvidenceOk) && logical(bad.ConfiguredSNRLikeSourceRejected), ...
+    "Configured-SNR-looking post-eq SINR must be rejected by the strict DL evidence gate.");
+
+fake = localMinimalEvidenceRx();
+fake.PostEqSINRSource = "evm_proxy_not_true_post_equalization_sinr";
+fake.PostEqSINRValueRole = "diagnostic_evm_proxy_not_scheduling_input";
+bad = sixgr.phy.dl.validatePDSCHReceiverEvidence(fake, "StrictMode", true);
+assert(~logical(bad.StrictReceiverEvidenceOk), ...
+    "Diagnostic/proxy SINR must not satisfy strict DL PDSCH receiver evidence.");
+
+ok = true;
+end
+
+function cfg = localBasicStrictPDSCHCfg()
+cfg = sixgr.config.defaultConfig();
+cfg.run.shortRun = true;
+cfg.run.strictMode = true;
+cfg.run.noProxyTruthContract = true;
+cfg.outputs.saveCSV = false;
+cfg.outputs.saveMAT = false;
+cfg.outputs.saveFigures = false;
+cfg.channel.model = "AWGN";
+cfg.channel.awgnOnly = true;
+cfg.channel.snr_dB = 30;
+cfg.phy.carrier.NSizeGrid = 12;
+cfg.phy.carrier.SubcarrierSpacing = 30;
+cfg.phy.pdsch.enable = true;
+cfg.phy.pdsch.prbSet = 0:5;
+cfg.phy.pdsch.symbolAllocation = [0 10];
+cfg.phy.pdsch.modulation = "QPSK";
+cfg.phy.pdsch.codeRate = 0.30;
+cfg.phy.pdsch.mcsIndex = 4;
+cfg.phy.pdsch.nLayers = 1;
+cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.equalizer = "MMSE";
+cfg.phy.channelEstimation.method = "LS";
+cfg.validation.dl_pdsch.max_bler = 0.10;
+cfg.validation.dl_pdsch.max_ber = 1e-3;
+end
+
+function rx = localMinimalEvidenceRx()
+rx = struct();
+rx.Ok = true;
+rx.CRCError = false;
+rx.ChannelEstimateAttempted = true;
+rx.ChannelEstimateAvailable = true;
+rx.ChannelEstimateSource = "pdsch_dmrs_channel_estimate";
+rx.ChannelEstimate = ones(8, 1, 1);
+rx.ResourceExtractionAttempted = true;
+rx.PDSCHRxSymbolsForEvidence = ones(8, 1);
+rx.EqualizationAttempted = true;
+rx.EqualizedSymbolsForEvidence = ones(8, 1);
+rx.DLSCHDecodeAttempted = true;
+rx.DecodeAttempted = true;
+rx.TransportBlock = int8([1;0;1;0]);
+rx.DLSCHCodewordLLR = [4; -4; 3; -3];
+rx.LLRAvailable = true;
+rx.LLRFinite = true;
+rx.PostEqSINR_dB = 18;
+rx.PostEqSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
+rx.PostEqSINRValueRole = "measured_post_equalization_scheduling_input";
+rx.PostEqSINRValueStatus = "OK";
+rx.SINRComputationMethod = "mmse";
+end
+
+function tf = localHaveRequired5G()
+tf = exist("nrPDSCH", "file") == 2 ...
+    && exist("nrPDSCHDecode", "file") == 2 ...
+    && exist("nrChannelEstimate", "file") == 2 ...
+    && exist("nrOFDMDemodulate", "file") == 2;
+end

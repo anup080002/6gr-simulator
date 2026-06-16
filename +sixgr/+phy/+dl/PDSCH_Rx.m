@@ -500,11 +500,37 @@ rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
 rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
-rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
+if isempty(pdschRxSym)
+    rx.PDSCHRxSymbolsForEvidence = rxSym;
+else
+    rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
+end
 rx.RecLLR = recLLR;
+rx.RateRecoveredLLR = recLLR;
+rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsAntInd);
+rx.ChannelEstimateAvailable = ~isempty(hEst);
+if useFastAWGNPath
+    rx.ChannelEstimateSource = "explicit_awgn_flat_validation_shortcut";
+elseif ~isempty(dmrsAntInd)
+    rx.ChannelEstimateSource = "pdsch_dmrs_channel_estimate";
+else
+    rx.ChannelEstimateSource = "unit_channel_no_dmrs_awgn_only";
+end
+rx.ResourceExtractionAttempted = true;
+rx.ResourceExtractionAvailable = ~isempty(rxSym);
+rx.EqualizationAttempted = true;
+rx.EqualizationAvailable = ~isempty(eqSym);
+rx.DLSCHDecodeAttempted = true;
+rx.DLSCHDecodeAvailable = ~isempty(tbRx) || ~isempty(decCbs) || ~isempty(recLLR);
+rx.LLRAvailable = ~isempty(llr);
+rx.LLRFinite = ~isempty(llr) && all(isfinite(double(llr(:))));
+rx.LLRScaleSource = "nrPDSCHDecode_noise_variance_plus_equalizer_csi_weights";
+rx.LLRNoiseVariance = double(nVarForDecode);
+rx.SINRComputationMethod = char(lower(string(equalizerAlg)));
 if ~logical(opt.CompactOutput)
     rx.TransportBlock = tbRx;
     rx.CodewordLLR = llr;
+    rx.DLSCHCodewordLLR = llr;
     rx.BaseGraph = bgn;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
@@ -543,6 +569,26 @@ if ~logical(opt.CompactOutput)
     rx.PDSCHRxSymbols = pdschRxSym;
 end
 
+strictEvidence = sixgr.phy.dl.validatePDSCHReceiverEvidence(rx, "StrictMode", strictMode);
+rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);
+rx.StrictOk = logical(strictEvidence.StrictOk);
+rx.TruthStatus = char(string(strictEvidence.TruthStatus));
+rx.SINRValidationStatus = char(string(strictEvidence.SINRValidationStatus));
+rx.SINRValidationReason = char(string(strictEvidence.SINRValidationReason));
+rx.PostEqSINRReceiverDerived = logical(strictEvidence.PostEqSINRReceiverDerived);
+rx.PostEqSINRAvailable = logical(strictEvidence.PostEqSINRAvailable);
+rx.ConfiguredSNRLikeSourceRejected = logical(strictEvidence.ConfiguredSNRLikeSourceRejected);
+if strictMode && ~logical(strictEvidence.StrictReceiverEvidenceOk)
+    rx.Ok = false;
+    rx.ReceiverUsable = false;
+    rx.DecodeUsable = false;
+    if strlength(string(rx.FailureReason)) == 0
+        rx.FailureReason = char(string(strictEvidence.FailureReason));
+    else
+        rx.FailureReason = char(string(rx.FailureReason) + "|" + string(strictEvidence.FailureReason));
+    end
+end
+
 info = struct();
 info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
@@ -561,6 +607,7 @@ info.PostEqualizationNoiseVariance = double(nVarDecode);
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
+info.StrictReceiverEvidence = strictEvidence;
 
 end
 

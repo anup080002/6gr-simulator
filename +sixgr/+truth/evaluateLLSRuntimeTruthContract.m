@@ -485,6 +485,11 @@ if strictTruthRequired && logical(channelRFStats.ChannelRFRequired) && ~logical(
         "evidence");
 end
 
+[pdschObjectiveStats, pdschObjectiveFailures] = localPDSCHObjectiveStats(dlTrials, scfg, cfg, strictTruthRequired, isControlOnly, verdict.RequiredDL);
+for ii = 1:numel(pdschObjectiveFailures)
+    verdict = localAddFailure(verdict, pdschObjectiveFailures(ii), "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -504,6 +509,7 @@ verdict.CheckDetails = struct( ...
     "TRS", trsStats, ...
     "SRS", srsStats, ...
     "ChannelRF", channelRFStats, ...
+    "PDSCHObjective", pdschObjectiveStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -2039,6 +2045,52 @@ for direction = ["DL", "UL"]
 end
 failures = failures(strlength(failures) > 0);
 stats.ScenarioObjectiveOk = isempty(failures);
+end
+
+function [stats, failures] = localPDSCHObjectiveStats(dlTrials, scfg, cfg, strictTruthRequired, isControlOnly, requiredDL)
+stats = struct( ...
+    "PDSCHObjectiveRequired", false, ...
+    "ObjectivePass", true, ...
+    "RawBLER", NaN, ...
+    "RawBERWeighted", NaN, ...
+    "TBAttemptCount", NaN, ...
+    "FailureReason", "");
+failures = strings(0, 1);
+if isControlOnly
+    return;
+end
+required = logical(requiredDL) || (istable(dlTrials) && height(dlTrials) > 0);
+stats.PDSCHObjectiveRequired = required;
+if ~required
+    return;
+end
+try
+    result = sixgr.truth.evaluatePDSCHObjectiveStrict(dlTrials, cfg, ...
+        "RunId", string(localScenarioGet(scfg, cfg, "run.runTag", "")), ...
+        "ScenarioName", string(localScenarioGet(scfg, cfg, "scenario.name", "")), ...
+        "StrictMode", strictTruthRequired);
+    if istable(result.Summary) && height(result.Summary) > 0
+        s = table2struct(result.Summary);
+        stats = s(1);
+        stats.PDSCHObjectiveRequired = required;
+    end
+    if strictTruthRequired && ~logical(result.ObjectivePass)
+        codes = string(result.FailureCodes(:));
+        codes = codes(strlength(codes) > 0);
+        if isempty(codes)
+            codes = "dl_pdsch_objective_failed";
+        end
+        for ci = 1:numel(codes)
+            failures(end+1,1) = "dl_pdsch_objective_failed:" + codes(ci); %#ok<AGROW>
+        end
+    end
+catch ME
+    stats.ObjectivePass = false;
+    stats.FailureReason = string(ME.identifier);
+    if strictTruthRequired
+        failures(end+1,1) = "dl_pdsch_objective_evaluation_failed:" + string(ME.identifier);
+    end
+end
 end
 
 function [tf, reason] = localIsFixedOperatingPointScenario(scfg, cfg)
