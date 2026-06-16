@@ -27,6 +27,7 @@ tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [pdcchTx, pdcchInfo] = sixgr.phy.dl.PDCCH_Tx(cfgSI, ...
     "Carrier", carrier, "PDCCH", pdcch, "DCIBits", dci.Bits, ...
     "K", double(numel(dci.Bits)), "RNTI", 65535, "NCellID", double(carrier.NCellID), ...
+    "PDCCHScramblingRNTI", 0, ...
     "OFDMModulate", false);
 [pdschTx, pdschInfo] = sixgr.phy.dl.PDSCH_Tx(cfgSI, ...
     "Carrier", carrier, "PDSCH", pdsch, "TransportBlockBits", paddedBits, ...
@@ -38,10 +39,10 @@ siWaveform = sixgr.phy.waveform.ofdmModulate(carrier, siGrid);
     "SSBIndex", double(sixgr.util.structGet(cfg, "phy.ssb.runtimeSSBIndex", 0)));
 sampleRate = double(sixgr.util.structGet(ssbInfo, "SampleRate_Hz", localSampleRate(carrier)));
 gapSamples = round(0.001 * sampleRate);
-waveform = [ssbWaveform; complex(zeros(gapSamples, size(ssbWaveform, 2))); siWaveform]; %#ok<AGROW>
+waveform = localConcatWaveformsWithGap(ssbWaveform, siWaveform, gapSamples);
 waveform = localApplyAWGN(waveform, p.Results.SNRdB);
 
-treeHash = sixgr.rrc.asn1.compareSIB1Trees(tree, tree);
+[~, treeHash] = sixgr.rrc.asn1.compareSIB1Trees(tree, tree);
 tx = struct();
 tx.Waveform = waveform;
 tx.SSBWaveform = ssbWaveform;
@@ -101,7 +102,9 @@ for nRB = 6:double(carrier.NSizeGrid)
     [dci, pdsch] = sixgr.phy.broadcast.buildSIB1DCI10(carrier, cfg, "PRBStart", 0, "PRBCount", nRB, ...
         "SymbolStart", 2, "NumSymbols", 12, "MCSIndex", 0, "RV", 0);
     [~, info] = nrPDSCHIndices(carrier, pdsch);
-    tbs = nrTBS(pdsch.Modulation, pdsch.NumLayers, nRB, info.NREPerPRB, dci.TargetCodeRate, 0);
+    nrePerPRB = localResolveSIB1DataNREPerPRB(info, nRB, pdsch.Modulation, pdsch.NumLayers);
+    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, pdsch.SymbolAllocation);
+    tbs = nrTBS(pdsch.Modulation, pdsch.NumLayers, nRB, nrePerPRB, dci.TargetCodeRate, xOverhead);
     if tbs >= numel(sib1Bits)
         targetCodeRate = dci.TargetCodeRate;
         paddedBits = int8([sib1Bits(:); zeros(tbs - numel(sib1Bits), 1, "int8")]);
@@ -112,6 +115,46 @@ error("sixgr:phy:broadcast:SIB1AllocationTooSmall", ...
     "No anchor SIB1 PDSCH allocation fits %d payload bits.", numel(sib1Bits));
 end
 
+function nrePerPRB = localResolveSIB1DataNREPerPRB(pdschInfo, nPRB, modStr, nLayers)
+% Keep SIB1 allocation TBS aligned with PDSCH_Tx's actual data-RE resolver.
+qm = localQm(modStr);
+nrePerPRB = NaN;
+if isfield(pdschInfo, "G")
+    gBits = double(pdschInfo.G);
+    if isfinite(gBits) && gBits > 0
+        nrePerPRB = floor(gBits / max(qm * double(nLayers) * max(double(nPRB), 1), 1));
+    end
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    if isfield(pdschInfo, "NRE")
+        nrePerPRB = floor(double(pdschInfo.NRE) / max(double(nPRB), 1));
+    elseif isfield(pdschInfo, "NREPerPRB")
+        nrePerPRB = double(pdschInfo.NREPerPRB);
+    end
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    error("sixgr:phy:broadcast:SIB1NoDataRE", ...
+        "SIB1 PDSCH allocation has no schedulable data RE.");
+end
+end
+
+function qm = localQm(modStr)
+switch upper(string(modStr))
+    case "QPSK"
+        qm = 2;
+    case "16QAM"
+        qm = 4;
+    case "64QAM"
+        qm = 6;
+    case "256QAM"
+        qm = 8;
+    case "1024QAM"
+        qm = 10;
+    otherwise
+        qm = 2;
+end
+end
+
 function [pdcch, cfgSI] = localSIB1PDCCHConfig(carrier, cfg)
 cfgSI = cfg;
 cfgSI.phy.pdcch.rnti = 65535;
@@ -119,6 +162,7 @@ cfgSI.phy.pdcch.dciPayloadBits = 32;
 cfgSI.phy.pdcch.KBits = 32;
 cfgSI.phy.pdcch.blindSearch = true;
 cfgSI.phy.pdcch.aggregationLevel = 4;
+cfgSI.phy.pdcch.scramblingRNTI = 0;
 cfgSI.phy.pdcch.allowBlindCandidateTimingEstimate = false;
 cfgSI.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];
 cfgSI.phy.pdcch.searchSpace.id = 0;
@@ -163,7 +207,7 @@ try
 catch
 end
 try
-    pdcch.RNTI = 65519; % Object validator excludes SI-RNTI; TX/RX calls use 65535.
+    pdcch.RNTI = 0; % Type0 CSS physical scrambling uses nRNTI=0; DCI CRC mask uses SI-RNTI.
 catch
 end
 pdcch.CORESET = coreset;
@@ -177,13 +221,29 @@ end
 end
 
 function grid = localAddGrids(a, b)
-sz = max([size(a); size(b)], [], 1);
-if numel(sz) < 3
-    sz(3) = 1;
-end
+sa = size(a);
+sb = size(b);
+sa(end+1:3) = 1;
+sb(end+1:3) = 1;
+sz = max([sa(1:3); sb(1:3)], [], 1);
 grid = complex(zeros(sz, "like", a));
 grid(1:size(a,1), 1:size(a,2), 1:size(a,3)) = grid(1:size(a,1), 1:size(a,2), 1:size(a,3)) + a;
 grid(1:size(b,1), 1:size(b,2), 1:size(b,3)) = grid(1:size(b,1), 1:size(b,2), 1:size(b,3)) + b;
+end
+
+function waveform = localConcatWaveformsWithGap(ssbWaveform, siWaveform, gapSamples)
+numCols = max(size(ssbWaveform, 2), size(siWaveform, 2));
+ssbWaveform = localPadWaveformColumns(ssbWaveform, numCols);
+siWaveform = localPadWaveformColumns(siWaveform, numCols);
+gap = complex(zeros(gapSamples, numCols, "like", ssbWaveform));
+waveform = [ssbWaveform; gap; siWaveform]; %#ok<AGROW>
+end
+
+function wave = localPadWaveformColumns(wave, numCols)
+if size(wave, 2) >= numCols
+    return;
+end
+wave(:, end+1:numCols) = 0;
 end
 
 function sampleRate = localSampleRate(carrier)

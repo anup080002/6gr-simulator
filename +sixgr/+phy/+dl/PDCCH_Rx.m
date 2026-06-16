@@ -14,6 +14,8 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %     "PDCCH"          : nrPDCCHConfig override
 %     "K"              : DCI payload length in bits (default 64)
 %     "ListLength"     : polar list length for DCI decoding (default 8)
+%     "RNTI"           : DCI CRC-mask RNTI override
+%     "PDCCHScramblingRNTI" : physical PDCCH scrambling RNTI override
 %     "NoiseVar"       : override noise variance (else estimate)
 %     "SampleRate_Hz"  : sample rate (only needed for some timing APIs)
 %
@@ -31,6 +33,8 @@ ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PDCCH', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('K', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.addParameter('ListLength', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
+ip.addParameter('RNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('PDCCHScramblingRNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
 ip.addParameter('NoiseOnlyWaveform', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
@@ -47,11 +51,16 @@ end
 
 nCellID = double(sixgr.util.structGet(cfg, 'phy.carrier.NCellID', ...
     sixgr.util.structGet(cfg, 'scenario.NCellID', 1)));
-rnti   = double(sixgr.util.structGet(cfg, 'phy.pdcch.rnti', 4660));
+if isempty(opt.RNTI)
+    rnti = double(sixgr.util.structGet(cfg, 'phy.pdcch.rnti', 4660));
+else
+    rnti = double(opt.RNTI);
+end
+pdcchScramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, rnti, opt.PDCCHScramblingRNTI);
 
 % PDCCH config
 if isempty(opt.PDCCH)
-    pdcch = localDefaultPDCCH(cfg, carrier, nCellID, rnti);
+    pdcch = localDefaultPDCCH(cfg, carrier, nCellID, localPDCCHConfigRNTI(rnti, pdcchScramblingRNTI));
 else
     pdcch = opt.PDCCH;
 end
@@ -267,9 +276,9 @@ for c = 1:numel(candSymInd)
 
     % PDCCH decode -> soft bits
     try
-        rxCW = nrPDCCHDecode(eqSym, nCellID, rnti, nVar);
+        rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI, nVar);
     catch
-        rxCW = nrPDCCHDecode(eqSym, nCellID, rnti);
+        rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI);
     end
     rxCW = localApplyPDCCHCSIWeighting(rxCW, csi);
 
@@ -327,6 +336,8 @@ info = struct();
 info.CarrierInfo = cinfo;
 info.NCellID = nCellID;
 info.RNTI = rnti;
+info.DCICrcRNTI = rnti;
+info.PDCCHScramblingRNTI = pdcchScramblingRNTI;
 info.K = K;
 info.ListLength = listLen;
 info.BlindSearch = blind;
@@ -654,6 +665,33 @@ end
 end
 
 % ---------------------- Local helper ----------------------
+function scramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, dciRNTI, optScramblingRNTI)
+if ~isempty(optScramblingRNTI)
+    scramblingRNTI = double(optScramblingRNTI);
+    return;
+end
+configured = sixgr.util.structGet(cfg, 'phy.pdcch.scramblingRNTI', []);
+if ~isempty(configured)
+    scramblingRNTI = double(configured);
+    return;
+end
+if double(dciRNTI) == 65535
+    scramblingRNTI = 0;
+else
+    scramblingRNTI = double(dciRNTI);
+end
+end
+
+function configRNTI = localPDCCHConfigRNTI(dciRNTI, scramblingRNTI)
+% nrPDCCHConfig validators reject SI-RNTI. Resource generation only needs a
+% valid object RNTI, while DCI CRC validation still uses the requested RNTI.
+if double(dciRNTI) == 65535
+    configRNTI = double(scramblingRNTI);
+else
+    configRNTI = double(dciRNTI);
+end
+end
+
 function pdcch = localDefaultPDCCH(cfg, carrier, nCellID, rnti)
 % Create a minimal, valid PDCCH configuration.
 

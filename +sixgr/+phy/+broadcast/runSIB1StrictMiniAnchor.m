@@ -35,33 +35,51 @@ wrong = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "ReceiverR
 wrong.NegativeTrialType = "wrong_si_rnti";
 wrong.InjectedFault = "receiver_attempted_wrong_rnti_4660";
 wrong.ExpectedFailureStage = "pdcch_decode_failed";
-negatives(end+1) = wrong; %#ok<AGROW>
+negatives = localAppendNegative(negatives, wrong);
 
 nosig = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "nosignal", ...
     "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
 nosig.NegativeTrialType = "no_signal_coreset0";
 nosig.InjectedFault = "zeroed_sib1_slot";
 nosig.ExpectedFailureStage = "pdcch_decode_failed";
-negatives(end+1) = nosig; %#ok<AGROW>
+negatives = localAppendNegative(negatives, nosig);
 
 cpdcch = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "corruptpdcch", ...
     "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
 cpdcch.NegativeTrialType = "corrupted_pdcch";
-cpdcch.InjectedFault = "pdcch_region_phase_inversion";
+cpdcch.InjectedFault = "pdcch_and_dmrs_resource_elements_zeroed";
 cpdcch.ExpectedFailureStage = "pdcch_decode_failed";
-negatives(end+1) = cpdcch; %#ok<AGROW>
+negatives = localAppendNegative(negatives, cpdcch);
 
 cpdsch = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "corruptpdsch", ...
     "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
 cpdsch.NegativeTrialType = "corrupted_pdsch";
-cpdsch.InjectedFault = "pdsch_region_phase_inversion";
+cpdsch.InjectedFault = "pdsch_and_dmrs_resource_elements_zeroed";
 cpdsch.ExpectedFailureStage = "pdsch_dlsch_crc_failed";
-negatives(end+1) = cpdsch; %#ok<AGROW>
+negatives = localAppendNegative(negatives, cpdsch);
 
 casn1 = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "corruptasn1", ...
     "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
 casn1.NegativeTrialType = "corrupted_asn1_payload";
 casn1.InjectedFault = "post_dlsch_payload_bit_flip";
 casn1.ExpectedFailureStage = "sib1_asn1_decode_or_tree_match_failed";
-negatives(end+1) = casn1; %#ok<AGROW>
+negatives = localAppendNegative(negatives, casn1);
+end
+
+function negatives = localAppendNegative(negatives, item)
+if isempty(negatives)
+    negatives = item;
+    return;
+end
+allFields = unique([fieldnames(negatives); fieldnames(item)]);
+for i = 1:numel(allFields)
+    f = allFields{i};
+    if ~isfield(negatives, f)
+        [negatives.(f)] = deal([]);
+    end
+    if ~isfield(item, f)
+        item.(f) = [];
+    end
+end
+negatives(end+1, 1) = orderfields(item, fieldnames(negatives)); %#ok<AGROW>
 end

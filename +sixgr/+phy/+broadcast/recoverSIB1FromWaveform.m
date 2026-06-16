@@ -44,14 +44,16 @@ try
     faultMode = lower(strtrim(string(p.Results.FaultMode)));
     if faultMode == "nosignal"
         siWave(:) = 0;
-    elseif faultMode == "corruptpdcch"
-        siWave(1:min(256, numel(siWave))) = -siWave(1:min(256, numel(siWave)));
     end
 
     [~, cfgSI] = localReceiverPDCCH(carrier, cfg, double(p.Results.ReceiverRNTI));
+    if faultMode == "corruptpdcch"
+        siWave = localCorruptPDCCHResources(siWave, carrier, cfgSI.phy.sib1.runtimePDCCH);
+    end
     [pdcchRx, pdcchInfo] = sixgr.phy.dl.PDCCH_Rx(siWave, cfgSI, ...
         "Carrier", carrier, "PDCCH", cfgSI.phy.sib1.runtimePDCCH, ...
-        "K", 32, "SampleRate_Hz", sampleRate);
+        "K", 32, "RNTI", double(p.Results.ReceiverRNTI), ...
+        "PDCCHScramblingRNTI", 0, "SampleRate_Hz", sampleRate);
     result.PDCCHCandidatesAttempted = double(sixgr.util.structGet(pdcchInfo, "NumCandidatesTried", 0));
     result.DCIBlindDecodeSuccess = logical(pdcchRx.Ok);
     result.DCICrcPass = logical(pdcchRx.Ok);
@@ -76,14 +78,11 @@ try
     result.PDSCHNumSymbols = double(dci.NumSymbols);
     result.PDSCHModulation = string(dci.Modulation);
     result.CORESET0NumRB = max(1, min(double(carrier.NSizeGrid), 36));
-    [~, pdschInfo] = nrPDSCHIndices(carrier, pdsch);
-    tbs = nrTBS(pdsch.Modulation, pdsch.NumLayers, numel(pdsch.PRBSet), pdschInfo.NREPerPRB, dci.TargetCodeRate, 0);
     if faultMode == "corruptpdsch"
-        siWave(round(end/2):min(numel(siWave), round(end/2)+255)) = ...
-            -siWave(round(end/2):min(numel(siWave), round(end/2)+255));
+        siWave = localCorruptPDSCHResources(siWave, carrier, pdsch);
     end
     [pdschRx, ~] = sixgr.phy.dl.PDSCH_Rx(siWave, cfgSI, ...
-        "Carrier", carrier, "PDSCH", pdsch, "TransportBlockSize", double(tbs), ...
+        "Carrier", carrier, "PDSCH", pdsch, ...
         "TargetCodeRate", dci.TargetCodeRate, "RV", double(dci.RV), ...
         "SkipTimingEstimate", true);
     result.PDSCHDMRSOk = isfield(pdschRx, "ChannelEstimate") && ~isempty(pdschRx.ChannelEstimate);
@@ -104,7 +103,8 @@ try
     result.SIB1ASN1DecodeOk = true;
     result.SIB1PayloadHashRx = string(rxMeta.PayloadHash);
     result.SIB1RxTree = rxTree;
-    result.SIB1RxTreeHash = sixgr.rrc.asn1.compareSIB1Trees(rxTree, rxTree).TxTreeHash;
+    [~, rxSelfHash] = sixgr.rrc.asn1.compareSIB1Trees(rxTree, rxTree);
+    result.SIB1RxTreeHash = rxSelfHash.TxTreeHash;
     result.SIB1PayloadHashTx = string(p.Results.ExpectedPayloadHash);
     result.SIB1TxTreeHash = string(p.Results.ExpectedTreeHash);
     if ~isempty(fieldnames(p.Results.ExpectedTxTree))
@@ -168,6 +168,7 @@ cfg.phy.carrier.NStartGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NStar
 cfg.phy.carrier.NSlot = 0;
 cfg.phy.carrier.NFrame = 0;
 cfg.phy.pdcch.rnti = double(rnti);
+cfg.phy.pdcch.scramblingRNTI = 0;
 cfg.phy.pdcch.dciPayloadBits = 32;
 cfg.phy.pdcch.KBits = 32;
 cfg.phy.pdcch.blindSearch = true;
@@ -208,7 +209,7 @@ try
 catch
 end
 try
-    pdcch.RNTI = 65519; % Resource object only; SI-RNTI is used in decoder calls.
+    pdcch.RNTI = 0; % Type0 CSS physical scrambling uses nRNTI=0; DCI CRC mask is receiver-selected.
 catch
 end
 pdcch.CORESET = coreset;
@@ -227,6 +228,49 @@ if prefixSamples >= size(rxWaveform, 1)
     error("sixgr:phy:broadcast:SIB1WaveformMissing", "Received waveform is too short for SIB1 occasion.");
 end
 siWave = rxWaveform(prefixSamples+1:end, :);
+end
+
+function siWave = localCorruptPDCCHResources(siWave, carrier, pdcch)
+try
+    rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, siWave);
+catch
+    rxGrid = nrOFDMDemodulate(carrier, siWave);
+end
+slotSymbols = max(1, round(double(carrier.SymbolsPerSlot)));
+if size(rxGrid, 2) > slotSymbols
+    rxGrid = rxGrid(:, 1:slotSymbols, :);
+end
+[pdcchInd, ~, dmrsInd] = nrPDCCHResources(carrier, pdcch);
+rxGrid(pdcchInd) = 0;
+rxGrid(dmrsInd) = 0;
+siWave = sixgr.phy.waveform.ofdmModulate(carrier, rxGrid);
+end
+
+function siWave = localCorruptPDSCHResources(siWave, carrier, pdsch)
+try
+    rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, siWave);
+catch
+    rxGrid = nrOFDMDemodulate(carrier, siWave);
+end
+slotSymbols = max(1, round(double(carrier.SymbolsPerSlot)));
+if size(rxGrid, 2) > slotSymbols
+    rxGrid = rxGrid(:, 1:slotSymbols, :);
+end
+try
+    [pdschInd, ~] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
+catch
+    [pdschInd, ~] = nrPDSCHIndices(carrier, pdsch);
+end
+try
+    [dmrsInd, ~] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
+catch
+    dmrsInd = [];
+end
+rxGrid(pdschInd) = 0;
+if ~isempty(dmrsInd)
+    rxGrid(dmrsInd) = 0;
+end
+siWave = sixgr.phy.waveform.ofdmModulate(carrier, rxGrid);
 end
 
 function sampleRate = localSampleRate(carrier)

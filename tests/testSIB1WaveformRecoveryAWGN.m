@@ -7,12 +7,8 @@ if exist("nrWaveformGenerator", "file") ~= 2
     return;
 end
 cfg = localCfg();
-[supported, ~] = sixgr.phy.broadcast.siRNTIWaveformSupported();
-if ~supported
-    localAssertSIRNTIUnsupported(cfg);
-    ok = true;
-    return;
-end
+[supported, reason] = sixgr.phy.broadcast.siRNTIWaveformSupported();
+assert(logical(supported), "SI-RNTI Type0 CSS waveform support must be available: %s", char(string(reason)));
 tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, "SNRdB", 35, "Seed", 1501);
 rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, ...
     "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
@@ -21,16 +17,6 @@ assert(logical(rx.DCIBlindDecodeSuccess) && double(rx.DCIRNTI) == 65535, "SI-RNT
 assert(logical(rx.SIB1TreeEqual), "Decoded SIB1 tree must equal transmitted tree after decode.");
 assert(isempty(rx.UsedOracleFields), "Receiver must not consume transmitter oracle fields before decode.");
 ok = true;
-end
-
-function localAssertSIRNTIUnsupported(cfg)
-threw = false;
-try
-    sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, "SNRdB", 35, "Seed", 1501);
-catch ME
-    threw = strcmp(string(ME.identifier), "sixgr:phy:broadcast:SIRNTIUnsupported");
-end
-assert(threw, "Current build must fail closed when SI-RNTI waveform support is unavailable.");
 end
 
 function cfg = localCfg()

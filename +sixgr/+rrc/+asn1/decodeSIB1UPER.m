@@ -15,6 +15,15 @@ if numel(bits) < pos + bodyLen - 1
 end
 bodyEnd = pos + bodyLen - 1;
 body = bits(pos:bodyEnd);
+payloadEnd = bodyEnd + mod(8 - mod(bodyEnd, 8), 8);
+if numel(bits) < payloadEnd
+    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 payload ended before byte alignment padding.");
+end
+payloadBits = bits(1:payloadEnd);
+trailingBits = bits(payloadEnd+1:end);
+if any(trailingBits ~= 0)
+    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 transport block has non-zero trailing padding after the ASN.1 payload.");
+end
 p = 1;
 [~, p] = localExpectUInt(body, p, 1, 0, "bcchExtension");
 [~, p] = localExpectUInt(body, p, 1, 0, "messageChoice");
@@ -67,10 +76,11 @@ sixgr.rrc.asn1.validateSIB1ForScenario(msg, cfg);
 
 meta = struct( ...
     "Profile", "sixgr_sib1_anchor_profile_v1", ...
-    "PayloadBits", double(numel(bits)), ...
+    "PayloadBits", double(numel(payloadBits)), ...
     "BodyBits", double(bodyLen), ...
-    "PayloadHash", sixgr.rrc.asn1.sha256Hex(bits(:)), ...
-    "EncodedHex", sixgr.rrc.asn1.bitsToHex(bits(:)));
+    "TrailingTransportBlockPaddingBits", double(numel(trailingBits)), ...
+    "PayloadHash", sixgr.rrc.asn1.sha256Hex(payloadBits(:)), ...
+    "EncodedHex", sixgr.rrc.asn1.bitsToHex(payloadBits(:)));
 end
 
 function bits = localNormalizeBits(x)

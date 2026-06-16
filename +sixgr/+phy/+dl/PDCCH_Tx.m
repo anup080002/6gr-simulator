@@ -16,7 +16,10 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %     "PDCCH"       : nrPDCCHConfig to use (default: from cfg)
 %     "DCIBits"     : int8 column vector (default: random)
 %     "K"           : DCI payload length (default: cfg.phy.pdcch.KBits or 64)
-%     "RNTI"        : scalar RNTI (default: cfg.phy.pdcch.rnti or 4660)
+%     "RNTI"        : scalar DCI CRC-mask RNTI (default: cfg.phy.pdcch.rnti or 4660)
+%     "PDCCHScramblingRNTI" : scalar physical PDCCH scrambling RNTI
+%                    (default: cfg.phy.pdcch.scramblingRNTI, or 0 for
+%                    SI-RNTI/common search space, otherwise RNTI)
 %     "NCellID"     : scalar NCellID (default: cfg.scenario.NCellID or 1)
 %     "NumTxAnt"    : number of TX antennas/ports for resource grid (default: 1)
 %     "OFDMModulate": true/false (default: true)
@@ -37,6 +40,7 @@ p.addParameter('PDCCH', [], @(x) isempty(x) || isobject(x));
 p.addParameter('DCIBits', [], @(x) isempty(x) || (isnumeric(x) && isvector(x)));
 p.addParameter('K', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 p.addParameter('RNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+p.addParameter('PDCCHScramblingRNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter('NCellID', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter('NumTxAnt', 1, @(x) isnumeric(x) && isscalar(x) && x>=1);
 p.addParameter('OFDMModulate', true, @(x) islogical(x) && isscalar(x));
@@ -60,10 +64,12 @@ rnti = opt.RNTI;
 if isempty(rnti)
     rnti = sixgr.util.structGet(cfg, 'phy.pdcch.rnti', 4660);
 end
+rnti = double(rnti);
+pdcchScramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, rnti, opt.PDCCHScramblingRNTI);
 
 % PDCCH config
 if isempty(opt.PDCCH)
-    pdcch = localDefaultPDCCH(cfg, carrier, nCellID, rnti);
+    pdcch = localDefaultPDCCH(cfg, carrier, nCellID, localPDCCHConfigRNTI(rnti, pdcchScramblingRNTI));
 else
     pdcch = opt.PDCCH;
 end
@@ -89,12 +95,13 @@ else
     K = numel(dciBits);
 end
 
-% DCI encoding (Polar + CRC mask by RNTI)
+% DCI encoding (Polar + CRC mask by the DCI RNTI)
 % dciCW length must be E.
 dciCW = nrDCIEncode(dciBits, rnti, E);
 
-% PDCCH modulation (includes scrambling per NCellID/RNTI)
-pdcchSym = nrPDCCH(dciCW, nCellID, rnti);
+% PDCCH modulation (38.211 scrambling).  Common-search-space SI-RNTI DCI
+% uses SI-RNTI for CRC masking, but physical PDCCH scrambling uses nRNTI=0.
+pdcchSym = nrPDCCH(dciCW, nCellID, pdcchScramblingRNTI);
 
 % Build resource grid and map symbols
 numTxAnt = double(opt.NumTxAnt);
@@ -130,11 +137,41 @@ info.NumPDCCHRE = numel(pdcchInd);
 info.NumDMRSRE  = numel(dmrsInd);
 info.NCellID = nCellID;
 info.RNTI = rnti;
-info.Note = 'PDCCH uses built-in 5G Toolbox functions (nrDCIEncode/nrPDCCH/nrPDCCHResources).';
+info.DCICrcRNTI = rnti;
+info.PDCCHScramblingRNTI = pdcchScramblingRNTI;
+info.Note = 'PDCCH uses built-in 5G Toolbox functions with explicit DCI CRC RNTI and physical scrambling RNTI separation.';
 
 end
 
 % -------------------------------------------------------------------------
+function scramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, dciRNTI, optScramblingRNTI)
+if ~isempty(optScramblingRNTI)
+    scramblingRNTI = double(optScramblingRNTI);
+    return;
+end
+configured = sixgr.util.structGet(cfg, 'phy.pdcch.scramblingRNTI', []);
+if ~isempty(configured)
+    scramblingRNTI = double(configured);
+    return;
+end
+if double(dciRNTI) == 65535
+    scramblingRNTI = 0;
+else
+    scramblingRNTI = double(dciRNTI);
+end
+end
+
+function configRNTI = localPDCCHConfigRNTI(dciRNTI, scramblingRNTI)
+% nrPDCCHConfig validators reject SI-RNTI, but resource generation only
+% needs a valid object.  Use the physical scrambling RNTI for common-space
+% SI PDCCH and the DCI RNTI otherwise.
+if double(dciRNTI) == 65535
+    configRNTI = double(scramblingRNTI);
+else
+    configRNTI = double(dciRNTI);
+end
+end
+
 function pdcch = localDefaultPDCCH(cfg, carrier, nCellID, rnti)
 %LOCALDEFAULTPDCCH Minimal, safe PDCCH configuration.
 %
