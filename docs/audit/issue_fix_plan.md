@@ -46,6 +46,23 @@ Critical issues cannot be waived. High and medium issues block strict anchor
 conformance unless explicitly marked `waived_non_blocking` with a justification
 and the scenario declares that the affected block is not part of the objective.
 
+## Current Truth-Gate Closure Notes
+
+`AUD-001` is closed for the runtime truth-contract/status gate. Strict runs now
+separate run completion from truth/conformance status, count active
+critical/high/medium issue-registry rows as mandatory blockers, and export those
+counts through `truth_contract_summary.csv`, `scenario_summary.csv`, and the
+scenario manifest. Rows remain blocking until their status is one of the
+resolved statuses such as `fixed`, `verified`, `closed`, or an explicitly
+documented non-blocking waiver.
+
+`AUD-002` is closed for fixed operating-point objective gating. The effective
+operating-point summary preserves configured nominal DL/UL rank/layers,
+modulation, and MCS separately from observed runtime histograms. Strict fixed
+operating-point scenarios fail `ScenarioObjectiveOk` when the configured-match
+rate from raw DL/UL trial rows is below the required threshold. Adaptive
+CQI-driven scenarios are not forced through this exact-match gate.
+
 ## Current Initial-Access Closure Notes
 
 `AUD-RA-001` is closed for the explicit unrestricted contention-based four-step
