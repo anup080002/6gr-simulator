@@ -281,6 +281,11 @@ try
         "Layers", double(numLayersForSINR), ...
         "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
 catch ME
+    if strictMode
+        error("sixgr:phy:ul:PUSCHPostEqSINRUnavailable", ...
+            "Strict UL PUSCH requires receiver-derived post-equalization SINR; computePostEqSINR failed: %s", ...
+            char(string(ME.message)));
+    end
     postEqSINR_dB = NaN;
     postEqSINRPerRE_dB = [];
     postEqSINRInfo = struct( ...
@@ -288,7 +293,8 @@ catch ME
         "NAReason", string(ME.identifier), ...
         "PerLayerSINR_dB", NaN, ...
         "Source", "post_equalization_sinr_from_equalizer_channel_estimate", ...
-        "ValueRole", "measured_post_equalization_scheduling_input");
+        "ValueRole", "measured_post_equalization_scheduling_input", ...
+        "Method", char(lower(string(equalizerAlg))));
 end
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 [nVarDecode, nVarDecodeInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
@@ -454,17 +460,32 @@ rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
 rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
 rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
 rx.PostEqSINR_dB = double(postEqSINR_dB);
+rx.PostEqSINRWidebanddB = double(postEqSINR_dB);
 rx.PostEqSINRSource = char(string(sixgr.util.structGet(postEqSINRInfo, "Source", "post_equalization_sinr_from_equalizer_channel_estimate")));
 rx.PostEqSINRValueRole = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueRole", "measured_post_equalization_scheduling_input")));
 rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueStatus", "unavailable")));
 rx.PostEqSINRNAReason = char(string(sixgr.util.structGet(postEqSINRInfo, "NAReason", "")));
 rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayerSINR_dB", NaN));
+rx.SINRComputationMethod = char(string(sixgr.util.structGet(postEqSINRInfo, "Method", char(lower(string(equalizerAlg))))));
 rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
 rx.EqualizerRequestedType = char(equalizerRequested);
 rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
 rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
 rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
+rx.ChannelEstimateAttempted = true;
+rx.ChannelEstimateAvailable = ~isempty(Hest);
+rx.ChannelEstimateSource = "pusch_dmrs_channel_estimate";
+rx.ResourceExtractionAttempted = true;
+rx.ResourceExtractionAvailable = ~isempty(rxSym);
+rx.EqualizationAttempted = true;
+rx.EqualizationAvailable = ~isempty(eqSym);
+rx.ULSCHDecodeAttempted = true;
+rx.ULSCHDecodeAvailable = ~isempty(tbBits) || ~isempty(decCbs) || ~isempty(recLLR);
+rx.LLRAvailable = ~isempty(cwLLRForULSCH);
+rx.LLRFinite = ~isempty(cwLLRForULSCH) && all(isfinite(double(cwLLRForULSCH(:))));
+rx.LLRScaleSource = "nrPUSCHDecode_noise_variance_plus_equalizer_csi_weights";
+rx.LLRNoiseVariance = double(nVarForDecode);
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
 rx.RecLLR = recLLR;
@@ -501,6 +522,26 @@ if ~logical(opt.CompactOutput)
     rx.InterferenceCovarianceInfo = rintInfo;
 end
 
+strictEvidence = sixgr.phy.ul.validatePUSCHReceiverEvidence(rx, "StrictMode", strictMode);
+rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);
+rx.StrictOk = logical(strictEvidence.StrictOk);
+rx.TruthStatus = char(string(strictEvidence.TruthStatus));
+rx.SINRValidationStatus = char(string(strictEvidence.SINRValidationStatus));
+rx.SINRValidationReason = char(string(strictEvidence.SINRValidationReason));
+rx.PostEqSINRReceiverDerived = logical(strictEvidence.PostEqSINRReceiverDerived);
+rx.PostEqSINRAvailable = logical(strictEvidence.PostEqSINRAvailable);
+rx.ConfiguredSNRLikeSourceRejected = logical(strictEvidence.ConfiguredSNRLikeSourceRejected);
+if strictMode && ~logical(strictEvidence.StrictReceiverEvidenceOk)
+    rx.Ok = false;
+    rx.ReceiverUsable = false;
+    rx.DecodeUsable = false;
+    if strlength(string(rx.FailureReason)) == 0
+        rx.FailureReason = char(string(strictEvidence.FailureReason));
+    else
+        rx.FailureReason = char(string(rx.FailureReason) + "|" + string(strictEvidence.FailureReason));
+    end
+end
+
 info = struct();
 info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
@@ -512,6 +553,7 @@ info.PostEqualizationNoiseVariance = nVarDecodeInfo;
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
+info.StrictReceiverEvidence = strictEvidence;
 
 end
 
@@ -1152,8 +1194,32 @@ rx.PostEqSINRValueRole = "measured_post_equalization_scheduling_input";
 rx.PostEqSINRValueStatus = "unavailable";
 rx.PostEqSINRNAReason = char(string(noiseStatus.Reason));
 rx.PostEqSINRPerLayer_dB = NaN;
+rx.PostEqSINRWidebanddB = NaN;
+rx.SINRComputationMethod = "unavailable_noise_variance";
+rx.ChannelEstimateAttempted = ~isempty(Hest);
+rx.ChannelEstimateAvailable = ~isempty(Hest);
+rx.ChannelEstimateSource = "pusch_dmrs_channel_estimate_before_noise_gate";
+rx.ResourceExtractionAttempted = false;
+rx.ResourceExtractionAvailable = false;
+rx.EqualizationAttempted = false;
+rx.EqualizationAvailable = false;
+rx.ULSCHDecodeAttempted = false;
+rx.ULSCHDecodeAvailable = false;
+rx.LLRAvailable = false;
+rx.LLRFinite = false;
+rx.LLRScaleSource = "";
+rx.LLRNoiseVariance = NaN;
 rx.EqualizedSymbolsForEvidence = complex([]);
 rx.PUSCHRxSymbolsForEvidence = complex([]);
+strictEvidence = sixgr.phy.ul.validatePUSCHReceiverEvidence(rx, "StrictMode", logical(noiseStatus.StrictFailure));
+rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);
+rx.StrictOk = logical(strictEvidence.StrictOk);
+rx.TruthStatus = char(string(strictEvidence.TruthStatus));
+rx.SINRValidationStatus = char(string(strictEvidence.SINRValidationStatus));
+rx.SINRValidationReason = char(string(strictEvidence.SINRValidationReason));
+rx.PostEqSINRReceiverDerived = logical(strictEvidence.PostEqSINRReceiverDerived);
+rx.PostEqSINRAvailable = logical(strictEvidence.PostEqSINRAvailable);
+rx.ConfiguredSNRLikeSourceRejected = logical(strictEvidence.ConfiguredSNRLikeSourceRejected);
 if ~compactOutput
     rx.CodewordLLR = double([]);
     rx.ULSCHCodewordLLR = double([]);
@@ -1182,6 +1248,7 @@ info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = noiseStatus;
 info.TimingEstimate = timingResolution;
+info.StrictReceiverEvidence = strictEvidence;
 end
 
 function token = localNormalizeChannelToken(rawValue)

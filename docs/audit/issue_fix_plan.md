@@ -63,6 +63,21 @@ operating-point scenarios fail `ScenarioObjectiveOk` when the configured-match
 rate from raw DL/UL trial rows is below the required threshold. Adaptive
 CQI-driven scenarios are not forced through this exact-match gate.
 
+## Current UL Data-Plane Closure Notes
+
+`AUD-UL-SINR-001` is in progress. The current working-tree patch adds a strict
+UL PUSCH receiver evidence gate and exports it in `ul_pusch_trials.csv`.
+Strict/no-proxy UL rows must now prove DM-RS channel estimation, PUSCH resource
+extraction, equalization, UL-SCH decode evidence, finite LLRs, and
+receiver-derived post-equalization SINR. Configured-SNR/proxy/fallback/oracle-
+looking SINR sources are rejected by `validatePUSCHReceiverEvidence`.
+
+This does not close the entire AUD-UL-SINR-001 prompt yet. Remaining closure
+items include the strict mini scenario artifacts, high-rank/256QAM fixed-anchor
+positive validation, the full negative fault matrix, and configured-vs-effective
+rank/modulation validation. `AUD-KPI-UL-GOODPUT` remains open and must be fixed
+with raw-vs-summary KPI evidence, not by this receiver gate.
+
 ## Current Initial-Access Closure Notes
 
 `AUD-RA-001` is closed for the explicit unrestricted contention-based four-step
