@@ -335,6 +335,46 @@ if ~ismember("Notes", string(T.Properties.VariableNames))
 end
 end
 
+function result = localRunStrictPDCCHValidationScenario(cfg, scfg, runFolder)
+pdcch = sixgr.phy.pdcch.runStrictPDCCHValidation(cfg, ...
+    "RunFolder", runFolder, ...
+    "RunId", string(scfg.ScenarioID), ...
+    "ScenarioName", string(scfg.ScenarioID), ...
+    "WriteArtifacts", true);
+
+if logical(pdcch.StrictOk)
+    note = "strict PDCCH waveform blind-decode validation completed";
+else
+    note = string(pdcch.FailureReason);
+end
+kpitable = table( ...
+    string("PDCCH_StrictValidation"), ...
+    logical(pdcch.StrictOk), ...
+    false, ...
+    note, ...
+    'VariableNames', {'Case','Ok','Skipped','Notes'});
+if localShouldWriteCSV(scfg)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "case_status.csv"), kpitable);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"), ...
+        pdcch.ArtifactTables.pdcch_trials);
+end
+
+link = struct();
+link.Ok = logical(pdcch.StrictOk);
+link.Result = struct("Ok", logical(pdcch.StrictOk));
+link.KPITable = kpitable;
+link.UnsupportedCases = table();
+link.RawTrials = struct("PDCCH", pdcch.ArtifactTables.pdcch_trials);
+
+result = struct();
+result.Ok = logical(pdcch.StrictOk);
+result.Link = link;
+result.PDCCH = pdcch;
+result.Control = struct();
+result.TrialTable = pdcch.ArtifactTables.pdcch_trials;
+result.SummaryTable = pdcch.ArtifactTables.pdcch_low_snr_sweep;
+end
+
 function result = localRun6GRPDCCHStudy(cfg, scfg, runFolder)
 studyDir = fullfile(runFolder, "control", "pdcch6gr_study");
 study = sixgr.ctrl.runPDCCHStudyLLS(cfg, ...
@@ -1223,6 +1263,8 @@ try
             result = localRunSystemLevelScenario(cfg, scfg, runFolder);
         case "pdcch_blind_decode_sweep"
             result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder);
+        case "pdcch_strict_validation"
+            result = localRunStrictPDCCHValidationScenario(cfg, scfg, runFolder);
         case "ctrl6gr_pdcch_study"
             result = localRun6GRPDCCHStudy(cfg, scfg, runFolder);
         case "pdsch6gr_truth_study"

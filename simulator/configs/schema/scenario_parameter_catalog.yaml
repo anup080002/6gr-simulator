@@ -70,7 +70,7 @@ sections:
       runner_profile:
         required: true
         type: string
-        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, prach_detection, prach_strict_validation, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
+        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, pdcch_strict_validation, prach_detection, prach_strict_validation, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
       scale_profile:
         required: false
         type: string
@@ -85,6 +85,7 @@ sections:
         min_items: 1
         allowed_values:
           - cell_search_mib_sib1
+          - pdcch_strict_validation
           - prach_detection
           - prach_strict_validation
           - random_access_four_step
@@ -509,6 +510,7 @@ sections:
         min: 0
       pdcch_payload_bits: {required: true, type: integer, min: 1}
       blind_decode_list_length: {required: true, type: integer, min: 1}
+      pdcch_strict: {required: false, type: struct}
       pdcch6gr: {required: false, type: struct}
       monitoring_mode:
         required: false

@@ -61,3 +61,13 @@ and exports positive, missed-detection, false-alarm, timing, frequency-offset,
 collision, multi-occasion, negative wrong-config, and oracle-guard evidence.
 Unsupported PRACH profiles remain fail-closed and must not be counted as fixed
 without equivalent waveform artifacts.
+
+`AUD-PDCCH-001` is closed for the implemented NR-baseline strict PDCCH mini
+profile only. The strict profile derives CORESET/search-space/RNTI/DCI config
+from resolved YAML, uses the waveform-backed PDCCH Tx/Rx path with
+`nrDCIEncode`, `nrPDCCHResources`, `nrPDCCH`, `nrPDCCHDecode`, and
+`nrDCIDecode`, exports candidate-level blind-search rows, DCI field equality,
+decoded-grant validation, wrong-RNTI/no-signal/corruption/wrong-format/invalid
+grant negative evidence, false-alarm and low-SNR sweeps, and an oracle guard.
+Unsupported DCI/RNTI/search-space combinations remain fail-closed and must not
+be counted as fixed without equivalent waveform artifacts.

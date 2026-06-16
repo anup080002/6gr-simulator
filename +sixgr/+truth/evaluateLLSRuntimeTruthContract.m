@@ -37,6 +37,7 @@ strictTruthRequired = localRequiresStrictRuntimeTruthContract(scfg, cfg);
 isPRACHOnly = localIsPRACHOnlyScenario(scfg, cfg);
 isPRACHStrict = localIsPRACHStrictScenario(scfg, cfg);
 isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
+isPDCCHStrict = localIsPDCCHStrictScenario(scfg, cfg);
 isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
 isProxyOnlyStudy = localIsProxyOnlyStudyScenario(scfg, cfg);
@@ -151,12 +152,32 @@ elseif isPRACHOnly
             ];
     end
 elseif isPDCCHOnly
-    requiredArtifacts = [
-        requiredArtifacts
-        fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv")
-        fullfile(layout.ReportCSVDir, "pdcch_control_outputs.csv")
-        ];
     runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+    if isPDCCHStrict
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.ControlCSVDir, "pdcch_config_strict.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_trials.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_candidates.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_dci_fields.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_grant_validation.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_wrong_rnti_trials.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_no_signal_trials.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_corruption_trials.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_false_alarm_sweep.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_low_snr_sweep.csv")
+            fullfile(layout.ControlCSVDir, "pdcch_oracle_guard.csv")
+            fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv")
+            fullfile(layout.ReportDir, "json", "pdcch_detection_summary.json")
+            fullfile(layout.ReportDir, "json", "pdcch_toolbox_capabilities.json")
+            ];
+    else
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv")
+            fullfile(layout.ReportCSVDir, "pdcch_control_outputs.csv")
+            ];
+    end
     if runnerProfile == "ctrl6gr_pdcch_study"
         requiredArtifacts = [
             requiredArtifacts
@@ -347,6 +368,13 @@ if strictTruthRequired && logical(prachStats.PRACHRequired) && ~logical(prachSta
         "evidence");
 end
 
+pdcchStats = localPDCCHStrictEvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(pdcchStats.PDCCHRequired) && ~logical(pdcchStats.PDCCHStrictOk)
+    verdict = localAddFailure(verdict, ...
+        "pdcch_strict_waveform_evidence_missing_or_failing:" + string(pdcchStats.PDCCHStatus), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -362,6 +390,7 @@ verdict.CheckDetails = struct( ...
     "SIB1", sib1Stats, ...
     "RandomAccess", raStats, ...
     "PRACH", prachStats, ...
+    "PDCCH", pdcchStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -402,8 +431,13 @@ if iscell(targetCases)
 end
 targetCases = lower(strtrim(targetCases(:)));
 targetCases = targetCases(strlength(targetCases) > 0);
-tf = any(runnerProfile == ["ctrl6gr_pdcch_study", "pdcch_blind_decode_sweep"]) || ...
+tf = any(runnerProfile == ["ctrl6gr_pdcch_study", "pdcch_blind_decode_sweep", "pdcch_strict_validation"]) || ...
     (~isempty(targetCases) && all(targetCases == "pdcch"));
+end
+
+function tf = localIsPDCCHStrictScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
 end
 
 function tf = localIsRAOnlyScenario(scfg, cfg)
@@ -1234,6 +1268,136 @@ if stats.PRACHStrictOk
     stats.PRACHStatus = "strict_prach_waveform_evidence_present";
 else
     stats.PRACHStatus = "strict_prach_waveform_evidence_incomplete";
+end
+end
+
+function stats = localPDCCHStrictEvidenceStats(layout, scfg, cfg)
+required = localIsPDCCHStrictScenario(scfg, cfg);
+configPath = fullfile(layout.ControlCSVDir, "pdcch_config_strict.csv");
+trialPath = fullfile(layout.ControlCSVDir, "pdcch_trials.csv");
+candidatePath = fullfile(layout.ControlCSVDir, "pdcch_candidates.csv");
+dciFieldPath = fullfile(layout.ControlCSVDir, "pdcch_dci_fields.csv");
+grantPath = fullfile(layout.ControlCSVDir, "pdcch_grant_validation.csv");
+wrongRntiPath = fullfile(layout.ControlCSVDir, "pdcch_wrong_rnti_trials.csv");
+noSignalPath = fullfile(layout.ControlCSVDir, "pdcch_no_signal_trials.csv");
+corruptionPath = fullfile(layout.ControlCSVDir, "pdcch_corruption_trials.csv");
+falsePath = fullfile(layout.ControlCSVDir, "pdcch_false_alarm_sweep.csv");
+lowSNRPath = fullfile(layout.ControlCSVDir, "pdcch_low_snr_sweep.csv");
+oraclePath = fullfile(layout.ControlCSVDir, "pdcch_oracle_guard.csv");
+stats = struct( ...
+    "PDCCHRequired", logical(required), ...
+    "PDCCHStrictOk", false, ...
+    "PDCCHStatus", "not_required", ...
+    "PDCCHConfigRows", 0, ...
+    "PDCCHTrialRows", 0, ...
+    "PDCCHCandidateRows", 0, ...
+    "PDCCHDCIFieldRows", 0, ...
+    "PDCCHGrantRows", 0, ...
+    "PDCCHWrongRNTIRows", 0, ...
+    "PDCCHNoSignalRows", 0, ...
+    "PDCCHCorruptionRows", 0, ...
+    "PDCCHFalseAlarmRows", 0, ...
+    "PDCCHLowSNRRows", 0, ...
+    "PDCCHOracleGuardRows", 0, ...
+    "PDCCHOracleGuardViolationCount", NaN);
+if ~required
+    return;
+end
+configT = localReadTable(configPath);
+trialT = localReadTable(trialPath);
+candidateT = localReadTable(candidatePath);
+dciFieldT = localReadTable(dciFieldPath);
+grantT = localReadTable(grantPath);
+wrongT = localReadTable(wrongRntiPath);
+noSignalT = localReadTable(noSignalPath);
+corruptionT = localReadTable(corruptionPath);
+falseT = localReadTable(falsePath);
+lowT = localReadTable(lowSNRPath);
+oracleT = localReadTable(oraclePath);
+
+stats.PDCCHConfigRows = height(configT);
+stats.PDCCHTrialRows = height(trialT);
+stats.PDCCHCandidateRows = height(candidateT);
+stats.PDCCHDCIFieldRows = height(dciFieldT);
+stats.PDCCHGrantRows = height(grantT);
+stats.PDCCHWrongRNTIRows = height(wrongT);
+stats.PDCCHNoSignalRows = height(noSignalT);
+stats.PDCCHCorruptionRows = height(corruptionT);
+stats.PDCCHFalseAlarmRows = height(falseT);
+stats.PDCCHLowSNRRows = height(lowT);
+stats.PDCCHOracleGuardRows = height(oracleT);
+
+if isempty(configT) || isempty(trialT)
+    stats.PDCCHStatus = "missing_strict_pdcch_config_or_trials";
+    return;
+end
+requiredTrialCols = ["StrictOk","NegativeExpectedOk","ProxyUsed","Skipped","ToolboxMissing", ...
+    "UsedOracleFields","TrialType","CandidatesAttempted","DCICrcPass","DCIPayloadHashTx", ...
+    "DCIPayloadHashRx","DCIPayloadMatch","GrantValid","ConfigHash","DetectionMetric"];
+missingTrialCols = requiredTrialCols(~arrayfun(@(c) localHasColumn(trialT, c), requiredTrialCols));
+if ~isempty(missingTrialCols)
+    stats.PDCCHStatus = "pdcch_trials_missing_columns:" + strjoin(missingTrialCols, "|");
+    return;
+end
+requiredCandidateCols = ["TrialId","CandidateIndex","AggregationLevel","CCEIndex","RNTIAttempted", ...
+    "ExpectedRNTI","CrcPass","Metric","SelectedCandidate","RejectedReason"];
+missingCandidateCols = requiredCandidateCols(~arrayfun(@(c) localHasColumn(candidateT, c), requiredCandidateCols));
+if ~isempty(missingCandidateCols)
+    stats.PDCCHStatus = "pdcch_candidates_missing_columns:" + strjoin(missingCandidateCols, "|");
+    return;
+end
+oracleViolations = 0;
+if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
+    oracleViolations = sum(localColumnBool(oracleT, "Violation"));
+end
+stats.PDCCHOracleGuardViolationCount = double(oracleViolations);
+
+artifactRowsOk = stats.PDCCHCandidateRows > 0 && stats.PDCCHDCIFieldRows > 0 && ...
+    stats.PDCCHGrantRows > 0 && stats.PDCCHWrongRNTIRows > 0 && stats.PDCCHNoSignalRows > 0 && ...
+    stats.PDCCHCorruptionRows > 0 && stats.PDCCHFalseAlarmRows > 0 && stats.PDCCHLowSNRRows > 0 && ...
+    stats.PDCCHOracleGuardRows > 0;
+configOk = localHasColumn(configT, "StrictValid") && any(localColumnBool(configT, "StrictValid")) && ...
+    localHasColumn(configT, "ConfigHash") && any(strlength(strtrim(string(configT.ConfigHash))) > 0);
+positiveMask = ismember(string(trialT.TrialType), ["positive_dci_1_0","positive_dci_0_0"]);
+positiveOkRows = localColumnBool(trialT, "StrictOk") & positiveMask & ...
+    localColumnBool(trialT, "DCICrcPass") & localColumnBool(trialT, "DCIPayloadMatch") & ...
+    localColumnBool(trialT, "GrantValid") & localColumnNumeric(trialT, "CandidatesAttempted") > 0 & ...
+    string(trialT.DCIPayloadHashTx) == string(trialT.DCIPayloadHashRx) & ...
+    strlength(strtrim(string(trialT.ConfigHash))) > 0 & ...
+    ~localColumnBool(trialT, "ProxyUsed") & ~localColumnBool(trialT, "Skipped") & ...
+    ~localColumnBool(trialT, "ToolboxMissing") & localBlankOrMissingMask(trialT.UsedOracleFields);
+positiveOk = sum(positiveOkRows) >= 2 && ...
+    any(positiveOkRows & string(trialT.DCIFormatTx) == "1_0") && ...
+    any(positiveOkRows & string(trialT.DCIFormatTx) == "0_0");
+negativeMask = ismember(string(trialT.TrialType), ["wrong_rnti","no_signal_coreset", ...
+    "corrupted_pdcch_symbols","corrupted_pdcch_dmrs","wrong_dci_format","invalid_grant_fields"]);
+negativeOk = any(negativeMask) && all(~localColumnBool(trialT(negativeMask, :), "StrictOk")) && ...
+    all(localColumnBool(trialT(negativeMask, :), "NegativeExpectedOk"));
+wrongOk = localHasColumn(wrongT, "NegativeExpectedOk") && all(localColumnBool(wrongT, "NegativeExpectedOk")) && ...
+    localHasColumn(wrongT, "WrongRNTIRejectCount") && any(localColumnNumeric(wrongT, "WrongRNTIRejectCount") > 0);
+noSignalOk = localHasColumn(noSignalT, "FalseCandidateCount") && localHasColumn(noSignalT, "NegativeExpectedOk") && ...
+    all(localColumnNumeric(noSignalT, "FalseCandidateCount") >= 0) && any(localColumnBool(noSignalT, "NegativeExpectedOk"));
+corruptionOk = localHasColumn(corruptionT, "NegativeExpectedOk") && all(localColumnBool(corruptionT, "NegativeExpectedOk"));
+falseAlarmOk = localHasColumn(falseT, "FalseAlarmProbability") && localHasColumn(falseT, "NumFalseCandidates") && ...
+    all(localColumnNumeric(falseT, "FalseAlarmProbability") >= 0 & localColumnNumeric(falseT, "FalseAlarmProbability") <= 1);
+lowSNROk = localHasColumn(lowT, "DetectionProbability") && localHasColumn(lowT, "CrcPassProbability") && ...
+    all(localColumnNumeric(lowT, "DetectionProbability") >= 0 & localColumnNumeric(lowT, "DetectionProbability") <= 1) && ...
+    all(localColumnNumeric(lowT, "CrcPassProbability") >= 0 & localColumnNumeric(lowT, "CrcPassProbability") <= 1);
+dciFieldsOk = localHasColumn(dciFieldT, "Equal") && any(localColumnBool(dciFieldT, "Equal"));
+grantOk = localHasColumn(grantT, "Valid") && any(localColumnBool(grantT, "Valid")) && ...
+    localHasColumn(grantT, "GrantReferenceId") && any(strlength(strtrim(string(grantT.GrantReferenceId))) > 0);
+successMetrics = localColumnNumeric(trialT(positiveOkRows, :), "DetectionMetric");
+candidateMetrics = localColumnNumeric(candidateT, "Metric");
+oldAllOneMetricOnly = ~isempty(successMetrics) && all(abs(successMetrics - 1) < 1e-12) && ...
+    numel(unique(candidateMetrics(isfinite(candidateMetrics)))) <= 1;
+
+stats.PDCCHStrictOk = artifactRowsOk && configOk && positiveOk && negativeOk && wrongOk && ...
+    noSignalOk && corruptionOk && falseAlarmOk && lowSNROk && dciFieldsOk && grantOk && ...
+    oracleViolations == 0 && ~oldAllOneMetricOnly;
+if stats.PDCCHStrictOk
+    stats.PDCCHStatus = "strict_pdcch_waveform_blind_decode_evidence_present";
+else
+    stats.PDCCHStatus = "strict_pdcch_waveform_blind_decode_evidence_incomplete";
 end
 end
 
