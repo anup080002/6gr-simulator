@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -42,6 +43,13 @@ def matlab_exe() -> str:
     return "matlab"
 
 
+def matlab_flags() -> list[str]:
+    raw = os.environ.get("MATLAB_FLAGS", "").strip()
+    if raw:
+        return shlex.split(raw, posix=False)
+    return []
+
+
 def normalize_test_name(raw: str) -> str:
     name = Path(raw).stem if raw.lower().endswith(".m") else raw
     name = name.strip()
@@ -64,7 +72,7 @@ def run_one(test_name: str, timeout_s: int, log_dir: Path) -> dict:
         f"try, feval({matlab_literal(test_name)}); "
         "catch ME, disp(getReport(ME,'extended','hyperlinks','off')); exit(1); end; exit(0);"
     )
-    cmd = [matlab_exe(), "-batch", batch]
+    cmd = [matlab_exe(), *matlab_flags(), "-batch", batch]
     started = datetime.now(timezone.utc)
     timed_out = False
     try:

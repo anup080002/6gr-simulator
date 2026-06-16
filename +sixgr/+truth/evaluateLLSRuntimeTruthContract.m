@@ -35,6 +35,7 @@ verdict.Failures = strings(0, 1);
 [verdict.RequiredDL, verdict.RequiredUL] = localRequiredDirections(scfg, cfg);
 strictTruthRequired = localRequiresStrictRuntimeTruthContract(scfg, cfg);
 isPRACHOnly = localIsPRACHOnlyScenario(scfg, cfg);
+isPRACHStrict = localIsPRACHStrictScenario(scfg, cfg);
 isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
 isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
@@ -117,16 +118,38 @@ if ~isControlOnly
             ];
     end
 elseif isPRACHOnly
-    requiredArtifacts = [
-        requiredArtifacts
-        fullfile(layout.ControlCSVDir, "prach_detection_trials.csv")
-        fullfile(layout.ControlCSVDir, "prach_trials.csv")
-        fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv")
-        fullfile(layout.ReportCSVDir, "initial_access_random_access_outputs.csv")
-        fullfile(layout.ReportCSVDir, "prach_summary_by_snr.csv")
-        fullfile(layout.ReportCSVDir, "prach_confusion_detection_types.csv")
-        fullfile(layout.ReportCSVDir, "prach_timing_error_samples.csv")
-        ];
+    if isPRACHStrict
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.ControlCSVDir, "prach_config_strict.csv")
+            fullfile(layout.ControlCSVDir, "prach_trials.csv")
+            fullfile(layout.ControlCSVDir, "prach_detection_candidates.csv")
+            fullfile(layout.ControlCSVDir, "prach_restricted_set_mapping.csv")
+            fullfile(layout.ControlCSVDir, "prach_root_sequence_budget.csv")
+            fullfile(layout.ControlCSVDir, "prach_zcz_cyclic_shift_mapping.csv")
+            fullfile(layout.ControlCSVDir, "prach_missed_detection_sweep.csv")
+            fullfile(layout.ControlCSVDir, "prach_false_alarm_sweep.csv")
+            fullfile(layout.ControlCSVDir, "prach_timing_offset_sweep.csv")
+            fullfile(layout.ControlCSVDir, "prach_frequency_offset_sweep.csv")
+            fullfile(layout.ControlCSVDir, "prach_collision_trials.csv")
+            fullfile(layout.ControlCSVDir, "prach_multi_occasion_trials.csv")
+            fullfile(layout.ControlCSVDir, "prach_negative_trials.csv")
+            fullfile(layout.ControlCSVDir, "prach_oracle_guard.csv")
+            fullfile(layout.ReportDir, "json", "prach_conformance_summary.json")
+            fullfile(layout.ReportDir, "json", "prach_toolbox_capabilities.json")
+            ];
+    else
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.ControlCSVDir, "prach_detection_trials.csv")
+            fullfile(layout.ControlCSVDir, "prach_trials.csv")
+            fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv")
+            fullfile(layout.ReportCSVDir, "initial_access_random_access_outputs.csv")
+            fullfile(layout.ReportCSVDir, "prach_summary_by_snr.csv")
+            fullfile(layout.ReportCSVDir, "prach_confusion_detection_types.csv")
+            fullfile(layout.ReportCSVDir, "prach_timing_error_samples.csv")
+            ];
+    end
 elseif isPDCCHOnly
     requiredArtifacts = [
         requiredArtifacts
@@ -317,6 +340,13 @@ if strictTruthRequired && logical(raStats.RARequired) && ~logical(raStats.RAStri
         "evidence");
 end
 
+prachStats = localPRACHStrictEvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(prachStats.PRACHRequired) && ~logical(prachStats.PRACHStrictOk)
+    verdict = localAddFailure(verdict, ...
+        "prach_strict_waveform_evidence_missing_or_failing:" + string(prachStats.PRACHStatus), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -331,6 +361,7 @@ verdict.CheckDetails = struct( ...
     "IssueRegistry", issueRegistryStats, ...
     "SIB1", sib1Stats, ...
     "RandomAccess", raStats, ...
+    "PRACH", prachStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -355,7 +386,12 @@ if iscell(targetCases)
 end
 targetCases = lower(strtrim(targetCases(:)));
 targetCases = targetCases(strlength(targetCases) > 0);
-tf = runnerProfile == "prach_detection" || (~isempty(targetCases) && all(targetCases == "prach"));
+tf = any(runnerProfile == ["prach_detection", "prach_strict_validation"]) || (~isempty(targetCases) && all(targetCases == "prach"));
+end
+
+function tf = localIsPRACHStrictScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "prach_strict_validation" || localScenarioHasObjective(scfg, cfg, "prach_strict_validation");
 end
 
 function tf = localIsPDCCHOnlyScenario(scfg, cfg)
@@ -619,6 +655,16 @@ elseif isnumeric(raw)
 else
     values = lower(strtrim(string(raw)));
     values = values == "1" | values == "true" | values == "yes";
+end
+values = values(:);
+end
+
+function values = localColumnNumeric(T, columnName)
+raw = T.(string(columnName));
+if isnumeric(raw) || islogical(raw)
+    values = double(raw);
+else
+    values = str2double(strtrim(string(raw)));
 end
 values = values(:);
 end
@@ -974,7 +1020,8 @@ end
 end
 
 function stats = localRAEvidenceStats(layout, scfg, cfg)
-required = localScenarioGetBool(scfg, cfg, "random_access.enabled", false) || ...
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+required = runnerProfile == "random_access_four_step" || ...
     localScenarioHasObjective(scfg, cfg, "random_access_four_step") || ...
     localScenarioHasObjective(scfg, cfg, "four_step_ra") || ...
     localScenarioHasObjective(scfg, cfg, "initial_access_ra");
@@ -1057,6 +1104,136 @@ if stats.RAStrictOk
     stats.RAStatus = "strict_four_step_ra_waveform_evidence_present";
 else
     stats.RAStatus = "strict_four_step_ra_evidence_incomplete";
+end
+end
+
+function stats = localPRACHStrictEvidenceStats(layout, scfg, cfg)
+required = localIsPRACHStrictScenario(scfg, cfg);
+configPath = fullfile(layout.ControlCSVDir, "prach_config_strict.csv");
+trialPath = fullfile(layout.ControlCSVDir, "prach_trials.csv");
+candidatePath = fullfile(layout.ControlCSVDir, "prach_detection_candidates.csv");
+mappingPath = fullfile(layout.ControlCSVDir, "prach_restricted_set_mapping.csv");
+rootPath = fullfile(layout.ControlCSVDir, "prach_root_sequence_budget.csv");
+zczPath = fullfile(layout.ControlCSVDir, "prach_zcz_cyclic_shift_mapping.csv");
+missPath = fullfile(layout.ControlCSVDir, "prach_missed_detection_sweep.csv");
+falsePath = fullfile(layout.ControlCSVDir, "prach_false_alarm_sweep.csv");
+timingPath = fullfile(layout.ControlCSVDir, "prach_timing_offset_sweep.csv");
+freqPath = fullfile(layout.ControlCSVDir, "prach_frequency_offset_sweep.csv");
+collisionPath = fullfile(layout.ControlCSVDir, "prach_collision_trials.csv");
+multiPath = fullfile(layout.ControlCSVDir, "prach_multi_occasion_trials.csv");
+negativePath = fullfile(layout.ControlCSVDir, "prach_negative_trials.csv");
+oraclePath = fullfile(layout.ControlCSVDir, "prach_oracle_guard.csv");
+stats = struct( ...
+    "PRACHRequired", logical(required), ...
+    "PRACHStrictOk", false, ...
+    "PRACHStatus", "not_required", ...
+    "PRACHConfigRows", 0, ...
+    "PRACHTrialRows", 0, ...
+    "PRACHCandidateRows", 0, ...
+    "PRACHRestrictedSetRows", 0, ...
+    "PRACHRootBudgetRows", 0, ...
+    "PRACHZCZRows", 0, ...
+    "PRACHMissedDetectionRows", 0, ...
+    "PRACHFalseAlarmRows", 0, ...
+    "PRACHTimingRows", 0, ...
+    "PRACHFrequencyRows", 0, ...
+    "PRACHCollisionRows", 0, ...
+    "PRACHMultiOccasionRows", 0, ...
+    "PRACHNegativeRows", 0, ...
+    "PRACHOracleGuardRows", 0, ...
+    "PRACHOracleGuardViolationCount", NaN);
+if ~required
+    return;
+end
+configT = localReadTable(configPath);
+trialT = localReadTable(trialPath);
+candidateT = localReadTable(candidatePath);
+mappingT = localReadTable(mappingPath);
+rootT = localReadTable(rootPath);
+zczT = localReadTable(zczPath);
+missT = localReadTable(missPath);
+falseT = localReadTable(falsePath);
+timingT = localReadTable(timingPath);
+freqT = localReadTable(freqPath);
+collisionT = localReadTable(collisionPath);
+multiT = localReadTable(multiPath);
+negativeT = localReadTable(negativePath);
+oracleT = localReadTable(oraclePath);
+
+stats.PRACHConfigRows = height(configT);
+stats.PRACHTrialRows = height(trialT);
+stats.PRACHCandidateRows = height(candidateT);
+stats.PRACHRestrictedSetRows = height(mappingT);
+stats.PRACHRootBudgetRows = height(rootT);
+stats.PRACHZCZRows = height(zczT);
+stats.PRACHMissedDetectionRows = height(missT);
+stats.PRACHFalseAlarmRows = height(falseT);
+stats.PRACHTimingRows = height(timingT);
+stats.PRACHFrequencyRows = height(freqT);
+stats.PRACHCollisionRows = height(collisionT);
+stats.PRACHMultiOccasionRows = height(multiT);
+stats.PRACHNegativeRows = height(negativeT);
+stats.PRACHOracleGuardRows = height(oracleT);
+
+if isempty(configT) || isempty(trialT)
+    stats.PRACHStatus = "missing_strict_prach_config_or_trials";
+    return;
+end
+requiredTrialCols = ["StrictOk","ProxyUsed","Skipped","ToolboxMissing","UsedOracleFields", ...
+    "TrialType","PreambleIndexMatch","FalseAlarm","MissedDetection","ConfigHash","WaveformHash"];
+missingTrialCols = requiredTrialCols(~arrayfun(@(c) localHasColumn(trialT, c), requiredTrialCols));
+if ~isempty(missingTrialCols)
+    stats.PRACHStatus = "prach_trials_missing_columns:" + strjoin(missingTrialCols, "|");
+    return;
+end
+oracleViolations = 0;
+if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
+    oracleViolations = sum(localColumnBool(oracleT, "Violation"));
+end
+stats.PRACHOracleGuardViolationCount = double(oracleViolations);
+artifactRowsOk = stats.PRACHCandidateRows > 0 && stats.PRACHRestrictedSetRows > 0 && ...
+    stats.PRACHRootBudgetRows > 0 && stats.PRACHZCZRows > 0 && ...
+    stats.PRACHMissedDetectionRows > 0 && stats.PRACHFalseAlarmRows > 0 && ...
+    stats.PRACHTimingRows > 0 && stats.PRACHFrequencyRows > 0 && ...
+    stats.PRACHCollisionRows > 0 && stats.PRACHMultiOccasionRows > 0 && ...
+    stats.PRACHNegativeRows > 0 && stats.PRACHOracleGuardRows > 0;
+configOk = localHasColumn(configT, "StrictValid") && any(localColumnBool(configT, "StrictValid"));
+rootOk = localHasColumn(rootT, "BudgetOk") && all(localColumnBool(rootT, "BudgetOk"));
+mappingOk = localHasColumn(mappingT, "Valid") && any(localColumnBool(mappingT, "Valid"));
+zczOk = localHasColumn(zczT, "Valid") && all(localColumnBool(zczT, "Valid"));
+missedOk = localHasColumn(missT, "NumMissed") && localHasColumn(missT, "NumDetected") && ...
+    localHasColumn(missT, "DetectionProbability") && ...
+    any(localColumnNumeric(missT, "NumMissed") > 0) && any(localColumnNumeric(missT, "NumDetected") > 0) && ...
+    all(localColumnNumeric(missT, "DetectionProbability") >= 0 & localColumnNumeric(missT, "DetectionProbability") <= 1);
+falseAlarmOk = localHasColumn(falseT, "NumFalseAlarms") && localHasColumn(falseT, "FalseAlarmProbability") && ...
+    all(localColumnNumeric(falseT, "FalseAlarmProbability") >= 0 & localColumnNumeric(falseT, "FalseAlarmProbability") <= 1);
+timingOk = localHasColumn(timingT, "WithinToleranceProbability") && localHasColumn(timingT, "MaxAbsTimingErrorSamples") && ...
+    all(localColumnNumeric(timingT, "WithinToleranceProbability") == 1) && ...
+    all(isfinite(localColumnNumeric(timingT, "MaxAbsTimingErrorSamples")));
+freqOk = localHasColumn(freqT, "Status") && any(strcmpi(strtrim(string(freqT.Status)), "measured")) && ...
+    localHasColumn(freqT, "DetectionProbability") && any(localColumnNumeric(freqT, "DetectionProbability") > 0);
+collisionOk = localHasColumn(collisionT, "CollisionInjected") && localHasColumn(collisionT, "CollisionDetected") && ...
+    any(localColumnBool(collisionT, "CollisionInjected") & localColumnBool(collisionT, "CollisionDetected")) && ...
+    localHasColumn(collisionT, "MultiplePreamblesDetected") && any(localColumnBool(collisionT, "MultiplePreamblesDetected"));
+multiOk = localHasColumn(multiT, "DetectedOnCorrectOccasion") && all(localColumnBool(multiT, "DetectedOnCorrectOccasion"));
+negativeOk = localHasColumn(negativeT, "StrictOk") && localHasColumn(negativeT, "NegativeExpectedOk") && ...
+    all(~localColumnBool(negativeT, "StrictOk")) && all(localColumnBool(negativeT, "NegativeExpectedOk"));
+positiveMask = string(trialT.TrialType) == "positive_high_snr";
+strictPositive = localColumnBool(trialT, "StrictOk") & positiveMask & ...
+    localColumnBool(trialT, "PreambleIndexMatch") & ...
+    ~localColumnBool(trialT, "FalseAlarm") & ~localColumnBool(trialT, "MissedDetection") & ...
+    ~localColumnBool(trialT, "ProxyUsed") & ~localColumnBool(trialT, "Skipped") & ...
+    ~localColumnBool(trialT, "ToolboxMissing") & localBlankOrMissingMask(trialT.UsedOracleFields) & ...
+    strlength(strtrim(string(trialT.ConfigHash))) > 0 & strlength(strtrim(string(trialT.WaveformHash))) > 0;
+oldSimplifiedSuccess = localTokenRowCount(trialT, ["Status","FailureReason"], ...
+    "active_but_simplified_waveform_prach_detection_gate") > 0 & any(localColumnBool(trialT, "StrictOk"));
+stats.PRACHStrictOk = artifactRowsOk && configOk && rootOk && mappingOk && zczOk && ...
+    missedOk && falseAlarmOk && timingOk && freqOk && collisionOk && multiOk && negativeOk && ...
+    oracleViolations == 0 && any(strictPositive) && ~oldSimplifiedSuccess;
+if stats.PRACHStrictOk
+    stats.PRACHStatus = "strict_prach_waveform_evidence_present";
+else
+    stats.PRACHStatus = "strict_prach_waveform_evidence_incomplete";
 end
 end
 
@@ -1193,6 +1370,7 @@ proxy = sixgr.util.structGet(details, "Proxy", struct());
 issueRegistry = sixgr.util.structGet(details, "IssueRegistry", struct());
 sib1 = sixgr.util.structGet(details, "SIB1", struct());
 ra = sixgr.util.structGet(details, "RandomAccess", struct());
+prach = sixgr.util.structGet(details, "PRACH", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
@@ -1243,6 +1421,13 @@ summaryT = table( ...
     double(sixgr.util.structGet(ra, "Msg3Rows", NaN)), ...
     double(sixgr.util.structGet(ra, "Msg4Rows", NaN)), ...
     double(sixgr.util.structGet(ra, "OracleGuardViolationCount", NaN)), ...
+    logical(sixgr.util.structGet(prach, "PRACHRequired", false)), ...
+    logical(sixgr.util.structGet(prach, "PRACHStrictOk", false)), ...
+    string(sixgr.util.structGet(prach, "PRACHStatus", "")), ...
+    double(sixgr.util.structGet(prach, "PRACHTrialRows", NaN)), ...
+    double(sixgr.util.structGet(prach, "PRACHMissedDetectionRows", NaN)), ...
+    double(sixgr.util.structGet(prach, "PRACHFalseAlarmRows", NaN)), ...
+    double(sixgr.util.structGet(prach, "PRACHOracleGuardViolationCount", NaN)), ...
     logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
     string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
     double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
@@ -1260,6 +1445,7 @@ summaryT = table( ...
     'IssueRegistryStatus','IssueRegistryRows','ActiveMandatoryIssueCount','ActiveCriticalIssueCount','ActiveHighIssueCount','ActiveMediumIssueCount', ...
     'SIB1Required','SIB1StrictOk','SIB1EvidenceStatus','SIB1RecoveryRows', ...
     'RARequired','RAStrictOk','RAEvidenceStatus','RAAttemptRows','RAMsg3Rows','RAMsg4Rows','RAOracleGuardViolationCount', ...
+    'PRACHRequired','PRACHStrictOk','PRACHEvidenceStatus','PRACHTrialRows','PRACHMissedDetectionRows','PRACHFalseAlarmRows','PRACHOracleGuardViolationCount', ...
     'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);
@@ -1302,6 +1488,8 @@ function category = localClassifyFailure(failure)
 failure = lower(string(failure));
 if contains(failure, "proxy") || contains(failure, "fallback") || contains(failure, "abstract") || contains(failure, "bler")
     category = "proxy_or_fallback";
+elseif contains(failure, "prach_strict") || contains(failure, "prach_")
+    category = "prach_waveform";
 elseif contains(failure, "ra_strict") || contains(failure, "random_access")
     category = "random_access";
 elseif contains(failure, "result_issue_registry")

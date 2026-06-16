@@ -464,6 +464,46 @@ result.TrialTable = controlTrialT;
 result.SummaryTable = study.SummaryBySNR;
 end
 
+function result = localRunStrictPRACHValidationScenario(cfg, scfg, runFolder)
+prach = sixgr.phy.prach.runStrictPRACHValidation(cfg, ...
+    "RunFolder", runFolder, ...
+    "RunId", string(scfg.ScenarioID), ...
+    "ScenarioName", string(scfg.ScenarioID), ...
+    "WriteArtifacts", true);
+
+if logical(prach.StrictOk)
+    note = "strict PRACH waveform validation completed";
+else
+    note = string(prach.FailureReason);
+end
+kpitable = table( ...
+    string("PRACH_StrictValidation"), ...
+    logical(prach.StrictOk), ...
+    false, ...
+    note, ...
+    'VariableNames', {'Case','Ok','Skipped','Notes'});
+if localShouldWriteCSV(scfg)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "case_status.csv"), kpitable);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "prach_trials.csv"), ...
+        prach.ArtifactTables.prach_trials);
+end
+
+link = struct();
+link.Ok = logical(prach.StrictOk);
+link.Result = struct("Ok", logical(prach.StrictOk));
+link.KPITable = kpitable;
+link.UnsupportedCases = table();
+link.RawTrials = struct("PRACH", prach.ArtifactTables.prach_trials);
+
+result = struct();
+result.Ok = logical(prach.StrictOk);
+result.Link = link;
+result.PRACH = prach;
+result.Control = struct();
+result.TrialTable = prach.ArtifactTables.prach_trials;
+result.SummaryTable = prach.ArtifactTables.prach_missed_detection_sweep;
+end
+
 function result = localRunFourStepRAScenario(cfg, scfg, runFolder)
 ra = sixgr.phy.ra.runFourStepRA(cfg, ...
     "RunFolder", runFolder, ...
@@ -1189,6 +1229,8 @@ try
             result = localRun6GRPDSCHStudy(cfg, scfg, runFolder);
         case "prach_detection"
             result = localRunPRACHDetectionScenario(cfg, scfg, runFolder);
+        case "prach_strict_validation"
+            result = localRunStrictPRACHValidationScenario(cfg, scfg, runFolder);
         case "random_access_four_step"
             result = localRunFourStepRAScenario(cfg, scfg, runFolder);
         case "generic_sweep"

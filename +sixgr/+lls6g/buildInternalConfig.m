@@ -718,6 +718,7 @@ cfg = sixgr.util.structSet(cfg, "phy.prach.preambleCount", double(s.random_acces
 cfg.phy.prach.configurationIndex = double(s.random_access.configuration_index);
 cfg.phy.prach.subcarrierSpacing_kHz = double(s.random_access.subcarrier_spacing_khz);
 cfg.phy.prach.rootSeqIndex = double(s.random_access.root_sequence_index);
+cfg = localStructSetIfPresent(cfg, "phy.carrier.NCellID", localGetNested(s, "random_access.n_cell_id", []));
 cfg.phy.prach.zeroCorrelationZone = double(s.random_access.zero_correlation_zone);
 cfg.phy.prach.preambleIndex = double(s.random_access.preamble_index);
 cfg = localStructSetIfPresent(cfg, "phy.prach.sequenceIndex", localGetNested(s, "random_access.sequence_index", []));
@@ -735,6 +736,7 @@ cfg = localStructSetIfPresent(cfg, "prach_lls.PRACHConfigurationIndex", localGet
 cfg = localStructSetIfPresent(cfg, "prach_lls.PRACHFormat", localGetNested(s, "random_access.prach_format", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.PRACHSubcarrierSpacing", localGetNested(s, "random_access.subcarrier_spacing_khz", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.SequenceIndex", localGetNested(s, "random_access.sequence_index", []));
+cfg = localStructSetIfPresent(cfg, "prach_lls.NCellID", localGetNested(s, "random_access.n_cell_id", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.LogicalRootSequenceIndex", localGetNested(s, "random_access.logical_root_sequence_index", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.PreambleIndex", localGetNested(s, "random_access.preamble_index", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.RestrictedSet", localGetNested(s, "random_access.restricted_set", []));
@@ -1048,6 +1050,8 @@ tf = false;
 end
 
 function cfg = localApplyFrameStructureEngine(cfg)
+configuredDuplexMode = string(sixgr.util.structGet(cfg, "phy.duplex.mode", ""));
+configuredTDDPattern = string(sixgr.util.structGet(cfg, "phy.duplex.tddPattern", ""));
 fs = sixgr.phy.FrameStructureEngine(cfg);
 fsStruct = fs.toStruct();
 
@@ -1078,9 +1082,25 @@ cfg = sixgr.util.structSet(cfg, "phy.waveform.sampleRate_Hz", double(fs.SampleRa
 cfg = sixgr.util.structSet(cfg, "waveform.fft_size", double(fs.FFTSize));
 cfg = sixgr.util.structSet(cfg, "waveform.sample_rate_hz", double(fs.SampleRate_Hz));
 
-cfg.phy.duplex.mode = char(fs.DuplexMode);
-cfg.phy.duplex.tddPattern = char(fs.TDDPattern);
-cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", char(fs.TDDPattern));
+engineDuplexMode = upper(string(fs.DuplexMode));
+if strlength(strtrim(configuredDuplexMode)) > 0
+    engineDuplexMode = upper(configuredDuplexMode);
+end
+cfg.phy.duplex.mode = char(engineDuplexMode);
+if engineDuplexMode == "FDD"
+    if strlength(strtrim(configuredTDDPattern)) == 0
+        configuredTDDPattern = "FDD";
+    end
+    cfg.phy.duplex.tddPattern = char(configuredTDDPattern);
+    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", char(configuredTDDPattern));
+    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern_applicable", false);
+    cfg = sixgr.util.structSet(cfg, "frame_timing.active_tdd_pattern", "not_applicable");
+else
+    cfg.phy.duplex.tddPattern = char(fs.TDDPattern);
+    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", char(fs.TDDPattern));
+    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern_applicable", true);
+    cfg = sixgr.util.structSet(cfg, "frame_timing.active_tdd_pattern", char(fs.TDDPattern));
+end
 cfg = sixgr.util.structSet(cfg, "frame_timing.symbols_per_slot", double(fs.SymbolsPerSlot));
 cfg = sixgr.util.structSet(cfg, "frame_timing.slots_per_frame", double(fs.SlotsPerFrame));
 cfg = sixgr.util.structSet(cfg, "frame_timing.slot_duration_ms", double(fs.SlotDuration_ms));

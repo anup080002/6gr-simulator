@@ -18,13 +18,14 @@ addParameter(p, "DuplexMode", [], @(x) isempty(x) || any(strcmpi(string(x), ["FD
 addParameter(p, "CarrierFrequencyHz", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x > 0));
 addParameter(p, "CarrierSCSkHz", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x > 0));
 addParameter(p, "NSizeGrid", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
+addParameter(p, "NCellID", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "PRACHConfigurationIndex", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "PRACHFormat", [], @(x) isempty(x) || (ischar(x) || (isstring(x) && isscalar(x))));
 addParameter(p, "PRACHSubcarrierSpacing", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x > 0));
 addParameter(p, "SequenceIndex", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "LogicalRootSequenceIndex", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "PreambleIndex", [], @(x) isempty(x) || isnumeric(x));
-addParameter(p, "RestrictedSet", [], @(x) isempty(x) || any(strcmpi(string(x), ["RestrictedSet","RestrictedSetTypeA","RestrictedSetTypeB","UnrestrictedSet"])));
+addParameter(p, "RestrictedSet", [], @(x) isempty(x) || (ischar(x) || (isstring(x) && isscalar(x))));
 addParameter(p, "ZeroCorrelationZone", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "FrequencyStart", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "NumPRACHOccasions", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
@@ -76,6 +77,8 @@ prachCfg.CarrierSCSkHz = double(localResolveScalar(localFirstNonEmpty(opts.Carri
     localResolveField(cfg, {"prach_lls.CarrierSCSkHz", "random_access.carrier_scs_khz", "phy.carrier.SubcarrierSpacing", "carrier.subcarrier_spacing_khz", "frame.scs_khz"}, 15))));
 prachCfg.NSizeGrid = round(double(localResolveScalar(localFirstNonEmpty(opts.NSizeGrid, ...
     localResolveField(cfg, {"prach_lls.NSizeGrid", "random_access.n_size_grid", "phy.carrier.NSizeGrid", "carrier.n_rb", "frequency.n_size_grid"}, 52)))));
+prachCfg.NCellID = round(double(localResolveScalar(localFirstNonEmpty(opts.NCellID, ...
+    localResolveField(cfg, {"prach_lls.NCellID", "random_access.n_cell_id", "phy.carrier.NCellID", "carrier.n_cell_id"}, 1)))));
 prachCfg.PRACHConfigurationIndex = round(double(localResolveScalar(localFirstNonEmpty(opts.PRACHConfigurationIndex, ...
     localResolveField(cfg, {"prach_lls.PRACHConfigurationIndex", "phy.prach.configurationIndex", "random_access.configuration_index"}, 16)))));
 prachCfg.RequestedPRACHFormat = upper(localResolveText(localFirstNonEmpty(opts.PRACHFormat, ...
@@ -87,7 +90,7 @@ prachCfg.SequenceIndex = round(double(localResolveScalar(localFirstNonEmpty(opts
 prachCfg.LogicalRootSequenceIndex = prachCfg.SequenceIndex;
 prachCfg.PreambleIndex = localResolveArray(localFirstNonEmpty(opts.PreambleIndex, ...
     localResolveField(cfg, {"prach_lls.PreambleIndex", "phy.prach.preambleIndex", "random_access.preamble_index"}, 0)));
-prachCfg.RestrictedSet = char(localResolveText(localFirstNonEmpty(opts.RestrictedSet, ...
+prachCfg.RestrictedSet = char(localNormalizeRestrictedSet(localFirstNonEmpty(opts.RestrictedSet, ...
     localResolveField(cfg, {"prach_lls.RestrictedSet", "random_access.restricted_set", "phy.prach.restrictedSet"}, "UnrestrictedSet"))));
 prachCfg.ZeroCorrelationZone = round(double(localResolveScalar(localFirstNonEmpty(opts.ZeroCorrelationZone, ...
     localResolveField(cfg, {"prach_lls.ZeroCorrelationZone", "phy.prach.zeroCorrelationZone", "random_access.zero_correlation_zone"}, 8)))));
@@ -179,6 +182,7 @@ end
 
 localValidateResolvedConfig(prachCfg);
 [carrier, prach] = localBuildToolboxConfigs(prachCfg);
+localAssertZCZRuntimeResolvable(prachCfg, prach);
 prachCfg.NumSlots = localExpandNumSlotsForRequestedOccasion(prachCfg, carrier, prach);
 [firstOccasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, prachCfg);
 
@@ -196,11 +200,19 @@ prachCfg.ConfigExport = localMakeSerializable(prachCfg);
 localPublishConfigEvidence(prachCfg, cfg);
 end
 
-function cfg = localValidateZCZRuntimeGuard(cfg)
-if ~strcmpi(string(cfg.RestrictedSet), "UnrestrictedSet")
-    error("sixgr:rach:PRACHConfig:RestrictedSetNCSMissing", ...
-        "Restricted-set PRACH N_CS validation is not implemented in this runtime; use UnrestrictedSet or add the restricted-set table before running strict PRACH studies.");
+function localAssertZCZRuntimeResolvable(cfg, prach)
+lra = NaN;
+try
+    lra = double(prach.LRA);
+catch
 end
+if ~(isscalar(lra) && isfinite(lra) && lra > 0)
+    return;
+end
+localResolveNCS(lra, cfg.ZeroCorrelationZone, cfg.RestrictedSet);
+end
+
+function cfg = localValidateZCZRuntimeGuard(cfg)
 lra = NaN;
 try
     lra = double(cfg.ToolboxPRACH.LRA);
@@ -243,21 +255,47 @@ end
 
 function ncs = localResolveNCS(lra, zcz, restrictedSet)
 zcz = max(0, min(15, round(double(zcz))));
-restrictedSet = lower(string(restrictedSet));
-if restrictedSet ~= "unrestrictedset"
-    error("sixgr:rach:PRACHConfig:RestrictedSetNCSMissing", ...
-        "Restricted-set PRACH N_CS validation is not implemented in this runtime; use UnrestrictedSet or add the restricted-set table before running strict PRACH studies.");
+restrictedSet = localNormalizeRestrictedSet(restrictedSet);
+try
+    p = nrPRACHConfig;
+    tables = p.Tables;
+    if round(double(lra)) == 839
+        T = tables.NCSFormat012;
+        col = char(restrictedSet);
+        if ~ismember(col, string(T.Properties.VariableNames))
+            error("sixgr:rach:PRACHConfig:BadRestrictedSetColumn", ...
+                "RestrictedSet=%s is not present in nrPRACHConfig.Tables.NCSFormat012.", col);
+        end
+        ncs = double(T.(col)(zcz + 1));
+    elseif any(round(double(lra)) == [139 571 1151])
+        if restrictedSet ~= "UnrestrictedSet"
+            error("sixgr:rach:PRACHConfig:RestrictedSetInvalidForShortFormat", ...
+                "Restricted-set PRACH applies to long-sequence formats in this strict profile; L_RA=%g is short-sequence and must use UnrestrictedSet.", ...
+                double(lra));
+        end
+        T = tables.NCSFormatABC;
+        col = "LRA_" + string(round(double(lra)));
+        if ~ismember(col, string(T.Properties.VariableNames))
+            error("sixgr:rach:PRACHConfig:UnsupportedLRAForZCZValidation", ...
+                "No nrPRACHConfig N_CS/ZCZ table column is available for L_RA=%g.", double(lra));
+        end
+        ncs = double(T.(char(col))(zcz + 1));
+    else
+        error("sixgr:rach:PRACHConfig:UnsupportedLRAForZCZValidation", ...
+            "No runtime N_CS/ZCZ validation table is implemented for L_RA=%g.", double(lra));
+    end
+catch ME
+    if startsWith(string(ME.identifier), "sixgr:")
+        rethrow(ME);
+    end
+    error("sixgr:rach:PRACHConfig:NCSResolveFailed", ...
+        "Failed to resolve N_CS from nrPRACHConfig tables: %s", ME.message);
 end
-if round(double(lra)) == 839
-    tableVals = [0 13 15 18 22 26 32 38 46 59 76 93 119 167 279 419];
-elseif round(double(lra)) == 139
-    tableVals = [0 2 4 6 8 10 12 13 15 17 19 23 27 34 46 69];
-else
-    error("sixgr:rach:PRACHConfig:UnsupportedLRAForZCZValidation", ...
-        "No runtime N_CS/ZCZ validation table is implemented for L_RA=%g. Add the concrete table before enabling this PRACH sequence length.", ...
-        double(lra));
+if ~(isfinite(ncs) && ncs >= 0)
+    error("sixgr:rach:PRACHConfig:InvalidRestrictedSetZCZ", ...
+        "RestrictedSet=%s with ZeroCorrelationZone=%g has no finite N_CS for L_RA=%g.", ...
+        string(restrictedSet), double(zcz), double(lra));
 end
-ncs = double(tableVals(zcz + 1));
 end
 
 function cfg = localStructFromInput(baseCfg)
@@ -306,6 +344,24 @@ if isempty(txt)
     value = '';
 else
     value = char(txt(1));
+end
+end
+
+function value = localNormalizeRestrictedSet(rawValue)
+token = lower(strtrim(string(rawValue)));
+token = erase(token, "-");
+token = erase(token, "_");
+token = erase(token, " ");
+switch token
+    case {"", "unrestricted", "unrestrictedset", "none"}
+        value = "UnrestrictedSet";
+    case {"restrictedsettypea", "restrictedseta", "restrictedtypea", "restricteda", "typea", "a"}
+        value = "RestrictedSetTypeA";
+    case {"restrictedsettypeb", "restrictedsetb", "restrictedtypeb", "restrictedb", "typeb", "b"}
+        value = "RestrictedSetTypeB";
+    otherwise
+        error("sixgr:rach:PRACHConfig:BadRestrictedSet", ...
+            "RestrictedSet must be UnrestrictedSet, RestrictedSetTypeA, or RestrictedSetTypeB. Got '%s'.", string(rawValue));
 end
 end
 
@@ -358,10 +414,6 @@ if ~any(strcmpi(cfg.ChannelModel, allowedChannels))
     error("sixgr:rach:PRACHConfig:UnsupportedChannelModel", ...
         "ChannelModel must be one of %s.", strjoin(cellstr(allowedChannels), ", "));
 end
-if ~strcmpi(string(cfg.RestrictedSet), "UnrestrictedSet")
-    error("sixgr:rach:PRACHConfig:RestrictedSetNCSMissing", ...
-        "Restricted-set PRACH N_CS validation is not implemented in this runtime; use UnrestrictedSet or add the restricted-set table before running strict PRACH studies.");
-end
 zcz = double(cfg.ZeroCorrelationZone);
 if ~isfinite(zcz) || zcz < 0 || zcz > 15 || zcz ~= round(zcz)
     error("sixgr:rach:PRACHConfig:InvalidZCZ", ...
@@ -398,7 +450,7 @@ carrier = nrCarrierConfig;
 carrier.SubcarrierSpacing = double(cfg.CarrierSCSkHz);
 carrier.NSizeGrid = double(cfg.NSizeGrid);
 carrier.NStartGrid = 0;
-carrier.NCellID = 1;
+carrier.NCellID = double(cfg.NCellID);
 carrier.CyclicPrefix = "normal";
 
 prach = nrPRACHConfig;

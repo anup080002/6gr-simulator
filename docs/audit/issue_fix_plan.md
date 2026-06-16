@@ -53,6 +53,11 @@ RA-RNTI PDCCH plus MAC RAR over PDSCH, Msg3 PUSCH from the decoded RAR UL
 grant, and Msg4 contention resolution using the temporary C-RNTI. Exported
 evidence lives under `control/csv/ra_*.csv` and `reports/json/msg*_*.json`.
 
-`AUD-PRACH-001` remains open. Restricted-set PRACH and full N_CS validation are
-not relabeled as fixed by the four-step RA work; strict RA config rejects
-unsupported restricted-set operation instead of fabricating evidence.
+`AUD-PRACH-001` is closed for the implemented NR-baseline strict PRACH mini
+profile only. The strict profile derives PRACH configuration from resolved YAML,
+uses waveform generation/detection, validates long-sequence unrestricted,
+restricted-set type A, and restricted-set type B N_CS/ZCZ/root-budget mappings,
+and exports positive, missed-detection, false-alarm, timing, frequency-offset,
+collision, multi-occasion, negative wrong-config, and oracle-guard evidence.
+Unsupported PRACH profiles remain fail-closed and must not be counted as fixed
+without equivalent waveform artifacts.

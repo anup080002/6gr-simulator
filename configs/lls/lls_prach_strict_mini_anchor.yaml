@@ -1,0 +1,173 @@
+inherits:
+  - ../../simulator/configs/defaults/global.yaml
+  - ../../simulator/configs/defaults/logging.yaml
+  - ../../simulator/configs/defaults/kpi.yaml
+  - ../../simulator/configs/bands/band_4ghz.yaml
+  - ../../simulator/configs/waveforms/cp_ofdm.yaml
+  - ../../simulator/configs/coding/ldpc_polar_baseline.yaml
+  - ../../simulator/configs/channels/awgn.yaml
+  - ../../simulator/configs/mimo/mimo_2x2.yaml
+  - ../../simulator/configs/control/pdcch_baseline.yaml
+  - ../../simulator/configs/control/harq_baseline.yaml
+  - ../../simulator/configs/control/ra_baseline.yaml
+  - ../../simulator/configs/ai_ml/disabled.yaml
+
+meta:
+  scenario_id: lls_prach_strict_mini_anchor
+  description: Strict NR baseline PRACH waveform validation mini anchor.
+  version: "1.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: initial_access
+  tags: [prach, strict, waveform_validation]
+
+scenario:
+  name: lls_prach_strict_mini_anchor
+  description: PRACH-only strict waveform validation with restricted-set, ZCZ, root-budget, negative, timing, false-alarm, and miss evidence.
+  runner_profile: prach_strict_validation
+  target_cases: [prach]
+  bundle_anchor_cases: [prach_strict_validation]
+  honesty_mode: strict
+  notes: "AUD-PRACH-001 strict mini-run; validates NR baseline/study PRACH, not exhaustive 6G normative conformance."
+
+run_control:
+  num_workers: 1
+  parallel_pool_kind: auto
+  parallel_pool_idle_timeout_minutes: 5
+
+simulation:
+  link_direction: ul
+  n_frames: 1
+  n_slots: 80
+  n_subframes: 10
+  monte_carlo_iterations: 1
+  random_seed: 240616
+  deterministic_mode: true
+  snr_db: 35
+  min_duration_s: 0.001
+  snr_sweep_offsets_db: [0]
+
+frequency:
+  range_name: FR1
+  center_frequency_hz: 700000000
+  bandwidth_hz: 10000000
+  duplex_mode: FDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  band_name: n28
+  bandwidth_options_hz: [10000000]
+  numerology_options_khz: [15]
+  max_mimo_size: 1
+  mobility_defaults_kmph: 3
+  channel_model_defaults: AWGN
+  reference_signal_defaults: baseline
+  power_model_defaults: baseline
+  energy_model_defaults: disabled
+  rf_impairment_defaults: disabled
+  n_size_grid: 52
+
+frame:
+  scs_khz: 15
+  cp_type: normal
+  slot_format: ul
+  tdd_pattern: FDD
+
+channels:
+  model_type: AWGN
+  profile: AWGN
+  delay_spread_ns: 0
+  doppler_hz: 0
+  mobility_kmph: 0
+  los_enabled: true
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  pathloss_model: none
+  shadow_fading_std_db: 0
+
+mimo:
+  n_tx_ant: 1
+  n_rx_ant: 1
+  n_layers: 1
+  precoder_type: none
+  codebook_type: type1
+  reciprocity_mode: FDD
+  beam_sweep_enabled: false
+  beam_count: 1
+  mtrp_ready: false
+  multi_panel_ready: false
+  panel_count: 1
+
+random_access:
+  enabled: true
+  binding_source: scenario_config_pending_sib1
+  procedure_type: contention_based_four_step
+  frequency_range: FR1
+  duplex_mode: FDD
+  carrier_frequency_hz: 700000000
+  carrier_scs_khz: 15
+  n_size_grid: 52
+  n_cell_id: 17
+  prach_format: "0"
+  prach_sequence_family: zadoff_chu_baseline
+  prach_design: nr_baseline
+  preamble_length_mode: long
+  configuration_index: 16
+  subcarrier_spacing_khz: 1.25
+  root_sequence_index: 1
+  logical_root_sequence_index: 1
+  sequence_index: 1
+  zero_correlation_zone: 8
+  restricted_set: RestrictedSetTypeA
+  frequency_start: 0
+  preamble_count: 64
+  preamble_index: [7]
+  min_detection_trials: 2
+  msg3_enabled: false
+  num_prach_occasions: 2
+  num_slots: 80
+  num_subframes: 10
+  active_preamble_pattern: [1]
+  num_rx_antennas: 1
+  num_tx_antennas: 1
+  num_ues_per_ro: 1
+  enable_collision_mode: true
+  enable_inter_cell_interference: false
+  enable_frequency_offset: true
+  enable_phase_noise: false
+  enable_timing_uncertainty: true
+  enable_frequency_estimation_metric: false
+  channel_model: AWGN
+  delay_spread_ns: 30
+  speed_kmh: 3
+  cell_radius_m: 500
+  timing_uncertainty_min_us: 0
+  timing_uncertainty_max_us: 0
+  ue_frequency_offset_hz: 0
+  trp_frequency_offset_hz: 0
+  phase_noise_std_rad: 0.001
+  inter_cell_relative_power_db: -3
+  target_false_alarm_probability: 0.001
+  timing_tolerance_us: 0.25
+  detection_threshold_mode: fixed
+  detection_threshold: 0.5
+  threshold_sweep: [0.5]
+  snr_sweep_db: [-24, -12, 0, 35]
+  # In this anchor the receiver search window validates in-window delayed
+  # arrivals. Early-arrival/window-underflow cases remain a separate negative
+  # profile so the strict timing sweep cannot pass on ambiguous preamble IDs.
+  timing_offset_sweep_samples: [0, 4, 8]
+  frequency_offset_sweep_hz: [0, 250]
+
+output:
+  bucket: lls
+  profile: strict_prach_waveform
+  save_csv: true
+  save_mat: false
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: false

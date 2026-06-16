@@ -1,0 +1,12 @@
+function rarnti = computeRARNTIFromPRACHOccasion(occasion)
+%COMPUTERARNTIFROMPRACHOCCASION Compute RA-RNTI for an NR PRACH occasion.
+
+symbol = double(sixgr.util.structGet(occasion, "SymbolLocation", ...
+    sixgr.util.structGet(occasion, "OccasionSymbol", 0)));
+slot = double(sixgr.util.structGet(occasion, "SlotIndex0", ...
+    sixgr.util.structGet(occasion, "OccasionSlot", 0)));
+freq = double(sixgr.util.structGet(occasion, "FrequencyIndex", ...
+    sixgr.util.structGet(occasion, "OccasionFrequencyIndex", 0)));
+ulCarrier = double(sixgr.util.structGet(occasion, "ULCarrierId", 0));
+rarnti = 1 + symbol + 14 * slot + 14 * 80 * freq + 14 * 80 * 8 * ulCarrier;
+end
