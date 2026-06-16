@@ -153,3 +153,20 @@ and exports configured-vs-applied positive/negative rows plus oracle/downstream
 reference guards. This closure does not claim that every production PDSCH/PUSCH
 trial row is now fully wired to ChannelRealizationId/RFImpairmentChainId; that
 lineage expansion must be closed separately with equivalent runtime evidence.
+
+`AUD-MIMO-RANK-001` is closed for the implemented MIMO rank/layer/beam evidence
+gate. The link KPI export now writes MIMO evidence artifacts under
+`beamforming/csv/` and `reports/csv/` from raw DL PDSCH and UL PUSCH trial rows.
+The artifacts separate nominal physical antenna/RF/port capability from
+scheduled, transmitted, receiver-estimated, and effective decoded rank/layers.
+Effective decoded rank/layers are populated only from CRC/decode/receiver-usable
+rows with finite per-layer receiver evidence; nominal configuration alone leaves
+the strict objective failed. Fixed-anchor rows fail when rank/layers,
+modulation, or MCS collapse, and multi-layer rows require PMI/precoder and beam
+lineage before top-level MIMO `StrictOk` can pass.
+
+This closure is intentionally scoped. It does not claim exhaustive MIMO
+conformance, full high-rank UL throughput, Type-II/multi-panel codebooks,
+MU-MIMO, CoMP/multi-TRP, FR2 hybrid beamforming, polarization/XPR modeling, or
+full channel/RF lineage in every production trial row. Unsupported combinations
+must remain fail-closed until equivalent runtime artifacts and tests are added.

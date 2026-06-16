@@ -87,6 +87,17 @@ if opt.SaveCSV
         artifacts.csv{end+1} = sidecarPath; %#ok<AGROW>
     end
 
+    mimoArtifacts = sixgr.mimo.exportMIMOEvidenceArtifacts(localRunRootFolder(runFolder), ...
+        localConfig(details), rawKPI, ...
+        "RunId", localRunId(details), ...
+        "ScenarioName", localScenarioName(details), ...
+        "StrictMode", localStrictMode(details));
+    if isstruct(mimoArtifacts)
+        for mi = 1:numel(mimoArtifacts.csv)
+            artifacts.csv{end+1} = mimoArtifacts.csv{mi}; %#ok<AGROW>
+        end
+    end
+
     % Backward-compatible campaign alias with compact scalar content. The
     % values are generated from raw direction-filtered trial rows only.
     csvSummary = fullfile(runFolder, "csv", localAppendFileSuffix("lls_kpi_summary.csv", fileSuffix));
@@ -228,6 +239,16 @@ else
 end
 end
 
+function rootFolder = localRunRootFolder(runFolder)
+runFolder = char(string(runFolder));
+[parent, leaf] = fileparts(runFolder);
+if strcmpi(leaf, "air_interface") && strlength(string(parent)) > 0
+    rootFolder = parent;
+else
+    rootFolder = runFolder;
+end
+end
+
 function runId = localRunId(details)
 runId = string(sixgr.util.structGet(details, "RunId", ...
     sixgr.util.structGet(details, "run_id", "")));
@@ -236,6 +257,10 @@ end
 function scenarioName = localScenarioName(details)
 scenarioName = string(sixgr.util.structGet(details, "ScenarioName", ...
     sixgr.util.structGet(details, "scenario_name", "")));
+end
+
+function cfg = localConfig(details)
+cfg = sixgr.util.structGet(details, "Config", struct());
 end
 
 function tf = localStrictMode(details)
