@@ -63,7 +63,7 @@ if isempty(rows)
     T = table(string.empty(0,1), zeros(0,1), string.empty(0,1), string.empty(0,1), zeros(0,1), zeros(0,1), ...
         'VariableNames', {'File','IssueCount','IssueTokens','Status','AllowedDisclosureCount','ScannedValueCount'});
 else
-    T = struct2table(rows);
+    T = struct2table(rows, "AsArray", true);
 end
 
 csvFile = layout.TruthScanCSV;

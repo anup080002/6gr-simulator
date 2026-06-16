@@ -40,10 +40,12 @@ isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
 isPDCCHStrict = localIsPDCCHStrictScenario(scfg, cfg);
 isTRSOnly = localIsTRSOnlyScenario(scfg, cfg);
 isTRSStrict = localIsTRSStrictScenario(scfg, cfg);
+isSRSOnly = localIsSRSOnlyScenario(scfg, cfg);
+isSRSStrict = localIsSRSStrictScenario(scfg, cfg);
 isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
 isProxyOnlyStudy = localIsProxyOnlyStudyScenario(scfg, cfg);
-isControlOnly = isPRACHOnly || isPDCCHOnly || isTRSOnly || isRAOnly;
+isControlOnly = isPRACHOnly || isPDCCHOnly || isTRSOnly || isSRSOnly || isRAOnly;
 verdict.ContractApplicability = "applicable";
 
 if isProxyOnlyStudy
@@ -230,6 +232,37 @@ elseif isTRSOnly
             fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv")
             ];
     end
+elseif isSRSOnly
+    refCsvDir = fullfile(layout.Root, "reference_signals", "csv");
+    if isSRSStrict
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(refCsvDir, "srs_config_strict.csv")
+            fullfile(refCsvDir, "srs_resource_sets.csv")
+            fullfile(refCsvDir, "srs_resources.csv")
+            fullfile(refCsvDir, "srs_resource_mapping.csv")
+            fullfile(refCsvDir, "srs_tx_waveform.csv")
+            fullfile(refCsvDir, "srs_rx_extraction.csv")
+            fullfile(refCsvDir, "srs_detection_metrics.csv")
+            fullfile(refCsvDir, "srs_channel_estimation.csv")
+            fullfile(refCsvDir, "srs_coverage.csv")
+            fullfile(refCsvDir, "srs_trigger_events.csv")
+            fullfile(refCsvDir, "srs_negative_trials.csv")
+            fullfile(refCsvDir, "srs_low_snr_sweep.csv")
+            fullfile(refCsvDir, "srs_timing_offset_sweep.csv")
+            fullfile(refCsvDir, "srs_multi_ue_trials.csv")
+            fullfile(refCsvDir, "srs_oracle_guard.csv")
+            fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv")
+            fullfile(layout.ReportDir, "json", "srs_detection_summary.json")
+            fullfile(layout.ReportDir, "json", "srs_coverage_summary.json")
+            fullfile(layout.ReportDir, "json", "srs_toolbox_capabilities.json")
+            ];
+    else
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv")
+            ];
+    end
 elseif isRAOnly
     requiredArtifacts = [
         requiredArtifacts
@@ -413,6 +446,13 @@ if strictTruthRequired && logical(trsStats.TRSRequired) && ~logical(trsStats.TRS
         "evidence");
 end
 
+srsStats = localSRSStrictEvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(srsStats.SRSRequired) && ~logical(srsStats.SRSStrictOk)
+    verdict = localAddFailure(verdict, ...
+        "srs_strict_waveform_evidence_missing_or_failing:" + string(srsStats.SRSStatus), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -430,6 +470,7 @@ verdict.CheckDetails = struct( ...
     "PRACH", prachStats, ...
     "PDCCH", pdcchStats, ...
     "TRS", trsStats, ...
+    "SRS", srsStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -494,6 +535,22 @@ end
 function tf = localIsTRSStrictScenario(scfg, cfg)
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
 tf = runnerProfile == "trs_strict_validation" || localScenarioHasObjective(scfg, cfg, "trs_strict_validation");
+end
+
+function tf = localIsSRSOnlyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+targetCases = string(localScenarioGet(scfg, cfg, "scenario.target_cases", strings(0, 1)));
+if iscell(targetCases)
+    targetCases = string(targetCases(:));
+end
+targetCases = lower(strtrim(targetCases(:)));
+targetCases = targetCases(strlength(targetCases) > 0);
+tf = runnerProfile == "srs_strict_validation" || (~isempty(targetCases) && all(targetCases == "srs"));
+end
+
+function tf = localIsSRSStrictScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "srs_strict_validation" || localScenarioHasObjective(scfg, cfg, "srs_strict_validation");
 end
 
 function tf = localIsRAOnlyScenario(scfg, cfg)
@@ -1578,6 +1635,151 @@ else
 end
 end
 
+function stats = localSRSStrictEvidenceStats(layout, scfg, cfg)
+required = localIsSRSStrictScenario(scfg, cfg);
+refCsvDir = fullfile(layout.Root, "reference_signals", "csv");
+configPath = fullfile(refCsvDir, "srs_config_strict.csv");
+resourceSetPath = fullfile(refCsvDir, "srs_resource_sets.csv");
+resourcePath = fullfile(refCsvDir, "srs_resources.csv");
+mappingPath = fullfile(refCsvDir, "srs_resource_mapping.csv");
+txPath = fullfile(refCsvDir, "srs_tx_waveform.csv");
+extractionPath = fullfile(refCsvDir, "srs_rx_extraction.csv");
+detectionPath = fullfile(refCsvDir, "srs_detection_metrics.csv");
+channelPath = fullfile(refCsvDir, "srs_channel_estimation.csv");
+coveragePath = fullfile(refCsvDir, "srs_coverage.csv");
+triggerPath = fullfile(refCsvDir, "srs_trigger_events.csv");
+negativePath = fullfile(refCsvDir, "srs_negative_trials.csv");
+lowPath = fullfile(refCsvDir, "srs_low_snr_sweep.csv");
+timingSweepPath = fullfile(refCsvDir, "srs_timing_offset_sweep.csv");
+multiUEPath = fullfile(refCsvDir, "srs_multi_ue_trials.csv");
+oraclePath = fullfile(refCsvDir, "srs_oracle_guard.csv");
+trialPath = fullfile(refCsvDir, "srs_trials.csv");
+stats = struct( ...
+    "SRSRequired", logical(required), ...
+    "SRSStrictOk", false, ...
+    "SRSStatus", "not_required", ...
+    "SRSConfigRows", 0, ...
+    "SRSTrialRows", 0, ...
+    "SRSResourceSetRows", 0, ...
+    "SRSResourceRows", 0, ...
+    "SRSResourceMappingRows", 0, ...
+    "SRSTxWaveformRows", 0, ...
+    "SRSExtractionRows", 0, ...
+    "SRSDetectionRows", 0, ...
+    "SRSChannelRows", 0, ...
+    "SRSCoverageRows", 0, ...
+    "SRSTriggerRows", 0, ...
+    "SRSNegativeRows", 0, ...
+    "SRSLowSNRRows", 0, ...
+    "SRSTimingSweepRows", 0, ...
+    "SRSMultiUERows", 0, ...
+    "SRSOracleGuardRows", 0, ...
+    "SRSOracleGuardViolationCount", NaN);
+if ~required
+    return;
+end
+configT = localReadTable(configPath);
+trialT = localReadTable(trialPath);
+resourceSetT = localReadTable(resourceSetPath);
+resourceT = localReadTable(resourcePath);
+mappingT = localReadTable(mappingPath);
+txT = localReadTable(txPath);
+extractionT = localReadTable(extractionPath);
+detectionT = localReadTable(detectionPath);
+channelT = localReadTable(channelPath);
+coverageT = localReadTable(coveragePath);
+triggerT = localReadTable(triggerPath);
+negativeT = localReadTable(negativePath);
+lowT = localReadTable(lowPath);
+timingSweepT = localReadTable(timingSweepPath);
+multiUET = localReadTable(multiUEPath);
+oracleT = localReadTable(oraclePath);
+
+stats.SRSConfigRows = height(configT);
+stats.SRSTrialRows = height(trialT);
+stats.SRSResourceSetRows = height(resourceSetT);
+stats.SRSResourceRows = height(resourceT);
+stats.SRSResourceMappingRows = height(mappingT);
+stats.SRSTxWaveformRows = height(txT);
+stats.SRSExtractionRows = height(extractionT);
+stats.SRSDetectionRows = height(detectionT);
+stats.SRSChannelRows = height(channelT);
+stats.SRSCoverageRows = height(coverageT);
+stats.SRSTriggerRows = height(triggerT);
+stats.SRSNegativeRows = height(negativeT);
+stats.SRSLowSNRRows = height(lowT);
+stats.SRSTimingSweepRows = height(timingSweepT);
+stats.SRSMultiUERows = height(multiUET);
+stats.SRSOracleGuardRows = height(oracleT);
+
+if isempty(configT) || isempty(trialT)
+    stats.SRSStatus = "missing_strict_srs_config_or_trials";
+    return;
+end
+requiredTrialCols = ["StrictOk","NegativeExpectedOk","ProxyUsed","Skipped","ToolboxMissing", ...
+    "UsedOracleFields","TrialType","ConfigHash","DetectionAttempted","DetectionSuccess", ...
+    "ResourceExtractionAttempted","ResourceExtractionAvailable", ...
+    "ChannelEstimateAttempted","SRSChannelEstimateAvailable","NMSE_dB", ...
+    "TimingEstimateAttempted","SRSTimingEstimateAvailable","EstimatedTimingOffsetSamples", ...
+    "CoverageRequirement","BandwidthCoverageStatus","FullCarrierClaimValid", ...
+    "ConfiguredBandClaimValid","TruthStatus"];
+missingTrialCols = requiredTrialCols(~arrayfun(@(c) localHasColumn(trialT, c), requiredTrialCols));
+if ~isempty(missingTrialCols)
+    stats.SRSStatus = "srs_trials_missing_columns:" + strjoin(missingTrialCols, "|");
+    return;
+end
+artifactRowsOk = stats.SRSResourceSetRows > 0 && stats.SRSResourceRows > 0 && ...
+    stats.SRSResourceMappingRows > 0 && stats.SRSTxWaveformRows > 0 && ...
+    stats.SRSExtractionRows > 0 && stats.SRSDetectionRows > 0 && ...
+    stats.SRSChannelRows > 0 && stats.SRSCoverageRows > 0 && stats.SRSTriggerRows > 0 && ...
+    stats.SRSNegativeRows > 0 && stats.SRSLowSNRRows > 0 && stats.SRSTimingSweepRows > 0 && ...
+    stats.SRSMultiUERows > 0 && stats.SRSOracleGuardRows > 0;
+configOk = localHasColumn(configT, "StrictValid") && any(localColumnBool(configT, "StrictValid")) && ...
+    localHasColumn(configT, "ImplementationStatus") && any(contains(string(configT.ImplementationStatus), "strict_srs"));
+positiveMask = string(trialT.TrialType) == "positive_awgn";
+positiveOkRows = localColumnBool(trialT, "StrictOk") & positiveMask & ...
+    localColumnBool(trialT, "DetectionAttempted") & localColumnBool(trialT, "DetectionSuccess") & ...
+    localColumnBool(trialT, "ResourceExtractionAttempted") & localColumnBool(trialT, "ResourceExtractionAvailable") & ...
+    localColumnBool(trialT, "ChannelEstimateAttempted") & localColumnBool(trialT, "SRSChannelEstimateAvailable") & ...
+    localColumnBool(trialT, "TimingEstimateAttempted") & localColumnBool(trialT, "SRSTimingEstimateAvailable") & ...
+    localColumnBool(trialT, "ConfiguredBandClaimValid") & localColumnBool(trialT, "FullCarrierClaimValid") & ...
+    string(trialT.BandwidthCoverageStatus) == "full_carrier" & ...
+    isfinite(localColumnNumeric(trialT, "EstimatedTimingOffsetSamples")) & ...
+    isfinite(localColumnNumeric(trialT, "NMSE_dB")) & ...
+    ~localColumnBool(trialT, "ProxyUsed") & ~localColumnBool(trialT, "Skipped") & ...
+    ~localColumnBool(trialT, "ToolboxMissing") & localBlankOrMissingMask(trialT.UsedOracleFields) & ...
+    strlength(strtrim(string(trialT.ConfigHash))) > 0;
+positiveOk = any(positiveOkRows);
+negativeOk = localHasColumn(negativeT, "StrictOk") && localHasColumn(negativeT, "NegativeExpectedOk") && ...
+    height(negativeT) >= 8 && all(~localColumnBool(negativeT, "StrictOk")) && all(localColumnBool(negativeT, "NegativeExpectedOk"));
+partialFullGateOk = any(string(negativeT.TrialType) == "partial_band_claimed_full" & ...
+    ~localColumnBool(negativeT, "StrictOk") & contains(string(negativeT.FailureReason), "srs_partial_band_claimed_full"));
+attemptCoverageOk = localHasColumn(detectionT, "DetectionAttempted") && all(localColumnBool(detectionT, "DetectionAttempted")) && ...
+    localHasColumn(channelT, "ChannelEstimateAttempted") && all(localColumnBool(channelT, "ChannelEstimateAttempted")) && ...
+    localHasColumn(extractionT, "ExtractionAttempted") && all(localColumnBool(extractionT, "ExtractionAttempted"));
+coverageOk = localHasColumn(coverageT, "FullCarrierClaimValid") && any(localColumnBool(coverageT, "FullCarrierClaimValid")) && ...
+    localHasColumn(coverageT, "BandwidthCoverageStatus") && any(string(coverageT.BandwidthCoverageStatus) == "full_carrier");
+triggerOk = localHasColumn(triggerT, "TriggerValid") && all(localColumnBool(triggerT, "TriggerValid"));
+sweepOk = localHasColumn(lowT, "DetectionProbability") && all(localColumnNumeric(lowT, "DetectionProbability") >= 0 & localColumnNumeric(lowT, "DetectionProbability") <= 1) && ...
+    localHasColumn(timingSweepT, "WithinToleranceProbability") && all(localColumnNumeric(timingSweepT, "WithinToleranceProbability") >= 0 & localColumnNumeric(timingSweepT, "WithinToleranceProbability") <= 1);
+multiUEOk = localHasColumn(multiUET, "CollisionDetected") && any(localColumnBool(multiUET, "CollisionDetected")) && ...
+    localHasColumn(multiUET, "OrthogonalityPass") && any(localColumnBool(multiUET, "OrthogonalityPass"));
+oracleViolations = 0;
+if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
+    oracleViolations = sum(localColumnBool(oracleT, "Violation"));
+end
+stats.SRSOracleGuardViolationCount = double(oracleViolations);
+truthStatusOk = localHasColumn(trialT, "TruthStatus") && all(string(trialT.TruthStatus) == "real_lls_evidence");
+stats.SRSStrictOk = artifactRowsOk && configOk && positiveOk && negativeOk && partialFullGateOk && ...
+    attemptCoverageOk && coverageOk && triggerOk && sweepOk && multiUEOk && ...
+    oracleViolations == 0 && truthStatusOk;
+if stats.SRSStrictOk
+    stats.SRSStatus = "strict_srs_waveform_channel_sounding_evidence_present";
+else
+    stats.SRSStatus = "strict_srs_waveform_channel_sounding_evidence_incomplete";
+end
+end
+
 function tf = localScenarioHasObjective(scfg, cfg, objectiveToken)
 objectiveToken = lower(strtrim(string(objectiveToken)));
 values = strings(0, 1);
@@ -1714,6 +1916,7 @@ ra = sixgr.util.structGet(details, "RandomAccess", struct());
 prach = sixgr.util.structGet(details, "PRACH", struct());
 pdcch = sixgr.util.structGet(details, "PDCCH", struct());
 trs = sixgr.util.structGet(details, "TRS", struct());
+srs = sixgr.util.structGet(details, "SRS", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
@@ -1785,6 +1988,15 @@ summaryT = table( ...
     double(sixgr.util.structGet(trs, "TRSFrequencyRows", NaN)), ...
     double(sixgr.util.structGet(trs, "TRSChannelRows", NaN)), ...
     double(sixgr.util.structGet(trs, "TRSOracleGuardViolationCount", NaN)), ...
+    logical(sixgr.util.structGet(srs, "SRSRequired", false)), ...
+    logical(sixgr.util.structGet(srs, "SRSStrictOk", false)), ...
+    string(sixgr.util.structGet(srs, "SRSStatus", "")), ...
+    double(sixgr.util.structGet(srs, "SRSTrialRows", NaN)), ...
+    double(sixgr.util.structGet(srs, "SRSResourceMappingRows", NaN)), ...
+    double(sixgr.util.structGet(srs, "SRSDetectionRows", NaN)), ...
+    double(sixgr.util.structGet(srs, "SRSChannelRows", NaN)), ...
+    double(sixgr.util.structGet(srs, "SRSCoverageRows", NaN)), ...
+    double(sixgr.util.structGet(srs, "SRSOracleGuardViolationCount", NaN)), ...
     logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
     string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
     double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
@@ -1805,6 +2017,7 @@ summaryT = table( ...
     'PRACHRequired','PRACHStrictOk','PRACHEvidenceStatus','PRACHTrialRows','PRACHMissedDetectionRows','PRACHFalseAlarmRows','PRACHOracleGuardViolationCount', ...
     'PDCCHRequired','PDCCHStrictOk','PDCCHStatus','PDCCHTrialRows','PDCCHOracleGuardViolationCount', ...
     'TRSRequired','TRSStrictOk','TRSStatus','TRSTrialRows','TRSDetectionRows','TRSTimingRows','TRSFrequencyRows','TRSChannelRows','TRSOracleGuardViolationCount', ...
+    'SRSRequired','SRSStrictOk','SRSStatus','SRSTrialRows','SRSResourceMappingRows','SRSDetectionRows','SRSChannelRows','SRSCoverageRows','SRSOracleGuardViolationCount', ...
     'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);
@@ -1851,6 +2064,8 @@ elseif contains(failure, "prach_strict") || contains(failure, "prach_")
     category = "prach_waveform";
 elseif contains(failure, "trs_strict") || contains(failure, "trs_")
     category = "trs_reference_signal";
+elseif contains(failure, "srs_strict") || contains(failure, "srs_")
+    category = "srs_reference_signal";
 elseif contains(failure, "ra_strict") || contains(failure, "random_access")
     category = "random_access";
 elseif contains(failure, "result_issue_registry")

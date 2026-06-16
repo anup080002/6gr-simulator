@@ -90,8 +90,9 @@ if ~logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.srs.enable=true for SRS coverage.");
     out.Skipped = true;
-    out.Ok = true;
+    out.Ok = false;
     out.Notes = "Skipped: cfg.phy.srs.enable=false";
+    out.FailureReason = "srs_disabled_fail_closed";
     return;
 end
 
@@ -99,8 +100,9 @@ if exist("nrSRS", "file") ~= 2 || exist("nrSRSIndices", "file") ~= 2
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnavailable", ...
         "Strict mode requires nrSRS/nrSRSIndices for SRS coverage.");
     out.Skipped = true;
-    out.Ok = true;
+    out.Ok = false;
     out.Notes = "Skipped: nrSRS APIs unavailable.";
+    out.FailureReason = "srs_toolbox_unavailable_fail_closed";
     return;
 end
 

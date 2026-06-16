@@ -1,0 +1,205 @@
+inherits:
+  - ../../simulator/configs/defaults/global.yaml
+  - ../../simulator/configs/defaults/logging.yaml
+  - ../../simulator/configs/defaults/kpi.yaml
+  - ../../simulator/configs/bands/band_4ghz.yaml
+  - ../../simulator/configs/waveforms/cp_ofdm.yaml
+  - ../../simulator/configs/coding/ldpc_polar_baseline.yaml
+  - ../../simulator/configs/channels/awgn.yaml
+  - ../../simulator/configs/mimo/mimo_2x2.yaml
+  - ../../simulator/configs/control/pdcch_baseline.yaml
+  - ../../simulator/configs/control/harq_baseline.yaml
+  - ../../simulator/configs/control/ra_baseline.yaml
+  - ../../simulator/configs/ai_ml/disabled.yaml
+
+meta:
+  scenario_id: lls_srs_strict_mini_anchor
+  description: Strict NR baseline SRS waveform generation, detection, coverage, and UL channel-sounding validation mini anchor.
+  version: "1.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: reference_signal
+  tags: [srs, strict, waveform_validation, ul_channel_sounding]
+
+scenario:
+  name: lls_srs_strict_mini_anchor
+  description: SRS-only strict waveform validation with resource mapping, receiver extraction, detection, channel estimation, coverage, trigger, negative, and sweep evidence.
+  runner_profile: srs_strict_validation
+  target_cases: [srs]
+  bundle_anchor_cases: [srs_strict_validation]
+  honesty_mode: strict
+  notes: "AUD-SRS-001 strict mini-run; validates NR-baseline SRS channel-sounding evidence, not exhaustive 6G normative conformance."
+
+run_control:
+  num_workers: 1
+  parallel_pool_kind: auto
+  parallel_pool_idle_timeout_minutes: 5
+
+simulation:
+  link_direction: ul
+  n_frames: 1
+  n_slots: 5
+  n_subframes: 1
+  monte_carlo_iterations: 1
+  random_seed: 240619
+  deterministic_mode: true
+  snr_db: 35
+  min_duration_s: 0.001
+  snr_sweep_offsets_db: [0]
+
+frequency:
+  range_name: FR1
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 10000000
+  duplex_mode: FDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  band_name: n77
+  bandwidth_options_hz: [10000000]
+  numerology_options_khz: [30]
+  max_mimo_size: 1
+  mobility_defaults_kmph: 3
+  channel_model_defaults: AWGN
+  reference_signal_defaults: baseline
+  power_model_defaults: baseline
+  energy_model_defaults: disabled
+  rf_impairment_defaults: disabled
+  n_size_grid: 24
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: ul
+  tdd_pattern: FDD
+
+channels:
+  model_type: AWGN
+  profile: AWGN
+  delay_spread_ns: 0
+  doppler_hz: 0
+  mobility_kmph: 0
+  los_enabled: true
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  pathloss_model: none
+  shadow_fading_std_db: 0
+
+reference_signals:
+  ssb_enabled: false
+  pbch_enabled: false
+  pdcch_dmrs_enabled: false
+  pdsch_dmrs_ports: 1
+  pusch_dmrs_ports: 1
+  csi_rs_enabled: false
+  srs_enabled: true
+  trs_enabled: false
+  tracking_rs_enabled: false
+  ptrs_enabled: false
+  csi_reporting_enabled: false
+  csi_feedback_mode: none
+  csi_acquisition_mode: ul_based
+  operation_orientation: tdd_reciprocity
+  dmrs_csi_tracking_enabled: false
+  srs_ports: 1
+  srs_sequence_family: baseline_nr
+  srs_periodicity_ms: 20
+  srs_periodicity_slots: 4
+  srs_max_ues_per_slot: 1
+  srs_scheduling_policy: round_robin_phase
+  channel_estimation_mode: realistic_baseline
+  receiver_example: mmse_irc
+  sgcs_reporting_enabled: false
+  nmse_reporting_enabled: true
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
+  pmi_codebook_mode: type1_su_mimo
+  channel_state_information_mode: none
+  srs:
+    enabled: true
+    purpose: ul_channel_sounding
+    baseline_or_candidate_tag: baseline_benchmark
+    time_density: configured
+    frequency_density: full_bwp
+    periodicity: "20"
+    aperiodic_trigger: none
+    semi_persistent_flag: false
+    num_ports: 1
+    port_set: [0]
+    comb: "2"
+    sequence_type: baseline_nr
+    scrambling_id: 7
+    cdm_grouping: none
+    orthogonality_policy: comb_cyclic_shift
+    power: nominal
+    beam_association: none
+    qcl_association: none
+    resource_mapping: full_bwp
+    reuse_policy: single_ue
+    coexistence_constraints: none
+    measurement_usage: ul_csi
+    interpolation_policy: none
+    resource_type: periodic
+    resource_set_usage: noncodebook
+    slot_numbers: [0, 4]
+    periodicity_slots: 4
+    period_offset: 0
+    symbol_start: 13
+    num_srs_symbols: 1
+    repetition_factor: 1
+    comb_number: 2
+    comb_offset: 0
+    cyclic_shift: 0
+    sequence_id: 7
+    group_or_sequence_hopping: neither
+    frequency_position: 0
+    frequency_shift: 0
+    frequency_hopping: neither
+    b_hop: 0
+    c_srs: 6
+    b_srs: 0
+    num_rb: 24
+    expected_rb_start: 0
+    expected_num_rb: 24
+    expected_bandwidth_coverage_percent: 100
+    coverage_requirement: full_carrier
+    full_carrier_sounding_required: true
+    detection_threshold: 0.72
+    channel_nmse_threshold_db: -8
+    timing_tolerance_samples: 3
+    low_snr_sweep_db: [-12, 0, 20, 35]
+    timing_offset_sweep_samples: [0, 2, 4]
+    dci_trigger_reference_id: ""
+    activation_mac_ce_reference_id: ""
+
+mimo:
+  n_tx_ant: 1
+  n_rx_ant: 1
+  n_layers: 1
+  precoder_type: none
+  codebook_type: type1
+  reciprocity_mode: FDD
+  beam_sweep_enabled: false
+  beam_count: 1
+  mtrp_ready: false
+  multi_panel_ready: false
+  panel_count: 1
+
+control_gating:
+  srs_required: true
+  srs_max_age_slots: 4
+
+output:
+  bucket: lls
+  profile: strict_srs_waveform
+  save_csv: true
+  save_mat: false
+  save_figures: true
+  save_png: false
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: false

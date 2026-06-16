@@ -1,0 +1,13 @@
+function T = validateSRSPeriodicSchedule(srsCfg)
+%VALIDATESRSPERIODICSCHEDULE Validate periodic SRS occasions from period/offset.
+
+slots = double(srsCfg.ExpectedSlotSet(:));
+period = max(1, round(double(srsCfg.Periodicity)));
+offset = max(0, round(double(srsCfg.Offset)));
+expected = mod(slots - offset, period) == 0;
+T = table(repmat(string(srsCfg.RunId), numel(slots), 1), slots, ...
+    repmat(double(period), numel(slots), 1), repmat(double(offset), numel(slots), 1), ...
+    expected, expected, repmat(string(srsCfg.ConfigHash), numel(slots), 1), ...
+    repmat("real_lls_evidence", numel(slots), 1), ...
+    'VariableNames', {'RunId','Slot','Periodicity','Offset','ExpectedOccasion','ObservedOccasion','ConfigHash','TruthStatus'});
+end

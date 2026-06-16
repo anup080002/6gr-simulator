@@ -80,3 +80,13 @@ positive, negative, sweep, and oracle-guard evidence, and extends the runtime
 TRS-required gate so metric-only rows cannot mark a cell valid. Unsupported
 multi-port or advanced TRS profiles remain fail-closed and must not be counted
 as fixed without equivalent waveform artifacts.
+
+`AUD-SRS-001` is closed for the implemented NR-baseline strict SRS mini profile
+only. The strict profile derives `nrSRSConfig` from resolved YAML, generates real
+SRS symbols/indices/waveform, extracts SRS from received UL grids at the gNB,
+estimates the UL channel from receiver SRS REs, validates configured/full-carrier
+coverage from actual PRB occupancy, and exports trigger, coverage, low-SNR,
+timing-offset, multi-UE, negative, and oracle-guard evidence. Unsupported SRS
+resource types/usages, incomplete hopping coverage, semi-persistent activation,
+and aperiodic SRS without decoded DCI trigger evidence remain fail-closed and
+must not be counted as fixed without equivalent waveform artifacts.
