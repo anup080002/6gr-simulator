@@ -1,0 +1,23 @@
+function ok = testKPIFormulaRegistry()
+%TESTKPIFORMULAREGISTRY KPI formulas must declare provenance and units.
+
+setup6GRSimToolkit("Verbose", false);
+
+T = sixgr.kpi.KPIFormulaRegistry();
+required = ["KPIName","Direction","Layer","Units","RequiredSourceTables", ...
+    "RequiredColumns","FilterPredicate","FormulaVersion","Tolerance","StrictAllowed"];
+assert(istable(T) && ~isempty(T), "KPI formula registry must be a non-empty table.");
+assert(all(ismember(required, string(T.Properties.VariableNames))), ...
+    "Formula registry is missing required contract columns.");
+
+mandatory = ["UL_PHY_ScheduledThroughput_Mbps","DL_PHY_ScheduledThroughput_Mbps", ...
+    "UL_TB_Delivery_Goodput_Mbps","DL_TB_Delivery_Goodput_Mbps", ...
+    "UL_BLER","DL_BLER","UL_BER","DL_BER", ...
+    "UL_Goodput_Max_Mbps","DL_Goodput_Max_Mbps"];
+assert(all(ismember(mandatory, string(T.KPIName))), ...
+    "Formula registry must include the mandatory raw-to-summary KPI formulas.");
+assert(all(strlength(string(T.FormulaVersion)) > 0) && all(isfinite(double(T.Tolerance))), ...
+    "Every formula must declare version and tolerance.");
+
+ok = true;
+end

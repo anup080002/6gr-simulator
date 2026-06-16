@@ -79,6 +79,7 @@ classdef LinkLevelRunner
             if ~isempty(rows)
                 out.KPITable = struct2table(rows);
             end
+            out.Config = cfg;
 
             skippedMask = false(height(out.KPITable), 1);
             if istable(out.KPITable) && ismember("Skipped", string(out.KPITable.Properties.VariableNames))

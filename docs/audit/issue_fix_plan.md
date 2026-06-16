@@ -75,8 +75,27 @@ looking SINR sources are rejected by `validatePUSCHReceiverEvidence`.
 This does not close the entire AUD-UL-SINR-001 prompt yet. Remaining closure
 items include the strict mini scenario artifacts, high-rank/256QAM fixed-anchor
 positive validation, the full negative fault matrix, and configured-vs-effective
-rank/modulation validation. `AUD-KPI-UL-GOODPUT` remains open and must be fixed
-with raw-vs-summary KPI evidence, not by this receiver gate.
+rank/modulation validation. KPI raw-vs-summary accounting is closed separately
+under `AUD-KPI-UL-GOODPUT`; this receiver gate must not be used to claim that
+KPI closure by itself.
+
+## Current KPI Accounting Closure Notes
+
+`AUD-KPI-UL-GOODPUT` is closed for raw-to-summary KPI accounting. The link KPI
+exporter now reconstructs the legacy scalar summary from direction-filtered raw
+DL/UL trial rows and writes canonical audit artifacts under `reports/csv/`:
+formula registry, source manifest, raw schema audit, reconstruction summary,
+row-level contributions, HARQ delivery trace, direction isolation, legacy alias
+map, known-bug regression, unit conversion, duration source, and objective
+binding. `Goodput_UL_max_Mbps` is generated only from `Direction=UL` rows and
+the audited DL-to-UL copy case (`DL=40.137091 Mbps`, `UL=7.952 Mbps`) is covered
+by `testKPIULGoodputNotCopiedFromDL`.
+
+This closure is intentionally scoped. It implements HARQ deduplication for KPI
+goodput accounting only; it does not claim full MAC/HARQ timing/procedure
+conformance. MAC and application goodput formulas are registered but remain
+unavailable unless the corresponding MAC SDU or application packet delivery rows
+exist. `AUD-UL-SINR-001` remains tracked separately for receiver-chain evidence.
 
 ## Current Initial-Access Closure Notes
 

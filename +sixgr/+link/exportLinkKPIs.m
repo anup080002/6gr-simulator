@@ -56,9 +56,41 @@ if opt.SaveCSV
         artifacts.csv{end+1} = paprFile;
     end
 
-    % Backward-compatible campaign alias with compact scalar content.
+    rawKPI = sixgr.kpi.loadDirectionRawTables(details, "RunFolder", runFolder);
+    kpiRecon = sixgr.kpi.reconstructLLSKPISummaryFromRaw(rawKPI, ...
+        "RunId", localRunId(details), ...
+        "ScenarioName", localScenarioName(details), ...
+        "SourcePaths", rawKPI.Paths, ...
+        "StrictMode", localStrictMode(details));
+
+    reportCSVDir = localKPIReportCSVDir(runFolder);
+    sixgr.util.ensureFolder(reportCSVDir);
+    kpiSidecars = {
+        "kpi_formula_registry.csv", kpiRecon.FormulaRegistry;
+        "kpi_source_table_manifest.csv", kpiRecon.SourceManifest;
+        "kpi_raw_table_schema_audit.csv", kpiRecon.SchemaAudit;
+        "kpi_reconstruction_summary.csv", kpiRecon.ReconstructionSummary;
+        "kpi_row_contributions_ul.csv", kpiRecon.RowContributionsUL;
+        "kpi_row_contributions_dl.csv", kpiRecon.RowContributionsDL;
+        "kpi_harq_delivery_trace_ul.csv", kpiRecon.HARQDeliveryTraceUL;
+        "kpi_harq_delivery_trace_dl.csv", kpiRecon.HARQDeliveryTraceDL;
+        "kpi_direction_isolation_audit.csv", kpiRecon.DirectionIsolationAudit;
+        "kpi_legacy_alias_map.csv", kpiRecon.LegacyAliasMap;
+        "kpi_known_bug_regression.csv", kpiRecon.KnownBugRegression;
+        "kpi_unit_conversion_audit.csv", kpiRecon.UnitConversionAudit;
+        "kpi_duration_source_audit.csv", kpiRecon.DurationSourceAudit;
+        "kpi_objective_binding.csv", kpiRecon.ObjectiveBinding
+        };
+    for ki = 1:size(kpiSidecars, 1)
+        sidecarPath = fullfile(reportCSVDir, kpiSidecars{ki, 1});
+        sixgr.util.csvWriteTable(sidecarPath, kpiSidecars{ki, 2});
+        artifacts.csv{end+1} = sidecarPath; %#ok<AGROW>
+    end
+
+    % Backward-compatible campaign alias with compact scalar content. The
+    % values are generated from raw direction-filtered trial rows only.
     csvSummary = fullfile(runFolder, "csv", localAppendFileSuffix("lls_kpi_summary.csv", fileSuffix));
-    sixgr.util.csvWriteTable(csvSummary, localBuildSingleRowSummary(kpiTable, sweep));
+    sixgr.util.csvWriteTable(csvSummary, kpiRecon.SummaryAliases);
     artifacts.csv{end+1} = csvSummary;
 
     unitFile = fullfile(runFolder, "csv", localAppendFileSuffix("metric_unit_catalog.csv", fileSuffix));
@@ -179,20 +211,6 @@ else
 end
 end
 
-function T = localBuildSingleRowSummary(kpiTable, sweepT)
-row = struct();
-row.BLER_DL_min = localTableMin(kpiTable, ["DL_BLER", "BLER_DL", "BLER"]);
-row.BLER_UL_min = localTableMin(kpiTable, ["UL_BLER", "BLER_UL"]);
-row.Goodput_DL_max_Mbps = localTableMax(kpiTable, ["DL_Goodput_Mbps", "DL_Throughput_Mbps"]);
-if ~isfinite(row.Goodput_DL_max_Mbps)
-    row.Goodput_DL_max_Mbps = localTableMax(kpiTable, ["Goodput_Mbps", "Throughput_Mbps"]);
-end
-row.Goodput_UL_max_Mbps = localTableMax(kpiTable, ["UL_Goodput_Mbps", "UL_Throughput_Mbps"]);
-row.RequiredSNR_DL_10pctBLER = localRequiredSNRFromSweep(sweepT, "DL_BLER", 0.1);
-row.RequiredSNR_UL_10pctBLER = localRequiredSNRFromSweep(sweepT, "UL_BLER", 0.1);
-T = struct2table(row);
-end
-
 function T = localEmptySweepStatusTable()
 T = table( ...
     string("skipped_single_point_run"), ...
@@ -200,67 +218,31 @@ T = table( ...
     'VariableNames', {'Status','SNR_dB','DL_BLER','UL_BLER','DL_Throughput_Mbps','UL_Throughput_Mbps'});
 end
 
-function v = localTableMin(T, candidates)
-v = NaN;
-x = localTableValues(T, candidates);
-if ~isempty(x)
-    v = min(x);
+function reportCSVDir = localKPIReportCSVDir(runFolder)
+runFolder = char(string(runFolder));
+[parent, leaf] = fileparts(runFolder);
+if strcmpi(leaf, "air_interface") && strlength(string(parent)) > 0
+    reportCSVDir = fullfile(parent, "reports", "csv");
+else
+    reportCSVDir = fullfile(runFolder, "reports", "csv");
 end
 end
 
-function v = localTableMax(T, candidates)
-v = NaN;
-x = localTableValues(T, candidates);
-if ~isempty(x)
-    v = max(x);
-end
+function runId = localRunId(details)
+runId = string(sixgr.util.structGet(details, "RunId", ...
+    sixgr.util.structGet(details, "run_id", "")));
 end
 
-function x = localTableValues(T, candidates)
-x = [];
-if ~(istable(T) && ~isempty(T))
-    return;
-end
-vars = string(T.Properties.VariableNames);
-candidates = string(candidates);
-for i = 1:numel(candidates)
-    if ismember(candidates(i), vars)
-        try
-            x = double(T.(candidates(i)));
-        catch
-            x = str2double(string(T.(candidates(i))));
-        end
-        x = x(isfinite(x));
-        return;
-    end
-end
+function scenarioName = localScenarioName(details)
+scenarioName = string(sixgr.util.structGet(details, "ScenarioName", ...
+    sixgr.util.structGet(details, "scenario_name", "")));
 end
 
-function snrReq = localRequiredSNRFromSweep(sweepT, blerCol, target)
-snrReq = NaN;
-if ~(istable(sweepT) && ~isempty(sweepT) && all(ismember(["SNR_dB", string(blerCol)], string(sweepT.Properties.VariableNames))))
-    return;
-end
-snr = double(sweepT.SNR_dB);
-bler = double(sweepT.(string(blerCol)));
-mask = isfinite(snr) & isfinite(bler);
-snr = snr(mask);
-bler = bler(mask);
-if numel(snr) < 2 || ~(any(bler <= target) && any(bler >= target))
-    return;
-end
-[snr, order] = sort(snr);
-bler = bler(order);
-for i = 1:(numel(snr) - 1)
-    if (bler(i) - target) * (bler(i + 1) - target) > 0
-        continue;
-    end
-    if abs(bler(i + 1) - bler(i)) < eps
-        snrReq = snr(i);
-    else
-        t = (target - bler(i)) / (bler(i + 1) - bler(i));
-        snrReq = snr(i) + t * (snr(i + 1) - snr(i));
-    end
-    return;
+function tf = localStrictMode(details)
+tf = false;
+cfg = sixgr.util.structGet(details, "Config", struct());
+if isstruct(cfg)
+    tf = logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
+        logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false));
 end
 end

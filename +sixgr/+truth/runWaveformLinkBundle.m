@@ -329,6 +329,8 @@ localLogStage(ctx, "Checking primary-link export integrity.");
 stageStart = tic;
 [kpi, integrity] = sixgr.link.enforcePrimaryLinkExportIntegrity(cfgExec, sixgr.util.structGet(res, "KPITable", table()), rawTrials);
 res.KPITable = kpi;
+res.RawTrials = rawTrials;
+res.Config = cfgExec;
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "integrity_check", toc(stageStart), toc(bundleStart), "Primary-link export integrity check completed.");
 localLogStage(ctx, "Exporting structured link KPI bundle and report inputs.");
