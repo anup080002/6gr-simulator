@@ -71,3 +71,12 @@ decoded-grant validation, wrong-RNTI/no-signal/corruption/wrong-format/invalid
 grant negative evidence, false-alarm and low-SNR sweeps, and an oracle guard.
 Unsupported DCI/RNTI/search-space combinations remain fail-closed and must not
 be counted as fixed without equivalent waveform artifacts.
+
+`AUD-TRS-001` is closed for the implemented NR-baseline strict TRS mini profile
+only. The strict profile derives NZP-CSI-RS/TRS resource configuration from
+resolved YAML, executes real resource mapping, waveform/channel, detection,
+timing tracking, CFO/frequency tracking, and channel-estimation checks, exports
+positive, negative, sweep, and oracle-guard evidence, and extends the runtime
+TRS-required gate so metric-only rows cannot mark a cell valid. Unsupported
+multi-port or advanced TRS profiles remain fail-closed and must not be counted
+as fixed without equivalent waveform artifacts.

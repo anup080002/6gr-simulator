@@ -91,8 +91,8 @@ trsRow = table( ...
     'VariableNames', {'Frame','Slot','InjectedDoppler_Hz','EstimatedDopplerHz','NMSE_dB','PhaseTrackingError_deg', ...
     'QCLAccuracy','DetectionMetric','TrackingEstimateSource','Status'});
 state = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state, 1, trsRow);
-assert(strcmpi(char(string(state.TRSValidityStateByCell(1))), "valid") && logical(state.TrackingEligibilityByCell(1)), ...
-    "TRS trial application must update runtime tracking state for the serving cell.");
+assert(strcmpi(char(string(state.TRSValidityStateByCell(1))), "failed") && ~logical(state.TrackingEligibilityByCell(1)), ...
+    "TRS-required gating must reject rows that lack explicit detection/timing/frequency/channel evidence.");
 assert(isfield(state, "ReceiverTrackingStateByCell") && logical(state.ReceiverTrackingStateByCell(1).TRSProcessed), ...
     "TRS trial application must update the shared receiver tracking state object.");
 assert(strcmpi(char(string(state.ReceiverTrackingStateByCell(1).ReceiverConsumerType)), "shared_receiver_tracking_state") && ...
@@ -103,16 +103,17 @@ assert(strcmpi(char(string(state.ReceiverTrackingStateByCell(1).TimingTrackingSt
     "TRS receiver tracking must not fabricate timing estimates when the runtime row has none.");
 assert(~logical(state.ReceiverTrackingStateByCell(1).CFOEstimateAvailable) && ~isfinite(double(state.ReceiverTrackingStateByCell(1).EstimatedCFO_Hz)), ...
     "TRS receiver tracking must not fabricate CFO estimates when the runtime row has none.");
-assert(logical(state.SchedulingEligibility(1)), ...
-    "TRS runtime state must actively feed scheduler eligibility after a valid observation.");
+assert(~logical(state.SchedulingEligibility(1)), ...
+    "Incomplete TRS rows must not feed scheduler eligibility when TRS gating is active.");
 
-trsRuntimeCFORow = trsRow;
-trsRuntimeCFORow.EstimatedCFO_Hz = double(out.EstimatedCFO_Hz);
-trsRuntimeCFORow.EstimatedCFO_PreCorrection_Hz = double(out.EstimatedCFO_PreCorrection_Hz);
+trsRuntimeCFORow = localStrictTRSRow(trsRow, out);
 stateRuntimeCFO = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(stateBeforeTRS, 1, trsRuntimeCFORow);
+assert(strcmpi(char(string(stateRuntimeCFO.TRSValidityStateByCell(1))), "valid") && logical(stateRuntimeCFO.TrackingEligibilityByCell(1)), ...
+    "TRS trial application must update runtime tracking state only after strict evidence is complete.");
 assert(logical(stateRuntimeCFO.ReceiverTrackingStateByCell(1).CFOEstimateAvailable) && ...
     abs(double(stateRuntimeCFO.ReceiverTrackingStateByCell(1).EstimatedCFO_Hz) - double(out.EstimatedCFO_Hz)) < 1e-9, ...
     "TRS receiver tracking must consume real CFO estimates carried by runtime TRS trial rows.");
+state = stateRuntimeCFO;
 
 cfgLLS = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfgLLS, state, 1, "DL");
 userMeta = sixgr.util.structGet(cfgLLS, "lls6g.userContext", struct());
@@ -127,7 +128,7 @@ assert(strcmpi(char(string(sixgr.util.structGet(userMeta, "RuntimeTRSReceiverInt
     "Applied user context must export runtime-backed TRS receiver integration evidence.");
 
 stateSync = state;
-trsSyncRow = trsRow;
+trsSyncRow = localStrictTRSRow(trsRow, out);
 trsSyncRow.EstimatedTimingOffset_samples = 0;
 trsSyncRow.EstimatedCFO_Hz = 0;
 stateSync = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(stateSync, 1, trsSyncRow);
@@ -196,6 +197,21 @@ assert(~logical(state.SchedulingEligibility(1)), ...
     "Stale TRS state must revoke scheduler eligibility in the active runtime path.");
 
 ok = true;
+end
+
+function row = localStrictTRSRow(row, out)
+row.DetectionAttempted = true;
+row.DetectionSuccess = true;
+row.TimingTrackingAttempted = true;
+row.TRSTimingEstimateAvailable = true;
+row.EstimatedTimingOffset_samples = 0;
+row.FrequencyTrackingAttempted = true;
+row.TRSCFOEstimateAvailable = true;
+row.EstimatedCFO_Hz = double(out.EstimatedCFO_Hz);
+row.EstimatedCFO_PreCorrection_Hz = double(out.EstimatedCFO_PreCorrection_Hz);
+row.ChannelEstimationAttempted = true;
+row.TRSChannelEstimateAvailable = true;
+row.StrictOk = true;
 end
 
 function status = ternaryTRSStatus(okFlag)

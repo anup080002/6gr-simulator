@@ -38,10 +38,12 @@ isPRACHOnly = localIsPRACHOnlyScenario(scfg, cfg);
 isPRACHStrict = localIsPRACHStrictScenario(scfg, cfg);
 isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
 isPDCCHStrict = localIsPDCCHStrictScenario(scfg, cfg);
+isTRSOnly = localIsTRSOnlyScenario(scfg, cfg);
+isTRSStrict = localIsTRSStrictScenario(scfg, cfg);
 isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
 isProxyOnlyStudy = localIsProxyOnlyStudyScenario(scfg, cfg);
-isControlOnly = isPRACHOnly || isPDCCHOnly || isRAOnly;
+isControlOnly = isPRACHOnly || isPDCCHOnly || isTRSOnly || isRAOnly;
 verdict.ContractApplicability = "applicable";
 
 if isProxyOnlyStudy
@@ -197,6 +199,35 @@ elseif isPDCCHOnly
             fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_frequency_allocation.csv")
             fullfile(layout.ReportCSVDir, "pdcch6gr_summary_by_mrss_mode.csv")
             fullfile(layout.ReportCSVDir, "pdcch6gr_complexity_summary.csv")
+            ];
+    end
+elseif isTRSOnly
+    refCsvDir = fullfile(layout.Root, "reference_signals", "csv");
+    if isTRSStrict
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(refCsvDir, "trs_config_strict.csv")
+            fullfile(refCsvDir, "trs_trials.csv")
+            fullfile(refCsvDir, "trs_resource_mapping.csv")
+            fullfile(refCsvDir, "trs_detection_metrics.csv")
+            fullfile(refCsvDir, "trs_timing_tracking.csv")
+            fullfile(refCsvDir, "trs_frequency_tracking.csv")
+            fullfile(refCsvDir, "trs_channel_estimation.csv")
+            fullfile(refCsvDir, "trs_coverage.csv")
+            fullfile(refCsvDir, "trs_negative_trials.csv")
+            fullfile(refCsvDir, "trs_low_snr_sweep.csv")
+            fullfile(refCsvDir, "trs_timing_offset_sweep.csv")
+            fullfile(refCsvDir, "trs_frequency_offset_sweep.csv")
+            fullfile(refCsvDir, "trs_oracle_guard.csv")
+            fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv")
+            fullfile(layout.ReportDir, "json", "trs_detection_summary.json")
+            fullfile(layout.ReportDir, "json", "trs_tracking_summary.json")
+            fullfile(layout.ReportDir, "json", "trs_toolbox_capabilities.json")
+            ];
+    else
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv")
             ];
     end
 elseif isRAOnly
@@ -375,6 +406,13 @@ if strictTruthRequired && logical(pdcchStats.PDCCHRequired) && ~logical(pdcchSta
         "evidence");
 end
 
+trsStats = localTRSStrictEvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(trsStats.TRSRequired) && ~logical(trsStats.TRSStrictOk)
+    verdict = localAddFailure(verdict, ...
+        "trs_strict_waveform_evidence_missing_or_failing:" + string(trsStats.TRSStatus), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -391,6 +429,7 @@ verdict.CheckDetails = struct( ...
     "RandomAccess", raStats, ...
     "PRACH", prachStats, ...
     "PDCCH", pdcchStats, ...
+    "TRS", trsStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -438,6 +477,23 @@ end
 function tf = localIsPDCCHStrictScenario(scfg, cfg)
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
 tf = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
+end
+
+function tf = localIsTRSOnlyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+targetCases = string(localScenarioGet(scfg, cfg, "scenario.target_cases", strings(0, 1)));
+if iscell(targetCases)
+    targetCases = string(targetCases(:));
+end
+targetCases = lower(strtrim(targetCases(:)));
+targetCases = targetCases(strlength(targetCases) > 0);
+tf = any(runnerProfile == ["trs_strict_validation", "trs_tracking_validation"]) || ...
+    (~isempty(targetCases) && all(targetCases == "trs"));
+end
+
+function tf = localIsTRSStrictScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "trs_strict_validation" || localScenarioHasObjective(scfg, cfg, "trs_strict_validation");
 end
 
 function tf = localIsRAOnlyScenario(scfg, cfg)
@@ -1401,6 +1457,127 @@ else
 end
 end
 
+function stats = localTRSStrictEvidenceStats(layout, scfg, cfg)
+required = localIsTRSStrictScenario(scfg, cfg);
+refCsvDir = fullfile(layout.Root, "reference_signals", "csv");
+configPath = fullfile(refCsvDir, "trs_config_strict.csv");
+trialPath = fullfile(refCsvDir, "trs_trials.csv");
+mappingPath = fullfile(refCsvDir, "trs_resource_mapping.csv");
+detectionPath = fullfile(refCsvDir, "trs_detection_metrics.csv");
+timingPath = fullfile(refCsvDir, "trs_timing_tracking.csv");
+freqPath = fullfile(refCsvDir, "trs_frequency_tracking.csv");
+channelPath = fullfile(refCsvDir, "trs_channel_estimation.csv");
+coveragePath = fullfile(refCsvDir, "trs_coverage.csv");
+negativePath = fullfile(refCsvDir, "trs_negative_trials.csv");
+lowPath = fullfile(refCsvDir, "trs_low_snr_sweep.csv");
+timingSweepPath = fullfile(refCsvDir, "trs_timing_offset_sweep.csv");
+freqSweepPath = fullfile(refCsvDir, "trs_frequency_offset_sweep.csv");
+oraclePath = fullfile(refCsvDir, "trs_oracle_guard.csv");
+stats = struct( ...
+    "TRSRequired", logical(required), ...
+    "TRSStrictOk", false, ...
+    "TRSStatus", "not_required", ...
+    "TRSConfigRows", 0, ...
+    "TRSTrialRows", 0, ...
+    "TRSResourceMappingRows", 0, ...
+    "TRSDetectionRows", 0, ...
+    "TRSTimingRows", 0, ...
+    "TRSFrequencyRows", 0, ...
+    "TRSChannelRows", 0, ...
+    "TRSCoverageRows", 0, ...
+    "TRSNegativeRows", 0, ...
+    "TRSLowSNRRows", 0, ...
+    "TRSTimingSweepRows", 0, ...
+    "TRSFrequencySweepRows", 0, ...
+    "TRSOracleGuardRows", 0, ...
+    "TRSOracleGuardViolationCount", NaN);
+if ~required
+    return;
+end
+configT = localReadTable(configPath);
+trialT = localReadTable(trialPath);
+mappingT = localReadTable(mappingPath);
+detectionT = localReadTable(detectionPath);
+timingT = localReadTable(timingPath);
+freqT = localReadTable(freqPath);
+channelT = localReadTable(channelPath);
+coverageT = localReadTable(coveragePath);
+negativeT = localReadTable(negativePath);
+lowT = localReadTable(lowPath);
+timingSweepT = localReadTable(timingSweepPath);
+freqSweepT = localReadTable(freqSweepPath);
+oracleT = localReadTable(oraclePath);
+
+stats.TRSConfigRows = height(configT);
+stats.TRSTrialRows = height(trialT);
+stats.TRSResourceMappingRows = height(mappingT);
+stats.TRSDetectionRows = height(detectionT);
+stats.TRSTimingRows = height(timingT);
+stats.TRSFrequencyRows = height(freqT);
+stats.TRSChannelRows = height(channelT);
+stats.TRSCoverageRows = height(coverageT);
+stats.TRSNegativeRows = height(negativeT);
+stats.TRSLowSNRRows = height(lowT);
+stats.TRSTimingSweepRows = height(timingSweepT);
+stats.TRSFrequencySweepRows = height(freqSweepT);
+stats.TRSOracleGuardRows = height(oracleT);
+
+if isempty(configT) || isempty(trialT)
+    stats.TRSStatus = "missing_strict_trs_config_or_trials";
+    return;
+end
+requiredTrialCols = ["StrictOk","NegativeExpectedOk","ProxyUsed","Skipped","ToolboxMissing", ...
+    "UsedOracleFields","TrialType","ConfigHash","DetectionAttempted","DetectionSuccess", ...
+    "TimingTrackingAttempted","TRSTimingEstimateAvailable","EstimatedTimingOffset_samples", ...
+    "FrequencyTrackingAttempted","TRSCFOEstimateAvailable","EstimatedCFO_Hz", ...
+    "ChannelEstimationAttempted","TRSChannelEstimateAvailable","NMSE_dB","TruthStatus"];
+missingTrialCols = requiredTrialCols(~arrayfun(@(c) localHasColumn(trialT, c), requiredTrialCols));
+if ~isempty(missingTrialCols)
+    stats.TRSStatus = "trs_trials_missing_columns:" + strjoin(missingTrialCols, "|");
+    return;
+end
+artifactRowsOk = stats.TRSResourceMappingRows > 0 && stats.TRSDetectionRows > 0 && ...
+    stats.TRSTimingRows > 0 && stats.TRSFrequencyRows > 0 && stats.TRSChannelRows > 0 && ...
+    stats.TRSCoverageRows > 0 && stats.TRSNegativeRows > 0 && stats.TRSLowSNRRows > 0 && ...
+    stats.TRSTimingSweepRows > 0 && stats.TRSFrequencySweepRows > 0 && stats.TRSOracleGuardRows > 0;
+configOk = localHasColumn(configT, "StrictValid") && any(localColumnBool(configT, "StrictValid")) && ...
+    localHasColumn(configT, "ImplementationStatus") && any(contains(string(configT.ImplementationStatus), "strict_trs"));
+positiveMask = string(trialT.TrialType) == "positive_awgn";
+positiveOkRows = localColumnBool(trialT, "StrictOk") & positiveMask & ...
+    localColumnBool(trialT, "DetectionAttempted") & localColumnBool(trialT, "DetectionSuccess") & ...
+    localColumnBool(trialT, "TimingTrackingAttempted") & localColumnBool(trialT, "TRSTimingEstimateAvailable") & ...
+    localColumnBool(trialT, "FrequencyTrackingAttempted") & localColumnBool(trialT, "TRSCFOEstimateAvailable") & ...
+    localColumnBool(trialT, "ChannelEstimationAttempted") & localColumnBool(trialT, "TRSChannelEstimateAvailable") & ...
+    isfinite(localColumnNumeric(trialT, "EstimatedTimingOffset_samples")) & ...
+    isfinite(localColumnNumeric(trialT, "EstimatedCFO_Hz")) & isfinite(localColumnNumeric(trialT, "NMSE_dB")) & ...
+    ~localColumnBool(trialT, "ProxyUsed") & ~localColumnBool(trialT, "Skipped") & ...
+    ~localColumnBool(trialT, "ToolboxMissing") & localBlankOrMissingMask(trialT.UsedOracleFields) & ...
+    strlength(strtrim(string(trialT.ConfigHash))) > 0;
+positiveOk = any(positiveOkRows);
+negativeOk = localHasColumn(negativeT, "StrictOk") && localHasColumn(negativeT, "NegativeExpectedOk") && ...
+    height(negativeT) >= 5 && all(~localColumnBool(negativeT, "StrictOk")) && all(localColumnBool(negativeT, "NegativeExpectedOk"));
+attemptCoverageOk = localHasColumn(detectionT, "DetectionAttempted") && all(localColumnBool(detectionT, "DetectionAttempted")) && ...
+    localHasColumn(timingT, "TimingTrackingAttempted") && all(localColumnBool(timingT, "TimingTrackingAttempted")) && ...
+    localHasColumn(freqT, "FrequencyTrackingAttempted") && all(localColumnBool(freqT, "FrequencyTrackingAttempted")) && ...
+    localHasColumn(channelT, "ChannelEstimationAttempted") && all(localColumnBool(channelT, "ChannelEstimationAttempted"));
+sweepOk = localHasColumn(lowT, "DetectionProbability") && all(localColumnNumeric(lowT, "DetectionProbability") >= 0 & localColumnNumeric(lowT, "DetectionProbability") <= 1) && ...
+    localHasColumn(timingSweepT, "TimingError_samples") && any(isfinite(localColumnNumeric(timingSweepT, "TimingError_samples"))) && ...
+    localHasColumn(freqSweepT, "FrequencyError_Hz") && any(isfinite(localColumnNumeric(freqSweepT, "FrequencyError_Hz")));
+oracleViolations = 0;
+if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
+    oracleViolations = sum(localColumnBool(oracleT, "Violation"));
+end
+stats.TRSOracleGuardViolationCount = double(oracleViolations);
+truthStatusOk = localHasColumn(trialT, "TruthStatus") && all(string(trialT.TruthStatus) == "real_lls_evidence");
+stats.TRSStrictOk = artifactRowsOk && configOk && positiveOk && negativeOk && ...
+    attemptCoverageOk && sweepOk && oracleViolations == 0 && truthStatusOk;
+if stats.TRSStrictOk
+    stats.TRSStatus = "strict_trs_waveform_tracking_evidence_present";
+else
+    stats.TRSStatus = "strict_trs_waveform_tracking_evidence_incomplete";
+end
+end
+
 function tf = localScenarioHasObjective(scfg, cfg, objectiveToken)
 objectiveToken = lower(strtrim(string(objectiveToken)));
 values = strings(0, 1);
@@ -1535,6 +1712,8 @@ issueRegistry = sixgr.util.structGet(details, "IssueRegistry", struct());
 sib1 = sixgr.util.structGet(details, "SIB1", struct());
 ra = sixgr.util.structGet(details, "RandomAccess", struct());
 prach = sixgr.util.structGet(details, "PRACH", struct());
+pdcch = sixgr.util.structGet(details, "PDCCH", struct());
+trs = sixgr.util.structGet(details, "TRS", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
@@ -1592,6 +1771,20 @@ summaryT = table( ...
     double(sixgr.util.structGet(prach, "PRACHMissedDetectionRows", NaN)), ...
     double(sixgr.util.structGet(prach, "PRACHFalseAlarmRows", NaN)), ...
     double(sixgr.util.structGet(prach, "PRACHOracleGuardViolationCount", NaN)), ...
+    logical(sixgr.util.structGet(pdcch, "PDCCHRequired", false)), ...
+    logical(sixgr.util.structGet(pdcch, "PDCCHStrictOk", false)), ...
+    string(sixgr.util.structGet(pdcch, "PDCCHStatus", "")), ...
+    double(sixgr.util.structGet(pdcch, "PDCCHTrialRows", NaN)), ...
+    double(sixgr.util.structGet(pdcch, "PDCCHOracleGuardViolationCount", NaN)), ...
+    logical(sixgr.util.structGet(trs, "TRSRequired", false)), ...
+    logical(sixgr.util.structGet(trs, "TRSStrictOk", false)), ...
+    string(sixgr.util.structGet(trs, "TRSStatus", "")), ...
+    double(sixgr.util.structGet(trs, "TRSTrialRows", NaN)), ...
+    double(sixgr.util.structGet(trs, "TRSDetectionRows", NaN)), ...
+    double(sixgr.util.structGet(trs, "TRSTimingRows", NaN)), ...
+    double(sixgr.util.structGet(trs, "TRSFrequencyRows", NaN)), ...
+    double(sixgr.util.structGet(trs, "TRSChannelRows", NaN)), ...
+    double(sixgr.util.structGet(trs, "TRSOracleGuardViolationCount", NaN)), ...
     logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
     string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
     double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
@@ -1610,6 +1803,8 @@ summaryT = table( ...
     'SIB1Required','SIB1StrictOk','SIB1EvidenceStatus','SIB1RecoveryRows', ...
     'RARequired','RAStrictOk','RAEvidenceStatus','RAAttemptRows','RAMsg3Rows','RAMsg4Rows','RAOracleGuardViolationCount', ...
     'PRACHRequired','PRACHStrictOk','PRACHEvidenceStatus','PRACHTrialRows','PRACHMissedDetectionRows','PRACHFalseAlarmRows','PRACHOracleGuardViolationCount', ...
+    'PDCCHRequired','PDCCHStrictOk','PDCCHStatus','PDCCHTrialRows','PDCCHOracleGuardViolationCount', ...
+    'TRSRequired','TRSStrictOk','TRSStatus','TRSTrialRows','TRSDetectionRows','TRSTimingRows','TRSFrequencyRows','TRSChannelRows','TRSOracleGuardViolationCount', ...
     'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);
@@ -1654,6 +1849,8 @@ if contains(failure, "proxy") || contains(failure, "fallback") || contains(failu
     category = "proxy_or_fallback";
 elseif contains(failure, "prach_strict") || contains(failure, "prach_")
     category = "prach_waveform";
+elseif contains(failure, "trs_strict") || contains(failure, "trs_")
+    category = "trs_reference_signal";
 elseif contains(failure, "ra_strict") || contains(failure, "random_access")
     category = "random_access";
 elseif contains(failure, "result_issue_registry")

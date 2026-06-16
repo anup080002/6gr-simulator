@@ -2770,7 +2770,10 @@ methods(Static, Access=private)
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         estDopplerHz = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "EstimatedDopplerHz", NaN));
         state.LastTRSObservedSlotByCell(servingCell) = double(slotIdx);
-        ok = sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
+        rowPass = sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
+        gatingActive = logical(sixgr.util.structGet(state.ControlGating, "TRSRequired", false));
+        strictEvidenceOk = sixgr.truth.CoupledTruthRuntime.trsRuntimeEvidenceComplete(row);
+        ok = rowPass && (~gatingActive || strictEvidenceOk);
         if ok
             state.TRSValidityStateByCell(servingCell) = "valid";
             state.TrackingEligibilityByCell(servingCell) = true;
@@ -2850,7 +2853,9 @@ methods(Static, Access=private)
             outcome = "trs_runtime_observation_failed";
             channelFreshness = "invalid_trs_runtime_observation";
         end
-        cfoAvailable = isfinite(estimatedCFOHz);
+        explicitCFOAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSCFOEstimateAvailable","CFOEstimateAvailable"], isfinite(estimatedCFOHz));
+        cfoAvailable = logical(explicitCFOAvailable) && isfinite(estimatedCFOHz);
         if isfinite(estDopplerHz) && cfoAvailable
             frequencyState = "doppler_and_cfo_estimates_updated_from_trs";
         elseif cfoAvailable
@@ -2860,7 +2865,9 @@ methods(Static, Access=private)
         else
             frequencyState = "not_updated_frequency_estimate_unavailable";
         end
-        timingAvailable = isfinite(timingEstimate);
+        explicitTimingAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSTimingEstimateAvailable","TimingEstimateAvailable"], isfinite(timingEstimate));
+        timingAvailable = logical(explicitTimingAvailable) && isfinite(timingEstimate);
         if timingAvailable
             timingState = "timing_estimate_updated_from_trs";
         else
@@ -4253,6 +4260,49 @@ methods(Static, Access=private)
         crcPass = sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRCPass", NaN);
         if isfinite(double(crcPass))
             tf = logical(crcPass);
+        end
+    end
+
+    function tf = trsRuntimeEvidenceComplete(row)
+        tf = false;
+        if ~(istable(row) && height(row) >= 1)
+            return;
+        end
+        proxyClean = ~sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ["ProxyUsed","Skipped","ToolboxMissing"], false) && ...
+            strlength(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UsedOracleFields", "")))) == 0;
+        detectionAttempted = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["DetectionAttempted","TRSDetectionAttempted"], false);
+        detectionAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["DetectionSuccess","TRSDetected","DetectionUsable"], false);
+        timingAttempted = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TimingTrackingAttempted","TRSTimingEstimateAttempted","TimingEstimateAttempted"], false);
+        timingAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSTimingEstimateAvailable","TimingEstimateAvailable"], false) && ...
+            isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["EstimatedTimingOffset_samples","TimingEstimate_samples","TimingOffset_samples"], NaN));
+        frequencyAttempted = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["FrequencyTrackingAttempted","TRSCFOEstimateAttempted","CFOEstimateAttempted"], false);
+        frequencyAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSCFOEstimateAvailable","CFOEstimateAvailable"], false) && ...
+            isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["EstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN));
+        channelAttempted = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["ChannelEstimationAttempted","TRSChannelEstimationAttempted"], false);
+        channelAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSChannelEstimateAvailable","ChannelEstimateAvailable"], false) && ...
+            isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["NMSE_dB"], NaN));
+        tf = proxyClean && detectionAttempted && detectionAvailable && ...
+            timingAttempted && timingAvailable && frequencyAttempted && ...
+            frequencyAvailable && channelAttempted && channelAvailable;
+    end
+
+    function value = rowAnyLogical(row, names, defaultValue)
+        value = logical(defaultValue);
+        for i = 1:numel(names)
+            name = char(string(names(i)));
+            if istable(row) && ismember(name, row.Properties.VariableNames)
+                value = value || sixgr.truth.CoupledTruthRuntime.rowLogical(row, name, false);
+            end
         end
     end
 

@@ -1,0 +1,164 @@
+inherits:
+  - ../../simulator/configs/defaults/global.yaml
+  - ../../simulator/configs/defaults/logging.yaml
+  - ../../simulator/configs/defaults/kpi.yaml
+  - ../../simulator/configs/bands/band_4ghz.yaml
+  - ../../simulator/configs/waveforms/cp_ofdm.yaml
+  - ../../simulator/configs/coding/ldpc_polar_baseline.yaml
+  - ../../simulator/configs/channels/awgn.yaml
+  - ../../simulator/configs/mimo/mimo_2x2.yaml
+  - ../../simulator/configs/control/pdcch_baseline.yaml
+  - ../../simulator/configs/control/harq_baseline.yaml
+  - ../../simulator/configs/control/ra_baseline.yaml
+  - ../../simulator/configs/ai_ml/disabled.yaml
+
+meta:
+  scenario_id: lls_trs_strict_mini_anchor
+  description: Strict NR baseline TRS/NZP-CSI-RS waveform tracking validation mini anchor.
+  version: "1.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: reference_signal
+  tags: [trs, nzp_csi_rs, strict, waveform_validation]
+
+scenario:
+  name: lls_trs_strict_mini_anchor
+  description: TRS-only strict waveform validation with detection, timing, CFO/frequency, channel-estimation, negative, and sweep evidence.
+  runner_profile: trs_strict_validation
+  target_cases: [trs]
+  bundle_anchor_cases: [trs_strict_validation]
+  honesty_mode: strict
+  notes: "AUD-TRS-001 strict mini-run; validates a TRS tracking anchor from executed NZP-CSI-RS resources, not exhaustive 6G normative conformance."
+
+run_control:
+  num_workers: 1
+  parallel_pool_kind: auto
+  parallel_pool_idle_timeout_minutes: 5
+
+simulation:
+  link_direction: dl
+  n_frames: 1
+  n_slots: 2
+  n_subframes: 1
+  monte_carlo_iterations: 1
+  random_seed: 240618
+  deterministic_mode: true
+  snr_db: 35
+  min_duration_s: 0.001
+  snr_sweep_offsets_db: [0]
+
+frequency:
+  range_name: FR1
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 10000000
+  duplex_mode: FDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  band_name: n77
+  bandwidth_options_hz: [10000000]
+  numerology_options_khz: [30]
+  max_mimo_size: 1
+  mobility_defaults_kmph: 3
+  channel_model_defaults: AWGN
+  reference_signal_defaults: baseline
+  power_model_defaults: baseline
+  energy_model_defaults: disabled
+  rf_impairment_defaults: disabled
+  n_size_grid: 24
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: dl
+  tdd_pattern: FDD
+
+channels:
+  model_type: AWGN
+  profile: AWGN
+  delay_spread_ns: 0
+  doppler_hz: 0
+  mobility_kmph: 0
+  los_enabled: true
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  pathloss_model: none
+  shadow_fading_std_db: 0
+
+reference_signals:
+  ssb_enabled: false
+  pbch_enabled: false
+  pdcch_dmrs_enabled: false
+  pdsch_dmrs_ports: 1
+  pusch_dmrs_ports: 1
+  csi_rs_enabled: true
+  srs_enabled: false
+  trs_enabled: true
+  tracking_rs_enabled: true
+  ptrs_enabled: false
+  csi_reporting_enabled: false
+  csi_feedback_mode: none
+  csi_acquisition_mode: dl_based
+  operation_orientation: fdd_feedback
+  dmrs_csi_tracking_enabled: false
+  srs_ports: 1
+  srs_sequence_family: baseline_nr
+  srs_periodicity_ms: 20
+  channel_estimation_mode: realistic_baseline
+  receiver_example: mmse_irc
+  sgcs_reporting_enabled: false
+  nmse_reporting_enabled: true
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
+  pmi_codebook_mode: type1_su_mimo
+  channel_state_information_mode: none
+  trs:
+    enabled: true
+    num_ports: 1
+    scrambling_id: 7
+    row_number: 2
+    symbol_location: 4
+    subcarrier_location: 0
+    rb_offset: 0
+    num_rb: 24
+    slot_numbers: [0, 1]
+    detection_threshold: 0.55
+    min_coverage_ratio: 0.95
+    timing_tolerance_samples: 2
+    frequency_tolerance_hz: 50
+    channel_nmse_threshold_db: -8
+    low_snr_sweep_db: [-12, 0, 20, 35]
+    timing_offset_sweep_samples: [0, 2, 4]
+    frequency_offset_sweep_hz: [0, 100, 250]
+
+mimo:
+  n_tx_ant: 1
+  n_rx_ant: 1
+  n_layers: 1
+  precoder_type: none
+  codebook_type: type1
+  reciprocity_mode: FDD
+  beam_sweep_enabled: false
+  beam_count: 1
+  mtrp_ready: false
+  multi_panel_ready: false
+  panel_count: 1
+
+control_gating:
+  trs_required: true
+  trs_max_age_slots: 2
+
+output:
+  bucket: lls
+  profile: strict_trs_waveform
+  save_csv: true
+  save_mat: false
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: false
