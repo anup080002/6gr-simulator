@@ -23,8 +23,8 @@ schema and preserve its original issue IDs.
 
 | Group | Backlog IDs | Primary Modules | Tests / Evidence |
 |---|---|---|---|
-| Run status and truth gates | AUD-001, AUD-002, AUD-PDSCH-001 | `+sixgr/+truth/evaluateLLSRuntimeTruthContract.m`, `+sixgr/+lls6g/+runners/runSingle.m` | `testLLSRuntimeTruthContractGates`, `testLLSStrictConformanceIssueGates`, `reports/csv/truth_contract_summary.csv` |
-| Configured-vs-effective operating point | AUD-002, AUD-MIMO-RANK-001 | `+sixgr/+truth/summarizeEffectiveOperatingPoint.m`, scheduler AMC/rank selection | `testLLSEffectiveOperatingPointSummary`, `reports/csv/scenario_summary.csv` |
+| Run status and truth gates | AUD-001, AUD-002, AUD-PDSCH-001 | `+sixgr/+truth/evaluateLLSRuntimeTruthContract.m`, `+sixgr/+truth/evaluateStrictAnchorStatus.m`, `+sixgr/+lls6g/+runners/runSingle.m` | `testLLSRuntimeTruthContractGates`, `testLLSResultStatusPayloadSchema`, `testLLSStandardsClaimGateRejectsBroadRel20Conformance`, `reports/csv/result_status_summary.csv`, `reports/csv/truth_contract_summary.csv` |
+| Configured-vs-effective operating point | AUD-002, AUD-MIMO-RANK-001 | `+sixgr/+truth/summarizeEffectiveOperatingPoint.m`, `+sixgr/+truth/evaluateStrictAnchorStatus.m`, scheduler AMC/rank selection | `testLLSFixedAnchorOperatingPointNoCollapse`, `testLLSConfiguredEffectiveMismatchFailsScenarioObjective`, `testLLSAdaptiveLinkModeLabelsEffectiveMcs`, `reports/csv/configured_effective_operating_point.csv` |
 | RRC and initial access | AUD-015, AUD-RA-001, AUD-PRACH-001 | SSB/PBCH/SIB1/PRACH producers and control CSV exporters | `testTruthValidationControlCoverage`, RA focused tests, `control/csv/ra_attempts.csv` |
 | Control channels and reference signals | AUD-PDCCH-001, AUD-TRS-001, AUD-SRS-001 | PDCCH/PUCCH/SRS/TRS runtime paths and exporters | `testTRSReferenceSignalExecution`, `test6GCSIReportingCoverage`, `air_interface/csv/pdcch_trials.csv` |
 | Data-plane receiver and KPIs | AUD-KPI-UL-GOODPUT, AUD-UL-SINR-001 | PDSCH/PUSCH RX, HARQ, KPI summary/raw consistency | `testPostEqSINR`, `testLLSSummaryRawConsistency`, `air_interface/csv/ul_pusch_trials.csv` |
@@ -48,20 +48,23 @@ and the scenario declares that the affected block is not part of the objective.
 
 ## Current Truth-Gate Closure Notes
 
-`AUD-001` is closed for the runtime truth-contract/status gate. Strict runs now
-separate run completion from truth/conformance status, count active
-critical/high/medium issue-registry rows as mandatory blockers, and export those
-counts through `truth_contract_summary.csv`, `scenario_summary.csv`, and the
-scenario manifest. Rows remain blocking until their status is one of the
-resolved statuses such as `fixed`, `verified`, `closed`, or an explicitly
-documented non-blocking waiver.
+`AUD-001` is closed for the root runtime status and standards-claim gate. Strict
+runs now separate `RunCompleted`, `TruthContractOk`, `StandardsConformanceOk`,
+`ScenarioObjectiveOk`, and final `ResultOk` in
+`reports/csv/result_status_summary.csv`. Broad `3GPP`/`6G`/`Rel-20`/conformance
+wording is rejected unless the claim profile is exact and mandatory proof is
+implemented, proxy-free, and artifact-backed. Rejected claims emit active
+critical AUD-001 rows and are visible in `standards_claim_audit.csv` and
+`public_output_claim_scan.csv`.
 
-`AUD-002` is closed for fixed operating-point objective gating. The effective
-operating-point summary preserves configured nominal DL/UL rank/layers,
-modulation, and MCS separately from observed runtime histograms. Strict fixed
-operating-point scenarios fail `ScenarioObjectiveOk` when the configured-match
-rate from raw DL/UL trial rows is below the required threshold. Adaptive
-CQI-driven scenarios are not forced through this exact-match gate.
+`AUD-002` is closed for fixed operating-point objective gating. The canonical
+`configured_effective_operating_point.csv` table preserves configured,
+scheduled, transmitted, and effective rank/layers/modulation/MCS fields.
+Strict fixed operating-point scenarios fail `ConfiguredEffectiveOk`,
+`ScenarioObjectiveOk`, and `ResultOk` when the configured-match rate from raw
+DL/UL trial rows is below the required threshold. Adaptive CQI-driven scenarios
+must be labeled `adaptive_link`; they may choose a lower effective MCS/rank but
+the mismatch remains visible and is not marketed as fixed-anchor success.
 
 `AUD-PDSCH-001` is closed for the NR-baseline DL PDSCH/DL-SCH receiver evidence
 and raw BLER/BER objective gate. `PDSCH_Rx` now emits strict receiver-stage

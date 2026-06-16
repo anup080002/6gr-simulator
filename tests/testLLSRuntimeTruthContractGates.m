@@ -57,6 +57,9 @@ end
 
 function localWritePassingEvidence(layout, scfg)
 configuredUsers = double(scfg.get("users.n_users", 1));
+configuredLayers = double(scfg.get("mimo.n_layers", 1));
+configuredMCS = double(scfg.get("modulation.dl_mcs_index", 4));
+configuredModulation = localModulationFromOrder(double(scfg.get("modulation.dl_modulation_order", 2)));
 
 summaryT = table( ...
     "completed", true, true, 0, true, 0, 0, 0, "scenario_status_aggregation_v2_runtime_truth_contract", ...
@@ -85,7 +88,8 @@ sourceAuditT = table("simulation.link_direction", "observed", ...
     'VariableNames', {'ParameterName','Status'});
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "value_source_audit.csv"), sourceAuditT);
 
-trialT = table((0:1).', [1; 1], [1; 1], ["QPSK"; "QPSK"], [4; 4], [false; false], ...
+trialT = table((0:1).', repmat(configuredLayers, 2, 1), repmat(configuredLayers, 2, 1), ...
+    repmat(configuredModulation, 2, 1), repmat(configuredMCS, 2, 1), [false; false], ...
     repmat("finalized", 2, 1), [1; 1], [0; 0], repmat("OK", 2, 1), ...
     repmat("scheduler_grant", 2, 1), repmat("scheduler_grant", 2, 1), repmat("scheduler_grant", 2, 1), repmat("cqi_driven", 2, 1), ...
     'VariableNames', {'Slot','Layers','RankIndicator','Modulation','MCS','IsWarmupFrame', ...
@@ -141,4 +145,19 @@ grantT = table((0:1).', [1; 1], [0; 12], [12; 12], ...
     'VariableNames', {'Slot','UEID','PRBStart','PRBLength'});
 sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), grantT);
 sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), grantT);
+end
+
+function modText = localModulationFromOrder(order)
+switch round(double(order))
+    case 2
+        modText = "QPSK";
+    case 4
+        modText = "16QAM";
+    case 6
+        modText = "64QAM";
+    case 8
+        modText = "256QAM";
+    otherwise
+        modText = "QPSK";
+end
 end

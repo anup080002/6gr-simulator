@@ -479,6 +479,7 @@ def infer_terminal_status_from_artifacts(run_row: dict[str, Any]) -> tuple[str, 
         None,
     )
     truth_summary_art = find_artifact_by_logical_path(artifacts, "reports/csv/truth_contract_summary.csv")
+    result_status_art = find_artifact_by_logical_path(artifacts, "reports/csv/result_status_summary.csv")
     output_coverage_art = find_artifact_by_logical_path(artifacts, "reports/csv/output_coverage_registry.csv")
     if summary_art is None or manifest_art is None:
         return None
@@ -499,7 +500,22 @@ def infer_terminal_status_from_artifacts(run_row: dict[str, Any]) -> tuple[str, 
     except Exception:
         manifest_payload = {}
 
+    result_status_row: dict[str, str] = {}
+    if result_status_art is not None:
+        try:
+            header, rows = load_cached_csv_preview(int(result_status_art["artifact_id"]), 2)
+            if rows:
+                result_status_row = {str(k): str(v) for k, v in zip(header, rows[0])}
+        except Exception:
+            result_status_row = {}
+    if result_status_row:
+        merged_summary = dict(summary_row)
+        merged_summary.update(result_status_row)
+        summary_row = merged_summary
+
     status_text = str(summary_row.get("RunCompletion") or manifest_payload.get("RunCompletion") or "").strip()
+    if not status_text and str(summary_row.get("RunCompleted") or "").strip().lower() in {"true", "1", "yes"}:
+        status_text = "completed"
     if not status_text:
         return None
     lowered = status_text.lower()
@@ -551,6 +567,7 @@ def infer_terminal_status_from_artifacts(run_row: dict[str, Any]) -> tuple[str, 
         "manifest_artifact": "meta/scenario_manifest.json",
         "artifact_manifest": str(artifact_manifest_art.get("logical_path") or "") if artifact_manifest_art else "",
         "truth_contract_summary": str(truth_summary_art.get("logical_path") or "") if truth_summary_art else "",
+        "result_status_summary": str(result_status_art.get("logical_path") or "") if result_status_art else "",
         "output_coverage_registry": str(output_coverage_art.get("logical_path") or "") if output_coverage_art else "",
         "terminal_evidence_mode": (
             "terminal_summary_manifest_plus_supporting_artifacts"
@@ -6993,9 +7010,15 @@ def filter_non_consistent_rows(rows: list[dict[str, Any]], *, max_rows: int = 50
 
 
 def load_scenario_summary_row(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
-    rows = load_small_csv_rows(artifacts, "reports/csv/scenario_summary.csv", max_rows=2)
-    if rows:
-        return rows[0]
+    summary_rows = load_small_csv_rows(artifacts, "reports/csv/scenario_summary.csv", max_rows=2)
+    result_status_rows = load_small_csv_rows(artifacts, "reports/csv/result_status_summary.csv", max_rows=2)
+    if result_status_rows:
+        merged = dict(summary_rows[0]) if summary_rows else {}
+        merged.update(result_status_rows[0])
+        merged.setdefault("ResultStatusSummaryArtifact", "reports/csv/result_status_summary.csv")
+        return merged
+    if summary_rows:
+        return summary_rows[0]
     return {}
 
 
@@ -8492,6 +8515,7 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
     browser_runtime_db_rows = load_small_csv_rows(artifacts, "reports/csv/browser_runtime_db_consistency.csv", max_rows=512)
     summary_vs_raw_rows = load_small_csv_rows(artifacts, "reports/csv/summary_vs_raw_consistency.csv", max_rows=128)
     value_source_audit_rows = load_small_csv_rows(artifacts, "reports/csv/value_source_audit.csv", max_rows=256)
+    result_status_rows = load_small_csv_rows(artifacts, "reports/csv/result_status_summary.csv", max_rows=4)
     truth_contract_summary_rows = load_small_csv_rows(artifacts, "reports/csv/truth_contract_summary.csv", max_rows=8)
     truth_contract_failure_rows = load_small_csv_rows(artifacts, "reports/csv/truth_contract_failures.csv", max_rows=128)
     control_summary_rows, control_summary_source = select_canonical_csv_rows(
@@ -8906,6 +8930,14 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
             f"RuntimeTruthContractOk={first_truth.get('RuntimeTruthContractOk')}, "
             f"StrictTruthFailureCount={first_truth.get('StrictTruthFailureCount')}."
         )
+    if result_status_rows:
+        first_status = result_status_rows[0]
+        notes.append(
+            "Canonical root result-status artifacts are being read from reports/csv/result_status_summary.csv. "
+            f"ResultOk={first_status.get('ResultOk')}, "
+            f"StandardsConformanceOk={first_status.get('StandardsConformanceOk')}, "
+            f"ConfiguredEffectiveOk={first_status.get('ConfiguredEffectiveOk')}."
+        )
     if truth_contract_failure_rows:
         notes.append(
             f"Truth-contract failure rows are present: {len(truth_contract_failure_rows)} required gate(s) need attention."
@@ -8961,6 +8993,14 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
                 if find_artifact_by_logical_path(artifacts, "reports/csv/truth_contract_summary.csv") else None,
                 "failures": build_artifact_descriptor(find_artifact_by_logical_path(artifacts, "reports/csv/truth_contract_failures.csv"))
                 if find_artifact_by_logical_path(artifacts, "reports/csv/truth_contract_failures.csv") else None,
+            },
+        },
+        "result_status": {
+            "summary": result_status_rows[0] if result_status_rows else {},
+            "summary_rows": result_status_rows,
+            "downloads": {
+                "summary": build_artifact_descriptor(find_artifact_by_logical_path(artifacts, "reports/csv/result_status_summary.csv"))
+                if find_artifact_by_logical_path(artifacts, "reports/csv/result_status_summary.csv") else None,
             },
         },
         "deployment": deployment,
