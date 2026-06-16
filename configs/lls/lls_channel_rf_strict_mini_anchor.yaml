@@ -1,0 +1,185 @@
+inherits:
+  - ../../simulator/configs/defaults/global.yaml
+  - ../../simulator/configs/defaults/logging.yaml
+  - ../../simulator/configs/defaults/kpi.yaml
+  - ../../simulator/configs/bands/band_4ghz.yaml
+  - ../../simulator/configs/waveforms/cp_ofdm.yaml
+  - ../../simulator/configs/coding/ldpc_polar_baseline.yaml
+  - ../../simulator/configs/channels/cdl_a.yaml
+  - ../../simulator/configs/mimo/mimo_2x2.yaml
+  - ../../simulator/configs/control/pdcch_baseline.yaml
+  - ../../simulator/configs/control/harq_baseline.yaml
+  - ../../simulator/configs/control/ra_baseline.yaml
+  - ../../simulator/configs/ai_ml/disabled.yaml
+
+meta:
+  scenario_id: lls_channel_rf_strict_mini_anchor
+  description: Strict NR baseline Channel/RF configured-vs-applied evidence mini anchor.
+  version: "1.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: channel_rf
+  tags: [channel_rf, strict, configured_vs_applied, waveform_impairments]
+
+scenario:
+  name: UMa
+  description: Channel/RF-only strict validation with geometry, large-scale loss, AWGN/TDL/CDL, Doppler, interference, RF, negative, and oracle evidence.
+  runner_profile: channel_rf_strict_validation
+  target_cases: [channel_rf]
+  bundle_anchor_cases: [channel_rf_strict_validation]
+  honesty_mode: strict
+  notes: "AUD-CHANNEL-RF-001 strict mini-run; validates configured-vs-applied NR baseline/study Channel/RF evidence, not exhaustive TR 38.901 or normative 6G conformance."
+  bs:
+    height_m: 24
+    downtilt_deg: 6
+  sectorization:
+    azimOffsets_deg: [0, 120, 240]
+
+run_control:
+  num_workers: 1
+  parallel_pool_kind: auto
+  parallel_pool_idle_timeout_minutes: 5
+
+deployment_topology:
+  scenario_type: multi-cell
+  sector_azimuths_deg: [0, 120, 240]
+  inter_site_distance_m: 500
+  cell_radius_m: 350
+  ues_per_sector: 1
+  indoor_ue_fraction: 0.5
+  min_ue_distance_from_bs_m: 80
+  max_ue_distance_from_bs_m: 350
+
+simulation:
+  link_direction: both
+  n_frames: 1
+  n_slots: 2
+  n_subframes: 1
+  monte_carlo_iterations: 1
+  random_seed: 240620
+  deterministic_mode: true
+  snr_db: 25
+  min_duration_s: 0.001
+  snr_sweep_offsets_db: [0]
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+
+frequency:
+  range_name: FR1
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 10000000
+  duplex_mode: FDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  band_name: n77
+  bandwidth_options_hz: [10000000]
+  numerology_options_khz: [30]
+  max_mimo_size: 2
+  mobility_defaults_kmph: 30
+  channel_model_defaults: CDL
+  reference_signal_defaults: baseline
+  power_model_defaults: baseline
+  energy_model_defaults: disabled
+  rf_impairment_defaults: configured
+  n_size_grid: 24
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: dl
+  tdd_pattern: FDD
+
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 100
+  doppler_hz: 111.11
+  doppler_source_mode: derive_from_ue_speed
+  mobility_kmph: 30
+  los_enabled: true
+  spatial_consistency_enabled: false
+  pathloss_enabled: true
+  shadow_fading_enabled: true
+  pathloss_model: nrPathLoss
+  shadow_fading_std_db: 4
+  o2i_model: low
+  o2i_loss_model: low
+  normalize_path_gains: true
+  normalize_channel_outputs: false
+
+reference_signals:
+  ssb_enabled: false
+  pbch_enabled: false
+  pdcch_dmrs_enabled: false
+  pdsch_dmrs_ports: 1
+  pusch_dmrs_ports: 1
+  csi_rs_enabled: false
+  srs_enabled: false
+  trs_enabled: false
+  tracking_rs_enabled: false
+  ptrs_enabled: false
+  csi_reporting_enabled: false
+  csi_feedback_mode: none
+  csi_acquisition_mode: dl_based
+  operation_orientation: fdd_feedback
+  dmrs_csi_tracking_enabled: false
+  srs_ports: 1
+  srs_sequence_family: baseline_nr
+  channel_estimation_mode: realistic_baseline
+  receiver_example: mmse_irc
+  sgcs_reporting_enabled: false
+  nmse_reporting_enabled: true
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
+  pmi_codebook_mode: type1_su_mimo
+  channel_state_information_mode: none
+
+mimo:
+  n_tx_ant: 2
+  n_rx_ant: 2
+  n_layers: 1
+  precoder_type: none
+  codebook_type: type1
+  reciprocity_mode: FDD
+  beam_sweep_enabled: false
+  beam_count: 1
+  mtrp_ready: false
+  multi_panel_ready: false
+  panel_count: 1
+
+impairments:
+  cfo_hz: 150
+  phase_noise_enabled: false
+  iq_imbalance_enabled: true
+  iq_amplitude_imbalance_dB: 0.7
+  iq_phase_imbalance_deg: 4
+  pa_nonlinearity_enabled: true
+  pa_output_backoff_dB: 3
+  adc_quantization_bits: 10
+  dac_quantization_bits: 10
+  timing_offset_samples: 2
+  cfo_acquisition_mode: initial_acquisition
+  cfo_drift_hz_per_s: 0
+  oscillator_profile: lab_clean
+  initial_time_offset_fraction_cp: 0
+
+air_interface:
+  interference_model: waveform_overlap_large_scale
+  bs_noise_figure_dB: 5
+  ue_noise_figure_dB: 7
+  bs_tx_power_per_sector_dBm: 43
+  ue_tx_power_dBm: 23
+
+output:
+  bucket: lls
+  profile: strict_channel_rf
+  save_csv: true
+  save_mat: false
+  save_figures: true
+  save_png: false
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: false

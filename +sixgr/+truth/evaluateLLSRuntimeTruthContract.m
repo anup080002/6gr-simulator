@@ -42,10 +42,12 @@ isTRSOnly = localIsTRSOnlyScenario(scfg, cfg);
 isTRSStrict = localIsTRSStrictScenario(scfg, cfg);
 isSRSOnly = localIsSRSOnlyScenario(scfg, cfg);
 isSRSStrict = localIsSRSStrictScenario(scfg, cfg);
+isChannelRFOnly = localIsChannelRFOnlyScenario(scfg, cfg);
+isChannelRFStrict = localIsChannelRFStrictScenario(scfg, cfg);
 isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
 isProxyOnlyStudy = localIsProxyOnlyStudyScenario(scfg, cfg);
-isControlOnly = isPRACHOnly || isPDCCHOnly || isTRSOnly || isSRSOnly || isRAOnly;
+isControlOnly = isPRACHOnly || isPDCCHOnly || isTRSOnly || isSRSOnly || isChannelRFOnly || isRAOnly;
 verdict.ContractApplicability = "applicable";
 
 if isProxyOnlyStudy
@@ -263,6 +265,29 @@ elseif isSRSOnly
             fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv")
             ];
     end
+elseif isChannelRFOnly
+    channelCsvDir = fullfile(layout.Root, "channel", "csv");
+    if isChannelRFStrict
+        requiredArtifacts = [
+            requiredArtifacts
+            fullfile(channelCsvDir, "channel_rf_config_strict.csv")
+            fullfile(channelCsvDir, "link_geometry.csv")
+            fullfile(channelCsvDir, "large_scale_parameters.csv")
+            fullfile(channelCsvDir, "channel_realizations.csv")
+            fullfile(channelCsvDir, "channel_snapshots.csv")
+            fullfile(channelCsvDir, "path_gains.csv")
+            fullfile(channelCsvDir, "channel_configured_vs_applied.csv")
+            fullfile(layout.InterferenceCSVDir, "interference_topology.csv")
+            fullfile(layout.RFCSVDir, "rf_impairment_chain.csv")
+            fullfile(layout.RFCSVDir, "thermal_noise_validation.csv")
+            fullfile(layout.RFCSVDir, "evm_impairment_measurements.csv")
+            fullfile(layout.RFCSVDir, "channel_rf_negative_trials.csv")
+            fullfile(layout.RFCSVDir, "channel_rf_oracle_guard.csv")
+            fullfile(layout.AirInterfaceCSVDir, "downstream_channel_references.csv")
+            fullfile(layout.ReportDir, "json", "channel_rf_toolbox_capabilities.json")
+            fullfile(layout.ReportDir, "json", "channel_rf_conformance_summary.json")
+            ];
+    end
 elseif isRAOnly
     requiredArtifacts = [
         requiredArtifacts
@@ -453,6 +478,13 @@ if strictTruthRequired && logical(srsStats.SRSRequired) && ~logical(srsStats.SRS
         "evidence");
 end
 
+channelRFStats = localChannelRFStrictEvidenceStats(layout, scfg, cfg);
+if strictTruthRequired && logical(channelRFStats.ChannelRFRequired) && ~logical(channelRFStats.ChannelRFStrictOk)
+    verdict = localAddFailure(verdict, ...
+        "channel_rf_configured_applied_evidence_missing_or_failing:" + string(channelRFStats.ChannelRFStatus), ...
+        "evidence");
+end
+
 [scenarioObjectiveStats, scenarioObjectiveFailures] = localScenarioObjectiveStats(opSummary, scfg, cfg, strictTruthRequired, isControlOnly, isPDSCHStudy);
 for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
@@ -471,6 +503,7 @@ verdict.CheckDetails = struct( ...
     "PDCCH", pdcchStats, ...
     "TRS", trsStats, ...
     "SRS", srsStats, ...
+    "ChannelRF", channelRFStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = verdict.StrictTruthFailureCount == 0;
@@ -551,6 +584,22 @@ end
 function tf = localIsSRSStrictScenario(scfg, cfg)
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
 tf = runnerProfile == "srs_strict_validation" || localScenarioHasObjective(scfg, cfg, "srs_strict_validation");
+end
+
+function tf = localIsChannelRFOnlyScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+targetCases = string(localScenarioGet(scfg, cfg, "scenario.target_cases", strings(0, 1)));
+if iscell(targetCases)
+    targetCases = string(targetCases(:));
+end
+targetCases = lower(strtrim(targetCases(:)));
+targetCases = targetCases(strlength(targetCases) > 0);
+tf = runnerProfile == "channel_rf_strict_validation" || (~isempty(targetCases) && all(targetCases == "channel_rf"));
+end
+
+function tf = localIsChannelRFStrictScenario(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "channel_rf_strict_validation" || localScenarioHasObjective(scfg, cfg, "channel_rf_strict_validation");
 end
 
 function tf = localIsRAOnlyScenario(scfg, cfg)
@@ -1780,6 +1829,138 @@ else
 end
 end
 
+function stats = localChannelRFStrictEvidenceStats(layout, scfg, cfg)
+required = localIsChannelRFStrictScenario(scfg, cfg);
+channelCsvDir = fullfile(layout.Root, "channel", "csv");
+configPath = fullfile(channelCsvDir, "channel_rf_config_strict.csv");
+geometryPath = fullfile(channelCsvDir, "link_geometry.csv");
+largeScalePath = fullfile(channelCsvDir, "large_scale_parameters.csv");
+realizationPath = fullfile(channelCsvDir, "channel_realizations.csv");
+snapshotPath = fullfile(channelCsvDir, "channel_snapshots.csv");
+pathGainPath = fullfile(channelCsvDir, "path_gains.csv");
+configuredAppliedPath = fullfile(channelCsvDir, "channel_configured_vs_applied.csv");
+interferencePath = fullfile(layout.InterferenceCSVDir, "interference_topology.csv");
+rfPath = fullfile(layout.RFCSVDir, "rf_impairment_chain.csv");
+noisePath = fullfile(layout.RFCSVDir, "thermal_noise_validation.csv");
+evmPath = fullfile(layout.RFCSVDir, "evm_impairment_measurements.csv");
+negativePath = fullfile(layout.RFCSVDir, "channel_rf_negative_trials.csv");
+oraclePath = fullfile(layout.RFCSVDir, "channel_rf_oracle_guard.csv");
+downstreamPath = fullfile(layout.AirInterfaceCSVDir, "downstream_channel_references.csv");
+stats = struct( ...
+    "ChannelRFRequired", logical(required), ...
+    "ChannelRFStrictOk", false, ...
+    "ChannelRFStatus", "not_required", ...
+    "ChannelRFConfigRows", 0, ...
+    "ChannelRFGeometryRows", 0, ...
+    "ChannelRFLargeScaleRows", 0, ...
+    "ChannelRFRealizationRows", 0, ...
+    "ChannelRFSnapshotRows", 0, ...
+    "ChannelRFPathGainRows", 0, ...
+    "ChannelRFConfiguredAppliedRows", 0, ...
+    "ChannelRFInterferenceRows", 0, ...
+    "ChannelRFRFRows", 0, ...
+    "ChannelRFThermalNoiseRows", 0, ...
+    "ChannelRFEVMRows", 0, ...
+    "ChannelRFNegativeRows", 0, ...
+    "ChannelRFDownstreamReferenceRows", 0, ...
+    "ChannelRFOracleGuardRows", 0, ...
+    "ChannelRFOracleGuardViolationCount", NaN);
+if ~required
+    return;
+end
+configT = localReadTable(configPath);
+geometryT = localReadTable(geometryPath);
+largeScaleT = localReadTable(largeScalePath);
+realizationT = localReadTable(realizationPath);
+snapshotT = localReadTable(snapshotPath);
+pathGainT = localReadTable(pathGainPath);
+configuredAppliedT = localReadTable(configuredAppliedPath);
+interferenceT = localReadTable(interferencePath);
+rfT = localReadTable(rfPath);
+noiseT = localReadTable(noisePath);
+evmT = localReadTable(evmPath);
+negativeT = localReadTable(negativePath);
+oracleT = localReadTable(oraclePath);
+downstreamT = localReadTable(downstreamPath);
+
+stats.ChannelRFConfigRows = height(configT);
+stats.ChannelRFGeometryRows = height(geometryT);
+stats.ChannelRFLargeScaleRows = height(largeScaleT);
+stats.ChannelRFRealizationRows = height(realizationT);
+stats.ChannelRFSnapshotRows = height(snapshotT);
+stats.ChannelRFPathGainRows = height(pathGainT);
+stats.ChannelRFConfiguredAppliedRows = height(configuredAppliedT);
+stats.ChannelRFInterferenceRows = height(interferenceT);
+stats.ChannelRFRFRows = height(rfT);
+stats.ChannelRFThermalNoiseRows = height(noiseT);
+stats.ChannelRFEVMRows = height(evmT);
+stats.ChannelRFNegativeRows = height(negativeT);
+stats.ChannelRFDownstreamReferenceRows = height(downstreamT);
+stats.ChannelRFOracleGuardRows = height(oracleT);
+
+if isempty(configT) || isempty(configuredAppliedT) || isempty(realizationT)
+    stats.ChannelRFStatus = "missing_channel_rf_configured_applied_or_realization_tables";
+    return;
+end
+
+requiredConfiguredCols = ["TrialId","ConfiguredChannelModelType","AppliedChannelModelType", ...
+    "ConfiguredAppliedMatch","FeatureConfigured","FeatureApplied","ExpectedOk","StrictOk","TruthStatus","FailureReason"];
+missingCols = requiredConfiguredCols(~arrayfun(@(c) localHasColumn(configuredAppliedT, c), requiredConfiguredCols));
+if ~isempty(missingCols)
+    stats.ChannelRFStatus = "channel_rf_configured_applied_missing_columns:" + strjoin(missingCols, "|");
+    return;
+end
+
+artifactRowsOk = stats.ChannelRFConfigRows > 0 && stats.ChannelRFGeometryRows > 0 && ...
+    stats.ChannelRFLargeScaleRows > 0 && stats.ChannelRFRealizationRows > 0 && ...
+    stats.ChannelRFSnapshotRows > 0 && stats.ChannelRFPathGainRows > 0 && ...
+    stats.ChannelRFConfiguredAppliedRows > 0 && stats.ChannelRFInterferenceRows > 0 && ...
+    stats.ChannelRFRFRows > 0 && stats.ChannelRFThermalNoiseRows > 0 && ...
+    stats.ChannelRFEVMRows > 0 && stats.ChannelRFNegativeRows > 0 && ...
+    stats.ChannelRFDownstreamReferenceRows > 0 && stats.ChannelRFOracleGuardRows > 0;
+configOk = localHasColumn(configT, "ConfigValidationOk") && all(localColumnBool(configT, "ConfigValidationOk")) && ...
+    localHasColumn(configT, "ProxyAllowed") && all(~localColumnBool(configT, "ProxyAllowed"));
+positiveMask = localColumnBool(configuredAppliedT, "ExpectedOk");
+negativeMask = ~positiveMask;
+positiveOk = any(positiveMask) && all(localColumnBool(configuredAppliedT(positiveMask, :), "StrictOk")) && ...
+    all(localColumnBool(configuredAppliedT(positiveMask, :), "ConfiguredAppliedMatch")) && ...
+    all(localColumnBool(configuredAppliedT(positiveMask, :), "FeatureApplied"));
+negativeOk = any(negativeMask) && all(~localColumnBool(configuredAppliedT(negativeMask, :), "StrictOk")) && ...
+    all(~localColumnBool(configuredAppliedT(negativeMask, :), "ConfiguredAppliedMatch")) && ...
+    localHasColumn(negativeT, "NegativeExpectedOk") && all(localColumnBool(negativeT, "NegativeExpectedOk"));
+realizationOk = localHasColumn(realizationT, "ChannelRealizationId") && ...
+    all(strlength(strtrim(string(realizationT.ChannelRealizationId))) > 0) && ...
+    localHasColumn(realizationT, "TruthStatus") && all(string(realizationT.TruthStatus) == "real_lls_evidence") && ...
+    any(string(realizationT.ChannelModelType) == "TDL" & localColumnBool(realizationT, "WaveformChanged") & localColumnBool(realizationT, "PathGainsExported")) && ...
+    any(string(realizationT.ChannelModelType) == "CDL" & localColumnBool(realizationT, "WaveformChanged") & localColumnBool(realizationT, "PathGainsExported"));
+largeScaleOk = localHasColumn(largeScaleT, "AppliedOk") && all(localColumnBool(largeScaleT, "AppliedOk")) && ...
+    localHasColumn(largeScaleT, "O2IPenetrationLossDbApplied") && any(localColumnNumeric(largeScaleT, "O2IPenetrationLossDbApplied") > 0);
+interferenceOk = localHasColumn(interferenceT, "InterferenceApplied") && all(localColumnBool(interferenceT, "InterferenceApplied")) && ...
+    localHasColumn(interferenceT, "ReceivedInterferencePower") && all(localColumnNumeric(interferenceT, "ReceivedInterferencePower") > 0);
+rfOk = localHasColumn(rfT, "WaveformChanged") && all(localColumnBool(rfT, "WaveformChanged")) && ...
+    localHasColumn(rfT, "RFImpairmentChainId") && all(strlength(strtrim(string(rfT.RFImpairmentChainId))) > 0);
+noiseOk = localHasColumn(noiseT, "ThermalNoiseApplied") && all(localColumnBool(noiseT, "ThermalNoiseApplied")) && ...
+    localHasColumn(noiseT, "StrictOk") && all(localColumnBool(noiseT, "StrictOk"));
+downstreamOk = localHasColumn(downstreamT, "ChannelRealizationId") && localHasColumn(downstreamT, "RFImpairmentChainId") && ...
+    localHasColumn(downstreamT, "ReferenceValid") && all(localColumnBool(downstreamT, "ReferenceValid")) && ...
+    all(strlength(strtrim(string(downstreamT.ChannelRealizationId))) > 0) && ...
+    all(strlength(strtrim(string(downstreamT.RFImpairmentChainId))) > 0);
+oracleViolations = 0;
+if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
+    oracleViolations = sum(localColumnBool(oracleT, "Violation"));
+end
+stats.ChannelRFOracleGuardViolationCount = double(oracleViolations);
+truthStatusOk = all(string(configuredAppliedT.TruthStatus) == "real_lls_evidence");
+stats.ChannelRFStrictOk = artifactRowsOk && configOk && positiveOk && negativeOk && ...
+    realizationOk && largeScaleOk && interferenceOk && rfOk && noiseOk && downstreamOk && ...
+    oracleViolations == 0 && truthStatusOk;
+if stats.ChannelRFStrictOk
+    stats.ChannelRFStatus = "strict_channel_rf_configured_applied_evidence_present";
+else
+    stats.ChannelRFStatus = "strict_channel_rf_configured_applied_evidence_incomplete";
+end
+end
+
 function tf = localScenarioHasObjective(scfg, cfg, objectiveToken)
 objectiveToken = lower(strtrim(string(objectiveToken)));
 values = strings(0, 1);
@@ -1917,6 +2098,7 @@ prach = sixgr.util.structGet(details, "PRACH", struct());
 pdcch = sixgr.util.structGet(details, "PDCCH", struct());
 trs = sixgr.util.structGet(details, "TRS", struct());
 srs = sixgr.util.structGet(details, "SRS", struct());
+channelRF = sixgr.util.structGet(details, "ChannelRF", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 failures = string(sixgr.util.structGet(verdict, "Failures", strings(0, 1)));
 failures = failures(:);
@@ -1997,6 +2179,16 @@ summaryT = table( ...
     double(sixgr.util.structGet(srs, "SRSChannelRows", NaN)), ...
     double(sixgr.util.structGet(srs, "SRSCoverageRows", NaN)), ...
     double(sixgr.util.structGet(srs, "SRSOracleGuardViolationCount", NaN)), ...
+    logical(sixgr.util.structGet(channelRF, "ChannelRFRequired", false)), ...
+    logical(sixgr.util.structGet(channelRF, "ChannelRFStrictOk", false)), ...
+    string(sixgr.util.structGet(channelRF, "ChannelRFStatus", "")), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFRealizationRows", NaN)), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFConfiguredAppliedRows", NaN)), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFLargeScaleRows", NaN)), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFInterferenceRows", NaN)), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFRFRows", NaN)), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFNegativeRows", NaN)), ...
+    double(sixgr.util.structGet(channelRF, "ChannelRFOracleGuardViolationCount", NaN)), ...
     logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)), ...
     string(sixgr.util.structGet(scenarioObjective, "Applicability", "")), ...
     double(sixgr.util.structGet(scenarioObjective, "RequiredConfiguredMatchRate", NaN)), ...
@@ -2018,6 +2210,7 @@ summaryT = table( ...
     'PDCCHRequired','PDCCHStrictOk','PDCCHStatus','PDCCHTrialRows','PDCCHOracleGuardViolationCount', ...
     'TRSRequired','TRSStrictOk','TRSStatus','TRSTrialRows','TRSDetectionRows','TRSTimingRows','TRSFrequencyRows','TRSChannelRows','TRSOracleGuardViolationCount', ...
     'SRSRequired','SRSStrictOk','SRSStatus','SRSTrialRows','SRSResourceMappingRows','SRSDetectionRows','SRSChannelRows','SRSCoverageRows','SRSOracleGuardViolationCount', ...
+    'ChannelRFRequired','ChannelRFStrictOk','ChannelRFStatus','ChannelRFRealizationRows','ChannelRFConfiguredAppliedRows','ChannelRFLargeScaleRows','ChannelRFInterferenceRows','ChannelRFRFRows','ChannelRFNegativeRows','ChannelRFOracleGuardViolationCount', ...
     'ScenarioObjectiveOk','ScenarioObjectiveApplicability','RequiredConfiguredMatchRate','DLConfiguredMatchRate','ULConfiguredMatchRate', ...
     'FailureSummary','TruthContractSummaryArtifact','TruthContractFailuresArtifact'});
 sixgr.util.csvWriteTable(summaryPath, summaryT);

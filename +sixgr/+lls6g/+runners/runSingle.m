@@ -455,6 +455,44 @@ result.TrialTable = srs.ArtifactTables.srs_trials;
 result.SummaryTable = srs.ArtifactTables.srs_low_snr_sweep;
 end
 
+function result = localRunStrictChannelRFValidationScenario(cfg, scfg, runFolder)
+channelRF = sixgr.channel.runStrictChannelRFValidation(cfg, ...
+    "RunFolder", runFolder, ...
+    "RunId", string(scfg.ScenarioID), ...
+    "ScenarioName", string(scfg.ScenarioID), ...
+    "WriteArtifacts", true);
+
+if logical(channelRF.StrictOk)
+    note = "strict Channel/RF configured-vs-applied validation completed";
+else
+    note = string(channelRF.FailureReason);
+end
+kpitable = table( ...
+    string("ChannelRF_StrictValidation"), ...
+    logical(channelRF.StrictOk), ...
+    false, ...
+    note, ...
+    'VariableNames', {'Case','Ok','Skipped','Notes'});
+if localShouldWriteCSV(scfg)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "case_status.csv"), kpitable);
+end
+
+link = struct();
+link.Ok = logical(channelRF.StrictOk);
+link.Result = struct("Ok", logical(channelRF.StrictOk));
+link.KPITable = kpitable;
+link.UnsupportedCases = table();
+link.RawTrials = struct("ChannelRF", channelRF.ConfiguredVsApplied);
+
+result = struct();
+result.Ok = logical(channelRF.StrictOk);
+result.Link = link;
+result.ChannelRF = channelRF;
+result.Control = struct();
+result.TrialTable = channelRF.ConfiguredVsApplied;
+result.SummaryTable = channelRF.ChannelRealizations;
+end
+
 function result = localRun6GRPDCCHStudy(cfg, scfg, runFolder)
 studyDir = fullfile(runFolder, "control", "pdcch6gr_study");
 study = sixgr.ctrl.runPDCCHStudyLLS(cfg, ...
@@ -1349,6 +1387,8 @@ try
             result = localRunStrictTRSValidationScenario(cfg, scfg, runFolder);
         case "srs_strict_validation"
             result = localRunStrictSRSValidationScenario(cfg, scfg, runFolder);
+        case "channel_rf_strict_validation"
+            result = localRunStrictChannelRFValidationScenario(cfg, scfg, runFolder);
         case "ctrl6gr_pdcch_study"
             result = localRun6GRPDCCHStudy(cfg, scfg, runFolder);
         case "pdsch6gr_truth_study"

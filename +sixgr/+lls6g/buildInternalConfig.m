@@ -223,6 +223,15 @@ cfg = sixgr.util.structSet(cfg, "channel.pathlossEnabled", logical(s.channels.pa
 cfg = sixgr.util.structSet(cfg, "channel.shadowFadingEnabled", logical(s.channels.shadow_fading_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.spatialConsistencyEnabled", logical(s.channels.spatial_consistency_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.losEnabled", logical(s.channels.los_enabled));
+o2iModel = char(string(localGetNested(s, "channels.o2i_model", ...
+    localGetNested(s, "channels.o2i_loss_model", "none"))));
+cfg = sixgr.util.structSet(cfg, "channel.o2i.model", o2iModel);
+cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", ...
+    ~any(lower(strtrim(string(o2iModel))) == ["", "none", "disabled", "off"]));
+cfg = localStructSetIfPresent(cfg, "channel.o2i.custom_dB", localGetNested(s, "channels.o2i_loss_db", []));
+interferenceModelToken = lower(strtrim(string(localGetNested(s, "air_interface.interference_model", "none"))));
+cfg = sixgr.util.structSet(cfg, "channel_rf.interferenceEnabled", ...
+    ~any(interferenceModelToken == ["", "none", "disabled", "off"]));
 
 channelModel = upper(string(s.channels.model_type));
 profile = upper(string(s.channels.profile));
@@ -864,6 +873,11 @@ cfg.phy.nRxAnt = double(s.mimo.n_rx_ant);
 cfg = localApplyRuntimeAntennaConfig(cfg, s);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(s.impairments.cfo_hz));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", logical(s.impairments.phase_noise_enabled));
+cfg = sixgr.util.structSet(cfg, "rf.enable", ...
+    abs(double(s.impairments.cfo_hz)) > 0 || logical(s.impairments.phase_noise_enabled) || ...
+    logical(s.impairments.iq_imbalance_enabled) || logical(s.impairments.pa_nonlinearity_enabled) || ...
+    abs(double(s.impairments.timing_offset_samples)) > 0);
+cfg = sixgr.util.structSet(cfg, "rf.cfo_Hz", double(s.impairments.cfo_hz));
 iqEnabled = logical(s.impairments.iq_imbalance_enabled) || logical(localGetNested(s, "impairments.iq_imbalance.enabled", false));
 iqModel = localResolveIQModelToken(s);
 iqGainImb_dB = localResolveFirstFiniteNumeric(s, [ ...
@@ -885,14 +899,21 @@ cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.enable", logical(iqEnabled));
 cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.model", char(iqModel));
 if isfinite(iqGainImb_dB)
     cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.ampImb_dB", double(iqGainImb_dB));
+    cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.gainImbalance_dB", double(iqGainImb_dB));
 end
 if isfinite(iqPhaseImb_deg)
     cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.phaseImb_deg", double(iqPhaseImb_deg));
+    cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.phaseImbalance_deg", double(iqPhaseImb_deg));
 end
 cfg = sixgr.util.structSet(cfg, "phy.impairments.paNonlinearityEnabled", logical(s.impairments.pa_nonlinearity_enabled));
+cfg = sixgr.util.structSet(cfg, "rf.pa.enable", logical(s.impairments.pa_nonlinearity_enabled));
+cfg = sixgr.util.structSet(cfg, "rf.pa.backoff_dB", double(localGetNested(s, "impairments.pa_output_backoff_dB", 3)));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.adcQuantizationBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.dacQuantizationBits", double(s.impairments.dac_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetSamples", double(s.impairments.timing_offset_samples));
+cfg = sixgr.util.structSet(cfg, "rf.adcBits", double(s.impairments.adc_quantization_bits));
+cfg = sixgr.util.structSet(cfg, "rf.dacBits", double(s.impairments.dac_quantization_bits));
+cfg = sixgr.util.structSet(cfg, "rf.timingOffsetSamples", double(s.impairments.timing_offset_samples));
 interferenceExecutionMode = localResolveInterferenceExecutionMode(s);
 if any(interferenceExecutionMode == ["abstract_large_scale_scheduler_context","explicit_activity_power_sum","waveform_overlap_large_scale"])
     error("sixgr:lls6g:config:NonWaveformInterferenceModeRemoved", ...

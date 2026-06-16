@@ -70,7 +70,7 @@ sections:
       runner_profile:
         required: true
         type: string
-        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, pdcch_strict_validation, trs_strict_validation, srs_strict_validation, prach_detection, prach_strict_validation, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
+        allowed_values: [waveform_bundle, system_level_lls, pdcch_blind_decode_sweep, pdcch_strict_validation, trs_strict_validation, srs_strict_validation, channel_rf_strict_validation, prach_detection, prach_strict_validation, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
       scale_profile:
         required: false
         type: string
@@ -78,7 +78,7 @@ sections:
         required: true
         type: string_list
         min_items: 1
-        allowed_values: [bundle, dl, ul, pdsch, pusch, pdcch, pucch, pbch, ssb, prach, csi_rs, srs, dmrs, trs, harq]
+        allowed_values: [bundle, dl, ul, pdsch, pusch, pdcch, pucch, pbch, ssb, prach, csi_rs, srs, dmrs, trs, harq, channel_rf]
       bundle_anchor_cases:
         required: false
         type: string_list
@@ -88,6 +88,7 @@ sections:
           - pdcch_strict_validation
           - trs_strict_validation
           - srs_strict_validation
+          - channel_rf_strict_validation
           - prach_detection
           - prach_strict_validation
           - random_access_four_step

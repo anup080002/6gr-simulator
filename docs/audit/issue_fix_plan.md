@@ -28,6 +28,7 @@ schema and preserve its original issue IDs.
 | RRC and initial access | AUD-015, AUD-RA-001, AUD-PRACH-001 | SSB/PBCH/SIB1/PRACH producers and control CSV exporters | `testTruthValidationControlCoverage`, RA focused tests, `control/csv/ra_attempts.csv` |
 | Control channels and reference signals | AUD-PDCCH-001, AUD-TRS-001, AUD-SRS-001 | PDCCH/PUCCH/SRS/TRS runtime paths and exporters | `testTRSReferenceSignalExecution`, `test6GCSIReportingCoverage`, `air_interface/csv/pdcch_trials.csv` |
 | Data-plane receiver and KPIs | AUD-KPI-UL-GOODPUT, AUD-UL-SINR-001 | PDSCH/PUSCH RX, HARQ, KPI summary/raw consistency | `testPostEqSINR`, `testLLSSummaryRawConsistency`, `air_interface/csv/ul_pusch_trials.csv` |
+| Channel and RF configured-vs-applied | AUD-CHANNEL-RF-001 | `+sixgr/+channel/*`, `+sixgr/+rf/*`, strict Channel/RF mini runner | Channel/RF focused tests, `channel/csv/channel_configured_vs_applied.csv`, `rf/csv/rf_impairment_chain.csv` |
 | Visual and artifact integrity | AUD-PLOT-001, AUD-ARTIFACT-DUP-001 | `+sixgr/+visual`, `tools/audit/audit_lls_visual_artifacts.py`, report bundle writers | `tests/test_audit_lls_visual_artifacts.py`, `reports/csv/visual_artifact_audit.csv` |
 | Dashboard dependency and DB routing | AUD-PY-MYSQL-001 | `apps/lls_web_dashboard.py`, `apps/start_lls_web_dashboard.ps1` | `tests/test_lls_dashboard_optional_mysql.py`, Python import collection |
 
@@ -90,3 +91,14 @@ timing-offset, multi-UE, negative, and oracle-guard evidence. Unsupported SRS
 resource types/usages, incomplete hopping coverage, semi-persistent activation,
 and aperiodic SRS without decoded DCI trigger evidence remain fail-closed and
 must not be counted as fixed without equivalent waveform artifacts.
+
+`AUD-CHANNEL-RF-001` is closed for the implemented strict Channel/RF mini profile
+only. The strict profile derives Channel/RF settings from resolved YAML, rejects
+bare TDL/CDL family names, builds geometry evidence, applies large-scale
+pathloss/shadow/O2I to waveform samples, executes AWGN/TDL/CDL channel
+realizations with path gains and snapshots, applies Doppler, waveform-overlap
+interference, thermal noise, and RF CFO/IQ/PA/timing/quantization to samples,
+and exports configured-vs-applied positive/negative rows plus oracle/downstream
+reference guards. This closure does not claim that every production PDSCH/PUSCH
+trial row is now fully wired to ChannelRealizationId/RFImpairmentChainId; that
+lineage expansion must be closed separately with equivalent runtime evidence.
