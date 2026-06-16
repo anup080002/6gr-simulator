@@ -20,8 +20,10 @@ feature to samples or fails the strict gate.
   spread, and `TruthStatus=real_lls_evidence`.
 - `channel/csv/channel_configured_vs_applied.csv`: positive cases that must pass
   and negative configured-vs-applied faults that must fail closed.
-- `rf/csv/rf_impairment_chain.csv`: RF CFO, IQ imbalance, PA compression, timing
-  offset, quantization, before/after waveform hashes, and measured EVM.
+- `rf/csv/rf_impairment_chain.csv`: RF CFO, sample-domain phase noise, IQ
+  imbalance, PA compression, timing offset, quantization, before/after waveform
+  hashes, and measured EVM. Sample-clock offset requests fail closed until a
+  real resampling/SCO model is implemented.
 - `rf/csv/thermal_noise_validation.csv`: thermal noise variance derived from
   bandwidth, temperature, and receiver noise figure, with measured variance.
 - `interference/csv/interference_topology.csv`: overlapping waveform
@@ -36,8 +38,17 @@ real LLS evidence. Unsupported or mismatched cases must appear as negative rows
 or fail the run. The gate also rejects oracle-style perfect channel access in
 strict pass/fail evidence.
 
+Configured phase noise is materialized through `sixgr.rf.PhaseNoiseModel` and
+must report changed phase-noise before/after waveform hashes. It is not accepted
+as a label-only RF setting.
+
 ## Scope Boundary
 
 This closure does not claim every production PDSCH/PUSCH trial row now carries
 complete ChannelRealizationId and RFImpairmentChainId lineage. That integration
 must be implemented and tested separately for the data-plane runners.
+
+Unsupported or not-yet-integrated items include sample-clock offset resampling,
+exhaustive TR 38.901 map-based/hybrid models, spatial consistency/blockage,
+dual mobility, NTN/HST cases, FR2 oxygen absorption, RIS/reconfigurable-surface
+models, and sub-THz/6G-specific channel models.

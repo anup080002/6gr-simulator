@@ -153,6 +153,9 @@ and exports configured-vs-applied positive/negative rows plus oracle/downstream
 reference guards. This closure does not claim that every production PDSCH/PUSCH
 trial row is now fully wired to ChannelRealizationId/RFImpairmentChainId; that
 lineage expansion must be closed separately with equivalent runtime evidence.
+Configured phase noise is materialized by the strict RF chain and exported with
+phase-noise before/after waveform hashes. Sample-clock offset requests remain
+fail-closed until a real resampling/SCO model is implemented.
 
 `AUD-MIMO-RANK-001` is closed for the implemented MIMO rank/layer/beam evidence
 gate. The link KPI export now writes MIMO evidence artifacts under
