@@ -8,8 +8,9 @@
     "modulation_and_mapping", "link_adaptation", "harq", "synchronization_and_tracking",
     "receiver_algorithms", "impairments", "ai_ml", "energy_and_complexity", "kpi_spec", "system", "traffic",
     "sweeps_and_matrix", "sanity_checks", "scenario", "simulation", "frequency", "frame", "channels",
-    "mimo", "users", "coding", "modulation", "control", "random_access", "control_gating", "receiver", "energy_efficiency",
-    "kpis", "logging", "output"
+    "mimo", "users", "coding", "modulation", "control", "pucch_resources", "random_access",
+    "sib1_and_initial_access", "random_access_evidence", "control_gating", "receiver", "energy_efficiency",
+    "channel_rf_configured_vs_applied", "decoder_output_capture", "dut_reference_validation", "kpis", "logging", "output"
   ],
   "sections": {
     "meta": { "parameters": {
@@ -366,6 +367,75 @@
       "self_interference_model": {"required": true, "type": "string"},
       "uplink_interference_model": {"required": true, "type": "string"},
       "interference_measurement_policy": {"required": true, "type": "string"}
+    }},
+    "pucch_resources": {"required": false, "parameters": {
+      "enabled": {"required": false, "type": "boolean"},
+      "resource_sets": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_resource_set_object"},
+      "resources": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_resource_object"},
+      "harq_ack": {"required": false, "type": "struct", "nested_rule": "pucch_harq_ack_object"},
+      "sr": {"required": false, "type": "struct", "nested_rule": "pucch_sr_object"},
+      "csi": {"required": false, "type": "struct", "nested_rule": "pucch_csi_object"},
+      "overlap_policy": {"required": false, "type": "struct", "nested_rule": "pucch_overlap_policy_object"}
+    }},
+    "sib1_and_initial_access": {"required": false, "parameters": {
+      "sib1_required": {"required": false, "type": "boolean"},
+      "mib_required": {"required": false, "type": "boolean"},
+      "ssb_required": {"required": false, "type": "boolean"},
+      "ssb_burst_required": {"required": false, "type": "boolean"},
+      "cell_search_required": {"required": false, "type": "boolean"},
+      "sib1_asn1_required": {"required": false, "type": "boolean"},
+      "type0_pdcch_css_required": {"required": false, "type": "boolean"},
+      "si_rnti": {"required": false, "type": "integer", "min": 0},
+      "coreset0_from_mib_required": {"required": false, "type": "boolean"},
+      "searchspace0_from_mib_required": {"required": false, "type": "boolean"},
+      "sib1_pdsch_required": {"required": false, "type": "boolean"},
+      "sib1_decode_from_waveform_required": {"required": false, "type": "boolean"}
+    }},
+    "random_access_evidence": {"required": false, "parameters": {
+      "four_step_ra_required": {"required": false, "type": "boolean"},
+      "msg1_prach_required": {"required": false, "type": "boolean"},
+      "msg2_rar_pdcch_pdsch_required": {"required": false, "type": "boolean"},
+      "msg3_pusch_required": {"required": false, "type": "boolean"},
+      "msg4_contention_resolution_required": {"required": false, "type": "boolean"},
+      "ra_rnti_decode_required": {"required": false, "type": "boolean"},
+      "rar_mac_ce_decode_required": {"required": false, "type": "boolean"},
+      "timing_advance_required": {"required": false, "type": "boolean"},
+      "contention_resolution_identity_required": {"required": false, "type": "boolean"},
+      "preamble_collision_test_enabled": {"required": false, "type": "boolean"},
+      "false_alarm_test_enabled": {"required": false, "type": "boolean"},
+      "missed_detection_test_enabled": {"required": false, "type": "boolean"}
+    }},
+    "channel_rf_configured_vs_applied": {"required": false, "parameters": {
+      "enabled": {"required": false, "type": "boolean"},
+      "require_channel_realization_id": {"required": false, "type": "boolean"},
+      "require_rf_impairment_chain_id": {"required": false, "type": "boolean"},
+      "require_waveform_hash_before_after_channel": {"required": false, "type": "boolean"},
+      "require_waveform_hash_before_after_rf": {"required": false, "type": "boolean"},
+      "require_path_gains_hash_for_cdl_tdl": {"required": false, "type": "boolean"},
+      "require_doppler_evidence": {"required": false, "type": "boolean"},
+      "require_noise_power_validation": {"required": false, "type": "boolean"},
+      "require_cfo_before_after_evidence": {"required": false, "type": "boolean"},
+      "require_phase_noise_evidence": {"required": false, "type": "boolean"},
+      "require_iq_imbalance_evidence": {"required": false, "type": "boolean"},
+      "require_pa_nonlinearity_evidence": {"required": false, "type": "boolean"},
+      "fail_if_cdl_configured_awgn_applied": {"required": false, "type": "boolean"},
+      "fail_if_impairment_configured_but_hash_unchanged": {"required": false, "type": "boolean"},
+      "fail_if_downstream_trials_lack_channel_reference": {"required": false, "type": "boolean"}
+    }},
+    "decoder_output_capture": {"required": false, "parameters": {
+      "enabled": {"required": false, "type": "boolean"},
+      "dl": {"required": false, "type": "struct", "nested_rule": "decoder_output_capture_direction_object"},
+      "ul": {"required": false, "type": "struct", "nested_rule": "decoder_output_capture_direction_object"},
+      "fail_if_crc_pass_without_decoder_evidence": {"required": false, "type": "boolean"},
+      "fail_if_bler_from_summary_only": {"required": false, "type": "boolean"},
+      "fail_if_ber_from_summary_only": {"required": false, "type": "boolean"}
+    }},
+    "dut_reference_validation": {"required": false, "parameters": {
+      "enabled": {"required": false, "type": "boolean"},
+      "reference_sources": {"required": false, "type": "struct", "nested_rule": "dut_reference_sources_object"},
+      "compare_blocks": {"required": false, "type": "struct", "nested_rule": "dut_reference_compare_blocks_object"},
+      "if_reference_missing_policy": {"required": false, "type": "string"},
+      "write_artifact": {"required": false, "type": "string"}
     }}
   },
   "nested_sections": {
@@ -422,6 +492,86 @@
       "periodSlots": {"required": false, "type": "integer", "min": 1},
       "maxGrantsPerAuditSlot": {"required": false, "type": "integer", "min": 0},
       "unsampledGrantPolicy": {"required": false, "type": "string", "allowed_values": ["unavailable_no_feedback", "full_replay"]}
+    }},
+    "pucch_resource_set_object": {"parameters": {
+      "set_id": {"required": true, "type": "integer", "min": 0},
+      "usage": {"required": false, "type": "string"},
+      "resource_ids": {"required": false, "type": "number_list"}
+    }},
+    "pucch_resource_object": {"parameters": {
+      "resource_id": {"required": true, "type": "integer", "min": 0},
+      "format": {"required": true, "type": "integer", "min": 0},
+      "starting_prb": {"required": false, "type": "integer", "min": 0},
+      "second_hop_prb": {"required": false, "type": "integer", "min": 0},
+      "num_prb": {"required": false, "type": "integer", "min": 1},
+      "intra_slot_frequency_hopping": {"required": false, "type": "boolean"},
+      "symbol_start": {"required": false, "type": "integer", "min": 0},
+      "num_symbols": {"required": false, "type": "integer", "min": 1},
+      "initial_cyclic_shift": {"required": false, "type": "integer", "min": 0},
+      "occ_length": {"required": false, "type": "integer", "min": 0},
+      "occ_index": {"required": false, "type": "integer", "min": 0},
+      "rnti_source": {"required": false, "type": "string"},
+      "scrambling_id_source": {"required": false, "type": "string"},
+      "feedback_type": {"required": false, "type": "string"}
+    }},
+    "pucch_harq_ack_object": {"parameters": {
+      "k1_slots": {"required": false, "type": "integer", "min": 0},
+      "require_mac_harq_binding": {"required": false, "type": "boolean"},
+      "require_waveform_decoded_uci": {"required": false, "type": "boolean"},
+      "direct_crc_feedback_allowed": {"required": false, "type": "boolean"}
+    }},
+    "pucch_sr_object": {"parameters": {
+      "periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "offset_slots": {"required": false, "type": "integer", "min": 0},
+      "require_scheduler_request_state_update": {"required": false, "type": "boolean"}
+    }},
+    "pucch_csi_object": {"parameters": {
+      "periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "offset_slots": {"required": false, "type": "integer", "min": 0},
+      "include_cqi": {"required": false, "type": "boolean"},
+      "include_ri": {"required": false, "type": "boolean"},
+      "include_pmi": {"required": false, "type": "boolean"}
+    }},
+    "pucch_overlap_policy_object": {"parameters": {
+      "detect_pucch_pusch_overlap": {"required": false, "type": "boolean"},
+      "uci_on_pusch_enabled": {"required": false, "type": "boolean"},
+      "unsupported_overlap_policy": {"required": false, "type": "string"}
+    }},
+    "decoder_output_capture_direction_object": {"parameters": {
+      "require_dlsch_decoder_output": {"required": false, "type": "boolean"},
+      "require_ulsch_decoder_output": {"required": false, "type": "boolean"},
+      "require_tb_crc": {"required": false, "type": "boolean"},
+      "require_codeblock_crc": {"required": false, "type": "boolean"},
+      "require_decoder_iterations": {"required": false, "type": "boolean"},
+      "require_llr_statistics": {"required": false, "type": "boolean"},
+      "require_tb_hash_tx_rx": {"required": false, "type": "boolean"},
+      "require_bit_error_count": {"required": false, "type": "boolean"},
+      "require_bler_ber_from_raw_decoder_rows": {"required": false, "type": "boolean"}
+    }},
+    "dut_reference_sources_object": {"parameters": {
+      "matlab_5g_toolbox": {"required": false, "type": "boolean"},
+      "analytical_physics": {"required": false, "type": "boolean"},
+      "repo_independent_formula": {"required": false, "type": "boolean"}
+    }},
+    "dut_reference_compare_blocks_object": {"parameters": {
+      "mobility_doppler": {"required": false, "type": "boolean"},
+      "pathloss_noise": {"required": false, "type": "boolean"},
+      "carrier_grid": {"required": false, "type": "boolean"},
+      "ssb_pbch_mib": {"required": false, "type": "boolean"},
+      "sib1": {"required": false, "type": "boolean"},
+      "prach": {"required": false, "type": "boolean"},
+      "pdcch": {"required": false, "type": "boolean"},
+      "pdsch": {"required": false, "type": "boolean"},
+      "pusch": {"required": false, "type": "boolean"},
+      "pucch": {"required": false, "type": "boolean"},
+      "srs": {"required": false, "type": "boolean"},
+      "trs": {"required": false, "type": "boolean"},
+      "csirs": {"required": false, "type": "boolean"},
+      "ptrs": {"required": false, "type": "boolean"},
+      "mimo_rank_beam": {"required": false, "type": "boolean"},
+      "channel_rf": {"required": false, "type": "boolean"},
+      "mac_harq": {"required": false, "type": "boolean"},
+      "kpi": {"required": false, "type": "boolean"}
     }},
     "mobility_user_path_object": {"parameters": {
       "ue_id": {"required": true, "type": "integer", "min": 1},

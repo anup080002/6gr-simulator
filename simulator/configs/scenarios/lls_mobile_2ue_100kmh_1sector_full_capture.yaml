@@ -4,7 +4,7 @@ inherits:
 meta:
   scenario_id: lls_mobile_2ue_100kmh_1sector_full_capture
   description: Actual-run-first 1-sector / 2UE / 100 km/h full-capture LLS study for 4 GHz TDD with exhaustive artifact readback and honest post-run auditing.
-  version: "1.0.0"
+  version: "1.1.0"
   owner: codex
   author: codex
   created_at: "2026-06-17"
@@ -20,9 +20,9 @@ meta:
   baseline_reference_name: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_4000slot
   comparison_group_name: mobile_2ue_100kmh_full_capture
   notes: >
-    This authoritative study YAML intentionally requests a 100 MHz / 30 kHz / 122.88 Msps carrier while
-    also setting n_size_grid=66 so the runtime must explicitly expose any resolved-grid correction and must
-    not silently claim that the configured grid is a standards-consistent 100 MHz NR operating point.
+    This authoritative study YAML requests a standards-consistent 100 MHz / 30 kHz / 122.88 Msps /
+    273-RB carrier and explicitly enables the strict control, decoder, SIB1, random-access, and
+    channel/RF evidence blocks required for honest post-run auditing.
   tags:
     - lls
     - actual-run
@@ -50,7 +50,7 @@ scenario:
   notes: >
     The runtime must use the real coupled system-level + waveform-backed replay path where implemented,
     must emit missing-evidence failures rather than label-only success, and must preserve the configured
-    versus resolved carrier-grid mismatch as an explicit study finding.
+    strict-validation objectives as explicit run-time gates rather than silently downgrading them.
   geometry:
     area_m: [1200, 200]
   sectorization:
@@ -80,10 +80,10 @@ scenario:
     height_m: 1.5
     txPower_dBm: 23.0
     noiseFigure_dB: 7.0
-    nTxAnt: 1
+    nTxAnt: 2
     nRxAnt: 4
     antenna:
-      type: isotropic_4rx
+      type: isotropic_2tx_4rx
       element_gain_dBi: 0.0
       inter_element_spacing_mm: 40.0
     distribution:
@@ -124,7 +124,7 @@ run_control:
   symbol_level_logging_enable: true
   per_ue_logging_enable: true
   per_cell_logging_enable: true
-  raw_iq_capture_enable: false
+  raw_iq_capture_enable: true
   raw_grid_capture_enable: true
   save_constellations: true
   save_channel_tensors: true
@@ -188,7 +188,7 @@ frequency:
   carrier_aggregation_enabled: false
   numerology_options_khz: [30]
   max_mimo_size: 64
-  n_size_grid: 66
+  n_size_grid: 273
 
 frame:
   scs_khz: 30
@@ -204,7 +204,7 @@ global_radio_scope:
   frequency_range_label: FR1
   channel_bandwidth_hz: 100000000
   simulation_bandwidth_hz: 100000000
-  occupied_bandwidth_hz: 98300000
+  occupied_bandwidth_hz: 98280000
   duplex_mode: TDD
   scs_hz: 30000
   numerology_mu: 1
@@ -212,7 +212,7 @@ global_radio_scope:
   sample_rate_hz: 122880000
   fft_size: 4096
   ifft_size: 4096
-  guard_band_hz: 1700000
+  guard_band_hz: 1720000
 
 frame_timing:
   frame_duration_ms: 10
@@ -226,7 +226,7 @@ frame_timing:
   special_slot_uplink_symbols: 1
 
 resource_grid:
-  num_rbs: 66
+  num_rbs: 273
 
 waveform:
   dl_waveform: CP-OFDM
@@ -311,12 +311,12 @@ mobility:
 
 channels:
   model_type: CDL
-  profile: CDL-D
+  profile: CDL-C
   delay_spread_ns: 300
   doppler_hz: 370.37037037
   doppler_source_mode: derive_from_ue_speed
   mobility_kmph: 100
-  los_enabled: false
+  los_enabled: true
   spatial_consistency_enabled: true
   pathloss_enabled: true
   shadow_fading_enabled: true
@@ -334,7 +334,7 @@ channels:
 
 channel_model:
   model_family: CDL
-  scenario_label: CDL-D
+  scenario_label: CDL-C
   delay_spread_ns: 300
   doppler_hz: 370.37037037
   doppler_source_mode: derive_from_ue_speed
@@ -345,14 +345,14 @@ mimo:
   n_rx_ant: 4
   n_layers: 2
   max_dl_layers: 2
-  max_ul_layers: 1
+  max_ul_layers: 2
   max_simultaneous_ue_dl: 2
   max_simultaneous_ue_ul: 2
   precoder_type: wideband
   codebook_type: type1
   beam_codebook_type: type1_su_mimo
   beam_codebook_size_dl: 16
-  reciprocity_mode: FDD
+  reciprocity_mode: TDD
   reciprocity_assumption: tdd_reciprocity
   beam_sweep_enabled: true
   beam_management_enable: true
@@ -368,7 +368,7 @@ mimo:
   rank_adaptation_enable: true
   rank_adaptation_policy: srs_rank_indicator
   max_rank_dl: 2
-  max_rank_ul: 1
+  max_rank_ul: 2
   tpmi_codebook_type: type1
   su_mu_selection_policy: proportional_fair_mu
   mu_mimo_enable: true
@@ -454,6 +454,78 @@ control:
   pucch_enabled: true
   pucch_format: 2
 
+pucch_resources:
+  enabled: true
+  resource_sets:
+    - set_id: 0
+      usage: harq_ack_sr
+      resource_ids: [0, 1]
+    - set_id: 1
+      usage: csi
+      resource_ids: [2]
+  resources:
+    - resource_id: 0
+      format: 1
+      starting_prb: 0
+      num_prb: 1
+      second_hop_prb: 272
+      intra_slot_frequency_hopping: true
+      symbol_start: 10
+      num_symbols: 4
+      initial_cyclic_shift: 0
+      occ_length: 2
+      occ_index: 0
+      rnti_source: c_rnti
+      scrambling_id_source: physical_cell_id
+      feedback_type: harq_ack
+    - resource_id: 1
+      format: 0
+      starting_prb: 1
+      num_prb: 1
+      second_hop_prb: 271
+      intra_slot_frequency_hopping: true
+      symbol_start: 12
+      num_symbols: 2
+      initial_cyclic_shift: 3
+      occ_length: 0
+      occ_index: 0
+      rnti_source: c_rnti
+      scrambling_id_source: physical_cell_id
+      feedback_type: scheduling_request
+    - resource_id: 2
+      format: 2
+      starting_prb: 2
+      num_prb: 4
+      second_hop_prb: 2
+      intra_slot_frequency_hopping: false
+      symbol_start: 8
+      num_symbols: 2
+      initial_cyclic_shift: 0
+      occ_length: 0
+      occ_index: 0
+      rnti_source: c_rnti
+      scrambling_id_source: physical_cell_id
+      feedback_type: csi_part1
+  harq_ack:
+    k1_slots: 4
+    require_mac_harq_binding: true
+    require_waveform_decoded_uci: true
+    direct_crc_feedback_allowed: false
+  sr:
+    periodicity_slots: 20
+    offset_slots: 5
+    require_scheduler_request_state_update: true
+  csi:
+    periodicity_slots: 10
+    offset_slots: 6
+    include_cqi: true
+    include_ri: true
+    include_pmi: true
+  overlap_policy:
+    detect_pucch_pusch_overlap: true
+    uci_on_pusch_enabled: false
+    unsupported_overlap_policy: fail_closed
+
 control_gating:
   pbch_required: true
   prach_required: true
@@ -480,7 +552,7 @@ reference_signals:
   pusch_dmrs_type: 1
   pusch_dmrs_typeA_position: 2
   pusch_dmrs_additional_positions: 0
-  pusch_dmrs_ports: 1
+  pusch_dmrs_ports: 2
   csi_rs_enabled: true
   csi_rs_port_count: 4
   csi_rs_cdm_type: FD-CDM2
@@ -500,7 +572,7 @@ reference_signals:
   csi_acquisition_mode: dl_based
   operation_orientation: tdd_reciprocity
   dmrs_csi_tracking_enabled: true
-  srs_ports: 1
+  srs_ports: 2
   srs_sequence_family: baseline_nr
   srs_bandwidth_config: full
   srs_frequency_hopping: groupOrSequenceHopping
@@ -585,6 +657,34 @@ random_access:
   target_false_alarm_probability: 0.001
   cell_radius_m: 500
 
+sib1_and_initial_access:
+  sib1_required: true
+  mib_required: true
+  ssb_required: true
+  ssb_burst_required: true
+  cell_search_required: true
+  sib1_asn1_required: true
+  type0_pdcch_css_required: true
+  si_rnti: 65535
+  coreset0_from_mib_required: true
+  searchspace0_from_mib_required: true
+  sib1_pdsch_required: true
+  sib1_decode_from_waveform_required: true
+
+random_access_evidence:
+  four_step_ra_required: true
+  msg1_prach_required: true
+  msg2_rar_pdcch_pdsch_required: true
+  msg3_pusch_required: true
+  msg4_contention_resolution_required: true
+  ra_rnti_decode_required: true
+  rar_mac_ce_decode_required: true
+  timing_advance_required: true
+  contention_resolution_identity_required: true
+  preamble_collision_test_enabled: true
+  false_alarm_test_enabled: true
+  missed_detection_test_enabled: true
+
 scheduler:
   type: proportional_fair
   dl_max_ues_per_slot: 2
@@ -636,6 +736,75 @@ impairments:
   evm_limit_64qam_pct: 8.0
   evm_limit_256qam_pct: 3.5
 
+decoder_output_capture:
+  enabled: true
+  dl:
+    require_dlsch_decoder_output: true
+    require_tb_crc: true
+    require_codeblock_crc: true
+    require_decoder_iterations: true
+    require_llr_statistics: true
+    require_tb_hash_tx_rx: true
+    require_bit_error_count: true
+    require_bler_ber_from_raw_decoder_rows: true
+  ul:
+    require_ulsch_decoder_output: true
+    require_tb_crc: true
+    require_codeblock_crc: true
+    require_decoder_iterations: true
+    require_llr_statistics: true
+    require_tb_hash_tx_rx: true
+    require_bit_error_count: true
+    require_bler_ber_from_raw_decoder_rows: true
+  fail_if_crc_pass_without_decoder_evidence: true
+  fail_if_bler_from_summary_only: true
+  fail_if_ber_from_summary_only: true
+
+dut_reference_validation:
+  enabled: true
+  reference_sources:
+    matlab_5g_toolbox: true
+    analytical_physics: true
+    repo_independent_formula: true
+  compare_blocks:
+    mobility_doppler: true
+    pathloss_noise: true
+    carrier_grid: true
+    ssb_pbch_mib: true
+    sib1: true
+    prach: true
+    pdcch: true
+    pdsch: true
+    pusch: true
+    pucch: true
+    srs: true
+    trs: true
+    csirs: true
+    ptrs: true
+    mimo_rank_beam: true
+    channel_rf: true
+    mac_harq: true
+    kpi: true
+  if_reference_missing_policy: mark_reference_unavailable_and_block_strict_conformance
+  write_artifact: reports/csv/dut_reference_comparison.csv
+
+channel_rf_configured_vs_applied:
+  enabled: true
+  require_channel_realization_id: true
+  require_rf_impairment_chain_id: true
+  require_waveform_hash_before_after_channel: true
+  require_waveform_hash_before_after_rf: true
+  require_path_gains_hash_for_cdl_tdl: true
+  require_doppler_evidence: true
+  require_noise_power_validation: true
+  require_cfo_before_after_evidence: true
+  require_phase_noise_evidence: true
+  require_iq_imbalance_evidence: true
+  require_pa_nonlinearity_evidence: true
+  fail_if_cdl_configured_awgn_applied: true
+  fail_if_impairment_configured_but_hash_unchanged: true
+  fail_if_downstream_trials_lack_channel_reference: true
+
 air_interface:
   bs_tx_power_per_sector_dBm: 46.0
   bs_tx_power_per_port_dBm: 27.94
@@ -659,8 +828,8 @@ air_interface:
   papr_target_dB: 12.0
   arfcn_dl: 640000
   gscn_ssb: 7499
-  guard_band_khz: 845.0
-  occupied_bandwidth_mhz: 98.31
+  guard_band_khz: 860.0
+  occupied_bandwidth_mhz: 98.28
 
 traffic:
   model: fullBuffer

@@ -33,6 +33,7 @@ classdef TraceContext < handle
             obj.StageProgressPath = fullfile(obj.RunFolder, "reports", "csv", "live_stage_progress.csv");
             obj.ArtifactTracePath = fullfile(obj.RunFolder, "reports", "csv", "runtime_artifact_generation_trace.csv");
             obj.IssueTracePath = fullfile(obj.RunFolder, "reports", "csv", "runtime_issue_trace.csv");
+            obj.StageRows = repmat(localStageRow("", NaN, "", "", "", NaN, false, false, false, NaN, NaN, 0, 0, 0, 0, "", ""), 0, 1);
 
             sixgr.util.ensureFolder(obj.RunFolder);
             sixgr.util.ensureFolder(fullfile(obj.RunFolder, "reports", "csv"));

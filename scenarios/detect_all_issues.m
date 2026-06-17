@@ -147,17 +147,57 @@ end
 
 function issue = localIssueFromInvariant(row)
 issue = localIssueRow( ...
-    string(row.CheckId), string(row.Severity), localInvariantStatus(row), "numerical_invariant", ...
-    "", double(row.UEId), NaN, string(row.Subsystem), string(row.MetricName), string(row.ObservedValue), ...
-    string(row.FailureReason), "reports/csv/phy_value_invariant_checks.csv", ...
-    "actual runtime invariant failed", string(row.RecommendedFix), true);
+    localOptionalRowText(row, ["CheckId","IssueId"], ""), ...
+    localOptionalRowText(row, ["Severity"], "medium"), ...
+    localInvariantStatus(row), "numerical_invariant", ...
+    localOptionalRowText(row, ["Direction"], ""), ...
+    localOptionalRowDouble(row, ["UEId","UEIndex"], NaN), ...
+    localOptionalRowDouble(row, ["CellId","CellID"], NaN), ...
+    localOptionalRowText(row, ["Subsystem","BlockName"], ""), ...
+    localOptionalRowText(row, ["MetricName"], ""), ...
+    localOptionalRowText(row, ["ObservedValue"], ""), ...
+    localOptionalRowText(row, ["FailureReason"], ""), ...
+    "reports/csv/phy_value_invariant_checks.csv", ...
+    "actual runtime invariant failed", localOptionalRowText(row, ["RecommendedFix"], "inspect failing invariant"), true);
 end
 
 function status = localInvariantStatus(row)
-if strcmpi(string(row.Severity), "critical")
+if strcmpi(localOptionalRowText(row, ["Severity"], "medium"), "critical")
     status = "active_blocking";
 else
     status = "active_observation";
+end
+end
+
+function out = localOptionalRowText(row, candidateNames, defaultValue)
+out = string(defaultValue);
+candidateNames = string(candidateNames(:));
+vars = string(row.Properties.VariableNames);
+hit = vars(ismember(lower(vars), lower(candidateNames)));
+if isempty(hit)
+    return;
+end
+out = string(row.(hit(1))(1));
+if ismissing(out)
+    out = string(defaultValue);
+end
+end
+
+function out = localOptionalRowDouble(row, candidateNames, defaultValue)
+out = double(defaultValue);
+candidateNames = string(candidateNames(:));
+vars = string(row.Properties.VariableNames);
+hit = vars(ismember(lower(vars), lower(candidateNames)));
+if isempty(hit)
+    return;
+end
+try
+    out = double(row.(hit(1))(1));
+catch
+    out = double(defaultValue);
+end
+if ~(isscalar(out) && isfinite(out))
+    out = double(defaultValue);
 end
 end
 
@@ -193,9 +233,38 @@ vars = string(fieldnames(template));
 for i = 1:numel(vars)
     if ~ismember(vars(i), string(T.Properties.VariableNames))
         T.(vars(i)) = repmat(template.(vars(i)), height(T), 1);
+    else
+        T.(vars(i)) = localCastIssueColumn(T.(vars(i)), template.(vars(i)));
     end
 end
 T = T(:, vars);
+end
+
+function values = localCastIssueColumn(values, templateValue)
+if isstring(templateValue)
+    values = string(values);
+    values(ismissing(values)) = "";
+    return;
+end
+if islogical(templateValue)
+    try
+        values = logical(values);
+    catch
+        values = ismember(lower(string(values)), ["true","1","yes","pass"]);
+    end
+    return;
+end
+if isnumeric(templateValue)
+    try
+        values = double(values);
+    catch
+        values = nan(numel(values), 1);
+    end
+    if ~iscolumn(values)
+        values = values(:);
+    end
+    return;
+end
 end
 
 function row = localIssueRow(issueId, severity, issueStatus, issueCategory, direction, ueId, cellId, blockName, metricName, observedValue, expectedOrPolicy, evidenceArtifactRef, rootCauseHint, fixPlan, analyticsVisibleFlag)

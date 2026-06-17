@@ -84,6 +84,10 @@ cfg.outputs.persistToDatabase = logical(localGetNested(s, "output.persist_to_dat
 cfg.outputs.persistToResultsFolder = logical(localGetNested(s, "output.persist_to_results_folder", true));
 cfg.outputs.persistenceFallbackReason = char(string(localGetNested(s, "output.persistence_fallback_reason", "")));
 cfg.outputs.resultsRoot = char(string(localGetNested(s, "output.results_root", "results")));
+cfg.outputs.rawIQCaptureEnabled = logical(localGetNested(s, "run_control.raw_iq_capture_enable", false));
+cfg.outputs.rawGridCaptureEnabled = logical(localGetNested(s, "run_control.raw_grid_capture_enable", false));
+cfg = sixgr.util.structSet(cfg, "run.rawIQCaptureEnabled", cfg.outputs.rawIQCaptureEnabled);
+cfg = sixgr.util.structSet(cfg, "run.rawGridCaptureEnabled", cfg.outputs.rawGridCaptureEnabled);
 cfg.outputs.databaseHost = char(string(localResolveDatabaseField(s, "output.database_host", cfg.outputs.storageBackend)));
 cfg.outputs.databasePort = double(localResolveDatabaseField(s, "output.database_port", cfg.outputs.storageBackend));
 cfg.outputs.databaseSchema = char(string(localResolveDatabaseField(s, "output.database_schema", cfg.outputs.storageBackend)));
@@ -1113,11 +1117,12 @@ rankEigenThreshold_dB = double(localGetNested(s, "reference_signals.srs_rank_eig
 if isfinite(rankEigenThreshold_dB) && rankEigenThreshold_dB > 0
     cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", double(rankEigenThreshold_dB));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", 10);
+cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", 10);
 end
 
 cfg = localApplySystemConfig(cfg, s);
 cfg = localApplyTrafficConfig(cfg, s);
+cfg = localApplyScenarioAuditExtensions(cfg, s);
 
 cfg = sixgr.util.structSet(cfg, "meta.lls6gScenarioID", char(string(s.meta.scenario_id)));
 cfg = sixgr.util.structSet(cfg, "lls6g.resolvedConfig", s);
@@ -1152,6 +1157,12 @@ cfg = sixgr.util.structSet(cfg, "lls6g.kpis", s.kpis);
 cfg = sixgr.util.structSet(cfg, "lls6g.logging", s.logging);
 cfg = sixgr.util.structSet(cfg, "lls6g.scenario", s.scenario);
 cfg = sixgr.util.structSet(cfg, "lls6g.outputRunFolder", char(string(runFolder)));
+for extraSection = ["pucch_resources", "sib1_and_initial_access", "random_access_evidence", ...
+        "channel_rf_configured_vs_applied", "decoder_output_capture", "dut_reference_validation"]
+    if isfield(s, extraSection)
+        cfg = sixgr.util.structSet(cfg, "lls6g." + extraSection, s.(extraSection));
+    end
+end
 
 if localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
     cfg = sixgr.util.structSet(cfg, "run.useMex", false);
@@ -1160,6 +1171,158 @@ end
 cfg = localApplyFrameStructureEngine(cfg);
 cfg = sixgr.config.normalizeConfig(cfg);
 sixgr.config.validateConfig(cfg);
+end
+
+function cfg = localApplyScenarioAuditExtensions(cfg, s)
+cfg = sixgr.util.structSet(cfg, "validation.strict", logical(localGetNested(s, "logging.strict_validation", false)));
+
+pucchSection = localGetNested(s, "pucch_resources", struct());
+if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
+    cfg = sixgr.util.structSet(cfg, "validation.pucch_resources", pucchSection);
+    if logical(localGetNested(s, "pucch_resources.enabled", false))
+        requestedFormat = double(sixgr.util.structGet(cfg, "phy.pucch.format", 2));
+        resource = localResolvePreferredPUCCHResource(localGetNested(s, "pucch_resources.resources", struct([])), requestedFormat);
+        if ~isempty(resource)
+            formatValue = double(sixgr.util.structGet(resource, "format", requestedFormat));
+            prbStart = double(sixgr.util.structGet(resource, "starting_prb", NaN));
+            numPRB = double(sixgr.util.structGet(resource, "num_prb", 1));
+            symbolStart = double(sixgr.util.structGet(resource, "symbol_start", NaN));
+            numSymbols = double(sixgr.util.structGet(resource, "num_symbols", NaN));
+            if isfinite(formatValue) && formatValue >= 0
+                cfg = sixgr.util.structSet(cfg, "phy.pucch.format", round(double(formatValue)));
+            end
+            if isfinite(prbStart) && isfinite(numPRB) && numPRB >= 1
+                cfg = sixgr.util.structSet(cfg, "phy.pucch.PRBSet", double(prbStart) + (0:max(round(double(numPRB)) - 1, 0)));
+            end
+            if isfinite(symbolStart) && isfinite(numSymbols) && numSymbols >= 1
+                cfg = sixgr.util.structSet(cfg, "phy.pucch.SymbolAllocation", [double(symbolStart) double(numSymbols)]);
+            end
+            cfg = localStructSetIfPresent(cfg, "phy.pucch.InitialCyclicShift", sixgr.util.structGet(resource, "initial_cyclic_shift", []));
+            cfg = localStructSetIfPresent(cfg, "phy.pucch.OCCLength", sixgr.util.structGet(resource, "occ_length", []));
+            cfg = localStructSetIfPresent(cfg, "phy.pucch.OCCIndex", sixgr.util.structGet(resource, "occ_index", []));
+            cfg = localStructSetIfPresent(cfg, "phy.pucch.SecondHopPRB", sixgr.util.structGet(resource, "second_hop_prb", []));
+            cfg = localStructSetIfPresent(cfg, "phy.pucch.IntraSlotFrequencyHopping", sixgr.util.structGet(resource, "intra_slot_frequency_hopping", []));
+            cfg = localStructSetIfPresent(cfg, "validation.pucch_resources.default_resource_id", sixgr.util.structGet(resource, "resource_id", []));
+            cfg = localStructSetIfPresent(cfg, "validation.pucch_resources.default_feedback_type", sixgr.util.structGet(resource, "feedback_type", []));
+        end
+        harqK1 = double(localGetNested(s, "pucch_resources.harq_ack.k1_slots", NaN));
+        if isfinite(harqK1) && harqK1 >= 0
+            cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", round(double(harqK1)));
+            cfg = sixgr.util.structSet(cfg, "mac.harq.k1", round(double(harqK1)));
+        end
+        uciOnPuschEnabled = localGetNested(s, "pucch_resources.overlap_policy.uci_on_pusch_enabled", []);
+        if ~isempty(uciOnPuschEnabled)
+            if logical(uciOnPuschEnabled)
+                cfg = sixgr.util.structSet(cfg, "phy.pusch.uciMultiplexingMode", "harq_ack_on_pusch_when_pucch_collides");
+            else
+                cfg = sixgr.util.structSet(cfg, "phy.pusch.uciMultiplexingMode", "pucch_only");
+            end
+        end
+        cfg = localStructSetIfPresent(cfg, "pucch.simultaneous_pucch_pusch_policy", ...
+            localGetNested(s, "pucch_resources.overlap_policy.unsupported_overlap_policy", []));
+    end
+end
+
+decoderSection = localGetNested(s, "decoder_output_capture", struct());
+if builtin("isstruct", decoderSection) && ~isempty(fieldnames(decoderSection))
+    cfg = sixgr.util.structSet(cfg, "validation.decoder_output_capture", decoderSection);
+end
+
+dutRefSection = localGetNested(s, "dut_reference_validation", struct());
+if builtin("isstruct", dutRefSection) && ~isempty(fieldnames(dutRefSection))
+    cfg = sixgr.util.structSet(cfg, "validation.dut_reference_validation", dutRefSection);
+    cfg = localStructSetIfPresent(cfg, "validation.referenceMissingPolicy", ...
+        localGetNested(s, "dut_reference_validation.if_reference_missing_policy", []));
+    cfg = localStructSetIfPresent(cfg, "validation.dutReferenceArtifact", ...
+        localGetNested(s, "dut_reference_validation.write_artifact", []));
+end
+
+sib1Section = localGetNested(s, "sib1_and_initial_access", struct());
+if builtin("isstruct", sib1Section) && ~isempty(fieldnames(sib1Section))
+    cfg = sixgr.util.structSet(cfg, "validation.sib1_and_initial_access", sib1Section);
+    sib1Required = logical(localGetNested(s, "sib1_and_initial_access.sib1_required", false)) || ...
+        logical(localGetNested(s, "sib1_and_initial_access.cell_search_required", false)) || ...
+        logical(localGetNested(s, "sib1_and_initial_access.sib1_decode_from_waveform_required", false));
+    if sib1Required
+        cfg = sixgr.util.structSet(cfg, "phy.sib1.enable", true);
+        cfg = localAppendValidationObjectives(cfg, "cell_search_mib_sib1");
+    end
+    siRNTI = double(localGetNested(s, "sib1_and_initial_access.si_rnti", NaN));
+    if isfinite(siRNTI) && siRNTI >= 0
+        cfg = sixgr.util.structSet(cfg, "validation.sib1.siRNTI", round(double(siRNTI)));
+    end
+    if logical(localGetNested(s, "sib1_and_initial_access.coreset0_from_mib_required", false))
+        cfg = sixgr.util.structSet(cfg, "phy.sib1.coreset0Index", ...
+            double(localGetNested(s, "phy.sib1.coreset0Index", 0)));
+    end
+    if logical(localGetNested(s, "sib1_and_initial_access.searchspace0_from_mib_required", false))
+        cfg = sixgr.util.structSet(cfg, "phy.sib1.searchSpaceZero", ...
+            double(localGetNested(s, "phy.sib1.searchSpaceZero", 0)));
+    end
+end
+
+raSection = localGetNested(s, "random_access_evidence", struct());
+if builtin("isstruct", raSection) && ~isempty(fieldnames(raSection))
+    cfg = sixgr.util.structSet(cfg, "validation.random_access_evidence", raSection);
+    if logical(localGetNested(s, "random_access_evidence.four_step_ra_required", false)) || ...
+            logical(localGetNested(s, "random_access_evidence.msg1_prach_required", false)) || ...
+            logical(localGetNested(s, "random_access_evidence.msg3_pusch_required", false))
+        cfg = localAppendValidationObjectives(cfg, "random_access_four_step");
+    end
+end
+
+channelRFSection = localGetNested(s, "channel_rf_configured_vs_applied", struct());
+if builtin("isstruct", channelRFSection) && ~isempty(fieldnames(channelRFSection))
+    cfg = sixgr.util.structSet(cfg, "validation.channel_rf_configured_vs_applied", channelRFSection);
+    if logical(localGetNested(s, "channel_rf_configured_vs_applied.enabled", false))
+        cfg = localAppendValidationObjectives(cfg, "channel_rf_strict_validation");
+    end
+end
+end
+
+function cfg = localAppendValidationObjectives(cfg, tokens)
+existing = localStringVector(sixgr.util.structGet(cfg, "validation.objectives", strings(0, 1)));
+tokens = localStringVector(tokens);
+values = unique([existing; tokens], "stable");
+cfg = sixgr.util.structSet(cfg, "validation.objectives", cellstr(values));
+end
+
+function resource = localResolvePreferredPUCCHResource(resources, requestedFormat)
+resource = struct([]);
+if isempty(resources)
+    return;
+end
+if istable(resources)
+    resources = table2struct(resources);
+end
+if ~isstruct(resources)
+    return;
+end
+formats = arrayfun(@(entry) double(sixgr.util.structGet(entry, "format", NaN)), resources);
+matchIdx = find(isfinite(formats) & round(formats) == round(double(requestedFormat)), 1, "first");
+if isempty(matchIdx)
+    matchIdx = 1;
+end
+resource = resources(matchIdx);
+end
+
+function values = localStringVector(raw)
+if isempty(raw)
+    values = strings(0, 1);
+elseif isstring(raw)
+    values = raw(:);
+elseif ischar(raw)
+    values = string(raw);
+elseif iscell(raw)
+    values = strings(numel(raw), 1);
+    for i = 1:numel(raw)
+        values(i) = string(raw{i});
+    end
+else
+    values = string(raw);
+end
+values = strtrim(values(:));
+values = values(strlength(values) > 0);
 end
 
 function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)

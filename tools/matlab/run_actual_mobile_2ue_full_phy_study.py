@@ -284,7 +284,6 @@ def batch_command_for_run(
     config_path: Path,
     matlab_output_root: str,
     run_tag: str,
-    diary_path: Path,
     workers: int,
     auto_fix_safe_issues: bool,
 ) -> str:
@@ -292,14 +291,13 @@ def batch_command_for_run(
     config_literal = matlab_literal(str(config_path.resolve()))
     output_literal = matlab_literal(matlab_output_root)
     run_tag_literal = matlab_literal(run_tag)
-    diary_literal = matlab_literal(str(diary_path))
     auto_fix_literal = "true" if auto_fix_safe_issues else "false"
     return (
         f"cd({root_literal}); "
         "setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false); "
         "try, "
         f"summary = run_full_study({config_literal}, {output_literal}, {run_tag_literal}, "
-        f"'DiaryPath', {diary_literal}, 'RequestedWorkers', {int(workers)}, "
+        f"'RequestedWorkers', {int(workers)}, "
         f"'AutoFixSafeIssues', {auto_fix_literal}); "
         f"disp('{SUMMARY_START}'); disp(jsonencode(summary)); disp('{SUMMARY_END}'); "
         "catch ME, disp(getReport(ME,'extended','hyperlinks','off')); exit(1); end; exit(0);"
@@ -366,12 +364,10 @@ def run_attempt(
     log_dir = repo_root() / "reports" / "logs" / "actual_mobile_2ue"
     log_dir.mkdir(parents=True, exist_ok=True)
     stdout_log = log_dir / f"{utc_stamp()}_{name}_{run_tag}.log"
-    diary_path = log_dir / f"{run_tag}_diary.tmp.log"
     batch = batch_command_for_run(
         config_path=config_path,
         matlab_output_root=matlab_output_root,
         run_tag=run_tag,
-        diary_path=diary_path,
         workers=workers,
         auto_fix_safe_issues=auto_fix_safe_issues,
     )

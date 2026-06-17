@@ -1250,12 +1250,33 @@ if istable(T)
     n = height(T);
 end
 if isstring(defaultValue) || ischar(defaultValue)
-    values = repmat(string(defaultValue), n, 1);
+    values = localExpandDefaultColumn(string(defaultValue), n);
 elseif islogical(defaultValue)
-    values = repmat(logical(defaultValue), n, 1);
+    values = localExpandDefaultColumn(logical(defaultValue), n);
 else
-    values = repmat(defaultValue, n, 1);
+    values = localExpandDefaultColumn(defaultValue, n);
 end
+end
+
+function values = localExpandDefaultColumn(defaultValue, n)
+if n <= 0
+    values = defaultValue([]);
+    values = values(:);
+    return;
+end
+if ischar(defaultValue)
+    values = repmat(string(defaultValue), n, 1);
+    return;
+end
+if isscalar(defaultValue)
+    values = repmat(defaultValue, n, 1);
+    return;
+end
+if numel(defaultValue) == n
+    values = defaultValue(:);
+    return;
+end
+values = repmat(defaultValue(1), n, 1);
 end
 
 function tf = localHasColumn(T, name)

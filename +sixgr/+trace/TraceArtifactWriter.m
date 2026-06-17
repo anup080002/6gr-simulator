@@ -318,22 +318,24 @@ try
     T = readtable(pathStr, "VariableNamingRule", "preserve");
     rows = height(T);
     cols = width(T);
-    numericSummary = localNumericSummary(T);
-    issueIds = localColumnCounts(T, ["IssueId","IssueID"]);
-    failureReasons = localColumnCounts(T, ["FailureReason","Reason","Notes"]);
-    statusCounts = localColumnCounts(T, ["Status"]);
-    strictCounts = localColumnCounts(T, ["StrictOk"]);
-    resultCounts = localColumnCounts(T, ["ResultOk"]);
-    proxyCounts = localColumnCounts(T, ["ProxyUsed"]);
-    skippedCounts = localColumnCounts(T, ["Skipped"]);
-    fallbackCounts = localColumnCounts(T, ["FallbackUsed"]);
-    suspicious = localSuspiciousSummary(T);
-    recommended = localRecommendedFix(T, suspicious);
+    numericSummary = localSafeAuditText(@() localNumericSummary(T), "summary_unavailable");
+    issueIds = localSafeAuditText(@() localColumnCounts(T, ["IssueId","IssueID"]), "summary_unavailable");
+    failureReasons = localSafeAuditText(@() localColumnCounts(T, ["FailureReason","Reason","Notes"]), "summary_unavailable");
+    statusCounts = localSafeAuditText(@() localColumnCounts(T, ["Status"]), "summary_unavailable");
+    strictCounts = localSafeAuditText(@() localColumnCounts(T, ["StrictOk"]), "summary_unavailable");
+    resultCounts = localSafeAuditText(@() localColumnCounts(T, ["ResultOk"]), "summary_unavailable");
+    proxyCounts = localSafeAuditText(@() localColumnCounts(T, ["ProxyUsed"]), "summary_unavailable");
+    skippedCounts = localSafeAuditText(@() localColumnCounts(T, ["Skipped"]), "summary_unavailable");
+    fallbackCounts = localSafeAuditText(@() localColumnCounts(T, ["FallbackUsed"]), "summary_unavailable");
+    suspicious = localSafeAuditText(@() localSuspiciousSummary(T), "summary_unavailable");
+    recommended = localSafeAuditText(@() localRecommendedFix(T, suspicious), "inspect_audit_summary_helpers");
+    firstExcerpt = localSafeAuditText(@() localExcerpt(T, "head"), "[excerpt unavailable]");
+    lastExcerpt = localSafeAuditText(@() localExcerpt(T, "tail"), "[excerpt unavailable]");
     summaryText = sprintf([ ...
-        "Path: %s\nSize: %d\nSHA256: %s\nRows: %d\nColumns: %d\nFirst5: %s\nLast5: %s\n" ...
-        "NumericStats: %s\nStatusCounts: %s\nStrictOkCounts: %s\nResultOkCounts: %s\nProxyUsedCounts: %s\n" ...
-        "SkippedCounts: %s\nFallbackUsedCounts: %s\nIssueIds: %s\nFailureReasons: %s\nSuspiciousValues: %s\nRecommendedNextFix: %s\n"], ...
-        char(relPath), byteSize, char(sha256), rows, cols, char(localExcerpt(T, "head")), char(localExcerpt(T, "tail")), ...
+        'Path: %s\nSize: %d\nSHA256: %s\nRows: %d\nColumns: %d\nFirst5: %s\nLast5: %s\n' ...
+        'NumericStats: %s\nStatusCounts: %s\nStrictOkCounts: %s\nResultOkCounts: %s\nProxyUsedCounts: %s\n' ...
+        'SkippedCounts: %s\nFallbackUsedCounts: %s\nIssueIds: %s\nFailureReasons: %s\nSuspiciousValues: %s\nRecommendedNextFix: %s\n'], ...
+        char(relPath), byteSize, char(sha256), rows, cols, char(firstExcerpt), char(lastExcerpt), ...
         char(numericSummary), char(statusCounts), char(strictCounts), char(resultCounts), char(proxyCounts), ...
         char(skippedCounts), char(fallbackCounts), char(issueIds), char(failureReasons), char(suspicious), char(recommended));
     row = struct( ...
@@ -361,6 +363,13 @@ try
     end
 catch ME
     summaryText = sprintf("Path: %s\nRead failure: %s\n", char(relPath), char(ME.message));
+    errorDetail = string(ME.message);
+    if strlength(string(ME.identifier)) > 0
+        errorDetail = string(ME.identifier) + ": " + errorDetail;
+    end
+    if ~isempty(ME.stack)
+        errorDetail = errorDetail + " @ " + string(ME.stack(1).name) + ":" + string(ME.stack(1).line);
+    end
     row = struct( ...
         "RunId", string(runId), ...
         "RelativePath", string(relPath), ...
@@ -369,7 +378,7 @@ catch ME
         "Rows", NaN, ...
         "Columns", NaN, ...
         "ReadOk", false, ...
-        "ErrorMessage", string(ME.message), ...
+        "ErrorMessage", errorDetail, ...
         "NumericSummary", "", ...
         "StatusCounts", "", ...
         "StrictOkCounts", "", ...
@@ -382,6 +391,20 @@ catch ME
         "SuspiciousValues", "read_failure", ...
         "RecommendedNextFix", "inspect_csv_schema_and_encoding");
     finding = localFinding(runId, relPath, "READBACK-01", "high", "csv_read_failed", string(ME.message));
+end
+end
+
+function text = localSafeAuditText(fn, fallback)
+try
+    text = string(fn());
+catch ME
+    text = string(fallback) + " (" + string(ME.message) + ")";
+end
+if ismissing(text)
+    text = string(fallback);
+end
+if ~isscalar(text)
+    text = strjoin(text(:), "; ");
 end
 end
 
@@ -592,13 +615,26 @@ report = "<html><body>" + body + "</body></html>";
 end
 
 function localWriteText(pathStr, textValue)
+if iscell(pathStr)
+    pathStr = string(pathStr{1});
+else
+    pathStr = string(pathStr);
+end
+if ~isscalar(pathStr)
+    pathStr = pathStr(1);
+end
 sixgr.util.ensureDir(pathStr);
-fid = fopen(pathStr, "w");
+fid = fopen(char(pathStr), "w");
 if fid < 0
     return;
 end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fprintf(fid, "%s", char(string(textValue)));
+textValue = string(textValue);
+textValue(ismissing(textValue)) = "";
+if ~isscalar(textValue)
+    textValue = strjoin(textValue, newline);
+end
+fprintf(fid, "%s", char(textValue));
 end
 
 function cfg = localReadConfigStruct(pathStr)
