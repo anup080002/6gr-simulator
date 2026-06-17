@@ -56,6 +56,12 @@ speedKmh = speeds(speedIdx).';
 
 % Heading (deg)
 headingDeg = mod(double(headingSeedDeg(:)) + 20 .* randn(K,1), 360);
+dropMode = repmat(string(localResolveDropMode(prof)), K, 1);
+servingMethod = repmat(string(localResolveServingSelectionMethod(prof)), K, 1);
+configuredPathMask = false(K, 1);
+
+[xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod, configuredPathMask] = ...
+    localApplyConfiguredUserPaths(cfg, layout, xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod);
 
 ue = struct();
 ue.profileName = prof.name;
@@ -66,15 +72,72 @@ ue.indoor = indoor;
 ue.speed_kmh = speedKmh;
 ue.heading_deg = headingDeg;
 ue.drop_cell_id = servingRef(:);
-ue.drop_mode = repmat(string(localResolveDropMode(prof)), K, 1);
+ue.drop_mode = dropMode;
 ue.drop_reference_cell_id = servingRef(:);
-ue.serving_selection_method = repmat(string(localResolveServingSelectionMethod(prof)), K, 1);
+ue.serving_selection_method = servingMethod;
 ue.min_inter_ue_distance_m = repmat(double(minInterUEDistance_m), K, 1);
 ue.min_inter_ue_distance_status = repmat(string(spacingStatus), K, 1);
+ue.configured_user_path = configuredPathMask;
 
 end
 
 % ---------------- Local helpers ----------------
+
+function [xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod, configuredMask] = ...
+    localApplyConfiguredUserPaths(cfg, layout, xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod)
+configuredMask = false(size(speedKmh));
+userPaths = sixgr.util.structGet(cfg, "scenario.mobility.userPaths", struct([]));
+if isempty(userPaths)
+    return;
+end
+if istable(userPaths)
+    userPaths = table2struct(userPaths);
+end
+if ~isstruct(userPaths)
+    error("sixgr:scenario:InvalidConfiguredUserPaths", ...
+        "cfg.scenario.mobility.userPaths must be a struct array when provided.");
+end
+
+K = size(xy, 1);
+for i = 1:numel(userPaths)
+    spec = userPaths(i);
+    ueId = round(double(sixgr.util.structGet(spec, "ue_id", NaN)));
+    if ~(isfinite(ueId) && ueId >= 1 && ueId <= K)
+        error("sixgr:scenario:ConfiguredUserPathUEOutOfRange", ...
+            "Configured mobility path UE id %g is out of range for K=%d.", double(ueId), K);
+    end
+    pos = double(sixgr.util.structGet(spec, "initial_position_m", [NaN NaN NaN]));
+    if numel(pos) < 2 || any(~isfinite(pos(1:2)))
+        error("sixgr:scenario:ConfiguredUserPathPositionInvalid", ...
+            "Configured user path UE %d must provide finite initial_position_m x/y values.", ueId);
+    end
+    xy(ueId, :) = pos(1:2);
+    if numel(pos) >= 3 && isfinite(pos(3))
+        z(ueId) = pos(3);
+    end
+    specSpeedKmh = double(sixgr.util.structGet(spec, "speed_kmh", NaN));
+    if isfinite(specSpeedKmh)
+        speedKmh(ueId) = specSpeedKmh;
+    end
+    specHeadingDeg = double(sixgr.util.structGet(spec, "initial_heading_deg", NaN));
+    if isfinite(specHeadingDeg)
+        headingDeg(ueId) = mod(specHeadingDeg, 360);
+    else
+        waypoints = sixgr.util.structGet(spec, "waypoints", struct([]));
+        if isstruct(waypoints) && ~isempty(waypoints)
+            targetPos = double(sixgr.util.structGet(waypoints(1), "position_m", [NaN NaN NaN]));
+            delta = targetPos(1:2) - pos(1:2);
+            if all(isfinite(delta)) && norm(delta) > 0
+                headingDeg(ueId) = mod(atan2d(delta(2), delta(1)), 360);
+            end
+        end
+    end
+    servingRef(ueId) = localAssignByNearestCell(xy(ueId, :), layout, max(1, size(layout.bs.pos_m, 1)));
+    dropMode(ueId) = "configured_user_path";
+    servingMethod(ueId) = "configured_user_path_nearest_cell";
+    configuredMask(ueId) = true;
+end
+end
 
 function minDistance_m = localResolveMinimumInterUEDistance(cfg, prof)
 minDistance_m = double(sixgr.util.structGet(cfg, "scenario.ue.minInterUEDistance_m", ...

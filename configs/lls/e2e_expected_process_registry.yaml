@@ -1,0 +1,419 @@
+version: "1.0"
+registry_name: actual_mobile_2ue_full_phy_study
+description: Expected process registry for the actual 1-sector / 2UE / 100 km/h full-PHY LLS study.
+required_processes:
+  - process_id: config_validation
+    process_name: config validation
+    required: true
+    function_patterns: [sixgr.lls6g.config.validateScenarioConfig, sixgr.config.validateConfig]
+    artifact_patterns: [reports/csv/config_roundtrip_verification.csv, reports/csv/validation_messages.csv]
+  - process_id: claim_gate
+    process_name: claim gate
+    required: true
+    function_patterns: [sixgr.truth.evaluateLLSRuntimeTruthContract]
+    artifact_patterns: [reports/csv/result_status_summary.csv, reports/csv/standards_claim_audit.csv]
+  - process_id: configured_effective_gate
+    process_name: configured/effective gate
+    required: true
+    function_patterns: [sixgr.truth.summarizeEffectiveOperatingPoint]
+    artifact_patterns: [reports/csv/configured_effective_operating_point.csv, reports/csv/scenario_objective_gates.csv]
+  - process_id: output_root_creation
+    process_name: output root creation
+    required: true
+    function_patterns: [sixgr.report.defaultRunFolder]
+    artifact_patterns: [meta/runtime_summary.json, meta/environment.json]
+  - process_id: environment_capture
+    process_name: environment capture
+    required: true
+    function_patterns: [localCaptureEnvironment]
+    artifact_patterns: [meta/environment.json]
+  - process_id: matlab_profiler_start
+    process_name: MATLAB profiler start
+    required: true
+    function_patterns: [profile]
+    artifact_patterns: [reports/csv/runtime_profiler_summary.csv, reports/profiling/matlab_profile_summary.txt]
+  - process_id: parallel_pool_start
+    process_name: parallel pool start
+    required: true
+    function_patterns: [parpool]
+    artifact_patterns: [reports/csv/parallel_execution_summary.csv, meta/runtime_summary.json]
+  - process_id: log_capture
+    process_name: log capture
+    required: true
+    function_patterns: [diary]
+    artifact_patterns: [logs/matlab_diary.log]
+  - process_id: mobility_trajectory
+    process_name: mobility trajectory
+    required: true
+    function_patterns: [sixgr.scenario.dropUEs, sixgr.scenario.mobility.updatePositions, sixgr.scenario.mobility.MobilityTrace]
+    artifact_patterns: [reports/csv/live_rsrp_serving_trace.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: tdd_pattern
+    process_name: TDD pattern
+    required: true
+    function_patterns: [sixgr.phy.FrameStructureEngine]
+    artifact_patterns: [reports/csv/runtime_operating_mode.csv]
+  - process_id: channel_geometry
+    process_name: channel geometry
+    required: true
+    function_patterns: [sixgr.channel.buildScenarioGeometry]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: pathloss
+    process_name: pathloss
+    required: true
+    function_patterns: [nrPathLoss]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: shadowing
+    process_name: shadowing
+    required: true
+    function_patterns: [shadow_fading]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: o2i
+    process_name: O2I
+    required: true
+    function_patterns: [o2i]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: doppler
+    process_name: Doppler
+    required: true
+    function_patterns: [doppler]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: cdl_tdl_channel
+    process_name: CDL/TDL channel
+    required: true
+    function_patterns: [nrCDLChannel, nrTDLChannel]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv, air_interface/csv/dl_pdsch_trials.csv, air_interface/csv/ul_pusch_trials.csv]
+  - process_id: thermal_noise
+    process_name: thermal noise
+    required: true
+    function_patterns: [thermal_noise]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: cfo
+    process_name: CFO
+    required: true
+    function_patterns: [InjectedCFO_Hz, EstimatedCFO_Hz]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: phase_noise
+    process_name: phase noise
+    required: true
+    function_patterns: [phase_noise]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: iq_imbalance
+    process_name: IQ imbalance
+    required: true
+    function_patterns: [iq_imbalance]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: pa_nonlinearity
+    process_name: PA nonlinearity
+    required: true
+    function_patterns: [pa]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: timing_offset
+    process_name: timing offset
+    required: true
+    function_patterns: [TimingError_samples, ToAEstimate_s]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: sample_clock_offset
+    process_name: sample clock offset
+    required: true
+    function_patterns: [sample_clock_offset]
+    artifact_patterns: [reports/csv/runtime_issue_trace.csv]
+  - process_id: quantization
+    process_name: quantization
+    required: true
+    function_patterns: [quantization]
+    artifact_patterns: [reports/csv/live_channel_state_tti.csv]
+  - process_id: ssb_generation
+    process_name: SSB generation
+    required: true
+    function_patterns: [SSB, PSS, SSS]
+    artifact_patterns: [air_interface/csv/pbch_trials.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: pbch
+    process_name: PBCH
+    required: true
+    function_patterns: [PBCH, MIB]
+    artifact_patterns: [air_interface/csv/pbch_trials.csv, control/csv/pbch_recovery_trials.csv]
+  - process_id: mib
+    process_name: MIB
+    required: true
+    function_patterns: [MIB]
+    artifact_patterns: [control/csv/pbch_recovery_trials.csv]
+  - process_id: sib1
+    process_name: SIB1
+    required: true
+    function_patterns: [SIB1]
+    artifact_patterns: [control/csv/sib1_recovery_trials.csv]
+  - process_id: sib1_asn1_encode
+    process_name: SIB1 ASN.1 encode
+    required: true
+    function_patterns: [sixgr.rrc.asn1]
+    artifact_patterns: [control/csv/sib1_recovery_trials.csv]
+  - process_id: sib1_pdcch
+    process_name: SIB1 PDCCH
+    required: true
+    function_patterns: [PDCCH]
+    artifact_patterns: [control/csv/pdcch_trials.csv]
+  - process_id: sib1_pdsch
+    process_name: SIB1 PDSCH
+    required: true
+    function_patterns: [PDSCH]
+    artifact_patterns: [control/csv/sib1_recovery_trials.csv]
+  - process_id: prach_config
+    process_name: PRACH config
+    required: true
+    function_patterns: [PRACH]
+    artifact_patterns: [control/csv/prach_trials.csv]
+  - process_id: prach_waveform
+    process_name: PRACH waveform
+    required: true
+    function_patterns: [sixgr.rach.generatePRACHWaveform]
+    artifact_patterns: [control/csv/prach_trials.csv, air_interface/csv/prach_trials.csv]
+  - process_id: prach_detector
+    process_name: PRACH detector
+    required: true
+    function_patterns: [PRACH detector]
+    artifact_patterns: [control/csv/prach_trials.csv, control/csv/prach_false_alarm_sweep.csv]
+  - process_id: ra_msg1
+    process_name: RA Msg1
+    required: true
+    function_patterns: [PRACH_Msg1]
+    artifact_patterns: [control/csv/initial_access_lifecycle_trace.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: ra_msg2
+    process_name: RA Msg2
+    required: true
+    function_patterns: [RAR_Msg2]
+    artifact_patterns: [control/csv/initial_access_lifecycle_trace.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: ra_msg3
+    process_name: RA Msg3
+    required: true
+    function_patterns: [Msg3_PUSCH]
+    artifact_patterns: [control/csv/initial_access_lifecycle_trace.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: ra_msg4
+    process_name: RA Msg4
+    required: true
+    function_patterns: [Msg4_ContentionResolution]
+    artifact_patterns: [control/csv/initial_access_lifecycle_trace.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: pdcch_config
+    process_name: PDCCH config
+    required: true
+    function_patterns: [sixgr.phy.dl.PDCCH_Tx]
+    artifact_patterns: [control/csv/pdcch_trials.csv]
+  - process_id: pdcch_blind_decode
+    process_name: PDCCH blind decode
+    required: true
+    function_patterns: [sixgr.phy.dl.PDCCH_Rx]
+    artifact_patterns: [control/csv/pdcch_trials.csv, control/csv/pdcch_wrong_rnti_trials.csv]
+  - process_id: dci_decode
+    process_name: DCI decode
+    required: true
+    function_patterns: [DCI]
+    artifact_patterns: [control/csv/pdcch_dci_fields.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: dci_grant_validation
+    process_name: DCI-to-grant validation
+    required: true
+    function_patterns: [grant validation]
+    artifact_patterns: [control/csv/pdcch_grant_validation.csv]
+  - process_id: dl_sch_encode
+    process_name: DL-SCH encode
+    required: true
+    function_patterns: [DL-SCH]
+    artifact_patterns: [air_interface/csv/dl_pdsch_trials.csv]
+  - process_id: pdsch_map
+    process_name: PDSCH map
+    required: true
+    function_patterns: [sixgr.phy.dl.PDSCH_Tx]
+    artifact_patterns: [air_interface/csv/dl_pdsch_trials.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: pdsch_channel_estimation
+    process_name: PDSCH channel estimation
+    required: true
+    function_patterns: [channelEstimate, nrChannelEstimate]
+    artifact_patterns: [reports/csv/live_channel_estimation_tti.csv, air_interface/csv/dl_pdsch_trials.csv]
+  - process_id: pdsch_equalization
+    process_name: PDSCH equalization
+    required: true
+    function_patterns: [equalization]
+    artifact_patterns: [air_interface/csv/dl_pdsch_trials.csv]
+  - process_id: pdsch_llr
+    process_name: PDSCH LLR
+    required: true
+    function_patterns: [LLR]
+    artifact_patterns: [air_interface/csv/dl_pdsch_trials.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: dl_sch_decode
+    process_name: DL-SCH decode
+    required: true
+    function_patterns: [DL-SCH decode]
+    artifact_patterns: [air_interface/csv/dl_pdsch_trials.csv]
+  - process_id: ul_sch_encode
+    process_name: UL-SCH encode
+    required: true
+    function_patterns: [UL-SCH]
+    artifact_patterns: [air_interface/csv/ul_pusch_trials.csv]
+  - process_id: pusch_map
+    process_name: PUSCH map
+    required: true
+    function_patterns: [sixgr.phy.ul.PUSCH_Tx]
+    artifact_patterns: [air_interface/csv/ul_pusch_trials.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: pusch_channel_estimation
+    process_name: PUSCH channel estimation
+    required: true
+    function_patterns: [sixgr.phy.ul.PUSCH_Rx, nrChannelEstimate]
+    artifact_patterns: [reports/csv/live_channel_estimation_tti.csv, air_interface/csv/ul_pusch_trials.csv]
+  - process_id: pusch_equalization
+    process_name: PUSCH equalization
+    required: true
+    function_patterns: [equalization]
+    artifact_patterns: [air_interface/csv/ul_pusch_trials.csv]
+  - process_id: pusch_llr
+    process_name: PUSCH LLR
+    required: true
+    function_patterns: [LLR]
+    artifact_patterns: [air_interface/csv/ul_pusch_trials.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: ul_sch_decode
+    process_name: UL-SCH decode
+    required: true
+    function_patterns: [UL-SCH decode]
+    artifact_patterns: [air_interface/csv/ul_pusch_trials.csv]
+  - process_id: pucch_uci_encode
+    process_name: PUCCH UCI encode
+    required: true
+    function_patterns: [PUCCH]
+    artifact_patterns: [air_interface/csv/pucch_trials.csv]
+  - process_id: pucch_waveform
+    process_name: PUCCH waveform
+    required: true
+    function_patterns: [PUCCH]
+    artifact_patterns: [air_interface/csv/pucch_trials.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: pucch_decode
+    process_name: PUCCH decode
+    required: true
+    function_patterns: [sixgr.phy.ul.PUCCH_Rx]
+    artifact_patterns: [air_interface/csv/pucch_trials.csv]
+  - process_id: srs_generation
+    process_name: SRS generation
+    required: true
+    function_patterns: [SRS]
+    artifact_patterns: [reference_signals/csv/srs_trials.csv, air_interface/csv/srs_trials.csv]
+  - process_id: srs_detection
+    process_name: SRS detection/channel estimate
+    required: true
+    function_patterns: [SRS]
+    artifact_patterns: [reference_signals/csv/srs_channel_estimation.csv, reference_signals/csv/srs_trials.csv]
+  - process_id: trs_generation
+    process_name: TRS generation
+    required: true
+    function_patterns: [TRS]
+    artifact_patterns: [reference_signals/csv/trs_trials.csv, air_interface/csv/trs_trials.csv]
+  - process_id: trs_timing_tracking
+    process_name: TRS timing tracking
+    required: true
+    function_patterns: [TRS]
+    artifact_patterns: [reference_signals/csv/trs_timing_tracking.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: csirs_generation
+    process_name: CSI-RS generation
+    required: true
+    function_patterns: [CSI_RS]
+    artifact_patterns: [reports/csv/runtime_message_flow_trace.csv, reports/csv/live_tx_rx_stage_trace.csv]
+  - process_id: ptrs_generation
+    process_name: PTRS generation
+    required: true
+    function_patterns: [PTRS]
+    artifact_patterns: [reports/csv/runtime_message_flow_trace.csv, reports/csv/live_tx_rx_stage_trace.csv]
+  - process_id: mu_mimo_scheduling
+    process_name: MU-MIMO scheduling
+    required: true
+    function_patterns: [mu_mimo]
+    artifact_patterns: [beamforming/csv/rank_layer_trials.csv, reports/csv/runtime_function_block_trace.csv]
+  - process_id: rank_layer_evidence
+    process_name: rank/layer evidence
+    required: true
+    function_patterns: [rank, layers]
+    artifact_patterns: [beamforming/csv/rank_layer_trials.csv]
+  - process_id: beam_codebook
+    process_name: beam codebook
+    required: true
+    function_patterns: [codebook]
+    artifact_patterns: [beamforming/csv/probe_beam_management.csv]
+  - process_id: beam_sweep
+    process_name: beam sweep
+    required: true
+    function_patterns: [beam sweep]
+    artifact_patterns: [beamforming/csv/probe_beam_management.csv]
+  - process_id: precoder_selection
+    process_name: precoder selection
+    required: true
+    function_patterns: [precoder]
+    artifact_patterns: [beamforming/csv/rank_layer_trials.csv]
+  - process_id: scheduler_grants
+    process_name: scheduler grants
+    required: true
+    function_patterns: [scheduler grants]
+    artifact_patterns: [mac/csv/dl_scheduler_grant_trace.csv, mac/csv/ul_scheduler_grant_trace.csv]
+  - process_id: harq_process
+    process_name: HARQ process
+    required: true
+    function_patterns: [HARQ]
+    artifact_patterns: [harq/csv/live_harq_observation_timeline.csv, harq/csv/harq_process_timeline.csv]
+  - process_id: harq_retransmission
+    process_name: HARQ retransmission
+    required: true
+    function_patterns: [IsRetransmission]
+    artifact_patterns: [harq/csv/live_harq_observation_timeline.csv, air_interface/csv/dl_pdsch_trials.csv, air_interface/csv/ul_pusch_trials.csv]
+  - process_id: harq_soft_combining
+    process_name: HARQ soft combining
+    required: true
+    function_patterns: [HARQCombiningApplied]
+    artifact_patterns: [harq/csv/live_harq_observation_timeline.csv, air_interface/csv/dl_pdsch_trials.csv, air_interface/csv/ul_pusch_trials.csv]
+  - process_id: k0k1k2_timing
+    process_name: K0/K1/K2 timing
+    required: true
+    function_patterns: [K0, K1, K2]
+    artifact_patterns: [harq/csv/live_harq_observation_timeline.csv, reports/csv/runtime_calculation_trace.csv]
+  - process_id: traffic_packet_generation
+    process_name: traffic packet generation
+    required: true
+    function_patterns: [TrafficFactory]
+    artifact_patterns: [reports/csv/live_user_performance_snapshot.csv, reports/csv/runtime_message_flow_trace.csv]
+  - process_id: mac_pdu
+    process_name: MAC PDU
+    required: true
+    function_patterns: [MAC_PDU]
+    artifact_patterns: [reports/csv/runtime_message_flow_trace.csv]
+  - process_id: mac_sdu_delivery
+    process_name: MAC SDU delivery
+    required: true
+    function_patterns: [MAC_SDU]
+    artifact_patterns: [reports/csv/runtime_message_flow_trace.csv, reports/csv/live_user_performance_snapshot.csv]
+  - process_id: kpi_reconstruction
+    process_name: KPI reconstruction
+    required: true
+    function_patterns: [sixgr.kpi.reconstructLLSKPISummaryFromRaw]
+    artifact_patterns: [reports/csv/live_error_rate_summary.csv, reports/csv/lls_phy_outcome_summary.csv]
+  - process_id: artifact_manifest
+    process_name: artifact manifest
+    required: true
+    function_patterns: [manifest]
+    artifact_patterns: [meta/scenario_manifest.json, reports/csv/exhaustive_file_inventory.csv]
+  - process_id: csv_schema_audit
+    process_name: CSV schema audit
+    required: true
+    function_patterns: [csv audit]
+    artifact_patterns: [reports/csv/exhaustive_csv_audit.csv]
+  - process_id: exhaustive_output_readback
+    process_name: exhaustive output readback
+    required: true
+    function_patterns: [readtable, fileread]
+    artifact_patterns: [reports/csv/exhaustive_file_inventory.csv, reports/csv/e2e_output_readback_findings.csv]
+  - process_id: visual_artifact_audit
+    process_name: visual artifact audit
+    required: true
+    function_patterns: [visual]
+    artifact_patterns: [reports/csv/exhaustive_log_audit.csv, reports/html/all_csv_deep_readback_report.html]
+  - process_id: duplicate_artifact_audit
+    process_name: duplicate artifact audit
+    required: true
+    function_patterns: [duplicate artifact]
+    artifact_patterns: [reports/csv/exhaustive_file_inventory.csv]
+  - process_id: final_report_generation
+    process_name: final report generation
+    required: true
+    function_patterns: [sixgr.validation.writeImplementationValidationReport]
+    artifact_patterns: [reports/md/actual_lls_implementation_validation_report.md, reports/html/actual_lls_implementation_validation_report.html, study_report/summary.json]

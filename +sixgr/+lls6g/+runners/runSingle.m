@@ -2593,10 +2593,11 @@ fprintf(fid, "- Reference-compared blocks: `%g`\n", double(sixgr.util.structGet(
 fprintf(fid, "- Numerical sanity failures: `%g`\n", double(sixgr.util.structGet(summary, "NumericalSanityFailureCount", 0)));
 fprintf(fid, "- Expected functions not called: `%s`\n", strjoin(cellstr(string(sixgr.util.structGet(summary, "FunctionNotCalled", strings(0, 1)))), " | "));
 fprintf(fid, "- Bypassed blocks: `%s`\n", strjoin(cellstr(string(sixgr.util.structGet(summary, "BypassedBlocks", strings(0, 1)))), " | "));
-fprintf(fid, "- Label-only/proxy detections: `%s`\n\n", strjoin(cellstr(unique([ ...
+proxyDetections = unique([ ...
     string(sixgr.util.structGet(summary, "LabelOnlyBlocks", strings(0, 1))); ...
     string(sixgr.util.structGet(summary, "ProxyBlocks", strings(0, 1))); ...
-    string(sixgr.util.structGet(summary, "FallbackBlocks", strings(0, 1))])), " | "));
+    string(sixgr.util.structGet(summary, "FallbackBlocks", strings(0, 1)))]);
+fprintf(fid, "- Label-only/proxy detections: `%s`\n\n", strjoin(cellstr(proxyDetections), " | "));
 end
 
 function opSummary = localOperatingPointSummary(scfg, result)

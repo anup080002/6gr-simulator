@@ -15,7 +15,9 @@ end
 tti_s = double(sixgr.util.structGet(details, "TTI_s", ...
     sixgr.util.structGet(cfg, "system.tti_s", ...
     double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 0.5)) / 1e3)));
-if ~(isfinite(tti_s) && tti_s > 0)
+tti_s = tti_s(:);
+tti_s = tti_s(find(isfinite(tti_s) & tti_s > 0, 1, "first"));
+if isempty(tti_s)
     tti_s = 0.5e-3;
 end
 slotDuration_ms = tti_s * 1e3;

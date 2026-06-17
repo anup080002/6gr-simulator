@@ -6587,7 +6587,7 @@ if ~isfield(summary, "ActualLLSVerdict")
     return;
 end
 modeName = lower(strtrim(string(modeName)));
-heading = localTernary(modeName == "technical", "## Actual LLS Implementation Verdict", "## Actual LLS Implementation Verdict");
+heading = "## Actual LLS Implementation Verdict";
 fprintf(fid, "%s\n\n", heading);
 fprintf(fid, "- Verdict: `%s`\n", string(sixgr.util.structGet(summary, "ActualLLSVerdict", "")));
 fprintf(fid, "- Statement: %s\n", string(sixgr.util.structGet(summary, "VerdictSentence", "")));
@@ -6597,10 +6597,11 @@ fprintf(fid, "- Reference-compared blocks: `%g`\n", double(sixgr.util.structGet(
 fprintf(fid, "- Numerical sanity failures: `%g`\n", double(sixgr.util.structGet(summary, "NumericalSanityFailureCount", 0)));
 localWriteValidationList(fid, "Expected functions not called", sixgr.util.structGet(summary, "FunctionNotCalled", strings(0, 1)));
 localWriteValidationList(fid, "Bypassed blocks", sixgr.util.structGet(summary, "BypassedBlocks", strings(0, 1)));
-localWriteValidationList(fid, "Label-only/proxy detections", unique([ ...
+proxyDetections = unique([ ...
     string(sixgr.util.structGet(summary, "LabelOnlyBlocks", strings(0, 1))); ...
     string(sixgr.util.structGet(summary, "ProxyBlocks", strings(0, 1))); ...
-    string(sixgr.util.structGet(summary, "FallbackBlocks", strings(0, 1))]));
+    string(sixgr.util.structGet(summary, "FallbackBlocks", strings(0, 1)))]);
+localWriteValidationList(fid, "Label-only/proxy detections", proxyDetections);
 fprintf(fid, "\n");
 end
 

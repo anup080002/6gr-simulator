@@ -182,6 +182,8 @@ cfg.scenario.mobility.zigzagTurnAngle_deg = double(localGetNested(s, "mobility.z
     localGetNested(s, "mobility.zigzagTurnAngle_deg", NaN)));
 cfg.scenario.mobility.turnAngle_deg = double(localGetNested(s, "mobility.turn_angle_deg", ...
     localGetNested(s, "mobility.turnAngle_deg", cfg.scenario.mobility.zigzagTurnAngle_deg)));
+cfg.scenario.mobility.userPaths = sixgr.lls6g.config.normalizeMobilityUserPaths( ...
+    localGetNested(s, "mobility.user_paths", struct([])));
 localAssertFiniteConfigValue(cfg.scenario.mobility.updatePeriod_s, "mobility.update_period_s");
 localAssertFiniteConfigValue(cfg.scenario.mobility.zigzagSegmentDuration_s, "mobility.zigzag_segment_duration_s");
 localAssertFiniteConfigValue(cfg.scenario.mobility.zigzagTurnAngle_deg, "mobility.zigzag_turn_angle_deg");
@@ -305,6 +307,9 @@ cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numULSymbols", ...
 cfg.phy.waveform.dl = char(string(s.waveform.dl_waveform));
 cfg.phy.waveform.ul = char(string(s.waveform.ul_waveform));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingEnabled", logical(s.waveform.windowing_enabled));
+cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingPercent", double(s.waveform.windowing_percent));
+cfg = sixgr.util.structSet(cfg, "phy.waveform.ofdmWindowingPercent", double(s.waveform.windowing_percent));
+cfg = sixgr.util.structSet(cfg, "phy.ofdm.windowingPercent", double(s.waveform.windowing_percent));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.experimentalDLDftsOfdmEnabled", ...
     logical(s.waveform.experimental_dl_dfts_ofdm_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.channelEstimation.method", char(string(localGetNested(s, ...
@@ -490,8 +495,23 @@ end
 cfg.pdsch6gr.FixedMCSActive = logical(linkAdaptationUsesFixedMCS);
 dlConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, "modulation.dl_mcs_index", NaN));
 ulConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, "modulation.ul_mcs_index", NaN));
+dlLayerCount = localNumericScalarOrNaN(localGetNested(s, "mimo.max_dl_layers", s.mimo.n_layers));
+if ~(isfinite(dlLayerCount) && dlLayerCount >= 1)
+    dlLayerCount = max(1, round(double(s.mimo.n_layers)));
+else
+    dlLayerCount = max(1, round(double(dlLayerCount)));
+end
+ulLayerCount = localNumericScalarOrNaN(localGetNested(s, "mimo.max_ul_layers", s.mimo.n_layers));
+if ~(isfinite(ulLayerCount) && ulLayerCount >= 1)
+    ulLayerCount = max(1, round(double(s.mimo.n_layers)));
+else
+    ulLayerCount = max(1, round(double(ulLayerCount)));
+end
 cfg.phy.pdsch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pdsch_enable)));
-cfg.phy.pdsch.nLayers = double(s.mimo.n_layers);
+cfg.phy.pdsch.nLayers = double(dlLayerCount);
+cfg.phy.pdsch.numLayers = double(dlLayerCount);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxLayers", double(dlLayerCount));
+cfg = sixgr.util.structSet(cfg, "phy.maxDLLayers", double(dlLayerCount));
 cfg.phy.pdsch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
 cfg.phy.pdsch.dmrs.numCDMGroupsWithoutData = double(s.reference_signals.pdsch_dmrs_num_cdm_groups_without_data);
 cfg.phy.pdsch.dmrs.typeApos = double(s.reference_signals.pdsch_dmrs_type_a_position);
@@ -661,8 +681,10 @@ cfg.phy.pucch.enable = logical(s.control.pucch_enabled);
 cfg.phy.pucch.format = double(s.control.pucch_format);
 
 cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
-cfg.phy.pusch.nLayers = double(s.mimo.n_layers);
-cfg.phy.pusch.numLayers = double(s.mimo.n_layers);
+cfg.phy.pusch.nLayers = double(ulLayerCount);
+cfg.phy.pusch.numLayers = double(ulLayerCount);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", double(ulLayerCount));
+cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", double(ulLayerCount));
 cfg.phy.pusch.transformPrecoding = logical(s.waveform.transform_precoding_enabled);
 cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
@@ -672,10 +694,10 @@ ulCodebookEnabled = ~logical(s.waveform.transform_precoding_enabled) && reportPM
     pmiCodebookMode ~= "noncodebook" && lower(string(s.mimo.codebook_type)) ~= "noncodebook";
 if ulCodebookEnabled
     ulNumPorts = double(localGetNested(s, "reference_signals.pusch_dmrs_ports", ...
-        localGetNested(s, "mimo.n_tx_ant", double(s.mimo.n_layers))));
+        localGetNested(s, "mimo.n_tx_ant", double(ulLayerCount))));
     allowedPorts = [1 2 4];
-    if ~(isfinite(ulNumPorts) && ulNumPorts >= double(s.mimo.n_layers))
-        ulNumPorts = double(s.mimo.n_layers);
+    if ~(isfinite(ulNumPorts) && ulNumPorts >= double(ulLayerCount))
+        ulNumPorts = double(ulLayerCount);
     end
     ulNumPorts = allowedPorts(find(allowedPorts >= max(1, round(ulNumPorts)), 1, "first"));
     if isempty(ulNumPorts)
@@ -695,6 +717,45 @@ end
 cfg = sixgr.util.structSet(cfg, "phy.pusch.pi2BPSKEnabled", logical(s.modulation.pi2_bpsk_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.modulation.constellationShapingEnabled", ...
     logical(s.modulation.constellation_shaping_enabled));
+powerControlEnabled = logical(localGetNested(s, "power_control.ul_open_loop_enable", false)) || ...
+    logical(localGetNested(s, "power_control.f_closed_loop_enable", false));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.enabled", powerControlEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.open_loop_enabled", ...
+    logical(localGetNested(s, "power_control.ul_open_loop_enable", false)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.closed_loop_enabled", ...
+    logical(localGetNested(s, "power_control.f_closed_loop_enable", false)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.p0_pusch_dbm", ...
+    double(localGetNested(s, "power_control.p0_pusch_dBm", -80)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.alpha", ...
+    double(localGetNested(s, "power_control.alpha_pusch", 0.8)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.delta_tf_db", 0);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.closed_loop_accumulation_db", 0);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.tpc_command_bits", ...
+    double(localGetNested(s, "power_control.tpc_command_bits", 0)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.power_control.phr_report_enabled", ...
+    logical(localGetNested(s, "power_control.phr_report_enable", false)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.enabled", powerControlEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.openLoopEnabled", ...
+    logical(localGetNested(s, "power_control.ul_open_loop_enable", false)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.closedLoopEnabled", ...
+    logical(localGetNested(s, "power_control.f_closed_loop_enable", false)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.p0PUSCH_dBm", ...
+    double(localGetNested(s, "power_control.p0_pusch_dBm", -80)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.alpha", ...
+    double(localGetNested(s, "power_control.alpha_pusch", 0.8)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.deltaTF_dB", 0);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.closedLoopAccumulation_dB", 0);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.tpcCommandBits", ...
+    double(localGetNested(s, "power_control.tpc_command_bits", 0)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.phrReportEnabled", ...
+    logical(localGetNested(s, "power_control.phr_report_enable", false)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.powerControl.pcmax_dBm", ...
+    double(localGetNested(s, "power_control.pcmax_dBm", localGetNested(s, "power_control.ue_max_power_dBm", 23))));
+cfg = sixgr.util.structSet(cfg, "powerAndRF.puschPowerControlEnabled", powerControlEnabled);
+cfg = sixgr.util.structSet(cfg, "powerAndRF.uePcmax_dBm", ...
+    double(localGetNested(s, "power_control.pcmax_dBm", localGetNested(s, "power_control.ue_max_power_dBm", 23))));
+cfg = sixgr.util.structSet(cfg, "powerAndRF.referenceTxPower_dBm", ...
+    double(localGetNested(s, "power_control.ue_max_power_dBm", localGetNested(s, "power_control.pcmax_dBm", 23))));
 
 cfg.phy.srs.enable = logical(s.reference_signals.srs_enabled);
 cfg.phy.srs.nPorts = double(s.reference_signals.srs_ports);

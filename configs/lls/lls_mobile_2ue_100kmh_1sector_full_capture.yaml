@@ -1,0 +1,2 @@
+inherits:
+  - ../../simulator/configs/scenarios/lls_mobile_2ue_100kmh_1sector_full_capture.yaml

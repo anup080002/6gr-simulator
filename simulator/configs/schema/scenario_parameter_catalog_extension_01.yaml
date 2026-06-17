@@ -241,6 +241,7 @@
       "update_period_s": {"required": false, "type": "number", "min": 0},
       "zigzag_segment_duration_s": {"required": false, "type": "number", "min": 0},
       "zigzag_turn_angle_deg": {"required": false, "type": "number", "min": 0},
+      "user_paths": {"required": false, "type": "struct_array", "item_nested_rule": "mobility_user_path_object"},
       "acceleration_profile": {"required": true, "type": "string"},
       "handover_context_flag": {"required": true, "type": "boolean"},
       "beam_dynamics_model": {"required": true, "type": "string"},
@@ -421,6 +422,19 @@
       "periodSlots": {"required": false, "type": "integer", "min": 1},
       "maxGrantsPerAuditSlot": {"required": false, "type": "integer", "min": 0},
       "unsampledGrantPolicy": {"required": false, "type": "string", "allowed_values": ["unavailable_no_feedback", "full_replay"]}
+    }},
+    "mobility_user_path_object": {"parameters": {
+      "ue_id": {"required": true, "type": "integer", "min": 1},
+      "label": {"required": false, "type": "string"},
+      "speed_kmh": {"required": false, "type": "number", "min": 0},
+      "initial_position_m": {"required": true, "type": "number_list", "min_items": 2, "max_items": 3},
+      "initial_heading_deg": {"required": false, "type": "number"},
+      "waypoints_m": {"required": false, "type": "struct_array", "item_nested_rule": "mobility_waypoint_object"},
+      "loop_mode": {"required": false, "type": "string", "allowed_values": ["hold", "ping_pong", "wrap"]}
+    }},
+    "mobility_waypoint_object": {"parameters": {
+      "position_m": {"required": true, "type": "number_list", "min_items": 2, "max_items": 3},
+      "hold_time_s": {"required": false, "type": "number", "min": 0}
     }},
     "traffic_tcp_object": {"parameters": {
       "initCwnd_packets": {"required": true, "type": "integer", "min": 1},

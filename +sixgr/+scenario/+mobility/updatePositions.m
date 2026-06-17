@@ -52,6 +52,9 @@ prof = sixgr.scenario.ScenarioFactory.getProfile(cfg);
                 sixgr.util.structGet(cfg, "scenario.mobility.turnAngle_deg", 35)));
             model = sixgr.scenario.mobility.MobilityZigZag(area_m, wrapEn, ...
                 "SegmentDuration_s", segDur_s, "TurnAngle_deg", turnAngle_deg);
+        case {"trace","trajectory_trace"}
+            model = sixgr.scenario.mobility.MobilityTrace(area_m, wrapEn, ...
+                sixgr.util.structGet(cfg, "scenario.mobility.userPaths", struct([])));
         case {"rmamixedspeed","rma","mixed","straightline","straight_line","straight","line"}
             model = sixgr.scenario.mobility.MobilityRMaMixedSpeed(area_m, wrapEn);
         otherwise

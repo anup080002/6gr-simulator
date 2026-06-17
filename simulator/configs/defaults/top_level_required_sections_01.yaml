@@ -158,6 +158,7 @@
     "update_period_s": 0.1,
     "zigzag_segment_duration_s": 0.75,
     "zigzag_turn_angle_deg": 35,
+    "user_paths": [],
     "acceleration_profile": "none",
     "handover_context_flag": false,
     "beam_dynamics_model": "static",
