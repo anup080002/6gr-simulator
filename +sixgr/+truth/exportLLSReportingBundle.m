@@ -26,6 +26,19 @@ inventoryT = localBuildArtifactInventory(runFolder, localEmptyMetricTable());
 inventoryPath = fullfile(layout.ReportCSVDir, "artifact_inventory.csv");
 sixgr.util.csvWriteTable(inventoryPath, inventoryT);
 ctx.Inventory = inventoryT;
+ctx.ImplementationValidation = struct();
+try
+    ctx.ImplementationValidation = sixgr.validation.LLSValidationHarness(runFolder, scfg, cfg, ...
+        "WriteArtifacts", true, ...
+        "RuntimeSummary", runtimeSummary, ...
+        "ScenarioStatus", scenarioStatus);
+catch ME
+    ctx.ValidationMessages(end+1, :) = struct2table(struct( ...
+        "Severity", "error", ...
+        "Source", "actual_lls_validation", ...
+        "Message", "Actual LLS validation harness failed: " + string(ME.identifier)));
+    sixgr.util.csvWriteTable(validationPath, ctx.ValidationMessages);
+end
 
 rows = localBuildCategoryRows(catalog, ctx);
 rows = localNormalizeMetricRows(rows, runFolder, ctx);
@@ -83,6 +96,7 @@ out.ExecutiveSummary = string(executivePath);
 out.TechnicalReport = string(technicalPath);
 out.Plots = string(plots(:));
 out.AggregateArtifacts = ctx.AggregateArtifacts;
+out.ImplementationValidation = ctx.ImplementationValidation;
 end
 
 function catalog = localLoadResultCatalog()
@@ -6355,6 +6369,7 @@ specifiedCount = height(coverageT);
 [runtimeCount, configCount, reportCount] = localMetricProvenanceCounts(rows);
 opSummary = localContextOperatingPointSummary(ctx);
 fprintf(fid, "# LLS Executive Summary\n\n");
+localWriteImplementationVerdictSection(fid, sixgr.util.structGet(ctx, "ImplementationValidation", struct()), "executive");
 fprintf(fid, "- Scenario: `%s`\n", string(ctx.ScenarioConfig.ScenarioID));
 fprintf(fid, "- Runner profile: `%s`\n", string(ctx.Manifest.RunnerProfile));
 fprintf(fid, "- Runtime-qualified description: `%s`\n", string(opSummary.RuntimeQualifiedDescription));
@@ -6439,6 +6454,7 @@ end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 opSummary = localContextOperatingPointSummary(ctx);
 fprintf(fid, "# LLS Technical Report\n\n");
+localWriteImplementationVerdictSection(fid, sixgr.util.structGet(ctx, "ImplementationValidation", struct()), "technical");
 fprintf(fid, "## Run Metadata\n\n");
 fprintf(fid, "- Scenario ID: `%s`\n", string(ctx.ScenarioConfig.ScenarioID));
 fprintf(fid, "- Runtime-qualified description: `%s`\n", string(opSummary.RuntimeQualifiedDescription));
@@ -6560,6 +6576,42 @@ if ~isempty(plots)
 end
 clear cleanupObj
 sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
+end
+
+function localWriteImplementationVerdictSection(fid, validation, modeName)
+if ~(isstruct(validation) && isfield(validation, "Summary") && isstruct(validation.Summary))
+    return;
+end
+summary = validation.Summary;
+if ~isfield(summary, "ActualLLSVerdict")
+    return;
+end
+modeName = lower(strtrim(string(modeName)));
+heading = localTernary(modeName == "technical", "## Actual LLS Implementation Verdict", "## Actual LLS Implementation Verdict");
+fprintf(fid, "%s\n\n", heading);
+fprintf(fid, "- Verdict: `%s`\n", string(sixgr.util.structGet(summary, "ActualLLSVerdict", "")));
+fprintf(fid, "- Statement: %s\n", string(sixgr.util.structGet(summary, "VerdictSentence", "")));
+fprintf(fid, "- Enabled blocks: `%g`\n", double(sixgr.util.structGet(summary, "EnabledBlockCount", 0)));
+fprintf(fid, "- Passing blocks: `%g`\n", double(sixgr.util.structGet(summary, "PassingBlockCount", 0)));
+fprintf(fid, "- Reference-compared blocks: `%g`\n", double(sixgr.util.structGet(summary, "ReferenceComparedBlockCount", 0)));
+fprintf(fid, "- Numerical sanity failures: `%g`\n", double(sixgr.util.structGet(summary, "NumericalSanityFailureCount", 0)));
+localWriteValidationList(fid, "Expected functions not called", sixgr.util.structGet(summary, "FunctionNotCalled", strings(0, 1)));
+localWriteValidationList(fid, "Bypassed blocks", sixgr.util.structGet(summary, "BypassedBlocks", strings(0, 1)));
+localWriteValidationList(fid, "Label-only/proxy detections", unique([ ...
+    string(sixgr.util.structGet(summary, "LabelOnlyBlocks", strings(0, 1))); ...
+    string(sixgr.util.structGet(summary, "ProxyBlocks", strings(0, 1))); ...
+    string(sixgr.util.structGet(summary, "FallbackBlocks", strings(0, 1))]));
+fprintf(fid, "\n");
+end
+
+function localWriteValidationList(fid, titleText, values)
+values = string(values(:));
+values = values(strlength(strtrim(values)) > 0);
+if isempty(values)
+    fprintf(fid, "- %s: `none`\n", titleText);
+    return;
+end
+fprintf(fid, "- %s: `%s`\n", titleText, strjoin(cellstr(values), " | "));
 end
 
 function localWriteHistogramMarkdownTable(fid, histStr, titleText, dimension)

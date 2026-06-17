@@ -57,3 +57,17 @@ Truth system mode is only acceptable when all of the following are true:
 - dedicated tests cover multi-cell scheduler, mobility, handover, CRC, and artifact integrity
 
 Only after those conditions are met should the repo add or claim a true 20-site, 60-cell system runner.
+
+## Actual LLS Implementation, Not Labels
+
+Phase-2 system truth is not allowed to stop at truth labels, dashboard cards, or green status rows. For every enabled PHY/MAC/RF block, the system path must prove actual runtime execution with generated evidence, numerical sanity checks, and DUT-vs-reference comparison where a trusted reference exists.
+
+The minimum implementation-proof package for bounded and large-topology system runs is:
+
+- runtime function coverage showing expected functions actually called
+- waveform/grid/bit/decoder/channel evidence rows for each enabled block
+- analytical or 5G Toolbox reference comparisons for mobility, timing, CFO, TBS, and other exposed block outputs
+- explicit oracle/proxy/fallback detection that fails closed in truth mode
+- final `Actual LLS Implementation Verdict` reporting whether the run is full actual LLS, partial actual LLS, a label/proxy simulator, or a failed evidence run
+
+System-truth claims must therefore be backed by the same implementation-validation harness artifacts and hard-failure rules used by waveform LLS truth. No future 20-site or 60-cell truth claim is acceptable if the run only preserves honest labels while missing real execution proof.

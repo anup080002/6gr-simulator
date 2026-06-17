@@ -2500,6 +2500,7 @@ end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 opSummary = localOperatingPointSummary(scfg, result);
 fprintf(fid, "# 6G PHY LLS Scenario Report\n\n");
+localWriteImplementationVerdictSection(fid, sixgr.util.structGet(reportBundle, "ImplementationValidation", struct()));
 fprintf(fid, "- Scenario ID: `%s`\n", string(scfg.ScenarioID));
 fprintf(fid, "- Scenario description (configured intent): `%s`\n", string(scfg.get("meta.description", "")));
 fprintf(fid, "- Runtime-qualified description: `%s`\n", string(opSummary.RuntimeQualifiedDescription));
@@ -2576,6 +2577,26 @@ for i = 1:numel(scfg.SourceFiles)
 end
 clear cleanupObj
 sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charset=UTF-8", true);
+end
+
+function localWriteImplementationVerdictSection(fid, validation)
+if ~(isstruct(validation) && isfield(validation, "Summary") && isstruct(validation.Summary))
+    return;
+end
+summary = validation.Summary;
+fprintf(fid, "## Actual LLS Implementation Verdict\n\n");
+fprintf(fid, "- Verdict: `%s`\n", string(sixgr.util.structGet(summary, "ActualLLSVerdict", "")));
+fprintf(fid, "- Statement: %s\n", string(sixgr.util.structGet(summary, "VerdictSentence", "")));
+fprintf(fid, "- Enabled blocks: `%g`\n", double(sixgr.util.structGet(summary, "EnabledBlockCount", 0)));
+fprintf(fid, "- Passing blocks: `%g`\n", double(sixgr.util.structGet(summary, "PassingBlockCount", 0)));
+fprintf(fid, "- Reference-compared blocks: `%g`\n", double(sixgr.util.structGet(summary, "ReferenceComparedBlockCount", 0)));
+fprintf(fid, "- Numerical sanity failures: `%g`\n", double(sixgr.util.structGet(summary, "NumericalSanityFailureCount", 0)));
+fprintf(fid, "- Expected functions not called: `%s`\n", strjoin(cellstr(string(sixgr.util.structGet(summary, "FunctionNotCalled", strings(0, 1)))), " | "));
+fprintf(fid, "- Bypassed blocks: `%s`\n", strjoin(cellstr(string(sixgr.util.structGet(summary, "BypassedBlocks", strings(0, 1)))), " | "));
+fprintf(fid, "- Label-only/proxy detections: `%s`\n\n", strjoin(cellstr(unique([ ...
+    string(sixgr.util.structGet(summary, "LabelOnlyBlocks", strings(0, 1))); ...
+    string(sixgr.util.structGet(summary, "ProxyBlocks", strings(0, 1))); ...
+    string(sixgr.util.structGet(summary, "FallbackBlocks", strings(0, 1))])), " | "));
 end
 
 function opSummary = localOperatingPointSummary(scfg, result)

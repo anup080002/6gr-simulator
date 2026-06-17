@@ -818,3 +818,37 @@ The re-architecture is complete only when:
 - map telemetry, beam, CQI, SINR, and user performance match the same slot state
 - all run statuses finalize correctly in MySQL
 - the browser renders the same truth the database stores
+
+## Actual LLS Implementation, Not Labels
+
+Truth/status fields remain required, but they are only acceptance summaries. They must never replace implementation evidence. A block is implemented for a scenario only when the real runtime path executed, the expected waveform/grid/bit/decoder/channel artifacts were produced, numerical sanity checks passed, and a DUT-vs-reference path either passed or failed closed as unavailable.
+
+The active implementation-proof surface is now the validation harness under `+sixgr/+validation/LLSValidationHarness.m` with companion modules for block evidence, reference comparison, invariants, function coverage, bypass detection, and report writing. That harness must emit:
+
+- `reports/csv/phy_block_validation_matrix.csv`
+- `reports/csv/dut_reference_comparison.csv`
+- `reports/csv/phy_value_invariant_checks.csv`
+- `reports/csv/implementation_function_coverage.csv`
+- `reports/csv/real_phy_path_evidence.csv`
+- `reports/csv/oracle_proxy_fallback_detector.csv`
+- `reports/csv/generated_value_plausibility_audit.csv`
+- `reports/csv/lls_phy_outcome_summary.csv`
+- `reports/csv/lls_link_performance_summary.csv`
+- `reports/csv/lls_block_correctness_summary.csv`
+- `reports/csv/lls_reference_comparison_summary.csv`
+- `reports/csv/lls_real_implementation_coverage_summary.csv`
+
+Hard-fail rules for this phase:
+
+- no pass row may rely on label/config/status evidence only
+- no expected PHY/MAC/RF function may be treated as called without runtime call evidence
+- no enabled data-channel pass may exist without decoder and CRC evidence
+- no proxy, fallback, skipped, or bypass path may contribute to `ImplementationPass=true`
+- no suspicious numerical output may pass silently when the invariant table or comparison table says otherwise
+
+The first section of every final implementation report must be `Actual LLS Implementation Verdict`, and it must classify the run as one of:
+
+- `full actual LLS`
+- `partial actual LLS`
+- `label/proxy simulator`
+- `failed evidence run`
