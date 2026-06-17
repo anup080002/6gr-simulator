@@ -688,8 +688,8 @@ classdef ChannelFactory
             arrayRuntimeMeta.TransmitAntennaElementSpacing_lambda = mat2str(double(cdl.TransmitAntennaArray.ElementSpacing));
             arrayRuntimeMeta.ReceiveAntennaElementSpacing_lambda = mat2str(double(cdl.ReceiveAntennaArray.ElementSpacing));
             if ~(txRuntimeCoupled && rxRuntimeCoupled)
-                arrayRuntimeMeta.RuntimeArrayGeometryCoupled = true;
-                arrayRuntimeMeta.RuntimeArrayGeometrySource = "ChannelFactory.configured_antenna_array_to_nrCDLChannel";
+                arrayRuntimeMeta.RuntimeArrayGeometryCoupled = false;
+                arrayRuntimeMeta.RuntimeArrayGeometrySource = "ChannelFactory.configured_antenna_array_shape_to_nrCDLChannel";
                 arrayRuntimeMeta.TransmitArrayOrientation_deg = [NaN; NaN; NaN];
                 arrayRuntimeMeta.ReceiveArrayOrientation_deg = [NaN; NaN; NaN];
             end

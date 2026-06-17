@@ -7621,12 +7621,10 @@ defPrachMiss = 0.0;
 defPrachCollision = 0.0;
 defPdcchMiss = 0.0;
 defPucchAckErr = 0.0;
-if strict
-    defPrachMiss = 0.02;
-    defPrachCollision = 0.01;
-    defPdcchMiss = 0.01;
-    defPucchAckErr = 0.005;
-end
+% Strict mode must not introduce hidden stochastic access failures. PRACH,
+% PDCCH, or PUCCH attach impairments are honored only when explicitly
+% configured; otherwise strict E2E validation deterministically proves that
+% attach completes before data scheduling.
 
 pPrachMiss = double(sixgr.util.structGet(cfg, "rrc.attach.prachMissProb", defPrachMiss));
 pPrachCollision = double(sixgr.util.structGet(cfg, "rrc.attach.prachCollisionProb", defPrachCollision));
@@ -7647,6 +7645,11 @@ if ~logical(sixgr.util.structGet(cfg, "phy.dl.pdcch.Enable", logical(sixgr.util.
 end
 if ~logical(sixgr.util.structGet(cfg, "phy.ul.pucch.Enable", logical(sixgr.util.structGet(cfg, "phy.pucch.Enable", true))))
     pPucchAckErr = 0;
+end
+
+if strict
+    [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach(cfg, cellId, ueId, slotDur_s);
+    return;
 end
 
 try
@@ -7795,6 +7798,99 @@ catch
     attachRows(end+1,1) = struct("Slot",NaN,"Time_s",NaN,"Direction","CTRL","Event","ATTACH_EXCEPTION", ...
         "Message","AttachProcedureException","UE",ueId,"CellID",cellId,"TempCRNTI",NaN,"Success",false,"Cause","exception");
 end
+end
+
+function [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach(cfg, cellId, ueId, slotDur_s)
+ok = false;
+slots = NaN;
+msgCount = 0;
+rnti = 1;
+attachRows = repmat(struct("Slot",NaN,"Time_s",NaN,"Direction","","Event","","Message","", ...
+    "UE",NaN,"CellID",NaN,"TempCRNTI",NaN,"Success",false,"Cause",""), 0, 1);
+try
+    raResult = sixgr.phy.ra.runFourStepRA(cfg, ...
+        "RunId", "e2e_strict_attach", ...
+        "ScenarioName", string(sixgr.util.structGet(cfg, "scenario.name", "e2e_strict_attach")), ...
+        "UEId", ueId, ...
+        "CellId", cellId, ...
+        "AttemptId", 1, ...
+        "WriteArtifacts", false);
+    ok = logical(sixgr.util.structGet(raResult, "RACompleted", false)) && ...
+        logical(sixgr.util.structGet(raResult, "StrictOk", false));
+    rnti = double(sixgr.util.structGet(raResult, "FinalCRNTI", ...
+        sixgr.util.structGet(raResult, "TemporaryCRNTI", 1)));
+    if ~(isfinite(rnti) && rnti >= 1)
+        rnti = 1;
+    end
+    slots = max(0, round(double(sixgr.util.structGet(raResult, "Msg4ScheduledSlot", NaN))));
+    if ~isfinite(slots)
+        slots = max(0, round(double(sixgr.util.structGet(raResult, "Msg3ScheduledSlot", 0))) + 1);
+    end
+    events = sixgr.util.structGet(raResult, "Events", table());
+    attachRows = localBuildStrictRAAttachRows(events, raResult, ueId, cellId, slotDur_s, rnti, ok);
+    msgCount = localStrictRAMessageCount(events);
+catch ME
+    attachRows(end+1,1) = struct("Slot",NaN,"Time_s",NaN,"Direction","CTRL","Event","ATTACH_EXCEPTION", ...
+        "Message","StrictFourStepRA","UE",ueId,"CellID",cellId,"TempCRNTI",NaN, ...
+        "Success",false,"Cause",string(ME.identifier));
+end
+end
+
+function rows = localBuildStrictRAAttachRows(events, raResult, ueId, cellId, slotDur_s, rnti, ok)
+rows = repmat(struct("Slot",NaN,"Time_s",NaN,"Direction","","Event","","Message","", ...
+    "UE",NaN,"CellID",NaN,"TempCRNTI",NaN,"Success",false,"Cause",""), 0, 1);
+if ~(istable(events) && ~isempty(events))
+    rows(end+1,1) = struct("Slot",NaN,"Time_s",NaN,"Direction","CTRL","Event","ATTACH_EXCEPTION", ...
+        "Message","StrictFourStepRA","UE",ueId,"CellID",cellId,"TempCRNTI",NaN, ...
+        "Success",false,"Cause","missing_ra_event_log");
+    return;
+end
+for i = 1:height(events)
+    slot = double(events.Slot(i));
+    if ~isfinite(slot)
+        slot = i - 1;
+    end
+    failure = "";
+    if ismember("FailureReason", string(events.Properties.VariableNames))
+        failure = string(events.FailureReason(i));
+    end
+    success = strlength(strtrim(failure)) == 0;
+    if ismember("StrictOkContribution", string(events.Properties.VariableNames))
+        success = logical(events.StrictOkContribution(i));
+    end
+    eventName = string(events.Event(i));
+    msgName = string(events.StateAfter(i));
+    rows(end+1,1) = struct("Slot",slot,"Time_s",slot * double(slotDur_s),"Direction",localStrictRAEventDirection(eventName), ...
+        "Event",eventName,"Message",msgName,"UE",ueId,"CellID",cellId, ...
+        "TempCRNTI",double(sixgr.util.structGet(raResult, "TemporaryCRNTI", NaN)), ...
+        "Success",logical(success),"Cause",failure); %#ok<AGROW>
+end
+if ok
+    finalSlot = double(sixgr.util.structGet(raResult, "Msg4ScheduledSlot", rows(end).Slot));
+    rows(end+1,1) = struct("Slot",finalSlot,"Time_s",finalSlot * double(slotDur_s),"Direction","CTRL", ...
+        "Event","ATTACH_CONNECTED","Message","RRC_CONNECTED","UE",ueId,"CellID",cellId, ...
+        "TempCRNTI",rnti,"Success",true,"Cause",""); %#ok<AGROW>
+end
+end
+
+function direction = localStrictRAEventDirection(eventName)
+eventName = upper(string(eventName));
+if any(contains(eventName, ["MSG1","MSG3"]))
+    direction = "UL";
+elseif any(contains(eventName, ["MSG2","MSG4"]))
+    direction = "DL";
+else
+    direction = "CTRL";
+end
+end
+
+function n = localStrictRAMessageCount(events)
+n = 0;
+if ~(istable(events) && ~isempty(events) && ismember("Event", string(events.Properties.VariableNames)))
+    return;
+end
+ev = upper(string(events.Event));
+n = sum(contains(ev, "MSG1") | contains(ev, "MSG2") | contains(ev, "MSG3") | contains(ev, "MSG4"));
 end
 
 function [ok, slots, msgCount, rnti, attachRows] = localRunRRCMiniAttach(cfg)

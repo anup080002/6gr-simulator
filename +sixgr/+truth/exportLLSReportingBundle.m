@@ -289,9 +289,46 @@ for i = 1:numel(files)
         "MachineReadable", any(strcmp(ext, [".csv" ".json" ".mat" ".yaml" ".yml"])), ...
         "HumanReadable", any(strcmp(ext, [".md" ".png" ".jpg" ".jpeg" ".svg"])));
 end
+invRows = localAppendUnavailableCardInventoryAliases(runFolder, invRows, metricRows);
 T = struct2table(invRows);
 if ~isempty(T)
     T = sortrows(T, "RelativePath");
+end
+end
+
+function invRows = localAppendUnavailableCardInventoryAliases(runFolder, invRows, metricRows)
+if ~(istable(metricRows) && ~isempty(metricRows) && ...
+        ismember("SourceArtifact", string(metricRows.Properties.VariableNames)) && ...
+        ismember("Availability", string(metricRows.Properties.VariableNames)))
+    return;
+end
+sources = localPortablePath(string(metricRows.SourceArtifact));
+states = lower(strtrim(string(metricRows.Availability)));
+aliasMask = strlength(sources) > 0 & endsWith(lower(sources), ".png") & ...
+    ismember(states, ["placeholder","disabled"]);
+for i = find(aliasMask(:).')
+    rel = sources(i);
+    if any(string({invRows.RelativePath}) == rel)
+        continue;
+    end
+    [folderPart, baseName, ~] = fileparts(char(rel));
+    cardRel = localPortablePath(fullfile(folderPart, string(baseName) + "_unavailable.svg"));
+    cardAbs = fullfile(runFolder, strrep(char(cardRel), '/', filesep));
+    targetAbs = fullfile(runFolder, strrep(char(rel), '/', filesep));
+    if exist(targetAbs, "file") == 2 || exist(cardAbs, "file") ~= 2
+        continue;
+    end
+    semanticState = localRollupAvailabilityState(states(sources == rel));
+    invRows(end+1, 1) = struct( ... %#ok<AGROW>
+        "RelativePath", rel, ...
+        "Extension", ".png", ...
+        "Bytes", 0, ...
+        "ModifiedUTC", "", ...
+        "ArtifactClass", localArtifactClass(rel, ".png"), ...
+        "SemanticState", semanticState, ...
+        "CountsTowardCoverage", false, ...
+        "MachineReadable", false, ...
+        "HumanReadable", true);
 end
 end
 

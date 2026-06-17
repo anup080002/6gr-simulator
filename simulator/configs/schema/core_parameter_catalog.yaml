@@ -113,6 +113,53 @@
         "flowTable": {"value_type": "table", "default_kind": "empty_table"}
       }
     },
+    "random_access": {
+      "enabled": {"value_type": "boolean", "default": true},
+      "binding_source": {"value_type": "string", "default": "scenario_config_pending_sib1", "allowed_values": ["decoded_sib1_rach_config_common", "scenario_config_pending_sib1"]},
+      "prach_format": {"value_type": "string", "default": "A2"},
+      "configuration_index": {"value_type": "integer", "default": 87, "min": 0},
+      "subcarrier_spacing_khz": {"value_type": "number", "default": 15, "min": 0},
+      "root_sequence_index": {"value_type": "integer", "default": 1, "min": 0},
+      "zero_correlation_zone": {"value_type": "integer", "default": 8, "min": 0},
+      "restricted_set": {"value_type": "string", "default": "UnrestrictedSet"},
+      "frequency_start": {"value_type": "integer", "default": 0, "min": 0},
+      "preamble_index": {"value_type": "integer", "default": 0, "min": 0},
+      "ra_response_window_slots": {"value_type": "integer", "default": 8, "min": 1},
+      "ra_contention_resolution_timer_slots": {"value_type": "integer", "default": 64, "min": 1},
+      "preamble_trans_max": {"value_type": "integer", "default": 4, "min": 1},
+      "power_ramping_step_db": {"value_type": "number", "default": 2, "min": 0},
+      "preamble_received_target_power_dbm": {"value_type": "number", "default": -100},
+      "temp_crnti": {"value_type": "integer", "default": 4660, "min": 1},
+      "final_crnti": {"value_type": "integer", "default": 4660, "min": 1},
+      "msg2_slot": {"value_type": "integer", "default": 1, "min": 0},
+      "msg3_slot": {"value_type": "integer", "default": 2, "min": 0},
+      "msg4_slot": {"value_type": "integer", "default": 3, "min": 0},
+      "msg2_pdsch": {
+        "prb_start": {"value_type": "integer", "default": 0, "min": 0},
+        "num_prb": {"value_type": "integer", "default": 24, "min": 1},
+        "symbol_start": {"value_type": "integer", "default": 0, "min": 0},
+        "num_symbols": {"value_type": "integer", "default": 14, "min": 1},
+        "modulation": {"value_type": "string", "default": "QPSK"},
+        "target_code_rate": {"value_type": "number", "default": 0.1171875, "min": 0}
+      },
+      "msg3_pusch": {
+        "prb_start": {"value_type": "integer", "default": 0, "min": 0},
+        "num_prb": {"value_type": "integer", "default": 24, "min": 1},
+        "symbol_start": {"value_type": "integer", "default": 0, "min": 0},
+        "num_symbols": {"value_type": "integer", "default": 14, "min": 1},
+        "mcs": {"value_type": "integer", "default": 0, "min": 0},
+        "modulation": {"value_type": "string", "default": "QPSK"},
+        "target_code_rate": {"value_type": "number", "default": 0.1171875, "min": 0}
+      },
+      "msg4_pdsch": {
+        "prb_start": {"value_type": "integer", "default": 0, "min": 0},
+        "num_prb": {"value_type": "integer", "default": 24, "min": 1},
+        "symbol_start": {"value_type": "integer", "default": 0, "min": 0},
+        "num_symbols": {"value_type": "integer", "default": 14, "min": 1},
+        "modulation": {"value_type": "string", "default": "QPSK"},
+        "target_code_rate": {"value_type": "number", "default": 0.1171875, "min": 0}
+      }
+    },
     "system": {
       "tti_s": {"value_type": "number_vector", "default": [], "min": 0},
       "queueMaxBits": {"value_type": "number", "default": 50000000, "min": 0},

@@ -1471,6 +1471,7 @@ try
     localDBLog("INFO", "Runtime truth contract re-evaluated after final artifact exports: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
         double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
         double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), double(scenarioStatus.StrictTruthFailureCount));
+    localAppendLinkRunStatusLog(layout, scenarioStatus);
     summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
     if logical(scfg.get("output.save_csv"))
         localDBLog("INFO", "Rewriting scenario summary CSV with final artifact truth-gated status.");
@@ -2134,6 +2135,36 @@ try
     if sixgr.db.isArtifactStoreActive()
         sixgr.db.appendLogLine(string(levelStr), string(localUTCStamp()), string(messageText));
     end
+catch
+end
+end
+
+function localAppendLinkRunStatusLog(layout, scenarioStatus)
+failingCaseCount = double(sixgr.util.structGet(scenarioStatus, "FailingCaseCount", 0));
+requiredFailureCount = double(sixgr.util.structGet(scenarioStatus, "RequiredFailureCount", 0));
+if failingCaseCount <= 0 && requiredFailureCount <= 0
+    return;
+end
+try
+    sixgr.util.ensureFolder(layout.AirInterfaceLogDir);
+    logPath = fullfile(layout.AirInterfaceLogDir, "run.log");
+    fid = fopen(logPath, "a");
+    if fid < 0
+        return;
+    end
+    cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+    failures = string(sixgr.util.structGet(scenarioStatus, "RequiredFailedCases", strings(0, 1)));
+    failures = failures(strlength(strtrim(failures)) > 0);
+    if isempty(failures)
+        detail = "no detailed failure code published";
+    else
+        detail = strjoin(failures(1:min(numel(failures), 6)), "; ");
+    end
+    fprintf(fid, "[%s] WARN Scenario completed with %g failing case(s); requiredFailures=%g statusAuthority=%s runtimeTruthContractOk=%d details=%s\n", ...
+        localUTCStamp(), failingCaseCount, requiredFailureCount, ...
+        char(string(sixgr.util.structGet(scenarioStatus, "StatusAuthority", ""))), ...
+        double(logical(sixgr.util.structGet(scenarioStatus, "RuntimeTruthContractOk", false))), ...
+        char(detail));
 catch
 end
 end

@@ -1191,14 +1191,14 @@ resolvedOrder = localQAMOrderFromValue(string(profile.Modulation));
 if ~(isfinite(resolvedOrder) && resolvedOrder > 0)
     return;
 end
-% The configured *_modulation_order is a capability/upper-bound knob in the
-% scenario schema. In fixed-MCS operation the actual scheduled modulation is
-% authoritative from TS 38.214 MCS table/index, so a 256QAM-capable scenario
-% may legally schedule a 64QAM MCS. The invalid case is the inverse: the
-% configured capability is lower than the selected MCS profile requires.
-if round(double(configuredOrder)) < round(double(resolvedOrder))
+% In strict/no-proxy validation, a fixed configured MCS profile and the
+% configured modulation order must describe the same scheduled operating
+% point. Capability ceilings belong in separate max-modulation fields; using
+% *_modulation_order as a looser upper bound hides an actual MCS/modulation
+% mismatch in browser/YAML-owned strict scenarios.
+if round(double(configuredOrder)) ~= round(double(resolvedOrder))
     error("sixgr:lls6g:config:ModulationMCSConsistencyRequired", ...
-        "%s modulation capability/order %g in %s is lower than modulation.mcs_table=%s, %s_mcs_index=%g, which resolves to %s per TS 38.214.", ...
+        "%s modulation order %g in %s does not match modulation.mcs_table=%s, %s_mcs_index=%g, which resolves to %s per TS 38.214.", ...
         direction, double(configuredOrder), localCtx(ctx), tableName, lower(direction), double(mcsIndex), string(profile.Modulation));
     end
 end

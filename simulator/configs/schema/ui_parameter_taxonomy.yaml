@@ -154,7 +154,7 @@ ui_groups:
     sections:
       Runtime_Evidence:
         feature_family: Runtime_Evidence
-        include_prefixes: [reporting_semantics., control_gating.]
+        include_prefixes: [reporting_semantics., control_gating., run.controlGating.]
         shared_dependency: false
       CSV_Image_Exports:
         feature_family: CSV_Image_Exports
@@ -166,7 +166,7 @@ ui_groups:
         shared_dependency: false
       Truth_Contract:
         feature_family: Truth_Contract
-        include_prefixes: [scenario.honesty_mode, scenario.unsupported_output_policy, run_control.execution_mode]
+        include_prefixes: [scenario.honesty_mode, scenario.unsupported_output_policy, scenario.required_configured_match_rate, validation., expected_result., result_status., run_control.execution_mode]
         shared_dependency: false
       Scenario_Metadata:
         feature_family: Scenario_Metadata
