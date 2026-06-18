@@ -27,6 +27,11 @@ replay = struct( ...
     "ExecutionBackend", "WAVEFORM_GRANT_REPLAY", ...
     "PHYMode", "CRC_WAVEFORM_REPLAY", ...
     "TransportBlockSize", NaN, ...
+    "CRCPass", NaN, ...
+    "CRCError", NaN, ...
+    "BitErrors", NaN, ...
+    "BitsCompared", NaN, ...
+    "RawBER", NaN, ...
     "DecoderIterations", NaN, ...
     "EffectiveTxAntennas", NaN, ...
     "EffectiveRxAntennas", NaN, ...
@@ -164,8 +169,11 @@ try
             "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
     end
 
-    replay.Ok = logical(sixgr.util.structGet(rx, "Ok", false));
-    replay.BLER = double(~replay.Ok);
+    [crcKnown, crcPass] = localMeasuredCRCPass(rx);
+    replay.Ok = logical(crcKnown && crcPass);
+    replay.CRCPass = localMeasuredCRCValue(crcKnown, crcPass);
+    replay.CRCError = localMeasuredCRCValue(crcKnown, ~crcPass);
+    replay.BLER = localBLERFromMeasuredCRC(crcKnown, crcPass);
     replay.UsedFading = logical(sixgr.util.structGet(chState, "UseFading", false));
     replay.FastAWGNPath = logical(fastAWGNPath);
     replay.WaveformReplayReused = logical(txTemplateReused);
@@ -218,6 +226,64 @@ replay.PHYDecisionSource = "sixgr.system.waveform.replayGrant";
 replay.PHYDecisionReason = string(reason);
 replay.WaveformReplayExecuted = false;
 replay.WaveformReplayReused = false;
+end
+
+function [known, pass] = localMeasuredCRCPass(rx)
+known = false;
+pass = false;
+if isstruct(rx) && isfield(rx, "CRCError")
+    crcErr = rx.CRCError;
+    if (islogical(crcErr) || isnumeric(crcErr)) && isscalar(crcErr)
+        known = true;
+        pass = ~logical(crcErr);
+        return;
+    end
+end
+if isstruct(rx) && isfield(rx, "CRCPass")
+    crcPass = rx.CRCPass;
+    if (islogical(crcPass) || isnumeric(crcPass)) && isscalar(crcPass)
+        known = true;
+        pass = logical(crcPass);
+    end
+end
+end
+
+function bler = localBLERFromMeasuredCRC(known, pass)
+if ~logical(known)
+    bler = NaN;
+else
+    bler = double(~logical(pass));
+end
+end
+
+function value = localMeasuredCRCValue(known, tf)
+if ~logical(known)
+    value = NaN;
+else
+    value = double(logical(tf));
+end
+end
+
+function [bitErrors, bitsCompared, rawBER] = localMeasuredTransportBlockBER(tx, rx)
+bitErrors = NaN;
+bitsCompared = NaN;
+rawBER = NaN;
+txBits = sixgr.util.structGet(tx, "TransportBlock", []);
+rxBits = sixgr.util.structGet(rx, "TransportBlock", []);
+if isempty(txBits) || isempty(rxBits)
+    return;
+end
+txBits = int8(txBits(:));
+rxBits = int8(rxBits(:));
+bitsCompared = double(max(numel(txBits), numel(rxBits)));
+if ~(isfinite(bitsCompared) && bitsCompared > 0)
+    bitsCompared = NaN;
+    return;
+end
+commonBits = min(numel(txBits), numel(rxBits));
+bitErrors = double(sum(txBits(1:commonBits) ~= rxBits(1:commonBits))) + ...
+    abs(double(numel(txBits)) - double(numel(rxBits)));
+rawBER = bitErrors / bitsCompared;
 end
 
 function tf = localShouldSkipTimingEstimate(cfg)
@@ -381,6 +447,10 @@ else
 end
 replay.LLRAvailable = logical(sixgr.util.structGet(rx, "LLRAvailable", false));
 replay.LLRFinite = logical(sixgr.util.structGet(rx, "LLRFinite", false));
+[bitErrors, bitsCompared, rawBER] = localMeasuredTransportBlockBER(tx, rx);
+replay.BitErrors = double(bitErrors);
+replay.BitsCompared = double(bitsCompared);
+replay.RawBER = double(rawBER);
 
 [decoderSINR, decoderMeta] = localDecoderTruthProxySINR(tx, rx, dir);
 replay.DecoderTruthProxySINR_dB = double(decoderSINR);

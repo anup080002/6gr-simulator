@@ -36,8 +36,9 @@ evidence = struct( ...
     "ConfiguredSNRLikeSourceRejected", false);
 
 Hest = localGet(rx, "ChannelEstimate", []);
-evidence.ChannelEstimateAvailable = ~isempty(Hest) && isnumeric(Hest) && ...
-    any(isfinite(real(Hest(:))) | isfinite(imag(Hest(:))));
+evidence.ChannelEstimateAvailable = localBool(rx, "ChannelEstimateAvailable", false) || ...
+    (~isempty(Hest) && isnumeric(Hest) && ...
+    any(isfinite(real(Hest(:))) | isfinite(imag(Hest(:)))));
 
 rxSym = localGet(rx, "PUSCHRxSymbolsForEvidence", []);
 eqSym = localGet(rx, "EqualizedSymbolsForEvidence", []);
@@ -45,11 +46,13 @@ evidence.ResourceExtractionAvailable = ~isempty(rxSym) && isnumeric(rxSym);
 evidence.EqualizationAvailable = ~isempty(eqSym) && isnumeric(eqSym) && ...
     any(isfinite(real(eqSym(:))) | isfinite(imag(eqSym(:))));
 
-cwLLR = localGet(rx, "ULSCHCodewordLLR", localGet(rx, "CodewordLLR", localGet(rx, "RecLLR", [])));
+cwLLR = localGet(rx, "ULSCHCodewordLLR", localGet(rx, "CodewordLLR", []));
 evidence.LLRAvailable = logical(evidence.LLRAvailable) || (~isempty(cwLLR) && isnumeric(cwLLR));
 if ~isempty(cwLLR) && isnumeric(cwLLR)
     finiteMask = isfinite(double(cwLLR(:)));
     evidence.LLRFinite = any(finiteMask) && all(finiteMask);
+else
+    evidence.LLRFinite = localBool(rx, "LLRFinite", false);
 end
 
 tb = localGet(rx, "TransportBlock", []);

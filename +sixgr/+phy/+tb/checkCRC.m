@@ -32,5 +32,6 @@ function [blk, ok, err] = checkCRC(blkcrc, poly, mask)
         [blk, err] = nrCRCDecode(blkcrc, poly, mask);
     end
 
-    ok = (err == 0);
+    err = any(double(err(:)) ~= 0);
+    ok = ~logical(err);
 end

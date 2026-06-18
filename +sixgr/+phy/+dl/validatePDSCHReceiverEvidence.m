@@ -48,7 +48,7 @@ evidence.EqualizationAvailable = localBool(rx, "EqualizationAvailable", false) |
     (~isempty(eqSym) && isnumeric(eqSym) && ...
     any(isfinite(real(eqSym(:))) | isfinite(imag(eqSym(:)))));
 
-cwLLR = localGet(rx, "DLSCHCodewordLLR", localGet(rx, "CodewordLLR", localGet(rx, "RecLLR", [])));
+cwLLR = localGet(rx, "DLSCHCodewordLLR", localGet(rx, "CodewordLLR", []));
 evidence.LLRAvailable = localBool(rx, "LLRAvailable", false) || logical(evidence.LLRAvailable) || ...
     (~isempty(cwLLR) && isnumeric(cwLLR));
 if ~isempty(cwLLR) && isnumeric(cwLLR)

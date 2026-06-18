@@ -256,6 +256,10 @@ if isempty(opt.TransportBlockSizeOverride)
 else
     tx.TransportBlockSizeSource = 'harq_replay_stored_transport_block';
 end
+tx.TransportBlock = trBlk;
+tx.TransportBlockCRCType = char(tbCRCType);
+tx.TransportBlockCRCLength = double(tbCRCLen);
+tx.TransportBlockLenWithCRC = B;
 tx.RV = rv;
 tx.TargetCodeRate = targetCodeRate;
 tx.Carrier = carrier;
@@ -272,11 +276,7 @@ tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
 tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
-    tx.TransportBlock = trBlk;
     tx.TransportBlockCRC = tbCrc;
-    tx.TransportBlockCRCType = char(tbCRCType);
-    tx.TransportBlockCRCLength = double(tbCRCLen);
-    tx.TransportBlockLenWithCRC = B;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
     tx.G = G;

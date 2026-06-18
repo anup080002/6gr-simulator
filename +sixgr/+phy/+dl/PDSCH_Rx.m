@@ -470,6 +470,9 @@ rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOk);
+rx.CRCPass = logical(crcOk);
+rx.TBCRCPass = logical(crcOk);
+rx.TransportBlock = int8(tbRx(:));
 rx.TimingOffset = double(timingResolution.RawEstimate_samples);
 rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
 rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
@@ -561,7 +564,6 @@ rx.LLRScaleSource = "nrPDSCHDecode_noise_variance_plus_equalizer_csi_weights";
 rx.LLRNoiseVariance = double(nVarForDecode);
 rx.SINRComputationMethod = char(lower(string(equalizerAlg)));
 if ~logical(opt.CompactOutput)
-    rx.TransportBlock = tbRx;
     rx.CodewordLLR = llr;
     rx.DLSCHCodewordLLR = llr;
     rx.BaseGraph = bgn;
@@ -612,7 +614,6 @@ rx.PostEqSINRReceiverDerived = logical(strictEvidence.PostEqSINRReceiverDerived)
 rx.PostEqSINRAvailable = logical(strictEvidence.PostEqSINRAvailable);
 rx.ConfiguredSNRLikeSourceRejected = logical(strictEvidence.ConfiguredSNRLikeSourceRejected);
 if strictMode && ~logical(strictEvidence.StrictReceiverEvidenceOk)
-    rx.Ok = false;
     rx.ReceiverUsable = false;
     rx.DecodeUsable = false;
     if strlength(string(rx.FailureReason)) == 0

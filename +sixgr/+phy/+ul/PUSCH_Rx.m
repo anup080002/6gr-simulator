@@ -447,6 +447,9 @@ rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
+rx.CRCPass = logical(crcOK);
+rx.TBCRCPass = logical(crcOK);
+rx.TransportBlock = int8(tbBits(:));
 rx.NoiseVar = nVarForDecode;
 rx.NoiseVarStatus = char(string(noiseStatus.Status));
 rx.NoiseVarSource = char(string(noiseStatus.Source));
@@ -532,7 +535,6 @@ rx.HARQACKContentMatch = logical(uciOnPUSCH.ContentMatch);
 rx.HARQACKDecodeStatus = char(string(uciOnPUSCH.Status));
 rx.HARQACKDecodeReason = char(string(uciOnPUSCH.Reason));
 if ~logical(opt.CompactOutput)
-    rx.TransportBlock = int8(tbBits(:));
     rx.CodewordLLR = cwLLR;
     rx.ULSCHCodewordLLR = cwLLRForULSCH;
     rx.HARQACKLLR = uciOnPUSCH.HARQACKLLR;
@@ -565,7 +567,6 @@ rx.PostEqSINRReceiverDerived = logical(strictEvidence.PostEqSINRReceiverDerived)
 rx.PostEqSINRAvailable = logical(strictEvidence.PostEqSINRAvailable);
 rx.ConfiguredSNRLikeSourceRejected = logical(strictEvidence.ConfiguredSNRLikeSourceRejected);
 if strictMode && ~logical(strictEvidence.StrictReceiverEvidenceOk)
-    rx.Ok = false;
     rx.ReceiverUsable = false;
     rx.DecodeUsable = false;
     if strlength(string(rx.FailureReason)) == 0
