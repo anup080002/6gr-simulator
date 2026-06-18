@@ -154,6 +154,18 @@ function prof = localFromFlatConfig(cfg, scenarioName)
     if ~isempty(indF)
         prof.ue.distribution.indoorFraction = double(indF);
     end
+    minBSDist = sixgr.util.structGet(sc, 'ue.distribution.min_bs_dist_m', ...
+        sixgr.util.structGet(sc, 'ue.distribution.minBsDistance_m', []));
+    if ~isempty(minBSDist)
+        prof.ue.distribution.min_bs_dist_m = double(minBSDist);
+        prof.ue.distribution.minBsDistance_m = double(minBSDist);
+    end
+    maxBSDist = sixgr.util.structGet(sc, 'ue.distribution.max_bs_dist_m', ...
+        sixgr.util.structGet(sc, 'ue.distribution.maxBsDistance_m', []));
+    if ~isempty(maxBSDist)
+        prof.ue.distribution.max_bs_dist_m = double(maxBSDist);
+        prof.ue.distribution.maxBsDistance_m = double(maxBSDist);
+    end
 
     % Mobility -> speed distributions
     sp = sixgr.util.structGet(sc, 'mobility.speed_kmh', []);

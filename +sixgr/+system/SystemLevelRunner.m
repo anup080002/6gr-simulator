@@ -530,6 +530,10 @@ classdef SystemLevelRunner
                 slotDirection(t) = slotLabel;
                 dlBudget = localSlotBudget(cfg, t, nRB, "DL");
                 ulBudget = localSlotBudget(cfg, t, nRB, "UL");
+                slotDLDataSchedulable = slotDL && ...
+                    localSlotBudgetSupportsExecutableDataGrants(cfg, "DL", dlBudget);
+                slotULDataSchedulable = slotUL && ...
+                    localSlotBudgetSupportsExecutableDataGrants(cfg, "UL", ulBudget);
 
                 [beamEventTrace, beamEventCount] = localAppendBeamEvents( ...
                     beamEventTrace, beamEventCount, t, tti_s, servingIdx, ...
@@ -548,10 +552,10 @@ classdef SystemLevelRunner
 
                 activeDL = find(queueBitsDL > 0 & ~interruptedMask);
                 activeUL = find(queueBitsUL > 0 & ~interruptedMask);
-                if ~slotDL
+                if ~slotDLDataSchedulable
                     activeDL = zeros(0,1);
                 end
-                if ~slotUL
+                if ~slotULDataSchedulable
                     activeUL = zeros(0,1);
                 end
                 activeMask = false(K,1);
@@ -632,7 +636,7 @@ classdef SystemLevelRunner
                     end
                 end
 
-                if slotDL
+                if slotDLDataSchedulable
                     activeCellsDL = find(activeCellDL > 0).';
                     grantSetsDL = cell(numel(activeCellsDL), 1);
                     grantCellsDL = cell(numel(activeCellsDL), 1);
@@ -688,7 +692,7 @@ classdef SystemLevelRunner
                     end
                 end
 
-                if slotUL
+                if slotULDataSchedulable
                     activeCellsUL = find(activeCellUL > 0).';
                     grantSetsUL = cell(numel(activeCellsUL), 1);
                     grantCellsUL = cell(numel(activeCellsUL), 1);
@@ -1674,6 +1678,85 @@ end
 budget = struct("NPRB", nPRB, "SymbolAllocation", reshape(symAlloc(1:2), 1, 2));
 end
 
+function tf = localSlotBudgetSupportsExecutableDataGrants(cfg, direction, budget)
+tf = true;
+if nargin < 3 || ~isstruct(budget) || isempty(fieldnames(budget))
+    return;
+end
+
+symAlloc = double(sixgr.util.structGet(budget, "SymbolAllocation", [0 0]));
+if numel(symAlloc) < 2
+    tf = false;
+    return;
+end
+symAlloc = reshape(symAlloc(1:2), 1, 2);
+nSym = round(double(symAlloc(2)));
+if ~(isfinite(nSym) && nSym > 0)
+    tf = false;
+    return;
+end
+requiresExactGrantNRE = localRequiresExactGrantNRE(direction, symAlloc);
+
+nPRB = max(1, round(double(sixgr.util.structGet(budget, "NPRB", ...
+    sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)))));
+dir = upper(string(direction));
+switch dir
+    case "UL"
+        modStr = char(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", "QPSK")));
+        nLayers = max(1, round(double(sixgr.util.structGet(cfg, "phy.pusch.numLayers", ...
+            sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)))));
+    otherwise
+        modStr = char(string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", "QPSK")));
+        nLayers = max(1, round(double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
+            sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)))));
+end
+
+try
+    [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg, ...
+        "NSizeGrid", max(nPRB, double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", nPRB))));
+    if dir == "UL"
+        [~, allocInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg, ...
+            "PRBSet", 0:(max(nPRB, 1) - 1), ...
+            "SymbolAllocation", symAlloc, ...
+            "Modulation", modStr, ...
+            "NumLayers", double(nLayers));
+    else
+        [~, allocInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg, ...
+            "PRBSet", 0:(max(nPRB, 1) - 1), ...
+            "SymbolAllocation", symAlloc, ...
+            "Modulation", modStr, ...
+            "NumLayers", double(nLayers));
+    end
+    [nrePerPRB, ~] = sixgr.util.resolveDataNREPerPRB(allocInfo, nPRB, modStr, nLayers);
+    if isfinite(double(nrePerPRB))
+        tf = double(nrePerPRB) > 0;
+    elseif requiresExactGrantNRE
+        tf = false;
+    end
+catch
+    % Fail open on unexpected RE-estimation issues so we only suppress
+    % grants when exact allocation math proves the slot cannot carry data.
+    tf = true;
+end
+end
+
+function tf = localRequiresExactGrantNRE(direction, symAlloc)
+tf = false;
+if upper(string(direction)) ~= "UL"
+    return;
+end
+sa = [0 14];
+if nargin >= 2 && ~isempty(symAlloc)
+    sa = double(symAlloc(:).');
+end
+if numel(sa) < 2
+    sa = [0 14];
+end
+startSym = max(0, round(double(sa(1))));
+nSym = max(0, round(double(sa(2))));
+tf = startSym > 3 || nSym <= 2;
+end
+
 function mode = localResolveSINRModel(cfg)
 raw = string(sixgr.util.structGet(cfg, "system.sinrModel", ...
     sixgr.util.structGet(cfg, "channel.interferenceModel", "explicit_activity_power_sum")));
@@ -2268,6 +2351,59 @@ trace.ReceiverHestSINRSource = strings(cap,1);
 trace.ReceiverHestSINRValueRole = strings(cap,1);
 trace.ReceiverHestSINRValueStatus = strings(cap,1);
 trace.ReceiverHestSINRNAReason = strings(cap,1);
+trace.PostEqSINR_dB = NaN(cap,1);
+trace.PostEqSINRSource = strings(cap,1);
+trace.PostEqSINRValueRole = strings(cap,1);
+trace.PostEqSINRValueStatus = strings(cap,1);
+trace.PostEqSINRNAReason = strings(cap,1);
+trace.PostEqSINRPerLayer_dB = strings(cap,1);
+trace.DecoderIterations = NaN(cap,1);
+trace.ChannelEstimateAvailable = false(cap,1);
+trace.EqualizationAvailable = false(cap,1);
+trace.DecodeAttempted = false(cap,1);
+trace.DecodeAvailable = false(cap,1);
+trace.LLRAvailable = false(cap,1);
+trace.LLRFinite = false(cap,1);
+trace.TimingEstimateUsed = false(cap,1);
+trace.RawTimingEstimate_samples = NaN(cap,1);
+trace.AppliedTimingCorrection_samples = NaN(cap,1);
+trace.TimingEstimateApplicationPolicy = strings(cap,1);
+trace.TimingEstimateStatus = strings(cap,1);
+trace.TimingEstimateWasClipped = false(cap,1);
+trace.TimingEstimateAvailability = strings(cap,1);
+trace.TimingErrorDefinition = strings(cap,1);
+trace.TimingValueStatus = strings(cap,1);
+trace.InjectedCFO_Hz = NaN(cap,1);
+trace.TrueCFO_Hz = NaN(cap,1);
+trace.EstimatedCFO_PreCorrection_Hz = NaN(cap,1);
+trace.ResidualCFO_PostCorrection_Hz = NaN(cap,1);
+trace.CFOError_Hz = NaN(cap,1);
+trace.EstimatedCFO_Hz = NaN(cap,1);
+trace.CFOEstimateAvailable = false(cap,1);
+trace.CFOEstimateAvailability = strings(cap,1);
+trace.ReceiverTrackingCorrectionSource = strings(cap,1);
+trace.ReceiverTrackingCorrectionStatus = strings(cap,1);
+trace.ReceiverTrackingCorrectionNAReason = strings(cap,1);
+trace.CFOErrorDefinition = strings(cap,1);
+trace.CFOValueStatus = strings(cap,1);
+trace.InjectedTimingOffset_samples = NaN(cap,1);
+trace.TrueTimingOffset_samples = NaN(cap,1);
+trace.EstimatedTimingOffset_PreCorrection_samples = NaN(cap,1);
+trace.TimingError_samples = NaN(cap,1);
+trace.AppliedPathloss_dB = NaN(cap,1);
+trace.AppliedShadowFading_dB = NaN(cap,1);
+trace.AppliedLargeScaleGain_dB = NaN(cap,1);
+trace.AppliedO2I_dB = NaN(cap,1);
+trace.ServingRxPower_dBm = NaN(cap,1);
+trace.ThermalNoisePower_dBm = NaN(cap,1);
+trace.NoisePowerSource = strings(cap,1);
+trace.PhaseNoiseConfigured = false(cap,1);
+trace.PhaseNoiseApplied = false(cap,1);
+trace.PhaseNoiseRMS_rad = NaN(cap,1);
+trace.IQImbalanceConfigured = false(cap,1);
+trace.IQImbalanceApplied = false(cap,1);
+trace.IQImbalanceImageRejection_dB = NaN(cap,1);
+trace.IQImbalanceMeasurementStatus = strings(cap,1);
 trace.DecoderTruthProxySINR_dB = NaN(cap,1);
 trace.DecoderTruthProxySINRSource = strings(cap,1);
 trace.DecoderTruthProxySINRValueRole = strings(cap,1);
@@ -2392,6 +2528,59 @@ trace.ReceiverHestSINRSource(i) = string(sixgr.util.structGet(replay, "ReceiverH
 trace.ReceiverHestSINRValueRole(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRValueRole", ""));
 trace.ReceiverHestSINRValueStatus(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRValueStatus", ""));
 trace.ReceiverHestSINRNAReason(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRNAReason", ""));
+trace.PostEqSINR_dB(i) = double(sixgr.util.structGet(replay, "PostEqSINR_dB", NaN));
+trace.PostEqSINRSource(i) = string(sixgr.util.structGet(replay, "PostEqSINRSource", ""));
+trace.PostEqSINRValueRole(i) = string(sixgr.util.structGet(replay, "PostEqSINRValueRole", ""));
+trace.PostEqSINRValueStatus(i) = string(sixgr.util.structGet(replay, "PostEqSINRValueStatus", ""));
+trace.PostEqSINRNAReason(i) = string(sixgr.util.structGet(replay, "PostEqSINRNAReason", ""));
+trace.PostEqSINRPerLayer_dB(i) = localFormatNumericVector(sixgr.util.structGet(replay, "PostEqSINRPerLayer_dB", NaN));
+trace.DecoderIterations(i) = double(sixgr.util.structGet(replay, "DecoderIterations", NaN));
+trace.ChannelEstimateAvailable(i) = logical(sixgr.util.structGet(replay, "ChannelEstimateAvailable", false));
+trace.EqualizationAvailable(i) = logical(sixgr.util.structGet(replay, "EqualizationAvailable", false));
+trace.DecodeAttempted(i) = logical(sixgr.util.structGet(replay, "DecodeAttempted", false));
+trace.DecodeAvailable(i) = logical(sixgr.util.structGet(replay, "DecodeAvailable", false));
+trace.LLRAvailable(i) = logical(sixgr.util.structGet(replay, "LLRAvailable", false));
+trace.LLRFinite(i) = logical(sixgr.util.structGet(replay, "LLRFinite", false));
+trace.TimingEstimateUsed(i) = logical(sixgr.util.structGet(replay, "TimingEstimateUsed", false));
+trace.RawTimingEstimate_samples(i) = double(sixgr.util.structGet(replay, "RawTimingEstimate_samples", NaN));
+trace.AppliedTimingCorrection_samples(i) = double(sixgr.util.structGet(replay, "AppliedTimingCorrection_samples", NaN));
+trace.TimingEstimateApplicationPolicy(i) = string(sixgr.util.structGet(replay, "TimingEstimateApplicationPolicy", ""));
+trace.TimingEstimateStatus(i) = string(sixgr.util.structGet(replay, "TimingEstimateStatus", ""));
+trace.TimingEstimateWasClipped(i) = logical(sixgr.util.structGet(replay, "TimingEstimateWasClipped", false));
+trace.TimingEstimateAvailability(i) = string(sixgr.util.structGet(replay, "TimingEstimateAvailability", ""));
+trace.TimingErrorDefinition(i) = string(sixgr.util.structGet(replay, "TimingErrorDefinition", ""));
+trace.TimingValueStatus(i) = string(sixgr.util.structGet(replay, "TimingValueStatus", ""));
+trace.InjectedCFO_Hz(i) = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
+trace.TrueCFO_Hz(i) = double(sixgr.util.structGet(replay, "TrueCFO_Hz", NaN));
+trace.EstimatedCFO_PreCorrection_Hz(i) = double(sixgr.util.structGet(replay, "EstimatedCFO_PreCorrection_Hz", NaN));
+trace.ResidualCFO_PostCorrection_Hz(i) = double(sixgr.util.structGet(replay, "ResidualCFO_PostCorrection_Hz", NaN));
+trace.CFOError_Hz(i) = double(sixgr.util.structGet(replay, "CFOError_Hz", NaN));
+trace.EstimatedCFO_Hz(i) = double(sixgr.util.structGet(replay, "EstimatedCFO_Hz", NaN));
+trace.CFOEstimateAvailable(i) = logical(sixgr.util.structGet(replay, "CFOEstimateAvailable", false));
+trace.CFOEstimateAvailability(i) = string(sixgr.util.structGet(replay, "CFOEstimateAvailability", ""));
+trace.ReceiverTrackingCorrectionSource(i) = string(sixgr.util.structGet(replay, "ReceiverTrackingCorrectionSource", ""));
+trace.ReceiverTrackingCorrectionStatus(i) = string(sixgr.util.structGet(replay, "ReceiverTrackingCorrectionStatus", ""));
+trace.ReceiverTrackingCorrectionNAReason(i) = string(sixgr.util.structGet(replay, "ReceiverTrackingCorrectionNAReason", ""));
+trace.CFOErrorDefinition(i) = string(sixgr.util.structGet(replay, "CFOErrorDefinition", ""));
+trace.CFOValueStatus(i) = string(sixgr.util.structGet(replay, "CFOValueStatus", ""));
+trace.InjectedTimingOffset_samples(i) = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", NaN));
+trace.TrueTimingOffset_samples(i) = double(sixgr.util.structGet(replay, "TrueTimingOffset_samples", NaN));
+trace.EstimatedTimingOffset_PreCorrection_samples(i) = double(sixgr.util.structGet(replay, "EstimatedTimingOffset_PreCorrection_samples", NaN));
+trace.TimingError_samples(i) = double(sixgr.util.structGet(replay, "TimingError_samples", NaN));
+trace.AppliedPathloss_dB(i) = double(sixgr.util.structGet(replay, "AppliedPathloss_dB", NaN));
+trace.AppliedShadowFading_dB(i) = double(sixgr.util.structGet(replay, "AppliedShadowFading_dB", NaN));
+trace.AppliedLargeScaleGain_dB(i) = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
+trace.AppliedO2I_dB(i) = double(sixgr.util.structGet(replay, "AppliedO2I_dB", NaN));
+trace.ServingRxPower_dBm(i) = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
+trace.ThermalNoisePower_dBm(i) = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
+trace.NoisePowerSource(i) = string(sixgr.util.structGet(replay, "NoisePowerSource", ""));
+trace.PhaseNoiseConfigured(i) = logical(sixgr.util.structGet(replay, "PhaseNoiseConfigured", false));
+trace.PhaseNoiseApplied(i) = logical(sixgr.util.structGet(replay, "PhaseNoiseApplied", false));
+trace.PhaseNoiseRMS_rad(i) = double(sixgr.util.structGet(replay, "PhaseNoiseRMS_rad", NaN));
+trace.IQImbalanceConfigured(i) = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
+trace.IQImbalanceApplied(i) = logical(sixgr.util.structGet(replay, "IQImbalanceApplied", false));
+trace.IQImbalanceImageRejection_dB(i) = double(sixgr.util.structGet(replay, "IQImbalanceImageRejection_dB", NaN));
+trace.IQImbalanceMeasurementStatus(i) = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementStatus", ""));
 trace.DecoderTruthProxySINR_dB(i) = double(sixgr.util.structGet(replay, "DecoderTruthProxySINR_dB", NaN));
 trace.DecoderTruthProxySINRSource(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRSource", ""));
 trace.DecoderTruthProxySINRValueRole(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRValueRole", ""));
@@ -2464,6 +2653,59 @@ T.ReceiverHestSINRSource = localTraceString(trace, "ReceiverHestSINRSource", idx
 T.ReceiverHestSINRValueRole = localTraceString(trace, "ReceiverHestSINRValueRole", idx, n, "");
 T.ReceiverHestSINRValueStatus = localTraceString(trace, "ReceiverHestSINRValueStatus", idx, n, "");
 T.ReceiverHestSINRNAReason = localTraceString(trace, "ReceiverHestSINRNAReason", idx, n, "");
+T.PostEqSINR_dB = localTraceNumeric(trace, "PostEqSINR_dB", idx, n, NaN);
+T.PostEqSINRSource = localTraceString(trace, "PostEqSINRSource", idx, n, "");
+T.PostEqSINRValueRole = localTraceString(trace, "PostEqSINRValueRole", idx, n, "");
+T.PostEqSINRValueStatus = localTraceString(trace, "PostEqSINRValueStatus", idx, n, "");
+T.PostEqSINRNAReason = localTraceString(trace, "PostEqSINRNAReason", idx, n, "");
+T.PostEqSINRPerLayer_dB = localTraceString(trace, "PostEqSINRPerLayer_dB", idx, n, "");
+T.DecoderIterations = localTraceNumeric(trace, "DecoderIterations", idx, n, NaN);
+T.ChannelEstimateAvailable = localTraceLogical(trace, "ChannelEstimateAvailable", idx, n, false);
+T.EqualizationAvailable = localTraceLogical(trace, "EqualizationAvailable", idx, n, false);
+T.DecodeAttempted = localTraceLogical(trace, "DecodeAttempted", idx, n, false);
+T.DecodeAvailable = localTraceLogical(trace, "DecodeAvailable", idx, n, false);
+T.LLRAvailable = localTraceLogical(trace, "LLRAvailable", idx, n, false);
+T.LLRFinite = localTraceLogical(trace, "LLRFinite", idx, n, false);
+T.TimingEstimateUsed = localTraceLogical(trace, "TimingEstimateUsed", idx, n, false);
+T.RawTimingEstimate_samples = localTraceNumeric(trace, "RawTimingEstimate_samples", idx, n, NaN);
+T.AppliedTimingCorrection_samples = localTraceNumeric(trace, "AppliedTimingCorrection_samples", idx, n, NaN);
+T.TimingEstimateApplicationPolicy = localTraceString(trace, "TimingEstimateApplicationPolicy", idx, n, "");
+T.TimingEstimateStatus = localTraceString(trace, "TimingEstimateStatus", idx, n, "");
+T.TimingEstimateWasClipped = localTraceLogical(trace, "TimingEstimateWasClipped", idx, n, false);
+T.TimingEstimateAvailability = localTraceString(trace, "TimingEstimateAvailability", idx, n, "");
+T.TimingErrorDefinition = localTraceString(trace, "TimingErrorDefinition", idx, n, "");
+T.TimingValueStatus = localTraceString(trace, "TimingValueStatus", idx, n, "");
+T.InjectedCFO_Hz = localTraceNumeric(trace, "InjectedCFO_Hz", idx, n, NaN);
+T.TrueCFO_Hz = localTraceNumeric(trace, "TrueCFO_Hz", idx, n, NaN);
+T.EstimatedCFO_PreCorrection_Hz = localTraceNumeric(trace, "EstimatedCFO_PreCorrection_Hz", idx, n, NaN);
+T.ResidualCFO_PostCorrection_Hz = localTraceNumeric(trace, "ResidualCFO_PostCorrection_Hz", idx, n, NaN);
+T.CFOError_Hz = localTraceNumeric(trace, "CFOError_Hz", idx, n, NaN);
+T.EstimatedCFO_Hz = localTraceNumeric(trace, "EstimatedCFO_Hz", idx, n, NaN);
+T.CFOEstimateAvailable = localTraceLogical(trace, "CFOEstimateAvailable", idx, n, false);
+T.CFOEstimateAvailability = localTraceString(trace, "CFOEstimateAvailability", idx, n, "");
+T.ReceiverTrackingCorrectionSource = localTraceString(trace, "ReceiverTrackingCorrectionSource", idx, n, "");
+T.ReceiverTrackingCorrectionStatus = localTraceString(trace, "ReceiverTrackingCorrectionStatus", idx, n, "");
+T.ReceiverTrackingCorrectionNAReason = localTraceString(trace, "ReceiverTrackingCorrectionNAReason", idx, n, "");
+T.CFOErrorDefinition = localTraceString(trace, "CFOErrorDefinition", idx, n, "");
+T.CFOValueStatus = localTraceString(trace, "CFOValueStatus", idx, n, "");
+T.InjectedTimingOffset_samples = localTraceNumeric(trace, "InjectedTimingOffset_samples", idx, n, NaN);
+T.TrueTimingOffset_samples = localTraceNumeric(trace, "TrueTimingOffset_samples", idx, n, NaN);
+T.EstimatedTimingOffset_PreCorrection_samples = localTraceNumeric(trace, "EstimatedTimingOffset_PreCorrection_samples", idx, n, NaN);
+T.TimingError_samples = localTraceNumeric(trace, "TimingError_samples", idx, n, NaN);
+T.AppliedPathloss_dB = localTraceNumeric(trace, "AppliedPathloss_dB", idx, n, NaN);
+T.AppliedShadowFading_dB = localTraceNumeric(trace, "AppliedShadowFading_dB", idx, n, NaN);
+T.AppliedLargeScaleGain_dB = localTraceNumeric(trace, "AppliedLargeScaleGain_dB", idx, n, NaN);
+T.AppliedO2I_dB = localTraceNumeric(trace, "AppliedO2I_dB", idx, n, NaN);
+T.ServingRxPower_dBm = localTraceNumeric(trace, "ServingRxPower_dBm", idx, n, NaN);
+T.ThermalNoisePower_dBm = localTraceNumeric(trace, "ThermalNoisePower_dBm", idx, n, NaN);
+T.NoisePowerSource = localTraceString(trace, "NoisePowerSource", idx, n, "");
+T.PhaseNoiseConfigured = localTraceLogical(trace, "PhaseNoiseConfigured", idx, n, false);
+T.PhaseNoiseApplied = localTraceLogical(trace, "PhaseNoiseApplied", idx, n, false);
+T.PhaseNoiseRMS_rad = localTraceNumeric(trace, "PhaseNoiseRMS_rad", idx, n, NaN);
+T.IQImbalanceConfigured = localTraceLogical(trace, "IQImbalanceConfigured", idx, n, false);
+T.IQImbalanceApplied = localTraceLogical(trace, "IQImbalanceApplied", idx, n, false);
+T.IQImbalanceImageRejection_dB = localTraceNumeric(trace, "IQImbalanceImageRejection_dB", idx, n, NaN);
+T.IQImbalanceMeasurementStatus = localTraceString(trace, "IQImbalanceMeasurementStatus", idx, n, "");
 T.DecoderTruthProxySINR_dB = localTraceNumeric(trace, "DecoderTruthProxySINR_dB", idx, n, NaN);
 T.DecoderTruthProxySINRSource = localTraceString(trace, "DecoderTruthProxySINRSource", idx, n, "");
 T.DecoderTruthProxySINRValueRole = localTraceString(trace, "DecoderTruthProxySINRValueRole", idx, n, "");
@@ -2519,6 +2761,20 @@ if n == 0 || ~isfield(trace, name)
 end
 values = logical(trace.(name)(idx));
 values = values(:);
+end
+
+function token = localFormatNumericVector(values)
+values = double(values(:));
+values = values(isfinite(values));
+if isempty(values)
+    token = "";
+    return;
+end
+parts = strings(numel(values), 1);
+for i = 1:numel(values)
+    parts(i) = string(values(i));
+end
+token = strjoin(parts, "|");
 end
 
 function T = localBuildHARQProcessTable(grantTable)
@@ -3177,6 +3433,11 @@ try
 catch
 end
 
+localEmitFilesystemLiveProgress(cfg, nowUTC, stageText, slotIdx, totalSlots, ...
+    completion, elapsed_s, simTime_ms, tti_s, slotText, "", NaN, NaN, ...
+    NaN, NaN, activeUECount, nCells, grantCount, servedBits, droppedBits, ...
+    overflowEvents);
+
 try
     if sixgr.db.isArtifactStoreActive()
         payload = struct();
@@ -3268,6 +3529,11 @@ try
 catch
 end
 
+localEmitFilesystemLiveProgress(cfg, nowUTC, stageText, slotIdx, totalSlots, ...
+    completion, elapsed_s, simTime_ms, tti_s, slotText, dirText, grantIndex, ...
+    grantTotal, cellId, ueId, activeUECount, nCells, grantCount, servedBits, ...
+    droppedBits, overflowEvents);
+
 try
     if sixgr.db.isArtifactStoreActive()
         payload = struct();
@@ -3310,6 +3576,113 @@ catch ME
     catch
     end
 end
+end
+
+function localEmitFilesystemLiveProgress(cfg, nowUTC, stageText, slotIdx, totalSlots, ...
+    completion, elapsed_s, simTime_ms, tti_s, slotText, replayDirection, ...
+    replayGrantIndex, replayGrantTotal, cellId, ueId, activeUECount, nCells, ...
+    grantCount, servedBits, droppedBits, overflowEvents)
+
+runFolder = localResolveLLSRunFolder(cfg);
+if strlength(runFolder) == 0
+    return;
+end
+
+try
+    sixgr.util.ensureFolder(runFolder);
+    reportCsvDir = fullfile(runFolder, "reports", "csv");
+    sixgr.util.ensureFolder(reportCsvDir);
+
+    payload = struct();
+    payload.LastUpdateAt = char(string(nowUTC));
+    payload.CurrentStage = char(string(stageText));
+    payload.CurrentSlot = double(slotIdx);
+    payload.TotalSlots = double(totalSlots);
+    payload.RunCompletion = double(completion);
+    payload.ElapsedSeconds = double(elapsed_s);
+    payload.SimTime_ms = double(simTime_ms);
+    payload.SlotDuration_ms = 1e3 * double(tti_s);
+    payload.SlotDirection = char(string(slotText));
+    payload.ReplayDirection = char(string(replayDirection));
+    payload.ReplayGrantIndex = double(replayGrantIndex);
+    payload.ReplayGrantTotal = double(replayGrantTotal);
+    payload.CellId = double(cellId);
+    payload.UEId = double(ueId);
+    payload.ActiveUECount = double(activeUECount);
+    payload.CellCount = double(nCells);
+    payload.GrantCountSlot = double(grantCount);
+    payload.ServedBitsTotal = double(servedBits);
+    payload.DroppedBitsTotal = double(droppedBits);
+    payload.OverflowEventCount = double(overflowEvents);
+    payload.RunCompleted = false;
+    payload.ResultOk = false;
+    payload.MatlabPID = feature("getpid");
+    payload.Source = "sixgr.system.SystemLevelRunner";
+    sixgr.util.jsonWrite(fullfile(runFolder, "RUNNING.status.json"), payload);
+
+    row = table( ...
+        string(nowUTC), string(stageText), double(slotIdx), double(totalSlots), ...
+        double(completion), double(elapsed_s), double(simTime_ms), ...
+        1e3 * double(tti_s), string(slotText), string(replayDirection), ...
+        double(replayGrantIndex), double(replayGrantTotal), double(cellId), ...
+        double(ueId), double(activeUECount), double(nCells), double(grantCount), ...
+        double(servedBits), double(droppedBits), double(overflowEvents), ...
+        string("sixgr.system.SystemLevelRunner"), ...
+        'VariableNames', {'TimestampUTC','StageName','CurrentSlot','TotalSlots', ...
+        'RunCompletion','ElapsedSeconds','SimTime_ms','SlotDuration_ms', ...
+        'SlotDirection','ReplayDirection','ReplayGrantIndex','ReplayGrantTotal', ...
+        'CellId','UEId','ActiveUECount','CellCount','GrantCountSlot', ...
+        'ServedBitsTotal','DroppedBitsTotal','OverflowEventCount','Source'});
+
+    progressPath = fullfile(reportCsvDir, "live_stage_progress.csv");
+    T = localReadProgressTable(progressPath);
+    T = [T; row]; %#ok<AGROW>
+    sixgr.util.csvWriteTable(progressPath, T);
+catch ME
+    try
+        fprintf('[%s] WARN filesystem live progress heartbeat failed: %s\n', ...
+            char(string(nowUTC)), ME.message);
+    catch
+    end
+end
+end
+
+function runFolder = localResolveLLSRunFolder(cfg)
+runFolder = string(sixgr.util.structGet(cfg, "lls6g.outputRunFolder", ""));
+if strlength(strtrim(runFolder)) > 0
+    return;
+end
+runFolder = string(sixgr.util.structGet(cfg, "outputs.runFolder", ...
+    sixgr.util.structGet(cfg, "run.runFolder", "")));
+end
+
+function T = localReadProgressTable(pathText)
+if exist(pathText, "file") ~= 2
+    T = localEmptyProgressTable();
+    return;
+end
+try
+    T = readtable(pathText, "VariableNamingRule", "preserve");
+    expected = string(localEmptyProgressTable().Properties.VariableNames);
+    if ~all(ismember(expected, string(T.Properties.VariableNames)))
+        T = localEmptyProgressTable();
+    end
+catch
+    T = localEmptyProgressTable();
+end
+end
+
+function T = localEmptyProgressTable()
+T = table(strings(0,1), strings(0,1), zeros(0,1), zeros(0,1), ...
+    zeros(0,1), zeros(0,1), zeros(0,1), zeros(0,1), ...
+    strings(0,1), strings(0,1), NaN(0,1), NaN(0,1), NaN(0,1), ...
+    NaN(0,1), zeros(0,1), zeros(0,1), zeros(0,1), zeros(0,1), ...
+    zeros(0,1), zeros(0,1), strings(0,1), ...
+    'VariableNames', {'TimestampUTC','StageName','CurrentSlot','TotalSlots', ...
+    'RunCompletion','ElapsedSeconds','SimTime_ms','SlotDuration_ms', ...
+    'SlotDirection','ReplayDirection','ReplayGrantIndex','ReplayGrantTotal', ...
+    'CellId','UEId','ActiveUECount','CellCount','GrantCountSlot', ...
+    'ServedBitsTotal','DroppedBitsTotal','OverflowEventCount','Source'});
 end
 
 function env = localBuildEnvironmentSummary(ctx)

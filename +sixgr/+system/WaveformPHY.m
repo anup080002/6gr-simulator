@@ -111,11 +111,19 @@ classdef WaveformPHY < handle
                 "LDPCMaxIterations", obj.LDPCMaxIterations, ...
                 "UseGPU", obj.UseGPU);
 
-            replay.PHYDecisionRole = "measured";
-            replay.PHYDecisionStatus = "OK";
-            replay.PHYDecisionSource = "sixgr.system.waveform.replayGrant";
-            replay.PHYDecisionReason = "waveform_replay_executed";
-            replay.WaveformReplayExecuted = true;
+            if strlength(strtrim(string(sixgr.util.structGet(replay, "PHYDecisionRole", "")))) == 0
+                replay.PHYDecisionRole = "measured";
+            end
+            if strlength(strtrim(string(sixgr.util.structGet(replay, "PHYDecisionStatus", "")))) == 0
+                replay.PHYDecisionStatus = "OK";
+            end
+            if strlength(strtrim(string(sixgr.util.structGet(replay, "PHYDecisionSource", "")))) == 0
+                replay.PHYDecisionSource = "sixgr.system.waveform.replayGrant";
+            end
+            if strlength(strtrim(string(sixgr.util.structGet(replay, "PHYDecisionReason", "")))) == 0
+                replay.PHYDecisionReason = "waveform_replay_executed";
+            end
+            replay.WaveformReplayExecuted = logical(sixgr.util.structGet(replay, "WaveformReplayExecuted", true));
             replay.WaveformReplayReused = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
             replay.WaveformReplayKey = obj.localReplayKey(ctx);
             obj.LastReplay = replay;

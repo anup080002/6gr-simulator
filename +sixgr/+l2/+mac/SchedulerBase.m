@@ -666,6 +666,10 @@ classdef (Abstract) SchedulerBase < handle
                 useFastNRE = false;
                 info.TBSMode = "faithful";
             end
+            requiresExactGrantNRE = localRequiresExactGrantNRE(obj.Direction, symAlloc);
+            if requiresExactGrantNRE
+                useFastNRE = false;
+            end
             nrePerPRB = localFastNREPerPRB(obj.Direction, obj.Cfg, nSym);
             if ~useFastNRE
                 nreCache = [];
@@ -1163,6 +1167,26 @@ nSym = max(1, round(double(nSym)));
 dmrsSym = localResolveDMRSSymbolCount(direction, cfg, nSym);
 dmrsREPerPRB = localResolveDMRSREPerPRB(direction, cfg);
 nrePerPRB = max(1, 12 * nSym - dmrsREPerPRB * dmrsSym);
+end
+
+function tf = localRequiresExactGrantNRE(direction, symAlloc)
+tf = false;
+if upper(string(direction)) ~= "UL"
+    return;
+end
+sa = [0 14];
+if nargin >= 2 && ~isempty(symAlloc)
+    sa = double(symAlloc(:).');
+end
+if numel(sa) < 2
+    sa = [0 14];
+end
+startSym = max(0, round(double(sa(1))));
+nSym = max(0, round(double(sa(2))));
+
+% Late-start or tiny UL allocations depend on exact PUSCH mapping. Fast
+% RE estimates can overstate schedulable data RE in special-slot UL tails.
+tf = startSym > 3 || nSym <= 2;
 end
 
 function nSym = localResolveDMRSSymbolCount(direction, cfg, allocSymbols)

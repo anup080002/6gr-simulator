@@ -83,7 +83,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.scenario_label", "cha
   cfg = localSyncValue(cfg, newBase, oldBase, "channels.carrier_frequency_hz", "frequency.center_frequency_hz", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "channels.pathloss_scenario", "deployment_topology.cell_type", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "channels.max_doppler_hz", "channels.doppler_hz", "identity");
-  cfg = localSyncValue(cfg, newBase, oldBase, "channels.o2i_loss_model", "channels.o2i_model", "identity");
+  cfg = localSyncValue(cfg, newBase, oldBase, "channels.o2i_loss_model", "channels.o2i_model", "o2i_model");
   cfg = localSyncValue(cfg, newBase, oldBase, "channels.o2i_loss_db", "channels.o2i_loss_db", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo_and_beam_management.beam_sweeping", "mimo.beam_sweep_enabled", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo_and_beam_management.rank_set", "mimo.n_layers", "first_numeric");
@@ -527,6 +527,19 @@ switch mode
         txt = upper(strtrim(string(value)));
         if txt == "BIDIRECTIONAL"
             out = "BIDIR";
+        else
+            out = value;
+        end
+    case "o2i_model"
+        txt = lower(strtrim(string(value)));
+        if ismember(txt, ["", "none", "off", "disabled", "disable"])
+            out = "none";
+        elseif ismember(txt, ["low", "low_loss", "low-loss", "lowloss"])
+            out = "low";
+        elseif ismember(txt, ["high", "high_loss", "high-loss", "highloss"])
+            out = "high";
+        elseif txt == "custom"
+            out = "custom";
         else
             out = value;
         end

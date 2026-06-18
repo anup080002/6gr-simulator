@@ -297,6 +297,12 @@ T.ReceiverHestSINRSource = localStringColumn(grantT, "ReceiverHestSINRSource", "
 T.ReceiverHestSINRValueRole = localStringColumn(grantT, "ReceiverHestSINRValueRole", "unavailable");
 T.ReceiverHestSINRValueStatus = localStringColumn(grantT, "ReceiverHestSINRValueStatus", "unavailable");
 T.ReceiverHestSINRNAReason = localStringColumn(grantT, "ReceiverHestSINRNAReason", "system_level_adapter_does_not_export_receiver_hest_or_csi_grid");
+T.PostEqSINR_dB = localNumericColumn(grantT, "PostEqSINR_dB", NaN);
+T.PostEqSINRSource = localStringColumn(grantT, "PostEqSINRSource", "unavailable_system_level_no_post_equalizer_measurement");
+T.PostEqSINRValueRole = localStringColumn(grantT, "PostEqSINRValueRole", "unavailable");
+T.PostEqSINRValueStatus = localStringColumn(grantT, "PostEqSINRValueStatus", "unavailable");
+T.PostEqSINRNAReason = localStringColumn(grantT, "PostEqSINRNAReason", "system_level_adapter_does_not_export_post_equalizer_measurement");
+T.PostEqSINRPerLayer_dB = localStringColumn(grantT, "PostEqSINRPerLayer_dB", "");
 T.DecoderTruthProxySINR_dB = localNumericColumn(grantT, "DecoderTruthProxySINR_dB", NaN);
 T.DecoderTruthProxySINRSource = localStringColumn(grantT, "DecoderTruthProxySINRSource", "unavailable_system_level_no_decoder_truth_proxy");
 T.DecoderTruthProxySINRValueRole = localStringColumn(grantT, "DecoderTruthProxySINRValueRole", "unavailable");
@@ -312,6 +318,14 @@ T.MeasuredTrialSINRSource = repmat("deprecated_unavailable_in_system_level_lls",
 T.MeasuredTrialSINRValueRole = repmat("deprecated_unavailable", n, 1);
 T.MeasuredTrialSINRValueStatus = repmat("unavailable", n, 1);
 T.MeasuredTrialSINRNAReason = repmat("measured_trial_sinr_not_exported_for_system_level_adapter", n, 1);
+postEqUsable = isfinite(double(T.PostEqSINR_dB)) & ...
+    strcmpi(string(T.PostEqSINRValueStatus), "OK") & ...
+    contains(lower(string(T.PostEqSINRSource)), "post_equalization");
+T.MeasuredTrialSINR_dB(postEqUsable) = double(T.PostEqSINR_dB(postEqUsable));
+T.MeasuredTrialSINRSource(postEqUsable) = string(T.PostEqSINRSource(postEqUsable));
+T.MeasuredTrialSINRValueRole(postEqUsable) = string(T.PostEqSINRValueRole(postEqUsable));
+T.MeasuredTrialSINRValueStatus(postEqUsable) = "OK";
+T.MeasuredTrialSINRNAReason(postEqUsable) = "";
 T.LargeScaleSINR_dB = directionSINR;
 T.LargeScaleSINRSource = repmat(largeScaleSource, n, 1);
 T.LargeScaleSINRValueRole = repmat("runtime_state_derived", n, 1);
@@ -382,11 +396,63 @@ T.PrecodingNumLayers = localNumericColumn(grantT, "PrecodingNumLayers", NaN);
 T.PrecodingMatrixRows = localNumericColumn(grantT, "PrecodingMatrixRows", NaN);
 T.PrecodingMatrixCols = localNumericColumn(grantT, "PrecodingMatrixCols", NaN);
 T.GrantControlState = repmat(phyProfile.GrantControlState, n, 1);
-T.TimingEstimateUsed = false(n, 1);
+T.DecoderIterations = localNumericColumn(grantT, "DecoderIterations", NaN);
+T.ChannelEstimateAvailable = localLogicalColumn(grantT, "ChannelEstimateAvailable", false);
+T.EqualizationAvailable = localLogicalColumn(grantT, "EqualizationAvailable", false);
+T.DecodeAttempted = localLogicalColumn(grantT, "DecodeAttempted", false);
+T.DecodeAvailable = localLogicalColumn(grantT, "DecodeAvailable", false);
+T.LLRAvailable = localLogicalColumn(grantT, "LLRAvailable", false);
+T.LLRFinite = localLogicalColumn(grantT, "LLRFinite", false);
+T.DLSCHDecodeAvailable = false(n, 1);
+T.ULSCHDecodeAvailable = false(n, 1);
+if upper(string(direction)) == "DL"
+    T.DLSCHDecodeAvailable = T.DecodeAvailable;
+else
+    T.ULSCHDecodeAvailable = T.DecodeAvailable;
+end
+T.ChannelEstimateAttempted = T.ChannelEstimateAvailable;
+T.EqualizationAttempted = T.EqualizationAvailable;
+T.TimingEstimateUsed = localLogicalColumn(grantT, "TimingEstimateUsed", false);
 T.UseIdealTimingSync = repmat(logical(sixgr.util.structGet(cfg, "phy.rx.useIdealTimingSync", false)), n, 1);
-T.EstimatedCFO_Hz = nan(n, 1);
-T.CFOError_Hz = nan(n, 1);
-T.TimingError_samples = nan(n, 1);
+T.RawTimingEstimate_samples = localNumericColumn(grantT, "RawTimingEstimate_samples", NaN);
+T.AppliedTimingCorrection_samples = localNumericColumn(grantT, "AppliedTimingCorrection_samples", NaN);
+T.TimingEstimateApplicationPolicy = localStringColumn(grantT, "TimingEstimateApplicationPolicy", "");
+T.TimingEstimateStatus = localStringColumn(grantT, "TimingEstimateStatus", "");
+T.TimingEstimateWasClipped = localLogicalColumn(grantT, "TimingEstimateWasClipped", false);
+T.TimingEstimateAvailability = localStringColumn(grantT, "TimingEstimateAvailability", localTimingAvailabilityFromFlag(T.TimingEstimateUsed));
+T.TimingErrorDefinition = localStringColumn(grantT, "TimingErrorDefinition", localTimingErrorDefinitionFromFlag(T.TimingEstimateUsed));
+T.TimingValueStatus = localStringColumn(grantT, "TimingValueStatus", repmat("NOT_AVAILABLE", n, 1));
+T.InjectedTimingOffset_samples = localNumericColumn(grantT, "InjectedTimingOffset_samples", NaN);
+T.TrueTimingOffset_samples = localNumericColumn(grantT, "TrueTimingOffset_samples", T.InjectedTimingOffset_samples);
+T.EstimatedTimingOffset_PreCorrection_samples = localNumericColumn(grantT, "EstimatedTimingOffset_PreCorrection_samples", T.RawTimingEstimate_samples);
+T.TimingError_samples = localNumericColumn(grantT, "TimingError_samples", NaN);
+T.EstimatedCFO_Hz = localNumericColumn(grantT, "EstimatedCFO_Hz", NaN);
+T.InjectedCFO_Hz = localNumericColumn(grantT, "InjectedCFO_Hz", NaN);
+T.TrueCFO_Hz = localNumericColumn(grantT, "TrueCFO_Hz", T.InjectedCFO_Hz);
+T.EstimatedCFO_PreCorrection_Hz = localNumericColumn(grantT, "EstimatedCFO_PreCorrection_Hz", T.EstimatedCFO_Hz);
+T.ResidualCFO_PostCorrection_Hz = localNumericColumn(grantT, "ResidualCFO_PostCorrection_Hz", NaN);
+T.CFOError_Hz = localNumericColumn(grantT, "CFOError_Hz", NaN);
+T.CFOEstimateAvailable = localLogicalColumn(grantT, "CFOEstimateAvailable", false);
+T.CFOEstimateAvailability = localStringColumn(grantT, "CFOEstimateAvailability", localCFOAvailabilityFromEstimate(T.EstimatedCFO_Hz));
+T.ReceiverTrackingCorrectionSource = localStringColumn(grantT, "ReceiverTrackingCorrectionSource", "");
+T.ReceiverTrackingCorrectionStatus = localStringColumn(grantT, "ReceiverTrackingCorrectionStatus", "");
+T.ReceiverTrackingCorrectionNAReason = localStringColumn(grantT, "ReceiverTrackingCorrectionNAReason", "");
+T.CFOErrorDefinition = localStringColumn(grantT, "CFOErrorDefinition", localCFOErrorDefinitionFromEstimate(T.EstimatedCFO_Hz));
+T.CFOValueStatus = localStringColumn(grantT, "CFOValueStatus", localValueStatusFromFinite(T.EstimatedCFO_Hz));
+T.AppliedPathloss_dB = localNumericColumn(grantT, "AppliedPathloss_dB", NaN);
+T.AppliedShadowFading_dB = localNumericColumn(grantT, "AppliedShadowFading_dB", NaN);
+T.AppliedLargeScaleGain_dB = localNumericColumn(grantT, "AppliedLargeScaleGain_dB", NaN);
+T.AppliedO2I_dB = localNumericColumn(grantT, "AppliedO2I_dB", NaN);
+T.ServingRxPower_dBm = localNumericColumn(grantT, "ServingRxPower_dBm", NaN);
+T.ThermalNoisePower_dBm = localNumericColumn(grantT, "ThermalNoisePower_dBm", NaN);
+T.NoisePowerSource = localStringColumn(grantT, "NoisePowerSource", "");
+T.PhaseNoiseConfigured = localLogicalColumn(grantT, "PhaseNoiseConfigured", false);
+T.PhaseNoiseApplied = localLogicalColumn(grantT, "PhaseNoiseApplied", false);
+T.PhaseNoiseRMS_rad = localNumericColumn(grantT, "PhaseNoiseRMS_rad", NaN);
+T.IQImbalanceConfigured = localLogicalColumn(grantT, "IQImbalanceConfigured", false);
+T.IQImbalanceApplied = localLogicalColumn(grantT, "IQImbalanceApplied", false);
+T.IQImbalanceImageRejection_dB = localNumericColumn(grantT, "IQImbalanceImageRejection_dB", NaN);
+T.IQImbalanceMeasurementStatus = localStringColumn(grantT, "IQImbalanceMeasurementStatus", "");
 T.BSAntennaArrayType = repmat(string(sixgr.util.structGet(scfg.toStruct(), "antenna_and_array.bs_array_geometry", "")), n, 1);
 T.UEAntennaArrayType = repmat(string(sixgr.util.structGet(scfg.toStruct(), "antenna_and_array.ue_array_geometry", "")), n, 1);
 T.BSAntennaElements = repmat(double(sixgr.util.structGet(scfg.toStruct(), "antenna_and_array.bs_num_antenna_elements", NaN)), n, 1);
@@ -1338,7 +1404,7 @@ if nargin < 3
     defaultValue = NaN;
 end
 if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
-    values = repmat(double(defaultValue), height(T), 1);
+    values = localDefaultColumn(defaultValue, height(T), "double");
     return;
 end
 values = double(T.(char(varName)));
@@ -1349,7 +1415,7 @@ if nargin < 3
     defaultValue = false;
 end
 if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
-    values = repmat(logical(defaultValue), height(T), 1);
+    values = localDefaultColumn(defaultValue, height(T), "logical");
     return;
 end
 raw = T.(char(varName));
@@ -1365,10 +1431,40 @@ if nargin < 3
     defaultValue = "";
 end
 if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
-    values = repmat(string(defaultValue), height(T), 1);
+    values = localDefaultColumn(defaultValue, height(T), "string");
     return;
 end
 values = string(T.(char(varName)));
+end
+
+function values = localDefaultColumn(defaultValue, n, kind)
+if nargin < 3
+    kind = "string";
+end
+n = max(0, round(double(n)));
+switch string(kind)
+    case "double"
+        v = double(defaultValue);
+        fillValue = NaN;
+    case "logical"
+        v = logical(defaultValue);
+        fillValue = false;
+    otherwise
+        v = string(defaultValue);
+        fillValue = "";
+end
+v = v(:);
+if numel(v) == n
+    values = v;
+elseif isscalar(v)
+    values = repmat(v, n, 1);
+else
+    values = repmat(fillValue, n, 1);
+    count = min(n, numel(v));
+    if count > 0
+        values(1:count) = v(1:count);
+    end
+end
 end
 
 function source = localMCSSelectionSourceFromMode(modeValues)
@@ -1429,10 +1525,62 @@ T.DecoderTruthProxySINRSource = source;
 T.DecoderTruthProxySINRValueRole = role;
 end
 
+function values = localTimingAvailabilityFromFlag(timingUsed)
+timingUsed = logical(timingUsed(:));
+values = repmat("missing", numel(timingUsed), 1);
+values(timingUsed) = "available";
+end
+
+function values = localTimingErrorDefinitionFromFlag(timingUsed)
+timingUsed = logical(timingUsed(:));
+values = repmat("not_available_without_timing_estimate", numel(timingUsed), 1);
+values(timingUsed) = "not_available_without_injected_timing_reference";
+end
+
+function values = localCFOAvailabilityFromEstimate(cfoHz)
+cfoHz = double(cfoHz(:));
+values = repmat("missing", numel(cfoHz), 1);
+values(isfinite(cfoHz)) = "available";
+end
+
+function values = localCFOErrorDefinitionFromEstimate(cfoHz)
+cfoHz = double(cfoHz(:));
+values = repmat("not_available_without_cfo_estimate", numel(cfoHz), 1);
+values(isfinite(cfoHz)) = "estimated_cfo_hz_no_injected_cfo_reference_in_system_replay";
+end
+
+function values = localValueStatusFromFinite(x)
+x = double(x(:));
+values = repmat("NOT_AVAILABLE", numel(x), 1);
+values(isfinite(x)) = "OK";
+end
+
 function T = localAppendSystemGrantReplayEvidence(T, sourceT)
 numericDefaults = struct( ...
     "ReceiverHestSINR_dB", NaN, ...
+    "PostEqSINR_dB", NaN, ...
     "DecoderTruthProxySINR_dB", NaN, ...
+    "DecoderIterations", NaN, ...
+    "RawTimingEstimate_samples", NaN, ...
+    "AppliedTimingCorrection_samples", NaN, ...
+    "InjectedTimingOffset_samples", NaN, ...
+    "TrueTimingOffset_samples", NaN, ...
+    "EstimatedTimingOffset_PreCorrection_samples", NaN, ...
+    "TimingError_samples", NaN, ...
+    "InjectedCFO_Hz", NaN, ...
+    "TrueCFO_Hz", NaN, ...
+    "EstimatedCFO_PreCorrection_Hz", NaN, ...
+    "ResidualCFO_PostCorrection_Hz", NaN, ...
+    "CFOError_Hz", NaN, ...
+    "EstimatedCFO_Hz", NaN, ...
+    "AppliedPathloss_dB", NaN, ...
+    "AppliedShadowFading_dB", NaN, ...
+    "AppliedLargeScaleGain_dB", NaN, ...
+    "AppliedO2I_dB", NaN, ...
+    "ServingRxPower_dBm", NaN, ...
+    "ThermalNoisePower_dBm", NaN, ...
+    "PhaseNoiseRMS_rad", NaN, ...
+    "IQImbalanceImageRejection_dB", NaN, ...
     "RequestedPrecoderPMI", NaN, ...
     "AppliedPrecoderPMI", NaN, ...
     "PrecodingNumPorts", NaN, ...
@@ -1443,12 +1591,40 @@ logicalDefaults = struct( ...
     "PrecodingActive", false, ...
     "ExplicitBeamWeightsApplied", false, ...
     "TransformPrecodingApplied", false, ...
-    "BeamformingApplied", false);
+    "BeamformingApplied", false, ...
+    "ChannelEstimateAvailable", false, ...
+    "EqualizationAvailable", false, ...
+    "DecodeAttempted", false, ...
+    "DecodeAvailable", false, ...
+    "LLRAvailable", false, ...
+    "LLRFinite", false, ...
+    "TimingEstimateUsed", false, ...
+    "TimingEstimateWasClipped", false, ...
+    "CFOEstimateAvailable", false, ...
+    "PhaseNoiseConfigured", false, ...
+    "PhaseNoiseApplied", false, ...
+    "IQImbalanceConfigured", false, ...
+    "IQImbalanceApplied", false);
 stringDefaults = struct( ...
     "ReceiverHestSINRSource", "unavailable_system_level_no_receiver_hest_grid", ...
     "ReceiverHestSINRValueRole", "unavailable", ...
     "ReceiverHestSINRValueStatus", "unavailable", ...
     "ReceiverHestSINRNAReason", "system_level_adapter_does_not_export_receiver_hest_or_csi_grid", ...
+    "PostEqSINRSource", "unavailable_system_level_no_post_equalizer_measurement", ...
+    "PostEqSINRValueRole", "unavailable", ...
+    "PostEqSINRValueStatus", "unavailable", ...
+    "PostEqSINRNAReason", "system_level_adapter_does_not_export_post_equalizer_measurement", ...
+    "PostEqSINRPerLayer_dB", "", ...
+    "TimingEstimateApplicationPolicy", "", ...
+    "TimingEstimateStatus", "", ...
+    "TimingEstimateAvailability", "missing", ...
+    "TimingErrorDefinition", "not_available_without_timing_estimate", ...
+    "TimingValueStatus", "NOT_AVAILABLE", ...
+    "CFOEstimateAvailability", "missing", ...
+    "CFOErrorDefinition", "not_available_without_cfo_estimate", ...
+    "CFOValueStatus", "NOT_AVAILABLE", ...
+    "NoisePowerSource", "", ...
+    "IQImbalanceMeasurementStatus", "", ...
     "DecoderTruthProxySINRSource", "unavailable_system_level_no_decoder_truth_proxy", ...
     "DecoderTruthProxySINRValueRole", "unavailable", ...
     "DecoderTruthProxySINRValueStatus", "unavailable", ...

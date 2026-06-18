@@ -41,6 +41,8 @@ cfgArea.scenario.ue.nUE = 2000;
 cfgArea = sixgr.config.normalizeConfig(cfgArea);
 sixgr.config.validateConfig(cfgArea);
 layoutArea = sixgr.scenario.generateLayout(cfgArea);
+assert(all(abs(double(layoutArea.bs.pos_m(1, 1:2))) < 1e-9), ...
+    "A single-site rectangular grid must center the TRP at the local origin.");
 ueArea = sixgr.scenario.dropUEs(cfgArea, layoutArea);
 center = double(layoutArea.bs.pos_m(1, 1:2));
 r = sqrt(sum((double(ueArea.pos_m(:,1:2)) - center).^2, 2));
@@ -53,6 +55,19 @@ assert(abs(mean(r, "omitnan") - expectedMean) < 0.03 * rMax, ...
     "Equal-sector UE radial drop must follow the uniform-area annulus distribution.");
 assert(all(string(ueArea.serving_selection_method) == "equal_sector_uniform_area_annulus_reference"), ...
     "Equal-sector UE drop must label its corrected area-uniform placement method.");
+
+cfgBounded = cfgArea;
+cfgBounded.scenario.ue.nUE = 200;
+cfgBounded.scenario.ue.distribution.min_bs_dist_m = 20;
+cfgBounded.scenario.ue.distribution.max_bs_dist_m = 120;
+cfgBounded = sixgr.config.normalizeConfig(cfgBounded);
+sixgr.config.validateConfig(cfgBounded);
+layoutBounded = sixgr.scenario.generateLayout(cfgBounded);
+ueBounded = sixgr.scenario.dropUEs(cfgBounded, layoutBounded);
+dBounded = hypot(double(ueBounded.pos_m(:,1)) - double(layoutBounded.bs.pos_m(1,1)), ...
+    double(ueBounded.pos_m(:,2)) - double(layoutBounded.bs.pos_m(1,2)));
+assert(all(dBounded >= 20 - 1e-9 & dBounded <= 120 + 1e-9), ...
+    "Configured min/max UE-to-BS distance bounds must constrain equal-sector UE drops.");
 
 cfgPathloss = cfgLegacy;
 cfgPathloss.scenario.ue.dropMode = "pathloss_based_association_drop";

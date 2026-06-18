@@ -191,6 +191,38 @@ rxWaveform = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorr
 
 % OFDM demod
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
+if ~logical(trackingCorrection.CFOEstimateAvailable)
+    cfoEstimationMethod = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.impairments.cfoEstimationMethod", "cyclic_prefix"))));
+    if any(cfoEstimationMethod == ["dmrs_two_symbol", "dmrs", "reference_symbol_phase_slope"])
+        [dmrsCFOHz, dmrsCFOInfo] = sixgr.phy.rx.estimateCFOFromReferenceSymbols( ...
+            rxGrid, dmrsInd, dmrsSym, carrier, sampleRateHz);
+        if logical(dmrsCFOInfo.EstimateAvailable)
+            trackingCorrection.CFOEstimateAvailable = true;
+            trackingCorrection.EstimatedCFO_Hz = double(dmrsCFOHz);
+            trackingCorrection.Status = "available";
+            trackingCorrection.Source = "dmrs_reference_symbol_phase_slope";
+            trackingCorrection.NAReason = "";
+            trackingCorrection.CFOCorrectionApplied = false;
+            trackingCorrection.CFOCorrectionApplied_Hz = NaN;
+        end
+    end
+    if ~logical(trackingCorrection.CFOEstimateAvailable) && cfoEstimationMethod ~= "dmrs_two_symbol"
+        [cpCFOHz, cpCFOInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWaveform, ofdmInfo, sampleRateHz);
+        if logical(cpCFOInfo.EstimateAvailable)
+            trackingCorrection.CFOEstimateAvailable = true;
+            trackingCorrection.EstimatedCFO_Hz = double(cpCFOHz);
+            trackingCorrection.Status = "available";
+            trackingCorrection.Source = "cyclic_prefix_cfo_estimator";
+            trackingCorrection.NAReason = "";
+            trackingCorrection.CFOCorrectionApplied = false;
+            trackingCorrection.CFOCorrectionApplied_Hz = NaN;
+        end
+    elseif ~logical(trackingCorrection.CFOEstimateAvailable)
+        trackingCorrection.Status = "not_available";
+        trackingCorrection.Source = "dmrs_reference_symbol_phase_slope";
+        trackingCorrection.NAReason = "dmrs_cfo_estimate_unavailable";
+    end
+end
 
 % Channel estimate
 Hest = [];
@@ -442,6 +474,7 @@ rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPol
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
+rx.DecoderIterations = mean(double(actIter(:)), "omitnan");
 rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
 rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
 rx.TransportBlockCRCLength = double(tbCRCLen);

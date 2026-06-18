@@ -34,6 +34,7 @@ H = prof.area_m(2);
 
 [xy, servingRef, headingSeedDeg] = localResolveDropPositions(layout, prof, K, W, H);
 minInterUEDistance_m = localResolveMinimumInterUEDistance(cfg, prof);
+[minUEDistanceFromBS_m, maxUEDistanceFromBS_m] = localResolveUEDistanceBounds(layout, prof, W, H);
 spacingStatus = "not_requested";
 if isfinite(minInterUEDistance_m) && minInterUEDistance_m > 0 && K > 1
     [xy, servingRef, headingSeedDeg, spacingStatus] = localEnforceMinimumInterUEDistance( ...
@@ -61,7 +62,7 @@ servingMethod = repmat(string(localResolveServingSelectionMethod(prof)), K, 1);
 configuredPathMask = false(K, 1);
 
 [xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod, configuredPathMask] = ...
-    localApplyConfiguredUserPaths(cfg, layout, xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod);
+    localApplyConfiguredUserPaths(cfg, layout, prof, xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod);
 
 ue = struct();
 ue.profileName = prof.name;
@@ -77,6 +78,8 @@ ue.drop_reference_cell_id = servingRef(:);
 ue.serving_selection_method = servingMethod;
 ue.min_inter_ue_distance_m = repmat(double(minInterUEDistance_m), K, 1);
 ue.min_inter_ue_distance_status = repmat(string(spacingStatus), K, 1);
+ue.min_ue_bs_distance_m = repmat(double(minUEDistanceFromBS_m), K, 1);
+ue.max_ue_bs_distance_m = repmat(double(maxUEDistanceFromBS_m), K, 1);
 ue.configured_user_path = configuredPathMask;
 
 end
@@ -84,7 +87,7 @@ end
 % ---------------- Local helpers ----------------
 
 function [xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod, configuredMask] = ...
-    localApplyConfiguredUserPaths(cfg, layout, xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod)
+    localApplyConfiguredUserPaths(cfg, layout, prof, xy, z, speedKmh, headingDeg, servingRef, dropMode, servingMethod)
 configuredMask = false(size(speedKmh));
 userPaths = sixgr.util.structGet(cfg, "scenario.mobility.userPaths", struct([]));
 if isempty(userPaths)
@@ -115,6 +118,8 @@ for i = 1:numel(userPaths)
     if numel(pos) >= 3 && isfinite(pos(3))
         z(ueId) = pos(3);
     end
+    localAssertPositionWithinConfiguredBounds(pos(1:2), layout, prof, ...
+        sprintf("mobility.user_paths(%d).initial_position_m", i));
     specSpeedKmh = double(sixgr.util.structGet(spec, "speed_kmh", NaN));
     if isfinite(specSpeedKmh)
         speedKmh(ueId) = specSpeedKmh;
@@ -129,6 +134,16 @@ for i = 1:numel(userPaths)
             delta = targetPos(1:2) - pos(1:2);
             if all(isfinite(delta)) && norm(delta) > 0
                 headingDeg(ueId) = mod(atan2d(delta(2), delta(1)), 360);
+            end
+        end
+    end
+    waypoints = sixgr.util.structGet(spec, "waypoints", struct([]));
+    if isstruct(waypoints) && ~isempty(waypoints)
+        for w = 1:numel(waypoints)
+            targetPos = double(sixgr.util.structGet(waypoints(w), "position_m", [NaN NaN NaN]));
+            if numel(targetPos) >= 2 && all(isfinite(targetPos(1:2)))
+                localAssertPositionWithinConfiguredBounds(targetPos(1:2), layout, prof, ...
+                    sprintf("mobility.user_paths(%d).waypoints_m(%d).position_m", i, w));
             end
         end
     end
@@ -204,6 +219,17 @@ end
 switch localResolveDropMode(prof)
     case "pathloss_based_association_drop"
         candidate = [(rand - 0.5) * W, (rand - 0.5) * H];
+        attempt = 0;
+        maxAttempts = 2000;
+        while ~localCandidateWithinConfiguredBounds(candidate, layout, prof, W, H) && attempt < maxAttempts
+            attempt = attempt + 1;
+            candidate = [(rand - 0.5) * W, (rand - 0.5) * H];
+        end
+        if attempt >= maxAttempts && ~localCandidateWithinConfiguredBounds(candidate, layout, prof, W, H)
+            error("sixgr:scenario:UEDistanceBoundsUnfillable", ...
+                "Unable to generate a pathloss-based UE drop within configured UE-to-BS distance bounds after %d attempts.", ...
+                maxAttempts);
+        end
         servingCell = localAssignByNearestCell(candidate, layout, nCells);
         dx = candidate(1) - bsPos(servingCell,1);
         dy = candidate(2) - bsPos(servingCell,2);
@@ -214,8 +240,7 @@ switch localResolveDropMode(prof)
         end
     otherwise
         sectorSpanDeg = localResolveSectorSpan(layout, prof);
-        radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
-        radiusMin_m = min(40, max(5, 0.08 * radiusMax_m));
+        [radiusMin_m, radiusMax_m] = localResolveUEDistanceBounds(layout, prof, W, H);
         servingCell = max(1, min(nCells, round(double(preferredServingCell))));
         az = double(bsAz(servingCell));
         theta = az + (rand - 0.5) * sectorSpanDeg;
@@ -242,7 +267,21 @@ end
 nCells = size(bsPos, 1);
 switch localResolveDropMode(prof)
     case "pathloss_based_association_drop"
-        xy = [ (rand(K,1)-0.5)*W, (rand(K,1)-0.5)*H ];
+        for u = 1:K
+            candidate = [(rand - 0.5) * W, (rand - 0.5) * H];
+            attempt = 0;
+            maxAttempts = 2000;
+            while ~localCandidateWithinConfiguredBounds(candidate, layout, prof, W, H) && attempt < maxAttempts
+                attempt = attempt + 1;
+                candidate = [(rand - 0.5) * W, (rand - 0.5) * H];
+            end
+            if attempt >= maxAttempts && ~localCandidateWithinConfiguredBounds(candidate, layout, prof, W, H)
+                error("sixgr:scenario:UEDistanceBoundsUnfillable", ...
+                    "Unable to generate UE %d within configured UE-to-BS distance bounds after %d attempts.", ...
+                    u, maxAttempts);
+            end
+            xy(u,:) = candidate;
+        end
         servingRef = localAssignByNearestCell(xy, layout, nCells);
         for u = 1:K
             c = servingRef(u);
@@ -256,8 +295,7 @@ switch localResolveDropMode(prof)
         end
     otherwise
         sectorSpanDeg = localResolveSectorSpan(layout, prof);
-        radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
-        radiusMin_m = min(40, max(5, 0.08 * radiusMax_m));
+        [radiusMin_m, radiusMax_m] = localResolveUEDistanceBounds(layout, prof, W, H);
 
         servingRef = repmat((1:nCells).', ceil(K / nCells), 1);
         servingRef = servingRef(1:K);
@@ -366,6 +404,88 @@ else
     radiusMax_m = 0.22 * min(double(W), double(H));
 end
 radiusMax_m = max(radiusMax_m, 25);
+end
+
+function [radiusMin_m, radiusMax_m, hasExplicitMin, hasExplicitMax] = localResolveUEDistanceBounds(layout, prof, W, H)
+radiusMax_m = localResolveSectorRadius(layout, prof, W, H);
+fallbackMin_m = min(40, max(5, 0.08 * radiusMax_m));
+
+minCandidate = double(sixgr.util.structGet(prof, "ue.distribution.min_bs_dist_m", ...
+    sixgr.util.structGet(prof, "ue.distribution.minBsDistance_m", NaN)));
+maxCandidate = double(sixgr.util.structGet(prof, "ue.distribution.max_bs_dist_m", ...
+    sixgr.util.structGet(prof, "ue.distribution.maxBsDistance_m", NaN)));
+
+hasExplicitMin = isscalar(minCandidate) && isfinite(minCandidate) && minCandidate >= 0;
+hasExplicitMax = isscalar(maxCandidate) && isfinite(maxCandidate) && maxCandidate > 0;
+if hasExplicitMax
+    radiusMax_m = double(maxCandidate);
+end
+if hasExplicitMin
+    radiusMin_m = double(minCandidate);
+else
+    radiusMin_m = fallbackMin_m;
+end
+if radiusMin_m > radiusMax_m
+    error("sixgr:scenario:InvalidUEDistanceBounds", ...
+        "UE minimum BS distance %.3f m exceeds maximum BS distance %.3f m.", ...
+        double(radiusMin_m), double(radiusMax_m));
+end
+radiusMin_m = max(0, radiusMin_m);
+radiusMax_m = max(radiusMax_m, max(radiusMin_m + eps, 1));
+end
+
+function localAssertPositionWithinConfiguredBounds(posXY, layout, prof, context)
+area_m = double(sixgr.util.structGet(layout, "area_m", [0 0]));
+[minDistance_m, maxDistance_m, hasMin, hasMax] = localResolveUEDistanceBounds(layout, prof, area_m(1), area_m(2));
+if ~(hasMin || hasMax)
+    return;
+end
+distance_m = localNearestBSDistance(posXY, layout);
+tolerance_m = 1e-6;
+if hasMin && distance_m < minDistance_m - tolerance_m
+    error("sixgr:scenario:ConfiguredUserPathOutsideDistanceBounds", ...
+        "%s is %.6f m from the nearest BS, below configured min_bs_dist_m %.6f m.", ...
+        context, double(distance_m), double(minDistance_m));
+end
+if hasMax && distance_m > maxDistance_m + tolerance_m
+    error("sixgr:scenario:ConfiguredUserPathOutsideDistanceBounds", ...
+        "%s is %.6f m from the nearest BS, above configured max_bs_dist_m %.6f m.", ...
+        context, double(distance_m), double(maxDistance_m));
+end
+end
+
+function ok = localCandidateWithinConfiguredBounds(posXY, layout, prof, W, H)
+[minDistance_m, maxDistance_m, hasMin, hasMax] = localResolveUEDistanceBounds(layout, prof, W, H);
+if ~(hasMin || hasMax)
+    ok = true;
+    return;
+end
+distance_m = localNearestBSDistance(posXY, layout);
+ok = isfinite(distance_m) && ...
+    (~hasMin || distance_m >= minDistance_m - 1e-9) && ...
+    (~hasMax || distance_m <= maxDistance_m + 1e-9);
+end
+
+function distance_m = localNearestBSDistance(posXY, layout)
+bsPos = double(sixgr.util.structGet(layout, "bs.pos_m", zeros(0,3)));
+if isempty(bsPos)
+    distance_m = NaN;
+    return;
+end
+xy = double(posXY(:).');
+xy = xy(1:2);
+wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", ""));
+wrapEnabled = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
+if wrapEnabled && strlength(strtrim(wrapMode)) > 0 && wrapMode ~= "disabled"
+    distanceCells = sixgr.scenario.wraparoundDistance([xy 0], bsPos, ...
+        double(sixgr.util.structGet(layout, "area_m", [0 0])), ...
+        "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));
+else
+    dx = xy(1) - bsPos(:,1).';
+    dy = xy(2) - bsPos(:,2).';
+    distanceCells = sqrt(dx.^2 + dy.^2);
+end
+distance_m = min(double(distanceCells(:)));
 end
 
 function idx = localDiscreteSample(p, N)

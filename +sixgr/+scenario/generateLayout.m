@@ -45,7 +45,7 @@ bsH = prof.bs.height_m;
 switch lower(string(prof.layoutType))
     case {"hex","hex_grid","hexgrid"}
         siteXY = localHexSites(prof.nSites, prof.isd_m);
-    case {"indoor_grid","grid","rect"}
+    case {"indoor_grid","grid","rect","rect_grid","rectgrid"}
         siteXY = localIndoorGridSites(prof.nSites, prof.isd_m, prof.area_m);
     otherwise
         error("sixgr:scenario:UnknownLayout", "Unknown layoutType: %s", prof.layoutType);
@@ -155,6 +155,10 @@ H = double(area_m(2));
 
 if nSites <= 0
     siteXY = zeros(0,2);
+    return;
+end
+if nSites == 1
+    siteXY = [0 0];
     return;
 end
 

@@ -39,7 +39,7 @@ cfg.run.strictMode = logical(s.logging.strict_validation);
 cfg.run.deterministicMode = logical(s.simulation.deterministic_mode);
 cfg.run.honestyMode = char(string(localGetNested(s, "scenario.honesty_mode", "strict")));
 cfg.run.unsupportedOutputPolicy = char(string(localGetNested(s, ...
-    "scenario.unsupported_output_policy", "show_unavailable_with_reason")));
+    "scenario.unsupported_output_policy", "blank_unmeasured_values")));
 cfg.run.provenanceLogging = logical(localGetNested(s, "scenario.provenance_logging", true));
 if isfield(s, "seeds")
     cfg.run.seedCatalog = s.seeds;
@@ -165,6 +165,28 @@ if isfinite(minInterUEDistance_m) && minInterUEDistance_m > 0
     cfg = sixgr.util.structSet(cfg, "scenario.ue.minInterUEDistance_m", double(minInterUEDistance_m));
     cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.minInterUEDistance_m", double(minInterUEDistance_m));
 end
+minUEDistanceFromBS_m = localResolveFirstFiniteNumeric(s, ...
+    ["deployment_topology.min_ue_distance_from_bs_m", ...
+     "scenario.ue.distribution.min_bs_dist_m", ...
+     "scenario.ue.distribution.minBsDistance_m"], NaN);
+maxUEDistanceFromBS_m = localResolveFirstFiniteNumeric(s, ...
+    ["deployment_topology.max_ue_distance_from_bs_m", ...
+     "deployment_topology.cell_radius_m", ...
+     "scenario.ue.distribution.max_bs_dist_m", ...
+     "scenario.ue.distribution.maxBsDistance_m"], NaN);
+if isfinite(minUEDistanceFromBS_m) && minUEDistanceFromBS_m >= 0
+    cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.min_bs_dist_m", double(minUEDistanceFromBS_m));
+    cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.minBsDistance_m", double(minUEDistanceFromBS_m));
+end
+if isfinite(maxUEDistanceFromBS_m) && maxUEDistanceFromBS_m > 0
+    cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.max_bs_dist_m", double(maxUEDistanceFromBS_m));
+    cfg = sixgr.util.structSet(cfg, "scenario.ue.distribution.maxBsDistance_m", double(maxUEDistanceFromBS_m));
+end
+if isfinite(minUEDistanceFromBS_m) && isfinite(maxUEDistanceFromBS_m) && ...
+        minUEDistanceFromBS_m > maxUEDistanceFromBS_m
+    error("sixgr:lls6g:config:InvalidUEDistanceBounds", ...
+        "deployment_topology.min_ue_distance_from_bs_m must be <= max_ue_distance_from_bs_m/cell_radius_m.");
+end
 
 mobilitySpeedKmh = localResolveFirstFiniteNumeric(s, ...
     ["mobility.ue_speed_kmh","channels.mobility_kmph"], NaN);
@@ -229,8 +251,8 @@ cfg = sixgr.util.structSet(cfg, "channel.pathlossEnabled", logical(s.channels.pa
 cfg = sixgr.util.structSet(cfg, "channel.shadowFadingEnabled", logical(s.channels.shadow_fading_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.spatialConsistencyEnabled", logical(s.channels.spatial_consistency_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.losEnabled", logical(s.channels.los_enabled));
-o2iModel = char(string(localGetNested(s, "channels.o2i_model", ...
-    localGetNested(s, "channels.o2i_loss_model", "none"))));
+o2iModel = localResolveO2IModel(localGetNested(s, "channels.o2i_model", ...
+    localGetNested(s, "channels.o2i_loss_model", "none")));
 cfg = sixgr.util.structSet(cfg, "channel.o2i.model", o2iModel);
 cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", ...
     ~any(lower(strtrim(string(o2iModel))) == ["", "none", "disabled", "off"]));
@@ -311,9 +333,10 @@ cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numULSymbols", ...
 cfg.phy.waveform.dl = char(string(s.waveform.dl_waveform));
 cfg.phy.waveform.ul = char(string(s.waveform.ul_waveform));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingEnabled", logical(s.waveform.windowing_enabled));
-cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingPercent", double(s.waveform.windowing_percent));
-cfg = sixgr.util.structSet(cfg, "phy.waveform.ofdmWindowingPercent", double(s.waveform.windowing_percent));
-cfg = sixgr.util.structSet(cfg, "phy.ofdm.windowingPercent", double(s.waveform.windowing_percent));
+windowingPercent = double(localGetNested(s, "waveform.windowing_percent", 0));
+cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingPercent", windowingPercent);
+cfg = sixgr.util.structSet(cfg, "phy.waveform.ofdmWindowingPercent", windowingPercent);
+cfg = sixgr.util.structSet(cfg, "phy.ofdm.windowingPercent", windowingPercent);
 cfg = sixgr.util.structSet(cfg, "phy.waveform.experimentalDLDftsOfdmEnabled", ...
     logical(s.waveform.experimental_dl_dfts_ofdm_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.channelEstimation.method", char(string(localGetNested(s, ...
@@ -520,6 +543,8 @@ cfg.phy.pdsch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
 cfg.phy.pdsch.dmrs.numCDMGroupsWithoutData = double(s.reference_signals.pdsch_dmrs_num_cdm_groups_without_data);
 cfg.phy.pdsch.dmrs.typeApos = double(s.reference_signals.pdsch_dmrs_type_a_position);
 cfg.phy.pdsch.dmrs.configType = double(s.reference_signals.pdsch_dmrs_config_type);
+cfg.phy.pdsch.dmrs.additionalPositions = double(localGetNested(s, "reference_signals.pdsch_dmrs_additional_positions", 0));
+cfg.phy.pdsch.dmrs.maxLength = double(localGetNested(s, "reference_signals.pdsch_dmrs_max_length", 1));
 cfg.phy.pdsch.configuredMCSIndex = dlConfiguredMCSIndex;
 cfg.phy.pdsch.mcsIndex = dlConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", char(string(s.modulation.mcs_table)));
@@ -694,6 +719,12 @@ cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(string(s.modulation.mcs_table)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.nPorts", double(s.reference_signals.pusch_dmrs_ports));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.typeApos", double(localGetNested(s, "reference_signals.pusch_dmrs_type_a_position", 2)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.configType", double(localGetNested(s, "reference_signals.pusch_dmrs_config_type", ...
+    localGetNested(s, "reference_signals.pdsch_dmrs_config_type", 1))));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.additionalPositions", double(localGetNested(s, "reference_signals.pusch_dmrs_additional_positions", 0)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.maxLength", double(localGetNested(s, "reference_signals.pusch_dmrs_max_length", ...
+    localGetNested(s, "reference_signals.pdsch_dmrs_max_length", 1))));
 ulCodebookEnabled = ~logical(s.waveform.transform_precoding_enabled) && reportPMI && ...
     pmiCodebookMode ~= "noncodebook" && lower(string(s.mimo.codebook_type)) ~= "noncodebook";
 if ulCodebookEnabled
@@ -929,27 +960,33 @@ cfg = sixgr.util.structSet(cfg, "phy.harq.validationMode", char(string(localRequ
 cfg.phy.ldpc.maxIterations = double(s.coding.max_decoder_iterations);
 cfg = sixgr.util.structSet(cfg, "phy.ldpc.useMexBatchDecode", ...
     ~localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile));
-cfg.phy.rx.cfoCompensation = abs(double(s.impairments.cfo_hz)) > 0;
+cfoHz = localResolveRuntimeCFOHz(s);
+timingOffsetSamples = localResolveRuntimeTimingOffsetSamples(s);
+cfg.phy.rx.cfoCompensation = abs(double(cfoHz)) > 0;
 cfg.phy.rx.useFastChannelEstMex = false;
 cfg = sixgr.util.structSet(cfg, "phy.rx.useIdealTimingSync", logical(localRequireNested(s, ...
     "receiver.use_ideal_timing_sync", "receiver.use_ideal_timing_sync")));
 cfg.phy.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.phy.nRxAnt = double(s.mimo.n_rx_ant);
 cfg = localApplyRuntimeAntennaConfig(cfg, s);
-cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(s.impairments.cfo_hz));
-cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", logical(s.impairments.phase_noise_enabled));
-cfg = sixgr.util.structSet(cfg, "rf.enable", ...
-    abs(double(s.impairments.cfo_hz)) > 0 || logical(s.impairments.phase_noise_enabled) || ...
-    logical(s.impairments.iq_imbalance_enabled) || logical(s.impairments.pa_nonlinearity_enabled) || ...
-    abs(double(s.impairments.timing_offset_samples)) > 0);
-cfg = sixgr.util.structSet(cfg, "rf.cfo_Hz", double(s.impairments.cfo_hz));
-iqEnabled = logical(s.impairments.iq_imbalance_enabled) || logical(localGetNested(s, "impairments.iq_imbalance.enabled", false));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(cfoHz));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoEstimationMethod", ...
+    char(string(localGetNested(s, "impairments.cfo_estimation_method", "cyclic_prefix"))));
+phaseNoiseEnabled = logical(s.impairments.phase_noise_enabled) || ...
+    logical(localGetNested(s, "impairments.phase_noise.enabled", false));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", logical(phaseNoiseEnabled));
+cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.enable", logical(phaseNoiseEnabled));
+cfg = sixgr.util.structSet(cfg, "rf.cfo_Hz", double(cfoHz));
 iqModel = localResolveIQModelToken(s);
 iqGainImb_dB = localResolveFirstFiniteNumeric(s, [ ...
     "power_and_rf_frontend.iq_imbalance.gain_imbalance_db"
     "power_and_rf_frontend.iq_imbalance.amp_imbalance_db"
     "power_and_rf_frontend.iq_imbalance.amp_imb_db"
     "power_and_rf_frontend.iq_imbalance.amplitude_imbalance_db"
+    "impairments.iq_amplitude_imbalance_dB"
+    "impairments.iq_amplitude_imbalance_db"
+    "impairments.iq_gain_imbalance_dB"
+    "impairments.iq_gain_imbalance_db"
     "impairments.iq_imbalance.gain_imbalance_db"
     "impairments.iq_imbalance.amp_imbalance_db"
     "impairments.iq_imbalance.amp_imb_db"
@@ -957,8 +994,16 @@ iqGainImb_dB = localResolveFirstFiniteNumeric(s, [ ...
 iqPhaseImb_deg = localResolveFirstFiniteNumeric(s, [ ...
     "power_and_rf_frontend.iq_imbalance.phase_imbalance_deg"
     "power_and_rf_frontend.iq_imbalance.phase_imb_deg"
+    "impairments.iq_phase_imbalance_deg"
     "impairments.iq_imbalance.phase_imbalance_deg"
     "impairments.iq_imbalance.phase_imb_deg"], NaN);
+iqEnabled = logical(s.impairments.iq_imbalance_enabled) || ...
+    logical(localGetNested(s, "impairments.iq_imbalance.enabled", false)) || ...
+    (isfinite(iqGainImb_dB) && abs(double(iqGainImb_dB)) > 1e-12) || ...
+    (isfinite(iqPhaseImb_deg) && abs(double(iqPhaseImb_deg)) > 1e-12);
+cfg = sixgr.util.structSet(cfg, "rf.enable", ...
+    abs(double(cfoHz)) > 0 || logical(phaseNoiseEnabled) || logical(iqEnabled) || ...
+    logical(s.impairments.pa_nonlinearity_enabled) || abs(double(timingOffsetSamples)) > 0);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceEnabled", logical(iqEnabled));
 cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.enable", logical(iqEnabled));
 cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.model", char(iqModel));
@@ -975,10 +1020,10 @@ cfg = sixgr.util.structSet(cfg, "rf.pa.enable", logical(s.impairments.pa_nonline
 cfg = sixgr.util.structSet(cfg, "rf.pa.backoff_dB", double(localGetNested(s, "impairments.pa_output_backoff_dB", 3)));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.adcQuantizationBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.dacQuantizationBits", double(s.impairments.dac_quantization_bits));
-cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetSamples", double(s.impairments.timing_offset_samples));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetSamples", double(timingOffsetSamples));
 cfg = sixgr.util.structSet(cfg, "rf.adcBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "rf.dacBits", double(s.impairments.dac_quantization_bits));
-cfg = sixgr.util.structSet(cfg, "rf.timingOffsetSamples", double(s.impairments.timing_offset_samples));
+cfg = sixgr.util.structSet(cfg, "rf.timingOffsetSamples", double(timingOffsetSamples));
 interferenceExecutionMode = localResolveInterferenceExecutionMode(s);
 if any(interferenceExecutionMode == ["abstract_large_scale_scheduler_context","explicit_activity_power_sum","waveform_overlap_large_scale"])
     error("sixgr:lls6g:config:NonWaveformInterferenceModeRemoved", ...
@@ -1326,12 +1371,12 @@ values = values(strlength(values) > 0);
 end
 
 function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
-% Exact MEX kernels in this repo accelerate AWGN, LDPC batch decode, struct
-% access, and FFT/PAPR without changing truth-vs-proxy labeling. The strict
-% coupled waveform restriction is enforced separately by validateConfig when
-% a fading-channel run tries to combine run.useMex with the scalar fast
-% channel-estimation MEX path.
-tf = false;
+% System-level waveform truth on fading channels is currently unsafe under
+% exact-MEX acceleration on this server. Keep these runs on the MATLAB path
+% so the scenario completes honestly instead of crashing the process.
+runnerProfile = lower(strtrim(string(runnerProfile)));
+channelModel = upper(strtrim(string(localGetNested(s, "channels.model_type", "AWGN"))));
+tf = runnerProfile == "system_level_lls" && channelModel ~= "AWGN";
 end
 
 function cfg = localApplyFrameStructureEngine(cfg)
@@ -2182,6 +2227,23 @@ switch token
 end
 end
 
+function o2iModel = localResolveO2IModel(rawValue)
+token = lower(strtrim(string(rawValue)));
+if ismember(token, ["", "none", "off", "disabled", "disable"])
+    o2iModel = 'none';
+elseif ismember(token, ["low", "low_loss", "low-loss", "lowloss"])
+    o2iModel = 'low';
+elseif ismember(token, ["high", "high_loss", "high-loss", "highloss"])
+    o2iModel = 'high';
+elseif token == "custom"
+    o2iModel = 'custom';
+else
+    error("sixgr:lls6g:config:BadO2IModel", ...
+        "channels.o2i_model / channels.o2i_loss_model must resolve to none, low, high, or custom; got '%s'.", ...
+        char(token));
+end
+end
+
 function [profileName, propagationScenario] = localResolveScenarioSemantics(s)
 profileCandidate = string(localGetNested(s, "scenario.profile_name", ""));
 if strlength(strtrim(profileCandidate)) == 0
@@ -2342,6 +2404,134 @@ end
 value = double(raw);
 if ~isfinite(value)
     value = NaN;
+end
+end
+
+function cfoHz = localResolveRuntimeCFOHz(s)
+explicit = localNumericScalarOrNaN(localGetNested(s, "impairments.cfo_hz", NaN));
+enabled = logical(localGetNested(s, "impairments.cfo_enabled", ...
+    localGetNested(s, "impairments.cfo.enabled", isfinite(explicit) && abs(explicit) > 0)));
+if ~enabled
+    cfoHz = 0;
+    return;
+end
+
+model = lower(strtrim(string(localGetNested(s, "impairments.cfo_model", ...
+    localGetNested(s, "impairments.cfo.model", "fixed")))));
+if any(model == ["fixed","constant","explicit","deterministic"]) && isfinite(explicit)
+    cfoHz = explicit;
+    return;
+end
+
+fcHz = localResolveFirstFiniteNumeric(s, [ ...
+    "frequency.center_frequency_hz"
+    "carrier_frequency_hz"
+    "carrier.carrier_frequency_hz"
+    "channel.carrier_frequency_hz"], 0);
+stdPpm = localResolveFirstFiniteNumeric(s, [ ...
+    "impairments.cfo_std_ppm"
+    "impairments.cfo.std_ppm"], NaN);
+stdHz = abs(double(fcHz)) * abs(double(stdPpm)) * 1e-6;
+maxHz = localResolveFirstFiniteNumeric(s, [ ...
+    "impairments.cfo_max_hz"
+    "impairments.cfo.value_hz"], NaN);
+if ~(isfinite(maxHz) && maxHz >= 0) && isfinite(explicit)
+    maxHz = abs(explicit);
+end
+if ~(isfinite(maxHz) && maxHz >= 0)
+    maxHz = 0;
+end
+
+stream = RandStream("mt19937ar", "Seed", localBoundedSeed(localResolveImpairmentSeed(s) + 101));
+switch model
+    case "gaussian"
+        if ~(isfinite(stdHz) && stdHz > 0)
+            stdHz = maxHz / 3;
+        end
+        cfoHz = double(stdHz) * randn(stream, 1, 1);
+    case {"uniform","bounded_uniform"}
+        cfoHz = (2 * rand(stream, 1, 1) - 1) * double(maxHz);
+    otherwise
+        if isfinite(explicit)
+            cfoHz = explicit;
+        else
+            cfoHz = 0;
+        end
+end
+if isfinite(maxHz) && maxHz > 0
+    cfoHz = max(-double(maxHz), min(double(maxHz), double(cfoHz)));
+end
+if ~isfinite(cfoHz)
+    cfoHz = 0;
+end
+end
+
+function timingOffset = localResolveRuntimeTimingOffsetSamples(s)
+explicit = localNumericScalarOrNaN(localGetNested(s, "impairments.timing_offset_samples", NaN));
+enabled = logical(localGetNested(s, "impairments.timing_offset_enabled", ...
+    localGetNested(s, "impairments.to.enabled", isfinite(explicit) && abs(explicit) > 0)));
+if ~enabled
+    timingOffset = 0;
+    return;
+end
+
+model = lower(strtrim(string(localGetNested(s, "impairments.timing_offset_model", ...
+    localGetNested(s, "impairments.to.model", "fixed")))));
+if any(model == ["fixed","constant","explicit","deterministic"]) && isfinite(explicit)
+    timingOffset = explicit;
+    return;
+end
+
+maxSamples = localResolveFirstFiniteNumeric(s, [ ...
+    "impairments.timing_offset_max_samples"
+    "impairments.to.value_samples"], NaN);
+if ~(isfinite(maxSamples) && maxSamples >= 0) && isfinite(explicit)
+    maxSamples = abs(explicit);
+end
+if ~(isfinite(maxSamples) && maxSamples >= 0)
+    maxSamples = 0;
+end
+
+stream = RandStream("mt19937ar", "Seed", localBoundedSeed(localResolveImpairmentSeed(s) + 202));
+switch model
+    case {"uniform","bounded_uniform"}
+        timingOffset = (2 * rand(stream, 1, 1) - 1) * double(maxSamples);
+    case "gaussian"
+        timingOffset = (double(maxSamples) / 3) * randn(stream, 1, 1);
+    otherwise
+        if isfinite(explicit)
+            timingOffset = explicit;
+        else
+            timingOffset = 0;
+        end
+end
+if isfinite(maxSamples) && maxSamples > 0
+    timingOffset = max(-double(maxSamples), min(double(maxSamples), double(timingOffset)));
+end
+if ~isfinite(timingOffset)
+    timingOffset = 0;
+end
+end
+
+function seed = localResolveImpairmentSeed(s)
+seed = localResolveFirstFiniteNumeric(s, [ ...
+    "run_control.impairment_seed"
+    "simulation.impairment_seed"
+    "run.impairment_seed"
+    "impairments.seed"
+    "run_control.seed"
+    "simulation.seed"], 1);
+seed = localBoundedSeed(seed);
+end
+
+function seed = localBoundedSeed(seed)
+seed = round(double(seed));
+if ~isfinite(seed)
+    seed = 1;
+end
+seed = mod(seed, 2^32 - 1);
+if seed < 0
+    seed = seed + (2^32 - 1);
 end
 end
 

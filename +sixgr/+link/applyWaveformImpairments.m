@@ -499,13 +499,10 @@ end
 end
 
 function y = localApplyIQImbalanceModel(x, gainImbalance_dB, phaseImbalance_deg)
-if exist("iqimbal", "file") == 2 || exist("iqimbal", "file") == 6
-    try
-        y = iqimbal(x, gainImbalance_dB, phaseImbalance_deg);
-        return;
-    catch
-    end
-end
+% Avoid the iqimbal backend in unattended replay: on this Windows/MATLAB
+% deployment it can terminate MATLAB with an access violation for larger
+% multi-antenna waveforms, which try/catch cannot recover from. The
+% widely-linear model below is the standard baseband IQ imbalance form.
 g = 10.^(double(gainImbalance_dB) / 20);
 phi = double(phaseImbalance_deg) * pi / 180;
 alpha = 0.5 * (1 + g * exp(-1j * phi));

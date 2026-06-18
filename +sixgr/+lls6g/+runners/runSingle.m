@@ -3176,10 +3176,16 @@ end
 end
 
 function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(cfg)
-% Exact MEX kernels remain allowed for strict coupled waveform truth as long
-% as the strict config validator keeps fast scalar channel-estimation MEX
-% paths disabled on fading channels.
-tf = false;
+runnerProfile = lower(strtrim(string(sixgr.util.structGet(cfg, "run.runnerProfile", ...
+    sixgr.util.structGet(cfg, "lls6g.scenario.runner_profile", "")))));
+if strlength(runnerProfile) == 0
+    if lower(strtrim(string(sixgr.util.structGet(cfg, "run.mode", "")))) == "system"
+        runnerProfile = "system_level_lls";
+    end
+end
+channelModel = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+phyBackend = lower(strtrim(string(sixgr.util.structGet(cfg, "system.phyBackend", "waveform"))));
+tf = runnerProfile == "system_level_lls" && phyBackend == "waveform" && channelModel ~= "AWGN";
 end
 
 function caps = localExactMexCapabilities()

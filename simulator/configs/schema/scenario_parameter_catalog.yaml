@@ -63,7 +63,7 @@ sections:
       unsupported_output_policy:
         required: false
         type: string
-        allowed_values: [show_unavailable_with_reason]
+        allowed_values: [blank_unmeasured_values, show_unavailable_with_reason]
       provenance_logging:
         required: false
         type: boolean
@@ -321,10 +321,34 @@ sections:
         required: true
         type: integer
         allowed_numeric_values: [2, 3]
+      pdsch_dmrs_additional_positions:
+        required: false
+        type: integer
+        allowed_numeric_values: [0, 1, 2, 3]
+      pdsch_dmrs_max_length:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2]
       pdsch_dmrs_num_cdm_groups_without_data:
         required: true
         type: integer
         allowed_numeric_values: [1, 2, 3]
+      pusch_dmrs_config_type:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2]
+      pusch_dmrs_type_a_position:
+        required: false
+        type: integer
+        allowed_numeric_values: [2, 3]
+      pusch_dmrs_additional_positions:
+        required: false
+        type: integer
+        allowed_numeric_values: [0, 1, 2, 3]
+      pusch_dmrs_max_length:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2]
   mimo:
     required: true
     parameters:

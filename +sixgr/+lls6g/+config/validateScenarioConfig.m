@@ -569,6 +569,12 @@ end
 dmrsConfigType = double(cfg.reference_signals.pdsch_dmrs_config_type);
 dmrsTypeAPos = double(cfg.reference_signals.pdsch_dmrs_type_a_position);
 dmrsCDMGroups = double(cfg.reference_signals.pdsch_dmrs_num_cdm_groups_without_data);
+pdschDmrsAddPos = double(localOptionalStructValue(cfg, "reference_signals.pdsch_dmrs_additional_positions", 0));
+puschDmrsAddPos = double(localOptionalStructValue(cfg, "reference_signals.pusch_dmrs_additional_positions", 0));
+pdschDmrsMaxLength = double(localOptionalStructValue(cfg, "reference_signals.pdsch_dmrs_max_length", 1));
+puschDmrsMaxLength = double(localOptionalStructValue(cfg, "reference_signals.pusch_dmrs_max_length", pdschDmrsMaxLength));
+puschDmrsConfigType = double(localOptionalStructValue(cfg, "reference_signals.pusch_dmrs_config_type", dmrsConfigType));
+puschDmrsTypeAPos = double(localOptionalStructValue(cfg, "reference_signals.pusch_dmrs_type_a_position", dmrsTypeAPos));
 if ~ismember(dmrsConfigType, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_config_type))
     error("sixgr:lls6g:config:BadDMRSConfigType", ...
         "reference_signals.pdsch_dmrs_config_type in %s must be 1 or 2.", localCtx(ctx));
@@ -580,6 +586,36 @@ end
 if ~ismember(dmrsCDMGroups, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_num_cdm_groups_without_data))
     error("sixgr:lls6g:config:BadDMRSCDMGroups", ...
         "reference_signals.pdsch_dmrs_num_cdm_groups_without_data in %s must be 1, 2, or 3.", ...
+        localCtx(ctx));
+end
+if ~ismember(pdschDmrsAddPos, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_additional_positions))
+    error("sixgr:lls6g:config:BadPDSCHDMRSAdditionalPositions", ...
+        "reference_signals.pdsch_dmrs_additional_positions in %s must be 0, 1, 2, or 3.", localCtx(ctx));
+end
+if ~ismember(puschDmrsAddPos, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pusch_dmrs_additional_positions))
+    error("sixgr:lls6g:config:BadPUSCHDMRSAdditionalPositions", ...
+        "reference_signals.pusch_dmrs_additional_positions in %s must be 0, 1, 2, or 3.", localCtx(ctx));
+end
+if ~ismember(pdschDmrsMaxLength, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pdsch_dmrs_max_length))
+    error("sixgr:lls6g:config:BadPDSCHDMRSMaxLength", ...
+        "reference_signals.pdsch_dmrs_max_length in %s must be 1 or 2.", localCtx(ctx));
+end
+if ~ismember(puschDmrsMaxLength, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pusch_dmrs_max_length))
+    error("sixgr:lls6g:config:BadPUSCHDMRSMaxLength", ...
+        "reference_signals.pusch_dmrs_max_length in %s must be 1 or 2.", localCtx(ctx));
+end
+if ~ismember(puschDmrsConfigType, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pusch_dmrs_config_type))
+    error("sixgr:lls6g:config:BadPUSCHDMRSConfigType", ...
+        "reference_signals.pusch_dmrs_config_type in %s must be 1 or 2.", localCtx(ctx));
+end
+if ~ismember(puschDmrsTypeAPos, localCatalogAllowedNumeric(catalog.sections.reference_signals.parameters.pusch_dmrs_type_a_position))
+    error("sixgr:lls6g:config:BadPUSCHDMRSTypeAPosition", ...
+        "reference_signals.pusch_dmrs_type_a_position in %s must be 2 or 3.", localCtx(ctx));
+end
+cfoEstMethod = lower(strtrim(string(localOptionalStructValue(cfg, "impairments.cfo_estimation_method", ""))));
+if cfoEstMethod == "dmrs_two_symbol" && (pdschDmrsAddPos < 1 || puschDmrsAddPos < 1)
+    error("sixgr:lls6g:config:DMRSTwoSymbolCFORequiresAdditionalDMRS", ...
+        "impairments.cfo_estimation_method=dmrs_two_symbol in %s requires reference_signals.pdsch_dmrs_additional_positions>=1 and pusch_dmrs_additional_positions>=1.", ...
         localCtx(ctx));
 end
 

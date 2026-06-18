@@ -45,7 +45,7 @@ scenario:
   target_cases: [bundle]
   bundle_anchor_cases: [ul_lowpapr]
   honesty_mode: strict
-  unsupported_output_policy: show_unavailable_with_reason
+  unsupported_output_policy: blank_unmeasured_values
   provenance_logging: true
   notes: >
     The runtime must use the real coupled system-level + waveform-backed replay path where implemented,
@@ -141,7 +141,7 @@ run_control:
   gpu_enable: false
   mixed_precision_enable: false
   fail_on_validation_warning: true
-  num_workers: 32
+  num_workers: 2
   max_runtime_guard: 14400
   debug_level: debug
   fail_on_warning: true
@@ -545,14 +545,16 @@ reference_signals:
   ssb_subcarrier_offset: 0
   pdcch_dmrs_enabled: true
   pdsch_dmrs_type: 1
-  pdsch_dmrs_typeA_position: 2
-  pdsch_dmrs_additional_positions: 0
+  pdsch_dmrs_type_a_position: 2
+  pdsch_dmrs_additional_positions: 2
   pdsch_dmrs_ports: 2
   pdsch_dmrs_max_length: 1
+  pusch_dmrs_config_type: 1
   pusch_dmrs_type: 1
-  pusch_dmrs_typeA_position: 2
-  pusch_dmrs_additional_positions: 0
+  pusch_dmrs_type_a_position: 2
+  pusch_dmrs_additional_positions: 2
   pusch_dmrs_ports: 2
+  pusch_dmrs_max_length: 1
   csi_rs_enabled: true
   csi_rs_port_count: 4
   csi_rs_cdm_type: FD-CDM2

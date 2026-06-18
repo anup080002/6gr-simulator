@@ -64,6 +64,7 @@ end
 wantSIB1 = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
 if wantSIB1
     try
+        cfg = localSanitizeSIB1PrecodingConfig(cfg);
         tStart = tic;
         tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, ...
             "SNRdB", double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf)), ...
@@ -181,6 +182,58 @@ catch ME
         log.warn("runCellSearch_MIB_SIB1 failed: " + string(ME.message));
     end
 end
+end
+
+function cfgOut = localSanitizeSIB1PrecodingConfig(cfgIn)
+cfgOut = cfgIn;
+nLayers = max(1, round(double(sixgr.util.structGet(cfgOut, "phy.pdsch.numLayers", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.nLayers", 1)))));
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+resolvedPorts = NaN;
+for i = 1:numel(paths)
+    path = paths(i);
+    Wcfg = sixgr.util.structGet(cfgOut, path, []);
+    if isempty(Wcfg)
+        continue;
+    end
+    Wcfg = localAdaptSIB1PrecodingMatrix(Wcfg, nLayers);
+    cfgOut = sixgr.util.structSet(cfgOut, path, Wcfg);
+    if ~isempty(Wcfg)
+        resolvedPorts = size(Wcfg, 1);
+    end
+end
+if isfinite(resolvedPorts) && resolvedPorts >= nLayers
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", resolvedPorts);
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", resolvedPorts);
+end
+end
+
+function Wout = localAdaptSIB1PrecodingMatrix(Wcfg, nLayers)
+Wout = [];
+if isempty(Wcfg)
+    return;
+end
+nLayers = max(1, round(double(nLayers)));
+sz = size(Wcfg);
+if ndims(Wcfg) > 2 && sz(3) == 1
+    Wcfg = squeeze(Wcfg);
+    sz = size(Wcfg);
+end
+if ndims(Wcfg) > 2 || numel(sz) < 2
+    return;
+end
+if sz(2) >= nLayers
+    Wout = double(Wcfg(:, 1:nLayers));
+elseif sz(1) == nLayers && sz(2) >= nLayers
+    Wout = double(Wcfg.');
+end
+if isempty(Wout) || size(Wout, 1) < nLayers
+    Wout = [];
+    return;
+end
+colNorm = sqrt(sum(abs(Wout).^2, 1));
+colNorm(colNorm <= eps) = 1;
+Wout = Wout ./ colNorm;
 end
 
 function durationMs = localResolvePBCHObservationDurationMs(cfg)

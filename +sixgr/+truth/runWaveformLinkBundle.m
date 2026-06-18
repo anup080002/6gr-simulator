@@ -9909,7 +9909,32 @@ if ~(isstruct(rawTrials) && isfield(rawTrials, char(fieldName)))
     return;
 end
 T = rawTrials.(char(fieldName));
-tf = istable(T) && ~isempty(T);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+T = localEffectiveTrialRows(T);
+if isempty(T)
+    return;
+end
+
+n = height(T);
+valueRole = repmat("", n, 1);
+artifactClass = repmat("", n, 1);
+runtimeConsumer = repmat("", n, 1);
+if ismember("ValueRole", string(T.Properties.VariableNames))
+    valueRole = strtrim(string(T.ValueRole));
+end
+if ismember("ArtifactClass", string(T.Properties.VariableNames))
+    artifactClass = strtrim(string(T.ArtifactClass));
+end
+if ismember("RuntimeStateConsumer", string(T.Properties.VariableNames))
+    runtimeConsumer = strtrim(string(T.RuntimeStateConsumer));
+end
+
+diagnosticOnlyMask = valueRole == "diagnostic_not_primary_runtime_evidence" | ...
+    artifactClass == "diagnostic_control_reference_signal_sweep" | ...
+    runtimeConsumer == "not_consumed_by_coupled_runtime";
+tf = any(~diagnosticOnlyMask);
 end
 
 function res = localApplyMultiUserPrimaryResults(res, rawTrials, multiUser, cfg)

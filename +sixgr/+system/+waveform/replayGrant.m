@@ -35,6 +35,58 @@ replay = struct( ...
     "ReceiverHestSINRValueRole", "unavailable", ...
     "ReceiverHestSINRValueStatus", "unavailable", ...
     "ReceiverHestSINRNAReason", "waveform_replay_not_executed", ...
+    "PostEqSINR_dB", NaN, ...
+    "PostEqSINRSource", "unavailable_waveform_replay_not_executed", ...
+    "PostEqSINRValueRole", "unavailable", ...
+    "PostEqSINRValueStatus", "unavailable", ...
+    "PostEqSINRNAReason", "waveform_replay_not_executed", ...
+    "PostEqSINRPerLayer_dB", NaN, ...
+    "TimingEstimateUsed", false, ...
+    "RawTimingEstimate_samples", NaN, ...
+    "AppliedTimingCorrection_samples", NaN, ...
+    "TimingEstimateApplicationPolicy", "unavailable", ...
+    "TimingEstimateStatus", "missing", ...
+    "TimingEstimateWasClipped", false, ...
+    "TimingEstimateAvailability", "missing", ...
+    "TimingErrorDefinition", "not_available_without_timing_estimate", ...
+    "TimingValueStatus", "NOT_AVAILABLE", ...
+    "InjectedCFO_Hz", NaN, ...
+    "TrueCFO_Hz", NaN, ...
+    "EstimatedCFO_PreCorrection_Hz", NaN, ...
+    "ResidualCFO_PostCorrection_Hz", NaN, ...
+    "CFOError_Hz", NaN, ...
+    "EstimatedCFO_Hz", NaN, ...
+    "CFOEstimateAvailable", false, ...
+    "CFOEstimateAvailability", "missing", ...
+    "ReceiverTrackingCorrectionSource", "", ...
+    "ReceiverTrackingCorrectionStatus", "", ...
+    "ReceiverTrackingCorrectionNAReason", "", ...
+    "CFOErrorDefinition", "not_available_without_cfo_estimate", ...
+    "CFOValueStatus", "NOT_AVAILABLE", ...
+    "InjectedTimingOffset_samples", NaN, ...
+    "TrueTimingOffset_samples", NaN, ...
+    "EstimatedTimingOffset_PreCorrection_samples", NaN, ...
+    "TimingError_samples", NaN, ...
+    "AppliedPathloss_dB", NaN, ...
+    "AppliedShadowFading_dB", NaN, ...
+    "AppliedLargeScaleGain_dB", NaN, ...
+    "AppliedO2I_dB", NaN, ...
+    "ServingRxPower_dBm", NaN, ...
+    "ThermalNoisePower_dBm", NaN, ...
+    "NoisePowerSource", "unavailable", ...
+    "PhaseNoiseConfigured", false, ...
+    "PhaseNoiseApplied", false, ...
+    "PhaseNoiseRMS_rad", NaN, ...
+    "IQImbalanceConfigured", false, ...
+    "IQImbalanceApplied", false, ...
+    "IQImbalanceImageRejection_dB", NaN, ...
+    "IQImbalanceMeasurementStatus", "not_measured", ...
+    "ChannelEstimateAvailable", false, ...
+    "EqualizationAvailable", false, ...
+    "DecodeAttempted", false, ...
+    "DecodeAvailable", false, ...
+    "LLRAvailable", false, ...
+    "LLRFinite", false, ...
     "DecoderTruthProxySINR_dB", NaN, ...
     "DecoderTruthProxySINRSource", "unavailable_equalizer_evm_not_computed", ...
     "DecoderTruthProxySINRValueRole", "unavailable", ...
@@ -89,7 +141,7 @@ try
             "MaxIterations", localLDPCMaxIterations(snr_dB, cfgReplay, opt), ...
             "CompactOutput", logical(opt.CompactPHYIO), ...
             "FastAWGNPath", fastAWGNPath, ...
-            "SkipTimingEstimate", logical(chState.UseFading));
+            "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
     else
         tmpl = localResolveReplayTemplate(cfgReplay, "DL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "DL", tmpl, payloadIn, opt);
@@ -109,7 +161,7 @@ try
             "MaxIterations", localLDPCMaxIterations(snr_dB, cfgReplay, opt), ...
             "CompactOutput", logical(opt.CompactPHYIO), ...
             "FastAWGNPath", fastAWGNPath, ...
-            "SkipTimingEstimate", logical(chState.UseFading));
+            "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
     end
 
     replay.Ok = logical(sixgr.util.structGet(rx, "Ok", false));
@@ -118,7 +170,9 @@ try
     replay.FastAWGNPath = logical(fastAWGNPath);
     replay.WaveformReplayReused = logical(txTemplateReused);
     replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo);
-    if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
+    replay = localAttachImpairmentEvidence(replay, chState);
+    replay.DecoderIterations = double(sixgr.util.structGet(rx, "DecoderIterations", NaN));
+    if ~isfinite(replay.DecoderIterations) && isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
         replay.DecoderIterations = mean(double(rx.ActiveIterations(:)), "omitnan");
     end
 
@@ -132,14 +186,42 @@ try
         end
         replay.Notes = msg;
     end
+    replay.PHYDecisionRole = "measured";
+    replay.PHYDecisionStatus = "OK";
+    replay.PHYDecisionSource = "sixgr.system.waveform.replayGrant";
+    replay.PHYDecisionReason = "waveform_replay_executed";
+    replay.WaveformReplayExecuted = true;
+    replay.WaveformReplayReused = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
 catch ME
+    if strcmp(string(ME.identifier), "sixgr:system:WaveformReplay:MissingExactNRE")
+        replay = localMarkReplayUnavailable(replay, ...
+            "waveform_replay_no_exact_data_re_budget", ...
+            "waveform_replay_failed: " + string(ME.message));
+        return;
+    end
     if logical(opt.StrictMode)
         rethrow(ME);
     end
-    replay.Ok = false;
-    replay.BLER = 1.0;
-    replay.Notes = "waveform_replay_failed: " + string(ME.message);
+    replay = localMarkReplayUnavailable(replay, ...
+        "waveform_replay_failed", ...
+        "waveform_replay_failed: " + string(ME.message));
 end
+end
+
+function replay = localMarkReplayUnavailable(replay, reason, note)
+replay.Ok = false;
+replay.BLER = NaN;
+replay.Notes = string(note);
+replay.PHYDecisionRole = "unavailable";
+replay.PHYDecisionStatus = "NOT_AVAILABLE";
+replay.PHYDecisionSource = "sixgr.system.waveform.replayGrant";
+replay.PHYDecisionReason = string(reason);
+replay.WaveformReplayExecuted = false;
+replay.WaveformReplayReused = false;
+end
+
+function tf = localShouldSkipTimingEstimate(cfg)
+tf = logical(sixgr.util.structGet(cfg, "phy.rx.useIdealTimingSync", false));
 end
 
 function [tx, txInfo, reused] = localResolveReplayTx(cfgReplay, dir, tmpl, payloadIn, opt)
@@ -264,6 +346,41 @@ replay.ReceiverHestSINRSource = string(sixgr.util.structGet(rx, "ReceiverHestSIN
 replay.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", "unavailable"));
 replay.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", "unavailable"));
 replay.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", "receiver_hest_sinr_not_exported_by_replay_rx"));
+replay.PostEqSINR_dB = double(sixgr.util.structGet(rx, "PostEqSINR_dB", NaN));
+replay.PostEqSINRSource = string(sixgr.util.structGet(rx, "PostEqSINRSource", "post_equalization_sinr_from_equalizer_channel_estimate"));
+replay.PostEqSINRValueRole = string(sixgr.util.structGet(rx, "PostEqSINRValueRole", "measured_post_equalization_scheduling_input"));
+replay.PostEqSINRValueStatus = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", localValueStatus(replay.PostEqSINR_dB)));
+replay.PostEqSINRNAReason = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
+replay.PostEqSINRPerLayer_dB = sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN);
+replay.TimingEstimateUsed = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", false));
+replay.RawTimingEstimate_samples = double(sixgr.util.structGet(rx, "RawTimingEstimate_samples", ...
+    sixgr.util.structGet(rx, "TimingOffset", NaN)));
+replay.AppliedTimingCorrection_samples = double(sixgr.util.structGet(rx, "AppliedTimingCorrection_samples", NaN));
+replay.TimingEstimateApplicationPolicy = string(sixgr.util.structGet(rx, "TimingEstimateApplicationPolicy", ""));
+replay.TimingEstimateStatus = string(sixgr.util.structGet(rx, "TimingEstimateStatus", localTimingStatus(replay.TimingEstimateUsed)));
+replay.TimingEstimateWasClipped = logical(sixgr.util.structGet(rx, "TimingEstimateWasClipped", false));
+replay.TimingEstimateAvailability = localAvailability(replay.TimingEstimateUsed);
+replay.TimingErrorDefinition = localTimingErrorDefinition(replay.TimingEstimateUsed);
+replay.TimingValueStatus = "NOT_AVAILABLE";
+replay.EstimatedCFO_Hz = double(sixgr.util.structGet(rx, "EstimatedCFO_Hz", NaN));
+replay.EstimatedCFO_PreCorrection_Hz = double(sixgr.util.structGet(rx, "EstimatedCFO_PreCorrection_Hz", replay.EstimatedCFO_Hz));
+replay.CFOEstimateAvailable = logical(sixgr.util.structGet(rx, "CFOEstimateAvailable", isfinite(replay.EstimatedCFO_Hz)));
+replay.CFOEstimateAvailability = localAvailability(replay.CFOEstimateAvailable);
+replay.ReceiverTrackingCorrectionSource = string(sixgr.util.structGet(rx, "ReceiverTrackingCorrectionSource", ""));
+replay.ReceiverTrackingCorrectionStatus = string(sixgr.util.structGet(rx, "ReceiverTrackingCorrectionStatus", ""));
+replay.ReceiverTrackingCorrectionNAReason = string(sixgr.util.structGet(rx, "ReceiverTrackingCorrectionNAReason", ""));
+replay.CFOErrorDefinition = localCFOErrorDefinition(replay.CFOEstimateAvailable);
+replay.CFOValueStatus = localValueStatus(replay.EstimatedCFO_Hz);
+replay.ChannelEstimateAvailable = logical(sixgr.util.structGet(rx, "ChannelEstimateAvailable", false));
+replay.EqualizationAvailable = logical(sixgr.util.structGet(rx, "EqualizationAvailable", false));
+replay.DecodeAttempted = logical(sixgr.util.structGet(rx, "DecodeAttempted", false));
+if dir == "UL"
+    replay.DecodeAvailable = logical(sixgr.util.structGet(rx, "ULSCHDecodeAvailable", false));
+else
+    replay.DecodeAvailable = logical(sixgr.util.structGet(rx, "DLSCHDecodeAvailable", false));
+end
+replay.LLRAvailable = logical(sixgr.util.structGet(rx, "LLRAvailable", false));
+replay.LLRFinite = logical(sixgr.util.structGet(rx, "LLRFinite", false));
 
 [decoderSINR, decoderMeta] = localDecoderTruthProxySINR(tx, rx, dir);
 replay.DecoderTruthProxySINR_dB = double(decoderSINR);
@@ -315,6 +432,85 @@ replay.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
 replay.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
 replay.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", NaN));
 replay.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", NaN));
+end
+
+function replay = localAttachImpairmentEvidence(replay, chState)
+imp = struct();
+if isstruct(chState)
+    imp = sixgr.util.structGet(chState, "ImpairmentReplay", struct());
+end
+if ~(isstruct(imp) && ~isempty(fieldnames(imp)))
+    return;
+end
+
+replay.InjectedCFO_Hz = double(sixgr.util.structGet(imp, "InjectedCFO_Hz", NaN));
+replay.TrueCFO_Hz = replay.InjectedCFO_Hz;
+replay.InjectedTimingOffset_samples = double(sixgr.util.structGet(imp, "InjectedTimingOffset_samples", NaN));
+replay.TrueTimingOffset_samples = replay.InjectedTimingOffset_samples;
+replay.EstimatedTimingOffset_PreCorrection_samples = replay.RawTimingEstimate_samples;
+if isfinite(replay.TrueTimingOffset_samples) && isfinite(replay.EstimatedTimingOffset_PreCorrection_samples)
+    replay.TimingError_samples = replay.TrueTimingOffset_samples - replay.EstimatedTimingOffset_PreCorrection_samples;
+end
+if isfinite(replay.TrueCFO_Hz) && isfinite(replay.EstimatedCFO_PreCorrection_Hz)
+    replay.CFOError_Hz = replay.TrueCFO_Hz - replay.EstimatedCFO_PreCorrection_Hz;
+    replay.ResidualCFO_PostCorrection_Hz = replay.CFOError_Hz;
+end
+
+replay.AppliedPathloss_dB = double(sixgr.util.structGet(imp, "AppliedPathloss_dB", NaN));
+replay.AppliedShadowFading_dB = double(sixgr.util.structGet(imp, "AppliedShadowFading_dB", NaN));
+replay.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(imp, "AppliedLargeScaleGain_dB", NaN));
+replay.AppliedO2I_dB = double(sixgr.util.structGet(imp, "AppliedO2I_dB", NaN));
+replay.ServingRxPower_dBm = double(sixgr.util.structGet(imp, "ServingRxPower_dBm", NaN));
+replay.ThermalNoisePower_dBm = double(sixgr.util.structGet(imp, "ThermalNoisePower_dBm", NaN));
+replay.NoisePowerSource = string(sixgr.util.structGet(imp, "NoisePowerSource", ""));
+
+replay.PhaseNoiseConfigured = logical(sixgr.util.structGet(imp, "PhaseNoiseConfigured", false));
+replay.PhaseNoiseApplied = logical(sixgr.util.structGet(imp, "PhaseNoiseApplied", false));
+replay.PhaseNoiseRMS_rad = double(sixgr.util.structGet(imp, "PhaseNoiseRMS_rad", NaN));
+replay.IQImbalanceConfigured = logical(sixgr.util.structGet(imp, "IQImbalanceConfigured", false));
+replay.IQImbalanceApplied = logical(sixgr.util.structGet(imp, "IQImbalanceApplied", false));
+replay.IQImbalanceImageRejection_dB = double(sixgr.util.structGet(imp, "IQImbalanceImageRejection_dB", NaN));
+replay.IQImbalanceMeasurementStatus = string(sixgr.util.structGet(imp, "IQImbalanceMeasurementStatus", ""));
+end
+
+function value = localAvailability(tf)
+if logical(tf)
+    value = "available";
+else
+    value = "missing";
+end
+end
+
+function value = localValueStatus(x)
+if any(isfinite(double(x(:))))
+    value = "OK";
+else
+    value = "NOT_AVAILABLE";
+end
+end
+
+function value = localTimingStatus(timingUsed)
+if logical(timingUsed)
+    value = "available_applied_signed_correction";
+else
+    value = "missing";
+end
+end
+
+function value = localTimingErrorDefinition(timingUsed)
+if logical(timingUsed)
+    value = "not_available_without_injected_timing_reference";
+else
+    value = "not_available_without_timing_estimate";
+end
+end
+
+function value = localCFOErrorDefinition(cfoAvailable)
+if logical(cfoAvailable)
+    value = "estimated_cfo_hz_no_injected_cfo_reference_in_replay";
+else
+    value = "not_available_without_cfo_estimate";
+end
 end
 
 function [sinr_dB, meta] = localDecoderTruthProxySINR(tx, rx, dir)
@@ -952,7 +1148,9 @@ end
 
 function state = localInitChannelState(cfg, tx, txInfo)
 state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
-    "ChannelPadSamples", 0, "ChannelTrimSamples", 0);
+    "ChannelPadSamples", 0, "ChannelTrimSamples", 0, ...
+    "Cfg", cfg, "SampleRateHz", localResolveSampleRate(tx, txInfo), ...
+    "ImpairmentReplay", struct());
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
@@ -965,7 +1163,7 @@ cfgCh.channel.doppler_Hz = max(0, double(sixgr.util.structGet(cfgCh, "channel.do
     sixgr.util.structGet(cfgCh, "channel.dopplerHz", ...
     sixgr.util.structGet(cfgCh, "channel.fading.maxDoppler_Hz", 0)))));
 
-fs = localResolveSampleRate(tx, txInfo);
+fs = double(state.SampleRateHz);
 numTx = max(1, size(tx.Waveform, 2));
 numRx = max(1, round(double(sixgr.util.structGet(cfgCh, "channel.nRxAnt", ...
     sixgr.util.structGet(cfgCh, "phy.nRxAnt", 1)))));
@@ -1015,7 +1213,21 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
         end
     end
 end
+[y, state] = localApplyReplayImpairments(y, state);
 [y, nVar] = localAddAwgn(y, snr_dB);
+end
+
+function [y, state] = localApplyReplayImpairments(x, state)
+y = x;
+if ~(isstruct(state) && isfield(state, "Cfg"))
+    return;
+end
+sampleRateHz = double(sixgr.util.structGet(state, "SampleRateHz", NaN));
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    sampleRateHz = 0;
+end
+[y, imp] = sixgr.link.applyWaveformImpairments(x, state.Cfg, sampleRateHz);
+state.ImpairmentReplay = imp;
 end
 
 function [y, nVar] = localAddAwgn(x, snr_dB)
