@@ -350,6 +350,14 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", ...
 cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", ...
     localDefaultSSBLmax(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz)));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", 8)));
+configuredSSBBeamCount = double(localGetNested(s, "reference_signals.ssb_beam_count", ...
+    sixgr.util.structGet(cfg, "phy.ssb.nBeams", sixgr.util.structGet(cfg, "phy.ssb.Lmax", 8))));
+if isfinite(configuredSSBBeamCount) && configuredSSBBeamCount >= 1
+    configuredSSBBeamCount = min(max(1, round(configuredSSBBeamCount)), ...
+        max(1, round(double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", configuredSSBBeamCount)))));
+    cfg = sixgr.util.structSet(cfg, "phy.ssb.beamCount", double(configuredSSBBeamCount));
+    cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(configuredSSBBeamCount));
+end
 cfg = sixgr.util.structSet(cfg, "phy.ssb.scs_kHz", ...
     double(localDefaultSSBSubcarrierSpacing_kHz(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz))));
 cfg.phy.pbch.enable = logical(s.reference_signals.pbch_enabled);
@@ -1495,7 +1503,14 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", char("Case " + string(fs
 cfg = sixgr.util.structSet(cfg, "phy.ssb.case", char(fs.SSBCase));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", double(fs.SSBLmax));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.lmax", double(fs.SSBLmax));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(fs.SSBLmax));
+configuredSSBBeamCount = double(sixgr.util.structGet(cfg, "reference_signals.ssb_beam_count", ...
+    sixgr.util.structGet(cfg, "phy.ssb.beamCount", sixgr.util.structGet(cfg, "phy.ssb.nBeams", double(fs.SSBLmax)))));
+if ~(isfinite(configuredSSBBeamCount) && configuredSSBBeamCount >= 1)
+    configuredSSBBeamCount = double(fs.SSBLmax);
+end
+configuredSSBBeamCount = min(max(1, round(configuredSSBBeamCount)), max(1, round(double(fs.SSBLmax))));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.beamCount", double(configuredSSBBeamCount));
+cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(configuredSSBBeamCount));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.candidateSymbols", double(fs.SSBCandidateSymbols));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.candidateSlots1Based", double(fs.SSBCandidateSlots1Based));
 

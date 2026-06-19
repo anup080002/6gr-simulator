@@ -198,6 +198,12 @@ ctx.Tables.BeamManagement = localReadOptionalTable(fullfile(layout.BeamformingCS
 ctx.Tables.BeamScoreTrace = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_score_trace.csv"));
 ctx.Tables.BeamManagementStateTrace = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_management_state_trace.csv"));
 ctx.Tables.BeamManagementEventTrace = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "beam_management_event_trace.csv"));
+ctx.Tables.SSBBeamSweep = localReadFirstOptionalTable({ ...
+    fullfile(layout.BeamformingCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
+    fullfile(layout.BeamformingCSVDir, "ssb_beam_sweep.csv"), ...
+    fullfile(layout.ControlCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "ssb_pbch_sib1_beam_sweep.csv")});
+ctx.Tables.LiveBeamSelectionStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv"));
 ctx.Tables.HARQPackets = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"));
 ctx.Tables.HARQSummary = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
 ctx.Tables.HARQTimeline = localReadOptionalTable(fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"));
@@ -218,6 +224,20 @@ try
     T = readtable(path, "VariableNamingRule", "preserve");
 catch
     T = table();
+end
+end
+
+function T = localReadFirstOptionalTable(paths)
+T = table();
+if nargin < 1 || isempty(paths)
+    return;
+end
+for i = 1:numel(paths)
+    Ti = localReadOptionalTable(paths{i});
+    if istable(Ti) && ~isempty(Ti)
+        T = Ti;
+        return;
+    end
 end
 end
 
@@ -768,7 +788,7 @@ switch key
     case {"beam_detection_probability","beam_index_hit_rate","top_k_beam_hit_rate","beam_switch_latency", ...
             "beam_misalignment_probability","beam_prediction_accuracy","beam_refinement_convergence", ...
             "beam_failure_rate","mtrp_beam_selection_gain","beam_management_overhead"}
-        T = localProbeMetricRows(cat, metric, ctx.Tables.BeamManagement, key, ctx);
+        T = localBeamManagementMetricRows(cat, metric, ctx, key);
     case "one_shot_ssb_detection_probability"
         T = localPassRateRows(cat, metric, ctx.Tables.PBCH, "PBCH");
     case "cell_id_detection_success"
@@ -3243,6 +3263,180 @@ for i = 1:height(probeT)
     end
     T = [T; localMetricTableRow(cat, metric, probeT.Entity(i), probeT.Statistic(i), availability, ... %#ok<AGROW>
         double(probeT.Value(i)), string(probeT.TextValue(i)), string(probeT.Unit(i)), src, string(probeT.Notes(i)))];
+end
+end
+
+function T = localBeamManagementMetricRows(cat, metric, ctx, metricKey)
+% Prefer measured P1/P2 beam artifacts before falling back to legacy probe summaries.
+T = localEmptyMetricTable();
+T = [T; localBeamManagementRowsFromLiveStats(cat, metric, ...
+    sixgr.util.structGet(ctx.Tables, "LiveBeamSelectionStats", table()), metricKey)]; %#ok<AGROW>
+T = [T; localBeamManagementRowsFromSSBSweep(cat, metric, ...
+    sixgr.util.structGet(ctx.Tables, "SSBBeamSweep", table()), metricKey)]; %#ok<AGROW>
+if isempty(T)
+    T = localProbeMetricRows(cat, metric, ctx.Tables.BeamManagement, metricKey, ctx);
+end
+end
+
+function T = localBeamManagementRowsFromLiveStats(cat, metric, statsT, metricKey)
+T = localEmptyMetricTable();
+requiredVars = ["Metric","MeanValue"];
+if ~(istable(statsT) && ~isempty(statsT) && all(ismember(requiredVars, string(statsT.Properties.VariableNames))))
+    return;
+end
+specs = localBeamManagementLiveMetricSpecs(metricKey);
+if isempty(specs)
+    return;
+end
+metrics = string(statsT.Metric);
+for si = 1:numel(specs)
+    spec = specs(si);
+    mask = metrics == string(spec.LiveMetric);
+    idx = find(mask(:)).';
+    for k = idx
+        value = localBeamTableNumeric(statsT, "MeanValue", k, NaN);
+        if ~isfinite(value)
+            continue;
+        end
+        source = localBeamTableString(statsT, "TraceSource", k, string(spec.Source));
+        if strlength(strtrim(source)) == 0
+            source = string(spec.Source);
+        end
+        qualityRole = localBeamTableString(statsT, "QualityValueRole", k, "");
+        qualitySource = localBeamTableString(statsT, "QualitySource", k, "");
+        note = "Measured beam-management metric aggregated from live beam-selection statistics.";
+        if strlength(strtrim(qualityRole)) > 0
+            note = note + " QualityValueRole=" + qualityRole + ".";
+        end
+        if strlength(strtrim(qualitySource)) > 0
+            note = note + " QualitySource=" + qualitySource + ".";
+        end
+        T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_mean", ...
+            "available", value, "", string(spec.Unit), source, note)]; %#ok<AGROW>
+
+        p05 = localBeamTableNumeric(statsT, "P05Value", k, NaN);
+        if isfinite(p05)
+            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_p05", ...
+                "available", p05, "", string(spec.Unit), source, note)]; %#ok<AGROW>
+        end
+        p95 = localBeamTableNumeric(statsT, "P95Value", k, NaN);
+        if isfinite(p95)
+            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_p95", ...
+                "available", p95, "", string(spec.Unit), source, note)]; %#ok<AGROW>
+        end
+        n = localBeamTableNumeric(statsT, "SampleCount", k, NaN);
+        if isfinite(n)
+            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_sample_count", ...
+                "available", n, "", "count", source, note)]; %#ok<AGROW>
+        end
+    end
+end
+end
+
+function T = localBeamManagementRowsFromSSBSweep(cat, metric, ssbT, metricKey)
+T = localEmptyMetricTable();
+if ~(istable(ssbT) && ~isempty(ssbT))
+    return;
+end
+metricKey = string(metricKey);
+source = "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv";
+switch metricKey
+    case "beam_detection_probability"
+        vals = localFiniteColumn(ssbT, ["DetectionSuccess","BCHCrcPass"]);
+        if isempty(vals)
+            return;
+        end
+        rate = mean(double(vals ~= 0), "omitnan");
+        note = "Measured P1 SSB/PBCH beam detection probability from one executed acquisition attempt per swept SSB beam.";
+        T = [T; ...
+            localMetricTableRow(cat, metric, "ssb_p1_acquisition", "raw_detection_rate", "available", rate, "", "fraction", source, note); ...
+            localMetricTableRow(cat, metric, "ssb_p1_acquisition", "raw_swept_beam_count", "available", double(numel(vals)), "", "count", source, note)];
+    case "beam_management_overhead"
+        sweptCount = double(height(ssbT));
+        if ~isfinite(sweptCount) || sweptCount < 1
+            return;
+        end
+        cfgCount = localFiniteColumn(ssbT, ["ConfiguredSSBBeamCount","SSBLmax"]);
+        note = "Measured P1 beam-management sweep burden from executed SSB/PBCH/SIB1 acquisition rows.";
+        T = [T; localMetricTableRow(cat, metric, "ssb_p1_acquisition", "raw_swept_beam_count", ...
+            "available", sweptCount, "", "count", source, note)]; %#ok<AGROW>
+        if ~isempty(cfgCount)
+            T = [T; localMetricTableRow(cat, metric, "ssb_p1_acquisition", "configured_beam_count", ...
+                "available", max(cfgCount), "", "count", source, note)]; %#ok<AGROW>
+        end
+end
+end
+
+function specs = localBeamManagementLiveMetricSpecs(metricKey)
+specs = repmat(localBeamManagementLiveMetricSpec("", "", "", "", ""), 0, 1);
+switch string(metricKey)
+    case "beam_detection_probability"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P1PBCHDetectionRate", "ssb_p1_acquisition", "p1_pbch_detection_rate", "fraction", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamDetectedRate", "runtime_p2_beam_state", "p2_detected_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
+    case "beam_index_hit_rate"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamHitRate", "runtime_p2_beam_refinement", "p2_selected_equals_best_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
+    case "top_k_beam_hit_rate"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2TopKBeamHitRate", "runtime_p2_beam_refinement", "p2_top_k_hit_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
+    case "beam_switch_latency"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatencySlots", "runtime_p2_beam_event", "p2_switch_latency", "slots", "beamforming/csv/beam_management_event_trace.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatency_s", "runtime_p2_beam_event", "p2_switch_latency", "s", "beamforming/csv/beam_management_event_trace.csv");
+    case "beam_misalignment_probability"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2MisalignmentRate", "runtime_p2_beam_state", "p2_misalignment_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
+    case "beam_prediction_accuracy"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2PredictionSuccessRate", "runtime_p2_beam_state", "p2_prediction_success_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
+    case "beam_refinement_convergence"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2FirstHitEventRate", "runtime_p2_beam_event", "p2_first_hit_event_rate", "fraction", "beamforming/csv/beam_management_event_trace.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2TrialsToFirstHit", "runtime_p2_beam_event", "p2_trials_to_first_hit", "count", "beamforming/csv/beam_management_event_trace.csv");
+    case "beam_failure_rate"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamFailureRate", "runtime_p2_beam_state", "p2_failure_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
+    case "beam_management_overhead"
+        specs(end+1) = localBeamManagementLiveMetricSpec("P1SSBSweptBeamCount", "ssb_p1_acquisition", "p1_swept_beam_count", "count", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamCandidateCount", "runtime_p2_beam_refinement", "p2_candidate_beam_count", "count", "beamforming/csv/beam_precoder_table.csv");
+end
+end
+
+function spec = localBeamManagementLiveMetricSpec(liveMetric, entity, statistic, unit, source)
+spec = struct( ...
+    "LiveMetric", string(liveMetric), ...
+    "Entity", string(entity), ...
+    "Statistic", string(statistic), ...
+    "Unit", string(unit), ...
+    "Source", string(source));
+end
+
+function value = localBeamTableNumeric(T, name, rowIdx, defaultValue)
+value = double(defaultValue);
+if ~(istable(T) && ismember(name, string(T.Properties.VariableNames)) && rowIdx >= 1 && rowIdx <= height(T))
+    return;
+end
+raw = T.(char(name));
+try
+    value = double(raw(rowIdx));
+catch
+    value = str2double(string(raw(rowIdx)));
+end
+if isempty(value)
+    value = double(defaultValue);
+else
+    value = double(value(1));
+end
+end
+
+function value = localBeamTableString(T, name, rowIdx, defaultValue)
+value = string(defaultValue);
+if ~(istable(T) && ismember(name, string(T.Properties.VariableNames)) && rowIdx >= 1 && rowIdx <= height(T))
+    return;
+end
+raw = T.(char(name));
+try
+    value = string(raw(rowIdx));
+catch
+    value = string(defaultValue);
+end
+if isempty(value) || ismissing(value(1))
+    value = string(defaultValue);
+else
+    value = strtrim(value(1));
 end
 end
 
