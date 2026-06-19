@@ -760,7 +760,10 @@ classdef SystemLevelRunner
                     fbDLCount = accumarray(grantCellDL, 1, [nCells, 1]);
                     for c = 1:nCells
                         if fbDLCount(c) > 0
-                            fbDLByCell{c} = repmat(struct("RNTI", 0, "TBSBits", 0, "Ack", false, "HarqID", NaN), fbDLCount(c), 1);
+                            fbDLByCell{c} = repmat(struct( ...
+                                "RNTI", 0, "TBSBits", 0, "Ack", false, ...
+                                "HarqID", NaN, "RV", NaN, "NDI", NaN, ...
+                                "IsRetransmission", false), fbDLCount(c), 1);
                         end
                     end
                 end
@@ -769,7 +772,10 @@ classdef SystemLevelRunner
                     fbULCount = accumarray(grantCellUL, 1, [nCells, 1]);
                     for c = 1:nCells
                         if fbULCount(c) > 0
-                            fbULByCell{c} = repmat(struct("RNTI", 0, "TBSBits", 0, "Ack", false, "HarqID", NaN), fbULCount(c), 1);
+                            fbULByCell{c} = repmat(struct( ...
+                                "RNTI", 0, "TBSBits", 0, "Ack", false, ...
+                                "HarqID", NaN, "RV", NaN, "NDI", NaN, ...
+                                "IsRetransmission", false), fbULCount(c), 1);
                         end
                     end
                 end
@@ -890,6 +896,7 @@ classdef SystemLevelRunner
                         "GrantIndex", gi, ...
                         "GrantCountInSlot", numel(grantsDL), ...
                         "Grant", g, ...
+                        "ReplayUserContext", localBuildReplayUserContext("DL", u, cellId, largeScaleState, finalPowerState), ...
                         "TBSBits", tbsBits);
                     harqIdDL = double(sixgr.util.structGet(sixgr.util.structGet(g, "HARQ", struct()), "HarqID", NaN));
                     if ~isempty(schedDLCells{cellId}.HARQ) && isfinite(harqIdDL)
@@ -945,11 +952,15 @@ classdef SystemLevelRunner
                         cellId, g, prbCount, replayTbsDL, cqiUsed, mcsIdx, numLayers, ...
                         tgtCodeRate, sinr_dB(u), blerDL, logical(okDL), replayDL);
                     if ~decisionUnavailableDL
+                        fbHarqDL = sixgr.util.structGet(g, "HARQ", struct());
                         fb = struct( ...
                             "RNTI", u, ...
                             "TBSBits", replayTbsDL, ...
                             "Ack", logical(okDL), ...
-                            "HarqID", double(sixgr.util.structGet(sixgr.util.structGet(g, "HARQ", struct()), "HarqID", NaN)));
+                            "HarqID", double(sixgr.util.structGet(fbHarqDL, "HarqID", NaN)), ...
+                            "RV", double(sixgr.util.structGet(fbHarqDL, "RV", NaN)), ...
+                            "NDI", double(sixgr.util.structGet(fbHarqDL, "NDI", NaN)), ...
+                            "IsRetransmission", logical(sixgr.util.structGet(fbHarqDL, "IsRetransmission", false)));
                         fbIdx = fbDLWriteIdx(cellId) + 1;
                         if ~isempty(fbDLByCell{cellId}) && fbIdx <= numel(fbDLByCell{cellId})
                             fbDLByCell{cellId}(fbIdx) = fb;
@@ -1016,6 +1027,7 @@ classdef SystemLevelRunner
                         "GrantIndex", gi, ...
                         "GrantCountInSlot", numel(grantsUL), ...
                         "Grant", g, ...
+                        "ReplayUserContext", localBuildReplayUserContext("UL", u, cellId, largeScaleState, finalPowerState), ...
                         "TBSBits", tbsBits);
                     harqIdUL = double(sixgr.util.structGet(sixgr.util.structGet(g, "HARQ", struct()), "HarqID", NaN));
                     if ~isempty(schedULCells{cellId}.HARQ) && isfinite(harqIdUL)
@@ -1071,11 +1083,15 @@ classdef SystemLevelRunner
                         cellId, g, prbCount, replayTbsUL, cqiUsed, mcsIdx, numLayers, ...
                         tgtCodeRate, sinrUL_dB(u), blerUL, logical(okUL), replayUL);
                     if ~decisionUnavailableUL
+                        fbHarqUL = sixgr.util.structGet(g, "HARQ", struct());
                         fb = struct( ...
                             "RNTI", u, ...
                             "TBSBits", replayTbsUL, ...
                             "Ack", logical(okUL), ...
-                            "HarqID", double(sixgr.util.structGet(sixgr.util.structGet(g, "HARQ", struct()), "HarqID", NaN)));
+                            "HarqID", double(sixgr.util.structGet(fbHarqUL, "HarqID", NaN)), ...
+                            "RV", double(sixgr.util.structGet(fbHarqUL, "RV", NaN)), ...
+                            "NDI", double(sixgr.util.structGet(fbHarqUL, "NDI", NaN)), ...
+                            "IsRetransmission", logical(sixgr.util.structGet(fbHarqUL, "IsRetransmission", false)));
                         fbIdx = fbULWriteIdx(cellId) + 1;
                         if ~isempty(fbULByCell{cellId}) && fbIdx <= numel(fbULByCell{cellId})
                             fbULByCell{cellId}(fbIdx) = fb;
@@ -2297,6 +2313,74 @@ if ~(isfinite(tbsBits) && tbsBits > 0)
 end
 end
 
+function userMeta = localBuildReplayUserContext(direction, ueIdx, cellId, largeScaleState, powerState)
+direction = upper(string(direction));
+ueIdx = max(1, round(double(ueIdx)));
+cellId = max(1, round(double(cellId)));
+
+userMeta = struct();
+userMeta.RuntimeCurrentDirection = char(direction);
+userMeta.UEIndex = double(ueIdx);
+userMeta.RuntimeServingCell = double(cellId);
+userMeta.RuntimeServingPathloss_dB = localMatrixValue(largeScaleState, "Pathloss_dB", ueIdx, cellId);
+userMeta.RuntimeServingBasePathloss_dB = localMatrixValue(largeScaleState, "BasePathloss_dB", ueIdx, cellId);
+userMeta.RuntimeServingShadowFading_dB = localMatrixValue(largeScaleState, "ShadowFading_dB", ueIdx, cellId);
+userMeta.RuntimeServingO2I_dB = localMatrixValue(largeScaleState, "O2ILoss_dB", ueIdx, cellId);
+userMeta.RuntimeServingLOS = localMatrixValue(largeScaleState, "LOS", ueIdx, cellId);
+userMeta.RuntimeServingRSRP_dBm = localMatrixValue(largeScaleState, "RSRP_dBm", ueIdx, cellId);
+userMeta.RuntimeServingBeamGain_dB = localMatrixValue(largeScaleState, "BeamGain_dB", ueIdx, cellId);
+userMeta.RuntimePathlossModelSource = char(string(sixgr.util.structGet(largeScaleState, "PathlossModelSource", "")));
+userMeta.RuntimePathlossComplianceStatus = char(string(sixgr.util.structGet(largeScaleState, "PathlossComplianceStatus", "")));
+userMeta.RuntimeFallbackUsedForPathloss = logical(sixgr.util.structGet(largeScaleState, "FallbackUsedForPathloss", false));
+userMeta.RuntimeChannelComplianceMode = char(string(sixgr.util.structGet(largeScaleState, "ChannelComplianceMode", "")));
+userMeta.RuntimeO2IModelSource = char(string(sixgr.util.structGet(largeScaleState, "O2IModelSource", "")));
+userMeta.RuntimeO2IComplianceStatus = char(string(sixgr.util.structGet(largeScaleState, "O2IComplianceStatus", "")));
+userMeta.RuntimeO2IComplianceReason = char(string(sixgr.util.structGet(largeScaleState, "O2IComplianceReason", "")));
+userMeta.RuntimeLOSProbabilitySource = char(string(sixgr.util.structGet(largeScaleState, "LOSProbabilitySource", "")));
+userMeta.RuntimeLOSComplianceStatus = char(string(sixgr.util.structGet(largeScaleState, "LOSComplianceStatus", "")));
+userMeta.RuntimeLOSComplianceReason = char(string(sixgr.util.structGet(largeScaleState, "LOSComplianceReason", "")));
+
+if direction == "UL"
+    userMeta.RuntimeServingRxPower_dBm = localVectorValue(powerState, "DesiredPowerUL_dBm", ueIdx);
+    userMeta.RuntimeServingLargeScaleSINR_dB = localVectorValue(powerState, "SINR_UL_dB", ueIdx);
+else
+    userMeta.RuntimeServingRxPower_dBm = localVectorValue(powerState, "DesiredPowerDL_dBm", ueIdx);
+    userMeta.RuntimeServingLargeScaleSINR_dB = localVectorValue(powerState, "SINR_DL_dB", ueIdx);
+end
+end
+
+function value = localMatrixValue(s, fieldName, rowIdx, colIdx)
+value = NaN;
+if ~(isstruct(s) && isfield(s, fieldName))
+    return;
+end
+raw = double(s.(fieldName));
+if isempty(raw)
+    return;
+end
+rowIdx = max(1, min(size(raw, 1), round(double(rowIdx))));
+if isvector(raw)
+    colIdx = 1;
+else
+    colIdx = max(1, min(size(raw, 2), round(double(colIdx))));
+end
+value = double(raw(rowIdx, colIdx));
+end
+
+function value = localVectorValue(s, fieldName, idx)
+value = NaN;
+if ~(isstruct(s) && isfield(s, fieldName))
+    return;
+end
+raw = double(s.(fieldName));
+raw = raw(:);
+if isempty(raw)
+    return;
+end
+idx = max(1, min(numel(raw), round(double(idx))));
+value = double(raw(idx));
+end
+
 function st = localEncodeHOState(hoPrepRemain, hoInterRemain)
 K = numel(hoPrepRemain);
 st = repmat("CONNECTED", K, 1);
@@ -2322,6 +2406,21 @@ trace.CQIUsed = zeros(cap,1);
 trace.MCSIndex = zeros(cap,1);
 trace.NumLayers = zeros(cap,1);
 trace.TargetCodeRate = zeros(cap,1);
+trace.AMCMode = strings(cap,1);
+trace.MCSTable = strings(cap,1);
+trace.CQITable = strings(cap,1);
+trace.OuterLoopEnabled = false(cap,1);
+trace.OuterLoopApplied = false(cap,1);
+trace.OLLADeltaMCS = NaN(cap,1);
+trace.OLLAUpdateCount = NaN(cap,1);
+trace.OLLAState = strings(cap,1);
+trace.MCSSelectionSource = strings(cap,1);
+trace.CQIProvenance = strings(cap,1);
+trace.MCSValueStatus = strings(cap,1);
+trace.NREPerPRB = NaN(cap,1);
+trace.EstimatedTBSBits = NaN(cap,1);
+trace.EstimatedTBSBytes = NaN(cap,1);
+trace.QueueLimited = false(cap,1);
 trace.SINR_dB = NaN(cap,1);
 trace.BLER = NaN(cap,1);
 trace.BitErrors = NaN(cap,1);
@@ -2403,10 +2502,19 @@ trace.NoisePowerSource = strings(cap,1);
 trace.PhaseNoiseConfigured = false(cap,1);
 trace.PhaseNoiseApplied = false(cap,1);
 trace.PhaseNoiseRMS_rad = NaN(cap,1);
+trace.PTRSCPECorrectionApplied = false(cap,1);
+trace.PTRSCPECorrectedSymbols = NaN(cap,1);
+trace.PTRSMeanCPE_deg = NaN(cap,1);
+trace.PTRSCPECorrectionReason = strings(cap,1);
 trace.IQImbalanceConfigured = false(cap,1);
 trace.IQImbalanceApplied = false(cap,1);
 trace.IQImbalanceImageRejection_dB = NaN(cap,1);
 trace.IQImbalanceMeasurementStatus = strings(cap,1);
+trace.IQImbalanceCorrectionApplied = false(cap,1);
+trace.IQImbalanceCorrectionAlphaAbs = NaN(cap,1);
+trace.IQImbalanceCorrectionBetaAbs = NaN(cap,1);
+trace.IQImbalanceCorrectionNoiseScale = NaN(cap,1);
+trace.IQImbalanceCorrectionStatus = strings(cap,1);
 trace.DecoderTruthProxySINR_dB = NaN(cap,1);
 trace.DecoderTruthProxySINRSource = strings(cap,1);
 trace.DecoderTruthProxySINRValueRole = strings(cap,1);
@@ -2502,6 +2610,21 @@ trace.CQIUsed(i) = double(cqiUsed);
 trace.MCSIndex(i) = double(mcsIdx);
 trace.NumLayers(i) = double(numLayers);
 trace.TargetCodeRate(i) = double(targetCodeRate);
+trace.AMCMode(i) = string(sixgr.util.structGet(grant, "AMCMode", ""));
+trace.MCSTable(i) = string(sixgr.util.structGet(grant, "MCSTable", ""));
+trace.CQITable(i) = string(sixgr.util.structGet(grant, "CQITable", ""));
+trace.OuterLoopEnabled(i) = logical(sixgr.util.structGet(grant, "OuterLoopEnabled", false));
+trace.OuterLoopApplied(i) = logical(sixgr.util.structGet(grant, "OuterLoopApplied", false));
+trace.OLLADeltaMCS(i) = double(sixgr.util.structGet(grant, "OLLADeltaMCS", NaN));
+trace.OLLAUpdateCount(i) = double(sixgr.util.structGet(grant, "OLLAUpdateCount", NaN));
+trace.OLLAState(i) = string(sixgr.util.structGet(grant, "OLLAState", ""));
+trace.MCSSelectionSource(i) = string(sixgr.util.structGet(grant, "MCSSelectionSource", ""));
+trace.CQIProvenance(i) = string(sixgr.util.structGet(grant, "CQIProvenance", ""));
+trace.MCSValueStatus(i) = string(sixgr.util.structGet(grant, "MCSValueStatus", ""));
+trace.NREPerPRB(i) = double(sixgr.util.structGet(grant, "NREPerPRB", NaN));
+trace.EstimatedTBSBits(i) = double(sixgr.util.structGet(grant, "EstimatedTBSBits", NaN));
+trace.EstimatedTBSBytes(i) = double(sixgr.util.structGet(grant, "EstimatedTBSBytes", NaN));
+trace.QueueLimited(i) = logical(sixgr.util.structGet(grant, "QueueLimited", false));
 trace.SINR_dB(i) = double(sinr_dB);
 trace.BLER(i) = double(bler);
 trace.BitErrors(i) = double(sixgr.util.structGet(replay, "BitErrors", NaN));
@@ -2583,10 +2706,19 @@ trace.NoisePowerSource(i) = string(sixgr.util.structGet(replay, "NoisePowerSourc
 trace.PhaseNoiseConfigured(i) = logical(sixgr.util.structGet(replay, "PhaseNoiseConfigured", false));
 trace.PhaseNoiseApplied(i) = logical(sixgr.util.structGet(replay, "PhaseNoiseApplied", false));
 trace.PhaseNoiseRMS_rad(i) = double(sixgr.util.structGet(replay, "PhaseNoiseRMS_rad", NaN));
+trace.PTRSCPECorrectionApplied(i) = logical(sixgr.util.structGet(replay, "PTRSCPECorrectionApplied", false));
+trace.PTRSCPECorrectedSymbols(i) = double(sixgr.util.structGet(replay, "PTRSCPECorrectedSymbols", NaN));
+trace.PTRSMeanCPE_deg(i) = double(sixgr.util.structGet(replay, "PTRSMeanCPE_deg", NaN));
+trace.PTRSCPECorrectionReason(i) = string(sixgr.util.structGet(replay, "PTRSCPECorrectionReason", ""));
 trace.IQImbalanceConfigured(i) = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
 trace.IQImbalanceApplied(i) = logical(sixgr.util.structGet(replay, "IQImbalanceApplied", false));
 trace.IQImbalanceImageRejection_dB(i) = double(sixgr.util.structGet(replay, "IQImbalanceImageRejection_dB", NaN));
 trace.IQImbalanceMeasurementStatus(i) = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementStatus", ""));
+trace.IQImbalanceCorrectionApplied(i) = logical(sixgr.util.structGet(replay, "IQImbalanceCorrectionApplied", false));
+trace.IQImbalanceCorrectionAlphaAbs(i) = double(sixgr.util.structGet(replay, "IQImbalanceCorrectionAlphaAbs", NaN));
+trace.IQImbalanceCorrectionBetaAbs(i) = double(sixgr.util.structGet(replay, "IQImbalanceCorrectionBetaAbs", NaN));
+trace.IQImbalanceCorrectionNoiseScale(i) = double(sixgr.util.structGet(replay, "IQImbalanceCorrectionNoiseScale", NaN));
+trace.IQImbalanceCorrectionStatus(i) = string(sixgr.util.structGet(replay, "IQImbalanceCorrectionStatus", ""));
 trace.DecoderTruthProxySINR_dB(i) = double(sixgr.util.structGet(replay, "DecoderTruthProxySINR_dB", NaN));
 trace.DecoderTruthProxySINRSource(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRSource", ""));
 trace.DecoderTruthProxySINRValueRole(i) = string(sixgr.util.structGet(replay, "DecoderTruthProxySINRValueRole", ""));
@@ -2654,6 +2786,21 @@ end
 
 function T = localAttachGrantTraceEvidenceColumns(T, trace, idx)
 n = height(T);
+T.AMCMode = localTraceString(trace, "AMCMode", idx, n, "");
+T.MCSTable = localTraceString(trace, "MCSTable", idx, n, "");
+T.CQITable = localTraceString(trace, "CQITable", idx, n, "");
+T.OuterLoopEnabled = localTraceLogical(trace, "OuterLoopEnabled", idx, n, false);
+T.OuterLoopApplied = localTraceLogical(trace, "OuterLoopApplied", idx, n, false);
+T.OLLADeltaMCS = localTraceNumeric(trace, "OLLADeltaMCS", idx, n, NaN);
+T.OLLAUpdateCount = localTraceNumeric(trace, "OLLAUpdateCount", idx, n, NaN);
+T.OLLAState = localTraceString(trace, "OLLAState", idx, n, "");
+T.MCSSelectionSource = localTraceString(trace, "MCSSelectionSource", idx, n, "");
+T.CQIProvenance = localTraceString(trace, "CQIProvenance", idx, n, "");
+T.MCSValueStatus = localTraceString(trace, "MCSValueStatus", idx, n, "");
+T.NREPerPRB = localTraceNumeric(trace, "NREPerPRB", idx, n, NaN);
+T.EstimatedTBSBits = localTraceNumeric(trace, "EstimatedTBSBits", idx, n, NaN);
+T.EstimatedTBSBytes = localTraceNumeric(trace, "EstimatedTBSBytes", idx, n, NaN);
+T.QueueLimited = localTraceLogical(trace, "QueueLimited", idx, n, false);
 T.ReceiverHestSINR_dB = localTraceNumeric(trace, "ReceiverHestSINR_dB", idx, n, NaN);
 T.BitErrors = localTraceNumeric(trace, "BitErrors", idx, n, NaN);
 T.BitsCompared = localTraceNumeric(trace, "BitsCompared", idx, n, NaN);
@@ -2711,10 +2858,19 @@ T.NoisePowerSource = localTraceString(trace, "NoisePowerSource", idx, n, "");
 T.PhaseNoiseConfigured = localTraceLogical(trace, "PhaseNoiseConfigured", idx, n, false);
 T.PhaseNoiseApplied = localTraceLogical(trace, "PhaseNoiseApplied", idx, n, false);
 T.PhaseNoiseRMS_rad = localTraceNumeric(trace, "PhaseNoiseRMS_rad", idx, n, NaN);
+T.PTRSCPECorrectionApplied = localTraceLogical(trace, "PTRSCPECorrectionApplied", idx, n, false);
+T.PTRSCPECorrectedSymbols = localTraceNumeric(trace, "PTRSCPECorrectedSymbols", idx, n, NaN);
+T.PTRSMeanCPE_deg = localTraceNumeric(trace, "PTRSMeanCPE_deg", idx, n, NaN);
+T.PTRSCPECorrectionReason = localTraceString(trace, "PTRSCPECorrectionReason", idx, n, "");
 T.IQImbalanceConfigured = localTraceLogical(trace, "IQImbalanceConfigured", idx, n, false);
 T.IQImbalanceApplied = localTraceLogical(trace, "IQImbalanceApplied", idx, n, false);
 T.IQImbalanceImageRejection_dB = localTraceNumeric(trace, "IQImbalanceImageRejection_dB", idx, n, NaN);
 T.IQImbalanceMeasurementStatus = localTraceString(trace, "IQImbalanceMeasurementStatus", idx, n, "");
+T.IQImbalanceCorrectionApplied = localTraceLogical(trace, "IQImbalanceCorrectionApplied", idx, n, false);
+T.IQImbalanceCorrectionAlphaAbs = localTraceNumeric(trace, "IQImbalanceCorrectionAlphaAbs", idx, n, NaN);
+T.IQImbalanceCorrectionBetaAbs = localTraceNumeric(trace, "IQImbalanceCorrectionBetaAbs", idx, n, NaN);
+T.IQImbalanceCorrectionNoiseScale = localTraceNumeric(trace, "IQImbalanceCorrectionNoiseScale", idx, n, NaN);
+T.IQImbalanceCorrectionStatus = localTraceString(trace, "IQImbalanceCorrectionStatus", idx, n, "");
 T.DecoderTruthProxySINR_dB = localTraceNumeric(trace, "DecoderTruthProxySINR_dB", idx, n, NaN);
 T.DecoderTruthProxySINRSource = localTraceString(trace, "DecoderTruthProxySINRSource", idx, n, "");
 T.DecoderTruthProxySINRValueRole = localTraceString(trace, "DecoderTruthProxySINRValueRole", idx, n, "");

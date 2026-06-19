@@ -48,6 +48,7 @@ ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('ExpectedHARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -223,6 +224,8 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
         trackingCorrection.NAReason = "dmrs_cfo_estimate_unavailable";
     end
 end
+[rxGrid, ofdmInfo, trackingCorrection] = localApplyEstimatedCFOAndRedemodulate( ...
+    carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, trackingCorrection, cfg);
 
 % Channel estimate
 Hest = [];
@@ -300,11 +303,17 @@ if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
 end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint);
+[ptrsInd, ptrsSym, ptrsInfo] = localResolvePUSCHPTRS(carrier, pusch, cfg);
+enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pusch.ptrs.enableCPECorrection", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true)));
+[eqSym, cpeCorrInfo] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, puschInd, rxGrid, Hest, ...
+    ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, enablePTRSCPECorrection);
 try
     numLayersForSINR = double(pusch.NumLayers);
 catch
     numLayersForSINR = min(size(hestSym, 2), max(1, size(hestSym, 3)));
 end
+sinrProjectionInfo = localPUSCHProjectionInfo("not_applicable");
 try
     [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
         hestSym, nVar, ...
@@ -312,6 +321,24 @@ try
         "Rint", Rint, ...
         "Layers", double(numLayersForSINR), ...
         "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
+    if ~isfinite(double(postEqSINR_dB))
+        [hestSymForSINR, projectedInfo] = localProjectPUSCHHestToLayerDomain(hestSym, pusch);
+        if logical(projectedInfo.Applied)
+            [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
+                hestSymForSINR, nVar, ...
+                "Method", char(lower(string(equalizerAlg))), ...
+                "Rint", Rint, ...
+                "Layers", double(numLayersForSINR), ...
+                "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
+            sinrProjectionInfo = projectedInfo;
+            postEqSINRInfo.Source = "post_equalization_sinr_from_pusch_codebook_effective_channel";
+        else
+            sinrProjectionInfo = projectedInfo;
+        end
+    end
+    postEqSINRInfo.PUSCHCodebookProjectionApplied = logical(sinrProjectionInfo.Applied);
+    postEqSINRInfo.PUSCHCodebookProjectionStatus = char(string(sinrProjectionInfo.Status));
+    postEqSINRInfo.PUSCHCodebookProjectionTPMI = double(sinrProjectionInfo.TPMI);
 catch ME
     if strictMode
         error("sixgr:phy:ul:PUSCHPostEqSINRUnavailable", ...
@@ -326,7 +353,10 @@ catch ME
         "PerLayerSINR_dB", NaN, ...
         "Source", "post_equalization_sinr_from_equalizer_channel_estimate", ...
         "ValueRole", "measured_post_equalization_scheduling_input", ...
-        "Method", char(lower(string(equalizerAlg))));
+        "Method", char(lower(string(equalizerAlg))), ...
+        "PUSCHCodebookProjectionApplied", logical(sinrProjectionInfo.Applied), ...
+        "PUSCHCodebookProjectionStatus", char(string(sinrProjectionInfo.Status)), ...
+        "PUSCHCodebookProjectionTPMI", double(sinrProjectionInfo.TPMI));
 end
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 [nVarDecode, nVarDecodeInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
@@ -336,7 +366,11 @@ receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmr
 
 % Decode PUSCH to codeword LLR
 puschRxSym = [];
-nVarForDecode = double(max(nVar, eps));
+nVarForDecode = double(nVarDecode);
+if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
+    nVarForDecode = double(nVar);
+end
+nVarForDecode = double(max(nVarForDecode, eps));
 try
     [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, eqSym, nVarForDecode);
 catch
@@ -353,6 +387,7 @@ expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
 
 % Rate recover (to code blocks)
 [recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLRForULSCH, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks);
+[recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
@@ -451,11 +486,11 @@ rx.CRCPass = logical(crcOK);
 rx.TBCRCPass = logical(crcOK);
 rx.TransportBlock = int8(tbBits(:));
 rx.NoiseVar = nVarForDecode;
-rx.NoiseVarStatus = char(string(noiseStatus.Status));
-rx.NoiseVarSource = char(string(noiseStatus.Source));
-rx.NoiseVarReason = char(string(noiseStatus.Reason));
-rx.NoiseVarStrictFailure = logical(noiseStatus.StrictFailure);
-rx.NoiseVarDomain = "resource_grid_pre_equalization";
+rx.NoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", noiseStatus.Status)));
+rx.NoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", noiseStatus.Source)));
+rx.NoiseVarReason = char(string(sixgr.util.structGet(nVarDecodeInfo, "NAReason", noiseStatus.Reason)));
+rx.NoiseVarStrictFailure = false;
+rx.NoiseVarDomain = "post_equalization_decoder_symbol_domain";
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
 rx.DecoderNoiseVar = double(nVarForDecode);
@@ -483,6 +518,10 @@ rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
 rx.TransportBlockCRCLength = double(tbCRCLen);
 rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
+rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
+rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
+rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
+rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
@@ -524,6 +563,10 @@ rx.LLRScaleSource = "nrPUSCHDecode_noise_variance_plus_equalizer_csi_weights";
 rx.LLRNoiseVariance = double(nVarForDecode);
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
+rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
+rx.PTRSCPECorrectionSymbols = double(cpeCorrInfo.NumSymbolsCorrected);
+rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
+rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
@@ -546,6 +589,10 @@ if ~logical(opt.CompactOutput)
     rx.RxGrid = rxGrid;
     rx.DMRSIndices = dmrsInd;
     rx.DMRSSymbols = dmrsSym;
+    rx.PTRSIndices = ptrsInd;
+    rx.PTRSSymbols = ptrsSym;
+    rx.PTRSInfo = ptrsInfo;
+    rx.CPECorrectionInfo = cpeCorrInfo;
     rx.Carrier = carrier;
     rx.PUSCH = pusch;
     rx.PUSCHInfo = puschInfo;
@@ -582,11 +629,14 @@ info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = noiseStatus;
+info.HARQSoftCombining = harqCombiningInfo;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = nVarDecodeInfo;
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
+info.PTRS = ptrsInfo;
+info.CPECorrection = cpeCorrInfo;
 info.StrictReceiverEvidence = strictEvidence;
 
 end
@@ -597,6 +647,178 @@ method = char(string(sixgr.util.structGet(cfg, "phy.channelEstimation.method", .
 if isempty(strtrim(method))
     method = 'LS';
 end
+end
+
+function [ptrsInd, ptrsSym, info] = localResolvePUSCHPTRS(carrier, pusch, cfg)
+ptrsInd = [];
+ptrsSym = [];
+info = struct("Available", false, "Enabled", false, "Source", "not_requested", ...
+    "NAReason", "");
+enabled = logical(sixgr.util.structGet(cfg, "phy.pusch.enablePTRS", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.enable", false)));
+info.Enabled = enabled;
+if ~enabled
+    info.NAReason = "ptrs_disabled_by_config";
+    return;
+end
+try
+    ptrsInd = nrPUSCHPTRSIndices(carrier, pusch, "IndexStyle", "index");
+    ptrsSym = nrPUSCHPTRS(carrier, pusch);
+    info.Available = ~isempty(ptrsInd) && ~isempty(ptrsSym);
+    info.Source = "nrPUSCHPTRS_runtime_symbols";
+    if ~info.Available
+        info.NAReason = "toolbox_returned_empty_ptrs";
+    end
+catch ME
+    ptrsInd = [];
+    ptrsSym = [];
+    info.Available = false;
+    info.Source = "nrPUSCHPTRS_unavailable";
+    info.NAReason = string(ME.identifier);
+end
+end
+
+function [eqSymOut, info] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, puschInd, rxGrid, hEst, ...
+        ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, enabled)
+info = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
+    'MeanCPE_deg', NaN, 'NAReason', "");
+eqSymOut = eqSym;
+if ~logical(enabled)
+    info.NAReason = "ptrs_cpe_correction_disabled_by_config";
+    return;
+end
+if isempty(eqSym) || isempty(puschInd) || isempty(rxGrid) || isempty(hEst)
+    info.NAReason = "missing_pusch_equalized_symbols_or_channel_estimate";
+    return;
+end
+if isempty(ptrsInd) || isempty(ptrsSym)
+    info.NAReason = "ptrs_unavailable";
+    return;
+end
+
+try
+    [rxPTRS, hPTRS] = nrExtractResources(ptrsInd, rxGrid, hEst);
+catch ME
+    info.NAReason = "ptrs_resource_extraction_failed:" + string(ME.identifier);
+    return;
+end
+if isempty(rxPTRS) || isempty(hPTRS)
+    info.NAReason = "ptrs_resource_extraction_empty";
+    return;
+end
+
+try
+    [eqPTRS, ~, ~] = sixgr.phy.rx.mimoDetect(rxPTRS, hPTRS, nVar, ...
+        "Algorithm", equalizerAlg, "Rint", Rint);
+catch ME
+    info.NAReason = "ptrs_equalization_failed:" + string(ME.identifier);
+    return;
+end
+
+refPTRS = ptrsSym(:);
+eqPTRS = localSelectPTRSObservation(eqPTRS, refPTRS);
+n = min(numel(eqPTRS), numel(refPTRS));
+if n <= 0
+    info.NAReason = "ptrs_equalized_symbol_count_mismatch";
+    return;
+end
+eqPTRS = eqPTRS(1:n);
+refPTRS = refPTRS(1:n);
+
+dims = size(rxGrid);
+if numel(dims) < 2
+    info.NAReason = "rx_grid_not_resource_grid";
+    return;
+end
+K = dims(1);
+L = dims(2);
+P = max(1, size(rxGrid, 3));
+try
+    [~, ptrsL, ~] = ind2sub([K L P], double(ptrsInd(:)));
+    [~, dataL, ~] = ind2sub([K L P], double(puschInd(:)));
+catch ME
+    info.NAReason = "ptrs_or_pusch_symbol_index_decode_failed:" + string(ME.identifier);
+    return;
+end
+ptrsL = ptrsL(1:min(numel(ptrsL), n));
+eqPTRS = eqPTRS(1:numel(ptrsL));
+refPTRS = refPTRS(1:numel(ptrsL));
+
+valid = isfinite(real(eqPTRS)) & isfinite(imag(eqPTRS)) & ...
+    isfinite(real(refPTRS)) & isfinite(imag(refPTRS)) & abs(refPTRS) > 0 & ...
+    ptrsL >= 1 & ptrsL <= L;
+if ~any(valid)
+    info.NAReason = "no_valid_ptrs_cpe_samples";
+    return;
+end
+eqPTRS = eqPTRS(valid);
+refPTRS = refPTRS(valid);
+ptrsL = ptrsL(valid);
+
+cpeVec = NaN(L, 1);
+for lSym = unique(ptrsL(:)).'
+    mask = ptrsL == lSym;
+    if ~any(mask)
+        continue;
+    end
+    cpe = angle(sum(eqPTRS(mask) .* conj(refPTRS(mask)), "omitnan"));
+    if isfinite(cpe)
+        cpeVec(lSym) = cpe;
+    end
+end
+finiteMask = isfinite(cpeVec);
+if ~any(finiteMask)
+    info.NAReason = "no_finite_ptrs_cpe_estimates";
+    return;
+end
+
+cpeInterp = cpeVec;
+finiteIdx = find(finiteMask);
+unwrapped = unwrap(double(cpeVec(finiteMask)));
+if numel(finiteIdx) == 1
+    cpeInterp(:) = unwrapped(1);
+else
+    cpeInterp(:) = interp1(double(finiteIdx), unwrapped, (1:L).', "linear", "extrap");
+end
+
+dataL = dataL(1:min(numel(dataL), size(eqSymOut, 1)));
+for row = 1:numel(dataL)
+    lSym = dataL(row);
+    if lSym >= 1 && lSym <= L && isfinite(cpeInterp(lSym))
+        eqSymOut(row, :) = eqSymOut(row, :) .* cast(exp(-1j * cpeInterp(lSym)), "like", eqSymOut);
+    end
+end
+
+info.Enabled = true;
+info.NumSymbolsCorrected = double(numel(unique(dataL(dataL >= 1 & dataL <= L))));
+info.MeanCPE_deg = rad2deg(mean(abs(cpeVec(finiteMask)), "omitnan"));
+info.NAReason = "";
+end
+
+function obs = localSelectPTRSObservation(eqPTRS, refPTRS)
+if isempty(eqPTRS)
+    obs = complex(zeros(0, 1));
+    return;
+end
+if isvector(eqPTRS)
+    obs = eqPTRS(:);
+    return;
+end
+if size(eqPTRS, 1) ~= numel(refPTRS)
+    obs = eqPTRS(:);
+    return;
+end
+refPTRS = refPTRS(:);
+metric = zeros(1, size(eqPTRS, 2));
+for col = 1:size(eqPTRS, 2)
+    candidate = eqPTRS(:, col);
+    metric(col) = abs(sum(candidate(:) .* conj(refPTRS), "omitnan"));
+end
+[~, bestCol] = max(metric);
+if isempty(bestCol) || ~isfinite(metric(bestCol))
+    bestCol = 1;
+end
+obs = eqPTRS(:, bestCol);
 end
 
 function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction)
@@ -750,6 +972,33 @@ rot = exp(1j * 2 * pi * (double(correctionHz) / double(sampleRateHz)) * n);
 y = x .* cast(rot, "like", x);
 end
 
+function [rxGrid, ofdmInfo, tracking] = localApplyEstimatedCFOAndRedemodulate( ...
+    carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, tracking, cfg)
+enabled = logical(sixgr.util.structGet(cfg, "phy.rx.cfoCorrectionEnabled", ...
+    sixgr.util.structGet(cfg, "phy.impairments.cfoCorrectionEnabled", false)));
+if ~enabled
+    if logical(sixgr.util.structGet(tracking, "CFOEstimateAvailable", false))
+        tracking.CFONAReason = "cfo_correction_disabled_by_config";
+    end
+    return;
+end
+if logical(sixgr.util.structGet(tracking, "CFOCorrectionApplied", false))
+    return;
+end
+estimatedCFOHz = double(sixgr.util.structGet(tracking, "EstimatedCFO_Hz", NaN));
+if ~(logical(sixgr.util.structGet(tracking, "CFOEstimateAvailable", false)) && ...
+        isfinite(estimatedCFOHz) && isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
+    return;
+end
+correctedWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -estimatedCFOHz);
+[rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, correctedWaveform);
+tracking.CFOCorrectionApplied = true;
+tracking.CFOCorrectionApplied_Hz = estimatedCFOHz;
+tracking.Status = "available_corrected";
+tracking.NAReason = "";
+tracking.CFONAReason = "";
+end
+
 function y = localApplyTimingCorrection(x, timingOffset)
 timingOffset = double(timingOffset);
 if ~isfinite(timingOffset) || abs(timingOffset) < 1e-9
@@ -854,6 +1103,143 @@ try
     end
 catch ME
     evidence.NAReason = "ul_receiver_measurement_failed:" + string(ME.identifier);
+end
+end
+
+function [Hlayer, info] = localProjectPUSCHHestToLayerDomain(Hport, pusch)
+info = localPUSCHProjectionInfo("not_applicable");
+Hlayer = Hport;
+if isempty(Hport) || ndims(Hport) ~= 3 || isempty(pusch)
+    info.Status = "unsupported_hest_shape_or_missing_pusch";
+    return;
+end
+
+nLayers = localObjectFiniteScalar(pusch, "NumLayers", NaN);
+nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(Hport, 3));
+tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
+transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
+scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
+if ~(isfinite(nLayers) && nLayers >= 1)
+    nLayers = 1;
+end
+if ~(isfinite(nPorts) && nPorts >= 1)
+    nPorts = size(Hport, 3);
+end
+nLayers = max(1, round(double(nLayers)));
+nPorts = max(1, round(double(nPorts)));
+info.NumLayers = double(nLayers);
+info.NumPorts = double(nPorts);
+info.TPMI = double(tpmi);
+if scheme ~= "codebook" || transformPrecoding || ~isfinite(tpmi) || size(Hport, 3) <= nLayers
+    return;
+end
+
+[Wlayer, codebookStatus] = localPUSCHCodebookProjectionMatrix(nLayers, nPorts, tpmi);
+if isempty(Wlayer)
+    info.Status = codebookStatus;
+    return;
+end
+if size(Wlayer, 1) ~= size(Hport, 3) || size(Wlayer, 2) ~= nLayers
+    info.Status = "codebook_matrix_shape_mismatch";
+    return;
+end
+
+nRE = size(Hport, 1);
+nRx = size(Hport, 2);
+Hlayer = zeros(nRE, nRx, nLayers, "like", Hport);
+for k = 1:nRE
+    Hk = squeeze(Hport(k, :, :));
+    if isvector(Hk)
+        Hk = reshape(Hk, nRx, size(Hport, 3));
+    end
+    Hlayer(k, :, :) = Hk * cast(Wlayer, "like", Hport);
+end
+info.Applied = true;
+info.Status = codebookStatus + "_projected_to_effective_layer_channel";
+end
+
+function info = localPUSCHProjectionInfo(status)
+info = struct( ...
+    "Applied", false, ...
+    "Status", char(string(status)), ...
+    "TPMI", NaN, ...
+    "NumPorts", NaN, ...
+    "NumLayers", NaN);
+end
+
+function [Wlayer, status] = localPUSCHCodebookProjectionMatrix(nLayers, nPorts, tpmi)
+% NR PUSCH codebook projection for the currently exercised uplink path.
+% TS 38.214 defines the two-port, one-layer TPMI entries used by this
+% scenario; leave other cases unsupported rather than inventing evidence.
+Wlayer = [];
+status = "unsupported_pusch_codebook_configuration";
+nLayers = round(double(nLayers));
+nPorts = round(double(nPorts));
+tpmi = round(double(tpmi));
+if ~(isfinite(nLayers) && isfinite(nPorts) && isfinite(tpmi))
+    status = "invalid_pusch_codebook_parameters";
+    return;
+end
+if nLayers ~= 1 || nPorts ~= 2
+    status = sprintf("unsupported_pusch_codebook_%dports_%dlayers", nPorts, nLayers);
+    return;
+end
+
+switch tpmi
+    case 0
+        Wlayer = [1; 0];
+    case 1
+        Wlayer = [0; 1];
+    case 2
+        Wlayer = [1; 1] ./ sqrt(2);
+    case 3
+        Wlayer = [1; -1] ./ sqrt(2);
+    case 4
+        Wlayer = [1; 1i] ./ sqrt(2);
+    case 5
+        Wlayer = [1; -1i] ./ sqrt(2);
+    otherwise
+        status = sprintf("unsupported_pusch_2port_1layer_tpmi_%d", tpmi);
+        return;
+end
+status = "nr_pusch_2port_1layer_codebook";
+end
+
+function value = localObjectFiniteScalar(obj, propName, defaultValue)
+raw = localObjectValue(obj, propName, defaultValue);
+if isnumeric(raw) || islogical(raw)
+    value = double(raw);
+elseif isstring(raw) || ischar(raw)
+    value = str2double(string(raw));
+else
+    value = double(defaultValue);
+end
+if numel(value) > 1
+    value = value(1);
+end
+if isempty(value) || ~isscalar(value) || ~isfinite(value)
+    value = double(defaultValue);
+end
+end
+
+function value = localObjectValue(obj, propName, defaultValue)
+value = defaultValue;
+if isempty(obj)
+    return;
+end
+try
+    if isobject(obj) && isprop(obj, char(propName))
+        raw = obj.(char(propName));
+    elseif isstruct(obj) && isfield(obj, char(propName))
+        raw = obj.(char(propName));
+    else
+        return;
+    end
+catch
+    return;
+end
+if ~isempty(raw)
+    value = raw;
 end
 end
 

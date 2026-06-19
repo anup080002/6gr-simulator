@@ -99,7 +99,8 @@ classdef WaveformPHY < handle
                 grantReplay = rmfield(grantReplay, "TBSBytes");
             end
 
-            replay = sixgr.system.waveform.replayGrant(obj.Cfg, ...
+            cfgReplay = obj.localReplayConfig(ctx);
+            replay = sixgr.system.waveform.replayGrant(cfgReplay, ...
                 sixgr.util.structGet(ctx, "Direction", "DL"), ...
                 grantReplay, [], ...
                 double(sixgr.util.structGet(ctx, "SINR_dB", NaN)), ...
@@ -127,6 +128,24 @@ classdef WaveformPHY < handle
             replay.WaveformReplayReused = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
             replay.WaveformReplayKey = obj.localReplayKey(ctx);
             obj.LastReplay = replay;
+        end
+
+        function cfgReplay = localReplayConfig(obj, ctx)
+            cfgReplay = obj.Cfg;
+            runtimeContext = sixgr.util.structGet(ctx, "ReplayUserContext", struct());
+            if ~(isstruct(runtimeContext) && ~isempty(fieldnames(runtimeContext)))
+                return;
+            end
+
+            userContext = sixgr.util.structGet(cfgReplay, "lls6g.userContext", struct());
+            if ~isstruct(userContext)
+                userContext = struct();
+            end
+            names = fieldnames(runtimeContext);
+            for i = 1:numel(names)
+                userContext.(names{i}) = runtimeContext.(names{i});
+            end
+            cfgReplay = sixgr.util.structSet(cfgReplay, "lls6g.userContext", userContext);
         end
 
         function tf = localShouldDeferReplay(obj, ctx)

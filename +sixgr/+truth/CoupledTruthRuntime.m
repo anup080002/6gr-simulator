@@ -378,6 +378,11 @@ methods(Static)
         grant = sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrant( ...
             grant, feedback, scheduler, cfg, direction);
     end
+
+    function state = enqueueTrafficForFrameRuntime(state, absoluteFrame)
+        % Public wrapper for K2 look-ahead scheduling outside this class.
+        state = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrame(state, absoluteFrame);
+    end
 end
 
 methods(Static, Access=private)

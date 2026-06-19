@@ -137,6 +137,7 @@ pdsch.PRBSet = prbVec;
 
 pdsch.SymbolAllocation = double(symAllocCfg(:).');
 pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg);
+pdsch = localApplyPDSCHPTRSConfig(pdsch, cfg);
 pdsch = localNormalizePDSCHMapping(pdsch, mapType, mapTypeExplicit);
 
 % Optional NID (scrambling)
@@ -238,6 +239,60 @@ if ~isempty(numCDM) && isprop(dmrs, "NumCDMGroupsWithoutData")
 end
 
 pdsch.DMRS = dmrs;
+end
+
+function pdsch = localApplyPDSCHPTRSConfig(pdsch, cfg)
+if ~(isstruct(cfg) && isprop(pdsch, "EnablePTRS"))
+    return;
+end
+
+enabled = logical(sixgr.util.structGet(cfg, "phy.pdsch.enablePTRS", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.enable", ...
+    sixgr.util.structGet(cfg, "pdsch6gr.EnablePTRS", false))));
+pdsch.EnablePTRS = enabled;
+if ~enabled || ~isprop(pdsch, "PTRS")
+    return;
+end
+
+ptrs = pdsch.PTRS;
+timeDensity = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.ptrs.timeDensity", []), ...
+    sixgr.util.structGet(cfg, "phy.ptrs.timeDensity", []), ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSTimeDensity", []), ...
+    2);
+freqDensity = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.ptrs.frequencyDensity", []), ...
+    sixgr.util.structGet(cfg, "phy.ptrs.frequencyDensity", []), ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSFrequencyDensity", []), ...
+    2);
+reOffset = string(sixgr.util.structGet(cfg, "phy.pdsch.ptrs.reOffset", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.reOffset", ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSREOffset", "00"))));
+portSet = sixgr.util.structGet(cfg, "phy.pdsch.ptrs.portSet", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.portSet", []));
+
+try
+    if isprop(ptrs, "TimeDensity")
+        ptrs.TimeDensity = max(1, round(double(timeDensity)));
+    end
+    if isprop(ptrs, "FrequencyDensity")
+        ptrs.FrequencyDensity = max(1, round(double(freqDensity)));
+    end
+    if isprop(ptrs, "REOffset")
+        ptrs.REOffset = char(reOffset);
+    end
+    if isprop(ptrs, "PTRSPortSet")
+        if isempty(portSet)
+            ptrs.PTRSPortSet = 0;
+        else
+            ptrs.PTRSPortSet = max(0, round(double(portSet(:).')));
+        end
+    end
+    pdsch.PTRS = ptrs;
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:BadPTRSConfig", ...
+        "Invalid PDSCH PTRS runtime configuration: %s", ME.message);
+end
 end
 
 function pdsch = localNormalizePDSCHMapping(pdsch, mapType, explicitMapType)

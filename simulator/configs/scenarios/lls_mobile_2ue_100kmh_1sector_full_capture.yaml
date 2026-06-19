@@ -523,7 +523,7 @@ pucch_resources:
     include_pmi: true
   overlap_policy:
     detect_pucch_pusch_overlap: true
-    uci_on_pusch_enabled: false
+    uci_on_pusch_enabled: true
     unsupported_overlap_policy: fail_closed
 
 control_gating:
@@ -531,7 +531,7 @@ control_gating:
   prach_required: true
   pdcch_required: true
   srs_required: true
-  srs_max_age_slots: 4
+  srs_max_age_slots: 5
   trs_required: true
   trs_max_age_slots: 4
 
@@ -580,6 +580,8 @@ reference_signals:
   srs_frequency_hopping: groupOrSequenceHopping
   srs_periodicity_ms: 10
   srs_slot_within_period: [5, 10, 15, 20]
+  srs_max_ues_per_slot: 2
+  srs_scheduling_policy: multiplex_due_users
   srs_power_imbalance_model: none
   trs_periodicity_ms: 10
   channel_estimation_mode: realistic_baseline
@@ -611,14 +613,21 @@ csi_acquisition_and_reporting:
 
 link_adaptation:
   fixed_or_amc: amc
+  outer_loop_flag: true
+  inner_loop_flag: true
   pdcch_link_adaptation_policy: measured_sinr_based
   pdsch_link_adaptation_policy: cqi_driven
   pusch_link_adaptation_policy: cqi_driven
   rank_adaptation_policy: srs_rank_indicator
   beam_adaptation_policy: beam_management
   cqi_table: table2
+  delta_mcs_policy: ack_nack_olla
+  delta_mcs_min: -6
+  delta_mcs_max: 6
   target_bler_dl: 0.10
   target_bler_ul: 0.10
+  olla_step_up: 0.10
+  olla_step_down: 0.90
   olla_step_up_db: 0.10
   olla_step_down_db: 0.90
   pdsch_la_policy: cqi_feedback_closed_loop
@@ -764,6 +773,7 @@ impairments:
   timing_correction_clip_to_cp: true
   iq_amplitude_imbalance_dB: 0.5
   iq_phase_imbalance_deg: 1.0
+  iq_imbalance_correction_enable: true
   pa_model: rapp
   pa_output_backoff_dB: 8.0
   pa_smoothness: 2.0

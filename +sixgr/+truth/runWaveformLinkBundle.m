@@ -2705,6 +2705,9 @@ if localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
 end
 
 planState = sixgr.truth.CoupledTruthRuntime.startSlot(state, cfg, "UL", sweepIdx, sweepCount, dueSlot, nFramesPerPoint, snr_dB);
+% K2 scheduling decides for the future UL slot, so its MAC buffer view must
+% include traffic that arrived up to that due slot.
+planState = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrameRuntime(planState, dueSlot);
 pucchDueUEs = sixgr.truth.CoupledTruthRuntime.pucchFeedbackDueUEsRuntime(state, dueSlot);
 uciOnPUSCHAvailable = localPUSCHUCIOnPUSCHAvailable(cfg);
 if ~isempty(pucchDueUEs) && ~uciOnPUSCHAvailable
@@ -5234,7 +5237,8 @@ for ueIdx = 1:numUsers
         if srsGatingActive
             shouldAttemptSRS = shouldAttemptSRS && accessSucceeded && isfinite(lastPrachSuccess) && slotIdx > lastPrachSuccess;
         end
-        srsResourceOpportunity = localCoupledUEControlOpportunity(slotIdx, ueIdx, srsPeriod, 2);
+        srsResourceOpportunity = localCoupledSRSResourceOpportunity( ...
+            cfg, slotIdx, ueIdx, numUsers, srsPeriod, srsSchedulingPolicy, srsMaxUEsPerSlot);
         if srsSchedulingPolicy == "multiplex_due_users" || srsMaxUEsPerSlot >= numUsers
             srsResourceOpportunity = true;
         end
@@ -5412,6 +5416,35 @@ ueIdx = max(1, round(double(ueIdx)));
 periodSlots = max(1, round(double(periodSlots)));
 phaseOffset = round(double(phaseOffset));
 tf = mod(slotIdx - 1, periodSlots) == mod((ueIdx - 1) + phaseOffset, periodSlots);
+end
+
+function tf = localCoupledSRSResourceOpportunity(cfg, slotIdx, ueIdx, numUsers, periodSlots, schedulingPolicy, maxUEsPerSlot)
+slotIdx = max(1, round(double(slotIdx)));
+ueIdx = max(1, round(double(ueIdx)));
+numUsers = max(1, round(double(numUsers)));
+periodSlots = max(1, round(double(periodSlots)));
+schedulingPolicy = lower(strtrim(string(schedulingPolicy)));
+maxUEsPerSlot = max(1, round(double(maxUEsPerSlot)));
+
+slotWithinPeriod1 = double(sixgr.util.structGet(cfg, "phy.srs.slotWithinPeriod1Based", []));
+slotWithinPeriod1 = unique(round(slotWithinPeriod1(isfinite(slotWithinPeriod1) & slotWithinPeriod1 >= 1)), "stable");
+if ~isempty(slotWithinPeriod1)
+    slotInPeriod = mod(slotIdx - 1, periodSlots) + 1;
+    matchIdx = find(slotWithinPeriod1 == slotInPeriod, 1, "first");
+    if isempty(matchIdx)
+        tf = false;
+        return;
+    end
+    if schedulingPolicy == "multiplex_due_users" || maxUEsPerSlot >= numUsers
+        tf = true;
+        return;
+    end
+    targetUE = mod(double(matchIdx) - 1, numUsers) + 1;
+    tf = ueIdx == targetUE;
+    return;
+end
+
+tf = localCoupledUEControlOpportunity(slotIdx, ueIdx, periodSlots, 2);
 end
 
 function cfgU = localApplyDeterministicPrachUserContext(cfgU, ueIdx)

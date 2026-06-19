@@ -686,7 +686,7 @@ for n = 1:numFrames
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
         trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
         trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
-        trialNoiseVarianceSource(n) = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
+        trialNoiseVarianceSource(n) = trialNoiseVarSource(n);
         trialAppliedLargeScaleGain(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
         trialAppliedLargeScaleLoss(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
         trialAppliedBasePathloss(n) = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -756,12 +756,15 @@ for n = 1:numFrames
         trialServingRSRP(n) = double(sixgr.util.structGet(replay, "ServingRSRP_dBm", NaN));
         trialServingRSRPSource(n) = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
         trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("UL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay);
-        if ~trialDecodeUsable(n)
+        decodeEvidenceAvailable = trialDecodeAttempted(n) && trialULSCHDecodeAvailable(n) && ...
+            trialLLRAvailable(n) && trialLLRFinite(n) && isfield(rx, "TransportBlock") && ...
+            ~isempty(rx.TransportBlock);
+        if ~decodeEvidenceAvailable
             blockErr = blockErr + 1;
             trialStatus(n) = "NA";
             trialCRC(n) = NaN;
             if strlength(strtrim(trialFailureReason(n))) == 0
-                trialFailureReason(n) = "ul_noise_variance_unavailable";
+                trialFailureReason(n) = "ulsch_decode_evidence_unavailable";
             end
             trialNotes(n) = "PUSCH decode unavailable: " + trialFailureReason(n);
             trialGoodBits(n) = NaN;
@@ -775,6 +778,8 @@ for n = 1:numFrames
                 "GrantSnapshot", grantSnapshot, ...
                 "Context", harqContext);
             continue;
+        elseif ~trialDecodeUsable(n)
+            trialNotes(n) = "PUSCH receiver evidence incomplete: " + trialFailureReason(n);
         end
         pilotTrack = localPilotTrackingMetrics(rx);
         metrics = localAnalyzeChannelMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), trialNoise(n), cfgFrame, rx, ulPrecoding);

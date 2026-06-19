@@ -129,11 +129,6 @@ if ~isempty(requestedPorts) && size(Wports, 1) ~= requestedPorts
         size(Wports, 1), requestedPorts);
 end
 
-if logical(pdsch.EnablePTRS)
-    error("sixgr:phy:dl:PDSCHPrecoding:PTRSUnsupported", ...
-        "Explicit PDSCH precoding with PTRS enabled is not supported in this release.");
-end
-
 dmrsPorts = localDMRSPortSet(pdsch, nLayers);
 expectedPorts = 0:(nLayers-1);
 if numel(dmrsPorts) ~= nLayers || any(dmrsPorts(:).' ~= expectedPorts)

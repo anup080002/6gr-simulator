@@ -663,6 +663,18 @@ if isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1
     cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", double(targetBLER));
     cfg = sixgr.util.structSet(cfg, "phy.pusch.targetBLER", double(targetBLER));
 end
+targetBLERDL = double(localGetNested(s, "csi_acquisition_and_reporting.target_bler_dl", ...
+    localGetNested(s, "link_adaptation.target_bler_dl", targetBLER)));
+if isfinite(targetBLERDL) && targetBLERDL > 0 && targetBLERDL < 1
+    cfg = sixgr.util.structSet(cfg, "phy.csi.dlTargetBLER", double(targetBLERDL));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", double(targetBLERDL));
+end
+targetBLERUL = double(localGetNested(s, "csi_acquisition_and_reporting.target_bler_ul", ...
+    localGetNested(s, "link_adaptation.target_bler_ul", targetBLER)));
+if isfinite(targetBLERUL) && targetBLERUL > 0 && targetBLERUL < 1
+    cfg = sixgr.util.structSet(cfg, "phy.csi.ulTargetBLER", double(targetBLERUL));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.targetBLER", double(targetBLERUL));
+end
 blerCurveSlope_dB = double(localGetNested(s, "csi_acquisition_and_reporting.bler_curve_slope_db", ...
     localGetNested(s, "link_adaptation.bler_curve_slope_db", NaN)));
 if isfinite(blerCurveSlope_dB) && blerCurveSlope_dB > 0
@@ -813,7 +825,10 @@ cfg = sixgr.util.structSet(cfg, "phy.srs.schedulingPolicy", char(string(localGet
 cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.srs", localGetNested(s, "reference_signals.srs", struct()));
 cfg = localStructSetIfPresent(cfg, "phy.srs.resourceType", localGetNested(s, "reference_signals.srs.resource_type", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.resourceSetUsage", localGetNested(s, "reference_signals.srs.resource_set_usage", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.slotNumbers", localGetNested(s, "reference_signals.srs.slot_numbers", []));
+srsSlotNumbers = localGetNested(s, "reference_signals.srs.slot_numbers", []);
+srsSlotWithinPeriod = localGetNested(s, "reference_signals.srs_slot_within_period", []);
+cfg = localStructSetIfPresent(cfg, "phy.srs.slotNumbers", srsSlotNumbers);
+cfg = localStructSetIfPresent(cfg, "phy.srs.slotWithinPeriod1Based", srsSlotWithinPeriod);
 cfg = localStructSetIfPresent(cfg, "phy.srs.period_offset", localGetNested(s, "reference_signals.srs.period_offset", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.SymbolStart", localGetNested(s, "reference_signals.srs.symbol_start", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.NumSRSSymbols", localGetNested(s, "reference_signals.srs.num_srs_symbols", []));
@@ -976,10 +991,30 @@ cfg = localApplyRuntimeAntennaConfig(cfg, s);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(cfoHz));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoEstimationMethod", ...
     char(string(localGetNested(s, "impairments.cfo_estimation_method", "cyclic_prefix"))));
+cfoCorrectionEnabled = logical(localGetNested(s, "impairments.cfo_correction_enable", true));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoCorrectionEnabled", cfoCorrectionEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.rx.cfoCorrectionEnabled", cfoCorrectionEnabled);
 phaseNoiseEnabled = logical(s.impairments.phase_noise_enabled) || ...
     logical(localGetNested(s, "impairments.phase_noise.enabled", false));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", logical(phaseNoiseEnabled));
 cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.enable", logical(phaseNoiseEnabled));
+phaseNoiseModel = string(localGetNested(s, "impairments.phase_noise_model", ...
+    localGetNested(s, "impairments.phase_noise.model", "")));
+if strlength(strtrim(phaseNoiseModel)) > 0
+    cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.model", char(phaseNoiseModel));
+end
+phaseNoiseL0_dBcHz = double(localGetNested(s, "impairments.phase_noise_L0_dBcHz", NaN));
+phaseNoiseF3dB_Hz = double(localGetNested(s, "impairments.phase_noise_f3dB_Hz", NaN));
+phaseNoiseFloor_dBcHz = double(localGetNested(s, "impairments.phase_noise_floor_dBcHz", NaN));
+if isfinite(phaseNoiseL0_dBcHz)
+    cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.L0_dBcHz", phaseNoiseL0_dBcHz);
+end
+if isfinite(phaseNoiseF3dB_Hz) && phaseNoiseF3dB_Hz > 0
+    cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.f3dB_Hz", phaseNoiseF3dB_Hz);
+end
+if isfinite(phaseNoiseFloor_dBcHz)
+    cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.floor_dBcHz", phaseNoiseFloor_dBcHz);
+end
 cfg = sixgr.util.structSet(cfg, "rf.cfo_Hz", double(cfoHz));
 iqModel = localResolveIQModelToken(s);
 iqGainImb_dB = localResolveFirstFiniteNumeric(s, [ ...
@@ -1009,6 +1044,9 @@ cfg = sixgr.util.structSet(cfg, "rf.enable", ...
     abs(double(cfoHz)) > 0 || logical(phaseNoiseEnabled) || logical(iqEnabled) || ...
     logical(s.impairments.pa_nonlinearity_enabled) || abs(double(timingOffsetSamples)) > 0);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceEnabled", logical(iqEnabled));
+iqCorrectionEnabled = logical(localGetNested(s, "impairments.iq_imbalance_correction_enable", true));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceCorrectionEnabled", iqCorrectionEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.rx.iqImbalanceCorrectionEnabled", iqCorrectionEnabled);
 cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.enable", logical(iqEnabled));
 cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.model", char(iqModel));
 if isfinite(iqGainImb_dB)
@@ -1131,13 +1169,15 @@ if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <=
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", 0.2);
 end
-ollaStepDown = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_down", NaN));
+ollaStepDown = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_down", ...
+    localGetNested(s, "link_adaptation.olla_step_down_db", NaN)));
 if isfinite(ollaStepDown) && ollaStepDown > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", double(ollaStepDown));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 1.0);
 end
-ollaStepUp = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_up", NaN));
+ollaStepUp = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_up", ...
+    localGetNested(s, "link_adaptation.olla_step_up_db", NaN)));
 if isfinite(ollaStepUp) && ollaStepUp > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", double(ollaStepUp));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"

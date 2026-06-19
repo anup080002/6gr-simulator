@@ -170,8 +170,7 @@ if isfinite(instantMCS)
         resetReason = "mcs_jump";
     end
 
-    initializeCQIMCS = ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS) || ...
-        (resetState && ~mcsJumpReset);
+    initializeCQIMCS = ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS) || resetState;
     if initializeCQIMCS
         cqiBasedMCS = double(instantMCS);
     elseif logical(adaptationState.InnerLoopEnabled)
@@ -537,8 +536,8 @@ if ~(isfinite(age_s) && age_s > 0 && isfinite(dopplerHz) && dopplerHz > 0)
 end
 coherence_s = 0.423 / max(double(dopplerHz), eps);
 % Clarke/Jakes temporal autocorrelation for isotropic Rayleigh fading.
-% A delayed CSI report should have less authority when Doppler decorrelates
-% the channel between measurement and scheduling.
+% Low temporal correlation means the previous smoothed CQI/MCS state is
+% stale, so the update must move faster toward the newest measurement.
 try
     trustWeight = abs(besselj(0, 2 * pi * double(dopplerHz) * double(age_s)));
 catch
@@ -548,7 +547,8 @@ if ~(isfinite(trustWeight) && trustWeight >= 0)
     trustWeight = 1;
 end
 trustWeight = min(1, max(0, double(trustWeight)));
-effectiveAlpha = baseAlpha * trustWeight;
+effectiveAlpha = baseAlpha + (1 - baseAlpha) * (1 - trustWeight);
+effectiveAlpha = min(1, max(baseAlpha, double(effectiveAlpha)));
 end
 
 function slotDuration_s = localSlotDurationSeconds(cfg)
@@ -574,7 +574,8 @@ slotDuration_s = 1e-3 / max(1, 2 ^ max(0, mu));
 end
 
 function threshold = localMCSJumpThreshold(cfg)
-threshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.mcsJumpResetThreshold", 5));
+threshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.mcsJumpResetThreshold", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", 5)));
 if ~(isfinite(threshold) && threshold >= 0)
     threshold = 5;
 end

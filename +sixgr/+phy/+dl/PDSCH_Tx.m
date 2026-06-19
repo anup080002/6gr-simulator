@@ -199,14 +199,19 @@ pdschAntInd = pdschInd;
 pdschAntSym = pdschSym;
 dmrsAntInd = dmrsInd;
 dmrsAntSym = dmrsSym;
+ptrsAntInd = ptrsInd;
+ptrsAntSym = ptrsSym;
 if prec.Active
-    % Precode layer-domain data and DM-RS before the final antenna-port map.
+    % Precode layer/reference-domain signals before the final antenna-port map.
     [pdschAntSym, pdschAntInd] = nrPDSCHPrecode(carrier, pdschSym, pdschInd, prec.MatrixNR);
     [dmrsAntSym, dmrsAntInd] = nrPDSCHPrecode(carrier, dmrsSym, dmrsInd, prec.MatrixNR);
+    if ~isempty(ptrsInd)
+        [ptrsAntSym, ptrsAntInd] = nrPDSCHPrecode(carrier, ptrsSym, ptrsInd, prec.MatrixNR);
+    end
 end
 
 % Build resource grid and map
-nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsInd,2), size(csirsInd,2), ...
+nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsAntInd,2), size(csirsInd,2), ...
     double(sixgr.util.structGet(csirsEvent, "NumPorts", NaN)), numTxAnt, 1]);
 try
     txGrid = nrResourceGrid(carrier, nPages);
@@ -220,11 +225,11 @@ txGrid = localMapToGrid(txGrid, pdschAntInd, pdschAntSym);
 if ~isempty(dmrsInd)
     txGrid = localMapToGrid(txGrid, dmrsAntInd, dmrsAntSym);
 end
-if ~isempty(ptrsInd)
-    txGrid = localMapToGrid(txGrid, ptrsInd, ptrsSym);
+if ~isempty(ptrsAntInd)
+    txGrid = localMapToGrid(txGrid, ptrsAntInd, ptrsAntSym);
 end
 if logical(sixgr.util.structGet(csirsEvent, "Scheduled", false)) && ~isempty(csirsInd)
-    [collision, collisionWith] = localCSIRSResourceCollision(csirsInd, pdschAntInd, dmrsAntInd, ptrsInd);
+    [collision, collisionWith] = localCSIRSResourceCollision(csirsInd, pdschAntInd, dmrsAntInd, ptrsAntInd);
     if collision
         csirsEvent.Transmitted = false;
         csirsEvent.RuntimeMaterializationStatus = "blocked_resource_collision";
@@ -238,7 +243,7 @@ if logical(sixgr.util.structGet(csirsEvent, "Scheduled", false)) && ~isempty(csi
 end
 
 gridPortContract = localBuildResourceGridPortContract(txGrid, pdschAntInd, pdschAntSym, ...
-    dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, csirsInd, csirsSym, csirsEvent, numTxAnt, prec);
+    dmrsAntInd, dmrsAntSym, ptrsAntInd, ptrsAntSym, csirsInd, csirsSym, csirsEvent, numTxAnt, prec);
 localValidateResourceGridPortContract(gridPortContract, prec);
 
 % OFDM modulation
@@ -287,6 +292,8 @@ if ~logical(opt.CompactOutput)
     tx.DMRSAntennaSymbols = dmrsAntSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
+    tx.PTRSAntennaIndices = ptrsAntInd;
+    tx.PTRSAntennaSymbols = ptrsAntSym;
     tx.CSIRSIndices = csirsInd;
     tx.CSIRSSymbols = csirsSym;
     tx.CSIRSInfo = csirsInfo;

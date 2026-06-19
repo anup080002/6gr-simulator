@@ -50,6 +50,7 @@ ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'ti
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -238,13 +239,26 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
         trackingCorrection.NAReason = "dmrs_cfo_estimate_unavailable";
     end
 end
+[rxGrid, ofdmInfo, trackingCorrection] = localApplyEstimatedCFOAndRedemodulate( ...
+    carrier, rxWave, sampleRateHz, rxGrid, ofdmInfo, trackingCorrection, cfg);
 [ptrsInd, ptrsSym, ptrsInfo] = localResolvePDSCHPTRS(carrier, pdsch, cfg);
-cpeCorrInfo = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
-    'MeanCPE_deg', NaN, 'NAReason', "ptrs_cpe_correction_disabled_or_unavailable");
-if logical(sixgr.util.structGet(cfg, "phy.pdsch.ptrs.enableCPECorrection", ...
-        sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true))) && ~isempty(ptrsInd)
-    [rxGrid, ~, cpeCorrInfo] = sixgr.phy.rx.correctCPEFromPTRS(rxGrid, ptrsInd, ptrsSym, carrier);
+ptrsAntInd = ptrsInd;
+ptrsAntSym = ptrsSym;
+if prec.Active && ~isempty(ptrsInd)
+    try
+        [ptrsAntSym, ptrsAntInd] = nrPDSCHPrecode(carrier, ptrsSym, ptrsInd, prec.MatrixNR);
+    catch ME
+        ptrsAntInd = [];
+        ptrsAntSym = [];
+        ptrsInfo.Available = false;
+        ptrsInfo.Source = "nrPDSCHPTRS_precode_failed";
+        ptrsInfo.NAReason = string(ME.identifier);
+    end
 end
+cpeCorrInfo = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
+    'MeanCPE_deg', NaN, 'NAReason', "ptrs_cpe_correction_deferred_until_equalization");
+enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pdsch.ptrs.enableCPECorrection", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true)));
 [csirsInd, csirsSym, csirsInfo, csirsObservation] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt);
 [csirsHest, csirsNVar, csirsEstInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, ...
     strictMode, channelModelToken, numTxPorts);
@@ -269,9 +283,10 @@ if useFastAWGNPath
         "ExpectedTxPorts", double(numTxPorts), ...
         "NumRxAnt", double(max(1, size(rxGrid, 3))), ...
         "ScalarFastPathUsed", true);
-elseif ~isempty(dmrsAntInd)
-    % Under explicit precoding, the reference ports already define the
-    % effective layer-domain channel seen by the receiver.
+elseif ~isempty(dmrsInd)
+    % Estimate the effective PDSCH layer channel from the DM-RS port
+    % resources. Precoding is transparent to the UE and is included in this
+    % effective channel rather than exposed as antenna-domain references.
     [hEst, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
         "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
         "UseFastMex", useFastChEstMex, ...
@@ -321,6 +336,8 @@ if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
 end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint);
+[eqSym, cpeCorrInfo] = localCorrectEqualizedPDSCHCPEFromPTRS(eqSym, pdschInd, rxGrid, hEst, ...
+    ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, enablePTRSCPECorrection);
 try
     [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
         hestSym, nVar, ...
@@ -347,7 +364,11 @@ receiverSINR = localReceiverHestSINR(hEst, nVar, cfg, "DL", rxGrid, dmrsInd, dmr
 % nrPDSCHDecode returns a cell array (one per codeword). Newer releases can
 % also return the sliced symbol estimates used during demodulation.
 pdschRxSym = [];
-nVarForDecode = double(max(nVar, eps));
+nVarForDecode = double(nVarDecode);
+if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
+    nVarForDecode = double(nVar);
+end
+nVarForDecode = double(max(nVarForDecode, eps));
 try
     [llrCW, pdschRxSym] = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
 catch
@@ -362,6 +383,7 @@ llr = localApplyCSIToCodewordLLR(llr, csi, pdsch.Modulation);
 
 % ---------------------- DL-SCH decode (rate recovery + LDPC decode) ----------------------
 [recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ldpcSeg.NumCodeBlocks);
+[recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
@@ -483,10 +505,10 @@ rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPol
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.NoiseVar = nVarForDecode;
 rx.NoiseVarStatus = "OK";
-rx.NoiseVarSource = "pre_equalization_grid_domain_noise_variance";
+rx.NoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "post_equalization_decoder_noise_variance")));
 rx.NoiseVarReason = "";
 rx.NoiseVarStrictFailure = false;
-rx.NoiseVarDomain = "resource_grid_pre_equalization";
+rx.NoiseVarDomain = "post_equalization_decoder_symbol_domain";
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
 rx.DecoderNoiseVar = double(nVarForDecode);
@@ -506,6 +528,10 @@ rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
 rx.TransportBlockCRCLength = double(tbCRCLen);
 rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
+rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
+rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
+rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
+rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
 rx.XOverhead = double(sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14])));
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
@@ -515,6 +541,10 @@ rx.CPECorrectionApplied = logical(cpeCorrInfo.Enabled);
 rx.CPECorrectedSymbols = double(sixgr.util.structGet(cpeCorrInfo, "NumSymbolsCorrected", 0));
 rx.CPEMeanCorrection_deg = double(sixgr.util.structGet(cpeCorrInfo, "MeanCPE_deg", NaN));
 rx.CPECorrectionNAReason = char(string(sixgr.util.structGet(cpeCorrInfo, "NAReason", "")));
+rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
+rx.PTRSCPECorrectionSymbols = double(sixgr.util.structGet(cpeCorrInfo, "NumSymbolsCorrected", NaN));
+rx.PTRSMeanCPE_deg = double(sixgr.util.structGet(cpeCorrInfo, "MeanCPE_deg", NaN));
+rx.PTRSCPECorrectionReason = char(string(sixgr.util.structGet(cpeCorrInfo, "NAReason", "")));
 rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
 rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
 rx.ReceiverTrackingCorrectionNAReason = char(string(trackingCorrection.NAReason));
@@ -543,7 +573,7 @@ else
 end
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
-rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsAntInd);
+rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsInd);
 rx.ChannelEstimateAvailable = ~isempty(hEst);
 if useFastAWGNPath
     rx.ChannelEstimateSource = "explicit_awgn_flat_validation_shortcut";
@@ -587,6 +617,8 @@ if ~logical(opt.CompactOutput)
     rx.CSIRSObservation = csirsObservation;
     rx.PTRSIndices = ptrsInd;
     rx.PTRSSymbols = ptrsSym;
+    rx.PTRSAntennaIndices = ptrsAntInd;
+    rx.PTRSAntennaSymbols = ptrsAntSym;
     rx.PTRSInfo = ptrsInfo;
     rx.CPECorrectionInfo = cpeCorrInfo;
     rx.CSIRSChannelEstimate = csirsHest;
@@ -636,6 +668,7 @@ info.PTRS = ptrsInfo;
 info.CPECorrection = cpeCorrInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = nVarDecodeInfo;
+info.HARQSoftCombining = harqCombiningInfo;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = double(nVarDecode);
 info.TimingEstimate = timingResolution;
@@ -651,6 +684,150 @@ method = char(string(sixgr.util.structGet(cfg, "phy.channelEstimation.method", .
 if isempty(strtrim(method))
     method = 'LS';
 end
+end
+
+function [eqSymOut, info] = localCorrectEqualizedPDSCHCPEFromPTRS(eqSym, pdschInd, rxGrid, hEst, ...
+        ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, enabled)
+% Estimate PTRS common phase after channel compensation, then rotate PDSCH.
+info = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
+    'MeanCPE_deg', NaN, 'NAReason', "");
+eqSymOut = eqSym;
+if ~logical(enabled)
+    info.NAReason = "ptrs_cpe_correction_disabled_by_config";
+    return;
+end
+if isempty(eqSym) || isempty(pdschInd) || isempty(rxGrid) || isempty(hEst)
+    info.NAReason = "missing_pdsch_equalized_symbols_or_channel_estimate";
+    return;
+end
+if isempty(ptrsInd) || isempty(ptrsSym)
+    info.NAReason = "ptrs_unavailable";
+    return;
+end
+
+try
+    [rxPTRS, hPTRS] = nrExtractResources(ptrsInd, rxGrid, hEst);
+catch ME
+    info.NAReason = "ptrs_resource_extraction_failed:" + string(ME.identifier);
+    return;
+end
+if isempty(rxPTRS) || isempty(hPTRS)
+    info.NAReason = "ptrs_resource_extraction_empty";
+    return;
+end
+
+try
+    [eqPTRS, ~, ~] = sixgr.phy.rx.mimoDetect(rxPTRS, hPTRS, nVar, ...
+        "Algorithm", equalizerAlg, "Rint", Rint);
+catch ME
+    info.NAReason = "ptrs_equalization_failed:" + string(ME.identifier);
+    return;
+end
+
+refPTRS = ptrsSym(:);
+eqPTRS = localSelectPTRSObservation(eqPTRS, refPTRS);
+n = min(numel(eqPTRS), numel(refPTRS));
+if n <= 0
+    info.NAReason = "ptrs_equalized_symbol_count_mismatch";
+    return;
+end
+eqPTRS = eqPTRS(1:n);
+refPTRS = refPTRS(1:n);
+
+dims = size(rxGrid);
+if numel(dims) < 2
+    info.NAReason = "rx_grid_not_resource_grid";
+    return;
+end
+K = dims(1);
+L = dims(2);
+P = max(1, size(rxGrid, 3));
+try
+    [~, ptrsL, ~] = ind2sub([K L P], double(ptrsInd(:)));
+    [~, dataL, ~] = ind2sub([K L P], double(pdschInd(:)));
+catch ME
+    info.NAReason = "ptrs_or_pdsch_symbol_index_decode_failed:" + string(ME.identifier);
+    return;
+end
+ptrsL = ptrsL(1:min(numel(ptrsL), n));
+eqPTRS = eqPTRS(1:numel(ptrsL));
+refPTRS = refPTRS(1:numel(ptrsL));
+
+valid = isfinite(real(eqPTRS)) & isfinite(imag(eqPTRS)) & ...
+    isfinite(real(refPTRS)) & isfinite(imag(refPTRS)) & abs(refPTRS) > 0 & ...
+    ptrsL >= 1 & ptrsL <= L;
+if ~any(valid)
+    info.NAReason = "no_valid_ptrs_cpe_samples";
+    return;
+end
+eqPTRS = eqPTRS(valid);
+refPTRS = refPTRS(valid);
+ptrsL = ptrsL(valid);
+
+cpeVec = NaN(L, 1);
+for lSym = unique(ptrsL(:)).'
+    mask = ptrsL == lSym;
+    if ~any(mask)
+        continue;
+    end
+    cpe = angle(sum(eqPTRS(mask) .* conj(refPTRS(mask)), "omitnan"));
+    if isfinite(cpe)
+        cpeVec(lSym) = cpe;
+    end
+end
+finiteMask = isfinite(cpeVec);
+if ~any(finiteMask)
+    info.NAReason = "no_finite_ptrs_cpe_estimates";
+    return;
+end
+
+cpeInterp = cpeVec;
+finiteIdx = find(finiteMask);
+unwrapped = unwrap(double(cpeVec(finiteMask)));
+if numel(finiteIdx) == 1
+    cpeInterp(:) = unwrapped(1);
+else
+    cpeInterp(:) = interp1(double(finiteIdx), unwrapped, (1:L).', "linear", "extrap");
+end
+
+dataL = dataL(1:min(numel(dataL), size(eqSymOut, 1)));
+for row = 1:numel(dataL)
+    lSym = dataL(row);
+    if lSym >= 1 && lSym <= L && isfinite(cpeInterp(lSym))
+        eqSymOut(row, :) = eqSymOut(row, :) .* cast(exp(-1j * cpeInterp(lSym)), "like", eqSymOut);
+    end
+end
+
+info.Enabled = true;
+info.NumSymbolsCorrected = double(numel(unique(dataL(dataL >= 1 & dataL <= L))));
+info.MeanCPE_deg = rad2deg(mean(abs(cpeVec(finiteMask)), "omitnan"));
+info.NAReason = "";
+end
+
+function obs = localSelectPTRSObservation(eqPTRS, refPTRS)
+if isempty(eqPTRS)
+    obs = complex(zeros(0, 1));
+    return;
+end
+if isvector(eqPTRS)
+    obs = eqPTRS(:);
+    return;
+end
+if size(eqPTRS, 1) ~= numel(refPTRS)
+    obs = eqPTRS(:);
+    return;
+end
+refPTRS = refPTRS(:);
+metric = zeros(1, size(eqPTRS, 2));
+for col = 1:size(eqPTRS, 2)
+    candidate = eqPTRS(:, col);
+    metric(col) = abs(sum(candidate(:) .* conj(refPTRS), "omitnan"));
+end
+[~, bestCol] = max(metric);
+if isempty(bestCol) || ~isfinite(metric(bestCol))
+    bestCol = 1;
+end
+obs = eqPTRS(:, bestCol);
 end
 
 function [ptrsInd, ptrsSym, info] = localResolvePDSCHPTRS(carrier, pdsch, cfg)
@@ -832,6 +1009,33 @@ end
 n = (0:size(x, 1)-1).';
 rot = exp(1j * 2 * pi * (double(correctionHz) / double(sampleRateHz)) * n);
 y = x .* cast(rot, "like", x);
+end
+
+function [rxGrid, ofdmInfo, tracking] = localApplyEstimatedCFOAndRedemodulate( ...
+    carrier, rxWave, sampleRateHz, rxGrid, ofdmInfo, tracking, cfg)
+enabled = logical(sixgr.util.structGet(cfg, "phy.rx.cfoCorrectionEnabled", ...
+    sixgr.util.structGet(cfg, "phy.impairments.cfoCorrectionEnabled", false)));
+if ~enabled
+    if logical(sixgr.util.structGet(tracking, "CFOEstimateAvailable", false))
+        tracking.CFONAReason = "cfo_correction_disabled_by_config";
+    end
+    return;
+end
+if logical(sixgr.util.structGet(tracking, "CFOCorrectionApplied", false))
+    return;
+end
+estimatedCFOHz = double(sixgr.util.structGet(tracking, "EstimatedCFO_Hz", NaN));
+if ~(logical(sixgr.util.structGet(tracking, "CFOEstimateAvailable", false)) && ...
+        isfinite(estimatedCFOHz) && isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
+    return;
+end
+correctedWave = localApplyFrequencyCorrection(rxWave, sampleRateHz, -estimatedCFOHz);
+[rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, correctedWave);
+tracking.CFOCorrectionApplied = true;
+tracking.CFOCorrectionApplied_Hz = estimatedCFOHz;
+tracking.Status = "available_corrected";
+tracking.NAReason = "";
+tracking.CFONAReason = "";
 end
 
 function y = localApplyTimingCorrection(x, timingOffset)

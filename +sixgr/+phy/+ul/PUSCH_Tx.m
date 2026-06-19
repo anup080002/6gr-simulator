@@ -331,9 +331,19 @@ if isfield(puschInfo, 'G')
     end
 end
 if isfield(puschInfo, 'NRE')
-    nrePerPRB = floor(double(puschInfo.NRE) / max(double(nPRB), 1));
+    totalNRE = double(puschInfo.NRE);
+    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
+    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
+        % Rate matching uses the exact transport-channel bit budget G.
+        % Do not reconstruct it from floor(NRE/PRB): PTRS/DMRS reservations
+        % can leave a non-integer average RE count per PRB.
+        gBits = double(totalNRE) * double(qm) * double(nLayers);
+    end
 elseif isfield(puschInfo, 'NREPerPRB')
     nrePerPRB = double(puschInfo.NREPerPRB);
+    if isfinite(nrePerPRB) && nrePerPRB > 0 && isfinite(qm) && qm > 0
+        gBits = double(nrePerPRB) * max(double(nPRB), 1) * double(qm) * double(nLayers);
+    end
 end
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     nrePerPRB = NaN;

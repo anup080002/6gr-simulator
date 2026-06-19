@@ -82,10 +82,19 @@ replay = struct( ...
     "PhaseNoiseConfigured", false, ...
     "PhaseNoiseApplied", false, ...
     "PhaseNoiseRMS_rad", NaN, ...
+    "PTRSCPECorrectionApplied", false, ...
+    "PTRSCPECorrectedSymbols", NaN, ...
+    "PTRSMeanCPE_deg", NaN, ...
+    "PTRSCPECorrectionReason", "", ...
     "IQImbalanceConfigured", false, ...
     "IQImbalanceApplied", false, ...
     "IQImbalanceImageRejection_dB", NaN, ...
     "IQImbalanceMeasurementStatus", "not_measured", ...
+    "IQImbalanceCorrectionApplied", false, ...
+    "IQImbalanceCorrectionAlphaAbs", NaN, ...
+    "IQImbalanceCorrectionBetaAbs", NaN, ...
+    "IQImbalanceCorrectionNoiseScale", NaN, ...
+    "IQImbalanceCorrectionStatus", "", ...
     "ChannelEstimateAvailable", false, ...
     "EqualizationAvailable", false, ...
     "DecodeAttempted", false, ...
@@ -116,6 +125,11 @@ replay = struct( ...
     "ExplicitPrecoderReplayBlocker", "waveform_replay_not_executed", ...
     "AppliedPrecoderPMIType", "", ...
     "AppliedPrecoderCodebookMode", "", ...
+    "HARQSoftCombiningApplied", false, ...
+    "HARQSoftCombiningReason", "", ...
+    "HARQSoftBufferPriorAvailable", false, ...
+    "HARQSoftBufferStored", false, ...
+    "HARQSoftBufferKey", "", ...
     "PrecodingNumPorts", NaN, ...
     "PrecodingNumLayers", NaN, ...
     "PrecodingMatrixRows", NaN, ...
@@ -131,8 +145,10 @@ try
         tmpl = localResolveReplayTemplate(cfgReplay, "UL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "UL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
+        [harqKey, harqPriorLLR, harqIsRetx] = localResolveHARQSoftBuffer("UL", grant, tx.TransportBlockSize);
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
+        [rxWave, nVar, chState] = localApplyReceiverIQImbalanceCompensation(rxWave, nVar, chState, cfgReplay);
         fastAWGNPath = logical(opt.FastAWGNPath) && localAllowsFastAWGN(cfgReplay, grant, chState);
         [rx, rxInfo] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgReplay, ...
             "Carrier", tx.Carrier, ...
@@ -144,6 +160,7 @@ try
             "NoiseVar", nVar, ...
             "NoiseVarDomain", "time", ...
             "MaxIterations", localLDPCMaxIterations(snr_dB, cfgReplay, opt), ...
+            "HARQSoftBufferLLR", harqPriorLLR, ...
             "CompactOutput", logical(opt.CompactPHYIO), ...
             "FastAWGNPath", fastAWGNPath, ...
             "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
@@ -151,8 +168,10 @@ try
         tmpl = localResolveReplayTemplate(cfgReplay, "DL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "DL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
+        [harqKey, harqPriorLLR, harqIsRetx] = localResolveHARQSoftBuffer("DL", grant, tx.TransportBlockSize);
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
+        [rxWave, nVar, chState] = localApplyReceiverIQImbalanceCompensation(rxWave, nVar, chState, cfgReplay);
         fastAWGNPath = logical(opt.FastAWGNPath) && localAllowsFastAWGN(cfgReplay, grant, chState);
         [rx, rxInfo] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgReplay, ...
             "Carrier", tx.Carrier, ...
@@ -164,6 +183,7 @@ try
             "NoiseVar", nVar, ...
             "NoiseVarDomain", "time", ...
             "MaxIterations", localLDPCMaxIterations(snr_dB, cfgReplay, opt), ...
+            "HARQSoftBufferLLR", harqPriorLLR, ...
             "CompactOutput", logical(opt.CompactPHYIO), ...
             "FastAWGNPath", fastAWGNPath, ...
             "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
@@ -178,6 +198,7 @@ try
     replay.FastAWGNPath = logical(fastAWGNPath);
     replay.WaveformReplayReused = logical(txTemplateReused);
     replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo);
+    replay = localUpdateHARQSoftBuffer(replay, rx, harqKey, harqPriorLLR, harqIsRetx);
     replay = localAttachImpairmentEvidence(replay, chState);
     replay.DecoderIterations = double(sixgr.util.structGet(rx, "DecoderIterations", NaN));
     if ~isfinite(replay.DecoderIterations) && isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
@@ -261,6 +282,109 @@ if ~logical(known)
     value = NaN;
 else
     value = double(logical(tf));
+end
+end
+
+function [key, priorLLR, isRetx] = localResolveHARQSoftBuffer(dir, grant, transportBlockSize)
+key = localHARQSoftBufferKey(dir, grant, transportBlockSize);
+isRetx = localGrantIsRetransmission(grant);
+if ~isRetx
+    localHARQSoftBufferCache("clear", key);
+    priorLLR = [];
+    return;
+end
+[hit, priorLLR] = localHARQSoftBufferCache("get", key);
+if ~hit
+    priorLLR = [];
+end
+end
+
+function replay = localUpdateHARQSoftBuffer(replay, rx, key, priorLLR, isRetx)
+replay.HARQSoftBufferKey = string(key);
+replay.HARQSoftBufferPriorAvailable = ~isempty(priorLLR);
+replay.HARQSoftCombiningApplied = logical(sixgr.util.structGet(rx, "HARQSoftCombiningApplied", false));
+replay.HARQSoftCombiningReason = string(sixgr.util.structGet(rx, "HARQSoftCombiningReason", ""));
+replay.HARQSoftBufferStored = false;
+
+if logical(sixgr.util.structGet(replay, "Ok", false))
+    localHARQSoftBufferCache("clear", key);
+    return;
+end
+
+softLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
+if isempty(softLLR)
+    softLLR = sixgr.util.structGet(rx, "RecLLR", []);
+end
+if isempty(softLLR)
+    return;
+end
+localHARQSoftBufferCache("set", key, softLLR);
+replay.HARQSoftBufferStored = true;
+if ~logical(isRetx)
+    replay.HARQSoftCombiningReason = localFirstNonEmptyText(replay.HARQSoftCombiningReason, ...
+        "stored_initial_rv_soft_buffer_after_crc_fail");
+end
+end
+
+function key = localHARQSoftBufferKey(dir, grant, transportBlockSize)
+rnti = double(sixgr.util.structGet(grant, "RNTI", sixgr.util.structGet(grant, "UEID", NaN)));
+harq = sixgr.util.structGet(grant, "HARQ", struct());
+harqId = double(sixgr.util.structGet(grant, "HarqID", sixgr.util.structGet(harq, "HarqID", 0)));
+mcs = double(sixgr.util.structGet(grant, "MCSIndex", NaN));
+modulation = char(string(sixgr.util.structGet(grant, "Modulation", "")));
+layers = double(sixgr.util.structGet(grant, "NumLayers", NaN));
+key = sprintf("%s|rnti=%g|harq=%g|tbs=%g|mcs=%g|mod=%s|layers=%g", ...
+    upper(char(string(dir))), rnti, harqId, round(double(transportBlockSize)), ...
+    mcs, modulation, layers);
+end
+
+function tf = localGrantIsRetransmission(grant)
+rv = localGrantRV(grant);
+reason = lower(string(sixgr.util.structGet(grant, "GrantReason", "")));
+tf = logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+    contains(reason, "retx") || contains(reason, "retrans") || ...
+    (isfinite(rv) && round(double(rv)) ~= 0);
+end
+
+function text = localFirstNonEmptyText(varargin)
+text = "";
+for i = 1:nargin
+    candidate = string(varargin{i});
+    if strlength(strtrim(candidate)) > 0
+        text = candidate(1);
+        return;
+    end
+end
+end
+
+function varargout = localHARQSoftBufferCache(action, key, value)
+persistent cacheMap
+if isempty(cacheMap)
+    cacheMap = containers.Map('KeyType', 'char', 'ValueType', 'any');
+end
+
+rawKey = char(string(key));
+switch lower(string(action))
+    case "get"
+        if isKey(cacheMap, rawKey)
+            varargout = {true, cacheMap(rawKey)};
+        else
+            varargout = {false, []};
+        end
+    case "set"
+        cacheMap(rawKey) = value;
+        varargout = {};
+    case "clear"
+        if isKey(cacheMap, rawKey)
+            remove(cacheMap, rawKey);
+        end
+        varargout = {};
+    case "reset"
+        remove(cacheMap, keys(cacheMap));
+        varargout = {};
+    otherwise
+        error("sixgr:system:WaveformReplay:BadHARQSoftBufferAction", ...
+            "Unknown HARQ soft-buffer cache action '%s'.", char(string(action)));
 end
 end
 
@@ -437,6 +561,14 @@ replay.ReceiverTrackingCorrectionStatus = string(sixgr.util.structGet(rx, "Recei
 replay.ReceiverTrackingCorrectionNAReason = string(sixgr.util.structGet(rx, "ReceiverTrackingCorrectionNAReason", ""));
 replay.CFOErrorDefinition = localCFOErrorDefinition(replay.CFOEstimateAvailable);
 replay.CFOValueStatus = localValueStatus(replay.EstimatedCFO_Hz);
+replay.PTRSCPECorrectionApplied = logical(sixgr.util.structGet(rx, "PTRSCPECorrectionEnabled", ...
+    sixgr.util.structGet(rx, "CPECorrectionApplied", false)));
+replay.PTRSCPECorrectedSymbols = double(sixgr.util.structGet(rx, "PTRSCPECorrectionSymbols", ...
+    sixgr.util.structGet(rx, "CPECorrectedSymbols", NaN)));
+replay.PTRSMeanCPE_deg = double(sixgr.util.structGet(rx, "PTRSMeanCPE_deg", ...
+    sixgr.util.structGet(rx, "CPEMeanCorrection_deg", NaN)));
+replay.PTRSCPECorrectionReason = string(sixgr.util.structGet(rx, "PTRSCPECorrectionReason", ...
+    sixgr.util.structGet(rx, "CPECorrectionNAReason", "")));
 replay.ChannelEstimateAvailable = logical(sixgr.util.structGet(rx, "ChannelEstimateAvailable", false));
 replay.EqualizationAvailable = logical(sixgr.util.structGet(rx, "EqualizationAvailable", false));
 replay.DecodeAttempted = logical(sixgr.util.structGet(rx, "DecodeAttempted", false));
@@ -541,6 +673,68 @@ replay.IQImbalanceConfigured = logical(sixgr.util.structGet(imp, "IQImbalanceCon
 replay.IQImbalanceApplied = logical(sixgr.util.structGet(imp, "IQImbalanceApplied", false));
 replay.IQImbalanceImageRejection_dB = double(sixgr.util.structGet(imp, "IQImbalanceImageRejection_dB", NaN));
 replay.IQImbalanceMeasurementStatus = string(sixgr.util.structGet(imp, "IQImbalanceMeasurementStatus", ""));
+replay.IQImbalanceCorrectionApplied = logical(sixgr.util.structGet(imp, "IQImbalanceCorrectionApplied", false));
+replay.IQImbalanceCorrectionAlphaAbs = double(sixgr.util.structGet(imp, "IQImbalanceCorrectionAlphaAbs", NaN));
+replay.IQImbalanceCorrectionBetaAbs = double(sixgr.util.structGet(imp, "IQImbalanceCorrectionBetaAbs", NaN));
+replay.IQImbalanceCorrectionNoiseScale = double(sixgr.util.structGet(imp, "IQImbalanceCorrectionNoiseScale", NaN));
+replay.IQImbalanceCorrectionStatus = string(sixgr.util.structGet(imp, "IQImbalanceCorrectionStatus", ""));
+end
+
+function [y, nVar, state] = localApplyReceiverIQImbalanceCompensation(x, nVar, state, cfg)
+y = x;
+if ~(isstruct(state) && isfield(state, "ImpairmentReplay") && isstruct(state.ImpairmentReplay))
+    return;
+end
+imp = state.ImpairmentReplay;
+imp.IQImbalanceCorrectionApplied = false;
+imp.IQImbalanceCorrectionAlphaAbs = NaN;
+imp.IQImbalanceCorrectionBetaAbs = NaN;
+imp.IQImbalanceCorrectionNoiseScale = NaN;
+imp.IQImbalanceCorrectionStatus = "not_applied";
+
+enabled = logical(sixgr.util.structGet(cfg, "phy.rx.iqImbalanceCorrectionEnabled", ...
+    sixgr.util.structGet(cfg, "phy.impairments.iqImbalanceCorrectionEnabled", true)));
+if ~enabled
+    imp.IQImbalanceCorrectionStatus = "disabled_by_config";
+    state.ImpairmentReplay = imp;
+    return;
+end
+if ~logical(sixgr.util.structGet(imp, "IQImbalanceApplied", false))
+    imp.IQImbalanceCorrectionStatus = "not_required_no_iq_imbalance_applied";
+    state.ImpairmentReplay = imp;
+    return;
+end
+
+gainImbalance_dB = double(sixgr.util.structGet(imp, "ConfiguredIQGainImbalance_dB", 0));
+phaseImbalance_deg = double(sixgr.util.structGet(imp, "ConfiguredIQPhaseImbalance_deg", 0));
+[alpha, beta] = localIQImbalanceCoefficients(gainImbalance_dB, phaseImbalance_deg);
+denom = abs(alpha).^2 - abs(beta).^2;
+if ~(isfinite(denom) && abs(denom) > eps)
+    imp.IQImbalanceCorrectionStatus = "singular_iq_imbalance_inverse";
+    state.ImpairmentReplay = imp;
+    return;
+end
+
+aInv = conj(alpha) ./ denom;
+bInv = -beta ./ denom;
+y = aInv .* x + bInv .* conj(x);
+noiseScale = abs(aInv).^2 + abs(bInv).^2;
+if isfinite(double(nVar)) && isfinite(noiseScale) && noiseScale > 0
+    nVar = double(nVar) .* double(noiseScale);
+end
+imp.IQImbalanceCorrectionApplied = true;
+imp.IQImbalanceCorrectionAlphaAbs = abs(aInv);
+imp.IQImbalanceCorrectionBetaAbs = abs(bInv);
+imp.IQImbalanceCorrectionNoiseScale = double(noiseScale);
+imp.IQImbalanceCorrectionStatus = "applied_configured_widely_linear_inverse";
+state.ImpairmentReplay = imp;
+end
+
+function [alpha, beta] = localIQImbalanceCoefficients(gainImbalance_dB, phaseImbalance_deg)
+g = 10.^(double(gainImbalance_dB) / 20);
+phi = double(phaseImbalance_deg) * pi / 180;
+alpha = 0.5 * (1 + g * exp(-1j * phi));
+beta = 0.5 * (1 - g * exp(1j * phi));
 end
 
 function value = localAvailability(tf)

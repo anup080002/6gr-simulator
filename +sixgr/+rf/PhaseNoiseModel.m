@@ -139,7 +139,7 @@ classdef PhaseNoiseModel < handle
                 sixgr.util.structGet(cfg, "lls6g.resolvedConfig.impairments.phase_noise_enabled", false)))));
         end
 
-        function [levels, offsets] = localResolvePhaseNoiseMask(~, cfg)
+        function [levels, offsets] = localResolvePhaseNoiseMask(obj, cfg)
             levels = double(sixgr.util.structGet(cfg, "rf.phaseNoise.level_dBcHz", []));
             offsets = double(sixgr.util.structGet(cfg, "rf.phaseNoise.freqOffsetHz", []));
             if ~isempty(levels) && ~isempty(offsets) && numel(levels) == numel(offsets)
@@ -147,10 +147,55 @@ classdef PhaseNoiseModel < handle
                 offsets = offsets(:).';
                 return;
             end
+
+            resolved = sixgr.util.structGet(cfg, "lls6g.resolvedConfig", struct());
+            model = lower(strtrim(string(sixgr.util.structGet(cfg, "rf.phaseNoise.model", ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise_model", ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise.model", ""))))));
+            l0 = obj.localFirstFiniteScalar( ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.L0_dBcHz", NaN), ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.l0_dBcHz", NaN), ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise_L0_dBcHz", NaN), ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise.L0_dBcHz", NaN));
+            f3dB = obj.localFirstFiniteScalar( ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.f3dB_Hz", NaN), ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.cornerFrequency_Hz", NaN), ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise_f3dB_Hz", NaN), ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise.f3dB_Hz", NaN));
+            floorLevel = obj.localFirstFiniteScalar( ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.floor_dBcHz", NaN), ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise_floor_dBcHz", NaN), ...
+                sixgr.util.structGet(resolved, "impairments.phase_noise.floor_dBcHz", NaN));
+            if isfinite(l0) && isfinite(f3dB) && f3dB > 0 && ...
+                    (contains(model, "lorentzian") || strlength(model) == 0 || isfinite(floorLevel))
+                if isempty(offsets)
+                    offsets = [1e3 1e4 1e5 1e6 1e7];
+                end
+                [levels, offsets] = sixgr.rf.PhaseNoiseModel.lorentzianMaskFromParameters( ...
+                    l0, f3dB, floorLevel, offsets);
+                return;
+            end
+
             carrierHz = double(sixgr.util.structGet(cfg, "phy.fc_Hz", ...
                 sixgr.util.structGet(cfg, "channel.fc_Hz", ...
                 sixgr.util.structGet(cfg, "carrierFrequencyHz", 4e9))));
             [levels, offsets] = sixgr.rf.PhaseNoiseModel.defaultMaskFromCarrier(carrierHz);
+        end
+
+        function value = localFirstFiniteScalar(~, varargin)
+            value = NaN;
+            for i = 1:nargin-1
+                raw = varargin{i};
+                if isempty(raw) || ~isnumeric(raw)
+                    continue;
+                end
+                raw = double(raw(:));
+                raw = raw(isfinite(raw));
+                if ~isempty(raw)
+                    value = raw(1);
+                    return;
+                end
+            end
         end
 
         function phi = coloredPhaseProcess(obj, nSamples)
@@ -214,11 +259,21 @@ classdef PhaseNoiseModel < handle
                 l0 = -73; f3dB = 1e5; floorLevel = -110;
             end
             offsets = [1e3 1e4 1e5 1e6 1e7];
-            refOffset = 1e6;
-            shaped = 10.^(l0 ./ 10) .* (1 + (refOffset ./ f3dB).^2) ./ ...
-                (1 + (offsets ./ f3dB).^2);
-            psd = shaped + 10.^(floorLevel ./ 10);
-            levels = 10 .* log10(psd);
+            [levels, offsets] = sixgr.rf.PhaseNoiseModel.lorentzianMaskFromParameters( ...
+                l0, f3dB, floorLevel, offsets);
+        end
+
+        function [levels, offsets] = lorentzianMaskFromParameters(l0_dBcHz, f3dB_Hz, floor_dBcHz, offsets)
+            offsets = max(double(offsets(:)).', 1);
+            l0Lin = 10.^(double(l0_dBcHz) ./ 10);
+            f3dB_Hz = max(double(f3dB_Hz), eps);
+            shaped = l0Lin ./ (1 + (offsets ./ f3dB_Hz).^2);
+            if isfinite(double(floor_dBcHz))
+                psd = shaped + 10.^(double(floor_dBcHz) ./ 10);
+            else
+                psd = shaped;
+            end
+            levels = 10 .* log10(max(psd, realmin));
         end
 
     end

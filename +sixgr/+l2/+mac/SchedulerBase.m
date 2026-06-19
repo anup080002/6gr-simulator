@@ -200,6 +200,8 @@ classdef (Abstract) SchedulerBase < handle
             % rxFeedback can be:
             %  - struct array with fields: RNTI, TBSBits, Ack (logical), and optional HarqID/HARQProcess
             %  - table with variables: RNTI, TBSBits, Ack, and optional HarqID/HARQProcess
+            % Optional RV/IsRetransmission marks HARQ-combined feedback that
+            % must not raise/lower first-transmission OLLA.
             if isempty(rxFeedback)
                 return;
             end
@@ -207,6 +209,9 @@ classdef (Abstract) SchedulerBase < handle
                 rntiList = rxFeedback.RNTI;
                 tbsList  = rxFeedback.TBSBits;
                 ackList  = rxFeedback.Ack;
+                rvList = nan(height(rxFeedback), 1);
+                isRetxList = false(height(rxFeedback), 1);
+                isRetxKnownList = false(height(rxFeedback), 1);
                 if ismember("HarqID", string(rxFeedback.Properties.VariableNames))
                     harqIdList = rxFeedback.HarqID;
                 elseif ismember("HARQProcess", string(rxFeedback.Properties.VariableNames))
@@ -214,11 +219,21 @@ classdef (Abstract) SchedulerBase < handle
                 else
                     harqIdList = nan(height(rxFeedback), 1);
                 end
+                if ismember("RV", string(rxFeedback.Properties.VariableNames))
+                    rvList = double(rxFeedback.RV);
+                end
+                if ismember("IsRetransmission", string(rxFeedback.Properties.VariableNames))
+                    isRetxList = logical(rxFeedback.IsRetransmission);
+                    isRetxKnownList = true(height(rxFeedback), 1);
+                end
             else
                 rntiList = [rxFeedback.RNTI];
                 tbsList  = [rxFeedback.TBSBits];
                 ackList  = [rxFeedback.Ack];
                 harqIdList = nan(numel(rntiList), 1);
+                rvList = nan(numel(rntiList), 1);
+                isRetxList = false(numel(rntiList), 1);
+                isRetxKnownList = false(numel(rntiList), 1);
                 for ii = 1:numel(rntiList)
                     if isfield(rxFeedback(ii), "HarqID") && ~isempty(rxFeedback(ii).HarqID)
                         harqIdList(ii) = double(rxFeedback(ii).HarqID);
@@ -226,6 +241,19 @@ classdef (Abstract) SchedulerBase < handle
                         harqIdList(ii) = double(rxFeedback(ii).HARQProcess);
                     elseif isfield(rxFeedback(ii), "HARQ") && isstruct(rxFeedback(ii).HARQ)
                         harqIdList(ii) = double(sixgr.util.structGet(rxFeedback(ii).HARQ, "HarqID", NaN));
+                    end
+                    if isfield(rxFeedback(ii), "RV") && ~isempty(rxFeedback(ii).RV)
+                        rvList(ii) = double(rxFeedback(ii).RV);
+                    elseif isfield(rxFeedback(ii), "HARQ") && isstruct(rxFeedback(ii).HARQ)
+                        rvList(ii) = double(sixgr.util.structGet(rxFeedback(ii).HARQ, "RV", NaN));
+                    end
+                    if isfield(rxFeedback(ii), "IsRetransmission") && ~isempty(rxFeedback(ii).IsRetransmission)
+                        isRetxList(ii) = logical(rxFeedback(ii).IsRetransmission);
+                        isRetxKnownList(ii) = true;
+                    elseif isfield(rxFeedback(ii), "HARQ") && isstruct(rxFeedback(ii).HARQ) && ...
+                            isfield(rxFeedback(ii).HARQ, "IsRetransmission")
+                        isRetxList(ii) = logical(rxFeedback(ii).HARQ.IsRetransmission);
+                        isRetxKnownList(ii) = true;
                     end
                 end
             end
@@ -235,7 +263,9 @@ classdef (Abstract) SchedulerBase < handle
                 tbsBits = double(tbsList(k));
                 ack = logical(ackList(k));
                 obj.updateAvgThroughput(rnti, tbsBits, ack);
-                obj.updateOLLADelta(rnti, ack);
+                if localFeedbackEligibleForOLLA(isRetxKnownList(k), isRetxList(k), rvList(k))
+                    obj.updateOLLADelta(rnti, ack);
+                end
                 if ~isempty(obj.HARQ)
                     harqId = double(harqIdList(k));
                     if isfinite(harqId)
@@ -552,7 +582,7 @@ classdef (Abstract) SchedulerBase < handle
                 amc.OLLAUpdateCount = double(ollaCount);
                 amc.OLLAState = "configured_waiting_for_ack_feedback";
                 if isfinite(amc.MCSIndex) && isfinite(ollaDelta) && ollaCount > 0
-                    adjustedMCS = max(0, min(31, round(double(amc.MCSIndex) + double(ollaDelta))));
+                    adjustedMCS = max(0, min(31, floor(double(amc.MCSIndex) + double(ollaDelta))));
                     prof = sixgr.link.resolveMCSProfile(mcsTable, adjustedMCS);
                     if prof.Valid
                         amc.MCSIndex = double(adjustedMCS);
@@ -1459,6 +1489,21 @@ if any(deltaPolicy == ["","baseline","default","auto"]) && outerFlag && policyEn
     deltaPolicy = "ack_nack_olla";
 end
 tf = outerFlag && policyEnabled && any(deltaPolicy == ["olla","outer_loop","outerloop","ack_nack","ack_nack_olla"]);
+end
+
+function tf = localFeedbackEligibleForOLLA(isRetxKnown, isRetx, rv)
+% OLLA should track the selected first-transmission operating point. HARQ
+% retransmission ACKs prove IR/soft combining recovered the TB, not that the
+% original CQI-to-MCS choice met the target first-transmission BLER.
+tf = true;
+if logical(isRetxKnown) && logical(isRetx)
+    tf = false;
+    return;
+end
+rv = double(rv);
+if isfinite(rv) && round(rv) ~= 0
+    tf = false;
+end
 end
 
 function step = localSchedulerOLLAStep(cfg, direction)
