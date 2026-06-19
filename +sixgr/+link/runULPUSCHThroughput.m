@@ -440,6 +440,7 @@ trialGrantSharedStateCommitMode = strings(numFrames,1);
 constellationChunks = cell(numFrames,1);
 waveformChunks = cell(numFrames,1);
 trialRuntimeEvidence = cell(numFrames,1);
+trialMeasuredPHYEvidence = cell(numFrames,1);
 trialStatus = strings(numFrames,1);
 trialStatus(:) = "FAIL";
 trialCrash = false(numFrames,1);
@@ -612,6 +613,7 @@ for n = 1:numFrames
             rxArgs = [rxArgs {"NoiseVar", injectedNoiseVariance, "NoiseVarDomain", "time"}]; %#ok<AGROW>
         end
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        trialMeasuredPHYEvidence{n} = sixgr.link.deriveMeasuredPHYEvidence(rx);
         replay = localFinalizeImpairmentReplay(replay, cfgFrame, rx, tx, txInfo, useIdealTimingSync);
         waveformChunks{n} = sixgr.link.buildWaveformPreviewTable("UL", snr_dB, trialFrame(n), trialSlot(n), ...
             tx.Waveform, rxWave, localResolveSampleRate(tx, txInfo));
@@ -1524,6 +1526,7 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.InterfererPrecodingModeSet = trialInterfererPrecodingModeSet(idx);
         T.InterfererBeamIndexSetSummary = trialInterfererBeamIndexSetSummary(idx);
         T = localApplyRuntimeEvidenceColumns(T, trialRuntimeEvidence(idx));
+        T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
         T = localDecorateTrialTruthFields(T, "UL", cfg);
     end
 end
@@ -3125,6 +3128,7 @@ T.InterfererPrecoderSourceSet = strings(0,1);
 T.InterfererPrecodingModeSet = strings(0,1);
 T.InterfererBeamIndexSetSummary = strings(0,1);
 T = localEnsureRuntimeEvidenceColumns(T, 0);
+T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, {});
 end
 
 function mode = localResolveLinkAdaptationMode(cfg, direction)

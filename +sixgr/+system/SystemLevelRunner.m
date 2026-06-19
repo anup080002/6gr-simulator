@@ -2543,6 +2543,7 @@ trace.PrecodingNumPorts = NaN(cap,1);
 trace.PrecodingNumLayers = NaN(cap,1);
 trace.PrecodingMatrixRows = NaN(cap,1);
 trace.PrecodingMatrixCols = NaN(cap,1);
+trace = localInitializeMeasuredPHYEvidenceTrace(trace, cap);
 end
 
 function [trace, count] = localEnsureGrantTraceCapacity(trace, count, need)
@@ -2664,6 +2665,7 @@ trace.PostEqSINRValueStatus(i) = string(sixgr.util.structGet(replay, "PostEqSINR
 trace.PostEqSINRNAReason(i) = string(sixgr.util.structGet(replay, "PostEqSINRNAReason", ""));
 trace.PostEqSINRPerLayer_dB(i) = localFormatNumericVector(sixgr.util.structGet(replay, "PostEqSINRPerLayer_dB", NaN));
 trace.DecoderIterations(i) = double(sixgr.util.structGet(replay, "DecoderIterations", NaN));
+trace = localAssignMeasuredPHYEvidenceTrace(trace, i, replay);
 trace.ChannelEstimateAvailable(i) = logical(sixgr.util.structGet(replay, "ChannelEstimateAvailable", false));
 trace.EqualizationAvailable(i) = logical(sixgr.util.structGet(replay, "EqualizationAvailable", false));
 trace.DecodeAttempted(i) = logical(sixgr.util.structGet(replay, "DecodeAttempted", false));
@@ -2816,6 +2818,7 @@ T.PostEqSINRValueStatus = localTraceString(trace, "PostEqSINRValueStatus", idx, 
 T.PostEqSINRNAReason = localTraceString(trace, "PostEqSINRNAReason", idx, n, "");
 T.PostEqSINRPerLayer_dB = localTraceString(trace, "PostEqSINRPerLayer_dB", idx, n, "");
 T.DecoderIterations = localTraceNumeric(trace, "DecoderIterations", idx, n, NaN);
+T = localAttachMeasuredPHYEvidenceTraceColumns(T, trace, idx);
 T.ChannelEstimateAvailable = localTraceLogical(trace, "ChannelEstimateAvailable", idx, n, false);
 T.EqualizationAvailable = localTraceLogical(trace, "EqualizationAvailable", idx, n, false);
 T.DecodeAttempted = localTraceLogical(trace, "DecodeAttempted", idx, n, false);
@@ -2899,6 +2902,47 @@ T.PrecodingNumPorts = localTraceNumeric(trace, "PrecodingNumPorts", idx, n, NaN)
 T.PrecodingNumLayers = localTraceNumeric(trace, "PrecodingNumLayers", idx, n, NaN);
 T.PrecodingMatrixRows = localTraceNumeric(trace, "PrecodingMatrixRows", idx, n, NaN);
 T.PrecodingMatrixCols = localTraceNumeric(trace, "PrecodingMatrixCols", idx, n, NaN);
+end
+
+function trace = localInitializeMeasuredPHYEvidenceTrace(trace, cap)
+row = sixgr.link.emptyMeasuredPHYEvidenceRow();
+names = fieldnames(row);
+for i = 1:numel(names)
+    name = names{i};
+    if isstring(row.(name)) || ischar(row.(name))
+        trace.(name) = strings(cap, 1);
+    else
+        trace.(name) = NaN(cap, 1);
+    end
+end
+end
+
+function trace = localAssignMeasuredPHYEvidenceTrace(trace, rowIdx, replay)
+evidence = sixgr.link.deriveMeasuredPHYEvidence(replay);
+defaults = sixgr.link.emptyMeasuredPHYEvidenceRow();
+names = fieldnames(defaults);
+for i = 1:numel(names)
+    name = names{i};
+    if isstring(defaults.(name)) || ischar(defaults.(name))
+        trace.(name)(rowIdx) = string(evidence.(name));
+    else
+        trace.(name)(rowIdx) = double(evidence.(name));
+    end
+end
+end
+
+function T = localAttachMeasuredPHYEvidenceTraceColumns(T, trace, idx)
+n = height(T);
+defaults = sixgr.link.emptyMeasuredPHYEvidenceRow();
+names = fieldnames(defaults);
+for i = 1:numel(names)
+    name = names{i};
+    if isstring(defaults.(name)) || ischar(defaults.(name))
+        T.(name) = localTraceString(trace, name, idx, n, "");
+    else
+        T.(name) = localTraceNumeric(trace, name, idx, n, NaN);
+    end
+end
 end
 
 function values = localTraceNumeric(trace, name, idx, n, defaultValue)

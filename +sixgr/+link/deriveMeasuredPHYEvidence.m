@@ -1,0 +1,94 @@
+function evidence = deriveMeasuredPHYEvidence(rx)
+%DERIVEMEASUREDPHYEVIDENCE Extract compact measured PHY evidence from RX output.
+
+evidence = sixgr.link.emptyMeasuredPHYEvidenceRow();
+if nargin < 1 || ~isstruct(rx) || isempty(rx)
+    return;
+end
+
+numericFields = localNumericFields();
+stringFields = localStringFields();
+
+for i = 1:numel(numericFields)
+    name = numericFields(i);
+    if isfield(rx, name)
+        evidence.(name) = localScalarDouble(rx.(name));
+    end
+end
+for i = 1:numel(stringFields)
+    name = stringFields(i);
+    if isfield(rx, name)
+        evidence.(name) = localScalarString(rx.(name));
+    end
+end
+end
+
+function fields = localNumericFields()
+fields = ["MeasuredDMRSRECount", ...
+    "MeasuredDMRSAntennaRECount", ...
+    "MeasuredDMRSSymbolCount", ...
+    "MeasuredDMRSPortCount", ...
+    "MeasuredDMRSAntennaPortCount", ...
+    "MeasuredDMRSCDMLengthFD", ...
+    "MeasuredDMRSCDMLengthTD", ...
+    "MeasuredRateMatchedCodewordLLRBits", ...
+    "MeasuredRateRecoveredLLRBits", ...
+    "MeasuredRateRecoveredFiniteLLRCount", ...
+    "MeasuredRateRecoverFillerBits", ...
+    "MeasuredRateRecoveredCodeBlockCount", ...
+    "MeasuredRateRecoveredCodeBlockLength_bits", ...
+    "MeasuredRateRecoverNrefBits", ...
+    "MeasuredLDPCDecoderMeanIterations", ...
+    "MeasuredLDPCDecoderMinIterations", ...
+    "MeasuredLDPCDecoderMaxIterations", ...
+    "MeasuredLDPCParityCheckFailures", ...
+    "MeasuredCodeBlockCRCErrorCount", ...
+    "MeasuredCodeBlockCRCCount", ...
+    "MeasuredCodeBlockCRCFailureRate"];
+end
+
+function fields = localStringFields()
+fields = ["MeasuredLDPCDecoderAlgorithm", ...
+    "MeasuredLDPCDecoderEngine", ...
+    "MeasuredLDPCIterationVector", ...
+    "MeasuredLDPCParityCheckVector", ...
+    "MeasuredCodeBlockCRCErrorVector"];
+end
+
+function value = localScalarDouble(raw)
+value = NaN;
+if isempty(raw)
+    return;
+end
+try
+    raw = double(raw);
+catch
+    return;
+end
+raw = raw(:);
+if isempty(raw)
+    return;
+end
+value = raw(1);
+end
+
+function value = localScalarString(raw)
+value = "";
+if isempty(raw)
+    return;
+end
+try
+    raw = string(raw);
+catch
+    return;
+end
+raw = raw(:);
+if isempty(raw)
+    return;
+end
+if numel(raw) == 1
+    value = raw(1);
+else
+    value = strjoin(raw.', "|");
+end
+end

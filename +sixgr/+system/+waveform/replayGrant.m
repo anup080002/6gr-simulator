@@ -134,6 +134,7 @@ replay = struct( ...
     "PrecodingNumLayers", NaN, ...
     "PrecodingMatrixRows", NaN, ...
     "PrecodingMatrixCols", NaN);
+replay = localAppendMeasuredPHYEvidence(replay, sixgr.link.emptyMeasuredPHYEvidenceRow());
 
 try
     cfgReplay = localBuildReplayConfig(cfgIn, dir, grant);
@@ -542,6 +543,7 @@ replay.PostEqSINRValueRole = string(sixgr.util.structGet(rx, "PostEqSINRValueRol
 replay.PostEqSINRValueStatus = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", localValueStatus(replay.PostEqSINR_dB)));
 replay.PostEqSINRNAReason = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
 replay.PostEqSINRPerLayer_dB = sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN);
+replay = localAppendMeasuredPHYEvidence(replay, sixgr.link.deriveMeasuredPHYEvidence(rx));
 replay.TimingEstimateUsed = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", false));
 replay.RawTimingEstimate_samples = double(sixgr.util.structGet(rx, "RawTimingEstimate_samples", ...
     sixgr.util.structGet(rx, "TimingOffset", NaN)));
@@ -634,6 +636,16 @@ replay.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
 replay.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
 replay.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", NaN));
 replay.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", NaN));
+end
+
+function out = localAppendMeasuredPHYEvidence(out, evidence)
+if ~(isstruct(evidence) && ~isempty(fieldnames(evidence)))
+    return;
+end
+names = fieldnames(evidence);
+for i = 1:numel(names)
+    out.(names{i}) = evidence.(names{i});
+end
 end
 
 function replay = localAttachImpairmentEvidence(replay, chState)

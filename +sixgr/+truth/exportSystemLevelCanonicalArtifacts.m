@@ -399,6 +399,7 @@ T.PrecodingMatrixRows = localNumericColumn(grantT, "PrecodingMatrixRows", NaN);
 T.PrecodingMatrixCols = localNumericColumn(grantT, "PrecodingMatrixCols", NaN);
 T.GrantControlState = repmat(phyProfile.GrantControlState, n, 1);
 T.DecoderIterations = localNumericColumn(grantT, "DecoderIterations", NaN);
+T = localAttachMeasuredPHYEvidenceColumnsFromGrant(T, grantT);
 T.ChannelEstimateAvailable = localLogicalColumn(grantT, "ChannelEstimateAvailable", false);
 T.EqualizationAvailable = localLogicalColumn(grantT, "EqualizationAvailable", false);
 T.DecodeAttempted = localLogicalColumn(grantT, "DecodeAttempted", false);
@@ -1375,6 +1376,7 @@ T.AllocatedPRBCount = zeros(0, 1);
 T.SchedulerGrantMCSSelectionMode = string.empty(0, 1);
 T.MCSSelectionSource = string.empty(0, 1);
 T.MCSValueStatus = string.empty(0, 1);
+T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, {});
 end
 
 function row = localEmptyMultiUserSummaryRow()
@@ -1662,6 +1664,20 @@ names = fieldnames(stringDefaults);
 for i = 1:numel(names)
     name = names{i};
     T.(name) = localStringColumn(sourceT, name, stringDefaults.(name));
+end
+T = localAttachMeasuredPHYEvidenceColumnsFromGrant(T, sourceT);
+end
+
+function T = localAttachMeasuredPHYEvidenceColumnsFromGrant(T, sourceT)
+defaults = sixgr.link.emptyMeasuredPHYEvidenceRow();
+names = fieldnames(defaults);
+for i = 1:numel(names)
+    name = names{i};
+    if isstring(defaults.(name)) || ischar(defaults.(name))
+        T.(name) = localStringColumn(sourceT, name, "");
+    else
+        T.(name) = localNumericColumn(sourceT, name, NaN);
+    end
 end
 end
 

@@ -569,6 +569,8 @@ rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
 rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, dmrsInfo, ...
+    cwLLRForULSCH, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC);
 rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
 rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
@@ -1626,6 +1628,8 @@ rx.LLRScaleSource = "";
 rx.LLRNoiseVariance = NaN;
 rx.EqualizedSymbolsForEvidence = complex([]);
 rx.PUSCHRxSymbolsForEvidence = complex([]);
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, struct(), ...
+    [], [], [], struct(), [], [], [], "", false);
 strictEvidence = sixgr.phy.ul.validatePUSCHReceiverEvidence(rx, "StrictMode", logical(noiseStatus.StrictFailure));
 rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);
 rx.StrictOk = logical(strictEvidence.StrictOk);

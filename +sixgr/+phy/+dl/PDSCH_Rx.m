@@ -569,10 +569,12 @@ rx.EqualizedSymbolsForEvidence = eqSym;
 if isempty(pdschRxSym)
     rx.PDSCHRxSymbolsForEvidence = rxSym;
 else
-    rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
+rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
 end
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, ...
+    llr, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC);
 rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsInd);
 rx.ChannelEstimateAvailable = ~isempty(hEst);
 if useFastAWGNPath
