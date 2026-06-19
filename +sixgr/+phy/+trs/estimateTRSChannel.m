@@ -17,18 +17,31 @@ for ii = 1:numel(slotDet)
         end
         [hest, noiseEst] = nrChannelEstimate(resources(ii).Carrier, rxGrid, ...
             resources(ii).Indices, resources(ii).Symbols);
-        ls = slotDet(ii).RxRE(:) ./ max(abs(resources(ii).Symbols(:)), eps) .* exp(-1j * angle(resources(ii).Symbols(:)));
-        if isempty(ls)
-            ls = hest(resources(ii).Indices);
+        rxRE = slotDet(ii).RxRE(:);
+        if isempty(rxRE)
+            rxRE = rxGrid(resources(ii).Indices);
         end
-        ref = mean(ls(isfinite(real(ls)) & isfinite(imag(ls))), "omitnan");
-        if isempty(ref) || ~isfinite(ref)
-            ref = 1;
+        ref = resources(ii).Symbols(:);
+        hPilot = hest(resources(ii).Indices);
+        n = min([numel(rxRE), numel(ref), numel(hPilot)]);
+        rxRE = rxRE(1:n);
+        ref = ref(1:n);
+        hPilot = hPilot(1:n);
+        mask = isfinite(real(rxRE)) & isfinite(imag(rxRE)) & ...
+            isfinite(real(ref)) & isfinite(imag(ref)) & ...
+            isfinite(real(hPilot)) & isfinite(imag(hPilot));
+        if ~any(mask)
+            nmse = NaN;
+        else
+            rxRE = rxRE(mask);
+            ref = ref(mask);
+            hPilot = hPilot(mask);
+            residual = rxRE(:) - hPilot(:) .* ref(:);
+            nmse = mean(abs(residual).^2, "omitnan") ./ max(mean(abs(rxRE(:)).^2, "omitnan"), eps);
         end
-        nmse = mean(abs(ls(:) - ref).^2, "omitnan") ./ max(mean(abs(ref).^2, "omitnan"), eps);
         nmseDb = 10 * log10(max(nmse, eps));
         available = isfinite(nmseDb) && logical(slotDet(ii).Detected);
-        status = "channel_estimate_available";
+        status = "channel_estimate_available_pilot_reconstruction_nmse";
     catch ME
         status = "channel_estimate_failed:" + string(ME.identifier);
     end
@@ -41,7 +54,7 @@ for ii = 1:numel(slotDet)
     row.NMSE_dB = double(nmseDb);
     row.NoiseEstimate = double(noiseEst);
     row.ChannelNMSEThreshold_dB = double(cfg.ChannelNMSEThresholddB);
-    row.ChannelEstimator = "nrChannelEstimate_from_trs_nzp_csirs_re";
+    row.ChannelEstimator = "nrChannelEstimate_pilot_reconstruction_nmse";
     row.Status = string(status);
     row.TruthStatus = "real_lls_evidence";
     rows(ii) = row;
@@ -66,5 +79,6 @@ function row = localChannelRow()
 row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, ...
     "ChannelEstimationAttempted", false, "TRSChannelEstimateAvailable", false, ...
     "NMSE_dB", NaN, "NoiseEstimate", NaN, "ChannelNMSEThreshold_dB", NaN, ...
-    "ChannelEstimator", "", "Status", "", "TruthStatus", "");
+    "ChannelEstimator", "nrChannelEstimate_pilot_reconstruction_nmse", ...
+    "Status", "", "TruthStatus", "");
 end

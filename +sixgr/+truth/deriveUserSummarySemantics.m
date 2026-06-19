@@ -21,8 +21,8 @@ failureByCRC = false(height(sourceT), 1);
 if ismember("CRCPass", string(sourceT.Properties.VariableNames))
     crcVals = double(sourceT.CRCPass);
     crcKnown = isfinite(crcVals);
-    successByCRC = crcKnown & logical(crcVals);
-    failureByCRC = crcKnown & ~logical(crcVals);
+    successByCRC(crcKnown) = crcVals(crcKnown) ~= 0;
+    failureByCRC(crcKnown) = crcVals(crcKnown) == 0;
 end
 
 goodputVals = double(sourceT.Goodput_Mbps);
@@ -34,7 +34,11 @@ if ismember("Crash", string(sourceT.Properties.VariableNames))
     if islogical(crashVals)
         crashMask = crashMask | logical(crashVals);
     else
-        crashMask = crashMask | (isfinite(double(crashVals)) & logical(double(crashVals)));
+        crashNumeric = double(crashVals);
+        crashKnown = isfinite(crashNumeric);
+        crashFromNumeric = false(height(sourceT), 1);
+        crashFromNumeric(crashKnown) = crashNumeric(crashKnown) ~= 0;
+        crashMask = crashMask | crashFromNumeric;
     end
 end
 

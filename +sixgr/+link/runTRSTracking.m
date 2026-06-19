@@ -33,6 +33,27 @@ out.DetectionMetric = NaN;
 out.ChannelModel = "";
 out.AppliedAWGNSNR_dB = NaN;
 out.TrackingEstimateSource = "";
+out.DetectionAttempted = false;
+out.DetectionSuccess = false;
+out.DetectionThreshold = NaN;
+out.ResourceCoverageRatio = NaN;
+out.MinCoverageRatio = NaN;
+out.TimingTrackingAttempted = false;
+out.TRSTimingEstimateAvailable = false;
+out.TRSTimingEstimateUsable = false;
+out.EstimatedTimingOffset_samples = NaN;
+out.InjectedTimingOffset_samples = NaN;
+out.TimingError_samples = NaN;
+out.FrequencyTrackingAttempted = false;
+out.TRSCFOEstimateAvailable = false;
+out.TRSCFOEstimateUsable = false;
+out.FrequencyError_Hz = NaN;
+out.ChannelEstimationAttempted = false;
+out.TRSChannelEstimateAvailable = false;
+out.TRSRuntimeEvidenceUsable = false;
+out.NoiseVariance = NaN;
+out.StrictOk = false;
+out.FailureReason = "";
 out.Notes = "";
 
 if ~logical(sixgr.util.structGet(cfg, "phy.trs.enable", false))
@@ -44,38 +65,51 @@ end
 
 try
     tStart = tic;
-    [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
-    [trsInd, trsSym, trsInfo] = sixgr.phy.refsig.trs(carrier, cfg);
-    if isempty(trsInd)
-        out.Notes = "TRS mapping produced no resources.";
-        return;
-    end
+    [strictCfg, tx, rx, replay, timing, det, freq, ch, tracking, score] = ...
+        localRunStrictRuntimeTRSEvidence(cfg, snr_dB);
+    trial = score.TrialRow;
+    runtimeEvidenceOk = localRuntimeTRSEvidenceComplete(trial, strictCfg);
 
-    nPorts = max(1, round(double(sixgr.util.structGet(trsInfo, "NumPorts", 1))));
-    txGrid = nrResourceGrid(carrier, nPorts);
-    txGrid(trsInd) = trsSym;
-    [txWave, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
-
-    sampleRateHz = localResolveSampleRate(ofdmInfo, carrier);
-    injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
-    [rxWave, replay] = localApplyTrackingChannelAndNoise(txWave, cfg, sampleRateHz, snr_dB, nPorts);
-    [rxGrid, ~] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
-    rxSym = rxGrid(trsInd);
-    den = trsSym(:);
-    den(abs(den) < eps) = 1;
-    hEst = rxSym(:) ./ den;
-
-    [hTrue, symTimes_s, symIdx] = localReferencePilotChannel(carrier, trsInd, nPorts, sampleRateHz, injectedDopplerHz);
-    nmse = localNormalizedMSE(hEst, hTrue);
-    phaseErr = angle(mean(hEst .* conj(hTrue), "omitnan"));
-
-    out.NMSE_dB = 10 * log10(max(nmse, eps));
-    out.PhaseError_deg = rad2deg(phaseErr);
-    out.EstimatedDoppler_Hz = localEstimateDopplerHz(symTimes_s, hEst);
-    out.InjectedDoppler_Hz = injectedDopplerHz;
-    out.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
-    out.EstimatedCFO_Hz = localEstimateCommonPhaseFrequencyHz(symTimes_s, hEst);
-    out.EstimatedCFO_PreCorrection_Hz = out.EstimatedCFO_Hz;
+    out.NMSE_dB = double(trial.NMSE_dB);
+    out.PhaseError_deg = localMeanReferencePhaseDeg(det);
+    out.EstimatedCFO_Hz = double(trial.EstimatedCFO_Hz);
+    out.EstimatedCFO_PreCorrection_Hz = double(trial.EstimatedCFO_PreCorrection_Hz);
+    out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
+    out.EstimatedDoppler_Hz = localResolveRuntimeDopplerEstimate(out.EstimatedCFO_Hz, out.InjectedCFO_Hz);
+    out.InjectedDoppler_Hz = localResolveInjectedDopplerHz(cfg);
+    out.QCLAccuracy = double(trial.QCLAccuracy);
+    out.DetectionMetric = double(trial.DetectionMetric);
+    out.AppliedAWGNSNR_dB = double(trial.AppliedAWGNSNR_dB);
+    out.NoiseVariance = double(trial.NoiseVariance);
+    out.ChannelModel = char(string(trial.ChannelModel));
+    out.DetectionAttempted = logical(trial.DetectionAttempted);
+    out.DetectionSuccess = logical(trial.DetectionSuccess);
+    out.DetectionThreshold = localFirstTableNumber(sixgr.util.structGet(det, "Table", table()), "DetectionThreshold", NaN);
+    out.ResourceCoverageRatio = double(trial.ResourceCoverageRatio);
+    out.MinCoverageRatio = localFirstTableNumber(sixgr.util.structGet(det, "Table", table()), "MinCoverageRatio", NaN);
+    out.TimingTrackingAttempted = logical(trial.TimingTrackingAttempted);
+    out.TRSTimingEstimateAvailable = logical(trial.TRSTimingEstimateAvailable);
+    out.TRSTimingEstimateUsable = localTimingEstimateUsable(trial, strictCfg);
+    out.EstimatedTimingOffset_samples = double(trial.EstimatedTimingOffset_samples);
+    out.InjectedTimingOffset_samples = double(trial.InjectedTimingOffset_samples);
+    out.TimingError_samples = double(trial.TimingError_samples);
+    out.FrequencyTrackingAttempted = logical(trial.FrequencyTrackingAttempted);
+    out.TRSCFOEstimateAvailable = logical(trial.TRSCFOEstimateAvailable);
+    out.TRSCFOEstimateUsable = localFrequencyEstimateUsable(trial, strictCfg);
+    out.FrequencyError_Hz = double(trial.FrequencyError_Hz);
+    out.ChannelEstimationAttempted = logical(trial.ChannelEstimationAttempted);
+    out.TRSChannelEstimateAvailable = logical(trial.TRSChannelEstimateAvailable);
+    out.TRSRuntimeEvidenceUsable = logical(runtimeEvidenceOk);
+    out.StrictOk = logical(score.StrictOk);
+    out.FailureReason = string(score.FailureReason);
+    out.TrackingEstimateSource = "trs_reference_waveform_estimator";
+    out.InterpolationLoss_dB = NaN;
+    out.MismatchSensitivity_dB = NaN;
+    out.ComputeLatency_ms = 1e3 * toc(tStart);
+    out.ProcedureDelay_ms = NaN;
+    out.AirInterfaceObservation_ms = 1e3 * (size(tx.Waveform, 1) / max(double(tx.SampleRateHz), eps));
+    out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
+    out.TrackingFailure = double(~runtimeEvidenceOk);
     if isfinite(out.EstimatedCFO_Hz)
         out.CFOEstimateAvailability = "available";
         out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
@@ -85,25 +119,13 @@ try
         out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
         out.CFOEstimateDefinition = "not_available_without_multiple_valid_trs_symbol_times";
     end
-    out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
-    out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
-    out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);
-    out.ComputeLatency_ms = 1e3 * toc(tStart);
-    out.ProcedureDelay_ms = NaN;
-    out.AirInterfaceObservation_ms = 1e3 * (size(txWave, 1) / max(sampleRateHz, eps));
-    % Legacy alias preserved for backward compatibility with older exports.
-    % It mirrors radio-time observation duration, not wall-clock compute runtime.
-    out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
-    out.TrackingFailure = 0;
-    out.DetectionMetric = -out.NMSE_dB;
-    out.ChannelModel = char(localResolveTrialChannelModel(cfg));
-    out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-    out.TrackingEstimateSource = "trs_reference_waveform_estimator";
-    out.Ok = true;
-    out.Notes = "TRS runtime tracking measurement from active coupled-reference path. NRE=" + string(numel(trsInd)) + ...
+    out.Ok = logical(runtimeEvidenceOk);
+    out.Notes = "TRS runtime tracking measurement from NZP-CSI-RS waveform path. NRE=" + string(localTRSNRE(tx)) + ...
         ", injected Doppler=" + string(round(out.InjectedDoppler_Hz, 3)) + ...
         " Hz, estimated Doppler=" + string(round(out.EstimatedDoppler_Hz, 3)) + ...
-        " Hz, estimated CFO=" + string(round(out.EstimatedCFO_Hz, 3)) + " Hz";
+        " Hz, estimated common frequency=" + string(round(out.EstimatedCFO_Hz, 3)) + ...
+        " Hz, strictOk=" + string(logical(score.StrictOk)) + ...
+        ", runtimeEvidenceOk=" + string(runtimeEvidenceOk);
 catch ME
     out.Ok = false;
     out.TrackingFailure = 1;
@@ -111,6 +133,179 @@ catch ME
     if ~isempty(log)
         log.warn("runTRSTracking failed: " + string(ME.message));
     end
+end
+end
+
+function [strictCfg, tx, rx, replay, timing, det, freq, ch, tracking, score] = localRunStrictRuntimeTRSEvidence(cfg, snr_dB)
+runId = string(sixgr.util.structGet(cfg, "run.id", ...
+    sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
+scenarioName = string(sixgr.util.structGet(cfg, "scenario.name", ...
+    sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
+strictCfg = sixgr.phy.trs.buildTRSConfigFromScenario(cfg, ...
+    "RunId", runId, "ScenarioName", scenarioName);
+if isfield(strictCfg, "StrictValidation") && ...
+        isfield(strictCfg.StrictValidation, "StrictValid") && ...
+        ~logical(strictCfg.StrictValidation.StrictValid)
+    reason = string(sixgr.util.structGet(strictCfg.StrictValidation, "StrictUnsupportedReason", ...
+        "strict_trs_config_invalid"));
+    error("sixgr:link:TRSStrictConfigInvalid", ...
+        "Strict TRS runtime config is invalid: %s", char(reason));
+end
+
+tx = sixgr.phy.trs.generateTRSWaveform(strictCfg);
+[rxWave, replay] = localApplyTrackingChannelAndNoise(tx.Waveform, cfg, ...
+    double(tx.SampleRateHz), snr_dB, double(strictCfg.NumCSIRSPorts));
+rx = struct();
+rx.Waveform = rxWave;
+rx.NoiseOnlyWaveform = [];
+rx.NoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
+rx.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+rx.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", 0));
+rx.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", 0));
+rx.FaultMode = "normal";
+rx.SampleRateHz = double(tx.SampleRateHz);
+rx.GridSlots = tx.GridSlots;
+rx.TruthStatus = "real_lls_evidence";
+
+timing = sixgr.phy.trs.estimateTRSTiming(rx, strictCfg, tx);
+det = sixgr.phy.trs.detectTRSResources(rx, strictCfg, tx, "Timing", timing);
+timing = localRejectTimingIfDetectionFailed(timing, det);
+freq = sixgr.phy.trs.estimateTRSFrequencyOffset(det, strictCfg, tx, rx);
+ch = sixgr.phy.trs.estimateTRSChannel(rx, strictCfg, tx, det);
+tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg);
+score = sixgr.phy.trs.scoreTRSDetection(strictCfg, rx, det, timing, freq, ch, tracking, ...
+    "TrialId", 1, "TrialType", "runtime_coupled_trs", "NegativeExpected", false);
+end
+
+function timing = localRejectTimingIfDetectionFailed(timing, det)
+if logical(sixgr.util.structGet(det, "DetectionSuccess", false))
+    return;
+end
+timing.EstimateAvailable = false;
+if istable(timing.Table) && ismember("TRSTimingEstimateAvailable", string(timing.Table.Properties.VariableNames))
+    timing.Table.TRSTimingEstimateAvailable(:) = false;
+    timing.Table.Status(:) = repmat("timing_estimate_rejected_no_valid_trs_detection", height(timing.Table), 1);
+end
+end
+
+function tf = localRuntimeTRSEvidenceComplete(trial, cfg)
+proxyClean = ~logical(trial.ProxyUsed) && ~logical(trial.Skipped) && ~logical(trial.ToolboxMissing) && ...
+    strlength(strtrim(string(trial.UsedOracleFields))) == 0;
+detectionUsable = logical(trial.DetectionAttempted) && logical(trial.DetectionSuccess) && ...
+    isfinite(double(trial.DetectionMetric)) && ...
+    double(trial.ResourceCoverageRatio) >= double(cfg.MinCoverageRatio);
+timingUsable = localTimingEstimateUsable(trial, cfg);
+frequencyUsable = localFrequencyEstimateUsable(trial, cfg);
+channelUsable = logical(trial.ChannelEstimationAttempted) && logical(trial.TRSChannelEstimateAvailable) && ...
+    isfinite(double(trial.NMSE_dB)) && double(trial.NMSE_dB) <= double(cfg.ChannelNMSEThresholddB);
+tf = proxyClean && detectionUsable && timingUsable && frequencyUsable && channelUsable;
+end
+
+function tf = localTimingEstimateUsable(trial, cfg)
+tf = false;
+if ~(logical(trial.TimingTrackingAttempted) && logical(trial.TRSTimingEstimateAvailable))
+    return;
+end
+est = double(trial.EstimatedTimingOffset_samples);
+if ~isfinite(est)
+    return;
+end
+maxSamples = localMaxRuntimeTimingCorrectionSamples(cfg);
+tf = abs(est) <= maxSamples;
+end
+
+function tf = localFrequencyEstimateUsable(trial, cfg)
+tf = false;
+if ~(logical(trial.FrequencyTrackingAttempted) && logical(trial.TRSCFOEstimateAvailable))
+    return;
+end
+est = double(trial.EstimatedCFO_Hz);
+if ~isfinite(est)
+    return;
+end
+maxHz = localMaxRuntimeFrequencyCorrectionHz(cfg);
+tf = abs(est) <= maxHz;
+end
+
+function maxSamples = localMaxRuntimeTimingCorrectionSamples(cfg)
+maxSamples = double(sixgr.util.structGet(cfg, "MaxRuntimeTimingCorrectionSamples", NaN));
+if isfinite(maxSamples) && maxSamples >= 0
+    return;
+end
+maxSamples = NaN;
+try
+    info = nrOFDMInfo(cfg.ToolboxCarrier);
+    cp = double(sixgr.util.structGet(info, "CyclicPrefixLengths", []));
+    cp = cp(isfinite(cp) & cp >= 0);
+    if ~isempty(cp)
+        maxSamples = max(cp);
+    end
+catch
+end
+if ~(isfinite(maxSamples) && maxSamples >= 0)
+    maxSamples = inf;
+end
+end
+
+function maxHz = localMaxRuntimeFrequencyCorrectionHz(cfg)
+scsHz = max(1, double(cfg.SubcarrierSpacingKHz) * 1e3);
+baseCfg = sixgr.util.structGet(cfg, "BaseConfig", struct());
+configuredCFOHz = abs(double(sixgr.util.structGet(baseCfg, "phy.impairments.cfoHz", ...
+    sixgr.util.structGet(baseCfg, "rf.cfoHz", 0))));
+configuredDopplerHz = abs(double(sixgr.util.structGet(baseCfg, "channel.doppler_Hz", ...
+    sixgr.util.structGet(baseCfg, "channel.dopplerHz", ...
+    sixgr.util.structGet(baseCfg, "channel.fading.maxDoppler_Hz", 0)))));
+configuredSpanHz = configuredCFOHz + configuredDopplerHz + double(cfg.FrequencyToleranceHz);
+maxHz = max([double(cfg.FrequencyToleranceHz), configuredSpanHz, scsHz / 2]);
+end
+
+function phaseDeg = localMeanReferencePhaseDeg(det)
+phaseDeg = NaN;
+T = sixgr.util.structGet(det, "Table", table());
+if ~(istable(T) && height(T) > 0 && ismember("ReferencePhase_rad", string(T.Properties.VariableNames)))
+    return;
+end
+phaseRad = double(T.ReferencePhase_rad);
+phaseRad = phaseRad(isfinite(phaseRad));
+if isempty(phaseRad)
+    return;
+end
+phaseDeg = rad2deg(angle(mean(exp(1j * phaseRad), "omitnan")));
+end
+
+function nre = localTRSNRE(tx)
+nre = NaN;
+if ~(isstruct(tx) && isfield(tx, "GridSlots"))
+    return;
+end
+vals = arrayfun(@(s) double(s.NRE), tx.GridSlots);
+vals = vals(isfinite(vals));
+if ~isempty(vals)
+    nre = sum(vals);
+end
+end
+
+function dopplerHz = localResolveRuntimeDopplerEstimate(commonFrequencyHz, injectedCFOHz)
+dopplerHz = NaN;
+if ~isfinite(double(commonFrequencyHz))
+    return;
+end
+if isfinite(double(injectedCFOHz))
+    dopplerHz = double(commonFrequencyHz) - double(injectedCFOHz);
+else
+    dopplerHz = double(commonFrequencyHz);
+end
+end
+
+function value = localFirstTableNumber(T, name, defaultValue)
+value = double(defaultValue);
+if ~(istable(T) && height(T) > 0 && ismember(string(name), string(T.Properties.VariableNames)))
+    return;
+end
+raw = double(T.(char(name)));
+raw = raw(isfinite(raw));
+if ~isempty(raw)
+    value = raw(1);
 end
 end
 

@@ -26,11 +26,14 @@ try
     result.SampleRateHz = sampleRate;
     result.DCIRNTI = double(p.Results.ReceiverRNTI);
     [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWaveform, cfg, "SampleRate_Hz", sampleRate);
-    [pbch, ~] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
+    [pbch, pbchInfo] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
     result.NCellID = double(sync.NCellID);
     result.TimingOffset = double(sixgr.util.structGet(sync, "TimingOffset", NaN));
     result.FrequencyOffsetHz = double(sixgr.util.structGet(sync, "FreqOffset_Hz", NaN));
     result.SSBIndex = double(sixgr.util.structGet(pbch, "SSBIndex", NaN));
+    result.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
+    result.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
+    result.PBCHNoiseVar = double(sixgr.util.structGet(pbch, "NoiseVar", NaN));
     result.BCHCrcPass = logical(pbch.Ok) && double(pbch.ErrFlag) == 0;
     result.MIBDecoded = result.BCHCrcPass;
     result.PDCCHConfigSIB1 = localPDCCHConfigSIB1(cfg);
@@ -136,6 +139,7 @@ function result = localEmptyResult()
 result = struct( ...
     "StrictOk", false, "Status", "", "Detail", "", "NCellID", NaN, ...
     "TimingOffset", NaN, "FrequencyOffsetHz", NaN, "SSBIndex", NaN, ...
+    "SSBReceivedPower_dB", NaN, "PBCHDMRSMetric", NaN, "PBCHNoiseVar", NaN, ...
     "BCHCrcPass", false, "MIBDecoded", false, "PDCCHConfigSIB1", NaN, ...
     "CORESET0Present", false, "CORESET0Pattern", "", "CORESET0RBStart", NaN, ...
     "CORESET0NumRB", NaN, "CORESET0Duration", NaN, "SearchSpace0ID", NaN, ...
@@ -150,6 +154,22 @@ result = struct( ...
     "UsedOracleFields", strings(0, 1), "ProxyUsed", false, "Skipped", false, ...
     "ToolboxMissing", false, "Errors", "", "FailureReason", "", ...
     "CandidateTable", table(), "SampleRateHz", NaN, "SIB1RxTree", struct());
+end
+
+function value = localGridMeanPowerDb(grid)
+value = NaN;
+if isempty(grid)
+    return;
+end
+samples = grid(:);
+samples = samples(isfinite(real(samples)) & isfinite(imag(samples)));
+if isempty(samples)
+    return;
+end
+powerLin = mean(abs(samples).^2, "omitnan");
+if isfinite(powerLin) && powerLin > 0
+    value = 10 * log10(powerLin);
+end
 end
 
 function cfg = localNormalizeReceiverCfg(cfg, rnti)

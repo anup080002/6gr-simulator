@@ -90,6 +90,133 @@ def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantic
     assert "plot_source_forbidden_truth_status" not in codes
 
 
+def test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "reports" / "image"
+    csv_dir = run / "reports" / "csv"
+    image_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+    (image_dir / "papr_ccdf.png").write_bytes(PNG_BYTES)
+
+    write_csv(
+        csv_dir / "plot_manifest.csv",
+        [
+            "PlotId",
+            "ImagePath",
+            "SourceCSV",
+            "XVariable",
+            "YVariables",
+            "PlotType",
+            "PlotRenderStatus",
+            "VisualValidity",
+            "IsUnavailableCard",
+        ],
+        [
+            {
+                "PlotId": "papr_ccdf",
+                "ImagePath": "reports/image/papr_ccdf.png",
+                "SourceCSV": "reports/csv/ul_pusch_trials.csv",
+                "XVariable": "PAPR_dB",
+                "YVariables": "PAPR_dB",
+                "PlotType": "cdf",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+        ],
+    )
+    write_csv(
+        csv_dir / "ul_pusch_trials.csv",
+        ["PAPR_dB", "PAPRValueStatus", "TruthStatus", "PostEqSINRValueStatus", "Notes"],
+        [
+            {
+                "PAPR_dB": 7.5,
+                "PAPRValueStatus": "measured",
+                "TruthStatus": "strict_receiver_evidence_failed",
+                "PostEqSINRValueStatus": "unavailable",
+                "Notes": "PUSCH decode unavailable: posteq_sinr_unavailable",
+            },
+            {
+                "PAPR_dB": 8.1,
+                "PAPRValueStatus": "measured",
+                "TruthStatus": "real_lls_evidence",
+                "PostEqSINRValueStatus": "available",
+                "Notes": "",
+            },
+        ],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    codes = read_audit_codes(csv_dir / "visual_artifact_audit.csv")
+    assert "plot_source_forbidden_truth_status" not in codes
+
+
+def test_visual_artifact_audit_rejects_unavailable_plotted_metric_status(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "reports" / "image"
+    csv_dir = run / "reports" / "csv"
+    image_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+    (image_dir / "posteq_sinr.png").write_bytes(PNG_BYTES)
+
+    write_csv(
+        csv_dir / "plot_manifest.csv",
+        [
+            "PlotId",
+            "ImagePath",
+            "SourceCSV",
+            "XVariable",
+            "YVariables",
+            "PlotType",
+            "PlotRenderStatus",
+            "VisualValidity",
+            "IsUnavailableCard",
+        ],
+        [
+            {
+                "PlotId": "posteq_sinr",
+                "ImagePath": "reports/image/posteq_sinr.png",
+                "SourceCSV": "reports/csv/dl_pdsch_trials.csv",
+                "XVariable": "Slot",
+                "YVariables": "PostEqSINR_dB",
+                "PlotType": "line",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+        ],
+    )
+    write_csv(
+        csv_dir / "dl_pdsch_trials.csv",
+        ["Slot", "PostEqSINR_dB", "PostEqSINRValueStatus"],
+        [
+            {"Slot": 1, "PostEqSINR_dB": 5.0, "PostEqSINRValueStatus": "unavailable"},
+            {"Slot": 2, "PostEqSINR_dB": 6.0, "PostEqSINRValueStatus": "unavailable"},
+            {"Slot": 3, "PostEqSINR_dB": 7.0, "PostEqSINRValueStatus": "unavailable"},
+        ],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode != 0
+    codes = read_audit_codes(csv_dir / "visual_artifact_audit.csv")
+    assert "plot_source_forbidden_truth_status" in codes
+
+
 def test_visual_artifact_audit_rejects_negative_fixture(tmp_path: Path) -> None:
     run = tmp_path / "run"
     image_dir = run / "reports" / "image"

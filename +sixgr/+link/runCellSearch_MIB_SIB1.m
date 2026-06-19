@@ -42,6 +42,9 @@ out.Sync = struct();
 out.PBCH = struct();
 out.SSBIndex = NaN;
 out.SSBBeamIndex = NaN;
+out.SSBReceivedPower_dB = NaN;
+out.PBCHDMRSMetric = NaN;
+out.PBCHNoiseVar = NaN;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.ssb.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -86,12 +89,18 @@ if wantSIB1
         out.SIB1 = rec;
         out.SSBIndex = double(rec.SSBIndex);
         out.SSBBeamIndex = out.SSBIndex + 1;
+        out.SSBReceivedPower_dB = double(sixgr.util.structGet(rec, "SSBReceivedPower_dB", NaN));
+        out.PBCHDMRSMetric = double(sixgr.util.structGet(rec, "PBCHDMRSMetric", NaN));
+        out.PBCHNoiseVar = double(sixgr.util.structGet(rec, "PBCHNoiseVar", NaN));
         out.FreqOffsetEstimate_Hz = double(rec.FrequencyOffsetHz);
         out.TrueCFO_Hz = 0;
         out.CFOError_Hz = double(rec.FrequencyOffsetHz);
         out.TimingOffset_samples = double(rec.TimingOffset);
-        out.TrueTimingOffset_samples = 0;
-        out.TimingError_samples = double(rec.TimingOffset);
+        out.RawTimingEstimate_samples = double(rec.TimingOffset);
+        out.EstimatedTimingOffset_PreCorrection_samples = double(rec.TimingOffset);
+        out.TrueTimingOffset_samples = NaN;
+        out.TimingError_samples = NaN;
+        out.TimingEstimateStatus = "estimated_ssb_position_no_injected_timing_reference";
         out.Notes = "Strict SIB1 waveform path: " + string(rec.Status) + ...
             "; DCI=" + string(rec.DCIPayloadHex) + ...
             "; SIB1TreeEqual=" + string(logical(rec.SIB1TreeEqual));
@@ -122,7 +131,7 @@ try
     estimatedCFO_PreCorrection_Hz = localEstimateWaveformCFO(txWave, rxWaveRaw, sampleRateHz, injectedTimingOffset);
     rxWave = localApplyCFOCorrection(rxWaveRaw, sampleRateHz, estimatedCFO_PreCorrection_Hz);
     [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWave, cfg, "SampleRate_Hz", sampleRateHz);
-    [pb, ~] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
+    [pb, pbchInfo] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = NaN;
     out.AirInterfaceObservation_ms = double(numSF);
@@ -133,6 +142,9 @@ try
     out.PBCH = pb;
     out.SSBIndex = double(sixgr.util.structGet(pb, "SSBIndex", sixgr.util.structGet(txInfo, "SSB.SSBIndex", NaN)));
     out.SSBBeamIndex = out.SSBIndex + 1;
+    out.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
+    out.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
+    out.PBCHNoiseVar = double(sixgr.util.structGet(pb, "NoiseVar", NaN));
 
     out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0);
     out.BLER = double(~out.Ok);
@@ -181,6 +193,22 @@ catch ME
     if ~isempty(log)
         log.warn("runCellSearch_MIB_SIB1 failed: " + string(ME.message));
     end
+end
+end
+
+function value = localGridMeanPowerDb(grid)
+value = NaN;
+if isempty(grid)
+    return;
+end
+samples = grid(:);
+samples = samples(isfinite(real(samples)) & isfinite(imag(samples)));
+if isempty(samples)
+    return;
+end
+powerLin = mean(abs(samples).^2, "omitnan");
+if isfinite(powerLin) && powerLin > 0
+    value = 10 * log10(powerLin);
 end
 end
 

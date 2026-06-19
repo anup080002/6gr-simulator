@@ -140,12 +140,18 @@ function [decision, adaptationState] = localResolveMCSDecision(decision, adaptat
 previousMCS = double(decision.MCSIndex);
 previousCodeRate = double(decision.TargetCodeRate);
 previousModulation = char(string(decision.Modulation));
+[effectiveCQIAlpha, csiTrustWeight, csiAge_s, csiCoherence_s] = ...
+    localEffectiveCQISmoothingAlpha(adaptationState.CQISmoothingAlpha, cfg, metrics);
+decision.EffectiveCQISmoothingAlpha = double(effectiveCQIAlpha);
+decision.CSITemporalCorrelationWeight = double(csiTrustWeight);
+decision.CSIAgeSeconds = double(csiAge_s);
+decision.CSICoherenceTimeSeconds = double(csiCoherence_s);
 
 if adaptationDomain ~= "legacy_mcs" && isfinite(instantCQI)
     if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.SmoothedCQI)
         smoothedCQI = double(instantCQI);
     elseif logical(adaptationState.InnerLoopEnabled)
-        alpha = min(max(double(adaptationState.CQISmoothingAlpha), 0), 1);
+        alpha = double(effectiveCQIAlpha);
         smoothedCQI = alpha * double(instantCQI) + (1 - alpha) * double(adaptationState.SmoothedCQI);
     else
         smoothedCQI = double(instantCQI);
@@ -169,7 +175,7 @@ if isfinite(instantMCS)
     if initializeCQIMCS
         cqiBasedMCS = double(instantMCS);
     elseif logical(adaptationState.InnerLoopEnabled)
-        cqiBasedMCS = localSmoothCQIBasedMCS(adaptationState.CQIBasedMCS, instantMCS, adaptationState.CQISmoothingAlpha);
+        cqiBasedMCS = localSmoothCQIBasedMCS(adaptationState.CQIBasedMCS, instantMCS, effectiveCQIAlpha);
     else
         cqiBasedMCS = double(instantMCS);
     end
@@ -504,6 +510,67 @@ oldWeightPct = 100 - newWeightPct;
 % floor to the integer MCS used by the grant.
 cqiBasedMCS = ceil((newWeightPct * double(instantMCS) * 100 + ...
     oldWeightPct * double(previousCQIBasedMCS) * 100) / 100) / 100;
+end
+
+function [effectiveAlpha, trustWeight, age_s, coherence_s] = localEffectiveCQISmoothingAlpha(baseAlpha, cfg, metrics)
+baseAlpha = min(max(double(baseAlpha), 0), 1);
+effectiveAlpha = baseAlpha;
+trustWeight = 1;
+age_s = double(sixgr.util.structGet(metrics, "CSIAgeSeconds", NaN));
+if ~(isfinite(age_s) && age_s >= 0)
+    ageSlots = double(sixgr.util.structGet(metrics, "CSIAgeSlots", NaN));
+    slotDuration_s = localSlotDurationSeconds(cfg);
+    if isfinite(ageSlots) && ageSlots >= 0 && isfinite(slotDuration_s) && slotDuration_s > 0
+        age_s = double(ageSlots) * double(slotDuration_s);
+    end
+end
+dopplerHz = localFirstFiniteConfigValue(cfg, [ ...
+    "channel.doppler_Hz"
+    "channel.dopplerHz"
+    "channel.fading.maxDoppler_Hz"
+    "channels.doppler_hz"
+    "frequency.doppler_hz"
+    "phy.channel.doppler_Hz"], NaN);
+coherence_s = NaN;
+if ~(isfinite(age_s) && age_s > 0 && isfinite(dopplerHz) && dopplerHz > 0)
+    return;
+end
+coherence_s = 0.423 / max(double(dopplerHz), eps);
+% Clarke/Jakes temporal autocorrelation for isotropic Rayleigh fading.
+% A delayed CSI report should have less authority when Doppler decorrelates
+% the channel between measurement and scheduling.
+try
+    trustWeight = abs(besselj(0, 2 * pi * double(dopplerHz) * double(age_s)));
+catch
+    trustWeight = min(1, double(coherence_s) / max(double(age_s), eps));
+end
+if ~(isfinite(trustWeight) && trustWeight >= 0)
+    trustWeight = 1;
+end
+trustWeight = min(1, max(0, double(trustWeight)));
+effectiveAlpha = baseAlpha * trustWeight;
+end
+
+function slotDuration_s = localSlotDurationSeconds(cfg)
+slotDuration_s = localFirstFiniteConfigValue(cfg, [ ...
+    "phy.numerology.slotDuration_s"
+    "phy.numerology.slotDurationSeconds"
+    "frame_timing.slot_duration_s"], NaN);
+if isfinite(slotDuration_s) && slotDuration_s > 0
+    return;
+end
+slotDuration_ms = localFirstFiniteConfigValue(cfg, [ ...
+    "phy.numerology.slotDuration_ms"
+    "frame_timing.slot_duration_ms"], NaN);
+if isfinite(slotDuration_ms) && slotDuration_ms > 0
+    slotDuration_s = double(slotDuration_ms) * 1e-3;
+    return;
+end
+scsKHz = localFirstFiniteConfigValue(cfg, [ ...
+    "phy.carrier.SubcarrierSpacing"
+    "phy.numerology.scs_kHz"], 30);
+mu = round(log2(max(double(scsKHz), 15) / 15));
+slotDuration_s = 1e-3 / max(1, 2 ^ max(0, mu));
 end
 
 function threshold = localMCSJumpThreshold(cfg)

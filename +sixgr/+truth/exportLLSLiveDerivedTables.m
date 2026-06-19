@@ -43,7 +43,7 @@ artifacts.ChannelImpulseResponsePath = fullfile(layout.ReportCSVDir, "channel_im
 
 channelT = localBuildChannelStatsTable(dlT, ulT, srsT, trsT);
 rankT = localBuildRankStatsTable(dlT, ulT);
-beamT = localBuildBeamStatsTable(dlT, ulT);
+beamT = localBuildBeamStatsTable(dlT, ulT, runFolder);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(dlT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
@@ -141,14 +141,400 @@ if isempty(T)
 end
 end
 
-function T = localBuildBeamStatsTable(dlT, ulT)
+function T = localBuildBeamStatsTable(dlT, ulT, runFolder)
+if nargin < 3
+    runFolder = "";
+end
+beamMetricFields = ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount", ...
+    "SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"];
+rawBeamT = localVertcat({ ...
+    localAggregateByDirectionAndSNR(dlT, "DL", beamMetricFields, "dl_pdsch_trials"), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", beamMetricFields, "ul_pusch_trials")});
+if isempty(rawBeamT)
+    [persistedDL, persistedUL] = localReadPersistedDirectionalBeamTrials(runFolder);
+    rawBeamT = localVertcat({ ...
+        localAggregateByDirectionAndSNR(persistedDL, "DL", beamMetricFields, "air_interface/csv/dl_pdsch_trials.csv"), ...
+        localAggregateByDirectionAndSNR(persistedUL, "UL", beamMetricFields, "air_interface/csv/ul_pusch_trials.csv")});
+end
+
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount","SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"], "dl_pdsch_trials"), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount","SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"], "ul_pusch_trials")};
+    rawBeamT, ...
+    localBuildSSBBeamSweepStats(localReadSSBBeamSweepTable(runFolder)), ...
+    localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "probe_beam_mimo.csv"), "beamforming/csv/probe_beam_mimo.csv"), ...
+    localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "beam_precoder_table.csv"), "beamforming/csv/beam_precoder_table.csv"), ...
+    localBuildBeamStateTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_state_trace.csv")), ...
+    localBuildBeamEventTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_event_trace.csv"))};
 T = localVertcat(parts);
 if isempty(T)
     T = localEmptySummaryTable();
 end
+end
+
+function [dlT, ulT] = localReadPersistedDirectionalBeamTrials(runFolder)
+dlT = table();
+ulT = table();
+if strlength(strtrim(string(runFolder))) == 0
+    return;
+end
+layout = sixgr.report.resultLayout(runFolder);
+dlT = localReadOptionalDerivedTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
+ulT = localReadOptionalDerivedTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
+end
+
+function T = localReadSSBBeamSweepTable(runFolder)
+T = table();
+if strlength(strtrim(string(runFolder))) == 0
+    return;
+end
+layout = sixgr.report.resultLayout(runFolder);
+candidates = { ...
+    fullfile(layout.BeamformingCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
+    fullfile(layout.BeamformingCSVDir, "ssb_beam_sweep.csv"), ...
+    fullfile(layout.ControlCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "ssb_pbch_sib1_beam_sweep.csv")};
+T = localReadFirstDerivedTable(candidates);
+end
+
+function T = localReadBeamArtifactTable(runFolder, fileName)
+T = table();
+if strlength(strtrim(string(runFolder))) == 0
+    return;
+end
+layout = sixgr.report.resultLayout(runFolder);
+candidates = { ...
+    fullfile(layout.BeamformingCSVDir, char(fileName)), ...
+    fullfile(layout.ReportCSVDir, char(fileName)), ...
+    fullfile(layout.ControlCSVDir, char(fileName)), ...
+    fullfile(layout.AirInterfaceCSVDir, char(fileName))};
+T = localReadFirstDerivedTable(candidates);
+end
+
+function T = localReadFirstDerivedTable(candidates)
+T = table();
+for i = 1:numel(candidates)
+    Ti = localReadOptionalDerivedTable(candidates{i});
+    if istable(Ti) && ~isempty(Ti)
+        T = Ti;
+        return;
+    end
+end
+end
+
+function T = localReadOptionalDerivedTable(pathStr)
+T = table();
+pathStr = char(string(pathStr));
+if strlength(string(pathStr)) == 0 || exist(pathStr, "file") ~= 2
+    return;
+end
+try
+    T = readtable(pathStr, "VariableNamingRule", "preserve", "TextType", "string");
+catch
+    try
+        T = readtable(pathStr, "VariableNamingRule", "preserve");
+    catch
+        T = table();
+    end
+end
+if ~(istable(T) && ~isempty(T))
+    T = table();
+end
+end
+
+function T = localBuildSSBBeamSweepStats(ssbT)
+if ~(istable(ssbT) && ~isempty(ssbT))
+    T = localEmptySummaryTable();
+    return;
+end
+specs = [ ...
+    localBeamMetricSpec("P1SSBConfiguredBeamCount", ["ConfiguredSSBBeamCount","SSBLmax"]); ...
+    localBeamMetricSpec("P1PBCHDetectionRate", "DetectionSuccess"); ...
+    localBeamMetricSpec("P1PBCHCRCPassRate", "BCHCrcPass"); ...
+    localBeamMetricSpec("P1MIBDecodeRate", "MIBDecoded"); ...
+    localBeamMetricSpec("P1SIB1StrictDecodeRate", "SIB1StrictOk"); ...
+    localBeamMetricSpec("P1SSBReceivedPower_dB", "SSBReceivedPower_dB"); ...
+    localBeamMetricSpec("P1PBCHDMRSMetric", "PBCHDMRSMetric"); ...
+    localBeamMetricSpec("P1PBCHNoiseVar", "PBCHNoiseVar"); ...
+    localBeamMetricSpec("P1TimingOffset_samples", "TimingOffset_samples"); ...
+    localBeamMetricSpec("P1AcquisitionTime_ms", "AcquisitionTime_ms"); ...
+    localBeamMetricSpec("P1ComputeLatency_ms", "ComputeLatency_ms")];
+rowsT = localBuildBeamSummaryRows(ssbT, "SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", specs, ...
+    "measured_ssb_pbch_sib1_sweep");
+
+selectedT = localBuildSSBSelectedBeamRows(ssbT);
+T = localVertcat({rowsT, selectedT});
+if isempty(T)
+    T = localEmptySummaryTable();
+end
+end
+
+function T = localBuildSSBSelectedBeamRows(ssbT)
+T = localEmptySummaryTable();
+if ~(istable(ssbT) && ~isempty(ssbT))
+    return;
+end
+score = localBeamNumericColumn(ssbT, ["SSBReceivedPower_dB","PBCHDMRSMetric"]);
+beam = localBeamNumericColumn(ssbT, ["BeamIndex","SSBIndex"]);
+if ~any(isfinite(score)) || ~any(isfinite(beam))
+    return;
+end
+[snrBin, snrHasFinite] = localBeamSNRBins(ssbT);
+if snrHasFinite
+    groups = unique(snrBin(isfinite(snrBin)), "stable");
+else
+    groups = NaN;
+end
+rows = repmat(localSummaryRowTemplate(), 0, 1);
+for i = 1:numel(groups)
+    if snrHasFinite
+        mask = abs(snrBin - groups(i)) < 1e-9;
+        snrValue = double(groups(i));
+        qualityAxis = "SNR_dB";
+        qualityRole = "measured_ssb_pbch_sib1_sweep";
+        qualitySource = "SNR_dB";
+    else
+        mask = true(height(ssbT), 1);
+        snrValue = NaN;
+        qualityAxis = "runtime_beam_sample";
+        qualityRole = "measured_ssb_pbch_sib1_sweep";
+        qualitySource = "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv";
+    end
+    valid = mask & isfinite(score) & isfinite(beam);
+    if ~any(valid)
+        continue;
+    end
+    validIdx = find(valid);
+    [~, relIdx] = max(score(valid));
+    selectedIdx = validIdx(relIdx);
+    selectedBeam = beam(selectedIdx);
+    selectedScore = score(selectedIdx);
+    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", snrValue, ...
+        qualityAxis, qualityRole, qualitySource, "P1SelectedSSBBeamIndex", selectedBeam, selectedBeam, selectedBeam, 1); %#ok<AGROW>
+    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", snrValue, ...
+        qualityAxis, qualityRole, qualitySource, "P1SelectedSSBBeamScore", selectedScore, selectedScore, selectedScore, 1); %#ok<AGROW>
+    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", snrValue, ...
+        qualityAxis, qualityRole, qualitySource, "P1SSBSweptBeamCount", double(nnz(valid)), double(nnz(valid)), double(nnz(valid)), 1); %#ok<AGROW>
+end
+if ~isempty(rows)
+    T = struct2table(rows, "AsArray", true);
+end
+end
+
+function T = localBuildRuntimeBeamArtifactStats(sourceT, traceSource)
+if ~(istable(sourceT) && ~isempty(sourceT))
+    T = localEmptySummaryTable();
+    return;
+end
+specs = [ ...
+    localBeamMetricSpec("P2SelectedBeamIndex", ["SelectedBeamIndex","selected_beam_index"]); ...
+    localBeamMetricSpec("P2BestBeamIndex", ["BestBeamIndex","best_beam_index"]); ...
+    localBeamMetricSpec("P2BeamHitRate", ["BeamHit","beam_hit"]); ...
+    localBeamMetricSpec("P2TopKBeamHitRate", ["TopKBeamHit","top_k_beam_hit"]); ...
+    localBeamMetricSpec("P2BeamCandidateCount", ["BeamCandidateCount","beam_candidate_count"]); ...
+    localBeamMetricSpec("P2SelectedBeamGain_dB", ["SelectedBeamGain_dB","selected_beam_gain_db"]); ...
+    localBeamMetricSpec("P2BestBeamGain_dB", ["BestBeamGain_dB","best_beam_gain_db"]); ...
+    localBeamMetricSpec("P2BeamGainGap_dB", ["BeamGainGap_dB","beam_gain_gap_db"]); ...
+    localBeamMetricSpec("P2BeamformingAppliedRate", ["BeamformingApplied","beamforming_applied"]); ...
+    localBeamMetricSpec("P2PrecodingActiveRate", ["PrecodingActive","precoding_active"]); ...
+    localBeamMetricSpec("P2PrecodingNumLayers", ["PrecodingNumLayers","precoding_num_layers"]); ...
+    localBeamMetricSpec("P2PrecodingNumPorts", ["PrecodingNumPorts","precoding_num_ports"])];
+T = localBuildBeamSummaryRows(sourceT, "", string(traceSource), specs, "measured_runtime_beam_refinement");
+if isempty(T)
+    T = localEmptySummaryTable();
+end
+end
+
+function T = localBuildBeamStateTraceStats(stateT)
+if ~(istable(stateT) && ~isempty(stateT))
+    T = localEmptySummaryTable();
+    return;
+end
+specs = [ ...
+    localBeamMetricSpec("P2BeamDetectedRate", "BeamDetectedFlag"); ...
+    localBeamMetricSpec("P2MisalignmentRate", "MisalignmentFlag"); ...
+    localBeamMetricSpec("P2BeamFailureRate", "BeamFailureFlag"); ...
+    localBeamMetricSpec("P2PredictionSuccessRate", "PredictionSuccessFlag"); ...
+    localBeamMetricSpec("P2TrialsSinceLastSwitch", "TrialsSinceLastSwitch")];
+T = localBuildBeamSummaryRows(stateT, "", "beamforming/csv/beam_management_state_trace.csv", specs, ...
+    "measured_runtime_beam_state_trace");
+if isempty(T)
+    T = localEmptySummaryTable();
+end
+end
+
+function T = localBuildBeamEventTraceStats(eventT)
+if ~(istable(eventT) && ~isempty(eventT))
+    T = localEmptySummaryTable();
+    return;
+end
+specs = [ ...
+    localBeamMetricSpec("P2SwitchEventRate", "SwitchEventFlag"); ...
+    localBeamMetricSpec("P2FirstHitEventRate", "FirstHitEventFlag"); ...
+    localBeamMetricSpec("P2BeamDetectedEventRate", "BeamDetectedEventFlag"); ...
+    localBeamMetricSpec("P2MisalignmentEventRate", "MisalignmentEventFlag"); ...
+    localBeamMetricSpec("P2FailureEventRate", "FailureEventFlag"); ...
+    localBeamMetricSpec("P2SwitchLatencySlots", "SwitchLatencySlots"); ...
+    localBeamMetricSpec("P2SwitchLatency_s", "SwitchLatency_s"); ...
+    localBeamMetricSpec("P2TrialsToFirstHit", "TrialsToFirstHit")];
+T = localBuildBeamSummaryRows(eventT, "", "beamforming/csv/beam_management_event_trace.csv", specs, ...
+    "measured_runtime_beam_event_trace");
+if isempty(T)
+    T = localEmptySummaryTable();
+end
+end
+
+function spec = localBeamMetricSpec(metric, columns)
+spec = struct("Metric", string(metric), "Columns", string(columns(:)).');
+end
+
+function T = localBuildBeamSummaryRows(sourceT, defaultDirection, traceSource, specs, qualityRole)
+if ~(istable(sourceT) && ~isempty(sourceT))
+    T = localEmptySummaryTable();
+    return;
+end
+direction = localBeamTextColumn(sourceT, ["Direction","direction"], string(defaultDirection));
+if strlength(strtrim(string(defaultDirection))) == 0
+    emptyDir = strlength(strtrim(direction)) == 0;
+    direction(emptyDir) = "BEAM";
+end
+[snrBin, snrHasFinite] = localBeamSNRBins(sourceT);
+dirList = unique(direction, "stable");
+if isempty(dirList)
+    dirList = string(defaultDirection);
+end
+if snrHasFinite
+    snrList = unique(snrBin(isfinite(snrBin)), "stable");
+else
+    snrList = NaN;
+end
+
+rows = repmat(localSummaryRowTemplate(), 0, 1);
+for d = 1:numel(dirList)
+    dirMask = direction == dirList(d);
+    for s = 1:numel(snrList)
+        if snrHasFinite
+            snrMask = abs(snrBin - snrList(s)) < 1e-9;
+            snrValue = double(snrList(s));
+            qualityAxis = "SNR_dB";
+            qualitySource = "SNR_dB";
+        else
+            snrMask = true(height(sourceT), 1);
+            snrValue = NaN;
+            qualityAxis = "runtime_beam_sample";
+            qualitySource = string(traceSource);
+        end
+        mask = dirMask & snrMask;
+        if ~any(mask)
+            continue;
+        end
+        for k = 1:numel(specs)
+            vals = localBeamNumericColumn(sourceT, specs(k).Columns);
+            vals = vals(mask);
+            vals = vals(isfinite(vals));
+            if isempty(vals)
+                continue;
+            end
+            rows(end+1, 1) = localMakeSummaryRow(dirList(d), traceSource, snrValue, qualityAxis, ...
+                qualityRole, qualitySource, specs(k).Metric, mean(vals, "omitnan"), ...
+                localPercentile(vals, 5), localPercentile(vals, 95), double(numel(vals))); %#ok<AGROW>
+        end
+    end
+end
+if isempty(rows)
+    T = localEmptySummaryTable();
+else
+    T = struct2table(rows, "AsArray", true);
+end
+end
+
+function [snrBin, hasFinite] = localBeamSNRBins(T)
+snr = localBeamNumericColumn(T, ["SNR_dB","snr_db"]);
+hasFinite = any(isfinite(snr));
+snrBin = nan(height(T), 1);
+if hasFinite
+    finiteMask = isfinite(snr);
+    snrBin(finiteMask) = round(snr(finiteMask));
+end
+end
+
+function values = localBeamNumericColumn(T, names)
+values = nan(height(T), 1);
+names = string(names(:)).';
+firstFound = nan(height(T), 1);
+foundAny = false;
+for i = 1:numel(names)
+    name = localFindTableVariable(T, names(i));
+    if strlength(name) == 0
+        continue;
+    end
+    raw = T.(char(name));
+    if isnumeric(raw) || islogical(raw)
+        candidate = double(raw);
+    else
+        token = lower(strtrim(string(raw)));
+        candidate = str2double(token);
+        candidate(token == "true" | token == "yes" | token == "pass" | token == "ok") = 1;
+        candidate(token == "false" | token == "no" | token == "fail") = 0;
+    end
+    if ~foundAny
+        firstFound = candidate;
+        foundAny = true;
+    end
+    if any(isfinite(candidate))
+        values = candidate;
+        return;
+    end
+end
+if foundAny
+    values = firstFound;
+end
+end
+
+function values = localBeamTextColumn(T, names, defaultValue)
+values = repmat(string(defaultValue), height(T), 1);
+name = localFindTableVariable(T, names);
+if strlength(name) == 0
+    return;
+end
+values = string(T.(char(name)));
+end
+
+function name = localFindTableVariable(T, candidates)
+name = "";
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+vars = string(T.Properties.VariableNames);
+normVars = lower(regexprep(vars, "[^A-Za-z0-9]", ""));
+candidates = string(candidates(:)).';
+for i = 1:numel(candidates)
+    normCandidate = lower(regexprep(candidates(i), "[^A-Za-z0-9]", ""));
+    idx = find(normVars == normCandidate, 1, "first");
+    if ~isempty(idx)
+        name = vars(idx);
+        return;
+    end
+end
+end
+
+function row = localSummaryRowTemplate()
+row = struct("Direction","", "TraceSource","", "SNR_dB", NaN, "QualityAxis", "", ...
+    "QualityValueRole", "", "QualitySource", "", "Metric", "", "MeanValue", NaN, ...
+    "P05Value", NaN, "P95Value", NaN, "SampleCount", NaN);
+end
+
+function row = localMakeSummaryRow(direction, traceSource, snrValue, qualityAxis, qualityRole, qualitySource, metric, meanValue, p05Value, p95Value, sampleCount)
+row = localSummaryRowTemplate();
+row.Direction = string(direction);
+row.TraceSource = string(traceSource);
+row.SNR_dB = double(snrValue);
+row.QualityAxis = string(qualityAxis);
+row.QualityValueRole = string(qualityRole);
+row.QualitySource = string(qualitySource);
+row.Metric = string(metric);
+row.MeanValue = double(meanValue);
+row.P05Value = double(p05Value);
+row.P95Value = double(p95Value);
+row.SampleCount = double(sampleCount);
 end
 
 function T = localBuildCSIStatsTable(dlT, ulT)

@@ -44,6 +44,22 @@ FORBIDDEN_TRUTH_TOKENS = (
     "unavailable",
     "placeholder",
 )
+STRONG_FORBIDDEN_TRUTH_TOKENS = tuple(
+    token for token in FORBIDDEN_TRUTH_TOKENS if token != "unavailable"
+)
+PLOT_SCOPED_STATUS_SUFFIXES = (
+    "status",
+    "valuestatus",
+    "truthstatus",
+    "availability",
+    "available",
+    "source",
+    "valuesource",
+    "role",
+    "valuerole",
+    "nareason",
+    "reason",
+)
 CURVE_COLUMNS = (
     "CurveConstruction",
     "curve_construction",
@@ -123,6 +139,7 @@ class SourceStats:
     units: list[str] = field(default_factory=list)
     curve_construction: list[str] = field(default_factory=list)
     truth_tokens: list[str] = field(default_factory=list)
+    plot_truth_tokens: list[str] = field(default_factory=list)
     source_mapping_status: list[str] = field(default_factory=list)
     chart_modes: list[str] = field(default_factory=list)
     chart_names: list[str] = field(default_factory=list)
@@ -394,6 +411,7 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
     unit_values: set[str] = set()
     curve_values: set[str] = set()
     truth_values: set[str] = set()
+    plot_truth_values: set[str] = set()
     mapping_values: set[str] = set()
     chart_modes: set[str] = set()
     chart_names: set[str] = set()
@@ -404,6 +422,7 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             fieldnames = list(reader.fieldnames or [])
+            plot_truth_columns = plot_scoped_truth_columns(fieldnames, split_plot_columns(x_col, y_col))
             saw_x_column = saw_x_column or x_col in fieldnames
             saw_y_column = saw_y_column or y_col in fieldnames
             for row in reader:
@@ -420,6 +439,7 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
                 collect_values(row, UNIT_COLUMNS, unit_values)
                 collect_values(row, CURVE_COLUMNS, curve_values)
                 collect_values(row, TRUTH_COLUMNS, truth_values)
+                collect_values(row, plot_truth_columns, plot_truth_values)
                 collect_values(row, SOURCE_MAPPING_COLUMNS, mapping_values)
                 collect_values(row, CHART_MODE_COLUMNS, chart_modes)
                 collect_values(row, ("chart_name", "ChartName"), chart_names)
@@ -433,6 +453,7 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
     stats.mixed_units = len(unit_values) > 1
     stats.curve_construction = sorted(curve_values)
     stats.truth_tokens = sorted(truth_values)
+    stats.plot_truth_tokens = sorted(plot_truth_values)
     stats.source_mapping_status = sorted(mapping_values)
     stats.chart_modes = sorted(chart_modes)
     stats.chart_names = sorted(chart_names)
@@ -581,6 +602,61 @@ def collect_values(row: dict[str, str], columns: Iterable[str], target: set[str]
             target.add(value)
 
 
+def split_plot_columns(x_col: str, y_col: str) -> list[str]:
+    values: list[str] = []
+    for raw in (x_col, y_col):
+        text = str(raw or "")
+        for part in text.replace(";", "|").replace(",", "|").split("|"):
+            part = part.strip()
+            if part:
+                values.append(part)
+    return values
+
+
+def plot_scoped_truth_columns(fieldnames: list[str], plot_columns: list[str]) -> list[str]:
+    metric_bases = {metric_base_name(name) for name in plot_columns}
+    metric_bases.discard("")
+    if not metric_bases:
+        return []
+    scoped: list[str] = []
+    for fieldname in fieldnames:
+        normalized = normalize_field_name(fieldname)
+        for base in metric_bases:
+            if normalized.startswith(base) and any(normalized.endswith(suffix) for suffix in PLOT_SCOPED_STATUS_SUFFIXES):
+                scoped.append(fieldname)
+                break
+    return scoped
+
+
+def metric_base_name(name: str) -> str:
+    normalized = normalize_field_name(name)
+    for suffix in (
+        "dbm",
+        "db",
+        "khz",
+        "mhz",
+        "ghz",
+        "hz",
+        "ms",
+        "us",
+        "ns",
+        "s",
+        "bits",
+        "bytes",
+        "mbps",
+        "gbps",
+        "samples",
+        "slots",
+    ):
+        if normalized.endswith(suffix) and len(normalized) > len(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
+def normalize_field_name(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
 def get_field(row: dict[str, str], *names: str) -> str:
     lower_map = {k.lower(): k for k in row}
     for name in names:
@@ -697,9 +773,12 @@ def is_mislabeled_snr_sweep(plot_id: str, image_path: str, stats: SourceStats) -
 
 def source_uses_forbidden_truth(stats: SourceStats) -> bool:
     tokens = " ".join(stats.truth_tokens).lower()
-    if not tokens:
-        return False
-    return any(token in tokens for token in FORBIDDEN_TRUTH_TOKENS)
+    plot_tokens = " ".join(stats.plot_truth_tokens).lower()
+    if any(token in tokens for token in STRONG_FORBIDDEN_TRUTH_TOKENS):
+        return True
+    if any(token in plot_tokens for token in FORBIDDEN_TRUTH_TOKENS):
+        return True
+    return False
 
 
 def md_escape(value: object) -> str:

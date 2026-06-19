@@ -656,6 +656,40 @@ random_access:
   restricted_set: UnrestrictedSet
   frequency_start: 0
   preamble_index: 0
+  binding_source: scenario_config_pending_sib1
+  ra_response_window_slots: 20
+  ra_contention_resolution_timer_slots: 128
+  preamble_trans_max: 10
+  power_ramping_step_db: 2
+  preamble_received_target_power_dbm: -96
+  temp_crnti: 4660
+  final_crnti: 4660
+  msg2_slot: 1
+  msg3_slot: 2
+  msg4_slot: 3
+  dci_payload_bits: 32
+  msg2_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    modulation: QPSK
+    target_code_rate: 0.1171875
+  msg3_pusch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 0
+    num_symbols: 14
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+  msg4_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    modulation: QPSK
+    target_code_rate: 0.1171875
   target_false_alarm_probability: 0.001
   cell_radius_m: 500
 

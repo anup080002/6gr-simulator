@@ -931,12 +931,12 @@ for direction = ["DL","UL"]
     if isempty(T)
         continue;
     end
-    pass = localNumericColumn(T, "CRCPass");
-    if isempty(pass)
+    if ~ismember("CRCPass", string(T.Properties.VariableNames))
         continue;
     end
+    pass = localOptionalLogicalColumn(T, "CRCPass", false(height(T), 1));
     evidence = localOptionalLogicalColumn(T, localTernary(direction == "DL", "DLSCHDecodeAvailable", "ULSCHDecodeAvailable"), false(height(T), 1));
-    bad = logical(pass) & ~evidence;
+    bad = pass & ~evidence;
     if any(bad)
         rows(end+1, 1) = localInvariantRecord(ctx.RunId, "DEC-01", localBlockSubsystem(localTernary(direction == "DL", "PDSCH", "PUSCH")), ... %#ok<AGROW>
             "CRCPass_without_decoder_evidence", NaN, NaN, NaN, sum(double(bad)), 0, 0, 0, 0, false, "critical", ...
@@ -1838,9 +1838,12 @@ if ~(istable(T) && ismember(string(name), string(T.Properties.VariableNames)))
     return;
 end
 raw = T.(name);
-try
-    values = logical(raw);
-catch
+if islogical(raw)
+    values = raw;
+elseif isnumeric(raw)
+    num = double(raw);
+    values = isfinite(num) & num ~= 0;
+else
     txt = lower(strtrim(string(raw)));
     values = ismember(txt, ["1","true","yes","on","pass"]);
 end

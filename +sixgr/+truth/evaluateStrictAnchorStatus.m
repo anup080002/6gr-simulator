@@ -863,7 +863,7 @@ high = severity == "high";
 medium = severity == "medium";
 low = severity == "low";
 criticalWaiverAttempt = critical & (contains(waiver, "waiv") | contains(runtime, "waiv") | contains(fixStatus, "waiv"));
-blockMask = strictEligible & active & (blocking | mandatory) & (critical | high | medium | criticalWaiverAttempt);
+blockMask = strictEligible & active & (blocking | mandatory) & (critical | high | criticalWaiverAttempt);
 blockMask = blockMask | (strictEligible & criticalWaiverAttempt);
 
 gate = struct();

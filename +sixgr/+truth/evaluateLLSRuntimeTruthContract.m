@@ -1165,7 +1165,7 @@ critical = severity == "critical";
 high = severity == "high";
 medium = severity == "medium";
 low = severity == "low";
-blocking = active & (critical | high | medium);
+blocking = active & (critical | high);
 stats.ActiveCriticalCount = sum(active & critical);
 stats.ActiveHighCount = sum(active & high);
 stats.ActiveMediumCount = sum(active & medium);

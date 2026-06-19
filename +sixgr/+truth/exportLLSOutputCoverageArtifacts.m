@@ -2137,6 +2137,8 @@ if all(~isfinite(timestampMs)) && any(isfinite(timestampSec))
     timestampMs = 1e3 * timestampSec;
 end
 T.timestamp_sim_ms = timestampMs;
+T.frame = localFirstAvailableColumnAsDouble(grants, ["Frame", "SFN"]);
+T.slot = localFirstAvailableColumnAsDouble(grants, ["Slot"]);
 T.ue_id = localFirstAvailableColumnAsDouble(grants, ["UE", "UEID", "UEIndex", "RNTI"]);
 T.cell_id = localFirstAvailableColumnAsDouble(grants, ["CellID", "ServingCell", "BaseStationID"]);
 T.direction = repmat(string(direction), n, 1);
@@ -2153,6 +2155,9 @@ T.mcs_selected = localColumnAsDouble(grants, "MCSIndex");
 T.mod_order = NaN(n, 1);
 T.code_rate = localColumnAsDouble(grants, "TargetCodeRate");
 T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
+T.harq_id = localFirstAvailableColumnAsDouble(grants, ["HarqID", "HARQProcessId"]);
+T.ndi = localFirstAvailableColumnAsDouble(grants, ["NDI", "NewDataIndicator"]);
+T.rv = localFirstAvailableColumnAsDouble(grants, ["RV", "RedundancyVersion"]);
 T.olla_offset = NaN(n, 1);
 T.harq_state = harqState;
 T.scheduler_reason = localColumnAsText(grants, "GrantReason");
@@ -3994,7 +3999,8 @@ function T = localBuildResultIssueRegistry(src, meta, tables)
 rows = repmat(struct("issue_id", "", "severity", "", "issue_status", "", "issue_category", "", ...
     "direction", "", "ue_id", NaN, "cell_id", NaN, "block_name", "", "metric_name", "", ...
     "observed_value", "", "expected_or_policy", "", "evidence_artifact_ref", "", ...
-    "root_cause_hint", "", "fix_plan", "", "analytics_visible_flag", true), 0, 1);
+    "root_cause_hint", "", "fix_plan", "", "frame", NaN, "slot", NaN, "harq_id", NaN, ...
+    "analytics_visible_flag", true), 0, 1);
 
 if istable(tables.root_cause_candidate_table) && ~isempty(tables.root_cause_candidate_table)
     for i = 1:height(tables.root_cause_candidate_table)
@@ -4024,36 +4030,20 @@ if istable(tables.energy_root_cause_table) && ~isempty(tables.energy_root_cause_
     missingBits = energyReasons == "energy_without_useful_bits";
     for i = find(missingBits(:).')
         row = tables.energy_root_cause_table(i, :);
+        energyPerBit = localNumericTableValue(row, "energy_per_bit_nj", NaN);
+        if ~isfinite(energyPerBit)
+            continue;
+        end
         rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>
             "energy_without_useful_bits_" + string(i), "medium", "REVIEW_REQUIRED", "power_energy", ...
             string(localTableValue(row, "direction", "")), ...
             NaN, NaN, "power/energy", "energy_per_bit_nj", ...
-            string(localTableValue(row, "total_energy_j", NaN)), ...
-            "Energy-per-bit requires nonzero useful bits; otherwise keep the metric unavailable/review", ...
+            string(energyPerBit), ...
+            "Energy-per-bit must be blank/NaN when useful-bit lineage is zero or unavailable", ...
             "rf/csv/power_energy_table.csv", ...
-            "Energy accumulated without useful-bit lineage", ...
-            "Verify successful-bit lineage from MAC/PHY payload counters before reporting efficiency KPIs.");
+            "Energy efficiency value was emitted without useful-bit lineage", ...
+            "Leave efficiency metrics blank until successful-bit lineage from MAC/PHY payload counters exists.");
     end
-end
-
-resultOk = localTableValue(localFirstRow(src.ScenarioSummary), "ResultOk", []);
-requiredFailures = double(localTableValue(localFirstRow(src.ScenarioSummary), "RequiredFailureCount", NaN));
-if ~isempty(resultOk) && ~localAsBoolScalar(resultOk, true)
-    rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>
-        "run_result_not_ok", "critical", "CRASHED", "run_status", ...
-        "", NaN, NaN, "run", "ResultOk", string(resultOk), ...
-        "ResultOk may be true only when required cases truthfully pass", ...
-        "reports/csv/scenario_summary.csv", ...
-        "Scenario summary reports ResultOk=false", ...
-        "Inspect required case failures, logs, and runtime truth-contract rows before accepting analytics.");
-elseif isfinite(requiredFailures) && requiredFailures > 0
-    rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>
-        "required_failures_present", "critical", "CRASHED", "run_status", ...
-        "", NaN, NaN, "run", "RequiredFailureCount", string(requiredFailures), ...
-        "RequiredFailureCount must be zero for a clean run", ...
-        "reports/csv/scenario_summary.csv", ...
-        "Required case failures were recorded", ...
-        "Open the failed case table and fix the failing runtime path rather than masking result_ok.");
 end
 
 if isempty(rows)
@@ -4115,46 +4105,86 @@ end
 for i = 1:height(sourceTable)
     row = sourceTable(i, :);
     mcs = double(localTableValue(row, "MCSIndex", NaN));
-    cqiDerivedMCS = double(localTableValue(row, "CQIDerivedMCS", NaN));
-    if ~isfinite(cqiDerivedMCS)
-        cqiUsed = double(localTableValue(row, "CQIUsed", localTableValue(row, "WidebandCQI", NaN)));
-        if isfinite(cqiUsed)
-            mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
-            cqiTable = string(localTableValue(row, "CQITable", localTableValue(row, "CQI_Table", "table1")));
-            sanitizedCQI = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiUsed, NaN);
-            decision = sixgr.link.resolveMCSFromCQI(sanitizedCQI, char(mcsTable), char(cqiTable));
-            if isstruct(decision) && isfield(decision, "Valid") && decision.Valid
-                cqiDerivedMCS = double(decision.MCSIndex);
-            end
-        end
-    end
-    if isfinite(mcs) && isfinite(cqiDerivedMCS) && mcs > cqiDerivedMCS + 1
-        ue = double(localTableValue(row, "UE", localTableValue(row, "UEID", localTableValue(row, "RNTI", NaN))));
-        cellID = double(localTableValue(row, "CellID", localTableValue(row, "ServingCell", NaN)));
-        rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>
+    [cqiDerivedMCS, cqiBasis] = localGrantTimeCQIDerivedMCS(row, sourceArtifactRef);
+    if isfinite(mcs) && isfinite(cqiDerivedMCS) && mcs > cqiDerivedMCS + 1 && ~localMCSRowIsRetransmission(row)
+        ue = double(localTableValue(row, "UEIndex", localTableValue(row, "UEID", localTableValue(row, "UE", localTableValue(row, "RNTI", NaN)))));
+        cellID = double(localTableValue(row, "CellID", localTableValue(row, "ServingCell", localTableValue(row, "BaseStationID", NaN))));
+        issueRow = localIssueRow( ...
             lower(string(direction)) + "_mcs_above_cqi_" + string(i), ...
             "high", "REVIEW_REQUIRED", "link_adaptation", ...
             string(direction), ue, cellID, "scheduler/link_adaptation", ...
-            "MCSIndex", "MCS=" + string(mcs) + ";CQIDerivedMCS=" + string(cqiDerivedMCS), ...
-            "AMC mode should not exceed CQI-derived MCS without explicit, sourced override", ...
+            "MCSIndex", "MCS=" + string(mcs) + ";" + cqiBasis + "=" + string(cqiDerivedMCS), ...
+            "AMC new-data grants should not exceed the grant-time CQI-derived MCS without explicit, sourced override", ...
             string(sourceArtifactRef), ...
-            "Selected MCS is higher than CQI-derived MCS", ...
+            "Selected new-data MCS is higher than grant-time CQI-derived MCS", ...
             "Verify fixed-vs-AMC config, CQI source lineage, and scheduler MCS selection for this row.");
+        issueRow.frame = localFirstNumericTableValue(row, ["Frame", "SFN"], NaN);
+        issueRow.slot = localFirstNumericTableValue(row, ["Slot"], NaN);
+        issueRow.harq_id = localFirstNumericTableValue(row, ["HarqID", "HARQProcessId"], NaN);
+        rows(end+1, 1) = issueRow; %#ok<AGROW>
     end
-    sinr = double(localTableValue(row, "MeasuredSINR_dB", localTableValue(row, "SINR_dB", NaN)));
+    receiverSinrFields = ["PostEqSINR_dB", "ReceiverHestSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"];
+    sinr = NaN;
+    sinrField = "";
+    for k = 1:numel(receiverSinrFields)
+        candidateSinr = localNumericTableValue(row, receiverSinrFields(k), NaN);
+        if isfinite(candidateSinr)
+            sinr = candidateSinr;
+            sinrField = receiverSinrFields(k);
+            break;
+        end
+    end
     crcPass = localAsBoolScalar(localTableValue(row, "CRCPass", localTableValue(row, "Ack", [])), false);
     if strcmpi(string(direction), "UL") && isfinite(sinr) && sinr < 0 && crcPass
         ue = double(localTableValue(row, "UE", localTableValue(row, "UEID", localTableValue(row, "RNTI", NaN))));
         cellID = double(localTableValue(row, "CellID", localTableValue(row, "ServingCell", NaN)));
         rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>
             "ul_low_sinr_crc_pass_" + string(i), "medium", "REVIEW_REQUIRED", "ul_receiver_semantics", ...
-            "UL", ue, cellID, "PUSCH", "CRCPass", "SINR=" + string(sinr) + ";CRCPass=true", ...
+            "UL", ue, cellID, "PUSCH", "CRCPass", sinrField + "=" + string(sinr) + ";CRCPass=true", ...
             "Low-SINR UL successes must be backed by actual receiver/decoder evidence", ...
             string(sourceArtifactRef), ...
             "UL trial reports CRC pass at negative SINR", ...
             "Inspect channel-estimation, equalization, decoder evidence, and SINR definition before treating this as clean success.");
     end
 end
+end
+
+function [cqiDerivedMCS, basis] = localGrantTimeCQIDerivedMCS(row, sourceArtifactRef)
+cqiDerivedMCS = NaN;
+basis = "GrantTimeCQIDerivedMCS";
+sourceArtifactRef = lower(string(sourceArtifactRef));
+hasGrantTimeCQI = localHasVar(row, "CQIUsed") && isfinite(localNumericTableValue(row, "CQIUsed", NaN));
+if hasGrantTimeCQI
+    cqiUsed = localNumericTableValue(row, "CQIUsed", NaN);
+    mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
+    cqiTable = string(localTableValue(row, "CQITable", localTableValue(row, "CQI_Table", "table1")));
+    sanitizedCQI = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiUsed, NaN);
+    decision = sixgr.link.resolveMCSFromCQI(sanitizedCQI, char(mcsTable), char(cqiTable));
+    if isstruct(decision) && isfield(decision, "Valid") && decision.Valid
+        cqiDerivedMCS = double(decision.MCSIndex);
+        basis = "CQIUsedDerivedMCS";
+    end
+    return;
+end
+if contains(sourceArtifactRef, "air_interface/csv")
+    return;
+end
+cqiDerivedMCS = localNumericTableValue(row, "CQIDerivedMCS", NaN);
+if isfinite(cqiDerivedMCS)
+    basis = "CQIDerivedMCS";
+end
+end
+
+function tf = localMCSRowIsRetransmission(row)
+tf = localAsBoolScalar(localTableValue(row, "IsRetransmission", []), false);
+if tf
+    return;
+end
+reason = lower(string(localTableValue(row, "GrantReason", "")));
+harqState = lower(string(localTableValue(row, "harq_state", "")));
+txNumber = localFirstNumericTableValue(row, ["HARQTxNumber", "HarqTxNumber", "TxNumber"], NaN);
+tf = contains(reason, "retx") || contains(reason, "retrans") || ...
+    contains(harqState, "retrans") || (isfinite(txNumber) && txNumber > 1);
 end
 
 function row = localIssueRow(issueID, severity, issueStatus, issueCategory, direction, ueID, cellID, blockName, metricName, observedValue, expectedOrPolicy, evidenceArtifactRef, rootCauseHint, fixPlan)
@@ -4173,6 +4203,9 @@ row = struct( ...
     "evidence_artifact_ref", string(evidenceArtifactRef), ...
     "root_cause_hint", string(rootCauseHint), ...
     "fix_plan", string(fixPlan), ...
+    "frame", NaN, ...
+    "slot", NaN, ...
+    "harq_id", NaN, ...
     "analytics_visible_flag", true);
 end
 

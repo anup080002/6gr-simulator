@@ -40,6 +40,16 @@ mncLen = 2 + double(mncIs3);
 [qQualMin, p] = localReadSigned(body, p, -43, 7);
 [scsIdx, p] = localReadUInt(body, p, 2);
 [carrierBandwidth, p] = localReadUInt(body, p, 10);
+remainingLegacyTailBits = 44;
+if bodyLen - p + 1 >= remainingLegacyTailBits + 66
+    [absoluteFrequencySSB, p] = localReadUInt(body, p, 22);
+    [dlAbsoluteFrequencyPointA, p] = localReadUInt(body, p, 22);
+    [ulAbsoluteFrequencyPointA, p] = localReadUInt(body, p, 22);
+else
+    absoluteFrequencySSB = NaN;
+    dlAbsoluteFrequencyPointA = NaN;
+    ulAbsoluteFrequencyPointA = NaN;
+end
 [coreset0, p] = localReadUInt(body, p, 4);
 [search0, p] = localReadUInt(body, p, 4);
 [dmrsOffset, p] = localReadUInt(body, p, 1);
@@ -72,6 +82,18 @@ msg.message.c1.systemInformationBlockType1.cellAccessRelatedInfo.cellReservedFor
     string(ternary(reserved == 1, "reserved", "notReserved"));
 msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.ssb_periodicityServingCell = ...
     localPeriodicityFromIndex(periodIdx);
+if isfinite(absoluteFrequencySSB)
+    msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.downlinkConfigCommon.frequencyInfoDL.absoluteFrequencySSB = ...
+        double(absoluteFrequencySSB);
+end
+if isfinite(dlAbsoluteFrequencyPointA)
+    msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.downlinkConfigCommon.frequencyInfoDL.dl_AbsoluteFrequencyPointA = ...
+        double(dlAbsoluteFrequencyPointA);
+end
+if isfinite(ulAbsoluteFrequencyPointA)
+    msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.uplinkConfigCommon.frequencyInfoUL.absoluteFrequencyPointA = ...
+        double(ulAbsoluteFrequencyPointA);
+end
 sixgr.rrc.asn1.validateSIB1ForScenario(msg, cfg);
 
 meta = struct( ...

@@ -1,0 +1,77 @@
+function ok = testInitialAccessPowerAndSSBArtifacts()
+tmp = tempname;
+mkdir(tmp);
+c = onCleanup(@() localCleanupTempFolder(tmp)); %#ok<NASGU>
+
+scenarioPath = fullfile("simulator", "configs", "scenarios", ...
+    "lls_mobile_2ue_100kmh_1sector_full_capture.yaml");
+scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+
+sweepPath = fullfile(tmp, "ssb_pbch_sib1_beam_sweep.csv");
+sweep = sixgr.link.runSSBBeamSweep(cfg, ...
+    "MaxBeams", 2, ...
+    "OutputPath", sweepPath);
+assert(exist(sweepPath, "file") == 2, "SSB beam-sweep CSV must be written.");
+assert(istable(sweep.TrialTable) && height(sweep.TrialTable) == 2, ...
+    "Targeted SSB beam sweep must emit one row per swept beam.");
+assert(isequal(double(sweep.TrialTable.SSBIndex(:)).', [0 1]), ...
+    "SSB beam sweep must execute the requested SSB indices.");
+assert(all(ismember(["BCHCrcPass","MIBDecoded","SIB1StrictOk","TimingOffset_samples", ...
+    "FrequencyOffsetHz","SSBReceivedPower_dB","PBCHDMRSMetric","PBCHNoiseVar"], string(sweep.TrialTable.Properties.VariableNames))), ...
+    "SSB beam-sweep artifact is missing acquisition metric columns.");
+assert(any(isfinite(double(sweep.TrialTable.SSBReceivedPower_dB))), ...
+    "SSB beam sweep must export measured received SS/PBCH block power.");
+
+derivedRunFolder = fullfile(tmp, "derived_run");
+layout = sixgr.report.resultLayout(derivedRunFolder);
+sixgr.util.ensureFolder(layout.BeamformingCSVDir);
+sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), sweep.TrialTable);
+beamPrecoderT = table( ...
+    ["DL"; "DL"; "UL"], [1; 2; 1], [1; 2; 1], [1; 1; 1], [2; 2; 1], [2; 2; 1], ...
+    'VariableNames', {'direction','selected_beam_index','best_beam_index','beam_hit', ...
+    'precoding_num_ports','precoding_num_layers'});
+sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, "beam_precoder_table.csv"), beamPrecoderT);
+derived = sixgr.truth.exportLLSLiveDerivedTables(cfg, derivedRunFolder, struct(), struct(), struct(), struct());
+beamStats = readtable(derived.BeamSelectionStatsPath, "TextType", "string");
+assert(height(beamStats) > 0, "Live beam-selection stats must be populated from measured beam artifacts.");
+assert(any(string(beamStats.Metric) == "P1SSBReceivedPower_dB"), ...
+    "Live beam-selection stats must include P1 measured SSB received-power evidence.");
+assert(any(string(beamStats.Metric) == "P2BeamHitRate"), ...
+    "Live beam-selection stats must include P2/runtime selected-vs-best beam evidence.");
+
+raFolder = fullfile(tmp, "ra");
+res = sixgr.phy.ra.runFourStepRA(cfg, ...
+    "RunFolder", raFolder, ...
+    "RunId", "mobile_power_probe", ...
+    "WriteArtifacts", true);
+assert(logical(res.StrictOk), "Mobile scenario four-step RA probe must complete.");
+
+csvDir = fullfile(raFolder, "control", "csv");
+attempts = readtable(fullfile(csvDir, "ra_attempts.csv"), "TextType", "string");
+msg1 = readtable(fullfile(csvDir, "msg1_prach_detection.csv"), "TextType", "string");
+msg3 = readtable(fullfile(csvDir, "msg3_pusch_trials.csv"), "TextType", "string");
+
+assert(isfinite(double(attempts.PowerPathloss_dB(1))), ...
+    "RA power control must resolve finite scenario pathloss.");
+assert(isfinite(double(msg1.PreambleTxPower_dBm(1))) && ...
+    double(msg1.PreambleTxPower_dBm(1)) <= double(msg1.Pcmax_dBm(1)) + 1e-9, ...
+    "PRACH transmit power must be computed and capped by Pcmax.");
+assert(isfinite(double(msg3.Msg3TxPower_dBm(1))) && ...
+    double(msg3.Msg3TxPower_dBm(1)) <= double(msg3.Pcmax_dBm(1)) + 1e-9, ...
+    "Msg3 transmit power must be computed and capped by Pcmax.");
+assert(isfinite(double(msg1.PreambleTxAmplitudeScale(1))) && ...
+    isfinite(double(msg3.Msg3TxAmplitudeScale(1))), ...
+    "Applied PRACH and Msg3 amplitude scales must be exported.");
+
+ok = true;
+end
+
+function localCleanupTempFolder(pathIn)
+if exist(pathIn, "dir") == 7
+    try
+        rmdir(pathIn, "s");
+    catch
+    end
+end
+end

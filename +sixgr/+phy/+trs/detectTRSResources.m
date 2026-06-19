@@ -24,9 +24,9 @@ for ii = 1:numel(resources)
         rxGrid = nrOFDMDemodulate(resources(ii).Carrier, corrWave);
         rxRE = rxGrid(resources(ii).Indices);
         ref = resources(ii).Symbols(:);
-        metric = abs(sum(rxRE(:) .* conj(ref), "omitnan")) ./ max(norm(rxRE(:)) * norm(ref), eps);
+        metric = localChunkedReferenceCorrelation(rxRE(:), ref);
         phase = angle(sum(rxRE(:) .* conj(ref), "omitnan"));
-        ampThreshold = max(6 * sqrt(max(double(rx.NoiseVariance), 0)), 0.05);
+        ampThreshold = localCoverageAmplitudeThreshold(rxRE(:), double(rx.NoiseVariance));
         observed = nnz(abs(rxRE(:)) > ampThreshold);
         status = "detection_metric_available";
     catch ME
@@ -126,4 +126,81 @@ function row = localSlotDetection()
 row = struct("Slot", NaN, "RxGrid", [], "RxRE", [], "ReferenceSymbols", [], ...
     "Detected", false, "PhaseRad", NaN, "Metric", NaN, "CoverageRatio", NaN, ...
     "CorrectedWaveform", []);
+end
+
+function metric = localChunkedReferenceCorrelation(rxRE, ref)
+rxRE = rxRE(:);
+ref = ref(:);
+n = min(numel(rxRE), numel(ref));
+if n == 0
+    metric = NaN;
+    return;
+end
+rxRE = rxRE(1:n);
+ref = ref(1:n);
+mask = isfinite(real(rxRE)) & isfinite(imag(rxRE)) & ...
+    isfinite(real(ref)) & isfinite(imag(ref));
+rxRE = rxRE(mask);
+ref = ref(mask);
+n = numel(rxRE);
+if n == 0
+    metric = NaN;
+    return;
+end
+
+whole = abs(sum(rxRE .* conj(ref), "omitnan")) ./ max(norm(rxRE) * norm(ref), eps);
+chunkSize = min(max(12, round(sqrt(double(n)))), n);
+nChunks = ceil(double(n) / double(chunkSize));
+chunkMetric = NaN(nChunks, 1);
+for kk = 1:nChunks
+    lo = (kk - 1) * chunkSize + 1;
+    hi = min(n, kk * chunkSize);
+    x = rxRE(lo:hi);
+    r = ref(lo:hi);
+    if numel(x) < 4
+        continue;
+    end
+    chunkMetric(kk) = abs(sum(x .* conj(r), "omitnan")) ./ max(norm(x) * norm(r), eps);
+end
+chunkMetric = chunkMetric(isfinite(chunkMetric));
+if isempty(chunkMetric)
+    metric = double(whole);
+else
+    metric = max(double(whole), median(double(chunkMetric), "omitnan"));
+end
+end
+
+function threshold = localCoverageAmplitudeThreshold(rxRE, noiseVariance)
+if isfinite(double(noiseVariance))
+    noiseThreshold = 2 * sqrt(max(double(noiseVariance), 0));
+else
+    noiseThreshold = 0;
+end
+rxAbs = abs(rxRE(:));
+rxAbs = rxAbs(isfinite(rxAbs));
+if isempty(rxAbs)
+    threshold = noiseThreshold;
+    return;
+end
+relativeThreshold = 0.1 * localPercentile(rxAbs, 90);
+threshold = max(noiseThreshold, relativeThreshold);
+end
+
+function value = localPercentile(x, pct)
+x = sort(double(x(:)));
+x = x(isfinite(x));
+if isempty(x)
+    value = NaN;
+    return;
+end
+pct = max(0, min(100, double(pct)));
+idx = 1 + (numel(x) - 1) * pct / 100;
+lo = max(1, floor(idx));
+hi = min(numel(x), ceil(idx));
+if lo == hi
+    value = x(lo);
+else
+    frac = idx - lo;
+    value = (1 - frac) * x(lo) + frac * x(hi);
+end
 end

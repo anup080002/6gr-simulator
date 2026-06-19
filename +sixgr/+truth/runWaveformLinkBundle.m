@@ -704,6 +704,7 @@ end
 
 fDL = fullfile(csvDir, "dl_pdsch_trials.csv");
 fUL = fullfile(csvDir, "ul_pusch_trials.csv");
+fSSBBeamSweep = fullfile(csvDir, "ssb_pbch_sib1_beam_sweep.csv");
 fPBCH = fullfile(csvDir, "pbch_trials.csv");
 fPRACH = fullfile(csvDir, "prach_trials.csv");
 fPDCCH = fullfile(csvDir, "pdcch_trials.csv");
@@ -743,6 +744,7 @@ if isLiveDBMode
 end
 
 pbchTrials = localEmptyLinkTrialTable(0);
+ssbBeamSweep = table();
 prachTrials = localEmptyLinkTrialTable(0);
 prachCorrelationTrace = table();
 pdcchTrials = localEmptyLinkTrialTable(0);
@@ -1022,6 +1024,43 @@ layout = sixgr.report.resultLayout(rootRunFolder);
 sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, fileName), T);
 end
 
+function tf = localShouldExportSSBBeamSweep(cfg)
+tf = logical(sixgr.util.structGet(cfg, "outputs.exportSSBBeamSweep", ...
+    sixgr.util.structGet(cfg, "analytics.export_ssb_beam_sweep", ...
+    sixgr.util.structGet(cfg, "phy.beamManagement.enabled", false)))) && ...
+    logical(sixgr.util.structGet(cfg, "phy.ssb.enable", true)) && ...
+    localResolveSSBBeamCount(cfg) > 1;
+end
+
+function T = localCollectSSBBeamSweepArtifact(cfg, snr_dB, outputPath)
+try
+    sweep = sixgr.link.runSSBBeamSweep(cfg, ...
+        "SNR_dB", double(snr_dB), ...
+        "NumSubframes", localResolvePBCHObservationSubframes(cfg), ...
+        "OutputPath", outputPath);
+    T = sixgr.util.structGet(sweep, "TrialTable", table());
+catch ME
+    if logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+        rethrow(ME);
+    end
+    T = table();
+end
+end
+
+function localWriteSSBBeamSweepMirrors(airInterfaceRunFolder, T)
+if nargin < 2 || ~istable(T) || isempty(T)
+    return;
+end
+rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
+if strlength(string(rootRunFolder)) == 0
+    return;
+end
+layout = sixgr.report.resultLayout(rootRunFolder);
+sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), T);
+sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), T);
+sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, "ssb_beam_sweep.csv"), T);
+end
+
 if coupledTruth && isstruct(coupledRuntime)
     mobilityArtifacts = localBuildMobilityArtifactsFromCoupledRuntime(coupledRuntime);
 end
@@ -1034,6 +1073,10 @@ pucchTrials = localCanonicalizeControlTrialTable("PUCCH", pucchTrials);
 srsTrials = localCanonicalizeControlTrialTable("SRS", srsTrials);
 trsTrials = localCanonicalizeControlTrialTable("TRS", trsTrials);
 sixgr.util.csvWriteTable(fPBCH, pbchTrials);
+if localShouldExportSSBBeamSweep(cfg)
+    ssbBeamSweep = localCollectSSBBeamSweepArtifact(cfg, snrGrid(1), fSSBBeamSweep);
+    localWriteSSBBeamSweepMirrors(runFolder, ssbBeamSweep);
+end
 sixgr.util.csvWriteTable(fPRACH, prachTrials);
 if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
     rootRunFolderForPRACHTrace = fileparts(char(string(runFolder)));
@@ -1105,6 +1148,8 @@ out.ULConstellation = ulConst;
 out.DLConstellationPath = outDLConst;
 out.ULConstellationPath = outULConst;
 out.PBCHPath = fPBCH;
+out.SSBBeamSweep = ssbBeamSweep;
+out.SSBBeamSweepPath = fSSBBeamSweep;
 out.PRACHPath = fPRACH;
 if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
     rootRunFolderForPRACHTrace = fileparts(char(string(runFolder)));
@@ -6458,13 +6503,22 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'ControlCapacityUtilization','CORESETUtilization','ControlLatency_ms', ...
     'ChannelGain_dB','NoiseVariance','DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
     'NoiseVarStatus','NoiseVarSource','NoiseVarReason','NoiseVarStrictFailure', ...
-    'ReceiverUsable','DecodeAttempted','DecodeUsable','DetectionAttempted','DetectionUsable', ...
+    'ReceiverUsable','DecodeAttempted','DecodeUsable','StrictReceiverEvidenceOk','StrictOk','TruthStatus', ...
+    'ChannelEstimateAttempted','ChannelEstimateAvailable','ChannelEstimateSource', ...
+    'ResourceExtractionAttempted','ResourceExtractionAvailable', ...
+    'EqualizationAttempted','EqualizationAvailable','DLSCHDecodeAttempted','DLSCHDecodeAvailable', ...
+    'ULSCHDecodeAttempted','ULSCHDecodeAvailable','LLRAvailable','LLRFinite','LLRScaleSource','LLRNoiseVariance', ...
+    'PostEqSINRWidebanddB','PostEqSINRAvailable','PostEqSINRReceiverDerived', ...
+    'SINRValidationStatus','SINRValidationReason','SINRComputationMethod','ConfiguredSNRLikeSourceRejected', ...
+    'EqualizerType','EqualizerRequestedType','EqualizerEngine', ...
+    'InterferenceCovarianceAvailable','InterferenceCovarianceSource','InterferenceCovarianceStatus', ...
+    'DetectionAttempted','DetectionUsable', ...
     'MeasurementAttempted','MeasurementUsable','FailureReason','TimingOffset_samples','TimingAdvance_samples','TimingAdvance_us','TAOutOfRangeFlag','TAOutOfRangeReason','TAMaxValid_samples','TAMaxValid_us','RankEstimate', ...
     'SRSOccupiedPRBCount','SRSCarrierPRBCount','SRSBandwidthFraction','SRSFrequencyPRBStart','SRSFrequencyPRBEnd','SRSBandwidthCoverageStatus', ...
     'ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
     'SelectedBeamIndex','BestBeamIndex','BeamHit','TopKBeamHit','BeamCandidateCount', ...
     'SelectedBeamGain_dB','BestBeamGain_dB','BeamGainGap_dB', ...
-    'ConfiguredPMI','ConfiguredCRI','BitErrors','BitsCompared', ...
+    'ConfiguredPMI','ConfiguredCRI','BitErrors','BitsCompared','RawBER', ...
     'OfferedBits','GoodBits','OfferedThroughput_Mbps','Goodput_Mbps', ...
     'ComputeLatency_ms','ProcedureDelay_ms','AirInterfaceTTI_ms','AirInterfaceObservation_ms', ...
     'Latency_ms','DecodeLatency_ms','EarlyStopRate','DecoderComplexityUnits','NormalizedDecoderComplexity','AreaEfficiencyProxy', ...
@@ -6559,6 +6613,9 @@ for i = 1:numel(vars)
                             'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
                             'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason','TAOutOfRangeReason', ...
+                            'TruthStatus','ChannelEstimateSource','LLRScaleSource', ...
+                            'SINRValidationStatus','SINRValidationReason','SINRComputationMethod', ...
+                            'EqualizerType','EqualizerRequestedType','EqualizerEngine','InterferenceCovarianceSource','InterferenceCovarianceStatus', ...
                             'ConfiguredSNRSource','SNRValueRole','AppliedAWGNSNRSource','PRACHSNRCalibrationStatus','PRACHSNRCalibrationSource', ...
                             'ReceiverHestSINRSource','ReceiverHestSINRValueRole','ReceiverHestSINRValueStatus','ReceiverHestSINRNAReason', ...
                             'PostEqSINRSource','PostEqSINRValueRole','PostEqSINRValueStatus','PostEqSINRNAReason','PostEqSINRPerLayer_dB', ...
@@ -6599,7 +6656,11 @@ for i = 1:numel(vars)
                         T.(v) = false(height(T),1);
                     case {'LinkAdaptationApplied','LinkAdaptationScheduled','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied', ...
                             'IsWarmupFrame','TimingEstimateUsed','UseIdealTimingSync','TimingEstimateWasClipped', ...
-                            'NoiseVarStrictFailure','ReceiverUsable','DecodeAttempted','DecodeUsable','DetectionAttempted','DetectionUsable', ...
+                            'NoiseVarStrictFailure','ReceiverUsable','DecodeAttempted','DecodeUsable','StrictReceiverEvidenceOk','StrictOk', ...
+                            'ChannelEstimateAttempted','ChannelEstimateAvailable','ResourceExtractionAttempted','ResourceExtractionAvailable', ...
+                            'EqualizationAttempted','EqualizationAvailable','DLSCHDecodeAttempted','DLSCHDecodeAvailable', ...
+                            'ULSCHDecodeAttempted','ULSCHDecodeAvailable','LLRAvailable','LLRFinite','PostEqSINRAvailable','PostEqSINRReceiverDerived', ...
+                            'ConfiguredSNRLikeSourceRejected','InterferenceCovarianceAvailable','DetectionAttempted','DetectionUsable', ...
                             'MeasurementAttempted','MeasurementUsable','TAOutOfRangeFlag', ...
                             'PBCHGatingActive','PRACHGatingActive','PDCCHGatingActive','SRSGatingActive','TRSGatingActive','ControlEligible','ControlDecodeOk','SRSValid', ...
                             'TrackingEligibility','TRSInfluencedDecision', ...
@@ -6935,6 +6996,13 @@ bitErrors = double(localColumnOrDefault(T, "BitErrors", nan(n, 1)));
 bitsCompared = double(localColumnOrDefault(T, "BitsCompared", nan(n, 1)));
 decoderIterations = double(localColumnOrDefault(T, "DecoderIterations", nan(n, 1)));
 tbBits = double(localColumnOrDefault(T, "TBSize_bits", nan(n, 1)));
+
+if ismember("RawBER", string(T.Properties.VariableNames))
+    rawBER = double(localColumnOrDefault(T, "RawBER", nan(n, 1)));
+    rawBERMask = ~isfinite(rawBER) & isfinite(bitErrors) & isfinite(bitsCompared) & bitsCompared > 0;
+    rawBER(rawBERMask) = bitErrors(rawBERMask) ./ bitsCompared(rawBERMask);
+    T.RawBER = rawBER;
+end
 
 activeOutcome = ~crash & any(status == ["pass","fail"], 2);
 decodeEvidence = ~crash & (decodeAttempted | activeOutcome | isfinite(crcPass) | ...
@@ -7308,8 +7376,28 @@ for k = 1:nTrials
     try
         ssbIndex = localResolvePBCHSSBIndex(cfg, k);
         out = sixgr.link.runCellSearch_MIB_SIB1(cfg, "NumSubframes", pbchObservationSubframes, "SSBIndex", ssbIndex);
-        ok = logical(sixgr.util.structGet(out, "Ok", false)) && ~logical(sixgr.util.structGet(out, "Skipped", false));
-        r.CRCPass = double(ok);
+        skipped = logical(sixgr.util.structGet(out, "Skipped", false));
+        pbch = sixgr.util.structGet(out, "PBCH", struct());
+        sib1 = sixgr.util.structGet(out, "SIB1", struct());
+        bchCrcPass = localStructLogical(sib1, "BCHCrcPass", ...
+            localStructLogical(pbch, "Ok", logical(sixgr.util.structGet(out, "Ok", false))));
+        mibDecoded = localStructLogical(sib1, "MIBDecoded", bchCrcPass);
+        sib1StrictOk = localStructLogical(sib1, "StrictOk", logical(sixgr.util.structGet(out, "Ok", false)));
+        sib1TreeEqual = localStructLogical(sib1, "SIB1TreeEqual", false);
+        sib1DciCrcPass = localStructLogical(sib1, "DCICrcPass", false);
+        sib1DlschCrcPass = localStructLogical(sib1, "DLSCHCrcPass", false);
+        sib1Asn1DecodeOk = localStructLogical(sib1, "SIB1ASN1DecodeOk", false);
+        pbchAcquired = bchCrcPass && mibDecoded && ~skipped;
+        r.CRCPass = double(pbchAcquired);
+        r.CRCApplicable = true;
+        r.BCHCrcPass = double(bchCrcPass);
+        r.MIBDecoded = double(mibDecoded);
+        r.SIB1StrictOk = double(sib1StrictOk);
+        r.SIB1TreeEqual = double(sib1TreeEqual);
+        r.SIB1DCICrcPass = double(sib1DciCrcPass);
+        r.SIB1DLSCHCrcPass = double(sib1DlschCrcPass);
+        r.SIB1ASN1DecodeOk = double(sib1Asn1DecodeOk);
+        r.SIB1FailureReason = string(sixgr.util.structGet(sib1, "FailureReason", ""));
         r.SSBIndex = double(sixgr.util.structGet(out, "SSBIndex", ssbIndex));
         r.BeamIndex = double(sixgr.util.structGet(out, "SSBBeamIndex", r.SSBIndex + 1));
         r.InjectedCFO_Hz = double(sixgr.util.structGet(out, "InjectedCFO_Hz", NaN));
@@ -7333,10 +7421,23 @@ for k = 1:nTrials
         r.ProcedureDelay_ms = double(sixgr.util.structGet(out, "ProcedureDelay_ms", NaN));
         r.AirInterfaceObservation_ms = double(sixgr.util.structGet(out, "AirInterfaceObservation_ms", NaN));
         r.AcquisitionTime_ms = double(sixgr.util.structGet(out, "AcquisitionTime_ms", NaN));
-        r.TrackingFailureProbability = double(~ok);
-        if ok
+        r.TrackingFailureProbability = double(~pbchAcquired);
+        if pbchAcquired
             r.DetectionMetric = 1;
-            r.Status = "PASS";
+            r.DetectionAttempted = true;
+            r.DetectionSuccess = true;
+            r.DetectionUsable = true;
+            r.MissedDetection = false;
+            r.FalseAlarm = false;
+            r.DetectionOutcome = "ssb_pbch_mib_acquired";
+            r.DecodeAttempted = true;
+            r.DecodeUsable = true;
+            if sib1StrictOk
+                r.Status = "PASS";
+            else
+                r.Status = "FAIL";
+                r.FailureReason = "sib1_strict_recovery_failed_after_pbch_mib_acquisition";
+            end
         end
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
     catch ME
@@ -7348,6 +7449,25 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function tf = localStructLogical(s, fieldName, defaultValue)
+raw = defaultValue;
+if isstruct(s) && isfield(s, fieldName)
+    raw = s.(fieldName);
+end
+if islogical(raw)
+    tf = any(raw(:));
+elseif isnumeric(raw)
+    vals = double(raw(:));
+    vals = vals(isfinite(vals));
+    tf = ~isempty(vals) && vals(1) ~= 0;
+elseif ischar(raw) || isstring(raw)
+    token = lower(strtrim(string(raw)));
+    tf = any(token == ["1", "true", "yes", "pass", "ok"]);
+else
+    tf = logical(defaultValue);
+end
 end
 
 function numSubframes = localResolvePBCHObservationSubframes(cfg)
@@ -8462,6 +8582,14 @@ for k = 1:nTrials
         r.CRCPass = NaN;
         r.NMSE_dB = double(sixgr.util.structGet(out, "NMSE_dB", NaN));
         r.DetectionMetric = double(sixgr.util.structGet(out, "DetectionMetric", NaN));
+        r.DetectionThreshold = double(sixgr.util.structGet(out, "DetectionThreshold", NaN));
+        r.ResourceCoverageRatio = double(sixgr.util.structGet(out, "ResourceCoverageRatio", NaN));
+        r.MinCoverageRatio = double(sixgr.util.structGet(out, "MinCoverageRatio", NaN));
+        r.DetectionAttempted = logical(sixgr.util.structGet(out, "DetectionAttempted", false));
+        r.DetectionSuccess = logical(sixgr.util.structGet(out, "DetectionSuccess", false));
+        r.DetectionUsable = logical(r.DetectionAttempted) && logical(r.DetectionSuccess) && isfinite(r.DetectionMetric);
+        r.MeasurementAttempted = logical(sixgr.util.structGet(out, "ChannelEstimationAttempted", false));
+        r.MeasurementUsable = logical(ok);
         r.InjectedDoppler_Hz = double(sixgr.util.structGet(out, "InjectedDoppler_Hz", r.DopplerHz));
         r.PhaseTrackingError_deg = double(sixgr.util.structGet(out, "PhaseError_deg", NaN));
         r.EstimatedDopplerHz = double(sixgr.util.structGet(out, "EstimatedDoppler_Hz", NaN));
@@ -8480,6 +8608,22 @@ for k = 1:nTrials
         r.TrueCFO_Hz = double(sixgr.util.structGet(out, "TrueCFO_Hz", r.InjectedCFO_Hz));
         r.EstimatedCFO_Hz = double(sixgr.util.structGet(out, "EstimatedCFO_Hz", NaN));
         r.EstimatedCFO_PreCorrection_Hz = double(sixgr.util.structGet(out, "EstimatedCFO_PreCorrection_Hz", r.EstimatedCFO_Hz));
+        r.InjectedTimingOffset_samples = double(sixgr.util.structGet(out, "InjectedTimingOffset_samples", r.InjectedTimingOffset_samples));
+        r.TrueTimingOffset_samples = double(sixgr.util.structGet(out, "TrueTimingOffset_samples", r.InjectedTimingOffset_samples));
+        r.EstimatedTimingOffset_PreCorrection_samples = double(sixgr.util.structGet(out, "EstimatedTimingOffset_samples", NaN));
+        r.EstimatedTimingOffset_samples = double(r.EstimatedTimingOffset_PreCorrection_samples);
+        r.TimingEstimate_samples = double(r.EstimatedTimingOffset_PreCorrection_samples);
+        r.TRSTimingEstimate_samples = double(r.EstimatedTimingOffset_PreCorrection_samples);
+        r.TimingError_samples = double(sixgr.util.structGet(out, "TimingError_samples", NaN));
+        r.TimingTrackingAttempted = logical(sixgr.util.structGet(out, "TimingTrackingAttempted", false));
+        r.TRSTimingEstimateAvailable = logical(sixgr.util.structGet(out, "TRSTimingEstimateAvailable", false));
+        r.TRSTimingEstimateUsable = logical(sixgr.util.structGet(out, "TRSTimingEstimateUsable", false));
+        r.FrequencyTrackingAttempted = logical(sixgr.util.structGet(out, "FrequencyTrackingAttempted", false));
+        r.TRSCFOEstimateUsable = logical(sixgr.util.structGet(out, "TRSCFOEstimateUsable", false));
+        r.ChannelEstimationAttempted = logical(sixgr.util.structGet(out, "ChannelEstimationAttempted", false));
+        r.TRSChannelEstimateAvailable = logical(sixgr.util.structGet(out, "TRSChannelEstimateAvailable", false));
+        r.TRSRuntimeEvidenceUsable = logical(sixgr.util.structGet(out, "TRSRuntimeEvidenceUsable", false));
+        r.StrictOk = logical(sixgr.util.structGet(out, "StrictOk", false));
         if isfinite(r.EstimatedCFO_Hz)
             if isfinite(r.TrueCFO_Hz)
                 r.ResidualCFO_PostCorrection_Hz = double(r.TrueCFO_Hz) - double(r.EstimatedCFO_Hz);
@@ -8503,6 +8647,10 @@ for k = 1:nTrials
         r.AirInterfaceObservation_ms = double(sixgr.util.structGet(out, "AirInterfaceObservation_ms", NaN));
         r.AcquisitionTime_ms = double(sixgr.util.structGet(out, "AcquisitionTime_ms", NaN));
         r.TrackingFailureProbability = double(sixgr.util.structGet(out, "TrackingFailure", NaN));
+        r.NoiseVariance = double(sixgr.util.structGet(out, "NoiseVariance", r.NoiseVariance));
+        if ~ok && strlength(strtrim(string(sixgr.util.structGet(out, "FailureReason", "")))) > 0
+            r.FailureReason = string(sixgr.util.structGet(out, "FailureReason", ""));
+        end
         if ok
             r.Status = "PASS";
         end
@@ -8543,6 +8691,14 @@ row.DopplerHz = dopp;
     row.CRCPass = NaN;
     row.CRCApplicable = false;
     row.CRCOutcome = "";
+    row.BCHCrcPass = NaN;
+    row.MIBDecoded = NaN;
+    row.SIB1StrictOk = NaN;
+    row.SIB1TreeEqual = NaN;
+    row.SIB1DCICrcPass = NaN;
+    row.SIB1DLSCHCrcPass = NaN;
+    row.SIB1ASN1DecodeOk = NaN;
+    row.SIB1FailureReason = "";
     row.UCIContentMatch = false;
     row.DetectionOutcome = "";
     row.DecoderIterations = NaN;
@@ -8551,6 +8707,8 @@ row.NMSE_dB = NaN;
 row.DetectionMetric = NaN;
 row.DetectionThreshold = NaN;
 row.DetectionThresholdMode = "";
+row.ResourceCoverageRatio = NaN;
+row.MinCoverageRatio = NaN;
 row.DetectionMetricStatus = "";
 row.DetectorPeakMetric = NaN;
 row.DetectorNoiseFloor = NaN;
@@ -8672,7 +8830,39 @@ row.NoiseVarStrictFailure = false;
 row.ReceiverUsable = false;
 row.DecodeAttempted = false;
 row.DecodeUsable = false;
+row.StrictReceiverEvidenceOk = false;
+row.StrictOk = false;
+row.TruthStatus = "";
+row.ChannelEstimateAttempted = false;
+row.ChannelEstimateAvailable = false;
+row.ChannelEstimateSource = "";
+row.ResourceExtractionAttempted = false;
+row.ResourceExtractionAvailable = false;
+row.EqualizationAttempted = false;
+row.EqualizationAvailable = false;
+row.DLSCHDecodeAttempted = false;
+row.DLSCHDecodeAvailable = false;
+row.ULSCHDecodeAttempted = false;
+row.ULSCHDecodeAvailable = false;
+row.LLRAvailable = false;
+row.LLRFinite = false;
+row.LLRScaleSource = "";
+row.LLRNoiseVariance = NaN;
+row.PostEqSINRWidebanddB = NaN;
+row.PostEqSINRAvailable = false;
+row.PostEqSINRReceiverDerived = false;
+row.SINRValidationStatus = "";
+row.SINRValidationReason = "";
+row.SINRComputationMethod = "";
+row.ConfiguredSNRLikeSourceRejected = false;
+row.EqualizerType = "";
+row.EqualizerRequestedType = "";
+row.EqualizerEngine = "";
+row.InterferenceCovarianceAvailable = false;
+row.InterferenceCovarianceSource = "";
+row.InterferenceCovarianceStatus = "";
 row.DetectionAttempted = false;
+row.DetectionSuccess = false;
 row.DetectionUsable = false;
 row.MeasurementAttempted = false;
 row.MeasurementUsable = false;
@@ -8706,6 +8896,7 @@ row.ConfiguredPMI = NaN;
 row.ConfiguredCRI = NaN;
 row.BitErrors = NaN;
 row.BitsCompared = NaN;
+row.RawBER = NaN;
 row.OfferedBits = NaN;
 row.GoodBits = NaN;
 row.OfferedThroughput_Mbps = NaN;
@@ -8766,6 +8957,8 @@ row.CFOErrorDefinition = "not_available_without_cfo_estimate";
 row.CFOValueStatus = "NOT_AVAILABLE";
 row.InjectedTimingOffset_samples = 0;
 row.EstimatedTimingOffset_PreCorrection_samples = NaN;
+row.EstimatedTimingOffset_samples = NaN;
+row.TimingEstimate_samples = NaN;
 row.AppliedTimingCorrection_samples = NaN;
 row.ResidualTimingError_PostCorrection_samples = NaN;
 row.TrueTimingOffset_samples = 0;
@@ -8885,11 +9078,19 @@ row.TRSUpdateOutcome = "";
 row.TRSChannelTrackingFreshnessState = "";
 row.TRSFrequencyTrackingState = "";
 row.TRSTimingTrackingState = "";
+row.TimingTrackingAttempted = false;
 row.TRSTimingEstimateAvailable = false;
+row.TRSTimingEstimateUsable = false;
 row.TRSTimingEstimate_samples = NaN;
+row.FrequencyTrackingAttempted = false;
 row.TRSCFOEstimateAvailable = false;
+row.TRSCFOEstimateUsable = false;
 row.TRSEstimatedCFO_Hz = NaN;
+row.ChannelEstimationAttempted = false;
+row.TRSChannelEstimateAvailable = false;
 row.TRSRuntimeEvidenceSource = "";
+row.TRSRuntimeEvidenceUsable = false;
+row.StrictOk = false;
 row.GrantContextId = "";
 row.GrantWorkerSafe = false;
 row.GrantSharedStateCommitMode = "";

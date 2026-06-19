@@ -4969,13 +4969,16 @@ availLower = lower(strtrim(string(coverageT.Availability)));
 targetSNR_dB = localConfigNumber(ctx, ["channel.snr_dB", "global_radio_scope.target_snr_db", "scenario.snr_dB"], NaN);
 dlBlerAtTarget = localBLERAtTargetSNR(ctx.Tables.Sweep, "DL_BLER", targetSNR_dB);
 ulBlerAtTarget = localBLERAtTargetSNR(ctx.Tables.Sweep, "UL_BLER", targetSNR_dB);
+resultOk = localStructLogicalWithFallback(ctx.Manifest, ctx.ScenarioStatus, "ResultOk", false);
+partialOk = localStructLogicalWithFallback(ctx.Manifest, ctx.ScenarioStatus, "PartialOk", false);
+artifactsGenerated = localStructLogicalWithFallback(ctx.Manifest, ctx.ScenarioStatus, "ArtifactsGenerated", true);
 T = table( ...
     string(ctx.ScenarioConfig.ScenarioID), ...
     string(ctx.Manifest.RunnerProfile), ...
     string(ctx.Manifest.RunCompletion), ...
-    logical(sixgr.util.structGet(ctx.Manifest, "ResultOk", sixgr.util.structGet(ctx.ScenarioStatus, "ResultOk", NaN))), ...
-    logical(sixgr.util.structGet(ctx.Manifest, "PartialOk", sixgr.util.structGet(ctx.ScenarioStatus, "PartialOk", false))), ...
-    logical(sixgr.util.structGet(ctx.Manifest, "ArtifactsGenerated", sixgr.util.structGet(ctx.ScenarioStatus, "ArtifactsGenerated", true))), ...
+    resultOk, ...
+    partialOk, ...
+    artifactsGenerated, ...
     double(sixgr.util.structGet(ctx.Manifest, "RequiredCaseCount", sixgr.util.structGet(ctx.ScenarioStatus, "RequiredCaseCount", NaN))), ...
     double(sixgr.util.structGet(ctx.Manifest, "RequiredFailureCount", sixgr.util.structGet(ctx.ScenarioStatus, "RequiredFailureCount", NaN))), ...
     double(sixgr.util.structGet(ctx.Manifest, "OptionalPrunedCount", sixgr.util.structGet(ctx.ScenarioStatus, "OptionalPrunedCount", NaN))), ...
@@ -5040,6 +5043,51 @@ T = table( ...
         'EffectiveDLDominantOperatingPoint','EffectiveDLLayerHistogram','EffectiveDLRankHistogram','EffectiveDLModulationHistogram','EffectiveDLMCSHistogram','EffectiveDLConfiguredMatchRate', ...
         'EffectiveULDominantOperatingPoint','EffectiveULLayerHistogram','EffectiveULRankHistogram','EffectiveULModulationHistogram','EffectiveULMCSHistogram','EffectiveULConfiguredMatchRate', ...
         'EffectiveRuntimeNote'});
+end
+
+function tf = localStructLogicalWithFallback(primary, secondary, fieldName, defaultValue)
+raw = sixgr.util.structGet(primary, fieldName, []);
+if localIsMissingScalar(raw)
+    raw = sixgr.util.structGet(secondary, fieldName, defaultValue);
+end
+tf = localScalarLogicalValue(raw, defaultValue);
+end
+
+function tf = localScalarLogicalValue(raw, defaultValue)
+tf = logical(defaultValue);
+if isempty(raw)
+    return;
+end
+if islogical(raw)
+    tf = raw(1);
+    return;
+end
+if isnumeric(raw)
+    raw = double(raw(1));
+    if isfinite(raw)
+        tf = raw ~= 0;
+    end
+    return;
+end
+text = lower(strtrim(string(raw(1))));
+if any(text == ["1","true","yes","on","ok","pass","passed","complete","completed"])
+    tf = true;
+elseif any(text == ["0","false","no","off","fail","failed",""])
+    tf = false;
+end
+end
+
+function tf = localIsMissingScalar(raw)
+tf = isempty(raw);
+if tf
+    return;
+end
+if isnumeric(raw)
+    tf = isscalar(raw) && isnan(double(raw));
+elseif isstring(raw) || ischar(raw)
+    txt = strtrim(string(raw));
+    tf = isscalar(txt) && (strlength(txt) == 0 || lower(txt) == "nan" || ismissing(txt));
+end
 end
 
 function T = localBuildPerSweepComparisonTable(ctx)

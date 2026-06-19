@@ -760,15 +760,10 @@ y = sixgr.util.applyFractionalSampleDelay(x, -timingOffset);
 end
 
 function maxCorrection = localMaxTimingCorrectionSamples(carrier)
+% nrTimingEstimate returns the absolute waveform acquisition offset. In a
+% fading replay this can include channel-object filter/group delay, so the
+% data receiver must not clamp the applied shift to one CP length.
 maxCorrection = inf;
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    cpLens = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
-    if ~isempty(cpLens)
-        maxCorrection = max(0, max(cpLens(:)));
-    end
-catch
-end
 end
 
 function fs = localCarrierSampleRateHz(carrier)

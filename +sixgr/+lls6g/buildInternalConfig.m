@@ -931,6 +931,10 @@ cfg = localStructSetIfPresent(cfg, "ZCDPE.DPI_d", localGetNested(s, "random_acce
 cfg = localStructSetIfPresent(cfg, "ZCDPE.NumSymbols", localGetNested(s, "random_access.zcdpe_num_symbols", []));
 cfg = localStructSetIfPresent(cfg, "ZCDPE.FreqSearchPoints", localGetNested(s, "random_access.zcdpe_freq_search_points", []));
 cfg = localStructSetIfPresent(cfg, "ZCDPE.ResidualFreqBound_Hz", localGetNested(s, "random_access.zcdpe_residual_freq_bound_hz", []));
+if isfield(s, "random_access") && isstruct(s.random_access)
+    cfg.random_access = sixgr.util.mergeStruct( ...
+        sixgr.util.structGet(cfg, "random_access", struct()), s.random_access);
+end
 cfg = sixgr.util.structSet(cfg, "prach_lls.OutputDir", runFolder);
 cfg = sixgr.util.structSet(cfg, "prach_lls.ScenarioName", char(string(s.meta.scenario_id)));
 
@@ -1081,6 +1085,12 @@ cfg = sixgr.util.structSet(cfg, "phy.beamManagement.multiPanelReady", logical(s.
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.panelCount", double(s.mimo.panel_count));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.trpCount", ...
     double(localRequireFirstNested(s, ["deployment_topology.num_trps","mimo.trp_count"], "deployment_topology.num_trps or mimo.trp_count")));
+exportSSBBeamSweep = logical(localGetNested(s, "outputs.export_ssb_beam_sweep", ...
+    localGetNested(s, "output.export_ssb_beam_sweep", ...
+    localGetNested(s, "analytics.export_ssb_beam_sweep", ...
+    logical(localGetNested(s, "analytics.export_beam_analytics", false)) && logical(s.mimo.beam_sweep_enabled)))));
+cfg = sixgr.util.structSet(cfg, "outputs.exportSSBBeamSweep", exportSSBBeamSweep);
+cfg = sixgr.util.structSet(cfg, "analytics.export_ssb_beam_sweep", exportSSBBeamSweep);
 
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mode", char(linkAdaptationMode));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.configuredDLMCSIndex", dlConfiguredMCSIndex);
@@ -2409,8 +2419,10 @@ end
 
 function cfoHz = localResolveRuntimeCFOHz(s)
 explicit = localNumericScalarOrNaN(localGetNested(s, "impairments.cfo_hz", NaN));
+explicitNonzero = isfinite(explicit) && abs(double(explicit)) > 0;
 enabled = logical(localGetNested(s, "impairments.cfo_enabled", ...
-    localGetNested(s, "impairments.cfo.enabled", isfinite(explicit) && abs(explicit) > 0)));
+    localGetNested(s, "impairments.cfo.enabled", explicitNonzero)));
+enabled = logical(enabled || explicitNonzero);
 if ~enabled
     cfoHz = 0;
     return;
@@ -2468,8 +2480,12 @@ end
 
 function timingOffset = localResolveRuntimeTimingOffsetSamples(s)
 explicit = localNumericScalarOrNaN(localGetNested(s, "impairments.timing_offset_samples", NaN));
-enabled = logical(localGetNested(s, "impairments.timing_offset_enabled", ...
-    localGetNested(s, "impairments.to.enabled", isfinite(explicit) && abs(explicit) > 0)));
+% A nonzero numeric timing offset is itself an enabled impairment request.
+% Defaults may carry timing_offset_enabled=false for the zero-offset case;
+% that default must not suppress a scenario override that sets samples != 0.
+enabled = logical(localGetNested(s, "impairments.timing_offset_enabled", false)) || ...
+    logical(localGetNested(s, "impairments.to.enabled", false)) || ...
+    (isfinite(explicit) && abs(explicit) > 0);
 if ~enabled
     timingOffset = 0;
     return;

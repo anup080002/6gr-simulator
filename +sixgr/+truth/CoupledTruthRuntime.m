@@ -176,6 +176,8 @@ methods(Static)
         state.PendingCSITable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyCSIReportRow(), 0, 1));
         state.LatestDLFeedback = repmat(sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow(), nUsers, 1);
         state.LatestULFeedback = repmat(sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow(), nUsers, 1);
+        state.DLLinkAdaptationState = cell(nUsers, 1);
+        state.ULLinkAdaptationState = cell(nUsers, 1);
         state.LastPBCHSlot = 0;
         state.LastTRSSlot = 0;
         state.DLSchedulers = sixgr.truth.CoupledTruthRuntime.createSchedulers(cfgMob, nCells, "DL", state.DLHarq);
@@ -1368,6 +1370,24 @@ methods(Static, Access=private)
             latest.Slot = double(row.SourceSlot);
             latest.Modulation = char(string(row.Modulation));
             latest.Direction = char(rowDirection);
+            latest.RawCQIDerivedMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RawCQIDerivedMCS", NaN));
+            latest.RawCQIDerivedTargetCodeRate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RawCQIDerivedTargetCodeRate", NaN));
+            latest.RawCQIDerivedModulation = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RawCQIDerivedModulation", "")));
+            latest.LinkAdaptationMCSIndex = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LinkAdaptationMCSIndex", NaN));
+            latest.LinkAdaptationDecisionReason = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LinkAdaptationDecisionReason", "")));
+            latest.MCSSelectionSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MCSSelectionSource", "")));
+            latest.MCSValueStatus = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MCSValueStatus", "")));
+            latest.CQIBasedMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIBasedMCS", NaN));
+            latest.SmoothedCQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SmoothedCQI", NaN));
+            latest.InstantaneousCQIMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "InstantaneousCQIMCS", NaN));
+            latest.DeltaMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DeltaMCS", NaN));
+            latest.EffectiveCQISmoothingAlpha = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "EffectiveCQISmoothingAlpha", NaN));
+            latest.CSITemporalCorrelationWeight = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSITemporalCorrelationWeight", NaN));
+            latest.CSIAgeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSIAgeSeconds", NaN));
+            latest.CSICoherenceTimeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSICoherenceTimeSeconds", NaN));
+            latest.OuterLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "OuterLoopEnabled", false));
+            latest.InnerLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "InnerLoopEnabled", false));
+            latest.LinkAdaptationStateUpdateCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LinkAdaptationStateUpdateCount", NaN));
             if rowDirection == "UL"
                 state.LatestULFeedback(ueIdx) = latest;
             else
@@ -2783,7 +2803,7 @@ methods(Static, Access=private)
             state.TrackingEligibilityByCell(servingCell) = false;
             state.TRSFailureCountByCell(servingCell) = double(state.TRSFailureCountByCell(servingCell)) + 1;
         end
-        if isfinite(estDopplerHz)
+        if logical(ok) && isfinite(estDopplerHz)
             state.LastEstimatedTRSDopplerHzByCell(servingCell) = double(estDopplerHz);
         end
         state = sixgr.truth.CoupledTruthRuntime.updateReceiverTrackingFromTRSImpl(state, servingCell, row, ok);
@@ -2855,7 +2875,10 @@ methods(Static, Access=private)
         end
         explicitCFOAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
             ["TRSCFOEstimateAvailable","CFOEstimateAvailable"], isfinite(estimatedCFOHz));
-        cfoAvailable = logical(explicitCFOAvailable) && isfinite(estimatedCFOHz);
+        cfoAvailable = logical(ok) && logical(explicitCFOAvailable) && isfinite(estimatedCFOHz);
+        if ~cfoAvailable
+            estimatedCFOHz = NaN;
+        end
         if isfinite(estDopplerHz) && cfoAvailable
             frequencyState = "doppler_and_cfo_estimates_updated_from_trs";
         elseif cfoAvailable
@@ -2867,7 +2890,10 @@ methods(Static, Access=private)
         end
         explicitTimingAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
             ["TRSTimingEstimateAvailable","TimingEstimateAvailable"], isfinite(timingEstimate));
-        timingAvailable = logical(explicitTimingAvailable) && isfinite(timingEstimate);
+        timingAvailable = logical(ok) && logical(explicitTimingAvailable) && isfinite(timingEstimate);
+        if ~timingAvailable
+            timingEstimate = NaN;
+        end
         if timingAvailable
             timingState = "timing_estimate_updated_from_trs";
         else
@@ -3768,11 +3794,26 @@ methods(Static, Access=private)
         if ~(isfinite(cqi) && cqi > 0)
             return;
         end
-        [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+        mcsTable = sixgr.link.resolveConfiguredMCSTable(cfg, direction);
+        feedbackMCS = double(sixgr.util.structGet(feedback, "MCSIndex", NaN));
+        feedbackProfile = sixgr.link.resolveMCSProfile(mcsTable, feedbackMCS);
+        useFeedbackDecision = isfinite(feedbackMCS) && feedbackMCS >= 0 && ...
+            logical(sixgr.util.structGet(feedbackProfile, "Valid", false));
+        if useFeedbackDecision
+            mcsIndex = double(round(feedbackMCS));
+            modStr = char(string(feedbackProfile.Modulation));
+            targetCodeRate = double(feedbackProfile.TargetCodeRate);
+        else
+            [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+        end
         ollaDelta = 0;
         ollaCount = 0;
         ollaEnabled = false;
-        if ~isempty(scheduler) && ismethod(scheduler, "getOLLAMCSDelta")
+        if useFeedbackDecision
+            ollaDelta = double(sixgr.util.structGet(feedback, "DeltaMCS", 0));
+            ollaCount = double(sixgr.util.structGet(feedback, "LinkAdaptationStateUpdateCount", 0));
+            ollaEnabled = logical(sixgr.util.structGet(feedback, "OuterLoopEnabled", false));
+        elseif ~isempty(scheduler) && ismethod(scheduler, "getOLLAMCSDelta")
             try
                 [ollaDelta, ollaCount, ollaEnabled] = scheduler.getOLLAMCSDelta(double(sixgr.util.structGet(grant, "RNTI", NaN)));
             catch
@@ -3781,9 +3822,9 @@ methods(Static, Access=private)
                 ollaEnabled = false;
             end
         end
-        if logical(ollaEnabled) && isfinite(mcsIndex) && isfinite(ollaDelta) && ollaCount > 0
+        if ~useFeedbackDecision && logical(ollaEnabled) && isfinite(mcsIndex) && isfinite(ollaDelta) && ollaCount > 0
             adjustedMCS = max(0, min(31, round(double(mcsIndex) + double(ollaDelta))));
-            prof = sixgr.link.resolveMCSProfile(sixgr.link.resolveConfiguredMCSTable(cfg, direction), adjustedMCS);
+            prof = sixgr.link.resolveMCSProfile(mcsTable, adjustedMCS);
             if prof.Valid
                 mcsIndex = double(adjustedMCS);
                 modStr = char(string(prof.Modulation));
@@ -3798,11 +3839,21 @@ methods(Static, Access=private)
         grant.MCS = double(round(mcsIndex));
         grant.Modulation = char(string(modStr));
         grant.TargetCodeRate = double(targetCodeRate);
-        grant.MCSIndexAuthority = "feedback_cqi_derived_reference";
-        grant.GrantOperatingPointSource = "feedback_cqi_derived_reference";
+        selectionSource = strtrim(string(sixgr.util.structGet(feedback, "MCSSelectionSource", "")));
+        if useFeedbackDecision
+            if strlength(selectionSource) == 0
+                selectionSource = "runtime_link_adaptation_decision";
+            end
+            grant.MCSValueStatus = char(string(sixgr.util.structGet(feedback, "MCSValueStatus", "measured_feedback_adapted")));
+        else
+            selectionSource = "feedback_cqi_derived_reference";
+            grant.MCSValueStatus = "measured_cqi_mapped";
+        end
+        grant.MCSIndexAuthority = char(selectionSource);
+        grant.GrantOperatingPointSource = char(selectionSource);
         grant.AMCMode = "cqi_table";
         grant.OuterLoopEnabled = logical(ollaEnabled);
-        grant.OuterLoopApplied = logical(ollaEnabled && ollaCount > 0);
+        grant.OuterLoopApplied = logical(ollaEnabled && ollaCount > 0 && isfinite(ollaDelta) && abs(double(ollaDelta)) > 0);
         grant.OLLADeltaMCS = double(ollaDelta);
         grant.OLLAUpdateCount = double(ollaCount);
         if logical(grant.OuterLoopApplied)
@@ -3863,10 +3914,14 @@ methods(Static, Access=private)
         report.MCSIndex = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
         report.TargetCodeRate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedTargetCodeRate", NaN));
         report.Modulation = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedModulation", "")));
+        report.RawCQIDerivedMCS = double(report.MCSIndex);
+        report.RawCQIDerivedTargetCodeRate = double(report.TargetCodeRate);
+        report.RawCQIDerivedModulation = char(string(report.Modulation));
         servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
         if ueIdx >= 1 && ueIdx <= numel(servingVec)
             report.ServingCell = double(servingVec(ueIdx));
         end
+        [state, report] = sixgr.truth.CoupledTruthRuntime.applyLinkAdaptationToCSIReport(state, report, ueIdx, direction, row);
         state.PendingCSITable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.PendingCSITable, struct2table(report, "AsArray", true));
         if report.DueSlot <= state.CurrentSlot
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
@@ -3884,12 +3939,180 @@ methods(Static, Access=private)
             latest.ServingCell = report.ServingCell;
             latest.Slot = report.SourceSlot;
             latest.Direction = report.Direction;
+            latest.RawCQIDerivedMCS = report.RawCQIDerivedMCS;
+            latest.RawCQIDerivedTargetCodeRate = report.RawCQIDerivedTargetCodeRate;
+            latest.RawCQIDerivedModulation = report.RawCQIDerivedModulation;
+            latest.LinkAdaptationMCSIndex = report.LinkAdaptationMCSIndex;
+            latest.LinkAdaptationDecisionReason = report.LinkAdaptationDecisionReason;
+            latest.MCSSelectionSource = report.MCSSelectionSource;
+            latest.MCSValueStatus = report.MCSValueStatus;
+            latest.CQIBasedMCS = report.CQIBasedMCS;
+            latest.SmoothedCQI = report.SmoothedCQI;
+            latest.InstantaneousCQIMCS = report.InstantaneousCQIMCS;
+            latest.DeltaMCS = report.DeltaMCS;
+            latest.EffectiveCQISmoothingAlpha = report.EffectiveCQISmoothingAlpha;
+            latest.CSITemporalCorrelationWeight = report.CSITemporalCorrelationWeight;
+            latest.CSIAgeSeconds = report.CSIAgeSeconds;
+            latest.CSICoherenceTimeSeconds = report.CSICoherenceTimeSeconds;
+            latest.OuterLoopEnabled = report.OuterLoopEnabled;
+            latest.InnerLoopEnabled = report.InnerLoopEnabled;
+            latest.LinkAdaptationStateUpdateCount = report.LinkAdaptationStateUpdateCount;
             if upper(string(direction)) == "UL"
                 state.LatestULFeedback(ueIdx) = latest;
             else
                 state.LatestDLFeedback(ueIdx) = latest;
             end
             state.PendingCSITable.Processed(end) = true;
+        end
+    end
+
+    function [state, report] = applyLinkAdaptationToCSIReport(state, report, ueIdx, direction, row)
+        direction = upper(string(direction));
+        report.LinkAdaptationMCSIndex = NaN;
+        report.LinkAdaptationDecisionReason = "";
+        report.MCSSelectionSource = "runtime_cqi_table_raw";
+        report.MCSValueStatus = "measured_cqi_mapped_raw";
+        report.CQIBasedMCS = NaN;
+        report.SmoothedCQI = NaN;
+        report.InstantaneousCQIMCS = NaN;
+        report.DeltaMCS = NaN;
+        report.EffectiveCQISmoothingAlpha = NaN;
+        report.CSITemporalCorrelationWeight = NaN;
+        report.CSIAgeSeconds = NaN;
+        report.CSICoherenceTimeSeconds = NaN;
+        report.OuterLoopEnabled = false;
+        report.InnerLoopEnabled = false;
+        report.LinkAdaptationStateUpdateCount = NaN;
+
+        if ~sixgr.truth.CoupledTruthRuntime.schedulerUsesCQITableForDirection(state.CfgMobility, direction)
+            return;
+        end
+        if ~(isfinite(report.CQI) && report.CQI > 0)
+            report.MCSSelectionSource = "missing_runtime_cqi";
+            report.MCSValueStatus = "unavailable_missing_runtime_cqi";
+            return;
+        end
+
+        previousState = sixgr.truth.CoupledTruthRuntime.linkAdaptationStateForUE(state, direction, ueIdx);
+        previousState = sixgr.truth.CoupledTruthRuntime.seedRuntimeLinkAdaptationState( ...
+            state.CfgMobility, direction, previousState, report.ServingCell);
+        metrics = struct( ...
+            "CQI", double(report.CQI), ...
+            "RI", double(report.RI), ...
+            "PMI", double(report.PMI), ...
+            "CRI", double(report.CRI), ...
+            "SINR_dB", double(report.SINR_dB), ...
+            "CSIAgeSlots", max(0, double(report.DueSlot) - double(report.SourceSlot)), ...
+            "CSIAgeSeconds", max(0, double(report.DueSlot) - double(report.SourceSlot)) * double(state.SlotDuration_s), ...
+            "SINRSource", char(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+                ["MeasuredTrialSINRSource","SINRSource","PostEqSINRSource"], "")), ...
+            "SINRValueRole", char(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+                ["MeasuredTrialSINRValueRole","SINRValueRole","PostEqSINRValueRole"], "")), ...
+            "SINRValueStatus", char(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+                ["MeasuredTrialSINRValueStatus","SINRValueStatus","PostEqSINRValueStatus"], "")));
+        if sixgr.truth.CoupledTruthRuntime.rowHasField(row, "CRCPass")
+            metrics.CRCPass = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "CRCPass", false));
+        end
+
+        try
+            [decision, nextState] = sixgr.link.computeLinkAdaptationDecision( ...
+                state.CfgMobility, direction, metrics, "AdaptationState", previousState);
+        catch
+            report.LinkAdaptationDecisionReason = "link_adaptation_decision_failed";
+            report.MCSSelectionSource = "runtime_cqi_table_raw_due_to_decision_error";
+            return;
+        end
+        nextState.ServingCell = double(report.ServingCell);
+        state = sixgr.truth.CoupledTruthRuntime.setLinkAdaptationStateForUE(state, direction, ueIdx, nextState);
+
+        report.LinkAdaptationDecisionReason = char(string(sixgr.util.structGet(decision, "Reason", "")));
+        report.CQIBasedMCS = double(sixgr.util.structGet(decision, "CQIBasedMCS", NaN));
+        report.SmoothedCQI = double(sixgr.util.structGet(decision, "SmoothedCQI", NaN));
+        report.InstantaneousCQIMCS = double(sixgr.util.structGet(decision, "InstantaneousCQIMCS", NaN));
+        report.DeltaMCS = double(sixgr.util.structGet(decision, "DeltaMCS", NaN));
+        report.EffectiveCQISmoothingAlpha = double(sixgr.util.structGet(decision, "EffectiveCQISmoothingAlpha", NaN));
+        report.CSITemporalCorrelationWeight = double(sixgr.util.structGet(decision, "CSITemporalCorrelationWeight", NaN));
+        report.CSIAgeSeconds = double(sixgr.util.structGet(decision, "CSIAgeSeconds", NaN));
+        report.CSICoherenceTimeSeconds = double(sixgr.util.structGet(decision, "CSICoherenceTimeSeconds", NaN));
+        report.OuterLoopEnabled = logical(sixgr.util.structGet(decision, "OuterLoopEnabled", false));
+        report.InnerLoopEnabled = logical(sixgr.util.structGet(decision, "InnerLoopEnabled", false));
+        report.LinkAdaptationStateUpdateCount = double(sixgr.util.structGet(decision, "StateUpdateCount", NaN));
+        if logical(sixgr.util.structGet(decision, "Valid", false)) && ...
+                isfinite(double(sixgr.util.structGet(decision, "MCSIndex", NaN)))
+            report.MCSIndex = double(decision.MCSIndex);
+            report.LinkAdaptationMCSIndex = double(decision.MCSIndex);
+            report.TargetCodeRate = double(decision.TargetCodeRate);
+            report.Modulation = char(string(decision.Modulation));
+            report.MCSSelectionSource = char(string(sixgr.util.structGet(decision, ...
+                "MCSSelectionSource", "runtime_link_adaptation_decision")));
+            report.MCSValueStatus = "measured_feedback_adapted";
+        end
+    end
+
+    function previousState = linkAdaptationStateForUE(state, direction, ueIdx)
+        previousState = struct();
+        direction = upper(string(direction));
+        if direction == "UL"
+            fieldName = "ULLinkAdaptationState";
+        else
+            fieldName = "DLLinkAdaptationState";
+        end
+        if ~(isfield(state, fieldName) && iscell(state.(fieldName)) && ...
+                ueIdx >= 1 && ueIdx <= numel(state.(fieldName)))
+            return;
+        end
+        candidate = state.(fieldName){ueIdx};
+        if isstruct(candidate)
+            previousState = candidate;
+        end
+    end
+
+    function state = setLinkAdaptationStateForUE(state, direction, ueIdx, nextState)
+        direction = upper(string(direction));
+        if direction == "UL"
+            fieldName = "ULLinkAdaptationState";
+        else
+            fieldName = "DLLinkAdaptationState";
+        end
+        if ~(isfield(state, fieldName) && iscell(state.(fieldName)))
+            state.(fieldName) = cell(max(0, double(sixgr.util.structGet(state, "NumUsers", ueIdx))), 1);
+        end
+        if ueIdx > numel(state.(fieldName))
+            state.(fieldName){ueIdx, 1} = [];
+        end
+        state.(fieldName){ueIdx} = nextState;
+    end
+
+    function previousState = seedRuntimeLinkAdaptationState(cfg, direction, previousState, servingCell)
+        if nargin < 3 || ~isstruct(previousState)
+            previousState = struct();
+        end
+        servingCell = double(servingCell);
+        initialized = logical(sixgr.util.structGet(previousState, "Initialized", false));
+        previousServingCell = double(sixgr.util.structGet(previousState, "ServingCell", NaN));
+        servingChanged = initialized && isfinite(previousServingCell) && isfinite(servingCell) && ...
+            abs(previousServingCell - servingCell) > 1e-9;
+        if initialized && ~servingChanged
+            return;
+        end
+        bootstrapMCS = max(0, min(31, round(double(sixgr.util.structGet(cfg, ...
+            "phy.linkAdaptation.bootstrapMCSIndex", 1)))));
+        bootstrapCQI = 0;
+        previousState = struct( ...
+            "Direction", char(upper(string(direction))), ...
+            "Initialized", true, ...
+            "CQIBasedMCS", double(bootstrapMCS), ...
+            "LastMCSIndex", double(bootstrapMCS), ...
+            "LastInstantaneousMCS", double(bootstrapMCS), ...
+            "SmoothedCQI", double(bootstrapCQI), ...
+            "LastCQI", double(bootstrapCQI), ...
+            "LastRI", NaN, ...
+            "DeltaMCS", 0, ...
+            "UpdateCount", 0, ...
+            "ServingCell", double(servingCell), ...
+            "LastResetReason", "bootstrap_seed");
+        if servingChanged
+            previousState.LastResetReason = "serving_cell_change";
         end
     end
 
@@ -4162,6 +4385,16 @@ methods(Static, Access=private)
         end
     end
 
+    function tf = rowHasField(row, name)
+        if istable(row)
+            tf = height(row) >= 1 && ismember(string(name), string(row.Properties.VariableNames));
+        elseif isstruct(row) && isscalar(row)
+            tf = isfield(row, char(string(name)));
+        else
+            tf = false;
+        end
+    end
+
     function rowOut = normalizeStructRowToPrototype(rowIn, prototype)
         if ~(isstruct(prototype) && isscalar(prototype))
             rowOut = rowIn;
@@ -4280,20 +4513,36 @@ methods(Static, Access=private)
             ["TRSTimingEstimateAvailable","TimingEstimateAvailable"], false) && ...
             isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["EstimatedTimingOffset_samples","TimingEstimate_samples","TimingOffset_samples"], NaN));
+        hasTimingUsableFlag = sixgr.truth.CoupledTruthRuntime.rowHasField(row, "TRSTimingEstimateUsable") || ...
+            sixgr.truth.CoupledTruthRuntime.rowHasField(row, "TimingEstimateUsable");
+        timingUsable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSTimingEstimateUsable","TimingEstimateUsable"], false);
+        if ~hasTimingUsableFlag
+            timingUsable = logical(timingAvailable);
+        end
         frequencyAttempted = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
             ["FrequencyTrackingAttempted","TRSCFOEstimateAttempted","CFOEstimateAttempted"], false);
         frequencyAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
             ["TRSCFOEstimateAvailable","CFOEstimateAvailable"], false) && ...
             isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["EstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN));
+        hasFrequencyUsableFlag = sixgr.truth.CoupledTruthRuntime.rowHasField(row, "TRSCFOEstimateUsable") || ...
+            sixgr.truth.CoupledTruthRuntime.rowHasField(row, "CFOEstimateUsable");
+        frequencyUsable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSCFOEstimateUsable","CFOEstimateUsable"], false);
+        if ~hasFrequencyUsableFlag
+            frequencyUsable = logical(frequencyAvailable);
+        end
         channelAttempted = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
             ["ChannelEstimationAttempted","TRSChannelEstimationAttempted"], false);
         channelAvailable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
             ["TRSChannelEstimateAvailable","ChannelEstimateAvailable"], false) && ...
             isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["NMSE_dB"], NaN));
-        tf = proxyClean && detectionAttempted && detectionAvailable && ...
-            timingAttempted && timingAvailable && frequencyAttempted && ...
-            frequencyAvailable && channelAttempted && channelAvailable;
+        runtimeUsable = sixgr.truth.CoupledTruthRuntime.rowAnyLogical(row, ...
+            ["TRSRuntimeEvidenceUsable","RuntimeEvidenceUsable","MeasurementUsable"], false);
+        tf = proxyClean && (runtimeUsable || (detectionAttempted && detectionAvailable && ...
+            timingAttempted && timingAvailable && timingUsable && frequencyAttempted && ...
+            frequencyAvailable && frequencyUsable && channelAttempted && channelAvailable));
     end
 
     function value = rowAnyLogical(row, names, defaultValue)
@@ -6506,7 +6755,17 @@ methods(Static, Access=private)
             "SourceSlot", NaN, "DueSlot", NaN, ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "MCSIndex", NaN, "TargetCodeRate", NaN, ...
-            "Modulation", "", "ServingCell", NaN, "Processed", false);
+            "Modulation", "", "RawCQIDerivedMCS", NaN, ...
+            "RawCQIDerivedTargetCodeRate", NaN, "RawCQIDerivedModulation", "", ...
+            "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
+            "MCSSelectionSource", "", "MCSValueStatus", "", ...
+            "CQIBasedMCS", NaN, "SmoothedCQI", NaN, ...
+            "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, ...
+            "EffectiveCQISmoothingAlpha", NaN, "CSITemporalCorrelationWeight", NaN, ...
+            "CSIAgeSeconds", NaN, "CSICoherenceTimeSeconds", NaN, ...
+            "OuterLoopEnabled", false, "InnerLoopEnabled", false, ...
+            "LinkAdaptationStateUpdateCount", NaN, ...
+            "ServingCell", NaN, "Processed", false);
     end
 
     function row = emptyLatestFeedbackRow()
@@ -6514,7 +6773,17 @@ methods(Static, Access=private)
             "Valid", false, "Direction", "", "Slot", NaN, ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "MCSIndex", NaN, "TargetCodeRate", NaN, ...
-            "Modulation", "", "ServingCell", NaN, ...
+            "Modulation", "", "RawCQIDerivedMCS", NaN, ...
+            "RawCQIDerivedTargetCodeRate", NaN, "RawCQIDerivedModulation", "", ...
+            "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
+            "MCSSelectionSource", "", "MCSValueStatus", "", ...
+            "CQIBasedMCS", NaN, "SmoothedCQI", NaN, ...
+            "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, ...
+            "EffectiveCQISmoothingAlpha", NaN, "CSITemporalCorrelationWeight", NaN, ...
+            "CSIAgeSeconds", NaN, "CSICoherenceTimeSeconds", NaN, ...
+            "OuterLoopEnabled", false, "InnerLoopEnabled", false, ...
+            "LinkAdaptationStateUpdateCount", NaN, ...
+            "ServingCell", NaN, ...
             "BootstrapCQISource", "", "PreviewSINR_dB", NaN, ...
             "PreviewCQI", NaN, "PreviewMCSIndex", NaN, ...
             "PreviewModulation", "", "PreviewTargetCodeRate", NaN, ...

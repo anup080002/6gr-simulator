@@ -6,6 +6,7 @@ cfg = sixgr.config.defaultConfig();
 cfg.phy.carrier.NCellID = 17;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.NSizeGrid = 52;
+cfg.phy.fc_Hz = 700e6;
 tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [bits, encMeta] = sixgr.rrc.asn1.encodeSIB1UPER(tree);
 [rxTree, decMeta] = sixgr.rrc.asn1.decodeSIB1UPER(bits);

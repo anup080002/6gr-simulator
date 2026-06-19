@@ -11,13 +11,17 @@ parse(p, baseCfg, varargin{:});
 opt = p.Results;
 
 cfg = baseCfg;
-mandatory = ["phy.carrier.NCellID","phy.carrier.NSizeGrid","phy.numerology.scs_kHz"];
+scsKHz = localResolveSubcarrierSpacingKHz(cfg);
+mandatory = ["phy.carrier.NCellID","phy.carrier.NSizeGrid"];
 missing = strings(0, 1);
 for ii = 1:numel(mandatory)
     value = sixgr.util.structGet(cfg, mandatory(ii), []);
     if isempty(value)
         missing(end+1, 1) = mandatory(ii); %#ok<AGROW>
     end
+end
+if ~(isfinite(scsKHz) && scsKHz > 0)
+    missing(end+1, 1) = "phy.numerology.scs_kHz|phy.carrier.SubcarrierSpacing"; %#ok<AGROW>
 end
 if ~isempty(missing)
     error("sixgr:phy:trs:MissingStrictConfigField", ...
@@ -27,7 +31,6 @@ end
 nSizeGrid = max(1, round(double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 24))));
 nStartGrid = max(0, round(double(sixgr.util.structGet(cfg, "phy.carrier.NStartGrid", 0))));
 nCellID = max(0, round(double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 0))));
-scsKHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", 30));
 slotNumbers = sixgr.util.structGet(cfg, "phy.trs.slotNumbers", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.slot_numbers", [0 1]));
 slotNumbers = unique(max(0, round(double(slotNumbers(:).'))), "stable");
@@ -114,4 +117,13 @@ elseif nPorts <= 2
 else
     row = 4;
 end
+end
+
+function scsKHz = localResolveSubcarrierSpacingKHz(cfg)
+scsKHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN));
+if isfinite(scsKHz) && scsKHz > 0
+    return;
+end
+scsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN)));
 end

@@ -1323,7 +1323,9 @@ localDBLog("INFO", "Preparing LLS run: scenario=%s runTag=%s runFolder=%s", ...
 
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 cfg.run.runTag = char(string(runTag));
-cfg.run.runnerProfile = char(string(scfg.get("scenario.runner_profile")));
+configuredProfile = lower(strtrim(string(scfg.get("scenario.runner_profile"))));
+cfg.run.configuredRunnerProfile = char(configuredProfile);
+cfg.run.runnerProfile = char(configuredProfile);
 cfg.run.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.configHash = char(string(scfg.ConfigHash));
@@ -1354,7 +1356,8 @@ localDBLog("INFO", "Artifact store active=%d backend=%s schema=%s", ...
     char(string(sixgr.util.structGet(storeInfo, "Backend", ""))), ...
     char(string(sixgr.util.structGet(storeInfo, "DatabaseSchema", ""))));
 
-profile = lower(string(scfg.get("scenario.runner_profile")));
+profile = localResolveEffectiveRunnerProfile(scfg, cfg, configuredProfile);
+cfg.run.runnerProfile = char(profile);
 result = struct();
 manifest = struct();
 runtimeSummary = struct();
@@ -2330,6 +2333,28 @@ if strlength(strtrim(profileName)) == 0
     profileName = string(scfg.ScenarioID);
 end
 profileName = strtrim(profileName);
+end
+
+function profile = localResolveEffectiveRunnerProfile(scfg, cfg, configuredProfile)
+profile = lower(strtrim(string(configuredProfile)));
+if strlength(profile) == 0
+    profile = lower(strtrim(string(scfg.get("scenario.runner_profile", ""))));
+end
+
+executionModel = lower(strtrim(string(sixgr.util.structGet(cfg, "lls6g.users.execution_model", ...
+    scfg.get("users.execution_model", "")))));
+controlRequired = any([ ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.pbchRequired", false)), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.prachRequired", false)), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.pdcchRequired", false)), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.srsRequired", false)), ...
+    logical(sixgr.util.structGet(cfg, "run.controlGating.trsRequired", false))]);
+
+if profile == "system_level_lls" && executionModel == "slot_coupled_truth" && controlRequired
+    profile = "waveform_bundle";
+    localDBLog("INFO", ...
+        "Effective runner promoted from system_level_lls to waveform_bundle because users.execution_model=slot_coupled_truth and runtime control/reference gating is required.");
+end
 end
 
 function [codeVersion, detail] = localDetectCodeVersion(includeGitHash)

@@ -115,6 +115,28 @@ assert(logical(stateRuntimeCFO.ReceiverTrackingStateByCell(1).CFOEstimateAvailab
     "TRS receiver tracking must consume real CFO estimates carried by runtime TRS trial rows.");
 state = stateRuntimeCFO;
 
+trsBadTimingRow = localStrictTRSRow(trsRow, out);
+trsBadTimingRow.EstimatedTimingOffset_samples = 365;
+trsBadTimingRow.TimingEstimate_samples = 365;
+trsBadTimingRow.TRSTimingEstimate_samples = 365;
+trsBadTimingRow.InjectedTimingOffset_samples = 0;
+trsBadTimingRow.TimingError_samples = 365;
+trsBadTimingRow.TRSTimingEstimateUsable = false;
+trsBadTimingRow.TRSCFOEstimateUsable = false;
+trsBadTimingRow.TRSRuntimeEvidenceUsable = false;
+trsBadTimingRow.StrictOk = false;
+trsBadTimingRow.Status = "PASS";
+trsBadTimingRow.FailureReason = "trs_strict_components_incomplete:timing";
+stateBadTiming = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(stateBeforeTRS, 1, trsBadTimingRow);
+assert(strcmpi(char(string(stateBadTiming.TRSValidityStateByCell(1))), "failed") && ~logical(stateBadTiming.TrackingEligibilityByCell(1)), ...
+    "TRS timing estimates outside the measured tolerance must not enable TRS gating.");
+assert(~logical(stateBadTiming.ReceiverTrackingStateByCell(1).TimingEstimateAvailable) && ...
+    ~isfinite(double(stateBadTiming.ReceiverTrackingStateByCell(1).TimingEstimate_samples)), ...
+    "Out-of-tolerance TRS timing must stay in raw trials, not the shared receiver timing state.");
+assert(~logical(stateBadTiming.ReceiverTrackingStateByCell(1).CFOEstimateAvailable) && ...
+    ~isfinite(double(stateBadTiming.ReceiverTrackingStateByCell(1).EstimatedCFO_Hz)), ...
+    "A failed TRS observation must not publish partial receiver corrections to data channels.");
+
 cfgLLS = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfgLLS, state, 1, "DL");
 userMeta = sixgr.util.structGet(cfgLLS, "lls6g.userContext", struct());
 assert(logical(sixgr.util.structGet(userMeta, "RuntimeTRSGatingActive", false)) && ...
@@ -205,12 +227,21 @@ row.DetectionSuccess = true;
 row.TimingTrackingAttempted = true;
 row.TRSTimingEstimateAvailable = true;
 row.EstimatedTimingOffset_samples = 0;
+row.TimingEstimate_samples = 0;
+row.TRSTimingEstimate_samples = 0;
+row.InjectedTimingOffset_samples = 0;
+row.TimingError_samples = 0;
+row.TRSTimingEstimateUsable = true;
 row.FrequencyTrackingAttempted = true;
 row.TRSCFOEstimateAvailable = true;
+row.TRSCFOEstimateUsable = true;
 row.EstimatedCFO_Hz = double(out.EstimatedCFO_Hz);
 row.EstimatedCFO_PreCorrection_Hz = double(out.EstimatedCFO_PreCorrection_Hz);
+row.InjectedCFO_Hz = double(out.InjectedCFO_Hz);
+row.FrequencyError_Hz = 0;
 row.ChannelEstimationAttempted = true;
 row.TRSChannelEstimateAvailable = true;
+row.TRSRuntimeEvidenceUsable = true;
 row.StrictOk = true;
 end
 
