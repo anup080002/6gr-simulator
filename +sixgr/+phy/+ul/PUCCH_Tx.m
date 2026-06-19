@@ -244,4 +244,64 @@ function pucch = localApplyPUCCHFromCfg(pucch, cfg, carrier)
             pucch.NID0 = nid0;
         end
     end
+
+    if isprop(pucch, "FrequencyHopping")
+        hopping = sixgr.util.structGet(cfg, "phy.pucch.FrequencyHopping", []);
+        if isempty(hopping)
+            hopping = sixgr.util.structGet(cfg, "phy.pucch.IntraSlotFrequencyHopping", []);
+        end
+        if ~isempty(hopping)
+            if islogical(hopping) || isnumeric(hopping)
+                pucch.FrequencyHopping = ternaryString(logical(hopping), "intraSlot", "neither");
+            else
+                pucch.FrequencyHopping = char(string(hopping));
+            end
+        end
+    end
+
+    if isprop(pucch, "SecondHopStartPRB")
+        secondHop = sixgr.util.structGet(cfg, "phy.pucch.SecondHopStartPRB", ...
+            sixgr.util.structGet(cfg, "phy.pucch.SecondHopPRB", []));
+        if ~isempty(secondHop) && isfinite(double(secondHop))
+            pucch.SecondHopStartPRB = max(0, round(double(secondHop)));
+        end
+    end
+
+    if isprop(pucch, "InitialCyclicShift")
+        cyclicShift = sixgr.util.structGet(cfg, "phy.pucch.InitialCyclicShift", []);
+        if ~isempty(cyclicShift) && isfinite(double(cyclicShift))
+            pucch.InitialCyclicShift = mod(round(double(cyclicShift)), 12);
+        end
+    end
+
+    if isprop(pucch, "OCCI")
+        occIndex = sixgr.util.structGet(cfg, "phy.pucch.OCCI", ...
+            sixgr.util.structGet(cfg, "phy.pucch.OCCIndex", []));
+        if ~isempty(occIndex) && isfinite(double(occIndex))
+            pucch.OCCI = max(0, round(double(occIndex)));
+        end
+    end
+
+    if isprop(pucch, "SpreadingFactor")
+        occLength = sixgr.util.structGet(cfg, "phy.pucch.SpreadingFactor", ...
+            sixgr.util.structGet(cfg, "phy.pucch.OCCLength", []));
+        if ~isempty(occLength) && isfinite(double(occLength)) && double(occLength) > 0
+            pucch.SpreadingFactor = max(1, round(double(occLength)));
+        end
+    end
+
+    if isprop(pucch, "HoppingID")
+        hoppingID = sixgr.util.structGet(cfg, "phy.pucch.HoppingID", []);
+        if ~isempty(hoppingID) && isfinite(double(hoppingID))
+            pucch.HoppingID = max(0, round(double(hoppingID)));
+        end
+    end
+end
+
+function out = ternaryString(cond, a, b)
+    if logical(cond)
+        out = a;
+    else
+        out = b;
+    end
 end

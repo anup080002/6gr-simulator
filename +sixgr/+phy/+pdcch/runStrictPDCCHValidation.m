@@ -68,7 +68,7 @@ oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
 trialRows(end+1,1) = tr; candidateRows = [candidateRows; table2struct(cand)]; %#ok<AGROW>
 oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
 
-badDci = sixgr.phy.pdcch.buildDCI10DownlinkAssignment(cfg, "PRBStart", max(1, cfg.NSizeGrid - 2), "NumPRB", 127, "MCS", 10);
+badDci = sixgr.phy.pdcch.buildDCI10DownlinkAssignment(cfg, "PRBStart", 0, "NumPRB", min(24, cfg.NSizeGrid), "MCS", 31);
 [trialId, tr, cand, fields, grant, oracle] = localRunOneTrial( ...
     trialId, "invalid_grant_fields", cfg, badDci, "1_0", cfg.RNTIValue, highSNR, "normal", true);
 trialRows(end+1,1) = tr; candidateRows = [candidateRows; table2struct(cand)]; %#ok<AGROW>
@@ -233,7 +233,7 @@ row.SecondBestCandidateMetric = double(score.SecondBestCandidateMetric);
 row.MetricMargin = double(score.MetricMargin);
 row.NoiseVariance = double(det.Rx.NoiseVar);
 row.SNRdB = double(snrDb);
-row.ChannelModel = string(cfg.ChannelModel);
+row.ChannelModel = "AWGN_STRICT_PDCCH_CONTROL_VALIDATION";
 row.ProxyUsed = false;
 row.Skipped = false;
 row.ToolboxMissing = false;

@@ -146,6 +146,18 @@ systemOut = sixgr.system.SystemLevelRunner.run(ctx, params);
 localDBLog("INFO", "System-level LLS finished: ok=%d", double(logical(sixgr.util.structGet(systemOut, "Ok", false))));
 
 canon = sixgr.truth.exportSystemLevelCanonicalArtifacts(runFolder, scfg, cfg, systemOut);
+strictControl = struct("Ok", true, "StrictOk", true, "SummaryTable", table(), "FailureReason", "");
+if localShouldRunStrictControlEvidence(scfg, cfg)
+    localDBLog("INFO", "Running strict waveform-backed control evidence for scenario target_cases.");
+    strictControl = sixgr.truth.exportStrictControlChannelEvidence(runFolder, cfg, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "EnablePDCCH", localStrictControlTargetEnabled(scfg, cfg, "pdcch"), ...
+        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"));
+    localDBLog("INFO", "Strict waveform-backed control evidence finished: ok=%d", ...
+        double(logical(sixgr.util.structGet(strictControl, "Ok", false))));
+    canon = localAttachStrictControlRawTrials(canon, strictControl);
+end
 
 notes = string(strjoin(string(sixgr.util.structGet(systemOut, "Errors", strings(0, 1))), "; "));
 if strlength(notes) == 0
@@ -157,20 +169,77 @@ kpitable = table( ...
     false, ...
     notes, ...
     'VariableNames', {'Case','Ok','Skipped','Notes'});
+strictSummaryT = sixgr.util.structGet(strictControl, "SummaryTable", table());
+if istable(strictSummaryT) && ~isempty(strictSummaryT)
+    strictCases = "strict_" + lower(string(strictSummaryT.SignalFamily)) + "_waveform_control";
+    strictNotes = string(strictSummaryT.FailureReason);
+    strictNotes(strlength(strtrim(strictNotes)) == 0) = "strict waveform-backed control evidence completed";
+    strictKPI = table(strictCases(:), logical(strictSummaryT.StrictOk(:)), false(height(strictSummaryT), 1), strictNotes(:), ...
+        'VariableNames', {'Case','Ok','Skipped','Notes'});
+    kpitable = [kpitable; strictKPI];
+end
+combinedOk = logical(sixgr.util.structGet(systemOut, "Ok", false)) && logical(sixgr.util.structGet(strictControl, "Ok", true));
 
 link = struct();
-link.Ok = logical(sixgr.util.structGet(systemOut, "Ok", false));
-link.Result = struct("Ok", logical(sixgr.util.structGet(systemOut, "Ok", false)));
+link.Ok = combinedOk;
+link.Result = struct("Ok", combinedOk);
 link.Errors = string(sixgr.util.structGet(systemOut, "Errors", strings(0, 1)));
+if ~logical(sixgr.util.structGet(strictControl, "Ok", true))
+    link.Errors = [link.Errors(:); string(sixgr.util.structGet(strictControl, "FailureReason", "strict_control_channel_evidence_failed"))];
+end
 link.UnsupportedCases = table();
 link.KPITable = kpitable;
 link.RawTrials = canon.RawTrials;
 
 result = struct();
-result.Ok = logical(sixgr.util.structGet(systemOut, "Ok", false));
+result.Ok = combinedOk;
 result.Link = link;
 result.System = systemOut;
 result.Canonical = canon;
+result.StrictControl = strictControl;
+end
+
+function tf = localShouldRunStrictControlEvidence(scfg, cfg)
+targetCases = lower(string(scfg.get("scenario.target_cases", {})));
+tf = any(ismember(targetCases, ["pdcch","pucch"]));
+if ~tf
+    return;
+end
+tf = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false)) || ...
+    logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+end
+
+function tf = localStrictControlTargetEnabled(scfg, cfg, signalName)
+signalName = lower(string(signalName));
+targetCases = lower(string(scfg.get("scenario.target_cases", {})));
+switch signalName
+    case "pdcch"
+        tf = any(targetCases == "pdcch") && logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
+    case "pucch"
+        tf = any(targetCases == "pucch") && logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+    otherwise
+        tf = false;
+end
+end
+
+function canon = localAttachStrictControlRawTrials(canon, strictControl)
+if ~(isstruct(canon) && isfield(canon, "RawTrials"))
+    return;
+end
+pdcch = sixgr.util.structGet(strictControl, "PDCCH", struct());
+if isstruct(pdcch) && isfield(pdcch, "ArtifactTables")
+    T = sixgr.util.structGet(pdcch.ArtifactTables, "pdcch_trials", table());
+    if istable(T) && ~isempty(T)
+        canon.RawTrials.PDCCH = T;
+    end
+end
+pucch = sixgr.util.structGet(strictControl, "PUCCH", struct());
+if isstruct(pucch) && isfield(pucch, "ArtifactTables")
+    T = sixgr.util.structGet(pucch.ArtifactTables, "pucch_trials", table());
+    if istable(T) && ~isempty(T)
+        canon.RawTrials.PUCCH = T;
+    end
+end
 end
 
 function result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder)
