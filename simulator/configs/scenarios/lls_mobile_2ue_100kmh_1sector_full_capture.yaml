@@ -41,7 +41,7 @@ meta:
 scenario:
   name: lls_mobile_2ue_100kmh_1sector_full_capture
   description: Actual-run-first 1-sector / 2UE / 100 km/h strict LLS scenario with exhaustive capture and post-run audits.
-  runner_profile: system_level_lls
+  runner_profile: waveform_bundle
   target_cases: [bundle, pdcch, pucch]
   bundle_anchor_cases: [ul_lowpapr]
   honesty_mode: strict

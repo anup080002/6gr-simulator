@@ -1429,12 +1429,14 @@ values = values(strlength(values) > 0);
 end
 
 function tf = localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
-% System-level waveform truth on fading channels is currently unsafe under
+% Coupled waveform truth on fading channels is currently unsafe under
 % exact-MEX acceleration on this server. Keep these runs on the MATLAB path
 % so the scenario completes honestly instead of crashing the process.
 runnerProfile = lower(strtrim(string(runnerProfile)));
+executionModel = lower(strtrim(string(localGetNested(s, "users.execution_model", ""))));
 channelModel = upper(strtrim(string(localGetNested(s, "channels.model_type", "AWGN"))));
-tf = runnerProfile == "system_level_lls" && channelModel ~= "AWGN";
+tf = channelModel ~= "AWGN" && (runnerProfile == "system_level_lls" || ...
+    (runnerProfile == "waveform_bundle" && executionModel == "slot_coupled_truth"));
 end
 
 function cfg = localApplyFrameStructureEngine(cfg)

@@ -336,9 +336,18 @@ if isfield(pdschInfo, 'G')
     end
 end
 if isfield(pdschInfo, 'NRE')
-    nrePerPRB = floor(double(pdschInfo.NRE) / max(double(nPRB), 1));
+    totalNRE = double(pdschInfo.NRE);
+    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
+    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
+        % Rate matching must follow the exact data-RE budget returned by
+        % nrPDSCHIndices. Reserved resources can make NRE/PRB non-integer.
+        gBits = totalNRE * double(qm) * double(nLayers);
+    end
 elseif isfield(pdschInfo, 'NREPerPRB')
     nrePerPRB = double(pdschInfo.NREPerPRB);
+    if isfinite(nrePerPRB) && nrePerPRB > 0 && isfinite(qm) && qm > 0
+        gBits = double(nrePerPRB) * max(double(nPRB), 1) * double(qm) * double(nLayers);
+    end
 end
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     nrePerPRB = NaN;

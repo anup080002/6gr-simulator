@@ -3611,7 +3611,9 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
         for key in ("results_root", "save_csv", "save_figures", "save_png", "save_mat"):
             if key in requested_output_cfg:
                 output_overlay[key] = requested_output_cfg[key]
-    for _, old_path, _ in BROWSER_ALIAS_RULES:
+    for new_path, old_path, _ in BROWSER_ALIAS_RULES:
+        if not schema_type_for_path(new_path):
+            path_delete(payload, new_path)
         if not schema_type_for_path(old_path):
             path_delete(payload, old_path)
     payload = _coerce_scalar_strings(payload)
