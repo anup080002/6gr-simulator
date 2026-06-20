@@ -92,6 +92,29 @@ else
 end
 link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
 localDBLog("INFO", "Waveform bundle finished: ok=%d", double(logical(sixgr.util.structGet(link, "Ok", false))));
+strictControl = struct("Ok", true, "StrictOk", true, "SummaryTable", table(), "FailureReason", "");
+if localShouldRunStrictControlEvidence(scfg, cfg)
+    localDBLog("INFO", "Running strict waveform-backed control evidence for waveform-bundle scenario target_cases.");
+    strictControl = sixgr.truth.exportStrictControlChannelEvidence(runFolder, cfg, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "EnablePDCCH", localStrictControlTargetEnabled(scfg, cfg, "pdcch"), ...
+        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"));
+    localDBLog("INFO", "Strict waveform-backed control evidence finished: ok=%d", ...
+        double(logical(sixgr.util.structGet(strictControl, "Ok", false))));
+    tmpCanon = struct("RawTrials", sixgr.util.structGet(link, "RawTrials", struct()));
+    tmpCanon = localAttachStrictControlRawTrials(tmpCanon, strictControl);
+    link.RawTrials = tmpCanon.RawTrials;
+    link.KPITable = localAppendStrictControlKPI(link.KPITable, strictControl);
+    link.Ok = logical(sixgr.util.structGet(link, "Ok", false)) && logical(sixgr.util.structGet(strictControl, "Ok", true));
+    if isfield(link, "Result") && isstruct(link.Result)
+        link.Result.Ok = logical(link.Ok);
+    end
+    if ~logical(sixgr.util.structGet(strictControl, "Ok", true))
+        link.Errors = [string(sixgr.util.structGet(link, "Errors", strings(0, 1))); ...
+            string(sixgr.util.structGet(strictControl, "FailureReason", "strict_control_channel_evidence_failed"))];
+    end
+end
 runtimeControl = sixgr.util.structGet(link, "RawTrials", struct());
 runtimeControl.CoupledRuntime = sixgr.util.structGet(link, "CoupledRuntime", struct());
 mobilityArtifacts = sixgr.util.structGet(link, "MobilityArtifacts", struct());
@@ -125,6 +148,7 @@ result = struct();
 result.Ok = logical(link.Ok);
 result.Link = link;
 result.Control = controlTrace;
+result.StrictControl = strictControl;
 end
 
 function result = localRunSystemLevelScenario(cfg, scfg, runFolder)
@@ -239,6 +263,57 @@ if isstruct(pucch) && isfield(pucch, "ArtifactTables")
     if istable(T) && ~isempty(T)
         canon.RawTrials.PUCCH = T;
     end
+end
+end
+
+function kpi = localAppendStrictControlKPI(kpi, strictControl)
+strictSummaryT = sixgr.util.structGet(strictControl, "SummaryTable", table());
+if ~(istable(strictSummaryT) && ~isempty(strictSummaryT))
+    return;
+end
+strictCases = "strict_" + lower(string(strictSummaryT.SignalFamily)) + "_waveform_control";
+strictNotes = string(strictSummaryT.FailureReason);
+strictNotes(strlength(strtrim(strictNotes)) == 0) = "strict waveform-backed control evidence completed";
+strictKPI = table(strictCases(:), logical(strictSummaryT.StrictOk(:)), false(height(strictSummaryT), 1), strictNotes(:), ...
+    'VariableNames', {'Case','Ok','Skipped','Notes'});
+if ~(istable(kpi) && ~isempty(kpi))
+    kpi = strictKPI;
+    return;
+end
+kpi.Case = string(kpi.Case);
+kpi.Ok = logical(kpi.Ok);
+kpi.Skipped = logical(kpi.Skipped);
+if ismember("Notes", string(kpi.Properties.VariableNames))
+    kpi.Notes = string(kpi.Notes);
+end
+strictKPI = localAlignKPIColumns(strictKPI, kpi);
+kpi = localAlignKPIColumns(kpi, strictKPI);
+strictKPI = strictKPI(:, kpi.Properties.VariableNames);
+kpi = [kpi; strictKPI];
+end
+
+function T = localAlignKPIColumns(T, referenceT)
+refVars = string(referenceT.Properties.VariableNames);
+for i = 1:numel(refVars)
+    name = refVars(i);
+    if ~ismember(name, string(T.Properties.VariableNames))
+        T.(name) = localDefaultKPIColumn(referenceT.(name), height(T));
+    end
+end
+T = T(:, refVars);
+end
+
+function col = localDefaultKPIColumn(referenceCol, n)
+if islogical(referenceCol)
+    col = false(n, 1);
+elseif isnumeric(referenceCol)
+    col = nan(n, 1);
+elseif isstring(referenceCol)
+    col = strings(n, 1);
+elseif iscellstr(referenceCol)
+    col = repmat({''}, n, 1);
+else
+    col = strings(n, 1);
 end
 end
 
