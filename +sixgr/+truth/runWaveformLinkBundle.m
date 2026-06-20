@@ -747,6 +747,7 @@ pbchTrials = localEmptyLinkTrialTable(0);
 ssbBeamSweep = table();
 prachTrials = localEmptyLinkTrialTable(0);
 prachCorrelationTrace = table();
+prachRAEvidence = localEmptyRAEvidenceTables();
 pdcchTrials = localEmptyLinkTrialTable(0);
 pucchTrials = localEmptyLinkTrialTable(0);
 srsTrials = localEmptyLinkTrialTable(0);
@@ -804,7 +805,7 @@ else
     pbchTrials = localCanonicalizeControlTrialTable("PBCH", pbchTrials);
     sixgr.util.csvWriteTable(fPBCH, pbchTrials);
 
-    [prachTrials, prachCorrelationTrace] = localCollectPRACHTrialsAcrossSweep(cfg, snrGrid, max(1, ceil(nTrials/4)), fPRACH, "PRACH");
+    [prachTrials, prachCorrelationTrace, prachRAEvidence] = localCollectPRACHTrialsAcrossSweep(cfg, snrGrid, max(1, ceil(nTrials/4)), fPRACH, "PRACH");
     prachTrials = localCanonicalizeControlTrialTable("PRACH", prachTrials);
     sixgr.util.csvWriteTable(fPRACH, prachTrials);
 
@@ -853,6 +854,7 @@ if coupledTruth
     pbchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PBCH", table())), pbchTrials);
     prachTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACH", table())), prachTrials);
     prachCorrelationTrace = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACHCorrelationTrace", table()));
+    prachRAEvidence = localAppendRAEvidenceTables(prachRAEvidence, sixgr.util.structGet(controlTrials, "RAEvidenceTables", struct()));
     pdcchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PDCCH", table())), pdcchTrials);
     pucchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PUCCH", table())), pucchTrials);
     srsTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "SRS", table())), srsTrials);
@@ -1084,6 +1086,7 @@ if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
     sixgr.util.csvWriteTable(fullfile(layoutForPRACHTrace.ReportCSVDir, "prach_correlation_trace.csv"), prachCorrelationTrace);
     sixgr.util.csvWriteTable(fullfile(layoutForPRACHTrace.ReportCSVDir, "prach_correlation_traces.csv"), prachCorrelationTrace);
 end
+localWriteRAEvidenceTables(fileparts(char(string(runFolder))), prachRAEvidence);
 sixgr.util.csvWriteTable(fPDCCH, pdcchTrials);
 sixgr.util.csvWriteTable(fPUCCH, pucchTrials);
 sixgr.util.csvWriteTable(fSRS, srsTrials);
@@ -5202,13 +5205,15 @@ for ueIdx = 1:numUsers
         if shouldAttemptPRACH
             cfgU = localApplyDeterministicPrachUserContext(cfgU, ueIdx);
             prachSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
-            [prachRawT, prachCorrT] = localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx);
+            [prachRawT, prachCorrT, prachRAEvidenceT] = localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx);
             prachT = localAnnotateCoupledControlTrial(prachRawT, slotIdx, frameIdx, ueIdx, rnti, "UL");
             prachCorrT = localAnnotateCoupledControlTrial(prachCorrT, slotIdx, frameIdx, ueIdx, rnti, "UL");
             prachAttemptCount = prachAttemptCount + 1;
             state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, prachT);
             state.ControlTrials.PRACHCorrelationTrace = localAppendCompatTable( ...
                 sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table()), prachCorrT);
+            state.ControlTrials.RAEvidenceTables = localAppendRAEvidenceTables( ...
+                sixgr.util.structGet(state.ControlTrials, "RAEvidenceTables", struct()), prachRAEvidenceT);
             state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, ueIdx, prachT);
             if ueIdx > numel(state.LastPRACHSlotByUE)
                 state.LastPRACHSlotByUE(ueIdx, 1) = 0;
@@ -5672,12 +5677,14 @@ else
     if ueIdx > numel(lastPRACH) || lastPRACH(ueIdx) == 0
         cfgU = localApplyDeterministicPrachUserContext(cfgU, ueIdx);
         prachSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
-        [prachRawT, prachCorrT] = localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx);
+        [prachRawT, prachCorrT, prachRAEvidenceT] = localCollectPRACHTrials(cfgU, prachSNR_dB, 1, slotIdx);
         state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, ...
             localAnnotateCoupledControlTrial(prachRawT, slotIdx, frameIdx, ueIdx, rnti, direction));
         state.ControlTrials.PRACHCorrelationTrace = localAppendCompatTable( ...
             sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table()), ...
             localAnnotateCoupledControlTrial(prachCorrT, slotIdx, frameIdx, ueIdx, rnti, direction));
+        state.ControlTrials.RAEvidenceTables = localAppendRAEvidenceTables( ...
+            sixgr.util.structGet(state.ControlTrials, "RAEvidenceTables", struct()), prachRAEvidenceT);
         if ueIdx > numel(state.LastPRACHSlotByUE)
             state.LastPRACHSlotByUE(ueIdx, 1) = 0;
         end
@@ -6134,9 +6141,10 @@ for i = 1:numel(snrGrid)
 end
 end
 
-function [T, correlationTraceT] = localCollectPRACHTrialsAcrossSweep(cfg, snrGrid, nTrials, liveTablePath, progressLabel)
+function [T, correlationTraceT, raEvidenceTables] = localCollectPRACHTrialsAcrossSweep(cfg, snrGrid, nTrials, liveTablePath, progressLabel)
 T = table();
 correlationTraceT = table();
+raEvidenceTables = localEmptyRAEvidenceTables();
 snrGrid = unique(sort(double(snrGrid(:))));
 if nargin < 4
     liveTablePath = "";
@@ -6145,9 +6153,10 @@ if nargin < 5
     progressLabel = "PRACH";
 end
 for i = 1:numel(snrGrid)
-    [Ti, Ci] = localCollectPRACHTrials(cfg, double(snrGrid(i)), nTrials);
+    [Ti, Ci, Ri] = localCollectPRACHTrials(cfg, double(snrGrid(i)), nTrials);
     T = localAppendCompatTable(T, Ti);
     correlationTraceT = localAppendCompatTable(correlationTraceT, Ci);
+    raEvidenceTables = localAppendRAEvidenceTables(raEvidenceTables, Ri);
     localMaybeWritePartialTable(liveTablePath, T);
     localMaybeAppendSweepProgressLog(progressLabel, double(snrGrid(i)), i, numel(snrGrid), T);
 end
@@ -7552,7 +7561,12 @@ for k = 1:nTrials
                 end
             end
         end
-        r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
+        detectorNotes = string(sixgr.util.structGet(out, "Notes", ""));
+        if strlength(strtrim(string(r.Notes))) == 0
+            r.Notes = detectorNotes;
+        elseif strlength(strtrim(detectorNotes)) > 0
+            r.Notes = string(r.Notes) + "; prach_detector_notes=" + detectorNotes;
+        end
     catch ME
         r.Crash = true;
         r.CRCPass = 0;
@@ -7656,13 +7670,15 @@ end
 beamCount = max(1, round(double(beamCount)));
 end
 
-function [T, correlationTraceT] = localCollectPRACHTrials(cfg, snr_dB, nTrials, slotIdx)
+function [T, correlationTraceT, raEvidenceTables] = localCollectPRACHTrials(cfg, snr_dB, nTrials, slotIdx)
 nTrials = max(1, round(double(nTrials)));
 if nargin < 4
     slotIdx = NaN;
 end
 rows = repmat(localMakeLinkTrialRow(cfg, "UL", snr_dB, 1), nTrials, 1);
 correlationTraceT = table();
+raEvidenceTables = localEmptyRAEvidenceTables();
+fourStepRequired = localShouldRunFourStepRAForPRACH(cfg);
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "UL", snr_dB, k);
     r.Status = "FAIL";
@@ -7750,7 +7766,26 @@ for k = 1:nTrials
         r.MeasurementAttempted = logical(r.DetectionAttempted);
         r.MeasurementUsable = logical(r.DetectionUsable) && isfinite(r.NoiseVariance);
         r.ReceiverUsable = logical(r.MeasurementUsable);
-        if completed && detected
+        if fourStepRequired
+            [ra, raRunOk, raRunFailure] = localRunFourStepRAForPRACHTrial(cfg, k, slotIdx, snr_dB);
+            if raRunOk
+                r = localApplyFourStepRAEvidenceToPRACHRow(r, ra, k, slotIdx);
+                raEvidenceTables = localAppendRAEvidenceTables(raEvidenceTables, sixgr.util.structGet(ra, "ArtifactTables", struct()));
+            else
+                r.CRCPass = 0;
+                r.StrictOk = false;
+                r.StrictReceiverEvidenceOk = false;
+                r.DecodeAttempted = true;
+                r.DecodeUsable = false;
+                r.ReceiverUsable = false;
+                r.Status = "CRASH";
+                r.FailureReason = string(raRunFailure);
+                r.RAFailureReason = string(raRunFailure);
+                r.Notes = "strict_four_step_ra_failed_before_complete_runtime_evidence:" + string(raRunFailure);
+                r.RuntimeMaterializationStatus = "four_step_ra_runtime_failed";
+                r.RuntimeEvidenceSource = "sixgr.phy.ra.runFourStepRA";
+            end
+        elseif completed && detected
             r.Status = "PASS";
         elseif logical(sixgr.util.structGet(out, "Skipped", false))
             r.CRCPass = NaN;
@@ -7767,6 +7802,192 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function tf = localShouldRunFourStepRAForPRACH(cfg)
+prachEnabled = logical(sixgr.util.structGet(cfg, "phy.prach.enable", ...
+    sixgr.util.structGet(cfg, "random_access.enabled", false)));
+tf = prachEnabled && ( ...
+    logical(sixgr.util.structGet(cfg, "random_access.four_step_ra_required", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.four_step_ra_required", false)) || ...
+    logical(sixgr.util.structGet(cfg, "random_access.msg4_contention_resolution_required", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.msg4_contention_resolution_required", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.contention_resolution_identity_required", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.msg3_pusch_required", false)));
+end
+
+function [ra, ok, failure] = localRunFourStepRAForPRACHTrial(cfg, trialIdx, slotIdx, snr_dB)
+ra = struct();
+ok = false;
+failure = "";
+try
+    scenarioName = string(sixgr.util.structGet(cfg, "run.scenarioID", ...
+        sixgr.util.structGet(cfg, "meta.lls6gScenarioID", ...
+        sixgr.util.structGet(cfg, "scenario.name", "waveform_bundle"))));
+    ueId = localFirstFinite([ ...
+        sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", NaN), ...
+        sixgr.util.structGet(cfg, "ue.id", NaN), ...
+        sixgr.util.structGet(cfg, "scenario.ue.id", NaN)], 1);
+    cellId = localFirstFinite([ ...
+        sixgr.util.structGet(cfg, "phy.carrier.NCellID", NaN), ...
+        sixgr.util.structGet(cfg, "scenario.NCellID", NaN)], 1);
+    slotToken = "slot_unknown";
+    if isfinite(double(slotIdx))
+        slotToken = "slot_" + string(round(double(slotIdx)));
+    end
+    snrToken = "snr_" + string(round(double(snr_dB) * 1000));
+    runId = "ra_" + matlab.lang.makeValidName(char(scenarioName)) + "_ue" + string(round(double(ueId))) + ...
+        "_trial" + string(round(double(trialIdx))) + "_" + slotToken + "_" + snrToken;
+    ra = sixgr.phy.ra.runFourStepRA(cfg, ...
+        "RunFolder", "", ...
+        "RunId", runId, ...
+        "ScenarioName", scenarioName, ...
+        "UEId", double(ueId), ...
+        "CellId", double(cellId), ...
+        "AttemptId", double(trialIdx), ...
+        "WriteArtifacts", false);
+    ok = true;
+catch ME
+    failure = string(ME.identifier) + ":" + string(ME.message);
+end
+end
+
+function r = localApplyFourStepRAEvidenceToPRACHRow(r, ra, trialIdx, slotIdx)
+r.RARunId = string(sixgr.util.structGet(ra, "RunId", ""));
+r.RAScenarioName = string(sixgr.util.structGet(ra, "ScenarioName", ""));
+r.RACellId = double(sixgr.util.structGet(ra, "CellId", NaN));
+r.RAUEId = double(sixgr.util.structGet(ra, "UEId", NaN));
+r.RAAttemptId = double(sixgr.util.structGet(ra, "AttemptId", trialIdx));
+fields = ["RAProcedureType","RABindingSource","RACHConfigHash", ...
+    "PreambleIndexTx","PreambleIndexDetected","PreambleDetectionMetric", ...
+    "PreambleDetectionThreshold","PreambleDetected","CollisionDetected", ...
+    "PreambleAmbiguityDetected","TimingAdvanceCommand","PreambleReceivedTargetPower_dBm", ...
+    "PowerRampingStep_dB","PreambleTransMax","PreambleAttemptNumber", ...
+    "PowerPathloss_dB","PowerBasePathloss_dB","PowerPathlossSource","ReferenceTxPower_dBm", ...
+    "PreambleDelta_dB","PreambleTargetReceivedPower_dBm","PreambleRequestedTxPower_dBm", ...
+    "PreambleTxPower_dBm","PreamblePowerHeadroom_dB","PreambleTxAmplitudeScale","PowerControlStatus", ...
+    "P0PUSCH_dBm","AlphaPUSCH","Pcmax_dBm", ...
+    "Msg3Pathloss_dB","Msg3P0PUSCH_dBm","Msg3Alpha","Msg3NumPRBForPower", ...
+    "Msg3DeltaTF_dB","Msg3ClosedLoopCorrection_dB","Msg3RequestedTxPower_dBm", ...
+    "Msg3TxPower_dBm","Msg3PowerHeadroom_dB","Msg3TxAmplitudeScale", ...
+    "RARNTI","RAResponseWindowStartSlot","RAResponseWindowEndSlot","RARWindowExpired", ...
+    "Msg2PDCCHCandidatesAttempted","Msg2RARNTIDetected","Msg2DCICrcPass","Msg2DCIFormat", ...
+    "Msg2PDSCHCrcPass","RARBytesHex","RAPIDDecoded","RAPIDMatches","TemporaryCRNTI", ...
+    "RARULGrantHex","RARULGrantValid","Msg3ScheduledSlot","Msg3PUSCHPRBStart", ...
+    "Msg3PUSCHNumPRB","Msg3PUSCHSymbolStart","Msg3PUSCHNumSymbols","Msg3MCS", ...
+    "Msg3Modulation","Msg3TBS","Msg3TimingAdvanceApplied","Msg3PUSCHCrcPass", ...
+    "Msg3PayloadHex","Msg3ContentionIdentity","Msg4ScheduledSlot","Msg4PDCCHCrcPass", ...
+    "Msg4PDSCHCrcPass","Msg4PayloadHex","Msg4ContentionIdentity","ContentionIdentityMatches", ...
+    "FinalCRNTI","RACompleted","FailureReason","ProxyUsed","Skipped","ToolboxMissing", ...
+    "UsedOracleFields","StrictOk"];
+for i = 1:numel(fields)
+    f = char(fields(i));
+    if isfield(ra, f) && isfield(r, f)
+        r.(f) = ra.(f);
+    end
+end
+strictOk = logical(sixgr.util.structGet(ra, "StrictOk", false));
+preambleDetected = logical(sixgr.util.structGet(ra, "PreambleDetected", false));
+r.Frame = localFirstFinite(slotIdx, trialIdx);
+r.Slot = localFirstFinite(slotIdx, trialIdx);
+r.PreambleIndex = double(sixgr.util.structGet(ra, "PreambleIndexTx", r.PreambleIndex));
+r.RequestedPreambleIndex = r.PreambleIndex;
+r.DetectedPreambleIndex = double(sixgr.util.structGet(ra, "PreambleIndexDetected", r.DetectedPreambleIndex));
+r.DetectionMetric = double(sixgr.util.structGet(ra, "PreambleDetectionMetric", r.DetectionMetric));
+r.CorrelationPeak = r.DetectionMetric;
+r.DetectionThreshold = double(sixgr.util.structGet(ra, "PreambleDetectionThreshold", r.DetectionThreshold));
+r.TimingAdvance_samples = double(sixgr.util.structGet(ra, "TimingAdvanceSamples", r.TimingAdvance_samples));
+r.TimingOffset_samples = r.TimingAdvance_samples;
+r.TimingError_samples = r.TimingAdvance_samples;
+r.CollisionFlag = double(logical(sixgr.util.structGet(ra, "CollisionDetected", false)));
+r.FalseAlarm = preambleDetected && isfinite(r.DetectedPreambleIndex) && isfinite(r.PreambleIndex) && ...
+    round(double(r.DetectedPreambleIndex)) ~= round(double(r.PreambleIndex));
+r.FalseAlarmFlag = double(logical(r.FalseAlarm));
+r.MissedDetection = ~preambleDetected;
+r.CRCPass = double(strictOk);
+r.CRCApplicable = true;
+if strictOk
+    r.CRCOutcome = "pass";
+else
+    r.CRCOutcome = "fail";
+end
+r.DetectionSuccess = preambleDetected;
+r.DetectionAttempted = true;
+r.DetectionUsable = preambleDetected && isfinite(double(r.DetectionMetric));
+r.MeasurementAttempted = true;
+r.MeasurementUsable = strictOk;
+r.ReceiverUsable = strictOk;
+r.DecodeAttempted = true;
+r.DecodeUsable = strictOk;
+r.StrictReceiverEvidenceOk = strictOk;
+r.StrictOk = strictOk;
+if strictOk
+    r.Status = "PASS";
+    r.RAStage = "RA_SUCCESS";
+    r.Notes = "strict_four_step_ra_waveform_chain_completed_msg1_msg2_msg3_msg4";
+else
+    r.Status = "FAIL";
+    r.RAStage = string(sixgr.util.structGet(ra, "ObservedFailureStage", ""));
+    r.Notes = "strict_four_step_ra_waveform_chain_failed:" + string(sixgr.util.structGet(ra, "FailureReason", ""));
+end
+r.RAFailureReason = string(sixgr.util.structGet(ra, "FailureReason", ""));
+r.TruthStatus = "real_lls_evidence";
+r.SourceClassification = "active_integrated";
+r.RuntimeMaterializationStatus = "active_integrated_four_step_ra_waveform_msg1_msg2_msg3_msg4";
+r.ControlGatingEffect = "random_access_gate_full_four_step_ra";
+r.RuntimeStateConsumer = "CoupledTruthRuntime.applyPRACHTrial";
+r.RuntimeConsumer = "CoupledTruthRuntime.applyPRACHTrial";
+r.RuntimeEvidenceSource = "sixgr.phy.ra.runFourStepRA";
+r.FullRAEvidenceSource = "sixgr.phy.ra.runFourStepRA";
+r.FullRAArtifactRunFolder = "control/csv";
+end
+
+function tables = localEmptyRAEvidenceTables()
+names = localRAEvidenceTableNames();
+tables = struct();
+for i = 1:numel(names)
+    tables.(char(names(i))) = table();
+end
+end
+
+function out = localAppendRAEvidenceTables(out, in)
+if nargin < 1 || ~isstruct(out) || isempty(fieldnames(out))
+    out = localEmptyRAEvidenceTables();
+end
+if nargin < 2 || ~isstruct(in)
+    return;
+end
+names = unique([localRAEvidenceTableNames(), string(fieldnames(in)).'], "stable");
+for i = 1:numel(names)
+    f = char(names(i));
+    if ~isfield(out, f)
+        out.(f) = table();
+    end
+    if isfield(in, f) && istable(in.(f)) && ~isempty(in.(f))
+        out.(f) = localAppendCompatTable(out.(f), in.(f));
+    end
+end
+end
+
+function localWriteRAEvidenceTables(rootRunFolder, tables)
+if strlength(string(rootRunFolder)) == 0 || ~isstruct(tables)
+    return;
+end
+layout = sixgr.report.resultLayout(rootRunFolder);
+names = localRAEvidenceTableNames();
+for i = 1:numel(names)
+    f = char(names(i));
+    if isfield(tables, f) && istable(tables.(f)) && ~isempty(tables.(f))
+        sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, string(f) + ".csv"), tables.(f));
+    end
+end
+end
+
+function names = localRAEvidenceTableNames()
+names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
+    "msg2_rar_trials","msg2_pdcch_candidates","msg3_pusch_trials", ...
+    "msg4_contention_resolution","ra_timer_events","ra_negative_trials", ...
+    "ra_collision_trials","ra_oracle_guard"];
 end
 
 function T = localCollectPDCCHTrials(cfg, snr_dB, nTrials, grantContext)
@@ -8843,6 +9064,94 @@ row.PRACHZeroCorrelationZone = NaN;
 row.PRACHConfigurationIndex = NaN;
 row.PRACHOccasionIndex = NaN;
 row.PRACHCarrierSlot = NaN;
+row.RAProcedureType = "";
+row.RABindingSource = "";
+row.RACHConfigHash = "";
+row.RARunId = "";
+row.RAScenarioName = "";
+row.RACellId = NaN;
+row.RAUEId = NaN;
+row.RAAttemptId = NaN;
+row.PreambleIndexTx = NaN;
+row.PreambleIndexDetected = NaN;
+row.PreambleDetectionMetric = NaN;
+row.PreambleDetectionThreshold = NaN;
+row.PreambleDetected = false;
+row.CollisionDetected = false;
+row.CollisionFlag = NaN;
+row.PreambleAmbiguityDetected = false;
+row.PreambleReceivedTargetPower_dBm = NaN;
+row.PowerRampingStep_dB = NaN;
+row.PreambleTransMax = NaN;
+row.PreambleAttemptNumber = NaN;
+row.PowerPathloss_dB = NaN;
+row.PowerBasePathloss_dB = NaN;
+row.PowerPathlossSource = "";
+row.ReferenceTxPower_dBm = NaN;
+row.PreambleDelta_dB = NaN;
+row.PreambleTargetReceivedPower_dBm = NaN;
+row.PreambleRequestedTxPower_dBm = NaN;
+row.PreambleTxPower_dBm = NaN;
+row.PreamblePowerHeadroom_dB = NaN;
+row.PreambleTxAmplitudeScale = NaN;
+row.PowerControlStatus = "";
+row.P0PUSCH_dBm = NaN;
+row.AlphaPUSCH = NaN;
+row.Pcmax_dBm = NaN;
+row.Msg3Pathloss_dB = NaN;
+row.Msg3P0PUSCH_dBm = NaN;
+row.Msg3Alpha = NaN;
+row.Msg3NumPRBForPower = NaN;
+row.Msg3DeltaTF_dB = NaN;
+row.Msg3ClosedLoopCorrection_dB = NaN;
+row.Msg3RequestedTxPower_dBm = NaN;
+row.Msg3TxPower_dBm = NaN;
+row.Msg3PowerHeadroom_dB = NaN;
+row.Msg3TxAmplitudeScale = NaN;
+row.TimingAdvanceCommand = NaN;
+row.RARNTI = NaN;
+row.RAResponseWindowStartSlot = NaN;
+row.RAResponseWindowEndSlot = NaN;
+row.RARWindowExpired = false;
+row.Msg2PDCCHCandidatesAttempted = NaN;
+row.Msg2RARNTIDetected = false;
+row.Msg2DCICrcPass = false;
+row.Msg2DCIFormat = "";
+row.Msg2PDSCHCrcPass = false;
+row.RARBytesHex = "";
+row.RAPIDDecoded = NaN;
+row.RAPIDMatches = false;
+row.TemporaryCRNTI = NaN;
+row.RARULGrantHex = "";
+row.RARULGrantValid = false;
+row.Msg3ScheduledSlot = NaN;
+row.Msg3PUSCHPRBStart = NaN;
+row.Msg3PUSCHNumPRB = NaN;
+row.Msg3PUSCHSymbolStart = NaN;
+row.Msg3PUSCHNumSymbols = NaN;
+row.Msg3MCS = NaN;
+row.Msg3Modulation = "";
+row.Msg3TBS = NaN;
+row.Msg3TimingAdvanceApplied = false;
+row.Msg3PUSCHCrcPass = false;
+row.Msg3PayloadHex = "";
+row.Msg3ContentionIdentity = "";
+row.Msg4ScheduledSlot = NaN;
+row.Msg4PDCCHCrcPass = false;
+row.Msg4PDSCHCrcPass = false;
+row.Msg4PayloadHex = "";
+row.Msg4ContentionIdentity = "";
+row.ContentionIdentityMatches = false;
+row.FinalCRNTI = NaN;
+row.RACompleted = false;
+row.RAStage = "";
+row.RAFailureReason = "";
+row.ProxyUsed = false;
+row.Skipped = false;
+row.ToolboxMissing = false;
+row.UsedOracleFields = "";
+row.FullRAEvidenceSource = "";
+row.FullRAArtifactRunFolder = "";
 row.MeasuredSINR_dB = NaN;
 row.ReceiverHestSINR_dB = NaN;
 row.ReceiverHestSINRSource = "";
@@ -8947,6 +9256,12 @@ row.DecodeUsable = false;
 row.StrictReceiverEvidenceOk = false;
 row.StrictOk = false;
 row.TruthStatus = "";
+row.SourceClassification = "";
+row.RuntimeMaterializationStatus = "";
+row.ControlGatingEffect = "";
+row.RuntimeStateConsumer = "";
+row.RuntimeConsumer = "";
+row.RuntimeEvidenceSource = "";
 row.ChannelEstimateAttempted = false;
 row.ChannelEstimateAvailable = false;
 row.ChannelEstimateSource = "";

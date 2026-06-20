@@ -91,6 +91,7 @@ methods(Static)
         state.ControlTrials = struct("PBCH", sixgr.util.structGet(controlTrials, "PBCH", table()), ...
             "PRACH", sixgr.util.structGet(controlTrials, "PRACH", table()), ...
             "PRACHCorrelationTrace", sixgr.util.structGet(controlTrials, "PRACHCorrelationTrace", table()), ...
+            "RAEvidenceTables", sixgr.util.structGet(controlTrials, "RAEvidenceTables", struct()), ...
             "PDCCH", sixgr.util.structGet(controlTrials, "PDCCH", table()), ...
             "PUCCH", sixgr.util.structGet(controlTrials, "PUCCH", table()), ...
             "SRS", sixgr.util.structGet(controlTrials, "SRS", table()), ...
@@ -955,6 +956,8 @@ methods(Static, Access=private)
             sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "prach_correlation_trace.csv"), prachCorrelationTrace);
             sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "prach_correlation_traces.csv"), prachCorrelationTrace);
         end
+        sixgr.truth.CoupledTruthRuntime.writeRAEvidenceTables(layout, ...
+            sixgr.util.structGet(state.ControlTrials, "RAEvidenceTables", struct()));
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_rsrp_serving_trace.csv"), state.ServingTraceTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_cell_measurement_trace.csv"), state.MeasurementTraceTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_cell_reselection_events.csv"), state.ReselectionEventTable);
@@ -2444,9 +2447,28 @@ methods(Static, Access=private)
                 state.TimeAlignmentState(ueIdx) = "access_succeeded_ta_unavailable";
                 state.TimingAdvanceUpdateStatusByUE(ueIdx) = "prach_access_succeeded_ta_unavailable";
             end
+            fullRA = logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RACompleted", false)) || ...
+                strlength(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "FullRAEvidenceSource", "")))) > 0;
+            eventSource = "slot_coupled_prach_detection_observation";
+            eventNote = "Msg1 PRACH detection observed in the coupled PRACH runtime gate.";
+            if fullRA
+                eventSource = "slot_coupled_four_step_ra_waveform_chain";
+                eventNote = "Four-step RA completed through Msg1 PRACH, Msg2 RAR, Msg3 PUSCH, and Msg4 contention-resolution waveform evidence.";
+            end
             state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "PRACH_MSG1_DETECTED", "UL", ...
                 "control/csv/prach_trials.csv", "PRACH", slotIdx, ...
-                "slot_coupled_prach_detection_observation", "Msg1 PRACH detection observed in the coupled PRACH runtime gate.");
+                eventSource, eventNote);
+            if fullRA
+                state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG2_RAR_DECODED", "DL", ...
+                    "control/csv/msg2_rar_trials.csv", "RAR", slotIdx, ...
+                    eventSource, "Msg2 RAR PDCCH/PDSCH decode observed inside the four-step RA chain.");
+                state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG3_PUSCH_COMPLETED", "UL", ...
+                    "control/csv/msg3_pusch_trials.csv", "PUSCH", slotIdx, ...
+                    eventSource, "Msg3 PUSCH decoded from the RAR UL grant inside the four-step RA chain.");
+                state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG4_CONTENTION_RESOLUTION_COMPLETED", "DL", ...
+                    "control/csv/msg4_contention_resolution.csv", "PDSCH", slotIdx, ...
+                    eventSource, "Msg4 contention-resolution identity matched and final C-RNTI assigned inside the four-step RA chain.");
+            end
         else
             state.AccessState(ueIdx) = "failed";
             state.PRACHFailureCount(ueIdx) = double(state.PRACHFailureCount(ueIdx)) + 1;
@@ -6076,6 +6098,7 @@ methods(Static, Access=private)
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ControlGatingEffect", gatingEffect, true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeStateConsumer", consumer, false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeConsumer", consumer, false);
+        T = sixgr.truth.CoupledTruthRuntime.applyPRACHFullRARuntimeTokens(signalName, T);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "DecodeSuccess", decodeSuccess);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "SuccessFlag", decodeSuccess);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FailureFlag", failureFlag);
@@ -6269,6 +6292,85 @@ methods(Static, Access=private)
                 gatingEffect = "none";
                 consumer = "none";
         end
+    end
+
+    function T = applyPRACHFullRARuntimeTokens(signalName, T)
+        if upper(string(signalName)) ~= "PRACH" || ~(istable(T) && ~isempty(T))
+            return;
+        end
+        n = height(T);
+        raProcedure = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+            T, "RAProcedureType", repmat("", n, 1)))));
+        fullSource = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+            T, "FullRAEvidenceSource", repmat("", n, 1))));
+        raCompleted = sixgr.truth.CoupledTruthRuntime.logicalVectorOrDefault( ...
+            sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "RACompleted", false(n, 1)), n, false);
+        fullMask = raCompleted | raProcedure == "contention_based_four_step" | strlength(fullSource) > 0;
+        if ~any(fullMask)
+            return;
+        end
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "SourceClassification", "", false);
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeMaterializationStatus", "", false);
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ControlGatingEffect", "", false);
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeStateConsumer", "", false);
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeConsumer", "", false);
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeEvidenceSource", "", false);
+        T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueDefinition", "", false);
+        T.SourceClassification(fullMask) = "active_integrated";
+        T.RuntimeMaterializationStatus(fullMask) = "active_integrated_four_step_ra_waveform_msg1_msg2_msg3_msg4";
+        T.ControlGatingEffect(fullMask) = "random_access_gate_full_four_step_ra";
+        T.RuntimeStateConsumer(fullMask) = "CoupledTruthRuntime.applyPRACHTrial";
+        T.RuntimeConsumer(fullMask) = "CoupledTruthRuntime.applyPRACHTrial";
+        T.RuntimeEvidenceSource(fullMask) = "sixgr.phy.ra.runFourStepRA";
+        T.ValueDefinition(fullMask) = "canonical PRACH row backed by Msg1 PRACH, Msg2 RAR, Msg3 PUSCH, and Msg4 contention-resolution waveform evidence";
+    end
+
+    function writeRAEvidenceTables(layout, tables)
+        if ~isstruct(tables)
+            return;
+        end
+        names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
+            "msg2_rar_trials","msg2_pdcch_candidates","msg3_pusch_trials", ...
+            "msg4_contention_resolution","ra_timer_events","ra_negative_trials", ...
+            "ra_collision_trials","ra_oracle_guard"];
+        for i = 1:numel(names)
+            f = char(names(i));
+            if isfield(tables, f) && istable(tables.(f)) && ~isempty(tables.(f))
+                sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, string(f) + ".csv"), tables.(f));
+            end
+        end
+    end
+
+    function values = logicalVectorOrDefault(raw, n, defaultValue)
+        n = max(0, round(double(n)));
+        if nargin < 3
+            defaultValue = false;
+        end
+        values = repmat(logical(defaultValue), n, 1);
+        if isempty(raw)
+            return;
+        end
+        if islogical(raw)
+            rawValues = reshape(raw, [], 1);
+        elseif isnumeric(raw)
+            rawValues = reshape(isfinite(double(raw)) & double(raw) ~= 0, [], 1);
+        else
+            tokens = lower(strtrim(string(raw)));
+            rawValues = reshape(tokens == "true" | tokens == "1" | tokens == "yes" | ...
+                tokens == "pass" | tokens == "passed", [], 1);
+        end
+        if isempty(rawValues)
+            return;
+        end
+        if numel(rawValues) == 1 && n ~= 1
+            rawValues = repmat(rawValues(1), n, 1);
+        elseif numel(rawValues) ~= n
+            rawValues = rawValues(1:min(numel(rawValues), n));
+            if numel(rawValues) < n
+                rawValues(end+1:n, 1) = logical(defaultValue);
+            end
+        end
+        values = logical(rawValues);
     end
 
     function value = tableColumnOrDefault(T, name, defaultValue)
