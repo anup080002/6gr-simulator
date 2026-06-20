@@ -286,6 +286,13 @@ localWriteTableArtifacts(runFolder, "reports/csv/persistence_audit_table.csv", p
 localWriteTableArtifacts(runFolder, "reports/csv/honest_unavailable_registry.csv", unavailable);
 localCoverageLog("coverage_tables_written", runFolder);
 
+measurementSidecars = sixgr.truth.exportLLSMeasurementSidecars(runFolder);
+tables.measurement_sidecar_manifest = measurementSidecars.Manifest;
+tables.measurement_output_integrity_audit = measurementSidecars.Audit;
+logicalPaths.measurement_sidecar_manifest = "reports/csv/measurement_sidecar_manifest.csv";
+logicalPaths.measurement_output_integrity_audit = "reports/csv/measurement_output_integrity_audit.csv";
+localCoverageLog("measurement_sidecars_written", runFolder);
+
 inventory = localBuildArtifactInventory(runFolder);
 localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", inventory);
 localCoverageLog("inventory_written", runFolder);
@@ -300,6 +307,7 @@ out.InstrumentationCoverageTable = instrumentation;
 out.APIExposureAuditTable = apiAudit;
 out.PersistenceAuditTable = persistence;
 out.HonestUnavailableRegistry = unavailable;
+out.MeasurementSidecars = measurementSidecars;
 out.VisualArtifactIntegrity = tables.visual_artifact_integrity;
 out.VisualArtifactIntegrityOk = all(logical(tables.visual_artifact_integrity.IntegrityOk));
 out.UpdatedArtifactInventory = inventory;
