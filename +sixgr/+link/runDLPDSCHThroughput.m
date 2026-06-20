@@ -801,8 +801,15 @@ for n = 1:numFrames
             trialCQIDerivedCodeRate(n) = double(cqiRate);
             trialCQIDerivedModulation(n) = string(cqiMod);
         end
-        if schedulerDrivenGrant && ~isfinite(trialCQI(n))
-            trialCQISource(n) = "current_receiver_cqi_unavailable_no_scheduler_grant_backfill";
+        if schedulerDrivenGrant && ~isfinite(trialCQI(n)) && isfinite(grantCQIUsed) && grantCQIUsed > 0
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            trialCQISource(n) = "scheduler_grant_cqi_used";
+            [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
+            trialCQIDerivedMCS(n) = double(cqiMCS);
+            trialCQIDerivedCodeRate(n) = double(cqiRate);
+            trialCQIDerivedModulation(n) = string(cqiMod);
+        elseif schedulerDrivenGrant && ~isfinite(trialCQI(n))
+            trialCQISource(n) = "current_receiver_cqi_unavailable_no_scheduler_grant_cqi";
             trialCQIDerivedMCS(n) = NaN;
             trialCQIDerivedCodeRate(n) = NaN;
             trialCQIDerivedModulation(n) = "";
@@ -2656,7 +2663,11 @@ end
 timingEstimate = double(sixgr.util.structGet(rx, "TimingOffset", NaN));
 rawTimingEstimate = double(sixgr.util.structGet(rx, "RawTimingEstimate_samples", timingEstimate));
 appliedTimingCorrection = double(sixgr.util.structGet(rx, "AppliedTimingCorrection_samples", NaN));
-timingEstimateUsed = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", isfinite(rawTimingEstimate)));
+if logical(useIdealTimingSync)
+    timingEstimateUsed = false;
+else
+    timingEstimateUsed = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", isfinite(rawTimingEstimate)));
+end
 if timingEstimateUsed
     replay.UseIdealTimingSync = false;
 end
@@ -3282,12 +3293,20 @@ status(bootstrapMask) = "bootstrap_not_measured_cqi";
 cqiMask = mode == "cqi_table";
 source(cqiMask) = "runtime_cqi_table";
 status(cqiMask) = "measured_cqi_mapped";
+ollaApplied = logical(localOptionalColumn(T, "OuterLoopApplied", false));
+ollaDelta = double(localOptionalColumn(T, "OLLADeltaMCS", NaN));
+feedbackAdaptedMask = cqiMask & ollaApplied & isfinite(ollaDelta) & abs(ollaDelta) > 0;
+status(feedbackAdaptedMask) = "measured_feedback_adapted";
 fixedMCSMask = mode == "fixed_mcs";
 source(fixedMCSMask) = "configured_fixed_mcs";
 status(fixedMCSMask) = "configured";
 fixedModMask = mode == "fixed_modulation";
 source(fixedModMask) = "configured_modulation_code_rate";
 status(fixedModMask) = "configured";
+existingSource = strtrim(string(localOptionalColumn(T, "MCSSelectionSource", "")));
+existingStatus = strtrim(string(localOptionalColumn(T, "MCSValueStatus", "")));
+source(strlength(existingSource) > 0) = existingSource(strlength(existingSource) > 0);
+status(strlength(existingStatus) > 0) = existingStatus(strlength(existingStatus) > 0);
 end
 
 function token = localResolveOLLADomainToken(cfg, direction)

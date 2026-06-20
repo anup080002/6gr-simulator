@@ -57,8 +57,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "scenario.ue.nRxAnt", "antenna_and_a
 cfg = localSyncValue(cfg, newBase, oldBase, "scenario.bs.downtilt_deg", "antenna_and_array.bs_mechanical_tilt_deg", "negative_tilt");
 cfg = localSyncValue(cfg, newBase, oldBase, "scenario.bs.antenna.type", "antenna_and_array.bs_array_geometry", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "scenario.ue.antenna.type", "antenna_and_array.ue_array_geometry", "ue_array_geometry");
-cfg = localSyncValue(cfg, newBase, oldBase, "scenario.bs.antenna.element_spacing_wavelengths", "antenna_and_array.element_spacing_h", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "scenario.bs.antenna.element_spacing_wavelengths", "antenna_and_array.element_spacing_v", "identity");
+cfg = localSyncAntennaElementSpacing(cfg, newBase, oldBase);
 cfg = localSyncValue(cfg, newBase, oldBase, "antenna_and_array.digital_precoder_family", "mimo.precoder_type", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "scenario.bs.txPower_dBm", "power_and_rf_frontend.bs_tx_power_dbm", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "air_interface.bs_tx_power_per_sector_dBm", "power_and_rf_frontend.bs_tx_power_dbm", "identity");
@@ -208,6 +207,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_enabled",
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_max_samples", "impairments.to.value_samples", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_enabled", "impairments.phase_noise.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_model", "impairments.phase_noise.model", "identity");
+cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localApplyDerivedRadioAliases(cfg, newBase);
 end
 
@@ -250,6 +250,91 @@ if strlength(candidate) == 0
 end
 [~, name, ext] = fileparts(char(candidate));
 tf = startsWith(string(name), "__web_runtime_", "IgnoreCase", true) && any(strcmpi(string(ext), [".yaml",".yml",".json"]));
+end
+
+function cfg = localApplyBrowserOverlayDurationAliases(cfg, sourceFiles, configPath)
+overlayPath = localBrowserOverlayPath(sourceFiles, configPath);
+if strlength(overlayPath) == 0
+    return;
+end
+overlay = localReadBrowserOverlayStruct(overlayPath);
+if ~isstruct(overlay) || ~isscalar(overlay)
+    return;
+end
+
+cfg = localMirrorOverlayNumeric(cfg, overlay, "simulation.n_slots", ...
+    ["simulation.n_slots", "run_control.total_slots"]);
+cfg = localMirrorOverlayNumeric(cfg, overlay, "run_control.total_slots", ...
+    ["run_control.total_slots", "simulation.n_slots"]);
+cfg = localMirrorOverlayNumeric(cfg, overlay, "run_control.warmup_slots", ...
+    "run_control.warmup_slots");
+cfg = localMirrorOverlayNumeric(cfg, overlay, "run_control.measurement_slots", ...
+    "run_control.measurement_slots");
+end
+
+function overlayPath = localBrowserOverlayPath(sourceFiles, configPath)
+overlayPath = "";
+if localIsBrowserOverlayPath(configPath)
+    overlayPath = string(configPath);
+    return;
+end
+for i = numel(sourceFiles):-1:1
+    if localIsBrowserOverlayPath(sourceFiles(i))
+        overlayPath = string(sourceFiles(i));
+        return;
+    end
+end
+end
+
+function overlay = localReadBrowserOverlayStruct(pathStr)
+overlay = struct();
+try
+    overlay = sixgr.lls6g.config.readConfigFile(char(string(pathStr)));
+catch
+    overlay = struct();
+end
+if isstruct(overlay) && isscalar(overlay) && isfield(overlay, "inherits")
+    overlay = rmfield(overlay, "inherits");
+end
+end
+
+function cfg = localMirrorOverlayNumeric(cfg, overlay, overlayPath, targetPaths)
+[value, found] = localTryGetNestedValue(overlay, overlayPath);
+value = localOverlayNumericScalar(value);
+if ~found || ~(isfinite(value) && value >= 0)
+    return;
+end
+for i = 1:numel(targetPaths)
+    cfg = sixgr.util.structSet(cfg, char(string(targetPaths(i))), double(value));
+end
+end
+
+function value = localOverlayNumericScalar(raw)
+value = NaN;
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if ~isempty(raw)
+    value = double(raw(1));
+end
+end
+
+function [value, found] = localTryGetNestedValue(s, pathStr)
+value = [];
+found = false;
+node = s;
+parts = split(string(pathStr), ".");
+for i = 1:numel(parts)
+    key = char(parts(i));
+    if ~(isstruct(node) && isscalar(node) && isfield(node, key))
+        return;
+    end
+    node = node.(key);
+end
+value = node;
+found = true;
 end
 
 function cfg = localSyncNestedFlag(cfg, newBase, oldBase, newPath, oldPath)
@@ -365,6 +450,70 @@ elseif newDiff && oldDiff
     if ~isequaln(oldVal, newToOld) && ~isequaln(newVal, oldToNew)
         cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
     end
+end
+end
+
+function cfg = localSyncAntennaElementSpacing(cfg, newBase, oldBase)
+hPath = "antenna_and_array.element_spacing_h";
+vPath = "antenna_and_array.element_spacing_v";
+legacyPath = "scenario.bs.antenna.element_spacing_wavelengths";
+
+hVal = sixgr.util.structGet(cfg, hPath, []);
+vVal = sixgr.util.structGet(cfg, vPath, []);
+legacyVal = sixgr.util.structGet(cfg, legacyPath, []);
+hBaseVal = sixgr.util.structGet(newBase, hPath, []);
+vBaseVal = sixgr.util.structGet(newBase, vPath, []);
+legacyBaseVal = sixgr.util.structGet(oldBase, legacyPath, []);
+
+hDiff = ~isequaln(hVal, hBaseVal);
+vDiff = ~isequaln(vVal, vBaseVal);
+legacyDiff = ~isequaln(legacyVal, legacyBaseVal);
+
+legacySpacing = localSpacingVector(legacyVal);
+if legacyDiff && ~isempty(legacySpacing)
+    if (localAliasMissing(hVal) || ~hDiff) && numel(legacySpacing) >= 1
+        cfg = sixgr.util.structSet(cfg, hPath, legacySpacing(1));
+        hVal = legacySpacing(1);
+        hDiff = true;
+    end
+    if localAliasMissing(vVal) || ~vDiff
+        if numel(legacySpacing) >= 2
+            cfg = sixgr.util.structSet(cfg, vPath, legacySpacing(2));
+            vVal = legacySpacing(2);
+            vDiff = true;
+        elseif numel(legacySpacing) == 1
+            cfg = sixgr.util.structSet(cfg, vPath, legacySpacing(1));
+            vVal = legacySpacing(1);
+            vDiff = true;
+        end
+    end
+end
+
+if hDiff || vDiff
+    hScalar = localNumericScalar(hVal);
+    vScalar = localNumericScalar(vVal);
+    if isfinite(hScalar) && isfinite(vScalar)
+        cfg = sixgr.util.structSet(cfg, legacyPath, [hScalar vScalar]);
+    elseif isfinite(hScalar)
+        cfg = sixgr.util.structSet(cfg, legacyPath, hScalar);
+    elseif isfinite(vScalar)
+        cfg = sixgr.util.structSet(cfg, legacyPath, vScalar);
+    end
+end
+end
+
+function values = localSpacingVector(value)
+values = [];
+if isnumeric(value) || islogical(value)
+    values = double(value(:).');
+    values = values(isfinite(values));
+end
+end
+
+function value = localNumericScalar(raw)
+value = NaN;
+if (isnumeric(raw) || islogical(raw)) && isscalar(raw) && isfinite(double(raw))
+    value = double(raw);
 end
 end
 

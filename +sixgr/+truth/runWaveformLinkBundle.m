@@ -7606,6 +7606,7 @@ for k = 1:nTrials
         completed = logical(sixgr.util.structGet(out, "Ok", false)) && ~logical(sixgr.util.structGet(out, "Skipped", false));
         detected = logical(sixgr.util.structGet(out, "Detected", false));
         r.CRCPass = double(detected);
+        r.DetectionSuccess = detected;
         r.DetectionMetric = double(sixgr.util.structGet(out, "DetectionMetric", double(detected)));
         r.CorrelationPeak = double(sixgr.util.structGet(out, "CorrelationPeak", r.DetectionMetric));
         r.DetectionThreshold = double(sixgr.util.structGet(out, "DetectionThreshold", NaN));
@@ -7673,7 +7674,7 @@ for k = 1:nTrials
         r.AirInterfaceObservation_ms = double(sixgr.util.structGet(out, "AirInterfaceObservation_ms", NaN));
         r.AcquisitionTime_ms = double(sixgr.util.structGet(out, "AcquisitionTime_ms", NaN));
         r.DetectionAttempted = completed || isfinite(r.DetectionMetric);
-        r.DetectionUsable = logical(r.DetectionAttempted) && isfinite(r.DetectionMetric);
+        r.DetectionUsable = logical(r.DetectionAttempted) && logical(r.DetectionSuccess) && isfinite(r.DetectionMetric);
         r.MeasurementAttempted = logical(r.DetectionAttempted);
         r.MeasurementUsable = logical(r.DetectionUsable) && isfinite(r.NoiseVariance);
         r.ReceiverUsable = logical(r.MeasurementUsable);
@@ -9895,10 +9896,21 @@ if ~ismember("RNTI", string(T.Properties.VariableNames))
     T.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), n, 1);
 end
 if ~ismember("Direction", string(T.Properties.VariableNames))
-    T.Direction = repmat(string(direction), n, 1);
+    if ismember("direction", string(T.Properties.VariableNames))
+        T.Direction = string(T.direction);
+    else
+        T.Direction = repmat(string(direction), n, 1);
+    end
+end
+if ~ismember("Modulation", string(T.Properties.VariableNames)) && ismember("modulation", string(T.Properties.VariableNames))
+    T.Modulation = string(T.modulation);
 end
 if ~ismember("SNR_dB", string(T.Properties.VariableNames))
-    T.SNR_dB = repmat(double(snr_dB), n, 1);
+    if ismember("snr_db", string(T.Properties.VariableNames))
+        T.SNR_dB = double(T.snr_db);
+    else
+        T.SNR_dB = repmat(double(snr_dB), n, 1);
+    end
 end
 if ~ismember("Modulation", string(T.Properties.VariableNames))
     T.Modulation = strings(n, 1);
@@ -9947,7 +9959,9 @@ if ~ismember("PostEqSINR_dB", string(T.Properties.VariableNames)) && ismember("M
     T.PostEqSINR_dB = double(T.MeasuredSINR_dB);
 end
 if ~ismember("EVM_rms_pct", string(T.Properties.VariableNames))
-    if ismember("EVM_rms", string(T.Properties.VariableNames))
+    if ismember("evm_rms_pct", string(T.Properties.VariableNames))
+        T.EVM_rms_pct = double(T.evm_rms_pct);
+    elseif ismember("EVM_rms", string(T.Properties.VariableNames))
         T.EVM_rms_pct = double(T.EVM_rms) .* 100;
     elseif ismember("SymbolEVM_rms", string(T.Properties.VariableNames))
         T.EVM_rms_pct = double(T.SymbolEVM_rms) .* 100;
@@ -9956,7 +9970,9 @@ if ~ismember("EVM_rms_pct", string(T.Properties.VariableNames))
     end
 end
 if ~ismember("EVM_dB", string(T.Properties.VariableNames))
-    if ismember("EVM_rms", string(T.Properties.VariableNames))
+    if ismember("evm_db", string(T.Properties.VariableNames))
+        T.EVM_dB = double(T.evm_db);
+    elseif ismember("EVM_rms", string(T.Properties.VariableNames))
         T.EVM_dB = 20 .* log10(max(double(T.EVM_rms), realmin));
     elseif ismember("SymbolEVM_rms", string(T.Properties.VariableNames))
         T.EVM_dB = 20 .* log10(max(double(T.SymbolEVM_rms), realmin));
@@ -9965,7 +9981,11 @@ if ~ismember("EVM_dB", string(T.Properties.VariableNames))
     end
 end
 if ~ismember("Normalization", string(T.Properties.VariableNames))
-    T.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", n, 1);
+    if ismember("normalization", string(T.Properties.VariableNames))
+        T.Normalization = string(T.normalization);
+    else
+        T.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", n, 1);
+    end
 end
 if ~ismember("TruthStatus", string(T.Properties.VariableNames))
     T.TruthStatus = repmat("real_lls_evidence", n, 1);
@@ -9989,6 +10009,39 @@ T.evm_rms_pct = localConstellationNumericColumn(T, "EVM_rms_pct");
 T.evm_db = localConstellationNumericColumn(T, "EVM_dB");
 T.normalization = string(T.Normalization);
 T.truth_status = string(T.TruthStatus);
+T = localDisambiguateConstellationCaseCollisionColumns(T);
+end
+
+function T = localDisambiguateConstellationCaseCollisionColumns(T)
+renameMap = [ ...
+    "Direction", "RuntimeDirection"; ...
+    "Modulation", "RuntimeModulation"; ...
+    "SNR_dB", "RuntimeSNR_dB"; ...
+    "Slot", "RuntimeSlot"; ...
+    "EVM_rms_pct", "RuntimeEVMRms_pct"; ...
+    "EVM_dB", "RuntimeEVM_dB"; ...
+    "Normalization", "RuntimeNormalization"];
+for i = 1:size(renameMap, 1)
+    src = renameMap(i, 1);
+    dst = renameMap(i, 2);
+    names = string(T.Properties.VariableNames);
+    if ~ismember(src, names)
+        continue;
+    end
+    collidesCaseInsensitive = any(strcmpi(names, src) & names ~= src);
+    if ~collidesCaseInsensitive
+        continue;
+    end
+    target = dst;
+    while ismember(target, names)
+        T.(char(src)) = [];
+        break;
+    end
+    if ~ismember(src, string(T.Properties.VariableNames))
+        continue;
+    end
+    T = renamevars(T, src, target);
+end
 end
 
 function values = localConstellationNumericColumn(T, names)

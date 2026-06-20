@@ -6,6 +6,7 @@ sixgr.util.ensureFolder(layout.ReportCSVDir);
 
 ctx = localBuildContext(runFolder, scfg, cfg, layout);
 registry = localParameterRegistry();
+registry = localApplyRuntimeDerivedRegistryOverrides(ctx, registry);
 registryHints = localBuildRegistryHints(registry);
 configEvidence = sixgr.config.exportConfigApplicationEvidence(runFolder);
 configEvidence.Table = localFilterConfigEvidence(configEvidence.Table, scfg, cfg);
@@ -396,7 +397,7 @@ rows = [ ...
         "TDD pattern stays YAML-owned and resolves into runtime duplex scheduling semantics."); ...
     localParam("mobility", "mobility.ue_speed_kmh", ["mobility.ue_speed_kmh","channels.mobility_kmph"], ...
         "@mobility_speed_kmh", "buildInternalConfig -> cfg.scenario.mobility.speed_kmh", ...
-        "reports/csv/runtime_operating_mode.csv", "MobilitySpeed_kmh", "direction=DL", true, true, true, true, ...
+        "reports/csv/runtime_operating_mode.csv", "MobilitySpeed_kmh", "direction=DL", true, true, false, true, ...
         "browser_or_yaml_mobility.ue_speed_kmh", ...
         "UE speed is a mobility input, not Doppler; Doppler is derived later from speed and carrier frequency."); ...
     localParam("mobility", "mobility.trajectory_model", "mobility.trajectory_model", ...
@@ -912,6 +913,113 @@ row = struct( ...
     "HiddenFallbackRemoved", logical(hiddenFallbackRemoved), ...
     "SourceOfTruth", string(sourceOfTruth), ...
     "Definition", string(definition));
+end
+
+function registry = localApplyRuntimeDerivedRegistryOverrides(ctx, registry)
+if localTopologySitesDerivedFromCellCount(ctx.ScenarioStruct)
+    registry = localMarkRegistryRuntimeDerived(registry, "deployment_topology.num_sites", ...
+        "yaml_deployment_topology.num_cells", ...
+        "Runtime site count is derived from requested cell count when an inherited site count would change the requested cell cardinality.");
+end
+
+if localImpairmentUsesRuntimeDraw(ctx.ScenarioStruct, ...
+        "impairments.cfo_model", "impairments.cfo.enabled", "impairments.cfo_enabled")
+    registry = localMarkRegistryRuntimeDerived(registry, "impairments.cfo_hz", ...
+        "yaml_impairments.cfo_model_cfo_std_ppm_cfo_max_hz", ...
+        "Configured CFO distribution is YAML-owned; phy.impairments.cfoHz is the seeded runtime realization used by the waveform impairment chain.");
+end
+
+if localImpairmentUsesRuntimeDraw(ctx.ScenarioStruct, ...
+        "impairments.timing_offset_model", "impairments.timing_offset.enabled", "impairments.timing_offset_enabled")
+    registry = localMarkRegistryRuntimeDerived(registry, "impairments.timing_offset_samples", ...
+        "yaml_impairments.timing_offset_model_timing_offset_max_samples", ...
+        "Configured timing-offset distribution is YAML-owned; phy.impairments.timingOffsetSamples is the seeded runtime realization used by the waveform impairment chain.");
+end
+end
+
+function tf = localTopologySitesDerivedFromCellCount(scenarioStruct)
+tf = false;
+[numCells, hasNumCells] = localScenarioNumericValue(scenarioStruct, "deployment_topology.num_cells");
+[numSites, hasNumSites] = localScenarioNumericValue(scenarioStruct, "deployment_topology.num_sites");
+if ~hasNumSites
+    [numSites, hasNumSites] = localScenarioNumericValue(scenarioStruct, "deployment_topology.num_base_stations");
+end
+if ~hasNumSites
+    [numSites, hasNumSites] = localScenarioNumericValue(scenarioStruct, "deployment_topology.num_bs");
+end
+if ~(hasNumCells && hasNumSites) || numCells <= 1
+    return;
+end
+
+[numSectors, hasNumSectors] = localScenarioNumericValue(scenarioStruct, "deployment_topology.num_sectors_per_site");
+if ~hasNumSectors
+    [numSectors, hasNumSectors] = localScenarioNumericValue(scenarioStruct, "deployment_topology.sectors_per_site");
+end
+if ~hasNumSectors
+    numSectors = max(1, round(numCells / max(1, round(numSites))));
+end
+
+tf = max(1, round(numSites)) * max(1, round(numSectors)) ~= max(1, round(numCells));
+end
+
+function registry = localMarkRegistryRuntimeDerived(registry, parameterName, sourceOfTruth, definition)
+target = string(parameterName);
+for i = 1:numel(registry)
+    if string(registry(i).ParameterName) ~= target
+        continue;
+    end
+    registry(i).RuntimeDerived = true;
+    registry(i).SourceOfTruth = string(sourceOfTruth);
+    registry(i).Definition = string(definition);
+end
+end
+
+function tf = localImpairmentUsesRuntimeDraw(scenarioStruct, modelPath, nestedEnabledPath, flatEnabledPath)
+model = lower(strtrim(localScenarioStringValue(scenarioStruct, modelPath)));
+enabledNested = localScenarioLogicalValue(scenarioStruct, nestedEnabledPath);
+enabledFlat = localScenarioLogicalValue(scenarioStruct, flatEnabledPath);
+enabled = enabledNested || enabledFlat;
+
+fixedModels = ["", "0", "false", "none", "off", "disabled", "fixed", "constant", "static", "deterministic", "constant_zero"];
+tf = enabled && ~any(model == fixedModels);
+end
+
+function value = localScenarioStringValue(scenarioStruct, pathStr)
+value = "";
+[raw, found] = localTryGetNestedValue(scenarioStruct, pathStr);
+if found
+    value = strtrim(localScalarToString(raw));
+end
+end
+
+function [value, found] = localScenarioNumericValue(scenarioStruct, pathStr)
+value = NaN;
+[raw, found] = localTryGetNestedValue(scenarioStruct, pathStr);
+if ~found
+    return;
+end
+if ~(isnumeric(raw) || islogical(raw)) || isempty(raw)
+    found = false;
+    return;
+end
+value = double(raw(1));
+found = isfinite(value);
+end
+
+function tf = localScenarioLogicalValue(scenarioStruct, pathStr)
+tf = false;
+[raw, found] = localTryGetNestedValue(scenarioStruct, pathStr);
+if ~found
+    return;
+end
+if islogical(raw)
+    tf = any(raw(:));
+elseif isnumeric(raw)
+    tf = any(raw(:) ~= 0);
+else
+    token = lower(strtrim(string(raw)));
+    tf = any(token == ["true", "1", "yes", "on", "enabled"]);
+end
 end
 
 function hints = localBuildRegistryHints(registry)

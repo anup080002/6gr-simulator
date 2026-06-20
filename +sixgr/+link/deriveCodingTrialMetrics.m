@@ -154,17 +154,41 @@ for c = 1:txCount
     end
     txCol = int8(txCbs(:, c));
     rxCol = int8(decCbs(:, c));
-    L = min(numel(txCol), numel(rxCol));
-    mismatch = (numel(txCol) ~= numel(rxCol));
-    if L > 0
-        mismatch = mismatch || any(txCol(1:L) ~= rxCol(1:L));
-    else
+    infoMask = txCol == 0 | txCol == 1;
+    if ~any(infoMask)
         mismatch = true;
+    else
+        lastInfo = find(infoMask, 1, "last");
+        if numel(rxCol) < lastInfo
+            mismatch = true;
+        else
+            mismatch = any(txCol(infoMask) ~= rxCol(infoMask));
+        end
     end
     if numel(parity) >= c && isfinite(parity(c)) && parity(c) > 0
         mismatch = true;
     end
     errMask(c) = mismatch;
+end
+
+% For the C=1 case, TS 38.212 does not append a code-block CRC24B.
+% The strongest simulator-side code-block check is therefore the recovered
+% transport block equality plus the TB CRC result, not a fabricated CB CRC.
+if txCount == 1
+    txTB = sixgr.util.structGet(tx, "TransportBlock", []);
+    rxTB = sixgr.util.structGet(rx, "TransportBlock", []);
+    if ~isempty(txTB) && ~isempty(rxTB)
+        txTB = int8(txTB(:));
+        rxTB = int8(rxTB(:));
+        Ltb = min(numel(txTB), numel(rxTB));
+        tbMismatch = numel(txTB) ~= numel(rxTB);
+        if Ltb > 0
+            tbMismatch = tbMismatch || any(txTB(1:Ltb) ~= rxTB(1:Ltb));
+        else
+            tbMismatch = true;
+        end
+        errMask(1) = tbMismatch || localBool(rx, "CRCError", false) || ~localBool(rx, "CRCPass", localBool(rx, "Ok", false));
+    end
 end
 cbErr = double(sum(errMask));
 [cbgErr, cbgCount] = localResolveCBGErrorStats(cbErr, cbCount, cfg);
@@ -184,5 +208,18 @@ if cbgEnabled
 else
     cbgCount = 1;
     cbgErr = double(cbErr > 0);
+end
+end
+
+function value = localBool(s, name, defaultValue)
+raw = sixgr.util.structGet(s, name, defaultValue);
+if islogical(raw) && isscalar(raw)
+    value = logical(raw);
+elseif isnumeric(raw) && isscalar(raw) && isfinite(raw)
+    value = raw ~= 0;
+elseif ischar(raw) || isstring(raw)
+    value = any(strcmpi(strtrim(char(string(raw))), ["true","1","yes","ok","pass"]));
+else
+    value = logical(defaultValue);
 end
 end

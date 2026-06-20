@@ -983,16 +983,14 @@ subcarrier = double(subcarrier(1:numRE));
 refSym = double(refSym(1:numRE));
 rxRef = double(rxRef(1:numRE, :, :, :));
 hRef = double(hRef(1:numRE, :, :, :));
-valid = isfinite(subcarrier) & abs(refSym(:)) > sqrt(eps);
+[pilotRecon, ~, ~, validRef] = localReferenceReconstruction(hRef, refSym, numRE);
+valid = isfinite(subcarrier) & validRef(:);
 if ~any(valid)
     return;
 end
 subcarrier = subcarrier(valid);
-refSym = refSym(valid);
-rxRef = rxRef(valid, :, :, :);
-hRef = hRef(valid, :, :, :);
-pilotRecon = hRef .* reshape(refSym, [], 1, 1, 1);
-signalPow = localMeanAcrossNonRE(abs(pilotRecon).^2);
+pilotRecon = pilotRecon(valid, :);
+signalPow = mean(abs(pilotRecon).^2, 2, "omitnan");
 nVar = double(nVar);
 if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
     return;
@@ -1053,41 +1051,33 @@ rxPilot = [];
 pilotRecon = [];
 pilotObsH = [];
 pilotEstH = [];
-refSym = double(refSym(:));
-L = min([size(rxRef, 1), size(hRef, 1), numel(refSym)]);
+L = min([size(rxRef, 1), size(hRef, 1)]);
 if ~(isfinite(L) && L >= 1)
     return;
 end
-rxRef = double(rxRef(1:L, :, :, :));
-hRef = double(hRef(1:L, :, :, :));
-refSym = reshape(refSym(1:L), [L, 1, 1, 1]);
-valid = abs(refSym) > sqrt(eps);
-if ~any(valid(:))
+rxMat = reshape(double(rxRef(1:L, :, :, :)), L, []);
+[pilotReconAll, pilotEstHAll, refScale, valid] = localReferenceReconstruction(hRef, refSym, L);
+if isempty(pilotReconAll) || ~any(valid)
     return;
 end
-rxPilot = double(rxRef(valid));
-pilotEstH = double(hRef(valid));
-pilotRecon = pilotEstH .* double(refSym(valid));
-pilotObsH = rxPilot ./ double(refSym(valid));
+rxPilot = rxMat(valid, :);
+pilotRecon = pilotReconAll(valid, :);
+pilotEstH = pilotEstHAll(valid, :);
+pilotObsH = rxPilot ./ max(refScale(valid), sqrt(eps));
 end
 
 function [signalPowLin, noisePowLin] = localHestNoiseSignalPowers(hRef, refSym, nVar)
 signalPowLin = NaN;
 noisePowLin = NaN;
-refSym = double(refSym(:));
-L = min([size(hRef, 1), numel(refSym)]);
+L = size(hRef, 1);
 if ~(isfinite(L) && L >= 1)
     return;
 end
-hRef = double(hRef(1:L, :, :, :));
-refSym = refSym(1:L);
-valid = abs(refSym(:)) > sqrt(eps);
+[pilotRecon, ~, ~, valid] = localReferenceReconstruction(hRef, refSym, L);
 if ~any(valid)
     return;
 end
-hUse = hRef(valid, :, :, :);
-refPow = reshape(abs(refSym(valid)).^2, [], 1, 1, 1);
-signalPow = abs(hUse).^2 .* refPow;
+signalPow = abs(pilotRecon(valid, :)).^2;
 signalPow = signalPow(isfinite(signalPow));
 if isempty(signalPow)
     return;
@@ -1098,6 +1088,64 @@ if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
 end
 signalPowLin = mean(signalPow, "omitnan");
 noisePowLin = nVar;
+end
+
+function [pilotRecon, pilotEstH, refScale, valid] = localReferenceReconstruction(hRef, refSym, L)
+pilotRecon = [];
+pilotEstH = [];
+refScale = [];
+valid = false(0, 1);
+if isempty(hRef) || isempty(refSym) || ~(isfinite(L) && L >= 1)
+    return;
+end
+h = reshape(double(hRef(1:L, :, :, :)), L, size(hRef, 2), []);
+nPorts = size(h, 3);
+refMat = localReferenceSymbolMatrix(refSym, L, nPorts);
+if isempty(refMat)
+    return;
+end
+refEnergy = sum(abs(refMat).^2, 2);
+valid = refEnergy > sqrt(eps);
+if ~any(valid)
+    return;
+end
+pilotRecon = complex(zeros(L, size(h, 2)));
+for p = 1:nPorts
+    pilotRecon = pilotRecon + h(:, :, p) .* refMat(:, p);
+end
+refScale = sqrt(max(refEnergy, eps));
+pilotEstH = pilotRecon ./ max(refScale, sqrt(eps));
+end
+
+function refMat = localReferenceSymbolMatrix(refSym, L, nPorts)
+refMat = [];
+if isempty(refSym) || ~(isfinite(L) && L >= 1) || ~(isfinite(nPorts) && nPorts >= 1)
+    return;
+end
+raw = double(refSym);
+if isvector(raw)
+    raw = raw(:);
+    if numel(raw) >= L * nPorts
+        refMat = reshape(raw(1:L * nPorts), L, nPorts);
+    elseif numel(raw) >= L
+        refMat = repmat(raw(1:L), 1, nPorts);
+    end
+else
+    raw = reshape(raw, size(raw, 1), []);
+    if size(raw, 1) < L
+        flat = raw(:);
+        if numel(flat) >= L * nPorts
+            refMat = reshape(flat(1:L * nPorts), L, nPorts);
+        end
+    else
+        refMat = raw(1:L, :);
+        if size(refMat, 2) < nPorts
+            refMat = [refMat, zeros(L, nPorts - size(refMat, 2))]; %#ok<AGROW>
+        elseif size(refMat, 2) > nPorts
+            refMat = refMat(:, 1:nPorts);
+        end
+    end
+end
 end
 
 function [signalPowLin, residualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar)

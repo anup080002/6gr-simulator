@@ -5499,7 +5499,7 @@ T = table('Size', [0 38], ...
     'double','double','double','double','double','string','string'}, ...
     'VariableNames', {'direction','ue_id','slot','tb_id','layer','modulation','mcs_index','snr_db','posteq_sinr_db','symbol_index', ...
     'reference_symbol_i','reference_symbol_q','equalized_i','equalized_q','evm_rms_pct','evm_db', ...
-    'Direction','Modulation','SNR_dB','SampleIndex','LayerIndex','MCSIndex','PostEqSINR_dB', ...
+    'RuntimeDirection','RuntimeModulation','RuntimeSNR_dB','SampleIndex','LayerIndex','MCSIndex','PostEqSINR_dB', ...
     'ReferenceSymbolReal','ReferenceSymbolImag','TxReal','TxImag','RawEqualizedReal','RawEqualizedImag','EqualizedReal','EqualizedImag', ...
     'HardDecisionReal','HardDecisionImag','DecisionReal','DecisionImag','SymbolEVM_rms','normalization','truth_status'});
 T.SourceArtifact = strings(0, 1);
@@ -5512,13 +5512,24 @@ if ~(istable(T) && ~isempty(T))
 end
 n = height(T);
 if ~ismember("Direction", string(T.Properties.VariableNames))
-    T.Direction = strings(n, 1);
+    if ismember("direction", string(T.Properties.VariableNames))
+        T.Direction = string(T.direction);
+    else
+        T.Direction = strings(n, 1);
+    end
+end
+if ~ismember("Modulation", string(T.Properties.VariableNames)) && ismember("modulation", string(T.Properties.VariableNames))
+    T.Modulation = string(T.modulation);
 end
 if ~ismember("Modulation", string(T.Properties.VariableNames))
     T.Modulation = strings(n, 1);
 end
 if ~ismember("SNR_dB", string(T.Properties.VariableNames))
-    T.SNR_dB = nan(n, 1);
+    if ismember("snr_db", string(T.Properties.VariableNames))
+        T.SNR_dB = double(T.snr_db);
+    else
+        T.SNR_dB = nan(n, 1);
+    end
 end
 if ~ismember("TBId", string(T.Properties.VariableNames))
     if all(ismember(["Frame","Slot"], string(T.Properties.VariableNames)))
@@ -5540,7 +5551,9 @@ if ~ismember("PostEqSINR_dB", string(T.Properties.VariableNames)) && ismember("M
     T.PostEqSINR_dB = double(T.MeasuredSINR_dB);
 end
 if ~ismember("EVM_rms_pct", string(T.Properties.VariableNames))
-    if ismember("EVM_rms", string(T.Properties.VariableNames))
+    if ismember("evm_rms_pct", string(T.Properties.VariableNames))
+        T.EVM_rms_pct = double(T.evm_rms_pct);
+    elseif ismember("EVM_rms", string(T.Properties.VariableNames))
         T.EVM_rms_pct = double(T.EVM_rms) .* 100;
     elseif ismember("SymbolEVM_rms", string(T.Properties.VariableNames))
         T.EVM_rms_pct = double(T.SymbolEVM_rms) .* 100;
@@ -5549,7 +5562,9 @@ if ~ismember("EVM_rms_pct", string(T.Properties.VariableNames))
     end
 end
 if ~ismember("EVM_dB", string(T.Properties.VariableNames))
-    if ismember("EVM_rms", string(T.Properties.VariableNames))
+    if ismember("evm_db", string(T.Properties.VariableNames))
+        T.EVM_dB = double(T.evm_db);
+    elseif ismember("EVM_rms", string(T.Properties.VariableNames))
         T.EVM_dB = 20 .* log10(max(double(T.EVM_rms), realmin));
     elseif ismember("SymbolEVM_rms", string(T.Properties.VariableNames))
         T.EVM_dB = 20 .* log10(max(double(T.SymbolEVM_rms), realmin));
@@ -5558,7 +5573,11 @@ if ~ismember("EVM_dB", string(T.Properties.VariableNames))
     end
 end
 if ~ismember("Normalization", string(T.Properties.VariableNames))
-    T.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", n, 1);
+    if ismember("normalization", string(T.Properties.VariableNames))
+        T.Normalization = string(T.normalization);
+    else
+        T.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", n, 1);
+    end
 end
 if ~ismember("TruthStatus", string(T.Properties.VariableNames))
     T.TruthStatus = repmat("real_lls_evidence", n, 1);
@@ -5581,6 +5600,39 @@ T.evm_rms_pct = localConstellationNumericColumn(T, "EVM_rms_pct");
 T.evm_db = localConstellationNumericColumn(T, "EVM_dB");
 T.normalization = string(T.Normalization);
 T.truth_status = string(T.TruthStatus);
+T = localDisambiguateConstellationCaseCollisionColumns(T);
+end
+
+function T = localDisambiguateConstellationCaseCollisionColumns(T)
+renameMap = [ ...
+    "Direction", "RuntimeDirection"; ...
+    "Modulation", "RuntimeModulation"; ...
+    "SNR_dB", "RuntimeSNR_dB"; ...
+    "Slot", "RuntimeSlot"; ...
+    "EVM_rms_pct", "RuntimeEVMRms_pct"; ...
+    "EVM_dB", "RuntimeEVM_dB"; ...
+    "Normalization", "RuntimeNormalization"];
+for i = 1:size(renameMap, 1)
+    src = renameMap(i, 1);
+    dst = renameMap(i, 2);
+    names = string(T.Properties.VariableNames);
+    if ~ismember(src, names)
+        continue;
+    end
+    collidesCaseInsensitive = any(strcmpi(names, src) & names ~= src);
+    if ~collidesCaseInsensitive
+        continue;
+    end
+    target = dst;
+    while ismember(target, names)
+        T.(char(src)) = [];
+        break;
+    end
+    if ~ismember(src, string(T.Properties.VariableNames))
+        continue;
+    end
+    T = renamevars(T, src, target);
+end
 end
 
 function values = localConstellationNumericColumn(T, names)

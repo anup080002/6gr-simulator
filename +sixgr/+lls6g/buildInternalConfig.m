@@ -2081,7 +2081,9 @@ if ~(isfinite(nSectorsRequested) && nSectorsRequested >= 1)
 end
 
 nSectorsPerSite = max(1, round(nSectorsRequested));
-if isfinite(nSitesRequested) && nSitesRequested >= 1
+requestedSitesCompatible = isfinite(nSitesRequested) && nSitesRequested >= 1 && ...
+    max(1, round(nSitesRequested)) * nSectorsPerSite == numCells;
+if isfinite(nSitesRequested) && nSitesRequested >= 1 && (numCells <= 1 || requestedSitesCompatible)
     nSites = max(1, round(nSitesRequested));
 else
     nSites = max(1, ceil(numCells / nSectorsPerSite));

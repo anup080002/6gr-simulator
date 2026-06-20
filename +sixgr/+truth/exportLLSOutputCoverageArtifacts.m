@@ -4106,14 +4106,15 @@ for i = 1:height(sourceTable)
     row = sourceTable(i, :);
     mcs = double(localTableValue(row, "MCSIndex", NaN));
     [cqiDerivedMCS, cqiBasis] = localGrantTimeCQIDerivedMCS(row, sourceArtifactRef);
-    if isfinite(mcs) && isfinite(cqiDerivedMCS) && mcs > cqiDerivedMCS + 1 && ~localMCSRowIsRetransmission(row)
+    [allowedMCS, allowedBasis] = localOLLAAwareMCSBound(row, cqiDerivedMCS, cqiBasis);
+    if isfinite(mcs) && isfinite(allowedMCS) && mcs > allowedMCS + 1 && ~localMCSRowIsRetransmission(row)
         ue = double(localTableValue(row, "UEIndex", localTableValue(row, "UEID", localTableValue(row, "UE", localTableValue(row, "RNTI", NaN)))));
         cellID = double(localTableValue(row, "CellID", localTableValue(row, "ServingCell", localTableValue(row, "BaseStationID", NaN))));
         issueRow = localIssueRow( ...
             lower(string(direction)) + "_mcs_above_cqi_" + string(i), ...
             "high", "REVIEW_REQUIRED", "link_adaptation", ...
             string(direction), ue, cellID, "scheduler/link_adaptation", ...
-            "MCSIndex", "MCS=" + string(mcs) + ";" + cqiBasis + "=" + string(cqiDerivedMCS), ...
+            "MCSIndex", "MCS=" + string(mcs) + ";" + allowedBasis + "=" + string(allowedMCS), ...
             "AMC new-data grants should not exceed the grant-time CQI-derived MCS without explicit, sourced override", ...
             string(sourceArtifactRef), ...
             "Selected new-data MCS is higher than grant-time CQI-derived MCS", ...
@@ -4146,6 +4147,22 @@ for i = 1:height(sourceTable)
             "UL trial reports CRC pass at negative SINR", ...
             "Inspect channel-estimation, equalization, decoder evidence, and SINR definition before treating this as clean success.");
     end
+end
+end
+
+function [allowedMCS, basis] = localOLLAAwareMCSBound(row, cqiDerivedMCS, cqiBasis)
+allowedMCS = double(cqiDerivedMCS);
+basis = string(cqiBasis);
+if ~isfinite(allowedMCS)
+    return;
+end
+outerLoopApplied = localAsBoolScalar(localTableValue(row, "OuterLoopApplied", []), false);
+delta = localNumericTableValue(row, "OLLADeltaMCS", NaN);
+status = lower(strtrim(string(localTableValue(row, "MCSValueStatus", ""))));
+explicitFeedback = contains(status, "feedback_adapted") || contains(status, "olla");
+if outerLoopApplied && explicitFeedback && isfinite(delta) && delta > 0
+    allowedMCS = allowedMCS + floor(double(delta));
+    basis = basis + "PlusMeasuredOLLADelta";
 end
 end
 
