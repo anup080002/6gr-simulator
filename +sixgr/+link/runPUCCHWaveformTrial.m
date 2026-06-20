@@ -53,6 +53,14 @@ out = struct( ...
     "NoiseVarReason", "", ...
     "NoiseVarStrictFailure", false, ...
     "ReceiverUsable", false, ...
+    "ChannelEstimateAttempted", false, ...
+    "ChannelEstimateAvailable", false, ...
+    "ResourceExtractionAttempted", false, ...
+    "ResourceExtractionAvailable", false, ...
+    "EqualizationAttempted", false, ...
+    "EqualizationAvailable", false, ...
+    "StrictReceiverEvidenceOk", false, ...
+    "StrictOk", false, ...
     "DetectionAttempted", false, ...
     "DetectionUsable", false, ...
     "FailureReason", "", ...
@@ -81,6 +89,26 @@ out = struct( ...
     "MeasuredTrialSINRValueRole", "", ...
     "MeasuredTrialSINRValueStatus", "", ...
     "MeasuredTrialSINRNAReason", "", ...
+    "PostEqSINR_dB", NaN, ...
+    "PostEqSINRSource", "", ...
+    "PostEqSINRValueRole", "", ...
+    "PostEqSINRValueStatus", "", ...
+    "PostEqSINRNAReason", "", ...
+    "PUCCHFormat", NaN, ...
+    "PUCCHResourceId", "", ...
+    "PUCCHPRBSet", "", ...
+    "PUCCHPRBStart", NaN, ...
+    "PUCCHPRBCount", NaN, ...
+    "PUCCHSymbolStart", NaN, ...
+    "PUCCHNumSymbols", NaN, ...
+    "PUCCHRECount", NaN, ...
+    "PUCCHDMRSRECount", NaN, ...
+    "PUCCHExpectedBitCount", NaN, ...
+    "PUCCHDecodedBitCount", NaN, ...
+    "PUCCHControlSINR_dB", NaN, ...
+    "PUCCHReceiverEvidenceSource", "", ...
+    "PUCCHGridHash", "", ...
+    "PUCCHWaveformHash", "", ...
     "EstimatedWidebandSINR_dB", NaN, ...
     "WidebandCQI", NaN, ...
     "RankIndicator", NaN, ...
@@ -222,6 +250,29 @@ try
     out.TxInfo = txInfo;
     out.Rx = rx;
     out.RxInfo = rxInfo;
+    out.PUCCHFormat = double(resolvedFormat);
+    out.PUCCHResourceId = char(localPUCCHResourceId(cfgResolved, tx.PUCCH));
+    out.PUCCHPRBSet = char(localNumericVectorToString(localObjectProperty(tx.PUCCH, "PRBSet", [])));
+    out.PUCCHPRBStart = localFirstNumeric(localObjectProperty(tx.PUCCH, "PRBSet", []), NaN);
+    out.PUCCHPRBCount = double(numel(localObjectProperty(tx.PUCCH, "PRBSet", [])));
+    symAlloc = localObjectProperty(tx.PUCCH, "SymbolAllocation", []);
+    out.PUCCHSymbolStart = localFirstNumeric(symAlloc, NaN);
+    if numel(symAlloc) >= 2
+        out.PUCCHNumSymbols = double(symAlloc(2));
+    else
+        out.PUCCHNumSymbols = NaN;
+    end
+    out.PUCCHRECount = double(numel(sixgr.util.structGet(tx, "PUCCHIndices", [])));
+    out.PUCCHDMRSRECount = double(numel(sixgr.util.structGet(tx, "DMRSIndices", [])));
+    out.PUCCHExpectedBitCount = double(numel(expectedBits));
+    out.PUCCHGridHash = char(localComplexSHA256(sixgr.util.structGet(tx, "Grid", [])));
+    out.PUCCHWaveformHash = char(localComplexSHA256(sixgr.util.structGet(tx, "Waveform", [])));
+    out.ResourceExtractionAttempted = true;
+    out.ResourceExtractionAvailable = out.PUCCHRECount > 0;
+    out.ChannelEstimateAttempted = out.PUCCHDMRSRECount > 0;
+    out.ChannelEstimateAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "ChannelEstimate", []));
+    out.EqualizationAttempted = out.ChannelEstimateAttempted && logical(sixgr.util.structGet(rx, "Equalized", false));
+    out.EqualizationAvailable = out.EqualizationAttempted && out.ChannelEstimateAvailable;
 
     if ~logical(out.DetectionUsable)
         out.Ok = false;
@@ -246,6 +297,12 @@ try
         out.SINRSource = "";
         out.SINRValueStatus = "unavailable";
         out.SINRValueDefinition = "no_control_sinr_observation_available_in_active_runtime";
+        out.PostEqSINRValueRole = "unavailable";
+        out.PostEqSINRValueStatus = "unavailable";
+        out.PostEqSINRNAReason = char(string(out.FailureReason));
+        out.PUCCHDecodedBitCount = 0;
+        out.StrictReceiverEvidenceOk = false;
+        out.StrictOk = false;
         out.CRCOutcome = "not_applicable";
         out.DetectionOutcome = "unavailable";
         out.Notes = "Waveform-backed PUCCH detection unavailable: " + string(out.FailureReason);
@@ -268,6 +325,7 @@ try
     out.DetectionOutcome = localResolvePUCCHDetectionOutcome(out.DetectionUsable, out.UCIContentMatch);
     out.BitsCompared = double(bitsCompared);
     out.BitErrors = double(bitErrors);
+    out.PUCCHDecodedBitCount = double(numel(decodedBits));
     out.DetectionMetric = double(detMetric);
     out.ComputeLatency_ms = double(decodeLatency_ms);
     out.DecodeLatency_ms = double(decodeLatency_ms);
@@ -303,7 +361,14 @@ try
     out.MeasuredTrialSINRValueRole = "unavailable";
     out.MeasuredTrialSINRValueStatus = "unavailable";
     out.MeasuredTrialSINRNAReason = "pucch_has_no_data_post_equalization_sinr_measurement";
+    out.PostEqSINR_dB = NaN;
+    out.PostEqSINRSource = "";
+    out.PostEqSINRValueRole = "unavailable";
+    out.PostEqSINRValueStatus = "unavailable";
+    out.PostEqSINRNAReason = "pucch_control_channel_uses_receiver_hest_sinr_not_data_post_equalization_sinr";
     if isfinite(double(out.ReceiverHestSINR_dB))
+        out.PUCCHControlSINR_dB = double(out.ReceiverHestSINR_dB);
+        out.PUCCHReceiverEvidenceSource = char(receiverSource);
         out.SINRValueRole = char(receiverRole);
         out.SINRSource = char(receiverSource);
         out.SINRValueStatus = char(receiverStatus);
@@ -327,6 +392,24 @@ try
     out.ConditionNumber_dB = double(sixgr.util.structGet(measurement, "ConditionNumber_dB", NaN));
     out.NumRxAntennas = double(sixgr.util.structGet(measurement, "NumRxAnt", NaN));
     out.NumTxPorts = double(sixgr.util.structGet(measurement, "NumTxPorts", NaN));
+    noiseOk = isfinite(double(out.NoiseVariance)) && double(out.NoiseVariance) > 0 && ...
+        strcmpi(string(out.NoiseVarStatus), "OK") && ~logical(out.NoiseVarStrictFailure);
+    dmrsRequired = double(out.PUCCHDMRSRECount) > 0;
+    channelOk = ~dmrsRequired || logical(out.ChannelEstimateAvailable);
+    equalizationOk = ~dmrsRequired || logical(out.EqualizationAvailable);
+    receiverSINROk = ~dmrsRequired || (isfinite(double(out.ReceiverHestSINR_dB)) && ...
+        strcmpi(string(out.ReceiverHestSINRValueStatus), "OK"));
+    strictOk = logical(ok) && logical(out.UCIContentMatch) && logical(out.DetectionUsable) && ...
+        logical(out.ResourceExtractionAvailable) && logical(out.ControlResourceValidity) && ...
+        noiseOk && channelOk && equalizationOk && receiverSINROk;
+    out.StrictReceiverEvidenceOk = logical(strictOk);
+    out.StrictOk = logical(strictOk);
+    out.ReceiverUsable = logical(strictOk);
+    if ~strictOk && logical(out.Ok)
+        out.Ok = false;
+        out.Status = "FAIL";
+        out.FailureReason = char(localPUCCHStrictFailureReason(out, dmrsRequired, noiseOk, channelOk, equalizationOk, receiverSINROk));
+    end
     out.Notes = "Waveform-backed PUCCH HARQ/feedback trial using active uplink PHY primitives." + ...
         ternaryFormatNote(requestedFormat, resolvedFormat);
 catch ME
@@ -819,6 +902,128 @@ try
         "ReferenceSymbols", pilotSym);
 catch
     metrics = struct();
+end
+end
+
+function reason = localPUCCHStrictFailureReason(out, dmrsRequired, noiseOk, channelOk, equalizationOk, receiverSINROk)
+parts = strings(0, 1);
+if ~logical(sixgr.util.structGet(out, "UCIContentMatch", false))
+    parts(end+1, 1) = "pucch_uci_content_mismatch"; %#ok<AGROW>
+end
+if ~logical(sixgr.util.structGet(out, "DetectionUsable", false))
+    parts(end+1, 1) = "pucch_detection_unusable"; %#ok<AGROW>
+end
+if ~logical(sixgr.util.structGet(out, "ResourceExtractionAvailable", false))
+    parts(end+1, 1) = "pucch_resource_extraction_missing"; %#ok<AGROW>
+end
+if ~logical(sixgr.util.structGet(out, "ControlResourceValidity", false))
+    parts(end+1, 1) = "pucch_control_resource_invalid"; %#ok<AGROW>
+end
+if ~logical(noiseOk)
+    parts(end+1, 1) = "pucch_noise_variance_missing_or_not_ok"; %#ok<AGROW>
+end
+if logical(dmrsRequired) && ~logical(channelOk)
+    parts(end+1, 1) = "pucch_dmrs_channel_estimate_missing"; %#ok<AGROW>
+end
+if logical(dmrsRequired) && ~logical(equalizationOk)
+    parts(end+1, 1) = "pucch_equalization_evidence_missing"; %#ok<AGROW>
+end
+if logical(dmrsRequired) && ~logical(receiverSINROk)
+    parts(end+1, 1) = "pucch_receiver_hest_sinr_missing_or_not_ok"; %#ok<AGROW>
+end
+if isempty(parts)
+    parts(end+1, 1) = "pucch_strict_receiver_evidence_incomplete"; %#ok<AGROW>
+end
+reason = strjoin(parts, ";");
+end
+
+function id = localPUCCHResourceId(cfg, pucch)
+fmt = double(sixgr.util.structGet(cfg, "phy.pucch.format", NaN));
+prb = localObjectProperty(pucch, "PRBSet", []);
+sym = localObjectProperty(pucch, "SymbolAllocation", []);
+id = "pucch_fmt" + string(localFiniteOrDefault(fmt, -1)) + ...
+    "_prb_" + localNumericVectorToString(prb) + "_sym_" + localNumericVectorToString(sym);
+id = regexprep(id, "[^A-Za-z0-9_]+", "_");
+end
+
+function value = localObjectProperty(obj, propName, defaultValue)
+value = defaultValue;
+if isempty(obj)
+    return;
+end
+try
+    if isprop(obj, propName)
+        value = obj.(propName);
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function value = localFirstNumeric(raw, defaultValue)
+value = defaultValue;
+if isempty(raw)
+    return;
+end
+try
+    vals = double(raw(:));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        value = vals(1);
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function token = localNumericVectorToString(raw)
+if isempty(raw)
+    token = "";
+    return;
+end
+try
+    vals = double(raw(:).');
+    vals = vals(isfinite(vals));
+    if isempty(vals)
+        token = "";
+    else
+        token = strjoin(string(vals), "|");
+    end
+catch
+    token = "";
+end
+end
+
+function tf = localHasFiniteNumericEvidence(value)
+tf = false;
+if isempty(value)
+    return;
+end
+try
+    vals = abs(double(value(:)));
+    tf = any(isfinite(vals));
+catch
+    tf = false;
+end
+end
+
+function hash = localComplexSHA256(value)
+hash = "";
+if isempty(value)
+    return;
+end
+try
+    data = single([real(value(:)).'; imag(value(:)).']);
+    hash = string(sixgr.rrc.asn1.sha256Hex(typecast(data(:), "uint8")));
+catch
+    hash = "";
+end
+end
+
+function value = localFiniteOrDefault(value, defaultValue)
+value = double(value);
+if ~(isscalar(value) && isfinite(value))
+    value = double(defaultValue);
 end
 end
 

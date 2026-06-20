@@ -6519,7 +6519,7 @@ end
 
 function T = localEnsureLinkTrialTable(Tin, direction, snr_dB, cfg)
 vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','ConfiguredLayers','ConfiguredTxAntennas','ConfiguredRxAntennas','Modulation','TargetCodeRate','TBSize_bits', ...
-    'ChannelModel','ChannelModelApplied','ChannelFadingApplied','DopplerHz','CRCPass','DecoderIterations','EVM_rms','NMSE_dB', ...
+    'ChannelModel','ChannelModelApplied','ChannelFadingApplied','DopplerHz','CRCPass','CRCApplicable','CRCOutcome','DecoderIterations','EVM_rms','NMSE_dB', ...
     'DetectionMetric','CorrelationPeak','DetectionThreshold','DetectionThresholdMode','DetectionMetricStatus', ...
     'DetectorPeakMetric','DetectorNoiseFloor','NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','FalseAlarmCandidateScope','FalseAlarmCandidateCount','DTXFlag','DTXReason', ...
     'PreambleIndex','RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
@@ -6540,7 +6540,17 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'AppliedPrecoderPMIApplicationSource','AppliedPrecoderPMITruthClassification', ...
     'MCSAuthority','ModulationAuthority','GrantOperatingPointSource','AppliedOperatingPointSource', ...
     'PrecodingNumPorts','PrecodingNumLayers','PrecodingMatrixRows','PrecodingMatrixCols', ...
-    'FalseAlarmFlag','NoiseFalseAlarmFlag','CollisionFalseAlarmFlag','FalseAlarmClassification','BlockingFlag','BlindDecodeCount','AvailableCCECount','UsedCCECount', ...
+    'RequestedFormat','ResolvedFormat','FormatAdapted','FormatAdaptationReason','ControlResourceValidity','ControlResourceSource', ...
+    'PUCCHFormat','PUCCHResourceId','PUCCHPRBSet','PUCCHPRBStart','PUCCHPRBCount','PUCCHSymbolStart','PUCCHNumSymbols', ...
+    'PUCCHRECount','PUCCHDMRSRECount','PUCCHExpectedBitCount','PUCCHDecodedBitCount','PUCCHControlSINR_dB','PUCCHReceiverEvidenceSource','PUCCHGridHash','PUCCHWaveformHash', ...
+    'FalseAlarmFlag','NoiseFalseAlarmFlag','CollisionFalseAlarmFlag','FalseAlarmClassification','BlockingFlag','BlindDecodeCount', ...
+    'CandidatesAttempted','DCICrcPass','PDCCHPayloadMatch','PDCCHErrFlag','TxCCEIndex','SelectedCCEIndex','GrantValid','NegativeExpectedOk', ...
+    'PDCCHBlindSearchEnabled','PDCCHCandidatesAvailable','PDCCHCandidatesAttempted','PDCCHCandidateIndex','PDCCHTxCCEIndex','PDCCHSelectedCCEIndex', ...
+    'PDCCHDCICrcRNTI','PDCCHScramblingRNTI','PDCCHEncodedBits','PDCCHRECount','PDCCHDMRSRECount', ...
+    'PDCCHCandidateErrFlagVector','PDCCHCandidateDecodeOKVector','PDCCHCandidateSINRVector_dB','PDCCHCandidateRECountVector','PDCCHCandidateDMRSRECountVector', ...
+    'PDCCHCRCDecodeSource','PDCCHBlindDecodeEvidenceSource','PDCCHCCE_REGMappingEvidence','PDCCHREGMappingAvailable', ...
+    'PDCCHCORESETDuration','PDCCHCORESETFrequencyResources','PDCCHSearchSpaceNumCandidates','PDCCHGridHash','PDCCHWaveformHash','PDCCHResourceHash', ...
+    'AvailableCCECount','UsedCCECount', ...
     'NonOverlappedCCEUsage','AggregationLevel','DCISize_bits','ControlCapacityBits', ...
     'ControlCapacityUtilization','CORESETUtilization','ControlLatency_ms', ...
     'ChannelGain_dB','NoiseVariance','DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
@@ -6554,7 +6564,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'SINRValidationStatus','SINRValidationReason','SINRComputationMethod','ConfiguredSNRLikeSourceRejected', ...
     'EqualizerType','EqualizerRequestedType','EqualizerEngine', ...
     'InterferenceCovarianceAvailable','InterferenceCovarianceSource','InterferenceCovarianceStatus', ...
-    'DetectionAttempted','DetectionUsable', ...
+    'DetectionAttempted','DetectionSuccess','DetectionUsable', ...
     'MeasurementAttempted','MeasurementUsable','FailureReason','TimingOffset_samples','TimingAdvance_samples','TimingAdvance_us','TAOutOfRangeFlag','TAOutOfRangeReason','TAMaxValid_samples','TAMaxValid_us','RankEstimate', ...
     'SRSOccupiedPRBCount','SRSCarrierPRBCount','SRSBandwidthFraction','SRSFrequencyPRBStart','SRSFrequencyPRBEnd','SRSBandwidthCoverageStatus', ...
     'ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
@@ -6661,7 +6671,7 @@ for i = 1:numel(vars)
                             'CQIDerivedModulation','LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy', ...
                             'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
-                            'NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason','TAOutOfRangeReason', ...
+                            'CRCOutcome','NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason','TAOutOfRangeReason', ...
                             'TruthStatus','ChannelEstimateSource','LLRScaleSource', ...
                             'SINRValidationStatus','SINRValidationReason','SINRComputationMethod', ...
                             'EqualizerType','EqualizerRequestedType','EqualizerEngine','InterferenceCovarianceSource','InterferenceCovarianceStatus', ...
@@ -6687,6 +6697,10 @@ for i = 1:numel(vars)
                             'AppliedPrecoderPMIApplicationSource','AppliedPrecoderPMITruthClassification', ...
                             'MCSAuthority','ModulationAuthority','GrantOperatingPointSource','AppliedOperatingPointSource', ...
                             'MeasuredLDPCDecoderAlgorithm','MeasuredLDPCDecoderEngine','MeasuredLDPCIterationVector','MeasuredLDPCParityCheckVector','MeasuredCodeBlockCRCErrorVector', ...
+                            'FormatAdaptationReason','ControlResourceSource','PUCCHResourceId','PUCCHPRBSet','PUCCHReceiverEvidenceSource','PUCCHGridHash','PUCCHWaveformHash', ...
+                            'PDCCHCandidateErrFlagVector','PDCCHCandidateDecodeOKVector','PDCCHCandidateSINRVector_dB','PDCCHCandidateRECountVector','PDCCHCandidateDMRSRECountVector', ...
+                            'PDCCHCRCDecodeSource','PDCCHBlindDecodeEvidenceSource','PDCCHCCE_REGMappingEvidence','PDCCHCORESETFrequencyResources','PDCCHSearchSpaceNumCandidates', ...
+                            'PDCCHGridHash','PDCCHWaveformHash','PDCCHResourceHash', ...
                             'CFOEstimateAvailability','CFOErrorDefinition','CFOValueStatus', ...
                             'TimingEstimateAvailability','TimingErrorDefinition','TimingValueStatus','TimingEstimateApplicationPolicy','TimingEstimateStatus', ...
                             'LargeScaleSINRValueStatus','LargeScaleSINRNAReason','PrimaryTruthValueStatus','SecondaryFieldGapReason','RowLifecycleState','NAReason', ...
@@ -6706,17 +6720,18 @@ for i = 1:numel(vars)
                         T.(v) = false(height(T),1);
                     case {'LinkAdaptationApplied','LinkAdaptationScheduled','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied', ...
                             'IsWarmupFrame','TimingEstimateUsed','UseIdealTimingSync','TimingEstimateWasClipped', ...
-                            'NoiseVarStrictFailure','ReceiverUsable','DecodeAttempted','DecodeUsable','StrictReceiverEvidenceOk','StrictOk', ...
+                            'CRCApplicable','NoiseVarStrictFailure','ReceiverUsable','DecodeAttempted','DecodeUsable','StrictReceiverEvidenceOk','StrictOk', ...
                             'ChannelEstimateAttempted','ChannelEstimateAvailable','ResourceExtractionAttempted','ResourceExtractionAvailable', ...
                             'EqualizationAttempted','EqualizationAvailable','DLSCHDecodeAttempted','DLSCHDecodeAvailable', ...
                             'ULSCHDecodeAttempted','ULSCHDecodeAvailable','LLRAvailable','LLRFinite','PostEqSINRAvailable','PostEqSINRReceiverDerived', ...
-                            'ConfiguredSNRLikeSourceRejected','InterferenceCovarianceAvailable','DetectionAttempted','DetectionUsable', ...
+                            'ConfiguredSNRLikeSourceRejected','InterferenceCovarianceAvailable','DetectionAttempted','DetectionSuccess','DetectionUsable', ...
                             'MeasurementAttempted','MeasurementUsable','TAOutOfRangeFlag', ...
                             'PBCHGatingActive','PRACHGatingActive','PDCCHGatingActive','SRSGatingActive','TRSGatingActive','ControlEligible','ControlDecodeOk','SRSValid', ...
                             'TrackingEligibility','TRSInfluencedDecision', ...
                             'IQImbalanceConfigured','IQImbalanceApplied', ...
                             'FallbackUsedForPathloss', ...
                             'FullInterfererChannelTruthUsed','PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied','BeamformingApplied','ChannelFadingApplied', ...
+                            'FormatAdapted','ControlResourceValidity','DCICrcPass','PDCCHPayloadMatch','GrantValid','NegativeExpectedOk','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable', ...
                             'BeamSelectionPolicyFixed','LargeScaleSINRFinalizedFlag','SecondaryFieldGapFlag','PartialRowFlag','FinalizedFlag','FallbackFlag','PlaceholderFlag', ...
                             'CountsTowardCoverage','MachineReadable','HumanReadable', ...
                             'GrantWorkerSafe','BSAntennaHasPhasedArrayObject','UEAntennaHasPhasedArrayObject', ...
@@ -8029,7 +8044,14 @@ for k = 1:nTrials
         end
         [rxNoise, ~] = sixgr.phy.dl.PDCCH_Rx(noiseOnly, cfgTrial, noiseArgs{:});
         [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
-        ok = logical(sixgr.util.structGet(rx, "Ok", false)) && (be == 0);
+        dciCrcPass = logical(sixgr.util.structGet(rx, "Ok", false)) && ...
+            double(sixgr.util.structGet(rx, "ErrFlag", 1)) == 0;
+        payloadMatch = (be == 0) && (bt == numel(tx.DCIBits));
+        ok = dciCrcPass && payloadMatch;
+        candidateT = sixgr.util.structGet(rxInfo, "CandidateResults", table());
+        if ~istable(candidateT)
+            candidateT = table();
+        end
         aggLevel = localPDCCHScalar(tx.PDCCH, "AggregationLevel", NaN);
         usedCCEs = aggLevel;
         availCCEs = localPDCCHAvailableCCEs(tx.PDCCH);
@@ -8038,7 +8060,12 @@ for k = 1:nTrials
         r.DCISize_bits = double(numel(tx.DCIBits));
         r.BitsCompared = double(bt);
         r.BitErrors = double(be);
+        r.CRCApplicable = true;
         r.CRCPass = double(ok);
+        r.CRCOutcome = string(localPDCCHCRCOutcome(dciCrcPass, payloadMatch));
+        r.DCICrcPass = logical(dciCrcPass);
+        r.PDCCHPayloadMatch = logical(payloadMatch);
+        r.PDCCHErrFlag = double(sixgr.util.structGet(rx, "ErrFlag", NaN));
         r.DetectionMetric = 1 - (double(be) / max(double(bt), 1));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
@@ -8106,19 +8133,48 @@ for k = 1:nTrials
         end
         r.EVM_rms = double(sixgr.util.structGet(rx, "EVM_rms", NaN));
         r.DecodeAttempted = true;
-        r.DecodeUsable = true;
+        r.DecodeUsable = logical(ok);
         r.DetectionAttempted = true;
-        r.DetectionUsable = isfinite(r.DetectionMetric);
+        r.DetectionSuccess = logical(ok);
+        r.DetectionUsable = isfinite(r.DetectionMetric) && height(candidateT) > 0;
         r.MeasurementAttempted = true;
         r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && strcmpi(string(r.ReceiverHestSINRValueStatus), "OK");
-        r.ReceiverUsable = logical(r.DecodeUsable && r.MeasurementUsable);
         r.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Ok", false)));
         r.BlockingFlag = double(isfinite(aggLevel) && isfinite(availCCEs) && aggLevel > availCCEs);
-        r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", NaN));
+        r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", height(candidateT)));
         r.AvailableCCECount = availCCEs;
         r.UsedCCECount = usedCCEs;
         r.NonOverlappedCCEUsage = usedCCEs / max(availCCEs, 1);
         r.AggregationLevel = aggLevel;
+        r.CandidatesAttempted = r.BlindDecodeCount;
+        r.PDCCHBlindSearchEnabled = logical(sixgr.util.structGet(rxInfo, "BlindSearch", false));
+        r.PDCCHCandidatesAvailable = double(sixgr.util.structGet(rxInfo, "NumCandidatesAvailable", height(candidateT)));
+        r.PDCCHCandidatesAttempted = r.BlindDecodeCount;
+        r.PDCCHCandidateIndex = double(sixgr.util.structGet(rx, "CandidateIndex", NaN));
+        r.PDCCHSelectedCCEIndex = double(localFiniteOrNaN(r.PDCCHCandidateIndex - 1));
+        r.SelectedCCEIndex = r.PDCCHSelectedCCEIndex;
+        r.TxCCEIndex = double(sixgr.util.structGet(cfgTrial, "phy.pdcch.candidateCCEIndex", 0));
+        r.PDCCHTxCCEIndex = r.TxCCEIndex;
+        r.PDCCHDCICrcRNTI = double(sixgr.util.structGet(txInfo, "DCICrcRNTI", NaN));
+        r.PDCCHScramblingRNTI = double(sixgr.util.structGet(txInfo, "PDCCHScramblingRNTI", NaN));
+        r.PDCCHEncodedBits = controlBits;
+        r.PDCCHRECount = double(sixgr.util.structGet(txInfo, "NumPDCCHRE", numel(tx.PDCCHInd)));
+        r.PDCCHDMRSRECount = double(sixgr.util.structGet(txInfo, "NumDMRSRE", numel(tx.DMRSInd)));
+        r.PDCCHCandidateErrFlagVector = localFormatNumericVector(localColumnOrDefault(candidateT, "ErrFlag", nan(height(candidateT), 1)));
+        r.PDCCHCandidateDecodeOKVector = localFormatNumericVector(double(localColumnOrDefault(candidateT, "DecodeOK", false(height(candidateT), 1))));
+        r.PDCCHCandidateSINRVector_dB = localFormatNumericVector(localColumnOrDefault(candidateT, "ReceiverHestSINR_dB", nan(height(candidateT), 1)));
+        r.PDCCHCandidateRECountVector = localFormatNumericVector(localColumnOrDefault(candidateT, "PDCCHRECount", nan(height(candidateT), 1)));
+        r.PDCCHCandidateDMRSRECountVector = localFormatNumericVector(localColumnOrDefault(candidateT, "DMRSRECount", nan(height(candidateT), 1)));
+        r.PDCCHCRCDecodeSource = "nrDCIDecode_crc_masked_by_rnti";
+        r.PDCCHBlindDecodeEvidenceSource = "nrPDCCHSpace_nrPDCCHDecode_nrDCIDecode";
+        r.PDCCHCCE_REGMappingEvidence = "nrPDCCHResources_coreset_search_space_candidate_mapping";
+        r.PDCCHREGMappingAvailable = ~isempty(tx.PDCCHInd) && ~isempty(tx.DMRSInd);
+        r.PDCCHCORESETDuration = localPDCCHScalar(tx.PDCCH.CORESET, "Duration", NaN);
+        r.PDCCHCORESETFrequencyResources = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.CORESET, "FrequencyResources"));
+        r.PDCCHSearchSpaceNumCandidates = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.SearchSpace, "NumCandidates"));
+        r.PDCCHGridHash = localComplexSHA256(tx.Grid);
+        r.PDCCHWaveformHash = localComplexSHA256(tx.Waveform);
+        r.PDCCHResourceHash = localPDCCHResourceHash(tx.PDCCHInd, tx.DMRSInd);
         r.ControlCapacityBits = controlBits;
         r.ControlCapacityUtilization = double(numel(tx.DCIBits)) / max(controlBits, 1);
         r.CORESETUtilization = usedCCEs / max(availCCEs, 1);
@@ -8128,13 +8184,33 @@ for k = 1:nTrials
         % Legacy alias preserved for backward compatibility with older exports.
         % It mirrors the control opportunity duration, not wall-clock decode runtime.
         r.ControlLatency_ms = radioTTI_ms;
-        if ok
+        r.ResourceExtractionAttempted = true;
+        r.ResourceExtractionAvailable = ~isempty(tx.PDCCHInd) && ~isempty(rx.EqualizedSymbols);
+        r.ChannelEstimateAttempted = true;
+        r.ChannelEstimateAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "ChannelEstimate", []));
+        r.ChannelEstimateSource = "nrChannelEstimate_pdcch_dmrs";
+        r.EqualizationAttempted = true;
+        r.EqualizationAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "EqualizedSymbols", []));
+        noiseOk = isfinite(r.NoiseVariance) && r.NoiseVariance > 0 && strcmpi(string(r.NoiseVarStatus), "OK") && ...
+            ~logical(r.NoiseVarStrictFailure);
+        strictOk = logical(ok) && logical(r.DetectionUsable) && logical(r.MeasurementUsable) && ...
+            logical(r.ChannelEstimateAvailable) && logical(r.ResourceExtractionAvailable) && ...
+            logical(r.EqualizationAvailable) && noiseOk && ~logical(r.FalseAlarmFlag);
+        r.StrictReceiverEvidenceOk = logical(strictOk);
+        r.StrictOk = logical(strictOk);
+        r.ReceiverUsable = logical(strictOk);
+        r.TruthStatus = "real_pdcch_waveform_blind_dci_crc_evidence";
+        r.SourceClassification = "active_integrated";
+        r.RuntimeMaterializationStatus = "active_integrated_pdcch_blind_dci_crc_cce_reg_evidence";
+        r.RuntimeEvidenceSource = "sixgr.phy.dl.PDCCH_Tx|sixgr.phy.dl.PDCCH_Rx";
+        if strictOk
             r.Status = "PASS";
         else
-            r.FailureReason = localPDCCHDecodeFailureReason(rx, be, bt);
+            r.Status = "FAIL";
+            r.FailureReason = localPDCCHStrictFailureReason(r, rx, be, bt, payloadMatch, dciCrcPass, noiseOk);
         end
         if ~isempty(dciBitsSeed)
-            r.Notes = "Grant-coupled PDCCH gating using scheduler-built DCI bitfield payload.";
+            r.Notes = "Grant-coupled PDCCH DCI payload decoded through blind candidate search, channel estimation, MMSE equalization, and RNTI-masked DCI CRC.";
         end
     catch ME
         r.Crash = true;
@@ -8481,6 +8557,51 @@ if strlength(strtrim(noiseStatus)) > 0 && noiseStatus ~= "OK"
 end
 end
 
+function outcome = localPDCCHCRCOutcome(dciCrcPass, payloadMatch)
+if logical(dciCrcPass) && logical(payloadMatch)
+    outcome = "pass";
+elseif logical(dciCrcPass)
+    outcome = "crc_pass_payload_mismatch";
+else
+    outcome = "fail";
+end
+end
+
+function reason = localPDCCHStrictFailureReason(r, rx, bitErrors, bitsCompared, payloadMatch, dciCrcPass, noiseOk)
+parts = strings(0, 1);
+if ~logical(dciCrcPass)
+    parts(end+1, 1) = "pdcch_dci_crc_failed"; %#ok<AGROW>
+end
+if ~logical(payloadMatch)
+    parts(end+1, 1) = localPDCCHDecodeFailureReason(rx, bitErrors, bitsCompared); %#ok<AGROW>
+end
+if ~logical(r.DetectionUsable)
+    parts(end+1, 1) = "pdcch_blind_candidate_detection_evidence_missing"; %#ok<AGROW>
+end
+if ~logical(r.MeasurementUsable)
+    parts(end+1, 1) = "pdcch_receiver_hest_sinr_missing_or_not_ok"; %#ok<AGROW>
+end
+if ~logical(r.ChannelEstimateAvailable)
+    parts(end+1, 1) = "pdcch_dmrs_channel_estimate_missing"; %#ok<AGROW>
+end
+if ~logical(r.ResourceExtractionAvailable)
+    parts(end+1, 1) = "pdcch_resource_extraction_missing"; %#ok<AGROW>
+end
+if ~logical(r.EqualizationAvailable)
+    parts(end+1, 1) = "pdcch_equalized_symbol_evidence_missing"; %#ok<AGROW>
+end
+if ~logical(noiseOk)
+    parts(end+1, 1) = "pdcch_noise_variance_missing_or_not_ok"; %#ok<AGROW>
+end
+if logical(r.FalseAlarmFlag)
+    parts(end+1, 1) = "pdcch_noise_only_false_alarm_detected"; %#ok<AGROW>
+end
+if isempty(parts)
+    parts(end+1, 1) = "pdcch_strict_receiver_evidence_incomplete"; %#ok<AGROW>
+end
+reason = strjoin(parts, ";");
+end
+
 function aggLevel = localResolveGrantPDCCHAggregationLevelForCapacity(cfg, snr_dB, grantContext)
 grantAggLevel = double(sixgr.util.structGet(grantContext, "PDCCHAggregationLevel", NaN));
 policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
@@ -8699,6 +8820,67 @@ elseif islogical(value)
 end
 end
 
+function value = localPDCCHScalarVector(obj, propName)
+value = [];
+if isempty(obj)
+    return;
+end
+try
+    value = obj.(propName);
+catch
+    value = [];
+    return;
+end
+if isnumeric(value) || islogical(value)
+    value = double(value(:).');
+else
+    value = [];
+end
+end
+
+function value = localFiniteOrNaN(value)
+value = double(value);
+if ~(isscalar(value) && isfinite(value))
+    value = NaN;
+end
+end
+
+function tf = localHasFiniteNumericEvidence(value)
+tf = false;
+if isempty(value)
+    return;
+end
+try
+    vals = abs(double(value(:)));
+    tf = any(isfinite(vals));
+catch
+    tf = false;
+end
+end
+
+function hash = localComplexSHA256(value)
+hash = "";
+if isempty(value)
+    return;
+end
+try
+    data = single([real(value(:)).'; imag(value(:)).']);
+    hash = string(sixgr.rrc.asn1.sha256Hex(typecast(data(:), "uint8")));
+catch
+    hash = "";
+end
+end
+
+function hash = localPDCCHResourceHash(pdcchInd, dmrsInd)
+hash = "";
+try
+    payload = struct("PDCCHInd", double(pdcchInd(:).'), "DMRSInd", double(dmrsInd(:).'));
+    hash = string(sixgr.rrc.asn1.sha256Hex(uint8(unicode2native(jsonencode(payload), "UTF-8"))));
+catch
+    hash = "";
+end
+end
+
 function T = localCollectPUCCHTrials(cfg, snr_dB, nTrials)
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "UL", snr_dB, 1), nTrials, 1);
@@ -8748,8 +8930,16 @@ for k = 1:nTrials
         r.NoiseVarStrictFailure = logical(sixgr.util.structGet(out, "NoiseVarStrictFailure", false));
         r.ReceiverUsable = logical(sixgr.util.structGet(out, "ReceiverUsable", false));
         r.DetectionAttempted = logical(sixgr.util.structGet(out, "DetectionAttempted", false));
+        r.DetectionSuccess = logical(ok);
         r.DetectionUsable = logical(sixgr.util.structGet(out, "DetectionUsable", false));
         r.FailureReason = string(sixgr.util.structGet(out, "FailureReason", ""));
+        r.ChannelEstimateAttempted = logical(sixgr.util.structGet(out, "ChannelEstimateAttempted", false));
+        r.ChannelEstimateAvailable = logical(sixgr.util.structGet(out, "ChannelEstimateAvailable", false));
+        r.ChannelEstimateSource = "nrPUCCHDMRS_nrChannelEstimate";
+        r.ResourceExtractionAttempted = logical(sixgr.util.structGet(out, "ResourceExtractionAttempted", false));
+        r.ResourceExtractionAvailable = logical(sixgr.util.structGet(out, "ResourceExtractionAvailable", false));
+        r.EqualizationAttempted = logical(sixgr.util.structGet(out, "EqualizationAttempted", false));
+        r.EqualizationAvailable = logical(sixgr.util.structGet(out, "EqualizationAvailable", false));
         r.ConfiguredSNR_dB = double(sixgr.util.structGet(out, "ConfiguredSNR_dB", snr_dB));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
         r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "DesiredSignalPowerBeforeNoise", NaN));
@@ -8785,9 +8975,42 @@ for k = 1:nTrials
         r.ConditionNumber_dB = double(sixgr.util.structGet(out, "ConditionNumber_dB", NaN));
         r.NumRxAntennas = double(sixgr.util.structGet(out, "NumRxAntennas", NaN));
         r.NumTxPorts = double(sixgr.util.structGet(out, "NumTxPorts", NaN));
+        r.RequestedFormat = double(sixgr.util.structGet(out, "RequestedFormat", NaN));
+        r.ResolvedFormat = double(sixgr.util.structGet(out, "ResolvedFormat", NaN));
+        r.FormatAdapted = logical(sixgr.util.structGet(out, "FormatAdapted", false));
+        r.FormatAdaptationReason = string(sixgr.util.structGet(out, "FormatAdaptationReason", ""));
+        r.ControlResourceValidity = logical(sixgr.util.structGet(out, "ControlResourceValidity", false));
+        r.ControlResourceSource = "runtime_pucch_waveform_resource_mapping";
+        r.PUCCHFormat = double(sixgr.util.structGet(out, "PUCCHFormat", r.ResolvedFormat));
+        r.PUCCHResourceId = string(sixgr.util.structGet(out, "PUCCHResourceId", ""));
+        r.PUCCHPRBSet = string(sixgr.util.structGet(out, "PUCCHPRBSet", ""));
+        r.PUCCHPRBStart = double(sixgr.util.structGet(out, "PUCCHPRBStart", NaN));
+        r.PUCCHPRBCount = double(sixgr.util.structGet(out, "PUCCHPRBCount", NaN));
+        r.PUCCHSymbolStart = double(sixgr.util.structGet(out, "PUCCHSymbolStart", NaN));
+        r.PUCCHNumSymbols = double(sixgr.util.structGet(out, "PUCCHNumSymbols", NaN));
+        r.PUCCHRECount = double(sixgr.util.structGet(out, "PUCCHRECount", NaN));
+        r.PUCCHDMRSRECount = double(sixgr.util.structGet(out, "PUCCHDMRSRECount", NaN));
+        r.PUCCHExpectedBitCount = double(sixgr.util.structGet(out, "PUCCHExpectedBitCount", numel(uci)));
+        r.PUCCHDecodedBitCount = double(sixgr.util.structGet(out, "PUCCHDecodedBitCount", NaN));
+        r.PUCCHControlSINR_dB = double(sixgr.util.structGet(out, "PUCCHControlSINR_dB", NaN));
+        r.PUCCHReceiverEvidenceSource = string(sixgr.util.structGet(out, "PUCCHReceiverEvidenceSource", ""));
+        r.PUCCHGridHash = string(sixgr.util.structGet(out, "PUCCHGridHash", ""));
+        r.PUCCHWaveformHash = string(sixgr.util.structGet(out, "PUCCHWaveformHash", ""));
+        r.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(out, "StrictReceiverEvidenceOk", false));
+        r.StrictOk = logical(sixgr.util.structGet(out, "StrictOk", false));
+        r.DecodeAttempted = true;
+        r.DecodeUsable = logical(r.StrictOk);
+        r.MeasurementAttempted = true;
+        r.MeasurementUsable = isfinite(r.PUCCHControlSINR_dB) || ...
+            (isfinite(r.ReceiverHestSINR_dB) && strcmpi(string(r.ReceiverHestSINRValueStatus), "OK"));
+        r.ReceiverUsable = logical(r.StrictReceiverEvidenceOk);
+        r.TruthStatus = "real_pucch_waveform_uci_receiver_evidence";
+        r.SourceClassification = "active_integrated";
+        r.RuntimeMaterializationStatus = "active_integrated_pucch_waveform_uci_resource_receiver_evidence";
+        r.RuntimeEvidenceSource = "sixgr.link.runPUCCHWaveformTrial";
         r.Crash = logical(sixgr.util.structGet(out, "Crash", false));
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
-        if ok
+        if logical(r.StrictOk)
             r.Status = "PASS";
         elseif ~logical(r.DetectionUsable)
             r.Status = "NA";
@@ -9036,6 +9259,27 @@ row.DopplerHz = dopp;
     row.SIB1FailureReason = "";
     row.UCIContentMatch = false;
     row.DetectionOutcome = "";
+    row.RequestedFormat = NaN;
+    row.ResolvedFormat = NaN;
+    row.FormatAdapted = false;
+    row.FormatAdaptationReason = "";
+    row.ControlResourceValidity = false;
+    row.ControlResourceSource = "";
+    row.PUCCHFormat = NaN;
+    row.PUCCHResourceId = "";
+    row.PUCCHPRBSet = "";
+    row.PUCCHPRBStart = NaN;
+    row.PUCCHPRBCount = NaN;
+    row.PUCCHSymbolStart = NaN;
+    row.PUCCHNumSymbols = NaN;
+    row.PUCCHRECount = NaN;
+    row.PUCCHDMRSRECount = NaN;
+    row.PUCCHExpectedBitCount = NaN;
+    row.PUCCHDecodedBitCount = NaN;
+    row.PUCCHControlSINR_dB = NaN;
+    row.PUCCHReceiverEvidenceSource = "";
+    row.PUCCHGridHash = "";
+    row.PUCCHWaveformHash = "";
     row.DecoderIterations = NaN;
 row.EVM_rms = NaN;
 row.NMSE_dB = NaN;
@@ -9231,6 +9475,40 @@ row.CollisionFalseAlarmFlag = NaN;
 row.FalseAlarmClassification = "";
 row.BlockingFlag = NaN;
 row.BlindDecodeCount = NaN;
+row.CandidatesAttempted = NaN;
+row.DCICrcPass = false;
+row.PDCCHPayloadMatch = false;
+row.PDCCHErrFlag = NaN;
+row.TxCCEIndex = NaN;
+row.SelectedCCEIndex = NaN;
+row.GrantValid = false;
+row.NegativeExpectedOk = false;
+row.PDCCHBlindSearchEnabled = false;
+row.PDCCHCandidatesAvailable = NaN;
+row.PDCCHCandidatesAttempted = NaN;
+row.PDCCHCandidateIndex = NaN;
+row.PDCCHTxCCEIndex = NaN;
+row.PDCCHSelectedCCEIndex = NaN;
+row.PDCCHDCICrcRNTI = NaN;
+row.PDCCHScramblingRNTI = NaN;
+row.PDCCHEncodedBits = NaN;
+row.PDCCHRECount = NaN;
+row.PDCCHDMRSRECount = NaN;
+row.PDCCHCandidateErrFlagVector = "";
+row.PDCCHCandidateDecodeOKVector = "";
+row.PDCCHCandidateSINRVector_dB = "";
+row.PDCCHCandidateRECountVector = "";
+row.PDCCHCandidateDMRSRECountVector = "";
+row.PDCCHCRCDecodeSource = "";
+row.PDCCHBlindDecodeEvidenceSource = "";
+row.PDCCHCCE_REGMappingEvidence = "";
+row.PDCCHREGMappingAvailable = false;
+row.PDCCHCORESETDuration = NaN;
+row.PDCCHCORESETFrequencyResources = "";
+row.PDCCHSearchSpaceNumCandidates = "";
+row.PDCCHGridHash = "";
+row.PDCCHWaveformHash = "";
+row.PDCCHResourceHash = "";
 row.AvailableCCECount = NaN;
 row.UsedCCECount = NaN;
 row.NonOverlappedCCEUsage = NaN;
