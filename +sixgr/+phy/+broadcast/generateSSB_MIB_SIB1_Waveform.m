@@ -23,6 +23,7 @@ tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
 [pdsch, dci, targetCodeRate, paddedBits] = localSelectSIB1Allocation(carrier, cfg, sib1Bits);
 [pdcch, cfgSI] = localSIB1PDCCHConfig(carrier, cfg);
+cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
 
 [pdcchTx, pdcchInfo] = sixgr.phy.dl.PDCCH_Tx(cfgSI, ...
     "Carrier", carrier, "PDCCH", pdcch, "DCIBits", dci.Bits, ...
@@ -178,6 +179,72 @@ cfgSI.phy.pdsch.modulation = "QPSK";
 cfgSI.phy.pdsch.numLayers = 1;
 cfgSI.phy.pdsch.nLayers = 1;
 pdcch = localBuildPDCCHObject(carrier, cfgSI);
+end
+
+function cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch)
+% SI-RNTI SIB1 is a broadcast PDSCH allocation; it must not inherit
+% UE-data rank/precoder state from scenario PDSCH grants.
+nLayers = max(1, round(double(pdsch.NumLayers)));
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numLayers", nLayers);
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nLayers", nLayers);
+
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+resolvedPorts = NaN;
+for i = 1:numel(paths)
+    path = paths(i);
+    Wcfg = sixgr.util.structGet(cfgSI, path, []);
+    if isempty(Wcfg)
+        continue;
+    end
+    Wsib = localAdaptSIB1PrecoderMatrix(Wcfg, nLayers);
+    if isempty(Wsib)
+        cfgSI = sixgr.util.structSet(cfgSI, path, []);
+    else
+        cfgSI = sixgr.util.structSet(cfgSI, path, Wsib);
+        resolvedPorts = size(Wsib, 1);
+    end
+end
+if isfinite(resolvedPorts) && resolvedPorts >= nLayers
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", resolvedPorts);
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", resolvedPorts);
+else
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", []);
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", []);
+end
+end
+
+function Wout = localAdaptSIB1PrecoderMatrix(Wcfg, nLayers)
+Wout = [];
+if isempty(Wcfg)
+    return;
+end
+nLayers = max(1, round(double(nLayers)));
+if ndims(Wcfg) > 2
+    if size(Wcfg, 3) == 1
+        Wcfg = squeeze(Wcfg);
+    else
+        return;
+    end
+end
+if ~isnumeric(Wcfg)
+    return;
+end
+sz = size(Wcfg);
+if sz(2) >= nLayers
+    Wout = double(Wcfg(:, 1:nLayers));
+elseif sz(1) >= nLayers
+    Wout = double(Wcfg(1:nLayers, :).');
+end
+if isempty(Wout) || size(Wout, 1) < nLayers || size(Wout, 2) ~= nLayers
+    Wout = [];
+    return;
+end
+colNorm = sqrt(sum(abs(Wout).^2, 1));
+if any(~isfinite(colNorm)) || any(colNorm <= eps)
+    Wout = [];
+    return;
+end
+Wout = Wout ./ colNorm;
 end
 
 function pdcch = localBuildPDCCHObject(carrier, cfgSI)

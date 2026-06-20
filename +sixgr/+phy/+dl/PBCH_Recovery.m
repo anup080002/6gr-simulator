@@ -149,6 +149,7 @@ for k = 1:numel(ibarCandidates)
     pbchRx = nrExtractResources(pbchInd, rxGrid);
     pbchHest = nrExtractResources(pbchInd, hest);
     [pbchEq, csi] = nrEqualizeMMSE(pbchRx, pbchHest, nVarUse);
+    evidence = localPBCHReceiverEvidence(rxGrid, hest, pbchEq, csi, dmrsInd, ncellid, ibar, nVarUse);
 
     % CSI replication per bit (same pattern as MathWorks example)
     Qm = pbchIndInfo.G / pbchIndInfo.Gd;
@@ -183,6 +184,7 @@ for k = 1:numel(ibarCandidates)
         selected.sfn4lsb = sfn4lsb;
         selected.nHalfFrame = nHalfFrame;
         selected.msbidxoffset = msbidxoffset;
+        selected.evidence = evidence;
         break;
     end
 end
@@ -211,6 +213,7 @@ if ~selectedFound
     pbchRx = nrExtractResources(pbchInd, rxGrid);
     pbchHest = nrExtractResources(pbchInd, hest);
     [pbchEq, csi] = nrEqualizeMMSE(pbchRx, pbchHest, nVarUse);
+    evidence = localPBCHReceiverEvidence(rxGrid, hest, pbchEq, csi, dmrsInd, ncellid, ibar, nVarUse);
 
     Qm = pbchIndInfo.G / pbchIndInfo.Gd;
     Qm = round(Qm);
@@ -233,6 +236,7 @@ if ~selectedFound
     selected.sfn4lsb = sfn4lsb;
     selected.nHalfFrame = nHalfFrame;
     selected.msbidxoffset = msbidxoffset;
+    selected.evidence = evidence;
 end
 
 % -----------------------------
@@ -270,6 +274,30 @@ pb.HalfFrame = double(selected.nHalfFrame);
 pb.TransportBlock = selected.trblk;
 pb.ScrambledTransportBlock = selected.scrblk;
 pb.NoiseVar = double(selected.nVar);
+evidence = sixgr.util.structGet(selected, "evidence", struct());
+pb.ChannelEstimateAvailable = logical(sixgr.util.structGet(evidence, "ChannelEstimateAvailable", false));
+pb.ChannelEstimateSource = string(sixgr.util.structGet(evidence, "ChannelEstimateSource", ""));
+pb.EqualizationAvailable = logical(sixgr.util.structGet(evidence, "EqualizationAvailable", false));
+pb.EqualizerType = string(sixgr.util.structGet(evidence, "EqualizerType", ""));
+pb.PBCHDecodeAvailable = true;
+pb.BCHDecodeAvailable = true;
+pb.ReceiverHestSINR_dB = double(sixgr.util.structGet(evidence, "ReceiverHestSINR_dB", NaN));
+pb.ReceiverHestSINRSource = string(sixgr.util.structGet(evidence, "ReceiverHestSINRSource", ""));
+pb.ReceiverHestSINRValueRole = string(sixgr.util.structGet(evidence, "ReceiverHestSINRValueRole", ""));
+pb.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(evidence, "ReceiverHestSINRValueStatus", ""));
+pb.ReceiverHestSINRNAReason = string(sixgr.util.structGet(evidence, "ReceiverHestSINRNAReason", ""));
+pb.MeasuredTrialSINR_dB = pb.ReceiverHestSINR_dB;
+pb.MeasuredTrialSINRSource = pb.ReceiverHestSINRSource;
+pb.MeasuredTrialSINRValueRole = "measured";
+pb.MeasuredTrialSINRValueStatus = pb.ReceiverHestSINRValueStatus;
+pb.MeasuredTrialSINRNAReason = pb.ReceiverHestSINRNAReason;
+pb.PostEqSINR_dB = double(sixgr.util.structGet(evidence, "PostEqSINR_dB", NaN));
+pb.PostEqSINRSource = string(sixgr.util.structGet(evidence, "PostEqSINRSource", ""));
+pb.PostEqSINRValueRole = string(sixgr.util.structGet(evidence, "PostEqSINRValueRole", ""));
+pb.PostEqSINRValueStatus = string(sixgr.util.structGet(evidence, "PostEqSINRValueStatus", ""));
+pb.PostEqSINRNAReason = string(sixgr.util.structGet(evidence, "PostEqSINRNAReason", ""));
+pb.StrictReceiverEvidenceOk = logical(pb.ChannelEstimateAvailable) && logical(pb.EqualizationAvailable) && ...
+    isfinite(pb.ReceiverHestSINR_dB) && logical(pb.PBCHDecodeAvailable) && logical(pb.BCHDecodeAvailable);
 
 info.Selected = selected;
 info.Nr = Nr;
@@ -280,6 +308,83 @@ if opt.Verbose
         pb.NCellID, Lmax, pb.iBar_SSB, pb.v, pb.SSBIndex, double(pb.ErrFlag));
 end
 
+end
+
+% -------------------------------------------------------------------------
+function evidence = localPBCHReceiverEvidence(rxGrid, hest, pbchEq, csi, dmrsInd, ncellid, ibar, nVarUse)
+evidence = struct( ...
+    "ChannelEstimateAvailable", false, ...
+    "ChannelEstimateSource", "", ...
+    "EqualizationAvailable", false, ...
+    "EqualizerType", "MMSE", ...
+    "ReceiverHestSINR_dB", NaN, ...
+    "ReceiverHestSINRSource", "", ...
+    "ReceiverHestSINRValueRole", "unavailable", ...
+    "ReceiverHestSINRValueStatus", "unavailable", ...
+    "ReceiverHestSINRNAReason", "pbch_dmrs_channel_estimate_not_available", ...
+    "PostEqSINR_dB", NaN, ...
+    "PostEqSINRSource", "", ...
+    "PostEqSINRValueRole", "unavailable", ...
+    "PostEqSINRValueStatus", "unavailable", ...
+    "PostEqSINRNAReason", "pbch_equalizer_csi_not_available");
+
+evidence.ChannelEstimateAvailable = ~isempty(hest) && all(isfinite(real(hest(:)))) && all(isfinite(imag(hest(:))));
+if evidence.ChannelEstimateAvailable
+    evidence.ChannelEstimateSource = "nrChannelEstimate_pbch_dmrs_sss";
+end
+evidence.EqualizationAvailable = ~isempty(pbchEq) && all(isfinite(real(pbchEq(:)))) && ...
+    all(isfinite(imag(pbchEq(:)))) && ~isempty(csi) && all(isfinite(double(csi(:))));
+
+if evidence.ChannelEstimateAvailable
+    try
+        refDmrs = nrPBCHDMRS(ncellid, ibar);
+        rxDmrs = nrExtractResources(dmrsInd, rxGrid);
+        hDmrs = nrExtractResources(dmrsInd, hest);
+        predicted = hDmrs .* repmat(refDmrs(:), 1, size(hDmrs, 2));
+        residual = rxDmrs - predicted;
+        sigP = localMeanAbs2(predicted);
+        noiseP = localMeanAbs2(residual);
+        if ~(isfinite(noiseP) && noiseP > 0)
+            noiseP = double(nVarUse);
+        end
+        noiseP = max(noiseP, realmin);
+        if isfinite(sigP) && sigP > 0 && isfinite(noiseP) && noiseP > 0
+            evidence.ReceiverHestSINR_dB = 10 * log10(sigP / noiseP);
+            evidence.ReceiverHestSINRSource = "receiver_hest_reference_signal_measurement";
+            evidence.ReceiverHestSINRValueRole = "estimated";
+            evidence.ReceiverHestSINRValueStatus = "OK";
+            evidence.ReceiverHestSINRNAReason = "";
+        end
+    catch ME
+        evidence.ReceiverHestSINRNAReason = "pbch_dmrs_sinr_measurement_failed:" + string(ME.identifier);
+    end
+end
+
+if evidence.EqualizationAvailable
+    csiLin = double(csi(:));
+    csiLin = csiLin(isfinite(csiLin) & csiLin > 0);
+    if ~isempty(csiLin)
+        eqMetric = mean(csiLin);
+        if isfinite(eqMetric) && eqMetric > 0
+            evidence.PostEqSINR_dB = 10 * log10(max(eqMetric, realmin) / max(1 - min(eqMetric, 1 - eps), realmin));
+            evidence.PostEqSINRSource = "pbch_mmse_equalizer_csi_measurement";
+            evidence.PostEqSINRValueRole = "estimated_post_equalization";
+            evidence.PostEqSINRValueStatus = "OK";
+            evidence.PostEqSINRNAReason = "";
+        end
+    end
+end
+end
+
+function pwr = localMeanAbs2(x)
+vals = x(:);
+mask = isfinite(real(vals)) & isfinite(imag(vals));
+vals = vals(mask);
+if isempty(vals)
+    pwr = NaN;
+else
+    pwr = mean(abs(vals).^2);
+end
 end
 
 % -------------------------------------------------------------------------

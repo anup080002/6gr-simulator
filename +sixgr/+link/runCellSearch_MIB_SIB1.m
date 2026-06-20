@@ -45,6 +45,31 @@ out.SSBBeamIndex = NaN;
 out.SSBReceivedPower_dB = NaN;
 out.PBCHDMRSMetric = NaN;
 out.PBCHNoiseVar = NaN;
+out.ChannelEstimateAvailable = false;
+out.ChannelEstimateSource = "";
+out.EqualizationAvailable = false;
+out.EqualizerType = "";
+out.ReceiverHestSINR_dB = NaN;
+out.ReceiverHestSINRSource = "";
+out.ReceiverHestSINRValueRole = "";
+out.ReceiverHestSINRValueStatus = "";
+out.ReceiverHestSINRNAReason = "";
+out.MeasuredTrialSINR_dB = NaN;
+out.MeasuredTrialSINRSource = "";
+out.MeasuredTrialSINRValueRole = "";
+out.MeasuredTrialSINRValueStatus = "";
+out.MeasuredTrialSINRNAReason = "";
+out.PostEqSINR_dB = NaN;
+out.PostEqSINRSource = "";
+out.PostEqSINRValueRole = "";
+out.PostEqSINRValueStatus = "";
+out.PostEqSINRNAReason = "";
+out.StrictReceiverEvidenceOk = false;
+out.SIB1PDSCHChannelEstimateAvailable = false;
+out.SIB1PDSCHEqualizationAvailable = false;
+out.SIB1PDSCHReceiverHestSINR_dB = NaN;
+out.SIB1PDSCHReceiverHestSINRSource = "";
+out.SIB1PDSCHStrictReceiverEvidenceOk = false;
 
 if ~logical(sixgr.util.structGet(cfg, "phy.ssb.enable", true))
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
@@ -85,13 +110,58 @@ if wantSIB1
         out.Sync = struct("NCellID", double(rec.NCellID), "TimingOffset", double(rec.TimingOffset), ...
             "FreqOffset_Hz", double(rec.FrequencyOffsetHz));
         out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.BCHCrcPass)), ...
-            "NCellID", double(rec.NCellID), "SSBIndex", double(rec.SSBIndex));
+            "NCellID", double(rec.NCellID), "SSBIndex", double(rec.SSBIndex), ...
+            "ChannelEstimateAvailable", logical(sixgr.util.structGet(rec, "ChannelEstimateAvailable", false)), ...
+            "ChannelEstimateSource", string(sixgr.util.structGet(rec, "ChannelEstimateSource", "")), ...
+            "EqualizationAvailable", logical(sixgr.util.structGet(rec, "EqualizationAvailable", false)), ...
+            "EqualizerType", string(sixgr.util.structGet(rec, "EqualizerType", "")), ...
+            "ReceiverHestSINR_dB", double(sixgr.util.structGet(rec, "ReceiverHestSINR_dB", NaN)), ...
+            "ReceiverHestSINRSource", string(sixgr.util.structGet(rec, "ReceiverHestSINRSource", "")), ...
+            "ReceiverHestSINRValueRole", string(sixgr.util.structGet(rec, "ReceiverHestSINRValueRole", "")), ...
+            "ReceiverHestSINRValueStatus", string(sixgr.util.structGet(rec, "ReceiverHestSINRValueStatus", "")), ...
+            "ReceiverHestSINRNAReason", string(sixgr.util.structGet(rec, "ReceiverHestSINRNAReason", "")), ...
+            "MeasuredTrialSINR_dB", double(sixgr.util.structGet(rec, "MeasuredTrialSINR_dB", NaN)), ...
+            "MeasuredTrialSINRSource", string(sixgr.util.structGet(rec, "MeasuredTrialSINRSource", "")), ...
+            "MeasuredTrialSINRValueRole", string(sixgr.util.structGet(rec, "MeasuredTrialSINRValueRole", "")), ...
+            "MeasuredTrialSINRValueStatus", string(sixgr.util.structGet(rec, "MeasuredTrialSINRValueStatus", "")), ...
+            "MeasuredTrialSINRNAReason", string(sixgr.util.structGet(rec, "MeasuredTrialSINRNAReason", "")), ...
+            "PostEqSINR_dB", double(sixgr.util.structGet(rec, "PostEqSINR_dB", NaN)), ...
+            "PostEqSINRSource", string(sixgr.util.structGet(rec, "PostEqSINRSource", "")), ...
+            "PostEqSINRValueRole", string(sixgr.util.structGet(rec, "PostEqSINRValueRole", "")), ...
+            "PostEqSINRValueStatus", string(sixgr.util.structGet(rec, "PostEqSINRValueStatus", "")), ...
+            "PostEqSINRNAReason", string(sixgr.util.structGet(rec, "PostEqSINRNAReason", "")), ...
+            "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false)));
         out.SIB1 = rec;
         out.SSBIndex = double(rec.SSBIndex);
         out.SSBBeamIndex = out.SSBIndex + 1;
         out.SSBReceivedPower_dB = double(sixgr.util.structGet(rec, "SSBReceivedPower_dB", NaN));
         out.PBCHDMRSMetric = double(sixgr.util.structGet(rec, "PBCHDMRSMetric", NaN));
         out.PBCHNoiseVar = double(sixgr.util.structGet(rec, "PBCHNoiseVar", NaN));
+        out.ChannelEstimateAvailable = logical(sixgr.util.structGet(rec, "ChannelEstimateAvailable", false));
+        out.ChannelEstimateSource = string(sixgr.util.structGet(rec, "ChannelEstimateSource", ""));
+        out.EqualizationAvailable = logical(sixgr.util.structGet(rec, "EqualizationAvailable", false));
+        out.EqualizerType = string(sixgr.util.structGet(rec, "EqualizerType", ""));
+        out.ReceiverHestSINR_dB = double(sixgr.util.structGet(rec, "ReceiverHestSINR_dB", NaN));
+        out.ReceiverHestSINRSource = string(sixgr.util.structGet(rec, "ReceiverHestSINRSource", ""));
+        out.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rec, "ReceiverHestSINRValueRole", ""));
+        out.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rec, "ReceiverHestSINRValueStatus", ""));
+        out.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rec, "ReceiverHestSINRNAReason", ""));
+        out.MeasuredTrialSINR_dB = double(sixgr.util.structGet(rec, "MeasuredTrialSINR_dB", NaN));
+        out.MeasuredTrialSINRSource = string(sixgr.util.structGet(rec, "MeasuredTrialSINRSource", ""));
+        out.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(rec, "MeasuredTrialSINRValueRole", ""));
+        out.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(rec, "MeasuredTrialSINRValueStatus", ""));
+        out.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(rec, "MeasuredTrialSINRNAReason", ""));
+        out.PostEqSINR_dB = double(sixgr.util.structGet(rec, "PostEqSINR_dB", NaN));
+        out.PostEqSINRSource = string(sixgr.util.structGet(rec, "PostEqSINRSource", ""));
+        out.PostEqSINRValueRole = string(sixgr.util.structGet(rec, "PostEqSINRValueRole", ""));
+        out.PostEqSINRValueStatus = string(sixgr.util.structGet(rec, "PostEqSINRValueStatus", ""));
+        out.PostEqSINRNAReason = string(sixgr.util.structGet(rec, "PostEqSINRNAReason", ""));
+        out.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false));
+        out.SIB1PDSCHChannelEstimateAvailable = logical(sixgr.util.structGet(rec, "SIB1PDSCHChannelEstimateAvailable", false));
+        out.SIB1PDSCHEqualizationAvailable = logical(sixgr.util.structGet(rec, "SIB1PDSCHEqualizationAvailable", false));
+        out.SIB1PDSCHReceiverHestSINR_dB = double(sixgr.util.structGet(rec, "SIB1PDSCHReceiverHestSINR_dB", NaN));
+        out.SIB1PDSCHReceiverHestSINRSource = string(sixgr.util.structGet(rec, "SIB1PDSCHReceiverHestSINRSource", ""));
+        out.SIB1PDSCHStrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "SIB1PDSCHStrictReceiverEvidenceOk", false));
         out.FreqOffsetEstimate_Hz = double(rec.FrequencyOffsetHz);
         out.TrueCFO_Hz = 0;
         out.CFOError_Hz = double(rec.FrequencyOffsetHz);
@@ -145,6 +215,26 @@ try
     out.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     out.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
     out.PBCHNoiseVar = double(sixgr.util.structGet(pb, "NoiseVar", NaN));
+    out.ChannelEstimateAvailable = logical(sixgr.util.structGet(pb, "ChannelEstimateAvailable", false));
+    out.ChannelEstimateSource = string(sixgr.util.structGet(pb, "ChannelEstimateSource", ""));
+    out.EqualizationAvailable = logical(sixgr.util.structGet(pb, "EqualizationAvailable", false));
+    out.EqualizerType = string(sixgr.util.structGet(pb, "EqualizerType", ""));
+    out.ReceiverHestSINR_dB = double(sixgr.util.structGet(pb, "ReceiverHestSINR_dB", NaN));
+    out.ReceiverHestSINRSource = string(sixgr.util.structGet(pb, "ReceiverHestSINRSource", ""));
+    out.ReceiverHestSINRValueRole = string(sixgr.util.structGet(pb, "ReceiverHestSINRValueRole", ""));
+    out.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(pb, "ReceiverHestSINRValueStatus", ""));
+    out.ReceiverHestSINRNAReason = string(sixgr.util.structGet(pb, "ReceiverHestSINRNAReason", ""));
+    out.MeasuredTrialSINR_dB = double(sixgr.util.structGet(pb, "MeasuredTrialSINR_dB", NaN));
+    out.MeasuredTrialSINRSource = string(sixgr.util.structGet(pb, "MeasuredTrialSINRSource", ""));
+    out.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(pb, "MeasuredTrialSINRValueRole", ""));
+    out.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(pb, "MeasuredTrialSINRValueStatus", ""));
+    out.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(pb, "MeasuredTrialSINRNAReason", ""));
+    out.PostEqSINR_dB = double(sixgr.util.structGet(pb, "PostEqSINR_dB", NaN));
+    out.PostEqSINRSource = string(sixgr.util.structGet(pb, "PostEqSINRSource", ""));
+    out.PostEqSINRValueRole = string(sixgr.util.structGet(pb, "PostEqSINRValueRole", ""));
+    out.PostEqSINRValueStatus = string(sixgr.util.structGet(pb, "PostEqSINRValueStatus", ""));
+    out.PostEqSINRNAReason = string(sixgr.util.structGet(pb, "PostEqSINRNAReason", ""));
+    out.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(pb, "StrictReceiverEvidenceOk", false));
 
     out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0);
     out.BLER = double(~out.Ok);

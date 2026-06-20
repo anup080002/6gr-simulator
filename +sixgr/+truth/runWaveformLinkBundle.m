@@ -7462,6 +7462,74 @@ for k = 1:nTrials
         r.ProcedureDelay_ms = double(sixgr.util.structGet(out, "ProcedureDelay_ms", NaN));
         r.AirInterfaceObservation_ms = double(sixgr.util.structGet(out, "AirInterfaceObservation_ms", NaN));
         r.AcquisitionTime_ms = double(sixgr.util.structGet(out, "AcquisitionTime_ms", NaN));
+        r.NoiseVariance = double(sixgr.util.structGet(out, "PBCHNoiseVar", ...
+            sixgr.util.structGet(pbch, "NoiseVar", NaN)));
+        if isfinite(r.NoiseVariance)
+            r.NoiseVarStatus = "OK";
+            r.NoiseVarSource = "nrChannelEstimate_pbch_dmrs_sss";
+            r.NoiseVarReason = "";
+        else
+            r.NoiseVarStatus = "unavailable";
+            r.NoiseVarSource = "";
+            r.NoiseVarReason = "pbch_noise_variance_not_reported_by_receiver";
+        end
+        r.ChannelEstimateAttempted = true;
+        r.ChannelEstimateAvailable = logical(sixgr.util.structGet(out, "ChannelEstimateAvailable", ...
+            sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false)));
+        r.ChannelEstimateSource = string(sixgr.util.structGet(out, "ChannelEstimateSource", ...
+            sixgr.util.structGet(pbch, "ChannelEstimateSource", "")));
+        r.ResourceExtractionAttempted = true;
+        r.ResourceExtractionAvailable = r.ChannelEstimateAvailable;
+        r.EqualizationAttempted = true;
+        r.EqualizationAvailable = logical(sixgr.util.structGet(out, "EqualizationAvailable", ...
+            sixgr.util.structGet(pbch, "EqualizationAvailable", false)));
+        r.EqualizerType = string(sixgr.util.structGet(out, "EqualizerType", ...
+            sixgr.util.structGet(pbch, "EqualizerType", "")));
+        r.ReceiverHestSINR_dB = double(sixgr.util.structGet(out, "ReceiverHestSINR_dB", ...
+            sixgr.util.structGet(pbch, "ReceiverHestSINR_dB", NaN)));
+        r.ReceiverHestSINRSource = string(sixgr.util.structGet(out, "ReceiverHestSINRSource", ...
+            sixgr.util.structGet(pbch, "ReceiverHestSINRSource", "")));
+        r.ReceiverHestSINRValueRole = string(sixgr.util.structGet(out, "ReceiverHestSINRValueRole", ...
+            sixgr.util.structGet(pbch, "ReceiverHestSINRValueRole", "")));
+        r.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(out, "ReceiverHestSINRValueStatus", ...
+            sixgr.util.structGet(pbch, "ReceiverHestSINRValueStatus", "")));
+        r.ReceiverHestSINRNAReason = string(sixgr.util.structGet(out, "ReceiverHestSINRNAReason", ...
+            sixgr.util.structGet(pbch, "ReceiverHestSINRNAReason", "")));
+        r.MeasuredTrialSINR_dB = double(sixgr.util.structGet(out, "MeasuredTrialSINR_dB", ...
+            sixgr.util.structGet(pbch, "MeasuredTrialSINR_dB", NaN)));
+        r.MeasuredTrialSINRSource = string(sixgr.util.structGet(out, "MeasuredTrialSINRSource", ...
+            sixgr.util.structGet(pbch, "MeasuredTrialSINRSource", "")));
+        r.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(out, "MeasuredTrialSINRValueRole", ...
+            sixgr.util.structGet(pbch, "MeasuredTrialSINRValueRole", "")));
+        r.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(out, "MeasuredTrialSINRValueStatus", ...
+            sixgr.util.structGet(pbch, "MeasuredTrialSINRValueStatus", "")));
+        r.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(out, "MeasuredTrialSINRNAReason", ...
+            sixgr.util.structGet(pbch, "MeasuredTrialSINRNAReason", "")));
+        r.PostEqSINR_dB = double(sixgr.util.structGet(out, "PostEqSINR_dB", ...
+            sixgr.util.structGet(pbch, "PostEqSINR_dB", NaN)));
+        r.PostEqSINRSource = string(sixgr.util.structGet(out, "PostEqSINRSource", ...
+            sixgr.util.structGet(pbch, "PostEqSINRSource", "")));
+        r.PostEqSINRValueRole = string(sixgr.util.structGet(out, "PostEqSINRValueRole", ...
+            sixgr.util.structGet(pbch, "PostEqSINRValueRole", "")));
+        r.PostEqSINRValueStatus = string(sixgr.util.structGet(out, "PostEqSINRValueStatus", ...
+            sixgr.util.structGet(pbch, "PostEqSINRValueStatus", "")));
+        r.PostEqSINRNAReason = string(sixgr.util.structGet(out, "PostEqSINRNAReason", ...
+            sixgr.util.structGet(pbch, "PostEqSINRNAReason", "")));
+        r.MeasuredSINR_dB = r.MeasuredTrialSINR_dB;
+        r.SINRValueRole = "measured";
+        r.SINRSource = r.MeasuredTrialSINRSource;
+        r.SINRValueStatus = r.MeasuredTrialSINRValueStatus;
+        r.SINRValueDefinition = "measured_trial_sinr_from_pbch_dmrs_channel_estimate";
+        r.LLRAvailable = true;
+        r.LLRFinite = logical(pbchAcquired);
+        r.LLRNoiseVariance = r.NoiseVariance;
+        r.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(out, "StrictReceiverEvidenceOk", ...
+            sixgr.util.structGet(pbch, "StrictReceiverEvidenceOk", false))) && ...
+            r.ChannelEstimateAvailable && r.EqualizationAvailable && isfinite(r.ReceiverHestSINR_dB);
+        r.StrictOk = logical(sib1StrictOk) && logical(r.StrictReceiverEvidenceOk);
+        r.ReceiverUsable = logical(r.StrictReceiverEvidenceOk);
+        r.MeasurementAttempted = true;
+        r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) || isfinite(r.MeasuredTrialSINR_dB);
         r.TrackingFailureProbability = double(~pbchAcquired);
         if pbchAcquired
             r.DetectionMetric = 1;
@@ -7473,11 +7541,15 @@ for k = 1:nTrials
             r.DetectionOutcome = "ssb_pbch_mib_acquired";
             r.DecodeAttempted = true;
             r.DecodeUsable = true;
-            if sib1StrictOk
+            if r.StrictOk
                 r.Status = "PASS";
             else
                 r.Status = "FAIL";
-                r.FailureReason = "sib1_strict_recovery_failed_after_pbch_mib_acquisition";
+                if ~logical(r.StrictReceiverEvidenceOk)
+                    r.FailureReason = "pbch_receiver_evidence_missing_after_pbch_mib_acquisition";
+                else
+                    r.FailureReason = "sib1_strict_recovery_failed_after_pbch_mib_acquisition";
+                end
             end
         end
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));

@@ -34,6 +34,26 @@ try
     result.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     result.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
     result.PBCHNoiseVar = double(sixgr.util.structGet(pbch, "NoiseVar", NaN));
+    result.ChannelEstimateAvailable = logical(sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false));
+    result.ChannelEstimateSource = string(sixgr.util.structGet(pbch, "ChannelEstimateSource", ""));
+    result.EqualizationAvailable = logical(sixgr.util.structGet(pbch, "EqualizationAvailable", false));
+    result.EqualizerType = string(sixgr.util.structGet(pbch, "EqualizerType", ""));
+    result.ReceiverHestSINR_dB = double(sixgr.util.structGet(pbch, "ReceiverHestSINR_dB", NaN));
+    result.ReceiverHestSINRSource = string(sixgr.util.structGet(pbch, "ReceiverHestSINRSource", ""));
+    result.ReceiverHestSINRValueRole = string(sixgr.util.structGet(pbch, "ReceiverHestSINRValueRole", ""));
+    result.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(pbch, "ReceiverHestSINRValueStatus", ""));
+    result.ReceiverHestSINRNAReason = string(sixgr.util.structGet(pbch, "ReceiverHestSINRNAReason", ""));
+    result.MeasuredTrialSINR_dB = double(sixgr.util.structGet(pbch, "MeasuredTrialSINR_dB", NaN));
+    result.MeasuredTrialSINRSource = string(sixgr.util.structGet(pbch, "MeasuredTrialSINRSource", ""));
+    result.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(pbch, "MeasuredTrialSINRValueRole", ""));
+    result.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(pbch, "MeasuredTrialSINRValueStatus", ""));
+    result.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(pbch, "MeasuredTrialSINRNAReason", ""));
+    result.PostEqSINR_dB = double(sixgr.util.structGet(pbch, "PostEqSINR_dB", NaN));
+    result.PostEqSINRSource = string(sixgr.util.structGet(pbch, "PostEqSINRSource", ""));
+    result.PostEqSINRValueRole = string(sixgr.util.structGet(pbch, "PostEqSINRValueRole", ""));
+    result.PostEqSINRValueStatus = string(sixgr.util.structGet(pbch, "PostEqSINRValueStatus", ""));
+    result.PostEqSINRNAReason = string(sixgr.util.structGet(pbch, "PostEqSINRNAReason", ""));
+    result.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(pbch, "StrictReceiverEvidenceOk", false));
     result.BCHCrcPass = logical(pbch.Ok) && double(pbch.ErrFlag) == 0;
     result.MIBDecoded = result.BCHCrcPass;
     result.PDCCHConfigSIB1 = localPDCCHConfigSIB1(cfg);
@@ -74,6 +94,7 @@ try
     end
 
     [dci, pdsch] = sixgr.phy.broadcast.buildSIB1DCI10(carrier, cfg, "Bits", pdcchRx.DCIBits);
+    cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
     result.DCIRNTI = 65535;
     result.PDSCHRBStart = double(dci.PRBStart);
     result.PDSCHNumRB = double(dci.PRBCount);
@@ -89,6 +110,13 @@ try
         "TargetCodeRate", dci.TargetCodeRate, "RV", double(dci.RV), ...
         "SkipTimingEstimate", true);
     result.PDSCHDMRSOk = isfield(pdschRx, "ChannelEstimate") && ~isempty(pdschRx.ChannelEstimate);
+    result.SIB1PDSCHChannelEstimateAvailable = logical(sixgr.util.structGet(pdschRx, "ChannelEstimateAvailable", result.PDSCHDMRSOk));
+    result.SIB1PDSCHEqualizationAvailable = logical(sixgr.util.structGet(pdschRx, "EqualizationAvailable", false));
+    result.SIB1PDSCHReceiverHestSINR_dB = double(sixgr.util.structGet(pdschRx, "ReceiverHestSINR_dB", NaN));
+    result.SIB1PDSCHReceiverHestSINRSource = string(sixgr.util.structGet(pdschRx, "ReceiverHestSINRSource", ""));
+    result.SIB1PDSCHStrictReceiverEvidenceOk = logical(sixgr.util.structGet(pdschRx, "StrictReceiverEvidenceOk", ...
+        result.SIB1PDSCHChannelEstimateAvailable && result.SIB1PDSCHEqualizationAvailable && isfinite(result.SIB1PDSCHReceiverHestSINR_dB)));
+    result.StrictReceiverEvidenceOk = logical(result.StrictReceiverEvidenceOk) && logical(result.SIB1PDSCHStrictReceiverEvidenceOk);
     result.DLSCHCrcPass = logical(pdschRx.Ok);
     if ~logical(pdschRx.Ok)
         result.Status = "pdsch_dlsch_crc_failed";
@@ -140,6 +168,19 @@ result = struct( ...
     "StrictOk", false, "Status", "", "Detail", "", "NCellID", NaN, ...
     "TimingOffset", NaN, "FrequencyOffsetHz", NaN, "SSBIndex", NaN, ...
     "SSBReceivedPower_dB", NaN, "PBCHDMRSMetric", NaN, "PBCHNoiseVar", NaN, ...
+    "ChannelEstimateAvailable", false, "ChannelEstimateSource", "", ...
+    "EqualizationAvailable", false, "EqualizerType", "", ...
+    "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", ...
+    "ReceiverHestSINRValueRole", "", "ReceiverHestSINRValueStatus", "", ...
+    "ReceiverHestSINRNAReason", "", "MeasuredTrialSINR_dB", NaN, ...
+    "MeasuredTrialSINRSource", "", "MeasuredTrialSINRValueRole", "", ...
+    "MeasuredTrialSINRValueStatus", "", "MeasuredTrialSINRNAReason", "", ...
+    "PostEqSINR_dB", NaN, "PostEqSINRSource", "", ...
+    "PostEqSINRValueRole", "", "PostEqSINRValueStatus", "", ...
+    "PostEqSINRNAReason", "", "StrictReceiverEvidenceOk", false, ...
+    "SIB1PDSCHChannelEstimateAvailable", false, "SIB1PDSCHEqualizationAvailable", false, ...
+    "SIB1PDSCHReceiverHestSINR_dB", NaN, "SIB1PDSCHReceiverHestSINRSource", "", ...
+    "SIB1PDSCHStrictReceiverEvidenceOk", false, ...
     "BCHCrcPass", false, "MIBDecoded", false, "PDCCHConfigSIB1", NaN, ...
     "CORESET0Present", false, "CORESET0Pattern", "", "CORESET0RBStart", NaN, ...
     "CORESET0NumRB", NaN, "CORESET0Duration", NaN, "SearchSpace0ID", NaN, ...
@@ -200,6 +241,69 @@ function [pdcch, cfgSI] = localReceiverPDCCH(carrier, cfg, rnti)
 cfgSI = localNormalizeReceiverCfg(cfg, rnti);
 pdcch = localBuildPDCCHObject(carrier);
 cfgSI.phy.sib1.runtimePDCCH = pdcch;
+end
+
+function cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch)
+nLayers = max(1, round(double(pdsch.NumLayers)));
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numLayers", nLayers);
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nLayers", nLayers);
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+resolvedPorts = NaN;
+for i = 1:numel(paths)
+    path = paths(i);
+    Wcfg = sixgr.util.structGet(cfgSI, path, []);
+    if isempty(Wcfg)
+        continue;
+    end
+    Wsib = localAdaptSIB1PrecoderMatrix(Wcfg, nLayers);
+    if isempty(Wsib)
+        cfgSI = sixgr.util.structSet(cfgSI, path, []);
+    else
+        cfgSI = sixgr.util.structSet(cfgSI, path, Wsib);
+        resolvedPorts = size(Wsib, 1);
+    end
+end
+if isfinite(resolvedPorts) && resolvedPorts >= nLayers
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", resolvedPorts);
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", resolvedPorts);
+else
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", []);
+    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", []);
+end
+end
+
+function Wout = localAdaptSIB1PrecoderMatrix(Wcfg, nLayers)
+Wout = [];
+if isempty(Wcfg)
+    return;
+end
+nLayers = max(1, round(double(nLayers)));
+if ndims(Wcfg) > 2
+    if size(Wcfg, 3) == 1
+        Wcfg = squeeze(Wcfg);
+    else
+        return;
+    end
+end
+if ~isnumeric(Wcfg)
+    return;
+end
+sz = size(Wcfg);
+if sz(2) >= nLayers
+    Wout = double(Wcfg(:, 1:nLayers));
+elseif sz(1) >= nLayers
+    Wout = double(Wcfg(1:nLayers, :).');
+end
+if isempty(Wout) || size(Wout, 1) < nLayers || size(Wout, 2) ~= nLayers
+    Wout = [];
+    return;
+end
+colNorm = sqrt(sum(abs(Wout).^2, 1));
+if any(~isfinite(colNorm)) || any(colNorm <= eps)
+    Wout = [];
+    return;
+end
+Wout = Wout ./ colNorm;
 end
 
 function pdcch = localBuildPDCCHObject(carrier)
@@ -313,6 +417,7 @@ end
 function ok = localStrictOk(result)
 ok = ~logical(result.Skipped) && ~logical(result.ProxyUsed) && ~logical(result.ToolboxMissing) && ...
     isempty(result.UsedOracleFields) && logical(result.BCHCrcPass) && logical(result.MIBDecoded) && ...
+    logical(result.StrictReceiverEvidenceOk) && ...
     logical(result.CORESET0Present) && double(result.PDCCHCandidatesAttempted) > 0 && ...
     logical(result.DCIBlindDecodeSuccess) && logical(result.DCICrcPass) && ...
     double(result.DCIRNTI) == 65535 && string(result.DCIFormat) == "1_0" && ...
