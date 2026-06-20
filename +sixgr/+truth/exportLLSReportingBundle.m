@@ -203,6 +203,9 @@ ctx.Tables.SSBBeamSweep = localReadFirstOptionalTable({ ...
     fullfile(layout.BeamformingCSVDir, "ssb_beam_sweep.csv"), ...
     fullfile(layout.ControlCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
     fullfile(layout.AirInterfaceCSVDir, "ssb_pbch_sib1_beam_sweep.csv")});
+ctx.Tables.LiveBeamP1AcquisitionStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_p1_acquisition_stats.csv"));
+ctx.Tables.LiveBeamP2RefinementStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_p2_refinement_stats.csv"));
+ctx.Tables.LiveBeamProcedureStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_management_procedure_stats.csv"));
 ctx.Tables.LiveBeamSelectionStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv"));
 ctx.Tables.HARQPackets = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"));
 ctx.Tables.HARQSummary = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
@@ -3279,14 +3282,31 @@ end
 
 function T = localBeamManagementMetricRows(cat, metric, ctx, metricKey)
 % Prefer measured P1/P2 beam artifacts before falling back to legacy probe summaries.
-T = localEmptyMetricTable();
-T = [T; localBeamManagementRowsFromLiveStats(cat, metric, ...
-    sixgr.util.structGet(ctx.Tables, "LiveBeamSelectionStats", table()), metricKey)]; %#ok<AGROW>
-T = [T; localBeamManagementRowsFromSSBSweep(cat, metric, ...
-    sixgr.util.structGet(ctx.Tables, "SSBBeamSweep", table()), metricKey)]; %#ok<AGROW>
+T = localVertcatTables({ ...
+    localBeamManagementRowsFromLiveStats(cat, metric, ...
+        sixgr.util.structGet(ctx.Tables, "LiveBeamP1AcquisitionStats", table()), metricKey), ...
+    localBeamManagementRowsFromLiveStats(cat, metric, ...
+        sixgr.util.structGet(ctx.Tables, "LiveBeamP2RefinementStats", table()), metricKey)});
+if ~localMetricRowsHaveEntity(T, "ssb_p1_acquisition")
+    T = [T; localBeamManagementRowsFromSSBSweep(cat, metric, ...
+        sixgr.util.structGet(ctx.Tables, "SSBBeamSweep", table()), metricKey)]; %#ok<AGROW>
+end
+if isempty(T)
+    T = localBeamManagementRowsFromLiveStats(cat, metric, ...
+        sixgr.util.structGet(ctx.Tables, "LiveBeamProcedureStats", table()), metricKey);
+end
+if isempty(T)
+    T = localBeamManagementRowsFromLiveStats(cat, metric, ...
+        sixgr.util.structGet(ctx.Tables, "LiveBeamSelectionStats", table()), metricKey);
+end
 if isempty(T)
     T = localProbeMetricRows(cat, metric, ctx.Tables.BeamManagement, metricKey, ctx);
 end
+end
+
+function tf = localMetricRowsHaveEntity(T, entity)
+tf = istable(T) && ~isempty(T) && ismember("Entity", string(T.Properties.VariableNames)) && ...
+    any(string(T.Entity) == string(entity));
 end
 
 function T = localBeamManagementRowsFromLiveStats(cat, metric, statsT, metricKey)
@@ -3321,6 +3341,14 @@ for si = 1:numel(specs)
         end
         if strlength(strtrim(qualitySource)) > 0
             note = note + " QualitySource=" + qualitySource + ".";
+        end
+        procedure = localBeamTableString(statsT, "BeamManagementProcedure", k, "");
+        sourceFamily = localBeamTableString(statsT, "SignalSourceFamily", k, "");
+        if strlength(strtrim(procedure)) > 0
+            note = note + " BeamManagementProcedure=" + procedure + ".";
+        end
+        if strlength(strtrim(sourceFamily)) > 0
+            note = note + " SignalSourceFamily=" + sourceFamily + ".";
         end
         T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_mean", ...
             "available", value, "", string(spec.Unit), source, note)]; %#ok<AGROW>

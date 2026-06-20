@@ -26,6 +26,9 @@ multiUserUL = sixgr.util.structGet(rawTrials, "MultiUserUL", table());
 artifacts.ChannelEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_channel_estimation_stats.csv");
 artifacts.RankEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_rank_estimation_stats.csv");
 artifacts.BeamSelectionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv");
+artifacts.BeamP1AcquisitionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_p1_acquisition_stats.csv");
+artifacts.BeamP2RefinementStatsPath = fullfile(layout.ReportCSVDir, "live_beam_p2_refinement_stats.csv");
+artifacts.BeamProcedureStatsPath = fullfile(layout.ReportCSVDir, "live_beam_management_procedure_stats.csv");
 artifacts.CSIFeedbackStatsPath = fullfile(layout.ReportCSVDir, "live_csi_feedback_stats.csv");
 artifacts.CSIRSStatsPath = fullfile(layout.ReportCSVDir, "live_csirs_stats.csv");
 artifacts.LinkAdaptationInputPath = fullfile(layout.ReportCSVDir, "live_link_adaptation_input_table.csv");
@@ -43,7 +46,7 @@ artifacts.ChannelImpulseResponsePath = fullfile(layout.ReportCSVDir, "channel_im
 
 channelT = localBuildChannelStatsTable(dlT, ulT, srsT, trsT);
 rankT = localBuildRankStatsTable(dlT, ulT);
-beamT = localBuildBeamStatsTable(dlT, ulT, runFolder);
+[beamT, beamP1T, beamP2T] = localBuildBeamStatsTable(dlT, ulT, runFolder);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(dlT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
@@ -82,6 +85,9 @@ channelImpulseT = sixgr.truth.buildChannelImpulseResponseTable(cfg);
 sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT);
 sixgr.util.csvWriteTable(artifacts.RankEstimationStatsPath, rankT);
 sixgr.util.csvWriteTable(artifacts.BeamSelectionStatsPath, beamT);
+sixgr.util.csvWriteTable(artifacts.BeamP1AcquisitionStatsPath, beamP1T);
+sixgr.util.csvWriteTable(artifacts.BeamP2RefinementStatsPath, beamP2T);
+sixgr.util.csvWriteTable(artifacts.BeamProcedureStatsPath, beamT);
 sixgr.util.csvWriteTable(artifacts.CSIFeedbackStatsPath, csiT);
 sixgr.util.csvWriteTable(artifacts.CSIRSStatsPath, csirsT);
 sixgr.util.csvWriteTable(artifacts.LinkAdaptationInputPath, linkAdaptationT);
@@ -100,6 +106,9 @@ sixgr.util.csvWriteTable(artifacts.ChannelImpulseResponsePath, channelImpulseT);
 artifacts.ChannelEstimationStats = channelT;
 artifacts.RankEstimationStats = rankT;
 artifacts.BeamSelectionStats = beamT;
+artifacts.BeamP1AcquisitionStats = beamP1T;
+artifacts.BeamP2RefinementStats = beamP2T;
+artifacts.BeamProcedureStats = beamT;
 artifacts.CSIFeedbackStats = csiT;
 artifacts.CSIRSStats = csirsT;
 artifacts.LinkAdaptationInput = linkAdaptationT;
@@ -141,10 +150,27 @@ if isempty(T)
 end
 end
 
-function T = localBuildBeamStatsTable(dlT, ulT, runFolder)
+function [T, p1T, p2T] = localBuildBeamStatsTable(dlT, ulT, runFolder)
 if nargin < 3
     runFolder = "";
 end
+p1T = localBuildP1BeamAcquisitionStats(runFolder);
+p2T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder);
+T = localVertcat({p1T, p2T});
+if isempty(T)
+    T = localEmptyBeamSummaryTable();
+end
+end
+
+function T = localBuildP1BeamAcquisitionStats(runFolder)
+T = localBuildSSBBeamSweepStats(localReadSSBBeamSweepTable(runFolder));
+T = localAnnotateBeamSummaryTable(T, "P1_SSB_beam_sweep", "SSB_PBCH_SIB1");
+if isempty(T)
+    T = localEmptyBeamSummaryTable();
+end
+end
+
+function T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder)
 beamMetricFields = ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount", ...
     "SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"];
 rawBeamT = localVertcat({ ...
@@ -156,18 +182,37 @@ if isempty(rawBeamT)
         localAggregateByDirectionAndSNR(persistedDL, "DL", beamMetricFields, "air_interface/csv/dl_pdsch_trials.csv"), ...
         localAggregateByDirectionAndSNR(persistedUL, "UL", beamMetricFields, "air_interface/csv/ul_pusch_trials.csv")});
 end
+rawBeamT = localAnnotateBeamSummaryTable(rawBeamT, "P2_runtime_beam_refinement", "PDSCH_PUSCH_GRANT");
 
 parts = { ...
     rawBeamT, ...
-    localBuildSSBBeamSweepStats(localReadSSBBeamSweepTable(runFolder)), ...
-    localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "probe_beam_mimo.csv"), "beamforming/csv/probe_beam_mimo.csv"), ...
-    localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "beam_precoder_table.csv"), "beamforming/csv/beam_precoder_table.csv"), ...
-    localBuildBeamStateTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_state_trace.csv")), ...
-    localBuildBeamEventTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_event_trace.csv"))};
+    localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "probe_beam_mimo.csv"), "beamforming/csv/probe_beam_mimo.csv"), ...
+        "P2_runtime_beam_refinement", "PDSCH_PUSCH_PROBE"), ...
+    localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "beam_precoder_table.csv"), "beamforming/csv/beam_precoder_table.csv"), ...
+        "P2_runtime_beam_refinement", "PDSCH_PUSCH_PRECODER"), ...
+    localAnnotateBeamSummaryTable(localBuildBeamStateTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_state_trace.csv")), ...
+        "P2_runtime_beam_state_tracking", "BEAM_STATE_TRACE"), ...
+    localAnnotateBeamSummaryTable(localBuildBeamEventTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_event_trace.csv")), ...
+        "P2_runtime_beam_event_tracking", "BEAM_EVENT_TRACE")};
 T = localVertcat(parts);
 if isempty(T)
+    T = localEmptyBeamSummaryTable();
+end
+end
+
+function T = localAnnotateBeamSummaryTable(T, procedure, sourceFamily)
+if ~(istable(T) && width(T) > 0)
     T = localEmptySummaryTable();
 end
+n = height(T);
+T.BeamManagementProcedure = repmat(string(procedure), n, 1);
+T.SignalSourceFamily = repmat(string(sourceFamily), n, 1);
+end
+
+function T = localEmptyBeamSummaryTable()
+T = localEmptySummaryTable();
+T.BeamManagementProcedure = strings(0, 1);
+T.SignalSourceFamily = strings(0, 1);
 end
 
 function [dlT, ulT] = localReadPersistedDirectionalBeamTrials(runFolder)
