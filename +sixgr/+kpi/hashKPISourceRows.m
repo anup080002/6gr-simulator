@@ -44,13 +44,9 @@ end
 
 function h = localSHA256(text)
 try
-    md = java.security.MessageDigest.getInstance("SHA-256");
-    bytes = uint8(char(string(text)));
-    md.update(bytes);
-    digest = typecast(md.digest(), "uint8");
-    h = lower(string(reshape(dec2hex(digest, 2).', 1, [])));
+    h = sixgr.util.sha256Hex(uint8(unicode2native(char(string(text)), "UTF-8")));
 catch
     error("sixgr:kpi:SourceHashUnavailable", ...
-        "Strict KPI source-row hashing requires Java SHA-256 support.");
+        "Strict KPI source-row hashing requires SHA-256 support.");
 end
 end

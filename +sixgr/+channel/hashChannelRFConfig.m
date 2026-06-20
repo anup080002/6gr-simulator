@@ -24,8 +24,5 @@ end
 end
 
 function hash = localSHA256(bytes)
-md = java.security.MessageDigest.getInstance("SHA-256");
-md.update(bytes(:));
-raw = typecast(md.digest(), "uint8");
-hash = lower(string(reshape(dec2hex(raw, 2).', 1, [])));
+hash = sixgr.util.sha256Hex(uint8(bytes(:)));
 end

@@ -3,10 +3,7 @@ function hash = hashMIMOConfig(value)
 
 try
     txt = jsonencode(localSanitize(value));
-    md = java.security.MessageDigest.getInstance("SHA-256");
-    md.update(uint8(unicode2native(char(txt), "UTF-8")));
-    digest = typecast(md.digest(), "uint8");
-    hash = lower(string(reshape(dec2hex(digest, 2).', 1, [])));
+    hash = sixgr.util.sha256Hex(uint8(unicode2native(char(txt), "UTF-8")));
 catch ME
     error("sixgr:mimo:HashUnavailable", "Unable to hash MIMO config/evidence: %s", ME.message);
 end

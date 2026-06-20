@@ -128,6 +128,10 @@ paths = [
     string(fullfile(figDir, "msg4_contention_resolution_flow.svg"))
     string(fullfile(figDir, "ra_collision_outcome.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
+if ~usejava("jvm")
+    rows = rows(1:0);
+    return;
+end
 
 fig = figure("Visible", "off");
 cleanup = onCleanup(@() close(fig)); %#ok<NASGU>

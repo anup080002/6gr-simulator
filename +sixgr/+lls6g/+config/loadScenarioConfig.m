@@ -42,12 +42,10 @@ end
 function cfgHash = localComputeConfigHash(cfg)
 txt = jsonencode(cfg);
 try
-    md = java.security.MessageDigest.getInstance("SHA-256");
-    md.update(uint8(txt));
-    d = typecast(md.digest(), "uint8");
-    cfgHash = lower(reshape(dec2hex(d, 2).', 1, []));
-catch
-    cfgHash = "fallback_" + string(sum(double(uint8(txt))));
+    cfgHash = sixgr.util.sha256Hex(uint8(unicode2native(char(txt), "UTF-8")));
+catch ME
+    error("sixgr:lls6g:ConfigHashUnavailable", ...
+        "Unable to compute scenario config SHA-256 hash: %s", ME.message);
 end
 cfgHash = char(string(cfgHash));
 end

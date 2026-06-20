@@ -412,12 +412,23 @@ for i = 1:numel(catalog.categories)
         metric = metrics(j);
         resolved = localResolveMetricRows(cat, metric, ctx);
         if isempty(resolved)
-            resolved = localMetricTableRow(cat, metric, "", "", "not_available", NaN, "", "", "", ...
-                "Not emitted by this run or not modeled by the current LLS path.");
+            if ~localSuppressUnmeasuredPrimaryRows(cat)
+                resolved = localMetricTableRow(cat, metric, "", "", "not_available", NaN, "", "", "", ...
+                    "Not emitted by this run or not modeled by the current LLS path.");
+            end
+        end
+        if isempty(resolved)
+            continue;
         end
         rows = [rows; resolved]; %#ok<AGROW>
     end
 end
+end
+
+function tf = localSuppressUnmeasuredPrimaryRows(cat)
+% Beam-management primary rows must be measured artifacts only. Coverage CSVs
+% still report catalog gaps, but the primary table should not be padded.
+tf = string(cat.key) == "beam_management_outputs";
 end
 
 function T = localResolveMetricRows(cat, metric, ctx)
@@ -4223,6 +4234,9 @@ end
 
 function plots = localExportReportPlots(ctx, coverageT)
 plots = strings(0, 1);
+if ~localCanRenderReportFigures()
+    return;
+end
 sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
 plots(end+1, 1) = localPlotControlledSNRSweep(ctx, ctx.Layout.ReportImageDir, ...
     "bler_vs_snr.png", "BLER vs controlled SNR", "BLER", "bler"); %#ok<AGROW>
@@ -4248,6 +4262,10 @@ plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDi
 plots(end+1, 1) = localPlotControlPassRates(ctx.Layout.ReportImageDir, ctx); %#ok<AGROW>
 plots(end+1, 1) = localPlotCoverageAvailability(ctx.Layout.ReportImageDir, coverageT); %#ok<AGROW>
 plots = plots(strlength(plots) > 0);
+end
+
+function tf = localCanRenderReportFigures()
+tf = usejava("jvm");
 end
 
 function pathOut = localPlotControlledSNRSweep(ctx, imgDir, fileName, plotTitle, yLabel, metricKind)
@@ -5141,15 +5159,17 @@ sixgr.util.csvWriteTable(artifacts.PerSweepComparisonTable, localBuildPerSweepCo
 sixgr.util.csvWriteTable(artifacts.BaselineCandidateDeltaTable, localBuildBaselineDeltaTable(ctx));
 localWriteAutomaticMarkdownSummary(artifacts.AutomaticMarkdownSummary, ctx, coverageT, plots, artifacts);
 
-localPlotWaterfallOrPlaceholder(artifacts.WaterfallChart, ctx);
-localPlotPAPRCCDFOrPlaceholder(artifacts.PAPRCCDFPlot, ctx);
-localPlotLatencyCDFOrPlaceholder(artifacts.LatencyCDFPlot, ctx);
-localPlotAccessDelayCDFOrPlaceholder(artifacts.AccessDelayCDFPlot, ctx);
-localPlotEnergyVsThroughputOrPlaceholder(artifacts.EnergyVsThroughputPlot, ctx);
-localPlotComplexityVsGainOrPlaceholder(artifacts.ComplexityVsGainPlot, ctx);
-localPlotBandFeatureKPIHeatmapPlaceholder(artifacts.BandFeatureKPIHeatmap, ctx, coverageT);
-localPlotImpairmentKPIHeatmapPlaceholder(artifacts.ImpairmentKPIHeatmap, ctx, coverageT);
-localPlotBeamRankTRPKPIHeatmapPlaceholder(artifacts.BeamRankTRPKPIHeatmap, ctx, coverageT);
+if localCanRenderReportFigures()
+    localPlotWaterfallOrPlaceholder(artifacts.WaterfallChart, ctx);
+    localPlotPAPRCCDFOrPlaceholder(artifacts.PAPRCCDFPlot, ctx);
+    localPlotLatencyCDFOrPlaceholder(artifacts.LatencyCDFPlot, ctx);
+    localPlotAccessDelayCDFOrPlaceholder(artifacts.AccessDelayCDFPlot, ctx);
+    localPlotEnergyVsThroughputOrPlaceholder(artifacts.EnergyVsThroughputPlot, ctx);
+    localPlotComplexityVsGainOrPlaceholder(artifacts.ComplexityVsGainPlot, ctx);
+    localPlotBandFeatureKPIHeatmapPlaceholder(artifacts.BandFeatureKPIHeatmap, ctx, coverageT);
+    localPlotImpairmentKPIHeatmapPlaceholder(artifacts.ImpairmentKPIHeatmap, ctx, coverageT);
+    localPlotBeamRankTRPKPIHeatmapPlaceholder(artifacts.BeamRankTRPKPIHeatmap, ctx, coverageT);
+end
 end
 
 function T = localBuildPerScenarioSummaryTable(ctx, coverageT, rows)
