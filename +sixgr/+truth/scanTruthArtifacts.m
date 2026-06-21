@@ -178,7 +178,7 @@ if strcmpi(token, "FAST_PROXY")
     return;
 end
 if strcmpi(token, "lut")
-    tf = contains(lower(string(value)), "lut");
+    tf = ~isempty(regexpi(lower(value), '(^|[^A-Za-z0-9])lut([^A-Za-z0-9]|$)', 'once'));
     return;
 end
 pat = ['(^|[^A-Za-z0-9])' regexptranslate('escape', lower(token)) '([^A-Za-z0-9]|$)'];
