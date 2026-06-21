@@ -533,7 +533,7 @@ control_gating:
   srs_required: true
   srs_max_age_slots: 5
   trs_required: true
-  trs_max_age_slots: 4
+  trs_max_age_slots: 20
 
 reference_signals:
   ssb_enabled: true

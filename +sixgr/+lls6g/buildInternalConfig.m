@@ -362,6 +362,13 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.scs_kHz", ...
     double(localDefaultSSBSubcarrierSpacing_kHz(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz))));
 cfg.phy.pbch.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.mib.enable = logical(s.reference_signals.pbch_enabled);
+ssbPeriodSlots = localResolvePeriodSlotsFromMsOrSlots(s, runTiming, ...
+    ["reference_signals.ssb_periodicity_slots","reference_signals.ssb.periodicity_slots","phy.ssb.period_slots"], ...
+    ["reference_signals.ssb_periodicity_ms","reference_signals.ssb.periodicity_ms"], NaN);
+if isfinite(ssbPeriodSlots) && ssbPeriodSlots >= 1
+    cfg = sixgr.util.structSet(cfg, "phy.ssb.period_slots", double(ssbPeriodSlots));
+    cfg = sixgr.util.structSet(cfg, "phy.pbch.period_slots", double(ssbPeriodSlots));
+end
 cfg.phy.sib1.enable = logical(localGetNested(s, "phy.sib1.enable", ...
     localGetNested(s, "signals_and_channels_common.sib1_related_pdcch.enable_flag", false) && ...
     localGetNested(s, "signals_and_channels_common.sib1_related_pdsch.enable_flag", false)));
@@ -870,6 +877,12 @@ cfg = localStructSetIfPresent(cfg, "phy.trs.subcarrierLocation", localGetNested(
 cfg = localStructSetIfPresent(cfg, "phy.trs.rbOffset", localGetNested(s, "reference_signals.trs.rb_offset", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.numRB", localGetNested(s, "reference_signals.trs.num_rb", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.slotNumbers", localGetNested(s, "reference_signals.trs.slot_numbers", []));
+trsPeriodSlots = localResolvePeriodSlotsFromMsOrSlots(s, runTiming, ...
+    ["reference_signals.trs_periodicity_slots","reference_signals.trs.periodicity_slots","control_gating.trs_period_slots","phy.trs.period_slots"], ...
+    ["reference_signals.trs_periodicity_ms","reference_signals.trs.periodicity_ms"], NaN);
+if isfinite(trsPeriodSlots) && trsPeriodSlots >= 1
+    cfg = sixgr.util.structSet(cfg, "phy.trs.period_slots", double(trsPeriodSlots));
+end
 cfg = localStructSetIfPresent(cfg, "phy.trs.detectionThreshold", localGetNested(s, "reference_signals.trs.detection_threshold", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.minCoverageRatio", localGetNested(s, "reference_signals.trs.min_coverage_ratio", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.timingToleranceSamples", localGetNested(s, "reference_signals.trs.timing_tolerance_samples", []));
@@ -895,6 +908,12 @@ cfg = localStructSetIfPresent(cfg, "phy.prach.restrictedSet", localGetNested(s, 
 cfg = localStructSetIfPresent(cfg, "phy.prach.frequencyStart", localGetNested(s, "random_access.frequency_start", []));
 cfg = localStructSetIfPresent(cfg, "phy.prach.detectionThreshold", localGetNested(s, "random_access.detection_threshold", []));
 cfg = localStructSetIfPresent(cfg, "phy.prach.falseAlarmCandidateScope", localGetNested(s, "random_access.false_alarm_candidate_scope", []));
+prachPeriodSlots = localResolvePeriodSlotsFromMsOrSlots(s, runTiming, ...
+    ["random_access.prach_periodicity_slots","random_access.periodicity_slots","phy.prach.period_slots"], ...
+    ["random_access.prach_periodicity_ms","random_access.periodicity_ms"], NaN);
+if isfinite(prachPeriodSlots) && prachPeriodSlots >= 1
+    cfg = sixgr.util.structSet(cfg, "phy.prach.period_slots", double(prachPeriodSlots));
+end
 cfg = localStructSetIfPresent(cfg, "prach_lls.FrequencyRange", localGetNested(s, "random_access.frequency_range", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.DuplexMode", localGetNested(s, "frequency.duplex_mode", []));
 cfg = localStructSetIfPresent(cfg, "prach_lls.CarrierFrequencyHz", localGetNested(s, "frequency.center_frequency_hz", []));
@@ -1542,6 +1561,13 @@ cfg = sixgr.util.structSet(cfg, "phy.prach.startSymbol", double(fs.PRACHStartSym
 cfg = sixgr.util.structSet(cfg, "phy.prach.durationSymbols", double(fs.PRACHDurationSymbols));
 cfg = sixgr.util.structSet(cfg, "phy.prach.validSlots1Based", double(fs.PRACHValidSlots1Based));
 cfg = sixgr.util.structSet(cfg, "phy.prach.validSlots0Based", double(fs.PRACHValidSlots0Based));
+if isempty(sixgr.util.structGet(cfg, "phy.prach.period_slots", []))
+    prachPeriodSlots = localDeriveRepeatingOccasionPeriodSlots( ...
+        double(fs.PRACHValidSlots1Based), double(fs.SlotsPerFrame));
+    if isfinite(prachPeriodSlots) && prachPeriodSlots >= 1
+        cfg = sixgr.util.structSet(cfg, "phy.prach.period_slots", double(prachPeriodSlots));
+    end
+end
 cfg = sixgr.util.structSet(cfg, "phy.prach.validationStatus", char(fs.PRACHValidationStatus));
 cfg = sixgr.util.structSet(cfg, "prach_lls.NSizeGrid", double(fs.NRB));
 cfg = sixgr.util.structSet(cfg, "prach_lls.PRACHFormat", char(fs.PRACHFormat));
@@ -1651,6 +1677,53 @@ if isfinite(frameCount) && frameCount > 0
     slots = max(1, round(double(frameCount) * double(slotsPerFrame)));
 else
     slots = max(1, round(double(totalSlots)));
+end
+end
+
+function slots = localResolvePeriodSlotsFromMsOrSlots(s, runTiming, slotPaths, msPaths, defaultSlots)
+slots = NaN;
+for i = 1:numel(slotPaths)
+    candidate = localNumericScalarOrNaN(localGetNested(s, slotPaths(i), NaN));
+    if isfinite(candidate) && candidate > 0
+        slots = max(1, round(double(candidate)));
+        return;
+    end
+end
+slotDurationMs = max(eps, double(runTiming.TotalTime_ms) / max(double(runTiming.TotalSlots), 1));
+for i = 1:numel(msPaths)
+    candidateMs = localNumericScalarOrNaN(localGetNested(s, msPaths(i), NaN));
+    if isfinite(candidateMs) && candidateMs > 0
+        slots = max(1, round(double(candidateMs) / slotDurationMs));
+        return;
+    end
+end
+candidate = localNumericScalarOrNaN(defaultSlots);
+if isfinite(candidate) && candidate > 0
+    slots = max(1, round(double(candidate)));
+end
+end
+
+function periodSlots = localDeriveRepeatingOccasionPeriodSlots(validSlots1Based, slotsPerFrame)
+periodSlots = NaN;
+validSlots1Based = unique(round(double(validSlots1Based(:))), "stable");
+validSlots1Based = validSlots1Based(isfinite(validSlots1Based) & validSlots1Based >= 1);
+slotsPerFrame = round(double(slotsPerFrame));
+if ~(isfinite(slotsPerFrame) && slotsPerFrame >= 1) || isempty(validSlots1Based)
+    return;
+end
+validSlots1Based = sort(mod(validSlots1Based - 1, slotsPerFrame) + 1);
+if numel(validSlots1Based) == 1
+    periodSlots = slotsPerFrame;
+    return;
+end
+spacing = diff(validSlots1Based(:));
+wrapSpacing = double(slotsPerFrame) - double(validSlots1Based(end)) + double(validSlots1Based(1));
+spacing = [spacing(:); wrapSpacing];
+spacing = spacing(isfinite(spacing) & spacing > 0);
+if isempty(spacing)
+    periodSlots = slotsPerFrame;
+else
+    periodSlots = max(1, round(double(min(spacing))));
 end
 end
 
