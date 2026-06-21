@@ -10657,22 +10657,22 @@ if ~ismember("TruthStatus", string(T.Properties.VariableNames))
         repmat("real_lls_evidence", n, 1));
 end
 
-T.direction = localConstellationStringColumn(T, ["Direction","direction","RuntimeDirection"], repmat(string(direction), n, 1));
-T.ue_id = localConstellationNumericColumn(T, ["UEIndex","UEId","RNTI"]);
-T.slot = localConstellationNumericColumn(T, "Slot");
-T.tb_id = localConstellationNumericColumn(T, "TBId");
-T.layer = localConstellationNumericColumn(T, "LayerIndex");
-T.modulation = localConstellationStringColumn(T, ["Modulation","modulation","RuntimeModulation"], strings(n, 1));
-T.mcs_index = localConstellationNumericColumn(T, "MCSIndex");
-T.snr_db = localConstellationNumericColumn(T, "SNR_dB");
-T.posteq_sinr_db = localConstellationNumericColumn(T, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"]);
-T.symbol_index = localConstellationNumericColumn(T, "SampleIndex");
-T.reference_symbol_i = localConstellationNumericColumn(T, ["ReferenceSymbolReal","TxReal"]);
-T.reference_symbol_q = localConstellationNumericColumn(T, ["ReferenceSymbolImag","TxImag"]);
-T.equalized_i = localConstellationNumericColumn(T, "EqualizedReal");
-T.equalized_q = localConstellationNumericColumn(T, "EqualizedImag");
-T.evm_rms_pct = localConstellationNumericColumn(T, "EVM_rms_pct");
-T.evm_db = localConstellationNumericColumn(T, "EVM_dB");
+T.direction = localConstellationStringColumn(T, ["direction","Direction","RuntimeDirection"], repmat(string(direction), n, 1));
+T.ue_id = localConstellationNumericColumn(T, ["ue_id","UEIndex","UEId","UEID","RNTI"]);
+T.slot = localConstellationNumericColumn(T, ["slot","Slot","RuntimeSlot"]);
+T.tb_id = localConstellationNumericColumn(T, ["tb_id","TBId"]);
+T.layer = localConstellationNumericColumn(T, ["layer","LayerIndex","Layer"]);
+T.modulation = localConstellationStringColumn(T, ["modulation","Modulation","RuntimeModulation"], strings(n, 1));
+T.mcs_index = localConstellationNumericColumn(T, ["mcs_index","MCSIndex","MCS"]);
+T.snr_db = localConstellationNumericColumn(T, ["snr_db","SNR_dB","RuntimeSNR_dB"]);
+T.posteq_sinr_db = localConstellationNumericColumn(T, ["posteq_sinr_db","PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"]);
+T.symbol_index = localConstellationNumericColumn(T, ["symbol_index","SampleIndex"]);
+T.reference_symbol_i = localConstellationNumericColumn(T, ["reference_symbol_i","ReferenceSymbolReal","TxReal"]);
+T.reference_symbol_q = localConstellationNumericColumn(T, ["reference_symbol_q","ReferenceSymbolImag","TxImag"]);
+T.equalized_i = localConstellationNumericColumn(T, ["equalized_i","EqualizedReal"]);
+T.equalized_q = localConstellationNumericColumn(T, ["equalized_q","EqualizedImag"]);
+T.evm_rms_pct = localConstellationNumericColumn(T, ["evm_rms_pct","EVM_rms_pct","RuntimeEVMRms_pct"]);
+T.evm_db = localConstellationNumericColumn(T, ["evm_db","EVM_dB","RuntimeEVM_dB"]);
 T.normalization = localConstellationStringColumn(T, ["Normalization","normalization","RuntimeNormalization"], ...
     repmat("post_equalized_and_reference_unit_power_constellation", n, 1));
 T.truth_status = localConstellationStringColumn(T, ["TruthStatus","truth_status","RuntimeTruthStatus"], ...
@@ -10715,6 +10715,8 @@ end
 function values = localConstellationNumericColumn(T, names)
 values = nan(height(T), 1);
 names = string(names);
+fallback = values;
+haveFallback = false;
 for i = 1:numel(names)
     if ~ismember(names(i), string(T.Properties.VariableNames))
         continue;
@@ -10726,9 +10728,18 @@ for i = 1:numel(names)
     end
     candidate = reshape(candidate, [], 1);
     if numel(candidate) == height(T)
-        values = candidate;
-        return;
+        if any(isfinite(candidate))
+            values = candidate;
+            return;
+        end
+        if ~haveFallback
+            fallback = candidate;
+            haveFallback = true;
+        end
     end
+end
+if haveFallback
+    values = fallback;
 end
 end
 
@@ -10738,16 +10749,18 @@ values = string(defaultValues);
 if isscalar(values) && n ~= 1
     values = repmat(values, n, 1);
 else
-    values = values(:);
-end
-if numel(values) ~= n
-    if isempty(values)
-        values = strings(n, 1);
-    else
-        values = repmat(values(1), n, 1);
+    values = reshape(values, [], 1);
+    if numel(values) ~= n
+        if isempty(values)
+            values = strings(n, 1);
+        else
+            values = repmat(values(1), n, 1);
+        end
     end
 end
 names = string(names);
+fallback = values;
+haveFallback = false;
 for i = 1:numel(names)
     if ~ismember(names(i), string(T.Properties.VariableNames))
         continue;
@@ -10764,8 +10777,18 @@ for i = 1:numel(names)
     if numel(candidate) ~= n
         continue;
     end
-    values = candidate;
-    return;
+    candidate(ismissing(candidate)) = "";
+    if any(strlength(strtrim(candidate)) > 0)
+        values = candidate;
+        return;
+    end
+    if ~haveFallback
+        fallback = candidate;
+        haveFallback = true;
+    end
+end
+if haveFallback
+    values = fallback;
 end
 end
 
