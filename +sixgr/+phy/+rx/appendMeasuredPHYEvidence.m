@@ -1,6 +1,6 @@
 function rx = appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, ...
         rateMatchedLLR, rateRecoveredLLR, rateRecoveredBatch, rateRecoverInfo, ...
-        decoderIterations, parityChecks, codeBlockCRCErrors, decoderAlgorithm, useMexDecoder)
+        decoderIterations, parityChecks, codeBlockCRCErrors, decoderAlgorithm, useMexDecoder, transportBlockCRCError)
 %APPENDMEASUREDPHYEVIDENCE Attach compact measured PHY evidence to RX output.
 
 if nargin < 1 || ~isstruct(rx)
@@ -42,10 +42,14 @@ end
 if nargin < 15
     useMexDecoder = false;
 end
+if nargin < 16
+    transportBlockCRCError = [];
+end
 
 dmrs = localDMRSEvidence(carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo);
 rate = localRateRecoverEvidence(rateMatchedLLR, rateRecoveredLLR, rateRecoveredBatch, rateRecoverInfo);
-ldpc = localLDPCEvidence(decoderIterations, parityChecks, codeBlockCRCErrors, decoderAlgorithm, useMexDecoder);
+ldpc = localLDPCEvidence(decoderIterations, parityChecks, codeBlockCRCErrors, decoderAlgorithm, useMexDecoder, ...
+    transportBlockCRCError);
 
 rx = localAppendFields(rx, dmrs);
 rx = localAppendFields(rx, rate);
@@ -110,16 +114,20 @@ if isscalar(nref) && isfinite(nref)
 end
 end
 
-function evidence = localLDPCEvidence(iterations, parityChecks, cbCrcErrors, decoderAlgorithm, useMexDecoder)
+function evidence = localLDPCEvidence(iterations, parityChecks, cbCrcErrors, decoderAlgorithm, useMexDecoder, transportBlockCRCError)
 iter = localFiniteVector(iterations);
 parity = localFiniteVector(parityChecks);
 cbCrc = localFiniteVector(cbCrcErrors);
+decodeErrors = localMeasuredDecodeErrors(iter, cbCrc, transportBlockCRCError);
 
 evidence = struct( ...
     "MeasuredLDPCDecoderMeanIterations", NaN, ...
     "MeasuredLDPCDecoderMinIterations", NaN, ...
     "MeasuredLDPCDecoderMaxIterations", NaN, ...
     "MeasuredLDPCParityCheckFailures", NaN, ...
+    "MeasuredCodeBlockDecodeErrorCount", NaN, ...
+    "MeasuredCodeBlockDecodeCount", NaN, ...
+    "MeasuredCodeBlockDecodeFailureRate", NaN, ...
     "MeasuredCodeBlockCRCErrorCount", NaN, ...
     "MeasuredCodeBlockCRCCount", NaN, ...
     "MeasuredCodeBlockCRCFailureRate", NaN, ...
@@ -127,6 +135,7 @@ evidence = struct( ...
     "MeasuredLDPCDecoderEngine", localDecoderEngine(useMexDecoder), ...
     "MeasuredLDPCIterationVector", localFormatVector(iterations), ...
     "MeasuredLDPCParityCheckVector", localFormatVector(parityChecks), ...
+    "MeasuredCodeBlockDecodeErrorVector", localFormatDecodeVector(decodeErrors), ...
     "MeasuredCodeBlockCRCErrorVector", localFormatVector(cbCrcErrors));
 
 if ~isempty(iter)
@@ -136,6 +145,14 @@ if ~isempty(iter)
 end
 if ~isempty(parity)
     evidence.MeasuredLDPCParityCheckFailures = double(sum(parity ~= 0));
+end
+if ~isempty(decodeErrors)
+    evidence.MeasuredCodeBlockDecodeCount = double(numel(decodeErrors));
+    evidence.MeasuredCodeBlockDecodeErrorCount = double(sum(decodeErrors ~= 0));
+    evidence.MeasuredCodeBlockDecodeFailureRate = evidence.MeasuredCodeBlockDecodeErrorCount ./ ...
+        max(evidence.MeasuredCodeBlockDecodeCount, eps);
+elseif ~isempty(iter)
+    evidence.MeasuredCodeBlockDecodeCount = double(numel(iter));
 end
 if ~isempty(cbCrc)
     evidence.MeasuredCodeBlockCRCCount = double(numel(cbCrc));
@@ -148,6 +165,24 @@ elseif ~isempty(iter)
     evidence.MeasuredCodeBlockCRCCount = 0;
     evidence.MeasuredCodeBlockCRCErrorCount = 0;
 end
+end
+
+function errors = localMeasuredDecodeErrors(iter, cbCrc, transportBlockCRCError)
+errors = double([]);
+if ~isempty(cbCrc)
+    errors = cbCrc;
+    return;
+end
+if numel(iter) ~= 1
+    return;
+end
+tbErr = localFiniteVector(transportBlockCRCError);
+if isempty(tbErr)
+    return;
+end
+% A single-code-block DL/UL-SCH decode has no CB CRC24B; the decoded
+% code-block outcome is therefore measured by the transport-block CRC.
+errors = double(tbErr(1) ~= 0);
 end
 
 function rx = localAppendFields(rx, evidence)
@@ -220,6 +255,15 @@ if isempty(values)
     return;
 end
 txt = strjoin(string(values.'), "|");
+end
+
+function txt = localFormatDecodeVector(raw)
+txt = "";
+values = localFiniteVector(raw);
+if isempty(values)
+    return;
+end
+txt = "[" + strjoin(string(values.'), "|") + "]";
 end
 
 function engine = localDecoderEngine(useMexDecoder)

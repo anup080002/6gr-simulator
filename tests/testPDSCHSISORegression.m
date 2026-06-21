@@ -56,6 +56,10 @@ assert(coding.CodeBlockCount == 1 && coding.CodeBlockErrors == 0 && coding.CodeB
     "Single-code-block PDSCH must not count TS 38.212 filler bits as code-block errors.");
 assert(rx.MeasuredCodeBlockCRCCount == 0 && ~isfinite(rx.MeasuredCodeBlockCRCFailureRate), ...
     "Single-code-block PDSCH must leave CB-CRC failure rate undefined because no CRC24B exists.");
+assert(rx.MeasuredCodeBlockDecodeCount == 1 && rx.MeasuredCodeBlockDecodeErrorCount == 0, ...
+    "Single-code-block PDSCH must expose the measured decoded-code-block outcome.");
+assert(rx.MeasuredCodeBlockDecodeFailureRate == 0 && string(rx.MeasuredCodeBlockDecodeErrorVector) == "[0]", ...
+    "Single-code-block PDSCH must report decode outcome from the measured TB CRC result.");
 ok = true;
 end
 

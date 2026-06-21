@@ -562,7 +562,7 @@ rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, dmrsInfo, ...
-    cwLLRForULSCH, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC);
+    cwLLRForULSCH, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
 rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
 rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);

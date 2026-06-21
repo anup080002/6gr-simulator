@@ -574,7 +574,7 @@ end
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, ...
-    llr, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC);
+    llr, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
 rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsInd);
 rx.ChannelEstimateAvailable = ~isempty(hEst);
 if useFastAWGNPath
