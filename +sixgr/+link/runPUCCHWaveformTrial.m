@@ -28,6 +28,14 @@ out = struct( ...
     "Status", "FAIL", ...
     "ExpectedBits", expectedBits, ...
     "DecodedBits", int8([]), ...
+    "ExpectedBitCount", double(numel(expectedBits)), ...
+    "DecodedBitCount", 0, ...
+    "UCIExpectedBitVector", char(localBitVectorString(expectedBits)), ...
+    "UCIDecodedBitVector", "", ...
+    "UCIBitErrorVector", "", ...
+    "UCICodedBitCount", NaN, ...
+    "UCICRCBitCount", 0, ...
+    "UCICRCApplicable", false, ...
     "AckObserved", false, ...
     "UCIContentMatch", false, ...
     "CRCApplicable", false, ...
@@ -76,6 +84,7 @@ out = struct( ...
     "ServingRxPower_dBm", NaN, ...
     "ServingRxPowerSource", "", ...
     "ReceiverHestSINR_dB", NaN, ...
+    "ReceiverHestSINRApplicable", false, ...
     "ReceiverHestSINRSource", "", ...
     "ReceiverHestSINRValueRole", "", ...
     "ReceiverHestSINRValueStatus", "", ...
@@ -264,7 +273,8 @@ try
     end
     out.PUCCHRECount = double(numel(sixgr.util.structGet(tx, "PUCCHIndices", [])));
     out.PUCCHDMRSRECount = double(numel(sixgr.util.structGet(tx, "DMRSIndices", [])));
-    out.PUCCHExpectedBitCount = double(numel(expectedBits));
+    out.ReceiverHestSINRApplicable = out.PUCCHDMRSRECount > 0;
+    out = localPopulatePUCCHUCIEvidence(out, expectedBits, int8([]), tx, resolvedFormat);
     out.PUCCHGridHash = char(localComplexSHA256(sixgr.util.structGet(tx, "Grid", [])));
     out.PUCCHWaveformHash = char(localComplexSHA256(sixgr.util.structGet(tx, "Waveform", [])));
     out.ResourceExtractionAttempted = true;
@@ -280,6 +290,8 @@ try
         out.UCIContentMatch = false;
         out.BitsCompared = 0;
         out.BitErrors = NaN;
+        out = localPopulatePUCCHUCIEvidence(out, expectedBits, ...
+            localNormalizeUCIBits(sixgr.util.structGet(rx, "UCIBits", int8([]))), tx, resolvedFormat);
         out.DetectionMetric = double(sixgr.util.structGet(rx, "DetectorPeakMetric", localResolveDetectionMetric(rx)));
         out.ComputeLatency_ms = double(decodeLatency_ms);
         out.DecodeLatency_ms = double(decodeLatency_ms);
@@ -300,7 +312,6 @@ try
         out.PostEqSINRValueRole = "unavailable";
         out.PostEqSINRValueStatus = "unavailable";
         out.PostEqSINRNAReason = char(string(out.FailureReason));
-        out.PUCCHDecodedBitCount = 0;
         out.StrictReceiverEvidenceOk = false;
         out.StrictOk = false;
         out.CRCOutcome = "not_applicable";
@@ -318,14 +329,13 @@ try
     out.Status = ternaryStatus(ok);
     out.ExpectedBits = expectedBits;
     out.DecodedBits = decodedBits;
+    out = localPopulatePUCCHUCIEvidence(out, expectedBits, decodedBits, tx, resolvedFormat);
     out.AckObserved = localFirstLogical(decodedBits, false);
     out.UCIContentMatch = logical(bitErrors == 0 && bitsCompared == numel(expectedBits));
-    out.CRCApplicable = logical(resolvedFormat >= 2 && numel(expectedBits) > 2);
     out.CRCOutcome = char(localResolvePUCCHCRCOutcome(out.CRCApplicable, out.UCIContentMatch));
     out.DetectionOutcome = localResolvePUCCHDetectionOutcome(out.DetectionUsable, out.UCIContentMatch);
     out.BitsCompared = double(bitsCompared);
     out.BitErrors = double(bitErrors);
-    out.PUCCHDecodedBitCount = double(numel(decodedBits));
     out.DetectionMetric = double(detMetric);
     out.ComputeLatency_ms = double(decodeLatency_ms);
     out.DecodeLatency_ms = double(decodeLatency_ms);
@@ -394,11 +404,11 @@ try
     out.NumTxPorts = double(sixgr.util.structGet(measurement, "NumTxPorts", NaN));
     noiseOk = isfinite(double(out.NoiseVariance)) && double(out.NoiseVariance) > 0 && ...
         strcmpi(string(out.NoiseVarStatus), "OK") && ~logical(out.NoiseVarStrictFailure);
-    dmrsRequired = double(out.PUCCHDMRSRECount) > 0;
+    dmrsRequired = logical(out.ReceiverHestSINRApplicable);
     channelOk = ~dmrsRequired || logical(out.ChannelEstimateAvailable);
     equalizationOk = ~dmrsRequired || logical(out.EqualizationAvailable);
     receiverSINROk = ~dmrsRequired || (isfinite(double(out.ReceiverHestSINR_dB)) && ...
-        strcmpi(string(out.ReceiverHestSINRValueStatus), "OK"));
+        localStatusIsOk(out.ReceiverHestSINRValueStatus));
     strictOk = logical(ok) && logical(out.UCIContentMatch) && logical(out.DetectionUsable) && ...
         logical(out.ResourceExtractionAvailable) && logical(out.ControlResourceValidity) && ...
         noiseOk && channelOk && equalizationOk && receiverSINROk;
@@ -867,6 +877,79 @@ end
 bitErrors = sum(expectedBits(1:bitsCompared) ~= decodedBits(1:bitsCompared));
 bitErrors = bitErrors + abs(numel(expectedBits) - numel(decodedBits));
 bitsCompared = max(bitsCompared, numel(expectedBits));
+end
+
+function out = localPopulatePUCCHUCIEvidence(out, expectedBits, decodedBits, tx, resolvedFormat)
+expectedBits = localNormalizeUCIBits(expectedBits);
+decodedBits = localNormalizeUCIBits(decodedBits);
+out.ExpectedBits = expectedBits;
+out.DecodedBits = decodedBits;
+out.ExpectedBitCount = double(numel(expectedBits));
+out.DecodedBitCount = double(numel(decodedBits));
+out.PUCCHExpectedBitCount = double(numel(expectedBits));
+out.PUCCHDecodedBitCount = double(numel(decodedBits));
+out.UCIExpectedBitVector = char(localBitVectorString(expectedBits));
+out.UCIDecodedBitVector = char(localBitVectorString(decodedBits));
+out.UCIBitErrorVector = char(localBitErrorVectorString(expectedBits, decodedBits));
+out.UCICodedBitCount = double(localCodedUCIBitCount(tx, resolvedFormat));
+out.UCICRCBitCount = double(localPUCCHUCICRCBitCount(numel(expectedBits), resolvedFormat));
+out.UCICRCApplicable = out.UCICRCBitCount > 0;
+out.CRCApplicable = logical(out.UCICRCApplicable);
+end
+
+function tf = localStatusIsOk(status)
+status = lower(strtrim(string(status)));
+tf = status == "ok" || startsWith(status, "ok_");
+end
+
+function n = localPUCCHUCICRCBitCount(numBits, resolvedFormat)
+numBits = max(0, round(double(numBits)));
+resolvedFormat = round(double(resolvedFormat));
+if isfinite(resolvedFormat) && resolvedFormat >= 2 && numBits >= 12
+    n = 6;
+else
+    n = 0;
+end
+end
+
+function n = localCodedUCIBitCount(tx, resolvedFormat)
+n = NaN;
+if isstruct(tx)
+    codedUCI = sixgr.util.structGet(tx, "CodedUCI", []);
+    if ~isempty(codedUCI)
+        n = double(numel(codedUCI));
+        return;
+    end
+end
+resolvedFormat = round(double(resolvedFormat));
+if isfinite(resolvedFormat) && resolvedFormat <= 1
+    n = 0;
+end
+end
+
+function s = localBitVectorString(bits)
+bits = localNormalizeUCIBits(bits);
+if isempty(bits)
+    s = "";
+else
+    s = "[" + strjoin(string(double(bits(:).')), "|") + "]";
+end
+end
+
+function s = localBitErrorVectorString(expectedBits, decodedBits)
+expectedBits = localNormalizeUCIBits(expectedBits);
+decodedBits = localNormalizeUCIBits(decodedBits);
+n = max(numel(expectedBits), numel(decodedBits));
+if n < 1
+    s = "";
+    return;
+end
+errs = ones(n, 1, "int8");
+nCompare = min(numel(expectedBits), numel(decodedBits));
+if nCompare > 0
+    errs(1:nCompare) = int8(expectedBits(1:nCompare) ~= decodedBits(1:nCompare));
+end
+s = localBitVectorString(errs);
 end
 
 function metric = localResolveDetectionMetric(rx)

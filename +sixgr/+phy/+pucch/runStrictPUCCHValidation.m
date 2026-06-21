@@ -204,14 +204,22 @@ row.FormatAdapted = logical(sixgr.util.structGet(trial, "FormatAdapted", false))
 row.FormatAdaptationReason = string(sixgr.util.structGet(trial, "FormatAdaptationReason", ""));
 row.ExpectedBits = localBitsToString(sixgr.util.structGet(trial, "ExpectedBits", int8([])));
 row.DecodedBits = localBitsToString(sixgr.util.structGet(trial, "DecodedBits", int8([])));
-row.ExpectedBitCount = double(numel(sixgr.util.structGet(trial, "ExpectedBits", int8([]))));
-row.DecodedBitCount = double(numel(sixgr.util.structGet(trial, "DecodedBits", int8([]))));
+expectedBits = localNormalizeBits(sixgr.util.structGet(trial, "ExpectedBits", int8([])));
+decodedBits = localNormalizeBits(sixgr.util.structGet(trial, "DecodedBits", int8([])));
+row.ExpectedBitCount = double(sixgr.util.structGet(trial, "ExpectedBitCount", numel(expectedBits)));
+row.DecodedBitCount = double(sixgr.util.structGet(trial, "DecodedBitCount", numel(decodedBits)));
+row.UCIExpectedBitVector = string(sixgr.util.structGet(trial, "UCIExpectedBitVector", localBitsToDelimitedString(expectedBits)));
+row.UCIDecodedBitVector = string(sixgr.util.structGet(trial, "UCIDecodedBitVector", localBitsToDelimitedString(decodedBits)));
+row.UCIBitErrorVector = string(sixgr.util.structGet(trial, "UCIBitErrorVector", localBitErrorVectorString(expectedBits, decodedBits)));
+row.UCICodedBitCount = double(sixgr.util.structGet(trial, "UCICodedBitCount", localPUCCHUCICodedBitCount(trial, row.ResolvedFormat)));
+row.UCICRCBitCount = double(sixgr.util.structGet(trial, "UCICRCBitCount", localPUCCHUCICRCBitCount(row.ExpectedBitCount, row.ResolvedFormat)));
+row.UCICRCApplicable = logical(sixgr.util.structGet(trial, "UCICRCApplicable", row.UCICRCBitCount > 0));
 row.BitsCompared = double(sixgr.util.structGet(trial, "BitsCompared", NaN));
 row.BitErrors = double(sixgr.util.structGet(trial, "BitErrors", NaN));
 row.UCIContentMatch = logical(sixgr.util.structGet(trial, "UCIContentMatch", false));
 row.ExpectedAck = localFirstBit(sixgr.util.structGet(trial, "ExpectedBits", int8([])));
 row.ObservedAck = logical(sixgr.util.structGet(trial, "AckObserved", false));
-row.CRCApplicable = logical(sixgr.util.structGet(trial, "CRCApplicable", false));
+row.CRCApplicable = logical(sixgr.util.structGet(trial, "CRCApplicable", row.UCICRCApplicable));
 if row.CRCApplicable
     row.CRCPass = double(logical(sixgr.util.structGet(trial, "Ok", false)));
 else
@@ -279,6 +287,7 @@ row.NID0 = localScalarNumeric(localObjectProperty(pucch, "NID0", []));
 row.RNTIOnPUCCHObject = localScalarNumeric(localObjectProperty(pucch, "RNTI", []));
 row.PUCCHRECount = double(numel(sixgr.util.structGet(tx, "PUCCHIndices", [])));
 row.DMRSRECount = double(numel(sixgr.util.structGet(tx, "DMRSIndices", [])));
+row.ReceiverHestSINRApplicable = logical(sixgr.util.structGet(trial, "ReceiverHestSINRApplicable", row.DMRSRECount > 0));
 grid = sixgr.util.structGet(tx, "Grid", []);
 wave = sixgr.util.structGet(tx, "Waveform", []);
 row.GridNonzeroRECount = double(nnz(abs(grid(:)) > 0));
@@ -426,6 +435,8 @@ row = struct( ...
     "RequestedFormat", NaN, "ResolvedFormat", NaN, "PUCCHFormat", NaN, ...
     "FormatAdapted", false, "FormatAdaptationReason", "", ...
     "ExpectedBits", "", "DecodedBits", "", "ExpectedBitCount", NaN, "DecodedBitCount", NaN, ...
+    "UCIExpectedBitVector", "", "UCIDecodedBitVector", "", "UCIBitErrorVector", "", ...
+    "UCICodedBitCount", NaN, "UCICRCBitCount", NaN, "UCICRCApplicable", false, ...
     "BitsCompared", NaN, "BitErrors", NaN, "UCIContentMatch", false, ...
     "ExpectedAck", false, "ObservedAck", false, ...
     "CRCApplicable", false, "CRCPass", NaN, "CRCOutcome", "", ...
@@ -436,7 +447,7 @@ row = struct( ...
     "NoiseVarStrictFailure", false, "ReceiverUsable", false, "DetectionAttempted", false, ...
     "DetectionUsable", false, "FailureReason", "", ...
     "ConfiguredSNR_dB", NaN, "AppliedAWGNSNR_dB", NaN, ...
-    "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", ...
+    "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRApplicable", false, "ReceiverHestSINRSource", "", ...
     "ChannelGain_dB", NaN, "ConditionNumber_dB", NaN, "NumRxAntennas", NaN, "NumTxPorts", NaN, ...
     "AirInterfaceTTI_ms", NaN, "ComputeLatency_ms", NaN, "DecodeLatency_ms", NaN, ...
     "ChannelModel", "", "DopplerHz", NaN, "TimingEstimateUsed", false, "UseIdealTimingSync", false, ...
@@ -469,6 +480,57 @@ if isempty(bits)
     s = "";
 else
     s = string(sprintf("%d", double(bits(:))));
+end
+end
+
+function s = localBitsToDelimitedString(raw)
+bits = localNormalizeBits(raw);
+if isempty(bits)
+    s = "";
+else
+    s = "[" + strjoin(string(double(bits(:).')), "|") + "]";
+end
+end
+
+function s = localBitErrorVectorString(expectedBits, decodedBits)
+expectedBits = localNormalizeBits(expectedBits);
+decodedBits = localNormalizeBits(decodedBits);
+n = max(numel(expectedBits), numel(decodedBits));
+if n < 1
+    s = "";
+    return;
+end
+errs = ones(n, 1, "int8");
+nCompare = min(numel(expectedBits), numel(decodedBits));
+if nCompare > 0
+    errs(1:nCompare) = int8(expectedBits(1:nCompare) ~= decodedBits(1:nCompare));
+end
+s = localBitsToDelimitedString(errs);
+end
+
+function n = localPUCCHUCICRCBitCount(numBits, resolvedFormat)
+numBits = max(0, round(double(numBits)));
+resolvedFormat = round(double(resolvedFormat));
+if isfinite(resolvedFormat) && resolvedFormat >= 2 && numBits >= 12
+    n = 6;
+else
+    n = 0;
+end
+end
+
+function n = localPUCCHUCICodedBitCount(trial, resolvedFormat)
+n = NaN;
+tx = sixgr.util.structGet(trial, "Tx", struct());
+if isstruct(tx)
+    codedUCI = sixgr.util.structGet(tx, "CodedUCI", []);
+    if ~isempty(codedUCI)
+        n = double(numel(codedUCI));
+        return;
+    end
+end
+resolvedFormat = round(double(resolvedFormat));
+if isfinite(resolvedFormat) && resolvedFormat <= 1
+    n = 0;
 end
 end
 
