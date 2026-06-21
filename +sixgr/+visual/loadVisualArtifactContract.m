@@ -156,12 +156,27 @@ elseif any(requiredColumns == "SNR_dB") && any(requiredColumns == "MetricValue")
 elseif any(requiredColumns == "latency_ms") && any(requiredColumns == "cdf_probability")
     xVar = "latency_ms";
     yVar = "cdf_probability";
-elseif any(requiredColumns == "PAPR_dB")
+elseif any(requiredColumns == "Entity") && any(requiredColumns == "PassRate")
+    xVar = "Entity";
+    yVar = "PassRate";
+elseif any(requiredColumns == "CategoryCode") && any(requiredColumns == "MetricCount")
+    xVar = "CategoryCode";
+    yVar = "MetricCount";
+elseif any(requiredColumns == "PAPR_dB") && any(requiredColumns == "CCDF")
     xVar = "PAPR_dB";
-    yVar = "PAPR_dB";
+    yVar = "CCDF";
 elseif any(requiredColumns == "ProcedureDelay_ms")
     xVar = "ProcedureDelay_ms";
     yVar = "ProcedureDelay_ms";
+elseif any(requiredColumns == "successful_bits") && any(requiredColumns == "energy_j")
+    xVar = "successful_bits";
+    yVar = "energy_j";
+elseif any(requiredColumns == "DecoderComplexityUnits") && any(requiredColumns == "PostEqSINR_dB")
+    xVar = "DecoderComplexityUnits";
+    yVar = "PostEqSINR_dB";
+elseif any(requiredColumns == "Feature") && any(requiredColumns == "KPIValue")
+    xVar = "Feature";
+    yVar = "KPIValue";
 elseif any(requiredColumns == "timestamp_sim_ms") && any(requiredColumns == "cumulative_energy_J")
     xVar = "timestamp_sim_ms";
     yVar = "cumulative_energy_J";

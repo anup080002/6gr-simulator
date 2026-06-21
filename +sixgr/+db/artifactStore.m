@@ -453,17 +453,17 @@ if endsWith(folderPath, "reports/image")
         case "gains_losses_waterfall"
             ref = "reports/csv/per_scenario_summary_tables.csv";
         case "papr_ccdf"
-            ref = "reports/csv/energy_efficiency_outputs.csv|air_interface/csv/link_kpis.csv";
+            ref = "reports/csv/papr_ccdf.csv";
         case "latency_cdf"
             ref = "reports/csv/table_latency.csv";
         case "energy_vs_throughput"
-            ref = "reports/csv/energy_efficiency_outputs.csv|reports/csv/per_scenario_summary_tables.csv";
+            ref = "reports/csv/energy_vs_throughput.csv";
         case "complexity_vs_gain"
-            ref = "reports/csv/complexity_implementation_outputs.csv|reports/csv/per_scenario_summary_tables.csv";
+            ref = "reports/csv/complexity_vs_gain.csv";
         case "control_pass_rates"
-            ref = "reports/csv/pdcch_control_outputs.csv|reports/csv/initial_access_random_access_outputs.csv";
+            ref = "reports/csv/control_pass_rates.csv";
         case "metric_coverage_by_category"
-            ref = "reports/csv/output_coverage_registry.csv";
+            ref = "reports/csv/metric_coverage_by_category.csv";
         case "bler_vs_snr"
             ref = "air_interface/csv/lls_snr_sweep.csv";
         case "throughput_vs_snr"
@@ -471,7 +471,7 @@ if endsWith(folderPath, "reports/image")
         case "bler_vs_measured_posteq_sinr_bins_diagnostic"
             ref = "reports/csv/bler_vs_measured_posteq_sinr_bins_diagnostic.csv";
         case {"heatmap_band_feature_kpi", "heatmap_beam_rank_trp_kpi", "heatmap_impairment_kpi"}
-            ref = "reports/csv/per_scenario_summary_tables.csv";
+            ref = "reports/csv/heatmap_band_feature_kpi.csv|reports/csv/heatmap_beam_rank_trp_kpi.csv|reports/csv/heatmap_impairment_kpi.csv";
     end
 end
 end

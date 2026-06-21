@@ -49,6 +49,13 @@ assert(all(ismember(["actual_mime_type","declared_mime_type","extension","sha256
 contracts = sixgr.visual.loadVisualArtifactContract();
 assert(~isempty(contracts) && all(ismember(["PlotId","ImagePath","SourceCSV","RequiredColumns","MinRows","MinUniqueX","MinUniqueY","LLSValidity"], string(fieldnames(contracts)))), ...
     "Canonical visual artifact contract must load with required schema fields.");
+controlSpec = contracts(strcmp(string({contracts.PlotId}), "control_pass_rates"));
+controlSource = table(["PBCH";"PDCCH";"PUCCH";"PRACH"], [1.0;0.75;0.8;1.0], [2;6;4;2], [2;8;5;2], ...
+    repmat("runtime_control_summary", 4, 1), repmat("control_summary", 4, 1), repmat("diagnostic_only", 4, 1), ...
+    'VariableNames', ["Entity","PassRate","PassCount","TrialCount","SourceArtifact","CurveConstruction","truth_status"]);
+controlStatus = sixgr.visual.evaluateVisualArtifactContract(controlSpec, controlSource);
+assert(strcmp(string(controlStatus.PlotRenderStatus), "rendered") && strcmp(string(controlStatus.VisualValidity), "diagnostic_only"), ...
+    "Categorical control-summary plot contracts must validate against category labels and numeric pass rates.");
 
 tmpCleanup = string(tempname);
 cleanupTmpCleanup = onCleanup(@() localRemoveFolder(tmpCleanup)); %#ok<NASGU>

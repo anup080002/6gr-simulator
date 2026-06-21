@@ -112,6 +112,26 @@ try
 catch
     values = str2double(string(raw));
 end
+values = values(:);
+if ~any(isfinite(values))
+    labels = strtrim(string(raw));
+    labels = labels(:);
+    valid = strlength(labels) > 0 & ~ismissing(labels);
+    if any(valid)
+        values = nan(numel(labels), 1);
+        validIdx = find(valid);
+        categories = strings(0, 1);
+        for i = 1:numel(validIdx)
+            label = labels(validIdx(i));
+            pos = find(categories == label, 1);
+            if isempty(pos)
+                categories(end + 1, 1) = label; %#ok<AGROW>
+                pos = numel(categories);
+            end
+            values(validIdx(i)) = double(pos);
+        end
+    end
+end
 end
 
 function [ok, status, reason] = localTruthStatusAllowed(T, spec)

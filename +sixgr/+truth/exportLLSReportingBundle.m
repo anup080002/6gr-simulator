@@ -4274,26 +4274,51 @@ plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Swee
     ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
 if localConfigFlag(ctx, ["output.enable_measured_posteq_sinr_bins_diagnostic_plot", ...
         "output.enable_measured_sinr_bin_diagnostic_plots", ...
-        "reporting.enable_measured_posteq_sinr_bins_diagnostic_plot"], false)
+        "reporting.enable_measured_posteq_sinr_bins_diagnostic_plot"], false) || ...
+        localHasMeasuredPostEqSINRDiagnosticEvidence(ctx)
     plots(end+1, 1) = localPlotMeasuredPostEqSINRBinsDiagnostic(ctx, ctx.Layout.ReportImageDir); %#ok<AGROW>
 end
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "PostEqSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Post-Eq SINR", "Post-equalization SINR (dB)", "BLER", false, true); %#ok<AGROW>
+    "PostEqSINR_dB", "BLER", "bler_vs_sinr.png", "BLER vs Post-Eq SINR", "Post-equalization SINR (dB)", "BLER", false, false); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "PostEqSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Post-Eq SINR", "Post-equalization SINR (dB)", "BER", false, true); %#ok<AGROW>
+    "PostEqSINR_dB", "BER", "ber_vs_sinr.png", "BER vs Post-Eq SINR", "Post-equalization SINR (dB)", "BER", false, false); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "BLER", "BER", "ber_vs_bler.png", "BER vs BLER", "BLER", "BER", true, true); %#ok<AGROW>
+    "BLER", "BER", "ber_vs_bler.png", "BER vs BLER", "BLER", "BER", false, false); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "DerivedEcNo_dB", "BER", "ber_vs_ecno.png", "BER vs Derived Ec/No", "Derived Ec/No (dB)", "BER", false, true); %#ok<AGROW>
+    "DerivedEcNo_dB", "BER", "ber_vs_ecno.png", "BER vs Derived Ec/No", "Derived Ec/No (dB)", "BER", false, false); %#ok<AGROW>
 plots(end+1, 1) = localPlotTrialMetricRelationship(ctx, ctx.Layout.ReportImageDir, ctx.Tables.DL, ctx.Tables.UL, ...
-    "DerivedEcNo_dB", "BLER", "bler_vs_ecno.png", "BLER vs Derived Ec/No", "Derived Ec/No (dB)", "BLER", false, true); %#ok<AGROW>
+    "DerivedEcNo_dB", "BLER", "bler_vs_ecno.png", "BLER vs Derived Ec/No", "Derived Ec/No (dB)", "BLER", false, false); %#ok<AGROW>
 plots(end+1, 1) = localPlotControlPassRates(ctx.Layout.ReportImageDir, ctx); %#ok<AGROW>
-plots(end+1, 1) = localPlotCoverageAvailability(ctx.Layout.ReportImageDir, coverageT); %#ok<AGROW>
+plots(end+1, 1) = localPlotCoverageAvailability(ctx.Layout.ReportImageDir, coverageT, ctx); %#ok<AGROW>
 plots = plots(strlength(plots) > 0);
 end
 
 function tf = localCanRenderReportFigures()
 tf = usejava("jvm");
+end
+
+function tf = localHasMeasuredPostEqSINRDiagnosticEvidence(ctx)
+tf = localTableHasFiniteColumn(ctx.Tables.DL, ["PostEqSINR_dB","PostEqWidebandSINR_dB","MeasuredTrialSINR_dB"]) || ...
+    localTableHasFiniteColumn(ctx.Tables.UL, ["PostEqSINR_dB","PostEqWidebandSINR_dB","MeasuredTrialSINR_dB"]);
+end
+
+function tf = localTableHasFiniteColumn(T, varNames)
+tf = false;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+vars = string(T.Properties.VariableNames);
+varNames = string(varNames);
+for i = 1:numel(varNames)
+    if ~ismember(varNames(i), vars)
+        continue;
+    end
+    values = localCoerceNumericVector(T.(varNames(i)));
+    if any(isfinite(values))
+        tf = true;
+        return;
+    end
+end
 end
 
 function pathOut = localPlotControlledSNRSweep(ctx, imgDir, fileName, plotTitle, yLabel, metricKind)
@@ -4738,7 +4763,7 @@ chartRows = localAppendRelationshipRows(chartRows, ulT, xVar, yVar, "UL");
 chartT = struct2table(chartRows);
 status = sixgr.visual.validatePlotData("relation", localColumnOrEmpty(chartT, "XValue"), localColumnOrEmpty(chartT, "YValue"));
 csvLogicalPath = localReportChartCSVLogicalPath(fileName);
-if istable(chartT) && ~isempty(chartT)
+if istable(chartT)
     sixgr.visual.writeChartSourceCsv(char(ctx.RunFolder), csvLogicalPath, chartT);
 end
 if status.PlotRenderStatus ~= "rendered"
@@ -4784,12 +4809,6 @@ if ~(xAvailable && yAvailable)
     return;
 end
 mask = isfinite(x) & isfinite(y);
-if strcmpi(char(string(yVar)), "BER") || strcmpi(char(string(yVar)), "BLER")
-    mask = mask & y > 0;
-end
-if strcmpi(char(string(xVar)), "BER") || strcmpi(char(string(xVar)), "BLER")
-    mask = mask & x > 0;
-end
 for i = find(mask(:)).'
     rows(end+1, 1) = struct("Direction", string(label), "XValue", double(x(i)), "YValue", double(y(i))); %#ok<AGROW>
 end
@@ -4806,12 +4825,6 @@ if ~(xAvailable && yAvailable)
     return;
 end
 mask = isfinite(x) & isfinite(y);
-if strcmpi(char(string(yVar)), "BER") || strcmpi(char(string(yVar)), "BLER")
-    mask = mask & y > 0;
-end
-if strcmpi(char(string(xVar)), "BER") || strcmpi(char(string(xVar)), "BLER")
-    mask = mask & x > 0;
-end
 if ~any(mask)
     return;
 end
@@ -4882,6 +4895,12 @@ if ismember(token, string(T.Properties.VariableNames))
 end
 
 switch lower(strtrim(token))
+    case "bler"
+        values = localDerivedBLERMetric(T);
+        available = any(isfinite(values));
+    case "ber"
+        values = localDerivedBERMetric(T);
+        available = any(isfinite(values));
     case {"derivedecno_db", "ecno_db", "effectiveecno_db"}
         values = localDerivedEcNoMetric(T);
         available = any(isfinite(values));
@@ -4892,6 +4911,29 @@ switch lower(strtrim(token))
         values = localDerivedEsNoMetric(T);
         available = any(isfinite(values));
 end
+end
+
+function values = localDerivedBLERMetric(T)
+values = localTrialMetricColumn(T, ["BLER","CodeBlockBLER"], NaN);
+if any(isfinite(values))
+    return;
+end
+crc = localTrialMetricColumn(T, "CRCPass", NaN);
+values = nan(size(crc));
+mask = isfinite(crc);
+values(mask) = double(crc(mask) <= 0);
+end
+
+function values = localDerivedBERMetric(T)
+values = localTrialMetricColumn(T, ["BER","RawBER"], NaN);
+if any(isfinite(values))
+    return;
+end
+bitErrors = localTrialMetricColumn(T, "BitErrors", NaN);
+bitsCompared = localTrialMetricColumn(T, "BitsCompared", NaN);
+values = nan(size(bitErrors));
+mask = isfinite(bitErrors) & isfinite(bitsCompared) & bitsCompared > 0;
+values(mask) = bitErrors(mask) ./ bitsCompared(mask);
 end
 
 function values = localDerivedEsNoMetric(T)
@@ -5102,24 +5144,35 @@ function pathOut = localPlotControlPassRates(imgDir, ctx)
 pathOut = "";
 entities = ["PBCH","PDCCH","PUCCH"];
 tables = {ctx.Tables.PBCH, ctx.Tables.PDCCH, ctx.Tables.PUCCH};
+sources = ["air_interface/csv/pbch_trials.csv","air_interface/csv/pdcch_trials.csv","air_interface/csv/pucch_trials.csv"];
 if ~localTruthCasePruned(ctx, "PRACH_Detection")
     entities(end+1) = "PRACH"; %#ok<AGROW>
     tables{end+1} = ctx.Tables.PRACH; %#ok<AGROW>
+    sources(end+1) = "air_interface/csv/prach_trials.csv"; %#ok<AGROW>
 end
 rates = NaN(size(entities));
+passCounts = zeros(size(entities));
+trialCounts = zeros(size(entities));
 for i = 1:numel(entities)
     T = tables{i};
     if istable(T) && ~isempty(T) && ismember("Status", string(T.Properties.VariableNames))
         status = upper(strtrim(string(T.Status)));
         validMask = localObservedStatusMask(status);
         if any(validMask)
-            rates(i) = mean(status(validMask) == "PASS");
+            passCounts(i) = sum(status(validMask) == "PASS");
+            trialCounts(i) = sum(validMask);
+            rates(i) = passCounts(i) ./ max(trialCounts(i), 1);
         end
     end
 end
 if ~any(isfinite(rates))
     return;
 end
+chartT = table(entities(:), rates(:), passCounts(:), trialCounts(:), sources(:), ...
+    repmat("control_summary", numel(entities), 1), repmat("diagnostic_only", numel(entities), 1), ...
+    'VariableNames', ["Entity","PassRate","PassCount","TrialCount","SourceArtifact","CurveConstruction","truth_status"]);
+sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "control_pass_rates.csv"), chartT);
 sixgr.util.ensureFolder(imgDir);
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
@@ -5133,7 +5186,7 @@ pathOut = string(fullfile(imgDir, "control_pass_rates.png"));
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
-function pathOut = localPlotCoverageAvailability(imgDir, coverageT)
+function pathOut = localPlotCoverageAvailability(imgDir, coverageT, ctx)
 pathOut = "";
 if ~(istable(coverageT) && ~isempty(coverageT))
     return;
@@ -5149,6 +5202,23 @@ for i = 1:numel(cats)
     for j = 1:numel(states)
         stateCounts(i, j) = sum(mask & (availLower == statesLower(j)));
     end
+end
+chartRows = repmat(struct("CategoryCode", "", "Availability", "", "MetricCount", NaN, ...
+    "CurveConstruction", "category_rollup", "truth_status", "diagnostic_only"), 0, 1);
+for i = 1:numel(cats)
+    for j = 1:numel(states)
+        chartRows(end + 1, 1) = struct( ... %#ok<AGROW>
+            "CategoryCode", cats(i), ...
+            "Availability", states(j), ...
+            "MetricCount", double(stateCounts(i, j)), ...
+            "CurveConstruction", "category_rollup", ...
+            "truth_status", "diagnostic_only");
+    end
+end
+if ~isempty(chartRows)
+    sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+    sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "metric_coverage_by_category.csv"), ...
+        struct2table(chartRows, "AsArray", true));
 end
 fig = figure("Visible", "off", "Color", "w");
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
@@ -6541,12 +6611,15 @@ sixgr.util.ensureFolder(fileparts(pathOut));
 dlPAPR = localFiniteColumn(ctx.Tables.DL, "PAPR_dB");
 ulPAPR = localFiniteColumn(ctx.Tables.UL, "PAPR_dB");
 if ~isempty(dlPAPR) || ~isempty(ulPAPR)
-    csvPath = regexprep(string(pathOut), "\.png$", ".csv", "ignorecase");
     paprRows = repmat(struct("Direction", "", "PAPR_dB", NaN, "CCDF", NaN), 0, 1);
     paprRows = localAppendPAPRCCDFRows(paprRows, dlPAPR, "DL");
     paprRows = localAppendPAPRCCDFRows(paprRows, ulPAPR, "UL");
     if ~isempty(paprRows)
-        sixgr.util.csvWriteTable(csvPath, struct2table(paprRows));
+        sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+        paprT = struct2table(paprRows, "AsArray", true);
+        paprT.CurveConstruction = repmat("empirical_ccdf", height(paprT), 1);
+        paprT.truth_status = repmat("real_lls_evidence", height(paprT), 1);
+        sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "papr_ccdf.csv"), paprT);
     end
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
@@ -6616,29 +6689,17 @@ localExportPlaceholderFigure(pathOut, "Access Delay CDF", "No true initial-acces
 end
 
 function localPlotEnergyVsThroughputOrPlaceholder(pathOut, ctx)
-x = localFiniteColumn(ctx.Tables.ScenarioSummary, "Throughput_Mbps");
-y = localFiniteColumn(ctx.Tables.ScenarioSummary, "EnergyPerBit_J");
-if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
+chartT = localEnergyVsThroughputChartTable(ctx);
+if istable(chartT) && ~isempty(chartT)
+    sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+    sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "energy_vs_throughput.csv"), chartT);
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
-    scatter(ax, x, y, 36, "filled");
-    xlabel(ax, "Throughput (Mbps)");
-    ylabel(ax, "Energy per bit (J)");
-    title(ax, "Energy vs Throughput");
-    grid(ax, "on");
-    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
-    return;
-end
-[x, y] = localEnergyThroughputPair(ctx);
-if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
-    fig = figure("Visible", "off", "Color", "w");
-    cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
-    ax = axes(fig);
-    scatter(ax, x, y, 42, "filled");
-    xlabel(ax, "Throughput (Mbps)");
-    ylabel(ax, "Energy per bit (J/bit)");
-    title(ax, "Energy vs Throughput");
+    scatter(ax, double(chartT.successful_bits), double(chartT.energy_j), 36, "filled");
+    xlabel(ax, "Successful bits");
+    ylabel(ax, "Cumulative energy (J)");
+    title(ax, "Energy vs Successful Bits");
     grid(ax, "on");
     sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
     return;
@@ -6649,18 +6710,47 @@ end
 localExportPlaceholderFigure(pathOut, "Energy vs Throughput", "No joint energy/throughput samples were emitted by the current LLS path.");
 end
 
-function localPlotComplexityVsGainOrPlaceholder(pathOut, ctx)
-x = localFiniteColumn(ctx.Tables.DL, "DecoderComplexityUnits");
-if isempty(x)
-    x = localFiniteColumn(ctx.Tables.DL, "DecoderIterations");
+function chartT = localEnergyVsThroughputChartTable(ctx)
+chartT = table();
+powerT = localReadOptionalTable(fullfile(ctx.Layout.RFCSVDir, "power_energy_table.csv"));
+if ~(istable(powerT) && ~isempty(powerT))
+    return;
 end
-y = localFiniteColumn(ctx.Tables.DL, "PostEqSINR_dB");
-if ~isempty(x) && ~isempty(y) && numel(x) == numel(y)
+bits = localFiniteColumn(powerT, "useful_bits");
+if isempty(bits)
+    bits = localFiniteColumn(powerT, "successful_bits");
+end
+energy = localFiniteColumn(powerT, "cumulative_energy_J");
+if isempty(energy)
+    energy = localFiniteColumn(powerT, "energy_j");
+end
+if isempty(bits) || isempty(energy)
+    return;
+end
+n = min(numel(bits), numel(energy));
+bits = double(bits(1:n));
+energy = double(energy(1:n));
+mask = isfinite(bits) & bits > 0 & isfinite(energy) & energy >= 0;
+if nnz(mask) < 2
+    return;
+end
+chartT = table(bits(mask), energy(mask), ...
+    repmat("rf/csv/power_energy_table.csv", nnz(mask), 1), ...
+    repmat("runtime_pairs", nnz(mask), 1), ...
+    repmat("real_lls_evidence", nnz(mask), 1), ...
+    'VariableNames', ["successful_bits","energy_j","source_artifact_ref","curve_construction","truth_status"]);
+end
+
+function localPlotComplexityVsGainOrPlaceholder(pathOut, ctx)
+chartT = localComplexityVsGainChartTable(ctx);
+if istable(chartT) && ~isempty(chartT)
+    sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+    sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "complexity_vs_gain.csv"), chartT);
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
-    scatter(ax, x, y, 36, "filled");
-    xlabel(ax, "Decoder complexity");
+    scatter(ax, double(chartT.DecoderComplexityUnits), double(chartT.PostEqSINR_dB), 36, "filled");
+    xlabel(ax, "Decoder complexity units");
     ylabel(ax, "Post-equalization SINR (dB)");
     title(ax, "Complexity vs Gain");
     grid(ax, "on");
@@ -6673,12 +6763,54 @@ end
 localExportPlaceholderFigure(pathOut, "Complexity vs Gain", "No complexity/gain sample pairs were emitted by the current LLS path.");
 end
 
+function chartT = localComplexityVsGainChartTable(ctx)
+rows = repmat(struct("Direction", "", "DecoderComplexityUnits", NaN, "PostEqSINR_dB", NaN, ...
+    "SourceArtifact", "", "CurveConstruction", "runtime_pairs", "truth_status", "diagnostic_only"), 0, 1);
+rows = localAppendComplexityGainRows(rows, ctx.Tables.DL, "DL", "air_interface/csv/dl_pdsch_trials.csv");
+rows = localAppendComplexityGainRows(rows, ctx.Tables.UL, "UL", "air_interface/csv/ul_pusch_trials.csv");
+if isempty(rows)
+    chartT = table();
+else
+    chartT = struct2table(rows, "AsArray", true);
+end
+end
+
+function rows = localAppendComplexityGainRows(rows, T, direction, sourceArtifact)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+vars = string(T.Properties.VariableNames);
+if ismember("DecoderComplexityUnits", vars)
+    x = localCoerceNumericVector(T.DecoderComplexityUnits);
+elseif ismember("NormalizedDecoderComplexity", vars)
+    x = localCoerceNumericVector(T.NormalizedDecoderComplexity);
+elseif ismember("DecoderIterations", vars)
+    x = localCoerceNumericVector(T.DecoderIterations);
+else
+    return;
+end
+y = localTrialMetricColumn(T, ["PostEqSINR_dB","MeasuredTrialSINR_dB","MeasuredSINR_dB"], NaN);
+n = min(numel(x), numel(y));
+x = double(x(1:n));
+y = double(y(1:n));
+mask = isfinite(x) & isfinite(y);
+for i = find(mask(:)).'
+    rows(end + 1, 1) = struct( ... %#ok<AGROW>
+        "Direction", string(direction), ...
+        "DecoderComplexityUnits", double(x(i)), ...
+        "PostEqSINR_dB", double(y(i)), ...
+        "SourceArtifact", string(sourceArtifact), ...
+        "CurveConstruction", "runtime_pairs", ...
+        "truth_status", "diagnostic_only");
+end
+end
+
 function localPlotBandFeatureKPIHeatmapPlaceholder(pathOut, ctx, coverageT)
 values = [ ...
-    localMeanColumn(ctx.Tables.Sweep, "DL_Throughput_Mbps"), ...
-    localMeanColumn(ctx.Tables.Sweep, "UL_Throughput_Mbps"), ...
-    localMeanColumn(ctx.Tables.Sweep, "DL_BLER"), ...
-    localMeanColumn(ctx.Tables.Sweep, "UL_BLER"), ...
+    localRuntimeTrialThroughputMean(ctx.Tables.DL), ...
+    localRuntimeTrialThroughputMean(ctx.Tables.UL), ...
+    localRuntimeTrialBLERMean(ctx.Tables.DL), ...
+    localRuntimeTrialBLERMean(ctx.Tables.UL), ...
     localMeanColumn(ctx.Tables.SRS, "NMSE_dB"), ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "beam_index_hit_rate"), ...
     localProbeMetricScalar(ctx.Tables.HARQSummary, "rtt_distribution"), ...
@@ -6688,6 +6820,7 @@ rowLabel = string(ctx.ScenarioConfig.get("global_radio_scope.frequency_range_lab
 if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
+localWriteHeatmapSource(ctx, "heatmap_band_feature_kpi.csv", rowLabel, labels, values, "summary_heatmap");
 localExportNamedHeatmap(pathOut, "Band vs Feature vs KPI", labels, rowLabel, values, ...
     "Single-run band/feature/KPI snapshot built from actual run data.");
 end
@@ -6698,8 +6831,8 @@ if rowLabel == ""
     rowLabel = "single_run";
 end
 values = [ ...
-    localMeanColumn(ctx.Tables.Sweep, "DL_BLER"), ...
-    localMeanColumn(ctx.Tables.Sweep, "UL_BLER"), ...
+    localRuntimeTrialBLERMean(ctx.Tables.DL), ...
+    localRuntimeTrialBLERMean(ctx.Tables.UL), ...
     localMeanColumn(ctx.Tables.SRS, "NMSE_dB"), ...
     localRMSEAcrossTables({ctx.Tables.PBCH, ctx.Tables.DL, ctx.Tables.UL}, "CFOError_Hz"), ...
     localRMSEAcrossTables({ctx.Tables.PBCH, ctx.Tables.DL, ctx.Tables.UL}, "TimingError_samples"), ...
@@ -6710,6 +6843,7 @@ labels = ["DL BLER","UL BLER","SRS NMSE","CFO RMSE","TO RMSE","Doppler RMSE","Mi
 if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
+localWriteHeatmapSource(ctx, "heatmap_impairment_kpi.csv", rowLabel, labels, values, "summary_heatmap");
 localExportNamedHeatmap(pathOut, "Impairment vs KPI", labels, rowLabel, values, ...
     "No impairment-linked KPI snapshot was emitted by the current LLS path.");
 end
@@ -6729,17 +6863,47 @@ values = [ ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "beam_index_hit_rate"), ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "top_k_beam_hit_rate"), ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "beam_switch_latency"), ...
-    localMeanColumn(ctx.Tables.Sweep, "DL_Throughput_Mbps"), ...
-    localMeanColumn(ctx.Tables.Sweep, "UL_Throughput_Mbps"), ...
-    localMeanColumn(ctx.Tables.Sweep, "DL_BLER"), ...
-    localMeanColumn(ctx.Tables.Sweep, "UL_BLER"), ...
+    localRuntimeTrialThroughputMean(ctx.Tables.DL), ...
+    localRuntimeTrialThroughputMean(ctx.Tables.UL), ...
+    localRuntimeTrialBLERMean(ctx.Tables.DL), ...
+    localRuntimeTrialBLERMean(ctx.Tables.UL), ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "mtrp_beam_selection_gain")];
 labels = ["Beam Hit","Top-K Hit","Switch Lat","DL Thr","UL Thr","DL BLER","UL BLER","mTRP Gain"];
 if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
+localWriteHeatmapSource(ctx, "heatmap_beam_rank_trp_kpi.csv", rowLabel, labels, values, "summary_heatmap");
 localExportNamedHeatmap(pathOut, "Beam/Rank/TRP vs KPI", labels, rowLabel, values, ...
     "No beam/rank/TRP KPI snapshot was emitted by the current LLS path.");
+end
+
+function localWriteHeatmapSource(ctx, fileName, rowLabel, labels, values, curveConstruction)
+labels = string(labels(:));
+values = double(values(:));
+n = min(numel(labels), numel(values));
+labels = labels(1:n);
+values = values(1:n);
+T = table(repmat(string(rowLabel), n, 1), labels, values, ...
+    repmat(string(curveConstruction), n, 1), repmat("diagnostic_only", n, 1), ...
+    'VariableNames', ["RowLabel","Feature","KPIValue","CurveConstruction","truth_status"]);
+sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, fileName), T);
+end
+
+function value = localRuntimeTrialThroughputMean(T)
+value = localMeanColumnFallback(T, ["Goodput_Mbps","OfferedThroughput_Mbps","Throughput_Mbps"]);
+end
+
+function value = localRuntimeTrialBLERMean(T)
+value = localMeanColumn(T, "BLER");
+if isfinite(value)
+    return;
+end
+crc = localFiniteColumn(T, "CRCPass");
+if isempty(crc)
+    return;
+end
+value = mean(double(crc(:) <= 0), "omitnan");
 end
 
 function localWriteExecutiveSummary(filePath, ctx, coverageT, rows, plots)
