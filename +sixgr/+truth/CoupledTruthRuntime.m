@@ -1396,6 +1396,8 @@ methods(Static, Access=private)
             latest.OuterLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "OuterLoopEnabled", false));
             latest.InnerLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "InnerLoopEnabled", false));
             latest.LinkAdaptationStateUpdateCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LinkAdaptationStateUpdateCount", NaN));
+            latest.FeedbackSourceSignal = char(rowDirection + "_CSI_REPORT");
+            latest.FeedbackCRCPass = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRCPass", NaN));
             if rowDirection == "UL"
                 state.LatestULFeedback(ueIdx) = latest;
             else
@@ -2686,28 +2688,50 @@ methods(Static, Access=private)
             modulation = string(modFromCQI);
             targetCodeRate = double(rateFromCQI);
         end
+        srsWidebandMCSUsable = sixgr.truth.CoupledTruthRuntime.srsWidebandMCSUsableForScheduling( ...
+            row, state.CfgMobility);
         if ueIdx <= numel(state.LatestULFeedback)
             latest = state.LatestULFeedback(ueIdx);
         else
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
         end
+        protectDataMCS = sixgr.truth.CoupledTruthRuntime.shouldPreserveRecentULDataMCS( ...
+            latest, mcsIndex, slotIdx, state.CfgMobility);
         latest.Valid = true;
         latest.Direction = "UL";
-        latest.Slot = double(slotIdx);
-        if isfinite(sinrDb)
+        if ~protectDataMCS
+            latest.Slot = double(slotIdx);
+            if srsWidebandMCSUsable
+                latest.FeedbackSourceSignal = "SRS";
+            else
+                latest.FeedbackSourceSignal = "SRS_PARTIAL_BAND_RI_TPMI_ONLY";
+            end
+            latest.FeedbackCRCPass = NaN;
+            if srsWidebandMCSUsable
+                latest.MCSSelectionSource = "feedback_cqi_derived_reference";
+                latest.MCSValueStatus = "measured_cqi_mapped";
+            else
+                latest.MCSSelectionSource = "srs_partial_bandwidth_not_wideband_mcs";
+                latest.MCSValueStatus = "unavailable_srs_partial_bandwidth_not_wideband";
+            end
+        end
+        if isfinite(sinrDb) && ~protectDataMCS && srsWidebandMCSUsable
             latest.SINR_dB = double(sinrDb);
         end
-        if isfinite(cqi) && cqi > 0
+        if isfinite(cqi) && cqi > 0 && ~protectDataMCS && srsWidebandMCSUsable
             latest.CQI = double(cqi);
         end
-        if isfinite(mcsIndex) && mcsIndex >= 0
+        if isfinite(mcsIndex) && mcsIndex >= 0 && ~protectDataMCS && srsWidebandMCSUsable
             latest.MCSIndex = double(round(mcsIndex));
+            latest.RawCQIDerivedMCS = double(round(mcsIndex));
         end
-        if isfinite(targetCodeRate) && targetCodeRate > 0
+        if isfinite(targetCodeRate) && targetCodeRate > 0 && ~protectDataMCS && srsWidebandMCSUsable
             latest.TargetCodeRate = double(targetCodeRate);
+            latest.RawCQIDerivedTargetCodeRate = double(targetCodeRate);
         end
-        if strlength(strtrim(modulation)) > 0
+        if strlength(strtrim(modulation)) > 0 && ~protectDataMCS && srsWidebandMCSUsable
             latest.Modulation = char(modulation);
+            latest.RawCQIDerivedModulation = char(modulation);
         end
         if isfinite(ri)
             latest.RI = double(max(1, round(ri)));
@@ -2736,11 +2760,24 @@ methods(Static, Access=private)
             dlLatest.Valid = true;
             dlLatest.Direction = "DL";
             dlLatest.Slot = double(slotIdx);
-            if isfinite(sinrDb)
+            if srsWidebandMCSUsable
+                dlLatest.FeedbackSourceSignal = "SRS_RECIPROCITY";
+            else
+                dlLatest.FeedbackSourceSignal = "SRS_RECIPROCITY_PARTIAL_BAND_RI_TPMI_ONLY";
+            end
+            dlLatest.FeedbackCRCPass = NaN;
+            if srsWidebandMCSUsable
+                dlLatest.MCSSelectionSource = "feedback_cqi_derived_reference";
+                dlLatest.MCSValueStatus = "measured_cqi_mapped";
+            else
+                dlLatest.MCSSelectionSource = "srs_partial_bandwidth_not_wideband_mcs";
+                dlLatest.MCSValueStatus = "unavailable_srs_partial_bandwidth_not_wideband";
+            end
+            if isfinite(sinrDb) && srsWidebandMCSUsable
                 dlLatest.SINR_dB = double(sinrDb);
             end
             dlCqi = cqi;
-            if isfinite(sinrDb)
+            if isfinite(sinrDb) && srsWidebandMCSUsable
                 try
                     dlCqiFeedback = sixgr.link.resolveWidebandCQI( ...
                         struct("WidebandSINR_dB", double(sinrDb)), state.CfgMobility, "DL");
@@ -2752,13 +2789,16 @@ methods(Static, Access=private)
                 catch
                 end
             end
-            if isfinite(dlCqi) && dlCqi > 0
+            if isfinite(dlCqi) && dlCqi > 0 && srsWidebandMCSUsable
                 dlLatest.CQI = double(dlCqi);
                 [dlMod, dlRate, dlMCS] = sixgr.link.amcFromCQI(dlCqi, "", NaN, state.CfgMobility, "DL");
                 if isfinite(dlMCS) && dlMCS >= 0
                     dlLatest.MCSIndex = double(round(dlMCS));
                     dlLatest.Modulation = char(string(dlMod));
                     dlLatest.TargetCodeRate = double(dlRate);
+                    dlLatest.RawCQIDerivedMCS = double(round(dlMCS));
+                    dlLatest.RawCQIDerivedModulation = char(string(dlMod));
+                    dlLatest.RawCQIDerivedTargetCodeRate = double(dlRate);
                 end
             end
             if isfinite(ri)
@@ -2773,6 +2813,62 @@ methods(Static, Access=private)
                 dlLatest.ServingCell = double(servingCell);
             end
             state.LatestDLFeedback(ueIdx) = dlLatest;
+        end
+    end
+
+    function tf = srsWidebandMCSUsableForScheduling(row, cfg)
+        tf = true;
+        status = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+            ["SRSBandwidthCoverageStatus","BandwidthCoverageStatus"], ""))));
+        fraction = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["SRSBandwidthFraction","BandwidthCoverageFraction"], NaN);
+        occupiedPRB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["SRSOccupiedPRBCount","SRSBandwidthPRBCount"], NaN);
+        carrierPRB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["SRSCarrierPRBCount","CarrierPRBCount"], NaN);
+        if ~(isfinite(fraction)) && isfinite(occupiedPRB) && isfinite(carrierPRB) && carrierPRB > 0
+            fraction = double(occupiedPRB) / max(double(carrierPRB), eps);
+        end
+        minFraction = double(sixgr.util.structGet(cfg, ...
+            "phy.srs.minWidebandCoverageFractionForMCS", ...
+            sixgr.util.structGet(cfg, "phy.linkAdaptation.minSRSWidebandCoverageFraction", 0.8)));
+        if ~(isfinite(minFraction) && minFraction > 0 && minFraction <= 1)
+            minFraction = 0.8;
+        end
+        if strlength(status) > 0 && (contains(status, "partial") || contains(status, "narrow"))
+            tf = false;
+        end
+        if isfinite(fraction) && fraction < minFraction
+            tf = false;
+        end
+    end
+
+    function tf = shouldPreserveRecentULDataMCS(latest, srsMCSIndex, slotIdx, cfg)
+        tf = false;
+        if ~(isstruct(latest) && logical(sixgr.util.structGet(latest, "Valid", false)))
+            return;
+        end
+        sourceSignal = upper(strtrim(string(sixgr.util.structGet(latest, "FeedbackSourceSignal", ""))));
+        if ~any(sourceSignal == ["UL_CSI_REPORT", "PUSCH", "UL_PUSCH"])
+            return;
+        end
+        latestMCS = double(sixgr.util.structGet(latest, "MCSIndex", NaN));
+        if ~(isfinite(latestMCS) && latestMCS >= 0)
+            return;
+        end
+        latestSlot = double(sixgr.util.structGet(latest, "Slot", NaN));
+        ageSlots = double(slotIdx) - latestSlot;
+        maxAgeSlots = double(sixgr.util.structGet(cfg, ...
+            "phy.linkAdaptation.ulPUSCHFeedbackMaxAgeSlots", ...
+            sixgr.util.structGet(cfg, "phy.linkAdaptation.ulDataFeedbackMaxAgeSlots", 20)));
+        if ~(isfinite(ageSlots) && ageSlots >= 0 && isfinite(maxAgeSlots) && ageSlots <= maxAgeSlots)
+            return;
+        end
+        srsMCSIndex = double(srsMCSIndex);
+        crcPass = double(sixgr.util.structGet(latest, "FeedbackCRCPass", NaN));
+        dataFailed = isfinite(crcPass) && crcPass == 0;
+        if dataFailed || ~(isfinite(srsMCSIndex) && srsMCSIndex < latestMCS)
+            tf = true;
         end
     end
 
@@ -3871,7 +3967,12 @@ methods(Static, Access=private)
         selectionSource = strtrim(string(sixgr.util.structGet(feedback, "MCSSelectionSource", "")));
         if useFeedbackDecision
             if strlength(selectionSource) == 0
-                selectionSource = "runtime_link_adaptation_decision";
+                sourceSignal = upper(strtrim(string(sixgr.util.structGet(feedback, "FeedbackSourceSignal", ""))));
+                if any(sourceSignal == ["SRS", "SRS_RECIPROCITY"])
+                    selectionSource = "feedback_cqi_derived_reference";
+                else
+                    selectionSource = "runtime_link_adaptation_decision";
+                end
             end
             grant.MCSValueStatus = char(string(sixgr.util.structGet(feedback, "MCSValueStatus", "measured_feedback_adapted")));
         else
@@ -3986,6 +4087,8 @@ methods(Static, Access=private)
             latest.OuterLoopEnabled = report.OuterLoopEnabled;
             latest.InnerLoopEnabled = report.InnerLoopEnabled;
             latest.LinkAdaptationStateUpdateCount = report.LinkAdaptationStateUpdateCount;
+            latest.FeedbackSourceSignal = char(upper(string(direction)) + "_CSI_REPORT");
+            latest.FeedbackCRCPass = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRCPass", NaN));
             if upper(string(direction)) == "UL"
                 state.LatestULFeedback(ueIdx) = latest;
             else
@@ -6896,7 +6999,8 @@ methods(Static, Access=private)
             "BootstrapCQISource", "", "PreviewSINR_dB", NaN, ...
             "PreviewCQI", NaN, "PreviewMCSIndex", NaN, ...
             "PreviewModulation", "", "PreviewTargetCodeRate", NaN, ...
-            "PreviewCQISource", "", "BootstrapCQIUsableForScheduling", false);
+            "PreviewCQISource", "", "BootstrapCQIUsableForScheduling", false, ...
+            "FeedbackSourceSignal", "", "FeedbackCRCPass", NaN);
     end
 
     function row = emptyReceiverTrackingStateRow()

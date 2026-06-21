@@ -59,7 +59,12 @@ if strlength(string(matlabProbe.Version)) > 0
     info.PythonVersion = char(string(matlabProbe.Version));
 end
 
-if info.MATLABPyYAMLAvailable
+% On Windows the embedded MATLAB Python bridge can native-crash while
+% parsing large YAML files. Prefer the external process boundary when it is
+% available; it uses the same PyYAML parser without risking MATLAB state.
+if ispc && info.ExternalPyYAMLAvailable
+    info.LoaderBackend = "external_python";
+elseif info.MATLABPyYAMLAvailable
     info.LoaderBackend = "matlab_pyrun";
 elseif info.ExternalPyYAMLAvailable
     info.LoaderBackend = "external_python";

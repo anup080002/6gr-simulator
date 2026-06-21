@@ -288,6 +288,10 @@ end
 
 % Extract resources
 [rxSym, hestSym] = nrExtractResources(puschInd, rxGrid, Hest);
+[hestSymForSINR, sinrProjectionInfo] = localProjectPUSCHHestToLayerDomain(hestSym, pusch);
+if ~logical(sinrProjectionInfo.Applied)
+    hestSymForSINR = hestSym;
+end
 
 % Equalize
 [equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL");
@@ -313,28 +317,15 @@ try
 catch
     numLayersForSINR = min(size(hestSym, 2), max(1, size(hestSym, 3)));
 end
-sinrProjectionInfo = localPUSCHProjectionInfo("not_applicable");
 try
     [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
-        hestSym, nVar, ...
+        hestSymForSINR, nVar, ...
         "Method", char(lower(string(equalizerAlg))), ...
         "Rint", Rint, ...
         "Layers", double(numLayersForSINR), ...
         "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
-    if ~isfinite(double(postEqSINR_dB))
-        [hestSymForSINR, projectedInfo] = localProjectPUSCHHestToLayerDomain(hestSym, pusch);
-        if logical(projectedInfo.Applied)
-            [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
-                hestSymForSINR, nVar, ...
-                "Method", char(lower(string(equalizerAlg))), ...
-                "Rint", Rint, ...
-                "Layers", double(numLayersForSINR), ...
-                "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
-            sinrProjectionInfo = projectedInfo;
-            postEqSINRInfo.Source = "post_equalization_sinr_from_pusch_codebook_effective_channel";
-        else
-            sinrProjectionInfo = projectedInfo;
-        end
+    if logical(sinrProjectionInfo.Applied)
+        postEqSINRInfo.Source = "post_equalization_sinr_from_pusch_codebook_effective_channel";
     end
     postEqSINRInfo.PUSCHCodebookProjectionApplied = logical(sinrProjectionInfo.Applied);
     postEqSINRInfo.PUSCHCodebookProjectionStatus = char(string(sinrProjectionInfo.Status));
@@ -359,14 +350,15 @@ catch ME
         "PUSCHCodebookProjectionTPMI", double(sinrProjectionInfo.TPMI));
 end
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
-[nVarDecode, nVarDecodeInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
+[nVarPostEqDiagnostic, nVarPostEqInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
     "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
     "PostEqSINR_dB", postEqSINR_dB, ...
     "CSI", csi);
+[nVarForDecode, nVarDecodeInfo] = localResolvePUSCHDecoderNoiseVariance(nVar, ...
+    nVarPostEqDiagnostic, nVarPostEqInfo, cfg);
 
 % Decode PUSCH to codeword LLR
 puschRxSym = [];
-nVarForDecode = double(nVarDecode);
 if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
     nVarForDecode = double(nVar);
 end
@@ -490,11 +482,11 @@ rx.NoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatu
 rx.NoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", noiseStatus.Source)));
 rx.NoiseVarReason = char(string(sixgr.util.structGet(nVarDecodeInfo, "NAReason", noiseStatus.Reason)));
 rx.NoiseVarStrictFailure = false;
-rx.NoiseVarDomain = "post_equalization_decoder_symbol_domain";
+rx.NoiseVarDomain = char(string(sixgr.util.structGet(nVarDecodeInfo, "Domain", "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode")));
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
 rx.DecoderNoiseVar = double(nVarForDecode);
-rx.PostEqualizationNoiseVar = double(nVarDecode);
+rx.PostEqualizationNoiseVar = double(nVarPostEqDiagnostic);
 rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
 rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
 rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
@@ -559,7 +551,7 @@ rx.ULSCHDecodeAttempted = true;
 rx.ULSCHDecodeAvailable = ~isempty(tbBits) || ~isempty(decCbs) || ~isempty(recLLR);
 rx.LLRAvailable = ~isempty(cwLLRForULSCH);
 rx.LLRFinite = ~isempty(cwLLRForULSCH) && all(isfinite(double(cwLLRForULSCH(:))));
-rx.LLRScaleSource = "nrPUSCHDecode_noise_variance_plus_equalizer_csi_weights";
+rx.LLRScaleSource = "nrPUSCHDecode_decoder_noise_variance_plus_equalizer_csi_weights";
 rx.LLRNoiseVariance = double(nVarForDecode);
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
@@ -633,7 +625,8 @@ info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = noiseStatus;
 info.HARQSoftCombining = harqCombiningInfo;
 info.PreEqualizationNoiseVariance = double(nVar);
-info.PostEqualizationNoiseVariance = nVarDecodeInfo;
+info.PostEqualizationNoiseVariance = nVarPostEqInfo;
+info.DecoderNoiseVariance = nVarDecodeInfo;
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
@@ -1167,6 +1160,77 @@ info = struct( ...
     "TPMI", NaN, ...
     "NumPorts", NaN, ...
     "NumLayers", NaN);
+end
+
+function [nVarForDecode, info] = localResolvePUSCHDecoderNoiseVariance(nVarPreEq, nVarPostEq, postInfo, cfg)
+% Keep nrPUSCHDecode aligned with the 5G Toolbox receiver chain: the
+% demapper receives the channel-estimator noise variance, while per-RE CSI
+% weights carry reliability variation after equalization.
+pre = double(localScalarOrNaN(nVarPreEq));
+post = double(localScalarOrNaN(nVarPostEq));
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.decoderNoiseVarianceSource", ...
+    sixgr.util.structGet(cfg, "phy.rx.puschDecoderNoiseVarianceSource", "pre_equalization")))));
+if strlength(mode) == 0
+    mode = "pre_equalization";
+end
+
+postSource = char(string(sixgr.util.structGet(postInfo, "Source", "")));
+postMethod = char(string(sixgr.util.structGet(postInfo, "ReductionMethod", "")));
+postSampleCount = double(sixgr.util.structGet(postInfo, "SampleCount", 0));
+info = struct( ...
+    "ValueStatus", "unavailable", ...
+    "Source", "pusch_decoder_noise_variance_unavailable", ...
+    "ValueRole", "pusch_decoder_llr_noise_variance", ...
+    "NAReason", "invalid_noise_variance", ...
+    "PreEqualizationNoiseVar", double(pre), ...
+    "PostEqualizationNoiseVar", double(post), ...
+    "ReductionMethod", "", ...
+    "SampleCount", 0, ...
+    "ConfiguredMode", char(mode), ...
+    "PostEqualizationDiagnosticSource", postSource, ...
+    "PostEqualizationDiagnosticReductionMethod", postMethod, ...
+    "PostEqualizationDiagnosticSampleCount", double(postSampleCount), ...
+    "Domain", "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode");
+
+usePost = any(mode == ["post_equalization", "post_equalization_sinr", "posteq", "legacy_post_equalization"]);
+if usePost && localValidNoiseScalar(post)
+    nVarForDecode = double(post);
+    info.ValueStatus = "OK";
+    info.Source = "post_equalization_sinr_decoder_noise_variance_configured";
+    info.NAReason = "";
+    info.ReductionMethod = postMethod;
+    info.SampleCount = double(max(postSampleCount, 1));
+    info.Domain = "post_equalization_decoder_symbol_domain";
+    return;
+end
+
+if localValidNoiseScalar(pre)
+    nVarForDecode = double(pre);
+    info.ValueStatus = "OK";
+    info.Source = "pre_equalization_channel_estimator_noise_variance";
+    info.NAReason = "";
+    info.ReductionMethod = "identity_pre_equalization_noise_variance";
+    info.SampleCount = 1;
+    return;
+end
+
+if localValidNoiseScalar(post)
+    nVarForDecode = double(post);
+    info.ValueStatus = "OK";
+    info.Source = "post_equalization_sinr_decoder_noise_variance_pre_equalization_unavailable";
+    info.NAReason = "";
+    info.ReductionMethod = postMethod;
+    info.SampleCount = double(max(postSampleCount, 1));
+    info.Domain = "post_equalization_decoder_symbol_domain";
+    return;
+end
+
+nVarForDecode = double(max(eps, realmin));
+end
+
+function tf = localValidNoiseScalar(value)
+value = double(value);
+tf = isscalar(value) && isfinite(value) && value > 0;
 end
 
 function [Wlayer, status] = localPUSCHCodebookProjectionMatrix(nLayers, nPorts, tpmi)
