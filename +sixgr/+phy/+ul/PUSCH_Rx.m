@@ -372,7 +372,7 @@ end
 if iscell(cwLLR)
     cwLLR = cwLLR{1};
 end
-cwLLR = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation);
+[cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation, postEqSINR_dB);
 expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
 [cwLLRForULSCH, uciOnPUSCH] = localDemultiplexHARQACKFromPUSCH( ...
     cwLLR, pusch, targetCodeRate, trBlkSize, expectedHARQACKBits);
@@ -551,7 +551,13 @@ rx.ULSCHDecodeAttempted = true;
 rx.ULSCHDecodeAvailable = ~isempty(tbBits) || ~isempty(decCbs) || ~isempty(recLLR);
 rx.LLRAvailable = ~isempty(cwLLRForULSCH);
 rx.LLRFinite = ~isempty(cwLLRForULSCH) && all(isfinite(double(cwLLRForULSCH(:))));
-rx.LLRScaleSource = "nrPUSCHDecode_decoder_noise_variance_plus_equalizer_csi_weights";
+rx.LLRScaleSource = "nrPUSCHDecode_decoder_noise_variance_plus_" + string(llrCSIInfo.Source);
+rx.LLRCSIWeightApplied = logical(llrCSIInfo.Applied);
+rx.LLRCSIWeightStatus = char(string(llrCSIInfo.Status));
+rx.LLRCSIWeightInputKind = char(string(llrCSIInfo.InputKind));
+rx.LLRCSIWeightRawMedian = double(llrCSIInfo.RawCSIMedian);
+rx.LLRCSIWeightMedianBeforeNormalization = double(llrCSIInfo.WeightMedianBeforeNormalization);
+rx.LLRCSIWeightNormalizationScale = double(llrCSIInfo.NormalizationScale);
 rx.LLRNoiseVariance = double(nVarForDecode);
 rx.EqualizedSymbolsForEvidence = eqSym;
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
@@ -1505,46 +1511,9 @@ catch ME
 end
 end
 
-function llrOut = localApplyCSIToCodewordLLR(llrIn, csi, modScheme)
-% 5G Toolbox decoders expect equalizer reliability to weight codeword LLRs.
-llrOut = double(llrIn(:));
-if isempty(csi)
-    return;
-end
-try
-    csiCW = nrLayerDemap(csi);
-    if iscell(csiCW)
-        csiVec = csiCW{1};
-    else
-        csiVec = csiCW;
-    end
-catch
-    csiVec = csi;
-end
-csiVec = double(real(csiVec(:)));
-csiVec(~isfinite(csiVec) | csiVec < 0) = 0;
-if isempty(csiVec) || ~any(csiVec > 0)
-    return;
-end
-csiVec = localCSIToReliabilityWeights(csiVec);
-qm = max(1, round(double(localQm(modScheme))));
-if numel(csiVec) * qm == numel(llrOut)
-    weights = repelem(csiVec, qm);
-elseif numel(csiVec) == numel(llrOut)
-    weights = csiVec;
-else
-    return;
-end
-llrOut = llrOut .* weights;
-end
-
-function weights = localCSIToReliabilityWeights(csiVec)
-weights = double(csiVec(:));
-if any(weights > 1 + sqrt(eps))
-    weights = weights ./ max(1 + weights, eps);
-else
-    weights = min(max(weights, 0), 1);
-end
+function [llrOut, info] = localApplyCSIToCodewordLLR(llrIn, csi, modScheme, postEqSINR_dB)
+[llrOut, info] = sixgr.phy.rx.applyCSIToCodewordLLR(llrIn, csi, modScheme, ...
+    "PostEqSINR_dB", postEqSINR_dB);
 end
 
 function x = localEnsureLLRBatch(xIn)

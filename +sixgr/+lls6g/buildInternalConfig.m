@@ -535,8 +535,12 @@ elseif linkAdaptationUsesFixedMCS && (strlength(explicitPDSCHMCSMode) == 0 || ex
     cfg.pdsch6gr.MCSMode = 'fixed';
 end
 cfg.pdsch6gr.FixedMCSActive = logical(linkAdaptationUsesFixedMCS);
-dlConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, "modulation.dl_mcs_index", NaN));
-ulConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, "modulation.ul_mcs_index", NaN));
+dlConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, ...
+    "modulation_and_mapping.dl_mcs_index", localGetNested(s, "modulation.dl_mcs_index", NaN)));
+ulConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, ...
+    "modulation_and_mapping.ul_mcs_index", localGetNested(s, "modulation.ul_mcs_index", NaN)));
+dlMCSTable = localResolveDirectionalMCSTable(s, "DL");
+ulMCSTable = localResolveDirectionalMCSTable(s, "UL");
 dlLayerCount = localNumericScalarOrNaN(localGetNested(s, "mimo.max_dl_layers", s.mimo.n_layers));
 if ~(isfinite(dlLayerCount) && dlLayerCount >= 1)
     dlLayerCount = max(1, round(double(s.mimo.n_layers)));
@@ -562,7 +566,7 @@ cfg.phy.pdsch.dmrs.additionalPositions = double(localGetNested(s, "reference_sig
 cfg.phy.pdsch.dmrs.maxLength = double(localGetNested(s, "reference_signals.pdsch_dmrs_max_length", 1));
 cfg.phy.pdsch.configuredMCSIndex = dlConfiguredMCSIndex;
 cfg.phy.pdsch.mcsIndex = dlConfiguredMCSIndex;
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", char(string(s.modulation.mcs_table)));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", char(dlMCSTable));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.nPorts", double(s.reference_signals.pdsch_dmrs_ports));
 
 cfg.phy.csirs.enable = logical(s.reference_signals.csi_rs_enabled);
@@ -744,7 +748,7 @@ cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", double(ulLayerCount));
 cfg.phy.pusch.transformPrecoding = logical(s.waveform.transform_precoding_enabled);
 cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
-cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(string(s.modulation.mcs_table)));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(ulMCSTable));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.nPorts", double(s.reference_signals.pusch_dmrs_ports));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.typeApos", double(localGetNested(s, "reference_signals.pusch_dmrs_type_a_position", 2)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.configType", double(localGetNested(s, "reference_signals.pusch_dmrs_config_type", ...
@@ -2091,7 +2095,8 @@ end
 end
 
 function modStr = localResolveULModulation(s)
-modStr = string(localOrderToModulation(double(s.modulation.ul_modulation_order)));
+modStr = string(localOrderToModulation(double(localResolveDirectionalModulationOrder(s, ...
+    "UL", localGetNested(s, "modulation.ul_modulation_order", 2)))));
 if localUsePi2BPSKULMode(s)
     modStr = "pi/2-BPSK";
 end
@@ -2100,11 +2105,13 @@ end
 
 function [modStr, codeRate] = localResolveFixedMCSProfile(s, direction)
 direction = upper(string(direction));
-tableName = string(localGetNested(s, "modulation.mcs_table", ""));
+tableName = string(localResolveDirectionalMCSTable(s, direction));
 if direction == "DL"
-    mcsIndex = double(localGetNested(s, "modulation.dl_mcs_index", NaN));
+    mcsIndex = double(localGetNested(s, "modulation_and_mapping.dl_mcs_index", ...
+        localGetNested(s, "modulation.dl_mcs_index", NaN)));
 else
-    mcsIndex = double(localGetNested(s, "modulation.ul_mcs_index", NaN));
+    mcsIndex = double(localGetNested(s, "modulation_and_mapping.ul_mcs_index", ...
+        localGetNested(s, "modulation.ul_mcs_index", NaN)));
 end
 
 profile = sixgr.link.resolveMCSProfile(tableName, mcsIndex);
@@ -2115,7 +2122,7 @@ elseif direction == "UL"
     modStr = string(localResolveULModulation(s));
     codeRate = 0.75;
 else
-    modStr = string(localOrderToModulation(double(localGetNested(s, "modulation.dl_modulation_order", 2))));
+    modStr = string(localOrderToModulation(double(localResolveDirectionalModulationOrder(s, "DL", 2))));
     codeRate = 0.75;
 end
 
@@ -2123,6 +2130,33 @@ end
 if direction == "UL" && localUsePi2BPSKULMode(s)
     modStr = "pi/2-BPSK";
 end
+end
+
+function tableName = localResolveDirectionalMCSTable(s, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    tableName = string(localGetNested(s, "modulation_and_mapping.ul_mcs_table", ...
+        localGetNested(s, "modulation_and_mapping.mcs_table", ...
+        localGetNested(s, "modulation.mcs_table", ""))));
+else
+    tableName = string(localGetNested(s, "modulation_and_mapping.dl_mcs_table", ...
+        localGetNested(s, "modulation_and_mapping.mcs_table", ...
+        localGetNested(s, "modulation.mcs_table", ""))));
+end
+end
+
+function order = localResolveDirectionalModulationOrder(s, direction, defaultValue)
+direction = upper(string(direction));
+if direction == "UL"
+    raw = localGetNested(s, "modulation_and_mapping.ul_max_modulation", ...
+        localGetNested(s, "modulation.ul_max_modulation", ...
+        localGetNested(s, "modulation.ul_modulation_order", defaultValue)));
+else
+    raw = localGetNested(s, "modulation_and_mapping.dl_max_modulation", ...
+        localGetNested(s, "modulation.dl_max_modulation", ...
+        localGetNested(s, "modulation.dl_modulation_order", defaultValue)));
+end
+order = localModulationToOrder(raw);
 end
 
 function tf = localUsePi2BPSKULMode(s)

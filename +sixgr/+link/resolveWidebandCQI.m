@@ -153,10 +153,9 @@ statusToken = lower(strtrim(string(status)));
 if strlength(strtrim(strjoin([source, role, status], " "))) == 0
     return;
 end
-provenanceWords = string(regexp(char(provenanceToken), '[a-z0-9]+', 'match'));
-blocked = ["receiverhest", "receiver_hest", "pilot", ...
-    "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep"];
-if any(provenanceWords == "hest") || any(contains(provenanceToken, blocked))
+blocked = ["evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+    "diagnostic", "not_scheduling"];
+if any(contains(provenanceToken, blocked))
     accepted = false;
     reason = "sinr_input_role_or_source_is_not_scheduler_eligible";
     return;

@@ -379,7 +379,7 @@ if iscell(llrCW)
 else
     llr = llrCW;
 end
-llr = localApplyCSIToCodewordLLR(llr, csi, pdsch.Modulation);
+[llr, llrCSIInfo] = localApplyCSIToCodewordLLR(llr, csi, pdsch.Modulation, postEqSINR_dB);
 
 % ---------------------- DL-SCH decode (rate recovery + LDPC decode) ----------------------
 [recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ldpcSeg.NumCodeBlocks);
@@ -592,7 +592,13 @@ rx.DLSCHDecodeAttempted = true;
 rx.DLSCHDecodeAvailable = ~isempty(tbRx) || ~isempty(decCbs) || ~isempty(recLLR);
 rx.LLRAvailable = ~isempty(llr);
 rx.LLRFinite = ~isempty(llr) && all(isfinite(double(llr(:))));
-rx.LLRScaleSource = "nrPDSCHDecode_noise_variance_plus_equalizer_csi_weights";
+rx.LLRScaleSource = "nrPDSCHDecode_noise_variance_plus_" + string(llrCSIInfo.Source);
+rx.LLRCSIWeightApplied = logical(llrCSIInfo.Applied);
+rx.LLRCSIWeightStatus = char(string(llrCSIInfo.Status));
+rx.LLRCSIWeightInputKind = char(string(llrCSIInfo.InputKind));
+rx.LLRCSIWeightRawMedian = double(llrCSIInfo.RawCSIMedian);
+rx.LLRCSIWeightMedianBeforeNormalization = double(llrCSIInfo.WeightMedianBeforeNormalization);
+rx.LLRCSIWeightNormalizationScale = double(llrCSIInfo.NormalizationScale);
 rx.LLRNoiseVariance = double(nVarForDecode);
 rx.SINRComputationMethod = char(lower(string(equalizerAlg)));
 if ~logical(opt.CompactOutput)
@@ -1411,48 +1417,9 @@ else
 end
 end
 
-function llrOut = localApplyCSIToCodewordLLR(llrIn, csi, modScheme)
-% 5G Toolbox decoders expect equalizer reliability to weight codeword LLRs.
-llrOut = double(llrIn(:));
-if isempty(csi)
-    return;
-end
-try
-    csiCW = nrLayerDemap(csi);
-    if iscell(csiCW)
-        csiVec = csiCW{1};
-    else
-        csiVec = csiCW;
-    end
-catch
-    csiVec = csi;
-end
-csiVec = double(real(csiVec(:)));
-csiVec(~isfinite(csiVec) | csiVec < 0) = 0;
-if isempty(csiVec) || ~any(csiVec > 0)
-    return;
-end
-csiVec = localCSIToReliabilityWeights(csiVec);
-qm = max(1, round(double(localQm(modScheme))));
-if numel(csiVec) * qm == numel(llrOut)
-    weights = repelem(csiVec, qm);
-elseif numel(csiVec) == numel(llrOut)
-    weights = csiVec;
-else
-    return;
-end
-llrOut = llrOut .* weights;
-end
-
-function weights = localCSIToReliabilityWeights(csiVec)
-weights = double(csiVec(:));
-if any(weights > 1 + sqrt(eps))
-    % Manual IRC/ZF paths expose CSI as SINR. Convert to the bounded MMSE
-    % reliability convention used by nrEqualizeMMSE examples.
-    weights = weights ./ max(1 + weights, eps);
-else
-    weights = min(max(weights, 0), 1);
-end
+function [llrOut, info] = localApplyCSIToCodewordLLR(llrIn, csi, modScheme, postEqSINR_dB)
+[llrOut, info] = sixgr.phy.rx.applyCSIToCodewordLLR(llrIn, csi, modScheme, ...
+    "PostEqSINR_dB", postEqSINR_dB);
 end
 
 function x = localEnsureLLRBatch(xIn)

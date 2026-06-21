@@ -380,6 +380,11 @@ methods(Static)
             grant, feedback, scheduler, cfg, direction);
     end
 
+    function csi = resolveMeasuredRuntimeCSIForRowRuntime(row, cfg, direction)
+        % Public test wrapper for the measured SINR -> CQI feedback bridge.
+        csi = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRow(row, cfg, direction);
+    end
+
     function state = enqueueTrafficForFrameRuntime(state, absoluteFrame)
         % Public wrapper for K2 look-ahead scheduling outside this class.
         state = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrame(state, absoluteFrame);
@@ -1638,11 +1643,12 @@ methods(Static, Access=private)
         csiRSRP = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSI_RSRP_dB", NaN));
         csiRSRPSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSI_RSRPSource", ""));
         interferenceMode = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "InterferenceMode", configuredInterferenceMode));
-        cqi = double(sixgr.util.normalizeReportedCQI( ...
-            sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN)));
-        mcs = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
-        rate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedTargetCodeRate", NaN));
-        modStr = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedModulation", ""));
+        csi = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRow( ...
+            row, state.CfgMobility, rowDirection);
+        cqi = double(csi.CQI);
+        mcs = double(csi.MCSIndex);
+        rate = double(csi.TargetCodeRate);
+        modStr = string(csi.Modulation);
         r = sixgr.truth.CoupledTruthRuntime.emptyServingRow();
         slotStamp = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         r.Slot = double(slotStamp);
@@ -3960,6 +3966,8 @@ methods(Static, Access=private)
             return;
         end
         grant.CQIUsed = double(cqi);
+        grant = sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackRankToGrant( ...
+            grant, feedback, cfg, direction);
         grant.MCSIndex = double(round(mcsIndex));
         grant.MCS = double(round(mcsIndex));
         grant.Modulation = char(string(modStr));
@@ -4034,16 +4042,20 @@ methods(Static, Access=private)
         sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         report.SourceSlot = double(sourceSlot);
         report.DueSlot = double(sourceSlot + state.CSIFeedbackSlots);
-        report.CQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN));
-        report.RI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RankIndicator", NaN));
+        csi = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRow(row, state.CfgMobility, direction);
+        report.CQI = double(csi.CQI);
+        report.RI = double(csi.RI);
         report.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
             sixgr.truth.CoupledTruthRuntime.rowValue(row, "PMI", NaN), state.CfgMobility, direction, report.RI));
         report.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
             sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRI", NaN), state.CfgMobility));
-        report.SINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredSINR_dB", NaN));
-        report.MCSIndex = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
-        report.TargetCodeRate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedTargetCodeRate", NaN));
-        report.Modulation = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedModulation", "")));
+        report.SINR_dB = double(csi.SINR_dB);
+        report.SINRSource = char(string(csi.SINRSource));
+        report.SINRValueRole = char(string(csi.SINRValueRole));
+        report.SINRValueStatus = char(string(csi.SINRValueStatus));
+        report.MCSIndex = double(csi.MCSIndex);
+        report.TargetCodeRate = double(csi.TargetCodeRate);
+        report.Modulation = char(string(csi.Modulation));
         report.RawCQIDerivedMCS = double(report.MCSIndex);
         report.RawCQIDerivedTargetCodeRate = double(report.TargetCodeRate);
         report.RawCQIDerivedModulation = char(string(report.Modulation));
@@ -4063,6 +4075,9 @@ methods(Static, Access=private)
             latest.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
                 report.CRI, state.CfgMobility));
             latest.SINR_dB = report.SINR_dB;
+            latest.SINRSource = report.SINRSource;
+            latest.SINRValueRole = report.SINRValueRole;
+            latest.SINRValueStatus = report.SINRValueStatus;
             latest.MCSIndex = report.MCSIndex;
             latest.TargetCodeRate = report.TargetCodeRate;
             latest.Modulation = report.Modulation;
@@ -4136,12 +4151,12 @@ methods(Static, Access=private)
             "SINR_dB", double(report.SINR_dB), ...
             "CSIAgeSlots", max(0, double(report.DueSlot) - double(report.SourceSlot)), ...
             "CSIAgeSeconds", max(0, double(report.DueSlot) - double(report.SourceSlot)) * double(state.SlotDuration_s), ...
-            "SINRSource", char(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
-                ["MeasuredTrialSINRSource","SINRSource","PostEqSINRSource"], "")), ...
-            "SINRValueRole", char(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
-                ["MeasuredTrialSINRValueRole","SINRValueRole","PostEqSINRValueRole"], "")), ...
-            "SINRValueStatus", char(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
-                ["MeasuredTrialSINRValueStatus","SINRValueStatus","PostEqSINRValueStatus"], "")));
+            "SINRSource", char(string(sixgr.util.structGet(report, "SINRSource", ...
+                sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ["MeasuredTrialSINRSource","SINRSource","PostEqSINRSource"], "")))), ...
+            "SINRValueRole", char(string(sixgr.util.structGet(report, "SINRValueRole", ...
+                sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ["MeasuredTrialSINRValueRole","SINRValueRole","PostEqSINRValueRole"], "")))), ...
+            "SINRValueStatus", char(string(sixgr.util.structGet(report, "SINRValueStatus", ...
+                sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ["MeasuredTrialSINRValueStatus","SINRValueStatus","PostEqSINRValueStatus"], "")))));
         if sixgr.truth.CoupledTruthRuntime.rowHasField(row, "CRCPass")
             metrics.CRCPass = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "CRCPass", false));
         end
@@ -4178,6 +4193,200 @@ methods(Static, Access=private)
             report.MCSSelectionSource = char(string(sixgr.util.structGet(decision, ...
                 "MCSSelectionSource", "runtime_link_adaptation_decision")));
             report.MCSValueStatus = "measured_feedback_adapted";
+        end
+    end
+
+    function csi = resolveMeasuredRuntimeCSIForRow(row, cfg, direction)
+        direction = upper(string(direction));
+        rawCQI = double(sixgr.util.normalizeReportedCQI( ...
+            sixgr.truth.CoupledTruthRuntime.rowValue(row, "WidebandCQI", NaN)));
+        rawMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedMCS", NaN));
+        rawRate = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedTargetCodeRate", NaN));
+        rawMod = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQIDerivedModulation", ""));
+        ri = double(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["RankIndicator","RI","RIUsed","Rank","Layers","NumLayers"], NaN));
+        if ~(isfinite(ri) && ri >= 1)
+            ri = NaN;
+        else
+            ri = max(1, round(ri));
+        end
+
+        [measuredSINR, sinrSource, sinrRole, sinrStatus] = ...
+            sixgr.truth.CoupledTruthRuntime.schedulerMeasuredSINRFromRow(row);
+        cqi = rawCQI;
+        mcs = rawMCS;
+        targetCodeRate = rawRate;
+        modStr = rawMod;
+        cqiSource = "trial_row_wideband_cqi";
+        derivedFromMeasuredSINR = false;
+        if isfinite(measuredSINR)
+            feedback = sixgr.link.resolveWidebandCQI(struct( ...
+                "WidebandSINR_dB", double(measuredSINR), ...
+                "SINRSource", char(sinrSource), ...
+                "SINRValueRole", char(sinrRole), ...
+                "SINRValueStatus", char(sinrStatus), ...
+                "RankIndicator", double(ri)), cfg, direction);
+            derivedCQI = double(sixgr.util.normalizeReportedCQI( ...
+                sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
+            if isfinite(derivedCQI) && derivedCQI > 0 && ...
+                    ~sixgr.truth.CoupledTruthRuntime.rowCQIHasMeasuredCSIProvenance(row)
+                cqi = double(derivedCQI);
+                [modCandidate, rateCandidate, mcsCandidate] = sixgr.link.amcFromCQI( ...
+                    cqi, "", NaN, cfg, direction);
+                mcs = double(mcsCandidate);
+                targetCodeRate = double(rateCandidate);
+                modStr = string(modCandidate);
+                cqiSource = "measured_post_equalization_sinr_to_cqi";
+                derivedFromMeasuredSINR = true;
+            elseif isfinite(rawCQI) && rawCQI > 0
+                [modCandidate, rateCandidate, mcsCandidate] = sixgr.link.amcFromCQI( ...
+                    rawCQI, char(rawMod), rawRate, cfg, direction);
+                if ~(isfinite(mcs) && mcs >= 0)
+                    mcs = double(mcsCandidate);
+                end
+                if ~(isfinite(targetCodeRate) && targetCodeRate > 0)
+                    targetCodeRate = double(rateCandidate);
+                end
+                if strlength(strtrim(modStr)) == 0
+                    modStr = string(modCandidate);
+                end
+            end
+        elseif isfinite(rawCQI) && rawCQI > 0
+            [modCandidate, rateCandidate, mcsCandidate] = sixgr.link.amcFromCQI( ...
+                rawCQI, char(rawMod), rawRate, cfg, direction);
+            if ~(isfinite(mcs) && mcs >= 0)
+                mcs = double(mcsCandidate);
+            end
+            if ~(isfinite(targetCodeRate) && targetCodeRate > 0)
+                targetCodeRate = double(rateCandidate);
+            end
+            if strlength(strtrim(modStr)) == 0
+                modStr = string(modCandidate);
+            end
+        end
+
+        csi = struct( ...
+            "CQI", double(cqi), ...
+            "RI", double(ri), ...
+            "SINR_dB", double(measuredSINR), ...
+            "SINRSource", char(sinrSource), ...
+            "SINRValueRole", char(sinrRole), ...
+            "SINRValueStatus", char(sinrStatus), ...
+            "MCSIndex", double(mcs), ...
+            "TargetCodeRate", double(targetCodeRate), ...
+            "Modulation", char(string(modStr)), ...
+            "CQISource", char(cqiSource), ...
+            "DerivedFromMeasuredSINR", logical(derivedFromMeasuredSINR));
+    end
+
+    function [sinr_dB, source, role, status] = schedulerMeasuredSINRFromRow(row)
+        sinr_dB = NaN;
+        source = "";
+        role = "";
+        status = "";
+        candidates = [
+            "ReceiverHestSINR_dB", "ReceiverHestSINRSource", "ReceiverHestSINRValueRole", "ReceiverHestSINRValueStatus"
+            "MeasuredSINR_dB", "MeasuredTrialSINRSource", "MeasuredTrialSINRValueRole", "MeasuredTrialSINRValueStatus"
+            "MeasuredTrialSINR_dB", "MeasuredTrialSINRSource", "MeasuredTrialSINRValueRole", "MeasuredTrialSINRValueStatus"
+            "PostEqSINR_dB", "PostEqSINRSource", "PostEqSINRValueRole", "PostEqSINRValueStatus"];
+        validSINR = nan(size(candidates, 1), 1);
+        validSource = strings(size(candidates, 1), 1);
+        validRole = strings(size(candidates, 1), 1);
+        validStatus = strings(size(candidates, 1), 1);
+        for i = 1:size(candidates, 1)
+            candidateSINR = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, candidates(i, 1), NaN));
+            candidateSource = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, candidates(i, 2), ""));
+            candidateRole = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, candidates(i, 3), ""));
+            candidateStatus = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, candidates(i, 4), ""));
+            if isfinite(candidateSINR) && sixgr.truth.CoupledTruthRuntime.schedulerSINRProvenanceIsEligible( ...
+                    candidateSource, candidateRole, candidateStatus)
+                validSINR(i) = double(candidateSINR);
+                validSource(i) = candidateSource;
+                validRole(i) = candidateRole;
+                validStatus(i) = candidateStatus;
+            end
+        end
+        valid = isfinite(validSINR);
+        if ~any(valid)
+            return;
+        end
+        receiverIdx = find(valid & candidates(:, 1) == "ReceiverHestSINR_dB", 1, "first");
+        postEqIdx = find(valid & (candidates(:, 1) == "MeasuredSINR_dB" | ...
+            candidates(:, 1) == "MeasuredTrialSINR_dB" | candidates(:, 1) == "PostEqSINR_dB"), 1, "first");
+        if ~isempty(receiverIdx) && ~isempty(postEqIdx)
+            if validSINR(receiverIdx) <= validSINR(postEqIdx)
+                chosenIdx = receiverIdx;
+            else
+                chosenIdx = postEqIdx;
+            end
+            sinr_dB = double(validSINR(chosenIdx));
+            source = "conservative_min(" + validSource(receiverIdx) + "," + validSource(postEqIdx) + ")";
+            role = "measured_scheduler_csi_conservative_min_channel_estimate_posteq";
+            status = "PASS";
+            return;
+        end
+        firstIdx = find(valid, 1, "first");
+        sinr_dB = double(validSINR(firstIdx));
+        source = validSource(firstIdx);
+        role = validRole(firstIdx);
+        status = validStatus(firstIdx);
+    end
+
+    function tf = rowCQIHasMeasuredCSIProvenance(row)
+        source = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+            ["CQIValueSource","CQIProvenance","WidebandCQISource"], ""))));
+        status = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+            ["CQIValueStatus","WidebandCQIValueStatus"], ""))));
+        if strlength(source) == 0 && strlength(status) == 0
+            tf = false;
+            return;
+        end
+        blocked = any(contains(source, ["bootstrap","fallback","proxy","stale","configured","unavailable"])) || ...
+            any(contains(status, ["bootstrap","fallback","proxy","stale","configured","unavailable","failed","rejected"]));
+        tf = ~blocked && (contains(source, "csi") || contains(source, "cqi") || contains(source, "ue_report"));
+    end
+
+    function grant = applyMeasuredFeedbackRankToGrant(grant, feedback, cfg, direction)
+        ri = double(sixgr.util.structGet(feedback, "RI", sixgr.util.structGet(grant, "RIUsed", NaN)));
+        if ~(isfinite(ri) && ri >= 1)
+            return;
+        end
+        nLayers = max(1, min(sixgr.truth.CoupledTruthRuntime.resolveMaxGrantLayers(cfg, direction), round(ri)));
+        grant.RIUsed = double(nLayers);
+        grant.Rank = double(nLayers);
+        grant.NumLayers = double(nLayers);
+        grant.Layers = double(nLayers);
+        grant.PrecodingNumLayers = double(nLayers);
+        grant.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
+            sixgr.util.structGet(feedback, "PMI", sixgr.util.structGet(grant, "PMI", NaN)), cfg, direction, nLayers));
+    end
+
+    function maxLayers = resolveMaxGrantLayers(cfg, direction)
+        direction = upper(string(direction));
+        if direction == "UL"
+            candidates = [ ...
+                "phy.pusch.maxLayers"
+                "phy.maxULLayers"
+                "phy.pusch.nLayers"
+                "phy.pusch.numLayers"
+                "phy.pusch.dmrs.nPorts"];
+        else
+            candidates = [ ...
+                "phy.pdsch.maxLayers"
+                "phy.maxDLLayers"
+                "phy.pdsch.nLayers"
+                "phy.pdsch.numLayers"
+                "phy.pdsch.dmrs.nPorts"];
+        end
+        vals = nan(numel(candidates), 1);
+        for i = 1:numel(candidates)
+            vals(i) = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+        end
+        vals = vals(isfinite(vals) & vals >= 1);
+        if isempty(vals)
+            maxLayers = 1;
+        else
+            maxLayers = max(1, round(min(vals)));
         end
     end
 
@@ -4456,11 +4665,12 @@ methods(Static, Access=private)
 
     function tf = schedulerSINRProvenanceIsEligible(source, role, status)
         token = lower(strjoin([string(source), string(role), string(status)], " "));
-        words = string(regexp(char(token), '[a-z0-9]+', 'match'));
-        blocked = ["receiverhest", "receiver_hest", "pilot", ...
-            "reference_signal", "evm_proxy", "proxy", "fallback", "configured", "sweep", ...
-            "unavailable", "failed", "rejected"];
-        tf = contains(token, "post_equalization") && ~any(words == "hest") && ~any(contains(token, blocked));
+        blocked = ["evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+            "diagnostic", "not_scheduling", "unavailable", "failed", "rejected"];
+        measuredCSI = contains(token, "post_equalization") || contains(token, "receiver_hest") || ...
+            contains(token, "reference_signal_measurement") || contains(token, "channel_estimate") || ...
+            contains(token, "measured_scheduler_csi");
+        tf = logical(measuredCSI) && ~any(contains(token, blocked));
     end
 
     function value = rowValue(row, name, defaultValue)
@@ -6966,7 +7176,8 @@ methods(Static, Access=private)
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
             "SourceSlot", NaN, "DueSlot", NaN, ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
-            "SINR_dB", NaN, "MCSIndex", NaN, "TargetCodeRate", NaN, ...
+            "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", "SINRValueStatus", "", ...
+            "MCSIndex", NaN, "TargetCodeRate", NaN, ...
             "Modulation", "", "RawCQIDerivedMCS", NaN, ...
             "RawCQIDerivedTargetCodeRate", NaN, "RawCQIDerivedModulation", "", ...
             "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
@@ -6984,7 +7195,8 @@ methods(Static, Access=private)
         row = struct( ...
             "Valid", false, "Direction", "", "Slot", NaN, ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
-            "SINR_dB", NaN, "MCSIndex", NaN, "TargetCodeRate", NaN, ...
+            "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", "SINRValueStatus", "", ...
+            "MCSIndex", NaN, "TargetCodeRate", NaN, ...
             "Modulation", "", "RawCQIDerivedMCS", NaN, ...
             "RawCQIDerivedTargetCodeRate", NaN, "RawCQIDerivedModulation", "", ...
             "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...

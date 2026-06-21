@@ -53,6 +53,16 @@
       "constellation_shaping_enable": {"required": false, "type": "boolean"},
       "cqi_table": {"required": false, "type": "string"}
     }},
+    "modulation_and_mapping": {"parameters": {
+      "dl_max_modulation": {"required": false, "type": "string"},
+      "ul_max_modulation": {"required": false, "type": "string"},
+      "dl_mcs_index": {"required": false, "type": "integer"},
+      "ul_mcs_index": {"required": false, "type": "integer"},
+      "dl_mcs_table": {"required": false, "type": "string"},
+      "ul_mcs_table": {"required": false, "type": "string"},
+      "mcs_table": {"required": false, "type": "string"},
+      "cqi_table": {"required": false, "type": "string"}
+    }},
     "coding": {"parameters": {
       "dl_coding_scheme": {"required": false, "type": "string"},
       "ul_coding_scheme": {"required": false, "type": "string"},

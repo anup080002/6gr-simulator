@@ -62,6 +62,10 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", 0.2);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 1.0);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", -6);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 6);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.nLayers", 2);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.numLayers", 2);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", 2);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.nPorts", 2);
 ollaScheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL");
 ueOLLA = struct("RNTI", 9001, "CQI", 12, "RI", 1);
 [~, ~, ~, amcBeforeNack] = ollaScheduler.selectAMC(ueOLLA);
@@ -115,6 +119,16 @@ assert(double(grantCQI.MCSIndex) > 0, ...
     "Measured CQI feedback must update the actual UL grant MCS before PHY execution.");
 assert(double(grantCQI.TBSBits) > double(bootstrapTBSBits), ...
     "Measured CQI feedback must update the actual UL grant TBS before PHY execution.");
+
+feedbackRank2 = feedback;
+feedbackRank2.RI = 2;
+grantRank2 = sixgr.truth.CoupledTruthRuntime.realignGrantAMCFromMeasuredFeedbackRuntime( ...
+    grant, feedbackRank2, ulScheduler, cfg, "UL");
+assert(double(grantRank2.RIUsed) == 2 && double(grantRank2.Rank) == 2 && ...
+    double(grantRank2.NumLayers) == 2 && double(grantRank2.Layers) == 2, ...
+    "Measured RI=2 must update the executable grant layers, not only the RIUsed evidence field.");
+assert(double(grantRank2.TBSBits) > double(grantCQI.TBSBits), ...
+    "Rank-2 measured feedback must increase the exact TBS estimate for the same PRB/symbol/MCS allocation.");
 
 ok = true;
 end
