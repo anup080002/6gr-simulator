@@ -1287,6 +1287,12 @@ try
     prach.SubcarrierSpacing = double(subcarrierSpacing);
     prach.ConfigurationIndex = double(configurationIndex);
 catch ME
+    if localIsMATLABServiceUnavailable(ME)
+        warning("sixgr:lls6g:config:PrachToolboxCompatibilityUnavailable", ...
+            "Skipping nrPRACHConfig compatibility validation for %s because MATLAB services are unavailable: %s", ...
+            localCtx(ctx), string(ME.message));
+        return;
+    end
     error("sixgr:lls6g:config:BadPrachConfigCompatibility", ...
         "random_access configuration in %s is not toolbox-compatible for configuration_index=%g and subcarrier_spacing_khz=%g: %s", ...
         localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(ME.message));
@@ -1367,4 +1373,12 @@ for slotCandidate = 0:max(0, round(double(scanSlots)) - 1)
     catch
     end
 end
+end
+
+function tf = localIsMATLABServiceUnavailable(ME)
+msg = lower(string(ME.message));
+id = lower(string(ME.identifier));
+tf = contains(msg, "error 5006") || ...
+    contains(msg, "services required to run matlab") || ...
+    ((contains(id, "license") || contains(id, "service")) && contains(msg, "matlab"));
 end

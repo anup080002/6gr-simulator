@@ -29,7 +29,7 @@ scenario:
   target_cases: [channel_rf]
   bundle_anchor_cases: [channel_rf_strict_validation]
   honesty_mode: strict
-  notes: "AUD-CHANNEL-RF-001 strict mini-run; validates configured-vs-applied NR baseline/study Channel/RF evidence, not exhaustive TR 38.901 or normative 6G conformance."
+  notes: "AUD-CHANNEL-RF-001 strict mini-run; validates configured-vs-applied NR baseline/study Channel/RF evidence for this fixture scope only."
   bs:
     height_m: 24
     downtilt_deg: 6

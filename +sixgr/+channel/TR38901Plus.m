@@ -47,6 +47,7 @@ classdef TR38901Plus < handle
         PathlossEnabled (1,1) logical = true
         ShadowFadingEnabled (1,1) logical = true
         LOSEnabled (1,1) logical = true
+        AtmosphericAbsorptionEnabled (1,1) logical = false
 
         % O2I model: "none" | "low" | "high" | "custom"
         O2IModel (1,1) string = "none"
@@ -80,6 +81,10 @@ classdef TR38901Plus < handle
             obj.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", obj.PathlossEnabled));
             obj.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", obj.ShadowFadingEnabled));
             obj.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", obj.LOSEnabled));
+            obj.AtmosphericAbsorptionEnabled = logical(localFirstStructGet(cfg, ...
+                ["channel.atmosphericAbsorptionEnabled", "channel.oxygenAbsorptionEnabled", ...
+                 "channel.atmospheric_absorption.enabled", "channel.oxygen_absorption.enabled"], ...
+                obj.AtmosphericAbsorptionEnabled));
             obj.ChannelComplianceMode = string(localCanonicalStructGet(cfg, "channel.complianceMode", "channel.compliance.mode", ...
                 localDefaultChannelComplianceMode(cfg)));
             obj.O2IModel = string(sixgr.util.structGet(cfg, "channel.o2i.model", obj.O2IModel));
@@ -116,6 +121,8 @@ classdef TR38901Plus < handle
                         obj.ShadowFadingEnabled = logical(val);
                     case "losenabled"
                         obj.LOSEnabled = logical(val);
+                    case {"atmosphericabsorptionenabled","oxygenabsorptionenabled"}
+                        obj.AtmosphericAbsorptionEnabled = logical(val);
                     case {"channelcompliancemode","compliancemode"}
                         obj.ChannelComplianceMode = string(val);
                     case "o2imodel"
@@ -186,6 +193,7 @@ classdef TR38901Plus < handle
             %   "PathlossEnabled"     : override pathloss flag
             %   "ShadowFadingEnabled" : override shadow-fading flag
             %   "LOSEnabled"          : override LOS-logic flag
+            %   "AtmosphericAbsorptionEnabled": add configured gaseous loss
             %
             opt = struct();
             opt.Scenario = obj.Scenario;
@@ -197,6 +205,7 @@ classdef TR38901Plus < handle
             opt.PathlossEnabled = obj.PathlossEnabled;
             opt.ShadowFadingEnabled = obj.ShadowFadingEnabled;
             opt.LOSEnabled = obj.LOSEnabled;
+            opt.AtmosphericAbsorptionEnabled = obj.AtmosphericAbsorptionEnabled;
 
             if mod(numel(varargin),2) ~= 0
                 error("TR38901Plus:pathloss:BadNV","Name-value inputs must come in pairs.");
@@ -223,6 +232,8 @@ classdef TR38901Plus < handle
                         opt.ShadowFadingEnabled = logical(val);
                     case "losenabled"
                         opt.LOSEnabled = logical(val);
+                    case {"atmosphericabsorptionenabled","oxygenabsorptionenabled"}
+                        opt.AtmosphericAbsorptionEnabled = logical(val);
                     otherwise
                         error("TR38901Plus:pathloss:UnknownOpt","Unknown option: %s", name);
                 end
@@ -367,7 +378,7 @@ classdef TR38901Plus < handle
             end
 
             oxygenAbsorption_dB = zeros(1, N);
-            if opt.PathlossEnabled && obj.Fc_Hz > 6e9
+            if opt.PathlossEnabled && opt.AtmosphericAbsorptionEnabled
                 oxygenAbsorption_dB = sixgr.channel.OxygenAbsorption.pathLoss_dB(obj.Fc_Hz, d3d);
             end
             oxygenAbsorption_dB = double(oxygenAbsorption_dB(:)).';
@@ -573,6 +584,17 @@ value = sixgr.util.structGet(cfg, canonicalPath, []);
 if isempty(value)
     value = sixgr.util.structGet(cfg, aliasPath, defaultValue);
 end
+end
+
+function value = localFirstStructGet(cfg, paths, defaultValue)
+value = [];
+for i = 1:numel(paths)
+    value = sixgr.util.structGet(cfg, char(paths(i)), []);
+    if ~isempty(value)
+        return;
+    end
+end
+value = defaultValue;
 end
 
 function value = localCanonicalScenario(cfg, defaultValue)

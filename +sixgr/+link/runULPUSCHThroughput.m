@@ -3657,22 +3657,7 @@ referenceReason = string(referenceReason);
 
 postEqAvailable = isfinite(postEqSINR) && localPostEqSINRIsSchedulerEligible(postEqSource, postEqRole, postEqStatus);
 referenceAvailable = isfinite(referenceSINR) && localULReferenceSINRIsReceiverMeasured(referenceSource, referenceRole, referenceStatus);
-if postEqAvailable && referenceAvailable
-    if referenceSINR < postEqSINR
-        selected.Value = double(referenceSINR);
-        selected.Source = "ul_receiver_evidence_limited_post_equalization_sinr";
-        selected.ValueRole = "measured_post_equalization_scheduling_input";
-        selected.ValueStatus = "OK";
-        selected.NAReason = sprintf("post_eq_sinr_%.6g_dB_limited_by_measured_ul_rs_sinr_%.6g_dB", ...
-            double(postEqSINR), double(referenceSINR));
-    else
-        selected.Value = double(postEqSINR);
-        selected.Source = char(postEqSource);
-        selected.ValueRole = char(postEqRole);
-        selected.ValueStatus = char(postEqStatus);
-        selected.NAReason = char(postEqReason);
-    end
-elseif postEqAvailable
+if postEqAvailable
     selected.Value = double(postEqSINR);
     selected.Source = char(postEqSource);
     selected.ValueRole = char(postEqRole);

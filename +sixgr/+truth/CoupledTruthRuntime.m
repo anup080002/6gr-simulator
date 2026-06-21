@@ -6273,7 +6273,7 @@ methods(Static, Access=private)
                 consumer = "CoupledTruthRuntime.applyPDCCHGrantTrial";
             case "PUCCH"
                 classification = "active_integrated";
-                materialization = "active_integrated_pucch_waveform_uci_resource_receiver_evidence";
+                materialization = "active_integrated_waveform_feedback_runtime";
                 gatingEffect = "harq_feedback_state_update";
                 consumer = "HARQEntity.onFeedback";
             case "SRS"

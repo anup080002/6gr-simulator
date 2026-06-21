@@ -92,7 +92,7 @@ if wantSIB1
         rec = sixgr.phy.broadcast.recoverSIB1FromWaveform(rxWaveform, cfg);
         sib1 = rec;
         sib1.Ok = logical(rec.StrictOk);
-        sib1.Source = "waveform_si_rnti_pdcch_pdsch_dlsch_asn1";
+        sib1.Source = "strict_waveform_si_rnti_pdcch_pdsch_dlsch_asn1";
         sib1.Msg = string(rec.Status);
     catch ex
         sib1.Ok = false;
