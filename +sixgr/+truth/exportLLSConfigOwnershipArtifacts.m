@@ -2709,6 +2709,7 @@ T.SubmittedValue = string(bindingT.SubmittedValue);
 T.ResolvedMATLABValue = string(bindingT.ResolvedScenarioValue);
 T.RuntimeAppliedValue = string(bindingT.RuntimeAppliedEvidenceValue);
 T.RuntimeMeasuredValue = string(bindingT.RuntimeMeasuredEvidenceValue);
+T.RuntimeObservedValue = string(bindingT.RuntimeObservedValue);
 T.ConfigStatus = string(bindingT.ConfigResolvedStatus);
 T.ApplicationStatus = string(bindingT.RuntimeAppliedStatus);
 T.MeasurementStatus = string(bindingT.RuntimeMeasuredStatus);

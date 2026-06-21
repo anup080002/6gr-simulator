@@ -139,7 +139,7 @@ rows = repmat(struct("ParameterId","", "ValueKind","", "Value",""), 0, 1);
 % Keep the public traceability value view limited to runtime evidence.
 % Scenario defaults, browser display strings, policies, and support labels
 % remain in the provenance sidecar.
-valueFields = ["RuntimeAppliedEvidenceValue","RuntimeMeasuredEvidenceValue", ...
+valueFields = ["RuntimeObservedValue","RuntimeAppliedEvidenceValue","RuntimeMeasuredEvidenceValue", ...
     "RuntimeAppliedValue","RuntimeMeasuredValue"];
 for i = 1:height(T)
     for f = valueFields

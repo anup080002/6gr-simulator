@@ -113,6 +113,8 @@ for i = 1:numel(parameterIds)
     configResolvedStatus = localResolveConfigStatus(submittedFound, baseFound, resolvedFound, contract);
     runtimeAppliedStatus = localResolveApplicationStatus(evidenceRow, consumerStatus, featureDisabledReason, contractClassification);
     runtimeMeasuredStatus = localFinalizeMeasurementStatus(runtimeMeasuredStatus, featureDisabledReason, runtimeAppliedStatus, measuredArtifact, measuredField);
+    runtimeObservedValue = localSelectRuntimeObservedValue( ...
+        runtimeAppliedValue, runtimeAppliedStatus, runtimeMeasuredValue, runtimeMeasuredStatus);
     dbSnapshotStatus = localTernary(dbFound, "db_snapshot_present", "db_snapshot_missing");
     browserDisplayStatus = localResolveBrowserDisplayStatus(browserVisible, runtimeAppliedStatus, runtimeMeasuredStatus, configResolvedStatus);
     finalBindingStatus = localResolveFinalBindingStatus(runtimeMeasuredStatus, runtimeAppliedStatus, mappingStatus, browserVisible, contractClassification, featureDisabledReason, resolvedFound);
@@ -146,6 +148,7 @@ for i = 1:numel(parameterIds)
     row.RuntimeMeasuredEvidenceArtifact = char(string(measuredArtifact));
     row.RuntimeMeasuredEvidenceField = char(string(measuredField));
     row.RuntimeMeasuredEvidenceValue = char(localValueToString(runtimeMeasuredValue));
+    row.RuntimeObservedValue = char(localValueToString(runtimeObservedValue));
     row.ConfigResolvedStatus = char(configResolvedStatus);
     row.RuntimeAppliedStatus = char(runtimeAppliedStatus);
     row.RuntimeMeasuredStatus = char(runtimeMeasuredStatus);
@@ -205,6 +208,7 @@ row = struct( ...
     "RuntimeMeasuredEvidenceArtifact", "", ...
     "RuntimeMeasuredEvidenceField", "", ...
     "RuntimeMeasuredEvidenceValue", "", ...
+    "RuntimeObservedValue", "", ...
     "ConfigResolvedStatus", "", ...
     "RuntimeAppliedStatus", "", ...
     "RuntimeMeasuredStatus", "", ...
@@ -619,6 +623,18 @@ else
 end
 end
 
+function value = localSelectRuntimeObservedValue(runtimeAppliedValue, runtimeAppliedStatus, runtimeMeasuredValue, runtimeMeasuredStatus)
+% Prefer direct runtime-object application evidence for config traceability.
+% Measured artifacts are used only when no applied config evidence exists.
+if string(runtimeAppliedStatus) == "applied_to_runtime_object" && localHasPresentValue(runtimeAppliedValue)
+    value = runtimeAppliedValue;
+elseif string(runtimeMeasuredStatus) == "measured_runtime_evidence_published" && localHasPresentValue(runtimeMeasuredValue)
+    value = runtimeMeasuredValue;
+else
+    value = "";
+end
+end
+
 function [value, status] = localResolveMeasuredValue(runFolder, artifactPath, fieldName)
 value = "";
 status = "";
@@ -867,6 +883,11 @@ for i = 1:numelCol
     found = true;
     return;
 end
+end
+
+function tf = localHasPresentValue(value)
+text = strtrim(string(localValueToString(value)));
+tf = ~(strlength(text) == 0 || any(strcmpi(text, ["NaN","<missing>","missing"])));
 end
 
 function value = localSelectDisplayedValue(submittedValue, resolvedScenarioValue)
