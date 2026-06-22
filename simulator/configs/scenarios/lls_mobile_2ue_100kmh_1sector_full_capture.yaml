@@ -243,6 +243,20 @@ waveform:
   low_papr_mode: none
   tone_reservation_enabled: false
 
+bwp:
+  dl:
+    bwp_id: 0
+    n_size_bwp: 273
+    n_start_bwp: 0
+    scs_khz: 30
+    cp_type: normal
+  ul:
+    bwp_id: 0
+    n_size_bwp: 273
+    n_start_bwp: 0
+    scs_khz: 30
+    cp_type: normal
+
 deployment_topology:
   scenario_type: single-cell
   site_layout: single
@@ -331,6 +345,13 @@ channels:
   carrier_frequency_hz: 4000000000
   max_doppler_hz: 370.37037037
   shadow_fading_std_db: 6
+  cdl_delay_profile_scaling: true
+  xpr_db: 10.0
+  antenna_element_spacing_dl_lambda: 0.5
+  antenna_element_spacing_ul_lambda: 0.5
+  spatial_filter_order: 4
+  channel_filter_length_samples: 32
+  perfect_csi: false
 
 channel_model:
   model_family: CDL
@@ -373,6 +394,12 @@ mimo:
   su_mu_selection_policy: proportional_fair_mu
   mu_mimo_enable: true
   mu_mimo_max_users_per_prb: 2
+  sv_rank_threshold: 0.01
+  precoder_prg_size_rbs: wideband
+  codebook_subset_restriction: unrestricted
+  type2_codebook_oversampling_factor_O1: 4
+  type2_codebook_oversampling_factor_O2: 4
+  csi_rs_based_precoder_update: true
 
 modulation:
   dl_max_modulation: 256QAM
@@ -398,6 +425,11 @@ coding:
   crc_type_tb: CRC24A
   crc_type_cb: CRC24B
   cb_segmentation: automatic
+  ldpc_lifting_size_z_selection: auto
+  ldpc_schedule_type: layered
+  ldpc_min_sum_offset: 0.75
+  polar_reliability_sequence_source: 3gpp_38212
+  polar_rate_matching_type: puncturing_shortening
 
 system:
   queueMaxBits: 50000000
@@ -449,6 +481,77 @@ system:
       periodSlots: 20
       maxGrantsPerAuditSlot: 2
       unsampledGrantPolicy: full_replay
+
+pdsch:
+  resource_allocation_type: type1
+  mapping_type: typeA
+  start_symbol: 2
+  num_symbols: 12
+  vrb_to_prb_mapping: non_interleaved
+  prb_bundling_type: static
+  prb_bundle_size: wideband
+  rate_matching_pattern: []
+  xoh_pdsch: 0
+  tbs_scaling: 1.0
+  cbg_transmission: false
+
+pusch:
+  resource_allocation_type: type1
+  mapping_type: typeA
+  start_symbol: 0
+  num_symbols: 14
+  frequency_hopping: disabled
+  intra_slot_frequency_hopping: false
+  inter_slot_frequency_hopping: false
+  transform_precoding: false
+  codebook_based_transmission: true
+  xoh_pusch: 0
+  cbg_transmission: false
+  tp_pi2_bpsk: false
+
+pdcch:
+  coreset:
+    - coreset_id: 0
+      duration_symbols: 2
+      frequency_domain_resources: full
+      cce_to_reg_mapping: non_interleaved
+      reg_bundle_size: 6
+      interleaver_size: 2
+      shift_index: 0
+      precoder_granularity: same_as_reg_bundle
+    - coreset_id: 1
+      duration_symbols: 1
+      frequency_domain_resources: full
+      cce_to_reg_mapping: non_interleaved
+      reg_bundle_size: 6
+      interleaver_size: 2
+      shift_index: 0
+      precoder_granularity: same_as_reg_bundle
+  search_spaces:
+    - search_space_id: 0
+      coreset_id: 0
+      type: common
+      dci_formats: [1_0, 0_0]
+      aggregation_levels: [4, 8, 16]
+      candidates_per_level: [1, 1, 1]
+      monitoring_periodicity_slots: 1
+      monitoring_offset_slots: 0
+    - search_space_id: 1
+      coreset_id: 1
+      type: ue_specific
+      dci_formats: [1_1, 0_1]
+      aggregation_levels: [1, 2, 4, 8]
+      candidates_per_level: [2, 2, 2, 2]
+      monitoring_periodicity_slots: 1
+      monitoring_offset_slots: 0
+  blind_decoding_attempts: 44
+  dmrs_scrambling_id_source: physical_cell_id
+  rnti_config:
+    c_rnti_range: [1, 65519]
+    tc_rnti: 65520
+    si_rnti: 65535
+    ra_rnti_base: 1
+    p_rnti: 65534
 
 control:
   pucch_enabled: true
@@ -535,6 +638,79 @@ control_gating:
   trs_required: true
   trs_max_age_slots: 20
 
+channel_estimation:
+  algorithm: mmse_wiener
+  interpolation_method: mmse_2d
+  filter_length_time: 7
+  filter_length_freq: 9
+  noise_variance_source: pilot_based
+  noise_variance_averaging_window_slots: 4
+  delay_spread_assumption_ns: 300
+  doppler_assumption_hz: 370
+  temporal_filtering_enable: true
+  frequency_smoothing_enable: true
+  perfect_csi: false
+  ce_extrapolation_mode: linear
+  ce_bound_delay_ns: 600
+  ce_reference_signal: dmrs
+
+equalization:
+  algorithm: mmse_irc
+  regularization_method: snr_based
+  noise_variance_for_equalizer: pre_equalization
+  post_equalization_snr_estimation: post_equalization_mmse
+  irc_interference_covariance_window_slots: 4
+  irc_covariance_estimation: sample_based
+  sv_threshold: 1.0e-6
+  condition_number_cap: 100.0
+  per_prb_equalization: true
+  per_symbol_equalization: false
+  equalizer_output_scaling: lmmse_norm
+  sic_enable: false
+  sic_stages: 1
+
+synchronization:
+  timing_sync_algorithm: pss_sss_based
+  frequency_sync_algorithm: sss_based
+  symbol_timing_recovery: pilot_aided
+  integer_cfo_correction_enable: true
+  fractional_cfo_correction_enable: true
+  timing_tracking_mode: trs_based
+  frequency_tracking_mode: ptrs_based
+  pss_detection_threshold: 0.3
+  sss_hypothesis_test_threshold: 0.5
+  max_timing_uncertainty_samples: 10
+  ota_timing_advance_enable: true
+  timing_advance_granularity_ts: 16
+
+rf_hardware:
+  adc_resolution_bits: 12
+  dac_resolution_bits: 12
+  adc_dynamic_range_db: 60
+  adc_full_scale_power_dBm: 0.0
+  agc_enable: true
+  agc_target_level_dBm: -15.0
+  agc_attack_time_us: 1.0
+  agc_release_time_us: 10.0
+  dc_offset_enable: true
+  dc_offset_level_dBc: -50.0
+  dc_offset_compensation_enable: true
+  lna_gain_dB: 20.0
+  rx_gain_dB: 30.0
+  tx_gain_dB: 30.0
+  mutual_coupling_matrix_enable: false
+
+tdd_timing:
+  pdcch_to_pdsch_k0: 0
+  pdcch_to_pusch_k2: 4
+  dl_harq_feedback_k1: [4, 5, 6, 7]
+  ul_grant_k2: 4
+  harq_roundtrip_slots: 8
+  dl_to_ul_guard_time_us: 50.0
+  timing_advance_max_us: 666.7
+  n1_pdsch_processing_time_symbols: 4
+  n2_pusch_preparation_time_symbols: 4
+
 reference_signals:
   ssb_enabled: true
   pbch_enabled: true
@@ -546,12 +722,14 @@ reference_signals:
   pdcch_dmrs_enabled: true
   pdsch_dmrs_type: 1
   pdsch_dmrs_type_a_position: 2
+  pdsch_dmrs_typeA_position: 2
   pdsch_dmrs_additional_positions: 2
   pdsch_dmrs_ports: 2
   pdsch_dmrs_max_length: 1
   pusch_dmrs_config_type: 1
   pusch_dmrs_type: 1
   pusch_dmrs_type_a_position: 2
+  pusch_dmrs_typeA_position: 2
   pusch_dmrs_additional_positions: 2
   pusch_dmrs_ports: 2
   pusch_dmrs_max_length: 1
@@ -583,6 +761,21 @@ reference_signals:
   srs_max_ues_per_slot: 2
   srs_scheduling_policy: multiplex_due_users
   srs_power_imbalance_model: none
+  srs_comb_size: 4
+  srs_comb_offset: 0
+  srs_nrof_symbols: 1
+  srs_nrof_antenna_ports: 2
+  srs_guard_band_nrof_rbs: 0
+  srs_freq_domain_position: 0
+  srs_freq_domain_shift: 0
+  srs_cyclic_shift: 0
+  srs_resource_type: periodic
+  csi_rs_row_index: 2
+  csi_rs_first_ofdm_symbol_in_time_domain: 4
+  csi_rs_sequence_id: 0
+  dmrs_scrambling_id_source: physical_cell_id
+  dmrs_scrambling_id: 0
+  dmrs_port_to_layer_mapping: sequential
   trs_periodicity_ms: 10
   channel_estimation_mode: realistic_baseline
   receiver_type: mmse_irc
@@ -626,6 +819,14 @@ link_adaptation:
   delta_mcs_max: 6
   target_bler_dl: 0.10
   target_bler_ul: 0.10
+  olla_init_offset_db: 0.0
+  olla_max_offset_db: 6.0
+  olla_min_offset_db: -6.0
+  olla_window_size_slots: 100
+  olla_forgetting_factor: 0.01
+  mcs_backoff_dl_db: 0.5
+  mcs_backoff_ul_db: 0.5
+  sinr_to_cqi_mapping_table: table2
   olla_step_up: 0.10
   olla_step_down: 0.90
   olla_step_up_db: 0.10
@@ -645,6 +846,9 @@ harq:
   combining_type: IR
   harq_timing_feedback: asynchronous
   cbg_enable: false
+  cbg_nrof_code_block_groups: 8
+  dl_harq_ack_codebook_type: dynamic
+  harq_process_ndi_initialization: zero
   harq_disable_mode: none
 
 random_access:
@@ -777,6 +981,10 @@ impairments:
   pa_model: rapp
   pa_output_backoff_dB: 8.0
   pa_smoothness: 2.0
+  clipping_ratio_db: 0.0
+  oob_emission_limit_dBr: -45.0
+  rx_spur_level_dBc: -60.0
+  local_oscillator_leakage_dBc: -40.0
   evm_limit_qpsk_pct: 17.5
   evm_limit_16qam_pct: 12.5
   evm_limit_64qam_pct: 8.0

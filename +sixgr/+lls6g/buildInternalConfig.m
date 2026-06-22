@@ -1404,6 +1404,322 @@ if builtin("isstruct", channelRFSection) && ~isempty(fieldnames(channelRFSection
         cfg = localAppendValidationObjectives(cfg, "channel_rf_strict_validation");
     end
 end
+
+cfg = localApplyConfigDrivenPHYRuntimeSurfaces(cfg, s);
+end
+
+function cfg = localApplyConfigDrivenPHYRuntimeSurfaces(cfg, s)
+% Map optional deep PHY YAML surfaces into the internal runtime cfg. These
+% mappings are intentionally generic; they expose reusable NR-like controls
+% without fabricating measurements or changing receiver evidence.
+for section = ["bwp","pdsch","pusch","pdcch","channel_estimation","equalization", ...
+        "synchronization","rf_hardware","tdd_timing"]
+    if isfield(s, char(section))
+        cfg = sixgr.util.structSet(cfg, "lls6g." + section, s.(char(section)));
+    end
+end
+
+cfg = localApplyBWPSurface(cfg, s);
+cfg = localApplyDataChannelSurface(cfg, s, "pdsch", "phy.pdsch");
+cfg = localApplyDataChannelSurface(cfg, s, "pusch", "phy.pusch");
+cfg = localApplyPDCCHSurface(cfg, s);
+cfg = localApplyReceiverSurface(cfg, s);
+cfg = localApplyTimingAndRFHardwareSurface(cfg, s);
+cfg = localApplyAuxiliaryPHYKnobs(cfg, s);
+end
+
+function cfg = localApplyBWPSurface(cfg, s)
+directions = ["dl","ul"];
+for i = 1:numel(directions)
+    dir = directions(i);
+    src = "bwp." + dir;
+    [bwpStruct, found] = localTryGetNestedStrict(s, src);
+    if ~found || ~isstruct(bwpStruct)
+        continue;
+    end
+    base = "phy.bwp." + dir;
+    cfg = sixgr.util.structSet(cfg, base, bwpStruct);
+    cfg = localCopyRuntimeField(cfg, s, src + ".bwp_id", base + ".id");
+    cfg = localCopyRuntimeField(cfg, s, src + ".n_size_bwp", base + ".NSizeBWP");
+    cfg = localCopyRuntimeField(cfg, s, src + ".n_start_bwp", base + ".NStartBWP");
+    cfg = localCopyRuntimeField(cfg, s, src + ".scs_khz", base + ".SubcarrierSpacing_kHz");
+    cfg = localCopyRuntimeField(cfg, s, src + ".cp_type", base + ".CyclicPrefix");
+end
+end
+
+function cfg = localApplyDataChannelSurface(cfg, s, section, targetBase)
+if ~isfield(s, char(section))
+    return;
+end
+cfg = sixgr.util.structSet(cfg, targetBase + ".yamlSurface", s.(char(section)));
+fieldPairs = {
+    "resource_allocation_type", "resourceAllocationType"
+    "vrb_to_prb_mapping", "vrbToPRBMapping"
+    "prb_bundling_type", "prbBundlingType"
+    "prb_bundle_size", "prbBundleSize"
+    "rate_matching_pattern", "rateMatchingPattern"
+    "tbs_scaling", "tbsScaling"
+    "cbg_transmission", "cbgTransmission"
+    };
+for i = 1:size(fieldPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, section + "." + fieldPairs{i,1}, targetBase + "." + fieldPairs{i,2});
+end
+[mappingType, hasMappingType] = localTryGetNestedStrict(s, section + ".mapping_type");
+if hasMappingType
+    cfg = sixgr.util.structSet(cfg, targetBase + ".mappingType", ...
+        localNormalizeDataChannelMappingType(mappingType, section + ".mapping_type"));
+end
+if section == "pdsch"
+    cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".xOverhead");
+    cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".XOverhead");
+else
+    cfg = localCopyRuntimeField(cfg, s, "pusch.frequency_hopping", targetBase + ".frequencyHopping");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.intra_slot_frequency_hopping", targetBase + ".intraSlotFrequencyHopping");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.inter_slot_frequency_hopping", targetBase + ".interSlotFrequencyHopping");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.transform_precoding", targetBase + ".transformPrecoding");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.codebook_based_transmission", targetBase + ".codebookBasedTransmission");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.xoh_pusch", targetBase + ".xOverhead");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.xoh_pusch", targetBase + ".XOverhead");
+    cfg = localCopyRuntimeField(cfg, s, "pusch.tp_pi2_bpsk", targetBase + ".pi2BPSKTransformPrecoding");
+end
+
+[startSymbol, hasStart] = localTryGetNestedStrict(s, section + ".start_symbol");
+[numSymbols, hasNum] = localTryGetNestedStrict(s, section + ".num_symbols");
+if hasStart
+    cfg = sixgr.util.structSet(cfg, targetBase + ".startSymbol", round(double(startSymbol)));
+end
+if hasNum
+    cfg = sixgr.util.structSet(cfg, targetBase + ".numSymbols", round(double(numSymbols)));
+end
+if hasStart || hasNum
+    startValue = double(sixgr.util.structGet(cfg, targetBase + ".startSymbol", 0));
+    numValue = double(sixgr.util.structGet(cfg, targetBase + ".numSymbols", 14));
+    cfg = sixgr.util.structSet(cfg, targetBase + ".symbolAllocation", [round(startValue) round(numValue)]);
+    cfg = sixgr.util.structSet(cfg, targetBase + ".SymbolAllocation", [round(startValue) round(numValue)]);
+end
+end
+
+function cfg = localApplyPDCCHSurface(cfg, s)
+if ~isfield(s, "pdcch")
+    return;
+end
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.yamlSurface", s.pdcch);
+cfg = localCopyRuntimeField(cfg, s, "pdcch.blind_decoding_attempts", "phy.pdcch.blindDecodingAttempts");
+cfg = localCopyRuntimeField(cfg, s, "pdcch.dmrs_scrambling_id_source", "phy.pdcch.dmrsScramblingIdSource");
+cfg = localCopyRuntimeField(cfg, s, "pdcch.rnti_config", "phy.pdcch.rntiConfig");
+[coresets, hasCoreset] = localTryGetNestedStrict(s, "pdcch.coreset");
+if ~hasCoreset
+    [coresets, hasCoreset] = localTryGetNestedStrict(s, "pdcch.coresets");
+end
+if hasCoreset
+    cfg = sixgr.util.structSet(cfg, "phy.pdcch.coresets", coresets);
+    if isstruct(coresets) && ~isempty(coresets)
+        first = coresets(1);
+        cfg = localSetFromStructIfPresent(cfg, first, "duration_symbols", "phy.pdcch.coreset.duration");
+        cfg = localSetFromStructIfPresent(cfg, first, "coreset_id", "phy.pdcch.coreset.id");
+        cfg = localSetFromStructIfPresent(cfg, first, "cce_to_reg_mapping", "phy.pdcch.coreset.cceToREGMapping");
+        cfg = localSetFromStructIfPresent(cfg, first, "reg_bundle_size", "phy.pdcch.coreset.regBundleSize");
+        cfg = localSetFromStructIfPresent(cfg, first, "interleaver_size", "phy.pdcch.coreset.interleaverSize");
+        cfg = localSetFromStructIfPresent(cfg, first, "shift_index", "phy.pdcch.coreset.shiftIndex");
+        cfg = localSetFromStructIfPresent(cfg, first, "precoder_granularity", "phy.pdcch.coreset.precoderGranularity");
+    end
+end
+[spaces, hasSpaces] = localTryGetNestedStrict(s, "pdcch.search_spaces");
+if hasSpaces
+    cfg = sixgr.util.structSet(cfg, "phy.pdcch.searchSpaces", spaces);
+end
+end
+
+function cfg = localApplyReceiverSurface(cfg, s)
+cePairs = {
+    "algorithm", "algorithm"
+    "interpolation_method", "interpolationMethod"
+    "filter_length_time", "filterLengthTime"
+    "filter_length_freq", "filterLengthFrequency"
+    "noise_variance_source", "noiseVarianceSource"
+    "noise_variance_averaging_window_slots", "noiseVarianceAveragingWindowSlots"
+    "delay_spread_assumption_ns", "delaySpreadAssumption_ns"
+    "doppler_assumption_hz", "dopplerAssumption_Hz"
+    "temporal_filtering_enable", "temporalFilteringEnabled"
+    "frequency_smoothing_enable", "frequencySmoothingEnabled"
+    "perfect_csi", "perfectCSI"
+    "ce_extrapolation_mode", "extrapolationMode"
+    "ce_bound_delay_ns", "boundDelay_ns"
+    "ce_reference_signal", "referenceSignal"
+    };
+for i = 1:size(cePairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, "channel_estimation." + cePairs{i,1}, "phy.channelEstimation." + cePairs{i,2});
+end
+
+eqPairs = {
+    "algorithm", "algorithm"
+    "regularization_method", "regularizationMethod"
+    "noise_variance_for_equalizer", "noiseVarianceForEqualizer"
+    "post_equalization_snr_estimation", "postEqualizationSNREstimation"
+    "irc_interference_covariance_window_slots", "ircInterferenceCovarianceWindowSlots"
+    "irc_covariance_estimation", "ircCovarianceEstimation"
+    "sv_threshold", "singularValueThreshold"
+    "condition_number_cap", "conditionNumberCap"
+    "per_prb_equalization", "perPRBEqualization"
+    "per_symbol_equalization", "perSymbolEqualization"
+    "equalizer_output_scaling", "outputScaling"
+    "sic_enable", "sicEnabled"
+    "sic_stages", "sicStages"
+    };
+for i = 1:size(eqPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, "equalization." + eqPairs{i,1}, "phy.equalization." + eqPairs{i,2});
+end
+end
+
+function cfg = localApplyTimingAndRFHardwareSurface(cfg, s)
+syncPairs = {
+    "timing_sync_algorithm", "timingSyncAlgorithm"
+    "frequency_sync_algorithm", "frequencySyncAlgorithm"
+    "symbol_timing_recovery", "symbolTimingRecovery"
+    "integer_cfo_correction_enable", "integerCFOCorrectionEnabled"
+    "fractional_cfo_correction_enable", "fractionalCFOCorrectionEnabled"
+    "timing_tracking_mode", "timingTrackingMode"
+    "frequency_tracking_mode", "frequencyTrackingMode"
+    "pss_detection_threshold", "pssDetectionThreshold"
+    "sss_hypothesis_test_threshold", "sssHypothesisTestThreshold"
+    "max_timing_uncertainty_samples", "maxTimingUncertaintySamples"
+    "ota_timing_advance_enable", "otaTimingAdvanceEnabled"
+    "timing_advance_granularity_ts", "timingAdvanceGranularityTs"
+    };
+for i = 1:size(syncPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, "synchronization." + syncPairs{i,1}, "phy.synchronization." + syncPairs{i,2});
+end
+
+rfPairs = {
+    "adc_resolution_bits", "adc.resolutionBits"
+    "dac_resolution_bits", "dac.resolutionBits"
+    "adc_dynamic_range_db", "adc.dynamicRange_dB"
+    "adc_full_scale_power_dBm", "adc.fullScalePower_dBm"
+    "agc_enable", "agc.enabled"
+    "agc_target_level_dBm", "agc.targetLevel_dBm"
+    "agc_attack_time_us", "agc.attackTime_us"
+    "agc_release_time_us", "agc.releaseTime_us"
+    "dc_offset_enable", "dcOffset.enabled"
+    "dc_offset_level_dBc", "dcOffset.level_dBc"
+    "dc_offset_compensation_enable", "dcOffset.compensationEnabled"
+    "lna_gain_dB", "lna.gain_dB"
+    "rx_gain_dB", "rxGain_dB"
+    "tx_gain_dB", "txGain_dB"
+    "mutual_coupling_matrix_enable", "mutualCouplingMatrixEnabled"
+    };
+for i = 1:size(rfPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, "rf_hardware." + rfPairs{i,1}, "rf.hardware." + rfPairs{i,2});
+end
+
+tddPairs = {
+    "pdcch_to_pdsch_k0", "pdcchToPDSCHK0"
+    "pdcch_to_pusch_k2", "pdcchToPUSCHK2"
+    "dl_harq_feedback_k1", "dlHARQFeedbackK1Candidates"
+    "ul_grant_k2", "ulGrantK2"
+    "harq_roundtrip_slots", "harqRoundtripSlots"
+    "dl_to_ul_guard_time_us", "dlToULGuardTime_us"
+    "timing_advance_max_us", "timingAdvanceMax_us"
+    "n1_pdsch_processing_time_symbols", "n1PDSCHProcessingTimeSymbols"
+    "n2_pusch_preparation_time_symbols", "n2PUSCHPreparationTimeSymbols"
+    };
+for i = 1:size(tddPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, "tdd_timing." + tddPairs{i,1}, "phy.tddTiming." + tddPairs{i,2});
+end
+cfg = localCopyRuntimeField(cfg, s, "tdd_timing.ul_grant_k2", "mac.harq.k2");
+cfg = localCopyRuntimeField(cfg, s, "tdd_timing.ul_grant_k2", "phy.pusch.k2_slots");
+cfg = localCopyRuntimeField(cfg, s, "tdd_timing.pdcch_to_pusch_k2", "phy.ul.grantK2Slots");
+end
+
+function cfg = localApplyAuxiliaryPHYKnobs(cfg, s)
+auxPairs = {
+    "coding.ldpc_lifting_size_z_selection", "phy.ldpc.liftingSizeZSelection"
+    "coding.ldpc_schedule_type", "phy.ldpc.scheduleType"
+    "coding.ldpc_min_sum_offset", "phy.ldpc.minSumOffset"
+    "coding.polar_reliability_sequence_source", "phy.polar.reliabilitySequenceSource"
+    "coding.polar_rate_matching_type", "phy.polar.rateMatchingType"
+    "mimo.sv_rank_threshold", "phy.mimo.svRankThreshold"
+    "mimo.precoder_prg_size_rbs", "phy.mimo.precoderPRGSizeRBs"
+    "mimo.codebook_subset_restriction", "phy.mimo.codebookSubsetRestriction"
+    "mimo.type2_codebook_oversampling_factor_O1", "phy.mimo.type2CodebookOversamplingO1"
+    "mimo.type2_codebook_oversampling_factor_O2", "phy.mimo.type2CodebookOversamplingO2"
+    "mimo.csi_rs_based_precoder_update", "phy.mimo.csirsBasedPrecoderUpdate"
+    "reference_signals.srs_comb_size", "phy.srs.KTC"
+    "reference_signals.srs_comb_offset", "phy.srs.KBarTC"
+    "reference_signals.srs_nrof_symbols", "phy.srs.NumSRSSymbols"
+    "reference_signals.srs_nrof_antenna_ports", "phy.srs.nPorts"
+    "reference_signals.srs_guard_band_nrof_rbs", "phy.srs.guardBandNumRBs"
+    "reference_signals.srs_freq_domain_position", "phy.srs.FrequencyStart"
+    "reference_signals.srs_freq_domain_shift", "phy.srs.FrequencyShift"
+    "reference_signals.srs_cyclic_shift", "phy.srs.CyclicShift"
+    "reference_signals.srs_resource_type", "phy.srs.resourceType"
+    "reference_signals.csi_rs_row_index", "phy.csirs.rowIndex"
+    "reference_signals.csi_rs_first_ofdm_symbol_in_time_domain", "phy.csirs.firstOFDMSymbol"
+    "reference_signals.csi_rs_sequence_id", "phy.csirs.scramblingID"
+    "reference_signals.dmrs_scrambling_id_source", "phy.dmrs.scramblingIdSource"
+    "reference_signals.dmrs_scrambling_id", "phy.dmrs.scramblingID"
+    "reference_signals.dmrs_port_to_layer_mapping", "phy.dmrs.portToLayerMapping"
+    "link_adaptation.olla_init_offset_db", "phy.linkAdaptation.ollaInitialOffset_dB"
+    "link_adaptation.olla_max_offset_db", "phy.linkAdaptation.ollaMaxOffset_dB"
+    "link_adaptation.olla_min_offset_db", "phy.linkAdaptation.ollaMinOffset_dB"
+    "link_adaptation.olla_window_size_slots", "phy.linkAdaptation.ollaWindowSizeSlots"
+    "link_adaptation.olla_forgetting_factor", "phy.linkAdaptation.ollaForgettingFactor"
+    "link_adaptation.mcs_backoff_dl_db", "phy.linkAdaptation.dlMCSBackoff_dB"
+    "link_adaptation.mcs_backoff_ul_db", "phy.linkAdaptation.ulMCSBackoff_dB"
+    "link_adaptation.sinr_to_cqi_mapping_table", "phy.linkAdaptation.sinrToCQITable"
+    "channels.cdl_delay_profile_scaling", "channel.cdlDelayProfileScaling"
+    "channels.xpr_db", "channel.xpr_dB"
+    "channels.antenna_element_spacing_dl_lambda", "channel.antennaElementSpacingDL_lambda"
+    "channels.antenna_element_spacing_ul_lambda", "channel.antennaElementSpacingUL_lambda"
+    "channels.spatial_filter_order", "channel.spatialFilterOrder"
+    "channels.channel_filter_length_samples", "channel.filterLengthSamples"
+    "channels.perfect_csi", "channel.perfectCSI"
+    "harq.cbg_nrof_code_block_groups", "phy.harq.cbgNumCodeBlockGroups"
+    "harq.dl_harq_ack_codebook_type", "phy.harq.dlACKCodebookType"
+    "harq.harq_process_ndi_initialization", "phy.harq.ndiInitialization"
+    "impairments.clipping_ratio_db", "phy.impairments.clippingRatio_dB"
+    "impairments.oob_emission_limit_dBr", "phy.impairments.oobEmissionLimit_dBr"
+    "impairments.rx_spur_level_dBc", "phy.impairments.rxSpurLevel_dBc"
+    "impairments.local_oscillator_leakage_dBc", "phy.impairments.localOscillatorLeakage_dBc"
+    };
+for i = 1:size(auxPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, auxPairs{i,1}, auxPairs{i,2});
+end
+
+% Accept both common spellings and drive one internal DMRS type-A field.
+cfg = localCopyRuntimeField(cfg, s, "reference_signals.pdsch_dmrs_typeA_position", "phy.pdsch.dmrs.typeApos");
+cfg = localCopyRuntimeField(cfg, s, "reference_signals.pusch_dmrs_typeA_position", "phy.pusch.dmrs.typeApos");
+end
+
+function cfg = localCopyRuntimeField(cfg, s, sourcePath, targetPath)
+[value, found] = localTryGetNestedStrict(s, sourcePath);
+if found
+    cfg = sixgr.util.structSet(cfg, targetPath, value);
+end
+end
+
+function mappingType = localNormalizeDataChannelMappingType(value, sourcePath)
+tokens = string(value);
+if numel(tokens) ~= 1
+    error("sixgr:lls6g:config:BadDataChannelMappingType", ...
+        "Scenario field '%s' must be a scalar PDSCH/PUSCH mapping type.", string(sourcePath));
+end
+token = lower(regexprep(strtrim(tokens), "[_\-\s]", ""));
+switch token
+    case {"a", "typea"}
+        mappingType = "A";
+    case {"b", "typeb"}
+        mappingType = "B";
+    otherwise
+        error("sixgr:lls6g:config:BadDataChannelMappingType", ...
+            "Scenario field '%s' has invalid mapping type '%s'. Allowed values are A, B, typeA, or typeB.", ...
+            string(sourcePath), tokens);
+end
+end
+
+function cfg = localSetFromStructIfPresent(cfg, valueStruct, fieldName, targetPath)
+if isstruct(valueStruct) && isfield(valueStruct, char(fieldName))
+    cfg = sixgr.util.structSet(cfg, targetPath, valueStruct.(char(fieldName)));
+end
 end
 
 function cfg = localAppendValidationObjectives(cfg, tokens)
@@ -2551,6 +2867,25 @@ end
 
 function value = localGetNested(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
+end
+
+function [value, found] = localTryGetNestedStrict(s, path)
+value = [];
+found = false;
+parts = split(string(path), ".");
+if isempty(parts) || ~isstruct(s)
+    return;
+end
+cursor = s;
+for i = 1:numel(parts)
+    key = char(parts(i));
+    if ~(isstruct(cursor) && isscalar(cursor) && isfield(cursor, key))
+        return;
+    end
+    cursor = cursor.(key);
+end
+value = cursor;
+found = true;
 end
 
 function tf = localScenarioHasTag(s, tag)

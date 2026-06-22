@@ -1,0 +1,196 @@
+top_level_order:
+  - bwp
+  - pdsch
+  - pusch
+  - pdcch
+  - channel_estimation
+  - equalization
+  - synchronization
+  - rf_hardware
+  - tdd_timing
+sections:
+  bwp:
+    required: false
+    parameters:
+      dl: {required: false, type: struct}
+      ul: {required: false, type: struct}
+  pdsch:
+    required: false
+    parameters:
+      resource_allocation_type: {required: false, type: string}
+      mapping_type: {required: false, type: string}
+      start_symbol: {required: false, type: integer, min: 0}
+      num_symbols: {required: false, type: integer, min: 1}
+      vrb_to_prb_mapping: {required: false, type: string}
+      prb_bundling_type: {required: false, type: string}
+      prb_bundle_size: {required: false, type: string_or_number}
+      rate_matching_pattern: {required: false, type: string_list}
+      xoh_pdsch: {required: false, type: number}
+      tbs_scaling: {required: false, type: number, min_exclusive: 0}
+      cbg_transmission: {required: false, type: boolean}
+  pusch:
+    required: false
+    parameters:
+      resource_allocation_type: {required: false, type: string}
+      mapping_type: {required: false, type: string}
+      start_symbol: {required: false, type: integer, min: 0}
+      num_symbols: {required: false, type: integer, min: 1}
+      frequency_hopping: {required: false, type: string}
+      intra_slot_frequency_hopping: {required: false, type: boolean}
+      inter_slot_frequency_hopping: {required: false, type: boolean}
+      transform_precoding: {required: false, type: boolean}
+      codebook_based_transmission: {required: false, type: boolean}
+      xoh_pusch: {required: false, type: number}
+      cbg_transmission: {required: false, type: boolean}
+      tp_pi2_bpsk: {required: false, type: boolean}
+  pdcch:
+    required: false
+    parameters:
+      coreset: {required: false, type: struct_array}
+      coresets: {required: false, type: struct_array}
+      search_spaces: {required: false, type: struct_array}
+      blind_decoding_attempts: {required: false, type: integer, min: 1}
+      dmrs_scrambling_id_source: {required: false, type: string}
+      rnti_config: {required: false, type: struct}
+  channel_estimation:
+    required: false
+    parameters:
+      algorithm: {required: false, type: string}
+      interpolation_method: {required: false, type: string}
+      filter_length_time: {required: false, type: integer, min: 1}
+      filter_length_freq: {required: false, type: integer, min: 1}
+      noise_variance_source: {required: false, type: string}
+      noise_variance_averaging_window_slots: {required: false, type: integer, min: 1}
+      delay_spread_assumption_ns: {required: false, type: number, min: 0}
+      doppler_assumption_hz: {required: false, type: number, min: 0}
+      temporal_filtering_enable: {required: false, type: boolean}
+      frequency_smoothing_enable: {required: false, type: boolean}
+      perfect_csi: {required: false, type: boolean}
+      ce_extrapolation_mode: {required: false, type: string}
+      ce_bound_delay_ns: {required: false, type: number, min: 0}
+      ce_reference_signal: {required: false, type: string}
+  equalization:
+    required: false
+    parameters:
+      algorithm: {required: false, type: string}
+      regularization_method: {required: false, type: string}
+      noise_variance_for_equalizer: {required: false, type: string}
+      post_equalization_snr_estimation: {required: false, type: string}
+      irc_interference_covariance_window_slots: {required: false, type: integer, min: 1}
+      irc_covariance_estimation: {required: false, type: string}
+      sv_threshold: {required: false, type: number, min: 0}
+      condition_number_cap: {required: false, type: number, min_exclusive: 0}
+      per_prb_equalization: {required: false, type: boolean}
+      per_symbol_equalization: {required: false, type: boolean}
+      equalizer_output_scaling: {required: false, type: string}
+      sic_enable: {required: false, type: boolean}
+      sic_stages: {required: false, type: integer, min: 1}
+  synchronization:
+    required: false
+    parameters:
+      timing_sync_algorithm: {required: false, type: string}
+      frequency_sync_algorithm: {required: false, type: string}
+      symbol_timing_recovery: {required: false, type: string}
+      integer_cfo_correction_enable: {required: false, type: boolean}
+      fractional_cfo_correction_enable: {required: false, type: boolean}
+      timing_tracking_mode: {required: false, type: string}
+      frequency_tracking_mode: {required: false, type: string}
+      pss_detection_threshold: {required: false, type: number, min: 0}
+      sss_hypothesis_test_threshold: {required: false, type: number, min: 0}
+      max_timing_uncertainty_samples: {required: false, type: integer, min: 0}
+      ota_timing_advance_enable: {required: false, type: boolean}
+      timing_advance_granularity_ts: {required: false, type: integer, min: 1}
+  rf_hardware:
+    required: false
+    parameters:
+      adc_resolution_bits: {required: false, type: integer, min: 1}
+      dac_resolution_bits: {required: false, type: integer, min: 1}
+      adc_dynamic_range_db: {required: false, type: number, min: 0}
+      adc_full_scale_power_dBm: {required: false, type: number}
+      agc_enable: {required: false, type: boolean}
+      agc_target_level_dBm: {required: false, type: number}
+      agc_attack_time_us: {required: false, type: number, min: 0}
+      agc_release_time_us: {required: false, type: number, min: 0}
+      dc_offset_enable: {required: false, type: boolean}
+      dc_offset_level_dBc: {required: false, type: number}
+      dc_offset_compensation_enable: {required: false, type: boolean}
+      lna_gain_dB: {required: false, type: number}
+      rx_gain_dB: {required: false, type: number}
+      tx_gain_dB: {required: false, type: number}
+      mutual_coupling_matrix_enable: {required: false, type: boolean}
+  tdd_timing:
+    required: false
+    parameters:
+      pdcch_to_pdsch_k0: {required: false, type: integer, min: 0}
+      pdcch_to_pusch_k2: {required: false, type: integer, min: 0}
+      dl_harq_feedback_k1: {required: false, type: number_list}
+      ul_grant_k2: {required: false, type: integer, min: 0}
+      harq_roundtrip_slots: {required: false, type: integer, min: 0}
+      dl_to_ul_guard_time_us: {required: false, type: number, min: 0}
+      timing_advance_max_us: {required: false, type: number, min: 0}
+      n1_pdsch_processing_time_symbols: {required: false, type: integer, min: 0}
+      n2_pusch_preparation_time_symbols: {required: false, type: integer, min: 0}
+  coding:
+    parameters:
+      ldpc_lifting_size_z_selection: {required: false, type: string}
+      ldpc_schedule_type: {required: false, type: string}
+      ldpc_min_sum_offset: {required: false, type: number}
+      polar_reliability_sequence_source: {required: false, type: string}
+      polar_rate_matching_type: {required: false, type: string}
+  mimo:
+    parameters:
+      sv_rank_threshold: {required: false, type: number, min: 0}
+      precoder_prg_size_rbs: {required: false, type: string_or_number}
+      codebook_subset_restriction: {required: false, type: string}
+      type2_codebook_oversampling_factor_O1: {required: false, type: integer, min: 1}
+      type2_codebook_oversampling_factor_O2: {required: false, type: integer, min: 1}
+      csi_rs_based_precoder_update: {required: false, type: boolean}
+  reference_signals:
+    parameters:
+      pdsch_dmrs_typeA_position: {required: false, type: integer, allowed_numeric_values: [2, 3]}
+      pusch_dmrs_typeA_position: {required: false, type: integer, allowed_numeric_values: [2, 3]}
+      srs_comb_size: {required: false, type: integer, min: 1}
+      srs_comb_offset: {required: false, type: integer, min: 0}
+      srs_nrof_symbols: {required: false, type: integer, min: 1}
+      srs_nrof_antenna_ports: {required: false, type: integer, min: 1}
+      srs_guard_band_nrof_rbs: {required: false, type: integer, min: 0}
+      srs_freq_domain_position: {required: false, type: integer, min: 0}
+      srs_freq_domain_shift: {required: false, type: integer, min: 0}
+      srs_cyclic_shift: {required: false, type: integer, min: 0}
+      srs_resource_type: {required: false, type: string}
+      csi_rs_row_index: {required: false, type: integer, min: 1}
+      csi_rs_first_ofdm_symbol_in_time_domain: {required: false, type: integer, min: 0}
+      csi_rs_sequence_id: {required: false, type: integer, min: 0}
+      dmrs_scrambling_id_source: {required: false, type: string}
+      dmrs_scrambling_id: {required: false, type: integer, min: 0}
+      dmrs_port_to_layer_mapping: {required: false, type: string}
+  link_adaptation:
+    parameters:
+      olla_init_offset_db: {required: false, type: number}
+      olla_max_offset_db: {required: false, type: number}
+      olla_min_offset_db: {required: false, type: number}
+      olla_window_size_slots: {required: false, type: integer, min: 1}
+      olla_forgetting_factor: {required: false, type: number, min: 0}
+      mcs_backoff_dl_db: {required: false, type: number, min: 0}
+      mcs_backoff_ul_db: {required: false, type: number, min: 0}
+      sinr_to_cqi_mapping_table: {required: false, type: string}
+  channels:
+    parameters:
+      cdl_delay_profile_scaling: {required: false, type: boolean}
+      xpr_db: {required: false, type: number}
+      antenna_element_spacing_dl_lambda: {required: false, type: number, min_exclusive: 0}
+      antenna_element_spacing_ul_lambda: {required: false, type: number, min_exclusive: 0}
+      spatial_filter_order: {required: false, type: integer, min: 1}
+      channel_filter_length_samples: {required: false, type: integer, min: 1}
+      perfect_csi: {required: false, type: boolean}
+  harq:
+    parameters:
+      cbg_nrof_code_block_groups: {required: false, type: integer, min: 1}
+      dl_harq_ack_codebook_type: {required: false, type: string}
+      harq_process_ndi_initialization: {required: false, type: string}
+  impairments:
+    parameters:
+      clipping_ratio_db: {required: false, type: number, min: 0}
+      oob_emission_limit_dBr: {required: false, type: number}
+      rx_spur_level_dBc: {required: false, type: number}
+      local_oscillator_leakage_dBc: {required: false, type: number}

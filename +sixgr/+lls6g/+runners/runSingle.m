@@ -1492,6 +1492,7 @@ sixgr.config.publishConfigApplicationEvidence("reset", struct( ...
     "RunId", double(sixgr.util.structGet(storeInfo, "RunID", NaN)), ...
     "ScenarioID", string(scfg.ScenarioID), ...
     "RunTag", string(runTag)));
+localPublishMappedRuntimeConfigEvidence(scfg, cfg);
 if logical(sixgr.util.structGet(storeInfo, "Active", false))
     sixgr.db.markRunStatus("running", struct("started_utc", runStartUTC));
 end
@@ -4342,6 +4343,164 @@ end
 
 function out = localShellEscapeArg(value)
 out = strrep(char(string(value)), '"', '""');
+end
+
+function localPublishMappedRuntimeConfigEvidence(scfg, cfg)
+if isa(scfg, "sixgr.lls6g.config.ScenarioConfig")
+    s = scfg.toStruct();
+else
+    s = scfg;
+end
+if ~isstruct(s)
+    return;
+end
+
+mappings = {
+    "bwp.dl", "PHY_BWP", "phy.bwp.dl"
+    "bwp.ul", "PHY_BWP", "phy.bwp.ul"
+    "pdsch.resource_allocation_type", "DL_Data_PDSCH", "phy.pdsch.resourceAllocationType"
+    "pdsch.mapping_type", "DL_Data_PDSCH", "phy.pdsch.mappingType"
+    "pdsch.start_symbol", "DL_Data_PDSCH", "phy.pdsch.startSymbol"
+    "pdsch.num_symbols", "DL_Data_PDSCH", "phy.pdsch.numSymbols"
+    "pdsch.vrb_to_prb_mapping", "DL_Data_PDSCH", "phy.pdsch.vrbToPRBMapping"
+    "pdsch.prb_bundling_type", "DL_Data_PDSCH", "phy.pdsch.prbBundlingType"
+    "pdsch.prb_bundle_size", "DL_Data_PDSCH", "phy.pdsch.prbBundleSize"
+    "pdsch.rate_matching_pattern", "DL_Data_PDSCH", "phy.pdsch.rateMatchingPattern"
+    "pdsch.xoh_pdsch", "DL_Data_PDSCH", "phy.pdsch.xOverhead"
+    "pdsch.tbs_scaling", "DL_Data_PDSCH", "phy.pdsch.tbsScaling"
+    "pdsch.cbg_transmission", "DL_Data_PDSCH", "phy.pdsch.cbgTransmission"
+    "pusch.resource_allocation_type", "UL_Data_PUSCH", "phy.pusch.resourceAllocationType"
+    "pusch.mapping_type", "UL_Data_PUSCH", "phy.pusch.mappingType"
+    "pusch.start_symbol", "UL_Data_PUSCH", "phy.pusch.startSymbol"
+    "pusch.num_symbols", "UL_Data_PUSCH", "phy.pusch.numSymbols"
+    "pusch.frequency_hopping", "UL_Data_PUSCH", "phy.pusch.frequencyHopping"
+    "pusch.intra_slot_frequency_hopping", "UL_Data_PUSCH", "phy.pusch.intraSlotFrequencyHopping"
+    "pusch.inter_slot_frequency_hopping", "UL_Data_PUSCH", "phy.pusch.interSlotFrequencyHopping"
+    "pusch.transform_precoding", "UL_Data_PUSCH", "phy.pusch.transformPrecoding"
+    "pusch.codebook_based_transmission", "UL_Data_PUSCH", "phy.pusch.codebookBasedTransmission"
+    "pusch.xoh_pusch", "UL_Data_PUSCH", "phy.pusch.xOverhead"
+    "pusch.cbg_transmission", "UL_Data_PUSCH", "phy.pusch.cbgTransmission"
+    "pusch.tp_pi2_bpsk", "UL_Data_PUSCH", "phy.pusch.pi2BPSKTransformPrecoding"
+    "pdcch.coreset", "DL_UL_Control_PDCCH", "phy.pdcch.coresets"
+    "pdcch.coresets", "DL_UL_Control_PDCCH", "phy.pdcch.coresets"
+    "pdcch.search_spaces", "DL_UL_Control_PDCCH", "phy.pdcch.searchSpaces"
+    "pdcch.blind_decoding_attempts", "DL_UL_Control_PDCCH", "phy.pdcch.blindDecodingAttempts"
+    "pdcch.dmrs_scrambling_id_source", "DL_UL_Control_PDCCH", "phy.pdcch.dmrsScramblingIdSource"
+    "pdcch.rnti_config", "DL_UL_Control_PDCCH", "phy.pdcch.rntiConfig"
+    "channel_estimation.algorithm", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.algorithm"
+    "channel_estimation.interpolation_method", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.interpolationMethod"
+    "channel_estimation.filter_length_time", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.filterLengthTime"
+    "channel_estimation.filter_length_freq", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.filterLengthFrequency"
+    "channel_estimation.noise_variance_source", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.noiseVarianceSource"
+    "channel_estimation.noise_variance_averaging_window_slots", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.noiseVarianceAveragingWindowSlots"
+    "channel_estimation.delay_spread_assumption_ns", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.delaySpreadAssumption_ns"
+    "channel_estimation.doppler_assumption_hz", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.dopplerAssumption_Hz"
+    "channel_estimation.temporal_filtering_enable", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.temporalFilteringEnabled"
+    "channel_estimation.frequency_smoothing_enable", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.frequencySmoothingEnabled"
+    "channel_estimation.perfect_csi", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.perfectCSI"
+    "channel_estimation.ce_extrapolation_mode", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.extrapolationMode"
+    "channel_estimation.ce_bound_delay_ns", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.boundDelay_ns"
+    "channel_estimation.ce_reference_signal", "PHY_Receiver_Channel_Estimation", "phy.channelEstimation.referenceSignal"
+    "equalization.algorithm", "PHY_Receiver_Equalization", "phy.equalization.algorithm"
+    "equalization.regularization_method", "PHY_Receiver_Equalization", "phy.equalization.regularizationMethod"
+    "equalization.noise_variance_for_equalizer", "PHY_Receiver_Equalization", "phy.equalization.noiseVarianceForEqualizer"
+    "equalization.post_equalization_snr_estimation", "PHY_Receiver_Equalization", "phy.equalization.postEqualizationSNREstimation"
+    "equalization.irc_interference_covariance_window_slots", "PHY_Receiver_Equalization", "phy.equalization.ircInterferenceCovarianceWindowSlots"
+    "equalization.irc_covariance_estimation", "PHY_Receiver_Equalization", "phy.equalization.ircCovarianceEstimation"
+    "equalization.sv_threshold", "PHY_Receiver_Equalization", "phy.equalization.singularValueThreshold"
+    "equalization.condition_number_cap", "PHY_Receiver_Equalization", "phy.equalization.conditionNumberCap"
+    "equalization.per_prb_equalization", "PHY_Receiver_Equalization", "phy.equalization.perPRBEqualization"
+    "equalization.per_symbol_equalization", "PHY_Receiver_Equalization", "phy.equalization.perSymbolEqualization"
+    "equalization.equalizer_output_scaling", "PHY_Receiver_Equalization", "phy.equalization.outputScaling"
+    "equalization.sic_enable", "PHY_Receiver_Equalization", "phy.equalization.sicEnabled"
+    "equalization.sic_stages", "PHY_Receiver_Equalization", "phy.equalization.sicStages"
+    "synchronization.timing_sync_algorithm", "PHY_Synchronization", "phy.synchronization.timingSyncAlgorithm"
+    "synchronization.frequency_sync_algorithm", "PHY_Synchronization", "phy.synchronization.frequencySyncAlgorithm"
+    "synchronization.symbol_timing_recovery", "PHY_Synchronization", "phy.synchronization.symbolTimingRecovery"
+    "synchronization.integer_cfo_correction_enable", "PHY_Synchronization", "phy.synchronization.integerCFOCorrectionEnabled"
+    "synchronization.fractional_cfo_correction_enable", "PHY_Synchronization", "phy.synchronization.fractionalCFOCorrectionEnabled"
+    "synchronization.timing_tracking_mode", "PHY_Synchronization", "phy.synchronization.timingTrackingMode"
+    "synchronization.frequency_tracking_mode", "PHY_Synchronization", "phy.synchronization.frequencyTrackingMode"
+    "synchronization.pss_detection_threshold", "PHY_Synchronization", "phy.synchronization.pssDetectionThreshold"
+    "synchronization.sss_hypothesis_test_threshold", "PHY_Synchronization", "phy.synchronization.sssHypothesisTestThreshold"
+    "synchronization.max_timing_uncertainty_samples", "PHY_Synchronization", "phy.synchronization.maxTimingUncertaintySamples"
+    "synchronization.ota_timing_advance_enable", "PHY_Synchronization", "phy.synchronization.otaTimingAdvanceEnabled"
+    "synchronization.timing_advance_granularity_ts", "PHY_Synchronization", "phy.synchronization.timingAdvanceGranularityTs"
+    "rf_hardware.adc_resolution_bits", "RF_Hardware", "rf.hardware.adc.resolutionBits"
+    "rf_hardware.dac_resolution_bits", "RF_Hardware", "rf.hardware.dac.resolutionBits"
+    "rf_hardware.adc_dynamic_range_db", "RF_Hardware", "rf.hardware.adc.dynamicRange_dB"
+    "rf_hardware.adc_full_scale_power_dBm", "RF_Hardware", "rf.hardware.adc.fullScalePower_dBm"
+    "rf_hardware.agc_enable", "RF_Hardware", "rf.hardware.agc.enabled"
+    "rf_hardware.agc_target_level_dBm", "RF_Hardware", "rf.hardware.agc.targetLevel_dBm"
+    "rf_hardware.agc_attack_time_us", "RF_Hardware", "rf.hardware.agc.attackTime_us"
+    "rf_hardware.agc_release_time_us", "RF_Hardware", "rf.hardware.agc.releaseTime_us"
+    "rf_hardware.dc_offset_enable", "RF_Hardware", "rf.hardware.dcOffset.enabled"
+    "rf_hardware.dc_offset_level_dBc", "RF_Hardware", "rf.hardware.dcOffset.level_dBc"
+    "rf_hardware.dc_offset_compensation_enable", "RF_Hardware", "rf.hardware.dcOffset.compensationEnabled"
+    "rf_hardware.lna_gain_dB", "RF_Hardware", "rf.hardware.lna.gain_dB"
+    "rf_hardware.rx_gain_dB", "RF_Hardware", "rf.hardware.rxGain_dB"
+    "rf_hardware.tx_gain_dB", "RF_Hardware", "rf.hardware.txGain_dB"
+    "rf_hardware.mutual_coupling_matrix_enable", "RF_Hardware", "rf.hardware.mutualCouplingMatrixEnabled"
+    "tdd_timing.pdcch_to_pdsch_k0", "TDD_Timing", "phy.tddTiming.pdcchToPDSCHK0"
+    "tdd_timing.pdcch_to_pusch_k2", "TDD_Timing", "phy.tddTiming.pdcchToPUSCHK2"
+    "tdd_timing.dl_harq_feedback_k1", "TDD_Timing", "phy.tddTiming.dlHARQFeedbackK1Candidates"
+    "tdd_timing.ul_grant_k2", "TDD_Timing", "phy.tddTiming.ulGrantK2"
+    "tdd_timing.harq_roundtrip_slots", "TDD_Timing", "phy.tddTiming.harqRoundtripSlots"
+    "tdd_timing.dl_to_ul_guard_time_us", "TDD_Timing", "phy.tddTiming.dlToULGuardTime_us"
+    "tdd_timing.timing_advance_max_us", "TDD_Timing", "phy.tddTiming.timingAdvanceMax_us"
+    "tdd_timing.n1_pdsch_processing_time_symbols", "TDD_Timing", "phy.tddTiming.n1PDSCHProcessingTimeSymbols"
+    "tdd_timing.n2_pusch_preparation_time_symbols", "TDD_Timing", "phy.tddTiming.n2PUSCHPreparationTimeSymbols"
+    "coding.ldpc_lifting_size_z_selection", "PHY_Coding", "phy.ldpc.liftingSizeZSelection"
+    "coding.ldpc_schedule_type", "PHY_Coding", "phy.ldpc.scheduleType"
+    "coding.ldpc_min_sum_offset", "PHY_Coding", "phy.ldpc.minSumOffset"
+    "coding.polar_reliability_sequence_source", "PHY_Coding", "phy.polar.reliabilitySequenceSource"
+    "coding.polar_rate_matching_type", "PHY_Coding", "phy.polar.rateMatchingType"
+    "link_adaptation.olla_init_offset_db", "Link_Adaptation", "phy.linkAdaptation.ollaInitialOffset_dB"
+    "link_adaptation.olla_max_offset_db", "Link_Adaptation", "phy.linkAdaptation.ollaMaxOffset_dB"
+    "link_adaptation.olla_min_offset_db", "Link_Adaptation", "phy.linkAdaptation.ollaMinOffset_dB"
+    "link_adaptation.olla_window_size_slots", "Link_Adaptation", "phy.linkAdaptation.ollaWindowSizeSlots"
+    "link_adaptation.olla_forgetting_factor", "Link_Adaptation", "phy.linkAdaptation.ollaForgettingFactor"
+    "link_adaptation.mcs_backoff_dl_db", "Link_Adaptation", "phy.linkAdaptation.dlMCSBackoff_dB"
+    "link_adaptation.mcs_backoff_ul_db", "Link_Adaptation", "phy.linkAdaptation.ulMCSBackoff_dB"
+    "link_adaptation.sinr_to_cqi_mapping_table", "Link_Adaptation", "phy.linkAdaptation.sinrToCQITable"
+    };
+
+for i = 1:size(mappings, 1)
+    parameterId = string(mappings{i, 1});
+    featureFamily = string(mappings{i, 2});
+    internalPath = string(mappings{i, 3});
+    [~, sourceFound] = localTryGetNestedRuntime(s, parameterId);
+    [appliedValue, internalFound] = localTryGetNestedRuntime(cfg, internalPath);
+    if ~(sourceFound && internalFound)
+        continue;
+    end
+    sixgr.config.publishConfigApplicationEvidence("record", ...
+        parameterId, featureFamily, internalPath, ...
+        "sixgr.lls6g.buildInternalConfig", appliedValue, ...
+        "RuntimeObjectType", "struct", ...
+        "RuntimeObjectPath", "cfg." + internalPath, ...
+        "ApplicationScope", "run", ...
+        "EvidenceSource", "resolved_config_to_internal_cfg_mapping");
+end
+end
+
+function [value, found] = localTryGetNestedRuntime(s, path)
+value = [];
+found = false;
+if ~isstruct(s)
+    return;
+end
+parts = split(string(path), ".");
+cursor = s;
+for i = 1:numel(parts)
+    key = char(parts(i));
+    if ~(isstruct(cursor) && isscalar(cursor) && isfield(cursor, key))
+        return;
+    end
+    cursor = cursor.(key);
+end
+value = cursor;
+found = true;
 end
 
 function localPruneEmptyDirs(rootFolder)
