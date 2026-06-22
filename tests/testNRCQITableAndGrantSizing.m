@@ -71,6 +71,29 @@ schStrict = sixgr.l2.mac.SchedulerPF(cfgStrict, "Direction", "DL");
 assert(~logical(info.UsedFastNREApprox), "Strict TBS mode must not use the fast NRE approximation.");
 assert(double(nrePerPRB) < 12 * 14, "Strict TBS mode must use actual RE counting with DMRS/overhead removed.");
 
+cfgULApprox = sixgr.config.defaultConfig();
+cfgULApprox = sixgr.util.structSet(cfgULApprox, "phy.pusch.transformPrecoding", false);
+cfgULApprox = sixgr.util.structSet(cfgULApprox, "phy.pusch.xOverhead", 0);
+cfgULApprox = sixgr.util.structSet(cfgULApprox, "phy.carrier.NSizeGrid", 273);
+cfgULApprox = sixgr.util.structSet(cfgULApprox, "mac.scheduler.tbsMode", "approximate");
+cfgULApprox = sixgr.util.structSet(cfgULApprox, "mac.scheduler.fastNREApprox", true);
+cfgULApprox = sixgr.config.normalizeConfig(cfgULApprox);
+schULApprox = sixgr.l2.mac.SchedulerPF(cfgULApprox, "Direction", "UL");
+[~, ~, ~, fastInfo] = schULApprox.estimateTBS("QPSK", 1, 134, [0 14], 193/1024);
+assert(logical(fastInfo.UsedFastNREApprox), ...
+    "Approximate scheduler probe must still be able to use the fast NRE path.");
+[exactULBits, ~, exactULNRE, exactULInfo] = schULApprox.estimateTBS("QPSK", 1, 134, [0 14], 193/1024, ...
+    "ForceExact", true);
+[carrierUL, ~] = sixgr.phy.grid.makeCarrier(cfgULApprox, "NSizeGrid", 273);
+[~, puschInfoRef] = sixgr.phy.grid.allocREsPUSCH(carrierUL, cfgULApprox, ...
+    "PRBSet", 0:133, "SymbolAllocation", [0 14], "Modulation", "QPSK", "NumLayers", 1);
+[nreRef, ~] = sixgr.util.resolveDataNREPerPRB(puschInfoRef, 134, "QPSK", 1);
+refULBits = double(nrTBS("QPSK", 1, 134, double(nreRef), 193/1024, 0));
+assert(~logical(exactULInfo.UsedFastNREApprox), ...
+    "ForceExact UL TBS must not be served from a cached fast planning estimate.");
+assert(double(exactULNRE) == double(nreRef) && double(exactULBits) == double(refULBits), ...
+    "ForceExact UL TBS must match nrTBS for the exact nrPUSCH allocation RE budget.");
+
 cfgGrant = sixgr.config.defaultConfig();
 cfgGrant.run.useMex = false;
 cfgGrant = sixgr.util.structSet(cfgGrant, "phy.pdsch.mcsTable", "qam256_table2");
@@ -115,9 +138,10 @@ planQueueAware = schQueueAware.buildNewDataGrantPlan( ...
     struct("RNTI", 77, "DLBufferBytes", 90, "CQI", 15, "RI", 2), 0:49, [0 14], 90);
 assert(planQueueAware.Valid && logical(planQueueAware.QueueAwareReductionApplied), ...
     "Queue-aware grant sizing must apply configured MCS/rank reduction when buffer occupancy is much smaller than the PRB share.");
-assert(double(planQueueAware.InitialMCSIndex) > double(planQueueAware.MCSIndex) && ...
-    double(planQueueAware.MCSReductionSteps) >= 1, ...
-    "Queue-aware grant sizing must disclose the exact MCS reduction applied before TB sizing.");
+assert((double(planQueueAware.InitialMCSIndex) > double(planQueueAware.MCSIndex) || ...
+    double(planQueueAware.InitialNumLayers) > double(planQueueAware.NumLayers)) && ...
+    (double(planQueueAware.MCSReductionSteps) + double(planQueueAware.LayerReductionSteps)) >= 1, ...
+    "Queue-aware grant sizing must disclose the exact MCS or layer reduction applied before TB sizing.");
 assert(double(planQueueAware.TBSBytes) <= 90 && double(planQueueAware.TBSBits) > 0, ...
     "Queue-aware MCS/rank reduction must still produce a real standards-sized TB that fits the queue.");
 

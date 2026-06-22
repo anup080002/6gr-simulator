@@ -322,31 +322,42 @@ function [nrePerPRB, gBits] = localResolveDataNREPerPRB(pdschInfo, nPRB, modStr,
 nrePerPRB = NaN;
 gBits = NaN;
 qm = localQm(modStr);
-if isfield(pdschInfo, 'G')
-    gBits = double(pdschInfo.G);
-    if isfinite(gBits)
-        if gBits <= 0
-            nrePerPRB = 0;
-            return;
-        end
-        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
-        if isfinite(nrePerPRB) && nrePerPRB > 0
-            return;
-        end
-    end
+indInfo = pdschInfo;
+if isstruct(pdschInfo) && isfield(pdschInfo, 'IndicesInfo')
+    indInfo = pdschInfo.IndicesInfo;
+elseif isstruct(pdschInfo) && isfield(pdschInfo, 'PDSCHIndicesInfo')
+    indInfo = pdschInfo.PDSCHIndicesInfo;
 end
-if isfield(pdschInfo, 'NRE')
-    totalNRE = double(pdschInfo.NRE);
+if isstruct(indInfo) && isfield(indInfo, 'G')
+    gBits = double(indInfo.G);
+elseif isstruct(pdschInfo) && isfield(pdschInfo, 'G')
+    gBits = double(pdschInfo.G);
+end
+if isstruct(indInfo) && isfield(indInfo, 'NREPerPRB')
+    nrePerPRB = double(indInfo.NREPerPRB);
+elseif isstruct(pdschInfo) && isfield(pdschInfo, 'NREPerPRB')
+    nrePerPRB = double(pdschInfo.NREPerPRB);
+elseif isstruct(indInfo) && isfield(indInfo, 'NRE')
+    totalNRE = double(indInfo.NRE);
     nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
     if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
         % Rate matching must follow the exact data-RE budget returned by
         % nrPDSCHIndices. Reserved resources can make NRE/PRB non-integer.
         gBits = totalNRE * double(qm) * double(nLayers);
     end
-elseif isfield(pdschInfo, 'NREPerPRB')
-    nrePerPRB = double(pdschInfo.NREPerPRB);
-    if isfinite(nrePerPRB) && nrePerPRB > 0 && isfinite(qm) && qm > 0
-        gBits = double(nrePerPRB) * max(double(nPRB), 1) * double(qm) * double(nLayers);
+elseif isstruct(pdschInfo) && isfield(pdschInfo, 'NRE')
+    totalNRE = double(pdschInfo.NRE);
+    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
+    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
+        gBits = totalNRE * double(qm) * double(nLayers);
+    end
+end
+if ~(isfinite(gBits) && gBits > 0) && isfinite(nrePerPRB) && nrePerPRB > 0 && isfinite(qm) && qm > 0
+    gBits = double(nrePerPRB) * max(double(nPRB), 1) * double(qm) * double(nLayers);
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
+    if isfinite(gBits) && gBits > 0
+        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
     end
 end
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)

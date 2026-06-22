@@ -657,28 +657,14 @@ classdef (Abstract) SchedulerBase < handle
                 "ForceExact", logical(opt.ForceExact), ...
                 "XOverhead", double(xOverhead));
 
-            % Memoize repeated TBS queries (same AMC + budget) since these are
-            % called very frequently in per-slot scheduling loops.
+            % Memoize repeated TBS queries (same AMC + budget). The cache key
+            % is formed after exact-vs-fast policy resolution so planning
+            % probes cannot contaminate executable grant sizing.
             tbsCache = [];
             if isa(obj.TBSCache, 'containers.Map')
                 tbsCache = true;
             end
             key = "";
-            if ~isempty(tbsCache)
-                symStart = round(double(symAlloc(1)));
-                key = localScopedCacheKey(obj.CacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%d|%.4f", ...
-                    upper(char(obj.Direction)), upper(char(modStr)), ...
-                    round(double(nLayers)), round(double(nPRB)), symStart, round(double(nSym)), ...
-                    round(double(xOverhead)), ...
-                    round(double(targetCodeRate) * 1e4) / 1e4));
-                [hit, v] = sixgr.l2.mac.schedulerCache('get', 'TBS', key);
-                if hit
-                    tbsBits = double(v(1));
-                    tbsBytes = double(v(2));
-                    nrePerPRB = double(v(3));
-                    return;
-                end
-            end
 
             useFastNRE = logical(sixgr.util.structGet(obj.Cfg, "mac.scheduler.fastNREApprox", true));
             strictMode = logical(sixgr.util.structGet(obj.Cfg, "run.strictMode", false));
@@ -699,6 +685,26 @@ classdef (Abstract) SchedulerBase < handle
             requiresExactGrantNRE = localRequiresExactGrantNRE(obj.Direction, symAlloc);
             if requiresExactGrantNRE
                 useFastNRE = false;
+            end
+            if ~isempty(tbsCache)
+                symStart = round(double(symAlloc(1)));
+                key = localScopedCacheKey(obj.CacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%d|%.4f|planning=%d|force=%d|fast=%d|mode=%s|strict=%d|vienna=%d", ...
+                    upper(char(obj.Direction)), upper(char(modStr)), ...
+                    round(double(nLayers)), round(double(nPRB)), symStart, round(double(nSym)), ...
+                    round(double(xOverhead)), ...
+                    round(double(targetCodeRate) * 1e4) / 1e4, ...
+                    logical(opt.PlanningOnly), logical(opt.ForceExact), logical(useFastNRE), ...
+                    char(tbsMode), logical(strictMode), logical(viennaEquivalent)));
+                [hit, v] = sixgr.l2.mac.schedulerCache('get', 'TBS', key);
+                if hit
+                    tbsBits = double(v(1));
+                    tbsBytes = double(v(2));
+                    nrePerPRB = double(v(3));
+                    if numel(v) >= 4
+                        info.UsedFastNREApprox = logical(v(4));
+                    end
+                    return;
+                end
             end
             nrePerPRB = localFastNREPerPRB(obj.Direction, obj.Cfg, nSym);
             if ~useFastNRE
@@ -759,7 +765,7 @@ classdef (Abstract) SchedulerBase < handle
                     tbsBytes = 0;
                     if ~isempty(tbsCache) && strlength(string(key)) > 0
                         sixgr.l2.mac.schedulerCache('set', 'TBS', char(key), ...
-                            [double(tbsBits), double(tbsBytes), double(nrePerPRB)]);
+                            [double(tbsBits), double(tbsBytes), double(nrePerPRB), double(logical(info.UsedFastNREApprox))]);
                     end
                     return;
                 end
@@ -778,7 +784,7 @@ classdef (Abstract) SchedulerBase < handle
 
             if ~isempty(tbsCache) && strlength(string(key)) > 0
                 sixgr.l2.mac.schedulerCache('set', 'TBS', char(key), ...
-                    [double(tbsBits), double(tbsBytes), double(nrePerPRB)]);
+                    [double(tbsBits), double(tbsBytes), double(nrePerPRB), double(logical(info.UsedFastNREApprox))]);
             end
         end
 
@@ -809,7 +815,8 @@ classdef (Abstract) SchedulerBase < handle
                 rawNRE = NaN;
             else
                 [rawBits, rawBytes, rawNRE] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
-                    "PlanningOnly", logical(opt.PlanningOnly));
+                    "PlanningOnly", logical(opt.PlanningOnly), ...
+                    "ForceExact", ~logical(opt.PlanningOnly));
             end
 
             plan = struct( ...
@@ -1776,7 +1783,8 @@ function evalOut = localEvaluateQueueLimitedCandidate(obj, cand, prbCount, symAl
 evalOut = localInvalidQueueEval();
 [tbsBits, tbsBytes, nrePerPRB] = obj.estimateTBS( ...
     cand.Modulation, cand.NumLayers, double(prbCount), symAlloc, cand.TargetCodeRate, ...
-    "PlanningOnly", logical(opt.PlanningOnly));
+    "PlanningOnly", logical(opt.PlanningOnly), ...
+    "ForceExact", ~logical(opt.PlanningOnly));
 if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
     return;
 end
@@ -1793,7 +1801,8 @@ function evalOut = localEvaluatePositiveCandidate(obj, cand, prbCount, symAlloc,
 evalOut = localInvalidQueueEval();
 [tbsBits, tbsBytes, nrePerPRB] = obj.estimateTBS( ...
     cand.Modulation, cand.NumLayers, double(prbCount), symAlloc, cand.TargetCodeRate, ...
-    "PlanningOnly", logical(opt.PlanningOnly));
+    "PlanningOnly", logical(opt.PlanningOnly), ...
+    "ForceExact", ~logical(opt.PlanningOnly));
 if ~(isfinite(tbsBits) && isfinite(tbsBytes) && tbsBits > 0 && tbsBytes > 0)
     return;
 end

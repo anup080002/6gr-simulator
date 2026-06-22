@@ -1329,23 +1329,30 @@ function [nrePerPRB, gBits] = localResolveDataNREPerPRB(chInfo, nPRB, modStr, nL
 nrePerPRB = NaN;
 gBits = NaN;
 qm = localQmFromModulation(modStr);
-if isfield(chInfo, "G")
-    gBits = double(chInfo.G);
-    if isfinite(gBits)
-        if gBits <= 0
-            nrePerPRB = 0;
-            return;
-        end
-        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
-        if isfinite(nrePerPRB) && nrePerPRB > 0
-            return;
-        end
-    end
+indInfo = chInfo;
+if isstruct(chInfo) && isfield(chInfo, "IndicesInfo")
+    indInfo = chInfo.IndicesInfo;
+elseif isstruct(chInfo) && isfield(chInfo, "PUSCHIndicesInfo")
+    indInfo = chInfo.PUSCHIndicesInfo;
+elseif isstruct(chInfo) && isfield(chInfo, "PDSCHIndicesInfo")
+    indInfo = chInfo.PDSCHIndicesInfo;
 end
-if isfield(chInfo, "NRE")
-    nrePerPRB = floor(double(chInfo.NRE) / max(double(nPRB), 1));
-elseif isfield(chInfo, "NREPerPRB")
+if isstruct(indInfo) && isfield(indInfo, "G")
+    gBits = double(indInfo.G);
+elseif isstruct(chInfo) && isfield(chInfo, "G")
+    gBits = double(chInfo.G);
+end
+if isstruct(indInfo) && isfield(indInfo, "NREPerPRB")
+    nrePerPRB = double(indInfo.NREPerPRB);
+elseif isstruct(chInfo) && isfield(chInfo, "NREPerPRB")
     nrePerPRB = double(chInfo.NREPerPRB);
+elseif isstruct(indInfo) && isfield(indInfo, "NRE")
+    nrePerPRB = floor(double(indInfo.NRE) / max(double(nPRB), 1));
+elseif isstruct(chInfo) && isfield(chInfo, "NRE")
+    nrePerPRB = floor(double(chInfo.NRE) / max(double(nPRB), 1));
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB > 0) && isfinite(gBits) && gBits > 0
+    nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
 end
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     nrePerPRB = NaN;
