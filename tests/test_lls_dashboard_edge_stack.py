@@ -33,8 +33,13 @@ def main() -> None:
         "CONTENT_TYPE": "",
     }
     body = b"".join(dash.dashboard_wsgi_app(environ, start_response)).decode("utf-8", errors="replace")
-    assert str(status_holder.get("status", "")).startswith("200")
-    assert "Sign in" in body or "Sign In" in body
+    status = str(status_holder.get("status", ""))
+    if dash.auth_mode_open():
+        assert status.startswith("303")
+        assert ("/home" in str(status_holder.get("headers", "")))
+    else:
+        assert status.startswith("200")
+        assert "Sign in" in body or "Sign In" in body
 
     nginx_template = (REPO_ROOT / "apps" / "deploy" / "nginx" / "lls_dashboard_proxy_cache.conf.template").read_text(encoding="utf-8")
     assert "proxy_cache_path" in nginx_template

@@ -5,6 +5,7 @@ import argparse
 import copy
 import csv
 import email.message
+import hashlib
 import html
 import io
 import json
@@ -50,6 +51,7 @@ from lls_contract_aliases import (
 # Preserve the active checkout path instead of collapsing through resolve(),
 # which can jump to a sibling canonical path on Windows.
 REPO_ROOT = Path(__file__).absolute().parent.parent
+RESULTS_ROOT = Path(os.environ.get("SIXGR_RESULTS_ROOT", str(REPO_ROOT / "results")))
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
 PARAMETER_MATRIX_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "scenario_parameter_matrix_catalog.yaml"
 PARAMETER_CONSTRAINT_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "parameter_constraints.json"
@@ -80,6 +82,9 @@ WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_ho
 DEFAULT_SCENARIO = WAVEFORM_TRUTH_DEFAULT_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
 OUTPUT_PERSISTENCE_OPTIONS = ["both", "database", "results_folder"]
+FILESYSTEM_RUN_ID_BASE = 9_000_000_000
+FILESYSTEM_RUN_ID_LIMIT = 9_900_000_000
+FILESYSTEM_ARTIFACT_ID_BASE = 9_000_000_000_000
 BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS", "E2E"]
 BROWSER_EXECUTION_MODE_LABELS = {
     "LLS": "LLS",
@@ -3142,28 +3147,274 @@ def rowify(row: dict[str, Any] | None) -> dict[str, Any] | None:
     return out
 
 
-def latest_run_id() -> int | None:
+def _stable_filesystem_id(base: int, *parts: Any) -> int:
+    text = "|".join(str(part or "").replace("\\", "/").lower() for part in parts)
+    digest = hashlib.sha1(text.encode("utf-8", errors="replace")).digest()
+    return int(base) + (int.from_bytes(digest[:4], "big") % 900_000_000)
+
+
+def is_filesystem_virtual_run_id(value: Any) -> bool:
     try:
-        mark_stale_running_runs()
-        with db_connection() as conn:
-            with conn.cursor(dictionary=True) as cur:
-                cur.execute("SELECT run_id FROM sim_runs ORDER BY run_id DESC LIMIT 1")
-                row = cur.fetchone()
-                return None if row is None else int(row["run_id"])
-    except MYSQL_CONNECTOR_ERRORS:
+        run_id = int(value)
+    except Exception:
+        return False
+    return FILESYSTEM_RUN_ID_BASE <= run_id < FILESYSTEM_RUN_ID_LIMIT
+
+
+def is_filesystem_virtual_artifact_id(value: Any) -> bool:
+    try:
+        artifact_id = int(value)
+    except Exception:
+        return False
+    return artifact_id >= FILESYSTEM_ARTIFACT_ID_BASE
+
+
+def _dashboard_result_roots() -> list[Path]:
+    roots: list[Path] = [RESULTS_ROOT]
+    env_root = str(os.environ.get("SIXGR_RESULTS_ROOT") or "").strip()
+    if env_root:
+        roots.insert(0, Path(env_root))
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root.absolute()).lower()
+        if key not in seen:
+            deduped.append(root)
+            seen.add(key)
+    return deduped
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_first_csv_record(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            row = next(reader, None)
+    except Exception:
+        return {}
+    return dict(row or {})
+
+
+def _truthy_value(value: Any) -> bool | None:
+    text = str(value if value is not None else "").strip().lower()
+    if text in {"1", "true", "yes", "y", "pass", "passed"}:
+        return True
+    if text in {"0", "false", "no", "n", "fail", "failed"}:
+        return False
+    return None
+
+
+def _int_value(value: Any) -> int | None:
+    text = str(value if value is not None else "").strip()
+    if not text:
         return None
+    try:
+        return int(float(text))
+    except Exception:
+        return None
+
+
+def _max_mtime_utc(paths: list[Path]) -> str:
+    mtimes: list[float] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            mtimes.append(path.stat().st_mtime)
+        except OSError:
+            continue
+    if not mtimes:
+        return ""
+    return datetime.fromtimestamp(max(mtimes), timezone.utc).isoformat()
+
+
+def _filesystem_run_id_for_folder(run_folder: Path) -> int:
+    try:
+        rel = run_folder.absolute().relative_to(REPO_ROOT.absolute()).as_posix()
+    except ValueError:
+        rel = run_folder.absolute().as_posix()
+    return _stable_filesystem_id(FILESYSTEM_RUN_ID_BASE, rel)
+
+
+def _filesystem_artifact_id_for_path(run_folder: Path, logical_path: str) -> int:
+    return _stable_filesystem_id(
+        FILESYSTEM_ARTIFACT_ID_BASE,
+        _filesystem_run_id_for_folder(run_folder),
+        logical_path,
+    )
+
+
+def _filesystem_artifact_kind_and_mime(path: Path) -> tuple[str, str] | None:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return "table_csv", "text/csv"
+    if suffix == ".json":
+        return "json", "application/json"
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+        return "image", f"image/{'jpeg' if suffix in {'.jpg', '.jpeg'} else suffix[1:]}"
+    if suffix == ".svg":
+        return "image", "image/svg+xml"
+    if suffix in {".md", ".markdown"}:
+        return "markdown_report", "text/markdown"
+    if suffix == ".html":
+        return "html_report", "text/html"
+    if suffix in {".txt", ".log"}:
+        return "text", "text/plain"
+    return None
+
+
+def _filesystem_run_folders() -> list[Path]:
+    folders: list[Path] = []
+    for root in _dashboard_result_roots():
+        lls_root = root / "lls"
+        if not lls_root.is_dir():
+            continue
+        for scenario_dir in lls_root.iterdir():
+            if not scenario_dir.is_dir():
+                continue
+            for run_dir in scenario_dir.iterdir():
+                if not run_dir.is_dir():
+                    continue
+                if (
+                    (run_dir / "meta" / "scenario_manifest.json").is_file()
+                    or (run_dir / "reports" / "csv" / "scenario_summary.csv").is_file()
+                ):
+                    folders.append(run_dir)
+    return folders
+
+
+def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
+    if not run_folder.is_dir():
+        return None
+    manifest_path = run_folder / "meta" / "scenario_manifest.json"
+    summary_path = run_folder / "reports" / "csv" / "scenario_summary.csv"
+    manifest = _read_json_file(manifest_path)
+    summary = _read_first_csv_record(summary_path)
+    if not manifest and not summary:
+        return None
+    run_id = _filesystem_run_id_for_folder(run_folder)
+    scenario_id = str(
+        summary.get("ScenarioID")
+        or manifest.get("ScenarioID")
+        or manifest.get("ScenarioId")
+        or run_folder.parent.name
+    ).strip()
+    run_completion = str(summary.get("RunCompletion") or manifest.get("RunCompletion") or "").strip()
+    if not run_completion:
+        completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
+        run_completion = "completed" if completed is True else "results_folder"
+    result_ok = _truthy_value(summary.get("ResultOk") or summary.get("Ok") or manifest.get("ResultOk"))
+    required_failures = _int_value(summary.get("RequiredFailureCount") or manifest.get("RequiredFailureCount"))
+    truth_ok = _truthy_value(summary.get("RuntimeTruthContractOk") or manifest.get("RuntimeTruthContractOk"))
+    updated_utc = _max_mtime_utc([manifest_path, summary_path, run_folder])
+    generated_utc = str(manifest.get("GeneratedUTC") or "").strip()
+    config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
+    config_json = ""
+    if config_json_path.is_file():
+        try:
+            config_json = config_json_path.read_text(encoding="utf-8")
+        except OSError:
+            config_json = ""
+    status_payload: dict[str, Any] = {
+        "status": run_completion,
+        "run_completion": run_completion,
+        "stage": "filesystem_result_folder",
+        "status_authority": summary.get("StatusAuthority") or manifest.get("StatusAuthority") or "filesystem_scenario_summary",
+        "result_ok": result_ok,
+        "required_failure_count": required_failures,
+        "runtime_truth_contract_ok": truth_ok,
+        "filesystem_backed": True,
+        "summary_artifact": "reports/csv/scenario_summary.csv" if summary else "",
+        "manifest_artifact": "meta/scenario_manifest.json" if manifest else "",
+    }
+    return {
+        "run_id": run_id,
+        "run_uuid": f"filesystem-{run_id}",
+        "scenario_id": scenario_id,
+        "run_tag": run_folder.name,
+        "run_folder": str(run_folder.absolute()),
+        "bucket": str(manifest.get("OutputBucket") or "filesystem"),
+        "profile_name": str(summary.get("RunnerProfile") or manifest.get("RunnerProfile") or ""),
+        "backend": str(manifest.get("OutputBackend") or "results_folder"),
+        "status_text": run_completion,
+        "status_json": json.dumps(status_payload, separators=(",", ":")),
+        "config_json": config_json,
+        "created_utc": generated_utc or updated_utc,
+        "updated_utc": updated_utc or generated_utc,
+    }
+
+
+def filesystem_run_rows(limit: int = 50, run_tag: str | None = None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    tag = str(run_tag or "").strip()
+    for folder in _filesystem_run_folders():
+        row = filesystem_run_row_from_folder(folder)
+        if row is None:
+            continue
+        if tag and str(row.get("run_tag") or "") != tag:
+            continue
+        rows.append(row)
+    ordered = order_run_rows_for_display(rows, prefer_active=bool(tag))
+    return ordered[: max(1, int(limit))]
+
+
+def filesystem_fetch_run(run_id: int) -> dict[str, Any] | None:
+    if not is_filesystem_virtual_run_id(run_id):
+        return None
+    for folder in _filesystem_run_folders():
+        if _filesystem_run_id_for_folder(folder) == int(run_id):
+            return filesystem_run_row_from_folder(folder)
+    return None
+
+
+def artifact_rollup_from_artifacts(artifacts: list[dict[str, Any]]) -> dict[str, int]:
+    rows = list(artifacts or [])
+    return {
+        "artifacts_total": len(rows),
+        "latest_artifact_id": max((int(art.get("artifact_id") or 0) for art in rows), default=0),
+        "bytes_total": sum(int(art.get("byte_size") or 0) for art in rows),
+        "tables_total": sum(1 for art in rows if str(art.get("artifact_kind") or "") == "table_csv"),
+        "images_total": sum(1 for art in rows if str(art.get("mime_type") or "").startswith("image/")),
+        "markdown_total": sum(1 for art in rows if str(art.get("artifact_kind") or "") == "markdown_report"),
+    }
+
+
+def latest_run_id() -> int | None:
+    row = _select_preferred_run_row(fetch_runs(limit=200), prefer_active=False)
+    if not row:
+        return None
+    raw = row.get("run_id")
+    return int(raw) if raw not in (None, "") else None
 
 
 def quick_latest_run_id() -> int | None:
     """Cheap run lookup for pages that must stay responsive during live writes."""
+    filesystem_rows = filesystem_run_rows(limit=1)
     try:
         with db_connection() as conn:
             with conn.cursor(dictionary=True) as cur:
                 cur.execute("SELECT run_id FROM sim_runs ORDER BY run_id DESC LIMIT 1")
                 row = cur.fetchone()
-                return None if row is None else int(row["run_id"])
+                db_id = None if row is None else int(row["run_id"])
     except MYSQL_CONNECTOR_ERRORS:
-        return None
+        db_id = None
+    if db_id is None:
+        return int(filesystem_rows[0]["run_id"]) if filesystem_rows else None
+    db_rows = [row for row in fetch_runs(limit=1) if int(row.get("run_id") or 0) == int(db_id)]
+    merged = db_rows + [row for row in filesystem_rows if int(row.get("run_id") or 0) != int(db_id)]
+    preferred = _select_preferred_run_row(merged, prefer_active=False)
+    return int(preferred["run_id"]) if preferred else db_id
 
 
 def _status_payload(row: dict[str, Any]) -> dict[str, Any]:
@@ -3271,6 +3522,8 @@ def preferred_analysis_run_id() -> int | None:
 
 
 def fetch_runs(limit: int = 50, run_tag: str | None = None) -> list[dict[str, Any]]:
+    limit = max(1, int(limit))
+    rows: list[dict[str, Any]] = []
     try:
         mark_stale_running_runs()
         with db_connection() as conn:
@@ -3288,62 +3541,136 @@ def fetch_runs(limit: int = 50, run_tag: str | None = None) -> list[dict[str, An
                     cur.execute(sql, tuple(params))
                     rows = [rowify(row) for row in cur.fetchall()]
                     rows = [repair_run_row_from_terminal_artifacts(row, persist=True)[0] for row in rows]
-                    ordered = order_run_rows_for_display(rows, prefer_active=True)
-                    return ordered[: max(1, int(limit))]
-                sql += " ORDER BY run_id DESC LIMIT %s"
-                params.append(limit)
-                cur.execute(sql, tuple(params))
-                rows = [rowify(row) for row in cur.fetchall()]
-                return [repair_run_row_from_terminal_artifacts(row, persist=True)[0] for row in rows]
+                else:
+                    sql += " ORDER BY run_id DESC LIMIT %s"
+                    params.append(limit)
+                    cur.execute(sql, tuple(params))
+                    rows = [rowify(row) for row in cur.fetchall()]
+                    rows = [repair_run_row_from_terminal_artifacts(row, persist=True)[0] for row in rows]
     except MYSQL_CONNECTOR_ERRORS:
-        return []
+        rows = []
+    filesystem_rows = filesystem_run_rows(limit=max(limit, 200), run_tag=run_tag)
+    seen_folders = {
+        str(row.get("run_folder") or "").replace("\\", "/").lower()
+        for row in rows
+        if str(row.get("run_folder") or "").strip()
+    }
+    seen_ids = {int(row.get("run_id") or 0) for row in rows if row.get("run_id") not in (None, "")}
+    for fs_row in filesystem_rows:
+        folder_key = str(fs_row.get("run_folder") or "").replace("\\", "/").lower()
+        fs_id = int(fs_row.get("run_id") or 0)
+        if folder_key and folder_key in seen_folders:
+            continue
+        if fs_id and fs_id in seen_ids:
+            continue
+        rows.append(fs_row)
+        if folder_key:
+            seen_folders.add(folder_key)
+        if fs_id:
+            seen_ids.add(fs_id)
+    ordered = order_run_rows_for_display(rows, prefer_active=bool(run_tag))
+    return ordered[:limit]
 
 
 def fetch_run(run_id: int) -> dict[str, Any] | None:
-    mark_stale_running_runs()
-    with db_connection() as conn:
-        with conn.cursor(dictionary=True) as cur:
-            cur.execute(
-                """
-                SELECT run_id, run_uuid, scenario_id, run_tag, run_folder, bucket, profile_name,
-                       backend, status_text, status_json, config_json, created_utc, updated_utc
-                FROM sim_runs
-                WHERE run_id = %s
-                """,
-                (run_id,),
-            )
-            row = rowify(cur.fetchone())
-    if row is None:
-        return None
-    return repair_run_row_from_terminal_artifacts(row, persist=True)[0]
+    if is_filesystem_virtual_run_id(run_id):
+        return filesystem_fetch_run(int(run_id))
+    try:
+        mark_stale_running_runs()
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute(
+                    """
+                    SELECT run_id, run_uuid, scenario_id, run_tag, run_folder, bucket, profile_name,
+                           backend, status_text, status_json, config_json, created_utc, updated_utc
+                    FROM sim_runs
+                    WHERE run_id = %s
+                    """,
+                    (run_id,),
+                )
+                row = rowify(cur.fetchone())
+        if row is not None:
+            return repair_run_row_from_terminal_artifacts(row, persist=True)[0]
+    except MYSQL_CONNECTOR_ERRORS:
+        pass
+    return filesystem_fetch_run(int(run_id))
+
+
+def filesystem_log_rows(run_row: dict[str, Any] | None, limit: int = MAX_LIVE_LOG_ROWS, descending: bool = True) -> list[dict[str, Any]]:
+    folder = Path(str((run_row or {}).get("run_folder") or ""))
+    if not folder.is_dir():
+        return []
+    candidates = [
+        folder / "logs" / "matlab_diary.log",
+        folder / "logs" / "run.log",
+        folder / "matlab_diary.log",
+    ]
+    lines: list[tuple[str, str]] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for idx, line in enumerate(raw_lines, start=1):
+            if line.strip():
+                lines.append((f"{path.name}:{idx}", line.strip()))
+    if descending:
+        lines = list(reversed(lines))
+    lines = lines[: max(0, int(limit))]
+    if descending:
+        lines = list(reversed(lines))
+    created = str((run_row or {}).get("updated_utc") or "")
+    return [
+        {
+            "log_id": idx + 1,
+            "level_str": classify_log_level(message),
+            "time_str": extract_log_time(message),
+            "message_text": message,
+            "created_utc": created,
+            "source": source,
+        }
+        for idx, (source, message) in enumerate(lines)
+    ]
 
 
 def fetch_logs(run_id: int, limit: int = MAX_LIVE_LOG_ROWS, descending: bool = True) -> list[dict[str, Any]]:
+    if is_filesystem_virtual_run_id(run_id):
+        return filesystem_log_rows(filesystem_fetch_run(int(run_id)), limit=limit, descending=descending)
     order = "DESC" if descending else "ASC"
-    with db_connection() as conn:
-        with conn.cursor(dictionary=True) as cur:
-            cur.execute(
-                f"""
-                SELECT log_id, level_str, time_str, message_text, created_utc
-                FROM sim_run_logs
-                WHERE run_id = %s
-                ORDER BY log_id {order}
-                LIMIT %s
-                """,
-                (run_id, limit),
-            )
-            rows = [rowify(row) for row in cur.fetchall()]
+    try:
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute(
+                    f"""
+                    SELECT log_id, level_str, time_str, message_text, created_utc
+                    FROM sim_run_logs
+                    WHERE run_id = %s
+                    ORDER BY log_id {order}
+                    LIMIT %s
+                    """,
+                    (run_id, limit),
+                )
+                rows = [rowify(row) for row in cur.fetchall()]
+    except MYSQL_CONNECTOR_ERRORS:
+        rows = filesystem_log_rows(fetch_run(int(run_id)), limit=limit, descending=descending)
     if descending:
         rows.reverse()
     return rows
 
 
 def count_logs(run_id: int) -> int:
-    with db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM sim_run_logs WHERE run_id=%s", (run_id,))
-            row = cur.fetchone()
-            return 0 if row is None else int(row[0])
+    if is_filesystem_virtual_run_id(run_id):
+        return len(filesystem_log_rows(filesystem_fetch_run(int(run_id)), limit=1_000_000, descending=False))
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM sim_run_logs WHERE run_id=%s", (run_id,))
+                row = cur.fetchone()
+                return 0 if row is None else int(row[0])
+    except MYSQL_CONNECTOR_ERRORS:
+        return len(filesystem_log_rows(fetch_run(int(run_id)), limit=1_000_000, descending=False))
 
 
 def fetch_artifacts(
@@ -3352,6 +3679,18 @@ def fetch_artifacts(
     limit: int | None = None,
     newest_first: bool = False,
 ) -> list[dict[str, Any]]:
+    fs_row = filesystem_fetch_run(int(run_id))
+    if fs_row is not None:
+        rows = filesystem_artifacts_for_run(fs_row)
+        if kind_prefix:
+            token = str(kind_prefix).replace("%", "").lower()
+            rows = [row for row in rows if str(row.get("artifact_kind") or "").lower().startswith(token)]
+        rows.sort(key=lambda row: (int(row.get("artifact_id") or 0), str(row.get("logical_path") or "")), reverse=bool(newest_first))
+        if limit is not None:
+            rows = rows[: max(0, int(limit))]
+        if newest_first:
+            rows.reverse()
+        return rows
     sql = """
         SELECT artifact_id, run_id, logical_path, artifact_kind, mime_type,
                byte_size, created_utc
@@ -3367,72 +3706,97 @@ def fetch_artifacts(
     if limit is not None:
         sql += " LIMIT %s"
         params.append(limit)
-    with db_connection() as conn:
-        with conn.cursor(dictionary=True) as cur:
-            cur.execute(sql, tuple(params))
-            rows = [rowify(row) for row in cur.fetchall()]
+    try:
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute(sql, tuple(params))
+                rows = [rowify(row) for row in cur.fetchall()]
+    except MYSQL_CONNECTOR_ERRORS:
+        rows = filesystem_artifacts_for_run(fetch_run(int(run_id)) or {})
     if newest_first:
         rows.reverse()
     return rows
 
 
 def fetch_artifact_rollup(run_id: int) -> dict[str, int]:
-    with db_connection() as conn:
-        with conn.cursor(dictionary=True) as cur:
-            cur.execute(
-                """
-                SELECT
-                    COUNT(*) AS artifacts_total,
-                    COALESCE(MAX(artifact_id), 0) AS latest_artifact_id,
-                    COALESCE(SUM(byte_size), 0) AS bytes_total,
-                    COALESCE(SUM(CASE WHEN artifact_kind='table_csv' THEN 1 ELSE 0 END), 0) AS tables_total,
-                    COALESCE(SUM(CASE WHEN mime_type LIKE 'image/%' THEN 1 ELSE 0 END), 0) AS images_total,
-                    COALESCE(SUM(CASE WHEN artifact_kind='markdown_report' THEN 1 ELSE 0 END), 0) AS markdown_total
-                FROM sim_artifacts
-                WHERE run_id = %s
-                """,
-                (run_id,),
-            )
-            row = rowify(cur.fetchone()) or {}
-    return {
-        "artifacts_total": int(row.get("artifacts_total") or 0),
-        "latest_artifact_id": int(row.get("latest_artifact_id") or 0),
-        "bytes_total": int(row.get("bytes_total") or 0),
-        "tables_total": int(row.get("tables_total") or 0),
-        "images_total": int(row.get("images_total") or 0),
-        "markdown_total": int(row.get("markdown_total") or 0),
-    }
+    if is_filesystem_virtual_run_id(run_id):
+        return artifact_rollup_from_artifacts(fetch_artifacts(int(run_id)))
+    try:
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS artifacts_total,
+                        COALESCE(MAX(artifact_id), 0) AS latest_artifact_id,
+                        COALESCE(SUM(byte_size), 0) AS bytes_total,
+                        COALESCE(SUM(CASE WHEN artifact_kind='table_csv' THEN 1 ELSE 0 END), 0) AS tables_total,
+                        COALESCE(SUM(CASE WHEN mime_type LIKE 'image/%' THEN 1 ELSE 0 END), 0) AS images_total,
+                        COALESCE(SUM(CASE WHEN artifact_kind='markdown_report' THEN 1 ELSE 0 END), 0) AS markdown_total
+                    FROM sim_artifacts
+                    WHERE run_id = %s
+                    """,
+                    (run_id,),
+                )
+                row = rowify(cur.fetchone()) or {}
+        return {
+            "artifacts_total": int(row.get("artifacts_total") or 0),
+            "latest_artifact_id": int(row.get("latest_artifact_id") or 0),
+            "bytes_total": int(row.get("bytes_total") or 0),
+            "tables_total": int(row.get("tables_total") or 0),
+            "images_total": int(row.get("images_total") or 0),
+            "markdown_total": int(row.get("markdown_total") or 0),
+        }
+    except MYSQL_CONNECTOR_ERRORS:
+        return artifact_rollup_from_artifacts(fetch_artifacts(int(run_id)))
 
 
 def fetch_artifact_meta(artifact_id: int) -> dict[str, Any] | None:
-    with db_connection() as conn:
-        with conn.cursor(dictionary=True) as cur:
-            cur.execute(
-                """
-                SELECT artifact_id, run_id, logical_path, artifact_kind, mime_type,
-                       byte_size, metadata_json, created_utc
-                FROM sim_artifacts
-                WHERE artifact_id = %s
-                """,
-                (artifact_id,),
-            )
-            return rowify(cur.fetchone())
+    if is_filesystem_virtual_artifact_id(artifact_id):
+        return filesystem_artifact_by_id(int(artifact_id))
+    try:
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute(
+                    """
+                    SELECT artifact_id, run_id, logical_path, artifact_kind, mime_type,
+                           byte_size, metadata_json, created_utc
+                    FROM sim_artifacts
+                    WHERE artifact_id = %s
+                    """,
+                    (artifact_id,),
+                )
+                row = rowify(cur.fetchone())
+        if row is not None:
+            return row
+    except MYSQL_CONNECTOR_ERRORS:
+        pass
+    return filesystem_artifact_by_id(int(artifact_id))
 
 
 @lru_cache(maxsize=1024)
 def fetch_artifact_bytes(artifact_id: int) -> bytes:
-    with db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT chunk_data
-                FROM sim_artifact_chunks
-                WHERE artifact_id = %s
-                ORDER BY chunk_index ASC
-                """,
-                (artifact_id,),
-            )
-            return b"".join(bytes(chunk) for (chunk,) in cur.fetchall())
+    filesystem_meta = filesystem_artifact_by_id(int(artifact_id)) if is_filesystem_virtual_artifact_id(artifact_id) else None
+    if filesystem_meta is not None:
+        return Path(str(filesystem_meta.get("filesystem_path") or "")).read_bytes()
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT chunk_data
+                    FROM sim_artifact_chunks
+                    WHERE artifact_id = %s
+                    ORDER BY chunk_index ASC
+                    """,
+                    (artifact_id,),
+                )
+                return b"".join(bytes(chunk) for (chunk,) in cur.fetchall())
+    except MYSQL_CONNECTOR_ERRORS:
+        filesystem_meta = filesystem_artifact_by_id(int(artifact_id))
+        if filesystem_meta is not None:
+            return Path(str(filesystem_meta.get("filesystem_path") or "")).read_bytes()
+        raise
 
 
 def contract_materialization_is_current(
@@ -4050,6 +4414,8 @@ def save_runtime_cursor(path: Path | None, payload: dict[str, Any]) -> None:
 def append_runtime_log_rows(run_id: int, rows: list[tuple[str, str, str]]) -> int:
     if not rows:
         return 0
+    if is_filesystem_virtual_run_id(run_id):
+        return 0
     with db_connection() as conn:
         with conn.cursor() as cur:
             cur.executemany(
@@ -4070,6 +4436,8 @@ def sync_runtime_log_for_run(run_row: dict[str, Any] | None) -> int:
     if raw_run_id in (None, ""):
         return 0
     run_id = int(raw_run_id)
+    if is_filesystem_virtual_run_id(run_id):
+        return 0
     log_path = runtime_log_file(str(run_row.get("run_tag") or ""))
     cursor_path = runtime_log_cursor_file(str(run_row.get("run_tag") or ""))
     if log_path is None or not log_path.is_file():
@@ -5329,26 +5697,31 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
-    artifacts = fetch_artifacts(run_id)
+    db_artifacts = fetch_artifacts(run_id)
+    artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
     should_materialize_contract = (
-        is_terminal_status(status_text)
-        or (
-            status_text == "running"
-            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        not is_filesystem_virtual_run_id(run_id)
+        and (
+            is_terminal_status(status_text)
+            or (
+                status_text == "running"
+                and any(str(art.get("artifact_kind") or "") == "table_csv" for art in db_artifacts)
+            )
         )
     )
-    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
+    if should_materialize_contract and not contract_materialization_is_current(db_artifacts, run_status=status_text):
         contract_materializer.materialize_run_contract_artifacts(
             run_row,
-            artifacts,
+            db_artifacts,
             fetch_artifact_bytes=fetch_artifact_bytes,
             db_connection_factory=db_connection,
             feature_policy=feature_policy,
             lock_timeout_seconds=0,
         )
-        artifacts = fetch_artifacts(run_id)
+        db_artifacts = fetch_artifacts(run_id)
+        artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
     sorted_artifacts = sorted(public_artifacts, key=artifact_sort_key)
     table_artifacts = dedupe_table_descriptors_for_ui(
@@ -5480,7 +5853,8 @@ def build_table_browser_payload(run_id: int) -> dict[str, Any]:
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
 
-    artifacts = fetch_artifacts(run_id)
+    db_artifacts = fetch_artifacts(run_id)
+    artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
     artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
     cache_key = (int(run_id), artifact_version)
@@ -5491,22 +5865,26 @@ def build_table_browser_payload(run_id: int) -> dict[str, Any]:
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
     should_materialize_contract = (
-        is_terminal_status(status_text)
-        or (
-            status_text == "running"
-            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        not is_filesystem_virtual_run_id(run_id)
+        and (
+            is_terminal_status(status_text)
+            or (
+                status_text == "running"
+                and any(str(art.get("artifact_kind") or "") == "table_csv" for art in db_artifacts)
+            )
         )
     )
-    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
+    if should_materialize_contract and not contract_materialization_is_current(db_artifacts, run_status=status_text):
         contract_materializer.materialize_run_contract_artifacts(
             run_row,
-            artifacts,
+            db_artifacts,
             fetch_artifact_bytes=fetch_artifact_bytes,
             db_connection_factory=db_connection,
             feature_policy=feature_policy,
             lock_timeout_seconds=0,
         )
-        artifacts = fetch_artifacts(run_id)
+        db_artifacts = fetch_artifacts(run_id)
+        artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
         latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
         artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
 
@@ -6330,33 +6708,47 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        rel = path.relative_to(root).as_posix().lower()
-        suffix = path.suffix.lower()
-        if suffix == ".csv":
-            artifact_kind = "table_csv"
-            mime_type = "text/csv"
-        elif suffix == ".json":
-            artifact_kind = "json"
-            mime_type = "application/json"
-        else:
+        rel = path.relative_to(root).as_posix()
+        kind_mime = _filesystem_artifact_kind_and_mime(path)
+        if kind_mime is None:
             continue
+        artifact_kind, mime_type = kind_mime
         try:
             stat = path.stat()
         except OSError:
             continue
+        artifact_id = _filesystem_artifact_id_for_path(root, rel)
         artifacts.append(
             {
-                "artifact_id": 0,
+                "artifact_id": artifact_id,
                 "run_id": int((run_row or {}).get("run_id") or 0),
-                "logical_path": rel,
+                "logical_path": rel.lower(),
                 "artifact_kind": artifact_kind,
                 "mime_type": mime_type,
                 "byte_size": int(stat.st_size),
                 "created_utc": datetime.fromtimestamp(stat.st_mtime, timezone.utc),
                 "filesystem_path": str(path),
+                "metadata_json": json.dumps(
+                    {
+                        "storage_backend": "results_folder",
+                        "filesystem_path": str(path),
+                        "source": "dashboard_filesystem_artifact_index",
+                    },
+                    separators=(",", ":"),
+                ),
             }
         )
     return artifacts
+
+
+def filesystem_artifact_by_id(artifact_id: int) -> dict[str, Any] | None:
+    if not is_filesystem_virtual_artifact_id(artifact_id):
+        return None
+    for row in filesystem_run_rows(limit=10_000):
+        for artifact in filesystem_artifacts_for_run(row):
+            if int(artifact.get("artifact_id") or 0) == int(artifact_id):
+                return artifact
+    return None
 
 
 def merge_db_and_filesystem_artifacts(
@@ -7926,26 +8318,31 @@ def build_contract_section_payload(run_id: int, *, kind: str, slug: str) -> dict
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
-    artifacts = fetch_artifacts(run_id)
+    db_artifacts = fetch_artifacts(run_id)
+    artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
     should_materialize_contract = (
-        is_terminal_status(status_text)
-        or (
-            status_text == "running"
-            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        not is_filesystem_virtual_run_id(run_id)
+        and (
+            is_terminal_status(status_text)
+            or (
+                status_text == "running"
+                and any(str(art.get("artifact_kind") or "") == "table_csv" for art in db_artifacts)
+            )
         )
     )
-    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
+    if should_materialize_contract and not contract_materialization_is_current(db_artifacts, run_status=status_text):
         contract_materializer.materialize_run_contract_artifacts(
             run_row,
-            artifacts,
+            db_artifacts,
             fetch_artifact_bytes=fetch_artifact_bytes,
             db_connection_factory=db_connection,
             feature_policy=feature_policy,
             lock_timeout_seconds=0,
         )
-        artifacts = fetch_artifacts(run_id)
+        db_artifacts = fetch_artifacts(run_id)
+        artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
     artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
     cache_key = (int(run_id), kind_token, slug_token, artifact_version)
@@ -11318,13 +11715,17 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
 
-    rollup = fetch_artifact_rollup(run_id)
+    recent_all_artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(run_id), run_row)
+    rollup = artifact_rollup_from_artifacts(recent_all_artifacts)
     artifact_version = f"{rollup['artifacts_total']}|{rollup['latest_artifact_id']}"
     full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == full_cache_version and run_id in LIVE_PAYLOAD_CACHE:
         return condense_live_payload(LIVE_PAYLOAD_CACHE[run_id])
 
-    recent_artifacts = fetch_artifacts(run_id, limit=MAX_ACTIVITY_POINTS, newest_first=True)
+    recent_artifacts = sorted(
+        recent_all_artifacts,
+        key=lambda art: (str(art.get("created_utc") or ""), int(art.get("artifact_id") or 0)),
+    )[-MAX_ACTIVITY_POINTS:]
     logs_recent = fetch_logs(run_id, limit=min(60, MAX_LIVE_LOG_ROWS), descending=True)
     counts = {
         "artifacts_total": rollup["artifacts_total"],
@@ -11418,26 +11819,31 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
-    artifacts = fetch_artifacts(run_id)
+    db_artifacts = fetch_artifacts(run_id)
+    artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
     should_materialize_contract = (
-        is_terminal_status(status_text)
-        or (
-            status_text == "running"
-            and any(str(art.get("artifact_kind") or "") == "table_csv" for art in artifacts)
+        not is_filesystem_virtual_run_id(run_id)
+        and (
+            is_terminal_status(status_text)
+            or (
+                status_text == "running"
+                and any(str(art.get("artifact_kind") or "") == "table_csv" for art in db_artifacts)
+            )
         )
     )
-    if should_materialize_contract and not contract_materialization_is_current(artifacts, run_status=status_text):
+    if should_materialize_contract and not contract_materialization_is_current(db_artifacts, run_status=status_text):
         contract_materializer.materialize_run_contract_artifacts(
             run_row,
-            artifacts,
+            db_artifacts,
             fetch_artifact_bytes=fetch_artifact_bytes,
             db_connection_factory=db_connection,
             feature_policy=feature_policy,
             lock_timeout_seconds=0,
         )
-        artifacts = fetch_artifacts(run_id)
+        db_artifacts = fetch_artifacts(run_id)
+        artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
     artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
     cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
@@ -15167,7 +15573,7 @@ def build_run_page(run_id: int, user_profile: dict[str, Any] | None = None) -> b
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
     sync_runtime_log_for_run(run_row)
-    artifacts = fetch_artifacts(run_id)
+    artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(run_id), run_row)
     logs = fetch_logs(run_id, limit=80, descending=True)
     counts = summarize_artifacts(artifacts)
     counts["logs_total"] = count_logs(run_id)
@@ -16067,7 +16473,12 @@ def build_images_page(run_id: int | None, user_profile: dict[str, Any] | None = 
     run_id = run_id or latest_run_id()
     if run_id is None:
         return page_shell("Images", '<section class="panel"><h2>Images</h2><p>No runs found.</p></section>', active="images", user_profile=user_profile)
-    artifacts = [art for art in fetch_artifacts(run_id) if str(art.get("mime_type") or "").startswith("image/")]
+    run_row = fetch_run(run_id) or {}
+    artifacts = [
+        art
+        for art in merge_db_and_filesystem_artifacts(fetch_artifacts(run_id), run_row)
+        if str(art.get("mime_type") or "").startswith("image/")
+    ]
     cards = []
     for art in artifacts:
         art_id = int(art["artifact_id"])
@@ -17494,7 +17905,7 @@ def build_output_family_page(run_id: int | None, output_name: str, run_tag: str 
         body = '<section class="panel"><h2>Output Family</h2><p class="muted">Waiting for the run row before output-family detail can be resolved.</p></section>'
         return page_shell("Output Family", body, active="outputs", user_profile=user_profile)
     payload = build_live_payload(run_id)
-    artifacts = fetch_artifacts(run_id)
+    artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(run_id), fetch_run(run_id) or {})
     coverage = payload.get("output_coverage") or {}
     registry = list(coverage.get("registry") or [])
     row = _row_by_output_name(registry, output_name)
