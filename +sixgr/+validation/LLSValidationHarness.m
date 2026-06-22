@@ -729,14 +729,14 @@ for idx = repIdx(:).'
     tbBits = localTableNumber(T, idx, "TBSize_bits", NaN);
     prb = localTableNumber(T, idx, "AllocatedPRBCount", NaN);
     layers = localTableNumber(T, idx, "Layers", 1);
-    dataRe = localTableNumber(T, idx, "DataRECount", NaN);
-    if ~isfinite(dataRe)
-        dataRe = localTableNumber(T, idx, "NREPerPRB", NaN) .* prb;
-    end
-    nRePerPrb = dataRe ./ max(prb, 1);
     modulation = localTableText(T, idx, "Modulation", "");
     targetCodeRate = localTableNumber(T, idx, "TargetCodeRate", NaN);
-    ref = sixgr.validation.ReferencePath5GToolbox("tbs_bits", modulation, layers, prb, nRePerPrb, targetCodeRate, 0, NaN);
+    xOverhead = localTableNumber(T, idx, "XOverhead", 0);
+    if ~isfinite(xOverhead)
+        xOverhead = 0;
+    end
+    nRePerPrb = localReferenceNREPerPRB(T, idx, prb, modulation, layers);
+    ref = sixgr.validation.ReferencePath5GToolbox("tbs_bits", modulation, layers, prb, nRePerPrb, targetCodeRate, xOverhead, NaN);
     if ref.Available && isfinite(tbBits)
         rows(end+1, 1) = localComparisonRecord(ctx.RunId, blockId, subsystem, idx, ... %#ok<AGROW>
             localTableNumber(T, idx, "UEID", NaN), localTableNumber(T, idx, "Slot", NaN), configHash, "", ...
@@ -744,6 +744,76 @@ for idx = repIdx(:).'
             max(24.0, 0.02 * max(ref.Value, 1)), 0.02, "toolbox_tbs", "nrTBS", ...
             localRelativePath(ctx.RunFolder, localDirectionPath(blockId)), "", "");
     end
+end
+end
+
+function nRePerPrb = localReferenceNREPerPRB(T, idx, prb, modulation, layers)
+nRePerPrb = localTableNumber(T, idx, "NREPerPRB", NaN);
+if isfinite(nRePerPrb) && nRePerPrb > 0
+    return;
+end
+prb = max(double(prb), 1);
+layers = max(double(layers), 1);
+qm = localModulationOrder(modulation);
+rawData = localTableNumber(T, idx, "DataRECount", NaN);
+rateMatched = localFirstFiniteNumber([ ...
+    localTableNumber(T, idx, "RateMatchedBits", NaN), ...
+    localTableNumber(T, idx, "MeasuredRateMatchedCodewordLLRBits", NaN), ...
+    localTableNumber(T, idx, "MeasuredRateMatchedCodewordBits", NaN)]);
+if isfinite(rateMatched) && rateMatched > 0
+    nRePerPrb = floor(rateMatched / max(qm * layers * prb, 1));
+    if isfinite(nRePerPrb) && nRePerPrb > 0
+        return;
+    end
+end
+if ~isfinite(rawData)
+    rawData = rateMatched;
+end
+if ~(isfinite(rawData) && rawData > 0)
+    nRePerPrb = NaN;
+    return;
+end
+
+maxPhysicalREAcrossLayers = prb * 12 * 14 * layers;
+rawLooksLikeCodedBitBudget = (isfinite(rateMatched) && abs(rawData - rateMatched) <= max(1, 1e-9 * abs(rawData))) || ...
+    rawData > maxPhysicalREAcrossLayers + eps;
+if rawLooksLikeCodedBitBudget
+    nRePerPrb = floor(rawData / max(qm * layers * prb, 1));
+else
+    nRePerPrb = floor(rawData / prb);
+end
+if ~(isfinite(nRePerPrb) && nRePerPrb > 0)
+    nRePerPrb = NaN;
+end
+end
+
+function qm = localModulationOrder(modulation)
+token = upper(strrep(strtrim(char(string(modulation))), "-", ""));
+switch token
+    case 'QPSK'
+        qm = 2;
+    case '16QAM'
+        qm = 4;
+    case '64QAM'
+        qm = 6;
+    case '256QAM'
+        qm = 8;
+    case '1024QAM'
+        qm = 10;
+    case '4096QAM'
+        qm = 12;
+    otherwise
+        qm = 2;
+end
+end
+
+function value = localFirstFiniteNumber(values)
+values = double(values(:));
+idx = find(isfinite(values), 1, "first");
+if isempty(idx)
+    value = NaN;
+else
+    value = values(idx);
 end
 end
 

@@ -60,7 +60,8 @@ scenarioObjectiveOk = logical(sixgr.util.structGet(scenarioObjective, "ScenarioO
     logical(configuredGate.ConfiguredEffectiveOk) && ...
     ~(strictEligible && ~logical(claimGate.ClaimAllowed) && logical(claimGate.ObjectiveDependsOnClaim));
 
-kpiConsistencyOk = true;
+kpiGate = localKPIConsistencyGate(layout, meta, scfg, cfg, strictEligible);
+kpiConsistencyOk = logical(kpiGate.KpiConsistencyOk);
 visualArtifactGateOk = true;
 duplicateArtifactGateOk = true;
 standardsConformanceOk = logical(claimGate.ClaimAllowed) && logical(mandatoryGate.MandatorySubsystemsOk) && ...
@@ -144,6 +145,8 @@ sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_objective_gates
     localScenarioObjectiveGateTable(meta, status, configuredGate, claimGate, mandatoryGate, activeIssueGate));
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "scenario_objective_gates.json"), ...
     localTableJsonPayload(localScenarioObjectiveGateTable(meta, status, configuredGate, claimGate, mandatoryGate, activeIssueGate)));
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "kpi_consistency_gate.csv"), kpiGate.Rows);
+sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "kpi_consistency_gate.json"), kpiGate.Summary);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "active_issue_gate_summary.csv"), activeIssueGate.Rows);
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "active_issue_gate_summary.json"), activeIssueGate.Summary);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "conformance_matrix_runtime_audit.csv"), conformanceGate.Rows);
@@ -162,7 +165,8 @@ root.Claim = claimGate;
 root.MandatorySubsystems = mandatoryGate;
 root.ActiveIssueGate = activeIssueGate;
 root.ConformanceMatrix = conformanceGate;
-root.Failures = localRootFailures(status, claimGate, configuredGate, mandatoryGate, activeIssueGate);
+root.KPIConsistency = kpiGate;
+root.Failures = localRootFailures(status, claimGate, configuredGate, mandatoryGate, activeIssueGate, kpiGate);
 end
 
 function localEnsureRootDirs(layout)
@@ -291,6 +295,109 @@ if ~isempty(summary) && height(summary) > 0
     else
         reason = "run_completion_not_terminal";
     end
+end
+end
+
+function gate = localKPIConsistencyGate(layout, meta, scfg, cfg, strictEligible)
+summaryPath = fullfile(layout.AirInterfaceCSVDir, "lls_kpi_summary.csv");
+reconPath = fullfile(layout.ReportCSVDir, "kpi_reconstruction_summary.csv");
+summaryT = localReadTable(summaryPath);
+reconT = localReadTable(reconPath);
+kpiRequired = logical(strictEligible) && (isfile(summaryPath) || isfile(reconPath) || ...
+    localScenarioGetBool(scfg, cfg, "kpi.required", false));
+
+rows = localKpiGateRows(meta, kpiRequired, summaryPath, reconPath, summaryT, reconT);
+failMask = localToLogical(localColumnOrDefault(rows, "Required", false)) & ...
+    ~localToLogical(localColumnOrDefault(rows, "Pass", false));
+gate = struct();
+gate.Rows = rows;
+gate.KpiConsistencyOk = ~any(failMask);
+gate.KPIFailureCount = double(sum(failMask));
+gate.FailureReasons = string(localColumnOrDefault(rows(failMask, :), "FailureReason", ""));
+gate.Summary = struct( ...
+    "RunId", meta.RunId, ...
+    "ScenarioName", meta.ScenarioName, ...
+    "Required", logical(kpiRequired), ...
+    "KpiConsistencyOk", logical(gate.KpiConsistencyOk), ...
+    "KPIFailureCount", double(gate.KPIFailureCount), ...
+    "FailureReasons", string(strjoin(gate.FailureReasons, "; ")), ...
+    "SummaryArtifact", "reports/csv/kpi_consistency_gate.csv");
+end
+
+function rows = localKpiGateRows(meta, required, summaryPath, reconPath, summaryT, reconT)
+schemaNames = {'RunId','ScenarioName','GateName','Required','Pass','EvidenceArtifact','FailureCount','FailureReason'};
+schemaTypes = {'string','string','string','logical','logical','string','double','string'};
+rows = table('Size', [0 numel(schemaNames)], 'VariableTypes', schemaTypes, 'VariableNames', schemaNames);
+rows = localAppendKpiGateRow(rows, meta, "kpi_summary_present", required, ...
+    ~required || (istable(summaryT) && height(summaryT) > 0), summaryPath, 0, "missing_lls_kpi_summary");
+rows = localAppendKpiGateRow(rows, meta, "kpi_reconstruction_present", required, ...
+    ~required || (istable(reconT) && height(reconT) > 0), reconPath, 0, "missing_kpi_reconstruction_summary");
+if ~(required && istable(summaryT) && height(summaryT) > 0)
+    summaryOk = ~required;
+    summaryFail = double(required && ~(istable(summaryT) && height(summaryT) > 0));
+else
+    summaryStrict = localOptionalBoolColumn(summaryT, "StrictOk", true);
+    summaryRecon = localOptionalBoolColumn(summaryT, "KPIReconciliationPass", true);
+    summaryStatus = lower(strtrim(string(localColumnOrDefault(summaryT, "Status", "pass"))));
+    summaryReason = strtrim(string(localColumnOrDefault(summaryT, "FailureReason", "")));
+    bad = ~summaryStrict | ~summaryRecon | ismember(summaryStatus, ["fail", "failed", "error"]) | ...
+        (strlength(summaryReason) > 0 & ~ismissing(summaryReason));
+    summaryOk = ~any(bad);
+    summaryFail = double(sum(bad));
+end
+rows = localAppendKpiGateRow(rows, meta, "kpi_summary_strict_reconciled", required, ...
+    summaryOk, summaryPath, summaryFail, "lls_kpi_summary_reports_failed_strict_or_reconciliation_status");
+
+if ~(required && istable(reconT) && height(reconT) > 0)
+    reconOk = ~required;
+    reconFail = double(required && ~(istable(reconT) && height(reconT) > 0));
+else
+    reconStrict = localOptionalBoolColumn(reconT, "StrictOk", true);
+    reconPass = localOptionalBoolColumn(reconT, "ReconciliationPass", true);
+    formula = localOptionalBoolColumn(reconT, "FormulaExecuted", true);
+    schema = localOptionalBoolColumn(reconT, "SchemaValid", true);
+    missingRaw = localOptionalBoolColumn(reconT, "MissingRawData", false);
+    duration = lower(strtrim(string(localColumnOrDefault(reconT, "DurationSource", ""))));
+    status = lower(strtrim(string(localColumnOrDefault(reconT, "Status", "pass"))));
+    reason = strtrim(string(localColumnOrDefault(reconT, "FailureReason", "")));
+    bad = ~reconStrict | ~reconPass | ~formula | ~schema | missingRaw | ...
+        ismember(duration, ["", "unavailable", "nan", "<missing>"]) | ...
+        ismember(status, ["fail", "failed", "error"]) | ...
+        (strlength(reason) > 0 & ~ismissing(reason));
+    reconOk = ~any(bad);
+    reconFail = double(sum(bad));
+end
+rows = localAppendKpiGateRow(rows, meta, "kpi_reconstruction_rows_strict", required, ...
+    reconOk, reconPath, reconFail, "kpi_reconstruction_has_failed_formula_duration_or_reconciliation_rows");
+end
+
+function rows = localAppendKpiGateRow(rows, meta, name, required, pass, artifact, count, reason)
+if pass
+    reason = "";
+    count = 0;
+end
+rows(end+1, :) = {meta.RunId, meta.ScenarioName, string(name), logical(required), ...
+    logical(pass), string(localRelativeReportPath(meta, artifact)), double(count), string(reason)}; %#ok<AGROW>
+end
+
+function values = localOptionalBoolColumn(T, name, defaultValue)
+if localHasColumn(T, name)
+    values = localToLogical(T.(char(string(name))));
+else
+    values = repmat(logical(defaultValue), height(T), 1);
+end
+end
+
+function rel = localRelativeReportPath(meta, pathValue) %#ok<INUSD>
+pathText = char(string(pathValue));
+idx = strfind(pathText, ['air_interface' filesep]);
+if isempty(idx)
+    idx = strfind(pathText, ['reports' filesep]);
+end
+if isempty(idx)
+    rel = replace(string(pathText), "\", "/");
+else
+    rel = replace(string(pathText(idx(1):end)), "\", "/");
 end
 end
 
@@ -1032,7 +1139,7 @@ T = table( ...
     'VariableNames', {'RunId','ScenarioName','GateName','Required','Pass','Blocking','IssueIds','EvidenceArtifacts','FailureReason'});
 end
 
-function failures = localRootFailures(status, claimGate, configuredGate, mandatoryGate, activeIssueGate)
+function failures = localRootFailures(status, claimGate, configuredGate, mandatoryGate, activeIssueGate, kpiGate)
 failures = strings(0, 1);
 if ~logical(status.ResultOk) && ~logical(claimGate.ClaimAllowed)
     failures(end+1, 1) = "aud_001_standards_claim_gate_failed:" + string(claimGate.ClaimFailureReason); %#ok<AGROW>
@@ -1045,6 +1152,10 @@ if ~logical(mandatoryGate.MandatorySubsystemsOk) && isempty(failures)
 end
 if ~logical(activeIssueGate.ActiveIssueGateOk)
     failures(end+1, 1) = "active_issue_gate_failed:" + strjoin(activeIssueGate.BlockingIssueIds, "|"); %#ok<AGROW>
+end
+if nargin >= 6 && isstruct(kpiGate) && ~logical(sixgr.util.structGet(kpiGate, "KpiConsistencyOk", true))
+    failures(end+1, 1) = "kpi_consistency_gate_failed:" + ...
+        strjoin(string(sixgr.util.structGet(kpiGate, "FailureReasons", strings(0, 1))), "; "); %#ok<AGROW>
 end
 failures = failures(strlength(strtrim(failures)) > 0);
 end
@@ -1210,6 +1321,23 @@ for pathValue = string(paths(:)).'
         value = nums(1);
         return;
     end
+end
+end
+
+function value = localScenarioGetBool(scfg, cfg, pathValue, defaultValue)
+raw = localScenarioGet(scfg, cfg, pathValue, defaultValue);
+if islogical(raw)
+    value = raw;
+elseif isnumeric(raw)
+    value = raw ~= 0;
+else
+    text = lower(strtrim(string(raw)));
+    value = ismember(text, ["true", "1", "yes", "on", "pass", "ok"]);
+end
+if isempty(value)
+    value = defaultValue;
+else
+    value = logical(value(1));
 end
 end
 

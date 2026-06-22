@@ -1424,6 +1424,7 @@ end
 cfg = localApplyBWPSurface(cfg, s);
 cfg = localApplyDataChannelSurface(cfg, s, "pdsch", "phy.pdsch");
 cfg = localApplyDataChannelSurface(cfg, s, "pusch", "phy.pusch");
+cfg = localReconcileULWaveformPUSCHSurface(cfg, s);
 cfg = localApplyPDCCHSurface(cfg, s);
 cfg = localApplyReceiverSurface(cfg, s);
 cfg = localApplyTimingAndRFHardwareSurface(cfg, s);
@@ -1498,6 +1499,21 @@ if hasStart || hasNum
     numValue = double(sixgr.util.structGet(cfg, targetBase + ".numSymbols", 14));
     cfg = sixgr.util.structSet(cfg, targetBase + ".symbolAllocation", [round(startValue) round(numValue)]);
     cfg = sixgr.util.structSet(cfg, targetBase + ".SymbolAllocation", [round(startValue) round(numValue)]);
+end
+end
+
+function cfg = localReconcileULWaveformPUSCHSurface(cfg, s)
+ulWaveform = upper(strtrim(string(localGetNested(s, "waveform.ul_waveform", ""))));
+transformEnabled = logical(localGetNested(s, "waveform.transform_precoding_enabled", false));
+if ulWaveform == "DFT-S-OFDM" || transformEnabled
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", true);
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.codebookBasedTransmission", false);
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.transmissionScheme", "noncodebook");
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.TransmissionScheme", "noncodebook");
+end
+if logical(localGetNested(s, "modulation.pi2_bpsk_enabled", false)) && ...
+        logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false))
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.pi2BPSKTransformPrecoding", true);
 end
 end
 

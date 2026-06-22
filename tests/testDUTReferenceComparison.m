@@ -11,6 +11,20 @@ passRows = outPass.DUTReferenceComparison(ismember(string(outPass.DUTReferenceCo
 assert(~isempty(passRows), "Expected DUT-vs-reference rows for PDSCH/PUSCH.");
 assert(all(logical(passRows.Pass)), "Reference-aligned fixture should pass all PDSCH/PUSCH comparisons.");
 
+ctxGBits = llsImplementationHarnessFixture("partial_actual");
+ulPath = fullfile(ctxGBits.RunFolder, "air_interface", "csv", "ul_pusch_trials.csv");
+ulT = readtable(ulPath, "VariableNamingRule", "preserve");
+qm = 2; % fixture modulation is QPSK
+ulT.RateMatchedBits = ulT.DataRECount .* qm .* ulT.Layers;
+ulT.MeasuredRateMatchedCodewordLLRBits = ulT.RateMatchedBits;
+ulT.DataRECount = ulT.RateMatchedBits;
+writetable(ulT, ulPath);
+outGBits = sixgr.validation.LLSValidationHarness(ctxGBits.RunFolder, ctxGBits.ScenarioConfig, ctxGBits.InternalConfig, ...
+    "WriteArtifacts", false);
+puschGBitRows = outGBits.DUTReferenceComparison(string(outGBits.DUTReferenceComparison.BlockId) == "PUSCH", :);
+assert(~isempty(puschGBitRows) && all(logical(puschGBitRows.Pass)), ...
+    "PUSCH reference comparison must convert coded-bit budget G to N_RE/PRB before calling nrTBS.");
+
 ctxFail = llsImplementationHarnessFixture("reference_mismatch");
 outFail = sixgr.validation.LLSValidationHarness(ctxFail.RunFolder, ctxFail.ScenarioConfig, ctxFail.InternalConfig, ...
     "WriteArtifacts", false);

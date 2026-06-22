@@ -552,8 +552,19 @@ tf = any(runnerProfile == ["prach_detection", "prach_strict_validation"]) || (~i
 end
 
 function tf = localIsPRACHStrictScenario(scfg, cfg)
+if localIsSRSOnlyScenario(scfg, cfg) || localIsTRSOnlyScenario(scfg, cfg) || ...
+        localIsPDCCHOnlyScenario(scfg, cfg) || localIsChannelRFOnlyScenario(scfg, cfg)
+    tf = false;
+    return;
+end
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-tf = runnerProfile == "prach_strict_validation" || localScenarioHasObjective(scfg, cfg, "prach_strict_validation");
+strictProfile = runnerProfile == "prach_strict_validation" || localScenarioHasObjective(scfg, cfg, "prach_strict_validation");
+if localIsPRACHOnlyScenario(scfg, cfg) && ~strictProfile
+    tf = false;
+    return;
+end
+tf = strictProfile || ...
+    localScenarioAnyTrue(scfg, cfg, ["control_gating.prach_required", "random_access_evidence.msg1_prach_required"]);
 end
 
 function tf = localIsPDCCHOnlyScenario(scfg, cfg)
@@ -569,8 +580,21 @@ tf = any(runnerProfile == ["ctrl6gr_pdcch_study", "pdcch_blind_decode_sweep", "p
 end
 
 function tf = localIsPDCCHStrictScenario(scfg, cfg)
+if localIsSRSOnlyScenario(scfg, cfg) || localIsTRSOnlyScenario(scfg, cfg) || ...
+        localIsPRACHOnlyScenario(scfg, cfg) || localIsChannelRFOnlyScenario(scfg, cfg)
+    tf = false;
+    return;
+end
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-tf = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
+strictProfile = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
+if localIsPDCCHOnlyScenario(scfg, cfg) && ~strictProfile
+    tf = false;
+    return;
+end
+tf = strictProfile || ...
+    localScenarioAnyTrue(scfg, cfg, ["control_gating.pdcch_required", ...
+    "sib1_and_initial_access.type0_pdcch_css_required", ...
+    "random_access_evidence.msg2_rar_pdcch_pdsch_required"]);
 end
 
 function tf = localIsTRSOnlyScenario(scfg, cfg)
@@ -586,8 +610,19 @@ tf = any(runnerProfile == ["trs_strict_validation", "trs_tracking_validation"]) 
 end
 
 function tf = localIsTRSStrictScenario(scfg, cfg)
+if localIsSRSOnlyScenario(scfg, cfg) || localIsPRACHOnlyScenario(scfg, cfg) || ...
+        localIsPDCCHOnlyScenario(scfg, cfg) || localIsChannelRFOnlyScenario(scfg, cfg)
+    tf = false;
+    return;
+end
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-tf = runnerProfile == "trs_strict_validation" || localScenarioHasObjective(scfg, cfg, "trs_strict_validation");
+strictProfile = runnerProfile == "trs_strict_validation" || localScenarioHasObjective(scfg, cfg, "trs_strict_validation");
+if localIsTRSOnlyScenario(scfg, cfg) && ~strictProfile
+    tf = false;
+    return;
+end
+tf = strictProfile || ...
+    localScenarioAnyTrue(scfg, cfg, ["control_gating.trs_required", "reference_signals.trs_required"]);
 end
 
 function tf = localIsSRSOnlyScenario(scfg, cfg)
@@ -602,8 +637,19 @@ tf = runnerProfile == "srs_strict_validation" || (~isempty(targetCases) && all(t
 end
 
 function tf = localIsSRSStrictScenario(scfg, cfg)
+if localIsPRACHOnlyScenario(scfg, cfg) || localIsPDCCHOnlyScenario(scfg, cfg) || ...
+        localIsTRSOnlyScenario(scfg, cfg) || localIsChannelRFOnlyScenario(scfg, cfg)
+    tf = false;
+    return;
+end
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-tf = runnerProfile == "srs_strict_validation" || localScenarioHasObjective(scfg, cfg, "srs_strict_validation");
+strictProfile = runnerProfile == "srs_strict_validation" || localScenarioHasObjective(scfg, cfg, "srs_strict_validation");
+if localIsSRSOnlyScenario(scfg, cfg) && ~strictProfile
+    tf = false;
+    return;
+end
+tf = strictProfile || ...
+    localScenarioAnyTrue(scfg, cfg, ["control_gating.srs_required", "reference_signals.srs_required"]);
 end
 
 function tf = localIsChannelRFOnlyScenario(scfg, cfg)
@@ -618,8 +664,19 @@ tf = runnerProfile == "channel_rf_strict_validation" || (~isempty(targetCases) &
 end
 
 function tf = localIsChannelRFStrictScenario(scfg, cfg)
+if localIsSRSOnlyScenario(scfg, cfg) || localIsPRACHOnlyScenario(scfg, cfg) || ...
+        localIsPDCCHOnlyScenario(scfg, cfg) || localIsTRSOnlyScenario(scfg, cfg)
+    tf = false;
+    return;
+end
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-tf = runnerProfile == "channel_rf_strict_validation" || localScenarioHasObjective(scfg, cfg, "channel_rf_strict_validation");
+strictProfile = runnerProfile == "channel_rf_strict_validation" || localScenarioHasObjective(scfg, cfg, "channel_rf_strict_validation");
+if localIsChannelRFOnlyScenario(scfg, cfg) && ~strictProfile
+    tf = false;
+    return;
+end
+tf = strictProfile || ...
+    localScenarioAnyTrue(scfg, cfg, ["control_gating.channel_rf_required", "channel_rf_configured_vs_applied.enabled"]);
 end
 
 function tf = localIsRAOnlyScenario(scfg, cfg)
@@ -1210,7 +1267,10 @@ end
 
 function stats = localSIB1EvidenceStats(layout, scfg, cfg)
 required = localScenarioGetBool(scfg, cfg, "phy.sib1.enable", false) || ...
-    localScenarioHasObjective(scfg, cfg, "cell_search_mib_sib1");
+    localScenarioHasObjective(scfg, cfg, "cell_search_mib_sib1") || ...
+    localScenarioAnyTrue(scfg, cfg, ["sib1_and_initial_access.sib1_required", ...
+    "sib1_and_initial_access.sib1_decode_from_waveform_required", ...
+    "sib1_and_initial_access.sib1_pdsch_required"]);
 summaryPath = fullfile(layout.ReportCSVDir, "sib1_conformance_summary.csv");
 recoveryPath = fullfile(layout.ControlCSVDir, "sib1_recovery_trials.csv");
 candidatePath = fullfile(layout.ControlCSVDir, "sib1_pdcch_candidates.csv");
@@ -1260,7 +1320,11 @@ runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runne
 required = runnerProfile == "random_access_four_step" || ...
     localScenarioHasObjective(scfg, cfg, "random_access_four_step") || ...
     localScenarioHasObjective(scfg, cfg, "four_step_ra") || ...
-    localScenarioHasObjective(scfg, cfg, "initial_access_ra");
+    localScenarioHasObjective(scfg, cfg, "initial_access_ra") || ...
+    localScenarioAnyTrue(scfg, cfg, ["random_access_evidence.four_step_ra_required", ...
+    "random_access_evidence.msg2_rar_pdcch_pdsch_required", ...
+    "random_access_evidence.msg3_pusch_required", ...
+    "random_access_evidence.msg4_contention_resolution_required"]);
 attemptPath = fullfile(layout.ControlCSVDir, "ra_attempts.csv");
 statePath = fullfile(layout.ControlCSVDir, "ra_state_transitions.csv");
 msg1Path = fullfile(layout.ControlCSVDir, "msg1_prach_detection.csv");
@@ -2509,6 +2573,16 @@ else
 end
 if isempty(value)
     value = defaultValue;
+end
+end
+
+function tf = localScenarioAnyTrue(scfg, cfg, paths)
+tf = false;
+for pathValue = string(paths(:)).'
+    if localScenarioGetBool(scfg, cfg, pathValue, false)
+        tf = true;
+        return;
+    end
 end
 end
 
