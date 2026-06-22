@@ -495,15 +495,8 @@ classdef TR38901Plus < handle
                 return;
             end
 
-            obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
-            obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
-            obj.PathlossApproximationReason = "";
-            obj.PathlossModelSource = "nrpathloss_runtime_backend";
-            obj.PathlossComplianceStatus = "strict_38901_runtime";
-            obj.FallbackUsedForPathloss = false;
-
-            % Try to configure nrPathLossConfig; keep minimal to avoid version issues.
             try
+                % Try to configure nrPathLossConfig; keep minimal to avoid version issues.
                 plc = nrPathLossConfig;
                 if ~isempty(scenarioName)
                     try
@@ -512,16 +505,26 @@ classdef TR38901Plus < handle
                         % Ignore if property differs by release
                     end
                 end
-            catch
-                plc = nrPathLossConfig;
-            end
 
-            % nrPathLoss expects LOS as logical. Ensure correct shape.
-            los = logical(los);
-            if isrow(los), losRow = los; else, losRow = los.'; end
+                % nrPathLoss expects LOS as logical. Ensure correct shape.
+                los = logical(los);
+                if isrow(los), losRow = los; else, losRow = los.'; end
 
-            for k = 1:N
-                pl(k) = nrPathLoss(plc, obj.Fc_Hz, losRow(k), txPos_m(:,k), rxPos_m(:,k));
+                for k = 1:N
+                    pl(k) = nrPathLoss(plc, obj.Fc_Hz, losRow(k), txPos_m(:,k), rxPos_m(:,k));
+                end
+                obj.PathlossExecutionBackend = "nrpathloss_runtime_backend";
+                obj.PathlossTruthClassification = "standards_backed_3gpp_large_scale_pathloss";
+                obj.PathlossApproximationReason = "";
+                obj.PathlossModelSource = "nrpathloss_runtime_backend";
+                obj.PathlossComplianceStatus = "strict_38901_runtime";
+                obj.FallbackUsedForPathloss = false;
+            catch ME
+                if localAnalytical38901Supported(scenarioToken, obj.Fc_Hz)
+                    pl = obj.pathlossViaTR38901ClosedForm(txPos_m, rxPos_m, los, scenarioToken);
+                    return;
+                end
+                rethrow(ME);
             end
         end
 
@@ -633,7 +636,16 @@ end
 end
 
 function tf = localNrPathLossRuntimeAvailable()
-tf = exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2;
+tf = false;
+if ~(exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2)
+    return;
+end
+try
+    plc = nrPathLossConfig; %#ok<NASGU>
+    tf = true;
+catch
+    tf = false;
+end
 end
 
 function tf = localNrPathLossBandSupported(fcHz)

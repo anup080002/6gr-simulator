@@ -1858,6 +1858,23 @@ if strlength(mode) == 0
 end
 end
 
+function mask = localRowsUseFadingChannelDoppler(T)
+mask = false(height(T), 1);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+n = height(T);
+trackingSource = lower(strtrim(string(localColumnOrDefault(T, "TrackingEstimateSource", repmat("", n, 1)))));
+sourceArtifact = lower(strtrim(string(localColumnOrDefault(T, "SourceArtifact", repmat("", n, 1)))));
+isTRS = contains(trackingSource, "trs") | contains(sourceArtifact, "trs_trials");
+channelModel = upper(strtrim(string(localColumnOrDefault(T, "ChannelModel", repmat("", n, 1)))));
+channelModelApplied = upper(strtrim(string(localColumnOrDefault(T, "ChannelModelApplied", repmat("", n, 1)))));
+fadingApplied = logical(localColumnOrDefault(T, "ChannelFadingApplied", false(n, 1)));
+fadingModel = startsWith(channelModel, "TDL") | startsWith(channelModel, "CDL") | ...
+    startsWith(channelModelApplied, "TDL") | startsWith(channelModelApplied, "CDL");
+mask = logical(isTRS & (fadingApplied | fadingModel));
+end
+
 function mode = localResolveControlIntegrationMode(cfg, multiUser)
 mode = "independent_signal_bundle";
 if logical(sixgr.util.structGet(multiUser, "Enabled", false)) && ...
@@ -6783,7 +6800,14 @@ if all(~isfinite(double(T.DopplerHz)))
         sixgr.util.structGet(cfg, "channel.dopplerHz", sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", 0))));
 end
 if all(~isfinite(double(T.InjectedDoppler_Hz))) && any(isfinite(double(T.DopplerHz)))
-    T.InjectedDoppler_Hz = double(T.DopplerHz);
+    scalarDopplerRows = ~localRowsUseFadingChannelDoppler(T);
+    if any(scalarDopplerRows)
+        injected = double(T.InjectedDoppler_Hz);
+        doppler = double(T.DopplerHz);
+        fillMask = scalarDopplerRows & ~isfinite(injected) & isfinite(doppler);
+        injected(fillMask) = doppler(fillMask);
+        T.InjectedDoppler_Hz = injected;
+    end
 end
 if all(~isfinite(double(T.Seed)))
     seed0 = double(sixgr.util.structGet(cfg, "run.seed", 1));
@@ -9161,15 +9185,20 @@ for k = 1:nTrials
         r.DetectionUsable = logical(r.DetectionAttempted) && logical(r.DetectionSuccess) && isfinite(r.DetectionMetric);
         r.MeasurementAttempted = logical(sixgr.util.structGet(out, "ChannelEstimationAttempted", false));
         r.MeasurementUsable = logical(ok);
-        r.InjectedDoppler_Hz = double(sixgr.util.structGet(out, "InjectedDoppler_Hz", r.DopplerHz));
+        r.InjectedDoppler_Hz = double(sixgr.util.structGet(out, "InjectedDoppler_Hz", NaN));
         r.PhaseTrackingError_deg = double(sixgr.util.structGet(out, "PhaseError_deg", NaN));
         r.EstimatedDopplerHz = double(sixgr.util.structGet(out, "EstimatedDoppler_Hz", NaN));
-        r.DopplerError_Hz = r.EstimatedDopplerHz - r.InjectedDoppler_Hz;
+        r.DopplerError_Hz = double(sixgr.util.structGet(out, "DopplerError_Hz", NaN));
+        if ~isfinite(r.DopplerError_Hz) && isfinite(r.EstimatedDopplerHz) && isfinite(r.InjectedDoppler_Hz)
+            r.DopplerError_Hz = r.EstimatedDopplerHz - r.InjectedDoppler_Hz;
+        end
         r.QCLAccuracy = double(sixgr.util.structGet(out, "QCLAccuracy", NaN));
         r.InterpolationLoss_dB = double(sixgr.util.structGet(out, "InterpolationLoss_dB", NaN));
         r.MismatchSensitivity_dB = double(sixgr.util.structGet(out, "MismatchSensitivity_dB", NaN));
         r.TrackingEstimateSource = string(sixgr.util.structGet(out, "TrackingEstimateSource", ""));
         r.ChannelModel = char(string(sixgr.util.structGet(out, "ChannelModel", r.ChannelModel)));
+        r.ChannelModelApplied = string(sixgr.util.structGet(out, "ChannelModelApplied", r.ChannelModelApplied));
+        r.ChannelFadingApplied = logical(sixgr.util.structGet(out, "ChannelFadingApplied", r.ChannelFadingApplied));
         r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(out, "AppliedAWGNSNR_dB", NaN));
         r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "DesiredSignalPowerBeforeNoise", NaN));
         r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(out, "CompositeSignalPowerBeforeNoise", NaN));

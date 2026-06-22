@@ -389,10 +389,28 @@ if ~(istable(T) && ~isempty(T) && all(ismember(need, string(T.Properties.Variabl
 end
 mask = isfinite(double(T.InjectedDoppler_Hz)) & isfinite(double(T.EstimatedDopplerHz));
 if ~any(mask)
+    if ~any(isfinite(double(T.EstimatedDopplerHz)))
+        return;
+    end
+    channelModel = upper(strtrim(string(localTableColumnOrDefault(T, "ChannelModel", repmat("", height(T), 1)))));
+    channelModelApplied = upper(strtrim(string(localTableColumnOrDefault(T, "ChannelModelApplied", repmat("", height(T), 1)))));
+    fadingApplied = logical(localTableColumnOrDefault(T, "ChannelFadingApplied", false(height(T), 1)));
+    fadingTRS = fadingApplied | startsWith(channelModel, "TDL") | startsWith(channelModel, "CDL") | ...
+        startsWith(channelModelApplied, "TDL") | startsWith(channelModelApplied, "CDL");
+    tf = any(fadingTRS) && all(~isfinite(double(T.InjectedDoppler_Hz))) && ...
+        all(~isfinite(double(T.DopplerError_Hz)));
     return;
 end
 delta = abs(double(T.EstimatedDopplerHz(mask)) - double(T.InjectedDoppler_Hz(mask)));
 tf = median(delta, "omitnan") < 20;
+end
+
+function values = localTableColumnOrDefault(T, name, defaultValue)
+if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
+    values = T.(char(name));
+else
+    values = defaultValue;
+end
 end
 
 function tf = localTrackingNmseConsistency(srs, trs)

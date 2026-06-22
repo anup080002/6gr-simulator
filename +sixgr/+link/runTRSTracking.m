@@ -15,6 +15,8 @@ out.NMSE_dB = NaN;
 out.PhaseError_deg = NaN;
 out.EstimatedDoppler_Hz = NaN;
 out.InjectedDoppler_Hz = NaN;
+out.ConfiguredMaxDoppler_Hz = NaN;
+out.DopplerError_Hz = NaN;
 out.EstimatedCFO_Hz = NaN;
 out.EstimatedCFO_PreCorrection_Hz = NaN;
 out.InjectedCFO_Hz = NaN;
@@ -76,7 +78,14 @@ try
     out.EstimatedCFO_PreCorrection_Hz = double(trial.EstimatedCFO_PreCorrection_Hz);
     out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
     out.EstimatedDoppler_Hz = localResolveRuntimeDopplerEstimate(out.EstimatedCFO_Hz, out.InjectedCFO_Hz);
-    out.InjectedDoppler_Hz = localResolveInjectedDopplerHz(cfg);
+    out.ConfiguredMaxDoppler_Hz = localResolveConfiguredMaxDopplerHz(cfg);
+    out.InjectedDoppler_Hz = localResolveScalarInjectedDopplerHz(replay);
+    if isfinite(out.EstimatedDoppler_Hz) && isfinite(out.InjectedDoppler_Hz)
+        out.DopplerError_Hz = out.EstimatedDoppler_Hz - out.InjectedDoppler_Hz;
+    end
+    out.ChannelModelApplied = string(sixgr.util.structGet(replay, "ChannelModelApplied", ...
+        localResolveTrialChannelModel(cfg)));
+    out.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
     out.QCLAccuracy = double(trial.QCLAccuracy);
     out.DetectionMetric = double(trial.DetectionMetric);
     out.AppliedAWGNSNR_dB = double(trial.AppliedAWGNSNR_dB);
@@ -121,8 +130,9 @@ try
     end
     out.Ok = logical(runtimeEvidenceOk);
     out.Notes = "TRS runtime tracking measurement from NZP-CSI-RS waveform path. NRE=" + string(localTRSNRE(tx)) + ...
-        ", injected Doppler=" + string(round(out.InjectedDoppler_Hz, 3)) + ...
-        " Hz, estimated Doppler=" + string(round(out.EstimatedDoppler_Hz, 3)) + ...
+        ", configured max Doppler=" + string(round(out.ConfiguredMaxDoppler_Hz, 3)) + ...
+        " Hz, scalar injected Doppler=" + string(round(out.InjectedDoppler_Hz, 3)) + ...
+        " Hz, measured residual phase rate=" + string(round(out.EstimatedDoppler_Hz, 3)) + ...
         " Hz, estimated common frequency=" + string(round(out.EstimatedCFO_Hz, 3)) + ...
         " Hz, strictOk=" + string(logical(score.StrictOk)) + ...
         ", runtimeEvidenceOk=" + string(runtimeEvidenceOk);
@@ -360,9 +370,17 @@ if ~(awgnOnly || any(modelRaw == ["AWGN", "NONE", "OFF", ""]))
 end
 [y, replay] = sixgr.link.applyWaveformImpairments(y, cfg, sampleRateHz);
 if ~fadingApplied
-    y = localApplyTrackingDoppler(y, sampleRateHz, localResolveInjectedDopplerHz(cfg));
+    scalarDopplerHz = localResolveConfiguredMaxDopplerHz(cfg);
+    y = localApplyTrackingDoppler(y, sampleRateHz, scalarDopplerHz);
+else
+    scalarDopplerHz = NaN;
 end
 [y, replay.InjectedNoiseVariance] = localAddTrackingNoise(y, replay, snr_dB);
+replay.ChannelFadingApplied = logical(fadingApplied);
+replay.ChannelModelApplied = char(localResolveTrialChannelModel(cfg));
+replay.ConfiguredMaxDoppler_Hz = double(localResolveConfiguredMaxDopplerHz(cfg));
+replay.ScalarDopplerInjected = isfinite(scalarDopplerHz);
+replay.InjectedScalarDoppler_Hz = double(scalarDopplerHz);
 end
 
 function [y, nVar] = localAddTrackingNoise(x, replay, snr_dB)
@@ -407,12 +425,20 @@ else
 end
 end
 
-function dopplerHz = localResolveInjectedDopplerHz(cfg)
+function dopplerHz = localResolveConfiguredMaxDopplerHz(cfg)
 dopplerHz = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
     sixgr.util.structGet(cfg, "channel.dopplerHz", sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", 0))));
 if ~isfinite(dopplerHz)
     dopplerHz = 0;
 end
+end
+
+function dopplerHz = localResolveScalarInjectedDopplerHz(replay)
+dopplerHz = NaN;
+if ~(isstruct(replay) && logical(sixgr.util.structGet(replay, "ScalarDopplerInjected", false)))
+    return;
+end
+dopplerHz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", NaN));
 end
 
 function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, sampleRateHz)

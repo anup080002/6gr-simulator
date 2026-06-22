@@ -184,7 +184,7 @@ tr38901 = sixgr.channel.ChannelFactory.create(cfgTR38901, ...
 assert(strcmpi(char(string(tr38901.Meta.ChannelComplianceMode)), "approximate_38901_plus"), ...
     "TR38901 metadata must expose the resolved channel compliance mode.");
 
-haveNrPathLoss = exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2;
+haveNrPathLoss = localNrPathLossRuntimeAvailable();
 if haveNrPathLoss
     assert(strcmpi(char(string(tr38901.Meta.PathlossExecutionBackend)), "nrpathloss_runtime_backend") && ...
         strcmpi(char(string(tr38901.Meta.PathlossTruthClassification)), "standards_backed_3gpp_large_scale_pathloss") && ...
@@ -268,4 +268,17 @@ tdlRuntime = sixgr.channel.ChannelFactory.create(cfgTDL, ...
     "TransmitAntennaMeta", bsRuntimeMeta, ...
     "ReceiveAntennaMeta", ueRuntimeMeta);
 txCorr = double(tdlRuntime.Object.TransmitCorrelationMatrix);
+end
+
+function tf = localNrPathLossRuntimeAvailable()
+tf = false;
+if ~(exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2)
+    return;
+end
+try
+    plc = nrPathLossConfig; %#ok<NASGU>
+    tf = true;
+catch
+    tf = false;
+end
 end
