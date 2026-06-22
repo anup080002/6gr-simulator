@@ -869,6 +869,10 @@ random_access:
   restricted_set: UnrestrictedSet
   frequency_start: 0
   preamble_index: 0
+  n_cell_id: 42
+  snr_sweep_db: [-10, 0, 10, 20, 30]
+  timing_offset_sweep_samples: [0, 4, 8]
+  frequency_offset_sweep_hz: [0, 100, 250]
   binding_source: scenario_config_pending_sib1
   ra_response_window_slots: 20
   ra_contention_resolution_timer_slots: 128

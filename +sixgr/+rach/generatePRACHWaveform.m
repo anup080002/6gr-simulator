@@ -1,6 +1,8 @@
 function tx = generatePRACHWaveform(cfg, varargin)
 %GENERATEPRACHWAVEFORM Generate a waveform-accurate PRACH occasion.
 
+tpSelf = sixgr.perf.TimeProfiler.scope("sixgr.rach.generatePRACHWaveform", ...
+    "Stage", "prach_waveform_generation"); %#ok<NASGU>
 p = inputParser;
 p.FunctionName = "sixgr.rach.generatePRACHWaveform";
 addRequired(p, "cfg", @(x) isstruct(x) || isobject(x));

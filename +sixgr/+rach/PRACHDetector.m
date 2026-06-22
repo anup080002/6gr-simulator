@@ -49,7 +49,7 @@ if isempty(maxIdx) || ~isfinite(peakMetric)
     peakMetric = NaN;
 end
 candidateDetected = candidateSet(maxIdx);
-threshold = localResolveThreshold(peaks, thresholdMode, explicitThreshold, cfg);
+[threshold, thresholdInfo] = localResolveThreshold(peaks, thresholdMode, explicitThreshold, cfg, detInfo);
 detected = isfinite(peakMetric) && peakMetric >= threshold && ~isempty(idx0);
 
 if detected
@@ -86,23 +86,53 @@ det.CandidatePreambles = candidateSet(:);
 det.MultiCandidateAboveThreshold = sum(peaks >= threshold) > 1;
 det.DetInfo = detInfo;
 det.CorrelationTrace = localSelectedCorrelationTrace(detInfo, candidateDetected, threshold, offset);
+det.DetectorBackend = string(sixgr.util.structGet(detInfo, "DetectorBackend", ""));
+det.RxAntennaCount = double(sixgr.util.structGet(detInfo, "RxAntennaCount", NaN));
+det.CandidateCount = double(numel(candidateSet));
+det.CandidatesAboveThreshold = double(sum(peaks >= threshold));
+det.PDPNoiseFloor = double(sixgr.util.structGet(det.CorrelationTrace, "NoiseFloor", NaN));
+det.PeakLagSamples = double(sixgr.util.structGet(det.CorrelationTrace, "PeakLagSamples", offset));
+det.ThresholdBackgroundComponent = double(sixgr.util.structGet(thresholdInfo, "BackgroundComponent", NaN));
+det.ThresholdGlobalPeakComponent = double(sixgr.util.structGet(thresholdInfo, "GlobalPeakComponent", NaN));
+det.TargetFalseAlarmProbability = double(sixgr.util.structGet(thresholdInfo, "TargetFalseAlarmProbability", NaN));
+det.PeakGuardFactor = double(sixgr.util.structGet(thresholdInfo, "PeakGuardFactor", NaN));
+det.PeakToThresholdRatio = localSafeRatio(peakMetric, threshold);
+det.PeakToNoiseRatio = localSafeRatio(peakMetric, det.PDPNoiseFloor);
+det.PeakToNoiseRatio_dB = localRatioToDb(det.PeakToNoiseRatio);
 det.FrequencyEstimate = freqEst;
 det.Occasion = occasion;
 end
 
 function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet)
-rx = localVector(rxWaveform);
+rx = localMatrix(rxWaveform);
 peaks = nan(numel(candidateSet), 1);
 offsets = nan(numel(candidateSet), 1);
 traceCells = cell(numel(candidateSet), 1);
+candidateRows = repmat(struct( ...
+    "PreambleIndex", NaN, ...
+    "PeakMetric", NaN, ...
+    "PeakLagSamples", NaN, ...
+    "AntennaCount", size(rx, 2), ...
+    "AntennaPeakMetrics", "", ...
+    "AntennaPeakLags", ""), numel(candidateSet), 1);
+numRepeatedSymbols = NaN;
 for iCand = 1:numel(candidateSet)
     ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
         "PreambleIndex", double(candidateSet(iCand)));
-    [peaks(iCand), offsets(iCand), lags, metrics] = localCorrelationPeak(rx, localVector(ref.Waveform));
+    numRepeatedSymbols = localFirstFinite(numRepeatedSymbols, localRepeatedSymbolCount(ref));
+    [peaks(iCand), offsets(iCand), lags, metrics, antPeaks, antOffsets] = localCorrelationPeak(rx, localVector(ref.Waveform));
     traceCells{iCand} = struct( ...
         "PreambleIndex", double(candidateSet(iCand)), ...
         "LagSamples", double(lags(:)), ...
-        "CorrelationAbs", double(metrics(:)));
+        "CorrelationAbs", double(metrics(:)), ...
+        "AntennaPeakMetrics", double(antPeaks(:)), ...
+        "AntennaPeakLags", double(antOffsets(:)));
+    candidateRows(iCand).PreambleIndex = double(candidateSet(iCand));
+    candidateRows(iCand).PeakMetric = double(peaks(iCand));
+    candidateRows(iCand).PeakLagSamples = double(offsets(iCand));
+    candidateRows(iCand).AntennaCount = double(size(rx, 2));
+    candidateRows(iCand).AntennaPeakMetrics = strjoin(string(double(antPeaks(:)).'), "|");
+    candidateRows(iCand).AntennaPeakLags = strjoin(string(double(antOffsets(:)).'), "|");
 end
 [bestPeak, bestIdx] = max(peaks, [], "omitnan");
 if isempty(bestIdx) || ~isfinite(bestPeak)
@@ -117,20 +147,44 @@ detInfo.CorrelationPeaks = peaks;
 detInfo.CorrelationOffsets = offsets;
 detInfo.BestCandidateIndex = double(bestIdx);
 detInfo.BestCorrelationTrace = traceCells{bestIdx};
-detInfo.DetectorBackend = "inrepo_waveform_correlation_from_nrPRACH_symbols";
+detInfo.CandidateResults = struct2table(candidateRows, "AsArray", true);
+detInfo.RxAntennaCount = double(size(rx, 2));
+detInfo.NumRepeatedSymbols = double(numRepeatedSymbols);
+detInfo.DetectorBackend = "inrepo_section5_prach_waveform_matched_filter_noncoherent_pdp";
+detInfo.ProcessingFlow = "rx_waveform_per_antenna_correlation_pdp_noncoherent_combining_peak_window_threshold_ta";
 end
 
-function [peakMetric, offsetSamples, lags, metrics] = localCorrelationPeak(rx, ref)
+function [peakMetric, offsetSamples, lags, metrics, antPeaks, antOffsets] = localCorrelationPeak(rx, ref)
 peakMetric = NaN;
 offsetSamples = NaN;
 lags = [];
 metrics = [];
-rx = complex(rx(:));
+antPeaks = zeros(0, 1);
+antOffsets = zeros(0, 1);
+rx = complex(rx);
 ref = complex(ref(:));
 if isempty(rx) || isempty(ref)
     return;
 end
-[metrics, lags] = localNormalizedCorrelationPower(rx, ref);
+if isvector(rx)
+    rx = rx(:);
+end
+numAnt = max(1, size(rx, 2));
+metricCells = cell(numAnt, 1);
+lagCells = cell(numAnt, 1);
+antPeaks = nan(numAnt, 1);
+antOffsets = nan(numAnt, 1);
+for iAnt = 1:numAnt
+    [metricCells{iAnt}, lagCells{iAnt}] = localNormalizedCorrelationPower(rx(:, iAnt), ref);
+    if isempty(metricCells{iAnt})
+        continue;
+    end
+    [antPeaks(iAnt), antIdx] = max(metricCells{iAnt}, [], "omitnan");
+    if ~isempty(antIdx) && isfinite(double(antPeaks(iAnt)))
+        antOffsets(iAnt) = double(antIdx) - numel(ref) + localParabolicPeakOffset(metricCells{iAnt}, antIdx);
+    end
+end
+[metrics, lags] = localNoncoherentAverage(metricCells, lagCells);
 if isempty(metrics)
     return;
 end
@@ -140,6 +194,43 @@ if isempty(peakIdx) || ~isfinite(peakMetric)
 end
 fracOffset = localParabolicPeakOffset(metrics, peakIdx);
 offsetSamples = double(peakIdx) - numel(ref) + fracOffset;
+end
+
+function [combined, lags] = localNoncoherentAverage(metricCells, lagCells)
+combined = [];
+lags = [];
+validIdx = find(cellfun(@(x) ~isempty(x), metricCells), 1, "first");
+if isempty(validIdx)
+    return;
+end
+lags = lagCells{validIdx}(:);
+n = numel(lags);
+M = nan(n, numel(metricCells));
+for iAnt = 1:numel(metricCells)
+    m = metricCells{iAnt};
+    if isempty(m)
+        continue;
+    end
+    li = lagCells{iAnt}(:);
+    if numel(m) ~= n || numel(li) ~= n || any(li ~= lags)
+        [common, ia, ib] = intersect(lags, li, "stable");
+        if isempty(common)
+            continue;
+        end
+        if numel(common) ~= n
+            M = M(ia, :);
+            lags = common;
+            n = numel(lags);
+        end
+        tmp = nan(n, 1);
+        tmp(1:numel(ia)) = double(m(ib));
+        M(:, iAnt) = tmp;
+    else
+        M(:, iAnt) = double(m(:));
+    end
+end
+combined = mean(M, 2, "omitnan");
+combined(all(~isfinite(M), 2)) = NaN;
 end
 
 function [metrics, lags] = localNormalizedCorrelationPower(rx, ref)
@@ -259,7 +350,14 @@ fracOffset = 0.5 * (yPrev - yNext) / denom;
 fracOffset = max(-0.5, min(0.5, double(fracOffset)));
 end
 
-function threshold = localResolveThreshold(peaks, modeToken, explicitThreshold, cfg)
+function [threshold, info] = localResolveThreshold(peaks, modeToken, explicitThreshold, cfg, detInfo)
+info = struct( ...
+    "BackgroundComponent", NaN, ...
+    "GlobalPeakComponent", NaN, ...
+    "BackgroundPDPLevel", NaN, ...
+    "ThresholdScale", NaN, ...
+    "TargetFalseAlarmProbability", NaN, ...
+    "PeakGuardFactor", NaN);
 if modeToken == "fixed"
     threshold = explicitThreshold;
     return;
@@ -271,10 +369,104 @@ if isempty(finitePeaks)
     return;
 end
 targetPfa = double(sixgr.util.structGet(cfg, "TargetFalseAlarmProbability", 1e-3));
-robustCenter = median(finitePeaks);
-robustSigma = 1.4826 * median(abs(finitePeaks - robustCenter));
-gaussQuantile = max(1, sqrt(-2 * log(max(targetPfa, eps))));
-threshold = max(explicitThreshold, robustCenter + gaussQuantile * robustSigma);
+peakGuardFactor = double(sixgr.util.structGet(cfg, "PrachPeakGuardFactor", ...
+    sixgr.util.structGet(cfg, "PeakThresholdFactor", 0.1)));
+if ~(isfinite(peakGuardFactor) && peakGuardFactor >= 0 && peakGuardFactor <= 1)
+    peakGuardFactor = 0.1;
+end
+numRxAnt = double(sixgr.util.structGet(detInfo, "RxAntennaCount", ...
+    sixgr.util.structGet(cfg, "NumRxAntennas", 1)));
+scale = localFlexRANPRACHThresholdScale(cfg, numRxAnt);
+background = NaN;
+try
+    tr = detInfo.BestCorrelationTrace;
+    background = localBackgroundPDPLevel(double(tr.CorrelationAbs(:)), double(sixgr.util.structGet(tr, "PeakLagSamples", NaN)), cfg);
+catch
+end
+if ~(isfinite(background) && background >= 0)
+    robustCenter = median(finitePeaks);
+    robustSigma = 1.4826 * median(abs(finitePeaks - robustCenter));
+    gaussQuantile = max(1, sqrt(-2 * log(max(targetPfa, eps))));
+    backgroundComponent = robustCenter + gaussQuantile * robustSigma;
+else
+    backgroundComponent = background * scale;
+end
+globalPeakComponent = max(finitePeaks) * peakGuardFactor;
+threshold = max([double(explicitThreshold), double(backgroundComponent), double(globalPeakComponent)], [], "omitnan");
+if ~(isfinite(threshold) && threshold >= 0)
+    threshold = explicitThreshold;
+end
+info.BackgroundComponent = double(backgroundComponent);
+info.GlobalPeakComponent = double(globalPeakComponent);
+info.BackgroundPDPLevel = double(background);
+info.ThresholdScale = double(scale);
+info.TargetFalseAlarmProbability = double(targetPfa);
+info.PeakGuardFactor = double(peakGuardFactor);
+end
+
+function scale = localFlexRANPRACHThresholdScale(cfg, numRxAnt)
+fmt = upper(strtrim(string(sixgr.util.structGet(cfg, "ResolvedPRACHFormat", ...
+    sixgr.util.structGet(cfg, "RequestedPRACHFormat", "")))));
+fmt = erase(fmt, "FORMAT");
+if strlength(fmt) == 0
+    fmt = "0";
+end
+ant = [1 2 4];
+switch fmt
+    case {"0"}
+        vals = [17.5320 11.7240 8.5440];
+    case {"A1", "B1"}
+        vals = [11.3570 8.3450 6.6500];
+    case {"A2", "B2"}
+        vals = [8.3450 5.1500 4.1660];
+    case {"C2"}
+        vals = [14.3450 11.1500 10.1660];
+    case {"A3", "B3"}
+        vals = [7.2410 5.0130 4.2870];
+    case {"B4"}
+        vals = [6.0130 5.2870 4.8430];
+    otherwise
+        vals = [16.8390 11.3570 8.3450];
+end
+numRxAnt = max(1, double(numRxAnt));
+scale = interp1(ant, vals, min(max(numRxAnt, ant(1)), ant(end)), "linear");
+if numRxAnt > ant(end)
+    scale = vals(end);
+end
+end
+
+function background = localBackgroundPDPLevel(vals, peakLagSamples, cfg)
+vals = double(vals(:));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    background = NaN;
+    return;
+end
+peakNeighborhood = round(double(sixgr.util.structGet(cfg, "PrachPeakNeighborhoodSamples", NaN)));
+if ~(isfinite(peakNeighborhood) && peakNeighborhood >= 0)
+    lra = double(sixgr.util.structGet(cfg, "ToolboxPRACH.LRA", NaN));
+    if isfinite(lra) && lra > 200
+        peakNeighborhood = 4;
+    else
+        peakNeighborhood = 8;
+    end
+end
+[~, peakIdx] = max(vals, [], "omitnan");
+if isfinite(peakLagSamples) && peakLagSamples >= 0 && peakLagSamples < numel(vals)
+    peakIdx = max(1, min(numel(vals), round(peakLagSamples) + 1));
+end
+keep = true(size(vals));
+lo = max(1, peakIdx - peakNeighborhood);
+hi = min(numel(vals), peakIdx + peakNeighborhood);
+keep(lo:hi) = false;
+bg = vals(keep);
+if isempty(bg)
+    bg = vals;
+end
+background = mean(bg, "omitnan");
+if ~(isfinite(background) && background >= 0)
+    background = median(vals, "omitnan");
+end
 end
 
 function aligned = localAlignWaveforms(rxWave, refWave, offsetSamples, cpLength)
@@ -327,6 +519,58 @@ if size(x, 2) > 1
     vec = mean(x, 2);
 else
     vec = x(:);
+end
+end
+
+function mat = localMatrix(x)
+mat = complex(x);
+if isvector(mat)
+    mat = mat(:);
+end
+if ndims(mat) > 2
+    mat = reshape(mat, size(mat, 1), []);
+end
+end
+
+function n = localRepeatedSymbolCount(ref)
+n = NaN;
+try
+    lra = double(ref.PRACH.LRA);
+    if isfinite(lra) && lra > 0
+        n = max(1, round(numel(ref.Symbols) / lra));
+    end
+catch
+end
+end
+
+function value = localFirstFinite(varargin)
+value = NaN;
+for iArg = 1:nargin
+    raw = double(varargin{iArg});
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw(1);
+        return;
+    end
+end
+end
+
+function ratio = localSafeRatio(num, den)
+num = double(num);
+den = double(den);
+if isfinite(num) && isfinite(den) && den > 0
+    ratio = num / den;
+else
+    ratio = NaN;
+end
+end
+
+function db = localRatioToDb(ratio)
+ratio = double(ratio);
+if isfinite(ratio) && ratio > 0
+    db = 10 * log10(ratio);
+else
+    db = NaN;
 end
 end
 

@@ -83,6 +83,8 @@ tableSpecs = { ...
     "TruthContractFailures", fullfile(layout.ReportCSVDir, "truth_contract_failures.csv"); ...
     "RuntimeFunctionProfile", fullfile(layout.ReportCSVDir, "runtime_function_profile.csv"); ...
     "RuntimeFunctionCallEdges", fullfile(layout.ReportCSVDir, "runtime_function_call_edges.csv"); ...
+    "TimeProfileCalls", fullfile(layout.ReportCSVDir, "time_profile_calls.csv"); ...
+    "TimeProfileCoverage", fullfile(layout.ReportCSVDir, "time_profile_coverage.csv"); ...
     "LiveChannelState", fullfile(layout.ReportCSVDir, "live_channel_state_tti.csv"); ...
     "LiveStageTrace", fullfile(layout.ReportCSVDir, "live_tx_rx_stage_trace.csv"); ...
     "LiveModulationTrace", fullfile(layout.ReportCSVDir, "live_modulation_demodulation_trace.csv"); ...
@@ -1209,10 +1211,30 @@ end
 
 function subsystem = localBlockSubsystem(blockId)
 switch string(blockId)
+    case "MobilityDoppler"
+        subsystem = "mobility";
+    case "ChannelRF"
+        subsystem = "rf_channel";
+    case {"SSB_PBCH_MIB","SIB1"}
+        subsystem = "broadcast";
+    case "PRACH"
+        subsystem = "random_access";
+    case "PDCCH"
+        subsystem = "control";
     case "PDSCH"
         subsystem = "downlink_data";
     case "PUSCH"
         subsystem = "uplink_data";
+    case "PUCCH_UCI"
+        subsystem = "uplink_control";
+    case {"SRS","TRS"}
+        subsystem = "reference_signal";
+    case "MIMO"
+        subsystem = "mimo_beamforming";
+    case "MAC_HARQ"
+        subsystem = "mac_harq";
+    case "KPI"
+        subsystem = "kpi";
     otherwise
         subsystem = lower(string(blockId));
 end
@@ -1309,13 +1331,68 @@ totalTime = NaN;
 selfTime = NaN;
 profileT = ctx.Tables.RuntimeFunctionProfile;
 if localHasRows(profileT)
-    nameMask = contains(lower(string(profileT.FunctionName)), lower(string(functionName))) | ...
-        contains(lower(string(profileT.CompleteName)), lower(string(functionName)));
+    nameMask = localFunctionMatchMask(profileT, functionName, ["FunctionName","CompleteName","FileName"]);
     if any(nameMask)
         called = true;
-        callCount = sum(localNumericColumn(profileT(nameMask, :), "NumCalls"));
-        totalTime = sum(localNumericColumn(profileT(nameMask, :), "TotalTime_s"));
-        selfTime = sum(localNumericColumn(profileT(nameMask, :), "SelfTimeApprox_s"));
+        [callCount, totalTime, selfTime] = localSummarizeProfileEvidence(profileT(nameMask, :));
+        return;
+    end
+end
+edgeT = ctx.Tables.RuntimeFunctionCallEdges;
+if localHasRows(edgeT)
+    nameMask = localFunctionMatchMask(edgeT, functionName, ["CalleeFunctionName","CalleeCompleteName"]);
+    if any(nameMask)
+        called = true;
+        callCount = localSummedCount(edgeT(nameMask, :), "NumCalls");
+        totalTime = localSummedTime(edgeT(nameMask, :), "TotalTime_s");
+        selfTime = NaN;
+        return;
+    end
+end
+timeCoverageT = ctx.Tables.TimeProfileCoverage;
+if localHasRows(timeCoverageT)
+    nameMask = localFunctionMatchMask(timeCoverageT, functionName, "FunctionName");
+    if any(nameMask)
+        executedMask = nameMask;
+        if ismember("CoverageStatus", string(timeCoverageT.Properties.VariableNames))
+            executedMask = executedMask & lower(strtrim(string(timeCoverageT.CoverageStatus))) == "executed";
+        end
+        if any(executedMask)
+            called = true;
+            callCount = localSummedCount(timeCoverageT(executedMask, :), "ExecutedCallCount");
+            totalTime = NaN;
+            selfTime = NaN;
+            return;
+        end
+    end
+end
+timeCallsT = ctx.Tables.TimeProfileCalls;
+if localHasRows(timeCallsT)
+    nameMask = localFunctionMatchMask(timeCallsT, functionName, "FunctionName");
+    if any(nameMask)
+        executedMask = nameMask;
+        if ismember("Status", string(timeCallsT.Properties.VariableNames))
+            executedMask = executedMask & lower(strtrim(string(timeCallsT.Status))) == "executed";
+        end
+        if any(executedMask)
+            called = true;
+            callCount = double(nnz(executedMask));
+            totalTime = localSummedTime(timeCallsT(executedMask, :), "Elapsed_s");
+            selfTime = NaN;
+            return;
+        end
+    end
+end
+edgeT = ctx.Tables.RuntimeFunctionCallEdges;
+if localHasRows(edgeT)
+    % A direct callee match is strongest; a caller match still proves the
+    % function executed even when MATLAB attributes child work separately.
+    nameMask = localFunctionMatchMask(edgeT, functionName, ["CallerFunctionName","CallerCompleteName"]);
+    if any(nameMask)
+        called = true;
+        callCount = localSummedCount(edgeT(nameMask, :), "NumCalls");
+        totalTime = localSummedTime(edgeT(nameMask, :), "TotalTime_s");
+        selfTime = NaN;
         return;
     end
 end
@@ -1338,6 +1415,65 @@ if localFunctionRequiresExplicitCallEvidence(functionName)
 end
 called = localHasRows(primary);
 callCount = height(primary);
+end
+
+function [callCount, totalTime, selfTime] = localSummarizeProfileEvidence(T)
+callCount = localSummedCount(T, "NumCalls");
+totalTime = localSummedTime(T, "TotalTime_s");
+selfTime = localSummedTime(T, "SelfTimeApprox_s");
+end
+
+function count = localSummedCount(T, name)
+vals = localNumericColumn(T, name);
+vals = vals(isfinite(vals));
+if isempty(vals)
+    count = double(height(T));
+else
+    count = sum(vals);
+end
+end
+
+function seconds = localSummedTime(T, name)
+vals = localNumericColumn(T, name);
+vals = vals(isfinite(vals));
+if isempty(vals)
+    seconds = NaN;
+else
+    seconds = sum(vals);
+end
+end
+
+function mask = localFunctionMatchMask(T, functionName, columnNames)
+mask = false(height(T), 1);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+tokens = localFunctionSearchTokens(functionName);
+columnNames = string(columnNames);
+vars = string(T.Properties.VariableNames);
+for i = 1:numel(columnNames)
+    if ~ismember(columnNames(i), vars)
+        continue;
+    end
+    txt = lower(strtrim(string(T.(char(columnNames(i))))));
+    for j = 1:numel(tokens)
+        mask = mask | contains(txt, tokens(j));
+    end
+end
+end
+
+function tokens = localFunctionSearchTokens(functionName)
+name = lower(strtrim(string(functionName)));
+parts = split(name, ".");
+leaf = parts(end);
+tokens = [name; leaf; leaf + ".m"; replace(name, ".", "/") + ".m"; replace(name, ".", "\") + ".m"];
+if numel(parts) > 1
+    pkgParts = "+" + parts(1:end-1);
+    plusSlash = strjoin(pkgParts, "/") + "/" + leaf + ".m";
+    plusBackslash = strjoin(pkgParts, "\") + "\" + leaf + ".m";
+    tokens = [tokens; plusSlash; plusBackslash]; %#ok<AGROW>
+end
+tokens = unique(tokens(strlength(tokens) > 0), "stable");
 end
 
 function tf = localFunctionRequiresExplicitCallEvidence(functionName)

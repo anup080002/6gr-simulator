@@ -126,6 +126,17 @@ if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", tab
         ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())))
     runtimeControl.ControlGatingStateTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingStateTable", table());
 end
+[link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence(link, cfg, scfg, runFolder);
+runtimeControl = sixgr.util.structGet(link, "RawTrials", runtimeControl);
+runtimeControl.CoupledRuntime = sixgr.util.structGet(link, "CoupledRuntime", struct());
+if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())) && ...
+        ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())))
+    runtimeControl.ControlGatingSummaryTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingSummaryTable", table());
+end
+if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())) && ...
+        ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())))
+    runtimeControl.ControlGatingStateTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingStateTable", table());
+end
 controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), runtimeControl);
 localDBLog("INFO", "Control-plane trace export complete.");
 
@@ -149,6 +160,178 @@ result.Ok = logical(link.Ok);
 result.Link = link;
 result.Control = controlTrace;
 result.StrictControl = strictControl;
+result.StrictSupplemental = strictSupplemental;
+end
+
+function [link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence(link, cfg, scfg, runFolder)
+strictSupplemental = struct("Ok", true, "SummaryTable", table(), ...
+    "PRACH", struct(), "SRS", struct(), "TRS", struct(), "ChannelRF", struct(), "MIMO", struct());
+rows = repmat(struct("Case", "", "Ok", true, "Skipped", false, "Notes", ""), 0, 1);
+
+if localShouldRunStrictPRACHEvidence(scfg, cfg)
+    localDBLog("INFO", "Running supplemental strict PRACH waveform validation for waveform-bundle scenario.");
+    tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.prach.runStrictPRACHValidation", ...
+        "Stage", "strict_prach_validation");
+    prach = sixgr.phy.prach.runStrictPRACHValidation(cfg, ...
+        "RunFolder", runFolder, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "WriteArtifacts", true);
+    clear tp;
+    strictSupplemental.PRACH = prach;
+    [link, rows] = localAttachSupplementalStrictResult(link, rows, "PRACH_StrictValidation", prach, ...
+        "strict PRACH waveform validation completed", "strict_prach_validation_failed");
+    link = localAttachRawTrialTable(link, "PRACH", prach, "prach_trials");
+end
+
+if localShouldRunStrictSRSEvidence(scfg, cfg)
+    localDBLog("INFO", "Running supplemental strict SRS waveform validation for waveform-bundle scenario.");
+    tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.srs.runStrictSRSValidation", ...
+        "Stage", "strict_srs_validation");
+    srs = sixgr.phy.srs.runStrictSRSValidation(cfg, ...
+        "RunFolder", runFolder, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "WriteArtifacts", true);
+    clear tp;
+    strictSupplemental.SRS = srs;
+    [link, rows] = localAttachSupplementalStrictResult(link, rows, "SRS_StrictValidation", srs, ...
+        "strict SRS waveform channel-sounding validation completed", "strict_srs_validation_failed");
+    link = localAttachRawTrialTable(link, "SRS", srs, "srs_trials");
+end
+
+if localShouldRunStrictTRSEvidence(scfg, cfg)
+    localDBLog("INFO", "Running supplemental strict TRS waveform validation for waveform-bundle scenario.");
+    tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.trs.runStrictTRSValidation", ...
+        "Stage", "strict_trs_validation");
+    trs = sixgr.phy.trs.runStrictTRSValidation(cfg, ...
+        "RunFolder", runFolder, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "WriteArtifacts", true);
+    clear tp;
+    strictSupplemental.TRS = trs;
+    [link, rows] = localAttachSupplementalStrictResult(link, rows, "TRS_StrictValidation", trs, ...
+        "strict TRS waveform tracking validation completed", "strict_trs_validation_failed");
+    link = localAttachRawTrialTable(link, "TRS", trs, "trs_trials");
+end
+
+if localShouldRunStrictChannelRFEvidence(scfg, cfg)
+    localDBLog("INFO", "Running supplemental strict Channel/RF validation for waveform-bundle scenario.");
+    tp = sixgr.perf.TimeProfiler.scope("sixgr.channel.runStrictChannelRFValidation", ...
+        "Stage", "strict_channel_rf_validation");
+    channelRF = sixgr.channel.runStrictChannelRFValidation(cfg, ...
+        "RunFolder", runFolder, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "WriteArtifacts", true);
+    clear tp;
+    strictSupplemental.ChannelRF = channelRF;
+    [link, rows] = localAttachSupplementalStrictResult(link, rows, "ChannelRF_StrictValidation", channelRF, ...
+        "strict Channel/RF configured-vs-applied validation completed", "strict_channel_rf_validation_failed");
+end
+
+if localShouldRunMIMOEvidence(scfg, cfg, link)
+    localDBLog("INFO", "Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.");
+    mimoArtifacts = sixgr.mimo.exportMIMOEvidenceArtifacts(runFolder, cfg, ...
+        sixgr.util.structGet(link, "RawTrials", struct()), ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "StrictMode", true);
+    strictSupplemental.MIMO = mimoArtifacts;
+    rows(end+1, 1) = struct("Case", "MIMO_NominalEffectiveEvidence", "Ok", true, ...
+        "Skipped", false, "Notes", "MIMO nominal-vs-effective evidence refreshed from raw trials"); %#ok<AGROW>
+end
+
+if ~isempty(rows)
+    strictSupplemental.SummaryTable = struct2table(rows, "AsArray", true);
+    strictSupplemental.Ok = all(logical(strictSupplemental.SummaryTable.Ok));
+    link.KPITable = localAppendStrictControlKPI(sixgr.util.structGet(link, "KPITable", table()), ...
+        struct("SummaryTable", strictSupplemental.SummaryTable));
+    link.Ok = logical(sixgr.util.structGet(link, "Ok", true)) && logical(strictSupplemental.Ok);
+    if isfield(link, "Result") && isstruct(link.Result)
+        link.Result.Ok = logical(link.Ok);
+    end
+end
+end
+
+function [link, rows] = localAttachSupplementalStrictResult(link, rows, caseName, result, successNote, failureNote)
+ok = logical(sixgr.util.structGet(result, "StrictOk", sixgr.util.structGet(result, "Ok", false)));
+note = string(successNote);
+if ~ok
+    note = string(sixgr.util.structGet(result, "FailureReason", failureNote));
+end
+rows(end+1, 1) = struct("Case", string(caseName), "Ok", ok, "Skipped", false, "Notes", note); %#ok<AGROW>
+if ~ok
+    existing = string(sixgr.util.structGet(link, "Errors", strings(0, 1)));
+    link.Errors = [existing(:); string(caseName) + ":" + note];
+end
+end
+
+function link = localAttachRawTrialTable(link, fieldName, result, tableName)
+if ~(isstruct(result) && isfield(result, "ArtifactTables"))
+    return;
+end
+T = sixgr.util.structGet(result.ArtifactTables, tableName, table());
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+rawTrials = sixgr.util.structGet(link, "RawTrials", struct());
+rawTrials.(char(fieldName)) = T;
+link.RawTrials = rawTrials;
+end
+
+function tf = localShouldRunStrictPRACHEvidence(scfg, cfg)
+targetCases = localScenarioTargetCases(scfg);
+validationObjectives = localValidationObjectives(cfg);
+tf = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false)) && ...
+    (any(ismember(targetCases, ["prach","ra","random_access"])) || ...
+    any(ismember(validationObjectives, ["prach_strict_validation","random_access_four_step"])) || ...
+    logical(sixgr.util.structGet(cfg, "control_gating.prachRequired", false)));
+end
+
+function tf = localShouldRunStrictSRSEvidence(scfg, cfg)
+targetCases = localScenarioTargetCases(scfg);
+validationObjectives = localValidationObjectives(cfg);
+tf = logical(sixgr.util.structGet(cfg, "phy.srs.enable", false)) && ...
+    (any(targetCases == "srs") || any(validationObjectives == "srs_strict_validation") || ...
+    logical(sixgr.util.structGet(cfg, "control_gating.srsRequired", false)));
+end
+
+function tf = localShouldRunStrictTRSEvidence(scfg, cfg)
+targetCases = localScenarioTargetCases(scfg);
+validationObjectives = localValidationObjectives(cfg);
+tf = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false)) && ...
+    (any(targetCases == "trs") || any(validationObjectives == "trs_strict_validation") || ...
+    logical(sixgr.util.structGet(cfg, "control_gating.trsRequired", false)));
+end
+
+function tf = localShouldRunStrictChannelRFEvidence(scfg, cfg)
+targetCases = localScenarioTargetCases(scfg);
+validationObjectives = localValidationObjectives(cfg);
+section = sixgr.util.structGet(cfg, "validation.channel_rf_configured_vs_applied", struct());
+enabled = builtin("isstruct", section) && logical(sixgr.util.structGet(section, "enabled", false));
+tf = enabled || any(targetCases == "channel_rf") || any(validationObjectives == "channel_rf_strict_validation");
+end
+
+function tf = localShouldRunMIMOEvidence(scfg, cfg, link)
+targetCases = localScenarioTargetCases(scfg);
+rawTrials = sixgr.util.structGet(link, "RawTrials", struct());
+hasRaw = builtin("isstruct", rawTrials) && (~isempty(fieldnames(rawTrials)));
+configuredMIMO = double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)) > 1 || ...
+    double(sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", 1)) > 1 || ...
+    double(sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", 1)) > 1;
+tf = hasRaw && (configuredMIMO || any(ismember(targetCases, ["mimo","beam","ssb"])));
+end
+
+function targets = localScenarioTargetCases(scfg)
+targets = lower(strtrim(string(scfg.get("scenario.target_cases", {}))));
+targets = targets(strlength(targets) > 0);
+end
+
+function objectives = localValidationObjectives(cfg)
+objectives = lower(strtrim(string(sixgr.util.structGet(cfg, "validation.objectives", strings(0, 1)))));
+objectives = objectives(strlength(objectives) > 0);
 end
 
 function result = localRunSystemLevelScenario(cfg, scfg, runFolder)
@@ -271,11 +454,28 @@ strictSummaryT = sixgr.util.structGet(strictControl, "SummaryTable", table());
 if ~(istable(strictSummaryT) && ~isempty(strictSummaryT))
     return;
 end
-strictCases = "strict_" + lower(string(strictSummaryT.SignalFamily)) + "_waveform_control";
-strictNotes = string(strictSummaryT.FailureReason);
-strictNotes(strlength(strtrim(strictNotes)) == 0) = "strict waveform-backed control evidence completed";
-strictKPI = table(strictCases(:), logical(strictSummaryT.StrictOk(:)), false(height(strictSummaryT), 1), strictNotes(:), ...
-    'VariableNames', {'Case','Ok','Skipped','Notes'});
+if all(ismember(["Case","Ok"], string(strictSummaryT.Properties.VariableNames)))
+    strictKPI = strictSummaryT;
+    strictKPI.Case = string(strictKPI.Case);
+    strictKPI.Ok = logical(strictKPI.Ok);
+    if ~ismember("Skipped", string(strictKPI.Properties.VariableNames))
+        strictKPI.Skipped = false(height(strictKPI), 1);
+    else
+        strictKPI.Skipped = logical(strictKPI.Skipped);
+    end
+    if ~ismember("Notes", string(strictKPI.Properties.VariableNames))
+        strictKPI.Notes = strings(height(strictKPI), 1);
+    else
+        strictKPI.Notes = string(strictKPI.Notes);
+    end
+    strictKPI = strictKPI(:, {'Case','Ok','Skipped','Notes'});
+else
+    strictCases = "strict_" + lower(string(strictSummaryT.SignalFamily)) + "_waveform_control";
+    strictNotes = string(strictSummaryT.FailureReason);
+    strictNotes(strlength(strtrim(strictNotes)) == 0) = "strict waveform-backed control evidence completed";
+    strictKPI = table(strictCases(:), logical(strictSummaryT.StrictOk(:)), false(height(strictSummaryT), 1), strictNotes(:), ...
+        'VariableNames', {'Case','Ok','Skipped','Notes'});
+end
 if ~(istable(kpi) && ~isempty(kpi))
     kpi = strictKPI;
     return;
@@ -1513,6 +1713,7 @@ scenarioStatus = struct();
 truthArtifactScan = struct();
 optionalArtifactIssues = strings(0, 1);
 profilerArtifacts = struct();
+profilerArtifactsExported = false;
 truthGatedCompletionPublished = false;
 
 try
@@ -1599,6 +1800,23 @@ try
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Rewriting scenario manifest with final truth-gated status.");
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    try
+        if logical(sixgr.util.structGet(profilerCfg, "Enabled", false)) && ...
+                logical(sixgr.util.structGet(profilerState, "OwnsSession", false))
+            localDBLog("INFO", "Exporting MATLAB profiler artifacts before implementation validation.");
+            profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, ...
+                "Run captured through runner execution before implementation validation.");
+            profilerArtifactsExported = true;
+            profilerState.OwnsSession = false;
+        end
+    catch profilerME
+        optionalArtifactIssues(end+1, 1) = "profiler_export_before_validation:" + string(profilerME.identifier);
+        localDBLog("WARN", "Profiler export before implementation validation did not complete: %s | %s", ...
+            char(string(profilerME.identifier)), char(string(profilerME.message)));
+        localStopProfilerSession(profilerState);
+        profilerState.OwnsSession = false;
+        profilerArtifacts = struct();
+    end
     localDBLog("INFO", "Exporting LLS reporting bundle.");
     reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
     reportBundle.ConfigOwnershipArtifacts = configOwnership;
@@ -1673,14 +1891,19 @@ try
         localDBLog("WARN", "Optional empty-directory prune did not complete: %s | %s", ...
             char(string(pruneME.identifier)), char(string(pruneME.message)));
     end
-    try
-        profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, "Run completed successfully.");
-    catch profilerME
-        optionalArtifactIssues(end+1, 1) = "profiler_export:" + string(profilerME.identifier);
-        localDBLog("WARN", "Optional profiler export did not complete: %s | %s", ...
-            char(string(profilerME.identifier)), char(string(profilerME.message)));
-        localStopProfilerSession(profilerState);
-        profilerArtifacts = struct();
+    if ~profilerArtifactsExported
+        try
+            profilerArtifacts = localExportProfilerArtifacts(layout, profilerCfg, profilerState, "Run completed successfully.");
+            profilerArtifactsExported = true;
+            profilerState.OwnsSession = false;
+        catch profilerME
+            optionalArtifactIssues(end+1, 1) = "profiler_export:" + string(profilerME.identifier);
+            localDBLog("WARN", "Optional profiler export did not complete: %s | %s", ...
+                char(string(profilerME.identifier)), char(string(profilerME.message)));
+            localStopProfilerSession(profilerState);
+            profilerState.OwnsSession = false;
+            profilerArtifacts = struct();
+        end
     end
     hydration = localHydratePublicRunFolderIfNeeded(runFolder, publicRunFolder);
     hydrationNotes = string(sixgr.util.structGet(hydration, "Notes", ""));

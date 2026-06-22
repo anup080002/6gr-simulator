@@ -6494,7 +6494,9 @@ function T = localEnsureLinkTrialTable(Tin, direction, snr_dB, cfg)
 vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','ConfiguredLayers','ConfiguredTxAntennas','ConfiguredRxAntennas','Modulation','TargetCodeRate','TBSize_bits', ...
     'ChannelModel','ChannelModelApplied','ChannelFadingApplied','DopplerHz','CRCPass','CRCApplicable','CRCOutcome','DecoderIterations','EVM_rms','NMSE_dB', ...
     'DetectionMetric','CorrelationPeak','DetectionThreshold','DetectionThresholdMode','DetectionMetricStatus', ...
-    'DetectorPeakMetric','DetectorNoiseFloor','NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','FalseAlarmCandidateScope','FalseAlarmCandidateCount','DTXFlag','DTXReason', ...
+    'DetectorPeakMetric','DetectorNoiseFloor','RxAntennaCount','PDPAverageNoiseFloor','PeakToThresholdRatio','PeakToNoiseRatio','PeakToNoiseRatio_dB', ...
+    'CandidateCount','CandidatesAboveThreshold','TargetFalseAlarmProbability','ThresholdBackgroundComponent','ThresholdGlobalPeakComponent','PeakGuardFactor','DetectorPeakLagSamples', ...
+    'NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','FalseAlarmCandidateScope','FalseAlarmCandidateCount','DTXFlag','DTXReason', ...
     'PreambleIndex','RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
     'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
     'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
@@ -7694,6 +7696,18 @@ for k = 1:nTrials
         r.DetectionThresholdMode = string(sixgr.util.structGet(out, "DetectionThresholdMode", ""));
         r.NoiseOnlyDetectionMetric = double(sixgr.util.structGet(out, "NoiseOnlyDetectionMetric", NaN));
         r.DetectorNoiseFloor = double(sixgr.util.structGet(out, "DetectorNoiseFloor", NaN));
+        r.RxAntennaCount = double(sixgr.util.structGet(out, "RxAntennaCount", NaN));
+        r.PDPAverageNoiseFloor = double(sixgr.util.structGet(out, "PDPAverageNoiseFloor", NaN));
+        r.PeakToThresholdRatio = double(sixgr.util.structGet(out, "PeakToThresholdRatio", NaN));
+        r.PeakToNoiseRatio = double(sixgr.util.structGet(out, "PeakToNoiseRatio", NaN));
+        r.PeakToNoiseRatio_dB = double(sixgr.util.structGet(out, "PeakToNoiseRatio_dB", NaN));
+        r.CandidateCount = double(sixgr.util.structGet(out, "CandidateCount", NaN));
+        r.CandidatesAboveThreshold = double(sixgr.util.structGet(out, "CandidatesAboveThreshold", NaN));
+        r.TargetFalseAlarmProbability = double(sixgr.util.structGet(out, "TargetFalseAlarmProbability", NaN));
+        r.ThresholdBackgroundComponent = double(sixgr.util.structGet(out, "ThresholdBackgroundComponent", NaN));
+        r.ThresholdGlobalPeakComponent = double(sixgr.util.structGet(out, "ThresholdGlobalPeakComponent", NaN));
+        r.PeakGuardFactor = double(sixgr.util.structGet(out, "PeakGuardFactor", NaN));
+        r.DetectorPeakLagSamples = double(sixgr.util.structGet(out, "DetectorPeakLagSamples", NaN));
         r.NoiseVariance = double(sixgr.util.structGet(out, "NoiseVariance", NaN));
         r.NoiseVarStatus = string(sixgr.util.structGet(out, "NoiseVarStatus", ""));
         r.NoiseVarSource = string(sixgr.util.structGet(out, "NoiseVarSource", ""));
@@ -7889,6 +7903,18 @@ r.DetectedPreambleIndex = double(sixgr.util.structGet(ra, "PreambleIndexDetected
 r.DetectionMetric = double(sixgr.util.structGet(ra, "PreambleDetectionMetric", r.DetectionMetric));
 r.CorrelationPeak = r.DetectionMetric;
 r.DetectionThreshold = double(sixgr.util.structGet(ra, "PreambleDetectionThreshold", r.DetectionThreshold));
+r.RxAntennaCount = double(sixgr.util.structGet(ra, "Msg1RxAntennaCount", r.RxAntennaCount));
+r.PDPAverageNoiseFloor = double(sixgr.util.structGet(ra, "Msg1PDPAverageNoiseFloor", r.PDPAverageNoiseFloor));
+r.PeakToThresholdRatio = double(sixgr.util.structGet(ra, "Msg1PeakToThresholdRatio", r.PeakToThresholdRatio));
+r.PeakToNoiseRatio = double(sixgr.util.structGet(ra, "Msg1PeakToNoiseRatio", r.PeakToNoiseRatio));
+r.PeakToNoiseRatio_dB = double(sixgr.util.structGet(ra, "Msg1PeakToNoiseRatio_dB", r.PeakToNoiseRatio_dB));
+r.CandidateCount = double(sixgr.util.structGet(ra, "Msg1CandidateCount", r.CandidateCount));
+r.CandidatesAboveThreshold = double(sixgr.util.structGet(ra, "Msg1CandidatesAboveThreshold", r.CandidatesAboveThreshold));
+r.TargetFalseAlarmProbability = double(sixgr.util.structGet(ra, "Msg1TargetFalseAlarmProbability", r.TargetFalseAlarmProbability));
+r.ThresholdBackgroundComponent = double(sixgr.util.structGet(ra, "Msg1ThresholdBackgroundComponent", r.ThresholdBackgroundComponent));
+r.ThresholdGlobalPeakComponent = double(sixgr.util.structGet(ra, "Msg1ThresholdGlobalPeakComponent", r.ThresholdGlobalPeakComponent));
+r.PeakGuardFactor = double(sixgr.util.structGet(ra, "Msg1PeakGuardFactor", r.PeakGuardFactor));
+r.DetectorPeakLagSamples = double(sixgr.util.structGet(ra, "Msg1DetectorPeakLagSamples", r.DetectorPeakLagSamples));
 r.TimingAdvance_samples = double(sixgr.util.structGet(ra, "TimingAdvanceSamples", r.TimingAdvance_samples));
 r.TimingOffset_samples = r.TimingAdvance_samples;
 r.TimingError_samples = r.TimingAdvance_samples;
@@ -9287,6 +9313,18 @@ row.MinCoverageRatio = NaN;
 row.DetectionMetricStatus = "";
 row.DetectorPeakMetric = NaN;
 row.DetectorNoiseFloor = NaN;
+row.RxAntennaCount = NaN;
+row.PDPAverageNoiseFloor = NaN;
+row.PeakToThresholdRatio = NaN;
+row.PeakToNoiseRatio = NaN;
+row.PeakToNoiseRatio_dB = NaN;
+row.CandidateCount = NaN;
+row.CandidatesAboveThreshold = NaN;
+row.TargetFalseAlarmProbability = NaN;
+row.ThresholdBackgroundComponent = NaN;
+row.ThresholdGlobalPeakComponent = NaN;
+row.PeakGuardFactor = NaN;
+row.DetectorPeakLagSamples = NaN;
 row.CorrelationPeak = NaN;
 row.NoiseOnlyDetectionMetric = NaN;
 row.MissedDetection = false;

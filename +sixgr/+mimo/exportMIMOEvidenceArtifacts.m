@@ -13,10 +13,13 @@ sixgr.util.ensureFolder(layout.BeamformingCSVDir);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(fullfile(layout.ReportDir, "json"));
 
+tpResolve = sixgr.perf.TimeProfiler.scope("sixgr.mimo.resolveNominalVsEffectiveMIMO", ...
+    "Stage", "mimo_nominal_effective_resolution");
 evidence = sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg, rawTrials, ...
     "RunId", ip.Results.RunId, ...
     "ScenarioName", ip.Results.ScenarioName, ...
     "StrictMode", ip.Results.StrictMode);
+clear tpResolve;
 
 artifacts = struct("Evidence", evidence, "csv", {{}}, "json", {{}});
 csvSpecs = {

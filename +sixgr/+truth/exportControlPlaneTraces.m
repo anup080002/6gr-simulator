@@ -1,6 +1,8 @@
 function controlTrace = exportControlPlaneTraces(runFolder, e2e, runtime)
 %EXPORTCONTROLPLANETRACES Build control-plane traces from link and E2E truth outputs.
 
+tpSelf = sixgr.perf.TimeProfiler.scope("sixgr.truth.exportControlPlaneTraces", ...
+    "Stage", "control_plane_trace_export"); %#ok<NASGU>
 layout = sixgr.report.resultLayout(runFolder);
 controlDir = layout.ControlCSVDir;
 sixgr.util.ensureFolder(controlDir);
