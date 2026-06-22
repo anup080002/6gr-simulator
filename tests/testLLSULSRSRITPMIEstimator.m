@@ -36,6 +36,19 @@ assert(isfinite(est.TPMI), ...
     "Estimated TPMI must be finite when the UL codebook path is active.");
 assert(est.TPMICandidateCount > 0 && isfinite(est.TPMIMutualInformation), ...
     "SRS TPMI estimation must score at least one candidate with a finite MI metric.");
+assert(est.PRBCount == 2 && est.SRSSymbolCount == 14, ...
+    "SRS RI/TPMI estimation must preserve both PRB and SRS-symbol observation dimensions.");
+
+HsymCancel = zeros(24, 2, 2, 2);
+HsymCancel(:, 1, :, :) = repmat(reshape(eye(2), 1, 1, 2, 2), [24, 1, 1, 1]);
+HsymCancel(:, 2, :, :) = -HsymCancel(:, 1, :, :);
+estSym = sixgr.phy.ul.estimateSRSRITPMI(HsymCancel, 0.01, cfg);
+assert(estSym.SRSSymbolCount == 2 && estSym.PRBCount == 2, ...
+    "SRS estimator must expose the observed symbol and PRB counts.");
+assert(isfinite(estSym.RI) && estSym.RI == 2, ...
+    "SRS RI estimation must use per-symbol covariance; averaging symbols first would erase this rank-2 channel.");
+assert(isfinite(estSym.TPMIMutualInformation) && estSym.TPMIMutualInformation > 1, ...
+    "SRS TPMI scoring must accumulate post-equalization MI over nonzero per-symbol channel observations.");
 
 cfgMismatch = sixgr.util.structSet(cfg, "phy.pusch.NumAntennaPorts", 2);
 cfgMismatch = sixgr.util.structSet(cfgMismatch, "phy.pusch.numAntennaPorts", 2);

@@ -4,7 +4,8 @@ function estimate = estimateSRSRITPMI(Hest, nVar, cfg)
 % This helper keeps the estimator explicitly in the SRS / UL sounding path:
 %   1. Form PRB-averaged channel observations from the measured Hest grid.
 %   2. Derive RI from the SRS channel singular-value condition number.
-%   3. Score TPMI codebook candidates with post-equalization MI across PRBs.
+%   3. Score TPMI codebook candidates with post-equalization MI across PRBs
+%      and SRS symbols.
 %
 % The default RI condition-number window follows the Intel/FlexRAN SRS
 % RI/TPMI note (Th_min=1, Th_max=10) while remaining configurable.
@@ -20,6 +21,7 @@ estimate = struct( ...
     "TPMIMutualInformation", NaN, ...
     "SelectedBeamIndices", [], ...
     "PRBCount", NaN, ...
+    "SRSSymbolCount", NaN, ...
     "NumTxPorts", NaN, ...
     "SRSNumTxPorts", NaN, ...
     "PUSCHCodebookNumPorts", NaN, ...
@@ -38,6 +40,7 @@ end
 
 [Hprb, numRxAnt, numTxPorts] = localPRBAveragedChannel(Hest);
 estimate.PRBCount = double(size(Hprb, 3));
+estimate.SRSSymbolCount = double(size(Hprb, 4));
 estimate.NumRxAnt = double(numRxAnt);
 estimate.NumTxPorts = double(numTxPorts);
 estimate.SRSNumTxPorts = double(numTxPorts);
@@ -115,7 +118,7 @@ if ~ismember(configuredPorts, allowedPorts)
 end
 
 if configuredPorts < numPortsOut
-    Hout = Hprb(:, 1:configuredPorts, :);
+    Hout = Hprb(:, 1:configuredPorts, :, :);
     numPortsOut = configuredPorts;
     source = "srs_ports_restricted_to_active_pusch_codebook_ports";
 elseif configuredPorts > numPortsOut
@@ -150,24 +153,28 @@ if ismatrix(Hest)
     end
     numRxAnt = size(Hwide, 1);
     numTxPorts = size(Hwide, 2);
-    Hprb = reshape(Hwide, numRxAnt, numTxPorts, 1);
+    Hprb = reshape(Hwide, numRxAnt, numTxPorts, 1, 1);
     return;
 end
 
 if ndims(Hest) == 3
-    % Single-port estimate often lands here as K x L x NRx.
+    % Single-port estimate often lands here as K x L x NRx. Keep each SRS
+    % OFDM symbol as its own observation; only subcarriers inside a PRB are
+    % averaged.
     Hgrid = double(Hest);
     K = size(Hgrid, 1);
     L = size(Hgrid, 2);
     numRxAnt = size(Hgrid, 3);
     numTxPorts = 1;
     nPRB = max(1, floor(K / 12));
-    Hprb = complex(zeros(numRxAnt, numTxPorts, nPRB));
+    Hprb = complex(zeros(numRxAnt, numTxPorts, nPRB, L));
     for prb = 1:nPRB
         sc = (prb - 1) * 12 + (1:12);
         sc = sc(sc <= K);
-        slice = Hgrid(sc, 1:L, :);
-        Hprb(:, 1, prb) = reshape(mean(slice, [1 2], "omitnan"), [], 1);
+        for sym = 1:L
+            slice = Hgrid(sc, sym, :);
+            Hprb(:, 1, prb, sym) = reshape(mean(slice, 1, "omitnan"), [], 1);
+        end
     end
     return;
 end
@@ -179,19 +186,21 @@ L = size(Hgrid, 2);
 numRxAnt = size(Hgrid, 3);
 numTxPorts = size(Hgrid, 4);
 nPRB = max(1, floor(K / 12));
-Hprb = complex(zeros(numRxAnt, numTxPorts, nPRB));
+Hprb = complex(zeros(numRxAnt, numTxPorts, nPRB, L));
 for prb = 1:nPRB
     sc = (prb - 1) * 12 + (1:12);
     sc = sc(sc <= K);
-    slice = Hgrid(sc, 1:L, :, :);
-    avg = squeeze(mean(slice, [1 2], "omitnan"));
-    if isempty(avg)
-        continue;
+    for sym = 1:L
+        slice = Hgrid(sc, sym, :, :);
+        avg = squeeze(mean(slice, 1, "omitnan"));
+        if isempty(avg)
+            continue;
+        end
+        if isvector(avg)
+            avg = reshape(avg, numRxAnt, numTxPorts);
+        end
+        Hprb(:, :, prb, sym) = avg;
     end
-    if isvector(avg)
-        avg = reshape(avg, numRxAnt, numTxPorts);
-    end
-    Hprb(:, :, prb) = avg;
 end
 end
 
@@ -206,12 +215,14 @@ end
 Rtx = zeros(numTxPorts, numTxPorts);
 validCount = 0;
 for prb = 1:size(Hprb, 3)
-    H = double(Hprb(:, :, prb));
-    if ~all(isfinite(H), "all")
-        continue;
+    for sym = 1:size(Hprb, 4)
+        H = double(Hprb(:, :, prb, sym));
+        if ~all(isfinite(H), "all")
+            continue;
+        end
+        Rtx = Rtx + (H' * H);
+        validCount = validCount + 1;
     end
-    Rtx = Rtx + (H' * H);
-    validCount = validCount + 1;
 end
 if validCount < 1
     return;
@@ -315,26 +326,28 @@ end
 acc = 0;
 count = 0;
 for prb = 1:size(Hprb, 3)
-    H = double(Hprb(:, :, prb));
-    if ~all(isfinite(H), "all")
-        continue;
+    for sym = 1:size(Hprb, 4)
+        H = double(Hprb(:, :, prb, sym));
+        if ~all(isfinite(H), "all")
+            continue;
+        end
+        WportsByLayer = localOrientPUSCHCodebookForChannel(W, size(H, 2));
+        if isempty(WportsByLayer)
+            continue;
+        end
+        Heff = H * WportsByLayer;
+        nLayers = size(Heff, 2);
+        regularized = eye(nLayers) + (Heff' * Heff) ./ max(double(nVar), eps);
+        if rcond(regularized) < eps
+            postEqCov = pinv(regularized);
+        else
+            postEqCov = inv(regularized); %#ok<MINV>
+        end
+        sinr = 1 ./ max(real(diag(postEqCov)), eps) - 1;
+        sinr = max(real(sinr), 0);
+        acc = acc + sum(log2(1 + sinr));
+        count = count + 1;
     end
-    WportsByLayer = localOrientPUSCHCodebookForChannel(W, size(H, 2));
-    if isempty(WportsByLayer)
-        continue;
-    end
-    Heff = H * WportsByLayer;
-    nLayers = size(Heff, 2);
-    regularized = eye(nLayers) + (Heff' * Heff) ./ max(double(nVar), eps);
-    if rcond(regularized) < eps
-        postEqCov = pinv(regularized);
-    else
-        postEqCov = inv(regularized); %#ok<MINV>
-    end
-    sinr = 1 ./ max(real(diag(postEqCov)), eps) - 1;
-    sinr = max(real(sinr), 0);
-    acc = acc + sum(log2(1 + sinr));
-    count = count + 1;
 end
 if count > 0
     metric = acc / count;

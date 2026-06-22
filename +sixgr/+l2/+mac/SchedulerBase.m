@@ -838,7 +838,14 @@ classdef (Abstract) SchedulerBase < handle
                 "RawEstimatedTBSBytes", double(rawBytes), ...
                 "QueueLimited", false, ...
                 "QueuePaddingBits", 0, ...
-                "QueuePaddingBytes", 0);
+                "QueuePaddingBytes", 0, ...
+                "InitialMCSIndex", double(amc.MCSIndex), ...
+                "InitialNumLayers", double(nLayers), ...
+                "QueueAwareReductionEnabled", logical(localQueueAwareRankMCSReductionEnabled(obj.Cfg)), ...
+                "QueueAwareReductionApplied", false, ...
+                "QueueAwareReductionSource", "", ...
+                "MCSReductionSteps", 0, ...
+                "LayerReductionSteps", 0);
 
             if queueBytes <= 0 || rawBits <= 0 || rawBytes <= 0 || isempty(prbSet)
                 return;
@@ -878,6 +885,13 @@ classdef (Abstract) SchedulerBase < handle
             plan.QueueLimited = true;
             plan.QueuePaddingBits = double(sixgr.util.structGet(best, "QueuePaddingBits", 0));
             plan.QueuePaddingBytes = double(sixgr.util.structGet(best, "QueuePaddingBytes", 0));
+            plan.InitialMCSIndex = double(sixgr.util.structGet(best, "InitialMCSIndex", plan.InitialMCSIndex));
+            plan.InitialNumLayers = double(sixgr.util.structGet(best, "InitialNumLayers", plan.InitialNumLayers));
+            plan.QueueAwareReductionEnabled = logical(sixgr.util.structGet(best, "QueueAwareReductionEnabled", plan.QueueAwareReductionEnabled));
+            plan.QueueAwareReductionApplied = logical(sixgr.util.structGet(best, "QueueAwareReductionApplied", false));
+            plan.QueueAwareReductionSource = char(string(sixgr.util.structGet(best, "QueueAwareReductionSource", "")));
+            plan.MCSReductionSteps = double(sixgr.util.structGet(best, "MCSReductionSteps", 0));
+            plan.LayerReductionSteps = double(sixgr.util.structGet(best, "LayerReductionSteps", 0));
         end
 
         function metric = pfMetric(obj, ue, tbsBits)
@@ -1621,8 +1635,10 @@ if isempty(rawPRBSet)
     return;
 end
 
-candidateProfiles = localCandidateMCSProfiles(amc);
-if localPreserveAMCMCSForQueueLimit(amc) && ~isempty(candidateProfiles)
+queueAwareReduction = localQueueAwareRankMCSReductionEnabled(obj.Cfg) && ...
+    localQueueAwarePRBDeltaTriggered(obj, amc, rawPRBSet, symAlloc, queueBytes, opt);
+candidateProfiles = localCandidateMCSProfiles(amc, obj.Cfg, queueAwareReduction);
+if localPreserveAMCMCSForQueueLimit(amc) && ~queueAwareReduction && ~isempty(candidateProfiles)
     cand = candidateProfiles(1);
     [chosenIdx, chosenCand] = localFindSmallestPositiveTB(obj, cand, rawPRBSet, symAlloc, opt);
     if chosenCand.Valid
@@ -1668,6 +1684,16 @@ function best = localBuildQueueLimitedBest(cand, prbSubset, evalOut, queueBytes)
 tbsBits = double(evalOut.TBSBits);
 tbsBytes = double(evalOut.TBSBytes);
 payloadBytes = max(0, floor(double(queueBytes)));
+initialMCS = double(sixgr.util.structGet(cand, "InitialMCSIndex", sixgr.util.structGet(cand, "MCSIndex", NaN)));
+initialLayers = double(sixgr.util.structGet(cand, "InitialNumLayers", sixgr.util.structGet(cand, "NumLayers", 1)));
+mcsSteps = double(sixgr.util.structGet(cand, "MCSReductionSteps", 0));
+layerSteps = double(sixgr.util.structGet(cand, "LayerReductionSteps", 0));
+queueAwareEnabled = logical(sixgr.util.structGet(cand, "QueueAwareReductionEnabled", false));
+queueAwareApplied = queueAwareEnabled && (mcsSteps > 0 || layerSteps > 0);
+source = "";
+if queueAwareApplied
+    source = "buffer_occupancy_prb_share_rank_mcs_reduction";
+end
 best = struct( ...
     "Valid", true, ...
     "PRBSet", double(prbSubset(:).'), ...
@@ -1679,7 +1705,14 @@ best = struct( ...
     "TBSBits", tbsBits, ...
     "TBSBytes", tbsBytes, ...
     "QueuePaddingBits", max(0, tbsBits - 8 * payloadBytes), ...
-    "QueuePaddingBytes", max(0, tbsBytes - payloadBytes));
+    "QueuePaddingBytes", max(0, tbsBytes - payloadBytes), ...
+    "InitialMCSIndex", initialMCS, ...
+    "InitialNumLayers", initialLayers, ...
+    "QueueAwareReductionEnabled", queueAwareEnabled, ...
+    "QueueAwareReductionApplied", queueAwareApplied, ...
+    "QueueAwareReductionSource", source, ...
+    "MCSReductionSteps", mcsSteps, ...
+    "LayerReductionSteps", layerSteps);
 end
 
 function [bestIdx, bestEval] = localFindLargestQueueFit(obj, cand, rawPRBSet, symAlloc, queueBytes, opt)
@@ -1778,31 +1811,153 @@ evalOut = struct( ...
     "TBSBytes", NaN);
 end
 
-function candidates = localCandidateMCSProfiles(amc)
+function candidates = localCandidateMCSProfiles(amc, cfg, queueAwareReduction)
+if nargin < 2 || isempty(cfg)
+    cfg = struct();
+end
+if nargin < 3 || isempty(queueAwareReduction)
+    queueAwareReduction = localQueueAwareRankMCSReductionEnabled(cfg);
+end
 mode = lower(string(sixgr.util.structGet(amc, "Mode", "fixed_modulation")));
 mcsTable = char(string(sixgr.util.structGet(amc, "MCSTable", "qam64_table1")));
 numLayers = max(1, round(double(sixgr.util.structGet(amc, "NumLayers", 1))));
+queueAwareReduction = logical(queueAwareReduction);
 
-if mode == "cqi_table" && isfinite(double(sixgr.util.structGet(amc, "MCSIndex", NaN)))
-    idxList = round(double(sixgr.util.structGet(amc, "MCSIndex", 0))):-1:0;
-    candidates = repmat(struct("MCSIndex", 0, "Modulation", "QPSK", "TargetCodeRate", 0.1, "NumLayers", numLayers), 0, 1);
-    for idx = idxList
-        prof = sixgr.link.resolveMCSProfile(mcsTable, idx);
-        if prof.Valid
-            candidates(end+1) = struct( ... %#ok<AGROW>
-                "MCSIndex", double(idx), ...
-                "Modulation", char(string(prof.Modulation)), ...
-                "TargetCodeRate", double(prof.TargetCodeRate), ...
-                "NumLayers", double(numLayers));
+layerList = numLayers;
+if queueAwareReduction
+    layerDecMax = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareLayerDecrementMax", 1);
+    minLayers = max(1, numLayers - layerDecMax);
+    layerList = numLayers:-1:minLayers;
+end
+
+hasMCSIndex = isfinite(double(sixgr.util.structGet(amc, "MCSIndex", NaN)));
+if (mode == "cqi_table" || mode == "fixed_mcs") && hasMCSIndex
+    initialMCS = max(0, min(31, round(double(sixgr.util.structGet(amc, "MCSIndex", 0)))));
+    if queueAwareReduction
+        mcsDecMax = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementMax", 2);
+        step1 = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementStep1", 1);
+        step2 = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementStep2", 2);
+        decSet = unique([0, 1:mcsDecMax, step1, step2], "stable");
+        decSet = decSet(decSet >= 0 & decSet <= max(mcsDecMax, 0));
+        idxList = max(0, initialMCS - decSet);
+    elseif mode == "cqi_table"
+        idxList = initialMCS:-1:0;
+    else
+        idxList = initialMCS;
+    end
+    idxList = unique(idxList, "stable");
+    prototype = localQueueAwareCandidateStruct(NaN, "QPSK", 0.1, numLayers, initialMCS, numLayers, queueAwareReduction);
+    candidates = repmat(prototype, 0, 1);
+    for layerIdx = 1:numel(layerList)
+        layerCount = double(layerList(layerIdx));
+        for idx = idxList
+            prof = sixgr.link.resolveMCSProfile(mcsTable, idx);
+            if prof.Valid
+                candidates(end+1) = localQueueAwareCandidateStruct( ... %#ok<AGROW>
+                    idx, prof.Modulation, prof.TargetCodeRate, layerCount, ...
+                    initialMCS, numLayers, queueAwareReduction);
+            end
         end
     end
 else
-    candidates = struct( ...
-        "MCSIndex", double(sixgr.util.structGet(amc, "MCSIndex", 0)), ...
-        "Modulation", char(string(sixgr.util.structGet(amc, "Modulation", "QPSK"))), ...
-        "TargetCodeRate", double(sixgr.util.structGet(amc, "TargetCodeRate", 0.1)), ...
-        "NumLayers", double(numLayers));
+    initialMCS = double(sixgr.util.structGet(amc, "MCSIndex", NaN));
+    prototype = localQueueAwareCandidateStruct(initialMCS, "QPSK", 0.1, numLayers, initialMCS, numLayers, queueAwareReduction);
+    candidates = repmat(prototype, 0, 1);
+    for layerIdx = 1:numel(layerList)
+        candidates(end+1) = localQueueAwareCandidateStruct( ... %#ok<AGROW>
+            initialMCS, sixgr.util.structGet(amc, "Modulation", "QPSK"), ...
+            sixgr.util.structGet(amc, "TargetCodeRate", 0.1), double(layerList(layerIdx)), ...
+            initialMCS, numLayers, queueAwareReduction);
+    end
 end
+end
+
+function cand = localQueueAwareCandidateStruct(mcsIndex, modulation, targetCodeRate, numLayers, initialMCS, initialLayers, queueAwareReduction)
+if ~(isfinite(double(mcsIndex)) && isfinite(double(initialMCS)))
+    mcsSteps = 0;
+else
+    mcsSteps = max(0, round(double(initialMCS)) - round(double(mcsIndex)));
+end
+layerSteps = max(0, round(double(initialLayers)) - round(double(numLayers)));
+cand = struct( ...
+    "MCSIndex", double(mcsIndex), ...
+    "Modulation", char(string(modulation)), ...
+    "TargetCodeRate", double(targetCodeRate), ...
+    "NumLayers", double(numLayers), ...
+    "InitialMCSIndex", double(initialMCS), ...
+    "InitialNumLayers", double(initialLayers), ...
+    "QueueAwareReductionEnabled", logical(queueAwareReduction), ...
+    "MCSReductionSteps", double(mcsSteps), ...
+    "LayerReductionSteps", double(layerSteps));
+end
+
+function tf = localQueueAwareRankMCSReductionEnabled(cfg)
+tf = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.queueAwareRankMCSReductionEnable", false));
+if ~tf
+    token = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", ""))));
+    tf = contains(token, "queue") || contains(token, "buffer");
+end
+end
+
+function tf = localQueueAwarePRBDeltaTriggered(obj, amc, rawPRBSet, symAlloc, queueBytes, opt)
+tf = false;
+rawPRBSet = double(rawPRBSet(:).');
+nShare = numel(rawPRBSet);
+if nShare < 1 || ~(isfinite(double(queueBytes)) && double(queueBytes) > 0)
+    return;
+end
+
+baseCandidates = localCandidateMCSProfiles(amc, obj.Cfg, false);
+if isempty(baseCandidates)
+    return;
+end
+baseCand = baseCandidates(1);
+requiredPRB = localFindSmallestQueueCoveringPRB(obj, baseCand, rawPRBSet, symAlloc, queueBytes, opt);
+if ~(isfinite(requiredPRB) && requiredPRB >= 1)
+    return;
+end
+
+spareFraction = max(0, (double(nShare) - double(requiredPRB)) / max(double(nShare), 1));
+delta1 = localNonnegativeScalarConfig(obj.Cfg, "phy.linkAdaptation.queueAwarePRBDelta1Fraction", 0.5);
+delta2 = localNonnegativeScalarConfig(obj.Cfg, "phy.linkAdaptation.queueAwarePRBDelta2Fraction", 0.8);
+triggerFraction = min(max(delta1, 0), max(delta2, 0));
+tf = spareFraction >= triggerFraction;
+end
+
+function requiredPRB = localFindSmallestQueueCoveringPRB(obj, cand, rawPRBSet, symAlloc, queueBytes, opt)
+requiredPRB = NaN;
+lo = 1;
+hi = numel(rawPRBSet);
+payloadBytes = max(0, floor(double(queueBytes)));
+while lo <= hi
+    mid = floor((lo + hi) / 2);
+    evalMid = localEvaluatePositiveCandidate(obj, cand, mid, symAlloc, opt);
+    if evalMid.Valid && double(evalMid.TBSBytes) >= payloadBytes
+        requiredPRB = mid;
+        hi = mid - 1;
+    else
+        lo = mid + 1;
+    end
+end
+if ~isfinite(requiredPRB)
+    requiredPRB = numel(rawPRBSet);
+end
+end
+
+function value = localNonnegativeIntegerConfig(cfg, path, defaultValue)
+value = double(sixgr.util.structGet(cfg, path, defaultValue));
+if ~(isfinite(value) && value >= 0)
+    value = double(defaultValue);
+end
+value = max(0, round(value));
+end
+
+function value = localNonnegativeScalarConfig(cfg, path, defaultValue)
+value = double(sixgr.util.structGet(cfg, path, defaultValue));
+if ~(isfinite(value) && value >= 0)
+    value = double(defaultValue);
+end
+value = max(0, double(value));
 end
 
 function map = localSharedTBSCache()

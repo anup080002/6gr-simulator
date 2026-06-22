@@ -835,6 +835,13 @@ link_adaptation:
   pusch_la_policy: srs_reciprocity_closed_loop
   pdcch_la_policy: measured_sinr_based
   effective_sinr_method: miesm
+  queue_aware_rank_mcs_reduction_enable: true
+  queue_aware_layer_decrement_max: 1
+  queue_aware_mcs_decrement_max: 2
+  queue_aware_mcs_decrement_step1: 1
+  queue_aware_mcs_decrement_step2: 2
+  queue_aware_prb_delta1_fraction: 0.5
+  queue_aware_prb_delta2_fraction: 0.8
 
 harq:
   enable: true

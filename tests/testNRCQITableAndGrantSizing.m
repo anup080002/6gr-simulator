@@ -101,5 +101,25 @@ proc = schGrant.HARQ.UEProcs{ui}(pid);
 assert(double(proc.TBSBytes) == double(g.TBSBytes), ...
     "HARQ new-data state must use the queue-limited TBS, not the oversized estimate.");
 
+cfgQueueAware = sixgr.util.structSet(cfgGrant, "phy.linkAdaptation.mode", "amc");
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.dlPolicy", "cqi_driven");
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwareRankMCSReductionEnable", true);
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwareLayerDecrementMax", 1);
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwareMCSDecrementMax", 2);
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwareMCSDecrementStep1", 1);
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwareMCSDecrementStep2", 2);
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwarePRBDelta1Fraction", 0.5);
+cfgQueueAware = sixgr.util.structSet(cfgQueueAware, "phy.linkAdaptation.queueAwarePRBDelta2Fraction", 0.8);
+schQueueAware = sixgr.l2.mac.SchedulerPF(cfgQueueAware, "Direction", "DL");
+planQueueAware = schQueueAware.buildNewDataGrantPlan( ...
+    struct("RNTI", 77, "DLBufferBytes", 90, "CQI", 15, "RI", 2), 0:49, [0 14], 90);
+assert(planQueueAware.Valid && logical(planQueueAware.QueueAwareReductionApplied), ...
+    "Queue-aware grant sizing must apply configured MCS/rank reduction when buffer occupancy is much smaller than the PRB share.");
+assert(double(planQueueAware.InitialMCSIndex) > double(planQueueAware.MCSIndex) && ...
+    double(planQueueAware.MCSReductionSteps) >= 1, ...
+    "Queue-aware grant sizing must disclose the exact MCS reduction applied before TB sizing.");
+assert(double(planQueueAware.TBSBytes) <= 90 && double(planQueueAware.TBSBits) > 0, ...
+    "Queue-aware MCS/rank reduction must still produce a real standards-sized TB that fits the queue.");
+
 ok = true;
 end
