@@ -15,6 +15,7 @@ for ii = 1:numel(mapping.SlotResources)
     ref = mapping.SlotResources(ii).Symbols;
     grid = rx.RxSlots(rxIdx).RxGrid;
     obs = complex(NaN(size(ref)));
+    [subcarrier, symbol, port] = localIndexCoordinates(ind, srsCfg, grid);
     try
         obs = grid(ind);
     catch
@@ -30,6 +31,20 @@ for ii = 1:numel(mapping.SlotResources)
         row.Slot = double(slot);
         row.ResourceId = double(srsCfg.ResourceId);
         row.LinearIndex = double(ind(k));
+        if k <= numel(symbol)
+            row.Symbol = double(symbol(k));
+        end
+        if k <= numel(subcarrier)
+            row.Subcarrier = double(subcarrier(k));
+            row.PRB = double(floor(subcarrier(k) / 12));
+        end
+        if k <= numel(port)
+            row.Port = double(port(k));
+        end
+        row.CombNumber = double(srsCfg.CombNumber);
+        row.CombOffset = double(srsCfg.CombOffset);
+        row.CyclicShift = double(srsCfg.CyclicShift);
+        row.SequenceId = double(srsCfg.SequenceId);
         row.ReferenceSymbolI = double(real(ref(k)));
         row.ReferenceSymbolQ = double(imag(ref(k)));
         row.ObservedSymbolI = double(real(obs(k)));
@@ -56,8 +71,33 @@ end
 
 function row = localExtractRow()
 row = struct("RunId", "", "Slot", NaN, "ResourceId", NaN, "LinearIndex", NaN, ...
+    "Symbol", NaN, "Subcarrier", NaN, "PRB", NaN, "Port", NaN, ...
+    "CombNumber", NaN, "CombOffset", NaN, "CyclicShift", NaN, "SequenceId", NaN, ...
     "ReferenceSymbolI", NaN, "ReferenceSymbolQ", NaN, ...
     "ObservedSymbolI", NaN, "ObservedSymbolQ", NaN, ...
     "ExtractionAttempted", false, "ExtractionAvailable", false, ...
     "ConfigHash", "", "TruthStatus", "");
+end
+
+function [subcarrier, symbol, port] = localIndexCoordinates(ind, srsCfg, grid)
+idx = double(ind(:));
+K = double(srsCfg.ToolboxCarrier.NSizeGrid) * 12;
+L = double(srsCfg.ToolboxCarrier.SymbolsPerSlot);
+P = max(1, round(double(srsCfg.NumSRSPorts)));
+if ~isempty(grid) && ndims(grid) >= 3
+    P = max(P, size(grid, 3));
+end
+subcarrier = NaN(size(idx));
+symbol = NaN(size(idx));
+port = NaN(size(idx));
+if isempty(idx) || ~(isfinite(K) && K > 0 && isfinite(L) && L > 0)
+    return;
+end
+try
+    [k, l, p] = ind2sub([K L P], idx);
+    subcarrier = double(k(:) - 1);
+    symbol = double(l(:) - 1);
+    port = double(p(:) - 1);
+catch
+end
 end

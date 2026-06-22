@@ -11,6 +11,8 @@ required = [
     "reference_signals/csv/srs_rx_extraction.csv"
     "reference_signals/csv/srs_detection_metrics.csv"
     "reference_signals/csv/srs_channel_estimation.csv"
+    "reference_signals/csv/srs_channel_estimation_per_prb.csv"
+    "reference_signals/csv/srs_channel_estimation_per_port.csv"
     "reference_signals/csv/srs_coverage.csv"
     "reference_signals/csv/srs_trigger_events.csv"
     "reference_signals/csv/srs_negative_trials.csv"
@@ -35,6 +37,12 @@ end
 T = readtable(fullfile(root, "reference_signals", "csv", "srs_trials.csv"), "TextType", "string");
 assert(all(ismember(["DetectionAttempted","ResourceExtractionAttempted","SRSChannelEstimateAvailable","FullCarrierClaimValid"], ...
     string(T.Properties.VariableNames))), "SRS trial schema must carry strict attempted/available/coverage columns.");
+ch = readtable(fullfile(root, "reference_signals", "csv", "srs_channel_estimation.csv"), "TextType", "string");
+assert(all(ismember(["PerREEstimateAvailable","PerPRBEstimateAvailable","PerPortEstimateAvailable","NumPRBEstimates"], ...
+    string(ch.Properties.VariableNames))), "SRS channel-estimation schema must expose measured per-RE/per-PRB/per-port columns.");
+prb = readtable(fullfile(root, "reference_signals", "csv", "srs_channel_estimation_per_prb.csv"), "TextType", "string");
+assert(height(prb) > 0 && all(ismember(["PRB","Port","EstimateI","EstimateQ","EstimateAvailable"], string(prb.Properties.VariableNames))), ...
+    "SRS per-PRB estimator artifact must expose measured PRB/port channel estimates.");
 figs = dir(fullfile(root, "reports", "figures", "srs_*_unavailable.svg"));
 assert(isempty(figs), "Strict SRS figures must not be unavailable cards.");
 ok = true;

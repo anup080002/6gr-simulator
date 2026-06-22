@@ -26,6 +26,8 @@ negativeT = table();
 extractionT = table();
 detectionT = table();
 channelT = table();
+channelPrbT = table();
+channelPortT = table();
 timingT = table();
 oracleT = table();
 trialId = 0;
@@ -36,6 +38,8 @@ trialT = localAppend(trialT, one.TrialTable);
 extractionT = localAppend(extractionT, one.ExtractionTable);
 detectionT = localAppend(detectionT, one.DetectionTable);
 channelT = localAppend(channelT, one.ChannelTable);
+channelPrbT = localAppend(channelPrbT, one.ChannelPRBTable);
+channelPortT = localAppend(channelPortT, one.ChannelPortTable);
 timingT = localAppend(timingT, one.TimingTable);
 oracleT = localAppend(oracleT, one.OracleTable);
 
@@ -73,6 +77,8 @@ for ii = 1:numel(negativeModes)
     extractionT = localAppend(extractionT, one.ExtractionTable);
     detectionT = localAppend(detectionT, one.DetectionTable);
     channelT = localAppend(channelT, one.ChannelTable);
+    channelPrbT = localAppend(channelPrbT, one.ChannelPRBTable);
+    channelPortT = localAppend(channelPortT, one.ChannelPortTable);
     timingT = localAppend(timingT, one.TimingTable);
     oracleT = localAppend(oracleT, one.OracleTable);
 end
@@ -89,7 +95,8 @@ negativeOk = height(negativeT) >= numel(negativeModes) && ...
     all(~logical(negativeT.StrictOk)) && all(logical(negativeT.NegativeExpectedOk));
 artifactRowsOk = height(configT) > 0 && height(resourceSetT) > 0 && height(resourceT) > 0 && ...
     height(txWaveformT) > 0 && height(extractionT) > 0 && height(detectionT) > 0 && ...
-    height(channelT) > 0 && height(timingT) > 0 && height(coverageT) > 0 && ...
+    height(channelT) > 0 && height(channelPrbT) > 0 && height(channelPortT) > 0 && ...
+    height(timingT) > 0 && height(coverageT) > 0 && ...
     height(triggerT) > 0 && height(lowSNRT) > 0 && height(timingSweepT) > 0 && ...
     height(multiUET) > 0 && height(oracleT) > 0;
 oracleOk = ~any(logical(oracleT.Violation));
@@ -129,6 +136,8 @@ result.ArtifactTables = struct( ...
     "srs_rx_extraction", extractionT, ...
     "srs_detection_metrics", detectionT, ...
     "srs_channel_estimation", channelT, ...
+    "srs_channel_estimation_per_prb", channelPrbT, ...
+    "srs_channel_estimation_per_port", channelPortT, ...
     "srs_timing_tracking", timingT, ...
     "srs_coverage", coverageT, ...
     "srs_trigger_events", triggerT, ...
@@ -164,8 +173,10 @@ trialTable = struct2table(score.TrialRow, "AsArray", true);
 extractionTable = det.Extracted.Table;
 detectionTable = det.Table;
 channelTable = ch.Table;
+channelPRBTable = ch.PerPRBTable;
+channelPortTable = ch.PerPortTable;
 timingTable = timing.Table;
-trialTables = {extractionTable, detectionTable, channelTable, timingTable};
+trialTables = {extractionTable, detectionTable, channelTable, channelPRBTable, channelPortTable, timingTable};
 for ii = 1:numel(trialTables)
     trialTables{ii}.TrialId = repmat(double(trialId), height(trialTables{ii}), 1);
     trialTables{ii}.TrialType = repmat(string(trialType), height(trialTables{ii}), 1);
@@ -175,7 +186,9 @@ out.TrialTable = trialTable;
 out.ExtractionTable = trialTables{1};
 out.DetectionTable = trialTables{2};
 out.ChannelTable = trialTables{3};
-out.TimingTable = trialTables{4};
+out.ChannelPRBTable = trialTables{4};
+out.ChannelPortTable = trialTables{5};
+out.TimingTable = trialTables{6};
 out.OracleTable = sixgr.phy.srs.guardNoOracleSRS(cfg.RunId, trialId);
 end
 

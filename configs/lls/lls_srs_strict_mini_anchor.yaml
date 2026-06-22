@@ -29,7 +29,7 @@ scenario:
   target_cases: [srs]
   bundle_anchor_cases: [srs_strict_validation]
   honesty_mode: strict
-  notes: "AUD-SRS-001 strict mini-run; validates NR-baseline SRS channel-sounding evidence, not exhaustive 6G normative conformance."
+  notes: "AUD-SRS-001 strict mini-run; validates NR-baseline SRS channel-sounding evidence only."
 
 run_control:
   num_workers: 1
