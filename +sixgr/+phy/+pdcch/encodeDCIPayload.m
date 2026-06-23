@@ -2,8 +2,8 @@ function dci = encodeDCIPayload(fields, dciFormat, pdcchCfg)
 %ENCODEDCIPAYLOAD Serialize strict mini-anchor DCI fields to payload bits.
 
 dciFormat = upper(strrep(string(dciFormat), "-", "_"));
-K = double(pdcchCfg.DCIPayloadSizeBits);
-layout = localLayout(dciFormat);
+[K, sizeDetails] = sixgr.phy.pdcch.dciPayloadSizeBits(double(pdcchCfg.NSizeGrid), dciFormat);
+layout = localLayout(dciFormat, sizeDetails);
 bits = zeros(K, 1, "int8");
 fieldRows = repmat(localFieldRow(), 0, 1);
 cursor = 1;
@@ -36,21 +36,26 @@ dci.PayloadHash = sixgr.rrc.asn1.sha256Hex(uint8(bits(:)));
 dci.FieldTable = struct2table(fieldRows, "AsArray", true);
 end
 
-function layout = localLayout(dciFormat)
+function layout = localLayout(dciFormat, sizeDetails)
+nFreqBits = double(sizeDetails.FrequencyResourceAssignmentBits);
 switch dciFormat
     case "1_0"
         names = ["format_identifier","frequency_resource_assignment","time_resource_assignment", ...
             "vrb_to_prb_mapping","mcs","ndi","rv","harq_process","dai","tpc", ...
             "pucch_resource_indicator","pdsch_to_harq_feedback_timing"];
-        widths = [1 14 4 1 5 1 2 4 2 2 3 3];
+        widths = [1 nFreqBits 4 1 5 1 2 4 2 2 3 3];
     case "0_0"
         names = ["format_identifier","frequency_resource_assignment","time_resource_assignment", ...
-            "frequency_hopping","mcs","ndi","rv","harq_process","tpc","csi_request"];
-        widths = [1 14 4 1 5 1 2 4 2 1];
+            "frequency_hopping","mcs","ndi","rv","harq_process","tpc","padding"];
+        padBits = max(0, double(sizeDetails.DCI00PaddedPayloadBits) - double(sizeDetails.DCI00UnpaddedPayloadBits));
+        widths = [1 nFreqBits 4 1 5 1 2 4 2 padBits];
     otherwise
         error("sixgr:phy:pdcch:UnsupportedDCIFormat", ...
             "Strict PDCCH mini-anchor supports DCI formats 1_0 and 0_0; got %s.", dciFormat);
 end
+keep = widths > 0;
+names = names(keep);
+widths = widths(keep);
 layout = repmat(struct("Name", "", "Width", 0), numel(names), 1);
 for ii = 1:numel(names)
     layout(ii).Name = char(names(ii));

@@ -12,8 +12,8 @@ opt = p.Results;
 
 fields = struct();
 fields.format_identifier = 0;
-fields.frequency_resource_assignment = localPackFreq(opt.PRBStart, opt.NumPRB);
-fields.time_resource_assignment = 1;
+fields.frequency_resource_assignment = sixgr.phy.pdcch.rivEncode(opt.PRBStart, opt.NumPRB, pdcchCfg.NSizeGrid);
+fields.time_resource_assignment = 0;
 fields.frequency_hopping = 0;
 fields.mcs = double(opt.MCS);
 fields.ndi = 1;
@@ -24,14 +24,9 @@ fields.csi_request = 0;
 fields.prb_start = double(opt.PRBStart);
 fields.num_prb = double(opt.NumPRB);
 fields.symbol_start = 0;
-fields.num_symbols = 12;
+fields.num_symbols = 14;
 fields.direction = "UL";
 fields.grant_type = "PUSCH";
 
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "0_0", pdcchCfg);
-end
-
-function v = localPackFreq(startPRB, numPRB)
-v = bitshift(uint32(max(0, round(double(startPRB)))), 7) + uint32(max(1, min(127, round(double(numPRB)))));
-v = double(v);
 end

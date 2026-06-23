@@ -8,6 +8,10 @@ numPRB = double(fields.num_prb);
 symStart = double(fields.symbol_start);
 numSym = double(fields.num_symbols);
 mcs = double(fields.mcs);
+freqValid = logical(localGetField(fields, "frequency_resource_assignment_valid", false));
+if ~freqValid
+    failure(end + 1, 1) = "frequency_resource_assignment_riv_invalid"; %#ok<AGROW>
+end
 if ~(isfinite(prbStart) && prbStart >= 0 && prbStart < double(pdcchCfg.NSizeGrid))
     failure(end + 1, 1) = "prb_start_out_of_range"; %#ok<AGROW>
 end
@@ -33,7 +37,8 @@ grant.SymbolStart = symStart;
 grant.NumSymbols = numSym;
 grant.MCS = mcs;
 grant.Modulation = localMCSModulation(mcs);
-grant.TBS = double(max(0, floor(numPRB * numSym * localModOrder(grant.Modulation) * 0.5 * 12)));
+grant.TBS = NaN;
+grant.TBSCalcSource = "not_carried_by_dci";
 grant.HARQProcess = double(fields.harq_process);
 grant.NDI = double(fields.ndi);
 grant.RV = double(fields.rv);
@@ -62,16 +67,5 @@ elseif mcs <= 16
     mod = "16QAM";
 else
     mod = "64QAM";
-end
-end
-
-function q = localModOrder(mod)
-switch string(mod)
-    case "QPSK"
-        q = 2;
-    case "16QAM"
-        q = 4;
-    otherwise
-        q = 6;
 end
 end

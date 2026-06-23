@@ -381,6 +381,7 @@ cfg.phy.pdcch.candidateAggregationLevels = double(localGetNested(s, "control.can
 cfg.phy.pdcch.aggregationSelectionPolicy = char(string(localGetNested(s, "control.aggregation_selection_policy", "snr_threshold")));
 cfg.phy.pdcch.schedulerAggregationLevel = double(localGetNested(s, "control.scheduler_aggregation_level", NaN));
 cfg.phy.pdcch.dciFormat = char(string(localFirstValue(s.control.dci_formats)));
+cfg.phy.pdcch.configuredPayloadBits = double(localGetNested(s, "control.pdcch_payload_bits", NaN));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindDecodeCandidates", double(s.control.blind_decode_candidates));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(s.control.coreset_duration));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResources", double(s.control.coreset_frequency_resources));

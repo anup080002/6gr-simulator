@@ -112,7 +112,7 @@ control:
   scheduler_aggregation_level: 4
   aggregation_selection_policy: configured_scheduler_level
   search_space_num_candidates: [0, 0, 2, 0, 0]
-  pdcch_payload_bits: 64
+  pdcch_payload_bits: 37
   blind_decode_list_length: 8
   pdcch_strict:
     rnti_type: C-RNTI

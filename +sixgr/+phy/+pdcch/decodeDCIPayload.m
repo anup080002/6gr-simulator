@@ -3,13 +3,13 @@ function dci = decodeDCIPayload(bits, dciFormat, pdcchCfg)
 
 bits = int8(bits(:));
 dciFormat = upper(strrep(string(dciFormat), "-", "_"));
-K = double(pdcchCfg.DCIPayloadSizeBits);
+[K, sizeDetails] = sixgr.phy.pdcch.dciPayloadSizeBits(double(pdcchCfg.NSizeGrid), dciFormat);
 if numel(bits) < K
     bits(end+1:K, 1) = 0;
 elseif numel(bits) > K
     bits = bits(1:K);
 end
-layout = localLayout(dciFormat);
+layout = localLayout(dciFormat, sizeDetails);
 fields = struct();
 fieldRows = repmat(localFieldRow(), 0, 1);
 cursor = 1;
@@ -30,19 +30,18 @@ for ii = 1:numel(layout)
     fieldRows(end + 1, 1) = row; %#ok<AGROW>
     cursor = cursor + spec.Width;
 end
-[prbStart, numPRB] = localUnpackFreq(fields.frequency_resource_assignment);
+[prbStart, numPRB, rivValid] = sixgr.phy.pdcch.rivDecode(fields.frequency_resource_assignment, pdcchCfg.NSizeGrid);
 fields.prb_start = prbStart;
 fields.num_prb = numPRB;
+fields.frequency_resource_assignment_valid = logical(rivValid);
 if dciFormat == "1_0"
     fields.direction = "DL";
     fields.grant_type = "PDSCH";
-    fields.symbol_start = 2;
-    fields.num_symbols = 10;
+    [fields.symbol_start, fields.num_symbols] = localResolveTimeDomainAlloc(fields.time_resource_assignment, "DL");
 else
     fields.direction = "UL";
     fields.grant_type = "PUSCH";
-    fields.symbol_start = 0;
-    fields.num_symbols = 12;
+    [fields.symbol_start, fields.num_symbols] = localResolveTimeDomainAlloc(fields.time_resource_assignment, "UL");
 end
 
 dci = struct();
@@ -56,21 +55,26 @@ dci.PayloadHash = sixgr.rrc.asn1.sha256Hex(uint8(bits(:)));
 dci.FieldTable = struct2table(fieldRows, "AsArray", true);
 end
 
-function layout = localLayout(dciFormat)
+function layout = localLayout(dciFormat, sizeDetails)
+nFreqBits = double(sizeDetails.FrequencyResourceAssignmentBits);
 switch dciFormat
     case "1_0"
         names = ["format_identifier","frequency_resource_assignment","time_resource_assignment", ...
             "vrb_to_prb_mapping","mcs","ndi","rv","harq_process","dai","tpc", ...
             "pucch_resource_indicator","pdsch_to_harq_feedback_timing"];
-        widths = [1 14 4 1 5 1 2 4 2 2 3 3];
+        widths = [1 nFreqBits 4 1 5 1 2 4 2 2 3 3];
     case "0_0"
         names = ["format_identifier","frequency_resource_assignment","time_resource_assignment", ...
-            "frequency_hopping","mcs","ndi","rv","harq_process","tpc","csi_request"];
-        widths = [1 14 4 1 5 1 2 4 2 1];
+            "frequency_hopping","mcs","ndi","rv","harq_process","tpc","padding"];
+        padBits = max(0, double(sizeDetails.DCI00PaddedPayloadBits) - double(sizeDetails.DCI00UnpaddedPayloadBits));
+        widths = [1 nFreqBits 4 1 5 1 2 4 2 padBits];
     otherwise
         error("sixgr:phy:pdcch:UnsupportedDCIFormat", ...
             "Strict PDCCH mini-anchor supports DCI formats 1_0 and 0_0; got %s.", dciFormat);
 end
+keep = widths > 0;
+names = names(keep);
+widths = widths(keep);
 layout = repmat(struct("Name", "", "Width", 0), numel(names), 1);
 for ii = 1:numel(names)
     layout(ii).Name = char(names(ii));
@@ -87,10 +91,56 @@ end
 value = double(value);
 end
 
-function [startPRB, numPRB] = localUnpackFreq(value)
-u = uint32(max(0, round(double(value))));
-startPRB = double(bitshift(u, -7));
-numPRB = double(bitand(u, uint32(127)));
+function [symStart, numSymbols] = localResolveTimeDomainAlloc(idx, direction)
+idx = double(idx);
+direction = upper(string(direction));
+if direction == "DL"
+    % Default type-A PDSCH allocation rows used by this simulator's NR
+    % baseline path. Row 0 matches the mobile scenario: S=2, L=12.
+    tableRows = [
+        0 2 12
+        1 2 10
+        2 3 11
+        3 2 9
+        4 2 7
+        5 9 4
+        6 4 4
+        7 5 7
+        8 5 2
+        9 9 2
+        10 12 2
+        11 1 13
+        12 1 6
+        13 2 4
+        14 4 7
+        15 8 4];
+else
+    % Baseline non-transform-precoded PUSCH allocation used in the mobile
+    % scenario. Row 0 is full-slot PUSCH: S=0, L=14.
+    tableRows = [
+        0 0 14
+        1 0 12
+        2 2 10
+        3 4 10
+        4 0 7
+        5 7 7
+        6 0 4
+        7 4 4
+        8 8 4
+        9 10 4
+        10 0 2
+        11 2 2
+        12 4 2
+        13 6 2
+        14 8 2
+        15 10 2];
+end
+row = tableRows(tableRows(:, 1) == idx, :);
+if isempty(row)
+    row = tableRows(1, :);
+end
+symStart = double(row(1, 2));
+numSymbols = double(row(1, 3));
 end
 
 function row = localFieldRow()

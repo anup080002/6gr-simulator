@@ -7,6 +7,10 @@ configT = b.Result.ArtifactTables.pdcch_config_strict;
 assert(height(configT) == 1, "Strict PDCCH config export must contain one effective config row.");
 assert(logical(configT.StrictValid(1)), "Strict PDCCH mini-anchor config must be valid.");
 assert(string(configT.RNTIType(1)) == "C-RNTI", "Strict PDCCH anchor must preserve configured C-RNTI.");
+assert(double(configT.ConfiguredDCIPayloadSizeBits(1)) == double(configT.DCIPayloadSizeBits(1)), ...
+    "Strict PDCCH anchor YAML payload size must match the standard-derived DCI size.");
+assert(~logical(configT.DCIPayloadConfiguredMismatch(1)), ...
+    "Strict PDCCH anchor must not carry a stale configured DCI payload size.");
 
 missing = b.InternalConfig;
 missing.phy.pdcch = rmfield(missing.phy.pdcch, "coreset");

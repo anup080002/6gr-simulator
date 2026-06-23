@@ -53,8 +53,6 @@ rntiValue = double(sixgr.util.structGet(cfg, "phy.pdcch.rnti", ...
 dciFormats = string(sixgr.util.structGet(cfg, "lls6g.control.dci_formats", ...
     sixgr.util.structGet(cfg, "phy.pdcch.dciFormat", "1_0")));
 dciFormats = unique(upper(strrep(strtrim(dciFormats(:)), "-", "_")), "stable");
-payloadBits = double(sixgr.util.structGet(cfg, "phy.pdcch.dciPayloadBits", ...
-    sixgr.util.structGet(cfg, "lls6g.control.pdcch_payload_bits", 64)));
 aggregationLevel = double(sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevel", 4));
 aggregationLevels = double(sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevels", aggregationLevel));
 numCand = double(sixgr.util.structGet(cfg, "phy.pdcch.searchSpace.numCandidates", [0 0 1 0 0]));
@@ -114,7 +112,18 @@ strictCfg.DCIMonitoringFormats = dciFormats(:).';
 strictCfg.RNTIType = rntiType;
 strictCfg.RNTIValue = rntiValue;
 strictCfg.DCIFormat = dciFormats(1);
+configuredPayloadBits = double(sixgr.util.structGet(cfg, "phy.pdcch.configuredPayloadBits", ...
+    sixgr.util.structGet(cfg, "phy.pdcch.dciPayloadBits", ...
+    sixgr.util.structGet(cfg, "lls6g.control.pdcch_payload_bits", NaN))));
+[payloadBits, payloadDetails] = sixgr.phy.pdcch.dciPayloadSizeBits(nSizeGrid, dciFormats);
+strictCfg.ConfiguredDCIPayloadSizeBits = configuredPayloadBits;
 strictCfg.DCIPayloadSizeBits = payloadBits;
+strictCfg.DCIPayloadFrequencyAssignmentBits = double(payloadDetails.FrequencyResourceAssignmentBits);
+strictCfg.DCI10PayloadSizeBits = double(payloadDetails.DCI10PayloadBits);
+strictCfg.DCI00UnpaddedPayloadSizeBits = double(payloadDetails.DCI00UnpaddedPayloadBits);
+strictCfg.DCI00PaddedPayloadSizeBits = double(payloadDetails.DCI00PaddedPayloadBits);
+strictCfg.DCIPayloadSizeSource = string(payloadDetails.SizeSource);
+strictCfg.DCIPayloadConfiguredMismatch = isfinite(configuredPayloadBits) && configuredPayloadBits ~= payloadBits;
 strictCfg.CandidateCCEIndex = double(sixgr.util.structGet(cfg, "phy.pdcch.candidateCCEIndex", 0));
 strictCfg.CandidateIndex = double(sixgr.util.structGet(cfg, "phy.pdcch.candidateIndex", 1));
 strictCfg.AggregationLevel = aggregationLevel;
