@@ -15,10 +15,12 @@ p.addParameter("AttemptId", 1, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("FaultMode", "none", @(x)ischar(x) || isstring(x));
 p.addParameter("WriteArtifacts", true, @(x)islogical(x) || isnumeric(x));
 p.addParameter("RunNegativeSuite", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("SIB1Recovery", struct(), @(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
 opt = p.Results;
 
 localRequireToolboxFunctions();
+[cfg, sib1BindingEvidence] = localApplyDecodedSIB1IfPresent(cfg, opt.SIB1Recovery);
 raCfg = sixgr.mac.ra.RAConfig(cfg, ...
     "RunId", opt.RunId, ...
     "ScenarioName", opt.ScenarioName, ...
@@ -33,6 +35,13 @@ if strlength(strtrim(runFolder)) == 0
 end
 
 result = localEmptyResult(raCfg, runFolder, faultMode);
+result.SIB1RACHBindingEvidence = sib1BindingEvidence;
+result.SIB1RACHBindingApplied = istable(sib1BindingEvidence) && height(sib1BindingEvidence) > 0;
+if logical(result.SIB1RACHBindingApplied)
+    result.SIB1RACHBindingSource = "decoded_sib1_rach_config_common";
+    result.SIB1RACHPayloadHash = string(sib1BindingEvidence.PayloadHash(1));
+    result.SIB1RACHTreeHash = string(sib1BindingEvidence.TreeHash(1));
+end
 powerState = localResolveRATransmitPower(cfg, raCfg);
 result = localApplyPowerStateToResult(result, powerState);
 events = localInitialEvents(raCfg);
@@ -210,11 +219,26 @@ if logical(opt.WriteArtifacts)
 end
 end
 
+function [cfg, evidenceT] = localApplyDecodedSIB1IfPresent(cfg, sib1Recovery)
+evidenceT = table('Size', [0 8], 'VariableTypes', ...
+    {'string','string','string','string','string','string','string','string'}, ...
+    'VariableNames', {'Parameter','ValueBefore','ValueAfter','Source','Note','PayloadHash','TreeHash','RunPhase'});
+if isempty(sib1Recovery) || ~(isstruct(sib1Recovery) && ~isempty(fieldnames(sib1Recovery)))
+    return;
+end
+[cfg, evidenceT] = sixgr.mac.ra.installDecodedSIB1RACHConfig(cfg, sib1Recovery);
+if istable(evidenceT) && ~isempty(evidenceT)
+    evidenceT.RunPhase = repmat("sib1_to_ra_config_install", height(evidenceT), 1);
+end
+end
+
 function result = localEmptyResult(raCfg, runFolder, faultMode)
 fields = { ...
     "RunId", raCfg.RunId, "ScenarioName", raCfg.ScenarioName, "CellId", double(raCfg.CellId), ...
     "UEId", double(raCfg.UEId), "AttemptId", double(raCfg.AttemptId), ...
     "RAProcedureType", raCfg.RAProcedureType, "RABindingSource", raCfg.BindingSource, ...
+    "SIB1RACHBindingApplied", false, "SIB1RACHBindingSource", "", ...
+    "SIB1RACHPayloadHash", "", "SIB1RACHTreeHash", "", ...
     "RACHConfigHash", raCfg.RACHConfigHash, "PRACHOccasionFrame", double(raCfg.PRACHOccasionFrame), ...
     "PRACHOccasionSlot", double(raCfg.PRACHOccasionSlot), "PRACHOccasionSymbol", double(raCfg.PRACHOccasionSymbol), ...
     "PRACHFrequencyIndex", double(raCfg.PRACHFrequencyIndex), "PreambleIndexTx", double(raCfg.PreambleIndex), ...
@@ -255,7 +279,8 @@ fields = { ...
     "Msg4ContentionIdentity", "", "ContentionIdentityMatches", false, "FinalCRNTI", NaN, ...
     "RACompleted", false, "FailureReason", "", "ProxyUsed", false, "Skipped", false, ...
     "ToolboxMissing", false, "UsedOracleFields", "", "StrictOk", false, ...
-    "RunFolder", string(runFolder), "FaultMode", string(faultMode)};
+    "RunFolder", string(runFolder), "FaultMode", string(faultMode), ...
+    "SIB1RACHBindingEvidence", table()};
 result = struct(fields{:});
 end
 
@@ -610,6 +635,7 @@ end
 
 function tables = localBuildArtifactTables(result, raCfg, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, msg4Tx)
 tables = struct();
+tables.sib1_rach_config_binding = result.SIB1RACHBindingEvidence;
 tables.ra_attempts = struct2table(localAttemptRow(result), "AsArray", true);
 tables.ra_state_transitions = result.Events;
 tables.msg1_prach_detection = struct2table(localMsg1Row(result, raCfg, det), "AsArray", true);
@@ -625,6 +651,7 @@ end
 
 function row = localAttemptRow(r)
 names = ["RunId","ScenarioName","CellId","UEId","AttemptId","RAProcedureType","RABindingSource", ...
+    "SIB1RACHBindingApplied","SIB1RACHBindingSource","SIB1RACHPayloadHash","SIB1RACHTreeHash", ...
     "RACHConfigHash","PreambleIndexTx","PreambleIndexDetected","PreambleDetected","CollisionDetected", ...
     "Msg1RxAntennaCount","Msg1PDPAverageNoiseFloor","Msg1PeakToThresholdRatio", ...
     "Msg1PeakToNoiseRatio","Msg1PeakToNoiseRatio_dB","Msg1CandidateCount", ...

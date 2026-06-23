@@ -1015,16 +1015,26 @@ result.SummaryTable = prach.ArtifactTables.prach_missed_detection_sweep;
 end
 
 function result = localRunFourStepRAScenario(cfg, scfg, runFolder)
-ra = sixgr.phy.ra.runFourStepRA(cfg, ...
-    "RunFolder", runFolder, ...
-    "RunId", string(scfg.ScenarioID), ...
-    "ScenarioName", string(scfg.ScenarioID), ...
-    "UEId", 1, ...
-    "CellId", sixgr.util.structGet(cfg, "phy.carrier.NCellID", 1), ...
-    "AttemptId", 1, ...
-    "WriteArtifacts", true);
+if logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false))
+    ia = sixgr.phy.broadcast.runInitialAccessWithRAAnchor(runFolder, cfg, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID));
+    ra = ia.RandomAccess;
+    scenarioOk = logical(ia.Ok);
+else
+    ia = struct();
+    ra = sixgr.phy.ra.runFourStepRA(cfg, ...
+        "RunFolder", runFolder, ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "UEId", 1, ...
+        "CellId", sixgr.util.structGet(cfg, "phy.carrier.NCellID", 1), ...
+        "AttemptId", 1, ...
+        "WriteArtifacts", true);
+    scenarioOk = logical(ra.StrictOk);
+end
 
-if logical(ra.StrictOk)
+if scenarioOk
     note = "strict MSG1-MSG4 waveform RA completed";
 else
     note = string(ra.FailureReason);
@@ -1040,16 +1050,19 @@ if localShouldWriteCSV(scfg)
 end
 
 link = struct();
-link.Ok = logical(ra.StrictOk);
-link.Result = struct("Ok", logical(ra.StrictOk));
+link.Ok = logical(scenarioOk);
+link.Result = struct("Ok", logical(scenarioOk));
 link.KPITable = kpitable;
 link.UnsupportedCases = table();
 link.RawTrials = struct("RandomAccess", ra.ArtifactTables.ra_attempts);
 
 result = struct();
-result.Ok = logical(ra.StrictOk);
+result.Ok = logical(scenarioOk);
 result.Link = link;
 result.RandomAccess = ra;
+if ~isempty(fieldnames(ia))
+    result.InitialAccess = ia;
+end
 result.Control = struct();
 end
 
