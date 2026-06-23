@@ -514,6 +514,9 @@ verdict.CheckDetails = struct( ...
     "ScenarioObjective", scenarioObjectiveStats);
 
 rootStatus = sixgr.truth.evaluateStrictAnchorStatus(runFolder, scfg, cfg, verdict, dlTrials, ulTrials, opSummary);
+rootResultStatus = sixgr.util.structGet(rootStatus, "Status", struct());
+rootResultOk = logical(sixgr.util.structGet(rootResultStatus, "ResultOk", true));
+rootResultReason = string(sixgr.util.structGet(rootResultStatus, "ResultStatusReason", ""));
 if isfield(rootStatus, "Failures")
     rootFailures = string(rootStatus.Failures(:));
     rootFailures = rootFailures(strlength(strtrim(rootFailures)) > 0);
@@ -521,12 +524,19 @@ if isfield(rootStatus, "Failures")
         verdict = localAddFailure(verdict, rootFailures(ii), "evidence");
     end
 end
+if ~rootResultOk
+    failureText = "root_result_status_failed";
+    if strlength(strtrim(rootResultReason)) > 0 && rootResultReason ~= "all_required_root_gates_passed"
+        failureText = failureText + ":" + rootResultReason;
+    end
+    verdict = localAddFailure(verdict, failureText, "root_status");
+end
 issueRegistryStats = localIssueRegistryStats(layout);
 verdict.CheckDetails.IssueRegistry = issueRegistryStats;
 verdict.CheckDetails.RootStatus = rootStatus;
 verdict.ResultStatus = rootStatus.Status;
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
-verdict.Ok = verdict.StrictTruthFailureCount == 0;
+verdict.Ok = rootResultOk && verdict.StrictTruthFailureCount == 0;
 verdict.RuntimeTruthContractOk = verdict.Ok;
 localWriteTruthContractArtifacts(layout, runFolder, scfg, cfg, verdict);
 end
@@ -2439,6 +2449,8 @@ elseif contains(failure, "amc")
     category = "amc_labeling";
 elseif contains(failure, "lifecycle") || contains(failure, "finalized")
     category = "raw_lifecycle";
+elseif contains(failure, "root_result_status") || contains(failure, "root_gate")
+    category = "root_status";
 else
     category = "runtime_evidence";
 end

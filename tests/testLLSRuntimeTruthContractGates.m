@@ -19,15 +19,15 @@ assert(double(missingVerdict.CanonicalArtifactGapCount) > 0, ...
 assert(double(missingVerdict.RequiredRuntimeEvidenceMissingCount) > 0, ...
     "Missing required DL/UL runtime evidence must fail the truth contract.");
 
-localWritePassingEvidence(layout, scfg);
-passingVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(tmp, scfg, cfg);
-assert(logical(passingVerdict.Ok), "Waveform-backed DL/UL evidence with consistent roundtrip artifacts must pass.");
+passCtx = llsRootGateFixture("pass");
+passingVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(passCtx.RunFolder, passCtx.ScenarioConfig, passCtx.InternalConfig);
+assert(logical(passingVerdict.Ok), "Complete strict root-gate evidence must pass.");
 assert(double(passingVerdict.RoundtripMismatchCount) == 0, ...
     "Consistent roundtrip artifacts must not produce mismatch failures.");
 assert(double(passingVerdict.RequiredRuntimeEvidenceMissingCount) == 0, ...
     "Nonempty required DL/UL trial artifacts must satisfy required runtime evidence.");
-summaryTruthT = readtable(fullfile(layout.ReportCSVDir, "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
-failureTruthT = readtable(fullfile(layout.ReportCSVDir, "truth_contract_failures.csv"), "VariableNamingRule", "preserve");
+summaryTruthT = readtable(fullfile(passCtx.Layout.ReportCSVDir, "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
+failureTruthT = readtable(fullfile(passCtx.Layout.ReportCSVDir, "truth_contract_failures.csv"), "VariableNamingRule", "preserve");
 assert(height(summaryTruthT) == 1 && logical(summaryTruthT.RuntimeTruthContractOk(1)), ...
     "Truth-contract evaluator must emit a passing truth_contract_summary.csv row.");
 assert(height(failureTruthT) == 0, ...
@@ -37,10 +37,30 @@ assert(logical(summaryTruthT.NoProxyPHYOk(1)) && logical(summaryTruthT.Synthetic
 assert(logical(summaryTruthT.RawLifecycleOk(1)) && logical(summaryTruthT.FERRunScopeIdentityOk(1)) && logical(summaryTruthT.AMCNamingOk(1)), ...
     "Truth contract summary must expose raw lifecycle, FER scope, and AMC naming checks.");
 
-runtimeT = readtable(fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv"), "VariableNamingRule", "preserve");
+lifecycleCtx = llsRootGateFixture("pass");
+lifecycleSummaryT = readtable(fullfile(lifecycleCtx.Layout.ReportCSVDir, "scenario_summary.csv"), "VariableNamingRule", "preserve");
+if iscell(lifecycleSummaryT.RunCompletion)
+    lifecycleSummaryT.RunCompletion(:) = {"not_completed"};
+else
+    lifecycleSummaryT.RunCompletion(:) = repmat("not_completed", height(lifecycleSummaryT), 1);
+end
+lifecycleSummaryT.Ok(:) = false;
+lifecycleSummaryT.ResultOk(:) = false;
+sixgr.util.csvWriteTable(fullfile(lifecycleCtx.Layout.ReportCSVDir, "scenario_summary.csv"), lifecycleSummaryT);
+rootBlockedVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(lifecycleCtx.RunFolder, lifecycleCtx.ScenarioConfig, lifecycleCtx.InternalConfig);
+assert(~logical(rootBlockedVerdict.Ok), ...
+    "Canonical root ResultOk=false must block the runtime truth contract even when low-level evidence rows exist.");
+assert(any(contains(string(rootBlockedVerdict.Failures), "root_result_status_failed")), ...
+    "Truth-contract failures must include the canonical root-status failure reason.");
+rootBlockedSummaryT = readtable(fullfile(lifecycleCtx.Layout.ReportCSVDir, "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
+assert(~logical(rootBlockedSummaryT.ResultOk(1)) && ~logical(rootBlockedSummaryT.RuntimeTruthContractOk(1)), ...
+    "Truth-contract summary must publish the canonical root-gate failure.");
+
+proxyCtx = llsRootGateFixture("pass");
+runtimeT = readtable(fullfile(proxyCtx.Layout.ReportCSVDir, "runtime_operating_mode.csv"), "VariableNamingRule", "preserve");
 runtimeT.InterferenceMode(:) = repmat({"abstract_scheduler_context"}, height(runtimeT), 1);
-sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_operating_mode.csv"), runtimeT);
-proxyVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(tmp, scfg, cfg);
+sixgr.util.csvWriteTable(fullfile(proxyCtx.Layout.ReportCSVDir, "runtime_operating_mode.csv"), runtimeT);
+proxyVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(proxyCtx.RunFolder, proxyCtx.ScenarioConfig, proxyCtx.InternalConfig);
 assert(~logical(proxyVerdict.Ok), "Abstract/proxy interference modes must fail honest LLS truth gating.");
 assert(double(proxyVerdict.StrictProxyGuardFailureCount) > 0, ...
     "Proxy/interference violations must be counted separately from raw evidence gaps.");
