@@ -374,6 +374,10 @@ trialDMLatency = NaN(numFrames,1);
 trialHighOrderRobustness = NaN(numFrames,1);
 trialDetectorComplexity = NaN(numFrames,1);
 trialDataRECount = NaN(numFrames,1);
+trialDataRECountPerLayer = NaN(numFrames,1);
+trialTotalDataRECount = NaN(numFrames,1);
+trialModulationOrderQm = NaN(numFrames,1);
+trialComputedE_TS38212 = NaN(numFrames,1);
 trialDMRSRECount = NaN(numFrames,1);
 trialPTRSRECount = NaN(numFrames,1);
 trialRSOverhead = NaN(numFrames,1);
@@ -922,6 +926,10 @@ for n = 1:numFrames
         trialHighOrderRobustness(n) = double(sixgr.util.structGet(modTrack, "HighOrderRobustness", NaN));
         trialDetectorComplexity(n) = double(sixgr.util.structGet(modTrack, "DetectorComplexityUnits", NaN));
         trialDataRECount(n) = double(sixgr.util.structGet(modTrack, "DataRECount", NaN));
+        trialDataRECountPerLayer(n) = double(sixgr.util.structGet(modTrack, "DataRECountPerLayer", trialDataRECount(n)));
+        trialTotalDataRECount(n) = double(sixgr.util.structGet(modTrack, "TotalDataRECount", NaN));
+        trialModulationOrderQm(n) = double(sixgr.util.structGet(modTrack, "ModulationOrderQm", NaN));
+        trialComputedE_TS38212(n) = double(sixgr.util.structGet(modTrack, "ComputedE_TS38212", NaN));
         trialDMRSRECount(n) = double(sixgr.util.structGet(modTrack, "DMRSRECount", NaN));
         trialPTRSRECount(n) = double(sixgr.util.structGet(modTrack, "PTRSRECount", NaN));
         trialRSOverhead(n) = double(sixgr.util.structGet(modTrack, "RSOverheadFraction", NaN));
@@ -1315,6 +1323,11 @@ end
             'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB', ...
             'Status','Crash', ...
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
+        T.DataRECountPerLayer = trialDataRECountPerLayer(idx);
+        T.TotalDataRECount = trialTotalDataRECount(idx);
+        T.ModulationOrderQm = trialModulationOrderQm(idx);
+        T.ComputedE_TS38212 = trialComputedE_TS38212(idx);
+        T.RateMatchedBitsDelta_TS38212 = trialRateMatchedBits(idx) - trialComputedE_TS38212(idx);
         T.ConfiguredSNR_dB = trialConfiguredSNR(idx);
         configuredLayers = localFirstFiniteScalar( ...
             sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN), ...
@@ -2887,6 +2900,11 @@ T.ConfiguredTxAntennas = zeros(0,1);
 T.ConfiguredRxAntennas = zeros(0,1);
 T.ConfiguredMCSIndex = zeros(0,1);
 T.ConfiguredModulation = strings(0,1);
+T.DataRECountPerLayer = zeros(0,1);
+T.TotalDataRECount = zeros(0,1);
+T.ModulationOrderQm = zeros(0,1);
+T.ComputedE_TS38212 = zeros(0,1);
+T.RateMatchedBitsDelta_TS38212 = zeros(0,1);
 T.ConfiguredRank = zeros(0,1);
 T.EffectiveMCSIndex = zeros(0,1);
 T.EffectiveModulation = strings(0,1);

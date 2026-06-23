@@ -21,6 +21,10 @@ metrics = struct( ...
     "HighOrderRobustness", NaN, ...
     "DetectorComplexityUnits", NaN, ...
     "DataRECount", NaN, ...
+    "DataRECountPerLayer", NaN, ...
+    "TotalDataRECount", NaN, ...
+    "ModulationOrderQm", NaN, ...
+    "ComputedE_TS38212", NaN, ...
     "DMRSRECount", NaN, ...
     "PTRSRECount", NaN, ...
     "RSOverheadFraction", NaN, ...
@@ -87,8 +91,10 @@ end
 
 [metrics.ShapingRateLoss, metrics.DistributionMatchingLatency_ms] = localShapingMetrics(cfg, tx, modulation);
 metrics.DetectorComplexityUnits = localDetectorComplexity(rx, eqSymAligned);
-[metrics.DataRECount, metrics.DMRSRECount, metrics.PTRSRECount, metrics.RSOverheadFraction] = ...
-    localResourceOverheadMetrics(tx, direction);
+metrics.ModulationOrderQm = localQm(modulation);
+[metrics.DataRECount, metrics.DMRSRECount, metrics.PTRSRECount, metrics.RSOverheadFraction, ...
+    metrics.DataRECountPerLayer, metrics.TotalDataRECount, metrics.ComputedE_TS38212] = ...
+    localResourceOverheadMetrics(tx, direction, metrics.ModulationOrderQm);
 
 if isfinite(metrics.SymbolErrorRate)
     robustness = max(0, 1 - metrics.SymbolErrorRate);
@@ -299,24 +305,38 @@ nTx = size(H2, 2);
 complexity = double(numSym) * max(double(nRx), 1) * max(double(nTx), 1);
 end
 
-function [dataRE, dmrsRE, ptrsRE, rsFrac] = localResourceOverheadMetrics(tx, direction)
+function [dataRE, dmrsRE, ptrsRE, rsFrac, dataREPerLayer, totalDataRE, computedE] = localResourceOverheadMetrics(tx, direction, qm)
 dataRE = NaN;
 dmrsRE = NaN;
 ptrsRE = NaN;
 rsFrac = NaN;
+dataREPerLayer = NaN;
+totalDataRE = NaN;
+computedE = NaN;
 if direction == "UL"
     dataIdx = sixgr.util.structGet(tx, "PUSCHIndices", []);
+    numLayers = double(sixgr.util.structGet(tx, "PUSCH.NumLayers", NaN));
 else
     dataIdx = sixgr.util.structGet(tx, "PDSCHIndices", []);
+    numLayers = double(sixgr.util.structGet(tx, "PDSCH.NumLayers", NaN));
 end
 dmrsIdx = sixgr.util.structGet(tx, "DMRSIndices", []);
 ptrsIdx = sixgr.util.structGet(tx, "PTRSIndices", []);
-dataRE = double(numel(dataIdx));
+if ~(isscalar(numLayers) && isfinite(numLayers) && numLayers >= 1)
+    numLayers = 1;
+end
+numLayers = max(1, round(numLayers));
+totalDataRE = double(numel(dataIdx));
+dataREPerLayer = totalDataRE / double(numLayers);
+dataRE = dataREPerLayer;
 dmrsRE = double(numel(dmrsIdx));
 ptrsRE = double(numel(ptrsIdx));
-totalRE = dataRE + dmrsRE + ptrsRE;
+totalRE = totalDataRE + dmrsRE + ptrsRE;
 if totalRE > 0
     rsFrac = (dmrsRE + ptrsRE) / totalRE;
+end
+if isscalar(qm) && isfinite(qm) && qm > 0 && isfinite(dataREPerLayer)
+    computedE = dataREPerLayer * double(qm) * double(numLayers);
 end
 end
 

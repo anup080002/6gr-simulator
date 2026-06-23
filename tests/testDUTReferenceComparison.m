@@ -25,6 +25,23 @@ puschGBitRows = outGBits.DUTReferenceComparison(string(outGBits.DUTReferenceComp
 assert(~isempty(puschGBitRows) && all(logical(puschGBitRows.Pass)), ...
     "PUSCH reference comparison must convert coded-bit budget G to N_RE/PRB before calling nrTBS.");
 
+ctxComputedE = llsImplementationHarnessFixture("partial_actual");
+ulPath = fullfile(ctxComputedE.RunFolder, "air_interface", "csv", "ul_pusch_trials.csv");
+ulT = readtable(ulPath, "VariableNamingRule", "preserve");
+ulT.DataRECountPerLayer = ulT.DataRECount;
+ulT.TotalDataRECount = ulT.DataRECount .* ulT.Layers;
+ulT.ModulationOrderQm = repmat(2, height(ulT), 1);
+ulT.ComputedE_TS38212 = ulT.DataRECountPerLayer .* ulT.ModulationOrderQm .* ulT.Layers;
+ulT.RateMatchedBits = ulT.ComputedE_TS38212;
+ulT.RateMatchedBitsDelta_TS38212 = ulT.RateMatchedBits - ulT.ComputedE_TS38212;
+writetable(ulT, ulPath);
+trialData = sixgr.analytics.loadAllTrialData(ctxComputedE.RunFolder);
+analysis = sixgr.analytics.buildScenarioAnalyticsTables(ctxComputedE.RunFolder, trialData, ctxComputedE.ScenarioConfig);
+tbsT = readtable(analysis.Paths.TBSReferenceComparison, "VariableNamingRule", "preserve");
+puschRows = tbsT(string(tbsT.Direction) == "UL", :);
+assert(~isempty(puschRows) && all(abs(double(puschRows.RateMatchedBits_Delta)) < 1e-9), ...
+    "Rate-matching audit must use ComputedE_TS38212 when present.");
+
 ctxFail = llsImplementationHarnessFixture("reference_mismatch");
 outFail = sixgr.validation.LLSValidationHarness(ctxFail.RunFolder, ctxFail.ScenarioConfig, ctxFail.InternalConfig, ...
     "WriteArtifacts", false);

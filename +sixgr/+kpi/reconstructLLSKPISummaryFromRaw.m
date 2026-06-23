@@ -534,7 +534,10 @@ if ismember("DurationSec", string(E.Properties.VariableNames))
     perRowDuration = localOptionalNumeric(E, "DurationSec", repmat(perRowDuration, height(E), 1));
 elseif ismember("AirInterfaceObservation_ms", string(E.Properties.VariableNames))
     perRowDuration = localOptionalNumeric(E, "AirInterfaceObservation_ms", repmat(perRowDuration * 1e3, height(E), 1)) ./ 1e3;
+elseif ismember("AirInterfaceTTI_ms", string(E.Properties.VariableNames))
+    perRowDuration = localOptionalNumeric(E, "AirInterfaceTTI_ms", repmat(perRowDuration * 1e3, height(E), 1)) ./ 1e3;
 end
+perRowDuration = localDistributeUniqueSlotDuration(E, perRowDuration, durationSec);
 crcPass = localOptionalLogical(E, "TBCrcPass", localOptionalLogical(E, "CRCPass", true(height(E), 1)));
 for i = 1:height(E)
     rows(i).RunId = string(runId);
@@ -563,25 +566,102 @@ end
 T = struct2table(rows);
 end
 
+function perRowDuration = localDistributeUniqueSlotDuration(T, perRowDuration, durationSec)
+perRowDuration = double(perRowDuration(:));
+if height(T) == 0
+    return;
+end
+if ~ismember("Slot", string(T.Properties.VariableNames)) || ~(isfinite(durationSec) && durationSec > 0)
+    if numel(perRowDuration) ~= height(T)
+        perRowDuration = repmat(durationSec / max(height(T), 1), height(T), 1);
+    end
+    return;
+end
+slotVals = localOptionalNumeric(T, "Slot", NaN(height(T), 1));
+valid = isfinite(slotVals) & isfinite(perRowDuration) & perRowDuration >= 0;
+if ~any(valid)
+    perRowDuration = repmat(durationSec / max(height(T), 1), height(T), 1);
+    return;
+end
+out = zeros(height(T), 1);
+slots = unique(slotVals(valid));
+for i = 1:numel(slots)
+    mask = slotVals == slots(i);
+    vals = perRowDuration(mask & valid);
+    if isempty(vals)
+        continue;
+    end
+    slotDuration = max(vals);
+    out(mask) = slotDuration / max(nnz(mask), 1);
+end
+missing = ~(out > 0);
+if any(missing)
+    out(missing) = durationSec / max(height(T), 1);
+end
+scale = sum(out, "omitnan");
+if isfinite(scale) && scale > 0
+    out = out .* (durationSec / scale);
+end
+perRowDuration = out;
+end
+
 function [durationSec, source] = localDurationSec(T)
 durationSec = NaN;
 source = "unavailable";
 if ismember("DurationSec", string(T.Properties.VariableNames))
     vals = localOptionalNumeric(T, "DurationSec", NaN(height(T), 1));
-    durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan");
-    source = "raw_duration_sec_sum";
+    [durationSec, source] = localUniqueSlotDurationSec(T, vals, "raw_duration_sec_unique_slot");
+    if ~(isfinite(durationSec) && durationSec > 0)
+        durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan");
+        source = "raw_duration_sec_sum";
+    end
 elseif ismember("AirInterfaceObservation_ms", string(T.Properties.VariableNames))
     vals = localOptionalNumeric(T, "AirInterfaceObservation_ms", NaN(height(T), 1));
-    durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan") / 1e3;
-    source = "air_interface_observation_ms_sum";
+    [durationSec, source] = localUniqueSlotDurationSec(T, vals ./ 1e3, "air_interface_observation_ms_unique_slot");
+    if ~(isfinite(durationSec) && durationSec > 0)
+        durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan") / 1e3;
+        source = "air_interface_observation_ms_sum";
+    end
 elseif ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
     vals = localOptionalNumeric(T, "AirInterfaceTTI_ms", NaN(height(T), 1));
-    durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan") / 1e3;
-    source = "air_interface_tti_ms_sum";
+    [durationSec, source] = localUniqueSlotDurationSec(T, vals ./ 1e3, "air_interface_tti_ms_unique_slot");
+    if ~(isfinite(durationSec) && durationSec > 0)
+        durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan") / 1e3;
+        source = "air_interface_tti_ms_sum";
+    end
 end
 if ~(isfinite(durationSec) && durationSec > 0)
     durationSec = NaN;
     source = "unavailable";
+end
+end
+
+function [durationSec, source] = localUniqueSlotDurationSec(T, rowDurSec, sourceToken)
+durationSec = NaN;
+source = "unavailable";
+if ~ismember("Slot", string(T.Properties.VariableNames))
+    return;
+end
+slotVals = localOptionalNumeric(T, "Slot", NaN(height(T), 1));
+rowDurSec = double(rowDurSec(:));
+valid = isfinite(slotVals) & isfinite(rowDurSec) & rowDurSec >= 0;
+if ~any(valid)
+    return;
+end
+slotVals = slotVals(valid);
+rowDurSec = rowDurSec(valid);
+slots = unique(slotVals);
+slotDur = NaN(numel(slots), 1);
+for i = 1:numel(slots)
+    vals = rowDurSec(slotVals == slots(i));
+    vals = vals(isfinite(vals) & vals >= 0);
+    if ~isempty(vals)
+        slotDur(i) = max(vals);
+    end
+end
+durationSec = sum(slotDur(isfinite(slotDur) & slotDur >= 0), "omitnan");
+if isfinite(durationSec) && durationSec > 0
+    source = string(sourceToken);
 end
 end
 

@@ -24,6 +24,17 @@ assert(all(logical(out.DurationSourceAudit.Pass)), ...
 assert(~any(logical(out.DurationSourceAudit.WallClockUsedForRadioThroughput)), ...
     "Wall-clock duration must not be used as the radio throughput denominator.");
 
+raw = struct();
+raw.UL = [localDirectionTable("UL", 1); localDirectionTable("UL", 1)];
+raw.DL = localDirectionTable("DL", 1);
+out = sixgr.kpi.reconstructLLSKPISummaryFromRaw(raw, "StrictMode", true);
+ulRecon = out.ReconstructionSummary(strcmp(string(out.ReconstructionSummary.KPIName), "UL_TB_Delivery_Goodput_Mbps"), :);
+assert(height(ulRecon) == 1 && abs(double(ulRecon.AggregationDurationSec(1)) - 0.001) < 1e-12, ...
+    "Multiple grants in one slot must use one radio-slot duration, not row-count duration.");
+ulContribDuration = sum(double(out.RowContributionsUL.DurationContributionSec), "omitnan");
+assert(abs(ulContribDuration - double(ulRecon.AggregationDurationSec(1))) < 1e-12, ...
+    "Per-row KPI duration contributions must sum to the unique-slot radio duration.");
+
 ok = true;
 end
 

@@ -398,9 +398,15 @@ for i = 1:height(Tin)
     else
         q = NaN;
     end
-    dataRE = localValue(r0, "DataRECount", NaN);
+    dataRE = localValue(r0, "DataRECountPerLayer", NaN);
+    if ~isfinite(dataRE)
+        dataRE = localValue(r0, "DataRECount", NaN);
+    end
     layers = localValue(r0, ["Layers","Rank"], NaN);
-    rmRef = dataRE * q * layers;
+    rmRef = localValue(r0, "ComputedE_TS38212", NaN);
+    if ~isfinite(rmRef)
+        rmRef = dataRE * q * layers;
+    end
     rmDut = localValue(r0, "RateMatchedBits", NaN);
     r = struct();
     r.Direction = string(direction);
