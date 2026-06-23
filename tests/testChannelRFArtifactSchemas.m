@@ -7,6 +7,11 @@ required = [
     "channel/csv/large_scale_parameters.csv"
     "channel/csv/channel_realizations.csv"
     "channel/csv/channel_configured_vs_applied.csv"
+    "reports/csv/channel_rf_configured_applied.csv"
+    "reports/csv/channel_rf_cdlc_realization_table.csv"
+    "reports/csv/channel_rf_per_ue_realization.csv"
+    "reports/csv/channel_rf_strict_summary.csv"
+    "reports/csv/channel_rf_negative_trials.csv"
     "rf/csv/rf_impairment_chain.csv"
     "rf/csv/channel_rf_negative_trials.csv"
     "interference/csv/interference_topology.csv"
@@ -20,4 +25,10 @@ end
 T = readtable(fullfile(runFolder, "channel", "csv", "channel_configured_vs_applied.csv"), "TextType", "string");
 assert(height(T) > 0 && all(ismember(["TrialId","StrictOk","ExpectedOk","TruthStatus"], string(T.Properties.VariableNames))), ...
     "Configured-vs-applied artifact schema is incomplete.");
+R = readtable(fullfile(runFolder, "reports", "csv", "channel_rf_configured_applied.csv"), "TextType", "string");
+assert(height(R) > 0 && all(logical(R.ExpectedOk)) && all(ismember(["ConfiguredAppliedOk","StrictOk","TruthStatus"], string(R.Properties.VariableNames))), ...
+    "Report-level Channel/RF configured-applied evidence must contain positive runtime rows with explicit ConfiguredAppliedOk.");
+cdl = readtable(fullfile(runFolder, "reports", "csv", "channel_rf_cdlc_realization_table.csv"), "TextType", "string");
+assert(height(cdl) == 24 && all(ismember(["PathIndex","Delay_s","AveragePathGain_dB","AngleAoD_deg","AngleAoA_deg"], string(cdl.Properties.VariableNames))), ...
+    "Report-level CDL-C realization table must expose the 24-path runtime channel profile.");
 end
