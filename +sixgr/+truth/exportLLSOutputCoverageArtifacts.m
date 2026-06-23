@@ -4850,23 +4850,73 @@ end
 
 function localWriteTableArtifacts(runFolder, logicalPath, T)
 csvPath = fullfile(runFolder, logicalPath);
-sixgr.util.csvWriteTable(csvPath, T);
+csvTx = sixgr.runtime.RuntimeArtifactTransaction(runFolder, logicalPath, ...
+    "ProducerStage", "post_link_table_export", ...
+    "ProducerBlock", "exportLLSOutputCoverageArtifacts.localWriteTableArtifacts");
+try
+    sixgr.util.csvWriteTable(csvPath, T);
+    csvValidationStatus = localValidateTableArtifact(csvPath, T);
+    csvTx.commit(csvPath, csvValidationStatus);
+catch ME
+    csvTx.fail(ME);
+    rethrow(ME);
+end
 jsonPath = replace(string(logicalPath), ".csv", ".json");
 jsonEnabled = false;
 [jsonRequired, jsonReason] = localJSONMirrorPolicy(logicalPath, T);
 if jsonRequired && jsonPath ~= string(logicalPath)
-    sixgr.util.jsonWrite(fullfile(runFolder, jsonPath), table2struct(T));
+    jsonTx = sixgr.runtime.RuntimeArtifactTransaction(runFolder, jsonPath, ...
+        "ProducerStage", "post_link_table_export", ...
+        "ProducerBlock", "exportLLSOutputCoverageArtifacts.localWriteTableArtifacts");
+    try
+        jsonAbsPath = fullfile(runFolder, jsonPath);
+        sixgr.util.jsonWrite(jsonAbsPath, table2struct(T));
+        jsonTx.commit(jsonAbsPath, "json_written");
+    catch ME
+        jsonTx.fail(ME);
+        rethrow(ME);
+    end
     jsonEnabled = true;
 elseif ~jsonRequired
     localCoverageLog("json_sidecar_suppressed:" + string(logicalPath) + ":" + string(jsonReason), runFolder);
 end
 policyPath = replace(string(logicalPath), ".csv", ".json_policy.json");
 if policyPath ~= string(logicalPath)
-    sixgr.util.jsonWrite(fullfile(runFolder, policyPath), struct( ...
-        "logical_path", char(string(logicalPath)), ...
-        "json_required", logical(jsonRequired), ...
-        "json_written", logical(jsonEnabled), ...
-        "reason", char(string(localTernary(jsonRequired, "json_required", jsonReason)))));
+    policyTx = sixgr.runtime.RuntimeArtifactTransaction(runFolder, policyPath, ...
+        "ProducerStage", "post_link_table_export", ...
+        "ProducerBlock", "exportLLSOutputCoverageArtifacts.localWriteTableArtifacts");
+    try
+        policyAbsPath = fullfile(runFolder, policyPath);
+        sixgr.util.jsonWrite(policyAbsPath, struct( ...
+            "logical_path", char(string(logicalPath)), ...
+            "json_required", logical(jsonRequired), ...
+            "json_written", logical(jsonEnabled), ...
+            "reason", char(string(localTernary(jsonRequired, "json_required", jsonReason)))));
+        policyTx.commit(policyAbsPath, "json_policy_written");
+    catch ME
+        policyTx.fail(ME);
+        rethrow(ME);
+    end
+end
+end
+
+function status = localValidateTableArtifact(csvPath, sourceTable)
+if exist(csvPath, "file") ~= 2
+    error("sixgr:truth:CoverageArtifactMissing", "Expected CSV artifact was not written: %s", char(string(csvPath)));
+end
+info = dir(csvPath);
+if isempty(info) || info.bytes <= 0
+    error("sixgr:truth:CoverageArtifactEmpty", "CSV artifact is empty: %s", char(string(csvPath)));
+end
+status = "file_exists_nonempty";
+if height(sourceTable) <= 200000 && width(sourceTable) <= 256
+    readback = readtable(csvPath, "VariableNamingRule", "preserve");
+    if height(readback) ~= height(sourceTable)
+        error("sixgr:truth:CoverageArtifactRowMismatch", ...
+            "CSV readback row mismatch for %s: expected %d rows, read %d rows.", ...
+            char(string(csvPath)), height(sourceTable), height(readback));
+    end
+    status = "csv_readback_row_count_match";
 end
 end
 
@@ -5230,6 +5280,22 @@ end
 
 function localCoverageLog(stepName, runFolder)
 msg = "exportLLSOutputCoverageArtifacts:" + string(stepName) + " runFolder=" + string(runFolder);
+eventType = "HEARTBEAT";
+status = "progress";
+if strcmpi(string(stepName), "start")
+    eventType = "STAGE_START";
+    status = "started";
+elseif strcmpi(string(stepName), "done")
+    eventType = "STAGE_END";
+    status = "completed";
+end
+sixgr.runtime.RuntimeEvidenceBus.appendStandaloneEvent(runFolder, eventType, ...
+    "StageName", "exportLLSOutputCoverageArtifacts." + string(stepName), ...
+    "FunctionName", "sixgr.truth.exportLLSOutputCoverageArtifacts", ...
+    "SourceFile", mfilename("fullpath"), ...
+    "Status", status, ...
+    "Message", msg, ...
+    "EvidenceClass", "LIVE_RUNTIME_BOUNDARY");
 if sixgr.db.isArtifactStoreActive()
     sixgr.db.appendLogLine("INFO", sixgr.util.utcNowISO8601(), string(msg));
 else
