@@ -51,8 +51,11 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     for nid2 = candNID2
         % Generate a time-domain PSS reference for the given SSB SCS/pattern
         ref = localPSSReference(blockPattern, nid2, sampleRateHz);
-        nSearch = min(numel(xIn), max(2048, 2*numel(ref)));
-        xSearch = xIn(1:nSearch);
+        % Cell search must cover the whole received SSB observation window.
+        % A short prefix-only search misses valid SSBs that start later in a
+        % burst period and can turn a no-signal prefix into a false NID2/CFO.
+        nSearch = numel(xIn);
+        xSearch = xIn;
 
         if useBatchMex
             try
@@ -93,6 +96,7 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.SearchBW_Hz = searchBW_Hz;
     info.Candidates_Hz = candHz;
     info.Candidates_NID2 = candNID2;
+    info.SearchSamples = double(numel(xIn));
     info.Metric = bestMetric;
 end
 

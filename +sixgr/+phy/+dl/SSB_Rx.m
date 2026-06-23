@@ -31,25 +31,14 @@ end
 % Burst parameters
 blockPattern = char(sixgr.util.structGet(cfg,'phy.ssb.blockPattern','Case B'));
 Lmax = double(sixgr.util.structGet(cfg,'phy.ssb.Lmax',8));
-configuredNCellID = localConfiguredNCellID(cfg);
 
 % Coarse frequency correction + NID2 detection
-if ~isempty(configuredNCellID)
-    rxF = rxWaveform;
-    fOffHz = 0;
-    NID2 = mod(double(configuredNCellID),3);
-    finfo = struct('UsedConfiguredCellID',true, 'ConfiguredNCellID', double(configuredNCellID));
-else
-    try
-        [rxF, fOffHz, NID2, finfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, fs, ...
-            'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]));
-    catch
-        % For pure simulation (no CFO), fall back gracefully
-        rxF = rxWaveform;
-        fOffHz = 0;
-        NID2 = mod(double(sixgr.util.structGet(cfg,'phy.NCellID',1)),3);
-        finfo = struct('UsedFallback',true);
-    end
+try
+    [rxF, fOffHz, NID2, finfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, fs, ...
+        'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]));
+catch ME
+    error('sixgr:phy:dl:SSB_Rx:CellSearchFailed', ...
+        'PSS/NID2 frequency search failed without transmitter-cell-ID oracle: %s', ME.message);
 end
 NID2 = mod(double(NID2),3);
 
@@ -103,11 +92,14 @@ if ndims(rxSSBGrid) == 2
     rxSSBGrid = reshape(rxSSBGrid, size(rxSSBGrid,1), size(rxSSBGrid,2), 1);
 end
 
+[NCellID, NID1, sssInfo] = localRecoverPhysicalCellIDFromSSS(rxSSBGrid, NID2);
+
 sync = struct();
 sync.SampleRate_Hz = fs;
 sync.BlockPattern = blockPattern;
 sync.Lmax = Lmax;
 sync.NID2 = NID2;
+sync.NID1 = double(NID1);
 sync.FreqOffset_Hz = fOffHz;
 sync.TimingOffset = double(timingResolution.RawEstimate_samples);
 sync.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
@@ -117,35 +109,58 @@ sync.TimingEstimateStatus = char(string(timingResolution.Status));
 sync.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 sync.SCS_SSB_kHz = scsSSB;
 sync.nRBSSB = nrbSSB;
-
-% In simulation we usually know the cell ID. Populate it to make downstream
-% blocks deterministic.
-if ~isempty(configuredNCellID)
-    sync.NCellID = double(configuredNCellID);
-else
-    sync.NCellID = double(sixgr.util.structGet(cfg,'phy.NCellID', (3*0)+NID2));
-end
+sync.NCellID = double(NCellID);
+sync.NCellIDSource = 'blind_pss_sss_correlation';
+sync.ConfiguredCellIDUsed = false;
+sync.UsedConfiguredCellID = false;
 
 % Attach debug info
 sync.FreqInfo = finfo;
 sync.TimingInfo = tinfo;
+sync.SSSInfo = sssInfo;
 
 end
 
-function ncellid = localConfiguredNCellID(cfg)
-ncellid = sixgr.util.structGet(cfg, 'phy.carrier.NCellID', []);
-if isempty(ncellid)
-    ncellid = sixgr.util.structGet(cfg, 'phy.NCellID', []);
+function [ncellid, nid1, info] = localRecoverPhysicalCellIDFromSSS(rxSSBGrid, nid2)
+sssInd = nrSSSIndices;
+sssRx = nrExtractResources(sssInd, rxSSBGrid);
+if isvector(sssRx)
+    sssRx = sssRx(:);
 end
-if isempty(ncellid)
-    return;
+metrics = zeros(336, 1);
+for candNID1 = 0:335
+    candNCellID = 3 * candNID1 + double(nid2);
+    ref = nrSSS(candNCellID);
+    metric = 0;
+    for rxAnt = 1:size(sssRx, 2)
+        rx = sssRx(:, rxAnt);
+        denom = max(norm(ref(:)) * norm(rx(:)), realmin);
+        metric = metric + abs(sum(conj(ref(:)) .* rx(:))) / denom;
+    end
+    metrics(candNID1 + 1) = metric;
 end
-ncellid = double(ncellid);
-if ~(isscalar(ncellid) && isfinite(ncellid) && ncellid >= 0)
-    ncellid = [];
+[bestMetric, bestIdx] = max(metrics);
+nid1 = double(bestIdx - 1);
+ncellid = double(3 * nid1 + double(nid2));
+if ~(isfinite(bestMetric) && bestMetric > 0 && ncellid >= 0 && ncellid <= 1007)
+    error('sixgr:phy:dl:SSB_Rx:SSSDetectionFailed', ...
+        'SSS search did not produce a valid physical-cell-ID candidate.');
+end
+sortedMetrics = sort(metrics, "descend");
+if numel(sortedMetrics) >= 2
+    margin = sortedMetrics(1) - sortedMetrics(2);
 else
-    ncellid = round(ncellid);
+    margin = NaN;
 end
+info = struct();
+info.NID2 = double(nid2);
+info.NID1 = double(nid1);
+info.NCellID = double(ncellid);
+info.Metric = double(bestMetric);
+info.MetricMargin = double(margin);
+info.Metrics = metrics;
+info.SearchSpaceSize = 336;
+info.Detector = 'sss_correlation_all_nid1_candidates';
 end
 
 function scs = localSSBSubcarrierSpacing_kHz(blockPattern)
