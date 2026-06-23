@@ -65,6 +65,22 @@ integrated = sixgr.phy.broadcast.runInitialAccessWithRAAnchor(fullfile(tempdir, 
 assert(logical(integrated.Ok) && logical(integrated.SIB1Ok) && logical(integrated.RAOk), ...
     "Integrated SSB/PBCH/SIB1/RA anchor must pass end-to-end.");
 
+miniRunFolder = fullfile(tempdir, "sixgr_test_sib1_mini_anchor_ra");
+if exist(miniRunFolder, "dir")
+    rmdir(miniRunFolder, "s");
+end
+mini = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(miniRunFolder, cfg);
+assert(logical(mini.Ok) && logical(mini.RandomAccessRequested) && logical(mini.RAOk), ...
+    "SIB1 strict mini-anchor must continue into four-step RA when random_access.enabled=true.");
+assert(exist(fullfile(miniRunFolder, "control", "csv", "ra_attempts.csv"), "file") == 2, ...
+    "Mini-anchor RA continuation must export RA attempts.");
+tracePath = fullfile(miniRunFolder, "control", "csv", "initial_access_lifecycle_trace.csv");
+assert(exist(tracePath, "file") == 2, ...
+    "Mini-anchor RA continuation must export an initial-access lifecycle trace.");
+trace = readtable(tracePath, "TextType", "string");
+assert(any(string(trace.StageName) == "RA_MSG4_CONTENTION_RESOLUTION" & logical(trace.Completed)), ...
+    "Lifecycle trace must prove Msg4 contention resolution completed.");
+
 ok = true;
 end
 
