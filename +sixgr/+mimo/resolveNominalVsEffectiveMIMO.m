@@ -1,21 +1,46 @@
-function out = resolveNominalVsEffectiveMIMO(cfg, rawTrials, varargin)
-%RESOLVENOMINALVSEFFECTIVEMIMO Build runtime MIMO evidence from raw trials.
+function out = resolveNominalVsEffectiveMIMO(varargin)
+%RESOLVENOMINALVSEFFECTIVEMIMO Resolve runtime MIMO rank or build evidence.
+%
+%   OUT = sixgr.mimo.resolveNominalVsEffectiveMIMO(CFG, RAWTRIALS, ...)
+%   preserves the artifact/evidence builder API used by LLS exports.
+%
+%   OUT = sixgr.mimo.resolveNominalVsEffectiveMIMO(CARRIER, PDSCH, H, ...
+%   NOISEVAR, NOMINALRANK, CFG) returns one SVD/codebook rank decision for
+%   a measured channel matrix H. This Prompt 5 call form is intentionally
+%   separate from the export path so nominal config is never promoted to
+%   effective runtime evidence.
+
+if nargin >= 6 && (isnumeric(varargin{3}) || islogical(varargin{3}))
+    out = localResolveRuntimeRank(varargin{1}, varargin{2}, varargin{3}, ...
+        varargin{4}, varargin{5}, varargin{6});
+    return;
+end
+
+if nargin < 2
+    error("sixgr:mimo:resolveNominalVsEffectiveMIMO:BadInput", ...
+        "Provide either (cfg, rawTrials, ...) or (carrier, pdsch, H, noiseVar, nominalRank, cfg).");
+end
+
+cfg = varargin{1};
+rawTrials = varargin{2};
+extraArgs = varargin(3:end);
 
 ip = inputParser;
 ip.addParameter("RunId", "", @(x) ischar(x) || isstring(x) || isnumeric(x));
 ip.addParameter("ScenarioName", "", @(x) ischar(x) || isstring(x));
 ip.addParameter("StrictMode", false, @(x) islogical(x) || isnumeric(x));
-ip.parse(varargin{:});
+ip.parse(extraArgs{:});
 runId = string(ip.Results.RunId);
 scenarioName = string(ip.Results.ScenarioName);
 strictMode = logical(ip.Results.StrictMode);
 
 cfgT = sixgr.mimo.buildMIMOConfigFromScenario(cfg, "RunId", runId, "ScenarioName", scenarioName);
-configAudit = sixgr.mimo.validateMIMOConfigStrict(cfgT);
 [rankTrials, layerMetrics] = localBuildRankAndLayerTables(cfgT, rawTrials, runId, scenarioName);
+cfgT = localAttachRuntimeEvidenceSummary(cfgT, rankTrials);
+configAudit = sixgr.mimo.validateMIMOConfigStrict(cfgT);
 configuredEffective = localConfiguredVsEffective(cfgT, rankTrials, runId, scenarioName, strictMode);
 rankUtil = localRankUtilization(rankTrials, runId, scenarioName);
-antennaArray = localAntennaArrayConfig(cfgT);
+antennaArray = localAntennaArrayConfig(cfgT, rankTrials);
 portMapping = localAntennaPortMapping(cfgT, rankTrials);
 precoderEvidence = localPrecoderEvidence(rankTrials);
 beamCodebook = localBeamCodebook(cfgT, rankTrials);
@@ -48,6 +73,123 @@ out.StrictOk = all(localColumnLogical(configAudit, "Pass", false)) && ...
     all(strcmp(string(oracleGuard.Status), "pass"));
 end
 
+function decision = localResolveRuntimeRank(carrier, pdsch, H, noiseVar, nominalRank, cfg)
+% Runtime SVD/codebook decision for Prompt 5. Carrier/pdsch are accepted for
+% API symmetry with PHY callers; all evidence comes from H/noise/config.
+if nargin < 6 || ~isstruct(cfg)
+    cfg = struct();
+end
+Hwb = localWidebandRuntimeChannel(H);
+if isempty(Hwb)
+    error("sixgr:mimo:RuntimeRank:EmptyChannel", ...
+        "Runtime MIMO rank selection requires a non-empty measured channel matrix.");
+end
+nRx = size(Hwb, 1);
+nTx = size(Hwb, 2);
+nominalRank = max(1, round(double(nominalRank)));
+maxRank = max(1, round(double(localFirstFiniteStruct(cfg, ...
+    ["MaxRank","maxRank","mimo.maxRank","phy.mimo.maxRank"], nominalRank))));
+maxRank = min([maxRank, nominalRank, nRx, nTx]);
+if maxRank < 1
+    maxRank = 1;
+end
+
+[~, S, V] = svd(double(Hwb), "econ");
+sv = diag(S);
+if isempty(sv)
+    sv = norm(Hwb, "fro");
+end
+sv = double(sv(:));
+rankLimit = min([numel(sv), maxRank, nRx, nTx]);
+if rankLimit < 1
+    rankLimit = 1;
+end
+
+snrCfg_dB = double(localFirstFiniteStruct(cfg, ...
+    ["SNR_configured_dB","snr_dB","SNR_dB","phy.snr_dB"], NaN));
+if isfinite(double(noiseVar)) && double(noiseVar) > 0
+    snrTotal = 1 / double(noiseVar);
+elseif isfinite(snrCfg_dB)
+    snrTotal = 10.^(snrCfg_dB / 10);
+else
+    snrTotal = 1;
+end
+minLayerSNR_dB = double(localFirstFiniteStruct(cfg, ...
+    ["MinSNR_per_layer_dB","minSNRPerLayer_dB","mimo.minSNRPerLayer_dB"], 0));
+minLayerSNR = 10.^(minLayerSNR_dB / 10);
+condThresh_dB = double(localFirstFiniteStruct(cfg, ...
+    ["ConditionNumberThresh_dB","conditionNumberThresh_dB","mimo.conditionNumberThresh_dB"], 20));
+
+rates = NaN(max(rankLimit, 2), 1);
+minLayerSNRs = NaN(max(rankLimit, 2), 1);
+feasible = false(max(rankLimit, 2), 1);
+for nu = 1:rankLimit
+    layerSNR = snrTotal .* (sv(1:nu).^2) ./ max(nu, 1);
+    rates(nu) = sum(log2(1 + max(layerSNR, 0)));
+    minLayerSNRs(nu) = min(layerSNR);
+    kappaNu_dB = localConditionNumberForRank(sv, nu);
+    feasible(nu) = isfinite(rates(nu)) && minLayerSNRs(nu) >= minLayerSNR && kappaNu_dB <= condThresh_dB;
+end
+candidateRates = rates;
+candidateRates(~feasible) = -Inf;
+[bestRate, effectiveRank] = max(candidateRates(1:rankLimit));
+if ~isfinite(bestRate)
+    effectiveRank = 1;
+end
+effectiveRank = min(max(1, round(double(effectiveRank))), rankLimit);
+
+reason = "rank" + string(effectiveRank) + "_selected_by_svd_rate";
+if effectiveRank == nominalRank
+    reason = "nominal_rank_matched_svd_rate";
+elseif nominalRank >= 2 && rankLimit >= 2
+    if ~(feasible(2))
+        if minLayerSNRs(2) < minLayerSNR
+            reason = "rank1_fallback_layer_snr";
+        elseif localConditionNumberForRank(sv, 2) > condThresh_dB
+            reason = "rank1_fallback_condition_number";
+        else
+            reason = "rank1_fallback_infeasible_rank2";
+        end
+    elseif rates(1) >= rates(2)
+        reason = "rank1_fallback_rate";
+    end
+end
+
+Wsvd = V(:, 1:effectiveRank);
+try
+    [Wcb, pmi1, pmi2] = sixgr.mimo.selectPMI(Hwb, effectiveRank, nTx, nRx, cfg);
+catch
+    Wcb = Wsvd;
+    pmi1 = [NaN NaN];
+    pmi2 = NaN;
+end
+
+decision = struct();
+decision.EffectiveRank = double(effectiveRank);
+decision.NominalRank = double(nominalRank);
+decision.ExactMatch = logical(effectiveRank == nominalRank);
+decision.Precoder_W = Wcb;
+decision.Precoder_W_SVD = Wsvd;
+decision.PMI_i1 = pmi1;
+decision.PMI_i2 = pmi2;
+decision.ConditionNumber_dB = localConditionNumberForRank(sv, max(1, min(effectiveRank, numel(sv))));
+decision.SingularValues = sv;
+decision.Rate_rank1_bps = rates(1);
+decision.Rate_rank2_bps = localVectorValueOrNaN(rates, 2);
+decision.SNR_layer1_dB = 10 * log10(max(localVectorValueOrNaN(minLayerSNRs, 1), realmin));
+decision.SNR_layer2_dB = 10 * log10(max(localVectorValueOrNaN(minLayerSNRs, 2), realmin));
+decision.RankDecisionReason = char(reason);
+decision.ConditionNumberOk = logical(localConditionNumberForRank(sv, min(2, max(1, numel(sv)))) <= condThresh_dB);
+decision.LayerSNROk = logical(localVectorValueOrNaN(minLayerSNRs, min(2, numel(minLayerSNRs))) >= minLayerSNR);
+decision.RateGainOk = logical(numel(rates) >= 2 && isfinite(rates(2)) && rates(2) > rates(1));
+decision.RuntimeEvidenceSource = "svd_of_measured_channel_matrix";
+decision.NumRxAntennas = double(nRx);
+decision.NumTxPorts = double(nTx);
+decision.CodebookType = string(localFirstTextStruct(cfg, ["CodebookType","codebookType","phy.csi.codebookType"], "type1"));
+decision.CarrierClass = string(class(carrier));
+decision.PDSCHClass = string(class(pdsch));
+end
+
 function [rankT, layerT] = localBuildRankAndLayerTables(cfgT, rawTrials, runId, scenarioName)
 rows = repmat(localRankTrialRow(), 0, 1);
 layerRows = repmat(localLayerRow(), 0, 1);
@@ -71,15 +213,26 @@ for direction = ["DL","UL"]
         row.ConfiguredLayers = double(cfgRow.ConfiguredLayers(1));
         row.ConfiguredModulation = string(cfgRow.ConfiguredModulation(1));
         row.ConfiguredMCS = double(cfgRow.ConfiguredMCS(1));
-        row.ScheduledRank = localFirstNum(tr, ["ScheduledRank","RankIndicator","RI","Layers"], NaN);
-        row.ScheduledLayers = localFirstNum(tr, ["ScheduledLayers","Layers"], NaN);
+        row.ScheduledRank = localFirstNum(tr, ["ScheduledRank","ScheduledLayers","PrecodingNumLayers","RankIndicator","RI","Layers"], NaN);
+        row.ScheduledLayers = localFirstNum(tr, ["ScheduledLayers","PrecodingNumLayers","Layers"], NaN);
         row.ScheduledModulation = localFirstTextTable(tr, ["ScheduledModulation","Modulation"], "");
         row.ScheduledMCS = localFirstNum(tr, ["ScheduledMCS","MCS","MCSIndex"], NaN);
-        row.TransmittedRank = localFirstNum(tr, ["TransmittedRank","Layers"], NaN);
-        row.TransmittedLayers = localFirstNum(tr, ["TransmittedLayers","Layers"], NaN);
+        row.TransmittedRank = localFirstNum(tr, ["TransmittedRank","TransmittedLayers","PrecodingNumLayers","Layers"], NaN);
+        row.TransmittedLayers = localFirstNum(tr, ["TransmittedLayers","PrecodingNumLayers","Layers"], NaN);
         row.TransmittedModulation = localFirstTextTable(tr, ["TransmittedModulation","Modulation"], "");
         row.TransmittedMCS = localFirstNum(tr, ["TransmittedMCS","MCS","MCSIndex"], NaN);
         row.ReceiverEstimatedRank = localFirstNum(tr, ["ReceiverEstimatedRank","RankEstimate"], NaN);
+        row.NumRxAntennas = localFirstNum(tr, ["NumRxAntennas","NumRxAnt","RxAntennaCount"], NaN);
+        row.NumTxPorts = localFirstNum(tr, ["NumTxPorts","PrecodingNumPorts","TxAntennaPortCount"], NaN);
+        row.ConditionNumber_dB = localFirstNum(tr, ["ConditionNumber_dB","ConditionNumber"], NaN);
+        row.RuntimeRI = localFirstNum(tr, ["RuntimeRI","RankIndicator","RI"], NaN);
+        row.RuntimePMI = localFirstNum(tr, ["RuntimePMI","AppliedPrecoderPMI","PMI","ConfiguredPMI"], NaN);
+        row.RuntimeRankSelectionSource = localFirstTextTable(tr, ...
+            ["RuntimeRankSelectionSource","RankSelectionSource","EffectiveRankSource","CSIReportMode","CQISource"], "");
+        row.EffectiveRankDecisionReason = localFirstTextTable(tr, ...
+            ["EffectiveRankDecisionReason","RankDecisionReason","MIMORankDecisionReason"], "");
+        row.RateRank1_bpsHz = localFirstNum(tr, ["Rate_rank1_bps","RateRank1_bpsHz","RateRank1"], NaN);
+        row.RateRank2_bpsHz = localFirstNum(tr, ["Rate_rank2_bps","RateRank2_bpsHz","RateRank2"], NaN);
         perLayer = localParseVector(localFirstTextTable(tr, ["PostEqSINRPerLayer_dB","LayerSINRdB"], ""));
         if ~isfinite(row.ReceiverEstimatedRank) && ~isempty(perLayer)
             row.ReceiverEstimatedRank = numel(perLayer);
@@ -88,7 +241,15 @@ for direction = ["DL","UL"]
         decodeUsable = localBool(tr, "DecodeUsable", crcPass);
         receiverUsable = localBool(tr, "ReceiverUsable", decodeUsable);
         if crcPass && decodeUsable && receiverUsable && isfinite(row.TransmittedLayers)
-            if isempty(perLayer)
+            rawEffectiveRank = localFirstNum(tr, ["EffectiveDecodedRank","EffectiveRank"], NaN);
+            rawEffectiveLayers = localFirstNum(tr, ["EffectiveDecodedLayers","EffectiveLayers"], NaN);
+            rawEffectiveSource = localFirstTextTable(tr, ...
+                ["EffectiveRankSource","EffectiveDecodedRankSource","RuntimeRankSelectionSource"], "");
+            if isfinite(rawEffectiveRank) && isfinite(rawEffectiveLayers) && ...
+                    localRuntimeRankEvidenceAllowed(rawEffectiveSource, perLayer)
+                row.EffectiveDecodedRank = rawEffectiveRank;
+                row.EffectiveDecodedLayers = rawEffectiveLayers;
+            elseif isempty(perLayer)
                 row.EffectiveDecodedRank = NaN;
                 row.EffectiveDecodedLayers = NaN;
             else
@@ -177,6 +338,15 @@ for i = 1:height(cfgT)
         row.DominantEffectiveMCS = localMode(subset.EffectiveDecodedMCS);
         row.ExactMatchRowCount = sum(logical(subset.ExactConfiguredMatch));
         row.ExactMatchPercent = row.ExactMatchRowCount / max(row.StrictEligibleRowCount, 1);
+        row.RuntimePopulated = true;
+        row.RuntimeTrialCount = height(subset);
+        row.RuntimeRank2Fraction = mean(double(subset.TransmittedRank) == 2 | double(subset.EffectiveDecodedRank) == 2, "omitnan");
+        row.RuntimeExactMatchFraction = row.ExactMatchPercent;
+        row.RuntimeMeanConditionNumber_dB = mean(double(subset.ConditionNumber_dB), "omitnan");
+        row.RuntimeMeanRateRank1_bpsHz = mean(double(subset.RateRank1_bpsHz), "omitnan");
+        row.RuntimeMeanRateRank2_bpsHz = mean(double(subset.RateRank2_bpsHz), "omitnan");
+        row.RuntimeEvidenceSource = "rank_layer_trials_from_air_interface_raw_trials";
+        row.EvidenceClass = "DIRECT_RUNTIME_EVIDENCE";
     end
     row.RequiredExactMatchPercent = localTernary(logical(cfgT.FixedAnchorMode(i)) || strictMode, 0.999, NaN);
     row.ScenarioObjectivePass = row.StrictEligibleRowCount > 0 && ...
@@ -186,6 +356,35 @@ for i = 1:height(cfgT)
     rows(end+1, 1) = row; %#ok<AGROW>
 end
 T = struct2table(rows);
+end
+
+function cfgT = localAttachRuntimeEvidenceSummary(cfgT, rankT)
+n = height(cfgT);
+cfgT.RuntimePopulated = false(n, 1);
+cfgT.RuntimeTrialCount = zeros(n, 1);
+cfgT.RuntimeRank2Fraction = NaN(n, 1);
+cfgT.RuntimeExactMatchFraction = NaN(n, 1);
+cfgT.RuntimeMeanConditionNumber_dB = NaN(n, 1);
+cfgT.RuntimeMeanRateRank1_bpsHz = NaN(n, 1);
+cfgT.RuntimeMeanRateRank2_bpsHz = NaN(n, 1);
+cfgT.RuntimeEvidenceSource = repmat("no_runtime_trials", n, 1);
+cfgT.EvidenceClass = repmat("CONFIGURATION_WITH_RUNTIME_LINKAGE_PENDING", n, 1);
+for i = 1:n
+    direction = string(cfgT.Direction(i));
+    subset = rankT(strcmp(string(rankT.Direction), direction) & logical(rankT.StrictEligible), :);
+    if height(subset) == 0
+        continue;
+    end
+    cfgT.RuntimePopulated(i) = true;
+    cfgT.RuntimeTrialCount(i) = height(subset);
+    cfgT.RuntimeRank2Fraction(i) = mean(double(subset.TransmittedRank) == 2 | double(subset.EffectiveDecodedRank) == 2, "omitnan");
+    cfgT.RuntimeExactMatchFraction(i) = mean(logical(subset.ExactConfiguredMatch), "omitnan");
+    cfgT.RuntimeMeanConditionNumber_dB(i) = mean(double(subset.ConditionNumber_dB), "omitnan");
+    cfgT.RuntimeMeanRateRank1_bpsHz(i) = mean(double(subset.RateRank1_bpsHz), "omitnan");
+    cfgT.RuntimeMeanRateRank2_bpsHz(i) = mean(double(subset.RateRank2_bpsHz), "omitnan");
+    cfgT.RuntimeEvidenceSource(i) = "rank_layer_trials_from_air_interface_raw_trials";
+    cfgT.EvidenceClass(i) = "CONFIGURATION_WITH_DIRECT_RUNTIME_TRIAL_EVIDENCE";
+end
 end
 
 function T = localRankUtilization(rankT, runId, scenarioName)
@@ -224,12 +423,15 @@ row = struct("RunId",string(runId), "ScenarioName",string(scenarioName), "Direct
     "StrictObjectiveRequired",false, "StrictObjectivePass",false, "Status","not_evaluated", "FailureReason","");
 end
 
-function T = localAntennaArrayConfig(cfgT)
+function T = localAntennaArrayConfig(cfgT, rankT)
 rows = repmat(struct("RunId","", "ScenarioName","", "Direction","", "ArrayGeometryId","", ...
     "PhysicalTxAntennaCount",NaN, "PhysicalRxAntennaCount",NaN, "TxRFChainCount",NaN, ...
     "RxRFChainCount",NaN, "TxAntennaPortCount",NaN, "RxAntennaPortCount",NaN, ...
-    "NominalCapabilityOnly",true, "SourceHash","", "Status","pass", "FailureReason",""), height(cfgT), 1);
+    "ObservedTxPortCount",NaN, "ObservedRxAntennaCount",NaN, "RuntimePopulated",false, ...
+    "NominalCapabilityOnly",true, "EvidenceClass","CONFIGURATION_ONLY", ...
+    "RuntimeEvidenceSource","", "SourceHash","", "Status","pass", "FailureReason",""), height(cfgT), 1);
 for i = 1:height(cfgT)
+    sub = rankT(strcmp(string(rankT.Direction), string(cfgT.Direction(i))), :);
     rows(i).RunId = string(cfgT.RunId(i));
     rows(i).ScenarioName = string(cfgT.ScenarioName(i));
     rows(i).Direction = string(cfgT.Direction(i));
@@ -241,6 +443,20 @@ for i = 1:height(cfgT)
     rows(i).TxAntennaPortCount = double(cfgT.TxAntennaPortCount(i));
     rows(i).RxAntennaPortCount = double(cfgT.RxAntennaPortCount(i));
     rows(i).SourceHash = string(cfgT.ConfigHash(i));
+    rows(i).ObservedTxPortCount = localMode(localColumn(sub, "NumTxPorts"));
+    rows(i).ObservedRxAntennaCount = localMode(localColumn(sub, "NumRxAntennas"));
+    if ~isfinite(rows(i).ObservedTxPortCount)
+        rows(i).ObservedTxPortCount = localMode(localColumn(sub, "TransmittedLayers"));
+    end
+    if ~isfinite(rows(i).ObservedRxAntennaCount)
+        rows(i).ObservedRxAntennaCount = localMode(localColumn(sub, "EffectiveDecodedLayers"));
+    end
+    rows(i).RuntimePopulated = height(sub) > 0;
+    if rows(i).RuntimePopulated
+        rows(i).NominalCapabilityOnly = false;
+        rows(i).EvidenceClass = "CONFIGURATION_WITH_DIRECT_RUNTIME_TRIAL_EVIDENCE";
+        rows(i).RuntimeEvidenceSource = "rank_layer_trials_from_air_interface_raw_trials";
+    end
 end
 T = struct2table(rows);
 end
@@ -590,10 +806,13 @@ row = struct("RunId","", "ScenarioName","", "TrialId",NaN, "Direction","", ...
     "ConfiguredRank",NaN, "ConfiguredLayers",NaN, "ScheduledRank",NaN, ...
     "ScheduledLayers",NaN, "TransmittedRank",NaN, "TransmittedLayers",NaN, ...
     "ReceiverEstimatedRank",NaN, "EffectiveDecodedRank",NaN, "EffectiveDecodedLayers",NaN, ...
+    "NumRxAntennas",NaN, "NumTxPorts",NaN, "ConditionNumber_dB",NaN, ...
     "ConfiguredModulation","", "ScheduledModulation","", "TransmittedModulation","", ...
     "EffectiveDecodedModulation","", "ConfiguredMCS",NaN, "ScheduledMCS",NaN, ...
     "TransmittedMCS",NaN, "EffectiveDecodedMCS",NaN, "DMRSPorts","", ...
     "PrecoderId","", "BeamId","", "CSIReportId","", "LayerSINRdB","", ...
+    "RuntimeRI",NaN, "RuntimePMI",NaN, "RuntimeRankSelectionSource","", ...
+    "EffectiveRankDecisionReason","", "RateRank1_bpsHz",NaN, "RateRank2_bpsHz",NaN, ...
     "DecodeCrcPass",false, "ExactConfiguredMatch",false, "MismatchCause","", ...
     "AdaptiveMode",false, "AdaptationEvidenceId","", "FixedAnchorMode",false, ...
     "StrictEligible",false, "StrictOk",false, "SourceArtifactRef","", "SourceRowsHash","", ...
@@ -616,6 +835,10 @@ row = struct("RunId","", "ScenarioName","", "Direction","", ...
     "ConfiguredModulation","", "DominantEffectiveModulation","", "ConfiguredMCS",NaN, ...
     "DominantEffectiveMCS",NaN, "StrictEligibleRowCount",0, "ExactMatchRowCount",0, ...
     "ExactMatchPercent",NaN, "RequiredExactMatchPercent",NaN, "ScenarioObjectivePass",false, ...
+    "RuntimePopulated",false, "RuntimeTrialCount",0, "RuntimeRank2Fraction",NaN, ...
+    "RuntimeExactMatchFraction",NaN, "RuntimeMeanConditionNumber_dB",NaN, ...
+    "RuntimeMeanRateRank1_bpsHz",NaN, "RuntimeMeanRateRank2_bpsHz",NaN, ...
+    "RuntimeEvidenceSource","", "EvidenceClass","CONFIGURATION_WITH_RUNTIME_LINKAGE_PENDING", ...
     "Status","not_evaluated", "FailureReason","");
 end
 
@@ -627,6 +850,104 @@ end
 function tf = localUsableText(s)
 s = lower(strtrim(string(s)));
 tf = ~ismissing(s) && strlength(s) > 0 && ~ismember(s, ["nan","<missing>","missing","none","unavailable"]);
+end
+
+function Hwb = localWidebandRuntimeChannel(H)
+Hwb = [];
+if isempty(H)
+    return;
+end
+H = double(H);
+nd = ndims(H);
+if ismatrix(H)
+    Hwb = H;
+elseif nd == 3
+    Hwb = mean(H, 3, "omitnan");
+elseif nd >= 4
+    try
+        Havg = mean(mean(H, 1, "omitnan"), 2, "omitnan");
+    catch
+        Havg = mean(mean(H, 1), 2);
+    end
+    Hwb = squeeze(Havg);
+end
+if isempty(Hwb)
+    return;
+end
+if isvector(Hwb)
+    Hwb = reshape(Hwb(:), numel(Hwb), 1);
+end
+if ~ismatrix(Hwb)
+    Hwb = [];
+end
+end
+
+function value = localFirstFiniteStruct(cfg, paths, defaultValue)
+value = defaultValue;
+for p = string(paths)
+    raw = sixgr.util.structGet(cfg, p, []);
+    if isempty(raw)
+        continue;
+    end
+    if isnumeric(raw) || islogical(raw)
+        vals = double(raw(:));
+    else
+        vals = str2double(string(raw(:)));
+    end
+    idx = find(isfinite(vals), 1);
+    if ~isempty(idx)
+        value = double(vals(idx));
+        return;
+    end
+end
+end
+
+function value = localFirstTextStruct(cfg, paths, defaultValue)
+value = string(defaultValue);
+for p = string(paths)
+    raw = sixgr.util.structGet(cfg, p, []);
+    if isempty(raw)
+        continue;
+    end
+    vals = strtrim(string(raw(:)));
+    vals = vals(arrayfun(@localUsableText, vals));
+    if ~isempty(vals)
+        value = vals(1);
+        return;
+    end
+end
+end
+
+function kappa = localConditionNumberForRank(sv, rankValue)
+rankValue = max(1, min(round(double(rankValue)), numel(sv)));
+if isempty(sv) || rankValue < 1
+    kappa = NaN;
+    return;
+end
+den = max(double(sv(rankValue)), realmin);
+kappa = 20 * log10(max(double(sv(1)), realmin) / den);
+end
+
+function value = localVectorValueOrNaN(values, idx)
+value = NaN;
+if numel(values) >= idx
+    value = double(values(idx));
+end
+end
+
+function tf = localRuntimeRankEvidenceAllowed(source, perLayer)
+if ~isempty(perLayer)
+    tf = true;
+    return;
+end
+source = lower(strtrim(string(source)));
+if strlength(source) == 0
+    tf = false;
+    return;
+end
+good = contains(source, ["runtime","measured","receiver","svd","post_equalization"]);
+bad = contains(source, ["configured","oracle","proxy","fallback","synthetic"]);
+tf = any(good) && ~any(bad);
 end
 
 function y = localTernary(cond, a, b)
