@@ -7477,6 +7477,34 @@ for k = 1:nTrials
         r.CRCApplicable = true;
         r.BCHCrcPass = double(bchCrcPass);
         r.MIBDecoded = double(mibDecoded);
+        r.BCHTransportBlockNumBits = double(sixgr.util.structGet(sib1, "BCHTransportBlockNumBits", ...
+            sixgr.util.structGet(pbch, "BCHTransportBlockNumBits", NaN)));
+        r.BCHTransportBlockHex = string(sixgr.util.structGet(sib1, "BCHTransportBlockHex", ...
+            sixgr.util.structGet(pbch, "BCHTransportBlockHex", "")));
+        r.BCHTransportBlockHash = string(sixgr.util.structGet(sib1, "BCHTransportBlockHash", ...
+            sixgr.util.structGet(pbch, "BCHTransportBlockHash", "")));
+        r.BCHScrambledBlockNumBits = double(sixgr.util.structGet(sib1, "BCHScrambledBlockNumBits", ...
+            sixgr.util.structGet(pbch, "BCHScrambledBlockNumBits", NaN)));
+        r.BCHScrambledBlockHex = string(sixgr.util.structGet(sib1, "BCHScrambledBlockHex", ...
+            sixgr.util.structGet(pbch, "BCHScrambledBlockHex", "")));
+        r.BCHScrambledBlockHash = string(sixgr.util.structGet(sib1, "BCHScrambledBlockHash", ...
+            sixgr.util.structGet(pbch, "BCHScrambledBlockHash", "")));
+        r.MIBDecodedBitSource = string(sixgr.util.structGet(sib1, "MIBDecodedBitSource", ...
+            sixgr.util.structGet(pbch, "MIBDecodedBitSource", "")));
+        r.MIBSFN4LSBValue = double(sixgr.util.structGet(sib1, "MIBSFN4LSBValue", ...
+            sixgr.util.structGet(pbch, "MIBSFN4LSBValue", NaN)));
+        r.MIBSFN4LSBBitString = string(sixgr.util.structGet(sib1, "MIBSFN4LSBBitString", ...
+            sixgr.util.structGet(pbch, "MIBSFN4LSBBitString", "")));
+        r.MIBHalfFrameBit = double(sixgr.util.structGet(sib1, "MIBHalfFrameBit", ...
+            sixgr.util.structGet(pbch, "MIBHalfFrameBit", NaN)));
+        r.MIBKSSBSubcarrierOffset = double(sixgr.util.structGet(sib1, "MIBKSSBSubcarrierOffset", ...
+            sixgr.util.structGet(pbch, "MIBKSSBSubcarrierOffset", NaN)));
+        r.MIBSSBIndex = double(sixgr.util.structGet(sib1, "MIBSSBIndex", ...
+            sixgr.util.structGet(pbch, "MIBSSBIndex", NaN)));
+        r.PBCHiBarSSB = double(sixgr.util.structGet(sib1, "PBCHiBarSSB", ...
+            sixgr.util.structGet(pbch, "iBar_SSB", NaN)));
+        r.PBCHv = double(sixgr.util.structGet(sib1, "PBCHv", ...
+            sixgr.util.structGet(pbch, "v", NaN)));
         r.SIB1StrictOk = double(sib1StrictOk);
         r.SIB1TreeEqual = double(sib1TreeEqual);
         r.SIB1DCICrcPass = double(sib1DciCrcPass);
@@ -9314,6 +9342,20 @@ row.DopplerHz = dopp;
     row.CRCOutcome = "";
     row.BCHCrcPass = NaN;
     row.MIBDecoded = NaN;
+    row.BCHTransportBlockNumBits = NaN;
+    row.BCHTransportBlockHex = "";
+    row.BCHTransportBlockHash = "";
+    row.BCHScrambledBlockNumBits = NaN;
+    row.BCHScrambledBlockHex = "";
+    row.BCHScrambledBlockHash = "";
+    row.MIBDecodedBitSource = "";
+    row.MIBSFN4LSBValue = NaN;
+    row.MIBSFN4LSBBitString = "";
+    row.MIBHalfFrameBit = NaN;
+    row.MIBKSSBSubcarrierOffset = NaN;
+    row.MIBSSBIndex = NaN;
+    row.PBCHiBarSSB = NaN;
+    row.PBCHv = NaN;
     row.SIB1StrictOk = NaN;
     row.SIB1TreeEqual = NaN;
     row.SIB1DCICrcPass = NaN;

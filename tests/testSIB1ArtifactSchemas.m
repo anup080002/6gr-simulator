@@ -19,6 +19,8 @@ out = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(runFolder, sixgr.config.defaul
 assert(logical(out.Ok), "SIB1 strict mini-run must pass before artifact schema checks.");
 required = [ ...
     "control/csv/sib1_recovery_trials.csv"
+    "control/csv/pbch_recovery_trials.csv"
+    "control/csv/mib_field_evidence.csv"
     "control/csv/sib1_pdcch_candidates.csv"
     "control/csv/sib1_negative_trials.csv"
     "control/csv/sib1_asn1_roundtrip.csv"
@@ -41,6 +43,14 @@ assert(height(C) == 1 && logical(C.StrictOk(1)), "Control-side SIB1 conformance 
 Trace = readtable(fullfile(runFolder, "control/csv/sib1_waveform_decode_trace.csv"), "VariableNamingRule", "preserve");
 assert(height(Trace) >= 8 && ismember("UsedOracleFields", string(Trace.Properties.VariableNames)), ...
     "SIB1 waveform decode trace must expose per-stage evidence and oracle guard state.");
+PBCH = readtable(fullfile(runFolder, "control/csv/pbch_recovery_trials.csv"), "VariableNamingRule", "preserve");
+assert(height(PBCH) == 1 && all(ismember(["BCHTransportBlockHash","MIBSFN4LSBValue", ...
+    "MIBHalfFrameBit","MIBDecodedBitSource"], string(PBCH.Properties.VariableNames))), ...
+    "PBCH recovery CSV must expose decoded BCH/MIB bit evidence.");
+MIB = readtable(fullfile(runFolder, "control/csv/mib_field_evidence.csv"), "VariableNamingRule", "preserve");
+assert(any(string(MIB.MIBEvidenceField) == "BCHTransportBlock") && ...
+    any(string(MIB.MIBEvidenceField) == "SFN4LSB"), ...
+    "MIB field evidence CSV must expose decoded BCH block and SFN4LSB evidence.");
 N = readtable(fullfile(runFolder, "control/csv/sib1_negative_trials.csv"), "VariableNamingRule", "preserve");
 assert(height(N) >= 3 && ~any(logical(N.StrictOk)), "Negative SIB1 rows must not pass strict.");
 ok = true;

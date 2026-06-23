@@ -4910,7 +4910,8 @@ if isempty(info) || info.bytes <= 0
 end
 status = "file_exists_nonempty";
 if height(sourceTable) <= 200000 && width(sourceTable) <= 256
-    readback = readtable(csvPath, "VariableNamingRule", "preserve");
+    readback = readtable(csvPath, "VariableNamingRule", "preserve", ...
+        "TextType", "string", "Delimiter", ",");
     if height(readback) ~= height(sourceTable)
         error("sixgr:truth:CoverageArtifactRowMismatch", ...
             "CSV readback row mismatch for %s: expected %d rows, read %d rows.", ...

@@ -274,6 +274,20 @@ pb.HalfFrame = double(selected.nHalfFrame);
 pb.TransportBlock = selected.trblk;
 pb.ScrambledTransportBlock = selected.scrblk;
 pb.NoiseVar = double(selected.nVar);
+trblkBits = int8(selected.trblk(:));
+scrblkBits = int8(selected.scrblk(:));
+pb.BCHTransportBlockNumBits = double(numel(trblkBits));
+pb.BCHTransportBlockHex = sixgr.rrc.asn1.bitsToHex(trblkBits);
+pb.BCHTransportBlockHash = sixgr.rrc.asn1.sha256Hex(uint8(trblkBits));
+pb.BCHScrambledBlockNumBits = double(numel(scrblkBits));
+pb.BCHScrambledBlockHex = sixgr.rrc.asn1.bitsToHex(scrblkBits);
+pb.BCHScrambledBlockHash = sixgr.rrc.asn1.sha256Hex(uint8(scrblkBits));
+pb.MIBDecodedBitSource = "nrBCHDecode";
+pb.MIBSFN4LSBValue = localBitsToInt(selected.sfn4lsb);
+pb.MIBSFN4LSBBitString = localBitsToString(selected.sfn4lsb);
+pb.MIBHalfFrameBit = localFirstBitScalar(selected.nHalfFrame);
+pb.MIBKSSBSubcarrierOffset = double(k_SSB);
+pb.MIBSSBIndex = double(ssbIndex);
 evidence = sixgr.util.structGet(selected, "evidence", struct());
 pb.ChannelEstimateAvailable = logical(sixgr.util.structGet(evidence, "ChannelEstimateAvailable", false));
 pb.ChannelEstimateSource = string(sixgr.util.structGet(evidence, "ChannelEstimateSource", ""));
@@ -398,5 +412,30 @@ b = double(bits(:).');
 val = 0;
 for i = 1:numel(b)
     val = val + b(i) * 2^(numel(b)-i);
+end
+end
+
+function txt = localBitsToString(bits)
+if isempty(bits)
+    txt = "";
+    return;
+end
+b = int8(bits(:)) ~= 0;
+chars = repmat('0', 1, numel(b));
+chars(b) = '1';
+txt = string(chars);
+end
+
+function val = localFirstBitScalar(bits)
+if isempty(bits)
+    val = NaN;
+    return;
+end
+vals = double(bits(:));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    val = NaN;
+else
+    val = double(vals(1) ~= 0);
 end
 end
