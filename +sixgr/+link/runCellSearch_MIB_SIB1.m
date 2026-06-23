@@ -5,6 +5,9 @@ p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
 p.addParameter("NumSubframes", 10, @(x) isnumeric(x) && isscalar(x) && x >= 1);
 p.addParameter("SSBIndex", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0));
+p.addParameter("RunFolder", "", @(x) ischar(x) || isstring(x));
+p.addParameter("RunId", "sib1_runtime", @(x) ischar(x) || isstring(x));
+p.addParameter("WriteArtifacts", false, @(x) islogical(x) || isnumeric(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numSF = round(double(p.Results.NumSubframes));
@@ -132,6 +135,11 @@ if wantSIB1
             "PostEqSINRNAReason", string(sixgr.util.structGet(rec, "PostEqSINRNAReason", "")), ...
             "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false)));
         out.SIB1 = rec;
+        if logical(p.Results.WriteArtifacts) && strlength(string(p.Results.RunFolder)) > 0
+            tx.RunId = string(p.Results.RunId);
+            out.SIB1Artifacts = sixgr.phy.broadcast.exportSIB1EvidenceArtifacts( ...
+                string(p.Results.RunFolder), tx, rec, "NegativeResults", struct([]));
+        end
         out.SSBIndex = double(rec.SSBIndex);
         out.SSBBeamIndex = out.SSBIndex + 1;
         out.SSBReceivedPower_dB = double(sixgr.util.structGet(rec, "SSBReceivedPower_dB", NaN));

@@ -14,6 +14,8 @@ multiUser = localResolveMultiUserSpec(cfgL);
 isCoupledTruth = logical(multiUser.Enabled) && string(multiUser.ExecutionModel) == "slot_coupled_truth";
 cfgExec = localPrepareUserCfg(cfgL, multiUser, 1);
 rootRunFolder = fileparts(char(string(runFolder)));
+cfgL = sixgr.util.structSet(cfgL, "run.rootRunFolder", rootRunFolder);
+cfgExec = sixgr.util.structSet(cfgExec, "run.rootRunFolder", rootRunFolder);
 
 sixgr.util.ensureFolder(runFolder);
 sixgr.util.ensureFolder(fullfile(runFolder, "csv"));
@@ -531,7 +533,13 @@ if isa(ctx, "sixgr.core.SimContext") && isprop(ctx, "Logger")
 end
 switch string(caseName)
     case "CellSearch_MIB_SIB1"
-        cres = sixgr.link.runCellSearch_MIB_SIB1(cfg, "Logger", log);
+        rootRunFolder = string(sixgr.util.structGet(cfg, "run.rootRunFolder", ""));
+        cellSearchArgs = {"Logger", log};
+        if strlength(rootRunFolder) > 0 && logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false))
+            cellSearchArgs = [cellSearchArgs, {"RunFolder", rootRunFolder, ...
+                "RunId", "sib1_anchor_waveform", "WriteArtifacts", true}]; %#ok<AGROW>
+        end
+        cres = sixgr.link.runCellSearch_MIB_SIB1(cfg, cellSearchArgs{:});
     case "PRACH_Detection"
         cres = sixgr.link.runPRACHDetection(cfg, "Logger", log, "SNR_dB", baseSNR_dB);
     case "DL_PDSCH_Throughput"
@@ -7439,12 +7447,20 @@ function T = localCollectPBCHTrials(cfg, snr_dB, nTrials)
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
 pbchObservationSubframes = localResolvePBCHObservationSubframes(cfg);
+rootRunFolder = string(sixgr.util.structGet(cfg, "run.rootRunFolder", ""));
+writeSIB1Artifacts = strlength(rootRunFolder) > 0 && ...
+    logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "DL", snr_dB, k);
     r.Status = "FAIL";
     try
         ssbIndex = localResolvePBCHSSBIndex(cfg, k);
-        out = sixgr.link.runCellSearch_MIB_SIB1(cfg, "NumSubframes", pbchObservationSubframes, "SSBIndex", ssbIndex);
+        cellSearchArgs = {"NumSubframes", pbchObservationSubframes, "SSBIndex", ssbIndex};
+        if writeSIB1Artifacts && k == 1
+            cellSearchArgs = [cellSearchArgs, {"RunFolder", rootRunFolder, ...
+                "RunId", "sib1_runtime_waveform", "WriteArtifacts", true}]; %#ok<AGROW>
+        end
+        out = sixgr.link.runCellSearch_MIB_SIB1(cfg, cellSearchArgs{:});
         skipped = logical(sixgr.util.structGet(out, "Skipped", false));
         pbch = sixgr.util.structGet(out, "PBCH", struct());
         sib1 = sixgr.util.structGet(out, "SIB1", struct());
@@ -8023,6 +8039,11 @@ for i = 1:numel(names)
     if isfield(tables, f) && istable(tables.(f)) && ~isempty(tables.(f))
         sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, string(f) + ".csv"), tables.(f));
     end
+end
+if isfield(tables, "msg4_contention_resolution") && istable(tables.msg4_contention_resolution) && ...
+        ~isempty(tables.msg4_contention_resolution)
+    sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "msg4_trials.csv"), ...
+        tables.msg4_contention_resolution);
 end
 end
 

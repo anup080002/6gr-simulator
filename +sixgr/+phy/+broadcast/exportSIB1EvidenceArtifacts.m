@@ -53,6 +53,7 @@ trialT = table( ...
 candidateT = localCandidateTable(runId, result);
 negativeT = localNegativeTable(runId, p.Results.NegativeResults);
 roundtripT = localRoundtripTable(runId, tx.TxTree, result.SIB1RxTree, logical(result.SIB1TreeEqual));
+traceT = localWaveformDecodeTraceTable(runId, result);
 summaryT = table(runId, scenarioName, "AUD-015", logical(result.StrictOk), ...
     string(result.Status), string(result.FailureReason), string(result.SIB1PayloadHashTx), ...
     string(result.SIB1PayloadHashRx), string(result.SIB1TxTreeHash), string(result.SIB1RxTreeHash), ...
@@ -65,12 +66,16 @@ paths.RecoveryTrialsCSV = fullfile(layout.ControlCSVDir, "sib1_recovery_trials.c
 paths.PDCCHCandidatesCSV = fullfile(layout.ControlCSVDir, "sib1_pdcch_candidates.csv");
 paths.NegativeTrialsCSV = fullfile(layout.ControlCSVDir, "sib1_negative_trials.csv");
 paths.ASN1RoundtripCSV = fullfile(layout.ControlCSVDir, "sib1_asn1_roundtrip.csv");
+paths.WaveformDecodeTraceCSV = fullfile(layout.ControlCSVDir, "sib1_waveform_decode_trace.csv");
+paths.ControlConformanceSummaryCSV = fullfile(layout.ControlCSVDir, "sib1_conformance_summary.csv");
 paths.AirInterfaceCSV = fullfile(layout.AirInterfaceCSVDir, "pbch_mib_sib1_trials.csv");
 paths.ConformanceSummaryCSV = fullfile(layout.ReportCSVDir, "sib1_conformance_summary.csv");
 sixgr.util.csvWriteTable(paths.RecoveryTrialsCSV, trialT);
 sixgr.util.csvWriteTable(paths.PDCCHCandidatesCSV, candidateT);
 sixgr.util.csvWriteTable(paths.NegativeTrialsCSV, negativeT);
 sixgr.util.csvWriteTable(paths.ASN1RoundtripCSV, roundtripT);
+sixgr.util.csvWriteTable(paths.WaveformDecodeTraceCSV, traceT);
+sixgr.util.csvWriteTable(paths.ControlConformanceSummaryCSV, summaryT);
 sixgr.util.csvWriteTable(paths.AirInterfaceCSV, trialT);
 sixgr.util.csvWriteTable(paths.ConformanceSummaryCSV, summaryT);
 
@@ -107,7 +112,46 @@ localWriteSVG(paths.DecodeFlowSVG, logical(result.StrictOk));
 
 artifacts = paths;
 artifacts.RowCounts = struct("Recovery", height(trialT), "Candidates", height(candidateT), ...
-    "Negative", height(negativeT), "Roundtrip", height(roundtripT), "Summary", height(summaryT));
+    "Negative", height(negativeT), "Roundtrip", height(roundtripT), ...
+    "WaveformDecodeTrace", height(traceT), "Summary", height(summaryT));
+end
+
+function T = localWaveformDecodeTraceTable(runId, result)
+stages = [
+    "SSB_PSS_SSS_CELL_SEARCH"
+    "PBCH_BCH_MIB_RECOVERY"
+    "CORESET0_SEARCHSPACE0_RESOLUTION"
+    "SI_RNTI_DCI_1_0_BLIND_DECODE"
+    "SIB1_PDSCH_DMRS_CHANNEL_ESTIMATION"
+    "SIB1_PDSCH_EQUALIZATION"
+    "SIB1_DLSCH_CRC"
+    "SIB1_ASN1_DECODE"];
+passVals = [
+    logical(isfinite(double(sixgr.util.structGet(result, "NCellID", NaN))))
+    logical(sixgr.util.structGet(result, "BCHCrcPass", false))
+    logical(sixgr.util.structGet(result, "CORESET0Present", false))
+    logical(sixgr.util.structGet(result, "DCIBlindDecodeSuccess", false)) && logical(sixgr.util.structGet(result, "DCICrcPass", false))
+    logical(sixgr.util.structGet(result, "SIB1PDSCHChannelEstimateAvailable", false))
+    logical(sixgr.util.structGet(result, "SIB1PDSCHEqualizationAvailable", false))
+    logical(sixgr.util.structGet(result, "DLSCHCrcPass", false))
+    logical(sixgr.util.structGet(result, "SIB1ASN1DecodeOk", false)) && logical(sixgr.util.structGet(result, "SIB1TreeEqual", false))];
+evidenceFields = [
+    "NCellID,SSBIndex,TimingOffsetSamples,FrequencyOffsetHz"
+    "BCHCrcPass,MIBDecoded,PDCCHConfigSIB1"
+    "CORESET0RBStart,CORESET0NumRB,CORESET0DurationSymbols,SearchSpace0ID"
+    "PDCCHCandidatesAttempted,DCICrcPass,DCIRNTI,DCIFormat,DCIPayloadHex"
+    "SIB1PDSCHReceiverHestSINR_dB,SIB1PDSCHReceiverHestSINRSource"
+    "PDSCHModulation,PDSCHRBStart,PDSCHNumRB,PDSCHSymbolStart,PDSCHNumSymbols"
+    "DLSCHCrcPass,SIB1PayloadNumBits,SIB1PayloadHashRx"
+    "SIB1ASN1DecodeOk,SIB1RxTreeHash,SIB1TreeEqual"];
+failure = string(sixgr.util.structGet(result, "FailureReason", ""));
+usedOracle = string(strjoin(string(sixgr.util.structGet(result, "UsedOracleFields", strings(0, 1))), "|"));
+n = numel(stages);
+T = table(repmat(runId, n, 1), (1:n).', stages(:), evidenceFields(:), ...
+    passVals(:), repmat(usedOracle, n, 1), repmat(failure, n, 1), ...
+    repmat("sixgr.phy.broadcast.recoverSIB1FromWaveform", n, 1), ...
+    'VariableNames', {'RunId','StageOrder','StageName','EvidenceFields', ...
+    'StagePass','UsedOracleFields','FailureReason','ImplementationPath'});
 end
 
 function T = localCandidateTable(runId, result)

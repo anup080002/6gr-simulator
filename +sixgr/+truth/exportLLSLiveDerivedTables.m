@@ -14,6 +14,7 @@ end
 artifacts = struct();
 layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
+sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
 sixgr.util.ensureFolder(layout.HARQCSVDir);
 
 dlT = sixgr.util.structGet(rawTrials, "DL", table());
@@ -35,6 +36,8 @@ artifacts.LinkAdaptationInputPath = fullfile(layout.ReportCSVDir, "live_link_ada
 artifacts.UserPerformancePath = fullfile(layout.ReportCSVDir, "live_user_performance_snapshot.csv");
 artifacts.CoverageLayerPath = fullfile(layout.ReportCSVDir, "live_coverage_layer.csv");
 artifacts.ErrorRateSummaryPath = fullfile(layout.ReportCSVDir, "live_error_rate_summary.csv");
+artifacts.FERSummaryPath = fullfile(layout.AirInterfaceCSVDir, "fer_summary.csv");
+artifacts.FERSummaryReportPath = fullfile(layout.ReportCSVDir, "fer_summary.csv");
 artifacts.LiveHARQSummaryPath = fullfile(layout.HARQCSVDir, "live_harq_observation_summary.csv");
 artifacts.LiveHARQTimelinePath = fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv");
 artifacts.AntennaConfigResolvedPath = fullfile(layout.ReportCSVDir, "antenna_config_resolved.csv");
@@ -94,6 +97,8 @@ sixgr.util.csvWriteTable(artifacts.LinkAdaptationInputPath, linkAdaptationT);
 sixgr.util.csvWriteTable(artifacts.UserPerformancePath, userPerfT);
 sixgr.util.csvWriteTable(artifacts.CoverageLayerPath, coverageT);
 sixgr.util.csvWriteTable(artifacts.ErrorRateSummaryPath, errorRateT);
+sixgr.util.csvWriteTable(artifacts.FERSummaryPath, errorRateT);
+sixgr.util.csvWriteTable(artifacts.FERSummaryReportPath, errorRateT);
 sixgr.util.csvWriteTable(artifacts.LiveHARQSummaryPath, harqSummaryT);
 sixgr.util.csvWriteTable(artifacts.LiveHARQTimelinePath, harqTimelineT);
 sixgr.util.csvWriteTable(artifacts.AntennaConfigResolvedPath, antennaConfigT);

@@ -22,6 +22,8 @@ required = [ ...
     "control/csv/sib1_pdcch_candidates.csv"
     "control/csv/sib1_negative_trials.csv"
     "control/csv/sib1_asn1_roundtrip.csv"
+    "control/csv/sib1_conformance_summary.csv"
+    "control/csv/sib1_waveform_decode_trace.csv"
     "air_interface/csv/pbch_mib_sib1_trials.csv"
     "reports/csv/sib1_conformance_summary.csv"
     "reports/json/sib1_tx_tree.json"
@@ -34,6 +36,11 @@ for i = 1:numel(required)
 end
 T = readtable(fullfile(runFolder, "control/csv/sib1_recovery_trials.csv"), "VariableNamingRule", "preserve");
 assert(height(T) == 1 && logical(T.StrictOk(1)), "SIB1 recovery CSV must contain one strict passing positive row.");
+C = readtable(fullfile(runFolder, "control/csv/sib1_conformance_summary.csv"), "VariableNamingRule", "preserve");
+assert(height(C) == 1 && logical(C.StrictOk(1)), "Control-side SIB1 conformance summary must contain one strict passing row.");
+Trace = readtable(fullfile(runFolder, "control/csv/sib1_waveform_decode_trace.csv"), "VariableNamingRule", "preserve");
+assert(height(Trace) >= 8 && ismember("UsedOracleFields", string(Trace.Properties.VariableNames)), ...
+    "SIB1 waveform decode trace must expose per-stage evidence and oracle guard state.");
 N = readtable(fullfile(runFolder, "control/csv/sib1_negative_trials.csv"), "VariableNamingRule", "preserve");
 assert(height(N) >= 3 && ~any(logical(N.StrictOk)), "Negative SIB1 rows must not pass strict.");
 ok = true;
