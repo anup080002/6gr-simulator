@@ -1108,20 +1108,32 @@ if any(interferenceExecutionMode == ["abstract_large_scale_scheduler_context","e
 end
 cfg = sixgr.util.structSet(cfg, "run.interferenceExecutionMode", char(interferenceExecutionMode));
 cfg = sixgr.util.structSet(cfg, "run.useAbstractInterferenceModel", false);
-cfg = sixgr.util.structSet(cfg, "run.controlGating.pbchRequired", logical(localRequireNested(s, ...
-    "control_gating.pbch_required", "control_gating.pbch_required")));
-cfg = sixgr.util.structSet(cfg, "run.controlGating.prachRequired", logical(localRequireNested(s, ...
-    "control_gating.prach_required", "control_gating.prach_required")));
-cfg = sixgr.util.structSet(cfg, "run.controlGating.pdcchRequired", logical(localRequireNested(s, ...
-    "control_gating.pdcch_required", "control_gating.pdcch_required")));
-cfg = sixgr.util.structSet(cfg, "run.controlGating.srsRequired", logical(localRequireNested(s, ...
-    "control_gating.srs_required", "control_gating.srs_required")));
-cfg = sixgr.util.structSet(cfg, "run.controlGating.srsMaxAgeSlots", max(0, round(double(localRequireNested(s, ...
-    "control_gating.srs_max_age_slots", "control_gating.srs_max_age_slots")))));
-cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", logical(localRequireNested(s, ...
-    "control_gating.trs_required", "control_gating.trs_required")));
-cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", max(0, round(double(localRequireNested(s, ...
-    "control_gating.trs_max_age_slots", "control_gating.trs_max_age_slots")))));
+pbchRequired = logical(localRequireNested(s, "control_gating.pbch_required", "control_gating.pbch_required"));
+prachRequired = logical(localRequireNested(s, "control_gating.prach_required", "control_gating.prach_required"));
+pdcchRequired = logical(localRequireNested(s, "control_gating.pdcch_required", "control_gating.pdcch_required"));
+srsRequired = logical(localRequireNested(s, "control_gating.srs_required", "control_gating.srs_required"));
+srsMaxAgeSlots = max(0, round(double(localRequireNested(s, ...
+    "control_gating.srs_max_age_slots", "control_gating.srs_max_age_slots"))));
+trsRequired = logical(localRequireNested(s, "control_gating.trs_required", "control_gating.trs_required"));
+trsMaxAgeSlots = max(0, round(double(localRequireNested(s, ...
+    "control_gating.trs_max_age_slots", "control_gating.trs_max_age_slots"))));
+cfg = sixgr.util.structSet(cfg, "run.controlGating.pbchRequired", pbchRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.prachRequired", prachRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.pdcchRequired", pdcchRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.srsRequired", srsRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.srsMaxAgeSlots", srsMaxAgeSlots);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", trsRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", trsMaxAgeSlots);
+cfg = sixgr.util.structSet(cfg, "control_gating.srs_required", srsRequired);
+cfg = sixgr.util.structSet(cfg, "control_gating.srs_max_age_slots", srsMaxAgeSlots);
+cfg = sixgr.util.structSet(cfg, "control_gating.trs_required", trsRequired);
+cfg = sixgr.util.structSet(cfg, "control_gating.trs_max_age_slots", trsMaxAgeSlots);
+if srsRequired
+    cfg = localAppendValidationObjectives(cfg, "srs_strict_validation");
+end
+if trsRequired
+    cfg = localAppendValidationObjectives(cfg, "trs_strict_validation");
+end
 preAttachBeforeMeasurement = logical(localGetNested(s, "control_gating.pre_attach_ues_before_measurement", ...
     localGetNested(s, "run.controlGating.preAttachUEsBeforeMeasurement", false)));
 cfg = sixgr.util.structSet(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", preAttachBeforeMeasurement);

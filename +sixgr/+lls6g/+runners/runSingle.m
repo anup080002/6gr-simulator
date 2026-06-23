@@ -303,7 +303,7 @@ targetCases = localScenarioTargetCases(scfg);
 validationObjectives = localValidationObjectives(cfg);
 tf = logical(sixgr.util.structGet(cfg, "phy.srs.enable", false)) && ...
     (any(targetCases == "srs") || any(validationObjectives == "srs_strict_validation") || ...
-    logical(sixgr.util.structGet(cfg, "control_gating.srsRequired", false)));
+    localControlGatingRequired(cfg, "srs"));
 end
 
 function tf = localShouldRunStrictTRSEvidence(scfg, cfg)
@@ -311,7 +311,7 @@ targetCases = localScenarioTargetCases(scfg);
 validationObjectives = localValidationObjectives(cfg);
 tf = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false)) && ...
     (any(targetCases == "trs") || any(validationObjectives == "trs_strict_validation") || ...
-    logical(sixgr.util.structGet(cfg, "control_gating.trsRequired", false)));
+    localControlGatingRequired(cfg, "trs"));
 end
 
 function tf = localShouldRunStrictChannelRFEvidence(scfg, cfg)
@@ -340,6 +340,22 @@ end
 function objectives = localValidationObjectives(cfg)
 objectives = lower(strtrim(string(sixgr.util.structGet(cfg, "validation.objectives", strings(0, 1)))));
 objectives = objectives(strlength(objectives) > 0);
+end
+
+function tf = localControlGatingRequired(cfg, signalName)
+signalName = lower(strtrim(string(signalName)));
+switch signalName
+    case "srs"
+        tf = logical(sixgr.util.structGet(cfg, "run.controlGating.srsRequired", ...
+            sixgr.util.structGet(cfg, "control_gating.srs_required", ...
+            sixgr.util.structGet(cfg, "control_gating.srsRequired", false))));
+    case "trs"
+        tf = logical(sixgr.util.structGet(cfg, "run.controlGating.trsRequired", ...
+            sixgr.util.structGet(cfg, "control_gating.trs_required", ...
+            sixgr.util.structGet(cfg, "control_gating.trsRequired", false))));
+    otherwise
+        tf = false;
+end
 end
 
 function result = localRunSystemLevelScenario(cfg, scfg, runFolder)
