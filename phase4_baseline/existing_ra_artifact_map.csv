@@ -1,0 +1,11 @@
+artifact,producer,classification,phase4_use,notes
+control/csv/sib1_rach_config_binding.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,decoded SIB1 to RA binding,Existing artifact retained for backward compatibility.
+control/csv/rach_config_from_decoded_sib1.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,Phase 4 decoded RACH/common-cell ownership,New artifact emitted only when decoded SIB1 rows exist.
+reports/csv/phase4_decoded_config_ownership_audit.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,audit evidence,Phase 4 ownership audit,New artifact emitted only when decoded SIB1 rows exist.
+control/csv/ra_attempts.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,RA attempt outcome,Contains binding source and Msg1-Msg4 pass fields.
+control/csv/msg1_prach_detection.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,Msg1 detection metrics,Contains detection threshold/metric/timing evidence.
+control/csv/msg2_rar_trials.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,RAR PDCCH/PDSCH/MAC evidence,Contains RAPID/TA/TC-RNTI/UL grant fields.
+control/csv/msg3_pusch_trials.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,Msg3 PUSCH evidence,Contains PUSCH grant/power/CRC fields.
+control/csv/msg4_contention_resolution.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,primary evidence,Msg4 contention resolution,Contains identity match and RA completion.
+control/csv/ra_oracle_guard.csv,+sixgr/+phy/+ra/exportRAEvidenceArtifacts.m,guard evidence,no-oracle audit,Must remain zero violations.
+control/csv/initial_access_lifecycle_trace.csv,+sixgr/+phy/+broadcast/runSIB1StrictMiniAnchor.m,primary evidence,SSB/SIB1/RA stage stitching,Written only from executed stages.

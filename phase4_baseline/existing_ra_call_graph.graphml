@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <graph edgedefault="directed">
+    <node id="decoded_sib1"/>
+    <node id="install_decoded_rach"/>
+    <node id="run_four_step_ra"/>
+    <node id="msg1_prach"/>
+    <node id="msg2_rar"/>
+    <node id="msg3_pusch"/>
+    <node id="msg4_contention"/>
+    <node id="ra_artifacts"/>
+    <edge source="decoded_sib1" target="install_decoded_rach"/>
+    <edge source="install_decoded_rach" target="run_four_step_ra"/>
+    <edge source="run_four_step_ra" target="msg1_prach"/>
+    <edge source="msg1_prach" target="msg2_rar"/>
+    <edge source="msg2_rar" target="msg3_pusch"/>
+    <edge source="msg3_pusch" target="msg4_contention"/>
+    <edge source="msg4_contention" target="ra_artifacts"/>
+  </graph>
+</graphml>

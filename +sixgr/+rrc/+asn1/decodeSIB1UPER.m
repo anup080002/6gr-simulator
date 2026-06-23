@@ -58,7 +58,13 @@ end
 [rootSeq, p] = localReadUInt(body, p, 10);
 [zcz, p] = localReadUInt(body, p, 4);
 [nPreambles, p] = localReadUInt(body, p, 7);
-[formatIdx, ~] = localReadUInt(body, p, 3);
+[formatIdx, p] = localReadUInt(body, p, 3);
+msg1SCSkHz = NaN;
+if bodyLen - p + 1 >= 2
+    [msg1SCSIdx, ~] = localReadUInt(body, p, 2);
+    msg1SCSKHzValue = localPRACHSCSFromIndex(msg1SCSIdx);
+    msg1SCSkHz = double(msg1SCSKHzValue);
+end
 
 cfg = struct();
 cfg.phy.carrier.NCellID = double(cellIdentity);
@@ -75,6 +81,9 @@ cfg.phy.prach.rootSeqIndex = double(rootSeq);
 cfg.phy.prach.zeroCorrelationZone = double(zcz);
 cfg.phy.prach.nPreambles = double(nPreambles);
 cfg.phy.prach.preambleFormat = char(localPreambleFormatFromIndex(formatIdx));
+if isfinite(msg1SCSkHz)
+    cfg.phy.prach.subcarrierSpacing_kHz = double(msg1SCSkHz);
+end
 msg = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg, "CellID", double(cellIdentity));
 msg.message.c1.systemInformationBlockType1.cellSelectionInfo.q_RxLevMin = double(qRxLevMin);
 msg.message.c1.systemInformationBlockType1.cellSelectionInfo.q_QualMin = double(qQualMin);
@@ -191,6 +200,15 @@ if idx < 1 || idx > numel(names)
     error("sixgr:rrc:asn1:DecodeFailed", "Bad PRACH preamble format enum in SIB1.");
 end
 value = names(idx);
+end
+
+function value = localPRACHSCSFromIndex(idx)
+values = [1.25 5 15 30];
+idx = double(idx) + 1;
+if idx < 1 || idx > numel(values)
+    error("sixgr:rrc:asn1:DecodeFailed", "Bad PRACH Msg1 SCS enum in SIB1.");
+end
+value = values(idx);
 end
 
 function out = ternary(cond, a, b)

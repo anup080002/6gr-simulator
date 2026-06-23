@@ -24,6 +24,8 @@ poisoned = cfg;
 poisoned.random_access.configuration_index = 87;
 poisoned.random_access.root_sequence_index = 111;
 poisoned.random_access.zero_correlation_zone = 1;
+poisoned.random_access.restricted_set = "RestrictedSetTypeA";
+poisoned.random_access.subcarrier_spacing_khz = 30;
 poisoned.random_access.prach_format = "A1";
 poisoned.random_access.ra_response_window_slots = 1;
 poisoned.random_access.preamble_received_target_power_dbm = -120;
@@ -57,8 +59,25 @@ assert(localBindingValue(bind, "root_sequence_index") == cfg.random_access.root_
     "Root sequence index must come from decoded SIB1.");
 assert(localBindingValue(bind, "zero_correlation_zone") == cfg.random_access.zero_correlation_zone, ...
     "Zero-correlation-zone config must come from decoded SIB1.");
+assert(string(localBindingText(bind, "restricted_set")) == string(cfg.random_access.restricted_set), ...
+    "Restricted-set config must come from decoded SIB1, not poisoned scenario config.");
+assert(localBindingValue(bind, "subcarrier_spacing_khz") == cfg.random_access.subcarrier_spacing_khz, ...
+    "PRACH Msg1 SCS must come from decoded SIB1, not poisoned scenario config.");
 csvPath = fullfile(runFolder, "control", "csv", "sib1_rach_config_binding.csv");
 assert(exist(csvPath, "file") == 2, "RA artifacts must export SIB1 RACH binding CSV.");
+assert(exist(fullfile(runFolder, "control", "csv", "rach_config_from_decoded_sib1.csv"), "file") == 2, ...
+    "RA artifacts must export decoded SIB1 RACH ownership CSV.");
+assert(exist(fullfile(runFolder, "reports", "csv", "phase4_decoded_config_ownership_audit.csv"), "file") == 2, ...
+    "RA artifacts must export Phase 4 decoded-config ownership audit CSV.");
+
+threw = false;
+try
+    sixgr.phy.ra.runFourStepRA(cfg, "RequireDecodedSIB1", true, "WriteArtifacts", false);
+catch ME
+    threw = strcmp(string(ME.identifier), "sixgr:mac:ra:UE_RACH_CONFIG_ORACLE_READ") || ...
+        contains(string(ME.message), "UE_RACH_CONFIG_ORACLE_READ");
+end
+assert(threw, "Phase 4 RA must fail closed if decoded SIB1 ownership is required but absent.");
 
 integrated = sixgr.phy.broadcast.runInitialAccessWithRAAnchor(fullfile(tempdir, "sixgr_test_initial_access_ra"), cfg, ...
     "RunId", "test_initial_access_ra", "ScenarioName", "test_initial_access_ra");
@@ -103,4 +122,10 @@ function value = localBindingValue(T, name)
 idx = find(string(T.Parameter) == string(name), 1);
 assert(~isempty(idx), "Missing SIB1 binding parameter " + string(name));
 value = str2double(string(T.ValueAfter(idx)));
+end
+
+function value = localBindingText(T, name)
+idx = find(string(T.Parameter) == string(name), 1);
+assert(~isempty(idx), "Missing SIB1 binding parameter " + string(name));
+value = string(T.ValueAfter(idx));
 end

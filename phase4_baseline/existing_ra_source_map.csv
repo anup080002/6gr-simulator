@@ -1,0 +1,16 @@
+path,classification,phase4_role,oracle_risk,notes
++sixgr/+phy/+ra/runFourStepRA.m,live production,orchestrates Msg1-Msg4 anchor,medium,Now supports RequireDecodedSIB1 guard for Phase 4 entry points.
++sixgr/+mac/+ra/installDecodedSIB1RACHConfig.m,live production,installs decoded SIB1 RACH and common-cell config,low,Expanded ownership evidence and fills PRACH SCS/restricted-set from decoded SIB1.
++sixgr/+mac/+ra/RAConfig.m,live production,resolves RA runtime config,medium,Still allows scenario_config_pending_sib1 for standalone diagnostics; Phase 4 callers must require decoded SIB1.
++sixgr/+phy/+ra/generateMsg1PRACHWaveform.m,live production,Msg1 PRACH waveform generation,low,Consumes RAConfig and PRACH config helper.
++sixgr/+phy/+ra/detectMsg1PRACH.m,live production,gNB blind PRACH detection,medium,Must continue to avoid transmitter oracle fields.
++sixgr/+phy/+ra/generateMsg2RARWaveform.m,live production,RAR PDCCH/PDSCH generation,medium,RAR must remain detector/MAC-state driven.
++sixgr/+phy/+ra/recoverMsg2RAR.m,live production,UE RAR PDSCH recovery,low,Consumes received waveform and decoded PDCCH result.
++sixgr/+phy/+ra/generateMsg3PUSCHWaveform.m,live production,Msg3 PUSCH generation from decoded RAR UL grant,medium,Must not accept transmitter payload at receiver.
++sixgr/+phy/+ra/recoverMsg3PUSCH.m,live production,gNB Msg3 PUSCH recovery,medium,Current anchor uses known tx object for size/reference metadata; receiver truth guard remains required.
++sixgr/+phy/+ra/generateMsg4Waveform.m,live production,Msg4 contention-resolution waveform,medium,Must derive identity from decoded Msg3.
++sixgr/+phy/+ra/recoverMsg4Waveform.m,live production,UE Msg4 recovery,low,Contention identity must be decoded from waveform.
++sixgr/+rach/runPRACHLLS.m,standalone diagnostic,PRACH sweep/study,medium,Not sufficient as Phase 4 end-to-end proof.
++sixgr/+link/runPRACHDetection.m,standalone diagnostic,legacy PRACH link study,medium,Not sufficient as Phase 4 end-to-end proof.
+tests/raStrictAnchorConfig.m,test-only,standalone anchor config,medium,May use scenario_config_pending_sib1 only outside Phase 4 decoded-SIB1 guard.
+tests/testSIB1ToFourStepRAIntegration.m,test,Phase 3/4 bridge regression,low,Now poisons YAML RA fields and verifies decoded SIB1 ownership.

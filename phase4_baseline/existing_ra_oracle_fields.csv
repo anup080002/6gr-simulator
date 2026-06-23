@@ -1,0 +1,8 @@
+field_or_pattern,risk_location,allowed_use,production_guard
+random_access.binding_source=scenario_config_pending_sib1,+sixgr/+mac/+ra/RAConfig.m,standalone diagnostics before SIB1 only,Phase 4 callers pass RequireDecodedSIB1=true
+random_access.subcarrier_spacing_khz,+sixgr/+mac/+ra/RAConfig.m,pre-SIB1 diagnostic seed only,installDecodedSIB1RACHConfig overwrites from decoded msg1SubcarrierSpacing_kHz
+random_access.restricted_set,+sixgr/+mac/+ra/RAConfig.m,pre-SIB1 diagnostic seed only,installDecodedSIB1RACHConfig overwrites from decoded restrictedSet
+raCfg.PreambleIndex,+sixgr/+phy/+ra/detectMsg1PRACH.m,UE local state/post-run comparison only,PRACH detector must search configured candidates and not consume selected UE truth
+msg3Tx payload object,+sixgr/+phy/+ra/recoverMsg3PUSCH.m,transport-size/reference metadata in anchor only,Msg3 receiver must not decide success from transmitter payload
+msg4 identity transmit object,+sixgr/+phy/+ra/recoverMsg4Waveform.m,post-run/reference metadata only,Msg4 success must compare UE-local identity with decoded MAC CE
+FaultMode,+sixgr/+phy/+ra/runFourStepRA.m,negative tests only,normal production runs use none

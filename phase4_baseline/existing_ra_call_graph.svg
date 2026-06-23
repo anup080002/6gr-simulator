@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="180" viewBox="0 0 1100 180">
+  <rect width="1100" height="180" fill="white"/>
+  <style>
+    text { font-family: Arial, sans-serif; font-size: 13px; }
+    .box { fill: #eef6ff; stroke: #24527a; stroke-width: 1.5; rx: 8; }
+    .edge { stroke: #333; stroke-width: 1.5; marker-end: url(#arrow); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#333"/>
+    </marker>
+  </defs>
+  <text x="20" y="28" font-size="18">Phase 4 existing RA anchor call graph</text>
+  <g transform="translate(20,70)">
+    <rect class="box" x="0" y="0" width="125" height="45"/><text x="12" y="27">Decoded SIB1</text>
+    <line class="edge" x1="125" y1="22" x2="160" y2="22"/>
+    <rect class="box" x="160" y="0" width="150" height="45"/><text x="170" y="27">Install RACH config</text>
+    <line class="edge" x1="310" y1="22" x2="345" y2="22"/>
+    <rect class="box" x="345" y="0" width="125" height="45"/><text x="358" y="27">Four-step RA</text>
+    <line class="edge" x1="470" y1="22" x2="505" y2="22"/>
+    <rect class="box" x="505" y="0" width="105" height="45"/><text x="522" y="27">Msg1 PRACH</text>
+    <line class="edge" x1="610" y1="22" x2="645" y2="22"/>
+    <rect class="box" x="645" y="0" width="95" height="45"/><text x="664" y="27">Msg2 RAR</text>
+    <line class="edge" x1="740" y1="22" x2="775" y2="22"/>
+    <rect class="box" x="775" y="0" width="105" height="45"/><text x="792" y="27">Msg3 PUSCH</text>
+    <line class="edge" x1="880" y1="22" x2="915" y2="22"/>
+    <rect class="box" x="915" y="0" width="145" height="45"/><text x="927" y="27">Msg4 contention</text>
+  </g>
+</svg>

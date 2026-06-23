@@ -19,7 +19,10 @@ try
     sib1 = tree.message.c1.systemInformationBlockType1;
     serving = sib1.servingCellConfigCommon;
     ul = serving.uplinkConfigCommon.initialUplinkBWP;
+    ulGeneric = ul.genericParameters;
     rach = ul.rach_ConfigCommon;
+    puschCommon = sixgr.util.structGet(ul, "pusch_ConfigCommon", struct());
+    pucchCommon = sixgr.util.structGet(ul, "pucch_ConfigCommon", struct());
 catch ME
     error("sixgr:mac:ra:MissingDecodedRACHConfigCommon", ...
         "Decoded SIB1 tree does not contain uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon: %s", ME.message);
@@ -31,51 +34,98 @@ if ~(isstruct(ra) && ~isempty(fieldnames(ra)))
     ra = struct();
 end
 
+initialUlBwpStart = 0;
+initialUlBwpSize = double(sixgr.util.structGet(ulGeneric, "locationAndBandwidth", NaN));
+initialUlBwpSCSkHz = localSCSNameToKHz(sixgr.util.structGet(ulGeneric, "subcarrierSpacing", ""));
+initialUlBwpCP = string(sixgr.util.structGet(ulGeneric, "cyclicPrefix", "normal"));
+prachSCSkHz = double(sixgr.util.structGet(rach, "msg1SubcarrierSpacing_kHz", initialUlBwpSCSkHz));
+restrictedSet = string(sixgr.util.structGet(rach, "restrictedSet", "UnrestrictedSet"));
+
 rows = repmat(localRow(), 0, 1);
-[ra, rows] = localApply(rows, ra, "enabled", true, "decoded_sib1_control", "SIB1 presence enables RA common config");
+[ra, rows] = localApply(rows, ra, "enabled", true, "decoded_sib1_control", ...
+    "SIB1 presence enables RA common config", "boolean", "n/a", "decoded");
 [ra, rows] = localApply(rows, ra, "binding_source", "decoded_sib1_rach_config_common", "decoded_sib1", ...
-    "Binding source selected by recovered SIB1 tree");
+    "Binding source selected by recovered SIB1 tree", "enum", "n/a", "decoded");
+[ra, rows] = localApply(rows, ra, "initial_ul_bwp_start", initialUlBwpStart, ...
+    "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.genericParameters.locationAndBandwidth", ...
+    "Anchor profile stores start at Point A with full initial UL BWP", "RB", "n/a", "decoded_anchor_profile");
+[ra, rows] = localApply(rows, ra, "initial_ul_bwp_size", initialUlBwpSize, ...
+    "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.genericParameters.locationAndBandwidth", ...
+    "", "RB", "n/a", "decoded");
+[ra, rows] = localApply(rows, ra, "subcarrier_spacing_khz", prachSCSkHz, ...
+    "SIB1.rach-ConfigCommon.rach-ConfigGeneric.msg1-SubcarrierSpacing", ...
+    "Decoded PRACH Msg1 SCS is used for PRACH waveform numerology.", "kHz", "n/a", "decoded");
+[ra, rows] = localApply(rows, ra, "initial_ul_bwp_cyclic_prefix", initialUlBwpCP, ...
+    "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.genericParameters.cyclicPrefix", ...
+    "", "enum", "normal", "decoded");
 [ra, rows] = localApply(rows, ra, "configuration_index", double(rach.configurationIndex), ...
-    "SIB1.rach-ConfigCommon.rach-ConfigGeneric.prach-ConfigurationIndex", "");
+    "SIB1.rach-ConfigCommon.rach-ConfigGeneric.prach-ConfigurationIndex", "", "index", "mandatory", "decoded");
+[ra, rows] = localApply(rows, ra, "msg1_fdm", string(sixgr.util.structGet(rach, "msg1FDM", "one")), ...
+    "SIB1.rach-ConfigCommon.rach-ConfigGeneric.msg1-FDM", "", "enum", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "root_sequence_index", double(rach.rootSequenceIndex), ...
-    "SIB1.rach-ConfigCommon.rootSequenceIndex", "");
+    "SIB1.rach-ConfigCommon.rootSequenceIndex", "", "index", "mandatory", "decoded");
+[ra, rows] = localApply(rows, ra, "restricted_set", restrictedSet, ...
+    "SIB1.rach-ConfigCommon.rach-ConfigGeneric.restrictedSetConfig", ...
+    "Supported anchor profile currently accepts unrestricted PRACH only.", "enum", "UnrestrictedSet", "decoded");
 [ra, rows] = localApply(rows, ra, "zero_correlation_zone", double(rach.zeroCorrelationZoneConfig), ...
-    "SIB1.rach-ConfigCommon.zeroCorrelationZoneConfig", "");
+    "SIB1.rach-ConfigCommon.zeroCorrelationZoneConfig", "", "index", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "frequency_start", double(sixgr.util.structGet(rach, "msg1FrequencyStart", ...
     sixgr.util.structGet(ra, "frequency_start", 0))), ...
-    "SIB1.rach-ConfigCommon.msg1-FrequencyStart", "");
+    "SIB1.rach-ConfigCommon.msg1-FrequencyStart", "", "RB", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "preamble_received_target_power_dbm", ...
     double(sixgr.util.structGet(rach, "preambleReceivedTargetPower_dBm", ...
     sixgr.util.structGet(ra, "preamble_received_target_power_dbm", NaN))), ...
-    "SIB1.rach-ConfigCommon.preambleReceivedTargetPower", "");
+    "SIB1.rach-ConfigCommon.preambleReceivedTargetPower", "", "dBm", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "power_ramping_step_db", localPowerRampingStepDb(rach), ...
-    "SIB1.rach-ConfigCommon.powerRampingStep", "");
+    "SIB1.rach-ConfigCommon.powerRampingStep", "", "dB", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "preamble_trans_max", localPreambleTransMax(rach), ...
-    "SIB1.rach-ConfigCommon.preambleTransMax", "");
+    "SIB1.rach-ConfigCommon.preambleTransMax", "", "count", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "ra_response_window_slots", localRAResponseWindowSlots(rach), ...
-    "SIB1.rach-ConfigCommon.ra-ResponseWindow", "");
+    "SIB1.rach-ConfigCommon.ra-ResponseWindow", "", "slots", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "preamble_count", double(sixgr.util.structGet(rach, "nPreambles", ...
     sixgr.util.structGet(ra, "preamble_count", NaN))), ...
-    "SIB1.rach-ConfigCommon.totalNumberOfRA-Preambles", "");
+    "SIB1.rach-ConfigCommon.totalNumberOfRA-Preambles", "", "count", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "prach_format", string(sixgr.util.structGet(rach, "preambleFormat", ...
     sixgr.util.structGet(ra, "prach_format", ""))), ...
-    "SIB1.rach-ConfigCommon.prach-RootSequenceIndex/format anchor", "");
+    "SIB1.rach-ConfigCommon.prach-RootSequenceIndex/format anchor", "", "enum", "anchor_profile", "decoded");
+[ra, rows] = localApply(rows, ra, "pusch_common_msg3_delta_preamble", ...
+    double(sixgr.util.structGet(puschCommon, "msg3_DeltaPreamble", NaN)), ...
+    "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.pusch-ConfigCommon.msg3-DeltaPreamble", ...
+    "", "dB", "n/a", "decoded_if_present");
+[ra, rows] = localApply(rows, ra, "pucch_common_resource", ...
+    double(sixgr.util.structGet(pucchCommon, "pucch_ResourceCommon", NaN)), ...
+    "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.pucch-ConfigCommon.pucch-ResourceCommon", ...
+    "", "index", "n/a", "decoded_if_present");
 
 % Not all 38.331 RACH fields are represented in the constrained SIB1 anchor
 % profile yet. Simulator-only scheduling fields must remain explicit in the
 % input config; RAConfig will fail closed if they are missing.
+ra.initial_ul_bwp = struct("start_rb", initialUlBwpStart, "size_rb", initialUlBwpSize, ...
+    "scs_khz", initialUlBwpSCSkHz, "cyclic_prefix", initialUlBwpCP);
 ra.decoded_sib1_payload_hash = string(payloadHash);
 ra.decoded_sib1_tree_hash = string(treeHash);
 cfgOut.random_access = ra;
+cfgOut.UECommonCellConfiguration = localBuildUECommonCellConfiguration(serving, ra, payloadHash, treeHash);
+cfgOut.ue_common_cell_configuration = cfgOut.UECommonCellConfiguration;
 
 for i = 1:numel(rows)
     rows(i).PayloadHash = string(payloadHash);
     rows(i).TreeHash = string(treeHash);
+    rows(i).SourceMessageId = string(payloadHash);
 end
 evidenceT = struct2table(rows, "AsArray", true);
 end
 
-function [ra, rows] = localApply(rows, ra, name, value, source, note)
+function [ra, rows] = localApply(rows, ra, name, value, source, note, units, standardsDefault, validationStatus)
+if nargin < 7
+    units = "";
+end
+if nargin < 8
+    standardsDefault = "";
+end
+if nargin < 9
+    validationStatus = "decoded";
+end
 before = "";
 if isfield(ra, name)
     before = string(localScalarToText(ra.(name)));
@@ -89,12 +139,23 @@ row.Source = string(source);
 row.Note = string(note);
 row.PayloadHash = "";
 row.TreeHash = "";
+row.DecodedASN1Path = string(source);
+row.DecodedValue = row.ValueAfter;
+row.Units = string(units);
+row.StandardsDefault = string(standardsDefault);
+row.SourceCallId = "recoverSIB1FromWaveform";
+row.SourceMessageId = "";
+row.SourceBitRange = "anchor_codec_field_level";
+row.ValidationStatus = string(validationStatus);
 rows(end+1, 1) = row; %#ok<AGROW>
 end
 
 function row = localRow()
 row = struct("Parameter", "", "ValueBefore", "", "ValueAfter", "", ...
-    "Source", "", "Note", "", "PayloadHash", "", "TreeHash", "");
+    "Source", "", "Note", "", "PayloadHash", "", "TreeHash", "", ...
+    "DecodedASN1Path", "", "DecodedValue", "", "Units", "", ...
+    "StandardsDefault", "", "SourceCallId", "", "SourceMessageId", "", ...
+    "SourceBitRange", "", "ValidationStatus", "");
 end
 
 function [tree, payloadHash, treeHash] = localResolveSIB1Tree(sib1Evidence)
@@ -117,6 +178,52 @@ if strlength(treeHash) == 0
     [~, cmp] = sixgr.rrc.asn1.compareSIB1Trees(tree, tree);
     treeHash = string(cmp.RxTreeHash);
 end
+end
+
+function khz = localSCSNameToKHz(name)
+switch string(name)
+    case "kHz15"
+        khz = 15;
+    case "kHz30"
+        khz = 30;
+    case "kHz60"
+        khz = 60;
+    case "kHz120"
+        khz = 120;
+    otherwise
+        khz = NaN;
+end
+end
+
+function cfg = localBuildUECommonCellConfiguration(serving, ra, payloadHash, treeHash)
+ul = serving.uplinkConfigCommon.initialUplinkBWP;
+ulGeneric = ul.genericParameters;
+cfg = struct();
+cfg.Source = "decoded_sib1";
+cfg.PayloadHash = string(payloadHash);
+cfg.TreeHash = string(treeHash);
+cfg.InitialULBWP = struct( ...
+    "StartRB", double(sixgr.util.structGet(ra, "initial_ul_bwp_start", NaN)), ...
+    "SizeRB", double(sixgr.util.structGet(ra, "initial_ul_bwp_size", NaN)), ...
+    "SubcarrierSpacing_kHz", double(sixgr.util.structGet(ra, "subcarrier_spacing_khz", NaN)), ...
+    "CyclicPrefix", string(sixgr.util.structGet(ulGeneric, "cyclicPrefix", "normal")));
+cfg.RACHConfigCommon = struct( ...
+    "ConfigurationIndex", double(sixgr.util.structGet(ra, "configuration_index", NaN)), ...
+    "Msg1FDM", string(sixgr.util.structGet(ra, "msg1_fdm", "")), ...
+    "Msg1FrequencyStart", double(sixgr.util.structGet(ra, "frequency_start", NaN)), ...
+    "PRACHSubcarrierSpacing_kHz", double(sixgr.util.structGet(ra, "subcarrier_spacing_khz", NaN)), ...
+    "RootSequenceIndex", double(sixgr.util.structGet(ra, "root_sequence_index", NaN)), ...
+    "RestrictedSet", string(sixgr.util.structGet(ra, "restricted_set", "")), ...
+    "ZeroCorrelationZoneConfig", double(sixgr.util.structGet(ra, "zero_correlation_zone", NaN)), ...
+    "TotalNumberOfRAPreambles", double(sixgr.util.structGet(ra, "preamble_count", NaN)), ...
+    "PreambleReceivedTargetPower_dBm", double(sixgr.util.structGet(ra, "preamble_received_target_power_dbm", NaN)), ...
+    "PowerRampingStep_dB", double(sixgr.util.structGet(ra, "power_ramping_step_db", NaN)), ...
+    "PreambleTransMax", double(sixgr.util.structGet(ra, "preamble_trans_max", NaN)), ...
+    "RAResponseWindowSlots", double(sixgr.util.structGet(ra, "ra_response_window_slots", NaN)), ...
+    "PRACHFormat", string(sixgr.util.structGet(ra, "prach_format", "")));
+cfg.PUSCHConfigCommon = sixgr.util.structGet(ul, "pusch_ConfigCommon", struct());
+cfg.PUCCHConfigCommon = sixgr.util.structGet(ul, "pucch_ConfigCommon", struct());
+cfg.ValidationStatus = "decoded_sib1_common_cell_config_installed";
 end
 
 function value = localPowerRampingStepDb(rach)

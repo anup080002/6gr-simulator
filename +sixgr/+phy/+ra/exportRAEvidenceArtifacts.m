@@ -41,6 +41,7 @@ for ii = 1:numel(csvFields)
     rows(ii) = localManifestRow(path, "text/csv", "csv", height(T), ...
         "sixgr.phy.ra.exportRAEvidenceArtifacts");
 end
+decodedOwnershipRows = localWriteDecodedOwnershipArtifacts(layout, tables);
 
 summary = localJsonEnvelope(result, "ra_attempt_summary", csvMap.ra_attempts);
 binding = localJsonEnvelope(result, "ra_config_binding", csvMap.ra_attempts);
@@ -99,13 +100,33 @@ for ii = 1:numel(textFields)
 end
 
 figRows = localWriteFigures(figDir, result);
-manifestRows = [rows(:); jsonRows(:); textRows(:); figRows(:)];
+manifestRows = [rows(:); decodedOwnershipRows(:); jsonRows(:); textRows(:); figRows(:)];
 manifest = struct2table(manifestRows, "AsArray", true);
 manifestPath = fullfile(layout.ControlCSVDir, "ra_artifact_manifest.csv");
 sixgr.util.csvWriteTable(manifestPath, manifest);
 manifest(end+1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
     "sixgr.phy.ra.exportRAEvidenceArtifacts"), "AsArray", true);
 sixgr.util.csvWriteTable(manifestPath, manifest);
+end
+
+function rows = localWriteDecodedOwnershipArtifacts(layout, tables)
+rows = repmat(localManifestRow(), 0, 1);
+if ~isfield(tables, "sib1_rach_config_binding") || ~istable(tables.sib1_rach_config_binding) || ...
+        height(tables.sib1_rach_config_binding) == 0
+    return;
+end
+T = tables.sib1_rach_config_binding;
+sixgr.util.ensureFolder(layout.ControlCSVDir);
+sixgr.util.ensureFolder(layout.ReportCSVDir);
+paths = [
+    string(fullfile(layout.ControlCSVDir, "rach_config_from_decoded_sib1.csv"))
+    string(fullfile(layout.ReportCSVDir, "phase4_decoded_config_ownership_audit.csv"))];
+rows = repmat(localManifestRow(), numel(paths), 1);
+for ii = 1:numel(paths)
+    sixgr.util.csvWriteTable(paths(ii), T);
+    rows(ii) = localManifestRow(paths(ii), "text/csv", "csv", height(T), ...
+        "sixgr.phy.ra.exportRAEvidenceArtifacts");
+end
 end
 
 function payload = localJsonEnvelope(result, implementationStatus, sourceCsv)

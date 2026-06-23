@@ -42,6 +42,8 @@ body = localAppendUInt(body, double(prach.rootSequenceIndex), 10);
 body = localAppendUInt(body, double(prach.zeroCorrelationZoneConfig), 4);
 body = localAppendUInt(body, double(prach.nPreambles), 7);
 body = localAppendUInt(body, localPreambleFormatIndex(prach.preambleFormat), 3);
+body = localAppendUInt(body, localPRACHSCSIndex(sixgr.util.structGet(prach, "msg1SubcarrierSpacing_kHz", ...
+    dl.frequencyInfoDL.scs_SpecificCarrierList.subcarrierSpacing)), 2);
 
 if numel(body) > 65535
     error("sixgr:rrc:asn1:SIB1TooLarge", "Encoded SIB1 anchor body exceeds 65535 bits.");
@@ -120,5 +122,27 @@ names = ["0","1","2","3","A1","A2","A3","B4"];
 idx = find(strcmpi(names, string(name)), 1) - 1;
 if isempty(idx)
     error("sixgr:rrc:asn1:UnsupportedSIB1IE", "Unsupported PRACH preamble format '%s'.", string(name));
+end
+end
+
+function idx = localPRACHSCSIndex(value)
+if isstring(value) || ischar(value)
+    switch string(value)
+        case "kHz1p25"
+            value = 1.25;
+        case "kHz5"
+            value = 5;
+        case "kHz15"
+            value = 15;
+        case "kHz30"
+            value = 30;
+        otherwise
+            value = str2double(erase(string(value), ["kHz","KHz","khz"]));
+    end
+end
+values = [1.25 5 15 30];
+idx = find(abs(values - double(value)) < 1e-9, 1) - 1;
+if isempty(idx)
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", "Unsupported PRACH msg1 subcarrier spacing '%s'.", string(value));
 end
 end

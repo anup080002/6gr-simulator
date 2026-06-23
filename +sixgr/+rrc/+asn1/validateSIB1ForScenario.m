@@ -30,7 +30,8 @@ if ~(isfinite(coreset0) && coreset0 >= 0 && coreset0 <= 15 && isfinite(search0) 
         "Anchor SIB1 profile supports CORESET0/searchSpaceZero indices in [0,15].");
 end
 prach = serving.uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon;
-if isfield(prach, "restrictedSet") && ~any(strcmpi(string(prach.restrictedSet), ["unrestricted","false","0",""] ))
+if isfield(prach, "restrictedSet") && ~any(strcmpi(string(prach.restrictedSet), ...
+        ["unrestricted","UnrestrictedSet","false","0",""] ))
     error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
         "Restricted-set PRACH SIB1 encoding is not implemented for AUD-015 anchor profile.");
 end
