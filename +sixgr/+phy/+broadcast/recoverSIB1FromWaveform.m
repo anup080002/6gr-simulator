@@ -46,6 +46,11 @@ try
     result.MIBHalfFrameBit = double(sixgr.util.structGet(pbch, "MIBHalfFrameBit", NaN));
     result.MIBKSSBSubcarrierOffset = double(sixgr.util.structGet(pbch, "MIBKSSBSubcarrierOffset", NaN));
     result.MIBSSBIndex = double(sixgr.util.structGet(pbch, "MIBSSBIndex", NaN));
+    result.MIBPDCCHConfigSIB1Recovered = double(sixgr.util.structGet(pbch, "PDCCHConfigSIB1", NaN));
+    result.MIBPDCCHConfigSIB1BitString = string(sixgr.util.structGet(pbch, "PDCCHConfigSIB1BitString", ""));
+    result.MIBCORESET0Index = double(sixgr.util.structGet(pbch, "CORESET0Index", NaN));
+    result.MIBSearchSpaceZero = double(sixgr.util.structGet(pbch, "SearchSpaceZero", NaN));
+    result.MIBDMRSTypeAPosition = double(sixgr.util.structGet(pbch, "MIBDMRSTypeAPosition", NaN));
     result.PBCHiBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
     result.PBCHv = double(sixgr.util.structGet(pbch, "v", NaN));
     result.ChannelEstimateAvailable = logical(sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false));
@@ -70,12 +75,27 @@ try
     result.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(pbch, "StrictReceiverEvidenceOk", false));
     result.BCHCrcPass = logical(pbch.Ok) && double(pbch.ErrFlag) == 0;
     result.MIBDecoded = result.BCHCrcPass;
-    result.PDCCHConfigSIB1 = localPDCCHConfigSIB1(cfg);
+    if ~logical(result.MIBDecoded)
+        result.Status = "mib_decode_failed";
+        result.FailureReason = "BCH/MIB CRC failed before CORESET0/SearchSpace0 derivation";
+        result.StrictOk = false;
+        return;
+    end
+    mib = sixgr.phy.broadcast.decodeMIBTransportBlock(pbch.TransportBlock);
+    [type0, cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB(carrier, cfg, mib, ...
+        "RNTI", double(p.Results.ReceiverRNTI));
+    result.PDCCHConfigSIB1 = double(type0.PDCCHConfigSIB1);
     result.CORESET0Present = true;
-    result.CORESET0Pattern = "anchor_coreset0_type0_css";
-    result.CORESET0RBStart = 0;
-    result.SearchSpace0ID = 0;
-    result.CORESET0Duration = 2;
+    result.CORESET0Pattern = string(type0.CORESET0.Pattern);
+    result.CORESET0RBStart = double(type0.CORESET0.RBStart);
+    result.SearchSpace0ID = double(type0.SearchSpace0.SearchSpaceID);
+    result.CORESET0Duration = double(type0.CORESET0.DurationSymbols);
+    result.CORESET0NumRB = double(type0.CORESET0.NumRB);
+    result.SearchSpace0SlotPeriod = double(type0.SearchSpace0.SlotPeriod);
+    result.SearchSpace0SlotOffset = double(type0.SearchSpace0.SlotOffset);
+    result.SearchSpace0StartSymbol = double(type0.SearchSpace0.StartSymbolWithinSlot);
+    result.SearchSpace0AggregationLevel = double(type0.SearchSpace0.AggregationLevel);
+    result.PDCCHConfigSIB1Source = "decoded_mib_bch_transport_block";
 
     siWave = localExtractSIB1Waveform(rxWaveform, cfg, sampleRate);
     faultMode = lower(strtrim(string(p.Results.FaultMode)));
@@ -83,12 +103,11 @@ try
         siWave(:) = 0;
     end
 
-    [~, cfgSI] = localReceiverPDCCH(carrier, cfg, double(p.Results.ReceiverRNTI));
     if faultMode == "corruptpdcch"
-        siWave = localCorruptPDCCHResources(siWave, carrier, cfgSI.phy.sib1.runtimePDCCH);
+        siWave = localCorruptPDCCHResources(siWave, carrier, type0.PDCCH);
     end
     [pdcchRx, pdcchInfo] = sixgr.phy.dl.PDCCH_Rx(siWave, cfgSI, ...
-        "Carrier", carrier, "PDCCH", cfgSI.phy.sib1.runtimePDCCH, ...
+        "Carrier", carrier, "PDCCH", type0.PDCCH, ...
         "K", 32, "RNTI", double(p.Results.ReceiverRNTI), ...
         "PDCCHScramblingRNTI", 0, "SampleRate_Hz", sampleRate);
     result.PDCCHCandidatesAttempted = double(sixgr.util.structGet(pdcchInfo, "NumCandidatesTried", 0));
@@ -107,7 +126,7 @@ try
         return;
     end
 
-    [dci, pdsch] = sixgr.phy.broadcast.buildSIB1DCI10(carrier, cfg, "Bits", pdcchRx.DCIBits);
+    [dci, pdsch] = sixgr.phy.broadcast.buildSIB1DCI10(carrier, cfgSI, "Bits", pdcchRx.DCIBits);
     cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
     result.DCIRNTI = 65535;
     result.PDSCHRBStart = double(dci.PRBStart);
@@ -115,7 +134,7 @@ try
     result.PDSCHSymbolStart = double(dci.SymbolStart);
     result.PDSCHNumSymbols = double(dci.NumSymbols);
     result.PDSCHModulation = string(dci.Modulation);
-    result.CORESET0NumRB = max(1, min(double(carrier.NSizeGrid), 36));
+    result.CORESET0NumRB = double(type0.CORESET0.NumRB);
     if faultMode == "corruptpdsch"
         siWave = localCorruptPDSCHResources(siWave, carrier, pdsch);
     end
@@ -188,6 +207,9 @@ result = struct( ...
     "MIBDecodedBitSource", "", "MIBSFN4LSBValue", NaN, ...
     "MIBSFN4LSBBitString", "", "MIBHalfFrameBit", NaN, ...
     "MIBKSSBSubcarrierOffset", NaN, "MIBSSBIndex", NaN, ...
+    "MIBPDCCHConfigSIB1Recovered", NaN, "MIBPDCCHConfigSIB1BitString", "", ...
+    "MIBCORESET0Index", NaN, "MIBSearchSpaceZero", NaN, ...
+    "MIBDMRSTypeAPosition", NaN, ...
     "PBCHiBarSSB", NaN, "PBCHv", NaN, ...
     "ChannelEstimateAvailable", false, "ChannelEstimateSource", "", ...
     "EqualizationAvailable", false, "EqualizerType", "", ...
@@ -203,8 +225,11 @@ result = struct( ...
     "SIB1PDSCHReceiverHestSINR_dB", NaN, "SIB1PDSCHReceiverHestSINRSource", "", ...
     "SIB1PDSCHStrictReceiverEvidenceOk", false, ...
     "BCHCrcPass", false, "MIBDecoded", false, "PDCCHConfigSIB1", NaN, ...
+    "PDCCHConfigSIB1Source", "", ...
     "CORESET0Present", false, "CORESET0Pattern", "", "CORESET0RBStart", NaN, ...
     "CORESET0NumRB", NaN, "CORESET0Duration", NaN, "SearchSpace0ID", NaN, ...
+    "SearchSpace0SlotPeriod", NaN, "SearchSpace0SlotOffset", NaN, ...
+    "SearchSpace0StartSymbol", NaN, "SearchSpace0AggregationLevel", NaN, ...
     "PDCCHCandidatesAttempted", 0, "DCIBlindDecodeSuccess", false, "DCICrcPass", false, ...
     "DCIRNTI", NaN, "DCIFormat", "", "DCIPayloadHex", "", ...
     "WrongRNTIRejectCount", 0, "NoSignalRejectCount", 0, "FalseCandidateCount", 0, ...

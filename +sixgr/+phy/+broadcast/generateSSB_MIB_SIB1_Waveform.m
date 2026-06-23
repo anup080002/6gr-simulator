@@ -67,9 +67,13 @@ tx.DCIPayloadHex = dci.PayloadHex;
 tx.PDCCHInfo = pdcchInfo;
 tx.PDSCHInfo = pdschInfo;
 tx.SSBInfo = ssbInfo;
-tx.CORESET0 = struct("CORESETID", 0, "Duration", double(pdcch.CORESET.Duration), ...
-    "RBStart", 0, "NumRB", double(min(carrier.NSizeGrid, 6 * numel(pdcch.CORESET.FrequencyResources))));
-tx.SearchSpace0 = struct("SearchSpaceID", 0, "Type", "Type0-PDCCH CSS", "RNTI", 65535);
+tx.MIBPDCCHConfigSIB1 = double(sixgr.util.structGet(cfgSI, "phy.sib1.decodedPDCCHConfigSIB1", ...
+    localPDCCHConfigSIB1(cfg)));
+tx.CORESET0 = sixgr.util.structGet(cfgSI, "phy.sib1.resolvedCORESET0", ...
+    struct("CORESETID", 0, "Duration", double(pdcch.CORESET.Duration), ...
+    "RBStart", 0, "NumRB", double(min(carrier.NSizeGrid, 6 * numel(pdcch.CORESET.FrequencyResources)))));
+tx.SearchSpace0 = sixgr.util.structGet(cfgSI, "phy.sib1.resolvedSearchSpace0", ...
+    struct("SearchSpaceID", 0, "Type", "Type0-PDCCH CSS", "RNTI", 65535));
 tx.UsedOracleFields = strings(0, 1);
 tx.ProxyUsed = false;
 tx.Skipped = false;
@@ -157,28 +161,13 @@ end
 end
 
 function [pdcch, cfgSI] = localSIB1PDCCHConfig(carrier, cfg)
-cfgSI = cfg;
-cfgSI.phy.pdcch.rnti = 65535;
-cfgSI.phy.pdcch.dciPayloadBits = 32;
-cfgSI.phy.pdcch.KBits = 32;
-cfgSI.phy.pdcch.blindSearch = true;
-cfgSI.phy.pdcch.aggregationLevel = 4;
-cfgSI.phy.pdcch.scramblingRNTI = 0;
-cfgSI.phy.pdcch.allowBlindCandidateTimingEstimate = false;
-cfgSI.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];
-cfgSI.phy.pdcch.searchSpace.id = 0;
-cfgSI.phy.pdcch.searchSpace.startSymbol = 0;
-cfgSI.phy.pdcch.searchSpace.duration = 1;
-cfgSI.phy.pdcch.searchSpace.slotPeriodAndOffset = [1 0];
-cfgSI.phy.pdcch.coreset.id = 0;
-cfgSI.phy.pdcch.coreset.duration = 2;
-cfgSI.phy.pdcch.coreset.frequencyResources = ones(1, max(1, min(6, ceil(double(carrier.NSizeGrid) / 6))));
-cfgSI.phy.pdsch.RNTI = 65535;
-cfgSI.phy.pdsch.rnti = 65535;
-cfgSI.phy.pdsch.modulation = "QPSK";
-cfgSI.phy.pdsch.numLayers = 1;
-cfgSI.phy.pdsch.nLayers = 1;
-pdcch = localBuildPDCCHObject(carrier, cfgSI);
+mib = sixgr.phy.broadcast.splitPDCCHConfigSIB1(localPDCCHConfigSIB1(cfg), ...
+    "Source", "tx_configured_mib_pdcch_ConfigSIB1");
+mib.DMRSTypeAPosition = double(sixgr.util.structGet(cfg, "phy.mib.dmrsTypeAPosition", 2));
+[resolution, cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB(carrier, cfg, mib, "RNTI", 65535);
+pdcch = resolution.PDCCH;
+cfgSI = sixgr.util.structSet(cfgSI, "phy.sib1.resolvedCORESET0", resolution.CORESET0);
+cfgSI = sixgr.util.structSet(cfgSI, "phy.sib1.resolvedSearchSpace0", resolution.SearchSpace0);
 end
 
 function cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch)
@@ -284,6 +273,20 @@ try
     pdcch.NStartBWP = double(carrier.NStartGrid);
     pdcch.NSizeBWP = double(carrier.NSizeGrid);
 catch
+end
+end
+
+function value = localPDCCHConfigSIB1(cfg)
+configured = sixgr.util.structGet(cfg, "phy.mib.pdcchConfigSIB1", []);
+if isempty(configured)
+    coreset0 = double(sixgr.util.structGet(cfg, "phy.sib1.coreset0Index", 0));
+    search0 = double(sixgr.util.structGet(cfg, "phy.sib1.searchSpaceZero", 0));
+    configured = coreset0 * 16 + search0;
+end
+value = round(double(configured));
+if ~(isscalar(value) && isfinite(value) && value >= 0 && value <= 255)
+    error("sixgr:phy:broadcast:InvalidPDCCHConfigSIB1", ...
+        "MIB pdcch-ConfigSIB1 must resolve to an integer in [0,255].");
 end
 end
 

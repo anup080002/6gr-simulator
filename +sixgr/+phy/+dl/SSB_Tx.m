@@ -104,6 +104,18 @@ if isprop(ssb, 'SubcarrierSpacingCommon')
     ssb.SubcarrierSpacingCommon = localFirstFiniteScalar(SSBCommonSCS_kHz, ...
         localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz));
 end
+if isprop(ssb, 'PDCCHConfigSIB1')
+    ssb.PDCCHConfigSIB1 = localPDCCHConfigSIB1(cfg);
+end
+if isprop(ssb, 'DMRSTypeAPosition')
+    ssb.DMRSTypeAPosition = localDMRSTypeAPosition(cfg);
+end
+if isprop(ssb, 'CellBarred')
+    ssb.CellBarred = logical(sixgr.util.structGet(cfg, 'phy.mib.cellBarred', false));
+end
+if isprop(ssb, 'IntraFreqReselection')
+    ssb.IntraFreqReselection = logical(sixgr.util.structGet(cfg, 'phy.mib.intraFreqReselection', false));
+end
 ssb.Period = 20; % ms
 ssb.Power = 0;
 ssbLmax = double(sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 8));
@@ -166,6 +178,10 @@ txCfg.SSB.NumBeams = double(ssbLmax);
 txCfg.SSB.Period_ms = double(ssb.Period);
 txCfg.SSB.SCS_kHz = double(localFirstFiniteScalar(SSBCommonSCS_kHz, ...
     localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz)));
+txCfg.SSB.PDCCHConfigSIB1 = double(localPDCCHConfigSIB1(cfg));
+txCfg.SSB.CORESET0Index = floor(double(txCfg.SSB.PDCCHConfigSIB1) / 16);
+txCfg.SSB.SearchSpaceZero = mod(double(txCfg.SSB.PDCCHConfigSIB1), 16);
+txCfg.SSB.DMRSTypeAPosition = double(localDMRSTypeAPosition(cfg));
 
 % Sample rate: nrWaveformGenerator returns it in waveInfo
 sr = [];
@@ -267,6 +283,28 @@ for i = 1:nargin
         value = raw;
         return;
     end
+end
+end
+
+function value = localPDCCHConfigSIB1(cfg)
+configured = sixgr.util.structGet(cfg, 'phy.mib.pdcchConfigSIB1', []);
+if isempty(configured)
+    coreset0 = double(sixgr.util.structGet(cfg, 'phy.sib1.coreset0Index', 0));
+    search0 = double(sixgr.util.structGet(cfg, 'phy.sib1.searchSpaceZero', 0));
+    configured = coreset0 * 16 + search0;
+end
+value = round(double(configured));
+if ~(isscalar(value) && isfinite(value) && value >= 0 && value <= 255)
+    error('sixgr:phy:SSB_Tx:InvalidPDCCHConfigSIB1', ...
+        'MIB PDCCHConfigSIB1 must resolve to an integer in [0,255].');
+end
+end
+
+function value = localDMRSTypeAPosition(cfg)
+value = round(double(sixgr.util.structGet(cfg, 'phy.mib.dmrsTypeAPosition', 2)));
+if ~ismember(value, [2 3])
+    error('sixgr:phy:SSB_Tx:InvalidDMRSTypeAPosition', ...
+        'MIB DMRSTypeAPosition must be 2 or 3.');
 end
 end
 

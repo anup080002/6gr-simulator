@@ -21,6 +21,9 @@ required = [ ...
     "control/csv/sib1_recovery_trials.csv"
     "control/csv/pbch_recovery_trials.csv"
     "control/csv/mib_field_evidence.csv"
+    "control/csv/mib_pdcch_config_sib1_recovery.csv"
+    "control/csv/coreset0_derivation.csv"
+    "control/csv/searchspace0_derivation.csv"
     "control/csv/sib1_pdcch_candidates.csv"
     "control/csv/sib1_negative_trials.csv"
     "control/csv/sib1_asn1_roundtrip.csv"
@@ -49,8 +52,19 @@ assert(height(PBCH) == 1 && all(ismember(["BCHTransportBlockHash","MIBSFN4LSBVal
     "PBCH recovery CSV must expose decoded BCH/MIB bit evidence.");
 MIB = readtable(fullfile(runFolder, "control/csv/mib_field_evidence.csv"), "VariableNamingRule", "preserve");
 assert(any(string(MIB.MIBEvidenceField) == "BCHTransportBlock") && ...
-    any(string(MIB.MIBEvidenceField) == "SFN4LSB"), ...
-    "MIB field evidence CSV must expose decoded BCH block and SFN4LSB evidence.");
+    any(string(MIB.MIBEvidenceField) == "SFN4LSB") && ...
+    any(string(MIB.MIBEvidenceField) == "pdcch-ConfigSIB1"), ...
+    "MIB field evidence CSV must expose decoded BCH block, SFN4LSB, and pdcch-ConfigSIB1 evidence.");
+MIBPDCCH = readtable(fullfile(runFolder, "control/csv/mib_pdcch_config_sib1_recovery.csv"), "VariableNamingRule", "preserve");
+assert(height(MIBPDCCH) == 1 && MIBPDCCH.PDCCHConfigSIB1(1) == 0 && ...
+    MIBPDCCH.ControlResourceSetZero(1) == 0 && MIBPDCCH.SearchSpaceZero(1) == 0, ...
+    "MIB pdcch-ConfigSIB1 recovery CSV must expose decoded Type0 CSS indices.");
+CORESET0 = readtable(fullfile(runFolder, "control/csv/coreset0_derivation.csv"), "VariableNamingRule", "preserve");
+SS0 = readtable(fullfile(runFolder, "control/csv/searchspace0_derivation.csv"), "VariableNamingRule", "preserve");
+assert(height(CORESET0) == 1 && logical(CORESET0.CORESET0Present(1)), ...
+    "CORESET0 derivation CSV must contain the resolved CORESET0 row.");
+assert(height(SS0) == 1 && SS0.SearchSpaceZero(1) == 0 && SS0.PDCCHCandidatesAttempted(1) > 0, ...
+    "SearchSpace0 derivation CSV must contain the resolved Type0 monitoring row.");
 N = readtable(fullfile(runFolder, "control/csv/sib1_negative_trials.csv"), "VariableNamingRule", "preserve");
 assert(height(N) >= 3 && ~any(logical(N.StrictOk)), "Negative SIB1 rows must not pass strict.");
 ok = true;

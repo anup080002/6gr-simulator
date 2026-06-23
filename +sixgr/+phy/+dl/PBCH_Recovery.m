@@ -283,6 +283,20 @@ pb.BCHScrambledBlockNumBits = double(numel(scrblkBits));
 pb.BCHScrambledBlockHex = sixgr.rrc.asn1.bitsToHex(scrblkBits);
 pb.BCHScrambledBlockHash = sixgr.rrc.asn1.sha256Hex(uint8(scrblkBits));
 pb.MIBDecodedBitSource = "nrBCHDecode";
+try
+    mib = sixgr.phy.broadcast.decodeMIBTransportBlock(trblkBits);
+catch
+    mib = struct();
+end
+pb.PDCCHConfigSIB1 = double(sixgr.util.structGet(mib, "PDCCHConfigSIB1", NaN));
+pb.CORESET0Index = double(sixgr.util.structGet(mib, "CORESET0Index", NaN));
+pb.SearchSpaceZero = double(sixgr.util.structGet(mib, "SearchSpaceZero", NaN));
+pb.PDCCHConfigSIB1BitString = string(sixgr.util.structGet(mib, "PDCCHConfigSIB1BitString", ""));
+pb.PDCCHConfigSIB1BitStart = double(sixgr.util.structGet(mib, "PDCCHConfigSIB1BitStart", NaN));
+pb.PDCCHConfigSIB1BitEnd = double(sixgr.util.structGet(mib, "PDCCHConfigSIB1BitEnd", NaN));
+pb.MIBDMRSTypeAPosition = double(sixgr.util.structGet(mib, "DMRSTypeAPosition", NaN));
+pb.MIBCellBarredBit = double(sixgr.util.structGet(mib, "CellBarredBit", NaN));
+pb.MIBIntraFreqReselectionBit = double(sixgr.util.structGet(mib, "IntraFreqReselectionBit", NaN));
 pb.MIBSFN4LSBValue = localBitsToInt(selected.sfn4lsb);
 pb.MIBSFN4LSBBitString = localBitsToString(selected.sfn4lsb);
 pb.MIBHalfFrameBit = localFirstBitScalar(selected.nHalfFrame);
