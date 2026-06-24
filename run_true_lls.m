@@ -21,7 +21,9 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 tStart = tic;
 fprintf("\n=== run_true_lls: initialising ===\n");
+stageStart = tic;
 registry = sixgr.utils.verifyFunctionRegistry("Strict", logical(opt.StrictRegistry));
+fprintf("[STAGE] stage_name=registry elapsed=%.3fs\n", toc(stageStart));
 
 out = struct();
 out.Ok = false;
@@ -44,26 +46,44 @@ profile on;
 cleanupProfile = onCleanup(@() profile("off")); %#ok<NASGU>
 
 fprintf("[Run] Executing config-driven LLS runner...\n");
+stageStart = tic;
 runner = sixgr.lls6g.runners.runSingle(scenarioYAML, string(opt.ResultsRoot), runTag);
+fprintf("[STAGE] stage_name=lls_runner elapsed=%.3fs\n", toc(stageStart));
 out.Runner = runner;
 out.RunFolder = string(runner.RunFolder);
 
 fprintf("[Export] Writing Prompt 9 evidence and audits...\n");
+stageStart = tic;
 exportReport = sixgr.export.exportAllEvidence(runner, runner.Config, out.RunFolder, ...
     "RunAnalysis", logical(opt.RunAnalysis), ...
     "ErrorOnOracleViolation", false);
+fprintf("[STAGE] stage_name=export_all_evidence elapsed=%.3fs\n", toc(stageStart));
 out.Export = exportReport;
 
 fprintf("[Audit] Verifying measurement-only contracts...\n");
+stageStart = tic;
 measurementOnly = sixgr.audit.verifyMeasurementOnly(out.RunFolder, ...
     "ErrorOnViolation", logical(opt.ErrorOnOracleViolation));
+fprintf("[STAGE] stage_name=measurement_only_audit elapsed=%.3fs\n", toc(stageStart));
+violationCount = double(sixgr.util.structGet(measurementOnly, "ViolationCount", NaN));
+if isfinite(violationCount) && violationCount == 0
+    fprintf("[ORACLE_GUARD] PASS: 0 violations\n");
+elseif isfinite(violationCount)
+    fprintf("[ORACLE_GUARD] FAIL: %.0f violations\n", violationCount);
+else
+    fprintf("[ORACLE_GUARD] UNKNOWN: violation count unavailable\n");
+end
 out.MeasurementOnly = measurementOnly;
 
 profile off;
+stageStart = tic;
 sixgr.analytics.buildRuntimeCallGraph(out.RunFolder);
+fprintf("[STAGE] stage_name=runtime_call_graph elapsed=%.3fs\n", toc(stageStart));
 
 fprintf("[Gate] Running Grade 10 checklist...\n");
+stageStart = tic;
 grade = grade10Checklist(out.RunFolder);
+fprintf("[STAGE] stage_name=grade10_checklist elapsed=%.3fs\n", toc(stageStart));
 out.Grade10 = grade;
 
 out.Ok = logical(registry.Ok) && logical(runner.Ok) && ...
