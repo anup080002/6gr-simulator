@@ -244,28 +244,34 @@ lags = (1:numel(corrVals)).' - nRef;
 rxPower = abs(rx).^2;
 refPower = abs(ref).^2;
 minOverlap = max(16, ceil(0.75 * double(nRef)));
-for k = 1:numel(corrVals)
-    lag = k - nRef;
-    if lag < 0
-        continue;
-    end
-    refStart = max(1, 1 - lag);
-    refEnd = min(nRef, nRx - lag);
-    if refEnd < refStart
-        continue;
-    end
-    if (refEnd - refStart + 1) < minOverlap
-        continue;
-    end
-    rxStart = lag + refStart;
-    rxEnd = lag + refEnd;
-    rxEnergy = sum(rxPower(rxStart:rxEnd), "omitnan");
-    refEnergy = sum(refPower(refStart:refEnd), "omitnan");
-    denom = double(rxEnergy) * double(refEnergy);
-    if isfinite(denom) && denom > 0
-        metrics(k) = double(abs(corrVals(k)).^2) / max(denom, eps);
-    end
+rxPower(~isfinite(rxPower)) = 0;
+refPower(~isfinite(refPower)) = 0;
+rxCum = [0; cumsum(double(rxPower(:)))];
+refCum = [0; cumsum(double(refPower(:)))];
+
+lagVals = 0:(nRx - 1);
+if isempty(lagVals)
+    return;
 end
+overlap = min(double(nRef), double(nRx) - double(lagVals));
+valid = overlap >= minOverlap;
+if ~any(valid)
+    return;
+end
+
+lagVals = lagVals(valid);
+overlap = overlap(valid);
+kIdx = double(lagVals) + double(nRef);
+rxStart = double(lagVals) + 1;
+rxEnd = double(lagVals) + overlap;
+refEnd = overlap;
+
+rxEnergy = rxCum(rxEnd + 1) - rxCum(rxStart);
+refEnergy = refCum(refEnd + 1) - refCum(1);
+denom = double(rxEnergy(:)) .* double(refEnergy(:));
+metricVals = double(abs(corrVals(kIdx)).^2) ./ max(denom, eps);
+metricVals(~(isfinite(denom) & denom > 0)) = NaN;
+metrics(kIdx) = metricVals;
 end
 
 function trace = localSelectedCorrelationTrace(detInfo, preambleIndex, threshold, peakLagSamples)

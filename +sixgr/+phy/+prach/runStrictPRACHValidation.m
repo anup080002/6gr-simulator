@@ -18,6 +18,8 @@ cfg = sixgr.phy.prach.buildPRACHConfigFromScenario(baseCfg, ...
     "RunFolder", runFolder, "ScenarioName", scenarioName);
 configHash = string(cfg.ConfigHash);
 
+localMarkStrictProgress(runId, "strict_prach_config_validation", 0.02, ...
+    "Validating strict PRACH configuration and root-sequence evidence.");
 mappingT = sixgr.phy.prach.validateRestrictedSetMapping(runId, configHash, cfg);
 rootBudgetT = sixgr.phy.prach.validateRootSequenceBudget(runId, configHash, cfg);
 zczT = sixgr.phy.prach.deriveCyclicShiftSet(runId, configHash, cfg);
@@ -35,6 +37,8 @@ preamble = localFirstPreamble(cfg);
 highSNR = max(30, double(sixgr.util.structGet(baseCfg, "simulation.snr_db", 30)));
 threshold = double(cfg.DetectionThreshold);
 
+localMarkStrictProgress(runId, "strict_prach_positive_high_snr", 0.08, ...
+    "Running positive high-SNR PRACH receive validation.");
 [trialId, pos, cand, oracle, positiveWaveform] = localRunOneTrial( ...
     trialId, "positive_high_snr", cfg, occ1, preamble, highSNR, 0, 0, ...
     true, false, threshold, runId, scenarioName, configHash);
@@ -42,6 +46,8 @@ trialRows(end + 1, 1) = pos; %#ok<AGROW>
 candidateRows = [candidateRows; table2struct(cand)]; %#ok<AGROW>
 oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
 
+localMarkStrictProgress(runId, "strict_prach_missed_detection_sweep", 0.18, ...
+    "Running PRACH missed-detection SNR sweep.");
 [missedT, missTrials, missCand, missOracle] = localMissedDetectionSweep( ...
     cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId);
 trialId = trialId + height(missTrials);
@@ -49,6 +55,8 @@ trialRows = [trialRows; table2struct(missTrials)]; %#ok<AGROW>
 candidateRows = [candidateRows; table2struct(missCand)]; %#ok<AGROW>
 oracleRows = [oracleRows; table2struct(missOracle)]; %#ok<AGROW>
 
+localMarkStrictProgress(runId, "strict_prach_false_alarm_sweep", 0.36, ...
+    "Running PRACH false-alarm noise-only sweep.");
 [falseAlarmT, falseTrials, falseCand, falseOracle, noiseWaveform] = localFalseAlarmSweep( ...
     cfg, occ1, runId, scenarioName, configHash, threshold, trialId);
 trialId = trialId + height(falseTrials);
@@ -56,6 +64,8 @@ trialRows = [trialRows; table2struct(falseTrials)]; %#ok<AGROW>
 candidateRows = [candidateRows; table2struct(falseCand)]; %#ok<AGROW>
 oracleRows = [oracleRows; table2struct(falseOracle)]; %#ok<AGROW>
 
+localMarkStrictProgress(runId, "strict_prach_timing_offset_sweep", 0.54, ...
+    "Running PRACH timing-offset sweep.");
 [timingT, timingTrials, timingCand, timingOracle] = localTimingOffsetSweep( ...
     cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId, highSNR);
 trialId = trialId + height(timingTrials);
@@ -63,10 +73,18 @@ trialRows = [trialRows; table2struct(timingTrials)]; %#ok<AGROW>
 candidateRows = [candidateRows; table2struct(timingCand)]; %#ok<AGROW>
 oracleRows = [oracleRows; table2struct(timingOracle)]; %#ok<AGROW>
 
+localMarkStrictProgress(runId, "strict_prach_frequency_offset_sweep", 0.66, ...
+    "Running PRACH frequency-offset and restricted-set sweep.");
 freqT = localFrequencyOffsetSweep(cfg, occ1, preamble, runId, configHash, threshold, highSNR);
+localMarkStrictProgress(runId, "strict_prach_collision_trials", 0.78, ...
+    "Running PRACH collision and multi-preamble trials.");
 [collisionT, collisionCandidates] = localCollisionTrials(cfg, occ1, preamble, runId, scenarioName, configHash, threshold, highSNR);
 candidateRows = [candidateRows; table2struct(collisionCandidates)]; %#ok<AGROW>
+localMarkStrictProgress(runId, "strict_prach_multi_occasion_trials", 0.86, ...
+    "Running PRACH multi-occasion RARNTI trials.");
 multiOccasionT = localMultiOccasionTrials(cfg, preamble, runId, scenarioName, configHash, threshold, highSNR);
+localMarkStrictProgress(runId, "strict_prach_negative_wrong_config", 0.92, ...
+    "Running PRACH negative wrong-root receiver guard.");
 [negativeT, negTrial, negCand, negOracle] = localNegativeWrongConfigTrial( ...
     cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId + 1, highSNR);
 trialRows = [trialRows; table2struct(negTrial)]; %#ok<AGROW>
@@ -125,9 +143,43 @@ result.ArtifactTables = struct( ...
     "prach_oracle_guard", oracleT);
 
 if logical(opt.WriteArtifacts)
+    localMarkStrictProgress(runId, "strict_prach_artifact_export", 0.97, ...
+        "Writing strict PRACH waveform evidence artifacts.");
     result.ArtifactManifest = sixgr.phy.prach.exportStrictPRACHArtifacts(runFolder, result);
 else
     result.ArtifactManifest = table();
+end
+localMarkStrictProgress(runId, "strict_prach_validation_complete", 1.0, ...
+    "Strict PRACH waveform validation completed.");
+end
+
+function localMarkStrictProgress(runId, stageName, supplementalCompletion, note)
+stamp = string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+try
+    fprintf(1, "[%s] INFO Strict PRACH progress: stage=%s supplemental_completion=%.3f note=%s\n", ...
+        char(stamp), char(string(stageName)), double(supplementalCompletion), char(string(note)));
+catch
+end
+active = false;
+try
+    active = sixgr.db.isArtifactStoreActive();
+catch
+    active = false;
+end
+if ~active
+    return;
+end
+payload = struct( ...
+    "stage", char(string(stageName)), ...
+    "run_completion", 1.0, ...
+    "supplemental_block", "PRACH", ...
+    "supplemental_completion", double(supplementalCompletion), ...
+    "run_id", string(runId), ...
+    "notes", string(note), ...
+    "timestamp_utc", stamp);
+try
+    sixgr.db.markRunStatus("running", payload);
+catch
 end
 end
 
