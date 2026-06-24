@@ -54,7 +54,10 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert canonical["topology"]["num_cells"] == 2
     assert canonical["topology"]["num_trps"] == 2
     assert canonical["topology"]["num_sectors_per_site"] == 1
-    assert canonical["topology"]["num_ues"] == 150
+    assert canonical["topology"]["num_ues"] == 2
+    assert canonical["output"]["profiler_enabled"] is True
+    assert canonical["output"]["live_publish_frame_interval"] == 1
+    assert canonical["output"]["live_heavy_refresh_interval_frames"] == 1
     assert canonical["output"]["emit_placeholder_artifacts"] is False
     override_paths = [item["path"] for item in canonical["runtime_overrides"]]
     assert len(override_paths) == len(set(override_paths))
@@ -67,13 +70,18 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert dash.path_get(resolved, "deployment_topology.num_cells") == 2
     assert dash.path_get(resolved, "deployment_topology.num_trps") == 2
     assert dash.path_get(resolved, "deployment_topology.num_sectors_per_site") == 1
-    assert dash.path_get(resolved, "deployment_topology.num_ues") == 150
-    assert dash.path_get(resolved, "users.n_users") == 150
+    assert dash.path_get(resolved, "deployment_topology.num_ues") == 2
+    assert dash.path_get(resolved, "users.n_users") == 2
     assert dash.path_get(resolved, "users.execution_model") == "slot_coupled_truth"
     assert dash.path_get(resolved, "simulation.noise_operating_mode") == "receiver_noise_figure_thermal_noise"
     assert dash.path_get(resolved, "global_radio_scope.carrier_frequency_hz") == 4_000_000_000
     assert dash.path_get(resolved, "global_radio_scope.channel_bandwidth_hz") == 100_000_000
     assert dash.path_get(resolved, "output.emit_placeholder_artifacts") is False
+    assert dash.path_get(resolved, "output.profiler_enabled") is True
+    assert dash.path_get(resolved, "output.profiler_top_functions") == 250
+    assert dash.path_get(resolved, "output.profiler_top_edges") == 500
+    assert dash.path_get(resolved, "output.live_publish_frame_interval") == 1
+    assert dash.path_get(resolved, "output.live_heavy_refresh_interval_frames") == 1
 
     contract = dash.scenario_launch_contract(resolved, SCENARIO)
     assert contract["launch_allowed"] is True

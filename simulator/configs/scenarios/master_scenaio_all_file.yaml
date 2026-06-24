@@ -95,7 +95,7 @@ canonical_control:
 
   topology:
     # Scale here only:
-    # - 2 cells: num_sites=2, num_sectors_per_site=1, num_ues=150
+    # - 2 cells: num_sites=2, num_sectors_per_site=1, num_ues=2
     # - 50 sites / 150 sectors: num_sites=50, num_sectors_per_site=3
     # num_cells is optional; omit it to derive sites * sectors_per_site.
     site_layout: hex_grid
@@ -104,7 +104,7 @@ canonical_control:
     num_sectors_per_site: 1
     num_cells: 2
     num_trps: 2
-    num_ues: 150
+    num_ues: 2
     sector_azimuth_offsets_deg: [0]
     inter_site_distance_m: 1000
     wraparound_enabled: false
@@ -393,6 +393,11 @@ canonical_control:
     save_resolved_config: true
     save_plots: true
     save_report: true
+    profiler_enabled: true
+    profiler_top_functions: 250
+    profiler_top_edges: 500
+    live_publish_frame_interval: 1
+    live_heavy_refresh_interval_frames: 1
     emit_placeholder_artifacts: false
 
   logging:
