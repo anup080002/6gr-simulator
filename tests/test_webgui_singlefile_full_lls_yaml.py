@@ -58,6 +58,9 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert canonical["output"]["profiler_enabled"] is True
     assert canonical["output"]["live_publish_frame_interval"] == 1
     assert canonical["output"]["live_heavy_refresh_interval_frames"] == 1
+    assert canonical["random_access"]["n_cell_id"] == 1
+    assert canonical["random_access"]["timing_offset_sweep_samples"] == [0, 4, 8]
+    assert canonical["random_access"]["frequency_offset_sweep_hz"] == [0, 100, 250]
     assert canonical["output"]["emit_placeholder_artifacts"] is False
     override_paths = [item["path"] for item in canonical["runtime_overrides"]]
     assert len(override_paths) == len(set(override_paths))
@@ -82,6 +85,9 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert dash.path_get(resolved, "output.profiler_top_edges") == 500
     assert dash.path_get(resolved, "output.live_publish_frame_interval") == 1
     assert dash.path_get(resolved, "output.live_heavy_refresh_interval_frames") == 1
+    assert dash.path_get(resolved, "random_access.n_cell_id") == 1
+    assert dash.path_get(resolved, "random_access.timing_offset_sweep_samples") == [0, 4, 8]
+    assert dash.path_get(resolved, "random_access.frequency_offset_sweep_hz") == [0, 100, 250]
 
     contract = dash.scenario_launch_contract(resolved, SCENARIO)
     assert contract["launch_allowed"] is True
