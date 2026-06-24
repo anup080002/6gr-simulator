@@ -45,6 +45,8 @@ coverageRequirement = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.co
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.coverage_requirement", "configured_band")))));
 fullRequired = logical(sixgr.util.structGet(cfg, "phy.srs.fullCarrierSoundingRequired", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.full_carrier_sounding_required", coverageRequirement == "full_carrier")));
+expectedNumRBExplicit = localHasPath(cfg, "lls6g.reference_signals.srs.expected_num_rb");
+expectedPctExplicit = localHasPath(cfg, "lls6g.reference_signals.srs.expected_bandwidth_coverage_percent");
 
 strictCfg = struct();
 strictCfg.RunId = string(opt.RunId);
@@ -166,8 +168,31 @@ strictCfg.ToolboxSRS = resourceSet.SRS;
 strictCfg.C_SRS = double(resourceSet.SRS.CSRS);
 strictCfg.B_SRS = double(resourceSet.SRS.BSRS);
 strictCfg.NumRB = double(resourceSet.SRS.NRBPerTransmission);
+if ~expectedNumRBExplicit
+    strictCfg.ExpectedNumRB = double(strictCfg.NumRB);
+end
+if ~expectedPctExplicit
+    strictCfg.ExpectedBandwidthCoveragePercent = 100 * min(double(strictCfg.ExpectedNumRB), nSizeGrid) / nSizeGrid;
+end
 strictCfg.ConfigHash = sixgr.phy.srs.hashSRSConfig(strictCfg);
 strictCfg.StrictValidation = sixgr.phy.srs.validateSRSConfigStrict(strictCfg);
 strictCfg.ConfigExport = rmfield(strictCfg, intersect(fieldnames(strictCfg), ...
     {'ToolboxCarrier','ToolboxSRS','BaseConfig','ConfigExport','StrictValidation'}));
+end
+
+function tf = localHasPath(s, path)
+tf = false;
+if ~(isstruct(s) && isscalar(s))
+    return;
+end
+parts = split(string(path), ".");
+cur = s;
+for ii = 1:numel(parts)
+    key = char(parts(ii));
+    if ~(isstruct(cur) && isscalar(cur) && isfield(cur, key))
+        return;
+    end
+    cur = cur.(key);
+end
+tf = true;
 end

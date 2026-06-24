@@ -57,6 +57,9 @@ try
     if logical(srsCfg.FullCarrierSoundingRequired) && ~logical(cov.FullCarrierClaimValid)
         reasons(end+1, 1) = "full_carrier_sounding_required_but_coverage_incomplete"; %#ok<AGROW>
     end
+    if lower(string(srsCfg.CoverageRequirement)) == "configured_band" && ~logical(cov.ConfiguredBandClaimValid)
+        reasons(end+1, 1) = "configured_band_sounding_required_but_coverage_incomplete"; %#ok<AGROW>
+    end
 catch ME
     reasons(end+1, 1) = "srs_resource_mapping_failed:" + string(ME.identifier); %#ok<AGROW>
 end

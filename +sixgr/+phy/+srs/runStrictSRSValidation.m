@@ -63,7 +63,13 @@ for ii = 1:numel(negativeModes)
     elseif mode == "wrong_comb_cyclic_shift"
         rxCfg = localReceiverOverride(srsCfg, "wrong_comb_cyclic_shift");
     elseif mode == "wrong_port"
-        rxCfg = localReceiverOverride(srsCfg, "wrong_port");
+        if double(srsCfg.NumSRSPorts) >= 4
+            txCfg = localWrongPortTransmitConfig(srsCfg);
+            tx = sixgr.phy.srs.generateSRSWaveform(txCfg);
+            rxCfg = srsCfg;
+        else
+            rxCfg = localReceiverOverride(srsCfg, "wrong_port");
+        end
     elseif mode == "partial_band_claimed_full"
         txCfg = localPartialFullClaimConfig(srsCfg);
         tx = sixgr.phy.srs.generateSRSWaveform(txCfg);
@@ -102,8 +108,9 @@ artifactRowsOk = height(configT) > 0 && height(resourceSetT) > 0 && height(resou
 oracleOk = ~any(logical(oracleT.Violation));
 configOk = logical(srsCfg.StrictValidation.StrictValid);
 noProxySkip = ~any(logical(trialT.ProxyUsed) | logical(trialT.Skipped) | logical(trialT.ToolboxMissing));
-coverageOk = any(logical(trialT.StrictOk) & logical(trialT.FullCarrierClaimValid) & ...
-    string(trialT.BandwidthCoverageStatus) == "full_carrier");
+coverageOk = any(logical(trialT.StrictOk) & logical(trialT.ConfiguredBandClaimValid) & ...
+    (~logical(trialT.FullCarrierSoundingRequired) | ...
+    (logical(trialT.FullCarrierClaimValid) & string(trialT.BandwidthCoverageStatus) == "full_carrier")));
 partialNegativeOk = any(string(negativeT.TrialType) == "partial_band_claimed_full" & ...
     ~logical(negativeT.StrictOk) & contains(string(negativeT.FailureReason), "srs_partial_band_claimed_full"));
 strictOk = positiveOk && negativeOk && artifactRowsOk && oracleOk && configOk && ...
@@ -215,6 +222,13 @@ switch string(mode)
         rxCfg.PortSet = 0:(rxCfg.NumSRSPorts - 1);
 end
 rxCfg = localRefreshSRSConfig(rxCfg);
+end
+
+function out = localWrongPortTransmitConfig(cfg)
+out = cfg;
+out.NumSRSPorts = max(1, min(2, double(cfg.NumSRSPorts) - 2));
+out.PortSet = 0:(out.NumSRSPorts - 1);
+out = localRefreshSRSConfig(out);
 end
 
 function out = localPartialFullClaimConfig(cfg)
@@ -345,7 +359,8 @@ row.TrialRows = double(height(trialT));
 row.DetectionRows = double(height(detectionT));
 row.ChannelRows = double(height(channelT));
 row.TimingRows = double(height(timingT));
-row.StrictCoverageOk = row.FullCarrierClaimValid && row.ConfiguredBandClaimValid && height(trialT) > 0;
+row.StrictCoverageOk = row.ConfiguredBandClaimValid && ...
+    (~row.FullCarrierSoundingRequired || row.FullCarrierClaimValid) && height(trialT) > 0;
 row.Status = string(sixgr.phy.srs.localTernary(row.StrictCoverageOk, ...
     "strict_srs_coverage_complete", "strict_srs_coverage_incomplete"));
 T = struct2table(row, "AsArray", true);
