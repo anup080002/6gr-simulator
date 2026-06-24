@@ -1,0 +1,20 @@
+dut:
+  schema_version: 1
+  master_scenario: ../scenarios/master_scenaio_all_file.yaml
+  source_of_truth: canonical_control
+  research_class: baseline_benchmark
+  run_contract: Apply this DUT overlay to the resolved master scenario for block-focused validation.
+  duplication_policy: Per-DUT YAMLs list only block-specific paths and overrides; do not copy the full master scenario.
+  output_policy: Write DUT outputs under results/lls/dut/<dut_id> with resolved config snapshots.
+  required_artifacts:
+    - meta/resolved_config.yaml
+    - meta/schema_validation_report.json
+    - reports/csv/scenario_summary.csv
+    - reports/csv/runtime_operating_mode.csv
+  common_runtime_overrides:
+    - path: output.emit_placeholder_artifacts
+      value: false
+    - path: logging.strict_validation
+      value: true
+    - path: run_control.execution_mode
+      value: LLS

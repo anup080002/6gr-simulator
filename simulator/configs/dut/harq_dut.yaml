@@ -1,0 +1,17 @@
+inherits: dut_base.yaml
+dut:
+  id: harq_dut
+  title: HARQ process and combining DUT
+  block: harq
+  direction: DL_UL
+  target_cases: [harq, dl, ul]
+  tx_chain: [rv_selection, ndi_toggle, retransmission_payload_build]
+  rx_chain: [soft_buffer_combine, ack_nack_feedback, retransmission_state_update]
+  config_paths:
+    - canonical_control.harq
+    - harq
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [harq, dl, ul]
+    - path: harq.enabled
+      value: true

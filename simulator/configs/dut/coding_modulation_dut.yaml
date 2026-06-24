@@ -1,0 +1,19 @@
+inherits: dut_base.yaml
+dut:
+  id: coding_modulation_dut
+  title: Coding, rate-matching, modulation, and demapping DUT
+  block: coding_modulation
+  direction: DL_UL
+  target_cases: [dl, ul]
+  tx_chain: [crc_attach, segmentation, ldpc_polar_encode, rate_match, interleave, qam_map]
+  rx_chain: [qam_demapper, deinterleave, rate_recover, decoder, crc_check]
+  config_paths:
+    - canonical_control.coding
+    - canonical_control.modulation
+    - channel_coding
+    - modulation_and_mapping
+  runtime_overrides:
+    - path: coding.data_code_type
+      value: LDPC
+    - path: coding.control_code_type
+      value: Polar

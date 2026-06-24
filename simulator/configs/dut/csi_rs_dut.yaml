@@ -1,0 +1,20 @@
+inherits: dut_base.yaml
+dut:
+  id: csi_rs_dut
+  title: NZP CSI-RS and CSI reporting DUT
+  block: csi_rs
+  direction: DL
+  target_cases: [csi_rs]
+  tx_chain: [csi_rs_sequence_generation, csi_rs_resource_mapping, ofdm_modulation]
+  rx_chain: [csi_rs_measurement, cqi_pmi_ri_reporting]
+  config_paths:
+    - canonical_control.reference_signals.csi_rs_enabled
+    - reference_signals.nzp_csi_rs
+    - csi_acquisition_and_reporting
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [csi_rs]
+    - path: reference_signals.csi_rs_enabled
+      value: true
+    - path: reference_signals.nzp_csi_rs.enabled
+      value: true

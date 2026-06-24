@@ -1,0 +1,18 @@
+inherits: dut_base.yaml
+dut:
+  id: ptrs_dut
+  title: PTRS phase-tracking DUT
+  block: ptrs
+  direction: DL_UL
+  target_cases: [dl, ul]
+  tx_chain: [ptrs_sequence_generation, ptrs_resource_mapping]
+  rx_chain: [phase_tracking, cpe_correction]
+  config_paths:
+    - canonical_control.reference_signals.ptrs_enabled
+    - reference_signals.ptrs
+    - impairments.phase_noise
+  runtime_overrides:
+    - path: reference_signals.ptrs.enabled
+      value: true
+    - path: reference_signals.ptrs_enabled
+      value: true

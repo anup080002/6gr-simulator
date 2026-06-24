@@ -1,0 +1,21 @@
+inherits: dut_base.yaml
+dut:
+  id: pdsch_dut
+  title: PDSCH data-channel DUT
+  block: pdsch
+  direction: DL
+  target_cases: [pdsch, dl]
+  tx_chain: [tb_crc, ldpc_encode, rate_match, qam_map, layer_map, precoding, pdsch_dmrs_tx, ofdm_modulation]
+  rx_chain: [channel_estimate, equalize, llr_demapper, rate_recover, ldpc_decode, crc_check]
+  config_paths:
+    - canonical_control.coding
+    - canonical_control.modulation
+    - canonical_control.mimo
+    - canonical_control.reference_signals
+    - pdsch
+    - pdsch6gr
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [pdsch, dl]
+    - path: pdsch.enabled
+      value: true

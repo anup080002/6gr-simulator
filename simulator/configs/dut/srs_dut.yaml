@@ -1,0 +1,21 @@
+inherits: dut_base.yaml
+dut:
+  id: srs_dut
+  title: SRS uplink sounding DUT
+  block: srs
+  direction: UL
+  target_cases: [srs]
+  tx_chain: [srs_sequence_generation, srs_resource_mapping, ofdm_modulation]
+  rx_chain: [srs_channel_estimate, ul_ri_tpmi_estimate, freshness_gating]
+  config_paths:
+    - canonical_control.reference_signals.srs_enabled
+    - canonical_control.reference_signals.srs_periodicity_ms
+    - reference_signals.srs
+    - control_gating.srs_required
+  runtime_overrides:
+    - path: scenario.runner_profile
+      value: srs_strict_validation
+    - path: scenario.target_cases
+      value: [srs]
+    - path: reference_signals.srs.enabled
+      value: true

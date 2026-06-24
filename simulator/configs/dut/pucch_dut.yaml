@@ -1,0 +1,19 @@
+inherits: dut_base.yaml
+dut:
+  id: pucch_dut
+  title: PUCCH UCI feedback DUT
+  block: pucch
+  direction: UL
+  target_cases: [pucch]
+  tx_chain: [uci_payload_build, pucch_format_map, pucch_dmrs_tx, ofdm_modulation]
+  rx_chain: [pucch_channel_estimate, uci_decode, harq_ack_sr_csi_extract]
+  config_paths:
+    - canonical_control.control.pucch_enabled
+    - canonical_control.control.pucch_format
+    - pucch
+    - control.pucch_enabled
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [pucch]
+    - path: pucch.enabled
+      value: true

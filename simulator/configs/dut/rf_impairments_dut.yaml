@@ -1,0 +1,19 @@
+inherits: dut_base.yaml
+dut:
+  id: rf_impairments_dut
+  title: RF impairment injection and compensation DUT
+  block: rf_impairments
+  direction: DL_UL
+  target_cases: [channel_rf]
+  tx_chain: [cfo_injection, phase_noise_injection, iq_imbalance_injection, pa_model]
+  rx_chain: [cfo_correction, phase_tracking, impairment_kpi_measurement]
+  config_paths:
+    - canonical_control.impairments
+    - impairments
+    - rf_hardware
+    - power_and_rf_frontend
+  runtime_overrides:
+    - path: scenario.runner_profile
+      value: channel_rf_strict_validation
+    - path: scenario.target_cases
+      value: [channel_rf]

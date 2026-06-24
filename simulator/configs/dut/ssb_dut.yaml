@@ -1,0 +1,23 @@
+inherits: dut_base.yaml
+dut:
+  id: ssb_dut
+  title: SSB transmit and detection DUT
+  block: ssb
+  direction: DL
+  target_cases: [ssb]
+  tx_chain: [pss_tx, sss_tx, pbch_tx, pbch_dmrs_tx, ssb_grid_mapping, ofdm_modulation]
+  rx_chain: [ssb_sync, pss_detect, sss_detect, pbch_demod]
+  config_paths:
+    - canonical_control.reference_signals.ssb_enabled
+    - signals_and_channels_common.ssb
+    - signals_and_channels_common.pss
+    - signals_and_channels_common.sss
+    - signals_and_channels_common.pbch
+    - signals_and_channels_common.pbch_dmrs
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [ssb, pbch]
+    - path: reference_signals.ssb_enabled
+      value: true
+    - path: reference_signals.pbch_enabled
+      value: true

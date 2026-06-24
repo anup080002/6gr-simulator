@@ -1,0 +1,20 @@
+inherits: dut_base.yaml
+dut:
+  id: channel_estimation_dut
+  title: Channel-estimation and equalization DUT
+  block: channel_estimation
+  direction: DL_UL
+  target_cases: [dmrs, csi_rs, srs]
+  tx_chain: [reference_signal_mapping]
+  rx_chain: [reference_signal_extraction, channel_estimate, interpolation, equalization]
+  config_paths:
+    - canonical_control.receiver
+    - receiver_algorithms.channel_estimator
+    - receiver_algorithms.interpolation_method
+    - channel_estimation
+    - equalization
+  runtime_overrides:
+    - path: receiver_algorithms.channel_estimator
+      value: realistic_baseline
+    - path: receiver_algorithms.equalizer
+      value: mmse

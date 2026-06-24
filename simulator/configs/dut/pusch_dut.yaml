@@ -1,0 +1,20 @@
+inherits: dut_base.yaml
+dut:
+  id: pusch_dut
+  title: PUSCH data-channel DUT
+  block: pusch
+  direction: UL
+  target_cases: [pusch, ul]
+  tx_chain: [ulsch_crc, ldpc_encode, transform_precoding_optional, qam_map, pusch_dmrs_tx, ofdm_modulation]
+  rx_chain: [ul_channel_estimate, equalize, llr_demapper, rate_recover, ldpc_decode, crc_check]
+  config_paths:
+    - canonical_control.radio.ul_waveform
+    - canonical_control.coding
+    - canonical_control.modulation
+    - canonical_control.reference_signals
+    - pusch
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [pusch, ul]
+    - path: pusch.enabled
+      value: true

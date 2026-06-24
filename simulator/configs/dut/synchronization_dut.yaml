@@ -1,0 +1,18 @@
+inherits: dut_base.yaml
+dut:
+  id: synchronization_dut
+  title: Synchronization and tracking DUT
+  block: synchronization
+  direction: DL_UL
+  target_cases: [ssb, trs]
+  tx_chain: [ssb_tx, trs_tx]
+  rx_chain: [cell_search, timing_sync, frequency_sync, tracking_loop]
+  config_paths:
+    - synchronization_and_tracking
+    - synchronization
+    - canonical_control.reference_signals.trs_enabled
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [ssb, trs]
+    - path: reference_signals.trs.enabled
+      value: true

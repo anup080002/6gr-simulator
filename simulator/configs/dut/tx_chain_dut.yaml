@@ -1,0 +1,27 @@
+inherits: dut_base.yaml
+dut:
+  id: tx_chain_dut
+  title: Full PHY transmit-chain DUT
+  block: tx_chain
+  direction: DL_UL
+  target_cases: [bundle, dl, ul]
+  tx_chain:
+    - waveform_grid_build
+    - coding
+    - modulation_mapping
+    - layer_mapping_precoding
+    - reference_signal_mapping
+    - ofdm_modulation
+  config_paths:
+    - canonical_control.radio
+    - canonical_control.coding
+    - canonical_control.modulation
+    - canonical_control.mimo
+    - canonical_control.reference_signals
+    - canonical_control.control
+    - canonical_control.random_access
+  runtime_overrides:
+    - path: scenario.runner_profile
+      value: waveform_bundle
+    - path: scenario.target_cases
+      value: [bundle, dl, ul]

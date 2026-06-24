@@ -1,0 +1,20 @@
+inherits: dut_base.yaml
+dut:
+  id: rach_dut
+  title: PRACH/RACH random-access DUT
+  block: prach
+  direction: UL
+  target_cases: [prach]
+  tx_chain: [prach_preamble_generation, prach_resource_mapping, prach_waveform_tx]
+  rx_chain: [prach_detector, timing_advance_estimation, false_alarm_miss_detection_kpi]
+  config_paths:
+    - canonical_control.random_access
+    - random_access
+    - prach
+  runtime_overrides:
+    - path: scenario.runner_profile
+      value: prach_detection
+    - path: scenario.target_cases
+      value: [prach]
+    - path: random_access.enabled
+      value: true

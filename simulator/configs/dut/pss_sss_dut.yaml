@@ -1,0 +1,21 @@
+inherits: dut_base.yaml
+dut:
+  id: pss_sss_dut
+  title: PSS and SSS synchronization DUT
+  block: pss_sss
+  direction: DL
+  target_cases: [ssb]
+  tx_chain: [pss_tx, sss_tx, ssb_grid_mapping]
+  rx_chain: [pss_detect, sss_detect, cell_id_resolution]
+  config_paths:
+    - signals_and_channels_common.pss
+    - signals_and_channels_common.sss
+    - synchronization_and_tracking.cell_search_policy
+    - synchronization_and_tracking.pss_sss_detection_policy
+  runtime_overrides:
+    - path: scenario.target_cases
+      value: [ssb]
+    - path: signals_and_channels_common.pss.enable_flag
+      value: true
+    - path: signals_and_channels_common.sss.enable_flag
+      value: true

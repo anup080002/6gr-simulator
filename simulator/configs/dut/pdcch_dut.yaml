@@ -1,0 +1,22 @@
+inherits: dut_base.yaml
+dut:
+  id: pdcch_dut
+  title: PDCCH control-channel DUT
+  block: pdcch
+  direction: DL
+  target_cases: [pdcch]
+  tx_chain: [dci_build, polar_encode, pdcch_dmrs_tx, coreset_mapping, ofdm_modulation]
+  rx_chain: [blind_decode, pdcch_channel_estimate, dci_decode]
+  config_paths:
+    - canonical_control.control.pdcch_enabled
+    - canonical_control.control.aggregation_levels
+    - canonical_control.control.coreset_frequency_resources
+    - pdcch
+    - control
+  runtime_overrides:
+    - path: scenario.runner_profile
+      value: pdcch_strict_validation
+    - path: scenario.target_cases
+      value: [pdcch]
+    - path: pdcch.enabled
+      value: true

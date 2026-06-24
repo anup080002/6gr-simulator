@@ -1,0 +1,21 @@
+inherits: dut_base.yaml
+dut:
+  id: trs_dut
+  title: TRS tracking-reference DUT
+  block: trs
+  direction: DL
+  target_cases: [trs]
+  tx_chain: [trs_sequence_generation, trs_resource_mapping, ofdm_modulation]
+  rx_chain: [time_frequency_tracking, doppler_tracking, freshness_gating]
+  config_paths:
+    - canonical_control.reference_signals.trs_enabled
+    - canonical_control.reference_signals.trs_periodicity_ms
+    - reference_signals.trs
+    - control_gating.trs_required
+  runtime_overrides:
+    - path: scenario.runner_profile
+      value: trs_strict_validation
+    - path: scenario.target_cases
+      value: [trs]
+    - path: reference_signals.trs.enabled
+      value: true

@@ -1,0 +1,20 @@
+inherits: dut_base.yaml
+dut:
+  id: mimo_beamforming_dut
+  title: MIMO beamforming and precoding DUT
+  block: mimo_beamforming
+  direction: DL_UL
+  target_cases: [dl, ul, csi_rs, srs]
+  tx_chain: [layer_mapping, precoder_selection, beam_weight_application]
+  rx_chain: [beam_measurement, csi_feedback, beam_update]
+  config_paths:
+    - canonical_control.mimo
+    - canonical_control.antenna
+    - mimo
+    - mimo_and_beam_management
+    - system.beam
+  runtime_overrides:
+    - path: mimo.beam_sweep_enabled
+      value: true
+    - path: system.beam.enable
+      value: true

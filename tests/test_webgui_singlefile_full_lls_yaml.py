@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
-SCENARIO = "lls_webgui_2cell_singlefile_full_lls_4ghz_100mhz.yaml"
+SCENARIO = "master_scenaio_all_file.yaml"
 SCENARIO_PATH = REPO_ROOT / "simulator" / "configs" / "scenarios" / SCENARIO
 
 
@@ -61,8 +61,8 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
 
     assert SCENARIO in dash.list_scenarios()
     resolved, chain = dash.load_resolved_config_payload(SCENARIO)
-    assert chain == ["simulator/configs/scenarios/lls_webgui_2cell_singlefile_full_lls_4ghz_100mhz.yaml"]
-    assert dash.path_get(resolved, "meta.scenario_id") == "lls_webgui_2cell_singlefile_full_lls_4ghz_100mhz"
+    assert chain == ["simulator/configs/scenarios/master_scenaio_all_file.yaml"]
+    assert dash.path_get(resolved, "meta.scenario_id") == "master_scenaio_all_file"
     assert dash.path_get(resolved, "scenario.runner_profile") == "waveform_bundle"
     assert dash.path_get(resolved, "deployment_topology.num_cells") == 2
     assert dash.path_get(resolved, "deployment_topology.num_trps") == 2
