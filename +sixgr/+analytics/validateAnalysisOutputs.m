@@ -18,6 +18,12 @@ expected = [
     "reports/csv/tbs_reference_comparison.csv"
     "reports/csv/shannon_capacity_gap.csv"
     "reports/csv/trs_doppler_error_trace.csv"
+    "reports/csv/mobility_adequacy_report.csv"
+    "air_interface/csv/harq_combining_gain.csv"
+    "reports/csv/runtime_call_graph.csv"
+    "reports/json/scenario_manifest.json"
+    "reports/html/access_delay_cdf.html"
+    "reports/html/harq_combining_gain.html"
     "reports/html/master_dashboard.html"
     ];
 rows = repmat(struct("Artifact", "", "Exists", false, "RowCount", NaN, "ColumnCount", NaN, "Status", ""), numel(expected), 1);

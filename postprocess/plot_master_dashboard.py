@@ -239,6 +239,58 @@ def build_energy_vs_throughput() -> None:
     write_page("energy_vs_throughput.html", "Energy vs Throughput", body, "reports/csv/energy_vs_throughput.csv")
 
 
+def build_access_delay_cdf() -> None:
+    source = "control/csv/initial_access_lifecycle_trace.csv"
+    rows = read_csv(CONTROL_CSV / "initial_access_lifecycle_trace.csv")
+    points: list[dict[str, str]] = []
+    if rows:
+        delays = []
+        for row in rows:
+            for col in ("ProcedureDelay_ms", "AccessDelay_ms", "Latency_ms", "Delay_ms", "Duration_ms"):
+                val = fnum(row.get(col, ""))
+                if math.isfinite(val):
+                    delays.append(val)
+                    break
+        delays.sort()
+        n = len(delays)
+        points = [
+            {"delay_ms": f"{delay:.9g}", "cdf_probability": f"{(i + 1) / n:.9g}", "source_artifact": source}
+            for i, delay in enumerate(delays)
+        ]
+    if not points:
+        source = "reports/csv/latency_cdf_plot.csv"
+        latency_cdf = read_csv(REPORT_CSV / "latency_cdf_plot.csv")
+        points = [
+            {
+                "delay_ms": row.get("latency_ms", ""),
+                "cdf_probability": row.get("cdf_probability", ""),
+                "source_artifact": source,
+            }
+            for row in latency_cdf
+        ]
+    body = "<div class='cards'>" + summary_cards(points) + "</div>"
+    body += "<section class='panel'><h2>Access Delay CDF</h2>" + svg_points(points, "delay_ms", "cdf_probability", "source_artifact") + "</section>"
+    body += "<section class='panel'><h2>Source Rows</h2>" + table_html(rows if rows else points) + "</section>"
+    write_page("access_delay_cdf.html", "Access Delay CDF", body, source)
+
+
+def build_harq_combining_gain() -> None:
+    rows = read_csv(AIR_CSV / "harq_combining_gain.csv")
+    values = {}
+    if rows:
+        row = rows[0]
+        values = {
+            "CombiningApplied": fnum(row.get("CombiningAppliedCount", "")),
+            "RecoveredByCombining": fnum(row.get("CombinedRecoveryCount", "")),
+            "MeanGain_dB": fnum(row.get("MeanLLRCombiningGain_dB", row.get("CombiningGain_dB", ""))),
+            "RetxAttempts": fnum(row.get("RetransmissionAttempts", "")),
+        }
+    body = "<div class='cards'>" + summary_cards(rows) + "</div>"
+    body += "<section class='panel'><h2>HARQ Combining Evidence</h2>" + svg_bar(values) + "</section>"
+    body += "<section class='panel'><h2>Source Rows</h2>" + table_html(rows) + "</section>"
+    write_page("harq_combining_gain.html", "HARQ Combining Gain", body, "air_interface/csv/harq_combining_gain.csv")
+
+
 def build_trs_tracking_error() -> None:
     rows = read_csv(REPORT_CSV / "trs_doppler_error_trace.csv")
     body = "<div class='cards'>" + summary_cards(rows) + "</div>"
@@ -362,6 +414,8 @@ def assemble_dashboard() -> None:
         ("Throughput vs SNR", "throughput_vs_snr.html"),
         ("NMSE vs SNR", "nmse_vs_snr.html"),
         ("Energy", "energy_vs_throughput.html"),
+        ("Access Delay", "access_delay_cdf.html"),
+        ("HARQ Gain", "harq_combining_gain.html"),
         ("TRS Tracking", "trs_tracking_error.html"),
         ("UL Beams", "ul_beam_accuracy.html"),
         ("Shannon Gap", "shannon_gap.html"),
@@ -417,6 +471,8 @@ def main() -> int:
     build_throughput_vs_snr()
     build_nmse_vs_snr()
     build_energy_vs_throughput()
+    build_access_delay_cdf()
+    build_harq_combining_gain()
     build_trs_tracking_error()
     build_ul_beam_accuracy()
     build_shannon_gap()

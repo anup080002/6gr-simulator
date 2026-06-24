@@ -1820,7 +1820,7 @@ try
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "environment.json"), environmentSummary);
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Writing scenario manifest.");
-    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localWriteScenarioManifest(layout, manifest);
     localDBLog("INFO", "Exporting initial config-ownership and hardcoding audit artifacts.");
     configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
     preTruthScenarioStatus = scenarioStatus;
@@ -1836,7 +1836,7 @@ try
     end
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Rewriting scenario manifest with final truth-gated status.");
-    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localWriteScenarioManifest(layout, manifest);
     try
         if logical(sixgr.util.structGet(profilerCfg, "Enabled", false)) && ...
                 logical(sixgr.util.structGet(profilerState, "OwnsSession", false))
@@ -1882,11 +1882,11 @@ try
     end
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Rewriting scenario manifest with final artifact truth-gated status.");
-    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localWriteScenarioManifest(layout, manifest);
     truthGatedCompletionPublished = true;
     localDBLog("INFO", "Writing artifact manifest.");
     manifest.ArtifactManifestPath = char(localWriteArtifactManifest(runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
-    sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+    localWriteScenarioManifest(layout, manifest);
     localDBLog("INFO", "Writing scenario markdown report.");
     localWriteMarkdownReport(fullfile(layout.ReportDir, "scenario_report.md"), scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus);
     localDBLog("INFO", "Materializing canonical browser contract artifacts for the completed run.");
@@ -2441,11 +2441,16 @@ end
 function manifest = localBuildManifest(scfg, runFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus)
 includeGitHash = logical(scfg.get("logging.include_git_hash"));
 [codeVersion, codeDetail] = localDetectCodeVersion(includeGitHash);
+gitInfo = localDetectGitProvenance(includeGitHash);
+[configOverlay, configOverlayPath] = localDetectConfigOverlay(scfg);
 manifest = struct();
 manifest.GeneratedUTC = localUTCStamp();
 manifest.ScenarioID = char(string(scfg.ScenarioID));
 manifest.ConfigHash = char(string(scfg.ConfigHash));
 manifest.ConfigPath = char(string(scfg.ConfigPath));
+manifest.ScenarioYAML = char(string(scfg.ConfigPath));
+manifest.ConfigOverlay = char(string(configOverlay));
+manifest.ConfigOverlayPath = char(string(configOverlayPath));
 manifest.RunFolder = char(string(runFolder));
 manifest.SourceFiles = cellstr(localPortablePath(scfg.SourceFiles));
 manifest.SourceFileCount = numel(scfg.SourceFiles);
@@ -2483,6 +2488,12 @@ manifest.MaxNumCompThreads = double(sixgr.util.structGet(runtimeSummary, "MaxNum
 manifest.IncludeGitHash = includeGitHash;
 manifest.CodeVersion = char(string(codeVersion));
 manifest.CodeDetail = char(string(codeDetail));
+manifest.GitCommit = char(string(gitInfo.Commit));
+manifest.GitBranch = char(string(gitInfo.Branch));
+manifest.GitDirty = logical(gitInfo.Dirty);
+manifest.GitStatusSource = char(string(gitInfo.StatusSource));
+manifest.MetaManifestPath = "meta/scenario_manifest.json";
+manifest.ProvenanceManifestPath = "reports/json/scenario_manifest.json";
 manifest.ExecutionStartedUTC = char(string(sixgr.util.structGet(runtimeSummary, "StartedUTC", "")));
 manifest.ExecutionCompletedUTC = char(string(sixgr.util.structGet(runtimeSummary, "CompletedUTC", "")));
 manifest.ElapsedSeconds = double(sixgr.util.structGet(runtimeSummary, "ElapsedSeconds", NaN));
@@ -2528,6 +2539,55 @@ manifest.RuntimeTruthContractFailures = cellstr(string(scenarioStatus.RuntimeTru
 manifest.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true));
 manifest.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0));
 manifest.VisualArtifactIntegrityFailures = cellstr(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1))));
+end
+
+function localWriteScenarioManifest(layout, manifest)
+sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+reportJsonDir = fullfile(layout.ReportDir, "json");
+sixgr.util.ensureFolder(reportJsonDir);
+sixgr.util.jsonWrite(fullfile(reportJsonDir, "scenario_manifest.json"), manifest);
+end
+
+function gitInfo = localDetectGitProvenance(includeGitHash)
+if ~includeGitHash
+    gitInfo = struct("Commit", "git_hash_omitted", "Branch", "git_hash_omitted", ...
+        "Dirty", false, "StatusSource", "git_hash_omitted_by_config");
+    return;
+end
+repoRoot = localRepoRoot();
+gitInfo = struct("Commit", "unavailable", "Branch", "unavailable", ...
+    "Dirty", false, "StatusSource", "git_unavailable");
+[s1, out1] = system(sprintf('git -C "%s" rev-parse HEAD', repoRoot));
+if s1 ~= 0
+    return;
+end
+gitInfo.Commit = string(strtrim(out1));
+[s2, out2] = system(sprintf('git -C "%s" rev-parse --abbrev-ref HEAD', repoRoot));
+if s2 == 0
+    gitInfo.Branch = string(strtrim(out2));
+end
+[s3, out3] = system(sprintf('git -C "%s" status --porcelain', repoRoot));
+if s3 == 0
+    gitInfo.Dirty = strlength(strtrim(string(out3))) > 0;
+    gitInfo.StatusSource = "git_status_porcelain";
+else
+    gitInfo.StatusSource = "git_commit_only";
+end
+end
+
+function [overlay, overlayPath] = localDetectConfigOverlay(scfg)
+overlay = "none_detected";
+overlayPath = "";
+paths = [string(scfg.ConfigPath); string(scfg.SourceFiles(:))];
+for i = 1:numel(paths)
+    p = paths(i);
+    token = lower(p);
+    if strlength(strtrim(p)) > 0 && (contains(token, "overlay") || contains(token, "browser_runtime"))
+        overlay = p;
+        overlayPath = p;
+        return;
+    end
+end
 end
 
 function txt = localUTCStamp()
@@ -3219,7 +3279,7 @@ end
 function localEnsureScenarioDirs(layout)
 dirs = { ...
     layout.MetaDir, layout.LogDir, layout.ReportDir, layout.ReportCSVDir, layout.ReportMATDir, ...
-    layout.ReportImageDir, layout.AirInterfaceDir, layout.AirInterfaceCSVDir, layout.AirInterfaceMATDir, ...
+    layout.ReportImageDir, fullfile(layout.ReportDir, "json"), layout.AirInterfaceDir, layout.AirInterfaceCSVDir, layout.AirInterfaceMATDir, ...
     layout.AirInterfaceImageDir, layout.ControlDir, layout.ControlCSVDir, layout.ControlImageDir, ...
     layout.BeamformingDir, layout.BeamformingCSVDir, layout.BeamformingImageDir};
 for i = 1:numel(dirs)

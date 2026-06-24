@@ -17,28 +17,38 @@ end
 fprintf("\n=== 6GR Simulator v2 - Run Analysis ===\n");
 fprintf("Run dir: %s\n\n", runDir);
 
-fprintf("[1/5] Loading completed-run trial data...\n");
+fprintf("[1/6] Loading completed-run trial data...\n");
 trialData = sixgr.analytics.loadAllTrialData(runDir);
 
-fprintf("[2/5] Building derived analysis CSV tables...\n");
+fprintf("[2/6] Building derived analysis CSV tables...\n");
 physicsT = sixgr.analytics.buildPhysicsAuditTable(runDir, scenarioCfg, trialData);
 analyticsReport = sixgr.analytics.buildScenarioAnalyticsTables(runDir, trialData, scenarioCfg);
 
-fprintf("[3/5] Exporting live instrumented traces if enabled...\n");
+fprintf("[3/6] Building Prompt-8 adequacy/provenance artifacts...\n");
+mobilityReport = sixgr.analytics.buildMobilityAdequacyReport(scenarioCfg, trialData.dl, runDir);
+harqReport = sixgr.analytics.measureHARQCombiningGain(trialData.dl, runDir);
+callGraphReport = sixgr.analytics.buildRuntimeCallGraph(runDir);
+provenanceManifest = sixgr.truth.buildProvenanceManifest(scenarioCfg, runDir);
+
+fprintf("[4/6] Exporting live instrumented traces if enabled...\n");
 sixgr.analytics.CallFlowInstrumentor.getInstance().exportCSV();
 sixgr.analytics.MessageLogger.getInstance().exportCSV();
 sixgr.analytics.AlgorithmAuditLogger.getInstance().exportCSV();
 
-fprintf("[4/5] Running Python visualization pipeline...\n");
+fprintf("[5/6] Running Python visualization pipeline...\n");
 pythonReports = localRunPostprocessors(runDir);
 
-fprintf("[5/5] Validating analysis outputs...\n");
+fprintf("[6/6] Validating analysis outputs...\n");
 validation = sixgr.analytics.validateAnalysisOutputs(runDir);
 
 report = struct( ...
     "RunDir", string(runDir), ...
     "PhysicsAuditRows", height(physicsT), ...
     "Analytics", analyticsReport, ...
+    "MobilityAdequacy", mobilityReport, ...
+    "HARQCombining", harqReport, ...
+    "RuntimeCallGraph", callGraphReport, ...
+    "ProvenanceManifest", provenanceManifest, ...
     "PythonReports", pythonReports, ...
     "Validation", validation);
 

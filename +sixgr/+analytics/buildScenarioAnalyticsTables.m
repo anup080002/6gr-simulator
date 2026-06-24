@@ -303,6 +303,15 @@ end
 function T = localBuildSNRSweep(trialData)
 allRows = [localSweepRows(trialData.dl, "DL"); localSweepRows(trialData.ul, "UL")];
 T = localStructRowsToTable(allRows, localSNRSweepVars());
+if height(T) > 0 && any(string(T.Properties.VariableNames) == "SNR_dB")
+    snr = localToDouble(T.SNR_dB);
+    if numel(unique(snr(isfinite(snr)))) > 1
+        T.Status(:) = "controlled_snr_sweep";
+        if any(string(T.Properties.VariableNames) == "truth_status")
+            T.truth_status(:) = "controlled_snr_sweep";
+        end
+    end
+end
 end
 
 function rows = localSweepRows(Tin, direction)
@@ -317,6 +326,11 @@ for i = 1:numel(uniqueSNR)
     sub = Tin(snrVals == snr, :);
     attempts = height(sub);
     fails = localFailCount(sub);
+    [ciLow, ciHigh] = localWilsonCI(fails, attempts);
+    goodputMbps = localMean(sub, "Goodput_Mbps");
+    throughputMbps = localMean(sub, "OfferedThroughput_Mbps");
+    meanMCS = localMean(sub, ["MCS","MCSIndex"]);
+    meanLayers = localMean(sub, ["Layers","Rank"]);
     r = struct();
     r.Direction = string(direction);
     r.SNR_dB = snr;
@@ -324,11 +338,14 @@ for i = 1:numel(uniqueSNR)
     r.PassCount = localPassCount(sub);
     r.FailCount = fails;
     r.BLER = localSafeDivide(fails, attempts);
+    r.BLER_CI95_Low = ciLow;
+    r.BLER_CI95_High = ciHigh;
+    r.BLER_CI95_Width = ciHigh - ciLow;
     r.BER = localMean(sub, "RawBER");
-    r.Goodput_Mbps = localMean(sub, "Goodput_Mbps");
-    r.Throughput_Mbps = localMean(sub, "OfferedThroughput_Mbps");
-    r.MeanMCS = localMean(sub, ["MCS","MCSIndex"]);
-    r.MeanLayers = localMean(sub, ["Layers","Rank"]);
+    r.Goodput_Mbps = goodputMbps;
+    r.Throughput_Mbps = throughputMbps;
+    r.MeanMCS = meanMCS;
+    r.MeanLayers = meanLayers;
     r.MeanPostEqSINR_dB = localMean(sub, ["PostEqSINR_dB","PostEqSINRWidebanddB"]);
     r.MeanEVM_rms = localMean(sub, "EVM_rms");
     r.MeanNMSE_dB = localMean(sub, "NMSE_dB");
@@ -344,6 +361,18 @@ for i = 1:numel(uniqueSNR)
     r.SourceRows = attempts;
     r.SourceArtifact = string(direction) + "_trial_rows";
     r.Status = "single_run_operating_point";
+    r.direction = lower(string(direction));
+    r.snr_db = snr;
+    r.n_tb = attempts;
+    r.n_crc_fail = fails;
+    r.bler = r.BLER;
+    r.bler_ci_low = ciLow;
+    r.bler_ci_high = ciHigh;
+    r.goodput_mbps = goodputMbps;
+    r.throughput_mbps = throughputMbps;
+    r.mcs_index = meanMCS;
+    r.n_layers = meanLayers;
+    r.truth_status = "single_run_operating_point";
     rows{end+1, 1} = r; %#ok<AGROW>
 end
 end
@@ -375,8 +404,21 @@ energyJ = localSum(trialData.power, ["Energy_J","TotalEnergy_J","CumulativeEnerg
 if energyJ == 0
     energyJ = NaN;
 end
+dlGoodput = localMean(trialData.dl, "Goodput_Mbps");
+ulGoodput = localMean(trialData.ul, "Goodput_Mbps");
+goodputMbps = localFiniteSum([dlGoodput; ulGoodput]);
+snrDb = localFirstFinite([localMean(trialData.dl, ["SNR_dB","ConfiguredSNR_dB","AppliedAWGNSNR_dB"]); ...
+    localMean(trialData.ul, ["SNR_dB","ConfiguredSNR_dB","AppliedAWGNSNR_dB"])], NaN);
+energyPerBit = localSafeDivide(energyJ, goodBits);
 r = struct("GoodBits", goodBits, "Energy_J", energyJ, ...
-    "EnergyPerBit_J", localSafeDivide(energyJ, goodBits), ...
+    "EnergyPerBit_J", energyPerBit, ...
+    "Goodput_Mbps", goodputMbps, ...
+    "SNR_dB", snrDb, ...
+    "Direction", "DL+UL", ...
+    "goodput_mbps", goodputMbps, ...
+    "energy_per_bit_j", energyPerBit, ...
+    "energy_j", energyJ, ...
+    "successful_bits", goodBits, ...
     "EvidenceClass", "RUNTIME_DERIVED", ...
     "Status", string(localAvailabilityStatus(isfinite(energyJ), "energy_runtime_source_missing")));
 T = struct2table(r, "AsArray", true);
@@ -605,6 +647,15 @@ for i = 1:numel(values)
 end
 end
 
+function value = localFiniteSum(values)
+values = values(isfinite(values));
+if isempty(values)
+    value = NaN;
+else
+    value = sum(values);
+end
+end
+
 function y = localSafeDivide(a, b)
 if ~isfinite(a) || ~isfinite(b) || b == 0
     y = NaN;
@@ -687,6 +738,21 @@ for p = string(paths)
 end
 end
 
+function [lo, hi] = localWilsonCI(fails, total)
+if ~isfinite(total) || total <= 0
+    lo = NaN;
+    hi = NaN;
+    return;
+end
+z = 1.96;
+p = localSafeDivide(fails, total);
+den = 1 + z^2 / total;
+center = (p + z^2 / (2 * total)) / den;
+half = z * sqrt((p * (1 - p) / total) + (z^2 / (4 * total^2))) / den;
+lo = max(0, center - half);
+hi = min(1, center + half);
+end
+
 function status = localAvailabilityStatus(tf, missingReason)
 if tf
     status = "derived_from_runtime_rows";
@@ -730,9 +796,10 @@ vars = ["EventIndex","Frame","Slot","Timestamp_ms","EventType","UEIndex","RNTI",
 end
 
 function vars = localSNRSweepVars()
-vars = ["Direction","SNR_dB","TrialCount","PassCount","FailCount","BLER","BER","Goodput_Mbps","Throughput_Mbps", ...
+vars = ["Direction","SNR_dB","TrialCount","PassCount","FailCount","BLER","BLER_CI95_Low","BLER_CI95_High","BLER_CI95_Width","BER","Goodput_Mbps","Throughput_Mbps", ...
     "MeanMCS","MeanLayers","MeanPostEqSINR_dB","MeanEVM_rms","MeanNMSE_dB","MeanPAPR_dB","MeanDecoderIterations", ...
-    "MeanDecodeLatency_ms","MeanRawBER","MeanBitErrors","MeanBitsCompared","MeanPRBs","MeanTBSBits","EvidenceClass","SourceRows","SourceArtifact","Status"];
+    "MeanDecodeLatency_ms","MeanRawBER","MeanBitErrors","MeanBitsCompared","MeanPRBs","MeanTBSBits","EvidenceClass","SourceRows","SourceArtifact","Status", ...
+    "direction","snr_db","n_tb","n_crc_fail","bler","bler_ci_low","bler_ci_high","goodput_mbps","throughput_mbps","mcs_index","n_layers","truth_status"];
 end
 
 function mustBeTextScalar(x)
