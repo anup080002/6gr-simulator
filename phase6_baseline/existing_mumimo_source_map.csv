@@ -1,0 +1,7 @@
+"component","path","classification","existing_test","phase6_note"
+"pf_mu_grouping","+sixgr/+l2/+mac/SchedulerPF.m","partial scheduler lineage","tests/testSchedulerHARQStateUnblockAndLineage.m","Current PF lineage has MU fields, but Phase 6 MU-MIMO needs true shared-PRB decode and interference evidence."
+"beamformed_validation_scenario","simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml","diagnostic scenario","tests/test6GLLSMultiUserBeamforming.m","Validation scenario is not sufficient by itself for Phase 6 coupled runtime MU-MIMO acceptance."
+"srs_multiue_orthogonality","+sixgr/+phy/+srs/generateMultiUESRSGrid.m","strict helper","tests/testSRSMultiUEOrthogonality.m","Useful for UL MU-MIMO resource legality; joint PUSCH receiver is still pending."
+"dl_rzf_precoder","pending owner","incomplete","docs/phase6_advanced_phy_architecture.md","DL MU-MIMO needs measured-CSI RZF or validated alternative with total-power normalization."
+"ul_joint_receiver","pending owner","incomplete","docs/phase6_advanced_phy_architecture.md","UL MU-MIMO needs same-PRB/symbol transmission and joint MMSE-IRC or SIC decode evidence."
+"mu_candidate_dashboard","scheduler candidate artifacts","partial evidence","tests/testSchedulerHARQStateUnblockAndLineage.m","Candidate and rejection lineage must expand to SU rank-1, SU rank-2, and MU alternatives."

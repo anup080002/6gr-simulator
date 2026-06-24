@@ -1,0 +1,7 @@
+"component","path","classification","existing_test","phase6_note"
+"srs_config_from_rrc","+sixgr/+phy/+srs/buildSRSConfigFromRRC.m","partial live production helper","tests/testSRSConfigStrictValidation.m","Must be driven by decoded connected RRC for Phase 6 runtime."
+"srs_grid","+sixgr/+phy/+srs/mapSRSToULResourceGrid.m","strict helper","tests/testSRSGridGeneration.m","Covers mapping checks; connected resource-set ownership still pending."
+"srs_waveform","+sixgr/+phy/+srs/generateSRSWaveform.m","strict helper","tests/testSRSDetectionPositiveAWGN.m","Must pass through live UL channel/RF chain in coupled runtime."
+"srs_receiver","+sixgr/+phy/+srs/detectSRSFromULGrid.m","strict receiver helper","tests/testSRSOracleGuard.m","No true-channel or expected-sequence oracle may enter production receiver."
+"srs_channel_estimate","+sixgr/+phy/+srs/estimateULChannelFromSRS.m","strict receiver helper","tests/testSRSChannelEstimationPositive.m","Must carry timestamp, age, SINR/RSRP, and provenance at scheduler use."
+"ul_rank_tpmi","+sixgr/+phy/+ul/estimateSRSRITPMI.m","partial helper","tests/testLLSULSRSRITPMIEstimator.m","Rank/TPMI must be derived from received SRS and delivered through decoded DCI before rank-2 PUSCH claim."

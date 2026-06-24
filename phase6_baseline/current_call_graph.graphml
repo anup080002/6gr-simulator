@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <graph id="phase6_current_call_graph" edgedefault="directed">
+    <node id="decoded_rrc"/>
+    <node id="csirs_waveform"/>
+    <node id="ue_csi_measurement"/>
+    <node id="pucch2_csi_report"/>
+    <node id="gnb_csi_state"/>
+    <node id="srs_waveform"/>
+    <node id="gnb_srs_receiver"/>
+    <node id="mimo_scheduler"/>
+    <edge source="decoded_rrc" target="csirs_waveform"/>
+    <edge source="csirs_waveform" target="ue_csi_measurement"/>
+    <edge source="ue_csi_measurement" target="pucch2_csi_report"/>
+    <edge source="pucch2_csi_report" target="gnb_csi_state"/>
+    <edge source="decoded_rrc" target="srs_waveform"/>
+    <edge source="srs_waveform" target="gnb_srs_receiver"/>
+    <edge source="gnb_csi_state" target="mimo_scheduler"/>
+    <edge source="gnb_srs_receiver" target="mimo_scheduler"/>
+  </graph>
+</graphml>

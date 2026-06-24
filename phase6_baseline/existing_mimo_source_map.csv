@@ -1,0 +1,7 @@
+"component","path","classification","existing_test","phase6_note"
+"nr_codebook","+sixgr/+mimo/buildNRCodebook.m","partial helper","tests/testMIMOBeamCodebookAndSweep.m","Type-I single-panel coverage needs independent exhaustive rank-1/rank-2 PMI checks."
+"pmi_selection","+sixgr/+mimo/selectPMI.m","partial helper","tests/testMIMOPrecoderEvidence.m","PMI must be selected from measured CSI and logged with candidate/rejection lineage."
+"mimo_resolver","+sixgr/+mimo/resolveNominalVsEffectiveMIMO.m","strict evidence helper","tests/testMIMONominalVsEffectiveRankEvidence.m","Correctly distinguishes configured rank from effective decoded rank; Phase 6 must feed it live rank-2 rows."
+"layer_mapping","+sixgr/+phy/+mimo/layerMap.m","live production primitive","tests/testPDSCHMultiPortPrecoding.m","Rank-2 PDSCH/PUSCH must prove two actual layers and valid DM-RS resources."
+"precoder","+sixgr/+phy/+mimo/precoder.m","live production primitive","tests/testPMIPrecodingRuntime.m","Power normalization must be audited for rank changes and MU pairing."
+"mimo_detector","+sixgr/+phy/+rx/mimoDetect.m","partial receiver helper","tests/testChannelEstimatePTRSIRC.m","Joint MMSE-IRC/SIC evidence for UL MU-MIMO remains pending."

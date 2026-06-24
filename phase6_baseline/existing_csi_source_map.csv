@@ -1,0 +1,7 @@
+"component","path","classification","existing_test","phase6_note"
+"csirs_refsig","+sixgr/+phy/+refsig/csirs.m","partial live production helper","tests/testCSIRuntimeExecution.m","CSI-RS primitive exists, but Phase 6 needs decoded RRC ownership, resource sets, collision masks, and receiver-derived measurement lineage."
+"csi_payload_packing","+sixgr/+phy/+dl/packCSIFeedbackPayload.m","partial helper","tests/testCSIPayloadPackingRuntime.m","Payload packing exists, but over-air PUCCH Format 2 CSI report decode is pending."
+"csi_feedback_domain","+sixgr/+phy/+dl/CSI_Feedback.m","diagnostic or partial runtime","tests/testRuntimeMeasuredCSIFeedbackDerivation.m","Must prove gNB scheduler receives only decoded CSI report fields, not UE private state."
+"mimo_csi_feedback","+sixgr/+mimo/buildCSIFeedback.m","partial helper","tests/testMIMOBeamCodebookAndSweep.m","Needs measured CSI-RS input ownership and complete CRI/RI/PMI/CQI candidate lineage."
+"csirs_trial_schema","+sixgr/+truth/emptyCSIRSTrialTable.m","evidence schema helper","tests/testLLSBundleRuntimeEvidenceExports.m","Rows must represent receiver-observed CSI-RS evidence, not transmit resource declarations."
+"cqi_scheduler_input","+sixgr/+l2/+mac/SchedulerBase.m","live production scheduler input","tests/testLinkAdaptationDomainTruth.m","CQI provenance must be decoded CSI report or explicitly labeled non-CSI bootstrap, never future CRC."

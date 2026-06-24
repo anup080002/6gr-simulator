@@ -1,0 +1,7 @@
+"component","path","classification","existing_test","phase6_note"
+"trs_config_from_rrc","+sixgr/+phy/+trs/buildTRSConfigFromRRC.m","partial live production helper","tests/testTRSConfigStrictValidation.m","Must use decoded connected configuration and avoid treating TRS as interchangeable with CSI-RS/PTRS."
+"trs_waveform","+sixgr/+phy/+trs/generateTRSWaveform.m","strict helper","tests/testTRSGridGeneration.m","Needs live coupled runtime transmission and reception evidence for Phase 6."
+"trs_receiver","+sixgr/+phy/+trs/detectTRSResources.m","strict receiver helper","tests/testTRSDetectionPositiveAWGN.m","Tracking estimates must be receiver-derived and oracle guarded."
+"trs_tracking","+sixgr/+phy/+trs/trackTRSOverTime.m","strict helper","tests/testTRSReferenceSignalExecution.m","Phase 6 needs before/after CFO, timing, and common-phase evidence under impairments."
+"pdsch_ptrs","+sixgr/+pdsch/PDSCHPTRS.m","partial helper","tests/testChannelEstimatePTRSIRC.m","PDSCH PTRS association and before/after EVM evidence remain incomplete."
+"cpe_correction","+sixgr/+phy/+rx/correctCPEFromPTRS.m","partial receiver helper","tests/testChannelEstimatePTRSIRC.m","Receiver correction must be derived from PTRS on the same received waveform."
