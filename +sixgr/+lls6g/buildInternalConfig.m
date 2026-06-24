@@ -991,6 +991,7 @@ cfg.phy.harq.enable = logical(s.harq.enabled);
 cfg.phy.harq.nProcesses = double(s.harq.process_count);
 cfg.phy.harq.rvSequence = double(s.harq.rv_sequence);
 cfg.mac.harq.enable = logical(s.harq.enabled);
+cfg.mac.harq.numProcesses = double(s.harq.process_count);
 cfg.mac.harq.maxRetx = double(localRequireNested(s, "harq.max_retx", "harq.max_retx"));
 harqFeedbackTimingSlots = max(0, round(double(s.harq.feedback_timing_slots)));
 harqK2Slots = localNumericScalarOrNaN(localGetNested(s, "harq.k2", NaN));
@@ -1004,6 +1005,14 @@ harqK2Slots = max(0, round(double(harqK2Slots)));
 cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", double(harqFeedbackTimingSlots));
 cfg = sixgr.util.structSet(cfg, "mac.harq.k1", double(harqFeedbackTimingSlots));
 cfg = sixgr.util.structSet(cfg, "mac.harq.k2", double(harqK2Slots));
+harqRoundtripSlots = localNumericScalarOrNaN(localGetNested(s, "tdd_timing.harq_roundtrip_slots", NaN));
+if isfinite(harqRoundtripSlots) && harqRoundtripSlots > 0
+    staleProcessTimeoutSlots = max(1, round(2 * double(harqRoundtripSlots)));
+else
+    staleProcessTimeoutSlots = max(16, round(4 * max(1, double(harqFeedbackTimingSlots))));
+end
+cfg = sixgr.util.structSet(cfg, "phy.harq.staleProcessTimeoutSlots", double(staleProcessTimeoutSlots));
+cfg = sixgr.util.structSet(cfg, "mac.harq.staleProcessTimeoutSlots", double(staleProcessTimeoutSlots));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.k2_slots", double(harqK2Slots));
 cfg = sixgr.util.structSet(cfg, "phy.ul.grantK2Slots", double(harqK2Slots));
 cfg = sixgr.util.structSet(cfg, "phy.harq.combiningMode", char(string(s.harq.combining_mode)));

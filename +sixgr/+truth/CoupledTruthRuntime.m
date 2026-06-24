@@ -183,6 +183,7 @@ methods(Static)
         state.LastTRSSlot = 0;
         state.DLSchedulers = sixgr.truth.CoupledTruthRuntime.createSchedulers(cfgMob, nCells, "DL", state.DLHarq);
         state.ULSchedulers = sixgr.truth.CoupledTruthRuntime.createSchedulers(cfgMob, nCells, "UL", state.ULHarq);
+        state.SchedulerDecisionTable = table();
         state.DLGrantTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyGrantRow(), 0, 1));
         state.ULGrantTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyGrantRow(), 0, 1));
         state.LastDLGrantCount = 0;
@@ -350,7 +351,8 @@ methods(Static)
             "ReceiverTrackingStateTable", sixgr.truth.CoupledTruthRuntime.buildReceiverTrackingStateTable(state), ...
             "ReceiverTrackingTraceTable", sixgr.util.structGet(state, "ReceiverTrackingTraceTable", table()), ...
             "ControlGatingSummaryTable", sixgr.truth.CoupledTruthRuntime.buildControlSummaryTable(state), ...
-            "ControlGatingStateTable", sixgr.truth.CoupledTruthRuntime.buildControlStateTable(state));
+            "ControlGatingStateTable", sixgr.truth.CoupledTruthRuntime.buildControlStateTable(state), ...
+            "SchedulerDecisionTable", sixgr.util.structGet(state, "SchedulerDecisionTable", table()));
     end
 
     function T = canonicalizePersistedControlReferenceTable(signalName, T)
@@ -649,7 +651,7 @@ methods(Static, Access=private)
             harq = state.DLHarq;
             softBuffers = state.DLCombinedLLR;
         end
-        retx = harq.peekRetx(rnti);
+        retx = harq.peekRetx(rnti, sixgr.util.structGet(state, "CurrentSlot", NaN));
         if isempty(retx)
             context.HARQContext = struct("Direction", char(direction), "UEIndex", double(ueIdx), "RNTI", double(rnti), "IsRetransmission", false, "FeedbackDelaySlots", double(state.HARQFeedbackSlots));
             return;
@@ -712,7 +714,8 @@ methods(Static, Access=private)
             if isempty(scheduler)
                 continue;
             end
-            [cellGrants, ~] = scheduler.schedule(double(state.CurrentSlot), ueStates, budget);
+            [cellGrants, schedInfo] = scheduler.schedule(double(state.CurrentSlot), ueStates, budget);
+            state = sixgr.truth.CoupledTruthRuntime.appendSchedulerDecisionRows(state, schedInfo, direction, cellId);
             if isempty(cellGrants)
                 continue;
             end
@@ -973,6 +976,13 @@ methods(Static, Access=private)
         sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv"), state.HARQTimelineTable);
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), sixgr.util.structGet(state, "DLGrantTraceTable", table()));
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), sixgr.util.structGet(state, "ULGrantTraceTable", table()));
+        schedulerDecisionT = sixgr.util.structGet(state, "SchedulerDecisionTable", table());
+        if istable(schedulerDecisionT) && ~isempty(schedulerDecisionT)
+            sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "scheduler_decision_log.csv"), schedulerDecisionT);
+            sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_scheduler_decision_log.csv"), schedulerDecisionT);
+            sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "scheduler_ue_summary.csv"), ...
+                sixgr.truth.CoupledTruthRuntime.buildSchedulerUESummaryTable(schedulerDecisionT));
+        end
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_pucch_grants.csv"), state.PUCCHGrantTraceTable);
         sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "initial_access_lifecycle_trace.csv"), ...
             sixgr.util.structGet(state, "InitialAccessLifecycleTraceTable", table()));
@@ -1331,7 +1341,8 @@ methods(Static, Access=private)
                     harq = state.DLHarq;
                     buffers = state.DLCombinedLLR;
                 end
-                harq.onFeedback(double(row.RNTI), double(row.HarqID), observedAck);
+                harq.onFeedback(double(row.RNTI), double(row.HarqID), observedAck, ...
+                    "SourceSlot", double(row.SourceSlot));
                 pid = double(row.HarqID) + 1;
                 if observedAck && double(row.UEIndex) <= size(buffers, 1) && pid <= size(buffers, 2)
                     buffers{double(row.UEIndex), pid} = [];
@@ -2124,7 +2135,7 @@ methods(Static, Access=private)
         end
         hasRetx = false;
         try
-            hasRetx = harq.hasPendingRetx(rnti);
+            hasRetx = harq.hasPendingRetx(rnti, sixgr.util.structGet(state, "CurrentSlot", NaN));
         catch
         end
         queueBytes = floor(max(queueBits, 0) / 8);
@@ -3709,6 +3720,120 @@ methods(Static, Access=private)
         else
             state.DLGrantTraceTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.DLGrantTraceTable, rowT);
         end
+    end
+
+    function state = appendSchedulerDecisionRows(state, info, direction, cellId)
+        decisionT = sixgr.util.structGet(info, "CandidateTable", table());
+        if ~(istable(decisionT) && ~isempty(decisionT))
+            return;
+        end
+        direction = upper(string(direction));
+        n = height(decisionT);
+        vars = string(decisionT.Properties.VariableNames);
+        if ismember("Direction", vars)
+            decisionT.Direction = string(decisionT.Direction);
+            blank = strlength(strtrim(decisionT.Direction)) == 0;
+            decisionT.Direction(blank) = direction;
+        else
+            decisionT.Direction = repmat(direction, n, 1);
+        end
+        if ismember("Slot", vars)
+            decisionT.Slot = double(decisionT.Slot);
+            bad = ~isfinite(decisionT.Slot);
+            decisionT.Slot(bad) = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+        else
+            decisionT.Slot = repmat(double(sixgr.util.structGet(state, "CurrentSlot", NaN)), n, 1);
+        end
+        if ismember("Frame", vars)
+            decisionT.Frame = double(decisionT.Frame);
+            bad = ~isfinite(decisionT.Frame);
+            decisionT.Frame(bad) = double(sixgr.util.structGet(state, "CurrentFrame", NaN));
+        else
+            decisionT.Frame = repmat(double(sixgr.util.structGet(state, "CurrentFrame", NaN)), n, 1);
+        end
+        if ismember("ServingCell", vars)
+            decisionT.ServingCell = double(decisionT.ServingCell);
+            bad = ~isfinite(decisionT.ServingCell);
+            decisionT.ServingCell(bad) = double(cellId);
+        else
+            decisionT.ServingCell = repmat(double(cellId), n, 1);
+        end
+        decisionT.SourceArtifact = repmat("packet_flow/csv/scheduler_decision_log.csv", n, 1);
+        decisionT.SourceClassification = repmat("runtime_scheduler_candidate_decision", n, 1);
+        decisionT.RuntimeMaterializationStatus = repmat("runtime_populated", n, 1);
+        decisionT.ValueSource = repmat("sixgr.l2.mac.SchedulerPF.schedule", n, 1);
+        decisionT.ValueRole = repmat("runtime_scheduler_candidate_rejection_lineage", n, 1);
+        decisionT.ValueStatus = repmat("available_runtime_observation", n, 1);
+        decisionT.ValueDefinition = repmat("Per-slot MAC scheduler candidate, PF metric, selected flag, and rejection reason emitted by the active scheduler.", n, 1);
+        if ~ismember("CandidateDecisionRowsAvailable", vars)
+            decisionT.CandidateDecisionRowsAvailable = true(n, 1);
+        end
+        if ~ismember("DecisionTruthStatus", vars)
+            decisionT.DecisionTruthStatus = repmat("runtime_scheduler_candidate_truth", n, 1);
+        end
+        state.SchedulerDecisionTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            sixgr.util.structGet(state, "SchedulerDecisionTable", table()), decisionT);
+    end
+
+    function summaryT = buildSchedulerUESummaryTable(decisionT)
+        if ~(istable(decisionT) && ~isempty(decisionT))
+            summaryT = table();
+            return;
+        end
+        direction = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "Direction", repmat("", height(decisionT), 1)));
+        rnti = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "RNTI", nan(height(decisionT), 1)));
+        ueIdx = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "UEIndex", rnti));
+        scheduled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "Scheduled", false(height(decisionT), 1)));
+        rejected = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "Rejected", false(height(decisionT), 1)));
+        harqBlocked = false(height(decisionT), 1);
+        if ismember("HARQBlocked", string(decisionT.Properties.VariableNames))
+            harqBlocked = logical(decisionT.HARQBlocked);
+        end
+        if ismember("RejectionReason", string(decisionT.Properties.VariableNames))
+            harqBlocked = harqBlocked | string(decisionT.RejectionReason) == "HARQ_ALL_PROCESSES_BUSY";
+        end
+        key = direction + "|" + string(rnti) + "|" + string(ueIdx);
+        [~, firstIdx, groupIdx] = unique(key);
+        rows = repmat(struct("Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
+            "CandidateCount", NaN, "ScheduledGrantCount", NaN, "RejectedCount", NaN, ...
+            "HARQBlockedCount", NaN, "ScheduledFrac", NaN, "MeanPFMetric", NaN, ...
+            "MeanInstantRate_bps", NaN, "MeanAvgThroughput_bps", NaN, ...
+            "SourceArtifact", "packet_flow/csv/scheduler_decision_log.csv"), numel(firstIdx), 1);
+        totalScheduledByDirection = containers.Map('KeyType', 'char', 'ValueType', 'double');
+        dirs = unique(direction, "stable");
+        for i = 1:numel(dirs)
+            d = char(dirs(i));
+            totalScheduledByDirection(d) = double(sum(scheduled(direction == dirs(i))));
+        end
+        pfMetric = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "PFMetric", nan(height(decisionT), 1)));
+        instRate = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "InstantRate_bps", nan(height(decisionT), 1)));
+        avgRate = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(decisionT, ...
+            "AvgThroughput_bps", nan(height(decisionT), 1)));
+        for i = 1:numel(firstIdx)
+            mask = groupIdx == i;
+            rowDir = direction(firstIdx(i));
+            schedCount = double(sum(scheduled(mask)));
+            denom = totalScheduledByDirection(char(rowDir));
+            rows(i).Direction = string(rowDir);
+            rows(i).UEIndex = double(ueIdx(firstIdx(i)));
+            rows(i).RNTI = double(rnti(firstIdx(i)));
+            rows(i).CandidateCount = double(sum(mask));
+            rows(i).ScheduledGrantCount = schedCount;
+            rows(i).RejectedCount = double(sum(rejected(mask)));
+            rows(i).HARQBlockedCount = double(sum(harqBlocked(mask)));
+            rows(i).ScheduledFrac = schedCount / max(denom, 1);
+            rows(i).MeanPFMetric = mean(pfMetric(mask), "omitnan");
+            rows(i).MeanInstantRate_bps = mean(instRate(mask), "omitnan");
+            rows(i).MeanAvgThroughput_bps = mean(avgRate(mask), "omitnan");
+        end
+        summaryT = struct2table(rows, "AsArray", true);
     end
 
     function row = buildGrantTraceRow(grant, direction, slotIdx, frameIdx, ueIdx, feedback)

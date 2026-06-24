@@ -212,6 +212,7 @@ classdef (Abstract) SchedulerBase < handle
                 rvList = nan(height(rxFeedback), 1);
                 isRetxList = false(height(rxFeedback), 1);
                 isRetxKnownList = false(height(rxFeedback), 1);
+                sourceSlotList = nan(height(rxFeedback), 1);
                 if ismember("HarqID", string(rxFeedback.Properties.VariableNames))
                     harqIdList = rxFeedback.HarqID;
                 elseif ismember("HARQProcess", string(rxFeedback.Properties.VariableNames))
@@ -226,6 +227,11 @@ classdef (Abstract) SchedulerBase < handle
                     isRetxList = logical(rxFeedback.IsRetransmission);
                     isRetxKnownList = true(height(rxFeedback), 1);
                 end
+                if ismember("SourceSlot", string(rxFeedback.Properties.VariableNames))
+                    sourceSlotList = double(rxFeedback.SourceSlot);
+                elseif ismember("Slot", string(rxFeedback.Properties.VariableNames))
+                    sourceSlotList = double(rxFeedback.Slot);
+                end
             else
                 rntiList = [rxFeedback.RNTI];
                 tbsList  = [rxFeedback.TBSBits];
@@ -234,6 +240,7 @@ classdef (Abstract) SchedulerBase < handle
                 rvList = nan(numel(rntiList), 1);
                 isRetxList = false(numel(rntiList), 1);
                 isRetxKnownList = false(numel(rntiList), 1);
+                sourceSlotList = nan(numel(rntiList), 1);
                 for ii = 1:numel(rntiList)
                     if isfield(rxFeedback(ii), "HarqID") && ~isempty(rxFeedback(ii).HarqID)
                         harqIdList(ii) = double(rxFeedback(ii).HarqID);
@@ -255,6 +262,11 @@ classdef (Abstract) SchedulerBase < handle
                         isRetxList(ii) = logical(rxFeedback(ii).HARQ.IsRetransmission);
                         isRetxKnownList(ii) = true;
                     end
+                    if isfield(rxFeedback(ii), "SourceSlot") && ~isempty(rxFeedback(ii).SourceSlot)
+                        sourceSlotList(ii) = double(rxFeedback(ii).SourceSlot);
+                    elseif isfield(rxFeedback(ii), "Slot") && ~isempty(rxFeedback(ii).Slot)
+                        sourceSlotList(ii) = double(rxFeedback(ii).Slot);
+                    end
                 end
             end
 
@@ -269,7 +281,11 @@ classdef (Abstract) SchedulerBase < handle
                 if ~isempty(obj.HARQ)
                     harqId = double(harqIdList(k));
                     if isfinite(harqId)
-                        obj.HARQ.onFeedback(rnti, harqId, ack);
+                        if isfinite(double(sourceSlotList(k)))
+                            obj.HARQ.onFeedback(rnti, harqId, ack, "SourceSlot", double(sourceSlotList(k)));
+                        else
+                            obj.HARQ.onFeedback(rnti, harqId, ack);
+                        end
                     end
                 end
             end
@@ -295,6 +311,22 @@ classdef (Abstract) SchedulerBase < handle
             obj.UEStats(i).LastTBSBits = double(tbsBits);
             obj.UEStats(i).LastAck = logical(ack);
             obj.UEStats(i).NumScheduledSlots = double(obj.UEStats(i).NumScheduledSlots) + 1;
+        end
+
+        function markUnscheduled(obj, rnti)
+            % Decay PF history for active UEs that were considered but not served.
+            i = obj.ensureUE(double(rnti));
+            old = double(obj.UEStats(i).AvgThroughput_bps);
+            switch lower(char(obj.MetricAveraging))
+                case 'exp'
+                    a = min(max(obj.Alpha,0),1);
+                    obj.UEStats(i).AvgThroughput_bps = a * old;
+                otherwise
+                    obj.UEStats(i).AvgThroughput_bps = 0.5 * old;
+            end
+            obj.UEStats(i).LastTBSBits = 0;
+            obj.UEStats(i).LastAck = false;
+            obj.UEStats(i).NumUnscheduledSlots = double(obj.UEStats(i).NumUnscheduledSlots) + 1;
         end
 
         function updateOLLADelta(obj, rnti, ack)
@@ -340,7 +372,9 @@ classdef (Abstract) SchedulerBase < handle
                 return;
             end
             idx = obj.ensureUE(double(ue.RNTI));
-            if isfinite(double(obj.UEStats(idx).LastServedSlot))
+            if isfinite(double(obj.UEStats(idx).LastServedSlot)) || ...
+                    double(obj.UEStats(idx).NumScheduledSlots) > 0 || ...
+                    double(obj.UEStats(idx).NumUnscheduledSlots) > 0
                 return;
             end
             cqi = double(sixgr.util.structGet(ue, "CQI", NaN));

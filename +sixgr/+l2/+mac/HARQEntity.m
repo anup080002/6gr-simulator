@@ -39,6 +39,7 @@ classdef HARQEntity < handle
         MaxRetx (1,1) double = 3
         RVSequence (1,:) double = [0 2 3 1]
         StoreTB (1,1) logical = true
+        StaleProcessTimeoutSlots (1,1) double = NaN
         Logger = []                         % optional sixgr.core.Logger
     end
 
@@ -49,7 +50,8 @@ classdef HARQEntity < handle
     end
 
     properties
-        Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0)
+        Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
+            'TimeoutDrop',0,'StaleFeedbackIgnored',0)
     end
 
     methods
@@ -79,6 +81,8 @@ classdef HARQEntity < handle
                             obj.RVSequence = double(val(:).');
                         case 'storetb'
                             obj.StoreTB = logical(val);
+                        case 'staleprocesstimeoutslots'
+                            obj.StaleProcessTimeoutSlots = double(val);
                         case 'logger'
                             obj.Logger = val;
                     end
@@ -91,22 +95,46 @@ classdef HARQEntity < handle
             % If cfg has mac.harq.*, use it as defaults unless overridden above
             try
                 obj.MaxRetx = double(sixgr.util.structGet(cfg,"mac.harq.maxRetx",obj.MaxRetx));
-                obj.NumProcesses = double(sixgr.util.structGet(cfg,"mac.harq.numProcesses",obj.NumProcesses));
+                obj.NumProcesses = double(sixgr.util.structGet(cfg,"mac.harq.numProcesses", ...
+                    sixgr.util.structGet(cfg,"phy.harq.nProcesses",obj.NumProcesses)));
+                obj.StaleProcessTimeoutSlots = double(sixgr.util.structGet(cfg,"mac.harq.staleProcessTimeoutSlots", ...
+                    sixgr.util.structGet(cfg,"phy.harq.staleProcessTimeoutSlots",obj.StaleProcessTimeoutSlots)));
             catch
             end
+            if ~(isfinite(obj.StaleProcessTimeoutSlots) && obj.StaleProcessTimeoutSlots > 0)
+                rttSlots = double(sixgr.util.structGet(cfg, "tdd_timing.harq_roundtrip_slots", NaN));
+                if isfinite(rttSlots) && rttSlots > 0
+                    obj.StaleProcessTimeoutSlots = 2 * rttSlots;
+                else
+                    feedbackSlots = double(sixgr.util.structGet(cfg, "phy.harq.feedbackTimingSlots", ...
+                        sixgr.util.structGet(cfg, "mac.harq.k1", 4)));
+                    if ~(isfinite(feedbackSlots) && feedbackSlots > 0)
+                        feedbackSlots = 4;
+                    end
+                    obj.StaleProcessTimeoutSlots = max(16, 4 * feedbackSlots);
+                end
+            end
+            obj.NumProcesses = max(1, round(obj.NumProcesses));
+            obj.MaxRetx = max(0, round(obj.MaxRetx));
+            obj.StaleProcessTimeoutSlots = max(1, round(double(obj.StaleProcessTimeoutSlots)));
         end
 
         function reset(obj)
             obj.UEList = double.empty(1,0);
             obj.UEProcs = {};
-            obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0);
+            obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
+                'TimeoutDrop',0,'StaleFeedbackIgnored',0);
         end
 
         function tf = hasUE(obj, rnti)
             tf = any(obj.UEList == double(rnti));
         end
 
-        function tf = hasPendingRetx(obj, rnti)
+        function tf = hasPendingRetx(obj, rnti, currentSlot)
+            if nargin < 3
+                currentSlot = NaN;
+            end
+            obj.expireStaleProcesses(double(rnti), currentSlot);
             [ui, procs] = obj.getUE(double(rnti), false);
             if ui < 1
                 tf = false;
@@ -115,11 +143,15 @@ classdef HARQEntity < handle
             tf = any([procs.NeedsRetx]);
         end
 
-        function tf = hasFreeProcess(obj, rnti)
+        function tf = hasFreeProcess(obj, rnti, currentSlot)
             % New-data grants must be blocked cleanly when every HARQ
             % process is active/awaiting feedback. TS 38.321 HARQ process
             % exhaustion is a scheduler gating condition, not a runtime
             % exception path.
+            if nargin < 3
+                currentSlot = NaN;
+            end
+            obj.expireStaleProcesses(double(rnti), currentSlot);
             [ui, procs] = obj.getUE(double(rnti), false);
             if ui < 1
                 tf = true;
@@ -128,9 +160,13 @@ classdef HARQEntity < handle
             tf = any(~[procs.Active]);
         end
 
-        function retx = peekRetx(obj, rnti)
+        function retx = peekRetx(obj, rnti, currentSlot)
             % Return information for the first pending retransmission, or [].
             retx = [];
+            if nargin < 3
+                currentSlot = NaN;
+            end
+            obj.expireStaleProcesses(double(rnti), currentSlot);
             [ui, procs] = obj.getUE(double(rnti), false);
             if ui < 1
                 return;
@@ -182,6 +218,7 @@ classdef HARQEntity < handle
             tbsBytes = double(tbsBytes);
 
             [ui, procs] = obj.getUE(rnti, true);
+            procs = obj.expireStaleProcessArray(procs, slot);
 
             % 1) Serve pending retransmissions first
             pid = find([procs.NeedsRetx], 1, 'first');
@@ -294,11 +331,26 @@ classdef HARQEntity < handle
             obj.UEProcs{ui} = procs;
         end
 
-        function onFeedback(obj, rnti, harqId0, ack)
+        function onFeedback(obj, rnti, harqId0, ack, varargin)
             % onFeedback Update HARQ process state after ACK/NACK.
             rnti = double(rnti);
             pid = double(harqId0) + 1;
             ack = logical(ack);
+            sourceSlot = NaN;
+            if ~isempty(varargin)
+                if mod(numel(varargin),2) ~= 0
+                    error('sixgr:HARQEntity:BadNV','Name-value inputs must come in pairs.');
+                end
+                for i = 1:2:numel(varargin)
+                    key = varargin{i};
+                    val = varargin{i+1};
+                    if isstring(key), key = char(key); end
+                    switch lower(char(key))
+                        case 'sourceslot'
+                            sourceSlot = double(val);
+                    end
+                end
+            end
 
             [ui, procs] = obj.getUE(rnti, false);
             if ui < 1
@@ -308,6 +360,18 @@ classdef HARQEntity < handle
             if pid < 1 || pid > numel(procs)
                 error('sixgr:HARQEntity:BadHarqId', ...
                     'Bad HarqID=%d for UE RNTI=%d.', harqId0, round(rnti));
+            end
+
+            p = procs(pid);
+            if ~logical(p.Active) && ~logical(p.AwaitingFeedback) && ...
+                    ~logical(p.NeedsRetx) && double(p.TxCount) == 0
+                obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
+                return;
+            end
+            if isfinite(sourceSlot) && isfinite(double(p.LastTxSlot)) && ...
+                    abs(double(sourceSlot) - double(p.LastTxSlot)) > 1e-9
+                obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
+                return;
             end
 
             procs(pid).AwaitingFeedback = false;
@@ -398,6 +462,7 @@ classdef HARQEntity < handle
             p.TB = uint8([]);
             p.LastGrant = struct();
             p.LastTxSlot = -inf;
+            p.LastDropReason = "";
         end
 
         function p = resetProc(obj, p)
@@ -405,6 +470,41 @@ classdef HARQEntity < handle
             ndi = p.NDI;
             p = obj.newProcTemplate();
             p.NDI = ndi;
+        end
+
+        function expireStaleProcesses(obj, rnti, currentSlot)
+            if ~(isfinite(double(currentSlot)) && isfinite(double(obj.StaleProcessTimeoutSlots)) && ...
+                    double(obj.StaleProcessTimeoutSlots) > 0)
+                return;
+            end
+            [ui, procs] = obj.getUE(double(rnti), false);
+            if ui < 1
+                return;
+            end
+            procs = obj.expireStaleProcessArray(procs, currentSlot);
+            obj.UEProcs{ui} = procs;
+        end
+
+        function procs = expireStaleProcessArray(obj, procs, currentSlot)
+            if ~(isfinite(double(currentSlot)) && isfinite(double(obj.StaleProcessTimeoutSlots)) && ...
+                    double(obj.StaleProcessTimeoutSlots) > 0) || isempty(procs)
+                return;
+            end
+            timeoutSlots = max(1, round(double(obj.StaleProcessTimeoutSlots)));
+            for pid = 1:numel(procs)
+                if ~logical(procs(pid).Active)
+                    continue;
+                end
+                ageSlots = double(currentSlot) - double(procs(pid).LastTxSlot);
+                if isfinite(ageSlots) && ageSlots >= timeoutSlots
+                    ndi = procs(pid).NDI;
+                    procs(pid) = obj.newProcTemplate();
+                    procs(pid).NDI = ndi;
+                    procs(pid).LastDropReason = "stale_harq_process_timeout";
+                    obj.Stats.Drop = obj.Stats.Drop + 1;
+                    obj.Stats.TimeoutDrop = obj.Stats.TimeoutDrop + 1;
+                end
+            end
         end
     end
 end

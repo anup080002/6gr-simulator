@@ -114,11 +114,11 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 for t = 1:numel(ueIdx)
                     k = ueIdx(t);
                     rnti = double(ueStates(k).RNTI);
-                    pendingRetx(k) = obj.HARQ.hasPendingRetx(rnti);
+                    pendingRetx(k) = obj.HARQ.hasPendingRetx(rnti, slot);
                     if ~pendingRetx(k)
                         continue;
                     end
-                    retx = obj.HARQ.peekRetx(rnti);
+                    retx = obj.HARQ.peekRetx(rnti, slot);
                     if isempty(retx) || cursor > nPRBAvail
                         continue;
                     end
@@ -222,7 +222,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 if hasHARQ && pendingRetx(k)
                     continue;
                 end
-                if hasHARQ && ~obj.HARQ.hasFreeProcess(rnti)
+                if hasHARQ && ~obj.HARQ.hasFreeProcess(rnti, slot)
                     continue;
                 end
 

@@ -54,6 +54,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             info = struct();
             info.Slot = slot;
             info.Direction = obj.Direction;
+            candidateRows = repmat(localCandidateRow(), 0, 1);
+            info.CandidateTable = localCandidateTable(candidateRows);
+            info.DecisionTable = info.CandidateTable;
             k1 = localResolveGrantK1(obj.Cfg, slot);
             k2 = max(0, round(double(sixgr.util.structGet(obj.Cfg, "mac.harq.k2", 1))));
             ssid = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.SearchSpaceID", 0))));
@@ -109,8 +112,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 for t = 1:numel(ueIdx)
                     k = ueIdx(t);
                     rnti = double(ueStates(k).RNTI);
-                    if obj.HARQ.hasPendingRetx(rnti)
-                        retx = obj.HARQ.peekRetx(rnti);
+                    if obj.HARQ.hasPendingRetx(rnti, slot)
+                        retx = obj.HARQ.peekRetx(rnti, slot);
                         if isempty(retx)
                             continue;
                         end
@@ -167,6 +170,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
 
             if isempty(prbAvail)
                 info.NGrants = numel(grants);
+                localDecayUnscheduledCandidates(obj, ueStates, ueIdx, grants);
                 return;
             end
 
@@ -189,35 +193,102 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
 
             metrics = -inf(1, numel(ueIdx));
             estTBS = zeros(1, numel(ueIdx));
+            candidateRowIdxByMetric = zeros(1, numel(ueIdx));
             probeTimer = tic;
             probePlanElapsed_s = zeros(1, numel(ueIdx));
             for t = 1:numel(ueIdx)
                 k = ueIdx(t);
                 rnti = double(ueStates(k).RNTI);
+                avgRate = localUEAverageThroughput(obj, rnti);
+                neededCCE = localUEPDCCHCCE(ueStates(k), budget);
+                row = localCandidateRow();
+                row.Slot = double(slot);
+                row.Direction = string(obj.Direction);
+                row.DecisionId = string(sprintf('%s_slot_%d_rnti_%d_candidate_%d', ...
+                    upper(char(string(obj.Direction))), round(double(slot)), round(rnti), t));
+                row.CandidateIndex = double(t);
+                row.CandidateScope = "new_data_pf";
+                row.RNTI = double(rnti);
+                row.UEIndex = double(sixgr.util.structGet(ueStates(k), "UEIndex", NaN));
+                row.ServingCell = double(sixgr.util.structGet(ueStates(k), "ServingCell", NaN));
+                row.BufferBytes = double(bufBytes(k));
+                row.CQI = double(localUECQI(ueStates(k)));
+                row.RI = double(sixgr.util.structGet(ueStates(k), "RI", NaN));
+                row.PMI = double(sixgr.util.structGet(ueStates(k), "PMI", NaN));
+                row.CRI = double(sixgr.util.structGet(ueStates(k), "CRI", NaN));
+                row.AvgThroughput_bps = double(avgRate);
+                row.PDCCHAggregationLevel = double(neededCCE);
+                row.ControlCCERemainingBefore = double(controlCCERemaining);
+                row.SymbolStart = double(symAlloc(1));
+                row.NumSymbols = double(symAlloc(2));
+                row.CandidateDecisionRowsAvailable = true;
+                row.DecisionTruthStatus = "runtime_scheduler_candidate_truth";
 
                 % Skip if HARQ already pending retx (handled earlier)
-                if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti)
+                if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti, slot)
+                    row.HARQPendingRetx = true;
+                    row.HARQHasFreeProcess = obj.HARQ.hasFreeProcess(rnti, slot);
+                    row.HARQBlocked = ~row.HARQHasFreeProcess;
+                    row.Rejected = true;
+                    row.RejectionReason = "HARQ_PENDING_RETX_PRIORITY";
+                    candidateRows(end+1, 1) = row; %#ok<AGROW>
+                    candidateRowIdxByMetric(t) = numel(candidateRows);
                     continue;
                 end
-                if ~isempty(obj.HARQ) && ~obj.HARQ.hasFreeProcess(rnti)
+                if ~isempty(obj.HARQ) && ~obj.HARQ.hasFreeProcess(rnti, slot)
+                    row.HARQHasFreeProcess = false;
+                    row.HARQBlocked = true;
+                    row.Rejected = true;
+                    row.RejectionReason = "HARQ_ALL_PROCESSES_BUSY";
+                    candidateRows(end+1, 1) = row; %#ok<AGROW>
+                    candidateRowIdxByMetric(t) = numel(candidateRows);
                     continue;
                 end
+                row.HARQHasFreeProcess = true;
 
                 probePRBSet = prbAvail(1:min(probeChunk, numel(prbAvail)));
+                row.ProbePRBCount = double(numel(probePRBSet));
                 probePlanTimer = tic;
                 plan = obj.buildNewDataGrantPlan(ueStates(k), probePRBSet, symAlloc, bufBytes(k), ...
                     "PlanningOnly", true);
                 probePlanElapsed_s(t) = toc(probePlanTimer);
                 estTBS(t) = double(sixgr.util.structGet(plan, "TBSBits", 0));
                 metrics(t) = obj.pfMetric(ueStates(k), estTBS(t));
+                row.EstimatedTBSBits = double(estTBS(t));
+                row.EstimatedTBSBytes = double(sixgr.util.structGet(plan, "TBSBytes", 0));
+                row.InstantRate_bps = double(estTBS(t)) / max(obj.SlotDuration_s, eps);
+                row.PFMetric = double(metrics(t));
+                row.QueueLimited = logical(sixgr.util.structGet(plan, "QueueLimited", false));
+                row.AMCMode = string(sixgr.util.structGet(plan, "AMCMode", ""));
+                row.MCSIndex = double(sixgr.util.structGet(plan, "MCSIndex", NaN));
+                row.MCSSelectionSource = string(sixgr.util.structGet(plan, "MCSSelectionSource", ""));
+                row.CQIProvenance = string(sixgr.util.structGet(plan, "CQIProvenance", ""));
+                row.MCSValueStatus = string(sixgr.util.structGet(plan, "MCSValueStatus", ""));
+                row.GrantBlocker = string(sixgr.util.structGet(plan, "GrantBlocker", ""));
+                if ~logical(sixgr.util.structGet(plan, "Valid", false)) || estTBS(t) <= 0
+                    row.Rejected = true;
+                    row.RejectionReason = localFirstNonempty(row.GrantBlocker, "NO_VALID_TBS_PLAN");
+                    metrics(t) = -inf;
+                    row.PFMetric = -inf;
+                elseif metrics(t) <= 0
+                    row.Rejected = true;
+                    row.RejectionReason = "PF_METRIC_NONPOSITIVE";
+                end
+                candidateRows(end+1, 1) = row; %#ok<AGROW>
+                candidateRowIdxByMetric(t) = numel(candidateRows);
             end
             probeElapsed_s = toc(probeTimer);
 
             % Sort UEs by PF metric descending
+            candidateRows = localAssignPFRanks(candidateRows, metrics, candidateRowIdxByMetric);
             [~, ord] = sort(metrics, 'descend');
             ord = ord(metrics(ord) > 0);
             if isempty(ord)
                 info.NGrants = numel(grants);
+                candidateRows = localFinalizeCandidateRejections(candidateRows, "NO_PF_CANDIDATE_SELECTED");
+                info.CandidateTable = localCandidateTable(candidateRows);
+                info.DecisionTable = info.CandidateTable;
+                localDecayUnscheduledCandidates(obj, ueStates, ueIdx, grants);
                 return;
             end
             ord = ord(1:min(numel(ord), maxUE));
@@ -259,20 +330,29 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 for gg = 1:numel(groupOrd)
                     k = ueIdx(groupOrd(gg));
                     rnti = double(ueStates(k).RNTI);
-                    if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti)
+                    if ~isempty(obj.HARQ) && obj.HARQ.hasPendingRetx(rnti, slot)
+                        candidateRows = localMarkCandidateRejected(candidateRows, rnti, ...
+                            "HARQ_PENDING_RETX_PRIORITY");
                         continue;
                     end
-                    if ~isempty(obj.HARQ) && ~obj.HARQ.hasFreeProcess(rnti)
+                    if ~isempty(obj.HARQ) && ~obj.HARQ.hasFreeProcess(rnti, slot)
+                        candidateRows = localMarkCandidateRejected(candidateRows, rnti, ...
+                            "HARQ_ALL_PROCESSES_BUSY");
                         continue;
                     end
                     neededCCE = localUEPDCCHCCE(ueStates(k), budget);
                     if controlBudgetActive && neededCCE > max(0, controlCCERemaining - groupCCEUsed)
+                        candidateRows = localMarkCandidateRejected(candidateRows, rnti, ...
+                            "PDCCH_CCE_BUDGET_EXHAUSTED");
                         continue;
                     end
                     finalPlanTimer = tic;
                     plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufBytes(k));
                     finalPlanElapsed_s(ii) = finalPlanElapsed_s(ii) + toc(finalPlanTimer);
                     if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
+                        candidateRows = localMarkCandidateRejected(candidateRows, rnti, ...
+                            localFirstNonempty(string(sixgr.util.structGet(plan, "GrantBlocker", "")), ...
+                            "NO_VALID_TBS_PLAN"));
                         continue;
                     end
                     prbSet = double(plan.PRBSet(:).');
@@ -282,6 +362,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     if ~isempty(obj.HARQ)
                         txp = obj.HARQ.allocate(rnti, slot, servedBytes, 'NewData', true);
                         if logical(sixgr.util.structGet(txp, "NoFreeProcess", false))
+                            candidateRows = localMarkCandidateRejected(candidateRows, rnti, ...
+                                "HARQ_ALL_PROCESSES_BUSY");
                             continue;
                         end
                         harqInfo = txp.HARQ;
@@ -371,12 +453,14 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 for gg = 1:numel(groupGrants)
                     grants(end+1) = groupGrants(gg); %#ok<AGROW>
                     rnti = double(groupGrants(gg).RNTI);
+                    candidateRows = localMarkCandidateScheduled(candidateRows, rnti, groupGrants(gg), numel(grants));
                     obj.ensureUE(rnti);
                     obj.updateAvgThroughput(rnti, groupGrants(gg).TBSBits, true);
                     obj.UEStats(obj.ensureUE(rnti)).LastServedSlot = slot;
                 end
             end
             allocElapsed_s = toc(allocTimer);
+            localDecayUnscheduledCandidates(obj, ueStates, ueIdx, grants);
 
             info.NGrants = numel(grants);
             info.PRBUnderuse = numel(prbAvail) - max(0, cursor-1);
@@ -387,6 +471,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             info.ProbePlanMaxElapsed_s = max([0 probePlanElapsed_s]);
             info.FinalPlanTotalElapsed_s = sum(finalPlanElapsed_s);
             info.FinalPlanMaxElapsed_s = max([0 finalPlanElapsed_s]);
+            candidateRows = localFinalizeCandidateRejections(candidateRows, "NOT_SELECTED_LOWER_PF_OR_RESOURCE_LIMIT");
+            info.CandidateTable = localCandidateTable(candidateRows);
+            info.DecisionTable = info.CandidateTable;
             if slot == 0
                 obj.log('info', sprintf([ ...
                     'SchedulerPF[%s] slot=%d ueStates=%d activeUE=%d maxUE=%d prbAvail=%d ' ...
@@ -652,6 +739,177 @@ elseif contains(mode, "noncodebook")
     token = "noncodebook";
 else
     token = "type1_codebook";
+end
+end
+
+function avg = localUEAverageThroughput(obj, rnti)
+avg = 1;
+stats = obj.getUEStats();
+if isempty(stats)
+    return;
+end
+idx = find([stats.RNTI] == double(rnti), 1, "first");
+if isempty(idx)
+    return;
+end
+avg = double(sixgr.util.structGet(stats(idx), "AvgThroughput_bps", 1));
+if ~(isfinite(avg) && avg > 0)
+    avg = 1;
+end
+end
+
+function row = localCandidateRow()
+row = struct( ...
+    "DecisionId", "", ...
+    "Slot", NaN, ...
+    "Frame", NaN, ...
+    "Direction", "", ...
+    "CandidateIndex", NaN, ...
+    "CandidateScope", "", ...
+    "PFRank", NaN, ...
+    "RNTI", NaN, ...
+    "UEIndex", NaN, ...
+    "ServingCell", NaN, ...
+    "BufferBytes", NaN, ...
+    "CQI", NaN, ...
+    "RI", NaN, ...
+    "PMI", NaN, ...
+    "CRI", NaN, ...
+    "EstimatedTBSBits", NaN, ...
+    "EstimatedTBSBytes", NaN, ...
+    "InstantRate_bps", NaN, ...
+    "AvgThroughput_bps", NaN, ...
+    "PFMetric", NaN, ...
+    "HARQPendingRetx", false, ...
+    "HARQHasFreeProcess", true, ...
+    "HARQBlocked", false, ...
+    "ProbePRBCount", NaN, ...
+    "AllocatedPRBCount", NaN, ...
+    "SymbolStart", NaN, ...
+    "NumSymbols", NaN, ...
+    "PDCCHAggregationLevel", NaN, ...
+    "ControlCCERemainingBefore", NaN, ...
+    "QueueLimited", false, ...
+    "AMCMode", "", ...
+    "MCSIndex", NaN, ...
+    "MCSSelectionSource", "", ...
+    "CQIProvenance", "", ...
+    "MCSValueStatus", "", ...
+    "GrantBlocker", "", ...
+    "Scheduled", false, ...
+    "Rejected", false, ...
+    "RejectionReason", "", ...
+    "GrantReason", "", ...
+    "SelectedGrantIndex", NaN, ...
+    "CandidateDecisionRowsAvailable", true, ...
+    "DecisionTruthStatus", "runtime_scheduler_candidate_truth", ...
+    "Source", "sixgr.l2.mac.SchedulerPF.schedule", ...
+    "ValueRole", "runtime_scheduler_candidate_decision");
+end
+
+function T = localCandidateTable(rows)
+if isempty(rows)
+    rows = repmat(localCandidateRow(), 0, 1);
+end
+T = struct2table(rows, "AsArray", true);
+end
+
+function rows = localAssignPFRanks(rows, metrics, rowIdxByMetric)
+if isempty(rows) || isempty(metrics)
+    return;
+end
+validMetricIdx = find(isfinite(metrics(:).') & metrics(:).' > 0);
+if isempty(validMetricIdx)
+    return;
+end
+[~, ord] = sort(metrics(validMetricIdx), "descend");
+rankedMetricIdx = validMetricIdx(ord);
+for rankIdx = 1:numel(rankedMetricIdx)
+    rowIdx = rowIdxByMetric(rankedMetricIdx(rankIdx));
+    if rowIdx >= 1 && rowIdx <= numel(rows)
+        rows(rowIdx).PFRank = double(rankIdx);
+    end
+end
+end
+
+function rows = localMarkCandidateRejected(rows, rnti, reason)
+if isempty(rows)
+    return;
+end
+reason = localFirstNonempty(reason, "NOT_SELECTED_LOWER_PF_OR_RESOURCE_LIMIT");
+for i = 1:numel(rows)
+    if abs(double(rows(i).RNTI) - double(rnti)) < 1e-9 && ...
+            string(rows(i).CandidateScope) == "new_data_pf" && ...
+            ~logical(rows(i).Scheduled)
+        rows(i).Rejected = true;
+        rows(i).RejectionReason = string(reason);
+        return;
+    end
+end
+end
+
+function rows = localMarkCandidateScheduled(rows, rnti, grant, grantIndex)
+if isempty(rows)
+    return;
+end
+for i = 1:numel(rows)
+    if abs(double(rows(i).RNTI) - double(rnti)) < 1e-9 && ...
+            string(rows(i).CandidateScope) == "new_data_pf"
+        rows(i).Scheduled = true;
+        rows(i).Rejected = false;
+        rows(i).RejectionReason = "";
+        rows(i).GrantReason = string(sixgr.util.structGet(grant, "GrantReason", ""));
+        rows(i).SelectedGrantIndex = double(grantIndex);
+        rows(i).AllocatedPRBCount = double(numel(sixgr.util.structGet(grant, "PRBSet", [])));
+        rows(i).EstimatedTBSBits = double(sixgr.util.structGet(grant, "TBSBits", rows(i).EstimatedTBSBits));
+        rows(i).EstimatedTBSBytes = double(sixgr.util.structGet(grant, "TBSBytes", rows(i).EstimatedTBSBytes));
+        rows(i).MCSIndex = double(sixgr.util.structGet(grant, "MCSIndex", rows(i).MCSIndex));
+        rows(i).DecisionTruthStatus = "runtime_scheduler_selected_candidate_truth";
+        return;
+    end
+end
+end
+
+function rows = localFinalizeCandidateRejections(rows, defaultReason)
+if isempty(rows)
+    return;
+end
+defaultReason = localFirstNonempty(defaultReason, "NOT_SELECTED_LOWER_PF_OR_RESOURCE_LIMIT");
+for i = 1:numel(rows)
+    if ~logical(rows(i).Scheduled) && ~logical(rows(i).Rejected)
+        rows(i).Rejected = true;
+        rows(i).RejectionReason = string(defaultReason);
+    end
+end
+end
+
+function localDecayUnscheduledCandidates(obj, ueStates, ueIdx, grants)
+if isempty(ueIdx)
+    return;
+end
+scheduledRNTI = zeros(1, 0);
+if isstruct(grants) && ~isempty(grants) && isfield(grants, "RNTI")
+    scheduledRNTI = double([grants.RNTI]);
+end
+for i = 1:numel(ueIdx)
+    k = ueIdx(i);
+    if k < 1 || k > numel(ueStates) || ~isfield(ueStates(k), "RNTI")
+        continue;
+    end
+    rnti = double(ueStates(k).RNTI);
+    if any(abs(scheduledRNTI - rnti) < 1e-9)
+        continue;
+    end
+    obj.markUnscheduled(rnti);
+end
+end
+
+function out = localFirstNonempty(value, fallback)
+out = string(value);
+if isempty(out) || strlength(strtrim(out(1))) == 0
+    out = string(fallback);
+else
+    out = out(1);
 end
 end
 
