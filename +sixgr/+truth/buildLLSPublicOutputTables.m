@@ -662,6 +662,8 @@ rows = repmat(struct("OutputId", "mcs_cqi_decision_trace_table", "RunId", meta.r
     "UEId", NaN, "CellId", NaN, "Slot", NaN, "SelectedMCS", NaN, "SelectedMCSSource", "", ...
     "SelectedMCSReason", "", "CQIDerivedMCS", NaN, "CQI", NaN, "CQISource", "", "CQICalibrationProfile", "", ...
     "LinkAdaptationMode", "", "SchedulerGrantSource", "", "HARQInfluence", "", "OLLAState", "", ...
+    "MCSConsistencyBound", NaN, "MCSConsistencyBoundSource", "", ...
+    "SelectedSpectralEfficiency", NaN, "BoundSpectralEfficiency", NaN, "MCSConsistencyDetail", "", ...
     "MCSMismatchStatus", "", "MCSMismatchReason", "", "RuntimeEvidenceStatus", "", "run_id", meta.run_id, ...
     "producer_module", "sixgr.truth.buildLLSPublicOutputTables", "source_artifact_ref", "reports/csv/table_mcs_tbs_evolution.csv", ...
     "runtime_evidence", "derived_from_runtime_scheduler_trace"), height(sourceT), 1);
@@ -669,8 +671,8 @@ for i = 1:height(sourceT)
     row = sourceT(i, :);
     selected = iFirstNum(row, ["mcs_selected","MCSIndex"], NaN);
     derived = iFirstNum(row, ["CQIDerivedMCS","cqi_derived_mcs"], NaN);
-    if ~isfinite(derived), derived = selected; end
-    status = iMCSStatus(selected, derived);
+    [bound, boundSource] = iMCSConsistencyBound(row, derived);
+    [status, selectedSE, boundSE, detail] = iMCSStatus(row, selected, derived, bound, boundSource);
     rows(i).TrialId = i;
     rows(i).UEId = iFirstNum(row, ["ue_id","UEId"], NaN);
     rows(i).CellId = iFirstNum(row, ["cell_id","CellId"], NaN);
@@ -686,6 +688,11 @@ for i = 1:height(sourceT)
     rows(i).SchedulerGrantSource = iFirstText(row, ["SchedulerGrantSource","source_artifact_ref"], "reports/csv/table_mcs_tbs_evolution.csv");
     rows(i).HARQInfluence = iFirstText(row, ["HARQInfluence","harq_state"], "");
     rows(i).OLLAState = iFirstText(row, ["OLLAState","olla_state"], "");
+    rows(i).MCSConsistencyBound = bound;
+    rows(i).MCSConsistencyBoundSource = boundSource;
+    rows(i).SelectedSpectralEfficiency = selectedSE;
+    rows(i).BoundSpectralEfficiency = boundSE;
+    rows(i).MCSConsistencyDetail = detail;
     rows(i).MCSMismatchStatus = status;
     rows(i).MCSMismatchReason = iMismatchReason(status, rows(i).SelectedMCSReason, rows(i).HARQInfluence);
     rows(i).RuntimeEvidenceStatus = "derived_from_runtime_scheduler_trace";
@@ -788,19 +795,87 @@ for i = 1:numel(configured)
 end
 end
 
-function status = iMCSStatus(selected, derived)
-if ~(isfinite(selected) && isfinite(derived))
+function [bound, source] = iMCSConsistencyBound(row, derived)
+bound = NaN;
+source = "unavailable";
+linkMCS = iFirstNum(row, ["LinkAdaptationMCSIndex", "link_adaptation_mcs", "AdaptedMCSIndex"], NaN);
+if isfinite(linkMCS) && iUsesMeasuredFeedbackAdaptation(row)
+    bound = double(linkMCS);
+    source = "link_adaptation_mcs";
+    return;
+end
+cqiBasedMCS = iFirstNum(row, ["CQIBasedMCS", "cqi_based_mcs"], NaN);
+if isfinite(cqiBasedMCS) && iUsesMeasuredFeedbackAdaptation(row)
+    delta = iFirstNum(row, ["DeltaMCS", "delta_mcs", "OLLADeltaMCS", "olla_offset"], 0);
+    staticDelta = iFirstNum(row, ["StaticDeltaMCS", "static_delta_mcs"], 0);
+    if ~isfinite(delta), delta = 0; end
+    if ~isfinite(staticDelta), staticDelta = 0; end
+    bound = floor(double(cqiBasedMCS) + double(delta) + double(staticDelta));
+    source = "cqi_based_mcs_plus_delta";
+    return;
+end
+if isfinite(derived)
+    bound = double(derived);
+    source = "cqi_derived_mcs";
+end
+end
+
+function tf = iUsesMeasuredFeedbackAdaptation(row)
+tokens = lower(strjoin([ ...
+    iFirstText(row, ["MCSValueStatus", "mcs_value_status"], ""), ...
+    iFirstText(row, ["MCSSelectionSource", "mcs_selection_source"], ""), ...
+    iFirstText(row, ["MCSIndexAuthority", "mcs_index_authority"], ""), ...
+    iFirstText(row, ["GrantOperatingPointSource", "grant_operating_point_source"], ""), ...
+    iFirstText(row, ["LinkAdaptationDecisionReason", "link_adaptation_decision_reason"], "")], " "));
+tf = contains(tokens, "feedback_adapted") || ...
+    contains(tokens, "measured_feedback_adapted") || ...
+    contains(tokens, "runtime_link_adaptation_decision");
+end
+
+function [status, selectedSE, boundSE, detail] = iMCSStatus(row, selected, derived, bound, boundSource)
+selectedSE = NaN;
+boundSE = NaN;
+detail = "";
+if ~(isfinite(selected) && isfinite(bound))
     status = "unavailable";
-elseif abs(selected - derived) < 0.5
+    detail = "missing_selected_or_bound_mcs";
+    return;
+end
+mcsTable = iFirstText(row, ["MCSTable", "mcs_table", "MCS_Table"], "qam64_table1");
+selectedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), selected);
+boundProfile = sixgr.link.resolveMCSProfile(char(mcsTable), bound);
+if logical(sixgr.util.structGet(selectedProfile, "Valid", false)) && ...
+        logical(sixgr.util.structGet(boundProfile, "Valid", false))
+    selectedSE = double(selectedProfile.SpectralEfficiency);
+    boundSE = double(boundProfile.SpectralEfficiency);
+    if selectedSE <= boundSE + 1e-9
+        if isfinite(derived) && abs(double(selected) - double(derived)) < 0.5
+            status = "match";
+        elseif string(boundSource) == "cqi_derived_mcs"
+            status = "match";
+        else
+            status = "within_link_adaptation_bound";
+        end
+    else
+        status = "mismatch";
+    end
+    detail = "SelectedSE=" + string(selectedSE) + ";BoundSE=" + string(boundSE) + ";BoundSource=" + string(boundSource);
+elseif abs(selected - bound) < 0.5
     status = "match";
+    detail = "fallback_mcs_index_match";
 else
     status = "mismatch";
+    detail = "fallback_mcs_index_mismatch";
 end
 end
 
 function reason = iMismatchReason(status, selectedReason, harqInfluence)
 if status == "match"
     reason = "selected_matches_cqi_derived";
+elseif status == "within_link_adaptation_bound"
+    reason = "selected_within_sourced_link_adaptation_bound";
+elseif status == "unavailable"
+    reason = "mcs_consistency_evidence_unavailable";
 elseif strlength(string(selectedReason)) > 0
     reason = string(selectedReason);
 elseif strlength(string(harqInfluence)) > 0

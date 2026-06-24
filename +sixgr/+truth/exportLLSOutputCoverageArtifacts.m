@@ -2172,16 +2172,52 @@ T.cqi_dynamic_range_status = repmat(cqiDynamicRangeStatus, n, 1);
 T.ri_input = NaN(n, 1);
 T.pmi_input = NaN(n, 1);
 T.mcs_selected = localColumnAsDouble(grants, "MCSIndex");
+T.cqi_derived_mcs = localCQIDerivedMCSFromGrantTable(grants);
+T.raw_cqi_derived_mcs = localFirstAvailableColumnAsDouble(grants, ["RawCQIDerivedMCS"]);
+T.link_adaptation_mcs = localFirstAvailableColumnAsDouble(grants, ["LinkAdaptationMCSIndex", "AdaptedMCSIndex"]);
+T.cqi_based_mcs = localFirstAvailableColumnAsDouble(grants, ["CQIBasedMCS"]);
+T.smoothed_cqi = localFirstAvailableColumnAsDouble(grants, ["SmoothedCQI"]);
+T.instantaneous_cqi_mcs = localFirstAvailableColumnAsDouble(grants, ["InstantaneousCQIMCS"]);
+T.delta_mcs = localFirstAvailableColumnAsDouble(grants, ["DeltaMCS", "OLLADeltaMCS"]);
+T.static_delta_mcs = localFirstAvailableColumnAsDouble(grants, ["StaticDeltaMCS"]);
+T.mcs_table = localColumnAsText(grants, "MCSTable");
+T.cqi_table = localColumnAsText(grants, "CQITable");
+T.mcs_selection_source = localColumnAsText(grants, "MCSSelectionSource");
+T.mcs_value_status = localColumnAsText(grants, "MCSValueStatus");
+T.mcs_index_authority = localColumnAsText(grants, "MCSIndexAuthority");
+T.grant_operating_point_source = localColumnAsText(grants, "GrantOperatingPointSource");
+T.link_adaptation_decision_reason = localColumnAsText(grants, "LinkAdaptationDecisionReason");
 T.mod_order = NaN(n, 1);
 T.code_rate = localColumnAsDouble(grants, "TargetCodeRate");
 T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
 T.harq_id = localFirstAvailableColumnAsDouble(grants, ["HarqID", "HARQProcessId"]);
 T.ndi = localFirstAvailableColumnAsDouble(grants, ["NDI", "NewDataIndicator"]);
 T.rv = localFirstAvailableColumnAsDouble(grants, ["RV", "RedundancyVersion"]);
-T.olla_offset = NaN(n, 1);
+T.olla_offset = localFirstAvailableColumnAsDouble(grants, ["OLLADeltaMCS", "DeltaMCS"]);
 T.harq_state = harqState;
 T.scheduler_reason = localColumnAsText(grants, "GrantReason");
 T.effective_sinr_dB = localColumnAsDouble(grants, "SINR_dB");
+end
+
+function values = localCQIDerivedMCSFromGrantTable(grants)
+n = height(grants);
+values = NaN(n, 1);
+if ~(istable(grants) && n > 0)
+    return;
+end
+for i = 1:n
+    row = grants(i, :);
+    cqiUsed = localNormalizeReportedCQIValue(localTableValue(row, "CQIUsed", NaN));
+    if ~isfinite(cqiUsed)
+        continue;
+    end
+    mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
+    cqiTable = string(localTableValue(row, "CQITable", localTableValue(row, "CQI_Table", "table1")));
+    decision = sixgr.link.resolveMCSFromCQI(cqiUsed, char(mcsTable), char(cqiTable));
+    if isstruct(decision) && isfield(decision, "Valid") && logical(decision.Valid)
+        values(i) = double(decision.MCSIndex);
+    end
+end
 end
 
 function [sampleCount, distinctCount, saturationFraction, status] = localCQIDynamicRangeDiagnostics(cqiValues)
