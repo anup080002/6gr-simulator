@@ -1549,8 +1549,10 @@ end
 
 function stats = localPDCCHStrictEvidenceStats(layout, scfg, cfg)
 required = localIsPDCCHStrictScenario(scfg, cfg);
+standaloneStrictRequired = localPDCCHStandaloneStrictRequired(scfg, cfg);
 configPath = fullfile(layout.ControlCSVDir, "pdcch_config_strict.csv");
 trialPath = fullfile(layout.ControlCSVDir, "pdcch_trials.csv");
+airTrialPath = fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv");
 candidatePath = fullfile(layout.ControlCSVDir, "pdcch_candidates.csv");
 dciFieldPath = fullfile(layout.ControlCSVDir, "pdcch_dci_fields.csv");
 grantPath = fullfile(layout.ControlCSVDir, "pdcch_grant_validation.csv");
@@ -1581,6 +1583,10 @@ if ~required
 end
 configT = localReadTable(configPath);
 trialT = localReadTable(trialPath);
+airTrialT = localReadTable(airTrialPath);
+if isempty(trialT) && ~isempty(airTrialT)
+    trialT = airTrialT;
+end
 candidateT = localReadTable(candidatePath);
 dciFieldT = localReadTable(dciFieldPath);
 grantT = localReadTable(grantPath);
@@ -1603,8 +1609,15 @@ stats.PDCCHFalseAlarmRows = height(falseT);
 stats.PDCCHLowSNRRows = height(lowT);
 stats.PDCCHOracleGuardRows = height(oracleT);
 
+[integratedOk, integratedStatus] = localIntegratedPDCCHRuntimeEvidenceOk(trialT);
+if integratedOk && ~standaloneStrictRequired
+    stats.PDCCHStrictOk = true;
+    stats.PDCCHStatus = "strict_pdcch_integrated_waveform_blind_decode_evidence_present";
+    return;
+end
+
 if isempty(configT) || isempty(trialT)
-    stats.PDCCHStatus = "missing_strict_pdcch_config_or_trials";
+    stats.PDCCHStatus = "missing_strict_pdcch_config_or_trials;" + integratedStatus;
     return;
 end
 requiredTrialCols = ["StrictOk","NegativeExpectedOk","ProxyUsed","Skipped","ToolboxMissing", ...
@@ -1673,8 +1686,166 @@ stats.PDCCHStrictOk = artifactRowsOk && configOk && positiveOk && negativeOk && 
 if stats.PDCCHStrictOk
     stats.PDCCHStatus = "strict_pdcch_waveform_blind_decode_evidence_present";
 else
-    stats.PDCCHStatus = "strict_pdcch_waveform_blind_decode_evidence_incomplete";
+    stats.PDCCHStatus = "strict_pdcch_waveform_blind_decode_evidence_incomplete;" + integratedStatus;
 end
+end
+
+function tf = localPDCCHStandaloneStrictRequired(scfg, cfg)
+runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
+tf = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
+end
+
+function [ok, status] = localIntegratedPDCCHRuntimeEvidenceOk(T)
+ok = false;
+status = "integrated_pdcch_runtime_evidence_unavailable";
+if ~(istable(T) && height(T) > 0)
+    status = "integrated_pdcch_trials_missing";
+    return;
+end
+requiredGroups = { ...
+    ["StrictOk"], ...
+    ["ProxyUsed"], ...
+    ["Skipped"], ...
+    ["ToolboxMissing"], ...
+    ["DCICrcPass"], ...
+    ["DCIPayloadMatch", "PDCCHPayloadMatch"], ...
+    ["GrantValid"], ...
+    ["CandidatesAttempted", "PDCCHCandidatesAttempted", "BlindDecodeCount"], ...
+    ["PDCCHRECount"], ...
+    ["PDCCHDMRSRECount"], ...
+    ["PDCCHEncodedBits"], ...
+    ["PDCCHDCICrcRNTI"], ...
+    ["PDCCHScramblingRNTI"], ...
+    ["PDCCHGridHash"], ...
+    ["PDCCHWaveformHash"], ...
+    ["PDCCHResourceHash"], ...
+    ["PDCCHCRCDecodeSource"], ...
+    ["PDCCHBlindDecodeEvidenceSource"], ...
+    ["PDCCHCCE_REGMappingEvidence"], ...
+    ["PDCCHREGMappingAvailable"], ...
+    ["PDCCHCORESETDuration"], ...
+    ["PDCCHSearchSpaceNumCandidates"], ...
+    ["PDCCHCandidateDecodeOKVector"], ...
+    ["PDCCHCandidateSINRVector_dB"], ...
+    ["ChannelEstimateSource"], ...
+    ["RuntimeEvidenceSource"], ...
+    ["TruthStatus"]};
+missing = localMissingAnyColumnGroups(T, requiredGroups);
+if ~isempty(missing)
+    status = "integrated_pdcch_trials_missing_columns:" + strjoin(missing, "|");
+    return;
+end
+
+strictOk = localFirstBoolColumn(T, ["StrictOk"], false);
+crcOk = localFirstBoolColumn(T, ["DCICrcPass"], false);
+payloadOk = localFirstBoolColumn(T, ["DCIPayloadMatch", "PDCCHPayloadMatch"], false);
+grantOk = localFirstBoolColumn(T, ["GrantValid"], false);
+nonProxy = ~localFirstBoolColumn(T, ["ProxyUsed"], true) & ...
+    ~localFirstBoolColumn(T, ["Skipped"], true) & ...
+    ~localFirstBoolColumn(T, ["ToolboxMissing"], true) & ...
+    ~localFirstBoolColumn(T, ["FallbackFlag"], false) & ...
+    ~localFirstBoolColumn(T, ["PlaceholderFlag"], false);
+candidateCount = localFirstNumericColumn(T, ["CandidatesAttempted", "PDCCHCandidatesAttempted", "BlindDecodeCount"], NaN);
+reCount = localFirstNumericColumn(T, ["PDCCHRECount"], NaN);
+dmrsRECount = localFirstNumericColumn(T, ["PDCCHDMRSRECount"], NaN);
+encodedBits = localFirstNumericColumn(T, ["PDCCHEncodedBits"], NaN);
+crcRNTI = localFirstNumericColumn(T, ["PDCCHDCICrcRNTI"], NaN);
+scramblingRNTI = localFirstNumericColumn(T, ["PDCCHScramblingRNTI"], NaN);
+coresetDuration = localFirstNumericColumn(T, ["PDCCHCORESETDuration"], NaN);
+regMappingAvailable = localFirstBoolColumn(T, ["PDCCHREGMappingAvailable"], false);
+receiverEvidenceOk = localFirstBoolColumn(T, ["StrictReceiverEvidenceOk"], true);
+decodeAttempted = localFirstBoolColumn(T, ["DecodeAttempted"], true);
+decodeUsable = localFirstBoolColumn(T, ["DecodeUsable"], true);
+receiverUsable = localFirstBoolColumn(T, ["ReceiverUsable"], true);
+detectionAttempted = localFirstBoolColumn(T, ["DetectionAttempted"], true);
+detectionUsable = localFirstBoolColumn(T, ["DetectionUsable"], true);
+
+gridHash = localFirstTextColumn(T, ["PDCCHGridHash"], "");
+waveHash = localFirstTextColumn(T, ["PDCCHWaveformHash"], "");
+resourceHash = localFirstTextColumn(T, ["PDCCHResourceHash"], "");
+candidateDecodeVector = localFirstTextColumn(T, ["PDCCHCandidateDecodeOKVector"], "");
+candidateSINRVector = localFirstTextColumn(T, ["PDCCHCandidateSINRVector_dB"], "");
+searchSpaceCandidates = localFirstTextColumn(T, ["PDCCHSearchSpaceNumCandidates"], "");
+crcSource = lower(localFirstTextColumn(T, ["PDCCHCRCDecodeSource"], ""));
+blindSource = lower(localFirstTextColumn(T, ["PDCCHBlindDecodeEvidenceSource"], ""));
+mappingSource = lower(localFirstTextColumn(T, ["PDCCHCCE_REGMappingEvidence"], ""));
+channelSource = lower(localFirstTextColumn(T, ["ChannelEstimateSource"], ""));
+runtimeSource = lower(localFirstTextColumn(T, ["RuntimeEvidenceSource"], ""));
+truthStatus = lower(localFirstTextColumn(T, ["TruthStatus"], ""));
+
+hashOk = localNonBlankTextMask(gridHash) & localNonBlankTextMask(waveHash) & localNonBlankTextMask(resourceHash);
+candidateVectorOk = localNonBlankTextMask(candidateDecodeVector) & contains(candidateDecodeVector, "1") & ...
+    localNonBlankTextMask(candidateSINRVector) & localNonBlankTextMask(searchSpaceCandidates);
+sourceOk = contains(crcSource, "nrdcidecode") & contains(blindSource, "nrpdcch") & ...
+    contains(mappingSource, "nrpdcchresources") & contains(channelSource, "nrchannelestimate") & ...
+    contains(runtimeSource, "pdcch_tx") & contains(runtimeSource, "pdcch_rx") & ...
+    contains(truthStatus, "real_pdcch_waveform");
+
+rowOk = strictOk & crcOk & payloadOk & grantOk & nonProxy & ...
+    candidateCount > 0 & reCount > 0 & dmrsRECount > 0 & encodedBits > 0 & ...
+    crcRNTI > 0 & scramblingRNTI > 0 & coresetDuration > 0 & regMappingAvailable & ...
+    receiverEvidenceOk & decodeAttempted & decodeUsable & receiverUsable & ...
+    detectionAttempted & detectionUsable & hashOk & candidateVectorOk & sourceOk;
+ok = any(rowOk);
+if ok
+    status = "integrated_pdcch_runtime_waveform_blind_decode_evidence_present";
+else
+    status = "integrated_pdcch_runtime_rows_fail_38xxx_evidence_checks";
+end
+end
+
+function missing = localMissingAnyColumnGroups(T, groups)
+missing = strings(0, 1);
+for i = 1:numel(groups)
+    candidates = string(groups{i});
+    present = false;
+    for k = 1:numel(candidates)
+        present = present || localHasColumn(T, candidates(k));
+    end
+    if ~present
+        missing(end+1, 1) = strjoin(candidates, "/"); %#ok<AGROW>
+    end
+end
+end
+
+function values = localFirstBoolColumn(T, names, defaultValue)
+names = string(names);
+for i = 1:numel(names)
+    if localHasColumn(T, names(i))
+        values = localColumnBool(T, names(i));
+        return;
+    end
+end
+values = repmat(logical(defaultValue), height(T), 1);
+end
+
+function values = localFirstNumericColumn(T, names, defaultValue)
+names = string(names);
+for i = 1:numel(names)
+    if localHasColumn(T, names(i))
+        values = localColumnNumeric(T, names(i));
+        return;
+    end
+end
+values = repmat(double(defaultValue), height(T), 1);
+end
+
+function values = localFirstTextColumn(T, names, defaultValue)
+names = string(names);
+for i = 1:numel(names)
+    if localHasColumn(T, names(i))
+        values = strtrim(string(T.(names(i))));
+        values(ismissing(values)) = "";
+        return;
+    end
+end
+values = repmat(string(defaultValue), height(T), 1);
+end
+
+function mask = localNonBlankTextMask(values)
+values = strtrim(string(values));
+mask = ~(ismissing(values) | values == "" | lower(values) == "nan" | values == "<missing>");
+mask = mask(:);
 end
 
 function stats = localTRSStrictEvidenceStats(layout, scfg, cfg)
