@@ -1,4 +1,5 @@
 top_level_order:
+  - canonical_control
   - bwp
   - pdsch
   - pusch
@@ -9,6 +10,38 @@ top_level_order:
   - rf_hardware
   - tdd_timing
 sections:
+  canonical_control:
+    required: false
+    parameters:
+      identity: {required: false, type: struct}
+      launch: {required: false, type: struct}
+      run: {required: false, type: struct}
+      topology: {required: false, type: struct}
+      radio: {required: false, type: struct}
+      channel: {required: false, type: struct}
+      mobility: {required: false, type: struct}
+      antenna: {required: false, type: struct}
+      power: {required: false, type: struct}
+      mimo: {required: false, type: struct}
+      scheduler: {required: false, type: struct}
+      traffic: {required: false, type: struct}
+      reference_signals: {required: false, type: struct}
+      csi: {required: false, type: struct}
+      control: {required: false, type: struct}
+      random_access: {required: false, type: struct}
+      coding: {required: false, type: struct}
+      modulation: {required: false, type: struct}
+      harq: {required: false, type: struct}
+      receiver: {required: false, type: struct}
+      impairments: {required: false, type: struct}
+      ai_ml: {required: false, type: struct}
+      energy: {required: false, type: struct}
+      kpis: {required: false, type: struct}
+      output: {required: false, type: struct}
+      logging: {required: false, type: struct}
+      sweeps: {required: false, type: struct}
+      manifest: {required: false, type: struct}
+      runtime_overrides: {required: false, type: struct_array}
   bwp:
     required: false
     parameters:

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -17,34 +17,88 @@ SCENARIO = "lls_webgui_2cell_singlefile_full_lls_4ghz_100mhz.yaml"
 SCENARIO_PATH = REPO_ROOT / "simulator" / "configs" / "scenarios" / SCENARIO
 
 
-def _leaf_count(value: Any) -> int:
-    if isinstance(value, dict):
-        return sum(_leaf_count(child) for child in value.values())
-    if isinstance(value, list):
-        return max(1, sum(_leaf_count(child) for child in value))
-    return 1
+RUNTIME_MIRROR_SECTIONS = {
+    "meta",
+    "scenario",
+    "simulation",
+    "frequency",
+    "frame",
+    "global_radio_scope",
+    "frame_timing",
+    "deployment_topology",
+    "users",
+    "channels",
+    "channel_model",
+    "mobility",
+    "antenna_and_array",
+    "mimo",
+    "system",
+    "traffic",
+    "reference_signals",
+    "control",
+    "random_access",
+    "output",
+    "output_control",
+    "logging",
+}
 
 
 def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> None:
     raw = yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8"))
 
     assert "inherits" not in raw
-    assert int(raw["meta"]["single_file_leaf_parameter_count_at_generation"]) >= 2000
-    assert _leaf_count(raw) >= 2000
-    assert raw["deployment_topology"]["num_cells"] == 2
-    assert raw["deployment_topology"]["num_trps"] == 2
-    assert raw["deployment_topology"]["num_sectors_per_site"] == 1
-    assert raw["output"]["emit_placeholder_artifacts"] is False
+    assert set(raw) == {"canonical_control"}
+    assert not (set(raw) & RUNTIME_MIRROR_SECTIONS)
+
+    canonical = raw["canonical_control"]
+    assert canonical["topology"]["num_cells"] == 2
+    assert canonical["topology"]["num_trps"] == 2
+    assert canonical["topology"]["num_sectors_per_site"] == 1
+    assert canonical["topology"]["num_ues"] == 150
+    assert canonical["output"]["emit_placeholder_artifacts"] is False
+    override_paths = [item["path"] for item in canonical["runtime_overrides"]]
+    assert len(override_paths) == len(set(override_paths))
 
     assert SCENARIO in dash.list_scenarios()
     resolved, chain = dash.load_resolved_config_payload(SCENARIO)
     assert chain == ["simulator/configs/scenarios/lls_webgui_2cell_singlefile_full_lls_4ghz_100mhz.yaml"]
     assert dash.path_get(resolved, "meta.scenario_id") == "lls_webgui_2cell_singlefile_full_lls_4ghz_100mhz"
     assert dash.path_get(resolved, "scenario.runner_profile") == "waveform_bundle"
+    assert dash.path_get(resolved, "deployment_topology.num_cells") == 2
+    assert dash.path_get(resolved, "deployment_topology.num_trps") == 2
+    assert dash.path_get(resolved, "deployment_topology.num_sectors_per_site") == 1
+    assert dash.path_get(resolved, "deployment_topology.num_ues") == 150
+    assert dash.path_get(resolved, "users.n_users") == 150
+    assert dash.path_get(resolved, "users.execution_model") == "slot_coupled_truth"
     assert dash.path_get(resolved, "simulation.noise_operating_mode") == "receiver_noise_figure_thermal_noise"
     assert dash.path_get(resolved, "global_radio_scope.carrier_frequency_hz") == 4_000_000_000
     assert dash.path_get(resolved, "global_radio_scope.channel_bandwidth_hz") == 100_000_000
+    assert dash.path_get(resolved, "output.emit_placeholder_artifacts") is False
 
     contract = dash.scenario_launch_contract(resolved, SCENARIO)
     assert contract["launch_allowed"] is True
     assert contract["launch_contract"] == "waveform_bundle_truth"
+
+
+def test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view() -> None:
+    raw = yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8"))
+    large = copy.deepcopy(raw)
+    topology = large["canonical_control"]["topology"]
+    topology["num_sites"] = 50
+    topology["num_sectors_per_site"] = 3
+    topology.pop("num_cells", None)
+    topology.pop("num_trps", None)
+    topology.pop("sector_azimuth_offsets_deg", None)
+    topology["num_ues"] = 12000
+
+    resolved = dash.canonicalize_browser_config_payload(large)
+
+    assert dash.path_get(resolved, "deployment_topology.num_sites") == 50
+    assert dash.path_get(resolved, "deployment_topology.num_sectors_per_site") == 3
+    assert dash.path_get(resolved, "deployment_topology.num_cells") == 150
+    assert dash.path_get(resolved, "deployment_topology.num_trps") == 150
+    assert dash.path_get(resolved, "deployment_topology.num_ues") == 12000
+    assert dash.path_get(resolved, "users.n_users") == 12000
+    assert dash.path_get(resolved, "scenario.layout.nSites") == 50
+    assert dash.path_get(resolved, "scenario.layout.nSectorsPerSite") == 3
+    assert dash.path_get(resolved, "scenario.sectorization.azimOffsets_deg") == [0.0, 120.0, 240.0]

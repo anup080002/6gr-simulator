@@ -13,6 +13,7 @@ oldBase = localLegacyDefaults();
 
 cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localEnsureScenarioSchemaVersion(cfg);
+cfg = localExpandCanonicalControl(cfg, sixgr.util.mergeStruct(newBase, oldBase));
 
 cfg = localSyncValue(cfg, newBase, oldBase, "meta.scenario_id", "meta.scenario_id", "identity");
 cfg = localSyncMetadataAlias(cfg, "meta.scenario_name", "meta.description");
@@ -217,6 +218,483 @@ cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_enabled", "
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_model", "impairments.phase_noise.model", "identity");
 cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localApplyDerivedRadioAliases(cfg, newBase);
+end
+
+function cfg = localExpandCanonicalControl(cfg, newBase)
+if ~isfield(cfg, "canonical_control") || ~isstruct(cfg.canonical_control) || ~isscalar(cfg.canonical_control)
+    return;
+end
+
+cfg = sixgr.util.mergeStruct(newBase, cfg);
+control = cfg.canonical_control;
+
+mappings = {
+    "identity.scenario_id", "meta.scenario_id", "identity"
+    "identity.scenario_id", "meta.scenario_family", "identity"
+    "identity.scenario_id", "meta.scenario_group", "identity"
+    "identity.scenario_name", "meta.scenario_name", "identity"
+    "identity.description", "meta.description", "identity"
+    "identity.version", "meta.version", "identity"
+    "identity.owner", "meta.owner", "identity"
+    "identity.owner", "meta.author", "identity"
+    "identity.research_class", "meta.research_class", "identity"
+    "identity.maturity_tag", "meta.maturity_tag", "identity"
+    "identity.maturity_tag", "meta.study_status", "identity"
+    "identity.tags", "meta.tags", "identity"
+    "identity.purpose", "meta.purpose", "identity"
+    "identity.release_reference", "meta.release_reference", "identity"
+    "identity.source_reference", "meta.source_reference", "identity"
+    "identity.created_at", "meta.created_at", "identity"
+    "identity.notes", "meta.notes", "identity"
+    "identity.baseline_reference_name", "meta.baseline_reference_name", "identity"
+    "identity.comparison_group_name", "meta.comparison_group_name", "identity"
+    "launch.runner_profile", "scenario.runner_profile", "identity"
+    "launch.target_cases", "scenario.target_cases", "identity"
+    "launch.bundle_anchor_cases", "scenario.bundle_anchor_cases", "identity"
+    "launch.expected_outputs", "scenario.expected_outputs", "identity"
+    "launch.honesty_mode", "scenario.honesty_mode", "identity"
+    "launch.unsupported_output_policy", "scenario.unsupported_output_policy", "identity"
+    "launch.provenance_logging", "scenario.provenance_logging", "identity"
+    "launch.notes", "scenario.notes", "identity"
+    "identity.scenario_id", "scenario.name", "identity"
+    "identity.description", "scenario.description", "identity"
+    "run.seed", "simulation.random_seed", "identity"
+    "run.seed", "run_control.seed", "identity"
+    "run.seed", "run_control.random_seed_master", "identity"
+    "run.deterministic_mode", "simulation.deterministic_mode", "identity"
+    "run.deterministic_mode", "run_control.deterministic_mode", "identity"
+    "run.link_direction", "simulation.link_direction", "identity"
+    "run.n_frames", "simulation.n_frames", "identity"
+    "run.total_slots", "simulation.n_slots", "identity"
+    "run.n_subframes", "simulation.n_subframes", "identity"
+    "run.monte_carlo_iterations", "simulation.monte_carlo_iterations", "identity"
+    "run.snr_db", "simulation.snr_db", "identity"
+    "run.noise_operating_mode", "simulation.noise_operating_mode", "identity"
+    "run.min_duration_s", "simulation.min_duration_s", "identity"
+    "run.snr_sweep_offsets_db", "simulation.snr_sweep_offsets_db", "identity"
+    "run.execution_mode", "run_control.execution_mode", "identity"
+    "run.study_mode", "run_control.study_mode", "identity"
+    "run.simulation_mode", "run_control.simulation_mode", "identity"
+    "run.run_profile", "run_control.run_profile", "identity"
+    "run.total_slots", "run_control.total_slots", "identity"
+    "run.warmup_slots", "run_control.warmup_slots", "identity"
+    "run.measurement_slots", "run_control.measurement_slots", "identity"
+    "run.num_workers", "run_control.num_workers", "identity"
+    "run.batch_size_links", "run_control.batch_size_links", "identity"
+    "run.trace_capture_level", "run_control.trace_capture_level", "identity"
+    "run.save_intermediate", "run_control.save_intermediate", "identity"
+    "radio.range_name", "frequency.range_name", "identity"
+    "radio.band_name", "frequency.band_name", "identity"
+    "radio.center_frequency_hz", "frequency.center_frequency_hz", "identity"
+    "radio.bandwidth_hz", "frequency.bandwidth_hz", "identity"
+    "radio.bandwidth_options_hz", "frequency.bandwidth_options_hz", "identity"
+    "radio.duplex_mode", "frequency.duplex_mode", "identity"
+    "radio.carrier_count", "frequency.carrier_count", "identity"
+    "radio.carrier_aggregation_enabled", "frequency.carrier_aggregation_enabled", "identity"
+    "radio.numerology_options_khz", "frequency.numerology_options_khz", "identity"
+    "radio.max_mimo_size", "frequency.max_mimo_size", "identity"
+    "radio.mobility_defaults_kmph", "frequency.mobility_defaults_kmph", "identity"
+    "radio.channel_model_defaults", "frequency.channel_model_defaults", "identity"
+    "radio.reference_signal_defaults", "frequency.reference_signal_defaults", "identity"
+    "radio.power_model_defaults", "frequency.power_model_defaults", "identity"
+    "radio.energy_model_defaults", "frequency.energy_model_defaults", "identity"
+    "radio.rf_impairment_defaults", "frequency.rf_impairment_defaults", "identity"
+    "radio.n_size_grid", "frequency.n_size_grid", "identity"
+    "radio.center_frequency_hz", "global_radio_scope.carrier_frequency_hz", "identity"
+    "radio.bandwidth_hz", "global_radio_scope.channel_bandwidth_hz", "identity"
+    "radio.bandwidth_hz", "global_radio_scope.simulation_bandwidth_hz", "identity"
+    "radio.occupied_bandwidth_hz", "global_radio_scope.occupied_bandwidth_hz", "identity"
+    "radio.duplex_mode", "global_radio_scope.duplex_mode", "identity"
+    "radio.range_name", "global_radio_scope.frequency_range_label", "identity"
+    "radio.scs_khz", "frame.scs_khz", "identity"
+    "radio.scs_khz", "global_radio_scope.scs_hz", "khz_to_hz"
+    "radio.cp_type", "frame.cp_type", "identity"
+    "radio.cp_type", "global_radio_scope.cp_type", "identity"
+    "radio.slot_format", "frame.slot_format", "identity"
+    "radio.tdd_pattern", "frame.tdd_pattern", "identity"
+    "radio.tdd_pattern", "frame_timing.tdd_pattern", "identity"
+    "radio.special_slot_downlink_symbols", "frame.special_slot_downlink_symbols", "identity"
+    "radio.special_slot_downlink_symbols", "frame_timing.special_slot_downlink_symbols", "identity"
+    "radio.ul_dl_guard_symbols", "frame.ul_dl_guard_symbols", "identity"
+    "radio.ul_dl_guard_symbols", "frame_timing.ul_dl_guard_symbols", "identity"
+    "radio.special_slot_uplink_symbols", "frame.special_slot_uplink_symbols", "identity"
+    "radio.special_slot_uplink_symbols", "frame_timing.special_slot_uplink_symbols", "identity"
+    "radio.sample_rate_hz", "waveform.sample_rate_hz", "identity"
+    "radio.sample_rate_hz", "global_radio_scope.sample_rate_hz", "identity"
+    "radio.fft_size", "waveform.fft_size", "identity"
+    "radio.fft_size", "waveform.dft_size", "identity"
+    "radio.fft_size", "global_radio_scope.fft_size", "identity"
+    "radio.fft_size", "global_radio_scope.ifft_size", "identity"
+    "radio.dl_waveform", "waveform.dl_waveform", "identity"
+    "radio.ul_waveform", "waveform.ul_waveform", "identity"
+    "radio.transform_precoding_enabled", "waveform.transform_precoding_enabled", "identity"
+    "radio.transform_precoding_enabled", "waveform.transform_precoding", "identity"
+    "radio.windowing_enabled", "waveform.windowing_enabled", "identity"
+    "radio.windowing_enabled", "waveform.windowing", "identity"
+    "radio.n_size_grid", "resource_grid.num_rbs", "identity"
+    "channel.model_type", "channels.model_type", "identity"
+    "channel.model_type", "channel_model.model_family", "identity"
+    "channel.profile", "channels.profile", "identity"
+    "channel.profile", "channel_model.scenario_label", "identity"
+    "channel.delay_spread_ns", "channels.delay_spread_ns", "identity"
+    "channel.delay_spread_ns", "channel_model.delay_spread_ns", "identity"
+    "channel.doppler_hz", "channels.doppler_hz", "identity"
+    "channel.doppler_hz", "channel_model.doppler_hz", "identity"
+    "channel.doppler_source_mode", "channels.doppler_source_mode", "identity"
+    "channel.doppler_source_mode", "channel_model.doppler_source_mode", "identity"
+    "channel.los_enabled", "channels.los_enabled", "identity"
+    "channel.spatial_consistency_enabled", "channels.spatial_consistency_enabled", "identity"
+    "channel.pathloss_enabled", "channels.pathloss_enabled", "identity"
+    "channel.shadow_fading_enabled", "channels.shadow_fading_enabled", "identity"
+    "channel.pathloss_model", "channels.pathloss_model", "identity"
+    "channel.pathloss_model", "channel_model.pathloss_model", "identity"
+    "channel.shadow_fading_std_db", "channels.shadow_fading_std_db", "identity"
+    "channel.mobility_kmph", "channels.mobility_kmph", "identity"
+    "channel.inter_cell_execution_mode", "interference.inter_cell_execution_mode", "identity"
+    "mobility.ue_speed_kmh", "mobility.ue_speed_kmh", "identity"
+    "mobility.ue_speed_kmh", "channels.mobility_kmph", "identity"
+    "mobility.speed_profile", "mobility.speed_profile", "identity"
+    "mobility.direction_model", "mobility.direction_model", "identity"
+    "mobility.trajectory_model", "mobility.trajectory_model", "identity"
+    "mobility.update_period_s", "mobility.update_period_s", "identity"
+    "mobility.spatial_consistency_flag", "mobility.spatial_consistency_flag", "identity"
+    "mobility.spatial_consistency_flag", "channels.spatial_consistency_enabled", "identity"
+    "antenna.bs_array_geometry", "antenna_and_array.bs_array_geometry", "identity"
+    "antenna.ue_array_geometry", "antenna_and_array.ue_array_geometry", "identity"
+    "antenna.bs_num_antenna_elements", "antenna_and_array.bs_num_antenna_elements", "identity"
+    "antenna.ue_num_antenna_elements", "antenna_and_array.ue_num_antenna_elements", "identity"
+    "antenna.bs_num_antenna_elements", "mimo.n_tx_ant", "identity"
+    "antenna.ue_num_antenna_elements", "mimo.n_rx_ant", "identity"
+    "antenna.polarization", "antenna_and_array.polarization", "identity"
+    "antenna.element_spacing_h", "antenna_and_array.element_spacing_h", "identity"
+    "antenna.element_spacing_v", "antenna_and_array.element_spacing_v", "identity"
+    "antenna.digital_precoder_family", "antenna_and_array.digital_precoder_family", "identity"
+    "antenna.digital_precoder_family", "mimo.precoder_type", "identity"
+    "antenna.bs_mechanical_tilt_deg", "antenna_and_array.bs_mechanical_tilt_deg", "identity"
+    "power.bs_tx_power_dbm", "power_and_rf_frontend.bs_tx_power_dbm", "identity"
+    "power.bs_tx_power_dbm", "energy_efficiency.tx_power_dbm", "identity"
+    "power.ue_tx_power_dbm", "power_and_rf_frontend.ue_tx_power_dbm", "identity"
+    "power.ue_noise_figure_db", "power_and_rf_frontend.ue_noise_figure_db", "identity"
+    "power.bs_noise_figure_db", "power_and_rf_frontend.bs_noise_figure_db", "identity"
+    "mimo.n_tx_ant", "mimo.n_tx_ant", "identity"
+    "mimo.n_rx_ant", "mimo.n_rx_ant", "identity"
+    "mimo.n_layers", "mimo.n_layers", "identity"
+    "mimo.max_dl_layers", "mimo.max_dl_layers", "identity"
+    "mimo.max_ul_layers", "mimo.max_ul_layers", "identity"
+    "mimo.precoder_type", "mimo.precoder_type", "identity"
+    "mimo.codebook_type", "mimo.codebook_type", "identity"
+    "mimo.reciprocity_mode", "mimo.reciprocity_mode", "identity"
+    "mimo.beam_sweep_enabled", "mimo.beam_sweep_enabled", "identity"
+    "mimo.beam_count", "mimo.beam_count", "identity"
+    "mimo.mtrp_ready", "mimo.mtrp_ready", "identity"
+    "mimo.multi_panel_ready", "mimo.multi_panel_ready", "identity"
+    "mimo.panel_count", "mimo.panel_count", "identity"
+    "mimo.trp_count", "mimo.trp_count", "identity"
+    "mimo.mu_mimo_enable", "mimo.mu_mimo_enable", "identity"
+    "mimo.mu_mimo_max_users_per_prb", "mimo.mu_mimo_max_users_per_prb", "identity"
+    "scheduler.type", "system.scheduler.type", "identity"
+    "scheduler.max_active_ues_per_slot", "system.scheduler.maxActiveUEsPerSlot", "identity"
+    "scheduler.max_active_ues_per_cell_per_slot", "system.scheduler.maxActiveUEsPerCellPerSlot", "identity"
+    "scheduler.max_active_ues_per_cell_per_slot_dl", "system.scheduler.maxActiveUEsPerCellPerSlotDL", "identity"
+    "scheduler.max_active_ues_per_cell_per_slot_ul", "system.scheduler.maxActiveUEsPerCellPerSlotUL", "identity"
+    "scheduler.max_prb_allocation_per_ue", "system.scheduler.maxPRBAllocationPerUE", "identity"
+    "scheduler.fairness_alpha", "system.scheduler.fairnessAlpha", "identity"
+    "scheduler.proportional_fair_window_ms", "system.scheduler.proportionalFairWindow_ms", "identity"
+    "scheduler.beam_aware", "system.scheduler.beamAware", "identity"
+    "scheduler.energy_aware", "system.scheduler.energyAware", "identity"
+    "scheduler.qos_aware", "system.scheduler.qosAware", "identity"
+    "scheduler.slice_aware", "system.scheduler.sliceAware", "identity"
+    "scheduler.starvation_guard", "system.scheduler.starvationGuard", "identity"
+    "scheduler.cell_edge_boost", "system.scheduler.cellEdgeBoost", "identity"
+    "scheduler.queue_max_bits", "system.queueMaxBits", "identity"
+    "scheduler.large_scale_update_period_slots", "system.largeScaleUpdatePeriod_slots", "identity"
+    "scheduler.beam_update_period_slots", "system.beam.updatePeriod_slots", "identity"
+    "scheduler.beam_count", "system.beam.numBeams", "identity"
+    "traffic.model", "traffic.model", "identity"
+    "traffic.transport", "traffic.transport", "identity"
+    "traffic.flow_direction", "traffic.flowDirection", "identity"
+    "traffic.dl_ratio", "traffic.dlRatio", "identity"
+    "traffic.ul_ratio", "traffic.ulRatio", "identity"
+    "traffic.packet_delay_budget_ms", "traffic.packetDelayBudget_ms", "identity"
+    "traffic.packet_size_bytes", "traffic.packetSize_bytes", "identity"
+    "traffic.packet_interval_ms", "traffic.packetInterval_ms", "identity"
+    "traffic.target_rate_mbps", "traffic.targetRate_Mbps", "identity"
+    "traffic.full_buffer_bits_per_tti", "traffic.fullBufferBitsPerTTI", "identity"
+    "reference_signals.ssb_enabled", "reference_signals.ssb_enabled", "identity"
+    "reference_signals.pbch_enabled", "reference_signals.pbch_enabled", "identity"
+    "reference_signals.pdcch_dmrs_enabled", "reference_signals.pdcch_dmrs_enabled", "identity"
+    "reference_signals.csi_rs_enabled", "reference_signals.csi_rs_enabled", "identity"
+    "reference_signals.srs_enabled", "reference_signals.srs_enabled", "identity"
+    "reference_signals.trs_enabled", "reference_signals.trs_enabled", "identity"
+    "reference_signals.ptrs_enabled", "reference_signals.ptrs_enabled", "identity"
+    "reference_signals.csi_feedback_mode", "reference_signals.csi_feedback_mode", "identity"
+    "reference_signals.cqi_reporting_enabled", "reference_signals.cqi_reporting_enabled", "identity"
+    "reference_signals.pmi_reporting_enabled", "reference_signals.pmi_reporting_enabled", "identity"
+    "reference_signals.ri_reporting_enabled", "reference_signals.ri_reporting_enabled", "identity"
+    "reference_signals.pdsch_dmrs_ports", "reference_signals.pdsch_dmrs_ports", "identity"
+    "reference_signals.pusch_dmrs_ports", "reference_signals.pusch_dmrs_ports", "identity"
+    "reference_signals.csi_rs_ports", "reference_signals.csi_rs_ports", "identity"
+    "reference_signals.srs_ports", "reference_signals.srs_ports", "identity"
+    "reference_signals.trs_ports", "reference_signals.trs.num_ports", "identity"
+    "reference_signals.trs_scrambling_id", "reference_signals.trs.scrambling_id", "identity"
+    "reference_signals.srs_periodicity_ms", "reference_signals.srs_periodicity_ms", "identity"
+    "reference_signals.trs_periodicity_ms", "reference_signals.trs_periodicity_ms", "identity"
+    "reference_signals.ptrs_enabled", "reference_signals.ptrs.enabled", "identity"
+    "reference_signals.csi_rs_enabled", "reference_signals.nzp_csi_rs.enabled", "identity"
+    "reference_signals.srs_enabled", "reference_signals.srs.enabled", "identity"
+    "reference_signals.trs_enabled", "reference_signals.trs.enabled", "identity"
+    "csi.dl_csi_enabled", "csi_acquisition_and_reporting.dl_csi_enabled", "identity"
+    "csi.ul_csi_enabled", "csi_acquisition_and_reporting.ul_csi_enabled", "identity"
+    "csi.cqi_policy", "csi_acquisition_and_reporting.cqi_policy", "identity"
+    "csi.pmi_policy", "csi_acquisition_and_reporting.pmi_policy", "identity"
+    "csi.ri_policy", "csi_acquisition_and_reporting.ri_policy", "identity"
+    "csi.report_payload_mode", "csi_acquisition_and_reporting.report_payload_mode", "identity"
+    "csi.crc_attached_mode", "csi_acquisition_and_reporting.crc_attached_mode", "identity"
+    "csi.crc_free_mode", "csi_acquisition_and_reporting.crc_free_mode", "identity"
+    "control.pdcch_enabled", "control.pdcch_enabled", "identity"
+    "control.pdcch_enabled", "pdcch.enabled", "identity"
+    "control.pucch_enabled", "control.pucch_enabled", "identity"
+    "control.pucch_enabled", "pucch.enabled", "identity"
+    "control.pucch_format", "control.pucch_format", "identity"
+    "control.pdcch_payload_bits", "control.pdcch_payload_bits", "identity"
+    "control.blind_decode_list_length", "control.blind_decode_list_length", "identity"
+    "control.aggregation_levels", "control.aggregation_levels", "identity"
+    "control.aggregation_levels", "pdcch.aggregation_levels", "identity"
+    "control.coreset_duration", "control.coreset_duration", "identity"
+    "control.coreset_frequency_resources", "control.coreset_frequency_resources", "identity"
+    "control.pbch_required", "control_gating.pbch_required", "identity"
+    "control.prach_required", "control_gating.prach_required", "identity"
+    "control.pdcch_required", "control_gating.pdcch_required", "identity"
+    "control.srs_required", "control_gating.srs_required", "identity"
+    "control.trs_required", "control_gating.trs_required", "identity"
+    "control.srs_max_age_slots", "control_gating.srs_max_age_slots", "identity"
+    "control.trs_max_age_slots", "control_gating.trs_max_age_slots", "identity"
+    "random_access.enabled", "random_access.enabled", "identity"
+    "random_access.enabled", "prach.enabled", "identity"
+    "random_access.preamble_count", "random_access.preamble_count", "identity"
+    "random_access.zero_correlation_zone", "random_access.zero_correlation_zone", "identity"
+    "random_access.detection_threshold", "random_access.detection_threshold", "identity"
+    "random_access.detection_threshold_mode", "random_access.detection_threshold_mode", "identity"
+    "random_access.msg3_enabled", "random_access.msg3_enabled", "identity"
+    "random_access.min_detection_trials", "random_access.min_detection_trials", "identity"
+    "random_access.configuration_index", "random_access.configuration_index", "identity"
+    "random_access.subcarrier_spacing_khz", "random_access.subcarrier_spacing_khz", "identity"
+    "random_access.root_sequence_index", "random_access.root_sequence_index", "identity"
+    "random_access.preamble_index", "random_access.preamble_index", "identity"
+    "random_access.prach_format", "random_access.prach_format", "identity"
+    "random_access.prach_format", "prach.format", "identity"
+    "random_access.preamble_length_mode", "random_access.preamble_length_mode", "identity"
+    "random_access.num_prach_occasions", "random_access.num_prach_occasions", "identity"
+    "coding.data_code_type", "coding.data_code_type", "identity"
+    "coding.control_code_type", "coding.control_code_type", "identity"
+    "coding.base_graph", "coding.base_graph", "identity"
+    "coding.max_decoder_iterations", "coding.max_decoder_iterations", "identity"
+    "modulation.dl_modulation_order", "modulation.dl_modulation_order", "identity"
+    "modulation.ul_modulation_order", "modulation.ul_modulation_order", "identity"
+    "modulation.dl_mcs_index", "modulation.dl_mcs_index", "identity"
+    "modulation.ul_mcs_index", "modulation.ul_mcs_index", "identity"
+    "modulation.mcs_table", "modulation.mcs_table", "identity"
+    "modulation.pi2_bpsk_enabled", "modulation.pi2_bpsk_enabled", "identity"
+    "modulation.constellation_shaping_enabled", "modulation.constellation_shaping_enabled", "identity"
+    "harq.enabled", "harq.enabled", "identity"
+    "harq.process_count", "harq.process_count", "identity"
+    "harq.max_retx", "harq.max_retx", "identity"
+    "harq.rv_sequence", "harq.rv_sequence", "identity"
+    "harq.combining_mode", "harq.combining_mode", "identity"
+    "harq.feedback_timing_slots", "harq.feedback_timing_slots", "identity"
+    "receiver.channel_estimator", "receiver_algorithms.channel_estimator", "identity"
+    "receiver.interpolation_method", "receiver_algorithms.interpolation_method", "identity"
+    "receiver.equalizer", "receiver_algorithms.equalizer", "identity"
+    "receiver.decoder_iterations", "receiver_algorithms.decoder_iterations", "identity"
+    "ai_ml.enabled", "ai_ml.enabled", "identity"
+    "ai_ml.use_case", "ai_ml.use_case", "identity"
+    "ai_ml.mode", "ai_ml.mode", "identity"
+    "ai_ml.model_path", "ai_ml.model_path", "identity"
+    "ai_ml.model_id", "ai_ml.model_id", "identity"
+    "ai_ml.model_version", "ai_ml.model_version", "identity"
+    "ai_ml.fallback_enabled", "ai_ml.fallback_enabled", "identity"
+    "energy.enabled", "energy_efficiency.enabled", "identity"
+    "energy.tx_power_dbm", "energy_efficiency.tx_power_dbm", "identity"
+    "energy.pa_efficiency", "energy_efficiency.pa_efficiency", "identity"
+    "energy.rf_chain_count", "energy_efficiency.rf_chain_count", "identity"
+    "kpis.enabled", "kpis", "kpi_flags"
+    "output.output_dir", "output_control.output_dir", "identity"
+    "output.artifact_formats", "output_control.artifact_formats", "identity"
+    "output.save_csv", "output.save_csv", "identity"
+    "output.save_mat", "output.save_mat", "identity"
+    "output.save_figures", "output.save_figures", "identity"
+    "output.save_png", "output.save_png", "identity"
+    "output.save_yaml_snapshot", "output.save_yaml_snapshot", "identity"
+    "output.save_json_snapshot", "output.save_json_snapshot", "identity"
+    "output.save_resolved_config", "output_control.save_resolved_config", "identity"
+    "output.save_plots", "output_control.save_plots", "identity"
+    "output.save_report", "output_control.save_report", "identity"
+    "output.backend", "output.backend", "identity"
+    "output.profile", "output.profile", "identity"
+    "output.persistence_mode", "output.persistence_mode", "identity"
+    "output.persistence_mode", "output_control.output_persistence_mode", "identity"
+    "output.emit_placeholder_artifacts", "output.emit_placeholder_artifacts", "identity"
+    "logging.level", "logging.level", "identity"
+    "logging.save_logs", "logging.save_logs", "identity"
+    "logging.save_intermediate", "logging.save_intermediate", "identity"
+    "logging.strict_validation", "logging.strict_validation", "identity"
+    "logging.include_git_hash", "logging.include_git_hash", "identity"
+    "logging.echo_to_console", "logging.echo_to_console", "identity"
+    };
+
+for i = 1:size(mappings, 1)
+    cfg = localSetCanonicalValue(cfg, control, mappings{i,1}, mappings{i,2}, mappings{i,3});
+end
+
+cfg = localApplyCanonicalTopology(cfg, control);
+cfg = localApplyCanonicalRuntimeOverrides(cfg, control);
+end
+
+function cfg = localSetCanonicalValue(cfg, control, sourcePath, targetPath, mode)
+[value, found] = localTryGetNestedValue(control, sourcePath);
+if ~found
+    return;
+end
+cfg = sixgr.util.structSet(cfg, targetPath, localCanonicalConvert(value, mode));
+end
+
+function out = localCanonicalConvert(value, mode)
+switch string(mode)
+    case "khz_to_hz"
+        out = double(value) * 1e3;
+    case "kpi_flags"
+        out = localCanonicalKPIFlags(value);
+    otherwise
+        out = value;
+end
+end
+
+function s = localCanonicalKPIFlags(value)
+if isstruct(value)
+    s = value;
+    return;
+end
+s = struct();
+if isstring(value) || iscellstr(value)
+    items = string(value(:));
+    for i = 1:numel(items)
+        key = matlab.lang.makeValidName(char(items(i)));
+        if strlength(strtrim(items(i))) > 0
+            s.(key) = true;
+        end
+    end
+end
+end
+
+function cfg = localApplyCanonicalTopology(cfg, control)
+sites = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_sites", []), 1);
+sectors = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_sectors_per_site", []), NaN);
+cells = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_cells", []), NaN);
+if ~isfinite(sectors)
+    if isfinite(cells)
+        sectors = max(1, ceil(cells / max(1, sites)));
+    else
+        sectors = 1;
+    end
+end
+if ~isfinite(cells)
+    cells = max(1, sites * sectors);
+end
+trps = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_trps", []), cells);
+ues = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_ues", []), 1);
+azimuths = localCanonicalSectorAzimuths(control, sectors);
+
+derived = {
+    "deployment_topology.num_sites", sites
+    "deployment_topology.num_base_stations", sites
+    "deployment_topology.num_sectors_per_site", sectors
+    "deployment_topology.num_cells", cells
+    "deployment_topology.num_trps", trps
+    "deployment_topology.num_ues", ues
+    "deployment_topology.sector_azimuth_offsets_deg", azimuths
+    "deployment_topology.sector_azimuths_deg", azimuths
+    "scenario.layout.nSites", sites
+    "scenario.layout.nSectorsPerSite", sectors
+    "scenario.layout.nCells", cells
+    "scenario.sectorization.azimOffsets_deg", azimuths
+    "scenario.ue.nUE", ues
+    "users.n_users", ues
+    };
+for i = 1:size(derived, 1)
+    cfg = sixgr.util.structSet(cfg, derived{i,1}, derived{i,2});
+end
+
+mappings = {
+    "topology.site_layout", "deployment_topology.site_layout"
+    "topology.cell_type", "deployment_topology.cell_type"
+    "topology.inter_site_distance_m", "deployment_topology.inter_site_distance"
+    "topology.inter_site_distance_m", "scenario.layout.interSiteDistance_m"
+    "topology.wraparound_enabled", "deployment_topology.wraparound_enabled"
+    "topology.wraparound_enabled", "scenario.layout.wrapAround"
+    "topology.area_m", "scenario.geometry.area_m"
+    "topology.bs_height_m", "scenario.bs.height_m"
+    "topology.indoor_ue_fraction", "deployment_topology.indoor_ue_fraction"
+    "topology.min_ue_distance_from_bs_m", "deployment_topology.min_ue_distance_from_bs_m"
+    "topology.max_ue_distance_from_bs_m", "deployment_topology.max_ue_distance_from_bs_m"
+    "topology.users_enabled", "users.enabled"
+    "topology.rnti_start", "users.rnti_start"
+    "topology.seed_stride", "users.seed_stride"
+    "topology.execution_model", "users.execution_model"
+    "topology.beam_selection_strategy", "users.beam_selection_strategy"
+    "topology.save_user_tables", "users.save_user_tables"
+    "topology.trp_topology", "deployment_topology.trp_topology"
+    "topology.trp_sync_mode", "deployment_topology.trp_sync_mode"
+    "topology.trp_switching_mode", "deployment_topology.trp_switching_mode"
+    "topology.cell_free_flag", "deployment_topology.cell_free_flag"
+    "topology.full_duplex_flag", "deployment_topology.full_duplex_flag"
+    "topology.self_interference_path_model", "deployment_topology.self_interference_path_model"
+    };
+for i = 1:size(mappings, 1)
+    cfg = localSetCanonicalValue(cfg, control, mappings{i,1}, mappings{i,2}, "identity");
+end
+end
+
+function value = localCanonicalPositiveInt(raw, defaultValue)
+value = defaultValue;
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if ~isempty(raw)
+    value = max(1, round(raw(1)));
+end
+end
+
+function azimuths = localCanonicalSectorAzimuths(control, sectors)
+[configured, found] = localTryGetNestedValue(control, "topology.sector_azimuth_offsets_deg");
+if found && isnumeric(configured) && ~isempty(configured)
+    vals = double(configured(:)).';
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        azimuths = vals;
+        return;
+    end
+end
+sectors = max(1, round(double(sectors)));
+azimuths = (0:(sectors-1)) .* (360 / sectors);
+end
+
+function cfg = localApplyCanonicalRuntimeOverrides(cfg, control)
+overrides = sixgr.util.structGet(control, "runtime_overrides", []);
+if isempty(overrides) || ~isstruct(overrides)
+    return;
+end
+for i = 1:numel(overrides)
+    if ~isfield(overrides(i), "path") || ~isfield(overrides(i), "value")
+        continue;
+    end
+    target = strtrim(string(overrides(i).path));
+    if strlength(target) == 0
+        continue;
+    end
+    cfg = sixgr.util.structSet(cfg, char(target), overrides(i).value);
+end
 end
 
 function cfg = localEnsureConfigInheritance(cfg, sourceFiles, configPath)
@@ -830,6 +1308,7 @@ paths = [ ...
     string(fullfile(root, "simulator", "configs", "defaults", "top_level_required_sections_01.yaml"))
     string(fullfile(root, "simulator", "configs", "defaults", "top_level_required_sections_02.yaml"))
     string(fullfile(root, "simulator", "configs", "defaults", "top_level_required_sections_03.yaml"))
+    string(fullfile(root, "simulator", "configs", "defaults", "processing_chains.yaml"))
     ];
 end
 
