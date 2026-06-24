@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <key id="label" for="all" attr.name="label" attr.type="string"/>
+  <key id="status" for="node" attr.name="status" attr.type="string"/>
+  <graph id="phase5_current_call_graph" edgedefault="directed">
+    <node id="rrc"><data key="label">RRC abstract attach and SRB1</data><data key="status">partial_json_not_asn1</data></node>
+    <node id="pdcp_rlc"><data key="label">PDCP/RLC SRB helpers</data><data key="status">partial_live</data></node>
+    <node id="mac"><data key="label">TBAssembler and MAC CEs</data><data key="status">partial_live</data></node>
+    <node id="scheduler"><data key="label">PF/RR scheduler</data><data key="status">partial_live</data></node>
+    <node id="pdcch"><data key="label">C-RNTI PDCCH strict anchor</data><data key="status">partial_strict_anchor</data></node>
+    <node id="pdsch"><data key="label">PDSCH Tx/Rx waveform</data><data key="status">partial_live</data></node>
+    <node id="pusch"><data key="label">PUSCH Tx/Rx waveform</data><data key="status">partial_live</data></node>
+    <node id="pucch"><data key="label">PUCCH F0/F1 feedback waveform</data><data key="status">partial_live</data></node>
+    <node id="harq"><data key="label">HARQ process and soft LLR helper</data><data key="status">partial_live</data></node>
+    <node id="packet"><data key="label">Packet delivery lineage</data><data key="status">pending_connected_runtime</data></node>
+    <edge id="e1" source="rrc" target="pdcp_rlc"><data key="label">SRB1 JSON bytes today; ASN.1 pending</data></edge>
+    <edge id="e2" source="pdcp_rlc" target="mac"><data key="label">MAC SDUs</data></edge>
+    <edge id="e3" source="mac" target="scheduler"><data key="label">queues and CEs; decoded BSR ownership pending</data></edge>
+    <edge id="e4" source="scheduler" target="pdcch"><data key="label">DCI encode at gNB</data></edge>
+    <edge id="e5" source="pdcch" target="pdsch"><data key="label">DL grant reconstruction pending in connected loop</data></edge>
+    <edge id="e6" source="pdcch" target="pusch"><data key="label">UL grant reconstruction pending in connected loop</data></edge>
+    <edge id="e7" source="pdsch" target="pucch"><data key="label">HARQ-ACK feedback</data></edge>
+    <edge id="e8" source="pucch" target="harq"><data key="label">observed feedback to HARQEntity.onFeedback</data></edge>
+    <edge id="e9" source="harq" target="scheduler"><data key="label">retx state</data></edge>
+    <edge id="e10" source="pdsch" target="packet"><data key="label">DL delivery pending</data></edge>
+    <edge id="e11" source="pusch" target="packet"><data key="label">UL delivery pending</data></edge>
+  </graph>
+</graphml>

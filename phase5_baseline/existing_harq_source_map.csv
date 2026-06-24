@@ -1,0 +1,8 @@
+"subsystem","function_path","classification","evidence","notes"
+"harq_entity","+sixgr/+l2/+mac/HARQEntity.m","live production process manager","tests/testLLSHARQExercise.m; tests/testNRCQITableAndGrantSizing.m","Tracks process IDs, NDI, RV, TB identity, feedback and retransmission state. It explicitly does not perform soft combining itself."
+"soft_combiner","+sixgr/+phy/+harq/combineSoftLLR.m","live production helper","tests/testHARQIRCombiningGain.m","Sums same-domain rate-recovered LLRs after size/domain checks."
+"coupled_harq","+sixgr/+truth/CoupledTruthRuntime.m::updateHARQState","live coupled runtime","tests/testLLSCoupledTruthHARQRoundTrip.m","Updates timeline, soft buffers, feedback due slot and PUCCH grant rows for coupled truth trials."
+"scheduler_feedback","+sixgr/+l2/+mac/SchedulerBase.m::onRxFeedback","live production scheduler hook","tests/testSchedulerAMCNoFixedMCSFallback.m","Updates OLLA and HARQ from feedback tables/structs. Phase 5 requires the feedback source to be decoded PUCCH/PUSCH only."
+"pdsch_study_harq","+sixgr/+pdsch/runPDSCHStudyLLS.m","standalone diagnostic study","tests/testPDSCH6GR.m","May exercise CRC-derived HARQ outcomes, but is not a full connected-mode HARQ loop."
+"postrun_synthetic_retx","synthetic retransmission reconstruction","unsupported","tests/testSchedulerGrantConsistency.m","No post-run synthetic retransmission rows may be promoted into primary exports."
+"dl_ul_connected_soft_buffers","full connected DL and UL HARQ soft-buffer persistence","partial or incomplete","docs/phase5_soft_combining.md","Evidence exists in focused paths, but Phase 5 connected packet delivery with both directions remains pending."

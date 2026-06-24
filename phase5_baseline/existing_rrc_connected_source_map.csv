@@ -1,0 +1,7 @@
+"subsystem","function_path","classification","evidence","notes"
+"rrc_attach","+sixgr/+l3/+rrc/AttachProcedure.m","live production abstract procedure","tests/testAttachProcedure.m","Drives Msg1 through RRCSetupComplete state progression, but message encoding is simulator JSON and not ASN.1/PER."
+"rrc_entity","+sixgr/+l3/+rrc/RRC.m","live production abstract procedure","tests/testAttachProcedure.m; tests/testPDCP_RLC_PacketConservation.m","Owns SRB0/SRB1 queues and PDCP/RLC bridging. File comments explicitly state RRC messages are UTF-8 JSON, not ASN.1/PER."
+"rrc_sib1_asn1","+sixgr/+rrc/+asn1/encodeSIB1UPER.m","reference or production for SIB1 only","tests/testSIB1ASN1RoundTrip.m","SIB1 ASN.1 path exists; RRCSetupComplete ASN.1 source and generated code are not present."
+"rrc_sib1_asn1_rx","+sixgr/+rrc/+asn1/decodeSIB1UPER.m","reference or production for SIB1 only","tests/testSIB1ASN1RoundTrip.m","Does not decode RRCSetupComplete."
+"ra_msg4","+sixgr/+mac/+ra/buildMsg4ContentionResolution.m","live production Phase 4 RA","tests/testMsg4ContentionResolution.m","Msg4 contention-resolution payload is not a dedicated connected-mode CellGroupConfig."
+"connected_dedicated_config","missing dedicated CellGroupConfig installer","incomplete","docs/phase5_dedicated_configuration.md","No production owner yet for decoded dedicated CellGroupConfig, RadioBearerConfig, PDCCH-Config, PDSCH-Config, PUSCH-Config, PUCCH-Config activation at both UE and gNB."

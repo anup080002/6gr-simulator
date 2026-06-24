@@ -1,0 +1,8 @@
+"subsystem","function_path","classification","evidence","notes"
+"scheduler_base","+sixgr/+l2/+mac/SchedulerBase.m","live production base","tests/testSchedulerAMCNoFixedMCSFallback.m; tests/testNRCQITableAndGrantSizing.m","AMC, OLLA, queue-limited sizing, DCI field helpers and feedback handling."
+"scheduler_pf","+sixgr/+l2/+mac/SchedulerPF.m","live production scheduler","tests/testSchedulerPFFairness.m","Schedules HARQ retransmissions first and then PF new-data grants. Full Phase 5 candidate/rejection lineage remains pending."
+"scheduler_rr","+sixgr/+l2/+mac/SchedulerRR.m","live production scheduler","tests/testSchedulerGrantConsistency.m","RR scheduler with HARQ and k1/k2 fields."
+"harq_timing","+sixgr/+l2/+mac/resolveHARQFeedbackK1.m","live production helper","tests/testLLSHARQExercise.m","Resolves feedback timing from configured TDD pattern."
+"bsr_phr_helper","+sixgr/+l2/+mac/BSR_PHR.m","live production helper","tests/testPDCP_RLC_PacketConservation.m","Encodes/decodes BSR and PHR payloads. Phase 5 must prove scheduler consumption from decoded MAC PDU, not UE queue object."
+"ul_queue_source","Scheduler UE ULBufferBytes direct state input","requires guard","docs/phase5_bsr_phr.md","Phase 5 requires UL buffer knowledge to originate in decoded BSR/protocol state."
+"candidate_lineage","all legal candidates and rejections","incomplete","docs/phase5_dynamic_scheduler.md","Current schedulers expose grants and reasons, but complete per-opportunity candidate lineage is not yet a Phase 5 truth artifact."

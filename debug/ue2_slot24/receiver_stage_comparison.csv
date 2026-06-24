@@ -1,0 +1,7 @@
+"stage","production_estimated_channel","perfect_channel_postrun","perfect_noise_postrun","bypassed_rf_loopback","noiseless_grid_loopback","coded_bit_decoder","status"
+"resource_extraction","","","","","","","pending_live_reproduction"
+"channel_estimation","","","","","","","pending_live_reproduction"
+"equalization","","","","","","","pending_live_reproduction"
+"descrambling","","","","","","","pending_live_reproduction"
+"rate_recovery","","","","","","","pending_live_reproduction"
+"ldpc_decode","","","","","","","pending_live_reproduction"

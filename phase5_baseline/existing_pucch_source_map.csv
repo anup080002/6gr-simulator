@@ -1,0 +1,8 @@
+"subsystem","function_path","classification","evidence","notes"
+"pucch_tx","+sixgr/+phy/+ul/PUCCH_Tx.m","live production waveform primitive","tests/testStrictControlChannelScenarioEvidence.m; tests/testULNoiseVarianceValidation.m","Uses 5G Toolbox PUCCH primitives. Formats 0 and 1 map UCI directly and do not use TB-style CRC."
+"pucch_rx","+sixgr/+phy/+ul/PUCCH_Rx.m","live production waveform primitive","tests/testStrictControlChannelScenarioEvidence.m; tests/testULNoiseVarianceValidation.m","Exports DTX and detection metrics. Expected UCI bits are for comparison contexts and must not become a production receiver oracle."
+"pucch_trial","+sixgr/+link/runPUCCHWaveformTrial.m","live production focused trial","tests/testStrictControlChannelScenarioEvidence.m","Creates waveform-backed PUCCH rows and CRC-applicability metadata."
+"pucch_runtime","+sixgr/+truth/CoupledTruthRuntime.m::observePUCCHFeedback","live coupled runtime","tests/testLLSPUCCHWaveformFeedback.m","Runs PUCCH feedback waveform and feeds observed ACK/NACK into HARQEntity.onFeedback."
+"pucch_grant_trace","+sixgr/+truth/CoupledTruthRuntime.m::appendPUCCHGrantTraceFromFeedback","live coupled runtime","tests/testLLSPUCCHGrantRuntimeArtifacts.m","Separates scheduled pending PUCCH resources from observed waveform results."
+"sr_over_pucch","Scheduling Request PUCCH decode into scheduler","incomplete","docs/phase5_scheduling_request.md","Phase 5 requires SR to be transmitted and decoded over PUCCH before UL scheduling uses it."
+"dtx_policy","DTX versus decoded NACK policy","partial live production","tests/testStrictControlChannelScenarioEvidence.m","DTX fields exist; Phase 5 still needs connected policy gates proving missed PUCCH is not silently relabeled as NACK."

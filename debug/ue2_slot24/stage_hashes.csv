@@ -1,0 +1,5 @@
+"stage","artifact","sha256","status","notes"
+"grant_capture","","","pending_live_reproduction","Capture DCI bits, decoded fields, PRBs, symbols, MCS, TBS, RV, NDI and HARQ process."
+"receiver_grid","","","pending_live_reproduction","Capture received grid, timing, CFO, channel estimate, noise and equalizer data."
+"llr_rate_recovery","","","pending_live_reproduction","Capture LLRs before and after rate recovery with sign and scale metadata."
+"decoder","","","pending_live_reproduction","Capture code-block CRC, TB CRC, bit errors and Tx/Rx hashes."

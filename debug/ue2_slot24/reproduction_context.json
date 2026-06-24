@@ -1,0 +1,16 @@
+{
+  "status": "pending_live_reproduction",
+  "ue_id": 2,
+  "direction": "DL",
+  "slot": 24,
+  "known_prior_summary": {
+    "mcs": 18,
+    "modulation": "64QAM",
+    "decoder_iterations": 100,
+    "raw_ber_approx": 0.140,
+    "tb_crc": "fail"
+  },
+  "scenario": "simulator/configs/scenarios/lls_mobile_2ue_100kmh_1sector_full_capture.yaml",
+  "scenario_sha256": "9ACBC34029931949C2D0E14C369F0431C7644003DC665D4F69667170008AF27D",
+  "policy": "Reproduce and diagnose before changing MCS, seed, channel, decoder iterations, grant eligibility, or HARQ policy."
+}

@@ -1,0 +1,9 @@
+Status: pending_live_reproduction
+
+Required scenario:
+simulator/configs/scenarios/lls_mobile_2ue_100kmh_1sector_full_capture.yaml
+
+Proposed starting command:
+matlab -batch "setup6GRSimToolkit('Verbose',false); out = run_6g_phy_lls_single('simulator/configs/scenarios/lls_mobile_2ue_100kmh_1sector_full_capture.yaml', fullfile('results','phase5_ue2_slot24_repro'), 'phase5_ue2_slot24_repro'); disp(out)"
+
+Do not claim a root cause until this run captures the exact UE 2 DL slot 24 grant and receiver-stage artifacts.

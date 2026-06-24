@@ -1,0 +1,5 @@
+"mode","base_graph","lifting_size","filler_bits","rv","iterations","codeblock_crc","tb_crc","bit_errors","status"
+"production_estimated_channel","","","","","100","","fail_expected_from_prior_summary","","pending_live_reproduction"
+"perfect_channel_reference","","","","","100","","","","pending_live_reproduction"
+"noiseless_grid_loopback","","","","","100","","","","pending_live_reproduction"
+"coded_bit_direct_decoder","","","","","100","","","","pending_live_reproduction"

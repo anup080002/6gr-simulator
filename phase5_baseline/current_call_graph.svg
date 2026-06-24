@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-label="Phase 5 current call graph">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+    <style>
+      text { font-family: Arial, sans-serif; font-size: 14px; fill: #111; }
+      .node { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 6; }
+      .partial { fill: #fff7ed; }
+      .pending { fill: #fee2e2; }
+      .edge { stroke: #333; stroke-width: 1.4; marker-end: url(#arrow); fill: none; }
+      .small { font-size: 12px; fill: #475569; }
+    </style>
+  </defs>
+  <text x="30" y="32" font-size="20" font-weight="700">Phase 5 Current Connected-Mode Surfaces</text>
+  <text x="30" y="54" class="small">Orange nodes are partial live/strict-anchor evidence. Red nodes are pending connected runtime evidence.</text>
+  <rect class="node partial" x="40" y="90" width="190" height="60"/><text x="60" y="116">RRC attach + SRB1</text><text x="60" y="137" class="small">JSON, not ASN.1</text>
+  <rect class="node partial" x="285" y="90" width="190" height="60"/><text x="305" y="116">PDCP/RLC helpers</text><text x="305" y="137" class="small">SRB0/SRB1 support</text>
+  <rect class="node partial" x="530" y="90" width="190" height="60"/><text x="550" y="116">MAC TBAssembler</text><text x="550" y="137" class="small">CE support</text>
+  <rect class="node partial" x="775" y="90" width="210" height="60"/><text x="795" y="116">PF/RR Scheduler</text><text x="795" y="137" class="small">HARQ, AMC, OLLA</text>
+  <rect class="node partial" x="775" y="220" width="210" height="60"/><text x="795" y="246">C-RNTI PDCCH</text><text x="795" y="267" class="small">DCI 1_0/0_0 strict</text>
+  <rect class="node partial" x="530" y="350" width="190" height="60"/><text x="550" y="376">PDSCH Tx/Rx</text><text x="550" y="397" class="small">decoded DCI lineage pending</text>
+  <rect class="node partial" x="775" y="350" width="210" height="60"/><text x="795" y="376">PUSCH Tx/Rx</text><text x="795" y="397" class="small">decoded BSR/SR lineage pending</text>
+  <rect class="node partial" x="285" y="350" width="190" height="60"/><text x="305" y="376">PUCCH F0/F1</text><text x="305" y="397" class="small">feedback waveform</text>
+  <rect class="node partial" x="40" y="350" width="190" height="60"/><text x="60" y="376">HARQ process</text><text x="60" y="397" class="small">soft LLR helper exists</text>
+  <rect class="node pending" x="405" y="500" width="260" height="60"/><text x="425" y="526">Packet delivery lineage</text><text x="425" y="547" class="small">Phase 5 connected runtime pending</text>
+  <path class="edge" d="M230,120 L285,120"/><path class="edge" d="M475,120 L530,120"/><path class="edge" d="M720,120 L775,120"/>
+  <path class="edge" d="M880,150 L880,220"/><path class="edge" d="M775,250 C705,260 665,310 635,350"/>
+  <path class="edge" d="M880,280 L880,350"/><path class="edge" d="M530,380 L475,380"/><path class="edge" d="M285,380 L230,380"/>
+  <path class="edge" d="M135,350 C160,270 600,250 775,250"/><path class="edge" d="M625,410 L535,500"/><path class="edge" d="M880,410 C820,470 690,500 665,530"/>
+</svg>

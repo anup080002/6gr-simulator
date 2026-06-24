@@ -1,0 +1,6 @@
+"field","dut_value","independent_reference_value","status","notes"
+"prb_count","","","pending_live_reproduction","Resolve from decoded DCI and compare with independent RE accounting."
+"symbol_count","","","pending_live_reproduction","Resolve from decoded DCI and compare with independent RE accounting."
+"dmrs_re_count","","","pending_live_reproduction","Capture from actual PDSCH config."
+"data_re_count","","","pending_live_reproduction","Exclude DM-RS, reserved and collision REs."
+"tbs_bits","","","pending_live_reproduction","Must match NR TBS calculation without grant-level synthesis."

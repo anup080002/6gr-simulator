@@ -1,0 +1,4 @@
+"source","tbs_bits","tbs_bytes","mcs","modulation","target_code_rate","status","notes"
+"decoded_dci_allocation","","","18","64QAM","","pending_live_reproduction","Use the exact UE2 slot-24 decoded DCI allocation."
+"independent_reference","","","18","64QAM","","pending_live_reproduction","Use independent NR TBS calculation."
+"runtime_grant","","","18","64QAM","","pending_live_reproduction","Must match decoded allocation without post-run synthesis."
