@@ -1,0 +1,5 @@
+"component","path","classification","current_status","phase7_note"
+"trajectory_config","simulator/configs/scenarios/lls_mobile_2ue_100kmh_1sector_full_capture.yaml","configuration-only","scaffold","YAML defines two opposing 50 m to 500 m traces at 100 km/h."
+"trajectory_resolution","+sixgr/+analytics/buildPhase7ReadinessArtifacts.m","diagnostic","implemented_scaffold","Computes traversal slots and labels the 500-slot run as SHORT_MOBILITY_DIAGNOSTIC."
+"inter_ue_distance","+sixgr/+analytics/buildPhase7ReadinessArtifacts.m","diagnostic","implemented_scaffold","Detects unresolved closest-approach violation against min_inter_ue_distance_m."
+"runtime_mobility_state","system/csv/system_ue_summary.csv","incomplete","runtime_artifact_pending","Continuous mobility state continuity needs runtime per-slot state."

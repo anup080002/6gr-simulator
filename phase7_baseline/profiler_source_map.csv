@@ -1,0 +1,4 @@
+"component","path","classification","current_status","phase7_note"
+"runtime_call_graph","+sixgr/+analytics/buildRuntimeCallGraph.m","partial","implemented_for_prompt8","Profiler rows are summarized when present."
+"performance_profile","reports/csv/runtime_function_profile.csv","incomplete","runtime_artifact_pending","Phase 7 performance and long-run stability gates require real long-run profiler evidence."
+"serial_parallel_determinism","reports/final/final_performance_validation.md","diagnostic","scaffold","Report remains fail-closed until serial/parallel equivalence evidence exists."

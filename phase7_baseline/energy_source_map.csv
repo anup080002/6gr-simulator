@@ -1,0 +1,4 @@
+"component","path","classification","current_status","phase7_note"
+"energy_trace","rf/csv/energy_timeline_trace.csv","partial","runtime_required","Energy KPIs must be sourced from runtime power/energy rows."
+"energy_analytics","analytics/csv/energy_efficiency_analytics.csv","partial","runtime_required","Phase 7 needs bandwidth, rank, antenna-count, and active/sleep duty-cycle reconciliation."
+"phase7_energy_report","reports/final/final_energy_validation.md","diagnostic","scaffold","Report states blocked status rather than inventing an energy model pass."

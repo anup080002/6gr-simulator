@@ -24,11 +24,12 @@ fprintf("[2/6] Building derived analysis CSV tables...\n");
 physicsT = sixgr.analytics.buildPhysicsAuditTable(runDir, scenarioCfg, trialData);
 analyticsReport = sixgr.analytics.buildScenarioAnalyticsTables(runDir, trialData, scenarioCfg);
 
-fprintf("[3/6] Building Prompt-8 adequacy/provenance artifacts...\n");
+fprintf("[3/6] Building Prompt-8/Phase-7 adequacy/provenance artifacts...\n");
 mobilityReport = sixgr.analytics.buildMobilityAdequacyReport(scenarioCfg, trialData.dl, runDir);
 harqReport = sixgr.analytics.measureHARQCombiningGain(trialData.dl, runDir);
 callGraphReport = sixgr.analytics.buildRuntimeCallGraph(runDir);
 provenanceManifest = sixgr.truth.buildProvenanceManifest(scenarioCfg, runDir);
+phase7Report = sixgr.analytics.buildPhase7ReadinessArtifacts(scenarioCfg, runDir);
 
 fprintf("[4/6] Exporting live instrumented traces if enabled...\n");
 sixgr.analytics.CallFlowInstrumentor.getInstance().exportCSV();
@@ -49,6 +50,7 @@ report = struct( ...
     "HARQCombining", harqReport, ...
     "RuntimeCallGraph", callGraphReport, ...
     "ProvenanceManifest", provenanceManifest, ...
+    "Phase7Readiness", phase7Report, ...
     "PythonReports", pythonReports, ...
     "Validation", validation);
 

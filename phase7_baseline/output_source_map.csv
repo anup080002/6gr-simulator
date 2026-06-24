@@ -1,0 +1,5 @@
+"component","path","classification","current_status","phase7_note"
+"analysis_validator","+sixgr/+analytics/validateAnalysisOutputs.m","partial","updated","Validator now expects Phase 7 readiness artifacts from run_analysis."
+"result_integrity","+sixgr/+truth/exportLLSOutputCoverageArtifacts.m","partial","updated","Coverage exporter emits Phase 7 gates without promoting them to pass."
+"final_reports","+sixgr/+analytics/buildPhase7ReadinessArtifacts.m","diagnostic","scaffold","Final reports are publication-readiness blockers until Phase7Ok is true."
+"source_diff","reports/final/final_source_diff.patch","diagnostic","scaffold","Records a reproducibility pointer, not a fabricated committed diff."

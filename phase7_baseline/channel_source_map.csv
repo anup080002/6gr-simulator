@@ -1,0 +1,5 @@
+"component","path","classification","current_status","phase7_note"
+"channel_factory","+sixgr/+channel/ChannelFactory.m","partial","runtime_required","Concrete CDL/TDL selection exists, but Phase 7 pass requires configured-vs-applied runtime rows."
+"channel_estimator","+sixgr/+phy/+rx/channelEstimate.m","partial","guarded","Fading channels must use per-resource estimates or nrChannelEstimate, not scalar full-grid Hest."
+"configured_vs_applied_gate","+sixgr/+analytics/buildPhase7ReadinessArtifacts.m","diagnostic","scaffold","Phase 7 reads channel/csv/channel_configured_vs_applied.csv when present and fails closed otherwise."
+"large_scale_parameters","channel/csv/large_scale_parameters.csv","incomplete","runtime_artifact_pending","LOS, pathloss, shadowing, and LSP reconciliation require real channel runtime export."

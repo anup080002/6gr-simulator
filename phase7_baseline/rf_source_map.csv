@@ -1,0 +1,4 @@
+"component","path","classification","current_status","phase7_note"
+"rf_impairment_chain","+sixgr/+rf/applyRFImpairmentChain.m","partial","runtime_required","Phase 7 requires configured-vs-applied evidence for CFO, phase noise, timing, IQ, and PA."
+"waveform_impairments","+sixgr/+link/applyWaveformImpairments.m","partial","runtime_required","Before/after waveform hashes and EVM/PAPR reconciliation are still required for publication readiness."
+"capture_policy","+sixgr/+analytics/buildPhase7ReadinessArtifacts.m","diagnostic","scaffold","Full-capture profile names are blocked when raw IQ capture is unbudgeted for the full route."

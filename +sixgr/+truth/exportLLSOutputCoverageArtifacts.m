@@ -130,7 +130,9 @@ tables.mobility_adequacy_report = sixgr.analytics.buildMobilityAdequacyReport(sc
 tables.harq_combining_gain = sixgr.analytics.measureHARQCombiningGain(src.DLTrials, runFolder);
 sixgr.analytics.buildRuntimeCallGraph(runFolder);
 sixgr.truth.buildProvenanceManifest(scfg, runFolder);
+sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
 tables.runtime_call_graph = localReadOptionalTable(fullfile(layout.ReportCSVDir, "runtime_call_graph.csv"));
+tables.phase7_truth_gates = localReadOptionalTable(fullfile(layout.ReportCSVDir, "phase7_truth_gates.csv"));
 localCoverageLog("tables_prompt8_adequacy_built", runFolder);
 localCoverageLog("tables_built", runFolder);
 
@@ -215,7 +217,8 @@ logicalPaths = struct( ...
     "timing_synchronization_table", "control/csv/timing_synchronization_table.csv", ...
     "mobility_adequacy_report", "reports/csv/mobility_adequacy_report.csv", ...
     "harq_combining_gain", "air_interface/csv/harq_combining_gain.csv", ...
-    "runtime_call_graph", "reports/csv/runtime_call_graph.csv");
+    "runtime_call_graph", "reports/csv/runtime_call_graph.csv", ...
+    "phase7_truth_gates", "reports/csv/phase7_truth_gates.csv");
 
 names = fieldnames(logicalPaths);
 for i = 1:numel(names)

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <graph id="phase7_current_channel_rf_mobility_call_graph" edgedefault="directed">
+    <node id="scenario_yaml"/>
+    <node id="resolved_config"/>
+    <node id="channel_factory"/>
+    <node id="rf_impairment_chain"/>
+    <node id="mobility_trajectory"/>
+    <node id="runtime_trials"/>
+    <node id="phase7_readiness"/>
+    <node id="truth_gates"/>
+    <edge source="scenario_yaml" target="resolved_config"/>
+    <edge source="resolved_config" target="channel_factory"/>
+    <edge source="resolved_config" target="rf_impairment_chain"/>
+    <edge source="resolved_config" target="mobility_trajectory"/>
+    <edge source="channel_factory" target="runtime_trials"/>
+    <edge source="rf_impairment_chain" target="runtime_trials"/>
+    <edge source="mobility_trajectory" target="runtime_trials"/>
+    <edge source="resolved_config" target="phase7_readiness"/>
+    <edge source="runtime_trials" target="phase7_readiness"/>
+    <edge source="phase7_readiness" target="truth_gates"/>
+  </graph>
+</graphml>

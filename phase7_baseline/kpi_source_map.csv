@@ -1,0 +1,4 @@
+"component","path","classification","current_status","phase7_note"
+"scenario_analytics","+sixgr/+analytics/buildScenarioAnalyticsTables.m","partial","runtime_required","KPI tables can be derived from runtime rows, but full Phase 7 ledger is blocked without full-route evidence."
+"prompt8_statistics","+sixgr/+analytics/buildMobilityAdequacyReport.m; +sixgr/+analytics/measureHARQCombiningGain.m","partial","implemented_for_prompt8","Prompt 8 adequacy artifacts remain source evidence but are not publication readiness alone."
+"phase7_kpi_ledger","reports/final/final_kpi_tables.csv","diagnostic","scaffold","Generated as an explicit not-evaluated table when full runtime rows are absent."

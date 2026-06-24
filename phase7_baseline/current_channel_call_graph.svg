@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-label="Phase 7 channel RF mobility call graph scaffold">
+  <style>
+    text { font-family: Arial, sans-serif; font-size: 13px; }
+    .box { fill: #f8f8f8; stroke: #333; stroke-width: 1.2; rx: 4; }
+    .edge { stroke: #333; stroke-width: 1.1; marker-end: url(#arrow); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect class="box" x="20" y="118" width="120" height="44"/><text x="80" y="144" text-anchor="middle">scenario YAML</text>
+  <rect class="box" x="185" y="118" width="130" height="44"/><text x="250" y="144" text-anchor="middle">resolved config</text>
+  <rect class="box" x="370" y="35" width="135" height="44"/><text x="438" y="61" text-anchor="middle">channel factory</text>
+  <rect class="box" x="370" y="118" width="135" height="44"/><text x="438" y="144" text-anchor="middle">RF chain</text>
+  <rect class="box" x="370" y="201" width="135" height="44"/><text x="438" y="227" text-anchor="middle">mobility trace</text>
+  <rect class="box" x="560" y="118" width="125" height="44"/><text x="623" y="144" text-anchor="middle">runtime trials</text>
+  <rect class="box" x="735" y="118" width="135" height="44"/><text x="803" y="144" text-anchor="middle">Phase 7 audit</text>
+  <rect class="box" x="735" y="215" width="135" height="44"/><text x="803" y="241" text-anchor="middle">truth gates</text>
+  <path class="edge" d="M140 140 L185 140"/>
+  <path class="edge" d="M315 132 L370 57"/>
+  <path class="edge" d="M315 140 L370 140"/>
+  <path class="edge" d="M315 148 L370 223"/>
+  <path class="edge" d="M505 57 L560 126"/>
+  <path class="edge" d="M505 140 L560 140"/>
+  <path class="edge" d="M505 223 L560 154"/>
+  <path class="edge" d="M315 156 C455 282 650 282 735 248"/>
+  <path class="edge" d="M685 140 L735 140"/>
+  <path class="edge" d="M803 162 L803 215"/>
+</svg>
