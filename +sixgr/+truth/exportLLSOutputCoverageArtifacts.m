@@ -4127,17 +4127,18 @@ for i = 1:height(sourceTable)
     mcs = double(localTableValue(row, "MCSIndex", NaN));
     [cqiDerivedMCS, cqiBasis] = localGrantTimeCQIDerivedMCS(row, sourceArtifactRef);
     [allowedMCS, allowedBasis] = localOLLAAwareMCSBound(row, cqiDerivedMCS, cqiBasis);
-    if isfinite(mcs) && isfinite(allowedMCS) && mcs > allowedMCS + 1 && ~localMCSRowIsRetransmission(row)
+    [mcsExceedsAllowed, mcsCompareDetail] = localMCSExceedsAllowedBound(row, mcs, allowedMCS);
+    if isfinite(mcs) && isfinite(allowedMCS) && mcsExceedsAllowed && ~localMCSRowIsRetransmission(row)
         ue = double(localTableValue(row, "UEIndex", localTableValue(row, "UEID", localTableValue(row, "UE", localTableValue(row, "RNTI", NaN)))));
         cellID = double(localTableValue(row, "CellID", localTableValue(row, "ServingCell", localTableValue(row, "BaseStationID", NaN))));
         issueRow = localIssueRow( ...
             lower(string(direction)) + "_mcs_above_cqi_" + string(i), ...
             "high", "REVIEW_REQUIRED", "link_adaptation", ...
             string(direction), ue, cellID, "scheduler/link_adaptation", ...
-            "MCSIndex", "MCS=" + string(mcs) + ";" + allowedBasis + "=" + string(allowedMCS), ...
-            "AMC new-data grants should not exceed the grant-time CQI-derived MCS without explicit, sourced override", ...
+            "MCSIndex", "MCS=" + string(mcs) + ";" + allowedBasis + "=" + string(allowedMCS) + ";" + mcsCompareDetail, ...
+            "AMC new-data grants should not exceed the grant-time 38.214 CQI/MCS spectral-efficiency bound without explicit, sourced link-adaptation state", ...
             string(sourceArtifactRef), ...
-            "Selected new-data MCS is higher than grant-time CQI-derived MCS", ...
+            "Selected new-data MCS spectral efficiency is higher than sourced grant-time CQI/link-adaptation bound", ...
             "Verify fixed-vs-AMC config, CQI source lineage, and scheduler MCS selection for this row.");
         issueRow.frame = localFirstNumericTableValue(row, ["Frame", "SFN"], NaN);
         issueRow.slot = localFirstNumericTableValue(row, ["Slot"], NaN);
@@ -4176,13 +4177,64 @@ basis = string(cqiBasis);
 if ~isfinite(allowedMCS)
     return;
 end
+if localUsesMeasuredFeedbackAdaptation(row)
+    linkMCS = localFirstNumericTableValue(row, ["LinkAdaptationMCSIndex", "AdaptedMCSIndex"], NaN);
+    if isfinite(linkMCS)
+        allowedMCS = double(linkMCS);
+        basis = "LinkAdaptationMCSIndex";
+        return;
+    end
+    cqiBasedMCS = localNumericTableValue(row, "CQIBasedMCS", NaN);
+    if isfinite(cqiBasedMCS)
+        deltaMCS = localFirstNumericTableValue(row, ["DeltaMCS", "OLLADeltaMCS"], 0);
+        staticDeltaMCS = localNumericTableValue(row, "StaticDeltaMCS", 0);
+        if ~isfinite(deltaMCS), deltaMCS = 0; end
+        if ~isfinite(staticDeltaMCS), staticDeltaMCS = 0; end
+        allowedMCS = floor(double(cqiBasedMCS) + double(deltaMCS) + double(staticDeltaMCS));
+        basis = "CQIBasedMCSPlusDelta";
+        return;
+    end
+end
 outerLoopApplied = localAsBoolScalar(localTableValue(row, "OuterLoopApplied", []), false);
 delta = localNumericTableValue(row, "OLLADeltaMCS", NaN);
 status = lower(strtrim(string(localTableValue(row, "MCSValueStatus", ""))));
 explicitFeedback = contains(status, "feedback_adapted") || contains(status, "olla");
 if outerLoopApplied && explicitFeedback && isfinite(delta) && delta > 0
-    allowedMCS = allowedMCS + floor(double(delta));
+    allowedMCS = floor(double(allowedMCS) + double(delta));
     basis = basis + "PlusMeasuredOLLADelta";
+end
+end
+
+function tf = localUsesMeasuredFeedbackAdaptation(row)
+tokens = lower(strjoin([ ...
+    string(localTableValue(row, "MCSValueStatus", "")), ...
+    string(localTableValue(row, "MCSSelectionSource", "")), ...
+    string(localTableValue(row, "MCSIndexAuthority", "")), ...
+    string(localTableValue(row, "GrantOperatingPointSource", "")), ...
+    string(localTableValue(row, "LinkAdaptationDecisionReason", ""))], " "));
+tf = contains(tokens, "feedback_adapted") || ...
+    contains(tokens, "measured_feedback_adapted") || ...
+    contains(tokens, "runtime_link_adaptation_decision");
+end
+
+function [tf, detail] = localMCSExceedsAllowedBound(row, selectedMCS, allowedMCS)
+tf = false;
+detail = "MCSIndexCompare";
+if ~(isfinite(selectedMCS) && isfinite(allowedMCS))
+    return;
+end
+mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
+selectedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), selectedMCS);
+allowedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), allowedMCS);
+if logical(sixgr.util.structGet(selectedProfile, "Valid", false)) && ...
+        logical(sixgr.util.structGet(allowedProfile, "Valid", false))
+    selectedSE = double(selectedProfile.SpectralEfficiency);
+    allowedSE = double(allowedProfile.SpectralEfficiency);
+    tf = selectedSE > allowedSE + 1e-9;
+    detail = "SelectedSE=" + string(selectedSE) + ";AllowedSE=" + string(allowedSE);
+else
+    tf = double(selectedMCS) > double(allowedMCS) + 1;
+    detail = "FallbackMCSIndexCompare";
 end
 end
 

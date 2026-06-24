@@ -3866,6 +3866,14 @@ methods(Static, Access=private)
         row.CQITable = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "CQITable", ""), "");
         row.Modulation = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "Modulation", ""), "");
         row.TargetCodeRate = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "TargetCodeRate", NaN), NaN);
+        row.RawCQIDerivedMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "RawCQIDerivedMCS", NaN), NaN);
+        row.LinkAdaptationMCSIndex = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "LinkAdaptationMCSIndex", NaN), NaN);
+        row.LinkAdaptationDecisionReason = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "LinkAdaptationDecisionReason", ""), "");
+        row.CQIBasedMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "CQIBasedMCS", NaN), NaN);
+        row.SmoothedCQI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "SmoothedCQI", NaN), NaN);
+        row.InstantaneousCQIMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "InstantaneousCQIMCS", NaN), NaN);
+        row.DeltaMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "DeltaMCS", NaN), NaN);
+        row.StaticDeltaMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "StaticDeltaMCS", NaN), NaN);
         row.AMCMode = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "AMCMode", ""), "");
         row.OuterLoopEnabled = logical(sixgr.util.structGet(grant, "OuterLoopEnabled", false));
         row.OuterLoopApplied = logical(sixgr.util.structGet(grant, "OuterLoopApplied", false));
@@ -4097,6 +4105,25 @@ methods(Static, Access=private)
         grant.MCS = double(round(mcsIndex));
         grant.Modulation = char(string(modStr));
         grant.TargetCodeRate = double(targetCodeRate);
+        if useFeedbackDecision
+            grant.RawCQIDerivedMCS = double(sixgr.util.structGet(feedback, "RawCQIDerivedMCS", NaN));
+            grant.LinkAdaptationMCSIndex = double(feedbackMCS);
+            grant.LinkAdaptationDecisionReason = char(string(sixgr.util.structGet(feedback, "LinkAdaptationDecisionReason", "")));
+            grant.CQIBasedMCS = double(sixgr.util.structGet(feedback, "CQIBasedMCS", NaN));
+            grant.SmoothedCQI = double(sixgr.util.structGet(feedback, "SmoothedCQI", NaN));
+            grant.InstantaneousCQIMCS = double(sixgr.util.structGet(feedback, "InstantaneousCQIMCS", NaN));
+            grant.DeltaMCS = double(sixgr.util.structGet(feedback, "DeltaMCS", NaN));
+            grant.StaticDeltaMCS = double(sixgr.util.structGet(feedback, "StaticDeltaMCS", 0));
+        else
+            grant.RawCQIDerivedMCS = double(mcsIndex);
+            grant.LinkAdaptationMCSIndex = NaN;
+            grant.LinkAdaptationDecisionReason = "";
+            grant.CQIBasedMCS = NaN;
+            grant.SmoothedCQI = NaN;
+            grant.InstantaneousCQIMCS = double(mcsIndex);
+            grant.DeltaMCS = NaN;
+            grant.StaticDeltaMCS = 0;
+        end
         selectionSource = strtrim(string(sixgr.util.structGet(feedback, "MCSSelectionSource", "")));
         if useFeedbackDecision
             if strlength(selectionSource) == 0
@@ -7397,6 +7424,8 @@ methods(Static, Access=private)
             "SymbolStart", NaN, "NumSymbols", NaN, ...
             "TBSBits", NaN, "TBSBytes", NaN, ...
             "MCSIndex", NaN, "MCSTable", "", "CQITable", "", "Modulation", "", "TargetCodeRate", NaN, ...
+            "RawCQIDerivedMCS", NaN, "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
+            "CQIBasedMCS", NaN, "SmoothedCQI", NaN, "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, "StaticDeltaMCS", NaN, ...
             "AMCMode", "", "OuterLoopEnabled", false, "OuterLoopApplied", false, ...
             "OLLADeltaMCS", NaN, "OLLAUpdateCount", NaN, "OLLAState", "", ...
             "MCSSelectionSource", "", "CQIProvenance", "", "MCSValueStatus", "", ...
