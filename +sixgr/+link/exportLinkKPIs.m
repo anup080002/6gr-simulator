@@ -62,6 +62,7 @@ if opt.SaveCSV
         "ScenarioName", localScenarioName(details), ...
         "SourcePaths", rawKPI.Paths, ...
         "StrictMode", localStrictMode(details));
+    kpiLineage = localBuildKPILineageTable(kpiRecon.ReconstructionSummary);
 
     reportCSVDir = localKPIReportCSVDir(runFolder);
     sixgr.util.ensureFolder(reportCSVDir);
@@ -79,13 +80,19 @@ if opt.SaveCSV
         "kpi_known_bug_regression.csv", kpiRecon.KnownBugRegression;
         "kpi_unit_conversion_audit.csv", kpiRecon.UnitConversionAudit;
         "kpi_duration_source_audit.csv", kpiRecon.DurationSourceAudit;
-        "kpi_objective_binding.csv", kpiRecon.ObjectiveBinding
+        "kpi_objective_binding.csv", kpiRecon.ObjectiveBinding;
+        "kpi_lineage_table.csv", kpiLineage
         };
     for ki = 1:size(kpiSidecars, 1)
         sidecarPath = fullfile(reportCSVDir, kpiSidecars{ki, 1});
         sixgr.util.csvWriteTable(sidecarPath, kpiSidecars{ki, 2});
         artifacts.csv{end+1} = sidecarPath; %#ok<AGROW>
     end
+    reportJSONDir = localKPIReportJSONDir(reportCSVDir);
+    sixgr.util.ensureFolder(reportJSONDir);
+    gatePath = fullfile(reportJSONDir, "kpi_consistency_gate.json");
+    sixgr.util.jsonWrite(gatePath, localBuildKPIConsistencyGate(kpiRecon, kpiLineage));
+    artifacts.json{end+1} = gatePath;
 
     mimoArtifacts = sixgr.mimo.exportMIMOEvidenceArtifacts(localRunRootFolder(runFolder), ...
         localConfig(details), rawKPI, ...
@@ -253,6 +260,77 @@ if strcmpi(leaf, "air_interface") && strlength(string(parent)) > 0
     reportCSVDir = fullfile(parent, "reports", "csv");
 else
     reportCSVDir = fullfile(runFolder, "reports", "csv");
+end
+end
+
+function reportJSONDir = localKPIReportJSONDir(reportCSVDir)
+[reportDir, leaf] = fileparts(char(string(reportCSVDir)));
+if strcmpi(leaf, "csv") && strlength(string(reportDir)) > 0
+    reportJSONDir = fullfile(reportDir, "json");
+else
+    reportJSONDir = fullfile(char(string(reportCSVDir)), "json");
+end
+end
+
+function T = localBuildKPILineageTable(recon)
+if ~(istable(recon) && ~isempty(recon))
+    T = table();
+    return;
+end
+n = height(recon);
+rows = table();
+rows.RunId = localColumnOrDefault(recon, "RunId", strings(n, 1));
+rows.ScenarioName = localColumnOrDefault(recon, "ScenarioName", strings(n, 1));
+rows.KPIName = localColumnOrDefault(recon, "KPIName", strings(n, 1));
+rows.Direction = localColumnOrDefault(recon, "Direction", strings(n, 1));
+rows.FormulaId = localColumnOrDefault(recon, "FormulaId", strings(n, 1));
+rows.FormulaVersion = localColumnOrDefault(recon, "FormulaVersion", strings(n, 1));
+rows.Value = localColumnOrDefault(recon, "Value", nan(n, 1));
+rows.NumeratorValue = localColumnOrDefault(recon, "NumeratorValue", nan(n, 1));
+rows.DenominatorValue = localColumnOrDefault(recon, "DenominatorValue", nan(n, 1));
+rows.AggregationDurationSec = localColumnOrDefault(recon, "AggregationDurationSec", nan(n, 1));
+rows.DurationSource = localColumnOrDefault(recon, "DurationSource", strings(n, 1));
+rows.RadioDurationOk = isfinite(double(rows.AggregationDurationSec)) & double(rows.AggregationDurationSec) > 0 & ...
+    ~contains(lower(string(rows.DurationSource)), "unavailable") & ...
+    ~contains(lower(string(rows.DurationSource)), "wall");
+rows.SourceTablePaths = localColumnOrDefault(recon, "SourceTablePaths", strings(n, 1));
+rows.SourceRowCount = localColumnOrDefault(recon, "SourceRowCount", zeros(n, 1));
+rows.EligibleRowCount = localColumnOrDefault(recon, "EligibleRowCount", zeros(n, 1));
+rows.SourceRowsHash = localColumnOrDefault(recon, "SourceRowsHash", strings(n, 1));
+rows.ProxyRowsExcluded = localColumnOrDefault(recon, "ProxyRowsExcluded", zeros(n, 1));
+rows.SkippedRowsExcluded = localColumnOrDefault(recon, "SkippedRowsExcluded", zeros(n, 1));
+rows.HARQDeduplicationApplied = localColumnOrDefault(recon, "HARQDeduplicationApplied", false(n, 1));
+rows.DuplicateDeliveryCount = localColumnOrDefault(recon, "DuplicateDeliveryCount", zeros(n, 1));
+rows.ReconstructionPass = localColumnOrDefault(recon, "ReconciliationPass", false(n, 1));
+rows.StrictOk = localColumnOrDefault(recon, "StrictOk", false(n, 1));
+rows.Status = localColumnOrDefault(recon, "Status", strings(n, 1));
+rows.FailureReason = localColumnOrDefault(recon, "FailureReason", strings(n, 1));
+T = rows;
+end
+
+function gate = localBuildKPIConsistencyGate(kpiRecon, kpiLineage)
+durationAudit = sixgr.util.structGet(kpiRecon, "DurationSourceAudit", table());
+durationPass = true;
+if istable(durationAudit) && ~isempty(durationAudit) && ismember("Pass", string(durationAudit.Properties.VariableNames))
+    durationPass = all(logical(durationAudit.Pass));
+end
+lineageDurationOk = true;
+if istable(kpiLineage) && ~isempty(kpiLineage) && ismember("RadioDurationOk", string(kpiLineage.Properties.VariableNames))
+    lineageDurationOk = all(logical(kpiLineage.RadioDurationOk));
+end
+gate = struct();
+gate.KpiConsistencyOk = logical(sixgr.util.structGet(kpiRecon, "StrictOk", false));
+gate.RadioDurationUnavailable = ~(durationPass && lineageDurationOk);
+gate.LineageRows = double(height(kpiLineage));
+gate.LineageRadioDurationOk = logical(lineageDurationOk);
+gate.FormulaRegistryVersion = "kpi_registry_v1";
+gate.ProducerModule = "sixgr.link.exportLinkKPIs";
+end
+
+function values = localColumnOrDefault(T, name, defaultValue)
+values = defaultValue;
+if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
+    values = T.(char(string(name)));
 end
 end
 

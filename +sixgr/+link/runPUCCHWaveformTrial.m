@@ -39,6 +39,7 @@ out = struct( ...
     "AckObserved", false, ...
     "UCIContentMatch", false, ...
     "CRCApplicable", false, ...
+    "CRCPass", NaN, ...
     "CRCOutcome", "not_applicable", ...
     "DetectionOutcome", "unavailable", ...
     "BitsCompared", 0, ...
@@ -312,8 +313,10 @@ try
         out.PostEqSINRValueRole = "unavailable";
         out.PostEqSINRValueStatus = "unavailable";
         out.PostEqSINRNAReason = char(string(out.FailureReason));
+        out = localPopulatePUCCHFormatSpecificSINR(out);
         out.StrictReceiverEvidenceOk = false;
         out.StrictOk = false;
+        out.CRCPass = NaN;
         out.CRCOutcome = "not_applicable";
         out.DetectionOutcome = "unavailable";
         out.Notes = "Waveform-backed PUCCH detection unavailable: " + string(out.FailureReason);
@@ -332,6 +335,11 @@ try
     out = localPopulatePUCCHUCIEvidence(out, expectedBits, decodedBits, tx, resolvedFormat);
     out.AckObserved = localFirstLogical(decodedBits, false);
     out.UCIContentMatch = logical(bitErrors == 0 && bitsCompared == numel(expectedBits));
+    if logical(out.CRCApplicable)
+        out.CRCPass = double(ok);
+    else
+        out.CRCPass = NaN;
+    end
     out.CRCOutcome = char(localResolvePUCCHCRCOutcome(out.CRCApplicable, out.UCIContentMatch));
     out.DetectionOutcome = localResolvePUCCHDetectionOutcome(out.DetectionUsable, out.UCIContentMatch);
     out.BitsCompared = double(bitsCompared);
@@ -389,6 +397,7 @@ try
         out.SINRValueStatus = char(receiverStatus);
         out.SINRValueDefinition = "no_control_sinr_observation_available_in_active_runtime";
     end
+    out = localPopulatePUCCHFormatSpecificSINR(out);
     out.EstimatedWidebandSINR_dB = NaN;
     out.WidebandCQI = NaN;
     if unanchoredThermalSINR
@@ -429,6 +438,55 @@ catch ME
     out.CrashSource = string(ME.identifier);
     out.CrashMessage = string(ME.message);
     out.Notes = string(ME.message);
+end
+end
+
+function out = localPopulatePUCCHFormatSpecificSINR(out)
+fmt = double(sixgr.util.structGet(out, "ResolvedFormat", sixgr.util.structGet(out, "PUCCHFormat", NaN)));
+receiverSINR = double(sixgr.util.structGet(out, "ReceiverHestSINR_dB", NaN));
+if isfinite(receiverSINR)
+    source = char(string(sixgr.util.structGet(out, "ReceiverHestSINRSource", "nrPUCCHDMRS_nrChannelEstimate")));
+    status = char(string(sixgr.util.structGet(out, "ReceiverHestSINRValueStatus", "OK")));
+    if strlength(strtrim(string(source))) == 0
+        source = "nrPUCCHDMRS_nrChannelEstimate";
+    end
+    if strlength(strtrim(string(status))) == 0
+        status = "OK";
+    end
+    out.PostEqSINR_dB = receiverSINR;
+    out.PostEqSINRSource = source;
+    out.PostEqSINRValueRole = "measured_control_channel_reference_signal_sinr";
+    out.PostEqSINRValueStatus = status;
+    out.PostEqSINRNAReason = "";
+    out.PUCCHControlSINR_dB = receiverSINR;
+    out.PUCCHReceiverEvidenceSource = source;
+    return;
+end
+
+% Format 0 has no DM-RS. Its waveform-derived quality evidence is the
+% sequence-correlation detector metric relative to the detector noise floor.
+if isfinite(fmt) && round(fmt) == 0
+    metric = double(sixgr.util.structGet(out, "DetectorPeakMetric", ...
+        sixgr.util.structGet(out, "DetectionMetric", NaN)));
+    noiseFloor = double(sixgr.util.structGet(out, "DetectorNoiseFloor", ...
+        sixgr.util.structGet(out, "NoiseVariance", NaN)));
+    if isfinite(metric) && metric >= 0 && isfinite(noiseFloor) && noiseFloor > 0
+        corrSINR = 10 * log10(max(metric ./ noiseFloor, realmin));
+        out.PostEqSINR_dB = corrSINR;
+        out.PostEqSINRSource = "pucch_format0_sequence_correlation_detector";
+        out.PostEqSINRValueRole = "measured_control_format0_correlation_snr";
+        out.PostEqSINRValueStatus = "OK";
+        out.PostEqSINRNAReason = "";
+        out.PUCCHControlSINR_dB = corrSINR;
+        out.PUCCHReceiverEvidenceSource = "pucch_format0_sequence_correlation_detector";
+        if strlength(strtrim(string(sixgr.util.structGet(out, "SINRValueRole", "")))) == 0 || ...
+                strcmpi(string(sixgr.util.structGet(out, "SINRValueRole", "")), "unavailable")
+            out.SINRValueRole = "measured_control_format0_correlation_snr";
+            out.SINRSource = "pucch_format0_sequence_correlation_detector";
+            out.SINRValueStatus = "OK";
+            out.SINRValueDefinition = "format0_sequence_correlation_metric_relative_to_detector_noise_floor_not_scheduling_cqi";
+        end
+    end
 end
 end
 

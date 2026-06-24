@@ -1161,7 +1161,8 @@ path = lower(strtrim(string(evidenceArtifact)));
 if strlength(path) == 0 || strlength(strtrim(string(evidenceField))) == 0
     return;
 end
-if startsWith(path, "air_interface/csv/") || contains(path, "_runtime_evidence") || contains(path, "/runtime_evidence")
+runtimePrefixes = ["air_interface/csv/","control/csv/","packet_flow/csv/","reports/csv/"];
+if any(startsWith(path, runtimePrefixes)) || contains(path, "_runtime_evidence") || contains(path, "/runtime_evidence")
     artifact = string(evidenceArtifact);
     field = string(evidenceField);
 end

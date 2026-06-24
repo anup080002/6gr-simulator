@@ -677,13 +677,154 @@ end
 function [artifact, field] = localDefaultMeasuredMapping(parameterId)
 artifact = "";
 field = "";
-switch string(parameterId)
+pid = lower(strtrim(string(parameterId)));
+switch pid
     case "random_access.detection_threshold"
         artifact = "air_interface/csv/prach_trials.csv";
         field = "threshold";
     case "random_access.enabled"
         artifact = "air_interface/csv/prach_trials.csv";
         field = "Status";
+end
+if strlength(artifact) > 0
+    return;
+end
+
+if contains(pid, "pucch")
+    artifact = "air_interface/csv/pucch_trials.csv";
+    if contains(pid, "sinr")
+        field = "PUCCHControlSINR_dB";
+    elseif contains(pid, "format")
+        field = "PUCCHFormat";
+    elseif contains(pid, "prb")
+        field = "PUCCHPRBCount";
+    elseif contains(pid, "symbol")
+        field = "PUCCHNumSymbols";
+    elseif contains(pid, "crc")
+        field = "CRCPass";
+    elseif contains(pid, "detection") || contains(pid, "threshold")
+        field = "DetectionMetric";
+    else
+        field = "StrictOk";
+    end
+elseif contains(pid, "srs")
+    artifact = "air_interface/csv/srs_trials.csv";
+    if contains(pid, "nmse")
+        field = "NMSE_dB";
+    elseif contains(pid, "sinr")
+        field = "ReceiverHestSINR_dB";
+    elseif contains(pid, "doppler")
+        field = "EstimatedDopplerHz";
+    else
+        field = "DetectionMetric";
+    end
+elseif contains(pid, "trs") || contains(pid, "cfo") || contains(pid, "timing")
+    artifact = "air_interface/csv/trs_trials.csv";
+    if contains(pid, "doppler")
+        field = "EstimatedDopplerHz";
+    elseif contains(pid, "cfo")
+        field = "EstimatedCFO_Hz";
+    elseif contains(pid, "timing")
+        field = "TimingOffsetEstimate_samples";
+    else
+        field = "DetectionMetric";
+    end
+elseif contains(pid, "ul") || contains(pid, "pusch") || contains(pid, "uplink")
+    artifact = "air_interface/csv/ul_pusch_trials.csv";
+    field = localDefaultLinkMeasuredField(pid);
+elseif contains(pid, "dl") || contains(pid, "pdsch") || contains(pid, "downlink")
+    artifact = "air_interface/csv/dl_pdsch_trials.csv";
+    field = localDefaultLinkMeasuredField(pid);
+elseif contains(pid, "goodput") || contains(pid, "throughput")
+    artifact = "air_interface/csv/lls_kpi_summary.csv";
+    if contains(pid, "ul")
+        field = "Goodput_UL_max_Mbps";
+    else
+        field = "Goodput_DL_max_Mbps";
+    end
+elseif contains(pid, "bler")
+    artifact = "air_interface/csv/lls_kpi_summary.csv";
+    if contains(pid, "ul")
+        field = "BLER_UL_min";
+    else
+        field = "BLER_DL_min";
+    end
+elseif contains(pid, "snr") || contains(pid, "noise")
+    artifact = "air_interface/csv/dl_pdsch_trials.csv";
+    if contains(pid, "noise")
+        field = "NoiseVariance";
+    else
+        field = "ConfiguredSNR_dB";
+    end
+elseif contains(pid, "mcs") || contains(pid, "cqi") || contains(pid, "rank") || contains(pid, "layer")
+    artifact = "air_interface/csv/dl_pdsch_trials.csv";
+    field = localDefaultLinkMeasuredField(pid);
+elseif contains(pid, "doppler") || contains(pid, "speed") || contains(pid, "scs") || ...
+        contains(pid, "slot") || contains(pid, "grid") || contains(pid, "bandwidth") || ...
+        contains(pid, "duplex") || contains(pid, "traffic") || contains(pid, "scheduler")
+    artifact = "reports/csv/runtime_operating_mode.csv";
+    field = localDefaultRuntimeOperatingModeField(pid);
+elseif contains(pid, "pathloss") || contains(pid, "shadow") || contains(pid, "rx_power")
+    artifact = "air_interface/csv/dl_pdsch_trials.csv";
+    if contains(pid, "pathloss")
+        field = "Pathloss_dB";
+    elseif contains(pid, "shadow")
+        field = "ShadowFading_dB";
+    else
+        field = "ServingRxPower_dBm";
+    end
+end
+end
+
+function field = localDefaultLinkMeasuredField(pid)
+pid = lower(strtrim(string(pid)));
+if contains(pid, "posteq") || contains(pid, "sinr")
+    field = "PostEqSINR_dB";
+elseif contains(pid, "receiver")
+    field = "ReceiverHestSINR_dB";
+elseif contains(pid, "mcs")
+    field = "MCS";
+elseif contains(pid, "cqi")
+    field = "WidebandCQI";
+elseif contains(pid, "rank") || contains(pid, "layer")
+    field = "Layers";
+elseif contains(pid, "prb") || contains(pid, "rb")
+    field = "PRBs";
+elseif contains(pid, "noise")
+    field = "NoiseVariance";
+elseif contains(pid, "doppler")
+    field = "DopplerHz";
+elseif contains(pid, "evm")
+    field = "EVM_rms";
+elseif contains(pid, "crc")
+    field = "CRCPass";
+else
+    field = "ConfiguredSNR_dB";
+end
+end
+
+function field = localDefaultRuntimeOperatingModeField(pid)
+pid = lower(strtrim(string(pid)));
+if contains(pid, "doppler")
+    field = "ResolvedDopplerHz";
+elseif contains(pid, "speed")
+    field = "MobilitySpeed_kmh";
+elseif contains(pid, "scs")
+    field = "SCS_kHz";
+elseif contains(pid, "slot")
+    field = "SlotDuration_ms";
+elseif contains(pid, "grid")
+    field = "ConfiguredGridNumRBs";
+elseif contains(pid, "duplex")
+    field = "DuplexMode";
+elseif contains(pid, "traffic")
+    field = "ConfiguredTrafficModel";
+elseif contains(pid, "scheduler")
+    field = "ConfiguredSchedulerType";
+elseif contains(pid, "bandwidth")
+    field = "ConfiguredBandwidthHz";
+else
+    field = "ConfiguredGridNumRBs";
 end
 end
 

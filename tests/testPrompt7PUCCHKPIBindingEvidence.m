@@ -1,0 +1,90 @@
+function ok = testPrompt7PUCCHKPIBindingEvidence()
+%TESTPROMPT7PUCCHKPIBINDINGEVIDENCE Focused DEF-006/009/010 regression.
+
+setup6GRSimToolkit("Verbose", false);
+
+tmp = tempname;
+mkdir(tmp);
+cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+
+scfg = sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
+    "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml"));
+cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "cfg"));
+cfg.channel.model = "AWGN";
+cfg.channel.awgnOnly = true;
+cfg.channel.snr_dB = 40;
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+cfg.run.interferenceExecutionMode = "none";
+cfg.phy.rnti = 320;
+
+trialF0 = sixgr.link.runPUCCHWaveformTrial(cfg, ...
+    "ExpectedUCIBits", int8(1), "SNR_dB", 40, "Format", 0, "RNTI", 320);
+trialF1 = sixgr.link.runPUCCHWaveformTrial(cfg, ...
+    "ExpectedUCIBits", int8([1; 0]), "SNR_dB", 40, "Format", 1, "RNTI", 320);
+trialF2 = sixgr.link.runPUCCHWaveformTrial(cfg, ...
+    "ExpectedUCIBits", int8(mod((0:19).', 2)), "SNR_dB", 45, "Format", 2, "RNTI", 320);
+
+for trial = [trialF0, trialF1, trialF2]
+    assert(logical(trial.Ok), "PUCCH focused waveform trial must decode.");
+    assert(isfinite(double(trial.DetectionMetric)), "PUCCH detection metric must be numeric.");
+    assert(isfinite(double(trial.PostEqSINR_dB)), ...
+        "PUCCH format-specific SINR evidence must populate PostEqSINR_dB.");
+    assert(strlength(strtrim(string(sixgr.util.structGet(trial, "UsedOracleFields", "")))) == 0, ...
+        "PUCCH trial must not disclose oracle fields.");
+end
+assert(~logical(trialF0.CRCApplicable) && ~isfinite(double(trialF0.CRCPass)), ...
+    "PUCCH Format 0 must keep CRCPass NaN because CRC is not applicable.");
+assert(logical(trialF2.CRCApplicable) && isfinite(double(trialF2.CRCPass)), ...
+    "Long Format 2 UCI must expose numeric CRC pass/fail evidence.");
+
+layout = sixgr.report.resultLayout(tmp);
+sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
+raw = localRawFixture();
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), raw.DL);
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), raw.UL);
+
+kpiTable = table(["DL_PDSCH_Throughput"; "UL_PUSCH_Throughput"], [true; true], [false; false], ...
+    'VariableNames', {'Case','Ok','Skipped'});
+details = struct("RawTrials", raw, "Config", struct("run", struct("strictMode", true)), ...
+    "RunId", "prompt7_kpi", "ScenarioName", "prompt7_kpi");
+sixgr.link.exportLinkKPIs(fullfile(tmp, "air_interface"), kpiTable, details, ...
+    "SaveCSV", true, "SaveMAT", false, "SaveFigures", false);
+
+lineagePath = fullfile(layout.ReportCSVDir, "kpi_lineage_table.csv");
+gatePath = fullfile(tmp, "reports", "json", "kpi_consistency_gate.json");
+assert(exist(lineagePath, "file") == 2, "KPI lineage table must be exported.");
+assert(exist(gatePath, "file") == 2, "KPI consistency gate JSON must be exported.");
+lineage = readtable(lineagePath, "VariableNamingRule", "preserve");
+assert(~isempty(lineage) && all(logical(lineage.RadioDurationOk)), ...
+    "KPI lineage rows must use valid radio-duration denominators.");
+
+scenario = struct();
+for i = 1:220
+    scenario.prompt7.(sprintf("snr_runtime_%03d", i)) = i;
+end
+bindingT = sixgr.config.buildParameterBindingMatrix(scenario, struct(), struct("RunFolder", tmp));
+published = strcmp(string(bindingT.RuntimeMeasuredStatus), "measured_runtime_evidence_published") & ...
+    strlength(strtrim(string(bindingT.RuntimeMeasuredEvidenceValue))) > 0;
+assert(nnz(published) >= 200, ...
+    "Parameter binding matrix must populate at least 200 runtime measured values from trial columns.");
+
+ok = true;
+end
+
+function raw = localRawFixture()
+raw = struct();
+raw.UL = table( ...
+    repmat("UL", 2, 1), [7.952; 0], [true; false], [0; 120], [7952; 8000], ...
+    [7952; 8000], [7952; 0], [1; 2], [1; 2], ["ul_tb_1"; "ul_tb_2"], [0; 0], [0; 0], [0; 0], ...
+    [1; 1], [1; 2], [12; 12], [18; 17], ...
+    'VariableNames', {'Direction','Goodput_Mbps','CRCPass','BitErrors','BitsCompared', ...
+    'TBSize_bits','GoodBits','Frame','Slot','TransportBlockId','HARQProcessId','RV','NDI', ...
+    'AirInterfaceObservation_ms','TrialId','ConfiguredSNR_dB','PostEqSINR_dB'});
+raw.DL = table( ...
+    repmat("DL", 2, 1), [40.137091; 1.0], [true; false], [0; 64], [40137; 40000], ...
+    [40137; 40000], [40137; 0], [1; 2], [1; 2], ["dl_tb_1"; "dl_tb_2"], [0; 0], [0; 0], [0; 0], ...
+    [1; 1], [1; 2], [15; 15], [22; 21], ...
+    'VariableNames', {'Direction','Goodput_Mbps','CRCPass','BitErrors','BitsCompared', ...
+    'TBSize_bits','GoodBits','Frame','Slot','TransportBlockId','HARQProcessId','RV','NDI', ...
+    'AirInterfaceObservation_ms','TrialId','ConfiguredSNR_dB','PostEqSINR_dB'});
+end
