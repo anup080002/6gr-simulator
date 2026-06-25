@@ -156,9 +156,11 @@ end
 trBlkSize = double(trBlkSize);
 
 % Canonical coding layout.
+rateMatchedBits = localRateMatchedBitCountFromInfo(pdschInfo);
 codingLayout = localResolveRxCodingLayout(opt.CodingLayout, phyGrant, "DL", ...
     trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ...
-    localRateMatchedBitCountFromInfo(pdschInfo));
+    rateMatchedBits);
+codewordLayerMapping = localBuildPDSCHRxCodewordLayerContract(pdsch, rateMatchedBits, codingLayout);
 bgn = double(codingLayout.BaseGraph);
 tbCRCType = char(string(codingLayout.TBCRCType));
 tbCRCLen = double(codingLayout.TBCRCLength);
@@ -396,12 +398,11 @@ try
 catch
     llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
 end
-if iscell(llrCW)
-    llr = llrCW{1};
-else
-    llr = llrCW;
-end
-[llr, llrCSIInfo] = localApplyCSIToCodewordLLR(llr, csi, pdsch.Modulation, postEqSINR_dB);
+[llrCWCell, codewordLLRInfo] = localNormalizePDSCHCodewordLLR(llrCW, codewordLayerMapping);
+[llrCell, llrCSIInfoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCWCell, csi, pdsch.Modulation, postEqSINR_dB, codewordLayerMapping);
+llr = llrCell{1};
+llrCSIInfo = llrCSIInfoCell{1};
+codewordLayerMapping = localFinalizePDSCHRxCodewordLayerContract(codewordLayerMapping, llrCell, eqSym);
 
 % ---------------------- DL-SCH decode (rate recovery + LDPC decode) ----------------------
 [recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ldpcSeg.NumCodeBlocks, [], ...
@@ -554,6 +555,10 @@ rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
 rx.TransportBlockCRCLength = double(tbCRCLen);
 rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
 rx.CodingLayout = codingLayout;
+rx.CodewordLayerMapping = codewordLayerMapping;
+rx.NumCodewords = double(codewordLayerMapping.NumCodewords);
+rx.ActualNumCodewords = double(codewordLayerMapping.ActualNumCodewords);
+rx.CodewordLLRCountPerCodeword = double(codewordLayerMapping.DemapperLLRCountPerCodeword);
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
 rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
 rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
@@ -597,7 +602,7 @@ rx.LayerEqualizedSymbolsForEvidence = eqSym;
 rx.LayerEqualizedSymbols = eqSym;
 rx.EqualizedSymbolDomain = "layer";
 rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschInd, "layer");
-rx.DemapperLLRCount = double(numel(llr));
+rx.DemapperLLRCount = double(codewordLayerMapping.TotalDemapperLLRCount);
 rx.RateRecoveredLLRCount = double(numel(recLLR));
 if isempty(pdschRxSym)
     rx.PDSCHRxSymbolsForEvidence = rxSym;
@@ -641,6 +646,10 @@ rx.SINRComputationMethod = char(lower(string(equalizerAlg)));
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = llr;
     rx.DLSCHCodewordLLR = llr;
+    rx.CodewordLLRCell = llrCell;
+    rx.DLSCHCodewordLLRCell = llrCell;
+    rx.CodewordLLRInfo = codewordLLRInfo;
+    rx.LLRCSIInfoPerCodeword = llrCSIInfoCell;
     rx.BaseGraph = bgn;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
@@ -722,6 +731,8 @@ info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
 info.CodingLayout = codingLayout;
+info.CodewordLayerMapping = codewordLayerMapping;
+info.CodewordLLRInfo = codewordLLRInfo;
 info.StrictReceiverEvidence = strictEvidence;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -1330,6 +1341,127 @@ obs.NumPorts = NaN;
 obs.RowNumber = NaN;
 end
 
+function mapping = localBuildPDSCHRxCodewordLayerContract(pdsch, rateMatchedBits, codingLayout)
+nLayers = localPositiveIntegerValue(localObjectValue(pdsch, "NumLayers", 1), "PDSCH.NumLayers");
+nCodewords = localResolvePDSCHNumCodewords(pdsch, nLayers);
+if nCodewords > 1 || nLayers > 4
+    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
+        "PDSCH truth RX supports one codeword for ranks 1-4. Requested NumLayers=%d NumCodewords=%d needs per-codeword TB/coding inputs.", ...
+        nLayers, nCodewords);
+end
+rateMatchedBits = double(rateMatchedBits);
+if ~(isscalar(rateMatchedBits) && isfinite(rateMatchedBits) && rateMatchedBits > 0 && abs(rateMatchedBits - round(rateMatchedBits)) < 1e-9)
+    error("sixgr:phy:dl:PDSCHBadRateMatchedBitCount", "PDSCH RX requires a positive integer G for the codeword contract.");
+end
+mapping = struct();
+mapping.ContractVersion = "PDSCHCodewordLayer/v1";
+mapping.Direction = "DL";
+mapping.MappingStandard = "3GPP_TS_38_211_codeword_to_layer_mapping";
+mapping.MappingEngine = "nrPDSCH_internal_nrLayerMap";
+mapping.InverseEngine = "nrPDSCHDecode_internal_nrLayerDemap";
+mapping.SupportedScope = "single_codeword_ranks_1_to_4";
+mapping.UnsupportedScope = "two_codeword_ranks_5_to_8_require_two_transport_blocks_and_per_codeword_coding_layouts";
+mapping.NumCodewords = double(nCodewords);
+mapping.ActualNumCodewords = NaN;
+mapping.NumLayers = double(nLayers);
+mapping.GrantNumLayers = double(nLayers);
+mapping.CodewordIndexByLayer = ones(1, nLayers);
+mapping.LayerIndexWithinCodeword = double(1:nLayers);
+mapping.LayerCountPerCodeword = double(nLayers);
+mapping.RateMatchedBitCountPerCodeword = double(round(rateMatchedBits));
+mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(codingLayout.RateMatchedBitCount);
+mapping.DemapperLLRCountPerCodeword = NaN(1, nCodewords);
+mapping.TotalDemapperLLRCount = NaN;
+mapping.ActualLayerColumns = NaN;
+mapping.ActualLayersEqualGrantLayers = false;
+mapping.Equation = "port_observations_to_equalized_layers_S_hat_to_codeword_LLRs_by_inverse_TS38211_7_3_1_3";
+end
+
+function [llrCell, info] = localNormalizePDSCHCodewordLLR(llrRaw, mapping)
+if iscell(llrRaw)
+    llrCell = reshape(llrRaw, 1, []);
+    sourceWasCell = true;
+else
+    llrCell = {llrRaw};
+    sourceWasCell = false;
+end
+expected = double(mapping.NumCodewords);
+if expected ~= 1
+    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
+        "PDSCH RX needs per-codeword rate recovery before accepting %d codeword(s).", expected);
+end
+if numel(llrCell) ~= expected
+    error("sixgr:phy:dl:PDSCHDecodedCodewordCountMismatch", ...
+        "nrPDSCHDecode returned %d codeword LLR stream(s), but the grant expects %d.", numel(llrCell), expected);
+end
+for c = 1:numel(llrCell)
+    llrCell{c} = double(llrCell{c}(:));
+end
+info = struct( ...
+    "ContractVersion", "PDSCHCodewordLLR/v1", ...
+    "SourceWasCell", logical(sourceWasCell), ...
+    "ExpectedNumCodewords", double(expected), ...
+    "ActualNumCodewords", double(numel(llrCell)), ...
+    "LLRCountPerCodeword", double(cellfun(@numel, llrCell)));
+end
+
+function [llrCellOut, infoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCellIn, csi, modScheme, postEqSINR_dB, mapping)
+if double(mapping.NumCodewords) ~= 1 || numel(llrCellIn) ~= 1
+    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
+        "PDSCH CSI-to-LLR weighting is only wired for the single-codeword truth path.");
+end
+llrCellOut = llrCellIn;
+infoCell = cell(size(llrCellIn));
+[llrCellOut{1}, infoCell{1}] = localApplyCSIToCodewordLLR(llrCellIn{1}, csi, modScheme, postEqSINR_dB);
+end
+
+function mapping = localFinalizePDSCHRxCodewordLayerContract(mapping, llrCell, eqSym)
+counts = double(cellfun(@numel, llrCell));
+expected = double(mapping.RateMatchedBitCountPerCodeword);
+if numel(counts) ~= double(mapping.NumCodewords)
+    error("sixgr:phy:dl:PDSCHDecodedCodewordCountMismatch", ...
+        "PDSCH RX finalized %d codeword LLR stream(s), but the mapping contract expects %d.", ...
+        numel(counts), round(double(mapping.NumCodewords)));
+end
+if any(counts(:).' ~= expected(:).')
+    error("sixgr:phy:dl:PDSCHCodewordLLRCountContract", ...
+        "PDSCH demapper LLR counts %s do not match per-codeword G %s.", mat2str(counts), mat2str(expected));
+end
+if isempty(eqSym)
+    nCols = 0;
+else
+    if isvector(eqSym)
+        nCols = 1;
+    else
+        nCols = size(eqSym, 2);
+    end
+end
+mapping.ActualNumCodewords = double(numel(llrCell));
+mapping.DemapperLLRCountPerCodeword = double(counts);
+mapping.TotalDemapperLLRCount = double(sum(counts));
+mapping.ActualLayerColumns = double(nCols);
+mapping.ActualLayersEqualGrantLayers = logical(nCols == double(mapping.NumLayers));
+end
+
+function nCodewords = localResolvePDSCHNumCodewords(pdsch, nLayers)
+nCodewords = 1 + (double(nLayers) > 4);
+raw = localObjectValue(pdsch, "NumCodewords", []);
+if ~isempty(raw)
+    nCodewords = double(raw);
+end
+if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1 && abs(nCodewords - round(nCodewords)) < 1e-9)
+    error("sixgr:phy:dl:PDSCHBadCodewordCount", "PDSCH NumCodewords must be a positive integer scalar.");
+end
+nCodewords = round(nCodewords);
+end
+
+function value = localPositiveIntegerValue(raw, name)
+value = double(raw);
+if ~(isscalar(value) && isfinite(value) && value > 0 && abs(value - round(value)) < 1e-9)
+    error("sixgr:phy:dl:PDSCHBadInteger", "%s must be a positive integer scalar.", char(string(name)));
+end
+value = round(value);
+end
 function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
 crcType = defaultType;
 crcLen = defaultLen;
@@ -1425,24 +1557,30 @@ nLayers = 1;
 if isempty(pdsch)
     nLayers = double(sixgr.util.structGet(cfg, 'phy.pdsch.numLayers', ...
         sixgr.util.structGet(cfg, 'phy.pdsch.nLayers', 1)));
+    nCodewords = double(sixgr.util.structGet(cfg, 'phy.pdsch.numCodewords', ...
+        sixgr.util.structGet(cfg, 'phy.pdsch.NumCodewords', 1 + (nLayers > 4))));
 else
     try
         nLayers = double(pdsch.NumLayers);
     catch
         nLayers = 1;
     end
+    nCodewords = double(localObjectValue(pdsch, "NumCodewords", 1 + (nLayers > 4)));
 end
 if ~(isscalar(nLayers) && isfinite(nLayers) && nLayers >= 1)
     nLayers = 1;
 end
 nLayers = round(nLayers);
-if nLayers > 4
+if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1)
+    nCodewords = 1 + (nLayers > 4);
+end
+nCodewords = round(nCodewords);
+if nLayers > 4 || nCodewords > 1
     error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
-        "PDSCH_Tx/PDSCH_Rx support a single codeword only. Requested %d layer(s) implies 2 codeword(s).", ...
-        nLayers);
+        "PDSCH_Tx/PDSCH_Rx support one codeword for ranks 1-4. Requested NumLayers=%d NumCodewords=%d.", ...
+        nLayers, nCodewords);
 end
 end
-
 function nrePerPRB = localResolvePDSCHNREPerPRBOrError(carrier, pdsch, pdschInfo, nPRB)
 nrePerPRB = localResolveNREFromInfo(pdschInfo, nPRB, pdsch.Modulation, pdsch.NumLayers);
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)

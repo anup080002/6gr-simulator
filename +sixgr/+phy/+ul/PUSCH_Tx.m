@@ -190,6 +190,8 @@ else
 end
 codeword = int8(codeword(:));
 dataRateMatchedBits = double(sixgr.util.structGet(rateMatchInfo, "E", numel(codeword)));
+codewords = {codeword};
+codewordLayerMapping = localBuildPUSCHCodewordLayerContract(pusch, codewords, {codingLayout}, resourceAccounting, dataRateMatchedBits, uciInfo);
 localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout);
 
 % ---------------------- PUSCH modulation & mapping ----------------------
@@ -288,6 +290,10 @@ tx.LayerRESymbolCount = double(numel(puschLayerSym));
 tx.PortIndexCellCount = double(numel(puschInd));
 tx.RateMatchedBitCount = double(G);
 tx.DataRateMatchedBitCount = double(dataRateMatchedBits);
+tx.NumCodewords = double(codewordLayerMapping.NumCodewords);
+tx.RateMatchedBitCountPerCodeword = double(codewordLayerMapping.RateMatchedBitCountPerCodeword);
+tx.DataRateMatchedBitCountPerCodeword = double(codewordLayerMapping.DataRateMatchedBitCountPerCodeword);
+tx.CodewordLayerMapping = codewordLayerMapping;
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.PrecodePowerInfo = precodePowerInfo;
@@ -306,6 +312,7 @@ if ~logical(opt.CompactOutput)
     tx.TransportBlockCRC = tbCrc;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
+    tx.Codewords = codewords;
     tx.PUSCHInfo = puschInfo;
     tx.PUSCHSymbols = puschLayerSym;
     tx.DFTInputSymbols = dftInputSym;
@@ -325,6 +332,7 @@ info.CRC = crcInfo;
 info.Segmentation = segInfo;
 info.RateMatch = rateMatchInfo;
 info.CodingLayout = codingLayout;
+info.CodewordLayerMapping = codewordLayerMapping;
 info.PUSCHSymbols = puschSymInfo;
 info.SymbolDomain = puschDomainInfo;
 info.OFDM = ofdmInfo;
@@ -337,10 +345,10 @@ info.UCIOnPUSCH = uciInfo;
 info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
 info.XOverhead = double(xOverhead);
 info.ResourceAccounting = resourceAccounting;
-info.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codeword, txGrid, txWaveform, ...
+info.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, ...
     puschLayerInd, puschLayerSym, puschInd, puschSym, dftInputSym, ...
-    dmrsInd, dmrsSym, ptrsInd, ptrsSym, carrier, pusch, codingLayout, ...
-    resourceAccounting, prec, precodePowerInfo, phyGrant, hasPHYGrant);
+    dmrsInd, dmrsSym, ptrsInd, ptrsSym, carrier, pusch, {codingLayout}, ...
+    resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
 tx.TxContext = info.TxContext;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -668,6 +676,47 @@ values = double(values(:));
 values = values(isfinite(values));
 end
 
+function mapping = localBuildPUSCHCodewordLayerContract(pusch, codewords, codingLayouts, resourceAccounting, dataRateMatchedBits, uciInfo)
+nLayers = localPositiveIntegerValue(localObjectValue(pusch, "NumLayers", 1), "PUSCH.NumLayers");
+nCodewords = double(localObjectValue(pusch, "NumCodewords", 1));
+if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1 && abs(nCodewords - round(nCodewords)) < 1e-9)
+    error("sixgr:phy:ul:PUSCHBadCodewordCount", "PUSCH NumCodewords must be a positive integer scalar.");
+end
+nCodewords = round(nCodewords);
+if nCodewords ~= 1
+    error("sixgr:phy:ul:PUSCHMultiCodewordUnsupported", ...
+        "PUSCH truth TX supports one UL-SCH codeword only. Requested NumCodewords=%d.", nCodewords);
+end
+if ~iscell(codewords)
+    codewords = {codewords};
+end
+if ~iscell(codingLayouts)
+    codingLayouts = {codingLayouts};
+end
+if numel(codewords) ~= 1 || numel(codingLayouts) ~= 1
+    error("sixgr:phy:ul:PUSCHCodewordContainerMismatch", ...
+        "PUSCH codeword/coding-layout containers must each contain exactly one stream.");
+end
+mapping = struct();
+mapping.ContractVersion = "PUSCHCodewordLayer/v1";
+mapping.Direction = "UL";
+mapping.MappingStandard = "3GPP_TS_38_211_single_ULSCH_codeword_to_layer_mapping";
+mapping.MappingEngine = "nrPUSCH_internal_nrLayerMap";
+mapping.InverseEngine = "nrPUSCHDecode_internal_nrLayerDemap";
+mapping.SupportedScope = "single_ulsch_codeword_ranks_1_to_4";
+mapping.NumCodewords = 1;
+mapping.NumLayers = double(nLayers);
+mapping.CodewordIndexByLayer = ones(1, nLayers);
+mapping.LayerIndexWithinCodeword = double(1:nLayers);
+mapping.LayerCountPerCodeword = double(nLayers);
+mapping.RateMatchedBitCountPerCodeword = double(numel(codewords{1}));
+mapping.DataRateMatchedBitCountPerCodeword = double(dataRateMatchedBits);
+mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(codingLayouts{1}.RateMatchedBitCount);
+mapping.ResourceAccountingG = double(resourceAccounting.CodedBitCountG);
+mapping.UCIOnPUSCHApplied = logical(sixgr.util.structGet(uciInfo, "UCIOnPUSCHApplied", false));
+mapping.HARQACKBitCount = double(sixgr.util.structGet(uciInfo, "HARQACKBitCount", 0));
+mapping.Equation = "b_G_to_scrambled_bits_to_QAM_d_to_layers_S_to_optional_DFT_to_ports_X";
+end
 function [layerSym, dftInputSym, info] = localResolvePUSCHSymbolDomains(carrier, pusch, codeword, portSym, prec)
 portSym = localEnsure2D(portSym);
 nLayers = localPositiveIntegerValue(localObjectValue(pusch, "NumLayers", size(portSym, 2)), "PUSCH.NumLayers");
@@ -834,17 +883,29 @@ powerInfo.NativeCodebookApplied = logical(prec.NativeCodebookApplied);
 powerInfo.Equation = "X_equals_S_times_W_for_codebook_or_X_equals_S_for_noncodebook";
 end
 
-function ctx = localBuildTxContext(tx, trBlk, tbCrc, codeword, txGrid, txWaveform, ...
+function ctx = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, ...
     layerInd, layerSym, portInd, portSym, dftInputSym, dmrsInd, dmrsSym, ptrsInd, ptrsSym, ...
-    carrier, pusch, codingLayout, resourceAccounting, prec, precodePowerInfo, phyGrant, hasPHYGrant)
+    carrier, pusch, codingLayouts, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant)
 ctx = struct();
 ctx.ContractVersion = "PUSCH_TxContext/v1";
 ctx.GrantDriven = logical(hasPHYGrant);
 ctx.GrantContextId = string(sixgr.util.structGet(phyGrant, "GrantContextId", ""));
 ctx.TransportBlock = int8(trBlk(:));
 ctx.TransportBlockCRC = int8(tbCrc(:));
-ctx.Codeword = int8(codeword(:));
-ctx.CodingLayout = codingLayout;
+if ~iscell(codewords)
+    codewords = {codewords};
+end
+if ~iscell(codingLayouts)
+    codingLayouts = {codingLayouts};
+end
+ctx.Codewords = cell(size(codewords));
+for c = 1:numel(codewords)
+    ctx.Codewords{c} = int8(codewords{c}(:));
+end
+ctx.Codeword = ctx.Codewords{1};
+ctx.CodingLayouts = codingLayouts;
+ctx.CodingLayout = codingLayouts{1};
+ctx.CodewordLayerMapping = codewordLayerMapping;
 ctx.DFTInputSymbols = dftInputSym;
 ctx.LayerSymbols = layerSym;
 ctx.LayerIndices = layerInd;
@@ -883,7 +944,9 @@ ctx.DimensionContract = struct( ...
     "QAMSymbolCount", double(numel(dftInputSym)), ...
     "DFTInputSymbolCount", double(numel(dftInputSym)), ...
     "LayerRESymbolCount", double(numel(layerSym)), ...
-    "RateMatchedBitCount", double(numel(codeword)), ...
+    "NumCodewords", double(codewordLayerMapping.NumCodewords), ...
+    "RateMatchedBitCount", double(numel(ctx.Codeword)), ...
+    "RateMatchedBitCountPerCodeword", double(codewordLayerMapping.RateMatchedBitCountPerCodeword), ...
     "LayerIndexCellCount", double(numel(layerInd)), ...
     "PortSymbolCount", double(numel(portSym)), ...
     "GridSize", double(size(txGrid)), ...

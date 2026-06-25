@@ -187,6 +187,7 @@ localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout);
 % ---------------------- PDSCH modulation & mapping ----------------------
 % nrPDSCH expects codewords as a cell array (up to 2 codewords)
 codewords = {codeword};
+codewordLayerMapping = localBuildPDSCHCodewordLayerContract(pdsch, codewords, {codingLayout}, resourceAccounting);
 
 try
     [pdschSym, pdschSymInfo] = nrPDSCH(carrier, pdsch, codewords);
@@ -194,7 +195,8 @@ catch
     pdschSym = nrPDSCH(carrier, pdsch, codewords);
     pdschSymInfo = struct();
 end
-localAssertPDSCHLayerSymbolContract(codeword, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayout);
+codewordLayerMapping = localFinalizePDSCHCodewordLayerContract(codewordLayerMapping, pdschSym);
+localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, {codingLayout}, codewordLayerMapping);
 
 % DMRS
 [dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
@@ -314,6 +316,9 @@ tx.ModulationSymbolCount = double(resourceAccounting.ModulationSymbolCount);
 tx.QAMSymbolCount = double(numel(pdschSym));
 tx.PortIndexCellCount = double(numel(pdschAntInd));
 tx.RateMatchedBitCount = double(G);
+tx.NumCodewords = double(codewordLayerMapping.NumCodewords);
+tx.RateMatchedBitCountPerCodeword = double(codewordLayerMapping.RateMatchedBitCountPerCodeword);
+tx.CodewordLayerMapping = codewordLayerMapping;
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.PrecodePowerInfo = precodePowerInfo;
@@ -333,6 +338,7 @@ if ~logical(opt.CompactOutput)
     tx.TransportBlockCRC = tbCrc;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
+    tx.Codewords = codewords;
     tx.PDSCHInfo = pdschInfo;
     tx.PDSCHSymbols = pdschSym;
     tx.DMRSIndices = dmrsInd;
@@ -352,9 +358,9 @@ if ~logical(opt.CompactOutput)
     tx.CSIRSRuntimeEvent = csirsEvent;
     tx.ResourceGridPortContract = gridPortContract;
 end
-tx.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codeword, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
+tx.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
     dmrsInd, dmrsSym, dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, ptrsAntInd, ptrsAntSym, ...
-    carrier, pdsch, codingLayout, resourceAccounting, prec, precodePowerInfo, phyGrant, hasPHYGrant);
+    carrier, pdsch, {codingLayout}, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
 
 info = struct();
 info.CarrierInfo = cinfo;
@@ -373,6 +379,7 @@ info.Precoding = prec;
 info.PrecodePowerInfo = precodePowerInfo;
 info.XOverhead = double(xOverhead);
 info.ResourceAccounting = resourceAccounting;
+info.CodewordLayerMapping = codewordLayerMapping;
 info.TxContext = tx.TxContext;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -621,16 +628,115 @@ if round(double(resourceAccounting.NumLayers)) ~= round(double(pdsch.NumLayers))
 end
 end
 
-function localAssertPDSCHLayerSymbolContract(codeword, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayout)
-if numel(codeword) ~= double(resourceAccounting.CodedBitCountG)
-    error("sixgr:phy:dl:PDSCHCodewordGContract", ...
-        "PDSCH codeword length %d does not match resource-accounting G=%d.", ...
-        numel(codeword), round(double(resourceAccounting.CodedBitCountG)));
+function mapping = localBuildPDSCHCodewordLayerContract(pdsch, codewords, codingLayouts, resourceAccounting)
+nLayers = localPositiveIntegerValue(localObjectValue(pdsch, "NumLayers", 1), "PDSCH.NumLayers");
+nCodewords = localResolvePDSCHNumCodewords(pdsch, nLayers);
+if nCodewords > 1 || nLayers > 4
+    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
+        "PDSCH truth TX supports one codeword for ranks 1-4. Requested NumLayers=%d NumCodewords=%d needs a two-codeword TB/coding contract.", ...
+        nLayers, nCodewords);
 end
-if numel(codeword) ~= double(codingLayout.RateMatchedBitCount)
-    error("sixgr:phy:dl:PDSCHCodewordCodingLayoutContract", ...
-        "PDSCH codeword length %d does not match CodingLayout RateMatchedBitCount=%d.", ...
-        numel(codeword), round(double(codingLayout.RateMatchedBitCount)));
+if ~iscell(codewords)
+    codewords = {codewords};
+end
+if ~iscell(codingLayouts)
+    codingLayouts = {codingLayouts};
+end
+if numel(codewords) ~= nCodewords || numel(codingLayouts) ~= nCodewords
+    error("sixgr:phy:dl:PDSCHCodewordContainerMismatch", ...
+        "PDSCH codeword/coding-layout container count must equal NumCodewords=%d. Got %d codeword(s), %d layout(s).", ...
+        nCodewords, numel(codewords), numel(codingLayouts));
+end
+rateBits = zeros(1, nCodewords);
+layoutBits = zeros(1, nCodewords);
+for c = 1:nCodewords
+    rateBits(c) = double(numel(codewords{c}));
+    layoutBits(c) = double(codingLayouts{c}.RateMatchedBitCount);
+end
+mapping = struct();
+mapping.ContractVersion = "PDSCHCodewordLayer/v1";
+mapping.Direction = "DL";
+mapping.MappingStandard = "3GPP_TS_38_211_codeword_to_layer_mapping";
+mapping.MappingEngine = "nrPDSCH_internal_nrLayerMap";
+mapping.InverseEngine = "nrPDSCHDecode_internal_nrLayerDemap";
+mapping.SupportedScope = "single_codeword_ranks_1_to_4";
+mapping.UnsupportedScope = "two_codeword_ranks_5_to_8_require_two_transport_blocks_and_per_codeword_coding_layouts";
+mapping.NumCodewords = double(nCodewords);
+mapping.NumLayers = double(nLayers);
+mapping.GrantNumLayers = double(nLayers);
+mapping.CodewordIndexByLayer = ones(1, nLayers);
+mapping.LayerIndexWithinCodeword = double(1:nLayers);
+mapping.LayerCountPerCodeword = double(nLayers);
+mapping.RateMatchedBitCountPerCodeword = double(rateBits);
+mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(layoutBits);
+mapping.ResourceAccountingG = double(resourceAccounting.CodedBitCountG);
+mapping.ExpectedLayerDataRE = double(resourceAccounting.LayerDataRE);
+mapping.ExpectedLayerSymbolCount = double(resourceAccounting.LayerDataRE) * double(nLayers);
+mapping.ActualLayerColumns = NaN;
+mapping.ActualLayerSymbolCount = NaN;
+mapping.ActualLayersEqualGrantLayers = false;
+mapping.LayerColumnEnergy = NaN(1, nLayers);
+mapping.AllLayerStreamsNonzero = false;
+mapping.Equation = "b_G_c_to_QAM_d_c_to_layers_S_using_TS38211_7_3_1_3_then_ports_X_equals_S_times_W_transpose";
+end
+
+function mapping = localFinalizePDSCHCodewordLayerContract(mapping, layerSym)
+if isempty(layerSym)
+    nCols = 0;
+    energy = zeros(1, 0);
+else
+    if isvector(layerSym)
+        layerSym2D = layerSym(:);
+    else
+        layerSym2D = layerSym;
+    end
+    nCols = size(layerSym2D, 2);
+    energy = sum(abs(layerSym2D).^2, 1);
+end
+mapping.ActualLayerColumns = double(nCols);
+mapping.ActualLayerSymbolCount = double(numel(layerSym));
+mapping.ActualLayersEqualGrantLayers = logical(nCols == double(mapping.NumLayers));
+mapping.LayerColumnEnergy = double(energy);
+mapping.AllLayerStreamsNonzero = logical(~isempty(energy) && all(energy > 0));
+end
+
+function nCodewords = localResolvePDSCHNumCodewords(pdsch, nLayers)
+nCodewords = 1 + (double(nLayers) > 4);
+raw = localObjectValue(pdsch, "NumCodewords", []);
+if ~isempty(raw)
+    nCodewords = double(raw);
+end
+if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1 && abs(nCodewords - round(nCodewords)) < 1e-9)
+    error("sixgr:phy:dl:PDSCHBadCodewordCount", "PDSCH NumCodewords must be a positive integer scalar.");
+end
+nCodewords = round(nCodewords);
+end
+
+function localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayouts, codewordLayerMapping)
+if ~iscell(codewords)
+    codewords = {codewords};
+end
+if ~iscell(codingLayouts)
+    codingLayouts = {codingLayouts};
+end
+if numel(codewords) ~= double(codewordLayerMapping.NumCodewords)
+    error("sixgr:phy:dl:PDSCHCodewordCountContract", ...
+        "PDSCH emitted %d codeword(s), but the mapping contract requires %d.", ...
+        numel(codewords), round(double(codewordLayerMapping.NumCodewords)));
+end
+rateMatchedBits = zeros(1, numel(codewords));
+for c = 1:numel(codewords)
+    rateMatchedBits(c) = numel(codewords{c});
+    if numel(codewords{c}) ~= double(codingLayouts{c}.RateMatchedBitCount)
+        error("sixgr:phy:dl:PDSCHCodewordCodingLayoutContract", ...
+            "PDSCH codeword %d length %d does not match CodingLayout RateMatchedBitCount=%d.", ...
+            c, numel(codewords{c}), round(double(codingLayouts{c}.RateMatchedBitCount)));
+    end
+end
+if sum(rateMatchedBits) ~= double(resourceAccounting.CodedBitCountG)
+    error("sixgr:phy:dl:PDSCHCodewordGContract", ...
+        "PDSCH total codeword length %d does not match resource-accounting G=%d.", ...
+        sum(rateMatchedBits), round(double(resourceAccounting.CodedBitCountG)));
 end
 expectedLayerSymbols = double(resourceAccounting.LayerDataRE) * double(pdsch.NumLayers);
 if numel(pdschSym) ~= expectedLayerSymbols
@@ -642,6 +748,16 @@ if numel(pdschInd) ~= expectedLayerSymbols
     error("sixgr:phy:dl:PDSCHLayerIndexCountContract", ...
         "PDSCH layer index cell count %d does not equal layer symbol count %d.", ...
         numel(pdschInd), expectedLayerSymbols);
+end
+if double(codewordLayerMapping.ActualLayerColumns) ~= double(pdsch.NumLayers)
+    error("sixgr:phy:dl:PDSCHLayerColumnContract", ...
+        "PDSCH actual layer columns %d do not match grant NumLayers=%d.", ...
+        round(double(codewordLayerMapping.ActualLayerColumns)), round(double(pdsch.NumLayers)));
+end
+if double(pdsch.NumLayers) > 1 && ~logical(codewordLayerMapping.AllLayerStreamsNonzero)
+    error("sixgr:phy:dl:PDSCHLayerStreamEnergyContract", ...
+        "PDSCH rank-%d transmission must materialize nonzero symbols on every layer stream.", ...
+        round(double(pdsch.NumLayers)));
 end
 end
 
@@ -715,17 +831,29 @@ powerInfo.TotalPowerRelativeError = double(abs(portEnergy - layerEnergy) / max(l
 powerInfo.Equation = "X_equals_S_times_W_transpose";
 end
 
-function ctx = localBuildTxContext(tx, trBlk, tbCrc, codeword, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
+function ctx = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
     dmrsInd, dmrsSym, dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, ptrsAntInd, ptrsAntSym, ...
-    carrier, pdsch, codingLayout, resourceAccounting, prec, precodePowerInfo, phyGrant, hasPHYGrant)
+    carrier, pdsch, codingLayouts, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant)
 ctx = struct();
 ctx.ContractVersion = "PDSCH_TxContext/v1";
 ctx.GrantDriven = logical(hasPHYGrant);
 ctx.GrantContextId = string(sixgr.util.structGet(phyGrant, "GrantContextId", ""));
 ctx.TransportBlock = int8(trBlk(:));
 ctx.TransportBlockCRC = int8(tbCrc(:));
-ctx.Codeword = int8(codeword(:));
-ctx.CodingLayout = codingLayout;
+if ~iscell(codewords)
+    codewords = {codewords};
+end
+if ~iscell(codingLayouts)
+    codingLayouts = {codingLayouts};
+end
+ctx.Codewords = cell(size(codewords));
+for c = 1:numel(codewords)
+    ctx.Codewords{c} = int8(codewords{c}(:));
+end
+ctx.Codeword = ctx.Codewords{1};
+ctx.CodingLayouts = codingLayouts;
+ctx.CodingLayout = codingLayouts{1};
+ctx.CodewordLayerMapping = codewordLayerMapping;
 ctx.LayerSymbols = pdschSym;
 ctx.LayerIndices = pdschInd;
 ctx.PortSymbols = pdschAntSym;
@@ -762,7 +890,10 @@ ctx.DimensionContract = struct( ...
     "LayerDataRE", double(resourceAccounting.LayerDataRE), ...
     "PortIndexCellCount", double(numel(pdschAntInd)), ...
     "QAMSymbolCount", double(numel(pdschSym)), ...
-    "RateMatchedBitCount", double(numel(codeword)), ...
+    "NumCodewords", double(codewordLayerMapping.NumCodewords), ...
+    "ActualNumLayers", double(codewordLayerMapping.ActualLayerColumns), ...
+    "RateMatchedBitCount", double(numel(ctx.Codeword)), ...
+    "RateMatchedBitCountPerCodeword", double(codewordLayerMapping.RateMatchedBitCountPerCodeword), ...
     "LayerIndexCellCount", double(numel(pdschInd)), ...
     "PortSymbolCount", double(numel(pdschAntSym)), ...
     "GridSize", double(size(txGrid)), ...
@@ -844,24 +975,30 @@ function localGuardUnsupportedNumLayers(cfg, pdsch)
 if isempty(pdsch)
     nLayers = double(sixgr.util.structGet(cfg, 'phy.pdsch.numLayers', ...
         sixgr.util.structGet(cfg, 'phy.pdsch.nLayers', 1)));
+    nCodewords = double(sixgr.util.structGet(cfg, 'phy.pdsch.numCodewords', ...
+        sixgr.util.structGet(cfg, 'phy.pdsch.NumCodewords', 1 + (nLayers > 4))));
 else
     try
         nLayers = double(pdsch.NumLayers);
     catch
         nLayers = 1;
     end
+    nCodewords = double(localObjectValue(pdsch, "NumCodewords", 1 + (nLayers > 4)));
 end
 if ~(isscalar(nLayers) && isfinite(nLayers) && nLayers >= 1)
     nLayers = 1;
 end
 nLayers = round(nLayers);
-if nLayers > 4
+if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1)
+    nCodewords = 1 + (nLayers > 4);
+end
+nCodewords = round(nCodewords);
+if nLayers > 4 || nCodewords > 1
     error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
-        "PDSCH_Tx/PDSCH_Rx support a single codeword only. Requested %d layer(s) implies 2 codeword(s).", ...
-        nLayers);
+        "PDSCH_Tx/PDSCH_Rx support one codeword for ranks 1-4. Requested NumLayers=%d NumCodewords=%d.", ...
+        nLayers, nCodewords);
 end
 end
-
 function [csirsInd, csirsSym, csirsInfo, csirsCfg, event] = localGenerateCSIRSRuntimeResource(carrier, cfg)
 csirsInd = zeros(0, 1);
 csirsSym = complex(zeros(0, 1));

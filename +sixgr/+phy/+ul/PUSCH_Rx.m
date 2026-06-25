@@ -394,9 +394,8 @@ catch
     cwLLR = nrPUSCHDecode(carrier, pusch, eqSym, nVarForDecode);
 end
 
-if iscell(cwLLR)
-    cwLLR = cwLLR{1};
-end
+[cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHSingleCodewordLLR(cwLLR);
+codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract(pusch, cwLLRCell, codingLayout, eqSym);
 [layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, puschRxSym, pusch);
 [cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation, postEqSINR_dB);
 expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
@@ -553,6 +552,10 @@ rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
 rx.TransportBlockCRCLength = double(tbCRCLen);
 rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
 rx.CodingLayout = codingLayout;
+rx.CodewordLayerMapping = codewordLayerMapping;
+rx.NumCodewords = double(codewordLayerMapping.NumCodewords);
+rx.ActualNumCodewords = double(codewordLayerMapping.ActualNumCodewords);
+rx.CodewordLLRCountPerCodeword = double(codewordLayerMapping.DemapperLLRCountPerCodeword);
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
 rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
 rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
@@ -612,7 +615,7 @@ rx.EqualizedSymbolDomain = "layer";
 rx.EqualizedSymbolSource = char(string(layerEqInfo.Status));
 rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, ...
     localLayerIndicesFromPUSCHIndices(puschInd, layerEqSym), "layer");
-rx.DemapperLLRCount = double(numel(cwLLR));
+rx.DemapperLLRCount = double(codewordLayerMapping.TotalDemapperLLRCount);
 rx.ULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
 rx.RateRecoveredLLRCount = double(numel(recLLR));
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
@@ -638,7 +641,10 @@ rx.HARQACKDecodeStatus = char(string(uciOnPUSCH.Status));
 rx.HARQACKDecodeReason = char(string(uciOnPUSCH.Reason));
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
+    rx.CodewordLLRCell = cwLLRCell;
     rx.ULSCHCodewordLLR = cwLLRForULSCH;
+    rx.ULSCHCodewordLLRCell = {cwLLRForULSCH};
+    rx.CodewordLLRInfo = codewordLLRInfo;
     rx.HARQACKLLR = uciOnPUSCH.HARQACKLLR;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
@@ -702,6 +708,8 @@ info.InterferenceCovariance = rintInfo;
 info.PTRS = ptrsInfo;
 info.CPECorrection = cpeCorrInfo;
 info.CodingLayout = codingLayout;
+info.CodewordLayerMapping = codewordLayerMapping;
+info.CodewordLLRInfo = codewordLLRInfo;
 info.StrictReceiverEvidence = strictEvidence;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -710,6 +718,71 @@ end
 
 end
 
+function [cwLLR, cwLLRCell, info] = localNormalizePUSCHSingleCodewordLLR(cwLLRRaw)
+if iscell(cwLLRRaw)
+    cwLLRCell = reshape(cwLLRRaw, 1, []);
+    sourceWasCell = true;
+else
+    cwLLRCell = {cwLLRRaw};
+    sourceWasCell = false;
+end
+if numel(cwLLRCell) ~= 1
+    error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
+        "nrPUSCHDecode returned %d codeword LLR stream(s); PUSCH truth RX supports exactly one.", numel(cwLLRCell));
+end
+cwLLR = double(cwLLRCell{1}(:));
+cwLLRCell{1} = cwLLR;
+info = struct( ...
+    "ContractVersion", "PUSCHCodewordLLR/v1", ...
+    "SourceWasCell", logical(sourceWasCell), ...
+    "ExpectedNumCodewords", 1, ...
+    "ActualNumCodewords", double(numel(cwLLRCell)), ...
+    "LLRCountPerCodeword", double(numel(cwLLR)));
+end
+
+function mapping = localBuildPUSCHRxCodewordLayerContract(pusch, cwLLRCell, codingLayout, eqSym)
+nLayers = max(1, round(double(localObjectValue(pusch, "NumLayers", 1))));
+counts = double(cellfun(@numel, cwLLRCell));
+expected = double(codingLayout.RateMatchedBitCount);
+if numel(cwLLRCell) ~= 1
+    error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
+        "PUSCH RX finalized %d codeword LLR stream(s), but the UL-SCH contract expects one.", numel(cwLLRCell));
+end
+if counts(1) < expected
+    error("sixgr:phy:ul:PUSCHCodewordLLRCountContract", ...
+        "PUSCH demapper LLR count %d is smaller than CodingLayout RateMatchedBitCount=%d.", counts(1), expected);
+end
+if isempty(eqSym)
+    nCols = 0;
+else
+    if isvector(eqSym)
+        nCols = 1;
+    else
+        nCols = size(eqSym, 2);
+    end
+end
+mapping = struct();
+mapping.ContractVersion = "PUSCHCodewordLayer/v1";
+mapping.Direction = "UL";
+mapping.MappingStandard = "3GPP_TS_38_211_single_ULSCH_codeword_to_layer_mapping";
+mapping.MappingEngine = "nrPUSCH_internal_nrLayerMap";
+mapping.InverseEngine = "nrPUSCHDecode_internal_nrLayerDemap";
+mapping.SupportedScope = "single_ulsch_codeword_ranks_1_to_4";
+mapping.NumCodewords = 1;
+mapping.ActualNumCodewords = 1;
+mapping.NumLayers = double(nLayers);
+mapping.CodewordIndexByLayer = ones(1, nLayers);
+mapping.LayerIndexWithinCodeword = double(1:nLayers);
+mapping.LayerCountPerCodeword = double(nLayers);
+mapping.RateMatchedBitCountPerCodeword = double(counts);
+mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(expected);
+mapping.UCIOrControlMuxedBitCount = double(max(0, counts(1) - expected));
+mapping.DemapperLLRCountPerCodeword = double(counts);
+mapping.TotalDemapperLLRCount = double(sum(counts));
+mapping.ActualLayerColumns = double(nCols);
+mapping.ActualLayersEqualGrantLayers = logical(nCols == nLayers);
+mapping.Equation = "port_observations_to_equalized_layers_S_hat_to_single_ULSCH_codeword_LLRs";
+end
 function method = localResolveChannelEstimationMethod(cfg)
 method = char(string(sixgr.util.structGet(cfg, "phy.channelEstimation.method", ...
     sixgr.util.structGet(cfg, "phy.rx.channelEstimationMethod", "LS"))));
