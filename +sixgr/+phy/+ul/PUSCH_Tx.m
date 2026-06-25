@@ -16,6 +16,7 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     "TargetCodeRate"     : code rate (0..1)
 %     "XOverhead"          : xOverhead for nrTBS (default 0)
 %     "NumTxAnt"           : number of TX antennas for resource grid pages
+%     "PHYGrant"           : frozen canonical grant dimensional contract
 %
 %   Outputs:
 %     TX.Waveform          : time-domain OFDM waveform
@@ -46,9 +47,17 @@ ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscal
 ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
 ip.addParameter('NumTxAnt', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('HARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+phyGrant = opt.PHYGrant;
+hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
+if hasPHYGrant
+    sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pusch_tx_entry");
+    cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
+    opt.NumTxAnt = double(phyGrant.AntennaArchitecture.NumWaveformColumns);
+end
 
 % Carrier
 if isempty(opt.Carrier)
@@ -98,6 +107,14 @@ if logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
     numTxAnt = max(double(numTxAnt), double(sixgr.util.structGet(prec, "NumPorts", 1)));
 end
 numTxAnt = max(1, round(numTxAnt));
+phyGrantContract = struct();
+if hasPHYGrant
+    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
+        "pusch_tx_before_waveform", ...
+        "PUSCH", pusch, ...
+        "Precoding", prec, ...
+        "NumTxAnt", numTxAnt);
+end
 
 % Transport block size
 nPRB = numel(pusch.PRBSet);
@@ -245,10 +262,23 @@ end
 [windowingSamples, windowingInfo] = sixgr.phy.waveform.resolveOFDMWindowing(cfg, carrier);
 [txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid, ...
     "Windowing", double(windowingSamples));
+if hasPHYGrant
+    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
+        "pusch_tx_after_waveform", ...
+        "PUSCH", pusch, ...
+        "Precoding", prec, ...
+        "NumTxAnt", numTxAnt, ...
+        "Grid", txGrid, ...
+        "Waveform", txWaveform);
+end
 
 % ---------------------- Outputs ----------------------
 tx = struct();
 tx.Waveform = txWaveform;
+if hasPHYGrant
+    tx.PHYGrant = phyGrant;
+    tx.PHYGrantDimensionContract = phyGrantContract;
+end
 tx.TransportBlockSize = trBlkSize;
 tx.ScheduledTransportBlockSize = scheduledTrBlkSize;
 if isempty(opt.TransportBlockSizeOverride)
@@ -302,6 +332,10 @@ info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.UCIOnPUSCH = uciInfo;
 info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
+if hasPHYGrant
+    info.PHYGrant = phyGrant;
+    info.PHYGrantDimensionContract = phyGrantContract;
+end
 
 end
 

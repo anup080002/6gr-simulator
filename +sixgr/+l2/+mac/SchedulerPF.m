@@ -159,6 +159,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.TBSBytes = floor(max(g.TBSBits, 0) / 8);
                         g.BufferBytesAfter = max(bufBytes(k) - double(g.TBSBytes), 0);
                         g.GrantReason = "harq_retx";
+                        g = obj.freezePHYGrantForGrant(g);
                         g.DCI = obj.buildDCIBitfield(g);
                         grants(end+1) = g; %#ok<AGROW>
                         if controlBudgetActive
@@ -433,6 +434,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
                         sprintf("%s %s RNTI=%d", class(obj), char(g.GrantReason), round(rnti)));
                     g.TBSBytes = g.TBSBits / 8;
+                    g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
                     groupGrants(end+1) = g; %#ok<AGROW>
                     groupValid(gg) = true;
@@ -582,6 +584,8 @@ g.MUMIMOGroupId = NaN;
 g.MUMIMOPairingStatus = "";
 g.MUMIMOPairingMetricSource = "";
 g.MUMIMOPrecoderType = "";
+g.PHYGrant = struct();
+g.PHYGrantContextId = "";
 g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"FieldValues",struct(), ...
     "RIV",0,"RBStart",0,"RBLength",0,"SLIV",NaN,"TimeDomainAssignmentIndex",NaN, ...
     "StandardProfile","","BitExactPDCCHPayload",false,"BitLength",0, ...

@@ -18,6 +18,7 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %     "MaxIterations": LDPC iterations
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
+%     "PHYGrant"    : frozen canonical grant dimensional contract
 %
 %   Outputs:
 %     RX.TransportBlock     : recovered TB bits
@@ -48,6 +49,7 @@ ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('ExpectedHARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -55,6 +57,12 @@ ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) 
 ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+phyGrant = opt.PHYGrant;
+hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
+if hasPHYGrant
+    sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pusch_rx_entry");
+    cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
+end
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.ul.PUSCH_Rx", ...
     "Stage", "ul_pusch_rx", ...
     "Metadata", struct( ...
@@ -148,6 +156,12 @@ strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pusch);
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PUSCH_Rx");
+phyGrantContract = struct();
+if hasPHYGrant
+    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
+        "pusch_rx_after_config", ...
+        "PUSCH", pusch);
+end
 
 % Timing estimate
 trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTrackingState, cfg);
@@ -569,6 +583,10 @@ rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, dmrsInfo, ...
     cwLLRForULSCH, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
+if hasPHYGrant
+    rx.PHYGrant = phyGrant;
+    rx.PHYGrantDimensionContract = phyGrantContract;
+end
 rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
 rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
@@ -639,6 +657,10 @@ info.InterferenceCovariance = rintInfo;
 info.PTRS = ptrsInfo;
 info.CPECorrection = cpeCorrInfo;
 info.StrictReceiverEvidence = strictEvidence;
+if hasPHYGrant
+    info.PHYGrant = phyGrant;
+    info.PHYGrantDimensionContract = phyGrantContract;
+end
 
 end
 

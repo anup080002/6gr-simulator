@@ -943,6 +943,27 @@ classdef (Abstract) SchedulerBase < handle
             metric = inst / max(avg, 1);
         end
 
+        function grantOut = freezePHYGrantForGrant(obj, grantIn)
+            % Freeze the final scheduler grant dimensional contract once.
+            grantOut = grantIn;
+            if nargin < 2 || ~(isstruct(grantOut) && ~isempty(fieldnames(grantOut)))
+                return;
+            end
+            if ~isfield(grantOut, "Direction") || strlength(string(grantOut.Direction)) == 0
+                grantOut.Direction = obj.Direction;
+            end
+            grantSeed = grantOut;
+            if isfield(grantSeed, "PHYGrant")
+                grantSeed = rmfield(grantSeed, "PHYGrant");
+            end
+            phyGrant = sixgr.phy.grant.freezePHYGrant(obj.Cfg, grantOut.Direction, grantSeed, ...
+                "Slot", double(sixgr.util.structGet(grantOut, "Slot", NaN)), ...
+                "Frame", double(sixgr.util.structGet(grantOut, "Frame", sixgr.util.structGet(grantOut, "Slot", NaN))), ...
+                "HARQContext", sixgr.util.structGet(grantOut, "HARQ", struct()));
+            grantOut.PHYGrant = phyGrant;
+            grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
+        end
+
         function dci = buildDCIBitfield(obj, grant)
             % buildDCIBitfield Build NR-style DCI intent fields for a grant.
             dci = struct("Format", "", "Bits", uint8([]), "Hex", "", ...
@@ -950,9 +971,19 @@ classdef (Abstract) SchedulerBase < handle
                 "RIV", 0, "RBStart", 0, "RBLength", 0, ...
                 "SLIV", NaN, "TimeDomainAssignmentIndex", NaN, ...
                 "StandardProfile", "ts38212_semantic_field_layout", ...
-                "BitExactPDCCHPayload", false);
+                "BitExactPDCCHPayload", false, ...
+                "PHYGrant", struct(), ...
+                "PHYGrantContextId", "", ...
+                "PHYGrantEvidenceSource", "");
             if nargin < 2 || isempty(grant) || ~isstruct(grant)
                 return;
+            end
+            phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+            if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
+                sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "scheduler_dci_build");
+                dci.PHYGrant = phyGrant;
+                dci.PHYGrantContextId = char(string(phyGrant.GrantContextId));
+                dci.PHYGrantEvidenceSource = "SchedulerBase.freezePHYGrantForGrant";
             end
 
             prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));

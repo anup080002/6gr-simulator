@@ -31,6 +31,11 @@ grant = sixgr.util.structGet(job, "GrantSnapshot", struct());
 if isstruct(grant) && ~isempty(fieldnames(grant))
     args = [args {"GrantSnapshot", grant}]; %#ok<AGROW>
 end
+phyGrant = sixgr.util.structGet(job, "PHYGrant", sixgr.util.structGet(grant, "PHYGrant", struct()));
+if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
+    sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "execute_grant_phy_job");
+    args = [args {"PHYGrant", phyGrant}]; %#ok<AGROW>
+end
 
 if direction == "UL"
     res = sixgr.link.runULPUSCHThroughput(cfg, args{:});
@@ -43,6 +48,7 @@ result.Direction = char(direction);
 result.Frame = double(sixgr.util.structGet(job, "StartFrameIndex", NaN));
 result.Slot = double(sixgr.util.structGet(job, "StartSlotIndex", NaN));
 result.GrantContextId = char(string(sixgr.util.structGet(job, "GrantContextId", "")));
+result.PHYGrant = phyGrant;
 result.Result = res;
 result.LinkAdaptationState = sixgr.util.structGet(res, "LinkAdaptationState", sixgr.util.structGet(job, "InitialLinkAdaptationState", struct()));
 result.WorkerSafe = logical(sixgr.util.structGet(job, "WorkerSafe", true));

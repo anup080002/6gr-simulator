@@ -164,6 +164,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     g.TBSBytes = floor(max(g.TBSBits, 0) / 8);
                     g.BufferBytesAfter = max(g.BufferBytesBefore - double(g.TBSBytes), 0);
                     g.GrantReason = "harq_retx";
+                    g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
 
                     nGrant = nGrant + 1;
@@ -313,6 +314,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
                     sprintf("%s new_data_rr RNTI=%d", class(obj), round(rnti)));
                 g.TBSBytes = g.TBSBits / 8;
+                g = obj.freezePHYGrantForGrant(g);
                 g.DCI = obj.buildDCIBitfield(g);
 
                 nGrant = nGrant + 1;
@@ -398,6 +400,8 @@ g.HeadOfLineDelay_ms = 0;
 g.BufferBytesBefore = 0;
 g.BufferBytesAfter = 0;
 g.GrantReason = "new_data_rr";
+g.PHYGrant = struct();
+g.PHYGrantContextId = "";
 g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"RIV",0,"RBStart",0,"RBLength",0);
 end
 

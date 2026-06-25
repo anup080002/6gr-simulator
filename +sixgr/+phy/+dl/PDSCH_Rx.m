@@ -18,6 +18,7 @@ function [rx, info] = PDSCH_Rx(rxWaveform, cfg, varargin)
 %     "MaxIterations": LDPC iterations (default from cfg)
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %     "PrecodingMatrix": wideband PDSCH precoder used by the transmitter
+%     "PHYGrant"    : frozen canonical grant dimensional contract
 %
 %   Outputs:
 %     RX.TransportBlock     : recovered TB bits (if CRC passes)
@@ -50,6 +51,7 @@ ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'ti
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -57,6 +59,15 @@ ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) 
 ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+phyGrant = opt.PHYGrant;
+hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
+if hasPHYGrant
+    sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pdsch_rx_entry");
+    cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
+    if isempty(opt.PrecodingMatrix)
+        opt.PrecodingMatrix = double(phyGrant.PrecodingState.Matrix);
+    end
+end
 localGuardUnsupportedNumLayers(cfg, opt.PDSCH);
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.dl.PDSCH_Rx", ...
     "Stage", "dl_pdsch_rx", ...
@@ -124,6 +135,13 @@ end
 
 prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
     "PrecodingMatrix", opt.PrecodingMatrix);
+phyGrantContract = struct();
+if hasPHYGrant
+    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
+        "pdsch_rx_after_config", ...
+        "PDSCH", pdsch, ...
+        "Precoding", prec);
+end
 
 % Expected TB size
 trBlkSize = opt.TransportBlockSize;
@@ -575,6 +593,10 @@ rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, ...
     llr, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
+if hasPHYGrant
+    rx.PHYGrant = phyGrant;
+    rx.PHYGrantDimensionContract = phyGrantContract;
+end
 rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsInd);
 rx.ChannelEstimateAvailable = ~isempty(hEst);
 if useFastAWGNPath
@@ -683,6 +705,10 @@ info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
 info.StrictReceiverEvidence = strictEvidence;
+if hasPHYGrant
+    info.PHYGrant = phyGrant;
+    info.PHYGrantDimensionContract = phyGrantContract;
+end
 
 end
 

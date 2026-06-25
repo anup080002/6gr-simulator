@@ -8,6 +8,18 @@ end
 
 grant = sixgr.util.structGet(trialContext, "GrantSnapshot", struct());
 grantSlotIdx = double(sixgr.util.structGet(grant, "Slot", frameIdx));
+phyGrant = sixgr.util.structGet(trialContext, "PHYGrant", ...
+    sixgr.util.structGet(grant, "PHYGrant", struct()));
+if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+        logical(sixgr.util.structGet(phyGrant, "IsFrozen", false)))
+    phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, direction, grant, ...
+        "SNR_dB", snr_dB, ...
+        "Frame", frameIdx, ...
+        "Slot", grantSlotIdx, ...
+        "HARQContext", sixgr.util.structGet(trialContext, "HARQContext", struct()));
+end
+grant.PHYGrant = phyGrant;
+grant.PHYGrantContextId = char(string(phyGrant.GrantContextId));
 
 job = struct();
 job.Cfg = cfg;
@@ -23,7 +35,8 @@ job.ExpectedUCIBits = sixgr.util.structGet(trialContext, "ExpectedUCIBits", ...
     sixgr.util.structGet(grant, "ExpectedUCIBits", []));
 job.HARQContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
 job.GrantSnapshot = grant;
-job.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", ""));
+job.PHYGrant = phyGrant;
+job.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", phyGrant.GrantContextId));
 job.PreviousCombinedLLR = sixgr.util.structGet(trialContext, "PreviousCombinedLLR", []);
 job.InterferenceBundle = sixgr.util.structGet(trialContext, "InterferenceBundle", struct([]));
 job.WorkerSafe = true;

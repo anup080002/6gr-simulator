@@ -14,6 +14,7 @@ p.addParameter("TransportBlockBits", [], @(x) isempty(x) || isnumeric(x) || islo
 p.addParameter("RV", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 0 && x <= 3));
 p.addParameter("HARQContext", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("GrantSnapshot", struct(), @(x) isempty(x) || isstruct(x));
+p.addParameter("PHYGrant", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("PreviousCombinedLLR", [], @(x) isempty(x) || isnumeric(x));
 p.addParameter("InterferenceBundle", struct([]), @(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
@@ -29,13 +30,32 @@ transportBlockBits = p.Results.TransportBlockBits;
 rvOverride = p.Results.RV;
 harqContext = p.Results.HARQContext;
 grantSnapshotOverride = p.Results.GrantSnapshot;
+phyGrantOverride = p.Results.PHYGrant;
 previousCombinedLLR = p.Results.PreviousCombinedLLR;
 interferenceBundle = p.Results.InterferenceBundle;
 isRetransmission = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
 if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride)))
     grantSnapshotOverride = sixgr.util.structGet(harqContext, "GrantSnapshot", struct());
 end
-schedulerDrivenGrant = isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride));
+if ~(isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride)))
+    phyGrantOverride = sixgr.util.structGet(grantSnapshotOverride, "PHYGrant", struct());
+end
+if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
+    sixgr.phy.grant.assertPHYGrantDimensions(phyGrantOverride, "run_dl_pdsch_throughput_entry");
+    if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride)))
+        grantSnapshotOverride = sixgr.util.structGet(phyGrantOverride, "LegacyGrantSnapshot", struct());
+    end
+    grantSnapshotOverride.PHYGrant = phyGrantOverride;
+    grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
+elseif isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))
+    phyGrantOverride = sixgr.phy.grant.freezePHYGrant(cfg, "DL", grantSnapshotOverride, ...
+        "SNR_dB", snr_dB, ...
+        "HARQContext", harqContext);
+    grantSnapshotOverride.PHYGrant = phyGrantOverride;
+    grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
+end
+schedulerDrivenGrant = (isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))) || ...
+    (isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride)));
 
 out = struct();
 out.Ok = false;
@@ -464,6 +484,11 @@ for n = 1:numFrames
             trialLAApplied(n) = logical(laApplyEvent.Applied);
         end
         cfgFrame = localApplyReplayGrantConfig(cfgFrame, grantSnapshotOverride, "DL");
+        if isRetransmission && isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
+            cfgFrame = sixgr.util.structSet(cfgFrame, "phy.csirs.enable", false);
+            cfgFrame = sixgr.util.structSet(cfgFrame, "phy.csirs.replayDisabledReason", ...
+                "harq_frozen_phygrant_replay_preserves_data_grant");
+        end
         trialMCS(n) = double(sixgr.util.structGet(cfgFrame, "phy.pdsch.mcsIndex", NaN));
         trialModulation(n) = string(sixgr.util.structGet(cfgFrame, "phy.pdsch.modulation", ""));
         trialCodeRate(n) = double(sixgr.util.structGet(cfgFrame, "phy.pdsch.codeRate", NaN));
@@ -487,6 +512,9 @@ for n = 1:numFrames
 
         txArgs = {};
         txArgs = localAppendGrantReplayTxArgs(txArgs, grantSnapshotOverride);
+        if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
+            txArgs = [txArgs {"PHYGrant", phyGrantOverride}]; %#ok<AGROW>
+        end
         if ~isempty(transportBlockBits)
             localAssertReplayTBConsistency(transportBlockBits, grantSnapshotOverride, "DL");
             txArgs = [txArgs {"TransportBlockBits", transportBlockBits}]; %#ok<AGROW>
@@ -605,6 +633,9 @@ for n = 1:numFrames
             "TargetCodeRate", tx.TargetCodeRate, ...
             "RV", tx.RV, ...
             "SkipTimingEstimate", useIdealTimingSync};
+        if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
+            rxArgs = [rxArgs {"PHYGrant", phyGrantOverride}]; %#ok<AGROW>
+        end
         injectedNoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
         if isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
             rxArgs = [rxArgs {"NoiseVar", injectedNoiseVariance, "NoiseVarDomain", "time"}]; %#ok<AGROW>
@@ -4597,12 +4628,17 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
     "TRSGatingActive","TRSValidityState","TrackingEligibility","TRSAgeSlots","LastSuccessfulTRSSlot","LastEstimatedTRSDopplerHz", ...
     "TRSStateSource","TRSRuntimeConsumer","TRSInfluencedDecision","TRSInfluenceDefinition","TRSReceiverIntegrationStatus","TRSReceiverIntegrationBlocker", ...
-    "GrantContextId","GrantWorkerSafe","GrantSharedStateCommitMode"];
+    "GrantContextId","GrantWorkerSafe","GrantSharedStateCommitMode","PHYGrant","PHYGrantContextId"];
 for i = 1:numel(preserveFields)
     fieldName = char(preserveFields(i));
     if isfield(seedGrant, fieldName)
         grant.(fieldName) = seedGrant.(fieldName);
     end
+end
+txPHYGrant = sixgr.util.structGet(tx, "PHYGrant", struct());
+if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
+    grant.PHYGrant = txPHYGrant;
+    grant.PHYGrantContextId = char(string(txPHYGrant.GrantContextId));
 end
 if ~(isfield(grant, "GrantContextId") && strlength(strtrim(string(grant.GrantContextId))) > 0)
     grant.GrantContextId = localComposeReplayGrantContextId(seedGrant, "DL");
@@ -4744,6 +4780,11 @@ cfgOut = cfgIn;
 if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
     return;
 end
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
+if hasPHYGrant
+    cfgOut = sixgr.phy.grant.applyPHYGrantToConfig(cfgOut, phyGrant);
+end
 direction = upper(string(direction));
 if direction == "UL"
     root = "phy.pusch";
@@ -4757,13 +4798,29 @@ targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
 modulation = string(sixgr.util.structGet(grant, "Modulation", ""));
 prbSet = sixgr.util.structGet(grant, "PRBSet", []);
 symbolAllocation = sixgr.util.structGet(grant, "SymbolAllocation", []);
+if hasPHYGrant
+    ant = phyGrant.AntennaArchitecture;
+    ra = phyGrant.ResourceAllocation;
+    cl = phyGrant.CodingLayout;
+    if ~isfinite(mcsIndex), mcsIndex = double(cl.MCSIndex); end
+    if ~isfinite(numLayers), numLayers = double(ant.NumLayers); end
+    if ~isfinite(targetCodeRate), targetCodeRate = double(cl.TargetCodeRate); end
+    if strlength(strtrim(modulation)) == 0, modulation = string(cl.Modulation); end
+    if isempty(prbSet), prbSet = double(ra.PRBSet(:).'); end
+    if isempty(symbolAllocation), symbolAllocation = double(ra.SymbolAllocation(:).'); end
+end
 
 if ~(isfinite(numLayers) && numLayers >= 1)
     numLayers = 1;
 end
 
-txAnt = localReplayEffectiveTxAntennas(cfgOut, direction, numLayers);
-rxAnt = localReplayEffectiveRxAntennas(cfgOut, direction, numLayers);
+if hasPHYGrant
+    txAnt = double(phyGrant.AntennaArchitecture.NumWaveformColumns);
+    rxAnt = double(phyGrant.AntennaArchitecture.NumRxAntennas);
+else
+    txAnt = localReplayEffectiveTxAntennas(cfgOut, direction, numLayers);
+    rxAnt = localReplayEffectiveRxAntennas(cfgOut, direction, numLayers);
+end
 cfgOut = sixgr.util.structSet(cfgOut, "phy.nTxAnt", txAnt);
 cfgOut = sixgr.util.structSet(cfgOut, "phy.nRxAnt", rxAnt);
 cfgOut = sixgr.util.structSet(cfgOut, "channel.nTxAnt", txAnt);
@@ -4797,6 +4854,10 @@ if direction == "DL"
     cri = double(sixgr.util.structGet(grant, "CRI", NaN));
     precodingMatrix = sixgr.util.structGet(grant, "PrecodingMatrix", []);
     useExplicitPrecoding = localGrantHasExplicitDLPrecoding(grant, precodingMatrix);
+    if hasPHYGrant
+        precodingMatrix = double(phyGrant.PrecodingState.Matrix);
+        useExplicitPrecoding = logical(phyGrant.PrecodingState.Active);
+    end
     if isfinite(pmi)
         cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", pmi);
     end
