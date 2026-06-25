@@ -213,7 +213,7 @@ if oack > 0
             'PUSCH UCI multiplexing has invalid bit allocation: GULSCH=%g GACK=%g OACK=%d.', ...
             gULSCH, gACK, oack);
     end
-    ulSchCodeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, gULSCH, rv, pusch.Modulation, pusch.NumLayers);
+    [ulSchCodeword, rateMatchInfo] = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, gULSCH, rv, pusch.Modulation, pusch.NumLayers);
     codedAck = nrUCIEncode(harqAckBits, gACK, pusch.Modulation);
     [codeword, muxInfo] = nrULSCHMultiplex(pusch, targetCodeRate, trBlkSize, ulSchCodeword(:), codedAck(:), [], []);
     codeword = int8(codeword(:));
@@ -224,9 +224,20 @@ if oack > 0
     uciInfo.MultiplexInfo = muxInfo;
     uciInfo.Source = "nrULSCHMultiplex_ts38212_6_2_7_harq_ack_on_pusch";
 else
-    codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pusch.NumLayers);
+    [codeword, rateMatchInfo] = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pusch.NumLayers);
 end
 codeword = int8(codeword(:));
+dataRateMatchedBits = double(sixgr.util.structGet(rateMatchInfo, "E", numel(codeword)));
+codingLayout = sixgr.phy.phycode.resolveCodingLayout( ...
+    "Direction", "UL", ...
+    "TransportBlockSize", trBlkSize, ...
+    "TargetCodeRate", targetCodeRate, ...
+    "RV", rv, ...
+    "Modulation", pusch.Modulation, ...
+    "NumLayers", pusch.NumLayers, ...
+    "RateMatchedBitCount", dataRateMatchedBits, ...
+    "TBCRCType", tbCRCType);
+localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout);
 
 % ---------------------- PUSCH modulation & mapping ----------------------
 [puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword);
@@ -302,6 +313,7 @@ tx.TransportBlockCRCLength = double(tbCRCLen);
 tx.TransportBlockLenWithCRC = B;
 tx.RV = rv;
 tx.TargetCodeRate = targetCodeRate;
+tx.CodingLayout = codingLayout;
 tx.Carrier = carrier;
 tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
@@ -356,6 +368,8 @@ info = struct();
 info.CarrierInfo = cinfo;
 info.CRC = crcInfo;
 info.Segmentation = segInfo;
+info.RateMatch = rateMatchInfo;
+info.CodingLayout = codingLayout;
 info.PUSCHSymbols = puschSymInfo;
 info.SymbolDomain = puschDomainInfo;
 info.OFDM = ofdmInfo;
@@ -409,6 +423,17 @@ end
 rawLen = double(sixgr.util.structGet(schInfo, 'L', defaultLen));
 if isfinite(rawLen) && rawLen >= 0
     crcLen = rawLen;
+end
+end
+
+function localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout)
+txMap = sixgr.util.structGet(rateMatchInfo, "PositionMap", struct());
+layoutMap = sixgr.util.structGet(codingLayout, "RateMatchPositionMap", struct());
+txIdx = sixgr.util.structGet(txMap, "MotherCodeLinearIndex", []);
+layoutIdx = sixgr.util.structGet(layoutMap, "MotherCodeLinearIndex", []);
+if isempty(txIdx) || isempty(layoutIdx) || numel(txIdx) ~= numel(layoutIdx) || any(uint32(txIdx(:)) ~= uint32(layoutIdx(:)))
+    error("sixgr:phy:ul:PUSCHCodingLayoutMapMismatch", ...
+        "PUSCH rate-match position map does not match canonical CodingLayout.");
 end
 end
 

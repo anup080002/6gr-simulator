@@ -1,4 +1,4 @@
-function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLayers, numCB, Nref)
+function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLayers, numCB, Nref, varargin)
 %rateRecoverLDPC LDPC rate recovery (5G Toolbox wrapper).
 %
 %   [recLLR, info] = sixgr.phy.phycode.rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLayers)
@@ -38,6 +38,7 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
     if nargin < 8
         Nref = [];
     end
+    opt = localParseOpts(varargin{:});
 
     if exist('nrRateRecoverLDPC','file') ~= 2
         error('sixgr:Missing5GToolbox', ...
@@ -60,6 +61,15 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
     % Normalize LLR type
     if ~isa(inLLR,'double') && ~isa(inLLR,'single')
         inLLR = double(inLLR);
+    end
+
+    layout = opt.CodingLayout;
+    if ~isempty(layout)
+        localValidateCodingLayout(layout, inLLR, trblkLen, rv, modScheme, nLayers, numCB, Nref);
+        numCB = double(layout.NumCodeBlocks);
+        if ~isempty(layout.Nref)
+            Nref = double(layout.Nref);
+        end
     end
 
     if isempty(numCB) && isempty(Nref)
@@ -91,4 +101,70 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
     info.nLayers = nLayers;
     info.numCBUsed = numCBUsed;
     info.NrefUsed = NrefUsed;
+    info.CodingLayout = layout;
+    if ~isempty(layout)
+        info.PositionMap = layout.RateMatchPositionMap;
+        info.CircularBufferPositionMap = layout.CircularBufferPositionMap;
+        info.CombineSignature = char(string(layout.CombineSignature));
+        info.RateMatchSignature = char(string(layout.RateMatchSignature));
+        info.EPerCodeBlock = double(layout.E_r);
+    end
+end
+
+function opt = localParseOpts(varargin)
+opt = struct("CodingLayout", []);
+if isempty(varargin)
+    return;
+end
+if mod(numel(varargin), 2) ~= 0
+    error('sixgr:phy:rateRecoverLDPC:BadNameValue', ...
+        'Name-value arguments must come in pairs.');
+end
+for i = 1:2:numel(varargin)
+    key = lower(string(varargin{i}));
+    switch key
+        case "codinglayout"
+            opt.CodingLayout = varargin{i + 1};
+        otherwise
+            error('sixgr:phy:rateRecoverLDPC:BadNameValue', ...
+                'Unknown option %s.', char(key));
+    end
+end
+end
+
+function localValidateCodingLayout(layout, inLLR, trblkLen, rv, modScheme, nLayers, numCB, Nref)
+if ~(isstruct(layout) && ~isempty(fieldnames(layout)))
+    error('sixgr:phy:rateRecoverLDPC:BadCodingLayout', ...
+        'CodingLayout must be a non-empty struct.');
+end
+if double(layout.TransportBlockSize) ~= double(trblkLen)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutMismatch', ...
+        'CodingLayout A=%d does not match rate recovery A=%d.', ...
+        double(layout.TransportBlockSize), double(trblkLen));
+end
+if double(layout.RV) ~= double(rv)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutMismatch', ...
+        'CodingLayout RV=%d does not match rate recovery RV=%d.', ...
+        double(layout.RV), double(rv));
+end
+if ~strcmpi(char(string(layout.Modulation)), char(string(modScheme))) || ...
+        double(layout.NumLayers) ~= double(nLayers)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutMismatch', ...
+        'CodingLayout modulation/layer contract does not match rate recovery inputs.');
+end
+if double(layout.RateMatchedBitCount) ~= numel(inLLR)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutMismatch', ...
+        'CodingLayout E=%d does not match received LLR count %d.', ...
+        double(layout.RateMatchedBitCount), numel(inLLR));
+end
+if ~isempty(numCB) && double(layout.NumCodeBlocks) ~= double(numCB)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutMismatch', ...
+        'CodingLayout C=%d does not match numCB=%d.', ...
+        double(layout.NumCodeBlocks), double(numCB));
+end
+if ~isempty(Nref) && ~isempty(layout.Nref) && double(layout.Nref) ~= double(Nref)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutMismatch', ...
+        'CodingLayout Nref=%d does not match Nref=%d.', ...
+        double(layout.Nref), double(Nref));
+end
 end

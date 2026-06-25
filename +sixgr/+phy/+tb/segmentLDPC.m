@@ -34,4 +34,19 @@ function [cbs, seg] = segmentLDPC(blk, bgn)
     seg.nCB = int32(size(cbs, 2));
     seg.cbLen = int32(size(cbs, 1));
     seg.hasCBCRC = (seg.nCB > 1);
+    seg.B = uint32(numel(blk));
+    seg.C = uint16(size(cbs, 2));
+    seg.K = uint32(size(cbs, 1));
+    seg.CBCRCType = "";
+    seg.CBCRCLength = uint16(0);
+    if seg.nCB > 1
+        seg.CBCRCType = "24B";
+        seg.CBCRCLength = uint16(24);
+    end
+    fillerMask = cbs < 0;
+    seg.FillerCount = uint32(nnz(fillerMask));
+    seg.FillerPositions = cell(1, size(cbs, 2));
+    for c = 1:size(cbs, 2)
+        seg.FillerPositions{c} = uint32(find(fillerMask(:, c)));
+    end
 end

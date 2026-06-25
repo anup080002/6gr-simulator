@@ -197,8 +197,18 @@ if ~(isfinite(G) && G > 0)
         'PDSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
         round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(string(pdsch.Modulation)), round(double(pdsch.NumLayers)));
 end
-codeword = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pdsch.Modulation, pdsch.NumLayers);
+[codeword, rateMatchInfo] = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pdsch.Modulation, pdsch.NumLayers);
 codeword = int8(codeword(:));
+codingLayout = sixgr.phy.phycode.resolveCodingLayout( ...
+    "Direction", "DL", ...
+    "TransportBlockSize", trBlkSize, ...
+    "TargetCodeRate", targetCodeRate, ...
+    "RV", rv, ...
+    "Modulation", pdsch.Modulation, ...
+    "NumLayers", pdsch.NumLayers, ...
+    "RateMatchedBitCount", numel(codeword), ...
+    "TBCRCType", tbCRCType);
+localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout);
 
 % ---------------------- PDSCH modulation & mapping ----------------------
 % nrPDSCH expects codewords as a cell array (up to 2 codewords)
@@ -306,6 +316,7 @@ tx.TransportBlockCRCLength = double(tbCRCLen);
 tx.TransportBlockLenWithCRC = B;
 tx.RV = rv;
 tx.TargetCodeRate = targetCodeRate;
+tx.CodingLayout = codingLayout;
 tx.Carrier = carrier;
 tx.PDSCH = pdsch;
 tx.PDSCHIndices = pdschInd;
@@ -371,6 +382,8 @@ info = struct();
 info.CarrierInfo = cinfo;
 info.CRC = crcInfo;
 info.Segmentation = segInfo;
+info.RateMatch = rateMatchInfo;
+info.CodingLayout = codingLayout;
 info.PDSCHSymbols = pdschSymInfo;
 info.PTRS = ptrsInfo;
 info.CSIRS = csirsInfo;
@@ -401,6 +414,17 @@ end
 rawLen = double(sixgr.util.structGet(schInfo, 'L', defaultLen));
 if isfinite(rawLen) && rawLen >= 0
     crcLen = rawLen;
+end
+end
+
+function localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout)
+txMap = sixgr.util.structGet(rateMatchInfo, "PositionMap", struct());
+layoutMap = sixgr.util.structGet(codingLayout, "RateMatchPositionMap", struct());
+txIdx = sixgr.util.structGet(txMap, "MotherCodeLinearIndex", []);
+layoutIdx = sixgr.util.structGet(layoutMap, "MotherCodeLinearIndex", []);
+if isempty(txIdx) || isempty(layoutIdx) || numel(txIdx) ~= numel(layoutIdx) || any(uint32(txIdx(:)) ~= uint32(layoutIdx(:)))
+    error("sixgr:phy:dl:PDSCHCodingLayoutMapMismatch", ...
+        "PDSCH rate-match position map does not match canonical CodingLayout.");
 end
 end
 

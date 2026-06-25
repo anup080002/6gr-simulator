@@ -53,6 +53,8 @@ ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -153,17 +155,14 @@ if isempty(trBlkSize)
 end
 trBlkSize = double(trBlkSize);
 
-% Base graph
-tbCRCType = '24A';
-tbCRCLen = 24;
-try
-    dlschInfo = nrDLSCHInfo(trBlkSize, targetCodeRate);
-    bgn = double(dlschInfo.BGN);
-    [tbCRCType, tbCRCLen] = localResolveTBCRCSpec(dlschInfo, tbCRCType, tbCRCLen);
-catch
-    bgn = 2;
-end
-ldpcSeg = localResolveExpectedLDPCSegmentation(trBlkSize, bgn, tbCRCType);
+% Canonical coding layout.
+codingLayout = localResolveRxCodingLayout(opt.CodingLayout, phyGrant, "DL", ...
+    trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ...
+    localRateMatchedBitCountFromInfo(pdschInfo));
+bgn = double(codingLayout.BaseGraph);
+tbCRCType = char(string(codingLayout.TBCRCType));
+tbCRCLen = double(codingLayout.TBCRCLength);
+ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
 
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
@@ -400,8 +399,10 @@ end
 [llr, llrCSIInfo] = localApplyCSIToCodewordLLR(llr, csi, pdsch.Modulation, postEqSINR_dB);
 
 % ---------------------- DL-SCH decode (rate recovery + LDPC decode) ----------------------
-[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ldpcSeg.NumCodeBlocks);
-[recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR);
+[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(llr, trBlkSize, targetCodeRate, rv, pdsch.Modulation, pdsch.NumLayers, ldpcSeg.NumCodeBlocks, [], ...
+    "CodingLayout", codingLayout);
+[recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR, ...
+    "CurrentLayout", codingLayout, "PriorLayout", opt.HARQSoftBufferLayout);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
@@ -545,6 +546,7 @@ rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
 rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
 rx.TransportBlockCRCLength = double(tbCRCLen);
 rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
+rx.CodingLayout = codingLayout;
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
 rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
 rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
@@ -710,6 +712,7 @@ info.PostEqualizationNoiseVariance = double(nVarDecode);
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
+info.CodingLayout = codingLayout;
 info.StrictReceiverEvidence = strictEvidence;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -1354,6 +1357,58 @@ seg = struct( ...
     "NumCodeBlocks", double(size(cbs, 2)), ...
     "CodeBlockLength", double(size(cbs, 1)), ...
     "SegmentationInfo", segInfo);
+end
+
+function layout = localResolveRxCodingLayout(layoutIn, phyGrant, direction, trBlkSize, targetCodeRate, rv, modulation, numLayers, rateMatchedBits)
+layout = layoutIn;
+if ~(isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMatchPositionMap"))
+    grantLayout = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
+    if isstruct(grantLayout) && ~isempty(fieldnames(grantLayout)) && isfield(grantLayout, "RateMatchPositionMap")
+        layout = grantLayout;
+    else
+        layout = struct();
+    end
+end
+if isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMatchPositionMap")
+    localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits);
+    return;
+end
+layout = sixgr.phy.phycode.resolveCodingLayout( ...
+    "Direction", direction, ...
+    "TransportBlockSize", trBlkSize, ...
+    "TargetCodeRate", targetCodeRate, ...
+    "RV", rv, ...
+    "Modulation", modulation, ...
+    "NumLayers", numLayers, ...
+    "RateMatchedBitCount", rateMatchedBits);
+end
+
+function localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits)
+if double(layout.TransportBlockSize) ~= double(trBlkSize) || ...
+        double(layout.RV) ~= double(rv) || ...
+        ~strcmpi(char(string(layout.Modulation)), char(string(modulation))) || ...
+        double(layout.NumLayers) ~= double(numLayers) || ...
+        double(layout.RateMatchedBitCount) ~= double(rateMatchedBits)
+    error("sixgr:phy:dl:PDSCHCodingLayoutMismatch", ...
+        "Supplied CodingLayout does not match PDSCH RX grant dimensions.");
+end
+end
+
+function seg = localLDPCSegmentationFromLayout(layout)
+seg = struct( ...
+    "TransportBlockLenWithCRC", double(layout.TransportBlockLengthWithCRC), ...
+    "NumCodeBlocks", double(layout.NumCodeBlocks), ...
+    "CodeBlockLength", double(layout.CodeBlockLength), ...
+    "SegmentationInfo", sixgr.util.structGet(layout, "Segmentation", struct()));
+end
+
+function E = localRateMatchedBitCountFromInfo(info)
+E = double(sixgr.util.structGet(info, "G", NaN));
+if ~(isscalar(E) && isfinite(E) && E > 0 && abs(E - round(E)) < 1e-9)
+    error("sixgr:phy:dl:PDSCHCodingLayoutMissingG", ...
+        "PDSCH RX requires an integer rate-matched bit count to resolve CodingLayout.");
+end
+E = round(E);
 end
 
 function localGuardUnsupportedNumLayers(cfg, pdsch)

@@ -146,7 +146,7 @@ try
         tmpl = localResolveReplayTemplate(cfgReplay, "UL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "UL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
-        [harqKey, harqPriorLLR, harqIsRetx] = localResolveHARQSoftBuffer("UL", grant, tx.TransportBlockSize);
+        [harqKey, harqPriorLLR, harqPriorLayout, harqIsRetx] = localResolveHARQSoftBuffer("UL", grant, tx.TransportBlockSize);
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         [rxWave, nVar, chState] = localApplyReceiverIQImbalanceCompensation(rxWave, nVar, chState, cfgReplay);
@@ -161,7 +161,9 @@ try
             "NoiseVar", nVar, ...
             "NoiseVarDomain", "time", ...
             "MaxIterations", localLDPCMaxIterations(snr_dB, cfgReplay, opt), ...
+            "CodingLayout", tx.CodingLayout, ...
             "HARQSoftBufferLLR", harqPriorLLR, ...
+            "HARQSoftBufferLayout", harqPriorLayout, ...
             "CompactOutput", logical(opt.CompactPHYIO), ...
             "FastAWGNPath", fastAWGNPath, ...
             "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
@@ -169,7 +171,7 @@ try
         tmpl = localResolveReplayTemplate(cfgReplay, "DL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "DL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
-        [harqKey, harqPriorLLR, harqIsRetx] = localResolveHARQSoftBuffer("DL", grant, tx.TransportBlockSize);
+        [harqKey, harqPriorLLR, harqPriorLayout, harqIsRetx] = localResolveHARQSoftBuffer("DL", grant, tx.TransportBlockSize);
         chState = localInitChannelState(cfgReplay, tx, txInfo);
         [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         [rxWave, nVar, chState] = localApplyReceiverIQImbalanceCompensation(rxWave, nVar, chState, cfgReplay);
@@ -184,7 +186,9 @@ try
             "NoiseVar", nVar, ...
             "NoiseVarDomain", "time", ...
             "MaxIterations", localLDPCMaxIterations(snr_dB, cfgReplay, opt), ...
+            "CodingLayout", tx.CodingLayout, ...
             "HARQSoftBufferLLR", harqPriorLLR, ...
+            "HARQSoftBufferLayout", harqPriorLayout, ...
             "CompactOutput", logical(opt.CompactPHYIO), ...
             "FastAWGNPath", fastAWGNPath, ...
             "SkipTimingEstimate", localShouldSkipTimingEstimate(cfgReplay));
@@ -286,17 +290,24 @@ else
 end
 end
 
-function [key, priorLLR, isRetx] = localResolveHARQSoftBuffer(dir, grant, transportBlockSize)
+function [key, priorLLR, priorLayout, isRetx] = localResolveHARQSoftBuffer(dir, grant, transportBlockSize)
 key = localHARQSoftBufferKey(dir, grant, transportBlockSize);
+priorLLR = [];
+priorLayout = struct();
 isRetx = localGrantIsRetransmission(grant);
 if ~isRetx
     localHARQSoftBufferCache("clear", key);
-    priorLLR = [];
     return;
 end
-[hit, priorLLR] = localHARQSoftBufferCache("get", key);
+[hit, priorValue] = localHARQSoftBufferCache("get", key);
 if ~hit
-    priorLLR = [];
+    return;
+end
+if isstruct(priorValue)
+    priorLLR = sixgr.util.structGet(priorValue, "LLR", []);
+    priorLayout = sixgr.util.structGet(priorValue, "CodingLayout", struct());
+else
+    priorLLR = priorValue;
 end
 end
 
@@ -319,7 +330,10 @@ end
 if isempty(softLLR)
     return;
 end
-localHARQSoftBufferCache("set", key, softLLR);
+softBuffer = struct( ...
+    "LLR", softLLR, ...
+    "CodingLayout", sixgr.util.structGet(rx, "CodingLayout", struct()));
+localHARQSoftBufferCache("set", key, softBuffer);
 replay.HARQSoftBufferStored = true;
 if ~logical(isRetx)
     replay.HARQSoftCombiningReason = localFirstNonEmptyText(replay.HARQSoftCombiningReason, ...

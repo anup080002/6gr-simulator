@@ -50,4 +50,21 @@ function [codedCB, info] = ldpcEncode(cbBits, bgn)
     info.K = size(cbBits, 1);
     info.numCB = size(cbBits, 2);
     info.N = size(codedCB, 1);
+    info.C = uint16(size(cbBits, 2));
+    info.Zc = localResolveLiftingSize(bgn, size(cbBits, 1));
+    info.FillerCount = uint32(nnz(cbBits < 0));
+end
+
+function zc = localResolveLiftingSize(bgn, K)
+if double(bgn) == 1
+    denom = 22;
+else
+    denom = 10;
+end
+zc = double(K) / denom;
+if isfinite(zc) && abs(zc - round(zc)) < 1e-9
+    zc = uint16(round(zc));
+else
+    zc = uint16(0);
+end
 end

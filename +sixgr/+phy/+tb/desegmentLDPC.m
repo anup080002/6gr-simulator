@@ -26,8 +26,18 @@ function [blk, err] = desegmentLDPC(cbs, bgnOrSeg, blklen)
         if ~builtin('isstruct', seg)
             error('sixgr:desegmentLDPC:BadSignature', 'Second input must be a seg struct when called with 2 inputs.');
         end
-        bgn = double(seg.bgn);
-        blklen = double(seg.blklen);
+        if isfield(seg, "BaseGraph")
+            bgn = double(seg.BaseGraph);
+        else
+            bgn = double(seg.bgn);
+        end
+        if isfield(seg, "TransportBlockLengthWithCRC")
+            blklen = double(seg.TransportBlockLengthWithCRC);
+        elseif isfield(seg, "B")
+            blklen = double(seg.B);
+        else
+            blklen = double(seg.blklen);
+        end
     else
         bgn = bgnOrSeg;
         if nargin < 3 || isempty(blklen)
