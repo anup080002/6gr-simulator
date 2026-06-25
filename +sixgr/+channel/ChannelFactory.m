@@ -195,10 +195,14 @@ classdef ChannelFactory
                 opt.ReceiveAntennaRuntime, opt.ReceiveAntennaMeta, opt.NumRxAnt, "rx");
             meta.TransmitAntennaNumElements = double(txRuntimeContract.NumElements);
             meta.TransmitAntennaNumPorts = double(txRuntimeContract.NumPorts);
+            meta.TransmitAntennaNumWaveformColumns = double(txRuntimeContract.NumWaveformColumns);
+            meta.TransmitAntennaWaveformDomain = string(txRuntimeContract.WaveformDomain);
             meta.TransmitAntennaNumRFChains = double(txRuntimeContract.NumRFChains);
             meta.TransmitAntennaPortCountSource = string(txRuntimeContract.PortCountSource);
             meta.ReceiveAntennaNumElements = double(rxRuntimeContract.NumElements);
             meta.ReceiveAntennaNumPorts = double(rxRuntimeContract.NumPorts);
+            meta.ReceiveAntennaNumWaveformColumns = double(rxRuntimeContract.NumWaveformColumns);
+            meta.ReceiveAntennaWaveformDomain = string(rxRuntimeContract.WaveformDomain);
             meta.ReceiveAntennaNumRFChains = double(rxRuntimeContract.NumRFChains);
             meta.ReceiveAntennaPortCountSource = string(rxRuntimeContract.PortCountSource);
             if any(model == ["nrtdl","tdl"])
@@ -334,9 +338,15 @@ classdef ChannelFactory
             [numPorts, portSource] = sixgr.channel.ChannelFactory.localRuntimeLogicalPortCount(runtimeAntenna, runtimeMeta);
             [numElements, elementSource] = sixgr.channel.ChannelFactory.localRuntimeElementCount(runtimeAntenna, runtimeMeta);
             [numRFChains, rfSource] = sixgr.channel.ChannelFactory.localRuntimeRFChainCount(runtimeAntenna, runtimeMeta);
+            [numWaveformColumns, waveformSource, waveformDomain] = sixgr.channel.ChannelFactory.localRuntimeWaveformColumnCount(runtimeAntenna, runtimeMeta);
             if ~isfinite(numRFChains) && isfinite(numPorts)
                 numRFChains = numPorts;
                 rfSource = "default_equal_logical_ports";
+            end
+            if ~isfinite(numWaveformColumns) && isfinite(numPorts)
+                numWaveformColumns = numPorts;
+                waveformSource = "default_logical_port_waveform_columns";
+                waveformDomain = "logical_port";
             end
 
             runtimeSupplied = (isstruct(runtimeAntenna) && ~isempty(fieldnames(runtimeAntenna))) || ...
@@ -351,18 +361,36 @@ classdef ChannelFactory
                         upper(char(string(sideLabel))), round(double(numElements)), signalPortCount);
                 end
             end
+            if ~isfinite(numWaveformColumns) && isfinite(numPorts)
+                numWaveformColumns = numPorts;
+                waveformSource = "default_logical_port_waveform_columns";
+                waveformDomain = "logical_port";
+            end
 
-            if isfinite(numPorts) && round(double(numPorts)) ~= signalPortCount
+            elementDomainDeclared = strcmpi(char(string(waveformDomain)), "element") || ...
+                logical(sixgr.util.structGet(runtimeAntenna, "HybridBeamformingEnabled", false)) || ...
+                logical(sixgr.util.structGet(runtimeMeta, "HybridBeamformingEnabled", false));
+            if isfinite(numWaveformColumns) && round(double(numWaveformColumns)) ~= signalPortCount
                 error("ChannelFactory:RuntimeAntennaPortMismatch", ...
-                    "%s runtime logical port count %d does not match waveform/channel port count %d. Geometry is not discarded to hide this mismatch.", ...
-                    upper(char(string(sideLabel))), round(double(numPorts)), signalPortCount);
+                    "%s runtime waveform column count %d from %s does not match channel port count %d.", ...
+                    upper(char(string(sideLabel))), round(double(numWaveformColumns)), char(string(waveformSource)), signalPortCount);
+            end
+            if isfinite(numPorts) && round(double(numPorts)) ~= signalPortCount
+                if ~(elementDomainDeclared && isfinite(numElements) && round(double(numElements)) == signalPortCount)
+                    error("ChannelFactory:RuntimeAntennaPortMismatch", ...
+                        "%s runtime logical port count %d does not match waveform/channel port count %d. Geometry is not discarded to hide this mismatch.", ...
+                        upper(char(string(sideLabel))), round(double(numPorts)), signalPortCount);
+                end
             end
 
             contract = struct( ...
                 "NumPorts", double(numPorts), ...
                 "NumElements", double(numElements), ...
+                "NumWaveformColumns", double(numWaveformColumns), ...
+                "WaveformDomain", char(string(waveformDomain)), ...
                 "NumRFChains", double(numRFChains), ...
                 "PortCountSource", char(string(portSource)), ...
+                "WaveformColumnCountSource", char(string(waveformSource)), ...
                 "ElementCountSource", char(string(elementSource)), ...
                 "RFChainCountSource", char(string(rfSource)));
         end
@@ -459,6 +487,48 @@ classdef ChannelFactory
                 end
             end
         end
+
+        function [count, source, domain] = localRuntimeWaveformColumnCount(runtimeAntenna, runtimeMeta)
+            count = NaN;
+            source = "";
+            domain = "";
+            fields = ["NumWaveformColumns", "WaveformColumnCount", "NumTxAntennas"];
+            objs = {runtimeMeta, runtimeAntenna};
+            labels = ["runtime_meta", "runtime_antenna"];
+            for c = 1:numel(objs)
+                obj = objs{c};
+                if ~(isstruct(obj) && ~isempty(fieldnames(obj)))
+                    continue;
+                end
+                for f = 1:numel(fields)
+                    raw = sixgr.util.structGet(obj, fields(f), NaN);
+                    value = sixgr.channel.ChannelFactory.localPositiveIntegerOrNaN(raw);
+                    if isfinite(value)
+                        count = value;
+                        source = labels(c) + "." + fields(f);
+                        break;
+                    end
+                end
+                if isfinite(count)
+                    break;
+                end
+            end
+            for c = 1:numel(objs)
+                obj = objs{c};
+                if ~(isstruct(obj) && ~isempty(fieldnames(obj)))
+                    continue;
+                end
+                rawDomain = string(sixgr.util.structGet(obj, "WaveformDomain", ""));
+                if strlength(strtrim(rawDomain)) > 0
+                    domain = lower(strtrim(rawDomain));
+                    return;
+                end
+            end
+            if strlength(string(domain)) == 0 && isfinite(count)
+                domain = "logical_port";
+            end
+        end
+
 
         function count = localPositiveIntegerOrNaN(raw)
             count = NaN;
@@ -1023,11 +1093,22 @@ classdef ChannelFactory
             if ~isfinite(nPol)
                 nPol = double(sixgr.util.structGet(runtimeAntenna, "NPol", NaN));
             end
+            panelRows = double(sixgr.util.structGet(runtimeMeta, "PanelRows", ...
+                sixgr.util.structGet(runtimeAntenna, "PanelRows", NaN)));
+            panelCols = double(sixgr.util.structGet(runtimeMeta, "PanelCols", ...
+                sixgr.util.structGet(runtimeAntenna, "PanelCols", NaN)));
             if ~(isfinite(nRow) && isfinite(nCol))
-                sizeVec = double(sixgr.util.structGet(runtimeAntenna, "Size", [NaN NaN]));
+                sizeVec = double(sixgr.util.structGet(runtimeAntenna, "ArraySize5D", ...
+                    sixgr.util.structGet(runtimeAntenna, "Size", [NaN NaN])));
                 if numel(sizeVec) >= 2
                     nRow = double(sizeVec(1));
                     nCol = double(sizeVec(2));
+                end
+                if numel(sizeVec) >= 4 && ~isfinite(panelRows)
+                    panelRows = double(sizeVec(4));
+                end
+                if numel(sizeVec) >= 5 && ~isfinite(panelCols)
+                    panelCols = double(sizeVec(5));
                 end
             end
             if ~(isfinite(nRow) && nRow >= 1 && isfinite(nCol) && nCol >= 1)
@@ -1036,9 +1117,17 @@ classdef ChannelFactory
             if ~(isfinite(nPol) && nPol >= 1)
                 nPol = 1;
             end
+            if ~(isfinite(panelRows) && panelRows >= 1)
+                panelRows = 1;
+            end
+            if ~(isfinite(panelCols) && panelCols >= 1)
+                panelCols = 1;
+            end
             nRow = max(1, round(nRow));
             nCol = max(1, round(nCol));
             nPol = max(1, round(nPol));
+            panelRows = max(1, round(panelRows));
+            panelCols = max(1, round(panelCols));
             spacingH = double(sixgr.util.structGet(runtimeMeta, "SpacingH_lambda", NaN));
             spacingV = double(sixgr.util.structGet(runtimeMeta, "SpacingV_lambda", NaN));
             if ~(isfinite(spacingH) && isfinite(spacingV) && spacingH > 0 && spacingV > 0)
@@ -1055,7 +1144,7 @@ classdef ChannelFactory
             end
             [logicalPorts, portSource] = sixgr.channel.ChannelFactory.localRuntimeLogicalPortCount(runtimeAntenna, runtimeMeta);
             [numElements, ~] = sixgr.channel.ChannelFactory.localRuntimeElementCount(runtimeAntenna, runtimeMeta);
-            physicalArrayCount = nRow * nCol * nPol;
+            physicalArrayCount = nRow * nCol * nPol * panelRows * panelCols;
             if isfinite(logicalPorts) && round(double(logicalPorts)) == numAnt && physicalArrayCount ~= numAnt
                 spec.Size = [numAnt 1 1 1 1];
                 spec.ElementSpacing = [spacingH spacingV 1 1];
@@ -1066,7 +1155,7 @@ classdef ChannelFactory
                 valid = true;
                 return;
             end
-            spec.Size = [nRow nCol nPol 1 1];
+            spec.Size = [nRow nCol nPol panelRows panelCols];
             spec.ElementSpacing = [spacingH spacingV 1 1];
             spec.PolarizationCount = nPol;
             spec.AdapterMeta = struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports");

@@ -25,6 +25,8 @@ prec.ApplicationStage = "none";
 prec.NormalizeW = false;
 prec.NumLayers = nLayers;
 prec.NumPorts = nLayers;
+prec.NumLogicalPorts = nLayers;
+prec.NumWaveformColumns = nLayers;
 prec.NumCodewords = nCodewords;
 prec.WidebandOnly = true;
 prec.PMI = NaN;
@@ -34,8 +36,15 @@ prec.BeamIndices = [];
 prec.MatrixRows = max(nLayers, 1);
 prec.MatrixCols = max(nLayers, 1);
 prec.MatrixPorts = eye(max(nLayers, 1));
+prec.MatrixLogicalPorts = prec.MatrixPorts;
 prec.MatrixNR = reshape(eye(max(nLayers, 1)), [max(nLayers, 1), max(nLayers, 1), 1]);
+prec.MatrixLogicalNR = prec.MatrixNR;
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+prec.HybridBeamformingApplied = false;
+prec.HybridElementDomainApplied = false;
+prec.HybridAnalogPrecoderMatrix = [];
+prec.HybridDigitalPortToRFChainMatrix = [];
+prec.HybridElementToPortMatrix = [];
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 
@@ -93,16 +102,20 @@ end
 
 if isempty(Wcfg)
     if nLayers == 1 && requestedPorts == 1
-        prec.NormalizeW = normalizeW;
-        return;
-    end
-    if requestedPorts ~= nLayers
+        if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+            prec.NormalizeW = normalizeW;
+            return;
+        end
+        Wports = eye(1);
+        source = "identity";
+    elseif requestedPorts ~= nLayers
         error("sixgr:phy:dl:PDSCHPrecoding:NumPortsNeedsMatrix", ...
             "Requested %d PDSCH port(s) for %d layer(s). Provide an explicit PrecodingMatrix or PMI/TPMI for multi-port DL precoding.", ...
             requestedPorts, nLayers);
+    else
+        Wports = eye(nLayers);
+        source = "identity";
     end
-    Wports = eye(nLayers);
-    source = "identity";
 else
     Wcfg = localSqueezeSingletonPage(Wcfg);
     if ~ismatrix(Wcfg)
@@ -135,6 +148,11 @@ if ~isempty(requestedPorts) && size(Wports, 1) ~= requestedPorts
         "PrecodingMatrix resolves to %d port(s), but cfg.phy.pdsch.numPorts/nPorts requests %d.", ...
         size(Wports, 1), requestedPorts);
 end
+WlogicalPorts = Wports;
+[Wports, hybridMeta] = localApplyHybridElementDomainPrecoder(WlogicalPorts, arch, nLayers);
+if logical(sixgr.util.structGet(hybridMeta, "Applied", false))
+    source = string(source) + "+hybrid-rf-element-domain";
+end
 
 dmrsPorts = localDMRSPortSet(pdsch, nLayers);
 expectedPorts = 0:(nLayers-1);
@@ -155,11 +173,21 @@ prec.Source = source;
 prec.ApplicationStage = "nrPDSCHPrecode_before_RE_mapping";
 prec.NormalizeW = normalizeW;
 prec.NumPorts = size(Wports, 1);
+prec.NumLogicalPorts = size(WlogicalPorts, 1);
+prec.NumWaveformColumns = size(Wports, 1);
 prec.MatrixRows = size(Wports, 1);
 prec.MatrixCols = size(Wports, 2);
 prec.MatrixPorts = Wports;
+prec.MatrixLogicalPorts = WlogicalPorts;
 prec.MatrixNR = reshape(Wports.', [nLayers, size(Wports, 1), 1]);
+prec.MatrixLogicalNR = reshape(WlogicalPorts.', [nLayers, size(WlogicalPorts, 1), 1]);
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+prec.HybridBeamformingApplied = logical(sixgr.util.structGet(hybridMeta, "Applied", false));
+prec.HybridElementDomainApplied = logical(sixgr.util.structGet(hybridMeta, "ElementDomainApplied", false));
+prec.HybridAnalogPrecoderMatrix = sixgr.util.structGet(hybridMeta, "AnalogPrecoderMatrix", []);
+prec.HybridDigitalPortToRFChainMatrix = sixgr.util.structGet(hybridMeta, "DigitalPortToRFChainMatrix", []);
+prec.HybridElementToPortMatrix = sixgr.util.structGet(hybridMeta, "ElementToPortMatrix", []);
+prec.HybridEquation = string(sixgr.util.structGet(hybridMeta, "Equation", ""));
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, Wports, nLayers);
 if isstruct(pmiMeta)
@@ -194,13 +222,59 @@ end
 function prec = localAttachArchitecture(prec, arch)
 prec.NumElements = double(sixgr.util.structGet(arch, "NumElements", NaN));
 prec.NumRFChains = double(sixgr.util.structGet(arch, "NumRFChains", NaN));
+prec.ArchitectureNumLogicalPorts = double(sixgr.util.structGet(arch, "NumLogicalPorts", sixgr.util.structGet(arch, "NumPorts", NaN)));
+prec.ArchitectureNumWaveformColumns = double(sixgr.util.structGet(arch, "NumWaveformColumns", sixgr.util.structGet(arch, "NumPorts", NaN)));
 prec.AntennaArchitecture = string(sixgr.util.structGet(arch, "Architecture", ""));
+prec.WaveformDomain = string(sixgr.util.structGet(arch, "WaveformDomain", "logical_port"));
 prec.PortCountSource = string(sixgr.util.structGet(arch, "PortCountSource", ""));
 prec.RFChainCountSource = string(sixgr.util.structGet(arch, "RFChainCountSource", ""));
 prec.PortToElementMatrix = sixgr.util.structGet(arch, "PortToElementMatrix", []);
 prec.ElementToPortMatrix = sixgr.util.structGet(arch, "ElementToPortMatrix", []);
 prec.PortToRFChainMatrix = sixgr.util.structGet(arch, "PortToRFChainMatrix", []);
 prec.RFChainToPortMatrix = sixgr.util.structGet(arch, "RFChainToPortMatrix", []);
+prec.AnalogPrecoderMatrix = sixgr.util.structGet(arch, "AnalogPrecoderMatrix", []);
+prec.DigitalPortToRFChainMatrix = sixgr.util.structGet(arch, "DigitalPortToRFChainMatrix", []);
+end
+
+function [Wout, meta] = localApplyHybridElementDomainPrecoder(Wlogical, arch, nLayers)
+Wout = Wlogical;
+meta = struct( ...
+    "Applied", false, ...
+    "ElementDomainApplied", false, ...
+    "AnalogPrecoderMatrix", [], ...
+    "DigitalPortToRFChainMatrix", [], ...
+    "ElementToPortMatrix", [], ...
+    "Equation", "X_port=S*W_logical''");
+if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+    return;
+end
+elementToPort = double(sixgr.util.structGet(arch, "HybridElementToPortMatrix", ...
+    sixgr.util.structGet(arch, "PortToElementMatrix", [])));
+if isempty(elementToPort) || ~ismatrix(elementToPort)
+    error("sixgr:phy:dl:PDSCHPrecoding:HybridMatrixMissing", ...
+        "Hybrid PDSCH precoding requires an element-by-logical-port RF/baseband matrix.");
+end
+if size(elementToPort, 2) ~= size(Wlogical, 1)
+    error("sixgr:phy:dl:PDSCHPrecoding:HybridLogicalPortMismatch", ...
+        "Hybrid element matrix is %dx%d but logical PDSCH precoder is %dx%d.", ...
+        size(elementToPort, 1), size(elementToPort, 2), size(Wlogical, 1), size(Wlogical, 2));
+end
+if size(Wlogical, 2) ~= nLayers
+    error("sixgr:phy:dl:PDSCHPrecoding:HybridLayerMismatch", ...
+        "Hybrid logical PDSCH precoder must have NumLayers=%d columns.", nLayers);
+end
+Wout = elementToPort * Wlogical;
+if size(Wout, 1) ~= double(sixgr.util.structGet(arch, "NumElements", size(Wout, 1)))
+    error("sixgr:phy:dl:PDSCHPrecoding:HybridElementMismatch", ...
+        "Hybrid PDSCH precoder produced %d waveform columns but architecture declares %d elements.", ...
+        size(Wout, 1), double(sixgr.util.structGet(arch, "NumElements", NaN)));
+end
+meta.Applied = true;
+meta.ElementDomainApplied = true;
+meta.AnalogPrecoderMatrix = sixgr.util.structGet(arch, "AnalogPrecoderMatrix", []);
+meta.DigitalPortToRFChainMatrix = sixgr.util.structGet(arch, "DigitalPortToRFChainMatrix", []);
+meta.ElementToPortMatrix = elementToPort;
+meta.Equation = "X_elem=S*(F_RF*F_BB*W_logical)'', F_RF columns unit-norm";
 end
 
 function prec = localAttachPowerInfo(prec, Wports, nLayers)

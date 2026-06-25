@@ -42,6 +42,8 @@ prec.ApplicationStage = "re_mapping_without_explicit_beam_weights";
 prec.NormalizeW = false;
 prec.NumLayers = double(nLayers);
 prec.NumPorts = double(max(nPorts, nLayers));
+prec.NumLogicalPorts = double(max(nPorts, nLayers));
+prec.NumWaveformColumns = double(max(nPorts, nLayers));
 prec.NumCodewords = double(localObjectValue(pusch, "NumCodewords", 1));
 prec.WidebandOnly = true;
 prec.PMI = NaN;
@@ -52,12 +54,19 @@ prec.BeamIndices = [];
 prec.MatrixRows = double(max(nPorts, nLayers));
 prec.MatrixCols = double(nLayers);
 prec.MatrixPorts = localRectIdentity(max(nPorts, nLayers), nLayers);
+prec.MatrixLogicalPorts = prec.MatrixPorts;
 prec.MatrixNR = [];
 prec.MatrixRightInverse = [];
 prec.ExplicitBeamWeightsApplied = false;
 prec.TransformPrecodingApplied = logical(transformPrecoding);
 prec.BeamformingApplied = false;
 prec.NativeCodebookApplied = false;
+prec.HybridBeamformingApplied = false;
+prec.HybridElementDomainApplied = false;
+prec.HybridElementToPortMatrix = [];
+prec.HybridAnalogPrecoderMatrix = [];
+prec.HybridDigitalPortToRFChainMatrix = [];
+prec.HybridEquation = "";
 prec.BeamIndexDefinition = "";
 prec.FixedReferenceMode = logical(opt.FixedReferenceMode);
 prec = localAttachArchitecture(prec, arch);
@@ -67,6 +76,7 @@ if transformPrecoding && ~isCodebook
     prec.Mode = "transform_precoding";
     prec.Source = "ul_pusch_transform_precoding";
     prec.ApplicationStage = "dft_spread_before_re_mapping";
+    prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
     prec.MatrixRows = double(size(prec.MatrixPorts, 1));
     prec.MatrixCols = double(size(prec.MatrixPorts, 2));
     prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
@@ -75,9 +85,13 @@ end
 
 if ~isCodebook
     prec.MatrixPorts = localRectIdentity(nLayers, nLayers);
+    prec.MatrixLogicalPorts = prec.MatrixPorts;
     prec.MatrixRows = NaN;
     prec.MatrixCols = NaN;
     prec.NumPorts = double(nLayers);
+    prec.NumLogicalPorts = double(nLayers);
+    prec.NumWaveformColumns = double(nLayers);
+    prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
     prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
     return;
 end
@@ -108,14 +122,18 @@ catch ME
         "Invalid PUSCH codebook configuration: %s", ME.message);
 end
 prec.MatrixPorts = Wports;
+prec.MatrixLogicalPorts = Wports;
 prec.MatrixNR = Wtx;
 prec.MatrixRightInverse = Winv;
 prec.MatrixRows = double(size(Wports, 1));
 prec.MatrixCols = double(size(Wports, 2));
 prec.NumPorts = double(size(Wports, 1));
+prec.NumLogicalPorts = double(size(Wports, 1));
+prec.NumWaveformColumns = double(size(Wports, 1));
 prec.BeamIndices = double(localActiveCodebookPorts(Wtx));
 prec.BeamIndexDefinition = "nrPUSCHCodebook_nonzero_antenna_port_support";
 prec.CodebookStatus = string(codebookStatus);
+prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 end
 
@@ -134,13 +152,56 @@ end
 function prec = localAttachArchitecture(prec, arch)
 prec.NumElements = double(sixgr.util.structGet(arch, "NumElements", NaN));
 prec.NumRFChains = double(sixgr.util.structGet(arch, "NumRFChains", NaN));
+prec.ArchitectureNumLogicalPorts = double(sixgr.util.structGet(arch, "NumLogicalPorts", sixgr.util.structGet(arch, "NumPorts", NaN)));
+prec.ArchitectureNumWaveformColumns = double(sixgr.util.structGet(arch, "NumWaveformColumns", sixgr.util.structGet(arch, "NumPorts", NaN)));
 prec.AntennaArchitecture = string(sixgr.util.structGet(arch, "Architecture", ""));
+prec.WaveformDomain = string(sixgr.util.structGet(arch, "WaveformDomain", "logical_port"));
 prec.PortCountSource = string(sixgr.util.structGet(arch, "PortCountSource", ""));
 prec.RFChainCountSource = string(sixgr.util.structGet(arch, "RFChainCountSource", ""));
 prec.PortToElementMatrix = sixgr.util.structGet(arch, "PortToElementMatrix", []);
 prec.ElementToPortMatrix = sixgr.util.structGet(arch, "ElementToPortMatrix", []);
 prec.PortToRFChainMatrix = sixgr.util.structGet(arch, "PortToRFChainMatrix", []);
 prec.RFChainToPortMatrix = sixgr.util.structGet(arch, "RFChainToPortMatrix", []);
+prec.AnalogPrecoderMatrix = sixgr.util.structGet(arch, "AnalogPrecoderMatrix", []);
+prec.DigitalPortToRFChainMatrix = sixgr.util.structGet(arch, "DigitalPortToRFChainMatrix", []);
+end
+
+function prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers)
+if ~isfield(prec, "MatrixLogicalPorts") || isempty(prec.MatrixLogicalPorts)
+    prec.MatrixLogicalPorts = prec.MatrixPorts;
+end
+prec.NumLogicalPorts = double(size(prec.MatrixLogicalPorts, 1));
+prec.NumWaveformColumns = double(size(prec.MatrixPorts, 1));
+if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+    return;
+end
+elementToPort = double(sixgr.util.structGet(arch, "HybridElementToPortMatrix", ...
+    sixgr.util.structGet(arch, "PortToElementMatrix", [])));
+if isempty(elementToPort) || ~ismatrix(elementToPort)
+    error("sixgr:phy:ul:PUSCHPrecoding:HybridMatrixMissing", ...
+        "Hybrid PUSCH precoding requires an element-by-logical-port RF/baseband matrix.");
+end
+if size(elementToPort, 2) ~= size(prec.MatrixLogicalPorts, 1)
+    error("sixgr:phy:ul:PUSCHPrecoding:HybridLogicalPortMismatch", ...
+        "Hybrid element matrix is %dx%d but logical PUSCH precoder is %dx%d.", ...
+        size(elementToPort, 1), size(elementToPort, 2), size(prec.MatrixLogicalPorts, 1), size(prec.MatrixLogicalPorts, 2));
+end
+if size(prec.MatrixLogicalPorts, 2) ~= nLayers
+    error("sixgr:phy:ul:PUSCHPrecoding:HybridLayerMismatch", ...
+        "Hybrid logical PUSCH precoder must have NumLayers=%d columns.", nLayers);
+end
+prec.MatrixPorts = elementToPort * double(prec.MatrixLogicalPorts);
+prec.MatrixRows = double(size(prec.MatrixPorts, 1));
+prec.MatrixCols = double(size(prec.MatrixPorts, 2));
+prec.NumPorts = double(size(prec.MatrixPorts, 1));
+prec.NumWaveformColumns = double(size(prec.MatrixPorts, 1));
+prec.HybridBeamformingApplied = true;
+prec.HybridElementDomainApplied = true;
+prec.HybridElementToPortMatrix = elementToPort;
+prec.HybridAnalogPrecoderMatrix = sixgr.util.structGet(arch, "AnalogPrecoderMatrix", []);
+prec.HybridDigitalPortToRFChainMatrix = sixgr.util.structGet(arch, "DigitalPortToRFChainMatrix", []);
+prec.HybridEquation = "X_elem=X_logical*(F_RF*F_BB)'', F_RF columns unit-norm";
+prec.BeamformingApplied = true;
 end
 
 function prec = localAttachPowerInfo(prec, Wports, nLayers)

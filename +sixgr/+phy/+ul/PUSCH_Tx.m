@@ -212,9 +212,24 @@ if ~isempty(ptrsSym)
 end
 localAssertSignalResourceDisjoint(puschInd, dmrsInd, ptrsInd);
 
+puschWaveformSym = puschSym;
+puschWaveformInd = puschInd;
+dmrsWaveformSym = dmrsSym;
+dmrsWaveformInd = dmrsInd;
+ptrsWaveformSym = ptrsSym;
+ptrsWaveformInd = ptrsInd;
+waveformSymbolDomain = "logical_port";
+if logical(sixgr.util.structGet(prec, "HybridElementDomainApplied", false))
+    [puschWaveformSym, puschWaveformInd] = localApplyHybridElementPrecode(carrier, puschSym, puschInd, prec, "PUSCH");
+    [dmrsWaveformSym, dmrsWaveformInd] = localApplyHybridElementPrecode(carrier, dmrsSym, dmrsInd, prec, "PUSCH DMRS");
+    [ptrsWaveformSym, ptrsWaveformInd] = localApplyHybridElementPrecode(carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS");
+    localAssertSignalResourceDisjoint(puschWaveformInd, dmrsWaveformInd, ptrsWaveformInd);
+    waveformSymbolDomain = "element";
+end
+
 % Build resource grid and map
 % Use grid pages that cover the indices returned by nrPUSCHIndices
-nPages = max([size(puschInd,2), size(dmrsInd,2), size(ptrsInd,2), numTxAnt, 1]);
+nPages = max([size(puschWaveformInd,2), size(dmrsWaveformInd,2), size(ptrsWaveformInd,2), numTxAnt, 1]);
 try
     txGrid = nrResourceGrid(carrier, nPages);
 catch
@@ -222,16 +237,16 @@ catch
 end
 
 % Map PUSCH
-txGrid = localMapToGrid(txGrid, puschInd, puschSym);
+txGrid = localMapToGrid(txGrid, puschWaveformInd, puschWaveformSym);
 
 % Map DMRS/PTRS
-if ~isempty(dmrsInd)
-    txGrid = localMapToGrid(txGrid, dmrsInd, dmrsSym);
+if ~isempty(dmrsWaveformInd)
+    txGrid = localMapToGrid(txGrid, dmrsWaveformInd, dmrsWaveformSym);
 end
-if ~isempty(ptrsInd)
-    txGrid = localMapToGrid(txGrid, ptrsInd, ptrsSym);
+if ~isempty(ptrsWaveformInd)
+    txGrid = localMapToGrid(txGrid, ptrsWaveformInd, ptrsWaveformSym);
 end
-precodePowerInfo = localBuildPUSCHPowerInfo(puschLayerSym, puschSym, prec);
+precodePowerInfo = localBuildPUSCHPowerInfo(puschLayerSym, puschWaveformSym, prec);
 
 % OFDM modulation
 [windowingSamples, windowingInfo] = sixgr.phy.waveform.resolveOFDMWindowing(cfg, carrier);
@@ -272,6 +287,9 @@ tx.PUSCHLayerSymbolsForEvidence = puschLayerSym;
 tx.PUSCHPortSymbolsForEvidence = puschSym;
 tx.PUSCHLayerSymbols = puschLayerSym;
 tx.PUSCHPortSymbols = puschSym;
+tx.PUSCHWaveformSymbols = puschWaveformSym;
+tx.PUSCHWaveformIndices = puschWaveformInd;
+tx.PUSCHWaveformSymbolDomain = waveformSymbolDomain;
 tx.PUSCHDFTInputSymbols = dftInputSym;
 tx.PUSCHLayerIndices = puschLayerInd;
 tx.PUSCHPortIndices = puschInd;
@@ -318,12 +336,16 @@ if ~logical(opt.CompactOutput)
     tx.DFTInputSymbols = dftInputSym;
     tx.DMRSIndices = dmrsInd;
     tx.DMRSSymbols = dmrsSym;
+    tx.DMRSWaveformIndices = dmrsWaveformInd;
+    tx.DMRSWaveformSymbols = dmrsWaveformSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
-    tx.PUSCHAntennaIndices = puschInd;
-    tx.PUSCHAntennaSymbols = puschSym;
-    tx.DMRSAntennaIndices = dmrsInd;
-    tx.DMRSAntennaSymbols = dmrsSym;
+    tx.PTRSWaveformIndices = ptrsWaveformInd;
+    tx.PTRSWaveformSymbols = ptrsWaveformSym;
+    tx.PUSCHAntennaIndices = puschWaveformInd;
+    tx.PUSCHAntennaSymbols = puschWaveformSym;
+    tx.DMRSAntennaIndices = dmrsWaveformInd;
+    tx.DMRSAntennaSymbols = dmrsWaveformSym;
 end
 
 info = struct();
@@ -782,6 +804,31 @@ info = struct( ...
     "PortSymbolCount", double(numel(portSym)), ...
     "Status", "explicit_pusch_layer_and_port_domains", ...
     "Equation", "b_G_to_scrambled_bits_to_QAM_d_to_layers_S_to_optional_DFT_to_ports_X");
+end
+
+function [elementSym, elementInd] = localApplyHybridElementPrecode(carrier, portSym, portInd, prec, label)
+elementSym = portSym;
+elementInd = portInd;
+if isempty(portSym) || isempty(portInd)
+    return;
+end
+if exist("nrPDSCHPrecode", "file") ~= 2
+    error("sixgr:phy:ul:PUSCHHybridPrecode:Missing5G", ...
+        "nrPDSCHPrecode is required to expand %s logical ports onto hybrid RF element waveform columns.", char(string(label)));
+end
+portSym = localEnsure2D(portSym);
+H = double(sixgr.util.structGet(prec, "HybridElementToPortMatrix", []));
+if isempty(H) || ~ismatrix(H)
+    error("sixgr:phy:ul:PUSCHHybridPrecode:MissingMatrix", ...
+        "Hybrid element precode matrix is missing for %s.", char(string(label)));
+end
+if size(H, 2) ~= size(portSym, 2)
+    error("sixgr:phy:ul:PUSCHHybridPrecode:PortMismatch", ...
+        "%s has %d logical port column(s), but the hybrid element matrix is %dx%d.", ...
+        char(string(label)), size(portSym, 2), size(H, 1), size(H, 2));
+end
+Wnr = reshape(H.', [size(H, 2), size(H, 1), 1]);
+[elementSym, elementInd] = nrPDSCHPrecode(carrier, portSym, portInd, Wnr);
 end
 
 function dftInputSym = localScrambledLayerSymbols(pusch, codeword)

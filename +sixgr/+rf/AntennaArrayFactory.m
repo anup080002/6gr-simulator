@@ -65,6 +65,7 @@ classdef AntennaArrayFactory
             nRow = max(1, round(a(1)));
             nCol = max(1, round(a(2)));
             nPol = max(1, round(a(3)));
+            [panelRows, panelCols, panelSource] = sixgr.rf.AntennaArrayFactory.localResolvePanelShape(cfg, roleL, a);
 
             % Element spacing (meters)
             d = lambda .* opts.elementSpacingLambda(:).';
@@ -106,11 +107,11 @@ classdef AntennaArrayFactory
                 end
             end
 
-            % Expand positions for polarization as a simple replication.
-            % True dual-pol modeling will be handled in later RF modules.
-            if nPol > 1
-                pos = repmat(pos, nPol, 1);
-            end
+            [pos, polIndex, panelIndex] = sixgr.rf.AntennaArrayFactory.localExpandPositionsForPolarizationAndPanels( ...
+                pos, nRow, nCol, nPol, panelRows, panelCols, d);
+            polModel = sixgr.rf.AntennaArrayFactory.localResolvePolarizationModel(cfg, roleL, nPol);
+            polAngles = sixgr.rf.AntennaArrayFactory.localResolvePolarizationAngles(cfg, roleL, nPol);
+            xprDb = sixgr.rf.AntennaArrayFactory.localResolveXPRdB(cfg, roleL);
 
             arr = struct();
             arr.Role = char(roleL);
@@ -118,9 +119,19 @@ classdef AntennaArrayFactory
             arr.Fc_Hz = fc;
             arr.Lambda_m = lambda;
             arr.Size = [nRow nCol];
+            arr.ArraySize5D = [nRow nCol nPol panelRows panelCols];
             arr.NPol = nPol;
+            arr.PanelRows = panelRows;
+            arr.PanelCols = panelCols;
+            arr.PanelCount = panelRows * panelCols;
+            arr.PanelShapeSource = char(string(panelSource));
             arr.ElementSpacing_m = d;
             arr.ElementPositions_m = pos;           % [Nant x 3]
+            arr.PolarizationModel = char(polModel);
+            arr.PolarizationAngles_deg = double(polAngles(:).');
+            arr.CrossPolarizationPowerRatio_dB = double(xprDb);
+            arr.PolarizationIndexByElement = double(polIndex(:).');
+            arr.PanelIndexByElement = double(panelIndex(:).');
             arr.Nant = size(pos,1);
             arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, roleL, ...
                 "NumElements", arr.Nant, ...
@@ -129,14 +140,22 @@ classdef AntennaArrayFactory
                 "NumRFChains", opts.numRFChains);
             arr.NumElements = arch.NumElements;
             arr.NumPorts = arch.NumPorts;
+            arr.NumLogicalPorts = arch.NumLogicalPorts;
+            arr.NumWaveformColumns = arch.NumWaveformColumns;
             arr.NumRFChains = arch.NumRFChains;
             arr.PortArchitecture = arch.Architecture;
+            arr.WaveformDomain = arch.WaveformDomain;
             arr.PortCountSource = arch.PortCountSource;
             arr.RFChainCountSource = arch.RFChainCountSource;
             arr.PortToElementMatrix = arch.PortToElementMatrix;
             arr.ElementToPortMatrix = arch.ElementToPortMatrix;
             arr.PortToRFChainMatrix = arch.PortToRFChainMatrix;
             arr.RFChainToPortMatrix = arch.RFChainToPortMatrix;
+            arr.AnalogPrecoderMatrix = arch.AnalogPrecoderMatrix;
+            arr.DigitalPortToRFChainMatrix = arch.DigitalPortToRFChainMatrix;
+            arr.HybridElementToPortMatrix = arch.HybridElementToPortMatrix;
+            arr.HybridBeamformingEnabled = arch.HybridBeamformingEnabled;
+            arr.HybridPowerNormalization = arch.HybridPowerNormalization;
             arr.ElementsPerPort = arch.ElementsPerPort;
             arr.HasPhased = havePhased;
             arr.ArrayObj = arrObj;                 % phased.URA or []
@@ -198,29 +217,50 @@ classdef AntennaArrayFactory
                 rfSource = "default_equal_logical_ports";
             end
             numRFChains = max(1, round(double(numRFChains)));
+            hybridEnabled = sixgr.rf.AntennaArrayFactory.localResolveHybridBeamformingEnabled(cfg, roleL, opts.Signal);
             if numRFChains < numPorts
                 error("AntennaArrayFactory:RFChainsLessThanPorts", ...
-                    "%s RF chain count %d is smaller than logical port count %d for the current port-domain architecture.", ...
+                    "%s RF chain count %d is smaller than logical port count %d. The implemented hybrid path still requires one RF chain per logical baseband port.", ...
                     upper(char(roleL)), numRFChains, numPorts);
             end
 
-            [portToElement, elementsPerPort] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numPorts);
-            portToRF = sixgr.rf.AntennaArrayFactory.localRectIdentity(numRFChains, numPorts);
+            [analogPrecoder, rfElementsPerChain] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numRFChains);
+            digitalPortToRF = sixgr.rf.AntennaArrayFactory.localRectIdentity(numRFChains, numPorts);
+            portToElement = analogPrecoder * digitalPortToRF;
+            [~, elementsPerPort] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numPorts);
+            portToRF = digitalPortToRF;
             rfToPort = portToRF.';
+            waveformColumns = numPorts;
+            waveformDomain = "logical_port";
+            architecture = "port_domain_logical_ports_with_element_mapping";
+            if hybridEnabled
+                waveformColumns = numElements;
+                waveformDomain = "element";
+                architecture = "hybrid_rf_bb_element_domain_precoding";
+            end
 
             arch = struct( ...
                 "Role", char(roleL), ...
                 "Signal", char(string(opts.Signal)), ...
-                "Architecture", "port_domain_logical_ports_with_element_mapping", ...
+                "Architecture", char(architecture), ...
                 "NumElements", double(numElements), ...
                 "NumPorts", double(numPorts), ...
+                "NumLogicalPorts", double(numPorts), ...
+                "NumWaveformColumns", double(waveformColumns), ...
                 "NumRFChains", double(numRFChains), ...
+                "WaveformDomain", char(waveformDomain), ...
                 "PortCountSource", char(string(portSource)), ...
                 "RFChainCountSource", char(string(rfSource)), ...
                 "PortToElementMatrix", portToElement, ...
                 "ElementToPortMatrix", portToElement', ...
                 "PortToRFChainMatrix", portToRF, ...
                 "RFChainToPortMatrix", rfToPort, ...
+                "AnalogPrecoderMatrix", analogPrecoder, ...
+                "DigitalPortToRFChainMatrix", digitalPortToRF, ...
+                "HybridElementToPortMatrix", portToElement, ...
+                "HybridBeamformingEnabled", logical(hybridEnabled), ...
+                "HybridPowerNormalization", "unit_norm_rf_chain_columns_trace_preserved_after_baseband_precoding", ...
+                "RFElementsPerChain", double(rfElementsPerChain(:).'), ...
                 "ElementsPerPort", double(elementsPerPort(:).'));
         end
         function cb = dftCodebookURA(nRow, nCol, nBeamsRow, nBeamsCol)
@@ -266,7 +306,8 @@ classdef AntennaArrayFactory
                 shape = double(sixgr.util.structGet(cfg, "phy.ueArray", [2 2 1]));
                 fallbackPaths = ["antenna.ue.numElements", "scenario.ue.nTxAnt", "scenario.ue.nRxAnt", "mimo.n_rx_ant", "phy.nRxAnt"];
             end
-            count = sixgr.rf.AntennaArrayFactory.localProductCount(shape);
+            [panelRows, panelCols] = sixgr.rf.AntennaArrayFactory.localResolvePanelShape(cfg, roleL, shape);
+            count = sixgr.rf.AntennaArrayFactory.localProductCount(shape) * panelRows * panelCols;
             explicit = sixgr.rf.AntennaArrayFactory.localFirstConfiguredCount(cfg, fallbackPaths);
             if isfinite(explicit)
                 count = explicit;
@@ -323,6 +364,31 @@ classdef AntennaArrayFactory
             [count, source] = sixgr.rf.AntennaArrayFactory.localFirstConfiguredCountWithSource(cfg, paths);
         end
 
+        function enabled = localResolveHybridBeamformingEnabled(cfg, roleL, signal)
+            signal = lower(strtrim(string(signal)));
+            paths = strings(0, 1);
+            if strlength(signal) > 0
+                paths = [paths; "phy." + signal + ".hybridBeamformingEnabled"; ...
+                    "phy." + signal + ".hybridBeamforming"];
+            end
+            paths = [paths; ...
+                "rf." + roleL + ".hybridBeamformingEnabled"; ...
+                "rf." + roleL + ".hybridBeamforming"; ...
+                "antenna." + roleL + ".hybridBeamformingEnabled"; ...
+                "antenna." + roleL + ".hybridBeamforming"; ...
+                "phy.beamManagement.hybridBeamformingEnabled"; ...
+                "mimo.hybrid_beamforming_flag"; ...
+                "mimo.hybridBeamformingEnabled"];
+            enabled = false;
+            for i = 1:numel(paths)
+                [tf, ok] = sixgr.rf.AntennaArrayFactory.localParseLogical(sixgr.util.structGet(cfg, paths(i), []));
+                if ok
+                    enabled = tf;
+                    return;
+                end
+            end
+        end
+
         function [count, source] = localFirstConfiguredCountWithSource(cfg, paths)
             count = NaN;
             source = "";
@@ -367,6 +433,161 @@ classdef AntennaArrayFactory
                 shape = shape(1:3);
             end
             count = prod(max(1, round(shape)));
+        end
+
+        function [panelRows, panelCols, source] = localResolvePanelShape(cfg, roleL, shape)
+            panelRows = NaN;
+            panelCols = NaN;
+            source = "";
+            shape = double(shape(:).');
+            if numel(shape) >= 5 && all(isfinite(shape(4:5))) && all(shape(4:5) >= 1)
+                panelRows = max(1, round(shape(4)));
+                panelCols = max(1, round(shape(5)));
+                source = "phy_array_shape_5d";
+            elseif numel(shape) >= 4 && isfinite(shape(4)) && shape(4) >= 1
+                panelRows = max(1, round(shape(4)));
+                panelCols = 1;
+                source = "phy_array_shape_4d_panel_count";
+            end
+            if ~(isfinite(panelRows) && isfinite(panelCols))
+                rowPaths = ["antenna." + roleL + ".panelRows", "rf." + roleL + ".panelRows", "scenario." + roleL + ".panelRows"];
+                colPaths = ["antenna." + roleL + ".panelCols", "rf." + roleL + ".panelCols", "scenario." + roleL + ".panelCols"];
+                panelRows = sixgr.rf.AntennaArrayFactory.localFirstConfiguredCount(cfg, rowPaths);
+                panelCols = sixgr.rf.AntennaArrayFactory.localFirstConfiguredCount(cfg, colPaths);
+                if isfinite(panelRows) || isfinite(panelCols)
+                    if ~isfinite(panelRows), panelRows = 1; end
+                    if ~isfinite(panelCols), panelCols = 1; end
+                    source = "configured_panel_rows_cols";
+                end
+            end
+            if ~(isfinite(panelRows) && isfinite(panelCols))
+                countPaths = ["antenna." + roleL + ".panelCount", "rf." + roleL + ".panelCount", ...
+                    "scenario." + roleL + ".panelCount", "phy.beamManagement.panelCount", "mimo.panel_count"];
+                panelCount = sixgr.rf.AntennaArrayFactory.localFirstConfiguredCount(cfg, countPaths);
+                if isfinite(panelCount)
+                    panelRows = panelCount;
+                    panelCols = 1;
+                    source = "configured_panel_count";
+                end
+            end
+            if ~(isfinite(panelRows) && panelRows >= 1), panelRows = 1; end
+            if ~(isfinite(panelCols) && panelCols >= 1), panelCols = 1; end
+            panelRows = max(1, round(panelRows));
+            panelCols = max(1, round(panelCols));
+            if strlength(string(source)) == 0
+                source = "default_single_panel";
+            end
+        end
+
+        function model = localResolvePolarizationModel(cfg, roleL, nPol)
+            paths = ["antenna." + roleL + ".polarization", "rf." + roleL + ".polarization", ...
+                "antenna_and_array.polarization", "mimo.polarization"];
+            model = "";
+            for i = 1:numel(paths)
+                raw = string(sixgr.util.structGet(cfg, paths(i), ""));
+                if strlength(strtrim(raw)) > 0
+                    model = lower(strtrim(raw));
+                    return;
+                end
+            end
+            if nPol >= 2
+                model = "cross_pol";
+            else
+                model = "single";
+            end
+        end
+
+        function angles = localResolvePolarizationAngles(cfg, roleL, nPol)
+            paths = ["antenna." + roleL + ".polarizationAngles_deg", "rf." + roleL + ".polarizationAngles_deg", ...
+                "antenna_and_array.polarizationAngles_deg"];
+            angles = [];
+            for i = 1:numel(paths)
+                raw = sixgr.util.structGet(cfg, paths(i), []);
+                if isnumeric(raw) && ~isempty(raw)
+                    angles = double(raw(:).');
+                    break;
+                end
+            end
+            if isempty(angles)
+                if nPol >= 2
+                    angles = [45 -45];
+                else
+                    angles = 0;
+                end
+            end
+            if numel(angles) < nPol
+                angles = repmat(angles(1), 1, nPol);
+                if nPol == 2 && numel(angles) >= 2
+                    angles = [angles(1) -angles(1)];
+                end
+            end
+            angles = angles(1:nPol);
+        end
+
+        function xprDb = localResolveXPRdB(cfg, roleL)
+            paths = ["antenna." + roleL + ".xpr_dB", "rf." + roleL + ".xpr_dB", ...
+                "channel.xpr_dB", "antenna_and_array.xpr_dB"];
+            xprDb = NaN;
+            for i = 1:numel(paths)
+                raw = sixgr.util.structGet(cfg, paths(i), NaN);
+                if isnumeric(raw) && isscalar(raw) && isfinite(double(raw))
+                    xprDb = double(raw);
+                    return;
+                end
+            end
+        end
+
+        function [posOut, polIndex, panelIndex] = localExpandPositionsForPolarizationAndPanels(pos, nRow, nCol, nPol, panelRows, panelCols, d)
+            base = double(pos);
+            nBase = size(base, 1);
+            nPol = max(1, round(double(nPol)));
+            panelRows = max(1, round(double(panelRows)));
+            panelCols = max(1, round(double(panelCols)));
+            posOut = zeros(nBase * nPol * panelRows * panelCols, 3);
+            polIndex = zeros(size(posOut, 1), 1);
+            panelIndex = zeros(size(posOut, 1), 1);
+            rowAperture = max(1, nRow) * d(1);
+            colAperture = max(1, nCol) * d(2);
+            writeIdx = 1;
+            for pr = 1:panelRows
+                for pc = 1:panelCols
+                    pIdx = (pr - 1) * panelCols + pc;
+                    panelOffset = [0, (pr - (panelRows + 1) / 2) * rowAperture, ...
+                        (pc - (panelCols + 1) / 2) * colAperture];
+                    for pp = 1:nPol
+                        rows = writeIdx:(writeIdx + nBase - 1);
+                        posOut(rows, :) = base + panelOffset;
+                        polIndex(rows) = pp;
+                        panelIndex(rows) = pIdx;
+                        writeIdx = writeIdx + nBase;
+                    end
+                end
+            end
+        end
+
+        function [tf, ok] = localParseLogical(raw)
+            tf = false;
+            ok = false;
+            if islogical(raw) && isscalar(raw)
+                tf = logical(raw);
+                ok = true;
+                return;
+            end
+            if isnumeric(raw) && isscalar(raw) && isfinite(double(raw))
+                tf = double(raw) ~= 0;
+                ok = true;
+                return;
+            end
+            if ischar(raw) || isstring(raw)
+                token = lower(strtrim(char(string(raw))));
+                if any(strcmp(token, {"true","t","yes","y","on","enabled","enable","1"}))
+                    tf = true;
+                    ok = true;
+                elseif any(strcmp(token, {"false","f","no","n","off","disabled","disable","0"}))
+                    tf = false;
+                    ok = true;
+                end
+            end
         end
 
         function [M, elementsPerPort] = localPortToElementMatrix(numElements, numPorts)
