@@ -154,7 +154,10 @@ useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pusch);
-localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PUSCH_Rx");
+[rxWaveform, fastAWGNColumnInfo] = localTrimInactiveFastAWGNColumns( ...
+    rxWaveform, channelModelToken, numTxPorts, useFastAWGNPath);
+localValidateFastScalarShortcut(channelModelToken, numTxPorts, ...
+    fastAWGNColumnInfo.ActiveColumnCount, useFastAWGNPath, "PUSCH_Rx");
 phyGrantContract = struct();
 if hasPHYGrant
     phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
@@ -254,7 +257,10 @@ if useFastAWGNPath
         "ChannelModel", string(channelModelToken), ...
         "ExpectedTxPorts", double(numTxPorts), ...
         "NumRxAnt", double(max(1, size(rxGrid, 3))), ...
-        "ScalarFastPathUsed", true);
+        "ScalarFastPathUsed", true, ...
+        "FastAWGNOriginalWaveformColumns", double(fastAWGNColumnInfo.OriginalColumnCount), ...
+        "FastAWGNActiveWaveformColumns", double(fastAWGNColumnInfo.ActiveColumnCount), ...
+        "FastAWGNInactiveColumnTrimmed", logical(fastAWGNColumnInfo.Trimmed));
 else
     [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
         "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
@@ -1750,6 +1756,52 @@ if ~(localIsExplicitFlatChannel(channelToken) && numTxPorts <= 1 && numRxAnt <= 
     error("sixgr:phy:rx:InvalidFastScalarShortcut", ...
         "%s requires an explicit AWGN/flat SISO validation mode. Channel='%s', TxPorts=%d, RxAnt=%d.", ...
         contextLabel, localDisplayChannelToken(channelToken), numTxPorts, numRxAnt);
+end
+end
+
+function [waveOut, info] = localTrimInactiveFastAWGNColumns(waveIn, channelToken, numTxPorts, useFastAWGNPath)
+waveOut = waveIn;
+numCols = max(1, size(waveIn, 2));
+activeCols = localActiveWaveformColumns(waveIn);
+info = struct( ...
+    "OriginalColumnCount", double(numCols), ...
+    "ActiveColumnCount", double(max(1, numel(activeCols))), ...
+    "ActiveColumns", double(activeCols(:).'), ...
+    "Trimmed", false);
+if ~logical(useFastAWGNPath) || ~localIsExplicitFlatChannel(channelToken) || ...
+        ~(isscalar(numTxPorts) && isfinite(numTxPorts) && numTxPorts <= 1)
+    return;
+end
+if numCols > 1 && numel(activeCols) == 1
+    waveOut = waveIn(:, activeCols);
+    info.Trimmed = true;
+end
+end
+
+function activeCols = localActiveWaveformColumns(waveIn)
+if isempty(waveIn)
+    activeCols = 1;
+    return;
+end
+if isvector(waveIn)
+    activeCols = 1;
+    return;
+end
+energy = sum(abs(waveIn).^2, 1, "omitnan");
+energy = double(reshape(energy, 1, []));
+if isempty(energy)
+    activeCols = 1;
+    return;
+end
+maxEnergy = max(energy(isfinite(energy)), [], "omitnan");
+if ~(isscalar(maxEnergy) && isfinite(maxEnergy) && maxEnergy > 0)
+    activeCols = 1;
+    return;
+end
+threshold = max(maxEnergy * 1e-12, eps(maxEnergy));
+activeCols = find(isfinite(energy) & energy > threshold);
+if isempty(activeCols)
+    activeCols = 1;
 end
 end
 
