@@ -163,6 +163,16 @@ cfg.ChannelBandwidthMHz = double(sixgr.util.structGet(point, "ChannelBandwidthMH
 cfg.NSizeGrid = double(sixgr.util.structGet(point, "NSizeGrid", cfg.NSizeGrid));
 cfg.CodewordLayer.Rank = double(point.Rank);
 cfg.NumLayers = double(point.Rank);
+cfg.NumCodewords = localPDSCHCodewordCount(cfg.NumLayers);
+cfg.CodewordLayer.NumCodewords = double(cfg.NumCodewords);
+cfg.NTx = max(double(cfg.NTx), double(cfg.NumLayers));
+cfg.NRx = max(double(cfg.NRx), double(cfg.NumLayers));
+cfg.DMRS.NumPorts = max(double(cfg.DMRS.NumPorts), double(cfg.NumLayers));
+cfg.DMRS.PortSet = double(0:(cfg.DMRS.NumPorts - 1));
+if cfg.NumLayers > 4
+    cfg.DMRS.ConfigType = 2;
+    cfg.DMRS.CDMGroupsWithoutData = max(double(cfg.DMRS.CDMGroupsWithoutData), 3);
+end
 cfg.RepetitionMode = char(string(point.RepetitionMode));
 cfg.EnablePDSCHRepetition = ~strcmpi(cfg.RepetitionMode, "none");
 cfg.RepetitionCount = localRepetitionCount(cfg);
@@ -218,6 +228,7 @@ for h = 1:attempts
     layerT = localVertcat(layerT, localAnnotateLayerTrace(txBundle.LayerMappingTrace, point, trialIndex, h));
 
     copyLLRs = cell(numel(txBundle.Copies), 1);
+    copyRx = cell(numel(txBundle.Copies), 1);
     postEqEVM = NaN(numel(txBundle.Copies), 1);
     sinrEst = NaN(numel(txBundle.Copies), 1);
     for c = 1:numel(txBundle.Copies)
@@ -225,7 +236,8 @@ for h = 1:attempts
         [rxWave, noiseVar] = localApplyChannelAndNoise(copy.Tx.Waveform, cfg, copy.TxInfo, seed + 100 * h + c);
         rxOut = sixgr.pdsch.PDSCHReceiver(rxWave, cfg, copy, ...
             "NoiseVar", noiseVar, "NoiseVarDomain", "time");
-        copyLLRs{c} = double(rxOut.Rx.CodewordLLR(:));
+        copyRx{c} = rxOut.Rx;
+        copyLLRs{c} = localCodewordLLRCell(rxOut.Rx);
         postEqEVM(c) = double(rxOut.PostEqEVM);
         sinrEst(c) = localBestStudySINR(rxOut.Rx);
         dmrsT = localVertcat(dmrsT, localAnnotateMap(copy.DMRSTable, point, trialIndex, h, c, "DMRS"));
@@ -236,7 +248,10 @@ for h = 1:attempts
     end
 
     combined = localCombineLLR(copyLLRs);
-    if ~isempty(combined)
+    if numel(copyRx) == 1 && ~isempty(copyRx{1})
+        decode = sixgr.pdsch.DLSCHDecoder(copyRx{1});
+        crcPass = logical(decode.CRCPass);
+    elseif ~isempty(combined)
         decode = sixgr.pdsch.DLSCHDecoder(combined, ...
             "TransportBlockSize", txBundle.TransportBlockSize, ...
             "TargetCodeRate", txBundle.ActiveAMC.TargetCodeRate, ...
@@ -252,7 +267,7 @@ for h = 1:attempts
     throughputBits = double(crcPass) * double(txBundle.PayloadBitsBeforePadding);
     finalPass = crcPass;
     finalThroughputBits = throughputBits;
-    finalTBSizeBits = double(txBundle.TransportBlockSize);
+    finalTBSizeBits = localTotalTBSBits(txBundle);
     finalComplexity = localComplexityProxy(txBundle, decode);
     finalCodedBits = double(sixgr.util.structGet(txBundle.Copies{1}.Tx, "G", NaN));
     finalEstimatedDelaySpread = localTailStructMean(paramRows, numel(txBundle.Copies), "estimated_delay_spread");
@@ -263,7 +278,7 @@ for h = 1:attempts
         ",avg_sinr=" + num2str(mean(sinrEst, "omitnan"), "%.4g"));
 
     tbRows(end+1,1) = localBuildTBRow(cfg, point, trialIndex, h, txBundle, decode, throughputBits, postEqEVM, sinrEst); %#ok<AGROW>
-    cwRows(end+1,1) = localBuildCWRow(cfg, point, trialIndex, h, txBundle, decode, throughputBits, postEqEVM, sinrEst); %#ok<AGROW>
+    cwRows = [cwRows; localBuildCWRows(cfg, point, trialIndex, h, txBundle, decode, throughputBits, postEqEVM, sinrEst)]; %#ok<AGROW>
     fdraRows(end+1,1) = localBuildFDRARow(point, trialIndex, h, fdraAlloc); %#ok<AGROW>
     harqRows(end+1,1) = localBuildHARQRow(point, trialIndex, h, rv, crcPass, txBundle); %#ok<AGROW>
     grantRows(end+1,1) = localBuildGrantRow(cfg, point, trialIndex, h, txBundle, crcPass, sinrEst); %#ok<AGROW>
@@ -413,6 +428,18 @@ if isempty(copyLLRs)
     combined = [];
     return;
 end
+if iscell(copyLLRs{1})
+    nCodewords = numel(copyLLRs{1});
+    combined = cell(1, nCodewords);
+    for cw = 1:nCodewords
+        streams = cell(numel(copyLLRs), 1);
+        for i = 1:numel(copyLLRs)
+            streams{i} = copyLLRs{i}{cw};
+        end
+        combined{cw} = localCombineLLR(streams);
+    end
+    return;
+end
 lengths = cellfun(@numel, copyLLRs);
 if isempty(lengths) || any(lengths ~= lengths(1))
     combined = double(copyLLRs{1}(:));
@@ -421,6 +448,39 @@ end
 combined = zeros(lengths(1), 1);
 for i = 1:numel(copyLLRs)
     combined = combined + double(copyLLRs{i}(:));
+end
+end
+
+function llrCell = localCodewordLLRCell(rx)
+llrCell = sixgr.util.structGet(rx, "CodewordLLRCell", []);
+if isempty(llrCell)
+    llrCell = {double(sixgr.util.structGet(rx, "CodewordLLR", []))};
+end
+if ~iscell(llrCell)
+    llrCell = {llrCell};
+end
+llrCell = cellfun(@(x) double(x(:)), llrCell(:).', "UniformOutput", false);
+end
+
+function n = localPDSCHCodewordCount(numLayers)
+n = 1 + double(round(double(numLayers)) > 4);
+end
+
+function total = localTotalTBSBits(txBundle)
+total = sum(double(sixgr.util.structGet(txBundle, "TransportBlockSize", NaN)), "omitnan");
+end
+
+function values = localPerCodewordVector(values, nCodewords)
+values = double(values(:).');
+if isempty(values)
+    values = NaN;
+end
+if numel(values) == 1 && nCodewords > 1
+    values = repmat(values, 1, nCodewords);
+elseif numel(values) < nCodewords
+    values(end+1:nCodewords) = values(end);
+elseif numel(values) > nCodewords
+    values = values(1:nCodewords);
 end
 end
 
@@ -439,7 +499,7 @@ value = mean(vals, "omitnan");
 end
 
 function ops = localComplexityProxy(txBundle, decode)
-ops = double(txBundle.TransportBlockSize) * max(1, double(txBundle.ActiveAMC.SpectralEfficiency)) * ...
+ops = localTotalTBSBits(txBundle) * max(1, double(txBundle.ActiveAMC.SpectralEfficiency)) * ...
     max(1, double(sixgr.util.structGet(decode, "DecoderIterations", 1))) * max(1, numel(txBundle.Copies));
 end
 
@@ -644,7 +704,7 @@ end
 
 function row = localBuildTBRow(cfg, point, trialIndex, harqTx, txBundle, decode, throughputBits, postEqEVM, sinrEst)
 row = localEmptyTBRow();
-base = localBuildTrialRow(cfg, point, trialIndex, logical(decode.CRCPass), throughputBits, txBundle.TransportBlockSize, ...
+base = localBuildTrialRow(cfg, point, trialIndex, logical(decode.CRCPass), throughputBits, localTotalTBSBits(txBundle), ...
     double(sixgr.util.structGet(txBundle.Copies{1}.Tx, "G", NaN)), localComplexityProxy(txBundle, decode), ...
     NaN, NaN, NaN, mean(sinrEst, "omitnan"), ...
     string("avg_evm=" + num2str(mean(postEqEVM, "omitnan"), "%.4g")), txBundle.FDRA);
@@ -658,14 +718,27 @@ row.avg_post_eq_evm = double(mean(postEqEVM, "omitnan"));
 row.avg_estimated_sinr_db = double(mean(sinrEst, "omitnan"));
 end
 
-function row = localBuildCWRow(cfg, point, trialIndex, harqTx, txBundle, decode, throughputBits, postEqEVM, sinrEst)
-row = localEmptyCWRow();
-base = localBuildTBRow(cfg, point, trialIndex, harqTx, txBundle, decode, throughputBits, postEqEVM, sinrEst);
-fields = fieldnames(base);
-for i = 1:numel(fields)
-    row.(fields{i}) = base.(fields{i});
+function rows = localBuildCWRows(cfg, point, trialIndex, harqTx, txBundle, decode, throughputBits, postEqEVM, sinrEst)
+nCodewords = max(1, round(double(sixgr.util.structGet(txBundle.Copies{1}.Tx, "NumCodewords", cfg.NumCodewords))));
+rows = repmat(localEmptyCWRow(), nCodewords, 1);
+tbsPerCW = localPerCodewordVector(txBundle.TransportBlockSize, nCodewords);
+gPerCW = localPerCodewordVector(sixgr.util.structGet(txBundle.Copies{1}.Tx, "GPerCodeword", NaN), nCodewords);
+passPerCW = logical(localPerCodewordVector(sixgr.util.structGet(decode, "CRCPassPerCodeword", logical(decode.CRCPass)), nCodewords));
+for cw = 1:nCodewords
+    row = localEmptyCWRow();
+    base = localBuildTBRow(cfg, point, trialIndex, harqTx, txBundle, decode, throughputBits, postEqEVM, sinrEst);
+    fields = fieldnames(base);
+    for i = 1:numel(fields)
+        row.(fields{i}) = base.(fields{i});
+    end
+    row.codeword_index = cw - 1;
+    row.tb_size_bits = double(tbsPerCW(cw));
+    row.coded_bits = double(gPerCW(cw));
+    row.crc_pass = logical(passPerCW(cw));
+    row.bler_flag = double(~passPerCW(cw));
+    row.throughput_bits = double(passPerCW(cw)) * double(tbsPerCW(cw));
+    rows(cw, 1) = row;
 end
-row.codeword_index = 0;
 end
 
 function row = localBuildFDRARow(point, trialIndex, harqTx, fdraAlloc)
@@ -744,7 +817,7 @@ row.trial_index = double(trialIndex);
 row.harq_tx = double(harqTx);
 row.rv = double(rv);
 row.crc_pass = logical(crcPass);
-row.tb_size_bits = double(txBundle.TransportBlockSize);
+row.tb_size_bits = localTotalTBSBits(txBundle);
 row.harq_combining_status = "not_materialized_across_retx_attempts";
 end
 
@@ -765,8 +838,8 @@ row.PRBStart = double(txBundle.FDRA.RBStart);
 row.PRBCount = double(txBundle.FDRA.NumRB);
 row.SymbolStart = double(txBundle.Copies{1}.TDRA.SymbolAllocation(1));
 row.NumSymbols = double(txBundle.Copies{1}.TDRA.SymbolAllocation(2));
-row.TBSBits = double(txBundle.TransportBlockSize);
-row.TBSBytes = double(txBundle.TransportBlockSize / 8);
+row.TBSBits = localTotalTBSBits(txBundle);
+row.TBSBytes = double(localTotalTBSBits(txBundle) / 8);
 row.CQIUsed = NaN;
 row.MCSIndex = double(txBundle.ActiveAMC.MCSIndex);
 row.Modulation = string(txBundle.ActiveAMC.Modulation);
@@ -810,7 +883,7 @@ row.RNTI = double(cfg.RNTI);
 row.Modulation = string(txBundle.ActiveAMC.Modulation);
 row.MCSIndex = double(txBundle.ActiveAMC.MCSIndex);
 row.NumLayers = double(cfg.NumLayers);
-row.TBSBits = double(txBundle.TransportBlockSize);
+row.TBSBits = localTotalTBSBits(txBundle);
 row.CRCError = ~logical(crcPass);
 row.BLER = double(~crcPass);
 row.ThroughputBits = double(throughputBits);

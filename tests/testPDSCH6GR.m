@@ -165,6 +165,20 @@ cfg.pdsch6gr.NumLayers = 2;
 trace = sixgr.pdsch.CodewordLayerMapper(sixgr.pdsch.PDSCHStudyConfig(cfg));
 assert(height(trace) == 2 && all(double(trace.CodewordIndex) == 0), ...
     "NR-baseline single-codeword mapping trace must materialize one row per layer.");
+
+cfg6 = localBaseCfg();
+cfg6.pdsch6gr.NumLayers = 6;
+cfg6.pdsch6gr.NumCodewords = 2;
+cfg6.pdsch6gr.NTx = 6;
+cfg6.pdsch6gr.NRx = 6;
+cfg6.pdsch6gr.DMRSConfigType = 2;
+cfg6.pdsch6gr.DMRSNumPorts = 6;
+cfg6.pdsch6gr.DMRSPortSet = 0:5;
+cfg6.pdsch6gr.DMRSCDMGroupsWithoutData = 3;
+cfg6.pdsch6gr.ModulationPerCodeword = {'QPSK','QPSK'};
+trace6 = sixgr.pdsch.CodewordLayerMapper(sixgr.pdsch.PDSCHStudyConfig(cfg6));
+assert(height(trace6) == 6 && isequal(double(trace6.CodewordIndex(:).'), [0 0 0 1 1 1]), ...
+    "Rank-6 PDSCH mapping trace must materialize the two-codeword layer split.");
 end
 
 function testDefaultFDRAUsesFullCarrierGrid()

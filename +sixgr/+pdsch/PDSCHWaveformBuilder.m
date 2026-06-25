@@ -25,11 +25,11 @@ for i = 1:height(copies)
     pdsch = localBuildPDSCHConfig(runtimeCfg, carrier, amc, fdraAlloc, symbolAllocation);
     [pdsch, amc, payloadBitsOriginal, queueFitStatus, transportBlockSize] = localFitGrantToQueue(cfg, carrier, pdsch, amc, double(opt.QueueBits));
     if isempty(transportBlockBits)
-        transportBlockBits = localMakeTransportBlock(double(transportBlockSize), payloadBitsOriginal, cfg.Seed + double(opt.TransmissionIndex));
-    elseif numel(transportBlockBits) ~= double(transportBlockSize)
+        transportBlockBits = localMakeTransportBlocks(double(transportBlockSize), payloadBitsOriginal, cfg.Seed + double(opt.TransmissionIndex));
+    elseif ~isequal(double(localTransportBlockSizes(transportBlockBits)), double(transportBlockSize(:).'))
         error("sixgr:pdsch:PDSCHWaveformBuilder:RepetitionTBSMismatch", ...
-            "PDSCH repetition copies must carry the same transport block size. First copy TBS=%d, copy %d TBS=%d.", ...
-            numel(transportBlockBits), i, round(double(transportBlockSize)));
+            "PDSCH repetition copies must carry the same per-codeword transport block size. First copy TBS=%s, copy %d TBS=%s.", ...
+            mat2str(localTransportBlockSizes(transportBlockBits)), i, mat2str(double(transportBlockSize(:).')));
     end
     tbBits = transportBlockBits;
     [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(runtimeCfg, ...
@@ -61,7 +61,7 @@ for i = 1:height(copies)
         "QueueFitStatus", queueFitStatus, ...
         "PayloadBitsBeforePadding", double(localPayloadBitCount(payloadBitsOriginal)), ...
         "TransportBlockSize", double(transportBlockSize), ...
-        "TransportBlockBits", tbBits);
+        "TransportBlockBits", {tbBits});
 end
 
 txBundle = struct();
@@ -75,7 +75,7 @@ txBundle.PayloadBitsBeforePadding = double(localPayloadBitCount(payloadBitsOrigi
 txBundle.RV = double(opt.RV);
 txBundle.RepetitionMode = char(cfg.RepetitionMode);
 txBundle.RepetitionCount = height(copies);
-txBundle.TransportBlockSize = double(copyBundles{1}.TransportBlockSize);
+txBundle.TransportBlockSize = double(copyBundles{1}.TransportBlockSize(:).');
 txBundle.TransportBlockBits = copyBundles{1}.TransportBlockBits;
 end
 
@@ -84,6 +84,7 @@ runtimeCfg = struct();
 runtimeCfg.CellID = double(cfg.CellID);
 runtimeCfg.RNTI = double(cfg.RNTI);
 runtimeCfg.NumLayers = double(cfg.NumLayers);
+runtimeCfg.NumCodewords = double(localPDSCHCodewordCount(cfg.NumLayers));
 runtimeCfg.Numerology = double(cfg.Numerology);
 runtimeCfg.NSizeGrid = double(cfg.NSizeGrid);
 runtimeCfg.SlotNumber = double(slotNumber);
@@ -102,9 +103,10 @@ runtimeCfg.phy.carrier = struct( ...
     "CyclicPrefix", "normal");
 runtimeCfg.phy.numerology = struct("mu", double(cfg.Numerology), "slotsPerFrame", 10 * 2^double(cfg.Numerology));
 runtimeCfg.phy.pdsch = struct( ...
-    "modulation", char(amc.Modulation), ...
+    "modulation", {localModulationForCodewords(amc.Modulation, cfg.NumLayers)}, ...
     "numLayers", double(cfg.NumLayers), ...
     "nLayers", double(cfg.NumLayers), ...
+    "numCodewords", double(localPDSCHCodewordCount(cfg.NumLayers)), ...
     "RNTI", double(cfg.RNTI), ...
     "mappingType", "A", ...
     "prbSet", double(fdraAlloc.PRBSet), ...
@@ -115,8 +117,11 @@ runtimeCfg.phy.pdsch = struct( ...
     "xOverhead", 0, ...
     "enablePTRS", logical(cfg.PTRS.PTRSEnabled), ...
     "dmrs", struct( ...
+        "configurationType", double(cfg.DMRS.ConfigType), ...
+        "additionalPosition", double(cfg.DMRS.AdditionalPosition), ...
         "numCDMGroupsWithoutData", double(cfg.DMRS.CDMGroupsWithoutData), ...
-        "nPorts", double(cfg.DMRS.NumPorts)));
+        "nPorts", double(cfg.DMRS.NumPorts), ...
+        "portSet", double(cfg.DMRS.PortSet)));
 runtimeCfg.phy.impairments = struct("cfoHz", 0, "timingOffsetSamples", 0);
 profile = upper(strtrim(char(string(cfg.ChannelModel))));
 tdlProfile = "";
@@ -147,10 +152,10 @@ ptrsCfg = sixgr.util.structGet(cfg, "PTRS", struct());
 [~, ~, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg, ...
     "PRBSet", double(fdraAlloc.PRBSet), ...
     "SymbolAllocation", double(symbolAllocation), ...
-    "Modulation", char(amc.Modulation), ...
+    "Modulation", localModulationForCodewords(amc.Modulation, numLayers), ...
     "NumLayers", numLayers, ...
     "RNTI", rnti);
-pdsch.Modulation = char(amc.Modulation);
+pdsch.Modulation = localModulationForCodewords(amc.Modulation, numLayers);
 pdsch.NumLayers = numLayers;
 pdsch.PRBSet = double(fdraAlloc.PRBSet(:).');
 pdsch.SymbolAllocation = double(symbolAllocation);
@@ -172,7 +177,7 @@ try
 catch
 end
 try
-    pdsch.DMRS.DMRSPortSet = double(sixgr.util.structGet(dmrsCfg, "PortSet", 0));
+    pdsch.DMRS.DMRSPortSet = double(sixgr.util.structGet(dmrsCfg, "PortSet", 0:(numLayers - 1)));
 catch
 end
 try
@@ -205,13 +210,13 @@ tbs = NaN;
 attempts = 0;
 while attempts < 256
     tbs = sixgr.pdsch.TBSCalculator(carrier, pdsch, amc.TargetCodeRate, 0);
-    if tbs <= payloadBits
+    if localTotalBits(tbs) <= payloadBits
         return;
     end
     attempts = attempts + 1;
     if amc.MCSIndex > 0
         amc = localAMCFromIndex(cfg, amc.MCSIndex - 1);
-        pdsch.Modulation = char(amc.Modulation);
+        pdsch.Modulation = localModulationForCodewords(amc.Modulation, pdsch.NumLayers);
         status = "queue_limited_mcs_backoff_before_tx";
         continue;
     end
@@ -236,9 +241,36 @@ amc.TargetCodeRate = double(profile.TargetCodeRate);
 amc.SpectralEfficiency = double(profile.SpectralEfficiency);
 end
 
-function bits = localMakeTransportBlock(tbsBits, payloadBits, seed)
+function bits = localMakeTransportBlocks(tbsBits, payloadBits, seed)
 rng(double(seed), "twister");
 payloadBitCount = localPayloadBitCount(payloadBits);
+tbsBits = double(tbsBits(:).');
+if numel(tbsBits) > 1
+    totalBits = sum(tbsBits);
+    if payloadBitCount <= 0
+        payloadVec = int8(randi([0 1], totalBits, 1));
+    elseif isnumeric(payloadBits) && isscalar(payloadBits)
+        payloadVec = int8(randi([0 1], payloadBitCount, 1));
+    else
+        payloadVec = int8(payloadBits(:) ~= 0);
+    end
+    bits = cell(1, numel(tbsBits));
+    offset = 0;
+    for c = 1:numel(tbsBits)
+        n = round(tbsBits(c));
+        bits{c} = int8(zeros(n, 1));
+        take = min(n, max(0, numel(payloadVec) - offset));
+        if take > 0
+            bits{c}(1:take) = payloadVec(offset + (1:take));
+        end
+        if take < n
+            bits{c}(take+1:end) = int8(randi([0 1], n - take, 1));
+        end
+        offset = offset + take;
+    end
+    return;
+end
+tbsBits = tbsBits(1);
 if payloadBitCount <= 0
     payloadBits = int8(randi([0 1], tbsBits, 1));
 elseif isnumeric(payloadBits) && isscalar(payloadBits)
@@ -253,6 +285,45 @@ if L > 0
 end
 if L < tbsBits
     bits(L+1:end) = int8(randi([0 1], tbsBits - L, 1));
+end
+end
+
+function sizes = localTransportBlockSizes(bits)
+if iscell(bits)
+    sizes = double(cellfun(@numel, bits));
+else
+    sizes = double(numel(bits));
+end
+sizes = sizes(:).';
+end
+
+function total = localTotalBits(bits)
+total = sum(double(bits(:)));
+end
+
+function n = localPDSCHCodewordCount(numLayers)
+n = 1 + double(round(double(numLayers)) > 4);
+end
+
+function modulation = localModulationForCodewords(modulationIn, numLayers)
+nCodewords = localPDSCHCodewordCount(numLayers);
+tokens = string(modulationIn);
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    tokens = "QPSK";
+end
+if numel(tokens) == 1 && nCodewords > 1
+    tokens = repmat(tokens, 1, nCodewords);
+elseif numel(tokens) < nCodewords
+    tokens(end+1:nCodewords) = tokens(end);
+elseif numel(tokens) > nCodewords
+    tokens = tokens(1:nCodewords);
+end
+if nCodewords == 1
+    modulation = char(tokens(1));
+else
+    modulation = cellstr(tokens);
 end
 end
 

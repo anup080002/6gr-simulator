@@ -35,7 +35,7 @@ cfg.ChannelBandwidthMHz = double(sixgr.util.structGet(pdsch6gr, "ChannelBandwidt
 cfg.NTx = max(1, round(double(sixgr.util.structGet(pdsch6gr, "NTx", sixgr.util.structGet(channel, "nTxAnt", 1)))));
 cfg.NRx = max(1, round(double(sixgr.util.structGet(pdsch6gr, "NRx", sixgr.util.structGet(channel, "nRxAnt", 1)))));
 cfg.NumLayers = max(1, round(double(sixgr.util.structGet(pdsch6gr, "NumLayers", sixgr.util.structGet(phy, "pdsch.nLayers", 1)))));
-cfg.NumCodewords = max(1, round(double(sixgr.util.structGet(pdsch6gr, "NumCodewords", 1))));
+cfg.NumCodewords = max(1, round(double(sixgr.util.structGet(pdsch6gr, "NumCodewords", localExpectedCodewords(cfg.NumLayers)))));
 cfg.ModulationPerCodeword = localStringList(sixgr.util.structGet(pdsch6gr, "ModulationPerCodeword", {"16QAM"}));
 cfg.TargetCodeRatePerCodeword = double(localNumericRow(sixgr.util.structGet(pdsch6gr, "TargetCodeRatePerCodeword", 0.4785)));
 cfg.MCSMode = char(lower(string(sixgr.util.structGet(pdsch6gr, "MCSMode", "fixed"))));
@@ -75,6 +75,7 @@ cfg.TDRA = localResolveTDRAConfig(pdsch6gr, cfg);
 cfg.DMRS = localResolveDMRSConfig(pdsch6gr);
 cfg.PTRS = localResolvePTRSConfig(pdsch6gr, cfg);
 cfg.CodewordLayer = localResolveCodewordLayerConfig(pdsch6gr, cfg);
+cfg = localNormalizePDSCHRankCodewordConfig(cfg);
 cfg.MRSS = localResolveMRSSConfig(pdsch6gr);
 cfg.StudySweep = localResolveStudySweep(pdsch6gr, cfg);
 
@@ -221,7 +222,7 @@ function status = localMultiCodewordStatus(cfg)
 if cfg.NumCodewords <= 1
     status = "materialized_single_codeword_baseline";
 else
-    status = "study_hook_not_materialized_in_active_truth_path";
+    status = "materialized_two_codeword_rank5_to_rank8_truth_path";
 end
 end
 
@@ -233,14 +234,70 @@ else
 end
 end
 
-function localValidate(cfg)
-if cfg.NumCodewords > 1
-    error("sixgr:pdsch:PDSCHStudyConfig:MultiCodewordUnsupported", ...
-        "The active truth path supports one codeword only. NumCodewords=%d is a study hook, not a materialized truth path.", cfg.NumCodewords);
+function cfg = localNormalizePDSCHRankCodewordConfig(cfg)
+expectedCodewords = localExpectedCodewords(cfg.NumLayers);
+if cfg.NumCodewords ~= expectedCodewords
+    error("sixgr:pdsch:PDSCHStudyConfig:BadCodewordLayerMapping", ...
+        "PDSCH rank-%d requires NumCodewords=%d by TS 38.211 codeword-to-layer mapping. Requested %d.", ...
+        cfg.NumLayers, expectedCodewords, cfg.NumCodewords);
 end
+cfg.CodewordLayer.Rank = double(cfg.NumLayers);
+cfg.CodewordLayer.NumCodewords = double(cfg.NumCodewords);
+cfg.NTx = max(double(cfg.NTx), double(cfg.NumLayers));
+cfg.NRx = max(double(cfg.NRx), double(cfg.NumLayers));
+cfg.DMRS.NumPorts = max(double(cfg.DMRS.NumPorts), double(cfg.NumLayers));
+cfg.DMRS.PortSet = double(0:(cfg.DMRS.NumPorts - 1));
 if cfg.NumLayers > 4
-    error("sixgr:pdsch:PDSCHStudyConfig:TooManyLayers", ...
-        "The active truth path supports up to 4 layers. Requested %d.", cfg.NumLayers);
+    cfg.DMRS.ConfigType = 2;
+    cfg.DMRS.CDMGroupsWithoutData = max(double(cfg.DMRS.CDMGroupsWithoutData), 3);
+end
+cfg.ModulationPerCodeword = localExpandStringList(cfg.ModulationPerCodeword, cfg.NumCodewords);
+cfg.TargetCodeRatePerCodeword = localExpandNumericRow(cfg.TargetCodeRatePerCodeword, cfg.NumCodewords);
+end
+
+function n = localExpectedCodewords(numLayers)
+numLayers = max(1, round(double(numLayers)));
+n = 1 + double(numLayers > 4);
+end
+
+function values = localExpandStringList(values, n)
+values = cellstr(string(values(:)));
+if isempty(values)
+    values = {'16QAM'};
+end
+if numel(values) == 1 && n > 1
+    values = repmat(values, 1, n);
+elseif numel(values) < n
+    values(end+1:n) = values(end);
+elseif numel(values) > n
+    values = values(1:n);
+end
+end
+
+function values = localExpandNumericRow(values, n)
+values = double(values(:).');
+if isempty(values)
+    values = 0.4785;
+end
+if numel(values) == 1 && n > 1
+    values = repmat(values, 1, n);
+elseif numel(values) < n
+    values(end+1:n) = values(end);
+elseif numel(values) > n
+    values = values(1:n);
+end
+end
+
+function localValidate(cfg)
+if cfg.NumLayers < 1 || cfg.NumLayers > 8
+    error("sixgr:pdsch:PDSCHStudyConfig:BadRank", ...
+        "The active PDSCH truth path supports ranks 1-8. Requested %d.", cfg.NumLayers);
+end
+expectedCodewords = localExpectedCodewords(cfg.NumLayers);
+if cfg.NumCodewords ~= expectedCodewords
+    error("sixgr:pdsch:PDSCHStudyConfig:BadCodewordLayerMapping", ...
+        "PDSCH rank-%d requires NumCodewords=%d by TS 38.211 codeword-to-layer mapping. Requested %d.", ...
+        cfg.NumLayers, expectedCodewords, cfg.NumCodewords);
 end
 if ~ismember(cfg.MCSMode, ["fixed","amc"])
     error("sixgr:pdsch:PDSCHStudyConfig:BadMCSMode", ...

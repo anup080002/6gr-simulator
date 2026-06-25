@@ -1256,7 +1256,7 @@ for idx = 1:maxLayers
     if ~any(mask)
         continue;
     end
-    note = "Current LLS runtime exports one-codeword TB outcome; per-layer BLER is attributed to each active layer in the configured layer map.";
+    note = "Current LLS runtime exports aggregate TB outcome rows; PDSCH PHY supports one codeword for ranks 1-4 and two codewords for ranks 5-8, while per-layer BLER is attributed to each active layer in the configured layer map.";
     T = [T; ... %#ok<AGROW>
         localMetricTableRow(cat, metric, "layer_" + string(idx), "rate", "available", mean(failMask(mask)), "", "fraction", "air_interface/csv/dl_pdsch_trials.csv", note); ...
         localMetricTableRow(cat, metric, "layer_" + string(idx), "sample_count", "available", sum(mask), "", "count", "air_interface/csv/dl_pdsch_trials.csv", note)];
