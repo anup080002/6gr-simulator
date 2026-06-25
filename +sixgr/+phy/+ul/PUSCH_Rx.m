@@ -1186,6 +1186,7 @@ end
 nLayers = localObjectFiniteScalar(pusch, "NumLayers", NaN);
 nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(Hport, 3));
 tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
+transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
 if ~(isfinite(nLayers) && nLayers >= 1)
     nLayers = 1;
@@ -1202,7 +1203,7 @@ if scheme ~= "codebook" || ~isfinite(tpmi) || size(Hport, 3) <= nLayers
     return;
 end
 
-[Wlayer, codebookStatus] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi);
+[Wlayer, codebookStatus] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi, transformPrecoding);
 if isempty(Wlayer)
     info.Status = codebookStatus;
     return;
@@ -1255,6 +1256,7 @@ puschRxSym = localEnsureSymbolMatrix(puschRxSym);
 nLayers = localObjectFiniteScalar(pusch, "NumLayers", size(eqSym, 2));
 nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(eqSym, 2));
 tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
+transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
 nLayers = max(1, round(double(nLayers)));
 nPorts = max(1, round(double(nPorts)));
@@ -1274,12 +1276,12 @@ if ~isempty(puschRxSym) && size(puschRxSym, 2) == nLayers
     return;
 end
 if scheme == "codebook" && ~isempty(eqSym) && size(eqSym, 2) == nPorts && nPorts > nLayers
-    [Wlayer, status] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi);
-    if isempty(Wlayer)
+    [~, status, ~, Winv] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi, transformPrecoding);
+    if isempty(Winv)
         error("sixgr:phy:ul:PUSCHEqualizedDomainUnsupported", ...
             "Cannot derive layer-domain equalized PUSCH symbols: %s.", char(string(status)));
     end
-    layerSym = eqSym * conj(Wlayer);
+    layerSym = eqSym * Winv;
     info.Status = string(status) + "_inverse_projected_equalized_symbols";
     return;
 end

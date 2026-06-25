@@ -18,6 +18,9 @@ function [puschInd, info, pusch] = allocREsPUSCH(carrier, cfgOrPusch, varargin)
 %     "TransmissionScheme"- "nonCodeBook" or "codebook"
 %     "NumAntennaPorts"  - UL codebook antenna ports
 %     "TPMI"             - UL codebook TPMI/PMI
+%     "NID"              - PUSCH scrambling identity
+%     "MappingType"      - "A" or "B"
+%     "FixedReferenceMode" - true rejects implicit mapping mutations
 
 opts.IndexBase = '1based';
 opts.PRBSet = [];
@@ -29,6 +32,10 @@ opts.TransformPrecoding = [];
 opts.TransmissionScheme = '';
 opts.NumAntennaPorts = [];
 opts.TPMI = [];
+opts.NID = [];
+opts.MappingType = '';
+opts.MappingTypeExplicit = false;
+opts.FixedReferenceMode = false;
 
 for i = 1:2:numel(varargin)
     if i+1 > numel(varargin), break; end
@@ -57,6 +64,13 @@ for i = 1:2:numel(varargin)
             opts.NumAntennaPorts = val;
         case {'tpmi','pmi'}
             opts.TPMI = val;
+        case 'nid'
+            opts.NID = val;
+        case 'mappingtype'
+            opts.MappingType = char(string(val));
+            opts.MappingTypeExplicit = true;
+        case 'fixedreferencemode'
+            opts.FixedReferenceMode = logical(val);
     end
 end
 
@@ -112,6 +126,8 @@ pusch = nrPUSCHConfig;
 mod = char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', '16QAM')));
 nl  = double(sixgr.util.structGet(cfg, 'phy.pusch.numLayers', 1));
 rnti = double(sixgr.util.structGet(cfg, 'phy.pusch.RNTI', 1));
+nid = sixgr.util.structGet(cfg, 'phy.pusch.NID', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.nid', []));
 prb = sixgr.util.structGet(cfg, 'phy.pusch.prbSet', []);
 symAlloc = sixgr.util.structGet(cfg, 'phy.pusch.symbolAllocation', [0 14]);
 tp = logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
@@ -127,11 +143,14 @@ codebookType = char(string(sixgr.util.structGet(cfg, 'phy.pusch.codebookType', .
     sixgr.util.structGet(cfg, 'phy.pusch.CodebookType', ''))));
 mapType = upper(char(string(sixgr.util.structGet(cfg, 'phy.pusch.mappingType', ...
     sixgr.util.structGet(cfg, 'phy.pusch.MappingType', 'A')))));
+mapTypeExplicit = strlength(strtrim(string(sixgr.util.structGet(cfg, 'phy.pusch.mappingType', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.MappingType', ''))))) > 0;
 
 % Apply overrides
 if ~isempty(opts.Modulation), mod = char(opts.Modulation); end
 if ~isempty(opts.NumLayers), nl = double(opts.NumLayers); end
 if ~isempty(opts.RNTI), rnti = double(opts.RNTI); end
+if ~isempty(opts.NID), nid = opts.NID; end
 if ~isempty(opts.PRBSet), prb = opts.PRBSet; end
 if ~isempty(opts.SymbolAllocation), symAlloc = opts.SymbolAllocation; end
 if ~isempty(opts.TransformPrecoding), tp = logical(opts.TransformPrecoding); end
@@ -140,6 +159,10 @@ if ~isempty(opts.TransmissionScheme), transmissionScheme = char(string(opts.Tran
 if ~isempty(opts.NumAntennaPorts)
     numAntennaPorts = localFirstFiniteScalar(opts.NumAntennaPorts);
     numAntennaPortsExplicit = true;
+end
+if ~isempty(opts.MappingType)
+    mapType = upper(char(string(opts.MappingType)));
+    mapTypeExplicit = logical(opts.MappingTypeExplicit);
 end
 if ~numAntennaPortsExplicit && (~isfinite(numAntennaPorts) || numAntennaPorts < nl)
     numAntennaPorts = nl;
@@ -197,12 +220,15 @@ pusch.PRBSet = prbVec;
 pusch.SymbolAllocation = symAlloc;
 pusch = localApplyPUSCHDMRSConfig(pusch, cfg);
 pusch = localApplyPUSCHPTRSConfig(pusch, cfg);
-pusch = localNormalizePUSCHMapping(pusch, mapType);
+pusch = localNormalizePUSCHMapping(pusch, mapType, mapTypeExplicit, opts.FixedReferenceMode);
 
 % Scrambling NID if available
 try
     if isprop(pusch, 'NID')
-        pusch.NID = carrier.NCellID;
+        if isempty(nid)
+            nid = carrier.NCellID;
+        end
+        pusch.NID = double(nid);
     end
 catch
 end
@@ -215,9 +241,15 @@ end
 
 end
 
-function pusch = localNormalizePUSCHMapping(pusch, mapType)
+function pusch = localNormalizePUSCHMapping(pusch, mapType, explicitMapType, fixedReferenceMode)
 if nargin < 2 || strlength(string(mapType)) == 0
     mapType = "A";
+end
+if nargin < 3
+    explicitMapType = false;
+end
+if nargin < 4
+    fixedReferenceMode = false;
 end
 
 symAlloc = [0 14];
@@ -233,7 +265,20 @@ if ~isempty(symAlloc)
 end
 
 mapType = upper(char(string(mapType)));
-if startSym > 3 && strcmp(mapType, "A")
+typeAPos = 2;
+try
+    if isprop(pusch, "DMRS") && isprop(pusch.DMRS, "DMRSTypeAPosition")
+        typeAPos = round(double(pusch.DMRS.DMRSTypeAPosition));
+    end
+catch
+end
+typeAPos = max(2, min(3, round(double(typeAPos))));
+if startSym > typeAPos && strcmp(mapType, "A")
+    if logical(explicitMapType) || logical(fixedReferenceMode)
+        error("sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol", ...
+            "PUSCH MappingType A starts at symbol %d after configured DMRSTypeAPosition=%d. Configure DMRSTypeAPosition=3 when legal, choose MappingType B, or move PUSCH earlier.", ...
+            round(double(startSym)), round(double(typeAPos)));
+    end
     mapType = "B";
 end
 
