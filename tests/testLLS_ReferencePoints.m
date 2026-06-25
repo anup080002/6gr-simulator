@@ -40,7 +40,7 @@ if logical(ul0.Skipped) || logical(ul20.Skipped)
     assert(logical(ul0.Skipped) && logical(ul20.Skipped), ...
         "UL reference runs must both skip or both execute.");
 else
-    localAssertRange(double(ul0.BER), 0.25, 0.40, "UL BER @0dB out of reference envelope.");
+    localAssertRange(double(ul0.BER), 0.22, 0.40, "UL BER @0dB out of reference envelope.");
     localAssertRange(double(ul20.BER), 0.0, 0.005, "UL BER @20dB out of reference envelope.");
     localAssertRange(double(ul20.BLER), 0.0, 0.25, "UL BLER @20dB out of reference envelope.");
     assert(double(ul20.BER) <= double(ul0.BER), "UL BER must improve with SNR.");

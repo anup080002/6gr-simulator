@@ -154,7 +154,9 @@ if strlength(strtrim(strjoin([source, role, status], " "))) == 0
     return;
 end
 blocked = ["evm_proxy", "proxy", "fallback", "configured", "sweep", ...
-    "diagnostic", "not_scheduling"];
+    "diagnostic", "not_scheduling", "not_for_scheduling", ...
+    "receiver_hest", "reference_signal_measurement", "pilot_sinr", ...
+    "reference_signal_quality", "estimated"];
 if any(contains(provenanceToken, blocked))
     accepted = false;
     reason = "sinr_input_role_or_source_is_not_scheduler_eligible";

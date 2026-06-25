@@ -716,6 +716,11 @@ classdef (Abstract) SchedulerBase < handle
                 useFastNRE = false;
                 info.TBSMode = "faithful";
             end
+            if ~localIsTBSModulationSupported(modStr) && ...
+                    (strictMode || logical(opt.ForceExact) || tbsMode == "faithful" || tbsMode == "strict" || viennaEquivalent)
+                error("sixgr:SchedulerBase:TBSFallback", ...
+                    "Strict TBS sizing forbids rough fallback for unsupported modulation '%s'.", char(string(modStr)));
+            end
             requiresExactGrantNRE = localRequiresExactGrantNRE(obj.Direction, symAlloc);
             if requiresExactGrantNRE
                 useFastNRE = false;
@@ -2130,6 +2135,11 @@ dirToken = upper(char(string(direction)));
 startSym = round(double(sa(1)));
 nSym = round(double(sa(2)));
 key = sprintf('%s|L%d|P%d|S%d|N%d', dirToken, round(double(nLayers)), round(double(nPRB)), startSym, nSym);
+end
+
+function tf = localIsTBSModulationSupported(modStr)
+token = upper(strtrim(string(modStr)));
+tf = any(token == ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM"]);
 end
 
 function nrePerPRB = localComputeExactNREPerPRB(direction, carrier, cfg, nPRB, symAlloc, modStr, nLayers)
