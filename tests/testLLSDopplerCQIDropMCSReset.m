@@ -22,7 +22,7 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 6);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", "qam256_table2");
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", "table1");
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotDuration_ms", 0.5);
-cfg = sixgr.util.structSet(cfg, "channel.doppler_Hz", 370.37037037);
+cfg = sixgr.util.structSet(cfg, "channel.doppler_Hz", 370.6267724424);
 
 amcFromCQI7 = sixgr.link.resolveMCSFromCQI(7, "qam256_table2", "table1");
 assert(logical(amcFromCQI7.Valid) && double(amcFromCQI7.MCSIndex) == 5, ...

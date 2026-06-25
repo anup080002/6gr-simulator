@@ -903,6 +903,21 @@ supportsPartial = logical(sixgr.util.structGet(cfg, "bandwidth_operation.support
 if isfinite(carrierGrid) && carrierGrid > 0 && (~supportsPartial || activeMode == "fullband")
     cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "resource_grid.num_rbs", round(carrierGrid));
 end
+
+dopplerMode = lower(strtrim(string(sixgr.util.structGet(cfg, "channels.doppler_source_mode", ...
+    sixgr.util.structGet(cfg, "channel_model.doppler_source_mode", "")))));
+if dopplerMode == "derive_from_ue_speed"
+    speedKmh = localFirstFiniteScalar(sixgr.util.structGet(cfg, "mobility.ue_speed_kmh", ...
+        sixgr.util.structGet(cfg, "channels.mobility_kmph", NaN)), NaN);
+    fcHz = localFirstFiniteScalar(sixgr.util.structGet(cfg, "frequency.center_frequency_hz", ...
+        sixgr.util.structGet(cfg, "global_radio_scope.carrier_frequency_hz", NaN)), NaN);
+    if isfinite(speedKmh) && speedKmh >= 0 && isfinite(fcHz) && fcHz >= 0
+        dopplerHz = (double(speedKmh) / 3.6) * double(fcHz) / 299792458;
+        cfg = sixgr.util.structSet(cfg, "channels.doppler_hz", dopplerHz);
+        cfg = sixgr.util.structSet(cfg, "channel_model.doppler_hz", dopplerHz);
+        cfg = sixgr.util.structSet(cfg, "channels.max_doppler_hz", dopplerHz);
+    end
+end
 end
 
 function cfg = localEnsureScenarioSchemaVersion(cfg)

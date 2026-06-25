@@ -334,7 +334,7 @@ channels:
   model_type: CDL
   profile: CDL-C
   delay_spread_ns: 300
-  doppler_hz: 370.37037037
+  doppler_hz: 370.6267724424
   doppler_source_mode: derive_from_ue_speed
   mobility_kmph: 100
   los_enabled: true
@@ -350,7 +350,7 @@ channels:
   shadow_fading_std_db_nlos: 6.0
   o2i_loss_model: low_loss
   carrier_frequency_hz: 4000000000
-  max_doppler_hz: 370.37037037
+  max_doppler_hz: 370.6267724424
   shadow_fading_std_db: 6
   cdl_delay_profile_scaling: true
   xpr_db: 10.0
@@ -364,7 +364,7 @@ channel_model:
   model_family: CDL
   scenario_label: CDL-C
   delay_spread_ns: 300
-  doppler_hz: 370.37037037
+  doppler_hz: 370.6267724424
   doppler_source_mode: derive_from_ue_speed
 
 mimo:

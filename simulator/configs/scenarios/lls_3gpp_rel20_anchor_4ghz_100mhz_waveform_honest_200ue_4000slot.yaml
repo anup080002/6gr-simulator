@@ -224,9 +224,9 @@ mobility:
 
 channels:
   model_type: CDL
-  profile: CDL-D
+  profile: CDL-C
   delay_spread_ns: 300
-  doppler_hz: 11.1111111111
+  doppler_hz: 11.1188031733
   doppler_source_mode: derive_from_ue_speed
   mobility_kmph: 3
   los_enabled: false
@@ -238,9 +238,9 @@ channels:
 
 channel_model:
   model_family: CDL
-  scenario_label: CDL-D
+  scenario_label: CDL-C
   delay_spread_ns: 300
-  doppler_hz: 11.1111111111
+  doppler_hz: 11.1188031733
   doppler_source_mode: derive_from_ue_speed
 
 mimo:

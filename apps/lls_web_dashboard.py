@@ -3172,12 +3172,105 @@ def apply_browser_derived_runtime_aliases(payload: dict[str, Any], new_defaults:
     if grid_rbs is not None and grid_rbs > 0 and (not supports_partial or active_mode == "fullband"):
         _replace_if_default_or_missing(payload, new_defaults, "resource_grid.num_rbs", grid_rbs)
 
+    apply_browser_doppler_derivation(payload)
+    apply_browser_channel_profile_derivation(payload)
+
 
 def _replace_if_default_or_missing(payload: dict[str, Any], defaults: dict[str, Any], path: str, value: Any) -> None:
     current = path_get(payload, path)
     base = path_get(defaults, path)
     if current is PATH_MISSING or values_equal(current, base):
         path_set(payload, path, value)
+
+
+def apply_browser_channel_profile_derivation(payload: dict[str, Any]) -> None:
+    model = str(path_get(payload, "channels.model_type", path_get(payload, "channel_model.model_family", "")) or "").strip().upper()
+    profile = str(path_get(payload, "channels.profile", path_get(payload, "channel_model.scenario_label", "")) or "").strip().upper()
+    if model != "CDL" or profile != "CDL-D":
+        return
+    los_enabled = _coerce_bool(path_get(payload, "channels.los_enabled", True), True)
+    if (not los_enabled) or _is_uma_midband_high_mobility_payload(payload):
+        path_set(payload, "channels.profile", "CDL-C")
+        path_set(payload, "channel_model.scenario_label", "CDL-C")
+
+
+def apply_browser_doppler_derivation(payload: dict[str, Any]) -> None:
+    source_mode = str(
+        path_get(payload, "channels.doppler_source_mode", path_get(payload, "channel_model.doppler_source_mode", ""))
+        or ""
+    ).strip().lower()
+    if source_mode != "derive_from_ue_speed":
+        return
+    speed = _first_finite_float(
+        path_get(payload, "mobility.ue_speed_kmh"),
+        path_get(payload, "channels.mobility_kmph"),
+        path_get(payload, "scenario.mobility.speed_kmh"),
+    )
+    fc_hz = _first_finite_float(
+        path_get(payload, "frequency.center_frequency_hz"),
+        path_get(payload, "global_radio_scope.carrier_frequency_hz"),
+    )
+    if speed is None or speed < 0 or fc_hz is None or fc_hz < 0:
+        return
+    doppler_hz = (speed / 3.6) * fc_hz / 299792458.0
+    path_set(payload, "channels.doppler_hz", doppler_hz)
+    path_set(payload, "channel_model.doppler_hz", doppler_hz)
+    path_set(payload, "channels.max_doppler_hz", doppler_hz)
+
+
+def _is_uma_midband_high_mobility_payload(payload: dict[str, Any]) -> bool:
+    speed = _first_finite_float(
+        path_get(payload, "mobility.ue_speed_kmh"),
+        path_get(payload, "channels.mobility_kmph"),
+        path_get(payload, "scenario.mobility.speed_kmh"),
+    )
+    if speed is None or speed < 100:
+        return False
+    fc_hz = _first_finite_float(
+        path_get(payload, "frequency.center_frequency_hz"),
+        path_get(payload, "global_radio_scope.carrier_frequency_hz"),
+    )
+    if fc_hz is None or fc_hz < 3.0e9 or fc_hz > 5.0e9:
+        return False
+    tokens = [
+        path_get(payload, "deployment_topology.cell_type", ""),
+        path_get(payload, "channels.pathloss_scenario", ""),
+        path_get(payload, "channel.scenario", ""),
+        path_get(payload, "scenario.name", ""),
+        path_get(payload, "scenario.profileName", ""),
+    ]
+    normalized = {re.sub(r"[^a-z0-9]", "", str(token or "").strip().lower()) for token in tokens}
+    return bool(normalized & {"uma", "urbanmacro"})
+
+
+def _first_finite_float(*values: Any) -> float | None:
+    for value in values:
+        if value is PATH_MISSING:
+            continue
+        if isinstance(value, (list, tuple)) and value:
+            value = value[0]
+        try:
+            out = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(out):
+            return out
+    return None
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    if value is PATH_MISSING:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return bool(value)
+    token = str(value or "").strip().lower()
+    if token in {"true", "t", "yes", "y", "on", "1", "enable", "enabled"}:
+        return True
+    if token in {"false", "f", "no", "n", "off", "0", "disable", "disabled"}:
+        return False
+    return default
 
 
 def normalize_output_persistence_mode(value: Any) -> str:

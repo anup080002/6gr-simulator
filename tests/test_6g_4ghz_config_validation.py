@@ -141,7 +141,7 @@ def main() -> None:
     assert list(dash.path_get(webgui_2site, "scenario.geometry.area_m", [])) == [3600, 2400]
     assert list(dash.path_get(webgui_2site, "scenario.sectorization.azimOffsets_deg", [])) == [0, 120, 240]
     assert str(dash.path_get(webgui_2site, "simulation.noise_operating_mode", "")) == "receiver_noise_figure_thermal_noise"
-    assert str(dash.path_get(webgui_2site, "channel_model.scenario_label", "")) == "CDL-D"
+    assert str(dash.path_get(webgui_2site, "channel_model.scenario_label", "")) == "CDL-C"
     assert bool(dash.path_get(webgui_2site, "mobility.spatial_consistency_flag", False))
     assert bool(dash.path_get(webgui_2site, "channels.pathloss_enabled", False))
     assert bool(dash.path_get(webgui_2site, "channels.shadow_fading_enabled", False))

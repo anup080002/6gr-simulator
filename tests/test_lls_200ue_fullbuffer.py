@@ -21,7 +21,7 @@ def main() -> None:
     assert int(dash.path_get(resolved, "run_control.total_slots", 0)) == 4000
     assert int(dash.path_get(resolved, "run_control.warmup_slots", 0)) == 500
     assert int(dash.path_get(resolved, "run_control.measurement_slots", 0)) == 3500
-    assert str(dash.path_get(resolved, "channel_model.scenario_label", "")) == "CDL-D"
+    assert str(dash.path_get(resolved, "channel_model.scenario_label", "")) == "CDL-C"
     assert str(dash.path_get(resolved, "scenario.runner_profile", "")) == "system_level_lls"
 
 

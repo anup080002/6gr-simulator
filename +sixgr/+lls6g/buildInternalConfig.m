@@ -262,7 +262,15 @@ cfg = sixgr.util.structSet(cfg, "channel_rf.interferenceEnabled", ...
     ~any(interferenceModelToken == ["", "none", "disabled", "off"]));
 
 channelModel = upper(string(s.channels.model_type));
-profile = upper(string(s.channels.profile));
+configuredProfile = upper(string(s.channels.profile));
+[profile, profileResolutionSource, profileResolutionReason] = ...
+    localResolveChannelProfileForRuntime(s, channelModel, configuredProfile, mobilitySpeedKmh);
+if profile ~= configuredProfile
+    s.channels.profile = char(profile);
+    if isfield(s, "channel_model") && isstruct(s.channel_model)
+        s.channel_model.scenario_label = char(profile);
+    end
+end
 switch channelModel
     case "AWGN"
         cfg.channel.model = "AWGN";
@@ -287,6 +295,9 @@ switch channelModel
         error("sixgr:lls6g:config:UnsupportedChannelModel", ...
             "Unsupported channels.model_type '%s'.", channelModel);
 end
+cfg.channel.configuredDelayProfile = char(configuredProfile);
+cfg.channel.profileResolutionSource = char(profileResolutionSource);
+cfg.channel.profileResolutionReason = char(profileResolutionReason);
 
 cfg.phy.carrier.SubcarrierSpacing = double(s.frame.scs_khz);
 cfg.phy.carrier.SubcarrierSpacing_kHz = double(s.frame.scs_khz);
@@ -2764,6 +2775,54 @@ end
 if mode ~= "derive_from_ue_speed"
     mode = "configured";
 end
+end
+
+function [profile, source, reason] = localResolveChannelProfileForRuntime(s, channelModel, configuredProfile, mobilitySpeedKmh)
+channelModel = upper(strtrim(string(channelModel)));
+configuredProfile = upper(strtrim(string(configuredProfile)));
+profile = configuredProfile;
+source = "configured_channels_profile";
+reason = "";
+if channelModel ~= "CDL"
+    return;
+end
+
+losEnabled = logical(localGetNested(s, "channels.los_enabled", true));
+if any(configuredProfile == ["CDL-D", "CDL-E"]) && ~losEnabled
+    profile = "CDL-C";
+    source = "cdl_los_profile_guard";
+    reason = "CDL-D/E are LOS CDL profiles but channels.los_enabled=false; using CDL-C NLOS cluster profile.";
+    return;
+end
+
+if configuredProfile == "CDL-D" && localIsTR38901UMaMidbandHighMobility(s, mobilitySpeedKmh)
+    profile = "CDL-C";
+    source = "tr38901_uma_midband_high_mobility_mapping";
+    reason = sprintf("4 GHz UMa high-mobility profile uses CDL-C; configured speed %.6g km/h was not allowed to keep CDL-D LOS bias.", ...
+        double(mobilitySpeedKmh));
+end
+end
+
+function tf = localIsTR38901UMaMidbandHighMobility(s, mobilitySpeedKmh)
+tf = false;
+if ~(isfinite(double(mobilitySpeedKmh)) && double(mobilitySpeedKmh) >= 100 - 1e-9)
+    return;
+end
+scenarioTokens = [
+    string(localGetNested(s, "deployment_topology.cell_type", ""))
+    string(localGetNested(s, "channels.pathloss_scenario", ""))
+    string(localGetNested(s, "channel.scenario", ""))
+    string(localGetNested(s, "scenario.name", ""))
+    string(localGetNested(s, "scenario.profileName", ""))
+    ];
+normalized = lower(regexprep(strtrim(scenarioTokens), "[^A-Za-z0-9]", ""));
+isUMa = any(normalized == "uma" | normalized == "urbanmacro");
+if ~isUMa
+    return;
+end
+fcHz = double(localGetNested(s, "frequency.center_frequency_hz", ...
+    localGetNested(s, "global_radio_scope.carrier_frequency_hz", NaN)));
+tf = isfinite(fcHz) && fcHz >= 3.0e9 && fcHz <= 5.0e9;
 end
 
 function dopplerHz = localResolveChannelDopplerHz(s, mobilitySpeedKmh, sourceMode)

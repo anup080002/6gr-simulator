@@ -217,7 +217,7 @@ channels:
   model_type: TDL
   profile: TDL-C
   delay_spread_ns: 300
-  doppler_hz: 11.1111111111
+  doppler_hz: 11.1188031733
   doppler_source_mode: derive_from_ue_speed
   mobility_kmph: 3
   los_enabled: false
@@ -231,7 +231,7 @@ channel_model:
   model_family: TDL
   scenario_label: TDL-C
   delay_spread_ns: 300
-  doppler_hz: 11.1111111111
+  doppler_hz: 11.1188031733
   doppler_source_mode: derive_from_ue_speed
 
 reference_signals:

@@ -59,6 +59,8 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert canonical["output"]["live_publish_frame_interval"] == 1
     assert canonical["output"]["live_heavy_refresh_interval_frames"] == 1
     assert canonical["random_access"]["n_cell_id"] == 1
+    assert canonical["channel"]["profile"] == "CDL-C"
+    assert canonical["random_access"]["channel_model"] == "CDL-C"
     assert canonical["random_access"]["timing_offset_sweep_samples"] == [0, 4, 8]
     assert canonical["random_access"]["frequency_offset_sweep_hz"] == [0, 100, 250]
     assert canonical["output"]["emit_placeholder_artifacts"] is False
@@ -79,6 +81,8 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert dash.path_get(resolved, "simulation.noise_operating_mode") == "receiver_noise_figure_thermal_noise"
     assert dash.path_get(resolved, "global_radio_scope.carrier_frequency_hz") == 4_000_000_000
     assert dash.path_get(resolved, "global_radio_scope.channel_bandwidth_hz") == 100_000_000
+    assert dash.path_get(resolved, "channels.profile") == "CDL-C"
+    assert dash.path_get(resolved, "channel_model.scenario_label") == "CDL-C"
     assert dash.path_get(resolved, "output.emit_placeholder_artifacts") is False
     assert dash.path_get(resolved, "output.profiler_enabled") is True
     assert dash.path_get(resolved, "output.profiler_top_functions") == 250
@@ -86,6 +90,7 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert dash.path_get(resolved, "output.live_publish_frame_interval") == 1
     assert dash.path_get(resolved, "output.live_heavy_refresh_interval_frames") == 1
     assert dash.path_get(resolved, "random_access.n_cell_id") == 1
+    assert dash.path_get(resolved, "random_access.channel_model") == "CDL-C"
     assert dash.path_get(resolved, "random_access.timing_offset_sweep_samples") == [0, 4, 8]
     assert dash.path_get(resolved, "random_access.frequency_offset_sweep_hz") == [0, 100, 250]
 
@@ -116,3 +121,21 @@ def test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view()
     assert dash.path_get(resolved, "scenario.layout.nSites") == 50
     assert dash.path_get(resolved, "scenario.layout.nSectorsPerSite") == 3
     assert dash.path_get(resolved, "scenario.sectorization.azimOffsets_deg") == [0.0, 120.0, 240.0]
+
+
+def test_webgui_singlefile_high_mobility_derives_cdlc_and_doppler() -> None:
+    raw = yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8"))
+    payload = copy.deepcopy(raw)
+    control = payload["canonical_control"]
+    control["mobility"]["ue_speed_kmh"] = 100
+    control["channel"]["mobility_kmph"] = 100
+    control["channel"]["profile"] = "CDL-D"
+    control["channel"]["los_enabled"] = True
+
+    resolved = dash.canonicalize_browser_config_payload(payload)
+    expected_doppler_hz = (100 / 3.6) * 4_000_000_000 / 299_792_458
+
+    assert dash.path_get(resolved, "channels.profile") == "CDL-C"
+    assert dash.path_get(resolved, "channel_model.scenario_label") == "CDL-C"
+    assert abs(float(dash.path_get(resolved, "channels.doppler_hz")) - expected_doppler_hz) < 1e-6
+    assert abs(float(dash.path_get(resolved, "channel_model.doppler_hz")) - expected_doppler_hz) < 1e-6
