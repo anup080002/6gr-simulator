@@ -8,6 +8,7 @@ function [rx, info] = SRS_Rx(rxWaveform, cfg, varargin)
 %     "Carrier"   : nrCarrierConfig override
 %     "SRS"       : nrSRSConfig override
 %     "NoiseVar"  : explicit runtime noise variance metadata
+%     "NoiseVarDomain": "time", "grid", "frequency", or "auto"
 %     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %
 %   Outputs (RX struct):
@@ -24,6 +25,7 @@ ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('SRS', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'time','grid','frequency','auto'})));
 ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @(x) ischar(x) || isstring(x));
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -72,18 +74,31 @@ catch
         nVarEst = [];
     end
 end
-
 noiseCandidate = opt.NoiseVar;
 noiseSource = "runtime_metadata";
+noiseTransformInfo = struct( ...
+    "InputDomain", "grid", ...
+    "OutputDomain", "resource_grid_pre_equalization", ...
+    "TransformSource", "runtime_channel_estimate_grid_domain");
+configuredNoiseTransformInfo = struct( ...
+    "InputDomain", "time", ...
+    "OutputDomain", "resource_grid_pre_equalization", ...
+    "TransformSource", "not_requested");
 if isempty(noiseCandidate)
     noiseCandidate = nVarEst;
     noiseSource = "runtime_channel_estimate";
 else
-    noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
+    [noiseCandidate, noiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+        noiseCandidate, ofdmInfo, ...
+        "InputDomain", opt.NoiseVarDomain, ...
+        "Source", noiseSource);
 end
 configuredNoiseVariance = opt.ConfiguredNoiseVariance;
 if ~isempty(configuredNoiseVariance)
-    configuredNoiseVariance = localConvertNoiseVarToGridDomain(configuredNoiseVariance, ofdmInfo);
+    [configuredNoiseVariance, configuredNoiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+        configuredNoiseVariance, ofdmInfo, ...
+        "InputDomain", "time", ...
+        "Source", opt.ConfiguredNoiseVarianceSource);
 end
 [nVar, noiseStatus] = sixgr.phy.ul.resolveULNoiseVariance(noiseCandidate, cfg, ...
     "ChannelType", "SRS", ...
@@ -96,6 +111,9 @@ nVar = double(nVar);
 rx = struct();
 rx.Hest = Hest;
 rx.NoiseVar = nVar;
+rx.NoiseVarDomain = "resource_grid_pre_equalization";
+rx.NoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
+rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
 rx.NoiseVarStatus = char(string(noiseStatus.Status));
 rx.NoiseVarSource = char(string(noiseStatus.Source));
 rx.NoiseVarReason = char(string(noiseStatus.Reason));
@@ -118,6 +136,9 @@ info.OFDMInfo = ofdmInfo;
 info.SRSInfo = srsInfo;
 info.ChannelEstimation = estInfo;
 info.NoiseVariance = noiseStatus;
+info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
+info.NoiseVarianceTransform = noiseTransformInfo;
+info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 
 end
 
@@ -255,15 +276,4 @@ function srs = localApplySRSFromCfg(srs, cfg)
             end
         end
     end
-end
-
-function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
-nVarGrid = double(nVarTime);
-if nargin < 2 || ~isstruct(ofdmInfo)
-    return;
-end
-nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
-if isfinite(nfft) && nfft > 0
-    nVarGrid = nVarGrid * nfft;
-end
 end

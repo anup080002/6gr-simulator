@@ -25,15 +25,37 @@ function [grid, info] = ofdmDemodulate(carrier, waveform, varargin)
             "nrOFDMDemodulate failed: %s", ME.message);
     end
 
-    % OFDM info (does not accept all demodulate name-value pairs, so keep simple)
-    try
-        ofdmInfo = nrOFDMInfo(carrier);
-    catch
-        ofdmInfo = struct();
-    end
+    ofdmInfo = localResolveOFDMInfo(carrier, varargin{:});
 
     info = ofdmInfo;
+    noiseTransform = sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier, varargin{:});
+    info.NoiseTransform = noiseTransform;
+    info.SampleToGridNoiseVarianceGain = double(noiseTransform.SampleToGridNoiseVarianceGain);
+    info.GridToSampleNoiseVarianceGain = double(noiseTransform.GridToSampleNoiseVarianceGain);
+    info.TimeDomainSignalPowerReference = char(string(noiseTransform.TimeDomainSignalPowerReference));
+    info.FrequencyDomainSignalPowerReference = char(string(noiseTransform.FrequencyDomainSignalPowerReference));
+    info.OFDMNoiseTransformVersion = char(string(noiseTransform.Version));
     info.EngineUsed = engine;
     info.WaveformSize = size(waveform);
     info.GridSize = size(grid);
+end
+
+function ofdmInfo = localResolveOFDMInfo(carrier, varargin)
+infoArgs = {};
+i = 1;
+while i <= numel(varargin)
+    if i == numel(varargin) || ~(ischar(varargin{i}) || isstring(varargin{i}))
+        break;
+    end
+    name = lower(strtrim(string(varargin{i})));
+    if any(name == ["carrierfrequency", "nfft", "samplerate"])
+        infoArgs = [infoArgs, varargin(i:i+1)]; %#ok<AGROW>
+    end
+    i = i + 2;
+end
+try
+    ofdmInfo = nrOFDMInfo(carrier, infoArgs{:});
+catch
+    ofdmInfo = nrOFDMInfo(carrier);
+end
 end

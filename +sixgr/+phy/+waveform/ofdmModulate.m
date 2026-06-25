@@ -34,6 +34,13 @@ function [waveform, info] = ofdmModulate(carrier, grid, varargin)
     end
 
     info = ofdmInfo;
+    noiseTransform = sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier, varargin{:});
+    info.NoiseTransform = noiseTransform;
+    info.SampleToGridNoiseVarianceGain = double(noiseTransform.SampleToGridNoiseVarianceGain);
+    info.GridToSampleNoiseVarianceGain = double(noiseTransform.GridToSampleNoiseVarianceGain);
+    info.TimeDomainSignalPowerReference = char(string(noiseTransform.TimeDomainSignalPowerReference));
+    info.FrequencyDomainSignalPowerReference = char(string(noiseTransform.FrequencyDomainSignalPowerReference));
+    info.OFDMNoiseTransformVersion = char(string(noiseTransform.Version));
     info.EngineUsed = engine;
     info.GridSize = size(grid);
     info.WaveformSize = size(waveform);

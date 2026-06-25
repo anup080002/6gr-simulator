@@ -16,6 +16,7 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
 %     "NumUCIBits"         : number of uncoded UCI bits (formats 2/3/4)
 %     "ExpectedUCIBits"    : optionally provide transmitted uncoded bits
 %     "NoiseVar"           : explicit runtime noise variance metadata
+%     "NoiseVarDomain"     : "time", "grid", "frequency", or "auto"
 %     "ConfiguredNoiseVariance": explicit configured/derived AWGN variance
 %     "Equalize"           : true/false (default: true)
 %     "ChannelEstimatorFcn": channel-estimator function handle
@@ -46,6 +47,7 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     addParameter(p, "NumUCIBits", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && x>=0));
     addParameter(p, "ExpectedUCIBits", [], @(x) isempty(x) || isnumeric(x) || islogical(x));
     addParameter(p, "NoiseVar", [], @(x) isempty(x) || isnumeric(x));
+    addParameter(p, "NoiseVarDomain", "auto", @(x) any(strcmpi(char(string(x)), {'time','grid','frequency','auto'})));
     addParameter(p, "ConfiguredNoiseVariance", [], @(x) isempty(x) || isnumeric(x));
     addParameter(p, "ConfiguredNoiseVarianceSource", "configured_awgn_derivation", @(x) ischar(x) || isstring(x));
     addParameter(p, "StrictNoiseVarianceRequired", [], @(x) isempty(x) || islogical(x) || (isscalar(x) && isnumeric(x)));
@@ -92,13 +94,7 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     end
 
     % ---- OFDM demod ------------------------------------------------------
-    rxGrid = nrOFDMDemodulate(carrier, rxWaveform);
-    ofdmInfo = struct();
-    try
-        ofdmInfo = nrOFDMInfo(carrier);
-    catch
-        ofdmInfo = struct();
-    end
+    [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
 
     % ---- Channel estimation / noise var ---------------------------------
     Hest = [];
@@ -128,15 +124,29 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     noiseCandidate = opts.NoiseVar;
     hasExplicitNoiseVariance = ~isempty(noiseCandidate);
     noiseSource = "runtime_metadata";
+    noiseTransformInfo = struct( ...
+        "InputDomain", "grid", ...
+        "OutputDomain", "resource_grid_pre_equalization", ...
+        "TransformSource", "runtime_channel_estimate_grid_domain");
+    configuredNoiseTransformInfo = struct( ...
+        "InputDomain", "time", ...
+        "OutputDomain", "resource_grid_pre_equalization", ...
+        "TransformSource", "not_requested");
     if isempty(noiseCandidate)
         noiseCandidate = nVarEst;
         noiseSource = "runtime_channel_estimate";
     else
-        noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
+        [noiseCandidate, noiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+            noiseCandidate, ofdmInfo, ...
+            "InputDomain", opts.NoiseVarDomain, ...
+            "Source", noiseSource);
     end
     configuredNoiseVariance = opts.ConfiguredNoiseVariance;
     if ~isempty(configuredNoiseVariance)
-        configuredNoiseVariance = localConvertNoiseVarToGridDomain(configuredNoiseVariance, ofdmInfo);
+        [configuredNoiseVariance, configuredNoiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+            configuredNoiseVariance, ofdmInfo, ...
+            "InputDomain", "time", ...
+            "Source", opts.ConfiguredNoiseVarianceSource);
     end
     [nVar, noiseStatus] = sixgr.phy.ul.resolveULNoiseVariance(noiseCandidate, cfg, ...
         "ChannelType", "PUCCH", ...
@@ -258,6 +268,9 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     rx.DTXFlag = ~logical(detectionUsable);
     rx.DTXReason = char(detectionFailureReason);
     rx.NoiseVar        = nVar;
+    rx.NoiseVarDomain  = "resource_grid_pre_equalization";
+    rx.NoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
+    rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
     rx.NoiseVarStatus  = char(string(noiseStatus.Status));
     rx.NoiseVarSource  = char(string(noiseStatus.Source));
     rx.NoiseVarReason  = char(string(noiseStatus.Reason));
@@ -280,6 +293,10 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     info.Estimation   = estInfo;
     info.Equalization = eqInfo;
     info.NoiseVariance = noiseStatus;
+    info.OFDM = ofdmInfo;
+    info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
+    info.NoiseVarianceTransform = noiseTransformInfo;
+    info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
     info.DetectionValidation = struct( ...
         "DetectionUsable", logical(detectionUsable), ...
         "FailureReason", string(detectionFailureReason), ...
@@ -597,15 +614,4 @@ info.DetectionValidation = struct( ...
     "DetectorPeakMetric", NaN, ...
     "DetectorNoiseFloor", double(nVar), ...
     "DTXFlag", true);
-end
-
-function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
-nVarGrid = double(nVarTime);
-if nargin < 2 || ~isstruct(ofdmInfo)
-    return;
-end
-nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
-if isfinite(nfft) && nfft > 0
-    nVarGrid = nVarGrid * nfft;
-end
 end

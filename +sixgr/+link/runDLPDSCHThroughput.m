@@ -1678,38 +1678,9 @@ nVar = refPower / max(10.^(snr_dB / 10), eps);
 end
 
 function refPower = localUsefulOFDMReferencePower(waveform, txInfo)
-refPower = NaN;
-if isempty(waveform)
-    return;
-end
 ofdmInfo = sixgr.util.structGet(txInfo, "OFDM", struct());
-nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
-cpLens = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
-if ~(isfinite(nfft) && nfft > 0 && ~isempty(cpLens))
-    refPower = mean(abs(double(waveform(:))).^2, "omitnan");
-    return;
-end
-cpLens = cpLens(:);
-idx = [];
-offset = 0;
-nSamp = size(waveform, 1);
-while offset < nSamp
-    for s = 1:numel(cpLens)
-        cp = max(0, round(double(cpLens(s))));
-        useful = offset + cp + (1:round(nfft));
-        useful = useful(useful <= nSamp);
-        idx = [idx useful]; %#ok<AGROW>
-        offset = offset + cp + round(nfft);
-        if offset >= nSamp
-            break;
-        end
-    end
-end
-if isempty(idx)
-    refPower = mean(abs(double(waveform(:))).^2, "omitnan");
-else
-    refPower = mean(abs(double(waveform(idx, :))).^2, "all", "omitnan");
-end
+[refPower, ~] = sixgr.phy.waveform.ofdmReferencePower(waveform, ofdmInfo, ...
+    "Domain", "active_samples");
 end
 
 function model = localResolveTrialChannelModel(cfg)

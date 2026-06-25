@@ -270,19 +270,31 @@ end
 % Noise variance
 noiseCandidate = opt.NoiseVar;
 noiseSource = "runtime_metadata";
+noiseTransformInfo = struct( ...
+    "InputDomain", "grid", ...
+    "OutputDomain", "resource_grid_pre_equalization", ...
+    "TransformSource", "runtime_channel_estimate_grid_domain");
+configuredNoiseTransformInfo = struct( ...
+    "InputDomain", "time", ...
+    "OutputDomain", "resource_grid_pre_equalization", ...
+    "TransformSource", "not_requested");
 if isempty(noiseCandidate)
     % nrChannelEstimate returns grid-domain noise variance.
     noiseCandidate = nVarEst;
     noiseSource = "runtime_channel_estimate";
 else
     domain = lower(strtrim(char(string(opt.NoiseVarDomain))));
-    if strcmp(domain, 'auto') || strcmp(domain, 'time')
-        noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
-    end
+    [noiseCandidate, noiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+        noiseCandidate, ofdmInfo, ...
+        "InputDomain", domain, ...
+        "Source", noiseSource);
 end
 configuredNoiseVariance = opt.ConfiguredNoiseVariance;
 if ~isempty(configuredNoiseVariance)
-    configuredNoiseVariance = localConvertNoiseVarToGridDomain(configuredNoiseVariance, ofdmInfo);
+    [configuredNoiseVariance, configuredNoiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+        configuredNoiseVariance, ofdmInfo, ...
+        "InputDomain", "time", ...
+        "Source", opt.ConfiguredNoiseVarianceSource);
 end
 [nVar, noiseStatus] = sixgr.phy.ul.resolveULNoiseVariance(noiseCandidate, cfg, ...
     "ChannelType", "PUSCH", ...
@@ -514,6 +526,8 @@ rx.NoiseVarStrictFailure = false;
 rx.NoiseVarDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
+rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
 rx.DecoderNoiseVar = double(nVarForDecode);
 rx.PostEqualizationNoiseVar = double(nVarPostEqDiagnostic);
 rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
@@ -675,6 +689,9 @@ info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = noiseStatus;
+info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
+info.PreEqualizationNoiseVarianceTransform = noiseTransformInfo;
+info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 info.HARQSoftCombining = harqCombiningInfo;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = nVarPostEqInfo;
@@ -1689,17 +1706,6 @@ for i = 1:numel(candidates)
     if strlength(token) > 0 && strlength(channelToken) == 0
         channelToken = token;
     end
-end
-end
-
-function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
-nVarGrid = double(nVarTime);
-if nargin < 2 || ~isstruct(ofdmInfo)
-    return;
-end
-nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
-if isfinite(nfft) && nfft > 0
-    nVarGrid = nVarGrid * nfft;
 end
 end
 

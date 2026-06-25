@@ -326,14 +326,19 @@ else
 end
 
 noiseCandidate = opt.NoiseVar;
+noiseTransformInfo = struct( ...
+    "InputDomain", "grid", ...
+    "OutputDomain", "resource_grid_pre_equalization", ...
+    "TransformSource", "runtime_channel_estimate_grid_domain");
 if isempty(noiseCandidate)
     % nrChannelEstimate returns grid-domain noise variance.
     noiseCandidate = nVarEst;
 else
     domain = lower(strtrim(char(string(opt.NoiseVarDomain))));
-    if strcmp(domain, 'auto') || strcmp(domain, 'time')
-        noiseCandidate = localConvertNoiseVarToGridDomain(noiseCandidate, ofdmInfo);
-    end
+    [noiseCandidate, noiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+        noiseCandidate, ofdmInfo, ...
+        "InputDomain", domain, ...
+        "Source", "runtime_metadata");
 end
 nVar = noiseCandidate;
 nVar = double(max(0, nVar));
@@ -530,6 +535,8 @@ rx.NoiseVarStrictFailure = false;
 rx.NoiseVarDomain = "post_equalization_decoder_symbol_domain";
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
+rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
 rx.DecoderNoiseVar = double(nVarForDecode);
 rx.PostEqualizationNoiseVar = double(nVarDecode);
 rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
@@ -706,6 +713,8 @@ info.PTRS = ptrsInfo;
 info.CPECorrection = cpeCorrInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.NoiseVariance = nVarDecodeInfo;
+info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
+info.PreEqualizationNoiseVarianceTransform = noiseTransformInfo;
 info.HARQSoftCombining = harqCombiningInfo;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = double(nVarDecode);
@@ -1487,17 +1496,6 @@ if ~ismatrix(x)
     x = reshape(x, size(x,1), []);
 else
     x = reshape(x, size(x,1), size(x,2));
-end
-end
-
-function nVarGrid = localConvertNoiseVarToGridDomain(nVarTime, ofdmInfo)
-nVarGrid = double(nVarTime);
-if nargin < 2 || ~isstruct(ofdmInfo)
-    return;
-end
-nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
-if isfinite(nfft) && nfft > 0
-    nVarGrid = nVarGrid * nfft;
 end
 end
 
