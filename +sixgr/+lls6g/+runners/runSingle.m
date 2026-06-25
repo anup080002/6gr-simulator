@@ -431,23 +431,18 @@ result.StrictControl = strictControl;
 end
 
 function tf = localShouldRunStrictControlEvidence(scfg, cfg)
-targetCases = lower(string(scfg.get("scenario.target_cases", {})));
-tf = any(ismember(targetCases, ["pdcch","pucch"]));
-if ~tf
-    return;
-end
-tf = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false)) || ...
-    logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+policy = sixgr.lls6g.runners.resolveStrictControlEvidencePolicy(scfg, cfg);
+tf = logical(policy.ShouldRun);
 end
 
 function tf = localStrictControlTargetEnabled(scfg, cfg, signalName)
 signalName = lower(string(signalName));
-targetCases = lower(string(scfg.get("scenario.target_cases", {})));
+policy = sixgr.lls6g.runners.resolveStrictControlEvidencePolicy(scfg, cfg);
 switch signalName
     case "pdcch"
-        tf = any(targetCases == "pdcch") && logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
+        tf = logical(policy.EnablePDCCH);
     case "pucch"
-        tf = any(targetCases == "pucch") && logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+        tf = logical(policy.EnablePUCCH);
     otherwise
         tf = false;
 end

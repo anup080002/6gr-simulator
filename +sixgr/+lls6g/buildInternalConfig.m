@@ -1133,10 +1133,14 @@ cfg = sixgr.util.structSet(cfg, "run.controlGating.srsRequired", srsRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.srsMaxAgeSlots", srsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", trsRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", trsMaxAgeSlots);
+cfg = sixgr.util.structSet(cfg, "control_gating.pdcch_required", pdcchRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.srs_required", srsRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.srs_max_age_slots", srsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "control_gating.trs_required", trsRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.trs_max_age_slots", trsMaxAgeSlots);
+if pdcchRequired
+    cfg = localAppendValidationObjectives(cfg, "pdcch_strict_validation");
+end
 if srsRequired
     cfg = localAppendValidationObjectives(cfg, "srs_strict_validation");
 end

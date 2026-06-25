@@ -14,6 +14,9 @@ opt = p.Results;
 runFolder = char(string(opt.RunFolder));
 runId = string(opt.RunId);
 scenarioName = string(opt.ScenarioName);
+tpSelf = sixgr.perf.TimeProfiler.scope("sixgr.phy.pdcch.runStrictPDCCHValidation", ...
+    "Stage", "strict_pdcch_validation", ...
+    "Metadata", struct("RunId", runId, "ScenarioName", scenarioName)); %#ok<NASGU>
 cfg = sixgr.phy.pdcch.buildPDCCHConfigFromScenario(baseCfg, ...
     "RunFolder", runFolder, "RunId", runId, "ScenarioName", scenarioName);
 configHash = string(cfg.ConfigHash);
