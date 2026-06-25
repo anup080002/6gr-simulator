@@ -10,16 +10,17 @@ end
 rng(8308, "twister");
 maxLayerInverseErr = 0;
 maxBER = 0;
-for nLayers = 1:4
+for nLayers = 1:8
     cfg = localCfg(nLayers);
     W = eye(nLayers);
     [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, "PrecodingMatrix", W);
+    expectedCW = 1 + double(nLayers > 4);
 
-    assert(double(tx.NumCodewords) == 1, "Rank-%d PDSCH must materialize one codeword.", nLayers);
-    assert(numel(tx.Codewords) == 1 && isequal(int8(tx.Codewords{1}(:)), int8(tx.Codeword(:))), ...
-        "Rank-%d PDSCH codeword cell must match legacy Codeword field.", nLayers);
-    assert(double(tx.RateMatchedBitCountPerCodeword(1)) == double(tx.G), ...
-        "Rank-%d PDSCH per-codeword G must match total G for single-CW ranks.", nLayers);
+    assert(double(tx.NumCodewords) == expectedCW, "Rank-%d PDSCH must materialize %d codeword(s).", nLayers, expectedCW);
+    assert(numel(tx.Codewords) == expectedCW && isequal(int8(tx.Codewords{1}(:)), int8(tx.Codeword(:))), ...
+        "Rank-%d PDSCH codeword cell must preserve legacy Codeword field as codeword 1.", nLayers);
+    assert(sum(double(tx.RateMatchedBitCountPerCodeword)) == double(tx.G), ...
+        "Rank-%d PDSCH per-codeword G must sum to total G.", nLayers);
     assert(double(tx.CodewordLayerMapping.NumLayers) == nLayers, ...
         "Rank-%d PDSCH mapping contract reports wrong NumLayers.", nLayers);
     assert(double(tx.CodewordLayerMapping.ActualLayerColumns) == nLayers, ...
@@ -30,9 +31,13 @@ for nLayers = 1:4
         "Rank-%d PDSCH layer-symbol matrix has wrong width.", nLayers);
 
     demapped = sixgr.phy.mimo.layerDemap(tx.PDSCHLayerSymbols, "ReturnCell", true);
-    assert(iscell(demapped) && numel(demapped) == 1, ...
-        "Rank-%d PDSCH layer demap must return one codeword stream.", nLayers);
-    remapped = sixgr.phy.mimo.layerMap(demapped{1}, nLayers);
+    assert(iscell(demapped) && numel(demapped) == expectedCW, ...
+        "Rank-%d PDSCH layer demap must return %d codeword stream(s).", nLayers, expectedCW);
+    if expectedCW == 1
+        remapped = sixgr.phy.mimo.layerMap(demapped{1}, nLayers);
+    else
+        remapped = sixgr.phy.mimo.layerMap(demapped, nLayers);
+    end
     layerInverseErr = localMaxAbs(remapped(:) - tx.PDSCHLayerSymbols(:));
     maxLayerInverseErr = max(maxLayerInverseErr, layerInverseErr);
     assert(layerInverseErr < 1e-12, "Rank-%d PDSCH layer map/demap inverse failed.", nLayers);
@@ -51,7 +56,7 @@ for nLayers = 1:4
         "TransportBlockSize", tx.TransportBlockSize, ...
         "TargetCodeRate", tx.TargetCodeRate, ...
         "RV", tx.RV, ...
-        "CodingLayout", tx.CodingLayout, ...
+        "CodingLayout", tx.CodingLayouts, ...
         "PrecodingMatrix", W, ...
         "NoiseVar", 1e-12, ...
         "NoiseVarDomain", "grid", ...
@@ -60,9 +65,9 @@ for nLayers = 1:4
     ber = sum(int8(rx.TransportBlock(:)) ~= int8(tx.TransportBlock(:))) / numel(tx.TransportBlock);
     maxBER = max(maxBER, ber);
     assert(ber == 0, "Rank-%d no-noise PDSCH must recover the exact TB.", nLayers);
-    assert(double(rx.NumCodewords) == 1 && double(rx.ActualNumCodewords) == 1, ...
-        "Rank-%d PDSCH RX must preserve a single explicit codeword stream.", nLayers);
-    assert(double(rx.CodewordLLRCountPerCodeword(1)) == double(tx.G), ...
+    assert(double(rx.NumCodewords) == expectedCW && double(rx.ActualNumCodewords) == expectedCW, ...
+        "Rank-%d PDSCH RX must preserve %d explicit codeword stream(s).", nLayers, expectedCW);
+    assert(all(double(rx.CodewordLLRCountPerCodeword) == double(tx.RateMatchedBitCountPerCodeword)), ...
         "Rank-%d PDSCH RX per-codeword LLR count must match G.", nLayers);
     assert(logical(rx.CodewordLayerMapping.ActualLayersEqualGrantLayers), ...
         "Rank-%d PDSCH RX equalized-layer contract must match the grant layers.", nLayers);
@@ -70,10 +75,18 @@ for nLayers = 1:4
         "Rank-%d PDSCH RX info must expose the exact demapper LLR count.", nLayers);
     assert(logical(txInfo.CodewordLayerMapping.ActualLayersEqualGrantLayers), ...
         "Rank-%d PDSCH TX info must expose the actual layer count.", nLayers);
+    if expectedCW == 2
+        harqDiag = sixgr.link.evaluateHARQDecode(tx, rx, cfg, ...
+            struct("LLRCell", {rx.RecLLRCell}, "CodingLayouts", {rx.CodingLayouts}));
+        assert(iscell(harqDiag.CombinedLLR) && numel(harqDiag.CombinedLLR) == 2, ...
+            "Rank-%d HARQ diagnostic must preserve per-codeword soft buffers.", nLayers);
+        assert(logical(harqDiag.CombinedDecodeOK), ...
+            "Rank-%d HARQ combined per-codeword decode must pass in no-noise loopback.", nLayers);
+    end
 end
 
-localAssertUnsupportedScopesFail();
-fprintf("PDSCH codeword/layer ranks=1:4 maxLayerInverseErr=%.3g maxBER=%.3g\n", ...
+localAssertInvalidScopesFail();
+fprintf("PDSCH codeword/layer ranks=1:8 maxLayerInverseErr=%.3g maxBER=%.3g\n", ...
     maxLayerInverseErr, maxBER);
 ok = true;
 end
@@ -99,7 +112,11 @@ cfg.phy.pdsch.enable = true;
 cfg.phy.pdsch.prbSet = 0:5;
 cfg.phy.pdsch.symbolAllocation = [0 10];
 cfg.phy.pdsch.mappingType = 'A';
-cfg.phy.pdsch.modulation = 'QPSK';
+if nLayers > 4
+    cfg.phy.pdsch.modulation = {'QPSK','QPSK'};
+else
+    cfg.phy.pdsch.modulation = 'QPSK';
+end
 cfg.phy.pdsch.numLayers = nLayers;
 cfg.phy.pdsch.nLayers = nLayers;
 cfg.phy.pdsch.numPorts = nLayers;
@@ -113,21 +130,28 @@ cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.pdsch.precoding.matrix = eye(nLayers);
 cfg.phy.pdsch.precodingMatrix = eye(nLayers);
 cfg.phy.pdsch.W = eye(nLayers);
+if nLayers > 4
+    cfg.phy.pdsch.dmrs.configurationType = 2;
+    cfg.phy.pdsch.dmrs.length = 2;
+    cfg.phy.pdsch.dmrs.numCDMGroupsWithoutData = 3;
+end
 cfg.phy.csirs.enable = false;
 end
 
-function localAssertUnsupportedScopesFail()
-cfgRank5 = localCfg(4);
-cfgRank5.phy.pdsch.numLayers = 5;
-cfgRank5.phy.pdsch.nLayers = 5;
-cfgRank5.phy.nTxAnt = 5;
-localAssertThrows(@() sixgr.phy.dl.PDSCH_Tx(cfgRank5, "PrecodingMatrix", eye(5)), ...
-    "sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported");
-
+function localAssertInvalidScopesFail()
 cfgTwoCW = localCfg(2);
 cfgTwoCW.phy.pdsch.numCodewords = 2;
 localAssertThrows(@() sixgr.phy.dl.PDSCH_Tx(cfgTwoCW, "PrecodingMatrix", eye(2)), ...
-    "sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported");
+    "sixgr:phy:dl:PDSCHCodewordLayerScope");
+
+cfgRank9 = localCfg(8);
+cfgRank9.phy.pdsch.numLayers = 9;
+cfgRank9.phy.pdsch.nLayers = 9;
+cfgRank9.phy.pdsch.numPorts = 9;
+cfgRank9.phy.pdsch.nPorts = 9;
+cfgRank9.phy.nTxAnt = 9;
+localAssertThrows(@() sixgr.phy.dl.PDSCH_Tx(cfgRank9, "PrecodingMatrix", eye(9)), ...
+    "sixgr:phy:dl:PDSCHCodewordLayerScope");
 end
 
 function localAssertThrows(fn, id)

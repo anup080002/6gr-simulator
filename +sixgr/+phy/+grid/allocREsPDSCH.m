@@ -33,8 +33,9 @@ info.IndexBase = opts.IndexBase;
 info.NRE = size(pdschInd, 1);
 info.PRBSet = pdsch.PRBSet;
 info.SymbolAllocation = pdsch.SymbolAllocation;
-info.Modulation = string(pdsch.Modulation);
+info.Modulation = localModulationText(pdsch.Modulation);
 info.NumLayers = pdsch.NumLayers;
+info.NumCodewords = double(pdsch.NumCodewords);
 info.IndicesInfo = indInfo;
 info.ResourceAccounting = sixgr.phy.resource.computeResourceAccounting("PDSCH", carrier, pdsch, ...
     "ChannelIndices", pdschInd, ...
@@ -44,6 +45,8 @@ info.LayerDataRE = info.ResourceAccounting.LayerDataRE;
 info.PortMappedRE = info.ResourceAccounting.PortMappedRE;
 info.ModulationSymbolCount = info.ResourceAccounting.ModulationSymbolCount;
 info.CodedBitCountG = info.ResourceAccounting.CodedBitCountG;
+info.CodedBitCountGPerCodeword = info.ResourceAccounting.CodedBitCountGPerCodeword;
+info.GPerCodeword = info.ResourceAccounting.GPerCodeword;
 info.G = info.ResourceAccounting.CodedBitCountG;
 info.NREPerPRB = info.ResourceAccounting.NREPerPRBForTBS;
 info.DMRSRE = info.ResourceAccounting.DMRSRE;
@@ -59,7 +62,7 @@ opts.PRBSet = [];
 opts.SymbolAllocation = [];
 opts.RNTI = [];
 opts.NumLayers = [];
-opts.Modulation = "";
+opts.Modulation = [];
 opts.MappingType = "";
 opts.MappingTypeExplicit = false;
 opts.NID = [];
@@ -88,7 +91,7 @@ for i = 1:2:numel(varargin)
         case "numlayers"
             opts.NumLayers = val;
         case "modulation"
-            opts.Modulation = string(val);
+            opts.Modulation = val;
         case "mappingtype"
             opts.MappingType = string(val);
             opts.MappingTypeExplicit = true;
@@ -125,7 +128,7 @@ symAllocCfg = [0 14];
 mapTypeExplicit = false;
 
 if isstruct(cfg)
-    modStr = string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", modStr));
+    modStr = sixgr.util.structGet(cfg, "phy.pdsch.modulation", modStr);
     numLayers = double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", numLayers));
     rnti = double(sixgr.util.structGet(cfg, "phy.pdsch.RNTI", rnti));
     nid = sixgr.util.structGet(cfg, "phy.pdsch.NID", ...
@@ -140,8 +143,8 @@ if isstruct(cfg)
 end
 
 % Apply overrides
-if strlength(opts.Modulation) > 0, modStr = opts.Modulation; end
 if ~isempty(opts.NumLayers), numLayers = double(opts.NumLayers); end
+if ~isempty(opts.Modulation), modStr = opts.Modulation; end
 if ~isempty(opts.RNTI), rnti = double(opts.RNTI); end
 if ~isempty(opts.NID), nid = opts.NID; end
 if strlength(opts.MappingType) > 0
@@ -152,7 +155,7 @@ if ~isempty(opts.PRBSet), prbSetCfg = opts.PRBSet; end
 if ~isempty(opts.SymbolAllocation), symAllocCfg = opts.SymbolAllocation; end
 
 % Assign
-pdsch.Modulation = char(modStr);
+pdsch.Modulation = localNormalizeModulationForCodewords(modStr, 1 + (double(numLayers) > 4));
 pdsch.NumLayers = numLayers;
 pdsch.RNTI = rnti;
 
@@ -203,6 +206,49 @@ else
     prbVec = prbSetCfg;
 end
 
+end
+
+function modulation = localNormalizeModulationForCodewords(raw, nCodewords)
+nCodewords = max(1, round(double(nCodewords)));
+if iscell(raw)
+    tokens = string(raw);
+else
+    tokens = string(raw);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    tokens = "QPSK";
+end
+if numel(tokens) == 1
+    if nCodewords == 1
+        modulation = char(tokens(1));
+    else
+        modulation = cellstr(repmat(tokens(1), 1, nCodewords));
+    end
+    return;
+end
+if numel(tokens) < nCodewords
+    tokens(end+1:nCodewords) = tokens(end);
+elseif numel(tokens) > nCodewords
+    tokens = tokens(1:nCodewords);
+end
+modulation = cellstr(tokens);
+end
+
+function text = localModulationText(raw)
+if iscell(raw)
+    tokens = string(raw);
+else
+    tokens = string(raw);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    text = "";
+else
+    text = strjoin(tokens, "|");
+end
 end
 
 function pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg)

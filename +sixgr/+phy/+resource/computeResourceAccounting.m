@@ -27,12 +27,15 @@ end
 idxInfo = localIndicesInfo(opt.AllocationInfo, channel);
 modulation = localObjectValue(cfgObj, "Modulation", "");
 numLayers = localPositiveInteger(localObjectValue(cfgObj, "NumLayers", NaN), 1);
+nCodewords = localPositiveInteger(localObjectValue(cfgObj, "NumCodewords", 1 + (double(numLayers) > 4)), 1);
 prbSet = localObjectValue(cfgObj, "PRBSet", []);
 nPRB = double(numel(prbSet));
 if ~(isfinite(nPRB) && nPRB > 0)
     nPRB = localPositiveInteger(sixgr.util.structGet(opt.AllocationInfo, "PRBCount", NaN), 1);
 end
-qm = localModulationOrder(modulation);
+qmPerCodeword = localModulationOrderVector(modulation, nCodewords);
+qm = qmPerCodeword(1);
+layerCountPerCodeword = localLayerCountPerCodeword(numLayers, nCodewords);
 
 layerDataRE = localFirstFiniteNonnegative([ ...
     sixgr.util.structGet(idxInfo, "Gd", NaN), ...
@@ -59,12 +62,22 @@ if ~isfinite(nrePerPRB) && isfinite(layerDataRE) && layerDataRE >= 0 && nPRB > 0
     end
 end
 
-gBits = localFirstFiniteNonnegative([ ...
+gBitsPerCodeword = localFirstFiniteNonnegativeVector( ...
     sixgr.util.structGet(idxInfo, "G", NaN), ...
-    sixgr.util.structGet(opt.AllocationInfo, "G", NaN), ...
-    sixgr.util.structGet(opt.AllocationInfo, "CodedBitCountG", NaN)]);
-if ~isfinite(gBits) && isfinite(layerDataRE) && layerDataRE >= 0
-    gBits = double(layerDataRE) * double(qm) * double(numLayers);
+    sixgr.util.structGet(opt.AllocationInfo, "GPerCodeword", NaN), ...
+    sixgr.util.structGet(opt.AllocationInfo, "CodedBitCountGPerCodeword", NaN), ...
+    sixgr.util.structGet(opt.AllocationInfo, "RateMatchedBitCountPerCodeword", NaN));
+if isempty(gBitsPerCodeword)
+    gBitsScalar = localFirstFiniteNonnegative([ ...
+        sixgr.util.structGet(idxInfo, "G", NaN), ...
+        sixgr.util.structGet(opt.AllocationInfo, "G", NaN), ...
+        sixgr.util.structGet(opt.AllocationInfo, "CodedBitCountG", NaN)]);
+    if isfinite(gBitsScalar)
+        gBitsPerCodeword = double(gBitsScalar);
+    end
+end
+if isempty(gBitsPerCodeword) && isfinite(layerDataRE) && layerDataRE >= 0
+    gBitsPerCodeword = double(layerDataRE) .* double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
 end
 
 if ~(isfinite(layerDataRE) && layerDataRE >= 0)
@@ -77,11 +90,16 @@ if ~(isfinite(nrePerPRB) && nrePerPRB >= 0)
         "%s resource accounting could not resolve NREPerPRB from nr%sIndices evidence.", ...
         char(channel), char(channel));
 end
-if ~(isfinite(gBits) && gBits >= 0)
+if isempty(gBitsPerCodeword) || ~all(isfinite(gBitsPerCodeword) & gBitsPerCodeword >= 0)
     error("sixgr:phy:resource:MissingG", ...
         "%s resource accounting could not resolve coded-bit count G from nr%sIndices evidence.", ...
         char(channel), char(channel));
 end
+gBitsPerCodeword = round(double(gBitsPerCodeword(:).'));
+if numel(gBitsPerCodeword) == 1 && nCodewords > 1
+    gBitsPerCodeword = double(layerDataRE) .* double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
+end
+gBits = sum(gBitsPerCodeword);
 
 dmrsIdx = opt.DMRSIndices;
 if isempty(dmrsIdx) && localCanComputeReferenceIndices(cfgObj)
@@ -121,9 +139,12 @@ overlapTotal = localStructSum(overlaps);
 acct = struct();
 acct.Channel = char(channel);
 acct.IndexBase = char(string(opt.IndexBase));
-acct.Modulation = char(string(modulation));
+acct.Modulation = char(localModulationText(modulation));
 acct.Qm = double(qm);
+acct.QmPerCodeword = double(qmPerCodeword);
 acct.NumLayers = double(numLayers);
+acct.NumCodewords = double(nCodewords);
+acct.LayerCountPerCodeword = double(layerCountPerCodeword);
 acct.PRBSet = double(prbSet(:).');
 acct.PRBCount = double(nPRB);
 acct.SymbolAllocation = double(localObjectValue(cfgObj, "SymbolAllocation", []));
@@ -131,6 +152,8 @@ acct.LayerDataRE = double(layerDataRE);
 acct.PortMappedRE = double(numel(dataLin));
 acct.ModulationSymbolCount = double(layerDataRE) * double(numLayers);
 acct.CodedBitCountG = double(gBits);
+acct.CodedBitCountGPerCodeword = double(gBitsPerCodeword);
+acct.GPerCodeword = double(gBitsPerCodeword);
 acct.DMRSRE = double(numel(unique(dmrsBase)));
 acct.PTRSRE = double(numel(unique(ptrsBase)));
 acct.ReservedRE = double(numel(unique(reservedBase)));
@@ -138,7 +161,8 @@ acct.DMRSLinearRE = double(numel(dmrsLin));
 acct.PTRSLinearRE = double(numel(ptrsLin));
 acct.ReservedLinearRE = double(numel(reservedLin));
 acct.NREPerPRBForTBS = double(nrePerPRB);
-acct.GFromLayerRE = double(layerDataRE) * double(qm) * double(numLayers);
+acct.GFromLayerREPerCodeword = double(layerDataRE) .* double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
+acct.GFromLayerRE = sum(acct.GFromLayerREPerCodeword);
 acct.GMatchesLayerRE = abs(double(gBits) - acct.GFromLayerRE) <= 1e-9;
 acct.DuplicateDataIndices = double(dupData);
 acct.DuplicateDMRSIndices = double(dupDMRS);
@@ -157,7 +181,7 @@ acct.Indices = struct( ...
     "ReservedBase", reservedBase);
 acct.Masks = localMasks(nSC, nSym, dataBase, dmrsBase, ptrsBase, reservedBase);
 acct.TBSInputs = struct( ...
-    "Modulation", char(string(modulation)), ...
+    "Modulation", char(localModulationText(modulation)), ...
     "NumLayers", double(numLayers), ...
     "NPRB", double(nPRB), ...
     "NREPerPRB", double(nrePerPRB), ...
@@ -220,8 +244,101 @@ if ~isempty(idx)
 end
 end
 
+function value = localFirstFiniteNonnegativeVector(varargin)
+value = [];
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+        continue;
+    end
+    raw = double(raw(:).');
+    if ~isempty(raw) && all(isfinite(raw) & raw >= 0)
+        value = raw;
+        return;
+    end
+end
+end
+
+function qm = localModulationOrderVector(modulation, nCodewords)
+if iscell(modulation)
+    tokens = string(modulation);
+else
+    tokens = string(modulation);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    tokens = "QPSK";
+end
+if numel(tokens) == 1 && nCodewords > 1
+    tokens = repmat(tokens, 1, nCodewords);
+elseif numel(tokens) < nCodewords
+    tokens(end+1:nCodewords) = tokens(end);
+elseif numel(tokens) > nCodewords
+    tokens = tokens(1:nCodewords);
+end
+qm = zeros(1, nCodewords);
+for i = 1:nCodewords
+    qm(i) = localModulationOrder(tokens(i));
+end
+end
+
+function counts = localLayerCountPerCodeword(numLayers, numCodewords)
+numLayers = max(1, round(double(numLayers)));
+numCodewords = max(1, round(double(numCodewords)));
+if numCodewords == 1
+    counts = double(numLayers);
+    return;
+end
+switch numLayers
+    case 5
+        counts = [2 3];
+    case 6
+        counts = [3 3];
+    case 7
+        counts = [3 4];
+    case 8
+        counts = [4 4];
+    otherwise
+        error("sixgr:phy:resource:BadCodewordLayerMapping", ...
+            "PDSCH two-codeword resource accounting supports ranks 5-8. Got NumLayers=%d NumCodewords=%d.", ...
+            numLayers, numCodewords);
+end
+if numel(counts) ~= numCodewords
+    error("sixgr:phy:resource:BadCodewordCount", ...
+        "PDSCH rank-%d requires %d codeword layer counts, but NumCodewords=%d.", ...
+        numLayers, numel(counts), numCodewords);
+end
+end
+
+function text = localModulationText(modulation)
+if iscell(modulation)
+    tokens = string(modulation);
+else
+    tokens = string(modulation);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    text = "";
+else
+    text = strjoin(tokens, "|");
+end
+end
+
 function qm = localModulationOrder(modulation)
-token = upper(strrep(strtrim(char(string(modulation))), " ", ""));
+if iscell(modulation)
+    modulation = modulation{1};
+end
+tokens = string(modulation);
+tokens = tokens(:);
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    token = "QPSK";
+else
+    token = tokens(1);
+end
+token = upper(strrep(strtrim(char(token)), " ", ""));
 switch token
     case {"PI/2-BPSK","PI2-BPSK","BPSK"}
         qm = 1;

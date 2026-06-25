@@ -45,17 +45,17 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %   Notes:
 %     * nrPDSCH internally performs scrambling using pdsch.NID / pdsch.RNTI.
 %       Therefore, TX.Codeword is NOT scrambled here.
-%     * This transmitter currently supports a single codeword only
-%       (NumLayers <= 4). Unsupported higher-rank combinations error early.
+%     * Ranks 1-4 use one codeword. Ranks 5-8 use the exact NR
+%       two-codeword mapping with independent TB, RV and CodingLayout state.
 
 % ---------------------- Parse inputs ----------------------
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PDSCH', [], @(x) isempty(x) || isobject(x));
-ip.addParameter('TransportBlockBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
-ip.addParameter('TransportBlockSizeOverride', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
-ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
-ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
+ip.addParameter('TransportBlockBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || iscell(x));
+ip.addParameter('TransportBlockSizeOverride', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>0)));
+ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>=0 & x(:)<=3)));
+ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>0 & x(:)<1)));
 ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
 ip.addParameter('NumTxAnt', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
@@ -71,7 +71,7 @@ if hasPHYGrant
     opt.NumTxAnt = double(phyGrant.AntennaArchitecture.NumWaveformColumns);
     opt.PrecodingMatrix = double(phyGrant.PrecodingState.Matrix);
 end
-localGuardUnsupportedNumLayers(cfg, opt.PDSCH);
+localValidateSupportedCodewordScope(cfg, opt.PDSCH);
 
 % Carrier
 if isempty(opt.Carrier)
@@ -139,55 +139,71 @@ nrePerPRB = resourceAccounting.NREPerPRBForTBS;
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     error('sixgr:phy:dl:PDSCHNoDataRE', ...
         'PDSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
-        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(string(pdsch.Modulation)), round(double(pdsch.NumLayers)));
+        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(localModulationText(pdsch.Modulation)), round(double(pdsch.NumLayers)));
 end
 [trBlkSize, scheduledTrBlkSize, transportBlockSizeSource] = localResolvePDSCHTransportBlockSize( ...
     opt.TransportBlockSizeOverride, phyGrant, hasPHYGrant, pdsch, nPRB, nrePerPRB, targetCodeRate, xOverhead);
+nCodewords = localResolvePDSCHNumCodewords(pdsch, round(double(pdsch.NumLayers)));
+targetCodeRate = localExpandPerCodewordDouble(targetCodeRate, nCodewords, "PDSCH TargetCodeRate");
+rv = localExpandPerCodewordRV(rv, nCodewords);
+trBlkSize = localExpandPerCodewordInteger(trBlkSize, nCodewords, "PDSCH transport block size");
+scheduledTrBlkSize = localExpandPerCodewordInteger(scheduledTrBlkSize, nCodewords, "PDSCH scheduled transport block size");
+GPerCodeword = localResolveRateMatchedBitsPerCodeword(resourceAccounting, nCodewords);
+modulationPerCodeword = localPDSCHModulationPerCodeword(pdsch, nCodewords);
 
 % Transport block bits
-if isempty(opt.TransportBlockBits)
-    trBlk = int8(randi([0 1], trBlkSize, 1));
-else
-    trBlk = opt.TransportBlockBits;
-    trBlk = int8(trBlk(:));
-    if numel(trBlk) ~= trBlkSize
-        error('PDSCH_Tx:BadTBSize', 'TransportBlockBits length %d does not match expected TBS %d.', numel(trBlk), trBlkSize);
-    end
-end
+trBlkCell = localResolvePDSCHTransportBlockBits(opt.TransportBlockBits, trBlkSize);
+trBlk = vertcat(trBlkCell{:});
 
 G = double(resourceAccounting.CodedBitCountG);
 if ~(isfinite(G) && G > 0)
     error('sixgr:phy:dl:PDSCHNoDataRE', ...
         'PDSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
-        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(string(pdsch.Modulation)), round(double(pdsch.NumLayers)));
+        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(localModulationText(pdsch.Modulation)), round(double(pdsch.NumLayers)));
 end
-codingLayout = localResolveTxCodingLayout(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, pdsch, G);
+codingLayouts = localResolveTxCodingLayouts(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, modulationPerCodeword, pdsch, GPerCodeword);
+codingLayout = codingLayouts{1};
 tbCRCType = char(codingLayout.TBCRCType);
 tbCRCLen = double(codingLayout.TBCRCLength);
 bgn = double(codingLayout.BaseGraph);
 
 % ---------------------- DL-SCH encoding (modular blocks) ----------------------
-% Match the TB CRC selected by nrDLSCHInfo for this transport block size.
-tbCrc = sixgr.phy.tb.attachCRC(trBlk, tbCRCType);
-crcInfo = struct("Type", string(tbCRCType), "Length", double(tbCRCLen));
-B = numel(tbCrc);
+tbCrcCell = cell(1, nCodewords);
+crcInfoCell = cell(1, nCodewords);
+segInfoCell = cell(1, nCodewords);
+rateMatchInfoCell = cell(1, nCodewords);
+codewords = cell(1, nCodewords);
+BPerCodeword = zeros(1, nCodewords);
+for c = 1:nCodewords
+    layoutC = codingLayouts{c};
+    tbCRCTypeC = char(layoutC.TBCRCType);
+    bgnC = double(layoutC.BaseGraph);
 
-% Code block segmentation
-[cbs, segInfo] = sixgr.phy.tb.segmentLDPC(tbCrc, bgn);
+    % Match the TB CRC selected by nrDLSCHInfo for this transport block size.
+    tbCrcCell{c} = sixgr.phy.tb.attachCRC(trBlkCell{c}, tbCRCTypeC);
+    crcInfoCell{c} = struct("Type", string(tbCRCTypeC), "Length", double(layoutC.TBCRCLength));
+    BPerCodeword(c) = numel(tbCrcCell{c});
 
-% LDPC encode all code blocks in one toolbox call to avoid repeated
-% per-code-block MATLAB loop overhead.
-ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
+    % Code block segmentation and LDPC encode.
+    [cbs, segInfoCell{c}] = sixgr.phy.tb.segmentLDPC(tbCrcCell{c}, bgnC);
+    ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgnC));
 
-% Rate match to G bits
-[codeword, rateMatchInfo] = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pdsch.Modulation, pdsch.NumLayers);
-codeword = int8(codeword(:));
-localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout);
+    % Rate match to the exact codeword-specific G.
+    [codewordC, rateMatchInfoCell{c}] = sixgr.phy.phycode.rateMatchLDPC( ...
+        ldpcEnc, double(GPerCodeword(c)), double(rv(c)), modulationPerCodeword{c}, double(codingLayouts{c}.NumLayers));
+    codewords{c} = int8(codewordC(:));
+    localAssertRateMatchMapAgreement(rateMatchInfoCell{c}, layoutC);
+end
+tbCrc = tbCrcCell{1};
+crcInfo = crcInfoCell{1};
+segInfo = segInfoCell{1};
+rateMatchInfo = rateMatchInfoCell{1};
+codeword = codewords{1};
+B = BPerCodeword(1);
 
 % ---------------------- PDSCH modulation & mapping ----------------------
 % nrPDSCH expects codewords as a cell array (up to 2 codewords)
-codewords = {codeword};
-codewordLayerMapping = localBuildPDSCHCodewordLayerContract(pdsch, codewords, {codingLayout}, resourceAccounting);
+codewordLayerMapping = localBuildPDSCHCodewordLayerContract(pdsch, codewords, codingLayouts, resourceAccounting);
 
 try
     [pdschSym, pdschSymInfo] = nrPDSCH(carrier, pdsch, codewords);
@@ -196,7 +212,7 @@ catch
     pdschSymInfo = struct();
 end
 codewordLayerMapping = localFinalizePDSCHCodewordLayerContract(codewordLayerMapping, pdschSym);
-localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, {codingLayout}, codewordLayerMapping);
+localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayouts, codewordLayerMapping);
 
 % DMRS
 [dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
@@ -287,12 +303,20 @@ tx.TransportBlockSize = trBlkSize;
 tx.ScheduledTransportBlockSize = scheduledTrBlkSize;
 tx.TransportBlockSizeSource = transportBlockSizeSource;
 tx.TransportBlock = trBlk;
+tx.TransportBlocks = trBlkCell;
+tx.TransportBlockSizePerCodeword = double(trBlkSize);
 tx.TransportBlockCRCType = char(tbCRCType);
 tx.TransportBlockCRCLength = double(tbCRCLen);
+tx.TransportBlockCRCTypePerCodeword = cellfun(@(x) char(string(x.Type)), crcInfoCell, "UniformOutput", false);
+tx.TransportBlockCRCLengthPerCodeword = double(cellfun(@(x) double(x.Length), crcInfoCell));
 tx.TransportBlockLenWithCRC = B;
+tx.TransportBlockLenWithCRCPerCodeword = double(BPerCodeword);
 tx.RV = rv;
+tx.RVPerCodeword = double(rv);
 tx.TargetCodeRate = targetCodeRate;
+tx.TargetCodeRatePerCodeword = double(targetCodeRate);
 tx.CodingLayout = codingLayout;
+tx.CodingLayouts = codingLayouts;
 tx.Carrier = carrier;
 tx.PDSCH = pdsch;
 tx.PDSCHIndices = pdschInd;
@@ -309,6 +333,7 @@ tx.LayerSymbolDomain = "layer";
 tx.PortSymbolDomain = "port";
 tx.XOverhead = double(xOverhead);
 tx.G = G;
+tx.GPerCodeword = double(GPerCodeword);
 tx.NREPerPRB = double(nrePerPRB);
 tx.LayerDataRE = double(resourceAccounting.LayerDataRE);
 tx.PortMappedRE = double(resourceAccounting.PortMappedRE);
@@ -336,7 +361,9 @@ tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlockCRC = tbCrc;
+    tx.TransportBlockCRCPerCodeword = tbCrcCell;
     tx.BaseGraph = bgn;
+    tx.BaseGraphPerCodeword = double(cellfun(@(x) double(x.BaseGraph), codingLayouts));
     tx.Codeword = codeword;
     tx.Codewords = codewords;
     tx.PDSCHInfo = pdschInfo;
@@ -358,16 +385,20 @@ if ~logical(opt.CompactOutput)
     tx.CSIRSRuntimeEvent = csirsEvent;
     tx.ResourceGridPortContract = gridPortContract;
 end
-tx.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
+tx.TxContext = localBuildTxContext(tx, trBlkCell, tbCrcCell, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
     dmrsInd, dmrsSym, dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, ptrsAntInd, ptrsAntSym, ...
-    carrier, pdsch, {codingLayout}, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
+    carrier, pdsch, codingLayouts, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
 
 info = struct();
 info.CarrierInfo = cinfo;
 info.CRC = crcInfo;
+info.CRCPerCodeword = crcInfoCell;
 info.Segmentation = segInfo;
+info.SegmentationPerCodeword = segInfoCell;
 info.RateMatch = rateMatchInfo;
+info.RateMatchPerCodeword = rateMatchInfoCell;
 info.CodingLayout = codingLayout;
+info.CodingLayouts = codingLayouts;
 info.PDSCHSymbols = pdschSymInfo;
 info.PTRS = ptrsInfo;
 info.CSIRS = csirsInfo;
@@ -452,8 +483,8 @@ localAssertSameVector(localObjectValue(pdsch, "SymbolAllocation", []), sixgr.uti
     "sixgr:phy:dl:PDSCHGrantSymbolMismatch", "PDSCH SymbolAllocation does not match frozen PHYGrant.");
 localAssertSameScalar(localObjectValue(pdsch, "NumLayers", NaN), sixgr.util.structGet(cl, "NumLayers", NaN), ...
     "sixgr:phy:dl:PDSCHGrantLayerMismatch", "PDSCH NumLayers does not match frozen PHYGrant.");
-grantMod = char(string(sixgr.util.structGet(cl, "Modulation", "")));
-pdschMod = char(string(localObjectValue(pdsch, "Modulation", "")));
+grantMod = char(localModulationText(sixgr.util.structGet(cl, "Modulation", "")));
+pdschMod = char(localModulationText(localObjectValue(pdsch, "Modulation", "")));
 if strlength(string(grantMod)) > 0 && ~strcmpi(strtrim(pdschMod), strtrim(grantMod))
     error("sixgr:phy:dl:PDSCHGrantModulationMismatch", ...
         "PDSCH Modulation '%s' does not match frozen PHYGrant '%s'.", pdschMod, grantMod);
@@ -476,16 +507,21 @@ end
 
 function rv = localResolvePDSCHRV(cfg, optRV, phyGrant, hasPHYGrant)
 if ~isempty(optRV)
-    rv = optRV;
+    rv = double(optRV(:).');
 elseif hasPHYGrant
-    rv = localFirstFiniteScalarValue(sixgr.util.structGet(phyGrant, "HARQProcessKey.RV", []), ...
+    rv = localFirstFiniteVectorValue(sixgr.util.structGet(phyGrant, "HARQProcessKey.RVPerCodeword", []), ...
+        sixgr.util.structGet(phyGrant, "HARQProcessKey.RV", []), ...
         sixgr.util.structGet(phyGrant, "CodingLayout.RV", []), ...
         sixgr.util.structGet(cfg, "phy.pdsch.rv", []), 0);
 else
     rv = double(sixgr.util.structGet(cfg, 'phy.pdsch.rv', 0));
+    rv = rv(:).';
 end
-rv = localNonnegativeIntegerValue(rv, "PDSCH RV");
-if rv > 3
+if isempty(rv) || any(~isfinite(rv) | rv < 0 | abs(rv - round(rv)) > 1e-9)
+    error("sixgr:phy:dl:PDSCHBadRV", "PDSCH RV must contain integer values in [0,3].");
+end
+rv = round(rv);
+if any(rv > 3)
     error("sixgr:phy:dl:PDSCHBadRV", "PDSCH RV must be in [0,3].");
 end
 end
@@ -493,20 +529,23 @@ end
 function targetCodeRate = localResolvePDSCHTargetCodeRate(cfg, optRate, phyGrant, hasPHYGrant)
 grantRate = NaN;
 if hasPHYGrant
-    grantRate = double(sixgr.util.structGet(phyGrant, "CodingLayout.TargetCodeRate", NaN));
+    grantRate = double(sixgr.util.structGet(phyGrant, "CodingLayout.TargetCodeRatePerCodeword", ...
+        sixgr.util.structGet(phyGrant, "CodingLayout.TargetCodeRate", NaN)));
 end
-if isfinite(grantRate) && grantRate > 0
-    if ~isempty(optRate) && abs(double(optRate) - grantRate) > 1e-12
+if ~isempty(grantRate) && all(isfinite(grantRate(:)) & grantRate(:) > 0)
+    if ~isempty(optRate) && ~isequal(size(double(optRate(:).')), size(grantRate(:).')) || ...
+            (~isempty(optRate) && any(abs(double(optRate(:).') - grantRate(:).') > 1e-12))
         error("sixgr:phy:dl:PDSCHGrantCodeRateMismatch", ...
-            "TargetCodeRate %.15g does not match frozen PHYGrant %.15g.", double(optRate), grantRate);
+            "TargetCodeRate %s does not match frozen PHYGrant %s.", mat2str(double(optRate(:).')), mat2str(grantRate(:).'));
     end
-    targetCodeRate = grantRate;
+    targetCodeRate = grantRate(:).';
 elseif ~isempty(optRate)
-    targetCodeRate = double(optRate);
+    targetCodeRate = double(optRate(:).');
 else
     targetCodeRate = double(sixgr.util.structGet(cfg, 'phy.pdsch.codeRate', 0.4785));
+    targetCodeRate = targetCodeRate(:).';
 end
-if ~(isscalar(targetCodeRate) && isfinite(targetCodeRate) && targetCodeRate > 0 && targetCodeRate < 1)
+if isempty(targetCodeRate) || any(~isfinite(targetCodeRate) | targetCodeRate <= 0 | targetCodeRate >= 1)
     error("sixgr:phy:dl:PDSCHBadCodeRate", "PDSCH TargetCodeRate must be finite in (0,1).");
 end
 end
@@ -537,47 +576,60 @@ function [trBlkSize, scheduledTrBlkSize, source] = localResolvePDSCHTransportBlo
 scheduledTrBlkSize = double(nrTBS(pdsch.Modulation, pdsch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead));
 grantTBS = NaN;
 if hasPHYGrant
-    grantTBS = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN));
+    grantTBS = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBitsPerCodeword", ...
+        sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN)));
 end
-if isfinite(grantTBS) && grantTBS > 0
-    trBlkSize = round(grantTBS);
-    if abs(double(scheduledTrBlkSize) - double(trBlkSize)) > 0
+if ~isempty(grantTBS) && all(isfinite(grantTBS(:)) & grantTBS(:) > 0)
+    trBlkSize = round(double(grantTBS(:).'));
+    if numel(trBlkSize) ~= numel(scheduledTrBlkSize) || any(abs(double(scheduledTrBlkSize(:).') - double(trBlkSize)) > 0)
         error("sixgr:phy:dl:PDSCHGrantTBSMismatch", ...
-            "Frozen PHYGrant TBS=%d but exact nrTBS from the frozen resource contract is %d.", ...
-            trBlkSize, round(double(scheduledTrBlkSize)));
+            "Frozen PHYGrant TBS=%s but exact nrTBS from the frozen resource contract is %s.", ...
+            mat2str(trBlkSize), mat2str(round(double(scheduledTrBlkSize(:).'))));
     end
-    if ~isempty(overrideTBS) && round(double(overrideTBS)) ~= trBlkSize
+    if ~isempty(overrideTBS) && ~isequal(round(double(overrideTBS(:).')), trBlkSize)
         error("sixgr:phy:dl:PDSCHReplayTBSMismatch", ...
-            "TransportBlockSizeOverride=%d does not match frozen PHYGrant TBS=%d.", ...
-            round(double(overrideTBS)), trBlkSize);
+            "TransportBlockSizeOverride=%s does not match frozen PHYGrant TBS=%s.", ...
+            mat2str(round(double(overrideTBS(:).'))), mat2str(trBlkSize));
     end
     source = 'frozen_phygrant_transport_block_size';
 elseif ~isempty(overrideTBS)
-    trBlkSize = round(double(overrideTBS));
+    trBlkSize = round(double(overrideTBS(:).'));
     source = 'harq_replay_stored_transport_block';
 elseif hasPHYGrant
-    trBlkSize = round(double(scheduledTrBlkSize));
+    trBlkSize = round(double(scheduledTrBlkSize(:).'));
     source = 'nrTBS_from_frozen_phygrant_resource_accounting';
 else
-    trBlkSize = round(double(scheduledTrBlkSize));
+    trBlkSize = round(double(scheduledTrBlkSize(:).'));
     source = 'nrTBS_from_current_allocation';
 end
-if ~(isfinite(trBlkSize) && trBlkSize > 0 && abs(trBlkSize - round(trBlkSize)) < 1e-9)
+scheduledTrBlkSize = round(double(scheduledTrBlkSize(:).'));
+if isempty(trBlkSize) || ~all(isfinite(trBlkSize) & trBlkSize > 0 & abs(trBlkSize - round(trBlkSize)) < 1e-9)
     error('PDSCH_Tx:BadReplayTBSize', 'PDSCH transport block size must be a positive finite integer.');
 end
 end
 
-function codingLayout = localResolveTxCodingLayout(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, pdsch, G)
-codingLayout = sixgr.phy.phycode.resolveCodingLayout( ...
-    "Direction", "DL", ...
-    "TransportBlockSize", trBlkSize, ...
-    "TargetCodeRate", targetCodeRate, ...
-    "RV", rv, ...
-    "Modulation", pdsch.Modulation, ...
-    "NumLayers", pdsch.NumLayers, ...
-    "RateMatchedBitCount", G);
+function codingLayouts = localResolveTxCodingLayouts(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, modulationPerCodeword, pdsch, GPerCodeword)
+nCodewords = numel(GPerCodeword);
+layerCounts = localLayerCountPerCodeword(double(pdsch.NumLayers), nCodewords);
+codingLayouts = cell(1, nCodewords);
+for c = 1:nCodewords
+    layout = sixgr.phy.phycode.resolveCodingLayout( ...
+        "Direction", "DL", ...
+        "TransportBlockSize", double(trBlkSize(c)), ...
+        "TargetCodeRate", double(targetCodeRate(c)), ...
+        "RV", double(rv(c)), ...
+        "Modulation", modulationPerCodeword{c}, ...
+        "NumLayers", double(layerCounts(c)), ...
+        "RateMatchedBitCount", double(GPerCodeword(c)));
+    layout.CodewordIndex = uint8(c);
+    layout.NumCodewords = uint8(nCodewords);
+    layout.PDSCHNumLayers = uint8(pdsch.NumLayers);
+    layout.CodewordLayerCount = uint8(layerCounts(c));
+    layout.CodewordLayerCountPerCodeword = uint8(layerCounts);
+    codingLayouts{c} = layout;
+end
 if hasPHYGrant
-    localAssertCodingLayoutMatchesGrant(codingLayout, phyGrant);
+    localAssertCodingLayoutMatchesGrant(codingLayouts{1}, phyGrant);
 end
 end
 
@@ -585,7 +637,8 @@ function localAssertCodingLayoutMatchesGrant(codingLayout, phyGrant)
 cl = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
 localAssertSameScalar(double(codingLayout.A), sixgr.util.structGet(cl, "TBSBits", NaN), ...
     "sixgr:phy:dl:PDSCHCodingGrantTBSMismatch", "Canonical CodingLayout A does not match frozen PHYGrant TBSBits.");
-localAssertSameScalar(double(codingLayout.NumLayers), sixgr.util.structGet(cl, "NumLayers", NaN), ...
+layoutTotalLayers = double(sixgr.util.structGet(codingLayout, "PDSCHNumLayers", double(codingLayout.NumLayers)));
+localAssertSameScalar(layoutTotalLayers, sixgr.util.structGet(cl, "NumLayers", NaN), ...
     "sixgr:phy:dl:PDSCHCodingGrantLayerMismatch", "Canonical CodingLayout NumLayers does not match frozen PHYGrant.");
 grantE = double(sixgr.util.structGet(cl, "RateMatchedBitCount", NaN));
 if isfinite(grantE)
@@ -631,11 +684,7 @@ end
 function mapping = localBuildPDSCHCodewordLayerContract(pdsch, codewords, codingLayouts, resourceAccounting)
 nLayers = localPositiveIntegerValue(localObjectValue(pdsch, "NumLayers", 1), "PDSCH.NumLayers");
 nCodewords = localResolvePDSCHNumCodewords(pdsch, nLayers);
-if nCodewords > 1 || nLayers > 4
-    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
-        "PDSCH truth TX supports one codeword for ranks 1-4. Requested NumLayers=%d NumCodewords=%d needs a two-codeword TB/coding contract.", ...
-        nLayers, nCodewords);
-end
+localAssertPDSCHCodewordLayerScope(nLayers, nCodewords);
 if ~iscell(codewords)
     codewords = {codewords};
 end
@@ -653,20 +702,22 @@ for c = 1:nCodewords
     rateBits(c) = double(numel(codewords{c}));
     layoutBits(c) = double(codingLayouts{c}.RateMatchedBitCount);
 end
+layerCountPerCodeword = localLayerCountPerCodeword(nLayers, nCodewords);
+[codewordIndexByLayer, layerIndexWithinCodeword] = localCodewordLayerIndexMap(layerCountPerCodeword);
 mapping = struct();
 mapping.ContractVersion = "PDSCHCodewordLayer/v1";
 mapping.Direction = "DL";
 mapping.MappingStandard = "3GPP_TS_38_211_codeword_to_layer_mapping";
 mapping.MappingEngine = "nrPDSCH_internal_nrLayerMap";
 mapping.InverseEngine = "nrPDSCHDecode_internal_nrLayerDemap";
-mapping.SupportedScope = "single_codeword_ranks_1_to_4";
-mapping.UnsupportedScope = "two_codeword_ranks_5_to_8_require_two_transport_blocks_and_per_codeword_coding_layouts";
+mapping.SupportedScope = "single_codeword_ranks_1_to_4_and_two_codeword_ranks_5_to_8";
+mapping.UnsupportedScope = "";
 mapping.NumCodewords = double(nCodewords);
 mapping.NumLayers = double(nLayers);
 mapping.GrantNumLayers = double(nLayers);
-mapping.CodewordIndexByLayer = ones(1, nLayers);
-mapping.LayerIndexWithinCodeword = double(1:nLayers);
-mapping.LayerCountPerCodeword = double(nLayers);
+mapping.CodewordIndexByLayer = double(codewordIndexByLayer);
+mapping.LayerIndexWithinCodeword = double(layerIndexWithinCodeword);
+mapping.LayerCountPerCodeword = double(layerCountPerCodeword);
 mapping.RateMatchedBitCountPerCodeword = double(rateBits);
 mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(layoutBits);
 mapping.ResourceAccountingG = double(resourceAccounting.CodedBitCountG);
@@ -710,6 +761,187 @@ if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1 && abs(nCod
     error("sixgr:phy:dl:PDSCHBadCodewordCount", "PDSCH NumCodewords must be a positive integer scalar.");
 end
 nCodewords = round(nCodewords);
+end
+
+function localAssertPDSCHCodewordLayerScope(nLayers, nCodewords)
+nLayers = round(double(nLayers));
+nCodewords = round(double(nCodewords));
+if nLayers < 1 || nLayers > 8
+    error("sixgr:phy:dl:PDSCHCodewordLayerScope", ...
+        "PDSCH supports ranks 1-8 in this truth path. Requested NumLayers=%d.", nLayers);
+end
+expected = 1 + double(nLayers > 4);
+if nCodewords ~= expected
+    error("sixgr:phy:dl:PDSCHCodewordLayerScope", ...
+        "PDSCH rank-%d requires NumCodewords=%d by TS 38.211 codeword-to-layer mapping. Requested %d.", ...
+        nLayers, expected, nCodewords);
+end
+end
+
+function counts = localLayerCountPerCodeword(nLayers, nCodewords)
+nLayers = round(double(nLayers));
+nCodewords = round(double(nCodewords));
+if nCodewords == 1
+    counts = double(nLayers);
+    return;
+end
+switch nLayers
+    case 5
+        counts = [2 3];
+    case 6
+        counts = [3 3];
+    case 7
+        counts = [3 4];
+    case 8
+        counts = [4 4];
+    otherwise
+        error("sixgr:phy:dl:PDSCHCodewordLayerScope", ...
+            "Two-codeword PDSCH mapping is defined here only for ranks 5-8. Requested rank %d.", nLayers);
+end
+if numel(counts) ~= nCodewords
+    error("sixgr:phy:dl:PDSCHCodewordLayerScope", ...
+        "PDSCH rank-%d maps to %d codeword layer groups, not %d.", nLayers, numel(counts), nCodewords);
+end
+end
+
+function [cwByLayer, layerInCw] = localCodewordLayerIndexMap(layerCountPerCodeword)
+cwByLayer = zeros(1, sum(layerCountPerCodeword));
+layerInCw = zeros(1, sum(layerCountPerCodeword));
+pos = 1;
+for c = 1:numel(layerCountPerCodeword)
+    n = double(layerCountPerCodeword(c));
+    idx = pos:(pos + n - 1);
+    cwByLayer(idx) = c;
+    layerInCw(idx) = 1:n;
+    pos = pos + n;
+end
+end
+
+function values = localExpandPerCodewordDouble(values, nCodewords, name)
+values = double(values(:).');
+if numel(values) == 1 && nCodewords > 1
+    values = repmat(values, 1, nCodewords);
+end
+if numel(values) ~= nCodewords || any(~isfinite(values))
+    error("sixgr:phy:dl:PDSCHBadPerCodewordVector", ...
+        "%s must have one value or exactly NumCodewords=%d values.", char(string(name)), nCodewords);
+end
+end
+
+function values = localExpandPerCodewordInteger(values, nCodewords, name)
+values = localExpandPerCodewordDouble(values, nCodewords, name);
+if any(abs(values - round(values)) > 1e-9)
+    error("sixgr:phy:dl:PDSCHBadPerCodewordVector", ...
+        "%s must contain integer values.", char(string(name)));
+end
+values = round(values);
+end
+
+function rv = localExpandPerCodewordRV(rv, nCodewords)
+rv = localExpandPerCodewordInteger(rv, nCodewords, "PDSCH RV");
+if any(rv < 0 | rv > 3)
+    error("sixgr:phy:dl:PDSCHBadRV", "PDSCH RV must be in [0,3].");
+end
+end
+
+function bits = localResolveRateMatchedBitsPerCodeword(resourceAccounting, nCodewords)
+bits = double(sixgr.util.structGet(resourceAccounting, "CodedBitCountGPerCodeword", []));
+bits = bits(:).';
+if isempty(bits)
+    bits = double(sixgr.util.structGet(resourceAccounting, "GPerCodeword", []));
+    bits = bits(:).';
+end
+if isempty(bits)
+    bits = double(sixgr.util.structGet(resourceAccounting, "CodedBitCountG", NaN));
+end
+bits = localExpandPerCodewordInteger(bits, nCodewords, "PDSCH G per codeword");
+if any(bits <= 0)
+    error("sixgr:phy:dl:PDSCHBadRateMatchedBitCount", ...
+        "PDSCH per-codeword G must be positive. Got %s.", mat2str(bits));
+end
+end
+
+function mods = localPDSCHModulationPerCodeword(pdsch, nCodewords)
+raw = localObjectValue(pdsch, "Modulation", "QPSK");
+if iscell(raw)
+    tokens = string(raw);
+else
+    tokens = string(raw);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    tokens = "QPSK";
+end
+if numel(tokens) == 1 && nCodewords > 1
+    tokens = repmat(tokens, 1, nCodewords);
+elseif numel(tokens) < nCodewords
+    tokens(end+1:nCodewords) = tokens(end);
+elseif numel(tokens) > nCodewords
+    tokens = tokens(1:nCodewords);
+end
+mods = cellstr(tokens);
+end
+
+function text = localModulationText(raw)
+if iscell(raw)
+    tokens = string(raw);
+else
+    tokens = string(raw);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    text = "";
+else
+    text = strjoin(tokens, "|");
+end
+end
+
+function trBlkCell = localResolvePDSCHTransportBlockBits(rawBits, trBlkSize)
+nCodewords = numel(trBlkSize);
+trBlkCell = cell(1, nCodewords);
+if isempty(rawBits)
+    for c = 1:nCodewords
+        trBlkCell{c} = int8(randi([0 1], trBlkSize(c), 1));
+    end
+    return;
+end
+if iscell(rawBits)
+    if numel(rawBits) ~= nCodewords
+        error("PDSCH_Tx:BadTBSize", ...
+            "TransportBlockBits cell count %d does not match NumCodewords=%d.", numel(rawBits), nCodewords);
+    end
+    for c = 1:nCodewords
+        trBlkCell{c} = int8(rawBits{c}(:));
+        if numel(trBlkCell{c}) ~= trBlkSize(c)
+            error("PDSCH_Tx:BadTBSize", ...
+                "TransportBlockBits{%d} length %d does not match expected TBS %d.", ...
+                c, numel(trBlkCell{c}), trBlkSize(c));
+        end
+    end
+    return;
+end
+rawBits = int8(rawBits(:));
+if nCodewords == 1
+    trBlkCell{1} = rawBits;
+    if numel(trBlkCell{1}) ~= trBlkSize(1)
+        error("PDSCH_Tx:BadTBSize", ...
+            "TransportBlockBits length %d does not match expected TBS %d.", numel(rawBits), trBlkSize(1));
+    end
+    return;
+end
+if numel(rawBits) ~= sum(trBlkSize)
+    error("PDSCH_Tx:BadTBSize", ...
+        "Concatenated TransportBlockBits length %d does not match expected sum(TBS) %d for %d codewords.", ...
+        numel(rawBits), sum(trBlkSize), nCodewords);
+end
+offset = 0;
+for c = 1:nCodewords
+    idx = offset + (1:trBlkSize(c));
+    trBlkCell{c} = rawBits(idx);
+    offset = offset + trBlkSize(c);
+end
 end
 
 function localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayouts, codewordLayerMapping)
@@ -838,8 +1070,22 @@ ctx = struct();
 ctx.ContractVersion = "PDSCH_TxContext/v1";
 ctx.GrantDriven = logical(hasPHYGrant);
 ctx.GrantContextId = string(sixgr.util.structGet(phyGrant, "GrantContextId", ""));
-ctx.TransportBlock = int8(trBlk(:));
-ctx.TransportBlockCRC = int8(tbCrc(:));
+if ~iscell(trBlk)
+    trBlk = {trBlk};
+end
+if ~iscell(tbCrc)
+    tbCrc = {tbCrc};
+end
+ctx.TransportBlocks = cell(size(trBlk));
+ctx.TransportBlockCRCPerCodeword = cell(size(tbCrc));
+for c = 1:numel(trBlk)
+    ctx.TransportBlocks{c} = int8(trBlk{c}(:));
+end
+for c = 1:numel(tbCrc)
+    ctx.TransportBlockCRCPerCodeword{c} = int8(tbCrc{c}(:));
+end
+ctx.TransportBlock = vertcat(ctx.TransportBlocks{:});
+ctx.TransportBlockCRC = vertcat(ctx.TransportBlockCRCPerCodeword{:});
 if ~iscell(codewords)
     codewords = {codewords};
 end
@@ -892,7 +1138,7 @@ ctx.DimensionContract = struct( ...
     "QAMSymbolCount", double(numel(pdschSym)), ...
     "NumCodewords", double(codewordLayerMapping.NumCodewords), ...
     "ActualNumLayers", double(codewordLayerMapping.ActualLayerColumns), ...
-    "RateMatchedBitCount", double(numel(ctx.Codeword)), ...
+    "RateMatchedBitCount", double(sum(cellfun(@numel, ctx.Codewords))), ...
     "RateMatchedBitCountPerCodeword", double(codewordLayerMapping.RateMatchedBitCountPerCodeword), ...
     "LayerIndexCellCount", double(numel(pdschInd)), ...
     "PortSymbolCount", double(numel(pdschAntSym)), ...
@@ -938,6 +1184,22 @@ for i = 1:nargin
 end
 end
 
+function value = localFirstFiniteVectorValue(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+        continue;
+    end
+    raw = double(raw(:).');
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw;
+        return;
+    end
+end
+end
+
 function localAssertSameVector(actual, expected, id, message)
 expected = double(expected(:).');
 actual = double(actual(:).');
@@ -971,7 +1233,7 @@ if isempty(txIdx) || isempty(layoutIdx) || numel(txIdx) ~= numel(layoutIdx) || a
 end
 end
 
-function localGuardUnsupportedNumLayers(cfg, pdsch)
+function localValidateSupportedCodewordScope(cfg, pdsch)
 if isempty(pdsch)
     nLayers = double(sixgr.util.structGet(cfg, 'phy.pdsch.numLayers', ...
         sixgr.util.structGet(cfg, 'phy.pdsch.nLayers', 1)));
@@ -993,11 +1255,7 @@ if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1)
     nCodewords = 1 + (nLayers > 4);
 end
 nCodewords = round(nCodewords);
-if nLayers > 4 || nCodewords > 1
-    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
-        "PDSCH_Tx/PDSCH_Rx support one codeword for ranks 1-4. Requested NumLayers=%d NumCodewords=%d.", ...
-        nLayers, nCodewords);
-end
+localAssertPDSCHCodewordLayerScope(nLayers, nCodewords);
 end
 function [csirsInd, csirsSym, csirsInfo, csirsCfg, event] = localGenerateCSIRSRuntimeResource(carrier, cfg)
 csirsInd = zeros(0, 1);

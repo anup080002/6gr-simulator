@@ -27,7 +27,7 @@ One scheduling-side study approximation remains explicit:
 ## Baseline Assumptions
 
 - CP-OFDM baseline
-- single-codeword truth path
+- PDSCH PHY truth path: one codeword for ranks 1-4, two codewords for ranks 5-8
 - NR-baseline codeword-to-layer mapping with spatial-first, frequency-second, time-third ordering
 - realistic DMRS-based channel estimation for truth runs
 - MMSE equalization baseline inside the active receive path
@@ -43,7 +43,7 @@ Supported truth knobs:
 - DMRS additional position / ports
 - PTRS enable and densities
 - channel model / delay spread / speed / SNR
-- rank within the current single-codeword truth path
+- rank 1-8 within the PDSCH PHY truth path, including TS 38.211 two-codeword mapping for ranks 5-8
 
 Explicit study hooks or not-yet-materialized items:
 
@@ -95,7 +95,7 @@ Key files:
 
 ## Known Limitations
 
-- The active truth path is single-codeword only.
+- The shared PDSCH PHY truth path supports one codeword for ranks 1-4 and two codewords for ranks 5-8. Legacy `+sixgr/+pdsch` study scaffolding can still be narrower and must remain labeled as a study path when used.
 - Cross-slot PDSCH is a study hook, not materialized.
 - PTRS compensation is currently a single common-phase estimate per copy.
 - `ReceiverType=MMSE_IRC` is reported as the study baseline, but the active equalization call is toolbox MMSE rather than a fully separate IRC implementation.
@@ -103,7 +103,7 @@ Key files:
 
 ## Next 3GPP Study Extensions
 
-- true multi-codeword support
+- codeword-specific BLER export rows when campaign tables carry per-codeword trial status
 - cross-slot PDSCH materialization
 - fuller MMSE-IRC interference-aware receiver
 - explicit MU-MIMO co-scheduled DMRS assistance signaling

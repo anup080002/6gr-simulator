@@ -39,11 +39,7 @@ prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 
-if nCodewords > 1 || nLayers > 4
-    error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
-        "PDSCH_Tx/PDSCH_Rx support a single codeword only. Requested %d layer(s) implies %d codeword(s).", ...
-        nLayers, nCodewords);
-end
+localAssertPDSCHCodewordLayerScope(nLayers, nCodewords);
 
 Wcfg = opt.PrecodingMatrix;
 if isempty(Wcfg)
@@ -243,6 +239,21 @@ nCodewords = 1 + (nLayers > 4);
 try
     nCodewords = double(pdsch.NumCodewords);
 catch
+end
+end
+
+function localAssertPDSCHCodewordLayerScope(nLayers, nCodewords)
+nLayers = round(double(nLayers));
+nCodewords = round(double(nCodewords));
+if nLayers < 1 || nLayers > 8
+    error("sixgr:phy:dl:PDSCHCodewordLayerScope", ...
+        "PDSCH supports ranks 1-8 in this truth path. Requested NumLayers=%d.", nLayers);
+end
+expected = 1 + double(nLayers > 4);
+if nCodewords ~= expected
+    error("sixgr:phy:dl:PDSCHCodewordLayerScope", ...
+        "PDSCH rank-%d requires NumCodewords=%d by TS 38.211 codeword-to-layer mapping. Requested %d.", ...
+        nLayers, expected, nCodewords);
 end
 end
 

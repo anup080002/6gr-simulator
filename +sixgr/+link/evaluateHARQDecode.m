@@ -9,7 +9,10 @@ end
 if isempty(recLLR)
     recLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
 end
-txLayout = sixgr.util.structGet(tx, "CodingLayout", rxLayout);
+txLayout = sixgr.util.structGet(tx, "CodingLayouts", []);
+if isempty(txLayout)
+    txLayout = sixgr.util.structGet(tx, "CodingLayout", rxLayout);
+end
 
 txBits = int8(sixgr.util.structGet(tx, "TransportBlock", int8([])));
 txBits = txBits(:);
@@ -71,14 +74,36 @@ end
 end
 
 function [llr, layout] = localRateRecoveredLLRAndLayout(rx)
-llr = sixgr.util.structGet(rx, "RecLLR", []);
+llr = sixgr.util.structGet(rx, "RecLLRCell", []);
+if isempty(llr)
+    llr = sixgr.util.structGet(rx, "RateRecoveredLLRCell", []);
+end
+if isempty(llr)
+    llr = sixgr.util.structGet(rx, "RecLLR", []);
+end
 if isempty(llr)
     llr = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
 end
-layout = sixgr.util.structGet(rx, "CodingLayout", struct());
+layout = sixgr.util.structGet(rx, "CodingLayouts", []);
+if isempty(layout)
+    layout = sixgr.util.structGet(rx, "CodingLayout", struct());
+end
 end
 
 function [combined, info] = localCombineRateRecoveredLLR(prev, cur, currentLayout)
+if iscell(cur)
+    [priorLLRCell, priorLayoutCell] = localUnwrapPriorCell(prev, numel(cur));
+    combined = cell(size(cur));
+    infoCell = cell(size(cur));
+    for c = 1:numel(cur)
+        [combined{c}, infoCell{c}] = sixgr.phy.harq.combineSoftLLR(localEnsureLLRMatrix(cur{c}), ...
+            localEnsureLLRMatrix(localCellOrScalar(priorLLRCell, c, [])), ...
+            "CurrentLayout", localCellOrScalar(currentLayout, c, struct()), ...
+            "PriorLayout", localCellOrScalar(priorLayoutCell, c, struct()));
+    end
+    info = localSummarizeCombineInfo(infoCell);
+    return;
+end
 if isempty(prev)
     combined = localEnsureLLRMatrix(cur);
     info = struct("Applied", false, "Reason", "no_prior_harq_soft_buffer");
@@ -105,9 +130,96 @@ if isstruct(prev)
 end
 end
 
+function [priorLLRCell, priorLayoutCell] = localUnwrapPriorCell(prev, n)
+priorLLRCell = cell(1, n);
+priorLayoutCell = cell(1, n);
+for c = 1:n
+    priorLLRCell{c} = [];
+    priorLayoutCell{c} = struct();
+end
+if isempty(prev)
+    return;
+end
+if iscell(prev)
+    for c = 1:min(n, numel(prev))
+        priorLLRCell{c} = prev{c};
+    end
+    return;
+end
+if isstruct(prev)
+    rawLLR = sixgr.util.structGet(prev, "LLRCell", []);
+    if isempty(rawLLR)
+        rawLLR = sixgr.util.structGet(prev, "RateRecoveredLLRCell", []);
+    end
+    if iscell(rawLLR)
+        for c = 1:min(n, numel(rawLLR))
+            priorLLRCell{c} = rawLLR{c};
+        end
+    else
+        priorLLRCell{1} = sixgr.util.structGet(prev, "LLR", sixgr.util.structGet(prev, "RateRecoveredLLR", []));
+    end
+    rawLayout = sixgr.util.structGet(prev, "CodingLayouts", []);
+    if iscell(rawLayout)
+        for c = 1:min(n, numel(rawLayout))
+            priorLayoutCell{c} = rawLayout{c};
+        end
+    elseif isstruct(rawLayout) && numel(rawLayout) >= n
+        for c = 1:n
+            priorLayoutCell{c} = rawLayout(c);
+        end
+    else
+        priorLayoutCell{1} = sixgr.util.structGet(prev, "CodingLayout", struct());
+    end
+else
+    priorLLRCell{1} = prev;
+end
+end
+
+function value = localCellOrScalar(container, idx, fallback)
+value = fallback;
+if iscell(container)
+    if numel(container) >= idx
+        value = container{idx};
+    end
+elseif isstruct(container) && numel(container) >= idx && idx > 1
+    value = container(idx);
+elseif ~isempty(container)
+    value = container;
+end
+end
+
+function info = localSummarizeCombineInfo(infoCell)
+applied = false(1, numel(infoCell));
+cur = zeros(1, numel(infoCell));
+prior = zeros(1, numel(infoCell));
+reasons = strings(1, numel(infoCell));
+for c = 1:numel(infoCell)
+    applied(c) = logical(sixgr.util.structGet(infoCell{c}, "Applied", false));
+    cur(c) = double(sixgr.util.structGet(infoCell{c}, "CurrentNumel", NaN));
+    prior(c) = double(sixgr.util.structGet(infoCell{c}, "PriorNumel", NaN));
+    reasons(c) = string(sixgr.util.structGet(infoCell{c}, "Reason", ""));
+end
+info = struct( ...
+    "Applied", any(applied), ...
+    "AppliedPerCodeword", logical(applied), ...
+    "Reason", char(strjoin(reasons, "|")), ...
+    "CurrentNumel", double(sum(cur(isfinite(cur)))), ...
+    "PriorNumel", double(sum(prior(isfinite(prior)))));
+end
+
 function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg, layout)
 ok = false;
 meanIter = NaN;
+if iscell(recLLR)
+    okVec = false(1, numel(recLLR));
+    iterVec = NaN(1, numel(recLLR));
+    for c = 1:numel(recLLR)
+        [okVec(c), iterVec(c)] = localDecodeCombinedLLR(tx, recLLR{c}, cfg, localCellOrScalar(layout, c, struct()));
+    end
+    ok = all(okVec);
+    meanIter = mean(iterVec(isfinite(iterVec)), "omitnan");
+    return;
+end
 if isempty(recLLR) || ~(isstruct(layout) && ~isempty(fieldnames(layout)))
     return;
 end

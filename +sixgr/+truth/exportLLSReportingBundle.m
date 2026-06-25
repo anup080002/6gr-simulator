@@ -1270,7 +1270,7 @@ if ~(istable(trialT) && ~isempty(trialT) && ismember("Status", string(trialT.Pro
 end
 status = upper(strtrim(string(trialT.Status)));
 failMask = status == "FAIL" | status == "CRASH";
-note = "Current LLS runtime exports a single-codeword PDSCH path; codeword_1 BLER equals TB failure rate.";
+note = "PHY PDSCH TX/RX supports one codeword for ranks 1-4 and two codewords for ranks 5-8; this aggregate trial table exposes TB status, so codeword_1 mirrors TB failure rate unless codeword-specific rows are present.";
 T = [T; ...
     localMetricTableRow(cat, metric, "codeword_1", "rate", "available", mean(failMask), "", "fraction", "air_interface/csv/dl_pdsch_trials.csv", note); ...
     localMetricTableRow(cat, metric, "codeword_1", "sample_count", "available", numel(failMask), "", "count", "air_interface/csv/dl_pdsch_trials.csv", note)];

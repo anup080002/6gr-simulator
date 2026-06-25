@@ -89,15 +89,14 @@ assert(strcmp(string(info.ChannelEstimation.EngineUsed), "nrChannelEstimate") &&
     "Explicitly precoded multi-port PDSCH must stay on resource-selective channel estimation.");
 
 cfgGuard = cfg;
-cfgGuard.phy.pdsch.nLayers = 5;
-cfgGuard.phy.pdsch.numLayers = 5;
+cfgGuard.phy.pdsch.numCodewords = 2;
 try
-    sixgr.phy.dl.PDSCH_Tx(cfgGuard, "PrecodingMatrix", eye(5));
+    sixgr.phy.dl.PDSCH_Tx(cfgGuard, "PrecodingMatrix", W);
     error("testPDSCHMultiPortPrecoding:MissingGuard", ...
-        "Expected the single-codeword guard for NumLayers > 4.");
+        "Expected invalid rank/codeword mapping to fail.");
 catch ME
-    assert(strcmp(ME.identifier, "sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported"), ...
-        "Unexpected guard failure for unsupported multi-codeword PDSCH: %s", ME.identifier);
+    assert(strcmp(ME.identifier, "sixgr:phy:dl:PDSCHCodewordLayerScope"), ...
+        "Unexpected guard failure for invalid codeword-layer mapping: %s", ME.identifier);
 end
 
 ok = true;
