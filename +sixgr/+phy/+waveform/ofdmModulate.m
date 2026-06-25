@@ -20,8 +20,20 @@ function [waveform, info] = ofdmModulate(carrier, grid, varargin)
 %     info     : struct including OFDM settings and metadata
 
     % Normalize grid dimensions: K-by-L-by-P
-    if ndims(grid) == 2
+    if ismatrix(grid)
         grid = reshape(grid, size(grid,1), size(grid,2), 1);
+    end
+    if ndims(grid) > 3
+        error("sixgr:phy:ofdmModulate:BadGridRank", ...
+            "OFDM modulation expects a K-by-L-by-P resource grid. Got rank %d.", ndims(grid));
+    end
+    gridShape = size(grid);
+    if numel(gridShape) < 3
+        gridShape(3) = 1;
+    end
+    if any(~isfinite(double(gridShape))) || any(double(gridShape) < 1)
+        error("sixgr:phy:ofdmModulate:BadGridShape", ...
+            "OFDM modulation expects positive grid dimensions. Got %s.", mat2str(gridShape));
     end
 
     try
@@ -41,7 +53,21 @@ function [waveform, info] = ofdmModulate(carrier, grid, varargin)
     info.TimeDomainSignalPowerReference = char(string(noiseTransform.TimeDomainSignalPowerReference));
     info.FrequencyDomainSignalPowerReference = char(string(noiseTransform.FrequencyDomainSignalPowerReference));
     info.OFDMNoiseTransformVersion = char(string(noiseTransform.Version));
+    [gridPower, gridPowerInfo] = sixgr.phy.waveform.ofdmReferencePower(grid, info, "Domain", "occupied_re");
+    [timePower, timePowerInfo] = sixgr.phy.waveform.ofdmReferencePower(waveform, info, "Domain", "active_samples");
+    info.GridDomainSignalPower = double(gridPower);
+    info.TimeDomainSignalPower = double(timePower);
+    info.GridDomainSignalPowerInfo = gridPowerInfo;
+    info.TimeDomainSignalPowerInfo = timePowerInfo;
     info.EngineUsed = engine;
-    info.GridSize = size(grid);
+    info.GridSize = gridShape;
     info.WaveformSize = size(waveform);
+    info.DimensionContract = struct( ...
+        "GridSubcarriers", double(gridShape(1)), ...
+        "GridSymbols", double(gridShape(2)), ...
+        "GridPorts", double(gridShape(3)), ...
+        "WaveformSamples", double(size(waveform, 1)), ...
+        "WaveformColumns", double(size(waveform, 2)), ...
+        "Nfft", double(sixgr.util.structGet(info, "Nfft", NaN)), ...
+        "SampleRate", double(sixgr.util.structGet(info, "SampleRate", NaN)));
 end

@@ -8,6 +8,7 @@ function prec = resolvePDSCHPrecoding(pdsch, cfg, varargin)
 ip = inputParser;
 ip.addParameter("PrecodingMatrix", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("NormalizeW", [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("FixedReferenceMode", false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -60,7 +61,12 @@ if ~isempty(requestedPorts)
 end
 
 if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
-    if localHasFinitePMI(cfg)
+    if logical(opt.FixedReferenceMode)
+        sz = size(Wcfg);
+        error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixLayerMismatch", ...
+            "Fixed-reference PDSCH precoding requires the frozen explicit matrix to be Nports-by-Nlayers or Nlayers-by-Nports. Got %dx%d for %d layer(s).", ...
+            sz(1), sz(2), nLayers);
+    elseif localHasFinitePMI(cfg)
         % A grant replay can carry a stale rank-1 explicit beam from an
         % earlier snapshot while the current grant has a higher RI.  Do not
         % reshape that matrix; regenerate the rank-consistent codebook
@@ -98,7 +104,8 @@ if isempty(Wcfg)
     Wports = eye(nLayers);
     source = "identity";
 else
-    if ndims(Wcfg) > 2 && size(Wcfg, 3) ~= 1
+    Wcfg = localSqueezeSingletonPage(Wcfg);
+    if ~ismatrix(Wcfg)
         error("sixgr:phy:dl:PDSCHPrecoding:PRGBundleUnsupported", ...
             "Only wideband 2-D PDSCH precoding matrices are supported in this release.");
     end
@@ -183,9 +190,7 @@ tf = false;
 if isempty(Wcfg)
     return;
 end
-if ndims(Wcfg) > 2 && size(Wcfg, 3) == 1
-    Wcfg = squeeze(Wcfg);
-end
+Wcfg = localSqueezeSingletonPage(Wcfg);
 if ~ismatrix(Wcfg)
     return;
 end
@@ -382,9 +387,7 @@ if isempty(Wcfg)
     return;
 end
 Wtry = Wcfg;
-if ndims(Wtry) > 2 && size(Wtry, 3) == 1
-    Wtry = squeeze(Wtry);
-end
+Wtry = localSqueezeSingletonPage(Wtry);
 if ~ismatrix(Wtry)
     return;
 end
@@ -442,4 +445,11 @@ end
 beamIdx = unique(round(str2double(string(tok))), "stable");
 beamIdx = beamIdx(isfinite(beamIdx) & beamIdx >= 1);
 beamIdx = double(beamIdx(:).');
+end
+
+function x = localSqueezeSingletonPage(x)
+sz = size(x);
+if numel(sz) > 2 && all(sz(3:end) == 1)
+    x = reshape(x, sz(1), sz(2));
+end
 end

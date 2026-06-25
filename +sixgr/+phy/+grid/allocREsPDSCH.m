@@ -11,6 +11,7 @@ function [pdschInd, info, pdsch] = allocREsPDSCH(carrier, cfgOrPdsch, varargin)
 %     "IndexBase"        - "1based" (default) or "0based"
 %     "PRBSet"           - vector of PRB indices or [start end]
 %     "SymbolAllocation" - [startSym nSym]
+%     "FixedReferenceMode" - true rejects implicit mapping mutations
 
 opts = localParseOpts(varargin{:});
 
@@ -61,6 +62,8 @@ opts.NumLayers = [];
 opts.Modulation = "";
 opts.MappingType = "";
 opts.MappingTypeExplicit = false;
+opts.NID = [];
+opts.FixedReferenceMode = false;
 
 if mod(numel(varargin),2) ~= 0
     error("sixgr:allocREsPDSCH:InvalidNV", "Name-Value arguments must come in pairs.");
@@ -89,6 +92,10 @@ for i = 1:2:numel(varargin)
         case "mappingtype"
             opts.MappingType = string(val);
             opts.MappingTypeExplicit = true;
+        case "nid"
+            opts.NID = val;
+        case "fixedreferencemode"
+            opts.FixedReferenceMode = logical(val);
     end
 end
 
@@ -111,6 +118,7 @@ pdsch = nrPDSCHConfig;
 modStr = "16QAM";
 numLayers = 1;
 rnti = 1;
+nid = [];
 mapType = "A";
 prbSetCfg = [];
 symAllocCfg = [0 14];
@@ -120,6 +128,8 @@ if isstruct(cfg)
     modStr = string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", modStr));
     numLayers = double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", numLayers));
     rnti = double(sixgr.util.structGet(cfg, "phy.pdsch.RNTI", rnti));
+    nid = sixgr.util.structGet(cfg, "phy.pdsch.NID", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.nid", nid));
     rawMapType = string(sixgr.util.structGet(cfg, "phy.pdsch.mappingType", ""));
     if strlength(strtrim(rawMapType)) > 0
         mapType = rawMapType;
@@ -133,6 +143,7 @@ end
 if strlength(opts.Modulation) > 0, modStr = opts.Modulation; end
 if ~isempty(opts.NumLayers), numLayers = double(opts.NumLayers); end
 if ~isempty(opts.RNTI), rnti = double(opts.RNTI); end
+if ~isempty(opts.NID), nid = opts.NID; end
 if strlength(opts.MappingType) > 0
     mapType = opts.MappingType;
     mapTypeExplicit = logical(opts.MappingTypeExplicit);
@@ -151,12 +162,15 @@ pdsch.PRBSet = prbVec;
 pdsch.SymbolAllocation = double(symAllocCfg(:).');
 pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg);
 pdsch = localApplyPDSCHPTRSConfig(pdsch, cfg);
-pdsch = localNormalizePDSCHMapping(pdsch, mapType, mapTypeExplicit);
+pdsch = localNormalizePDSCHMapping(pdsch, mapType, mapTypeExplicit, opts.FixedReferenceMode);
 
 % Optional NID (scrambling)
 try
     if isprop(pdsch, "NID")
-        pdsch.NID = carrier.NCellID;
+        if isempty(nid)
+            nid = carrier.NCellID;
+        end
+        pdsch.NID = double(nid);
     end
 catch
 end
@@ -308,12 +322,15 @@ catch ME
 end
 end
 
-function pdsch = localNormalizePDSCHMapping(pdsch, mapType, explicitMapType)
+function pdsch = localNormalizePDSCHMapping(pdsch, mapType, explicitMapType, fixedReferenceMode)
 if nargin < 2 || strlength(string(mapType)) == 0
     mapType = "A";
 end
 if nargin < 3
     explicitMapType = false;
+end
+if nargin < 4
+    fixedReferenceMode = false;
 end
 
 mapType = upper(strtrim(string(mapType)));
@@ -336,7 +353,7 @@ end
 typeAPos = max(2, min(3, round(double(typeAPos))));
 
 if mapType == "A" && startSym > typeAPos
-    if logical(explicitMapType)
+    if logical(explicitMapType) || logical(fixedReferenceMode)
         error("sixgr:phy:grid:allocREsPDSCH:InvalidTypeADMRSSymbol", ...
             "PDSCH MappingType A starts at symbol %d after configured DMRSTypeAPosition=%d. Configure DMRSTypeAPosition=3 when legal, choose MappingType B, or move PDSCH earlier.", ...
             round(double(startSym)), round(double(typeAPos)));
