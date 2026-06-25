@@ -727,11 +727,18 @@ repIdx = localRepresentativeRowIndices(T, 16);
 subsystem = localTernary(blockId == "PDSCH", "downlink_data", "uplink_data");
 for idx = repIdx(:).'
     tbBits = localTableNumber(T, idx, "TBSize_bits", NaN);
-    prb = localTableNumber(T, idx, "AllocatedPRBCount", NaN);
-    layers = localTableNumber(T, idx, "Layers", 1);
-    modulation = localTableText(T, idx, "Modulation", "");
-    targetCodeRate = localTableNumber(T, idx, "TargetCodeRate", NaN);
-    xOverhead = localTableNumber(T, idx, "XOverhead", 0);
+    prb = localFirstFiniteNumber([localTableNumber(T, idx, "TBSInputNPRB", NaN), ...
+        localTableNumber(T, idx, "AllocatedPRBCount", NaN)]);
+    layers = localFirstFiniteNumber([localTableNumber(T, idx, "TBSInputNumLayers", NaN), ...
+        localTableNumber(T, idx, "Layers", 1)]);
+    modulation = localTableText(T, idx, "TBSInputModulation", "");
+    if strlength(strtrim(string(modulation))) == 0
+        modulation = localTableText(T, idx, "Modulation", "");
+    end
+    targetCodeRate = localFirstFiniteNumber([localTableNumber(T, idx, "TBSInputTargetCodeRate", NaN), ...
+        localTableNumber(T, idx, "TargetCodeRate", NaN)]);
+    xOverhead = localFirstFiniteNumber([localTableNumber(T, idx, "TBSInputXOverhead", NaN), ...
+        localTableNumber(T, idx, "XOverhead", 0)]);
     if ~isfinite(xOverhead)
         xOverhead = 0;
     end
@@ -748,62 +755,24 @@ end
 end
 
 function nRePerPrb = localReferenceNREPerPRB(T, idx, prb, modulation, layers)
-nRePerPrb = localTableNumber(T, idx, "NREPerPRB", NaN);
+nRePerPrb = localFirstFiniteNumber([ ...
+    localTableNumber(T, idx, "TBSInputNREPerPRB", NaN), ...
+    localTableNumber(T, idx, "NREPerPRB", NaN)]);
 if isfinite(nRePerPrb) && nRePerPrb > 0
     return;
 end
 prb = max(double(prb), 1);
-layers = max(double(layers), 1);
-qm = localModulationOrder(modulation);
-rawData = localTableNumber(T, idx, "DataRECount", NaN);
-rateMatched = localFirstFiniteNumber([ ...
-    localTableNumber(T, idx, "RateMatchedBits", NaN), ...
-    localTableNumber(T, idx, "MeasuredRateMatchedCodewordLLRBits", NaN), ...
-    localTableNumber(T, idx, "MeasuredRateMatchedCodewordBits", NaN)]);
-if isfinite(rateMatched) && rateMatched > 0
-    nRePerPrb = floor(rateMatched / max(qm * layers * prb, 1));
-    if isfinite(nRePerPrb) && nRePerPrb > 0
-        return;
-    end
-end
-if ~isfinite(rawData)
-    rawData = rateMatched;
-end
+rawData = localFirstFiniteNumber([ ...
+    localTableNumber(T, idx, "LayerDataRE", NaN), ...
+    localTableNumber(T, idx, "DataRECountPerLayer", NaN), ...
+    localTableNumber(T, idx, "DataRECount", NaN)]);
 if ~(isfinite(rawData) && rawData > 0)
     nRePerPrb = NaN;
     return;
 end
-
-maxPhysicalREAcrossLayers = prb * 12 * 14 * layers;
-rawLooksLikeCodedBitBudget = (isfinite(rateMatched) && abs(rawData - rateMatched) <= max(1, 1e-9 * abs(rawData))) || ...
-    rawData > maxPhysicalREAcrossLayers + eps;
-if rawLooksLikeCodedBitBudget
-    nRePerPrb = floor(rawData / max(qm * layers * prb, 1));
-else
-    nRePerPrb = floor(rawData / prb);
-end
+nRePerPrb = floor(rawData / prb);
 if ~(isfinite(nRePerPrb) && nRePerPrb > 0)
     nRePerPrb = NaN;
-end
-end
-
-function qm = localModulationOrder(modulation)
-token = upper(strrep(strtrim(char(string(modulation))), "-", ""));
-switch token
-    case 'QPSK'
-        qm = 2;
-    case '16QAM'
-        qm = 4;
-    case '64QAM'
-        qm = 6;
-    case '256QAM'
-        qm = 8;
-    case '1024QAM'
-        qm = 10;
-    case '4096QAM'
-        qm = 12;
-    otherwise
-        qm = 2;
 end
 end
 

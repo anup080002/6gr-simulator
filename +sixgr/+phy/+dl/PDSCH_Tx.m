@@ -124,7 +124,20 @@ end
 
 % Transport block size
 nPRB = numel(pdsch.PRBSet);
-[nrePerPRB, dataBitBudget] = localResolveDataNREPerPRB(pdschInfo, nPRB, pdsch.Modulation, pdsch.NumLayers);
+resourceAccounting = sixgr.phy.resource.computeResourceAccounting("PDSCH", carrier, pdsch, ...
+    "ChannelIndices", pdschInd, ...
+    "AllocationInfo", pdschInfo, ...
+    "IndexBase", "1based", ...
+    "TargetCodeRate", targetCodeRate, ...
+    "XOverhead", xOverhead);
+pdschInfo.ResourceAccounting = resourceAccounting;
+pdschInfo.LayerDataRE = resourceAccounting.LayerDataRE;
+pdschInfo.PortMappedRE = resourceAccounting.PortMappedRE;
+pdschInfo.ModulationSymbolCount = resourceAccounting.ModulationSymbolCount;
+pdschInfo.CodedBitCountG = resourceAccounting.CodedBitCountG;
+pdschInfo.G = resourceAccounting.CodedBitCountG;
+pdschInfo.NREPerPRB = resourceAccounting.NREPerPRBForTBS;
+nrePerPRB = resourceAccounting.NREPerPRBForTBS;
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     error('sixgr:phy:dl:PDSCHNoDataRE', ...
         'PDSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
@@ -178,14 +191,7 @@ C = size(cbs, 2);
 ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
 
 % Rate match to G bits
-if isfinite(dataBitBudget) && dataBitBudget > 0
-    G = double(dataBitBudget);
-elseif isfield(pdschInfo, 'G')
-    G = double(pdschInfo.G);
-else
-    qm = localQm(pdsch.Modulation);
-    G = double(qm * pdsch.NumLayers * nPRB * nrePerPRB);
-end
+G = double(resourceAccounting.CodedBitCountG);
 if ~(isfinite(G) && G > 0)
     error('sixgr:phy:dl:PDSCHNoDataRE', ...
         'PDSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
@@ -303,6 +309,12 @@ tx.PDSCH = pdsch;
 tx.PDSCHIndices = pdschInd;
 tx.PDSCHSymbolsForEvidence = pdschSym;
 tx.XOverhead = double(xOverhead);
+tx.G = G;
+tx.NREPerPRB = double(nrePerPRB);
+tx.LayerDataRE = double(resourceAccounting.LayerDataRE);
+tx.PortMappedRE = double(resourceAccounting.PortMappedRE);
+tx.ModulationSymbolCount = double(resourceAccounting.ModulationSymbolCount);
+tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.OFDMWindowingSamples = double(windowingSamples);
 tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
@@ -312,7 +324,6 @@ if ~logical(opt.CompactOutput)
     tx.TransportBlockCRC = tbCrc;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
-    tx.G = G;
     tx.PDSCHInfo = pdschInfo;
     tx.PDSCHSymbols = pdschSym;
     tx.DMRSIndices = dmrsInd;
@@ -346,58 +357,12 @@ info.OFDM = ofdmInfo;
 info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.XOverhead = double(xOverhead);
+info.ResourceAccounting = resourceAccounting;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
     info.PHYGrantDimensionContract = phyGrantContract;
 end
 
-end
-
-function [nrePerPRB, gBits] = localResolveDataNREPerPRB(pdschInfo, nPRB, modStr, nLayers)
-nrePerPRB = NaN;
-gBits = NaN;
-qm = localQm(modStr);
-indInfo = pdschInfo;
-if isstruct(pdschInfo) && isfield(pdschInfo, 'IndicesInfo')
-    indInfo = pdschInfo.IndicesInfo;
-elseif isstruct(pdschInfo) && isfield(pdschInfo, 'PDSCHIndicesInfo')
-    indInfo = pdschInfo.PDSCHIndicesInfo;
-end
-if isstruct(indInfo) && isfield(indInfo, 'G')
-    gBits = double(indInfo.G);
-elseif isstruct(pdschInfo) && isfield(pdschInfo, 'G')
-    gBits = double(pdschInfo.G);
-end
-if isstruct(indInfo) && isfield(indInfo, 'NREPerPRB')
-    nrePerPRB = double(indInfo.NREPerPRB);
-elseif isstruct(pdschInfo) && isfield(pdschInfo, 'NREPerPRB')
-    nrePerPRB = double(pdschInfo.NREPerPRB);
-elseif isstruct(indInfo) && isfield(indInfo, 'NRE')
-    totalNRE = double(indInfo.NRE);
-    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
-    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
-        % Rate matching must follow the exact data-RE budget returned by
-        % nrPDSCHIndices. Reserved resources can make NRE/PRB non-integer.
-        gBits = totalNRE * double(qm) * double(nLayers);
-    end
-elseif isstruct(pdschInfo) && isfield(pdschInfo, 'NRE')
-    totalNRE = double(pdschInfo.NRE);
-    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
-    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
-        gBits = totalNRE * double(qm) * double(nLayers);
-    end
-end
-if ~(isfinite(gBits) && gBits > 0) && isfinite(nrePerPRB) && nrePerPRB > 0 && isfinite(qm) && qm > 0
-    gBits = double(nrePerPRB) * max(double(nPRB), 1) * double(qm) * double(nLayers);
-end
-if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
-    if isfinite(gBits) && gBits > 0
-        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
-    end
-end
-if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
-    nrePerPRB = NaN;
-end
 end
 
 function [crcType, crcLen] = localResolveTBCRCSpec(schInfo, defaultType, defaultLen)
@@ -436,27 +401,6 @@ if nLayers > 4
     error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
         "PDSCH_Tx/PDSCH_Rx support a single codeword only. Requested %d layer(s) implies 2 codeword(s).", ...
         nLayers);
-end
-end
-
-function qm = localQm(modScheme)
-switch upper(char(string(modScheme)))
-    case {'PI/2-BPSK','BPSK'}
-        qm = 1;
-    case 'QPSK'
-        qm = 2;
-    case '16QAM'
-        qm = 4;
-    case '64QAM'
-        qm = 6;
-    case '256QAM'
-        qm = 8;
-    case '1024QAM'
-        qm = 10;
-    case '4096QAM'
-        qm = 12;
-    otherwise
-        qm = 2;
 end
 end
 

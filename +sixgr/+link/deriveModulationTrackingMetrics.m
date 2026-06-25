@@ -313,6 +313,20 @@ rsFrac = NaN;
 dataREPerLayer = NaN;
 totalDataRE = NaN;
 computedE = NaN;
+acct = sixgr.util.structGet(tx, "ResourceAccounting", struct());
+if isstruct(acct) && ~isempty(fieldnames(acct))
+    dataRE = double(sixgr.util.structGet(acct, "LayerDataRE", NaN));
+    dataREPerLayer = dataRE;
+    totalDataRE = double(sixgr.util.structGet(acct, "ModulationSymbolCount", NaN));
+    dmrsRE = double(sixgr.util.structGet(acct, "DMRSRE", NaN));
+    ptrsRE = double(sixgr.util.structGet(acct, "PTRSRE", NaN));
+    computedE = double(sixgr.util.structGet(acct, "CodedBitCountG", NaN));
+    totalRE = totalDataRE + dmrsRE + ptrsRE;
+    if totalRE > 0
+        rsFrac = (dmrsRE + ptrsRE) / totalRE;
+    end
+    return;
+end
 if direction == "UL"
     dataIdx = sixgr.util.structGet(tx, "PUSCHIndices", []);
     numLayers = double(sixgr.util.structGet(tx, "PUSCH.NumLayers", NaN));

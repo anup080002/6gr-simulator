@@ -1375,27 +1375,6 @@ seg = struct( ...
     "SegmentationInfo", segInfo);
 end
 
-function qm = localQm(modScheme)
-switch upper(char(string(modScheme)))
-    case {'PI/2-BPSK','BPSK'}
-        qm = 1;
-    case 'QPSK'
-        qm = 2;
-    case '16QAM'
-        qm = 4;
-    case '64QAM'
-        qm = 6;
-    case '256QAM'
-        qm = 8;
-    case '1024QAM'
-        qm = 10;
-    case '4096QAM'
-        qm = 12;
-    otherwise
-        qm = 2;
-end
-end
-
 function pusch = localEnsureTransformPrecodingOwnership(pusch, cfg)
 try
     modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
@@ -1452,18 +1431,7 @@ end
 end
 
 function nrePerPRB = localResolveNREFromInfo(info, nPRB, modStr, nLayers)
-nrePerPRB = NaN;
-if isempty(info) || ~isstruct(info)
-    return;
-end
-if isfield(info, 'NREPerPRB')
-    nrePerPRB = double(info.NREPerPRB);
-elseif isfield(info, 'NRE')
-    nrePerPRB = floor(double(info.NRE) / max(double(nPRB), 1));
-elseif isfield(info, 'G')
-    qm = localQm(modStr);
-    nrePerPRB = floor(double(info.G) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
-end
+[nrePerPRB, ~] = sixgr.util.resolveDataNREPerPRB(info, nPRB, modStr, nLayers);
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     nrePerPRB = NaN;
 end

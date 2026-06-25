@@ -87,6 +87,19 @@ info.PRBSet = pusch.PRBSet;
 info.SymbolAllocation = pusch.SymbolAllocation;
 info.NRE = size(puschInd, 1);
 info.PUSCHIndicesInfo = puschIndInfo;
+info.ResourceAccounting = sixgr.phy.resource.computeResourceAccounting("PUSCH", carrier, pusch, ...
+    "ChannelIndices", puschInd, ...
+    "AllocationInfo", info, ...
+    "IndexBase", opts.IndexBase);
+info.LayerDataRE = info.ResourceAccounting.LayerDataRE;
+info.PortMappedRE = info.ResourceAccounting.PortMappedRE;
+info.ModulationSymbolCount = info.ResourceAccounting.ModulationSymbolCount;
+info.CodedBitCountG = info.ResourceAccounting.CodedBitCountG;
+info.G = info.ResourceAccounting.CodedBitCountG;
+info.NREPerPRB = info.ResourceAccounting.NREPerPRBForTBS;
+info.DMRSRE = info.ResourceAccounting.DMRSRE;
+info.PTRSRE = info.ResourceAccounting.PTRSRE;
+info.ReservedRE = info.ResourceAccounting.ReservedRE;
 
 end
 

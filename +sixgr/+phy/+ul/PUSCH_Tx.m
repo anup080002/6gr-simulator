@@ -118,7 +118,20 @@ end
 
 % Transport block size
 nPRB = numel(pusch.PRBSet);
-[nrePerPRB, dataBitBudget] = localResolveDataNREPerPRB(puschInfo, nPRB, pusch.Modulation, pusch.NumLayers);
+resourceAccounting = sixgr.phy.resource.computeResourceAccounting("PUSCH", carrier, pusch, ...
+    "ChannelIndices", puschInd, ...
+    "AllocationInfo", puschInfo, ...
+    "IndexBase", "1based", ...
+    "TargetCodeRate", targetCodeRate, ...
+    "XOverhead", xOverhead);
+puschInfo.ResourceAccounting = resourceAccounting;
+puschInfo.LayerDataRE = resourceAccounting.LayerDataRE;
+puschInfo.PortMappedRE = resourceAccounting.PortMappedRE;
+puschInfo.ModulationSymbolCount = resourceAccounting.ModulationSymbolCount;
+puschInfo.CodedBitCountG = resourceAccounting.CodedBitCountG;
+puschInfo.G = resourceAccounting.CodedBitCountG;
+puschInfo.NREPerPRB = resourceAccounting.NREPerPRBForTBS;
+nrePerPRB = resourceAccounting.NREPerPRBForTBS;
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
     error('sixgr:phy:ul:PUSCHNoDataRE', ...
         'PUSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
@@ -181,14 +194,7 @@ uciInfo = struct( ...
     "Source", "no_uci_payload_requested");
 
 % Rate match to G bits
-if isfinite(dataBitBudget) && dataBitBudget > 0
-    G = double(dataBitBudget);
-elseif isfield(puschInfo, 'G')
-    G = double(puschInfo.G);
-else
-    qm = localQm(pusch.Modulation);
-    G = double(qm * pusch.NumLayers * nPRB * nrePerPRB);
-end
+G = double(resourceAccounting.CodedBitCountG);
 if ~(isfinite(G) && G > 0)
     error('sixgr:phy:ul:PUSCHNoDataRE', ...
         'PUSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
@@ -296,6 +302,13 @@ tx.Carrier = carrier;
 tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
 tx.PUSCHSymbolsForEvidence = puschSym;
+tx.XOverhead = double(xOverhead);
+tx.G = G;
+tx.NREPerPRB = double(nrePerPRB);
+tx.LayerDataRE = double(resourceAccounting.LayerDataRE);
+tx.PortMappedRE = double(resourceAccounting.PortMappedRE);
+tx.ModulationSymbolCount = double(resourceAccounting.ModulationSymbolCount);
+tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.UCIOnPUSCHApplied = logical(uciInfo.UCIOnPUSCHApplied);
 tx.HARQACKBitCount = double(uciInfo.HARQACKBitCount);
@@ -309,7 +322,6 @@ if ~logical(opt.CompactOutput)
     tx.TransportBlockCRC = tbCrc;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
-    tx.G = G;
     tx.PUSCHInfo = puschInfo;
     tx.PUSCHSymbols = puschSym;
     tx.DMRSIndices = dmrsInd;
@@ -332,6 +344,8 @@ info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.UCIOnPUSCH = uciInfo;
 info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
+info.XOverhead = double(xOverhead);
+info.ResourceAccounting = resourceAccounting;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
     info.PHYGrantDimensionContract = phyGrantContract;
@@ -345,54 +359,6 @@ if isempty(rawBits)
     return;
 end
 bits = int8(logical(rawBits(:)));
-end
-
-function [nrePerPRB, gBits] = localResolveDataNREPerPRB(puschInfo, nPRB, modStr, nLayers)
-nrePerPRB = NaN;
-gBits = NaN;
-qm = localQm(modStr);
-indInfo = puschInfo;
-if isstruct(puschInfo) && isfield(puschInfo, 'PUSCHIndicesInfo')
-    indInfo = puschInfo.PUSCHIndicesInfo;
-elseif isstruct(puschInfo) && isfield(puschInfo, 'IndicesInfo')
-    indInfo = puschInfo.IndicesInfo;
-end
-if isstruct(indInfo) && isfield(indInfo, 'G')
-    gBits = double(indInfo.G);
-elseif isstruct(puschInfo) && isfield(puschInfo, 'G')
-    gBits = double(puschInfo.G);
-end
-if isstruct(indInfo) && isfield(indInfo, 'NREPerPRB')
-    nrePerPRB = double(indInfo.NREPerPRB);
-elseif isstruct(puschInfo) && isfield(puschInfo, 'NREPerPRB')
-    nrePerPRB = double(puschInfo.NREPerPRB);
-elseif isstruct(indInfo) && isfield(indInfo, 'NRE')
-    totalNRE = double(indInfo.NRE);
-    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
-    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
-        % Rate matching uses the exact transport-channel bit budget G.
-        % Do not reconstruct it from floor(NRE/PRB): PTRS/DMRS reservations
-        % can leave a non-integer average RE count per PRB.
-        gBits = double(totalNRE) * double(qm) * double(nLayers);
-    end
-elseif isstruct(puschInfo) && isfield(puschInfo, 'NRE')
-    totalNRE = double(puschInfo.NRE);
-    nrePerPRB = floor(totalNRE / max(double(nPRB), 1));
-    if isfinite(totalNRE) && totalNRE > 0 && isfinite(qm) && qm > 0
-        gBits = double(totalNRE) * double(qm) * double(nLayers);
-    end
-end
-if ~(isfinite(gBits) && gBits > 0) && isfinite(nrePerPRB) && nrePerPRB > 0 && isfinite(qm) && qm > 0
-    gBits = double(nrePerPRB) * max(double(nPRB), 1) * double(qm) * double(nLayers);
-end
-if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
-    if isfinite(gBits) && gBits > 0
-        nrePerPRB = floor(double(gBits) / max(double(qm) * double(nLayers) * max(double(nPRB), 1), 1));
-    end
-end
-if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
-    nrePerPRB = NaN;
-end
 end
 
 function symAlloc = localResolveSymbolAllocation(pusch)
@@ -491,27 +457,6 @@ catch
 end
 if source == "disabled" && logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false))
     source = "configured_but_not_runtime_applied";
-end
-end
-
-function qm = localQm(modScheme)
-switch upper(char(string(modScheme)))
-    case {'PI/2-BPSK','BPSK'}
-        qm = 1;
-    case 'QPSK'
-        qm = 2;
-    case '16QAM'
-        qm = 4;
-    case '64QAM'
-        qm = 6;
-    case '256QAM'
-        qm = 8;
-    case '1024QAM'
-        qm = 10;
-    case '4096QAM'
-        qm = 12;
-    otherwise
-        qm = 2;
 end
 end
 

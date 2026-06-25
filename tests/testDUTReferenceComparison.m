@@ -22,8 +22,8 @@ writetable(ulT, ulPath);
 outGBits = sixgr.validation.LLSValidationHarness(ctxGBits.RunFolder, ctxGBits.ScenarioConfig, ctxGBits.InternalConfig, ...
     "WriteArtifacts", false);
 puschGBitRows = outGBits.DUTReferenceComparison(string(outGBits.DUTReferenceComparison.BlockId) == "PUSCH", :);
-assert(~isempty(puschGBitRows) && all(logical(puschGBitRows.Pass)), ...
-    "PUSCH reference comparison must convert coded-bit budget G to N_RE/PRB before calling nrTBS.");
+assert(~isempty(puschGBitRows) && any(~logical(puschGBitRows.Pass)), ...
+    "PUSCH reference comparison must reject coded-bit budget G when it is mislabeled as physical DataRECount.");
 
 ctxComputedE = llsImplementationHarnessFixture("partial_actual");
 ulPath = fullfile(ctxComputedE.RunFolder, "air_interface", "csv", "ul_pusch_trials.csv");

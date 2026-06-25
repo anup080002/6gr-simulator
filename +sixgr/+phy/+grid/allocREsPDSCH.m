@@ -35,6 +35,19 @@ info.SymbolAllocation = pdsch.SymbolAllocation;
 info.Modulation = string(pdsch.Modulation);
 info.NumLayers = pdsch.NumLayers;
 info.IndicesInfo = indInfo;
+info.ResourceAccounting = sixgr.phy.resource.computeResourceAccounting("PDSCH", carrier, pdsch, ...
+    "ChannelIndices", pdschInd, ...
+    "AllocationInfo", info, ...
+    "IndexBase", opts.IndexBase);
+info.LayerDataRE = info.ResourceAccounting.LayerDataRE;
+info.PortMappedRE = info.ResourceAccounting.PortMappedRE;
+info.ModulationSymbolCount = info.ResourceAccounting.ModulationSymbolCount;
+info.CodedBitCountG = info.ResourceAccounting.CodedBitCountG;
+info.G = info.ResourceAccounting.CodedBitCountG;
+info.NREPerPRB = info.ResourceAccounting.NREPerPRBForTBS;
+info.DMRSRE = info.ResourceAccounting.DMRSRE;
+info.PTRSRE = info.ResourceAccounting.PTRSRE;
+info.ReservedRE = info.ResourceAccounting.ReservedRE;
 
 end
 
