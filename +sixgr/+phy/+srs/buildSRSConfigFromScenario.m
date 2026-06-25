@@ -155,7 +155,7 @@ strictCfg.DFTDelayTapKeepCount = double(sixgr.util.structGet(cfg, "phy.srs.dftDe
 strictCfg.TimingToleranceSamples = double(sixgr.util.structGet(cfg, "phy.srs.timingToleranceSamples", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.timing_tolerance_samples", 3)));
 strictCfg.HighSNRdB = double(sixgr.util.structGet(cfg, "channel.snr_dB", 35));
-strictCfg.LowSNRSweepdB = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.low_snr_sweep_db", [-12 0 20 35]));
+strictCfg.LowSNRSweepdB = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.low_snr_sweep_db", [-20 -12 0 20 35]));
 strictCfg.TimingOffsetSweepSamples = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.timing_offset_sweep_samples", [0 2 4]));
 strictCfg.Seed = double(sixgr.util.structGet(cfg, "run.seed", 240619));
 strictCfg.ChannelModel = string(sixgr.util.structGet(cfg, "channel.model", "AWGN"));

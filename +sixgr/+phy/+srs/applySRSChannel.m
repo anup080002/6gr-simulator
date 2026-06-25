@@ -15,8 +15,12 @@ rng(max(1, round(double(opt.Seed))), "twister");
 
 wave = tx.Waveform;
 faultMode = lower(strtrim(string(opt.FaultMode)));
+appliedChannelGain = complex(1, 0);
+appliedChannelGainSource = "strict_srs_awgn_unit_channel";
 if faultMode == "no_signal"
     wave = complex(zeros(size(wave), "like", wave));
+    appliedChannelGain = complex(0, 0);
+    appliedChannelGainSource = "strict_srs_no_signal_fault";
 end
 timingOffset = round(double(opt.TimingOffsetSamples));
 if timingOffset > 0
@@ -27,7 +31,7 @@ elseif timingOffset < 0
     wave = [wave(n+1:end, :); zeros(n, size(wave, 2), "like", wave)];
 end
 if faultMode == "corrupted_symbols"
-    wave = wave + 4 .* std(abs(wave(:)), 0, "omitnan") .* ...
+    wave = wave + 8 .* std(abs(wave(:)), 0, "omitnan") .* ...
         (randn(size(wave), "like", real(wave)) + 1i .* randn(size(wave), "like", real(wave)));
 end
 snrDb = double(opt.SNRdB);
@@ -66,4 +70,6 @@ rx.InjectedTimingOffsetSamples = double(timingOffset);
 rx.FaultMode = string(faultMode);
 rx.ChannelModel = string(srsCfg.ChannelModel);
 rx.ChannelFadingApplied = false;
+rx.AppliedChannelGain = appliedChannelGain;
+rx.AppliedChannelGainSource = appliedChannelGainSource;
 end

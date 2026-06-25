@@ -5,6 +5,8 @@ mapping = sixgr.phy.srs.generateSRSSymbolsAndIndices(srsCfg);
 rows = repmat(localExtractRow(), 0, 1);
 obsAll = [];
 refAll = [];
+truthAll = [];
+appliedGain = sixgr.util.structGet(rx, "AppliedChannelGain", complex(1, 0));
 for ii = 1:numel(mapping.SlotResources)
     slot = mapping.SlotResources(ii).Slot;
     rxIdx = find([rx.RxSlots.Slot] == slot, 1, "first");
@@ -25,6 +27,7 @@ for ii = 1:numel(mapping.SlotResources)
     end
     obsAll = [obsAll; obs(:)]; %#ok<AGROW>
     refAll = [refAll; ref(:)]; %#ok<AGROW>
+    truthAll = [truthAll; repmat(appliedGain, numel(ref), 1)]; %#ok<AGROW>
     for k = 1:numel(ind)
         row = localExtractRow();
         row.RunId = string(srsCfg.RunId);
@@ -49,6 +52,8 @@ for ii = 1:numel(mapping.SlotResources)
         row.ReferenceSymbolQ = double(imag(ref(k)));
         row.ObservedSymbolI = double(real(obs(k)));
         row.ObservedSymbolQ = double(imag(obs(k)));
+        row.AppliedChannelGainI = double(real(appliedGain));
+        row.AppliedChannelGainQ = double(imag(appliedGain));
         row.ExtractionAttempted = true;
         row.ExtractionAvailable = isfinite(real(obs(k))) && isfinite(imag(obs(k)));
         row.ConfigHash = string(srsCfg.ConfigHash);
@@ -63,6 +68,7 @@ else
 end
 finiteMask = isfinite(real(obsAll)) & isfinite(imag(obsAll));
 extracted = struct("ObservedSymbols", obsAll, "ReferenceSymbols", refAll, ...
+    "AppliedChannelGains", truthAll, ...
     "Table", T, "ExtractionAttempted", true, ...
     "ExtractionAvailable", ~isempty(obsAll) && all(finiteMask), ...
     "ObservedFiniteRECount", double(sum(finiteMask)), ...
@@ -75,6 +81,7 @@ row = struct("RunId", "", "Slot", NaN, "ResourceId", NaN, "LinearIndex", NaN, ..
     "CombNumber", NaN, "CombOffset", NaN, "CyclicShift", NaN, "SequenceId", NaN, ...
     "ReferenceSymbolI", NaN, "ReferenceSymbolQ", NaN, ...
     "ObservedSymbolI", NaN, "ObservedSymbolQ", NaN, ...
+    "AppliedChannelGainI", NaN, "AppliedChannelGainQ", NaN, ...
     "ExtractionAttempted", false, "ExtractionAvailable", false, ...
     "ConfigHash", "", "TruthStatus", "");
 end

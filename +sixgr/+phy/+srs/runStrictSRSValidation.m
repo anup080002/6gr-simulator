@@ -89,10 +89,24 @@ for ii = 1:numel(negativeModes)
     oracleT = localAppend(oracleT, one.OracleTable);
 end
 
-[lowSNRT, lowTrials, trialId] = localLowSNRSweep(srsCfg, baseTx, trialId);
+[lowSNRT, lowTrials, lowEvidence, trialId] = localLowSNRSweep(srsCfg, baseTx, trialId);
 trialT = localAppend(trialT, lowTrials);
-[timingSweepT, timingTrials, trialId] = localTimingOffsetSweep(srsCfg, baseTx, trialId);
+extractionT = localAppend(extractionT, lowEvidence.ExtractionTable);
+detectionT = localAppend(detectionT, lowEvidence.DetectionTable);
+channelT = localAppend(channelT, lowEvidence.ChannelTable);
+channelPrbT = localAppend(channelPrbT, lowEvidence.ChannelPRBTable);
+channelPortT = localAppend(channelPortT, lowEvidence.ChannelPortTable);
+timingT = localAppend(timingT, lowEvidence.TimingTable);
+oracleT = localAppend(oracleT, lowEvidence.OracleTable);
+[timingSweepT, timingTrials, timingEvidence, trialId] = localTimingOffsetSweep(srsCfg, baseTx, trialId);
 trialT = localAppend(trialT, timingTrials);
+extractionT = localAppend(extractionT, timingEvidence.ExtractionTable);
+detectionT = localAppend(detectionT, timingEvidence.DetectionTable);
+channelT = localAppend(channelT, timingEvidence.ChannelTable);
+channelPrbT = localAppend(channelPrbT, timingEvidence.ChannelPRBTable);
+channelPortT = localAppend(channelPortT, timingEvidence.ChannelPortTable);
+timingT = localAppend(timingT, timingEvidence.TimingTable);
+oracleT = localAppend(oracleT, timingEvidence.OracleTable);
 multiUET = localMultiUETrials(srsCfg);
 coverageT = localCoverageTable(srsCfg, trialT, detectionT, channelT, timingT);
 
@@ -261,14 +275,16 @@ cfg.ConfigExport = rmfield(cfg, intersect(fieldnames(cfg), ...
     {'ToolboxCarrier','ToolboxSRS','BaseConfig','ConfigExport','StrictValidation'}));
 end
 
-function [sweepT, trialT, trialId] = localLowSNRSweep(cfg, baseTx, trialId)
+function [sweepT, trialT, evidence, trialId] = localLowSNRSweep(cfg, baseTx, trialId)
 snrs = double(cfg.LowSNRSweepdB(:).');
 rows = repmat(localLowSNRRow(), numel(snrs), 1);
 trialT = table();
+evidence = localEmptyEvidenceTables();
 for ii = 1:numel(snrs)
     [trialId, one] = localRunOneTrial(trialId, cfg, baseTx, "low_snr_sweep", snrs(ii), 0, "normal", false, []);
     tr = one.TrialTable;
     trialT = localAppend(trialT, tr);
+    evidence = localAppendEvidence(evidence, one);
     rows(ii) = localLowSNRRow();
     rows(ii).RunId = string(cfg.RunId);
     rows(ii).SweepId = "low_snr_" + string(ii);
@@ -286,14 +302,16 @@ end
 sweepT = struct2table(rows, "AsArray", true);
 end
 
-function [sweepT, trialT, trialId] = localTimingOffsetSweep(cfg, baseTx, trialId)
+function [sweepT, trialT, evidence, trialId] = localTimingOffsetSweep(cfg, baseTx, trialId)
 offsets = double(cfg.TimingOffsetSweepSamples(:).');
 rows = repmat(localTimingSweepRow(), numel(offsets), 1);
 trialT = table();
+evidence = localEmptyEvidenceTables();
 for ii = 1:numel(offsets)
     [trialId, one] = localRunOneTrial(trialId, cfg, baseTx, "timing_offset_sweep", max(35, cfg.HighSNRdB), offsets(ii), "normal", false, []);
     tr = one.TrialTable;
     trialT = localAppend(trialT, tr);
+    evidence = localAppendEvidence(evidence, one);
     rows(ii) = localTimingSweepRow();
     rows(ii).RunId = string(cfg.RunId);
     rows(ii).SweepId = "timing_offset_" + string(ii);
@@ -308,6 +326,22 @@ for ii = 1:numel(offsets)
     rows(ii).Status = "measured_waveform_sweep";
 end
 sweepT = struct2table(rows, "AsArray", true);
+end
+
+function evidence = localEmptyEvidenceTables()
+evidence = struct("ExtractionTable", table(), "DetectionTable", table(), ...
+    "ChannelTable", table(), "ChannelPRBTable", table(), ...
+    "ChannelPortTable", table(), "TimingTable", table(), "OracleTable", table());
+end
+
+function evidence = localAppendEvidence(evidence, one)
+evidence.ExtractionTable = localAppend(evidence.ExtractionTable, one.ExtractionTable);
+evidence.DetectionTable = localAppend(evidence.DetectionTable, one.DetectionTable);
+evidence.ChannelTable = localAppend(evidence.ChannelTable, one.ChannelTable);
+evidence.ChannelPRBTable = localAppend(evidence.ChannelPRBTable, one.ChannelPRBTable);
+evidence.ChannelPortTable = localAppend(evidence.ChannelPortTable, one.ChannelPortTable);
+evidence.TimingTable = localAppend(evidence.TimingTable, one.TimingTable);
+evidence.OracleTable = localAppend(evidence.OracleTable, one.OracleTable);
 end
 
 function T = localMultiUETrials(cfg)

@@ -1426,9 +1426,15 @@ if builtin("isstruct", raSection) && ~isempty(fieldnames(raSection))
 end
 
 channelRFSection = localGetNested(s, "channel_rf_configured_vs_applied", struct());
+channelRFEnabledExplicit = localHasNestedPath(s, "channel_rf_configured_vs_applied.enabled");
+channelRFDerivedRequired = localChannelRFStrictRequiredByRuntime(cfg);
+if channelRFDerivedRequired && ~channelRFEnabledExplicit
+    channelRFSection = sixgr.util.structSet(channelRFSection, "enabled", true);
+    channelRFSection = sixgr.util.structSet(channelRFSection, "required_by", "strict_reference_signal_or_random_access_channel_rf");
+end
 if builtin("isstruct", channelRFSection) && ~isempty(fieldnames(channelRFSection))
     cfg = sixgr.util.structSet(cfg, "validation.channel_rf_configured_vs_applied", channelRFSection);
-    if logical(localGetNested(s, "channel_rf_configured_vs_applied.enabled", false))
+    if logical(sixgr.util.structGet(channelRFSection, "enabled", false))
         cfg = localAppendValidationObjectives(cfg, "channel_rf_strict_validation");
     end
 end
@@ -1778,6 +1784,39 @@ existing = localStringVector(sixgr.util.structGet(cfg, "validation.objectives", 
 tokens = localStringVector(tokens);
 values = unique([existing; tokens], "stable");
 cfg = sixgr.util.structSet(cfg, "validation.objectives", cellstr(values));
+end
+
+function tf = localChannelRFStrictRequiredByRuntime(cfg)
+strictReferenceRequired = any([
+    logical(sixgr.util.structGet(cfg, "run.controlGating.prachRequired", false))
+    logical(sixgr.util.structGet(cfg, "run.controlGating.srsRequired", false))
+    logical(sixgr.util.structGet(cfg, "run.controlGating.trsRequired", false))]);
+channelModel = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+fadingProfile = strtrim(string(sixgr.util.structGet(cfg, "channel.fading.profile", ...
+    sixgr.util.structGet(cfg, "channel.delayProfile", ""))));
+rfEnabled = logical(sixgr.util.structGet(cfg, "rf.enable", false));
+interferenceEnabled = logical(sixgr.util.structGet(cfg, "channel_rf.interferenceEnabled", false));
+interferenceMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.interferenceExecutionMode", "none"))));
+hasNonAwgnChannel = ~(channelModel == "" || channelModel == "AWGN") || strlength(fadingProfile) > 0;
+hasRFOrInterference = rfEnabled || interferenceEnabled || ~any(interferenceMode == ["", "none", "disabled", "off"]);
+tf = strictReferenceRequired && (hasNonAwgnChannel || hasRFOrInterference);
+end
+
+function tf = localHasNestedPath(s, path)
+tf = false;
+if ~(isstruct(s) && isscalar(s))
+    return;
+end
+parts = split(string(path), ".");
+cur = s;
+for ii = 1:numel(parts)
+    key = char(parts(ii));
+    if ~(isstruct(cur) && isscalar(cur) && isfield(cur, key))
+        return;
+    end
+    cur = cur.(key);
+end
+tf = true;
 end
 
 function resource = localResolvePreferredPUCCHResource(resources, requestedFormat)
