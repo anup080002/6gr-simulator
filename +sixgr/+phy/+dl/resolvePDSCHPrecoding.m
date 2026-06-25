@@ -14,6 +14,8 @@ opt = ip.Results;
 
 nLayers = double(pdsch.NumLayers);
 nCodewords = localNumCodewords(pdsch, nLayers);
+arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "bs", ...
+    "Signal", "PDSCH", "MinimumPorts", max(1, nLayers));
 
 prec = struct();
 prec.Active = false;
@@ -34,6 +36,8 @@ prec.MatrixCols = max(nLayers, 1);
 prec.MatrixPorts = eye(max(nLayers, 1));
 prec.MatrixNR = reshape(eye(max(nLayers, 1)), [max(nLayers, 1), max(nLayers, 1), 1]);
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+prec = localAttachArchitecture(prec, arch);
+prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 
 if nCodewords > 1 || nLayers > 4
     error("sixgr:phy:dl:PDSCHPrecoding:MultiCodewordUnsupported", ...
@@ -52,12 +56,12 @@ if isempty(Wcfg)
     Wcfg = sixgr.util.structGet(cfg, "phy.pdsch.W", []);
 end
 
-requestedPorts = sixgr.util.structGet(cfg, "phy.pdsch.numPorts", []);
-if isempty(requestedPorts)
-    requestedPorts = sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []);
+requestedPorts = localResolvePDSCHRequestedPorts(cfg);
+if isempty(requestedPorts) && ~isempty(Wcfg) && localExplicitMatrixHasLayerShape(Wcfg, nLayers)
+    requestedPorts = localExplicitMatrixPortCount(Wcfg, nLayers);
 end
-if ~isempty(requestedPorts)
-    requestedPorts = max(1, round(double(requestedPorts)));
+if isempty(requestedPorts)
+    requestedPorts = double(arch.NumPorts);
 end
 
 if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
@@ -92,13 +96,13 @@ if isempty(normalizeW)
 end
 
 if isempty(Wcfg)
-    if nLayers == 1
+    if nLayers == 1 && requestedPorts == 1
         prec.NormalizeW = normalizeW;
         return;
     end
-    if ~isempty(requestedPorts) && requestedPorts ~= nLayers
+    if requestedPorts ~= nLayers
         error("sixgr:phy:dl:PDSCHPrecoding:NumPortsNeedsMatrix", ...
-            "Requested %d PDSCH port(s) for %d layer(s). Provide an explicit PrecodingMatrix for multi-port DL precoding.", ...
+            "Requested %d PDSCH port(s) for %d layer(s). Provide an explicit PrecodingMatrix or PMI/TPMI for multi-port DL precoding.", ...
             requestedPorts, nLayers);
     end
     Wports = eye(nLayers);
@@ -160,6 +164,8 @@ prec.MatrixCols = size(Wports, 2);
 prec.MatrixPorts = Wports;
 prec.MatrixNR = reshape(Wports.', [nLayers, size(Wports, 1), 1]);
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+prec = localAttachArchitecture(prec, arch);
+prec = localAttachPowerInfo(prec, Wports, nLayers);
 if isstruct(pmiMeta)
     if isfield(pmiMeta, "PMI")
         prec.PMI = double(pmiMeta.PMI);
@@ -177,6 +183,61 @@ end
 
 end
 
+function requestedPorts = localResolvePDSCHRequestedPorts(cfg)
+requestedPorts = [];
+paths = ["phy.pdsch.numPorts", "phy.pdsch.nPorts", "phy.pdsch.NumAntennaPorts", "phy.pdsch.numAntennaPorts"];
+for i = 1:numel(paths)
+    value = sixgr.util.structGet(cfg, paths(i), []);
+    if isnumeric(value) && isscalar(value) && isfinite(double(value)) && double(value) >= 1
+        requestedPorts = max(1, round(double(value)));
+        return;
+    end
+end
+end
+
+function prec = localAttachArchitecture(prec, arch)
+prec.NumElements = double(sixgr.util.structGet(arch, "NumElements", NaN));
+prec.NumRFChains = double(sixgr.util.structGet(arch, "NumRFChains", NaN));
+prec.AntennaArchitecture = string(sixgr.util.structGet(arch, "Architecture", ""));
+prec.PortCountSource = string(sixgr.util.structGet(arch, "PortCountSource", ""));
+prec.RFChainCountSource = string(sixgr.util.structGet(arch, "RFChainCountSource", ""));
+prec.PortToElementMatrix = sixgr.util.structGet(arch, "PortToElementMatrix", []);
+prec.ElementToPortMatrix = sixgr.util.structGet(arch, "ElementToPortMatrix", []);
+prec.PortToRFChainMatrix = sixgr.util.structGet(arch, "PortToRFChainMatrix", []);
+prec.RFChainToPortMatrix = sixgr.util.structGet(arch, "RFChainToPortMatrix", []);
+end
+
+function prec = localAttachPowerInfo(prec, Wports, nLayers)
+Wports = double(Wports);
+traceWWH = real(trace(Wports * Wports'));
+traceTarget = double(nLayers);
+if isempty(Wports)
+    gramError = NaN;
+else
+    gramError = norm(Wports' * Wports - eye(size(Wports, 2)), "fro");
+end
+if isfinite(traceWWH) && traceWWH > 0 && isfinite(traceTarget) && traceTarget > 0
+    powerScale = sqrt(traceTarget ./ traceWWH);
+    Wpower = Wports .* powerScale;
+    normalizedTrace = real(trace(Wpower * Wpower'));
+else
+    powerScale = NaN;
+    Wpower = Wports;
+    normalizedTrace = NaN;
+end
+prec.PrecoderTraceWWH = double(traceWWH);
+prec.PrecoderRawTraceWWH = double(traceWWH);
+prec.PrecoderTraceTarget = traceTarget;
+prec.PrecoderTraceError = double(abs(traceWWH - traceTarget));
+prec.PrecoderLayerGramFroError = double(gramError);
+prec.PrecoderPowerScale = double(powerScale);
+prec.PowerNormalizedMatrixPorts = Wpower;
+prec.PrecoderNormalizedTraceWWH = double(normalizedTrace);
+prec.PrecoderNormalizedTraceError = double(abs(normalizedTrace - traceTarget));
+prec.TotalPowerPreservationEquation = "trace((alpha*W)*(alpha*W)'')=NumLayers, alpha=sqrt(NumLayers/trace(W*W''))";
+prec.TotalPowerPreservingTrace = logical(isfinite(traceWWH) && abs(traceWWH - traceTarget) <= 1e-12 * max(1, traceTarget));
+prec.TotalPowerPreservingNormalizedTrace = logical(isfinite(normalizedTrace) && abs(normalizedTrace - traceTarget) <= 1e-12 * max(1, traceTarget));
+end
 function nCodewords = localNumCodewords(pdsch, nLayers)
 nCodewords = 1 + (nLayers > 4);
 try
@@ -199,6 +260,22 @@ tf = (sz(2) == nLayers && sz(1) >= nLayers) || ...
     (sz(1) == nLayers && sz(2) >= nLayers);
 end
 
+function nPorts = localExplicitMatrixPortCount(Wcfg, nLayers)
+nPorts = [];
+Wcfg = localSqueezeSingletonPage(Wcfg);
+if ~ismatrix(Wcfg)
+    return;
+end
+sz = size(Wcfg);
+if sz(2) == nLayers && sz(1) >= nLayers
+    nPorts = sz(1);
+elseif sz(1) == nLayers && sz(2) >= nLayers
+    nPorts = sz(2);
+end
+if ~isempty(nPorts)
+    nPorts = max(1, round(double(nPorts)));
+end
+end
 function tf = localHasFinitePMI(cfg)
 tf = false;
 paths = ["phy.pdsch.tpmi", "phy.pdsch.TPMI", "phy.pdsch.pmi", "phy.pdsch.PMI"];
@@ -249,7 +326,7 @@ end
 
 numPorts = requestedPorts;
 if isempty(numPorts)
-    numPorts = sixgr.util.structGet(cfg, "phy.nTxAnt", nLayers);
+    numPorts = nLayers;
 end
 numPorts = max(1, round(double(numPorts)));
 

@@ -188,6 +188,19 @@ classdef ChannelFactory
                 return;
             end
 
+
+            [txRuntimeContract] = sixgr.channel.ChannelFactory.localValidateRuntimeAntennaPortContract( ...
+                opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta, opt.NumTxAnt, "tx");
+            [rxRuntimeContract] = sixgr.channel.ChannelFactory.localValidateRuntimeAntennaPortContract( ...
+                opt.ReceiveAntennaRuntime, opt.ReceiveAntennaMeta, opt.NumRxAnt, "rx");
+            meta.TransmitAntennaNumElements = double(txRuntimeContract.NumElements);
+            meta.TransmitAntennaNumPorts = double(txRuntimeContract.NumPorts);
+            meta.TransmitAntennaNumRFChains = double(txRuntimeContract.NumRFChains);
+            meta.TransmitAntennaPortCountSource = string(txRuntimeContract.PortCountSource);
+            meta.ReceiveAntennaNumElements = double(rxRuntimeContract.NumElements);
+            meta.ReceiveAntennaNumPorts = double(rxRuntimeContract.NumPorts);
+            meta.ReceiveAntennaNumRFChains = double(rxRuntimeContract.NumRFChains);
+            meta.ReceiveAntennaPortCountSource = string(rxRuntimeContract.PortCountSource);
             if any(model == ["nrtdl","tdl"])
                 [chObj, arrayRuntimeMeta] = sixgr.channel.ChannelFactory.localCreateTDL(cfg, opt);
                 meta = sixgr.channel.ChannelFactory.localApplyChannelHandlingMeta( ...
@@ -229,15 +242,15 @@ classdef ChannelFactory
                 meta.RuntimeArrayGeometryCoupled = logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false));
                 if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false))
                     meta.ChannelArrayModel = "nrcdl_runtime_array_geometry_channel";
-                    meta.ChannelArrayHandlingStatus = "runtime_array_shape_spacing_orientation_coupled";
+                    meta.ChannelArrayHandlingStatus = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelArrayHandlingStatus", "runtime_array_shape_spacing_orientation_coupled"));
                     meta.ChannelArrayHandlingBlocker = "";
                     meta.ChannelUsesCountOnlyAntennaModel = false;
-                    meta.ChannelUsesSameRuntimeAntennaAssumptions = true;
-                    meta.ChannelGeometryCouplingLevel = "runtime_array_shape_spacing_orientation";
-                    meta.GeometryAdapterType = "backend_native_nrCDLChannel_antenna_array";
+                    meta.ChannelUsesSameRuntimeAntennaAssumptions = logical(sixgr.util.structGet(arrayRuntimeMeta, "ChannelUsesSameRuntimeAntennaAssumptions", true));
+                    meta.ChannelGeometryCouplingLevel = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelGeometryCouplingLevel", "runtime_array_shape_spacing_orientation"));
+                    meta.GeometryAdapterType = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterType", "backend_native_nrCDLChannel_antenna_array"));
                     meta.GeometryAdapterSource = string(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometrySource", ""));
-                    meta.GeometryAdapterLimitation = "";
-                    meta.GeometryAdapterPortMapping = "runtime_array_shape_matches_channel_ports";
+                    meta.GeometryAdapterLimitation = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterLimitation", ""));
+                    meta.GeometryAdapterPortMapping = string(sixgr.util.structGet(arrayRuntimeMeta, "GeometryAdapterPortMapping", "runtime_array_shape_matches_channel_ports"));
                     meta.ChannelRuntimeGeometrySource = string(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometrySource", ""));
                     meta.TransmitArrayOrientation_deg = sixgr.util.structGet(arrayRuntimeMeta, "TransmitArrayOrientation_deg", [NaN; NaN; NaN]);
                     meta.ReceiveArrayOrientation_deg = sixgr.util.structGet(arrayRuntimeMeta, "ReceiveArrayOrientation_deg", [NaN; NaN; NaN]);
@@ -316,6 +329,147 @@ classdef ChannelFactory
     end
 
     methods(Static, Access=private)
+        function contract = localValidateRuntimeAntennaPortContract(runtimeAntenna, runtimeMeta, signalPortCount, sideLabel)
+            signalPortCount = max(1, round(double(signalPortCount)));
+            [numPorts, portSource] = sixgr.channel.ChannelFactory.localRuntimeLogicalPortCount(runtimeAntenna, runtimeMeta);
+            [numElements, elementSource] = sixgr.channel.ChannelFactory.localRuntimeElementCount(runtimeAntenna, runtimeMeta);
+            [numRFChains, rfSource] = sixgr.channel.ChannelFactory.localRuntimeRFChainCount(runtimeAntenna, runtimeMeta);
+            if ~isfinite(numRFChains) && isfinite(numPorts)
+                numRFChains = numPorts;
+                rfSource = "default_equal_logical_ports";
+            end
+
+            runtimeSupplied = (isstruct(runtimeAntenna) && ~isempty(fieldnames(runtimeAntenna))) || ...
+                (isstruct(runtimeMeta) && ~isempty(fieldnames(runtimeMeta)));
+            if ~isfinite(numPorts) && isfinite(numElements) && runtimeSupplied
+                if round(double(numElements)) == signalPortCount
+                    numPorts = numElements;
+                    portSource = "legacy_runtime_element_count_matches_signal_ports";
+                else
+                    error("ChannelFactory:RuntimeAntennaPortMismatch", ...
+                        "%s runtime antenna evidence has %d element(s) but no logical-port mapping for %d waveform/channel port(s).", ...
+                        upper(char(string(sideLabel))), round(double(numElements)), signalPortCount);
+                end
+            end
+
+            if isfinite(numPorts) && round(double(numPorts)) ~= signalPortCount
+                error("ChannelFactory:RuntimeAntennaPortMismatch", ...
+                    "%s runtime logical port count %d does not match waveform/channel port count %d. Geometry is not discarded to hide this mismatch.", ...
+                    upper(char(string(sideLabel))), round(double(numPorts)), signalPortCount);
+            end
+
+            contract = struct( ...
+                "NumPorts", double(numPorts), ...
+                "NumElements", double(numElements), ...
+                "NumRFChains", double(numRFChains), ...
+                "PortCountSource", char(string(portSource)), ...
+                "ElementCountSource", char(string(elementSource)), ...
+                "RFChainCountSource", char(string(rfSource)));
+        end
+
+        function [count, source] = localRuntimeLogicalPortCount(runtimeAntenna, runtimeMeta)
+            count = NaN;
+            source = "";
+            candidates = {runtimeMeta, runtimeAntenna};
+            labels = ["runtime_meta", "runtime_antenna"];
+            fields = ["NumPorts", "NumLogicalPorts", "LogicalPortCount"];
+            for c = 1:numel(candidates)
+                obj = candidates{c};
+                if ~(isstruct(obj) && ~isempty(fieldnames(obj)))
+                    continue;
+                end
+                for f = 1:numel(fields)
+                    raw = sixgr.util.structGet(obj, fields(f), NaN);
+                    value = sixgr.channel.ChannelFactory.localPositiveIntegerOrNaN(raw);
+                    if isfinite(value)
+                        count = value;
+                        source = labels(c) + "." + fields(f);
+                        return;
+                    end
+                end
+            end
+            map = sixgr.util.structGet(runtimeAntenna, "PortToElementMatrix", []);
+            if isnumeric(map) && ismatrix(map) && size(map, 2) >= 1
+                count = size(map, 2);
+                source = "runtime_antenna.PortToElementMatrix_columns";
+                return;
+            end
+            map = sixgr.util.structGet(runtimeAntenna, "ElementToPortMatrix", []);
+            if isnumeric(map) && ismatrix(map) && size(map, 1) >= 1
+                count = size(map, 1);
+                source = "runtime_antenna.ElementToPortMatrix_rows";
+                return;
+            end
+        end
+
+        function [count, source] = localRuntimeElementCount(runtimeAntenna, runtimeMeta)
+            count = NaN;
+            source = "";
+            fields = ["NumElements", "Nant"];
+            objs = {runtimeMeta, runtimeAntenna};
+            labels = ["runtime_meta", "runtime_antenna"];
+            for c = 1:numel(objs)
+                obj = objs{c};
+                if ~(isstruct(obj) && ~isempty(fieldnames(obj)))
+                    continue;
+                end
+                for f = 1:numel(fields)
+                    raw = sixgr.util.structGet(obj, fields(f), NaN);
+                    value = sixgr.channel.ChannelFactory.localPositiveIntegerOrNaN(raw);
+                    if isfinite(value)
+                        count = value;
+                        source = labels(c) + "." + fields(f);
+                        return;
+                    end
+                end
+            end
+            sizeVec = double(sixgr.util.structGet(runtimeAntenna, "Size", []));
+            if ~isempty(sizeVec)
+                sizeVec = sizeVec(:).';
+                sizeVec = sizeVec(isfinite(sizeVec) & sizeVec >= 1);
+                if ~isempty(sizeVec)
+                    if numel(sizeVec) >= 3
+                        sizeVec = sizeVec(1:3);
+                    end
+                    count = prod(max(1, round(sizeVec)));
+                    source = "runtime_antenna.Size_product";
+                end
+            end
+        end
+
+        function [count, source] = localRuntimeRFChainCount(runtimeAntenna, runtimeMeta)
+            count = NaN;
+            source = "";
+            fields = ["NumRFChains", "RFChainCount"];
+            objs = {runtimeMeta, runtimeAntenna};
+            labels = ["runtime_meta", "runtime_antenna"];
+            for c = 1:numel(objs)
+                obj = objs{c};
+                if ~(isstruct(obj) && ~isempty(fieldnames(obj)))
+                    continue;
+                end
+                for f = 1:numel(fields)
+                    raw = sixgr.util.structGet(obj, fields(f), NaN);
+                    value = sixgr.channel.ChannelFactory.localPositiveIntegerOrNaN(raw);
+                    if isfinite(value)
+                        count = value;
+                        source = labels(c) + "." + fields(f);
+                        return;
+                    end
+                end
+            end
+        end
+
+        function count = localPositiveIntegerOrNaN(raw)
+            count = NaN;
+            if isempty(raw) || ~isnumeric(raw)
+                return;
+            end
+            raw = double(raw(1));
+            if isfinite(raw) && raw >= 1
+                count = max(1, round(raw));
+            end
+        end
         function meta = localApplyChannelHandlingMeta(meta, modelToken, objectClass, objectSource)
             token = lower(strtrim(char(string(modelToken))));
             objClass = char(string(objectClass));
@@ -548,6 +702,21 @@ classdef ChannelFactory
 
             pos = double(sixgr.util.structGet(runtimeAntenna, "ElementPositions_m", []));
             lambda = double(sixgr.util.structGet(runtimeAntenna, "Lambda_m", NaN));
+            portToElement = double(sixgr.util.structGet(runtimeAntenna, "PortToElementMatrix", []));
+            if ismatrix(pos) && size(pos, 2) >= 3 && ismatrix(portToElement) && ...
+                    size(portToElement, 2) == numAnt && size(pos, 1) >= size(portToElement, 1) && ...
+                    isfinite(lambda) && lambda > 0
+                weights = abs(portToElement);
+                colSum = sum(weights, 1);
+                if all(isfinite(colSum)) && all(colSum > 0)
+                    weights = weights ./ colSum;
+                    positionsLambda = (weights.' * pos(1:size(weights, 1), 1:3)) ./ lambda;
+                    source = string(role) + "_runtime_port_centroids_from_element_port_mapping";
+                    mapping = string(role) + "_logical_ports_projected_from_runtime_element_positions";
+                    valid = all(isfinite(positionsLambda(:)));
+                    return;
+                end
+            end
             if ismatrix(pos) && size(pos, 2) >= 3 && size(pos, 1) >= numAnt && isfinite(lambda) && lambda > 0
                 positionsLambda = pos(1:numAnt, 1:3) ./ lambda;
                 source = string(role) + "_runtime_element_positions_m";
@@ -655,7 +824,13 @@ classdef ChannelFactory
                 "LOSComplianceReason", "", ...
                 "CDLDelayProfileBeforeLOSGating", string(delayProfile), ...
                 "CDLDelayProfileAfterLOSGating", string(delayProfile), ...
-                "CDLLOSDraw", NaN);
+                "CDLLOSDraw", NaN, ...
+                "ChannelArrayHandlingStatus", "runtime_array_shape_spacing_orientation_coupled", ...
+                "ChannelGeometryCouplingLevel", "runtime_array_shape_spacing_orientation", ...
+                "GeometryAdapterType", "backend_native_nrCDLChannel_antenna_array", ...
+                "GeometryAdapterLimitation", "", ...
+                "GeometryAdapterPortMapping", "runtime_array_shape_matches_channel_ports", ...
+                "ChannelUsesSameRuntimeAntennaAssumptions", true);
             [delayProfile, losMeta] = sixgr.channel.ChannelFactory.localApplyCDLLOSProbabilityGating(delayProfile, cfg, opt);
             losFields = fieldnames(losMeta);
             for losIdx = 1:numel(losFields)
@@ -673,12 +848,12 @@ classdef ChannelFactory
             arrayRuntimeMeta.NormalizePathGains = normalizePathGains;
             arrayRuntimeMeta.ChannelNormalizationMode = normalizationMode;
             arrayRuntimeMeta.ChannelNormalizationSource = normalizationSource;
-            [cdl.TransmitAntennaArray, txRuntimeCoupled] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
+            [cdl.TransmitAntennaArray, txRuntimeCoupled, txArrayAdapterMeta] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.TransmitAntennaArray, opt.NumTxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.bs_array_geometry", "ura"), ...
                 sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""), ...
                 opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta);
-            [cdl.ReceiveAntennaArray, rxRuntimeCoupled] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
+            [cdl.ReceiveAntennaArray, rxRuntimeCoupled, rxArrayAdapterMeta] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.ReceiveAntennaArray, opt.NumRxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.ue_array_geometry", "ula"), ...
                 sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""), ...
@@ -704,6 +879,17 @@ classdef ChannelFactory
                 arrayRuntimeMeta.RuntimeArrayGeometrySource = "CoupledTruthRuntime.runtime_antenna_metadata_to_nrCDLChannel";
                 arrayRuntimeMeta.TransmitArrayOrientation_deg = txOrientation;
                 arrayRuntimeMeta.ReceiveArrayOrientation_deg = rxOrientation;
+                projectionApplied = logical(sixgr.util.structGet(txArrayAdapterMeta, "LogicalPortProjectionApplied", false)) || ...
+                    logical(sixgr.util.structGet(rxArrayAdapterMeta, "LogicalPortProjectionApplied", false));
+                arrayRuntimeMeta.GeometryAdapterPortMapping = string(sixgr.util.structGet(txArrayAdapterMeta, "PortMapping", "")) + ";" + ...
+                    string(sixgr.util.structGet(rxArrayAdapterMeta, "PortMapping", ""));
+                if projectionApplied
+                    arrayRuntimeMeta.ChannelArrayHandlingStatus = "runtime_array_logical_port_projection_coupled";
+                    arrayRuntimeMeta.ChannelGeometryCouplingLevel = "runtime_logical_port_projection_from_element_geometry";
+                    arrayRuntimeMeta.GeometryAdapterType = "port_domain_channel_array_from_element_to_port_mapping";
+                    arrayRuntimeMeta.GeometryAdapterLimitation = "nrCDLChannel consumes waveform columns as channel ports; physical element geometry is projected to logical ports before channel filtering.";
+                    arrayRuntimeMeta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+                end
             end
 
             if ~isempty(opt.SampleRate)
@@ -795,19 +981,21 @@ classdef ChannelFactory
             meta.CDLLOSDraw = double(draw);
         end
 
-        function [arr, usedRuntimeGeometry] = localConfigureCDLAntennaArray(arr, numAnt, geometry, polarization, runtimeAntenna, runtimeMeta)
+        function [arr, usedRuntimeGeometry, adapterMeta] = localConfigureCDLAntennaArray(arr, numAnt, geometry, polarization, runtimeAntenna, runtimeMeta)
             if nargin < 5
                 runtimeAntenna = struct();
             end
             if nargin < 6
                 runtimeMeta = struct();
             end
-            [runtimeSpec, usedRuntimeGeometry] = sixgr.channel.ChannelFactory.localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta);
+            adapterMeta = struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports");
+            [runtimeSpec, usedRuntimeGeometry] = sixgr.channel.ChannelFactory.localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta, numAnt);
             if usedRuntimeGeometry
                 arr.Size = runtimeSpec.Size;
                 arr.ElementSpacing = runtimeSpec.ElementSpacing;
                 arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
                     arr.PolarizationAngles, runtimeSpec.PolarizationCount);
+                adapterMeta = runtimeSpec.AdapterMeta;
                 return;
             end
             numAnt = max(1, round(double(numAnt)));
@@ -818,8 +1006,10 @@ classdef ChannelFactory
                 arr.PolarizationAngles, polCount);
         end
 
-        function [spec, valid] = localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta)
-            spec = struct("Size", [NaN NaN NaN 1 1], "ElementSpacing", [NaN NaN 1 1], "PolarizationCount", NaN);
+        function [spec, valid] = localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta, numAnt)
+            spec = struct("Size", [NaN NaN NaN 1 1], "ElementSpacing", [NaN NaN 1 1], "PolarizationCount", NaN, ...
+                "AdapterMeta", struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports"));
+            numAnt = max(1, round(double(numAnt)));
             valid = false;
             if ~(isstruct(runtimeMeta) && ~isempty(fieldnames(runtimeMeta)))
                 runtimeMeta = struct();
@@ -863,9 +1053,23 @@ classdef ChannelFactory
                 spacingH = 0.5;
                 spacingV = 0.5;
             end
+            [logicalPorts, portSource] = sixgr.channel.ChannelFactory.localRuntimeLogicalPortCount(runtimeAntenna, runtimeMeta);
+            [numElements, ~] = sixgr.channel.ChannelFactory.localRuntimeElementCount(runtimeAntenna, runtimeMeta);
+            physicalArrayCount = nRow * nCol * nPol;
+            if isfinite(logicalPorts) && round(double(logicalPorts)) == numAnt && physicalArrayCount ~= numAnt
+                spec.Size = [numAnt 1 1 1 1];
+                spec.ElementSpacing = [spacingH spacingV 1 1];
+                spec.PolarizationCount = 1;
+                spec.AdapterMeta = struct("LogicalPortProjectionApplied", true, ...
+                    "PortMapping", sprintf("logical_%d_ports_projected_from_%d_runtime_elements_via_%s", ...
+                    numAnt, round(double(numElements)), char(string(portSource))));
+                valid = true;
+                return;
+            end
             spec.Size = [nRow nCol nPol 1 1];
             spec.ElementSpacing = [spacingH spacingV 1 1];
             spec.PolarizationCount = nPol;
+            spec.AdapterMeta = struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports");
             valid = true;
         end
 

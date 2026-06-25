@@ -21,6 +21,8 @@ assert(any(double(resolvedT.NumElements(strcmpi(string(resolvedT.NodeType), "UE"
 
 [cfgDL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "DL");
 [cfgUL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "UL");
+cfgDL = localApplyStrictPDSCHFixture(cfgDL);
+cfgUL = localApplyStrictPDSCHFixture(cfgUL);
 assert(isstruct(cfgDL.lls6g.userContext.RuntimeServingBSAntenna) && ...
     ~isempty(fieldnames(cfgDL.lls6g.userContext.RuntimeServingBSAntenna)), ...
     "DL runtime user context must carry the active BS antenna object.");
@@ -123,6 +125,19 @@ assert(isfinite(double(T.ToD_s(1))) && isfinite(double(T.ToA_s(1))) && double(T.
     "Raw %s trial row must export a finite same-flow ToD/ToA pair.", direction);
 end
 
+function cfg = localApplyStrictPDSCHFixture(cfg)
+cfg.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeApos = 3;
+cfg.phy.dmrs.typeAPosition = 3;
+cfg.phy.csirs.enable = true;
+cfg.phy.csirs.nPorts = 1;
+cfg.phy.csirs.rowNumber = 2;
+cfg.phy.csirs.symbolLocations = 5;
+cfg.phy.csirs.subcarrierLocations = 0;
+cfg.phy.csirs.rbOffset = 0;
+cfg.phy.csirs.numRB = max(1, min(double(cfg.phy.carrier.NSizeGrid), 24));
+end
 function [cfg, state, grant] = localPrepareRuntime(tmp)
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "simulator", "configs", "scenarios", "lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml"));
@@ -135,6 +150,17 @@ cfg.channel.tdlProfile = "TDL-C";
 cfg.channel.awgnOnly = false;
 cfg.channel.snr_dB = 18;
 cfg.run.interferenceExecutionMode = "none";
+cfg.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeApos = 3;
+cfg.phy.dmrs.typeAPosition = 3;
+cfg.phy.csirs.enable = true;
+cfg.phy.csirs.nPorts = 1;
+cfg.phy.csirs.rowNumber = 2;
+cfg.phy.csirs.symbolLocations = 5;
+cfg.phy.csirs.subcarrierLocations = 0;
+cfg.phy.csirs.rbOffset = 0;
+cfg.phy.csirs.numRB = max(1, min(double(cfg.phy.carrier.NSizeGrid), 24));
 
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);

@@ -13,13 +13,18 @@ ip.parse(varargin{:});
 opt = ip.Results;
 
 nLayers = localPositiveInteger(localObjectValue(pusch, "NumLayers", 1), "NumLayers");
+arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "ue", ...
+    "Signal", "PUSCH", "MinimumPorts", max(1, nLayers));
 transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
 scheme = string(localObjectValue(pusch, "TransmissionScheme", "nonCodebook"));
 isCodebook = strcmpi(char(scheme), "codebook");
 
 nPorts = double(localObjectValue(pusch, "NumAntennaPorts", NaN));
 if ~(isscalar(nPorts) && isfinite(nPorts) && nPorts >= 1)
-    nPorts = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", nLayers));
+    nPorts = localResolvePUSCHConfiguredPorts(cfg);
+end
+if ~(isscalar(nPorts) && isfinite(nPorts) && nPorts >= 1)
+    nPorts = double(arch.NumPorts);
 end
 nPorts = max(1, round(double(nPorts)));
 
@@ -55,6 +60,8 @@ prec.BeamformingApplied = false;
 prec.NativeCodebookApplied = false;
 prec.BeamIndexDefinition = "";
 prec.FixedReferenceMode = logical(opt.FixedReferenceMode);
+prec = localAttachArchitecture(prec, arch);
+prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 
 if transformPrecoding && ~isCodebook
     prec.Mode = "transform_precoding";
@@ -62,6 +69,7 @@ if transformPrecoding && ~isCodebook
     prec.ApplicationStage = "dft_spread_before_re_mapping";
     prec.MatrixRows = double(size(prec.MatrixPorts, 1));
     prec.MatrixCols = double(size(prec.MatrixPorts, 2));
+    prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
     return;
 end
 
@@ -70,6 +78,7 @@ if ~isCodebook
     prec.MatrixRows = NaN;
     prec.MatrixCols = NaN;
     prec.NumPorts = double(nLayers);
+    prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
     return;
 end
 
@@ -107,8 +116,64 @@ prec.NumPorts = double(size(Wports, 1));
 prec.BeamIndices = double(localActiveCodebookPorts(Wtx));
 prec.BeamIndexDefinition = "nrPUSCHCodebook_nonzero_antenna_port_support";
 prec.CodebookStatus = string(codebookStatus);
+prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 end
 
+function nPorts = localResolvePUSCHConfiguredPorts(cfg)
+nPorts = NaN;
+paths = ["phy.pusch.NumAntennaPorts", "phy.pusch.numAntennaPorts", "phy.pusch.numPorts", "phy.pusch.nPorts"];
+for i = 1:numel(paths)
+    value = sixgr.util.structGet(cfg, paths(i), []);
+    if isnumeric(value) && isscalar(value) && isfinite(double(value)) && double(value) >= 1
+        nPorts = max(1, round(double(value)));
+        return;
+    end
+end
+end
+
+function prec = localAttachArchitecture(prec, arch)
+prec.NumElements = double(sixgr.util.structGet(arch, "NumElements", NaN));
+prec.NumRFChains = double(sixgr.util.structGet(arch, "NumRFChains", NaN));
+prec.AntennaArchitecture = string(sixgr.util.structGet(arch, "Architecture", ""));
+prec.PortCountSource = string(sixgr.util.structGet(arch, "PortCountSource", ""));
+prec.RFChainCountSource = string(sixgr.util.structGet(arch, "RFChainCountSource", ""));
+prec.PortToElementMatrix = sixgr.util.structGet(arch, "PortToElementMatrix", []);
+prec.ElementToPortMatrix = sixgr.util.structGet(arch, "ElementToPortMatrix", []);
+prec.PortToRFChainMatrix = sixgr.util.structGet(arch, "PortToRFChainMatrix", []);
+prec.RFChainToPortMatrix = sixgr.util.structGet(arch, "RFChainToPortMatrix", []);
+end
+
+function prec = localAttachPowerInfo(prec, Wports, nLayers)
+Wports = double(Wports);
+traceWWH = real(trace(Wports * Wports'));
+traceTarget = double(nLayers);
+if isempty(Wports)
+    gramError = NaN;
+else
+    gramError = norm(Wports' * Wports - eye(size(Wports, 2)), "fro");
+end
+if isfinite(traceWWH) && traceWWH > 0 && isfinite(traceTarget) && traceTarget > 0
+    powerScale = sqrt(traceTarget ./ traceWWH);
+    Wpower = Wports .* powerScale;
+    normalizedTrace = real(trace(Wpower * Wpower'));
+else
+    powerScale = NaN;
+    Wpower = Wports;
+    normalizedTrace = NaN;
+end
+prec.PrecoderTraceWWH = double(traceWWH);
+prec.PrecoderRawTraceWWH = double(traceWWH);
+prec.PrecoderTraceTarget = traceTarget;
+prec.PrecoderTraceError = double(abs(traceWWH - traceTarget));
+prec.PrecoderLayerGramFroError = double(gramError);
+prec.PrecoderPowerScale = double(powerScale);
+prec.PowerNormalizedMatrixPorts = Wpower;
+prec.PrecoderNormalizedTraceWWH = double(normalizedTrace);
+prec.PrecoderNormalizedTraceError = double(abs(normalizedTrace - traceTarget));
+prec.TotalPowerPreservationEquation = "trace((alpha*W)*(alpha*W)'')=NumLayers, alpha=sqrt(NumLayers/trace(W*W''))";
+prec.TotalPowerPreservingTrace = logical(isfinite(traceWWH) && abs(traceWWH - traceTarget) <= 1e-12 * max(1, traceTarget));
+prec.TotalPowerPreservingNormalizedTrace = logical(isfinite(normalizedTrace) && abs(normalizedTrace - traceTarget) <= 1e-12 * max(1, traceTarget));
+end
 function localValidateCodebookInputs(nLayers, nPorts, tpmi)
 if ~(isscalar(tpmi) && isfinite(tpmi) && tpmi >= 0 && abs(tpmi - round(tpmi)) < 1e-9)
     error("sixgr:phy:ul:PUSCHPrecoding:BadTPMI", ...

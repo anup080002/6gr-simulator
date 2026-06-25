@@ -651,28 +651,6 @@ ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
     "TransmitAntennaMeta", txMeta, ...
     "ReceiveAntennaMeta", rxMeta);
 channelMeta = sixgr.util.structGet(ch, "Meta", struct());
-if txRuntimeNormalized || rxRuntimeNormalized
-    notes = strings(0, 1);
-    if txRuntimeNormalized
-        notes(end + 1, 1) = string(txNormalizationReason); %#ok<AGROW>
-    end
-    if rxRuntimeNormalized
-        notes(end + 1, 1) = string(rxNormalizationReason); %#ok<AGROW>
-    end
-    channelMeta.ChannelArrayHandlingStatus = "runtime_array_port_mismatch_normalized_to_signal_port_count";
-    channelMeta.ChannelArrayHandlingBlocker = localSafeCharToken(localUniqueTokenSet([ ...
-        string(sixgr.util.structGet(channelMeta, "ChannelArrayHandlingBlocker", "")); ...
-        notes]));
-    channelMeta.ChannelGeometryCouplingLevel = "count_only_signal_port_fallback_after_runtime_array_port_mismatch";
-    channelMeta.GeometryAdapterLimitation = localSafeCharToken(localUniqueTokenSet([ ...
-        string(sixgr.util.structGet(channelMeta, "GeometryAdapterLimitation", "")); ...
-        "runtime_array_geometry_removed_when_signal_port_count_did_not_match_waveform_columns"]));
-    channelMeta.GeometryAdapterPortMapping = localSafeCharToken(localUniqueTokenSet([ ...
-        string(sixgr.util.structGet(channelMeta, "GeometryAdapterPortMapping", "")); ...
-        "signal_port_count_drives_channel_object_after_runtime_array_port_mismatch"]));
-    channelMeta.ChannelUsesSameRuntimeAntennaAssumptions = false;
-end
-
 if ~(logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object))
     waveform = localCollapseToVictimRx(txWave, numRx, max(1, round(double(seed))));
     waveform = localMatchWaveformLength(waveform, targetSize(1));
@@ -766,11 +744,9 @@ runtimePortCount = max(1, round(double(runtimePortCount)));
 if runtimePortCount == signalPortCount
     return;
 end
-runtimeAntenna = struct();
-runtimeMeta = struct();
-normalized = true;
-reason = sprintf("%s_runtime_ports_%d_mismatch_signal_ports_%d", ...
-    lower(char(string(sideLabel))), runtimePortCount, signalPortCount);
+error("sixgr:link:InterferenceRuntimeAntennaPortMismatch", ...
+    "%s runtime logical port count %d does not match interference waveform port count %d. Runtime geometry is not discarded to hide this mismatch.", ...
+    upper(char(string(sideLabel))), runtimePortCount, signalPortCount);
 end
 
 function portCount = localResolveRuntimeAntennaPortCount(runtimeAntenna, runtimeMeta)
@@ -780,6 +756,27 @@ if nargin < 1 || ~isstruct(runtimeAntenna)
 end
 if nargin < 2 || ~isstruct(runtimeMeta)
     runtimeMeta = struct();
+end
+explicitCandidates = [ ...
+    sixgr.util.structGet(runtimeMeta, "NumPorts", NaN), ...
+    sixgr.util.structGet(runtimeMeta, "NumLogicalPorts", NaN), ...
+    sixgr.util.structGet(runtimeAntenna, "NumPorts", NaN), ...
+    sixgr.util.structGet(runtimeAntenna, "NumLogicalPorts", NaN)];
+explicitCandidates = double(explicitCandidates(:));
+explicitCandidates = explicitCandidates(isfinite(explicitCandidates) & explicitCandidates >= 1);
+if ~isempty(explicitCandidates)
+    portCount = max(1, round(explicitCandidates(1)));
+    return;
+end
+portToElement = sixgr.util.structGet(runtimeAntenna, "PortToElementMatrix", []);
+if isnumeric(portToElement) && ismatrix(portToElement) && size(portToElement, 2) >= 1
+    portCount = size(portToElement, 2);
+    return;
+end
+elementToPort = sixgr.util.structGet(runtimeAntenna, "ElementToPortMatrix", []);
+if isnumeric(elementToPort) && ismatrix(elementToPort) && size(elementToPort, 1) >= 1
+    portCount = size(elementToPort, 1);
+    return;
 end
 nRow = double(sixgr.util.structGet(runtimeMeta, "NumRows", NaN));
 nCol = double(sixgr.util.structGet(runtimeMeta, "NumCols", NaN));

@@ -53,11 +53,18 @@ if direction == "DL"
     if logical(sixgr.util.structGet(cfgOut, "phy.csirs.enable", false))
         cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.nPorts", numWaveformColumns);
         cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.numPorts", numWaveformColumns);
-        cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.rowNumber", []);
-        cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.symbolLocations", []);
-        cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.subcarrierLocations", []);
-        cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.density", "");
-        cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.cdmType", "");
+        if isempty(sixgr.util.structGet(cfgOut, "phy.csirs.symbolLocations", []))
+            cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.symbolLocations", 0);
+        end
+        if isempty(sixgr.util.structGet(cfgOut, "phy.csirs.subcarrierLocations", []))
+            cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.subcarrierLocations", 0);
+        end
+        if isempty(sixgr.util.structGet(cfgOut, "phy.csirs.density", []))
+            cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.density", "one");
+        end
+        if isempty(sixgr.util.structGet(cfgOut, "phy.csirs.cdmType", []))
+            cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.cdmType", "NoCDM");
+        end
     end
 else
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.NumAntennaPorts", numLogicalPorts);
