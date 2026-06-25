@@ -230,6 +230,10 @@ codeword = int8(codeword(:));
 
 % ---------------------- PUSCH modulation & mapping ----------------------
 [puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword);
+[puschLayerSym, puschDomainInfo] = localResolvePUSCHLayerSymbols(puschSym, pusch);
+puschLayerInd = localLayerIndicesFromPortIndices(puschInd, puschLayerSym);
+puschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschLayerInd, "layer");
+puschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschInd, "port");
 
 % DMRS
 [dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
@@ -301,15 +305,29 @@ tx.TargetCodeRate = targetCodeRate;
 tx.Carrier = carrier;
 tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
-tx.PUSCHSymbolsForEvidence = puschSym;
+tx.PUSCHSymbolsForEvidence = puschLayerSym;
+tx.PUSCHLayerSymbolsForEvidence = puschLayerSym;
+tx.PUSCHPortSymbolsForEvidence = puschSym;
+tx.PUSCHLayerSymbols = puschLayerSym;
+tx.PUSCHPortSymbols = puschSym;
+tx.PUSCHLayerIndices = puschLayerInd;
+tx.PUSCHPortIndices = puschInd;
+tx.LayerSymbolOrder = puschLayerOrder;
+tx.PortSymbolOrder = puschPortOrder;
+tx.LayerSymbolDomain = "layer";
+tx.PortSymbolDomain = "port";
 tx.XOverhead = double(xOverhead);
 tx.G = G;
 tx.NREPerPRB = double(nrePerPRB);
 tx.LayerDataRE = double(resourceAccounting.LayerDataRE);
 tx.PortMappedRE = double(resourceAccounting.PortMappedRE);
 tx.ModulationSymbolCount = double(resourceAccounting.ModulationSymbolCount);
+tx.QAMSymbolCount = double(numel(puschLayerSym));
+tx.PortIndexCellCount = double(numel(puschInd));
+tx.RateMatchedBitCount = double(G);
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
+tx.SymbolDomainInfo = puschDomainInfo;
 tx.UCIOnPUSCHApplied = logical(uciInfo.UCIOnPUSCHApplied);
 tx.HARQACKBitCount = double(uciInfo.HARQACKBitCount);
 tx.HARQACKBits = harqAckBits;
@@ -323,7 +341,7 @@ if ~logical(opt.CompactOutput)
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
     tx.PUSCHInfo = puschInfo;
-    tx.PUSCHSymbols = puschSym;
+    tx.PUSCHSymbols = puschLayerSym;
     tx.DMRSIndices = dmrsInd;
     tx.DMRSSymbols = dmrsSym;
     tx.PTRSIndices = ptrsInd;
@@ -339,6 +357,7 @@ info.CarrierInfo = cinfo;
 info.CRC = crcInfo;
 info.Segmentation = segInfo;
 info.PUSCHSymbols = puschSymInfo;
+info.SymbolDomain = puschDomainInfo;
 info.OFDM = ofdmInfo;
 info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
@@ -426,6 +445,126 @@ try
     return;
 catch
     rethrow(numericErr);
+end
+end
+
+function [layerSym, info] = localResolvePUSCHLayerSymbols(portSym, pusch)
+portSym = localEnsure2D(portSym);
+nLayers = localObjectFiniteScalar(pusch, "NumLayers", size(portSym, 2));
+nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(portSym, 2));
+tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
+scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
+nLayers = max(1, round(double(nLayers)));
+nPorts = max(1, round(double(nPorts)));
+info = struct( ...
+    "ReferenceDomain", "layer", ...
+    "PortDomain", "port", ...
+    "Transform", "identity", ...
+    "NumLayers", double(nLayers), ...
+    "NumPorts", double(nPorts), ...
+    "TPMI", double(tpmi), ...
+    "Status", "native_layer_symbols", ...
+    "Equation", "b_G_to_QAM_d_to_layers_S_to_ports_X_equals_S_times_W_transpose");
+
+if isempty(portSym)
+    layerSym = portSym;
+    info.Status = "empty_symbol_array";
+    return;
+end
+
+if size(portSym, 2) == nLayers
+    layerSym = portSym;
+    return;
+end
+
+if scheme == "codebook" && size(portSym, 2) == nPorts && nPorts > nLayers
+    [Wlayer, status] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi);
+    if isempty(Wlayer)
+        error("sixgr:phy:ul:PUSCHSymbolDomainUnsupported", ...
+            "Cannot derive layer-domain PUSCH symbols from port-domain symbols: %s.", char(string(status)));
+    end
+    if size(Wlayer, 1) ~= size(portSym, 2) || size(Wlayer, 2) ~= nLayers
+        error("sixgr:phy:ul:PUSCHSymbolDomainMismatch", ...
+            "PUSCH codebook matrix shape %s does not match port-symbol shape %s.", ...
+            mat2str(size(Wlayer)), mat2str(size(portSym)));
+    end
+    layerSym = portSym * conj(Wlayer);
+    info.Transform = "inverse_unitary_codebook_projection_X_times_conj_W";
+    info.Status = string(status) + "_recovered_layer_symbols";
+    return;
+end
+
+error("sixgr:phy:ul:PUSCHSymbolDomainMismatch", ...
+    "PUSCH symbol domains are incompatible: port-symbol shape %s, NumLayers=%d, NumPorts=%d, TransmissionScheme=%s.", ...
+    mat2str(size(portSym)), nLayers, nPorts, char(scheme));
+end
+
+function layerInd = localLayerIndicesFromPortIndices(portInd, layerSym)
+layerSym = localEnsure2D(layerSym);
+nRows = size(layerSym, 1);
+nLayers = size(layerSym, 2);
+if isempty(portInd) || isempty(layerSym)
+    layerInd = zeros(size(layerSym));
+    return;
+end
+if size(portInd, 1) == nRows && size(portInd, 2) >= nLayers
+    layerInd = portInd(:, 1:nLayers);
+    return;
+end
+if numel(portInd) == numel(layerSym)
+    layerInd = reshape(portInd, size(layerSym));
+    return;
+end
+error("sixgr:phy:ul:PUSCHLayerIndexDomainMismatch", ...
+    "Cannot attach layer-domain ordering map: index shape %s does not match layer-symbol shape %s.", ...
+    mat2str(size(portInd)), mat2str(size(layerSym)));
+end
+
+function x = localEnsure2D(x)
+if isempty(x)
+    x = complex(zeros(0, 1));
+    return;
+end
+if isvector(x)
+    x = x(:);
+end
+end
+
+function value = localObjectFiniteScalar(obj, propName, defaultValue)
+raw = localObjectValue(obj, propName, defaultValue);
+if isnumeric(raw) || islogical(raw)
+    value = double(raw);
+elseif isstring(raw) || ischar(raw)
+    value = str2double(string(raw));
+else
+    value = double(defaultValue);
+end
+if numel(value) > 1
+    value = value(1);
+end
+if isempty(value) || ~isscalar(value) || ~isfinite(value)
+    value = double(defaultValue);
+end
+end
+
+function value = localObjectValue(obj, propName, defaultValue)
+value = defaultValue;
+if isempty(obj)
+    return;
+end
+try
+    if isobject(obj) && isprop(obj, char(propName))
+        raw = obj.(char(propName));
+    elseif isstruct(obj) && isfield(obj, char(propName))
+        raw = obj.(char(propName));
+    else
+        return;
+    end
+catch
+    return;
+end
+if ~isempty(raw)
+    value = raw;
 end
 end
 

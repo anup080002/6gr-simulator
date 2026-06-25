@@ -796,11 +796,14 @@ meta = struct( ...
     "ValueStatus", "unavailable", ...
     "NAReason", "equalized_or_reference_symbols_missing");
 sinr_dB = NaN;
-eqSym = localEvidenceSymbols(rx, "EqualizedSymbolsForEvidence", "EqualizedSymbols");
+eqSym = localEvidenceSymbols(rx, "LayerEqualizedSymbolsForEvidence", "LayerEqualizedSymbols", ...
+    "EqualizedSymbolsForEvidence", "EqualizedSymbols");
 if dir == "UL"
-    refSym = localEvidenceSymbols(tx, "PUSCHSymbolsForEvidence", "PUSCHSymbols");
+    refSym = localEvidenceSymbols(tx, "PUSCHLayerSymbolsForEvidence", "PUSCHLayerSymbols", ...
+        "PUSCHSymbolsForEvidence", "PUSCHSymbols");
 else
-    refSym = localEvidenceSymbols(tx, "PDSCHSymbolsForEvidence", "PDSCHSymbols");
+    refSym = localEvidenceSymbols(tx, "PDSCHLayerSymbolsForEvidence", "PDSCHLayerSymbols", ...
+        "PDSCHSymbolsForEvidence", "PDSCHSymbols");
 end
 if isempty(eqSym) || isempty(refSym)
     return;
@@ -829,10 +832,13 @@ if ~isfinite(sinr_dB)
 end
 end
 
-function values = localEvidenceSymbols(s, preferredName, legacyName)
-values = sixgr.util.structGet(s, preferredName, []);
-if isempty(values)
-    values = sixgr.util.structGet(s, legacyName, []);
+function values = localEvidenceSymbols(s, varargin)
+values = [];
+for i = 1:numel(varargin)
+    values = sixgr.util.structGet(s, char(varargin{i}), []);
+    if ~isempty(values)
+        break;
+    end
 end
 if iscell(values) && ~isempty(values)
     values = values{1};

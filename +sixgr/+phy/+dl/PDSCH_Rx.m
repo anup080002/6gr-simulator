@@ -584,6 +584,12 @@ rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
 rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.EqualizedSymbolsForEvidence = eqSym;
+rx.LayerEqualizedSymbolsForEvidence = eqSym;
+rx.LayerEqualizedSymbols = eqSym;
+rx.EqualizedSymbolDomain = "layer";
+rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschInd, "layer");
+rx.DemapperLLRCount = double(numel(llr));
+rx.RateRecoveredLLRCount = double(numel(recLLR));
 if isempty(pdschRxSym)
     rx.PDSCHRxSymbolsForEvidence = rxSym;
 else

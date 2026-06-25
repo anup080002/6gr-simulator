@@ -9,6 +9,14 @@ metrics = struct( ...
     "SymbolErrors", NaN, ...
     "SymbolsCompared", NaN, ...
     "SymbolErrorRate", NaN, ...
+    "SymbolDecisionBitErrors", NaN, ...
+    "SymbolDecisionBitsCompared", NaN, ...
+    "SymbolDecisionBitErrorRate", NaN, ...
+    "SymbolComparisonDomain", "", ...
+    "ReferenceSymbolDomain", "", ...
+    "EqualizedSymbolDomain", "", ...
+    "SymbolOrdering", "", ...
+    "SymbolOrderingStatus", "", ...
     "ResidualInterferencePower_dB", NaN, ...
     "PAPR_dB", NaN, ...
     "PeakClippingEvents", NaN, ...
@@ -23,6 +31,11 @@ metrics = struct( ...
     "DataRECount", NaN, ...
     "DataRECountPerLayer", NaN, ...
     "TotalDataRECount", NaN, ...
+    "LayerDataRE", NaN, ...
+    "PortIndexCellCount", NaN, ...
+    "QAMSymbolCount", NaN, ...
+    "RateMatchedBitCount", NaN, ...
+    "DemapperLLRCount", NaN, ...
     "ModulationOrderQm", NaN, ...
     "ComputedE_TS38212", NaN, ...
     "DMRSRECount", NaN, ...
@@ -37,19 +50,24 @@ metrics = struct( ...
 constellationT = table();
 
 modulation = localResolveModulation(tx, cfg, direction);
-eqSymRaw = localEnsureColumn(sixgr.util.structGet(rx, "EqualizedSymbols", []));
-txSym = localReferenceSymbols(tx, direction);
+[eqSymRaw, eqDomain, eqOrder] = localEqualizedLayerSymbols(rx);
+[txSym, refDomain, refOrder] = localReferenceSymbols(tx, direction);
 detectorSym = localDetectorSymbols(rx, direction);
 
-[refSym, eqSymAligned, eqSymRawUse] = localPrepareAlignedSymbols(txSym, eqSymRaw);
+[refSym, eqSymAligned, eqSymRawUse, orderInfo] = localPrepareMatchedLayerSymbols( ...
+    txSym, eqSymRaw, refDomain, eqDomain, refOrder, eqOrder);
+metrics.ReferenceSymbolDomain = refDomain;
+metrics.EqualizedSymbolDomain = eqDomain;
+metrics.SymbolComparisonDomain = orderInfo.ComparisonDomain;
+metrics.SymbolOrdering = orderInfo.Ordering;
+metrics.SymbolOrderingStatus = orderInfo.Status;
 hardSym = localHardDecisionSymbols(eqSymAligned, modulation, refSym);
 if isempty(refSym)
     refSym = txSym;
 end
 
 if ~isempty(eqSymAligned) && ~isempty(refSym)
-    L = min(numel(eqSymAligned), numel(refSym));
-    [eqNorm, refNorm, evmStatus] = localNormalizeEVMInputs(eqSymAligned(1:L), refSym(1:L));
+    [eqNorm, refNorm, evmStatus] = localNormalizeEVMInputs(eqSymAligned, refSym);
     if ~isempty(eqNorm) && ~isempty(refNorm)
         err = eqNorm - refNorm;
         metrics.EVM_rms = sqrt(mean(abs(err).^2, "omitnan"));
@@ -64,12 +82,23 @@ if ~isempty(eqSymAligned) && ~isempty(refSym)
 end
 
 if ~isempty(refSym) && ~isempty(hardSym)
-    L = min(numel(refSym), numel(hardSym));
-    symErr = sum(abs(refSym(1:L) - hardSym(1:L)) > 1e-8);
+    if numel(refSym) ~= numel(hardSym)
+        error("sixgr:link:SymbolDomainMismatch", ...
+            "Hard-decision symbol count %d does not match reference symbol count %d.", ...
+            numel(hardSym), numel(refSym));
+    end
+    L = numel(refSym);
+    symErr = sum(abs(refSym - hardSym) > 1e-8);
     metrics.SymbolErrors = double(symErr);
     metrics.SymbolsCompared = double(L);
     metrics.SymbolErrorRate = double(symErr) / max(double(L), 1);
-    resid = eqSymAligned(1:L) - hardSym(1:L);
+    [bitErr, bitsCompared] = localSymbolDecisionBitErrors(refSym, hardSym, modulation);
+    metrics.SymbolDecisionBitErrors = double(bitErr);
+    metrics.SymbolDecisionBitsCompared = double(bitsCompared);
+    if bitsCompared > 0
+        metrics.SymbolDecisionBitErrorRate = double(bitErr) / double(bitsCompared);
+    end
+    resid = eqSymAligned - hardSym;
     metrics.ResidualInterferencePower_dB = 10 * log10(max(mean(abs(resid).^2, "omitnan"), eps));
 end
 
@@ -95,6 +124,8 @@ metrics.ModulationOrderQm = localQm(modulation);
 [metrics.DataRECount, metrics.DMRSRECount, metrics.PTRSRECount, metrics.RSOverheadFraction, ...
     metrics.DataRECountPerLayer, metrics.TotalDataRECount, metrics.ComputedE_TS38212] = ...
     localResourceOverheadMetrics(tx, direction, metrics.ModulationOrderQm);
+[metrics.LayerDataRE, metrics.PortIndexCellCount, metrics.QAMSymbolCount, ...
+    metrics.RateMatchedBitCount, metrics.DemapperLLRCount] = localDomainCountMetrics(tx, rx);
 
 if isfinite(metrics.SymbolErrorRate)
     robustness = max(0, 1 - metrics.SymbolErrorRate);
@@ -114,7 +145,7 @@ for i = 1:numel(fields)
 end
 
 constellationT = localConstellationTable(direction, modulation, ...
-    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym);
+    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym, orderInfo);
 end
 
 function modulation = localResolveModulation(tx, cfg, direction)
@@ -166,14 +197,63 @@ refNorm = refSym ./ sqrt(refPower);
 status = "OK";
 end
 
-function txSym = localReferenceSymbols(tx, direction)
+function [txSym, domain, order] = localReferenceSymbols(tx, direction)
 txSym = [];
+domain = "layer";
+order = struct();
 if direction == "UL"
-    txSym = sixgr.util.structGet(tx, "PUSCHSymbols", []);
+    [txSym, fieldName] = localFirstPresent(tx, ["PUSCHLayerSymbolsForEvidence", ...
+        "PUSCHLayerSymbols", "PUSCHSymbolsForEvidence", "PUSCHSymbols"]);
 else
-    txSym = sixgr.util.structGet(tx, "PDSCHSymbols", sixgr.util.structGet(tx, "PDSCHAntennaSymbols", []));
+    [txSym, fieldName] = localFirstPresent(tx, ["PDSCHLayerSymbolsForEvidence", ...
+        "PDSCHLayerSymbols", "PDSCHSymbolsForEvidence", "PDSCHSymbols"]);
 end
-txSym = localEnsureColumn(txSym);
+if contains(lower(string(fieldName)), "port") || contains(lower(string(fieldName)), "antenna")
+    domain = "port";
+else
+    domain = string(sixgr.util.structGet(tx, "LayerSymbolDomain", "layer"));
+end
+order = sixgr.util.structGet(tx, "LayerSymbolOrder", struct());
+txSym = localEnsureSymbolMatrix(txSym);
+end
+
+function [eqSym, domain, order] = localEqualizedLayerSymbols(rx)
+[eqSym, fieldName] = localFirstPresent(rx, ["LayerEqualizedSymbolsForEvidence", ...
+    "LayerEqualizedSymbols", "EqualizedSymbolsForEvidence", "EqualizedSymbols"]);
+domain = string(sixgr.util.structGet(rx, "EqualizedSymbolDomain", "layer"));
+if contains(lower(string(fieldName)), "port") || contains(lower(string(fieldName)), "antenna")
+    domain = "port";
+end
+order = sixgr.util.structGet(rx, "LayerSymbolOrder", struct());
+eqSym = localEnsureSymbolMatrix(eqSym);
+end
+
+function [value, fieldName] = localFirstPresent(s, names)
+value = [];
+fieldName = "";
+for i = 1:numel(names)
+    raw = sixgr.util.structGet(s, char(names(i)), []);
+    if ~isempty(raw)
+        value = raw;
+        fieldName = names(i);
+        return;
+    end
+end
+end
+
+function x = localEnsureSymbolMatrix(x)
+if isempty(x)
+    return;
+end
+if iscell(x)
+    x = localUnwrapCellSignal(x);
+end
+if isempty(x)
+    return;
+end
+if isvector(x)
+    x = x(:);
+end
 end
 
 function decSym = localDetectorSymbols(rx, direction)
@@ -354,6 +434,50 @@ if isscalar(qm) && isfinite(qm) && qm > 0 && isfinite(dataREPerLayer)
 end
 end
 
+function [layerDataRE, portIndexCellCount, qamSymbolCount, rateMatchedBitCount, demapperLLRCount] = localDomainCountMetrics(tx, rx)
+acct = sixgr.util.structGet(tx, "ResourceAccounting", struct());
+layerDataRE = double(sixgr.util.structGet(tx, "LayerDataRE", NaN));
+portIndexCellCount = double(sixgr.util.structGet(tx, "PortIndexCellCount", NaN));
+qamSymbolCount = double(sixgr.util.structGet(tx, "QAMSymbolCount", NaN));
+rateMatchedBitCount = double(sixgr.util.structGet(tx, "RateMatchedBitCount", NaN));
+if isstruct(acct) && ~isempty(fieldnames(acct))
+    if ~isfinite(layerDataRE)
+        layerDataRE = double(sixgr.util.structGet(acct, "LayerDataRE", NaN));
+    end
+    if ~isfinite(portIndexCellCount)
+        portIndexCellCount = double(sixgr.util.structGet(acct, "PortMappedRE", NaN));
+    end
+    if ~isfinite(qamSymbolCount)
+        qamSymbolCount = double(sixgr.util.structGet(acct, "ModulationSymbolCount", NaN));
+    end
+    if ~isfinite(rateMatchedBitCount)
+        rateMatchedBitCount = double(sixgr.util.structGet(acct, "CodedBitCountG", NaN));
+    end
+end
+if ~isfinite(qamSymbolCount)
+    layerSym = sixgr.util.structGet(tx, "PUSCHLayerSymbolsForEvidence", ...
+        sixgr.util.structGet(tx, "PDSCHLayerSymbolsForEvidence", []));
+    qamSymbolCount = double(numel(layerSym));
+end
+if ~isfinite(portIndexCellCount)
+    portInd = sixgr.util.structGet(tx, "PUSCHPortIndices", ...
+        sixgr.util.structGet(tx, "PDSCHPortIndices", []));
+    portIndexCellCount = double(numel(portInd));
+end
+if ~isfinite(rateMatchedBitCount)
+    rateMatchedBitCount = double(sixgr.util.structGet(tx, "G", NaN));
+end
+demapperLLRCount = double(sixgr.util.structGet(rx, "DemapperLLRCount", NaN));
+if ~isfinite(demapperLLRCount)
+    llr = sixgr.util.structGet(rx, "CodewordLLR", []);
+    if isempty(llr)
+        llr = sixgr.util.structGet(rx, "ULSCHCodewordLLR", ...
+            sixgr.util.structGet(rx, "DLSCHCodewordLLR", []));
+    end
+    demapperLLRCount = double(numel(llr));
+end
+end
+
 function metrics = localTrackingMetrics(Hest, cfg)
 metrics = struct( ...
     "EstimatedDopplerHz", NaN, ...
@@ -443,22 +567,40 @@ if ~ismatrix(H2)
 end
 end
 
-function [refUse, eqAligned, eqRawUse] = localPrepareAlignedSymbols(refSym, eqSymRaw)
+function [refUse, eqAligned, eqRawUse, info] = localPrepareMatchedLayerSymbols(refSym, eqSymRaw, refDomain, eqDomain, refOrder, eqOrder)
 refUse = [];
 eqAligned = [];
 eqRawUse = [];
-refSym = localEnsureColumn(refSym);
-eqSymRaw = localEnsureColumn(eqSymRaw);
+info = struct( ...
+    "ComparisonDomain", "layer", ...
+    "Ordering", "matrix_column_major_matches_nr_resource_indices", ...
+    "Status", "unavailable");
+refDomain = lower(strtrim(string(refDomain)));
+eqDomain = lower(strtrim(string(eqDomain)));
+refSym = localEnsureSymbolMatrix(refSym);
+eqSymRaw = localEnsureSymbolMatrix(eqSymRaw);
 if isempty(refSym) || isempty(eqSymRaw)
     return;
 end
-
-L = min(numel(refSym), numel(eqSymRaw));
-if L <= 0
-    return;
+if refDomain ~= "layer" || eqDomain ~= "layer"
+    error("sixgr:link:SymbolDomainMismatch", ...
+        "Layer-domain SER/EVM requires layer reference and layer estimate, got reference=%s estimate=%s.", ...
+        char(refDomain), char(eqDomain));
 end
-refUse = refSym(1:L);
-eqRawUse = eqSymRaw(1:L);
+if ~isequal(size(refSym), size(eqSymRaw))
+    if isvector(refSym) && isvector(eqSymRaw) && numel(refSym) == numel(eqSymRaw)
+        refSym = refSym(:);
+        eqSymRaw = eqSymRaw(:);
+    else
+        error("sixgr:link:SymbolDomainMismatch", ...
+            "Layer-domain symbol comparison requires identical shapes; reference=%s estimate=%s.", ...
+            mat2str(size(refSym)), mat2str(size(eqSymRaw)));
+    end
+end
+localAssertCompatibleOrdering(refOrder, eqOrder);
+refUse = refSym(:);
+eqRawUse = eqSymRaw(:);
+info.Status = "matched_layer_domain_same_shape";
 
 den = sum(abs(refUse).^2, "omitnan");
 gain = 1;
@@ -471,7 +613,37 @@ end
 eqAligned = eqRawUse ./ gain;
 end
 
-function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym)
+function localAssertCompatibleOrdering(refOrder, eqOrder)
+refIdx = localOrderLinearIndex(refOrder);
+eqIdx = localOrderLinearIndex(eqOrder);
+if isempty(refIdx) || isempty(eqIdx)
+    return;
+end
+if ~isequal(size(refIdx), size(eqIdx))
+    error("sixgr:link:SymbolOrderingMismatch", ...
+        "Layer-domain ordering map shapes differ: reference=%s estimate=%s.", ...
+        mat2str(size(refIdx)), mat2str(size(eqIdx)));
+end
+finite = isfinite(refIdx) & isfinite(eqIdx);
+if any(finite(:)) && any(refIdx(finite) ~= eqIdx(finite))
+    error("sixgr:link:SymbolOrderingMismatch", ...
+        "Layer-domain symbol ordering maps refer to different resource indices.");
+end
+end
+
+function idx = localOrderLinearIndex(order)
+idx = [];
+if ~isstruct(order) || isempty(fieldnames(order))
+    return;
+end
+try
+    idx = double(order.LinearIndex);
+catch
+    idx = [];
+end
+end
+
+function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym, orderInfo)
 constellationT = table();
 if isempty(eqSymAligned)
     return;
@@ -520,6 +692,8 @@ evmRms = abs(eqUse - refUse) ./ sqrt(refPower);
 
 constellationT = table( ...
     repmat(direction, L, 1), repmat(string(modulation), L, 1), repmat(double(snr_dB), L, 1), (1:L).', ...
+    repmat(string(orderInfo.ComparisonDomain), L, 1), repmat(string(orderInfo.Ordering), L, 1), ...
+    repmat(string(orderInfo.Status), L, 1), ...
     subcarrierIdx, ofdmSymbolIdx, layerIdx, codewordIdx, ...
     real(refUse), imag(refUse), ...
     real(refUse), imag(refUse), ...
@@ -530,6 +704,7 @@ constellationT = table( ...
     real(detUse), imag(detUse), ...
     errorMag, evmRms, ...
     'VariableNames', {'Direction','Modulation','SNR_dB','SampleIndex', ...
+    'SymbolComparisonDomain','SymbolOrdering','SymbolOrderingStatus', ...
     'SubcarrierIndex','OFDMSymbolIndex','LayerIndex','CodewordIndex', ...
     'ReferenceSymbolReal','ReferenceSymbolImag','TxReal','TxImag', ...
     'RawEqualizedReal','RawEqualizedImag','EqualizedReal','EqualizedImag', ...
@@ -544,6 +719,21 @@ layerIdx = nan(L, 1);
 codewordIdx = zeros(L, 1);
 if nargin < 3 || L <= 0
     return;
+end
+order = sixgr.util.structGet(tx, "LayerSymbolOrder", struct());
+if isstruct(order) && ~isempty(fieldnames(order))
+    sc = sixgr.util.structGet(order, "SubcarrierIndex", []);
+    sym = sixgr.util.structGet(order, "OFDMSymbolIndex", []);
+    lyr = sixgr.util.structGet(order, "LayerIndex", []);
+    if ~isempty(sc) && ~isempty(sym)
+        take = min([numel(sc), numel(sym), L]);
+        subcarrierIdx(1:take) = double(sc(1:take));
+        ofdmSymbolIdx(1:take) = double(sym(1:take));
+        if ~isempty(lyr)
+            layerIdx(1:min(numel(lyr), L)) = double(lyr(1:min(numel(lyr), L)));
+        end
+        return;
+    end
 end
 if direction == "UL"
     ind = sixgr.util.structGet(tx, "PUSCHIndices", []);
@@ -597,9 +787,73 @@ dist = abs(sym - reshape(alphabet, 1, []));
 y = alphabet(idx);
 end
 
+function [bitErr, bitsCompared] = localSymbolDecisionBitErrors(refSym, hardSym, modulation)
+bitErr = NaN;
+bitsCompared = NaN;
+refSym = localEnsureColumn(refSym);
+hardSym = localEnsureColumn(hardSym);
+if isempty(refSym) || isempty(hardSym) || numel(refSym) ~= numel(hardSym)
+    return;
+end
+alphabet = localConstellationAlphabet(modulation, refSym);
+labels = localConstellationBitLabels(modulation, numel(alphabet));
+if isempty(alphabet) || isempty(labels)
+    return;
+end
+refIdx = localNearestAlphabetIndex(refSym, alphabet);
+hardIdx = localNearestAlphabetIndex(hardSym, alphabet);
+valid = refIdx >= 1 & hardIdx >= 1 & refIdx <= size(labels, 1) & hardIdx <= size(labels, 1);
+if ~any(valid)
+    return;
+end
+refBits = labels(refIdx(valid), :);
+hardBits = labels(hardIdx(valid), :);
+bitErr = sum(refBits ~= hardBits, "all");
+bitsCompared = numel(refBits);
+end
+
+function idx = localNearestAlphabetIndex(sym, alphabet)
+sym = localEnsureColumn(sym);
+alphabet = localEnsureColumn(alphabet);
+if isempty(sym) || isempty(alphabet)
+    idx = zeros(numel(sym), 1);
+    return;
+end
+dist = abs(sym - reshape(alphabet, 1, []));
+[~, idx] = min(dist, [], 2);
+end
+
+function labels = localConstellationBitLabels(modulation, M)
+labels = [];
+qm = localQm(modulation);
+if ~(isfinite(qm) && qm >= 1 && M >= 2)
+    return;
+end
+if strcmp(upper(char(string(modulation))), 'QPSK') && M == 4
+    labels = logical([0 0; 0 1; 1 1; 1 0]);
+    return;
+end
+if M ~= 2^qm
+    return;
+end
+labels = false(M, qm);
+for k = 0:(M - 1)
+    gray = bitxor(uint32(k), bitshift(uint32(k), -1));
+    for b = 1:qm
+        labels(k + 1, b) = bitget(gray, qm - b + 1) ~= 0;
+    end
+end
+end
+
 function alphabet = localConstellationAlphabet(modulation, refSym)
 alphabet = [];
 qm = localQm(modulation);
+Mref = 2^qm;
+refAlphabet = localUniqueComplex(refSym);
+if numel(refAlphabet) >= 2 && numel(refAlphabet) <= Mref
+    alphabet = refAlphabet;
+    return;
+end
 modToken = upper(char(string(modulation)));
 switch modToken
     case 'PI/2-BPSK'

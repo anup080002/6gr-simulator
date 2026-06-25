@@ -386,6 +386,7 @@ end
 if iscell(cwLLR)
     cwLLR = cwLLR{1};
 end
+[layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, puschRxSym, pusch);
 [cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation, postEqSINR_dB);
 expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
 [cwLLRForULSCH, uciOnPUSCH] = localDemultiplexHARQACKFromPUSCH( ...
@@ -573,7 +574,18 @@ rx.LLRCSIWeightRawMedian = double(llrCSIInfo.RawCSIMedian);
 rx.LLRCSIWeightMedianBeforeNormalization = double(llrCSIInfo.WeightMedianBeforeNormalization);
 rx.LLRCSIWeightNormalizationScale = double(llrCSIInfo.NormalizationScale);
 rx.LLRNoiseVariance = double(nVarForDecode);
-rx.EqualizedSymbolsForEvidence = eqSym;
+rx.EqualizedSymbolsForEvidence = layerEqSym;
+rx.LayerEqualizedSymbolsForEvidence = layerEqSym;
+rx.LayerEqualizedSymbols = layerEqSym;
+rx.PortEqualizedSymbolsForEvidence = eqSym;
+rx.PortEqualizedSymbols = eqSym;
+rx.EqualizedSymbolDomain = "layer";
+rx.EqualizedSymbolSource = char(string(layerEqInfo.Status));
+rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, ...
+    localLayerIndicesFromPUSCHIndices(puschInd, layerEqSym), "layer");
+rx.DemapperLLRCount = double(numel(cwLLR));
+rx.ULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
+rx.RateRecoveredLLRCount = double(numel(recLLR));
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
 rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
 rx.PTRSCPECorrectionSymbols = double(cpeCorrInfo.NumSymbolsCorrected);
@@ -614,7 +626,8 @@ if ~logical(opt.CompactOutput)
     rx.Carrier = carrier;
     rx.PUSCH = pusch;
     rx.PUSCHInfo = puschInfo;
-    rx.EqualizedSymbols = eqSym;
+    rx.EqualizedSymbols = layerEqSym;
+    rx.PortEqualizedSymbols = eqSym;
     rx.PUSCHRxSymbols = puschRxSym;
     rx.CSI = csi;
     rx.EqualizerInfo = equalizerInfo;
@@ -1140,7 +1153,6 @@ end
 nLayers = localObjectFiniteScalar(pusch, "NumLayers", NaN);
 nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(Hport, 3));
 tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
-transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
 if ~(isfinite(nLayers) && nLayers >= 1)
     nLayers = 1;
@@ -1153,11 +1165,11 @@ nPorts = max(1, round(double(nPorts)));
 info.NumLayers = double(nLayers);
 info.NumPorts = double(nPorts);
 info.TPMI = double(tpmi);
-if scheme ~= "codebook" || transformPrecoding || ~isfinite(tpmi) || size(Hport, 3) <= nLayers
+if scheme ~= "codebook" || ~isfinite(tpmi) || size(Hport, 3) <= nLayers
     return;
 end
 
-[Wlayer, codebookStatus] = localPUSCHCodebookProjectionMatrix(nLayers, nPorts, tpmi);
+[Wlayer, codebookStatus] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi);
 if isempty(Wlayer)
     info.Status = codebookStatus;
     return;
@@ -1179,6 +1191,80 @@ for k = 1:nRE
 end
 info.Applied = true;
 info.Status = codebookStatus + "_projected_to_effective_layer_channel";
+end
+
+function layerInd = localLayerIndicesFromPUSCHIndices(portInd, layerSym)
+if isempty(portInd) || isempty(layerSym)
+    layerInd = zeros(0, 1);
+    return;
+end
+if isvector(layerSym)
+    layerSym = layerSym(:);
+end
+nRows = size(layerSym, 1);
+nLayers = size(layerSym, 2);
+if size(portInd, 1) == nRows && size(portInd, 2) >= nLayers
+    layerInd = portInd(:, 1:nLayers);
+    return;
+end
+if numel(portInd) == numel(layerSym)
+    layerInd = reshape(portInd, size(layerSym));
+    return;
+end
+error("sixgr:phy:ul:PUSCHLayerIndexDomainMismatch", ...
+    "Cannot attach PUSCH layer ordering: index shape %s does not match layer-symbol shape %s.", ...
+    mat2str(size(portInd)), mat2str(size(layerSym)));
+end
+
+function [layerSym, info] = localResolvePUSCHLayerEqualizedSymbols(eqSym, puschRxSym, pusch)
+eqSym = localEnsureSymbolMatrix(eqSym);
+puschRxSym = localEnsureSymbolMatrix(puschRxSym);
+nLayers = localObjectFiniteScalar(pusch, "NumLayers", size(eqSym, 2));
+nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(eqSym, 2));
+tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
+scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
+nLayers = max(1, round(double(nLayers)));
+nPorts = max(1, round(double(nPorts)));
+info = struct( ...
+    "Status", "native_equalizer_layer_symbols", ...
+    "NumLayers", double(nLayers), ...
+    "NumPorts", double(nPorts), ...
+    "TPMI", double(tpmi));
+
+if ~isempty(eqSym) && size(eqSym, 2) == nLayers
+    layerSym = eqSym;
+    return;
+end
+if ~isempty(puschRxSym) && size(puschRxSym, 2) == nLayers
+    layerSym = puschRxSym;
+    info.Status = "nrPUSCHDecode_layer_symbol_estimates";
+    return;
+end
+if scheme == "codebook" && ~isempty(eqSym) && size(eqSym, 2) == nPorts && nPorts > nLayers
+    [Wlayer, status] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi);
+    if isempty(Wlayer)
+        error("sixgr:phy:ul:PUSCHEqualizedDomainUnsupported", ...
+            "Cannot derive layer-domain equalized PUSCH symbols: %s.", char(string(status)));
+    end
+    layerSym = eqSym * conj(Wlayer);
+    info.Status = string(status) + "_inverse_projected_equalized_symbols";
+    return;
+end
+error("sixgr:phy:ul:PUSCHEqualizedDomainMismatch", ...
+    "PUSCH equalized symbol domain mismatch: equalized shape %s, decoder symbol shape %s, NumLayers=%d, NumPorts=%d.", ...
+    mat2str(size(eqSym)), mat2str(size(puschRxSym)), nLayers, nPorts);
+end
+
+function x = localEnsureSymbolMatrix(x)
+if isempty(x)
+    return;
+end
+if iscell(x)
+    x = x{1};
+end
+if isvector(x)
+    x = x(:);
+end
 end
 
 function info = localPUSCHProjectionInfo(status)
@@ -1259,44 +1345,6 @@ end
 function tf = localValidNoiseScalar(value)
 value = double(value);
 tf = isscalar(value) && isfinite(value) && value > 0;
-end
-
-function [Wlayer, status] = localPUSCHCodebookProjectionMatrix(nLayers, nPorts, tpmi)
-% NR PUSCH codebook projection for the currently exercised uplink path.
-% TS 38.214 defines the two-port, one-layer TPMI entries used by this
-% scenario; leave other cases unsupported rather than inventing evidence.
-Wlayer = [];
-status = "unsupported_pusch_codebook_configuration";
-nLayers = round(double(nLayers));
-nPorts = round(double(nPorts));
-tpmi = round(double(tpmi));
-if ~(isfinite(nLayers) && isfinite(nPorts) && isfinite(tpmi))
-    status = "invalid_pusch_codebook_parameters";
-    return;
-end
-if nLayers ~= 1 || nPorts ~= 2
-    status = sprintf("unsupported_pusch_codebook_%dports_%dlayers", nPorts, nLayers);
-    return;
-end
-
-switch tpmi
-    case 0
-        Wlayer = [1; 0];
-    case 1
-        Wlayer = [0; 1];
-    case 2
-        Wlayer = [1; 1] ./ sqrt(2);
-    case 3
-        Wlayer = [1; -1] ./ sqrt(2);
-    case 4
-        Wlayer = [1; 1i] ./ sqrt(2);
-    case 5
-        Wlayer = [1; -1i] ./ sqrt(2);
-    otherwise
-        status = sprintf("unsupported_pusch_2port_1layer_tpmi_%d", tpmi);
-        return;
-end
-status = "nr_pusch_2port_1layer_codebook";
 end
 
 function value = localObjectFiniteScalar(obj, propName, defaultValue)
@@ -1650,6 +1698,13 @@ rx.LLRFinite = false;
 rx.LLRScaleSource = "";
 rx.LLRNoiseVariance = NaN;
 rx.EqualizedSymbolsForEvidence = complex([]);
+rx.LayerEqualizedSymbolsForEvidence = complex([]);
+rx.LayerEqualizedSymbols = complex([]);
+rx.EqualizedSymbolDomain = "layer";
+rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, zeros(0, 1), "layer");
+rx.DemapperLLRCount = 0;
+rx.ULSCHDemapperLLRCount = 0;
+rx.RateRecoveredLLRCount = 0;
 rx.PUSCHRxSymbolsForEvidence = complex([]);
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, struct(), ...
     [], [], [], struct(), [], [], [], "", false);

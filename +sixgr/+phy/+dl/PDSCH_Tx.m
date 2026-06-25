@@ -233,6 +233,8 @@ if prec.Active
         [ptrsAntSym, ptrsAntInd] = nrPDSCHPrecode(carrier, ptrsSym, ptrsInd, prec.MatrixNR);
     end
 end
+pdschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschInd, "layer");
+pdschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschAntInd, "port");
 
 % Build resource grid and map
 nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsAntInd,2), size(csirsInd,2), ...
@@ -308,14 +310,35 @@ tx.Carrier = carrier;
 tx.PDSCH = pdsch;
 tx.PDSCHIndices = pdschInd;
 tx.PDSCHSymbolsForEvidence = pdschSym;
+tx.PDSCHLayerSymbolsForEvidence = pdschSym;
+tx.PDSCHPortSymbolsForEvidence = pdschAntSym;
+tx.PDSCHLayerSymbols = pdschSym;
+tx.PDSCHPortSymbols = pdschAntSym;
+tx.PDSCHLayerIndices = pdschInd;
+tx.PDSCHPortIndices = pdschAntInd;
+tx.LayerSymbolOrder = pdschLayerOrder;
+tx.PortSymbolOrder = pdschPortOrder;
+tx.LayerSymbolDomain = "layer";
+tx.PortSymbolDomain = "port";
 tx.XOverhead = double(xOverhead);
 tx.G = G;
 tx.NREPerPRB = double(nrePerPRB);
 tx.LayerDataRE = double(resourceAccounting.LayerDataRE);
 tx.PortMappedRE = double(resourceAccounting.PortMappedRE);
 tx.ModulationSymbolCount = double(resourceAccounting.ModulationSymbolCount);
+tx.QAMSymbolCount = double(numel(pdschSym));
+tx.PortIndexCellCount = double(numel(pdschAntInd));
+tx.RateMatchedBitCount = double(G);
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
+tx.SymbolDomainInfo = struct( ...
+    "ReferenceDomain", "layer", ...
+    "PortDomain", "port", ...
+    "Transform", "nrPDSCHPrecode_when_active", ...
+    "NumLayers", double(pdsch.NumLayers), ...
+    "NumPorts", double(size(pdschAntSym, 2)), ...
+    "Status", "native_layer_symbols_and_port_grid_symbols", ...
+    "Equation", "b_G_to_QAM_d_to_layers_S_to_ports_X_equals_S_times_W_transpose");
 tx.OFDMWindowingSamples = double(windowingSamples);
 tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
 tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
