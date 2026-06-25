@@ -484,6 +484,7 @@ mappings = {
     "random_access.preamble_index", "random_access.preamble_index", "identity"
     "random_access.prach_format", "random_access.prach_format", "identity"
     "random_access.prach_format", "prach.format", "identity"
+    "random_access.channel_model", "random_access.channel_model", "identity"
     "random_access.preamble_length_mode", "random_access.preamble_length_mode", "identity"
     "random_access.num_prach_occasions", "random_access.num_prach_occasions", "identity"
     "random_access.timing_offset_sweep_samples", "random_access.timing_offset_sweep_samples", "identity"

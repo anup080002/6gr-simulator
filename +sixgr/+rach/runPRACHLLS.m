@@ -411,7 +411,7 @@ channelInfo = struct("ChannelFilterDelay", 0);
 switch upper(cfg.ChannelModel)
     case "AWGN"
         rxWave = localReplicateToRx(wave, cfg.NumRxAntennas);
-    case {"TDL-A","TDL-C"}
+    case {"TDL-A","TDL-B","TDL-C","TDL-D","TDL-E"}
         chan = nrTDLChannel;
         chan.DelayProfile = upper(cfg.ChannelModel);
         chan.DelaySpread = double(cfg.DelaySpread_ns) * 1e-9;
@@ -422,9 +422,9 @@ switch upper(cfg.ChannelModel)
         chan.Seed = double(seed);
         channelInfo = info(chan);
         rxWave = chan(wave);
-    case "CDL-C"
+    case {"CDL-A","CDL-B","CDL-C","CDL-D","CDL-E"}
         chan = nrCDLChannel;
-        chan.DelayProfile = "CDL-C";
+        chan.DelayProfile = upper(cfg.ChannelModel);
         chan.DelaySpread = double(cfg.DelaySpread_ns) * 1e-9;
         chan.MaximumDopplerShift = localSpeedToDoppler(cfg.Speed_kmh, cfg.CarrierFrequencyHz);
         chan.SampleRate = sampleRateHz;

@@ -105,7 +105,19 @@ artifactRowsOk = height(mappingT) > 0 && height(rootBudgetT) > 0 && height(zczT)
 oracleOk = ~any(logical(oracleT.Violation));
 configOk = logical(cfg.StrictValidation.StrictValid) && all(logical(rootBudgetT.BudgetOk));
 noProxySkip = ~any(logical(trialT.ProxyUsed) | logical(trialT.Skipped) | logical(trialT.ToolboxMissing));
-strictOk = strictPositiveOk && artifactRowsOk && oracleOk && configOk && noProxySkip;
+missedEvidenceOk = any(double(missedT.NumMissed) > 0) && any(double(missedT.NumDetected) > 0) && ...
+    all(double(missedT.DetectionProbability) >= 0 & double(missedT.DetectionProbability) <= 1);
+falseAlarmEvidenceOk = all(double(falseAlarmT.FalseAlarmProbability) >= 0 & double(falseAlarmT.FalseAlarmProbability) <= 1);
+timingEvidenceOk = all(double(timingT.WithinToleranceProbability) == 1) && ...
+    all(isfinite(double(timingT.MaxAbsTimingErrorSamples)));
+freqEvidenceOk = any(strcmpi(strtrim(string(freqT.Status)), "measured")) && any(double(freqT.DetectionProbability) > 0);
+collisionEvidenceOk = any(logical(collisionT.CollisionInjected) & logical(collisionT.CollisionDetected)) && ...
+    any(logical(collisionT.MultiplePreamblesDetected));
+multiEvidenceOk = all(logical(multiOccasionT.DetectedOnCorrectOccasion));
+negativeEvidenceOk = all(~logical(negativeTrialT.StrictOk)) && all(logical(negativeTrialT.NegativeExpectedOk));
+strictOk = strictPositiveOk && artifactRowsOk && oracleOk && configOk && noProxySkip && ...
+    missedEvidenceOk && falseAlarmEvidenceOk && timingEvidenceOk && freqEvidenceOk && ...
+    collisionEvidenceOk && multiEvidenceOk && negativeEvidenceOk;
 
 summary = localSummaryStruct(runId, scenarioName, strictOk, cfg, trialT, missedT, falseAlarmT, ...
     timingT, freqT, collisionT, multiOccasionT, negativeTrialT, oracleT);
@@ -210,8 +222,6 @@ function [nextTrialId, row, candidateT, oracleT, waveform] = localRunOneTrial( .
     trialId, trialType, cfg, occ, preamble, snrDb, timingOffsetSamples, freqOffsetHz, ...
     preamblePresent, collisionInjected, threshold, runId, scenarioName, configHash)
 nextTrialId = trialId + 1;
-txMeta = struct("PreambleIndexTx", double(preamble), "InjectedTimingOffsetSamples", double(timingOffsetSamples), ...
-    "PreamblePresent", logical(preamblePresent));
 if preamblePresent
     tx = sixgr.phy.prach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", preamble);
     waveform = tx.Waveform;
@@ -221,17 +231,21 @@ else
     waveform = complex(zeros(size(ref.Waveform)));
 end
 waveform = localApplyIntegerDelay(waveform, timingOffsetSamples);
+[waveform, channelInfo] = localApplyStrictChannel(waveform, cfg, nextTrialId + 977);
+trueTimingOffsetSamples = double(timingOffsetSamples) + double(sixgr.util.structGet(channelInfo, "ChannelFilterDelay", 0));
 waveform = localApplyFrequencyOffset(waveform, freqOffsetHz, tx.SampleRate_Hz);
 [rx, noiseVar] = localAddNoise(waveform, snrDb, nextTrialId + 991);
 if ~preamblePresent
     rx = localNoiseOnly(size(rx), noiseVar, nextTrialId + 992);
 end
+txMeta = struct("PreambleIndexTx", double(preamble), "InjectedTimingOffsetSamples", double(trueTimingOffsetSamples), ...
+    "PreamblePresent", logical(preamblePresent));
 det = sixgr.phy.prach.detectPRACHWaveform(rx, cfg, "Occasion", occ, ...
     "CandidatePreambles", 0:(min(64, cfg.NumPreambles) - 1), "DetectionThreshold", threshold);
 waveform = rx;
 score = sixgr.phy.prach.scorePRACHDetection(det, txMeta, cfg, "TrialType", trialType);
 row = localTrialRowFromDetection(runId, scenarioName, nextTrialId, trialType, cfg, occ, tx, det, score, ...
-    snrDb, timingOffsetSamples, freqOffsetHz, collisionInjected, configHash);
+    snrDb, trueTimingOffsetSamples, freqOffsetHz, collisionInjected, configHash);
 candidateT = localCandidateTable(runId, nextTrialId, cfg, occ, det, freqOffsetHz);
 oracleT = localOracleGuardTable(runId, nextTrialId);
 end
@@ -482,7 +496,8 @@ for ii = 1:numel(offsets)
     trialRows(end + 1, 1) = row; %#ok<AGROW>
     candRows = [candRows; table2struct(cand)]; %#ok<AGROW>
     oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
-    within = isfinite(row.TimingErrorSamples) && abs(row.TimingErrorSamples) <= 1.5;
+    toleranceSamples = localStrictTimingToleranceSamples(cfg);
+    within = isfinite(row.TimingErrorSamples) && abs(row.TimingErrorSamples) <= toleranceSamples;
     rows(ii) = struct("RunId", string(runId), "SweepId", double(ii), "ConfigHash", string(configHash), ...
         "InjectedTimingOffsetSamples", double(offsets(ii)), ...
         "MeanEstimatedTimingOffsetSamples", double(row.EstimatedTimingOffsetSamples), ...
@@ -549,12 +564,13 @@ rows = repmat(struct("RunId","", "CollisionGroupId",NaN, "TrialId",NaN, "UEId",N
 candRows = repmat(localCandidateRowTemplate(), 0, 1);
 idx = 0;
 for iCase = 1:numel(cases)
-    [rx, ~] = localAddNoise(cases(iCase).Waveform, highSNR, 700 + iCase);
+    [caseWaveform, ~] = localApplyStrictChannel(cases(iCase).Waveform, cfg, 700 + iCase);
+    [rx, ~] = localAddNoise(caseWaveform, highSNR, 700 + iCase);
     det = sixgr.phy.prach.detectPRACHWaveform(rx, cfg, "Occasion", occ, ...
         "CandidatePreambles", 0:(min(64, cfg.NumPreambles) - 1), "DetectionThreshold", threshold);
     cand = localCandidateTable(runId, 9000 + iCase, cfg, occ, det, 0);
     candRows = [candRows; table2struct(cand)]; %#ok<AGROW>
-    detectedCandidateCount = sum(double(det.CorrelationPeaks) >= double(det.Threshold));
+    detectedCandidateCount = localCollisionCandidateCount(det);
     for iUE = 1:2
         idx = idx + 1;
         rows(idx) = struct("RunId", string(runId), "CollisionGroupId", double(iCase), ...
@@ -571,6 +587,24 @@ for iCase = 1:numel(cases)
 end
 T = struct2table(rows, "AsArray", true);
 candT = struct2table(candRows, "AsArray", true);
+end
+
+function count = localCollisionCandidateCount(det)
+peaks = double(sixgr.util.structGet(det, "CorrelationPeaks", []));
+peaks = peaks(isfinite(peaks));
+if isempty(peaks)
+    count = 0;
+    return;
+end
+primary = max(peaks, [], "omitnan");
+singleThreshold = double(sixgr.util.structGet(det, "Threshold", NaN));
+relativeThreshold = 0.95 * double(primary);
+noiseGuard = 0.25 * double(singleThreshold);
+if ~(isfinite(noiseGuard) && noiseGuard >= 0)
+    noiseGuard = 0;
+end
+candidateMask = peaks >= relativeThreshold & peaks >= noiseGuard;
+count = double(sum(candidateMask));
 end
 
 function T = localMultiOccasionTrials(cfg, preamble, runId, scenarioName, configHash, threshold, highSNR) %#ok<INUSD>
@@ -595,16 +629,18 @@ end
 
 function [negT, trialT, candT, oracleT] = localNegativeWrongConfigTrial(cfg, occ, preamble, runId, scenarioName, configHash, threshold, trialId, highSNR)
 tx = sixgr.phy.prach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", preamble);
-[rx, ~] = localAddNoise(tx.Waveform, highSNR, 4401);
+[waveform, channelInfo] = localApplyStrictChannel(tx.Waveform, cfg, 4401);
+trueTimingOffsetSamples = double(sixgr.util.structGet(channelInfo, "ChannelFilterDelay", 0));
+[rx, ~] = localAddNoise(waveform, highSNR, 4401);
 badCfg = cfg;
 badCfg.SequenceIndex = mod(double(cfg.SequenceIndex) + 13, 838);
 badCfg.ToolboxPRACH.SequenceIndex = double(badCfg.SequenceIndex);
 det = sixgr.phy.prach.detectPRACHWaveform(rx, badCfg, "Occasion", occ, ...
     "CandidatePreambles", 0:(min(64, cfg.NumPreambles) - 1), "DetectionThreshold", threshold);
-txMeta = struct("PreambleIndexTx", double(preamble), "InjectedTimingOffsetSamples", 0, "PreamblePresent", true);
+txMeta = struct("PreambleIndexTx", double(preamble), "InjectedTimingOffsetSamples", trueTimingOffsetSamples, "PreamblePresent", true);
 score = sixgr.phy.prach.scorePRACHDetection(det, txMeta, badCfg, "TrialType", "negative_wrong_root");
 row = localTrialRowFromDetection(runId, scenarioName, trialId, "negative_wrong_root", badCfg, occ, tx, det, score, ...
-    highSNR, 0, 0, false, configHash);
+    highSNR, trueTimingOffsetSamples, 0, false, configHash);
 row.StrictOk = false;
 row.NegativeExpectedOk = ~logical(score.StrictOk);
 row.Status = string(ternary(row.NegativeExpectedOk, "PASS", "FAIL"));
@@ -628,6 +664,76 @@ end
 noiseVar = signalPower / max(10^(double(snrDb) / 10), eps);
 noise = sqrt(noiseVar / 2) .* (randn(size(waveform)) + 1i .* randn(size(waveform)));
 rx = waveform + noise;
+end
+
+function [rxWaveform, channelInfo] = localApplyStrictChannel(waveform, cfg, seed)
+model = upper(strtrim(string(sixgr.util.structGet(cfg, "ChannelModel", "AWGN"))));
+channelInfo = struct("ChannelFilterDelay", 0, "ChannelModelApplied", model);
+switch model
+    case {"", "AWGN", "NONE", "OFF"}
+        rxWaveform = waveform;
+    case {"TDL-A","TDL-B","TDL-C","TDL-D","TDL-E"}
+        chan = nrTDLChannel;
+        chan.DelayProfile = char(model);
+        chan.DelaySpread = double(sixgr.util.structGet(cfg, "DelaySpread_ns", 30)) * 1e-9;
+        chan.MaximumDopplerShift = localSpeedToDoppler(cfg);
+        chan.SampleRate = double(sixgr.util.structGet(cfg, "SampleRate_Hz", 1));
+        chan.NumTransmitAntennas = size(waveform, 2);
+        chan.NumReceiveAntennas = round(double(sixgr.util.structGet(cfg, "NumRxAntennas", 1)));
+        chan.Seed = double(seed);
+        channelInfo = localChannelInfo(chan, model);
+        rxWaveform = chan(waveform);
+    case {"CDL-A","CDL-B","CDL-C","CDL-D","CDL-E"}
+        chan = nrCDLChannel;
+        chan.DelayProfile = char(model);
+        chan.DelaySpread = double(sixgr.util.structGet(cfg, "DelaySpread_ns", 30)) * 1e-9;
+        chan.MaximumDopplerShift = localSpeedToDoppler(cfg);
+        chan.SampleRate = double(sixgr.util.structGet(cfg, "SampleRate_Hz", 1));
+        chan.Seed = double(seed);
+        chan.ReceiveAntennaArray.Size = [round(double(sixgr.util.structGet(cfg, "NumRxAntennas", 1))) 1 1 1 1];
+        chan.TransmitAntennaArray.Size = [size(waveform, 2) 1 1 1 1];
+        channelInfo = localChannelInfo(chan, model);
+        rxWaveform = chan(waveform);
+    otherwise
+        error("sixgr:phy:prach:UnsupportedStrictChannel", ...
+            "Strict PRACH validation requires AWGN or a concrete TDL/CDL profile. Got '%s'.", model);
+end
+end
+
+function channelInfo = localChannelInfo(chan, model)
+try
+    channelInfo = info(chan);
+catch
+    channelInfo = struct();
+end
+channelInfo.ChannelModelApplied = model;
+if ~isfield(channelInfo, "ChannelFilterDelay")
+    channelInfo.ChannelFilterDelay = 0;
+end
+end
+
+function fd = localSpeedToDoppler(cfg)
+speedKmh = double(sixgr.util.structGet(cfg, "Speed_kmh", 0));
+fcHz = double(sixgr.util.structGet(cfg, "CarrierFrequencyHz", 0));
+if ~(isfinite(speedKmh) && speedKmh >= 0 && isfinite(fcHz) && fcHz > 0)
+    fd = 0;
+else
+    fd = (speedKmh / 3.6) * fcHz / 299792458;
+end
+end
+
+function tol = localStrictTimingToleranceSamples(cfg)
+tolUs = double(sixgr.util.structGet(cfg, "TimingTolerance_us", NaN));
+sampleRateHz = double(sixgr.util.structGet(cfg, "SampleRate_Hz", NaN));
+if isfinite(tolUs) && tolUs >= 0 && isfinite(sampleRateHz) && sampleRateHz > 0
+    tol = tolUs * sampleRateHz / 1e6;
+else
+    tol = NaN;
+end
+if ~(isfinite(tol) && tol >= 0)
+    tol = 1.5;
+end
+tol = max(1.5, double(tol));
 end
 
 function wave = localNoiseOnly(sz, noiseVar, seed)

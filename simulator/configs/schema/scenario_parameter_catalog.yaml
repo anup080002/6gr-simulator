@@ -845,7 +845,7 @@ sections:
       channel_model:
         required: false
         type: string
-        allowed_values: [AWGN, TDL-A, TDL-C, CDL-C]
+        allowed_values: [AWGN, TDL-A, TDL-B, TDL-C, TDL-D, TDL-E, CDL-A, CDL-B, CDL-C, CDL-D, CDL-E]
       delay_spread_ns:
         required: false
         type: number

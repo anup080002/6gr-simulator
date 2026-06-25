@@ -311,6 +311,7 @@ canonical_control:
     root_sequence_index: 1
     preamble_index: 0
     prach_format: B4
+    channel_model: CDL-D
     preamble_length_mode: short
     num_prach_occasions: 4
     timing_offset_sweep_samples: [0, 4, 8]

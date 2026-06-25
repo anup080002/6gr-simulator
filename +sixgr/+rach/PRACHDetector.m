@@ -92,6 +92,7 @@ det.CandidateCount = double(numel(candidateSet));
 det.CandidatesAboveThreshold = double(sum(peaks >= threshold));
 det.PDPNoiseFloor = double(sixgr.util.structGet(det.CorrelationTrace, "NoiseFloor", NaN));
 det.PeakLagSamples = double(sixgr.util.structGet(det.CorrelationTrace, "PeakLagSamples", offset));
+det.TimingSearchWindow = sixgr.util.structGet(detInfo, "TimingSearchWindow", struct());
 det.ThresholdBackgroundComponent = double(sixgr.util.structGet(thresholdInfo, "BackgroundComponent", NaN));
 det.ThresholdGlobalPeakComponent = double(sixgr.util.structGet(thresholdInfo, "GlobalPeakComponent", NaN));
 det.TargetFalseAlarmProbability = double(sixgr.util.structGet(thresholdInfo, "TargetFalseAlarmProbability", NaN));
@@ -108,6 +109,7 @@ rx = localMatrix(rxWaveform);
 peaks = nan(numel(candidateSet), 1);
 offsets = nan(numel(candidateSet), 1);
 traceCells = cell(numel(candidateSet), 1);
+timingWindow = struct();
 candidateRows = repmat(struct( ...
     "PreambleIndex", NaN, ...
     "PeakMetric", NaN, ...
@@ -120,7 +122,7 @@ for iCand = 1:numel(candidateSet)
     ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
         "PreambleIndex", double(candidateSet(iCand)));
     numRepeatedSymbols = localFirstFinite(numRepeatedSymbols, localRepeatedSymbolCount(ref));
-    [peaks(iCand), offsets(iCand), lags, metrics, antPeaks, antOffsets] = localCorrelationPeak(rx, localVector(ref.Waveform));
+    [peaks(iCand), offsets(iCand), lags, metrics, antPeaks, antOffsets, timingWindow] = localCorrelationPeak(rx, ref, cfg);
     traceCells{iCand} = struct( ...
         "PreambleIndex", double(candidateSet(iCand)), ...
         "LagSamples", double(lags(:)), ...
@@ -150,20 +152,23 @@ detInfo.BestCorrelationTrace = traceCells{bestIdx};
 detInfo.CandidateResults = struct2table(candidateRows, "AsArray", true);
 detInfo.RxAntennaCount = double(size(rx, 2));
 detInfo.NumRepeatedSymbols = double(numRepeatedSymbols);
+detInfo.TimingSearchWindow = timingWindow;
 detInfo.DetectorBackend = "inrepo_section5_prach_waveform_matched_filter_noncoherent_pdp";
 detInfo.ProcessingFlow = "rx_waveform_per_antenna_correlation_pdp_noncoherent_combining_peak_window_threshold_ta";
 end
 
-function [peakMetric, offsetSamples, lags, metrics, antPeaks, antOffsets] = localCorrelationPeak(rx, ref)
+function [peakMetric, offsetSamples, lags, metrics, antPeaks, antOffsets, timingWindow] = localCorrelationPeak(rx, ref, cfg)
 peakMetric = NaN;
 offsetSamples = NaN;
 lags = [];
 metrics = [];
 antPeaks = zeros(0, 1);
 antOffsets = zeros(0, 1);
+timingWindow = localEmptyTimingSearchWindow();
 rx = complex(rx);
-ref = complex(ref(:));
-if isempty(rx) || isempty(ref)
+refInfo = localReferenceInfo(ref);
+refWaveform = complex(localVector(sixgr.util.structGet(refInfo, "Waveform", [])));
+if isempty(rx) || isempty(refWaveform)
     return;
 end
 if isvector(rx)
@@ -175,25 +180,33 @@ lagCells = cell(numAnt, 1);
 antPeaks = nan(numAnt, 1);
 antOffsets = nan(numAnt, 1);
 for iAnt = 1:numAnt
-    [metricCells{iAnt}, lagCells{iAnt}] = localNormalizedCorrelationPower(rx(:, iAnt), ref);
+    [metricCells{iAnt}, lagCells{iAnt}] = localNormalizedCorrelationPower(rx(:, iAnt), refWaveform);
     if isempty(metricCells{iAnt})
         continue;
     end
     [antPeaks(iAnt), antIdx] = max(metricCells{iAnt}, [], "omitnan");
     if ~isempty(antIdx) && isfinite(double(antPeaks(iAnt)))
-        antOffsets(iAnt) = double(antIdx) - numel(ref) + localParabolicPeakOffset(metricCells{iAnt}, antIdx);
+        antOffsets(iAnt) = double(antIdx) - numel(refWaveform) + localParabolicPeakOffset(metricCells{iAnt}, antIdx);
     end
 end
 [metrics, lags] = localNoncoherentAverage(metricCells, lagCells);
 if isempty(metrics)
     return;
 end
-[peakMetric, peakIdx] = max(metrics, [], "omitnan");
+[searchMask, timingWindow] = localTimingSearchMask(lags, metrics, cfg, refInfo);
+peakMetrics = metrics;
+if any(searchMask & isfinite(peakMetrics))
+    peakMetrics(~searchMask) = NaN;
+    timingWindow.SearchApplied = true;
+else
+    timingWindow.SearchApplied = false;
+end
+[peakMetric, peakIdx] = max(peakMetrics, [], "omitnan");
 if isempty(peakIdx) || ~isfinite(peakMetric)
     return;
 end
 fracOffset = localParabolicPeakOffset(metrics, peakIdx);
-offsetSamples = double(peakIdx) - numel(ref) + fracOffset;
+offsetSamples = double(peakIdx) - numel(refWaveform) + fracOffset;
 end
 
 function [combined, lags] = localNoncoherentAverage(metricCells, lagCells)
@@ -272,6 +285,137 @@ denom = double(rxEnergy(:)) .* double(refEnergy(:));
 metricVals = double(abs(corrVals(kIdx)).^2) ./ max(denom, eps);
 metricVals(~(isfinite(denom) & denom > 0)) = NaN;
 metrics(kIdx) = metricVals;
+end
+
+function [mask, win] = localTimingSearchMask(lags, metrics, cfg, refInfo)
+win = localResolveTimingSearchWindow(cfg, refInfo);
+lags = double(lags(:));
+metrics = double(metrics(:));
+mask = isfinite(lags) & isfinite(metrics) & ...
+    lags >= double(win.MinLagSamples) & lags <= double(win.MaxLagSamples);
+win.FiniteLagCount = double(sum(isfinite(metrics)));
+win.SearchLagCount = double(sum(mask));
+end
+
+function win = localResolveTimingSearchWindow(cfg, refInfo)
+sr = localFirstFinite( ...
+    sixgr.util.structGet(cfg, "SampleRate_Hz", NaN), ...
+    sixgr.util.structGet(refInfo, "SampleRate_Hz", NaN));
+tol = localTimingToleranceSamples(cfg, sr);
+cpLen = double(localFirstCPLength(refInfo));
+explicit = localFiniteVector(localFirstNonEmpty( ...
+    sixgr.util.structGet(cfg, "PrachTimingSearchWindowSamples", []), ...
+    sixgr.util.structGet(cfg, "TimingSearchWindowSamples", [])));
+if numel(explicit) >= 2
+    minLag = min(explicit(1:2));
+    maxLag = max(explicit(1:2));
+    source = "explicit_config_window";
+elseif numel(explicit) == 1
+    minLag = 0;
+    maxLag = explicit(1);
+    source = "explicit_config_window";
+else
+    offsets = abs(localFiniteVector(sixgr.util.structGet(cfg, "TimingOffsetSweepSamples", [])));
+    if isempty(offsets)
+        offsets = 0;
+    end
+    timingUncertainty = localTimingUncertaintySamples(cfg, sr);
+    propagation = localCellRadiusPropagationSamples(cfg, sr);
+    delaySpread = localDelaySpreadSamples(cfg, sr);
+    candidates = [max(offsets) + tol, cpLen, timingUncertainty + tol, propagation + delaySpread + tol, 32];
+    candidates = candidates(isfinite(candidates) & candidates >= 0);
+    minLag = 0;
+    maxLag = max(candidates);
+    source = "derived_from_prach_timing_budget";
+end
+guard = max(4, ceil(0.25 * max(1, tol)));
+maxLag = max(maxLag, minLag) + guard;
+win = localEmptyTimingSearchWindow();
+win.MinLagSamples = double(max(0, floor(minLag)));
+win.MaxLagSamples = double(ceil(maxLag));
+win.Source = source;
+win.SampleRateHz = double(sr);
+win.CPLengthSamples = double(cpLen);
+win.TimingToleranceSamples = double(tol);
+win.SearchApplied = false;
+end
+
+function tol = localTimingToleranceSamples(cfg, sampleRateHz)
+tolUs = double(sixgr.util.structGet(cfg, "TimingTolerance_us", NaN));
+sr = double(sampleRateHz);
+if isfinite(tolUs) && isfinite(sr) && sr > 0
+    tol = tolUs * sr / 1e6;
+else
+    tol = NaN;
+end
+if ~(isfinite(tol) && tol >= 0)
+    tol = 1.5;
+end
+tol = max(1.5, double(tol));
+end
+
+function samples = localTimingUncertaintySamples(cfg, sampleRateHz)
+sr = double(sampleRateHz);
+if ~(isfinite(sr) && sr > 0)
+    samples = NaN;
+    return;
+end
+maxUs = double(sixgr.util.structGet(cfg, "TimingUncertaintyMax_us", NaN));
+if ~(isfinite(maxUs) && maxUs >= 0)
+    samples = NaN;
+else
+    samples = maxUs * sr / 1e6;
+end
+end
+
+function samples = localCellRadiusPropagationSamples(cfg, sampleRateHz)
+sr = double(sampleRateHz);
+radiusM = double(sixgr.util.structGet(cfg, "CellRadius_m", NaN));
+if ~(isfinite(sr) && sr > 0 && isfinite(radiusM) && radiusM >= 0)
+    samples = NaN;
+else
+    samples = radiusM / 299792458 * sr;
+end
+end
+
+function samples = localDelaySpreadSamples(cfg, sampleRateHz)
+sr = double(sampleRateHz);
+delayNs = double(sixgr.util.structGet(cfg, "DelaySpread_ns", NaN));
+if ~(isfinite(sr) && sr > 0 && isfinite(delayNs) && delayNs >= 0)
+    samples = NaN;
+else
+    samples = 5 * delayNs * 1e-9 * sr;
+end
+end
+
+function values = localFiniteVector(raw)
+try
+    values = double(raw(:));
+catch
+    values = [];
+end
+values = values(isfinite(values));
+end
+
+function info = localReferenceInfo(ref)
+if isstruct(ref)
+    info = ref;
+else
+    info = struct("Waveform", ref);
+end
+end
+
+function win = localEmptyTimingSearchWindow()
+win = struct( ...
+    "MinLagSamples", NaN, ...
+    "MaxLagSamples", NaN, ...
+    "Source", "", ...
+    "SampleRateHz", NaN, ...
+    "CPLengthSamples", NaN, ...
+    "TimingToleranceSamples", NaN, ...
+    "FiniteLagCount", 0, ...
+    "SearchLagCount", 0, ...
+    "SearchApplied", false);
 end
 
 function trace = localSelectedCorrelationTrace(detInfo, preambleIndex, threshold, peakLagSamples)

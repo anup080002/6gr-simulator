@@ -409,7 +409,9 @@ end
 end
 
 function localValidateResolvedConfig(cfg)
-allowedChannels = ["AWGN","TDL-A","TDL-C","CDL-C"];
+allowedChannels = ["AWGN", ...
+    "TDL-A","TDL-B","TDL-C","TDL-D","TDL-E", ...
+    "CDL-A","CDL-B","CDL-C","CDL-D","CDL-E"];
 if ~any(strcmpi(cfg.ChannelModel, allowedChannels))
     error("sixgr:rach:PRACHConfig:UnsupportedChannelModel", ...
         "ChannelModel must be one of %s.", strjoin(cellstr(allowedChannels), ", "));
