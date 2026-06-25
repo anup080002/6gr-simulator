@@ -65,7 +65,10 @@ for i = 1:numel(vectors)
     assert(double(ctx.RateMatchedBitCount) == numel(tx.Codeword), ...
         "TxContext RateMatchedBitCount does not match codeword.");
     assert(localLinearMasksDisjoint(info.ResourceAccounting), ...
-        "Frozen-grant PUSCH must have disjoint data/DMRS/PTRS port-domain cells.");
+        "Frozen-grant PUSCH must have unique maps with no data-DMRS or DMRS-PTRS overlap.");
+    if logical(v.EnablePTRS)
+        localAssertPTRSWaveformMapping(tx, i);
+    end
 
     if i == 1
         localAssertNoiselessRoundtrip(tx, tbBits, cfg);
@@ -87,7 +90,7 @@ vectors = [ ...
     localVector("256QAM", 4, 4, "nonCodebook", NaN, false, false), ...
     localVector("QPSK", 1, 2, "codebook", 0, false, false), ...
     localVector("QPSK", 1, 2, "codebook", 3, false, false), ...
-    localVector("16QAM", 2, 4, "codebook", 1, false, false), ...
+    localVector("16QAM", 2, 4, "codebook", 1, false, true), ...
     localVector("64QAM", 2, 4, "codebook", 6, false, false), ...
     localVector("QPSK", 3, 4, "codebook", 3, false, false), ...
     localVector("QPSK", 4, 4, "codebook", 0, false, false), ...
@@ -106,7 +109,9 @@ for i = 1:numel(vectors)
     vectors(i).SymbolAllocation = [0 10];
     vectors(i).MappingType = "A";
     vectors(i).MCSTable = "qam256";
+    vectors(i).PTRSPortSet = 0;
 end
+vectors(7).PTRSPortSet = 1;
 end
 
 function v = localVector(modulation, nLayers, nPorts, scheme, tpmi, transformPrecoding, enablePTRS)
@@ -118,6 +123,7 @@ v.TransmissionScheme = string(scheme);
 v.TPMI = double(tpmi);
 v.TransformPrecoding = logical(transformPrecoding);
 v.EnablePTRS = logical(enablePTRS);
+v.PTRSPortSet = 0;
 end
 
 function cfg = localCfg(v)
@@ -159,7 +165,7 @@ cfg.phy.pusch.enablePTRS = logical(v.EnablePTRS);
 cfg.phy.pusch.ptrs.timeDensity = 2;
 cfg.phy.pusch.ptrs.frequencyDensity = 2;
 cfg.phy.pusch.ptrs.reOffset = "00";
-cfg.phy.pusch.ptrs.portSet = 0;
+cfg.phy.pusch.ptrs.portSet = v.PTRSPortSet;
 if isfinite(v.TPMI)
     cfg.phy.pusch.TPMI = v.TPMI;
     cfg.phy.pusch.PMI = v.TPMI;
@@ -392,6 +398,42 @@ catch ME
     thrown = strcmp(ME.identifier, "sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol");
 end
 assert(thrown, "Fixed-reference PUSCH MappingType A timing mutation must fail.");
+end
+
+function localAssertPTRSWaveformMapping(tx, vectorIndex)
+assert(~isempty(tx.PTRSIndices) && ~isempty(tx.PTRSSymbols), ...
+    "PTRS-enabled vector %d must expose raw Toolbox PTRS indices and symbols.", vectorIndex);
+assert(isfield(tx, "PTRSRawWaveformIndices") && isfield(tx, "PTRSRawWaveformSymbols"), ...
+    "PTRS-enabled vector %d must retain raw waveform PTRS tensors.", vectorIndex);
+rawInd = tx.PTRSRawWaveformIndices;
+rawSym = tx.PTRSRawWaveformSymbols;
+activeCols = find(sum(abs(rawSym).^2, 1) > 0);
+assert(~isempty(activeCols), "PTRS-enabled vector %d must have at least one active PTRS column.", vectorIndex);
+if size(rawInd, 1) == size(rawSym, 1) && size(rawInd, 2) == size(rawSym, 2)
+    expInd = rawInd(:, activeCols);
+    expSym = rawSym(:, activeCols);
+elseif size(rawInd, 1) == size(rawSym, 1) && numel(activeCols) == size(rawInd, 2)
+    expInd = rawInd;
+    expSym = rawSym(:, activeCols);
+else
+    assert(numel(rawInd) == numel(rawSym), ...
+        "PTRS vector %d has unpairable raw index/symbol shapes.", vectorIndex);
+    expInd = rawInd;
+    expSym = rawSym;
+end
+assert(isequal(tx.PTRSWaveformIndices, expInd), ...
+    "PTRS vector %d waveform indices must select the active Toolbox PTRS columns.", vectorIndex);
+assert(localMaxAbs(tx.PTRSWaveformSymbols(:) - expSym(:)) < 1e-12, ...
+    "PTRS vector %d waveform symbols must select the active Toolbox PTRS columns.", vectorIndex);
+assert(all(abs(tx.Grid(tx.PTRSWaveformIndices(:)) - tx.PTRSWaveformSymbols(:)) < 1e-12), ...
+    "PTRS vector %d active PTRS symbols must be present on their waveform grid pages.", vectorIndex);
+if size(rawInd, 2) == size(rawSym, 2) && numel(activeCols) < size(rawSym, 2)
+    inactiveCols = setdiff(1:size(rawSym, 2), activeCols);
+    assert(isempty(intersect(double(tx.PTRSWaveformIndices(:)), double(rawInd(:, inactiveCols)))), ...
+        "PTRS vector %d inactive PTRS columns must not be recorded as PTRS waveform writes.", vectorIndex);
+    assert(contains(string(tx.PTRSWaveformMapping.Status), "inactive_zero_columns_removed"), ...
+        "PTRS vector %d mapping evidence must disclose inactive-column removal.", vectorIndex);
+end
 end
 
 function tf = localLinearMasksDisjoint(acct)

@@ -226,10 +226,11 @@ if logical(sixgr.util.structGet(prec, "HybridElementDomainApplied", false))
     localAssertSignalResourceDisjoint(puschWaveformInd, dmrsWaveformInd, ptrsWaveformInd);
     waveformSymbolDomain = "element";
 end
+[ptrsGridInd, ptrsGridSym, ptrsGridMapInfo] = localActiveReferenceGridPairs(ptrsWaveformInd, ptrsWaveformSym, "PUSCH PTRS");
 
 % Build resource grid and map
 % Use grid pages that cover the indices returned by nrPUSCHIndices
-nPages = max([size(puschWaveformInd,2), size(dmrsWaveformInd,2), size(ptrsWaveformInd,2), numTxAnt, 1]);
+nPages = max([size(puschWaveformInd,2), size(dmrsWaveformInd,2), size(ptrsWaveformInd,2), size(ptrsGridInd,2), numTxAnt, 1]);
 try
     txGrid = nrResourceGrid(carrier, nPages);
 catch
@@ -243,8 +244,8 @@ txGrid = localMapToGrid(txGrid, puschWaveformInd, puschWaveformSym);
 if ~isempty(dmrsWaveformInd)
     txGrid = localMapToGrid(txGrid, dmrsWaveformInd, dmrsWaveformSym);
 end
-if ~isempty(ptrsWaveformInd)
-    txGrid = localMapToGrid(txGrid, ptrsWaveformInd, ptrsWaveformSym);
+if ~isempty(ptrsGridInd)
+    txGrid = localMapToGrid(txGrid, ptrsGridInd, ptrsGridSym);
 end
 precodePowerInfo = localBuildPUSCHPowerInfo(puschLayerSym, puschWaveformSym, prec);
 
@@ -340,8 +341,11 @@ if ~logical(opt.CompactOutput)
     tx.DMRSWaveformSymbols = dmrsWaveformSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
-    tx.PTRSWaveformIndices = ptrsWaveformInd;
-    tx.PTRSWaveformSymbols = ptrsWaveformSym;
+    tx.PTRSRawWaveformIndices = ptrsWaveformInd;
+    tx.PTRSRawWaveformSymbols = ptrsWaveformSym;
+    tx.PTRSWaveformIndices = ptrsGridInd;
+    tx.PTRSWaveformSymbols = ptrsGridSym;
+    tx.PTRSWaveformMapping = ptrsGridMapInfo;
     tx.PUSCHAntennaIndices = puschWaveformInd;
     tx.PUSCHAntennaSymbols = puschWaveformSym;
     tx.DMRSAntennaIndices = dmrsWaveformInd;
@@ -668,7 +672,7 @@ if ~logical(resourceAccounting.GMatchesLayerRE)
 end
 if logical(fixedReferenceMode) && ~localPUSCHLinearMasksDisjoint(resourceAccounting)
     error("sixgr:phy:ul:PUSCHResourceAccountingOverlap", ...
-        "PUSCH frozen grant has overlapping or duplicate data/DMRS/PTRS port-domain RE cells. BaseOverlapCount=%d.", ...
+        "PUSCH frozen grant has duplicate data/DMRS/PTRS cells or illegal data-DMRS/DMRS-PTRS overlap. BaseOverlapCount=%d.", ...
         round(double(resourceAccounting.OverlapCount)));
 end
 if round(double(resourceAccounting.NumLayers)) ~= round(double(pusch.NumLayers))
@@ -905,6 +909,73 @@ if ~isempty(intersect(dmrsSet, ptrsSet))
 end
 end
 
+function [mapInd, mapSym, info] = localActiveReferenceGridPairs(ind, sym, label)
+mapInd = ind;
+mapSym = sym;
+info = struct( ...
+    "Status", "empty", ...
+    "Label", string(label), ...
+    "RawIndexShape", double(size(ind)), ...
+    "RawSymbolShape", double(size(sym)), ...
+    "MappedIndexShape", double(size(mapInd)), ...
+    "MappedSymbolShape", double(size(mapSym)), ...
+    "ActiveColumns", [], ...
+    "Equation", "grid(active_reference_indices)=active_reference_symbols");
+if isempty(ind) || isempty(sym)
+    mapInd = [];
+    mapSym = [];
+    info.MappedIndexShape = double(size(mapInd));
+    info.MappedSymbolShape = double(size(mapSym));
+    return;
+end
+if ~(isnumeric(ind) && isnumeric(sym) && ismatrix(ind) && ismatrix(sym))
+    error("sixgr:phy:ul:PUSCHReferenceGridMappingBadType", ...
+        "%s grid mapping requires numeric 2-D indices and symbols.", char(string(label)));
+end
+if size(ind, 1) ~= size(sym, 1)
+    if numel(ind) == numel(sym)
+        info.Status = "one_to_one_linear";
+        info.ActiveColumns = 1:size(sym, 2);
+        info.MappedIndexShape = double(size(mapInd));
+        info.MappedSymbolShape = double(size(mapSym));
+        return;
+    end
+    error("sixgr:phy:ul:PUSCHReferenceGridMappingRowMismatch", ...
+        "%s index rows %d do not match symbol rows %d.", char(string(label)), size(ind, 1), size(sym, 1));
+end
+
+colEnergy = sum(abs(sym).^2, 1);
+activeCols = find(colEnergy > 0);
+if isempty(activeCols)
+    mapInd = zeros(size(ind, 1), 0);
+    mapSym = complex(zeros(size(sym, 1), 0));
+    info.Status = "all_symbol_columns_inactive";
+elseif size(ind, 2) == size(sym, 2)
+    mapInd = ind(:, activeCols);
+    mapSym = sym(:, activeCols);
+    if numel(activeCols) == size(sym, 2)
+        info.Status = "all_columns_active";
+    else
+        info.Status = "inactive_zero_columns_removed";
+    end
+elseif numel(activeCols) == size(ind, 2)
+    mapInd = ind;
+    mapSym = sym(:, activeCols);
+    info.Status = "active_symbol_columns_matched_to_index_columns";
+elseif numel(ind) == numel(sym)
+    info.Status = "one_to_one_linear";
+else
+    error("sixgr:phy:ul:PUSCHReferenceGridMappingMismatch", ...
+        "%s active reference columns cannot be paired with grid indices. IndexShape=%s SymbolShape=%s ActiveColumns=%s.", ...
+        char(string(label)), mat2str(size(ind)), mat2str(size(sym)), mat2str(activeCols));
+end
+info.RawIndexShape = double(size(ind));
+info.RawSymbolShape = double(size(sym));
+info.MappedIndexShape = double(size(mapInd));
+info.MappedSymbolShape = double(size(mapSym));
+info.ActiveColumns = double(activeCols);
+end
+
 function powerInfo = localBuildPUSCHPowerInfo(layerSym, portSym, prec)
 W = double(prec.MatrixPorts);
 if isempty(W)
@@ -962,6 +1033,13 @@ ctx.DMRSSymbols = dmrsSym;
 ctx.DMRSIndices = dmrsInd;
 ctx.PTRSSymbols = ptrsSym;
 ctx.PTRSIndices = ptrsInd;
+if isfield(tx, "PTRSWaveformIndices")
+    ctx.PTRSWaveformIndices = tx.PTRSWaveformIndices;
+    ctx.PTRSWaveformSymbols = tx.PTRSWaveformSymbols;
+end
+if isfield(tx, "PTRSWaveformMapping")
+    ctx.PTRSWaveformMapping = tx.PTRSWaveformMapping;
+end
 ctx.PortGrid = txGrid;
 ctx.Waveform = txWaveform;
 ctx.Precoder = prec.MatrixPorts;
