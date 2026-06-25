@@ -289,20 +289,20 @@ end
 if exist("nrPUSCHCodebook", "file") ~= 2
     return;
 end
+catalog = sixgr.phy.ul.puschCodebookCatalog(ri, numTxPorts, transformPrecoding);
+if ~logical(catalog.Valid)
+    return;
+end
 
 bestMetric = -inf;
 bestBeamIndices = [];
-missStreak = 0;
-for tpmiIdx = 0:255
+validTPMIs = double(catalog.ValidTPMISet);
+for idx = 1:numel(validTPMIs)
+    tpmiIdx = validTPMIs(idx);
     [W, candidateBeamIndices] = localPUSCHCodebookCandidate(ri, numTxPorts, tpmiIdx, transformPrecoding);
     if isempty(W)
-        missStreak = missStreak + 1;
-        if candidateCount > 0 && missStreak >= 32
-            break;
-        end
         continue;
     end
-    missStreak = 0;
     candidateCount = candidateCount + 1;
     metric = localAverageMutualInformation(Hprb, W, nVar);
     if isfinite(metric) && metric > bestMetric
@@ -382,16 +382,9 @@ end
 function [W, beamIndices] = localPUSCHCodebookCandidate(ri, numTxPorts, tpmiIdx, transformPrecoding)
 W = [];
 beamIndices = [];
-try
-    W = nrPUSCHCodebook(max(1, round(double(ri))), max(1, round(double(numTxPorts))), ...
-        round(double(tpmiIdx)), logical(transformPrecoding));
-catch
-    try
-        W = nrPUSCHCodebook(max(1, round(double(ri))), max(1, round(double(numTxPorts))), round(double(tpmiIdx)));
-    catch
-        W = [];
-    end
-end
+[~, ~, W] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
+    max(1, round(double(ri))), max(1, round(double(numTxPorts))), ...
+    round(double(tpmiIdx)), logical(transformPrecoding));
 if isempty(W)
     return;
 end

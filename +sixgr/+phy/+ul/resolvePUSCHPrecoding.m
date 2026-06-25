@@ -50,6 +50,9 @@ prec.PMI = NaN;
 prec.PMIType = "";
 prec.CodebookMode = "";
 prec.CodebookStatus = "";
+prec.CodebookCatalogSource = "";
+prec.CodebookCatalogValidTPMISet = [];
+prec.CodebookCatalogNumCandidates = NaN;
 prec.BeamIndices = [];
 prec.MatrixRows = double(max(nPorts, nLayers));
 prec.MatrixCols = double(nLayers);
@@ -114,6 +117,10 @@ if strlength(strtrim(prec.CodebookMode)) == 0
 end
 prec.BeamformingApplied = true;
 prec.NativeCodebookApplied = true;
+catalog = sixgr.phy.ul.puschCodebookCatalog(nLayers, nPorts, transformPrecoding);
+prec.CodebookCatalogSource = string(catalog.Source);
+prec.CodebookCatalogValidTPMISet = double(catalog.ValidTPMISet);
+prec.CodebookCatalogNumCandidates = double(catalog.NumTPMICandidates);
 try
     [Wports, codebookStatus, Wtx, Winv] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
         nLayers, nPorts, tpmi, transformPrecoding);
