@@ -122,7 +122,7 @@ sections:
         type: string
         allowed_values: [receiver_noise_figure_thermal_noise]
       min_duration_s: {required: true, type: number, min_exclusive: 0}
-      snr_sweep_offsets_db: {required: true, type: number_list, min_items: 1}
+      snr_sweep_offsets_db: {required: true, type: number_list, min_items: 0}
   frequency:
     required: true
     parameters:
@@ -604,7 +604,7 @@ sections:
       validation_mode:
         required: false
         type: string
-        allowed_values: [observation, exercise]
+        allowed_values: [observation, exercise, closed_loop]
   pdsch6gr:
     required: false
     parameters:
@@ -853,7 +853,7 @@ sections:
       speed_kmh:
         required: false
         type: number
-        allowed_numeric_values: [3, 30, 120, 500, 1000]
+        allowed_numeric_values: [3, 30, 100, 120, 500, 1000]
       cell_radius_m: {required: false, type: number, min: 0}
       timing_uncertainty_min_us: {required: false, type: number}
       timing_uncertainty_max_us: {required: false, type: number}

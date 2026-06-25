@@ -364,9 +364,10 @@ if ~(isfinite(minDuration_s) && minDuration_s > 0)
 end
 
 snrSweepOffsets = double(cfg.simulation.snr_sweep_offsets_db);
-if isempty(snrSweepOffsets) || ~isvector(snrSweepOffsets) || any(~isfinite(snrSweepOffsets))
+snrSweepEnabled = logical(localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.enabled", false));
+if (~isempty(snrSweepOffsets) && ~isvector(snrSweepOffsets)) || any(~isfinite(snrSweepOffsets)) || (snrSweepEnabled && isempty(snrSweepOffsets))
     error("sixgr:lls6g:config:BadSNRSweepOffsets", ...
-        "simulation.snr_sweep_offsets_db in %s must be a finite numeric vector.", localCtx(ctx));
+        "simulation.snr_sweep_offsets_db in %s must be a finite numeric vector, and must be non-empty when sweeps_and_matrix.snr_sweep.enabled=true.", localCtx(ctx));
 end
 
 ulWf = upper(string(cfg.waveform.ul_waveform));
@@ -1150,7 +1151,7 @@ if enabled && isnumeric(values) && isvector(values) && numel(values) >= 2 && all
         return;
     end
 end
-baseSNR = double(localOptionalStructValue(cfg, "simulation.snr_db", NaN));
+baseSNR = localOptionalFiniteScalarOrNaN(cfg, "simulation.snr_db");
 offsets = localOptionalStructValue(cfg, "simulation.snr_sweep_offsets_db", []);
 if isfinite(baseSNR) && isnumeric(offsets) && isvector(offsets) && numel(offsets) >= 2 && all(isfinite(offsets))
     tf = max(baseSNR + double(offsets(:))) >= double(minHighSNRAccept_dB);

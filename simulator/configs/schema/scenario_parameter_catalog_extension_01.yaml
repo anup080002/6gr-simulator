@@ -338,7 +338,7 @@
       "delay_spread_ns": {"required": true, "type": "number", "min": 0},
       "doppler_hz": {"required": true, "type": "number", "min": 0},
       "doppler_source_mode": {"required": false, "type": "string", "allowed_values": ["configured", "derive_from_ue_speed"]},
-      "k_factor": {"required": true, "type": "number", "min": 0},
+      "k_factor": {"required": true, "type": "number", "min": -999},
       "angular_spread": {"required": true, "type": "string"},
       "zsa": {"required": true, "type": "string"},
       "zsd": {"required": true, "type": "string"},

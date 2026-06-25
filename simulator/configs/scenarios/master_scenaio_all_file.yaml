@@ -80,10 +80,10 @@ canonical_control:
     measurement_slots: 55
     n_subframes: 30
     monte_carlo_iterations: 1
-    snr_db: 18
+    snr_db: null
     noise_operating_mode: receiver_noise_figure_thermal_noise
     min_duration_s: 0.03
-    snr_sweep_offsets_db: [0]
+    snr_sweep_offsets_db: []
     execution_mode: LLS
     study_mode: baseline
     simulation_mode: full_phy
@@ -138,7 +138,7 @@ canonical_control:
     carrier_aggregation_enabled: false
     numerology_options_khz: [30]
     max_mimo_size: 64
-    mobility_defaults_kmph: 3
+    mobility_defaults_kmph: 100
     channel_model_defaults: CDL-C
     reference_signal_defaults: coverage
     power_model_defaults: coverage
@@ -162,11 +162,11 @@ canonical_control:
   channel:
     model_type: CDL
     profile: CDL-C
-    delay_spread_ns: 300
-    doppler_hz: 11.1188031733
+    delay_spread_ns: 93
+    doppler_hz: 370.370
     doppler_source_mode: derive_from_ue_speed
-    mobility_kmph: 3
-    los_enabled: true
+    mobility_kmph: 100
+    los_enabled: false
     spatial_consistency_enabled: true
     pathloss_enabled: true
     shadow_fading_enabled: true
@@ -175,10 +175,10 @@ canonical_control:
     inter_cell_execution_mode: full_per_link_channel_waveform_sum
 
   mobility:
-    ue_speed_kmh: 3
-    speed_profile: rel20_anchor_random_waypoint_3_to_30_kmph
-    direction_model: random
-    trajectory_model: randomWaypoint
+    ue_speed_kmh: 100
+    speed_profile: linear_100kmph
+    direction_model: fixed
+    trajectory_model: linear
     update_period_s: 0.0005
     spatial_consistency_flag: true
 
@@ -312,6 +312,7 @@ canonical_control:
     preamble_index: 0
     prach_format: B4
     channel_model: CDL-C
+    speed_kmh: 100
     preamble_length_mode: short
     num_prach_occasions: 4
     timing_offset_sweep_samples: [0, 4, 8]
@@ -339,6 +340,7 @@ canonical_control:
     rv_sequence: [0, 2, 3, 1]
     combining_mode: incremental_redundancy
     feedback_timing_slots: 4
+    validation_mode: closed_loop
 
   receiver:
     channel_estimator: realistic_baseline
@@ -431,6 +433,40 @@ canonical_control:
       value: true
     - path: output.persist_to_results_folder
       value: true
+    - path: channel_model.k_factor
+      value: -999
+    - path: channel_model.shadow_fading_model
+      value: lognormal
+    - path: channels.max_doppler_hz
+      value: 370.370
+    - path: channels.pathloss_scenario
+      value: UMa
+    - path: scenario.mobility.speed_kmh
+      value: 100
+    - path: scenario.mobility.model
+      value: linear
+    - path: random_access.speed_kmh
+      value: 100
+    - path: link_adaptation.rank_adaptation_policy
+      value: dynamic
+    - path: link_adaptation.al_adaptation_policy
+      value: dynamic
+    - path: link_adaptation.olla_step_down
+      value: 0.1
+    - path: link_adaptation.olla_step_up
+      value: 0.01
+    - path: link_adaptation.bootstrap_cqi_mode
+      value: estimated
+    - path: harq.validation_mode
+      value: closed_loop
+    - path: interference.inter_cell_interference_flag
+      value: true
+    - path: interference.intra_cell_interference_flag
+      value: false
+    - path: sweeps_and_matrix.snr_sweep.enabled
+      value: false
+    - path: sweeps_and_matrix.snr_sweep.values_db
+      value: []
     - path: system.measurement.periodSlots
       value: 1
     - path: system.measurement.filterAlpha

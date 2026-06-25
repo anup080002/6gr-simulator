@@ -46,7 +46,7 @@
       "delta_mcs_min": {"required": false, "type": "number"},
       "delta_mcs_max": {"required": false, "type": "number"},
       "bootstrap_mcs_index": {"required": false, "type": "integer", "min": 0, "max": 31},
-      "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default", "require_measured_cqi", "measured_only", "strict_measured_cqi", "none", "disabled", "off"]}
+      "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "estimated", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default", "require_measured_cqi", "measured_only", "strict_measured_cqi", "none", "disabled", "off"]}
     }},
     "harq": {"parameters": {
       "dl_harq_enabled": {"required": true, "type": "boolean"}, "ul_harq_enabled": {"required": true, "type": "boolean"},

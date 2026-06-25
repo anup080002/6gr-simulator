@@ -485,6 +485,7 @@ mappings = {
     "random_access.prach_format", "random_access.prach_format", "identity"
     "random_access.prach_format", "prach.format", "identity"
     "random_access.channel_model", "random_access.channel_model", "identity"
+    "random_access.speed_kmh", "random_access.speed_kmh", "identity"
     "random_access.preamble_length_mode", "random_access.preamble_length_mode", "identity"
     "random_access.num_prach_occasions", "random_access.num_prach_occasions", "identity"
     "random_access.timing_offset_sweep_samples", "random_access.timing_offset_sweep_samples", "identity"
@@ -1278,8 +1279,10 @@ txt = lower(strtrim(string(value)));
 switch txt
     case {"random_waypoint","randomwaypoint","waypoint"}
         token = "randomWaypoint";
-    case {"straight_line","straightline","linear"}
+    case {"straight_line","straightline"}
         token = "straightLine";
+    case "linear"
+        token = "linear";
     otherwise
         token = value;
 end
