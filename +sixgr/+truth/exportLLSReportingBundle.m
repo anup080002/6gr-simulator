@@ -161,7 +161,12 @@ ctx.Tables = struct();
 ctx.TableSources = struct();
 ctx.Tables.ScenarioSummary = localReadOptionalTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"));
 ctx.Tables.CaseStatus = localReadOptionalTable(fullfile(layout.ReportCSVDir, "case_status.csv"));
-ctx.Tables.Sweep = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"));
+ctx.Tables.Sweep = table();
+ctx.Tables.MeasuredSINRSummary = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv"));
+ctx.Tables.DLMeasuredSINRBLER = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_measured_sinr_bler_curve.csv"));
+ctx.Tables.ULMeasuredSINRBLER = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_measured_sinr_bler_curve.csv"));
+ctx.Tables.DLMeasuredSINRThroughput = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_measured_sinr_throughput_curve.csv"));
+ctx.Tables.ULMeasuredSINRThroughput = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_measured_sinr_throughput_curve.csv"));
 ctx.Tables.ReferenceSweep = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "lls_reference_snr_sweep.csv"));
 ctx.Tables.DL = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
 ctx.Tables.UL = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
@@ -490,9 +495,9 @@ switch key
         T = localEffectiveHistogramMetricRows(cat, metric, ctx, "MCS", "effective runtime-selected MCS histogram derived from actual waveform trial tables.");
 
     case "bler_vs_snr_sinr_esn0"
-        T = localSweepMetricRows(cat, metric, ctx.Tables.Sweep, ["DL_BLER","UL_BLER"], ["DL","UL"], "fraction");
+        T = localMeasuredCurveMetricRows(cat, metric, ctx, "BLER", "fraction");
     case "ber_vs_snr_sinr_esn0"
-        T = localSweepMetricRows(cat, metric, ctx.Tables.Sweep, ["DL_BER","UL_BER"], ["DL","UL"], "fraction");
+        T = localMeasuredCurveMetricRows(cat, metric, ctx, "BER", "fraction");
     case "fer_tb_error_rate"
         T = [T; localFailureRateRows(cat, metric, ctx.Tables.DL, "DL"); localFailureRateRows(cat, metric, ctx.Tables.UL, "UL")];
     case "code_block_bler"
@@ -504,34 +509,24 @@ switch key
             localRatioSummaryRows(cat, metric, ctx.Tables.DL, "CBGErrors", "CBGCount", "DL", "fraction", "air_interface/csv/dl_pdsch_trials.csv", "Derived from TB-equivalent grouping when explicit CBG mode is disabled."); ...
             localRatioSummaryRows(cat, metric, ctx.Tables.UL, "CBGErrors", "CBGCount", "UL", "fraction", "air_interface/csv/ul_pusch_trials.csv", "Derived from TB-equivalent grouping when explicit CBG mode is disabled.")];
     case "throughput"
-        T = localSweepMetricRowsPreferred(cat, metric, ctx.Tables.Sweep, ...
-            [["DL_OfferedThroughput_Mbps","DL_Throughput_Mbps","Throughput_Mbps","DL_Tput_Mbps"]; ...
-             ["UL_OfferedThroughput_Mbps","UL_Throughput_Mbps","Throughput_Mbps","UL_Tput_Mbps"]], ...
-            ["DL","UL"], "Mbps");
+        T = localMeasuredThroughputCurveRows(cat, metric, ctx, "OfferedThroughput_Mbps_mean", "Mbps");
     case "goodput"
-        T = localSweepMetricRowsPreferred(cat, metric, ctx.Tables.Sweep, ...
-            [["DL_Goodput_Mbps","Goodput_Mbps","DL_Throughput_Mbps"]; ...
-             ["UL_Goodput_Mbps","Goodput_Mbps","UL_Throughput_Mbps"]], ...
-            ["DL","UL"], "Mbps");
+        T = localMeasuredThroughputCurveRows(cat, metric, ctx, "Goodput_Mbps_mean", "Mbps");
     case "spectral_efficiency"
-        bwHz = double(ctx.ScenarioConfig.get("global_radio_scope.channel_bandwidth_hz", NaN));
-        T = [T; ...
-            localSpectralEfficiencyRows(cat, metric, ctx.Tables.Sweep, ["DL_Throughput_Mbps", "DL_Goodput_Mbps", "Throughput_Mbps"], "DL", bwHz); ...
-            localSpectralEfficiencyRows(cat, metric, ctx.Tables.Sweep, ["UL_Throughput_Mbps", "UL_Goodput_Mbps", "Throughput_Mbps"], "UL", bwHz)];
+        T = localMeasuredSummaryMetricRows(cat, metric, ctx, "SpectralEfficiency_mean_bps_Hz", "bit/s/Hz", "mean");
     case "user_perceived_throughput"
         T = [T; ...
             localTrialThroughputRows(cat, metric, ctx.Tables.DL, "DL", "Mbps", "LLS has no application-layer perception model; emitted as PHY goodput equivalent."); ...
             localTrialThroughputRows(cat, metric, ctx.Tables.UL, "UL", "Mbps", "LLS has no application-layer perception model; emitted as PHY goodput equivalent.")];
     case "required_snr_target_bler"
-        T = [T; ...
-            localPreferredRequiredSNRRows(cat, metric, ctx, "DL_BLER", "DL"); ...
-            localPreferredRequiredSNRRows(cat, metric, ctx, "UL_BLER", "UL")];
+        T = localOracleFreeUnsupportedSNRRows(cat, metric, ["DL","UL"], ...
+            "Geometry-driven oracle-free LLS derives receiver SINR from pathloss, shadow fading, fading channel, and equalisation. Required injected-SNR targets are intentionally not estimated.");
     case "outage_probability"
         T = [T; localFailureRateRows(cat, metric, ctx.Tables.DL, "DL"); localFailureRateRows(cat, metric, ctx.Tables.UL, "UL")];
     case "error_floor_region_characterization"
         T = [T; ...
-            localErrorFloorRows(cat, metric, ctx.Tables.Sweep, "DL_BLER", "DL"); ...
-            localErrorFloorRows(cat, metric, ctx.Tables.Sweep, "UL_BLER", "UL")];
+            localMeasuredErrorFloorRows(cat, metric, ctx.Tables.DLMeasuredSINRBLER, "DL", "air_interface/csv/dl_measured_sinr_bler_curve.csv"); ...
+            localMeasuredErrorFloorRows(cat, metric, ctx.Tables.ULMeasuredSINRBLER, "UL", "air_interface/csv/ul_measured_sinr_bler_curve.csv")];
 
     case "decoder_iterations"
         T = [T; ...
@@ -559,13 +554,11 @@ switch key
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "AreaEfficiencyProxy", "DL", "bits_per_complexity_unit"); ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "AreaEfficiencyProxy", "UL", "bits_per_complexity_unit")];
     case "snr_gain_same_complexity"
-        T = [T; ...
-            localSNRGainSameComplexityRows(cat, metric, ctx, "DL", "DL_DecoderComplexityUnits"); ...
-            localSNRGainSameComplexityRows(cat, metric, ctx, "UL", "UL_DecoderComplexityUnits")];
+        T = localOracleFreeUnsupportedSNRRows(cat, metric, ["DL","UL"], ...
+            "Same-complexity injected-SNR gain is not defined for geometry-driven oracle-free LLS. Use measured SINR and decoder-complexity traces directly.");
     case "complexity_reduction_same_bler"
-        T = [T; ...
-            localComplexityReductionSameBLERRows(cat, metric, ctx, "DL", "DL_BLER", "DL_DecoderComplexityUnits"); ...
-            localComplexityReductionSameBLERRows(cat, metric, ctx, "UL", "UL_BLER", "UL_DecoderComplexityUnits")];
+        T = localOracleFreeUnsupportedSNRRows(cat, metric, ["DL","UL"], ...
+            "Same-BLER complexity reduction against an injected-SNR reference sweep is not defined for geometry-driven oracle-free LLS.");
     case "evm"
         T = [T; ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "EVM_rms", "DL", "rms"); ...
@@ -968,27 +961,25 @@ switch key
         aggPath = localAggregateArtifactPath(ctx, "PerScenarioSummaryTable");
         T = localMetricTableRow(cat, metric, "report", "summary_table", localFileAvailability(aggPath), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), "");
     case "per_sweep_comparison_tables"
-        aggPath = localAggregateArtifactPath(ctx, "PerSweepComparisonTable");
-        hasData = istable(ctx.Tables.Sweep) && ~isempty(ctx.Tables.Sweep);
-        T = localMetricTableRow(cat, metric, "report", "comparison_table", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "Sweep data unavailable; placeholder table emitted."));
+        T = localOracleFreeUnsupportedSNRRows(cat, metric, "report", ...
+            "Injected-SNR sweep comparison tables are suppressed in oracle-free geometry-driven LLS. Use air_interface/csv/lls_measured_sinr_summary.csv and measured SINR curve CSVs instead.");
     case "baseline_candidate_delta_tables"
         aggPath = localAggregateArtifactPath(ctx, "BaselineCandidateDeltaTable");
         hasComparator = strlength(string(ctx.ScenarioConfig.get("meta.baseline_reference_name", ""))) > 0;
         T = localMetricTableRow(cat, metric, "report", "delta_table", localDerivedOrPlaceholderAvailability(hasComparator), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasComparator, "No paired baseline comparator artifacts were materialized for this run; placeholder delta table emitted."));
     case "waterfall_bar_charts_gains_losses"
         aggPath = localAggregateArtifactPath(ctx, "WaterfallChart");
-        hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_Throughput_Mbps","UL_Throughput_Mbps","DL_BLER","UL_BLER"]);
+        hasData = localMeasuredSummaryHasAnyKPI(ctx);
         T = localMetricTableRow(cat, metric, "report", "chart", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No key-KPI aggregate data available; placeholder figure emitted."));
     case "curves_bler_vs_snr"
-        aggPath = fullfile(ctx.Layout.ReportImageDir, "bler_vs_snr.png");
-        hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_BLER","UL_BLER"]);
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/bler_vs_snr.png", "", "reports/image/bler_vs_snr.png", localAggregateAvailabilityNote(hasData, "No BLER sweep data available; placeholder figure emitted."));
+        hasData = localMeasuredCurveHasAnyKPI(ctx, "BLER");
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/bler_vs_measured_sinr.png", "", "reports/image/bler_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No measured SINR BLER curve data available; placeholder figure emitted."));
     case "curves_throughput_vs_snr"
-        hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_Throughput_Mbps","UL_Throughput_Mbps","DL_Goodput_Mbps","UL_Goodput_Mbps","Throughput_Mbps","Goodput_Mbps"]);
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/throughput_vs_snr.png", "", "reports/image/throughput_vs_snr.png", localAggregateAvailabilityNote(hasData, "No throughput sweep data available; placeholder figure emitted."));
+        hasData = localMeasuredCurveHasAnyKPI(ctx, "Goodput_Mbps_mean");
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/throughput_vs_measured_sinr.png", "", "reports/image/throughput_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No measured SINR throughput curve data available; placeholder figure emitted."));
     case "curves_nmse_vs_snr"
-        hasData = localHasAnyFiniteColumn(ctx.Tables.Sweep, ["SRS_NMSE_dB"]);
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/nmse_vs_snr.png", "", "reports/image/nmse_vs_snr.png", localAggregateAvailabilityNote(hasData, "No NMSE sweep data available; placeholder figure emitted."));
+        hasData = exist(fullfile(ctx.Layout.ReportCSVDir, "nmse_vs_measured_sinr.csv"), "file") == 2;
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/nmse_vs_measured_sinr.png", "", "reports/image/nmse_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No NMSE measured-SINR data available; placeholder figure emitted."));
     case "curves_papr_ccdf"
         aggPath = localAggregateArtifactPath(ctx, "PAPRCCDFPlot");
         hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["PAPR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["PAPR_dB"]);
@@ -3143,6 +3134,179 @@ else
 end
 end
 
+function T = localMeasuredCurveMetricRows(cat, metric, ctx, valueCol, unit)
+T = localEmptyMetricTable();
+valueCol = string(valueCol);
+T = [T; ...
+    localMeasuredCurveStatsRows(cat, metric, ctx.Tables.DLMeasuredSINRBLER, "DL", valueCol, unit, "air_interface/csv/dl_measured_sinr_bler_curve.csv"); ...
+    localMeasuredCurveStatsRows(cat, metric, ctx.Tables.ULMeasuredSINRBLER, "UL", valueCol, unit, "air_interface/csv/ul_measured_sinr_bler_curve.csv")];
+end
+
+function T = localMeasuredThroughputCurveRows(cat, metric, ctx, valueCol, unit)
+T = localEmptyMetricTable();
+valueCol = string(valueCol);
+T = [T; ...
+    localMeasuredCurveStatsRows(cat, metric, ctx.Tables.DLMeasuredSINRThroughput, "DL", valueCol, unit, "air_interface/csv/dl_measured_sinr_throughput_curve.csv"); ...
+    localMeasuredCurveStatsRows(cat, metric, ctx.Tables.ULMeasuredSINRThroughput, "UL", valueCol, unit, "air_interface/csv/ul_measured_sinr_throughput_curve.csv")];
+end
+
+function T = localMeasuredCurveStatsRows(cat, metric, curveT, entity, valueCol, unit, source)
+T = localEmptyMetricTable();
+if ~(istable(curveT) && ~isempty(curveT))
+    return;
+end
+valueCol = localFirstPresentColumn(curveT, valueCol);
+if strlength(valueCol) == 0
+    return;
+end
+curveT = localMeasuredAggregateCurveRows(curveT);
+x = localCoerceNumericVector(curveT.(valueCol));
+x = x(isfinite(x));
+if isempty(x)
+    return;
+end
+note = "Derived from geometry-driven measured post-equalisation SINR bins; no injected-SNR sweep axis is used.";
+T = [T; ...
+    localMetricTableRow(cat, metric, entity, "min", "available", min(x), "", unit, source, note); ...
+    localMetricTableRow(cat, metric, entity, "mean", "available", mean(x, "omitnan"), "", unit, source, note); ...
+    localMetricTableRow(cat, metric, entity, "max", "available", max(x), "", unit, source, note)];
+end
+
+function T = localMeasuredSummaryMetricRows(cat, metric, ctx, valueCol, unit, statName)
+T = localEmptyMetricTable();
+valueCol = string(valueCol);
+if nargin < 6 || strlength(string(statName)) == 0
+    statName = "mean";
+end
+for direction = ["DL","UL"]
+    row = localMeasuredSummaryRowForDirection(ctx, direction);
+    if istable(row) && ~isempty(row)
+        col = localFirstPresentColumn(row, valueCol);
+        if strlength(col) == 0 && valueCol == "OfferedThroughput_Mbps"
+            col = localFirstPresentColumn(row, ["OfferedThroughput_Mbps","OfferedThroughput_Mbps_mean","Goodput_Mbps_mean"]);
+        end
+        if strlength(col) > 0
+            value = localTableNumericAtRow(row, 1, col);
+            if isfinite(value)
+                T = [T; localMetricTableRow(cat, metric, direction, statName, "available", value, "", unit, ...
+                    "air_interface/csv/lls_measured_sinr_summary.csv", ...
+                    "Derived from geometry-driven measured post-equalisation SINR summary; no injected-SNR sweep axis is used.")]; %#ok<AGROW>
+                continue;
+            end
+        end
+    end
+    if valueCol == "OfferedThroughput_Mbps"
+        if direction == "DL"
+            curveT = ctx.Tables.DLMeasuredSINRThroughput;
+            source = "air_interface/csv/dl_measured_sinr_throughput_curve.csv";
+        else
+            curveT = ctx.Tables.ULMeasuredSINRThroughput;
+            source = "air_interface/csv/ul_measured_sinr_throughput_curve.csv";
+        end
+        curveRows = localMeasuredCurveStatsRows(cat, metric, curveT, direction, "OfferedThroughput_Mbps_mean", unit, source);
+        if ~isempty(curveRows)
+            T = [T; curveRows]; %#ok<AGROW>
+        end
+    end
+end
+end
+
+function T = localOracleFreeUnsupportedSNRRows(cat, metric, entities, note)
+T = localEmptyMetricTable();
+entities = string(entities(:));
+for i = 1:numel(entities)
+    T = [T; localMetricTableRow(cat, metric, entities(i), "not_applicable", "not_supported", NaN, ...
+        "geometry_measured_sinr", "", "air_interface/csv/lls_measured_sinr_summary.csv", string(note))]; %#ok<AGROW>
+end
+end
+
+function tf = localMeasuredCurveHasAnyKPI(ctx, valueCol)
+tf = localHasAnyFiniteColumn(ctx.Tables.DLMeasuredSINRBLER, valueCol) || ...
+    localHasAnyFiniteColumn(ctx.Tables.ULMeasuredSINRBLER, valueCol) || ...
+    localHasAnyFiniteColumn(ctx.Tables.DLMeasuredSINRThroughput, valueCol) || ...
+    localHasAnyFiniteColumn(ctx.Tables.ULMeasuredSINRThroughput, valueCol);
+end
+
+function tf = localMeasuredSummaryHasAnyKPI(ctx)
+tf = localHasAnyFiniteColumn(ctx.Tables.MeasuredSINRSummary, ["Goodput_Mbps_mean","BLER_overall","SINR_median_dB"]);
+end
+
+function T = localMeasuredAggregateCurveRows(T)
+if ~(istable(T) && ~isempty(T) && ismember("UEIndex", string(T.Properties.VariableNames)))
+    return;
+end
+ue = T.UEIndex;
+if isnumeric(ue) || islogical(ue)
+    mask = isnan(double(ue));
+else
+    txt = lower(strtrim(string(ue)));
+    mask = txt == "all" | txt == "nan" | strlength(txt) == 0 | ismissing(txt);
+end
+if any(mask)
+    T = T(mask, :);
+end
+end
+
+function row = localMeasuredSummaryRowForDirection(ctx, direction)
+row = table();
+T = ctx.Tables.MeasuredSINRSummary;
+if ~(istable(T) && ~isempty(T) && all(ismember(["Direction","UEIndex"], string(T.Properties.VariableNames))))
+    return;
+end
+dirMask = strcmpi(string(T.Direction), string(direction));
+ue = lower(strtrim(string(T.UEIndex)));
+allMask = dirMask & (ue == "all" | ue == "nan" | strlength(ue) == 0);
+if any(allMask)
+    row = T(find(allMask, 1, "first"), :);
+elseif any(dirMask)
+    row = T(find(dirMask, 1, "first"), :);
+end
+end
+
+function value = localMeasuredSummaryNumeric(ctx, direction, candidates)
+value = NaN;
+row = localMeasuredSummaryRowForDirection(ctx, direction);
+if ~(istable(row) && ~isempty(row))
+    return;
+end
+value = localTableNumericAtRow(row, 1, candidates);
+end
+
+function T = localMeasuredErrorFloorRows(cat, metric, curveT, entity, source)
+T = localEmptyMetricTable();
+if ~(istable(curveT) && ~isempty(curveT) && ismember("BLER", string(curveT.Properties.VariableNames)))
+    return;
+end
+curveT = localMeasuredAggregateCurveRows(curveT);
+bler = localCoerceNumericVector(curveT.BLER);
+bler = bler(isfinite(bler));
+if isempty(bler)
+    return;
+end
+tail = bler;
+if ismember("PostEqSINR_dB_BinCenter", string(curveT.Properties.VariableNames))
+    x = localCoerceNumericVector(curveT.PostEqSINR_dB_BinCenter);
+    mask = isfinite(x) & isfinite(localCoerceNumericVector(curveT.BLER));
+    if any(mask)
+        x = x(mask);
+        y = localCoerceNumericVector(curveT.BLER);
+        y = y(mask);
+        tail = y(x >= max(x) - 1e-9);
+        if isempty(tail)
+            tail = y(end);
+        end
+    end
+end
+desc = "no_error_floor_observed";
+if any(tail > 1e-3)
+    desc = "possible_error_floor_above_1e-3";
+elseif any(tail > 1e-4)
+    desc = "possible_error_floor_above_1e-4";
+end
+T = localMetricTableRow(cat, metric, entity, "assessment", "available", NaN, desc, "bler", source, ...
+    "Assessed on measured post-equalisation SINR bins from the geometry-driven run.");
+end
+
 function token = localNumericToken(value)
 if ~isfinite(double(value))
     token = "NaN";
@@ -4266,12 +4430,11 @@ if ~localCanRenderReportFigures()
     return;
 end
 sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
-plots(end+1, 1) = localPlotControlledSNRSweep(ctx, ctx.Layout.ReportImageDir, ...
-    "bler_vs_snr.png", "BLER vs controlled SNR", "BLER", "bler"); %#ok<AGROW>
-plots(end+1, 1) = localPlotControlledSNRSweep(ctx, ctx.Layout.ReportImageDir, ...
-    "throughput_vs_snr.png", "Throughput vs controlled SNR", "Throughput (Mbps)", "throughput"); %#ok<AGROW>
-plots(end+1, 1) = localPlotSweep(ctx, ctx.Layout.ReportImageDir, ctx.Tables.Sweep, ...
-    ["SRS_NMSE_dB"], ["SRS"], "nmse_vs_snr.png", "NMSE vs SNR", "NMSE (dB)"); %#ok<AGROW>
+try
+    measuredPlots = sixgr.analytics.generateMeasuredSINRPlots(ctx.RunFolder);
+    plots = [plots; string(measuredPlots.Plots(:))]; %#ok<AGROW>
+catch
+end
 if localConfigFlag(ctx, ["output.enable_measured_posteq_sinr_bins_diagnostic_plot", ...
         "output.enable_measured_sinr_bin_diagnostic_plots", ...
         "reporting.enable_measured_posteq_sinr_bins_diagnostic_plot"], false) || ...
@@ -5239,7 +5402,7 @@ sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
 sixgr.util.ensureFolder(ctx.Layout.ReportDir);
 
 artifacts.PerScenarioSummaryTable = fullfile(ctx.Layout.ReportCSVDir, "per_scenario_summary_tables.csv");
-artifacts.PerSweepComparisonTable = fullfile(ctx.Layout.ReportCSVDir, "per_sweep_comparison_tables.csv");
+artifacts.MeasuredSINRComparisonTable = fullfile(ctx.Layout.ReportCSVDir, "per_measured_sinr_comparison_tables.csv");
 artifacts.BaselineCandidateDeltaTable = fullfile(ctx.Layout.ReportCSVDir, "baseline_candidate_delta_tables.csv");
 artifacts.AutomaticMarkdownSummary = fullfile(ctx.Layout.ReportDir, "automatic_markdown_summary.md");
 artifacts.WaterfallChart = fullfile(ctx.Layout.ReportImageDir, "gains_losses_waterfall.png");
@@ -5253,7 +5416,11 @@ artifacts.ImpairmentKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_im
 artifacts.BeamRankTRPKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_beam_rank_trp_kpi.png");
 
 sixgr.util.csvWriteTable(artifacts.PerScenarioSummaryTable, localBuildPerScenarioSummaryTable(ctx, coverageT, rows));
-sixgr.util.csvWriteTable(artifacts.PerSweepComparisonTable, localBuildPerSweepComparisonTable(ctx));
+legacyPerSweep = fullfile(ctx.Layout.ReportCSVDir, "per_sweep_comparison_tables.csv");
+if exist(legacyPerSweep, "file") == 2
+    delete(legacyPerSweep);
+end
+sixgr.util.csvWriteTable(artifacts.MeasuredSINRComparisonTable, localBuildMeasuredSINRComparisonTable(ctx));
 sixgr.util.csvWriteTable(artifacts.BaselineCandidateDeltaTable, localBuildBaselineDeltaTable(ctx));
 localWriteAutomaticMarkdownSummary(artifacts.AutomaticMarkdownSummary, ctx, coverageT, plots, artifacts);
 
@@ -5278,9 +5445,20 @@ end
 coveredCount = sum(localCoverageStateCountsTowardCoverage(string(coverageT.Availability)));
 opSummary = localContextOperatingPointSummary(ctx);
 availLower = lower(strtrim(string(coverageT.Availability)));
-targetSNR_dB = localConfigNumber(ctx, ["channel.snr_dB", "global_radio_scope.target_snr_db", "scenario.snr_dB"], NaN);
-dlBlerAtTarget = localBLERAtTargetSNR(ctx.Tables.Sweep, "DL_BLER", targetSNR_dB);
-ulBlerAtTarget = localBLERAtTargetSNR(ctx.Tables.Sweep, "UL_BLER", targetSNR_dB);
+dlGoodput = localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean");
+ulGoodput = localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean");
+dlBler = localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall");
+ulBler = localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall");
+dlSINRP5 = localMeasuredSummaryNumeric(ctx, "DL", "SINR_p5_dB");
+dlSINRMedian = localMeasuredSummaryNumeric(ctx, "DL", "SINR_median_dB");
+dlSINRP95 = localMeasuredSummaryNumeric(ctx, "DL", "SINR_p95_dB");
+ulSINRP5 = localMeasuredSummaryNumeric(ctx, "UL", "SINR_p5_dB");
+ulSINRMedian = localMeasuredSummaryNumeric(ctx, "UL", "SINR_median_dB");
+ulSINRP95 = localMeasuredSummaryNumeric(ctx, "UL", "SINR_p95_dB");
+dlDistanceMin = localMeasuredSummaryNumeric(ctx, "DL", "Distance_min_m");
+dlDistanceMax = localMeasuredSummaryNumeric(ctx, "DL", "Distance_max_m");
+ulDistanceMin = localMeasuredSummaryNumeric(ctx, "UL", "Distance_min_m");
+ulDistanceMax = localMeasuredSummaryNumeric(ctx, "UL", "Distance_max_m");
 resultOk = localStructLogicalWithFallback(ctx.Manifest, ctx.ScenarioStatus, "ResultOk", false);
 partialOk = localStructLogicalWithFallback(ctx.Manifest, ctx.ScenarioStatus, "PartialOk", false);
 artifactsGenerated = localStructLogicalWithFallback(ctx.Manifest, ctx.ScenarioStatus, "ArtifactsGenerated", true);
@@ -5310,17 +5488,20 @@ T = table( ...
     double(runtimeCount), ...
     double(configCount), ...
     double(reportCount), ...
-    double(localMeanColumnFallback(ctx.Tables.Sweep, ["DL_Throughput_Mbps", "DL_Goodput_Mbps", "Throughput_Mbps"])), ...
-    double(localMeanColumnFallback(ctx.Tables.Sweep, ["UL_Throughput_Mbps", "UL_Goodput_Mbps", "Throughput_Mbps"])), ...
-    double(localMeanColumn(ctx.Tables.Sweep, "DL_BLER")), ...
-    double(localMeanColumn(ctx.Tables.Sweep, "UL_BLER")), ...
-    double(targetSNR_dB), ...
-    double(dlBlerAtTarget), ...
-    double(ulBlerAtTarget), ...
-    double(localMinColumn(ctx.Tables.Sweep, "DL_BLER")), ...
-    double(localMaxColumn(ctx.Tables.Sweep, "DL_BLER")), ...
-    double(localMinColumn(ctx.Tables.Sweep, "UL_BLER")), ...
-    double(localMaxColumn(ctx.Tables.Sweep, "UL_BLER")), ...
+    double(dlGoodput), ...
+    double(ulGoodput), ...
+    double(dlBler), ...
+    double(ulBler), ...
+    double(dlSINRP5), ...
+    double(dlSINRMedian), ...
+    double(dlSINRP95), ...
+    double(ulSINRP5), ...
+    double(ulSINRMedian), ...
+    double(ulSINRP95), ...
+    double(dlDistanceMin), ...
+    double(dlDistanceMax), ...
+    double(ulDistanceMin), ...
+    double(ulDistanceMax), ...
     string(opSummary.RuntimeQualifiedDescription), ...
     string(opSummary.Configured.MIMOText), ...
     string(opSummary.Configured.DL.OperatingPointText), ...
@@ -5347,8 +5528,9 @@ T = table( ...
         'ElapsedSeconds','CoveredMetricCount','ObservedMetricCount','DerivedMetricCount','ConfigOnlyMetricCount','DisabledMetricCount','PlaceholderMetricCount', ...
         'NotSupportedMetricCount','NotAvailableMetricCount','NotExercisedMetricCount','SpecifiedMetricCount', ...
         'ObservedRuntimeMetricCount','ConfigOnlyMetricRollupCount','DerivedMetricRollupCount', ...
-        'DL_Throughput_Mbps_mean','UL_Throughput_Mbps_mean','DL_BLER_mean','UL_BLER_mean', ...
-        'TargetSNR_dB','DL_BLER_at_target','UL_BLER_at_target','DL_BLER_sweep_min','DL_BLER_sweep_max','UL_BLER_sweep_min','UL_BLER_sweep_max', ...
+        'DL_Goodput_Mbps_mean','UL_Goodput_Mbps_mean','DL_BLER_overall','UL_BLER_overall', ...
+        'DL_SINR_p5_dB','DL_SINR_median_dB','DL_SINR_p95_dB','UL_SINR_p5_dB','UL_SINR_median_dB','UL_SINR_p95_dB', ...
+        'DL_Distance_min_m','DL_Distance_max_m','UL_Distance_min_m','UL_Distance_max_m', ...
         'RuntimeQualifiedDescription', ...
         'ConfiguredMIMO','ConfiguredDLNominalOperatingPoint','ConfiguredULNominalOperatingPoint', ...
         'ActiveGridNumRBs','ActiveGridSource','ActiveDuplexMode','ActiveTDDPattern', ...
@@ -5402,12 +5584,13 @@ elseif isstring(raw) || ischar(raw)
 end
 end
 
-function T = localBuildPerSweepComparisonTable(ctx)
-if istable(ctx.Tables.Sweep) && ~isempty(ctx.Tables.Sweep)
-    T = ctx.Tables.Sweep;
+function T = localBuildMeasuredSINRComparisonTable(ctx)
+if istable(ctx.Tables.MeasuredSINRSummary) && ~isempty(ctx.Tables.MeasuredSINRSummary)
+    T = ctx.Tables.MeasuredSINRSummary;
+    T.SourceTable = repmat("air_interface/csv/lls_measured_sinr_summary.csv", height(T), 1);
     return;
 end
-T = table("placeholder", "No sweep table was emitted for this run.", ...
+T = table("not_available", "No measured-SINR summary table was emitted for this run.", ...
     'VariableNames', {'Availability','Reason'});
 end
 
@@ -6556,7 +6739,9 @@ fprintf(fid, "- Not exercised metrics: `%d`\n", sum(availability == "not_exercis
 fprintf(fid, "- Runtime seconds: `%.3f`\n", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
 fprintf(fid, "\n## Aggregate Tables\n\n");
 fprintf(fid, "- `%s`\n", localRelativeToRunFolder(artifacts.PerScenarioSummaryTable, ctx.RunFolder));
-fprintf(fid, "- `%s`\n", localRelativeToRunFolder(artifacts.PerSweepComparisonTable, ctx.RunFolder));
+if isfield(artifacts, "MeasuredSINRComparisonTable")
+    fprintf(fid, "- `%s`\n", localRelativeToRunFolder(artifacts.MeasuredSINRComparisonTable, ctx.RunFolder));
+end
 fprintf(fid, "- `%s`\n", localRelativeToRunFolder(artifacts.BaselineCandidateDeltaTable, ctx.RunFolder));
 fprintf(fid, "\n## Aggregate Figures\n\n");
 figPaths = [ ...
@@ -6584,9 +6769,10 @@ sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charse
 end
 
 function localPlotWaterfallOrPlaceholder(pathOut, ctx)
-thr = [localMeanColumnFallback(ctx.Tables.Sweep, ["DL_Throughput_Mbps", "DL_Goodput_Mbps", "Throughput_Mbps"]), ...
-    localMeanColumnFallback(ctx.Tables.Sweep, ["UL_Throughput_Mbps", "UL_Goodput_Mbps", "Throughput_Mbps"])];
-bler = [localMeanColumn(ctx.Tables.Sweep, "DL_BLER"), localMeanColumn(ctx.Tables.Sweep, "UL_BLER")];
+thr = [localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean"), ...
+    localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean")];
+bler = [localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall"), ...
+    localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall")];
 if any(isfinite(thr)) || any(isfinite(bler))
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
@@ -6603,7 +6789,7 @@ end
 if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
-localExportPlaceholderFigure(pathOut, "Key Gains/Losses Summary", "No throughput/BLER sweep data available for this run.");
+localExportPlaceholderFigure(pathOut, "Key Gains/Losses Summary", "No measured SINR throughput/BLER summary data available for this run.");
 end
 
 function localPlotPAPRCCDFOrPlaceholder(pathOut, ctx)
@@ -6906,6 +7092,95 @@ end
 value = mean(double(crc(:) <= 0), "omitnan");
 end
 
+function localWriteMeasuredSINRRangeSection(fid, ctx, header)
+fprintf(fid, "\n%s\n\n", char(string(header)));
+fprintf(fid, "| Metric | DL | UL |\n");
+fprintf(fid, "|---|---:|---:|\n");
+localWriteMeasuredSINRRangeRow(fid, "SINR range (p5-p95) dB", ...
+    localFormatRange(localMeasuredSummaryNumeric(ctx, "DL", "SINR_p5_dB"), localMeasuredSummaryNumeric(ctx, "DL", "SINR_p95_dB"), "%.3g"), ...
+    localFormatRange(localMeasuredSummaryNumeric(ctx, "UL", "SINR_p5_dB"), localMeasuredSummaryNumeric(ctx, "UL", "SINR_p95_dB"), "%.3g"));
+localWriteMeasuredSINRRangeRow(fid, "SINR median dB", ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "DL", "SINR_median_dB"), "%.3g"), ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "UL", "SINR_median_dB"), "%.3g"));
+localWriteMeasuredSINRRangeRow(fid, "UE distance range m", ...
+    localFormatRange(localMeasuredSummaryNumeric(ctx, "DL", "Distance_min_m"), localMeasuredSummaryNumeric(ctx, "DL", "Distance_max_m"), "%.3g"), ...
+    localFormatRange(localMeasuredSummaryNumeric(ctx, "UL", "Distance_min_m"), localMeasuredSummaryNumeric(ctx, "UL", "Distance_max_m"), "%.3g"));
+localWriteMeasuredSINRRangeRow(fid, "BLER overall", ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall"), "%.6g"), ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall"), "%.6g"));
+localWriteMeasuredSINRRangeRow(fid, "BER overall", ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "DL", "BER_overall"), "%.6g"), ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "UL", "BER_overall"), "%.6g"));
+localWriteMeasuredSINRRangeRow(fid, "Goodput Mbps", ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean"), "%.6g"), ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean"), "%.6g"));
+localWriteMeasuredSINRRangeRow(fid, "Spectral efficiency b/s/Hz", ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "DL", "SpectralEfficiency_mean_bps_Hz"), "%.6g"), ...
+    localFormatNumber(localMeasuredSummaryNumeric(ctx, "UL", "SpectralEfficiency_mean_bps_Hz"), "%.6g"));
+end
+
+function localWriteMeasuredSINRRangeRow(fid, metricName, dlValue, ulValue)
+fprintf(fid, "| %s | %s | %s |\n", char(string(metricName)), char(string(dlValue)), char(string(ulValue)));
+end
+
+function localWriteMeasuredSINRHighlight(fid, ctx, direction)
+direction = upper(string(direction));
+row = localMeasuredSummaryRowForDirection(ctx, direction);
+if ~(istable(row) && ~isempty(row))
+    fprintf(fid, "- %s measured SINR: unavailable\n", char(direction));
+    return;
+end
+p5 = localTableNumericAtRow(row, 1, "SINR_p5_dB");
+p95 = localTableNumericAtRow(row, 1, "SINR_p95_dB");
+medianSINR = localTableNumericAtRow(row, 1, "SINR_median_dB");
+bler = localTableNumericAtRow(row, 1, "BLER_overall");
+goodput = localTableNumericAtRow(row, 1, "Goodput_Mbps_mean");
+trials = localTableNumericAtRow(row, 1, "N_Trials");
+fprintf(fid, "- %s measured SINR p5-p95: `%s dB`, median `%s dB`, BLER `%s`, goodput `%s Mbps`, trials `%s`\n", ...
+    char(direction), char(localFormatRange(p5, p95, "%.3g")), char(localFormatNumber(medianSINR, "%.3g")), ...
+    char(localFormatNumber(bler, "%.6g")), char(localFormatNumber(goodput, "%.6g")), char(localFormatNumber(trials, "%.0f")));
+end
+
+function localWriteMeasuredSINRPerformanceSection(fid, sectionTitle, ctx, direction)
+direction = upper(string(direction));
+fprintf(fid, "\n%s\n\n", char(string(sectionTitle)));
+fprintf(fid, "| Direction | SINR p5-p95 dB | SINR median dB | BLER | BER | Goodput Mbps | Spectral efficiency b/s/Hz | Trials | Source |\n");
+fprintf(fid, "|---|---:|---:|---:|---:|---:|---:|---:|---|\n");
+row = localMeasuredSummaryRowForDirection(ctx, direction);
+if ~(istable(row) && ~isempty(row))
+    fprintf(fid, "| %s | NaN | NaN | NaN | NaN | NaN | NaN | 0 | `air_interface/csv/lls_measured_sinr_summary.csv` |\n", char(direction));
+    return;
+end
+fprintf(fid, "| %s | %s | %s | %s | %s | %s | %s | %s | `air_interface/csv/lls_measured_sinr_summary.csv` |\n", ...
+    char(direction), ...
+    char(localFormatRange(localTableNumericAtRow(row, 1, "SINR_p5_dB"), localTableNumericAtRow(row, 1, "SINR_p95_dB"), "%.3g")), ...
+    char(localFormatNumber(localTableNumericAtRow(row, 1, "SINR_median_dB"), "%.3g")), ...
+    char(localFormatNumber(localTableNumericAtRow(row, 1, "BLER_overall"), "%.6g")), ...
+    char(localFormatNumber(localTableNumericAtRow(row, 1, "BER_overall"), "%.6g")), ...
+    char(localFormatNumber(localTableNumericAtRow(row, 1, "Goodput_Mbps_mean"), "%.6g")), ...
+    char(localFormatNumber(localTableNumericAtRow(row, 1, "SpectralEfficiency_mean_bps_Hz"), "%.6g")), ...
+    char(localFormatNumber(localTableNumericAtRow(row, 1, "N_Trials"), "%.0f")));
+end
+
+function txt = localFormatRange(lo, hi, fmt)
+loTxt = localFormatNumber(lo, fmt);
+hiTxt = localFormatNumber(hi, fmt);
+if loTxt == "NaN" && hiTxt == "NaN"
+    txt = "NaN";
+else
+    txt = loTxt + " to " + hiTxt;
+end
+end
+
+function txt = localFormatNumber(value, fmt)
+value = double(value);
+if ~(isscalar(value) && isfinite(value))
+    txt = "NaN";
+    return;
+end
+txt = string(sprintf(char(fmt), value));
+end
+
 function localWriteExecutiveSummary(filePath, ctx, coverageT, rows, plots)
 fid = fopen(filePath, "w");
 if fid < 0
@@ -6953,9 +7228,10 @@ fprintf(fid, "- Observed-runtime rollup count: `%d`\n", runtimeCount);
 fprintf(fid, "- Config-only rollup count: `%d`\n", configCount);
 fprintf(fid, "- Report-derived rollup count: `%d`\n", reportCount);
 fprintf(fid, "- Primary air-interface KPIs: `%s`\n", localExistsText(fullfile(ctx.Layout.AirInterfaceCSVDir, "lls_kpi_summary.csv")));
-fprintf(fid, "- SNR sweep: `%s`\n", localExistsText(fullfile(ctx.Layout.AirInterfaceCSVDir, "lls_snr_sweep.csv")));
+fprintf(fid, "- Measured SINR summary: `%s`\n", localExistsText(fullfile(ctx.Layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv")));
 fprintf(fid, "- Report coverage table: `%s`\n", localExistsText(fullfile(ctx.Layout.ReportCSVDir, "lls_output_spec_coverage.csv")));
 fprintf(fid, "\n## Operating Point\n\n");
+fprintf(fid, "- SINR source: `geometry-derived (pathloss + shadow fading + CDL/TDL channel + MMSE equaliser); no AWGN injection`\n");
 fprintf(fid, "- Configured nominal MIMO: `%s`\n", string(opSummary.Configured.MIMOText));
 fprintf(fid, "- Configured DL nominal operating point: `%s`\n", string(opSummary.Configured.DL.OperatingPointText));
 fprintf(fid, "- Configured UL nominal operating point: `%s`\n", string(opSummary.Configured.UL.OperatingPointText));
@@ -6973,28 +7249,16 @@ if logical(opSummary.UL.HasSamples)
     localWriteHistogramMarkdownTable(fid, opSummary.UL.ModulationHistogram, "UL Modulation Distribution", "Modulation");
 end
 fprintf(fid, "- Effective runtime note: `%s`\n", string(opSummary.RuntimeNarrative));
-fprintf(fid, "\n## Key Performance Indicators\n\n");
-targetSNR_dB = localConfigNumber(ctx, ["channel.snr_dB", "global_radio_scope.target_snr_db", "scenario.snr_dB"], NaN);
-fprintf(fid, "| Metric | DL | UL |\n");
-fprintf(fid, "|---|---:|---:|\n");
-fprintf(fid, "| BLER at target SNR | %.6g | %.6g |\n", ...
-    localBLERAtTargetSNR(ctx.Tables.Sweep, "DL_BLER", targetSNR_dB), ...
-    localBLERAtTargetSNR(ctx.Tables.Sweep, "UL_BLER", targetSNR_dB));
-fprintf(fid, "| Goodput/throughput (Mbps) | %.6g | %.6g |\n", ...
-    localMeanColumnFallback(ctx.Tables.Sweep, ["DL_Goodput_Mbps", "Goodput_Mbps", "DL_Throughput_Mbps", "Throughput_Mbps"]), ...
-    localMeanColumnFallback(ctx.Tables.Sweep, ["UL_Goodput_Mbps", "Goodput_Mbps", "UL_Throughput_Mbps", "Throughput_Mbps"]));
-fprintf(fid, "| Target SNR (dB) | %.6g | %.6g |\n", targetSNR_dB, targetSNR_dB);
+localWriteMeasuredSINRRangeSection(fid, ctx, "## SINR Operating Range (Geometry-Driven)");
 fprintf(fid, "\n## Highlights\n\n");
-localWriteMetricHighlight(fid, ctx.Tables.Sweep, "DL_BLER", "DL BLER sweep");
-localWriteMetricHighlight(fid, ctx.Tables.Sweep, "UL_BLER", "UL BLER sweep");
-localWriteMetricHighlight(fid, ctx.Tables.Sweep, "DL_Throughput_Mbps", "DL throughput sweep");
-localWriteMetricHighlight(fid, ctx.Tables.Sweep, "UL_Throughput_Mbps", "UL throughput sweep");
+localWriteMeasuredSINRHighlight(fid, ctx, "DL");
+localWriteMeasuredSINRHighlight(fid, ctx, "UL");
 localWriteMetricHighlight(fid, ctx.Tables.SRS, "NMSE_dB", "SRS NMSE");
 localWriteProbeMetricHighlight(fid, ctx.Tables.HARQSummary, "rtt_distribution", "mean_ms", "HARQ RTT");
 localWriteProbeMetricHighlight(fid, ctx.Tables.BeamManagement, "beam_index_hit_rate", "rate", "Beam hit rate");
 localWriteProbeMetricHighlight(fid, ctx.Tables.RFEnergy, "ue_energy_per_successful_bit", "mean", "UE energy per successful bit");
 if ~isempty(plots)
-    fprintf(fid, "\n## Key Plots\n\n");
+    fprintf(fid, "\n## Key Measurement-Based Curves\n\n");
     for i = 1:numel(plots)
         fprintf(fid, "- `%s`\n", localRelativeToRunFolder(plots(i), ctx.RunFolder));
     end
@@ -7075,6 +7339,8 @@ if logical(opSummary.UL.HasSamples)
     fprintf(fid, "- Effective UL configured-match rate: `%.3f`\n", double(opSummary.UL.ConfiguredMatchRate));
 end
 fprintf(fid, "- Effective runtime note: `%s`\n", string(opSummary.RuntimeNarrative));
+fprintf(fid, "- SINR source: `geometry-derived (pathloss + shadow fading + CDL/TDL channel + MMSE equaliser); no AWGN injection`\n");
+localWriteMeasuredSINRRangeSection(fid, ctx, "## SINR Operating Range (Geometry-Driven)");
 fprintf(fid, "\n## Category Coverage\n\n");
 cats = unique(string(coverageT.CategoryCode), "stable");
 coverageAvailLower = lower(strtrim(string(coverageT.Availability)));
@@ -7092,14 +7358,17 @@ for i = 1:numel(cats)
     fprintf(fid, "- `%s` %s: `%d / %d` covered, `%d` observed, `%d` derived, `%d` config-only, `%d` disabled, `%d` placeholder, `%d` not supported\n", ...
         cats(i), catName, availableCount, totalCount, observedCount, derivedCount, configOnlyCount, disabledCount, placeholderCount, notSupportedCount);
 end
-localWriteSweepPerformanceSection(fid, "## 2. DL PDSCH Performance", ctx.Tables.Sweep, ...
-    ["DL_BLER", "BLER"], ["DL_BER", "BER"], ["DL_Goodput_Mbps", "DL_Throughput_Mbps", "Goodput_Mbps", "Throughput_Mbps"], ["DL_TrialCount", "TrialCount"]);
-localWriteSweepPerformanceSection(fid, "## 3. UL PUSCH Performance", ctx.Tables.Sweep, ...
-    ["UL_BLER", "BLER"], ["UL_BER", "BER"], ["UL_Goodput_Mbps", "UL_Throughput_Mbps", "Goodput_Mbps", "Throughput_Mbps"], ["UL_TrialCount", "TrialCount"]);
+localWriteMeasuredSINRPerformanceSection(fid, "## 2. DL PDSCH Measured-SINR Performance", ctx, "DL");
+localWriteMeasuredSINRPerformanceSection(fid, "## 3. UL PUSCH Measured-SINR Performance", ctx, "UL");
 localWriteControlPerformanceSection(fid, ctx);
 fprintf(fid, "\n## Key Artifacts\n\n");
 fprintf(fid, "- `air_interface/csv/lls_kpi_summary.csv`\n");
-fprintf(fid, "- `air_interface/csv/lls_snr_sweep.csv`\n");
+fprintf(fid, "- `air_interface/csv/lls_measured_sinr_summary.csv`\n");
+fprintf(fid, "- `air_interface/csv/dl_measured_sinr_bler_curve.csv`\n");
+fprintf(fid, "- `air_interface/csv/ul_measured_sinr_bler_curve.csv`\n");
+fprintf(fid, "- `air_interface/csv/dl_measured_sinr_throughput_curve.csv`\n");
+fprintf(fid, "- `air_interface/csv/ul_measured_sinr_throughput_curve.csv`\n");
+fprintf(fid, "- `air_interface/csv/distance_vs_sinr.csv`\n");
 fprintf(fid, "- `harq/csv/probe_harq_summary.csv`\n");
 fprintf(fid, "- `beamforming/csv/probe_beam_management.csv`\n");
 fprintf(fid, "- `beamforming/csv/beam_management_state_trace.csv`\n");
@@ -7405,8 +7674,8 @@ end
 switch string(fieldName)
     case "PerScenarioSummaryTable"
         pathOut = fullfile(ctx.Layout.ReportCSVDir, "per_scenario_summary_tables.csv");
-    case "PerSweepComparisonTable"
-        pathOut = fullfile(ctx.Layout.ReportCSVDir, "per_sweep_comparison_tables.csv");
+    case {"MeasuredSINRComparisonTable","PerSweepComparisonTable"}
+        pathOut = fullfile(ctx.Layout.ReportCSVDir, "per_measured_sinr_comparison_tables.csv");
     case "BaselineCandidateDeltaTable"
         pathOut = fullfile(ctx.Layout.ReportCSVDir, "baseline_candidate_delta_tables.csv");
     case "AutomaticMarkdownSummary"

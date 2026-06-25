@@ -38,17 +38,6 @@ if opt.SaveCSV
     sixgr.util.csvWriteTable(csvFile, kpiTable);
     artifacts.csv{end+1} = csvFile;
 
-    sweep = sixgr.util.structGet(details, "SNRSweep", table());
-    sweepFile = fullfile(runFolder, "csv", localAppendFileSuffix("lls_snr_sweep.csv", fileSuffix));
-    if istable(sweep)
-        if isempty(sweep) || height(sweep) == 0
-            sweep = localEmptySweepStatusTable();
-        end
-        sweep = localPreserveExistingTableColumns(sweepFile, sweep);
-        sixgr.util.csvWriteTable(sweepFile, sweep);
-        artifacts.csv{end+1} = sweepFile;
-    end
-
     paprT = sixgr.util.structGet(details, "PAPRCCDF", table());
     if istable(paprT) && ~isempty(paprT)
         paprFile = fullfile(runFolder, "csv", localAppendFileSuffix("papr_ccdf.csv", fileSuffix));
@@ -150,10 +139,6 @@ if opt.SaveFigures
         resStruct.KPIs = struct();
         resStruct.KPIs.LinkKPI = kpiTable;
         figPrefix = string(opt.FigurePrefix) + localNormalizeFileSuffix(opt.FileSuffix);
-        sweep = sixgr.util.structGet(details, "SNRSweep", table());
-        if istable(sweep) && ~isempty(sweep)
-            resStruct.KPIs.LinkSNRSweep = sweep;
-        end
         paprCCDF = sixgr.util.structGet(details, "PAPRCCDF", table());
         if istable(paprCCDF) && ~isempty(paprCCDF)
             resStruct.KPIs.PAPRCCDF = paprCCDF;
@@ -190,35 +175,6 @@ if opt.SaveFigures
 end
 end
 
-function T = localPreserveExistingTableColumns(csvFile, T)
-% Keep richer runner-owned measured columns when this generic exporter
-% refreshes the same artifact later in the bundle pipeline.
-if ~(istable(T) && isfile(csvFile))
-    return;
-end
-try
-    existing = readtable(csvFile, "VariableNamingRule", "preserve");
-catch
-    return;
-end
-if ~(istable(existing) && height(existing) == height(T))
-    return;
-end
-
-existingVars = string(existing.Properties.VariableNames);
-newVars = string(T.Properties.VariableNames);
-merged = existing;
-for i = 1:numel(newVars)
-    varName = char(newVars(i));
-    merged.(varName) = T.(varName);
-end
-
-missingExisting = setdiff(existingVars, newVars, "stable");
-if ~isempty(missingExisting) || width(existing) > width(T)
-    T = merged;
-end
-end
-
 function suffix = localNormalizeFileSuffix(in)
 suffix = strtrim(string(in));
 if strlength(suffix) == 0
@@ -244,13 +200,6 @@ if strlength(string(folder)) > 0
 else
     out = char(outName);
 end
-end
-
-function T = localEmptySweepStatusTable()
-T = table( ...
-    string("skipped_single_point_run"), ...
-    NaN, NaN, NaN, NaN, NaN, ...
-    'VariableNames', {'Status','SNR_dB','DL_BLER','UL_BLER','DL_Throughput_Mbps','UL_Throughput_Mbps'});
 end
 
 function reportCSVDir = localKPIReportCSVDir(runFolder)

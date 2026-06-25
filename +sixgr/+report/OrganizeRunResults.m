@@ -98,7 +98,12 @@ localCopy("air_interface/detailed/logs/run.log", "logs", "detailed_lls_run.log",
 localCopy("system/logs/run.log", "logs", "system_run.log", "log", "System runner log");
 localCopy("mmtc/logs/run.log", "logs", "mmtc_run.log", "log", "mMTC runner log");
 
-localCopy("air_interface/csv/lls_snr_sweep.csv", "phy/channel", "lls_snr_sweep.csv", "csv", "PHY SNR sweep");
+localCopy("air_interface/csv/lls_measured_sinr_summary.csv", "phy/channel", "lls_measured_sinr_summary.csv", "csv", "Geometry-driven measured SINR summary");
+localCopy("air_interface/csv/dl_measured_sinr_bler_curve.csv", "phy/dl/pdsch", "dl_measured_sinr_bler_curve.csv", "csv", "DL BLER vs measured post-equalisation SINR");
+localCopy("air_interface/csv/dl_measured_sinr_throughput_curve.csv", "phy/dl/pdsch", "dl_measured_sinr_throughput_curve.csv", "csv", "DL throughput vs measured post-equalisation SINR");
+localCopy("air_interface/csv/ul_measured_sinr_bler_curve.csv", "phy/ul/pusch", "ul_measured_sinr_bler_curve.csv", "csv", "UL BLER vs measured post-equalisation SINR");
+localCopy("air_interface/csv/ul_measured_sinr_throughput_curve.csv", "phy/ul/pusch", "ul_measured_sinr_throughput_curve.csv", "csv", "UL throughput vs measured post-equalisation SINR");
+localCopy("air_interface/csv/distance_vs_sinr.csv", "phy/channel", "distance_vs_sinr.csv", "csv", "Propagation distance vs measured post-equalisation SINR scatter source");
 localCopy("air_interface/csv/lls_kpi_summary.csv", "phy/channel", "lls_kpi_summary.csv", "csv", "Link KPI summary");
 localCopy("air_interface/detailed/csv/detailed_lls_summary.csv", "phy/channel", "detailed_lls_summary.csv", "csv", "Detailed PHY diagnostics");
 localCopy("air_interface/mat/link_results.mat", "phy/channel", "link_results.mat", "mat", "Link-level MAT");
@@ -405,7 +410,7 @@ out.MirrorLayout = char(string(mirrorLayout));
         c = onCleanup(@() fclose(fid)); %#ok<NASGU>
         fprintf(fid, "# Structured Result Layout\n\n");
         fprintf(fid, "This folder groups campaign outputs by block/layer.\n\n");
-        fprintf(fid, "- `phy/channel`: channel/sweep/MAT diagnostics\n");
+        fprintf(fid, "- `phy/channel`: channel, measured-SINR, and MAT diagnostics\n");
         fprintf(fid, "- `phy/dl/*`, `phy/ul/*`, `phy/sync`, `phy/harq`: PHY channel/control artifacts\n");
         fprintf(fid, "- `protocol/*`: MAC/RLC/PDCP/SDAP/RRC extracted summaries\n");
         fprintf(fid, "- `system/*`: mobility/interference/mMTC/V2X/NTN outputs\n");

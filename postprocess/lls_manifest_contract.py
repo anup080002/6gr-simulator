@@ -191,20 +191,29 @@ def _constraint_strict_ok_no_oracle(df: pd.DataFrame) -> ConstraintResult:
     }
 
 
-def _constraint_snr_sweep(df: pd.DataFrame) -> ConstraintResult:
-    truth_ok = None
-    if "truth_status" in df.columns:
-        truth_ok = df["truth_status"].map(_as_text).str.lower().eq("real_lls_evidence").all()
-    dirs = set(df["direction"].map(_as_text).str.upper()) if "direction" in df.columns else set()
+def _constraint_measured_sinr_summary(df: pd.DataFrame) -> ConstraintResult:
+    dirs = set(df["Direction"].map(_as_text).str.upper()) if "Direction" in df.columns else set()
+    formula_ok = None
+    if "KPIFormulaVersion" in df.columns:
+        formula_ok = df["KPIFormulaVersion"].map(_as_text).eq("measured_sinr_geometry_v1").all()
+    sinr_ok = None
+    if "SINR_median_dB" in df.columns:
+        sinr_ok = _num(df["SINR_median_dB"]).notna().all()
     return {
-        "has_ci_columns": _has(df, "bler_ci_low", "bler_ci_high"),
-        "real_evidence_label": truth_ok,
+        "geometry_formula_version": formula_ok,
+        "finite_median_sinr": sinr_ok,
         "has_dl_and_ul": {"DL", "UL"}.issubset(dirs) if dirs else None,
-        "minimum_rows": len(df) >= 10,
+        "minimum_rows": len(df) >= 2,
     }
 
 
 def _constraint_kpi_summary(df: pd.DataFrame) -> ConstraintResult:
+    if "KPIFormulaVersion" in df.columns or "KPIReconciliationPass" in df.columns:
+        return {
+            "geometry_formula_version": "KPIFormulaVersion" not in df.columns or df["KPIFormulaVersion"].map(_as_text).eq("measured_sinr_geometry_v1").all(),
+            "kpi_reconciliation_pass": "KPIReconciliationPass" not in df.columns or _bool_series(df["KPIReconciliationPass"]).all(),
+            "status_not_failed": "Status" not in df.columns or ~df["Status"].map(_as_text).str.lower().eq("fail").any(),
+        }
     return {
         "kpi_consistency_ok": _all_true(df, "KpiConsistencyOk"),
         "radio_duration_available": _has(df, "RadioDurationUnavailable") and not _bool_series(df["RadioDurationUnavailable"]).any(),
@@ -350,36 +359,61 @@ CSV_MANIFEST: tuple[CsvSpec, ...] = (
         "Standard_Reference", "RuntimeTrialCount", "RuntimeMeanEstimate_Hz",
         "RuntimeEstimateSignOk", "OracleFieldRows", "StrictOk", "FailureReason",
     ), 1, "Strict TRS config evidence", constraints=_constraint_strict_ok_no_oracle),
-    CsvSpec("air_interface/csv/lls_snr_sweep.csv", "T3", (
-        "direction", "snr_db", "noise_variance", "n_tb", "n_crc_fail", "bler",
-        "bler_ci_low", "bler_ci_high", "n_bits", "n_bit_errors", "ber", "throughput_mbps",
-        "goodput_mbps", "mcs_index", "n_layers", "channel_model", "seed", "truth_status",
-    ), 10, "SNR sweep and BLER/throughput evidence", constraints=_constraint_snr_sweep),
-    CsvSpec("reports/csv/nmse_vs_snr.csv", "T3", (
-        "UEIndex", "snr_db", "NMSE_dB_mean", "NMSE_dB_min", "NMSE_dB_max", "N_trials",
-        "Method", "EstimationMethod",
-    ), 10, "NMSE-vs-SNR analysis"),
+    CsvSpec("air_interface/csv/lls_measured_sinr_summary.csv", "T3", (
+        "Direction", "UEIndex", "N_Trials", "SINR_p5_dB", "SINR_median_dB",
+        "SINR_p95_dB", "BLER_overall", "BER_overall", "Goodput_Mbps_mean",
+        "SpectralEfficiency_mean_bps_Hz", "KPIFormulaVersion", "SourceArtifact",
+    ), 2, "Measured SINR summary and BLER/throughput evidence", constraints=_constraint_measured_sinr_summary),
+    CsvSpec("air_interface/csv/dl_measured_sinr_bler_curve.csv", "T3", (
+        "Direction", "UEIndex", "PostEqSINR_dB_BinCenter", "BLER",
+        "BLER_CI_Low", "BLER_CI_High", "BER", "TrialCount", "FailureCount",
+        "SourceArtifact",
+    ), 1, "DL BLER/BER vs measured post-EQ SINR"),
+    CsvSpec("air_interface/csv/ul_measured_sinr_bler_curve.csv", "T3", (
+        "Direction", "UEIndex", "PostEqSINR_dB_BinCenter", "BLER",
+        "BLER_CI_Low", "BLER_CI_High", "BER", "TrialCount", "FailureCount",
+        "SourceArtifact",
+    ), 1, "UL BLER/BER vs measured post-EQ SINR"),
+    CsvSpec("air_interface/csv/dl_measured_sinr_throughput_curve.csv", "T3", (
+        "Direction", "UEIndex", "PostEqSINR_dB_BinCenter", "Goodput_Mbps_mean",
+        "OfferedThroughput_Mbps_mean", "SpectralEfficiency_bps_Hz_mean",
+        "TrialCount", "SourceArtifact",
+    ), 1, "DL throughput vs measured post-EQ SINR"),
+    CsvSpec("air_interface/csv/ul_measured_sinr_throughput_curve.csv", "T3", (
+        "Direction", "UEIndex", "PostEqSINR_dB_BinCenter", "Goodput_Mbps_mean",
+        "OfferedThroughput_Mbps_mean", "SpectralEfficiency_bps_Hz_mean",
+        "TrialCount", "SourceArtifact",
+    ), 1, "UL throughput vs measured post-EQ SINR"),
+    CsvSpec("air_interface/csv/distance_vs_sinr.csv", "T3", (
+        "Direction", "UEIndex", "TrialIndex", "PropagationDistance_m",
+        "PostEqSINR_dB", "LargeScaleSINR_dB", "ReceiverHestSINR_dB",
+        "MCS", "Modulation", "Rank", "CRCPass", "Goodput_Mbps",
+    ), 1, "Propagation distance vs measured SINR evidence"),
+    CsvSpec("reports/csv/nmse_vs_measured_sinr.csv", "T3", (
+        "Direction", "PostEqSINR_dB", "MetricName", "MetricValue", "SampleCount",
+        "EvidenceClass", "SourceArtifact",
+    ), 1, "NMSE-vs-measured-SINR analysis"),
     CsvSpec("reports/csv/energy_vs_throughput.csv", "T3", (
-        "UEIndex", "Direction", "snr_db", "goodput_mbps", "power_mW", "energy_per_bit_j",
-        "SNR_dB", "EE_bits_per_joule", "N_trials",
+        "Direction", "PostEqSINR_dB", "goodput_mbps", "energy_per_bit_j",
+        "Goodput_Mbps", "EnergyPerBit_J", "successful_bits",
     ), 1, "Energy-throughput analysis"),
     CsvSpec("reports/csv/tbs_reference_comparison.csv", "T3", (
         "UEIndex", "Direction", "Slot", "MCS", "PRBCount", "Layers", "Modulation",
         "DUT_TBSize_bits", "Reference_nrTBS_bits", "Delta_bits", "Pass", "BaseGraph",
     ), 1, "DUT-vs-reference TBS comparison"),
     CsvSpec("reports/csv/shannon_capacity_gap.csv", "T3", (
-        "direction", "snr_db", "n_layers", "shannon_capacity_bps_hz", "shannon_mbps",
-        "achieved_goodput_mbps", "achieved_se_bps_hz", "gap_db", "gap_pct",
+        "Direction", "PostEqSINR_dB", "Layers", "ShannonCapacity_Mbps",
+        "AchievedGoodput_Mbps", "Gap_Mbps",
     ), 1, "Shannon capacity gap analysis"),
     CsvSpec("reports/csv/trs_doppler_error_trace.csv", "T3", (
         "AbsoluteSlot", "Frame", "Slot", "UEIndex", "InjectedDoppler_Hz",
         "EstimatedDoppler_Hz", "DopplerError_Hz", "TrackingState", "StrictOk",
     ), 1, "TRS Doppler error trace"),
     CsvSpec("air_interface/csv/lls_kpi_summary.csv", "T4", (
-        "ScenarioID", "DL_BLER", "DL_BLER_CI95_Low", "DL_BLER_CI95_High", "DL_BER",
-        "DL_Goodput_Mbps", "DL_Offered_Mbps", "DL_RadioDuration_ms", "UL_BLER",
-        "UL_Goodput_Mbps", "UL_RadioDuration_ms", "KpiConsistencyOk",
-        "RadioDurationUnavailable", "Status",
+        "RunId", "Direction", "UEIndex", "KPIFormulaVersion", "KPIReconciliationPass",
+        "SINR_median_dB", "SINR_p5_dB", "SINR_p95_dB", "BLER_overall", "BER_overall",
+        "Goodput_Mbps", "OfferedThroughput_Mbps", "SpectralEfficiency_bps_Hz",
+        "RadioDuration_s", "TrialCount", "StrictOk", "Status", "FailureReason",
     ), 1, "KPI summary", constraints=_constraint_kpi_summary),
     CsvSpec("reports/csv/kpi_lineage_table.csv", "T4", (
         "Direction", "KPI_BLER", "BLER_Source", "KPI_Goodput_Mbps", "Goodput_Source",
@@ -387,7 +421,7 @@ CSV_MANIFEST: tuple[CsvSpec, ...] = (
     ), 1, "KPI lineage table"),
     CsvSpec("air_interface/csv/fer_summary.csv", "T4", (
         "Scope", "Direction", "UEIndex", "N_TB", "N_CRC_Fail", "FER", "FER_CI95_Low",
-        "FER_CI95_High", "SNR_dB", "MCS_Mode", "ScenarioID",
+        "FER_CI95_High", "PostEqSINR_dB", "MCS_Mode", "ScenarioID",
     ), 1, "FER summary", constraints=_constraint_fer),
     CsvSpec("air_interface/csv/harq_combining_gain.csv", "T4", (
         "CombiningGain_dB", "BLER_RV0", "BLER_RV0_plus1", "BLER_RV0_plus2",
@@ -467,12 +501,12 @@ CSV_MANIFEST: tuple[CsvSpec, ...] = (
 
 
 IMAGE_MANIFEST: tuple[ImageSpec, ...] = (
-    ImageSpec("reports/html/bler_vs_snr.html", "I1", "air_interface/csv/lls_snr_sweep.csv", "BLER vs SNR", unavailable_stems=("bler_vs_snr",)),
-    ImageSpec("reports/image/bler_vs_snr.png", "I1", "air_interface/csv/lls_snr_sweep.csv", "BLER vs SNR PNG", unavailable_stems=("bler_vs_snr",)),
-    ImageSpec("reports/html/throughput_vs_snr.html", "I1", "air_interface/csv/lls_snr_sweep.csv", "Throughput vs SNR", unavailable_stems=("throughput_vs_snr",)),
-    ImageSpec("reports/image/throughput_vs_snr.png", "I1", "air_interface/csv/lls_snr_sweep.csv", "Throughput vs SNR PNG", unavailable_stems=("throughput_vs_snr",)),
-    ImageSpec("reports/html/nmse_vs_snr.html", "I1", "reports/csv/nmse_vs_snr.csv", "NMSE vs SNR"),
-    ImageSpec("reports/image/nmse_vs_snr.png", "I1", "reports/csv/nmse_vs_snr.csv", "NMSE vs SNR PNG"),
+    ImageSpec("reports/image/bler_vs_measured_sinr.png", "I1", "air_interface/csv/dl_measured_sinr_bler_curve.csv", "BLER vs measured SINR PNG", unavailable_stems=("bler_vs_measured_sinr",)),
+    ImageSpec("reports/image/ber_vs_measured_sinr.png", "I1", "air_interface/csv/dl_measured_sinr_bler_curve.csv", "BER vs measured SINR PNG", unavailable_stems=("ber_vs_measured_sinr",)),
+    ImageSpec("reports/image/throughput_vs_measured_sinr.png", "I1", "air_interface/csv/dl_measured_sinr_throughput_curve.csv", "Throughput vs measured SINR PNG", unavailable_stems=("throughput_vs_measured_sinr",)),
+    ImageSpec("reports/image/measured_sinr_distribution.png", "I1", "air_interface/csv/measured_sinr_distribution.csv", "Measured SINR distribution PNG", unavailable_stems=("measured_sinr_distribution",)),
+    ImageSpec("reports/image/distance_vs_sinr.png", "I1", "air_interface/csv/distance_vs_sinr.csv", "Distance vs measured SINR PNG", unavailable_stems=("distance_vs_sinr",)),
+    ImageSpec("reports/image/nmse_vs_measured_sinr.png", "I1", "reports/csv/nmse_vs_measured_sinr.csv", "NMSE vs measured SINR PNG"),
     ImageSpec("reports/html/shannon_gap.html", "I1", "reports/csv/shannon_capacity_gap.csv", "Shannon gap"),
     ImageSpec("reports/html/pdcch_detection_vs_snr.html", "I2", "control/csv/pdcch_false_alarm_sweep.csv", "PDCCH detection vs SNR"),
     ImageSpec("reports/html/access_delay_cdf.html", "I2", "control/csv/initial_access_lifecycle_trace.csv", "Access delay CDF", unavailable_stems=("access_delay_cdf",)),

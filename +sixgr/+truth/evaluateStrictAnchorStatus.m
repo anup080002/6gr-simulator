@@ -346,7 +346,7 @@ else
     summaryFail = double(sum(bad));
 end
 rows = localAppendKpiGateRow(rows, meta, "kpi_summary_strict_reconciled", required, ...
-    summaryOk, summaryPath, summaryFail, "lls_kpi_summary_reports_failed_strict_or_reconciliation_status");
+    summaryOk, summaryPath, summaryFail, "measured_sinr_kpi_summary_not_strict_or_reconciled");
 
 if ~(required && istable(reconT) && height(reconT) > 0)
     reconOk = ~required;
@@ -368,7 +368,7 @@ else
     reconFail = double(sum(bad));
 end
 rows = localAppendKpiGateRow(rows, meta, "kpi_reconstruction_rows_strict", required, ...
-    reconOk, reconPath, reconFail, "kpi_reconstruction_has_failed_formula_duration_or_reconciliation_rows");
+    reconOk, reconPath, reconFail, "measured_sinr_kpi_reconstruction_failed_formula_duration_or_reconciliation_rows");
 end
 
 function rows = localAppendKpiGateRow(rows, meta, name, required, pass, artifact, count, reason)

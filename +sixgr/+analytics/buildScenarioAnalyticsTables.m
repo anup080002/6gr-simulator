@@ -21,40 +21,43 @@ perSlot = localBuildPerSlotKPI(trialData);
 perUE = localBuildPerUESlotKPI(trialData);
 physics = localBuildPhysicsTimeline(trialData);
 control = localBuildControlPlaneTimeline(trialData);
-snrSweep = localBuildSNRSweep(trialData);
-nmse = localBuildNMSEVsSNR(trialData);
+nmse = localBuildNMSEVsMeasuredSINR(trialData);
 energy = localBuildEnergyVsThroughput(trialData);
 tbs = localBuildTBSReferenceComparison(trialData);
 shannon = localBuildShannonCapacityGap(trialData, scenarioCfg);
 trs = localBuildTRSDopplerErrorTrace(trialData);
+measured = sixgr.analytics.generateMeasuredSINRCurves(runDir, "", ...
+    "TrialData", trialData, ...
+    "ScenarioConfig", scenarioCfg, ...
+    "WriteKPISummary", true);
 
 paths = struct();
 paths.PerSlotKPI = fullfile(layout.ReportCSVDir, "per_slot_kpi_table.csv");
 paths.PerUESlotKPI = fullfile(layout.ReportCSVDir, "per_ue_slot_kpi_table.csv");
 paths.FullPhysicsTimeline = fullfile(layout.ReportCSVDir, "full_physics_timeline.csv");
 paths.ControlPlaneTimeline = fullfile(layout.ReportCSVDir, "control_plane_timeline.csv");
-paths.SNRSweep = fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv");
-paths.NMSEVsSNR = fullfile(layout.ReportCSVDir, "nmse_vs_snr.csv");
+paths.MeasuredSINRSummary = fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv");
+paths.NMSEVsMeasuredSINR = fullfile(layout.ReportCSVDir, "nmse_vs_measured_sinr.csv");
 paths.EnergyVsThroughput = fullfile(layout.ReportCSVDir, "energy_vs_throughput.csv");
 paths.TBSReferenceComparison = fullfile(layout.ReportCSVDir, "tbs_reference_comparison.csv");
 paths.ShannonCapacityGap = fullfile(layout.ReportCSVDir, "shannon_capacity_gap.csv");
 paths.TRSDopplerErrorTrace = fullfile(layout.ReportCSVDir, "trs_doppler_error_trace.csv");
+paths.MeasuredSINRCurves = measured.Paths;
 
 sixgr.analytics.writeAnalysisTable(paths.PerSlotKPI, perSlot);
 sixgr.analytics.writeAnalysisTable(paths.PerUESlotKPI, perUE);
 sixgr.analytics.writeAnalysisTable(paths.FullPhysicsTimeline, physics);
 sixgr.analytics.writeAnalysisTable(paths.ControlPlaneTimeline, control);
-sixgr.analytics.writeAnalysisTable(paths.SNRSweep, snrSweep);
-sixgr.analytics.writeAnalysisTable(paths.NMSEVsSNR, nmse);
+sixgr.analytics.writeAnalysisTable(paths.NMSEVsMeasuredSINR, nmse);
 sixgr.analytics.writeAnalysisTable(paths.EnergyVsThroughput, energy);
 sixgr.analytics.writeAnalysisTable(paths.TBSReferenceComparison, tbs);
 sixgr.analytics.writeAnalysisTable(paths.ShannonCapacityGap, shannon);
 sixgr.analytics.writeAnalysisTable(paths.TRSDopplerErrorTrace, trs);
 
 summary = table( ...
-    ["per_slot_kpi_table";"per_ue_slot_kpi_table";"full_physics_timeline";"control_plane_timeline";"lls_snr_sweep";"nmse_vs_snr";"energy_vs_throughput";"tbs_reference_comparison";"shannon_capacity_gap";"trs_doppler_error_trace"], ...
-    [height(perSlot);height(perUE);height(physics);height(control);height(snrSweep);height(nmse);height(energy);height(tbs);height(shannon);height(trs)], ...
-    ["RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED"], ...
+    ["per_slot_kpi_table";"per_ue_slot_kpi_table";"full_physics_timeline";"control_plane_timeline";"lls_measured_sinr_summary";"nmse_vs_measured_sinr";"energy_vs_throughput";"tbs_reference_comparison";"shannon_capacity_gap";"trs_doppler_error_trace"], ...
+    [height(perSlot);height(perUE);height(physics);height(control);height(measured.Tables.Summary);height(nmse);height(energy);height(tbs);height(shannon);height(trs)], ...
+    ["RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"MEASURED_SINR_GEOMETRY";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED";"RUNTIME_DERIVED"], ...
     'VariableNames', {'ArtifactName','RowCount','EvidenceClass'});
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "analysis_generation_summary.csv"), summary);
 
@@ -300,98 +303,22 @@ r.SRS_NMSE_dB = localValue(r0, "SRS_NMSE_dB", NaN);
 r.TRS_TrackingState = string(localValue(r0, "TRSValidityState", ""));
 end
 
-function T = localBuildSNRSweep(trialData)
-allRows = [localSweepRows(trialData.dl, "DL"); localSweepRows(trialData.ul, "UL")];
-T = localStructRowsToTable(allRows, localSNRSweepVars());
-if height(T) > 0 && any(string(T.Properties.VariableNames) == "SNR_dB")
-    snr = localToDouble(T.SNR_dB);
-    if numel(unique(snr(isfinite(snr)))) > 1
-        T.Status(:) = "controlled_snr_sweep";
-        if any(string(T.Properties.VariableNames) == "truth_status")
-            T.truth_status(:) = "controlled_snr_sweep";
-        end
-    end
-end
+function T = localBuildNMSEVsMeasuredSINR(trialData)
+rows = [localMetricVsMeasuredSINRRows(trialData.dl, "DL", "NMSE_dB"); localMetricVsMeasuredSINRRows(trialData.ul, "UL", "NMSE_dB")];
+T = localStructRowsToTable(rows, ["Direction","PostEqSINR_dB","MetricName","MetricValue","SampleCount","EvidenceClass","SourceArtifact"]);
 end
 
-function rows = localSweepRows(Tin, direction)
-rows = cell(0, 1);
-if isempty(Tin) || height(Tin) == 0
-    return;
-end
-snrVals = localColumnFirstAvailable(Tin, ["SNR_dB","ConfiguredSNR_dB","AppliedAWGNSNR_dB"]);
-uniqueSNR = unique(snrVals(isfinite(snrVals)));
-for i = 1:numel(uniqueSNR)
-    snr = uniqueSNR(i);
-    sub = Tin(snrVals == snr, :);
-    attempts = height(sub);
-    fails = localFailCount(sub);
-    [ciLow, ciHigh] = localWilsonCI(fails, attempts);
-    goodputMbps = localMean(sub, "Goodput_Mbps");
-    throughputMbps = localMean(sub, "OfferedThroughput_Mbps");
-    meanMCS = localMean(sub, ["MCS","MCSIndex"]);
-    meanLayers = localMean(sub, ["Layers","Rank"]);
-    r = struct();
-    r.Direction = string(direction);
-    r.SNR_dB = snr;
-    r.TrialCount = attempts;
-    r.PassCount = localPassCount(sub);
-    r.FailCount = fails;
-    r.BLER = localSafeDivide(fails, attempts);
-    r.BLER_CI95_Low = ciLow;
-    r.BLER_CI95_High = ciHigh;
-    r.BLER_CI95_Width = ciHigh - ciLow;
-    r.BER = localMean(sub, "RawBER");
-    r.Goodput_Mbps = goodputMbps;
-    r.Throughput_Mbps = throughputMbps;
-    r.MeanMCS = meanMCS;
-    r.MeanLayers = meanLayers;
-    r.MeanPostEqSINR_dB = localMean(sub, ["PostEqSINR_dB","PostEqSINRWidebanddB"]);
-    r.MeanEVM_rms = localMean(sub, "EVM_rms");
-    r.MeanNMSE_dB = localMean(sub, "NMSE_dB");
-    r.MeanPAPR_dB = localMean(sub, "PAPR_dB");
-    r.MeanDecoderIterations = localMean(sub, "DecoderIterations");
-    r.MeanDecodeLatency_ms = localMean(sub, "DecodeLatency_ms");
-    r.MeanRawBER = localMean(sub, "RawBER");
-    r.MeanBitErrors = localMean(sub, "BitErrors");
-    r.MeanBitsCompared = localMean(sub, "BitsCompared");
-    r.MeanPRBs = localMean(sub, ["AllocatedPRBCount","PRBs"]);
-    r.MeanTBSBits = localMean(sub, ["TBSize_bits","TBSBits"]);
-    r.EvidenceClass = "RUNTIME_DERIVED";
-    r.SourceRows = attempts;
-    r.SourceArtifact = string(direction) + "_trial_rows";
-    r.Status = "single_run_operating_point";
-    r.direction = lower(string(direction));
-    r.snr_db = snr;
-    r.n_tb = attempts;
-    r.n_crc_fail = fails;
-    r.bler = r.BLER;
-    r.bler_ci_low = ciLow;
-    r.bler_ci_high = ciHigh;
-    r.goodput_mbps = goodputMbps;
-    r.throughput_mbps = throughputMbps;
-    r.mcs_index = meanMCS;
-    r.n_layers = meanLayers;
-    r.truth_status = "single_run_operating_point";
-    rows{end+1, 1} = r; %#ok<AGROW>
-end
-end
-
-function T = localBuildNMSEVsSNR(trialData)
-rows = [localMetricVsSNRRows(trialData.dl, "DL", "NMSE_dB"); localMetricVsSNRRows(trialData.ul, "UL", "NMSE_dB")];
-T = localStructRowsToTable(rows, ["Direction","SNR_dB","MetricName","MetricValue","SampleCount","EvidenceClass","SourceArtifact"]);
-end
-
-function rows = localMetricVsSNRRows(Tin, direction, metric)
+function rows = localMetricVsMeasuredSINRRows(Tin, direction, metric)
 rows = cell(0, 1);
 if isempty(Tin) || height(Tin) == 0 || ~any(string(Tin.Properties.VariableNames) == metric)
     return;
 end
-snrVals = localColumnFirstAvailable(Tin, ["SNR_dB","ConfiguredSNR_dB","AppliedAWGNSNR_dB"]);
-uniqueSNR = unique(snrVals(isfinite(snrVals)));
-for i = 1:numel(uniqueSNR)
-    sub = Tin(snrVals == uniqueSNR(i), :);
-    r = struct("Direction", string(direction), "SNR_dB", uniqueSNR(i), "MetricName", string(metric), ...
+sinrVals = localColumnFirstAvailable(Tin, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"]);
+sinrVals = round(double(sinrVals), 1);
+uniqueSINR = unique(sinrVals(isfinite(sinrVals)));
+for i = 1:numel(uniqueSINR)
+    sub = Tin(sinrVals == uniqueSINR(i), :);
+    r = struct("Direction", string(direction), "PostEqSINR_dB", uniqueSINR(i), "MetricName", string(metric), ...
         "MetricValue", localMean(sub, metric), "SampleCount", height(sub), ...
         "EvidenceClass", "RUNTIME_DERIVED", "SourceArtifact", string(direction) + "_trial_rows");
     rows{end+1, 1} = r; %#ok<AGROW>
@@ -407,13 +334,13 @@ end
 dlGoodput = localMean(trialData.dl, "Goodput_Mbps");
 ulGoodput = localMean(trialData.ul, "Goodput_Mbps");
 goodputMbps = localFiniteSum([dlGoodput; ulGoodput]);
-snrDb = localFirstFinite([localMean(trialData.dl, ["SNR_dB","ConfiguredSNR_dB","AppliedAWGNSNR_dB"]); ...
-    localMean(trialData.ul, ["SNR_dB","ConfiguredSNR_dB","AppliedAWGNSNR_dB"])], NaN);
+postEqSINRDb = localFirstFinite([localMean(trialData.dl, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"]); ...
+    localMean(trialData.ul, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"])], NaN);
 energyPerBit = localSafeDivide(energyJ, goodBits);
 r = struct("GoodBits", goodBits, "Energy_J", energyJ, ...
     "EnergyPerBit_J", energyPerBit, ...
     "Goodput_Mbps", goodputMbps, ...
-    "SNR_dB", snrDb, ...
+    "PostEqSINR_dB", postEqSINRDb, ...
     "Direction", "DL+UL", ...
     "goodput_mbps", goodputMbps, ...
     "energy_per_bit_j", energyPerBit, ...
@@ -476,14 +403,14 @@ end
 function T = localBuildShannonCapacityGap(trialData, scenarioCfg)
 bandwidthHz = localCfgValue(scenarioCfg, ["global_radio_scope.channel_bandwidth_hz","frequency.bandwidthHz","carrier.bandwidth_hz"], 100e6);
 layers = localFirstFinite([localMean(trialData.dl, ["Layers","Rank"]); 1], 1);
-snrDb = localFirstFinite([localMean(trialData.dl, ["PostEqSINR_dB","MeasuredSINR_dB","SNR_dB"]); localMean(trialData.ul, ["PostEqSINR_dB","MeasuredSINR_dB","SNR_dB"])], NaN);
-if isfinite(snrDb)
-    shannonMbps = layers * log2(1 + 10^(snrDb/10)) * bandwidthHz / 1e6;
+postEqSINRDb = localFirstFinite([localMean(trialData.dl, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"]); localMean(trialData.ul, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"])], NaN);
+if isfinite(postEqSINRDb)
+    shannonMbps = layers * log2(1 + 10^(postEqSINRDb/10)) * bandwidthHz / 1e6;
 else
     shannonMbps = NaN;
 end
 dlGoodput = localMean(trialData.dl, "Goodput_Mbps");
-r = struct("Direction", "DL", "SNR_dB", snrDb, "Layers", layers, ...
+r = struct("Direction", "DL", "PostEqSINR_dB", postEqSINRDb, "Layers", layers, ...
     "Bandwidth_Hz", bandwidthHz, "ShannonCapacity_Mbps", shannonMbps, ...
     "AchievedGoodput_Mbps", dlGoodput, "Gap_Mbps", shannonMbps - dlGoodput, ...
     "EvidenceClass", "RUNTIME_DERIVED", "Status", "reference_capacity_not_conformance_claim");
@@ -793,13 +720,6 @@ vars = ["EventIndex","Frame","Slot","Timestamp_ms","EventType","UEIndex","RNTI",
     "MCS","PRBStart","PRBCount","Layers","TBSBits","HARQ_ID","NDI","RV","DCI_Format","AggregationLevel","CCE_Index","CandidateCount", ...
     "PUCCH_Format","UCI_ACK","UCI_CQI","UCI_PMI","UCI_RI","PRACH_RootSeq","PRACH_ZeroCorr","PreambleDetected","TimingAdvance_us", ...
     "RA_Stage","RAR_Decoded","Msg3_Pass","Msg4_Pass","BeamIndex","BeamSwitchFlag","SRS_NMSE_dB","TRS_TrackingState"];
-end
-
-function vars = localSNRSweepVars()
-vars = ["Direction","SNR_dB","TrialCount","PassCount","FailCount","BLER","BLER_CI95_Low","BLER_CI95_High","BLER_CI95_Width","BER","Goodput_Mbps","Throughput_Mbps", ...
-    "MeanMCS","MeanLayers","MeanPostEqSINR_dB","MeanEVM_rms","MeanNMSE_dB","MeanPAPR_dB","MeanDecoderIterations", ...
-    "MeanDecodeLatency_ms","MeanRawBER","MeanBitErrors","MeanBitsCompared","MeanPRBs","MeanTBSBits","EvidenceClass","SourceRows","SourceArtifact","Status", ...
-    "direction","snr_db","n_tb","n_crc_fail","bler","bler_ci_low","bler_ci_high","goodput_mbps","throughput_mbps","mcs_index","n_layers","truth_status"];
 end
 
 function mustBeTextScalar(x)

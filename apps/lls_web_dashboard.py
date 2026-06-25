@@ -10452,7 +10452,7 @@ def is_direct_debug_artifact_path(path: str) -> bool:
         "run_metadata_outputs.csv",
         "lls_output_",
         "per_scenario_summary_tables.csv",
-        "per_sweep_comparison_tables.csv",
+        "per_measured_sinr_comparison_tables.csv",
         "baseline_candidate_delta_tables.csv",
         "_outputs.csv",
         "basic_phy_performance_outputs.csv",
@@ -11046,9 +11046,9 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
             return (3, path)
         if "mcs_table_reference" in path:
             return (4, path)
-        if "live_link_snr_sweep" in path:
+        if "live_measured_sinr_summary" in path:
             return (5, path)
-        if "lls_snr_sweep" in path:
+        if "lls_measured_sinr_summary" in path or "measured_sinr" in path:
             return (6, path)
         if "constellation_preview" in path:
             return (7, path)
@@ -14758,7 +14758,7 @@ window.addEventListener('DOMContentLoaded', function () {
       const liveTables = (state.live || {}).tables_all || [];
       return liveTables.some(item => {
         const path = String((item || {}).logical_path || '').toLowerCase();
-        return path.includes('baseline_candidate_delta_tables') || path.includes('per_sweep_comparison_tables');
+        return path.includes('baseline_candidate_delta_tables') || path.includes('per_measured_sinr_comparison_tables');
       });
     }
     return true;

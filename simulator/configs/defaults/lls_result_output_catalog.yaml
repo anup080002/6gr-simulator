@@ -287,12 +287,12 @@ categories:
     file_name: aggregated_reporting_outputs.csv
     metrics:
       - { key: per_scenario_summary_tables, label: per-scenario summary tables }
-      - { key: per_sweep_comparison_tables, label: per-sweep comparison tables }
+      - { key: per_sweep_comparison_tables, label: measured-SINR comparison tables }
       - { key: baseline_candidate_delta_tables, label: baseline vs candidate delta tables }
       - { key: waterfall_bar_charts_gains_losses, label: waterfall charts / bar charts of gains/losses }
-      - { key: curves_bler_vs_snr, label: curves: BLER vs SNR }
-      - { key: curves_throughput_vs_snr, label: curves: throughput vs SNR }
-      - { key: curves_nmse_vs_snr, label: curves: NMSE vs SNR }
+      - { key: curves_bler_vs_snr, label: curves: BLER vs measured post-EQ SINR }
+      - { key: curves_throughput_vs_snr, label: curves: throughput vs measured post-EQ SINR }
+      - { key: curves_nmse_vs_snr, label: curves: NMSE vs measured post-EQ SINR }
       - { key: curves_papr_ccdf, label: curves: PAPR CCDF }
       - { key: curves_latency_cdf, label: curves: latency semantics CDF }
       - { key: curves_access_delay_cdf, label: curves: access procedure-delay CDF }

@@ -124,7 +124,7 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "reports_value_semantics_coverage_v": ["reports/csv/value_source_audit.csv", "reports/csv/runtime_value_source_dictionary.csv"],
     "reports_status_rollup_explanations_v": ["reports/csv/truth_contract_summary.csv", "reports/csv/validation_messages.csv"],
     "waveform_analytics": ["analytics/csv/waveform_analytics.csv", "reports/csv/live_waveform_preview.csv", "reports/csv/live_tx_rx_stage_trace.csv"],
-    "waveform_comparison_analytics": ["reports/csv/per_sweep_comparison_tables.csv", "reports/csv/aggregated_reporting_outputs.csv"],
+    "waveform_comparison_analytics": ["reports/csv/per_measured_sinr_comparison_tables.csv", "reports/csv/aggregated_reporting_outputs.csv"],
     "waveform_stage_overlay_analytics": ["reports/csv/live_tx_rx_stage_trace.csv", "reports/csv/live_modulation_demodulation_trace.csv"],
     "spectrum_analytics": ["reports/csv/modulation_shaping_outputs.csv", "reports/csv/aggregated_reporting_outputs.csv"],
     "papr_analytics": ["reports/csv/modulation_shaping_outputs.csv", "reports/csv/aggregated_reporting_outputs.csv"],
@@ -175,10 +175,10 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "truth_policy_analytics": ["reports/csv/truth_contract_summary.csv", "reports/csv/truth_contract_failures.csv"],
     "schema_drift_analytics": ["reports/csv/value_source_audit.csv", "reports/csv/config_roundtrip_verification.csv"],
     "regression_analytics": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/compare_run_prerequisites.csv"],
-    "regression_baseline_view": ["reports/csv/per_scenario_summary_tables.csv", "reports/csv/per_sweep_comparison_tables.csv"],
-    "regression_candidate_view": ["reports/csv/per_scenario_summary_tables.csv", "reports/csv/per_sweep_comparison_tables.csv"],
-    "regression_delta_view": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/per_sweep_comparison_tables.csv"],
-    "change_impact_analytics": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/per_sweep_comparison_tables.csv"],
+    "regression_baseline_view": ["reports/csv/per_scenario_summary_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
+    "regression_candidate_view": ["reports/csv/per_scenario_summary_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
+    "regression_delta_view": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
+    "change_impact_analytics": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
 }
 
 
@@ -235,7 +235,7 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
     "pre-channel waveform": ["reports/csv/live_tx_rx_stage_trace.csv"],
     "post-channel waveform": ["reports/csv/live_tx_rx_stage_trace.csv"],
     "post-impairment waveform": ["reports/csv/live_tx_rx_stage_trace.csv"],
-    "UE-wise / link-wise waveform comparison": ["reports/csv/per_sweep_comparison_tables.csv"],
+    "UE-wise / link-wise waveform comparison": ["reports/csv/per_measured_sinr_comparison_tables.csv"],
     "PSD": ["reports/csv/modulation_shaping_outputs.csv"],
     "PAPR histogram / CDF": ["reports/image/papr_ccdf.png", "reports/csv/modulation_shaping_outputs.csv"],
     "pre-equalization constellation": ["reports/image/equalized_constellations.png", "reports/csv/equalized_constellations.csv"],

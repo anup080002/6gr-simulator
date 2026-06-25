@@ -50,7 +50,7 @@ for i = 1:n
 end
 
 T = struct2table(rows);
-T = localValidateSNRSweepInventory(runFolder, T);
+T = localValidateMeasuredSINRInventory(runFolder, T);
 reqMask = logical(T.Required);
 reqCov = 1;
 if any(reqMask)
@@ -99,31 +99,35 @@ if strictMode && ~out.Ok
 end
 end
 
-function T = localValidateSNRSweepInventory(runFolder, T)
-sweepFile = fullfile(runFolder, "air_interface", "csv", "lls_snr_sweep.csv");
-if ~isfile(sweepFile)
+function T = localValidateMeasuredSINRInventory(runFolder, T)
+summaryFile = fullfile(runFolder, "air_interface", "csv", "lls_measured_sinr_summary.csv");
+idx = find(strcmp(string(T.ArtifactID), "lls_measured_sinr"));
+if ~isfile(summaryFile)
     return;
 end
-idx = find(strcmp(string(T.ArtifactID), "lls_snr") | strcmp(string(T.ArtifactID), "snr_sweep"));
 try
-    sweepT = readtable(sweepFile, "VariableNamingRule", "preserve");
+    summaryT = readtable(summaryFile, "VariableNamingRule", "preserve");
 catch ME
     if ~isempty(idx)
         T.Status(idx) = "invalid_unreadable";
-        T.Notes(idx) = "lls_snr_sweep.csv unreadable: " + string(ME.identifier);
+        T.Notes(idx) = "lls_measured_sinr_summary.csv unreadable: " + string(ME.identifier);
     end
     return;
 end
-if height(sweepT) == 0
+if height(summaryT) == 0
     if ~isempty(idx)
-        T.Status(idx) = "invalid_empty_sweep";
-        T.Notes(idx) = "lls_snr_sweep.csv is empty; expected controlled sweep rows or skipped_single_point_run status.";
+        T.Status(idx) = "invalid_empty_measured_sinr_summary";
+        T.Notes(idx) = "lls_measured_sinr_summary.csv is empty; expected geometry-derived measured SINR rows.";
     end
-elseif ismember("Status", string(sweepT.Properties.VariableNames)) && height(sweepT) == 1
-    status = strtrim(string(sweepT.Status(1)));
-    if status == "skipped_single_point_run" && ~isempty(idx)
-        T.Status(idx) = "skipped_single_point_run";
-        T.Notes(idx) = "Single operating-point run; controlled SNR sweep intentionally unavailable.";
+elseif ~all(ismember(["Direction","SINR_median_dB","KPIFormulaVersion"], string(summaryT.Properties.VariableNames)))
+    if ~isempty(idx)
+        T.Status(idx) = "invalid_schema";
+        T.Notes(idx) = "lls_measured_sinr_summary.csv is missing Direction, SINR_median_dB, or KPIFormulaVersion.";
+    end
+elseif any(~isfinite(double(summaryT.SINR_median_dB)))
+    if ~isempty(idx)
+        T.Status(idx) = "invalid_sinr_summary";
+        T.Notes(idx) = "lls_measured_sinr_summary.csv contains non-finite SINR_median_dB.";
     end
 end
 end
@@ -240,9 +244,13 @@ if ctx.IncludeLink
     S(end+1) = localSpec("1. Error Performance Metrics", "pbch_trials", "air_interface/csv/pbch_trials.csv", "csv", true, "Per-trial PBCH trace");
     S(end+1) = localSpec("1. Error Performance Metrics", "prach_trials", "air_interface/csv/prach_trials.csv", "csv", true, "Per-trial PRACH trace");
     S(end+1) = localSpec("1. Error Performance Metrics", "srs_trials", "air_interface/csv/srs_trials.csv", "csv", true, "Per-trial SRS trace");
-    S(end+1) = localSpec("2. Throughput and Rate Metrics", "lls_snr", "air_interface/csv/lls_snr_sweep.csv", "csv", true, "Throughput vs SNR");
+    S(end+1) = localSpec("1. Error Performance Metrics", "dl_measured_sinr_bler", "air_interface/csv/dl_measured_sinr_bler_curve.csv", "csv", true, "DL BLER/BER vs measured post-equalisation SINR");
+    S(end+1) = localSpec("1. Error Performance Metrics", "ul_measured_sinr_bler", "air_interface/csv/ul_measured_sinr_bler_curve.csv", "csv", true, "UL BLER/BER vs measured post-equalisation SINR");
+    S(end+1) = localSpec("2. Throughput and Rate Metrics", "lls_measured_sinr", "air_interface/csv/lls_measured_sinr_summary.csv", "csv", true, "Geometry-driven measured SINR summary");
+    S(end+1) = localSpec("2. Throughput and Rate Metrics", "dl_measured_sinr_throughput", "air_interface/csv/dl_measured_sinr_throughput_curve.csv", "csv", true, "DL throughput vs measured post-equalisation SINR");
+    S(end+1) = localSpec("2. Throughput and Rate Metrics", "ul_measured_sinr_throughput", "air_interface/csv/ul_measured_sinr_throughput_curve.csv", "csv", true, "UL throughput vs measured post-equalisation SINR");
     S(end+1) = localSpec("4. Channel Estimation and Equalization", "lls_link_results", "air_interface/mat/link_results.mat", "mat", true, "Channel/equalization artifacts");
-    S(end+1) = localSpec("6. Link Adaptation", "snr_sweep", "air_interface/csv/lls_snr_sweep.csv", "csv", true, "MCS adaptation proxy");
+    S(end+1) = localSpec("6. Link Adaptation", "distance_vs_sinr", "air_interface/csv/distance_vs_sinr.csv", "csv", true, "Propagation distance vs measured post-equalisation SINR");
 end
 
 if ctx.IncludeAuxiliary

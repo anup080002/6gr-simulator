@@ -200,28 +200,28 @@ def build_overview() -> None:
     write_page("kpi_overview.html", "KPI Overview", body, "scenario_summary.csv and generated analysis CSVs")
 
 
-def build_bler_vs_snr() -> None:
-    rows = read_csv(AIR_CSV / "lls_snr_sweep.csv")
+def build_bler_vs_measured_sinr() -> None:
+    rows = read_csv(AIR_CSV / "dl_measured_sinr_bler_curve.csv") + read_csv(AIR_CSV / "ul_measured_sinr_bler_curve.csv")
     body = "<div class='cards'>" + summary_cards(rows) + "</div>"
-    body += "<section class='panel'><h2>BLER vs SNR</h2>" + svg_points(rows, "SNR_dB", "BLER", "Direction") + "</section>"
+    body += "<section class='panel'><h2>BLER vs Measured SINR</h2>" + svg_points(rows, "PostEqSINR_dB_BinCenter", "BLER", "Direction") + "</section>"
     body += "<section class='panel'><h2>Source Rows</h2>" + table_html(rows) + "</section>"
-    write_page("bler_vs_snr.html", "BLER vs SNR", body, "air_interface/csv/lls_snr_sweep.csv")
+    write_page("bler_vs_measured_sinr.html", "BLER vs Measured SINR", body, "air_interface/csv/*_measured_sinr_bler_curve.csv")
 
 
-def build_throughput_vs_snr() -> None:
-    rows = read_csv(AIR_CSV / "lls_snr_sweep.csv")
+def build_throughput_vs_measured_sinr() -> None:
+    rows = read_csv(AIR_CSV / "dl_measured_sinr_throughput_curve.csv") + read_csv(AIR_CSV / "ul_measured_sinr_throughput_curve.csv")
     body = "<div class='cards'>" + summary_cards(rows) + "</div>"
-    body += "<section class='panel'><h2>Goodput vs SNR</h2>" + svg_points(rows, "SNR_dB", "Goodput_Mbps", "Direction") + "</section>"
+    body += "<section class='panel'><h2>Goodput vs Measured SINR</h2>" + svg_points(rows, "PostEqSINR_dB_BinCenter", "Goodput_Mbps_mean", "Direction") + "</section>"
     body += "<section class='panel'><h2>Source Rows</h2>" + table_html(rows) + "</section>"
-    write_page("throughput_vs_snr.html", "Throughput vs SNR", body, "air_interface/csv/lls_snr_sweep.csv")
+    write_page("throughput_vs_measured_sinr.html", "Throughput vs Measured SINR", body, "air_interface/csv/*_measured_sinr_throughput_curve.csv")
 
 
-def build_nmse_vs_snr() -> None:
-    rows = read_csv(REPORT_CSV / "nmse_vs_snr.csv")
+def build_nmse_vs_measured_sinr() -> None:
+    rows = read_csv(REPORT_CSV / "nmse_vs_measured_sinr.csv")
     body = "<div class='cards'>" + summary_cards(rows) + "</div>"
-    body += "<section class='panel'><h2>NMSE vs SNR</h2>" + svg_points(rows, "SNR_dB", "MetricValue", "Direction") + "</section>"
+    body += "<section class='panel'><h2>NMSE vs Measured SINR</h2>" + svg_points(rows, "PostEqSINR_dB", "MetricValue", "Direction") + "</section>"
     body += "<section class='panel'><h2>Source Rows</h2>" + table_html(rows) + "</section>"
-    write_page("nmse_vs_snr.html", "NMSE vs SNR", body, "reports/csv/nmse_vs_snr.csv")
+    write_page("nmse_vs_measured_sinr.html", "NMSE vs Measured SINR", body, "reports/csv/nmse_vs_measured_sinr.csv")
 
 
 def build_energy_vs_throughput() -> None:
@@ -410,9 +410,9 @@ def assemble_dashboard() -> None:
         ("Call Flame", "call_flow_flamegraph.html"),
         ("Messages", "message_sequence_diagram.html"),
         ("Algorithms", "algorithm_analysis_dashboard.html"),
-        ("BLER vs SNR", "bler_vs_snr.html"),
-        ("Throughput vs SNR", "throughput_vs_snr.html"),
-        ("NMSE vs SNR", "nmse_vs_snr.html"),
+        ("BLER vs Measured SINR", "bler_vs_measured_sinr.html"),
+        ("Throughput vs Measured SINR", "throughput_vs_measured_sinr.html"),
+        ("NMSE vs Measured SINR", "nmse_vs_measured_sinr.html"),
         ("Energy", "energy_vs_throughput.html"),
         ("Access Delay", "access_delay_cdf.html"),
         ("HARQ Gain", "harq_combining_gain.html"),
@@ -467,9 +467,9 @@ def assemble_dashboard() -> None:
 def main() -> int:
     HTML_DIR.mkdir(parents=True, exist_ok=True)
     build_overview()
-    build_bler_vs_snr()
-    build_throughput_vs_snr()
-    build_nmse_vs_snr()
+    build_bler_vs_measured_sinr()
+    build_throughput_vs_measured_sinr()
+    build_nmse_vs_measured_sinr()
     build_energy_vs_throughput()
     build_access_delay_cdf()
     build_harq_combining_gain()

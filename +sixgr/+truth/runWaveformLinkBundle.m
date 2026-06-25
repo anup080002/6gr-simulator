@@ -164,7 +164,11 @@ else
     localLogStage(ctx, "Building primary SNR sweep from raw truth trials.");
 end
 stageStart = tic;
-res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
+if receiverNoiseMode
+    res.SNRSweep = table();
+else
+    res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
+end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "primary_sweep_from_raw_trials", toc(stageStart), toc(bundleStart), "Primary operating-point summary constructed from raw trials.");
 if receiverNoiseMode
@@ -243,14 +247,16 @@ if logical(multiUser.Enabled)
     res.MultiUserEnabled = logical(multiUser.Enabled);
     res.MultiUserCount = double(multiUser.NumUsers);
 end
-localLogStage(ctx, "Writing primary and reference sweep CSV artifacts.");
+localLogStage(ctx, "Writing optional legacy sweep CSV artifacts when enabled.");
 stageStart = tic;
-sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), res.SNRSweep);
-if istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
+if ~receiverNoiseMode && istable(res.SNRSweep) && ~isempty(res.SNRSweep)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), res.SNRSweep);
+end
+if ~receiverNoiseMode && istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
     sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), res.ReferenceSweep);
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-    "sweep_csv_export", toc(stageStart), toc(bundleStart), "Primary and reference sweep CSV artifacts written.");
+    "sweep_csv_export", toc(stageStart), toc(bundleStart), "Optional legacy sweep CSV artifact export completed or skipped by receiver-noise mode.");
 legacyHARQReady = localLegacyHARQArtifactsReady(rootRunFolder);
 runtimeHARQReady = localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
     localArtifactStructReady(harqArtifacts, "TimelineTable");
@@ -345,6 +351,31 @@ arts = sixgr.link.exportLinkKPIs(runFolder, kpi, res, ...
     "FigurePrefix", "link_truth_validation", ...
     "PlotVisible", false, ...
     "FigureResolution", 140);
+measuredSINRArtifacts = struct();
+try
+    measuredSINRArtifacts.Curves = sixgr.analytics.generateMeasuredSINRCurves(rootRunFolder, ...
+        string(sixgr.util.structGet(cfgExec, "run.runTag", "")), ...
+        "TrialData", rawTrials, ...
+        "ScenarioConfig", cfgExec, ...
+        "WriteKPISummary", true, ...
+        "UpdateAnchorKPIs", true);
+    measuredSINRArtifacts.Plots = sixgr.analytics.generateMeasuredSINRPlots(rootRunFolder, ...
+        string(sixgr.util.structGet(cfgExec, "run.runTag", "")));
+    if isstruct(arts) && isfield(arts, "csv")
+        curvePaths = struct2cell(measuredSINRArtifacts.Curves.Paths);
+        for ai = 1:numel(curvePaths)
+            arts.csv{end+1} = char(string(curvePaths{ai})); %#ok<AGROW>
+        end
+    end
+    if isstruct(arts) && isfield(arts, "fig")
+        plotPaths = string(measuredSINRArtifacts.Plots.Plots(:));
+        for ai = 1:numel(plotPaths)
+            arts.fig{end+1} = char(plotPaths(ai)); %#ok<AGROW>
+        end
+    end
+catch ME
+    measuredSINRArtifacts = struct("Ok", false, "Identifier", string(ME.identifier), "Message", string(ME.message));
+end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "final_kpi_bundle_export", toc(stageStart), toc(bundleStart), "Final structured KPI bundle exported.");
 localPublishWaveformBundleStageStatus(runFolder, struct( ...
@@ -368,6 +399,7 @@ out.RunFolder = runFolder;
 out.Result = res;
 out.KPITable = kpi;
 out.SNRSweep = res.SNRSweep;
+out.MeasuredSINR = measuredSINRArtifacts;
 out.ReferenceSweep = sixgr.util.structGet(res, "ReferenceSweep", table());
 out.RawTrials = rawTrials;
 out.Artifacts = arts;
@@ -1109,12 +1141,6 @@ if coupledTruth
 end
 if istable(csirsTrials) && ~isempty(csirsTrials)
     sixgr.util.csvWriteTable(fCSIRS, csirsTrials);
-end
-
-liveSweep = localBuildSNRSweepFromRawTrials(struct("DL", dlTrials, "UL", ulTrials, "SRS", srsTrials), cfg, snrGrid);
-liveSweepPath = fullfile(csvDir, "live_link_snr_sweep.csv");
-if istable(liveSweep) && ~isempty(liveSweep)
-    sixgr.util.csvWriteTable(liveSweepPath, liveSweep);
 end
 
 if istable(dlConst) && ~isempty(dlConst)

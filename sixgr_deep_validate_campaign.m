@@ -76,7 +76,7 @@ T_ai = localLoadCSVAbs(fullfile(layout.PacketFlowCSVDir, "probe_e2e_ai_metrics.c
 T_sync = localLoadCSVAbs(fullfile(layout.ControlCSVDir, "probe_sync_control.csv"));
 T_harq = localLoadCSVAbs(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
 T_lls = localLoadCSVAbs(fullfile(layout.AirInterfaceCSVDir, "lls_kpi_summary.csv"));
-T_snr = localLoadCSVAbs(fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"));
+T_sinr = localLoadCSVAbs(fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv"));
 T_sys = localLoadCSVAbs(fullfile(layout.SystemCSVDir, "system_kpis.csv"));
 T_mmtc = localLoadCSVAbs(fullfile(layout.MMTCCSVDir, "probe_mmtc_kpis.csv"));
 T_v2x = localLoadCSVAbs(fullfile(layout.V2XCSVDir, "probe_v2x_sidelink.csv"));
@@ -112,7 +112,7 @@ writetable(flow.DataSummary, dataCSV);
 % -------------------------------------------------------------------------
 % 5) Cross-probe KPI highlight extraction
 % -------------------------------------------------------------------------
-kpi = localExtractHighlights(T_lls, T_snr, T_sys, T_harq, T_mmtc, T_v2x, T_ntn, T_intf, T_num, T_beam, T_ai, T_audit, T_e2e);
+kpi = localExtractHighlights(T_lls, T_sinr, T_sys, T_harq, T_mmtc, T_v2x, T_ntn, T_intf, T_num, T_beam, T_ai, T_audit, T_e2e);
 kpiCSV = fullfile(outFolder, "deep_kpi_highlights.csv");
 writetable(kpi.Table, kpiCSV);
 
@@ -717,7 +717,7 @@ if isempty(act)
 end
 end
 
-function out = localExtractHighlights(T_lls, T_snr, T_sys, T_harq, T_mmtc, T_v2x, T_ntn, T_intf, T_num, T_beam, T_ai, T_audit, T_e2e)
+function out = localExtractHighlights(T_lls, T_sinr, T_sys, T_harq, T_mmtc, T_v2x, T_ntn, T_intf, T_num, T_beam, T_ai, T_audit, T_e2e)
 metric = strings(0,1);
 value = strings(0,1);
 status = strings(0,1);
@@ -728,8 +728,10 @@ append("Link.MainBLER_DL", localFmt(localMaybeCaseMetric(T_lls, "DL_PDSCH_Throug
 append("Link.MainBLER_UL", localFmt(localMaybeCaseMetric(T_lls, "UL_PUSCH_Throughput", "BLER")), "INFO", "From lls_kpi_summary");
 append("Link.MainThr_DL_Mbps", localFmt(localMaybeCaseMetric(T_lls, "DL_PDSCH_Throughput", "Throughput_Mbps")), "INFO", "From lls_kpi_summary");
 append("Link.MainThr_UL_Mbps", localFmt(localMaybeCaseMetric(T_lls, "UL_PUSCH_Throughput", "Throughput_Mbps")), "INFO", "From lls_kpi_summary");
-append("Link.SNRSweep.BestDLThr_Mbps", localFmt(localMaybeMax(T_snr, "DL_Throughput_Mbps")), "INFO", "Max over SNR sweep");
-append("Link.SNRSweep.BestULThr_Mbps", localFmt(localMaybeMax(T_snr, "UL_Throughput_Mbps")), "INFO", "Max over SNR sweep");
+append("Link.MeasuredSINR.DLGoodput_Mbps", localFmt(localMaybeDirectionMetric(T_sinr, "DL", "Goodput_Mbps_mean")), "INFO", "From measured SINR summary");
+append("Link.MeasuredSINR.ULGoodput_Mbps", localFmt(localMaybeDirectionMetric(T_sinr, "UL", "Goodput_Mbps_mean")), "INFO", "From measured SINR summary");
+append("Link.MeasuredSINR.DLMedian_dB", localFmt(localMaybeDirectionMetric(T_sinr, "DL", "SINR_median_dB")), "INFO", "Geometry-derived post-equalisation SINR");
+append("Link.MeasuredSINR.ULMedian_dB", localFmt(localMaybeDirectionMetric(T_sinr, "UL", "SINR_median_dB")), "INFO", "Geometry-derived post-equalisation SINR");
 append("System.Throughput_Mbps", localFmt(localMaybeScalar(T_sys, "Throughput_Mbps")), "INFO", "System-level aggregate throughput");
 append("System.PacketLoss", localFmt(localMaybeScalar(T_sys, "PacketLoss")), "WARN", "High values indicate heavy load/loss");
 append("System.JainFairness", localFmt(localMaybeScalar(T_sys, "JainFairness")), "WARN", "Lower values indicate unfair resource split");
@@ -776,6 +778,32 @@ if any(mask)
     x = T.(colName);
     x = localToDouble(x);
     v = x(find(mask, 1, "first"));
+end
+end
+
+function v = localMaybeDirectionMetric(T, direction, colName)
+v = NaN;
+if isempty(T)
+    return;
+end
+vn = string(T.Properties.VariableNames);
+if ~all(ismember(["Direction", colName], vn))
+    return;
+end
+dirMask = strcmpi(string(T.Direction), string(direction));
+if ismember("UEIndex", vn)
+    ue = lower(strtrim(string(T.UEIndex)));
+    allMask = ue == "all" | ue == "nan" | strlength(ue) == 0;
+    mask = dirMask & allMask;
+    if any(mask)
+        x = localToDouble(T.(colName));
+        v = x(find(mask, 1, "first"));
+        return;
+    end
+end
+if any(dirMask)
+    x = localToDouble(T.(colName));
+    v = x(find(dirMask, 1, "first"));
 end
 end
 

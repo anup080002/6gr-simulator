@@ -631,9 +631,43 @@ elseif ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
     end
 end
 if ~(isfinite(durationSec) && durationSec > 0)
+    slotDurationSec = localTrialSlotDurationSec(T);
+    finalized = true(height(T), 1);
+    if ismember("FinalizedFlag", string(T.Properties.VariableNames))
+        finalized = localOptionalLogical(T, "FinalizedFlag", finalized);
+    end
+    durationSec = sum(finalized) * slotDurationSec;
+    source = "geometry_trial_count_slot_duration";
+end
+if ~(isfinite(durationSec) && durationSec > 0)
     durationSec = NaN;
     source = "unavailable";
 end
+end
+
+function slotDurationSec = localTrialSlotDurationSec(T)
+slotDurationSec = NaN;
+for name = ["SlotDuration_s","slot_duration_s"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localOptionalNumeric(T, name, NaN(height(T), 1));
+        vals = vals(isfinite(vals) & vals > 0);
+        if ~isempty(vals)
+            slotDurationSec = vals(1);
+            return;
+        end
+    end
+end
+for name = ["SlotDuration_ms","slot_duration_ms","AirInterfaceTTI_ms"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localOptionalNumeric(T, name, NaN(height(T), 1));
+        vals = vals(isfinite(vals) & vals > 0);
+        if ~isempty(vals)
+            slotDurationSec = vals(1) / 1e3;
+            return;
+        end
+    end
+end
+slotDurationSec = 0.5e-3;
 end
 
 function [durationSec, source] = localUniqueSlotDurationSec(T, rowDurSec, sourceToken)
@@ -682,9 +716,6 @@ if ~ismember("BitsCompared", vars)
 end
 if ~any(ismember(["ScheduledBits","TBSize_bits","OfferedBits","TBS"], vars))
     missingParts(end+1, 1) = "ScheduledBits_or_TBSize_bits_or_OfferedBits_or_TBS"; %#ok<AGROW>
-end
-if ~any(ismember(["DurationSec","AirInterfaceObservation_ms","AirInterfaceTTI_ms"], vars))
-    missingParts(end+1, 1) = "radio_duration"; %#ok<AGROW>
 end
 missing = strjoin(missingParts, ",");
 end

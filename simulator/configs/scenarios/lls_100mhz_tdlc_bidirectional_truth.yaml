@@ -28,7 +28,9 @@
     "notes": "True link-level only. Multi-cell topology, UE placement, network RSRP/SINR mobility traces, and traffic-coupled scheduling are outside LLS scope in this repo.",
     "expected_outputs": [
       "air_interface/csv/lls_kpi_summary.csv",
-      "air_interface/csv/lls_snr_sweep.csv",
+      "air_interface/csv/lls_measured_sinr_summary.csv",
+      "air_interface/csv/dl_measured_sinr_bler_curve.csv",
+      "air_interface/csv/ul_measured_sinr_bler_curve.csv",
       "air_interface/csv/dl_pdsch_trials.csv",
       "air_interface/csv/ul_pusch_trials.csv",
       "air_interface/csv/pbch_trials.csv",

@@ -442,7 +442,7 @@ if endsWith(folderPath, "air_interface/image")
         case "ul_constellation_scatter"
             ref = "air_interface/csv/ul_constellation_preview.csv";
         case {"link_truth_validation_bler", "link_truth_validation_ber", "link_truth_validation_throughput"}
-            ref = "air_interface/csv/live_link_snr_sweep.csv|air_interface/csv/link_kpis.csv";
+            ref = "air_interface/csv/live_measured_sinr_summary.csv|air_interface/csv/link_kpis.csv";
         case "link_truth_validation_papr"
             ref = "air_interface/csv/link_kpis.csv";
     end
@@ -464,10 +464,12 @@ if endsWith(folderPath, "reports/image")
             ref = "reports/csv/control_pass_rates.csv";
         case "metric_coverage_by_category"
             ref = "reports/csv/metric_coverage_by_category.csv";
-        case "bler_vs_snr"
-            ref = "air_interface/csv/lls_snr_sweep.csv";
-        case "throughput_vs_snr"
-            ref = "air_interface/csv/lls_snr_sweep.csv";
+        case "bler_vs_measured_sinr"
+            ref = "air_interface/csv/dl_measured_sinr_bler_curve.csv|air_interface/csv/ul_measured_sinr_bler_curve.csv";
+        case "ber_vs_measured_sinr"
+            ref = "air_interface/csv/dl_measured_sinr_bler_curve.csv|air_interface/csv/ul_measured_sinr_bler_curve.csv";
+        case "throughput_vs_measured_sinr"
+            ref = "air_interface/csv/dl_measured_sinr_throughput_curve.csv|air_interface/csv/ul_measured_sinr_throughput_curve.csv";
         case "bler_vs_measured_posteq_sinr_bins_diagnostic"
             ref = "reports/csv/bler_vs_measured_posteq_sinr_bins_diagnostic.csv";
         case {"heatmap_band_feature_kpi", "heatmap_beam_rank_trp_kpi", "heatmap_impairment_kpi"}

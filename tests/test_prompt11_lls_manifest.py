@@ -137,10 +137,12 @@ def test_csv_generator_derives_runtime_tables_without_fake_tbs_reference(tmp_pat
 
     CsvGenerator(run_dir).run()
 
-    sweep = pd.read_csv(run_dir / "air_interface" / "csv" / "lls_snr_sweep.csv")
-    assert {"bler_ci_low", "bler_ci_high", "truth_status"}.issubset(sweep.columns)
-    assert len(sweep) == 10
-    assert set(sweep["truth_status"]) == {"real_lls_evidence"}
+    assert not (run_dir / "air_interface" / "csv" / "lls_snr_sweep.csv").exists()
+    summary = pd.read_csv(run_dir / "air_interface" / "csv" / "lls_measured_sinr_summary.csv")
+    assert {"SINR_median_dB", "KPIFormulaVersion", "Goodput_Mbps_mean"}.issubset(summary.columns)
+    assert set(summary["KPIFormulaVersion"]) == {"measured_sinr_geometry_v1"}
+    dl_curve = pd.read_csv(run_dir / "air_interface" / "csv" / "dl_measured_sinr_bler_curve.csv")
+    assert {"PostEqSINR_dB_BinCenter", "BLER_CI_Low", "BLER_CI_High"}.issubset(dl_curve.columns)
     assert (run_dir / "reports" / "csv" / "kpi_lineage_table.csv").exists()
     assert (run_dir / "air_interface" / "csv" / "fer_summary.csv").exists()
     assert (run_dir / "air_interface" / "csv" / "harq_combining_gain.csv").exists()
@@ -152,42 +154,81 @@ def test_csv_generator_derives_runtime_tables_without_fake_tbs_reference(tmp_pat
     assert "reference=DUT" in tbs_log["notes"]
 
 
-def test_plot_generator_renders_sweep_html_and_png_from_real_csv(tmp_path: Path) -> None:
+def test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv(tmp_path: Path) -> None:
     if plt is None:
         pytest.skip("matplotlib is unavailable")
     run_dir = tmp_path / "run"
     _mkdirs(run_dir)
     pd.DataFrame(
         {
-            "direction": ["DL", "DL", "UL", "UL"],
-            "snr_db": [0, 10, 0, 10],
-            "bler": [0.5, 0.05, 0.6, 0.08],
-            "bler_ci_low": [0.3, 0.01, 0.4, 0.02],
-            "bler_ci_high": [0.7, 0.1, 0.8, 0.14],
-            "goodput_mbps": [4.0, 12.0, 3.0, 9.0],
-            "n_layers": [2, 2, 1, 1],
-            "truth_status": ["real_lls_evidence"] * 4,
+            "Direction": ["DL", "DL"],
+            "UEIndex": [float("nan"), float("nan")],
+            "PostEqSINR_dB_BinCenter": [1, 11],
+            "BLER": [0.5, 0.05],
+            "BLER_CI_Low": [0.3, 0.01],
+            "BLER_CI_High": [0.7, 0.1],
+            "BER": [0.02, 0.001],
+            "TrialCount": [10, 10],
+            "FailureCount": [5, 1],
+            "SourceArtifact": ["air_interface/csv/dl_pdsch_trials.csv"] * 2,
         }
-    ).to_csv(run_dir / "air_interface" / "csv" / "lls_snr_sweep.csv", index=False)
+    ).to_csv(run_dir / "air_interface" / "csv" / "dl_measured_sinr_bler_curve.csv", index=False)
     pd.DataFrame(
         {
-            "UEIndex": [1, 1, 2, 2],
-            "snr_db": [0, 10, 0, 10],
-            "NMSE_dB_mean": [-5, -16, -4, -14],
-            "NMSE_dB_min": [-6, -17, -5, -15],
-            "NMSE_dB_max": [-4, -15, -3, -13],
-            "N_trials": [2, 2, 2, 2],
-            "Method": ["SRS"] * 4,
-            "EstimationMethod": ["LS+MMSE_Wiener"] * 4,
+            "Direction": ["UL", "UL"],
+            "UEIndex": [float("nan"), float("nan")],
+            "PostEqSINR_dB_BinCenter": [1, 11],
+            "BLER": [0.6, 0.08],
+            "BLER_CI_Low": [0.4, 0.02],
+            "BLER_CI_High": [0.8, 0.14],
+            "BER": [0.03, 0.002],
+            "TrialCount": [10, 10],
+            "FailureCount": [6, 1],
+            "SourceArtifact": ["air_interface/csv/ul_pusch_trials.csv"] * 2,
         }
-    ).to_csv(run_dir / "reports" / "csv" / "nmse_vs_snr.csv", index=False)
+    ).to_csv(run_dir / "air_interface" / "csv" / "ul_measured_sinr_bler_curve.csv", index=False)
+    pd.DataFrame(
+        {
+            "Direction": ["DL", "DL", "UL", "UL"],
+            "UEIndex": [float("nan")] * 4,
+            "PostEqSINR_dB_BinCenter": [1, 11, 1, 11],
+            "Goodput_Mbps_mean": [4.0, 12.0, 3.0, 9.0],
+            "OfferedThroughput_Mbps_mean": [5.0, 13.0, 4.0, 10.0],
+            "SpectralEfficiency_bps_Hz_mean": [0.04, 0.12, 0.03, 0.09],
+            "TrialCount": [10, 10, 10, 10],
+            "SourceArtifact": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"],
+        }
+    ).iloc[:2].to_csv(run_dir / "air_interface" / "csv" / "dl_measured_sinr_throughput_curve.csv", index=False)
+    pd.DataFrame(
+        {
+            "Direction": ["UL", "UL"],
+            "UEIndex": [float("nan"), float("nan")],
+            "PostEqSINR_dB_BinCenter": [1, 11],
+            "Goodput_Mbps_mean": [3.0, 9.0],
+            "OfferedThroughput_Mbps_mean": [4.0, 10.0],
+            "SpectralEfficiency_bps_Hz_mean": [0.03, 0.09],
+            "TrialCount": [10, 10],
+            "SourceArtifact": ["air_interface/csv/ul_pusch_trials.csv"] * 2,
+        }
+    ).to_csv(run_dir / "air_interface" / "csv" / "ul_measured_sinr_throughput_curve.csv", index=False)
+    pd.DataFrame(
+        {
+            "Direction": ["SRS", "SRS"],
+            "PostEqSINR_dB": [1, 11],
+            "MetricName": ["NMSE_dB", "NMSE_dB"],
+            "MetricValue": [-5, -16],
+            "SampleCount": [2, 2],
+            "EvidenceClass": ["RUNTIME_DERIVED"] * 2,
+            "SourceArtifact": ["air_interface/csv/srs_trials.csv"] * 2,
+        }
+    ).to_csv(run_dir / "reports" / "csv" / "nmse_vs_measured_sinr.csv", index=False)
 
     PlotGenerator(run_dir).run()
 
-    assert (run_dir / "reports" / "html" / "bler_vs_snr.html").exists()
-    assert (run_dir / "reports" / "image" / "bler_vs_snr.png").exists()
-    assert (run_dir / "reports" / "html" / "throughput_vs_snr.html").exists()
-    assert (run_dir / "reports" / "image" / "nmse_vs_snr.png").exists()
+    assert (run_dir / "reports" / "html" / "bler_vs_measured_sinr.html").exists()
+    assert (run_dir / "reports" / "image" / "bler_vs_measured_sinr.png").exists()
+    assert (run_dir / "reports" / "html" / "throughput_vs_measured_sinr.html").exists()
+    assert (run_dir / "reports" / "image" / "nmse_vs_measured_sinr.png").exists()
     assert (run_dir / "reports" / "html" / "master_dashboard.html").exists()
 
 

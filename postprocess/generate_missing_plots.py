@@ -201,50 +201,50 @@ class PlotGenerator:
 
         self.write_png(target, title, source, plot, len(df))
 
-    def plot_bler_vs_snr(self) -> None:
-        source = "air_interface/csv/lls_snr_sweep.csv"
-        df = self.read(source)
-        needed = ["reports/html/bler_vs_snr.html", "reports/image/bler_vs_snr.png"]
-        if df.empty or self.source_missing(needed[0], source, "plot_bler_vs_snr"):
+    def plot_bler_vs_measured_sinr(self) -> None:
+        source = "air_interface/csv/dl_measured_sinr_bler_curve.csv"
+        df = pd.concat([self.read(source), self.read("air_interface/csv/ul_measured_sinr_bler_curve.csv")], ignore_index=True)
+        needed = ["reports/html/bler_vs_measured_sinr.html", "reports/image/bler_vs_measured_sinr.png"]
+        if df.empty or self.source_missing(needed[0], source, "plot_bler_vs_measured_sinr"):
             return
-        x_col, y_col = _col(df, ["snr_db", "SNR_dB"]), _col(df, ["bler", "BLER"])
+        x_col, y_col = _col(df, "PostEqSINR_dB_BinCenter"), _col(df, "BLER")
         if x_col is None or y_col is None:
             for target in needed:
-                self.log(target, "plot_bler_vs_snr", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df), "requires snr_db and bler")
+                self.log(target, "plot_bler_vs_measured_sinr", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df), "requires measured SINR bin center and BLER")
             return
-        group = _col(df, ["direction", "Direction"])
+        group = _col(df, ["Direction", "UEIndex"])
         if not self.exists(needed[0]):
             fig = go.Figure() if go is not None else None
             if fig is not None:
                 groups = df.groupby(group, dropna=False) if group else [("all", df)]
                 for name, sub in groups:
                     fig.add_trace(go.Scatter(x=sub[x_col], y=sub[y_col], mode="lines+markers", name=str(name)))
-                    lo, hi = _col(sub, "bler_ci_low"), _col(sub, "bler_ci_high")
+                    lo, hi = _col(sub, "BLER_CI_Low"), _col(sub, "BLER_CI_High")
                     if lo and hi:
                         fig.add_trace(go.Scatter(x=sub[x_col], y=sub[lo], mode="lines", line={"width": 0}, showlegend=False, hoverinfo="skip"))
                         fig.add_trace(go.Scatter(x=sub[x_col], y=sub[hi], mode="lines", fill="tonexty", line={"width": 0}, name=f"{name} CI95", opacity=0.25))
                 fig.add_hline(y=0.10, line_dash="dash", annotation_text="Target BLER 10%")
                 fig.update_yaxes(type="log", title="BLER")
-                fig.update_xaxes(title="SNR (dB)")
-            self.write_html(needed[0], "BLER vs SNR", source, fig, df)
+                fig.update_xaxes(title="Measured post-EQ SINR (dB)")
+            self.write_html(needed[0], "BLER vs Measured SINR", source, fig, df)
         if not self.exists(needed[1]):
-            self.line_png(needed[1], "BLER vs SNR", source, df.rename(columns={x_col: "snr_db", y_col: "bler"}), "snr_db", "bler", group, log_y=True)
+            self.line_png(needed[1], "BLER vs Measured SINR", source, df.rename(columns={x_col: "PostEqSINR_dB", y_col: "BLER"}), "PostEqSINR_dB", "BLER", group, log_y=True)
 
-    def plot_throughput_vs_snr(self) -> None:
-        source = "air_interface/csv/lls_snr_sweep.csv"
-        df = self.read(source)
-        needed = ["reports/html/throughput_vs_snr.html", "reports/image/throughput_vs_snr.png"]
+    def plot_throughput_vs_measured_sinr(self) -> None:
+        source = "air_interface/csv/dl_measured_sinr_throughput_curve.csv"
+        df = pd.concat([self.read(source), self.read("air_interface/csv/ul_measured_sinr_throughput_curve.csv")], ignore_index=True)
+        needed = ["reports/html/throughput_vs_measured_sinr.html", "reports/image/throughput_vs_measured_sinr.png"]
         if df.empty:
             for target in needed:
-                self.log(target, "plot_throughput_vs_snr", "BLOCKED_SOURCE_MISSING", [source], 0)
+                self.log(target, "plot_throughput_vs_measured_sinr", "BLOCKED_SOURCE_MISSING", [source], 0)
             return
-        x_col = _col(df, ["snr_db", "SNR_dB"])
-        y_col = _col(df, ["goodput_mbps", "Goodput_Mbps", "throughput_mbps", "Throughput_Mbps"])
+        x_col = _col(df, "PostEqSINR_dB_BinCenter")
+        y_col = _col(df, ["Goodput_Mbps_mean", "OfferedThroughput_Mbps_mean"])
         if x_col is None or y_col is None:
             for target in needed:
-                self.log(target, "plot_throughput_vs_snr", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df), "requires SNR and throughput/goodput")
+                self.log(target, "plot_throughput_vs_measured_sinr", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df), "requires measured SINR and throughput/goodput")
             return
-        group = _col(df, ["direction", "Direction"])
+        group = _col(df, ["Direction", "UEIndex"])
         if not self.exists(needed[0]):
             fig = go.Figure() if go is not None else None
             if fig is not None:
@@ -252,27 +252,27 @@ class PlotGenerator:
                 for name, sub in groups:
                     fig.add_trace(go.Scatter(x=sub[x_col], y=sub[y_col], mode="lines+markers", name=str(name)))
                 shannon = self.read("reports/csv/shannon_capacity_gap.csv")
-                sx, sy = _col(shannon, ["snr_db", "SNR_dB"]), _col(shannon, ["shannon_mbps", "ShannonCapacity_Mbps"])
+                sx, sy = _col(shannon, ["PostEqSINR_dB", "SINR_median_dB"]), _col(shannon, ["ShannonCapacity_Mbps", "shannon_mbps"])
                 if sx and sy:
                     fig.add_trace(go.Scatter(x=shannon[sx], y=shannon[sy], mode="lines", name="Shannon reference", line={"dash": "dash"}))
-                fig.update_xaxes(title="SNR (dB)")
+                fig.update_xaxes(title="Measured post-EQ SINR (dB)")
                 fig.update_yaxes(title="Throughput (Mbps)")
-            self.write_html(needed[0], "Throughput vs SNR", source, fig, df)
+            self.write_html(needed[0], "Throughput vs Measured SINR", source, fig, df)
         if not self.exists(needed[1]):
-            self.line_png(needed[1], "Throughput vs SNR", source, df.rename(columns={x_col: "snr_db", y_col: "throughput_mbps"}), "snr_db", "throughput_mbps", group)
+            self.line_png(needed[1], "Throughput vs Measured SINR", source, df.rename(columns={x_col: "PostEqSINR_dB", y_col: "throughput_mbps"}), "PostEqSINR_dB", "throughput_mbps", group)
 
-    def plot_nmse_vs_snr(self) -> None:
-        source = "reports/csv/nmse_vs_snr.csv"
+    def plot_nmse_vs_measured_sinr(self) -> None:
+        source = "reports/csv/nmse_vs_measured_sinr.csv"
         df = self.read(source)
-        needed = ["reports/html/nmse_vs_snr.html", "reports/image/nmse_vs_snr.png"]
+        needed = ["reports/html/nmse_vs_measured_sinr.html", "reports/image/nmse_vs_measured_sinr.png"]
         if df.empty:
             for target in needed:
-                self.log(target, "plot_nmse_vs_snr", "BLOCKED_SOURCE_MISSING", [source], 0)
+                self.log(target, "plot_nmse_vs_measured_sinr", "BLOCKED_SOURCE_MISSING", [source], 0)
             return
-        x_col, y_col = _col(df, ["snr_db", "SNR_dB"]), _col(df, ["NMSE_dB_mean", "MetricValue", "NMSE_dB"])
+        x_col, y_col = _col(df, ["PostEqSINR_dB", "MeasuredSINR_dB"]), _col(df, ["MetricValue", "NMSE_dB_mean", "NMSE_dB"])
         if x_col is None or y_col is None:
             for target in needed:
-                self.log(target, "plot_nmse_vs_snr", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df), "requires snr_db and NMSE")
+                self.log(target, "plot_nmse_vs_measured_sinr", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df), "requires measured SINR and NMSE")
             return
         group = _col(df, ["UEIndex", "Direction", "Method"])
         if not self.exists(needed[0]):
@@ -282,11 +282,11 @@ class PlotGenerator:
                 for name, sub in groups:
                     fig.add_trace(go.Scatter(x=sub[x_col], y=sub[y_col], mode="lines+markers", name=f"UE/method {name}"))
                 fig.add_hline(y=0, line_dash="dash", annotation_text="0 dB")
-                fig.update_xaxes(title="SNR (dB)")
+                fig.update_xaxes(title="Measured post-EQ SINR (dB)")
                 fig.update_yaxes(title="NMSE (dB)")
-            self.write_html(needed[0], "NMSE vs SNR", source, fig, df)
+            self.write_html(needed[0], "NMSE vs Measured SINR", source, fig, df)
         if not self.exists(needed[1]):
-            self.line_png(needed[1], "NMSE vs SNR", source, df.rename(columns={x_col: "snr_db", y_col: "NMSE_dB_mean"}), "snr_db", "NMSE_dB_mean", group)
+            self.line_png(needed[1], "NMSE vs Measured SINR", source, df.rename(columns={x_col: "PostEqSINR_dB", y_col: "NMSE_dB_mean"}), "PostEqSINR_dB", "NMSE_dB_mean", group)
 
     def plot_shannon_gap(self) -> None:
         source = "reports/csv/shannon_capacity_gap.csv"
@@ -295,7 +295,7 @@ class PlotGenerator:
         if df.empty:
             self.log(target, "plot_shannon_gap", "BLOCKED_SOURCE_MISSING", [source], 0)
             return
-        sx, cap, good = _col(df, ["snr_db", "SNR_dB"]), _col(df, ["shannon_mbps", "ShannonCapacity_Mbps"]), _col(df, ["achieved_goodput_mbps", "AchievedGoodput_Mbps"])
+        sx, cap, good = _col(df, ["PostEqSINR_dB", "SINR_median_dB"]), _col(df, ["ShannonCapacity_Mbps", "shannon_mbps"]), _col(df, ["AchievedGoodput_Mbps", "achieved_goodput_mbps"])
         if sx is None or cap is None or good is None:
             self.log(target, "plot_shannon_gap", "BLOCKED_INSUFFICIENT_COLUMNS", [source], len(df))
             return
@@ -306,7 +306,7 @@ class PlotGenerator:
         if fig is not None:
             fig.add_trace(go.Scatter(x=df[sx], y=df[cap], mode="lines+markers", name="Shannon"))
             fig.add_trace(go.Scatter(x=df[sx], y=df[good], mode="lines+markers", name="Achieved goodput"))
-            fig.update_xaxes(title="SNR (dB)")
+            fig.update_xaxes(title="Measured post-EQ SINR (dB)")
             fig.update_yaxes(title="Mbps")
         self.write_html(target, "Shannon Capacity Gap", source, fig, df)
 
@@ -665,7 +665,7 @@ class PlotGenerator:
         self.png_hist_or_line("reports/image/heatmap_band_feature_kpi.png", "reports/csv/per_slot_kpi_table.csv", "Band Feature KPI", ["Slot"], ["DL_BLER", "DL_Goodput_Mbps"], "plot_heatmap_band_feature")
         self.png_hist_or_line("reports/image/heatmap_beam_rank_trp_kpi.png", "beamforming/csv/mimo_configured_vs_effective.csv", "Beam Rank TRP KPI", ["ExactMatchPercent"], None, "plot_heatmap_beam_rank")
         self.png_hist_or_line("reports/image/heatmap_impairment_kpi.png", "reports/csv/physics_audit_table.csv", "Impairment KPI", ["MetricValue", "Value"], None, "plot_heatmap_impairment")
-        self.png_hist_or_line("reports/image/gains_losses_waterfall.png", "reports/csv/shannon_capacity_gap.csv", "Gains/Losses Waterfall", ["snr_db"], ["gap_pct"], "plot_gains_losses_waterfall")
+        self.png_hist_or_line("reports/image/gains_losses_waterfall.png", "reports/csv/shannon_capacity_gap.csv", "Gains/Losses Waterfall", ["PostEqSINR_dB", "SINR_median_dB"], ["Gap_pct", "gap_pct"], "plot_gains_losses_waterfall")
         self.png_hist_or_line("reports/image/metric_coverage_by_category.png", "reports/csv/output_coverage_registry.csv", "Metric Coverage", ["CoverageFraction", "Implemented"], None, "plot_metric_coverage")
 
     def build_master_dashboard(self) -> None:
@@ -693,9 +693,9 @@ class PlotGenerator:
         self.log(target, "build_master_dashboard", "GENERATED", ["reports/html/*.html"], len(pages))
 
     def run(self) -> None:
-        self.plot_bler_vs_snr()
-        self.plot_throughput_vs_snr()
-        self.plot_nmse_vs_snr()
+        self.plot_bler_vs_measured_sinr()
+        self.plot_throughput_vs_measured_sinr()
+        self.plot_nmse_vs_measured_sinr()
         self.plot_shannon_gap()
         self.plot_control_detection("control/csv/pdcch_false_alarm_sweep.csv", "reports/html/pdcch_detection_vs_snr.html", "PDCCH Detection vs SNR", "plot_pdcch_detection")
         self.plot_access_delay()

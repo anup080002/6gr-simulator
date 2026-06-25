@@ -52,6 +52,8 @@ fprintf("[STAGE] stage_name=lls_runner elapsed=%.3fs\n", toc(stageStart));
 out.Runner = runner;
 out.RunFolder = string(runner.RunFolder);
 
+localAssertOracleFreeSINRMode(runner.Config);
+
 fprintf("[Export] Writing Prompt 9 evidence and audits...\n");
 stageStart = tic;
 exportReport = sixgr.export.exportAllEvidence(runner, runner.Config, out.RunFolder, ...
@@ -92,4 +94,35 @@ out.Status = "complete";
 out.WallTime_s = toc(tStart);
 
 fprintf("\n=== run_true_lls complete: %.0fs wall, ResultOk=%d ===\n", out.WallTime_s, out.Ok);
+end
+
+function localAssertOracleFreeSINRMode(cfg)
+noiseMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ""))));
+oracleFree = logical(sixgr.util.structGet(cfg, "oracle_free_mode", ...
+    sixgr.util.structGet(cfg, "oracleFreeMode", false))) || noiseMode == "receiver_noise_figure_thermal_noise";
+if ~oracleFree
+    return;
+end
+
+snrGrid = sixgr.util.structGet(cfg, "snr_grid_db", []);
+assert(isempty(snrGrid), ...
+    "SINR_GUARD: snr_grid_db must be empty in oracle_free_mode. Remove AWGN injection sweep.");
+snrGrid2 = sixgr.util.structGet(cfg, "SNRGrid", []);
+assert(isempty(snrGrid2), ...
+    "SINR_GUARD: SNRGrid must be empty in oracle_free_mode. Remove AWGN injection sweep.");
+
+distances = sixgr.util.structGet(cfg, "scenario.ue_distances_m", []);
+if isempty(distances)
+    minDist = double(sixgr.util.structGet(cfg, "scenario.ue.minDistanceFromBS_m", ...
+        sixgr.util.structGet(cfg, "scenario.ue.distribution.min_bs_dist_m", NaN)));
+    maxDist = double(sixgr.util.structGet(cfg, "scenario.ue.maxDistanceFromBS_m", ...
+        sixgr.util.structGet(cfg, "scenario.ue.distribution.max_bs_dist_m", NaN)));
+    if isfinite(minDist) && isfinite(maxDist) && maxDist >= minDist
+        distances = [minDist maxDist];
+    end
+end
+assert(~isempty(distances), ...
+    "SINR_GUARD: UE distances must be specified for geometry-driven SINR mode.");
+assert(numel(distances) >= 1, ...
+    "SINR_GUARD: At least 1 UE distance must be specified.");
 end

@@ -135,15 +135,18 @@ yVar = "";
 if any(requiredColumns == "XValue") && any(requiredColumns == "YValue")
     xVar = "XValue";
     yVar = "YValue";
-elseif any(requiredColumns == "snr_db") && plotId == "bler_vs_snr"
-    xVar = "snr_db";
-    yVar = "bler";
-elseif any(requiredColumns == "snr_db") && plotId == "throughput_vs_snr"
-    xVar = "snr_db";
-    yVar = "throughput_mbps";
+elseif any(requiredColumns == "PostEqSINR_dB_BinCenter") && plotId == "bler_vs_measured_sinr"
+    xVar = "PostEqSINR_dB_BinCenter";
+    yVar = "BLER";
+elseif any(requiredColumns == "PostEqSINR_dB_BinCenter") && plotId == "throughput_vs_measured_sinr"
+    xVar = "PostEqSINR_dB_BinCenter";
+    yVar = "Goodput_Mbps_mean";
 elseif any(requiredColumns == "BinCenterPostEqSINR_dB") && any(requiredColumns == "BLER")
     xVar = "BinCenterPostEqSINR_dB";
     yVar = "BLER";
+elseif any(requiredColumns == "PostEqSINR_dB") && any(requiredColumns == "MetricValue")
+    xVar = "PostEqSINR_dB";
+    yVar = "MetricValue";
 elseif plotId == "prach_correlation_traces" && any(requiredColumns == "lag_samples") && any(requiredColumns == "correlation_abs")
     xVar = "lag_samples";
     yVar = "correlation_abs";

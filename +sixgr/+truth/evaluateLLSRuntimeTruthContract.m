@@ -496,6 +496,11 @@ for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
 end
 
+[measuredSINRStats, measuredSINRFailures] = localMeasuredSINREvidenceStats(layout, strictTruthRequired, isControlOnly);
+for ii = 1:numel(measuredSINRFailures)
+    verdict = localAddFailure(verdict, measuredSINRFailures(ii), "evidence");
+end
+
 verdict.CheckDetails = struct( ...
     "RawLifecycle", rawLifecycleStats, ...
     "FER", ferStats, ...
@@ -511,6 +516,7 @@ verdict.CheckDetails = struct( ...
     "SRS", srsStats, ...
     "ChannelRF", channelRFStats, ...
     "PDSCHObjective", pdschObjectiveStats, ...
+    "MeasuredSINR", measuredSINRStats, ...
     "ScenarioObjective", scenarioObjectiveStats);
 
 rootStatus = sixgr.truth.evaluateStrictAnchorStatus(runFolder, scfg, cfg, verdict, dlTrials, ulTrials, opSummary);
@@ -2280,6 +2286,73 @@ else
     catch
         values = strings(0, 1);
     end
+end
+end
+
+function [stats, failures] = localMeasuredSINREvidenceStats(layout, strictTruthRequired, isControlOnly)
+stats = struct( ...
+    "MeasuredSINRRequired", logical(strictTruthRequired) && ~logical(isControlOnly), ...
+    "MeasuredSINRCurveOk", true, ...
+    "DistanceSINREvidenceOk", true, ...
+    "SINRSummaryOk", true, ...
+    "DLBinsWithAtLeast5Trials", NaN, ...
+    "DistanceRows", NaN, ...
+    "UEsWithDistanceRows", NaN, ...
+    "SummaryRows", NaN, ...
+    "FailureReason", "");
+failures = strings(0, 1);
+if ~stats.MeasuredSINRRequired
+    return;
+end
+
+curvePath = fullfile(layout.AirInterfaceCSVDir, "dl_measured_sinr_bler_curve.csv");
+curveT = localReadTable(curvePath);
+if isempty(curveT) || height(curveT) == 0 || ~localHasColumn(curveT, "UEIndex") || ~localHasColumn(curveT, "TrialCount")
+    stats.MeasuredSINRCurveOk = false;
+    failures(end+1, 1) = "measured_sinr_curve_missing_or_empty:dl_measured_sinr_bler_curve"; %#ok<AGROW>
+else
+    ue = localColumnNumeric(curveT, "UEIndex");
+    trials = localColumnNumeric(curveT, "TrialCount");
+    agg = isnan(ue);
+    stats.DLBinsWithAtLeast5Trials = sum(agg & trials >= 5);
+    stats.MeasuredSINRCurveOk = stats.DLBinsWithAtLeast5Trials >= 1;
+    if ~stats.MeasuredSINRCurveOk
+        failures(end+1, 1) = "measured_sinr_curve_no_aggregate_dl_bin_with_min_trials"; %#ok<AGROW>
+    end
+end
+
+distancePath = fullfile(layout.AirInterfaceCSVDir, "distance_vs_sinr.csv");
+distT = localReadTable(distancePath);
+if isempty(distT) || height(distT) == 0 || ~localHasColumn(distT, "UEIndex") || ~localHasColumn(distT, "PropagationDistance_m")
+    stats.DistanceSINREvidenceOk = false;
+    failures(end+1, 1) = "distance_vs_sinr_missing_or_empty"; %#ok<AGROW>
+else
+    distance = localColumnNumeric(distT, "PropagationDistance_m");
+    ue = localColumnNumeric(distT, "UEIndex");
+    valid = isfinite(distance) & isfinite(ue);
+    stats.DistanceRows = sum(valid);
+    stats.UEsWithDistanceRows = numel(unique(ue(valid)));
+    stats.DistanceSINREvidenceOk = stats.DistanceRows >= 1 && stats.UEsWithDistanceRows >= 1;
+    if ~stats.DistanceSINREvidenceOk
+        failures(end+1, 1) = "distance_vs_sinr_no_valid_ue_distance_rows"; %#ok<AGROW>
+    end
+end
+
+summaryPath = fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv");
+summaryT = localReadTable(summaryPath);
+if isempty(summaryT) || height(summaryT) == 0 || ~localHasColumn(summaryT, "SINR_median_dB")
+    stats.SINRSummaryOk = false;
+    failures(end+1, 1) = "lls_measured_sinr_summary_missing_or_empty"; %#ok<AGROW>
+else
+    med = localColumnNumeric(summaryT, "SINR_median_dB");
+    stats.SummaryRows = height(summaryT);
+    stats.SINRSummaryOk = all(isfinite(med));
+    if ~stats.SINRSummaryOk
+        failures(end+1, 1) = "lls_measured_sinr_summary_has_nan_median_sinr"; %#ok<AGROW>
+    end
+end
+if ~isempty(failures)
+    stats.FailureReason = strjoin(failures, ";");
 end
 end
 

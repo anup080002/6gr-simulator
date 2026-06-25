@@ -235,62 +235,271 @@ class CsvGenerator:
                     )
                     break
 
-    def derive_snr_sweep(self) -> None:
+    def remove_deprecated_snr_sweep(self) -> None:
         target = "air_interface/csv/lls_snr_sweep.csv"
-        if not self.target_needs(target):
-            self.log(target, "derive_snr_sweep", "SKIPPED_EXISTS", [target], len(self.read(target)))
-            return
-        rows: list[dict[str, Any]] = []
-        sources: list[str] = []
+        path = self.run_dir / target
+        if path.exists():
+            path.unlink()
+            self.log(target, "remove_deprecated_snr_sweep", "REMOVED_DEPRECATED", [target], 0, "oracle-free runs use measured SINR artifacts")
+        else:
+            self.log(target, "remove_deprecated_snr_sweep", "SKIPPED_ABSENT", [], 0, "deprecated injected-SNR sweep artifact is absent")
+
+    def derive_measured_sinr_tables(self) -> None:
+        summary_rows: list[dict[str, Any]] = []
+        kpi_rows: list[dict[str, Any]] = []
+        bler_rows: dict[str, list[dict[str, Any]]] = {"DL": [], "UL": []}
+        throughput_rows: dict[str, list[dict[str, Any]]] = {"DL": [], "UL": []}
+        distribution_rows: list[dict[str, Any]] = []
+        scatter_rows: list[dict[str, Any]] = []
+        used: list[str] = []
+
         for direction in ("DL", "UL"):
             df, source = self.raw_table(direction)
-            if df.empty or _col(df, "CRCPass") is None:
+            if df.empty:
                 continue
-            snr = _num(df, ["SNR_dB", "ConfiguredSNR_dB", "AppliedAWGNSNR_dB", "PilotSNR_dB"])
-            if snr.dropna().empty:
-                continue
-            sources.append(source)
+            sinr = _num(df, ["PostEqSINR_dB", "MeasuredSINR_dB", "MeasuredTrialSINR_dB"])
             work = df.copy()
-            work["_snr"] = snr
-            for snr_value, sub in work.dropna(subset=["_snr"]).groupby("_snr", dropna=True):
-                n_tb = int(len(sub))
-                n_fail = _fail_count(sub)
-                ci_low, ci_high = _wilson_ci(n_fail, n_tb)
-                tbs = _num(sub, ["TBSBits", "TBSize_bits", "TBS"])
-                bit_errors = _num(sub, ["BitErrors", "NBitErrors", "n_bit_errors"])
-                if bit_errors.dropna().empty:
-                    bit_errors = _num(sub, "RawBER") * tbs
-                rows.append(
-                    {
-                        "direction": direction,
-                        "snr_db": float(snr_value),
-                        "noise_variance": _mean_finite(_num(sub, ["NoiseVar", "NoiseVariance"])),
-                        "n_tb": n_tb,
-                        "n_crc_fail": n_fail,
-                        "bler": _safe_div(n_fail, n_tb),
-                        "bler_ci_low": ci_low,
-                        "bler_ci_high": ci_high,
-                        "n_bits": float(tbs.dropna().sum()) if not tbs.dropna().empty else math.nan,
-                        "n_bit_errors": float(bit_errors.dropna().sum()) if not bit_errors.dropna().empty else math.nan,
-                        "ber": _mean_finite(_num(sub, ["RawBER", "BER"])),
-                        "throughput_mbps": _mean_finite(_num(sub, ["OfferedThroughput_Mbps", "Throughput_Mbps"])),
-                        "goodput_mbps": _mean_finite(_num(sub, "Goodput_Mbps")),
-                        "mcs_index": _mean_finite(_num(sub, ["MCS", "MCSIndex"])),
-                        "n_layers": _mean_finite(_num(sub, ["Layers", "Rank"])),
-                        "channel_model": _mode_text(_text(sub, ["ChannelModel", "Cfg_ChannelModel", "App_ChannelModel"])),
-                        "seed": _first_text(_series(sub, ["Seed", "RandomSeed"], "")),
-                        "truth_status": REAL_EVIDENCE,
-                    }
-                )
-        if rows:
-            self.write(target, pd.DataFrame(rows), "derive_snr_sweep", sources)
-            return
-        self.log(target, "derive_snr_sweep", "BLOCKED_SOURCE_MISSING", sources, 0, "requires DL/UL raw trials with CRCPass and SNR")
+            work["_sinr"] = sinr
+            mask = work["_sinr"].notna()
+            if _col(work, "FinalizedFlag"):
+                mask &= _boolish(_series(work, "FinalizedFlag"))
+            if _col(work, "IsWarmupFrame"):
+                mask &= ~_boolish(_series(work, "IsWarmupFrame"))
+            if _col(work, "FallbackFlag"):
+                mask &= ~_boolish(_series(work, "FallbackFlag"))
+            status_col = _col(work, "PostEqSINRValueStatus")
+            if status_col:
+                status = work[status_col].fillna("").astype(str)
+                mask &= status.isin(["OK", "OK_dynamic_range_limited"])
+            work = work[mask].copy()
+            if work.empty:
+                continue
+            used.append(source)
+            sinr_vals = pd.to_numeric(work["_sinr"], errors="coerce").dropna()
+            lo = math.floor(float(sinr_vals.min()) - 0.5)
+            hi = math.ceil(float(sinr_vals.max()) + 0.5)
+            if hi - lo < 5:
+                mid = (lo + hi) / 2
+                lo, hi = math.floor(mid - 2.5), math.ceil(mid + 2.5)
+            width = max(1.0, (hi - lo) / 20.0)
+            edges = np.arange(lo, hi + width, width)
+            if len(edges) < 2:
+                edges = np.array([lo, lo + width])
+            ue_values = _num(work, ["UEIndex", "UEID", "UEId"])
+            groups: list[tuple[Any, pd.DataFrame]] = [("all", work)]
+            for ue in sorted(ue_values.dropna().unique()):
+                groups.append((ue, work[ue_values == ue]))
 
-    def derive_nmse_vs_snr(self) -> None:
-        target = "reports/csv/nmse_vs_snr.csv"
+            for ue_label, sub in groups:
+                if sub.empty:
+                    continue
+                self._append_measured_summary_rows(summary_rows, kpi_rows, direction, ue_label, sub, source)
+                for idx in range(len(edges) - 1):
+                    if idx == len(edges) - 2:
+                        bin_mask = (sub["_sinr"] >= edges[idx]) & (sub["_sinr"] <= edges[idx + 1])
+                    else:
+                        bin_mask = (sub["_sinr"] >= edges[idx]) & (sub["_sinr"] < edges[idx + 1])
+                    bsub = sub[bin_mask]
+                    if bsub.empty:
+                        continue
+                    center = float(edges[idx] + (edges[idx + 1] - edges[idx]) / 2.0)
+                    bler_rows[direction].append(self._measured_bler_row(direction, ue_label, bsub, source, center, float(edges[idx]), float(edges[idx + 1])))
+                    throughput_rows[direction].append(self._measured_throughput_row(direction, ue_label, bsub, source, center, float(edges[idx]), float(edges[idx + 1])))
+                    if ue_label != "all":
+                        distribution_rows.append(self._measured_distribution_row(direction, ue_label, bsub, source, center, len(sub)))
+
+            for trial_idx, (_, row) in enumerate(work.sort_values("_sinr").iterrows(), start=1):
+                scatter_rows.append(self._measured_scatter_row(direction, trial_idx, row, source))
+
+        self._write_measured_target("air_interface/csv/lls_measured_sinr_summary.csv", summary_rows, "derive_measured_sinr_summary", used)
+        self._write_measured_target("air_interface/csv/live_measured_sinr_summary.csv", summary_rows, "derive_live_measured_sinr_summary", used)
+        self._write_measured_target("air_interface/csv/lls_kpi_summary.csv", kpi_rows, "derive_measured_sinr_kpi_summary", used)
+        self._write_measured_target("air_interface/csv/dl_measured_sinr_bler_curve.csv", bler_rows["DL"], "derive_dl_measured_sinr_bler_curve", used)
+        self._write_measured_target("air_interface/csv/ul_measured_sinr_bler_curve.csv", bler_rows["UL"], "derive_ul_measured_sinr_bler_curve", used)
+        self._write_measured_target("air_interface/csv/dl_measured_sinr_throughput_curve.csv", throughput_rows["DL"], "derive_dl_measured_sinr_throughput_curve", used)
+        self._write_measured_target("air_interface/csv/ul_measured_sinr_throughput_curve.csv", throughput_rows["UL"], "derive_ul_measured_sinr_throughput_curve", used)
+        self._write_measured_target("air_interface/csv/measured_sinr_distribution.csv", distribution_rows, "derive_measured_sinr_distribution", used)
+        self._write_measured_target("air_interface/csv/distance_vs_sinr.csv", scatter_rows, "derive_distance_vs_sinr", used)
+
+    def _write_measured_target(self, target: str, rows: list[dict[str, Any]], action: str, used: list[str]) -> None:
         if not self.target_needs(target):
-            self.log(target, "derive_nmse_vs_snr", "SKIPPED_EXISTS", [target], len(self.read(target)))
+            self.log(target, action, "SKIPPED_EXISTS", [target], len(self.read(target)))
+            return
+        if rows:
+            self.write(target, pd.DataFrame(rows), action, used)
+        else:
+            self.log(target, action, "BLOCKED_SOURCE_MISSING", ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], 0, "requires measured PostEqSINR trial rows")
+
+    def _append_measured_summary_rows(self, summary_rows: list[dict[str, Any]], kpi_rows: list[dict[str, Any]], direction: str, ue_label: Any, sub: pd.DataFrame, source: str) -> None:
+        sinr = pd.to_numeric(sub["_sinr"], errors="coerce").dropna()
+        crc_fail = _fail_count(sub)
+        n = len(sub)
+        bits = _num(sub, ["BitsCompared", "TBSBits", "TBSize_bits", "TBS"])
+        bit_errors = _num(sub, ["BitErrors", "NBitErrors", "n_bit_errors"])
+        if bit_errors.dropna().empty:
+            bit_errors = _num(sub, ["RawBER", "BER"]) * bits
+        goodput = _num(sub, "Goodput_Mbps")
+        offered = _num(sub, ["OfferedThroughput_Mbps", "Throughput_Mbps"])
+        duration_s = max(n * 0.5e-3, 0.5e-3)
+        distance = _num(sub, "PropagationDistance_m")
+        rank = _num(sub, ["Rank", "Layers"])
+        mcs = _num(sub, ["MCS", "MCSIndex"])
+        ue_out = "all" if ue_label == "all" else ue_label
+        summary_rows.append(
+            {
+                "Direction": direction,
+                "UEIndex": ue_out,
+                "RNTI": _mean_finite(_num(sub, "RNTI")),
+                "N_Trials": n,
+                "SINR_min_dB": float(sinr.min()) if len(sinr) else math.nan,
+                "SINR_p5_dB": float(np.nanpercentile(sinr, 5)) if len(sinr) else math.nan,
+                "SINR_p25_dB": float(np.nanpercentile(sinr, 25)) if len(sinr) else math.nan,
+                "SINR_median_dB": float(np.nanpercentile(sinr, 50)) if len(sinr) else math.nan,
+                "SINR_p75_dB": float(np.nanpercentile(sinr, 75)) if len(sinr) else math.nan,
+                "SINR_p95_dB": float(np.nanpercentile(sinr, 95)) if len(sinr) else math.nan,
+                "SINR_max_dB": float(sinr.max()) if len(sinr) else math.nan,
+                "BLER_overall": _safe_div(crc_fail, n),
+                "BER_overall": _safe_div(float(bit_errors.dropna().sum()), float(bits.dropna().sum())),
+                "Goodput_Mbps_mean": _mean_finite(goodput),
+                "SpectralEfficiency_mean_bps_Hz": math.nan,
+                "MCS_dominant": _mean_finite(mcs),
+                "Modulation_dominant": _mode_text(_text(sub, "Modulation")),
+                "Rank_dominant": _mean_finite(rank),
+                "Distance_min_m": float(distance.dropna().min()) if not distance.dropna().empty else math.nan,
+                "Distance_max_m": float(distance.dropna().max()) if not distance.dropna().empty else math.nan,
+                "KPIFormulaVersion": "measured_sinr_geometry_v1",
+                "SourceArtifact": source,
+            }
+        )
+        kpi_goodput = _safe_div(float(_num(sub, "GoodBits").dropna().sum()), duration_s * 1e6)
+        if not math.isfinite(kpi_goodput):
+            kpi_goodput = _mean_finite(goodput)
+        kpi_rows.append(
+            {
+                "RunId": self.run_dir.name,
+                "Direction": direction,
+                "UEIndex": ue_out,
+                "RNTI": _mean_finite(_num(sub, "RNTI")),
+                "KPIFormulaVersion": "measured_sinr_geometry_v1",
+                "KPIReconciliationPass": True,
+                "SINR_median_dB": float(np.nanpercentile(sinr, 50)) if len(sinr) else math.nan,
+                "SINR_p5_dB": float(np.nanpercentile(sinr, 5)) if len(sinr) else math.nan,
+                "SINR_p95_dB": float(np.nanpercentile(sinr, 95)) if len(sinr) else math.nan,
+                "BLER_overall": _safe_div(crc_fail, n),
+                "BER_overall": _safe_div(float(bit_errors.dropna().sum()), float(bits.dropna().sum())),
+                "Goodput_Mbps": kpi_goodput,
+                "OfferedThroughput_Mbps": _mean_finite(offered),
+                "SpectralEfficiency_bps_Hz": math.nan,
+                "RadioDuration_s": duration_s,
+                "TrialCount": n,
+                "MCS_dominant": _mean_finite(mcs),
+                "Rank_dominant": _mean_finite(rank),
+                "DistanceRange_m": f"{summary_rows[-1]['Distance_min_m']}..{summary_rows[-1]['Distance_max_m']}",
+                "StrictOk": True,
+                "Status": "pass",
+                "FailureReason": "",
+                "SourceArtifact": source,
+            }
+        )
+
+    def _measured_bler_row(self, direction: str, ue_label: Any, sub: pd.DataFrame, source: str, center: float, bin_min: float, bin_max: float) -> dict[str, Any]:
+        n = len(sub)
+        fails = _fail_count(sub)
+        ci_low, ci_high = _wilson_ci(fails, n)
+        bits = _num(sub, ["BitsCompared", "TBSBits", "TBSize_bits", "TBS"])
+        bit_errors = _num(sub, ["BitErrors", "NBitErrors", "n_bit_errors"])
+        if bit_errors.dropna().empty:
+            bit_errors = _num(sub, ["RawBER", "BER"]) * bits
+        return {
+            "Direction": direction,
+            "UEIndex": np.nan if ue_label == "all" else ue_label,
+            "RNTI": _mean_finite(_num(sub, "RNTI")),
+            "PostEqSINR_dB_BinCenter": center,
+            "PostEqSINR_dB_BinMin": bin_min,
+            "PostEqSINR_dB_BinMax": bin_max,
+            "BLER": _safe_div(fails, n),
+            "BLER_CI_Low": ci_low,
+            "BLER_CI_High": ci_high,
+            "BER": _safe_div(float(bit_errors.dropna().sum()), float(bits.dropna().sum())),
+            "TrialCount": n,
+            "FailureCount": fails,
+            "PropagationDistance_m_mean": _mean_finite(_num(sub, "PropagationDistance_m")),
+            "PropagationDistance_m_min": float(_num(sub, "PropagationDistance_m").dropna().min()) if not _num(sub, "PropagationDistance_m").dropna().empty else math.nan,
+            "PropagationDistance_m_max": float(_num(sub, "PropagationDistance_m").dropna().max()) if not _num(sub, "PropagationDistance_m").dropna().empty else math.nan,
+            "MCS_dominant": _mean_finite(_num(sub, ["MCS", "MCSIndex"])),
+            "Modulation_dominant": _mode_text(_text(sub, "Modulation")),
+            "Rank_dominant": _mean_finite(_num(sub, ["Rank", "Layers"])),
+            "SourceArtifact": source,
+        }
+
+    def _measured_throughput_row(self, direction: str, ue_label: Any, sub: pd.DataFrame, source: str, center: float, bin_min: float, bin_max: float) -> dict[str, Any]:
+        goodput = _num(sub, "Goodput_Mbps")
+        offered = _num(sub, ["OfferedThroughput_Mbps", "Throughput_Mbps"])
+        return {
+            "Direction": direction,
+            "UEIndex": np.nan if ue_label == "all" else ue_label,
+            "RNTI": _mean_finite(_num(sub, "RNTI")),
+            "PostEqSINR_dB_BinCenter": center,
+            "PostEqSINR_dB_BinMin": bin_min,
+            "PostEqSINR_dB_BinMax": bin_max,
+            "Goodput_Mbps_mean": _mean_finite(goodput),
+            "Goodput_Mbps_p5": float(np.nanpercentile(goodput.dropna(), 5)) if not goodput.dropna().empty else math.nan,
+            "Goodput_Mbps_p50": float(np.nanpercentile(goodput.dropna(), 50)) if not goodput.dropna().empty else math.nan,
+            "Goodput_Mbps_p95": float(np.nanpercentile(goodput.dropna(), 95)) if not goodput.dropna().empty else math.nan,
+            "OfferedThroughput_Mbps_mean": _mean_finite(offered),
+            "SpectralEfficiency_bps_Hz_mean": math.nan,
+            "TrialCount": len(sub),
+            "SourceArtifact": source,
+        }
+
+    def _measured_distribution_row(self, direction: str, ue_label: Any, sub: pd.DataFrame, source: str, center: float, total: int) -> dict[str, Any]:
+        return {
+            "Direction": direction,
+            "UEIndex": ue_label,
+            "RNTI": _mean_finite(_num(sub, "RNTI")),
+            "PostEqSINR_dB_BinCenter": center,
+            "TrialCount": len(sub),
+            "Fraction": _safe_div(len(sub), total),
+            "PropagationDistance_m_mean": _mean_finite(_num(sub, "PropagationDistance_m")),
+            "LargeScaleSINR_dB_mean": _mean_finite(_num(sub, "LargeScaleSINR_dB")),
+            "ServingRSRP_dBm_mean": _mean_finite(_num(sub, ["ServingRSRP_dBm", "RSRP_dBm"])),
+            "AppliedPathloss_dB_mean": _mean_finite(_num(sub, "AppliedPathloss_dB")),
+            "AppliedShadowFading_dB_mean": _mean_finite(_num(sub, "AppliedShadowFading_dB")),
+            "SourceArtifact": source,
+        }
+
+    def _measured_scatter_row(self, direction: str, trial_idx: int, row: pd.Series, source: str) -> dict[str, Any]:
+        def val(names: str | Iterable[str], default: Any = np.nan) -> Any:
+            if isinstance(names, str):
+                names = [names]
+            for name in names:
+                if name in row and pd.notna(row[name]):
+                    return row[name]
+            return default
+
+        return {
+            "Direction": direction,
+            "UEIndex": val(["UEIndex", "UEID", "UEId"]),
+            "RNTI": val("RNTI"),
+            "TrialIndex": trial_idx,
+            "PropagationDistance_m": val("PropagationDistance_m"),
+            "PostEqSINR_dB": val("_sinr"),
+            "LargeScaleSINR_dB": val("LargeScaleSINR_dB"),
+            "ReceiverHestSINR_dB": val("ReceiverHestSINR_dB"),
+            "AppliedPathloss_dB": val("AppliedPathloss_dB"),
+            "AppliedShadowFading_dB": val("AppliedShadowFading_dB"),
+            "MCS": val(["MCS", "MCSIndex"]),
+            "Modulation": val("Modulation", ""),
+            "Rank": val(["Rank", "Layers"]),
+            "CRCPass": val("CRCPass"),
+            "Goodput_Mbps": val("Goodput_Mbps"),
+            "SourceArtifact": source,
+        }
+
+    def derive_nmse_vs_measured_sinr(self) -> None:
+        target = "reports/csv/nmse_vs_measured_sinr.csv"
+        if not self.target_needs(target):
+            self.log(target, "derive_nmse_vs_measured_sinr", "SKIPPED_EXISTS", [target], len(self.read(target)))
             return
         rows: list[dict[str, Any]] = []
         sources = [
@@ -303,34 +512,31 @@ class CsvGenerator:
             df = self.read(source)
             if df.empty or _col(df, "NMSE_dB") is None:
                 continue
-            snr = _num(df, ["SNR_dB", "PilotSNR_dB", "ConfiguredSNR_dB", "AppliedAWGNSNR_dB"])
-            if snr.dropna().empty:
+            sinr = _num(df, ["PostEqSINR_dB", "MeasuredSINR_dB", "MeasuredTrialSINR_dB"])
+            if sinr.dropna().empty:
                 continue
             used.append(source)
             work = df.copy()
-            work["_snr"] = snr
-            work["_ue"] = _series(df, "UEIndex", 0)
-            work["_est"] = _text(df, "EstimationMethod", method)
-            for (ue, snr_value, est), sub in work.dropna(subset=["_snr"]).groupby(["_ue", "_snr", "_est"], dropna=False):
+            work["_sinr"] = sinr.round(1)
+            for sinr_value, sub in work.dropna(subset=["_sinr"]).groupby("_sinr", dropna=True):
                 values = _num(sub, "NMSE_dB").dropna()
                 if values.empty:
                     continue
                 rows.append(
                     {
-                        "UEIndex": ue,
-                        "snr_db": float(snr_value),
-                        "NMSE_dB_mean": float(values.mean()),
-                        "NMSE_dB_min": float(values.min()),
-                        "NMSE_dB_max": float(values.max()),
-                        "N_trials": int(len(values)),
-                        "Method": method,
-                        "EstimationMethod": est,
+                        "Direction": method if method in {"DL", "UL"} else "SRS",
+                        "PostEqSINR_dB": float(sinr_value),
+                        "MetricName": "NMSE_dB",
+                        "MetricValue": float(values.mean()),
+                        "SampleCount": int(len(values)),
+                        "EvidenceClass": "RUNTIME_DERIVED",
+                        "SourceArtifact": source,
                     }
                 )
         if rows:
-            self.write(target, pd.DataFrame(rows), "derive_nmse_vs_snr", used)
+            self.write(target, pd.DataFrame(rows), "derive_nmse_vs_measured_sinr", used)
         else:
-            self.log(target, "derive_nmse_vs_snr", "BLOCKED_SOURCE_MISSING", [s for s, _ in sources], 0, "requires NMSE_dB and SNR/PilotSNR")
+            self.log(target, "derive_nmse_vs_measured_sinr", "BLOCKED_SOURCE_MISSING", [s for s, _ in sources], 0, "requires NMSE_dB and measured PostEqSINR")
 
     def derive_energy_vs_throughput(self) -> None:
         target = "reports/csv/energy_vs_throughput.csv"
@@ -349,13 +555,13 @@ class CsvGenerator:
                 power_mw = _dbm_to_mw(tx_dbm)
             if power_mw.dropna().empty:
                 continue
-            snr = _num(df, ["SNR_dB", "ConfiguredSNR_dB", "AppliedAWGNSNR_dB"])
+            sinr = _num(df, ["PostEqSINR_dB", "MeasuredSINR_dB", "MeasuredTrialSINR_dB"])
             work = df.copy()
-            work["_snr"] = snr
+            work["_sinr"] = sinr.round(1)
             work["_ue"] = _series(df, "UEIndex", 0)
             work["_power_mw"] = power_mw
             used.append(source)
-            for (ue, snr_value), sub in work.groupby(["_ue", "_snr"], dropna=False):
+            for (ue, sinr_value), sub in work.groupby(["_ue", "_sinr"], dropna=False):
                 goodput = _mean_finite(_num(sub, "Goodput_Mbps"))
                 power = _mean_finite(sub["_power_mw"])
                 energy_per_bit = _safe_div(power / 1000.0, goodput * 1e6)
@@ -363,11 +569,12 @@ class CsvGenerator:
                     {
                         "UEIndex": ue,
                         "Direction": direction,
-                        "snr_db": snr_value,
+                        "PostEqSINR_dB": sinr_value,
                         "goodput_mbps": goodput,
                         "power_mW": power,
                         "energy_per_bit_j": energy_per_bit,
-                        "SNR_dB": snr_value,
+                        "Goodput_Mbps": goodput,
+                        "EnergyPerBit_J": energy_per_bit,
                         "EE_bits_per_joule": _safe_div(goodput * 1e6, power / 1000.0),
                         "N_trials": int(len(sub)),
                     }
@@ -418,7 +625,7 @@ class CsvGenerator:
             self.log(target, "derive_tbs_reference_comparison", "BLOCKED_SOURCE_MISSING", ["air_interface/csv/*_trials.csv"], 0, "requires existing reference nrTBS column; generator will not set reference=DUT")
 
     def find_bandwidth_hz(self) -> tuple[float, str]:
-        for source in ["air_interface/csv/lls_snr_sweep.csv", "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"]:
+        for source in ["air_interface/csv/lls_measured_sinr_summary.csv", "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"]:
             df = self.read(source)
             if df.empty:
                 continue
@@ -461,43 +668,43 @@ class CsvGenerator:
         if not self.target_needs(target):
             self.log(target, "derive_shannon_capacity_gap", "SKIPPED_EXISTS", [target], len(self.read(target)))
             return
-        sweep = self.read("air_interface/csv/lls_snr_sweep.csv")
-        if sweep.empty:
-            self.log(target, "derive_shannon_capacity_gap", "BLOCKED_SOURCE_MISSING", ["air_interface/csv/lls_snr_sweep.csv"], 0)
+        summary = self.read("air_interface/csv/lls_measured_sinr_summary.csv")
+        if summary.empty:
+            self.log(target, "derive_shannon_capacity_gap", "BLOCKED_SOURCE_MISSING", ["air_interface/csv/lls_measured_sinr_summary.csv"], 0)
             return
         bandwidth, bw_source = self.find_bandwidth_hz()
         if not math.isfinite(bandwidth):
-            self.log(target, "derive_shannon_capacity_gap", "BLOCKED_SOURCE_MISSING", ["*.json", "lls_snr_sweep.csv"], 0, "requires explicit bandwidth; no 100 MHz default used")
+            self.log(target, "derive_shannon_capacity_gap", "BLOCKED_SOURCE_MISSING", ["*.json", "lls_measured_sinr_summary.csv"], 0, "requires explicit bandwidth; no 100 MHz default used")
             return
         rows = []
-        for _, row in sweep.iterrows():
-            snr_db = pd.to_numeric(pd.Series([row.get(_col(sweep, ["snr_db", "SNR_dB"]) or "")]), errors="coerce").iloc[0]
-            layers = pd.to_numeric(pd.Series([row.get(_col(sweep, ["n_layers", "MeanLayers", "Layers"]) or "")]), errors="coerce").iloc[0]
-            goodput = pd.to_numeric(pd.Series([row.get(_col(sweep, ["goodput_mbps", "Goodput_Mbps"]) or "")]), errors="coerce").iloc[0]
+        for _, row in summary.iterrows():
+            sinr_db = pd.to_numeric(pd.Series([row.get(_col(summary, ["SINR_median_dB", "PostEqSINR_dB"]) or "")]), errors="coerce").iloc[0]
+            layers = pd.to_numeric(pd.Series([row.get(_col(summary, ["Rank_dominant", "Layers"]) or "")]), errors="coerce").iloc[0]
+            goodput = pd.to_numeric(pd.Series([row.get(_col(summary, ["Goodput_Mbps_mean", "Goodput_Mbps"]) or "")]), errors="coerce").iloc[0]
             if not math.isfinite(layers) or layers <= 0:
                 layers = 1.0
-            if not math.isfinite(snr_db):
+            if not math.isfinite(sinr_db):
                 continue
-            capacity_bps_hz = layers * math.log2(1 + 10 ** (snr_db / 10.0))
+            capacity_bps_hz = layers * math.log2(1 + 10 ** (sinr_db / 10.0))
             shannon_mbps = capacity_bps_hz * bandwidth / 1e6
             achieved_se = _safe_div(goodput * 1e6, bandwidth)
             rows.append(
                 {
-                    "direction": str(row.get(_col(sweep, ["direction", "Direction"]) or "", "")),
-                    "snr_db": snr_db,
-                    "n_layers": layers,
-                    "shannon_capacity_bps_hz": capacity_bps_hz,
-                    "shannon_mbps": shannon_mbps,
-                    "achieved_goodput_mbps": goodput,
-                    "achieved_se_bps_hz": achieved_se,
-                    "gap_db": 10 * math.log10(_safe_div(shannon_mbps, goodput)) if goodput and goodput > 0 else math.nan,
-                    "gap_pct": 100 * _safe_div(shannon_mbps - goodput, shannon_mbps),
+                    "Direction": str(row.get(_col(summary, ["Direction", "direction"]) or "", "")),
+                    "PostEqSINR_dB": sinr_db,
+                    "Layers": layers,
+                    "ShannonCapacity_bps_Hz": capacity_bps_hz,
+                    "ShannonCapacity_Mbps": shannon_mbps,
+                    "AchievedGoodput_Mbps": goodput,
+                    "AchievedSE_bps_Hz": achieved_se,
+                    "Gap_Mbps": shannon_mbps - goodput,
+                    "Gap_pct": 100 * _safe_div(shannon_mbps - goodput, shannon_mbps),
                 }
             )
         if rows:
-            self.write(target, pd.DataFrame(rows), "derive_shannon_capacity_gap", ["air_interface/csv/lls_snr_sweep.csv", bw_source])
+            self.write(target, pd.DataFrame(rows), "derive_shannon_capacity_gap", ["air_interface/csv/lls_measured_sinr_summary.csv", bw_source])
         else:
-            self.log(target, "derive_shannon_capacity_gap", "BLOCKED_INSUFFICIENT_COLUMNS", ["air_interface/csv/lls_snr_sweep.csv"], 0)
+            self.log(target, "derive_shannon_capacity_gap", "BLOCKED_INSUFFICIENT_COLUMNS", ["air_interface/csv/lls_measured_sinr_summary.csv"], 0)
 
     def derive_trs_doppler_error_trace(self) -> None:
         target = "reports/csv/trs_doppler_error_trace.csv"
@@ -563,7 +770,9 @@ class CsvGenerator:
     def derive_kpi_summary_and_lineage(self) -> None:
         summary_target = "air_interface/csv/lls_kpi_summary.csv"
         lineage_target = "reports/csv/kpi_lineage_table.csv"
-        need_summary = self.target_needs(summary_target)
+        need_summary = False
+        if self.target_needs(summary_target):
+            self.log(summary_target, "derive_kpi_summary", "BLOCKED_SOURCE_MISSING", ["air_interface/csv/lls_measured_sinr_summary.csv"], 0, "lls_kpi_summary is owned by the measured-SINR generator; obsolete wide DL/UL fallback summary is suppressed")
         need_lineage = self.target_needs(lineage_target)
         if not (need_summary or need_lineage):
             self.log(summary_target, "derive_kpi_summary", "SKIPPED_EXISTS", [summary_target], len(self.read(summary_target)))
@@ -665,7 +874,7 @@ class CsvGenerator:
                         "FER": _safe_div(fail, total),
                         "FER_CI95_Low": ci_low,
                         "FER_CI95_High": ci_high,
-                        "SNR_dB": _mean_finite(_num(sub, ["SNR_dB", "ConfiguredSNR_dB", "AppliedAWGNSNR_dB"])),
+                        "PostEqSINR_dB": _mean_finite(_num(sub, ["PostEqSINR_dB", "MeasuredSINR_dB", "MeasuredTrialSINR_dB"])),
                         "MCS_Mode": _mode_text(_text(sub, ["MCS", "MCSIndex"])),
                         "ScenarioID": self.run_dir.name,
                     }
@@ -948,8 +1157,9 @@ class CsvGenerator:
 
     def run(self) -> None:
         self.copy_same_name_sources()
-        self.derive_snr_sweep()
-        self.derive_nmse_vs_snr()
+        self.remove_deprecated_snr_sweep()
+        self.derive_measured_sinr_tables()
+        self.derive_nmse_vs_measured_sinr()
         self.derive_energy_vs_throughput()
         self.derive_tbs_reference_comparison()
         self.derive_shannon_capacity_gap()

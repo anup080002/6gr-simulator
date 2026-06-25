@@ -38,16 +38,11 @@ for i = 1:numel(art.fig)
     assert(exist(art.fig{i}, "file") == 2, "Missing FIG artifact: %s", art.fig{i});
 end
 assert(exist(fullfile(tmp, "csv", "link_kpis_fallback.csv"), "file") == 2, "Missing fallback link KPI CSV.");
-assert(exist(fullfile(tmp, "csv", "lls_snr_sweep_fallback.csv"), "file") == 2, "Missing fallback SNR sweep status CSV.");
+assert(exist(fullfile(tmp, "csv", "lls_snr_sweep_fallback.csv"), "file") ~= 2, ...
+    "Deprecated fallback SNR sweep status CSV must not be emitted.");
 assert(exist(fullfile(tmp, "csv", "lls_kpi_summary_fallback.csv"), "file") == 2, "Missing fallback summary CSV.");
 assert(exist(fullfile(tmp, "csv", "metric_unit_catalog_fallback.csv"), "file") == 2, ...
     "Missing fallback metric unit catalog CSV.");
-
-sweepFallback = readtable(fullfile(tmp, "csv", "lls_snr_sweep_fallback.csv"), "VariableNamingRule", "preserve");
-assert(ismember("Status", string(sweepFallback.Properties.VariableNames)), ...
-    "Fallback SNR sweep CSV must include a Status sentinel column.");
-assert(any(string(sweepFallback.Status) == "skipped_single_point_run"), ...
-    "Fallback SNR sweep CSV must include skipped_single_point_run sentinel.");
 
 unitT = readtable(fullfile(tmp, "csv", "metric_unit_catalog_fallback.csv"), "VariableNamingRule", "preserve");
 assert(all(ismember(["csv_path","column_name","unit"], string(unitT.Properties.VariableNames))), ...
