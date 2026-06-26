@@ -3031,6 +3031,8 @@ for chunkStart = 1:chunkSize:numel(grants)
         ueIdx = double(chunk(bi).UEIndex);
         runtimeState = sixgr.truth.CoupledTruthRuntime.setCurrentUE(runtimeState, ueIdx, direction);
         userT = localAnnotateGrantDrivenTrials(sixgr.util.structGet(chunk(bi), "TrialTable", table()), chunk(bi).GrantRow);
+        runtimeState = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
+            runtimeState, sixgr.util.structGet(chunk(bi).Result, "ChannelState", struct()));
         runtimeState = sixgr.truth.CoupledTruthRuntime.commitGrantExecution(runtimeState, ueIdx, direction, chunk(bi).GrantSnapshot);
         [runtimeState, userT] = localCompleteCoupledRuntimeSlot(runtimeState, chunk(bi).Cfg, ueIdx, direction, userT, chunk(bi).Result);
         primaryTrials = localAppendCompatTable(primaryTrials, userT);
@@ -3207,9 +3209,19 @@ tf = logical(sixgr.util.structGet(cfg, "run.useParallel", false)) && ...
 if ~tf
     return;
 end
+if any(arrayfun(@localPlanHasRuntimeChannelState, batch(:)))
+    tf = false;
+    return;
+end
 ueIdx = arrayfun(@(b) double(sixgr.util.structGet(b, "UEIndex", NaN)), batch(:));
 ueIdx = ueIdx(isfinite(ueIdx));
 tf = numel(unique(ueIdx)) == numel(ueIdx);
+end
+
+function tf = localPlanHasRuntimeChannelState(plan)
+trialContext = sixgr.util.structGet(plan, "TrialContext", struct());
+chState = sixgr.util.structGet(trialContext, "ChannelState", struct());
+tf = isstruct(chState) && isfield(chState, "ContractVersion");
 end
 
 function plan = localExecuteCoupledGrantBatchPlan(plan, runtimeState, resolvedGrantCache, multiUser, direction, snr_dB, absoluteFrame, interferenceCacheKey)
@@ -3252,7 +3264,7 @@ out = struct();
 if ~(isstruct(res) && ~isempty(fieldnames(res)))
     return;
 end
-keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", ...
+keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", ...
     "Throughput_Mbps", "Goodput_Mbps", "BLER", "BER", "Ok", "Notes"];
 for i = 1:numel(keepFields)
     f = char(keepFields(i));
@@ -3335,6 +3347,10 @@ if isRetx
     grant = localResolveRetransmissionGrantSnapshot(cfgIn, direction, grant, replayBits);
 else
     grant = localResolveStrictGrantSnapshot(cfgIn, direction, grant, queueBitsUpper);
+    grant = localClearFrozenPHYGrantSnapshot(grant);
+    if isfield(trialContext, "PHYGrant")
+        trialContext = rmfield(trialContext, "PHYGrant");
+    end
 end
 trialContext.GrantSnapshot = grant;
 resolvedBits = double(sixgr.util.structGet(grant, "TransportBlockSize", sixgr.util.structGet(grant, "TBSBits", NaN)));
@@ -3343,6 +3359,19 @@ if ~isRetx
         ~(isfinite(resolvedBits) && resolvedBits > 0 && numel(trialContext.TransportBlockBits) == round(resolvedBits));
     if needNewTB && isfinite(resolvedBits) && resolvedBits > 0
         trialContext.TransportBlockBits = localGenerateGrantTransportBlockBits(cfgIn, grant, direction, round(resolvedBits));
+    end
+end
+end
+
+function grant = localClearFrozenPHYGrantSnapshot(grant)
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+dropFields = ["PHYGrant", "PHYGrantContextId"];
+for i = 1:numel(dropFields)
+    f = char(dropFields(i));
+    if isfield(grant, f)
+        grant = rmfield(grant, f);
     end
 end
 end
@@ -3438,6 +3467,9 @@ if isfield(stateOut, "PLModel")
 end
 if isfield(stateOut, "MobilityModel")
     stateOut.MobilityModel = [];
+end
+if isfield(stateOut, "RuntimeChannelStates")
+    stateOut.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
 end
 end
 
@@ -4428,6 +4460,14 @@ else
     if precActive && isempty(precMatrix)
         precMatrix = localAdaptDLPrecodingMatrix(rawPrecodingMatrix, double(pdsch.NumLayers));
     end
+    if precActive && ~isempty(precMatrix)
+        precMatrix = localAdaptDLPrecodingMatrix(precMatrix, double(pdsch.NumLayers));
+        if isempty(precMatrix)
+            error("sixgr:truth:BadGrantDLPrecodingMatrix", ...
+                "DL grant hydration could not resolve a %d-layer precoder from the configured/grant matrix.", ...
+                round(double(pdsch.NumLayers)));
+        end
+    end
     numTxAnt = double(sixgr.util.structGet(cfgGrant, "phy.nTxAnt", NaN));
     if isfinite(numTxAnt)
         numTxAnt = max(numTxAnt, localPrecodingPortCount(precMatrix, double(pdsch.NumLayers)));
@@ -4459,10 +4499,17 @@ else
     grant.AppliedPrecoderPMI = double(sixgr.util.structGet(prec, "PMI", NaN));
     grant.AppliedPrecoderPMIType = char(string(sixgr.util.structGet(prec, "PMIType", "")));
     grant.AppliedPrecoderCodebookMode = char(string(sixgr.util.structGet(prec, "CodebookMode", "")));
-    grant.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
-    grant.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
-    grant.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", NaN));
-    grant.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", NaN));
+    if ~isempty(precMatrix)
+        grant.PrecodingNumPorts = double(size(precMatrix, 1));
+        grant.PrecodingNumLayers = double(size(precMatrix, 2));
+        grant.PrecodingMatrixRows = double(size(precMatrix, 1));
+        grant.PrecodingMatrixCols = double(size(precMatrix, 2));
+    else
+        grant.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
+        grant.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
+        grant.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", NaN));
+        grant.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", NaN));
+    end
     grant.ReplayPRBOffset = double(sixgr.util.structGet(cfgGrant, "system.waveform.replayPRBOffset", 0));
     grant.ReplayGridMode = char(string(sixgr.util.structGet(cfgGrant, "system.waveform.replayGridMode", "")));
 end

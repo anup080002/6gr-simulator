@@ -21,7 +21,7 @@ if nargin < 3 || ~isstruct(grant)
 end
 
 existing = sixgr.util.structGet(grant, "PHYGrant", struct());
-if localIsFrozenPHYGrant(existing)
+if localIsFrozenPHYGrant(existing) && localFrozenPHYGrantHasConsistentDimensions(existing)
     sixgr.phy.grant.assertPHYGrantDimensions(existing, "reuse_existing_phygrant");
     phyGrant = existing;
     return;
@@ -181,6 +181,31 @@ tf = isstruct(value) && ~isempty(fieldnames(value)) && ...
     isfield(value, "PrecodingState");
 end
 
+function tf = localFrozenPHYGrantHasConsistentDimensions(value)
+tf = false;
+if ~localIsFrozenPHYGrant(value)
+    return;
+end
+ant = sixgr.util.structGet(value, "AntennaArchitecture", struct());
+coding = sixgr.util.structGet(value, "CodingLayout", struct());
+prec = sixgr.util.structGet(value, "PrecodingState", struct());
+numPorts = round(double(sixgr.util.structGet(ant, "NumLogicalPorts", NaN)));
+numLayers = round(double(sixgr.util.structGet(coding, "NumLayers", ...
+    sixgr.util.structGet(ant, "NumLayers", NaN))));
+W = sixgr.util.structGet(prec, "MatrixPorts", sixgr.util.structGet(prec, "Matrix", []));
+if isempty(W) || ~isnumeric(W)
+    return;
+end
+if ndims(W) > 2 && size(W, 3) == 1
+    W = squeeze(W);
+end
+if ~ismatrix(W)
+    return;
+end
+tf = isfinite(numPorts) && isfinite(numLayers) && numPorts >= numLayers && ...
+    size(W, 1) == numPorts && size(W, 2) == numLayers;
+end
+
 function prbSet = localResolvePRBSet(cfg, grant, root)
 prbSet = sixgr.util.structGet(grant, "PRBSet", []);
 if isempty(prbSet)
@@ -297,14 +322,21 @@ else
         sixgr.util.structGet(cfg, "channel.nRxAnt", []), ...
         sixgr.util.structGet(cfg, "phy.nRxAnt", []), numLayers), numLayers);
     logicalPorts = localPositiveInteger(localFirstFiniteScalar( ...
+        localMatrixPortCount(wRaw, numLayers), ...
         sixgr.util.structGet(grant, "NumLogicalPorts", []), ...
         sixgr.util.structGet(grant, "PortCount", []), ...
         sixgr.util.structGet(grant, "PrecodingNumPorts", []), ...
         sixgr.util.structGet(cfg, "phy.pdsch.numPorts", []), ...
-        sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []), ...
-        localMatrixPortCount(wRaw, numLayers), numLayers), numLayers);
+        sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []), numLayers), numLayers);
     logicalPorts = min(max(logicalPorts, numLayers), max(numElements, numLayers));
+    matrixPortCount = localMatrixPortCount(wRaw, numLayers);
+    if isfinite(matrixPortCount) && matrixPortCount >= numLayers
+        logicalPorts = max(numLayers, round(double(matrixPortCount)));
+    end
     matrixPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
+    if ~isempty(wRaw)
+        logicalPorts = size(matrixPorts, 1);
+    end
     numWaveformColumns = logicalPorts;
     active = logicalPorts > 1 || numLayers > 1 || ~isempty(wRaw);
     mode = localFirstNonempty(sixgr.util.structGet(grant, "PrecodingMode", ""), ...
@@ -370,15 +402,12 @@ if size(Wraw, 2) == nLayers
     W = Wraw;
 elseif size(Wraw, 1) == nLayers
     W = Wraw.';
+elseif size(Wraw, 2) > nLayers && size(Wraw, 1) >= nLayers
+    W = Wraw(:, 1:nLayers);
 else
     error("sixgr:phy:grant:BadPrecodingMatrix", ...
         "DL precoding matrix must be Nports-by-Nlayers or transpose. Got %dx%d for %d layer(s).", ...
         size(Wraw, 1), size(Wraw, 2), nLayers);
-end
-if size(W, 1) ~= nPorts
-    error("sixgr:phy:grant:PrecodingPortMismatch", ...
-        "DL frozen logical-port count is %d but PrecodingState.Matrix has %d row(s).", ...
-        nPorts, size(W, 1));
 end
 end
 

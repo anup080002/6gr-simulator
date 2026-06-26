@@ -143,6 +143,7 @@ methods(Static)
         state.SRSInvalidEventCount = zeros(nUsers, 1);
         state.PUCCHChannelStateByUE = cell(nUsers, 1);
         state.SRSChannelStateByUE = cell(nUsers, 1);
+        state.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
         state.SchedulingOpportunitiesBlockedByGatingCount = zeros(nUsers, 1);
         state.GrantsBlockedByGatingCount = zeros(nUsers, 1);
         state.ServingTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyServingRow(), 0, 1));
@@ -222,6 +223,10 @@ methods(Static)
 
     function [state, context, grantRow] = buildTrialContextFromGrant(state, cfg, ueIdx, direction, grant)
         [state, context, grantRow] = sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrantImpl(state, cfg, ueIdx, direction, grant);
+    end
+
+    function state = commitRuntimeChannelState(state, channelState)
+        state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelStateImpl(state, channelState);
     end
 
     function state = commitGrantExecution(state, ueIdx, direction, grant)
@@ -535,6 +540,7 @@ methods(Static, Access=private)
         end
         userMeta = sixgr.util.structGet(cfgU, "lls6g.userContext", struct());
         userMeta.RuntimeServingCell = servingCell;
+        userMeta.RuntimeUEIndex = double(ueIdx);
         userMeta.RuntimeServingSite = double(state.Layout.bs.siteId(servingCell));
         userMeta.RuntimeServingSector = double(state.Layout.bs.sectorId(servingCell));
         userMeta.RuntimeServingBeamIndex = double(state.LargeScaleState.BeamIndex(ueIdx, servingCell));
@@ -914,12 +920,99 @@ methods(Static, Access=private)
             context.ExpectedUCIBits = int8(expectedUCI(:));
             context.HARQContext.ExpectedUCIBits = int8(expectedUCI(:));
         end
+        [state, context] = sixgr.truth.CoupledTruthRuntime.attachRuntimeChannelStateToGrantContext(state, cfg, ueIdx, direction, context);
         grantRow = sixgr.truth.CoupledTruthRuntime.buildGrantTraceRow( ...
             sixgr.util.structGet(context, "GrantSnapshot", grant), direction, ...
             sixgr.util.structGet(sixgr.util.structGet(context, "GrantSnapshot", grant), "Slot", state.CurrentSlot), ...
             sixgr.util.structGet(sixgr.util.structGet(context, "GrantSnapshot", grant), "Frame", state.CurrentFrame), ...
             ueIdx, ...
             sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction));
+    end
+
+    function [state, context] = attachRuntimeChannelStateToGrantContext(state, cfg, ueIdx, direction, context)
+        if ~(isstruct(context) && isstruct(sixgr.util.structGet(context, "GrantSnapshot", struct())))
+            return;
+        end
+        if ~sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
+            return;
+        end
+        direction = upper(string(direction));
+        grant = sixgr.util.structGet(context, "GrantSnapshot", struct());
+        servingCell = double(sixgr.util.structGet(grant, "ServingCell", ...
+            sixgr.truth.CoupledTruthRuntime.currentServingCellForUE(state, ueIdx)));
+        if ~(isfinite(servingCell) && servingCell >= 1)
+            servingCell = 1;
+        end
+        linkKey = sixgr.channel.ChannelFactory.runtimeChannelKey(cfg, direction, ...
+            "UEIndex", ueIdx, "ServingCell", servingCell);
+        [state, chState] = sixgr.truth.CoupledTruthRuntime.resolveRuntimeChannelState(state, cfg, direction, linkKey, ueIdx, servingCell);
+        slotStartTime_s = max(0, double(sixgr.util.structGet(state, "CurrentSlot", 1)) - 1) * ...
+            double(sixgr.util.structGet(state, "SlotDuration_s", sixgr.truth.CoupledTruthRuntime.slotDuration(cfg)));
+        chState.TargetSlotStartTime_s = double(slotStartTime_s);
+        chState.TargetSlot = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+        chState.TargetFrame = double(sixgr.util.structGet(state, "CurrentFrame", NaN));
+        chState.TargetUEIndex = double(ueIdx);
+        chState.TargetServingCell = double(servingCell);
+        chState.Direction = char(direction);
+
+        grant.RuntimeChannelLinkKey = char(linkKey);
+        grant.RuntimeChannelSeed = double(chState.Seed);
+        grant.RuntimeChannelStateContract = char(string(chState.ContractVersion));
+        grant.GrantWorkerSafe = false;
+        grant.GrantSharedStateCommitMode = "serial_runtime_channel_state_commit";
+        context.GrantSnapshot = grant;
+        context.ChannelState = chState;
+        context.RuntimeChannelLinkKey = char(linkKey);
+        context.AbsoluteSampleTime_s = double(slotStartTime_s);
+        context.HARQContext.ChannelStateKey = char(linkKey);
+        context.HARQContext.RuntimeChannelSeed = double(chState.Seed);
+    end
+
+    function [state, chState] = resolveRuntimeChannelState(state, cfg, direction, linkKey, ueIdx, servingCell)
+        if ~isfield(state, "RuntimeChannelStates") || ~isstruct(state.RuntimeChannelStates)
+            state.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
+        end
+        idx = sixgr.truth.CoupledTruthRuntime.findRuntimeChannelStateIndex(state, linkKey);
+        if isfinite(idx)
+            chState = state.RuntimeChannelStates(idx);
+            return;
+        end
+        seed = sixgr.channel.ChannelFactory.runtimeChannelSeed(cfg, linkKey);
+        chState = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
+            "LinkKey", linkKey, "Seed", seed, "UEIndex", ueIdx, "ServingCell", servingCell);
+        state.RuntimeChannelStates(end + 1, 1) = chState;
+    end
+
+    function state = commitRuntimeChannelStateImpl(state, channelState)
+        if ~(isstruct(channelState) && isfield(channelState, "ContractVersion"))
+            return;
+        end
+        linkKey = char(string(sixgr.util.structGet(channelState, "LinkKey", "")));
+        if strlength(strtrim(string(linkKey))) == 0
+            return;
+        end
+        if ~isfield(state, "RuntimeChannelStates") || ~isstruct(state.RuntimeChannelStates)
+            state.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
+        end
+        idx = sixgr.truth.CoupledTruthRuntime.findRuntimeChannelStateIndex(state, linkKey);
+        if isfinite(idx)
+            state.RuntimeChannelStates(idx) = channelState;
+        else
+            state.RuntimeChannelStates(end + 1, 1) = channelState;
+        end
+    end
+
+    function idx = findRuntimeChannelStateIndex(state, linkKey)
+        idx = NaN;
+        states = sixgr.util.structGet(state, "RuntimeChannelStates", repmat(struct(), 0, 1));
+        if ~(isstruct(states) && ~isempty(states))
+            return;
+        end
+        keys = arrayfun(@(s) string(sixgr.util.structGet(s, "LinkKey", "")), states(:));
+        hit = find(keys == string(linkKey), 1, "first");
+        if ~isempty(hit)
+            idx = double(hit);
+        end
     end
 
     function state = writeTablesImpl(state, runFolder)

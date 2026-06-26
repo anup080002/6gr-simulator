@@ -330,9 +330,438 @@ classdef ChannelFactory
             end
             metaOut = ch.Meta;
         end
+
+        function tf = requiresRuntimeChannelState(cfg)
+            modelRaw = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", ...
+                sixgr.util.structGet(cfg, "channel.type", "AWGN")))));
+            awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+            tf = ~awgnOnly && (startsWith(modelRaw, "TDL") || startsWith(modelRaw, "CDL") || ...
+                any(modelRaw == ["NRTDL","NRCDL"]));
+        end
+
+        function key = runtimeChannelKey(cfg, direction, varargin)
+            ip = inputParser;
+            ip.addParameter("UEIndex", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("ServingCell", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("CarrierKey", "", @(x) ischar(x) || isstring(x));
+            ip.parse(varargin{:});
+            opt = ip.Results;
+
+            direction = upper(strtrim(string(direction)));
+            if direction ~= "UL"
+                direction = "DL";
+            end
+            ueIdx = double(opt.UEIndex);
+            if ~(isfinite(ueIdx) && ueIdx >= 1)
+                ueIdx = double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeUEIndex", ...
+                    sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", 1)));
+            end
+            servingCell = double(opt.ServingCell);
+            if ~(isfinite(servingCell) && servingCell >= 1)
+                servingCell = double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingCell", ...
+                    sixgr.util.structGet(cfg, "cell.id", 1)));
+            end
+            carrierKey = string(opt.CarrierKey);
+            if strlength(strtrim(carrierKey)) == 0
+                nSize = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
+                scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN));
+                fc = double(sixgr.util.structGet(cfg, "phy.fc_Hz", sixgr.util.structGet(cfg, "carrier.fc_Hz", NaN)));
+                carrierKey = "nrb=" + string(nSize) + ":scs=" + string(scs) + ":fc=" + string(fc);
+            end
+            if direction == "UL"
+                txEntity = "UE" + string(round(ueIdx));
+                rxEntity = "gNB" + string(round(servingCell));
+            else
+                txEntity = "gNB" + string(round(servingCell));
+                rxEntity = "UE" + string(round(ueIdx));
+            end
+            key = char("dir=" + direction + ";tx=" + txEntity + ";rx=" + rxEntity + ";carrier=" + carrierKey);
+        end
+
+        function seed = runtimeChannelSeed(cfg, linkKey)
+            baseSeed = double(sixgr.util.structGet(cfg, "channel.seed", ...
+                sixgr.util.structGet(cfg, "run.seed", 1)));
+            if ~(isfinite(baseSeed) && baseSeed >= 0)
+                baseSeed = 1;
+            end
+            seed = mod(round(baseSeed) * 1664525 + sixgr.channel.ChannelFactory.localStringHash(linkKey) + 1013904223, 2^31 - 1);
+            if ~(isfinite(seed) && seed >= 1)
+                seed = 1;
+            end
+        end
+
+        function state = emptyRuntimeChannelState()
+            state = struct( ...
+                "ContractVersion", "sixgr.channel.RuntimeChannelState/v1", ...
+                "LinkKey", "", ...
+                "Direction", "", ...
+                "Seed", NaN, ...
+                "Initialized", false, ...
+                "Materialized", false, ...
+                "UseFading", false, ...
+                "Obj", [], ...
+                "Meta", struct(), ...
+                "SampleRate_Hz", NaN, ...
+                "NumTxAnt", NaN, ...
+                "NumRxAnt", NaN, ...
+                "ChannelPadSamples", 0, ...
+                "ChannelTrimSamples", 0, ...
+                "WarmupSamples", 0, ...
+                "ResetCount", 0, ...
+                "ResetPolicy", "drop_seed_boundary_only", ...
+                "CreatedBy", "sixgr.channel.ChannelFactory.createRuntimeChannelState", ...
+                "CurrentSampleIndex", 0, ...
+                "CurrentTime_s", 0, ...
+                "PendingIdleSamples", 0, ...
+                "TotalAppliedSamples", 0, ...
+                "TotalIdleAdvancedSamples", 0, ...
+                "TotalObjectInputSamples", 0, ...
+                "LastApplyStartSample", NaN, ...
+                "LastApplyEndSample", NaN, ...
+                "LastIdleAdvancedSamples", 0, ...
+                "TargetSlotStartTime_s", NaN, ...
+                "TargetSlot", NaN, ...
+                "TargetFrame", NaN, ...
+                "TargetUEIndex", NaN, ...
+                "TargetServingCell", NaN, ...
+                "LastPathGainsAvailable", false);
+        end
+
+        function state = createRuntimeChannelState(cfg, direction, varargin)
+            ip = inputParser;
+            ip.addParameter("LinkKey", "", @(x) ischar(x) || isstring(x));
+            ip.addParameter("Seed", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("UEIndex", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("ServingCell", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("CarrierKey", "", @(x) ischar(x) || isstring(x));
+            ip.addParameter("AbsoluteSampleIndex", 0, @(x) isnumeric(x) && isscalar(x));
+            ip.parse(varargin{:});
+            opt = ip.Results;
+
+            key = string(opt.LinkKey);
+            if strlength(strtrim(key)) == 0
+                key = string(sixgr.channel.ChannelFactory.runtimeChannelKey(cfg, direction, ...
+                    "UEIndex", opt.UEIndex, "ServingCell", opt.ServingCell, "CarrierKey", opt.CarrierKey));
+            end
+            seed = double(opt.Seed);
+            if ~(isfinite(seed) && seed >= 0)
+                seed = sixgr.channel.ChannelFactory.runtimeChannelSeed(cfg, key);
+            end
+            state = sixgr.channel.ChannelFactory.emptyRuntimeChannelState();
+            state.LinkKey = char(key);
+            state.Direction = char(upper(string(direction)));
+            state.Seed = double(seed);
+            state.Initialized = true;
+            state.CurrentSampleIndex = max(0, round(double(opt.AbsoluteSampleIndex)));
+            state.CurrentTime_s = 0;
+        end
+
+        function state = materializeRuntimeChannelState(state, cfg, waveform, txInfo, varargin)
+            if nargin < 2 || ~isstruct(cfg)
+                cfg = struct();
+            end
+            if nargin < 3
+                waveform = [];
+            end
+            if nargin < 4 || ~isstruct(txInfo)
+                txInfo = struct();
+            end
+            if ~(isstruct(state) && isfield(state, "ContractVersion"))
+                state = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, "DL");
+            end
+            if logical(sixgr.util.structGet(state, "Materialized", false))
+                expectedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
+                if ~isempty(waveform) && isfinite(expectedTx) && expectedTx >= 1 && size(waveform, 2) ~= round(expectedTx)
+                    error("ChannelFactory:RuntimeChannelDimensionChange", ...
+                        "Runtime channel '%s' was materialized for %d Tx port(s), but this grant has %d waveform column(s).", ...
+                        char(string(sixgr.util.structGet(state, "LinkKey", ""))), round(expectedTx), size(waveform, 2));
+                end
+                return;
+            end
+
+            ip = inputParser;
+            ip.addParameter("NumTxAnt", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("NumRxAnt", NaN, @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("TransmitAntennaRuntime", struct(), @(x) isempty(x) || isstruct(x));
+            ip.addParameter("ReceiveAntennaRuntime", struct(), @(x) isempty(x) || isstruct(x));
+            ip.addParameter("TransmitAntennaMeta", struct(), @(x) isempty(x) || isstruct(x));
+            ip.addParameter("ReceiveAntennaMeta", struct(), @(x) isempty(x) || isstruct(x));
+            ip.parse(varargin{:});
+            opt = ip.Results;
+
+            modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
+            awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+            if awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF"
+                state.Materialized = true;
+                state.UseFading = false;
+                return;
+            end
+
+            cfgCh = cfg;
+            dopp = double(sixgr.util.structGet(cfgCh, "channel.doppler_Hz", ...
+                sixgr.util.structGet(cfgCh, "channel.dopplerHz", ...
+                sixgr.util.structGet(cfgCh, "channel.fading.maxDoppler_Hz", 0))));
+            cfgCh.channel.doppler_Hz = max(0, dopp);
+            if startsWith(modelRaw, "TDL")
+                cfgCh.channel.model = "TDL";
+                if modelRaw ~= "TDL"
+                    cfgCh.channel.tdlProfile = char(modelRaw);
+                end
+            elseif startsWith(modelRaw, "CDL")
+                cfgCh.channel.model = "CDL";
+                if modelRaw ~= "CDL"
+                    cfgCh.channel.cdlProfile = char(modelRaw);
+                end
+            else
+                cfgCh.channel.model = char(modelRaw);
+            end
+
+            fs = sixgr.channel.ChannelFactory.localRuntimeSampleRate(waveform, txInfo);
+            numTx = double(opt.NumTxAnt);
+            if ~(isfinite(numTx) && numTx >= 1)
+                numTx = max(1, size(waveform, 2));
+            end
+            numRx = double(opt.NumRxAnt);
+            if ~(isfinite(numRx) && numRx >= 1)
+                numRx = max(1, double(sixgr.util.structGet(cfg, "phy.nRxAnt", numTx)));
+            end
+
+            ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
+                "Model", cfgCh.channel.model, ...
+                "SampleRate", fs, ...
+                "NumTxAnt", max(1, round(numTx)), ...
+                "NumRxAnt", max(1, round(numRx)), ...
+                "Seed", double(state.Seed), ...
+                "TransmitAntennaRuntime", opt.TransmitAntennaRuntime, ...
+                "ReceiveAntennaRuntime", opt.ReceiveAntennaRuntime, ...
+                "TransmitAntennaMeta", opt.TransmitAntennaMeta, ...
+                "ReceiveAntennaMeta", opt.ReceiveAntennaMeta);
+            state.Meta = sixgr.util.structGet(ch, "Meta", struct());
+            state.SampleRate_Hz = double(fs);
+            state.NumTxAnt = max(1, round(numTx));
+            state.NumRxAnt = max(1, round(numRx));
+            state.Materialized = true;
+            if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
+                state.UseFading = true;
+                state.Obj = ch.Object;
+                [padSamples, trimSamples] = sixgr.channel.ChannelFactory.resolveChannelDelaySamples(ch.Object, fs);
+                state.ChannelPadSamples = padSamples;
+                state.ChannelTrimSamples = trimSamples;
+                state.WarmupSamples = max(256, padSamples);
+                reset(state.Obj);
+                state.ResetCount = double(state.ResetCount) + 1;
+                if state.WarmupSamples > 0
+                    if isempty(waveform)
+                        warmup = zeros(state.WarmupSamples, max(1, round(numTx)));
+                    else
+                        warmup = zeros(state.WarmupSamples, max(1, round(numTx)), 'like', waveform);
+                    end
+                    try
+                        state.Obj(warmup);
+                    catch
+                        [~, ~] = state.Obj(warmup);
+                    end
+                    state.TotalObjectInputSamples = double(state.TotalObjectInputSamples) + double(state.WarmupSamples);
+                end
+                pendingIdle = max(0, round(double(sixgr.util.structGet(state, "PendingIdleSamples", 0))));
+                if pendingIdle > 0
+                    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelState(state, pendingIdle, max(1, round(numTx)), waveform);
+                    state.PendingIdleSamples = 0;
+                end
+            end
+        end
+
+        function state = advanceRuntimeChannelStateToTime(state, targetTime_s, numTx, prototype)
+            if nargin < 4
+                prototype = [];
+            end
+            if ~(isstruct(state) && isfield(state, "ContractVersion"))
+                return;
+            end
+            fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
+            if ~(isfinite(fs) && fs > 0 && isfinite(double(targetTime_s)) && double(targetTime_s) >= 0)
+                return;
+            end
+            targetSample = max(0, round(double(targetTime_s) * fs));
+            currentSample = max(0, round(double(sixgr.util.structGet(state, "CurrentSampleIndex", 0))));
+            state = sixgr.channel.ChannelFactory.advanceRuntimeChannelState(state, targetSample - currentSample, numTx, prototype);
+        end
+
+        function state = advanceRuntimeChannelState(state, numSamples, numTx, prototype)
+            if nargin < 4
+                prototype = [];
+            end
+            if ~(isstruct(state) && isfield(state, "ContractVersion"))
+                return;
+            end
+            n = max(0, round(double(numSamples)));
+            if n <= 0
+                state.LastIdleAdvancedSamples = 0;
+                return;
+            end
+            if ~(logical(sixgr.util.structGet(state, "Materialized", false)) && ...
+                    logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
+                state.PendingIdleSamples = max(0, round(double(sixgr.util.structGet(state, "PendingIdleSamples", 0)))) + n;
+                state.CurrentSampleIndex = max(0, round(double(sixgr.util.structGet(state, "CurrentSampleIndex", 0)))) + n;
+                state.LastIdleAdvancedSamples = n;
+                return;
+            end
+            if ~(isfinite(double(numTx)) && double(numTx) >= 1)
+                numTx = double(sixgr.util.structGet(state, "NumTxAnt", 1));
+            end
+            if isempty(prototype)
+                z = zeros(n, max(1, round(double(numTx))));
+            else
+                z = zeros(n, max(1, round(double(numTx))), 'like', prototype);
+            end
+            try
+                state.Obj(z);
+            catch
+                [~, ~] = state.Obj(z);
+            end
+            state.CurrentSampleIndex = max(0, round(double(sixgr.util.structGet(state, "CurrentSampleIndex", 0)))) + n;
+            fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
+            if isfinite(fs) && fs > 0
+                state.CurrentTime_s = double(state.CurrentSampleIndex) / fs;
+            end
+            state.TotalIdleAdvancedSamples = double(sixgr.util.structGet(state, "TotalIdleAdvancedSamples", 0)) + n;
+            state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + n;
+            state.LastIdleAdvancedSamples = n;
+        end
+
+        function [y, replay, state] = applyRuntimeChannelState(state, x)
+            y = x;
+            replay = struct( ...
+                "ChannelFadingApplied", false, ...
+                "ChannelFadingExecutionStatus", "not_requested", ...
+                "ChannelFadingObjectClass", "", ...
+                "ChannelPathGainsAvailable", false, ...
+                "RuntimeChannelStateUsed", false, ...
+                "RuntimeChannelLinkKey", "", ...
+                "RuntimeChannelSeed", NaN, ...
+                "RuntimeChannelResetCount", NaN, ...
+                "RuntimeChannelStartSample", NaN, ...
+                "RuntimeChannelEndSample", NaN, ...
+                "RuntimeChannelIdleAdvancedSamples", NaN);
+            if ~(isstruct(state) && isfield(state, "ContractVersion"))
+                return;
+            end
+            replay.RuntimeChannelStateUsed = true;
+            replay.RuntimeChannelLinkKey = char(string(sixgr.util.structGet(state, "LinkKey", "")));
+            replay.RuntimeChannelSeed = double(sixgr.util.structGet(state, "Seed", NaN));
+            replay.RuntimeChannelResetCount = double(sixgr.util.structGet(state, "ResetCount", NaN));
+            replay.RuntimeChannelStartSample = double(sixgr.util.structGet(state, "CurrentSampleIndex", 0));
+            replay.RuntimeChannelIdleAdvancedSamples = double(sixgr.util.structGet(state, "LastIdleAdvancedSamples", 0));
+            if ~(logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
+                replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
+                replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
+                state.CurrentSampleIndex = replay.RuntimeChannelEndSample;
+                return;
+            end
+            replay.ChannelFadingExecutionStatus = "attempted";
+            replay.ChannelFadingObjectClass = class(state.Obj);
+            xIn = x;
+            padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
+            trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
+            if padSamples > 0
+                xIn = [x; zeros(padSamples, size(x, 2), 'like', x)];
+            end
+            try
+                [yRaw, pathGains] = state.Obj(xIn);
+            catch
+                yRaw = state.Obj(xIn);
+                pathGains = [];
+            end
+            if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
+                y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
+            else
+                y = yRaw;
+                if size(y, 1) > size(x, 1)
+                    y = y(1:size(x, 1), :);
+                elseif size(y, 1) < size(x, 1)
+                    y(end+1:size(x, 1), :) = cast(0, 'like', y); %#ok<AGROW>
+                end
+            end
+            replay.ChannelFadingApplied = true;
+            replay.ChannelFadingExecutionStatus = "applied_persistent_runtime_channel_object";
+            replay.ChannelPathGainsAvailable = ~isempty(pathGains);
+            state.LastPathGainsAvailable = replay.ChannelPathGainsAvailable;
+            state.LastApplyStartSample = replay.RuntimeChannelStartSample;
+            state.LastApplyEndSample = replay.RuntimeChannelStartSample + size(x, 1);
+            state.CurrentSampleIndex = state.LastApplyEndSample;
+            fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
+            if isfinite(fs) && fs > 0
+                state.CurrentTime_s = double(state.CurrentSampleIndex) / fs;
+            end
+            state.TotalAppliedSamples = double(sixgr.util.structGet(state, "TotalAppliedSamples", 0)) + size(x, 1);
+            state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + size(xIn, 1);
+            replay.RuntimeChannelEndSample = double(state.CurrentSampleIndex);
+        end
+
+        function [padSamples, trimSamples] = resolveChannelDelaySamples(chObj, fs)
+            padSamples = 0;
+            trimSamples = 0;
+            if isempty(chObj) || ~isfinite(double(fs)) || double(fs) <= 0
+                return;
+            end
+            filterDelay = 0;
+            pathDelays = [];
+            try
+                chInfo = info(chObj);
+                filterDelay = double(sixgr.util.structGet(chInfo, "ChannelFilterDelay", 0));
+                pathDelays = sixgr.util.structGet(chInfo, "PathDelays", []);
+            catch
+            end
+            if isempty(pathDelays)
+                try
+                    pathDelays = double(chObj.PathDelays);
+                catch
+                    pathDelays = [];
+                end
+            end
+            maxPathDelay = 0;
+            if ~isempty(pathDelays)
+                maxPathDelay = ceil(max(double(pathDelays(:))) * double(fs));
+            end
+            padSamples = max(0, round(filterDelay + maxPathDelay));
+            trimSamples = max(0, round(filterDelay));
+        end
     end
 
     methods(Static, Access=private)
+        function fs = localRuntimeSampleRate(tx, txInfo)
+            fs = [];
+            if nargin >= 2 && isstruct(txInfo)
+                fs = sixgr.util.structGet(txInfo, "OFDM.SampleRate", []);
+            end
+            if isempty(fs) && isstruct(tx)
+                carrier = sixgr.util.structGet(tx, "Carrier", []);
+                if ~isempty(carrier)
+                    try
+                        ofdmInfo = nrOFDMInfo(carrier);
+                        fs = double(sixgr.util.structGet(ofdmInfo, "SampleRate", []));
+                    catch
+                        fs = [];
+                    end
+                end
+            end
+            if isempty(fs) || ~isfinite(double(fs)) || double(fs) <= 0
+                fs = 30.72e6;
+            else
+                fs = double(fs);
+            end
+        end
+
+        function hash = localStringHash(value)
+            bytes = uint8(char(string(value)));
+            hash = uint32(2166136261);
+            for ii = 1:numel(bytes)
+                hash = bitxor(hash, uint32(bytes(ii)));
+                hash = uint32(mod(uint64(hash) * uint64(16777619), uint64(2^32)));
+            end
+            hash = double(hash);
+        end
+
         function contract = localValidateRuntimeAntennaPortContract(runtimeAntenna, runtimeMeta, signalPortCount, sideLabel)
             signalPortCount = max(1, round(double(signalPortCount)));
             [numPorts, portSource] = sixgr.channel.ChannelFactory.localRuntimeLogicalPortCount(runtimeAntenna, runtimeMeta);

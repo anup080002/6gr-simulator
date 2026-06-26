@@ -14,6 +14,10 @@ args = { ...
     "HARQContext", sixgr.util.structGet(job, "HARQContext", struct()), ...
     "PreviousCombinedLLR", sixgr.util.structGet(job, "PreviousCombinedLLR", []), ...
     "InterferenceBundle", sixgr.util.structGet(job, "InterferenceBundle", struct([]))};
+channelState = sixgr.util.structGet(job, "ChannelState", struct());
+if isstruct(channelState) && isfield(channelState, "ContractVersion")
+    args = [args {"ChannelState", channelState}]; %#ok<AGROW>
+end
 
 transportBlockBits = sixgr.util.structGet(job, "TransportBlockBits", []);
 if ~isempty(transportBlockBits)
@@ -51,6 +55,7 @@ result.GrantContextId = char(string(sixgr.util.structGet(job, "GrantContextId", 
 result.PHYGrant = phyGrant;
 result.Result = res;
 result.LinkAdaptationState = sixgr.util.structGet(res, "LinkAdaptationState", sixgr.util.structGet(job, "InitialLinkAdaptationState", struct()));
+result.ChannelState = sixgr.util.structGet(res, "ChannelState", channelState);
 result.WorkerSafe = logical(sixgr.util.structGet(job, "WorkerSafe", true));
 result.SharedStateCommitMode = char(string(sixgr.util.structGet(job, "SharedStateCommitMode", "serial_coordinator_commit")));
 end

@@ -18,6 +18,7 @@ p.addParameter("PHYGrant", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("PreviousCombinedLLR", [], @(x) isempty(x) || isnumeric(x));
 p.addParameter("InterferenceBundle", struct([]), @(x) isempty(x) || isstruct(x));
 p.addParameter("ExpectedUCIBits", [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+p.addParameter("ChannelState", struct(), @(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numFrames = max(1, round(double(p.Results.NumFrames)));
@@ -34,6 +35,8 @@ grantSnapshotOverride = p.Results.GrantSnapshot;
 phyGrantOverride = p.Results.PHYGrant;
 previousCombinedLLR = p.Results.PreviousCombinedLLR;
 interferenceBundle = p.Results.InterferenceBundle;
+chStateIn = p.Results.ChannelState;
+externalChannelState = isstruct(chStateIn) && isfield(chStateIn, "ContractVersion");
 isRetransmission = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
 if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride)))
     grantSnapshotOverride = sixgr.util.structGet(harqContext, "GrantSnapshot", struct());
@@ -126,8 +129,12 @@ bitTot = 0;
 bitGood = 0;
 frameCrash = 0;
 firstCrashMsg = "";
-chState = struct("Initialized", false, "UseFading", false, "Obj", [], ...
-    "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "WarmupSamples", 0);
+if externalChannelState
+    chState = chStateIn;
+else
+    chState = struct("Initialized", false, "UseFading", false, "Obj", [], ...
+        "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "WarmupSamples", 0);
+end
 seedBase = double(sixgr.util.structGet(cfgUL, "run.seed", 1));
 chanModel = localResolveTrialChannelModel(cfgUL);
 dopplerHz = double(sixgr.util.structGet(cfgUL, "channel.doppler_Hz", ...
@@ -610,7 +617,9 @@ for n = 1:numFrames
         if isfield(tx, "TargetCodeRate")
             trialCodeRate(n) = double(tx.TargetCodeRate);
         end
-        if ~chState.Initialized
+        if externalChannelState
+            chState = localPrepareRuntimeChannelState(chState, cfgFrame, tx, txInfo, "UL");
+        elseif ~chState.Initialized
             chState = localInitChannelState(cfgFrame, tx, txInfo, snr_dB, trialSeed(n));
         end
         useIdealTimingSync = localUseIdealTimingSync(cfgFrame);
@@ -628,7 +637,7 @@ for n = 1:numFrames
         trialPUSCHPowerHeadroom(n) = double(powerCtrl.PowerHeadroom_dB);
         trialPUSCHPowerScale(n) = double(powerCtrl.AmplitudeScale);
         trialPUSCHPowerControlPathloss(n) = double(powerCtrl.Pathloss_dB);
-        [rxWave, replay] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, interferenceBundle);
+        [rxWave, replay, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, interferenceBundle);
 
         rxArgs = {"Carrier", tx.Carrier, ...
             "PUSCH", tx.PUSCH, ...
@@ -1226,6 +1235,7 @@ out.StartSlotIndex = double(startSlotIndex);
 out.EndFrameIndex = double(trialFrame(max(1, numFrames)));
 out.EndSlotIndex = double(trialSlot(max(1, numFrames)));
 out.HARQ = lastHARQ;
+out.ChannelState = chState;
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
@@ -2330,6 +2340,28 @@ else
 end
 end
 
+function state = localPrepareRuntimeChannelState(state, cfg, tx, txInfo, direction)
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+if ~(isstruct(state) && isfield(state, "ContractVersion"))
+    state = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
+        "UEIndex", double(sixgr.util.structGet(userMeta, "RuntimeUEIndex", sixgr.util.structGet(userMeta, "UEIndex", 1))), ...
+        "ServingCell", double(sixgr.util.structGet(userMeta, "RuntimeServingCell", 1)));
+end
+numTx = max(1, size(tx.Waveform, 2));
+numRx = localResolveULNumRxAnt(cfg, numTx);
+state = sixgr.channel.ChannelFactory.materializeRuntimeChannelState(state, cfg, tx.Waveform, txInfo, ...
+    "NumTxAnt", numTx, ...
+    "NumRxAnt", numRx, ...
+    "TransmitAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct()), ...
+    "ReceiveAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct()), ...
+    "TransmitAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct()), ...
+    "ReceiveAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct()));
+slotStart_s = double(sixgr.util.structGet(userMeta, "RuntimeSlotStartTime_s", NaN));
+if isfinite(slotStart_s) && slotStart_s >= 0
+    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(state, slotStart_s, numTx, tx.Waveform);
+end
+end
+
 function state = localInitChannelState(cfg, tx, txInfo, snr_dB, trialSeed)
 if nargin < 4
     snr_dB = NaN;
@@ -2534,7 +2566,7 @@ pathloss_dB = double(txPower_dBm) - rxSignal_dBm;
 source = "configured_snr_thermal_noise_link_budget";
 end
 
-function [y, replay] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)
+function [y, replay, state] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)
 % Channel state (state.Obj) is NOT reset between calls.
 % Temporal correlation is preserved per TR 38.901 7.7.3.
 % The channel was reset once during localInitChannelState.
@@ -2593,7 +2625,13 @@ replay = struct( ...
     "ChannelFadingExecutionStatus", "not_requested", ...
     "ChannelFadingObjectClass", "", ...
     "ChannelPathGainsAvailable", false);
-if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
+if isstruct(state) && isfield(state, "ContractVersion")
+    [y, channelReplay, state] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(state, x);
+    channelFields = fieldnames(channelReplay);
+    for ci = 1:numel(channelFields)
+        replay.(channelFields{ci}) = channelReplay.(channelFields{ci});
+    end
+elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
     replay.ChannelFadingExecutionStatus = "attempted";
     replay.ChannelFadingObjectClass = class(state.Obj);

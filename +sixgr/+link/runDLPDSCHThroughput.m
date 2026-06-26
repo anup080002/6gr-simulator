@@ -17,6 +17,7 @@ p.addParameter("GrantSnapshot", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("PHYGrant", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("PreviousCombinedLLR", [], @(x) isempty(x) || isnumeric(x));
 p.addParameter("InterferenceBundle", struct([]), @(x) isempty(x) || isstruct(x));
+p.addParameter("ChannelState", struct(), @(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numFrames = max(1, round(double(p.Results.NumFrames)));
@@ -33,6 +34,8 @@ grantSnapshotOverride = p.Results.GrantSnapshot;
 phyGrantOverride = p.Results.PHYGrant;
 previousCombinedLLR = p.Results.PreviousCombinedLLR;
 interferenceBundle = p.Results.InterferenceBundle;
+chStateIn = p.Results.ChannelState;
+externalChannelState = isstruct(chStateIn) && isfield(chStateIn, "ContractVersion");
 isRetransmission = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
 if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride)))
     grantSnapshotOverride = sixgr.util.structGet(harqContext, "GrantSnapshot", struct());
@@ -45,12 +48,14 @@ if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
     if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride)))
         grantSnapshotOverride = sixgr.util.structGet(phyGrantOverride, "LegacyGrantSnapshot", struct());
     end
+    grantSnapshotOverride = localAlignGrantSnapshotToPHYGrant(grantSnapshotOverride, phyGrantOverride);
     grantSnapshotOverride.PHYGrant = phyGrantOverride;
     grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
 elseif isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))
     phyGrantOverride = sixgr.phy.grant.freezePHYGrant(cfg, "DL", grantSnapshotOverride, ...
         "SNR_dB", snr_dB, ...
         "HARQContext", harqContext);
+    grantSnapshotOverride = localAlignGrantSnapshotToPHYGrant(grantSnapshotOverride, phyGrantOverride);
     grantSnapshotOverride.PHYGrant = phyGrantOverride;
     grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
 end
@@ -122,8 +127,12 @@ bitTot = 0;
 bitGood = 0;
 frameCrash = 0;
 firstCrashMsg = "";
-chState = struct("Initialized", false, "UseFading", false, "Obj", [], ...
-    "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "WarmupSamples", 0);
+if externalChannelState
+    chState = chStateIn;
+else
+    chState = struct("Initialized", false, "UseFading", false, "Obj", [], ...
+        "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "WarmupSamples", 0);
+end
 seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1));
 chanModel = localResolveTrialChannelModel(cfg);
 dopplerHz = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
@@ -620,11 +629,13 @@ for n = 1:numFrames
         if isfield(tx, "TargetCodeRate")
             trialCodeRate(n) = double(tx.TargetCodeRate);
         end
-        if ~chState.Initialized
+        if externalChannelState
+            chState = localPrepareRuntimeChannelState(chState, cfgFrame, tx, txInfo, "DL");
+        elseif ~chState.Initialized
             chState = localInitChannelState(cfgFrame, tx, txInfo, snr_dB, trialSeed(n));
         end
         useIdealTimingSync = localUseIdealTimingSync(cfgFrame);
-        [rxWave, replay] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrame, tx, txInfo, interferenceBundle);
+        [rxWave, replay, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrame, tx, txInfo, interferenceBundle);
 
         rxArgs = {"Carrier", tx.Carrier, ...
             "PDSCH", tx.PDSCH, ...
@@ -1194,6 +1205,7 @@ out.StartSlotIndex = double(startSlotIndex);
 out.EndFrameIndex = double(trialFrame(max(1, numFrames)));
 out.EndSlotIndex = double(trialSlot(max(1, numFrames)));
 out.HARQ = lastHARQ;
+out.ChannelState = chState;
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
@@ -2437,6 +2449,29 @@ else
 end
 end
 
+function state = localPrepareRuntimeChannelState(state, cfg, tx, txInfo, direction)
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+if ~(isstruct(state) && isfield(state, "ContractVersion"))
+    state = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
+        "UEIndex", double(sixgr.util.structGet(userMeta, "RuntimeUEIndex", sixgr.util.structGet(userMeta, "UEIndex", 1))), ...
+        "ServingCell", double(sixgr.util.structGet(userMeta, "RuntimeServingCell", 1)));
+end
+numTx = max(1, size(tx.Waveform, 2));
+numRx = max(1, double(sixgr.util.structGet(cfg, "phy.nRxAnt", ...
+    sixgr.util.structGet(cfg, "channel.nRxAnt", numTx))));
+state = sixgr.channel.ChannelFactory.materializeRuntimeChannelState(state, cfg, tx.Waveform, txInfo, ...
+    "NumTxAnt", numTx, ...
+    "NumRxAnt", numRx, ...
+    "TransmitAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct()), ...
+    "ReceiveAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct()), ...
+    "TransmitAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct()), ...
+    "ReceiveAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct()));
+slotStart_s = double(sixgr.util.structGet(userMeta, "RuntimeSlotStartTime_s", NaN));
+if isfinite(slotStart_s) && slotStart_s >= 0
+    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(state, slotStart_s, numTx, tx.Waveform);
+end
+end
+
 function state = localInitChannelState(cfg, tx, txInfo, snr_dB, trialSeed)
 if nargin < 4
     snr_dB = NaN;
@@ -2515,7 +2550,7 @@ if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object")
 end
 end
 
-function [y, replay] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)
+function [y, replay, state] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)
 % Channel state (state.Obj) is NOT reset between calls.
 % Temporal correlation is preserved per TR 38.901 7.7.3.
 % The channel was reset once during localInitChannelState.
@@ -2574,7 +2609,13 @@ replay = struct( ...
     "ChannelFadingExecutionStatus", "not_requested", ...
     "ChannelFadingObjectClass", "", ...
     "ChannelPathGainsAvailable", false);
-if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
+if isstruct(state) && isfield(state, "ContractVersion")
+    [y, channelReplay, state] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(state, x);
+    channelFields = fieldnames(channelReplay);
+    for ci = 1:numel(channelFields)
+        replay.(channelFields{ci}) = channelReplay.(channelFields{ci});
+    end
+elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
     replay.ChannelFadingExecutionStatus = "attempted";
     replay.ChannelFadingObjectClass = class(state.Obj);
@@ -4662,6 +4703,38 @@ end
 if isfinite(grantRate) && grantRate > 0
     codeRate = grantRate;
 end
+end
+
+function grant = localAlignGrantSnapshotToPHYGrant(grant, phyGrant)
+if ~(isstruct(grant) && isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)))
+    return;
+end
+coding = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
+ant = sixgr.util.structGet(phyGrant, "AntennaArchitecture", struct());
+prec = sixgr.util.structGet(phyGrant, "PrecodingState", struct());
+grant.TargetCodeRate = double(sixgr.util.structGet(coding, "TargetCodeRate", ...
+    sixgr.util.structGet(grant, "TargetCodeRate", NaN)));
+grant.XOverhead = double(sixgr.util.structGet(coding, "XOverhead", ...
+    sixgr.util.structGet(grant, "XOverhead", NaN)));
+grant.TBSBits = double(sixgr.util.structGet(coding, "TBSBits", ...
+    sixgr.util.structGet(grant, "TBSBits", sixgr.util.structGet(grant, "TransportBlockSize", NaN))));
+grant.TransportBlockSize = double(grant.TBSBits);
+grant.TBSBytes = double(sixgr.util.structGet(coding, "TBSBytes", floor(max(grant.TBSBits, 0) / 8)));
+grant.NumLayers = double(sixgr.util.structGet(coding, "NumLayers", ...
+    sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN))));
+grant.Layers = double(grant.NumLayers);
+grant.PrecodingMatrix = sixgr.util.structGet(prec, "MatrixPorts", ...
+    sixgr.util.structGet(prec, "Matrix", sixgr.util.structGet(grant, "PrecodingMatrix", [])));
+grant.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", ...
+    sixgr.util.structGet(grant, "PrecodingNumPorts", NaN)));
+grant.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", ...
+    sixgr.util.structGet(grant, "PrecodingNumLayers", NaN)));
+grant.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", ...
+    sixgr.util.structGet(grant, "PrecodingMatrixRows", NaN)));
+grant.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", ...
+    sixgr.util.structGet(grant, "PrecodingMatrixCols", NaN)));
+grant.NumTxAnt = double(sixgr.util.structGet(ant, "NumWaveformColumns", ...
+    sixgr.util.structGet(grant, "NumTxAnt", NaN)));
 end
 
 function txArgs = localAppendGrantReplayTxArgs(txArgs, grant)
