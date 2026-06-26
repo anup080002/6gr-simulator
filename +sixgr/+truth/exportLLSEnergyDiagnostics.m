@@ -30,19 +30,20 @@ ueCfg = localBuildEnergyModelCfg(cfg);
 ueModel = sixgr.rf.EnergyModelUE(ueCfg);
 bsModel = sixgr.rf.EnergyModelBS(ueCfg);
 slotDur_s = localSlotDuration(cfg);
-rfChains = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.rf_chain_count", sixgr.util.structGet(cfg, "phy.nTxAnt", 1)))));
-bsTxPowerW = localdBmToW(double(sixgr.util.structGet(cfg, "scenario.bs.txPower_dBm", sixgr.util.structGet(cfg, "lls6g.energy_efficiency.tx_power_dbm", 23))));
-ueTxPowerW = localdBmToW(double(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.tx_power_dbm", 23)));
+bsRfChains = localResolveRFChains(cfg, "gNB");
+ueRfChains = localResolveRFChains(cfg, "UE");
+bsTxPowerW = localdBmToW(localResolveTxPowerdBm(cfg, "gNB"));
+ueTxPowerW = localdBmToW(localResolveTxPowerdBm(cfg, "UE"));
 totalRBs = max(1, double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)));
 
 rows = repmat(localEmptyEnergyRow(), 0, 1);
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "DL", table())), "DL_data", "DL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/dl_pdsch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "UL", table())), "UL_data", "UL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/ul_pusch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PDCCH", table())), "PDCCH_monitoring", "DL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pdcch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PBCH", table())), "SSB_PBCH", "DL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pbch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PRACH", table())), "PRACH", "UL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/prach_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PUCCH", table())), "PUCCH", "UL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pucch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "SRS", table())), "SRS", "UL", slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/srs_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "DL", table())), "DL_data", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/dl_pdsch_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "UL", table())), "UL_data", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/ul_pusch_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PDCCH", table())), "PDCCH_monitoring", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pdcch_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PBCH", table())), "SSB_PBCH", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pbch_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PRACH", table())), "PRACH", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/prach_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PUCCH", table())), "PUCCH", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pucch_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "SRS", table())), "SRS", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/srs_trials.csv")]; %#ok<AGROW>
 
 if isempty(rows)
     timelineT = table();
@@ -51,7 +52,7 @@ else
 end
 end
 
-function rows = localBuildRowsForTable(T, domain, direction, slotDur_s, totalRBs, rfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, sourceArtifact)
+function rows = localBuildRowsForTable(T, domain, direction, slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, sourceArtifact)
 rows = repmat(localEmptyEnergyRow(), 0, 1);
 if ~(istable(T) && ~isempty(T))
     return;
@@ -103,18 +104,18 @@ for i = 1:height(T)
     end
     switch upper(string(direction))
         case "DL"
-            bs = bsModel.power('active', rfChains, load, bsTxPowerW);
+            bs = bsModel.power('active', bsRfChains, load, bsTxPowerW);
             ue = ueModel.power('rx', 0);
-            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, rfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, prbCount, load, layers, rfChains, 1, txPower_dBm, NaN, "active_tx");
-            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, rfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
+            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
+                ueId, cellId, baseStationId, rnti, prbCount, load, layers, bsRfChains, 1, txPower_dBm, NaN, "active_tx");
+            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
                 ueId, cellId, baseStationId, rnti, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"));
         otherwise
             ue = ueModel.power('tx', ueTxPowerW);
-            bs = bsModel.power('active', rfChains, load, 0);
-            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, rfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, prbCount, load, layers, rfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"));
-            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, rfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
+            bs = bsModel.power('active', bsRfChains, load, 0);
+            rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
+                ueId, cellId, baseStationId, rnti, prbCount, load, layers, ueRfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"));
+            rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
                 ueId, cellId, baseStationId, rnti, prbCount, load, layers, 0, 0, NaN, rxPower_dBm, "active_rx");
     end
 end
@@ -250,7 +251,79 @@ cfgEnergy = cfg;
 eff = double(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.pa_efficiency", 0.35));
 cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.bs.efficiencyPA", eff);
 cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.ue.txWPerWattRF", 1 / max(eff, eps));
-cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.bs.perTRxPW", 5 * double(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.rf_chain_count", 2)));
+cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.bs.perTRxPW", ...
+    double(sixgr.util.structGet(cfg, "energy.bs.perTRxPW", ...
+    sixgr.util.structGet(cfg, "lls6g.energy_efficiency.per_rf_chain_power_w", 5))));
+end
+
+function n = localResolveRFChains(cfg, entity)
+entity = upper(string(entity));
+if entity == "UE"
+    n = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "powerAndRF.ueRFChainCount", []), ...
+        sixgr.util.structGet(cfg, "rf.ue.numRFChains", []), ...
+        sixgr.util.structGet(cfg, "scenario.ue.numRFChains", []), ...
+        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", []), ...
+        sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", []), ...
+        1);
+else
+    n = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "powerAndRF.bsRFChainCount", []), ...
+        sixgr.util.structGet(cfg, "rf.bs.numRFChains", []), ...
+        sixgr.util.structGet(cfg, "scenario.bs.numRFChains", []), ...
+        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.rf_chain_count", []), ...
+        sixgr.util.structGet(cfg, "phy.nTxAnt", []), ...
+        1);
+end
+if ~(isfinite(double(n)) && double(n) >= 1)
+    n = 1;
+else
+    n = max(1, round(double(n)));
+end
+end
+
+function dbm = localResolveTxPowerdBm(cfg, entity)
+entity = upper(string(entity));
+if entity == "UE"
+    dbm = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "powerAndRF.ueTxPower_dBm", []), ...
+        sixgr.util.structGet(cfg, "lls6g.resolvedConfig.power_and_rf_frontend.ue_tx_power_dbm", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.powerControl.pcmax_dBm", []), ...
+        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.ue_tx_power_dbm", []), ...
+        23);
+else
+    dbm = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "powerAndRF.bsTxPower_dBm", []), ...
+        sixgr.util.structGet(cfg, "lls6g.resolvedConfig.power_and_rf_frontend.bs_tx_power_dbm", []), ...
+        sixgr.util.structGet(cfg, "scenario.bs.txPower_dBm", []), ...
+        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.bs_tx_power_dbm", []), ...
+        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.tx_power_dbm", []), ...
+        46);
+end
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw)
+        continue;
+    end
+    if islogical(raw)
+        raw = double(raw);
+    end
+    if ~isnumeric(raw)
+        numeric = str2double(string(raw));
+    else
+        numeric = double(raw);
+    end
+    numeric = numeric(:);
+    numeric = numeric(isfinite(numeric));
+    if ~isempty(numeric)
+        value = numeric(1);
+        return;
+    end
+end
 end
 
 function T = localResolveTrialTable(v)

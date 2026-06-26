@@ -523,6 +523,10 @@ for n = 1:numFrames
             txArgs = [txArgs {"RV", rvOverride}]; %#ok<AGROW>
         end
         [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgFrame, txArgs{:});
+        [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext(tx.Waveform, cfgFrame, "DL", txInfo);
+        tx.PowerContext = powerContext;
+        txInfo.PowerContext = powerContext;
+        cfgFrame = sixgr.util.structSet(cfgFrame, "lls6g.runtimePowerContext", powerContext);
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
         trialOuterLoopEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopEnabled", false));
         trialOuterLoopAppliedFromGrant(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopApplied", false));

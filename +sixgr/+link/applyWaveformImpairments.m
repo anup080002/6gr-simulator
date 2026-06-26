@@ -2,9 +2,10 @@ function [y, replay] = applyWaveformImpairments(x, cfg, sampleRateHz)
 %APPLYWAVEFORMIMPAIRMENTS Apply large-scale loss and sample-domain impairments.
 % Keep this file ASCII-only.
 %
-% Large-scale attenuation is expressed as a power-domain loss in dB. We
-% convert it to a complex-sample amplitude scale with:
-%   AppliedLargeScaleGain_dB = -AppliedLargeScaleLoss_dB
+% Large-scale attenuation and RF gains are expressed in power-domain dB. We
+% convert them to a complex-sample amplitude scale with:
+%   AppliedLargeScaleGain_dB =
+%       -AppliedLargeScaleLoss_dB + G_tx + G_rx - implementationLoss
 %   amplitudeGain = 10^(AppliedLargeScaleGain_dB/20)
 %
 % The downstream AWGN helper injects thermal noise derived from bandwidth and
@@ -14,8 +15,8 @@ function [y, replay] = applyWaveformImpairments(x, cfg, sampleRateHz)
 % which is exported as an AWGN baseline mode rather than receiver truth.
 %
 % In the thermal-noise mode we keep an explicit absolute-power bridge between
-% the normalized waveform and the large-scale link budget by using the
-% serving-cell RuntimeServingRxPower_dBm exported by the coupled runtime.
+% the waveform amplitude convention and the large-scale link budget through
+% sixgr.rf.PowerContext.
 
 if nargin < 3 || ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
     sampleRateHz = 0;
@@ -62,6 +63,11 @@ end
 
 function replay = localResolveReplayContext(cfg, sampleRateHz)
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+direction = localResolveDirection(userMeta);
+powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
+if ~(isstruct(powerContext) && isfield(powerContext, "ContractVersion"))
+    powerContext = sixgr.rf.PowerContext(cfg, direction);
+end
 
 basePathloss_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingBasePathloss_dB", NaN));
 pathloss_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingPathloss_dB", NaN));
@@ -88,14 +94,14 @@ if ~isfinite(pathloss_dB) && logical(sixgr.util.structGet(cfg, "channel.pathloss
 end
 
 [loss_dB, gainSource] = localResolveLargeScaleLoss(pathloss_dB, basePathloss_dB, shadow_dB, o2i_dB);
-gain_dB = -loss_dB;
+gain_dB = -loss_dB + double(powerContext.TxGain_dB) + double(powerContext.RxGain_dB) - double(powerContext.AdditionalLoss_dB);
 ampGain = 10.^(gain_dB / 20);
 
 configuredSNR_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "channel.snr_dB", NaN));
 noiseMode = localResolveNoiseOperatingMode(cfg);
 [servingRxPower_dBm, servingRxPowerSource, referenceTxPower_dBm, referenceTxPowerSource] = ...
-    localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB);
-noiseFigure_dB = localResolveNoiseFigure(cfg);
+    localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB, powerContext);
+noiseFigure_dB = localResolveNoiseFigure(cfg, powerContext, direction);
 noiseBandwidth_Hz = localResolveNoiseBandwidth(cfg, sampleRateHz);
 [appliedAWGNSNR_dB, targetNoiseVariance, thermalNoisePower_dBm, noiseSource] = ...
     localResolveAppliedNoise(noiseMode, configuredSNR_dB, loss_dB, servingRxPower_dBm, ...
@@ -131,6 +137,17 @@ replay = struct( ...
     "CarrierPhaseOffsetSource", char(carrierPhaseOffsetSource), ...
     "CarrierPhaseOffsetExecutionStatus", char(carrierPhaseOffsetStatus), ...
     "SampleRate_Hz", double(sampleRateHz), ...
+    "PowerContext", powerContext, ...
+    "PowerContextDirection", char(direction), ...
+    "PowerContextTxEntity", char(string(powerContext.TxEntity)), ...
+    "PowerContextRxEntity", char(string(powerContext.RxEntity)), ...
+    "PowerContextAmplitudeUnit", char(string(powerContext.WaveformAmplitudeUnit)), ...
+    "PowerContextTotalTxPower_dBm", double(powerContext.TotalTxPower_dBm), ...
+    "PowerContextTxGain_dB", double(powerContext.TxGain_dB), ...
+    "PowerContextRxGain_dB", double(powerContext.RxGain_dB), ...
+    "PowerContextAdditionalLoss_dB", double(powerContext.AdditionalLoss_dB), ...
+    "PowerContextRFChainCount", double(powerContext.RFChainCount), ...
+    "PowerContextPAEfficiency", double(powerContext.PAEfficiency), ...
     "ConfiguredSNR_dB", configuredSNR_dB, ...
     "NoiseOperatingMode", char(noiseMode), ...
     "AppliedAWGNSNR_dB", appliedAWGNSNR_dB, ...
@@ -208,12 +225,26 @@ mode = string(cfg.run.noiseOperatingMode);
 tf = strlength(strtrim(mode)) > 0;
 end
 
+function direction = localResolveDirection(userMeta)
+direction = upper(strtrim(string(sixgr.util.structGet(userMeta, "RuntimeCurrentDirection", ""))));
+if strlength(direction) == 0
+    direction = upper(strtrim(string(sixgr.util.structGet(userMeta, "Direction", ""))));
+end
+if direction ~= "UL"
+    direction = "DL";
+end
+end
+
 function [servingRxPower_dBm, source, referenceTxPower_dBm, referenceTxPowerSource] = ...
-        localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB)
+        localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB, powerContext)
 servingRxPower_dBm = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingRxPower_dBm", NaN));
 source = "runtime_serving_rx_power";
 referenceTxPower_dBm = NaN;
 referenceTxPowerSource = "";
+if isstruct(powerContext) && isfield(powerContext, "TotalTxPower_dBm")
+    referenceTxPower_dBm = double(powerContext.TotalTxPower_dBm);
+    referenceTxPowerSource = "sixgr.rf.PowerContext.TotalTxPower_dBm";
+end
 if isfinite(servingRxPower_dBm)
     return;
 end
@@ -225,13 +256,18 @@ if ~(isfinite(pathloss_dB) || isfinite(basePathloss_dB))
     source = "unavailable_missing_pathloss_or_runtime_rx_power";
     return;
 end
-[referenceTxPower_dBm, referenceTxPowerSource] = localResolveReferenceTxPower(cfg, userMeta);
+if ~(isfinite(referenceTxPower_dBm))
+    [referenceTxPower_dBm, referenceTxPowerSource] = localResolveReferenceTxPower(cfg, userMeta);
+end
 if ~(isfinite(referenceTxPower_dBm))
     source = "unavailable";
     return;
 end
-servingRxPower_dBm = referenceTxPower_dBm - loss_dB;
-source = "derived_tx_power_minus_large_scale_loss";
+txGain_dB = double(sixgr.util.structGet(powerContext, "TxGain_dB", 0));
+rxGain_dB = double(sixgr.util.structGet(powerContext, "RxGain_dB", 0));
+additionalLoss_dB = double(sixgr.util.structGet(powerContext, "AdditionalLoss_dB", 0));
+servingRxPower_dBm = referenceTxPower_dBm + txGain_dB + rxGain_dB - loss_dB - additionalLoss_dB;
+source = "power_context_link_budget";
 end
 
 function [txPower_dBm, source] = localResolveReferenceTxPower(cfg, userMeta)
@@ -332,11 +368,26 @@ if strlength(mode) == 0
 end
 end
 
-function noiseFigure_dB = localResolveNoiseFigure(cfg)
-noiseFigure_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "scenario.ue.noiseFigure_dB", ...
-    sixgr.util.structGet(cfg, "channel.receiverNoiseFigure_dB", 9)));
+function noiseFigure_dB = localResolveNoiseFigure(cfg, powerContext, direction)
+noiseFigure_dB = localFiniteOrNaN(sixgr.util.structGet(powerContext, "NoiseFigure_dB", NaN));
+if isfinite(noiseFigure_dB)
+    return;
+end
+if upper(string(direction)) == "UL"
+    noiseFigure_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", ...
+        sixgr.util.structGet(cfg, "powerAndRF.bsNoiseFigure_dB", ...
+        sixgr.util.structGet(cfg, "channel.receiverNoiseFigure_dB", 5))));
+else
+    noiseFigure_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "scenario.ue.noiseFigure_dB", ...
+        sixgr.util.structGet(cfg, "powerAndRF.ueNoiseFigure_dB", ...
+        sixgr.util.structGet(cfg, "channel.receiverNoiseFigure_dB", 9))));
+end
 if ~isfinite(noiseFigure_dB)
-    noiseFigure_dB = 9;
+    if upper(string(direction)) == "UL"
+        noiseFigure_dB = 5;
+    else
+        noiseFigure_dB = 9;
+    end
 end
 end
 

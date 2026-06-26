@@ -616,6 +616,11 @@ for n = 1:numFrames
         useIdealTimingSync = localUseIdealTimingSync(cfgFrame);
         [txWaveformPC, powerCtrl, cfgFrameRx] = localApplyPUSCHOpenLoopPowerControl(tx.Waveform, cfgFrame, tx, grantSnapshot);
         tx.Waveform = txWaveformPC;
+        [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext(tx.Waveform, cfgFrameRx, "UL", txInfo);
+        powerContext.PowerControlAmplitudeScale = double(powerCtrl.AmplitudeScale);
+        tx.PowerContext = powerContext;
+        txInfo.PowerContext = powerContext;
+        cfgFrameRx = sixgr.util.structSet(cfgFrameRx, "lls6g.runtimePowerContext", powerContext);
         trialPUSCHPowerControlEnabled(n) = logical(powerCtrl.Enabled);
         trialPUSCHPowerControlStatus(n) = string(powerCtrl.Status);
         trialPUSCHTxPower(n) = double(powerCtrl.TxPower_dBm);
@@ -2485,16 +2490,14 @@ requestedPower = double(p0) + double(alpha) * double(pathloss_dB) + 10 * log10(d
     double(deltaTF) + double(closedLoop);
 txPower = min(double(pcmax), requestedPower);
 scale = 10 .^ ((double(txPower) - double(refPower)) / 20);
-if isfinite(scale) && scale > 0
-    waveOut = waveIn .* cast(scale, "like", waveIn);
-else
+if ~(isfinite(scale) && scale > 0)
     scale = 1;
 end
 
 if ~isfield(pc, "PathlossSource")
     pc.PathlossSource = "runtime_pathloss_evidence";
 end
-pc.Status = "applied_open_loop_ts38213_fractional_pathloss";
+pc.Status = "resolved_open_loop_ts38213_fractional_pathloss_scaling_deferred_to_power_context";
 pc.TxPower_dBm = double(txPower);
 pc.Pcmax_dBm = double(pcmax);
 pc.PowerHeadroom_dB = double(pcmax) - double(txPower);
