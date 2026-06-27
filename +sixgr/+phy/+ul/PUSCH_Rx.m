@@ -128,6 +128,7 @@ if isempty(alg)
     alg = sixgr.util.structGet(cfg, 'phy.ldpc.algorithm', 'Normalized min-sum');
 end
 alg = char(string(alg));
+expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
 
 % Determine TB size
 trBlkSize = opt.TransportBlockSize;
@@ -142,7 +143,7 @@ trBlkSize = double(trBlkSize);
 % Canonical coding layout.
 codingLayout = localResolveRxCodingLayout(opt.CodingLayout, phyGrant, "UL", ...
     trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ...
-    localRateMatchedBitCountFromInfo(puschInfo));
+    localRateMatchedBitCountFromInfo(puschInfo), numel(expectedHARQACKBits));
 bgn = double(codingLayout.BaseGraph);
 tbCRCType = char(string(codingLayout.TBCRCType));
 tbCRCLen = double(codingLayout.TBCRCLength);
@@ -419,28 +420,43 @@ receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmr
 [nVarForDecode, nVarDecodeInfo] = localResolvePUSCHDecoderNoiseVariance(nVar, ...
     nVarPostEqDiagnostic, nVarPostEqInfo, cfg);
 
-% Decode PUSCH to codeword LLR
+% Decode PUSCH to codeword LLR.  nrPUSCHDecode consumes layer-domain
+% equalized REs for non-codebook PUSCH, while native codebook PUSCH
+% consumes the port-domain equalized symbols and applies the codebook-aware
+% de-layering internally.
+[layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, [], pusch);
+[decoderInputSym, decoderInputInfo] = localResolvePUSCHDecoderInputSymbols(eqSym, layerEqSym, pusch);
 puschRxSym = [];
 if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
     nVarForDecode = double(nVar);
 end
 nVarForDecode = double(max(nVarForDecode, eps));
 try
-    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, eqSym, nVarForDecode);
+    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, decoderInputSym, nVarForDecode);
 catch
-    cwLLR = nrPUSCHDecode(carrier, pusch, eqSym, nVarForDecode);
+    cwLLR = nrPUSCHDecode(carrier, pusch, decoderInputSym, nVarForDecode);
 end
+[qamEqSym, qamEqInfo] = localResolvePUSCHQAMEqualizedSymbols(puschRxSym, layerEqSym);
 
 [cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHSingleCodewordLLR(cwLLR);
 codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract(pusch, cwLLRCell, codingLayout, eqSym);
-[layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, puschRxSym, pusch);
-[cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation, postEqSINR_dB);
-expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
+[cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation, postEqSINR_dB, ...
+    nVarForDecode, nVarDecodeInfo);
 [cwLLRForULSCH, uciOnPUSCH] = localDemultiplexHARQACKFromPUSCH( ...
     cwLLR, pusch, targetCodeRate, trBlkSize, expectedHARQACKBits);
+if ~isempty(expectedHARQACKBits) && ~logical(uciOnPUSCH.Applied)
+    error("sixgr:phy:ul:PUSCHUCIDemultiplexUnavailable", ...
+        "Expected HARQ-ACK on PUSCH, but UCI demultiplexing was not applied: %s %s.", ...
+        char(string(uciOnPUSCH.Status)), char(string(uciOnPUSCH.Reason)));
+end
 
 % Rate recover (to code blocks)
 if numel(cwLLRForULSCH) ~= double(codingLayout.RateMatchedBitCount)
+    if ~logical(uciOnPUSCH.Applied)
+        error("sixgr:phy:ul:PUSCHCodewordLLRCountContract", ...
+            "PUSCH UL-SCH LLR count %d does not match CodingLayout RateMatchedBitCount=%d and no UCI demultiplexing explains the mismatch.", ...
+            numel(cwLLRForULSCH), round(double(codingLayout.RateMatchedBitCount)));
+    end
     codingLayout = sixgr.phy.phycode.resolveCodingLayout( ...
         "Direction", "UL", ...
         "TransportBlockSize", trBlkSize, ...
@@ -453,6 +469,8 @@ if numel(cwLLRForULSCH) ~= double(codingLayout.RateMatchedBitCount)
     bgn = double(codingLayout.BaseGraph);
     ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
 end
+codewordLayerMapping.ULSCHDemapperLLRCountPerCodeword = double(numel(cwLLRForULSCH));
+codewordLayerMapping.TotalULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
 [recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLRForULSCH, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks, [], ...
     "CodingLayout", codingLayout);
 [recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR, ...
@@ -545,6 +563,8 @@ decodeLatency_s = toc(decodeTic);
 B = ldpcSeg.TransportBlockLenWithCRC;
 [tbCrc, cbCrcErr] = sixgr.phy.tb.desegmentLDPC(decCbs, bgn, B);
 [tbBits, crcOK, crcErr] = sixgr.phy.tb.checkCRC(tbCrc, tbCRCType);
+decodedBitLineage = localBuildPUSCHDecodedBitLineage(cwLLR, cwLLRForULSCH, recLLR, decCbs, ...
+    codingLayout, trBlkSize, B, crcOK, uciOnPUSCH);
 
 % Outputs
 rx = struct();
@@ -596,6 +616,7 @@ rx.CodewordLayerMapping = codewordLayerMapping;
 rx.NumCodewords = double(codewordLayerMapping.NumCodewords);
 rx.ActualNumCodewords = double(codewordLayerMapping.ActualNumCodewords);
 rx.CodewordLLRCountPerCodeword = double(codewordLayerMapping.DemapperLLRCountPerCodeword);
+rx.DecodedBitLineage = decodedBitLineage;
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
 rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
 rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
@@ -656,7 +677,11 @@ rx.ULSCHDecodeAttempted = true;
 rx.ULSCHDecodeAvailable = ~isempty(tbBits) || ~isempty(decCbs) || ~isempty(recLLR);
 rx.LLRAvailable = ~isempty(cwLLRForULSCH);
 rx.LLRFinite = ~isempty(cwLLRForULSCH) && all(isfinite(double(cwLLRForULSCH(:))));
-rx.LLRScaleSource = "nrPUSCHDecode_decoder_noise_variance_plus_" + string(llrCSIInfo.Source);
+rx.LLRScaleSource = string(llrCSIInfo.Source);
+rx.LLRScalingConvention = char(string(llrCSIInfo.Convention));
+rx.DemapperNoiseVarianceConvention = char(string(llrCSIInfo.NoiseVarianceConvention));
+rx.DemapperLLRDomain = char(string(llrCSIInfo.OutputDomain));
+rx.LLRDoubleWeightingGuard = logical(llrCSIInfo.NoSecondCSIWeighting);
 rx.LLRCSIWeightApplied = logical(llrCSIInfo.Applied);
 rx.LLRCSIWeightStatus = char(string(llrCSIInfo.Status));
 rx.LLRCSIWeightInputKind = char(string(llrCSIInfo.InputKind));
@@ -669,10 +694,20 @@ rx.LayerEqualizedSymbolsForEvidence = layerEqSym;
 rx.LayerEqualizedSymbols = layerEqSym;
 rx.PortEqualizedSymbolsForEvidence = eqSym;
 rx.PortEqualizedSymbols = eqSym;
+rx.DecoderInputSymbolsForEvidence = decoderInputSym;
+rx.DecoderInputSymbolDomain = char(string(decoderInputInfo.Domain));
+rx.DecoderInputSymbolSource = char(string(decoderInputInfo.Status));
 rx.EqualizedSymbolDomain = "layer";
 rx.EqualizedSymbolSource = char(string(layerEqInfo.Status));
 rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, ...
     localLayerIndicesFromPUSCHIndices(puschInd, layerEqSym), "layer");
+rx.QAMEqualizedSymbolsForEvidence = qamEqSym;
+rx.PUSCHQAMSymbolsForEvidence = qamEqSym;
+rx.PUSCHDFTInputSymbolsForEvidence = qamEqSym;
+rx.QAMEqualizedSymbolDomain = "layer";
+rx.QAMEqualizedSymbolSource = char(string(qamEqInfo.Status));
+rx.QAMSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, ...
+    localLayerIndicesFromPUSCHIndices(puschInd, qamEqSym), "layer");
 rx.DemapperLLRCount = double(codewordLayerMapping.TotalDemapperLLRCount);
 rx.ULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
 rx.RateRecoveredLLRCount = double(numel(recLLR));
@@ -683,6 +718,7 @@ rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
 rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
+rx.RateRecoverInfo = rateRecoverInfo;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, dmrsInfo, ...
     cwLLRForULSCH, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
 if hasPHYGrant
@@ -722,7 +758,10 @@ if ~logical(opt.CompactOutput)
     rx.PUSCHInfo = puschInfo;
     rx.EqualizedSymbols = layerEqSym;
     rx.PortEqualizedSymbols = eqSym;
+    rx.DecoderInputSymbols = decoderInputSym;
     rx.PUSCHRxSymbols = puschRxSym;
+    rx.QAMEqualizedSymbols = qamEqSym;
+    rx.PUSCHQAMSymbols = qamEqSym;
     rx.CSI = csi;
     rx.EqualizerInfo = equalizerInfo;
     rx.InterferenceCovariance = Rint;
@@ -770,6 +809,9 @@ info.CPECorrection = cpeCorrInfo;
 info.CodingLayout = codingLayout;
 info.CodewordLayerMapping = codewordLayerMapping;
 info.CodewordLLRInfo = codewordLLRInfo;
+info.LLRScaling = llrCSIInfo;
+info.RateRecover = rateRecoverInfo;
+info.DecodedBitLineage = decodedBitLineage;
 info.StrictReceiverEvidence = strictEvidence;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -843,6 +885,33 @@ mapping.ActualLayerColumns = double(nCols);
 mapping.ActualLayersEqualGrantLayers = logical(nCols == nLayers);
 mapping.Equation = "port_observations_to_equalized_layers_S_hat_to_single_ULSCH_codeword_LLRs";
 end
+
+function lineage = localBuildPUSCHDecodedBitLineage(demapperLLR, ulschLLR, recLLR, decCbs, layout, trBlkSize, transportBlockLenWithCRC, crcPass, uciOnPUSCH)
+lineage = struct( ...
+    "ContractVersion", "PUSCHDecodedBitLineage/v1", ...
+    "CodewordIndex", 1, ...
+    "DemapperDomain", "rate_matched_pusch_codeword_llr", ...
+    "DemapperLLRCount", double(numel(demapperLLR)), ...
+    "ULSCHDemapperLLRCount", double(numel(ulschLLR)), ...
+    "RateMatchedBitCount", double(layout.RateMatchedBitCount), ...
+    "RateRecoveryInputDomain", "rate_matched_ulsch_codeword_llr", ...
+    "RateRecoveryOutputDomain", "mother_code_llr_by_code_block", ...
+    "RateRecoveredRows", double(size(recLLR, 1)), ...
+    "RateRecoveredCodeBlocks", double(size(recLLR, 2)), ...
+    "MotherCodeLength", double(layout.MotherCodeLength), ...
+    "NumCodeBlocks", double(layout.NumCodeBlocks), ...
+    "LDPCDecodedRows", double(size(decCbs, 1)), ...
+    "LDPCDecodedCodeBlocks", double(size(decCbs, 2)), ...
+    "TransportBlockSize", double(trBlkSize), ...
+    "TransportBlockLengthWithCRC", double(transportBlockLenWithCRC), ...
+    "TBCRCType", char(string(layout.TBCRCType)), ...
+    "CRCPass", logical(crcPass), ...
+    "UCIOnPUSCHApplied", logical(sixgr.util.structGet(uciOnPUSCH, "Applied", false)), ...
+    "HARQACKBitCount", double(sixgr.util.structGet(uciOnPUSCH, "HARQACKBitCount", 0)), ...
+    "RateMatchSignature", char(string(layout.RateMatchSignature)), ...
+    "CombineSignature", char(string(layout.CombineSignature)));
+end
+
 function method = localResolveChannelEstimationMethod(cfg)
 method = char(string(sixgr.util.structGet(cfg, "phy.channelEstimation.method", ...
     sixgr.util.structGet(cfg, "phy.rx.channelEstimationMethod", "LS"))));
@@ -1492,6 +1561,61 @@ error("sixgr:phy:ul:PUSCHEqualizedDomainMismatch", ...
     mat2str(size(eqSym)), mat2str(size(puschRxSym)), nLayers, nPorts);
 end
 
+function [decoderSym, info] = localResolvePUSCHDecoderInputSymbols(eqSym, layerSym, pusch)
+eqSym = localEnsureSymbolMatrix(eqSym);
+layerSym = localEnsureSymbolMatrix(layerSym);
+nLayers = max(1, round(double(localObjectFiniteScalar(pusch, "NumLayers", size(layerSym, 2)))));
+nPorts = max(1, round(double(localObjectFiniteScalar(pusch, "NumAntennaPorts", size(eqSym, 2)))));
+scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
+info = struct( ...
+    "Status", "layer_equalized_symbols_for_nrPUSCHDecode", ...
+    "Domain", "layer", ...
+    "NumLayers", double(nLayers), ...
+    "NumPorts", double(nPorts));
+
+if scheme == "codebook" && ~isempty(eqSym) && size(eqSym, 2) == nPorts && nPorts > nLayers
+    decoderSym = eqSym;
+    info.Status = "port_equalized_symbols_for_native_codebook_nrPUSCHDecode";
+    info.Domain = "port";
+    return;
+end
+
+decoderSym = layerSym;
+if isempty(decoderSym)
+    error("sixgr:phy:ul:PUSCHDecoderInputUnavailable", ...
+        "PUSCH decoder input symbols are unavailable after equalization.");
+end
+end
+
+function [qamSym, info] = localResolvePUSCHQAMEqualizedSymbols(puschRxSym, layerSym)
+puschRxSym = localEnsureSymbolMatrix(puschRxSym);
+layerSym = localEnsureSymbolMatrix(layerSym);
+info = struct( ...
+    "Status", "nrPUSCHDecode_qam_symbol_estimates", ...
+    "Source", "nrPUSCHDecode_second_output", ...
+    "FallbackUsed", false);
+
+if ~isempty(puschRxSym)
+    if isempty(layerSym) || size(puschRxSym, 2) == size(layerSym, 2)
+        qamSym = puschRxSym;
+        return;
+    end
+    if ~isempty(layerSym) && numel(puschRxSym) == numel(layerSym)
+        qamSym = reshape(puschRxSym(:), size(layerSym, 2), []).';
+        info.Status = "nrPUSCHDecode_qam_symbol_estimates_reshaped_to_layer_matrix";
+        return;
+    end
+    error("sixgr:phy:ul:PUSCHQAMSymbolDomainMismatch", ...
+        "PUSCH decoder QAM symbol estimate shape %s does not match layer-domain symbol shape %s.", ...
+        mat2str(size(puschRxSym)), mat2str(size(layerSym)));
+end
+
+qamSym = layerSym;
+info.Status = "nrPUSCHDecode_qam_symbol_estimates_unavailable_using_layer_equalized_symbols";
+info.Source = "layer_equalized_symbols";
+info.FallbackUsed = true;
+end
+
 function x = localEnsureSymbolMatrix(x)
 if isempty(x)
     return;
@@ -1514,17 +1638,10 @@ info = struct( ...
 end
 
 function [nVarForDecode, info] = localResolvePUSCHDecoderNoiseVariance(nVarPreEq, nVarPostEq, postInfo, cfg)
-% Keep nrPUSCHDecode aligned with the 5G Toolbox receiver chain: the
-% demapper receives the channel-estimator noise variance, while per-RE CSI
-% weights carry reliability variation after equalization.
+% Keep nrPUSCHDecode aligned with the DL receiver convention: demapper LLRs
+% are scaled exactly once by the effective post-equalization noise variance.
 pre = double(localScalarOrNaN(nVarPreEq));
 post = double(localScalarOrNaN(nVarPostEq));
-mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.decoderNoiseVarianceSource", ...
-    sixgr.util.structGet(cfg, "phy.rx.puschDecoderNoiseVarianceSource", "pre_equalization")))));
-if strlength(mode) == 0
-    mode = "pre_equalization";
-end
-
 postSource = char(string(sixgr.util.structGet(postInfo, "Source", "")));
 postMethod = char(string(sixgr.util.structGet(postInfo, "ReductionMethod", "")));
 postSampleCount = double(sixgr.util.structGet(postInfo, "SampleCount", 0));
@@ -1537,42 +1654,31 @@ info = struct( ...
     "PostEqualizationNoiseVar", double(post), ...
     "ReductionMethod", "", ...
     "SampleCount", 0, ...
-    "ConfiguredMode", char(mode), ...
+    "Convention", "post_equalization_variance_only", ...
+    "ConfiguredMode", "post_equalization_fixed", ...
     "PostEqualizationDiagnosticSource", postSource, ...
     "PostEqualizationDiagnosticReductionMethod", postMethod, ...
     "PostEqualizationDiagnosticSampleCount", double(postSampleCount), ...
-    "Domain", "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode");
+    "Domain", "post_equalization_decoder_symbol_domain");
 
-usePost = any(mode == ["post_equalization", "post_equalization_sinr", "posteq", "legacy_post_equalization"]);
-if usePost && localValidNoiseScalar(post)
+if localValidNoiseScalar(post)
     nVarForDecode = double(post);
     info.ValueStatus = "OK";
-    info.Source = "post_equalization_sinr_decoder_noise_variance_configured";
+    info.Source = "post_equalization_sinr_decoder_noise_variance";
     info.NAReason = "";
     info.ReductionMethod = postMethod;
     info.SampleCount = double(max(postSampleCount, 1));
-    info.Domain = "post_equalization_decoder_symbol_domain";
     return;
 end
 
 if localValidNoiseScalar(pre)
     nVarForDecode = double(pre);
     info.ValueStatus = "OK";
-    info.Source = "pre_equalization_channel_estimator_noise_variance";
+    info.Source = "pre_equalization_noise_variance_used_because_post_equalization_unavailable";
     info.NAReason = "";
-    info.ReductionMethod = "identity_pre_equalization_noise_variance";
+    info.ReductionMethod = "explicit_pre_equalization_emergency_path";
     info.SampleCount = 1;
-    return;
-end
-
-if localValidNoiseScalar(post)
-    nVarForDecode = double(post);
-    info.ValueStatus = "OK";
-    info.Source = "post_equalization_sinr_decoder_noise_variance_pre_equalization_unavailable";
-    info.NAReason = "";
-    info.ReductionMethod = postMethod;
-    info.SampleCount = double(max(postSampleCount, 1));
-    info.Domain = "post_equalization_decoder_symbol_domain";
+    info.Domain = "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode";
     return;
 end
 
@@ -1660,7 +1766,10 @@ seg = struct( ...
     "SegmentationInfo", segInfo);
 end
 
-function layout = localResolveRxCodingLayout(layoutIn, phyGrant, direction, trBlkSize, targetCodeRate, rv, modulation, numLayers, rateMatchedBits)
+function layout = localResolveRxCodingLayout(layoutIn, phyGrant, direction, trBlkSize, targetCodeRate, rv, modulation, numLayers, rateMatchedBits, expectedHARQACKBitCount)
+if nargin < 10
+    expectedHARQACKBitCount = 0;
+end
 layout = layoutIn;
 if ~(isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMatchPositionMap"))
     grantLayout = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
@@ -1671,7 +1780,7 @@ if ~(isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMa
     end
 end
 if isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMatchPositionMap")
-    localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits);
+    localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits, expectedHARQACKBitCount);
     return;
 end
 layout = sixgr.phy.phycode.resolveCodingLayout( ...
@@ -1684,7 +1793,7 @@ layout = sixgr.phy.phycode.resolveCodingLayout( ...
     "RateMatchedBitCount", rateMatchedBits);
 end
 
-function localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits)
+function localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits, expectedHARQACKBitCount)
 if double(layout.TransportBlockSize) ~= double(trBlkSize) || ...
         double(layout.RV) ~= double(rv) || ...
         ~strcmpi(char(string(layout.Modulation)), char(string(modulation))) || ...
@@ -1692,6 +1801,17 @@ if double(layout.TransportBlockSize) ~= double(trBlkSize) || ...
     error("sixgr:phy:ul:PUSCHCodingLayoutMismatch", ...
         "Supplied CodingLayout does not match PUSCH RX grant dimensions.");
 end
+layoutE = double(layout.RateMatchedBitCount);
+rxE = double(rateMatchedBits);
+if layoutE == rxE
+    return;
+end
+if double(expectedHARQACKBitCount) > 0 && layoutE < rxE
+    return;
+end
+error("sixgr:phy:ul:PUSCHCodingLayoutMismatch", ...
+    "Supplied CodingLayout RateMatchedBitCount=%d does not match PUSCH demapper G=%d.", ...
+    round(layoutE), round(rxE));
 end
 
 function seg = localLDPCSegmentationFromLayout(layout)
@@ -1837,9 +1957,38 @@ catch ME
 end
 end
 
-function [llrOut, info] = localApplyCSIToCodewordLLR(llrIn, csi, modScheme, postEqSINR_dB)
-[llrOut, info] = sixgr.phy.rx.applyCSIToCodewordLLR(llrIn, csi, modScheme, ...
-    "PostEqSINR_dB", postEqSINR_dB);
+function [llrOut, info] = localApplyCSIToCodewordLLR(llrIn, csi, modScheme, postEqSINR_dB, nVarForDecode, nVarDecodeInfo)
+llrOut = double(llrIn(:));
+rawCSI = double(csi(:));
+rawCSI = rawCSI(isfinite(rawCSI));
+if isempty(rawCSI)
+    rawMedian = NaN;
+else
+    rawMedian = median(rawCSI, "omitnan");
+end
+meanAbsLLR = mean(abs(llrOut), "omitnan");
+info = struct( ...
+    "ContractVersion", "PUSCHDemapperLLRScaling/v1", ...
+    "Convention", "post_equalization_variance_only", ...
+    "NoiseVarianceConvention", "post_equalized_symbol_variance_passed_to_nrPUSCHDecode", ...
+    "Source", "nrPUSCHDecode_post_equalization_noise_variance_only", ...
+    "NoiseVarianceSource", char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "post_equalization_decoder_noise_variance"))), ...
+    "OutputDomain", "rate_matched_codeword_llr", ...
+    "Applied", false, ...
+    "Status", "not_applied_post_equalization_variance_convention", ...
+    "Reason", "nrPUSCHDecode already consumed the effective post-equalization noise variance; applying CSI again would double-count reliability.", ...
+    "InputKind", "not_used_for_second_weighting", ...
+    "NoSecondCSIWeighting", true, ...
+    "DemapperOutputAlreadyWeightedByNoiseVariance", true, ...
+    "Modulation", char(string(modScheme)), ...
+    "LLRCount", double(numel(llrOut)), ...
+    "NoiseVariance", double(nVarForDecode), ...
+    "PostEqSINR_dB", double(postEqSINR_dB), ...
+    "RawCSIMedian", double(rawMedian), ...
+    "WeightMedianBeforeNormalization", 1, ...
+    "NormalizationScale", 1, ...
+    "InputLLRMeanAbs", double(meanAbsLLR), ...
+    "OutputLLRMeanAbs", double(meanAbsLLR));
 end
 
 function x = localEnsureLLRBatch(xIn)
@@ -2019,12 +2168,25 @@ rx.ULSCHDecodeAvailable = false;
 rx.LLRAvailable = false;
 rx.LLRFinite = false;
 rx.LLRScaleSource = "";
+rx.LLRScalingConvention = "";
+rx.DemapperNoiseVarianceConvention = "";
+rx.DemapperLLRDomain = "";
+rx.LLRDoubleWeightingGuard = false;
 rx.LLRNoiseVariance = NaN;
 rx.EqualizedSymbolsForEvidence = complex([]);
 rx.LayerEqualizedSymbolsForEvidence = complex([]);
 rx.LayerEqualizedSymbols = complex([]);
+rx.DecoderInputSymbolsForEvidence = complex([]);
+rx.DecoderInputSymbolDomain = "unavailable";
+rx.DecoderInputSymbolSource = "unavailable";
 rx.EqualizedSymbolDomain = "layer";
 rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, zeros(0, 1), "layer");
+rx.QAMEqualizedSymbolsForEvidence = complex([]);
+rx.PUSCHQAMSymbolsForEvidence = complex([]);
+rx.PUSCHDFTInputSymbolsForEvidence = complex([]);
+rx.QAMEqualizedSymbolDomain = "layer";
+rx.QAMEqualizedSymbolSource = "unavailable";
+rx.QAMSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, zeros(0, 1), "layer");
 rx.DemapperLLRCount = 0;
 rx.ULSCHDemapperLLRCount = 0;
 rx.RateRecoveredLLRCount = 0;
@@ -2057,7 +2219,10 @@ if ~compactOutput
     rx.PUSCH = pusch;
     rx.PUSCHInfo = puschInfo;
     rx.EqualizedSymbols = complex([]);
+    rx.DecoderInputSymbols = complex([]);
     rx.PUSCHRxSymbols = complex([]);
+    rx.QAMEqualizedSymbols = complex([]);
+    rx.PUSCHQAMSymbols = complex([]);
     rx.CSI = double([]);
 end
 

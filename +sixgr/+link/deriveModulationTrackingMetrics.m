@@ -50,7 +50,7 @@ metrics = struct( ...
 constellationT = table();
 
 modulation = localResolveModulation(tx, cfg, direction);
-[eqSymRaw, eqDomain, eqOrder] = localEqualizedLayerSymbols(rx);
+[eqSymRaw, eqDomain, eqOrder] = localEqualizedLayerSymbols(rx, direction);
 [txSym, refDomain, refOrder] = localReferenceSymbols(tx, direction);
 detectorSym = localDetectorSymbols(rx, direction);
 
@@ -202,7 +202,9 @@ txSym = [];
 domain = "layer";
 order = struct();
 if direction == "UL"
-    [txSym, fieldName] = localFirstPresent(tx, ["PUSCHLayerSymbolsForEvidence", ...
+    [txSym, fieldName] = localFirstPresent(tx, ["PUSCHDFTInputSymbolsForEvidence", ...
+        "PUSCHDFTInputSymbols", "DFTInputSymbols", "PUSCHQAMSymbolsForEvidence", ...
+        "PUSCHLayerSymbolsForEvidence", ...
         "PUSCHLayerSymbols", "PUSCHSymbolsForEvidence", "PUSCHSymbols"]);
 else
     [txSym, fieldName] = localFirstPresent(tx, ["PDSCHLayerSymbolsForEvidence", ...
@@ -213,18 +215,37 @@ if contains(lower(string(fieldName)), "port") || contains(lower(string(fieldName
 else
     domain = string(sixgr.util.structGet(tx, "LayerSymbolDomain", "layer"));
 end
-order = sixgr.util.structGet(tx, "LayerSymbolOrder", struct());
+if direction == "UL" && (contains(lower(string(fieldName)), "dftinput") || contains(lower(string(fieldName)), "qam"))
+    order = sixgr.util.structGet(tx, "QAMSymbolOrder", ...
+        sixgr.util.structGet(tx, "LayerSymbolOrder", struct()));
+else
+    order = sixgr.util.structGet(tx, "LayerSymbolOrder", struct());
+end
 txSym = localEnsureSymbolMatrix(txSym);
 end
 
-function [eqSym, domain, order] = localEqualizedLayerSymbols(rx)
-[eqSym, fieldName] = localFirstPresent(rx, ["LayerEqualizedSymbolsForEvidence", ...
-    "LayerEqualizedSymbols", "EqualizedSymbolsForEvidence", "EqualizedSymbols"]);
-domain = string(sixgr.util.structGet(rx, "EqualizedSymbolDomain", "layer"));
+function [eqSym, domain, order] = localEqualizedLayerSymbols(rx, direction)
+if direction == "UL"
+    [eqSym, fieldName] = localFirstPresent(rx, ["PUSCHQAMSymbolsForEvidence", ...
+        "PUSCHDFTInputSymbolsForEvidence", "QAMEqualizedSymbolsForEvidence", ...
+        "PUSCHQAMSymbols", "QAMEqualizedSymbols", ...
+        "LayerEqualizedSymbolsForEvidence", "LayerEqualizedSymbols", ...
+        "EqualizedSymbolsForEvidence", "EqualizedSymbols"]);
+else
+    [eqSym, fieldName] = localFirstPresent(rx, ["LayerEqualizedSymbolsForEvidence", ...
+        "LayerEqualizedSymbols", "EqualizedSymbolsForEvidence", "EqualizedSymbols"]);
+end
+if direction == "UL" && (contains(lower(string(fieldName)), "qam") || contains(lower(string(fieldName)), "dftinput"))
+    domain = string(sixgr.util.structGet(rx, "QAMEqualizedSymbolDomain", "layer"));
+    order = sixgr.util.structGet(rx, "QAMSymbolOrder", ...
+        sixgr.util.structGet(rx, "LayerSymbolOrder", struct()));
+else
+    domain = string(sixgr.util.structGet(rx, "EqualizedSymbolDomain", "layer"));
+    order = sixgr.util.structGet(rx, "LayerSymbolOrder", struct());
+end
 if contains(lower(string(fieldName)), "port") || contains(lower(string(fieldName)), "antenna")
     domain = "port";
 end
-order = sixgr.util.structGet(rx, "LayerSymbolOrder", struct());
 eqSym = localEnsureSymbolMatrix(eqSym);
 end
 
@@ -436,10 +457,12 @@ end
 
 function [layerDataRE, portIndexCellCount, qamSymbolCount, rateMatchedBitCount, demapperLLRCount] = localDomainCountMetrics(tx, rx)
 acct = sixgr.util.structGet(tx, "ResourceAccounting", struct());
+uciOnPUSCHApplied = logical(sixgr.util.structGet(tx, "UCIOnPUSCHApplied", false));
 layerDataRE = double(sixgr.util.structGet(tx, "LayerDataRE", NaN));
 portIndexCellCount = double(sixgr.util.structGet(tx, "PortIndexCellCount", NaN));
 qamSymbolCount = double(sixgr.util.structGet(tx, "QAMSymbolCount", NaN));
 rateMatchedBitCount = double(sixgr.util.structGet(tx, "RateMatchedBitCount", NaN));
+dataRateMatchedBitCount = double(sixgr.util.structGet(tx, "DataRateMatchedBitCount", NaN));
 if isstruct(acct) && ~isempty(fieldnames(acct))
     if ~isfinite(layerDataRE)
         layerDataRE = double(sixgr.util.structGet(acct, "LayerDataRE", NaN));
@@ -467,12 +490,27 @@ end
 if ~isfinite(rateMatchedBitCount)
     rateMatchedBitCount = double(sixgr.util.structGet(tx, "G", NaN));
 end
-demapperLLRCount = double(sixgr.util.structGet(rx, "DemapperLLRCount", NaN));
+if logical(uciOnPUSCHApplied) && isfinite(dataRateMatchedBitCount) && dataRateMatchedBitCount > 0
+    rateMatchedBitCount = double(dataRateMatchedBitCount);
+end
+if logical(uciOnPUSCHApplied)
+    demapperLLRCount = double(sixgr.util.structGet(rx, "ULSCHDemapperLLRCount", NaN));
+else
+    demapperLLRCount = double(sixgr.util.structGet(rx, "DemapperLLRCount", NaN));
+end
 if ~isfinite(demapperLLRCount)
-    llr = sixgr.util.structGet(rx, "CodewordLLR", []);
-    if isempty(llr)
+    if logical(uciOnPUSCHApplied)
         llr = sixgr.util.structGet(rx, "ULSCHCodewordLLR", ...
             sixgr.util.structGet(rx, "DLSCHCodewordLLR", []));
+        if isempty(llr)
+            llr = sixgr.util.structGet(rx, "CodewordLLR", []);
+        end
+    else
+        llr = sixgr.util.structGet(rx, "CodewordLLR", []);
+        if isempty(llr)
+            llr = sixgr.util.structGet(rx, "ULSCHCodewordLLR", ...
+                sixgr.util.structGet(rx, "DLSCHCodewordLLR", []));
+        end
     end
     demapperLLRCount = double(numel(llr));
 end
