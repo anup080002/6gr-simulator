@@ -370,11 +370,16 @@ try
 catch
     numLayersForSINR = min(size(hestSym, 2), max(1, size(hestSym, 3)));
 end
+equalizerResultForSINR = sixgr.util.structGet(equalizerInfo, "EqualizerResult", struct());
+if logical(sinrProjectionInfo.Applied)
+    equalizerResultForSINR = struct();
+end
 try
     [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
         hestSymForSINR, nVar, ...
         "Method", char(lower(string(equalizerAlg))), ...
         "Rint", Rint, ...
+        "EqualizerResult", equalizerResultForSINR, ...
         "Layers", double(numLayersForSINR), ...
         "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
     if logical(sinrProjectionInfo.Applied)
@@ -401,6 +406,10 @@ catch ME
         "PUSCHCodebookProjectionApplied", logical(sinrProjectionInfo.Applied), ...
         "PUSCHCodebookProjectionStatus", char(string(sinrProjectionInfo.Status)), ...
         "PUSCHCodebookProjectionTPMI", double(sinrProjectionInfo.TPMI));
+end
+csiFromEqualizerResult = sixgr.util.structGet(postEqSINRInfo, "DemapperReliability", []);
+if ~isempty(csiFromEqualizerResult)
+    csi = csiFromEqualizerResult;
 end
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 [nVarPostEqDiagnostic, nVarPostEqInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
@@ -620,6 +629,12 @@ rx.SINRComputationMethod = char(string(sixgr.util.structGet(postEqSINRInfo, "Met
 rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
 rx.EqualizerRequestedType = char(equalizerRequested);
 rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
+rx.EqualizerResultContract = char(string(sixgr.util.structGet(equalizerInfo, "EqualizerResult.ContractVersion", "")));
+rx.EqualizerEquation = char(string(sixgr.util.structGet(equalizerInfo, "EqualizerResult.Equation", "")));
+rx.EqualizerCovarianceIncludesNoise = logical(sixgr.util.structGet(equalizerInfo, "EqualizerResult.CovarianceIncludesNoise", false));
+rx.EqualizerNoiseAddedExactlyOnce = logical(sixgr.util.structGet(equalizerInfo, "EqualizerResult.NoiseAddedExactlyOnce", false));
+rx.EqualizerUniqueSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerResult.UniqueSolveCount", NaN));
+rx.EqualizerSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerResult.SolveCount", NaN));
 rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
 rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));

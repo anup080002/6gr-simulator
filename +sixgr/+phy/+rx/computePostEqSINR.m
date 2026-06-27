@@ -1,19 +1,128 @@
 function [sinr_dB, sinr_per_re_dB, info] = computePostEqSINR(hEstSym, nVar, varargin)
-%COMPUTEPOSTEQSINR Estimate post-equalization SINR from data-RE channel estimates.
+%COMPUTEPOSTEQSINR Estimate post-equalization SINR from EqualizerResult.
 %
-%   This helper returns a scheduler-eligible data-domain SINR from the same
-%   extracted resource-element channel estimate and noise variance used by
-%   the linear equalizer. Pilot/Hest residual metrics and post-decode EVM
-%   proxies must not be fed to CQI/MCS selection as if they were this value.
+%   The preferred path supplies "EqualizerResult" from mimoDetect. If that
+%   is not supplied, this helper constructs the same result through
+%   equalizeMMSE using a zero receive-symbol vector, so there is still one
+%   source of equalizer mathematics.
 
 ip = inputParser;
 ip.addParameter("Method", "mmse", @(s) any(strcmpi(char(string(s)), ["mmse","irc","zf","mrc"])));
 ip.addParameter("Rint", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("Layers", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 1));
 ip.addParameter("MaxTrustedSINR_dB", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("EqualizerResult", struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter("RIncludesNoise", [], @(x) isempty(x) || islogical(x) || isnumeric(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
+info = localDefaultInfo(opt);
+sinr_dB = NaN;
+sinr_per_re_dB = [];
+
+eqResult = opt.EqualizerResult;
+if ~(isstruct(eqResult) && isfield(eqResult, "PostEqSINRLinear") && ~isempty(eqResult.PostEqSINRLinear))
+    if isempty(hEstSym) || ~isnumeric(hEstSym)
+        info.NAReason = "empty_or_non_numeric_channel_estimate";
+        sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+            "post_equalization_sinr", info.NAReason);
+        return;
+    end
+    nVar = double(nVar);
+    if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
+        info.NAReason = "invalid_or_unavailable_noise_variance";
+        sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+            "post_equalization_sinr", info.NAReason);
+        return;
+    end
+    [H, dims, badReason] = localNormalizeH(hEstSym);
+    if strlength(badReason) > 0
+        info.NAReason = char(badReason);
+        sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
+            "post_equalization_sinr", info.NAReason);
+        return;
+    end
+    profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.rx.computePostEqSINR", ...
+        "Stage", "post_equalization_sinr", ...
+        "Metadata", struct("NRE", double(dims.NRE), "NRx", double(dims.NumRxAnt), ...
+        "NTx", double(dims.NumTxPorts), "NLayers", double(localResolveLayerCount(opt.Layers, dims)))); %#ok<NASGU>
+    rxZeros = complex(zeros(dims.NRE, dims.NumRxAnt));
+    args = {"Algorithm", upper(string(opt.Method)), "Rint", opt.Rint};
+    if ~isempty(opt.RIncludesNoise)
+        args = [args, {"RIncludesNoise", logical(opt.RIncludesNoise)}]; %#ok<AGROW>
+    end
+    [~, ~, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxZeros, H, nVar, args{:});
+    eqResult = eqInfo.EqualizerResult;
+    info.EqualizerResultSource = "computed_from_channel_estimate";
+else
+    info.EqualizerResultSource = "supplied_by_mimoDetect";
+end
+
+[sinrLin, layerCount] = localExtractSINR(eqResult, opt.Layers);
+valid = isfinite(sinrLin) & sinrLin > 0;
+if ~any(valid(:))
+    info.NAReason = "no_valid_post_equalization_sinr_samples";
+    return;
+end
+
+perLayer = localGeometricLayerSINR(sinrLin);
+validLayers = perLayer(isfinite(perLayer));
+if isempty(validLayers)
+    info.NAReason = "no_valid_post_equalization_sinr_layers";
+    return;
+end
+
+rawPerLayer = double(perLayer);
+rawSINR_dB = mean(validLayers, "omitnan");
+sinr_dB = double(rawSINR_dB);
+sinr_per_re_dB = 10 .* log10(max(sinrLin, eps));
+sinr_per_re_dB(~valid) = NaN;
+
+maxTrustedSINR = double(opt.MaxTrustedSINR_dB);
+if ~(isscalar(maxTrustedSINR) && isfinite(maxTrustedSINR) && maxTrustedSINR > 0)
+    maxTrustedSINR = inf;
+end
+if isfinite(maxTrustedSINR)
+    sinr_dB = min(double(sinr_dB), double(maxTrustedSINR));
+    perLayer = min(double(perLayer), double(maxTrustedSINR));
+    sinr_per_re_dB = min(double(sinr_per_re_dB), double(maxTrustedSINR));
+end
+
+info.SINR_dB = double(sinr_dB);
+info.ValueStatus = "OK";
+info.NAReason = "";
+info.Method = char(lower(string(sixgr.util.structGet(eqResult, "AlgorithmUsed", opt.Method))));
+info.PerLayerSINR_dB = double(perLayer);
+info.RawSINR_dB = double(rawSINR_dB);
+info.RawPerLayerSINR_dB = double(rawPerLayer);
+info.MaxTrustedSINR_dB = double(maxTrustedSINR);
+if isfinite(maxTrustedSINR) && isfinite(rawSINR_dB) && rawSINR_dB > maxTrustedSINR
+    info.ValueStatus = "OK_dynamic_range_limited";
+    info.NAReason = sprintf("raw_post_eq_sinr_%.6g_dB_limited_to_max_trusted_%.6g_dB", ...
+        double(rawSINR_dB), double(maxTrustedSINR));
+end
+info.NRE = double(size(sinrLin, 1));
+info.NumRxAnt = double(sixgr.util.structGet(eqResult, "NumRxAnt", NaN));
+info.NumTxPorts = double(sixgr.util.structGet(eqResult, "NumTxPorts", NaN));
+info.NumLayers = double(layerCount);
+info.NoiseVariance = double(sixgr.util.structGet(eqResult, "PreEqualizationNoiseVariance", nVar));
+info.ImpairmentCovarianceUsed = ~strcmp(string(sixgr.util.structGet(eqResult, "CovarianceSource", "")), "white_noise_variance");
+if logical(info.ImpairmentCovarianceUsed)
+    info.ImpairmentCovarianceSource = "dmrs_residual_impairment_covariance";
+end
+info.EqualizerResultContract = string(sixgr.util.structGet(eqResult, "ContractVersion", ""));
+info.EqualizerEquation = string(sixgr.util.structGet(eqResult, "Equation", ""));
+info.EqualizerSolveCount = double(sixgr.util.structGet(eqResult, "SolveCount", NaN));
+info.EqualizerUniqueSolveCount = double(sixgr.util.structGet(eqResult, "UniqueSolveCount", NaN));
+info.EqualizerStaticChannelBatchApplied = logical(sixgr.util.structGet(eqResult, "StaticChannelBatchApplied", false));
+info.EqualizerRegularizationApplied = logical(sixgr.util.structGet(eqResult, "RegularizationApplied", false));
+info.DemapperReliability = localFirstLayers(sixgr.util.structGet(eqResult, "DemapperReliability", []), layerCount);
+info.PostEqSINRLinear = sinrLin;
+info.DemapperReliabilityMean = localFiniteMean(info.DemapperReliability);
+info.ResidualInterLayerPowerMean = localFiniteMean(sixgr.util.structGet(eqResult, "ResidualInterLayerPower", []));
+end
+
+function info = localDefaultInfo(opt)
 info = struct( ...
     "SINR_dB", NaN, ...
     "Method", char(lower(string(opt.Method))), ...
@@ -31,24 +140,22 @@ info = struct( ...
     "RawPerLayerSINR_dB", NaN, ...
     "MaxTrustedSINR_dB", NaN, ...
     "ImpairmentCovarianceUsed", false, ...
-    "ImpairmentCovarianceSource", "");
-sinr_dB = NaN;
-sinr_per_re_dB = [];
-
-if isempty(hEstSym) || ~isnumeric(hEstSym)
-    info.NAReason = "empty_or_non_numeric_channel_estimate";
-    sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
-        "post_equalization_sinr", info.NAReason);
-    return;
-end
-nVar = double(nVar);
-if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
-    info.NAReason = "invalid_or_unavailable_noise_variance";
-    sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
-        "post_equalization_sinr", info.NAReason);
-    return;
+    "ImpairmentCovarianceSource", "", ...
+    "EqualizerResultSource", "", ...
+    "EqualizerResultContract", "", ...
+    "EqualizerEquation", "", ...
+    "EqualizerSolveCount", NaN, ...
+    "EqualizerUniqueSolveCount", NaN, ...
+    "EqualizerStaticChannelBatchApplied", false, ...
+    "EqualizerRegularizationApplied", false, ...
+    "DemapperReliability", [], ...
+    "PostEqSINRLinear", [], ...
+    "DemapperReliabilityMean", NaN, ...
+    "ResidualInterLayerPowerMean", NaN);
 end
 
+function [H, dims, reason] = localNormalizeH(hEstSym)
+reason = "";
 H = hEstSym;
 switch ndims(H)
     case 2
@@ -67,217 +174,79 @@ switch ndims(H)
         nTx = sz(4);
         H = reshape(H, nRE, nRx, nTx);
     otherwise
-        info.NAReason = "unsupported_channel_estimate_rank";
-        sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
-            "post_equalization_sinr", info.NAReason);
+        dims = struct("NRE", NaN, "NumRxAnt", NaN, "NumTxPorts", NaN);
+        reason = "unsupported_channel_estimate_rank";
         return;
 end
 if nRE < 1 || nRx < 1 || nTx < 1
-    info.NAReason = "empty_channel_estimate_dimensions";
-    sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
-        "post_equalization_sinr", info.NAReason);
-    return;
+    reason = "empty_channel_estimate_dimensions";
 end
-nLayers = min(nRx, nTx);
-if ~isempty(opt.Layers)
-    nLayers = max(1, min(round(double(opt.Layers)), min(nRx, nTx)));
-end
-profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.rx.computePostEqSINR", ...
-    "Stage", "post_equalization_sinr", ...
-    "Metadata", struct("NRE", double(nRE), "NRx", double(nRx), "NTx", double(nTx), ...
-    "NLayers", double(nLayers))); %#ok<NASGU>
-method = lower(string(opt.Method));
-rint = opt.Rint;
-usePerRERint = ~isempty(rint) && ndims(rint) == 3 && size(rint, 1) == nRE && size(rint, 2) == nRx && size(rint, 3) == nRx;
-useStaticRint = ~isempty(rint) && ismatrix(rint) && size(rint, 1) == nRx && size(rint, 2) == nRx;
-if method == "irc" && ~(usePerRERint || useStaticRint)
-    method = "mmse";
-    info.Method = "mmse";
+dims = struct("NRE", double(nRE), "NumRxAnt", double(nRx), "NumTxPorts", double(nTx));
 end
 
-sinrLin = nan(nRE, nLayers);
-for k = 1:nRE
-    Hk = squeeze(H(k, :, :));
-    if isvector(Hk)
-        Hk = reshape(Hk, nRx, nTx);
-    end
-    if any(~isfinite(real(Hk(:)))) || any(~isfinite(imag(Hk(:))))
-        continue;
-    end
-
-    switch method
-        case {"mmse","irc"}
-            whiteCov = nVar * eye(nRx);
-            actualCov = whiteCov;
-            impairmentCovUsed = false;
-            if method == "irc" && usePerRERint
-                Rnn = localRegularizeCovariance(squeeze(rint(k, :, :)), nVar);
-                actualCov = Rnn;
-                impairmentCovUsed = true;
-            elseif method == "irc" && useStaticRint
-                Rnn = localRegularizeCovariance(rint, nVar);
-                actualCov = Rnn;
-                impairmentCovUsed = true;
-            else
-                Rnn = whiteCov;
-                if usePerRERint
-                    actualCov = localRegularizeCovariance(squeeze(rint(k, :, :)), nVar);
-                    impairmentCovUsed = true;
-                elseif useStaticRint
-                    actualCov = localRegularizeCovariance(rint, nVar);
-                    impairmentCovUsed = true;
-                end
-            end
-            W = localStableRightSolve(Hk', Hk * Hk' + Rnn);
-            if isempty(W)
-                continue;
-            end
-            G = W * Hk;
-            noiseCov = W * actualCov * W';
-            for layer = 1:nLayers
-                signalPower = abs(G(layer, layer)) .^ 2;
-                interferencePower = sum(abs(G(layer, :)) .^ 2) - signalPower;
-                noisePower = real(noiseCov(layer, layer));
-                sinrLin(k, layer) = signalPower / max(interferencePower + noisePower, eps);
-            end
-            if impairmentCovUsed
-                info.ImpairmentCovarianceUsed = true;
-            end
-
-        case "zf"
-            W = pinv(Hk);
-            G = W * Hk;
-            if usePerRERint
-                actualCov = localRegularizeCovariance(squeeze(rint(k, :, :)), nVar);
-                info.ImpairmentCovarianceUsed = true;
-            elseif useStaticRint
-                actualCov = localRegularizeCovariance(rint, nVar);
-                info.ImpairmentCovarianceUsed = true;
-            else
-                actualCov = nVar * eye(nRx);
-            end
-            noiseCov = W * actualCov * W';
-            for layer = 1:nLayers
-                signalPower = abs(G(layer, layer)) .^ 2;
-                interferencePower = sum(abs(G(layer, :)) .^ 2) - signalPower;
-                noisePower = real(noiseCov(layer, layer));
-                sinrLin(k, layer) = signalPower / max(interferencePower + noisePower, eps);
-            end
-
-        case "mrc"
-            for layer = 1:nLayers
-                h = Hk(:, layer);
-                sinrLin(k, layer) = real(h' * h) / max(nVar, eps);
-            end
-    end
-end
-
-valid = isfinite(sinrLin) & sinrLin > 0;
-if ~any(valid(:))
-    info.NAReason = "no_valid_post_equalization_sinr_samples";
-    return;
-end
-
-perLayer = nan(1, nLayers);
-for layer = 1:nLayers
-    values = sinrLin(valid(:, layer), layer);
-    if ~isempty(values)
-        perLayer(layer) = 10 * log10(exp(mean(log(values))));
-    end
-end
-validLayers = perLayer(isfinite(perLayer));
-if isempty(validLayers)
-    info.NAReason = "no_valid_post_equalization_sinr_layers";
-    return;
-end
-
-rawPerLayer = double(perLayer);
-rawSINR_dB = mean(validLayers);
-sinr_dB = double(rawSINR_dB);
-sinr_per_re_dB = 10 * log10(max(sinrLin, eps));
-sinr_per_re_dB(~valid) = NaN;
-maxTrustedSINR = double(opt.MaxTrustedSINR_dB);
-if ~(isscalar(maxTrustedSINR) && isfinite(maxTrustedSINR) && maxTrustedSINR > 0)
-    maxTrustedSINR = inf;
-end
-if isfinite(maxTrustedSINR)
-    sinr_dB = min(double(sinr_dB), double(maxTrustedSINR));
-    perLayer = min(double(perLayer), double(maxTrustedSINR));
-    sinr_per_re_dB = min(double(sinr_per_re_dB), double(maxTrustedSINR));
-end
-
-info.SINR_dB = double(sinr_dB);
-info.ValueStatus = "OK";
-info.NAReason = "";
-info.PerLayerSINR_dB = double(perLayer);
-info.RawSINR_dB = double(rawSINR_dB);
-info.RawPerLayerSINR_dB = double(rawPerLayer);
-info.MaxTrustedSINR_dB = double(maxTrustedSINR);
-if isfinite(maxTrustedSINR) && isfinite(rawSINR_dB) && rawSINR_dB > maxTrustedSINR
-    info.ValueStatus = "OK_dynamic_range_limited";
-    info.NAReason = sprintf("raw_post_eq_sinr_%.6g_dB_limited_to_max_trusted_%.6g_dB", ...
-        double(rawSINR_dB), double(maxTrustedSINR));
-end
-info.NRE = double(nRE);
-info.NumRxAnt = double(nRx);
-info.NumTxPorts = double(nTx);
-info.NumLayers = double(nLayers);
-info.NoiseVariance = double(nVar);
-if logical(info.ImpairmentCovarianceUsed)
-    info.ImpairmentCovarianceSource = "dmrs_residual_impairment_covariance";
-end
-end
-
-function R = localRegularizeCovariance(Rin, nVar)
-R = double(Rin);
-R = (R + R') ./ 2;
-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
-    R = max(double(nVar), eps) * eye(size(R, 1));
-    return;
-end
-diagonalFloor = max(double(nVar) * 1e-6, eps);
-R = R + diagonalFloor * eye(size(R, 1));
-if rcond(R) < 1e-12
-    R = R + max(diagonalFloor, norm(R, "fro") * 1e-10) * eye(size(R, 1));
-end
-end
-
-function X = localStableRightSolve(B, A)
-X = [];
-if isempty(A) || isempty(B) || size(A, 1) ~= size(A, 2) || size(B, 2) ~= size(A, 1)
-    return;
-end
-A = double(A);
-B = double(B);
-if any(~isfinite(real(A(:)))) || any(~isfinite(imag(A(:)))) || ...
-        any(~isfinite(real(B(:)))) || any(~isfinite(imag(B(:))))
-    return;
-end
-A = (A + A') ./ 2;
-s = svd(A);
-s = double(s(isfinite(s) & s >= 0));
-if isempty(s)
-    return;
-end
-sMax = max(s);
-if ~(isfinite(sMax) && sMax > 0)
-    return;
-end
-rcondEstimate = min(s) / max(sMax, eps);
-if rcondEstimate < 1e-10
-    diagonalLoad = max(sMax * 1e-8, eps(class(sMax)));
-    A = A + diagonalLoad * eye(size(A, 1));
-    s = svd(A);
-    s = double(s(isfinite(s) & s >= 0));
-    if isempty(s)
-        return;
-    end
-    sMax = max(s);
-    rcondEstimate = min(s) / max(sMax, eps);
-end
-if rcondEstimate < 1e-12
-    X = B * pinv(A);
+function n = localResolveLayerCount(layers, dims)
+if isempty(layers)
+    n = min(double(dims.NumRxAnt), double(dims.NumTxPorts));
 else
-    X = B / A;
+    n = max(1, min(round(double(layers)), min(double(dims.NumRxAnt), double(dims.NumTxPorts))));
 end
+end
+
+function [sinrLin, layerCount] = localExtractSINR(eqResult, layers)
+sinrLin = double(sixgr.util.structGet(eqResult, "PostEqSINRLinear", []));
+if isempty(sinrLin)
+    sinrLin = [];
+    layerCount = 0;
+    return;
+end
+if isvector(sinrLin)
+    sinrLin = sinrLin(:);
+end
+maxLayers = size(sinrLin, 2);
+if isempty(layers)
+    layerCount = maxLayers;
+else
+    layerCount = max(1, min(round(double(layers)), maxLayers));
+end
+sinrLin = sinrLin(:, 1:layerCount);
+end
+
+function perLayer = localGeometricLayerSINR(sinrLin)
+nLayers = size(sinrLin, 2);
+perLayer = NaN(1, nLayers);
+for layer = 1:nLayers
+    x = double(sinrLin(:, layer));
+    x = x(isfinite(x) & x > 0);
+    if ~isempty(x)
+        perLayer(layer) = 10 * log10(exp(mean(log(x), "omitnan")));
+    end
+end
+end
+
+function v = localFiniteMean(x)
+if isempty(x)
+    v = NaN;
+    return;
+end
+x = double(x(:));
+x = x(isfinite(x));
+if isempty(x)
+    v = NaN;
+else
+    v = mean(x, "omitnan");
+end
+end
+
+function y = localFirstLayers(x, layerCount)
+y = x;
+if isempty(x) || ~isnumeric(x)
+    y = [];
+    return;
+end
+if isvector(x)
+    y = x(:);
+    return;
+end
+n = min(size(x, 2), max(1, round(double(layerCount))));
+y = x(:, 1:n);
 end
