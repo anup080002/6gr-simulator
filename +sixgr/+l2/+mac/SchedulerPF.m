@@ -669,7 +669,7 @@ n = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoMaxUsersPerPRB", ...
 if ~(isscalar(n) && isfinite(n) && n >= 2)
     n = 2;
 end
-n = max(2, min(2, round(n)));
+n = max(2, min(8, round(n)));
 end
 
 function tf = localMUMIMOCompatible(ueA, ueB, cfg)

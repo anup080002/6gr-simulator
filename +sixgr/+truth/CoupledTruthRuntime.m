@@ -71,6 +71,10 @@ methods(Static)
         state.CurrentDirection = "";
         state.CurrentUEIndex = NaN;
         state.NumUsers = nUsers;
+        state.MIMOExecutionState = struct( ...
+            "Initialized", true, ...
+            "ExecutionSource", "sixgr.mimo.executeSpatialComposite", ...
+            "LastCompositeSummary", struct());
         state.RunState = sixgr.truth.CoupledTruthRuntime.initializeRunState(cfgMob, multiUser, totalTrafficFrames);
         state.SlotTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptySlotTraceRow(), 0, 1));
         state.SlotDuration_s = sixgr.truth.CoupledTruthRuntime.slotDuration(cfgMob);
@@ -254,6 +258,14 @@ methods(Static)
                     ii, char(string(context)));
             end
         end
+    end
+
+    function out = executeMIMOCompositeRuntime(txContributors, rxContexts, cfg, varargin)
+        if nargin < 3 || ~isstruct(cfg)
+            cfg = struct();
+        end
+        out = sixgr.mimo.executeSpatialComposite(txContributors, rxContexts, cfg, varargin{:});
+        out.RuntimeConsumer = "sixgr.truth.CoupledTruthRuntime.executeMIMOCompositeRuntime";
     end
 
     function tf = interferenceEntryHasSharedSlotContribution(entry)

@@ -500,7 +500,13 @@ classdef (Abstract) SchedulerBase < handle
                 "OLLAState", "not_applicable", ...
                 "MCSSelectionSource", "configured_profile", ...
                 "CQIProvenance", "unavailable", ...
-                "MCSValueStatus", "unresolved");
+                "MCSValueStatus", "unresolved", ...
+                "InitialNumLayers", double(nLayers), ...
+                "RankSelectionPolicy", "", ...
+                "RankSelectionSource", "", ...
+                "RankDecisionReason", "", ...
+                "RankDowngradeApplied", false, ...
+                "MaxSupportedLayers", NaN);
 
             ueMCSIndex = double(sixgr.util.structGet(ue, "MCSIndex", NaN));
             ueMCSIndexAuthority = lower(strtrim(string(sixgr.util.structGet(ue, "MCSIndexAuthority", ""))));
@@ -629,17 +635,23 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
 
-            if localUseWaveformULSingleLayerSafety(obj.Cfg) && strcmp(dir, 'UL')
-                % Preserve the validated waveform-fading UL single-layer safety
-                % behavior without coupling it to CQI or AMC table selection.
-                nLayers = 1;
-            end
-
+            requestedLayers = max(1, min(8, round(nLayers)));
+            rankDecision = sixgr.mimo.resolveRankExecutionPolicy(obj.Cfg, dir, requestedLayers, ...
+                "WaveformFadingULSafetyRequested", localUseWaveformULSingleLayerSafety(obj.Cfg), ...
+                "TransmissionScheme", sixgr.util.structGet(obj.Cfg, "phy.pusch.transmissionScheme", ""), ...
+                "TPMI", sixgr.util.structGet(obj.Cfg, "phy.pusch.TPMI", NaN));
+            nLayers = double(rankDecision.EffectiveRank);
             nLayers = max(1, min(8, round(nLayers)));
             targetCodeRate = min(max(targetCodeRate, 0.05), 0.95);
             amc.Modulation = char(string(modStr));
             amc.TargetCodeRate = double(targetCodeRate);
             amc.NumLayers = double(nLayers);
+            amc.InitialNumLayers = double(requestedLayers);
+            amc.RankSelectionPolicy = char(string(rankDecision.Policy));
+            amc.RankSelectionSource = char(string(rankDecision.ValueSource));
+            amc.RankDecisionReason = char(string(rankDecision.DecisionReason));
+            amc.RankDowngradeApplied = logical(rankDecision.DowngradeApplied);
+            amc.MaxSupportedLayers = double(rankDecision.MaxSupportedLayers);
         end
 
         function tableName = resolveMCSTable(obj)
