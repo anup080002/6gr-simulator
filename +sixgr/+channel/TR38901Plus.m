@@ -415,6 +415,38 @@ classdef TR38901Plus < handle
         end
     end
 
+    methods
+        function [pl_dB, los, ex] = pathlossFromGeometryState(obj, geometryState, cellIdx)
+            % Evaluate pathloss using one canonical GeometryEngine state.
+            if ~(isstruct(geometryState) && isfield(geometryState, "UEPosition_m") && isfield(geometryState, "BSPosition_m"))
+                error("TR38901Plus:pathlossFromGeometryState:BadGeometryState", ...
+                    "geometryState must contain UEPosition_m and BSPosition_m.");
+            end
+            cellIdx = max(1, round(double(cellIdx)));
+            uePos = double(geometryState.UEPosition_m);
+            bsPos = double(geometryState.BSPosition_m);
+            if cellIdx > size(bsPos, 1)
+                error("TR38901Plus:pathlossFromGeometryState:CellOutOfRange", ...
+                    "Requested cellIdx %d exceeds BSPosition_m rows %d.", cellIdx, size(bsPos, 1));
+            end
+            K = size(uePos, 1);
+            txPos = repmat(bsPos(cellIdx, :).', 1, K);
+            rxPos = uePos.';
+            [pl_dB, los, ex] = obj.pathloss(txPos, rxPos, ...
+                "Scenario", string(sixgr.util.structGet(geometryState, "PropagationScenario", obj.Scenario)), ...
+                "IndoorRx", reshape(logical(geometryState.IndoorRx(:, cellIdx)), 1, []), ...
+                "IndoorDistance_m", reshape(double(geometryState.IndoorDistance_m(:, cellIdx)), 1, []), ...
+                "PathlossEnabled", logical(sixgr.util.structGet(geometryState, "PathlossEnabled", obj.PathlossEnabled)), ...
+                "ShadowFadingEnabled", logical(sixgr.util.structGet(geometryState, "ShadowFadingEnabled", obj.ShadowFadingEnabled)), ...
+                "LOSEnabled", logical(sixgr.util.structGet(geometryState, "LOSEnabled", obj.LOSEnabled)));
+            ex.geometrySource = string(sixgr.util.structGet(geometryState, "GeometrySource", ""));
+            ex.distance2D_m = reshape(double(geometryState.d2d_m(:, cellIdx)), 1, []);
+            ex.distance3D_m = reshape(double(geometryState.d3d_m(:, cellIdx)), 1, []);
+            ex.propagationDelay_s = reshape(double(geometryState.PropagationDelay_s(:, cellIdx)), 1, []);
+            ex.signedDoppler_Hz = reshape(double(geometryState.SignedDoppler_Hz(:, cellIdx)), 1, []);
+        end
+    end
+
     methods(Access=private)
         function obj = refreshPathlossTruthBoundary(obj)
             model = lower(strtrim(obj.PathlossModel));

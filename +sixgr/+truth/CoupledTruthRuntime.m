@@ -435,8 +435,10 @@ methods(Static, Access=private)
             state.CurrentSNR_dB = double(snr_dB);
             return;
         end
+        mobilityAdvanced = false;
         if canonicalSlot > 1 && mobilityEnabled
             [state.UE, state.MobilityModel] = sixgr.scenario.mobility.updatePositions(state.UE, state.CfgMobility, state.SlotDuration_s, state.MobilityModel);
+            mobilityAdvanced = true;
         end
         state = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrame(state, canonicalSlot);
         doBeamUpdate = (canonicalSlot == 1) || (mod(canonicalSlot - 1, beamUpdateSlots) == 0);
@@ -445,7 +447,7 @@ methods(Static, Access=private)
                 state.UE.pos_m, state.Layout.bs.pos_m, state.Layout.bs.azim_deg, ...
                 state.NBeams, state.BeamSpanDeg, state.BeamMaxGain_dB);
         end
-        doProp = (canonicalSlot == 1) || doBeamUpdate || (mod(canonicalSlot - 1, largeScaleUpdateSlots) == 0);
+        doProp = (canonicalSlot == 1) || mobilityAdvanced || doBeamUpdate || (mod(canonicalSlot - 1, largeScaleUpdateSlots) == 0);
         reuseProp = ~isempty(fieldnames(state.LargeScaleState)) && ~doProp;
         state.LargeScaleState = sixgr.system.buildLargeScaleStateCache( ...
             state.CfgLargeScale, state.Layout, state.UE, state.BeamIdx, state.BeamGain_dB, state.PLModel, ...
@@ -534,6 +536,15 @@ methods(Static, Access=private)
         if ueIdx < 1 || ueIdx > numel(state.CurrentServingIdx)
             return;
         end
+        largeScaleReady = isfield(state, 'LargeScaleState') && isstruct(state.LargeScaleState) && ...
+            isfield(state.LargeScaleState, 'd2d_m') && isfield(state.LargeScaleState, 'PropagationDelay_s') && ...
+            isfield(state.LargeScaleState, 'Doppler_Hz');
+        if ~largeScaleReady
+            state.LargeScaleState = sixgr.system.buildLargeScaleStateCache( ...
+                state.CfgLargeScale, state.Layout, state.UE, state.BeamIdx, state.BeamGain_dB, state.PLModel, ...
+                "NumRB", state.NumRB, "PreviousState", struct(), "ReusePropagation", false);
+            [state.CurrentServingIdx, state.CurrentServingMetric_dBm] = sixgr.system.selectServingCellsFromPower(state.LargeScaleState.RSRP_dBm);
+        end
         servingCell = double(state.CurrentServingIdx(ueIdx));
         if ~(isfinite(servingCell) && servingCell >= 1)
             servingCell = 1;
@@ -551,6 +562,18 @@ methods(Static, Access=private)
         userMeta.RuntimeServingPathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, servingCell));
         userMeta.RuntimeServingShadowFading_dB = double(state.LargeScaleState.Shadow_dB(ueIdx, servingCell));
         userMeta.RuntimeServingO2I_dB = double(state.LargeScaleState.O2I_dB(ueIdx, servingCell));
+        userMeta.RuntimeGeometrySource = char(string(sixgr.util.structGet(state.LargeScaleState, "GeometrySource", "")));
+        userMeta.RuntimeGeometryDelaySource = char(string(sixgr.util.structGet(state.LargeScaleState, "DelaySource", "")));
+        userMeta.RuntimeGeometryDopplerSource = char(string(sixgr.util.structGet(state.LargeScaleState, "DopplerSource", "")));
+        userMeta.RuntimeServingDistance2D_m = double(state.LargeScaleState.d2d_m(ueIdx, servingCell));
+        userMeta.RuntimeServingDistance3D_m = double(state.LargeScaleState.d3d_m(ueIdx, servingCell));
+        userMeta.RuntimeServingPropagationDelay_s = double(state.LargeScaleState.PropagationDelay_s(ueIdx, servingCell));
+        userMeta.RuntimeServingRadialVelocity_mps = double(state.LargeScaleState.RadialVelocity_mps(ueIdx, servingCell));
+        userMeta.RuntimeServingSignedDopplerHz = double(state.LargeScaleState.SignedDoppler_Hz(ueIdx, servingCell));
+        userMeta.RuntimeServingDopplerHz = double(state.LargeScaleState.Doppler_Hz(ueIdx, servingCell));
+        userMeta.RuntimeServingLOSProbability = double(state.LargeScaleState.LOSProbability(ueIdx, servingCell));
+        userMeta.RuntimeServingLOS = logical(state.LargeScaleState.LOS(ueIdx, servingCell));
+        userMeta.RuntimeServingIndoorDistance_m = double(state.LargeScaleState.IndoorDistance_m(ueIdx, servingCell));
         userMeta.RuntimeChannelComplianceMode = char(string(sixgr.util.structGet(state.LargeScaleState, "ChannelComplianceMode", "")));
         userMeta.RuntimePathlossModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossModelSource", "")));
         userMeta.RuntimePathlossComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossComplianceStatus", "")));
@@ -571,11 +594,17 @@ methods(Static, Access=private)
         if ueIdx <= size(state.UE.pos_m, 1)
             userMeta.RuntimeUEPosition_m = reshape(double(state.UE.pos_m(ueIdx, :)), 1, []);
         end
+        if isfield(state.LargeScaleState, "UEVelocity_mps") && ueIdx <= size(state.LargeScaleState.UEVelocity_mps, 1)
+            userMeta.RuntimeUEVelocity_mps = reshape(double(state.LargeScaleState.UEVelocity_mps(ueIdx, :)), 1, []);
+        end
         if ueIdx <= numel(state.UE.heading_deg)
             userMeta.RuntimeUEHeading_deg = double(state.UE.heading_deg(ueIdx));
         end
         if servingCell <= size(state.Layout.bs.pos_m, 1)
             userMeta.RuntimeServingBSPosition_m = reshape(double(state.Layout.bs.pos_m(servingCell, :)), 1, []);
+        end
+        if isfield(state.LargeScaleState, "BSVelocity_mps") && servingCell <= size(state.LargeScaleState.BSVelocity_mps, 1)
+            userMeta.RuntimeServingBSVelocity_mps = reshape(double(state.LargeScaleState.BSVelocity_mps(servingCell, :)), 1, []);
         end
         if servingCell <= numel(state.Layout.bs.azim_deg)
             userMeta.RuntimeServingBSAzimuth_deg = double(state.Layout.bs.azim_deg(servingCell));
@@ -592,6 +621,15 @@ methods(Static, Access=private)
         userMeta.RuntimeAntennaConfigSource = "browser_yaml_to_buildInternalConfig_to_CoupledTruthRuntime";
         userMeta.RuntimeAntennaObjectSource = "CoupledTruthRuntime.initialize:AntennaArrayFactory.build";
         userMeta.RuntimeChannelArrayModel = char(sixgr.truth.CoupledTruthRuntime.resolveChannelArrayModel(cfgU));
+        cfgU = sixgr.util.structSet(cfgU, "channel.distance2D_m", userMeta.RuntimeServingDistance2D_m);
+        cfgU = sixgr.util.structSet(cfgU, "channel.distance3D_m", userMeta.RuntimeServingDistance3D_m);
+        cfgU = sixgr.util.structSet(cfgU, "channel.propagationDistance2D_m", userMeta.RuntimeServingDistance2D_m);
+        cfgU = sixgr.util.structSet(cfgU, "channel.propagationDistance_m", userMeta.RuntimeServingDistance3D_m);
+        cfgU = sixgr.util.structSet(cfgU, "channel.propagationDelay_s", userMeta.RuntimeServingPropagationDelay_s);
+        cfgU = sixgr.util.structSet(cfgU, "channel.doppler_Hz", userMeta.RuntimeServingDopplerHz);
+        cfgU = sixgr.util.structSet(cfgU, "channel.runtimeSignedDoppler_Hz", userMeta.RuntimeServingSignedDopplerHz);
+        cfgU = sixgr.util.structSet(cfgU, "channel.losProbability", userMeta.RuntimeServingLOSProbability);
+        cfgU = sixgr.util.structSet(cfgU, "channel.runtimeLOS", userMeta.RuntimeServingLOS);
         feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
         if isfinite(double(sixgr.util.structGet(feedback, "PMI", NaN)))
             userMeta.RuntimeFeedbackPMI = double(feedback.PMI);

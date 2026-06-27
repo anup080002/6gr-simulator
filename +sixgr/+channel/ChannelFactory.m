@@ -537,6 +537,7 @@ classdef ChannelFactory
                 "TransmitAntennaMeta", opt.TransmitAntennaMeta, ...
                 "ReceiveAntennaMeta", opt.ReceiveAntennaMeta);
             state.Meta = sixgr.util.structGet(ch, "Meta", struct());
+            state.Meta = sixgr.channel.ChannelFactory.localAttachRuntimeGeometryMeta(state.Meta, cfgCh);
             state.SampleRate_Hz = double(fs);
             state.NumTxAnt = max(1, round(numTx));
             state.NumRxAnt = max(1, round(numRx));
@@ -1045,6 +1046,24 @@ classdef ChannelFactory
             end
         end
 
+        function meta = localAttachRuntimeGeometryMeta(meta, cfg)
+            if ~(isstruct(meta) && isscalar(meta))
+                meta = struct();
+            end
+            meta.RuntimeGeometrySource = string(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeGeometrySource", ""));
+            meta.RuntimeGeometryDelaySource = string(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeGeometryDelaySource", ""));
+            meta.RuntimeGeometryDopplerSource = string(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeGeometryDopplerSource", ""));
+            meta.RuntimeDistance2D_m = double(sixgr.util.structGet(cfg, "channel.distance2D_m", NaN));
+            meta.RuntimeDistance3D_m = double(sixgr.util.structGet(cfg, "channel.distance3D_m", NaN));
+            meta.RuntimePropagationDelay_s = double(sixgr.util.structGet(cfg, "channel.propagationDelay_s", NaN));
+            meta.RuntimeDoppler_Hz = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", NaN));
+            meta.RuntimeSignedDoppler_Hz = double(sixgr.util.structGet(cfg, "channel.runtimeSignedDoppler_Hz", NaN));
+            meta.RuntimeLOSProbability = double(sixgr.util.structGet(cfg, "channel.losProbability", NaN));
+            meta.RuntimeLOS = logical(sixgr.util.structGet(cfg, "channel.runtimeLOS", false));
+            meta.RuntimePathloss_dB = double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingPathloss_dB", NaN));
+            meta.RuntimeShadowFading_dB = double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingShadowFading_dB", NaN));
+            meta.RuntimeO2I_dB = double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingO2I_dB", NaN));
+        end
         function [tdl, arrayRuntimeMeta] = localCreateTDL(cfg, opt)
             delayProfile = sixgr.channel.ChannelFactory.localResolveConcreteDelayProfile(cfg, "TDL");
             if exist("nrTDLChannel","class") ~= 8
@@ -1420,6 +1439,19 @@ classdef ChannelFactory
                 "CDLDelayProfileBeforeLOSGating", string(profile), ...
                 "CDLDelayProfileAfterLOSGating", string(profile), ...
                 "CDLLOSDraw", NaN);
+            runtimeLOS = sixgr.util.structGet(cfg, "channel.runtimeLOS", []);
+            if ~isempty(runtimeLOS)
+                isLOS = logical(runtimeLOS);
+                if ~isLOS && any(upper(string(profile)) == ["CDL-D", "CDL-E"])
+                    profile = "CDL-C";
+                end
+                meta.LOSProbabilitySource = "runtime_geometry_los_state";
+                meta.LOSComplianceStatus = "runtime_geometry_state_reused";
+                meta.LOSComplianceReason = "";
+                meta.CDLDelayProfileAfterLOSGating = string(profile);
+                meta.CDLLOSDraw = double(isLOS);
+                return;
+            end
             pLOS = double(sixgr.util.structGet(cfg, "channel.losProbability", NaN));
             status = struct("Source", "configured_channel_los_probability", ...
                 "ComplianceStatus", "configured_probability", "Reason", "", "StrictSupported", true);

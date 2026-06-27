@@ -25,7 +25,7 @@ ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
 localAssertTodToaRawRow(dl.TrialTable, "DL");
 localAssertTodToaRawRow(ul.TrialTable, "UL");
 
-trialT = [dl.TrialTable; ul.TrialTable]; %#ok<AGROW>
+trialT = localVertcatTablesByName(dl.TrialTable, ul.TrialTable);
 signalArtifacts = sixgr.truth.exportLLSLiveSignalChainTables(fullfile(tmp, "run"), trialT, table(), struct());
 stageT = readtable(char(signalArtifacts.StageTracePath), "VariableNamingRule", "preserve", "Delimiter", ",");
 assert(all(ismember({'BSAntennaArrayClass','UEAntennaArrayClass','PropagationDistance_m','ToD_s','ToA_s','ToAEstimate_s','ChannelDelaySource','AntennaGeometrySource','SameFlowEvidenceSource'}, stageT.Properties.VariableNames)), ...
@@ -54,6 +54,41 @@ assert(all(contains(string(timingT.Notes), "ToD is the active slot-start runtime
 ok = true;
 end
 
+function T = localVertcatTablesByName(varargin)
+T = varargin{1};
+for k = 2:nargin
+    T = localAppendTableByName(T, varargin{k});
+end
+end
+
+function T = localAppendTableByName(A, B)
+vars = union(string(A.Properties.VariableNames), string(B.Properties.VariableNames), "stable");
+for i = 1:numel(vars)
+    name = char(vars(i));
+    hasA = ismember(name, A.Properties.VariableNames);
+    hasB = ismember(name, B.Properties.VariableNames);
+    if ~hasA && hasB
+        A.(name) = localMissingColumnLike(B.(name), height(A));
+    elseif hasA && ~hasB
+        B.(name) = localMissingColumnLike(A.(name), height(B));
+    end
+end
+A = A(:, cellstr(vars));
+B = B(:, cellstr(vars));
+T = [A; B];
+end
+
+function col = localMissingColumnLike(reference, nRows)
+if isstring(reference)
+    col = strings(nRows, 1);
+elseif islogical(reference)
+    col = false(nRows, 1);
+elseif isnumeric(reference)
+    col = nan(nRows, 1);
+else
+    col = repmat(missing, nRows, 1);
+end
+end
 function localAssertTodToaRawRow(T, direction)
 assert(istable(T) && height(T) == 1, ...
     "Expected one raw %s trial row for ToD/ToA validation.", direction);
@@ -92,6 +127,9 @@ cfg.channel.tdlProfile = "TDL-C";
 cfg.channel.awgnOnly = false;
 cfg.channel.snr_dB = 18;
 cfg.run.interferenceExecutionMode = "none";
+cfg.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeApos = 3;
 
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);

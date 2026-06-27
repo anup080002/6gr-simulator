@@ -2190,6 +2190,13 @@ end
 function [distance_m, delay_s] = localResolveGeometryDelay(userMeta)
 distance_m = NaN;
 delay_s = NaN;
+runtimeDistance = double(sixgr.util.structGet(userMeta, "RuntimeServingDistance3D_m", NaN));
+runtimeDelay = double(sixgr.util.structGet(userMeta, "RuntimeServingPropagationDelay_s", NaN));
+if isfinite(runtimeDistance) && isfinite(runtimeDelay)
+    distance_m = runtimeDistance;
+    delay_s = runtimeDelay;
+    return;
+end
 bsPos = double(sixgr.util.structGet(userMeta, "RuntimeServingBSPosition_m", nan(1, 3)));
 uePos = double(sixgr.util.structGet(userMeta, "RuntimeUEPosition_m", nan(1, 3)));
 if numel(bsPos) < 3 || numel(uePos) < 3 || ~all(isfinite(bsPos(1:3))) || ~all(isfinite(uePos(1:3)))
