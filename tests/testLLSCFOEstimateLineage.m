@@ -16,6 +16,9 @@ cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
 cfg.run.interferenceExecutionMode = "none";
+cfg.phy.impairments.cfoEstimationMethod = "none";
+cfg.phy.impairments.cfoCorrectionEnabled = false;
+cfg.phy.rx.cfoCorrectionEnabled = false;
 
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);
@@ -36,6 +39,16 @@ state.CurrentUESpeed_kmh = 30;
 state.CurrentDopplerHz = 40;
 [cfgDL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "DL");
 [cfgUL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "UL");
+cfgDL.phy.impairments.cfoEstimationMethod = "none";
+cfgDL.phy.impairments.cfoCorrectionEnabled = false;
+cfgDL.phy.rx.cfoCorrectionEnabled = false;
+cfgDL.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
+cfgDL.phy.pdsch.dmrs.typeAPosition = 3;
+cfgUL.phy.impairments.cfoEstimationMethod = "none";
+cfgUL.phy.impairments.cfoCorrectionEnabled = false;
+cfgUL.phy.rx.cfoCorrectionEnabled = false;
+cfgUL.phy.pusch.dmrs.DMRSTypeAPosition = 3;
+cfgUL.phy.pusch.dmrs.typeAPosition = 3;
 
 grant = struct( ...
     "UEIndex", 1, ...

@@ -651,6 +651,7 @@ for n = 1:numFrames
         end
         useIdealTimingSync = localUseIdealTimingSync(cfgFrame);
         [rxWave, replay, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrame, tx, txInfo, interferenceBundle);
+        cfgFrame = localAttachReceiverSyncRuntimeContext(cfgFrame, chState, replay);
 
         rxArgs = {"Carrier", tx.Carrier, ...
             "PDSCH", tx.PDSCH, ...
@@ -2738,6 +2739,7 @@ replay.ResidualCFO_PostCorrection_Hz = NaN;
 replay.EstimatedCFO_Hz = NaN;
 replay.CFOEstimateAvailability = "missing";
 replay.UseIdealTimingSync = logical(useIdealTimingSync);
+syncState = sixgr.util.structGet(rx, "SynchronizationState", struct());
 
 estimatedCFO = double(sixgr.util.structGet(rx, "EstimatedCFO_Hz", NaN));
 cfoCorrectionApplied = logical(sixgr.util.structGet(rx, "CFOCorrectionApplied", false));
@@ -2752,6 +2754,7 @@ if cfoCorrectionApplied && isfinite(estimatedCFO)
         replay.ResidualCFO_PostCorrection_Hz = NaN;
     end
 end
+replay = localApplyReceiverSynchronizationReplay(replay, syncState, rx);
 
 timingEstimate = double(sixgr.util.structGet(rx, "TimingOffset", NaN));
 rawTimingEstimate = double(sixgr.util.structGet(rx, "RawTimingEstimate_samples", timingEstimate));
@@ -2778,6 +2781,7 @@ if ~timingEstimateUsed || ~isfinite(rawTimingEstimate)
     else
         replay.ResidualTimingError_PostCorrection_samples = NaN;
     end
+    replay = localApplyReceiverSynchronizationReplay(replay, syncState, rx);
     return;
 end
 replay.TimingEstimateUsed = true;
@@ -2787,6 +2791,50 @@ if isfinite(replay.InjectedTimingOffset_samples)
 else
     replay.ResidualTimingError_PostCorrection_samples = NaN;
 end
+replay = localApplyReceiverSynchronizationReplay(replay, syncState, rx);
+end
+
+function cfg = localAttachReceiverSyncRuntimeContext(cfg, chState, replay)
+delay = double(sixgr.util.structGet(replay, "ChannelTrimSamples", ...
+    sixgr.util.structGet(chState, "ChannelTrimSamples", 0)));
+if ~isfinite(delay)
+    delay = 0;
+end
+cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", double(delay));
+cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelFilterDelay_samples", double(delay));
+cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", double(delay));
+end
+
+function replay = localApplyReceiverSynchronizationReplay(replay, syncState, rx)
+if ~(isstruct(syncState) && ~isempty(fieldnames(syncState)))
+    return;
+end
+replay.EstimatedCFO_PreCorrection_Hz = double(sixgr.util.structGet(syncState, ...
+    "EstimatedOscillatorCFO_Hz", replay.EstimatedCFO_PreCorrection_Hz));
+replay.EstimatedCFO_Hz = replay.EstimatedCFO_PreCorrection_Hz;
+replay.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(syncState, "EstimatedCommonFrequency_Hz", NaN));
+replay.PhysicalDoppler_Hz = double(sixgr.util.structGet(syncState, "PhysicalDoppler_Hz", NaN));
+replay.CFOCorrectionApplied = logical(sixgr.util.structGet(rx, "CFOCorrectionApplied", replay.CFOCorrectionApplied));
+replay.CFOCorrectionApplied_Hz = double(sixgr.util.structGet(syncState, "AppliedCFOCorrection_Hz", ...
+    sixgr.util.structGet(rx, "CFOCorrectionApplied_Hz", NaN)));
+replay.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(syncState, ...
+    "ResidualCFO_PostCorrection_Hz", replay.ResidualCFO_PostCorrection_Hz));
+replay.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet(syncState, ...
+    "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
+if isfinite(replay.EstimatedCFO_PreCorrection_Hz)
+    replay.CFOEstimateAvailability = "available";
+end
+replay.RawTimingEstimate_samples = double(sixgr.util.structGet(syncState, ...
+    "RawTimingEstimate_samples", sixgr.util.structGet(replay, "RawTimingEstimate_samples", NaN)));
+replay.KnownTimingDelay_samples = double(sixgr.util.structGet(syncState, "KnownTimingDelay_samples", NaN));
+replay.EstimatedTimingOffset_PreCorrection_samples = double(sixgr.util.structGet(syncState, ...
+    "RawTimingEstimate_samples", sixgr.util.structGet(replay, "EstimatedTimingOffset_PreCorrection_samples", NaN)));
+replay.EstimatedTimingOffsetForCorrection_samples = double(sixgr.util.structGet(syncState, ...
+    "EstimatedTimingOffsetForCorrection_samples", NaN));
+replay.AppliedTimingCorrection_samples = double(sixgr.util.structGet(syncState, ...
+    "AppliedTimingCorrection_samples", sixgr.util.structGet(replay, "AppliedTimingCorrection_samples", NaN)));
+replay.ResidualTimingError_PostCorrection_samples = double(sixgr.util.structGet(syncState, ...
+    "ResidualTimingError_PostCorrection_samples", sixgr.util.structGet(replay, "ResidualTimingError_PostCorrection_samples", NaN)));
 end
 
 function cfoHz = localResolveInjectedCFOHz(cfg)

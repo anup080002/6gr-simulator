@@ -9,6 +9,7 @@ function freq = estimateTRSFrequencyOffset(det, cfg, tx, rx)
 
 slotDet = det.SlotDetections;
 slotT = tx.SlotTable;
+physicalDopplerHz = localPhysicalDopplerHz(rx);
 candidateRows = repmat(localFrequencyRow(), 0, 1);
 pairEstimates = [];
 pairWeights = [];
@@ -22,6 +23,7 @@ for ii = 1:max(0, numel(slotDet) - 1)
     row.ToSlot = double(slotDet(ii + 1).Slot);
     row.FrequencyTrackingAttempted = logical(attempted);
     row.InjectedCFO_Hz = double(rx.InjectedCFO_Hz);
+    row.PhysicalDoppler_Hz = double(physicalDopplerHz);
     row.FrequencyTolerance_Hz = double(cfg.FrequencyToleranceHz);
     row.PhaseSampleCount = 0;
     row.DeltaT_s = localSlotDeltaSeconds(slotT, ii, ii + 1, tx.SampleRateHz);
@@ -45,7 +47,8 @@ for ii = 1:max(0, numel(slotDet) - 1)
 
     accumC = sum(hLate .* conj(hEarly), "omitnan");
     row.DeltaPhi_rad = double(angle(accumC));
-    row.EstimatedCFO_Hz = double(row.DeltaPhi_rad ./ (2 * pi * row.DeltaT_s));
+    row.EstimatedCommonFrequency_Hz = double(row.DeltaPhi_rad ./ (2 * pi * row.DeltaT_s));
+    row.EstimatedCFO_Hz = double(row.EstimatedCommonFrequency_Hz - physicalDopplerHz);
     row.FrequencyError_Hz = double(row.EstimatedCFO_Hz - double(rx.InjectedCFO_Hz));
     row.TRSCFOEstimateAvailable = isfinite(row.EstimatedCFO_Hz);
     row.Status = string(sixgr.phy.trs.localTernary(row.TRSCFOEstimateAvailable, ...
@@ -54,7 +57,7 @@ for ii = 1:max(0, numel(slotDet) - 1)
     candidateRows(end + 1, 1) = row; %#ok<AGROW>
 
     if row.TRSCFOEstimateAvailable
-        pairEstimates(end + 1, 1) = row.EstimatedCFO_Hz; %#ok<AGROW>
+        pairEstimates(end + 1, 1) = row.EstimatedCommonFrequency_Hz; %#ok<AGROW>
         pairWeights(end + 1, 1) = max(1, double(n)); %#ok<AGROW>
     end
 end
@@ -65,6 +68,7 @@ if isempty(candidateRows)
     candidateRows.ConfigHash = string(cfg.ConfigHash);
     candidateRows.FrequencyTrackingAttempted = logical(attempted);
     candidateRows.InjectedCFO_Hz = double(rx.InjectedCFO_Hz);
+    candidateRows.PhysicalDoppler_Hz = double(physicalDopplerHz);
     candidateRows.FrequencyTolerance_Hz = double(cfg.FrequencyToleranceHz);
     candidateRows.Status = "frequency_estimate_unavailable_insufficient_trs_slots";
     candidateRows.TruthStatus = "real_lls_evidence";
@@ -72,13 +76,16 @@ end
 
 available = ~isempty(pairEstimates);
 if available
-    estimated = sum(pairEstimates .* pairWeights, "omitnan") ./ max(sum(pairWeights, "omitnan"), eps);
+    estimatedCommon = sum(pairEstimates .* pairWeights, "omitnan") ./ max(sum(pairWeights, "omitnan"), eps);
+    estimated = estimatedCommon - physicalDopplerHz;
 else
+    estimatedCommon = NaN;
     estimated = NaN;
 end
 err = estimated - double(rx.InjectedCFO_Hz);
 for ii = 1:numel(candidateRows)
     if available
+        candidateRows(ii).EstimatedCommonFrequency_Hz = double(estimatedCommon);
         candidateRows(ii).EstimatedCFO_Hz = double(estimated);
         candidateRows(ii).FrequencyError_Hz = double(err);
         candidateRows(ii).TRSCFOEstimateAvailable = true;
@@ -90,7 +97,35 @@ freq.Table = struct2table(candidateRows, "AsArray", true);
 freq.Attempted = logical(attempted);
 freq.EstimateAvailable = logical(available);
 freq.EstimatedCFO_Hz = double(estimated);
+freq.EstimatedCommonFrequency_Hz = double(estimatedCommon);
+freq.PhysicalDoppler_Hz = double(physicalDopplerHz);
 freq.FrequencyError_Hz = double(err);
+end
+
+function dopplerHz = localPhysicalDopplerHz(rx)
+dopplerHz = localFirstFinite(rx, ["PhysicalDoppler_Hz","InjectedDoppler_Hz","InjectedScalarDoppler_Hz"], 0);
+if ~isfinite(dopplerHz)
+    dopplerHz = 0;
+end
+end
+
+function value = localFirstFinite(s, names, defaultValue)
+value = double(defaultValue);
+if ~isstruct(s)
+    return;
+end
+for name = string(names(:)).'
+    field = char(name);
+    if ~isfield(s, field)
+        continue;
+    end
+    raw = double(s.(field));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw(1);
+        return;
+    end
+end
 end
 
 function [hEarly, hLate, n] = localAlignedChannelEstimates(early, late)
@@ -134,6 +169,7 @@ end
 function row = localFrequencyRow()
 row = struct("RunId", "", "ConfigHash", "", "FromSlot", NaN, "ToSlot", NaN, ...
     "FrequencyTrackingAttempted", false, "TRSCFOEstimateAvailable", false, ...
+    "EstimatedCommonFrequency_Hz", NaN, "PhysicalDoppler_Hz", NaN, ...
     "EstimatedCFO_Hz", NaN, "InjectedCFO_Hz", NaN, "FrequencyError_Hz", NaN, ...
     "FrequencyTolerance_Hz", NaN, "PhaseSampleCount", NaN, "DeltaPhi_rad", NaN, ...
     "DeltaT_s", NaN, "CrossCorrelationOrder", "", "Status", "", ...

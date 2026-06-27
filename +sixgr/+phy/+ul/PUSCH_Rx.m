@@ -168,6 +168,7 @@ end
 % Timing estimate
 trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTrackingState, cfg);
 sampleRateHz = localCarrierSampleRateHz(carrier);
+knownTimingDelaySamples = localResolveKnownTimingDelaySamples(cfg, trackingCorrection);
 if logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
         isfinite(sampleRateHz) && sampleRateHz > 0
     rxWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -double(trackingCorrection.EstimatedCFO_Hz));
@@ -197,7 +198,11 @@ elseif ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate)
     end
 end
 
-timingResolution = sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ...
+timingEstimateForCorrection = rawTimingEstimate;
+if timingEstimateUsed && isfinite(rawTimingEstimate)
+    timingEstimateForCorrection = rawTimingEstimate - double(knownTimingDelaySamples);
+end
+timingResolution = sixgr.phy.sync.resolveTimingApplication(timingEstimateForCorrection, ...
     "EstimateUsed", timingEstimateUsed, ...
     "ApplicationMode", "signed_waveform_shift", ...
     "SkipRequested", logical(opt.SkipTimingEstimate), ...
@@ -223,7 +228,7 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
             trackingCorrection.CFOCorrectionApplied_Hz = NaN;
         end
     end
-    if ~logical(trackingCorrection.CFOEstimateAvailable) && cfoEstimationMethod ~= "dmrs_two_symbol"
+    if ~logical(trackingCorrection.CFOEstimateAvailable) && any(cfoEstimationMethod == ["cyclic_prefix", "cp"])
         [cpCFOHz, cpCFOInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWaveform, ofdmInfo, sampleRateHz);
         if logical(cpCFOInfo.EstimateAvailable)
             trackingCorrection.CFOEstimateAvailable = true;
@@ -236,12 +241,29 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
         end
     elseif ~logical(trackingCorrection.CFOEstimateAvailable)
         trackingCorrection.Status = "not_available";
-        trackingCorrection.Source = "dmrs_reference_symbol_phase_slope";
-        trackingCorrection.NAReason = "dmrs_cfo_estimate_unavailable";
+        trackingCorrection.Source = char(string(cfoEstimationMethod));
+        trackingCorrection.NAReason = "cfo_estimate_unavailable_or_disabled_by_method";
     end
 end
 [rxGrid, ofdmInfo, trackingCorrection] = localApplyEstimatedCFOAndRedemodulate( ...
     carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, trackingCorrection, cfg);
+syncState = sixgr.phy.sync.resolveSynchronizationState( ...
+    "SampleRate_Hz", sampleRateHz, ...
+    "InjectedCFO_Hz", localResolveInjectedCFOHz(cfg), ...
+    "EstimatedCFO_Hz", double(sixgr.util.structGet(trackingCorrection, "EstimatedCFO_Hz", NaN)), ...
+    "AppliedCFOCorrection_Hz", double(sixgr.util.structGet(trackingCorrection, "CFOCorrectionApplied_Hz", NaN)), ...
+    "ResidualCFOEstimate_Hz", double(sixgr.util.structGet(trackingCorrection, "ResidualCFOEstimate_Hz", NaN)), ...
+    "EstimatedCommonFrequency_Hz", double(sixgr.util.structGet(trackingCorrection, "EstimatedCommonFrequency_Hz", NaN)), ...
+    "PhysicalDoppler_Hz", double(sixgr.util.structGet(trackingCorrection, "PhysicalDoppler_Hz", NaN)), ...
+    "InjectedTimingOffset_samples", localResolveInjectedTimingOffsetSamples(cfg), ...
+    "RawTimingEstimate_samples", rawTimingEstimate, ...
+    "KnownTimingDelay_samples", knownTimingDelaySamples, ...
+    "AppliedTimingCorrection_samples", double(timingResolution.AppliedCorrection_samples), ...
+    "TimingEstimateUsed", logical(timingResolution.EstimateUsed), ...
+    "TimingSource", timingEstimateSource, ...
+    "FrequencySource", string(sixgr.util.structGet(trackingCorrection, "Source", "")), ...
+    "TrackingState", string(sixgr.util.structGet(trackingCorrection, "TrackingState", "")), ...
+    "TrackingAgeSlots", double(sixgr.util.structGet(trackingCorrection, "AgeSlots", NaN)));
 
 % Channel estimate
 Hest = [];
@@ -542,14 +564,17 @@ rx.ReceiverUsable = true;
 rx.DecodeAttempted = true;
 rx.DecodeUsable = true;
 rx.FailureReason = "";
-rx.TimingOffset = double(timingResolution.RawEstimate_samples);
-rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
+rx.TimingOffset = double(rawTimingEstimate);
+rx.RawTimingEstimate_samples = double(rawTimingEstimate);
+rx.KnownTimingDelay_samples = double(knownTimingDelaySamples);
+rx.TimingEstimateForCorrection_samples = double(timingEstimateForCorrection);
 rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
 rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
 rx.TimingEstimateSource = char(timingEstimateSource);
 rx.TimingEstimateStatus = char(string(timingResolution.Status));
 rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
+rx.SynchronizationState = syncState;
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
 rx.DecoderIterations = mean(double(actIter(:)), "omitnan");
@@ -569,8 +594,13 @@ rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
 rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+rx.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(syncState, "EstimatedCommonFrequency_Hz", NaN));
+rx.PhysicalDoppler_Hz = double(sixgr.util.structGet(syncState, "PhysicalDoppler_Hz", NaN));
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
 rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
+rx.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_PostCorrection_Hz", NaN));
+rx.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
+rx.ResidualTimingError_PostCorrection_samples = double(sixgr.util.structGet(syncState, "ResidualTimingError_PostCorrection_samples", NaN));
 rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
 rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
 rx.ReceiverTrackingCorrectionNAReason = char(string(trackingCorrection.NAReason));
@@ -700,6 +730,7 @@ info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
+info.ReceiverSynchronizationState = syncState;
 info.NoiseVariance = noiseStatus;
 info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
 info.PreEqualizationNoiseVarianceTransform = noiseTransformInfo;
@@ -1057,12 +1088,18 @@ tracking = struct( ...
     "TimingCorrectionApplied", false, ...
     "CFOEstimateAvailable", false, ...
     "EstimatedCFO_Hz", NaN, ...
+    "EstimatedCommonFrequency_Hz", NaN, ...
+    "PhysicalDoppler_Hz", NaN, ...
     "CFOCorrectionApplied", false, ...
     "CFOCorrectionApplied_Hz", NaN, ...
+    "ResidualCFOEstimate_Hz", NaN, ...
     "Source", "unavailable_receiver_tracking_state", ...
     "Status", "unavailable", ...
     "NAReason", "no_receiver_tracking_state", ...
-    "CFONAReason", "");
+    "CFONAReason", "", ...
+    "TrackingState", "", ...
+    "AgeSlots", NaN, ...
+    "KnownTimingDelay_samples", NaN);
 
 raw = explicitState;
 if isempty(raw)
@@ -1074,6 +1111,8 @@ end
 
 processed = localFirstLogical(raw, ["TRSProcessed","RuntimeTRSProcessed"], false);
 tracking.TRSProcessed = logical(processed);
+tracking.TrackingState = char(localFirstString(raw, ["TrackingState","RuntimeTRSTrackingStateAfter"], ""));
+tracking.AgeSlots = double(localFirstFinite(raw, ["TRSAgeSlots","RuntimeTRSAgeSlots"], NaN));
 tracking.Source = localFirstString(raw, ["RuntimeTRSRuntimeEvidenceSource","RuntimeEvidenceSource","TrackingEstimateSource"], ...
     "trs_receiver_tracking_state");
 if ~processed
@@ -1096,12 +1135,21 @@ end
 timingAvailable = localFirstLogical(raw, ["TimingEstimateAvailable","RuntimeTRSTimingEstimateAvailable"], false);
 timingSamples = localFirstFinite(raw, ["TimingEstimate_samples","RuntimeTRSTimingEstimate_samples","EstimatedTimingOffset_samples"], NaN);
 cfoAvailable = localFirstLogical(raw, ["CFOEstimateAvailable","RuntimeTRSCFOEstimateAvailable"], false);
-cfoHz = localFirstFinite(raw, ["EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+cfoHz = localFirstFinite(raw, ["EstimatedOscillatorCFO_Hz","RuntimeTRSEstimatedOscillatorCFO_Hz", ...
+    "EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+commonHz = localFirstFinite(raw, ["EstimatedCommonFrequency_Hz","RuntimeTRSEstimatedCommonFrequency_Hz", ...
+    "EstimatedCommonPhaseFrequency_Hz"], NaN);
+physicalDopplerHz = localFirstFinite(raw, ["PhysicalDoppler_Hz","RuntimeTRSPhysicalDoppler_Hz", ...
+    "EstimatedDopplerHz","LastEstimatedTRSDopplerHz","RuntimeLastEstimatedTRSDopplerHz"], NaN);
 
 tracking.TimingEstimateAvailable = logical(timingAvailable && isfinite(timingSamples));
 tracking.TimingEstimate_samples = double(timingSamples);
 tracking.CFOEstimateAvailable = logical(cfoAvailable && isfinite(cfoHz));
 tracking.EstimatedCFO_Hz = double(cfoHz);
+tracking.EstimatedCommonFrequency_Hz = double(commonHz);
+tracking.PhysicalDoppler_Hz = double(physicalDopplerHz);
+tracking.KnownTimingDelay_samples = localFirstFinite(raw, ["KnownTimingDelay_samples","RuntimeChannelFilterDelay_samples", ...
+    "RuntimeChannelTrimSamples"], NaN);
 if tracking.TimingEstimateAvailable || tracking.CFOEstimateAvailable
     tracking.Status = "available";
     tracking.NAReason = "";
@@ -1131,6 +1179,8 @@ if ~enabled
     return;
 end
 if logical(sixgr.util.structGet(tracking, "CFOCorrectionApplied", false))
+    tracking = localEstimateResidualCFOAfterCorrection(rxWaveform, ofdmInfo, sampleRateHz, tracking, ...
+        "cyclic_prefix_post_tracking_correction");
     return;
 end
 estimatedCFOHz = double(sixgr.util.structGet(tracking, "EstimatedCFO_Hz", NaN));
@@ -1145,6 +1195,24 @@ tracking.CFOCorrectionApplied_Hz = estimatedCFOHz;
 tracking.Status = "available_corrected";
 tracking.NAReason = "";
 tracking.CFONAReason = "";
+tracking = localEstimateResidualCFOAfterCorrection(correctedWaveform, ofdmInfo, sampleRateHz, tracking, ...
+    "cyclic_prefix_post_receiver_correction");
+end
+
+function tracking = localEstimateResidualCFOAfterCorrection(rxWaveform, ofdmInfo, sampleRateHz, tracking, source)
+tracking.ResidualCFOEstimate_Hz = NaN;
+tracking.ResidualCFOEstimateSource = string(source);
+if ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
+    return;
+end
+try
+    [residualHz, residualInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWaveform, ofdmInfo, sampleRateHz);
+    if logical(sixgr.util.structGet(residualInfo, "EstimateAvailable", false)) && isfinite(double(residualHz))
+        tracking.ResidualCFOEstimate_Hz = double(residualHz);
+    end
+catch
+    tracking.ResidualCFOEstimateSource = string(source) + "_failed";
+end
 end
 
 function y = localApplyTimingCorrection(x, timingOffset)
@@ -1161,6 +1229,38 @@ function maxCorrection = localMaxTimingCorrectionSamples(carrier)
 % fading replay this can include channel-object filter/group delay, so the
 % data receiver must not clamp the applied shift to one CP length.
 maxCorrection = inf;
+end
+
+function delay = localResolveKnownTimingDelaySamples(cfg, tracking)
+delay = double(sixgr.util.structGet(tracking, "KnownTimingDelay_samples", NaN));
+if isfinite(delay)
+    return;
+end
+delay = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelFilterDelay_samples", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", ...
+    sixgr.util.structGet(cfg, "phy.rx.knownTimingDelay_samples", 0)))));
+if ~isfinite(delay)
+    delay = 0;
+end
+end
+
+function cfoHz = localResolveInjectedCFOHz(cfg)
+cfoHz = double(sixgr.util.structGet(cfg, "phy.impairments.cfoHz", ...
+    sixgr.util.structGet(cfg, "rf.cfo_Hz", ...
+    sixgr.util.structGet(cfg, "impairments.cfo_hz", 0))));
+if ~isfinite(cfoHz)
+    cfoHz = 0;
+end
+end
+
+function timingOffset = localResolveInjectedTimingOffsetSamples(cfg)
+timingOffset = double(sixgr.util.structGet(cfg, "phy.impairments.timingOffsetSamples", ...
+    sixgr.util.structGet(cfg, "rf.timingOffsetSamples", ...
+    sixgr.util.structGet(cfg, "impairments.timing_offset_samples", 0))));
+if ~isfinite(timingOffset)
+    timingOffset = 0;
+end
 end
 
 function fs = localCarrierSampleRateHz(carrier)

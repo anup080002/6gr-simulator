@@ -19,6 +19,9 @@ out.ConfiguredMaxDoppler_Hz = NaN;
 out.DopplerError_Hz = NaN;
 out.EstimatedCFO_Hz = NaN;
 out.EstimatedCFO_PreCorrection_Hz = NaN;
+out.EstimatedOscillatorCFO_Hz = NaN;
+out.EstimatedCommonFrequency_Hz = NaN;
+out.PhysicalDoppler_Hz = NaN;
 out.InjectedCFO_Hz = NaN;
 out.CFOEstimateAvailability = "missing";
 out.CFOEstimateSource = "";
@@ -76,8 +79,11 @@ try
     out.PhaseError_deg = localMeanReferencePhaseDeg(det);
     out.EstimatedCFO_Hz = double(trial.EstimatedCFO_Hz);
     out.EstimatedCFO_PreCorrection_Hz = double(trial.EstimatedCFO_PreCorrection_Hz);
+    out.EstimatedOscillatorCFO_Hz = double(sixgr.util.structGet(trial, "EstimatedOscillatorCFO_Hz", out.EstimatedCFO_Hz));
+    out.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(trial, "EstimatedCommonFrequency_Hz", NaN));
+    out.PhysicalDoppler_Hz = double(sixgr.util.structGet(trial, "PhysicalDoppler_Hz", NaN));
     out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
-    out.EstimatedDoppler_Hz = localResolveRuntimeDopplerEstimate(out.EstimatedCFO_Hz, out.InjectedCFO_Hz);
+    out.EstimatedDoppler_Hz = localResolveRuntimeDopplerEstimate(out.EstimatedCommonFrequency_Hz, out.EstimatedOscillatorCFO_Hz);
     out.ConfiguredMaxDoppler_Hz = localResolveConfiguredMaxDopplerHz(cfg);
     out.InjectedDoppler_Hz = localResolveScalarInjectedDopplerHz(replay);
     if isfinite(out.EstimatedDoppler_Hz) && isfinite(out.InjectedDoppler_Hz)
@@ -132,8 +138,9 @@ try
     out.Notes = "TRS runtime tracking measurement from NZP-CSI-RS waveform path. NRE=" + string(localTRSNRE(tx)) + ...
         ", configured max Doppler=" + string(round(out.ConfiguredMaxDoppler_Hz, 3)) + ...
         " Hz, scalar injected Doppler=" + string(round(out.InjectedDoppler_Hz, 3)) + ...
-        " Hz, measured residual phase rate=" + string(round(out.EstimatedDoppler_Hz, 3)) + ...
-        " Hz, estimated common frequency=" + string(round(out.EstimatedCFO_Hz, 3)) + ...
+        " Hz, measured Doppler component=" + string(round(out.EstimatedDoppler_Hz, 3)) + ...
+        " Hz, estimated common frequency=" + string(round(out.EstimatedCommonFrequency_Hz, 3)) + ...
+        " Hz, estimated oscillator CFO=" + string(round(out.EstimatedOscillatorCFO_Hz, 3)) + ...
         " Hz, strictOk=" + string(logical(score.StrictOk)) + ...
         ", runtimeEvidenceOk=" + string(runtimeEvidenceOk);
 catch ME
@@ -172,6 +179,8 @@ rx.NoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", 
 rx.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 rx.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", 0));
 rx.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", 0));
+rx.InjectedDoppler_Hz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", 0));
+rx.PhysicalDoppler_Hz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", 0));
 rx.FaultMode = "normal";
 rx.SampleRateHz = double(tx.SampleRateHz);
 rx.GridSlots = tx.GridSlots;
@@ -295,13 +304,13 @@ if ~isempty(vals)
 end
 end
 
-function dopplerHz = localResolveRuntimeDopplerEstimate(commonFrequencyHz, injectedCFOHz)
+function dopplerHz = localResolveRuntimeDopplerEstimate(commonFrequencyHz, estimatedOscillatorCFOHz)
 dopplerHz = NaN;
 if ~isfinite(double(commonFrequencyHz))
     return;
 end
-if isfinite(double(injectedCFOHz))
-    dopplerHz = double(commonFrequencyHz) - double(injectedCFOHz);
+if isfinite(double(estimatedOscillatorCFOHz))
+    dopplerHz = double(commonFrequencyHz) - double(estimatedOscillatorCFOHz);
 else
     dopplerHz = double(commonFrequencyHz);
 end
