@@ -42,6 +42,14 @@ function [decCB, actNumIter, finalParityChecks] = ldpcDecode(llr, bgn, maxNumIte
         error('sixgr:Missing5GToolbox', ...
             'nrLDPCDecode not found. Install/enable 5G Toolbox.');
     end
+    if ~(isnumeric(llr) || islogical(llr)) || isempty(llr)
+        error('sixgr:phy:ldpcDecode:InvalidLLR', ...
+            'llr must be a non-empty real numeric matrix of rate-recovered soft bits.');
+    end
+    if ~isreal(llr)
+        error('sixgr:phy:ldpcDecode:InvalidLLR', ...
+            'llr must be real-valued; complex soft bits indicate a domain mismatch before LDPC decode.');
+    end
 
     % Normalize shape: allow vector input for single CB
     if isvector(llr)
@@ -51,6 +59,10 @@ function [decCB, actNumIter, finalParityChecks] = ldpcDecode(llr, bgn, maxNumIte
     % Normalize type
     if ~isa(llr,'double') && ~isa(llr,'single')
         llr = double(llr);
+    end
+    if any(isnan(double(llr(:))))
+        error('sixgr:phy:ldpcDecode:InvalidLLR', ...
+            'llr contains NaN values; Inf is reserved only for LDPC filler positions.');
     end
 
     if ~isempty(algorithm)

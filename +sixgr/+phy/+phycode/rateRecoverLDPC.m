@@ -92,6 +92,9 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
         numCBUsed = numCB;
         NrefUsed = Nref;
     end
+    if ~isempty(layout)
+        localValidateRecoveredLLRShape(layout, recLLR);
+    end
 
     info = struct();
     info.A = trblkLen;
@@ -101,6 +104,12 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
     info.nLayers = nLayers;
     info.numCBUsed = numCBUsed;
     info.NrefUsed = NrefUsed;
+    info.InputLLRCount = double(numel(inLLR));
+    info.OutputLLRCount = double(numel(recLLR));
+    info.OutputShape = uint32(size(recLLR));
+    info.InputDomain = "rate_matched_codeword_llr";
+    info.OutputDomain = "mother_code_llr_by_code_block";
+    info.FillerLLRSemantics = "Toolbox nrRateRecoverLDPC output preserved at CodingLayout filler positions";
     info.CodingLayout = layout;
     if ~isempty(layout)
         info.PositionMap = layout.RateMatchPositionMap;
@@ -109,6 +118,20 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
         info.RateMatchSignature = char(string(layout.RateMatchSignature));
         info.EPerCodeBlock = double(layout.E_r);
     end
+end
+
+function localValidateRecoveredLLRShape(layout, recLLR)
+if ~ismatrix(recLLR)
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutOutputMismatch', ...
+        'Recovered LLR output must be a 2-D mother-code-by-codeblock matrix.');
+end
+expectedRows = double(layout.MotherCodeLength);
+expectedCols = double(layout.NumCodeBlocks);
+if size(recLLR, 1) ~= expectedRows || size(recLLR, 2) ~= expectedCols
+    error('sixgr:phy:rateRecoverLDPC:CodingLayoutOutputMismatch', ...
+        'Recovered LLR shape %s does not match CodingLayout mother-code shape [%d %d].', ...
+        mat2str(size(recLLR)), expectedRows, expectedCols);
+end
 end
 
 function opt = localParseOpts(varargin)

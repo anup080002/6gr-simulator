@@ -435,7 +435,8 @@ catch
     llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
 end
 [llrCWCell, codewordLLRInfo] = localNormalizePDSCHCodewordLLR(llrCW, codewordLayerMapping);
-[llrCell, llrCSIInfoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCWCell, csi, pdsch.Modulation, postEqSINR_dB, codewordLayerMapping);
+[llrCell, llrCSIInfoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCWCell, csi, pdsch.Modulation, ...
+    postEqSINR_dB, codewordLayerMapping, nVarForDecode, nVarDecodeInfo);
 llr = llrCell{1};
 llrCSIInfo = llrCSIInfoCell{1};
 codewordLayerMapping = localFinalizePDSCHRxCodewordLayerContract(codewordLayerMapping, llrCell, eqSym);
@@ -519,6 +520,8 @@ rx.CodewordLayerMapping = codewordLayerMapping;
 rx.NumCodewords = double(codewordLayerMapping.NumCodewords);
 rx.ActualNumCodewords = double(codewordLayerMapping.ActualNumCodewords);
 rx.CodewordLLRCountPerCodeword = double(codewordLayerMapping.DemapperLLRCountPerCodeword);
+rx.DecodedBitLineage = decode.DecodedBitLineageCell{1};
+rx.DecodedBitLineagePerCodeword = decode.DecodedBitLineageCell;
 rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
 rx.LDPCRateRecoverNumCodeBlocksPerCodeword = double(cellfun(@(x) double(sixgr.util.structGet(x, "numCBUsed", NaN)), decode.RateRecoverInfoCell));
 rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
@@ -618,7 +621,11 @@ rx.DLSCHDecodeAttempted = true;
 rx.DLSCHDecodeAvailable = ~isempty(tbRx) || ~isempty(decCbs) || ~isempty(recLLR);
 rx.LLRAvailable = ~isempty(llr);
 rx.LLRFinite = ~isempty(llr) && all(isfinite(double(llr(:))));
-rx.LLRScaleSource = "nrPDSCHDecode_noise_variance_plus_" + string(llrCSIInfo.Source);
+rx.LLRScaleSource = string(llrCSIInfo.Source);
+rx.LLRScalingConvention = char(string(llrCSIInfo.Convention));
+rx.DemapperNoiseVarianceConvention = char(string(llrCSIInfo.NoiseVarianceConvention));
+rx.DemapperLLRDomain = char(string(llrCSIInfo.OutputDomain));
+rx.LLRDoubleWeightingGuard = logical(llrCSIInfo.NoSecondCSIWeighting);
 rx.LLRCSIWeightApplied = logical(llrCSIInfo.Applied);
 rx.LLRCSIWeightStatus = char(string(llrCSIInfo.Status));
 rx.LLRCSIWeightInputKind = char(string(llrCSIInfo.InputKind));
@@ -722,6 +729,8 @@ info.CodingLayout = codingLayout;
 info.CodingLayouts = codingLayouts;
 info.CodewordLayerMapping = codewordLayerMapping;
 info.CodewordLLRInfo = codewordLLRInfo;
+info.LLRScalingPerCodeword = llrCSIInfoCell;
+info.DecodedBitLineagePerCodeword = decode.DecodedBitLineageCell;
 info.RateRecoverPerCodeword = decode.RateRecoverInfoCell;
 info.HARQSoftCombiningPerCodeword = decode.HARQCombiningInfoCell;
 info.DecodePerCodeword = decode;
@@ -1475,14 +1484,50 @@ info = struct( ...
     "LLRCountPerCodeword", double(cellfun(@numel, llrCell)));
 end
 
-function [llrCellOut, infoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCellIn, csi, modScheme, postEqSINR_dB, mapping)
+function [llrCellOut, infoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCellIn, csi, modScheme, postEqSINR_dB, mapping, nVarForDecode, nVarDecodeInfo)
 llrCellOut = llrCellIn;
 infoCell = cell(size(llrCellIn));
 mods = localNormalizeModulationCell(modScheme, numel(llrCellIn));
 csiCell = localDemapCSIByCodeword(csi, mapping);
 for c = 1:numel(llrCellIn)
-    [llrCellOut{c}, infoCell{c}] = localApplyCSIToCodewordLLR(llrCellIn{c}, csiCell{c}, mods{c}, postEqSINR_dB);
+    infoCell{c} = localPDSCHPostEqVarianceLLRInfo(llrCellIn{c}, csiCell{c}, mods{c}, ...
+        postEqSINR_dB, nVarForDecode, nVarDecodeInfo);
 end
+end
+
+function info = localPDSCHPostEqVarianceLLRInfo(llrIn, csi, modScheme, postEqSINR_dB, nVarForDecode, nVarDecodeInfo)
+rawCSI = double(csi(:));
+rawCSI = rawCSI(isfinite(rawCSI));
+if isempty(rawCSI)
+    rawMedian = NaN;
+else
+    rawMedian = median(rawCSI, "omitnan");
+end
+inputMean = mean(abs(double(llrIn(:))), "omitnan");
+source = "nrPDSCHDecode_post_equalization_noise_variance_only";
+noiseSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "post_equalization_decoder_noise_variance")));
+info = struct( ...
+    "ContractVersion", "PDSCHDemapperLLRScaling/v1", ...
+    "Convention", "post_equalization_variance_only", ...
+    "NoiseVarianceConvention", "post_equalized_symbol_variance_passed_to_nrPDSCHDecode", ...
+    "Source", source, ...
+    "NoiseVarianceSource", noiseSource, ...
+    "OutputDomain", "rate_matched_codeword_llr", ...
+    "Applied", false, ...
+    "Status", "not_applied_post_equalization_variance_convention", ...
+    "Reason", "nrPDSCHDecode already consumed the effective post-equalization noise variance; applying CSI again would double-count reliability.", ...
+    "InputKind", "not_used_for_second_weighting", ...
+    "NoSecondCSIWeighting", true, ...
+    "DemapperOutputAlreadyWeightedByNoiseVariance", true, ...
+    "Modulation", char(string(modScheme)), ...
+    "LLRCount", double(numel(llrIn)), ...
+    "NoiseVariance", double(nVarForDecode), ...
+    "PostEqSINR_dB", double(postEqSINR_dB), ...
+    "RawCSIMedian", double(rawMedian), ...
+    "WeightMedianBeforeNormalization", 1, ...
+    "NormalizationScale", 1, ...
+    "InputLLRMeanAbs", double(inputMean), ...
+    "OutputLLRMeanAbs", double(inputMean));
 end
 
 function mapping = localFinalizePDSCHRxCodewordLayerContract(mapping, llrCell, eqSym)
@@ -1528,6 +1573,7 @@ crcError = true(1, nCodewords);
 cbCrcCell = cell(1, nCodewords);
 activeIterCell = cell(1, nCodewords);
 parityCell = cell(1, nCodewords);
+lineageCell = cell(1, nCodewords);
 decodeLatency = zeros(1, nCodewords);
 useMexAny = false;
 
@@ -1559,6 +1605,8 @@ for cw = 1:nCodewords
     cbCrcCell{cw} = cbCrcErr(:).';
     activeIterCell{cw} = actIter(:).';
     parityCell{cw} = parity(:).';
+    lineageCell{cw} = localBuildPDSCHDecodedBitLineage(cw, llrCell{cw}, recLLR, decCbs, ...
+        layout, trBlkSize(cw), B, ok);
     decodeLatency(cw) = latency;
     useMexAny = useMexAny || logical(usedMex);
 end
@@ -1578,11 +1626,35 @@ decode.CodeBlockCRCErrorPerCodeword = cbCrcCell;
 decode.CodeBlockCRCError = [cbCrcCell{:}];
 decode.ActiveIterations = [activeIterCell{:}];
 decode.ParityChecks = [parityCell{:}];
+decode.DecodedBitLineageCell = lineageCell;
 decode.DecodeLatency_s = double(sum(decodeLatency));
 decode.DecodeLatencyPerCodeword_s = double(decodeLatency);
 decode.UseMexLDPC = logical(useMexAny);
 decode.TransportBlockLenWithCRCPerCodeword = double(cellfun(@(x) double(x.TransportBlockLenWithCRC), ldpcSegCell));
 decode.HARQCombiningSummary = localSummarizeHARQCombining(harqInfoCell);
+end
+
+function lineage = localBuildPDSCHDecodedBitLineage(codewordIndex, demapperLLR, recLLR, decCbs, layout, trBlkSize, transportBlockLenWithCRC, crcPass)
+lineage = struct( ...
+    "ContractVersion", "PDSCHDecodedBitLineage/v1", ...
+    "CodewordIndex", double(codewordIndex), ...
+    "DemapperDomain", "rate_matched_codeword_llr", ...
+    "DemapperLLRCount", double(numel(demapperLLR)), ...
+    "RateMatchedBitCount", double(layout.RateMatchedBitCount), ...
+    "RateRecoveryInputDomain", "rate_matched_codeword_llr", ...
+    "RateRecoveryOutputDomain", "mother_code_llr_by_code_block", ...
+    "RateRecoveredRows", double(size(recLLR, 1)), ...
+    "RateRecoveredCodeBlocks", double(size(recLLR, 2)), ...
+    "MotherCodeLength", double(layout.MotherCodeLength), ...
+    "NumCodeBlocks", double(layout.NumCodeBlocks), ...
+    "LDPCDecodedRows", double(size(decCbs, 1)), ...
+    "LDPCDecodedCodeBlocks", double(size(decCbs, 2)), ...
+    "TransportBlockSize", double(trBlkSize), ...
+    "TransportBlockLengthWithCRC", double(transportBlockLenWithCRC), ...
+    "TBCRCType", char(string(layout.TBCRCType)), ...
+    "CRCPass", logical(crcPass), ...
+    "RateMatchSignature", char(string(layout.RateMatchSignature)), ...
+    "CombineSignature", char(string(layout.CombineSignature)));
 end
 
 function [decCbs, actIter, parity, useMexLDPC, decodeLatency_s] = localDecodeLDPCCodeBlocks(recLLRBatch, bgn, maxIter, alg, cfg)
@@ -2106,11 +2178,6 @@ if numel(sa) < 2
 else
     sa = reshape(sa(1:2), 1, 2);
 end
-end
-
-function [llrOut, info] = localApplyCSIToCodewordLLR(llrIn, csi, modScheme, postEqSINR_dB)
-[llrOut, info] = sixgr.phy.rx.applyCSIToCodewordLLR(llrIn, csi, modScheme, ...
-    "PostEqSINR_dB", postEqSINR_dB);
 end
 
 function x = localEnsureLLRBatch(xIn)
