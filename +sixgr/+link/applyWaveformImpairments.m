@@ -1,4 +1,4 @@
-function [y, replay] = applyWaveformImpairments(x, cfg, sampleRateHz)
+function [y, replay] = applyWaveformImpairments(x, cfg, sampleRateHz, varargin)
 %APPLYWAVEFORMIMPAIRMENTS Apply large-scale loss and sample-domain impairments.
 % Keep this file ASCII-only.
 %
@@ -23,6 +23,13 @@ if nargin < 3 || ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
 else
     sampleRateHz = double(sampleRateHz);
 end
+p = inputParser;
+p.addParameter("Endpoint", "rx");
+p.addParameter("UseLegacyGlobalConfig", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
+p.addParameter("ApplyPA", false, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
+p.addParameter("ApplyADC", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
+p.parse(varargin{:});
+opt = p.Results;
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.applyWaveformImpairments", ...
     "Stage", "rf_impairments", ...
     "Metadata", struct("NSamples", double(numel(x)))); %#ok<NASGU>
@@ -35,29 +42,70 @@ if isfinite(ampGain) && ampGain > 0 && abs(ampGain - 1) > 1e-12
     y = y .* cast(ampGain, "like", y);
 end
 
-[y, replay] = localApplyIQImbalanceStage(y, replay);
-
-if logical(replay.PhaseNoiseConfigured)
-    [y, replay] = localApplyPhaseNoiseStage(y, replay, cfg, sampleRateHz);
+[y, replay] = localApplyOrderedRFChain(y, cfg, sampleRateHz, replay, opt);
 end
 
-timingOffset = double(replay.InjectedTimingOffset_samples);
-if isfinite(timingOffset) && timingOffset ~= 0
-    y = sixgr.util.applyFractionalSampleDelay(y, timingOffset);
+function [y, replay] = localApplyOrderedRFChain(x, cfg, sampleRateHz, replay, opt)
+y = x;
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    replay.RFImpairmentChainContract = "sixgr.rf.ImpairmentChainConfig/v1";
+    replay.RFEndpoint = string(opt.Endpoint);
+    replay.RFStageOrder = "";
+    replay.RFConfiguredStageCount = 0;
+    replay.RFAppliedStageCount = 0;
+    replay.RFExecutionStatus = "not_applied_sample_rate_unavailable";
+    return;
+end
+rfOut = sixgr.rf.applyRFImpairmentChain(x, cfg, ...
+    "SampleRateHz", sampleRateHz, ...
+    "Direction", sixgr.util.structGet(replay, "PowerContextDirection", "DL"), ...
+    "MeasurementPoint", string(opt.Endpoint) + "_front_end", ...
+    "Endpoint", opt.Endpoint, ...
+    "StrictMutationRequired", false, ...
+    "UseLegacyGlobalConfig", logical(opt.UseLegacyGlobalConfig), ...
+    "ApplyPA", logical(opt.ApplyPA), ...
+    "ApplyADC", logical(opt.ApplyADC));
+y = cast(rfOut.Waveform, "like", x);
+replay = localMergeRFReplay(replay, rfOut.Replay, rfOut.Row);
+replay.RFExecutionStatus = "applied_ordered_sample_domain_chain";
 end
 
-cfoHz = double(replay.InjectedCFO_Hz);
-if sampleRateHz > 0 && isfinite(cfoHz) && cfoHz ~= 0
-    n = (0:size(y, 1)-1).';
-    rot = exp(1j * 2 * pi * (cfoHz / sampleRateHz) * n);
-    y = y .* cast(rot, "like", y);
+function replay = localMergeRFReplay(replay, rfReplay, rfRow)
+rfFields = fieldnames(rfReplay);
+for i = 1:numel(rfFields)
+    replay.(rfFields{i}) = rfReplay.(rfFields{i});
 end
-
-phaseOffsetRad = double(replay.InjectedCarrierPhaseOffset_rad);
-if isfinite(phaseOffsetRad) && abs(phaseOffsetRad) > 1e-12
-    y = y .* cast(exp(1j * phaseOffsetRad), "like", y);
+replay.RFImpairmentChainId = char(string(rfRow.RFImpairmentChainId));
+replay.RFStrictOk = logical(rfRow.StrictOk);
+replay.RFFailureReason = char(string(rfRow.FailureReason));
+replay.EVMMeasuredDb = double(rfRow.EVMMeasuredDb);
+replay.EVMMeasuredPercent = double(rfRow.EVMMeasuredPercent);
+if isfield(rfReplay, "InjectedCFO_Hz")
+    replay.InjectedCFO_Hz = double(rfReplay.InjectedCFO_Hz);
+end
+if isfield(rfReplay, "InjectedTimingOffset_samples")
+    replay.InjectedTimingOffset_samples = double(rfReplay.InjectedTimingOffset_samples);
+end
+if isfield(rfReplay, "TimingOffsetApplied")
+    replay.TimingOffsetExecutionStatus = localConditionalString(logical(rfReplay.TimingOffsetApplied), ...
+        "applied_fractional_sample_delay", "disabled_or_zero_identity");
+end
+if isfield(rfReplay, "CFOApplied")
+    replay.CFOExecutionStatus = localConditionalString(logical(rfReplay.CFOApplied), ...
+        "applied_cfo_rotation", "disabled_or_zero_identity");
+end
+if isfield(rfReplay, "PhaseNoiseApplied")
+    replay.PhaseNoiseApplied = logical(rfReplay.PhaseNoiseApplied);
+end
+if isfield(rfReplay, "IQImbalanceApplied")
+    replay.IQImbalanceApplied = logical(rfReplay.IQImbalanceApplied);
+end
+if isfield(rfReplay, "RFStageOrder") && contains(string(rfReplay.RFStageOrder), "carrier_phase")
     replay.CarrierPhaseOffsetApplied = true;
     replay.CarrierPhaseOffsetExecutionStatus = "applied_sample_domain_constant_rotation";
+elseif isfield(replay, "CarrierPhaseOffsetExecutionStatus") && string(replay.CarrierPhaseOffsetExecutionStatus) ~= "disabled"
+    replay.CarrierPhaseOffsetApplied = false;
+    replay.CarrierPhaseOffsetExecutionStatus = "disabled_or_zero_identity";
 end
 end
 
@@ -779,5 +827,13 @@ end
 value = value(1);
 if ~isfinite(value)
     value = NaN;
+end
+end
+
+function value = localConditionalString(condition, trueValue, falseValue)
+if condition
+    value = string(trueValue);
+else
+    value = string(falseValue);
 end
 end

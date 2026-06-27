@@ -536,6 +536,21 @@ for n = 1:numFrames
         tx.PowerContext = powerContext;
         txInfo.PowerContext = powerContext;
         cfgFrame = sixgr.util.structSet(cfgFrame, "lls6g.runtimePowerContext", powerContext);
+        if localHasExplicitTransmitRFConfig(cfgFrame)
+            txRfOut = sixgr.rf.applyRFImpairmentChain(tx.Waveform, cfgFrame, ...
+                "SampleRateHz", localResolveSampleRate(tx, txInfo), ...
+                "Direction", "DL", ...
+                "MeasurementPoint", "tx_output", ...
+                "Endpoint", "tx", ...
+                "StrictMutationRequired", false, ...
+                "UseLegacyGlobalConfig", false, ...
+                "ApplyPA", false, ...
+                "ApplyADC", false);
+            tx.Waveform = cast(txRfOut.Waveform, "like", tx.Waveform);
+            tx.TxRFImpairmentReplay = txRfOut.Replay;
+            txInfo.TxRFImpairmentReplay = txRfOut.Replay;
+            cfgFrame = sixgr.util.structSet(cfgFrame, "lls6g.txRFImpairmentReplay", txRfOut.Replay);
+        end
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
         trialOuterLoopEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopEnabled", false));
         trialOuterLoopAppliedFromGrant(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopApplied", false));
@@ -2845,6 +2860,64 @@ if isempty(fs) || ~isfinite(double(fs)) || double(fs) <= 0
     fs = 30.72e6;
 else
     fs = double(fs);
+end
+end
+
+function tf = localHasExplicitTransmitRFConfig(cfg)
+txPaths = [ ...
+    "rf.tx.cfo_Hz", ...
+    "rf.tx.cfoHz", ...
+    "rf.tx.loOffset_Hz", ...
+    "rf.tx.timingOffsetSamples", ...
+    "rf.tx.sampleTimingOffset_samples", ...
+    "rf.tx.timing_offset_samples", ...
+    "rf.tx.iqImbalance.gainImbalance_dB", ...
+    "rf.tx.iqImbalance.ampImb_dB", ...
+    "rf.tx.iqImbalance.amp_imbalance_db", ...
+    "rf.tx.iqImbalance.phaseImbalance_deg", ...
+    "rf.tx.iqImbalance.phaseImb_deg", ...
+    "rf.tx.iqImbalance.phase_imbalance_deg"];
+for i = 1:numel(txPaths)
+    if localFiniteNonzeroConfig(cfg, txPaths(i))
+        tf = true;
+        return;
+    end
+end
+flagPaths = [ ...
+    "rf.tx.iqImbalance.enable", ...
+    "rf.tx.iqImbalance.enabled", ...
+    "rf.tx.phaseNoise.enable", ...
+    "rf.tx.phaseNoise.enabled"];
+for i = 1:numel(flagPaths)
+    value = sixgr.util.structGet(cfg, char(flagPaths(i)), []);
+    if localTruthyConfig(value)
+        tf = true;
+        return;
+    end
+end
+tf = false;
+end
+
+function tf = localFiniteNonzeroConfig(cfg, path)
+value = sixgr.util.structGet(cfg, char(path), []);
+if isempty(value) || ~isnumeric(value)
+    tf = false;
+    return;
+end
+value = double(value(1));
+tf = isfinite(value) && abs(value) > 1e-12;
+end
+
+function tf = localTruthyConfig(value)
+tf = false;
+if isempty(value)
+    return;
+end
+if islogical(value) || isnumeric(value)
+    tf = logical(value(1));
+elseif ischar(value) || isstring(value)
+    token = lower(strtrim(string(value(1))));
+    tf = any(token == ["true","1","yes","on","enabled"]);
 end
 end
 
