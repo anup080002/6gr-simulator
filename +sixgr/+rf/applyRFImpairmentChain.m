@@ -305,6 +305,23 @@ phase = localFirstVector( ...
     localGetPath(cfg, prefix + "phase_deg", []), ...
     localGetPath(cfg, prefix + "phaseError_deg", []), ...
     []);
+couplingEnabled = localFirstLogical( ...
+    localGetPath(cfg, prefix + "mutualCoupling.enable", []), ...
+    localGetPath(cfg, prefix + "mutualCoupling.enabled", []), ...
+    localGetPath(cfg, "rf." + string(endpoint) + ".mutualCoupling.enable", []), ...
+    localGetPath(cfg, "rf." + string(endpoint) + ".mutualCoupling.enabled", []), ...
+    localGetPath(cfg, "rf.mutualCoupling.enable", []), ...
+    localGetPath(cfg, "rf.mutualCoupling.enabled", []), ...
+    []);
+couplingMatrix = localFirstMatrix( ...
+    localGetPath(cfg, prefix + "mutualCoupling.matrix", []), ...
+    localGetPath(cfg, prefix + "mutualCouplingMatrix", []), ...
+    localGetPath(cfg, "rf." + string(endpoint) + ".mutualCoupling.matrix", []), ...
+    localGetPath(cfg, "rf." + string(endpoint) + ".mutualCouplingMatrix", []), ...
+    localGetPath(cfg, "rf.mutualCoupling.matrix", []), ...
+    localGetPath(cfg, "rf.mutualCouplingMatrix", []), ...
+    localGetPath(cfg, "channel.mutualCouplingMatrix", []), ...
+    []);
 if includeLegacy
     enabled = localFirstLogical(enabled, ...
         sixgr.util.structGet(cfg, "rf.element.enable", []), ...
@@ -318,9 +335,20 @@ if includeLegacy
         sixgr.util.structGet(cfg, "rf.element.phase_deg", []), ...
         sixgr.util.structGet(cfg, "rf.element.phaseError_deg", []), ...
         []);
+    couplingEnabled = localFirstLogical(couplingEnabled, ...
+        sixgr.util.structGet(cfg, "rf.mutualCoupling.enable", []), ...
+        sixgr.util.structGet(cfg, "rf.mutualCoupling.enabled", []), ...
+        sixgr.util.structGet(cfg, "channel.mutual_coupling_matrix_enable", []), ...
+        []);
+    couplingMatrix = localFirstMatrix(couplingMatrix, ...
+        sixgr.util.structGet(cfg, "rf.mutualCoupling.matrix", []), ...
+        sixgr.util.structGet(cfg, "rf.mutualCouplingMatrix", []), ...
+        sixgr.util.structGet(cfg, "channel.mutualCouplingMatrix", []), ...
+        []);
 end
 if isempty(enabled)
-    enabled = ~isempty(gain) || ~isempty(phase);
+    enabled = ~isempty(gain) || ~isempty(phase) || ~isempty(couplingMatrix) || ...
+        (~isempty(couplingEnabled) && logical(couplingEnabled));
 end
 if isempty(gain)
     gain = 0;
@@ -328,9 +356,14 @@ end
 if isempty(phase)
     phase = 0;
 end
+if isempty(couplingEnabled)
+    couplingEnabled = ~isempty(couplingMatrix);
+end
 role = localEndpointRole(endpoint, direction);
 cfgElem = struct("Enabled", logical(enabled), "Gain_dB", double(gain(:).'), ...
-    "Phase_deg", double(phase(:).'), "Endpoint", char(endpoint), "Role", char(role));
+    "Phase_deg", double(phase(:).'), "Endpoint", char(endpoint), "Role", char(role), ...
+    "MutualCouplingEnabled", logical(couplingEnabled), ...
+    "MutualCouplingMatrix", double(couplingMatrix));
 end
 
 function cfgAGC = localResolveAGCConfig(cfg, applyADC)
@@ -490,7 +523,11 @@ row.Parameter2Name = "element_phase_deg_rms";
 row.Parameter2Value = localRMSFinite(stageCfg.Phase_deg);
 row.Parameter3Name = "element_count";
 row.Parameter3Value = localResolveElementCountForStage(x, stageCfg, cfg);
-row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_element_analog_rf_gain_phase", row.Status);
+if stageCfg.Enabled && row.Applied && logical(stageCfg.MutualCouplingEnabled)
+    row.Status = "applied_element_analog_rf_gain_phase_mutual_coupling";
+else
+    row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_element_analog_rf_gain_phase", row.Status);
+end
 rows(end + 1, 1) = row;
 end
 
@@ -705,6 +742,9 @@ replay = struct( ...
     "ElementRFApplied", ~isempty(elementRows) && any([elementRows.Applied]), ...
     "ElementRFExecutionStatus", localStageSetStatus(elementRows), ...
     "ElementRFStageCount", double(nnz([elementRows.Enabled])), ...
+    "MutualCouplingEnabled", logical(chain.TxElementRF.MutualCouplingEnabled || chain.RxElementRF.MutualCouplingEnabled), ...
+    "MutualCouplingApplied", localMutualCouplingApplied(chain, elementRows), ...
+    "MutualCouplingMatrixSize", char(localMutualCouplingMatrixSize(chain)), ...
     "AGCEnabled", ~isempty(agcRows) && any([agcRows.Enabled]), ...
     "AGCApplied", ~isempty(agcRows) && any([agcRows.Applied]), ...
     "AGCGain_dB", localSumRowParameter(agcRows, "agc_gain_dB"), ...
@@ -728,6 +768,34 @@ else
     mutationOk = true;
 end
 strictOk = logical(appliedAllEnabled && mutationOk);
+end
+
+function tf = localMutualCouplingApplied(chain, elementRows)
+enabled = logical(chain.TxElementRF.MutualCouplingEnabled || chain.RxElementRF.MutualCouplingEnabled);
+tf = false;
+if ~enabled || isempty(elementRows)
+    return;
+end
+tf = any([elementRows.Applied]) && any(contains(string({elementRows.Status}), "mutual_coupling"));
+end
+
+function txt = localMutualCouplingMatrixSize(chain)
+sizes = strings(0, 1);
+if logical(chain.TxElementRF.MutualCouplingEnabled) && ~isempty(chain.TxElementRF.MutualCouplingMatrix)
+    sizes(end + 1, 1) = "tx:" + localMatrixSizeToken(chain.TxElementRF.MutualCouplingMatrix); %#ok<AGROW>
+end
+if logical(chain.RxElementRF.MutualCouplingEnabled) && ~isempty(chain.RxElementRF.MutualCouplingMatrix)
+    sizes(end + 1, 1) = "rx:" + localMatrixSizeToken(chain.RxElementRF.MutualCouplingMatrix); %#ok<AGROW>
+end
+if isempty(sizes)
+    txt = "";
+else
+    txt = strjoin(sizes, ";");
+end
+end
+
+function txt = localMatrixSizeToken(M)
+txt = string(size(M, 1)) + "x" + string(size(M, 2));
 end
 
 function reason = localStrictFailureReason(chain, beforeHash, afterHash, rows, strictMutationRequired)
@@ -760,12 +828,15 @@ end
 function y = localApplyElementRFModel(x, stageCfg, cfg)
 M = localResolvePortToElementMatrixForStage(x, stageCfg, cfg);
 g = localElementComplexGain(stageCfg, size(M, 1));
+coupling = localElementMutualCouplingMatrix(stageCfg, size(M, 1));
 if size(x, 2) == size(M, 1)
-    y = x .* cast(reshape(g, 1, []), "like", x);
+    xElem = x .* cast(reshape(g, 1, []), "like", x);
+    y = xElem * cast(coupling.', "like", x);
     return;
 end
 xElem = x * cast(M.', "like", x);
 xElem = xElem .* cast(reshape(g, 1, []), "like", x);
+xElem = xElem * cast(coupling.', "like", x);
 y = xElem * cast(M, "like", x);
 end
 
@@ -933,6 +1004,26 @@ M = localResolvePortToElementMatrixForStage(x, stageCfg, cfg);
 nElem = size(M, 1);
 end
 
+function C = localElementMutualCouplingMatrix(stageCfg, nElem)
+nElem = max(1, round(double(nElem)));
+enabled = logical(sixgr.util.structGet(stageCfg, "MutualCouplingEnabled", false));
+raw = sixgr.util.structGet(stageCfg, "MutualCouplingMatrix", []);
+if isempty(raw)
+    if enabled
+        error("sixgr:rf:MutualCouplingMatrixMissing", ...
+            "Mutual coupling is enabled but no element-domain coupling matrix was configured.");
+    end
+    C = eye(nElem);
+    return;
+end
+C = double(raw);
+if ~ismatrix(C) || ~isequal(size(C), [nElem nElem]) || any(~isfinite(C(:)))
+    error("sixgr:rf:MutualCouplingMatrixMismatch", ...
+        "Mutual coupling matrix must be finite and sized %dx%d for the element-domain waveform.", ...
+        nElem, nElem);
+end
+end
+
 function g = localElementComplexGain(stageCfg, nElem)
 gainDb = localExpandVector(stageCfg.Gain_dB, nElem, 0);
 phaseDeg = localExpandVector(stageCfg.Phase_deg, nElem, 0);
@@ -1030,6 +1121,21 @@ for i = 1:nargin
     raw = double(raw(:).');
     raw = raw(isfinite(raw));
     if ~isempty(raw)
+        value = raw;
+        return;
+    end
+end
+end
+
+function value = localFirstMatrix(varargin)
+value = [];
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw) || ~isnumeric(raw) || ~ismatrix(raw)
+        continue;
+    end
+    raw = double(raw);
+    if ~isempty(raw) && all(isfinite(raw(:)))
         value = raw;
         return;
     end

@@ -43,12 +43,25 @@ rs = RandStream("mt19937ar", "Seed", 9081);
 xPA = complex(randn(rs, 2048, 2), randn(rs, 2048, 2)) / sqrt(2);
 [yLinear, ~] = sixgr.rf.applyPowerContext(xPA, cfg, "UL", struct());
 [yPA, ctxPA] = sixgr.rf.applyPowerContext(xPA, cfgPA, "UL", struct());
-assert(logical(ctxPA.PAApplied) && strcmp(string(ctxPA.PAExecutionStatus), "applied_memoryless_pa_in_physical_sample_units"), ...
+assert(logical(ctxPA.PAApplied) && strcmp(string(ctxPA.PAExecutionStatus), "applied_soft_limiter_pa_in_physical_sample_units"), ...
     "Configured PA nonlinearity must execute in the physical sample-power path.");
 assert(abs(ctxPA.OutputTotalPower_dBm - 23) < 1e-10, ...
     "PA output must remain in the configured physical Tx-power unit convention.");
 assert(localRelativeNorm(yPA - yLinear) > 1e-4, ...
     "PA nonlinearity must change the waveform samples, not only report metadata.");
+
+cfgMemPA = cfgPA;
+cfgMemPA.rf.pa.method = "memorypolynomial";
+cfgMemPA.rf.pa.memory.enable = true;
+cfgMemPA.rf.pa.memory.taps = [1 0.2];
+cfgMemPA.rf.pa.memory.orders = [1 3];
+cfgMemPA.rf.pa.memory.orderWeights = [1 -0.05];
+[yMemPA, ctxMemPA] = sixgr.rf.applyPowerContext(xPA, cfgMemPA, "UL", struct());
+assert(logical(ctxMemPA.PAApplied) && ...
+        strcmp(string(ctxMemPA.PAExecutionStatus), "applied_memory_polynomial_pa_in_physical_sample_units"), ...
+    "Memory-polynomial PA must execute in the physical sample-power path with model-specific evidence.");
+assert(localRelativeNorm(yMemPA - yLinear) > 1e-4, ...
+    "Memory-polynomial PA must change samples in the physical power path.");
 
 cfgDL = sixgr.util.structSet(cfg, "lls6g.runtimePowerContext", ctxDL);
 cfgDL = sixgr.util.structSet(cfgDL, "lls6g.userContext", struct( ...

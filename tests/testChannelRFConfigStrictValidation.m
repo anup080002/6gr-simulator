@@ -13,6 +13,6 @@ sco = bundle.Config;
 sco = sixgr.util.structSet(sco, "rf.sampleClockOffset.enable", true);
 sco = sixgr.util.structSet(sco, "rf.sampleClockOffset.ppm", 25);
 vs = sixgr.channel.validateChannelRFConfigStrict(sco);
-assert(~vs.Ok && contains(string(vs.StrictUnsupportedReason), "sample_clock_offset_configured_but_unsupported"), ...
-    "Configured sample-clock offset must fail closed until a real SCO resampling model is implemented.");
+assert(vs.Ok && logical(vs.SampleClockOffsetConfigured) && logical(vs.SampleClockOffsetSupported), ...
+    "Configured sample-clock offset must validate because the ordered RF chain applies real SCO resampling.");
 end

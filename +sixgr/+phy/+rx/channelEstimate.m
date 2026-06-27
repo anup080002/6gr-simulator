@@ -20,10 +20,12 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
 %     "ChannelModel"    : normalized channel token/profile for validation
 %     "ExpectedTxPorts" : expected TX port count for truth validation
 %     "ContextLabel"    : caller label for diagnostics
-%     "Method"          : "LS" (default), "wiener", or "ideal"
+%     "Method"          : "LS" (default), "wiener", "lmmse", or "ideal"
 %     "TrueChannel"     : test-only true effective channel tensor
 %     "OracleTestMode"  : true permits true-channel oracle diagnostics
 %     "Config"          : simulator cfg used for ideal nVar / DMRS defaults
+%     "ChannelCovariance" : full covariance for Method="lmmse"
+%     "NoiseVariance"     : pilot noise variance for Method="lmmse"
 %
 %   Outputs
 %     Hest : K-by-L-by-R-by-P channel estimate
@@ -52,6 +54,10 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     oracleTestMode = false;
     effectiveChannelConvention = "resource_grid_rx_antenna_by_reference_port_after_precoding_and_timing_alignment";
     methodCfg = struct();
+    lmmseChannelCovariance = [];
+    lmmseCrossCovariance = [];
+    lmmsePilotCovariance = [];
+    lmmseNoiseVariance = NaN;
     dmrsConfigType = [];
     fwd = varargin;
     if ~isempty(varargin)
@@ -112,6 +118,26 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
                     keep(i:i+1) = false;
                     i = i + 2;
                     continue;
+                elseif any(strcmpi(key, ["ChannelCovariance","LMMSEChannelCovariance","WienerChannelCovariance"]))
+                    lmmseChannelCovariance = varargin{i+1};
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif any(strcmpi(key, ["LMMSECrossCovariance","CrossCovariance"]))
+                    lmmseCrossCovariance = varargin{i+1};
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif any(strcmpi(key, ["LMMSEPilotCovariance","PilotCovariance"]))
+                    lmmsePilotCovariance = varargin{i+1};
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif any(strcmpi(key, ["NoiseVariance","PilotNoiseVariance","LMMSENoiseVariance"]))
+                    lmmseNoiseVariance = double(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
                 elseif strcmpi(key, "DMRSConfigType")
                     dmrsConfigType = varargin{i+1};
                     keep(i:i+1) = false;
@@ -149,6 +175,11 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.Method = char(estimationMethod);
     info.OutputHhatVariable = "Hest";
     info.EffectiveChannelConvention = char(string(effectiveChannelConvention));
+    info.EstimatorUsesTrueChannel = false;
+    info.FullCovarianceLMMSE = false;
+    info.LMMSECovarianceSource = "";
+    info.LMMSEObservationCount = 0;
+    info.LMMSETargetCount = 0;
     info.OracleTestMode = logical(oracleTestMode);
     info.UsedOracleFields = "";
     info.RxGridSize = size(rxGrid);
@@ -179,8 +210,26 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
         info.EngineUsed = "ideal_true_channel_test_oracle";
         info.HestSize = size(Hest);
         info.NoiseVar = nVar;
+        info.EstimatorUsesTrueChannel = true;
         info.IdealChannelSource = "TrueChannel_name_value_test_only";
         info.UsedOracleFields = "TrueChannel";
+        info = localAttachPilotDiagnostics(info, carrier, rxGrid, refInd, refSym, Hest, nVar, ...
+            trueChannel, logical(oracleTestMode));
+        return;
+    elseif estimationMethod == "lmmse"
+        [Hest, nVar, lmmseInfo] = localFullCovarianceLMMSE(rxGrid, refInd, refSym, ...
+            expectedTxPorts, lmmseChannelCovariance, lmmseCrossCovariance, ...
+            lmmsePilotCovariance, lmmseNoiseVariance, methodCfg);
+        info.EngineUsed = "full_covariance_lmmse";
+        info.HestSize = size(Hest);
+        info.NoiseVar = nVar;
+        info.FullCovarianceLMMSE = true;
+        info.LMMSECovarianceSource = char(string(lmmseInfo.CovarianceSource));
+        info.LMMSEObservationCount = double(lmmseInfo.ObservationCount);
+        info.LMMSETargetCount = double(lmmseInfo.TargetCount);
+        info.LMMSERegularization = double(lmmseInfo.Regularization);
+        info.LMMSEConditionEstimate = double(lmmseInfo.ConditionEstimate);
+        info.InterpolationMethod = "full_covariance_lmmse_from_pilot_ls_observations";
         info = localAttachPilotDiagnostics(info, carrier, rxGrid, refInd, refSym, Hest, nVar, ...
             trueChannel, logical(oracleTestMode));
         return;
@@ -285,11 +334,95 @@ switch method
         method = "LS";
     case {"wiener","wiener_interpolation","wiener_interpolated"}
         method = "wiener";
+    case {"lmmse","full_covariance_lmmse","wiener_lmmse","wiener-full-covariance"}
+        method = "lmmse";
     case {"ideal","true","true_channel"}
         method = "ideal";
     otherwise
         error("sixgr:phy:channelEstimate:UnknownMethod", ...
-            "Unknown channel estimation Method '%s'. Use LS, wiener, or ideal.", char(method));
+            "Unknown channel estimation Method '%s'. Use LS, wiener, lmmse, or ideal.", char(method));
+end
+end
+
+function [Hest, nVar, info] = localFullCovarianceLMMSE(rxGrid, refInd, refSym, expectedTxPorts, ...
+        channelCovariance, crossCovariance, pilotCovariance, noiseVariance, cfg)
+K = size(rxGrid, 1);
+L = size(rxGrid, 2);
+R = max(1, size(rxGrid, 3));
+P = max(localNormalizeTxPorts(expectedTxPorts), localInferReferencePortCount(refInd, refSym));
+[k, l, p, refValues] = localPilotCoordinates(refInd, refSym, K, L, P);
+if isempty(k)
+    error("sixgr:phy:channelEstimate:LMMSEInvalidReference", ...
+        "Method='lmmse' requires at least one valid non-zero pilot observation.");
+end
+[hObs, obsIdx] = localPilotObservationVector(rxGrid, k, l, p, refValues, R, [K L R P]);
+valid = isfinite(real(hObs)) & isfinite(imag(hObs)) & isfinite(obsIdx);
+hObs = hObs(valid);
+obsIdx = obsIdx(valid);
+if isempty(hObs)
+    error("sixgr:phy:channelEstimate:LMMSEInvalidObservation", ...
+        "Method='lmmse' could not form finite pilot LS observations.");
+end
+targetCount = double(K) * double(L) * double(R) * double(P);
+nObs = numel(hObs);
+nVar = double(noiseVariance);
+if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
+    nVar = localNoiseVarianceFromConfig(cfg);
+end
+
+if ~isempty(channelCovariance)
+    C = localValidateCovarianceMatrix(channelCovariance, targetCount, targetCount, "ChannelCovariance");
+    Rhp = C(:, obsIdx);
+    Rpp = C(obsIdx, obsIdx);
+    source = "full_channel_covariance";
+elseif ~isempty(crossCovariance) || ~isempty(pilotCovariance)
+    Rhp = localValidateCovarianceMatrix(crossCovariance, targetCount, nObs, "LMMSECrossCovariance");
+    Rpp = localValidateCovarianceMatrix(pilotCovariance, nObs, nObs, "LMMSEPilotCovariance");
+    source = "explicit_cross_and_pilot_covariance";
+else
+    error("sixgr:phy:channelEstimate:LMMSECovarianceMissing", ...
+        "Method='lmmse' requires ChannelCovariance or LMMSECrossCovariance plus LMMSEPilotCovariance.");
+end
+
+regularization = max(0, nVar);
+A = Rpp + regularization .* eye(nObs);
+if rcond(A) < 1e-12
+    regularization = regularization + max(eps, 1e-12 * trace(abs(Rpp)) / max(nObs, 1));
+    A = Rpp + regularization .* eye(nObs);
+end
+hVec = Rhp * (A \ hObs);
+Hest = reshape(hVec, [K L R P]);
+info = struct( ...
+    "CovarianceSource", source, ...
+    "ObservationCount", double(nObs), ...
+    "TargetCount", double(targetCount), ...
+    "Regularization", double(regularization), ...
+    "ConditionEstimate", double(cond(A)));
+end
+
+function [hObs, obsIdx] = localPilotObservationVector(rxGrid, k, l, p, refValues, R, targetSize)
+N = numel(k);
+hObs = complex(zeros(N * R, 1));
+obsIdx = zeros(N * R, 1);
+writeIdx = 0;
+for ii = 1:N
+    for rr = 1:R
+        writeIdx = writeIdx + 1;
+        hObs(writeIdx) = rxGrid(k(ii), l(ii), rr) ./ refValues(ii);
+        obsIdx(writeIdx) = sub2ind(targetSize, k(ii), l(ii), rr, p(ii));
+    end
+end
+end
+
+function C = localValidateCovarianceMatrix(raw, nRows, nCols, label)
+if isempty(raw) || ~isnumeric(raw) || ~ismatrix(raw)
+    error("sixgr:phy:channelEstimate:LMMSEBadCovariance", ...
+        "%s must be a numeric covariance matrix.", char(label));
+end
+C = double(raw);
+if ~isequal(size(C), [nRows nCols]) || any(~isfinite(real(C(:)))) || any(~isfinite(imag(C(:))))
+    error("sixgr:phy:channelEstimate:LMMSEBadCovariance", ...
+        "%s must be finite and sized %dx%d.", char(label), nRows, nCols);
 end
 end
 

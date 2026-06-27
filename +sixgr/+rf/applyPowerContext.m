@@ -73,6 +73,7 @@ if ~(isfinite(inputTotal_mW) && inputTotal_mW > 0)
     return;
 end
 pa = sixgr.rf.PAModel(cfg);
+paModel = string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"));
 normScale = sqrt(max(double(inputTotal_mW), realmin));
 yn = pa.apply(x ./ cast(normScale, "like", x));
 [normOutTotal, ~] = localTotalActivePower_mW(yn, txInfo);
@@ -87,9 +88,20 @@ info.PAApplied = true;
 info.PAModel = string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"));
 info.PAOutputTotalPower_mW = double(outputTotal_mW);
 info.PACompression_dB = 10 * log10(max(double(outputTotal_mW), realmin) ./ max(double(inputTotal_mW), realmin));
-info.PAExecutionStatus = "applied_memoryless_pa_in_physical_sample_units";
+info.PAExecutionStatus = localPAExecutionStatus(paModel);
 if isfield(ctx, "WaveformAmplitudeUnit")
     info.PAAmplitudeUnit = string(ctx.WaveformAmplitudeUnit);
+end
+end
+
+function status = localPAExecutionStatus(paModel)
+token = lower(strtrim(string(paModel)));
+if contains(token, "memory")
+    status = "applied_memory_polynomial_pa_in_physical_sample_units";
+elseif contains(token, "soft")
+    status = "applied_soft_limiter_pa_in_physical_sample_units";
+else
+    status = "applied_memoryless_pa_in_physical_sample_units";
 end
 end
 function [total_mW, perPort_mW, info] = localTotalActivePower_mW(x, txInfo)
