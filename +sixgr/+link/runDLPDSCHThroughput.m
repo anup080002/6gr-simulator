@@ -2690,6 +2690,16 @@ replay.InterfererTransformPrecodingCount = double(sixgr.util.structGet(interfere
 replay.InterfererPrecoderSourceSet = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterfererPrecoderSourceSet", ""));
 replay.InterfererPrecodingModeSet = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterfererPrecodingModeSet", ""));
 replay.InterfererBeamIndexSetSummary = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterfererBeamIndexSetSummary", ""));
+replay.InterferenceContributionTensorAvailable = logical(sixgr.util.structGet(interferenceMeta, "ContributionTensorAvailable", false));
+replay.InterferenceContributionSourceIdSet = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "ContributionSourceIdSet", ""));
+replay.InterferenceSampleExactSuperpositionOk = logical(sixgr.util.structGet(interferenceMeta, "SampleExactSuperpositionOk", true));
+replay.InterferenceSampleExactSuperpositionError = double(sixgr.util.structGet(interferenceMeta, "SampleExactSuperpositionError", 0));
+replay.InterferenceCovarianceAvailableFromContributions = logical(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceAvailable", false));
+replay.InterferenceCovarianceSourceFromContributions = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceSource", ""));
+replay.InterferenceCovarianceStatusFromContributions = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceStatus", ""));
+replay.InterferenceTxRegenerationUsed = logical(sixgr.util.structGet(interferenceMeta, "TxRegenerationUsed", false));
+replay.InterferencePostChannelNormalizationApplied = logical(sixgr.util.structGet(interferenceMeta, "PostChannelNormalizationApplied", false));
+replay.InterferenceRandomPhaseApplied = logical(sixgr.util.structGet(interferenceMeta, "RandomPhaseApplied", false));
 if strlength(strtrim(string(replay.InterferencePowerSource))) == 0 && replay.InterferenceContributorCount > 0
     replay.InterferencePowerSource = "sample_domain_interference_sum";
 end

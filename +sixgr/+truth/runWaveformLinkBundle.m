@@ -36,6 +36,7 @@ params.ForceLong = true;
 bundleStart = tic;
 stageRows = repmat(localEmptyRuntimeStageRow(), 0, 1);
 stageOrder = 0;
+liveSweepPath = "";
 saveFigures = logical(sixgr.util.structGet(opt, "SaveFigures", true));
 anchorCaseNames = localResolveBundleAnchorCases(opt);
 receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfgExec, opt);
@@ -755,6 +756,7 @@ fTRS = fullfile(csvDir, "trs_trials.csv");
 isLiveDBMode = localIsMySQLWebMode(cfg);
 dlLiveConstellationPath = "";
 ulLiveConstellationPath = "";
+liveSweepPath = "";
 if isLiveDBMode
     dlLiveConstellationPath = fullfile(csvDir, "dl_constellation_preview.csv");
     ulLiveConstellationPath = fullfile(csvDir, "ul_constellation_preview.csv");
@@ -4095,9 +4097,10 @@ try
     end
     txWave = sixgr.util.structGet(tx, "Waveform", []);
     sampleRateHz = localResolveCoupledTxSampleRate(tx, txInfo);
-catch
-    txWave = [];
-    sampleRateHz = NaN;
+catch ME
+    error("sixgr:truth:InterfererTxPrecomputeFailed", ...
+        "Coupled %s interferer Tx precompute failed for signal %s: %s %s", ...
+        char(direction), char(signalType), char(string(ME.identifier)), char(string(ME.message)));
 end
 end
 

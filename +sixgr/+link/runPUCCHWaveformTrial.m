@@ -720,6 +720,16 @@ replay.InterferenceContributorCount = double(sixgr.util.structGet(interferenceMe
 replay.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(interferenceMeta, "AggregatedRxPower_dBm", NaN));
 replay.InterferencePowerSource = char(string(sixgr.util.structGet(interferenceMeta, "PowerSource", "")));
 replay.FullInterfererChannelTruthUsed = logical(sixgr.util.structGet(interferenceMeta, "FullPerLinkChannelTruthUsed", false));
+replay.InterferenceContributionTensorAvailable = logical(sixgr.util.structGet(interferenceMeta, "ContributionTensorAvailable", false));
+replay.InterferenceContributionSourceIdSet = char(string(sixgr.util.structGet(interferenceMeta, "ContributionSourceIdSet", "")));
+replay.InterferenceSampleExactSuperpositionOk = logical(sixgr.util.structGet(interferenceMeta, "SampleExactSuperpositionOk", true));
+replay.InterferenceSampleExactSuperpositionError = double(sixgr.util.structGet(interferenceMeta, "SampleExactSuperpositionError", 0));
+replay.InterferenceCovarianceAvailableFromContributions = logical(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceAvailable", false));
+replay.InterferenceCovarianceSourceFromContributions = char(string(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceSource", "")));
+replay.InterferenceCovarianceStatusFromContributions = char(string(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceStatus", "")));
+replay.InterferenceTxRegenerationUsed = logical(sixgr.util.structGet(interferenceMeta, "TxRegenerationUsed", false));
+replay.InterferencePostChannelNormalizationApplied = logical(sixgr.util.structGet(interferenceMeta, "PostChannelNormalizationApplied", false));
+replay.InterferenceRandomPhaseApplied = logical(sixgr.util.structGet(interferenceMeta, "RandomPhaseApplied", false));
 if strlength(strtrim(string(replay.InterferencePowerSource))) == 0 && replay.InterferenceContributorCount > 0
     replay.InterferencePowerSource = "sample_domain_interference_sum";
 end

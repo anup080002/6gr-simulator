@@ -229,6 +229,49 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelStateImpl(state, channelState);
     end
 
+    function assertSharedSlotInterferenceBundle(bundle, context)
+        if nargin < 2
+            context = "coupled_truth_runtime";
+        end
+        if isempty(bundle) || ~isstruct(bundle) || isempty(fieldnames(bundle))
+            return;
+        end
+        for ii = 1:numel(bundle)
+            entry = bundle(ii);
+            mode = lower(strtrim(string(sixgr.util.structGet(entry, "InterferenceMode", ""))));
+            if mode ~= "full_per_link_channel_waveform_sum" && mode ~= "shared_slot_waveform_superposition"
+                continue;
+            end
+            if logical(sixgr.util.structGet(entry, "Muted", false))
+                continue;
+            end
+            hasContribution = sixgr.truth.CoupledTruthRuntime.interferenceEntryHasSharedSlotContribution(entry);
+            hasWorkerCache = strlength(strtrim(string(sixgr.util.structGet(entry, "CacheKey", "")))) > 0 && ...
+                isfinite(double(sixgr.util.structGet(entry, "CacheIndex", NaN)));
+            if ~(hasContribution || hasWorkerCache)
+                error("sixgr:truth:MissingSharedSlotInterferenceContribution", ...
+                    "Full-truth interference entry %d in %s has no receiver-side shared-slot contribution waveform. The runtime must build all Tx waveforms, propagate persistent links, and pass contribution samples instead of asking the victim path to regenerate interferers.", ...
+                    ii, char(string(context)));
+            end
+        end
+    end
+
+    function tf = interferenceEntryHasSharedSlotContribution(entry)
+        tf = false;
+        if ~(isstruct(entry) && ~isempty(fieldnames(entry)))
+            return;
+        end
+        fields = ["SharedSlotContributionWaveform", "ContributionWaveform", ...
+            "RxContributionWaveform", "PrecomputedRxWaveform", "PrecomputedContributionWaveform"];
+        for fi = 1:numel(fields)
+            f = char(fields(fi));
+            if isfield(entry, f) && ~isempty(entry.(f))
+                tf = true;
+                return;
+            end
+        end
+    end
+
     function state = commitGrantExecution(state, ueIdx, direction, grant)
         state = sixgr.truth.CoupledTruthRuntime.commitGrantExecutionImpl(state, ueIdx, direction, grant);
     end

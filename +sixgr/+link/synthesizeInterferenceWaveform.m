@@ -1,16 +1,146 @@
 function [sumWaveform, meta] = synthesizeInterferenceWaveform(direction, desiredWaveform, replay, interferenceBundle)
-%SYNTHESIZEINTERFERENCEWAVEFORM Build sample-domain interference for one victim link.
+%SYNTHESIZEINTERFERENCEWAVEFORM Sum shared-slot receiver-side interference.
 % Keep this file ASCII-only.
 %
-% This helper supports the no-proxy coupled-truth interference mode:
-%   - full_per_link_channel_waveform_sum
-%       Each interferer is rebuilt through its real grant-specific PHY Tx
-%       path, then propagated through its own fading channel realization
-%       into the victim receiver before large-scale loss is applied.
-% Legacy large-scale overlap modes are blocked before this helper in the
-% active LLS resolver and are not populated as runtime truth.
+% The full truth interference contract is slot-centric:
+%   schedule -> build each transmitter waveform once -> propagate each
+%   transmitter-to-receiver link with its persistent channel -> sum receiver
+%   contributions -> add receiver noise once.
+%
+% This helper therefore accepts only already-propagated, sample-aligned
+% receiver contribution waveforms. It does not rebuild transmitter PHY
+% waveforms, reset channels, invent receive phases, or renormalize power
+% after the channel.
 
-sumWaveform = complex(zeros(size(desiredWaveform), "like", desiredWaveform));
+direction = upper(string(direction));
+targetSize = localWaveformTargetSize(desiredWaveform);
+sumWaveform = complex(zeros(targetSize(1), targetSize(2), "like", desiredWaveform));
+meta = localEmptyMeta(targetSize);
+
+if nargin < 4 || isempty(interferenceBundle) || ~isstruct(interferenceBundle)
+    return;
+end
+if isempty(fieldnames(interferenceBundle))
+    return;
+end
+
+entries = interferenceBundle(:);
+victimPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
+victimPowerSource = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
+samplePowerPerMilliwatt = localResolveSamplePowerPerMilliwatt(desiredWaveform, victimPower_dBm);
+
+contributionTensor = complex(zeros(targetSize(1), targetSize(2), numel(entries), "like", desiredWaveform));
+sourceIds = strings(0, 1);
+modeTokens = strings(0, 1);
+powerSources = strings(0, 1);
+precoderSources = strings(0, 1);
+precodingModes = strings(0, 1);
+beamIndexSets = strings(0, 1);
+channelObjectSources = strings(0, 1);
+channelObjectClasses = strings(0, 1);
+channelHandlingStatuses = strings(0, 1);
+channelHandlingBlockers = strings(0, 1);
+channelGeometryLevels = strings(0, 1);
+geometryAdapterTypes = strings(0, 1);
+geometryAdapterSources = strings(0, 1);
+geometryAdapterLimitations = strings(0, 1);
+geometryAdapterPortMappings = strings(0, 1);
+channelUsesSameRuntime = false(0, 1);
+beamformingCount = 0;
+explicitBeamWeightCount = 0;
+transformPrecodingCount = 0;
+aggMilliwatt = 0;
+count = 0;
+
+for i = 1:numel(entries)
+    entry = entries(i);
+    if logical(sixgr.util.structGet(entry, "Muted", false))
+        continue;
+    end
+    [entryResolved, cachePayload] = localResolveCachedInterferenceEntry(entry);
+    [contribution, rxPower_dBm, entryMeta] = localResolveSharedSlotContribution( ...
+        direction, entry, entryResolved, cachePayload, targetSize, samplePowerPerMilliwatt, replay);
+
+    count = count + 1;
+    contribution = cast(contribution, "like", desiredWaveform);
+    contributionTensor(:, :, count) = contribution;
+    sumWaveform = sumWaveform + contribution;
+
+    if isfinite(rxPower_dBm)
+        aggMilliwatt = aggMilliwatt + 10.^(double(rxPower_dBm) / 10);
+    end
+    modeTokens = localAppendToken(modeTokens, sixgr.util.structGet(entryMeta, "InterferenceMode", "")); %#ok<AGROW>
+    powerSources = localAppendToken(powerSources, sixgr.util.structGet(entryMeta, "PowerSource", "")); %#ok<AGROW>
+    sourceIds = localAppendToken(sourceIds, sixgr.util.structGet(entryMeta, "SourceId", "")); %#ok<AGROW>
+    channelObjectSources = localAppendToken(channelObjectSources, sixgr.util.structGet(entryMeta, "ChannelObjectSource", "")); %#ok<AGROW>
+    channelObjectClasses = localAppendToken(channelObjectClasses, sixgr.util.structGet(entryMeta, "ChannelObjectClass", "")); %#ok<AGROW>
+    channelHandlingStatuses = localAppendToken(channelHandlingStatuses, sixgr.util.structGet(entryMeta, "ChannelArrayHandlingStatus", "")); %#ok<AGROW>
+    channelHandlingBlockers = localAppendToken(channelHandlingBlockers, sixgr.util.structGet(entryMeta, "ChannelArrayHandlingBlocker", "")); %#ok<AGROW>
+    channelGeometryLevels = localAppendToken(channelGeometryLevels, sixgr.util.structGet(entryMeta, "ChannelGeometryCouplingLevel", "")); %#ok<AGROW>
+    geometryAdapterTypes = localAppendToken(geometryAdapterTypes, sixgr.util.structGet(entryMeta, "GeometryAdapterType", "")); %#ok<AGROW>
+    geometryAdapterSources = localAppendToken(geometryAdapterSources, sixgr.util.structGet(entryMeta, "GeometryAdapterSource", "")); %#ok<AGROW>
+    geometryAdapterLimitations = localAppendToken(geometryAdapterLimitations, sixgr.util.structGet(entryMeta, "GeometryAdapterLimitation", "")); %#ok<AGROW>
+    geometryAdapterPortMappings = localAppendToken(geometryAdapterPortMappings, sixgr.util.structGet(entryMeta, "GeometryAdapterPortMapping", "")); %#ok<AGROW>
+    channelUsesSameRuntime(end + 1, 1) = logical(sixgr.util.structGet(entryMeta, "ChannelUsesSameRuntimeAntennaAssumptions", false)); %#ok<AGROW>
+    beamformingCount = beamformingCount + double(logical(sixgr.util.structGet(entryMeta, "BeamformingApplied", false)));
+    explicitBeamWeightCount = explicitBeamWeightCount + double(logical(sixgr.util.structGet(entryMeta, "ExplicitBeamWeightsApplied", false)));
+    transformPrecodingCount = transformPrecodingCount + double(logical(sixgr.util.structGet(entryMeta, "TransformPrecodingApplied", false)));
+    precoderSources = localAppendToken(precoderSources, sixgr.util.structGet(entryMeta, "PrecoderSource", "")); %#ok<AGROW>
+    precodingModes = localAppendToken(precodingModes, sixgr.util.structGet(entryMeta, "PrecodingMode", "")); %#ok<AGROW>
+    beamIndexSets = localAppendToken(beamIndexSets, sixgr.util.structGet(entryMeta, "BeamIndexSet", "")); %#ok<AGROW>
+end
+
+if count < 1
+    return;
+end
+
+contributionTensor = contributionTensor(:, :, 1:count);
+reconstructed = sum(contributionTensor, 3);
+identityError = max(abs(double(sumWaveform(:)) - double(reconstructed(:))), [], "omitnan");
+if isempty(identityError)
+    identityError = 0;
+end
+
+meta.InterferenceMode = localSafeCharToken(localUniqueTokenSet(modeTokens));
+meta.Contributors = double(count);
+meta.AggregatedRxPower_dBm = localAggregatedPowerDbm(aggMilliwatt);
+meta.VictimPowerReference_dBm = double(victimPower_dBm);
+meta.VictimPowerReferenceSource = localSafeCharToken(victimPowerSource);
+meta.PowerSource = localSafeCharToken(localUniqueTokenSet(powerSources));
+meta.FullPerLinkChannelTruthUsed = true;
+meta.ChannelObjectSource = localSafeCharToken(localUniqueTokenSet(channelObjectSources));
+meta.ChannelObjectClass = localSafeCharToken(localUniqueTokenSet(channelObjectClasses));
+meta.ChannelArrayHandlingStatus = localSafeCharToken(localUniqueTokenSet(channelHandlingStatuses));
+meta.ChannelArrayHandlingBlocker = localSafeCharToken(localUniqueTokenSet(channelHandlingBlockers));
+meta.ChannelGeometryCouplingLevel = localSafeCharToken(localUniqueTokenSet(channelGeometryLevels));
+meta.GeometryAdapterType = localSafeCharToken(localUniqueTokenSet(geometryAdapterTypes));
+meta.GeometryAdapterSource = localSafeCharToken(localUniqueTokenSet(geometryAdapterSources));
+meta.GeometryAdapterLimitation = localSafeCharToken(localUniqueTokenSet(geometryAdapterLimitations));
+meta.GeometryAdapterPortMapping = localSafeCharToken(localUniqueTokenSet(geometryAdapterPortMappings));
+meta.ChannelUsesSameRuntimeAntennaAssumptions = ~isempty(channelUsesSameRuntime) && all(channelUsesSameRuntime);
+meta.InterfererBeamformingAppliedCount = double(beamformingCount);
+meta.InterfererExplicitBeamWeightCount = double(explicitBeamWeightCount);
+meta.InterfererTransformPrecodingCount = double(transformPrecodingCount);
+meta.InterfererPrecoderSourceSet = localSafeCharToken(localUniqueTokenSet(precoderSources));
+meta.InterfererPrecodingModeSet = localSafeCharToken(localUniqueTokenSet(precodingModes));
+meta.InterfererBeamIndexSetSummary = localSafeCharToken(localUniqueTokenSet(beamIndexSets));
+meta.ContributionTensor = contributionTensor;
+meta.ContributionTensorAvailable = true;
+meta.ContributionSourceIdSet = localSafeCharToken(localUniqueTokenSet(sourceIds));
+meta.ContributionSampleCount = double(targetSize(1));
+meta.ContributionRxPortCount = double(targetSize(2));
+meta.SampleExactSuperpositionOk = identityError <= 10 * eps(max(1, max(abs(double(sumWaveform(:))))));
+meta.SampleExactSuperpositionError = double(identityError);
+meta.InterferenceCovariance = localEstimateSampleCovariance(sumWaveform);
+meta.InterferenceCovarianceAvailable = ~isempty(meta.InterferenceCovariance);
+meta.InterferenceCovarianceSource = "shared_slot_contribution_sample_covariance";
+meta.InterferenceCovarianceStatus = "available_from_shared_slot_contributions";
+meta.TxRegenerationUsed = false;
+meta.PostChannelNormalizationApplied = false;
+meta.RandomPhaseApplied = false;
+end
+
+function meta = localEmptyMeta(targetSize)
 meta = struct( ...
     "InterferenceMode", "none", ...
     "Contributors", 0, ...
@@ -34,171 +164,61 @@ meta = struct( ...
     "InterfererTransformPrecodingCount", 0, ...
     "InterfererPrecoderSourceSet", "", ...
     "InterfererPrecodingModeSet", "", ...
-    "InterfererBeamIndexSetSummary", "");
-
-if nargin < 4 || isempty(interferenceBundle) || ~isstruct(interferenceBundle)
-    return;
+    "InterfererBeamIndexSetSummary", "", ...
+    "ContributionTensor", complex(zeros(targetSize(1), targetSize(2), 0)), ...
+    "ContributionTensorAvailable", false, ...
+    "ContributionSourceIdSet", "", ...
+    "ContributionSampleCount", double(targetSize(1)), ...
+    "ContributionRxPortCount", double(targetSize(2)), ...
+    "SampleExactSuperpositionOk", true, ...
+    "SampleExactSuperpositionError", 0, ...
+    "InterferenceCovariance", [], ...
+    "InterferenceCovarianceAvailable", false, ...
+    "InterferenceCovarianceSource", "", ...
+    "InterferenceCovarianceStatus", "no_interference_contributions", ...
+    "TxRegenerationUsed", false, ...
+    "PostChannelNormalizationApplied", false, ...
+    "RandomPhaseApplied", false);
 end
-if isempty(fieldnames(interferenceBundle))
-    return;
+
+function targetSize = localWaveformTargetSize(waveform)
+targetSize = size(waveform);
+if isempty(targetSize)
+    targetSize = [0 1];
+elseif numel(targetSize) < 2
+    targetSize(2) = 1;
+end
+targetSize = [max(0, round(double(targetSize(1)))), max(1, round(double(targetSize(2))))];
 end
 
-entries = interferenceBundle(:);
-victimPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-victimPowerSource = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
-desiredPower = mean(abs(double(desiredWaveform(:))).^2, "omitnan");
+function samplePowerPerMilliwatt = localResolveSamplePowerPerMilliwatt(desiredWaveform, victimPower_dBm)
 samplePowerPerMilliwatt = NaN;
-if isfinite(victimPower_dBm) && isfinite(desiredPower) && desiredPower > 0
-    victimMilliwatt = 10.^(victimPower_dBm / 10);
-    if isfinite(victimMilliwatt) && victimMilliwatt > 0
-        samplePowerPerMilliwatt = desiredPower / victimMilliwatt;
-    end
-end
-
-aggMilliwatt = 0;
-modeToken = "";
-powerSource = "";
-count = 0;
-fullTruthUsed = false;
-precoderSources = strings(0, 1);
-precodingModes = strings(0, 1);
-beamIndexSets = strings(0, 1);
-channelObjectSources = strings(0, 1);
-channelObjectClasses = strings(0, 1);
-channelHandlingStatuses = strings(0, 1);
-channelHandlingBlockers = strings(0, 1);
-channelGeometryLevels = strings(0, 1);
-geometryAdapterTypes = strings(0, 1);
-geometryAdapterSources = strings(0, 1);
-geometryAdapterLimitations = strings(0, 1);
-geometryAdapterPortMappings = strings(0, 1);
-channelUsesSameRuntime = false(0, 1);
-beamformingCount = 0;
-explicitBeamWeightCount = 0;
-transformPrecodingCount = 0;
-for i = 1:numel(entries)
-    entry = entries(i);
-    [waveform, rxPower_dBm, entryMeta] = localBuildOneInterferer(direction, entry, size(desiredWaveform), samplePowerPerMilliwatt);
-    if isempty(waveform)
-        continue;
-    end
-    sumWaveform = sumWaveform + cast(waveform, "like", desiredWaveform);
-    if isfinite(rxPower_dBm)
-        aggMilliwatt = aggMilliwatt + 10.^(rxPower_dBm / 10);
-    end
-    if strlength(modeToken) == 0
-        modeToken = string(sixgr.util.structGet(entryMeta, "InterferenceMode", ...
-            sixgr.util.structGet(entry, "InterferenceMode", "none")));
-    end
-    if strlength(powerSource) == 0
-        powerSource = string(sixgr.util.structGet(entryMeta, "PowerSource", ""));
-    end
-    fullTruthUsed = fullTruthUsed || logical(sixgr.util.structGet(entryMeta, "FullPerLinkChannelTruthUsed", false));
-    channelObjectSource = string(sixgr.util.structGet(entryMeta, "ChannelObjectSource", ""));
-    if strlength(strtrim(channelObjectSource)) > 0
-        channelObjectSources(end + 1, 1) = channelObjectSource; %#ok<AGROW>
-    end
-    channelObjectClass = string(sixgr.util.structGet(entryMeta, "ChannelObjectClass", ""));
-    if strlength(strtrim(channelObjectClass)) > 0
-        channelObjectClasses(end + 1, 1) = channelObjectClass; %#ok<AGROW>
-    end
-    channelHandlingStatus = string(sixgr.util.structGet(entryMeta, "ChannelArrayHandlingStatus", ""));
-    if strlength(strtrim(channelHandlingStatus)) > 0
-        channelHandlingStatuses(end + 1, 1) = channelHandlingStatus; %#ok<AGROW>
-    end
-    channelHandlingBlocker = string(sixgr.util.structGet(entryMeta, "ChannelArrayHandlingBlocker", ""));
-    if strlength(strtrim(channelHandlingBlocker)) > 0
-        channelHandlingBlockers(end + 1, 1) = channelHandlingBlocker; %#ok<AGROW>
-    end
-    channelGeometryLevel = string(sixgr.util.structGet(entryMeta, "ChannelGeometryCouplingLevel", ""));
-    if strlength(strtrim(channelGeometryLevel)) > 0
-        channelGeometryLevels(end + 1, 1) = channelGeometryLevel; %#ok<AGROW>
-    end
-    geometryAdapterType = string(sixgr.util.structGet(entryMeta, "GeometryAdapterType", ""));
-    if strlength(strtrim(geometryAdapterType)) > 0
-        geometryAdapterTypes(end + 1, 1) = geometryAdapterType; %#ok<AGROW>
-    end
-    geometryAdapterSource = string(sixgr.util.structGet(entryMeta, "GeometryAdapterSource", ""));
-    if strlength(strtrim(geometryAdapterSource)) > 0
-        geometryAdapterSources(end + 1, 1) = geometryAdapterSource; %#ok<AGROW>
-    end
-    geometryAdapterLimitation = string(sixgr.util.structGet(entryMeta, "GeometryAdapterLimitation", ""));
-    if strlength(strtrim(geometryAdapterLimitation)) > 0
-        geometryAdapterLimitations(end + 1, 1) = geometryAdapterLimitation; %#ok<AGROW>
-    end
-    geometryAdapterPortMapping = string(sixgr.util.structGet(entryMeta, "GeometryAdapterPortMapping", ""));
-    if strlength(strtrim(geometryAdapterPortMapping)) > 0
-        geometryAdapterPortMappings(end + 1, 1) = geometryAdapterPortMapping; %#ok<AGROW>
-    end
-    channelUsesSameRuntime(end + 1, 1) = logical(sixgr.util.structGet(entryMeta, "ChannelUsesSameRuntimeAntennaAssumptions", false)); %#ok<AGROW>
-    beamformingCount = beamformingCount + double(logical(sixgr.util.structGet(entryMeta, "BeamformingApplied", false)));
-    explicitBeamWeightCount = explicitBeamWeightCount + double(logical(sixgr.util.structGet(entryMeta, "ExplicitBeamWeightsApplied", false)));
-    transformPrecodingCount = transformPrecodingCount + double(logical(sixgr.util.structGet(entryMeta, "TransformPrecodingApplied", false)));
-    precoderSource = string(sixgr.util.structGet(entryMeta, "PrecoderSource", ""));
-    if strlength(strtrim(precoderSource)) > 0
-        precoderSources(end + 1, 1) = precoderSource; %#ok<AGROW>
-    end
-    precodingMode = string(sixgr.util.structGet(entryMeta, "PrecodingMode", ""));
-    if strlength(strtrim(precodingMode)) > 0
-        precodingModes(end + 1, 1) = precodingMode; %#ok<AGROW>
-    end
-    beamIndexSet = string(sixgr.util.structGet(entryMeta, "BeamIndexSet", ""));
-    if strlength(strtrim(beamIndexSet)) > 0
-        beamIndexSets(end + 1, 1) = beamIndexSet; %#ok<AGROW>
-    end
-    count = count + 1;
-end
-
-if count < 1
+desiredPower = mean(abs(double(desiredWaveform(:))).^2, "omitnan");
+if ~(isfinite(victimPower_dBm) && isfinite(desiredPower) && desiredPower > 0)
     return;
 end
-
-meta.InterferenceMode = localSafeCharToken(modeToken);
-meta.Contributors = double(count);
-meta.VictimPowerReference_dBm = double(victimPower_dBm);
-meta.VictimPowerReferenceSource = localSafeCharToken(victimPowerSource);
-meta.PowerSource = localSafeCharToken(powerSource);
-meta.FullPerLinkChannelTruthUsed = logical(fullTruthUsed);
-meta.ChannelObjectSource = localSafeCharToken(localUniqueTokenSet(channelObjectSources));
-meta.ChannelObjectClass = localSafeCharToken(localUniqueTokenSet(channelObjectClasses));
-meta.ChannelArrayHandlingStatus = localSafeCharToken(localUniqueTokenSet(channelHandlingStatuses));
-meta.ChannelArrayHandlingBlocker = localSafeCharToken(localUniqueTokenSet(channelHandlingBlockers));
-meta.ChannelGeometryCouplingLevel = localSafeCharToken(localUniqueTokenSet(channelGeometryLevels));
-meta.GeometryAdapterType = localSafeCharToken(localUniqueTokenSet(geometryAdapterTypes));
-meta.GeometryAdapterSource = localSafeCharToken(localUniqueTokenSet(geometryAdapterSources));
-meta.GeometryAdapterLimitation = localSafeCharToken(localUniqueTokenSet(geometryAdapterLimitations));
-meta.GeometryAdapterPortMapping = localSafeCharToken(localUniqueTokenSet(geometryAdapterPortMappings));
-meta.ChannelUsesSameRuntimeAntennaAssumptions = ~isempty(channelUsesSameRuntime) && all(channelUsesSameRuntime);
-meta.InterfererBeamformingAppliedCount = double(beamformingCount);
-meta.InterfererExplicitBeamWeightCount = double(explicitBeamWeightCount);
-meta.InterfererTransformPrecodingCount = double(transformPrecodingCount);
-meta.InterfererPrecoderSourceSet = localSafeCharToken(localUniqueTokenSet(precoderSources));
-meta.InterfererPrecodingModeSet = localSafeCharToken(localUniqueTokenSet(precodingModes));
-meta.InterfererBeamIndexSetSummary = localSafeCharToken(localUniqueTokenSet(beamIndexSets));
-if aggMilliwatt > 0
-    meta.AggregatedRxPower_dBm = 10 * log10(aggMilliwatt);
+victimMilliwatt = 10.^(double(victimPower_dBm) / 10);
+if isfinite(victimMilliwatt) && victimMilliwatt > 0
+    samplePowerPerMilliwatt = desiredPower / victimMilliwatt;
 end
 end
 
-function [waveform, rxPower_dBm, entryMeta] = localBuildOneInterferer(direction, entry, targetSize, samplePowerPerMilliwatt)
-waveform = [];
-rxPower_dBm = NaN;
-[entryResolved, cachePayload] = localResolveCachedInterferenceEntry(entry);
+function [waveform, rxPower_dBm, entryMeta] = localResolveSharedSlotContribution(direction, entry, entryResolved, cachePayload, targetSize, samplePowerPerMilliwatt, replay)
 grant = sixgr.util.structGet(entryResolved, "GrantSnapshot", struct());
 entryMeta = struct( ...
-    "InterferenceMode", localSafeCharToken(sixgr.util.structGet(entry, "InterferenceMode", "none")), ...
-    "PowerSource", "", ...
-    "FullPerLinkChannelTruthUsed", false, ...
-    "ChannelObjectSource", "", ...
-    "ChannelObjectClass", "", ...
-    "ChannelArrayHandlingStatus", "", ...
-    "ChannelArrayHandlingBlocker", "", ...
-    "ChannelGeometryCouplingLevel", "", ...
-    "GeometryAdapterType", "", ...
-    "GeometryAdapterSource", "", ...
-    "GeometryAdapterLimitation", "", ...
-    "GeometryAdapterPortMapping", "", ...
-    "ChannelUsesSameRuntimeAntennaAssumptions", false, ...
+    "InterferenceMode", localSafeCharToken(sixgr.util.structGet(entry, "InterferenceMode", "full_per_link_channel_waveform_sum")), ...
+    "PowerSource", "shared_slot_rx_contribution_samples", ...
+    "SourceId", localSourceId(entry, entryResolved), ...
+    "ChannelObjectSource", localSafeCharToken(sixgr.util.structGet(entryResolved, "ChannelObjectSource", sixgr.util.structGet(entry, "ChannelObjectSource", ""))), ...
+    "ChannelObjectClass", localSafeCharToken(sixgr.util.structGet(entryResolved, "ChannelObjectClass", sixgr.util.structGet(entry, "ChannelObjectClass", ""))), ...
+    "ChannelArrayHandlingStatus", localSafeCharToken(sixgr.util.structGet(entryResolved, "ChannelArrayHandlingStatus", sixgr.util.structGet(entry, "ChannelArrayHandlingStatus", ""))), ...
+    "ChannelArrayHandlingBlocker", localSafeCharToken(sixgr.util.structGet(entryResolved, "ChannelArrayHandlingBlocker", sixgr.util.structGet(entry, "ChannelArrayHandlingBlocker", ""))), ...
+    "ChannelGeometryCouplingLevel", localSafeCharToken(sixgr.util.structGet(entryResolved, "ChannelGeometryCouplingLevel", sixgr.util.structGet(entry, "ChannelGeometryCouplingLevel", ""))), ...
+    "GeometryAdapterType", localSafeCharToken(sixgr.util.structGet(entryResolved, "GeometryAdapterType", sixgr.util.structGet(entry, "GeometryAdapterType", ""))), ...
+    "GeometryAdapterSource", localSafeCharToken(sixgr.util.structGet(entryResolved, "GeometryAdapterSource", sixgr.util.structGet(entry, "GeometryAdapterSource", ""))), ...
+    "GeometryAdapterLimitation", localSafeCharToken(sixgr.util.structGet(entryResolved, "GeometryAdapterLimitation", sixgr.util.structGet(entry, "GeometryAdapterLimitation", ""))), ...
+    "GeometryAdapterPortMapping", localSafeCharToken(sixgr.util.structGet(entryResolved, "GeometryAdapterPortMapping", sixgr.util.structGet(entry, "GeometryAdapterPortMapping", ""))), ...
+    "ChannelUsesSameRuntimeAntennaAssumptions", logical(sixgr.util.structGet(entryResolved, "ChannelUsesSameRuntimeAntennaAssumptions", sixgr.util.structGet(entry, "ChannelUsesSameRuntimeAntennaAssumptions", false))), ...
     "PrecoderSource", localSafeCharToken(sixgr.util.structGet(grant, "PrecoderSource", "none")), ...
     "PrecodingMode", localSafeCharToken(sixgr.util.structGet(grant, "PrecodingMode", "")), ...
     "BeamIndexSet", localSafeCharToken(sixgr.util.structGet(grant, "AppliedBeamIndexSet", "")), ...
@@ -206,287 +226,104 @@ entryMeta = struct( ...
     "ExplicitBeamWeightsApplied", logical(sixgr.util.structGet(grant, "ExplicitBeamWeightsApplied", false)), ...
     "TransformPrecodingApplied", logical(sixgr.util.structGet(grant, "TransformPrecodingApplied", false)));
 
-cfg = sixgr.util.structGet(entryResolved, "Cfg", struct());
-if ~(isstruct(cfg) && ~isempty(fieldnames(cfg)))
-    return;
-end
-channelCfg = localBuildVictimLinkConfig(cfg, entry, cachePayload);
-
-direction = upper(string(direction));
-signalType = upper(string(sixgr.util.structGet(entryResolved, "SignalType", direction)));
-cfg = localApplyPerLinkSeed(cfg, double(sixgr.util.structGet(entry, "Seed", NaN)));
-channelCfg = localApplyPerLinkSeed(channelCfg, double(sixgr.util.structGet(entry, "Seed", NaN)));
-transportBlockBits = sixgr.util.structGet(entryResolved, "TransportBlockBits", []);
-rv = sixgr.util.structGet(entryResolved, "RV", []);
-seed = double(sixgr.util.structGet(entry, "Seed", NaN));
-uciBits = int8(sixgr.util.structGet(entryResolved, "ExpectedUCIBits", int8(1)));
-requestedFormat = double(sixgr.util.structGet(entryResolved, "ResolvedFormat", ...
-    sixgr.util.structGet(entryResolved, "RequestedFormat", sixgr.util.structGet(cfg, "phy.pucch.format", NaN))));
-rnti = double(sixgr.util.structGet(entryResolved, "RNTI", sixgr.util.structGet(cfg, "phy.rnti", NaN)));
-
-txWave = [];
-txInfo = struct();
-precomputedTxWave = sixgr.util.structGet(entryResolved, "PrecomputedTxWaveform", []);
-precomputedSampleRateHz = double(sixgr.util.structGet(entryResolved, "PrecomputedTxSampleRate_Hz", NaN));
-if ~isempty(precomputedTxWave)
-    txWave = precomputedTxWave;
-else
-    restore = [];
-    if isfinite(seed) && seed >= 1
-        priorRng = rng;
-        restore = onCleanup(@() rng(priorRng)); %#ok<NASGU>
-        rng(max(1, round(seed)), "twister");
-    end
-
-    args = {"CompactOutput", true};
-    if ~isempty(transportBlockBits)
-        args = [args {"TransportBlockBits", transportBlockBits}]; %#ok<AGROW>
-    end
-    if ~isempty(rv)
-        args = [args {"RV", rv}]; %#ok<AGROW>
-    end
-    if isstruct(grant) && ~isempty(fieldnames(grant))
-        if direction == "UL"
-            transformPrecoding = sixgr.util.structGet(grant, "TransformPrecoding", []);
-            if ~isempty(transformPrecoding)
-                cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", logical(transformPrecoding));
-            end
-        else
-            precodingMatrix = sixgr.util.structGet(grant, "PrecodingMatrix", []);
-            if ~isempty(precodingMatrix)
-                args = [args {"PrecodingMatrix", precodingMatrix}]; %#ok<AGROW>
-            end
-        end
-    end
-
-    try
-        if direction == "UL" && signalType == "PUCCH"
-            txArgs = {};
-            if isfinite(requestedFormat)
-                txArgs = [txArgs {"Format", requestedFormat}]; %#ok<AGROW>
-            end
-            if isfinite(rnti)
-                txArgs = [txArgs {"RNTI", rnti}]; %#ok<AGROW>
-            end
-            [tx, txInfo] = sixgr.phy.ul.PUCCH_Tx(cfg, uciBits, txArgs{:});
-        elseif direction == "UL"
-            [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfg, args{:});
-        else
-            [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, args{:});
-        end
-        txWave = sixgr.util.structGet(tx, "Waveform", []);
-    catch
-        waveform = [];
-        return;
-    end
+mode = lower(strtrim(string(sixgr.util.structGet(entry, "InterferenceMode", entryMeta.InterferenceMode))));
+if mode ~= "full_per_link_channel_waveform_sum" && mode ~= "shared_slot_waveform_superposition"
+    error("sixgr:link:UnsupportedInterferenceContributionMode", ...
+        "Interference mode '%s' is not a shared-slot waveform truth mode.", char(mode));
 end
 
-if isempty(txWave)
-    return;
+[waveform, fieldName] = localFirstContributionWaveform(entryResolved, entry, cachePayload);
+if isempty(waveform)
+    error("sixgr:link:MissingSharedSlotInterferenceContribution", ...
+        "Full-truth interference entry '%s' has no receiver-side contribution waveform. Build all slot transmitters and propagate each source before calling synthesizeInterferenceWaveform.", ...
+        char(string(entryMeta.SourceId)));
+end
+waveform = localValidateContributionWaveform(waveform, targetSize, fieldName);
+localValidateContributionSampleRate(entryResolved, entry, cachePayload, replay);
+
+rxPower_dBm = localResolveWaveformPowerdBm(waveform, samplePowerPerMilliwatt, ...
+    double(sixgr.util.structGet(entryResolved, "ContributionRxPower_dBm", ...
+    sixgr.util.structGet(entry, "ContributionRxPower_dBm", NaN))));
+if isfinite(rxPower_dBm)
+    entryMeta.PowerSource = "shared_slot_rx_contribution_sample_power";
+elseif isfinite(double(sixgr.util.structGet(entryResolved, "ContributionRxPower_dBm", sixgr.util.structGet(entry, "ContributionRxPower_dBm", NaN))))
+    rxPower_dBm = double(sixgr.util.structGet(entryResolved, "ContributionRxPower_dBm", sixgr.util.structGet(entry, "ContributionRxPower_dBm", NaN)));
+    entryMeta.PowerSource = "shared_slot_rx_contribution_declared_power";
 end
 
-mode = lower(strtrim(string(sixgr.util.structGet(entry, "InterferenceMode", "none"))));
-if isfinite(precomputedSampleRateHz) && precomputedSampleRateHz > 0
-    fs = precomputedSampleRateHz;
-else
-    fs = localResolveSampleRate(tx, txInfo);
+if strlength(strtrim(string(entryMeta.ChannelObjectSource))) < 1
+    entryMeta.ChannelObjectSource = localSafeCharToken(sixgr.util.structGet(cachePayload, "ChannelObjectSource", ""));
 end
-switch mode
-    case "full_per_link_channel_waveform_sum"
-        cacheKey = localInterferenceWaveformCacheKey(direction, entry, targetSize, fs);
-        [cacheHit, cached] = localInterferenceWaveformCache("get", cacheKey);
-        if cacheHit
-            waveformBase = sixgr.util.structGet(cached, "Waveform", []);
-            channelMeta = sixgr.util.structGet(cached, "ChannelMeta", struct());
-        else
-            [waveformBase, channelMeta] = localApplyPerLinkChannelTruth(direction, txWave, channelCfg, fs, targetSize, seed);
-            if isempty(waveformBase)
-                waveform = [];
+if strlength(strtrim(string(entryMeta.ChannelObjectClass))) < 1
+    entryMeta.ChannelObjectClass = localSafeCharToken(sixgr.util.structGet(cachePayload, "ChannelObjectClass", ""));
+end
+entryMeta.InterferenceMode = localSafeCharToken(mode);
+end
+
+function [waveform, fieldName] = localFirstContributionWaveform(entryResolved, entry, cachePayload)
+waveform = [];
+fieldName = "";
+fields = ["SharedSlotContributionWaveform", "ContributionWaveform", ...
+    "RxContributionWaveform", "PrecomputedRxWaveform", "PrecomputedContributionWaveform"];
+containers = {entryResolved, entry, cachePayload};
+for ci = 1:numel(containers)
+    c = containers{ci};
+    if ~(isstruct(c) && ~isempty(fieldnames(c)))
+        continue;
+    end
+    for fi = 1:numel(fields)
+        f = char(fields(fi));
+        if isfield(c, f)
+            candidate = c.(f);
+            if ~isempty(candidate)
+                waveform = candidate;
+                fieldName = f;
                 return;
             end
-            localInterferenceWaveformCache("set", cacheKey, struct( ...
-                "Waveform", waveformBase, ...
-                "ChannelMeta", channelMeta));
         end
-        if isempty(waveformBase)
-            return;
-        end
-        victimCfg = channelCfg;
-        [waveform, ~] = sixgr.link.applyWaveformImpairments(waveformBase, victimCfg, fs);
-        waveform = localMatchWaveformLength(waveform, targetSize(1));
-        targetRxPower_dBm = double(sixgr.util.structGet(entry, "VictimRxPower_dBm", NaN));
-        [waveform, rxPower_dBm] = localNormalizeWaveformToRuntimeRxPower( ...
-            waveform, samplePowerPerMilliwatt, targetRxPower_dBm);
-        entryMeta.PowerSource = "sample_domain_full_per_link_channel_waveform_sum";
-        entryMeta.FullPerLinkChannelTruthUsed = true;
-        entryMeta.ChannelObjectSource = localSafeCharToken(sixgr.util.structGet(channelMeta, "ChannelObjectSource", ""));
-        entryMeta.ChannelObjectClass = localSafeCharToken(sixgr.util.structGet(channelMeta, "ChannelObjectClass", ""));
-        entryMeta.ChannelArrayHandlingStatus = localSafeCharToken(sixgr.util.structGet(channelMeta, "ChannelArrayHandlingStatus", ""));
-        entryMeta.ChannelArrayHandlingBlocker = localSafeCharToken(sixgr.util.structGet(channelMeta, "ChannelArrayHandlingBlocker", ""));
-        entryMeta.ChannelGeometryCouplingLevel = localSafeCharToken(sixgr.util.structGet(channelMeta, "ChannelGeometryCouplingLevel", ""));
-        entryMeta.GeometryAdapterType = localSafeCharToken(sixgr.util.structGet(channelMeta, "GeometryAdapterType", ""));
-        entryMeta.GeometryAdapterSource = localSafeCharToken(sixgr.util.structGet(channelMeta, "GeometryAdapterSource", ""));
-        entryMeta.GeometryAdapterLimitation = localSafeCharToken(sixgr.util.structGet(channelMeta, "GeometryAdapterLimitation", ""));
-        entryMeta.GeometryAdapterPortMapping = localSafeCharToken(sixgr.util.structGet(channelMeta, "GeometryAdapterPortMapping", ""));
-        entryMeta.ChannelUsesSameRuntimeAntennaAssumptions = logical(sixgr.util.structGet(channelMeta, "ChannelUsesSameRuntimeAntennaAssumptions", false));
-    otherwise
-        waveform = [];
-        return;
-end
-end
-
-function key = localInterferenceWaveformCacheKey(direction, entry, targetSize, sampleRateHz)
-grant = sixgr.util.structGet(entry, "GrantSnapshot", struct());
-grantContextId = string(sixgr.util.structGet(grant, "GrantContextId", ""));
-if strlength(strtrim(grantContextId)) < 1
-    frameIdx = double(sixgr.util.structGet(grant, "Frame", NaN));
-    slotIdx = double(sixgr.util.structGet(grant, "Slot", NaN));
-    servingCell = double(sixgr.util.structGet(grant, "ServingCell", NaN));
-    ueIdx = double(sixgr.util.structGet(entry, "InterfererUEIndex", NaN));
-    prbCount = numel(sixgr.util.structGet(grant, "PRBSet", []));
-    grantContextId = sprintf("anon_f%d_s%d_c%d_ue%d_prb%d", round(frameIdx), round(slotIdx), round(servingCell), round(ueIdx), round(prbCount));
-end
-signalType = upper(string(sixgr.util.structGet(entry, "SignalType", string(direction))));
-seed = double(sixgr.util.structGet(entry, "Seed", NaN));
-targetLen = NaN;
-targetRx = NaN;
-if isnumeric(targetSize) && ~isempty(targetSize)
-    targetLen = double(targetSize(1));
-    if numel(targetSize) >= 2
-        targetRx = double(targetSize(2));
     end
 end
-key = sprintf("%s|%s|%s|seed=%d|len=%d|rx=%d|fs=%.0f", ...
-    char(upper(string(direction))), ...
-    char(signalType), ...
-    char(strtrim(grantContextId)), ...
-    round(double(seed)), ...
-    round(double(targetLen)), ...
-    round(double(targetRx)), ...
-    double(sampleRateHz));
 end
 
-function varargout = localInterferenceWaveformCache(action, key, value)
-persistent cacheMap keyOrder
-if isempty(cacheMap)
-    cacheMap = containers.Map("KeyType", "char", "ValueType", "any");
-    keyOrder = strings(0,1);
+function waveform = localValidateContributionWaveform(waveform, targetSize, fieldName)
+if ~isnumeric(waveform)
+    error("sixgr:link:BadInterferenceContributionType", ...
+        "Shared-slot contribution field '%s' must be a numeric sample matrix.", char(string(fieldName)));
 end
-
-switch lower(string(action))
-    case "get"
-        rawKey = char(string(key));
-        if isKey(cacheMap, rawKey)
-            varargout = {true, cacheMap(rawKey)};
-        else
-            varargout = {false, struct()};
-        end
-    case "set"
-        rawKey = char(string(key));
-        cacheMap(rawKey) = value;
-        keyOrder(end + 1, 1) = string(rawKey);
-        maxEntries = 64;
-        if numel(cacheMap) > maxEntries
-            dropCount = max(1, floor(maxEntries / 4));
-            keyOrder = localPruneInterferenceWaveformCache(cacheMap, keyOrder, dropCount);
-        end
-        varargout = {};
-    case "reset"
-        if ~isempty(cacheMap)
-            remove(cacheMap, keys(cacheMap));
-        end
-        keyOrder = strings(0,1);
-        varargout = {};
-    otherwise
-        error("sixgr:link:BadInterferenceWaveformCacheAction", ...
-            "Unknown interference waveform cache action '%s'.", char(string(action)));
+if ndims(waveform) > 2
+    error("sixgr:link:BadInterferenceContributionRank", ...
+        "Shared-slot contribution field '%s' must be Ns-by-Nrx, not a higher-rank array.", char(string(fieldName)));
+end
+if isvector(waveform)
+    waveform = waveform(:);
+end
+if size(waveform, 1) ~= targetSize(1)
+    error("sixgr:link:InterferenceContributionSampleMismatch", ...
+        "Shared-slot contribution field '%s' has %d samples but the victim waveform has %d samples. Incompatible slot timing is rejected.", ...
+        char(string(fieldName)), size(waveform, 1), targetSize(1));
+end
+if size(waveform, 2) ~= targetSize(2)
+    error("sixgr:link:InterferenceContributionPortMismatch", ...
+        "Shared-slot contribution field '%s' has %d receive port(s) but the victim waveform has %d. Receiver phases/ports are not synthesized to hide mismatches.", ...
+        char(string(fieldName)), size(waveform, 2), targetSize(2));
 end
 end
 
-function keyOrder = localPruneInterferenceWaveformCache(cacheMap, keyOrder, dropCount)
-if isempty(keyOrder) || numel(cacheMap) == 0
-    keyOrder = strings(0,1);
+function localValidateContributionSampleRate(entryResolved, entry, cachePayload, replay)
+entryFs = localFirstFinite( ...
+    sixgr.util.structGet(entryResolved, "ContributionSampleRate_Hz", NaN), ...
+    sixgr.util.structGet(entry, "ContributionSampleRate_Hz", NaN), ...
+    sixgr.util.structGet(cachePayload, "ContributionSampleRate_Hz", NaN));
+replayFs = double(sixgr.util.structGet(replay, "SampleRate_Hz", NaN));
+if ~(isfinite(entryFs) && entryFs > 0 && isfinite(replayFs) && replayFs > 0)
     return;
 end
-
-dropCount = min(dropCount, numel(keyOrder));
-dropKeys = unique(keyOrder(1:dropCount), "stable");
-for i = 1:numel(dropKeys)
-    rawKey = char(dropKeys(i));
-    if isKey(cacheMap, rawKey)
-        remove(cacheMap, rawKey);
-    end
+tolHz = max(1e-6 * max(abs(entryFs), abs(replayFs)), 1e-3);
+if abs(entryFs - replayFs) > tolHz
+    error("sixgr:link:InterferenceContributionSampleRateMismatch", ...
+        "Shared-slot contribution sample rate %.6f Hz does not match victim sample rate %.6f Hz.", ...
+        double(entryFs), double(replayFs));
 end
-
-liveKeys = string(keys(cacheMap));
-if isempty(liveKeys)
-    keyOrder = strings(0,1);
-else
-    keyOrder = liveKeys(:);
-end
-end
-
-function cfgOut = localApplyPerLinkSeed(cfgIn, seed)
-cfgOut = cfgIn;
-if ~(isfinite(seed) && seed >= 1)
-    return;
-end
-cfgOut = sixgr.util.structSet(cfgOut, "run.seed", double(max(1, round(seed))));
-cfgOut = sixgr.util.structSet(cfgOut, "channel.seed", double(max(1, round(seed))));
-end
-
-function cfgOut = localBuildVictimLinkConfig(cfgIn, entry, cachePayload)
-cfgOut = cfgIn;
-if nargin < 3 || ~isstruct(cachePayload)
-    cachePayload = struct();
-end
-userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
-userMeta.RuntimeServingCell = double(sixgr.util.structGet(entry, "VictimServingCell", sixgr.util.structGet(entry, "ServingCell", NaN)));
-userMeta.RuntimeServingBeamIndex = double(sixgr.util.structGet(entry, "BeamIndex", NaN));
-userMeta.RuntimeServingBeamGain_dB = double(sixgr.util.structGet(entry, "BeamGain_dB", NaN));
-userMeta.RuntimeServingRSRP_dBm = double(sixgr.util.structGet(entry, "VictimRSRP_dBm", NaN));
-userMeta.RuntimeServingRxPower_dBm = double(sixgr.util.structGet(entry, "VictimRxPower_dBm", NaN));
-userMeta.RuntimeServingBasePathloss_dB = double(sixgr.util.structGet(entry, "BasePathloss_dB", NaN));
-userMeta.RuntimeServingPathloss_dB = double(sixgr.util.structGet(entry, "Pathloss_dB", NaN));
-userMeta.RuntimeServingShadowFading_dB = double(sixgr.util.structGet(entry, "ShadowFading_dB", NaN));
-userMeta.RuntimeServingO2I_dB = double(sixgr.util.structGet(entry, "O2I_dB", NaN));
-victimBSAntenna = sixgr.util.structGet(entry, "VictimServingBSAntenna", struct());
-victimBSAntennaMeta = sixgr.util.structGet(entry, "VictimServingBSAntennaMeta", struct());
-victimUEAntenna = sixgr.util.structGet(entry, "VictimUEAntenna", struct());
-victimUEAntennaMeta = sixgr.util.structGet(entry, "VictimUEAntennaMeta", struct());
-[cachedBsEntry, cachedUeEntry, cachedBsPosition, cachedBSAzimuth] = localResolveCachedVictimRuntimeContext(cachePayload, entry);
-if ~(isstruct(victimBSAntenna) && ~isempty(fieldnames(victimBSAntenna)))
-    victimBSAntenna = sixgr.util.structGet(cachedBsEntry, "Antenna", struct());
-    victimBSAntennaMeta = sixgr.util.structGet(cachedBsEntry, "Metadata", victimBSAntennaMeta);
-end
-if isstruct(victimBSAntenna) && ~isempty(fieldnames(victimBSAntenna))
-    userMeta.RuntimeServingBSAntenna = victimBSAntenna;
-    userMeta.RuntimeServingBSAntennaMeta = victimBSAntennaMeta;
-end
-if ~(isstruct(victimUEAntenna) && ~isempty(fieldnames(victimUEAntenna)))
-    victimUEAntenna = sixgr.util.structGet(cachedUeEntry, "Antenna", struct());
-    victimUEAntennaMeta = sixgr.util.structGet(cachedUeEntry, "Metadata", victimUEAntennaMeta);
-end
-if isstruct(victimUEAntenna) && ~isempty(fieldnames(victimUEAntenna))
-    userMeta.RuntimeUEAntenna = victimUEAntenna;
-    userMeta.RuntimeUEAntennaMeta = victimUEAntennaMeta;
-end
-victimBSPosition = double(sixgr.util.structGet(entry, "VictimServingBSPosition_m", nan(1, 3)));
-if isempty(victimBSPosition) || all(~isfinite(victimBSPosition))
-    victimBSPosition = cachedBsPosition;
-end
-if ~isempty(victimBSPosition)
-    userMeta.RuntimeServingBSPosition_m = reshape(victimBSPosition, 1, []);
-end
-victimBSAzimuth = double(sixgr.util.structGet(entry, "VictimServingBSAzimuth_deg", NaN));
-if ~isfinite(victimBSAzimuth)
-    victimBSAzimuth = cachedBSAzimuth;
-end
-if isfinite(victimBSAzimuth)
-    userMeta.RuntimeServingBSAzimuth_deg = victimBSAzimuth;
-end
-userMeta.RuntimeInterferenceMode = localSafeCharToken(sixgr.util.structGet(entry, "InterferenceMode", ""));
-cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
 end
 
 function [entryResolved, cachePayload] = localResolveCachedInterferenceEntry(entry)
@@ -499,18 +336,24 @@ if strlength(strtrim(cacheKey)) < 1 || ~(isfinite(cacheIndex) && cacheIndex >= 1
 end
 [hit, cachePayload] = sixgr.link.interferenceReplayCache("get", char(cacheKey));
 if ~hit
-    cachePayload = struct();
-    return;
+    error("sixgr:link:MissingInterferenceReplayCache", ...
+        "Interference replay cache key '%s' is not installed on this worker.", char(cacheKey));
 end
 resolvedGrantCache = sixgr.util.structGet(cachePayload, "ResolvedGrantCache", struct([]));
 cacheIndex = round(cacheIndex);
 if ~(isstruct(resolvedGrantCache) && cacheIndex >= 1 && cacheIndex <= numel(resolvedGrantCache))
-    cachePayload = struct();
-    return;
+    error("sixgr:link:BadInterferenceReplayCacheIndex", ...
+        "Interference replay cache key '%s' has no resolved grant entry at index %d.", char(cacheKey), cacheIndex);
 end
 resolvedEntry = resolvedGrantCache(cacheIndex);
 copyFields = ["Cfg","GrantSnapshot","TransportBlockBits","RV","ExpectedUCIBits", ...
-    "ResolvedFormat","RNTI","PrecomputedTxWaveform","PrecomputedTxSampleRate_Hz","SignalType"];
+    "ResolvedFormat","RNTI","SignalType","SharedSlotContributionWaveform", ...
+    "ContributionWaveform","RxContributionWaveform","PrecomputedRxWaveform", ...
+    "PrecomputedContributionWaveform","ContributionSampleRate_Hz","ContributionRxPower_dBm", ...
+    "ChannelObjectSource","ChannelObjectClass","ChannelArrayHandlingStatus", ...
+    "ChannelArrayHandlingBlocker","ChannelGeometryCouplingLevel","GeometryAdapterType", ...
+    "GeometryAdapterSource","GeometryAdapterLimitation","GeometryAdapterPortMapping", ...
+    "ChannelUsesSameRuntimeAntennaAssumptions"];
 for i = 1:numel(copyFields)
     fieldName = char(copyFields(i));
     if isfield(resolvedEntry, fieldName)
@@ -519,32 +362,71 @@ for i = 1:numel(copyFields)
 end
 end
 
-function [bsEntry, ueEntry, bsPosition, bsAzimuth] = localResolveCachedVictimRuntimeContext(cachePayload, entry)
-bsEntry = struct();
-ueEntry = struct();
-bsPosition = nan(1, 3);
-bsAzimuth = NaN;
-if ~(isstruct(cachePayload) && ~isempty(fieldnames(cachePayload)))
+function sourceId = localSourceId(entry, entryResolved)
+sourceId = string(sixgr.util.structGet(entryResolved, "SourceId", sixgr.util.structGet(entry, "SourceId", "")));
+if strlength(strtrim(sourceId)) > 0
+    sourceId = char(sourceId);
     return;
 end
-victimServingCell = round(double(sixgr.util.structGet(entry, "VictimServingCell", NaN)));
-victimUEIdx = round(double(sixgr.util.structGet(entry, "VictimUEIndex", NaN)));
-bsRuntime = sixgr.util.structGet(cachePayload, "BSAntennaRuntime", repmat(struct(), 0, 1));
-ueRuntime = sixgr.util.structGet(cachePayload, "UEAntennaRuntime", repmat(struct(), 0, 1));
-layout = sixgr.util.structGet(cachePayload, "Layout", struct());
-if isfinite(victimServingCell) && victimServingCell >= 1 && victimServingCell <= numel(bsRuntime)
-    bsEntry = bsRuntime(victimServingCell);
-    bsPos = double(sixgr.util.structGet(layout, "bs.pos_m", nan(0, 0)));
-    if ~isempty(bsPos) && victimServingCell <= size(bsPos, 1)
-        bsPosition = reshape(double(bsPos(victimServingCell, :)), 1, []);
-    end
-    bsAzim = double(sixgr.util.structGet(layout, "bs.azim_deg", nan(0, 0)));
-    if ~isempty(bsAzim) && victimServingCell <= numel(bsAzim)
-        bsAzimuth = double(bsAzim(victimServingCell));
+grant = sixgr.util.structGet(entryResolved, "GrantSnapshot", sixgr.util.structGet(entry, "GrantSnapshot", struct()));
+ueIdx = double(sixgr.util.structGet(entryResolved, "InterfererUEIndex", sixgr.util.structGet(entry, "InterfererUEIndex", NaN)));
+cellIdx = double(sixgr.util.structGet(entryResolved, "ServingCell", sixgr.util.structGet(entry, "ServingCell", NaN)));
+frameIdx = double(sixgr.util.structGet(grant, "Frame", sixgr.util.structGet(entry, "Frame", NaN)));
+slotIdx = double(sixgr.util.structGet(grant, "Slot", sixgr.util.structGet(entry, "Slot", NaN)));
+sourceId = char(sprintf("cell%d_ue%d_f%d_s%d", round(cellIdx), round(ueIdx), round(frameIdx), round(slotIdx)));
+end
+
+function power_dBm = localResolveWaveformPowerdBm(waveform, samplePowerPerMilliwatt, fallback_dBm)
+power_dBm = double(fallback_dBm);
+samplePower = mean(abs(double(waveform(:))).^2, "omitnan");
+if ~(isfinite(samplePowerPerMilliwatt) && samplePowerPerMilliwatt > 0 && isfinite(samplePower) && samplePower > 0)
+    return;
+end
+milliwatt = samplePower / samplePowerPerMilliwatt;
+if isfinite(milliwatt) && milliwatt > 0
+    power_dBm = 10 * log10(milliwatt);
+end
+end
+
+function R = localEstimateSampleCovariance(waveform)
+R = [];
+if isempty(waveform)
+    return;
+end
+X = reshape(double(waveform), size(waveform, 1), size(waveform, 2));
+if isempty(X) || size(X, 1) < 1
+    return;
+end
+R = (X' * X) ./ double(size(X, 1));
+end
+
+function value = localFirstFinite(varargin)
+value = NaN;
+for i = 1:nargin
+    candidate = double(varargin{i});
+    if isscalar(candidate) && isfinite(candidate)
+        value = candidate;
+        return;
     end
 end
-if isfinite(victimUEIdx) && victimUEIdx >= 1 && victimUEIdx <= numel(ueRuntime)
-    ueEntry = ueRuntime(victimUEIdx);
+end
+
+function powerDbm = localAggregatedPowerDbm(milliwatt)
+powerDbm = NaN;
+if isfinite(milliwatt) && milliwatt > 0
+    powerDbm = 10 * log10(milliwatt);
+end
+end
+
+function values = localAppendToken(values, value)
+token = string(value);
+token = token(~ismissing(token));
+if isempty(token)
+    return;
+end
+token = strtrim(token(1));
+if strlength(token) > 0
+    values(end + 1, 1) = token;
 end
 end
 
@@ -574,302 +456,4 @@ if strlength(value) < 1
     return;
 end
 token = char(value);
-end
-
-function [waveform, channelMeta] = localApplyPerLinkChannelTruth(direction, txWave, cfg, sampleRateHz, targetSize, seed)
-waveform = [];
-channelMeta = struct();
-numRx = max(1, round(double(targetSize(2))));
-modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
-awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
-if awgnOnly || any(modelRaw == ["AWGN", "NONE", "OFF", ""])
-    waveform = localCollapseToVictimRx(txWave, numRx, max(1, round(double(seed))));
-    waveform = localMatchWaveformLength(waveform, targetSize(1));
-    channelMeta = struct( ...
-        "ChannelObjectSource", "sixgr.channel.ChannelFactory.create:awgn_shortcut", ...
-        "ChannelObjectClass", "none", ...
-        "ChannelArrayHandlingStatus", "no_fading_channel_object", ...
-        "ChannelArrayHandlingBlocker", "", ...
-        "ChannelGeometryCouplingLevel", "not_applicable_no_fading_channel_object", ...
-        "GeometryAdapterType", "", ...
-        "GeometryAdapterSource", "", ...
-        "GeometryAdapterLimitation", "", ...
-        "GeometryAdapterPortMapping", "", ...
-        "ChannelUsesSameRuntimeAntennaAssumptions", false);
-    return;
-end
-
-cfgCh = cfg;
-dopp = double(sixgr.util.structGet(cfgCh, "channel.doppler_Hz", ...
-    sixgr.util.structGet(cfgCh, "channel.dopplerHz", ...
-    sixgr.util.structGet(cfgCh, "channel.fading.maxDoppler_Hz", 0))));
-cfgCh.channel.doppler_Hz = max(0, dopp);
-
-if startsWith(modelRaw, "TDL")
-    cfgCh.channel.model = "TDL";
-    if modelRaw ~= "TDL"
-        cfgCh.channel.tdlProfile = char(modelRaw);
-    end
-elseif startsWith(modelRaw, "CDL")
-    cfgCh.channel.model = "CDL";
-    if modelRaw ~= "CDL"
-        cfgCh.channel.cdlProfile = char(modelRaw);
-    end
-else
-    cfgCh.channel.model = char(modelRaw);
-end
-
-numTx = max(1, size(txWave, 2));
-userMeta = sixgr.util.structGet(cfgCh, "lls6g.userContext", struct());
-txRuntime = struct();
-rxRuntime = struct();
-txMeta = struct();
-rxMeta = struct();
-if upper(string(direction)) == "UL"
-    txRuntime = sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct());
-    rxRuntime = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
-    txMeta = sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct());
-    rxMeta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
-else
-    txRuntime = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
-    rxRuntime = sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct());
-    txMeta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
-    rxMeta = sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct());
-end
-[txRuntime, txMeta, txRuntimeNormalized, txNormalizationReason] = ...
-    localNormalizeRuntimeAntennaContext(txRuntime, txMeta, numTx, "tx");
-[rxRuntime, rxMeta, rxRuntimeNormalized, rxNormalizationReason] = ...
-    localNormalizeRuntimeAntennaContext(rxRuntime, rxMeta, numRx, "rx");
-ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
-    "Model", cfgCh.channel.model, ...
-    "SampleRate", sampleRateHz, ...
-    "NumTxAnt", numTx, ...
-    "NumRxAnt", numRx, ...
-    "Seed", max(1, round(double(seed))), ...
-    "TransmitAntennaRuntime", txRuntime, ...
-    "ReceiveAntennaRuntime", rxRuntime, ...
-    "TransmitAntennaMeta", txMeta, ...
-    "ReceiveAntennaMeta", rxMeta);
-channelMeta = sixgr.util.structGet(ch, "Meta", struct());
-if ~(logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object))
-    waveform = localCollapseToVictimRx(txWave, numRx, max(1, round(double(seed))));
-    waveform = localMatchWaveformLength(waveform, targetSize(1));
-    return;
-end
-
-chObj = ch.Object;
-try
-    reset(chObj);
-catch
-end
-padSamples = 0;
-trimSamples = 0;
-[padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, sampleRateHz);
-txIn = txWave;
-if padSamples > 0
-    txIn = [txWave; zeros(padSamples, size(txWave, 2), "like", txWave)];
-end
-try
-    yRaw = chObj(txIn);
-catch
-    [yRaw, ~] = chObj(txIn);
-end
-waveform = localTrimWaveform(yRaw, targetSize(1), trimSamples);
-end
-
-function fs = localResolveSampleRate(tx, txInfo)
-fs = [];
-if nargin >= 2 && isstruct(txInfo)
-    fs = sixgr.util.structGet(txInfo, "OFDM.SampleRate", []);
-end
-if isempty(fs) && isstruct(tx)
-    carrier = sixgr.util.structGet(tx, "Carrier", []);
-    if ~isempty(carrier)
-        try
-            ofdmInfo = nrOFDMInfo(carrier);
-            fs = double(sixgr.util.structGet(ofdmInfo, "SampleRate", []));
-        catch
-            fs = [];
-        end
-    end
-end
-if isempty(fs) || ~isfinite(double(fs)) || double(fs) <= 0
-    fs = 30.72e6;
-else
-    fs = double(fs);
-end
-end
-
-function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, fs)
-padSamples = 0;
-trimSamples = 0;
-if isempty(chObj) || ~isfinite(double(fs)) || double(fs) <= 0
-    return;
-end
-filterDelay = 0;
-pathDelays = [];
-try
-    chInfo = info(chObj);
-    filterDelay = double(sixgr.util.structGet(chInfo, "ChannelFilterDelay", 0));
-    pathDelays = sixgr.util.structGet(chInfo, "PathDelays", []);
-catch
-    chInfo = struct();
-end
-if isempty(pathDelays)
-    pathDelays = sixgr.util.structGet(chInfo, "PathDelays", []);
-end
-maxPathDelay = 0;
-if ~isempty(pathDelays)
-    maxPathDelay = ceil(max(double(pathDelays(:))) * double(fs));
-end
-padSamples = max(0, round(filterDelay + maxPathDelay + 8));
-trimSamples = max(0, round(filterDelay));
-end
-
-function [runtimeAntenna, runtimeMeta, normalized, reason] = localNormalizeRuntimeAntennaContext(runtimeAntenna, runtimeMeta, signalPortCount, sideLabel)
-if nargin < 1 || ~isstruct(runtimeAntenna)
-    runtimeAntenna = struct();
-end
-if nargin < 2 || ~isstruct(runtimeMeta)
-    runtimeMeta = struct();
-end
-signalPortCount = max(1, round(double(signalPortCount)));
-normalized = false;
-reason = "";
-runtimePortCount = localResolveRuntimeAntennaPortCount(runtimeAntenna, runtimeMeta);
-if ~(isfinite(runtimePortCount) && runtimePortCount >= 1)
-    return;
-end
-runtimePortCount = max(1, round(double(runtimePortCount)));
-if runtimePortCount == signalPortCount
-    return;
-end
-error("sixgr:link:InterferenceRuntimeAntennaPortMismatch", ...
-    "%s runtime logical port count %d does not match interference waveform port count %d. Runtime geometry is not discarded to hide this mismatch.", ...
-    upper(char(string(sideLabel))), runtimePortCount, signalPortCount);
-end
-
-function portCount = localResolveRuntimeAntennaPortCount(runtimeAntenna, runtimeMeta)
-portCount = NaN;
-if nargin < 1 || ~isstruct(runtimeAntenna)
-    runtimeAntenna = struct();
-end
-if nargin < 2 || ~isstruct(runtimeMeta)
-    runtimeMeta = struct();
-end
-explicitCandidates = [ ...
-    sixgr.util.structGet(runtimeMeta, "NumPorts", NaN), ...
-    sixgr.util.structGet(runtimeMeta, "NumLogicalPorts", NaN), ...
-    sixgr.util.structGet(runtimeAntenna, "NumPorts", NaN), ...
-    sixgr.util.structGet(runtimeAntenna, "NumLogicalPorts", NaN)];
-explicitCandidates = double(explicitCandidates(:));
-explicitCandidates = explicitCandidates(isfinite(explicitCandidates) & explicitCandidates >= 1);
-if ~isempty(explicitCandidates)
-    portCount = max(1, round(explicitCandidates(1)));
-    return;
-end
-portToElement = sixgr.util.structGet(runtimeAntenna, "PortToElementMatrix", []);
-if isnumeric(portToElement) && ismatrix(portToElement) && size(portToElement, 2) >= 1
-    portCount = size(portToElement, 2);
-    return;
-end
-elementToPort = sixgr.util.structGet(runtimeAntenna, "ElementToPortMatrix", []);
-if isnumeric(elementToPort) && ismatrix(elementToPort) && size(elementToPort, 1) >= 1
-    portCount = size(elementToPort, 1);
-    return;
-end
-nRow = double(sixgr.util.structGet(runtimeMeta, "NumRows", NaN));
-nCol = double(sixgr.util.structGet(runtimeMeta, "NumCols", NaN));
-nPol = double(sixgr.util.structGet(runtimeMeta, "NumPolarizations", NaN));
-if ~(isfinite(nRow) && isfinite(nCol))
-    sizeVec = double(sixgr.util.structGet(runtimeAntenna, "Size", [NaN NaN]));
-    if numel(sizeVec) >= 2
-        nRow = double(sizeVec(1));
-        nCol = double(sizeVec(2));
-    end
-end
-if ~isfinite(nPol)
-    nPol = double(sixgr.util.structGet(runtimeAntenna, "NPol", NaN));
-end
-if ~(isfinite(nRow) && nRow >= 1 && isfinite(nCol) && nCol >= 1)
-    return;
-end
-if ~(isfinite(nPol) && nPol >= 1)
-    nPol = 1;
-end
-portCount = max(1, round(nRow)) * max(1, round(nCol)) * max(1, round(nPol));
-end
-
-function waveform = localTrimWaveform(yRaw, targetLen, trimSamples)
-if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + targetLen)
-    waveform = yRaw(1 + trimSamples:trimSamples + targetLen, :);
-else
-    waveform = yRaw;
-    if size(waveform, 1) > targetLen
-        waveform = waveform(1:targetLen, :);
-    elseif size(waveform, 1) < targetLen
-        waveform(end + 1:targetLen, :) = cast(0, "like", waveform); %#ok<AGROW>
-    end
-end
-end
-
-function waveform = localCollapseToVictimRx(txWave, nRx, seed)
-if nargin < 3 || ~(isfinite(seed) && seed >= 1)
-    seed = 1;
-end
-if size(txWave, 2) == nRx
-    waveform = txWave;
-    return;
-end
-
-composite = sum(txWave, 2) ./ sqrt(max(1, size(txWave, 2)));
-if nRx <= 1
-    waveform = composite;
-    return;
-end
-
-rs = RandStream("mt19937ar", "Seed", max(1, round(double(seed))));
-phases = exp(1i * 2 * pi * rand(rs, 1, nRx));
-waveform = composite .* reshape(phases, 1, []);
-end
-
-function waveform = localMatchWaveformLength(waveform, targetLen)
-targetLen = max(0, round(double(targetLen)));
-if isempty(waveform) || targetLen < 1
-    waveform = complex(zeros(0, size(waveform, 2)));
-    return;
-end
-if size(waveform, 1) > targetLen
-    waveform = waveform(1:targetLen, :);
-elseif size(waveform, 1) < targetLen
-    waveform(end + 1:targetLen, :) = cast(0, "like", waveform); %#ok<AGROW>
-end
-end
-
-function power_dBm = localResolveWaveformPowerdBm(waveform, samplePowerPerMilliwatt, fallback_dBm)
-power_dBm = double(fallback_dBm);
-samplePower = mean(abs(double(waveform(:))).^2, "omitnan");
-if ~(isfinite(samplePowerPerMilliwatt) && samplePowerPerMilliwatt > 0 && isfinite(samplePower) && samplePower > 0)
-    return;
-end
-milliwatt = samplePower / samplePowerPerMilliwatt;
-if isfinite(milliwatt) && milliwatt > 0
-    power_dBm = 10 * log10(milliwatt);
-end
-end
-
-function [waveformOut, power_dBm] = localNormalizeWaveformToRuntimeRxPower(waveformIn, samplePowerPerMilliwatt, targetRxPower_dBm)
-waveformOut = waveformIn;
-targetRxPower_dBm = double(targetRxPower_dBm);
-if isfinite(targetRxPower_dBm) && isfinite(samplePowerPerMilliwatt) && samplePowerPerMilliwatt > 0
-    samplePower = mean(abs(double(waveformIn(:))).^2, "omitnan");
-    targetSamplePower = samplePowerPerMilliwatt * 10.^(targetRxPower_dBm / 10);
-    if isfinite(samplePower) && samplePower > 0 && isfinite(targetSamplePower) && targetSamplePower >= 0
-        scale = sqrt(targetSamplePower / samplePower);
-        waveformOut = waveformIn .* cast(scale, "like", waveformIn);
-        power_dBm = targetRxPower_dBm;
-        return;
-    end
-end
-power_dBm = localResolveWaveformPowerdBm(waveformOut, samplePowerPerMilliwatt, targetRxPower_dBm);
 end
