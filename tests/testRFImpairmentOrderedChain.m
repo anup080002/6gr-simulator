@@ -69,6 +69,23 @@ assert(abs(double(timing.Replay.InjectedTimingOffset_samples) + 0.375) < 1e-12 &
     "Timing replay must disclose the exact signed fractional-sample offset.");
 
 cfg = struct();
+cfg.rf.rx.sampleClockOffset.enable = true;
+cfg.rf.rx.sampleClockOffset.ppm = 1000;
+ramp = complex((0:15).', zeros(16, 1));
+sco = sixgr.rf.applyRFImpairmentChain(ramp, cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyADC", false);
+expectedSCO = interp1((0:15).', double(ramp), (0:15).' .* 1.001, "linear", 0);
+assert(localMaxAbs(sco.Waveform - expectedSCO) < 1e-12, ...
+    "Sample clock offset must resample using y[n]=x[n(1+ppm*1e-6)].");
+assert(logical(sco.Replay.SampleClockOffsetApplied) && ...
+        abs(double(sco.Replay.SampleClockOffsetPpm) - 1000) < 1e-12, ...
+    "SCO replay must mark applied resampling and preserve ppm.");
+
+cfg = struct();
 cfg.rf.rx.iqImbalance.enable = true;
 cfg.rf.rx.iqImbalance.gainImbalance_dB = 1.5;
 cfg.rf.rx.iqImbalance.phaseImbalance_deg = 7;
@@ -111,6 +128,64 @@ expectedEVM = 100 * rms(abs(expectedPA(:) - xPA(:))) / rms(abs(xPA(:)));
 assert(abs(double(pa.Row.EVMMeasuredPercent) - expectedEVM) < 1e-12, ...
     "PA clipping EVM must be measured from the actual before/after samples.");
 
+cfg.rf.pa.method = "memorypolynomial";
+cfg.rf.pa.memory.enable = true;
+cfg.rf.pa.memory.taps = [1 0.25];
+cfg.rf.pa.memory.orders = [1 3];
+cfg.rf.pa.memory.orderWeights = [1 -0.1];
+xMem = complex([1; 2; 0; -1], [0; 0; 0; 0]);
+paMem = sixgr.rf.applyRFImpairmentChain(xMem, cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "tx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyPA", true, ...
+    "ApplyADC", false);
+expectedMem = localMemoryPolynomial(xMem, [1 0.25], [1 3], [1 -0.1]);
+assert(localMaxAbs(paMem.Waveform - expectedMem) < 1e-12, ...
+    "Memory-polynomial PA must include delayed circuit-memory taps.");
+
+cfg = struct();
+cfg.rf.rx.agc.enable = true;
+cfg.rf.rx.agc.targetRms = 0.5;
+cfg.rf.rx.agc.maxGain_dB = 40;
+cfg.rf.rx.agc.minGain_dB = -40;
+cfg.rf.adc.enable = true;
+cfg.rf.adcBits = 4;
+cfg.rf.adc.fullScale = 1;
+xAdc = complex([0.05; 0.10; -0.05; -0.10], zeros(4, 1));
+adc = sixgr.rf.applyRFImpairmentChain(xAdc, cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyADC", true);
+agcGain = 0.5 / rms(abs(xAdc));
+expectedADCIn = xAdc .* agcGain;
+expectedADC = localQuantize(expectedADCIn, 4, 1);
+assert(localMaxAbs(adc.Waveform - expectedADC) < 1e-12, ...
+    "AGC must scale to target RMS before calibrated full-scale ADC quantization.");
+assert(abs(double(adc.Replay.AGCGain_dB) - 20 * log10(agcGain)) < 1e-12 && ...
+        abs(double(adc.Replay.ADCFullScale) - 1) < 1e-12, ...
+    "AGC/ADC replay must disclose gain and calibrated full scale.");
+
+cfg = struct();
+cfg.rf.rx.element.enable = true;
+cfg.rf.rx.element.gain_dB = [0 6];
+cfg.rf.rx.element.phase_deg = [0 90];
+xElem = complex(ones(8, 2), zeros(8, 2));
+elem = sixgr.rf.applyRFImpairmentChain(xElem, cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyADC", false);
+expectedElem = xElem .* [1, 10^(6/20) * 1j];
+assert(localMaxAbs(elem.Waveform - expectedElem) < 1e-12, ...
+    "Element-domain RF gain/phase must apply per waveform element column.");
+assert(logical(elem.Replay.ElementRFApplied), ...
+    "Element RF replay must mark applied per-element analog impairment.");
+
 cfg = struct();
 cfg.run.seed = 88;
 cfg.rf.rx.phaseNoise.enable = true;
@@ -152,7 +227,7 @@ manual = localCFO(manual, 80, fs);
 manual = sixgr.util.applyFractionalSampleDelay(manual, 0.25);
 assert(localMaxAbs(ordered.Waveform - manual) < 1e-10, ...
     "Combined impairment output must equal declared stage composition.");
-assert(string(ordered.Replay.RFStageOrder) == "tx_iq>tx_pa>tx_phase_noise>tx_cfo>tx_timing", ...
+assert(string(ordered.Replay.RFStageOrder) == "tx_iq>tx_element_rf>tx_pa>tx_phase_noise>tx_cfo>tx_timing>tx_sample_clock_offset", ...
     "TX stage order must be immutable and explicit.");
 
 cfg = struct();
@@ -182,6 +257,31 @@ function y = localCFO(x, cfoHz, fs)
 n = (0:size(x, 1)-1).';
 rot = exp(1j * 2 * pi * double(cfoHz) / double(fs) .* n);
 y = x .* rot;
+end
+
+function y = localMemoryPolynomial(x, taps, orders, weights)
+y = complex(zeros(size(x)));
+for mi = 1:numel(taps)
+    delay = mi - 1;
+    xd = complex(zeros(size(x)));
+    if delay == 0
+        xd = x;
+    elseif size(x, 1) > delay
+        xd(1+delay:end, :) = x(1:end-delay, :);
+    end
+    for oi = 1:numel(orders)
+        y = y + taps(mi) .* weights(oi) .* xd .* abs(xd).^(orders(oi) - 1);
+    end
+end
+end
+
+function y = localQuantize(x, bits, fullScale)
+levels = 2^bits;
+maxCode = levels / 2 - 1;
+xr = min(max(real(double(x)), -fullScale), fullScale);
+xi = min(max(imag(double(x)), -fullScale), fullScale);
+y = complex(round((xr ./ fullScale) .* maxCode) ./ maxCode .* fullScale, ...
+    round((xi ./ fullScale) .* maxCode) ./ maxCode .* fullScale);
 end
 
 function targetRMS = localExpectedFlatPhaseNoiseRMS(nSamples, fs, level_dBcHz)

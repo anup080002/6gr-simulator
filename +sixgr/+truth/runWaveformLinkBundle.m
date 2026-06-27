@@ -3820,11 +3820,9 @@ end
 end
 
 function tf = localShouldPrecomputeCoupledInterfererTxWaveform(cfg)
-% Precomputing full 400 MHz multi-antenna waveforms for every grant is exact
-% but can exceed MATLAB parfor serialization memory. Leaving the waveform
-% empty keeps the same truth path: the interferer Tx is rebuilt on the worker
-% when the victim bundle needs it.
-tf = logical(sixgr.util.structGet(cfg, "run.precomputeInterfererTxWaveforms", false));
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.interferenceExecutionMode", ""))));
+tf = mode == "full_per_link_channel_waveform_sum" || ...
+    logical(sixgr.util.structGet(cfg, "run.precomputeInterfererTxWaveforms", false));
 end
 
 function cfgOut = localCompactCoupledResolvedGrantCacheCfg(cfgIn)
@@ -3981,9 +3979,108 @@ for gi = 1:numel(resolvedGrantCache)
         bundle(count).VictimServingBSAzimuth_deg = double(runtimeState.Layout.bs.azim_deg(victimServingCell)); %#ok<AGROW>
     end
     bundle(count).InterferenceMode = char(mode); %#ok<AGROW>
+    bundle(count).SourceId = char(sprintf("%s_cell%d_ue%d_grant%d_to_victim%d", ...
+        char(direction), round(double(interfererCell)), round(double(interfererUEIdx)), ...
+        round(double(sixgr.util.structGet(entry, "GrantIndex", gi))), round(double(victimUEIdx)))); %#ok<AGROW>
     bundle(count).Frame = double(sixgr.util.structGet(entry, "Frame", sixgr.util.structGet(runtimeState, "CurrentFrame", NaN))); %#ok<AGROW>
     bundle(count).Slot = double(sixgr.util.structGet(entry, "Slot", sixgr.util.structGet(runtimeState, "CurrentSlot", NaN))); %#ok<AGROW>
     bundle(count).Seed = double(localDeterministicInterferenceSeed(cfg, runtimeState, victimUEIdx, victimServingCell, interfererUEIdx, interfererCell, direction)); %#ok<AGROW>
+    [contributionWaveform, contributionMeta] = localBuildSharedSlotReceiverContribution( ...
+        bundle(count), entry, runtimeState, direction, metricUE, metricCell);
+    bundle(count).SharedSlotContributionWaveform = contributionWaveform; %#ok<AGROW>
+    bundle(count).ContributionSampleRate_Hz = double(contributionMeta.SampleRate_Hz); %#ok<AGROW>
+    bundle(count).ContributionRxPower_dBm = double(contributionMeta.RxPower_dBm); %#ok<AGROW>
+    bundle(count).ContributionSource = char(contributionMeta.Source); %#ok<AGROW>
+    bundle(count).ChannelObjectSource = char(contributionMeta.ChannelObjectSource); %#ok<AGROW>
+    bundle(count).ChannelObjectClass = char(contributionMeta.ChannelObjectClass); %#ok<AGROW>
+    bundle(count).ChannelArrayHandlingStatus = char(contributionMeta.ChannelArrayHandlingStatus); %#ok<AGROW>
+    bundle(count).ChannelArrayHandlingBlocker = char(contributionMeta.ChannelArrayHandlingBlocker); %#ok<AGROW>
+    bundle(count).ChannelGeometryCouplingLevel = char(contributionMeta.ChannelGeometryCouplingLevel); %#ok<AGROW>
+    bundle(count).GeometryAdapterType = char(contributionMeta.GeometryAdapterType); %#ok<AGROW>
+    bundle(count).GeometryAdapterSource = char(contributionMeta.GeometryAdapterSource); %#ok<AGROW>
+    bundle(count).GeometryAdapterLimitation = char(contributionMeta.GeometryAdapterLimitation); %#ok<AGROW>
+    bundle(count).GeometryAdapterPortMapping = char(contributionMeta.GeometryAdapterPortMapping); %#ok<AGROW>
+    bundle(count).ChannelUsesSameRuntimeAntennaAssumptions = logical(contributionMeta.ChannelUsesSameRuntimeAntennaAssumptions); %#ok<AGROW>
+end
+end
+
+function [contribution, meta] = localBuildSharedSlotReceiverContribution(bundleEntry, cacheEntry, runtimeState, direction, metricUE, metricCell)
+txWave = sixgr.util.structGet(cacheEntry, "PrecomputedTxWaveform", []);
+sampleRateHz = double(sixgr.util.structGet(cacheEntry, "PrecomputedTxSampleRate_Hz", NaN));
+sourceId = string(sixgr.util.structGet(bundleEntry, "SourceId", ...
+    sprintf("grant%d", round(double(sixgr.util.structGet(cacheEntry, "GrantIndex", NaN))))));
+if isempty(txWave)
+    error("sixgr:truth:MissingPrecomputedSharedSlotTxWaveform", ...
+        "Full-truth interference source '%s' has no precomputed Tx waveform; receiver contribution tensors cannot be produced without regenerating in the victim path.", ...
+        char(sourceId));
+end
+if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    sampleRateHz = double(sixgr.util.structGet(bundleEntry, "PrecomputedTxSampleRate_Hz", 30.72e6));
+end
+cfgC = sixgr.util.structGet(cacheEntry, "Cfg", struct());
+cfgC = localConfigureContributionLinkBudget(cfgC, runtimeState, direction, metricUE, metricCell, bundleEntry);
+[contribution, replay] = sixgr.link.applyWaveformImpairments(txWave, cfgC, sampleRateHz, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", true, ...
+    "ApplyPA", false, ...
+    "ApplyADC", true);
+meta = struct( ...
+    "SampleRate_Hz", double(sampleRateHz), ...
+    "RxPower_dBm", double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN)), ...
+    "Source", "runtime_prepropagated_shared_slot_receiver_contribution", ...
+    "ChannelObjectSource", "runtime_large_scale_link_budget_and_rf_chain", ...
+    "ChannelObjectClass", "sample_domain_large_scale_contribution", ...
+    "ChannelArrayHandlingStatus", "shared_slot_receiver_contribution_precomputed", ...
+    "ChannelArrayHandlingBlocker", "", ...
+    "ChannelGeometryCouplingLevel", "runtime_geometry_large_scale_state", ...
+    "GeometryAdapterType", char(string(sixgr.util.structGet(bundleEntry, "GeometryAdapterType", "runtime_state"))), ...
+    "GeometryAdapterSource", char(string(sixgr.util.structGet(bundleEntry, "GeometryAdapterSource", "CoupledTruthRuntime.localBuildSharedSlotReceiverContribution"))), ...
+    "GeometryAdapterLimitation", char(string(sixgr.util.structGet(bundleEntry, "GeometryAdapterLimitation", ""))), ...
+    "GeometryAdapterPortMapping", char(string(sixgr.util.structGet(bundleEntry, "GeometryAdapterPortMapping", "contribution_waveform_columns_preserved"))), ...
+    "ChannelUsesSameRuntimeAntennaAssumptions", true);
+end
+
+function cfgOut = localConfigureContributionLinkBudget(cfgIn, runtimeState, direction, metricUE, metricCell, bundleEntry)
+cfgOut = cfgIn;
+direction = upper(string(direction));
+userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
+if ~(isstruct(userMeta) && ~isempty(fieldnames(userMeta)))
+    userMeta = struct();
+end
+ls = sixgr.util.structGet(runtimeState, "LargeScaleState", struct());
+userMeta.RuntimeCurrentDirection = char(direction);
+userMeta.RuntimeServingCell = double(metricCell);
+userMeta.RuntimeUEIndex = double(metricUE);
+userMeta.RuntimeServingBasePathloss_dB = localLargeScaleMatrixValue(ls, "BasePathloss_dB", metricUE, metricCell);
+userMeta.RuntimeServingPathloss_dB = localLargeScaleMatrixValue(ls, "Pathloss_dB", metricUE, metricCell);
+userMeta.RuntimeServingShadowFading_dB = localLargeScaleMatrixValue(ls, "Shadow_dB", metricUE, metricCell);
+userMeta.RuntimeServingO2I_dB = localLargeScaleMatrixValue(ls, "O2I_dB", metricUE, metricCell);
+userMeta.RuntimeServingRSRP_dBm = localLargeScaleMatrixValue(ls, "RSRP_dBm", metricUE, metricCell);
+userMeta.RuntimeServingRxPower_dBm = localLargeScaleMatrixValue(ls, "RxPower_dBm", metricUE, metricCell);
+userMeta.RuntimeChannelComplianceMode = "runtime_coupled_shared_slot_contribution";
+userMeta.RuntimePathlossModelSource = "CoupledTruthRuntime.LargeScaleState";
+userMeta.RuntimePathlossComplianceStatus = "applied";
+userMeta.RuntimeFallbackUsedForPathloss = false;
+if isfield(bundleEntry, "VictimServingBSAntenna")
+    userMeta.RuntimeServingBSAntenna = bundleEntry.VictimServingBSAntenna;
+end
+if isfield(bundleEntry, "VictimUEAntenna")
+    userMeta.RuntimeUEAntenna = bundleEntry.VictimUEAntenna;
+end
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
+cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "receiver_noise_figure_thermal_noise");
+end
+
+function value = localLargeScaleMatrixValue(ls, fieldName, rowIdx, colIdx)
+value = NaN;
+if ~(isstruct(ls) && isfield(ls, fieldName))
+    return;
+end
+M = double(ls.(fieldName));
+rowIdx = round(double(rowIdx));
+colIdx = round(double(colIdx));
+if rowIdx >= 1 && colIdx >= 1 && rowIdx <= size(M, 1) && colIdx <= size(M, 2)
+    value = double(M(rowIdx, colIdx));
 end
 end
 
@@ -4096,6 +4193,10 @@ try
         [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, txArgs{:});
     end
     txWave = sixgr.util.structGet(tx, "Waveform", []);
+    if ~isempty(txWave)
+        [txWave, powerContext] = sixgr.rf.applyPowerContext(txWave, cfg, char(direction), txInfo);
+        tx.PowerContext = powerContext; %#ok<NASGU>
+    end
     sampleRateHz = localResolveCoupledTxSampleRate(tx, txInfo);
 catch ME
     error("sixgr:truth:InterfererTxPrecomputeFailed", ...
