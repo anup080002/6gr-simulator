@@ -220,7 +220,7 @@ classdef PhaseNoiseModel < handle
                 phaseVar = 0;
             end
             targetRMS = sqrt(max(phaseVar, 0));
-            currentRMS = std(phi, 0, "omitnan");
+            currentRMS = sqrt(mean(double(phi).^2, "omitnan"));
             if isfinite(targetRMS) && targetRMS > 0 && isfinite(currentRMS) && currentRMS > 0
                 phi = phi .* (targetRMS / currentRMS);
             end

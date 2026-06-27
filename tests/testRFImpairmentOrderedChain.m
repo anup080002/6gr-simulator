@@ -40,6 +40,34 @@ rowCFO = cfo.StageTrace(string(cfo.StageTrace.StageName) == "rx_lo_cfo", :);
 assert(abs(double(rowCFO.PowerDelta_dB)) < 1e-12, ...
     "Pure CFO rotation must conserve sample power.");
 
+cfg.rf.rx.cfo_Hz = -75;
+cfoNeg = sixgr.rf.applyRFImpairmentChain(ones(64, 1), cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyADC", false);
+expectedCFONeg = exp(1j * 2 * pi * cfg.rf.rx.cfo_Hz / fs .* n);
+assert(localMaxAbs(cfoNeg.Waveform - expectedCFONeg) < 1e-12, ...
+    "Negative CFO must use the same signed oscillator equation.");
+assert(abs(double(cfoNeg.Replay.InjectedCFO_Hz) + 75) < 1e-12, ...
+    "Negative CFO replay must preserve the injected sign.");
+
+cfg = struct();
+cfg.rf.rx.timingOffsetSamples = -0.375;
+timing = sixgr.rf.applyRFImpairmentChain(x, cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyADC", false);
+expectedTiming = sixgr.util.applyFractionalSampleDelay(x, -0.375);
+assert(localMaxAbs(timing.Waveform - expectedTiming) < 1e-12, ...
+    "Standalone timing impairment must use the fractional-delay operator.");
+assert(abs(double(timing.Replay.InjectedTimingOffset_samples) + 0.375) < 1e-12 && ...
+        logical(timing.Replay.TimingOffsetApplied), ...
+    "Timing replay must disclose the exact signed fractional-sample offset.");
+
 cfg = struct();
 cfg.rf.rx.iqImbalance.enable = true;
 cfg.rf.rx.iqImbalance.gainImbalance_dB = 1.5;
@@ -55,6 +83,10 @@ assert(localMaxAbs(iq.Waveform - expectedIQ) < 1e-12, ...
     "IQ imbalance must implement alpha*x + beta*conj(x).");
 assert(logical(iq.Replay.IQImbalanceApplied), ...
     "IQ replay must mark the stage as applied.");
+[alpha, beta] = localIQAlphaBeta(1.5, 7);
+expectedIRR = 20 * log10(abs(alpha) / abs(beta));
+assert(abs(double(iq.Replay.IQImbalanceImageRejection_dB) - expectedIRR) < 0.25, ...
+    "IQ image-rejection measurement must match the alpha/beta analytical ratio.");
 
 cfg = struct();
 cfg.rf.pa.enable = true;
@@ -75,6 +107,32 @@ rowPA = pa.StageTrace(string(pa.StageTrace.StageName) == "tx_pa", :);
 expectedDelta = 10 * log10(mean(abs(expectedPA(:)).^2) / mean(abs(xPA(:)).^2));
 assert(abs(double(rowPA.PowerDelta_dB) - expectedDelta) < 1e-12, ...
     "PA stage ledger must close to measured before/after power.");
+expectedEVM = 100 * rms(abs(expectedPA(:) - xPA(:))) / rms(abs(xPA(:)));
+assert(abs(double(pa.Row.EVMMeasuredPercent) - expectedEVM) < 1e-12, ...
+    "PA clipping EVM must be measured from the actual before/after samples.");
+
+cfg = struct();
+cfg.run.seed = 88;
+cfg.rf.rx.phaseNoise.enable = true;
+cfg.rf.phaseNoise.enable = true;
+cfg.rf.phaseNoise.useCommBackend = false;
+cfg.rf.phaseNoise.level_dBcHz = [-100 -100];
+cfg.rf.phaseNoise.freqOffsetHz = [1 fs/2];
+nPN = 8192;
+phaseNoise = sixgr.rf.applyRFImpairmentChain(complex(ones(nPN, 1)), cfg, ...
+    "SampleRateHz", fs, ...
+    "Endpoint", "rx", ...
+    "UseLegacyGlobalConfig", false, ...
+    "StrictMutationRequired", true, ...
+    "ApplyADC", false);
+expectedPhaseRMS = localExpectedFlatPhaseNoiseRMS(nPN, fs, -100);
+assert(logical(phaseNoise.Replay.PhaseNoiseApplied), ...
+    "Configured phase noise must apply through the ordered chain.");
+assert(abs(double(phaseNoise.Replay.PhaseNoiseRMS_rad) - expectedPhaseRMS) < 1e-9, ...
+    "Phase-noise RMS must close to the configured flat PSD integral.");
+rowPN = phaseNoise.StageTrace(string(phaseNoise.StageTrace.StageName) == "rx_phase_noise", :);
+assert(abs(double(rowPN.PowerDelta_dB)) < 1e-12, ...
+    "Pure phase-noise rotation must conserve sample power.");
 
 cfg = struct();
 cfg.rf.tx.iqImbalance.enable = true;
@@ -109,17 +167,30 @@ ok = true;
 end
 
 function y = localIQModel(x, gainImb_dB, phaseImb_deg)
+[alpha, beta] = localIQAlphaBeta(gainImb_dB, phaseImb_deg);
+y = alpha .* x + beta .* conj(x);
+end
+
+function [alpha, beta] = localIQAlphaBeta(gainImb_dB, phaseImb_deg)
 g = 10.^(double(gainImb_dB) / 20);
 phi = double(phaseImb_deg) * pi / 180;
 alpha = 0.5 * (1 + g * exp(-1j * phi));
 beta = 0.5 * (1 - g * exp(1j * phi));
-y = alpha .* x + beta .* conj(x);
 end
 
 function y = localCFO(x, cfoHz, fs)
 n = (0:size(x, 1)-1).';
 rot = exp(1j * 2 * pi * double(cfoHz) / double(fs) .* n);
 y = x .* rot;
+end
+
+function targetRMS = localExpectedFlatPhaseNoiseRMS(nSamples, fs, level_dBcHz)
+freqAbs = (0:nSamples-1).' .* double(fs) ./ double(nSamples);
+freqAbs(freqAbs > double(fs) / 2) = freqAbs(freqAbs > double(fs) / 2) - double(fs);
+freqAbs = max(abs(freqAbs), 1);
+posFreq = unique(freqAbs(freqAbs > 0 & freqAbs <= double(fs) / 2));
+psd = repmat(10.^(double(level_dBcHz) / 10), size(posFreq));
+targetRMS = sqrt(2 * trapz(posFreq, psd));
 end
 
 function e = localMaxAbs(x)
