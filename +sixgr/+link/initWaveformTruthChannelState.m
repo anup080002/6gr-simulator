@@ -12,6 +12,9 @@ state = struct( ...
     "SampleRate_Hz", double(fs), ...
     "UseFading", false, ...
     "Obj", [], ...
+    "RuntimeChannelState", sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), ...
+    "RuntimeChannelStateUsed", false, ...
+    "RuntimeChannelObjectSource", "", ...
     "ChannelPadSamples", 0, ...
     "ChannelTrimSamples", 0, ...
     "LargeScaleGain_dB", 0, ...
@@ -25,39 +28,27 @@ state = struct( ...
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
 if ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
-    cfgCh = cfg;
-    dopp = double(sixgr.util.structGet(cfgCh, "channel.doppler_Hz", ...
-        sixgr.util.structGet(cfgCh, "channel.dopplerHz", ...
-        sixgr.util.structGet(cfgCh, "channel.fading.maxDoppler_Hz", 0))));
-    cfgCh.channel.doppler_Hz = max(0, dopp);
-
-    if startsWith(modelRaw, "TDL")
-        cfgCh.channel.model = "TDL";
-        if modelRaw ~= "TDL"
-            cfgCh.channel.tdlProfile = char(modelRaw);
-        end
-    elseif startsWith(modelRaw, "CDL")
-        cfgCh.channel.model = "CDL";
-        if modelRaw ~= "CDL"
-            cfgCh.channel.cdlProfile = char(modelRaw);
-        end
-    else
-        cfgCh.channel.model = char(modelRaw);
-    end
-
-    ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
-        "Model", cfgCh.channel.model, ...
-        "SampleRate", fs, ...
-        "NumTxAnt", numTx, ...
-        "NumRxAnt", numRx, ...
-        "Seed", sixgr.util.structGet(cfg, "run.seed", 1));
-    if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
-        state.UseFading = true;
-        state.Obj = ch.Object;
-        [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
-        state.ChannelPadSamples = padSamples;
-        state.ChannelTrimSamples = trimSamples;
-    end
+    direction = localResolveDirection(cfg);
+    ueIdx = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", 1))));
+    servingCell = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingCellIndex", ...
+        sixgr.util.structGet(cfg, "lls6g.userContext.ServingCell", 1)))));
+    runtimeState = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
+        "UEIndex", ueIdx, "ServingCell", servingCell, ...
+        "Seed", sixgr.util.structGet(cfg, "run.seed", NaN));
+    runtimeState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+        runtimeState, cfg, sixgr.util.structGet(tx, "Waveform", []), txInfo, ...
+        "NumTxAnt", numTx, "NumRxAnt", numRx, ...
+        "TransmitAntennaRuntime", localRuntimeAntenna(cfg, direction, "tx"), ...
+        "ReceiveAntennaRuntime", localRuntimeAntenna(cfg, direction, "rx"), ...
+        "TransmitAntennaMeta", localRuntimeAntennaMeta(cfg, direction, "tx"), ...
+        "ReceiveAntennaMeta", localRuntimeAntennaMeta(cfg, direction, "rx"));
+    state.RuntimeChannelState = runtimeState;
+    state.RuntimeChannelStateUsed = true;
+    state.RuntimeChannelObjectSource = "sixgr.channel.ChannelFactory.materializeRuntimeChannelState";
+    state.UseFading = logical(sixgr.util.structGet(runtimeState, "UseFading", false));
+    state.Obj = sixgr.util.structGet(runtimeState, "Obj", []);
+    state.ChannelPadSamples = double(sixgr.util.structGet(runtimeState, "ChannelPadSamples", 0));
+    state.ChannelTrimSamples = double(sixgr.util.structGet(runtimeState, "ChannelTrimSamples", 0));
 end
 
 [gain_dB, pathloss_dB, shadow_dB, o2i_dB, losVal] = localResolveLargeScaleGain(cfg);
@@ -99,6 +90,51 @@ else
 end
 end
 
+function direction = localResolveDirection(cfg)
+direction = upper(strtrim(string(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeCurrentDirection", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.Direction", "DL")))));
+if direction ~= "UL"
+    direction = "DL";
+end
+end
+
+function ant = localRuntimeAntenna(cfg, direction, endpoint)
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+role = localRuntimeRole(direction, endpoint);
+if role == "BS"
+    ant = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
+else
+    ant = sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct());
+end
+end
+
+function meta = localRuntimeAntennaMeta(cfg, direction, endpoint)
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+role = localRuntimeRole(direction, endpoint);
+if role == "BS"
+    meta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
+else
+    meta = sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct());
+end
+end
+
+function role = localRuntimeRole(direction, endpoint)
+direction = upper(strtrim(string(direction)));
+endpoint = lower(strtrim(string(endpoint)));
+if direction == "UL"
+    if endpoint == "tx"
+        role = "UE";
+    else
+        role = "BS";
+    end
+else
+    if endpoint == "tx"
+        role = "BS";
+    else
+        role = "UE";
+    end
+end
+end
 function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, fs)
 padSamples = 0;
 trimSamples = 0;

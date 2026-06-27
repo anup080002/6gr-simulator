@@ -3860,34 +3860,10 @@ replay = struct( ...
     "ChannelModelApplied", string(sixgr.util.structGet(cfg, "channel.model", "AWGN")), ...
     "ChannelFadingApplied", false);
 
-if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
-        isfield(state, "Obj") && ~isempty(state.Obj)
-    replay.ChannelFadingApplied = true;
-    try
-        reset(state.Obj);
-    catch
-    end
-    xIn = x;
-    padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
-    trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
-    if padSamples > 0
-        xIn = [x; zeros(padSamples, size(x, 2), "like", x)];
-    end
-    try
-        yRaw = state.Obj(xIn);
-    catch
-        [yRaw, ~] = state.Obj(xIn);
-    end
-    if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
-        y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
-    else
-        y = yRaw;
-        if size(y, 1) > size(x, 1)
-            y = y(1:size(x, 1), :);
-        elseif size(y, 1) < size(x, 1)
-            y(end+1:size(x, 1), :) = cast(0, "like", y); %#ok<AGROW>
-        end
-    end
+[y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state); %#ok<ASGLU>
+chFields = fieldnames(channelReplay);
+for chIdx = 1:numel(chFields)
+    replay.(chFields{chIdx}) = channelReplay.(chFields{chIdx});
 end
 
 cfgReplay = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));

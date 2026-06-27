@@ -35,6 +35,21 @@ assert(abs(ctxUL.OutputTotalPower_dBm - 23) < 1e-10, ...
 assert(ctxUL.RFChainCount == 2, ...
     "UE RF-chain count must not inherit the 64-chain gNB configuration.");
 
+cfgPA = cfg;
+cfgPA.rf.pa.enable = true;
+cfgPA.rf.pa.method = "softlimiter";
+cfgPA.rf.pa.backoff_dB = 0;
+rs = RandStream("mt19937ar", "Seed", 9081);
+xPA = complex(randn(rs, 2048, 2), randn(rs, 2048, 2)) / sqrt(2);
+[yLinear, ~] = sixgr.rf.applyPowerContext(xPA, cfg, "UL", struct());
+[yPA, ctxPA] = sixgr.rf.applyPowerContext(xPA, cfgPA, "UL", struct());
+assert(logical(ctxPA.PAApplied) && strcmp(string(ctxPA.PAExecutionStatus), "applied_memoryless_pa_in_physical_sample_units"), ...
+    "Configured PA nonlinearity must execute in the physical sample-power path.");
+assert(abs(ctxPA.OutputTotalPower_dBm - 23) < 1e-10, ...
+    "PA output must remain in the configured physical Tx-power unit convention.");
+assert(localRelativeNorm(yPA - yLinear) > 1e-4, ...
+    "PA nonlinearity must change the waveform samples, not only report metadata.");
+
 cfgDL = sixgr.util.structSet(cfg, "lls6g.runtimePowerContext", ctxDL);
 cfgDL = sixgr.util.structSet(cfgDL, "lls6g.userContext", struct( ...
     "RuntimeCurrentDirection", "DL"));
@@ -80,6 +95,9 @@ power_mW = mean(sum(abs(double(x)).^2, 2), "omitnan");
 dbm = 10 * log10(max(power_mW, realmin));
 end
 
+function e = localRelativeNorm(x)
+e = norm(double(x(:))) / max(1, sqrt(numel(x)));
+end
 function localCleanup(root)
 if isfolder(root)
     try

@@ -22,6 +22,7 @@ if isfinite(inputTotal_mW) && inputTotal_mW > 0 && ...
     scale = sqrt(double(ctx.TotalTxPower_mW) / max(inputTotal_mW, realmin));
 end
 y = x .* cast(scale, "like", x);
+[y, paInfo] = localApplyPAContext(y, cfg, ctx, txInfo);
 [outputTotal_mW, outputPerPort_mW] = localTotalActivePower_mW(y, txInfo);
 
 ctx.ScaleApplied = true;
@@ -41,8 +42,56 @@ ctx.PowerClosureError_dB = double(ctx.OutputTotalPower_dBm) - double(ctx.TotalTx
 ctx.PerPortPowerSum_mW = sum(double(outputPerPort_mW), "omitnan");
 ctx.PerPortPowerSumError_mW = double(ctx.PerPortPowerSum_mW) - double(ctx.TotalTxPower_mW);
 ctx.ConversionEquation = "x_scaled=x*sqrt(Ptx_mW/mean_sum_abs2_active_samples)";
+paFields = fieldnames(paInfo);
+for paIdx = 1:numel(paFields)
+    ctx.(paFields{paIdx}) = paInfo.(paFields{paIdx});
+end
 end
 
+function [y, info] = localApplyPAContext(x, cfg, ctx, txInfo)
+y = x;
+enabled = logical(sixgr.util.structGet(cfg, "rf.pa.enable", ...
+    sixgr.util.structGet(cfg, "phy.impairments.paNonlinearityEnabled", false)));
+info = struct( ...
+    "PAEnabled", logical(enabled), ...
+    "PAApplied", false, ...
+    "PAModel", "disabled", ...
+    "PABackoff_dB", double(sixgr.util.structGet(cfg, "rf.pa.backoff_dB", ...
+        sixgr.util.structGet(cfg, "lls6g.impairments.pa_output_backoff_dB", 0))), ...
+    "PAInputTotalPower_mW", NaN, ...
+    "PAOutputTotalPower_mW", NaN, ...
+    "PACompression_dB", NaN, ...
+    "PAAmplitudeUnit", "sqrt_mW", ...
+    "PAExecutionStatus", "disabled");
+if ~enabled || isempty(x)
+    return;
+end
+[inputTotal_mW, ~] = localTotalActivePower_mW(x, txInfo);
+info.PAInputTotalPower_mW = double(inputTotal_mW);
+if ~(isfinite(inputTotal_mW) && inputTotal_mW > 0)
+    info.PAExecutionStatus = "configured_but_input_power_unavailable";
+    return;
+end
+pa = sixgr.rf.PAModel(cfg);
+normScale = sqrt(max(double(inputTotal_mW), realmin));
+yn = pa.apply(x ./ cast(normScale, "like", x));
+[normOutTotal, ~] = localTotalActivePower_mW(yn, txInfo);
+if ~(isfinite(normOutTotal) && normOutTotal > 0)
+    info.PAExecutionStatus = "configured_but_output_power_unavailable";
+    return;
+end
+restoreScale = sqrt(max(double(inputTotal_mW), realmin) ./ max(double(normOutTotal), realmin));
+y = yn .* cast(restoreScale, "like", x);
+[outputTotal_mW, ~] = localTotalActivePower_mW(y, txInfo);
+info.PAApplied = true;
+info.PAModel = string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"));
+info.PAOutputTotalPower_mW = double(outputTotal_mW);
+info.PACompression_dB = 10 * log10(max(double(outputTotal_mW), realmin) ./ max(double(inputTotal_mW), realmin));
+info.PAExecutionStatus = "applied_memoryless_pa_in_physical_sample_units";
+if isfield(ctx, "WaveformAmplitudeUnit")
+    info.PAAmplitudeUnit = string(ctx.WaveformAmplitudeUnit);
+end
+end
 function [total_mW, perPort_mW, info] = localTotalActivePower_mW(x, txInfo)
 if isempty(x)
     total_mW = NaN;

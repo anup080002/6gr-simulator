@@ -1,4 +1,4 @@
-function [y, replay] = applyWaveformTruthImpairments(x, snr_dB, state, cfg, tx, txInfo)
+function [y, replay, state] = applyWaveformTruthImpairments(x, snr_dB, state, cfg, tx, txInfo)
 %APPLYWAVEFORMTRUTHIMPAIRMENTS Apply the authoritative waveform impairment path.
 
 fs = double(sixgr.util.structGet(state, "SampleRate_Hz", localResolveSampleRate(tx, txInfo)));
@@ -30,28 +30,11 @@ replay = struct( ...
     "PhaseNoiseTruthClassification", "disabled", ...
     "PhaseNoiseExecutionStatus", "not_configured");
 
-if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
-        isfield(state, "Obj") && ~isempty(state.Obj)
-    xIn = x;
-    padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
-    trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
-    if padSamples > 0
-        xIn = [x; zeros(padSamples, size(x, 2), "like", x)];
-    end
-    try
-        yRaw = state.Obj(xIn);
-    catch
-        [yRaw, ~] = state.Obj(xIn);
-    end
-    if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
-        y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
-    else
-        y = yRaw;
-        if size(y, 1) > size(x, 1)
-            y = y(1:size(x, 1), :);
-        elseif size(y, 1) < size(x, 1)
-            y(end+1:size(x, 1), :) = cast(0, "like", y); %#ok<AGROW>
-        end
+if isstruct(state)
+    [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state);
+    chFields = fieldnames(channelReplay);
+    for chIdx = 1:numel(chFields)
+        replay.(chFields{chIdx}) = channelReplay.(chFields{chIdx});
     end
 end
 

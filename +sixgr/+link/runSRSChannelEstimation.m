@@ -273,42 +273,21 @@ txInfo = struct("OFDM", sixgr.util.structGet(info, "OFDMInfo", struct()));
 if ~(isstruct(state) && logical(sixgr.util.structGet(state, "Initialized", false)))
     state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
     state.ChannelSeed = localTrialSeed(cfg, trialIdx);
-    localResetChannelOnce(sixgr.util.structGet(state, "Obj", []), state.ChannelSeed);
 end
-useFading = isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
-    isfield(state, "Obj") && ~isempty(state.Obj);
-y = x;
-if useFading
-    xIn = x;
-    padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
-    trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
-    if padSamples > 0
-        xIn = [x; zeros(padSamples, size(x, 2), "like", x)];
-    end
-    try
-        yRaw = state.Obj(xIn);
-    catch
-        [yRaw, ~] = state.Obj(xIn);
-    end
-    if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
-        y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
-    else
-        y = yRaw;
-        if size(y, 1) > size(x, 1)
-            y = y(1:size(x, 1), :);
-        elseif size(y, 1) < size(x, 1)
-            y(end+1:size(x, 1), :) = cast(0, "like", y); %#ok<AGROW>
-        end
-    end
-    referenceWaveform = y;
-else
+[y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state);
+useFading = logical(sixgr.util.structGet(channelReplay, "ChannelFadingApplied", false));
+if ~useFading
     y = localApplyTrackingDoppler(x, sampleRateHz, injectedDopplerHz);
-    referenceWaveform = y;
 end
+referenceWaveform = y;
 
 cfgReplay = localPrepareSRSReplayCfg(cfg, snr_dB);
 [y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
 replay = impairmentReplay;
+chFields = fieldnames(channelReplay);
+for chIdx = 1:numel(chFields)
+    replay.(chFields{chIdx}) = channelReplay.(chFields{chIdx});
+end
 replay.ChannelModelApplied = char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 replay.ChannelFadingApplied = logical(useFading);
 desiredWaveform = y;
