@@ -1,8 +1,10 @@
 function tf = validateSRSFullCarrierClaim(coverage, srsCfg)
-%VALIDATESRSFULLCARRIERCLAIM True only when actual PRB union covers carrier.
+%VALIDATESRSFULLCARRIERCLAIM True when actual PRB union covers the carrier,
+%or the explicitly configured full-carrier tolerance covers a Toolbox RB edge.
 
-tf = double(coverage.OccupiedPRBCount) >= double(coverage.CarrierPRBCount) && ...
-    double(coverage.CarrierPRBCount) > 0;
+targetRB = double(sixgr.util.structGet(coverage, "FullCarrierEffectiveTargetRB", coverage.CarrierPRBCount));
+tf = double(coverage.OccupiedPRBCount) >= targetRB && ...
+    double(coverage.CarrierPRBCount) > 0 && targetRB > 0;
 if logical(srsCfg.FullCarrierSoundingRequired)
     tf = tf && string(coverage.BandwidthCoverageStatus) == "full_carrier";
 end

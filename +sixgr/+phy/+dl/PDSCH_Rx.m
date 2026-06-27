@@ -591,6 +591,13 @@ elseif ~isempty(dmrsAntInd)
 else
     rx.ChannelEstimateSource = "unit_channel_no_dmrs_awgn_only";
 end
+rx.ChannelEstimateMethod = char(string(sixgr.util.structGet(estInfo, "Method", "")));
+rx.ChannelEstimateEngine = char(string(sixgr.util.structGet(estInfo, "EngineUsed", "")));
+rx.ChannelEstimateInterpolationMethod = char(string(sixgr.util.structGet(estInfo, "InterpolationMethod", "")));
+rx.ChannelEstimateEffectiveConvention = char(string(sixgr.util.structGet(estInfo, "EffectiveChannelConvention", "")));
+rx.ChannelEstimatePilotRECount = double(sixgr.util.structGet(estInfo, "PilotRECount", NaN));
+rx.ChannelEstimatePilotResidualPower = double(sixgr.util.structGet(estInfo, "PilotResidualPower", NaN));
+rx.ChannelEstimatePilotResidualNMSE_dB = double(sixgr.util.structGet(estInfo, "PilotResidualNMSE_dB", NaN));
 rx.ResourceExtractionAttempted = true;
 rx.ResourceExtractionAvailable = ~isempty(rxSym);
 rx.EqualizationAttempted = true;
@@ -623,6 +630,7 @@ if ~logical(opt.CompactOutput)
     rx.ParityChecks = parity;
     rx.CodeBlockCRCError = cbCrcErr;
     rx.ChannelEstimate = hEst;
+    rx.ChannelEstimation = estInfo;
     rx.RxGrid = rxGrid;
     rx.DMRSIndices = dmrsInd;
     rx.DMRSSymbols = dmrsSym;
@@ -1348,6 +1356,11 @@ try
         estInfo.NoiseVar = double(nVar);
         estInfo.ChannelEstimator = string(sixgr.util.structGet(chInfo, "EngineUsed", ""));
         estInfo.InferredReferencePortCount = double(sixgr.util.structGet(chInfo, "InferredReferencePortCount", NaN));
+        estInfo.InterpolationMethod = string(sixgr.util.structGet(chInfo, "InterpolationMethod", ""));
+        estInfo.EffectiveChannelConvention = string(sixgr.util.structGet(chInfo, "EffectiveChannelConvention", ""));
+        estInfo.PilotRECount = double(sixgr.util.structGet(chInfo, "PilotRECount", NaN));
+        estInfo.PilotResidualPower = double(sixgr.util.structGet(chInfo, "PilotResidualPower", NaN));
+        estInfo.PilotResidualNMSE_dB = double(sixgr.util.structGet(chInfo, "PilotResidualNMSE_dB", NaN));
     else
         estInfo.Status = "NOT_AVAILABLE";
         estInfo.Reason = "empty_csirs_channel_estimate";

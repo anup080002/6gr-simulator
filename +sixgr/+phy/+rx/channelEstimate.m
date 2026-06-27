@@ -21,7 +21,8 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
 %     "ExpectedTxPorts" : expected TX port count for truth validation
 %     "ContextLabel"    : caller label for diagnostics
 %     "Method"          : "LS" (default), "wiener", or "ideal"
-%     "TrueChannel"     : channel tensor required by Method="ideal"
+%     "TrueChannel"     : test-only true effective channel tensor
+%     "OracleTestMode"  : true permits true-channel oracle diagnostics
 %     "Config"          : simulator cfg used for ideal nVar / DMRS defaults
 %
 %   Outputs
@@ -48,6 +49,8 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     contextLabel = "channelEstimate";
     estimationMethod = "LS";
     trueChannel = [];
+    oracleTestMode = false;
+    effectiveChannelConvention = "resource_grid_rx_antenna_by_reference_port_after_precoding_and_timing_alignment";
     methodCfg = struct();
     dmrsConfigType = [];
     fwd = varargin;
@@ -94,6 +97,16 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
                     keep(i:i+1) = false;
                     i = i + 2;
                     continue;
+                elseif strcmpi(key, "OracleTestMode") || strcmpi(key, "AllowTestOracle")
+                    oracleTestMode = logical(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
+                elseif strcmpi(key, "EffectiveChannelConvention")
+                    effectiveChannelConvention = string(varargin{i+1});
+                    keep(i:i+1) = false;
+                    i = i + 2;
+                    continue;
                 elseif strcmpi(key, "Config") || strcmpi(key, "Cfg")
                     methodCfg = varargin{i+1};
                     keep(i:i+1) = false;
@@ -134,6 +147,10 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.ScalarFastPathUsed = false;
     info.ScalarFastPathDisabledReason = string(policy.DisabledReason);
     info.Method = char(estimationMethod);
+    info.OutputHhatVariable = "Hest";
+    info.EffectiveChannelConvention = char(string(effectiveChannelConvention));
+    info.OracleTestMode = logical(oracleTestMode);
+    info.UsedOracleFields = "";
     info.RxGridSize = size(rxGrid);
     info.ReferenceSymbolsOriginalCount = double(refPruneInfo.OriginalCount);
     info.ReferenceSymbolsUsedCount = double(refPruneInfo.RetainedCount);
@@ -141,6 +158,7 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.PrunedZeroReferenceSymbols = logical(refPruneInfo.PrunedZeroReferenceSymbols);
     cdmLengths = localNormalizeCDMLengths(localResolveCDMLengths(refInd, refSym, fwd, methodCfg, dmrsConfigType));
     info.CDMLengths = double(cdmLengths);
+    info.InterpolationMethod = char(localResolveInterpolationMethod(fwd, estimationMethod));
     if isempty(cdmLengths)
         fwd = localRemoveFwdNameValue(fwd, "CDMLengths");
     elseif any(double(cdmLengths) > 1)
@@ -148,16 +166,23 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     end
 
     if estimationMethod == "ideal"
+        if ~logical(oracleTestMode)
+            error("sixgr:phy:channelEstimate:OracleTestModeRequired", ...
+                "Method='ideal' is a true-channel oracle path and is permitted only with OracleTestMode=true.");
+        end
         if isempty(trueChannel)
             error("sixgr:phy:channelEstimate:IdealChannelMissing", ...
                 "Method='ideal' requires non-empty TrueChannel runtime evidence.");
         end
         Hest = trueChannel;
         nVar = localNoiseVarianceFromConfig(methodCfg);
-        info.EngineUsed = "ideal_true_channel_runtime_evidence";
+        info.EngineUsed = "ideal_true_channel_test_oracle";
         info.HestSize = size(Hest);
         info.NoiseVar = nVar;
-        info.IdealChannelSource = "TrueChannel_name_value";
+        info.IdealChannelSource = "TrueChannel_name_value_test_only";
+        info.UsedOracleFields = "TrueChannel";
+        info = localAttachPilotDiagnostics(info, carrier, rxGrid, refInd, refSym, Hest, nVar, ...
+            trueChannel, logical(oracleTestMode));
         return;
     elseif estimationMethod == "wiener"
         fwd = localSetFwdNameValue(fwd, "Interpolation", "linear");
@@ -187,6 +212,8 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
             info.HestSize = size(Hest);
             info.NoiseVar = nVar;
             info.ScalarFastPathUsed = true;
+            info = localAttachPilotDiagnostics(info, carrier, rxGrid, refInd, refSym, Hest, nVar, ...
+                trueChannel, logical(oracleTestMode));
             return;
         catch ME
             info.FastMexError = string(ME.message);
@@ -222,6 +249,8 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
     info.EngineUsed = engine;
     info.HestSize = size(Hest);
     info.NoiseVar = nVar;
+    info = localAttachPilotDiagnostics(info, carrier, rxGrid, refInd, refSym, Hest, nVar, ...
+        trueChannel, logical(oracleTestMode));
 end
 
 function localValidateReferenceSymbols(refSym)
@@ -276,6 +305,203 @@ end
 if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
     nVar = 0;
 end
+end
+
+function method = localResolveInterpolationMethod(fwd, estimationMethod)
+method = "";
+for ii = 1:2:numel(fwd)-1
+    key = string(fwd{ii});
+    if strcmpi(key, "Interpolation")
+        raw = fwd{ii+1};
+        if ischar(raw) || isstring(raw)
+            method = string(raw);
+        elseif isnumeric(raw) || islogical(raw)
+            method = "numeric:" + string(mat2str(double(raw)));
+        else
+            method = string(class(raw));
+        end
+        break;
+    end
+end
+if strlength(method) == 0
+    switch string(estimationMethod)
+        case "wiener"
+            method = "linear_zero_averaging_window_practical_smoothing";
+        case "ideal"
+            method = "true_channel_oracle_no_interpolation";
+        otherwise
+            method = "nrChannelEstimate_default";
+    end
+end
+method = char(method);
+end
+
+function info = localAttachPilotDiagnostics(info, carrier, rxGrid, refInd, refSym, Hest, nVar, trueChannel, oracleTestMode) %#ok<INUSD>
+info.PilotMask = false(0, 0);
+info.PilotMaskLinearIndices = zeros(0, 1);
+info.PilotRECount = 0;
+info.PilotRxAntennaCount = 0;
+info.PilotReferencePortCount = 0;
+info.PilotResidualPower = NaN;
+info.PilotSignalPower = NaN;
+info.PilotResidualNMSE_dB = NaN;
+info.PilotNoiseVarianceEstimate = NaN;
+info.PilotNoiseVarianceEstimateSource = "pilot_ls_minus_interpolated_hhat_residual";
+info.OracleAvailable = false;
+info.OracleReferenceSource = "";
+info.OracleNMSE_dB = NaN;
+info.OracleMSE = NaN;
+info.OracleSignalPower = NaN;
+info.OraclePilotSampleCount = 0;
+info.OracleEffectiveChannelConvention = char(string(sixgr.util.structGet(info, "EffectiveChannelConvention", "")));
+
+if isempty(rxGrid) || isempty(refInd) || isempty(refSym) || isempty(Hest)
+    return;
+end
+
+try
+    K = size(rxGrid, 1);
+    L = size(rxGrid, 2);
+    R = max(1, size(rxGrid, 3));
+    P = max(1, size(Hest, 4));
+    if ~(K > 0 && L > 0)
+        return;
+    end
+    [k, l, p, refValues] = localPilotCoordinates(refInd, refSym, K, L, P);
+    if isempty(k)
+        return;
+    end
+
+    pilotLinear = unique(sub2ind([K L], k(:), l(:)), "stable");
+    pilotMask = false(K, L);
+    pilotMask(pilotLinear) = true;
+
+    [hLS, hHatPilot] = localPilotLSAndEstimate(rxGrid, Hest, k, l, p, refValues, R, P);
+    [residualPower, signalPower, nmseDb] = localPowerMetrics(hLS, hHatPilot);
+    info.PilotMask = pilotMask;
+    info.PilotMaskLinearIndices = double(pilotLinear(:));
+    info.PilotRECount = double(numel(k));
+    info.PilotRxAntennaCount = double(R);
+    info.PilotReferencePortCount = double(max(p));
+    info.PilotResidualPower = double(residualPower);
+    info.PilotSignalPower = double(signalPower);
+    info.PilotResidualNMSE_dB = double(nmseDb);
+    info.PilotNoiseVarianceEstimate = double(residualPower);
+    info.PilotNoiseVarianceFromEstimator = double(nVar);
+
+    if logical(oracleTestMode) && ~isempty(trueChannel)
+        hTruePilot = localExtractPilotEstimate(trueChannel, k, l, p, R, P);
+        [oracleMSE, oracleSignal, oracleNMSE] = localPowerMetrics(hTruePilot, hHatPilot);
+        oracleMask = isfinite(real(hTruePilot)) & isfinite(imag(hTruePilot)) & ...
+            isfinite(real(hHatPilot)) & isfinite(imag(hHatPilot));
+        info.OracleAvailable = any(oracleMask(:));
+        info.OracleReferenceSource = "TrueChannel_test_only";
+        info.OracleNMSE_dB = double(oracleNMSE);
+        info.OracleMSE = double(oracleMSE);
+        info.OracleSignalPower = double(oracleSignal);
+        info.OraclePilotSampleCount = double(nnz(oracleMask));
+        info.OracleEffectiveChannelConvention = char(string(info.EffectiveChannelConvention));
+    end
+catch ME
+    info.PilotDiagnosticStatus = "failed";
+    info.PilotDiagnosticFailure = string(ME.identifier);
+    info.PilotDiagnosticMessage = string(ME.message);
+end
+end
+
+function [k, l, p, refValues] = localPilotCoordinates(refInd, refSym, K, L, P)
+idx = round(double(refInd(:)));
+refValues = refSym(:);
+N = min(numel(idx), numel(refValues));
+if N <= 0
+    k = zeros(0, 1);
+    l = zeros(0, 1);
+    p = zeros(0, 1);
+    refValues = complex(zeros(0, 1));
+    return;
+end
+idx = idx(1:N);
+refValues = refValues(1:N);
+maxIndex = max(double(K) * double(L) * double(max(1, P)), 1);
+mask = isfinite(idx) & idx >= 1 & idx <= maxIndex & ...
+    isfinite(real(refValues)) & isfinite(imag(refValues)) & abs(refValues) > eps;
+idx = idx(mask);
+refValues = refValues(mask);
+if isempty(idx)
+    k = zeros(0, 1);
+    l = zeros(0, 1);
+    p = zeros(0, 1);
+    refValues = complex(zeros(0, 1));
+    return;
+end
+[k, l, p] = ind2sub([K L max(1, P)], idx);
+k = double(k(:));
+l = double(l(:));
+p = max(1, min(double(P), double(p(:))));
+refValues = refValues(:);
+end
+
+function [hLS, hHatPilot] = localPilotLSAndEstimate(rxGrid, Hest, k, l, p, refValues, R, P)
+N = numel(k);
+hLS = complex(NaN(N, R));
+hHatPilot = complex(NaN(N, R));
+for ii = 1:N
+    for rr = 1:R
+        y = rxGrid(k(ii), l(ii), rr);
+        hLS(ii, rr) = y ./ refValues(ii);
+        hHatPilot(ii, rr) = Hest(k(ii), l(ii), rr, min(p(ii), P));
+    end
+end
+end
+
+function hPilot = localExtractPilotEstimate(grid, k, l, p, R, P)
+N = numel(k);
+hPilot = complex(NaN(N, R));
+if isempty(grid)
+    return;
+end
+if isnumeric(grid) && isvector(grid)
+    raw = grid(:);
+    n = min(numel(raw), numel(hPilot));
+    hPilot(1:n) = raw(1:n);
+    return;
+end
+sz = size(grid);
+if numel(sz) < 3
+    sz(3) = 1;
+end
+if numel(sz) < 4
+    sz(4) = 1;
+end
+for ii = 1:N
+    for rr = 1:R
+        if k(ii) <= sz(1) && l(ii) <= sz(2) && rr <= sz(3)
+            pp = min([p(ii), P, sz(4)]);
+            hPilot(ii, rr) = grid(k(ii), l(ii), rr, pp);
+        end
+    end
+end
+end
+
+function [errPower, signalPower, nmseDb] = localPowerMetrics(reference, estimate)
+errPower = NaN;
+signalPower = NaN;
+nmseDb = NaN;
+if isempty(reference) || isempty(estimate)
+    return;
+end
+N = min(numel(reference), numel(estimate));
+reference = reference(1:N);
+estimate = estimate(1:N);
+mask = isfinite(real(reference)) & isfinite(imag(reference)) & ...
+    isfinite(real(estimate)) & isfinite(imag(estimate));
+if ~any(mask)
+    return;
+end
+err = reference(mask) - estimate(mask);
+errPower = mean(abs(err).^2, "omitnan");
+signalPower = mean(abs(reference(mask)).^2, "omitnan");
+nmseDb = 10 * log10(max(errPower / max(signalPower, eps), eps));
 end
 
 function cdm = localResolveCDMLengths(refInd, refSym, fwd, cfg, dmrsConfigType)

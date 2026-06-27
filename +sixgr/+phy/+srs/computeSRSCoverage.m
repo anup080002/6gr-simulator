@@ -16,7 +16,10 @@ else
 end
 occupied = numel(prb);
 coveragePercent = 100 * occupied / nCarrierPRB;
-if occupied >= nCarrierPRB
+fullCarrierToleranceRB = localFullCarrierToleranceRB(srsCfg, nCarrierPRB);
+fullCarrierEffectiveTargetRB = max(1, nCarrierPRB - fullCarrierToleranceRB);
+fullRequired = localFullCarrierRequired(srsCfg);
+if occupied >= nCarrierPRB || (fullRequired && occupied >= fullCarrierEffectiveTargetRB)
     status = "full_carrier";
 elseif occupied > 0
     status = "partial_band";
@@ -36,6 +39,9 @@ coverage.ObservedRECount = double(numel(idx));
 coverage.OccupiedPRBCount = double(occupied);
 coverage.CarrierPRBCount = double(nCarrierPRB);
 coverage.CoveragePercent = double(coveragePercent);
+coverage.CoverageGapRB = double(max(0, nCarrierPRB - occupied));
+coverage.FullCarrierCoverageToleranceRB = double(fullCarrierToleranceRB);
+coverage.FullCarrierEffectiveTargetRB = double(fullCarrierEffectiveTargetRB);
 coverage.PRBStart = double(prbStart);
 coverage.PRBEnd = double(prbEnd);
 coverage.BandwidthCoverageStatus = string(status);
@@ -44,4 +50,21 @@ coverage.FullCarrierSoundingRequired = logical(srsCfg.FullCarrierSoundingRequire
 coverage.FullCarrierClaimValid = sixgr.phy.srs.validateSRSFullCarrierClaim(coverage, srsCfg);
 coverage.ConfiguredBandClaimValid = sixgr.phy.srs.validateSRSConfiguredBandClaim(coverage, srsCfg);
 coverage.PartialBandValid = status == "partial_band" && string(srsCfg.CoverageRequirement) == "partial_band_allowed";
+end
+
+function tol = localFullCarrierToleranceRB(srsCfg, nCarrierPRB)
+tol = 0;
+expectedRB = double(sixgr.util.structGet(srsCfg, "ExpectedNumRB", NaN));
+if localFullCarrierRequired(srsCfg) && isfinite(expectedRB) && expectedRB >= double(nCarrierPRB)
+    tol = double(sixgr.util.structGet(srsCfg, "FullCarrierCoverageToleranceRB", 1));
+end
+if ~(isscalar(tol) && isfinite(tol) && tol >= 0)
+    tol = 0;
+end
+tol = min(max(0, round(tol)), max(0, round(double(nCarrierPRB)) - 1));
+end
+
+function tf = localFullCarrierRequired(srsCfg)
+req = lower(string(sixgr.util.structGet(srsCfg, "CoverageRequirement", "")));
+tf = logical(sixgr.util.structGet(srsCfg, "FullCarrierSoundingRequired", false)) || req == "full_carrier";
 end
