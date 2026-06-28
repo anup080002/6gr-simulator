@@ -6,6 +6,7 @@ setup6GRSimToolkit("Verbose", false);
 localCSVWriteGate();
 localPMICacheDeterminism();
 localPostEqSINRCacheDeterminism();
+localDeterministicTaskPlan();
 localFixedLinkCoreOnlyDeterminism();
 
 ok = true;
@@ -76,6 +77,47 @@ assert(strcmp(string(info1.CacheKey), string(info2.CacheKey)), ...
     "Identical post-EQ SINR inputs must produce identical cache keys.");
 end
 
+function localDeterministicTaskPlan()
+snrGrid = [-2 0 4];
+plan = sixgr.util.buildDeterministicTaskPlan(99123, snrGrid, ["DL", "UL"], ...
+    "MaxTrials", 5, ...
+    "TrialsPerDrop", 2, ...
+    "IncludePointTasks", true);
+
+pointRows = string(plan.TaskKind) == "point_metadata";
+workRows = string(plan.TaskKind) == "point_drop_link";
+assert(nnz(pointRows) == numel(snrGrid), ...
+    "Task plan must include one deterministic point metadata row per SNR point.");
+assert(all(double(plan.TrialCount(workRows)) > 0) && all(double(plan.TrialCount(workRows)) <= 2), ...
+    "Drop tasks must carry bounded trial counts for coarse-grain execution.");
+assert(numel(unique(double(plan.TaskSeed))) == height(plan), ...
+    "Every coarse task must receive a unique immutable seed.");
+assert(all(string(plan.SchedulingInvariant) == "worker_order_independent_seed_per_task"), ...
+    "Task plan must declare worker-order-independent seed assignment.");
+assert(all(string(plan.PersistencePhase) == "post_run_or_disabled"), ...
+    "Task plan must keep persistence outside task execution rows.");
+
+serialSig = localTaskSignature(plan);
+reordered = plan([height(plan):-1:1], :);
+parallelLike = sortrows(reordered, "TaskIndex");
+parallelSig = localTaskSignature(parallelLike);
+assert(isequaln(serialSig, parallelSig), ...
+    "Task outputs derived only from immutable task seeds must be invariant to worker completion order.");
+
+expectedDLSeed = sixgr.util.hierarchicalSeed(99123, 2, 1, 0, "DL");
+mask = double(plan.PointIndex) == 2 & double(plan.DropIndex) == 1 & string(plan.LinkToken) == "DL";
+assert(any(mask) && double(plan.TaskSeed(find(mask, 1, "first"))) == expectedDLSeed, ...
+    "Task-plan DL seed must use the canonical hierarchical seed function.");
+end
+
+function sig = localTaskSignature(plan)
+sig = zeros(height(plan), 1);
+for i = 1:height(plan)
+    rs = RandStream("mt19937ar", "Seed", double(plan.TaskSeed(i)));
+    sig(i) = rand(rs) + double(plan.PointIndex(i)) * 1e-3 + double(plan.DropIndex(i)) * 1e-5;
+end
+end
+
 function localFixedLinkCoreOnlyDeterminism()
 cfg = localFixtureConfig();
 opt = localCampaignOptions(cfg, 12, 77729);
@@ -109,6 +151,17 @@ for i = 1:numel(cols)
     assert(isequaln(double(T1.(cols(i))), double(T2.(cols(i)))), ...
         "Core-only and persisted fixed-link campaign column %s must match.", cols(i));
 end
+
+P1 = outPersist.FixedLinkCampaign.TaskPlan;
+P2 = outCore.FixedLinkCampaign.TaskPlan;
+assert(istable(P1) && istable(P2) && height(P1) == height(P2) && height(P1) > 0, ...
+    "Persisted and core-only fixed-link runs must both expose the deterministic task plan.");
+for c = ["TaskIndex","PointIndex","DropIndex","TrialStartIndex","TrialCount","PointSeed","TaskSeed"]
+    assert(isequaln(double(P1.(c)), double(P2.(c))), ...
+        "Core-only and persisted task-plan column %s must match.", c);
+end
+assert(isequal(string(P1.TaskKey), string(P2.TaskKey)) && isequal(string(P1.LinkToken), string(P2.LinkToken)), ...
+    "Core-only and persisted task-plan identities must match.");
 end
 
 function cfg = localFixtureConfig()

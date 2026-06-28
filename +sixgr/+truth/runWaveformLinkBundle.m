@@ -11279,6 +11279,7 @@ campaign = struct( ...
     "Summary", table(), ...
     "DLTrials", table(), ...
     "ULTrials", table(), ...
+    "TaskPlan", table(), ...
     "SNRGrid_dB", [], ...
     "SeedBase", NaN, ...
     "Notes", "");
@@ -11325,6 +11326,13 @@ if logical(sixgr.util.structGet(multiUser, "Enabled", false))
         end
         dlTrials = localAppendCompatTable(dlTrials, sixgr.util.structGet(userCampaign, "DLTrials", table()));
         ulTrials = localAppendCompatTable(ulTrials, sixgr.util.structGet(userCampaign, "ULTrials", table()));
+        userTaskPlan = sixgr.util.structGet(userCampaign, "TaskPlan", table());
+        if istable(userTaskPlan) && ~isempty(userTaskPlan)
+            userTaskPlan.UEIndex = repmat(double(ueIdx), height(userTaskPlan), 1);
+            userTaskPlan.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), height(userTaskPlan), 1);
+            userTaskPlan.ExecutionModel = repmat(string(multiUser.ExecutionModel), height(userTaskPlan), 1);
+            campaign.TaskPlan = localAppendCompatTable(campaign.TaskPlan, userTaskPlan);
+        end
     end
     campaign.Summary = summary;
     campaign.DLTrials = dlTrials;
@@ -11344,10 +11352,12 @@ n = numel(snrGrid);
 rows = repmat(localEmptySweepSummaryRow(0), n, 1);
 dlAll = table();
 ulAll = table();
+taskPlan = localBuildFixedLinkTaskPlan(cfgRef, snrGrid, sweepPlan);
+campaign.TaskPlan = taskPlan;
 
 for i = 1:n
     snr = double(snrGrid(i));
-    pointSeed = localHierarchicalCampaignSeed(double(sweepPlan.FixedLinkSeed), i, 0, 0, "POINT");
+    pointSeed = localTaskPlanSeed(taskPlan, i, 0, "POINT", sweepPlan);
     row = localEmptySweepSummaryRow(snr);
     row.CampaignKind = "fixed_link_monte_carlo";
     row.SweepKind = "fixed_reference_awgn_snr_campaign";
@@ -11365,19 +11375,19 @@ for i = 1:n
     row.UL_TargetBLER = double(sweepPlan.FixedLinkTargetBLER);
 
     if logical(sixgr.util.structGet(cfgRef, "phy.pdsch.enable", true))
-        [stats, trials] = localRunFixedDirectionCampaignPoint(cfgRef, "DL", snr, i, sweepPlan);
+        [stats, trials] = localRunFixedDirectionCampaignPoint(cfgRef, "DL", snr, i, sweepPlan, taskPlan);
         row = localApplyFixedDirectionStats(row, "DL", stats);
         dlAll = localAppendCompatTable(dlAll, trials);
     end
 
     if logical(sixgr.util.structGet(cfgRef, "phy.pusch.enable", true))
-        [stats, trials] = localRunFixedDirectionCampaignPoint(cfgRef, "UL", snr, i, sweepPlan);
+        [stats, trials] = localRunFixedDirectionCampaignPoint(cfgRef, "UL", snr, i, sweepPlan, taskPlan);
         row = localApplyFixedDirectionStats(row, "UL", stats);
         ulAll = localAppendCompatTable(ulAll, trials);
     end
 
     if logical(sixgr.util.structGet(cfgRef, "phy.srs.enable", false))
-        row = localApplyFixedSRSMeasurement(row, cfgRef, snr, i, sweepPlan);
+        row = localApplyFixedSRSMeasurement(row, cfgRef, snr, i, sweepPlan, taskPlan);
     end
 
     rows(i, 1) = row;
@@ -11393,7 +11403,42 @@ campaign.SeedBase = double(sweepPlan.FixedLinkSeed);
 campaign.Notes = "fixed_link_campaign_uses_waveform_dl_ul_kernels_with_standalone_awgn_snr_argument";
 end
 
-function [stats, T] = localRunFixedDirectionCampaignPoint(cfg, direction, snr, pointIndex, sweepPlan)
+function taskPlan = localBuildFixedLinkTaskPlan(cfg, snrGrid, sweepPlan)
+tokens = strings(0, 1);
+if logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", true))
+    tokens(end+1, 1) = "DL";
+end
+if logical(sixgr.util.structGet(cfg, "phy.pusch.enable", true))
+    tokens(end+1, 1) = "UL";
+end
+if logical(sixgr.util.structGet(cfg, "phy.srs.enable", false))
+    tokens(end+1, 1) = "SRS";
+end
+if isempty(tokens)
+    tokens = "POINT";
+end
+taskPlan = sixgr.util.buildDeterministicTaskPlan(double(sweepPlan.FixedLinkSeed), double(snrGrid(:)), tokens, ...
+    "MaxTrials", double(sweepPlan.FixedLinkMaxTrials), ...
+    "TrialsPerDrop", double(sweepPlan.FixedLinkTrialsPerDrop), ...
+    "IncludePointTasks", true, ...
+    "ExecutionGranularity", "fixed_link_campaign_point_drop_link");
+end
+
+function seed = localTaskPlanSeed(taskPlan, pointIndex, dropIndex, linkToken, sweepPlan)
+linkToken = upper(string(linkToken));
+seed = sixgr.util.hierarchicalSeed(double(sweepPlan.FixedLinkSeed), pointIndex, dropIndex, 0, linkToken);
+if ~(istable(taskPlan) && ~isempty(taskPlan))
+    return;
+end
+mask = double(taskPlan.PointIndex) == double(pointIndex) & ...
+    double(taskPlan.DropIndex) == double(dropIndex) & ...
+    upper(string(taskPlan.LinkToken)) == linkToken;
+if any(mask)
+    seed = double(taskPlan.TaskSeed(find(mask, 1, "first")));
+end
+end
+
+function [stats, T] = localRunFixedDirectionCampaignPoint(cfg, direction, snr, pointIndex, sweepPlan, taskPlan)
 direction = upper(string(direction));
 T = localEmptyLinkTrialTable(0);
 dropIndex = 0;
@@ -11416,7 +11461,7 @@ while true
     dropIndex = dropIndex + 1;
     remaining = double(sweepPlan.FixedLinkMaxTrials) - completed;
     nFrames = max(1, min(round(double(sweepPlan.FixedLinkTrialsPerDrop)), round(remaining)));
-    dropSeed = localHierarchicalCampaignSeed(double(sweepPlan.FixedLinkSeed), pointIndex, dropIndex, 0, direction);
+    dropSeed = localTaskPlanSeed(taskPlan, pointIndex, dropIndex, direction, sweepPlan);
     cfgDrop = cfg;
     cfgDrop = sixgr.util.structSet(cfgDrop, "run.seed", double(dropSeed));
     cfgDrop = sixgr.util.structSet(cfgDrop, "channel.snr_dB", double(snr));
@@ -11549,8 +11594,8 @@ row.(char(prefix + "_StopReason")) = string(sixgr.util.structGet(stats, "StopRea
 row.(char(prefix + "_Incomplete")) = logical(sixgr.util.structGet(stats, "Incomplete", false));
 end
 
-function row = localApplyFixedSRSMeasurement(row, cfg, snr, pointIndex, sweepPlan)
-seed = localHierarchicalCampaignSeed(double(sweepPlan.FixedLinkSeed), pointIndex, 1, 0, "SRS");
+function row = localApplyFixedSRSMeasurement(row, cfg, snr, pointIndex, sweepPlan, taskPlan)
+seed = localTaskPlanSeed(taskPlan, pointIndex, 1, "SRS", sweepPlan);
 cfgSRS = cfg;
 cfgSRS = sixgr.util.structSet(cfgSRS, "run.seed", double(seed));
 cfgSRS = sixgr.util.structSet(cfgSRS, "channel.snr_dB", double(snr));
@@ -11593,24 +11638,6 @@ else
 end
 lo = max(0, min(1, double(lo)));
 hi = max(0, min(1, double(hi)));
-end
-
-function seed = localHierarchicalCampaignSeed(baseSeed, pointIndex, dropIndex, trialIndex, linkToken)
-baseSeed = double(baseSeed);
-if ~(isfinite(baseSeed) && baseSeed >= 0)
-    baseSeed = 1;
-end
-token = char(upper(string(linkToken)));
-linkHash = 0;
-for i = 1:numel(token)
-    linkHash = mod(linkHash * 131 + double(token(i)), 2^31 - 1);
-end
-seed = mod(round(baseSeed) + round(double(pointIndex)) * 1000003 + ...
-    round(double(dropIndex)) * 9176 + round(double(trialIndex)) * 131071 + ...
-    linkHash * 8191, 2^31 - 1);
-if seed <= 0
-    seed = seed + 1;
-end
 end
 
 function T = localAnnotateFixedLinkCurveCrossings(T, sweepPlan)
