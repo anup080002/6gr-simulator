@@ -107,6 +107,8 @@ methods(Static)
         state.LastPDCCHStatus = repmat("not_attempted", nUsers, 1);
         state.SRSValidityState = repmat(string(state.ControlGating.SRSInitialState), nUsers, 1);
         state.CSIValidityState = repmat(string(state.ControlGating.CSIInitialState), nUsers, 1);
+        state.ReferenceSignalMeasurementTable = struct2table(repmat( ...
+            sixgr.truth.CoupledTruthRuntime.emptyReferenceSignalMeasurementRow(), 0, 1));
         state.ControlEligibility = false(nUsers, 1);
         state.SchedulingEligibility = false(nUsers, 1);
         state.CoverageEligibility = true(nUsers, 1);
@@ -338,6 +340,19 @@ methods(Static)
 
     function state = applyTRSTrial(state, servingCell, trialT)
         state = sixgr.truth.CoupledTruthRuntime.applyTRSTrialImpl(state, servingCell, trialT);
+    end
+
+    function state = publishReferenceSignalMeasurementRuntime(state, signalType, targetType, targetId, row, varargin)
+        state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
+            state, signalType, targetType, targetId, row, varargin{:});
+    end
+
+    function result = consumeReferenceSignalMeasurementRuntime(state, signalType, targetType, targetId, consumerSlot, maxAgeSlots)
+        if nargin < 6
+            maxAgeSlots = inf;
+        end
+        result = sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementImpl( ...
+            state, signalType, targetType, targetId, consumerSlot, maxAgeSlots);
     end
 
     function ageSlots = trsAgeSlotsRuntime(state, servingCell)
@@ -871,17 +886,40 @@ methods(Static, Access=private)
                 grant.AccessState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "AccessState", ueIdx, "not_attempted"));
                 grant.SRSValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "SRSValidityState", ueIdx, "unknown"));
                 grant.CSIValidityState = char(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_csi_unavailable"));
+                csiMaxAgeSlots = max(0, round(double(sixgr.util.structGet(state.CfgMobility, "phy.csirs.maxAgeSlots", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.csi.maxAgeSlots", ...
+                    sixgr.util.structGet(state.CfgMobility, "mac.scheduler.csiMaxAgeSlots", 20))))));
+                csirsCausal = sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementImpl( ...
+                    state, "CSI-RS", "UE", ueIdx, state.CurrentSlot, csiMaxAgeSlots);
+                grant.CSIRSCausalUsable = logical(csirsCausal.Usable);
+                grant.CSIRSCausalAgeSlots = double(csirsCausal.AgeSlots);
+                grant.CSIRSCausalStatus = char(string(csirsCausal.Status));
+                grant.CSIRSCausalMeasurementId = char(string(csirsCausal.MeasurementId));
                 grant.SRSValid = strcmpi(char(string(grant.SRSValidityState)), "valid");
                 grant.LastSuccessfulSRSSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulSRSSlotByUE", ueIdx, NaN));
                 grant.SRSAgeSlots = double(sixgr.truth.CoupledTruthRuntime.srsAgeSlots(state, ueIdx));
+                srsCausal = sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementImpl( ...
+                    state, "SRS", "UE", ueIdx, state.CurrentSlot, ...
+                    max(0, round(double(sixgr.util.structGet(state.ControlGating, "SRSMaxAgeSlots", 0)))));
+                grant.SRSCausalUsable = logical(srsCausal.Usable);
+                grant.SRSCausalAgeSlots = double(srsCausal.AgeSlots);
+                grant.SRSCausalStatus = char(string(srsCausal.Status));
+                grant.SRSCausalMeasurementId = char(string(srsCausal.MeasurementId));
                 grant.ControlEligible = logical(sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "ControlEligibility", ueIdx, true));
                 grant.SchedulingEligible = sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, direction);
                 grant.SchedulingBlockedBySRS = logical(grant.ControlEligible && ~grant.SchedulingEligible && grant.SRSGatingActive);
                 trsContext = sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContext(state, cfg, ueIdx, cellId);
+                trsCausal = sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementImpl( ...
+                    state, "TRS", "CELL", cellId, state.CurrentSlot, ...
+                    max(0, round(double(sixgr.util.structGet(state.ControlGating, "TRSMaxAgeSlots", 0)))));
                 grant.TRSGatingActive = logical(trsContext.TRSGatingActive);
                 grant.TRSValidityState = char(string(trsContext.TRSValidityState));
                 grant.TrackingEligibility = logical(trsContext.TrackingEligibility);
                 grant.TRSAgeSlots = double(trsContext.TRSAgeSlots);
+                grant.TRSCausalUsable = logical(trsCausal.Usable);
+                grant.TRSCausalAgeSlots = double(trsCausal.AgeSlots);
+                grant.TRSCausalStatus = char(string(trsCausal.Status));
+                grant.TRSCausalMeasurementId = char(string(trsCausal.MeasurementId));
                 grant.LastSuccessfulTRSSlot = double(trsContext.LastSuccessfulTRSSlot);
                 grant.LastEstimatedTRSDopplerHz = double(trsContext.LastEstimatedTRSDopplerHz);
                 grant.TRSStateSource = char(string(trsContext.TRSStateSource));
@@ -2834,6 +2872,99 @@ methods(Static, Access=private)
         distanceM = sqrt(sum(double(delta(:)).^2));
     end
 
+    function state = publishReferenceSignalMeasurementImpl(state, signalType, targetType, targetId, row, varargin)
+        opt = struct("AvailableSlot", NaN, "ProducerSlot", NaN, "Valid", [], ...
+            "Direction", "", "SourceSignal", "", "MeasurementSource", "");
+        if ~isempty(varargin)
+            if mod(numel(varargin), 2) ~= 0
+                error("sixgr:truth:ReferenceMeasurementBadNV", ...
+                    "Reference measurement name-value inputs must come in pairs.");
+            end
+            for ii = 1:2:numel(varargin)
+                key = lower(strtrim(string(varargin{ii})));
+                switch key
+                    case "availableslot"
+                        opt.AvailableSlot = double(varargin{ii + 1});
+                    case "producerslot"
+                        opt.ProducerSlot = double(varargin{ii + 1});
+                    case "valid"
+                        opt.Valid = logical(varargin{ii + 1});
+                    case "direction"
+                        opt.Direction = string(varargin{ii + 1});
+                    case "sourcesignal"
+                        opt.SourceSignal = string(varargin{ii + 1});
+                    case "measurementsource"
+                        opt.MeasurementSource = string(varargin{ii + 1});
+                    otherwise
+                        error("sixgr:truth:ReferenceMeasurementUnknownOption", ...
+                            "Unknown reference measurement option '%s'.", key);
+                end
+            end
+        end
+        if ~(isfield(state, "ReferenceSignalMeasurementTable") && istable(state.ReferenceSignalMeasurementTable))
+            state.ReferenceSignalMeasurementTable = struct2table(repmat( ...
+                sixgr.truth.CoupledTruthRuntime.emptyReferenceSignalMeasurementRow(), 0, 1));
+        end
+        signalType = upper(strtrim(string(signalType)));
+        targetType = upper(strtrim(string(targetType)));
+        if strlength(signalType) == 0 || strlength(targetType) == 0 || ~isfinite(double(targetId))
+            return;
+        end
+        producerSlot = double(opt.ProducerSlot);
+        if ~isfinite(producerSlot)
+            producerSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                ["Slot","SourceSlot","ProducerSlot"], sixgr.util.structGet(state, "CurrentSlot", NaN));
+        end
+        availableSlot = double(opt.AvailableSlot);
+        if ~isfinite(availableSlot)
+            availableSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                ["AvailableSlot","DueSlot"], producerSlot);
+        end
+        valid = opt.Valid;
+        if isempty(valid)
+            valid = sixgr.truth.CoupledTruthRuntime.trialPassed(row);
+        end
+        meas = sixgr.truth.CoupledTruthRuntime.emptyReferenceSignalMeasurementRow();
+        meas.SignalType = char(signalType);
+        meas.TargetType = char(targetType);
+        meas.TargetId = double(targetId);
+        meas.ProducerSlot = double(producerSlot);
+        meas.AvailableSlot = double(availableSlot);
+        meas.Valid = logical(valid);
+        meas.Direction = char(upper(strtrim(string(opt.Direction))));
+        meas.SourceSignal = char(string(sixgr.util.structGet(opt, "SourceSignal", signalType)));
+        if strlength(strtrim(string(meas.SourceSignal))) == 0
+            meas.SourceSignal = char(signalType);
+        end
+        meas.MeasurementSource = char(string(opt.MeasurementSource));
+        if strlength(strtrim(string(meas.MeasurementSource))) == 0
+            meas.MeasurementSource = "CoupledTruthRuntime.publishReferenceSignalMeasurement";
+        end
+        meas.MeasurementId = char(signalType + "_" + targetType + "_" + string(targetId) + "_slot_" + string(producerSlot));
+        meas.CQI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["WidebandCQI","CQI"], NaN);
+        meas.RI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["RIEstimate","RankIndicator","RI","Rank"], NaN);
+        meas.PMI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["TPMIEstimate","PMI"], NaN);
+        meas.CRI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["CRI"], NaN);
+        meas.SINR_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["WidebandSRSSINR_dB","SINR_dB","MeasuredSINR_dB","PostEqSINR_dB"], NaN);
+        meas.NMSE_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["NMSE_dB","TrueChannelNMSE_dB"], NaN);
+        meas.TimingOffset_samples = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["EstimatedTimingOffset_samples","TimingEstimate_samples","TRSTimingEstimate_samples"], NaN);
+        meas.CFO_Hz = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["EstimatedCFO_Hz","EstimatedOscillatorCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+        meas.EvidenceSource = sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+            ["TrackingEstimateSource","RuntimeEvidenceSource","NMSEReferenceSource"], "");
+        state.ReferenceSignalMeasurementTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            state.ReferenceSignalMeasurementTable, struct2table(meas, "AsArray", true));
+    end
+
+    function result = consumeReferenceSignalMeasurementImpl(state, signalType, targetType, targetId, consumerSlot, maxAgeSlots)
+        T = sixgr.util.structGet(state, "ReferenceSignalMeasurementTable", table());
+        result = sixgr.phy.refsig.causalMeasurementState(T, consumerSlot, ...
+            "SignalType", signalType, "TargetType", targetType, ...
+            "TargetId", targetId, "MaxAgeSlots", maxAgeSlots);
+    end
+
     function state = applySRSTrialImpl(state, ueIdx, trialT)
         if ~(isfinite(double(ueIdx)) && ueIdx >= 1 && ueIdx <= double(state.NumUsers))
             return;
@@ -2854,6 +2985,11 @@ methods(Static, Access=private)
             state.CSIValidityState(ueIdx) = "invalid_srs_not_usable";
             state.SRSInvalidEventCount(ueIdx) = double(state.SRSInvalidEventCount(ueIdx)) + 1;
         end
+        state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
+            state, "SRS", "UE", ueIdx, row, ...
+            "ProducerSlot", slotIdx, "AvailableSlot", slotIdx, ...
+            "Valid", ok, "Direction", "UL", "SourceSignal", "SRS", ...
+            "MeasurementSource", "CoupledTruthRuntime.applySRSTrial");
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
     end
 
@@ -3136,6 +3272,11 @@ methods(Static, Access=private)
             state.LastEstimatedTRSDopplerHzByCell(servingCell) = double(estDopplerHz);
         end
         state = sixgr.truth.CoupledTruthRuntime.updateReceiverTrackingFromTRSImpl(state, servingCell, row, ok);
+        state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
+            state, "TRS", "CELL", servingCell, row, ...
+            "ProducerSlot", slotIdx, "AvailableSlot", slotIdx, ...
+            "Valid", ok, "Direction", "DL", "SourceSignal", "TRS", ...
+            "MeasurementSource", "CoupledTruthRuntime.applyTRSTrial");
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
     end
 
@@ -4415,6 +4556,16 @@ methods(Static, Access=private)
             report.ServingCell = double(servingVec(ueIdx));
         end
         [state, report] = sixgr.truth.CoupledTruthRuntime.applyLinkAdaptationToCSIReport(state, report, ueIdx, direction, row);
+        sourceSignal = "CSI-RS";
+        if upper(string(direction)) == "UL"
+            sourceSignal = "SRS";
+        end
+        state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
+            state, sourceSignal, "UE", ueIdx, row, ...
+            "ProducerSlot", report.SourceSlot, "AvailableSlot", report.DueSlot, ...
+            "Valid", isfinite(report.CQI) || isfinite(report.RI) || isfinite(report.SINR_dB), ...
+            "Direction", direction, "SourceSignal", sourceSignal, ...
+            "MeasurementSource", "CoupledTruthRuntime.enqueueCSIReport");
         state.PendingCSITable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.PendingCSITable, struct2table(report, "AsArray", true));
         if report.DueSlot <= state.CurrentSlot
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
@@ -7495,6 +7646,17 @@ methods(Static, Access=private)
             "UCIType", "", "ControlResourceSource", "", "ControlResourceValidity", false, ...
             "FormatAdaptationReason", "", "PUCCHGrantId", "", ...
             "Processed", false);
+    end
+
+    function row = emptyReferenceSignalMeasurementRow()
+        row = struct( ...
+            "SignalType", "", "TargetType", "", "TargetId", NaN, ...
+            "ProducerSlot", NaN, "AvailableSlot", NaN, "Valid", false, ...
+            "Direction", "", "SourceSignal", "", "MeasurementId", "", ...
+            "MeasurementSource", "", "EvidenceSource", "", ...
+            "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
+            "SINR_dB", NaN, "NMSE_dB", NaN, ...
+            "TimingOffset_samples", NaN, "CFO_Hz", NaN);
     end
 
     function row = emptyPUCCHGrantRow()

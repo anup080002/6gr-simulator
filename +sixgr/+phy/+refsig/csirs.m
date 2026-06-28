@@ -58,6 +58,23 @@ catch
     info.NumCSIRSPorts = NaN;
 end
 info.CSIRSIndicesInfo = csirsIndInfo;
+info.RBOffset = double(csirs.RBOffset);
+info.NumRB = double(csirs.NumRB);
+info.SymbolLocations = double(csirs.SymbolLocations(:).');
+info.SubcarrierLocations = double(csirs.SubcarrierLocations(:).');
+try
+    info.Density = string(csirs.Density);
+catch
+    info.Density = "";
+end
+try
+    info.CDMType = string(csirs.CDMType);
+catch
+    info.CDMType = "";
+end
+info.ResourceMappingTable = localCSIRSResourceMappingTable(carrier, csirs, csirsInd, csirsSym, opts.IndexBase);
+info.CausalMeasurementRole = "CSI-RS -> DL CSI/RI/PMI/CQI measurement producer";
+info.MeasurementStateContract = "ProducerSlot/AvailableSlot must be <= consuming grant slot; runtime estimator remains pilot-based";
 
 end
 
@@ -252,4 +269,71 @@ try
 catch
     [ind, indInfo] = nrCSIRSIndices(carrier, csirs);
 end
+end
+
+function T = localCSIRSResourceMappingTable(carrier, csirs, ind, sym, indexBase)
+idx = localFlattenIndex(ind);
+sym = localFlattenSymbols(sym);
+if strcmpi(string(indexBase), "0based")
+    idxForSub = idx + 1;
+else
+    idxForSub = idx;
+end
+K = double(carrier.NSizeGrid) * 12;
+L = double(carrier.SymbolsPerSlot);
+try
+    P = double(csirs.NumCSIRSPorts);
+catch
+    P = 1;
+end
+P = max(1, round(P));
+N = min(numel(idxForSub), numel(sym));
+rows = repmat(localCSIRSResourceRow(), N, 1);
+if N == 0
+    T = struct2table(rows);
+    return;
+end
+[subcarrier, symbol, port] = ind2sub([K L P], double(idxForSub(1:N)));
+for ii = 1:N
+    rows(ii) = localCSIRSResourceRow();
+    rows(ii).Slot = double(carrier.NSlot);
+    rows(ii).Symbol = double(symbol(ii) - 1);
+    rows(ii).Subcarrier = double(subcarrier(ii) - 1);
+    rows(ii).PRB = double(floor((subcarrier(ii) - 1) / 12));
+    rows(ii).Port = double(port(ii) - 1);
+    rows(ii).RowNumber = double(csirs.RowNumber);
+    rows(ii).RBOffset = double(csirs.RBOffset);
+    rows(ii).NumRB = double(csirs.NumRB);
+    rows(ii).LinearIndex = double(idx(ii));
+    rows(ii).SymbolI = double(real(sym(ii)));
+    rows(ii).SymbolQ = double(imag(sym(ii)));
+    rows(ii).SourceSignal = "CSI-RS";
+    rows(ii).TruthStatus = "real_lls_evidence";
+end
+T = struct2table(rows, "AsArray", true);
+end
+
+function idx = localFlattenIndex(ind)
+if iscell(ind)
+    parts = cellfun(@(x) double(x(:)), ind(:), "UniformOutput", false);
+    idx = vertcat(parts{:});
+else
+    idx = double(ind(:));
+end
+end
+
+function sym = localFlattenSymbols(symIn)
+if iscell(symIn)
+    parts = cellfun(@(x) x(:), symIn(:), "UniformOutput", false);
+    sym = vertcat(parts{:});
+else
+    sym = symIn(:);
+end
+end
+
+function row = localCSIRSResourceRow()
+row = struct("Slot", NaN, "Symbol", NaN, "Subcarrier", NaN, "PRB", NaN, ...
+    "Port", NaN, "RowNumber", NaN, "RBOffset", NaN, "NumRB", NaN, ...
+    "LinearIndex", NaN, "SymbolI", NaN, "SymbolQ", NaN, ...
+    "SourceSignal", "", "TruthStatus", "");
 end

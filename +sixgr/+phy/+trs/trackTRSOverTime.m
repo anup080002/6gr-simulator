@@ -15,10 +15,15 @@ freqOk = istable(freqT) && height(freqT) > 0 && all(logical(freqT.FrequencyTrack
 channelOk = istable(chT) && height(chT) > 0 && all(logical(chT.ChannelEstimationAttempted)) && ...
     all(logical(chT.TRSChannelEstimateAvailable)) && mean(double(chT.NMSE_dB), "omitnan") <= double(cfg.ChannelNMSEThresholddB);
 strictOk = detectionOk && timingOk && freqOk && channelOk;
+producerSlot = localFirstFiniteSlot(detT);
 
 row = struct();
 row.RunId = string(cfg.RunId);
 row.ConfigHash = string(cfg.ConfigHash);
+row.ProducerSlot = double(producerSlot);
+row.AvailableSlot = double(producerSlot);
+row.MeasurementTargetType = "CELL";
+row.CausalConsumerContract = "TRS timing/CFO/phase tracking may feed data receivers only when AvailableSlot<=grant slot and age is within TRS freshness";
 row.TrackingAttempted = true;
 row.DetectionOk = logical(detectionOk);
 row.TimingTrackingOk = logical(timingOk);
@@ -35,4 +40,16 @@ row.TruthStatus = "real_lls_evidence";
 tracking = struct();
 tracking.Table = struct2table(row, "AsArray", true);
 tracking.StrictOk = logical(strictOk);
+end
+
+function slot = localFirstFiniteSlot(T)
+slot = NaN;
+if ~(istable(T) && height(T) > 0 && ismember("Slot", string(T.Properties.VariableNames)))
+    return;
+end
+raw = double(T.Slot);
+raw = raw(isfinite(raw));
+if ~isempty(raw)
+    slot = raw(1);
+end
 end

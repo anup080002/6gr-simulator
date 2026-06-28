@@ -345,29 +345,14 @@ evidence.OracleTable = localAppend(evidence.OracleTable, one.OracleTable);
 end
 
 function T = localMultiUETrials(cfg)
-rows = repmat(localMultiUERow(), 2, 1);
-for ii = 1:2
-    row = localMultiUERow();
-    row.RunId = string(cfg.RunId);
-    row.TrialId = double(ii);
-    row.UEId = double(ii);
-    row.CollisionGroupId = double(ii);
-    row.ResourceId = double(cfg.ResourceId);
-    row.Port = 0;
-    row.RBStart = double(cfg.ExpectedRBStart);
-    row.NumRB = double(cfg.NumRB);
-    row.CyclicShift = double(mod(double(cfg.CyclicShift) + (ii - 1) * 2, 12));
-    row.CombOffset = double(mod(double(cfg.CombOffset) + (ii - 1), double(cfg.CombNumber)));
-    row.CollisionInjected = ii == 2;
-    row.CollisionDetected = ii == 2;
-    row.OrthogonalityPass = ii == 1;
-    row.ChannelEstimateAvailable = ii == 1;
-    row.Outcome = string(sixgr.phy.srs.localTernary(ii == 1, "orthogonal_resources_separable", "intentional_collision_detected"));
-    row.Status = "real_lls_evidence";
-    row.FailureReason = string(sixgr.phy.srs.localTernary(ii == 1, "", "srs_resource_collision"));
-    rows(ii) = row;
-end
-T = struct2table(rows, "AsArray", true);
+orthogonal = sixgr.phy.srs.generateMultiUESRSGrid(cfg, [1 2], ...
+    "Mode", "orthogonal", "SNRdB", max(35, double(cfg.HighSNRdB)), ...
+    "Seed", double(cfg.Seed) + 8100);
+collision = sixgr.phy.srs.generateMultiUESRSGrid(cfg, [1 2], ...
+    "Mode", "collision", "SNRdB", max(35, double(cfg.HighSNRdB)), ...
+    "Seed", double(cfg.Seed) + 8200);
+T = localAppend(orthogonal.TrialTable, collision.TrialTable);
+T.TrialId = (1:height(T)).';
 end
 
 function T = localCoverageTable(cfg, trialT, detectionT, channelT, timingT)
@@ -524,5 +509,8 @@ row = struct("RunId", "", "TrialId", NaN, "UEId", NaN, "CollisionGroupId", NaN, 
     "ResourceId", NaN, "Port", NaN, "RBStart", NaN, "NumRB", NaN, ...
     "CyclicShift", NaN, "CombOffset", NaN, "CollisionInjected", false, ...
     "CollisionDetected", false, "OrthogonalityPass", false, ...
-    "ChannelEstimateAvailable", false, "Outcome", "", "Status", "", "FailureReason", "");
+    "ChannelEstimateAvailable", false, "DetectionSuccess", false, ...
+    "DetectionMetric", NaN, "NMSE_dB", NaN, "OverlapRECount", NaN, ...
+    "SharedSlotWaveformSuperposition", true, "WaveformSource", "", ...
+    "Outcome", "", "Status", "", "FailureReason", "");
 end
