@@ -20,6 +20,7 @@ p.addParameter("RequireDecodedSIB1", false, @(x)islogical(x) || isnumeric(x));
 p.addParameter("RuntimeIntegrationMode", "standalone_self_loop", @(x)ischar(x) || isstring(x));
 p.addParameter("RuntimeStageWaveforms", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("RequireRuntimeStageWaveforms", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("AllowRuntimeStageWaveformComposition", false, @(x)islogical(x) || isnumeric(x));
 p.addParameter("UseRuntimeChannel", false, @(x)islogical(x) || isnumeric(x));
 p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("RuntimeSlot", NaN, @(x)isnumeric(x) && isscalar(x));
@@ -324,10 +325,14 @@ useRuntimeChannel = logical(opt.UseRuntimeChannel) || ...
 requireStageWaveforms = logical(opt.RequireRuntimeStageWaveforms) || ...
     logical(sixgr.util.structGet(cfg, "random_access.require_runtime_stage_waveforms", false)) || ...
     logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.require_runtime_stage_waveforms", false));
+allowComposition = logical(opt.AllowRuntimeStageWaveformComposition) || ...
+    logical(sixgr.util.structGet(cfg, "random_access.allow_runtime_stage_waveform_composition", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.allow_runtime_stage_waveform_composition", false));
 runtime = struct();
 runtime.Mode = char(mode);
 runtime.StageWaveforms = opt.RuntimeStageWaveforms;
 runtime.RequireStageWaveforms = logical(requireStageWaveforms);
+runtime.AllowStageWaveformComposition = logical(allowComposition);
 runtime.UseRuntimeChannel = logical(useRuntimeChannel);
 runtime.RuntimeSlot = double(opt.RuntimeSlot);
 runtime.RuntimeNoiseSNR_dB = double(opt.RuntimeNoiseSNR_dB);
@@ -344,7 +349,9 @@ runtime.CarrierFrequencyHz = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "frequency.center_frequency_hz", []), ...
     sixgr.util.structGet(cfg, "random_access.carrier_frequency_hz", []), 4e9);
 runtime.TransportMode = "standalone_self_loop";
-if runtime.RequireStageWaveforms
+if runtime.RequireStageWaveforms && runtime.AllowStageWaveformComposition && runtime.UseRuntimeChannel
+    runtime.TransportMode = "coupled_runtime_stage_waveform_composer";
+elseif runtime.RequireStageWaveforms
     runtime.TransportMode = "provided_runtime_stage_waveforms_required";
 elseif runtime.UseRuntimeChannel
     runtime.TransportMode = "persistent_runtime_channel_state";
@@ -390,6 +397,14 @@ if ~isempty(provided)
 end
 
 if logical(runtime.RequireStageWaveforms)
+    if logical(runtime.AllowStageWaveformComposition) && logical(runtime.UseRuntimeChannel)
+        [rxWave, runtime, row] = localApplyRuntimeChannelForStage(row, direction, txWave, cfg, txStruct, runtime);
+        row.WaveformSource = "coupled_runtime_stage_waveform_composer";
+        row.RuntimeStageWaveformUsed = true;
+        row.ProvidedWaveformField = "runtime_channel_state";
+        runtime.StageRows(end + 1, 1) = row;
+        return;
+    end
     error("sixgr:phy:ra:MissingRuntimeStageWaveform", ...
         "Four-step RA runtime mode requires a propagated receive waveform for %s, but none was provided.", stageName);
 end
