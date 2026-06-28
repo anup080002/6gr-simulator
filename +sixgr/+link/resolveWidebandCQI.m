@@ -40,7 +40,7 @@ modeToken = localResolveCQIMode(cfg, direction, ~isempty(perRBSINR_dB));
 [thresholds_dB, thresholdSource, thresholdRole] = localResolveCQIThresholds(cfg, direction, tableToken);
 targetBLER = localResolveTargetBLER(cfg, direction);
 if modeToken == "effective_sinr_bler_lut" && ...
-        ~localConfiguredBLERLUTAvailable(cfg, direction, targetBLER) && ...
+        ~localConfiguredBLERLUTAvailable(cfg, direction, tableToken, targetBLER) && ...
         ~localAllowUncalibratedBLERLUT(cfg, direction)
     error("sixgr:link:UncalibratedBLERLUT", ...
         "effective_sinr_bler_lut requires a configured CQI BLER LUT. Set phy.csi.allowUncalibratedBLERLUT=true only for explicitly labeled lab-default studies.");
@@ -127,7 +127,8 @@ feedback = struct( ...
     "SINRInputValueRole", char(string(sinrInputRole)), ...
     "SINRInputValueStatus", char(string(sinrInputStatus)), ...
     "BLERLUTSource", char(string(localResolveBLERLUTSource(cfg, direction, tableToken, thresholds_dB, targetBLER))), ...
-    "BLERLUTValueRole", char(string(localResolveBLERLUTValueRole(cfg, direction, tableToken, thresholds_dB, targetBLER))));
+    "BLERLUTValueRole", char(string(localResolveBLERLUTValueRole(cfg, direction, tableToken, thresholds_dB, targetBLER))), ...
+    "BLERLUTCalibrationID", char(string(localResolveBLERLUTCalibrationID(cfg, direction, tableToken, thresholds_dB, targetBLER))));
 end
 
 function [accepted, reason, source, role, status] = localValidateSINRInputProvenance(sinrInput)
@@ -176,6 +177,11 @@ end
 function role = localResolveBLERLUTValueRole(cfg, direction, tableToken, thresholds_dB, targetBLER)
 lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER);
 role = string(sixgr.util.structGet(lut, "ValueRole", ""));
+end
+
+function calibrationID = localResolveBLERLUTCalibrationID(cfg, direction, tableToken, thresholds_dB, targetBLER)
+lut = localResolveBLERLUT(cfg, direction, tableToken, thresholds_dB, targetBLER);
+calibrationID = string(sixgr.util.structGet(lut, "CalibrationID", ""));
 end
 
 function [widebandSINR_dB, perRBSINR_dB, rankIndicator, perLayerSINR_dB] = localExtractSINRInputs(sinrInput)
@@ -584,13 +590,20 @@ else
 end
 for i = 1:numel(candidates)
     raw = sixgr.util.structGet(cfg, candidates(i), []);
-    curves = localParseBLERLUT(raw, targetBLER);
+    [curves, meta] = localParseBLERLUT(raw, targetBLER, cfg, direction, tableToken);
     if localHasAnyCurves(curves)
         lut.Curves = curves;
-        lut.Source = char(candidates(i));
-        lut.ValueRole = "configured_lab_default_override";
-        lut.CalibrationID = char(string(sixgr.util.structGet(raw, "CalibrationID", ...
-            sixgr.util.structGet(raw, "calibration_id", ""))));
+        if strlength(string(meta.Source)) > 0
+            lut.Source = char(string(candidates(i)) + ":" + string(meta.Source));
+        else
+            lut.Source = char(candidates(i));
+        end
+        if strlength(string(meta.ValueRole)) > 0
+            lut.ValueRole = char(string(meta.ValueRole));
+        else
+            lut.ValueRole = "configured_bler_lut";
+        end
+        lut.CalibrationID = char(string(meta.CalibrationID));
         return;
     end
 end
@@ -601,7 +614,7 @@ lut.ValueRole = "uncalibrated_lab_default";
 lut.CalibrationID = "uncalibrated_vendor_style_lab_default_operating_point_grid";
 end
 
-function tf = localConfiguredBLERLUTAvailable(cfg, direction, targetBLER)
+function tf = localConfiguredBLERLUTAvailable(cfg, direction, tableToken, targetBLER)
 tf = false;
 dir = upper(string(direction));
 if dir == "UL"
@@ -617,7 +630,7 @@ else
 end
 for i = 1:numel(candidates)
     raw = sixgr.util.structGet(cfg, candidates(i), []);
-    if localHasAnyCurves(localParseBLERLUT(raw, targetBLER))
+    if localHasAnyCurves(localParseBLERLUT(raw, targetBLER, cfg, direction, tableToken))
         tf = true;
         return;
     end
@@ -665,26 +678,42 @@ for i = 1:numel(curves)
 end
 end
 
-function curves = localParseBLERLUT(raw, targetBLER)
+function [curves, meta] = localParseBLERLUT(raw, targetBLER, cfg, direction, tableToken)
 curves = cell(15, 1);
+meta = struct("Source", "", "ValueRole", "", "CalibrationID", "");
 if isempty(raw)
     return;
 end
-if istable(raw)
-    T = raw;
-elseif isstruct(raw)
-    try
-        T = struct2table(raw);
-    catch
-        T = table();
-    end
-else
-    T = table();
+if nargin < 3 || isempty(cfg)
+    cfg = struct();
 end
-if isempty(T) || ~all(ismember(["CQI", "SINR_dB", "BLER"], string(T.Properties.VariableNames)))
+if nargin < 4 || isempty(direction)
+    direction = "DL";
+end
+if nargin < 5 || isempty(tableToken)
+    tableToken = "table1";
+end
+dir = upper(string(direction));
+[T, rawMeta] = localBLERLUTInputTable(raw);
+meta = rawMeta;
+if isempty(T)
     return;
 end
 
+names = string(T.Properties.VariableNames);
+if all(ismember(["CQI", "SINR_dB", "BLER"], names))
+    [curves, parsedMeta] = localParseExplicitCQIBLERTable(T, targetBLER);
+    meta = localMergeBLERLUTMeta(meta, parsedMeta, "configured_cqi_bler_table", "configured_waveform_bler_lut");
+    return;
+end
+
+[curves, parsedMeta] = localParseFixedLinkCampaignBLERTable(T, targetBLER, cfg, dir, tableToken);
+meta = localMergeBLERLUTMeta(meta, parsedMeta, "", "");
+end
+
+function [curves, meta] = localParseExplicitCQIBLERTable(T, targetBLER)
+curves = cell(15, 1);
+meta = localEmptyBLERLUTMeta();
 for idx = 1:15
     mask = round(double(T.CQI)) == idx;
     if ~any(mask)
@@ -692,6 +721,257 @@ for idx = 1:15
     end
     curves{idx} = localFinalizeBLERCurve(double(T.SINR_dB(mask)), double(T.BLER(mask)), targetBLER);
 end
+end
+
+function [curves, meta] = localParseFixedLinkCampaignBLERTable(T, targetBLER, cfg, direction, tableToken)
+curves = cell(15, 1);
+meta = localEmptyBLERLUTMeta();
+names = string(T.Properties.VariableNames);
+dir = upper(string(direction));
+blerCol = dir + "_BLER";
+trialCol = dir + "_TrialCount";
+if ~(ismember("SNR_dB", names) && ismember(blerCol, names))
+    return;
+end
+snr = double(T.SNR_dB);
+bler = double(T.(char(blerCol)));
+mask = isfinite(snr) & isfinite(bler) & bler > 0 & bler <= 1;
+if ismember(trialCol, names)
+    trials = double(T.(char(trialCol)));
+    mask = mask & isfinite(trials) & trials > 0;
+end
+if nnz(mask) < 2
+    return;
+end
+cqi = localResolveCampaignCQI(T, mask, cfg, dir, tableToken);
+validCQI = isfinite(cqi) & cqi >= 1 & cqi <= 15;
+if ~any(validCQI)
+    return;
+end
+for idx = 1:15
+    idxMask = mask & round(cqi(:)) == idx;
+    if nnz(idxMask) < 2
+        continue;
+    end
+    curves{idx} = localFinalizeBLERCurve(snr(idxMask), bler(idxMask), targetBLER);
+end
+if ~localHasAnyCurves(curves)
+    return;
+end
+meta.Source = "fixed_link_monte_carlo_campaign";
+meta.ValueRole = "fixed_link_waveform_bler_calibration";
+meta.CalibrationID = localFixedLinkCalibrationID(T, dir, tableToken, targetBLER);
+end
+
+function cqi = localResolveCampaignCQI(T, mask, cfg, direction, tableToken)
+n = height(T);
+cqi = nan(n, 1);
+names = string(T.Properties.VariableNames);
+cqiCandidates = ["CQI", "WidebandCQI", "CQIUsed", "ResolvedCQI", "AgedCQI"];
+for i = 1:numel(cqiCandidates)
+    if ~ismember(cqiCandidates(i), names)
+        continue;
+    end
+    raw = double(T.(char(cqiCandidates(i))));
+    raw = raw(:);
+    if numel(raw) == n
+        cqi(mask) = raw(mask);
+        if any(isfinite(cqi(mask)))
+            return;
+        end
+    end
+end
+mcs = nan(n, 1);
+mcsCandidates = ["MCS", "MCSIndex", "ConfiguredMCSIndex", "DominantMCS", "MCS_dominant"];
+for i = 1:numel(mcsCandidates)
+    if ~ismember(mcsCandidates(i), names)
+        continue;
+    end
+    raw = double(T.(char(mcsCandidates(i))));
+    raw = raw(:);
+    if numel(raw) == n
+        mcs(mask) = raw(mask);
+        break;
+    end
+end
+if ~any(isfinite(mcs(mask)))
+    cfgMCS = localConfiguredMCSIndex(cfg, direction);
+    if isfinite(cfgMCS)
+        mcs(mask) = double(cfgMCS);
+    end
+end
+for i = find(mask(:)).'
+    if isfinite(mcs(i))
+        cqi(i) = localMCSIndexToCQI(round(double(mcs(i))), cfg, direction, tableToken);
+    end
+end
+end
+
+function cqi = localMCSIndexToCQI(mcsIndex, cfg, direction, tableToken)
+cqi = NaN;
+try
+    mcsTable = char(sixgr.link.resolveConfiguredMCSTable(cfg, direction));
+catch
+    if upper(string(direction)) == "UL"
+        mcsTable = char(string(sixgr.util.structGet(cfg, "phy.pusch.mcsTable", "qam64_table1")));
+    else
+        mcsTable = char(string(sixgr.util.structGet(cfg, "phy.pdsch.mcsTable", "qam64_table1")));
+    end
+end
+targetProfile = sixgr.link.resolveMCSProfile(mcsTable, mcsIndex);
+exact = [];
+for idx = 1:15
+    amc = sixgr.link.resolveMCSFromCQI(idx, mcsTable, tableToken);
+    if logical(sixgr.util.structGet(amc, "Valid", false)) && ...
+            round(double(sixgr.util.structGet(amc, "MCSIndex", NaN))) == round(double(mcsIndex))
+        exact(end + 1) = idx; %#ok<AGROW>
+    end
+end
+if ~isempty(exact)
+    cqi = double(max(exact));
+    return;
+end
+if ~logical(sixgr.util.structGet(targetProfile, "Valid", false))
+    return;
+end
+bestIdx = NaN;
+bestDistance = inf;
+for idx = 1:15
+    profile = sixgr.link.resolveCQIProfile(tableToken, idx);
+    if ~logical(sixgr.util.structGet(profile, "Valid", false))
+        continue;
+    end
+    qPenalty = 0;
+    if double(profile.Qm) < double(targetProfile.Qm)
+        qPenalty = 100;
+    end
+    distance = abs(double(profile.SpectralEfficiency) - double(targetProfile.SpectralEfficiency)) + qPenalty;
+    if distance < bestDistance
+        bestDistance = distance;
+        bestIdx = idx;
+    end
+end
+if isfinite(bestIdx)
+    cqi = double(bestIdx);
+end
+end
+
+function mcsIndex = localConfiguredMCSIndex(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    candidates = [ ...
+        "phy.pusch.mcsIndex"
+        "phy.pusch.configuredMCSIndex"
+        "phy.linkAdaptation.configuredULMCSIndex"];
+else
+    candidates = [ ...
+        "phy.pdsch.mcsIndex"
+        "phy.pdsch.configuredMCSIndex"
+        "phy.linkAdaptation.configuredDLMCSIndex"];
+end
+mcsIndex = NaN;
+for i = 1:numel(candidates)
+    raw = double(sixgr.util.structGet(cfg, candidates(i), NaN));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        mcsIndex = round(double(raw(1)));
+        return;
+    end
+end
+end
+
+function [T, meta] = localBLERLUTInputTable(raw)
+T = table();
+meta = localEmptyBLERLUTMeta();
+if istable(raw)
+    T = raw;
+    return;
+end
+if ~isstruct(raw)
+    return;
+end
+meta.Source = string(sixgr.util.structGet(raw, "Source", ...
+    sixgr.util.structGet(raw, "source", "")));
+meta.ValueRole = string(sixgr.util.structGet(raw, "ValueRole", ...
+    sixgr.util.structGet(raw, "value_role", "")));
+meta.CalibrationID = string(sixgr.util.structGet(raw, "CalibrationID", ...
+    sixgr.util.structGet(raw, "calibration_id", ...
+    sixgr.util.structGet(raw, "CalibrationVersion", ...
+    sixgr.util.structGet(raw, "calibration_version", "")))));
+if all(isfield(raw, {'CQI','SINR_dB','BLER'}))
+    try
+        T = table(double(raw.CQI(:)), double(raw.SINR_dB(:)), double(raw.BLER(:)), ...
+            'VariableNames', {'CQI','SINR_dB','BLER'});
+        return;
+    catch
+        T = table();
+    end
+end
+tableFields = ["Table", "table", "Curves", "curves", "Summary", "summary", ...
+    "SNRSweep", "snr_sweep", "FixedLinkCampaignSummary", "FixedLinkSummary", ...
+    "CampaignSummary", "CampaignSummaryTable"];
+for i = 1:numel(tableFields)
+    candidate = sixgr.util.structGet(raw, tableFields(i), []);
+    if istable(candidate)
+        T = candidate;
+        return;
+    end
+end
+try
+    T = struct2table(raw);
+catch
+    T = table();
+end
+end
+
+function meta = localEmptyBLERLUTMeta()
+meta = struct("Source", "", "ValueRole", "", "CalibrationID", "");
+end
+
+function out = localMergeBLERLUTMeta(base, overlay, fallbackSource, fallbackRole)
+out = localEmptyBLERLUTMeta();
+for field = ["Source", "ValueRole", "CalibrationID"]
+    value = string(sixgr.util.structGet(base, field, ""));
+    overlayValue = string(sixgr.util.structGet(overlay, field, ""));
+    if strlength(strtrim(overlayValue)) > 0
+        value = overlayValue;
+    end
+    out.(char(field)) = char(value);
+end
+if strlength(strtrim(string(out.Source))) == 0
+    out.Source = char(string(fallbackSource));
+end
+if strlength(strtrim(string(out.ValueRole))) == 0
+    out.ValueRole = char(string(fallbackRole));
+end
+end
+
+function id = localFixedLinkCalibrationID(T, direction, tableToken, targetBLER)
+names = string(T.Properties.VariableNames);
+for candidate = ["CalibrationID", "CalibrationVersion", "CampaignID", "RunID"]
+    if ismember(candidate, names)
+        values = string(T.(char(candidate)));
+        values = values(strlength(strtrim(values)) > 0);
+        if ~isempty(values)
+            id = char(values(1));
+            return;
+        end
+    end
+end
+if ismember("PointSeed", names)
+    seedVals = double(T.PointSeed);
+    seedVals = seedVals(isfinite(seedVals));
+else
+    seedVals = [];
+end
+seedToken = "noseed";
+if ~isempty(seedVals)
+    seedToken = "seed" + join(string(round(seedVals(:).')), "_");
+end
+id = char("fixed_link_monte_carlo:" + upper(string(direction)) + ...
+    ":cqi_" + lower(string(tableToken)) + ...
+    ":target_bler_" + regexprep(string(sprintf("%.3g", double(targetBLER))), "[^0-9A-Za-z]+", "p") + ...
+    ":" + seedToken);
 end
 
 function curves = localDefaultBLERLUT(tableToken, thresholds_dB, targetBLER, cfg, direction)
