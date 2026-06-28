@@ -286,6 +286,19 @@ assert(strcmpi(char(string(grantObserved.PUCCHGrantId(1))), char(string(row.PUCC
     strcmpi(char(string(grantObserved.InterferenceMode(1))), char(string(row.InterferenceMode(1)))), ...
     "Executed PUCCH grant rows must preserve truthful execution/interference/runtime-consumer evidence.");
 
+stateOverlap = state;
+stateOverlap.PUCCHGrantTraceTable.PUCCHPRBStart(2) = stateOverlap.PUCCHGrantTraceTable.PUCCHPRBStart(1);
+stateOverlap.PUCCHGrantTraceTable.PUCCHPRBCount(2) = stateOverlap.PUCCHGrantTraceTable.PUCCHPRBCount(1);
+stateOverlap.PUCCHGrantTraceTable.PUCCHSymbolStart(2) = stateOverlap.PUCCHGrantTraceTable.PUCCHSymbolStart(1);
+stateOverlap.PUCCHGrantTraceTable.PUCCHNumSymbols(2) = stateOverlap.PUCCHGrantTraceTable.PUCCHNumSymbols(1);
+stateOverlap.PUCCHGrantTraceTable.GrantExecutedFlag(2) = false;
+[stateOverlap, ~] = sixgr.truth.CoupledTruthRuntime.observePUCCHFeedbackRuntime(stateOverlap, stateOverlap.PUCCHGrantTraceTable(1, :));
+overlapRow = stateOverlap.ControlTrials.PUCCH(end, :);
+assert(double(overlapRow.InterferenceContributorCount(1)) >= 1 && ...
+    strcmpi(char(string(overlapRow.InterferenceMode(1))), "full_per_link_channel_waveform_sum") && ...
+    logical(overlapRow.FullInterfererChannelTruthUsed(1)), ...
+    "Overlapping PUCCH grants must use precomputed shared-slot contribution waveforms instead of standalone one-port observation.");
+
 ok = true;
 end
 

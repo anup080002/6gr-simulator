@@ -9280,6 +9280,10 @@ methods(Static, Access=private)
 
     function bundle = buildPUCCHInterferenceBundle(state, feedbackRow)
         bundle = struct([]);
+        mode = lower(strtrim(string(sixgr.util.structGet(state.CfgMobility, "run.interferenceExecutionMode", "none"))));
+        if mode ~= "full_per_link_channel_waveform_sum"
+            return;
+        end
         grants = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
         if ~(istable(grants) && ~isempty(grants) && istable(feedbackRow) && height(feedbackRow) >= 1)
             return;
@@ -9366,6 +9370,121 @@ methods(Static, Access=private)
             bundle(count).RNTI = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RNTI", NaN)); %#ok<AGROW>
             bundle(count).ControlResourceSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))); %#ok<AGROW>
             bundle(count).PUCCHResourceId = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHResourceId", ""))); %#ok<AGROW>
+            [contributionWaveform, contributionMeta] = sixgr.truth.CoupledTruthRuntime.buildPUCCHSharedSlotContribution( ...
+                state, cfgI, bundle(count), ueIdx, currentServingCell, requestedFormat);
+            bundle(count).SharedSlotContributionWaveform = contributionWaveform; %#ok<AGROW>
+            bundle(count).ContributionSampleRate_Hz = double(contributionMeta.SampleRate_Hz); %#ok<AGROW>
+            bundle(count).ContributionRxPower_dBm = double(contributionMeta.RxPower_dBm); %#ok<AGROW>
+            bundle(count).ContributionSource = char(contributionMeta.Source); %#ok<AGROW>
+            bundle(count).ChannelObjectSource = char(contributionMeta.ChannelObjectSource); %#ok<AGROW>
+            bundle(count).ChannelObjectClass = char(contributionMeta.ChannelObjectClass); %#ok<AGROW>
+            bundle(count).ChannelArrayHandlingStatus = char(contributionMeta.ChannelArrayHandlingStatus); %#ok<AGROW>
+            bundle(count).ChannelArrayHandlingBlocker = char(contributionMeta.ChannelArrayHandlingBlocker); %#ok<AGROW>
+            bundle(count).ChannelGeometryCouplingLevel = char(contributionMeta.ChannelGeometryCouplingLevel); %#ok<AGROW>
+            bundle(count).GeometryAdapterType = char(contributionMeta.GeometryAdapterType); %#ok<AGROW>
+            bundle(count).GeometryAdapterSource = char(contributionMeta.GeometryAdapterSource); %#ok<AGROW>
+            bundle(count).GeometryAdapterLimitation = char(contributionMeta.GeometryAdapterLimitation); %#ok<AGROW>
+            bundle(count).GeometryAdapterPortMapping = char(contributionMeta.GeometryAdapterPortMapping); %#ok<AGROW>
+            bundle(count).ChannelUsesSameRuntimeAntennaAssumptions = logical(contributionMeta.ChannelUsesSameRuntimeAntennaAssumptions); %#ok<AGROW>
+        end
+    end
+
+    function [contributionWaveform, meta] = buildPUCCHSharedSlotContribution(state, cfgIn, bundleEntry, ueIdx, victimCell, requestedFormat)
+        expectedBits = int8(logical(sixgr.util.structGet(bundleEntry, "ExpectedUCIBits", int8(1))));
+        if isempty(expectedBits)
+            expectedBits = int8(1);
+        end
+        rnti = double(sixgr.util.structGet(bundleEntry, "RNTI", NaN));
+        txArgs = {"Format", double(requestedFormat)};
+        if isfinite(rnti)
+            txArgs = [txArgs {"RNTI", rnti}]; %#ok<AGROW>
+        end
+        [tx, txInfo] = sixgr.phy.ul.PUCCH_Tx(cfgIn, expectedBits, txArgs{:});
+        sampleRateHz = sixgr.truth.CoupledTruthRuntime.resolvePUCCHContributionSampleRate(tx, txInfo);
+        cfgContribution = sixgr.truth.CoupledTruthRuntime.configurePUCCHContributionLinkBudget( ...
+            cfgIn, state, ueIdx, victimCell, bundleEntry);
+        [contributionWaveform, replay] = sixgr.link.applyWaveformImpairments(tx.Waveform, cfgContribution, sampleRateHz, ...
+            "Endpoint", "rx", ...
+            "UseLegacyGlobalConfig", true, ...
+            "ApplyPA", false, ...
+            "ApplyADC", true);
+        meta = struct( ...
+            "SampleRate_Hz", double(sampleRateHz), ...
+            "RxPower_dBm", double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN)), ...
+            "Source", "runtime_prepropagated_pucch_shared_slot_receiver_contribution", ...
+            "ChannelObjectSource", "runtime_large_scale_link_budget_and_rf_chain", ...
+            "ChannelObjectClass", "sample_domain_large_scale_pucch_contribution", ...
+            "ChannelArrayHandlingStatus", "shared_slot_receiver_contribution_precomputed", ...
+            "ChannelArrayHandlingBlocker", "", ...
+            "ChannelGeometryCouplingLevel", "runtime_geometry_large_scale_state", ...
+            "GeometryAdapterType", "runtime_state", ...
+            "GeometryAdapterSource", "CoupledTruthRuntime.buildPUCCHSharedSlotContribution", ...
+            "GeometryAdapterLimitation", "large_scale_sample_domain_contribution;small_scale_pucch_peer_channel_reuse_not_modeled_here", ...
+            "GeometryAdapterPortMapping", "contribution_waveform_columns_preserved", ...
+            "ChannelUsesSameRuntimeAntennaAssumptions", true);
+    end
+
+    function sampleRateHz = resolvePUCCHContributionSampleRate(tx, txInfo)
+        sampleRateHz = double(sixgr.util.structGet(txInfo, "OFDMInfo.SampleRate", NaN));
+        if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+            sampleRateHz = double(sixgr.util.structGet(txInfo, "OFDM.SampleRate", NaN));
+        end
+        if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+            carrier = sixgr.util.structGet(tx, "Carrier", []);
+            if ~isempty(carrier) && exist("nrOFDMInfo", "file") == 2
+                ofdmInfo = nrOFDMInfo(carrier);
+                sampleRateHz = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
+            end
+        end
+        if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+            error("sixgr:truth:PUCCHContributionSampleRateUnavailable", ...
+                "Cannot build shared-slot PUCCH contribution without a finite OFDM sample rate.");
+        end
+    end
+
+    function cfgOut = configurePUCCHContributionLinkBudget(cfgIn, state, ueIdx, victimCell, bundleEntry)
+        cfgOut = cfgIn;
+        userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
+        if ~(isstruct(userMeta) && ~isempty(fieldnames(userMeta)))
+            userMeta = struct();
+        end
+        ls = sixgr.util.structGet(state, "LargeScaleState", struct());
+        userMeta.RuntimeCurrentDirection = "UL";
+        userMeta.Direction = "UL";
+        userMeta.RuntimeUEIndex = double(ueIdx);
+        userMeta.RuntimeServingCell = double(victimCell);
+        userMeta.RuntimeServingCellIndex = double(victimCell);
+        userMeta.RuntimeServingBasePathloss_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "BasePathloss_dB", ueIdx, victimCell);
+        userMeta.RuntimeServingPathloss_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "Pathloss_dB", ueIdx, victimCell);
+        userMeta.RuntimeServingShadowFading_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "Shadow_dB", ueIdx, victimCell);
+        userMeta.RuntimeServingO2I_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "O2I_dB", ueIdx, victimCell);
+        userMeta.RuntimeServingRSRP_dBm = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "RSRP_dBm", ueIdx, victimCell);
+        userMeta.RuntimeServingRxPower_dBm = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "RxPower_dBm", ueIdx, victimCell);
+        userMeta.RuntimeChannelComplianceMode = "runtime_coupled_shared_slot_pucch_contribution";
+        userMeta.RuntimePathlossModelSource = "CoupledTruthRuntime.LargeScaleState";
+        userMeta.RuntimePathlossComplianceStatus = "applied";
+        userMeta.RuntimeFallbackUsedForPathloss = false;
+        if isfield(bundleEntry, "VictimServingBSAntenna")
+            userMeta.RuntimeServingBSAntenna = bundleEntry.VictimServingBSAntenna;
+        end
+        if isfield(bundleEntry, "VictimUEAntenna")
+            userMeta.RuntimeUEAntenna = bundleEntry.VictimUEAntenna;
+        end
+        cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
+        cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "receiver_noise_figure_thermal_noise");
+    end
+
+    function value = largeScaleValue(ls, fieldName, rowIdx, colIdx)
+        value = NaN;
+        if ~(isstruct(ls) && isfield(ls, char(fieldName)))
+            return;
+        end
+        M = double(ls.(char(fieldName)));
+        rowIdx = round(double(rowIdx));
+        colIdx = round(double(colIdx));
+        if isfinite(rowIdx) && isfinite(colIdx) && rowIdx >= 1 && colIdx >= 1 && ...
+                rowIdx <= size(M, 1) && colIdx <= size(M, 2)
+            value = double(M(rowIdx, colIdx));
         end
     end
 
