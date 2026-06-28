@@ -2,7 +2,8 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %PDCCH_Tx Generate a basic PDCCH transmission for one slot.
 %
 %   [TX,INFO] = sixgr.phy.dl.PDCCH_Tx(CFG) builds a carrier and PDCCH
-%   configuration from CFG (plus safe defaults), encodes a synthetic DCI
+%   configuration from CFG (plus safe defaults), encodes an explicit or
+%   deterministic DCI
 %   payload, maps PDCCH symbols + DMRS into a resource grid, and produces an
 %   OFDM waveform.
 %
@@ -14,7 +15,8 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %   Name-Value options:
 %     "Carrier"     : nrCarrierConfig to use (default: from cfg)
 %     "PDCCH"       : nrPDCCHConfig to use (default: from cfg)
-%     "DCIBits"     : int8 column vector (default: random)
+%     "DCIBits"     : int8 column vector (default: grant DCI or zeros)
+%     "Grant"       : finalized scheduler grant with DCI.Bits (optional)
 %     "K"           : DCI payload length (default: cfg.phy.pdcch.KBits or 64)
 %     "RNTI"        : scalar DCI CRC-mask RNTI (default: cfg.phy.pdcch.rnti or 4660)
 %     "PDCCHScramblingRNTI" : scalar physical PDCCH scrambling RNTI
@@ -23,6 +25,7 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %     "NCellID"     : scalar NCellID (default: cfg.scenario.NCellID or 1)
 %     "NumTxAnt"    : number of TX antennas/ports for resource grid (default: 1)
 %     "OFDMModulate": true/false (default: true)
+%     "AllowRandomDCI": true/false legacy standalone random payload opt-in
 %
 %   Outputs:
 %     TX: struct with fields:
@@ -38,12 +41,14 @@ p = inputParser;
 p.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 p.addParameter('PDCCH', [], @(x) isempty(x) || isobject(x));
 p.addParameter('DCIBits', [], @(x) isempty(x) || (isnumeric(x) && isvector(x)));
+p.addParameter('Grant', struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter('K', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 p.addParameter('RNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter('PDCCHScramblingRNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter('NCellID', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter('NumTxAnt', 1, @(x) isnumeric(x) && isscalar(x) && x>=1);
 p.addParameter('OFDMModulate', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('AllowRandomDCI', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 p.parse(varargin{:});
 opt = p.Results;
 
@@ -88,12 +93,8 @@ else
     K = double(opt.K);
 end
 
-if isempty(opt.DCIBits)
-    dciBits = int8(randi([0 1], K, 1));
-else
-    dciBits = int8(opt.DCIBits(:));
-    K = numel(dciBits);
-end
+[dciBits, payloadSource, randomPayload] = localResolveDCIPayload(cfg, opt, K);
+K = numel(dciBits);
 
 % DCI encoding (Polar + CRC mask by the DCI RNTI)
 % dciCW length must be E.
@@ -139,11 +140,57 @@ info.NCellID = nCellID;
 info.RNTI = rnti;
 info.DCICrcRNTI = rnti;
 info.PDCCHScramblingRNTI = pdcchScramblingRNTI;
+info.DCIPayloadSource = char(payloadSource);
+info.RandomDCIPayload = logical(randomPayload);
 info.Note = 'PDCCH uses built-in 5G Toolbox functions with explicit DCI CRC RNTI and physical scrambling RNTI separation.';
 
 end
 
 % -------------------------------------------------------------------------
+function [dciBits, source, randomPayload] = localResolveDCIPayload(cfg, opt, K)
+randomPayload = false;
+if ~isempty(opt.DCIBits)
+    dciBits = int8(opt.DCIBits(:));
+    source = "explicit_DCIBits_argument";
+    return;
+end
+
+grantBits = localGrantDCIBits(opt.Grant);
+if ~isempty(grantBits)
+    dciBits = int8(grantBits(:));
+    source = "finalized_scheduler_grant_dci_bits";
+    return;
+end
+
+configuredBits = sixgr.util.structGet(cfg, 'phy.pdcch.dciBits', []);
+if ~isempty(configuredBits)
+    dciBits = int8(configuredBits(:));
+    source = "configured_phy_pdcch_dciBits";
+    return;
+end
+
+if logical(opt.AllowRandomDCI)
+    dciBits = int8(randi([0 1], K, 1));
+    source = "legacy_random_dci_payload_opt_in";
+    randomPayload = true;
+    return;
+end
+
+dciBits = int8(zeros(max(1, round(double(K))), 1));
+source = "deterministic_zero_dci_payload";
+end
+
+function bits = localGrantDCIBits(grant)
+bits = [];
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+dci = sixgr.util.structGet(grant, "DCI", struct());
+if isstruct(dci) && isfield(dci, "Bits") && ~isempty(dci.Bits)
+    bits = dci.Bits;
+end
+end
+
 function scramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, dciRNTI, optScramblingRNTI)
 if ~isempty(optScramblingRNTI)
     scramblingRNTI = double(optScramblingRNTI);

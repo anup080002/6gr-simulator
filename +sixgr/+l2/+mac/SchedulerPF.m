@@ -161,7 +161,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.GrantReason = "harq_retx";
                         g = obj.freezePHYGrantForGrant(g);
                         g.DCI = obj.buildDCIBitfield(g);
-                        grants(end+1) = g; %#ok<AGROW>
+                        grants = localAppendGrant(grants, g);
                         if controlBudgetActive
                             controlCCERemaining = max(0, controlCCERemaining - neededCCE);
                         end
@@ -443,7 +443,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.TBSBytes = g.TBSBits / 8;
                     g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
-                    groupGrants(end+1) = g; %#ok<AGROW>
+                    groupGrants = localAppendGrant(groupGrants, g);
                     groupValid(gg) = true;
                     if controlBudgetActive
                         groupCCEUsed = groupCCEUsed + neededCCE;
@@ -460,7 +460,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     controlCCERemaining = max(0, controlCCERemaining - groupCCEUsed);
                 end
                 for gg = 1:numel(groupGrants)
-                    grants(end+1) = groupGrants(gg); %#ok<AGROW>
+                    grants = localAppendGrant(grants, groupGrants(gg));
                     rnti = double(groupGrants(gg).RNTI);
                     candidateRows = localMarkCandidateScheduled(candidateRows, rnti, groupGrants(gg), numel(grants));
                     obj.ensureUE(rnti);
@@ -532,18 +532,68 @@ mu = double(sixgr.util.structGet(cfg, "global_radio_scope.numerology_mu", ...
 k1 = sixgr.l2.mac.resolveHARQFeedbackK1(slot, pattern, mu);
 end
 
+function grants = localAppendGrant(grants, grant)
+if isempty(grants)
+    grants = grant;
+    return;
+end
+[grants, grant] = localAlignGrantFields(grants, grant);
+grants(end+1) = grant; %#ok<AGROW>
+end
+
+function [grants, grant] = localAlignGrantFields(grants, grant)
+grantFields = fieldnames(grant);
+arrayFields = fieldnames(grants);
+missingInGrant = setdiff(arrayFields, grantFields);
+for i = 1:numel(missingInGrant)
+    f = missingInGrant{i};
+    grant.(f) = localDefaultFieldLike(grants(1).(f));
+end
+missingInArray = setdiff(grantFields, arrayFields);
+for i = 1:numel(missingInArray)
+    f = missingInArray{i};
+    v = localDefaultFieldLike(grant.(f));
+    for k = 1:numel(grants)
+        grants(k).(f) = v;
+    end
+end
+end
+
+function value = localDefaultFieldLike(example)
+if isstruct(example)
+    value = example;
+elseif isstring(example)
+    value = strings(size(example));
+elseif ischar(example)
+    value = '';
+elseif islogical(example)
+    value = false(size(example));
+elseif isa(example, 'uint8')
+    value = uint8(zeros(size(example)));
+elseif isnumeric(example)
+    value = zeros(size(example));
+else
+    value = [];
+end
+end
+
 function g = localGrantTemplate(direction, slot)
 g = struct();
 g.Direction = char(string(direction));
 g.Slot = double(slot);
 g.RNTI = 0;
 g.PRBSet = zeros(1,0);
+g.PRBStart = NaN;
+g.AllocatedPRBCount = 0;
+g.PRBCount = 0;
 g.SymbolAllocation = [NaN NaN];
 g.Modulation = 'QPSK';
 g.NumLayers = 1;
+g.Layers = 1;
 g.TargetCodeRate = 0.5;
 g.TBSBits = 0;
 g.TBSBytes = 0;
+g.TransportBlockSize = 0;
 g.EstimatedTBSBits = 0;
 g.EstimatedTBSBytes = 0;
 g.NREPerPRB = 0;
@@ -575,6 +625,21 @@ g.QueueAwareReductionApplied = false;
 g.QueueAwareReductionSource = "";
 g.MCSReductionSteps = 0;
 g.LayerReductionSteps = 0;
+g.Valid = true;
+g.ExactPHYFeasibilityChecked = false;
+g.ExactPHYFeasible = false;
+g.ExactPHYFeasibilitySource = "";
+g.ExecutableTBSMode = "";
+g.ExactPHYInfeasibilityReason = "";
+g.ExactAllocationCapacityBits = NaN;
+g.ExactAllocationCapacityBytes = NaN;
+g.ExactTBSBits = NaN;
+g.ExactTBSBytes = NaN;
+g.ExactNREPerPRB = NaN;
+g.ExactTBSUsedFastNREApprox = false;
+g.ExactTBSInfo = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
+    "TBSMode", "", "ViennaEquivalent", false, "PlanningOnly", false, ...
+    "ForceExact", false, "XOverhead", 0);
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 1;
 g.CQIUsed = 1;
@@ -602,7 +667,10 @@ g.PHYGrant = struct();
 g.PHYGrantContextId = "";
 g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"FieldValues",struct(), ...
     "RIV",0,"RBStart",0,"RBLength",0,"SLIV",NaN,"TimeDomainAssignmentIndex",NaN, ...
-    "StandardProfile","","BitExactPDCCHPayload",false,"BitLength",0, ...
+    "StandardProfile","","BitExactPDCCHPayload",false,"PHYGrant",struct(), ...
+    "PHYGrantContextId","","PHYGrantEvidenceSource","","FinalizedGrant",false, ...
+    "ExactPHYFeasibilityChecked",false,"ExactPHYFeasible",false, ...
+    "SourceGrantTBSBits",NaN,"DCIGrantContract","","BitLength",0, ...
     "NRFieldLayoutSource","","NRResourceAssignmentSource","");
 end
 

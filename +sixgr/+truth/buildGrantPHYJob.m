@@ -9,6 +9,13 @@ end
 grant = sixgr.util.structGet(trialContext, "GrantSnapshot", struct());
 grant = localNormalizeGrantPrecodingForFreeze(grant, direction);
 grantSlotIdx = double(sixgr.util.structGet(grant, "Slot", frameIdx));
+if isstruct(grant) && ~isempty(fieldnames(grant))
+    scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", char(upper(string(direction))));
+    grant = scheduler.freezePHYGrantForGrant(grant);
+    if ~isfield(grant, "DCI") || ~isstruct(grant.DCI) || isempty(fieldnames(grant.DCI))
+        grant.DCI = scheduler.buildDCIBitfield(grant);
+    end
+end
 phyGrant = sixgr.util.structGet(trialContext, "PHYGrant", ...
     sixgr.util.structGet(grant, "PHYGrant", struct()));
 if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
@@ -37,6 +44,7 @@ job.ExpectedUCIBits = sixgr.util.structGet(trialContext, "ExpectedUCIBits", ...
 job.HARQContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
 job.GrantSnapshot = grant;
 job.PHYGrant = phyGrant;
+job.DCI = sixgr.util.structGet(grant, "DCI", struct());
 job.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", phyGrant.GrantContextId));
 job.PreviousCombinedLLR = sixgr.util.structGet(trialContext, "PreviousCombinedLLR", []);
 job.InterferenceBundle = sixgr.util.structGet(trialContext, "InterferenceBundle", struct([]));

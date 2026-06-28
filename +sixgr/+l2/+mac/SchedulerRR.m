@@ -102,8 +102,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 obj.prewarmUEAverage(ueStates(ueIdx(t)), maxUE);
             end
             [controlBudgetActive, controlCCERemaining] = localPDCCHCCEBudget(budget);
-            maxGrantsEst = maxUE + numel(ueIdx);
-            grants = repmat(tmpl, maxGrantsEst, 1);
+            grants = repmat(tmpl, 0, 1);
             nGrant = 0;
             cursor = 1;
             hasHARQ = ~isempty(obj.HARQ);
@@ -167,11 +166,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
 
-                    nGrant = nGrant + 1;
-                    if nGrant > numel(grants)
-                        grants = [grants; repmat(tmpl, max(32, round(0.5*numel(grants))+1), 1)]; %#ok<AGROW>
-                    end
-                    grants(nGrant) = g;
+                    grants = localAppendGrant(grants, g);
+                    nGrant = numel(grants);
                     if controlBudgetActive
                         controlCCERemaining = max(0, controlCCERemaining - neededCCE);
                     end
@@ -324,11 +320,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g = obj.freezePHYGrantForGrant(g);
                 g.DCI = obj.buildDCIBitfield(g);
 
-                nGrant = nGrant + 1;
-                if nGrant > numel(grants)
-                    grants = [grants; repmat(tmpl, max(32, round(0.5*numel(grants))+1), 1)]; %#ok<AGROW>
-                end
-                grants(nGrant) = g;
+                grants = localAppendGrant(grants, g);
+                nGrant = numel(grants);
                 if controlBudgetActive
                     controlCCERemaining = max(0, controlCCERemaining - neededCCE);
                 end
@@ -363,12 +356,17 @@ g.Direction = char(string(direction));
 g.Slot = double(slot);
 g.RNTI = 0;
 g.PRBSet = zeros(1,0);
+g.PRBStart = NaN;
+g.AllocatedPRBCount = 0;
+g.PRBCount = 0;
 g.SymbolAllocation = [NaN NaN];
 g.Modulation = 'QPSK';
 g.NumLayers = 1;
+g.Layers = 1;
 g.TargetCodeRate = 0.5;
 g.TBSBits = 0;
 g.TBSBytes = 0;
+g.TransportBlockSize = 0;
 g.EstimatedTBSBits = 0;
 g.EstimatedTBSBytes = 0;
 g.NREPerPRB = 0;
@@ -400,6 +398,21 @@ g.QueueAwareReductionApplied = false;
 g.QueueAwareReductionSource = "";
 g.MCSReductionSteps = 0;
 g.LayerReductionSteps = 0;
+g.Valid = true;
+g.ExactPHYFeasibilityChecked = false;
+g.ExactPHYFeasible = false;
+g.ExactPHYFeasibilitySource = "";
+g.ExecutableTBSMode = "";
+g.ExactPHYInfeasibilityReason = "";
+g.ExactAllocationCapacityBits = NaN;
+g.ExactAllocationCapacityBytes = NaN;
+g.ExactTBSBits = NaN;
+g.ExactTBSBytes = NaN;
+g.ExactNREPerPRB = NaN;
+g.ExactTBSUsedFastNREApprox = false;
+g.ExactTBSInfo = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
+    "TBSMode", "", "ViennaEquivalent", false, "PlanningOnly", false, ...
+    "ForceExact", false, "XOverhead", 0);
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 1;
 g.CQIUsed = 1;
@@ -416,7 +429,58 @@ g.BufferBytesAfter = 0;
 g.GrantReason = "new_data_rr";
 g.PHYGrant = struct();
 g.PHYGrantContextId = "";
-g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"RIV",0,"RBStart",0,"RBLength",0);
+g.DCI = struct("Format","","Bits",uint8([]),"Hex","","FieldMap",struct(),"FieldValues",struct(), ...
+    "RIV",0,"RBStart",0,"RBLength",0,"SLIV",NaN,"TimeDomainAssignmentIndex",NaN, ...
+    "StandardProfile","","BitExactPDCCHPayload",false,"PHYGrant",struct(), ...
+    "PHYGrantContextId","","PHYGrantEvidenceSource","","FinalizedGrant",false, ...
+    "ExactPHYFeasibilityChecked",false,"ExactPHYFeasible",false, ...
+    "SourceGrantTBSBits",NaN,"DCIGrantContract","","BitLength",0, ...
+    "NRFieldLayoutSource","","NRResourceAssignmentSource","");
+end
+
+function grants = localAppendGrant(grants, grant)
+if isempty(grants)
+    grants = grant;
+    return;
+end
+[grants, grant] = localAlignGrantFields(grants, grant);
+grants(end+1) = grant; %#ok<AGROW>
+end
+
+function [grants, grant] = localAlignGrantFields(grants, grant)
+grantFields = fieldnames(grant);
+arrayFields = fieldnames(grants);
+missingInGrant = setdiff(arrayFields, grantFields);
+for i = 1:numel(missingInGrant)
+    f = missingInGrant{i};
+    grant.(f) = localDefaultFieldLike(grants(1).(f));
+end
+missingInArray = setdiff(grantFields, arrayFields);
+for i = 1:numel(missingInArray)
+    f = missingInArray{i};
+    v = localDefaultFieldLike(grant.(f));
+    for k = 1:numel(grants)
+        grants(k).(f) = v;
+    end
+end
+end
+
+function value = localDefaultFieldLike(example)
+if isstruct(example)
+    value = example;
+elseif isstring(example)
+    value = strings(size(example));
+elseif ischar(example)
+    value = '';
+elseif islogical(example)
+    value = false(size(example));
+elseif isa(example, 'uint8')
+    value = uint8(zeros(size(example)));
+elseif isnumeric(example)
+    value = zeros(size(example));
+else
+    value = [];
+end
 end
 
 function [active, remainingCCE] = localPDCCHCCEBudget(budget)

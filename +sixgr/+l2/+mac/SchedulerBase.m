@@ -1010,6 +1010,7 @@ classdef (Abstract) SchedulerBase < handle
             if ~isfield(grantOut, "Direction") || strlength(string(grantOut.Direction)) == 0
                 grantOut.Direction = obj.Direction;
             end
+            grantOut = obj.finalizeExactPHYFeasibility(grantOut);
             grantSeed = grantOut;
             if isfield(grantSeed, "PHYGrant")
                 grantSeed = rmfield(grantSeed, "PHYGrant");
@@ -1022,6 +1023,125 @@ classdef (Abstract) SchedulerBase < handle
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
         end
 
+        function grantOut = finalizeExactPHYFeasibility(obj, grantIn)
+            %finalizeExactPHYFeasibility Stamp executable grant sizing before DCI/TX.
+            grantOut = grantIn;
+            if nargin < 2 || ~(isstruct(grantOut) && ~isempty(fieldnames(grantOut)))
+                return;
+            end
+            if ~isfield(grantOut, "Direction") || strlength(string(grantOut.Direction)) == 0
+                grantOut.Direction = obj.Direction;
+            end
+
+            [ok, reason] = localValidateGrantResourceIntent(obj, grantOut);
+            grantOut.ExactPHYFeasibilityChecked = true;
+            grantOut.ExactPHYFeasible = logical(ok);
+            grantOut.ExactPHYFeasibilitySource = "SchedulerBase.finalizeExactPHYFeasibility";
+            grantOut.ExecutableTBSMode = "faithful_exact_resource_accounting";
+            grantOut.ExactPHYInfeasibilityReason = char(reason);
+            if ~ok
+                grantOut.Valid = false;
+                grantOut.GrantBlocker = char(reason);
+                return;
+            end
+
+            prbSet = double(sixgr.util.structGet(grantOut, "PRBSet", []));
+            if isempty(prbSet)
+                prbStart = double(sixgr.util.structGet(grantOut, "PRBStart", NaN));
+                prbCount = double(sixgr.util.structGet(grantOut, "AllocatedPRBCount", ...
+                    sixgr.util.structGet(grantOut, "PRBCount", NaN)));
+                if isfinite(prbStart) && isfinite(prbCount) && prbCount >= 1
+                    prbSet = round(prbStart):(round(prbStart) + round(prbCount) - 1);
+                end
+            end
+            prbSet = double(prbSet(:).');
+            symAlloc = double(sixgr.util.structGet(grantOut, "SymbolAllocation", [0 obj.SymbolsPerSlot]));
+            symAlloc = double(symAlloc(:).');
+            if numel(symAlloc) < 2
+                symAlloc = [0 obj.SymbolsPerSlot];
+            end
+            symAlloc = round(symAlloc(1:2));
+
+            modStr = char(string(sixgr.util.structGet(grantOut, "Modulation", ...
+                sixgr.util.structGet(obj.Cfg, localPHYRoot(grantOut.Direction) + ".modulation", "QPSK"))));
+            nLayers = double(sixgr.util.structGet(grantOut, "NumLayers", ...
+                sixgr.util.structGet(grantOut, "Layers", 1)));
+            nLayers = max(1, round(nLayers));
+            targetCodeRate = double(sixgr.util.structGet(grantOut, "TargetCodeRate", ...
+                sixgr.util.structGet(obj.Cfg, localPHYRoot(grantOut.Direction) + ".codeRate", NaN)));
+            if ~(isscalar(targetCodeRate) && isfinite(targetCodeRate) && targetCodeRate > 0)
+                mcsTable = char(string(sixgr.util.structGet(grantOut, "MCSTable", obj.resolveMCSTable())));
+                mcsIndex = double(sixgr.util.structGet(grantOut, "MCSIndex", sixgr.util.structGet(grantOut, "MCS", NaN)));
+                if isfinite(mcsIndex)
+                    profile = sixgr.link.resolveMCSProfile(mcsTable, mcsIndex);
+                    if logical(sixgr.util.structGet(profile, "Valid", false))
+                        modStr = char(string(profile.Modulation));
+                        targetCodeRate = double(profile.TargetCodeRate);
+                    end
+                end
+            end
+
+            [exactBits, exactBytes, exactNRE, exactInfo] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
+                "PlanningOnly", false, "ForceExact", true);
+            if ~(isfinite(double(exactBits)) && double(exactBits) > 0 && isfinite(double(exactBytes)) && double(exactBytes) > 0)
+                grantOut.Valid = false;
+                grantOut.ExactPHYFeasible = false;
+                grantOut.ExactPHYInfeasibilityReason = "zero_exact_tbs";
+                grantOut.GrantBlocker = "zero_exact_tbs";
+                return;
+            end
+
+            harq = sixgr.util.structGet(grantOut, "HARQ", struct());
+            isRetx = logical(sixgr.util.structGet(grantOut, "IsRetransmission", ...
+                sixgr.util.structGet(harq, "IsRetransmission", false)));
+            scheduledBits = double(exactBits);
+            scheduledBytes = double(exactBytes);
+            existingTBSBits = double(sixgr.util.structGet(grantOut, "TBSBits", ...
+                sixgr.util.structGet(grantOut, "TransportBlockSize", NaN)));
+            if isRetx && isfinite(existingTBSBits) && existingTBSBits > 0
+                if existingTBSBits > double(exactBits)
+                    grantOut.Valid = false;
+                    grantOut.ExactPHYFeasible = false;
+                    grantOut.ExactPHYInfeasibilityReason = "retx_tbs_exceeds_exact_allocation_capacity";
+                    grantOut.GrantBlocker = "retx_tbs_exceeds_exact_allocation_capacity";
+                    return;
+                end
+                scheduledBits = double(existingTBSBits);
+                scheduledBytes = floor(scheduledBits / 8);
+            end
+
+            grantOut.PRBSet = prbSet;
+            grantOut.PRBStart = double(min(prbSet));
+            grantOut.AllocatedPRBCount = double(numel(prbSet));
+            grantOut.PRBCount = double(numel(prbSet));
+            grantOut.SymbolAllocation = symAlloc;
+            grantOut.Modulation = char(string(modStr));
+            grantOut.NumLayers = double(nLayers);
+            grantOut.Layers = double(nLayers);
+            grantOut.TargetCodeRate = double(targetCodeRate);
+            grantOut.NREPerPRB = double(exactNRE);
+            grantOut.TBSInputModulation = char(string(modStr));
+            grantOut.TBSInputNumLayers = double(nLayers);
+            grantOut.TBSInputNPRB = double(numel(prbSet));
+            grantOut.TBSInputNREPerPRB = double(exactNRE);
+            grantOut.TBSInputTargetCodeRate = double(targetCodeRate);
+            grantOut.TBSInputXOverhead = double(sixgr.util.structGet(exactInfo, "XOverhead", ...
+                sixgr.util.structGet(grantOut, "XOverhead", 0)));
+            grantOut.XOverhead = double(grantOut.TBSInputXOverhead);
+            grantOut.ExactAllocationCapacityBits = double(exactBits);
+            grantOut.ExactAllocationCapacityBytes = double(exactBytes);
+            grantOut.ExactTBSBits = double(scheduledBits);
+            grantOut.ExactTBSBytes = double(scheduledBytes);
+            grantOut.ExactNREPerPRB = double(exactNRE);
+            grantOut.ExactTBSUsedFastNREApprox = logical(sixgr.util.structGet(exactInfo, "UsedFastNREApprox", false));
+            grantOut.ExactTBSInfo = exactInfo;
+            grantOut.PlanningOnlyApproximation = false;
+            grantOut.TBSBits = double(scheduledBits);
+            grantOut.TBSBytes = double(scheduledBytes);
+            grantOut.TransportBlockSize = double(scheduledBits);
+            grantOut.Valid = logical(sixgr.util.structGet(grantOut, "Valid", true));
+        end
+
         function dci = buildDCIBitfield(obj, grant)
             % buildDCIBitfield Build NR-style DCI intent fields for a grant.
             dci = struct("Format", "", "Bits", uint8([]), "Hex", "", ...
@@ -1032,9 +1152,20 @@ classdef (Abstract) SchedulerBase < handle
                 "BitExactPDCCHPayload", false, ...
                 "PHYGrant", struct(), ...
                 "PHYGrantContextId", "", ...
-                "PHYGrantEvidenceSource", "");
+                "PHYGrantEvidenceSource", "", ...
+                "FinalizedGrant", false, ...
+                "ExactPHYFeasibilityChecked", false, ...
+                "ExactPHYFeasible", false, ...
+                "SourceGrantTBSBits", NaN, ...
+                "DCIGrantContract", "");
             if nargin < 2 || isempty(grant) || ~isstruct(grant)
                 return;
+            end
+            if logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false)) && ...
+                    ~logical(sixgr.util.structGet(grant, "ExactPHYFeasible", false))
+                error("sixgr:SchedulerBase:InfeasibleGrantDCI", ...
+                    "Cannot pack DCI for an infeasible finalized PHY grant: %s", ...
+                    char(string(sixgr.util.structGet(grant, "ExactPHYInfeasibilityReason", "unknown"))));
             end
             phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
             if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
@@ -1146,6 +1277,11 @@ classdef (Abstract) SchedulerBase < handle
             dci.BitLength = double(numel(dci.Bits));
             dci.NRFieldLayoutSource = "3gpp_ts_38_212_dci_field_semantics";
             dci.NRResourceAssignmentSource = "3gpp_ts_38_214_riv_sliv";
+            dci.FinalizedGrant = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
+            dci.ExactPHYFeasibilityChecked = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
+            dci.ExactPHYFeasible = logical(sixgr.util.structGet(grant, "ExactPHYFeasible", false));
+            dci.SourceGrantTBSBits = double(sixgr.util.structGet(grant, "TBSBits", NaN));
+            dci.DCIGrantContract = "packed_from_finalized_scheduler_phy_grant";
         end
 
         function log(obj, level, msg, varargin)
@@ -2273,4 +2409,121 @@ end
 
 function nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers)
 [nrePerPRB, ~] = sixgr.util.resolveDataNREPerPRB(info, nPRB, modStr, nLayers);
+end
+
+function root = localPHYRoot(direction)
+if upper(string(direction)) == "UL"
+    root = "phy.pusch";
+else
+    root = "phy.pdsch";
+end
+end
+
+function [ok, reason] = localValidateGrantResourceIntent(obj, grant)
+ok = false;
+reason = "unknown_resource_validation_failure";
+
+prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+if isempty(prbSet)
+    prbStart = double(sixgr.util.structGet(grant, "PRBStart", NaN));
+    prbCount = double(sixgr.util.structGet(grant, "AllocatedPRBCount", ...
+        sixgr.util.structGet(grant, "PRBCount", NaN)));
+    if isfinite(prbStart) && isfinite(prbCount) && prbCount >= 1
+        prbSet = round(prbStart):(round(prbStart) + round(prbCount) - 1);
+    end
+end
+prbSet = double(prbSet(:).');
+if isempty(prbSet) || any(~isfinite(prbSet)) || any(prbSet < 0)
+    reason = "empty_or_invalid_prb_set";
+    return;
+end
+if numel(unique(round(prbSet), "stable")) ~= numel(prbSet)
+    reason = "duplicate_prb_allocation";
+    return;
+end
+if any(abs(prbSet - round(prbSet)) > 1e-9)
+    reason = "non_integer_prb_allocation";
+    return;
+end
+nGrid = max(1, round(double(obj.NSizeGrid)));
+if any(round(prbSet) >= nGrid)
+    reason = "prb_out_of_carrier_grid";
+    return;
+end
+
+symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 obj.SymbolsPerSlot]));
+symAlloc = double(symAlloc(:).');
+if numel(symAlloc) < 2 || any(~isfinite(symAlloc(1:2)))
+    reason = "invalid_symbol_allocation";
+    return;
+end
+symAlloc = round(symAlloc(1:2));
+if symAlloc(1) < 0 || symAlloc(2) < 1 || (symAlloc(1) + symAlloc(2)) > round(double(obj.SymbolsPerSlot))
+    reason = "symbol_allocation_out_of_slot";
+    return;
+end
+
+reserved = localGrantReservedRegions(obj.Cfg, grant);
+if ~isempty(reserved)
+    dataSymbols = symAlloc(1):(symAlloc(1) + symAlloc(2) - 1);
+    for k = 1:numel(reserved)
+        r = reserved(k);
+        if isempty(r.PRBSet) || isempty(r.Symbols)
+            continue;
+        end
+        if any(ismember(round(prbSet), round(double(r.PRBSet(:).')))) && ...
+                any(ismember(double(dataSymbols), round(double(r.Symbols(:).'))))
+            reason = "data_control_reference_resource_collision";
+            return;
+        end
+    end
+end
+
+ok = true;
+reason = "";
+end
+
+function reserved = localGrantReservedRegions(cfg, grant)
+reserved = repmat(struct("PRBSet", [], "Symbols", []), 0, 1);
+
+raw = sixgr.util.structGet(grant, "ReservedResourceRegions", struct([]));
+if isstruct(raw) && ~isempty(raw)
+    for i = 1:numel(raw)
+        prb = double(sixgr.util.structGet(raw(i), "PRBSet", []));
+        symbols = localSymbolsFromAllocation(sixgr.util.structGet(raw(i), "SymbolAllocation", []));
+        if isempty(symbols)
+            symbols = double(sixgr.util.structGet(raw(i), "Symbols", []));
+        end
+        reserved(end+1, 1) = struct("PRBSet", prb(:).', "Symbols", symbols(:).'); %#ok<AGROW>
+    end
+end
+
+if upper(string(sixgr.util.structGet(grant, "Direction", "DL"))) == "DL" && ...
+        logical(sixgr.util.structGet(cfg, "mac.scheduler.enforceControlReferenceCollisions", false))
+    duration = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.duration", ...
+        sixgr.util.structGet(cfg, "phy.pdcch.numSymbols", ...
+        sixgr.util.structGet(cfg, "ctrl6gr.CORESET.DurationSymbols", 0))));
+    if isscalar(duration) && isfinite(duration) && duration > 0
+        nGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
+        if ~(isscalar(nGrid) && isfinite(nGrid) && nGrid >= 1)
+            nGrid = double(sixgr.util.structGet(grant, "AllocatedPRBCount", numel(sixgr.util.structGet(grant, "PRBSet", []))));
+        end
+        reserved(end+1, 1) = struct("PRBSet", 0:(max(1, round(nGrid)) - 1), ...
+            "Symbols", 0:(ceil(duration) - 1)); %#ok<AGROW>
+    end
+end
+end
+
+function symbols = localSymbolsFromAllocation(symAlloc)
+symbols = [];
+symAlloc = double(symAlloc(:).');
+if numel(symAlloc) < 2 || any(~isfinite(symAlloc(1:2)))
+    return;
+end
+startSym = round(symAlloc(1));
+nSym = round(symAlloc(2));
+if nSym < 1
+    return;
+end
+symbols = startSym:(startSym + nSym - 1);
 end
