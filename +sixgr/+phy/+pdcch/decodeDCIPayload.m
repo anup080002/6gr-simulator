@@ -2,14 +2,14 @@ function dci = decodeDCIPayload(bits, dciFormat, pdcchCfg)
 %DECODEDCIPAYLOAD Parse strict mini-anchor DCI payload bits.
 
 bits = int8(bits(:));
-dciFormat = upper(strrep(string(dciFormat), "-", "_"));
+dciFormat = sixgr.phy.pdcch.normalizeDCIFormat(dciFormat);
 [K, sizeDetails] = sixgr.phy.pdcch.dciPayloadSizeBits(double(pdcchCfg.NSizeGrid), dciFormat);
 if numel(bits) < K
     bits(end+1:K, 1) = 0;
 elseif numel(bits) > K
     bits = bits(1:K);
 end
-layout = localLayout(dciFormat, sizeDetails);
+layout = sixgr.phy.pdcch.dciPayloadLayout(dciFormat, pdcchCfg);
 fields = struct();
 fieldRows = repmat(localFieldRow(), 0, 1);
 cursor = 1;
@@ -34,7 +34,7 @@ end
 fields.prb_start = prbStart;
 fields.num_prb = numPRB;
 fields.frequency_resource_assignment_valid = logical(rivValid);
-if dciFormat == "1_0"
+if dciFormat == "1_0" || dciFormat == "1_1"
     fields.direction = "DL";
     fields.grant_type = "PDSCH";
     [fields.symbol_start, fields.num_symbols] = localResolveTimeDomainAlloc(fields.time_resource_assignment, "DL");
@@ -53,33 +53,9 @@ dci.Bits = bits;
 dci.PayloadHex = sixgr.phy.pdcch.payloadBitsToHex(bits);
 dci.PayloadHash = sixgr.rrc.asn1.sha256Hex(uint8(bits(:)));
 dci.FieldTable = struct2table(fieldRows, "AsArray", true);
-end
-
-function layout = localLayout(dciFormat, sizeDetails)
-nFreqBits = double(sizeDetails.FrequencyResourceAssignmentBits);
-switch dciFormat
-    case "1_0"
-        names = ["format_identifier","frequency_resource_assignment","time_resource_assignment", ...
-            "vrb_to_prb_mapping","mcs","ndi","rv","harq_process","dai","tpc", ...
-            "pucch_resource_indicator","pdsch_to_harq_feedback_timing"];
-        widths = [1 nFreqBits 4 1 5 1 2 4 2 2 3 3];
-    case "0_0"
-        names = ["format_identifier","frequency_resource_assignment","time_resource_assignment", ...
-            "frequency_hopping","mcs","ndi","rv","harq_process","tpc","padding"];
-        padBits = max(0, double(sizeDetails.DCI00PaddedPayloadBits) - double(sizeDetails.DCI00UnpaddedPayloadBits));
-        widths = [1 nFreqBits 4 1 5 1 2 4 2 padBits];
-    otherwise
-        error("sixgr:phy:pdcch:UnsupportedDCIFormat", ...
-            "Strict PDCCH mini-anchor supports DCI formats 1_0 and 0_0; got %s.", dciFormat);
-end
-keep = widths > 0;
-names = names(keep);
-widths = widths(keep);
-layout = repmat(struct("Name", "", "Width", 0), numel(names), 1);
-for ii = 1:numel(names)
-    layout(ii).Name = char(names(ii));
-    layout(ii).Width = widths(ii);
-end
+dci.BitExactPDCCHPayload = true;
+dci.StandardProfile = "ts_38212_supported_dci_payload";
+dci.SizeDetails = sizeDetails;
 end
 
 function value = localBitsToUInt(bits)

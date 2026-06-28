@@ -1209,65 +1209,18 @@ classdef (Abstract) SchedulerBase < handle
 
             direction = upper(string(sixgr.util.structGet(grant, "Direction", obj.Direction)));
             fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
-            fmtBit = double(direction == "DL");
-
-            bits = uint8([]);
-            fmap = struct();
-            fvals = struct();
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FormatIndicator", fmtBit, 1);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FrequencyDomainResourceAssignment_RIV", riv, freqBits);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TimeDomainResourceAssignmentIndex", tdaIndex, 4);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TimeDomainResourceAssignmentSLIV", sliv, 8);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "MCS", mcs, 5);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "NDI", ndi, 1);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "RV", rv, 2);
-            [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "HARQProcessNumber", harqId, 4);
-
-            if fmt == "DCI_1_1"
-                tci = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
-                    sixgr.util.structGet(obj.Cfg, "phy.pdsch.TCIState", 0)), 3);
-                srsReq = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
-                csiReq = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", ...
-                    double(isfinite(double(sixgr.util.structGet(grant, "CRI", NaN))))), 2);
-                antennaPorts = localDLAntennaPortField(grant);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "DAI", dai, 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PDSCHToHARQFeedbackTimingIndicator_K1", k1, 3);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "VRBToPRBMapping", sixgr.util.structGet(grant, "VRBToPRBMapping", 0), 1);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PRBBundlingSizeIndicator", sixgr.util.structGet(grant, "PRBBundlingSizeIndicator", 0), 1);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "RateMatchingIndicator", sixgr.util.structGet(grant, "RateMatchingIndicator", 0), 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "ZP_CSIRS_Trigger", sixgr.util.structGet(grant, "ZPCSIRSTrigger", 0), 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "AntennaPorts", antennaPorts, 5);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TransmissionConfigurationIndication", tci, 3);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "SRSRequest", srsReq, 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CSIRequest", csiReq, 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CBGTransmissionInformation", sixgr.util.structGet(grant, "CBGTI", 0), 8);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CBGFlushingInformation", sixgr.util.structGet(grant, "CBGFI", 0), 1);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "DMRSSequenceInitialization", sixgr.util.structGet(grant, "DMRSSequenceInitialization", 0), 1);
-            elseif fmt == "DCI_0_1"
-                tpmi = localClampDCIValue(sixgr.util.structGet(grant, "TPMI", ...
-                    sixgr.util.structGet(grant, "PMI", NaN)), 6);
-                numLayers = localClampDCIValue(sixgr.util.structGet(grant, "NumLayers", 1), 2) - 1;
-                sri = localClampDCIValue(sixgr.util.structGet(grant, "SRSResourceIndicator", ...
-                    sixgr.util.structGet(grant, "SRSResourceID", 0)), 4);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FrequencyHoppingFlag", sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "FirstDAI", dai, 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "TPCCommandForPUSCH", sixgr.util.structGet(grant, "TPCCommandForPUSCH", 1), 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "SRSResourceIndicator", sri, 4);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PrecodingInformationAndNumberOfLayers_TPMI", tpmi, 6);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "PrecodingInformationAndNumberOfLayers_RankMinus1", numLayers, 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "AntennaPorts", localULAntennaPortField(grant), 5);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "SRSRequest", sixgr.util.structGet(grant, "SRSRequest", 0), 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "CSIRequest", sixgr.util.structGet(grant, "CSIRequest", 0), 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "K2", k2, 3);
-            else
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "DAI", dai, 2);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "K1", k1, 3);
-                [bits, fmap, fvals] = localAppendDCIField(bits, fmap, fvals, "K2", k2, 3);
-            end
+            pdcchCfg = struct("NSizeGrid", double(nRB));
+            dciFields = localBuildSupportedDCIFields(obj.Cfg, grant, direction, fmt, riv, tdaIndex, ...
+                rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2);
+            dciPayload = sixgr.phy.pdcch.encodeDCIPayload(dciFields, fmt, pdcchCfg);
+            fmap = localDCIFieldMapFromTable(dciPayload.FieldTable);
+            fvals = localDCILegacyFieldValues(dciPayload.Fields, riv, tdaIndex, sliv, mcs, ndi, rv, harqId, dai, k1, k2);
 
             dci.Format = fmt;
-            dci.Bits = uint8(bits(:));
-            dci.Hex = sixgr.l2.mac.SchedulerBase.bitsToHex(dci.Bits);
+            dci.Bits = uint8(dciPayload.Bits(:));
+            dci.Hex = char(string(dciPayload.PayloadHex));
+            dci.PayloadHash = char(string(dciPayload.PayloadHash));
+            dci.PayloadHex = char(string(dciPayload.PayloadHex));
             dci.FieldMap = fmap;
             dci.FieldValues = fvals;
             dci.RIV = double(riv);
@@ -1276,7 +1229,11 @@ classdef (Abstract) SchedulerBase < handle
             dci.SLIV = double(sliv);
             dci.TimeDomainAssignmentIndex = double(tdaIndex);
             dci.BitLength = double(numel(dci.Bits));
-            dci.NRFieldLayoutSource = "3gpp_ts_38_212_dci_field_semantics";
+            dci.StandardProfile = "ts38212_supported_dci_payload";
+            dci.BitExactPDCCHPayload = true;
+            dci.FieldTable = dciPayload.FieldTable;
+            dci.SizeDetails = dciPayload.SizeDetails;
+            dci.NRFieldLayoutSource = "sixgr.phy.pdcch.encodeDCIPayload_ts_38212_supported_layout";
             dci.NRResourceAssignmentSource = "3gpp_ts_38_214_riv_sliv";
             dci.FinalizedGrant = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
             dci.ExactPHYFeasibilityChecked = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
@@ -1645,6 +1602,122 @@ else
         fmt = "DCI_1_1";
     else
         fmt = "DCI_1_0";
+    end
+end
+end
+
+function fields = localBuildSupportedDCIFields(cfg, grant, direction, fmt, riv, tdaIndex, ...
+        rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2)
+direction = upper(string(direction));
+fmt = sixgr.phy.pdcch.normalizeDCIFormat(fmt);
+fields = struct();
+fields.format_identifier = double(direction == "DL");
+fields.frequency_resource_assignment = double(riv);
+fields.time_resource_assignment = double(tdaIndex);
+fields.mcs = double(mcs);
+fields.ndi = double(ndi);
+fields.rv = double(rv);
+fields.harq_process = double(harqId);
+fields.prb_start = double(rbStart);
+fields.num_prb = double(rbLen);
+fields.direction = char(direction);
+if direction == "DL"
+    fields.grant_type = "PDSCH";
+else
+    fields.grant_type = "PUSCH";
+end
+symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]));
+if numel(symAlloc) >= 2 && all(isfinite(symAlloc(1:2)))
+    fields.symbol_start = round(double(symAlloc(1)));
+    fields.num_symbols = round(double(symAlloc(2)));
+else
+    if direction == "DL"
+        fields.symbol_start = 2;
+        fields.num_symbols = 12;
+    else
+        fields.symbol_start = 0;
+        fields.num_symbols = 14;
+    end
+end
+
+switch fmt
+    case "1_0"
+        fields.vrb_to_prb_mapping = localClampDCIValue(sixgr.util.structGet(grant, "VRBToPRBMapping", 0), 1);
+        fields.dai = double(dai);
+        fields.tpc = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
+        fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
+        fields.pdsch_to_harq_feedback_timing = double(k1);
+    case "0_0"
+        fields.frequency_hopping = localClampDCIValue(sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
+        fields.tpc = localClampDCIValue(sixgr.util.structGet(grant, "TPCCommandForPUSCH", ...
+            sixgr.util.structGet(grant, "TPC", 1)), 2);
+    case "1_1"
+        fields.vrb_to_prb_mapping = localClampDCIValue(sixgr.util.structGet(grant, "VRBToPRBMapping", 0), 1);
+        fields.prb_bundling_size_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PRBBundlingSizeIndicator", 0), 1);
+        fields.rate_matching_indicator = localClampDCIValue(sixgr.util.structGet(grant, "RateMatchingIndicator", 0), 2);
+        fields.zp_csirs_trigger = localClampDCIValue(sixgr.util.structGet(grant, "ZPCSIRSTrigger", 0), 2);
+        fields.dai = double(dai);
+        fields.tpc = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
+        fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
+        fields.pdsch_to_harq_feedback_timing = double(k1);
+        fields.antenna_ports = localDLAntennaPortField(grant);
+        fields.transmission_configuration_indication = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
+            sixgr.util.structGet(cfg, "phy.pdsch.TCIState", 0)), 3);
+        fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
+        fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", ...
+            double(isfinite(double(sixgr.util.structGet(grant, "CRI", NaN))))), 2);
+        fields.cbg_transmission_information = localClampDCIValue(sixgr.util.structGet(grant, "CBGTI", 0), 8);
+        fields.cbg_flushing_information = localClampDCIValue(sixgr.util.structGet(grant, "CBGFI", 0), 1);
+        fields.dmrs_sequence_initialization = localClampDCIValue(sixgr.util.structGet(grant, "DMRSSequenceInitialization", 0), 1);
+    case "0_1"
+        fields.frequency_hopping = localClampDCIValue(sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
+        fields.first_dai = double(dai);
+        fields.tpc_command_for_pusch = localClampDCIValue(sixgr.util.structGet(grant, "TPCCommandForPUSCH", 1), 2);
+        fields.srs_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "SRSResourceIndicator", ...
+            sixgr.util.structGet(grant, "SRSResourceID", 0)), 4);
+        fields.precoding_information_and_number_of_layers_tpmi = localClampDCIValue(sixgr.util.structGet(grant, "TPMI", ...
+            sixgr.util.structGet(grant, "PMI", NaN)), 6);
+        fields.precoding_information_and_number_of_layers_rank_minus1 = max(0, ...
+            localClampDCIValue(sixgr.util.structGet(grant, "NumLayers", 1), 2) - 1);
+        fields.antenna_ports = localULAntennaPortField(grant);
+        fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
+        fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", 0), 2);
+        fields.k2 = double(k2);
+end
+end
+
+function fmap = localDCIFieldMapFromTable(fieldTable)
+fmap = struct();
+if ~istable(fieldTable) || height(fieldTable) < 1
+    return;
+end
+for ii = 1:height(fieldTable)
+    name = char(matlab.lang.makeValidName(char(string(fieldTable.FieldName(ii)))));
+    fmap.([name '_bits']) = double(fieldTable.BitOffsetEnd(ii) - fieldTable.BitOffsetStart(ii) + 1);
+    fmap.([name '_start']) = double(fieldTable.BitOffsetStart(ii));
+    fmap.([name '_end']) = double(fieldTable.BitOffsetEnd(ii));
+end
+end
+
+function fvals = localDCILegacyFieldValues(fields, riv, tdaIndex, sliv, mcs, ndi, rv, harqId, dai, k1, k2)
+fvals = struct();
+fvals.FormatIndicator = double(sixgr.util.structGet(fields, "format_identifier", NaN));
+fvals.FrequencyDomainResourceAssignment_RIV = double(riv);
+fvals.TimeDomainResourceAssignmentIndex = double(tdaIndex);
+fvals.TimeDomainResourceAssignmentSLIV = double(sliv);
+fvals.MCS = double(mcs);
+fvals.NDI = double(ndi);
+fvals.RV = double(rv);
+fvals.HARQProcessNumber = double(harqId);
+fvals.DAI = double(dai);
+fvals.K1 = double(k1);
+fvals.K2 = double(k2);
+fieldNames = string(fieldnames(fields));
+for ii = 1:numel(fieldNames)
+    raw = fields.(char(fieldNames(ii)));
+    if isnumeric(raw) && isscalar(raw)
+        legacyName = char(matlab.lang.makeValidName(char(fieldNames(ii))));
+        fvals.(legacyName) = double(raw);
     end
 end
 end
