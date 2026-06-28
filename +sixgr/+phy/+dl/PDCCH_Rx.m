@@ -17,12 +17,14 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %     "RNTI"           : DCI CRC-mask RNTI override
 %     "PDCCHScramblingRNTI" : physical PDCCH scrambling RNTI override
 %     "NoiseVar"       : override noise variance (else estimate)
+%     "ExpectedDCIBits": optional finalized-grant DCI bits for causal match
 %     "SampleRate_Hz"  : sample rate (only needed for some timing APIs)
 %
 %   Outputs:
 %     RX.DCIBits        : recovered DCI payload bits
 %     RX.ErrFlag        : 0 if CRC passes, 1 otherwise (when available)
 %     RX.Ok             : true when ErrFlag==0
+%     RX.CausalGrantDecodeOk : true when CRC passes and ExpectedDCIBits match
 %     RX.TimingOffset   : raw sample timing estimate
 %     RX.AppliedTimingCorrection_samples : applied waveform correction
 %     RX.NoiseVar       : noise variance used
@@ -36,6 +38,7 @@ ip.addParameter('ListLength', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x
 ip.addParameter('RNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('PDCCHScramblingRNTI', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
+ip.addParameter('ExpectedDCIBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
 ip.addParameter('NoiseOnlyWaveform', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.parse(varargin{:});
@@ -66,8 +69,13 @@ else
 end
 
 K = opt.K;
+expectedDCIBits = localNormalizeDCIBits(opt.ExpectedDCIBits);
 if isempty(K)
-    K = double(sixgr.util.structGet(cfg, 'phy.pdcch.dciPayloadBits', 64));
+    if ~isempty(expectedDCIBits)
+        K = numel(expectedDCIBits);
+    else
+        K = double(sixgr.util.structGet(cfg, 'phy.pdcch.dciPayloadBits', 64));
+    end
 end
 
 listLen = opt.ListLength;
@@ -224,6 +232,13 @@ end
 
 rx = struct();
 rx.DCIBits = int8([]);
+rx.ExpectedDCIBits = expectedDCIBits;
+rx.DCIBitsCompared = 0;
+rx.DCIBitErrors = NaN;
+rx.DCIPayloadMatch = isempty(expectedDCIBits);
+rx.CausalGrantDecodeOk = false;
+rx.FalseAlarm = false;
+rx.MissedDetection = ~isempty(expectedDCIBits);
 rx.ErrFlag = 1;
 rx.Ok = false;
 rx.CandidateIndex = 0;
@@ -296,6 +311,13 @@ for c = 1:numel(candSymInd)
     rx.DCIBits = int8(dciBits(:));
     rx.ErrFlag = double(errFlag);
     rx.Ok = (rx.ErrFlag == 0);
+    [dciBitErrors, dciBitsCompared, dciPayloadMatch] = localCompareDCIBits(expectedDCIBits, rx.DCIBits);
+    rx.DCIBitsCompared = double(dciBitsCompared);
+    rx.DCIBitErrors = double(dciBitErrors);
+    rx.DCIPayloadMatch = logical(dciPayloadMatch);
+    rx.CausalGrantDecodeOk = logical(rx.Ok && dciPayloadMatch);
+    rx.FalseAlarm = logical(rx.Ok && ~dciPayloadMatch && ~isempty(expectedDCIBits));
+    rx.MissedDetection = logical(~rx.Ok && ~isempty(expectedDCIBits));
     rx.CandidateIndex = c;
     rx.NoiseVar = nVar;
     rx.NoiseVarStatus = char(string(nVarStatus));
@@ -315,6 +337,12 @@ for c = 1:numel(candSymInd)
     row.DecodeAttempted = true;
     row.DecodeOK = logical(rx.Ok);
     row.ErrFlag = double(errFlag);
+    row.DCIBitsCompared = double(dciBitsCompared);
+    row.DCIBitErrors = double(dciBitErrors);
+    row.DCIPayloadMatch = logical(dciPayloadMatch);
+    row.CausalGrantDecodeOk = logical(rx.CausalGrantDecodeOk);
+    row.FalseAlarm = logical(rx.FalseAlarm);
+    row.MissedDetection = logical(rx.MissedDetection);
     row.NoiseVariance = double(nVar);
     row.NoiseVarStatus = string(nVarStatus);
     row.NoiseVarSource = string(nVarSource);
@@ -339,6 +367,13 @@ info.RNTI = rnti;
 info.DCICrcRNTI = rnti;
 info.PDCCHScramblingRNTI = pdcchScramblingRNTI;
 info.K = K;
+info.ExpectedDCIBits = expectedDCIBits;
+info.DCIBitsCompared = double(rx.DCIBitsCompared);
+info.DCIBitErrors = double(rx.DCIBitErrors);
+info.DCIPayloadMatch = logical(rx.DCIPayloadMatch);
+info.CausalGrantDecodeOk = logical(rx.CausalGrantDecodeOk);
+info.FalseAlarm = logical(rx.FalseAlarm);
+info.MissedDetection = logical(rx.MissedDetection);
 info.ListLength = listLen;
 info.BlindSearch = blind;
 info.NumCandidatesAvailable = numel(candSymInd);
@@ -361,6 +396,12 @@ row = struct( ...
     "DecodeAttempted", false, ...
     "DecodeOK", false, ...
     "ErrFlag", NaN, ...
+    "DCIBitsCompared", 0, ...
+    "DCIBitErrors", NaN, ...
+    "DCIPayloadMatch", false, ...
+    "CausalGrantDecodeOk", false, ...
+    "FalseAlarm", false, ...
+    "MissedDetection", false, ...
     "NoiseVariance", NaN, ...
     "NoiseVarStatus", "", ...
     "NoiseVarSource", "", ...
@@ -371,6 +412,37 @@ row = struct( ...
     "EVM_rms", NaN, ...
     "PDCCHRECount", NaN, ...
     "DMRSRECount", NaN);
+end
+
+function bits = localNormalizeDCIBits(rawBits)
+bits = int8([]);
+if isempty(rawBits)
+    return;
+end
+vals = double(rawBits(:));
+if isempty(vals)
+    return;
+end
+bits = int8(vals ~= 0);
+end
+
+function [bitErrors, bitsCompared, payloadMatch] = localCompareDCIBits(expectedBits, decodedBits)
+if isempty(expectedBits)
+    bitErrors = NaN;
+    bitsCompared = 0;
+    payloadMatch = true;
+    return;
+end
+expectedBits = localNormalizeDCIBits(expectedBits);
+decodedBits = localNormalizeDCIBits(decodedBits);
+bitsCompared = min(numel(expectedBits), numel(decodedBits));
+if bitsCompared > 0
+    bitErrors = sum(expectedBits(1:bitsCompared) ~= decodedBits(1:bitsCompared));
+else
+    bitErrors = 0;
+end
+bitErrors = bitErrors + abs(numel(expectedBits) - numel(decodedBits));
+payloadMatch = (bitErrors == 0) && (numel(decodedBits) == numel(expectedBits));
 end
 
 function [nVar, status, source, reason] = localResolvePDCCHNoiseVariance(nVar, nVarEst, noiseGridNVar, hEst, dmrsInd, dmrsSym, rxGrid)

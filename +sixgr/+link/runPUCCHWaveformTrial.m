@@ -12,9 +12,11 @@ addParameter(p, "RNTI", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x)));
 addParameter(p, "InterferenceBundle", struct([]), @(x) isstruct(x));
 addParameter(p, "ChannelState", [], @(x) isempty(x) || isstruct(x));
 addParameter(p, "TrialIndex", 1, @(x) isnumeric(x) && isscalar(x));
+addParameter(p, "FixedFormatValidation", [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 parse(p, cfg, varargin{:});
 opt = p.Results;
 trialIdx = max(1, round(double(opt.TrialIndex)));
+fixedFormatValidation = localResolveFixedFormatValidation(cfg, opt.FixedFormatValidation);
 
 expectedBits = int8(logical(opt.ExpectedUCIBits(:)));
 if isempty(expectedBits)
@@ -132,6 +134,7 @@ out = struct( ...
     "ResolvedFormat", NaN, ...
     "FormatAdapted", false, ...
     "FormatAdaptationReason", "", ...
+    "FixedFormatValidation", logical(fixedFormatValidation), ...
     "ControlResourceValidity", false, ...
     "CrashSource", "", ...
     "CrashMessage", "", ...
@@ -166,20 +169,37 @@ if ~isempty(opt.Format)
 end
 fmt = localNormalizePUCCHFormatNumber(fmt);
 if ~(isfinite(fmt) && any(fmt == [0 1 2 3 4]))
+    if fixedFormatValidation
+        out.RequestedFormat = fmt;
+        out.ResolvedFormat = fmt;
+        out.FormatAdapted = false;
+        out.ControlResourceValidity = false;
+        out.Status = "FAIL";
+        out.FailureReason = "pucch_fixed_format_invalid_request";
+        out.Notes = "Fixed-format PUCCH validation rejected an unsupported requested format before waveform generation.";
+        return;
+    end
     fmt = 2;
 end
 uciPayloadBits = double(sixgr.util.structGet(cfg, "phy.pucch.uciPayloadBits", numel(expectedBits)));
 if isfinite(uciPayloadBits) && uciPayloadBits > numel(expectedBits)
     rng(localTrialSeed(cfg, trialIdx) + 17, "twister");
     expectedBits = int8(logical(randi([0 1], max(1, round(uciPayloadBits)), 1)));
+    out.ExpectedBits = expectedBits;
+    out.ExpectedBitCount = double(numel(expectedBits));
+    out.UCIExpectedBitVector = char(localBitVectorString(expectedBits));
 end
-if isfinite(uciPayloadBits) && uciPayloadBits > 2
+if ~fixedFormatValidation && isfinite(uciPayloadBits) && uciPayloadBits > 2
     if ~any(double(fmt) == [2 3 4])
         fmt = 2;
     end
 end
 requestedFormat = double(fmt);
-resolvedFormat = localResolveCompatiblePUCCHFormat(requestedFormat, numel(expectedBits));
+if fixedFormatValidation
+    resolvedFormat = requestedFormat;
+else
+    resolvedFormat = localResolveCompatiblePUCCHFormat(requestedFormat, numel(expectedBits));
+end
 cfgResolved = sixgr.util.structSet(cfg, "phy.pucch.format", resolvedFormat);
 previewInterference = localPreviewInterferenceMetadata(opt.InterferenceBundle);
 out.RequestedFormat = requestedFormat;
@@ -187,6 +207,15 @@ out.ResolvedFormat = resolvedFormat;
 out.FormatAdapted = requestedFormat ~= resolvedFormat;
 out.FormatAdaptationReason = ternaryFormatReason(requestedFormat, resolvedFormat, numel(expectedBits));
 out.ControlResourceValidity = true;
+if fixedFormatValidation && ~localPUCCHFormatPayloadCompatible(requestedFormat, numel(expectedBits))
+    out.ControlResourceValidity = false;
+    out.Status = "FAIL";
+    out.FailureReason = "pucch_fixed_format_payload_incompatible";
+    out.DetectionOutcome = "not_attempted_invalid_fixed_format";
+    out.Notes = "Fixed-format PUCCH validation rejected the requested format/payload combination before waveform generation.";
+    out = localPopulatePUCCHUCIEvidence(out, expectedBits, int8([]), struct(), resolvedFormat);
+    return;
+end
 out.ChannelModel = char(localResolveTrialChannelModel(cfgResolved));
 out.DopplerHz = double(localResolveDopplerHz(cfgResolved));
 out.InterferenceMode = char(string(sixgr.util.structGet(previewInterference, "InterferenceMode", "none")));
@@ -209,13 +238,17 @@ try
 
     tDecode = tic;
     strictNoiseVarianceRequired = ~localThermalNoiseSINRUnavailable(replay);
+    rxNoiseVar = sixgr.util.structGet(replay, "InjectedNoiseVariance", []);
+    if isempty(rxNoiseVar) || ~(isnumeric(rxNoiseVar) && isscalar(rxNoiseVar) && isfinite(double(rxNoiseVar)) && double(rxNoiseVar) > 0)
+        rxNoiseVar = [];
+    end
     [rx, rxInfo] = sixgr.phy.ul.PUCCH_Rx(rxWave, cfgResolved, ...
         "Carrier", tx.Carrier, ...
         "PUCCH", tx.PUCCH, ...
         "Format", resolvedFormat, ...
         "NumUCIBits", numel(expectedBits), ...
         "ExpectedUCIBits", expectedBits, ...
-        "NoiseVar", sixgr.util.structGet(replay, "InjectedNoiseVariance", []), ...
+        "NoiseVar", rxNoiseVar, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     decodeLatency_ms = toc(tDecode) * 1e3;
 
@@ -520,6 +553,30 @@ elseif numBits > 2 && any(fmt == [0 1])
 end
 end
 
+function tf = localResolveFixedFormatValidation(cfg, optValue)
+if ~isempty(optValue)
+    tf = logical(optValue);
+    return;
+end
+tf = logical(sixgr.util.structGet(cfg, "phy.pucch.fixedFormatValidation", ...
+    sixgr.util.structGet(cfg, "phy.pucch.strictFixedFormatValidation", ...
+    sixgr.util.structGet(cfg, "validation.pucch.fixedFormatValidation", false))));
+end
+
+function tf = localPUCCHFormatPayloadCompatible(requestedFormat, numBits)
+fmt = double(requestedFormat);
+numBits = max(0, round(double(numBits)));
+if ~(isfinite(fmt) && any(fmt == [0 1 2 3 4]))
+    tf = false;
+    return;
+end
+if any(fmt == [0 1])
+    tf = numBits >= 1 && numBits <= 2;
+else
+    tf = numBits >= 1;
+end
+end
+
 function fmt = localNormalizePUCCHFormatNumber(raw)
 if isnumeric(raw) && isscalar(raw)
     fmt = double(raw);
@@ -700,7 +757,9 @@ end
 
 sampleRateHz = localResolveSampleRate(tx, txInfo);
 cfgReplay = localPrepareControlReplayCfg(cfg, snr_dB);
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz, ...
+    "UseLegacyGlobalConfig", false, ...
+    "ApplyADC", false);
 impairFields = fieldnames(impairmentReplay);
 for fi = 1:numel(impairFields)
     replay.(impairFields{fi}) = impairmentReplay.(impairFields{fi});
@@ -747,6 +806,10 @@ end
 
 function cfgOut = localPrepareControlReplayCfg(cfg, snr_dB)
 cfgOut = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeCurrentDirection", "UL");
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.Direction", "UL");
+cfgOut = sixgr.util.structSet(cfgOut, "rf.rx.element.enable", false);
+cfgOut = sixgr.util.structSet(cfgOut, "rf.rx.element.enabled", false);
 if localShouldUseStandaloneAWGN(cfgOut, snr_dB)
     cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
 end
@@ -795,6 +858,10 @@ function [y, nVar, source] = localAddAwgn(x, replay, referenceWaveform)
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     thermalNVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
+    if ~(isfinite(thermalNVar) && thermalNVar > 0)
+        appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+        thermalNVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+    end
     [nVar, source] = localReceiverEffectiveNoiseVariance(thermalNVar, replay, "thermal_noise_plus_receiver_nf");
     if isfinite(thermalNVar) && thermalNVar > 0
         n = sqrt(thermalNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
@@ -805,6 +872,10 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+if ~isfinite(appliedSNR_dB) && noiseMode == "standalone_awgn_snr_argument"
+    appliedSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", NaN));
+    replay.AppliedAWGNSNR_dB = appliedSNR_dB;
+end
 awgnNVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
 [nVar, source] = localReceiverEffectiveNoiseVariance(awgnNVar, replay, "standalone_awgn_snr_argument_post_channel_units");
 if isfinite(awgnNVar) && awgnNVar >= 0
@@ -875,6 +946,12 @@ if ~(isfinite(signalMilliwatt) && signalMilliwatt > 0 && isfinite(noiseMilliwatt
     return;
 end
 nVar = referencePower * (noiseMilliwatt / signalMilliwatt);
+if ~(isfinite(nVar) && nVar > 0)
+    appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+    if isfinite(appliedSNR_dB)
+        nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+    end
+end
 end
 
 function fs = localResolveSampleRate(tx, txInfo)

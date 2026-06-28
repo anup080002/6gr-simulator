@@ -248,6 +248,9 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
         detectionThreshold = dtxThreshold;
     end
     detectorPeakMetric = localFiniteDetectionMetric(detMet);
+    expectedUCIBits = localNormalizeUCIBits(opts.ExpectedUCIBits);
+    decodedUCIBits = localNormalizeUCIBits(uciBits);
+    [uciBitErrors, uciBitsCompared, uciContentMatch] = localCompareUCIBits(expectedUCIBits, decodedUCIBits);
     detectionMetricStatus = "OK";
     if ~isfinite(detectorPeakMetric)
         detectionMetricStatus = "NOT_AVAILABLE";
@@ -259,6 +262,14 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
     rx.Ok              = logical(detectionUsable);
     rx.UCISoft         = uciSoft;
     rx.UCIBits         = uciBits;
+    rx.ExpectedUCIBits = expectedUCIBits;
+    rx.ExpectedBitCount = double(numel(expectedUCIBits));
+    rx.DecodedBitCount = double(numel(decodedUCIBits));
+    rx.BitsCompared = double(uciBitsCompared);
+    rx.BitErrors = double(uciBitErrors);
+    rx.UCIContentMatch = logical(uciContentMatch);
+    rx.FalseAck = logical(~isempty(expectedUCIBits) && ~logical(expectedUCIBits(1)) && ~isempty(decodedUCIBits) && logical(decodedUCIBits(1)));
+    rx.FalseNack = logical(~isempty(expectedUCIBits) && logical(expectedUCIBits(1)) && ~isempty(decodedUCIBits) && ~logical(decodedUCIBits(1)));
     rx.Symbols         = rxConst;
     rx.DetMetric       = detMet;
     rx.DetectionThreshold = detectionThreshold;
@@ -304,6 +315,9 @@ function [rx, info] = PUCCH_Rx(rxWaveform, cfg, varargin)
         "DetectionMetricStatus", detectionMetricStatus, ...
         "DetectorPeakMetric", detectorPeakMetric, ...
         "DetectorNoiseFloor", nVar, ...
+        "BitsCompared", double(uciBitsCompared), ...
+        "BitErrors", double(uciBitErrors), ...
+        "UCIContentMatch", logical(uciContentMatch), ...
         "DTXFlag", ~logical(detectionUsable));
 end
 
@@ -614,4 +628,40 @@ info.DetectionValidation = struct( ...
     "DetectorPeakMetric", NaN, ...
     "DetectorNoiseFloor", double(nVar), ...
     "DTXFlag", true);
+end
+
+function bits = localNormalizeUCIBits(rawBits)
+bits = int8([]);
+if isempty(rawBits)
+    return;
+end
+if iscell(rawBits)
+    if isempty(rawBits)
+        return;
+    end
+    rawBits = rawBits{1};
+end
+if ~(isnumeric(rawBits) || islogical(rawBits))
+    return;
+end
+vals = double(rawBits(:));
+vals = vals(isfinite(vals));
+bits = int8(vals ~= 0);
+end
+
+function [bitErrors, bitsCompared, contentMatch] = localCompareUCIBits(expectedBits, decodedBits)
+if isempty(expectedBits)
+    bitErrors = NaN;
+    bitsCompared = 0;
+    contentMatch = true;
+    return;
+end
+bitsCompared = min(numel(expectedBits), numel(decodedBits));
+if bitsCompared > 0
+    bitErrors = sum(expectedBits(1:bitsCompared) ~= decodedBits(1:bitsCompared));
+else
+    bitErrors = 0;
+end
+bitErrors = bitErrors + abs(numel(expectedBits) - numel(decodedBits));
+contentMatch = (bitErrors == 0) && (numel(decodedBits) == numel(expectedBits));
 end

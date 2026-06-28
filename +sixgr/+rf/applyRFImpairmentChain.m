@@ -522,7 +522,11 @@ row.Parameter1Value = localRMSFinite(stageCfg.Gain_dB);
 row.Parameter2Name = "element_phase_deg_rms";
 row.Parameter2Value = localRMSFinite(stageCfg.Phase_deg);
 row.Parameter3Name = "element_count";
-row.Parameter3Value = localResolveElementCountForStage(x, stageCfg, cfg);
+if stageCfg.Enabled
+    row.Parameter3Value = localResolveElementCountForStage(x, stageCfg, cfg);
+else
+    row.Parameter3Value = size(x, 2);
+end
 if stageCfg.Enabled && row.Applied && logical(stageCfg.MutualCouplingEnabled)
     row.Status = "applied_element_analog_rf_gain_phase_mutual_coupling";
 else

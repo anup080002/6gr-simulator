@@ -3505,12 +3505,17 @@ methods(Static, Access=private)
             return;
         end
         gatingActive = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
-        ok = ~gatingActive || sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
+        [pdcchOk, pdcchReason] = sixgr.truth.CoupledTruthRuntime.pdcchCausalGrantDecodePassed(trialT);
+        ok = ~gatingActive || pdcchOk;
         grant.PDCCHGatingActive = gatingActive;
         grant.ControlDecodeOk = logical(ok);
+        grant.PDCCHCausalGrantDecodeOk = logical(pdcchOk);
+        grant.PDCCHControlFailureReason = char(string(pdcchReason));
+        grant.PDCCHControlEvidenceSource = "pdcch_waveform_dci_crc_and_payload_match";
         if gatingActive
             if ok
                 grant.GrantControlState = "control_ok";
+                grant.ControlDecodeSource = "pdcch_waveform_dci_crc_and_payload_match";
                 state.LastPDCCHStatus(ueIdx) = "control_ok";
                 state.LastSuccessfulPDCCHSlotByUE(ueIdx) = double(sixgr.util.structGet(grant, "Slot", state.CurrentSlot));
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "PDCCH_DCI_DECODED", direction, ...
@@ -3519,6 +3524,7 @@ methods(Static, Access=private)
                     "PDCCH DCI decode observed for a scheduler grant in the coupled runtime.");
             else
                 grant.GrantControlState = "control_failed";
+                grant.ControlDecodeSource = "pdcch_waveform_dci_crc_and_payload_rejected";
                 state.LastPDCCHStatus(ueIdx) = "control_failed";
                 state.PDCCHFailureCount(ueIdx) = double(state.PDCCHFailureCount(ueIdx)) + 1;
                 state.GrantsBlockedByGatingCount(ueIdx) = double(state.GrantsBlockedByGatingCount(ueIdx)) + 1;
@@ -4294,6 +4300,10 @@ methods(Static, Access=private)
         row.SchedulingEligible = logical(sixgr.util.structGet(grant, "SchedulingEligible", row.ControlEligible));
         row.SchedulingBlockedBySRS = logical(sixgr.util.structGet(grant, "SchedulingBlockedBySRS", false));
         row.ControlDecodeOk = logical(sixgr.util.structGet(grant, "ControlDecodeOk", false));
+        row.PDCCHCausalGrantDecodeOk = logical(sixgr.util.structGet(grant, "PDCCHCausalGrantDecodeOk", false));
+        row.PDCCHControlFailureReason = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "PDCCHControlFailureReason", ""), "");
+        row.PDCCHControlEvidenceSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "PDCCHControlEvidenceSource", ""), "");
+        row.ControlDecodeSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "ControlDecodeSource", ""), "");
         row.GrantControlState = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "GrantControlState", ""), "");
         row.CellAcquisitionState = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "CellAcquisitionState", ""), "");
         row.AccessState = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "AccessState", ""), "");
@@ -5367,6 +5377,37 @@ methods(Static, Access=private)
         end
     end
 
+    function [tf, reason] = pdcchCausalGrantDecodePassed(trialT)
+        tf = false;
+        reason = "pdcch_trial_missing";
+        if ~(istable(trialT) && ~isempty(trialT))
+            return;
+        end
+        row = trialT(end, :);
+        basePass = sixgr.truth.CoupledTruthRuntime.trialPassed(row);
+        dciCrcPass = sixgr.truth.CoupledTruthRuntime.rowLogical(row, "DCICrcPass", basePass);
+        payloadMatch = sixgr.truth.CoupledTruthRuntime.rowLogical(row, "PDCCHPayloadMatch", true);
+        causalDecodeOk = sixgr.truth.CoupledTruthRuntime.rowLogical(row, "PDCCHCausalGrantDecodeOk", dciCrcPass && payloadMatch);
+        falseAlarm = sixgr.truth.CoupledTruthRuntime.rowLogical(row, "PDCCHFalseAlarm", false);
+        missedDetection = sixgr.truth.CoupledTruthRuntime.rowLogical(row, "PDCCHMissedDetection", false);
+        tf = logical(basePass && dciCrcPass && payloadMatch && causalDecodeOk && ~falseAlarm && ~missedDetection);
+        if tf
+            reason = "pdcch_dci_crc_and_payload_match";
+        elseif ~basePass
+            reason = "pdcch_trial_not_passed";
+        elseif ~dciCrcPass
+            reason = "pdcch_dci_crc_failed";
+        elseif ~payloadMatch
+            reason = "pdcch_dci_payload_mismatch";
+        elseif falseAlarm
+            reason = "pdcch_false_alarm_payload_rejected";
+        elseif missedDetection
+            reason = "pdcch_missed_detection";
+        else
+            reason = "pdcch_causal_grant_decode_rejected";
+        end
+    end
+
     function tf = trsRuntimeEvidenceComplete(row)
         tf = false;
         if ~(istable(row) && height(row) >= 1)
@@ -5658,6 +5699,10 @@ methods(Static, Access=private)
             "SRSGatingActive", logical(sixgr.util.structGet(grant, "SRSGatingActive", false)); ...
             "ControlEligible", logical(sixgr.util.structGet(grant, "ControlEligible", true)); ...
             "ControlDecodeOk", logical(sixgr.util.structGet(grant, "ControlDecodeOk", false)); ...
+            "PDCCHCausalGrantDecodeOk", logical(sixgr.util.structGet(grant, "PDCCHCausalGrantDecodeOk", false)); ...
+            "PDCCHControlFailureReason", string(sixgr.util.structGet(grant, "PDCCHControlFailureReason", "")); ...
+            "PDCCHControlEvidenceSource", string(sixgr.util.structGet(grant, "PDCCHControlEvidenceSource", "")); ...
+            "ControlDecodeSource", string(sixgr.util.structGet(grant, "ControlDecodeSource", "")); ...
             "GrantControlState", string(sixgr.util.structGet(grant, "GrantControlState", "")); ...
             "CellAcquisitionState", string(sixgr.util.structGet(grant, "CellAcquisitionState", "")); ...
             "AccessState", string(sixgr.util.structGet(grant, "AccessState", "")); ...
@@ -7692,6 +7737,7 @@ methods(Static, Access=private)
             "Frame", NaN, "Slot", NaN, "ScheduledAbsoluteSlot", NaN, "SourceSlot", NaN, ...
             "UEIndex", NaN, "UEID", NaN, "RNTI", NaN, "ServingCell", NaN, "BaseStationID", NaN, ...
             "HarqID", NaN, "TBSBits", NaN, "ExpectedAck", false, "ObservedAck", false, ...
+            "DecodedAck", false, "FalseAck", false, "FalseNack", false, "MissedFeedback", false, ...
             "ExpectedHARQCurrentDecodeOK", false, "ExpectedHARQCombinedDecodeOK", false, ...
             "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
             "UCIBitCount", NaN, "UCIType", "", ...
@@ -7843,7 +7889,9 @@ methods(Static, Access=private)
             "QueueBytesBefore", NaN, "QueueBytesAfter", NaN, ...
             "PBCHGatingActive", false, "PRACHGatingActive", false, "PDCCHGatingActive", false, "SRSGatingActive", false, ...
             "ControlEligible", false, "SchedulingEligible", false, "SchedulingBlockedBySRS", false, ...
-            "ControlDecodeOk", false, "GrantControlState", "", ...
+            "ControlDecodeOk", false, "PDCCHCausalGrantDecodeOk", false, ...
+            "PDCCHControlFailureReason", "", "PDCCHControlEvidenceSource", "", ...
+            "ControlDecodeSource", "", "GrantControlState", "", ...
             "CellAcquisitionState", "", "AccessState", "", "SRSValidityState", "", "CSIValidityState", "", ...
             "SRSValid", false, "LastSuccessfulSRSSlot", NaN, "SRSAgeSlots", NaN, ...
             "TRSGatingActive", false, "TRSValidityState", "", "TrackingEligibility", false, "TRSAgeSlots", NaN, ...
@@ -7892,7 +7940,9 @@ methods(Static, Access=private)
     end
 
     function [state, observed] = observePUCCHFeedback(state, feedbackRow)
-        observed = struct("ObservedAck", false, "DecodeOk", false);
+        observed = struct("ExpectedAck", false, "ObservedAck", false, "DecodedAck", false, ...
+            "DecodeOk", false, "DTXFlag", false, "MissedFeedback", true, ...
+            "FalseAck", false, "FalseNack", false);
         if ~(istable(feedbackRow) && height(feedbackRow) >= 1)
             return;
         end
@@ -7922,6 +7972,7 @@ methods(Static, Access=private)
         end
         interferenceBundle = sixgr.truth.CoupledTruthRuntime.buildPUCCHInterferenceBundle(state, row);
         expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
+        observed.ExpectedAck = logical(expectedAck);
         pucchSNR_dB = sixgr.truth.CoupledTruthRuntime.resolveRuntimeSignalSNRForUE(state, cfgU, ueIdx, "UL");
         if ~isfield(state, "PUCCHChannelStateByUE") || numel(state.PUCCHChannelStateByUE) < ueIdx
             state.PUCCHChannelStateByUE{ueIdx, 1} = [];
@@ -7937,7 +7988,12 @@ methods(Static, Access=private)
             "ChannelState", state.PUCCHChannelStateByUE{ueIdx});
         state.PUCCHChannelStateByUE{ueIdx, 1} = sixgr.util.structGet(trial, "ChannelState", state.PUCCHChannelStateByUE{ueIdx});
         observed.DecodeOk = logical(sixgr.util.structGet(trial, "Ok", false));
-        observed.ObservedAck = logical(observed.DecodeOk && sixgr.util.structGet(trial, "AckObserved", false));
+        observed.DTXFlag = logical(sixgr.util.structGet(trial, "DTXFlag", false)) || ~logical(observed.DecodeOk);
+        observed.MissedFeedback = ~logical(observed.DecodeOk);
+        observed.DecodedAck = logical(sixgr.util.structGet(trial, "AckObserved", false));
+        observed.ObservedAck = logical(observed.DecodeOk && observed.DecodedAck);
+        observed.FalseAck = logical(~expectedAck && observed.ObservedAck);
+        observed.FalseNack = logical(expectedAck && observed.DecodeOk && ~observed.ObservedAck);
         trialCrashed = logical(sixgr.util.structGet(trial, "Crash", false));
         if observed.DecodeOk
             if ueIdx > numel(state.LastSuccessfulPUCCHSlotByUE)
@@ -7945,16 +8001,15 @@ methods(Static, Access=private)
             end
             state.LastSuccessfulPUCCHSlotByUE(ueIdx) = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
         else
+            if ueIdx > numel(state.PUCCHFailureCount)
+                state.PUCCHFailureCount(ueIdx, 1) = 0;
+            end
+            state.PUCCHFailureCount(ueIdx) = double(state.PUCCHFailureCount(ueIdx)) + 1;
             if trialCrashed
                 if ueIdx > numel(state.PUCCHCrashCount)
                     state.PUCCHCrashCount(ueIdx, 1) = 0;
                 end
                 state.PUCCHCrashCount(ueIdx) = double(state.PUCCHCrashCount(ueIdx)) + 1;
-            else
-                if ueIdx > numel(state.PUCCHFailureCount)
-                    state.PUCCHFailureCount(ueIdx, 1) = 0;
-                end
-                state.PUCCHFailureCount(ueIdx) = double(state.PUCCHFailureCount(ueIdx)) + 1;
             end
         end
         state = sixgr.truth.CoupledTruthRuntime.appendPUCCHFeedbackTrial(state, feedbackRow, trial, observed);
@@ -7966,7 +8021,9 @@ methods(Static, Access=private)
         end
         fbRow = feedbackRow(1, :);
         if nargin < 4 || ~isstruct(observed)
-            observed = struct("ObservedAck", false, "DecodeOk", false);
+            observed = struct("ExpectedAck", false, "ObservedAck", false, "DecodedAck", false, ...
+                "DecodeOk", false, "DTXFlag", false, "MissedFeedback", true, ...
+                "FalseAck", false, "FalseNack", false);
         end
         if nargin < 3 || ~isstruct(trial)
             trial = struct();
@@ -8123,6 +8180,10 @@ methods(Static, Access=private)
             "ControlResourceValidity", logical(sixgr.util.structGet(trial, "ControlResourceValidity", true)), ...
             "ExpectedAck", logical(expectedAck), ...
             "ObservedAck", logical(ack), ...
+            "DecodedAck", logical(sixgr.util.structGet(observed, "DecodedAck", ack)), ...
+            "FalseAck", logical(sixgr.util.structGet(observed, "FalseAck", false)), ...
+            "FalseNack", logical(sixgr.util.structGet(observed, "FalseNack", false)), ...
+            "MissedFeedback", logical(sixgr.util.structGet(observed, "MissedFeedback", ~decodeOk)), ...
             "PUCCHDecodeOk", logical(decodeOk), ...
             "RuntimeStateUpdated", true, ...
             "RuntimeStateConsumer", "HARQEntity.onFeedback", ...
@@ -8525,6 +8586,18 @@ methods(Static, Access=private)
         decodeOk = logical(sixgr.util.structGet(observed, "DecodeOk", false));
         observedAck = logical(sixgr.util.structGet(observed, "ObservedAck", false));
         traceT.ObservedAck(idx) = observedAck;
+        if ismember("DecodedAck", string(traceT.Properties.VariableNames))
+            traceT.DecodedAck(idx) = logical(sixgr.util.structGet(observed, "DecodedAck", observedAck));
+        end
+        if ismember("FalseAck", string(traceT.Properties.VariableNames))
+            traceT.FalseAck(idx) = logical(sixgr.util.structGet(observed, "FalseAck", false));
+        end
+        if ismember("FalseNack", string(traceT.Properties.VariableNames))
+            traceT.FalseNack(idx) = logical(sixgr.util.structGet(observed, "FalseNack", false));
+        end
+        if ismember("MissedFeedback", string(traceT.Properties.VariableNames))
+            traceT.MissedFeedback(idx) = logical(sixgr.util.structGet(observed, "MissedFeedback", ~decodeOk));
+        end
         traceT.PUCCHDecodeOk(idx) = decodeOk;
         traceT.CurrentDecodeOK(idx) = decodeOk;
         traceT.CombinedDecodeOK(idx) = decodeOk;
