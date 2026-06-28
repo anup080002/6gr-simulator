@@ -29,6 +29,34 @@ slotDur_s = localSlotDuration(cfgExec);
 reqFrames = ceil(double(sixgr.util.structGet(opt, "LinkDuration_s", 0.02)) / max(slotDur_s, eps));
 requestedMaxFrames = round(double(sixgr.util.structGet(opt, "LinkMaxSimFrames", reqFrames)));
 numFrames = max(1, min(requestedMaxFrames, reqFrames));
+sweepPlan = localResolveSweepPlan(opt, numFrames);
+
+if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
+    fixedGridFallback = sixgr.util.structGet(opt, "LinkSNRGrid_dB", ...
+        sixgr.util.structGet(opt, "LinkSNR_dB", cfgExec.channel.snr_dB));
+    fixedLinkGrid = localResolveFixedLinkCampaignGrid(double(fixedGridFallback), sweepPlan);
+    campaign = localRunFixedLinkCampaign(cfgExec, fixedLinkGrid(:), sweepPlan, multiUser);
+    fixedSummary = sixgr.util.structGet(campaign, "Summary", table());
+    if istable(fixedSummary) && ~isempty(fixedSummary)
+        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), fixedSummary);
+        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), fixedSummary);
+        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedSummary);
+    end
+    out = struct();
+    out.Ok = istable(fixedSummary) && ~isempty(fixedSummary);
+    out.RunFolder = runFolder;
+    out.Result = struct("SNRSweep", fixedSummary, "ReferenceSweep", fixedSummary, "FixedLinkCampaign", campaign);
+    out.KPITable = table();
+    out.SNRSweep = fixedSummary;
+    out.ReferenceSweep = fixedSummary;
+    out.FixedLinkCampaign = campaign;
+    out.RawTrials = struct("DL", sixgr.util.structGet(campaign, "DLTrials", table()), ...
+        "UL", sixgr.util.structGet(campaign, "ULTrials", table()));
+    out.Artifacts = struct();
+    out.Errors = strings(0,1);
+    out.MultiUser = multiUser;
+    return;
+end
 
 params = struct();
 params.NumFrames = numFrames;
@@ -112,7 +140,6 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
 if istable(unsupportedCases) && ~isempty(unsupportedCases)
     localLogStage(ctx, "Pruned unsupported truth-only cases from KPI table: " + string(height(unsupportedCases)));
 end
-sweepPlan = localResolveSweepPlan(opt, numFrames);
 if receiverNoiseMode
     sweepPlan.MaxSweepPoints = 1;
     sweepPlan.ReferenceTrialsPerSNR = 0;
@@ -195,27 +222,39 @@ elseif ~isempty(refinedGrid)
     snrGrid = unique(sort([double(snrGrid(:)); double(refinedGrid(:))]));
     res.SNRSweep = localBuildSNRSweepFromRawTrials(rawTrials, cfgExec, snrGrid(:));
 end
-if receiverNoiseMode
+res.FixedLinkCampaign = localEmptyFixedLinkCampaignResult(false);
+if logical(sweepPlan.FixedLinkCampaignEnabled)
+    fixedLinkGrid = localResolveFixedLinkCampaignGrid(snrGrid(:), sweepPlan);
+    localLogStage(ctx, "Running fixed-reference SNR sweep with fixed-link Monte Carlo engine.");
+    stageStart = tic;
+    res.FixedLinkCampaign = localRunFixedLinkCampaign(cfgExec, fixedLinkGrid(:), sweepPlan, multiUser);
+    res.ReferenceSweep = sixgr.util.structGet(res.FixedLinkCampaign, "Summary", table());
+    if istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
+        res.SNRSweep = res.ReferenceSweep;
+    end
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "fixed_link_monte_carlo_campaign", toc(stageStart), toc(bundleStart), ...
+        "Fixed-reference multi-point Monte Carlo SNR campaign completed.");
+elseif receiverNoiseMode
     res.ReferenceSweep = table();
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
         "reference_sweep_skipped_for_receiver_noise", 0, toc(bundleStart), ...
-        "Receiver-noise mode forbids fixed-reference SNR sweeps; runtime receiver evidence remains authoritative.");
+        "Receiver-noise mode skipped the optional fixed-link calibration campaign; runtime receiver evidence remains authoritative.");
     if isCoupledTruth
         [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
             "reference_sweep_skipped_for_coupled_truth", 0, toc(bundleStart), ...
-            "Coupled truth also skips the legacy fixed-reference sweep and uses canonical slot-trace summaries only.");
+            "Coupled truth also skipped the optional fixed-link campaign and uses canonical slot-trace summaries only.");
     end
 elseif isCoupledTruth
     res.ReferenceSweep = table();
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
         "reference_sweep_skipped_for_coupled_truth", 0, toc(bundleStart), ...
-        "Coupled truth skips the legacy fixed-reference sweep and uses canonical slot-trace summaries only.");
+        "Coupled truth skipped the optional fixed-link campaign and uses canonical slot-trace summaries only.");
 else
-    localLogStage(ctx, "Running fixed-reference SNR sweep.");
-    stageStart = tic;
-    res.ReferenceSweep = localRunReferenceLinkSNRSweep(cfgExec, snrGrid(:), sweepPlan.ReferenceTrialsPerSNR, multiUser, sweepPlan);
+    res.ReferenceSweep = table();
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-        "reference_sweep", toc(stageStart), toc(bundleStart), "Fixed-reference SNR sweep completed.");
+        "reference_sweep_disabled", 0, toc(bundleStart), ...
+        "Fixed-link campaign disabled by configuration.");
 end
 localLogStage(ctx, "Applying primary sweep results to the authoritative KPI table.");
 stageStart = tic;
@@ -250,14 +289,18 @@ if logical(multiUser.Enabled)
 end
 localLogStage(ctx, "Writing optional legacy sweep CSV artifacts when enabled.");
 stageStart = tic;
-if ~receiverNoiseMode && istable(res.SNRSweep) && ~isempty(res.SNRSweep)
+if istable(res.SNRSweep) && ~isempty(res.SNRSweep)
     sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), res.SNRSweep);
 end
-if ~receiverNoiseMode && istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
+if istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
     sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), res.ReferenceSweep);
 end
+fixedLinkSummary = sixgr.util.structGet(sixgr.util.structGet(res, "FixedLinkCampaign", struct()), "Summary", table());
+if istable(fixedLinkSummary) && ~isempty(fixedLinkSummary)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedLinkSummary);
+end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-    "sweep_csv_export", toc(stageStart), toc(bundleStart), "Optional legacy sweep CSV artifact export completed or skipped by receiver-noise mode.");
+    "sweep_csv_export", toc(stageStart), toc(bundleStart), "Controlled sweep CSV artifact export completed when fixed-link or raw sweep evidence was available.");
 legacyHARQReady = localLegacyHARQArtifactsReady(rootRunFolder);
 runtimeHARQReady = localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
     localArtifactStructReady(harqArtifacts, "TimelineTable");
@@ -402,6 +445,7 @@ out.KPITable = kpi;
 out.SNRSweep = res.SNRSweep;
 out.MeasuredSINR = measuredSINRArtifacts;
 out.ReferenceSweep = sixgr.util.structGet(res, "ReferenceSweep", table());
+out.FixedLinkCampaign = sixgr.util.structGet(res, "FixedLinkCampaign", localEmptyFixedLinkCampaignResult(false));
 out.RawTrials = rawTrials;
 out.Artifacts = arts;
 out.BeamformingArtifacts = beamArtifacts;
@@ -685,41 +729,44 @@ end
 function row = localRunSweepPointDeterministic(cfg, snr, nFrames, seed)
 row = localEmptySweepSummaryRow(snr);
 
-try
+if logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", true))
     rng(double(seed), "twister");
     dl = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", nFrames, "SNR_dB", snr);
-    if ~logical(sixgr.util.structGet(dl, "Skipped", false))
-        dlTrials = localEnsureLinkTrialTable(sixgr.util.structGet(dl, "TrialTable", table()), "DL", snr, cfg);
-        dlStats = localSummarizeLinkTrialTable(dlTrials, cfg);
-        row = localApplyLinkSweepStats(row, "DL", dlStats);
+    if logical(sixgr.util.structGet(dl, "Skipped", false))
+        error("sixgr:truth:FixedSweepSkippedDL", ...
+            "DL fixed-link sweep point at %.6g dB was skipped: %s", snr, string(sixgr.util.structGet(dl, "Notes", "")));
     end
-catch
+    dlTrials = localEnsureLinkTrialTable(sixgr.util.structGet(dl, "TrialTable", table()), "DL", snr, cfg);
+    dlStats = localSummarizeLinkTrialTable(dlTrials, cfg);
+    row = localApplyLinkSweepStats(row, "DL", dlStats);
 end
 
-try
+if logical(sixgr.util.structGet(cfg, "phy.pusch.enable", true))
     rng(double(seed) + 10000, "twister");
     ul = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", nFrames, "SNR_dB", snr);
-    if ~logical(sixgr.util.structGet(ul, "Skipped", false))
-        ulTrials = localEnsureLinkTrialTable(sixgr.util.structGet(ul, "TrialTable", table()), "UL", snr, cfg);
-        ulStats = localSummarizeLinkTrialTable(ulTrials, cfg);
-        row = localApplyLinkSweepStats(row, "UL", ulStats);
+    if logical(sixgr.util.structGet(ul, "Skipped", false))
+        error("sixgr:truth:FixedSweepSkippedUL", ...
+            "UL fixed-link sweep point at %.6g dB was skipped: %s", snr, string(sixgr.util.structGet(ul, "Notes", "")));
     end
-catch
+    ulTrials = localEnsureLinkTrialTable(sixgr.util.structGet(ul, "TrialTable", table()), "UL", snr, cfg);
+    ulStats = localSummarizeLinkTrialTable(ulTrials, cfg);
+    row = localApplyLinkSweepStats(row, "UL", ulStats);
 end
 
-try
+if logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
     rng(double(seed) + 20000, "twister");
     srs = sixgr.link.runSRSChannelEstimation(cfg, "SNR_dB", snr);
-    if ~logical(sixgr.util.structGet(srs, "Skipped", false))
-        nmse = double(sixgr.util.structGet(srs, "NMSE_dB", NaN));
-        if isfinite(nmse)
-            row.SRS_NMSE_dB = nmse;
-            row.SRS_NMSE_CI_Low = nmse;
-            row.SRS_NMSE_CI_High = nmse;
-            row.SRS_TrialCount = 1;
-        end
+    if logical(sixgr.util.structGet(srs, "Skipped", false))
+        error("sixgr:truth:FixedSweepSkippedSRS", ...
+            "SRS fixed-link sweep point at %.6g dB was skipped: %s", snr, string(sixgr.util.structGet(srs, "Notes", "")));
     end
-catch
+    nmse = double(sixgr.util.structGet(srs, "NMSE_dB", NaN));
+    if isfinite(nmse)
+        row.SRS_NMSE_dB = nmse;
+        row.SRS_NMSE_CI_Low = nmse;
+        row.SRS_NMSE_CI_High = nmse;
+        row.SRS_TrialCount = 1;
+    end
 end
 end
 
@@ -11180,19 +11227,416 @@ cfgRef = sixgr.util.structSet(cfgRef, "phy.linkAdaptation.rankPolicy", "fixed");
 cfgRef = sixgr.util.structSet(cfgRef, "phy.linkAdaptation.beamPolicy", "fixed");
 cfgRef = sixgr.util.structSet(cfgRef, "phy.linkAdaptation.deltaCQIPolicy", "none");
 cfgRef = sixgr.util.structSet(cfgRef, "phy.linkAdaptation.deltaMCSPolicy", "none");
-cfgRef = sixgr.util.structSet(cfgRef, "phy.pdsch.nLayers", 1);
-cfgRef = sixgr.util.structSet(cfgRef, "phy.pdsch.numLayers", 1);
-cfgRef = sixgr.util.structSet(cfgRef, "phy.pusch.nLayers", 1);
-cfgRef = sixgr.util.structSet(cfgRef, "phy.pusch.numLayers", 1);
+cfgRef = sixgr.util.structSet(cfgRef, "phy.linkAdaptation.fixedReferenceMode", true);
+cfgRef = sixgr.util.structSet(cfgRef, "run.fixedReferenceMode", true);
+cfgRef = sixgr.util.structSet(cfgRef, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
 end
 
 function T = localRunReferenceLinkSNRSweep(cfg, snrGrid, nFrames, multiUser, sweepPlan)
-cfgRef = localBuildFixedReferenceCfg(cfg);
 if nargin < 5 || ~isstruct(sweepPlan)
     sweepPlan = localResolveSweepPlan(struct(), nFrames);
 end
-snrGrid = localBuildReferenceSweepGrid(snrGrid, sweepPlan);
-T = localRunLinkSNRSweep(cfgRef, snrGrid, nFrames, multiUser);
+campaign = localRunFixedLinkCampaign(cfg, localBuildReferenceSweepGrid(snrGrid, sweepPlan), sweepPlan, multiUser);
+T = sixgr.util.structGet(campaign, "Summary", table());
+end
+
+function campaign = localEmptyFixedLinkCampaignResult(enabled)
+if nargin < 1
+    enabled = false;
+end
+campaign = struct( ...
+    "Enabled", logical(enabled), ...
+    "CampaignKind", "fixed_link_monte_carlo", ...
+    "Summary", table(), ...
+    "DLTrials", table(), ...
+    "ULTrials", table(), ...
+    "SNRGrid_dB", [], ...
+    "SeedBase", NaN, ...
+    "Notes", "");
+end
+
+function grid = localResolveFixedLinkCampaignGrid(snrGrid, sweepPlan)
+explicit = double(sixgr.util.structGet(sweepPlan, "FixedLinkSNRGrid_dB", []));
+explicit = explicit(:);
+explicit = explicit(isfinite(explicit));
+if ~isempty(explicit)
+    grid = unique(sort(explicit));
+    return;
+end
+grid = localBuildReferenceSweepGrid(snrGrid, sweepPlan);
+end
+
+function campaign = localRunFixedLinkCampaign(cfg, snrGrid, sweepPlan, multiUser)
+campaign = localEmptyFixedLinkCampaignResult(true);
+snrGrid = unique(sort(double(snrGrid(:))));
+snrGrid = snrGrid(isfinite(snrGrid));
+if isempty(snrGrid)
+    campaign.Notes = "skipped_empty_snr_grid";
+    return;
+end
+campaign.SNRGrid_dB = snrGrid(:).';
+campaign.SeedBase = double(sweepPlan.FixedLinkSeed);
+if nargin < 4 || ~isstruct(multiUser)
+    multiUser = localResolveMultiUserSpec(cfg);
+end
+
+if logical(sixgr.util.structGet(multiUser, "Enabled", false))
+    summary = table();
+    dlTrials = table();
+    ulTrials = table();
+    for ueIdx = 1:max(1, round(double(multiUser.NumUsers)))
+        cfgU = localPrepareUserCfg(cfg, multiUser, ueIdx);
+        userCampaign = localRunFixedLinkCampaignSingleUser(cfgU, snrGrid, sweepPlan);
+        Su = sixgr.util.structGet(userCampaign, "Summary", table());
+        if istable(Su) && ~isempty(Su)
+            Su.UEIndex = repmat(double(ueIdx), height(Su), 1);
+            Su.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), height(Su), 1);
+            Su.ExecutionModel = repmat(string(multiUser.ExecutionModel), height(Su), 1);
+            summary = localAppendCompatTable(summary, Su);
+        end
+        dlTrials = localAppendCompatTable(dlTrials, sixgr.util.structGet(userCampaign, "DLTrials", table()));
+        ulTrials = localAppendCompatTable(ulTrials, sixgr.util.structGet(userCampaign, "ULTrials", table()));
+    end
+    campaign.Summary = summary;
+    campaign.DLTrials = dlTrials;
+    campaign.ULTrials = ulTrials;
+    campaign.Notes = "multi_user_fixed_link_campaign_executed_as_independent_fixed_links";
+    return;
+end
+
+campaign = localRunFixedLinkCampaignSingleUser(cfg, snrGrid, sweepPlan);
+end
+
+function campaign = localRunFixedLinkCampaignSingleUser(cfg, snrGrid, sweepPlan)
+campaign = localEmptyFixedLinkCampaignResult(true);
+cfgRef = localBuildFixedReferenceCfg(cfg);
+snrGrid = unique(sort(double(snrGrid(:))));
+n = numel(snrGrid);
+rows = repmat(localEmptySweepSummaryRow(0), n, 1);
+dlAll = table();
+ulAll = table();
+
+for i = 1:n
+    snr = double(snrGrid(i));
+    pointSeed = localHierarchicalCampaignSeed(double(sweepPlan.FixedLinkSeed), i, 0, 0, "POINT");
+    row = localEmptySweepSummaryRow(snr);
+    row.CampaignKind = "fixed_link_monte_carlo";
+    row.SweepKind = "fixed_reference_awgn_snr_campaign";
+    row.FixedReferenceMode = true;
+    row.NoiseOperatingMode = "standalone_awgn_snr_argument";
+    row.ConfidenceLevel = double(sweepPlan.FixedLinkConfidenceLevel);
+    row.SequentialMinTrials = double(sweepPlan.FixedLinkMinTrials);
+    row.SequentialMaxTrials = double(sweepPlan.FixedLinkMaxTrials);
+    row.SequentialErrorTarget = double(sweepPlan.FixedLinkErrorTarget);
+    row.SequentialCIWidthTarget = double(sweepPlan.FixedLinkCIWidthTarget);
+    row.TrialsPerDrop = double(sweepPlan.FixedLinkTrialsPerDrop);
+    row.PointIndex = double(i);
+    row.PointSeed = double(pointSeed);
+    row.DL_TargetBLER = double(sweepPlan.FixedLinkTargetBLER);
+    row.UL_TargetBLER = double(sweepPlan.FixedLinkTargetBLER);
+
+    if logical(sixgr.util.structGet(cfgRef, "phy.pdsch.enable", true))
+        [stats, trials] = localRunFixedDirectionCampaignPoint(cfgRef, "DL", snr, i, sweepPlan);
+        row = localApplyFixedDirectionStats(row, "DL", stats);
+        dlAll = localAppendCompatTable(dlAll, trials);
+    end
+
+    if logical(sixgr.util.structGet(cfgRef, "phy.pusch.enable", true))
+        [stats, trials] = localRunFixedDirectionCampaignPoint(cfgRef, "UL", snr, i, sweepPlan);
+        row = localApplyFixedDirectionStats(row, "UL", stats);
+        ulAll = localAppendCompatTable(ulAll, trials);
+    end
+
+    if logical(sixgr.util.structGet(cfgRef, "phy.srs.enable", false))
+        row = localApplyFixedSRSMeasurement(row, cfgRef, snr, i, sweepPlan);
+    end
+
+    rows(i, 1) = row;
+end
+
+summary = struct2table(rows);
+summary = localAnnotateFixedLinkCurveCrossings(summary, sweepPlan);
+campaign.Summary = summary;
+campaign.DLTrials = dlAll;
+campaign.ULTrials = ulAll;
+campaign.SNRGrid_dB = snrGrid(:).';
+campaign.SeedBase = double(sweepPlan.FixedLinkSeed);
+campaign.Notes = "fixed_link_campaign_uses_waveform_dl_ul_kernels_with_standalone_awgn_snr_argument";
+end
+
+function [stats, T] = localRunFixedDirectionCampaignPoint(cfg, direction, snr, pointIndex, sweepPlan)
+direction = upper(string(direction));
+T = localEmptyLinkTrialTable(0);
+dropIndex = 0;
+while true
+    stats = localSummarizeFixedLinkTrialTable(T, cfg, sweepPlan);
+    stopReason = localFixedLinkStopReason(stats, sweepPlan);
+    if stopReason ~= "continue"
+        stats.StopReason = stopReason;
+        stats.Incomplete = localFixedLinkIncomplete(stats, sweepPlan, stopReason);
+        return;
+    end
+
+    completed = max(0, round(double(sixgr.util.structGet(stats, "TrialCount", 0))));
+    if completed >= double(sweepPlan.FixedLinkMaxTrials)
+        stats.StopReason = "max_trials_reached";
+        stats.Incomplete = localFixedLinkIncomplete(stats, sweepPlan, stats.StopReason);
+        return;
+    end
+
+    dropIndex = dropIndex + 1;
+    remaining = double(sweepPlan.FixedLinkMaxTrials) - completed;
+    nFrames = max(1, min(round(double(sweepPlan.FixedLinkTrialsPerDrop)), round(remaining)));
+    dropSeed = localHierarchicalCampaignSeed(double(sweepPlan.FixedLinkSeed), pointIndex, dropIndex, 0, direction);
+    cfgDrop = cfg;
+    cfgDrop = sixgr.util.structSet(cfgDrop, "run.seed", double(dropSeed));
+    cfgDrop = sixgr.util.structSet(cfgDrop, "channel.snr_dB", double(snr));
+    cfgDrop = sixgr.util.structSet(cfgDrop, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
+    startFrame = 1 + completed;
+
+    if direction == "DL"
+        res = sixgr.link.runDLPDSCHThroughput(cfgDrop, ...
+            "NumFrames", nFrames, ...
+            "SNR_dB", snr, ...
+            "StartFrameIndex", startFrame);
+    else
+        res = sixgr.link.runULPUSCHThroughput(cfgDrop, ...
+            "NumFrames", nFrames, ...
+            "SNR_dB", snr, ...
+            "StartFrameIndex", startFrame);
+    end
+
+    if logical(sixgr.util.structGet(res, "Skipped", false))
+        error("sixgr:truth:FixedLinkCampaignSkipped", ...
+            "%s fixed-link campaign point %.6g dB skipped: %s", direction, snr, string(sixgr.util.structGet(res, "Notes", "")));
+    end
+
+    Ti = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), direction, snr, cfgDrop);
+    Ti = localAnnotateFixedLinkTrialRows(Ti, pointIndex, dropIndex, dropSeed, completed, direction, sweepPlan);
+    T = localAppendCompatTable(T, Ti);
+end
+end
+
+function T = localAnnotateFixedLinkTrialRows(T, pointIndex, dropIndex, dropSeed, completed, direction, sweepPlan)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+T.FixedLinkCampaign = true(n, 1);
+T.FixedLinkCampaignKind = repmat("fixed_link_monte_carlo", n, 1);
+T.FixedReferenceMode = true(n, 1);
+T.FixedLinkPointIndex = repmat(double(pointIndex), n, 1);
+T.FixedLinkDropIndex = repmat(double(dropIndex), n, 1);
+T.FixedLinkDropSeed = repmat(double(dropSeed), n, 1);
+T.FixedLinkTrialIndex = double(completed) + (1:n).';
+T.FixedLinkDirection = repmat(upper(string(direction)), n, 1);
+T.FixedLinkNoiseVariable = repmat("SNR_dB", n, 1);
+T.FixedLinkConfidenceLevel = repmat(double(sweepPlan.FixedLinkConfidenceLevel), n, 1);
+T.FixedLinkSeedHierarchy = "campaign=" + string(double(sweepPlan.FixedLinkSeed)) + ...
+    "|point=" + string(double(pointIndex)) + ...
+    "|drop=" + string(double(dropIndex)) + ...
+    "|trial=" + string(T.FixedLinkTrialIndex) + ...
+    "|link=" + upper(string(direction));
+end
+
+function stats = localSummarizeFixedLinkTrialTable(T, cfg, sweepPlan)
+stats = localSummarizeLinkTrialTable(T, cfg);
+stats.BLER_CI_Method = "clopper_pearson_exact";
+stats.BER_CI_Method = "clopper_pearson_exact";
+stats.BLER_CI_Width = NaN;
+stats.DropCount = NaN;
+stats.BLER_ClusterCI_Low = NaN;
+stats.BLER_ClusterCI_High = NaN;
+stats.StopReason = "continue";
+stats.Incomplete = false;
+Te = localEffectiveTrialRows(T);
+if isempty(Te)
+    stats.TrialCount = 0;
+    stats.FailureCount = 0;
+    return;
+end
+status = upper(strtrim(string(Te.Status)));
+failMask = status == "FAIL" | status == "CRASH";
+bits = double(Te.BitsCompared);
+bits(~isfinite(bits)) = 0;
+bitErr = double(Te.BitErrors);
+bitErr(~isfinite(bitErr)) = 0;
+stats.TrialCount = double(height(Te));
+stats.FailureCount = double(sum(failMask));
+[stats.BLER_CI_Low, stats.BLER_CI_High] = localClopperPearsonInterval(stats.FailureCount, stats.TrialCount, sweepPlan.FixedLinkConfidenceLevel);
+[stats.BER_CI_Low, stats.BER_CI_High] = localClopperPearsonInterval(sum(bitErr), sum(bits), sweepPlan.FixedLinkConfidenceLevel);
+stats.BLER_CI_Width = stats.BLER_CI_High - stats.BLER_CI_Low;
+if ismember("FixedLinkDropIndex", string(Te.Properties.VariableNames))
+    drops = double(Te.FixedLinkDropIndex);
+    valid = isfinite(drops);
+    if any(valid)
+        [g, ~] = findgroups(drops(valid));
+        dropFail = splitapply(@mean, double(failMask(valid)), g);
+        stats.DropCount = double(numel(dropFail));
+        [stats.BLER_ClusterCI_Low, stats.BLER_ClusterCI_High] = localMeanConfidenceInterval(dropFail);
+    end
+end
+end
+
+function stopReason = localFixedLinkStopReason(stats, sweepPlan)
+trialCount = double(sixgr.util.structGet(stats, "TrialCount", 0));
+failureCount = double(sixgr.util.structGet(stats, "FailureCount", 0));
+ciWidth = double(sixgr.util.structGet(stats, "BLER_CI_Width", inf));
+if trialCount < double(sweepPlan.FixedLinkMinTrials)
+    stopReason = "continue";
+elseif isfinite(double(sweepPlan.FixedLinkErrorTarget)) && failureCount >= double(sweepPlan.FixedLinkErrorTarget)
+    stopReason = "error_target_reached";
+elseif isfinite(double(sweepPlan.FixedLinkCIWidthTarget)) && isfinite(ciWidth) && ciWidth <= double(sweepPlan.FixedLinkCIWidthTarget)
+    stopReason = "ci_width_target_reached";
+elseif trialCount >= double(sweepPlan.FixedLinkMaxTrials)
+    stopReason = "max_trials_reached";
+else
+    stopReason = "continue";
+end
+end
+
+function tf = localFixedLinkIncomplete(stats, sweepPlan, stopReason)
+tf = false;
+if string(stopReason) ~= "max_trials_reached"
+    return;
+end
+failureCount = double(sixgr.util.structGet(stats, "FailureCount", 0));
+ciWidth = double(sixgr.util.structGet(stats, "BLER_CI_Width", inf));
+metErrorTarget = isfinite(double(sweepPlan.FixedLinkErrorTarget)) && failureCount >= double(sweepPlan.FixedLinkErrorTarget);
+metCIWidth = isfinite(double(sweepPlan.FixedLinkCIWidthTarget)) && isfinite(ciWidth) && ciWidth <= double(sweepPlan.FixedLinkCIWidthTarget);
+tf = ~(metErrorTarget || metCIWidth);
+end
+
+function row = localApplyFixedDirectionStats(row, prefix, stats)
+prefix = upper(string(prefix));
+row = localApplyLinkSweepStats(row, prefix, stats);
+row.(char(prefix + "_BLER_CI_Method")) = string(sixgr.util.structGet(stats, "BLER_CI_Method", ""));
+row.(char(prefix + "_BLER_CI_Width")) = double(sixgr.util.structGet(stats, "BLER_CI_Width", NaN));
+row.(char(prefix + "_BER_CI_Method")) = string(sixgr.util.structGet(stats, "BER_CI_Method", ""));
+row.(char(prefix + "_DropCount")) = double(sixgr.util.structGet(stats, "DropCount", NaN));
+row.(char(prefix + "_BLER_ClusterCI_Low")) = double(sixgr.util.structGet(stats, "BLER_ClusterCI_Low", NaN));
+row.(char(prefix + "_BLER_ClusterCI_High")) = double(sixgr.util.structGet(stats, "BLER_ClusterCI_High", NaN));
+row.(char(prefix + "_StopReason")) = string(sixgr.util.structGet(stats, "StopReason", ""));
+row.(char(prefix + "_Incomplete")) = logical(sixgr.util.structGet(stats, "Incomplete", false));
+end
+
+function row = localApplyFixedSRSMeasurement(row, cfg, snr, pointIndex, sweepPlan)
+seed = localHierarchicalCampaignSeed(double(sweepPlan.FixedLinkSeed), pointIndex, 1, 0, "SRS");
+cfgSRS = cfg;
+cfgSRS = sixgr.util.structSet(cfgSRS, "run.seed", double(seed));
+cfgSRS = sixgr.util.structSet(cfgSRS, "channel.snr_dB", double(snr));
+cfgSRS = sixgr.util.structSet(cfgSRS, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
+rng(double(seed), "twister");
+srs = sixgr.link.runSRSChannelEstimation(cfgSRS, "SNR_dB", snr);
+if logical(sixgr.util.structGet(srs, "Skipped", false))
+    error("sixgr:truth:FixedLinkCampaignSkippedSRS", ...
+        "SRS fixed-link campaign point %.6g dB skipped: %s", snr, string(sixgr.util.structGet(srs, "Notes", "")));
+end
+nmse = double(sixgr.util.structGet(srs, "NMSE_dB", NaN));
+if isfinite(nmse)
+    row.SRS_NMSE_dB = nmse;
+    row.SRS_NMSE_CI_Low = nmse;
+    row.SRS_NMSE_CI_High = nmse;
+    row.SRS_TrialCount = 1;
+end
+end
+
+function [lo, hi] = localClopperPearsonInterval(k, n, confidenceLevel)
+lo = NaN;
+hi = NaN;
+k = double(k);
+n = double(n);
+if ~(isfinite(n) && n > 0 && isfinite(k) && k >= 0)
+    return;
+end
+k = min(max(k, 0), n);
+alpha = 1 - double(confidenceLevel);
+alpha = min(max(alpha, eps), 1 - eps);
+if k == 0
+    lo = 0;
+else
+    lo = betaincinv(alpha / 2, k, n - k + 1);
+end
+if k == n
+    hi = 1;
+else
+    hi = betaincinv(1 - alpha / 2, k + 1, n - k);
+end
+lo = max(0, min(1, double(lo)));
+hi = max(0, min(1, double(hi)));
+end
+
+function seed = localHierarchicalCampaignSeed(baseSeed, pointIndex, dropIndex, trialIndex, linkToken)
+baseSeed = double(baseSeed);
+if ~(isfinite(baseSeed) && baseSeed >= 0)
+    baseSeed = 1;
+end
+token = char(upper(string(linkToken)));
+linkHash = 0;
+for i = 1:numel(token)
+    linkHash = mod(linkHash * 131 + double(token(i)), 2^31 - 1);
+end
+seed = mod(round(baseSeed) + round(double(pointIndex)) * 1000003 + ...
+    round(double(dropIndex)) * 9176 + round(double(trialIndex)) * 131071 + ...
+    linkHash * 8191, 2^31 - 1);
+if seed <= 0
+    seed = seed + 1;
+end
+end
+
+function T = localAnnotateFixedLinkCurveCrossings(T, sweepPlan)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+for prefix = ["DL", "UL"]
+    targetCol = prefix + "_TargetBLER";
+    statusCol = prefix + "_TargetCrossingStatus";
+    snrCol = prefix + "_TargetCrossingSNR_dB";
+    if ~all(ismember(["SNR_dB", prefix + "_BLER", statusCol, snrCol], string(T.Properties.VariableNames)))
+        continue;
+    end
+    [status, crossingSNR] = localFixedLinkCrossingStatus(T, prefix, double(sweepPlan.FixedLinkTargetBLER));
+    T.(char(targetCol)) = repmat(double(sweepPlan.FixedLinkTargetBLER), height(T), 1);
+    T.(char(statusCol)) = repmat(string(status), height(T), 1);
+    T.(char(snrCol)) = repmat(double(crossingSNR), height(T), 1);
+end
+end
+
+function [status, crossingSNR] = localFixedLinkCrossingStatus(T, prefix, targetBLER)
+status = "insufficient_finite_points";
+crossingSNR = NaN;
+prefix = upper(string(prefix));
+x = double(T.SNR_dB);
+y = double(T.(char(prefix + "_BLER")));
+mask = isfinite(x) & isfinite(y);
+if nnz(mask) < 2
+    return;
+end
+x = x(mask);
+y = y(mask);
+[x, order] = sort(x(:));
+y = y(order);
+target = double(targetBLER);
+for i = 1:numel(x)-1
+    y1 = y(i);
+    y2 = y(i + 1);
+    if (y1 >= target && y2 <= target) || (y1 <= target && y2 >= target)
+        if abs(y2 - y1) < eps
+            crossingSNR = x(i);
+        else
+            crossingSNR = x(i) + (target - y1) .* (x(i + 1) - x(i)) ./ (y2 - y1);
+        end
+        status = "crossing_observed";
+        return;
+    end
+end
+if all(y > target)
+    status = "no_crossing_all_points_above_target";
+elseif all(y < target)
+    status = "no_crossing_all_points_below_target";
+else
+    status = "no_crossing_nonmonotonic_points";
+end
 end
 
 function res = localApplyPrimarySweepResults(res, rawTrials, cfg, snrGrid, pruneMissingPrimaryEvidence)
@@ -11760,13 +12204,33 @@ end
 function row = localEmptySweepSummaryRow(snr)
 row = struct( ...
     "SNR_dB", double(snr), ...
+    "CampaignKind", "raw_trial_summary", ...
+    "SweepKind", "operating_point_summary", ...
+    "FixedReferenceMode", false, ...
+    "NoiseOperatingMode", "", ...
+    "ConfidenceLevel", NaN, ...
+    "SequentialMinTrials", NaN, ...
+    "SequentialMaxTrials", NaN, ...
+    "SequentialErrorTarget", NaN, ...
+    "SequentialCIWidthTarget", NaN, ...
+    "TrialsPerDrop", NaN, ...
+    "PointIndex", NaN, ...
+    "PointSeed", NaN, ...
     "DL_BER", NaN, "DL_BER_CI_Low", NaN, "DL_BER_CI_High", NaN, ...
     "DL_BLER", NaN, "DL_BLER_CI_Low", NaN, "DL_BLER_CI_High", NaN, "DL_TrialCount", NaN, "DL_FailureCount", NaN, ...
+    "DL_BLER_CI_Method", "", "DL_BLER_CI_Width", NaN, "DL_BER_CI_Method", "", ...
+    "DL_DropCount", NaN, "DL_BLER_ClusterCI_Low", NaN, "DL_BLER_ClusterCI_High", NaN, ...
+    "DL_StopReason", "", "DL_Incomplete", false, "DL_TargetBLER", NaN, ...
+    "DL_TargetCrossingStatus", "", "DL_TargetCrossingSNR_dB", NaN, ...
     "DL_Throughput_Mbps", NaN, "DL_Throughput_CI_Low", NaN, "DL_Throughput_CI_High", NaN, ...
     "DL_OfferedThroughput_Mbps", NaN, "DL_Goodput_Mbps", NaN, "DL_CodeBlockBLER", NaN, "DL_CBG_BLER", NaN, ...
     "DL_DecodeLatency_ms", NaN, "DL_DecoderComplexityUnits", NaN, "DL_NormalizedDecoderComplexity", NaN, ...
     "UL_BER", NaN, "UL_BER_CI_Low", NaN, "UL_BER_CI_High", NaN, ...
     "UL_BLER", NaN, "UL_BLER_CI_Low", NaN, "UL_BLER_CI_High", NaN, "UL_TrialCount", NaN, "UL_FailureCount", NaN, ...
+    "UL_BLER_CI_Method", "", "UL_BLER_CI_Width", NaN, "UL_BER_CI_Method", "", ...
+    "UL_DropCount", NaN, "UL_BLER_ClusterCI_Low", NaN, "UL_BLER_ClusterCI_High", NaN, ...
+    "UL_StopReason", "", "UL_Incomplete", false, "UL_TargetBLER", NaN, ...
+    "UL_TargetCrossingStatus", "", "UL_TargetCrossingSNR_dB", NaN, ...
     "UL_Throughput_Mbps", NaN, "UL_Throughput_CI_Low", NaN, "UL_Throughput_CI_High", NaN, ...
     "UL_OfferedThroughput_Mbps", NaN, "UL_Goodput_Mbps", NaN, "UL_CodeBlockBLER", NaN, "UL_CBG_BLER", NaN, ...
     "UL_DecodeLatency_ms", NaN, "UL_DecoderComplexityUnits", NaN, "UL_NormalizedDecoderComplexity", NaN, ...
@@ -12028,6 +12492,28 @@ plan.MaxSweepPoints = max(3, round(double(sixgr.util.structGet(opt, "LinkSweepMa
 plan.ReferenceSweepStep_dB = max(1, double(sixgr.util.structGet(opt, "LinkReferenceSweepStep_dB", 5)));
 plan.ReferenceSweepMargin_dB = max(plan.ReferenceSweepStep_dB * 3, double(sixgr.util.structGet(opt, "LinkReferenceSweepMargin_dB", 24)));
 plan.ReferenceMaxSweepPoints = max(plan.MaxSweepPoints + 1, round(double(sixgr.util.structGet(opt, "LinkReferenceSweepMaxPoints", 8))));
+plan.FixedLinkCampaignEnabled = logical(sixgr.util.structGet(opt, "LinkFixedLinkCampaignEnabled", false));
+plan.FixedLinkSNRGrid_dB = double(sixgr.util.structGet(opt, "LinkFixedLinkSNRGrid_dB", []));
+plan.FixedLinkMinTrials = max(1, round(double(sixgr.util.structGet(opt, "LinkFixedLinkMinTrials", plan.ReferenceTrialsPerSNR))));
+plan.FixedLinkMaxTrials = max(plan.FixedLinkMinTrials, round(double(sixgr.util.structGet(opt, "LinkFixedLinkMaxTrials", plan.ReferenceTrialsPerSNR))));
+plan.FixedLinkTrialsPerDrop = max(1, round(double(sixgr.util.structGet(opt, "LinkFixedLinkTrialsPerDrop", min(plan.FixedLinkMaxTrials, baseTrials)))));
+plan.FixedLinkErrorTarget = max(1, round(double(sixgr.util.structGet(opt, "LinkFixedLinkErrorTarget", inf))));
+plan.FixedLinkCIWidthTarget = double(sixgr.util.structGet(opt, "LinkFixedLinkCIWidthTarget", inf));
+if ~(isfinite(plan.FixedLinkCIWidthTarget) && plan.FixedLinkCIWidthTarget >= 0)
+    plan.FixedLinkCIWidthTarget = inf;
+end
+plan.FixedLinkConfidenceLevel = double(sixgr.util.structGet(opt, "LinkFixedLinkConfidenceLevel", 0.95));
+if ~(isfinite(plan.FixedLinkConfidenceLevel) && plan.FixedLinkConfidenceLevel > 0 && plan.FixedLinkConfidenceLevel < 1)
+    plan.FixedLinkConfidenceLevel = 0.95;
+end
+plan.FixedLinkSeed = double(sixgr.util.structGet(opt, "LinkFixedLinkSeed", 730001));
+if ~(isfinite(plan.FixedLinkSeed) && plan.FixedLinkSeed >= 0)
+    plan.FixedLinkSeed = 730001;
+end
+plan.FixedLinkTargetBLER = double(sixgr.util.structGet(opt, "LinkFixedLinkTargetBLER", 0.10));
+if ~(isfinite(plan.FixedLinkTargetBLER) && plan.FixedLinkTargetBLER > 0 && plan.FixedLinkTargetBLER < 1)
+    plan.FixedLinkTargetBLER = 0.10;
+end
 end
 
 function grid = localBuildAdaptiveRefinedGrid(sweepT, anchorGrid, cfg, opt)

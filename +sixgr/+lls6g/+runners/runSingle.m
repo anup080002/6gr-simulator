@@ -48,17 +48,18 @@ opt.LinkDuration_s = max(double(totalSlots) * slotDuration_s, ...
 opt.LinkMaxSimFrames = double(totalSlots);
 opt.LinkSNR_dB = double(cfg.channel.snr_dB);
 receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfg);
+controlledSNRGrid = localBuildSweepGrid(cfg.channel.snr_dB, ...
+    double(scfg.get("simulation.snr_sweep_offsets_db")), ...
+    logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled", false)), ...
+    double(scfg.get("sweeps_and_matrix.snr_sweep.values_db", [])));
 if receiverNoiseMode
     opt.LinkSNRGrid_dB = localBuildPhysicalOperatingPointGrid(cfg.channel.snr_dB);
 else
-    opt.LinkSNRGrid_dB = localBuildSweepGrid(cfg.channel.snr_dB, ...
-        double(scfg.get("simulation.snr_sweep_offsets_db")), ...
-        logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled")), ...
-        double(scfg.get("sweeps_and_matrix.snr_sweep.values_db")));
+    opt.LinkSNRGrid_dB = controlledSNRGrid;
 end
 opt.LinkQualityMode = char(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ...
     "receiver_noise_figure_thermal_noise")));
-mcIterations = max(1, round(double(scfg.get("simulation.monte_carlo_iterations"))));
+mcIterations = max(1, round(double(scfg.get("simulation.monte_carlo_iterations", 1))));
 opt.LinkSweepFrames = mcIterations;
 opt.LinkSweepTrialsPerSNR = max(double(totalSlots), double(totalSlots) * mcIterations);
 if receiverNoiseMode
@@ -71,6 +72,20 @@ end
 opt.LinkAdaptiveSweepEnabled = ~receiverNoiseMode;
 opt.LinkAdaptiveSweepStep_dB = 2;
 opt.LinkAdaptiveSweepMaxPoints = ternaryDouble(receiverNoiseMode, 1, 12);
+snrSweepEnabled = logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled", false));
+fixedLinkEnabledDefault = (~receiverNoiseMode) || (snrSweepEnabled && numel(unique(controlledSNRGrid)) >= 2);
+opt.LinkFixedLinkCampaignEnabled = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.enabled", fixedLinkEnabledDefault));
+opt.LinkFixedLinkSNRGrid_dB = controlledSNRGrid;
+defaultFixedTrials = max(1, opt.LinkSweepTrialsPerSNR);
+opt.LinkFixedLinkMinTrials = max(1, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.min_trials", defaultFixedTrials))));
+opt.LinkFixedLinkMaxTrials = max(opt.LinkFixedLinkMinTrials, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.max_trials", defaultFixedTrials))));
+opt.LinkFixedLinkTrialsPerDrop = max(1, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.trials_per_drop", totalSlots))));
+opt.LinkFixedLinkErrorTarget = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.error_target", inf));
+opt.LinkFixedLinkCIWidthTarget = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.ci_width_target", inf));
+opt.LinkFixedLinkConfidenceLevel = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.confidence_level", 0.95));
+opt.LinkFixedLinkTargetBLER = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.target_bler", 0.10));
+opt.LinkFixedLinkSeed = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.seed", ...
+    double(sixgr.util.structGet(cfg, "run.seed", 1)) + 730001));
 opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
 opt.SaveFigures = logical(scfg.get("output.save_figures"));
 tuning = sixgr.lls6g.runners.resolveWaveformBundleRuntimeTuning(scfg, cfg, opt.LinkSNRGrid_dB);
