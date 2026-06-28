@@ -50,7 +50,10 @@ if opt.SaveCSV
         "RunId", localRunId(details), ...
         "ScenarioName", localScenarioName(details), ...
         "SourcePaths", rawKPI.Paths, ...
-        "StrictMode", localStrictMode(details));
+        "StrictMode", localStrictMode(details), ...
+        "MeasurementWindowSec", localMeasurementWindowSec(details, rawKPI), ...
+        "WarmupDurationSec", localWarmupDurationSec(details), ...
+        "EffectiveBandwidthHz", localEffectiveBandwidthHz(details));
     kpiLineage = localBuildKPILineageTable(kpiRecon.ReconstructionSummary);
 
     reportCSVDir = localKPIReportCSVDir(runFolder);
@@ -64,6 +67,8 @@ if opt.SaveCSV
         "kpi_row_contributions_dl.csv", kpiRecon.RowContributionsDL;
         "kpi_harq_delivery_trace_ul.csv", kpiRecon.HARQDeliveryTraceUL;
         "kpi_harq_delivery_trace_dl.csv", kpiRecon.HARQDeliveryTraceDL;
+        "kpi_tb_delivery_ledger_ul.csv", kpiRecon.TBDeliveryLedgerUL;
+        "kpi_tb_delivery_ledger_dl.csv", kpiRecon.TBDeliveryLedgerDL;
         "kpi_direction_isolation_audit.csv", kpiRecon.DirectionIsolationAudit;
         "kpi_legacy_alias_map.csv", kpiRecon.LegacyAliasMap;
         "kpi_known_bug_regression.csv", kpiRecon.KnownBugRegression;
@@ -314,4 +319,101 @@ if isstruct(cfg)
     tf = logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
         logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false));
 end
+end
+
+function durationSec = localMeasurementWindowSec(details, rawKPI)
+durationSec = NaN;
+cfg = localConfig(details);
+if isstruct(cfg)
+    slotDur = localSlotDurationSec(cfg);
+    totalSlots = double(sixgr.util.structGet(cfg, "run.totalSlots", ...
+        sixgr.util.structGet(cfg, "run.numTTI", ...
+        sixgr.util.structGet(cfg, "run.numFrames", NaN))));
+    if isfinite(totalSlots) && totalSlots > 0 && isfinite(slotDur) && slotDur > 0
+        durationSec = totalSlots * slotDur;
+        return;
+    end
+    durationSec = double(sixgr.util.structGet(cfg, "run.measurementWindow_s", ...
+        sixgr.util.structGet(cfg, "simulation.measurementWindow_s", NaN)));
+    if isfinite(durationSec) && durationSec > 0
+        return;
+    end
+end
+durationSec = max(localRawWindow(rawKPI.DL), localRawWindow(rawKPI.UL));
+if ~(isfinite(durationSec) && durationSec > 0)
+    durationSec = NaN;
+end
+end
+
+function warmupSec = localWarmupDurationSec(details)
+warmupSec = 0;
+cfg = localConfig(details);
+if isstruct(cfg)
+    warmupSec = double(sixgr.util.structGet(cfg, "run.warmupDuration_s", ...
+        sixgr.util.structGet(cfg, "simulation.warmupDuration_s", 0)));
+end
+if ~(isfinite(warmupSec) && warmupSec >= 0)
+    warmupSec = 0;
+end
+end
+
+function bwHz = localEffectiveBandwidthHz(details)
+bwHz = NaN;
+cfg = localConfig(details);
+if isstruct(cfg)
+    bwHz = double(sixgr.util.structGet(cfg, "channel.bandwidth_Hz", ...
+        sixgr.util.structGet(cfg, "phy.channelBandwidth_Hz", NaN)));
+    if ~(isfinite(bwHz) && bwHz > 0)
+        bwMHz = double(sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", NaN));
+        if isfinite(bwMHz) && bwMHz > 0
+            bwHz = bwMHz * 1e6;
+        end
+    end
+end
+end
+
+function slotDur = localSlotDurationSec(cfg)
+scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.numerology.scs_khz", 30)));
+mu = log2(scs / 15);
+if ~(isfinite(mu) && mu >= 0)
+    mu = 0;
+end
+slotDur = 1e-3 / (2 ^ round(mu));
+end
+
+function durationSec = localRawWindow(T)
+durationSec = NaN;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+for name = ["MeasurementWindowSec","MeasurementWindow_s","ScenarioMeasurementWindowSec","ScenarioDurationSec","RunDurationSec"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localNumericColumn(T, name);
+        vals = vals(isfinite(vals) & vals > 0);
+        if ~isempty(vals)
+            durationSec = max(vals);
+            return;
+        end
+    end
+end
+for name = ["MeasurementWindow_ms","ScenarioDuration_ms","RunDuration_ms"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localNumericColumn(T, name);
+        vals = vals(isfinite(vals) & vals > 0);
+        if ~isempty(vals)
+            durationSec = max(vals) / 1e3;
+            return;
+        end
+    end
+end
+end
+
+function vals = localNumericColumn(T, name)
+try
+    vals = double(T.(char(string(name))));
+catch
+    vals = str2double(string(T.(char(string(name)))));
+end
+vals = vals(:);
 end

@@ -7,6 +7,9 @@ ip.addParameter("ScenarioName", "", @(x) ischar(x) || isstring(x));
 ip.addParameter("SourcePaths", struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter("ExportedSummary", table(), @(x) isempty(x) || istable(x));
 ip.addParameter("StrictMode", false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("MeasurementWindowSec", NaN, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("WarmupDurationSec", 0, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("EffectiveBandwidthHz", NaN, @(x) isnumeric(x) && isscalar(x));
 ip.parse(varargin{:});
 
 runId = string(ip.Results.RunId);
@@ -14,12 +17,17 @@ scenarioName = string(ip.Results.ScenarioName);
 sourcePaths = ip.Results.SourcePaths;
 exportedSummary = ip.Results.ExportedSummary;
 strictMode = logical(ip.Results.StrictMode);
+measurementWindowSec = double(ip.Results.MeasurementWindowSec);
+warmupDurationSec = max(0, double(ip.Results.WarmupDurationSec));
+effectiveBandwidthHz = double(ip.Results.EffectiveBandwidthHz);
 
 registry = sixgr.kpi.KPIFormulaRegistry();
 schemaAudit = sixgr.kpi.validateRawKPITables(raw);
 
-[ulMetrics, ulContrib, ulTrace] = localComputeDirection(raw, sourcePaths, "UL", runId, scenarioName);
-[dlMetrics, dlContrib, dlTrace] = localComputeDirection(raw, sourcePaths, "DL", runId, scenarioName);
+[ulMetrics, ulContrib, ulTrace] = localComputeDirection(raw, sourcePaths, "UL", runId, scenarioName, ...
+    measurementWindowSec, warmupDurationSec, effectiveBandwidthHz);
+[dlMetrics, dlContrib, dlTrace] = localComputeDirection(raw, sourcePaths, "DL", runId, scenarioName, ...
+    measurementWindowSec, warmupDurationSec, effectiveBandwidthHz);
 
 summary = localBuildLegacySummary(runId, scenarioName, ulMetrics, dlMetrics, strictMode);
 recon = localBuildReconstructionSummary(runId, scenarioName, registry, ulMetrics, dlMetrics, exportedSummary);
@@ -46,6 +54,8 @@ out.RowContributionsUL = ulContrib;
 out.RowContributionsDL = dlContrib;
 out.HARQDeliveryTraceUL = ulTrace;
 out.HARQDeliveryTraceDL = dlTrace;
+out.TBDeliveryLedgerUL = ulTrace;
+out.TBDeliveryLedgerDL = dlTrace;
 out.StrictOk = all(localColumnBool(recon, "StrictOk", false)) && ...
     all(localColumnBool(dirAudit, "Status", "pass")) && ...
     all(localColumnBool(knownBug, "BugPrevented", false)) && ...
@@ -54,7 +64,7 @@ out.StrictOk = all(localColumnBool(recon, "StrictOk", false)) && ...
 out.Status = string(localTernary(out.StrictOk, "pass", "fail"));
 end
 
-function [metrics, contribT, traceT] = localComputeDirection(raw, sourcePaths, direction, runId, scenarioName)
+function [metrics, contribT, traceT] = localComputeDirection(raw, sourcePaths, direction, runId, scenarioName, measurementWindowSec, warmupDurationSec, effectiveBandwidthHz)
 direction = upper(string(direction));
 if isstruct(raw) && isfield(raw, char(direction)) && istable(raw.(char(direction)))
     T = raw.(char(direction));
@@ -77,6 +87,9 @@ metrics = struct( ...
     "ProxyRowsExcluded", 0, ...
     "SkippedRowsExcluded", 0, ...
     "AggregationDurationSec", NaN, ...
+    "ScheduledResourceExposureSec", NaN, ...
+    "MeasurementWindowSec", NaN, ...
+    "WarmupDurationSec", double(warmupDurationSec), ...
     "DurationSource", "unavailable", ...
     "ScheduledBits", NaN, ...
     "DeliveredBits", NaN, ...
@@ -84,6 +97,11 @@ metrics = struct( ...
     "ScheduledThroughput_Mbps", NaN, ...
     "TBGooDput_Mbps", NaN, ...
     "TBGoodput_Mbps", NaN, ...
+    "SpectralEfficiency_bpsHz", NaN, ...
+    "FirstSuccessDeliveryCount", 0, ...
+    "RetransmissionAttemptCount", 0, ...
+    "MeanDeliveryLatency_ms", NaN, ...
+    "P95DeliveryLatency_ms", NaN, ...
     "BLER", NaN, ...
     "BER", NaN, ...
     "DuplicateDeliveryCount", 0, ...
@@ -150,23 +168,39 @@ goodBits(~crcPass) = 0;
 goodBits(~isfinite(goodBits)) = 0;
 scheduledBits(~isfinite(scheduledBits)) = 0;
 
-[durationSec, durationSource] = localDurationSec(E);
+[resourceExposureSec, resourceExposureSource] = localDurationSec(E);
+[durationSec, durationSource] = localMeasurementWindowSec(E, resourceExposureSec, resourceExposureSource, measurementWindowSec, warmupDurationSec);
 metrics.AggregationDurationSec = durationSec;
+metrics.ScheduledResourceExposureSec = resourceExposureSec;
+metrics.MeasurementWindowSec = durationSec;
 metrics.DurationSource = durationSource;
 metrics.ScheduledBits = sum(scheduledBits, "omitnan");
-if ~(isfinite(durationSec) && durationSec > 0)
+if ~(isfinite(durationSec) && durationSec > 0) || ~(isfinite(resourceExposureSec) && resourceExposureSec > 0)
     metrics.Status = "invalid_duration";
     metrics.FailureReason = "radio_duration_unavailable";
     return;
 end
 
-[deliveryBits, duplicateCount, traceT] = localDeduplicateDeliveries(E, direction, runId, scheduledBits, goodBits, crcPass);
+[deliveryBits, duplicateCount, traceT] = localDeduplicateDeliveries(E, direction, runId, scheduledBits, goodBits, crcPass, resourceExposureSec, durationSec);
 metrics.DeliveredBits = deliveryBits;
 metrics.DuplicateDeliveryCount = duplicateCount;
+metrics.FirstSuccessDeliveryCount = sum(logical(traceT.FirstSuccessDelivery));
+metrics.RetransmissionAttemptCount = sum(logical(traceT.RetransmissionFlag));
+lat = double(traceT.DeliveryLatency_ms(logical(traceT.FirstSuccessDelivery)));
+lat = lat(isfinite(lat));
+if ~isempty(lat)
+    metrics.MeanDeliveryLatency_ms = mean(lat, "omitnan");
+    metrics.P95DeliveryLatency_ms = localPercentile(lat, 95);
+end
+if isfinite(resourceExposureSec) && resourceExposureSec > 0
+    metrics.ScheduledThroughput_Mbps = metrics.ScheduledBits / resourceExposureSec / 1e6;
+end
 if isfinite(durationSec) && durationSec > 0
-    metrics.ScheduledThroughput_Mbps = metrics.ScheduledBits / durationSec / 1e6;
     metrics.TBGoodput_Mbps = metrics.DeliveredBits / durationSec / 1e6;
     metrics.TBGooDput_Mbps = metrics.TBGoodput_Mbps;
+    if isfinite(effectiveBandwidthHz) && effectiveBandwidthHz > 0
+        metrics.SpectralEfficiency_bpsHz = metrics.DeliveredBits / durationSec / effectiveBandwidthHz;
+    end
 end
 if ~isfinite(metrics.TBGoodput_Mbps) && isfinite(metrics.GoodputMax_Mbps)
     metrics.TBGoodput_Mbps = metrics.GoodputMax_Mbps;
@@ -182,22 +216,30 @@ if sum(bitsCompared(isfinite(bitsCompared)), "omitnan") > 0
 end
 metrics.Status = "pass";
 metrics.FailureReason = "";
-contribT = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, durationSec);
+contribT = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, traceT, resourceExposureSec, durationSec);
 end
 
-function [bits, duplicateCount, traceT] = localDeduplicateDeliveries(T, direction, runId, scheduledBits, goodBits, crcPass)
+function [bits, duplicateCount, traceT] = localDeduplicateDeliveries(T, direction, runId, scheduledBits, goodBits, crcPass, resourceExposureSec, measurementWindowSec)
 traceRows = repmat(localHARQTraceRow(), height(T), 1);
-keys = strings(height(T), 1);
-for i = 1:height(T)
-    keys(i) = localTransportBlockKey(T, i);
-end
+keys = localTransportBlockKeys(T, direction);
 seenDelivered = strings(0, 1);
 bits = 0;
 duplicateCount = 0;
+slotDur = localTrialSlotDurationSec(T);
+rowDur = localRowDurationSec(T, resourceExposureSec);
+attemptTime = localAttemptStartTimes(T, slotDur);
+firstSchedule = containers.Map("KeyType", "char", "ValueType", "double");
 for i = 1:height(T)
+    keyChar = char(keys(i));
+    if ~isKey(firstSchedule, keyChar)
+        firstSchedule(keyChar) = attemptTime(i);
+    end
     delivered = logical(crcPass(i)) && isfinite(goodBits(i)) && goodBits(i) > 0;
     duplicate = false;
     counted = 0;
+    firstSuccess = false;
+    firstSuccessTime = NaN;
+    deliveryLatencyMs = NaN;
     if delivered
         if any(seenDelivered == keys(i))
             duplicate = true;
@@ -206,27 +248,78 @@ for i = 1:height(T)
             seenDelivered(end+1, 1) = keys(i); %#ok<AGROW>
             counted = goodBits(i);
             bits = bits + counted;
+            firstSuccess = true;
+            firstSuccessTime = attemptTime(i) + rowDur(i);
+            deliveryLatencyMs = (firstSuccessTime - firstSchedule(keyChar)) * 1e3;
         end
     end
     traceRows(i).RunId = string(runId);
     traceRows(i).Direction = direction;
     traceRows(i).TransportBlockId = keys(i);
+    traceRows(i).Codeword = localRowNum(T, "Codeword", i, localRowNum(T, "CodewordIndex", i, 0));
+    traceRows(i).UEId = localRowNum(T, "UEIndex", i, localRowNum(T, "UEId", i, NaN));
     traceRows(i).HARQProcessId = localRowNum(T, "HARQProcessId", i, NaN);
     traceRows(i).AttemptIndex = i;
     traceRows(i).RV = localRowNum(T, "RV", i, NaN);
     traceRows(i).NDI = localRowNum(T, "NDI", i, NaN);
+    traceRows(i).NewDataFlag = localNewDataFlag(T, i);
+    traceRows(i).RetransmissionFlag = localRetransmissionFlag(T, i);
+    traceRows(i).ScheduleTime_s = firstSchedule(keyChar);
+    traceRows(i).AttemptStartTime_s = attemptTime(i);
+    traceRows(i).AttemptEndTime_s = attemptTime(i) + rowDur(i);
+    traceRows(i).FirstSuccessTime_s = firstSuccessTime;
+    traceRows(i).DeliveryLatency_ms = deliveryLatencyMs;
     traceRows(i).ScheduledBits = scheduledBits(i);
     traceRows(i).TBCrcPass = logical(crcPass(i));
     traceRows(i).DeliveredThisAttempt = delivered;
+    traceRows(i).FirstSuccessDelivery = firstSuccess;
     traceRows(i).DuplicateDelivery = duplicate;
     traceRows(i).CountedGoodputBits = counted;
+    traceRows(i).ScheduledResourceExposureSec = resourceExposureSec;
+    traceRows(i).MeasurementWindowSec = measurementWindowSec;
     traceRows(i).DeliveryStatus = string(localTernary(delivered, "delivered", "not_delivered"));
+    if duplicate
+        traceRows(i).DeliveryStatus = "duplicate_delivery_not_counted";
+    elseif firstSuccess
+        traceRows(i).DeliveryStatus = "first_success_delivery_counted";
+    end
     traceRows(i).Status = "pass";
 end
 traceT = struct2table(traceRows);
 end
 
-function key = localTransportBlockKey(T, i)
+function keys = localTransportBlockKeys(T, direction)
+keys = strings(height(T), 1);
+active = containers.Map("KeyType", "char", "ValueType", "char");
+delivered = containers.Map("KeyType", "char", "ValueType", "logical");
+instance = containers.Map("KeyType", "char", "ValueType", "double");
+for i = 1:height(T)
+    explicit = localExplicitTransportBlockKey(T, i);
+    if strlength(explicit) > 0
+        keys(i) = explicit;
+        continue;
+    end
+    base = localTransportBlockBaseKey(T, i, direction);
+    baseChar = char(base);
+    isNew = localNewDataFlag(T, i);
+    if ~isKey(active, baseChar) || isNew
+        nextInstance = 1;
+        if isKey(instance, baseChar)
+            nextInstance = instance(baseChar) + 1;
+        end
+        instance(baseChar) = nextInstance;
+        active(baseChar) = char(base + "_tb" + string(nextInstance));
+        delivered(active(baseChar)) = false;
+    end
+    keys(i) = string(active(baseChar));
+    if localOptionalLogical(T(i, :), "TBCrcPass", localOptionalLogical(T(i, :), "CRCPass", false)) && ...
+            localFirstNumeric(T(i, :), ["GoodputBits","GoodBits","DeliveredBits","PayloadBits","TBSize_bits"], NaN) > 0
+        delivered(active(baseChar)) = true;
+    end
+end
+end
+
+function key = localExplicitTransportBlockKey(T, i)
 vars = string(T.Properties.VariableNames);
 for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
     if ismember(name, vars)
@@ -237,13 +330,52 @@ for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
         end
     end
 end
+key = "";
+end
+
+function key = localTransportBlockBaseKey(T, i, direction)
 ue = localRowNum(T, "UEIndex", i, localRowNum(T, "UEId", i, NaN));
+rnti = localRowNum(T, "RNTI", i, NaN);
 harq = localRowNum(T, "HARQProcessId", i, NaN);
+if ~isfinite(harq)
+    harq = localRowNum(T, "HARQProcess", i, NaN);
+end
 ndi = localRowNum(T, "NDI", i, NaN);
-frame = localRowNum(T, "Frame", i, NaN);
-slot = localRowNum(T, "Slot", i, NaN);
+cw = localRowNum(T, "Codeword", i, localRowNum(T, "CodewordIndex", i, 0));
+key = "derived_" + upper(string(direction)) + "_ue" + localKeyToken(ue) + "_rnti" + localKeyToken(rnti) + ...
+    "_harq" + localKeyToken(harq) + "_ndi" + localKeyToken(ndi) + "_cw" + localKeyToken(cw);
+end
+
+function token = localKeyToken(value)
+value = double(value);
+if isempty(value) || ~isfinite(value(1))
+    token = "nan";
+else
+    token = string(value(1));
+end
+end
+
+function tf = localNewDataFlag(T, i)
+tf = localOptionalLogical(T(i, :), "NewDataFlag", false);
+if tf
+    return;
+end
+isRetx = localRetransmissionFlag(T, i);
 rv = localRowNum(T, "RV", i, NaN);
-key = "derived_ue" + string(ue) + "_harq" + string(harq) + "_ndi" + string(ndi) + "_f" + string(frame) + "_s" + string(slot) + "_rv" + string(rv);
+tf = ~isRetx && (~isfinite(rv) || abs(rv) < 1e-12);
+end
+
+function tf = localRetransmissionFlag(T, i)
+tf = localOptionalLogical(T(i, :), "RetransmissionFlag", false);
+if tf
+    return;
+end
+tf = localOptionalLogical(T(i, :), "HARQIsRetransmission", false);
+if tf
+    return;
+end
+rv = localRowNum(T, "RV", i, localRowNum(T, "HARQRV", i, NaN));
+tf = isfinite(rv) && abs(rv) > 1e-12;
 end
 
 function summary = localBuildLegacySummary(runId, scenarioName, ul, dl, strictMode)
@@ -280,6 +412,10 @@ defs = [
     localRecon("DL_PHY_ScheduledThroughput_Mbps", dl, "ScheduledThroughput_Mbps", "");
     localRecon("UL_TB_Delivery_Goodput_Mbps", ul, "TBGoodput_Mbps", "");
     localRecon("DL_TB_Delivery_Goodput_Mbps", dl, "TBGoodput_Mbps", "");
+    localRecon("UL_SpectralEfficiency_bpsHz", ul, "SpectralEfficiency_bpsHz", "");
+    localRecon("DL_SpectralEfficiency_bpsHz", dl, "SpectralEfficiency_bpsHz", "");
+    localRecon("UL_Latency_ms", ul, "MeanDeliveryLatency_ms", "");
+    localRecon("DL_Latency_ms", dl, "MeanDeliveryLatency_ms", "");
     localRecon("UL_BLER", ul, "BLER", "BLER_UL_min");
     localRecon("DL_BLER", dl, "BLER", "BLER_DL_min");
     localRecon("UL_BER", ul, "BER", "");
@@ -320,8 +456,15 @@ for i = 1:numel(defs)
     rows(i).NumeratorValue = localNumeratorValue(d.Metrics, d.KPIName);
     rows(i).DenominatorValue = localDenominatorValue(d.Metrics, d.KPIName);
     rows(i).Value = value;
-    rows(i).AggregationDurationSec = d.Metrics.AggregationDurationSec;
-    rows(i).DurationSource = d.Metrics.DurationSource;
+    rows(i).AggregationDurationSec = localAggregationDurationValue(d.Metrics, d.KPIName);
+    rows(i).DurationSource = localDurationSourceValue(d.Metrics, d.KPIName);
+    rows(i).ScheduledResourceExposureSec = d.Metrics.ScheduledResourceExposureSec;
+    rows(i).MeasurementWindowSec = d.Metrics.MeasurementWindowSec;
+    rows(i).WarmupDurationSec = d.Metrics.WarmupDurationSec;
+    rows(i).FirstSuccessDeliveryCount = d.Metrics.FirstSuccessDeliveryCount;
+    rows(i).RetransmissionAttemptCount = d.Metrics.RetransmissionAttemptCount;
+    rows(i).MeanDeliveryLatency_ms = d.Metrics.MeanDeliveryLatency_ms;
+    rows(i).P95DeliveryLatency_ms = d.Metrics.P95DeliveryLatency_ms;
     rows(i).SourceTablePaths = d.Metrics.SourceTablePath;
     rows(i).SourceRowCount = d.Metrics.SourceRowCount;
     rows(i).EligibleRowCount = d.Metrics.EligibleRowCount;
@@ -484,6 +627,8 @@ function row = localDurationRow(runId, scenarioName, m)
 row = struct("RunId",string(runId), "ScenarioName",string(scenarioName), "Direction",string(m.Direction), ...
     "DurationSource",string(m.DurationSource), "SlotCount",double(m.EligibleRowCount), "Numerology",NaN, ...
     "SlotDurationSec",NaN, "RadioDurationSec",double(m.AggregationDurationSec), "WallClockDurationSec",NaN, ...
+    "ScheduledResourceExposureSec",double(m.ScheduledResourceExposureSec), ...
+    "MeasurementWindowSec",double(m.MeasurementWindowSec), "WarmupDurationSec",double(m.WarmupDurationSec), ...
     "AggregationDurationSec",double(m.AggregationDurationSec), "WallClockUsedForRadioThroughput",false, ...
     "Pass",isfinite(double(m.AggregationDurationSec)) && double(m.AggregationDurationSec) > 0 && ~contains(string(m.DurationSource), "wall"), ...
     "Status","", "FailureReason","");
@@ -527,9 +672,9 @@ if strlength(path) == 0
 end
 end
 
-function T = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, durationSec)
+function T = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, traceT, resourceExposureSec, measurementWindowSec)
 rows = repmat(localContributionRow(), height(E), 1);
-perRowDuration = durationSec / max(height(E), 1);
+perRowDuration = resourceExposureSec / max(height(E), 1);
 if ismember("DurationSec", string(E.Properties.VariableNames))
     perRowDuration = localOptionalNumeric(E, "DurationSec", repmat(perRowDuration, height(E), 1));
 elseif ismember("AirInterfaceObservation_ms", string(E.Properties.VariableNames))
@@ -537,7 +682,7 @@ elseif ismember("AirInterfaceObservation_ms", string(E.Properties.VariableNames)
 elseif ismember("AirInterfaceTTI_ms", string(E.Properties.VariableNames))
     perRowDuration = localOptionalNumeric(E, "AirInterfaceTTI_ms", repmat(perRowDuration * 1e3, height(E), 1)) ./ 1e3;
 end
-perRowDuration = localDistributeUniqueSlotDuration(E, perRowDuration, durationSec);
+perRowDuration = localDistributeUniqueSlotDuration(E, perRowDuration, resourceExposureSec);
 crcPass = localOptionalLogical(E, "TBCrcPass", localOptionalLogical(E, "CRCPass", true(height(E), 1)));
 for i = 1:height(E)
     rows(i).RunId = string(runId);
@@ -551,15 +696,25 @@ for i = 1:height(E)
     rows(i).TrialId = localRowNum(E, "TrialId", i, i);
     rows(i).Slot = localRowNum(E, "Slot", i, NaN);
     rows(i).Frame = localRowNum(E, "Frame", i, NaN);
-    rows(i).TransportBlockId = localTransportBlockKey(E, i);
+    rows(i).TransportBlockId = string(traceT.TransportBlockId(i));
     rows(i).HARQProcessId = localRowNum(E, "HARQProcessId", i, NaN);
     rows(i).RV = localRowNum(E, "RV", i, NaN);
     rows(i).NDI = localRowNum(E, "NDI", i, NaN);
+    rows(i).NewDataFlag = logical(traceT.NewDataFlag(i));
+    rows(i).RetransmissionFlag = logical(traceT.RetransmissionFlag(i));
     rows(i).TBCrcPass = crcPass(i);
     rows(i).ScheduledBitsContribution = scheduledBits(i);
-    rows(i).DeliveredBitsContribution = goodBits(i);
-    rows(i).GoodputBitsContribution = goodBits(i);
+    rows(i).DeliveredBitsContribution = double(traceT.CountedGoodputBits(i));
+    rows(i).GoodputBitsContribution = double(traceT.CountedGoodputBits(i));
     rows(i).DurationContributionSec = perRowDuration(i);
+    rows(i).MeasurementWindowContributionSec = measurementWindowSec / max(height(E), 1);
+    rows(i).ScheduleTime_s = double(traceT.ScheduleTime_s(i));
+    rows(i).AttemptStartTime_s = double(traceT.AttemptStartTime_s(i));
+    rows(i).AttemptEndTime_s = double(traceT.AttemptEndTime_s(i));
+    rows(i).FirstSuccessTime_s = double(traceT.FirstSuccessTime_s(i));
+    rows(i).DeliveryLatency_ms = double(traceT.DeliveryLatency_ms(i));
+    rows(i).FirstSuccessDelivery = logical(traceT.FirstSuccessDelivery(i));
+    rows(i).DuplicateDelivery = logical(traceT.DuplicateDelivery(i));
     rows(i).Included = true;
     rows(i).Status = "pass";
 end
@@ -631,17 +786,127 @@ elseif ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
     end
 end
 if ~(isfinite(durationSec) && durationSec > 0)
-    slotDurationSec = localTrialSlotDurationSec(T);
-    finalized = true(height(T), 1);
-    if ismember("FinalizedFlag", string(T.Properties.VariableNames))
-        finalized = localOptionalLogical(T, "FinalizedFlag", finalized);
+    if localHasExplicitSlotDuration(T)
+        slotDurationSec = localTrialSlotDurationSec(T);
+        finalized = true(height(T), 1);
+        if ismember("FinalizedFlag", string(T.Properties.VariableNames))
+            finalized = localOptionalLogical(T, "FinalizedFlag", finalized);
+        end
+        durationSec = sum(finalized) * slotDurationSec;
+        source = "explicit_slot_duration_trial_count";
     end
-    durationSec = sum(finalized) * slotDurationSec;
-    source = "geometry_trial_count_slot_duration";
 end
 if ~(isfinite(durationSec) && durationSec > 0)
     durationSec = NaN;
     source = "unavailable";
+end
+end
+
+function tf = localHasExplicitSlotDuration(T)
+tf = any(ismember(["SlotDuration_s","slot_duration_s","SlotDuration_ms","slot_duration_ms"], string(T.Properties.VariableNames)));
+end
+
+function [durationSec, source] = localMeasurementWindowSec(T, resourceExposureSec, resourceExposureSource, requestedWindowSec, warmupDurationSec)
+durationSec = NaN;
+source = "unavailable";
+requestedWindowSec = double(requestedWindowSec);
+warmupDurationSec = max(0, double(warmupDurationSec));
+if isfinite(requestedWindowSec) && requestedWindowSec > 0
+    durationSec = max(requestedWindowSec - warmupDurationSec, eps);
+    source = "configured_measurement_window_sec";
+    return;
+end
+for name = ["MeasurementWindowSec","MeasurementWindow_s","ScenarioMeasurementWindowSec","ScenarioDurationSec","RunDurationSec"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localOptionalNumeric(T, name, NaN(height(T), 1));
+        vals = vals(isfinite(vals) & vals > 0);
+        if ~isempty(vals)
+            durationSec = max(vals) - warmupDurationSec;
+            if isfinite(durationSec) && durationSec > 0
+                source = lower(string(name));
+                return;
+            end
+        end
+    end
+end
+for name = ["MeasurementWindow_ms","ScenarioDuration_ms","RunDuration_ms"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localOptionalNumeric(T, name, NaN(height(T), 1));
+        vals = vals(isfinite(vals) & vals > 0);
+        if ~isempty(vals)
+            durationSec = max(vals) / 1e3 - warmupDurationSec;
+            if isfinite(durationSec) && durationSec > 0
+                source = lower(string(name));
+                return;
+            end
+        end
+    end
+end
+if isfinite(resourceExposureSec) && resourceExposureSec > 0
+    durationSec = resourceExposureSec;
+    source = "active_resource_exposure_fallback:" + string(resourceExposureSource);
+end
+end
+
+function rowDur = localRowDurationSec(T, resourceExposureSec)
+n = height(T);
+rowDur = repmat(resourceExposureSec / max(n, 1), n, 1);
+if n == 0
+    return;
+end
+if ismember("DurationSec", string(T.Properties.VariableNames))
+    rowDur = localOptionalNumeric(T, "DurationSec", rowDur);
+elseif ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
+    rowDur = localOptionalNumeric(T, "AirInterfaceTTI_ms", rowDur * 1e3) ./ 1e3;
+elseif ismember("AirInterfaceObservation_ms", string(T.Properties.VariableNames))
+    rowDur = localOptionalNumeric(T, "AirInterfaceObservation_ms", rowDur * 1e3) ./ 1e3;
+end
+rowDur = double(rowDur(:));
+rowDur(~isfinite(rowDur) | rowDur < 0) = resourceExposureSec / max(n, 1);
+end
+
+function t = localAttemptStartTimes(T, slotDurationSec)
+n = height(T);
+t = NaN(n, 1);
+for name = ["AttemptStartTime_s","ScheduleTime_s","EventTime_s","Time_s","RuntimeSlotStartTime_s"]
+    if ismember(name, string(T.Properties.VariableNames))
+        vals = localOptionalNumeric(T, name, NaN(n, 1));
+        mask = isfinite(vals);
+        t(mask) = vals(mask);
+        if all(isfinite(t))
+            return;
+        end
+    end
+end
+frame = localOptionalNumeric(T, "Frame", NaN(n, 1));
+slot = localOptionalNumeric(T, "Slot", NaN(n, 1));
+slotDurationSec = max(eps, double(slotDurationSec));
+for i = 1:n
+    if isfinite(frame(i)) && isfinite(slot(i))
+        t(i) = max(0, double(frame(i) - 1)) * 0.01 + max(0, double(slot(i) - 1)) * slotDurationSec;
+    elseif isfinite(slot(i))
+        t(i) = max(0, double(slot(i) - 1)) * slotDurationSec;
+    else
+        t(i) = max(0, i - 1) * slotDurationSec;
+    end
+end
+end
+
+function value = localPercentile(x, pct)
+x = sort(double(x(:)));
+x = x(isfinite(x));
+if isempty(x)
+    value = NaN;
+    return;
+end
+pct = min(max(double(pct), 0), 100);
+pos = 1 + (numel(x) - 1) * pct / 100;
+lo = floor(pos);
+hi = ceil(pos);
+if lo == hi
+    value = x(lo);
+else
+    value = x(lo) + (x(hi) - x(lo)) * (pos - lo);
 end
 end
 
@@ -815,6 +1080,10 @@ if contains(kpiName, "ScheduledThroughput")
     v = metrics.ScheduledBits;
 elseif contains(kpiName, "Goodput")
     v = metrics.DeliveredBits;
+elseif contains(kpiName, "SpectralEfficiency")
+    v = metrics.DeliveredBits;
+elseif contains(kpiName, "Latency")
+    v = metrics.MeanDeliveryLatency_ms;
 elseif contains(kpiName, "BLER")
     v = NaN;
 elseif contains(kpiName, "BER")
@@ -828,10 +1097,38 @@ end
 end
 
 function v = localDenominatorValue(metrics, kpiName)
-if contains(kpiName, "Throughput") || contains(kpiName, "Goodput")
+if contains(kpiName, "ScheduledThroughput")
+    v = metrics.ScheduledResourceExposureSec;
+elseif contains(kpiName, "Goodput")
+    v = metrics.MeasurementWindowSec;
+elseif contains(kpiName, "SpectralEfficiency")
+    v = metrics.MeasurementWindowSec;
+elseif contains(kpiName, "Latency")
+    v = metrics.FirstSuccessDeliveryCount;
+elseif contains(kpiName, "Throughput")
     v = metrics.AggregationDurationSec;
 else
     v = metrics.SourceRowCount;
+end
+end
+
+function v = localAggregationDurationValue(metrics, kpiName)
+if contains(kpiName, "ScheduledThroughput")
+    v = metrics.ScheduledResourceExposureSec;
+elseif contains(kpiName, "Goodput") || contains(kpiName, "SpectralEfficiency")
+    v = metrics.MeasurementWindowSec;
+else
+    v = metrics.AggregationDurationSec;
+end
+end
+
+function source = localDurationSourceValue(metrics, kpiName)
+if contains(kpiName, "ScheduledThroughput")
+    source = "scheduled_resource_exposure:" + string(metrics.DurationSource);
+elseif contains(kpiName, "Goodput") || contains(kpiName, "SpectralEfficiency")
+    source = "measurement_window:" + string(metrics.DurationSource);
+else
+    source = string(metrics.DurationSource);
 end
 end
 
@@ -853,7 +1150,10 @@ row = struct("RunId","", "ScenarioName","", "KPIName","", "FormulaId","", "Direc
     "Slot",NaN, "Frame",NaN, "TransportBlockId","", "MACPDUId","", "MACSDUId","", ...
     "HARQProcessId",NaN, "RV",NaN, "NDI",NaN, "NewDataFlag",false, "RetransmissionFlag",false, ...
     "TBCrcPass",false, "ScheduledBitsContribution",NaN, "DeliveredBitsContribution",NaN, ...
-    "GoodputBitsContribution",NaN, "DurationContributionSec",NaN, "Included",false, ...
+    "GoodputBitsContribution",NaN, "DurationContributionSec",NaN, "MeasurementWindowContributionSec",NaN, ...
+    "ScheduleTime_s",NaN, "AttemptStartTime_s",NaN, "AttemptEndTime_s",NaN, ...
+    "FirstSuccessTime_s",NaN, "DeliveryLatency_ms",NaN, ...
+    "FirstSuccessDelivery",false, "DuplicateDelivery",false, "Included",false, ...
     "ExcludedReason","", "Status","not_evaluated");
 end
 
@@ -863,9 +1163,13 @@ end
 
 function row = localHARQTraceRow()
 row = struct("RunId","", "Direction","", "UEId",NaN, "TransportBlockId","", ...
-    "HARQProcessId",NaN, "AttemptIndex",NaN, "RV",NaN, "NDI",NaN, ...
+    "Codeword",NaN, "HARQProcessId",NaN, "AttemptIndex",NaN, "RV",NaN, "NDI",NaN, ...
+    "NewDataFlag",false, "RetransmissionFlag",false, ...
+    "ScheduleTime_s",NaN, "AttemptStartTime_s",NaN, "AttemptEndTime_s",NaN, ...
+    "FirstSuccessTime_s",NaN, "DeliveryLatency_ms",NaN, ...
     "ScheduledBits",NaN, "TBCrcPass",false, "DeliveredThisAttempt",false, ...
-    "DuplicateDelivery",false, "CountedGoodputBits",NaN, "DeliveryStatus","", ...
+    "FirstSuccessDelivery",false, "DuplicateDelivery",false, "CountedGoodputBits",NaN, ...
+    "ScheduledResourceExposureSec",NaN, "MeasurementWindowSec",NaN, "DeliveryStatus","", ...
     "Status","", "FailureReason","");
 end
 
@@ -873,6 +1177,9 @@ function row = localReconRow()
 row = struct("RunId","", "ScenarioName","", "KPIName","", "Direction","", "Layer","", ...
     "Units","", "FormulaId","", "FormulaVersion","", "NumeratorValue",NaN, ...
     "DenominatorValue",NaN, "Value",NaN, "AggregationDurationSec",NaN, ...
+    "ScheduledResourceExposureSec",NaN, "MeasurementWindowSec",NaN, "WarmupDurationSec",NaN, ...
+    "FirstSuccessDeliveryCount",NaN, "RetransmissionAttemptCount",NaN, ...
+    "MeanDeliveryLatency_ms",NaN, "P95DeliveryLatency_ms",NaN, ...
     "DurationSource","", "SourceTablePaths","", "SourceRowCount",0, "EligibleRowCount",0, ...
     "ExcludedRowCount",0, "SourceRowsHash","", "SourceDirection","", "ProxyRowsExcluded",0, ...
     "SkippedRowsExcluded",0, "FailedRowsIncluded",true, "HARQDeduplicationApplied",false, ...

@@ -77,6 +77,10 @@ for i = 1:height(T)
     cellId = localNumericField(T, i, ["CellID","BaseStationID"], NaN);
     baseStationId = localNumericField(T, i, ["BaseStationID","CellID"], NaN);
     rnti = localNumericField(T, i, ["RNTI","UEID","UEIndex"], NaN);
+    tbId = localTransportBlockId(T, i, direction);
+    harqProcessId = localNumericField(T, i, ["HARQProcessId","HARQProcess"], NaN);
+    ndi = localNumericField(T, i, ["NDI","HARQNDI"], NaN);
+    rv = localNumericField(T, i, ["RV","HARQRV"], NaN);
     layers = localNumericField(T, i, ["Layers","RankIndicator","Rank"], NaN);
     txPower_dBm = NaN;
     rxPower_dBm = NaN;
@@ -107,21 +111,21 @@ for i = 1:height(T)
             bs = bsModel.power('active', bsRfChains, load, bsTxPowerW);
             ue = ueModel.power('rx', 0);
             rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, prbCount, load, layers, bsRfChains, 1, txPower_dBm, NaN, "active_tx");
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, bsRfChains, 1, txPower_dBm, NaN, "active_tx");
             rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"));
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"));
         otherwise
             ue = ueModel.power('tx', ueTxPowerW);
             bs = bsModel.power('active', bsRfChains, load, 0);
             rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, prbCount, load, layers, ueRfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"));
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, ueRfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"));
             rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, prbCount, load, layers, 0, 0, NaN, rxPower_dBm, "active_rx");
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, 0, NaN, rxPower_dBm, "active_rx");
     end
 end
 end
 
-function row = localMakeEnergyRow(entity, domain, direction, frameVal, slotVal, symbolVal, duration_s, powerW, successBits, rfChains, bbEnergyJ, sourceArtifact, status, ueId, cellId, baseStationId, rnti, prbCount, activeBWFrac, activeRank, activeTxruCount, controlMonitoringLoad, txPower_dBm, rxPower_dBm, state)
+function row = localMakeEnergyRow(entity, domain, direction, frameVal, slotVal, symbolVal, duration_s, powerW, successBits, rfChains, bbEnergyJ, sourceArtifact, status, ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, activeBWFrac, activeRank, activeTxruCount, controlMonitoringLoad, txPower_dBm, rxPower_dBm, state)
 row = struct( ...
     "Entity", string(entity), ...
     "EntityType", localEntityTypeToken(entity), ...
@@ -136,6 +140,10 @@ row = struct( ...
     "CellID", double(cellId), ...
     "BaseStationID", double(baseStationId), ...
     "RNTI", double(rnti), ...
+    "TransportBlockId", string(tbId), ...
+    "HARQProcessId", double(harqProcessId), ...
+    "NDI", double(ndi), ...
+    "RV", double(rv), ...
     "PRBCount", double(prbCount), ...
     "ActiveBWFraction", double(activeBWFrac), ...
     "ActiveRank", double(activeRank), ...
@@ -159,6 +167,7 @@ row = struct( ...
     "Entity", "", "EntityType", "", "EntityID", NaN, "Domain", "", "Direction", "", ...
     "Frame", NaN, "Slot", NaN, "Symbol", NaN, "TimestampSim_ms", NaN, ...
     "UEID", NaN, "CellID", NaN, "BaseStationID", NaN, "RNTI", NaN, ...
+    "TransportBlockId", "", "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, ...
     "PRBCount", NaN, "ActiveBWFraction", NaN, "ActiveRank", NaN, "ActiveTxRUCount", NaN, ...
     "ControlMonitoringLoad", NaN, "TxPower_dBm", NaN, "RxPowerEst_dBm", NaN, "State", "", ...
     "Duration_s", NaN, "Power_W", NaN, "Energy_J", NaN, "SuccessfulBits", NaN, ...
@@ -173,8 +182,9 @@ end
 
 slotDur_s = localSlotDuration(cfg);
 numFrames = max(1, double(sixgr.util.structGet(cfg, "run.numFrames", 1)));
-scenarioDur = max(numFrames * slotDur_s, sum(double(timelineT.Duration_s(string(timelineT.Entity) == "gNB")), "omitnan"));
-successBits = max(sum(double(timelineT.SuccessfulBits), "omitnan"), 1);
+scenarioDur = localScenarioMeasurementDuration(cfg, timelineT, numFrames, slotDur_s);
+[successBitsRaw, firstDeliveryCount] = localUniqueDeliveredBits(timelineT);
+successBits = max(successBitsRaw, 1);
 ueMask = string(timelineT.Entity) == "UE";
 gnbMask = string(timelineT.Entity) == "gNB";
 ueEnergy = sum(double(timelineT.Energy_J(ueMask)), "omitnan");
@@ -214,6 +224,9 @@ end
 
 summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("ue_energy_per_successful_bit", "UE", "mean", ueEnergy / successBits, "", "J/bit", "UE runtime energy divided by successful bits."); ...
+    localProbeMetricRow("first_delivered_bits", "system", "total", successBitsRaw, "", "bit", "Unique first-success delivered bits used as energy denominator."); ...
+    localProbeMetricRow("first_delivery_count", "system", "total", firstDeliveryCount, "", "count", "Unique first-success TB delivery events used by energy accounting."); ...
+    localProbeMetricRow("measurement_window_duration", "system", "total", scenarioDur, "", "s", "Simulated measurement window used by energy and throughput-per-watt metrics."); ...
     localProbeMetricRow("ue_energy_per_slot_frame_burst", "UE", "per_frame_mean", ueEnergy / numFrames, "", "J/frame", "Average UE energy per frame."); ...
     localProbeMetricRow("gnb_energy_per_successful_bit", "gNB", "mean", gnbEnergy / successBits, "", "J/bit", "gNB runtime energy divided by successful bits."); ...
     localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "active_ratio", rfActiveTime / max(scenarioDur, eps), "", "fraction", "Active ratio from gNB runtime timeline."); ...
@@ -244,6 +257,67 @@ if ~(isfinite(bwHz) && bwHz > 0)
 end
 spectralEfficiency = (throughputMbps * 1e6) / bwHz;
 value = spectralEfficiency / max(avgPowerW, eps);
+end
+
+function durationSec = localScenarioMeasurementDuration(cfg, timelineT, numFrames, slotDur_s)
+durationSec = double(sixgr.util.structGet(cfg, "run.measurementWindow_s", ...
+    sixgr.util.structGet(cfg, "simulation.measurementWindow_s", NaN)));
+if isfinite(durationSec) && durationSec > 0
+    return;
+end
+totalSlots = double(sixgr.util.structGet(cfg, "run.totalSlots", ...
+    sixgr.util.structGet(cfg, "run.numTTI", NaN)));
+if isfinite(totalSlots) && totalSlots > 0
+    durationSec = totalSlots * slotDur_s;
+    return;
+end
+if istable(timelineT) && ~isempty(timelineT) && all(ismember(["TimestampSim_ms","Duration_s"], string(timelineT.Properties.VariableNames)))
+    endTimes = double(timelineT.TimestampSim_ms) ./ 1e3 + double(timelineT.Duration_s);
+    endTimes = endTimes(isfinite(endTimes) & endTimes >= 0);
+    if ~isempty(endTimes)
+        durationSec = max(endTimes);
+        if isfinite(durationSec) && durationSec > 0
+            return;
+        end
+    end
+end
+durationSec = max(numFrames * slotDur_s, sum(double(timelineT.Duration_s(string(timelineT.Entity) == "gNB")), "omitnan"));
+end
+
+function [bits, count] = localUniqueDeliveredBits(timelineT)
+bits = 0;
+count = 0;
+if ~(istable(timelineT) && ~isempty(timelineT))
+    return;
+end
+txMask = (upper(string(timelineT.Direction)) == "DL" & string(timelineT.Entity) == "gNB") | ...
+    (upper(string(timelineT.Direction)) == "UL" & string(timelineT.Entity) == "UE");
+success = double(timelineT.SuccessfulBits) > 0 & txMask;
+if ~any(success)
+    return;
+end
+seen = strings(0, 1);
+idx = find(success(:).');
+for k = 1:numel(idx)
+    i = idx(k);
+    key = localEnergyDeliveryKey(timelineT, i);
+    if any(seen == key)
+        continue;
+    end
+    seen(end+1, 1) = key; %#ok<AGROW>
+    bits = bits + double(timelineT.SuccessfulBits(i));
+    count = count + 1;
+end
+end
+
+function key = localEnergyDeliveryKey(T, i)
+tb = string(T.TransportBlockId(i));
+if strlength(strtrim(tb)) > 0 && lower(strtrim(tb)) ~= "nan"
+    key = tb;
+    return;
+end
+key = upper(string(T.Direction(i))) + "_ue" + string(T.UEID(i)) + "_rnti" + string(T.RNTI(i)) + ...
+    "_harq" + string(T.HARQProcessId(i)) + "_ndi" + string(T.NDI(i)) + "_f" + string(T.Frame(i)) + "_s" + string(T.Slot(i));
 end
 
 function cfgEnergy = localBuildEnergyModelCfg(cfg)
@@ -368,6 +442,26 @@ for name = reshape(string(names), 1, [])
         return;
     end
 end
+end
+
+function tbId = localTransportBlockId(T, rowIdx, direction)
+for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
+    if istable(T) && ismember(name, string(T.Properties.VariableNames))
+        raw = strtrim(string(T.(char(name))(rowIdx)));
+        if strlength(raw) > 0 && lower(raw) ~= "nan"
+            tbId = raw;
+            return;
+        end
+    end
+end
+ueId = localNumericField(T, rowIdx, ["UEID","UEIndex"], NaN);
+rnti = localNumericField(T, rowIdx, ["RNTI","UEID","UEIndex"], NaN);
+harqProcessId = localNumericField(T, rowIdx, ["HARQProcessId","HARQProcess"], NaN);
+ndi = localNumericField(T, rowIdx, ["NDI","HARQNDI"], NaN);
+frameVal = double(localTableValue(T, rowIdx, "Frame", rowIdx));
+slotVal = double(localTableValue(T, rowIdx, "Slot", rowIdx));
+tbId = upper(string(direction)) + "_ue" + string(ueId) + "_rnti" + string(rnti) + ...
+    "_harq" + string(harqProcessId) + "_ndi" + string(ndi) + "_f" + string(frameVal) + "_s" + string(slotVal);
 end
 
 function token = localEntityTypeToken(entity)

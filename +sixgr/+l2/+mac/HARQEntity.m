@@ -46,6 +46,7 @@ classdef HARQEntity < handle
         % UE list and per-UE process state cell array
         UEList (1,:) double = double.empty(1,0)
         UEProcs = {}                        % {NUE} each is struct array NumProcesses
+        DeliveryLedger table = table()
     end
 
     properties
@@ -122,6 +123,7 @@ classdef HARQEntity < handle
         function reset(obj)
             obj.UEList = double.empty(1,0);
             obj.UEProcs = {};
+            obj.DeliveryLedger = table();
             obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
                 'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
                 'SoftBufferClear',0,'FirstSuccessDelivery',0);
@@ -330,6 +332,11 @@ classdef HARQEntity < handle
                 end
             end
             procs(pid).LastGrant = grant;
+            if strlength(string(procs(pid).TBIdentity)) == 0
+                procs(pid).FirstTxSlot = double(slot);
+                procs(pid).TBIdentity = obj.composeTBIdentity(rnti, harqId0, procs(pid), grant);
+            end
+            obj.appendDeliveryAttempt(rnti, harqId0, slot, procs(pid), grant);
 
             obj.UEProcs{ui} = procs;
         end
@@ -340,6 +347,7 @@ classdef HARQEntity < handle
             pid = double(harqId0) + 1;
             ack = logical(ack);
             sourceSlot = NaN;
+            feedbackSlot = NaN;
             if ~isempty(varargin)
                 if mod(numel(varargin),2) ~= 0
                     error('sixgr:HARQEntity:BadNV','Name-value inputs must come in pairs.');
@@ -351,6 +359,8 @@ classdef HARQEntity < handle
                     switch lower(char(key))
                         case 'sourceslot'
                             sourceSlot = double(val);
+                        case 'feedbackslot'
+                            feedbackSlot = double(val);
                     end
                 end
             end
@@ -381,6 +391,7 @@ classdef HARQEntity < handle
 
             if ack
                 % ACK: release process
+                obj.markDeliveryFeedback(rnti, harqId0, true, sourceSlot, feedbackSlot, "");
                 if ~isempty(fieldnames(procs(pid).SoftBuffer))
                     obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                 end
@@ -391,6 +402,7 @@ classdef HARQEntity < handle
                 obj.Stats.Ack = obj.Stats.Ack + 1;
             else
                 obj.Stats.Nack = obj.Stats.Nack + 1;
+                obj.markDeliveryFeedback(rnti, harqId0, false, sourceSlot, feedbackSlot, "nack");
 
                 % NACK: if max transmissions reached, drop; else schedule retx
                 maxTx = 1 + obj.MaxRetx;
@@ -400,6 +412,7 @@ classdef HARQEntity < handle
                     end
                     procs(pid) = obj.resetProc(procs(pid));
                     obj.Stats.Drop = obj.Stats.Drop + 1;
+                    obj.markDeliveryFeedback(rnti, harqId0, false, sourceSlot, feedbackSlot, "max_retx_drop");
                 else
                     procs(pid).NeedsRetx = true;
                     procs(pid).RVIdx = min(procs(pid).RVIdx + 1, numel(obj.RVSequence));
@@ -408,6 +421,10 @@ classdef HARQEntity < handle
             end
 
             obj.UEProcs{ui} = procs;
+        end
+
+        function ledger = getDeliveryLedger(obj)
+            ledger = obj.DeliveryLedger;
         end
 
         function tb = getStoredTB(obj, rnti, harqId0)
@@ -520,6 +537,8 @@ classdef HARQEntity < handle
             p.TB = uint8([]);
             p.LastGrant = struct();
             p.LastTxSlot = -inf;
+            p.FirstTxSlot = NaN;
+            p.TBIdentity = "";
             p.LastDropReason = "";
             p.SoftBuffer = struct();
             p.SoftBufferKey = "";
@@ -558,16 +577,106 @@ classdef HARQEntity < handle
                 ageSlots = double(currentSlot) - double(procs(pid).LastTxSlot);
                 if isfinite(ageSlots) && ageSlots >= timeoutSlots
                     ndi = procs(pid).NDI;
+                    lastTxSlot = procs(pid).LastTxSlot;
                     if ~isempty(fieldnames(procs(pid).SoftBuffer))
                         obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                     end
                     procs(pid) = obj.newProcTemplate();
                     procs(pid).NDI = ndi;
                     procs(pid).LastDropReason = "stale_harq_process_timeout";
+                    obj.markDeliveryFeedback(NaN, pid - 1, false, lastTxSlot, currentSlot, "stale_harq_process_timeout");
                     obj.Stats.Drop = obj.Stats.Drop + 1;
                     obj.Stats.TimeoutDrop = obj.Stats.TimeoutDrop + 1;
                 end
             end
+        end
+
+        function key = composeTBIdentity(obj, rnti, harqId0, p, grant)
+            %#ok<INUSD> obj
+            for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
+                if isstruct(grant) && isfield(grant, char(name))
+                    raw = strtrim(string(grant.(char(name))));
+                    if strlength(raw) > 0 && lower(raw) ~= "nan"
+                        key = raw;
+                        return;
+                    end
+                end
+            end
+            cw = double(sixgr.util.structGet(grant, "Codeword", sixgr.util.structGet(grant, "CodewordIndex", 0)));
+            key = string(obj.Direction) + "_rnti" + string(double(rnti)) + "_harq" + string(double(harqId0)) + ...
+                "_ndi" + string(double(p.NDI)) + "_cw" + string(cw) + "_firstSlot" + string(double(p.FirstTxSlot));
+        end
+
+        function appendDeliveryAttempt(obj, rnti, harqId0, slot, p, grant)
+            row = obj.emptyDeliveryLedgerRow();
+            row.Direction = string(obj.Direction);
+            row.RNTI = double(rnti);
+            row.HARQProcessId = double(harqId0);
+            row.TransportBlockId = string(p.TBIdentity);
+            row.Codeword = double(sixgr.util.structGet(grant, "Codeword", sixgr.util.structGet(grant, "CodewordIndex", 0)));
+            row.NDI = double(p.NDI);
+            row.RV = double(p.RV);
+            row.AttemptIndex = double(p.TxCount);
+            row.NewDataFlag = double(p.TxCount) == 1;
+            row.RetransmissionFlag = double(p.TxCount) > 1;
+            row.ScheduleSlot = double(p.FirstTxSlot);
+            row.AttemptSlot = double(slot);
+            row.TBSBits = double(sixgr.util.structGet(grant, "TBSBits", sixgr.util.structGet(grant, "TransportBlockSize", p.TBSBytes * 8)));
+            row.CrcPass = false;
+            row.FirstSuccessDelivery = false;
+            row.CountedGoodputBits = 0;
+            row.Status = "tx_attempt";
+            obj.DeliveryLedger = [obj.DeliveryLedger; struct2table(row, "AsArray", true)]; %#ok<AGROW>
+        end
+
+        function markDeliveryFeedback(obj, rnti, harqId0, ack, sourceSlot, feedbackSlot, reason)
+            if isempty(obj.DeliveryLedger)
+                return;
+            end
+            T = obj.DeliveryLedger;
+            mask = double(T.HARQProcessId) == double(harqId0);
+            if isfinite(double(rnti))
+                mask = mask & double(T.RNTI) == double(rnti);
+            end
+            if isfinite(double(sourceSlot))
+                mask = mask & abs(double(T.AttemptSlot) - double(sourceSlot)) < 1e-9;
+            end
+            idx = find(mask, 1, "last");
+            if isempty(idx)
+                return;
+            end
+            obj.DeliveryLedger.CrcPass(idx) = logical(ack);
+            if isfinite(double(feedbackSlot))
+                obj.DeliveryLedger.FeedbackSlot(idx) = double(feedbackSlot);
+            elseif isfinite(double(sourceSlot))
+                obj.DeliveryLedger.FeedbackSlot(idx) = double(sourceSlot);
+            end
+            if ack
+                tbKey = string(obj.DeliveryLedger.TransportBlockId(idx));
+                prior = string(obj.DeliveryLedger.TransportBlockId) == tbKey & logical(obj.DeliveryLedger.FirstSuccessDelivery);
+                if ~any(prior)
+                    obj.DeliveryLedger.FirstSuccessDelivery(idx) = true;
+                    obj.DeliveryLedger.CountedGoodputBits(idx) = double(obj.DeliveryLedger.TBSBits(idx));
+                    obj.DeliveryLedger.FirstSuccessSlot(idx) = double(obj.DeliveryLedger.FeedbackSlot(idx));
+                    obj.DeliveryLedger.Status(idx) = "first_success_delivery";
+                else
+                    obj.DeliveryLedger.Status(idx) = "duplicate_success_delivery";
+                end
+            elseif strlength(string(reason)) > 0
+                obj.DeliveryLedger.Status(idx) = string(reason);
+            else
+                obj.DeliveryLedger.Status(idx) = "nack";
+            end
+        end
+
+        function row = emptyDeliveryLedgerRow(obj)
+            %#ok<INUSD> obj
+            row = struct("Direction","", "RNTI",NaN, "HARQProcessId",NaN, ...
+                "TransportBlockId","", "Codeword",NaN, "NDI",NaN, "RV",NaN, ...
+                "AttemptIndex",NaN, "NewDataFlag",false, "RetransmissionFlag",false, ...
+                "ScheduleSlot",NaN, "AttemptSlot",NaN, "FeedbackSlot",NaN, "FirstSuccessSlot",NaN, ...
+                "TBSBits",NaN, "CrcPass",false, "FirstSuccessDelivery",false, ...
+                "CountedGoodputBits",NaN, "Status","");
         end
     end
 end
