@@ -66,6 +66,10 @@ cfg.run.snapshotEverySlots = runTiming.SnapshotEverySlots;
 cfg.run.logEverySlots = runTiming.LogEverySlots;
 cfg.run.saveIntermediateArtifacts = runTiming.SaveIntermediateArtifacts;
 cfg.run.deterministicReplay = runTiming.DeterministicReplay;
+snrSweepOffsets_dB = double(localGetNested(s, "simulation.snr_sweep_offsets_db", []));
+cfg.run.snrSweepOffsets_dB = snrSweepOffsets_dB(:).';
+cfg.run.snrSweepEnabled = logical(localGetNested(s, "sweeps_and_matrix.snr_sweep.enabled", ...
+    ~isempty(cfg.run.snrSweepOffsets_dB)));
 
 cfg.outputs.saveCSV = logical(s.output.save_csv);
 cfg.outputs.saveMAT = logical(s.output.save_mat);
@@ -235,6 +239,8 @@ cfg.channel.dopplerSourceMode = char(dopplerSourceMode);
 cfg.channel.dopplerConfigured_Hz = double(localRequireNested(s, "channels.doppler_hz", "channels.doppler_hz"));
 cfg.channel.doppler_Hz = double(resolvedDopplerHz);
 cfg.channel.dopplerHz = double(resolvedDopplerHz);
+cfg.channel.maxDoppler_Hz = double(resolvedDopplerHz);
+cfg.channel.maxDopplerHz = double(resolvedDopplerHz);
 cfg.channel.awgnOnly = upper(string(s.channels.model_type)) == "AWGN";
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
@@ -246,6 +252,7 @@ cfg.channel.shadowSigma_dB = double(s.channels.shadow_fading_std_db);
 cfg.channel.receiverNoiseFigure_dB = double(cfg.scenario.ue.noiseFigure_dB);
 cfg.channel.fading.enable = ~cfg.channel.awgnOnly;
 cfg.channel.fading.maxDoppler_Hz = double(resolvedDopplerHz);
+cfg.channel.fading.maxDopplerHz = double(resolvedDopplerHz);
 cfg.channel.fading.delaySpread_s = double(s.channels.delay_spread_ns) * 1e-9;
 cfg = sixgr.util.structSet(cfg, "channel.pathlossEnabled", logical(s.channels.pathloss_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.shadowFadingEnabled", logical(s.channels.shadow_fading_enabled));
@@ -1128,6 +1135,14 @@ if any(interferenceExecutionMode == ["abstract_large_scale_scheduler_context","e
 end
 cfg = sixgr.util.structSet(cfg, "run.interferenceExecutionMode", char(interferenceExecutionMode));
 cfg = sixgr.util.structSet(cfg, "run.useAbstractInterferenceModel", false);
+interCellInterferenceEnabled = logical(localGetNested(s, "interference.inter_cell_interference_flag", ...
+    localGetNested(s, "interference.inter_cell_interference_enable", false)));
+intraCellInterferenceEnabled = logical(localGetNested(s, "interference.intra_cell_interference_flag", ...
+    localGetNested(s, "interference.intra_cell_interference_enable", false)));
+cfg = sixgr.util.structSet(cfg, "channel.interference.interCellEnabled", interCellInterferenceEnabled);
+cfg = sixgr.util.structSet(cfg, "channel.interference.intraCellEnabled", intraCellInterferenceEnabled);
+cfg = sixgr.util.structSet(cfg, "interference.interCellEnabled", interCellInterferenceEnabled);
+cfg = sixgr.util.structSet(cfg, "interference.intraCellEnabled", intraCellInterferenceEnabled);
 pbchRequired = logical(localRequireNested(s, "control_gating.pbch_required", "control_gating.pbch_required"));
 prachRequired = logical(localRequireNested(s, "control_gating.prach_required", "control_gating.prach_required"));
 pdcchRequired = logical(localRequireNested(s, "control_gating.pdcch_required", "control_gating.pdcch_required"));

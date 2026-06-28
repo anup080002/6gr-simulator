@@ -14,10 +14,10 @@ assert(strcmpi(char(string(resolved.channel_model.scenario_label)), "CDL-C"), ..
     "channel_model.scenario_label must mirror channels.profile as CDL-C.");
 assert(strcmpi(char(string(resolved.random_access.channel_model)), "CDL-C"), ...
     "Master random-access channel model must follow the 4 GHz UMa CDL-C channel profile.");
-expectedDefaultDopplerHz = (3 / 3.6) * 4.0e9 / 299792458;
+expectedDefaultDopplerHz = (100 / 3.6) * 4.0e9 / 299792458;
 assert(abs(double(resolved.channels.doppler_hz) - expectedDefaultDopplerHz) < 1e-6 && ...
     abs(double(resolved.channel_model.doppler_hz) - expectedDefaultDopplerHz) < 1e-6, ...
-    "Resolved master Doppler must be derived from 3 km/h and 4 GHz when derive_from_ue_speed is active.");
+    "Resolved master Doppler must be derived from 100 km/h and 4 GHz when derive_from_ue_speed is active.");
 
 tmp = tempname;
 mkdir(tmp);
