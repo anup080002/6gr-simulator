@@ -9,6 +9,9 @@ arguments
 end
 
 filePath = char(filePath);
+if ~sixgr.util.persistenceEnabled()
+    return;
+end
 T = sixgr.util.pruneStructurallyBlankTableColumns(T);
 if sixgr.db.isArtifactStoreActive()
     sixgr.db.storeTableArtifact(filePath, T);

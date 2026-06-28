@@ -42,18 +42,28 @@ if ~(isstruct(eqResult) && isfield(eqResult, "PostEqSINRLinear") && ~isempty(eqR
             "post_equalization_sinr", info.NAReason);
         return;
     end
-    profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.rx.computePostEqSINR", ...
-        "Stage", "post_equalization_sinr", ...
-        "Metadata", struct("NRE", double(dims.NRE), "NRx", double(dims.NumRxAnt), ...
-        "NTx", double(dims.NumTxPorts), "NLayers", double(localResolveLayerCount(opt.Layers, dims)))); %#ok<NASGU>
-    rxZeros = complex(zeros(dims.NRE, dims.NumRxAnt));
-    args = {"Algorithm", upper(string(opt.Method)), "Rint", opt.Rint};
-    if ~isempty(opt.RIncludesNoise)
-        args = [args, {"RIncludesNoise", logical(opt.RIncludesNoise)}]; %#ok<AGROW>
+    cacheKey = localEqualizerCacheKey(H, nVar, opt, dims);
+    [cacheHit, eqResult] = localEqualizerResultCache("lookup", cacheKey);
+    info.CacheEligible = true;
+    info.CacheKey = string(cacheKey);
+    info.CacheHit = logical(cacheHit);
+    if cacheHit
+        info.EqualizerResultSource = "computed_from_channel_estimate_cache";
+    else
+        profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.rx.computePostEqSINR", ...
+            "Stage", "post_equalization_sinr", ...
+            "Metadata", struct("NRE", double(dims.NRE), "NRx", double(dims.NumRxAnt), ...
+            "NTx", double(dims.NumTxPorts), "NLayers", double(localResolveLayerCount(opt.Layers, dims)))); %#ok<NASGU>
+        rxZeros = complex(zeros(dims.NRE, dims.NumRxAnt));
+        args = {"Algorithm", upper(string(opt.Method)), "Rint", opt.Rint};
+        if ~isempty(opt.RIncludesNoise)
+            args = [args, {"RIncludesNoise", logical(opt.RIncludesNoise)}]; %#ok<AGROW>
+        end
+        [~, ~, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxZeros, H, nVar, args{:});
+        eqResult = eqInfo.EqualizerResult;
+        localEqualizerResultCache("store", cacheKey, eqResult);
+        info.EqualizerResultSource = "computed_from_channel_estimate";
     end
-    [~, ~, eqInfo] = sixgr.phy.rx.equalizeMMSE(rxZeros, H, nVar, args{:});
-    eqResult = eqInfo.EqualizerResult;
-    info.EqualizerResultSource = "computed_from_channel_estimate";
 else
     info.EqualizerResultSource = "supplied_by_mimoDetect";
 end
@@ -148,10 +158,101 @@ info = struct( ...
     "EqualizerUniqueSolveCount", NaN, ...
     "EqualizerStaticChannelBatchApplied", false, ...
     "EqualizerRegularizationApplied", false, ...
+    "CacheEligible", false, ...
+    "CacheHit", false, ...
+    "CacheKey", "", ...
     "DemapperReliability", [], ...
     "PostEqSINRLinear", [], ...
     "DemapperReliabilityMean", NaN, ...
     "ResidualInterLayerPowerMean", NaN);
+end
+
+function key = localEqualizerCacheKey(H, nVar, opt, dims)
+payload = struct();
+payload.Contract = "sixgr.phy.rx.computePostEqSINR.equalizer_cache.v1";
+payload.Method = char(lower(string(opt.Method)));
+payload.Layers = double(localResolveLayerCount(opt.Layers, dims));
+payload.NoiseVariance = double(nVar);
+payload.RIncludesNoise = localOptionalLogicalToken(opt.RIncludesNoise);
+payload.Channel = localNumericDigest(H);
+payload.Rint = localNumericDigest(opt.Rint);
+key = char(sixgr.util.sha256Hex(jsonencode(payload)));
+end
+
+function token = localOptionalLogicalToken(value)
+if isempty(value)
+    token = "unspecified";
+else
+    value = logical(value);
+    token = string(value(1));
+end
+end
+
+function digest = localNumericDigest(x)
+digest = struct();
+digest.Class = char(string(class(x)));
+digest.Size = double(size(x));
+digest.IsEmpty = isempty(x);
+digest.IsComplex = ~isreal(x);
+digest.IsSparse = issparse(x);
+if isempty(x)
+    digest.SHA256 = "";
+    return;
+end
+if issparse(x)
+    x = full(x);
+end
+bytes = localNumericBytes(x);
+digest.SHA256 = char(sixgr.util.sha256Hex(bytes));
+end
+
+function bytes = localNumericBytes(x)
+if islogical(x)
+    bytes = uint8(x(:).');
+    return;
+end
+if ~isnumeric(x)
+    bytes = uint8(unicode2native(char(string(x)), "UTF-8"));
+    return;
+end
+x = full(x);
+if ~isreal(x)
+    bytes = [typecast(real(x(:)).', "uint8"), typecast(imag(x(:)).', "uint8")];
+else
+    bytes = typecast(x(:).', "uint8");
+end
+end
+
+function varargout = localEqualizerResultCache(action, key, eqResult)
+persistent cache
+if isempty(cache)
+    cache = containers.Map("KeyType", "char", "ValueType", "any");
+end
+action = lower(string(action));
+key = char(string(key));
+switch action
+    case "lookup"
+        hit = isKey(cache, key);
+        if hit
+            varargout = {true, cache(key)};
+        else
+            varargout = {false, struct()};
+        end
+    case "store"
+        if nargin < 3
+            varargout = {};
+            return;
+        end
+        if cache.Count >= 256 && ~isKey(cache, key)
+            k = keys(cache);
+            remove(cache, k{1});
+        end
+        cache(key) = eqResult;
+        varargout = {};
+    otherwise
+        error("sixgr:phy:rx:PostEqSINR:BadCacheAction", ...
+            "Unsupported post-equalization SINR cache action '%s'.", action);
+end
 end
 
 function [H, dims, reason] = localNormalizeH(hEstSym)

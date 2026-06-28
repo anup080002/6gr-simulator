@@ -1186,6 +1186,11 @@ methods(Static, Access=private)
         state.ControlTrials.SRS = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "SRS", sixgr.util.structGet(state.ControlTrials, "SRS", table()));
         state.ControlTrials.TRS = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "TRS", sixgr.util.structGet(state.ControlTrials, "TRS", table()));
         state.PUCCHGrantTraceTable = sixgr.truth.CoupledTruthRuntime.annotatePUCCHGrantTraceTable(state, sixgr.util.structGet(state, "PUCCHGrantTraceTable", table()));
+        if ~sixgr.util.persistenceEnabled()
+            state.RunState = sixgr.truth.CoupledTruthRuntime.refreshRunState(state);
+            state.RunFolder = string(runFolder);
+            return;
+        end
 
         % Keep control-plane trials on both canonical browser-owned
         % air-interface paths and explicit control mirrors; the mirror is
@@ -7469,6 +7474,9 @@ methods(Static, Access=private)
     end
 
     function writeMirroredTable(layout, fileName, T)
+        if ~sixgr.util.persistenceEnabled()
+            return;
+        end
         controlPath = fullfile(layout.ControlCSVDir, fileName);
         airPath = fullfile(layout.AirInterfaceCSVDir, fileName);
         if istable(T) && ~isempty(T)

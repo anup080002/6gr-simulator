@@ -2,7 +2,7 @@ function handled = storeTableArtifact(filePath, T)
 %STORETABLEARTIFACT Persist a table artifact through the active DB sink.
 
 handled = false;
-if ~sixgr.db.isArtifactStoreActive()
+if ~sixgr.util.persistenceEnabled() || ~sixgr.db.isArtifactStoreActive()
     return;
 end
 

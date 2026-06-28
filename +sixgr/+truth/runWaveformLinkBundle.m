@@ -1,6 +1,12 @@
 function out = runWaveformLinkBundle(cfg, runFolder, opt)
 %RUNWAVEFORMLINKBUNDLE Run strict waveform link/control validation exports.
 
+if nargin < 3 || ~isstruct(opt)
+    opt = struct();
+end
+persistenceEnabled = localResolvePersistenceEnabled(opt);
+persistenceCleanup = sixgr.util.persistenceScope(persistenceEnabled); %#ok<NASGU>
+
 cfgL = cfg;
 cfgL.run.mode = "link";
 cfgL.run.shortRun = false;
@@ -55,6 +61,8 @@ if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
     out.Artifacts = struct();
     out.Errors = strings(0,1);
     out.MultiUser = multiUser;
+    out.PersistenceEnabled = logical(persistenceEnabled);
+    out.CoreOnly = ~logical(persistenceEnabled);
     return;
 end
 
@@ -459,7 +467,17 @@ out.Integrity = integrity;
 out.Errors = sixgr.util.structGet(res, "Errors", strings(0,1));
 out.UnsupportedCases = unsupportedCases;
 out.MultiUser = multiUser;
+out.PersistenceEnabled = logical(persistenceEnabled);
+out.CoreOnly = ~logical(persistenceEnabled);
 localLogStage(ctx, "Strict waveform LLS bundle completed.");
+end
+
+function tf = localResolvePersistenceEnabled(opt)
+tf = logical(sixgr.util.structGet(opt, "PersistenceEnabled", true));
+if logical(sixgr.util.structGet(opt, "CoreOnly", false))
+    tf = false;
+end
+tf = tf && sixgr.util.persistenceEnabled();
 end
 
 function localLogStage(ctx, msg)
@@ -1363,6 +1381,9 @@ end
 end
 
 function localPublishWaveformBundleStageStatus(runFolder, status)
+if ~sixgr.util.persistenceEnabled()
+    return;
+end
 rootRunFolder = localNormalizeBundleRootRunFolder(runFolder);
 layout = sixgr.report.resultLayout(rootRunFolder);
 statusPath = fullfile(layout.ReportCSVDir, "live_stage_status.csv");

@@ -19,6 +19,14 @@ opt = ip.Results;
 nLayers = max(1, round(double(nLayers)));
 numTxPorts = max(1, round(double(numTxPorts)));
 mode = localResolveMode(cfg, opt.Mode);
+maxCandidates = localResolveMaxCandidates(mode, opt.MaxCandidates);
+cacheKey = localCacheKey(cfg, nLayers, numTxPorts, mode, maxCandidates);
+[cacheHit, candidates, info] = localPMICache("lookup", cacheKey);
+if cacheHit
+    info.CacheHit = true;
+    info.CacheKey = string(cacheKey);
+    return;
+end
 
 if mode == "noncodebook"
     W = eye(numTxPorts, nLayers);
@@ -45,7 +53,10 @@ if mode == "noncodebook"
         "NumPorts", numTxPorts, ...
         "NumLayers", nLayers, ...
         "StrideSet", 1, ...
-        "NumPhaseVariants", 1);
+        "NumPhaseVariants", 1, ...
+        "CacheHit", false, ...
+        "CacheKey", string(cacheKey));
+    localPMICache("store", cacheKey, candidates, info);
     return;
 end
 
@@ -139,18 +150,6 @@ for s = 1:numel(strides)
     end
 end
 
-maxCandidates = opt.MaxCandidates;
-if isempty(maxCandidates)
-    switch mode
-        case "type1_su_mimo"
-            maxCandidates = 64;
-        case "type2_mu_mimo"
-            maxCandidates = 96;
-        otherwise
-            maxCandidates = 160;
-    end
-end
-maxCandidates = max(1, round(double(maxCandidates)));
 candidateList = localLimitCandidates(candidateList, maxCandidates);
 candidateList = localRenumberPMI(candidateList);
 
@@ -164,7 +163,87 @@ info = struct( ...
     "NumLayers", double(nLayers), ...
     "StrideSet", double(strides(:).'), ...
     "NumPhaseVariants", double(size(phaseVariants, 1)), ...
-    "Type2BasisBeamCount", double(localTernaryNumeric(isType2, type2BasisBeamCount, 1)));
+    "Type2BasisBeamCount", double(localTernaryNumeric(isType2, type2BasisBeamCount, 1)), ...
+    "CacheHit", false, ...
+    "CacheKey", string(cacheKey));
+localPMICache("store", cacheKey, candidates, info);
+end
+
+function maxCandidates = localResolveMaxCandidates(mode, requestedMax)
+maxCandidates = requestedMax;
+if isempty(maxCandidates)
+    switch string(mode)
+        case "type1_su_mimo"
+            maxCandidates = 64;
+        case "type2_mu_mimo"
+            maxCandidates = 96;
+        otherwise
+            maxCandidates = 160;
+    end
+end
+maxCandidates = max(1, round(double(maxCandidates)));
+end
+
+function varargout = localPMICache(action, key, candidates, info)
+persistent cache
+if isempty(cache)
+    cache = containers.Map("KeyType", "char", "ValueType", "any");
+end
+action = lower(string(action));
+key = char(string(key));
+switch action
+    case "lookup"
+        hit = isKey(cache, key);
+        if hit
+            item = cache(key);
+            varargout = {true, item.Candidates, item.Info};
+        else
+            varargout = {false, struct([]), struct()};
+        end
+    case "store"
+        if nargin < 4
+            varargout = {};
+            return;
+        end
+        if cache.Count >= 256 && ~isKey(cache, key)
+            k = keys(cache);
+            remove(cache, k{1});
+        end
+        cache(key) = struct("Candidates", candidates, "Info", info);
+        varargout = {};
+    otherwise
+        error("sixgr:phy:dl:PMICodebook:BadCacheAction", ...
+            "Unsupported PMI cache action '%s'.", action);
+end
+end
+
+function key = localCacheKey(cfg, nLayers, numTxPorts, mode, maxCandidates)
+snapshot = struct();
+snapshot.Contract = "sixgr.phy.dl.pmiCodebookCandidates.cache.v1";
+snapshot.Mode = char(string(mode));
+snapshot.NumLayers = double(nLayers);
+snapshot.NumTxPorts = double(numTxPorts);
+snapshot.MaxCandidates = double(maxCandidates);
+snapshot.BeamCount = double(sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", numTxPorts));
+snapshot.CodebookType = char(string(sixgr.util.structGet(cfg, "phy.csi.codebookType", "")));
+snapshot.Type2BasisBeamCount = double(sixgr.util.structGet(cfg, "phy.csi.type2BasisBeamCount", ...
+    sixgr.util.structGet(cfg, "csi_acquisition_and_reporting.type2_basis_beam_count", NaN)));
+snapshot.DualPolarizedType1 = logical(sixgr.util.structGet(cfg, "phy.csi.dualPolarizedType1", false));
+snapshot.AntennaBSPolarization = char(string(sixgr.util.structGet(cfg, "antenna.bs.polarization", "")));
+snapshot.AntennaArrayPolarization = char(string(sixgr.util.structGet(cfg, "antenna_and_array.polarization", "")));
+snapshot.PhyBSArray = localSerializableValue(sixgr.util.structGet(cfg, "phy.bsArray", []));
+snapshot.AntennaBSGeometry = char(string(sixgr.util.structGet(cfg, "antenna.bs.geometry", "")));
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+snapshot.RuntimeServingBSAntenna = localSerializableValue(sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct()));
+key = char(sixgr.util.sha256Hex(jsonencode(snapshot)));
+end
+
+function value = localSerializableValue(value)
+try
+    jsonencode(value);
+catch
+    value = char(string(class(value)));
+end
 end
 
 function mode = localResolveMode(cfg, overrideMode)
