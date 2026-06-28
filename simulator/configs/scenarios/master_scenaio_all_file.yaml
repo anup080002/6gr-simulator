@@ -301,7 +301,7 @@ canonical_control:
     enabled: true
     preamble_count: 64
     zero_correlation_zone: 8
-    detection_threshold: 0.5
+    detection_threshold: 0.35
     detection_threshold_mode: fixed
     msg3_enabled: true
     min_detection_trials: 8
@@ -312,7 +312,11 @@ canonical_control:
     preamble_index: 0
     prach_format: B4
     channel_model: CDL-C
+    delay_spread_ns: 93
     speed_kmh: 100
+    num_rx_antennas: 64
+    num_tx_antennas: 4
+    timing_tolerance_us: 0.5
     preamble_length_mode: short
     num_prach_occasions: 4
     timing_offset_sweep_samples: [0, 4, 8]

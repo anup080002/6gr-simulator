@@ -853,7 +853,7 @@ sections:
       delay_spread_ns:
         required: false
         type: number
-        allowed_numeric_values: [10, 30, 100, 300, 1000]
+        min: 0
       speed_kmh:
         required: false
         type: number

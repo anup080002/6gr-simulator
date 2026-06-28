@@ -12,6 +12,9 @@ function layout = generateLayout(cfg, scenarioName)
 %   layout.bs.pos_m            [nTRxP x 3]
 %   layout.bs.siteId           [nTRxP x 1]
 %   layout.bs.sectorId         [nTRxP x 1]
+%   layout.bs.cellId           [nTRxP x 1]
+%   layout.bs.pci              [nTRxP x 1]
+%   layout.bs.nCellId          [nTRxP x 1]
 %   layout.bs.azim_deg         [nTRxP x 1]
 %   layout.bs.txPower_dBm      [nTRxP x 1]
 %
@@ -74,6 +77,7 @@ nTRxP = nSites * prof.nSectors;
 bsPos = zeros(nTRxP,3);
 siteId = zeros(nTRxP,1);
 sectorId = zeros(nTRxP,1);
+cellId = zeros(nTRxP,1);
 azimDeg = zeros(nTRxP,1);
 txP = prof.bs.txPower_dBm * ones(nTRxP,1);
 
@@ -84,6 +88,7 @@ for s = 1:nSites
         bsPos(k,:) = sitePos(s,:);
         siteId(k) = s;
         sectorId(k) = sec;
+        cellId(k) = (s - 1) * prof.nSectors + sec;
         azimDeg(k) = mod(azOff(sec), 360);
     end
 end
@@ -92,6 +97,9 @@ layout.bs = struct();
 layout.bs.pos_m = bsPos;
 layout.bs.siteId = siteId;
 layout.bs.sectorId = sectorId;
+layout.bs.cellId = cellId;
+layout.bs.pci = cellId;
+layout.bs.nCellId = cellId;
 layout.bs.azim_deg = azimDeg;
 layout.bs.height_m = bsH;
 layout.bs.txPower_dBm = txP;

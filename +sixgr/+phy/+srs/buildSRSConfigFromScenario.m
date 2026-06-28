@@ -56,8 +56,9 @@ strictCfg.CellId = 1;
 strictCfg.UEId = 1;
 strictCfg.BindingSource = string(sixgr.util.structGet(cfg, "phy.srs.bindingSource", "scenario_config"));
 strictCfg.ReferenceSignalFamily = "SRS";
-strictCfg.CarrierFrequencyHz = double(sixgr.util.structGet(cfg, "frequency.center_frequency_hz", ...
-    sixgr.util.structGet(cfg, "channel.carrier_frequency_hz", NaN)));
+strictCfg.CarrierFrequencyHz = localFirstFiniteScalar(cfg, ...
+    ["frequency.center_frequency_hz", "frequency.centerFrequencyHz", ...
+     "phy.fc_Hz", "channel.fc_Hz", "channel.carrier_frequency_hz"], NaN);
 strictCfg.FrequencyRange = string(sixgr.util.structGet(cfg, "frequency.range_name", "FR1"));
 strictCfg.DuplexMode = string(sixgr.util.structGet(cfg, "phy.duplex.mode", ...
     sixgr.util.structGet(cfg, "frequency.duplex_mode", "FDD")));
@@ -131,8 +132,12 @@ strictCfg.FullCarrierSoundingRequired = logical(fullRequired);
 strictCfg.CoverageRequirement = string(coverageRequirement);
 strictCfg.SpatialRelationInfo = string(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.spatial_relation_info", ""));
 strictCfg.PathlossReferenceRS = string(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.pathloss_reference_rs", ""));
-strictCfg.PowerControlAlpha = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.power_control_alpha", NaN));
-strictCfg.P0 = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.p0", NaN));
+strictCfg.PowerControlAlpha = localFirstFiniteScalar(cfg, ...
+    ["lls6g.reference_signals.srs.power_control_alpha", "phy.srs.powerControlAlpha", ...
+     "phy.pusch.powerControl.alpha", "phy.pusch.power_control.alpha"], NaN);
+strictCfg.P0 = localFirstFiniteScalar(cfg, ...
+    ["lls6g.reference_signals.srs.p0", "phy.srs.p0", ...
+     "phy.pusch.powerControl.p0PUSCH_dBm", "phy.pusch.power_control.p0_pusch_dbm"], NaN);
 strictCfg.DetectionThreshold = double(sixgr.util.structGet(cfg, "phy.srs.detectionThreshold", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.detection_threshold", 0.72)));
 strictCfg.ChannelNMSEThresholddB = double(sixgr.util.structGet(cfg, "phy.srs.channelNMSEThresholddB", ...
@@ -174,10 +179,40 @@ end
 if ~expectedPctExplicit
     strictCfg.ExpectedBandwidthCoveragePercent = 100 * min(double(strictCfg.ExpectedNumRB), nSizeGrid) / nSizeGrid;
 end
+strictCfg.ExpectedRECount = localExpectedSRSRECount(strictCfg);
 strictCfg.ConfigHash = sixgr.phy.srs.hashSRSConfig(strictCfg);
 strictCfg.StrictValidation = sixgr.phy.srs.validateSRSConfigStrict(strictCfg);
 strictCfg.ConfigExport = rmfield(strictCfg, intersect(fieldnames(strictCfg), ...
     {'ToolboxCarrier','ToolboxSRS','BaseConfig','ConfigExport','StrictValidation'}));
+end
+
+function value = localFirstFiniteScalar(s, paths, defaultValue)
+value = double(defaultValue);
+for ii = 1:numel(paths)
+    candidate = sixgr.util.structGet(s, paths(ii), []);
+    if isempty(candidate)
+        continue;
+    end
+    candidate = double(candidate);
+    candidate = candidate(isfinite(candidate));
+    if ~isempty(candidate)
+        value = double(candidate(1));
+        return;
+    end
+end
+end
+
+function nRE = localExpectedSRSRECount(srsCfg)
+carrier0 = srsCfg.ToolboxCarrier;
+srs = srsCfg.ToolboxSRS;
+slots = double(srsCfg.ExpectedSlotSet(:).');
+nRE = 0;
+for ii = 1:numel(slots)
+    carrier = carrier0;
+    carrier.NSlot = double(slots(ii));
+    nRE = nRE + numel(nrSRSIndices(carrier, srs));
+end
+nRE = double(nRE);
 end
 
 function tf = localHasPath(s, path)

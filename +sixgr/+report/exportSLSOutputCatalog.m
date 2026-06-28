@@ -384,12 +384,19 @@ layout = sixgr.util.structGet(details, "Layout", struct());
 bsPos = double(sixgr.util.structGet(layout, "bs.pos_m", zeros(0,3)));
 siteId = double(sixgr.util.structGet(layout, "bs.siteId", nan(size(bsPos,1),1)));
 sectorId = double(sixgr.util.structGet(layout, "bs.sectorId", (1:size(bsPos,1)).'));
+cellId = double(sixgr.util.structGet(layout, "bs.cellId", ...
+    (siteId(:) - 1) .* max(1, double(sixgr.util.structGet(layout, "nSectors", 1))) + sectorId(:)));
+pci = double(sixgr.util.structGet(layout, "bs.pci", cellId(:)));
+nCellId = double(sixgr.util.structGet(layout, "bs.nCellId", cellId(:)));
 az = double(sixgr.util.structGet(layout, "bs.azim_deg", nan(size(bsPos,1),1)));
 txP = double(sixgr.util.structGet(layout, "bs.txPower_dBm", nan(size(bsPos,1),1)));
 n = size(bsPos, 1);
 
 site_id = siteId(:);
 sector_id = sectorId(:);
+cell_id = cellId(:);
+pci_id = pci(:);
+n_cell_id = nCellId(:);
 trp_id = (1:n).';
 x_m = localColumnOrNaN(bsPos, 1);
 y_m = localColumnOrNaN(bsPos, 2);
@@ -405,11 +412,14 @@ array_geometry_id = repmat(localResolveBSArrayGeometryID(cfg), n, 1);
 indoor_outdoor = repmat(localResolveLayoutIndoorOutdoor(layout), n, 1);
 sleep_capable_flag = repmat(localResolveSleepCapableFlag(cfg), n, 1);
 
-T = table(site_id, sector_id, trp_id, x_m, y_m, z_m, layer_id, carrier_id, ...
+T = table(site_id, sector_id, cell_id, pci_id, n_cell_id, trp_id, x_m, y_m, z_m, layer_id, carrier_id, ...
     boresight_deg, mechanical_tilt_deg, electrical_tilt_deg, max_tx_power_dbm, ...
     antenna_model_id, array_geometry_id, indoor_outdoor, sleep_capable_flag);
 T.SiteID = site_id;
 T.SectorID = sector_id;
+T.CellID = cell_id;
+T.PCI = pci_id;
+T.NCellID = n_cell_id;
 T.TRPID = trp_id;
 T.Azimuth_deg = boresight_deg;
 T.X_m = x_m;
@@ -432,6 +442,8 @@ pos0 = double(sixgr.util.structGet(ue0, "pos_m", zeros(numel(ue_id), 3)));
 indoor = logical(sixgr.util.structGet(ue0, "indoor", false(numel(ue_id),1)));
 speed_kmh = double(sixgr.util.structGet(ue0, "speed_kmh", zeros(numel(ue_id),1)));
 heading = double(sixgr.util.structGet(ue0, "heading_deg", zeros(numel(ue_id),1)));
+servingCell = double(sixgr.util.structGet(ue0, "drop_cell_id", nan(numel(ue_id),1)));
+serving_cell_id = servingCell(:);
 n = numel(ue_id);
 
 if numel(trafficClass) ~= n
@@ -451,7 +463,7 @@ ai_capability_class = repmat(localResolveAICapabilityClass(cfg), n, 1);
 mobility_profile_id = repmat(localResolveMobilityProfileID(cfg), n, 1);
 
 T = table(ue_id, ue_type, service_profile, start_x_m, start_y_m, start_z_m, ...
-    indoor_outdoor_state, speed_profile, heading, power_class_dbm, antenna_model_id, ...
+    indoor_outdoor_state, speed_profile, heading, serving_cell_id, power_class_dbm, antenna_model_id, ...
     ai_capability_class, mobility_profile_id);
 T.UEID = ue_id;
 T.X_m = start_x_m;
@@ -460,6 +472,7 @@ T.Z_m = start_z_m;
 T.Indoor = indoor;
 T.Speed_kmh = speed_kmh;
 T.Heading_deg = heading;
+T.ServingCellID = serving_cell_id;
 end
 
 function T = localBuildUETrajectoryTrace(results)
