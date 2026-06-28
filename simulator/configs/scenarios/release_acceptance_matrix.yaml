@@ -1,0 +1,25 @@
+meta:
+  matrix_id: release_acceptance_10of10_v1
+  description: Minimal release baseline matrix for numerical LLS acceptance across PHY, channel, MAC/control, reference-signal, access, MIMO, interference, fixed, and adaptive modes.
+  owner: codex
+  version: "1.0.0"
+
+execution:
+  stop_on_failure: true
+  max_parallel_jobs: 1
+  repeat_count: 1
+  save_combined_summary: true
+
+scenarios:
+  - simulator/configs/scenarios/variants/SCN07_LINK_LEVEL_REFERENCE_EQUIVALENT.yaml
+  - simulator/configs/scenarios/DL_PDSCH_AWGN_CALIBRATION.yaml
+  - simulator/configs/scenarios/DL_PDSCH_FADING_MIMO.yaml
+  - simulator/configs/scenarios/UL_PUSCH_WAVEFORM_AND_PAPR.yaml
+  - simulator/configs/scenarios/CSI_ACQUISITION.yaml
+  - simulator/configs/scenarios/CONTROL_CHANNELS.yaml
+  - simulator/configs/scenarios/RANDOM_ACCESS.yaml
+  - simulator/configs/scenarios/HARQ_AND_RETRANSMISSION.yaml
+  - simulator/configs/scenarios/variants/SCN01_CELL_EDGE_INTERFERENCE.yaml
+  - simulator/configs/scenarios/rank_adaptation_sweep.yaml
+  - simulator/configs/scenarios/lls_700mhz_20mhz_2x2_rank2_beam_truth.yaml
+  - simulator/configs/scenarios/lls_3gpp_4ghz_100mhz_longrun.yaml
