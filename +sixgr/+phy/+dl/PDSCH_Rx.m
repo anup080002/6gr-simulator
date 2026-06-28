@@ -528,6 +528,8 @@ rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
 rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
 rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
 rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
+rx.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(harqCombiningInfo, "PositionAware", false));
+rx.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(harqCombiningInfo, "OverlapPositionCount", NaN));
 rx.XOverhead = double(sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14])));
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
@@ -591,6 +593,8 @@ rx.RecLLRCell = decode.RecLLRCell;
 rx.RateRecoveredLLRCell = decode.RecLLRCell;
 rx.RateRecoverInfoCell = decode.RateRecoverInfoCell;
 rx.HARQSoftCombiningInfoPerCodeword = decode.HARQCombiningInfoCell;
+rx.HARQSoftBuffer = sixgr.util.structGet(harqCombiningInfo, "SoftBuffer", struct());
+rx.HARQSoftBufferCell = decode.HARQSoftBufferCell;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, ...
     llr, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
 if hasPHYGrant
@@ -720,6 +724,7 @@ info.NoiseVariance = nVarDecodeInfo;
 info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
 info.PreEqualizationNoiseVarianceTransform = noiseTransformInfo;
 info.HARQSoftCombining = harqCombiningInfo;
+info.HARQSoftBuffer = rx.HARQSoftBuffer;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = double(nVarDecode);
 info.TimingEstimate = timingResolution;
@@ -733,6 +738,7 @@ info.LLRScalingPerCodeword = llrCSIInfoCell;
 info.DecodedBitLineagePerCodeword = decode.DecodedBitLineageCell;
 info.RateRecoverPerCodeword = decode.RateRecoverInfoCell;
 info.HARQSoftCombiningPerCodeword = decode.HARQCombiningInfoCell;
+info.HARQSoftBufferPerCodeword = decode.HARQSoftBufferCell;
 info.DecodePerCodeword = decode;
 info.StrictReceiverEvidence = strictEvidence;
 if hasPHYGrant
@@ -1564,6 +1570,7 @@ recLLRCell = cell(1, nCodewords);
 recLLRBatchCell = cell(1, nCodewords);
 rateRecoverInfoCell = cell(1, nCodewords);
 harqInfoCell = cell(1, nCodewords);
+harqSoftBufferCell = cell(1, nCodewords);
 decodedCodeBlocksCell = cell(1, nCodewords);
 ldpcSegCell = cell(1, nCodewords);
 tbCrcCell = cell(1, nCodewords);
@@ -1596,6 +1603,7 @@ for cw = 1:nCodewords
     recLLRBatchCell{cw} = recLLRBatch;
     rateRecoverInfoCell{cw} = rateRecoverInfo;
     harqInfoCell{cw} = harqInfo;
+    harqSoftBufferCell{cw} = sixgr.util.structGet(harqInfo, "SoftBuffer", struct());
     decodedCodeBlocksCell{cw} = decCbs;
     ldpcSegCell{cw} = ldpcSeg;
     tbCrcCell{cw} = tbCrcRx;
@@ -1616,6 +1624,7 @@ decode.RecLLRCell = recLLRCell;
 decode.RecLLRBatchCell = recLLRBatchCell;
 decode.RateRecoverInfoCell = rateRecoverInfoCell;
 decode.HARQCombiningInfoCell = harqInfoCell;
+decode.HARQSoftBufferCell = harqSoftBufferCell;
 decode.DecodedCodeBlocksCell = decodedCodeBlocksCell;
 decode.LDPCSegmentationCell = ldpcSegCell;
 decode.TransportBlockCRCPerCodeword = tbCrcCell;
@@ -1763,6 +1772,17 @@ if iscell(softBuffers)
         priorLLR = softBuffers{codewordIndex};
     end
 elseif isstruct(softBuffers)
+    if isfield(softBuffers, "LLRSum") || isfield(softBuffers, "SoftBuffer")
+        priorLLR = softBuffers;
+        priorLayout = sixgr.util.structGet(softBuffers, "CodingLayout", struct());
+        return;
+    end
+    softCell = sixgr.util.structGet(softBuffers, "SoftBufferCell", []);
+    if iscell(softCell) && numel(softCell) >= codewordIndex
+        priorLLR = softCell{codewordIndex};
+        priorLayout = sixgr.util.structGet(priorLLR, "CodingLayout", struct());
+        return;
+    end
     raw = sixgr.util.structGet(softBuffers, "LLRCell", []);
     if isempty(raw)
         raw = sixgr.util.structGet(softBuffers, "RateRecoveredLLRCell", []);
@@ -1809,9 +1829,18 @@ end
 summary = struct( ...
     "Applied", any(applied), ...
     "AppliedPerCodeword", logical(applied), ...
+    "PositionAware", any(cellfun(@(x) logical(sixgr.util.structGet(x, "PositionAware", false)), infoCell)), ...
     "Reason", char(strjoin(reasons, "|")), ...
     "CurrentNumel", double(sum(cur(isfinite(cur)))), ...
-    "PriorNumel", double(sum(prior(isfinite(prior)))));
+    "PriorNumel", double(sum(prior(isfinite(prior)))), ...
+    "OverlapPositionCount", double(sum(cellfun(@(x) double(sixgr.util.structGet(x, "OverlapPositionCount", 0)), infoCell))), ...
+    "SoftBufferCell", {cellfun(@(x) sixgr.util.structGet(x, "SoftBuffer", struct()), infoCell, "UniformOutput", false)});
+if numel(summary.SoftBufferCell) == 1
+    summary.SoftBuffer = summary.SoftBufferCell{1};
+else
+    summary.SoftBuffer = struct("ContractVersion", "HARQSoftBufferCollection/v1", ...
+        "SoftBufferCell", {summary.SoftBufferCell});
+end
 end
 
 function nCodewords = localResolvePDSCHNumCodewords(pdsch, nLayers)

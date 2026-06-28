@@ -50,7 +50,7 @@ ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscala
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('ExpectedHARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
-ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -622,6 +622,9 @@ rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
 rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
 rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
 rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
+rx.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(harqCombiningInfo, "PositionAware", false));
+rx.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(harqCombiningInfo, "OverlapPositionCount", NaN));
+rx.HARQSoftBuffer = sixgr.util.structGet(harqCombiningInfo, "SoftBuffer", struct());
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 rx.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(syncState, "EstimatedCommonFrequency_Hz", NaN));
@@ -798,6 +801,7 @@ info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struc
 info.PreEqualizationNoiseVarianceTransform = noiseTransformInfo;
 info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 info.HARQSoftCombining = harqCombiningInfo;
+info.HARQSoftBuffer = rx.HARQSoftBuffer;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = nVarPostEqInfo;
 info.DecoderNoiseVariance = nVarDecodeInfo;

@@ -31,8 +31,12 @@ diag = struct();
 diag.RateRecoveredLLR = recLLR;
 diag.CombinedLLR = combinedLLR;
 diag.CodingLayout = rxLayout;
+diag.SoftBuffer = sixgr.util.structGet(combineInfo, "SoftBuffer", struct());
+diag.HARQSoftBuffer = diag.SoftBuffer;
 diag.HARQSoftCombiningReason = char(string(combineInfo.Reason));
 diag.HARQSoftCombiningApplied = logical(combineInfo.Applied);
+diag.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(combineInfo, "PositionAware", false));
+diag.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(combineInfo, "OverlapPositionCount", NaN));
 diag.CurrentDecodeOK = currentOK;
 diag.CombinedDecodeOK = logical(combinedOK);
 diag.BitErrors = double(bitErr);
@@ -97,26 +101,17 @@ if iscell(cur)
     infoCell = cell(size(cur));
     for c = 1:numel(cur)
         [combined{c}, infoCell{c}] = sixgr.phy.harq.combineSoftLLR(localEnsureLLRMatrix(cur{c}), ...
-            localEnsureLLRMatrix(localCellOrScalar(priorLLRCell, c, [])), ...
+            localCellOrScalar(priorLLRCell, c, []), ...
             "CurrentLayout", localCellOrScalar(currentLayout, c, struct()), ...
-            "PriorLayout", localCellOrScalar(priorLayoutCell, c, struct()));
+            "PriorLayout", localCellOrScalar(priorLayoutCell, c, struct()), ...
+            "CodewordIndex", c);
     end
     info = localSummarizeCombineInfo(infoCell);
     return;
 end
-if isempty(prev)
-    combined = localEnsureLLRMatrix(cur);
-    info = struct("Applied", false, "Reason", "no_prior_harq_soft_buffer");
-    return;
-end
-if isempty(cur)
-    combined = localEnsureLLRMatrix(prev);
-    info = struct("Applied", false, "Reason", "current_llr_empty");
-    return;
-end
 [priorLLR, priorLayout] = localUnwrapPrior(prev);
 [combined, info] = sixgr.phy.harq.combineSoftLLR(localEnsureLLRMatrix(cur), ...
-    localEnsureLLRMatrix(priorLLR), ...
+    priorLLR, ...
     "CurrentLayout", currentLayout, ...
     "PriorLayout", priorLayout);
 end
@@ -125,6 +120,11 @@ function [priorLLR, priorLayout] = localUnwrapPrior(prev)
 priorLayout = struct();
 priorLLR = prev;
 if isstruct(prev)
+    if isfield(prev, "LLRSum") || isfield(prev, "SoftBuffer")
+        priorLayout = sixgr.util.structGet(prev, "CodingLayout", struct());
+        priorLLR = prev;
+        return;
+    end
     priorLayout = sixgr.util.structGet(prev, "CodingLayout", struct());
     priorLLR = sixgr.util.structGet(prev, "LLR", sixgr.util.structGet(prev, "RateRecoveredLLR", []));
 end
@@ -147,6 +147,17 @@ if iscell(prev)
     return;
 end
 if isstruct(prev)
+    softCell = sixgr.util.structGet(prev, "SoftBufferCell", []);
+    hadSoftBuffer = false;
+    if iscell(softCell)
+        for c = 1:min(n, numel(softCell))
+            priorLLRCell{c} = softCell{c};
+        end
+        hadSoftBuffer = true;
+    elseif isfield(prev, "LLRSum") || isfield(prev, "SoftBuffer")
+        priorLLRCell{1} = prev;
+        hadSoftBuffer = true;
+    end
     rawLLR = sixgr.util.structGet(prev, "LLRCell", []);
     if isempty(rawLLR)
         rawLLR = sixgr.util.structGet(prev, "RateRecoveredLLRCell", []);
@@ -155,7 +166,7 @@ if isstruct(prev)
         for c = 1:min(n, numel(rawLLR))
             priorLLRCell{c} = rawLLR{c};
         end
-    else
+    elseif ~hadSoftBuffer
         priorLLRCell{1} = sixgr.util.structGet(prev, "LLR", sixgr.util.structGet(prev, "RateRecoveredLLR", []));
     end
     rawLayout = sixgr.util.structGet(prev, "CodingLayouts", []);
@@ -202,9 +213,17 @@ end
 info = struct( ...
     "Applied", any(applied), ...
     "AppliedPerCodeword", logical(applied), ...
+    "PositionAware", any(cellfun(@(x) logical(sixgr.util.structGet(x, "PositionAware", false)), infoCell)), ...
     "Reason", char(strjoin(reasons, "|")), ...
     "CurrentNumel", double(sum(cur(isfinite(cur)))), ...
-    "PriorNumel", double(sum(prior(isfinite(prior)))));
+    "PriorNumel", double(sum(prior(isfinite(prior)))), ...
+    "SoftBufferCell", {cellfun(@(x) sixgr.util.structGet(x, "SoftBuffer", struct()), infoCell, "UniformOutput", false)});
+if numel(info.SoftBufferCell) == 1
+    info.SoftBuffer = info.SoftBufferCell{1};
+else
+    info.SoftBuffer = struct("ContractVersion", "HARQSoftBufferCollection/v1", ...
+        "SoftBufferCell", {info.SoftBufferCell});
+end
 end
 
 function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg, layout)

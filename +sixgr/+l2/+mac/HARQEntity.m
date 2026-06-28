@@ -3,9 +3,9 @@ classdef HARQEntity < handle
 % Simple HARQ process manager for MAC/PHY integration.
 %
 % This class tracks HARQ process state per UE and per direction (DL/UL).
-% It does NOT implement soft combining itself; it provides the process ID,
-% redundancy version (RV) sequence, and NDI toggling, and it can optionally
-% store the last transmitted TB bytes for retransmission.
+% It does NOT implement soft-combining arithmetic itself; it provides the
+% process ID, redundancy version (RV) sequence, NDI toggling, and lifecycle
+% ownership for the position-aware PHY soft buffer.
 %
 % Typical usage pattern (gNB DL scheduler)
 %   harq = sixgr.l2.mac.HARQEntity(cfg,'Direction','DL');
@@ -26,10 +26,9 @@ classdef HARQEntity < handle
 %    DCI conventions, while internal indexing is 1-based.
 %  - RV sequence follows the common 0,2,3,1 cycling.
 %  - MaxRetx is "max retransmissions" (excluding initial transmission).
-%  - Soft combining is intentionally not performed here. The PHY/link
-%    receiver owns rate-recovered LLR capture and combining; HARQEntity
-%    provides the process ID, NDI, RV, TB identity, and retransmission
-%    scheduling contract needed to pair those PHY observations correctly.
+%  - Soft-combining arithmetic is performed by sixgr.phy.harq.combineSoftLLR.
+%    HARQEntity stores and clears the returned soft-buffer state so RV
+%    observations are paired by process identity and coding-layout hash.
 %
 % Keep this file ASCII-only.
 
@@ -51,7 +50,8 @@ classdef HARQEntity < handle
 
     properties
         Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
-            'TimeoutDrop',0,'StaleFeedbackIgnored',0)
+            'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
+            'SoftBufferClear',0,'FirstSuccessDelivery',0)
     end
 
     methods
@@ -123,7 +123,8 @@ classdef HARQEntity < handle
             obj.UEList = double.empty(1,0);
             obj.UEProcs = {};
             obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
-                'TimeoutDrop',0,'StaleFeedbackIgnored',0);
+                'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
+                'SoftBufferClear',0,'FirstSuccessDelivery',0);
         end
 
         function tf = hasUE(obj, rnti)
@@ -256,6 +257,8 @@ classdef HARQEntity < handle
                 procs(pid).TB = uint8([]);
                 procs(pid).LastGrant = struct();
                 procs(pid).LastTxSlot = slot;
+                procs(pid).SoftBuffer = struct();
+                procs(pid).SoftBufferKey = "";
                 % TxCount incremented in onTx
             end
 
@@ -378,6 +381,12 @@ classdef HARQEntity < handle
 
             if ack
                 % ACK: release process
+                if ~isempty(fieldnames(procs(pid).SoftBuffer))
+                    obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
+                end
+                if double(procs(pid).TxCount) >= 1
+                    obj.Stats.FirstSuccessDelivery = obj.Stats.FirstSuccessDelivery + 1;
+                end
                 procs(pid) = obj.resetProc(procs(pid));
                 obj.Stats.Ack = obj.Stats.Ack + 1;
             else
@@ -386,6 +395,9 @@ classdef HARQEntity < handle
                 % NACK: if max transmissions reached, drop; else schedule retx
                 maxTx = 1 + obj.MaxRetx;
                 if procs(pid).TxCount >= maxTx
+                    if ~isempty(fieldnames(procs(pid).SoftBuffer))
+                        obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
+                    end
                     procs(pid) = obj.resetProc(procs(pid));
                     obj.Stats.Drop = obj.Stats.Drop + 1;
                 else
@@ -407,6 +419,52 @@ classdef HARQEntity < handle
                 return;
             end
             tb = procs(pid).TB;
+        end
+
+        function softBuffer = getSoftBuffer(obj, rnti, harqId0)
+            softBuffer = struct();
+            rnti = double(rnti);
+            pid = double(harqId0) + 1;
+            [ui, procs] = obj.getUE(rnti, false);
+            if ui < 1 || pid < 1 || pid > numel(procs)
+                return;
+            end
+            softBuffer = procs(pid).SoftBuffer;
+        end
+
+        function storeSoftBuffer(obj, rnti, harqId0, softBuffer)
+            if ~(isstruct(softBuffer) && ~isempty(fieldnames(softBuffer)))
+                return;
+            end
+            if ~(isfield(softBuffer, "LLRSum") && isfield(softBuffer, "ObservationWeight"))
+                error('sixgr:HARQEntity:BadSoftBuffer', ...
+                    'HARQ soft buffer must contain LLRSum and ObservationWeight.');
+            end
+            rnti = double(rnti);
+            pid = double(harqId0) + 1;
+            [ui, procs] = obj.getUE(rnti, true);
+            if pid < 1 || pid > numel(procs)
+                error('sixgr:HARQEntity:BadHarqId','Bad HarqID=%d for UE RNTI=%d.', harqId0, rnti);
+            end
+            procs(pid).SoftBuffer = softBuffer;
+            procs(pid).SoftBufferKey = char(string(sixgr.util.structGet(softBuffer, "CodingLayoutHash", "")));
+            obj.UEProcs{ui} = procs;
+            obj.Stats.SoftBufferStore = obj.Stats.SoftBufferStore + 1;
+        end
+
+        function clearSoftBuffer(obj, rnti, harqId0)
+            rnti = double(rnti);
+            pid = double(harqId0) + 1;
+            [ui, procs] = obj.getUE(rnti, false);
+            if ui < 1 || pid < 1 || pid > numel(procs)
+                return;
+            end
+            if ~isempty(fieldnames(procs(pid).SoftBuffer))
+                obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
+            end
+            procs(pid).SoftBuffer = struct();
+            procs(pid).SoftBufferKey = "";
+            obj.UEProcs{ui} = procs;
         end
 
         function cancelled = cancelTentativeTx(obj, rnti, harqId0)
@@ -463,6 +521,8 @@ classdef HARQEntity < handle
             p.LastGrant = struct();
             p.LastTxSlot = -inf;
             p.LastDropReason = "";
+            p.SoftBuffer = struct();
+            p.SoftBufferKey = "";
         end
 
         function p = resetProc(obj, p)
@@ -498,6 +558,9 @@ classdef HARQEntity < handle
                 ageSlots = double(currentSlot) - double(procs(pid).LastTxSlot);
                 if isfinite(ageSlots) && ageSlots >= timeoutSlots
                     ndi = procs(pid).NDI;
+                    if ~isempty(fieldnames(procs(pid).SoftBuffer))
+                        obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
+                    end
                     procs(pid) = obj.newProcTemplate();
                     procs(pid).NDI = ndi;
                     procs(pid).LastDropReason = "stale_harq_process_timeout";

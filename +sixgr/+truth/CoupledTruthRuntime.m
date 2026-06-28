@@ -774,9 +774,15 @@ methods(Static, Access=private)
             return;
         end
         pid = double(retx.HARQ.HarqID) + 1;
-        prevLLR = [];
+        prevLLR = harq.getSoftBuffer(rnti, double(retx.HARQ.HarqID));
         if ueIdx <= size(softBuffers, 1) && pid <= size(softBuffers, 2)
-            prevLLR = softBuffers{ueIdx, pid};
+            mirrored = softBuffers{ueIdx, pid};
+            if isempty(fieldnames(prevLLR)) && ~isempty(mirrored)
+                prevLLR = mirrored;
+            end
+        end
+        if isstruct(prevLLR) && isempty(fieldnames(prevLLR))
+            prevLLR = [];
         end
         context.TransportBlockBits = int8(retx.TB(:));
         context.RV = double(retx.HARQ.RV);
@@ -1571,8 +1577,14 @@ methods(Static, Access=private)
                 harq.onFeedback(double(row.RNTI), double(row.HarqID), observedAck, ...
                     "SourceSlot", double(row.SourceSlot));
                 pid = double(row.HarqID) + 1;
-                if observedAck && double(row.UEIndex) <= size(buffers, 1) && pid <= size(buffers, 2)
-                    buffers{double(row.UEIndex), pid} = [];
+                if observedAck
+                    try
+                        harq.clearSoftBuffer(double(row.RNTI), double(row.HarqID));
+                    catch
+                    end
+                    if double(row.UEIndex) <= size(buffers, 1) && pid <= size(buffers, 2)
+                        buffers{double(row.UEIndex), pid} = [];
+                    end
                 end
                 rowAck = row;
                 rowAck.Ack(1) = observedAck;
@@ -1685,6 +1697,8 @@ methods(Static, Access=private)
             tbBits = zeros(max(0, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "TBSize_bits", 0)))), 1, "int8");
         end
         combinedLLR = sixgr.util.structGet(harqOut, "CombinedLLR", []);
+        softBuffer = sixgr.util.structGet(harqOut, "SoftBuffer", ...
+            sixgr.util.structGet(harqOut, "HARQSoftBuffer", struct()));
         currentDecodeOK = logical(sixgr.util.structGet(harqOut, "CurrentDecodeOK", sixgr.truth.CoupledTruthRuntime.rowLogical(row, "CRCPass", false)));
         combinedDecodeOK = logical(sixgr.util.structGet(harqOut, "CombinedDecodeOK", currentDecodeOK));
         context = sixgr.util.structGet(harqOut, "Context", struct());
@@ -1725,8 +1739,21 @@ methods(Static, Access=private)
         pid = harqId0 + 1;
         if combinedDecodeOK
             buffers{ueIdx, pid} = [];
+            try
+                harq.clearSoftBuffer(rnti, harqId0);
+            catch
+            end
         else
-            buffers{ueIdx, pid} = combinedLLR;
+            if isstruct(softBuffer) && ~isempty(fieldnames(softBuffer))
+                try
+                    harq.storeSoftBuffer(rnti, harqId0, softBuffer);
+                    buffers{ueIdx, pid} = softBuffer;
+                catch
+                    buffers{ueIdx, pid} = combinedLLR;
+                end
+            else
+                buffers{ueIdx, pid} = combinedLLR;
+            end
         end
         if direction == "UL"
             state.ULHarq = harq;

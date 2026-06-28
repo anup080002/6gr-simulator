@@ -15,7 +15,7 @@ p.addParameter("RV", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >=
 p.addParameter("HARQContext", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("GrantSnapshot", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("PHYGrant", struct(), @(x) isempty(x) || isstruct(x));
-p.addParameter("PreviousCombinedLLR", [], @(x) isempty(x) || isnumeric(x));
+p.addParameter("PreviousCombinedLLR", [], @(x) isempty(x) || isnumeric(x) || isstruct(x) || iscell(x));
 p.addParameter("InterferenceBundle", struct([]), @(x) isempty(x) || isstruct(x));
 p.addParameter("ChannelState", struct(), @(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
@@ -1076,8 +1076,8 @@ for n = 1:numFrames
         txBits = int8(tx.TransportBlock(:));
         rxBits = int8(rx.TransportBlock(:));
         currentRecLLR = sixgr.util.structGet(rx, "RecLLR", []);
-        combinedLLR = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR);
-        harqCombining = localHARQCombiningDiagnostics(previousCombinedLLR, currentRecLLR, combinedLLR);
+        currentCodingLayout = sixgr.util.structGet(rx, "CodingLayout", sixgr.util.structGet(tx, "CodingLayout", struct()));
+        [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout);
         combinedDecodeOK = false;
         combinedDecodeIt = NaN;
         L = min(numel(txBits), numel(rxBits));
@@ -1090,10 +1090,14 @@ for n = 1:numFrames
             lastHARQ = struct( ...
                 "TransportBlockBits", txBits, ...
                 "CombinedLLR", combinedLLR, ...
+                "SoftBuffer", harqCombining.SoftBuffer, ...
+                "HARQSoftBuffer", harqCombining.SoftBuffer, ...
                 "PreviousLLRCount", harqCombining.PreviousLLRCount, ...
                 "CurrentLLRCount", harqCombining.CurrentLLRCount, ...
                 "CombinedLLRCount", harqCombining.CombinedLLRCount, ...
                 "HARQCombiningApplied", harqCombining.CombiningApplied, ...
+                "HARQSoftCombiningPositionAware", harqCombining.PositionAware, ...
+                "HARQSoftCombiningReason", harqCombining.CombiningSkipReason, ...
                 "LLRCombiningGain_dB", harqCombining.LLRCombiningGain_dB, ...
                 "CurrentDecodeOK", false, ...
                 "CombinedDecodeOK", false, ...
@@ -1110,7 +1114,7 @@ for n = 1:numFrames
         bitTot = bitTot + double(numel(txBits));
 
         currentDecodeOK = rx.Ok && be == 0 && numel(rxBits) == numel(txBits);
-        hasPriorHARQEvidence = ~isempty(previousCombinedLLR);
+        hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
         if hasPriorHARQEvidence && ~currentDecodeOK
             [combinedDecodeOK, combinedDecodeIt] = localDecodeCombinedLLR(tx, combinedLLR, cfgFrame);
         else
@@ -1150,10 +1154,14 @@ for n = 1:numFrames
         lastHARQ = struct( ...
             "TransportBlockBits", txBits, ...
             "CombinedLLR", combinedLLR, ...
+            "SoftBuffer", harqCombining.SoftBuffer, ...
+            "HARQSoftBuffer", harqCombining.SoftBuffer, ...
             "PreviousLLRCount", harqCombining.PreviousLLRCount, ...
             "CurrentLLRCount", harqCombining.CurrentLLRCount, ...
             "CombinedLLRCount", harqCombining.CombinedLLRCount, ...
             "HARQCombiningApplied", harqCombining.CombiningApplied, ...
+            "HARQSoftCombiningPositionAware", harqCombining.PositionAware, ...
+            "HARQSoftCombiningReason", harqCombining.CombiningSkipReason, ...
             "LLRCombiningGain_dB", harqCombining.LLRCombiningGain_dB, ...
             "CurrentDecodeOK", logical(currentDecodeOK), ...
             "CombinedDecodeOK", logical(combinedDecodeOK), ...
@@ -4548,51 +4556,44 @@ if isfinite(nmse_dB) && nmse_dB > 6
 end
 end
 
-function combined = localCombineRateRecoveredLLR(prev, cur)
-if isempty(prev)
-    combined = localEnsureLLRMatrix(cur);
-    return;
+function [combined, diag] = localCombineRateRecoveredLLR(prev, cur, currentLayout)
+if nargin < 3
+    currentLayout = struct();
 end
-if isempty(cur)
-    combined = localEnsureLLRMatrix(prev);
-    return;
-end
-X = localEnsureLLRMatrix(prev);
-Y = localEnsureLLRMatrix(cur);
-if isequal(size(X), size(Y))
-    combined = X + Y;
-    return;
-end
-% HARQ soft combining is only valid for retransmissions of the same TB code
-% block layout. If the stored buffer shape differs, keep the current
-% observation and let HARQ state record a failed current decode naturally.
-combined = Y;
+[combined, info] = sixgr.phy.harq.combineSoftLLR(localEnsureLLRMatrix(cur), prev, ...
+    "CurrentLayout", currentLayout);
+diag = localHARQCombiningDiagnostics(prev, cur, combined, info);
 end
 
-function diag = localHARQCombiningDiagnostics(prev, cur, combined)
+function diag = localHARQCombiningDiagnostics(prev, cur, combined, info)
+if nargin < 4
+    info = struct();
+end
 prevShape = localLLRShape(prev);
 curShape = localLLRShape(cur);
 combinedShape = localLLRShape(combined);
-compatibleShape = ~isempty(prev) && ~isempty(cur) && ...
-    isequal(prevShape, curShape) && isequal(curShape, combinedShape);
-skipReason = "";
-if ~isempty(prev) && ~isempty(cur) && ~compatibleShape
-    skipReason = "code_block_layout_mismatch";
-end
+compatibleShape = logical(sixgr.util.structGet(info, "Applied", false));
+skipReason = string(sixgr.util.structGet(info, "Reason", ""));
 diag = struct( ...
-    "PreviousLLRCount", double(numel(prev)), ...
+    "PreviousLLRCount", localLLRCount(prev), ...
     "CurrentLLRCount", double(numel(cur)), ...
     "CombinedLLRCount", double(numel(combined)), ...
     "CombiningApplied", compatibleShape, ...
     "CombiningSkipReason", char(skipReason), ...
+    "PositionAware", logical(sixgr.util.structGet(info, "PositionAware", false)), ...
+    "OverlapPositionCount", double(sixgr.util.structGet(info, "OverlapPositionCount", NaN)), ...
+    "SoftBuffer", sixgr.util.structGet(info, "SoftBuffer", struct()), ...
     "PreviousLLRRows", double(prevShape(1)), ...
     "PreviousLLRCodeBlocks", double(prevShape(2)), ...
     "CurrentLLRRows", double(curShape(1)), ...
     "CurrentLLRCodeBlocks", double(curShape(2)), ...
     "CombinedLLRRows", double(combinedShape(1)), ...
     "CombinedLLRCodeBlocks", double(combinedShape(2)), ...
-    "LLRCombiningGain_dB", NaN);
+    "LLRCombiningGain_dB", double(sixgr.util.structGet(info, "LLRCombiningGain_dB", NaN)));
 if isempty(cur) || isempty(combined)
+    return;
+end
+if isfinite(diag.LLRCombiningGain_dB)
     return;
 end
 try
@@ -4654,9 +4655,38 @@ meanIter = mean(itVec(isfinite(itVec)), "omitnan");
 end
 
 function X = localEnsureLLRMatrix(v)
+if isstruct(v)
+    v = sixgr.util.structGet(v, "LLR", sixgr.util.structGet(v, "RateRecoveredLLR", []));
+end
 X = double(v);
 if isvector(X)
     X = X(:);
+end
+end
+
+function n = localLLRCount(v)
+n = double(numel(v));
+if isstruct(v)
+    if isfield(v, "LLRSum")
+        n = double(numel(v.LLRSum));
+    elseif isfield(v, "SoftBuffer")
+        soft = sixgr.util.structGet(v, "SoftBuffer", struct());
+        if isstruct(soft) && isfield(soft, "LLRSum")
+            n = double(numel(soft.LLRSum));
+        end
+    else
+        x = sixgr.util.structGet(v, "LLR", sixgr.util.structGet(v, "RateRecoveredLLR", []));
+        n = double(numel(x));
+    end
+end
+end
+
+function tf = localHARQPriorAvailable(v)
+tf = ~isempty(v);
+if isstruct(v)
+    tf = ~isempty(fieldnames(v));
+elseif iscell(v)
+    tf = any(~cellfun(@isempty, v));
 end
 end
 

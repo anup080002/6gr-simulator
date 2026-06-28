@@ -304,8 +304,13 @@ if ~hit
     return;
 end
 if isstruct(priorValue)
-    priorLLR = sixgr.util.structGet(priorValue, "LLR", []);
-    priorLayout = sixgr.util.structGet(priorValue, "CodingLayout", struct());
+    if isfield(priorValue, "LLRSum") || isfield(priorValue, "SoftBuffer")
+        priorLLR = priorValue;
+        priorLayout = sixgr.util.structGet(priorValue, "CodingLayout", struct());
+    else
+        priorLLR = sixgr.util.structGet(priorValue, "LLR", []);
+        priorLayout = sixgr.util.structGet(priorValue, "CodingLayout", struct());
+    end
 else
     priorLLR = priorValue;
 end
@@ -313,7 +318,7 @@ end
 
 function replay = localUpdateHARQSoftBuffer(replay, rx, key, priorLLR, isRetx)
 replay.HARQSoftBufferKey = string(key);
-replay.HARQSoftBufferPriorAvailable = ~isempty(priorLLR);
+replay.HARQSoftBufferPriorAvailable = localHARQSoftBufferAvailable(priorLLR);
 replay.HARQSoftCombiningApplied = logical(sixgr.util.structGet(rx, "HARQSoftCombiningApplied", false));
 replay.HARQSoftCombiningReason = string(sixgr.util.structGet(rx, "HARQSoftCombiningReason", ""));
 replay.HARQSoftBufferStored = false;
@@ -327,17 +332,29 @@ softLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
 if isempty(softLLR)
     softLLR = sixgr.util.structGet(rx, "RecLLR", []);
 end
-if isempty(softLLR)
+softBuffer = sixgr.util.structGet(rx, "HARQSoftBuffer", struct());
+if isstruct(softBuffer) && ~isempty(fieldnames(softBuffer))
+    localHARQSoftBufferCache("set", key, softBuffer);
+    replay.HARQSoftBufferStored = true;
+elseif isempty(softLLR)
     return;
+else
+    softBuffer = struct( ...
+        "LLR", softLLR, ...
+        "CodingLayout", sixgr.util.structGet(rx, "CodingLayout", struct()));
+    localHARQSoftBufferCache("set", key, softBuffer);
+    replay.HARQSoftBufferStored = true;
 end
-softBuffer = struct( ...
-    "LLR", softLLR, ...
-    "CodingLayout", sixgr.util.structGet(rx, "CodingLayout", struct()));
-localHARQSoftBufferCache("set", key, softBuffer);
-replay.HARQSoftBufferStored = true;
 if ~logical(isRetx)
     replay.HARQSoftCombiningReason = localFirstNonEmptyText(replay.HARQSoftCombiningReason, ...
         "stored_initial_rv_soft_buffer_after_crc_fail");
+end
+end
+
+function tf = localHARQSoftBufferAvailable(value)
+tf = ~isempty(value);
+if isstruct(value)
+    tf = ~isempty(fieldnames(value));
 end
 end
 

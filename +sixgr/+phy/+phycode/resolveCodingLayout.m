@@ -126,6 +126,7 @@ layout.NumLayers = uint8(nLayers);
 layout.NumCodewords = uint8(1);
 layout.CircularBufferPositionMap = positionMap;
 layout.RateMatchPositionMap = positionMap;
+layout.CodingLayoutHash = combineSignature;
 layout.CombineSignature = combineSignature;
 layout.RateMatchSignature = rateMatchSignature;
 layout.Segmentation = seg;

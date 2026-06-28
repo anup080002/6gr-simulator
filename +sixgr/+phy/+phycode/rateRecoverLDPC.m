@@ -114,6 +114,7 @@ function [recLLR, info] = rateRecoverLDPC(inLLR, trblkLen, R, rv, modScheme, nLa
     if ~isempty(layout)
         info.PositionMap = layout.RateMatchPositionMap;
         info.CircularBufferPositionMap = layout.CircularBufferPositionMap;
+        info.CodingLayoutHash = char(string(sixgr.util.structGet(layout, "CodingLayoutHash", layout.CombineSignature)));
         info.CombineSignature = char(string(layout.CombineSignature));
         info.RateMatchSignature = char(string(layout.RateMatchSignature));
         info.EPerCodeBlock = double(layout.E_r);
