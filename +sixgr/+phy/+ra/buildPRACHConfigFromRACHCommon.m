@@ -25,8 +25,8 @@ base.random_access = struct( ...
 base.phy.carrier.NCellID = double(raCfg.NCellID);
 base.phy.carrier.NSizeGrid = double(raCfg.NSizeGrid);
 base.phy.carrier.SubcarrierSpacing = double(raCfg.CarrierSCSkHz);
-base.channel.model = "AWGN";
-base.channel.awgnOnly = true;
+base.channel.model = char(localResolvePRACHChannelModel(cfg));
+base.channel.awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", strcmpi(base.channel.model, "AWGN")));
 prachCfg = sixgr.rach.PRACHConfig(base, ...
     "PreambleIndex", double(raCfg.PreambleIndex), ...
     "PRACHConfigurationIndex", double(raCfg.PRACHConfigurationIndex), ...
@@ -40,5 +40,34 @@ prachCfg = sixgr.rach.PRACHConfig(base, ...
     "RestrictedSet", char(raCfg.RestrictedSetType), ...
     "NumPRACHOccasions", 1, ...
     "NumSlots", max(80, double(raCfg.PRACHOccasionSlot) + 20), ...
-    "ChannelModel", "AWGN");
+    "ChannelModel", base.channel.model);
+end
+
+function model = localResolvePRACHChannelModel(cfg)
+model = string(sixgr.util.structGet(cfg, "random_access.channel_model", ""));
+if strlength(strtrim(model)) == 0
+    model = string(sixgr.util.structGet(cfg, "prach_lls.ChannelModel", ""));
+end
+if strlength(strtrim(model)) == 0
+    model = string(sixgr.util.structGet(cfg, "channel.model", ""));
+end
+if strlength(strtrim(model)) == 0
+    model = string(sixgr.util.structGet(cfg, "channel.tdlProfile", ""));
+end
+if strlength(strtrim(model)) == 0
+    model = string(sixgr.util.structGet(cfg, "channel.cdlProfile", "AWGN"));
+end
+token = upper(strtrim(model));
+if token == "TDL"
+    concrete = string(sixgr.util.structGet(cfg, "channel.tdlProfile", ""));
+    if strlength(strtrim(concrete)) > 0
+        token = upper(strtrim(concrete));
+    end
+elseif token == "CDL"
+    concrete = string(sixgr.util.structGet(cfg, "channel.cdlProfile", ""));
+    if strlength(strtrim(concrete)) > 0
+        token = upper(strtrim(concrete));
+    end
+end
+model = token;
 end

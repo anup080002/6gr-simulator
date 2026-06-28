@@ -17,6 +17,12 @@ p.addParameter("WriteArtifacts", true, @(x)islogical(x) || isnumeric(x));
 p.addParameter("RunNegativeSuite", false, @(x)islogical(x) || isnumeric(x));
 p.addParameter("SIB1Recovery", struct(), @(x) isempty(x) || isstruct(x));
 p.addParameter("RequireDecodedSIB1", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("RuntimeIntegrationMode", "standalone_self_loop", @(x)ischar(x) || isstring(x));
+p.addParameter("RuntimeStageWaveforms", struct(), @(x) isempty(x) || isstruct(x));
+p.addParameter("RequireRuntimeStageWaveforms", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("UseRuntimeChannel", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("RuntimeSlot", NaN, @(x)isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 opt = p.Results;
 
@@ -40,6 +46,8 @@ if strlength(strtrim(runFolder)) == 0
 end
 
 result = localEmptyResult(raCfg, runFolder, faultMode);
+runtime = localResolveRuntimeTransport(cfg, raCfg, opt);
+result = localApplyRuntimeTransportToResult(result, runtime);
 result.SIB1RACHBindingEvidence = sib1BindingEvidence;
 result.SIB1RACHBindingApplied = istable(sib1BindingEvidence) && height(sib1BindingEvidence) > 0;
 if logical(result.SIB1RACHBindingApplied)
@@ -60,7 +68,8 @@ try
     msg1Tx.PowerControl = powerState;
     msg1Tx.PowerControl.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
     result.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
-    msg1RxWave = msg1Tx.Waveform;
+    [msg1RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg1", "UL", msg1Tx.Waveform, cfg, raCfg, msg1Tx, runtime);
+    result = localAppendRuntimeStage(result, stageInfo);
     if faultMode == "no_prach_detected"
         msg1RxWave(:) = 0;
     end
@@ -100,9 +109,11 @@ try
     if faultMode == "wrong_ra_rnti"
         attemptedRNTI = double(raCfg.RARNTI) + 1;
     end
-    [pdcchRx, pdcchInfo] = sixgr.phy.ra.blindDecodeRARPDCCH(msg2Tx.Waveform, cfg, raCfg, msg2Sched, ...
+    [msg2RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg2", "DL", msg2Tx.Waveform, cfg, raCfg, msg2Tx, runtime);
+    result = localAppendRuntimeStage(result, stageInfo);
+    [pdcchRx, pdcchInfo] = sixgr.phy.ra.blindDecodeRARPDCCH(msg2RxWave, cfg, raCfg, msg2Sched, ...
         "RNTIAttempted", attemptedRNTI);
-    msg2WaveForPDSCH = msg2Tx.Waveform;
+    msg2WaveForPDSCH = msg2RxWave;
     if faultMode == "rar_pdsch_corrupted"
         msg2WaveForPDSCH = localCorruptWaveform(msg2WaveForPDSCH, 0.75);
     end
@@ -142,7 +153,8 @@ try
     msg3Tx.PowerControl.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     result.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     msg3TA = sixgr.phy.ra.applyMsg3TimingAdvance(msg3Tx.Waveform, double(result.TimingAdvanceSamples));
-    msg3Wave = msg3TA.Waveform;
+    [msg3Wave, runtime, stageInfo] = localResolveStageRxWaveform("Msg3", "UL", msg3TA.Waveform, cfg, raCfg, msg3Tx, runtime);
+    result = localAppendRuntimeStage(result, stageInfo);
     if faultMode == "msg3_pusch_corrupted"
         msg3Wave = localCorruptWaveform(msg3Wave, 1.5);
     end
@@ -169,7 +181,9 @@ try
     end
     msg4TxPayload = sixgr.mac.ra.buildMsg4ContentionResolution(msg4Identity, "FinalCRNTI", double(raCfg.FinalCRNTI));
     [msg4Tx, msg4Sched] = sixgr.phy.ra.generateMsg4Waveform(cfg, raCfg, msg4TxPayload);
-    [msg4PdcchRx, msg4PdschRx, msg4Decoded] = sixgr.phy.ra.recoverMsg4Waveform(msg4Tx.Waveform, cfg, raCfg, msg4Sched, msg4Tx);
+    [msg4RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg4", "DL", msg4Tx.Waveform, cfg, raCfg, msg4Tx, runtime);
+    result = localAppendRuntimeStage(result, stageInfo);
+    [msg4PdcchRx, msg4PdschRx, msg4Decoded] = sixgr.phy.ra.recoverMsg4Waveform(msg4RxWave, cfg, raCfg, msg4Sched, msg4Tx);
     result = localApplyMsg4(result, raCfg, msg3Decoded, msg4PdcchRx, msg4PdschRx, msg4Decoded, msg4TxPayload);
     if ~logical(result.ContentionIdentityMatches)
         result = localFail(result, "contention_resolution_identity_mismatch", "MSG4_CONTENTION_RESOLUTION_RX");
@@ -287,9 +301,329 @@ fields = { ...
     "Msg4ContentionIdentity", "", "ContentionIdentityMatches", false, "FinalCRNTI", NaN, ...
     "RACompleted", false, "FailureReason", "", "ProxyUsed", false, "Skipped", false, ...
     "ToolboxMissing", false, "UsedOracleFields", "", "StrictOk", false, ...
+    "RuntimeIntegrationMode", "", "RuntimeTransportMode", "", ...
+    "RuntimeStageWaveformsRequired", false, "RuntimeStageWaveformsUsed", false, ...
+    "RuntimeSelfLoopWaveformsUsed", false, "RuntimeChannelStateUsed", false, ...
+    "RuntimeNoiseApplied", false, "RuntimeNoiseVarianceMean", NaN, ...
+    "RuntimeChannelLinkKeys", "", "RuntimeStageCount", 0, ...
+    "RuntimeStageRows", table(), ...
     "RunFolder", string(runFolder), "FaultMode", string(faultMode), ...
     "SIB1RACHBindingEvidence", table()};
 result = struct(fields{:});
+end
+
+function runtime = localResolveRuntimeTransport(cfg, raCfg, opt)
+mode = lower(strtrim(string(opt.RuntimeIntegrationMode)));
+if strlength(mode) == 0
+    mode = "standalone_self_loop";
+end
+useRuntimeChannel = logical(opt.UseRuntimeChannel) || ...
+    logical(sixgr.util.structGet(cfg, "random_access.use_runtime_channel", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.use_runtime_channel", false)) || ...
+    any(mode == ["coupled_truth_runtime","slot_coupled_runtime","runtime_channel_state"]);
+requireStageWaveforms = logical(opt.RequireRuntimeStageWaveforms) || ...
+    logical(sixgr.util.structGet(cfg, "random_access.require_runtime_stage_waveforms", false)) || ...
+    logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.require_runtime_stage_waveforms", false));
+runtime = struct();
+runtime.Mode = char(mode);
+runtime.StageWaveforms = opt.RuntimeStageWaveforms;
+runtime.RequireStageWaveforms = logical(requireStageWaveforms);
+runtime.UseRuntimeChannel = logical(useRuntimeChannel);
+runtime.RuntimeSlot = double(opt.RuntimeSlot);
+runtime.RuntimeNoiseSNR_dB = double(opt.RuntimeNoiseSNR_dB);
+runtime.StageRows = repmat(localEmptyRuntimeStageRow(), 0, 1);
+runtime.ULChannelState = sixgr.channel.ChannelFactory.emptyRuntimeChannelState();
+runtime.DLChannelState = sixgr.channel.ChannelFactory.emptyRuntimeChannelState();
+runtime.UEIndex = max(1, round(double(raCfg.UEId)));
+runtime.ServingCell = max(1, round(double(raCfg.CellId)));
+runtime.NSizeGrid = double(raCfg.NSizeGrid);
+runtime.CarrierSCSkHz = double(raCfg.CarrierSCSkHz);
+runtime.CarrierFrequencyHz = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.fc_Hz", []), ...
+    sixgr.util.structGet(cfg, "channel.fc_Hz", []), ...
+    sixgr.util.structGet(cfg, "frequency.center_frequency_hz", []), ...
+    sixgr.util.structGet(cfg, "random_access.carrier_frequency_hz", []), 4e9);
+runtime.TransportMode = "standalone_self_loop";
+if runtime.RequireStageWaveforms
+    runtime.TransportMode = "provided_runtime_stage_waveforms_required";
+elseif runtime.UseRuntimeChannel
+    runtime.TransportMode = "persistent_runtime_channel_state";
+end
+end
+
+function result = localApplyRuntimeTransportToResult(result, runtime)
+result.RuntimeIntegrationMode = string(runtime.Mode);
+result.RuntimeTransportMode = string(runtime.TransportMode);
+result.RuntimeStageWaveformsRequired = logical(runtime.RequireStageWaveforms);
+result.RuntimeStageRows = struct2table(runtime.StageRows, "AsArray", true);
+end
+
+function [rxWave, runtime, row] = localResolveStageRxWaveform(stageName, direction, txWave, cfg, raCfg, txStruct, runtime)
+stageName = string(stageName);
+direction = upper(strtrim(string(direction)));
+row = localEmptyRuntimeStageRow();
+row.RunId = string(raCfg.RunId);
+row.CellId = double(raCfg.CellId);
+row.UEId = double(raCfg.UEId);
+row.AttemptId = double(raCfg.AttemptId);
+row.StageName = stageName;
+row.Direction = direction;
+row.TxSampleCount = size(txWave, 1);
+row.TxPortCount = size(txWave, 2);
+row.RuntimeIntegrationMode = string(runtime.Mode);
+row.RuntimeTransportMode = string(runtime.TransportMode);
+row.StageSlot = localStageSlot(raCfg, stageName);
+rxWave = txWave;
+
+[provided, providedField] = localRuntimeProvidedWaveform(runtime.StageWaveforms, stageName);
+if ~isempty(provided)
+    localAssertRuntimeWaveformCompatible(provided, txWave, stageName, providedField);
+    rxWave = provided;
+    row.RxSampleCount = size(rxWave, 1);
+    row.RxPortCount = size(rxWave, 2);
+    row.WaveformSource = "provided_runtime_stage_waveform";
+    row.ProvidedWaveformField = providedField;
+    row.RuntimeStageWaveformUsed = true;
+    row.SelfLoopWaveformUsed = false;
+    runtime.StageRows(end + 1, 1) = row;
+    return;
+end
+
+if logical(runtime.RequireStageWaveforms)
+    error("sixgr:phy:ra:MissingRuntimeStageWaveform", ...
+        "Four-step RA runtime mode requires a propagated receive waveform for %s, but none was provided.", stageName);
+end
+
+if logical(runtime.UseRuntimeChannel)
+    [rxWave, runtime, row] = localApplyRuntimeChannelForStage(row, direction, txWave, cfg, txStruct, runtime);
+    runtime.StageRows(end + 1, 1) = row;
+    return;
+end
+
+row.RxSampleCount = size(rxWave, 1);
+row.RxPortCount = size(rxWave, 2);
+row.WaveformSource = "standalone_self_loop_waveform";
+row.SelfLoopWaveformUsed = true;
+runtime.StageRows(end + 1, 1) = row;
+end
+
+function [rxWave, runtime, row] = localApplyRuntimeChannelForStage(row, direction, txWave, cfg, txStruct, runtime)
+cfgStage = localRuntimeStageConfig(cfg, direction, runtime);
+txInfo = localStageTxInfo(txStruct);
+stateField = "DLChannelState";
+if direction == "UL"
+    stateField = "ULChannelState";
+end
+chState = runtime.(stateField);
+if ~(isstruct(chState) && isfield(chState, "ContractVersion") && logical(sixgr.util.structGet(chState, "Initialized", false)))
+    linkKey = sixgr.channel.ChannelFactory.runtimeChannelKey(cfgStage, direction, ...
+        "UEIndex", runtime.UEIndex, "ServingCell", runtime.ServingCell);
+    chState = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfgStage, direction, ...
+        "LinkKey", linkKey, ...
+        "Seed", sixgr.channel.ChannelFactory.runtimeChannelSeed(cfgStage, linkKey), ...
+        "UEIndex", runtime.UEIndex, "ServingCell", runtime.ServingCell);
+end
+numTx = max(1, size(txWave, 2));
+numRx = localResolveStageRxPorts(cfgStage, direction, numTx);
+chState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState(chState, cfgStage, ...
+    txWave, txInfo, ...
+    "NumTxAnt", numTx, "NumRxAnt", numRx);
+slotStart_s = localStageSlotStartTime(cfgStage, double(row.StageSlot));
+if isfinite(slotStart_s)
+    chState = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(chState, slotStart_s, numTx, txWave);
+end
+[rxWave, replay, chState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(chState, txWave);
+runtime.(stateField) = chState;
+row.RxSampleCount = size(rxWave, 1);
+row.RxPortCount = size(rxWave, 2);
+row.WaveformSource = "runtime_channel_state";
+row.SelfLoopWaveformUsed = false;
+row.RuntimeChannelStateUsed = logical(sixgr.util.structGet(replay, "RuntimeChannelStateUsed", false));
+row.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
+row.ChannelFadingExecutionStatus = string(sixgr.util.structGet(replay, "ChannelFadingExecutionStatus", ""));
+row.RuntimeChannelLinkKey = string(sixgr.util.structGet(replay, "RuntimeChannelLinkKey", ""));
+row.RuntimeChannelSeed = double(sixgr.util.structGet(replay, "RuntimeChannelSeed", NaN));
+row.RuntimeChannelStartSample = double(sixgr.util.structGet(replay, "RuntimeChannelStartSample", NaN));
+row.RuntimeChannelEndSample = double(sixgr.util.structGet(replay, "RuntimeChannelEndSample", NaN));
+row.RuntimeChannelIdleAdvancedSamples = double(sixgr.util.structGet(replay, "RuntimeChannelIdleAdvancedSamples", NaN));
+if isfinite(double(runtime.RuntimeNoiseSNR_dB))
+    sigPow = mean(abs(rxWave(:)).^2, "omitnan");
+    if ~(isfinite(sigPow) && sigPow >= 0)
+        sigPow = 0;
+    end
+    [rxWave, nVar] = sixgr.util.addAwgnComplex(rxWave, double(runtime.RuntimeNoiseSNR_dB), "SignalPower", sigPow);
+    row.NoiseApplied = true;
+    row.NoiseSNR_dB = double(runtime.RuntimeNoiseSNR_dB);
+    row.NoiseVariance = double(nVar);
+end
+end
+
+function result = localAppendRuntimeStage(result, row)
+if ~istable(result.RuntimeStageRows)
+    result.RuntimeStageRows = table();
+end
+rowT = struct2table(row, "AsArray", true);
+if isempty(result.RuntimeStageRows)
+    result.RuntimeStageRows = rowT;
+else
+    result.RuntimeStageRows = [result.RuntimeStageRows; rowT];
+end
+result.RuntimeStageCount = height(result.RuntimeStageRows);
+result.RuntimeStageWaveformsUsed = any(logical(result.RuntimeStageRows.RuntimeStageWaveformUsed));
+result.RuntimeSelfLoopWaveformsUsed = any(logical(result.RuntimeStageRows.SelfLoopWaveformUsed));
+result.RuntimeChannelStateUsed = any(logical(result.RuntimeStageRows.RuntimeChannelStateUsed));
+result.RuntimeNoiseApplied = any(logical(result.RuntimeStageRows.NoiseApplied));
+noiseVars = double(result.RuntimeStageRows.NoiseVariance);
+noiseVars = noiseVars(isfinite(noiseVars));
+if ~isempty(noiseVars)
+    result.RuntimeNoiseVarianceMean = mean(noiseVars);
+end
+keys = string(result.RuntimeStageRows.RuntimeChannelLinkKey);
+keys = keys(strlength(strtrim(keys)) > 0);
+result.RuntimeChannelLinkKeys = strjoin(unique(keys, "stable"), "|");
+end
+
+function [wave, fieldName] = localRuntimeProvidedWaveform(stageWaveforms, stageName)
+wave = [];
+fieldName = "";
+if ~(isstruct(stageWaveforms) && ~isempty(fieldnames(stageWaveforms)))
+    return;
+end
+stageName = string(stageName);
+candidates = [stageName + "RxWaveform", stageName + "Waveform", lower(stageName) + "_rx_waveform", ...
+    lower(stageName) + "_waveform"];
+for i = 1:numel(candidates)
+    f = char(candidates(i));
+    if isfield(stageWaveforms, f)
+        candidate = stageWaveforms.(f);
+        if isnumeric(candidate) && ~isempty(candidate)
+            wave = candidate;
+            fieldName = string(f);
+            return;
+        end
+    end
+end
+end
+
+function localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, fieldName)
+if ~(isnumeric(rxWave) && ndims(rxWave) <= 2)
+    error("sixgr:phy:ra:BadRuntimeStageWaveform", ...
+        "Runtime waveform %s for %s must be a numeric sample-by-port matrix.", string(fieldName), string(stageName));
+end
+if size(rxWave, 1) ~= size(txWave, 1)
+    error("sixgr:phy:ra:RuntimeStageWaveformLengthMismatch", ...
+        "Runtime waveform %s for %s has %d samples; expected %d.", ...
+        string(fieldName), string(stageName), size(rxWave, 1), size(txWave, 1));
+end
+if size(rxWave, 2) < 1
+    error("sixgr:phy:ra:RuntimeStageWaveformPortMismatch", ...
+        "Runtime waveform %s for %s has no receive ports.", string(fieldName), string(stageName));
+end
+end
+
+function cfgStage = localRuntimeStageConfig(cfg, direction, runtime)
+cfgStage = cfg;
+cfgStage = sixgr.util.structSet(cfgStage, "lls6g.userContext.RuntimeCurrentDirection", char(direction));
+cfgStage = sixgr.util.structSet(cfgStage, "lls6g.userContext.Direction", char(direction));
+cfgStage = sixgr.util.structSet(cfgStage, "lls6g.userContext.UEIndex", double(runtime.UEIndex));
+cfgStage = sixgr.util.structSet(cfgStage, "lls6g.userContext.RuntimeUEIndex", double(runtime.UEIndex));
+cfgStage = sixgr.util.structSet(cfgStage, "lls6g.userContext.RuntimeServingCell", double(runtime.ServingCell));
+cfgStage = sixgr.util.structSet(cfgStage, "lls6g.userContext.RuntimeServingCellIndex", double(runtime.ServingCell));
+cfgStage = sixgr.util.structSet(cfgStage, "phy.carrier.NSizeGrid", double(runtime.NSizeGrid));
+cfgStage = sixgr.util.structSet(cfgStage, "phy.carrier.SubcarrierSpacing", double(runtime.CarrierSCSkHz));
+cfgStage = sixgr.util.structSet(cfgStage, "phy.carrier.SubcarrierSpacing_kHz", double(runtime.CarrierSCSkHz));
+cfgStage = sixgr.util.structSet(cfgStage, "phy.fc_Hz", double(runtime.CarrierFrequencyHz));
+cfgStage = sixgr.util.structSet(cfgStage, "carrier.fc_Hz", double(runtime.CarrierFrequencyHz));
+end
+
+function txInfo = localStageTxInfo(txStruct)
+txInfo = struct("OFDM", struct());
+if isstruct(txStruct)
+    if isfield(txStruct, "OFDMInfo") && isstruct(txStruct.OFDMInfo)
+        txInfo.OFDM = txStruct.OFDMInfo;
+    elseif isfield(txStruct, "Info") && isstruct(txStruct.Info)
+        candidate = sixgr.util.structGet(txStruct.Info, "OFDM", struct());
+        if isstruct(candidate) && ~isempty(fieldnames(candidate))
+            txInfo.OFDM = candidate;
+        end
+    end
+    if ~isfield(txInfo.OFDM, "SampleRate") || isempty(txInfo.OFDM.SampleRate)
+        sampleRate = sixgr.util.structGet(txStruct, "PRACHRuntimeConfig.SampleRate_Hz", []);
+        if isempty(sampleRate) && isfield(txStruct, "Carrier")
+            try
+                ofdmInfo = nrOFDMInfo(txStruct.Carrier);
+                sampleRate = double(sixgr.util.structGet(ofdmInfo, "SampleRate", []));
+            catch
+                sampleRate = [];
+            end
+        end
+        if ~isempty(sampleRate)
+            txInfo.OFDM.SampleRate = double(sampleRate);
+        end
+    end
+end
+end
+
+function nRx = localResolveStageRxPorts(cfg, direction, numTx)
+if direction == "UL"
+    nRx = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "random_access.num_rx_antennas", []), ...
+        sixgr.util.structGet(cfg, "phy.nRxAnt", []), NaN);
+else
+    nRx = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "random_access.ue_num_rx_antennas", []), ...
+        sixgr.util.structGet(cfg, "ue.nRxAnt", []), ...
+        sixgr.util.structGet(cfg, "phy.nRxAntUE", []), NaN);
+end
+if ~(isfinite(nRx) && nRx >= 1)
+    nRx = max(1, double(numTx));
+end
+nRx = max(1, round(double(nRx)));
+end
+
+function slot = localStageSlot(raCfg, stageName)
+switch string(stageName)
+    case "Msg1"
+        slot = double(raCfg.PRACHOccasionSlot);
+    case "Msg2"
+        slot = double(raCfg.Msg2Slot);
+    case "Msg3"
+        slot = double(raCfg.Msg3Slot);
+    case "Msg4"
+        slot = double(raCfg.Msg4Slot);
+    otherwise
+        slot = NaN;
+end
+end
+
+function t = localStageSlotStartTime(cfg, slot)
+t = NaN;
+if ~(isfinite(slot) && slot >= 0)
+    return;
+end
+scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", 15)));
+if ~(isfinite(scs) && scs > 0)
+    scs = 15;
+end
+mu = round(log2(scs / 15));
+slotsPerMs = 2 ^ max(0, mu);
+t = double(slot) / (1000 * slotsPerMs);
+end
+
+function row = localEmptyRuntimeStageRow()
+row = struct( ...
+    "RunId", "", "CellId", NaN, "UEId", NaN, "AttemptId", NaN, ...
+    "StageName", "", "Direction", "", "StageSlot", NaN, ...
+    "RuntimeIntegrationMode", "", "RuntimeTransportMode", "", ...
+    "WaveformSource", "", "ProvidedWaveformField", "", ...
+    "RuntimeStageWaveformUsed", false, "SelfLoopWaveformUsed", false, ...
+    "RuntimeChannelStateUsed", false, "ChannelFadingApplied", false, ...
+    "ChannelFadingExecutionStatus", "", "RuntimeChannelLinkKey", "", ...
+    "RuntimeChannelSeed", NaN, "RuntimeChannelStartSample", NaN, ...
+    "RuntimeChannelEndSample", NaN, "RuntimeChannelIdleAdvancedSamples", NaN, ...
+    "NoiseApplied", false, "NoiseSNR_dB", NaN, "NoiseVariance", NaN, ...
+    "TxSampleCount", NaN, "TxPortCount", NaN, "RxSampleCount", NaN, "RxPortCount", NaN);
 end
 
 function pc = localResolveRATransmitPower(cfg, raCfg)
@@ -655,6 +989,7 @@ tables.ra_timer_events = result.TimerEvents;
 tables.ra_negative_trials = localNegativeRow(result);
 tables.ra_collision_trials = localCollisionRow(result, raCfg);
 tables.ra_oracle_guard = result.OracleGuard;
+tables.ra_runtime_stage_waveforms = localRuntimeStageTable(result);
 end
 
 function row = localAttemptRow(r)
@@ -678,9 +1013,20 @@ names = ["RunId","ScenarioName","CellId","UEId","AttemptId","RAProcedureType","R
     "RARBytesHex","RAPIDDecoded","RAPIDMatches","TemporaryCRNTI","RARULGrantHex","RARULGrantValid","Msg3PUSCHCrcPass", ...
     "Msg3ContentionIdentity","Msg4PDCCHCrcPass","Msg4PDSCHCrcPass","Msg4ContentionIdentity", ...
     "ContentionIdentityMatches","FinalCRNTI","RACompleted","FailureReason","ProxyUsed","Skipped", ...
-    "ToolboxMissing","UsedOracleFields","StrictOk"];
+    "ToolboxMissing","UsedOracleFields","StrictOk", ...
+    "RuntimeIntegrationMode","RuntimeTransportMode","RuntimeStageWaveformsRequired", ...
+    "RuntimeStageWaveformsUsed","RuntimeSelfLoopWaveformsUsed","RuntimeChannelStateUsed", ...
+    "RuntimeNoiseApplied","RuntimeNoiseVarianceMean","RuntimeChannelLinkKeys","RuntimeStageCount"];
 for ii = 1:numel(names)
     row.(names(ii)) = r.(names(ii));
+end
+end
+
+function T = localRuntimeStageTable(r)
+if istable(r.RuntimeStageRows)
+    T = r.RuntimeStageRows;
+else
+    T = struct2table(repmat(localEmptyRuntimeStageRow(), 0, 1));
 end
 end
 

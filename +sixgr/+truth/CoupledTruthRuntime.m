@@ -334,6 +334,10 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrialImpl(state, ueIdx, trialT);
     end
 
+    function result = runFourStepRARuntime(cfg, varargin)
+        result = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntimeImpl(cfg, varargin{:});
+    end
+
     function state = applySRSTrial(state, ueIdx, trialT)
         state = sixgr.truth.CoupledTruthRuntime.applySRSTrialImpl(state, ueIdx, trialT);
     end
@@ -2747,6 +2751,46 @@ methods(Static, Access=private)
             state.PRACHFailureCount(ueIdx) = double(state.PRACHFailureCount(ueIdx)) + 1;
         end
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
+    end
+
+    function result = runFourStepRARuntimeImpl(cfg, varargin)
+        p = inputParser;
+        p.addParameter("RunFolder", "", @(x)ischar(x) || isstring(x));
+        p.addParameter("RunId", "ra_coupled_runtime", @(x)ischar(x) || isstring(x));
+        p.addParameter("ScenarioName", "", @(x)ischar(x) || isstring(x));
+        p.addParameter("UEId", 1, @(x)isnumeric(x) && isscalar(x));
+        p.addParameter("CellId", [], @(x)isempty(x) || (isnumeric(x) && isscalar(x)));
+        p.addParameter("AttemptId", 1, @(x)isnumeric(x) && isscalar(x));
+        p.addParameter("RuntimeSlot", NaN, @(x)isnumeric(x) && isscalar(x));
+        p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
+        p.addParameter("RuntimeStageWaveforms", struct(), @(x) isempty(x) || isstruct(x));
+        p.addParameter("RequireRuntimeStageWaveforms", false, @(x)islogical(x) || isnumeric(x));
+        p.addParameter("WriteArtifacts", false, @(x)islogical(x) || isnumeric(x));
+        p.parse(varargin{:});
+        opt = p.Results;
+
+        cfgRuntime = cfg;
+        cfgRuntime = sixgr.util.structSet(cfgRuntime, "random_access.use_runtime_channel", true);
+        cfgRuntime = sixgr.util.structSet(cfgRuntime, "lls6g.userContext.UEIndex", double(opt.UEId));
+        cfgRuntime = sixgr.util.structSet(cfgRuntime, "lls6g.userContext.RuntimeUEIndex", double(opt.UEId));
+        if ~isempty(opt.CellId)
+            cfgRuntime = sixgr.util.structSet(cfgRuntime, "lls6g.userContext.RuntimeServingCell", double(opt.CellId));
+            cfgRuntime = sixgr.util.structSet(cfgRuntime, "lls6g.userContext.RuntimeServingCellIndex", double(opt.CellId));
+        end
+        result = sixgr.phy.ra.runFourStepRA(cfgRuntime, ...
+            "RunFolder", opt.RunFolder, ...
+            "RunId", opt.RunId, ...
+            "ScenarioName", opt.ScenarioName, ...
+            "UEId", double(opt.UEId), ...
+            "CellId", opt.CellId, ...
+            "AttemptId", double(opt.AttemptId), ...
+            "RuntimeIntegrationMode", "coupled_truth_runtime", ...
+            "UseRuntimeChannel", true, ...
+            "RuntimeNoiseSNR_dB", double(opt.RuntimeNoiseSNR_dB), ...
+            "RuntimeSlot", double(opt.RuntimeSlot), ...
+            "RuntimeStageWaveforms", opt.RuntimeStageWaveforms, ...
+            "RequireRuntimeStageWaveforms", logical(opt.RequireRuntimeStageWaveforms), ...
+            "WriteArtifacts", logical(opt.WriteArtifacts));
     end
 
     function state = updateTimingAdvanceFromReceiverTrialImpl(state, ueIdx, row, sourceLabel)
@@ -7228,7 +7272,7 @@ methods(Static, Access=private)
         names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
             "msg2_rar_trials","msg2_pdcch_candidates","msg3_pusch_trials", ...
             "msg4_contention_resolution","ra_timer_events","ra_negative_trials", ...
-            "ra_collision_trials","ra_oracle_guard"];
+            "ra_collision_trials","ra_oracle_guard","ra_runtime_stage_waveforms"];
         for i = 1:numel(names)
             f = char(names(i));
             if isfield(tables, f) && istable(tables.(f)) && ~isempty(tables.(f))
