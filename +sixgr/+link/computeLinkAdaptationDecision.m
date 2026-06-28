@@ -27,7 +27,7 @@ base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
 adaptationDomain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
 [ackKnown, ackObserved, ackSource] = localResolveAckOutcome(metrics);
-[instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile] = ...
+[instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile, cqiMeta] = ...
     localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain);
 [resetState, resetReason] = localShouldResetState(adaptationState, metrics, cfg);
 
@@ -66,6 +66,15 @@ decision = struct( ...
     "MCSSelectionSource", char(localResolveMCSSelectionSource(adaptationDomain)), ...
     "OLLADomain", char(localResolveOLLADomain(adaptationDomain, adaptationState.OuterLoopEnabled)), ...
     "CalibrationProfile", char(calibrationProfile), ...
+    "CalibrationVersion", char(string(cqiMeta.CalibrationVersion)), ...
+    "TargetBLER", double(cqiMeta.TargetBLER), ...
+    "CausalFeedbackUsable", logical(cqiMeta.CausalFeedbackUsable), ...
+    "CausalFeedbackStatus", char(string(cqiMeta.CausalFeedbackStatus)), ...
+    "FeedbackAgeSlots", double(cqiMeta.FeedbackAgeSlots), ...
+    "FeedbackAgingPenalty_dB", double(cqiMeta.FeedbackAgingPenalty_dB), ...
+    "AgedSINR_dB", double(cqiMeta.AgedSINR_dB), ...
+    "AgedCQI", double(cqiMeta.AgedCQI), ...
+    "CSIQuantizationBits", double(cqiMeta.CSIQuantizationBits), ...
     "CQITable", char(cqiTable), ...
     "MCSTable", char(mcsTable), ...
     "InstantaneousCQIMCS", double(instantMCS), ...
@@ -95,7 +104,8 @@ if localPolicyEnabled(policy)
     [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, ...
         instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ...
         ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy);
-    if ~decision.MCSUpdated && ~(isfinite(decision.CQIBasedMCS) || adaptationState.Initialized)
+    if ~decision.MCSUpdated && ~(isfinite(decision.CQIBasedMCS) || adaptationState.Initialized) && ...
+            strlength(string(decision.Reason)) == 0
         decision.Reason = "missing_cqi";
         return;
     end
@@ -159,6 +169,11 @@ if adaptationDomain ~= "legacy_mcs" && isfinite(instantCQI)
     adaptationState.SmoothedCQI = double(smoothedCQI);
 end
 decision.SmoothedCQI = double(adaptationState.SmoothedCQI);
+decision.CausalFeedbackUsable = logical(sixgr.util.structGet(decision, "CausalFeedbackUsable", true));
+if ~decision.CausalFeedbackUsable
+    decision.Reason = "stale_or_unusable_csi_feedback";
+    return;
+end
 
 if isfinite(instantMCS)
     mcsJumpReset = false;
@@ -222,7 +237,11 @@ if ~logical(sixgr.util.structGet(profile, "Valid", false))
 end
 
 decision.CQIBasedMCS = double(cqiBasedMCS);
+decision.CQIBasedMCSNoOLLA = double(cqiBasedMCS);
 decision.DeltaMCS = double(adaptationState.DeltaMCS);
+decision.OLLAOffsetMCS = double(adaptationState.DeltaMCS);
+decision.OLLAMCSBoundMin = double(adaptationState.DeltaMCSMin);
+decision.OLLAMCSBoundMax = double(adaptationState.DeltaMCSMax);
 decision.StaticDeltaMCS = double(adaptationState.StaticDeltaMCS);
 decision.Modulation = char(string(profile.Modulation));
 decision.TargetCodeRate = double(profile.TargetCodeRate);
@@ -251,7 +270,7 @@ outerLoopFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopF
 tf = outerLoopFlag || ~(token == "" || ismember(token, ["disabled", "none", "off", "false"]));
 end
 
-function [instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile] = localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain)
+function [instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile, cqiMeta] = localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain)
 mcsTable = sixgr.link.resolveConfiguredMCSTable(cfg, direction);
 cqiTable = sixgr.link.resolveConfiguredCQITable(cfg, direction);
 instantCQI = NaN;
@@ -260,16 +279,21 @@ instantMod = "";
 instantCodeRate = NaN;
 cqiSource = "unavailable";
 calibrationProfile = localResolveCalibrationProfile(cfg, direction, adaptationDomain);
-[instantCQI, cqiSource, calibrationProfile] = localResolveInstantaneousCQI(cfg, direction, metrics, adaptationDomain, calibrationProfile);
+[instantCQI, cqiSource, calibrationProfile, cqiMeta] = localResolveInstantaneousCQI(cfg, direction, metrics, adaptationDomain, calibrationProfile);
 if ~(isfinite(instantCQI))
     return;
 end
 [instantMod, instantCodeRate, instantMCS] = sixgr.link.amcFromCQI(instantCQI, "", NaN, cfg, direction);
 end
 
-function [instantCQI, cqiSource, calibrationProfile] = localResolveInstantaneousCQI(cfg, direction, metrics, adaptationDomain, calibrationProfile)
+function [instantCQI, cqiSource, calibrationProfile, cqiMeta] = localResolveInstantaneousCQI(cfg, direction, metrics, adaptationDomain, calibrationProfile)
 instantCQI = NaN;
 cqiSource = "unavailable";
+cqiMeta = localCQIMetaDefaults(cfg, direction, metrics);
+if ~logical(cqiMeta.CausalFeedbackUsable)
+    cqiSource = "stale_or_unusable_runtime_csi";
+    return;
+end
 
 rawCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
 rawSINR = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
@@ -281,6 +305,16 @@ if localSINRProvenanceBlockedForAMC(rawSINRSource, rawSINRRole, rawSINRStatus)
     if strlength(strtrim(cqiSource)) == 0 || cqiSource == "unavailable"
         cqiSource = "sinr_input_rejected_non_scheduling_provenance";
     end
+end
+if isfinite(rawSINR)
+    rawSINR = rawSINR - double(cqiMeta.FeedbackAgingPenalty_dB);
+    cqiMeta.AgedSINR_dB = double(rawSINR);
+end
+if isfinite(rawCQI)
+    if logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.ageReportedCQI", false))
+        rawCQI = localApplyCQIAging(rawCQI, cqiMeta.FeedbackAgingPenalty_dB, cfg);
+    end
+    cqiMeta.AgedCQI = double(rawCQI);
 end
 sinrInput = struct( ...
     "WidebandSINR_dB", rawSINR, ...
@@ -294,7 +328,7 @@ switch string(adaptationDomain)
             feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
             instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
             cqiSource = "runtime_effective_sinr";
-            calibrationProfile = string(sixgr.util.structGet(feedback, "Mode", calibrationProfile));
+            calibrationProfile = string(calibrationProfile) + ":" + string(sixgr.util.structGet(feedback, "Mode", ""));
         end
     case "bler_margin"
         if isfinite(rawCQI)
@@ -325,17 +359,189 @@ tf = any(contains(token, blocked));
 end
 
 function profile = localResolveCalibrationProfile(cfg, direction, adaptationDomain)
+targetBLER = localResolveTargetBLER(cfg, direction);
+version = localCalibrationVersion(cfg, direction);
 switch string(adaptationDomain)
     case "effective_sinr"
         feedbackMode = localResolveSINRToCQIMode(cfg, direction);
-        profile = "effective_sinr:" + feedbackMode;
+        profile = "calibrated_effective_sinr:" + feedbackMode + ":target_bler_" + localNumberToken(targetBLER) + ":" + version;
     case "bler_margin"
-        profile = "heuristic_bler_margin_proxy";
+        profile = "calibrated_bler_margin_olla:target_bler_" + localNumberToken(targetBLER) + ":" + version;
     case "legacy_mcs"
         profile = "legacy_mcs_domain_smoothing";
     otherwise
-        profile = "cqi_table_amc";
+        profile = "nr_cqi_table_amc:target_bler_" + localNumberToken(targetBLER) + ":" + version;
 end
+end
+
+function meta = localCQIMetaDefaults(cfg, direction, metrics)
+[usable, status, ageSlots, age_s, coherence_s, trustWeight, agingPenalty_dB] = ...
+    localResolveCausalFeedbackFreshness(cfg, direction, metrics);
+meta = struct( ...
+    "CalibrationVersion", char(localCalibrationVersion(cfg, direction)), ...
+    "TargetBLER", double(localResolveTargetBLER(cfg, direction)), ...
+    "CausalFeedbackUsable", logical(usable), ...
+    "CausalFeedbackStatus", char(status), ...
+    "FeedbackAgeSlots", double(ageSlots), ...
+    "FeedbackAgeSeconds", double(age_s), ...
+    "CSICoherenceTimeSeconds", double(coherence_s), ...
+    "CSITemporalCorrelationWeight", double(trustWeight), ...
+    "FeedbackAgingPenalty_dB", double(agingPenalty_dB), ...
+    "AgedSINR_dB", NaN, ...
+    "AgedCQI", NaN, ...
+    "CSIQuantizationBits", double(localCSIQuantizationBits(cfg, direction)));
+end
+
+function [usable, status, ageSlots, age_s, coherence_s, trustWeight, agingPenalty_dB] = localResolveCausalFeedbackFreshness(cfg, direction, metrics)
+usable = true;
+status = "OK";
+ageSlots = double(sixgr.util.structGet(metrics, "CSIAgeSlots", ...
+    sixgr.util.structGet(metrics, "FeedbackAgeSlots", NaN)));
+age_s = double(sixgr.util.structGet(metrics, "CSIAgeSeconds", ...
+    sixgr.util.structGet(metrics, "FeedbackAgeSeconds", NaN)));
+if ~(isfinite(age_s) && age_s >= 0)
+    slotDuration_s = localSlotDurationSeconds(cfg);
+    if isfinite(ageSlots) && ageSlots >= 0 && isfinite(slotDuration_s) && slotDuration_s > 0
+        age_s = double(ageSlots) * double(slotDuration_s);
+    end
+end
+if ~(isfinite(ageSlots) && ageSlots >= 0) && isfinite(age_s) && age_s >= 0
+    slotDuration_s = localSlotDurationSeconds(cfg);
+    if isfinite(slotDuration_s) && slotDuration_s > 0
+        ageSlots = double(age_s) / double(slotDuration_s);
+    end
+end
+
+rawUsable = sixgr.util.structGet(metrics, "CausalFeedbackUsable", ...
+    sixgr.util.structGet(metrics, "FeedbackUsable", ...
+    sixgr.util.structGet(metrics, "CSICausalUsable", [])));
+if ~isempty(rawUsable) && (islogical(rawUsable) || isnumeric(rawUsable)) && isscalar(rawUsable)
+    usable = logical(rawUsable);
+end
+rawStatus = strtrim(string(sixgr.util.structGet(metrics, "CausalFeedbackStatus", ...
+    sixgr.util.structGet(metrics, "FeedbackStatus", ""))));
+if strlength(rawStatus) > 0
+    status = rawStatus;
+end
+
+maxAgeSlots = localMaxCSIAgeSlots(cfg, direction);
+if isfinite(maxAgeSlots) && isfinite(ageSlots) && ageSlots > maxAgeSlots
+    usable = false;
+    status = "stale_csi_age_exceeds_configured_limit";
+elseif ~usable && status == "OK"
+    status = "csi_marked_unusable_by_runtime";
+end
+
+dopplerHz = localFirstFiniteConfigValue(cfg, [ ...
+    "channel.doppler_Hz"
+    "channel.dopplerHz"
+    "channel.fading.maxDoppler_Hz"
+    "channels.doppler_hz"
+    "frequency.doppler_hz"
+    "phy.channel.doppler_Hz"], NaN);
+coherence_s = NaN;
+trustWeight = 1;
+agingPenalty_dB = 0;
+if isfinite(age_s) && age_s > 0 && isfinite(dopplerHz) && dopplerHz > 0
+    coherence_s = 0.423 / max(double(dopplerHz), eps);
+    trustWeight = abs(besselj(0, 2 * pi * double(dopplerHz) * double(age_s)));
+    if ~(isfinite(trustWeight) && trustWeight >= 0)
+        trustWeight = min(1, double(coherence_s) / max(double(age_s), eps));
+    end
+    trustWeight = min(1, max(0, double(trustWeight)));
+    maxPenalty = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.maxCSIAgingPenalty_dB", 6));
+    if ~(isfinite(maxPenalty) && maxPenalty >= 0)
+        maxPenalty = 6;
+    end
+    minTrust = 10 ^ (-double(maxPenalty) / 20);
+    agingPenalty_dB = -20 * log10(max(double(trustWeight), minTrust));
+    agingPenalty_dB = min(double(maxPenalty), max(0, double(agingPenalty_dB)));
+end
+end
+
+function maxAgeSlots = localMaxCSIAgeSlots(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    candidates = [ ...
+        "phy.linkAdaptation.ulMaxCSIAgeSlots"
+        "phy.linkAdaptation.maxCSIAgeSlots"
+        "run.controlGating.srsMaxAgeSlots"];
+else
+    candidates = [ ...
+        "phy.linkAdaptation.dlMaxCSIAgeSlots"
+        "phy.linkAdaptation.maxCSIAgeSlots"
+        "run.controlGating.csirsMaxAgeSlots"];
+end
+maxAgeSlots = localFirstFiniteConfigValue(cfg, candidates, inf);
+if ~(isfinite(maxAgeSlots) && maxAgeSlots >= 0)
+    maxAgeSlots = inf;
+end
+end
+
+function cqi = localApplyCQIAging(cqi, agingPenalty_dB, cfg)
+cqi = double(sixgr.util.normalizeReportedCQI(cqi));
+if ~(isfinite(cqi) && cqi >= 0)
+    return;
+end
+penalty = double(agingPenalty_dB);
+if ~(isfinite(penalty) && penalty > 0)
+    return;
+end
+step_dB = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.cqiAgingStep_dB", 2));
+if ~(isfinite(step_dB) && step_dB > 0)
+    step_dB = 2;
+end
+cqi = max(0, min(15, cqi - ceil(penalty / step_dB)));
+end
+
+function bits = localCSIQuantizationBits(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    bits = double(sixgr.util.structGet(cfg, "phy.csi.ulCQIQuantizationBits", ...
+        sixgr.util.structGet(cfg, "phy.csi.cqiQuantizationBits", 4)));
+else
+    bits = double(sixgr.util.structGet(cfg, "phy.csi.dlCQIQuantizationBits", ...
+        sixgr.util.structGet(cfg, "phy.csi.cqiQuantizationBits", 4)));
+end
+if ~(isfinite(bits) && bits >= 1)
+    bits = 4;
+end
+bits = round(bits);
+end
+
+function targetBLER = localResolveTargetBLER(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    targetBLER = double(sixgr.util.structGet(cfg, "phy.pusch.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.csi.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.targetBLER", 0.1))));
+else
+    targetBLER = double(sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.csi.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.targetBLER", 0.1))));
+end
+if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
+    targetBLER = 0.1;
+end
+end
+
+function version = localCalibrationVersion(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    version = string(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulCalibrationVersion", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.calibrationVersion", "")));
+else
+    version = string(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlCalibrationVersion", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.calibrationVersion", "")));
+end
+version = strtrim(version);
+if strlength(version) == 0
+    version = "nr_cqi_mcs_table_v1";
+end
+end
+
+function token = localNumberToken(value)
+token = regexprep(string(sprintf("%.3g", double(value))), "[^0-9A-Za-z]+", "p");
 end
 
 function token = localResolveSINRToCQIMode(cfg, direction)

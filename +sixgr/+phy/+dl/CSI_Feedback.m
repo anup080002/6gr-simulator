@@ -39,7 +39,6 @@ else
     maxRank = max(1, min([double(maxRank), numRxAnt, numTxPorts]));
 end
 svdRank = localEstimateRIFromSVD(hEst, cfg, maxRank);
-maxRank = max(1, min(maxRank, svdRank));
 
 reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", true));
 reportPMI = logical(sixgr.util.structGet(cfg, "phy.csi.reportPMI", true));
@@ -145,7 +144,8 @@ csi.CQI = localReportedScalar(cqi, reportCQI);
 csi.RI = localReportedScalar(best.Rank, reportRI);
 csi.PMI = localReportedScalar(best.PMI, reportPMI);
 csi.CRI = localReportedScalar(criInfo.CRI, reportCRI);
-csi.RankSelectionMethod = "wideband_channel_svd_singular_value_gap";
+csi.RankSelectionMethod = "wideband_codebook_post_equalization_mi";
+csi.RankSelectionObjective = "sum_log2_one_plus_layer_sinr";
 csi.SVDRankEstimate = double(svdRank);
 csi.SINR_dB = double(sinr_dB);
 csi.Direction = char(direction);
@@ -164,6 +164,8 @@ csi.NumRxAnt = double(numRxAnt);
 csi.NumTxPorts = double(numTxPorts);
 csi.SelectedBeamIndices = double(best.BeamIndices);
 csi.SelectedPrecoder = best.W;
+csi.SelectedLayerSINR_dB = double(best.LayerSINR_dB);
+csi.SelectedMutualInformation_bpcu = double(best.Capacity_bpcu);
 csi.SelectedCRIMetric_dB = double(criInfo.Metric_dB);
 csi.ReportCQI = reportCQI;
 csi.ReportPMI = reportPMI;
@@ -228,8 +230,10 @@ info.SelectedMetric = double(best.Metric);
 info.SelectedEffectiveSINR = double(best.EffectiveSINR);
 info.SelectedRank = double(best.Rank);
 info.SVDRankEstimate = double(svdRank);
-info.RankSelectionMethod = "wideband_channel_svd_singular_value_gap";
+info.RankSelectionMethod = "wideband_codebook_post_equalization_mi";
+info.RankSelectionObjective = "sum_log2_one_plus_layer_sinr";
 info.SelectedPMI = double(best.PMI);
+info.SelectedLayerSINR_dB = double(best.LayerSINR_dB);
 info.SelectedCRI = double(criInfo.CRI);
 info.Config = struct( ...
     "TargetBLER", double(localResolveTargetBLER(cfg, direction)), ...
@@ -269,7 +273,7 @@ info.Hints = struct( ...
 end
 
 function ri = localEstimateRIFromSVD(hEst, cfg, maxRank)
-ri = 1;
+ri = NaN;
 if nargin < 3 || isempty(maxRank) || ~(isfinite(double(maxRank)) && double(maxRank) >= 1)
     maxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", 1));
 end
@@ -277,27 +281,23 @@ maxRank = max(1, round(double(maxRank)));
 if isempty(hEst)
     return;
 end
-try
-    Hwb = localWidebandChannelMatrix(hEst, cfg);
-    if isempty(Hwb)
-        return;
-    end
-    sv = svd(double(Hwb));
-    sv = sv(isfinite(sv) & sv > 0);
-    if isempty(sv)
-        return;
-    end
-    threshold_dB = double(sixgr.util.structGet(cfg, "phy.mimo.rankSelectionSVGap_dB", ...
-        sixgr.util.structGet(cfg, "phy.csi.rankSelectionSVGap_dB", 3)));
-    if ~(isfinite(threshold_dB) && threshold_dB >= 0)
-        threshold_dB = 3;
-    end
-    sv_dB = 20 .* log10(sv ./ max(sv));
-    ri = sum(sv_dB >= -threshold_dB);
-    ri = max(1, min(maxRank, ri));
-catch
-    ri = 1;
+Hwb = localWidebandChannelMatrix(hEst, cfg);
+if isempty(Hwb)
+    return;
 end
+sv = svd(double(Hwb));
+sv = sv(isfinite(sv) & sv > 0);
+if isempty(sv)
+    return;
+end
+threshold_dB = double(sixgr.util.structGet(cfg, "phy.mimo.rankSelectionSVGap_dB", ...
+    sixgr.util.structGet(cfg, "phy.csi.rankSelectionSVGap_dB", 3)));
+if ~(isfinite(threshold_dB) && threshold_dB >= 0)
+    threshold_dB = 3;
+end
+sv_dB = 20 .* log10(sv ./ max(sv));
+ri = sum(sv_dB >= -threshold_dB);
+ri = max(1, min(maxRank, ri));
 end
 
 function [value, source, role, status, reason] = localResolveSchedulerEligiblePostEqSINR(opt)
@@ -375,6 +375,7 @@ if isempty(Hwb)
         "Metric", 0, ...
         "Capacity_bpcu", 0, ...
         "EffectiveSINR", 0, ...
+        "LayerSINR_dB", NaN, ...
         "NumCandidates", 1);
     return;
 end
@@ -388,13 +389,15 @@ best = struct( ...
     "Metric", -inf, ...
     "Capacity_bpcu", 0, ...
     "EffectiveSINR", 0, ...
+    "LayerSINR_dB", NaN, ...
     "NumCandidates", 0);
 
 for rankIdx = 1:maxRank
     if codebookMode == "noncodebook"
         W = localDominantRightSingularVectors(Hwb, rankIdx);
-        metric = localCapacityMetric(Hwb, W, nVar);
-        effSinr = localEffectiveSINR(Hwb, W, nVar);
+        layerSINR = localLayerMMSESINR(Hwb, W, nVar);
+        metric = localCapacityMetricFromSINR(layerSINR);
+        effSinr = localEffectiveSINRFromSINR(layerSINR);
         candidate = struct( ...
             "Rank", double(rankIdx), ...
             "PMI", -1, ...
@@ -404,6 +407,7 @@ for rankIdx = 1:maxRank
             "Metric", metric, ...
             "Capacity_bpcu", metric, ...
             "EffectiveSINR", effSinr, ...
+            "LayerSINR_dB", localSINRToDb(layerSINR), ...
             "NumCandidates", 1, ...
             "Candidate", struct( ...
                 "PMI", -1, ...
@@ -429,7 +433,7 @@ for rankIdx = 1:maxRank
                 "NumPhaseVariants", 1));
     else
         [candidates, cbInfo] = sixgr.phy.dl.pmiCodebookCandidates(cfg, rankIdx, numTxPorts, "Mode", codebookMode);
-        [winner, metric, effSinr] = localBestCandidate(Hwb, candidates, nVar);
+        [winner, metric, effSinr, layerSINR_dB] = localBestCandidate(Hwb, candidates, nVar);
         candidate = struct( ...
             "Rank", double(rankIdx), ...
             "PMI", double(winner.PMI), ...
@@ -439,6 +443,7 @@ for rankIdx = 1:maxRank
             "Metric", double(metric), ...
             "Capacity_bpcu", double(metric), ...
             "EffectiveSINR", double(effSinr), ...
+            "LayerSINR_dB", double(layerSINR_dB), ...
             "NumCandidates", double(numel(candidates)), ...
             "Candidate", winner, ...
             "CodebookInfo", cbInfo);
@@ -449,16 +454,19 @@ for rankIdx = 1:maxRank
 end
 end
 
-function [winner, bestMetric, effSinr] = localBestCandidate(Hwb, candidates, nVar)
+function [winner, bestMetric, effSinr, layerSINR_dB] = localBestCandidate(Hwb, candidates, nVar)
 winner = candidates(1);
 bestMetric = -inf;
 effSinr = 0;
+layerSINR_dB = NaN;
 for i = 1:numel(candidates)
     W = candidates(i).W;
-    metric = localCapacityMetric(Hwb, W, nVar);
+    layerSINR = localLayerMMSESINR(Hwb, W, nVar);
+    metric = localCapacityMetricFromSINR(layerSINR);
     if metric > bestMetric
         bestMetric = metric;
-        effSinr = localEffectiveSINR(Hwb, W, nVar);
+        effSinr = localEffectiveSINRFromSINR(layerSINR);
+        layerSINR_dB = localSINRToDb(layerSINR);
         winner = candidates(i);
     end
 end
@@ -499,6 +507,14 @@ if isempty(Hwb) || isempty(W)
     return;
 end
 sinrs = localLayerMMSESINR(Hwb, W, nVar);
+metric = localCapacityMetricFromSINR(sinrs);
+end
+
+function metric = localCapacityMetricFromSINR(sinrs)
+if isempty(sinrs)
+    metric = -inf;
+    return;
+end
 metric = sum(log2(1 + max(sinrs, 0)), "omitnan");
 end
 
@@ -508,8 +524,23 @@ if isempty(Hwb) || isempty(W)
     return;
 end
 sinrs = localLayerMMSESINR(Hwb, W, nVar);
+effSinr = localEffectiveSINRFromSINR(sinrs);
+end
+
+function effSinr = localEffectiveSINRFromSINR(sinrs)
+if isempty(sinrs)
+    effSinr = 0;
+    return;
+end
 sinrs = max(double(sinrs(:)), eps);
 effSinr = exp(mean(log(sinrs), "omitnan"));
+end
+
+function sinr_dB = localSINRToDb(sinrLin)
+sinrLin = double(sinrLin(:).');
+sinr_dB = nan(size(sinrLin));
+mask = isfinite(sinrLin) & sinrLin > 0;
+sinr_dB(mask) = 10 .* log10(max(sinrLin(mask), eps));
 end
 
 function sinrs = localLayerMMSESINR(Hwb, W, nVar)

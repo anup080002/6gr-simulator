@@ -454,6 +454,8 @@ classdef (Abstract) SchedulerBase < handle
             cqiTable = obj.resolveCQITable();
             cqiRaw = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
                 sixgr.util.structGet(ue, "CQI", NaN), NaN);
+            [causalFeedbackUsable, causalFeedbackStatus, feedbackAgeSlots, feedbackAgeSeconds] = ...
+                localResolveUECausalFeedback(ue, obj.Cfg, dir);
 
             if strcmp(dir,'DL')
                 modStr = char(string(sixgr.util.structGet(obj.Cfg,"phy.pdsch.modulation","16QAM")));
@@ -501,6 +503,11 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSSelectionSource", "configured_profile", ...
                 "CQIProvenance", "unavailable", ...
                 "MCSValueStatus", "unresolved", ...
+                "CausalFeedbackUsable", logical(causalFeedbackUsable), ...
+                "CausalFeedbackStatus", char(causalFeedbackStatus), ...
+                "FeedbackAgeSlots", double(feedbackAgeSlots), ...
+                "FeedbackAgeSeconds", double(feedbackAgeSeconds), ...
+                "CalibrationProfile", char(localSchedulerCalibrationProfile(obj.Cfg, dir)), ...
                 "InitialNumLayers", double(nLayers), ...
                 "RankSelectionPolicy", "", ...
                 "RankSelectionSource", "", ...
@@ -529,7 +536,10 @@ classdef (Abstract) SchedulerBase < handle
                 amc.MCSValueStatus = "configured";
             elseif useConfiguredCQIAMC
                 amc.Mode = "cqi_table";
-                if ~(isfinite(double(cqiRaw)) && cqiRaw > 0)
+                if ~logical(causalFeedbackUsable)
+                    cqiDecision = struct("Valid", false);
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, causalFeedbackStatus);
+                elseif ~(isfinite(double(cqiRaw)) && cqiRaw > 0)
                     cqiDecision = struct("Valid", false);
                     amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_runtime_cqi");
                 else
@@ -550,7 +560,11 @@ classdef (Abstract) SchedulerBase < handle
                     % Conservative scenarios can still request a labeled
                     % bootstrap MCS. Measured-only scenarios fail closed and
                     % block the grant until runtime CQI evidence arrives.
-                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_or_invalid_runtime_cqi");
+                    if logical(causalFeedbackUsable)
+                        amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_or_invalid_runtime_cqi");
+                    else
+                        amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, causalFeedbackStatus);
+                    end
                 end
             elseif isfinite(cfgMCSIndex) && cfgMCSIndex >= 0
                 amc.Mode = "fixed_mcs";
@@ -565,7 +579,10 @@ classdef (Abstract) SchedulerBase < handle
                 amc.MCSValueStatus = "configured";
             elseif isfinite(cqiRaw)
                 amc.Mode = "cqi_table";
-                if cqiRaw <= 0
+                if ~logical(causalFeedbackUsable)
+                    cqiDecision = struct("Valid", false);
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, causalFeedbackStatus);
+                elseif cqiRaw <= 0
                     cqiDecision = struct("Valid", false);
                     amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "invalid_runtime_cqi");
                 else
@@ -891,6 +908,11 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSSelectionSource", char(string(sixgr.util.structGet(amc, "MCSSelectionSource", ""))), ...
                 "CQIProvenance", char(string(sixgr.util.structGet(amc, "CQIProvenance", ""))), ...
                 "MCSValueStatus", char(string(sixgr.util.structGet(amc, "MCSValueStatus", ""))), ...
+                "CausalFeedbackUsable", logical(sixgr.util.structGet(amc, "CausalFeedbackUsable", true)), ...
+                "CausalFeedbackStatus", char(string(sixgr.util.structGet(amc, "CausalFeedbackStatus", ""))), ...
+                "FeedbackAgeSlots", double(sixgr.util.structGet(amc, "FeedbackAgeSlots", NaN)), ...
+                "FeedbackAgeSeconds", double(sixgr.util.structGet(amc, "FeedbackAgeSeconds", NaN)), ...
+                "CalibrationProfile", char(string(sixgr.util.structGet(amc, "CalibrationProfile", ""))), ...
                 "GrantBlocker", char(localAMCBlockerReason(amc)), ...
                 "NREPerPRB", double(rawNRE), ...
                 "XOverhead", double(xOverhead), ...
@@ -1552,6 +1574,82 @@ fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","f
 tf = ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
 end
 
+function [usable, status, ageSlots, ageSeconds] = localResolveUECausalFeedback(ue, cfg, direction)
+usable = true;
+status = "OK";
+ageSlots = double(sixgr.util.structGet(ue, "FeedbackAgeSlots", ...
+    sixgr.util.structGet(ue, "CSIAgeSlots", NaN)));
+ageSeconds = double(sixgr.util.structGet(ue, "FeedbackAgeSeconds", ...
+    sixgr.util.structGet(ue, "CSIAgeSeconds", NaN)));
+
+direction = upper(string(direction));
+if direction == "UL"
+    signalUsable = sixgr.util.structGet(ue, "SRSCausalUsable", []);
+else
+    signalUsable = sixgr.util.structGet(ue, "CSIRSCausalUsable", []);
+end
+rawUsable = sixgr.util.structGet(ue, "CausalFeedbackUsable", ...
+    sixgr.util.structGet(ue, "FeedbackUsable", signalUsable));
+if ~isempty(rawUsable) && (islogical(rawUsable) || isnumeric(rawUsable)) && isscalar(rawUsable)
+    usable = logical(rawUsable);
+end
+rawStatus = strtrim(string(sixgr.util.structGet(ue, "CausalFeedbackStatus", ...
+    sixgr.util.structGet(ue, "FeedbackStatus", ""))));
+if strlength(rawStatus) > 0
+    status = rawStatus;
+end
+
+maxAgeSlots = localSchedulerMaxCSIAgeSlots(cfg, direction);
+if isfinite(maxAgeSlots) && isfinite(ageSlots) && ageSlots > maxAgeSlots
+    usable = false;
+    status = "stale_csi_age_exceeds_configured_limit";
+elseif ~usable && status == "OK"
+    status = "csi_marked_unusable_by_runtime";
+end
+end
+
+function maxAgeSlots = localSchedulerMaxCSIAgeSlots(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    maxAgeSlots = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.ulMaxCSIAgeSlots", []), ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.maxCSIAgeSlots", []), ...
+        sixgr.util.structGet(cfg, "run.controlGating.srsMaxAgeSlots", []), ...
+        inf);
+else
+    maxAgeSlots = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.dlMaxCSIAgeSlots", []), ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.maxCSIAgeSlots", []), ...
+        sixgr.util.structGet(cfg, "run.controlGating.csirsMaxAgeSlots", []), ...
+        inf);
+end
+if ~(isfinite(maxAgeSlots) && maxAgeSlots >= 0)
+    maxAgeSlots = inf;
+end
+end
+
+function profile = localSchedulerCalibrationProfile(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    version = string(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulCalibrationVersion", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.calibrationVersion", "nr_cqi_mcs_table_v1")));
+    targetBLER = double(sixgr.util.structGet(cfg, "phy.pusch.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.targetBLER", 0.1)));
+else
+    version = string(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlCalibrationVersion", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.calibrationVersion", "nr_cqi_mcs_table_v1")));
+    targetBLER = double(sixgr.util.structGet(cfg, "phy.pdsch.targetBLER", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.targetBLER", 0.1)));
+end
+if strlength(strtrim(version)) == 0
+    version = "nr_cqi_mcs_table_v1";
+end
+if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
+    targetBLER = 0.1;
+end
+profile = "nr_cqi_table_amc:target_bler_" + regexprep(string(sprintf("%.3g", targetBLER)), "[^0-9A-Za-z]+", "p") + ":" + strtrim(version);
+end
+
 function mcs = localResolveBootstrapMCSIndex(cfg)
 mcs = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", ...
     sixgr.util.structGet(cfg, "mac.scheduler.bootstrapMCSIndex", 1)));
@@ -1562,6 +1660,8 @@ mcs = max(0, min(31, round(mcs)));
 end
 
 function amc = localMarkMissingRuntimeCQI(amc, cfg, provenance)
+amc.CausalFeedbackUsable = false;
+amc.CausalFeedbackStatus = char(string(provenance));
 if localSchedulerRequiresMeasuredCQI(cfg)
     amc.Mode = "cqi_required_no_runtime_feedback";
     amc.MCSIndex = NaN;

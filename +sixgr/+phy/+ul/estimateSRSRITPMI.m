@@ -3,12 +3,10 @@ function estimate = estimateSRSRITPMI(Hest, nVar, cfg)
 %
 % This helper keeps the estimator explicitly in the SRS / UL sounding path:
 %   1. Form PRB-averaged channel observations from the measured Hest grid.
-%   2. Derive RI from the SRS channel singular-value condition number.
-%   3. Score TPMI codebook candidates with post-equalization MI across PRBs
+%   2. Derive RI from post-equalization mutual information across PRBs
 %      and SRS symbols.
-%
-% The default RI condition-number window follows the Intel/FlexRAN SRS
-% RI/TPMI note (Th_min=1, Th_max=10) while remaining configurable.
+%   3. Score TPMI codebook candidates with the same MI objective across PRBs
+%      and SRS symbols.
 
 estimate = struct( ...
     "Valid", false, ...
@@ -17,6 +15,8 @@ estimate = struct( ...
     "RISource", "", ...
     "TPMISource", "", ...
     "ConditionNumber_dB", NaN, ...
+    "RankMutualInformation", NaN, ...
+    "RankCandidateCount", NaN, ...
     "TPMICandidateCount", NaN, ...
     "TPMIMutualInformation", NaN, ...
     "SelectedBeamIndices", [], ...
@@ -30,6 +30,7 @@ estimate = struct( ...
     "TransformPrecoding", false, ...
     "TransmissionScheme", "", ...
     "MetricFamily", "post_equalization_mutual_information", ...
+    "RankSelectionObjective", "sum_log2_one_plus_layer_sinr", ...
     "ValueRole", "estimated_runtime_srs");
 
 if isempty(Hest)
@@ -55,10 +56,13 @@ transformPrecoding = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPreco
 estimate.TransformPrecoding = logical(transformPrecoding);
 estimate.TransmissionScheme = char(scheme);
 
-[ri, cond_dB] = localEstimateRI(Hprb, cfg);
+[cond_dB] = localRankConditionNumber(Hprb);
+[ri, rankMetric, rankCandidateCount] = localEstimateRankByMI(Hprb, max(double(nVar), eps), cfg);
 estimate.RI = double(ri);
 estimate.ConditionNumber_dB = double(cond_dB);
-estimate.RISource = "ul_srs_condition_number_rank_estimator";
+estimate.RankMutualInformation = double(rankMetric);
+estimate.RankCandidateCount = double(rankCandidateCount);
+estimate.RISource = "ul_srs_post_equalization_mi_rank_estimator";
 
 if scheme ~= "codebook" || transformPrecoding || numTxPorts < 2
     estimate.Valid = isfinite(estimate.RI);
@@ -70,11 +74,14 @@ end
 estimate.NumTxPorts = double(tpmiNumPorts);
 estimate.PUSCHCodebookNumPorts = double(tpmiNumPorts);
 estimate.PortSelectionSource = char(portSource);
-if isfinite(estimate.RI)
+[riJoint, tpmi, metric, candidateCount, beamIndices] = localEstimateRankTPMI(Htpmi, max(double(nVar), eps), cfg, tpmiNumPorts, transformPrecoding);
+if isfinite(riJoint)
+    estimate.RI = double(riJoint);
+    estimate.RankMutualInformation = double(metric);
+    estimate.RISource = "ul_srs_joint_rank_tpmi_post_equalization_mi_estimator";
+elseif isfinite(estimate.RI)
     estimate.RI = double(max(1, min(round(double(estimate.RI)), max(1, round(double(tpmiNumPorts))))));
 end
-
-[tpmi, metric, candidateCount, beamIndices] = localEstimateTPMI(Htpmi, max(double(nVar), eps), estimate.RI, tpmiNumPorts, transformPrecoding);
 estimate.TPMI = double(tpmi);
 estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
@@ -204,8 +211,7 @@ for prb = 1:nPRB
 end
 end
 
-function [ri, cond_dB] = localEstimateRI(Hprb, cfg)
-ri = NaN;
+function cond_dB = localRankConditionNumber(Hprb)
 cond_dB = NaN;
 numTxPorts = size(Hprb, 2);
 if isempty(Hprb) || numTxPorts < 1
@@ -234,85 +240,119 @@ if isempty(eigvals)
     return;
 end
 singularValues = sqrt(max(eigvals, 0));
-sigma1 = max(singularValues);
-if sigma1 <= 0
-    ri = 1;
+singularValues = singularValues(singularValues > 0);
+if isempty(singularValues)
     cond_dB = 0;
     return;
 end
+cond_dB = 20 * log10(max(singularValues) / max(min(singularValues), eps));
+end
 
+function [ri, metricBest, candidateCount] = localEstimateRankByMI(Hprb, nVar, cfg)
+ri = NaN;
+metricBest = NaN;
+candidateCount = 0;
+numTxPorts = size(Hprb, 2);
+if isempty(Hprb) || numTxPorts < 1
+    return;
+end
+maxRank = localResolveMaxRank(cfg, numTxPorts);
+bestMetric = -inf;
+minIncrement = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankMinIncrementMI_bpcu", ...
+    sixgr.util.structGet(cfg, "phy.srs.rankMinIncrementMI_bpcu", 1e-6)));
+if ~(isfinite(minIncrement) && minIncrement >= 0)
+    minIncrement = 1e-6;
+end
+for rankIdx = 1:maxRank
+    candidateCount = candidateCount + 1;
+    metric = localAverageEigenmodeMI(Hprb, nVar, rankIdx);
+    if isfinite(metric) && (metric > bestMetric + minIncrement || ~isfinite(bestMetric))
+        bestMetric = metric;
+        ri = rankIdx;
+    end
+end
+if isfinite(bestMetric)
+    metricBest = bestMetric;
+end
+end
+
+function maxRank = localResolveMaxRank(cfg, numTxPorts)
 maxRank = double(sixgr.util.structGet(cfg, "phy.pusch.maxRankDefault", ...
     sixgr.util.structGet(cfg, "phy.pusch.numLayers", sixgr.util.structGet(cfg, "phy.pusch.nLayers", numTxPorts))));
 if ~(isfinite(maxRank) && maxRank >= 1)
     maxRank = numTxPorts;
 end
-maxRank = max(1, min(round(maxRank), numel(singularValues)));
-
-thMin = double(sixgr.util.structGet(cfg, "phy.srs.rankConditionMin", 1));
-thMax = double(sixgr.util.structGet(cfg, "phy.srs.rankConditionMax", ...
-    sixgr.util.structGet(cfg, "phy.srs.rankConditionNumberMax", 10)));
-if ~(isfinite(thMin) && thMin >= 1)
-    thMin = 1;
-end
-if ~(isfinite(thMax) && thMax >= thMin)
-    thMax = 10;
+maxRank = max(1, min(round(maxRank), max(1, round(double(numTxPorts)))));
 end
 
-selectedCond = 1;
-for candidateRank = maxRank:-1:1
-    sigmaL = singularValues(candidateRank);
-    if sigmaL <= 0
-        continue;
+function metric = localAverageEigenmodeMI(Hprb, nVar, rankIdx)
+metric = NaN;
+acc = 0;
+count = 0;
+for prb = 1:size(Hprb, 3)
+    for sym = 1:size(Hprb, 4)
+        H = double(Hprb(:, :, prb, sym));
+        if ~all(isfinite(H), "all")
+            continue;
+        end
+        Rtx = H' * H;
+        eigvals = sort(real(eig((Rtx + Rtx') / 2)), "descend");
+        eigvals = eigvals(isfinite(eigvals) & eigvals > 0);
+        if isempty(eigvals)
+            continue;
+        end
+        n = min(max(1, round(double(rankIdx))), numel(eigvals));
+        acc = acc + sum(log2(1 + eigvals(1:n) ./ max(double(nVar), eps)));
+        count = count + 1;
     end
-    cn = sigma1 / sigmaL;
-    if cn >= thMin && cn <= thMax
-        ri = candidateRank;
-        selectedCond = cn;
-        break;
-    end
 end
-if ~isfinite(ri)
-    ri = 1;
-    selectedCond = 1;
+if count > 0
+    metric = acc / count;
 end
-cond_dB = 20 * log10(max(selectedCond, eps));
 end
 
-function [tpmi, metricBest, candidateCount, beamIndices] = localEstimateTPMI(Hprb, nVar, ri, numTxPorts, transformPrecoding)
+function [ri, tpmi, metricBest, candidateCount, beamIndices] = localEstimateRankTPMI(Hprb, nVar, cfg, numTxPorts, transformPrecoding)
+ri = NaN;
 tpmi = NaN;
 metricBest = NaN;
 candidateCount = 0;
 beamIndices = [];
-if ~(isfinite(ri) && ri >= 1 && numTxPorts >= 2)
+if ~(numTxPorts >= 2)
     return;
 end
 if exist("nrPUSCHCodebook", "file") ~= 2
     return;
 end
-catalog = sixgr.phy.ul.puschCodebookCatalog(ri, numTxPorts, transformPrecoding);
-if ~logical(catalog.Valid)
-    return;
-end
 
 bestMetric = -inf;
 bestBeamIndices = [];
-validTPMIs = double(catalog.ValidTPMISet);
-for idx = 1:numel(validTPMIs)
-    tpmiIdx = validTPMIs(idx);
-    [W, candidateBeamIndices] = localPUSCHCodebookCandidate(ri, numTxPorts, tpmiIdx, transformPrecoding);
-    if isempty(W)
+bestRI = NaN;
+maxRank = localResolveMaxRank(cfg, numTxPorts);
+for rankIdx = 1:maxRank
+    catalog = sixgr.phy.ul.puschCodebookCatalog(rankIdx, numTxPorts, transformPrecoding);
+    if ~logical(catalog.Valid)
         continue;
     end
-    candidateCount = candidateCount + 1;
-    metric = localAverageMutualInformation(Hprb, W, nVar);
-    if isfinite(metric) && metric > bestMetric
-        bestMetric = metric;
-        tpmi = double(tpmiIdx);
-        bestBeamIndices = candidateBeamIndices;
+    validTPMIs = double(catalog.ValidTPMISet);
+    for idx = 1:numel(validTPMIs)
+        tpmiIdx = validTPMIs(idx);
+        [W, candidateBeamIndices] = localPUSCHCodebookCandidate(rankIdx, numTxPorts, tpmiIdx, transformPrecoding);
+        if isempty(W)
+            continue;
+        end
+        candidateCount = candidateCount + 1;
+        metric = localAverageMutualInformation(Hprb, W, nVar);
+        if isfinite(metric) && metric > bestMetric
+            bestMetric = metric;
+            bestRI = rankIdx;
+            tpmi = double(tpmiIdx);
+            bestBeamIndices = candidateBeamIndices;
+        end
     end
 end
 
 if isfinite(bestMetric)
+    ri = double(bestRI);
     metricBest = bestMetric;
     beamIndices = bestBeamIndices;
 end
@@ -338,11 +378,10 @@ for prb = 1:size(Hprb, 3)
         Heff = H * WportsByLayer;
         nLayers = size(Heff, 2);
         regularized = eye(nLayers) + (Heff' * Heff) ./ max(double(nVar), eps);
-        if rcond(regularized) < eps
-            postEqCov = pinv(regularized);
-        else
-            postEqCov = inv(regularized); %#ok<MINV>
+        if rcond(regularized) < 1e-12
+            regularized = regularized + eye(nLayers) .* (1e-12 * max(trace(regularized) / max(nLayers, 1), 1));
         end
+        postEqCov = regularized \ eye(nLayers);
         sinr = 1 ./ max(real(diag(postEqCov)), eps) - 1;
         sinr = max(real(sinr), 0);
         acc = acc + sum(log2(1 + sinr));
