@@ -74,6 +74,10 @@ sections:
       scale_profile:
         required: false
         type: string
+      study_mode:
+        required: false
+        type: string
+        allowed_values: [smoke, debug, baseline, campaign, publication, runner_smoke]
       target_cases:
         required: true
         type: string_list
@@ -1029,6 +1033,10 @@ sections:
       save_mat: {required: true, type: boolean}
       save_figures: {required: true, type: boolean}
       save_png: {required: true, type: boolean}
+      publication_mode:
+        required: false
+        type: string
+        allowed_values: [full, publication, smoke, minimal, runner_smoke]
       profiler_enabled: {required: false, type: boolean}
       profiler_top_functions: {required: false, type: integer, min: 1}
       profiler_top_edges: {required: false, type: integer, min: 1}

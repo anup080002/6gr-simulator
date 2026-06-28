@@ -1721,6 +1721,9 @@ cfg.run.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.configHash = char(string(scfg.ConfigHash));
 cfg = localEnsureExactMexAcceleration(cfg);
+if localIsSmokePublicationRun(scfg)
+    cfg = localForceSerialSmokeExecution(cfg);
+end
 cfg = localEnsureParallelExecution(cfg);
 sixgr.perf.TimeProfiler.configure(cfg);
 profilerCfg = localResolveProfilerConfig(scfg);
@@ -1831,6 +1834,20 @@ try
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Writing scenario manifest.");
     localWriteScenarioManifest(layout, manifest);
+    if localIsSmokePublicationRun(scfg)
+        scenarioStatus = localApplySmokePublicationStatus(scenarioStatus);
+        result = localApplyScenarioStatus(result, scenarioStatus);
+        manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+        manifest.PublicationMode = "smoke";
+        manifest.PublicationModeNotes = "Runner smoke publication: profile artifacts were written, release truth-contract/report bundle publication was intentionally skipped.";
+        localDBLog("INFO", "Smoke publication mode active; skipping release truth-contract/report bundle publication.");
+        localWriteScenarioManifest(layout, manifest);
+        localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
+            localBuildTerminalStatusPayload(scenarioStatus, "run_smoke_publication_complete", optionalArtifactIssues));
+        execOut = localBuildExecOut(profile, result, manifest, runtimeSummary, environmentSummary, ...
+            reportBundle, configOwnership, scenarioStatus, profilerArtifacts, optionalArtifactIssues);
+        return;
+    end
     localDBLog("INFO", "Exporting initial config-ownership and hardcoding audit artifacts.");
     configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
     preTruthScenarioStatus = scenarioStatus;
@@ -2091,6 +2108,49 @@ profilerCfg = struct( ...
     "Enabled", enabled, ...
     "TopFunctions", max(1, round(double(scfg.get("output.profiler_top_functions", 160)))), ...
     "TopEdges", max(1, round(double(scfg.get("output.profiler_top_edges", 320)))));
+end
+
+function tf = localIsSmokePublicationRun(scfg)
+studyMode = lower(strtrim(string(scfg.get("scenario.study_mode", ""))));
+publicationMode = lower(strtrim(string(scfg.get("output.publication_mode", ""))));
+tf = any(studyMode == ["smoke", "runner_smoke"]) || ...
+    any(publicationMode == ["smoke", "minimal", "runner_smoke"]);
+end
+
+function cfg = localForceSerialSmokeExecution(cfg)
+cfg = sixgr.util.structSet(cfg, "run.useParallel", false);
+cfg = sixgr.util.structSet(cfg, "run.numWorkers", 1);
+cfg = sixgr.util.structSet(cfg, "run.parallelRequestedWorkers", 1);
+cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "smoke_publication_serial_execution");
+end
+
+function status = localApplySmokePublicationStatus(status)
+profileOk = logical(sixgr.util.structGet(status, "ProfileReportedOk", status.ResultOk));
+caseOk = logical(sixgr.util.structGet(status, "CaseOk", profileOk));
+requiredFailures = double(sixgr.util.structGet(status, "RequiredFailureCount", double(~caseOk)));
+status.ResultOk = profileOk && caseOk && requiredFailures == 0;
+status.CaseOk = caseOk;
+status.PartialOk = false;
+status.RunCompletion = "completed";
+status.RunCompleted = true;
+status.StatusAuthority = "runner_smoke_publication_v1";
+status.AuthoritativeStatusSource = "runner_profile_result_smoke";
+status.RuntimeTruthContractOk = false;
+status.TruthContractOk = false;
+status.StandardsConformanceOk = false;
+status.ScenarioObjectiveOk = status.ResultOk;
+status.ResultStatusReason = "runner_smoke_profile_completed_release_truth_contract_not_evaluated";
+status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+    "Smoke publication mode writes runner profile artifacts only; release truth contract, browser contract materialization, and full reporting bundle are not evaluated for this run.");
+status.RequiredRuntimeEvidenceMissingCount = 0;
+status.StrictTruthFailureCount = 0;
+status.StrictProxyGuardFailureCount = 0;
+status.CanonicalArtifactGapCount = 0;
+status.RuntimeTruthContractFailures = strings(0, 1);
+status.FailingCaseCount = double(numel(string(status.RequiredFailedCases(:))));
+if ~status.ResultOk && status.FailingCaseCount == 0
+    status.FailingCaseCount = 1;
+end
 end
 
 function profilerState = localStartProfilerIfEnabled(profilerCfg)
@@ -3362,6 +3422,7 @@ end
 function cfg = localEnsureParallelExecution(cfg)
 useParallel = logical(sixgr.util.structGet(cfg, "run.useParallel", false));
 requestedWorkers = max(0, round(double(sixgr.util.structGet(cfg, "run.numWorkers", 0))));
+configuredDisabledReason = string(sixgr.util.structGet(cfg, "run.parallelDisabledReason", ""));
 cfg = sixgr.util.structSet(cfg, "run.parallelRequestedWorkers", double(requestedWorkers));
 cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "");
 idleTimeoutMinutes = max(1, double(sixgr.util.structGet(cfg, ...
@@ -3373,7 +3434,11 @@ parpoolAvailable = exist("parpool", "file") == 2;
 if ~useParallel
     cfg.run.useParallel = false;
     cfg = localSetSerialWorkerState(cfg);
-    cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "parallel_not_requested");
+    disabledReason = "parallel_not_requested";
+    if strlength(strtrim(configuredDisabledReason)) > 0
+        disabledReason = configuredDisabledReason;
+    end
+    cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", char(disabledReason));
     return;
 end
 if requestedWorkers <= 1
