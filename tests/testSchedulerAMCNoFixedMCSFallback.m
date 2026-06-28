@@ -110,6 +110,13 @@ grant = struct( ...
     "ForceExact", true);
 feedback = struct("Valid", true, "CQI", 12, "RI", 1, "PMI", NaN, "CRI", NaN, ...
     "SINR_dB", 24, "MCSIndex", NaN, "TargetCodeRate", NaN, "Modulation", "");
+feedback.CSIAgingModel = "per_subband_layer_jakes_measured_csi";
+feedback.SubbandSINRVector_dB = "24|21|18";
+feedback.AgedSubbandSINRVector_dB = "24|19|15";
+feedback.PostEqSINRPerLayer_dB = "24";
+feedback.AgedPostEqSINRPerLayer_dB = "24";
+feedback.SubbandAgingPenaltyVector_dB = "0|2|3";
+feedback.LayerAgingPenaltyVector_dB = "0";
 grantCQI = sixgr.truth.CoupledTruthRuntime.realignGrantAMCFromMeasuredFeedbackRuntime( ...
     grant, feedback, ulScheduler, cfg, "UL");
 
@@ -119,6 +126,9 @@ assert(double(grantCQI.MCSIndex) > 0, ...
     "Measured CQI feedback must update the actual UL grant MCS before PHY execution.");
 assert(double(grantCQI.TBSBits) > double(bootstrapTBSBits), ...
     "Measured CQI feedback must update the actual UL grant TBS before PHY execution.");
+assert(strcmpi(char(string(grantCQI.CSIAgingModel)), "per_subband_layer_jakes_measured_csi") && ...
+    strlength(string(grantCQI.AgedSubbandSINRVector_dB)) > 0, ...
+    "Executable grant must retain aged measured CSI metadata consumed by AMC.");
 
 feedbackRank2 = feedback;
 feedbackRank2.RI = 2;

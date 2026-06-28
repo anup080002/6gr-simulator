@@ -77,6 +77,11 @@ decision = struct( ...
     "FeedbackAgingPenalty_dB", double(cqiMeta.FeedbackAgingPenalty_dB), ...
     "AgedSINR_dB", double(cqiMeta.AgedSINR_dB), ...
     "AgedCQI", double(cqiMeta.AgedCQI), ...
+    "CSIAgingModel", char(string(cqiMeta.CSIAgingModel)), ...
+    "AgedSubbandSINRVector_dB", char(string(cqiMeta.AgedSubbandSINRVector_dB)), ...
+    "AgedLayerSINRVector_dB", char(string(cqiMeta.AgedLayerSINRVector_dB)), ...
+    "SubbandAgingPenaltyVector_dB", char(string(cqiMeta.SubbandAgingPenaltyVector_dB)), ...
+    "LayerAgingPenaltyVector_dB", char(string(cqiMeta.LayerAgingPenaltyVector_dB)), ...
     "CSIQuantizationBits", double(cqiMeta.CSIQuantizationBits), ...
     "CQITable", char(cqiTable), ...
     "MCSTable", char(mcsTable), ...
@@ -303,15 +308,55 @@ rawSINR = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
 rawSINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
 rawSINRRole = string(sixgr.util.structGet(metrics, "SINRValueRole", ""));
 rawSINRStatus = string(sixgr.util.structGet(metrics, "SINRValueStatus", ""));
+rawSubbandSINR = localMetricVector(metrics, ["PerRBSINR_dB", "SubbandSINR_dB", "SubbandSINRVector_dB"]);
+rawLayerSINR = localMetricVector(metrics, ["PostEqSINRPerLayer_dB", "PerLayerSINR_dB", "SelectedLayerSINR_dB", "LayerSINRdB"]);
 if localSINRProvenanceBlockedForAMC(rawSINRSource, rawSINRRole, rawSINRStatus)
     rawSINR = NaN;
+    rawSubbandSINR = [];
+    rawLayerSINR = [];
     if strlength(strtrim(cqiSource)) == 0 || cqiSource == "unavailable"
         cqiSource = "sinr_input_rejected_non_scheduling_provenance";
+    end
+end
+[agedSubbandSINR, subbandPenalty, subbandTrust] = localApplyVectorCSIAging( ...
+    rawSubbandSINR, cfg, direction, metrics, "subband", cqiMeta.FeedbackAgingPenalty_dB);
+[agedLayerSINR, layerPenalty, layerTrust] = localApplyVectorCSIAging( ...
+    rawLayerSINR, cfg, direction, metrics, "layer", cqiMeta.FeedbackAgingPenalty_dB);
+if ~isempty(agedSubbandSINR)
+    cqiMeta.AgedSubbandSINRVector_dB = localVectorToToken(agedSubbandSINR, "%.6g");
+    cqiMeta.SubbandAgingPenaltyVector_dB = localVectorToToken(subbandPenalty, "%.6g");
+    cqiMeta.CSIAgingModel = "per_subband_layer_jakes_measured_csi";
+    if ~isempty(subbandTrust)
+        cqiMeta.CSITemporalCorrelationWeight = min(double(cqiMeta.CSITemporalCorrelationWeight), min(double(subbandTrust), [], "omitnan"));
+    end
+end
+if ~isempty(agedLayerSINR)
+    cqiMeta.AgedLayerSINRVector_dB = localVectorToToken(agedLayerSINR, "%.6g");
+    cqiMeta.LayerAgingPenaltyVector_dB = localVectorToToken(layerPenalty, "%.6g");
+    cqiMeta.CSIAgingModel = "per_subband_layer_jakes_measured_csi";
+    if ~isempty(layerTrust)
+        cqiMeta.CSITemporalCorrelationWeight = min(double(cqiMeta.CSITemporalCorrelationWeight), min(double(layerTrust), [], "omitnan"));
     end
 end
 if isfinite(rawSINR)
     rawSINR = rawSINR - double(cqiMeta.FeedbackAgingPenalty_dB);
     cqiMeta.AgedSINR_dB = double(rawSINR);
+elseif ~isempty(agedSubbandSINR)
+    rawSINR = localMeanSINR_dB(agedSubbandSINR);
+    cqiMeta.AgedSINR_dB = double(rawSINR);
+    if strlength(strtrim(rawSINRSource)) == 0
+        rawSINRSource = "aged_subband_measured_csi";
+        rawSINRRole = "measured_post_equalization_scheduling_input";
+        rawSINRStatus = "OK";
+    end
+elseif ~isempty(agedLayerSINR)
+    rawSINR = localMeanSINR_dB(agedLayerSINR);
+    cqiMeta.AgedSINR_dB = double(rawSINR);
+    if strlength(strtrim(rawSINRSource)) == 0
+        rawSINRSource = "aged_layer_measured_csi";
+        rawSINRRole = "measured_post_equalization_scheduling_input";
+        rawSINRStatus = "OK";
+    end
 end
 if isfinite(rawCQI)
     if logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.ageReportedCQI", false))
@@ -321,6 +366,9 @@ if isfinite(rawCQI)
 end
 sinrInput = struct( ...
     "WidebandSINR_dB", rawSINR, ...
+    "PerRBSINR_dB", double(agedSubbandSINR), ...
+    "PostEqSINRPerLayer_dB", double(agedLayerSINR), ...
+    "RankIndicator", double(sixgr.util.structGet(metrics, "RI", NaN)), ...
     "SINRSource", char(rawSINRSource), ...
     "SINRValueRole", char(rawSINRRole), ...
     "SINRValueStatus", char(rawSINRStatus));
@@ -345,7 +393,13 @@ switch string(adaptationDomain)
             cqiSource = "runtime_effective_sinr_proxy_for_bler_margin";
         end
     otherwise
-        if isfinite(rawCQI)
+        if localUseAgedMeasuredSINRForCQI(cfg, direction) && isfinite(rawSINR)
+            feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
+            instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
+            cqiMeta = localApplyWidebandCQIMeta(cqiMeta, feedback);
+            cqiSource = "runtime_aged_measured_sinr_cqi";
+            calibrationProfile = string(calibrationProfile) + ":" + string(sixgr.util.structGet(feedback, "Mode", ""));
+        elseif isfinite(rawCQI)
             instantCQI = rawCQI;
             cqiSource = "runtime_reported_cqi";
         end
@@ -359,6 +413,7 @@ if strlength(strtrim(token)) == 0
     return;
 end
 blocked = ["evm_proxy", "proxy", "fallback", "configured", "sweep", ...
+    "oracle", "true_channel", "true-channel", ...
     "diagnostic", "not_scheduling", "unavailable", "failed", "rejected"];
 tf = any(contains(token, blocked));
 end
@@ -397,6 +452,11 @@ meta = struct( ...
     "FeedbackAgingPenalty_dB", double(agingPenalty_dB), ...
     "AgedSINR_dB", NaN, ...
     "AgedCQI", NaN, ...
+    "CSIAgingModel", "wideband_jakes_measured_csi", ...
+    "AgedSubbandSINRVector_dB", "", ...
+    "AgedLayerSINRVector_dB", "", ...
+    "SubbandAgingPenaltyVector_dB", "", ...
+    "LayerAgingPenaltyVector_dB", "", ...
     "CSIQuantizationBits", double(localCSIQuantizationBits(cfg, direction)));
 end
 
@@ -520,6 +580,233 @@ if ~(isfinite(step_dB) && step_dB > 0)
     step_dB = 2;
 end
 cqi = max(0, min(15, cqi - ceil(penalty / step_dB)));
+end
+
+function tf = localUseAgedMeasuredSINRForCQI(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    candidates = [ ...
+        "phy.pusch.useAgedMeasuredSINRForCQI"
+        "phy.csi.ulUseAgedMeasuredSINRForCQI"
+        "phy.linkAdaptation.ulUseAgedMeasuredSINRForCQI"
+        "phy.linkAdaptation.useAgedMeasuredSINRForCQI"];
+else
+    candidates = [ ...
+        "phy.pdsch.useAgedMeasuredSINRForCQI"
+        "phy.csi.dlUseAgedMeasuredSINRForCQI"
+        "phy.linkAdaptation.dlUseAgedMeasuredSINRForCQI"
+        "phy.linkAdaptation.useAgedMeasuredSINRForCQI"];
+end
+tf = true;
+for i = 1:numel(candidates)
+    raw = sixgr.util.structGet(cfg, candidates(i), []);
+    if isempty(raw)
+        continue;
+    end
+    if ischar(raw) || isstring(raw)
+        tf = any(lower(strtrim(string(raw))) == ["true", "1", "yes", "on"]);
+    elseif isnumeric(raw) || islogical(raw)
+        tf = logical(raw);
+    end
+    return;
+end
+end
+
+function values = localMetricVector(metrics, candidates)
+values = [];
+if ~isstruct(metrics)
+    return;
+end
+for i = 1:numel(candidates)
+    raw = sixgr.util.structGet(metrics, candidates(i), []);
+    values = localParseNumericVector(raw);
+    if ~isempty(values)
+        return;
+    end
+end
+end
+
+function values = localParseNumericVector(raw)
+values = [];
+if isempty(raw)
+    return;
+end
+if isnumeric(raw) || islogical(raw)
+    values = double(raw(:).');
+elseif ischar(raw) || isstring(raw)
+    text = strtrim(strjoin(string(raw(:).'), "|"));
+    if strlength(text) == 0
+        return;
+    end
+    parts = regexp(char(text), '[,;|\s]+', 'split');
+    parts = parts(~cellfun(@isempty, parts));
+    if isempty(parts)
+        return;
+    end
+    values = str2double(string(parts));
+else
+    return;
+end
+values = double(values(:).');
+values = values(isfinite(values));
+end
+
+function [aged, penalty, trustWeight] = localApplyVectorCSIAging(values, cfg, direction, metrics, domain, fallbackPenalty_dB)
+aged = [];
+penalty = [];
+trustWeight = [];
+values = double(values(:).');
+values = values(isfinite(values));
+if isempty(values)
+    return;
+end
+n = numel(values);
+age_s = localResolveAgingVector(metrics, domain, "seconds", n, NaN);
+if isempty(age_s)
+    age_s = repmat(double(sixgr.util.structGet(metrics, "CSIAgeSeconds", ...
+        sixgr.util.structGet(metrics, "FeedbackAgeSeconds", NaN))), 1, n);
+end
+ageSlots = localResolveAgingVector(metrics, domain, "slots", n, NaN);
+slotDuration_s = localSlotDurationSeconds(cfg);
+if isempty(age_s) || any(~isfinite(age_s))
+    if isempty(ageSlots)
+        ageSlots = repmat(double(sixgr.util.structGet(metrics, "CSIAgeSlots", ...
+            sixgr.util.structGet(metrics, "FeedbackAgeSlots", NaN))), 1, n);
+    end
+    if isfinite(slotDuration_s) && slotDuration_s > 0
+        fillMask = ~isfinite(age_s);
+        if isempty(age_s)
+            fillMask = true(1, n);
+            age_s = nan(1, n);
+        end
+        if numel(ageSlots) == n
+            age_s(fillMask) = double(ageSlots(fillMask)) .* double(slotDuration_s);
+        end
+    end
+end
+if isempty(age_s)
+    age_s = zeros(1, n);
+end
+age_s = localPadVector(age_s, n, 0);
+age_s(~isfinite(age_s) | age_s < 0) = 0;
+
+dopplerHz = localResolveAgingVector(metrics, domain, "doppler", n, NaN);
+if isempty(dopplerHz)
+    dopplerScalar = localFirstFiniteConfigValue(cfg, [ ...
+        "channel.doppler_Hz"
+        "channel.dopplerHz"
+        "channel.fading.maxDoppler_Hz"
+        "channels.doppler_hz"
+        "frequency.doppler_hz"
+        "phy.channel.doppler_Hz"], NaN);
+    dopplerHz = repmat(double(dopplerScalar), 1, n);
+end
+dopplerHz = localPadVector(dopplerHz, n, NaN);
+
+maxPenalty = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.maxCSIAgingPenalty_dB", 6));
+if ~(isfinite(maxPenalty) && maxPenalty >= 0)
+    maxPenalty = 6;
+end
+fallbackPenalty_dB = double(fallbackPenalty_dB);
+if ~(isfinite(fallbackPenalty_dB) && fallbackPenalty_dB >= 0)
+    fallbackPenalty_dB = 0;
+end
+penalty = repmat(fallbackPenalty_dB, 1, n);
+trustWeight = ones(1, n);
+for i = 1:n
+    if isfinite(age_s(i)) && age_s(i) > 0 && isfinite(dopplerHz(i)) && dopplerHz(i) > 0
+        try
+            rho = abs(besselj(0, 2 * pi * double(dopplerHz(i)) * double(age_s(i))));
+        catch
+            coherence_s = 0.423 / max(double(dopplerHz(i)), eps);
+            rho = min(1, double(coherence_s) / max(double(age_s(i)), eps));
+        end
+        if ~(isfinite(rho) && rho >= 0)
+            rho = 1;
+        end
+        rho = min(1, max(0, double(rho)));
+        minTrust = 10 ^ (-double(maxPenalty) / 20);
+        penalty(i) = min(double(maxPenalty), max(0, -20 * log10(max(rho, minTrust))));
+        trustWeight(i) = rho;
+    end
+end
+aged = double(values) - double(penalty);
+end
+
+function values = localResolveAgingVector(metrics, domain, kind, n, defaultValue)
+domain = lower(string(domain));
+kind = lower(string(kind));
+switch kind
+    case "seconds"
+        if domain == "subband"
+            candidates = ["SubbandCSIAgeSeconds", "SubbandAgeSeconds", "PerSubbandCSIAgeSeconds", "PerRBAgeSeconds"];
+        else
+            candidates = ["LayerCSIAgeSeconds", "LayerAgeSeconds", "PerLayerCSIAgeSeconds"];
+        end
+    case "slots"
+        if domain == "subband"
+            candidates = ["SubbandCSIAgeSlots", "SubbandAgeSlots", "PerSubbandCSIAgeSlots", "PerRBAgeSlots"];
+        else
+            candidates = ["LayerCSIAgeSlots", "LayerAgeSlots", "PerLayerCSIAgeSlots"];
+        end
+    otherwise
+        if domain == "subband"
+            candidates = ["SubbandDopplerHz", "SubbandDoppler_Hz", "PerSubbandDopplerHz", "PerRBDopplerHz"];
+        else
+            candidates = ["LayerDopplerHz", "LayerDoppler_Hz", "PerLayerDopplerHz"];
+        end
+end
+values = localMetricVector(metrics, candidates);
+if isempty(values)
+    raw = defaultValue;
+    if isfinite(double(raw))
+        values = repmat(double(raw), 1, n);
+    end
+    return;
+end
+values = localPadVector(values, n, NaN);
+end
+
+function values = localPadVector(values, n, fillValue)
+values = double(values(:).');
+if numel(values) == n
+    return;
+end
+if isempty(values)
+    values = repmat(double(fillValue), 1, n);
+elseif numel(values) == 1
+    values = repmat(double(values), 1, n);
+elseif numel(values) > n
+    values = values(1:n);
+else
+    values = [values repmat(double(fillValue), 1, n - numel(values))];
+end
+end
+
+function value = localMeanSINR_dB(values)
+values = double(values(:));
+values = values(isfinite(values));
+if isempty(values)
+    value = NaN;
+    return;
+end
+value = 10 * log10(max(mean(10 .^ (values / 10), "omitnan"), eps));
+end
+
+function token = localVectorToToken(values, fmt)
+values = double(values(:).');
+if nargin < 2 || strlength(string(fmt)) == 0
+    fmt = "%.6g";
+end
+parts = strings(1, numel(values));
+for i = 1:numel(values)
+    if isfinite(values(i))
+        parts(i) = string(sprintf(char(fmt), values(i)));
+    else
+        parts(i) = "NaN";
+    end
+end
+token = strjoin(parts, "|");
 end
 
 function bits = localCSIQuantizationBits(cfg, direction)

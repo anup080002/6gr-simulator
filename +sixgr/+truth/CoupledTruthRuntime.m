@@ -1657,6 +1657,13 @@ methods(Static, Access=private)
             latest.CSITemporalCorrelationWeight = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSITemporalCorrelationWeight", NaN));
             latest.CSIAgeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSIAgeSeconds", NaN));
             latest.CSICoherenceTimeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSICoherenceTimeSeconds", NaN));
+            latest.CSIAgingModel = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSIAgingModel", "")));
+            latest.SubbandSINRVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SubbandSINRVector_dB", "")));
+            latest.AgedSubbandSINRVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AgedSubbandSINRVector_dB", "")));
+            latest.PostEqSINRPerLayer_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PostEqSINRPerLayer_dB", "")));
+            latest.AgedPostEqSINRPerLayer_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AgedPostEqSINRPerLayer_dB", "")));
+            latest.SubbandAgingPenaltyVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SubbandAgingPenaltyVector_dB", "")));
+            latest.LayerAgingPenaltyVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LayerAgingPenaltyVector_dB", "")));
             latest.OuterLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "OuterLoopEnabled", false));
             latest.InnerLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "InnerLoopEnabled", false));
             latest.LinkAdaptationStateUpdateCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LinkAdaptationStateUpdateCount", NaN));
@@ -2474,6 +2481,11 @@ methods(Static, Access=private)
         ueState.PMI = double(sixgr.util.structGet(feedback, "PMI", NaN));
         ueState.CRI = double(sixgr.util.structGet(feedback, "CRI", NaN));
         ueState.MeasuredSINR_dB = double(sixgr.util.structGet(feedback, "SINR_dB", NaN));
+        ueState.CSIAgingModel = char(string(sixgr.util.structGet(feedback, "CSIAgingModel", "")));
+        ueState.SubbandSINRVector_dB = char(string(sixgr.util.structGet(feedback, "SubbandSINRVector_dB", "")));
+        ueState.AgedSubbandSINRVector_dB = char(string(sixgr.util.structGet(feedback, "AgedSubbandSINRVector_dB", "")));
+        ueState.PostEqSINRPerLayer_dB = char(string(sixgr.util.structGet(feedback, "PostEqSINRPerLayer_dB", "")));
+        ueState.AgedPostEqSINRPerLayer_dB = char(string(sixgr.util.structGet(feedback, "AgedPostEqSINRPerLayer_dB", "")));
         ueState.PDCCHAggregationLevel = double(sixgr.truth.CoupledTruthRuntime.resolveSchedulerPDCCHAggregationLevel( ...
             state.CfgMobility, ueState.MeasuredSINR_dB));
         ueState.MCSIndex = double(schedulerMCSIndex);
@@ -4568,6 +4580,13 @@ methods(Static, Access=private)
         grant.MCSIndexAuthority = char(selectionSource);
         grant.GrantOperatingPointSource = char(selectionSource);
         grant.AMCMode = "cqi_table";
+        grant.CSIAgingModel = char(string(sixgr.util.structGet(feedback, "CSIAgingModel", "")));
+        grant.SubbandSINRVector_dB = char(string(sixgr.util.structGet(feedback, "SubbandSINRVector_dB", "")));
+        grant.AgedSubbandSINRVector_dB = char(string(sixgr.util.structGet(feedback, "AgedSubbandSINRVector_dB", "")));
+        grant.PostEqSINRPerLayer_dB = char(string(sixgr.util.structGet(feedback, "PostEqSINRPerLayer_dB", "")));
+        grant.AgedPostEqSINRPerLayer_dB = char(string(sixgr.util.structGet(feedback, "AgedPostEqSINRPerLayer_dB", "")));
+        grant.SubbandAgingPenaltyVector_dB = char(string(sixgr.util.structGet(feedback, "SubbandAgingPenaltyVector_dB", "")));
+        grant.LayerAgingPenaltyVector_dB = char(string(sixgr.util.structGet(feedback, "LayerAgingPenaltyVector_dB", "")));
         grant.OuterLoopEnabled = logical(ollaEnabled);
         grant.OuterLoopApplied = logical(ollaEnabled && ollaCount > 0 && isfinite(ollaDelta) && abs(double(ollaDelta)) > 0);
         grant.OLLADeltaMCS = double(ollaDelta);
@@ -4637,6 +4656,20 @@ methods(Static, Access=private)
         report.RawCQIDerivedMCS = double(report.MCSIndex);
         report.RawCQIDerivedTargetCodeRate = double(report.TargetCodeRate);
         report.RawCQIDerivedModulation = char(string(report.Modulation));
+        subbandSINR = sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ...
+            ["SubbandSINRVector_dB","SubbandSINR_dB","PerRBSINR_dB"]);
+        layerSINR = sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ...
+            ["PostEqSINRPerLayer_dB","PerLayerSINR_dB","SelectedLayerSINR_dB","LayerSINRdB"]);
+        report.SubbandSINRVector_dB = sixgr.truth.CoupledTruthRuntime.numericVectorToken(subbandSINR);
+        report.PostEqSINRPerLayer_dB = sixgr.truth.CoupledTruthRuntime.numericVectorToken(layerSINR);
+        report.SubbandCSIAgeSlots = sixgr.truth.CoupledTruthRuntime.numericVectorToken( ...
+            sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ["SubbandCSIAgeSlots","SubbandAgeSlots","PerSubbandCSIAgeSlots","PerRBAgeSlots"]));
+        report.LayerCSIAgeSlots = sixgr.truth.CoupledTruthRuntime.numericVectorToken( ...
+            sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ["LayerCSIAgeSlots","LayerAgeSlots","PerLayerCSIAgeSlots"]));
+        report.SubbandDopplerHz = sixgr.truth.CoupledTruthRuntime.numericVectorToken( ...
+            sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ["SubbandDopplerHz","SubbandDoppler_Hz","PerSubbandDopplerHz","PerRBDopplerHz"]));
+        report.LayerDopplerHz = sixgr.truth.CoupledTruthRuntime.numericVectorToken( ...
+            sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ["LayerDopplerHz","LayerDoppler_Hz","PerLayerDopplerHz"]));
         servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
         if ueIdx >= 1 && ueIdx <= numel(servingVec)
             report.ServingCell = double(servingVec(ueIdx));
@@ -4687,6 +4720,13 @@ methods(Static, Access=private)
             latest.CSITemporalCorrelationWeight = report.CSITemporalCorrelationWeight;
             latest.CSIAgeSeconds = report.CSIAgeSeconds;
             latest.CSICoherenceTimeSeconds = report.CSICoherenceTimeSeconds;
+            latest.CSIAgingModel = report.CSIAgingModel;
+            latest.SubbandSINRVector_dB = report.SubbandSINRVector_dB;
+            latest.AgedSubbandSINRVector_dB = report.AgedSubbandSINRVector_dB;
+            latest.PostEqSINRPerLayer_dB = report.PostEqSINRPerLayer_dB;
+            latest.AgedPostEqSINRPerLayer_dB = report.AgedPostEqSINRPerLayer_dB;
+            latest.SubbandAgingPenaltyVector_dB = report.SubbandAgingPenaltyVector_dB;
+            latest.LayerAgingPenaltyVector_dB = report.LayerAgingPenaltyVector_dB;
             latest.OuterLoopEnabled = report.OuterLoopEnabled;
             latest.InnerLoopEnabled = report.InnerLoopEnabled;
             latest.LinkAdaptationStateUpdateCount = report.LinkAdaptationStateUpdateCount;
@@ -4715,6 +4755,11 @@ methods(Static, Access=private)
         report.CSITemporalCorrelationWeight = NaN;
         report.CSIAgeSeconds = NaN;
         report.CSICoherenceTimeSeconds = NaN;
+        report.CSIAgingModel = "";
+        report.AgedSubbandSINRVector_dB = "";
+        report.AgedPostEqSINRPerLayer_dB = "";
+        report.SubbandAgingPenaltyVector_dB = "";
+        report.LayerAgingPenaltyVector_dB = "";
         report.OuterLoopEnabled = false;
         report.InnerLoopEnabled = false;
         report.LinkAdaptationStateUpdateCount = NaN;
@@ -4745,6 +4790,12 @@ methods(Static, Access=private)
                 sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ["MeasuredTrialSINRValueRole","SINRValueRole","PostEqSINRValueRole"], "")))), ...
             "SINRValueStatus", char(string(sixgr.util.structGet(report, "SINRValueStatus", ...
                 sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ["MeasuredTrialSINRValueStatus","SINRValueStatus","PostEqSINRValueStatus"], "")))));
+        metrics.SubbandSINRVector_dB = char(string(sixgr.util.structGet(report, "SubbandSINRVector_dB", "")));
+        metrics.PostEqSINRPerLayer_dB = char(string(sixgr.util.structGet(report, "PostEqSINRPerLayer_dB", "")));
+        metrics.SubbandCSIAgeSlots = char(string(sixgr.util.structGet(report, "SubbandCSIAgeSlots", "")));
+        metrics.LayerCSIAgeSlots = char(string(sixgr.util.structGet(report, "LayerCSIAgeSlots", "")));
+        metrics.SubbandDopplerHz = char(string(sixgr.util.structGet(report, "SubbandDopplerHz", "")));
+        metrics.LayerDopplerHz = char(string(sixgr.util.structGet(report, "LayerDopplerHz", "")));
         if sixgr.truth.CoupledTruthRuntime.rowHasField(row, "CRCPass")
             metrics.CRCPass = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "CRCPass", false));
         end
@@ -4769,6 +4820,11 @@ methods(Static, Access=private)
         report.CSITemporalCorrelationWeight = double(sixgr.util.structGet(decision, "CSITemporalCorrelationWeight", NaN));
         report.CSIAgeSeconds = double(sixgr.util.structGet(decision, "CSIAgeSeconds", NaN));
         report.CSICoherenceTimeSeconds = double(sixgr.util.structGet(decision, "CSICoherenceTimeSeconds", NaN));
+        report.CSIAgingModel = char(string(sixgr.util.structGet(decision, "CSIAgingModel", "")));
+        report.AgedSubbandSINRVector_dB = char(string(sixgr.util.structGet(decision, "AgedSubbandSINRVector_dB", "")));
+        report.AgedPostEqSINRPerLayer_dB = char(string(sixgr.util.structGet(decision, "AgedLayerSINRVector_dB", "")));
+        report.SubbandAgingPenaltyVector_dB = char(string(sixgr.util.structGet(decision, "SubbandAgingPenaltyVector_dB", "")));
+        report.LayerAgingPenaltyVector_dB = char(string(sixgr.util.structGet(decision, "LayerAgingPenaltyVector_dB", "")));
         report.OuterLoopEnabled = logical(sixgr.util.structGet(decision, "OuterLoopEnabled", false));
         report.InnerLoopEnabled = logical(sixgr.util.structGet(decision, "InnerLoopEnabled", false));
         report.LinkAdaptationStateUpdateCount = double(sixgr.util.structGet(decision, "StateUpdateCount", NaN));
@@ -4801,6 +4857,10 @@ methods(Static, Access=private)
 
         [measuredSINR, sinrSource, sinrRole, sinrStatus] = ...
             sixgr.truth.CoupledTruthRuntime.schedulerMeasuredSINRFromRow(row);
+        subbandSINR = sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ...
+            ["SubbandSINRVector_dB","SubbandSINR_dB","PerRBSINR_dB"]);
+        layerSINR = sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ...
+            ["PostEqSINRPerLayer_dB","PerLayerSINR_dB","SelectedLayerSINR_dB","LayerSINRdB"]);
         cqi = rawCQI;
         mcs = rawMCS;
         targetCodeRate = rawRate;
@@ -4810,6 +4870,8 @@ methods(Static, Access=private)
         if isfinite(measuredSINR)
             feedback = sixgr.link.resolveWidebandCQI(struct( ...
                 "WidebandSINR_dB", double(measuredSINR), ...
+                "PerRBSINR_dB", double(subbandSINR), ...
+                "PostEqSINRPerLayer_dB", double(layerSINR), ...
                 "SINRSource", char(sinrSource), ...
                 "SINRValueRole", char(sinrRole), ...
                 "SINRValueStatus", char(sinrStatus), ...
@@ -4864,6 +4926,8 @@ methods(Static, Access=private)
             "TargetCodeRate", double(targetCodeRate), ...
             "Modulation", char(string(modStr)), ...
             "CQISource", char(cqiSource), ...
+            "SubbandSINRVector_dB", char(sixgr.truth.CoupledTruthRuntime.numericVectorToken(subbandSINR)), ...
+            "PostEqSINRPerLayer_dB", char(sixgr.truth.CoupledTruthRuntime.numericVectorToken(layerSINR)), ...
             "DerivedFromMeasuredSINR", logical(derivedFromMeasuredSINR));
     end
 
@@ -5407,6 +5471,55 @@ methods(Static, Access=private)
                 return;
             end
         end
+    end
+
+    function values = rowFirstNumericVector(row, names)
+        values = [];
+        for i = 1:numel(names)
+            raw = sixgr.truth.CoupledTruthRuntime.rowValue(row, char(string(names(i))), []);
+            values = sixgr.truth.CoupledTruthRuntime.parseNumericVector(raw);
+            if ~isempty(values)
+                return;
+            end
+        end
+    end
+
+    function values = parseNumericVector(raw)
+        values = [];
+        if isempty(raw)
+            return;
+        end
+        if isnumeric(raw) || islogical(raw)
+            values = double(raw(:).');
+        elseif ischar(raw) || isstring(raw)
+            token = strtrim(strjoin(string(raw(:).'), "|"));
+            if strlength(token) == 0
+                return;
+            end
+            parts = regexp(char(token), '[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', 'match');
+            if isempty(parts)
+                return;
+            end
+            values = str2double(string(parts(:))).';
+        else
+            return;
+        end
+        values = double(values(:).');
+        values = values(isfinite(values));
+    end
+
+    function token = numericVectorToken(values)
+        values = double(values(:).');
+        values = values(isfinite(values));
+        if isempty(values)
+            token = "";
+            return;
+        end
+        parts = strings(1, numel(values));
+        for i = 1:numel(values)
+            parts(i) = string(sprintf("%.6g", values(i)));
+        end
+        token = char(strjoin(parts, "|"));
     end
 
     function tf = trialPassed(trialT)
@@ -7833,6 +7946,12 @@ methods(Static, Access=private)
             "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, ...
             "EffectiveCQISmoothingAlpha", NaN, "CSITemporalCorrelationWeight", NaN, ...
             "CSIAgeSeconds", NaN, "CSICoherenceTimeSeconds", NaN, ...
+            "CSIAgingModel", "", ...
+            "SubbandSINRVector_dB", "", "AgedSubbandSINRVector_dB", "", ...
+            "PostEqSINRPerLayer_dB", "", "AgedPostEqSINRPerLayer_dB", "", ...
+            "SubbandAgingPenaltyVector_dB", "", "LayerAgingPenaltyVector_dB", "", ...
+            "SubbandCSIAgeSlots", "", "LayerCSIAgeSlots", "", ...
+            "SubbandDopplerHz", "", "LayerDopplerHz", "", ...
             "OuterLoopEnabled", false, "InnerLoopEnabled", false, ...
             "LinkAdaptationStateUpdateCount", NaN, ...
             "ServingCell", NaN, "Processed", false);
@@ -7852,6 +7971,12 @@ methods(Static, Access=private)
             "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, ...
             "EffectiveCQISmoothingAlpha", NaN, "CSITemporalCorrelationWeight", NaN, ...
             "CSIAgeSeconds", NaN, "CSICoherenceTimeSeconds", NaN, ...
+            "CSIAgingModel", "", ...
+            "SubbandSINRVector_dB", "", "AgedSubbandSINRVector_dB", "", ...
+            "PostEqSINRPerLayer_dB", "", "AgedPostEqSINRPerLayer_dB", "", ...
+            "SubbandAgingPenaltyVector_dB", "", "LayerAgingPenaltyVector_dB", "", ...
+            "SubbandCSIAgeSlots", "", "LayerCSIAgeSlots", "", ...
+            "SubbandDopplerHz", "", "LayerDopplerHz", "", ...
             "OuterLoopEnabled", false, "InnerLoopEnabled", false, ...
             "LinkAdaptationStateUpdateCount", NaN, ...
             "ServingCell", NaN, ...
