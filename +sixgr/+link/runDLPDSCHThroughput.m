@@ -59,6 +59,8 @@ elseif isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverr
     grantSnapshotOverride.PHYGrant = phyGrantOverride;
     grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
 end
+[grantSnapshotOverride, phyGrantOverride] = localNormalizeHARQReplayGrantInputs( ...
+    cfg, grantSnapshotOverride, phyGrantOverride, transportBlockBits, harqContext, snr_dB, startFrameIndex, startSlotIndex);
 schedulerDrivenGrant = (isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))) || ...
     (isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride)));
 
@@ -4903,6 +4905,59 @@ grant.PrecodingMatrixCols = double(sixgr.util.structGet(prec, "MatrixCols", ...
     sixgr.util.structGet(grant, "PrecodingMatrixCols", NaN)));
 grant.NumTxAnt = double(sixgr.util.structGet(ant, "NumWaveformColumns", ...
     sixgr.util.structGet(grant, "NumTxAnt", NaN)));
+end
+
+function [grant, phyGrant] = localNormalizeHARQReplayGrantInputs(cfg, grant, phyGrant, tbBits, harqContext, snr_dB, frameIdx, slotIdx)
+replayBits = double(numel(tbBits));
+if ~(isfinite(replayBits) && replayBits > 0)
+    return;
+end
+isRetx = isstruct(harqContext) && logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
+if ~isstruct(grant)
+    grant = struct();
+end
+harq = sixgr.util.structGet(grant, "HARQ", struct());
+if ~isstruct(harq)
+    harq = struct();
+end
+if isRetx
+    harq.IsRetransmission = true;
+end
+copyFields = ["HARQProcess","HarqID","RV","NDI","CodewordIndex","TBIdentity"];
+for i = 1:numel(copyFields)
+    f = char(copyFields(i));
+    v = sixgr.util.structGet(harqContext, f, []);
+    if ~isempty(v)
+        harq.(f) = v;
+    end
+end
+grant.HARQ = harq;
+grant.IsRetransmission = isRetx;
+grant.TransportBlockSize = double(replayBits);
+grant.TBSBits = double(replayBits);
+grant.TBSBytes = floor(double(replayBits) / 8);
+grant.ScheduledTransportBlockSize = double(replayBits);
+phyTBS = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN));
+phyRetx = logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
+if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+        logical(sixgr.util.structGet(phyGrant, "IsFrozen", false)) && ...
+        isfinite(phyTBS) && round(phyTBS) == round(replayBits) && (~isRetx || phyRetx))
+    if isfield(grant, "PHYGrant")
+        grant = rmfield(grant, "PHYGrant");
+    end
+    phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, "DL", grant, ...
+        "SNR_dB", snr_dB, ...
+        "Frame", frameIdx, ...
+        "Slot", slotIdx, ...
+        "HARQContext", harqContext);
+end
+grant = localAlignGrantSnapshotToPHYGrant(grant, phyGrant);
+grant.TransportBlockSize = double(replayBits);
+grant.TBSBits = double(replayBits);
+grant.TBSBytes = floor(double(replayBits) / 8);
+grant.ScheduledTransportBlockSize = double(replayBits);
+grant.PHYGrant = phyGrant;
+grant.PHYGrantContextId = char(string(phyGrant.GrantContextId));
 end
 
 function txArgs = localAppendGrantReplayTxArgs(txArgs, grant)

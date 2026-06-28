@@ -581,7 +581,10 @@ if hasPHYGrant
 end
 if ~isempty(grantTBS) && all(isfinite(grantTBS(:)) & grantTBS(:) > 0)
     trBlkSize = round(double(grantTBS(:).'));
-    if numel(trBlkSize) ~= numel(scheduledTrBlkSize) || any(abs(double(scheduledTrBlkSize(:).') - double(trBlkSize)) > 0)
+    isHARQRetx = logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
+    hasExplicitTBContract = ~isempty(overrideTBS) && isequal(round(double(overrideTBS(:).')), trBlkSize);
+    if ~(isHARQRetx || hasExplicitTBContract) && ...
+            (numel(trBlkSize) ~= numel(scheduledTrBlkSize) || any(abs(double(scheduledTrBlkSize(:).') - double(trBlkSize)) > 0))
         error("sixgr:phy:dl:PDSCHGrantTBSMismatch", ...
             "Frozen PHYGrant TBS=%s but exact nrTBS from the frozen resource contract is %s.", ...
             mat2str(trBlkSize), mat2str(round(double(scheduledTrBlkSize(:).'))));
@@ -591,7 +594,13 @@ if ~isempty(grantTBS) && all(isfinite(grantTBS(:)) & grantTBS(:) > 0)
             "TransportBlockSizeOverride=%s does not match frozen PHYGrant TBS=%s.", ...
             mat2str(round(double(overrideTBS(:).'))), mat2str(trBlkSize));
     end
-    source = 'frozen_phygrant_transport_block_size';
+    if isHARQRetx
+        source = 'frozen_phygrant_harq_original_transport_block_size';
+    elseif hasExplicitTBContract
+        source = 'frozen_phygrant_external_transport_block_bits';
+    else
+        source = 'frozen_phygrant_transport_block_size';
+    end
 elseif ~isempty(overrideTBS)
     trBlkSize = round(double(overrideTBS(:).'));
     source = 'harq_replay_stored_transport_block';

@@ -160,6 +160,8 @@ methods(Static)
         state.CoverageLayerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyCoverageLayerRow(), 0, 1));
         state.HARQTimelineTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyHARQTimelineRow(), 0, 1));
         state.HARQSummaryTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyHARQSummaryRow(), 0, 1));
+        state.PacketDeliveryLedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1));
+        state.PacketSDULedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow(), 0, 1));
         state.DLHarq = harqDL;
         state.ULHarq = harqUL;
         state.PendingFeedbackTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyFeedbackRow(), 0, 1));
@@ -1218,6 +1220,10 @@ methods(Static, Access=private)
         sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv"), state.HARQTimelineTable);
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), sixgr.util.structGet(state, "DLGrantTraceTable", table()));
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), sixgr.util.structGet(state, "ULGrantTraceTable", table()));
+        sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_application_packet_delivery_ledger.csv"), ...
+            sixgr.util.structGet(state, "PacketDeliveryLedgerTable", table()));
+        sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_packet_sdu_delivery_ledger.csv"), ...
+            sixgr.util.structGet(state, "PacketSDULedgerTable", table()));
         schedulerDecisionT = sixgr.util.structGet(state, "SchedulerDecisionTable", table());
         if istable(schedulerDecisionT) && ~isempty(schedulerDecisionT)
             sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "scheduler_decision_log.csv"), schedulerDecisionT);
@@ -1273,7 +1279,7 @@ methods(Static, Access=private)
         end
         isRetx = logical(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
         if ~isRetx && tbsBits > 0
-            state = sixgr.truth.CoupledTruthRuntime.reserveGrantBits(state, ueIdx, direction, tbsBits);
+            state = sixgr.truth.CoupledTruthRuntime.reserveGrantBits(state, ueIdx, direction, tbsBits, grant);
         end
 
         if direction == "UL"
@@ -1842,6 +1848,7 @@ methods(Static, Access=private)
         t.Notes = "Canonical slot-runtime HARQ transmission attempt.";
         state.HARQTimelineTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.HARQTimelineTable, struct2table(t, "AsArray", true));
         state.HARQSummaryTable = sixgr.truth.CoupledTruthRuntime.buildHARQSummary(state.HARQTimelineTable);
+        state = sixgr.truth.CoupledTruthRuntime.updatePacketDeliveryFromHARQ(state, direction, grantSnapshot, t);
 
         harqFields = struct("HARQProcess", double(harqId0), "HARQNDI", double(ndi), "HARQRV", double(rv), ...
             "HARQIsRetransmission", logical(isRetx), "HARQFeedbackDueSlot", double(feedbackDueSlot), ...
@@ -2373,6 +2380,8 @@ methods(Static, Access=private)
         state.ULQueueBits = max(0, double(state.ULQueueBits(:)) + ulRow);
         state.DLOfferedBits = double(state.DLOfferedBits(:)) + dlRow;
         state.ULOfferedBits = double(state.ULOfferedBits(:)) + ulRow;
+        state = sixgr.truth.CoupledTruthRuntime.appendOfferedTrafficPackets(state, "DL", absoluteFrame, dlRow);
+        state = sixgr.truth.CoupledTruthRuntime.appendOfferedTrafficPackets(state, "UL", absoluteFrame, ulRow);
         state.LastTrafficFrameApplied = absoluteFrame;
     end
 
@@ -4122,8 +4131,12 @@ methods(Static, Access=private)
         end
     end
 
-    function state = reserveGrantBits(state, ueIdx, direction, tbsBits)
+    function state = reserveGrantBits(state, ueIdx, direction, tbsBits, grant)
+        if nargin < 5
+            grant = struct();
+        end
         tbsBits = max(0, round(double(tbsBits)));
+        state = sixgr.truth.CoupledTruthRuntime.allocatePacketSegmentsToGrant(state, ueIdx, direction, tbsBits, grant);
         if upper(string(direction)) == "UL"
             state.ULQueueBits(ueIdx) = max(0, double(state.ULQueueBits(ueIdx)) - tbsBits);
             state.ULTransmittedBits(ueIdx) = double(state.ULTransmittedBits(ueIdx)) + tbsBits;
@@ -4131,6 +4144,258 @@ methods(Static, Access=private)
             state.DLQueueBits(ueIdx) = max(0, double(state.DLQueueBits(ueIdx)) - tbsBits);
             state.DLTransmittedBits(ueIdx) = double(state.DLTransmittedBits(ueIdx)) + tbsBits;
         end
+    end
+
+    function state = appendOfferedTrafficPackets(state, direction, absoluteFrame, offeredBits)
+        direction = upper(string(direction));
+        offeredBits = double(offeredBits(:));
+        if isempty(offeredBits)
+            return;
+        end
+        if ~isfield(state, "PacketDeliveryLedgerTable") || ~istable(state.PacketDeliveryLedgerTable)
+            state.PacketDeliveryLedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1));
+        end
+        nUsers = min(numel(offeredBits), double(sixgr.util.structGet(state, "NumUsers", numel(offeredBits))));
+        slotsPerFrame = max(1, round(double(sixgr.util.structGet(state, "SlotsPerFrame", 10))));
+        enqueueFrame = max(1, round(double(absoluteFrame)));
+        enqueueSlot = (enqueueFrame - 1) * slotsPerFrame + 1;
+        enqueueTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec(state, enqueueSlot);
+        rows = repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1);
+        for ueIdx = 1:nUsers
+            bits = max(0, round(double(offeredBits(ueIdx))));
+            if bits <= 0
+                continue;
+            end
+            row = sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow();
+            row.Direction = direction;
+            row.UEIndex = double(ueIdx);
+            row.RNTI = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
+            row.EnqueueFrame = double(enqueueFrame);
+            row.EnqueueSlot = double(enqueueSlot);
+            row.EnqueueTime_s = double(enqueueTime);
+            row.OfferedBits = double(bits);
+            row.RemainingBits = double(bits);
+            row.PacketId = sixgr.truth.CoupledTruthRuntime.composeRuntimePacketId(state, direction, ueIdx, enqueueFrame);
+            row.ApplicationPacketId = row.PacketId;
+            row.FlowId = direction + "_ue" + string(ueIdx);
+            row.PacketizationSource = "runtime_offered_bits_frame_packet";
+            row.Status = "queued";
+            row.Notes = "Application packet created from the coupled runtime offered-bit arrival for this frame/UE/direction.";
+            rows(end+1, 1) = row; %#ok<AGROW>
+        end
+        if ~isempty(rows)
+            state.PacketDeliveryLedgerTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                state.PacketDeliveryLedgerTable, struct2table(rows, "AsArray", true));
+        end
+    end
+
+    function state = allocatePacketSegmentsToGrant(state, ueIdx, direction, tbsBits, grant)
+        direction = upper(string(direction));
+        if ~(isfinite(double(ueIdx)) && double(ueIdx) >= 1) || ~(isfinite(double(tbsBits)) && double(tbsBits) > 0)
+            return;
+        end
+        if ~isfield(state, "PacketDeliveryLedgerTable") || ~istable(state.PacketDeliveryLedgerTable) || isempty(state.PacketDeliveryLedgerTable)
+            return;
+        end
+        if ~isfield(state, "PacketSDULedgerTable") || ~istable(state.PacketSDULedgerTable)
+            state.PacketSDULedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow(), 0, 1));
+        end
+        packetT = state.PacketDeliveryLedgerTable;
+        vars = string(packetT.Properties.VariableNames);
+        if ~all(ismember(["Direction","UEIndex","RemainingBits","PacketId"], vars))
+            return;
+        end
+        remainingBudget = max(0, round(double(tbsBits)));
+        packetMask = upper(string(packetT.Direction)) == direction & ...
+            abs(double(packetT.UEIndex) - double(ueIdx)) < 1e-9 & ...
+            double(packetT.RemainingBits) > 0 & ~logical(packetT.DeliverySuccess);
+        packetIdx = find(packetMask(:).');
+        if isempty(packetIdx)
+            return;
+        end
+        tbId = sixgr.truth.CoupledTruthRuntime.transportBlockIdFromGrant(state, grant, direction, ueIdx);
+        grantContextId = char(string(sixgr.util.structGet(grant, "GrantContextId", "")));
+        harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
+        harqId = double(sixgr.util.structGet(harqStruct, "HarqID", NaN));
+        ndi = double(sixgr.util.structGet(harqStruct, "NDI", NaN));
+        rv = double(sixgr.util.structGet(harqStruct, "RV", NaN));
+        schedSlot = double(sixgr.util.structGet(grant, "Slot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
+        schedTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec(state, schedSlot);
+        rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
+        if ~isfinite(rnti)
+            rnti = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
+        end
+        segRows = repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow(), 0, 1);
+        for k = 1:numel(packetIdx)
+            if remainingBudget <= 0
+                break;
+            end
+            pi = packetIdx(k);
+            segBits = min(remainingBudget, max(0, round(double(packetT.RemainingBits(pi)))));
+            if segBits <= 0
+                continue;
+            end
+            packetId = string(packetT.PacketId(pi));
+            existingSduT = state.PacketSDULedgerTable;
+            segmentIndex = 1;
+            if istable(existingSduT) && ~isempty(existingSduT) && all(ismember(["Direction","PacketId"], string(existingSduT.Properties.VariableNames)))
+                segmentIndex = 1 + sum(upper(string(existingSduT.Direction)) == direction & string(existingSduT.PacketId) == packetId);
+            end
+            row = sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow();
+            row.Direction = direction;
+            row.UEIndex = double(ueIdx);
+            row.RNTI = double(rnti);
+            row.PacketId = packetId;
+            row.ApplicationPacketId = string(packetT.ApplicationPacketId(pi));
+            row.MACSDUId = packetId + "_macsdu" + string(segmentIndex);
+            row.TransportBlockId = string(tbId);
+            row.GrantContextId = string(grantContextId);
+            row.HARQProcessId = double(harqId);
+            row.NDI = double(ndi);
+            row.RV = double(rv);
+            row.SegmentIndex = double(segmentIndex);
+            row.PayloadBits = double(segBits);
+            row.ScheduleSlot = double(schedSlot);
+            row.ScheduleTime_s = double(schedTime);
+            row.Status = "scheduled_pending_harq";
+            row.Notes = "MAC SDU segment mapped from queued application packet bits into a finalized new-data PHY grant.";
+            segRows(end+1, 1) = row; %#ok<AGROW>
+
+            packetT.RemainingBits(pi) = max(0, double(packetT.RemainingBits(pi)) - segBits);
+            packetT.ScheduledBits(pi) = double(packetT.ScheduledBits(pi)) + segBits;
+            packetT.SegmentCount(pi) = double(packetT.SegmentCount(pi)) + 1;
+            if ~isfinite(double(packetT.FirstGrantSlot(pi)))
+                packetT.FirstGrantSlot(pi) = double(schedSlot);
+                packetT.FirstGrantTime_s(pi) = double(schedTime);
+            end
+            packetT.Status(pi) = "partially_scheduled";
+            if double(packetT.RemainingBits(pi)) <= 0
+                packetT.Status(pi) = "fully_scheduled_pending_delivery";
+            end
+            remainingBudget = remainingBudget - segBits;
+        end
+        state.PacketDeliveryLedgerTable = packetT;
+        if ~isempty(segRows)
+            state.PacketSDULedgerTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                state.PacketSDULedgerTable, struct2table(segRows, "AsArray", true));
+        end
+    end
+
+    function state = updatePacketDeliveryFromHARQ(state, direction, grant, harqRow)
+        direction = upper(string(direction));
+        if ~isfield(state, "PacketSDULedgerTable") || ~istable(state.PacketSDULedgerTable) || isempty(state.PacketSDULedgerTable)
+            return;
+        end
+        tbId = sixgr.truth.CoupledTruthRuntime.transportBlockIdFromGrant(state, grant, direction, ...
+            double(sixgr.util.structGet(grant, "UEIndex", sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "UEIndex", NaN))));
+        sduT = state.PacketSDULedgerTable;
+        mask = upper(string(sduT.Direction)) == direction & string(sduT.TransportBlockId) == string(tbId);
+        if ~any(mask)
+            return;
+        end
+        attemptSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "Slot", NaN));
+        feedbackSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "FeedbackDueSlot", attemptSlot));
+        deliveryTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec(state, feedbackSlot);
+        sduT.HARQAttemptCount(mask) = double(sduT.HARQAttemptCount(mask)) + 1;
+        sduT.LastAttemptSlot(mask) = double(attemptSlot);
+        sduT.LastRV(mask) = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "RV", NaN));
+        sduT.TBCrcPass(mask) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(harqRow, "CombinedDecodeOK", false));
+        if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(harqRow, "CombinedDecodeOK", false))
+            firstMask = mask & ~logical(sduT.DeliverySuccess);
+            sduT.DeliverySuccess(firstMask) = true;
+            sduT.FirstSuccessDelivery(firstMask) = true;
+            sduT.FirstSuccessSlot(firstMask) = double(feedbackSlot);
+            sduT.DeliveryTime_s(firstMask) = double(deliveryTime);
+            sduT.DeliveryLatency_ms(firstMask) = (double(deliveryTime) - double(sduT.ScheduleTime_s(firstMask))) * 1e3;
+            sduT.Status(firstMask) = "first_success_delivery";
+        else
+            sduT.Status(mask & ~logical(sduT.DeliverySuccess)) = "harq_pending_or_failed";
+        end
+        state.PacketSDULedgerTable = sduT;
+        state = sixgr.truth.CoupledTruthRuntime.refreshApplicationPacketDeliveries(state);
+    end
+
+    function state = refreshApplicationPacketDeliveries(state)
+        if ~isfield(state, "PacketDeliveryLedgerTable") || ~istable(state.PacketDeliveryLedgerTable) || isempty(state.PacketDeliveryLedgerTable) || ...
+                ~isfield(state, "PacketSDULedgerTable") || ~istable(state.PacketSDULedgerTable)
+            return;
+        end
+        packetT = state.PacketDeliveryLedgerTable;
+        sduT = state.PacketSDULedgerTable;
+        packetIds = unique(string(sduT.PacketId), "stable");
+        for k = 1:numel(packetIds)
+            pid = packetIds(k);
+            pidx = find(string(packetT.PacketId) == pid, 1, "first");
+            if isempty(pidx) || logical(packetT.DeliverySuccess(pidx))
+                continue;
+            end
+            smask = string(sduT.PacketId) == pid;
+            if ~any(smask)
+                continue;
+            end
+            fullyScheduled = double(packetT.RemainingBits(pidx)) <= 0;
+            allDelivered = all(logical(sduT.DeliverySuccess(smask)));
+            if ~(fullyScheduled && allDelivered)
+                continue;
+            end
+            deliveryTime = max(double(sduT.DeliveryTime_s(smask)), [], "omitnan");
+            deliverySlot = max(double(sduT.FirstSuccessSlot(smask)), [], "omitnan");
+            packetT.DeliveredBits(pidx) = double(packetT.OfferedBits(pidx));
+            packetT.DeliverySuccess(pidx) = true;
+            packetT.ReassemblyCompleteFlag(pidx) = true;
+            packetT.DeliverySlot(pidx) = double(deliverySlot);
+            packetT.DeliveryTime_s(pidx) = double(deliveryTime);
+            packetT.Latency_ms(pidx) = (double(deliveryTime) - double(packetT.EnqueueTime_s(pidx))) * 1e3;
+            packetT.HARQAttemptCount(pidx) = sum(double(sduT.HARQAttemptCount(smask)), "omitnan");
+            packetT.DeliverySource = "harq_first_success_reassembly";
+            packetT.Status(pidx) = "delivered";
+            sduT.ReassemblyCompleteFlag(smask) = true;
+            sduT.ApplicationDeliveryFlag(smask) = true;
+        end
+        state.PacketDeliveryLedgerTable = packetT;
+        state.PacketSDULedgerTable = sduT;
+    end
+
+    function packetId = composeRuntimePacketId(state, direction, ueIdx, frameIdx)
+        existing = sixgr.util.structGet(state, "PacketDeliveryLedgerTable", table());
+        serial = 1;
+        if istable(existing) && ~isempty(existing)
+            serial = height(existing) + 1;
+        end
+        packetId = upper(string(direction)) + "_ue" + string(double(ueIdx)) + "_frame" + string(double(frameIdx)) + "_pkt" + string(serial);
+    end
+
+    function tbId = transportBlockIdFromGrant(state, grant, direction, ueIdx)
+        for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
+            raw = string(sixgr.util.structGet(grant, char(name), ""));
+            if strlength(strtrim(raw)) > 0 && lower(strtrim(raw)) ~= "nan"
+                tbId = raw;
+                return;
+            end
+        end
+        harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
+        rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
+        if ~isfinite(rnti) && isstruct(state) && isfield(state, "MultiUser") && isfinite(double(ueIdx))
+            rnti = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
+        end
+        harqId = double(sixgr.util.structGet(harqStruct, "HarqID", NaN));
+        ndi = double(sixgr.util.structGet(harqStruct, "NDI", NaN));
+        cw = double(sixgr.util.structGet(grant, "Codeword", sixgr.util.structGet(grant, "CodewordIndex", 0)));
+        slot = double(sixgr.util.structGet(grant, "Slot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
+        tbId = upper(string(direction)) + "_rnti" + string(rnti) + "_harq" + string(harqId) + ...
+            "_ndi" + string(ndi) + "_cw" + string(cw) + "_firstSlot" + string(slot);
+    end
+
+    function t = slotStartTimeSec(state, slotIdx)
+        slotDur = double(sixgr.util.structGet(state, "SlotDuration_s", 0.5e-3));
+        if ~(isfinite(slotDur) && slotDur > 0)
+            slotDur = 0.5e-3;
+        end
+        slotIdx = double(slotIdx);
+        if ~(isfinite(slotIdx) && slotIdx >= 1)
+            slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", 1));
+        end
+        t = max(0, slotIdx - 1) * slotDur;
     end
 
     function idx = resolveUEIndexFromRNTI(state, rnti)
@@ -7848,6 +8113,35 @@ methods(Static, Access=private)
             "Direction", "", "DueSlot", NaN, "UEIndex", NaN, "RNTI", NaN, ...
             "PUSCHGrantSlot", NaN, "PUCCHSourceSlot", NaN, "PUCCHGrantId", "", ...
             "CollisionEvidenceSource", "", "Reason", "", "Policy", "");
+    end
+
+    function row = emptyPacketDeliveryLedgerRow()
+        row = struct( ...
+            "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
+            "PacketId", "", "ApplicationPacketId", "", "FlowId", "", "QFI", NaN, ...
+            "EnqueueFrame", NaN, "EnqueueSlot", NaN, "EnqueueTime_s", NaN, ...
+            "OfferedBits", NaN, "ScheduledBits", 0, "DeliveredBits", 0, "RemainingBits", 0, ...
+            "SegmentCount", 0, "HARQAttemptCount", 0, ...
+            "FirstGrantSlot", NaN, "FirstGrantTime_s", NaN, ...
+            "ReassemblyCompleteFlag", false, "DeliverySuccess", false, ...
+            "DeliverySlot", NaN, "DeliveryTime_s", NaN, "Latency_ms", NaN, ...
+            "PacketizationSource", "", "DeliverySource", "", ...
+            "Status", "", "Notes", "");
+    end
+
+    function row = emptyPacketSDULedgerRow()
+        row = struct( ...
+            "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
+            "PacketId", "", "ApplicationPacketId", "", "MACSDUId", "", ...
+            "TransportBlockId", "", "GrantContextId", "", ...
+            "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, ...
+            "SegmentIndex", NaN, "PayloadBits", NaN, ...
+            "ScheduleSlot", NaN, "ScheduleTime_s", NaN, ...
+            "FirstSuccessSlot", NaN, "DeliveryTime_s", NaN, "DeliveryLatency_ms", NaN, ...
+            "HARQAttemptCount", 0, "LastAttemptSlot", NaN, "LastRV", NaN, ...
+            "TBCrcPass", false, "DeliverySuccess", false, "FirstSuccessDelivery", false, ...
+            "ReassemblyCompleteFlag", false, "ApplicationDeliveryFlag", false, ...
+            "Status", "", "Notes", "");
     end
 
     function row = emptyHARQTimelineRow()

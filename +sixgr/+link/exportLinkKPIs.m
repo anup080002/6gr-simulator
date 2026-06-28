@@ -69,6 +69,10 @@ if opt.SaveCSV
         "kpi_harq_delivery_trace_dl.csv", kpiRecon.HARQDeliveryTraceDL;
         "kpi_tb_delivery_ledger_ul.csv", kpiRecon.TBDeliveryLedgerUL;
         "kpi_tb_delivery_ledger_dl.csv", kpiRecon.TBDeliveryLedgerDL;
+        "kpi_packet_sdu_delivery_ledger_ul.csv", kpiRecon.PacketSDUDeliveryLedgerUL;
+        "kpi_packet_sdu_delivery_ledger_dl.csv", kpiRecon.PacketSDUDeliveryLedgerDL;
+        "kpi_application_packet_delivery_ledger_ul.csv", kpiRecon.ApplicationPacketDeliveryLedgerUL;
+        "kpi_application_packet_delivery_ledger_dl.csv", kpiRecon.ApplicationPacketDeliveryLedgerDL;
         "kpi_direction_isolation_audit.csv", kpiRecon.DirectionIsolationAudit;
         "kpi_legacy_alias_map.csv", kpiRecon.LegacyAliasMap;
         "kpi_known_bug_regression.csv", kpiRecon.KnownBugRegression;

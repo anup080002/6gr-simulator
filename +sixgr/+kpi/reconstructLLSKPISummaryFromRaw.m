@@ -28,6 +28,8 @@ schemaAudit = sixgr.kpi.validateRawKPITables(raw);
     measurementWindowSec, warmupDurationSec, effectiveBandwidthHz);
 [dlMetrics, dlContrib, dlTrace] = localComputeDirection(raw, sourcePaths, "DL", runId, scenarioName, ...
     measurementWindowSec, warmupDurationSec, effectiveBandwidthHz);
+[ulMetrics, ulPacketSDU, ulAppPackets] = localAttachPacketMetrics(raw, sourcePaths, "UL", ulMetrics, measurementWindowSec, warmupDurationSec);
+[dlMetrics, dlPacketSDU, dlAppPackets] = localAttachPacketMetrics(raw, sourcePaths, "DL", dlMetrics, measurementWindowSec, warmupDurationSec);
 
 summary = localBuildLegacySummary(runId, scenarioName, ulMetrics, dlMetrics, strictMode);
 recon = localBuildReconstructionSummary(runId, scenarioName, registry, ulMetrics, dlMetrics, exportedSummary);
@@ -56,6 +58,10 @@ out.HARQDeliveryTraceUL = ulTrace;
 out.HARQDeliveryTraceDL = dlTrace;
 out.TBDeliveryLedgerUL = ulTrace;
 out.TBDeliveryLedgerDL = dlTrace;
+out.PacketSDUDeliveryLedgerUL = ulPacketSDU;
+out.PacketSDUDeliveryLedgerDL = dlPacketSDU;
+out.ApplicationPacketDeliveryLedgerUL = ulAppPackets;
+out.ApplicationPacketDeliveryLedgerDL = dlAppPackets;
 out.StrictOk = all(localColumnBool(recon, "StrictOk", false)) && ...
     all(localColumnBool(dirAudit, "Status", "pass")) && ...
     all(localColumnBool(knownBug, "BugPrevented", false)) && ...
@@ -217,6 +223,195 @@ end
 metrics.Status = "pass";
 metrics.FailureReason = "";
 contribT = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, traceT, resourceExposureSec, durationSec);
+end
+
+function [metrics, macLedger, appLedger] = localAttachPacketMetrics(raw, sourcePaths, direction, metrics, measurementWindowSec, warmupDurationSec)
+direction = upper(string(direction));
+macSourcePath = localSourcePath(sourcePaths, "PacketSDU");
+appSourcePath = localSourcePath(sourcePaths, "ApplicationPackets");
+macLedger = localFilterRawDirectionTable(localRawTable(raw, "PacketSDU"), direction);
+appLedger = localFilterRawDirectionTable(localRawTable(raw, "ApplicationPackets"), direction);
+
+metrics.MAC = localEmptyLayerMetrics(metrics, "MAC", macSourcePath);
+metrics.Application = localEmptyLayerMetrics(metrics, "application", appSourcePath);
+
+if istable(macLedger) && ~isempty(macLedger)
+    metrics.MAC.SourceRowCount = height(macLedger);
+    metrics.MAC.RowsWithExpectedDirection = height(macLedger);
+    metrics.MAC.MissingRawData = false;
+    missing = localMissingPacketColumns(macLedger, ["MACSDUId","PayloadBits","DeliverySuccess"]);
+    if strlength(missing) > 0
+        metrics.MAC.Status = "schema_invalid";
+        metrics.MAC.FailureReason = "missing_required_columns:" + missing;
+    else
+        success = localOptionalLogical(macLedger, "DeliverySuccess", false(height(macLedger), 1));
+        bits = localFirstNumeric(macLedger, ["PayloadBits","DeliveredBits","ApplicationPayloadBits"], NaN(height(macLedger), 1));
+        ids = string(macLedger.MACSDUId);
+        [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
+        durationSec = localPacketMeasurementWindowSec(macLedger, metrics, measurementWindowSec, warmupDurationSec);
+        metrics.MAC = localFinalizeLayerMetrics(metrics.MAC, macLedger, deliveredBits, duplicateCount, firstCount, durationSec);
+    end
+end
+
+if istable(appLedger) && ~isempty(appLedger)
+    metrics.Application.SourceRowCount = height(appLedger);
+    metrics.Application.RowsWithExpectedDirection = height(appLedger);
+    metrics.Application.MissingRawData = false;
+    missing = localMissingPacketColumns(appLedger, ["PacketId","DeliverySuccess"]);
+    if strlength(missing) > 0
+        metrics.Application.Status = "schema_invalid";
+        metrics.Application.FailureReason = "missing_required_columns:" + missing;
+    else
+        success = localOptionalLogical(appLedger, "DeliverySuccess", false(height(appLedger), 1));
+        bits = localFirstNumeric(appLedger, ["DeliveredBits","ApplicationPayloadBits","OfferedBits","PayloadBits"], NaN(height(appLedger), 1));
+        ids = string(appLedger.PacketId);
+        if ismember("ApplicationPacketId", string(appLedger.Properties.VariableNames))
+            appIds = string(appLedger.ApplicationPacketId);
+            ids(strlength(strtrim(appIds)) > 0) = appIds(strlength(strtrim(appIds)) > 0);
+        end
+        [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
+        durationSec = localPacketMeasurementWindowSec(appLedger, metrics, measurementWindowSec, warmupDurationSec);
+        metrics.Application = localFinalizeLayerMetrics(metrics.Application, appLedger, deliveredBits, duplicateCount, firstCount, durationSec);
+        lat = localPacketLatencyMs(appLedger, success);
+        if ~isempty(lat)
+            metrics.Application.MeanDeliveryLatency_ms = mean(lat, "omitnan");
+            metrics.Application.P95DeliveryLatency_ms = localPercentile(lat, 95);
+            metrics.MeanDeliveryLatency_ms = metrics.Application.MeanDeliveryLatency_ms;
+            metrics.P95DeliveryLatency_ms = metrics.Application.P95DeliveryLatency_ms;
+        end
+    end
+end
+end
+
+function layer = localEmptyLayerMetrics(parent, layerName, sourcePath)
+layer = parent;
+layer.Layer = string(layerName);
+layer.SourceTablePath = string(sourcePath);
+layer.SourceRowCount = 0;
+layer.EligibleRowCount = 0;
+layer.ExcludedRowCount = 0;
+layer.RowsWithExpectedDirection = 0;
+layer.RowsWithWrongDirection = 0;
+layer.SourceRowsHash = "empty";
+layer.MissingRawData = true;
+layer.SchemaValid = false;
+layer.ProxyRowsExcluded = 0;
+layer.SkippedRowsExcluded = 0;
+layer.DeliveredBits = NaN;
+layer.ComputedGoodput_Mbps = NaN;
+layer.FirstSuccessDeliveryCount = 0;
+layer.DuplicateDeliveryCount = 0;
+layer.MeanDeliveryLatency_ms = NaN;
+layer.P95DeliveryLatency_ms = NaN;
+layer.Status = "missing_raw_data";
+layer.FailureReason = "packet_delivery_ledger_missing_or_empty";
+end
+
+function layer = localFinalizeLayerMetrics(layer, T, deliveredBits, duplicateCount, firstCount, durationSec)
+layer.EligibleRowCount = height(T);
+layer.ExcludedRowCount = 0;
+layer.SourceRowsHash = sixgr.kpi.hashKPISourceRows(T);
+layer.SchemaValid = true;
+layer.DeliveredBits = double(deliveredBits);
+layer.DuplicateDeliveryCount = double(duplicateCount);
+layer.FirstSuccessDeliveryCount = double(firstCount);
+layer.MeasurementWindowSec = double(durationSec);
+layer.AggregationDurationSec = double(durationSec);
+layer.DurationSource = "packet_delivery_measurement_window";
+if isfinite(durationSec) && durationSec > 0
+    layer.ComputedGoodput_Mbps = double(deliveredBits) / double(durationSec) / 1e6;
+    layer.Status = "pass";
+    layer.FailureReason = "";
+else
+    layer.Status = "invalid_duration";
+    layer.FailureReason = "packet_delivery_duration_unavailable";
+end
+end
+
+function T = localRawTable(raw, fieldName)
+T = table();
+if isstruct(raw) && isfield(raw, char(fieldName)) && istable(raw.(char(fieldName)))
+    T = raw.(char(fieldName));
+end
+end
+
+function T = localFilterRawDirectionTable(Tin, direction)
+direction = upper(string(direction));
+T = table();
+if ~(istable(Tin) && ~isempty(Tin))
+    return;
+end
+if ~ismember("Direction", string(Tin.Properties.VariableNames))
+    T = Tin;
+    return;
+end
+mask = upper(strtrim(string(Tin.Direction))) == direction;
+T = Tin(mask, :);
+end
+
+function missing = localMissingPacketColumns(T, names)
+vars = string(T.Properties.VariableNames);
+missingNames = strings(0, 1);
+for name = string(names)
+    if ~ismember(name, vars)
+        missingNames(end+1, 1) = name; %#ok<AGROW>
+    end
+end
+missing = strjoin(missingNames, ",");
+end
+
+function [bits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, payloadBits, success)
+ids = string(ids(:));
+payloadBits = double(payloadBits(:));
+success = logical(success(:));
+n = min([numel(ids), numel(payloadBits), numel(success)]);
+ids = ids(1:n);
+payloadBits = payloadBits(1:n);
+success = success(1:n);
+seen = strings(0, 1);
+bits = 0;
+duplicateCount = 0;
+firstCount = 0;
+for i = 1:n
+    if ~success(i) || ~(isfinite(payloadBits(i)) && payloadBits(i) > 0)
+        continue;
+    end
+    id = strtrim(ids(i));
+    if strlength(id) == 0 || lower(id) == "nan"
+        id = "row_" + string(i);
+    end
+    if any(seen == id)
+        duplicateCount = duplicateCount + 1;
+        continue;
+    end
+    seen(end+1, 1) = id; %#ok<AGROW>
+    bits = bits + payloadBits(i);
+    firstCount = firstCount + 1;
+end
+end
+
+function durationSec = localPacketMeasurementWindowSec(T, parentMetrics, requestedWindowSec, warmupDurationSec)
+durationSec = double(sixgr.util.structGet(parentMetrics, "MeasurementWindowSec", NaN));
+if isfinite(durationSec) && durationSec > 0
+    return;
+end
+[durationSec, ~] = localMeasurementWindowSec(T, NaN, "packet_delivery_ledger", requestedWindowSec, warmupDurationSec);
+end
+
+function lat = localPacketLatencyMs(T, success)
+lat = [];
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+if ismember("Latency_ms", string(T.Properties.VariableNames))
+    vals = localOptionalNumeric(T, "Latency_ms", NaN(height(T), 1));
+elseif all(ismember(["EnqueueTime_s","DeliveryTime_s"], string(T.Properties.VariableNames)))
+    vals = (localOptionalNumeric(T, "DeliveryTime_s", NaN(height(T), 1)) - ...
+        localOptionalNumeric(T, "EnqueueTime_s", NaN(height(T), 1))) * 1e3;
+else
+    vals = NaN(height(T), 1);
+end
+lat = vals(logical(success(:)) & isfinite(vals(:)));
 end
 
 function [bits, duplicateCount, traceT] = localDeduplicateDeliveries(T, direction, runId, scheduledBits, goodBits, crcPass, resourceExposureSec, measurementWindowSec)
@@ -421,6 +616,18 @@ defs = [
     localRecon("UL_BER", ul, "BER", "");
     localRecon("DL_BER", dl, "BER", "")
     ];
+if localLayerEvidencePresent(ul, "MAC")
+    defs = [defs; localRecon("UL_MAC_Goodput_Mbps", ul.MAC, "ComputedGoodput_Mbps", "")]; %#ok<AGROW>
+end
+if localLayerEvidencePresent(dl, "MAC")
+    defs = [defs; localRecon("DL_MAC_Goodput_Mbps", dl.MAC, "ComputedGoodput_Mbps", "")]; %#ok<AGROW>
+end
+if localLayerEvidencePresent(ul, "Application")
+    defs = [defs; localRecon("UL_Application_Goodput_Mbps", ul.Application, "ComputedGoodput_Mbps", "")]; %#ok<AGROW>
+end
+if localLayerEvidencePresent(dl, "Application")
+    defs = [defs; localRecon("DL_Application_Goodput_Mbps", dl.Application, "ComputedGoodput_Mbps", "")]; %#ok<AGROW>
+end
 rows = repmat(localReconRow(), numel(defs), 1);
 for i = 1:numel(defs)
     d = defs(i);
@@ -489,6 +696,16 @@ for i = 1:numel(defs)
     rows(i).FailureReason = string(localTernary(rows(i).StrictOk, "", d.Metrics.FailureReason));
 end
 T = struct2table(rows);
+end
+
+function tf = localLayerEvidencePresent(metrics, layerName)
+tf = false;
+if ~(isstruct(metrics) && isfield(metrics, char(layerName)))
+    return;
+end
+layer = metrics.(char(layerName));
+tf = isstruct(layer) && (~logical(sixgr.util.structGet(layer, "MissingRawData", true)) || ...
+    double(sixgr.util.structGet(layer, "SourceRowCount", 0)) > 0);
 end
 
 function def = localRecon(name, metrics, field, alias)
@@ -565,7 +782,9 @@ function T = localBuildUnitAudit(runId, recon)
 rows = repmat(struct("RunId","", "KPIName","", "Direction","", "Bits",NaN, "DurationSec",NaN, ...
     "ExpectedMbps",NaN, "ComputedMbps",NaN, "Delta",NaN, "Tolerance",1e-9, "Pass",false, "Status","", "FailureReason",""), 0, 1);
 mask = contains(string(recon.KPIName), "ScheduledThroughput_Mbps") | ...
-    contains(string(recon.KPIName), "TB_Delivery_Goodput_Mbps");
+    contains(string(recon.KPIName), "TB_Delivery_Goodput_Mbps") | ...
+    contains(string(recon.KPIName), "MAC_Goodput_Mbps") | ...
+    contains(string(recon.KPIName), "Application_Goodput_Mbps");
 idxs = find(mask(:).');
 for j = 1:numel(idxs)
     i = idxs(j);
@@ -637,7 +856,10 @@ row.FailureReason = string(localTernary(row.Pass, "", "invalid_radio_duration"))
 end
 
 function T = localBuildSourceManifest(runId, scenarioName, raw, sourcePaths)
-rows = [localManifestRow(runId, scenarioName, raw, sourcePaths, "UL"); localManifestRow(runId, scenarioName, raw, sourcePaths, "DL")];
+rows = [localManifestRow(runId, scenarioName, raw, sourcePaths, "UL"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "DL"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "PacketSDU"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "ApplicationPackets")];
 T = struct2table(rows);
 end
 
@@ -647,9 +869,18 @@ if isstruct(raw) && isfield(raw, char(direction)) && istable(raw.(char(direction
     T = raw.(char(direction));
 end
 path = localSourcePath(paths, direction);
+layer = "PHY";
+required = true;
+if string(direction) == "PacketSDU"
+    layer = "MAC";
+    required = false;
+elseif string(direction) == "ApplicationPackets"
+    layer = "application";
+    required = false;
+end
 row = struct("RunId",string(runId), "ScenarioName",string(scenarioName), ...
     "SourceTablePath",string(path), "SourceTableName",string(localSourceName(direction)), ...
-    "Direction",string(direction), "Layer","PHY", "RequiredForObjective",true, ...
+    "Direction",string(direction), "Layer",string(layer), "RequiredForObjective",logical(required), ...
     "Exists",istable(T) && ~isempty(T), "RowCount",height(T), "ColumnCount",width(T), ...
     "FileHash",sixgr.kpi.hashKPISourceRows(T), "SchemaHash","kpi_schema_v1", ...
     "ProducerModule","sixgr.kpi.reconstructLLSKPISummaryFromRaw", ...
@@ -664,10 +895,17 @@ if isstruct(paths) && isfield(paths, char(direction))
     path = string(paths.(char(direction)));
 end
 if strlength(path) == 0
+    direction = string(direction);
     if direction == "UL"
         path = "air_interface/csv/ul_pusch_trials.csv";
-    else
+    elseif direction == "DL"
         path = "air_interface/csv/dl_pdsch_trials.csv";
+    elseif direction == "PacketSDU"
+        path = "packet_flow/csv/live_packet_sdu_delivery_ledger.csv";
+    elseif direction == "ApplicationPackets"
+        path = "packet_flow/csv/live_application_packet_delivery_ledger.csv";
+    else
+        path = "";
     end
 end
 end
@@ -1133,10 +1371,17 @@ end
 end
 
 function name = localSourceName(direction)
+direction = string(direction);
 if direction == "UL"
     name = "ul_pusch_trials";
-else
+elseif direction == "DL"
     name = "dl_pdsch_trials";
+elseif direction == "PacketSDU"
+    name = "packet_sdu_delivery_ledger";
+elseif direction == "ApplicationPackets"
+    name = "application_packet_delivery_ledger";
+else
+    name = "unknown";
 end
 end
 

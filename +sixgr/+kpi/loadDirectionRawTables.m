@@ -9,13 +9,17 @@ runFolder = string(ip.Results.RunFolder);
 raw = struct();
 raw.DL = table();
 raw.UL = table();
-raw.Paths = struct("DL", "", "UL", "");
+raw.PacketSDU = table();
+raw.ApplicationPackets = table();
+raw.Paths = struct("DL", "", "UL", "", "PacketSDU", "", "ApplicationPackets", "");
 
 if isstruct(details)
     rt = sixgr.util.structGet(details, "RawTrials", struct());
     if isstruct(rt)
         [raw.DL, raw.Paths.DL] = localResolveTable(sixgr.util.structGet(rt, "DL", table()), "air_interface/csv/dl_pdsch_trials.csv");
         [raw.UL, raw.Paths.UL] = localResolveTable(sixgr.util.structGet(rt, "UL", table()), "air_interface/csv/ul_pusch_trials.csv");
+        [raw.PacketSDU, raw.Paths.PacketSDU] = localResolveTable(sixgr.util.structGet(rt, "PacketSDU", table()), "packet_flow/csv/live_packet_sdu_delivery_ledger.csv");
+        [raw.ApplicationPackets, raw.Paths.ApplicationPackets] = localResolveTable(sixgr.util.structGet(rt, "ApplicationPackets", table()), "packet_flow/csv/live_application_packet_delivery_ledger.csv");
     end
 
     if isempty(raw.DL)
@@ -42,6 +46,14 @@ if strlength(runFolder) > 0
     if isempty(raw.UL)
         p = localCandidatePath(runFolder, "air_interface/csv/ul_pusch_trials.csv", "csv/ul_pusch_trials.csv");
         [raw.UL, raw.Paths.UL] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.PacketSDU)
+        p = localCandidatePath(runFolder, "packet_flow/csv/live_packet_sdu_delivery_ledger.csv", "reports/csv/kpi_packet_sdu_delivery_ledger.csv");
+        [raw.PacketSDU, raw.Paths.PacketSDU] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.ApplicationPackets)
+        p = localCandidatePath(runFolder, "packet_flow/csv/live_application_packet_delivery_ledger.csv", "reports/csv/kpi_application_packet_delivery_ledger.csv");
+        [raw.ApplicationPackets, raw.Paths.ApplicationPackets] = localResolveTable(p, string(p));
     end
 end
 end

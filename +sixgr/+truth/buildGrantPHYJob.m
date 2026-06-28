@@ -8,24 +8,32 @@ end
 
 grant = sixgr.util.structGet(trialContext, "GrantSnapshot", struct());
 grant = localNormalizeGrantPrecodingForFreeze(grant, direction);
+grant = localApplyHARQReplayContract(grant, trialContext);
 grantSlotIdx = double(sixgr.util.structGet(grant, "Slot", frameIdx));
 if isstruct(grant) && ~isempty(fieldnames(grant))
     scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", char(upper(string(direction))));
     grant = scheduler.freezePHYGrantForGrant(grant);
+    grant = localApplyHARQReplayContract(grant, trialContext);
     if ~isfield(grant, "DCI") || ~isstruct(grant.DCI) || isempty(fieldnames(grant.DCI))
         grant.DCI = scheduler.buildDCIBitfield(grant);
     end
 end
-phyGrant = sixgr.util.structGet(trialContext, "PHYGrant", ...
-    sixgr.util.structGet(grant, "PHYGrant", struct()));
+if localIsHARQReplay(trialContext)
+    phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+else
+    phyGrant = sixgr.util.structGet(trialContext, "PHYGrant", ...
+        sixgr.util.structGet(grant, "PHYGrant", struct()));
+end
 if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
         logical(sixgr.util.structGet(phyGrant, "IsFrozen", false)))
+    grant = localApplyHARQReplayContract(grant, trialContext);
     phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, direction, grant, ...
         "SNR_dB", snr_dB, ...
         "Frame", frameIdx, ...
         "Slot", grantSlotIdx, ...
         "HARQContext", sixgr.util.structGet(trialContext, "HARQContext", struct()));
 end
+localAssertHARQReplayPHYGrant(phyGrant, trialContext);
 grant.PHYGrant = phyGrant;
 grant.PHYGrantContextId = char(string(phyGrant.GrantContextId));
 
@@ -98,4 +106,70 @@ grant.PrecodingNumLayers = double(size(Wports, 2));
 grant.PrecodingMatrixRows = double(size(Wports, 1));
 grant.PrecodingMatrixCols = double(size(Wports, 2));
 grant.NumTxAnt = max(double(sixgr.util.structGet(grant, "NumTxAnt", size(Wports, 1))), double(size(Wports, 1)));
+end
+
+function grant = localApplyHARQReplayContract(grant, trialContext)
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)) && localIsHARQReplay(trialContext))
+    return;
+end
+replayBits = localReplayTransportBlockBits(trialContext);
+if ~(isfinite(replayBits) && replayBits > 0)
+    return;
+end
+harq = sixgr.util.structGet(grant, "HARQ", struct());
+harqContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
+if ~isstruct(harq)
+    harq = struct();
+end
+harq.IsRetransmission = true;
+copyFields = ["HARQProcess","HarqID","RV","NDI","CodewordIndex","TBIdentity"];
+for i = 1:numel(copyFields)
+    f = char(copyFields(i));
+    v = sixgr.util.structGet(harqContext, f, []);
+    if ~isempty(v)
+        harq.(f) = v;
+    end
+end
+grant.IsRetransmission = true;
+grant.HARQ = harq;
+grant.TransportBlockSize = double(replayBits);
+grant.TBSBits = double(replayBits);
+grant.TBSBytes = floor(double(replayBits) / 8);
+grant.ScheduledTransportBlockSize = double(replayBits);
+if isfield(grant, "PHYGrant")
+    grant = rmfield(grant, "PHYGrant");
+end
+if isfield(grant, "PHYGrantContextId")
+    grant.PHYGrantContextId = "";
+end
+end
+
+function tf = localIsHARQReplay(trialContext)
+harqContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
+tf = isstruct(harqContext) && logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)) && ...
+    localReplayTransportBlockBits(trialContext) > 0;
+end
+
+function replayBits = localReplayTransportBlockBits(trialContext)
+tbBits = sixgr.util.structGet(trialContext, "TransportBlockBits", []);
+replayBits = double(numel(tbBits));
+if replayBits > 0
+    return;
+end
+harqContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
+tbBits = sixgr.util.structGet(harqContext, "TransportBlockBits", []);
+replayBits = double(numel(tbBits));
+end
+
+function localAssertHARQReplayPHYGrant(phyGrant, trialContext)
+if ~localIsHARQReplay(trialContext)
+    return;
+end
+replayBits = localReplayTransportBlockBits(trialContext);
+grantBits = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN));
+if ~(isfinite(grantBits) && grantBits == replayBits)
+    error("sixgr:truth:HARQReplayPHYGrantTBSMismatch", ...
+        "HARQ replay PHYGrant TBS %s does not match stored transport block size %d.", ...
+        mat2str(grantBits), round(replayBits));
+end
 end

@@ -4308,10 +4308,18 @@ if ~(hasCarrier && hasDirectionConfig)
     grant = localHydrateGrantSnapshot(cfgIn, direction, grant);
 end
 if isfinite(replayBits) && replayBits > 0
+    harq = sixgr.util.structGet(grant, "HARQ", struct());
+    if ~isstruct(harq)
+        harq = struct();
+    end
+    harq.IsRetransmission = true;
+    grant.HARQ = harq;
+    grant.IsRetransmission = true;
     grant.TransportBlockSize = double(replayBits);
     grant.TBSBits = double(replayBits);
     grant.TBSBytes = floor(double(replayBits) / 8);
     grant.ScheduledTransportBlockSize = double(replayBits);
+    grant = localClearFrozenPHYGrantSnapshot(grant);
 end
 end
 

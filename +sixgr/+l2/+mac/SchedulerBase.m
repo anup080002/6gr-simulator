@@ -1099,13 +1099,6 @@ classdef (Abstract) SchedulerBase < handle
             existingTBSBits = double(sixgr.util.structGet(grantOut, "TBSBits", ...
                 sixgr.util.structGet(grantOut, "TransportBlockSize", NaN)));
             if isRetx && isfinite(existingTBSBits) && existingTBSBits > 0
-                if existingTBSBits > double(exactBits)
-                    grantOut.Valid = false;
-                    grantOut.ExactPHYFeasible = false;
-                    grantOut.ExactPHYInfeasibilityReason = "retx_tbs_exceeds_exact_allocation_capacity";
-                    grantOut.GrantBlocker = "retx_tbs_exceeds_exact_allocation_capacity";
-                    return;
-                end
                 scheduledBits = double(existingTBSBits);
                 scheduledBytes = floor(scheduledBits / 8);
             end
@@ -1130,6 +1123,14 @@ classdef (Abstract) SchedulerBase < handle
             grantOut.XOverhead = double(grantOut.TBSInputXOverhead);
             grantOut.ExactAllocationCapacityBits = double(exactBits);
             grantOut.ExactAllocationCapacityBytes = double(exactBytes);
+            grantOut.RetxOriginalTBSBits = NaN;
+            grantOut.RetxCurrentGrantNewDataTBSBits = NaN;
+            grantOut.RetxTBSPreservationMode = "";
+            if isRetx
+                grantOut.RetxOriginalTBSBits = double(scheduledBits);
+                grantOut.RetxCurrentGrantNewDataTBSBits = double(exactBits);
+                grantOut.RetxTBSPreservationMode = "harq_original_tb_size_preserved";
+            end
             grantOut.ExactTBSBits = double(scheduledBits);
             grantOut.ExactTBSBytes = double(scheduledBytes);
             grantOut.ExactNREPerPRB = double(exactNRE);
