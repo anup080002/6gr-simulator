@@ -1,6 +1,7 @@
 .vscode/
 codegen/
 results/
+outputs/
 
 # Python caches
 __pycache__/
