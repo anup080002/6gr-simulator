@@ -29,6 +29,8 @@ opt.LinkSNR_dB = double(cfg.channel.snr_dB);
 opt.LinkSNRGrid_dB = snrGrid;
 opt.LinkSweepFrames = max(1, round(double(scfg.get("simulation.monte_carlo_iterations"))));
 opt.LinkSweepMaxPoints = numel(snrGrid);
+opt.HARQProbeDirections = ["DL"; "UL"];
+opt.HARQProbePackets = 2;
 
 artifacts = sixgr.truth.exportLLSHARQDiagnostics(cfg, fullfile(tmp, "run", "air_interface"), opt);
 packetPath = fullfile(tmp, "run", "harq", "csv", "probe_harq_packets.csv");

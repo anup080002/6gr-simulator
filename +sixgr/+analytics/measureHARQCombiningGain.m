@@ -61,22 +61,55 @@ end
 
 function [T, sourceArtifact] = localSelectHARQSource(dlTrials, layout)
 candidates = {
+    fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"), "harq/csv/probe_harq_packets.csv";
+    fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"), "harq/csv/harq_process_timeline.csv";
     fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv"), "harq/csv/live_harq_observation_timeline.csv";
     fullfile(layout.ReportCSVDir, "live_harq_timeline.csv"), "reports/csv/live_harq_timeline.csv";
-    fullfile(layout.SystemCSVDir, "system_harq_processes.csv"), "system/csv/system_harq_processes.csv";
-    fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"), "harq/csv/harq_process_timeline.csv"};
+    fullfile(layout.SystemCSVDir, "system_harq_processes.csv"), "system/csv/system_harq_processes.csv"};
+bestT = table();
+bestArtifact = "";
+bestScore = -Inf;
 for i = 1:size(candidates, 1)
     T = localReadOptionalTable(candidates{i, 1});
     if height(T) > 0
-        sourceArtifact = string(candidates{i, 2});
-        return;
+        score = localHARQEvidenceScore(T);
+        if score > bestScore
+            bestT = T;
+            bestArtifact = string(candidates{i, 2});
+            bestScore = score;
+        end
     end
+end
+if height(bestT) > 0
+    T = bestT;
+    sourceArtifact = bestArtifact;
+    return;
 end
 T = dlTrials;
 if isempty(T)
     T = table();
 end
 sourceArtifact = "air_interface/csv/dl_pdsch_trials.csv";
+end
+
+function score = localHARQEvidenceScore(T)
+if ~(istable(T) && height(T) > 0)
+    score = -Inf;
+    return;
+end
+retxMask = localRetransmissionMask(T);
+combiningMask = localCombiningMask(T);
+currentOk = localBoolColumnFirstAvailable(T, ["CurrentDecodeOK","HARQCurrentDecodeOK","CurrentCRCPass"]);
+combinedOk = localBoolColumnFirstAvailable(T, ["CombinedDecodeOK","HARQCombinedDecodeOK","CRCPass"]);
+recoveryMask = ~currentOk & combinedOk & combiningMask;
+gainVals = localColumnFirstAvailable(T, ["LLRCombiningGain_dB","HARQLLRCombiningGain_dB","CombiningGain_dB"]);
+finiteGain = isfinite(gainVals);
+score = double(height(T)) * 1e-6 + ...
+    100 * double(any(recoveryMask)) + ...
+    40 * double(any(combiningMask)) + ...
+    20 * double(any(retxMask)) + ...
+    10 * double(any(finiteGain)) + ...
+    2 * double(any(combinedOk));
 end
 
 function mask = localRetransmissionMask(T)

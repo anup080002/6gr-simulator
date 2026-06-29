@@ -79,6 +79,8 @@ opt.LinkSNRGrid_dB = double(cfg.channel.snr_dB);
 opt.LinkSweepFrames = 1;
 opt.LinkSweepMaxPoints = 1;
 opt.HARQLivePreview = true;
+opt.HARQProbeDirections = "DL";
+opt.HARQProbePackets = 2;
 artifacts = sixgr.truth.exportLLSHARQDiagnostics(cfg, fullfile(tmp, "closed_loop", "air_interface"), opt);
 packetT = artifacts.PacketTable;
 summaryT = artifacts.SummaryTable;
@@ -95,6 +97,8 @@ terminalStops = string(packetT.StopCondition);
 terminalStops = terminalStops(terminalStops ~= "pending" & terminalStops ~= "");
 assert(~isempty(terminalStops) && all(ismember(terminalStops, ["crc_pass","max_retx_drop"])), ...
     "Closed-loop HARQ terminal stop conditions must be CRC pass or max retransmission drop.");
+assert(any(isfinite(double(packetT.DecoderIterations))) && any(isfinite(double(packetT.CombinedDecoderIterations))), ...
+    "Closed-loop HARQ diagnostics must report current and combined LDPC decoder iterations.");
 assert(any(string(summaryT.MetricKey) == "combining_gain" & string(summaryT.Statistic) == "mean_llr_gain_dB"), ...
     "Closed-loop HARQ summary must include numerical LLR combining gain evidence.");
 end

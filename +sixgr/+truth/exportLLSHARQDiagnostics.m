@@ -16,17 +16,20 @@ end
 snrAnchor = double(sixgr.util.structGet(opt, "LinkSNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 30)));
 snrGrid = localReduceSweepGrid(double(sixgr.util.structGet(opt, "LinkSNRGrid_dB", snrAnchor)), ...
     min(5, max(3, round(double(sixgr.util.structGet(opt, "LinkSweepMaxPoints", 4))))), snrAnchor);
-numPackets = max(4, round(double(sixgr.util.structGet(opt, "LinkSweepFrames", max(4, ceil(double(sixgr.util.structGet(cfg, "run.numFrames", 8)) / 2))))));
+numPackets = localResolveProbePacketCount(cfg, opt);
+directions = localResolveProbeDirections(cfg, opt);
 previewOnly = logical(sixgr.util.structGet(opt, "HARQLivePreview", false));
 if previewOnly
     snrGrid = localReduceSweepGrid(snrGrid, 2, snrAnchor);
-    numPackets = min(numPackets, 2);
+    if ~localHasProbePacketOverride(cfg, opt)
+        numPackets = min(numPackets, 2);
+    end
     artifacts.PreviewOnly = true;
 end
 
 packetParts = cell(0, 1);
 summaryParts = cell(0, 1);
-for direction = ["DL"; "UL"].'
+for direction = directions(:).'
     for i = 1:numel(snrGrid)
         [packetT, summaryT] = localRunDirectionProbe(cfg, direction, snrGrid(i), numPackets);
         if istable(packetT) && ~isempty(packetT)
@@ -78,6 +81,79 @@ artifacts.PacketTable = packetT;
 artifacts.TimelineTable = timelineT;
 artifacts.SummaryTable = summaryT;
 artifacts.PreviewOnly = logical(previewOnly);
+end
+
+function n = localResolveProbePacketCount(cfg, opt)
+raw = sixgr.util.structGet(opt, "HARQProbePackets", []);
+if isempty(raw)
+    raw = sixgr.util.structGet(opt, "HARQProbePacketCount", []);
+end
+if isempty(raw)
+    raw = sixgr.util.structGet(cfg, "phy.harq.probePackets", []);
+end
+if isempty(raw)
+    raw = sixgr.util.structGet(cfg, "lls6g.harq.probe_packets", []);
+end
+if ~isempty(raw)
+    rawNum = double(raw);
+    rawNum = rawNum(:);
+    if numel(rawNum) ~= 1 || ~(isfinite(rawNum) && rawNum >= 1)
+        error("sixgr:truth:HARQProbePacketCountInvalid", ...
+            "HARQ probe packet count must be a finite positive scalar.");
+    end
+    n = max(1, round(rawNum));
+    return;
+end
+n = max(4, round(double(sixgr.util.structGet(opt, "LinkSweepFrames", ...
+    max(4, ceil(double(sixgr.util.structGet(cfg, "run.numFrames", 8)) / 2))))));
+end
+
+function tf = localHasProbePacketOverride(cfg, opt)
+tf = ~isempty(sixgr.util.structGet(opt, "HARQProbePackets", [])) || ...
+    ~isempty(sixgr.util.structGet(opt, "HARQProbePacketCount", [])) || ...
+    ~isempty(sixgr.util.structGet(cfg, "phy.harq.probePackets", [])) || ...
+    ~isempty(sixgr.util.structGet(cfg, "lls6g.harq.probe_packets", []));
+end
+
+function directions = localResolveProbeDirections(cfg, opt)
+raw = sixgr.util.structGet(opt, "HARQProbeDirections", []);
+if isempty(raw)
+    raw = sixgr.util.structGet(opt, "HARQProbeDirection", []);
+end
+if isempty(raw)
+    raw = sixgr.util.structGet(cfg, "phy.harq.probeDirections", []);
+end
+if isempty(raw)
+    raw = sixgr.util.structGet(cfg, "lls6g.harq.probe_directions", []);
+end
+if isempty(raw)
+    linkDir = lower(strtrim(string(sixgr.util.structGet(cfg, "lls6g.simulation.link_direction", "both"))));
+    switch linkDir
+        case "dl"
+            directions = "DL";
+        case "ul"
+            directions = "UL";
+        otherwise
+            directions = ["DL"; "UL"];
+    end
+    return;
+end
+
+tokens = upper(strtrim(string(raw)));
+if isscalar(tokens)
+    tokens = split(replace(tokens, [";", ","], " "), " ");
+end
+tokens = tokens(strlength(tokens) > 0);
+tokens = unique(tokens(:), "stable");
+if isempty(tokens) || any(~ismember(tokens, ["DL"; "UL"; "BOTH"]))
+    error("sixgr:truth:HARQProbeDirectionInvalid", ...
+        "HARQ probe directions must be DL, UL, or BOTH.");
+end
+if any(tokens == "BOTH")
+    directions = ["DL"; "UL"];
+else
+    directions = tokens(:);
+end
 end
 
 function [packetT, summaryT] = localRunDirectionProbe(cfg, direction, snr_dB, numPackets)
