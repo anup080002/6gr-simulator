@@ -48,6 +48,9 @@ if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
         sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), fixedSummary);
         sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedSummary);
     end
+    if logical(persistenceEnabled)
+        localWriteFixedLinkCampaignEvidence(runFolder, campaign);
+    end
     out = struct();
     out.Ok = istable(fixedSummary) && ~isempty(fixedSummary);
     out.RunFolder = runFolder;
@@ -306,6 +309,9 @@ end
 fixedLinkSummary = sixgr.util.structGet(sixgr.util.structGet(res, "FixedLinkCampaign", struct()), "Summary", table());
 if istable(fixedLinkSummary) && ~isempty(fixedLinkSummary)
     sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedLinkSummary);
+end
+if logical(persistenceEnabled)
+    localWriteFixedLinkCampaignEvidence(runFolder, sixgr.util.structGet(res, "FixedLinkCampaign", struct()));
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "sweep_csv_export", toc(stageStart), toc(bundleStart), "Controlled sweep CSV artifact export completed when fixed-link or raw sweep evidence was available.");
@@ -11283,6 +11289,24 @@ campaign = struct( ...
     "SNRGrid_dB", [], ...
     "SeedBase", NaN, ...
     "Notes", "");
+end
+
+function localWriteFixedLinkCampaignEvidence(runFolder, campaign)
+if ~(isstruct(campaign) && logical(sixgr.util.structGet(campaign, "Enabled", false)))
+    return;
+end
+taskPlan = sixgr.util.structGet(campaign, "TaskPlan", table());
+if istable(taskPlan) && ~isempty(taskPlan)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "fixed_link_campaign_task_plan.csv"), taskPlan);
+end
+dlTrials = sixgr.util.structGet(campaign, "DLTrials", table());
+if istable(dlTrials) && ~isempty(dlTrials)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "dl_fixed_link_campaign_trials.csv"), dlTrials);
+end
+ulTrials = sixgr.util.structGet(campaign, "ULTrials", table());
+if istable(ulTrials) && ~isempty(ulTrials)
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "ul_fixed_link_campaign_trials.csv"), ulTrials);
+end
 end
 
 function grid = localResolveFixedLinkCampaignGrid(snrGrid, sweepPlan)

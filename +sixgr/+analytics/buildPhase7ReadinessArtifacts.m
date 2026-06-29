@@ -17,8 +17,9 @@ cfgTables = localBuildConfigurationTables(cfg);
 storageTables = localBuildStorageTables(cfg);
 geometryTables = localBuildGeometryTables(cfg);
 mobilityTables = localBuildMobilityTables(cfg, geometryTables);
-gateStatus = localBuildGateStatus(runDir, cfgTables, storageTables, geometryTables, mobilityTables);
-finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables);
+campaignEvidence = localBuildCampaignEvidence(runDir, cfg);
+gateStatus = localBuildGateStatus(runDir, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence);
+finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence);
 
 localWrite(dirs.ConfigurationCSV, "resolved_channel_rf_configuration.csv", cfgTables.Resolved);
 localWrite(dirs.ConfigurationCSV, "configuration_conflicts.csv", cfgTables.Conflicts);
@@ -41,6 +42,16 @@ localWrite(dirs.MobilityCSV, "trajectory_segment_table.csv", mobilityTables.Segm
 localWrite(dirs.MobilityCSV, "inter_ue_distance_validation.csv", mobilityTables.InterUEDistance);
 localWrite(dirs.MobilityCSV, "trajectory_constraint_conflicts.csv", mobilityTables.ConstraintConflicts);
 
+if istable(campaignEvidence.Tables.DLBlerCurve) && height(campaignEvidence.Tables.DLBlerCurve) > 0
+    localWrite(dirs.AirInterfaceCSV, "dl_multi_seed_bler_curve.csv", campaignEvidence.Tables.DLBlerCurve);
+end
+if istable(campaignEvidence.Tables.DropStatistics) && height(campaignEvidence.Tables.DropStatistics) > 0
+    localWrite(dirs.AirInterfaceCSV, "multi_seed_drop_statistics.csv", campaignEvidence.Tables.DropStatistics);
+end
+if istable(campaignEvidence.Tables.CampaignAudit) && height(campaignEvidence.Tables.CampaignAudit) > 0
+    localWrite(dirs.ReportCSV, "campaign_evidence_audit.csv", campaignEvidence.Tables.CampaignAudit);
+end
+
 gateT = sixgr.runtime.Phase7TruthEvaluator.table(gateStatus);
 localWrite(dirs.ReportCSV, "phase7_truth_gates.csv", gateT);
 sixgr.util.jsonWrite(fullfile(dirs.ReportJSON, "phase7_truth_gates.json"), gateStatus);
@@ -57,12 +68,14 @@ report.Configuration = cfgTables;
 report.Storage = storageTables;
 report.Geometry = geometryTables;
 report.Mobility = mobilityTables;
+report.Campaign = campaignEvidence;
 report.Gates = gateStatus;
 report.OutputRoot = string(runDir);
 end
 
 function dirs = localEnsurePhase7Dirs(runDir)
 dirs = struct();
+dirs.AirInterfaceCSV = fullfile(runDir, "air_interface", "csv");
 dirs.ConfigurationCSV = fullfile(runDir, "configuration", "csv");
 dirs.StorageCSV = fullfile(runDir, "storage", "csv");
 dirs.GeometryCSV = fullfile(runDir, "geometry", "csv");
@@ -331,7 +344,354 @@ T = table(traj.UEID(1), traj.UEID(2), minCfg, d, tClosest, ok, ...
     'VariableNames', {'UE1','UE2','MinDistanceConfigured_m','ClosestDistance_m','ClosestTime_s','InterUeConstraintResolvedOk','Status'});
 end
 
-function status = localBuildGateStatus(runDir, cfgTables, storageTables, geometryTables, mobilityTables)
+function evidence = localBuildCampaignEvidence(runDir, cfg)
+airCsv = fullfile(runDir, "air_interface", "csv");
+reportCsv = fullfile(runDir, "reports", "csv");
+fixed = localReadOptionalTable(fullfile(airCsv, "lls_fixed_link_campaign.csv"));
+taskPlan = localReadOptionalTable(fullfile(airCsv, "fixed_link_campaign_task_plan.csv"));
+dlTrials = localReadOptionalTable(fullfile(airCsv, "dl_fixed_link_campaign_trials.csv"));
+ulTrials = localReadOptionalTable(fullfile(airCsv, "ul_fixed_link_campaign_trials.csv"));
+checkpoint = localReadOptionalTable(fullfile(reportCsv, "checkpoint_resume_equivalence.csv"));
+determinism = localReadOptionalTable(fullfile(reportCsv, "serial_parallel_determinism.csv"));
+
+thresholds = localCampaignThresholds(cfg);
+curve = localBuildDLMultiSeedBlerCurve(fixed, thresholds);
+dropStats = localBuildMultiSeedDropStatistics(dlTrials, ulTrials, taskPlan);
+[summary, flags] = localBuildCampaignSummaryAndFlags(fixed, taskPlan, dlTrials, ulTrials, ...
+    curve, dropStats, checkpoint, determinism, thresholds);
+audit = localBuildCampaignEvidenceAudit(fixed, taskPlan, dlTrials, ulTrials, checkpoint, determinism, curve, dropStats);
+
+evidence = struct();
+evidence.Thresholds = thresholds;
+evidence.Tables = struct("FixedLinkSummary", fixed, "TaskPlan", taskPlan, ...
+    "DLTrials", dlTrials, "ULTrials", ulTrials, "DLBlerCurve", curve, ...
+    "DropStatistics", dropStats, "CampaignAudit", audit, "Summary", summary);
+evidence.Flags = flags;
+end
+
+function thresholds = localCampaignThresholds(cfg)
+requiredSeeds = localNumber(cfg, ["canonical_control.run.num_seeds", ...
+    "simulation.num_seeds", "canonical_control.run.final_runs", ...
+    "simulation.final_runs", "canonical_control.run.monte_carlo_iterations", ...
+    "simulation.monte_carlo_iterations"], 30);
+thresholds = struct( ...
+    "RequiredSeedCount", max(1, round(requiredSeeds)), ...
+    "MinTrialsPerBin", max(1, round(localNumber(cfg, ["canonical_control.run.min_trials_per_sinr_bin", ...
+        "simulation.min_trials_per_sinr_bin", "statistics.min_trials_per_sinr_bin"], 30))), ...
+    "MaxCIWidth", localNumber(cfg, ["canonical_control.run.max_ci_width", ...
+        "simulation.max_ci_width", "statistics.max_ci_width"], 0.05), ...
+    "MinSNRPoints", max(1, round(localNumber(cfg, ["canonical_control.run.min_campaign_snr_points", ...
+        "simulation.min_campaign_snr_points", "statistics.min_campaign_snr_points"], 5))), ...
+    "ConfidenceLevel", localNumber(cfg, ["canonical_control.run.confidence_level", ...
+        "simulation.confidence_level", "statistics.confidence_level"], 0.95));
+end
+
+function T = localBuildDLMultiSeedBlerCurve(fixed, thresholds)
+if ~(istable(fixed) && height(fixed) > 0 && localHasColumn(fixed, "SNR_dB"))
+    T = localEmptyCampaignTable("curve");
+    return;
+end
+snr = localColumnDouble(fixed, "SNR_dB", NaN);
+snrValues = unique(sort(snr(isfinite(snr))));
+rows = repmat(struct("PostEqSINR_dB_BinCenter", NaN, "SNR_dB", NaN, ...
+    "BinMin", NaN, "BinMax", NaN, "TrialCount", NaN, "FailureCount", NaN, ...
+    "BLER", NaN, "BLER_CI_Low", NaN, "BLER_CI_High", NaN, "BLER_CI_Width", NaN, ...
+    "Goodput_Mbps_mean", NaN, "SeedCount", NaN, "CampaignKind", "", ...
+    "EvidenceSource", ""), 0, 1);
+for i = 1:numel(snrValues)
+    s = snrValues(i);
+    mask = snr == s;
+    trialCount = sum(localColumnDouble(fixed(mask, :), "DL_TrialCount", 0), "omitnan");
+    failureCount = sum(localColumnDouble(fixed(mask, :), "DL_FailureCount", 0), "omitnan");
+    if ~(isfinite(failureCount) && failureCount >= 0) && localHasColumn(fixed, "DL_BLER")
+        failureCount = sum(localColumnDouble(fixed(mask, :), "DL_BLER", 0) .* ...
+            localColumnDouble(fixed(mask, :), "DL_TrialCount", 0), "omitnan");
+    end
+    bler = localSafeDivide(failureCount, trialCount);
+    [lo, hi] = localClopperPearsonInterval(failureCount, trialCount, thresholds.ConfidenceLevel);
+    ciWidth = hi - lo;
+    seedCount = max(localUniqueFiniteCount(localColumnDouble(fixed(mask, :), "PointSeed", NaN)), ...
+        localMaxFinite(localColumnDouble(fixed(mask, :), "DL_DropCount", NaN)));
+    rows(end+1, 1) = struct("PostEqSINR_dB_BinCenter", s, "SNR_dB", s, ...
+        "BinMin", s, "BinMax", s, "TrialCount", double(trialCount), ...
+        "FailureCount", double(failureCount), "BLER", double(bler), ...
+        "BLER_CI_Low", double(lo), "BLER_CI_High", double(hi), ...
+        "BLER_CI_Width", double(ciWidth), ...
+        "Goodput_Mbps_mean", localMeanFinite(localColumnDouble(fixed(mask, :), "DL_Throughput_Mbps", NaN)), ...
+        "SeedCount", double(seedCount), ...
+        "CampaignKind", localFirstString(fixed(mask, :), "CampaignKind", "fixed_link_monte_carlo"), ...
+        "EvidenceSource", "air_interface/csv/lls_fixed_link_campaign.csv"); %#ok<AGROW>
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildMultiSeedDropStatistics(dlTrials, ulTrials, taskPlan)
+rows = repmat(localEmptyDropStatisticRow(), 0, 1);
+rows = [rows; localDropStatisticRows(dlTrials, "DL")]; %#ok<AGROW>
+rows = [rows; localDropStatisticRows(ulTrials, "UL")]; %#ok<AGROW>
+if isempty(rows)
+    rows = localTaskPlanDropRows(taskPlan);
+end
+if isempty(rows)
+    T = localEmptyCampaignTable("drops");
+else
+    T = localStructRowsToTable(rows);
+end
+end
+
+function rows = localDropStatisticRows(T, direction)
+rows = repmat(localEmptyDropStatisticRow(), 0, 1);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+point = localColumnDouble(T, "FixedLinkPointIndex", localColumnDouble(T, "PointIndex", NaN));
+drop = localColumnDouble(T, "FixedLinkDropIndex", localColumnDouble(T, "DropIndex", NaN));
+keys = unique([point(:), drop(:)], "rows");
+for i = 1:size(keys, 1)
+    p = keys(i, 1);
+    d = keys(i, 2);
+    mask = (point == p) & (drop == d);
+    if ~any(mask)
+        continue;
+    end
+    Ti = T(mask, :);
+    fail = localTrialFailureMask(Ti);
+    trials = height(Ti);
+    failures = sum(fail);
+    rows(end+1, 1) = struct("Direction", upper(string(direction)), ...
+        "FixedLinkPointIndex", double(p), ...
+        "SNR_dB", localFirstFinite(localColumnDouble(Ti, "SNR_dB", localColumnDouble(Ti, "PointValue", NaN))), ...
+        "FixedLinkDropIndex", double(d), ...
+        "FixedLinkDropSeed", localFirstFinite(localColumnDouble(Ti, "FixedLinkDropSeed", localColumnDouble(Ti, "TaskSeed", NaN))), ...
+        "TrialCount", double(trials), ...
+        "FailureCount", double(failures), ...
+        "BLER", localSafeDivide(failures, trials), ...
+        "Goodput_Mbps_mean", localMeanFinite(localColumnDouble(Ti, "Goodput_Mbps", NaN)), ...
+        "EvidenceStatus", "executed_trial_rows", ...
+        "EvidenceSource", "fixed_link_campaign_trials"); %#ok<AGROW>
+end
+end
+
+function rows = localTaskPlanDropRows(taskPlan)
+rows = repmat(localEmptyDropStatisticRow(), 0, 1);
+if ~(istable(taskPlan) && height(taskPlan) > 0)
+    return;
+end
+kind = strings(height(taskPlan), 1);
+if localHasColumn(taskPlan, "TaskKind")
+    kind = lower(strtrim(string(taskPlan.TaskKind)));
+end
+drop = localColumnDouble(taskPlan, "DropIndex", NaN);
+link = strings(height(taskPlan), 1);
+if localHasColumn(taskPlan, "LinkToken")
+    link = upper(strtrim(string(taskPlan.LinkToken)));
+end
+mask = kind == "point_drop_link" & drop > 0;
+idx = find(mask);
+for j = 1:numel(idx)
+    k = idx(j);
+    rows(end+1, 1) = struct("Direction", link(k), ...
+        "FixedLinkPointIndex", localColumnDouble(taskPlan(k, :), "PointIndex", NaN), ...
+        "SNR_dB", localColumnDouble(taskPlan(k, :), "PointValue", NaN), ...
+        "FixedLinkDropIndex", drop(k), ...
+        "FixedLinkDropSeed", localColumnDouble(taskPlan(k, :), "TaskSeed", NaN), ...
+        "TrialCount", localColumnDouble(taskPlan(k, :), "TrialCount", NaN), ...
+        "FailureCount", NaN, "BLER", NaN, "Goodput_Mbps_mean", NaN, ...
+        "EvidenceStatus", "planned_task_no_trial_table", ...
+        "EvidenceSource", "air_interface/csv/fixed_link_campaign_task_plan.csv"); %#ok<AGROW>
+end
+end
+
+function [summary, flags] = localBuildCampaignSummaryAndFlags(fixed, taskPlan, dlTrials, ulTrials, curve, dropStats, checkpoint, determinism, thresholds)
+flags = localCampaignFlags(false);
+if ~(istable(fixed) && height(fixed) > 0)
+    summary = localCampaignSummaryTable(0, 0, 0, 0, 0, 0, 0, NaN, NaN, NaN, thresholds, ...
+        "no_phase7_campaign_runs_provided", "air_interface/csv/lls_fixed_link_campaign.csv missing", flags);
+    return;
+end
+
+dlTrialCount = sum(localColumnDouble(fixed, "DL_TrialCount", 0), "omitnan");
+ulTrialCount = sum(localColumnDouble(fixed, "UL_TrialCount", 0), "omitnan");
+dlFailureCount = sum(localColumnDouble(fixed, "DL_FailureCount", 0), "omitnan");
+ulFailureCount = sum(localColumnDouble(fixed, "UL_FailureCount", 0), "omitnan");
+trialSeedCount = localUniqueFiniteCount([localColumnDouble(dlTrials, "FixedLinkDropSeed", NaN); ...
+    localColumnDouble(ulTrials, "FixedLinkDropSeed", NaN)]);
+taskSeedCount = localUniqueFiniteCount(localColumnDouble(taskPlan, "TaskSeed", NaN));
+pointSeedCount = localUniqueFiniteCount(localColumnDouble(fixed, "PointSeed", NaN));
+dropSeedCount = max(trialSeedCount, taskSeedCount);
+seedsRun = max([dropSeedCount, pointSeedCount, localMaxFinite(localColumnDouble(fixed, "DL_DropCount", NaN)), ...
+    localMaxFinite(localColumnDouble(fixed, "UL_DropCount", NaN))]);
+snrPoints = localUniqueFiniteCount(localColumnDouble(fixed, "SNR_dB", NaN));
+pilotRuns = localPilotRunCount(taskPlan);
+failedRuns = dlFailureCount + ulFailureCount;
+incomplete = localIncompleteCount(fixed);
+curveTrials = localColumnDouble(curve, "TrialCount", NaN);
+curveCI = localColumnDouble(curve, "BLER_CI_Width", NaN);
+finiteCurve = isfinite(curveTrials) & curveTrials > 0 & isfinite(curveCI);
+
+flags.SeedHierarchyOk = localTaskPlanSeedHierarchyOk(taskPlan);
+flags.CampaignDesignOk = flags.SeedHierarchyOk && snrPoints >= thresholds.MinSNRPoints && ...
+    seedsRun >= thresholds.RequiredSeedCount && all(lower(string(localFirstString(fixed, "CampaignKind", ""))) == "fixed_link_monte_carlo");
+flags.CampaignCompletionOk = (dlTrialCount > 0 || ulTrialCount > 0) && incomplete == 0;
+flags.SampleAdequacyOk = any(finiteCurve) && all(curveTrials(finiteCurve) >= thresholds.MinTrialsPerBin) && ...
+    seedsRun >= thresholds.RequiredSeedCount;
+flags.ConfidenceIntervalsOk = any(finiteCurve) && all(curveCI(finiteCurve) <= thresholds.MaxCIWidth);
+flags.MultiSeedDropStatisticsOk = localDropStatisticsOk(dropStats, thresholds);
+flags.CheckpointResumeEquivalenceOk = localEvidenceFlag(checkpoint, "CheckpointResumeEquivalenceOk");
+flags.SerialParallelDeterminismOk = localEvidenceFlag(determinism, "SerialParallelDeterminismOk");
+flags.SweepDataQualityOk = flags.CampaignDesignOk && flags.CampaignCompletionOk && ...
+    flags.SampleAdequacyOk && flags.ConfidenceIntervalsOk;
+
+status = "campaign_incomplete";
+if flags.CampaignCompletionOk && flags.SampleAdequacyOk && flags.ConfidenceIntervalsOk && flags.MultiSeedDropStatisticsOk
+    status = "campaign_complete";
+end
+summary = localCampaignSummaryTable(pilotRuns, dlTrialCount + ulTrialCount, failedRuns, seedsRun, ...
+    snrPoints, dlTrialCount, ulTrialCount, localMinFinite(curveTrials), ...
+    localMaxFinite(curveCI), localVarianceFinite(localColumnDouble(dropStats, "BLER", NaN)), ...
+    thresholds, status, "air_interface/csv/lls_fixed_link_campaign.csv", flags);
+end
+
+function T = localCampaignSummaryTable(pilotRuns, finalRuns, failedRuns, seedsRun, snrPoints, dlTrials, ulTrials, minTrials, maxCI, blerVariance, thresholds, status, source, flags)
+T = table(double(pilotRuns), double(finalRuns), double(failedRuns), double(seedsRun), ...
+    double(snrPoints), double(dlTrials), double(ulTrials), double(minTrials), double(maxCI), ...
+    double(blerVariance), double(thresholds.RequiredSeedCount), double(thresholds.MinTrialsPerBin), ...
+    double(thresholds.MaxCIWidth), string(status), string(source), ...
+    logical(flags.SeedHierarchyOk), logical(flags.CampaignDesignOk), logical(flags.CampaignCompletionOk), ...
+    logical(flags.MultiSeedDropStatisticsOk), logical(flags.SampleAdequacyOk), logical(flags.ConfidenceIntervalsOk), ...
+    logical(flags.CheckpointResumeEquivalenceOk), logical(flags.SerialParallelDeterminismOk), ...
+    'VariableNames', {'PilotRuns','FinalRuns','FailedRuns','SeedsRun','SNRPointCount', ...
+    'NDLTrialsTotal','NULTrialsTotal','MinTrialsPerBin','MaxCIWidth','BLERVarianceAcrossSeeds', ...
+    'RequiredSeedCount','RequiredMinTrialsPerBin','RequiredMaxCIWidth','Status','EvidenceSource', ...
+    'SeedHierarchyOk','CampaignDesignOk','CampaignCompletionOk','MultiSeedDropStatisticsOk', ...
+    'SampleAdequacyOk','ConfidenceIntervalsOk','CheckpointResumeEquivalenceOk','SerialParallelDeterminismOk'});
+end
+
+function flags = localCampaignFlags(value)
+flags = struct("SeedHierarchyOk", logical(value), "CampaignDesignOk", logical(value), ...
+    "CampaignCompletionOk", logical(value), "MultiSeedDropStatisticsOk", logical(value), ...
+    "ConfidenceIntervalsOk", logical(value), "SampleAdequacyOk", logical(value), ...
+    "CheckpointResumeEquivalenceOk", logical(value), "SerialParallelDeterminismOk", logical(value), ...
+    "SweepDataQualityOk", logical(value));
+end
+
+function T = localBuildCampaignEvidenceAudit(fixed, taskPlan, dlTrials, ulTrials, checkpoint, determinism, curve, dropStats)
+artifacts = ["lls_fixed_link_campaign.csv"; "fixed_link_campaign_task_plan.csv"; ...
+    "dl_fixed_link_campaign_trials.csv"; "ul_fixed_link_campaign_trials.csv"; ...
+    "checkpoint_resume_equivalence.csv"; "serial_parallel_determinism.csv"; ...
+    "dl_multi_seed_bler_curve.csv"; "multi_seed_drop_statistics.csv"];
+classes = ["runtime_summary"; "seed_hierarchy"; "executed_dl_trials"; "executed_ul_trials"; ...
+    "checkpoint_resume"; "serial_parallel"; "derived_bler_curve"; "derived_drop_statistics"];
+counts = [height(fixed); height(taskPlan); height(dlTrials); height(ulTrials); ...
+    height(checkpoint); height(determinism); height(curve); height(dropStats)];
+rows = repmat(struct("Artifact", "", "EvidenceClass", "", "RowCount", NaN, ...
+    "EvidencePresent", false, "CountsTowardCampaignGate", false), 0, 1);
+for i = 1:numel(artifacts)
+    n = double(counts(i));
+    rows(end+1, 1) = struct("Artifact", artifacts(i), "EvidenceClass", classes(i), ...
+        "RowCount", double(n), "EvidencePresent", n > 0, ...
+        "CountsTowardCampaignGate", n > 0 && ~contains(classes(i), "derived")); %#ok<AGROW>
+end
+T = localStructRowsToTable(rows);
+end
+
+function tf = localTaskPlanSeedHierarchyOk(taskPlan)
+tf = false;
+if ~(istable(taskPlan) && height(taskPlan) > 0 && localHasColumn(taskPlan, "TaskSeed"))
+    return;
+end
+seeds = localColumnDouble(taskPlan, "TaskSeed", NaN);
+valid = isfinite(seeds);
+if ~any(valid)
+    return;
+end
+invariantOk = true;
+if localHasColumn(taskPlan, "SchedulingInvariant")
+    invariantOk = all(string(taskPlan.SchedulingInvariant(valid)) == "worker_order_independent_seed_per_task");
+end
+tf = invariantOk && localUniqueFiniteCount(seeds(valid)) >= 2;
+end
+
+function n = localPilotRunCount(taskPlan)
+n = 0;
+if istable(taskPlan) && height(taskPlan) > 0 && localHasColumn(taskPlan, "TaskKind")
+    n = sum(lower(strtrim(string(taskPlan.TaskKind))) == "point_metadata");
+end
+end
+
+function n = localIncompleteCount(T)
+n = 0;
+for col = ["DL_Incomplete", "UL_Incomplete"]
+    if istable(T) && localHasColumn(T, col)
+        n = n + sum(localColumnAsLogical(T.(char(col))));
+    end
+end
+end
+
+function tf = localDropStatisticsOk(dropStats, thresholds)
+tf = false;
+if ~(istable(dropStats) && height(dropStats) > 0)
+    return;
+end
+status = strings(height(dropStats), 1);
+if localHasColumn(dropStats, "EvidenceStatus")
+    status = string(dropStats.EvidenceStatus);
+end
+executed = status == "executed_trial_rows";
+if ~any(executed)
+    return;
+end
+seeds = localColumnDouble(dropStats(executed, :), "FixedLinkDropSeed", NaN);
+bler = localColumnDouble(dropStats(executed, :), "BLER", NaN);
+tf = localUniqueFiniteCount(seeds) >= thresholds.RequiredSeedCount && any(isfinite(bler));
+end
+
+function tf = localEvidenceFlag(T, flagName)
+tf = false;
+if istable(T) && height(T) > 0 && localHasColumn(T, flagName)
+    tf = localFirstLogical(T.(char(flagName)), false);
+end
+end
+
+function fail = localTrialFailureMask(T)
+fail = false(height(T), 1);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+if localHasColumn(T, "CRCPass")
+    fail = ~localColumnAsLogical(T.CRCPass);
+elseif localHasColumn(T, "Status")
+    status = upper(strtrim(string(T.Status)));
+    fail = status == "FAIL" | status == "CRASH" | status == "CRC_FAIL";
+end
+end
+
+function row = localEmptyDropStatisticRow()
+row = struct("Direction", "", "FixedLinkPointIndex", NaN, "SNR_dB", NaN, ...
+    "FixedLinkDropIndex", NaN, "FixedLinkDropSeed", NaN, "TrialCount", NaN, ...
+    "FailureCount", NaN, "BLER", NaN, "Goodput_Mbps_mean", NaN, ...
+    "EvidenceStatus", "", "EvidenceSource", "");
+end
+
+function T = localEmptyCampaignTable(kind)
+switch string(kind)
+    case "curve"
+        T = table('Size', [0 14], 'VariableTypes', {'double','double','double','double','double','double', ...
+            'double','double','double','double','double','double','string','string'}, ...
+            'VariableNames', {'PostEqSINR_dB_BinCenter','SNR_dB','BinMin','BinMax','TrialCount', ...
+            'FailureCount','BLER','BLER_CI_Low','BLER_CI_High','BLER_CI_Width','Goodput_Mbps_mean', ...
+            'SeedCount','CampaignKind','EvidenceSource'});
+    case "drops"
+        T = table('Size', [0 11], 'VariableTypes', {'string','double','double','double','double','double', ...
+            'double','double','double','string','string'}, ...
+            'VariableNames', {'Direction','FixedLinkPointIndex','SNR_dB','FixedLinkDropIndex','FixedLinkDropSeed', ...
+            'TrialCount','FailureCount','BLER','Goodput_Mbps_mean','EvidenceStatus','EvidenceSource'});
+    otherwise
+        T = table();
+end
+end
+
+function status = localBuildGateStatus(runDir, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence)
 flags = struct();
 flags.ResolvedConfigurationConsistentOk = ~any(string(cfgTables.Conflicts.ConflictStatus) == "conflict_unresolved");
 flags.CapturePolicyTruthfulOk = logical(storageTables.Policy.CapturePolicyTruthfulOk(1));
@@ -342,6 +702,8 @@ flags.Phase7NoFabricationOk = true;
 flags.Phase7ProvenanceOk = exist(fullfile(runDir, "reports", "json", "scenario_manifest.json"), "file") == 2 || ...
     exist(fullfile(runDir, "meta", "scenario_manifest.json"), "file") == 2;
 flags.ChannelRfConfiguredVsAppliedOk = localChannelRFArtifactsPass(runDir);
+flags = localApplyKPIReconciliationFlags(flags, runDir);
+flags = localApplyCampaignFlags(flags, campaignEvidence);
 flags.FinalScientificClaimsTruthfulOk = false;
 flags.OutputSchemaValidationOk = true;
 flags.ArtifactCompletenessOk = false;
@@ -377,7 +739,39 @@ else
 end
 end
 
-function finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables)
+function flags = localApplyKPIReconciliationFlags(flags, runDir)
+ledger = localReadOptionalTable(fullfile(runDir, "reports", "csv", "canonical_kpi_ledger.csv"));
+if istable(ledger) && height(ledger) > 0
+    for name = ["CanonicalKpiLedgerOk","ThroughputReconciliationOk","BlerBerReconciliationOk", ...
+            "LatencyReconciliationOk","AccessKpiReconciliationOk","SchedulerKpiReconciliationOk"]
+        if ismember(name, string(ledger.Properties.VariableNames))
+            flags.(char(name)) = localFirstLogical(ledger.(char(name)), false);
+        end
+    end
+end
+for spec = [
+        "throughput_reconciliation.csv", "ThroughputReconciliationOk"
+        "blerber_reconciliation.csv", "BlerBerReconciliationOk"
+        "latency_reconciliation.csv", "LatencyReconciliationOk"
+        "access_kpi_reconciliation.csv", "AccessKpiReconciliationOk"
+        "scheduler_kpi_reconciliation.csv", "SchedulerKpiReconciliationOk"
+        ]'
+    T = localReadOptionalTable(fullfile(runDir, "reports", "csv", spec(1)));
+    flagName = spec(2);
+    if istable(T) && height(T) > 0 && ismember(flagName, string(T.Properties.VariableNames))
+        flags.(char(flagName)) = localFirstLogical(T.(char(flagName)), false);
+    end
+end
+end
+
+function flags = localApplyCampaignFlags(flags, campaignEvidence)
+names = string(fieldnames(campaignEvidence.Flags));
+for i = 1:numel(names)
+    flags.(char(names(i))) = logical(campaignEvidence.Flags.(char(names(i))));
+end
+end
+
+function finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence)
 failures = string(gateStatus.FailureCodes(:));
 if isempty(failures)
     defects = table("none", "none", "all gates passed", "closed", ...
@@ -387,15 +781,20 @@ else
         failures, repmat("open", numel(failures), 1), ...
         'VariableNames', {'defect_id','severity','summary','status'});
 end
-claims = table(["single_cell_two_ue_scope";"full_route_mobility_study";"publication_ready"], ...
-    ["supported_scope";"unsupported_until_full_route_run";"unsupported_until_all_phase7_gates_pass"], ...
-    ["scenario YAML scope";"mobility/csv/trajectory_resolution.csv";"reports/csv/phase7_truth_gates.csv"], ...
+fullRouteStatus = string(localTernary(logical(mobilityTables.Resolution.FullTrajectoryExecutedOk(1)), ...
+    "supported_by_runtime_trajectory_rows", "unsupported_until_full_route_run"));
+campaignStatus = string(localTernary(logical(campaignEvidence.Flags.CampaignCompletionOk), ...
+    "supported_by_fixed_link_monte_carlo_campaign", "unsupported_until_multi_seed_campaign_rows"));
+publicationStatus = string(localTernary(logical(gateStatus.PublicationReadinessOk), ...
+    "supported_by_all_phase7_gates", "unsupported_until_all_phase7_gates_pass"));
+claims = table(["single_cell_two_ue_scope";"full_route_mobility_study";"multi_seed_statistics";"publication_ready"], ...
+    ["supported_scope"; fullRouteStatus; campaignStatus; publicationStatus], ...
+    ["scenario YAML scope";"mobility/csv/trajectory_resolution.csv";"air_interface/csv/dl_multi_seed_bler_curve.csv";"reports/csv/phase7_truth_gates.csv"], ...
     'VariableNames', {'claim','support_status','evidence_artifact'});
 kp = table("phase7_kpi_reconstruction", "not_evaluated_without_full_runtime_rows", ...
     "canonical KPI ledger pending full route/campaign rows", ...
     'VariableNames', {'kpi_group','status','notes'});
-campaign = table(0, 0, 0, "no_phase7_campaign_runs_provided", ...
-    'VariableNames', {'PilotRuns','FinalRuns','FailedRuns','Status'});
+campaign = campaignEvidence.Tables.Summary;
 grade = struct("GradeOutOf10", 0, "Confidence", "low", ...
     "Reason", "Phase7Ok false; publication readiness blocked until full runtime/campaign evidence exists", ...
     "Phase7Ok", logical(gateStatus.Phase7Ok), ...
@@ -451,6 +850,165 @@ paths = sixgr.util.structGet(cfg, "mobility.user_paths", struct([]));
 if isempty(paths)
     paths = struct([]);
 end
+end
+
+function T = localReadOptionalTable(path)
+T = table();
+if exist(char(path), "file") ~= 2
+    return;
+end
+try
+    T = readtable(char(path), "VariableNamingRule", "preserve", "TextType", "string", "Delimiter", ",");
+catch
+    T = table();
+end
+end
+
+function tf = localHasColumn(T, name)
+tf = istable(T) && ismember(string(name), string(T.Properties.VariableNames));
+end
+
+function x = localColumnDouble(T, name, defaultValue)
+if nargin < 3
+    defaultValue = NaN;
+end
+if ~(istable(T) && height(T) > 0)
+    x = zeros(0, 1);
+    return;
+end
+if localHasColumn(T, name)
+    raw = T.(char(name));
+    x = localToDouble(raw);
+else
+    if isscalar(defaultValue)
+        x = repmat(double(defaultValue), height(T), 1);
+    else
+        x = localToDouble(defaultValue);
+        if numel(x) ~= height(T)
+            x = repmat(NaN, height(T), 1);
+        end
+    end
+end
+x = x(:);
+end
+
+function x = localToDouble(raw)
+if isempty(raw)
+    x = zeros(0, 1);
+elseif isnumeric(raw) || islogical(raw)
+    x = double(raw);
+else
+    x = str2double(string(raw));
+end
+x = x(:);
+end
+
+function tf = localFirstLogical(values, defaultValue)
+if nargin < 2
+    defaultValue = false;
+end
+tf = logical(defaultValue);
+if isempty(values)
+    return;
+end
+v = localColumnAsLogical(values);
+if ~isempty(v)
+    tf = logical(v(1));
+end
+end
+
+function text = localFirstString(T, name, defaultValue)
+if nargin < 3
+    defaultValue = "";
+end
+text = string(defaultValue);
+if istable(T) && height(T) > 0 && localHasColumn(T, name)
+    raw = string(T.(char(name)));
+    if ~isempty(raw)
+        text = raw(1);
+    end
+end
+end
+
+function n = localUniqueFiniteCount(values)
+v = localToDouble(values);
+v = v(isfinite(v));
+n = double(numel(unique(v)));
+end
+
+function m = localMeanFinite(values)
+v = localToDouble(values);
+v = v(isfinite(v));
+if isempty(v)
+    m = NaN;
+else
+    m = mean(v);
+end
+end
+
+function m = localMinFinite(values)
+v = localToDouble(values);
+v = v(isfinite(v));
+if isempty(v)
+    m = NaN;
+else
+    m = min(v);
+end
+end
+
+function m = localMaxFinite(values)
+v = localToDouble(values);
+v = v(isfinite(v));
+if isempty(v)
+    m = NaN;
+else
+    m = max(v);
+end
+end
+
+function m = localFirstFinite(values)
+v = localToDouble(values);
+idx = find(isfinite(v), 1, "first");
+if isempty(idx)
+    m = NaN;
+else
+    m = v(idx);
+end
+end
+
+function v = localVarianceFinite(values)
+x = localToDouble(values);
+x = x(isfinite(x));
+if numel(x) < 2
+    v = NaN;
+else
+    v = var(x, 0);
+end
+end
+
+function [lo, hi] = localClopperPearsonInterval(k, n, confidenceLevel)
+lo = NaN;
+hi = NaN;
+k = double(k);
+n = double(n);
+if ~(isfinite(n) && n > 0 && isfinite(k) && k >= 0)
+    return;
+end
+k = min(max(k, 0), n);
+alpha = 1 - double(confidenceLevel);
+alpha = min(max(alpha, eps), 1 - eps);
+if k == 0
+    lo = 0;
+else
+    lo = betaincinv(alpha / 2, k, n - k + 1);
+end
+if k == n
+    hi = 1;
+else
+    hi = betaincinv(1 - alpha / 2, k + 1, n - k);
+end
+lo = max(0, min(1, double(lo)));
+hi = max(0, min(1, double(hi)));
 end
 
 function stop = localWaypointPosition(p, fallback)
