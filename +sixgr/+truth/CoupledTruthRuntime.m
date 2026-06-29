@@ -3850,10 +3850,13 @@ methods(Static, Access=private)
             feedback.MCSIndex = double(mcsIndex);
         end
         bootstrapCQIUsable = logical(sixgr.util.structGet(feedback, "BootstrapCQIUsableForScheduling", false));
-        if schedulerUsesCQITable && ~logical(sixgr.util.structGet(feedback, "Valid", false)) && ~bootstrapCQIUsable
+        bootstrapCQISource = lower(strtrim(string(sixgr.util.structGet(feedback, "BootstrapCQISource", ""))));
+        estimatedBootstrapRankUsable = bootstrapCQIUsable && ...
+            any(bootstrapCQISource == ["bootstrap_estimated_runtime_preview_cqi", "estimated_runtime_preview_cqi"]);
+        if schedulerUsesCQITable && ~logical(sixgr.util.structGet(feedback, "Valid", false)) && ~estimatedBootstrapRankUsable
             % Before measured RI is available, keep bootstrap rank
             % conservative and explicit instead of inheriting configured
-            % multi-layer study settings as if they were feedback.
+            % multi-layer study settings as if they were measured feedback.
             feedback.RI = 1;
         else
             feedback.RI = max(1, round(rankHint));
@@ -3905,8 +3908,12 @@ methods(Static, Access=private)
             end
         end
 
-        bootstrapMCS = max(0, round(double(sixgr.util.structGet(state.CfgMobility, ...
-            "phy.linkAdaptation.bootstrapMCSIndex", 1))));
+        if useLargeScalePreview
+            bootstrapMCS = max(0, round(double(sixgr.util.structGet(state.CfgMobility, ...
+                "phy.linkAdaptation.bootstrapMCSIndex", 1))));
+        else
+            bootstrapMCS = 0;
+        end
         bootstrapProfile = sixgr.link.resolveMCSProfile(mcsTable, bootstrapMCS);
         feedback.CQI = 0;
         feedback.SINR_dB = NaN;
