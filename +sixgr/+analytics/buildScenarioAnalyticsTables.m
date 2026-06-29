@@ -30,6 +30,7 @@ measured = sixgr.analytics.generateMeasuredSINRCurves(runDir, "", ...
     "TrialData", trialData, ...
     "ScenarioConfig", scenarioCfg, ...
     "WriteKPISummary", true);
+measuredPlots = sixgr.analytics.generateMeasuredSINRPlots(runDir, "");
 
 paths = struct();
 paths.PerSlotKPI = fullfile(layout.ReportCSVDir, "per_slot_kpi_table.csv");
@@ -37,6 +38,8 @@ paths.PerUESlotKPI = fullfile(layout.ReportCSVDir, "per_ue_slot_kpi_table.csv");
 paths.FullPhysicsTimeline = fullfile(layout.ReportCSVDir, "full_physics_timeline.csv");
 paths.ControlPlaneTimeline = fullfile(layout.ReportCSVDir, "control_plane_timeline.csv");
 paths.MeasuredSINRSummary = fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv");
+paths.MeasuredSINRPlots = measuredPlots.Plots;
+paths.MeasuredSINRPlotLineage = measuredPlots.LineageCSV;
 paths.NMSEVsMeasuredSINR = fullfile(layout.ReportCSVDir, "nmse_vs_measured_sinr.csv");
 paths.EnergyVsThroughput = fullfile(layout.ReportCSVDir, "energy_vs_throughput.csv");
 paths.TBSReferenceComparison = fullfile(layout.ReportCSVDir, "tbs_reference_comparison.csv");

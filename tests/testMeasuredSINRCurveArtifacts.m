@@ -20,6 +20,9 @@ localWriteLegacyAnalyticsFiles(tmp);
 trialData = struct();
 trialData.dl = localTrialTable("DL");
 trialData.ul = localTrialTable("UL");
+trialData.pbch = localPBCHTrialTable();
+trialData.prach = localPRACHTrialTable();
+trialData.srs = localSRSTrialTable();
 
 res = sixgr.analytics.generateMeasuredSINRCurves(tmp, "unit", ...
     "TrialData", trialData, ...
@@ -40,6 +43,12 @@ csvs = [
     "air_interface/csv/live_measured_sinr_summary.csv"
     "air_interface/csv/lls_kpi_summary.csv"
     "air_interface/csv/link_anchor_kpis.csv"
+    "reports/csv/throughput_reconciliation.csv"
+    "reports/csv/blerber_reconciliation.csv"
+    "reports/csv/access_kpi_reconciliation.csv"
+    "reports/csv/scheduler_kpi_reconciliation.csv"
+    "reports/csv/latency_reconciliation.csv"
+    "reports/csv/canonical_kpi_ledger.csv"
     ];
 for i = 1:numel(csvs)
     p = fullfile(tmp, strrep(csvs(i), "/", filesep));
@@ -66,6 +75,21 @@ assert(all(logical(kpi.KPIReconciliationPass)), "KPI reconciliation did not pass
 
 anchor = readtable(fullfile(tmp, "air_interface", "csv", "link_anchor_kpis.csv"), "VariableNamingRule", "preserve");
 assert(~any(contains(string(anchor.Notes), "deferred")), "Anchor KPI notes still contain deferred status.");
+requiredCases = ["CellSearch_MIB_SIB1","PRACH_Detection","DL_PDSCH_Throughput", ...
+    "UL_PUSCH_Throughput","UL_SRS_ChannelEst","UL_LowPAPR"];
+assert(all(ismember(requiredCases, string(anchor.Case))), "Measured SINR anchor KPIs must cover all six Prompt 7 cases.");
+for caseName = requiredCases
+    mask = strcmp(string(anchor.Case), caseName);
+    assert(any(mask) && localAsLogical(anchor.Ok(find(mask, 1))), "Anchor case did not pass from runtime evidence: %s", caseName);
+end
+assert(all(string(anchor.KPIFormulaVersion) == "measured_sinr_geometry_v1"), "Anchor KPI formula version must be measured_sinr_geometry_v1.");
+
+localAssertGateOk(tmp, "throughput_reconciliation.csv", "ThroughputReconciliationOk");
+localAssertGateOk(tmp, "blerber_reconciliation.csv", "BlerBerReconciliationOk");
+localAssertGateOk(tmp, "access_kpi_reconciliation.csv", "AccessKpiReconciliationOk");
+localAssertGateOk(tmp, "scheduler_kpi_reconciliation.csv", "SchedulerKpiReconciliationOk");
+localAssertGateOk(tmp, "latency_reconciliation.csv", "LatencyReconciliationOk");
+localAssertGateOk(tmp, "canonical_kpi_ledger.csv", "CanonicalKpiLedgerOk");
 
 plots = sixgr.analytics.generateMeasuredSINRPlots(tmp, "unit");
 if usejava("jvm")
@@ -84,6 +108,18 @@ end
 localAssertRelabeledAnalytics(tmp);
 
 ok = true;
+end
+
+function localAssertGateOk(tmp, fileName, flagName)
+path = fullfile(tmp, "reports", "csv", fileName);
+assert(exist(path, "file") == 2, "Missing KPI reconciliation gate CSV: %s", fileName);
+T = readtable(path, "VariableNamingRule", "preserve");
+assert(ismember(flagName, string(T.Properties.VariableNames)), ...
+    "Gate CSV %s is missing flag %s.", fileName, flagName);
+assert(localAsLogical(T.(flagName)(1)), "KPI reconciliation gate did not pass: %s", flagName);
+assert(ismember("KPIFormulaVersion", string(T.Properties.VariableNames)) && ...
+    string(T.KPIFormulaVersion(1)) == "measured_sinr_geometry_v1", ...
+    "Gate CSV %s must carry measured_sinr_geometry_v1.", fileName);
 end
 
 function localWriteLegacyAnalyticsFiles(tmp)
@@ -160,6 +196,9 @@ T = table( ...
     bitErrors, ...
     goodBits ./ 0.5e-3 ./ 1e6, ...
     repmat(1200, n, 1) ./ 0.5e-3 ./ 1e6, ...
+    repmat(0.035, n, 1), ...
+    repmat(10.2, n, 1), ...
+    repmat(0.5, n, 1), ...
     distance, ...
     sinr - 1, ...
     sinr - 0.5, ...
@@ -171,6 +210,40 @@ T = table( ...
     'VariableNames', {'Direction','Slot','Frame','UEIndex','RNTI','ConfiguredSNR_dB','AppliedAWGNSNR_dB', ...
     'PostEqSINR_dB','PostEqSINRValueStatus','FinalizedFlag','IsWarmupFrame','FallbackFlag','CRCPass', ...
     'GoodBits','OfferedBits','BitsCompared','BitErrors','Goodput_Mbps','OfferedThroughput_Mbps', ...
+    'EVM_rms','PAPR_dB','ProcedureDelay_ms', ...
     'PropagationDistance_m','LargeScaleSINR_dB','ReceiverHestSINR_dB','AppliedPathloss_dB', ...
     'AppliedShadowFading_dB','MCS','Modulation','Layers'});
+end
+
+function T = localPBCHTrialTable()
+n = 4;
+T = table((0:n-1).', zeros(n,1), repmat([1;2], n/2, 1), 65520 + (1:n).', ...
+    true(n,1), linspace(8, 16, n).', repmat("PASS", n, 1), ...
+    'VariableNames', {'Frame','Slot','UEIndex','RNTI','SIB1StrictOk','PostEqSINR_dB','Status'});
+end
+
+function T = localPRACHTrialTable()
+n = 5;
+T = table(zeros(n,1), (0:n-1).', ones(n,1), 65520 + (1:n).', ...
+    true(n,1), false(n,1), false(n,1), 18 + (0:n-1).', repmat("PASS", n, 1), ...
+    'VariableNames', {'Frame','Slot','UEIndex','RNTI','PreambleDetected','MissedDetection', ...
+    'FalseAlarm','PeakToNoiseRatio_dB','Status'});
+end
+
+function T = localSRSTrialTable()
+n = 6;
+T = table(zeros(n,1), (0:n-1).', repmat([1;2], n/2, 1), 4660 + (1:n).', ...
+    true(n,1), -12 + (0:n-1).' * 0.25, linspace(5, 15, n).', repmat("PASS", n, 1), ...
+    'VariableNames', {'Frame','Slot','UEIndex','RNTI','DetectionSuccess','NMSE_dB','PostEqSINR_dB','Status'});
+end
+
+function tf = localAsLogical(value)
+if islogical(value)
+    tf = logical(value(1));
+elseif isnumeric(value)
+    tf = double(value(1)) ~= 0;
+else
+    token = lower(strtrim(string(value(1))));
+    tf = token == "1" || token == "true" || token == "yes" || token == "pass";
+end
 end

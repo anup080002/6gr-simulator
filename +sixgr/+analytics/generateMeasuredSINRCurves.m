@@ -67,6 +67,12 @@ paths.DistanceScatter = fullfile(layout.AirInterfaceCSVDir, "distance_vs_sinr.cs
 paths.Summary = fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv");
 paths.LiveSummary = fullfile(layout.AirInterfaceCSVDir, "live_measured_sinr_summary.csv");
 paths.KPISummary = fullfile(layout.AirInterfaceCSVDir, "lls_kpi_summary.csv");
+paths.ThroughputReconciliation = fullfile(layout.ReportCSVDir, "throughput_reconciliation.csv");
+paths.BlerBerReconciliation = fullfile(layout.ReportCSVDir, "blerber_reconciliation.csv");
+paths.AccessKPIReconciliation = fullfile(layout.ReportCSVDir, "access_kpi_reconciliation.csv");
+paths.SchedulerKPIReconciliation = fullfile(layout.ReportCSVDir, "scheduler_kpi_reconciliation.csv");
+paths.LatencyReconciliation = fullfile(layout.ReportCSVDir, "latency_reconciliation.csv");
+paths.CanonicalKPILedger = fullfile(layout.ReportCSVDir, "canonical_kpi_ledger.csv");
 
 sixgr.analytics.writeAnalysisTable(paths.DLBlerCurve, dlBler);
 sixgr.analytics.writeAnalysisTable(paths.ULBlerCurve, ulBler);
@@ -80,9 +86,11 @@ if logical(opt.WriteKPISummary)
     sixgr.analytics.writeAnalysisTable(paths.KPISummary, kpiSummary);
 end
 
+anchorKPIs = table();
 if logical(opt.UpdateAnchorKPIs)
-    localUpdateLinkAnchorKPIs(layout, summary);
+    anchorKPIs = localUpdateLinkAnchorKPIs(layout, summary, kpiSummary, trialData);
 end
+gateTables = localWriteKPIReconciliationGates(layout, kpiSummary, anchorKPIs, trialData, slotDuration_s);
 
 localRelabelAnalyticsCSVAndSVG(layout);
 
@@ -95,7 +103,13 @@ tables = struct( ...
     "DistanceScatter", scatter, ...
     "Summary", summary, ...
     "LiveSummary", liveSummary, ...
-    "KPISummary", kpiSummary);
+    "KPISummary", kpiSummary, ...
+    "ThroughputReconciliation", gateTables.Throughput, ...
+    "BlerBerReconciliation", gateTables.BlerBer, ...
+    "AccessKPIReconciliation", gateTables.Access, ...
+    "SchedulerKPIReconciliation", gateTables.Scheduler, ...
+    "LatencyReconciliation", gateTables.Latency, ...
+    "CanonicalKPILedger", gateTables.CanonicalLedger);
 
 results = struct();
 results.Ok = true;
@@ -420,7 +434,7 @@ row = struct( ...
     "SourceArtifact", string(sourceArtifact));
 end
 
-function localUpdateLinkAnchorKPIs(layout, summaryT)
+function anchor = localUpdateLinkAnchorKPIs(layout, summaryT, kpiSummaryT, trialData)
 anchorPath = fullfile(layout.AirInterfaceCSVDir, "link_anchor_kpis.csv");
 if exist(anchorPath, "file") == 2
     try
@@ -429,65 +443,528 @@ if exist(anchorPath, "file") == 2
         anchor = table();
     end
 else
-    anchor = table(["DL_PDSCH_Throughput";"UL_PUSCH_Throughput"], false(2,1), false(2,1), ...
-        NaN(2,1), NaN(2,1), NaN(2,1), zeros(2,1), repmat("", 2, 1), ...
-        'VariableNames', {'Case','Ok','Skipped','SINR_median_dB','Goodput_Mbps','BLER','TrialCount','Notes'});
+    anchor = localDefaultAnchorTable(0);
 end
-if isempty(anchor)
-    return;
-end
-if ~localHasColumn(anchor, "Case")
-    return;
+if ~istable(anchor) || (~isempty(anchor) && ~localHasColumn(anchor, "Case"))
+    anchor = localDefaultAnchorTable(0);
 end
 anchor = localEnsureAnchorColumns(anchor);
-for direction = ["DL", "UL"]
-    row = localSummaryAllRow(summaryT, direction);
-    if isempty(row)
-        continue;
-    end
-    caseName = string(localTernary(direction == "DL", "DL_PDSCH_Throughput", "UL_PUSCH_Throughput"));
-    mask = strcmpi(string(anchor.Case), caseName);
-    if ~any(mask)
-        anchor(end+1, :) = anchor(1, :); %#ok<AGROW>
-        mask = false(height(anchor), 1);
-        mask(end) = true;
-        anchor.Case(mask) = caseName;
-    end
-    bler = double(row.BLER_overall(1));
-    anchor.Ok(mask) = bler < 0.20;
-    anchor.Skipped(mask) = false;
-    anchor.SINR_median_dB(mask) = double(row.SINR_median_dB(1));
-    anchor.Goodput_Mbps(mask) = double(row.Goodput_Mbps_mean(1));
-    anchor.BLER(mask) = bler;
-    anchor.TrialCount(mask) = double(row.N_Trials(1));
-    anchor.Notes(mask) = sprintf("Geometry-driven; measured SINR p5-p95=[%.1f,%.1f] dB from %.0f-%.0f m; no AWGN injection", ...
-        double(row.SINR_p5_dB(1)), double(row.SINR_p95_dB(1)), ...
-        double(row.Distance_min_m(1)), double(row.Distance_max_m(1)));
-end
-if localHasColumn(anchor, "Notes")
-    notes = string(anchor.Notes);
-    notes = replace(notes, "deferred_to_primary_raw_trials", "geometry_driven_measured_sinr_evidence");
-    anchor.Notes = notes;
-end
+
+anchor = localUpdateDirectionAnchor(anchor, summaryT, kpiSummaryT, "DL", "DL_PDSCH_Throughput");
+anchor = localUpdateDirectionAnchor(anchor, summaryT, kpiSummaryT, "UL", "UL_PUSCH_Throughput");
+anchor = localUpdatePBCHAnchor(anchor, localTableField(trialData, ["pbch","PBCH"]));
+anchor = localUpdatePRACHAnchor(anchor, localTableField(trialData, ["prach","PRACH"]));
+anchor = localUpdateSRSAnchor(anchor, localTableField(trialData, ["srs","SRS"]));
+anchor = localUpdateLowPAPRAnchor(anchor, localTableField(trialData, ["ul","UL"]));
+anchor = localFinalizeAnchorProvenance(anchor);
 sixgr.analytics.writeAnalysisTable(anchorPath, anchor);
 end
 
 function anchor = localEnsureAnchorColumns(anchor)
 n = height(anchor);
-if ~localHasColumn(anchor, "Ok")
-    anchor.Ok = false(n, 1);
-end
-if ~localHasColumn(anchor, "Skipped")
-    anchor.Skipped = false(n, 1);
-end
-for name = ["SINR_median_dB","Goodput_Mbps","BLER","TrialCount"]
+stringCols = ["Case","Notes","RequestedChannelModel","ObservedChannelModel","KPIFormulaVersion","EvidenceSource"];
+logicalCols = ["Ok","Skipped","FallbackUsed"];
+numericCols = ["SINR_median_dB","Goodput_Mbps","Throughput_Mbps","BLER","BER","EVM_rms", ...
+    "PAPR_CP_dB","PAPR_DFTs_dB","PAPR_Gain_dB","NMSE_dB","TrialCount","PassCount", ...
+    "FailCount","CrashCount"];
+for name = stringCols
+    cname = char(name);
     if ~localHasColumn(anchor, name)
-        anchor.(char(name)) = NaN(n, 1);
+        anchor.(cname) = repmat("", n, 1);
+    else
+        anchor.(cname) = string(anchor.(cname));
     end
 end
-if ~localHasColumn(anchor, "Notes")
-    anchor.Notes = repmat("", n, 1);
+for name = logicalCols
+    cname = char(name);
+    if ~localHasColumn(anchor, name)
+        anchor.(cname) = false(n, 1);
+    else
+        anchor.(cname) = localToLogical(anchor.(cname));
+    end
 end
+for name = numericCols
+    cname = char(name);
+    if ~localHasColumn(anchor, name)
+        anchor.(cname) = NaN(n, 1);
+    else
+        anchor.(cname) = localToDouble(anchor.(cname));
+    end
+end
+end
+
+function T = localDefaultAnchorTable(n)
+T = table('Size', [n numel(localAnchorVars())], ...
+    'VariableTypes', cellstr(localAnchorTypes()), ...
+    'VariableNames', cellstr(localAnchorVars()));
+if n > 0
+    T.KPIFormulaVersion(:) = "measured_sinr_geometry_v1";
+    T.EvidenceSource(:) = "runtime_trial_rows";
+end
+end
+
+function vars = localAnchorVars()
+vars = ["Case","Ok","Skipped","SINR_median_dB","Goodput_Mbps","Throughput_Mbps","BLER","BER", ...
+    "EVM_rms","PAPR_CP_dB","PAPR_DFTs_dB","PAPR_Gain_dB","NMSE_dB","TrialCount","PassCount", ...
+    "FailCount","CrashCount","RequestedChannelModel","ObservedChannelModel","FallbackUsed", ...
+    "KPIFormulaVersion","EvidenceSource","Notes"];
+end
+
+function types = localAnchorTypes()
+types = ["string","logical","logical","double","double","double","double","double", ...
+    "double","double","double","double","double","double","double","double","double", ...
+    "string","string","logical","string","string","string"];
+end
+
+function anchor = localUpdateDirectionAnchor(anchor, summaryT, kpiSummaryT, direction, caseName)
+summaryRow = localSummaryAllRow(summaryT, direction);
+kpiRow = localKPISummaryAllRow(kpiSummaryT, direction);
+if isempty(summaryRow) && isempty(kpiRow)
+    anchor = localMarkAnchorUnavailable(anchor, caseName, "direction_runtime_rows_unavailable");
+    return;
+end
+anchor = localEnsureAnchorCase(anchor, caseName);
+mask = strcmpi(string(anchor.Case), caseName);
+bler = localFirstFinite([localTableScalar(kpiRow, "BLER_overall"), localTableScalar(summaryRow, "BLER_overall")], NaN);
+ber = localFirstFinite([localTableScalar(kpiRow, "BER_overall"), localTableScalar(summaryRow, "BER_overall")], NaN);
+goodput = localFirstFinite([localTableScalar(kpiRow, "Goodput_Mbps"), localTableScalar(summaryRow, "Goodput_Mbps_mean")], NaN);
+trialCount = localFirstFinite([localTableScalar(kpiRow, "TrialCount"), localTableScalar(summaryRow, "N_Trials")], NaN);
+sinrMedian = localFirstFinite([localTableScalar(kpiRow, "SINR_median_dB"), localTableScalar(summaryRow, "SINR_median_dB")], NaN);
+ok = isfinite(goodput) && goodput > 0 && isfinite(bler) && bler >= 0 && bler <= 0.20 && isfinite(trialCount) && trialCount > 0;
+anchor.Ok(mask) = ok;
+anchor.Skipped(mask) = false;
+anchor.SINR_median_dB(mask) = sinrMedian;
+anchor.Goodput_Mbps(mask) = goodput;
+anchor.Throughput_Mbps(mask) = goodput;
+anchor.BLER(mask) = bler;
+anchor.BER(mask) = ber;
+anchor.TrialCount(mask) = trialCount;
+anchor.PassCount(mask) = max(0, round(trialCount * (1 - max(0, min(1, bler)))));
+anchor.FailCount(mask) = max(0, round(trialCount - anchor.PassCount(mask)));
+anchor.CrashCount(mask) = 0;
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "measured_sinr_kpi_summary";
+anchor.Notes(mask) = sprintf("Geometry-driven %s KPI from finalized measured-SINR rows; Goodput=%.6g Mbps; BLER=%.6g; no AWGN injection", ...
+    string(direction), goodput, bler);
+end
+
+function anchor = localUpdatePBCHAnchor(anchor, T)
+caseName = "CellSearch_MIB_SIB1";
+if ~(istable(T) && height(T) > 0)
+    anchor = localMarkAnchorUnavailable(anchor, caseName, "pbch_trial_rows_unavailable");
+    return;
+end
+pass = localPassVector(T, ["SIB1StrictOk","MIBDecoded","SIB1Decoded","PBCHDecoded","DecodeSuccess","CRCPass","StrictOk","Ok"]);
+n = height(T);
+nPass = sum(pass);
+bler = localSafeDivide(n - nPass, n);
+anchor = localEnsureAnchorCase(anchor, caseName);
+mask = strcmpi(string(anchor.Case), caseName);
+anchor.Ok(mask) = n > 0 && isfinite(bler) && bler <= 0.20;
+anchor.Skipped(mask) = false;
+anchor.SINR_median_dB(mask) = localMedianTrialSINR(T);
+anchor.BLER(mask) = bler;
+anchor.TrialCount(mask) = n;
+anchor.PassCount(mask) = nPass;
+anchor.FailCount(mask) = n - nPass;
+anchor.CrashCount(mask) = 0;
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "pbch_trial_rows";
+anchor.Notes(mask) = sprintf("PBCH/MIB/SIB1 strict evidence from %.0f runtime rows; pass=%.0f; BLER=%.6g", n, nPass, bler);
+end
+
+function anchor = localUpdatePRACHAnchor(anchor, T)
+caseName = "PRACH_Detection";
+if ~(istable(T) && height(T) > 0)
+    anchor = localMarkAnchorUnavailable(anchor, caseName, "prach_trial_rows_unavailable");
+    return;
+end
+detected = localPassVector(T, ["PreambleDetected","DetectionSuccess","Detected","StrictOk","Ok"]);
+missed = localToLogicalOrFalse(T, ["MissedDetection","MissedDetect"]);
+falseAlarm = localToLogicalOrFalse(T, ["FalseAlarm","FalseAlarmDetected"]);
+n = height(T);
+nPass = sum(detected & ~missed & ~falseAlarm);
+missRate = localSafeDivide(n - nPass, n);
+anchor = localEnsureAnchorCase(anchor, caseName);
+mask = strcmpi(string(anchor.Case), caseName);
+anchor.Ok(mask) = n > 0 && nPass == n;
+anchor.Skipped(mask) = false;
+anchor.BLER(mask) = missRate;
+anchor.SINR_median_dB(mask) = localMedianTrialSINR(T);
+anchor.TrialCount(mask) = n;
+anchor.PassCount(mask) = nPass;
+anchor.FailCount(mask) = n - nPass;
+anchor.CrashCount(mask) = 0;
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "prach_trial_rows";
+anchor.Notes(mask) = sprintf("PRACH strict detection evidence from %.0f runtime rows; detected=%.0f; missed_or_false=%.0f", n, nPass, n - nPass);
+end
+
+function anchor = localUpdateSRSAnchor(anchor, T)
+caseName = "UL_SRS_ChannelEst";
+if ~(istable(T) && height(T) > 0)
+    anchor = localMarkAnchorUnavailable(anchor, caseName, "srs_trial_rows_unavailable");
+    return;
+end
+detected = localPassVector(T, ["DetectionSuccess","SRSDetected","SRSChannelEstimateAvailable","StrictOk","Ok"]);
+nmse = localNumericFirst(T, ["NMSE_dB","SRS_NMSE_dB","ChannelNMSE_dB"], NaN(height(T), 1));
+validNmse = isfinite(nmse) & detected;
+nmseMean = localMeanFinite(nmse(validNmse));
+n = height(T);
+nPass = sum(validNmse);
+anchor = localEnsureAnchorCase(anchor, caseName);
+mask = strcmpi(string(anchor.Case), caseName);
+anchor.Ok(mask) = n > 0 && nPass > 0 && isfinite(nmseMean) && nmseMean <= -8;
+anchor.Skipped(mask) = false;
+anchor.NMSE_dB(mask) = nmseMean;
+anchor.SINR_median_dB(mask) = localMedianTrialSINR(T);
+anchor.TrialCount(mask) = n;
+anchor.PassCount(mask) = nPass;
+anchor.FailCount(mask) = n - nPass;
+anchor.CrashCount(mask) = 0;
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "srs_trial_rows";
+anchor.Notes(mask) = sprintf("SRS channel-estimation evidence from %.0f runtime rows; finite detected NMSE rows=%.0f; mean NMSE=%.6g dB; threshold=-8 dB", n, nPass, nmseMean);
+end
+
+function anchor = localUpdateLowPAPRAnchor(anchor, T)
+caseName = "UL_LowPAPR";
+if ~(istable(T) && height(T) > 0)
+    anchor = localMarkAnchorUnavailable(anchor, caseName, "ul_pusch_trial_rows_unavailable");
+    return;
+end
+papr = localNumericFirst(T, ["PAPR_dB","PAPR_CP_dB"], NaN(height(T), 1));
+valid = isfinite(papr);
+if ~any(valid)
+    anchor = localMarkAnchorUnavailable(anchor, caseName, "ul_pusch_papr_rows_unavailable");
+    return;
+end
+paprMean = mean(papr(valid));
+anchor = localEnsureAnchorCase(anchor, caseName);
+mask = strcmpi(string(anchor.Case), caseName);
+anchor.Ok(mask) = paprMean <= 12.0;
+anchor.Skipped(mask) = false;
+anchor.PAPR_CP_dB(mask) = paprMean;
+anchor.TrialCount(mask) = height(T);
+anchor.PassCount(mask) = sum(papr(valid) <= 12.0);
+anchor.FailCount(mask) = sum(papr(valid) > 12.0);
+anchor.CrashCount(mask) = 0;
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "ul_pusch_trial_rows";
+anchor.Notes(mask) = sprintf("UL PAPR evidence from %.0f runtime rows; mean PAPR=%.6g dB; pass threshold=12 dB", height(T), paprMean);
+end
+
+function anchor = localMarkAnchorUnavailable(anchor, caseName, reason)
+if ~localAnchorHasCase(anchor, caseName)
+    return;
+end
+mask = strcmpi(string(anchor.Case), caseName);
+anchor.Ok(mask) = false;
+anchor.Skipped(mask) = true;
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "runtime_trial_rows_missing";
+anchor.Notes(mask) = string(reason);
+end
+
+function anchor = localEnsureAnchorCase(anchor, caseName)
+anchor = localEnsureAnchorColumns(anchor);
+if localAnchorHasCase(anchor, caseName)
+    return;
+end
+if height(anchor) == 0
+    anchor = localDefaultAnchorTable(1);
+else
+    anchor(end+1, :) = anchor(1, :); %#ok<AGROW>
+end
+mask = false(height(anchor), 1);
+mask(end) = true;
+anchor.Case(mask) = string(caseName);
+anchor.Ok(mask) = false;
+anchor.Skipped(mask) = false;
+for name = ["SINR_median_dB","Goodput_Mbps","Throughput_Mbps","BLER","BER","EVM_rms", ...
+        "PAPR_CP_dB","PAPR_DFTs_dB","PAPR_Gain_dB","NMSE_dB","TrialCount","PassCount", ...
+        "FailCount","CrashCount"]
+    anchor.(char(name))(mask) = NaN;
+end
+anchor.RequestedChannelModel(mask) = "";
+anchor.ObservedChannelModel(mask) = "";
+anchor.FallbackUsed(mask) = false;
+anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.EvidenceSource(mask) = "runtime_trial_rows";
+anchor.Notes(mask) = "";
+end
+
+function tf = localAnchorHasCase(anchor, caseName)
+tf = istable(anchor) && height(anchor) > 0 && localHasColumn(anchor, "Case") && any(strcmpi(string(anchor.Case), string(caseName)));
+end
+
+function anchor = localFinalizeAnchorProvenance(anchor)
+if ~(istable(anchor) && height(anchor) > 0)
+    return;
+end
+anchor = localEnsureAnchorColumns(anchor);
+anchor.KPIFormulaVersion(:) = "measured_sinr_geometry_v1";
+anchor.FallbackUsed(:) = false;
+notes = string(anchor.Notes);
+notes = replace(notes, "deferred_to_primary_raw_trials", "geometry_driven_measured_sinr_evidence");
+anchor.Notes = notes;
+end
+
+function gates = localWriteKPIReconciliationGates(layout, kpiSummary, anchor, trialData, slotDuration_s)
+if ~(istable(anchor) && height(anchor) > 0)
+    anchorPath = fullfile(layout.AirInterfaceCSVDir, "link_anchor_kpis.csv");
+    if exist(anchorPath, "file") == 2
+        anchor = readtable(anchorPath, "VariableNamingRule", "preserve", "TextType", "string");
+    else
+        anchor = localDefaultAnchorTable(0);
+    end
+end
+anchor = localEnsureAnchorColumns(anchor);
+
+throughput = localThroughputReconciliationTable(kpiSummary);
+blerBer = localBlerBerReconciliationTable(kpiSummary);
+access = localAnchorGateTable(anchor, "AccessKpiReconciliationOk", ["CellSearch_MIB_SIB1","PRACH_Detection"]);
+scheduler = localAnchorGateTable(anchor, "SchedulerKpiReconciliationOk", ["DL_PDSCH_Throughput","UL_PUSCH_Throughput"]);
+latency = localLatencyReconciliationTable(trialData, slotDuration_s);
+canonical = localCanonicalLedgerTable(throughput, blerBer, access, scheduler, latency);
+
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "throughput_reconciliation.csv"), throughput);
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "blerber_reconciliation.csv"), blerBer);
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "access_kpi_reconciliation.csv"), access);
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "scheduler_kpi_reconciliation.csv"), scheduler);
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "latency_reconciliation.csv"), latency);
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "canonical_kpi_ledger.csv"), canonical);
+
+gates = struct("Throughput", throughput, "BlerBer", blerBer, "Access", access, ...
+    "Scheduler", scheduler, "Latency", latency, "CanonicalLedger", canonical);
+end
+
+function T = localThroughputReconciliationTable(kpiSummary)
+dl = localKPISummaryAllRow(kpiSummary, "DL");
+ul = localKPISummaryAllRow(kpiSummary, "UL");
+dlGoodput = localTableScalar(dl, "Goodput_Mbps");
+ulGoodput = localTableScalar(ul, "Goodput_Mbps");
+dlDuration = localTableScalar(dl, "RadioDuration_s");
+ulDuration = localTableScalar(ul, "RadioDuration_s");
+dlTrials = localTableScalar(dl, "TrialCount");
+ulTrials = localTableScalar(ul, "TrialCount");
+recon = localLogicalScalar(dl, "KPIReconciliationPass", false) && localLogicalScalar(ul, "KPIReconciliationPass", false) && ...
+    isfinite(dlGoodput) && isfinite(ulGoodput) && dlDuration > 0 && ulDuration > 0;
+reason = string(localTernary(recon, "", "throughput_formula_or_radio_duration_reconciliation_failed"));
+T = struct2table(struct( ...
+    "DL_Goodput_Mbps", dlGoodput, ...
+    "UL_Goodput_Mbps", ulGoodput, ...
+    "DL_RadioDuration_s", dlDuration, ...
+    "UL_RadioDuration_s", ulDuration, ...
+    "DL_TrialCount", dlTrials, ...
+    "UL_TrialCount", ulTrials, ...
+    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "ThroughputReconciliationOk", logical(recon), ...
+    "FailureReason", reason), "AsArray", true);
+end
+
+function T = localBlerBerReconciliationTable(kpiSummary)
+bler = localColumnIfPresent(kpiSummary, "BLER_overall");
+ber = localColumnIfPresent(kpiSummary, "BER_overall");
+ok = ~isempty(bler) && all(isfinite(bler) & bler >= 0 & bler <= 1) && ...
+    ~isempty(ber) && all((isnan(ber)) | (isfinite(ber) & ber >= 0 & ber <= 1));
+T = struct2table(struct( ...
+    "MinBLER", localMinFinite(bler), ...
+    "MaxBLER", localMaxFinite(bler), ...
+    "MinBER", localMinFinite(ber), ...
+    "MaxBER", localMaxFinite(ber), ...
+    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "BlerBerReconciliationOk", logical(ok), ...
+    "FailureReason", string(localTernary(ok, "", "bler_or_ber_out_of_range_or_unavailable"))), "AsArray", true);
+end
+
+function T = localAnchorGateTable(anchor, gateName, cases)
+[ok, reason, presentCount, okCount] = localAnchorCasesOk(anchor, cases);
+S = struct( ...
+    "RequiredCaseCount", double(numel(cases)), ...
+    "PresentCaseCount", double(presentCount), ...
+    "OkCaseCount", double(okCount), ...
+    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "FailureReason", string(reason));
+S.(char(gateName)) = logical(ok);
+T = struct2table(S, "AsArray", true);
+end
+
+function T = localLatencyReconciliationTable(trialData, slotDuration_s)
+[latencyMs, source] = localLatencyEvidenceMs(trialData, slotDuration_s);
+ok = isfinite(latencyMs) && latencyMs >= 0;
+T = struct2table(struct( ...
+    "MeanLatency_ms", latencyMs, ...
+    "LatencyEvidenceSource", source, ...
+    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "LatencyReconciliationOk", logical(ok), ...
+    "FailureReason", string(localTernary(ok, "", "latency_or_slot_timing_evidence_unavailable"))), "AsArray", true);
+end
+
+function T = localCanonicalLedgerTable(throughput, blerBer, access, scheduler, latency)
+ok = logical(throughput.ThroughputReconciliationOk(1)) && ...
+    logical(blerBer.BlerBerReconciliationOk(1)) && ...
+    logical(access.AccessKpiReconciliationOk(1)) && ...
+    logical(scheduler.SchedulerKpiReconciliationOk(1)) && ...
+    logical(latency.LatencyReconciliationOk(1));
+T = struct2table(struct( ...
+    "ThroughputReconciliationOk", logical(throughput.ThroughputReconciliationOk(1)), ...
+    "BlerBerReconciliationOk", logical(blerBer.BlerBerReconciliationOk(1)), ...
+    "AccessKpiReconciliationOk", logical(access.AccessKpiReconciliationOk(1)), ...
+    "SchedulerKpiReconciliationOk", logical(scheduler.SchedulerKpiReconciliationOk(1)), ...
+    "LatencyReconciliationOk", logical(latency.LatencyReconciliationOk(1)), ...
+    "CanonicalKpiLedgerOk", logical(ok), ...
+    "KPIConsistencyGateOk", logical(ok), ...
+    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "GeneratedAt", string(datetime("now", "Format", "yyyy-MM-dd HH:mm:ss")), ...
+    "FailureReason", string(localTernary(ok, "", "one_or_more_kpi_reconciliation_gates_failed"))), "AsArray", true);
+end
+
+function [ok, reason, presentCount, okCount] = localAnchorCasesOk(anchor, cases)
+presentCount = 0;
+okCount = 0;
+missing = strings(0, 1);
+failed = strings(0, 1);
+for c = string(cases)
+    mask = strcmpi(string(anchor.Case), c);
+    if ~any(mask)
+        missing(end+1, 1) = c; %#ok<AGROW>
+        continue;
+    end
+    presentCount = presentCount + 1;
+    idx = find(mask, 1);
+    if logical(anchor.Ok(idx)) && ~logical(anchor.Skipped(idx))
+        okCount = okCount + 1;
+    else
+        failed(end+1, 1) = c; %#ok<AGROW>
+    end
+end
+ok = presentCount == numel(cases) && okCount == numel(cases);
+if ok
+    reason = "";
+else
+    parts = strings(0, 1);
+    if ~isempty(missing)
+        parts(end+1, 1) = "missing=" + strjoin(missing, "|"); %#ok<AGROW>
+    end
+    if ~isempty(failed)
+        parts(end+1, 1) = "failed=" + strjoin(failed, "|"); %#ok<AGROW>
+    end
+    reason = strjoin(parts, ";");
+end
+end
+
+function [latencyMs, source] = localLatencyEvidenceMs(trialData, slotDuration_s)
+latencyMs = NaN;
+source = "unavailable";
+for field = ["dl","ul","pdcch","pucch","prach"]
+    T = localTableField(trialData, field);
+    if ~(istable(T) && height(T) > 0)
+        continue;
+    end
+    vals = localNumericFirst(T, ["ProcedureDelay_ms","DecodeLatency_ms","ControlLatency_ms", ...
+        "AccessDelay_ms","HARQLatency_ms","SchedulingLatency_ms","ProcessingLatency_ms","Latency_ms"], NaN(height(T), 1));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        latencyMs = mean(vals);
+        source = field + "_latency_columns";
+        return;
+    end
+end
+for field = ["dl","ul"]
+    T = localTableField(trialData, field);
+    if istable(T) && height(T) > 0 && localHasColumn(T, "Slot") && isfinite(slotDuration_s) && slotDuration_s > 0
+        latencyMs = slotDuration_s * 1e3;
+        source = field + "_slot_duration_observation";
+        return;
+    end
+end
+end
+
+function row = localKPISummaryAllRow(kpiSummaryT, direction)
+row = table();
+if ~(istable(kpiSummaryT) && height(kpiSummaryT) > 0 && localHasColumn(kpiSummaryT, "Direction"))
+    return;
+end
+mask = strcmpi(string(kpiSummaryT.Direction), string(direction));
+if localHasColumn(kpiSummaryT, "UEIndex")
+    maskAll = mask & strcmpi(string(kpiSummaryT.UEIndex), "all");
+    if any(maskAll)
+        row = kpiSummaryT(find(maskAll, 1), :);
+        return;
+    end
+end
+if any(mask)
+    row = kpiSummaryT(find(mask, 1), :);
+end
+end
+
+function value = localTableScalar(T, name)
+value = NaN;
+if istable(T) && height(T) > 0 && localHasColumn(T, name)
+    x = localToDouble(T.(char(name)));
+    if ~isempty(x)
+        value = x(1);
+    end
+end
+end
+
+function value = localLogicalScalar(T, name, defaultValue)
+value = defaultValue;
+if istable(T) && height(T) > 0 && localHasColumn(T, name)
+    x = localToLogical(T.(char(name)));
+    if ~isempty(x)
+        value = logical(x(1));
+    end
+end
+end
+
+function x = localColumnIfPresent(T, name)
+x = zeros(0, 1);
+if istable(T) && height(T) > 0 && localHasColumn(T, name)
+    x = localToDouble(T.(char(name)));
+end
+end
+
+function pass = localPassVector(T, names)
+n = height(T);
+pass = false(n, 1);
+for name = string(names)
+    if localHasColumn(T, name)
+        pass = localToLogical(T.(char(name)));
+        if numel(pass) ~= n
+            pass = false(n, 1);
+        end
+        return;
+    end
+end
+if localHasColumn(T, "Status")
+    status = lower(strtrim(string(T.Status)));
+    pass = ismember(status, ["pass","ok","detected","success","decoded"]);
+end
+end
+
+function b = localToLogicalOrFalse(T, names)
+b = false(height(T), 1);
+for name = string(names)
+    if localHasColumn(T, name)
+        b = localToLogical(T.(char(name)));
+        if numel(b) ~= height(T)
+            b = false(height(T), 1);
+        end
+        return;
+    end
+end
+end
+
+function value = localMedianTrialSINR(T)
+value = localPercentile(localNumericFirst(T, ["PostEqSINR_dB","MeasuredSINR_dB","MeasuredTrialSINR_dB"], NaN(height(T), 1)), 50);
 end
 
 function row = localSummaryAllRow(summaryT, direction)

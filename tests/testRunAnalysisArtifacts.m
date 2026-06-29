@@ -42,6 +42,10 @@ writetable(edges, fullfile(layout.ReportCSVDir, "runtime_function_call_edges.csv
 cfg = struct();
 cfg.global_radio_scope = struct("channel_bandwidth_hz", 100e6);
 report = run_analysis(tmp, cfg);
+if ~report.Validation.Ok
+    missing = report.Validation.Table(~logical(report.Validation.Table.Exists), :);
+    disp(missing(:, intersect(["Artifact","Status"], string(missing.Properties.VariableNames), "stable")));
+end
 assert(report.Validation.Ok, "run_analysis validation failed.");
 
 validationPath = fullfile(layout.ReportCSVDir, "analysis_output_validation.csv");
