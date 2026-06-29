@@ -18,7 +18,7 @@ storageTables = localBuildStorageTables(cfg);
 geometryTables = localBuildGeometryTables(cfg);
 mobilityTables = localBuildMobilityTables(cfg, geometryTables);
 campaignEvidence = localBuildCampaignEvidence(runDir, cfg);
-gateStatus = localBuildGateStatus(runDir, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence);
+gateStatus = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence);
 finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence);
 
 localWrite(dirs.ConfigurationCSV, "resolved_channel_rf_configuration.csv", cfgTables.Resolved);
@@ -691,7 +691,7 @@ switch string(kind)
 end
 end
 
-function status = localBuildGateStatus(runDir, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence)
+function status = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence)
 flags = struct();
 flags.ResolvedConfigurationConsistentOk = ~any(string(cfgTables.Conflicts.ConflictStatus) == "conflict_unresolved");
 flags.CapturePolicyTruthfulOk = logical(storageTables.Policy.CapturePolicyTruthfulOk(1));
@@ -705,10 +705,12 @@ flags.ChannelRfConfiguredVsAppliedOk = localChannelRFArtifactsPass(runDir);
 flags = localApplyKPIReconciliationFlags(flags, runDir);
 flags = localApplyRFInterferenceReconciliationFlags(flags, runDir);
 flags = localApplyCampaignFlags(flags, campaignEvidence);
-flags.FinalScientificClaimsTruthfulOk = false;
+publicationEvidence = sixgr.analytics.evaluatePublicationReadinessGates(cfg, runDir);
+flags = localApplyStructFlags(flags, publicationEvidence.Flags);
 flags.OutputSchemaValidationOk = true;
-flags.ArtifactCompletenessOk = false;
-flags.PlotDataLineageOk = false;
+flags = localApplyPhaseRollupFlags(flags);
+flags.PublicationReadinessOk = localAllNamedFlagsTrue(flags, sixgr.runtime.Phase7TruthEvaluator.gateNames()) && ...
+    localAllNamedFlagsTrue(flags, ["Phase1Ok","Phase2Ok","Phase3Ok","Phase4Ok","Phase5Ok","Phase6Ok"]);
 status = sixgr.runtime.Phase7TruthEvaluator.evaluate(flags);
 end
 
@@ -796,6 +798,83 @@ for i = 1:numel(names)
 end
 end
 
+function flags = localApplyStructFlags(flags, src)
+if ~isstruct(src)
+    return;
+end
+names = string(fieldnames(src));
+for i = 1:numel(names)
+    flags.(char(names(i))) = logical(src.(char(names(i))));
+end
+end
+
+function flags = localApplyPhaseRollupFlags(flags)
+flags.Phase1Ok = localAllNamedFlagsTrue(flags, [
+    "GeometryValidationOk"
+    "FullTrajectoryExecutedOk"
+    "MobilityStateContinuousOk"
+    "InterUeConstraintResolvedOk"
+    "LosStateModelOk"
+    "PathlossReconciliationOk"
+    "ShadowFadingReconciliationOk"
+    "LargeScaleParameterReconciliationOk"
+    "CdlRealizationOk"
+    "ChannelStateContinuityOk"
+    "PathPowerNormalizationOk"
+    "DopplerReconciliationOk"
+    "PropagationDelayReconciliationOk"
+    "AntennaArrayReconciliationOk"
+    "PolarizationReconciliationOk"]);
+flags.Phase2Ok = localAllNamedFlagsTrue(flags, [
+    "ResolvedConfigurationConsistentOk"
+    "NoiseReconciliationOk"
+    "InterferenceAccountingOk"
+    "RfChainDefinitionOk"
+    "CfoConfiguredAppliedOk"
+    "PhaseNoiseConfiguredAppliedOk"
+    "TimingOffsetConfiguredAppliedOk"
+    "IqImbalanceConfiguredAppliedOk"
+    "PaConfiguredAppliedOk"
+    "EvmReconciliationOk"
+    "PaprReconciliationOk"
+    "ChannelRfConfiguredVsAppliedOk"
+    "MimoKpiReconciliationOk"
+    "SchedulerKpiReconciliationOk"
+    "MobilityKpiReconciliationOk"]);
+flags.Phase3Ok = localAllNamedFlagsTrue(flags, [
+    "ArtifactCompletenessOk"
+    "PlotDataLineageOk"
+    "Phase7NoFabricationOk"]);
+flags.Phase4Ok = localAllNamedFlagsTrue(flags, [
+    "CanonicalKpiLedgerOk"
+    "ThroughputReconciliationOk"
+    "BlerBerReconciliationOk"
+    "LatencyReconciliationOk"
+    "AccessKpiReconciliationOk"
+    "SchedulerKpiReconciliationOk"]);
+flags.Phase5Ok = localAllNamedFlagsTrue(flags, [
+    "SeedHierarchyOk"
+    "CampaignDesignOk"
+    "CampaignCompletionOk"
+    "MultiSeedDropStatisticsOk"
+    "ConfidenceIntervalsOk"
+    "SampleAdequacyOk"
+    "SweepDataQualityOk"
+    "CheckpointResumeEquivalenceOk"
+    "SerialParallelDeterminismOk"]);
+flags.Phase6Ok = localAllNamedFlagsTrue(flags, [
+    "EnergyModelOk"
+    "PerformanceProfileOk"
+    "LongRunStabilityOk"]);
+end
+
+function tf = localAllNamedFlagsTrue(flags, names)
+tf = true;
+for name = string(names(:)).'
+    tf = tf && logical(sixgr.util.structGet(flags, char(name), false));
+end
+end
+
 function finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence)
 failures = string(gateStatus.FailureCodes(:));
 if isempty(failures)
@@ -820,8 +899,17 @@ kp = table("phase7_kpi_reconstruction", "not_evaluated_without_full_runtime_rows
     "canonical KPI ledger pending full route/campaign rows", ...
     'VariableNames', {'kpi_group','status','notes'});
 campaign = campaignEvidence.Tables.Summary;
-grade = struct("GradeOutOf10", 0, "Confidence", "low", ...
-    "Reason", "Phase7Ok false; publication readiness blocked until full runtime/campaign evidence exists", ...
+if logical(gateStatus.PublicationReadinessOk)
+    gradeValue = 10;
+    confidence = "high";
+    reason = "All Phase 7 and phase rollup gates verified from runtime evidence.";
+else
+    gradeValue = 0;
+    confidence = "low";
+    reason = "Publication readiness blocked until every evidence-derived Phase 7 gate passes.";
+end
+grade = struct("GradeOutOf10", double(gradeValue), "Confidence", char(confidence), ...
+    "Reason", char(reason), ...
     "Phase7Ok", logical(gateStatus.Phase7Ok), ...
     "PublicationReadinessOk", logical(gateStatus.PublicationReadinessOk));
 finalTables = struct("DefectRegister", defects, "ClaimsMatrix", claims, ...
@@ -829,10 +917,15 @@ finalTables = struct("DefectRegister", defects, "ClaimsMatrix", claims, ...
 end
 
 function localWriteFinalMarkdown(finalDir, gateStatus, cfgTables, storageTables, mobilityTables)
+if logical(gateStatus.PublicationReadinessOk)
+    verdict = "publication-ready.";
+else
+    verdict = "not publication-ready.";
+end
 summary = [
     "# Phase 7 Scientific Readiness"
     ""
-    "Verdict: not publication-ready."
+    "Verdict: " + verdict
     ""
     "Scope label: SCOPED IMPLEMENTATION VALIDATION."
     ""
