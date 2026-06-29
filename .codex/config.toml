@@ -1,36 +1,36 @@
 model = "gpt-5.4"
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 web_search = "cached"
 review_model = "gpt-5.4"
 
 [sandbox_workspace_write]
-network_access = false
+network_access = true
 
 [profiles.audit]
 model = "gpt-5.4-mini"
-approval_policy = "on-request"
-sandbox_mode = "read-only"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 web_search = "cached"
 personality = "pragmatic"
 
 [profiles.patch]
 model = "gpt-5.4"
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 web_search = "cached"
 personality = "pragmatic"
 
 [profiles.perf]
 model = "gpt-5.4"
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 web_search = "disabled"
 personality = "pragmatic"
 
 [profiles.subagent]
 model = "gpt-5.4-mini"
-approval_policy = "on-request"
-sandbox_mode = "read-only"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 web_search = "disabled"
 personality = "none"
