@@ -56,7 +56,7 @@
       "parity_cb_mode": {"required": true, "type": "string"}, "ack_codebook_mode": {"required": true, "type": "string"},
       "feedback_timing": {"required": true, "type": "string"}, "dtx_model": {"required": true, "type": "string"},
       "pdcch_miss_interaction": {"required": true, "type": "string"}, "detection_feedback_interaction": {"required": true, "type": "string"},
-      "max_retx": {"required": true, "type": "integer", "min": 0}, "latency_budget": {"required": true, "type": "string"},
+      "max_retx": {"required": true, "type": "integer", "min": 0}, "save_harq_buffers": {"required": false, "type": "boolean"}, "stop_condition": {"required": false, "type": "string", "allowed_values": ["max_retransmissions", "crc_pass_or_max_retx", "latency_budget", "reliability_budget"]}, "latency_budget": {"required": true, "type": "string"},
       "reliability_target": {"required": true, "type": "string"}, "overhead_budget": {"required": true, "type": "string"},
       "retransmission_scheduler_policy": {"required": true, "type": "string"}
     }},

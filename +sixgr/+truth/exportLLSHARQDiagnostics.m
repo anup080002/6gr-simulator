@@ -85,6 +85,7 @@ packetRows = repmat(localEmptyPacketRow(), 0, 1);
 summaryT = localEmptyProbeMetricTable();
 
 mode = localHARQProbeMode(cfg);
+successStopCondition = localHARQSuccessStopCondition(mode);
 slotDur_s = localSlotDuration(cfg);
 feedbackSlots = max(1, round(double(sixgr.util.structGet(cfg, "phy.harq.feedbackTimingSlots", 4))));
 seedBase = double(sixgr.util.structGet(cfg, "run.seed", 1)) + 1000 * double(direction == "UL");
@@ -129,7 +130,7 @@ for pkt = 1:numPackets
     finalSuccess(pkt) = diag.CombinedDecodeOK;
     retxCount(pkt) = 0;
     rttMs(pkt) = feedbackSlots * slotDur_s * 1e3;
-    stopCondition(pkt) = "ack";
+    stopCondition(pkt) = successStopCondition;
 
     attempt = 1;
     while ~diag.CombinedDecodeOK
@@ -141,7 +142,7 @@ for pkt = 1:numPackets
         end
         attempt = attempt + 1;
         cfgPkt.run.seed = seedBase + pkt - 1 + 37 * attempt;
-        [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, int8(retx.TB(:)), retx.HARQ.RV, diag.CombinedLLR);
+        [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, int8(retx.TB(:)), retx.HARQ.RV, diag.HARQSoftBuffer);
         harq.onTx(rnti, retx.HARQ.HarqID, uint8(tx.TransportBlock(:)), struct("Direction", char(direction)), slotBase + attempt - 1);
         packetRows(end+1, 1) = localMakePacketRow(direction, snr_dB, pkt, attempt, slotBase + attempt - 1, retx.HARQ, diag, feedbackSlots * attempt, slotDur_s, "pending", tx.TransportBlockSize, mode); %#ok<AGROW>
         harq.onFeedback(rnti, retx.HARQ.HarqID, diag.CombinedDecodeOK);
@@ -149,13 +150,13 @@ for pkt = 1:numPackets
         retxCount(pkt) = attempt - 1;
         rttMs(pkt) = feedbackSlots * attempt * slotDur_s * 1e3;
         if diag.CombinedDecodeOK
-            stopCondition(pkt) = "ack";
+            stopCondition(pkt) = successStopCondition;
             packetRows(end).RecoveryAfterRetx = logical(~singleShotSuccess(pkt));
         end
     end
 
     if stopCondition(pkt) == ""
-        stopCondition(pkt) = "ack";
+        stopCondition(pkt) = successStopCondition;
     end
     packetRows(end).StopCondition = stopCondition(pkt);
     [cfgDyn, laState] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, direction, frameCounter, "Phase", "after", "Metrics", observeMetrics);
@@ -163,6 +164,16 @@ for pkt = 1:numPackets
 end
 
 packetT = struct2table(packetRows);
+successStopMask = ismember(stopCondition, ["ack","crc_pass"]);
+llrGainRows = double(packetT.LLRCombiningGain_dB);
+llrGainRows = llrGainRows(isfinite(llrGainRows) & logical(packetT.HARQCombiningApplied));
+meanLLRGain_dB = NaN;
+if ~isempty(llrGainRows)
+    meanLLRGain_dB = mean(llrGainRows, "omitnan");
+end
+llrGainObserved = isfinite(meanLLRGain_dB);
+llrGainAvailability = localRetxClaimAvailability(mode, llrGainObserved);
+llrGainText = localRetxClaimText(mode, llrGainObserved);
 entity = direction + "@SNR=" + string(snr_dB) + "dB";
 retxObserved = isfinite(retxCount) & retxCount > 0;
 retxClaimAvailability = localRetxClaimAvailability(mode, retxObserved);
@@ -184,6 +195,9 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("combining_gain", entity, "recovered_after_retx_rate", retxClaimAvailability, recoveryRate, ...
         localRetxClaimText(mode, retxObserved), "fraction", mode, ...
         localHARQRetxClaimNote(mode, "Fraction of packets only recovered after HARQ combining.", retxObserved)); ...
+    localProbeMetricRow("combining_gain", entity, "mean_llr_gain_dB", llrGainAvailability, meanLLRGain_dB, ...
+        llrGainText, "dB", mode, ...
+        localHARQRetxClaimNote(mode, "Mean HARQ LLR combining gain from canonical position-aware soft buffers.", llrGainObserved)); ...
     localProbeMetricRow("ack_nack_dtx_distribution", entity, "first_attempt_ack_rate", "available", mean(singleShotSuccess, "omitnan"), "", "fraction", mode, ...
         localHARQModeNote(mode, "First-attempt ACK rate before any HARQ retransmission opportunity.", retxObserved)); ...
     localProbeMetricRow("ack_nack_dtx_distribution", entity, "first_attempt_nack_rate", "available", mean(~singleShotSuccess, "omitnan"), "", "fraction", mode, ...
@@ -196,8 +210,8 @@ summaryT = [summaryT; ... %#ok<AGROW>
         localHARQModeNote(mode, "DTX is not modeled in the current LLS HARQ probe.", retxObserved)); ...
     localProbeMetricRow("feedback_overhead", entity, "total_bits", "available", height(packetT), "", "bits", mode, ...
         localHARQModeNote(mode, "One ACK/NACK feedback bit per HARQ attempt.", retxObserved)); ...
-    localProbeMetricRow("stop_condition_distribution", entity, "ack_rate", "available", mean(stopCondition == "ack", "omitnan"), "", "fraction", mode, ...
-        localHARQModeNote(mode, "Packets that terminated with ACK.", retxObserved)); ...
+    localProbeMetricRow("stop_condition_distribution", entity, "ack_rate", "available", mean(successStopMask, "omitnan"), "", "fraction", mode, ...
+        localHARQModeNote(mode, "Packets that terminated after successful CRC/ACK.", retxObserved)); ...
     localProbeMetricRow("stop_condition_distribution", entity, "drop_rate", "available", mean(stopCondition == "max_retx_drop", "omitnan"), "", "fraction", mode, ...
         localHARQModeNote(mode, "Packets that exhausted retransmissions.", retxObserved)); ...
     localProbeMetricRow("latency_percentile", entity, "p95_ms", "available", localPercentile(rttMs, 95), "", "ms", mode, ...
@@ -251,28 +265,21 @@ if isempty(tbBits)
 else
     tbBits = int8(tbBits(:));
 end
+diag = sixgr.link.evaluateHARQDecode(tx, rx, cfg, combinedPrev);
 rxBits = int8(sixgr.util.structGet(rx, "TransportBlock", int8([])));
-rxBits = rxBits(:);
-combinedLLR = localCombineRateRecoveredLLR(combinedPrev, recLLR);
-[combinedOK, combinedDecIt] = localDecodeCombinedLLR(tx, combinedLLR, cfg);
 [bitErr, bitsCompared] = localBitErrors(tbBits, rxBits);
+diag.BitErrors = double(bitErr);
+diag.BitsCompared = double(bitsCompared);
+diag.CurrentDecodeOK = logical(sixgr.util.structGet(rx, "Ok", false)) && bitErr == 0 && numel(rxBits(:)) == numel(tbBits(:));
 fallbackMetrics = localExtractLinkAdaptationMetrics(cfg, rx, struct("MeasuredSINR_dB", NaN));
 measuredSINR = localExtractSINR(rx);
 if ~isfinite(measuredSINR)
     measuredSINR = double(sixgr.util.structGet(fallbackMetrics, "SINR_dB", NaN));
 end
-
-diag = struct();
-diag.RateRecoveredLLR = recLLR;
-diag.CombinedLLR = combinedLLR;
-diag.CurrentDecodeOK = logical(sixgr.util.structGet(rx, "Ok", false)) && bitErr == 0 && numel(rxBits) == numel(tbBits);
-diag.CombinedDecodeOK = combinedOK;
-diag.BitErrors = double(bitErr);
-diag.BitsCompared = double(bitsCompared);
-diag.DecoderIterations = double(decIt);
-diag.CombinedDecoderIterations = double(combinedDecIt);
 diag.MeasuredSINR_dB = measuredSINR;
-diag.Notes = "";
+if ~isfield(diag, "Notes")
+    diag.Notes = "";
+end
 end
 
 function row = localMakePacketRow(direction, snr_dB, packetID, attempt, slotIdx, harqInfo, diag, rttSlots, slotDur_s, stopCondition, tbSizeBits, mode)
@@ -303,6 +310,10 @@ row.BitsCompared = double(diag.BitsCompared);
 row.DecoderIterations = double(diag.DecoderIterations);
 row.CombinedDecoderIterations = double(diag.CombinedDecoderIterations);
 row.MeasuredSINR_dB = double(diag.MeasuredSINR_dB);
+row.HARQCombiningApplied = logical(sixgr.util.structGet(diag, "HARQSoftCombiningApplied", false));
+row.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(diag, "HARQSoftCombiningPositionAware", false));
+row.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(diag, "HARQSoftCombiningOverlapPositionCount", NaN));
+row.LLRCombiningGain_dB = double(sixgr.util.structGet(diag, "LLRCombiningGain_dB", NaN));
 row.ProbeMode = string(mode);
 row.Notes = string(diag.Notes);
 end
@@ -316,80 +327,14 @@ row = struct( ...
     "RTT_slots", NaN, "RTT_ms", NaN, "FeedbackBits", NaN, ...
     "RetransmissionCount", NaN, "RecoveryAfterRetx", false, "TBSize_bits", NaN, ...
     "BitErrors", NaN, "BitsCompared", NaN, "DecoderIterations", NaN, ...
-    "CombinedDecoderIterations", NaN, "MeasuredSINR_dB", NaN, "ProbeMode", "", "Notes", "");
+    "CombinedDecoderIterations", NaN, "MeasuredSINR_dB", NaN, ...
+    "HARQCombiningApplied", false, "HARQSoftCombiningPositionAware", false, ...
+    "HARQSoftCombiningOverlapPositionCount", NaN, "LLRCombiningGain_dB", NaN, ...
+    "ProbeMode", "", "Notes", "");
 end
 
 function T = localEmptyPacketTable()
 T = struct2table(repmat(localEmptyPacketRow(), 0, 1));
-end
-
-function combined = localCombineRateRecoveredLLR(prev, cur)
-if isempty(prev)
-    combined = cur;
-    return;
-end
-if isempty(cur)
-    combined = prev;
-    return;
-end
-X = localEnsureLLRMatrix(prev);
-Y = localEnsureLLRMatrix(cur);
-nRow = max(size(X, 1), size(Y, 1));
-nCol = max(size(X, 2), size(Y, 2));
-X(end+1:nRow, end+1:nCol) = 0;
-Y(end+1:nRow, end+1:nCol) = 0;
-combined = X + Y;
-end
-
-function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg)
-ok = false;
-meanIter = NaN;
-if isempty(recLLR)
-    return;
-end
-X = localEnsureLLRMatrix(recLLR);
-if isempty(X)
-    return;
-end
-
-nRow = size(X, 1);
-nCB = size(X, 2);
-decCbs = zeros(nRow, nCB, 'int8');
-itVec = NaN(nCB, 1);
-maxLen = 0;
-alg = char(string(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum")));
-maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg);
-
-for c = 1:nCB
-    [d, it] = sixgr.phy.phycode.ldpcDecode(X(:, c), double(tx.BaseGraph), maxIter, alg);
-    d = int8(d(:));
-    Ld = min(numel(d), nRow);
-    if Ld > 0
-        decCbs(1:Ld, c) = d(1:Ld);
-        maxLen = max(maxLen, Ld);
-    end
-    it = it(:);
-    if ~isempty(it)
-        itVec(c) = double(it(1));
-    end
-end
-if maxLen <= 0
-    return;
-end
-
-decCbs = decCbs(1:maxLen, :);
-B = double(tx.TransportBlockSize) + double(sixgr.util.structGet(tx, "TransportBlockCRCLength", 24));
-tbCrc = sixgr.phy.tb.desegmentLDPC(decCbs, double(tx.BaseGraph), B);
-[~, crcOk] = sixgr.phy.tb.checkCRC(tbCrc, char(string(sixgr.util.structGet(tx, "TransportBlockCRCType", "24A"))));
-ok = logical(crcOk);
-meanIter = mean(itVec(isfinite(itVec)), "omitnan");
-end
-
-function X = localEnsureLLRMatrix(v)
-X = double(v);
-if isvector(X)
-    X = X(:);
-end
 end
 
 function sinr_dB = localExtractSINR(rx)
@@ -710,13 +655,25 @@ end
 function mode = localHARQProbeMode(cfg)
 mode = lower(string(sixgr.util.structGet(cfg, "phy.harq.validationMode", ...
     sixgr.util.structGet(cfg, "lls6g.harq.validation_mode", "observation"))));
-if ~ismember(mode, ["observation","exercise"])
+if ~ismember(mode, ["observation","exercise","closed_loop"])
     mode = "observation";
 end
 end
 
+function stopToken = localHARQSuccessStopCondition(mode)
+if string(mode) == "closed_loop"
+    stopToken = "crc_pass";
+else
+    stopToken = "ack";
+end
+end
+
+function tf = localHARQClaimsRetx(mode)
+tf = ismember(string(mode), ["exercise","closed_loop"]);
+end
+
 function availability = localRetxClaimAvailability(mode, retxObserved)
-if string(mode) == "exercise" && any(retxObserved)
+if localHARQClaimsRetx(mode) && any(retxObserved)
     availability = "available";
 else
     availability = "not_exercised";
@@ -724,7 +681,7 @@ end
 end
 
 function txt = localRetxClaimText(mode, retxObserved)
-if string(mode) == "exercise" && any(retxObserved)
+if localHARQClaimsRetx(mode) && any(retxObserved)
     txt = "";
 elseif any(retxObserved)
     txt = "not_exercised_observation_mode";
@@ -742,7 +699,7 @@ end
 
 function note = localHARQRetxClaimNote(mode, baseNote, retxObserved)
 note = "HARQ " + string(mode) + " mode. " + string(baseNote);
-if string(mode) ~= "exercise"
+if ~localHARQClaimsRetx(mode)
     note = note + " Observation mode does not claim retransmission-effectiveness gain as covered evidence, so this metric remains not exercised.";
 end
 if ~any(retxObserved)

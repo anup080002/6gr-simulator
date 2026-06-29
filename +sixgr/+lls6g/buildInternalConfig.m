@@ -1019,6 +1019,17 @@ cfg.phy.harq.rvSequence = double(s.harq.rv_sequence);
 cfg.mac.harq.enable = logical(s.harq.enabled);
 cfg.mac.harq.numProcesses = double(s.harq.process_count);
 cfg.mac.harq.maxRetx = double(localRequireNested(s, "harq.max_retx", "harq.max_retx"));
+harqSaveBuffers = logical(localGetNested(s, "harq.save_harq_buffers", ...
+    localGetNested(s, "run_control.save_harq_buffers", false)));
+harqStopCondition = lower(strtrim(string(localGetNested(s, "harq.stop_condition", "max_retransmissions"))));
+if strlength(harqStopCondition) == 0
+    harqStopCondition = "max_retransmissions";
+end
+cfg = sixgr.util.structSet(cfg, "phy.harq.saveBuffers", harqSaveBuffers);
+cfg = sixgr.util.structSet(cfg, "mac.harq.saveBuffers", harqSaveBuffers);
+cfg = sixgr.util.structSet(cfg, "run.saveHARQBuffers", harqSaveBuffers);
+cfg = sixgr.util.structSet(cfg, "phy.harq.stopCondition", char(harqStopCondition));
+cfg = sixgr.util.structSet(cfg, "mac.harq.stopCondition", char(harqStopCondition));
 harqFeedbackTimingSlots = max(0, round(double(s.harq.feedback_timing_slots)));
 harqK2Slots = localNumericScalarOrNaN(localGetNested(s, "harq.k2", NaN));
 if ~(isfinite(harqK2Slots) && harqK2Slots >= 0)

@@ -595,7 +595,7 @@ sections:
       stop_condition:
         required: false
         type: string
-        allowed_values: [max_retransmissions, latency_budget, reliability_budget]
+        allowed_values: [max_retransmissions, crc_pass_or_max_retx, latency_budget, reliability_budget]
       ack_nack_dtx_model:
         required: false
         type: string
@@ -605,6 +605,7 @@ sections:
         type: string
         allowed_values: [treat_as_dtx, treat_as_nack, hold_state]
       detection_feedback_interaction_enabled: {required: false, type: boolean}
+      save_harq_buffers: {required: false, type: boolean}
       validation_mode:
         required: false
         type: string

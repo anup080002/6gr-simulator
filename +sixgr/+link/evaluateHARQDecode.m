@@ -33,10 +33,12 @@ diag.CombinedLLR = combinedLLR;
 diag.CodingLayout = rxLayout;
 diag.SoftBuffer = sixgr.util.structGet(combineInfo, "SoftBuffer", struct());
 diag.HARQSoftBuffer = diag.SoftBuffer;
+diag.HARQSoftCombiningInfo = combineInfo;
 diag.HARQSoftCombiningReason = char(string(combineInfo.Reason));
 diag.HARQSoftCombiningApplied = logical(combineInfo.Applied);
 diag.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(combineInfo, "PositionAware", false));
 diag.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(combineInfo, "OverlapPositionCount", NaN));
+diag.LLRCombiningGain_dB = double(sixgr.util.structGet(combineInfo, "LLRCombiningGain_dB", NaN));
 diag.CurrentDecodeOK = currentOK;
 diag.CombinedDecodeOK = logical(combinedOK);
 diag.BitErrors = double(bitErr);
@@ -204,12 +206,18 @@ applied = false(1, numel(infoCell));
 cur = zeros(1, numel(infoCell));
 prior = zeros(1, numel(infoCell));
 reasons = strings(1, numel(infoCell));
+gain = NaN(1, numel(infoCell));
+overlap = NaN(1, numel(infoCell));
 for c = 1:numel(infoCell)
     applied(c) = logical(sixgr.util.structGet(infoCell{c}, "Applied", false));
     cur(c) = double(sixgr.util.structGet(infoCell{c}, "CurrentNumel", NaN));
     prior(c) = double(sixgr.util.structGet(infoCell{c}, "PriorNumel", NaN));
     reasons(c) = string(sixgr.util.structGet(infoCell{c}, "Reason", ""));
+    gain(c) = double(sixgr.util.structGet(infoCell{c}, "LLRCombiningGain_dB", NaN));
+    overlap(c) = double(sixgr.util.structGet(infoCell{c}, "OverlapPositionCount", NaN));
 end
+finiteGain = gain(isfinite(gain));
+finiteOverlap = overlap(isfinite(overlap));
 info = struct( ...
     "Applied", any(applied), ...
     "AppliedPerCodeword", logical(applied), ...
@@ -217,6 +225,8 @@ info = struct( ...
     "Reason", char(strjoin(reasons, "|")), ...
     "CurrentNumel", double(sum(cur(isfinite(cur)))), ...
     "PriorNumel", double(sum(prior(isfinite(prior)))), ...
+    "OverlapPositionCount", double(localSumOrNaN(finiteOverlap)), ...
+    "LLRCombiningGain_dB", double(localMeanOrNaN(finiteGain)), ...
     "SoftBufferCell", {cellfun(@(x) sixgr.util.structGet(x, "SoftBuffer", struct()), infoCell, "UniformOutput", false)});
 if numel(info.SoftBufferCell) == 1
     info.SoftBuffer = info.SoftBufferCell{1};
@@ -226,6 +236,21 @@ else
 end
 end
 
+function y = localMeanOrNaN(x)
+if isempty(x)
+    y = NaN;
+else
+    y = mean(double(x), "omitnan");
+end
+end
+
+function y = localSumOrNaN(x)
+if isempty(x)
+    y = NaN;
+else
+    y = sum(double(x), "omitnan");
+end
+end
 function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg, layout)
 ok = false;
 meanIter = NaN;

@@ -345,6 +345,8 @@ canonical_control:
     combining_mode: incremental_redundancy
     feedback_timing_slots: 4
     validation_mode: closed_loop
+    save_harq_buffers: true
+    stop_condition: crc_pass_or_max_retx
 
   receiver:
     channel_estimator: realistic_baseline
@@ -473,6 +475,10 @@ canonical_control:
       value: estimated
     - path: harq.validation_mode
       value: closed_loop
+    - path: harq.save_harq_buffers
+      value: true
+    - path: harq.stop_condition
+      value: crc_pass_or_max_retx
     - path: interference.inter_cell_interference_flag
       value: true
     - path: interference.intra_cell_interference_flag
