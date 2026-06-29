@@ -448,8 +448,40 @@ for rankIdx = 1:maxRank
             "Candidate", winner, ...
             "CodebookInfo", cbInfo);
     end
+    if ~localRankCandidateAllowed(candidate, Hwb, cfg)
+        continue;
+    end
     if candidate.Metric > best.Metric + 1e-9
         best = candidate;
+    end
+end
+end
+
+function tf = localRankCandidateAllowed(candidate, Hwb, cfg)
+rankIdx = max(1, round(double(sixgr.util.structGet(candidate, "Rank", 1))));
+tf = true;
+if rankIdx <= 1
+    return;
+end
+
+rankThreshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankThreshold", ...
+    sixgr.util.structGet(cfg, "phy.mimo.svRankThreshold", NaN)));
+if isfinite(rankThreshold) && rankThreshold > 0
+    sv = svd(double(Hwb));
+    sv = sv(isfinite(sv) & sv > 0);
+    if numel(sv) < rankIdx || double(sv(rankIdx)) < double(rankThreshold) * max(double(sv(1)), eps)
+        tf = false;
+        return;
+    end
+end
+
+minSINR_dB = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.minSINRForRank2_dB", NaN));
+if isfinite(minSINR_dB)
+    layerSINR_dB = double(sixgr.util.structGet(candidate, "LayerSINR_dB", []));
+    layerSINR_dB = layerSINR_dB(:).';
+    if numel(layerSINR_dB) < rankIdx || any(~isfinite(layerSINR_dB(1:rankIdx))) || ...
+            any(layerSINR_dB(1:rankIdx) < double(minSINR_dB))
+        tf = false;
     end
 end
 end

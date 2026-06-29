@@ -3849,7 +3849,8 @@ methods(Static, Access=private)
             feedback.TargetCodeRate = double(targetCodeRate);
             feedback.MCSIndex = double(mcsIndex);
         end
-        if schedulerUsesCQITable && ~logical(sixgr.util.structGet(feedback, "Valid", false))
+        bootstrapCQIUsable = logical(sixgr.util.structGet(feedback, "BootstrapCQIUsableForScheduling", false));
+        if schedulerUsesCQITable && ~logical(sixgr.util.structGet(feedback, "Valid", false)) && ~bootstrapCQIUsable
             % Before measured RI is available, keep bootstrap rank
             % conservative and explicit instead of inheriting configured
             % multi-layer study settings as if they were feedback.
@@ -3864,9 +3865,16 @@ methods(Static, Access=private)
     function feedback = bootstrapCQIFeedbackFromRuntimePreview(state, direction, ueIdx, mcsTable, feedback, rankHint)
         bootstrapMode = lower(strtrim(string(sixgr.util.structGet(state.CfgMobility, "phy.linkAdaptation.bootstrapCQIMode", ""))));
         useLargeScalePreview = any(bootstrapMode == [ ...
+            "estimated", ...
+            "estimate", ...
+            "runtime_estimated", ...
             "large_scale_preview", ...
             "large_scale_preview_lab_default", ...
             "large_scale_preview_cqi_lab_default"]);
+        previewSource = "bootstrap_large_scale_interference_preview_cqi";
+        if any(bootstrapMode == ["estimated", "estimate", "runtime_estimated"])
+            previewSource = "bootstrap_estimated_runtime_preview_cqi";
+        end
         previewSINR_dB = NaN;
         previewCQI = NaN;
         previewMCSIndex = NaN;
@@ -3919,13 +3927,13 @@ methods(Static, Access=private)
         feedback.PreviewModulation = char(string(previewModulation));
         feedback.PreviewTargetCodeRate = double(previewTargetCodeRate);
         if isfinite(previewCQI) && previewCQI > 0
-            feedback.PreviewCQISource = "bootstrap_large_scale_interference_preview_cqi";
+            feedback.PreviewCQISource = char(previewSource);
             feedback.CQI = double(previewCQI);
             feedback.Modulation = char(string(previewModulation));
             feedback.TargetCodeRate = double(previewTargetCodeRate);
             feedback.MCSIndex = double(previewMCSIndex);
             feedback.BootstrapCQIUsableForScheduling = true;
-            feedback.BootstrapCQISource = "bootstrap_large_scale_interference_preview_cqi";
+            feedback.BootstrapCQISource = char(previewSource);
         else
             feedback.PreviewCQISource = "";
         end
@@ -4763,6 +4771,9 @@ methods(Static, Access=private)
             return;
         end
         mcsTable = sixgr.link.resolveConfiguredMCSTable(cfg, direction);
+        [cqiModStr, cqiTargetCodeRate, cqiMCSIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+        cqiProfileValid = isfinite(cqiMCSIndex) && cqiMCSIndex >= 0 && ...
+            isfinite(cqiTargetCodeRate) && cqiTargetCodeRate > 0 && strlength(string(cqiModStr)) > 0;
         feedbackMCS = double(sixgr.util.structGet(feedback, "MCSIndex", NaN));
         feedbackProfile = sixgr.link.resolveMCSProfile(mcsTable, feedbackMCS);
         useFeedbackDecision = isfinite(feedbackMCS) && feedbackMCS >= 0 && ...
@@ -4772,11 +4783,15 @@ methods(Static, Access=private)
             modStr = char(string(feedbackProfile.Modulation));
             targetCodeRate = double(feedbackProfile.TargetCodeRate);
         else
-            [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
+            modStr = char(string(cqiModStr));
+            targetCodeRate = double(cqiTargetCodeRate);
+            mcsIndex = double(cqiMCSIndex);
         end
         ollaDelta = 0;
         ollaCount = 0;
         ollaEnabled = false;
+        ollaMCSAdjusted = false;
+        mcsClampedToCQI = false;
         if useFeedbackDecision
             ollaDelta = double(sixgr.util.structGet(feedback, "DeltaMCS", 0));
             ollaCount = double(sixgr.util.structGet(feedback, "LinkAdaptationStateUpdateCount", 0));
@@ -4791,13 +4806,26 @@ methods(Static, Access=private)
             end
         end
         if ~useFeedbackDecision && logical(ollaEnabled) && isfinite(mcsIndex) && isfinite(ollaDelta) && ollaCount > 0
-            adjustedMCS = max(0, min(31, round(double(mcsIndex) + double(ollaDelta))));
+            cqiCeiling = double(cqiMCSIndex);
+            if ~(isfinite(cqiCeiling) && cqiCeiling >= 0)
+                cqiCeiling = double(mcsIndex);
+            end
+            rawAdjustedMCS = round(double(mcsIndex) + double(ollaDelta));
+            adjustedMCS = max(0, min(31, min(rawAdjustedMCS, round(cqiCeiling))));
             prof = sixgr.link.resolveMCSProfile(mcsTable, adjustedMCS);
             if prof.Valid
                 mcsIndex = double(adjustedMCS);
                 modStr = char(string(prof.Modulation));
                 targetCodeRate = double(prof.TargetCodeRate);
+                ollaMCSAdjusted = true;
+                mcsClampedToCQI = rawAdjustedMCS > round(cqiCeiling);
             end
+        end
+        if cqiProfileValid && isfinite(mcsIndex) && round(double(mcsIndex)) > round(double(cqiMCSIndex))
+            mcsIndex = double(round(cqiMCSIndex));
+            modStr = char(string(cqiModStr));
+            targetCodeRate = double(cqiTargetCodeRate);
+            mcsClampedToCQI = true;
         end
         if ~(isfinite(mcsIndex) && mcsIndex >= 0 && isfinite(targetCodeRate) && targetCodeRate > 0)
             return;
@@ -4810,7 +4838,12 @@ methods(Static, Access=private)
         grant.Modulation = char(string(modStr));
         grant.TargetCodeRate = double(targetCodeRate);
         if useFeedbackDecision
-            grant.RawCQIDerivedMCS = double(sixgr.util.structGet(feedback, "RawCQIDerivedMCS", NaN));
+            feedbackRawCQIMCS = double(sixgr.util.structGet(feedback, "RawCQIDerivedMCS", NaN));
+            if cqiProfileValid
+                grant.RawCQIDerivedMCS = double(cqiMCSIndex);
+            else
+                grant.RawCQIDerivedMCS = double(feedbackRawCQIMCS);
+            end
             grant.LinkAdaptationMCSIndex = double(feedbackMCS);
             grant.LinkAdaptationDecisionReason = char(string(sixgr.util.structGet(feedback, "LinkAdaptationDecisionReason", "")));
             grant.CQIBasedMCS = double(sixgr.util.structGet(feedback, "CQIBasedMCS", NaN));
@@ -4819,12 +4852,12 @@ methods(Static, Access=private)
             grant.DeltaMCS = double(sixgr.util.structGet(feedback, "DeltaMCS", NaN));
             grant.StaticDeltaMCS = double(sixgr.util.structGet(feedback, "StaticDeltaMCS", 0));
         else
-            grant.RawCQIDerivedMCS = double(mcsIndex);
+            grant.RawCQIDerivedMCS = double(cqiMCSIndex);
             grant.LinkAdaptationMCSIndex = NaN;
             grant.LinkAdaptationDecisionReason = "";
             grant.CQIBasedMCS = NaN;
             grant.SmoothedCQI = NaN;
-            grant.InstantaneousCQIMCS = double(mcsIndex);
+            grant.InstantaneousCQIMCS = double(cqiMCSIndex);
             grant.DeltaMCS = NaN;
             grant.StaticDeltaMCS = 0;
         end
@@ -4841,7 +4874,14 @@ methods(Static, Access=private)
             grant.MCSValueStatus = char(string(sixgr.util.structGet(feedback, "MCSValueStatus", "measured_feedback_adapted")));
         else
             selectionSource = "feedback_cqi_derived_reference";
-            grant.MCSValueStatus = "measured_cqi_mapped";
+            if ollaMCSAdjusted
+                grant.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+            else
+                grant.MCSValueStatus = "measured_cqi_mapped";
+            end
+        end
+        if mcsClampedToCQI
+            grant.MCSValueStatus = "clamped_to_cqi_max";
         end
         grant.MCSIndexAuthority = char(selectionSource);
         grant.GrantOperatingPointSource = char(selectionSource);
@@ -5102,7 +5142,8 @@ methods(Static, Access=private)
             report.Modulation = char(string(decision.Modulation));
             report.MCSSelectionSource = char(string(sixgr.util.structGet(decision, ...
                 "MCSSelectionSource", "runtime_link_adaptation_decision")));
-            report.MCSValueStatus = "measured_feedback_adapted";
+            report.MCSValueStatus = char(string(sixgr.util.structGet(decision, ...
+                "MCSValueStatus", "measured_feedback_adapted")));
         end
     end
 

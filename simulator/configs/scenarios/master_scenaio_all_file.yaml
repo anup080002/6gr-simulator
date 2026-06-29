@@ -455,10 +455,20 @@ canonical_control:
       value: dynamic
     - path: link_adaptation.al_adaptation_policy
       value: dynamic
+    - path: link_adaptation.cqi_table
+      value: table2
+    - path: link_adaptation.rank_threshold
+      value: 0.25
+    - path: link_adaptation.min_sinr_for_rank2_dB
+      value: 5.0
     - path: link_adaptation.olla_step_down
       value: 0.1
     - path: link_adaptation.olla_step_up
       value: 0.01
+    - path: link_adaptation.delta_mcs_min
+      value: -5
+    - path: link_adaptation.delta_mcs_max
+      value: 5
     - path: link_adaptation.bootstrap_cqi_mode
       value: estimated
     - path: harq.validation_mode

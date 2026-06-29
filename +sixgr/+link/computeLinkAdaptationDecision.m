@@ -64,6 +64,7 @@ decision = struct( ...
     "SmoothedCQI", double(adaptationState.SmoothedCQI), ...
     "CQISource", char(cqiSource), ...
     "MCSSelectionSource", char(localResolveMCSSelectionSource(adaptationDomain)), ...
+    "MCSValueStatus", "unresolved", ...
     "OLLADomain", char(localResolveOLLADomain(adaptationDomain, adaptationState.OuterLoopEnabled)), ...
     "CalibrationProfile", char(calibrationProfile), ...
     "CalibrationVersion", char(string(cqiMeta.CalibrationVersion)), ...
@@ -228,9 +229,14 @@ if adaptationState.OuterLoopEnabled && localDeltaPolicyEnabled(deltaMCSPolicy, c
     end
 end
 
-dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
 maxMCS = localMaxValidMCS(mcsTable);
-selectedMCS = floor(dynamicMCS);
+cqiCeilingMCS = double(instantMCS);
+if ~(isfinite(cqiCeilingMCS) && cqiCeilingMCS >= 0)
+    cqiCeilingMCS = double(maxMCS);
+end
+dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
+selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
+mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
 if selectedMCS > maxMCS
     selectedMCS = maxMCS;
     adaptationState.DeltaMCS = double(maxMCS) - double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
@@ -254,6 +260,14 @@ decision.StaticDeltaMCS = double(adaptationState.StaticDeltaMCS);
 decision.Modulation = char(string(profile.Modulation));
 decision.TargetCodeRate = double(profile.TargetCodeRate);
 decision.MCSIndex = double(selectedMCS);
+if mcsClampedToCQI
+    decision.MCSValueStatus = "clamped_to_cqi_max";
+elseif adaptationState.OuterLoopEnabled && isfinite(double(adaptationState.DeltaMCS)) && ...
+        abs(double(adaptationState.DeltaMCS)) > 0
+    decision.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+else
+    decision.MCSValueStatus = "measured_cqi_mapped";
+end
 decision.MCSUpdated = resetState || ...
     ~(isfinite(previousMCS) && abs(previousMCS - double(selectedMCS)) <= 1e-9 && ...
     isfinite(previousCodeRate) && abs(previousCodeRate - double(profile.TargetCodeRate)) <= 1e-12 && ...

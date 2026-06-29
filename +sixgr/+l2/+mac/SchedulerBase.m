@@ -503,6 +503,7 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSSelectionSource", "configured_profile", ...
                 "CQIProvenance", "unavailable", ...
                 "MCSValueStatus", "unresolved", ...
+                "RawCQIDerivedMCS", NaN, ...
                 "CausalFeedbackUsable", logical(causalFeedbackUsable), ...
                 "CausalFeedbackStatus", char(causalFeedbackStatus), ...
                 "FeedbackAgeSlots", double(feedbackAgeSlots), ...
@@ -552,6 +553,7 @@ classdef (Abstract) SchedulerBase < handle
                     amc.MCSSelectionSource = "runtime_cqi_table";
                     amc.CQIProvenance = "runtime_reported_cqi";
                     amc.MCSValueStatus = "measured_cqi_mapped";
+                    amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 else
@@ -595,6 +597,7 @@ classdef (Abstract) SchedulerBase < handle
                     amc.MCSSelectionSource = "runtime_cqi_table";
                     amc.CQIProvenance = "runtime_reported_cqi";
                     amc.MCSValueStatus = "measured_cqi_mapped";
+                    amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 end
@@ -639,7 +642,12 @@ classdef (Abstract) SchedulerBase < handle
                 amc.OLLAUpdateCount = double(ollaCount);
                 amc.OLLAState = "configured_waiting_for_ack_feedback";
                 if isfinite(amc.MCSIndex) && isfinite(ollaDelta) && ollaCount > 0
-                    adjustedMCS = max(0, min(31, floor(double(amc.MCSIndex) + double(ollaDelta))));
+                    cqiCeilingMCS = double(sixgr.util.structGet(amc, "RawCQIDerivedMCS", amc.MCSIndex));
+                    if ~(isfinite(cqiCeilingMCS) && cqiCeilingMCS >= 0)
+                        cqiCeilingMCS = double(amc.MCSIndex);
+                    end
+                    unclampedMCS = floor(double(amc.MCSIndex) + double(ollaDelta));
+                    adjustedMCS = max(0, min(31, min(unclampedMCS, floor(double(cqiCeilingMCS)))));
                     prof = sixgr.link.resolveMCSProfile(mcsTable, adjustedMCS);
                     if prof.Valid
                         amc.MCSIndex = double(adjustedMCS);
@@ -648,6 +656,11 @@ classdef (Abstract) SchedulerBase < handle
                         targetCodeRate = double(prof.TargetCodeRate);
                         amc.OuterLoopApplied = true;
                         amc.OLLAState = "applied_scheduler_ack_nack_delta";
+                        if double(unclampedMCS) > double(cqiCeilingMCS)
+                            amc.MCSValueStatus = "clamped_to_cqi_max";
+                        else
+                            amc.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+                        end
                     end
                 end
             end

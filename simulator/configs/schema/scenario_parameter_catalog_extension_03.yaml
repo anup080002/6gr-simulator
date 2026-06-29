@@ -45,6 +45,8 @@
       "olla_step_up": {"required": false, "type": "number", "min": 0},
       "delta_mcs_min": {"required": false, "type": "number"},
       "delta_mcs_max": {"required": false, "type": "number"},
+      "rank_threshold": {"required": false, "type": "number", "min": 0},
+      "min_sinr_for_rank2_dB": {"required": false, "type": "number"},
       "bootstrap_mcs_index": {"required": false, "type": "integer", "min": 0, "max": 31},
       "bootstrap_cqi_mode": {"required": false, "type": "string", "allowed_values": ["conservative", "estimated", "large_scale_preview", "large_scale_preview_lab_default", "large_scale_preview_cqi_lab_default", "require_measured_cqi", "measured_only", "strict_measured_cqi", "none", "disabled", "off"]}
     }},

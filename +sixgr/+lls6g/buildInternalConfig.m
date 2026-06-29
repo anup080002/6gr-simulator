@@ -1294,6 +1294,15 @@ if ~isempty(resetOnRIChange)
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnRIChange", true);
 end
+rankThreshold = double(localGetNested(s, "link_adaptation.rank_threshold", NaN));
+if isfinite(rankThreshold) && rankThreshold >= 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.rankThreshold", double(rankThreshold));
+    cfg = sixgr.util.structSet(cfg, "phy.mimo.svRankThreshold", double(rankThreshold));
+end
+minSINRForRank2_dB = double(localGetNested(s, "link_adaptation.min_sinr_for_rank2_dB", NaN));
+if isfinite(minSINRForRank2_dB)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.minSINRForRank2_dB", double(minSINRForRank2_dB));
+end
 cqiJumpResetThreshold = double(localGetNested(s, "link_adaptation.cqi_jump_reset_threshold", NaN));
 if isfinite(cqiJumpResetThreshold) && cqiJumpResetThreshold >= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", double(cqiJumpResetThreshold));
@@ -1747,6 +1756,9 @@ auxPairs = {
     "link_adaptation.olla_min_offset_db", "phy.linkAdaptation.ollaMinOffset_dB"
     "link_adaptation.olla_window_size_slots", "phy.linkAdaptation.ollaWindowSizeSlots"
     "link_adaptation.olla_forgetting_factor", "phy.linkAdaptation.ollaForgettingFactor"
+    "link_adaptation.rank_threshold", "phy.linkAdaptation.rankThreshold"
+    "link_adaptation.rank_threshold", "phy.mimo.svRankThreshold"
+    "link_adaptation.min_sinr_for_rank2_dB", "phy.linkAdaptation.minSINRForRank2_dB"
     "link_adaptation.mcs_backoff_dl_db", "phy.linkAdaptation.dlMCSBackoff_dB"
     "link_adaptation.mcs_backoff_ul_db", "phy.linkAdaptation.ulMCSBackoff_dB"
     "link_adaptation.sinr_to_cqi_mapping_table", "phy.linkAdaptation.sinrToCQITable"
