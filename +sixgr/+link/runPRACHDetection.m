@@ -9,7 +9,7 @@ p.addParameter("CanonicalSlot", NaN, @(x) isempty(x) || (isscalar(x) && isnumeri
 p.addParameter("PreambleIndex", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x)));
 p.parse(varargin{:});
 log = p.Results.Logger;
-snr_dB = double(p.Results.SNR_dB);
+[snr_dB, snrSource] = localResolveFinitePRACHReceiverSNR(cfg, double(p.Results.SNR_dB));
 detectionThreshold = localResolveDetectionThreshold(cfg, p.Results.DetectionThreshold);
 canonicalSlot = double(p.Results.CanonicalSlot);
 preambleIndex = p.Results.PreambleIndex;
@@ -87,7 +87,7 @@ out.NoiseVarSource = "";
 out.NoiseVarReason = "";
 out.ConfiguredSNR_dB = double(snr_dB);
 out.AppliedAWGNSNR_dB = NaN;
-out.AppliedAWGNSNRSource = "";
+out.AppliedAWGNSNRSource = char(snrSource);
 out.SNRValueRole = "prach_receiver_esn0_detection_axis";
 out.DesiredSignalPowerBeforeNoise = NaN;
 out.CompositeSignalPowerBeforeNoise = NaN;
@@ -149,7 +149,7 @@ try
     out.PRACHConfigurationIndex = double(sixgr.util.structGet(prachCfg, "PRACHConfigurationIndex", NaN));
     out.PRACHOccasionIndex = double(sixgr.util.structGet(occasion, "OccasionIndex", NaN));
     out.PRACHCarrierSlot = double(carrierSlot);
-    [rxWave, replay, noiseOnlyWave] = localApplyPRACHChannelAndNoise(tx.Waveform, cfg, tx, snr_dB);
+    [rxWave, replay, noiseOnlyWave] = localApplyPRACHChannelAndNoise(tx.Waveform, cfg, tx, snr_dB, snrSource);
     out.NoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
@@ -428,7 +428,54 @@ if isempty(candidates)
 end
 end
 
-function [y, replay, noiseOnlyWave] = localApplyPRACHChannelAndNoise(x, cfg, tx, snr_dB)
+function [snr_dB, source] = localResolveFinitePRACHReceiverSNR(cfg, requestedSNR_dB)
+snr_dB = double(requestedSNR_dB);
+source = "input_SNR_dB";
+if isscalar(snr_dB) && (isfinite(snr_dB) || isinf(snr_dB))
+    return;
+end
+
+paths = [ ...
+    "phy.prach.receiverEsN0_dB"; ...
+    "phy.prach.receiver_esn0_db"; ...
+    "phy.prach.snr_dB"; ...
+    "random_access.receiverEsN0_dB"; ...
+    "random_access.receiver_esn0_db"; ...
+    "random_access.prach_receiver_esn0_db"; ...
+    "random_access.snr_dB"; ...
+    "random_access.snr_db"; ...
+    "validation.random_access_evidence.receiver_esn0_db"; ...
+    "channel.snr_dB"; ...
+    "simulation.snr_db"];
+for i = 1:numel(paths)
+    raw = sixgr.util.structGet(cfg, paths(i), []);
+    vals = double(raw(:));
+    vals = vals(isfinite(vals) | isinf(vals));
+    if ~isempty(vals)
+        snr_dB = double(vals(1));
+        source = "configured_" + paths(i);
+        return;
+    end
+end
+
+sweepPaths = ["random_access.snr_sweep_db","random_access.snrSweepDb","validation.prach.snr_sweep_db"];
+for i = 1:numel(sweepPaths)
+    raw = sixgr.util.structGet(cfg, sweepPaths(i), []);
+    vals = double(raw(:));
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        snr_dB = double(max(vals));
+        source = "configured_" + sweepPaths(i) + "_max";
+        return;
+    end
+end
+source = "unresolved_nonfinite_prach_receiver_esn0";
+end
+
+function [y, replay, noiseOnlyWave] = localApplyPRACHChannelAndNoise(x, cfg, tx, snr_dB, snrSource)
+if nargin < 5
+    snrSource = "prach_receiver_esn0_detection_axis";
+end
 txInfo = struct("OFDM", sixgr.util.structGet(tx, "OFDMInfo", struct()));
 state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
 sampleRateHz = double(sixgr.util.structGet(state, "SampleRate_Hz", localResolveSampleRate(tx, txInfo)));
@@ -436,7 +483,7 @@ y = x;
 replay = struct( ...
     "ConfiguredSNR_dB", double(snr_dB), ...
     "AppliedAWGNSNR_dB", double(snr_dB), ...
-    "AppliedAWGNSNRSource", "prach_receiver_esn0_detection_axis", ...
+    "AppliedAWGNSNRSource", char(string(snrSource)), ...
     "SNRValueRole", "prach_receiver_esn0_detection_axis_not_data_channel_sinr", ...
     "InjectedNoiseVariance", NaN, ...
     "NoiseVarianceSource", "", ...

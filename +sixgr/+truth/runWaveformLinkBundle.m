@@ -189,6 +189,52 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "SweepReady", false, ...
     "FinalBundleReady", false, ...
     "Notes", "Primary raw trial tables were written to the active artifact sink."));
+profileStopReason = string(sixgr.util.structGet(slotTrace, "ProfileStopReason", ""));
+if strlength(strtrim(profileStopReason)) > 0
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "profile_debug_stop", 0, toc(bundleStart), ...
+        "Profile debug stop requested before publication-grade derived exports: " + profileStopReason);
+    localPublishWaveformBundleStageStatus(runFolder, struct( ...
+        "Stage", "profile_debug_stopped", ...
+        "AnchorKPIsReady", true, ...
+        "DLTrialsReady", istable(sixgr.util.structGet(rawTrials, "DL", table())), ...
+        "ULTrialsReady", istable(sixgr.util.structGet(rawTrials, "UL", table())), ...
+        "ControlReady", localRawControlTablesReady(rawTrials), ...
+        "HARQReady", false, ...
+        "BeamReady", false, ...
+        "RFReady", false, ...
+        "SweepReady", false, ...
+        "FinalBundleReady", false, ...
+        "Notes", "Profile debug run stopped early before heavy derived/report exports: " + profileStopReason));
+    out = struct();
+    out.Ok = false;
+    out.RunFolder = runFolder;
+    out.Result = res;
+    out.KPITable = sixgr.util.structGet(res, "KPITable", table());
+    out.SNRSweep = table();
+    out.MeasuredSINR = struct();
+    out.ReferenceSweep = table();
+    out.FixedLinkCampaign = localEmptyFixedLinkCampaignResult(false);
+    out.RawTrials = rawTrials;
+    out.Artifacts = struct();
+    out.BeamformingArtifacts = struct();
+    out.HARQArtifacts = struct();
+    out.EnergyArtifacts = struct();
+    out.TrialDiagnosticPlots = strings(0, 1);
+    out.LiveMobilityArtifacts = liveMobilityArtifacts;
+    out.LiveDerivedArtifacts = struct();
+    out.RuntimeStageProfile = struct2table(stageRows);
+    out.Integrity = struct("Ok", false, "ProfileStoppedEarly", true, "Reason", profileStopReason);
+    out.Errors = "profile_debug_stop:" + profileStopReason;
+    out.UnsupportedCases = unsupportedCases;
+    out.MultiUser = multiUser;
+    out.PersistenceEnabled = logical(persistenceEnabled);
+    out.CoreOnly = ~logical(persistenceEnabled);
+    out.ProfileStoppedEarly = true;
+    out.ProfileStopReason = profileStopReason;
+    localLogStage(ctx, "Profile debug run stopped early before heavy derived exports: " + profileStopReason);
+    return;
+end
 localLogStage(ctx, "Publishing live derived channel, beam, CSI, and coverage tables from raw trials.");
 stageStart = tic;
 liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgL, rootRunFolder, rawTrials, multiUser, liveMobilityArtifacts, slotTrace);
@@ -2715,6 +2761,10 @@ for ueIdx = 1:numUsers
 end
 runtimeState = localInitCoupledTruthRuntimeState(cfg, runFolder, multiUser, controlTrials, nFramesPerPoint * numel(snrGrid));
 pendingULGrants = repmat(struct(), 0, 1);
+rootRunFolder = fileparts(char(string(runFolder)));
+profileCtl = localResolveCoupledProfileControl(runFolder, nFramesPerPoint);
+profileCtl.StartTic = tic;
+stopCoupledProfile = false;
 
 for sweepIdx = 1:numel(snrGrid)
     snrVal = double(snrGrid(sweepIdx));
@@ -2789,9 +2839,22 @@ for sweepIdx = 1:numel(snrGrid)
                     sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
             end
         end
+        [runtimeState, profileCtl] = localMaybeFlushCoupledProfileSnapshot(runtimeState, rootRunFolder, profileCtl, absoluteFrame);
+        [stopCoupledProfile, stopReason] = localShouldStopCoupledProfile(runtimeState, profileCtl, absoluteFrame, dlTrials, ulTrials);
+        if stopCoupledProfile
+            runtimeState.ProfileStopReason = string(stopReason);
+            runtimeState = localWriteCoupledRuntimeTables(runtimeState, rootRunFolder);
+            localAppendRuntimeLog("WARN", ...
+                "Coupled profiled run stopped early at slot=%d/%d: %s.", ...
+                round(double(frameLocal)), round(double(nFramesPerPoint)), char(string(stopReason)));
+            break;
+        end
     end
     localMaybeAppendSweepProgressLog("DL", snrVal, sweepIdx, numel(snrGrid), dlTrials);
     localMaybeAppendSweepProgressLog("UL", snrVal, sweepIdx, numel(snrGrid), ulTrials);
+    if stopCoupledProfile
+        break;
+    end
 end
 
 controlTrials = runtimeState.ControlTrials;
@@ -5269,6 +5332,151 @@ end
 
 function state = localWriteCoupledRuntimeTables(state, runFolder)
 state = sixgr.truth.CoupledTruthRuntime.writeTables(state, runFolder);
+end
+
+function ctl = localResolveCoupledProfileControl(runFolder, totalSlots)
+mode = strtrim(string(getenv("SIXGR_PROFILE_MODE")));
+ctl = struct();
+ctl.Enabled = strlength(mode) > 0;
+ctl.Mode = mode;
+ctl.RunFolder = string(fileparts(char(string(runFolder))));
+ctl.TotalSlots = double(totalSlots);
+ctl.FlushEverySlots = localEnvDouble("SIXGR_FLUSH_EVERY_SLOTS", Inf);
+ctl.FlushEverySeconds = localEnvDouble("SIXGR_FLUSH_EVERY_SECONDS", Inf);
+ctl.InternalWallClockGuardSeconds = localEnvDouble("SIXGR_INTERNAL_WALL_GUARD_SECONDS", Inf);
+ctl.StopAfterAccessComplete = localEnvLogical("SIXGR_STOP_AFTER_ACCESS_COMPLETE", false);
+ctl.StopAfterFirstExecutableDataGrant = localEnvLogical("SIXGR_STOP_AFTER_FIRST_EXECUTABLE_DATA_GRANT", false);
+ctl.StopAfterFirstNPDSCHGrants = localEnvDouble("SIXGR_STOP_AFTER_FIRST_N_PDSCH_GRANTS", Inf);
+ctl.StopAfterFirstNPUSCHGrants = localEnvDouble("SIXGR_STOP_AFTER_FIRST_N_PUSCH_GRANTS", Inf);
+ctl.LastFlushSlot = 0;
+ctl.LastFlushElapsed_s = 0;
+ctl.StartTic = [];
+if ctl.Enabled
+    if ~(isfinite(ctl.FlushEverySlots) && ctl.FlushEverySlots >= 1)
+        ctl.FlushEverySlots = 25;
+    end
+    if ~(isfinite(ctl.FlushEverySeconds) && ctl.FlushEverySeconds >= 1)
+        ctl.FlushEverySeconds = 30;
+    end
+end
+end
+
+function value = localEnvDouble(name, defaultValue)
+raw = strtrim(string(getenv(char(string(name)))));
+value = double(defaultValue);
+if strlength(raw) == 0
+    return;
+end
+tmp = str2double(raw);
+if isfinite(tmp) || isinf(tmp)
+    value = double(tmp);
+end
+end
+
+function tf = localEnvLogical(name, defaultValue)
+raw = lower(strtrim(string(getenv(char(string(name))))));
+if strlength(raw) == 0
+    tf = logical(defaultValue);
+    return;
+end
+tf = any(raw == ["1","true","yes","on"]);
+end
+
+function [state, ctl] = localMaybeFlushCoupledProfileSnapshot(state, rootRunFolder, ctl, absoluteSlot)
+if ~(isstruct(ctl) && logical(sixgr.util.structGet(ctl, "Enabled", false)))
+    return;
+end
+if isempty(sixgr.util.structGet(ctl, "StartTic", []))
+    ctl.StartTic = tic;
+end
+elapsed = toc(ctl.StartTic);
+slotDelta = double(absoluteSlot) - double(sixgr.util.structGet(ctl, "LastFlushSlot", 0));
+timeDelta = elapsed - double(sixgr.util.structGet(ctl, "LastFlushElapsed_s", 0));
+slotDue = isfinite(double(ctl.FlushEverySlots)) && slotDelta >= double(ctl.FlushEverySlots);
+timeDue = isfinite(double(ctl.FlushEverySeconds)) && timeDelta >= double(ctl.FlushEverySeconds);
+if ~(slotDue || timeDue)
+    return;
+end
+try
+    state = localWriteCoupledRuntimeTables(state, rootRunFolder);
+    localWriteCoupledProfileSnapshot(rootRunFolder, state, ctl, absoluteSlot, elapsed);
+    ctl.LastFlushSlot = double(absoluteSlot);
+    ctl.LastFlushElapsed_s = double(elapsed);
+catch ME
+    localAppendRuntimeLog("WARN", ...
+        "Coupled profile snapshot flush failed at slot=%d: %s %s", ...
+        round(double(absoluteSlot)), char(string(ME.identifier)), char(string(ME.message)));
+end
+end
+
+function localWriteCoupledProfileSnapshot(rootRunFolder, state, ctl, absoluteSlot, elapsed_s)
+if strlength(string(rootRunFolder)) == 0
+    return;
+end
+snapDir = fullfile(char(string(rootRunFolder)), "profile_snapshots");
+sixgr.util.ensureFolder(snapDir);
+slotToken = sprintf("slot_%06d", round(double(absoluteSlot)));
+profileInfo = struct();
+try
+    profileInfo = profile("info");
+catch
+end
+save(fullfile(snapDir, "profile_snapshot_" + string(slotToken) + ".mat"), "profileInfo");
+profileT = sixgr.monitor.ProfileExporter.functionTable(profileInfo);
+sixgr.util.csvWriteTable(fullfile(snapDir, "profile_snapshot_" + string(slotToken) + ".csv"), profileT);
+summary = struct( ...
+    "mode", string(sixgr.util.structGet(ctl, "Mode", "")), ...
+    "slot", double(absoluteSlot), ...
+    "elapsed_s", double(elapsed_s), ...
+    "access_state", strjoin(string(sixgr.util.structGet(state, "AccessState", strings(0,1))).', ","), ...
+    "scheduling_eligible", strjoin(string(logical(sixgr.util.structGet(state, "SchedulingEligibility", false(0,1)))).', ","), ...
+    "profile_function_rows", height(profileT));
+sixgr.util.jsonWrite(fullfile(snapDir, "profile_snapshot_" + string(slotToken) + ".json"), summary);
+end
+
+function [tf, reason] = localShouldStopCoupledProfile(state, ctl, absoluteSlot, dlTrials, ulTrials)
+tf = false;
+reason = "";
+if ~(isstruct(ctl) && logical(sixgr.util.structGet(ctl, "Enabled", false)))
+    return;
+end
+elapsed = toc(ctl.StartTic);
+guard_s = double(sixgr.util.structGet(ctl, "InternalWallClockGuardSeconds", Inf));
+if isfinite(guard_s) && guard_s > 0 && elapsed >= guard_s
+    tf = true;
+    reason = "internal_wall_clock_guard_seconds_elapsed";
+    return;
+end
+accessState = string(sixgr.util.structGet(state, "AccessState", strings(0,1)));
+if logical(sixgr.util.structGet(ctl, "StopAfterAccessComplete", false)) && ...
+        ~isempty(accessState) && all(accessState == "succeeded")
+    tf = true;
+    reason = "all_ues_access_succeeded";
+    return;
+end
+dlRows = height(dlTrials);
+ulRows = height(ulTrials);
+if logical(sixgr.util.structGet(ctl, "StopAfterFirstExecutableDataGrant", false)) && (dlRows + ulRows) >= 1
+    tf = true;
+    reason = "first_executable_data_grant_observed";
+    return;
+end
+nDL = double(sixgr.util.structGet(ctl, "StopAfterFirstNPDSCHGrants", Inf));
+if isfinite(nDL) && nDL >= 1 && dlRows >= nDL
+    tf = true;
+    reason = "requested_pdsch_grant_count_observed";
+    return;
+end
+nUL = double(sixgr.util.structGet(ctl, "StopAfterFirstNPUSCHGrants", Inf));
+if isfinite(nUL) && nUL >= 1 && ulRows >= nUL
+    tf = true;
+    reason = "requested_pusch_grant_count_observed";
+    return;
+end
+if isfinite(double(sixgr.util.structGet(ctl, "TotalSlots", NaN))) && ...
+        double(absoluteSlot) >= double(sixgr.util.structGet(ctl, "TotalSlots", Inf))
+    reason = "profiled_slot_budget_completed";
+end
 end
 
 function artifacts = localBuildMobilityArtifactsFromCoupledRuntime(state)

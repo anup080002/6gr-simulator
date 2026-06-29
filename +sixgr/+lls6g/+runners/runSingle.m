@@ -13,6 +13,14 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
 leaf = localResolveLeaf(runTag);
 backend = lower(string(scfg.get("output.backend", "filesystem")));
+backendOverride = lower(strtrim(string(getenv("SIXGR_OUTPUT_BACKEND_OVERRIDE"))));
+if strlength(backendOverride) > 0
+    if ~ismember(backendOverride, ["filesystem","mysql_web"])
+        error("sixgr:lls6g:InvalidOutputBackendOverride", ...
+            "SIXGR_OUTPUT_BACKEND_OVERRIDE must be filesystem or mysql_web, not '%s'.", char(backendOverride));
+    end
+    backend = backendOverride;
+end
 logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
 if backend == "mysql_web"
     runFolder = localComposeDBStagingRunFolder(scfg.ScenarioID, leaf);
@@ -108,6 +116,31 @@ end
 link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
 localDBLog("INFO", "Waveform bundle finished: ok=%d", double(logical(sixgr.util.structGet(link, "Ok", false))));
 strictControl = struct("Ok", true, "StrictOk", true, "SummaryTable", table(), "FailureReason", "");
+if logical(sixgr.util.structGet(link, "ProfileStoppedEarly", false))
+    localDBLog("WARN", "Waveform bundle profile debug stop observed; skipping supplemental strict validators: %s", ...
+        char(string(sixgr.util.structGet(link, "ProfileStopReason", ""))));
+    runtimeControl = sixgr.util.structGet(link, "RawTrials", struct());
+    runtimeControl.CoupledRuntime = sixgr.util.structGet(link, "CoupledRuntime", struct());
+    mobilityArtifacts = sixgr.util.structGet(link, "MobilityArtifacts", struct());
+    if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())) && ...
+            ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())))
+        runtimeControl.ControlGatingSummaryTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingSummaryTable", table());
+    end
+    if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())) && ...
+            ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())))
+        runtimeControl.ControlGatingStateTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingStateTable", table());
+    end
+    controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), runtimeControl);
+    result = struct();
+    result.Ok = false;
+    result.Link = link;
+    result.Control = controlTrace;
+    result.StrictControl = struct("Ok", true, "Skipped", true, ...
+        "FailureReason", "profile_debug_stop_before_supplemental_validators", "SummaryTable", table());
+    result.StrictSupplemental = struct("Ok", true, "Skipped", true, ...
+        "FailureReason", "profile_debug_stop_before_supplemental_validators", "SummaryTable", table());
+    return;
+end
 if localShouldRunStrictControlEvidence(scfg, cfg)
     localDBLog("INFO", "Running strict waveform-backed control evidence for waveform-bundle scenario target_cases.");
     strictControl = sixgr.truth.exportStrictControlChannelEvidence(runFolder, cfg, ...
@@ -1851,6 +1884,21 @@ try
     manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
     localDBLog("INFO", "Writing scenario manifest.");
     localWriteScenarioManifest(layout, manifest);
+    if logical(sixgr.util.structGet(sixgr.util.structGet(result, "Link", struct()), "ProfileStoppedEarly", false))
+        profileStopReason = string(sixgr.util.structGet(sixgr.util.structGet(result, "Link", struct()), "ProfileStopReason", ""));
+        manifest.ProfileStoppedEarly = true;
+        manifest.ProfileStopReason = char(profileStopReason);
+        manifest.PublicationMode = "profile_debug";
+        manifest.PublicationModeNotes = "Profile debug run stopped early and intentionally skipped publication-grade truth-contract/report bundle exports.";
+        localDBLog("WARN", "Profile debug stop active; skipping publication-grade ownership/report/truth-contract exports: %s", ...
+            char(profileStopReason));
+        localWriteScenarioManifest(layout, manifest);
+        localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
+            localBuildTerminalStatusPayload(scenarioStatus, "profile_debug_stop_complete", optionalArtifactIssues));
+        execOut = localBuildExecOut(profile, result, manifest, runtimeSummary, environmentSummary, ...
+            reportBundle, configOwnership, scenarioStatus, profilerArtifacts, optionalArtifactIssues);
+        return;
+    end
     if localIsSmokePublicationRun(scfg)
         scenarioStatus = localApplySmokePublicationStatus(scenarioStatus);
         result = localApplyScenarioStatus(result, scenarioStatus);

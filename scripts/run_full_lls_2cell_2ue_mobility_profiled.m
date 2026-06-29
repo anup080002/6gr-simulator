@@ -9,6 +9,16 @@ p = inputParser;
 p.addParameter("ScenarioPath", "", @(x)ischar(x) || isstring(x));
 p.addParameter("OutputRoot", fullfile("outputs", "profiled_runs"), @(x)ischar(x) || isstring(x));
 p.addParameter("RunTag", "profiled_2cell_2ue_mobility", @(x)ischar(x) || isstring(x));
+p.addParameter("RunDirSuffix", "2cell_2ue_mobility", @(x)ischar(x) || isstring(x));
+p.addParameter("ProfileMode", "", @(x)ischar(x) || isstring(x));
+p.addParameter("FlushEverySlots", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("FlushEverySeconds", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("InternalWallClockGuardSeconds", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("StopAfterAccessComplete", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("StopAfterFirstExecutableDataGrant", false, @(x)islogical(x) || isnumeric(x));
+p.addParameter("StopAfterFirstNPDSCHGrants", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("StopAfterFirstNPUSCHGrants", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("OutputBackendOverride", "", @(x)ischar(x) || isstring(x));
 p.parse(varargin{:});
 
 repoRoot = localRepoRoot();
@@ -24,7 +34,7 @@ if exist(char(scenarioPath), "file") ~= 2
 end
 
 stamp = string(datetime("now", "Format", "yyyyMMdd_HHmmss"));
-runDir = fullfile(repoRoot, char(string(p.Results.OutputRoot)), char(stamp + "_2cell_2ue_mobility"));
+runDir = fullfile(repoRoot, char(string(p.Results.OutputRoot)), char(stamp + "_" + string(p.Results.RunDirSuffix)));
 sixgr.util.ensureFolder(runDir);
 simOutputRoot = fullfile(runDir, "simulator_output");
 sixgr.util.ensureFolder(simOutputRoot);
@@ -55,6 +65,7 @@ mon.record("END_PHASE", "function_name", mfilename, "phase", "static_inventory",
 
 profileInfo = struct();
 profileT = table();
+envCleanup = localApplyProfileEnvironment(p.Results, runDir); %#ok<NASGU>
 try
     mon.record("START_PHASE", "function_name", mfilename, "phase", "scenario_run", ...
         "status", "started", "file_path", scenarioPath);
@@ -112,6 +123,60 @@ if ~isempty(runError)
 else
     fprintf("Profiled run completed with Ok=%d. Audit score %.2f/10. Output: %s\n", ...
         double(runOk), double(audit.Grade.final_score_out_of_10), runDir);
+end
+end
+
+function cleanup = localApplyProfileEnvironment(opt, runDir)
+names = ["SIXGR_PROFILE_MODE","SIXGR_FLUSH_EVERY_SLOTS","SIXGR_FLUSH_EVERY_SECONDS", ...
+    "SIXGR_INTERNAL_WALL_GUARD_SECONDS","SIXGR_STOP_AFTER_ACCESS_COMPLETE", ...
+    "SIXGR_STOP_AFTER_FIRST_EXECUTABLE_DATA_GRANT","SIXGR_STOP_AFTER_FIRST_N_PDSCH_GRANTS", ...
+    "SIXGR_STOP_AFTER_FIRST_N_PUSCH_GRANTS","SIXGR_PROFILE_RUN_DIR","SIXGR_OUTPUT_BACKEND_OVERRIDE"];
+old = containers.Map("KeyType", "char", "ValueType", "char");
+for i = 1:numel(names)
+    old(char(names(i))) = getenv(char(names(i)));
+end
+setIfText("SIXGR_PROFILE_MODE", string(opt.ProfileMode));
+setIfFinite("SIXGR_FLUSH_EVERY_SLOTS", opt.FlushEverySlots);
+setIfFinite("SIXGR_FLUSH_EVERY_SECONDS", opt.FlushEverySeconds);
+setIfFinite("SIXGR_INTERNAL_WALL_GUARD_SECONDS", opt.InternalWallClockGuardSeconds);
+setIfLogical("SIXGR_STOP_AFTER_ACCESS_COMPLETE", opt.StopAfterAccessComplete);
+setIfLogical("SIXGR_STOP_AFTER_FIRST_EXECUTABLE_DATA_GRANT", opt.StopAfterFirstExecutableDataGrant);
+setIfFinite("SIXGR_STOP_AFTER_FIRST_N_PDSCH_GRANTS", opt.StopAfterFirstNPDSCHGrants);
+setIfFinite("SIXGR_STOP_AFTER_FIRST_N_PUSCH_GRANTS", opt.StopAfterFirstNPUSCHGrants);
+setenv("SIXGR_PROFILE_RUN_DIR", char(string(runDir)));
+setIfText("SIXGR_OUTPUT_BACKEND_OVERRIDE", string(opt.OutputBackendOverride));
+cleanup = onCleanup(@()restoreEnv(names, old));
+
+    function setIfText(name, value)
+        if strlength(strtrim(value)) > 0
+            setenv(name, char(value));
+        else
+            setenv(name, "");
+        end
+    end
+
+    function setIfFinite(name, value)
+        value = double(value);
+        if isfinite(value)
+            setenv(name, char(string(value)));
+        else
+            setenv(name, "");
+        end
+    end
+
+    function setIfLogical(name, value)
+        if logical(value)
+            setenv(name, "1");
+        else
+            setenv(name, "0");
+        end
+    end
+end
+
+function restoreEnv(names, old)
+for i = 1:numel(names)
+    key = char(names(i));
+    setenv(key, old(key));
 end
 end
 
