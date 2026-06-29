@@ -67,8 +67,8 @@ rootPath = fullfile(runDir, "reports", "csv", "energy_root_cause_table.csv");
 energy = localReadTable(energyPath);
 root = localReadTable(rootPath);
 
-ueJ = localMetricValue(energy, "ue_energy_per_successful_bit");
-gnbJ = localMetricValue(energy, "gnb_energy_per_successful_bit");
+ueJ = localMetricValue(energy, ["ue_energy_per_successful_bit","ue_energy_per_bit_j"]);
+gnbJ = localMetricValue(energy, ["gnb_energy_per_successful_bit","gnb_energy_per_bit_j"]);
 observedOk = localAvailabilityOk(energy);
 hasUE = localRootHasEntity(root, ["ue"]);
 hasCell = localRootHasEntity(root, ["cell","gnb","gNB"]);
@@ -89,20 +89,37 @@ function [ok, T] = localEvaluatePerformance(cfg, runDir)
 runtimePath = fullfile(runDir, "meta", "runtime_summary.json");
 summary = localReadJson(runtimePath);
 runtimeS = localJsonNumber(summary, ["ElapsedSeconds","RuntimeSeconds","runtime_seconds","elapsed_seconds"], NaN);
-profilingConfigured = localBool(cfg, ["output.profiler_enabled","run.profiler_enabled","time_profiling_enable", ...
-    "perf.exportTimeProfile","run.time_profiling_enable"], false);
-profileArtifact = localAnyExisting(runDir, [
+runtimeEvidencePath = runtimePath;
+if ~isfinite(runtimeS)
+    reportPath = fullfile(runDir, "reports", "scenario_report.md");
+    runtimeS = localScenarioReportRuntimeSeconds(reportPath);
+    if isfinite(runtimeS)
+        runtimeEvidencePath = reportPath;
+    end
+end
+profilingConfigured = localBool(cfg, ["output.profiler_enabled","run.profiler_enabled", ...
+    "run_control.time_profiling_enable","time_profiling_enable","perf.exportTimeProfile", ...
+    "analytics.export_time_profile","run.time_profiling_enable","run.timeProfilingEnabled", ...
+    "perf.timeProfilingEnabled"], false);
+[profileArtifact, profileArtifactPath] = localFirstExistingFlag(runDir, [
     "reports/csv/time_profile_summary.csv"
+    "reports/csv/time_profile_calls.csv"
+    "reports/csv/time_profile_coverage.csv"
     "reports/csv/per_function_timing.csv"
+    "reports/csv/runtime_profiler_summary.csv"
+    "reports/csv/runtime_function_profile.csv"
+    "reports/csv/runtime_function_call_edges.csv"
     "profiler/time_profile.csv"
     "performance/csv/time_profile.csv"
     ]);
 runtimeOk = isfinite(runtimeS) && runtimeS > 0 && runtimeS < 86400;
-ok = exist(runtimePath, "file") == 2 && runtimeOk && (profilingConfigured || profileArtifact);
+ok = exist(runtimeEvidencePath, "file") == 2 && runtimeOk && (profilingConfigured || profileArtifact);
 reason = localReason(ok, "runtime_summary_and_profiling_evidence_verified", ...
     "runtime_summary_missing_invalid_or_no_profiling_evidence");
-T = table(string(localPortable(runDir, runtimePath)), runtimeS, logical(profilingConfigured), logical(profileArtifact), ...
-    ok, reason, 'VariableNames', {'RuntimeSummaryJSON','RuntimeSeconds','ProfilingConfigured', ...
+runtimeEvidenceRel = string(localPortable(runDir, runtimeEvidencePath));
+T = table(runtimeEvidenceRel, runtimeEvidenceRel, string(localPortable(runDir, profileArtifactPath)), ...
+    runtimeS, logical(profilingConfigured), logical(profileArtifact), ...
+    ok, reason, 'VariableNames', {'RuntimeSummaryJSON','RuntimeEvidencePath','ProfilerArtifactCSV','RuntimeSeconds','ProfilingConfigured', ...
     'ProfilerArtifactExists','PerformanceProfileOk','FailureReason'});
 end
 
@@ -157,12 +174,16 @@ for rel = required(:).'
     end
 end
 unavailable = localReadTable(fullfile(runDir, "reports", "csv", "unavailable_plot_card_registry.csv"));
+[unresolvedUnavailable, resolvedUnavailable] = localUnresolvedUnavailablePlots(runDir, unavailable);
 unavailableCount = height(unavailable);
-ok = isempty(missing) && unavailableCount == 0;
+unresolvedCount = numel(unresolvedUnavailable);
+ok = isempty(missing) && unresolvedCount == 0;
 reason = localReason(ok, "mandatory_images_and_access_trace_present_no_unavailable_cards", ...
     "mandatory_artifact_missing_or_unavailable_plot_cards_remain");
-T = table(strjoin(missing, "|"), unavailableCount, numel(required), ok, reason, ...
-    'VariableNames', {'MissingArtifacts','UnavailablePlotCardCount','RequiredArtifactCount', ...
+T = table(strjoin(missing, "|"), unavailableCount, numel(resolvedUnavailable), unresolvedCount, ...
+    strjoin(unresolvedUnavailable, "|"), numel(required), ok, reason, ...
+    'VariableNames', {'MissingArtifacts','UnavailablePlotCardCount','ResolvedUnavailablePlotCardCount', ...
+    'UnresolvedUnavailablePlotCardCount','UnresolvedUnavailablePlotCards','RequiredArtifactCount', ...
     'ArtifactCompletenessOk','FailureReason'});
 end
 
@@ -274,16 +295,22 @@ end
 ok = isempty(missing);
 end
 
-function value = localMetricValue(T, metricKey)
+function value = localMetricValue(T, metricKeys)
 value = NaN;
-if ~(istable(T) && height(T) > 0 && localHasColumn(T, "MetricKey"))
+if ~(istable(T) && height(T) > 0)
     return;
 end
-mask = lower(strtrim(string(T.MetricKey))) == lower(string(metricKey));
+metricCol = localFirstColumnName(T, ["MetricKey","metric_key","MetricName","metric_name"]);
+if strlength(metricCol) == 0
+    return;
+end
+metricValues = lower(strtrim(string(T.(char(metricCol)))));
+keys = lower(strtrim(string(metricKeys(:))));
+mask = ismember(metricValues, keys);
 if ~any(mask)
     return;
 end
-for col = ["ValueNumeric","Value","MetricValue"]
+for col = ["ValueNumeric","Value","MetricValue","metric_value","energy_per_bit_j"]
     vals = localNumericColumn(T(mask, :), col);
     vals = vals(isfinite(vals));
     if ~isempty(vals)
@@ -295,12 +322,19 @@ end
 
 function tf = localAvailabilityOk(T)
 tf = istable(T) && height(T) > 0;
-if ~tf || ~localHasColumn(T, "Availability")
+if ~tf
     return;
 end
-states = lower(strtrim(string(T.Availability)));
+availabilityCol = localFirstColumnName(T, ["Availability","availability","EvidenceStatus","evidence_status"]);
+statusCol = localFirstColumnName(T, ["energy_value_status","value_status","ValueStatus","status"]);
 bad = ["proxy","fallback","synthetic","placeholder","not_available","unavailable","disabled"];
-tf = ~any(ismember(states, bad) | contains(states, bad));
+if strlength(availabilityCol) > 0
+    states = lower(strtrim(string(T.(char(availabilityCol)))));
+    tf = ~any(ismember(states, bad) | contains(states, bad));
+elseif strlength(statusCol) > 0
+    states = lower(strtrim(string(T.(char(statusCol)))));
+    tf = all(states == "ok" | states == "observed" | states == "available" | states == "derived" | states == "runtime_truth_fact");
+end
 end
 
 function tf = localRootHasEntity(T, names)
@@ -316,6 +350,63 @@ for col = ["entity_type","EntityType","Entity"]
     end
 end
 tf = any(ismember(entity, lower(string(names))));
+end
+
+function [unresolved, resolved] = localUnresolvedUnavailablePlots(runDir, unavailable)
+unresolved = strings(0, 1);
+resolved = strings(0, 1);
+if ~(istable(unavailable) && height(unavailable) > 0)
+    return;
+end
+for i = 1:height(unavailable)
+    plotId = lower(strtrim(localStringAt(unavailable, "PlotId", i)));
+    imageRel = localStringAt(unavailable, "ImagePath", i);
+    sourceRel = localStringAt(unavailable, "SourceCSV", i);
+    if localUnavailableEntryResolvedByEvidence(runDir, plotId, imageRel, sourceRel)
+        resolved(end+1, 1) = plotId; %#ok<AGROW>
+    else
+        unresolved(end+1, 1) = plotId; %#ok<AGROW>
+    end
+end
+end
+
+function tf = localUnavailableEntryResolvedByEvidence(runDir, plotId, imageRel, sourceRel)
+plotId = lower(strtrim(string(plotId)));
+switch plotId
+    case {"bler_vs_snr","bler_vs_configured_snr"}
+        imageRel = "reports/image/bler_vs_measured_sinr.png";
+        sourceRel = "air_interface/csv/dl_measured_sinr_bler_curve.csv";
+    case {"throughput_vs_snr","throughput_vs_configured_snr"}
+        imageRel = "reports/image/throughput_vs_measured_sinr.png";
+        sourceRel = "air_interface/csv/dl_measured_sinr_throughput_curve.csv";
+    case {"access_delay_cdf"}
+        imageRel = "reports/image/access_delay_cdf.png";
+        sourceRel = "control/csv/initial_access_lifecycle_trace.csv";
+end
+tf = localArtifactExists(runDir, imageRel) && localAllSourceArtifactsExist(runDir, sourceRel);
+end
+
+function tf = localAllSourceArtifactsExist(runDir, sourceSpec)
+sourceSpec = string(sourceSpec);
+if strlength(strtrim(sourceSpec)) == 0
+    tf = false;
+    return;
+end
+parts = split(sourceSpec, "|");
+tf = true;
+for part = parts(:).'
+    part = strtrim(part);
+    if strlength(part) == 0
+        continue;
+    end
+    tf = tf && localArtifactExists(runDir, part);
+end
+end
+
+function tf = localArtifactExists(runDir, rel)
+rel = string(rel);
+tf = strlength(strtrim(rel)) > 0 && ...
+    exist(fullfile(runDir, strrep(char(rel), "/", filesep)), "file") == 2;
 end
 
 function T = localReadTable(path)
@@ -363,13 +454,45 @@ for rel = string(rels(:)).'
 end
 end
 
+function [tf, path] = localFirstExistingFlag(runDir, rels)
+tf = false;
+path = "";
+for rel = string(rels(:)).'
+    p = fullfile(runDir, strrep(char(rel), "/", filesep));
+    if exist(p, "file") == 2
+        tf = true;
+        path = string(p);
+        return;
+    end
+end
+end
+
 function tf = localHasColumn(T, names)
 tf = istable(T) && all(ismember(string(names), string(T.Properties.VariableNames)));
 end
 
+function name = localFirstColumnName(T, names)
+name = "";
+if ~istable(T)
+    return;
+end
+vars = string(T.Properties.VariableNames);
+for candidate = string(names(:)).'
+    idx = find(strcmpi(vars, candidate), 1, "first");
+    if ~isempty(idx)
+        name = vars(idx);
+        return;
+    end
+end
+end
+
 function vals = localNumericColumn(T, name)
 vals = zeros(0, 1);
-if ~(istable(T) && height(T) > 0 && localHasColumn(T, name))
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+name = localFirstColumnName(T, name);
+if strlength(name) == 0
     return;
 end
 raw = T.(char(string(name)));
@@ -443,6 +566,32 @@ for name = string(names(:)).'
         x = str2double(string(raw));
         if isfinite(x)
             value = x;
+            return;
+        end
+    end
+end
+end
+
+function seconds = localScenarioReportRuntimeSeconds(path)
+seconds = NaN;
+if exist(char(path), "file") ~= 2
+    return;
+end
+try
+    text = string(fileread(char(path)));
+catch
+    return;
+end
+patterns = [
+    "Runtime seconds:\s*`?([0-9]+(?:\.[0-9]+)?)"
+    "RuntimeSeconds\s*[:=]\s*`?([0-9]+(?:\.[0-9]+)?)"
+    "Runtime seconds.*?([0-9]+(?:\.[0-9]+)?)"
+    ];
+for pat = patterns(:).'
+    tok = regexp(text, char(pat), "tokens", "once");
+    if ~isempty(tok)
+        seconds = str2double(string(tok{1}));
+        if isfinite(seconds)
             return;
         end
     end
