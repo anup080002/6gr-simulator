@@ -15,6 +15,7 @@ for i = 1:numel(legacyFiles)
     sixgr.util.ensureDir(legacyFiles{i});
     writetable(table(1, 'VariableNames', {'Deprecated'}), legacyFiles{i});
 end
+localWriteLegacyAnalyticsFiles(tmp);
 
 trialData = struct();
 trialData.dl = localTrialTable("DL");
@@ -72,9 +73,62 @@ if usejava("jvm")
     for p = string(plots.Plots(:)).'
         assert(exist(p, "file") == 2, "Missing measured SINR plot: %s", p);
     end
+    lineagePath = fullfile(tmp, "reports", "csv", "measurement_sinr_plot_lineage.csv");
+    assert(exist(lineagePath, "file") == 2, "Missing measured SINR plot lineage CSV.");
+    lineage = readtable(lineagePath, "VariableNamingRule", "preserve");
+    assert(height(lineage) == 5 && all(logical(lineage.ImageExists)) && all(logical(lineage.SourceExists)), ...
+        "Measured SINR plot lineage must cover all five generated measured-SINR plots and their source CSVs.");
+    assert(all(strlength(string(lineage.GeneratorFunction)) > 0), ...
+        "Measured SINR plot lineage must name each plot generator function.");
 end
+localAssertRelabeledAnalytics(tmp);
 
 ok = true;
+end
+
+function localWriteLegacyAnalyticsFiles(tmp)
+csvDir = fullfile(tmp, "analytics", "csv");
+imgDir = fullfile(tmp, "analytics", "image");
+sixgr.util.ensureFolder(csvDir);
+sixgr.util.ensureFolder(imgDir);
+legacy = [
+    "contract__error-reliability-analytics__bler-vs-snr", "BLER vs SNR";
+    "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "throughput vs SNR"
+    ];
+for i = 1:size(legacy, 1)
+    T = table(repmat(legacy(i, 2), 2, 1), [0; 1], [0.5; 0.25], ...
+        'VariableNames', {'chart_name','SNR_dB','MetricValue'});
+    writetable(T, fullfile(csvDir, legacy(i, 1) + ".csv"));
+    fid = fopen(fullfile(imgDir, legacy(i, 1) + ".svg"), "w");
+    assert(fid > 0, "Could not create legacy analytics SVG fixture.");
+    cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+    fwrite(fid, char("<svg><text>" + legacy(i, 2) + "</text><text>Applied AWGN SNR (dB)</text></svg>"));
+end
+end
+
+function localAssertRelabeledAnalytics(tmp)
+csvDir = fullfile(tmp, "analytics", "csv");
+imgDir = fullfile(tmp, "analytics", "image");
+specs = [
+    "contract__error-reliability-analytics__bler-vs-snr", "contract__error-reliability-analytics__bler-vs-measured-sinr";
+    "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-measured-sinr"
+    ];
+for i = 1:size(specs, 1)
+    for stem = specs(i, :)
+        csvPath = fullfile(csvDir, stem + ".csv");
+        assert(exist(csvPath, "file") == 2, "Missing relabeled analytics CSV: %s", stem);
+        T = readtable(csvPath, "VariableNamingRule", "preserve", "TextType", "string");
+        assert(contains(lower(string(T.chart_name(1))), "measured") && ...
+            ismember("PostEqSINR_dB", string(T.Properties.VariableNames)) && ...
+            ~ismember("SNR_dB", string(T.Properties.VariableNames)), ...
+            "Analytics CSV must be relabeled to measured PostEq SINR without SNR_dB injection axis: %s", stem);
+        svgPath = fullfile(imgDir, stem + ".svg");
+        assert(exist(svgPath, "file") == 2, "Missing relabeled analytics SVG: %s", stem);
+        txt = string(fileread(svgPath));
+        assert(contains(txt, "Measured PostEq SINR (dB)") && ~contains(txt, "Applied AWGN"), ...
+            "Analytics SVG must relabel the x-axis to measured PostEq SINR: %s", stem);
+    end
+end
 end
 
 function T = localTrialTable(direction)

@@ -522,13 +522,14 @@ function localRelabelAnalyticsCSVAndSVG(layout)
 csvDir = fullfile(layout.Root, "analytics", "csv");
 imgDir = fullfile(layout.Root, "analytics", "image");
 specs = [
-    "contract__error-reliability-analytics__bler-vs-snr", "BLER vs Measured PostEq SINR";
-    "contract__error-reliability-analytics__ber-vs-snr", "BER vs Measured PostEq SINR";
-    "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "Throughput vs Measured PostEq SINR"
+    "contract__error-reliability-analytics__bler-vs-snr", "BLER vs Measured PostEq SINR", "contract__error-reliability-analytics__bler-vs-measured-sinr";
+    "contract__error-reliability-analytics__ber-vs-snr", "BER vs Measured PostEq SINR", "contract__error-reliability-analytics__ber-vs-measured-sinr";
+    "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "Throughput vs Measured PostEq SINR", "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-measured-sinr"
     ];
 for i = 1:size(specs, 1)
     stem = specs(i, 1);
     titleText = specs(i, 2);
+    aliasStem = specs(i, 3);
     csvPath = fullfile(csvDir, stem + ".csv");
     if exist(csvPath, "file") == 2
         try
@@ -537,9 +538,10 @@ for i = 1:size(specs, 1)
                 T.chart_name(:) = titleText;
             end
             if localHasColumn(T, "SNR_dB") && ~localHasColumn(T, "PostEqSINR_dB")
-                T.Properties.VariableNames{strcmp(string(T.Properties.VariableNames), "SNR_dB")} = "PostEqSINR_dB";
+                T.Properties.VariableNames{strcmp(string(T.Properties.VariableNames), "SNR_dB")} = char("PostEqSINR_dB");
             end
             sixgr.analytics.writeAnalysisTable(csvPath, T);
+            sixgr.analytics.writeAnalysisTable(fullfile(csvDir, aliasStem + ".csv"), T);
         catch
         end
     end
@@ -557,6 +559,13 @@ for i = 1:size(specs, 1)
             if fid > 0
                 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
                 fwrite(fid, char(txt));
+            end
+            aliasSvgPath = fullfile(imgDir, aliasStem + ".svg");
+            sixgr.util.ensureDir(aliasSvgPath);
+            fidAlias = fopen(aliasSvgPath, "w");
+            if fidAlias > 0
+                cleanupAlias = onCleanup(@() fclose(fidAlias)); %#ok<NASGU>
+                fwrite(fidAlias, char(txt));
             end
         catch
         end

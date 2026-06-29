@@ -11701,25 +11701,25 @@ if nargin < 5
 end
 snrGrid = unique(sort(double(snrGrid(:))));
 if isfield(rawTrials, "PBCH") && istable(rawTrials.PBCH) && ~isempty(rawTrials.PBCH)
-    aggPBCH = localAggregatePrimaryPassFailCase(rawTrials.PBCH, "PBCH primary sweep", snrGrid);
+    aggPBCH = localAggregatePrimaryPassFailCase(rawTrials.PBCH, "PBCH geometry-driven");
     res = localReplaceCaseResult(res, "CellSearch_MIB_SIB1", aggPBCH);
 end
 if isfield(rawTrials, "PRACH") && istable(rawTrials.PRACH) && ~isempty(rawTrials.PRACH)
-    aggPRACH = localAggregatePrimaryPassFailCase(rawTrials.PRACH, "PRACH primary sweep", snrGrid);
+    aggPRACH = localAggregatePrimaryPassFailCase(rawTrials.PRACH, "PRACH geometry-driven");
     res = localReplaceCaseResult(res, "PRACH_Detection", aggPRACH);
 end
 if isfield(rawTrials, "DL") && istable(rawTrials.DL) && ~isempty(rawTrials.DL)
-    aggDL = localAggregatePrimaryLinkCase(rawTrials.DL, cfg, "DL primary sweep", snrGrid);
+    aggDL = localAggregatePrimaryLinkCase(rawTrials.DL, cfg, "DL geometry-driven");
     res = localReplaceCaseResult(res, "DL_PDSCH_Throughput", aggDL);
 end
 if isfield(rawTrials, "UL") && istable(rawTrials.UL) && ~isempty(rawTrials.UL)
-    aggUL = localAggregatePrimaryLinkCase(rawTrials.UL, cfg, "UL primary sweep", snrGrid);
+    aggUL = localAggregatePrimaryLinkCase(rawTrials.UL, cfg, "UL geometry-driven");
     res = localReplaceCaseResult(res, "UL_PUSCH_Throughput", aggUL);
-    aggPAPR = localAggregatePrimaryULPAPRCase(rawTrials.UL, snrGrid);
+    aggPAPR = localAggregatePrimaryULPAPRCase(rawTrials.UL);
     res = localReplaceCaseResult(res, "UL_LowPAPR", aggPAPR);
 end
 if isfield(rawTrials, "SRS") && istable(rawTrials.SRS) && ~isempty(rawTrials.SRS)
-    aggSRS = localAggregatePrimarySRSCase(rawTrials.SRS, snrGrid);
+    aggSRS = localAggregatePrimarySRSCase(rawTrials.SRS);
     res = localReplaceCaseResult(res, "UL_SRS_ChannelEst", aggSRS);
 end
 if logical(pruneMissingPrimaryEvidence)
@@ -11830,11 +11830,12 @@ agg.Ok = any(passMask);
 if ~any(observedMask)
     agg.Skipped = true;
 end
-agg.Notes = string(label) + "; snr_grid_db=" + strjoin(string(round(snrGrid(:).', 6)), "|") + ...
+agg.Notes = string(label) + "; geometry_driven=true" + ...
+    localMeasuredSINRRangeNoteFromTable(stats.Table) + ...
     "; steady_state_warmup_rows_excluded=true";
 end
 
-function agg = localAggregatePrimaryPassFailCase(T, label, snrGrid)
+function agg = localAggregatePrimaryPassFailCase(T, label)
 agg = struct();
 agg.Ok = false;
 agg.Skipped = isempty(T);
@@ -11858,10 +11859,10 @@ agg.Ok = any(passMask);
 if ~any(observedMask)
     agg.Skipped = true;
 end
-agg.Notes = string(label) + "; snr_grid_db=" + strjoin(string(round(snrGrid(:).', 6)), "|");
+agg.Notes = string(label) + "; geometry_driven=true" + localMeasuredSINRRangeNoteFromTable(Te);
 end
 
-function agg = localAggregatePrimarySRSCase(T, snrGrid)
+function agg = localAggregatePrimarySRSCase(T)
 agg = struct();
 agg.Ok = false;
 agg.Skipped = isempty(T);
@@ -11879,10 +11880,10 @@ Te = localEffectiveTrialRows(T);
 nmse = localFiniteColumn(Te, "NMSE_dB");
 agg.NMSE_dB = mean(nmse, "omitnan");
 agg.Ok = ~isempty(nmse);
-agg.Notes = "SRS primary sweep; snr_grid_db=" + strjoin(string(round(snrGrid(:).', 6)), "|");
+agg.Notes = "SRS geometry-driven; nmse_source=srs_trials.NMSE_dB" + localMeasuredSINRRangeNoteFromTable(Te);
 end
 
-function agg = localAggregatePrimaryULPAPRCase(T, snrGrid)
+function agg = localAggregatePrimaryULPAPRCase(T)
 agg = struct();
 agg.Ok = false;
 agg.Skipped = isempty(T);
@@ -11935,12 +11936,33 @@ if isfinite(agg.PAPR_CP_dB) && isfinite(agg.PAPR_DFTs_dB)
 end
 
 agg.Ok = true;
-agg.Notes = "UL low-PAPR primary raw trial metric; snr_grid_db=" + ...
-    strjoin(string(round(snrGrid(:).', 6)), "|") + ...
-    "; papr_source=ul_pusch_trials.PAPR_dB";
+agg.Notes = "UL low-PAPR geometry-driven; papr_source=ul_pusch_trials.PAPR_dB" + ...
+    localMeasuredSINRRangeNoteFromTable(Te);
 if ~isfinite(agg.PAPR_DFTs_dB)
     agg.Notes = agg.Notes + "; dfts_comparison_unavailable_without_transform_precoding_trials";
 end
+end
+
+function note = localMeasuredSINRRangeNoteFromTable(T)
+note = "; measured_sinr_source=not_applicable_or_unavailable";
+if ~istable(T) || isempty(T)
+    return;
+end
+source = "";
+sinr = [];
+for candidate = ["PostEqSINR_dB", "MeasuredSINR_dB", "MeasuredTrialSINR_dB", "ReceiverHestSINR_dB"]
+    vals = localFiniteColumn(T, candidate);
+    if ~isempty(vals)
+        source = candidate;
+        sinr = vals;
+        break;
+    end
+end
+if isempty(sinr)
+    return;
+end
+note = sprintf("; measured_sinr_source=%s; measured_sinr_range_db=[%.3g,%.3g]", ...
+    char(source), min(sinr), max(sinr));
 end
 
 function stats = localSummarizeLinkTrialTable(T, cfg)

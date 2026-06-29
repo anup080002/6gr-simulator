@@ -12,6 +12,7 @@ opt = ip.Results;
 
 runDir = localResolveRunDir(cfg);
 layout = sixgr.report.resultLayout(runDir);
+sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.ReportImageDir);
 sixgr.util.ensureFolder(layout.AirInterfaceImageDir);
 
@@ -30,7 +31,10 @@ paths(end+1, 1) = localPlotThroughput(layout, tables.DLThroughput, tables.ULThro
 paths(end+1, 1) = localPlotDistribution(layout, tables.Distribution);
 paths(end+1, 1) = localPlotDistanceScatter(layout, tables.DistanceScatter);
 
-results = struct("Ok", true, "RunDir", string(runDir), "RunTag", string(runTag), "Plots", paths);
+lineage = localWritePlotLineage(layout, paths);
+
+results = struct("Ok", true, "RunDir", string(runDir), "RunTag", string(runTag), ...
+    "Plots", paths, "LineageCSV", string(lineage.Path), "LineageTable", lineage.Table);
 end
 
 function path = localPlotBLER(layout, dl, ul, minTrials)
@@ -231,6 +235,89 @@ catch
 end
 end
 
+function lineage = localWritePlotLineage(layout, paths)
+plotIds = [
+    "bler_vs_measured_sinr"
+    "ber_vs_measured_sinr"
+    "throughput_vs_measured_sinr"
+    "measured_sinr_distribution"
+    "distance_vs_sinr"
+    ];
+sourceCsv = [
+    "air_interface/csv/dl_measured_sinr_bler_curve.csv|air_interface/csv/ul_measured_sinr_bler_curve.csv"
+    "air_interface/csv/dl_measured_sinr_bler_curve.csv|air_interface/csv/ul_measured_sinr_bler_curve.csv"
+    "air_interface/csv/dl_measured_sinr_throughput_curve.csv|air_interface/csv/ul_measured_sinr_throughput_curve.csv"
+    "air_interface/csv/measured_sinr_distribution.csv"
+    "air_interface/csv/distance_vs_sinr.csv"
+    ];
+generator = [
+    "sixgr.analytics.generateMeasuredSINRPlots.localPlotBLER"
+    "sixgr.analytics.generateMeasuredSINRPlots.localPlotBER"
+    "sixgr.analytics.generateMeasuredSINRPlots.localPlotThroughput"
+    "sixgr.analytics.generateMeasuredSINRPlots.localPlotDistribution"
+    "sixgr.analytics.generateMeasuredSINRPlots.localPlotDistanceScatter"
+    ];
+xVariable = [
+    "PostEqSINR_dB_BinCenter"
+    "PostEqSINR_dB_BinCenter"
+    "PostEqSINR_dB_BinCenter"
+    "PostEqSINR_dB_BinCenter"
+    "PropagationDistance_m"
+    ];
+yVariables = [
+    "BLER|BLER_CI_Low|BLER_CI_High"
+    "BER"
+    "Goodput_Mbps_mean"
+    "Fraction"
+    "PostEqSINR_dB|LargeScaleSINR_dB"
+    ];
+
+rows = repmat(struct("PlotId", "", "ImagePath", "", "SourceCSV", "", ...
+    "GeneratorFunction", "", "XVariable", "", "YVariables", "", ...
+    "ImageExists", false, "SourceExists", false, "SourceRowCount", NaN, ...
+    "TruthStatus", "", "LineageStatus", ""), numel(plotIds), 1);
+for i = 1:numel(plotIds)
+    imagePath = string(paths(min(i, numel(paths))));
+    relImage = "reports/image/" + plotIds(i) + ".png";
+    [sourceExists, sourceRows] = localSourceStats(layout.Root, sourceCsv(i));
+    imageExists = strlength(imagePath) > 0 && exist(char(imagePath), "file") == 2;
+    rows(i) = struct("PlotId", plotIds(i), ...
+        "ImagePath", relImage, ...
+        "SourceCSV", sourceCsv(i), ...
+        "GeneratorFunction", generator(i), ...
+        "XVariable", xVariable(i), ...
+        "YVariables", yVariables(i), ...
+        "ImageExists", logical(imageExists), ...
+        "SourceExists", logical(sourceExists), ...
+        "SourceRowCount", double(sourceRows), ...
+        "TruthStatus", "real_lls_measured_sinr_analytics", ...
+        "LineageStatus", string(localTernary(imageExists && sourceExists, "complete", "incomplete")));
+end
+T = struct2table(rows, "AsArray", true);
+path = fullfile(layout.ReportCSVDir, "measurement_sinr_plot_lineage.csv");
+sixgr.analytics.writeAnalysisTable(path, T);
+lineage = struct("Path", string(path), "Table", T);
+end
+
+function [existsAll, rowCount] = localSourceStats(runDir, sourceSpec)
+parts = split(string(sourceSpec), "|");
+existsAll = true;
+rowCount = 0;
+for i = 1:numel(parts)
+    p = fullfile(char(runDir), char(strrep(parts(i), "/", filesep)));
+    if exist(p, "file") ~= 2
+        existsAll = false;
+        continue;
+    end
+    try
+        T = readtable(p, "VariableNamingRule", "preserve");
+        rowCount = rowCount + height(T);
+    catch
+        existsAll = false;
+    end
+end
+end
+
 function localEmptyAnnotationIfNeeded(counts, msg)
 if all(double(counts(:)) == 0)
     localEmptyAnnotation(msg);
@@ -304,4 +391,12 @@ end
 
 function tf = localHasColumn(T, name)
 tf = istable(T) && any(string(T.Properties.VariableNames) == string(name));
+end
+
+function y = localTernary(cond, a, b)
+if cond
+    y = a;
+else
+    y = b;
+end
 end
