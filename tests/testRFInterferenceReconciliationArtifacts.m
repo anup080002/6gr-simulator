@@ -1,0 +1,143 @@
+function ok = testRFInterferenceReconciliationArtifacts()
+%TESTRFINTERFERENCERECONCILIATIONARTIFACTS Guard Phase 7 RF evidence wiring.
+
+setup6GRSimToolkit("Verbose", false);
+
+tmp = tempname;
+mkdir(tmp);
+cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+sixgr.util.ensureFolder(fullfile(tmp, "reports", "json"));
+sixgr.util.jsonWrite(fullfile(tmp, "reports", "json", "scenario_manifest.json"), ...
+    struct("Fixture", "rf_interference_reconciliation"));
+
+cfg = localScenarioConfig();
+rawTrials = struct("DL", localTrialTable("DL"), "UL", localTrialTable("UL"));
+mobilityArtifacts = struct("Resolution", localMobilityResolution());
+
+artifacts = sixgr.analytics.writeRFInterferenceReconciliation(cfg, tmp, rawTrials, mobilityArtifacts, struct());
+assert(isstruct(artifacts) && isfield(artifacts, "Tables"), "Writer must return artifact tables.");
+
+required = [
+    "noise_reconciliation.csv", "NoiseReconciliationOk"
+    "interference_accounting.csv", "InterferenceAccountingOk"
+    "rf_chain_definition.csv", "RfChainDefinitionOk"
+    "cfo_reconciliation.csv", "CfoConfiguredAppliedOk"
+    "phase_noise_reconciliation.csv", "PhaseNoiseConfiguredAppliedOk"
+    "timing_offset_reconciliation.csv", "TimingOffsetConfiguredAppliedOk"
+    "iq_imbalance_reconciliation.csv", "IqImbalanceConfiguredAppliedOk"
+    "pa_reconciliation.csv", "PaConfiguredAppliedOk"
+    "evm_reconciliation.csv", "EvmReconciliationOk"
+    "papr_reconciliation.csv", "PaprReconciliationOk"
+    "channel_rf_reconciliation.csv", "ChannelRfConfiguredVsAppliedOk"
+    "mimo_kpi_reconciliation.csv", "MimoKpiReconciliationOk"
+    "mobility_kpi_reconciliation.csv", "MobilityKpiReconciliationOk"
+    "scheduler_kpi_reconciliation.csv", "SchedulerKpiReconciliationOk"
+    ];
+for i = 1:size(required, 1)
+    path = fullfile(tmp, "reports", "csv", required(i, 1));
+    assert(exist(path, "file") == 2, "Missing reconciliation CSV: %s", required(i, 1));
+    T = readtable(path, "VariableNamingRule", "preserve", "TextType", "string");
+    assert(height(T) >= 1, "Reconciliation CSV must contain an audit row: %s", required(i, 1));
+    flag = required(i, 2);
+    assert(ismember(flag, string(T.Properties.VariableNames)), ...
+        "Reconciliation CSV %s missing flag %s.", required(i, 1), flag);
+    assert(all(localAsLogical(T.(char(flag)))), ...
+        "Reconciliation flag did not pass for fixture: %s", flag);
+end
+
+report = sixgr.analytics.buildPhase7ReadinessArtifacts(cfg, tmp);
+assert(isfield(report, "Gates"), "Phase 7 report must expose gates.");
+gates = readtable(fullfile(tmp, "reports", "csv", "phase7_truth_gates.csv"), ...
+    "VariableNamingRule", "preserve", "TextType", "string");
+for flag = required(:, 2).'
+    assert(ismember(flag, string(gates.Properties.VariableNames)), "Phase 7 gate missing: %s", flag);
+    assert(localAsLogical(gates.(char(flag))(1)), "Phase 7 gate did not consume reconciliation CSV: %s", flag);
+end
+
+ok = true;
+end
+
+function cfg = localScenarioConfig()
+cfg = struct();
+cfg.global_radio_scope = struct("channel_bandwidth_hz", 100e6, "carrier_frequency_hz", 4e9);
+cfg.scenario = struct();
+cfg.scenario.ue = struct("noiseFigure_dB", 7, "nTxAnt", 4);
+cfg.scenario.bs = struct("noiseFigure_dB", 5, "nTxAnt", 64);
+cfg.frame_timing = struct("slot_duration_ms", 0.5);
+cfg.run = struct("total_slots", 240, "noise_operating_mode", "receiver_noise_figure_thermal_noise");
+cfg.run_control = struct("total_slots", 240);
+cfg.simulation = struct("n_slots", 240);
+cfg.interference = struct("inter_cell_execution_mode", "full_per_link_channel_waveform_sum");
+cfg.mimo = struct("max_dl_layers", 2, "max_ul_layers", 2);
+cfg.impairments = struct();
+cfg.impairments.oscillator_profile = "lab_clean";
+cfg.impairments.dac_quantization_bits = 12;
+cfg.impairments.adc_quantization_bits = 12;
+cfg.impairments.cfo = struct("enabled", false, "value_hz", 0, "model", "zero_ppm");
+cfg.impairments.phase_noise = struct("enabled", false, "model", "none", "psd_floor_dbc_hz", -150);
+cfg.impairments.iq_imbalance = struct("enabled", false, "model", "none", ...
+    "amplitude_imbalance_db", 0, "phase_imbalance_deg", 0);
+cfg.impairments.to = struct("enabled", false, "value_samples", 0, "model", "perfect_timing");
+cfg.impairments.pa_nonlinearity = struct("enabled", false, "model", "ideal_linear", ...
+    "iip3_dbm", 60, "p1db_dbm", 50);
+cfg.mobility = struct("ue_speed_kmh", 100, "user_paths", localUserPaths());
+cfg.meta = struct("scenario_id", "rf_interference_reconciliation_fixture");
+end
+
+function paths = localUserPaths()
+paths = repmat(struct("ue_id", 0, "initial_position_m", [0 0 1.5], ...
+    "speed_kmh", 100, "waypoints_m", struct("position_m", [0 3.333333333333 1.5])), 2, 1);
+paths(1).ue_id = 1;
+paths(2).ue_id = 2;
+paths(2).initial_position_m = [10 0 1.5];
+paths(2).waypoints_m = struct("position_m", [10 3.333333333333 1.5]);
+end
+
+function T = localTrialTable(direction)
+n = 6;
+slot = (1:n).';
+T = table( ...
+    repmat(string(direction), n, 1), ...
+    slot, floor(slot ./ 20), repmat([1; 2], n / 2, 1), ...
+    true(n, 1), false(n, 1), repmat("PASS", n, 1), true(n, 1), ...
+    repmat(12000, n, 1), repmat(0.5, n, 1), repmat(24, n, 1), ...
+    repmat("64QAM", n, 1), repmat(2, n, 1), repmat(2, n, 1), ...
+    repmat(0.045, n, 1), repmat(10.2, n, 1), repmat(12, n, 1), ...
+    zeros(n, 1), zeros(n, 1), zeros(n, 1), ...
+    zeros(n, 1), zeros(n, 1), zeros(n, 1), ...
+    false(n, 1), false(n, 1), repmat("none", n, 1), zeros(n, 1), zeros(n, 1), ...
+    false(n, 1), false(n, 1), false(n, 1), false(n, 1), ...
+    repmat("full_per_link_channel_waveform_sum", n, 1), repmat(1, n, 1), ...
+    repmat(-100, n, 1), repmat("sample_domain_interference_sum", n, 1), true(n, 1), ...
+    'VariableNames', {'Direction','Slot','Frame','UEIndex','FinalizedFlag','IsWarmupFrame','Status','CRCPass', ...
+    'GoodBits','AirInterfaceTTI_ms','MCS','Modulation','Layers','RankIndicator', ...
+    'EVM_rms','PAPR_dB','PostEqSINR_dB', ...
+    'InjectedCFO_Hz','EstimatedCFO_PreCorrection_Hz','ResidualCFO_PostCorrection_Hz', ...
+    'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples', ...
+    'IQImbalanceConfigured','IQImbalanceApplied','IQImbalanceModel','ConfiguredIQGainImbalance_dB','ConfiguredIQPhaseImbalance_deg', ...
+    'PhaseNoiseConfigured','PhaseNoiseApplied','PAEnabled','PAApplied', ...
+    'InterferenceMode','InterferenceContributorCount','InterferenceAggregatedRxPower_dBm', ...
+    'InterferencePowerSource','FullInterfererChannelTruthUsed'});
+end
+
+function T = localMobilityResolution()
+slotMs = 0.5;
+slots = 240;
+speed = 100 / 3.6;
+dist = speed * slots * slotMs / 1e3;
+T = table(true, slots, slots * slotMs / 1e3, slots, dist, "full_route_duration_configured", ...
+    'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s', ...
+    'RequiredTraversalSlots','ActualDistanceTravelled_m','Status'});
+end
+
+function tf = localAsLogical(values)
+if islogical(values)
+    tf = logical(values(:));
+elseif isnumeric(values)
+    v = double(values(:));
+    tf = isfinite(v) & v ~= 0;
+else
+    token = lower(strtrim(string(values(:))));
+    tf = token == "1" | token == "true" | token == "yes" | token == "pass" | token == "passed" | token == "ok";
+end
+end

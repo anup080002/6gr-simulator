@@ -295,6 +295,8 @@ end
 % ---------------------- Outputs ----------------------
 tx = struct();
 tx.Waveform = txWaveform;
+tx.OFDMInfo = ofdmInfo;
+tx.OFDM = ofdmInfo;
 if hasPHYGrant
     tx.PHYGrant = phyGrant;
     tx.PHYGrantDimensionContract = phyGrantContract;

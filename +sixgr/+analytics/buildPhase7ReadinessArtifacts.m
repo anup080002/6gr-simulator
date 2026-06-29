@@ -703,6 +703,7 @@ flags.Phase7ProvenanceOk = exist(fullfile(runDir, "reports", "json", "scenario_m
     exist(fullfile(runDir, "meta", "scenario_manifest.json"), "file") == 2;
 flags.ChannelRfConfiguredVsAppliedOk = localChannelRFArtifactsPass(runDir);
 flags = localApplyKPIReconciliationFlags(flags, runDir);
+flags = localApplyRFInterferenceReconciliationFlags(flags, runDir);
 flags = localApplyCampaignFlags(flags, campaignEvidence);
 flags.FinalScientificClaimsTruthfulOk = false;
 flags.OutputSchemaValidationOk = true;
@@ -712,18 +713,18 @@ status = sixgr.runtime.Phase7TruthEvaluator.evaluate(flags);
 end
 
 function tf = localChannelRFArtifactsPass(runDir)
-path = fullfile(runDir, "channel", "csv", "channel_configured_vs_applied.csv");
 tf = false;
-if exist(path, "file") ~= 2
+reportPath = fullfile(runDir, "reports", "csv", "channel_rf_reconciliation.csv");
+T = localReadOptionalTable(reportPath);
+if istable(T) && height(T) > 0 && localHasColumn(T, "ChannelRfConfiguredVsAppliedOk")
+    tf = all(localColumnAsLogical(T.ChannelRfConfiguredVsAppliedOk));
     return;
 end
-try
-    T = readtable(path, "VariableNamingRule", "preserve", "TextType", "string");
-    if any(string(T.Properties.VariableNames) == "ConfiguredAppliedOk")
-        tf = all(localColumnAsLogical(T.ConfiguredAppliedOk));
-    end
-catch
-    tf = false;
+
+path = fullfile(runDir, "channel", "csv", "channel_configured_vs_applied.csv");
+T = localReadOptionalTable(path);
+if istable(T) && height(T) > 0 && localHasColumn(T, "ConfiguredAppliedOk")
+    tf = all(localColumnAsLogical(T.ConfiguredAppliedOk));
 end
 end
 
@@ -760,6 +761,30 @@ for spec = [
     flagName = spec(2);
     if istable(T) && height(T) > 0 && ismember(flagName, string(T.Properties.VariableNames))
         flags.(char(flagName)) = localFirstLogical(T.(char(flagName)), false);
+    end
+end
+end
+
+function flags = localApplyRFInterferenceReconciliationFlags(flags, runDir)
+for spec = [
+        "noise_reconciliation.csv", "NoiseReconciliationOk"
+        "interference_accounting.csv", "InterferenceAccountingOk"
+        "rf_chain_definition.csv", "RfChainDefinitionOk"
+        "cfo_reconciliation.csv", "CfoConfiguredAppliedOk"
+        "phase_noise_reconciliation.csv", "PhaseNoiseConfiguredAppliedOk"
+        "timing_offset_reconciliation.csv", "TimingOffsetConfiguredAppliedOk"
+        "iq_imbalance_reconciliation.csv", "IqImbalanceConfiguredAppliedOk"
+        "pa_reconciliation.csv", "PaConfiguredAppliedOk"
+        "evm_reconciliation.csv", "EvmReconciliationOk"
+        "papr_reconciliation.csv", "PaprReconciliationOk"
+        "channel_rf_reconciliation.csv", "ChannelRfConfiguredVsAppliedOk"
+        "mimo_kpi_reconciliation.csv", "MimoKpiReconciliationOk"
+        "mobility_kpi_reconciliation.csv", "MobilityKpiReconciliationOk"
+        ]'
+    T = localReadOptionalTable(fullfile(runDir, "reports", "csv", spec(1)));
+    flagName = spec(2);
+    if istable(T) && height(T) > 0 && localHasColumn(T, flagName)
+        flags.(char(flagName)) = all(localColumnAsLogical(T.(char(flagName))));
     end
 end
 end

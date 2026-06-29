@@ -218,34 +218,26 @@ if isempty(Hprb) || numTxPorts < 1
     return;
 end
 
-Rtx = zeros(numTxPorts, numTxPorts);
-validCount = 0;
+condVals = NaN(numel(1:size(Hprb, 3)) * numel(1:size(Hprb, 4)), 1);
+k = 0;
 for prb = 1:size(Hprb, 3)
     for sym = 1:size(Hprb, 4)
         H = double(Hprb(:, :, prb, sym));
         if ~all(isfinite(H), "all")
             continue;
         end
-        Rtx = Rtx + (H' * H);
-        validCount = validCount + 1;
+        [condHere, status] = sixgr.mimo.channelConditionNumber(H);
+        if isfinite(condHere) && string(status) == "valid"
+            k = k + 1;
+            condVals(k) = double(condHere);
+        end
     end
 end
-if validCount < 1
+condVals = condVals(isfinite(condVals));
+if isempty(condVals)
     return;
 end
-Rtx = Rtx ./ validCount;
-eigvals = sort(real(eig((Rtx + Rtx') / 2)), "descend");
-eigvals = eigvals(isfinite(eigvals) & eigvals >= 0);
-if isempty(eigvals)
-    return;
-end
-singularValues = sqrt(max(eigvals, 0));
-singularValues = singularValues(singularValues > 0);
-if isempty(singularValues)
-    cond_dB = 0;
-    return;
-end
-cond_dB = 20 * log10(max(singularValues) / max(min(singularValues), eps));
+cond_dB = mean(condVals, "omitnan");
 end
 
 function [ri, metricBest, candidateCount] = localEstimateRankByMI(Hprb, nVar, cfg)

@@ -107,6 +107,8 @@ sixgr.util.csvWriteTable(artifacts.ChannelArrayConsistencyPath, arrayConsistency
 sixgr.util.csvWriteTable(artifacts.TodToaTracePath, todToaT);
 sixgr.util.csvWriteTable(artifacts.TimingPositioningEvidencePath, timingPositioningT);
 sixgr.util.csvWriteTable(artifacts.ChannelImpulseResponsePath, channelImpulseT);
+rfInterferenceArtifacts = sixgr.analytics.writeRFInterferenceReconciliation( ...
+    cfg, runFolder, rawTrials, mobilityArtifacts, slotTrace);
 
 artifacts.ChannelEstimationStats = channelT;
 artifacts.RankEstimationStats = rankT;
@@ -126,6 +128,7 @@ artifacts.ChannelArrayConsistency = arrayConsistencyT;
 artifacts.TodToaTrace = todToaT;
 artifacts.TimingPositioningEvidence = timingPositioningT;
 artifacts.ChannelImpulseResponse = channelImpulseT;
+artifacts.RFInterferenceReconciliation = rfInterferenceArtifacts;
 artifacts.HARQ = struct( ...
     "SummaryCSV", artifacts.LiveHARQSummaryPath, ...
     "TimelineCSV", artifacts.LiveHARQTimelinePath, ...

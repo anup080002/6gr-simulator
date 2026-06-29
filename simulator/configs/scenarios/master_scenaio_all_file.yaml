@@ -74,11 +74,11 @@ canonical_control:
     seed: 104729
     deterministic_mode: true
     link_direction: both
-    n_frames: 3
-    total_slots: 60
+    n_frames: 12
+    total_slots: 240
     warmup_slots: 5
-    measurement_slots: 55
-    n_subframes: 30
+    measurement_slots: 235
+    n_subframes: 120
     monte_carlo_iterations: 30
     num_seeds: 30
     pilot_runs: 3
@@ -368,6 +368,33 @@ canonical_control:
     interpolation_method: 2d_linear
     equalizer: mmse
     decoder_iterations: 8
+
+  impairments:
+    oscillator_profile: lab_clean
+    dac_quantization_bits: 12
+    adc_quantization_bits: 12
+    cfo:
+      enabled: false
+      value_hz: 0
+      model: zero_ppm
+    phase_noise:
+      enabled: false
+      model: none
+      psd_floor_dbc_hz: -150
+    iq_imbalance:
+      enabled: false
+      model: none
+      amplitude_imbalance_db: 0
+      phase_imbalance_deg: 0
+    to:
+      enabled: false
+      value_samples: 0
+      model: perfect_timing
+    pa_nonlinearity:
+      enabled: false
+      model: ideal_linear
+      iip3_dbm: 60
+      p1db_dbm: 50
 
   ai_ml:
     enabled: false

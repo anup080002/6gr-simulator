@@ -3811,16 +3811,8 @@ end
 metrics.NumRxAnt = size(Hwb, 1);
 metrics.NumTxPorts = size(Hwb, 2);
 try
-    s = svd(double(Hwb));
-    if ~isempty(s)
-        smax = max(s);
-        metrics.RankEstimate = sum(s > max(smax * 0.1, eps));
-        if numel(s) >= 2 && s(end) > 0
-            metrics.ConditionNumber_dB = 20 * log10(s(1) / s(end));
-        else
-            metrics.ConditionNumber_dB = 0;
-        end
-    end
+    [metrics.ConditionNumber_dB, metrics.ConditionNumberStatus, metrics.RankEstimate] = ...
+        sixgr.mimo.channelConditionNumber(Hwb);
 catch
 end
 beamMetrics = localComputeBeamMetrics(Hwb, cfg, metrics);

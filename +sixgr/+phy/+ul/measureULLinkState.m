@@ -189,24 +189,15 @@ if isfinite(gainLin) && gainLin > 0
     gain_dB = 10 * log10(max(gainLin, eps));
 end
 try
-    s = svd(double(Hwb));
+    [cond, ~, rankEst] = sixgr.mimo.channelConditionNumber(Hwb);
 catch
-    s = [];
+    cond = NaN;
+    rankEst = NaN;
 end
-if isempty(s)
-    return;
+if isfinite(rankEst)
+    rankEstimate = double(rankEst);
 end
-s = s(isfinite(s) & s >= 0);
-if isempty(s)
-    return;
-end
-smax = max(s);
-rankEstimate = sum(s > max(smax * 0.1, eps));
-if numel(s) >= 2 && s(end) > 0
-    cond_dB = 20 * log10(max(s(1), eps) / max(s(end), eps));
-elseif numel(s) == 1
-    cond_dB = 0;
-end
+cond_dB = double(cond);
 end
 
 function ri = localResolveULRankIndicator(rankEstimate, cfg)

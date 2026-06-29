@@ -104,7 +104,9 @@ end
 
 wf = sixgr.util.structGet(tx, "Waveform", []);
 if ~isempty(wf)
-    metrics.PAPR_dB = localPAPRdB(wf);
+    ofdmInfo = sixgr.util.structGet(tx, "OFDMInfo", ...
+        sixgr.util.structGet(tx, "OFDM", struct()));
+    metrics.PAPR_dB = localPAPRdB(wf, ofdmInfo);
     metrics.PeakClippingEvents = localPeakClippingEvents(wf, cfg);
 end
 
@@ -286,12 +288,18 @@ end
 decSym = localEnsureColumn(decSym);
 end
 
-function papr_dB = localPAPRdB(waveform)
+function papr_dB = localPAPRdB(waveform, ofdmInfo)
 papr_dB = NaN;
 if isempty(waveform)
     return;
 end
 x = localWaveformPortMatrix(waveform);
+if nargin >= 2
+    usefulIdx = localUsefulSampleIndices(size(x, 1), ofdmInfo);
+    if ~isempty(usefulIdx)
+        x = x(usefulIdx, :);
+    end
+end
 p = abs(x).^2;
 if isempty(p) || ~any(isfinite(p(:)))
     return;
@@ -304,6 +312,32 @@ if ~any(valid)
 end
 portPAPR_dB = 10 * log10(portPeak(valid) ./ max(portMean(valid), eps));
 papr_dB = max(portPAPR_dB, [], "omitnan");
+end
+
+function idx = localUsefulSampleIndices(nSamples, ofdmInfo)
+idx = [];
+if nargin < 2 || ~isstruct(ofdmInfo)
+    return;
+end
+nfft = round(double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN)));
+cpLens = round(double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", [])));
+if ~(isfinite(nfft) && nfft > 0 && ~isempty(cpLens))
+    return;
+end
+offset = 0;
+while offset < nSamples
+    for s = 1:numel(cpLens)
+        cp = max(0, cpLens(s));
+        useful = offset + cp + (1:nfft);
+        useful = useful(useful <= nSamples);
+        idx = [idx, useful]; %#ok<AGROW>
+        offset = offset + cp + nfft;
+        if offset >= nSamples
+            break;
+        end
+    end
+end
+idx = idx(:);
 end
 
 function count = localPeakClippingEvents(waveform, cfg)
