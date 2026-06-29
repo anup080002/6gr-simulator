@@ -180,7 +180,8 @@ end
 
 function [link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence(link, cfg, scfg, runFolder)
 strictSupplemental = struct("Ok", true, "SummaryTable", table(), ...
-    "PRACH", struct(), "SRS", struct(), "TRS", struct(), "ChannelRF", struct(), "MIMO", struct());
+    "PRACH", struct(), "SRS", struct(), "TRS", struct(), "SIB1", struct(), ...
+    "ChannelRF", struct(), "MIMO", struct());
 rows = repmat(struct("Case", "", "Ok", true, "Skipped", false, "Notes", ""), 0, 1);
 
 if localShouldRunStrictPRACHEvidence(scfg, cfg)
@@ -229,6 +230,17 @@ if localShouldRunStrictTRSEvidence(scfg, cfg)
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "TRS_StrictValidation", trs, ...
         "strict TRS waveform tracking validation completed", "strict_trs_validation_failed");
     link = localAttachRawTrialTable(link, "TRS", trs, "trs_trials");
+end
+
+if localShouldRunStrictSIB1Evidence(scfg, cfg)
+    localDBLog("INFO", "Running supplemental strict SIB1/PBCH waveform mini-anchor validation for waveform-bundle scenario.");
+    tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.broadcast.runSIB1StrictMiniAnchor", ...
+        "Stage", "strict_sib1_validation");
+    sib1 = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(runFolder, cfg);
+    clear tp;
+    strictSupplemental.SIB1 = sib1;
+    [link, rows] = localAttachSupplementalStrictResult(link, rows, "SIB1_StrictMiniAnchor", sib1, ...
+        "strict SIB1/PBCH waveform mini-anchor validation completed", "strict_sib1_validation_failed");
 end
 
 if localShouldRunStrictChannelRFEvidence(scfg, cfg)
@@ -327,6 +339,11 @@ validationObjectives = localValidationObjectives(cfg);
 tf = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false)) && ...
     (any(targetCases == "trs") || any(validationObjectives == "trs_strict_validation") || ...
     localControlGatingRequired(cfg, "trs"));
+end
+
+function tf = localShouldRunStrictSIB1Evidence(scfg, cfg)
+policy = sixgr.lls6g.runners.resolveStrictSupplementalEvidencePolicy(scfg, cfg);
+tf = logical(sixgr.util.structGet(policy, "EnableSIB1", false));
 end
 
 function tf = localShouldRunStrictChannelRFEvidence(scfg, cfg)

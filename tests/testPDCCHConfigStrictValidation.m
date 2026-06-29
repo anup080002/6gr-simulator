@@ -11,6 +11,14 @@ assert(double(configT.ConfiguredDCIPayloadSizeBits(1)) == double(configT.DCIPayl
     "Strict PDCCH anchor YAML payload size must match the standard-derived DCI size.");
 assert(~logical(configT.DCIPayloadConfiguredMismatch(1)), ...
     "Strict PDCCH anchor must not carry a stale configured DCI payload size.");
+trialT = b.Result.ArtifactTables.pdcch_trials;
+assert(ismember("ControlResourceValidity", string(trialT.Properties.VariableNames)), ...
+    "Strict PDCCH trial rows must expose control-resource validity evidence.");
+positive = trialT(startsWith(string(trialT.TrialType), "positive"), :);
+assert(~isempty(positive) && all(logical(positive.ControlResourceValidity)), ...
+    "Strict positive PDCCH trials must have valid CORESET/search-space/DCI control resources.");
+assert(all(strlength(string(positive.ControlResourceFailureReason)) == 0), ...
+    "Strict positive PDCCH trials must not carry control-resource failure reasons.");
 
 missing = b.InternalConfig;
 missing.phy.pdcch = rmfield(missing.phy.pdcch, "coreset");

@@ -34,6 +34,7 @@ assert(logical(result.StrictOk), "Configured-band SRS strict validation must pas
 assert(logical(positive.DetectionSuccess) && logical(positive.SRSChannelEstimateAvailable) && ...
     logical(positive.ConfiguredBandClaimValid), ...
     "Configured-band positive SRS must expose detection and channel-estimate evidence.");
+localAssertPartialFiniteREDetectionPasses(srsCfg);
 assert(~logical(wrongPort.StrictOk) && logical(wrongPort.NegativeExpectedOk) && ...
     contains(string(wrongPort.FailureReason), "srs_detection_failed"), ...
     "Wrong-port negative SRS must fail even for a 4-port configured-band resource.");
@@ -58,4 +59,26 @@ cfg.lls6g.reference_signals.srs.full_carrier_sounding_required = false;
 cfg.lls6g.reference_signals.srs.slot_numbers = 0;
 cfg.lls6g.reference_signals.srs.low_snr_sweep_db = 35;
 cfg.lls6g.reference_signals.srs.timing_offset_sweep_samples = 0;
+end
+
+function localAssertPartialFiniteREDetectionPasses(srsCfg)
+tx = sixgr.phy.srs.generateSRSWaveform(srsCfg);
+rxGrid = tx.GridSlots(1).Grid;
+dropCount = min(24, numel(tx.GridSlots(1).Indices));
+rxGrid(tx.GridSlots(1).Indices(1:dropCount)) = complex(NaN, NaN);
+rx = struct();
+rx.RxSlots = struct("Slot", double(tx.GridSlots(1).Slot), "RxGrid", rxGrid);
+rx.AppliedChannelGain = complex(1, 0);
+
+det = sixgr.phy.srs.detectSRSFromULGrid(rx, srsCfg);
+assert(double(det.Extracted.ObservedFiniteRECount) < double(det.Extracted.ExpectedRECount), ...
+    "Regression fixture must remove a small number of observed SRS REs.");
+assert(double(det.Table.CoveragePercent(1)) >= 95, ...
+    "Regression fixture must preserve at least 95 percent configured-band coverage.");
+assert(double(det.Table.DetectionMetric(1)) >= double(det.Table.Threshold(1)), ...
+    "Regression fixture must keep the SRS correlation metric above threshold.");
+assert(logical(det.Table.DetectionSuccess(1)), ...
+    "SRS detection must pass when metric is above threshold and configured-band coverage is at least 95 percent.");
+assert(strlength(string(det.Table.FailureReason(1))) == 0, ...
+    "Passing SRS detection must not retain a stale failure reason.");
 end
