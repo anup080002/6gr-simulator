@@ -112,6 +112,12 @@ UNIT_COLUMNS = (
 SOURCE_MAPPING_COLUMNS = ("source_mapping_status", "SourceMappingStatus")
 CHART_MODE_COLUMNS = ("chart_mode", "ChartMode", "mode", "Mode")
 UNSAFE_GENERIC_FAMILIES = ("heatmap", "map", "timeline")
+LOW_INFORMATION_VISUAL_MARKERS = (
+    "visual_gate=",
+    "would not support a defensible",
+    "requires two independent axes",
+    "every heatmap cell is zero",
+)
 
 
 @dataclass
@@ -125,6 +131,7 @@ class FileInfo:
     byte_count: int = 0
     signature_status: str = "missing_file"
     signature_ok: bool = False
+    contains_low_information_explanation: bool = False
 
 
 @dataclass
@@ -145,6 +152,8 @@ class SourceStats:
     chart_names: list[str] = field(default_factory=list)
     x_missing: bool = False
     y_missing: bool = False
+    low_information_reason: str = ""
+    low_information_details: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -289,6 +298,13 @@ def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditR
         failures.append(("plot_source_y_column_missing", f"source CSV is missing y column '{y_col}'"))
     if source_stats.nan_only_y and normal_rendered:
         failures.append(("nan_only_chart", "rendered chart y-series is NaN/blank-only"))
+    if normal_rendered and source_stats.low_information_reason and not file_info.contains_low_information_explanation:
+        failures.append(
+            (
+                "low_information_visual_without_explanation",
+                "rendered chart source has insufficient independent variation but the visual does not disclose the low-information gate",
+            )
+        )
     if normal_rendered and plot_kind == "line" and source_stats.source_exists and source_stats.unique_x_count < 3:
         failures.append(("line_plot_insufficient_unique_x", "line plot uses fewer than 3 unique x values"))
     if plot_kind == "heatmap" and source_stats.mixed_units:
@@ -355,11 +371,20 @@ def audit_stale_normal_siblings(run_folder: Path, manifest_row: dict[str, str]) 
 
 def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
     info = inspect_file(run_folder, rel_path)
+    source_csv = companion_contract_csv_path(rel_path)
+    source_stats = inspect_source_csv(run_folder, source_csv, "", "") if source_csv else SourceStats()
     failures: list[tuple[str, str]] = []
     if not info.signature_ok:
         failures.append((info.signature_status, "unmanifested visual artifact has invalid byte signature"))
     if info.extension == ".svg" and info.actual_mime_type == "image/png":
         failures.append(("png_bytes_in_svg", ".svg artifact contains PNG bytes"))
+    if source_stats.low_information_reason and not info.contains_low_information_explanation:
+        failures.append(
+            (
+                "low_information_visual_without_explanation",
+                "contract visual source has insufficient independent variation, but the SVG does not disclose that gate",
+            )
+        )
     return make_row(
         run_folder,
         plot_id="",
@@ -367,6 +392,8 @@ def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
         artifact_kind="unmanifested_visual_file",
         is_manifest_row=False,
         file_info=info,
+        source_csv=source_csv,
+        source_stats=source_stats,
         failures=failures,
     )
 
@@ -374,7 +401,7 @@ def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
 def audit_contract_source_csvs(run_folder: Path, manifest_rows: list[dict[str, str]]) -> list[AuditRow]:
     referenced = {normalize_rel_path(get_field(r, "SourceCSV", "source_csv")) for r in manifest_rows}
     rows: list[AuditRow] = []
-    for csv_path in (run_folder / "analytics" / "csv").glob("contract__*.csv"):
+    for csv_path in list((run_folder / "analytics" / "csv").glob("contract__*.csv")) + list((run_folder / "reports" / "csv").glob("contract__*.csv")):
         rel = normalize_rel_path(relative_path(run_folder, csv_path))
         if rel in referenced:
             continue
@@ -422,6 +449,8 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             fieldnames = list(reader.fieldnames or [])
+            x_col, y_col = infer_chart_source_columns(fieldnames, x_col, y_col)
+            axis_columns_available = bool(x_col and y_col)
             plot_truth_columns = plot_scoped_truth_columns(fieldnames, split_plot_columns(x_col, y_col))
             saw_x_column = saw_x_column or x_col in fieldnames
             saw_y_column = saw_y_column or y_col in fieldnames
@@ -459,7 +488,68 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
     stats.chart_names = sorted(chart_names)
     stats.x_missing = bool(x_col and not saw_x_column)
     stats.y_missing = bool(y_col and not saw_y_column)
+    if "axis_columns_available" in locals() and axis_columns_available:
+        stats.low_information_reason, stats.low_information_details = source_low_information_reason(stats)
     return stats
+
+
+def infer_chart_source_columns(fieldnames: list[str], x_col: str, y_col: str) -> tuple[str, str]:
+    lower_to_original = {str(name).strip().lower(): str(name) for name in fieldnames}
+    if not x_col:
+        for candidate in ("x_value", "snr_db", "slot", "frame", "beam_gap_value", "metric_value"):
+            if candidate in lower_to_original:
+                x_col = lower_to_original[candidate]
+                break
+    if not y_col:
+        for candidate in ("y_value", "z_value", "metric_value", "bler", "ber", "throughput_mbps", "goodput_mbps", "beam_gap_value"):
+            if candidate in lower_to_original:
+                y_col = lower_to_original[candidate]
+                break
+    if not x_col and y_col:
+        x_col = y_col
+    if not y_col and x_col:
+        y_col = x_col
+    return x_col, y_col
+
+
+def source_low_information_reason(stats: SourceStats) -> tuple[str, list[str]]:
+    if not stats.source_exists or stats.row_count <= 0:
+        return "", []
+    mode = next((lower_token(value) for value in stats.chart_modes if value), "")
+    details = [
+        f"row_count={stats.row_count}",
+        f"unique_x={stats.unique_x_count}",
+        f"unique_y={stats.unique_y_count}",
+        f"non_nan_y={stats.non_nan_y_count}",
+        f"chart_mode={mode or 'unknown'}",
+    ]
+    if stats.non_nan_y_count == 0:
+        return "no_finite_y_values", details
+    if stats.row_count > 1 and stats.unique_x_count == 1 and stats.unique_y_count == 1:
+        return "constant_chart_source", details
+    if mode in {"line", "cdf"}:
+        if stats.row_count < 3:
+            return "insufficient_rows_for_trend", details
+        if stats.unique_x_count < 3:
+            return "insufficient_unique_x_for_trend", details
+        if mode == "line" and stats.unique_y_count < 2:
+            return "constant_y_for_trend", details
+    elif mode in {"scatter", "relation", "vs"}:
+        if stats.row_count < 2:
+            return "insufficient_rows_for_relation", details
+        if stats.unique_x_count < 2:
+            return "constant_x_for_relation", details
+        if stats.unique_y_count < 2:
+            return "constant_y_for_relation", details
+    elif mode in {"bar", "histogram", "distribution"}:
+        if stats.unique_x_count < 2:
+            return "single_bucket_distribution", details
+    elif mode == "heatmap":
+        if stats.unique_x_count < 2 or stats.unique_y_count < 2:
+            return "insufficient_heatmap_axes", details
+    elif stats.row_count == 1 and stats.unique_x_count <= 1 and stats.unique_y_count <= 1:
+        return "single_value_chart_source", details
+    return "", details
 
 
 def inspect_file(run_folder: Path, rel_path: str) -> FileInfo:
@@ -486,7 +576,19 @@ def inspect_file(run_folder: Path, rel_path: str) -> FileInfo:
         info.signature_status = "unknown_signature"
     else:
         info.signature_status = "extension_mime_mismatch"
+    if info.actual_mime_type in {"image/svg+xml", "text/html"}:
+        text_prefix = data[:8192].decode("utf-8", errors="ignore").lower()
+        info.contains_low_information_explanation = any(marker in text_prefix for marker in LOW_INFORMATION_VISUAL_MARKERS)
     return info
+
+
+def companion_contract_csv_path(rel_path: str) -> str:
+    rel = normalize_rel_path(rel_path)
+    if "/contract__" not in rel or not rel.endswith(".svg"):
+        return ""
+    if "/image/" not in rel:
+        return ""
+    return rel.replace("/image/", "/csv/")[:-4] + ".csv"
 
 
 def inventory_visual_files(run_folder: Path) -> Iterable[Path]:
@@ -756,7 +858,8 @@ def is_generic_materializer_output(plot_id: str, image_path: str, source_csv: st
     identity = " ".join([plot_id, image_path, source_csv, " ".join(stats.chart_names)]).lower()
     modes = {lower_token(v) for v in stats.chart_modes}
     unsafe_family = any(token in identity for token in UNSAFE_GENERIC_FAMILIES)
-    if unsafe_family and ("line" in modes or "generic" in " ".join(stats.truth_tokens + stats.curve_construction)):
+    provenance_tokens = " ".join(stats.truth_tokens + stats.curve_construction)
+    if unsafe_family and ("generic" in provenance_tokens or source_has_bad_mapping(source_csv, stats)):
         return True
     if "contract__" in lower_token(source_csv) and source_has_bad_mapping(source_csv, stats):
         return True

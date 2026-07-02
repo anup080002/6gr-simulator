@@ -385,3 +385,54 @@ def test_visual_artifact_audit_rejects_negative_fixture(tmp_path: Path) -> None:
     assert "chart_source_mapping_not_exact" in codes
     assert "generic_chart_materializer_output" in codes
     assert "plot_source_forbidden_truth_status" in codes
+
+
+def test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "analytics" / "image"
+    csv_dir = run / "analytics" / "csv"
+    report_csv_dir = run / "reports" / "csv"
+    image_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+    report_csv_dir.mkdir(parents=True)
+
+    (image_dir / "contract__beamforming__beam-gain-gap-histogram.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'><text>Beam gain gap histogram</text></svg>",
+        encoding="utf-8",
+    )
+    write_csv(
+        csv_dir / "contract__beamforming__beam-gain-gap-histogram.csv",
+        ["run_id", "chart_name", "beam_gap_value", "source_mapping_status"],
+        [
+            {"run_id": 119, "chart_name": "beam gain gap histogram", "beam_gap_value": 0.0, "source_mapping_status": "exact"},
+            {"run_id": 119, "chart_name": "beam gain gap histogram", "beam_gap_value": 0.0, "source_mapping_status": "exact"},
+            {"run_id": 119, "chart_name": "beam gain gap histogram", "beam_gap_value": 0.0, "source_mapping_status": "exact"},
+        ],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run), "--non-strict"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    codes = read_audit_codes(report_csv_dir / "visual_artifact_audit.csv")
+    assert "low_information_visual_without_explanation" in codes
+
+    (image_dir / "contract__beamforming__beam-gain-gap-histogram.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg'><text>visual_gate=constant_chart_source</text></svg>",
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run), "--non-strict"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    codes = read_audit_codes(report_csv_dir / "visual_artifact_audit.csv")
+    assert "low_information_visual_without_explanation" not in codes

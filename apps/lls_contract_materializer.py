@@ -21,8 +21,10 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-06-11-contract-v23-strict-chart-source-mapping"
+MATERIALIZER_VERSION = "2026-06-11-contract-v24-low-information-visual-gates"
 MAX_PREVIEW_ROWS = 180
+MIN_EXPLANATORY_CHART_POINTS = 2
+MIN_TREND_CHART_POINTS = 3
 EXACT_CHART_FAMILY_CONTRACTS: dict[str, dict[str, Any]] = {
     "heatmap": {
         "source_table": "explicit_direct_alias_only",
@@ -390,6 +392,62 @@ def _honest_chart_mode(points: list[list[float]], preferred: str = "line", min_l
     return "line"
 
 
+def _finite_dataset_points(dataset: dict[str, Any] | None) -> list[tuple[float, float]]:
+    if not isinstance(dataset, dict):
+        return []
+    out: list[tuple[float, float]] = []
+    for row in dataset.get("points") or []:
+        if not isinstance(row, (list, tuple)) or len(row) < 2:
+            continue
+        x_val = _coerce_float(row[0])
+        y_val = _coerce_float(row[1])
+        if x_val is None or y_val is None:
+            continue
+        out.append((float(x_val), float(y_val)))
+    return out
+
+
+def _unique_numeric_count(values: list[float]) -> int:
+    return len({round(float(value), 9) for value in values if math.isfinite(float(value))})
+
+
+def _dataset_low_information_reason(dataset: dict[str, Any] | None) -> tuple[str, list[str]]:
+    points = _finite_dataset_points(dataset)
+    if not points:
+        return "no_finite_chart_points", ["No finite x/y points were available in the chart source."]
+    mode = str((dataset or {}).get("mode") or "line").strip().lower()
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    unique_x = _unique_numeric_count(xs)
+    unique_y = _unique_numeric_count(ys)
+    stats = [
+        f"finite_points={len(points)}",
+        f"unique_x={unique_x}",
+        f"unique_y={unique_y}",
+        f"chart_mode={mode or 'unknown'}",
+    ]
+    if all(math.isclose(y, 0.0, abs_tol=1e-15) for y in ys):
+        return "all_zero_metric_values", stats + ["Every plotted metric value is zero."]
+    if mode in {"line", "cdf"}:
+        if len(points) < MIN_TREND_CHART_POINTS:
+            return "insufficient_points_for_trend", stats + ["At least three finite points are required for a trend/CDF curve."]
+        if unique_x < MIN_TREND_CHART_POINTS:
+            return "insufficient_unique_x_for_trend", stats + ["The x-axis does not contain enough independent values for a trend."]
+        if mode == "line" and unique_y < 2:
+            return "constant_y_for_trend", stats + ["The y-axis is constant; a line would imply movement that is not present."]
+    elif mode in {"scatter", "relation", "vs"}:
+        if len(points) < MIN_EXPLANATORY_CHART_POINTS:
+            return "insufficient_points_for_relation", stats + ["At least two finite points are required for a relation/scatter chart."]
+        if unique_x < 2:
+            return "constant_x_for_relation", stats + ["The x-axis is constant; no relationship can be inferred."]
+        if unique_y < 2:
+            return "constant_y_for_relation", stats + ["The y-axis is constant; no relationship can be inferred."]
+    elif mode in {"histogram", "bar"}:
+        if len(points) < MIN_EXPLANATORY_CHART_POINTS:
+            return "single_bucket_distribution", stats + ["Only one bucket/category exists; render an explanation card instead of a misleading distribution."]
+    return "", stats
+
+
 def _bar_dataset_from_named_values(
     x_label: str,
     y_label: str,
@@ -451,6 +509,15 @@ def _render_multi_series_svg(
         all_points.extend(sampled_pairs)
     if not prepared or not all_points:
         return _render_reason_svg(title, subtitle, summary_lines + ["No numeric multi-series rows were available for this chart."])
+    low_info_reason, low_info_lines = _dataset_low_information_reason(
+        {"mode": mode, "points": [[x_val, y_val] for x_val, y_val in all_points]}
+    )
+    if low_info_reason:
+        return _render_reason_svg(
+            title,
+            "Exact runtime source rows exist, but this visual would not support a defensible trend conclusion.",
+            summary_lines + [f"visual_gate={low_info_reason}"] + low_info_lines,
+        )
     xs = [point[0] for point in all_points]
     ys = [point[1] for point in all_points]
     min_x = min(xs)
@@ -520,6 +587,13 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
     if dataset and dataset.get("points"):
+        low_info_reason, low_info_lines = _dataset_low_information_reason(dataset)
+        if low_info_reason:
+            return _render_reason_svg(
+                title,
+                "Exact runtime source rows exist, but this visual would not support a defensible chart conclusion.",
+                summary_lines + [f"visual_gate={low_info_reason}"] + low_info_lines,
+            )
         points = [[float(row[0]), float(row[1])] for row in dataset.get("points", []) if len(row) >= 2]
         xs = [row[0] for row in points]
         ys = [row[1] for row in points]
@@ -534,6 +608,10 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         parts.append(f'<line x1="{left + 45}" y1="{top + plot_h - 38}" x2="{left + plot_w - 24}" y2="{top + plot_h - 38}" stroke="#94a3b8" stroke-width="1.2"/>')
         parts.append(f'<line x1="{left + 45}" y1="{top + 24}" x2="{left + 45}" y2="{top + plot_h - 38}" stroke="#94a3b8" stroke-width="1.2"/>')
         if dataset.get("mode") == "bar":
+            if min_y > 0:
+                min_y = 0.0
+            if math.isclose(min_y, max_y):
+                max_y = min_y + max(abs(min_y) * 0.1, 1.0)
             bar_w = max(8.0, (plot_w - 100) / max(len(points), 1) * 0.7)
             for idx, (x_val, y_val) in enumerate(points):
                 x_px = left + 55 + idx * max(bar_w + 4, (plot_w - 100) / max(len(points), 1))
@@ -1176,7 +1254,23 @@ def _render_heatmap_svg(
     ]
     if not x_labels or not y_labels or not matrix:
         return _render_reason_svg(title, subtitle, summary_lines + ["No heatmap cells were derived from the persisted runtime source rows."])
+    if len(x_labels) < 2 or len(y_labels) < 2:
+        return _render_reason_svg(
+            title,
+            "Exact runtime source rows exist, but a heatmap requires two independent axes.",
+            summary_lines + [
+                "visual_gate=insufficient_heatmap_axes",
+                f"unique_x_labels={len(x_labels)}",
+                f"unique_y_labels={len(y_labels)}",
+            ],
+        )
     max_value = max((value for row in matrix for value in row), default=0.0)
+    if max_value <= 0.0:
+        return _render_reason_svg(
+            title,
+            "Exact runtime source rows exist, but every heatmap cell is zero.",
+            summary_lines + ["visual_gate=all_zero_heatmap_cells"],
+        )
     n_x = max(len(x_labels), 1)
     n_y = max(len(y_labels), 1)
     cell_w = (plot_w - 80) / n_x

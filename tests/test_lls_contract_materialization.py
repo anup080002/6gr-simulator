@@ -66,6 +66,24 @@ def main() -> None:
     assert "source_mapping_status" in chart_csv
     assert "exact" in chart_csv
 
+    constant_svg = materializer._render_svg_plot(  # noqa: SLF001
+        "beam gain gap histogram",
+        "Beam gap distribution from exported runtime beam metrics.",
+        {"mode": "bar", "x_label": "Beam gap (dB)", "y_label": "Count", "points": [[0.0, 1546.0]]},
+        ["samples=1546"],
+    ).decode("utf-8")
+    assert "visual_gate=single_bucket_distribution" in constant_svg
+    assert "would not support a defensible chart conclusion" in constant_svg
+
+    useful_bar_svg = materializer._render_svg_plot(  # noqa: SLF001
+        "rank distribution",
+        "Rank/layer distribution from runtime rows.",
+        {"mode": "bar", "x_label": "Rank", "y_label": "Count", "points": [[1.0, 100.0], [2.0, 45.0]]},
+        ["samples=145"],
+    ).decode("utf-8")
+    assert "visual_gate=" not in useful_bar_svg
+    assert "<rect" in useful_bar_svg
+
     assert materializer.EXACT_CHART_FAMILY_CONTRACTS["heatmap"]["required_columns"] == ("x_value", "y_value", "z_value")
     assert materializer.EXACT_CHART_FAMILY_CONTRACTS["timeline"]["required_columns"] == ("x_value", "y_value")
 
