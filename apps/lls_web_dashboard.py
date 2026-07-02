@@ -2156,6 +2156,30 @@ def diff_config_value(base: Any, current: Any) -> Any:
     return CONFIG_NO_CHANGE if values_equal(base, current) else copy.deepcopy(current)
 
 
+def merge_runtime_override_lists(base: Any, override: Any) -> list[Any] | Any:
+    if not isinstance(base, list) or not isinstance(override, list):
+        return copy.deepcopy(override)
+    merged: list[Any] = []
+    by_path: dict[str, int] = {}
+    for item in base:
+        copied = copy.deepcopy(item)
+        if isinstance(copied, dict):
+            path = str(copied.get("path") or "").strip()
+            if path:
+                by_path[path] = len(merged)
+        merged.append(copied)
+    for item in override:
+        copied = copy.deepcopy(item)
+        path = str(copied.get("path") or "").strip() if isinstance(copied, dict) else ""
+        if path and path in by_path:
+            merged[by_path[path]] = copied
+        else:
+            if path:
+                by_path[path] = len(merged)
+            merged.append(copied)
+    return merged
+
+
 PATH_MISSING = object()
 BROWSER_ALIAS_RULES: list[tuple[str, str, str]] = [
     ("run_control.seed", "simulation.random_seed", "identity"),
@@ -3447,6 +3471,14 @@ def build_runtime_overlay_payload(
         source = copy.deepcopy(source_payload)
         source.pop("inherits", None)
         source.pop("_download_metadata", None)
+        base_overrides = path_get(base_payload, "canonical_control.runtime_overrides")
+        source_overrides = path_get(source, "canonical_control.runtime_overrides")
+        if isinstance(base_overrides, list) and isinstance(source_overrides, list):
+            path_set(
+                source,
+                "canonical_control.runtime_overrides",
+                merge_runtime_override_lists(base_overrides, source_overrides),
+            )
         candidate_payload = merge_config_dict(copy.deepcopy(base_payload), source)
     else:
         candidate_payload = payload

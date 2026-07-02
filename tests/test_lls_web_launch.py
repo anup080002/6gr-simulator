@@ -85,6 +85,7 @@ def main() -> None:
             },
             "runtime_overrides": [
                 {"path": "channels.max_doppler_hz", "value": 741.2535448847824},
+                {"path": "scenario.mobility.speed_kmh", "value": 200},
                 {"path": "random_access.speed_kmh", "value": 100},
             ],
         },
@@ -107,6 +108,16 @@ def main() -> None:
     assert dash.path_get(master_runtime, "random_access.prach_format") is dash.PATH_MISSING
     assert dash.path_get(master_runtime, "random_access.channel_model") is dash.PATH_MISSING
     assert dash.path_get(master_runtime, "mobility.ue_speed_kmh") == 200
+    runtime_overrides = dash.path_get(master_runtime, "canonical_control.runtime_overrides", [])
+    by_path = {
+        str(item.get("path")): item.get("value")
+        for item in runtime_overrides
+        if isinstance(item, dict) and item.get("path")
+    }
+    assert by_path["sweeps_and_matrix.snr_sweep.enabled"] is False
+    assert by_path["sweeps_and_matrix.snr_sweep.values_db"] == []
+    assert by_path["channels.max_doppler_hz"] == 741.2535448847824
+    assert by_path["scenario.mobility.speed_kmh"] == 200
 
     honest_payload, _ = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     honest_contract = dash.scenario_launch_contract(honest_payload, dash.DEFAULT_SCENARIO)
