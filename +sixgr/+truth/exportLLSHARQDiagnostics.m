@@ -307,6 +307,7 @@ function [tx, rx, diag] = localRunAttempt(cfg, direction, snr_dB, tbBits, rv, co
 if nargin < 6
     combinedPrev = [];
 end
+cfgAttempt = localSanitizeHARQProbeConfig(cfg, direction);
 if isempty(tbBits)
     tbBitsArg = {};
 else
@@ -315,20 +316,20 @@ end
 
 switch upper(string(direction))
     case "UL"
-        [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfg, tbBitsArg{:}, "RV", rv);
-        chState = localInitChannelState(cfg, tx, txInfo, direction);
+        [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgAttempt, tbBitsArg{:}, "RV", rv);
+        chState = localInitChannelState(cfgAttempt, tx, txInfo, direction);
         rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
-        [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfg, "Carrier", tx.Carrier, "PUSCH", tx.PUSCH, ...
+        [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PUSCH", tx.PUSCH, ...
             "PUSCHIndices", tx.PUSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, "RV", tx.RV, ...
             "SkipTimingEstimate", logical(sixgr.util.structGet(chState, "UseFading", false)));
         recLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
         decIt = mean(double(sixgr.util.structGet(rx, "ActiveIterations", NaN)), "omitnan");
     otherwise
-        [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, tbBitsArg{:}, "RV", rv);
-        chState = localInitChannelState(cfg, tx, txInfo, direction);
+        [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgAttempt, tbBitsArg{:}, "RV", rv);
+        chState = localInitChannelState(cfgAttempt, tx, txInfo, direction);
         rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
-        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfg, "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, ...
+        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, "RV", tx.RV, ...
             "SkipTimingEstimate", logical(sixgr.util.structGet(chState, "UseFading", false)));
@@ -341,13 +342,13 @@ if isempty(tbBits)
 else
     tbBits = int8(tbBits(:));
 end
-diag = sixgr.link.evaluateHARQDecode(tx, rx, cfg, combinedPrev);
+diag = sixgr.link.evaluateHARQDecode(tx, rx, cfgAttempt, combinedPrev);
 rxBits = int8(sixgr.util.structGet(rx, "TransportBlock", int8([])));
 [bitErr, bitsCompared] = localBitErrors(tbBits, rxBits);
 diag.BitErrors = double(bitErr);
 diag.BitsCompared = double(bitsCompared);
 diag.CurrentDecodeOK = logical(sixgr.util.structGet(rx, "Ok", false)) && bitErr == 0 && numel(rxBits(:)) == numel(tbBits(:));
-fallbackMetrics = localExtractLinkAdaptationMetrics(cfg, rx, struct("MeasuredSINR_dB", NaN));
+fallbackMetrics = localExtractLinkAdaptationMetrics(cfgAttempt, rx, struct("MeasuredSINR_dB", NaN));
 measuredSINR = localExtractSINR(rx);
 if ~isfinite(measuredSINR)
     measuredSINR = double(sixgr.util.structGet(fallbackMetrics, "SINR_dB", NaN));
@@ -428,6 +429,85 @@ try
     end
 catch
 end
+end
+
+function cfgOut = localSanitizeHARQProbeConfig(cfg, direction)
+cfgOut = cfg;
+if upper(string(direction)) ~= "DL"
+    return;
+end
+
+nLayers = max(1, round(double(sixgr.util.structGet(cfgOut, "phy.pdsch.numLayers", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.nLayers", 1)))));
+if localHasFiniteDLPMI(cfgOut)
+    return;
+end
+
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+clearMatrix = false;
+for i = 1:numel(paths)
+    W = sixgr.util.structGet(cfgOut, paths(i), []);
+    if isempty(W)
+        continue;
+    end
+    W = localSqueezeSingletonPage(W);
+    if ~ismatrix(W)
+        continue;
+    end
+    if localMatrixMatchesPDSCHLayers(W, nLayers)
+        return;
+    end
+    if size(W, 1) > localMaxNRLogicalPDSCHPorts() || size(W, 2) > localMaxNRLogicalPDSCHPorts()
+        clearMatrix = true;
+    end
+end
+
+if ~clearMatrix
+    return;
+end
+
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nLayers", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numLayers", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", nLayers);
+for i = 1:numel(paths)
+    cfgOut = sixgr.util.structSet(cfgOut, paths(i), []);
+end
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.source", "harq_probe_rank_localized_identity");
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.normalizePrecodingMatrix", true);
+end
+
+function tf = localMatrixMatchesPDSCHLayers(W, nLayers)
+tf = false;
+if isempty(W) || ~ismatrix(W)
+    return;
+end
+sz = size(W);
+tf = (sz(2) == nLayers && sz(1) >= nLayers) || ...
+    (sz(1) == nLayers && sz(2) >= nLayers);
+end
+
+function W = localSqueezeSingletonPage(W)
+sz = size(W);
+if numel(sz) > 2 && all(sz(3:end) == 1)
+    W = reshape(W, sz(1), sz(2));
+end
+end
+
+function tf = localHasFiniteDLPMI(cfg)
+tf = false;
+paths = ["phy.pdsch.tpmi", "phy.pdsch.TPMI", "phy.pdsch.pmi", "phy.pdsch.PMI"];
+for i = 1:numel(paths)
+    value = sixgr.util.structGet(cfg, paths(i), []);
+    if isnumeric(value) && isscalar(value) && isfinite(double(value))
+        tf = true;
+        return;
+    end
+end
+end
+
+function n = localMaxNRLogicalPDSCHPorts()
+n = 32;
 end
 
 function [be, bt] = localBitErrors(txBits, rxBits)

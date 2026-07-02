@@ -13,15 +13,22 @@ if ~sixgr.util.persistenceEnabled()
     return;
 end
 T = sixgr.util.pruneStructurallyBlankTableColumns(T);
-if sixgr.db.isArtifactStoreActive()
-    sixgr.db.storeTableArtifact(filePath, T);
-end
 sixgr.util.ensureDir(filePath);
 
 try
     writetable(T, filePath, 'Delimiter', ',', 'QuoteStrings', true);
 catch
     writetable(T, filePath);
+end
+
+if sixgr.db.isArtifactStoreActive()
+    try
+        sixgr.db.storeTableArtifact(filePath, T);
+    catch ME
+        warning("sixgr:util:csvWriteTable:ArtifactStoreMirrorFailed", ...
+            "Local CSV '%s' was written, but DB artifact mirroring failed: %s", ...
+            string(filePath), string(ME.message));
+    end
 end
 
 end

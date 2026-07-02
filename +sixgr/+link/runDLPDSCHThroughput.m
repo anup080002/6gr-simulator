@@ -923,19 +923,19 @@ for n = 1:numFrames
             csirsRows(end+1, 1) = csirsRow; %#ok<AGROW>
         end
         receiverCQI = double(sixgr.util.normalizeReportedCQI(metrics.CQI));
-        if schedulerDrivenGrant && isfinite(grantCQIUsed) && grantCQIUsed > 0
-            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
-            trialCQISource(n) = "scheduler_grant_cqi_used";
-            [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
-            trialCQIDerivedMCS(n) = double(cqiMCS);
-            trialCQIDerivedCodeRate(n) = double(cqiRate);
-            trialCQIDerivedModulation(n) = string(cqiMod);
-        elseif isfinite(receiverCQI)
+        if isfinite(receiverCQI)
             trialCQI(n) = receiverCQI;
             trialCQISource(n) = string(sixgr.util.structGet(metrics, "CQISource", "receiver_csi_feedback"));
             if strlength(strtrim(trialCQISource(n))) == 0
                 trialCQISource(n) = "receiver_csi_feedback";
             end
+            [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
+            trialCQIDerivedMCS(n) = double(cqiMCS);
+            trialCQIDerivedCodeRate(n) = double(cqiRate);
+            trialCQIDerivedModulation(n) = string(cqiMod);
+        elseif schedulerDrivenGrant && isfinite(grantCQIUsed) && grantCQIUsed > 0
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            trialCQISource(n) = "scheduler_grant_cqi_used_no_current_receiver_cqi";
             [cqiMod, cqiRate, cqiMCS] = sixgr.link.amcFromCQI(trialCQI(n), "", NaN, cfgFrame, "DL");
             trialCQIDerivedMCS(n) = double(cqiMCS);
             trialCQIDerivedCodeRate(n) = double(cqiRate);
@@ -1228,6 +1228,9 @@ for n = 1:numFrames
         else
             metrics.CQI = double(trialCQI(n));
             metrics.SINR_dB = double(trialSINR(n));
+            metrics.SINRSource = char(string(trialSINRSource(n)));
+            metrics.SINRValueRole = char(string(trialSINRValueRole(n)));
+            metrics.SINRValueStatus = char(string(trialMeasuredTrialSINRValueStatus(n)));
             metrics.CRCPass = logical(finalDecodeOK);
             metrics.CurrentDecodeOK = logical(currentDecodeOK);
             metrics.CombinedDecodeOK = logical(finalDecodeOK);

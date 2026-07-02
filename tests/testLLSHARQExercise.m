@@ -10,6 +10,11 @@ c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_harq_retransmission_exercise.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.nLayers", 1);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.numLayers", 1);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.precoding.matrix", ones(64, 2) ./ sqrt(64));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.pmi", NaN);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.tpmi", NaN);
 localAssertHARQTimingReachesScheduler(scfg, tmp);
 
 assert(logical(sixgr.util.structGet(cfg, "phy.harq.enable", false)), ...

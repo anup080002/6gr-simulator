@@ -892,15 +892,15 @@ for n = 1:numFrames
         if isfinite(rawMeasuredCQI)
             receiverCQI = double(sixgr.util.normalizeReportedCQI(rawMeasuredCQI));
         end
-        if schedulerDrivenGrant && isfinite(grantCQIUsed) && grantCQIUsed > 0
-            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
-            trialCQISource(n) = "scheduler_grant_cqi_used";
-        elseif isfinite(receiverCQI)
+        if isfinite(receiverCQI)
             trialCQI(n) = receiverCQI;
             trialCQISource(n) = string(sixgr.util.structGet(metrics, "CQISource", "ul_link_state_reference_signal_cqi"));
             if strlength(strtrim(trialCQISource(n))) == 0
                 trialCQISource(n) = "ul_link_state_reference_signal_cqi";
             end
+        elseif schedulerDrivenGrant && isfinite(grantCQIUsed) && grantCQIUsed > 0
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            trialCQISource(n) = "scheduler_grant_cqi_used_no_current_receiver_cqi";
         elseif schedulerDrivenGrant && ~isfinite(trialCQI(n))
             trialCQISource(n) = "current_receiver_cqi_unavailable_no_scheduler_grant_cqi";
         end

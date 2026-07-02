@@ -11,13 +11,19 @@ end
 
 filePath = char(string(filePath));
 sixgr.util.ensureDir(filePath);
-if sixgr.db.isArtifactStoreActive()
-    sixgr.db.storeTableArtifact(filePath, T);
-end
 try
     writetable(T, filePath, "Delimiter", ",", "QuoteStrings", true);
 catch
     writetable(T, filePath);
+end
+if sixgr.db.isArtifactStoreActive()
+    try
+        sixgr.db.storeTableArtifact(filePath, T);
+    catch ME
+        warning("sixgr:analytics:writeAnalysisTable:ArtifactStoreMirrorFailed", ...
+            "Local analysis CSV '%s' was written, but DB artifact mirroring failed: %s", ...
+            string(filePath), string(ME.message));
+    end
 end
 end
 

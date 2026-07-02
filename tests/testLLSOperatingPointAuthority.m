@@ -16,6 +16,11 @@ cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
 cfg.run.interferenceExecutionMode = "none";
+cfg.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
+cfg.phy.pdsch.dmrs.typeAPosition = 3;
+cfg.phy.pusch.dmrs.DMRSTypeAPosition = 3;
+cfg.phy.pusch.dmrs.typeAPosition = 3;
+cfg.phy.dmrs.typeAPosition = 3;
 
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);
@@ -67,6 +72,24 @@ ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
 
 localAssertOperatingPointAuthority(dl.TrialTable, "DL");
 localAssertOperatingPointAuthority(ul.TrialTable, "UL");
+
+staleCQIGrant = grant;
+staleCQIGrant.CQIUsed = 1;
+staleCQIGrant.MCS = 10;
+staleCQIGrant.MCSIndex = 10;
+staleCQIGrant.GrantReason = "stale_scheduler_cqi_must_not_override_receiver_measurement";
+dlStaleCQI = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
+    "NumFrames", 1, ...
+    "SNR_dB", 24, ...
+    "GrantSnapshot", staleCQIGrant, ...
+    "InterferenceBundle", struct([]));
+ulStaleCQI = sixgr.link.runULPUSCHThroughput(cfgUL, ...
+    "NumFrames", 1, ...
+    "SNR_dB", 24, ...
+    "GrantSnapshot", staleCQIGrant, ...
+    "InterferenceBundle", struct([]));
+localAssertReceiverCQIPrecedesStaleGrant(dlStaleCQI.TrialTable, "DL");
+localAssertReceiverCQIPrecedesStaleGrant(ulStaleCQI.TrialTable, "UL");
 ok = true;
 end
 
@@ -103,4 +126,20 @@ assert(double(T.MCS(1)) == 10 && strcmpi(char(string(T.Modulation(1))), "16QAM")
 assert(double(T.MCS(1)) == 10 && strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant") && ...
     strcmpi(char(string(T.ModulationAuthority(1))), "scheduler_grant"), ...
     "Raw %s trial row must preserve the actual grant-applied operating point even when the CQI-derived recommendation may coincide.", direction);
+end
+
+function localAssertReceiverCQIPrecedesStaleGrant(T, direction)
+assert(istable(T) && height(T) == 1, ...
+    "Expected a single %s row for stale-grant CQI precedence validation.", direction);
+requiredVars = {'WidebandCQI','CQISource','MeasuredTrialSINR_dB','MeasuredTrialSINRSource','MCS','MCSAuthority'};
+assert(all(ismember(requiredVars, T.Properties.VariableNames)), ...
+    "Raw %s trial row must expose measured CQI/SINR provenance and applied grant authority.", direction);
+assert(isfinite(double(T.MeasuredTrialSINR_dB(1))) && double(T.MeasuredTrialSINR_dB(1)) > 12, ...
+    "Regression setup requires a high measured %s post-equalization SINR.", direction);
+assert(isfinite(double(T.WidebandCQI(1))) && double(T.WidebandCQI(1)) > 1, ...
+    "Measured receiver CQI must replace stale scheduler CQIUsed=1 when current %s receiver evidence is available.", direction);
+assert(~contains(lower(string(T.CQISource(1))), "scheduler_grant_cqi_used_no_current_receiver_cqi"), ...
+    "%s CQISource must not claim grant-CQI fallback when receiver CQI evidence exists.", direction);
+assert(double(T.MCS(1)) == 10 && strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant"), ...
+    "The applied %s MCS must still remain the finalized scheduler grant while CQI is reported as receiver evidence.", direction);
 end
