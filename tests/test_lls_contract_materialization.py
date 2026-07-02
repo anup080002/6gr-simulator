@@ -230,6 +230,7 @@ def main() -> None:
     assert detection_special is not None
     assert detection_special["csv_status"] == "specialized_runtime_detection_dataset"
     assert "bucket_name,snr_db,metric_value,sample_count" in detection_special["csv_bytes"].decode("utf-8")
+    assert "visual_gate=scalar_prach_rate_kpi" in detection_special["img_bytes"].decode("utf-8")
 
     false_alarm_special = materializer._specialized_chart_materialization(  # noqa: SLF001
         "false alarm rate",
@@ -240,6 +241,28 @@ def main() -> None:
     assert false_alarm_special is not None
     assert false_alarm_special["csv_status"] == "specialized_runtime_detection_dataset"
     assert "false alarm rate" in false_alarm_special["csv_bytes"].decode("utf-8").lower()
+
+    prach_peak_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "PeakValue", "DetectionMetric", "TimingError_samples", "Status"],
+        [[5, 0.87, 0.87, 0, "PASS"], [5, 0.89, 0.89, 0, "PASS"]],
+    )
+    existing = {
+        "air_interface/csv/prach_trials.csv": {
+            "artifact_id": 111,
+            "logical_path": "air_interface/csv/prach_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {111: prach_peak_csv}
+    prach_peak = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "PRACH peak search timeline",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        10,
+    )
+    assert prach_peak is not None
+    assert "visual_gate=sparse_prach_peak_evidence" in prach_peak["img_bytes"].decode("utf-8")
 
     csirs_csv = materializer._encode_csv(  # noqa: SLF001
         ["CellID", "Slot", "ResourceID", "ResourceSetID", "RBOffset", "NumRB", "SymbolLocations", "NRE", "MeasurementRSRP_dB", "UEIndex"],
@@ -268,6 +291,28 @@ def main() -> None:
     csirs_text = csirs_special["csv_bytes"].decode("utf-8")
     assert "symbol_index,rb_index,occupancy_value" in csirs_text
     assert csirs_text.count("\n") >= 4
+
+    csirs_stripe_csv = materializer._encode_csv(  # noqa: SLF001
+        ["CellID", "Slot", "ResourceID", "ResourceSetID", "RBOffset", "NumRB", "SymbolLocations", "NRE", "MeasurementRSRP_dB"],
+        [[1, 7, 0, 0, 0, 4, "0", 16, -91.5]],
+    )
+    existing = {
+        "air_interface/csv/csi_rs_trials.csv": {
+            "artifact_id": 211,
+            "logical_path": "air_interface/csv/csi_rs_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {211: csirs_stripe_csv}
+    csirs_stripe = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CSI-RS resource occupancy",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        12,
+    )
+    assert csirs_stripe is not None
+    assert "visual_gate=single_axis_resource_occupancy" in csirs_stripe["img_bytes"].decode("utf-8")
 
     srs_csv = materializer._encode_csv(  # noqa: SLF001
         ["Slot", "UEIndex", "NMSE_dB", "SuccessFlag", "Status"],
@@ -367,6 +412,73 @@ def main() -> None:
     bler_summary_text = bler_summary["csv_bytes"].decode("utf-8")
     assert "BLER,0.0,2,air_interface/csv/dl_pdsch_trials.csv" in bler_summary_text
     assert "pucch_trials" not in bler_summary_text, "Data-channel BLER must not mix PUCCH control decode failures into the denominator."
+    assert "visual_gate=scalar_reliability_kpi" in bler_summary["img_bytes"].decode("utf-8")
+
+    flat_waveform_csv = materializer._encode_csv(  # noqa: SLF001
+        ["SampleIndex", "Time_s", "TxReal", "TxImag", "TxMagnitude", "RxReal", "RxImag", "RxMagnitude"],
+        [[1, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.1], [2, 1e-6, 0.0, 0.0, 0.0, 0.2, 0.0, 0.2]],
+    )
+    existing = {
+        "analytics/csv/waveform_analytics.csv": {
+            "artifact_id": 413,
+            "logical_path": "analytics/csv/waveform_analytics.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {413: flat_waveform_csv}
+    flat_tx = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "Tx waveform",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        16,
+    )
+    assert flat_tx is not None
+    assert "visual_gate=flat_waveform_preview" in flat_tx["img_bytes"].decode("utf-8")
+
+    ssb_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "SSBIndex"],
+        [[1, 0], [1, 1]],
+    )
+    existing = {
+        "reports/csv/live_ssb_stage_table.csv": {
+            "artifact_id": 414,
+            "logical_path": "reports/csv/live_ssb_stage_table.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {414: ssb_csv}
+    ssb_sparse = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "SSB index timeline",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        16,
+    )
+    assert ssb_sparse is not None
+    assert "visual_gate=sparse_ssb_index_events" in ssb_sparse["img_bytes"].decode("utf-8")
+
+    pbch_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "CellID", "DecodeSuccess", "SelectedBeamIndex"],
+        [[1, 1, 1, 0], [1, 2, 1, 1]],
+    )
+    existing = {
+        "air_interface/csv/pbch_trials.csv": {
+            "artifact_id": 415,
+            "logical_path": "air_interface/csv/pbch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    payloads = {415: pbch_csv}
+    pbch_sparse = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "PBCH/SSB map",
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        16,
+    )
+    assert pbch_sparse is not None
+    assert "visual_gate=single_axis_resource_occupancy" in pbch_sparse["img_bytes"].decode("utf-8")
 
     pucch_dtx_csv = materializer._encode_csv(  # noqa: SLF001
         ["Slot", "UEID", "CRCPass", "DetectionAttempted", "BitsCompared", "DTXFlag", "MissedDetection", "FalseAlarmFlag"],

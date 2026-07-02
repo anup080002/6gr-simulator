@@ -21,7 +21,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-06-11-contract-v24-low-information-visual-gates"
+MATERIALIZER_VERSION = "2026-06-11-contract-v25-chart-family-visual-cards"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -1215,6 +1215,169 @@ def _render_reason_svg(title: str, subtitle: str, lines: list[str]) -> bytes:
         y += 28
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
+
+
+def _format_card_number(value: Any, unit: str = "") -> str:
+    number = _coerce_float(value)
+    if number is None or not math.isfinite(float(number)):
+        return "n/a"
+    value_f = float(number)
+    if math.isclose(value_f, round(value_f), abs_tol=1e-12):
+        text = f"{int(round(value_f))}"
+    elif abs(value_f) >= 1000 or (abs(value_f) > 0 and abs(value_f) < 1e-3):
+        text = f"{value_f:.4e}"
+    else:
+        text = f"{value_f:.6g}"
+    return f"{text} {unit}".strip()
+
+
+def _render_kpi_card_svg(
+    title: str,
+    subtitle: str,
+    kpis: list[tuple[str, Any, str]],
+    summary_lines: list[str],
+    *,
+    visual_gate: str,
+) -> bytes:
+    width = 1120
+    height = 620
+    card_w = 320
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#f8fafc"/>',
+        f'<text x="42" y="50" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
+        f'<text x="42" y="78" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(subtitle)}</text>',
+        '<text x="42" y="112" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#7c2d12">'
+        + html.escape(f"visual_gate={visual_gate}")
+        + "</text>",
+    ]
+    for idx, (label, value, unit) in enumerate(kpis[:3]):
+        x = 42 + idx * (card_w + 22)
+        parts.extend(
+            [
+                f'<rect x="{x}" y="140" width="{card_w}" height="148" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+                f'<text x="{x + 24}" y="178" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="700" fill="#334155">{html.escape(str(label))}</text>',
+                f'<text x="{x + 24}" y="238" font-family="Segoe UI,Arial,sans-serif" font-size="40" font-weight="800" fill="#0f766e">{html.escape(_format_card_number(value, unit))}</text>',
+            ]
+        )
+    parts.extend(
+        [
+            '<rect x="42" y="320" width="1030" height="240" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+            '<text x="66" y="358" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Exact Source Summary</text>',
+        ]
+    )
+    y = 390
+    for line in summary_lines[:8]:
+        parts.append(f'<text x="66" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="14" fill="#334155">{html.escape(str(line))}</text>')
+        y += 25
+    parts.append('</svg>')
+    return "".join(parts).encode("utf-8")
+
+
+def _render_prach_rate_card_svg(
+    title: str,
+    metric_label: str,
+    rate_value: float,
+    positive_count: float,
+    sample_count: int,
+    summary_lines: list[str],
+) -> bytes:
+    return _render_kpi_card_svg(
+        title,
+        "PRACH rate evidence is a scalar run aggregate, not a sweep or trend.",
+        [
+            (metric_label, rate_value, ""),
+            ("Positive trials", positive_count, ""),
+            ("Samples", sample_count, ""),
+        ],
+        summary_lines + ["chart_decision=scalar_prach_rate_card"],
+        visual_gate="scalar_prach_rate_kpi",
+    )
+
+
+def _render_reliability_card_svg(
+    title: str,
+    metric_value: float,
+    sample_count: int,
+    summary_lines: list[str],
+) -> bytes:
+    return _render_kpi_card_svg(
+        title,
+        "Reliability evidence is a scalar run summary. A curve requires controlled SNR/SINR/MCS buckets.",
+        [(title, metric_value, ""), ("Samples", sample_count, ""), ("Curve points", 1, "")],
+        summary_lines + ["chart_decision=scalar_reliability_card"],
+        visual_gate="scalar_reliability_kpi",
+    )
+
+
+def _render_prach_peak_summary_svg(
+    title: str,
+    values: list[float],
+    status_counts: Counter[str],
+    summary_lines: list[str],
+) -> bytes:
+    clean = sorted(float(value) for value in values if math.isfinite(float(value)))
+    if clean:
+        kpis = [
+            ("Peak samples", len(clean), ""),
+            ("Peak min", clean[0], ""),
+            ("Peak max", clean[-1], ""),
+        ]
+        median = _percentile(clean, 0.5)
+        detail = [f"peak_p50={median:.6g}", f"peak_span={clean[-1] - clean[0]:.6g}"]
+    else:
+        kpis = [("Peak samples", 0, ""), ("Peak min", "", ""), ("Peak max", "", "")]
+        detail = ["peak_values=none"]
+    detail.extend(f"status_{idx + 1}={label}:{count}" for idx, (label, count) in enumerate(status_counts.most_common(4)))
+    return _render_kpi_card_svg(
+        title,
+        "PRACH peak evidence is too sparse for a histogram/timeline, so exact summary statistics are shown.",
+        kpis,
+        summary_lines + detail + ["chart_decision=prach_peak_summary_card"],
+        visual_gate="sparse_prach_peak_evidence",
+    )
+
+
+def _render_resource_occupancy_card_svg(
+    title: str,
+    *,
+    occupied_cells: int,
+    x_count: int,
+    y_count: int,
+    value_sum: float,
+    summary_lines: list[str],
+) -> bytes:
+    return _render_kpi_card_svg(
+        title,
+        "Resource occupancy has only one independent map axis in this run, so a heatmap would imply missing 2-D variation.",
+        [
+            ("Occupied cells", occupied_cells, ""),
+            ("Unique x-axis", x_count, ""),
+            ("Unique y-axis", y_count, ""),
+        ],
+        summary_lines + [f"occupancy_sum={value_sum:.6g}", "chart_decision=single_axis_resource_card"],
+        visual_gate="single_axis_resource_occupancy",
+    )
+
+
+def _render_waveform_flat_card_svg(
+    title: str,
+    series: list[dict[str, Any]],
+    summary_lines: list[str],
+) -> bytes:
+    sample_count = sum(len(item.get("points") or []) for item in series)
+    max_abs = 0.0
+    for item in series:
+        for point in item.get("points") or []:
+            if isinstance(point, (list, tuple)) and len(point) >= 2 and _coerce_float(point[1]) is not None:
+                max_abs = max(max_abs, abs(float(point[1])))
+    return _render_kpi_card_svg(
+        title,
+        "The exported waveform preview is flat, so the image reports amplitude evidence instead of drawing a meaningless trace.",
+        [("Preview samples", sample_count, ""), ("Max abs amplitude", max_abs, ""), ("Active series", len(series), "")],
+        summary_lines + ["chart_decision=flat_waveform_card"],
+        visual_gate="flat_waveform_preview",
+    )
 
 
 def _heat_color(value: float, max_value: float) -> str:
@@ -2826,17 +2989,30 @@ def _prach_rate_chart_materialization(
                 f"samples_used={total_samples}",
                 f"mean_rate={total_positive / max(total_samples, 1):.6f}",
             ]
+            unique_x = _unique_numeric_count([point[0] for point in points])
+            unique_y = _unique_numeric_count([point[1] for point in points])
+            if len(points) < 2 or unique_x < 2 or unique_y < 2:
+                img_bytes = _render_prach_rate_card_svg(
+                    chart_name,
+                    str(spec["metric_label"]),
+                    total_positive / max(total_samples, 1),
+                    total_positive,
+                    total_samples,
+                    summary,
+                )
+            else:
+                img_bytes = _render_svg_plot(
+                    chart_name,
+                    "PRACH detection statistics aggregated directly from persisted PRACH trial outcomes.",
+                    dataset,
+                    summary,
+                )
             return {
                 "csv_bytes": _encode_dict_rows(
                     ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "source_table_logical_path"],
                     csv_rows,
                 ),
-                "img_bytes": _render_svg_plot(
-                    chart_name,
-                    "PRACH detection statistics aggregated directly from persisted PRACH trial outcomes.",
-                    dataset,
-                    summary,
-                ),
+                "img_bytes": img_bytes,
                 "csv_status": "specialized_runtime_detection_dataset",
                 "image_status": "generated_specialized_runtime_summary_svg",
                 "source_table_path": trial_path,
@@ -2886,17 +3062,20 @@ def _prach_rate_chart_materialization(
     summary = [f"source={summary_path}", f"observed_rate={float(rate_value):.6f}"]
     if count_value is not None:
         summary.append(f"sample_count={int(round(count_value))}")
+    img_bytes = _render_prach_rate_card_svg(
+        chart_name,
+        str(spec["metric_label"]),
+        float(rate_value),
+        float(rate_value) * float(count_value if count_value is not None else 1.0),
+        int(round(count_value)) if count_value is not None else 1,
+        summary,
+    )
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "source_table_logical_path"],
             csv_rows,
         ),
-        "img_bytes": _render_svg_plot(
-            chart_name,
-            "PRACH detection summary taken from the persisted random-access metrics artifact.",
-            dataset,
-            summary,
-        ),
+        "img_bytes": img_bytes,
         "csv_status": "specialized_summary_detection_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": summary_path,
@@ -2936,6 +3115,7 @@ def _prach_peak_chart_materialization(
     csv_rows: list[dict[str, Any]] = []
     values: list[float] = []
     points: list[list[float]] = []
+    status_counts: Counter[str] = Counter()
     for idx, row in enumerate(records, start=1):
         slot = _row_float(row, "trial_id", "Slot")
         if slot is None:
@@ -2947,6 +3127,8 @@ def _prach_peak_chart_materialization(
             continue
         values.append(float(metric))
         points.append([float(slot), float(metric)])
+        status_text = _row_text(row, "Status", "DetectionOutcome") or "unknown"
+        status_counts[status_text] += 1
         csv_rows.append(
             {
                 "run_id": run_id,
@@ -2963,16 +3145,27 @@ def _prach_peak_chart_materialization(
         )
     if not csv_rows:
         return None
-    if "histogram" in chart_key or "distributions" in chart_key or "results" in chart_key:
+    is_distribution_chart = "histogram" in chart_key or "distributions" in chart_key or "results" in chart_key
+    if is_distribution_chart:
         dataset = {"mode": "bar", "x_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric", "y_label": "Count", "points": _histogram_points(values, 18)}
     else:
         dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric", "points": points[:MAX_PREVIEW_ROWS]}
+    unique_slots = _unique_numeric_count([point[0] for point in points])
+    unique_values = _unique_numeric_count(values)
+    summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
+    sparse_peak_evidence = len(values) < 3 or unique_values < 2
+    if not is_distribution_chart:
+        sparse_peak_evidence = sparse_peak_evidence or unique_slots < 3
+    if sparse_peak_evidence:
+        img_bytes = _render_prach_peak_summary_svg(chart_name, values, status_counts, summary)
+    else:
+        img_bytes = _render_svg_plot(chart_name, "PRACH peak/noise evidence from persisted runtime PRACH correlation or trial rows.", dataset, summary)
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "slot", "peak_index", "peak_value", "noise_floor", "detection_metric", "timing_error_samples", "status", "source_table_logical_path"],
             csv_rows,
         ),
-        "img_bytes": _render_svg_plot(chart_name, "PRACH peak/noise evidence from persisted runtime PRACH correlation or trial rows.", dataset, [f"source={source_path}", f"rows={len(csv_rows)}"]),
+        "img_bytes": img_bytes,
         "csv_status": "specialized_runtime_prach_peak_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": source_path,
@@ -3340,9 +3533,22 @@ def _ssb_index_timeline_chart_materialization(
     if not csv_rows:
         return None
     dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "SSB index", "points": points[:MAX_PREVIEW_ROWS]}
+    summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
+    unique_slots = _unique_numeric_count([point[0] for point in points])
+    unique_ssb = _unique_numeric_count([point[1] for point in points])
+    if len(points) < 3 or unique_slots < 3:
+        img_bytes = _render_kpi_card_svg(
+            chart_name,
+            "SSB acquisition evidence is a bounded event set, not a slot-by-slot beam timeline.",
+            [("Observed rows", len(csv_rows), ""), ("Unique slots", unique_slots, ""), ("Unique SSBs", unique_ssb, "")],
+            summary + ["chart_decision=ssb_event_summary_card"],
+            visual_gate="sparse_ssb_index_events",
+        )
+    else:
+        img_bytes = _render_svg_plot(chart_name, "SSB index timeline parsed from runtime SSB/PBCH stage rows.", dataset, summary)
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ssb_index", "source_table_logical_path"], csv_rows),
-        "img_bytes": _render_svg_plot(chart_name, "SSB index timeline parsed from runtime SSB/PBCH stage rows.", dataset, [f"source={source_path}", f"rows={len(csv_rows)}"]),
+        "img_bytes": img_bytes,
         "csv_status": "specialized_runtime_ssb_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": source_path,
@@ -3427,6 +3633,28 @@ def _csirs_map_chart_materialization(
     if rsrp_values:
         summary.append(f"mean_measurement_rsrp_db={sum(rsrp_values) / len(rsrp_values):.3f}")
     summary.append("exact_subcarrier_pattern=normalized_from_exported_nre_per_rb_symbol")
+    occupied_cells = sum(1 for row in matrix for value in row if value > 0.0)
+    value_sum = sum(value for row in matrix for value in row)
+    if len(x_labels) < 2 or len(y_labels) < 2:
+        img_bytes = _render_resource_occupancy_card_svg(
+            chart_name,
+            occupied_cells=occupied_cells,
+            x_count=len(x_labels),
+            y_count=len(y_labels),
+            value_sum=value_sum,
+            summary_lines=summary,
+        )
+    else:
+        img_bytes = _render_heatmap_svg(
+            chart_name,
+            "CSI-RS resource occupancy for the most active cell/slot, normalized from the exported runtime mapping evidence.",
+            x_labels,
+            y_labels,
+            matrix,
+            summary,
+            "OFDM symbol",
+            "RB index",
+        )
     return {
         "csv_bytes": _encode_dict_rows(
             [
@@ -3443,16 +3671,7 @@ def _csirs_map_chart_materialization(
             ],
             [{**row, "run_id": run_id, "chart_name": chart_name} for row in grid_rows],
         ),
-        "img_bytes": _render_heatmap_svg(
-            chart_name,
-            "CSI-RS resource occupancy for the most active cell/slot, normalized from the exported runtime mapping evidence.",
-            x_labels,
-            y_labels,
-            matrix,
-            summary,
-            "OFDM symbol",
-            "RB index",
-        ),
+        "img_bytes": img_bytes,
         "csv_status": "specialized_runtime_grid_dataset",
         "image_status": "generated_specialized_runtime_heatmap_svg",
         "source_table_path": source_path,
@@ -4534,6 +4753,7 @@ def _specialized_chart_materialization(
         )
         if records:
             dataset = None
+            img_bytes_override: bytes | None = None
             note = "HARQ chart derived from persisted runtime HARQ observation rows."
             if chart_name == "RV usage distribution":
                 counts = Counter(int(round(_row_float(row, "RV") or -1)) for row in records if _row_float(row, "RV") is not None)
@@ -4592,6 +4812,15 @@ def _specialized_chart_materialization(
             elif chart_name == "residual failure patterns":
                 counts = Counter(_row_text(row, "final_state", "FinalState", "ack_nack_state", "ACKNACKState") or "unknown" for row in records)
                 dataset, _summary = _bar_dataset_from_named_values("Final HARQ state", "Count", [(key, float(value)) for key, value in counts.items()])
+                if len(counts) <= 1:
+                    label, count = next(iter(counts.items())) if counts else ("unknown", 0)
+                    img_bytes_override = _render_kpi_card_svg(
+                        chart_name,
+                        "Residual HARQ evidence has one final-state bucket in this run, so no failure-pattern distribution can be inferred.",
+                        [("Final state count", count, ""), ("Distinct states", len(counts), ""), ("Rows", len(records), "")],
+                        [f"state={label}", f"source_rows={len(records)}", "chart_decision=single_state_harq_card"],
+                        visual_gate="single_bucket_harq_residual_state",
+                    )
             elif chart_name == "ACK/NACK timeline":
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in records:
@@ -4635,7 +4864,7 @@ def _specialized_chart_materialization(
             if dataset and dataset.get("points"):
                 summary = [f"source_table={source_path}", f"source_rows={len(records)}", f"chart={chart_name}"]
                 csv_bytes = _chart_dataset_csv(run_id, chart_name, dataset, source_path, len(records), "derived_chart_dataset", note)
-                img_bytes = _render_svg_plot(chart_name, "Runtime HARQ evidence rendered from persisted truthful rows.", dataset, summary)
+                img_bytes = img_bytes_override or _render_svg_plot(chart_name, "Runtime HARQ evidence rendered from persisted truthful rows.", dataset, summary)
                 return {
                     "csv_bytes": csv_bytes,
                     "img_bytes": img_bytes,
@@ -5063,9 +5292,22 @@ def _specialized_chart_materialization(
         summary = ["source=air_interface/csv/pbch_trials.csv", f"rows={len(rows)}", "note=exact SSB RE mapping is not exported; this view shows runtime PBCH/SSB observation density and decode success."]
         csv_header = ["run_id", "chart_name", "cell_id", "slot", "occupancy_value", "SelectedBeamIndex", "source_table_logical_path"]
         csv_rows = [{**row, "run_id": run_id, "chart_name": chart_name, "source_table_logical_path": "air_interface/csv/pbch_trials.csv"} for row in rows]
+        occupied_cells = sum(1 for matrix_row in matrix for value in matrix_row if value > 0.0)
+        value_sum = sum(value for matrix_row in matrix for value in matrix_row)
+        if len(x_labels) < 2 or len(y_labels) < 2:
+            img_bytes = _render_resource_occupancy_card_svg(
+                chart_name,
+                occupied_cells=occupied_cells,
+                x_count=len(x_labels),
+                y_count=len(y_labels),
+                value_sum=value_sum,
+                summary_lines=summary,
+            )
+        else:
+            img_bytes = _render_heatmap_svg(chart_name, "Runtime PBCH/SSB observations by slot and cell.", x_labels, y_labels, matrix, summary, "Slot", "Cell")
         return {
             "csv_bytes": _encode_dict_rows(csv_header, csv_rows),
-            "img_bytes": _render_heatmap_svg(chart_name, "Runtime PBCH/SSB observations by slot and cell.", x_labels, y_labels, matrix, summary, "Slot", "Cell"),
+            "img_bytes": img_bytes,
             "csv_status": "specialized_runtime_control_dataset",
             "image_status": "generated_specialized_runtime_heatmap_svg",
             "source_table_path": "air_interface/csv/pbch_trials.csv",
@@ -5260,9 +5502,19 @@ def _specialized_chart_materialization(
                     if points:
                         series.append({"name": series_name, "points": _downsample_points(points, 256)})
                 if series:
+                    flat_values = [
+                        abs(float(point[1]))
+                        for item in series
+                        for point in (item.get("points") or [])
+                        if isinstance(point, (list, tuple)) and len(point) >= 2 and _coerce_float(point[1]) is not None
+                    ]
+                    if flat_values and max(flat_values) <= 1e-15:
+                        img_bytes = _render_waveform_flat_card_svg(chart_name, series, summary)
+                    else:
+                        img_bytes = _render_multi_series_svg(chart_name, "Sample-domain waveform traces rendered from persisted runtime preview samples.", series, summary, x_label=x_label, y_label="Amplitude / derived value")
                     return {
                         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", x_label, "series_name", "metric_name", "metric_value", "source_table_logical_path"], csv_rows),
-                        "img_bytes": _render_multi_series_svg(chart_name, "Sample-domain waveform traces rendered from persisted runtime preview samples.", series, summary, x_label=x_label, y_label="Amplitude / derived value"),
+                        "img_bytes": img_bytes,
                         "csv_status": "specialized_runtime_waveform_dataset",
                         "image_status": "generated_specialized_runtime_waveform_svg",
                         "source_table_path": source_path,
@@ -5500,10 +5752,15 @@ def _specialized_chart_materialization(
                     dataset, summary = _bar_dataset_from_named_values("Metric bucket", "Value", named_values)
                     summary.extend([f"{path}={count}" for path, count in source_counter.most_common(4)])
                     source_path_text = "|".join(source_counter.keys()) if source_counter else "multiple_runtime_trials"
-                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "metric_name": name, "metric_value": value, "sample_count": int(counts.get(f'{chart_name} samples', counts.get('BER samples', counts.get('BLER samples', counts.get('FER samples', 0))))), "source_table_logical_path": source_path_text} for name, value in named_values]
+                    sample_count = int(counts.get(f"{chart_name} samples", counts.get("BER samples", counts.get("BLER samples", counts.get("FER samples", 0)))))
+                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "metric_name": name, "metric_value": value, "sample_count": sample_count, "source_table_logical_path": source_path_text} for name, value in named_values]
+                    if chart_name in {"BER", "BLER", "FER"} and len(named_values) == 1:
+                        img_bytes = _render_reliability_card_svg(chart_name, float(named_values[0][1]), sample_count, summary)
+                    else:
+                        img_bytes = _render_svg_plot(chart_name, "Summary reliability metric from persisted waveform/control trials.", dataset, summary)
                     return {
                         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "metric_name", "metric_value", "sample_count", "source_table_logical_path"], csv_rows),
-                        "img_bytes": _render_svg_plot(chart_name, "Summary reliability metric from persisted waveform/control trials.", dataset, summary),
+                        "img_bytes": img_bytes,
                         "csv_status": "specialized_runtime_reliability_dataset",
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": source_path_text,
