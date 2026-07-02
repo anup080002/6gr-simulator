@@ -11,6 +11,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 DEFAULT_WAVEFORM_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
+MASTER_SCENARIO = "master_scenaio_all_file.yaml"
 
 
 def main() -> None:
@@ -53,6 +54,59 @@ def main() -> None:
     assert catalog_runtime["output"]["backend"] == "mysql_web"
     assert catalog_runtime["output"]["persistence_mode"] == "both"
     assert catalog_runtime["output"]["persist_to_database"] is True
+
+    master_base, _ = dash.load_resolved_config_payload(MASTER_SCENARIO)
+    assert dash.path_get(master_base, "deployment_topology.num_cells") == 2
+    assert dash.path_get(master_base, "deployment_topology.num_ues") == 2
+    assert dash.path_get(master_base, "prach.configuration_index") == 167
+    assert dash.path_get(master_base, "prach.format") == "B4"
+    master_runtime_request = {
+        "inherits": [f"./{MASTER_SCENARIO}"],
+        "canonical_control": {
+            "identity": {
+                "scenario_name": "WebGUI inherited master regression",
+                "description": "Runtime overlay changes slots and mobility only.",
+            },
+            "run": {
+                "n_frames": 5,
+                "total_slots": 100,
+                "warmup_slots": 0,
+                "measurement_slots": 100,
+                "n_subframes": 50,
+                "min_duration_s": 0.05,
+            },
+            "channel": {
+                "mobility_kmph": 200,
+                "doppler_hz": 741.2535448847824,
+            },
+            "mobility": {
+                "ue_speed_kmh": 200,
+                "speed_profile": "linear_200kmph",
+            },
+            "runtime_overrides": [
+                {"path": "channels.max_doppler_hz", "value": 741.2535448847824},
+                {"path": "random_access.speed_kmh", "value": 100},
+            ],
+        },
+        "output": {"persistence_mode": "both"},
+    }
+    try:
+        dash.dashboard_mysql_available = lambda: (True, "connected")
+        master_runtime = json.loads(
+            dash.normalize_run_yaml(
+                __import__("yaml").safe_dump(master_runtime_request, sort_keys=False),
+                MASTER_SCENARIO,
+            )
+        )
+    finally:
+        dash.dashboard_mysql_available = original_mysql_available
+    assert master_runtime["inherits"] == [f"./{MASTER_SCENARIO}"]
+    assert dash.path_get(master_runtime, "deployment_topology.num_cells") is dash.PATH_MISSING
+    assert dash.path_get(master_runtime, "deployment_topology.num_ues") is dash.PATH_MISSING
+    assert dash.path_get(master_runtime, "random_access.configuration_index") is dash.PATH_MISSING
+    assert dash.path_get(master_runtime, "random_access.prach_format") is dash.PATH_MISSING
+    assert dash.path_get(master_runtime, "random_access.channel_model") is dash.PATH_MISSING
+    assert dash.path_get(master_runtime, "mobility.ue_speed_kmh") == 200
 
     honest_payload, _ = dash.load_resolved_config_payload(dash.DEFAULT_SCENARIO)
     honest_contract = dash.scenario_launch_contract(honest_payload, dash.DEFAULT_SCENARIO)

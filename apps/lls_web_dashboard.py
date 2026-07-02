@@ -3436,11 +3436,22 @@ def load_resolved_config_payload(rel_path: str) -> tuple[dict[str, Any], list[st
     return apply_output_persistence_defaults(canonicalize_browser_config_payload(payload)), chain
 
 
-def build_runtime_overlay_payload(scenario_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+def build_runtime_overlay_payload(
+    scenario_name: str,
+    payload: dict[str, Any],
+    source_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     scenario_path = resolve_scenario_path(scenario_name)
     base_payload, _ = load_resolved_config_payload(scenario_name)
+    if source_payload is not None:
+        source = copy.deepcopy(source_payload)
+        source.pop("inherits", None)
+        source.pop("_download_metadata", None)
+        candidate_payload = merge_config_dict(copy.deepcopy(base_payload), source)
+    else:
+        candidate_payload = payload
     base_with_aliases = canonicalize_browser_config_payload(base_payload, keep_legacy_aliases=True)
-    payload_with_aliases = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
+    payload_with_aliases = canonicalize_browser_config_payload(candidate_payload, keep_legacy_aliases=True)
     diff_payload = diff_config_value(base_with_aliases, payload_with_aliases)
     overlay = diff_payload if isinstance(diff_payload, dict) else {}
     overlay = copy.deepcopy(overlay)
@@ -4561,12 +4572,14 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
                     return value
         return value
 
+    raw_payload_for_overlay: dict[str, Any] | None = None
     if not str(raw_text or "").strip() and scenario_name:
         payload, _ = load_resolved_config_payload(str(scenario_name))
     else:
         payload = yaml.safe_load(raw_text) or {}
         if not isinstance(payload, dict):
             raise ValueError("Scenario YAML must decode to a mapping at the top level.")
+        raw_payload_for_overlay = copy.deepcopy(payload)
     payload = _coerce_scalar_strings(payload)
     payload = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
     requested_output_cfg = copy.deepcopy(payload.get("output") if isinstance(payload.get("output"), dict) else {})
@@ -4577,7 +4590,7 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
         requested_output_cfg.get("persistence_mode", requested_output_control_cfg.get("output_persistence_mode", ""))
     )
     if scenario_name:
-        payload = build_runtime_overlay_payload(str(scenario_name), payload)
+        payload = build_runtime_overlay_payload(str(scenario_name), payload, raw_payload_for_overlay)
         output_overlay = payload.get("output")
         if not isinstance(output_overlay, dict):
             output_overlay = {}
