@@ -20,6 +20,8 @@ cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.csi_acquisition_mode", 
 cfg = sixgr.util.structSet(cfg, "phy.waveform.sampleRate_Hz", 30.72e6);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.timingAdvanceUpdateMode", "measurement_only");
 cfg = sixgr.util.structSet(cfg, "run.controlGating.timingAdvanceUpdateThresholdSamples", 0.25);
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.coverageOutageGuardEnabled", false);
+cfg = sixgr.util.structSet(cfg, "system.scheduler.coverageOutageGuardEnabled", false);
 
 multiUser = struct( ...
     "Enabled", true, ...
@@ -59,6 +61,46 @@ assert(string(state.TimeAlignmentState(1)) == "time_aligned_from_prach" && ...
 assert(string(state.LastTimingAdvanceSourceByUE(1)) == "prach_receiver_measurement" && ...
     isfinite(double(state.LastTimingAdvanceServingDistanceMByUE(1))), ...
     "PRACH timing advance must retain receiver-measurement source and serving-geometry baseline.");
+
+simplePrach = localPRACHAnnotationRow("PASS");
+annotatedSimple = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable("PRACH", simplePrach);
+assert(strcmpi(string(annotatedSimple.SourceClassification(1)), "active_but_simplified") && ...
+        contains(string(annotatedSimple.RuntimeMaterializationStatus(1)), "prach_detection_gate_no_full_ra_procedure"), ...
+    "A PRACH detector row without Msg1-Msg4 RA evidence must not be promoted to full four-step RA materialization.");
+
+incompleteFullPrach = simplePrach;
+incompleteFullPrach.RAProcedureType(1) = "contention_based_four_step";
+incompleteFullPrach.FullRAEvidenceSource(1) = "sixgr.phy.ra.runFourStepRA";
+annotatedIncompleteFull = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable("PRACH", incompleteFullPrach);
+assert(strcmpi(string(annotatedIncompleteFull.SourceClassification(1)), "active_but_simplified") && ...
+        contains(string(annotatedIncompleteFull.RuntimeMaterializationStatus(1)), "prach_detection_gate_no_full_ra_procedure"), ...
+    "A PRACH row with full-RA labels but no Msg1-Msg4 evidence must fail closed instead of claiming full four-step RA.");
+
+fullPrachAttempt = simplePrach;
+fullPrachAttempt.Status(1) = "FAIL";
+fullPrachAttempt.CRCPass(1) = 0;
+fullPrachAttempt.RAProcedureType(1) = "contention_based_four_step";
+fullPrachAttempt.FullRAEvidenceSource(1) = "sixgr.phy.ra.runFourStepRA";
+fullPrachAttempt.PreambleIndexTx(1) = 7;
+fullPrachAttempt.RARNTI(1) = 1;
+annotatedFull = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable("PRACH", fullPrachAttempt);
+assert(strcmpi(string(annotatedFull.SourceClassification(1)), "active_integrated") && ...
+        strcmpi(string(annotatedFull.RuntimeMaterializationStatus(1)), "active_integrated_four_step_ra_waveform_msg1_msg2_msg3_msg4"), ...
+    "A failed full four-step RA attempt with real Msg1 evidence must retain full-RA provenance instead of being collapsed to simplified PRACH.");
+
+[stateAfterAccessBlocked, dlGrantsBeforeSRS, ~] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
+assert(isempty(dlGrantsBeforeSRS), ...
+    "DL scheduling must stay blocked after PBCH/PRACH until configured SRS/CSI evidence is valid.");
+assert(~logical(stateAfterAccessBlocked.SchedulingEligibility(1)), ...
+    "DL scheduling eligibility must honor SRSRequired instead of bypassing it when CSI is enabled.");
+assert(double(stateAfterAccessBlocked.SchedulingOpportunitiesBlockedByGatingCount(1)) >= 1, ...
+    "Blocked pre-SRS DL traffic must increment the scheduling-gating opportunity counter.");
+blockedArtifacts = sixgr.truth.CoupledTruthRuntime.mobilityArtifacts(stateAfterAccessBlocked);
+blockedControlStateT = blockedArtifacts.ControlGatingStateTable;
+assert(ismember("DLSchedulingEligibility", string(blockedControlStateT.Properties.VariableNames)) && ...
+        ~logical(blockedControlStateT.DLSchedulingEligibility(1)), ...
+    "Control-state export must report DL scheduling ineligible before valid SRS/CSI evidence.");
+
 artifactsAfterPRACH = sixgr.truth.CoupledTruthRuntime.mobilityArtifacts(state);
 controlStateT = artifactsAfterPRACH.ControlGatingStateTable;
 assert(all(ismember(["TimeAlignmentState","LastTimingAdvance_samples","LastTimingAdvance_us", ...
@@ -81,7 +123,7 @@ assert(logical(stateMeasurementOnly.TimingAdvanceUpdateRequiredByUE(1)) && ...
     abs(double(stateMeasurementOnly.LastTimingAdvanceSamplesByUE(1)) - 37) < 1e-12, ...
     "Measurement-only TA mode must flag mobility drift without silently applying a geometry-derived TA command.");
 
-ulTimingPass = localControlTrial("PASS", double(stateMeasurementOnly.CurrentSlot), double(stateMeasurementOnly.CurrentFrame));
+ulTimingPass = localSRSTrial(double(stateMeasurementOnly.CurrentSlot), double(stateMeasurementOnly.CurrentFrame));
 ulTimingPass.TimingOffset_samples = 41;
 stateMeasurementOnly = sixgr.truth.CoupledTruthRuntime.applySRSTrial(stateMeasurementOnly, 1, ulTimingPass);
 assert(string(stateMeasurementOnly.TimeAlignmentState(1)) == "time_aligned_from_srs_receiver_measurement" && ...
@@ -101,7 +143,12 @@ assert(string(stateGeometryPredictive.TimeAlignmentState(1)) == "time_aligned_fr
     string(stateGeometryPredictive.TimingAdvanceUpdateStatusByUE(1)) == "updated_from_geometry_mobility_delta", ...
     "Geometry-predictive TA mode must apply only a propagation-derived mobility delta with honest source labeling.");
 
-srsPass = localControlTrial("PASS", double(state.CurrentSlot), double(state.CurrentFrame));
+syntheticSrsPass = localControlTrial("PASS", double(state.CurrentSlot), double(state.CurrentFrame));
+stateSyntheticSrs = sixgr.truth.CoupledTruthRuntime.applySRSTrial(state, 1, syntheticSrsPass);
+assert(string(stateSyntheticSrs.SRSValidityState(1)) == "invalid", ...
+    "SRS gating must reject a generic PASS row without detection/channel-estimate evidence.");
+
+srsPass = localSRSTrial(double(state.CurrentSlot), double(state.CurrentFrame));
 srsPass.RIEstimate = 1;
 srsPass.TPMIEstimate = 0;
 srsPass.MeasuredTrialSINR_dB = 18;
@@ -168,4 +215,31 @@ else
     row.CRCPass = 0;
 end
 T = row;
+end
+
+function T = localSRSTrial(slotIdx, frameIdx)
+T = localControlTrial("PASS", slotIdx, frameIdx);
+T.DetectionAttempted = true;
+T.DetectionSuccess = true;
+T.DetectionUsable = true;
+T.ResourceExtractionAttempted = true;
+T.ResourceExtractionAvailable = true;
+T.ChannelEstimateAttempted = true;
+T.ChannelEstimateAvailable = true;
+T.SRSChannelEstimateAvailable = true;
+T.MeasurementAttempted = true;
+T.MeasurementUsable = true;
+T.StrictReceiverEvidenceOk = true;
+T.StrictOk = true;
+T.SRSRuntimeEvidenceUsable = true;
+T.NMSE_dB = -20;
+T.ReceiverHestSINR_dB = 18;
+T.MeasuredTrialSINR_dB = 18;
+T.FailureReason = "";
+end
+
+function T = localPRACHAnnotationRow(status)
+T = table(string(status), 1, 1, 0, false, "", "", false, NaN, NaN, NaN, ...
+    'VariableNames', {'Status','Slot','Frame','CRCPass','RACompleted','RAProcedureType', ...
+    'FullRAEvidenceSource','PreambleDetected','PreambleIndexTx','RARNTI','TimingAdvanceCommand'});
 end

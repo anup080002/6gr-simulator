@@ -305,6 +305,9 @@ logicalPaths.measurement_sidecar_manifest = "reports/csv/measurement_sidecar_man
 logicalPaths.measurement_output_integrity_audit = "reports/csv/measurement_output_integrity_audit.csv";
 localCoverageLog("measurement_sidecars_written", runFolder);
 
+localReconcileLiveStageControlAttemptCounts(runFolder);
+localCoverageLog("live_stage_control_counts_reconciled", runFolder);
+
 inventory = localBuildArtifactInventory(runFolder);
 localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", inventory);
 localCoverageLog("inventory_written", runFolder);
@@ -7179,6 +7182,93 @@ if istable(T) && ~isempty(T)
 else
     count = 0;
 end
+end
+
+function localReconcileLiveStageControlAttemptCounts(runFolder)
+runFolder = char(string(runFolder));
+statusPaths = [
+    string(fullfile(runFolder, "reports", "csv", "live_stage_status.csv"));
+    string(fullfile(runFolder, "air_interface", "reports", "csv", "live_stage_status.csv"))];
+signals = ["PBCH", "PRACH", "SRS", "TRS"];
+for iPath = 1:numel(statusPaths)
+    statusPath = statusPaths(iPath);
+    if exist(statusPath, "file") ~= 2
+        continue;
+    end
+    T = localReadOptionalTable(statusPath);
+    if ~(istable(T) && ~isempty(T))
+        continue;
+    end
+    changed = false;
+    for iSig = 1:numel(signals)
+        sig = signals(iSig);
+        colName = char(sig + "AttemptCount");
+        if ~ismember(colName, string(T.Properties.VariableNames))
+            T.(colName) = zeros(height(T), 1);
+            changed = true;
+        end
+        observed = localObservedControlAttemptCount(runFolder, sig);
+        if observed <= 0
+            continue;
+        end
+        current = double(T.(colName));
+        current(~isfinite(current)) = 0;
+        updated = max(current, observed);
+        if any(abs(updated - current) > 0)
+            T.(colName) = updated;
+            changed = true;
+        end
+    end
+    if changed
+        sixgr.util.csvWriteTable(statusPath, T);
+    end
+end
+end
+
+function count = localObservedControlAttemptCount(runFolder, signalName)
+signalName = lower(string(signalName));
+fileName = signalName + "_trials.csv";
+candidatePaths = [
+    string(fullfile(runFolder, "air_interface", "csv", fileName));
+    string(fullfile(runFolder, "control", "csv", fileName));
+    string(fullfile(runFolder, "reference_signals", "csv", fileName));
+    string(fullfile(runFolder, "reports", "csv", fileName))];
+count = 0;
+for iPath = 1:numel(candidatePaths)
+    count = max(count, localCSVDataRowCount(candidatePaths(iPath)));
+end
+end
+
+function count = localCSVDataRowCount(pathStr)
+count = 0;
+pathStr = char(string(pathStr));
+if exist(pathStr, "file") ~= 2
+    return;
+end
+try
+    T = localReadOptionalTable(pathStr);
+    if istable(T)
+        count = max(count, height(T));
+    end
+catch
+end
+if count > 0
+    return;
+end
+fid = fopen(pathStr, "r");
+if fid < 0
+    return;
+end
+cleanupObj = onCleanup(@() fclose(fid));
+lineCount = 0;
+while true
+    line = fgetl(fid);
+    if ~ischar(line)
+        break;
+    end
+    lineCount = lineCount + 1;
+end
+count = max(lineCount - 1, 0);
 end
 
 function out = localSafeDivide(num, den)

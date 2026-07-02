@@ -337,8 +337,113 @@ if ~(istable(T) && ~isempty(T))
     return;
 end
 rawTrials = sixgr.util.structGet(link, "RawTrials", struct());
-rawTrials.(char(fieldName)) = T;
+fieldName = char(fieldName);
+T = localPrepareStrictRawTrialTable(fieldName, T);
+existing = sixgr.util.structGet(rawTrials, fieldName, table());
+existing = localPrepareStrictRawTrialTable(fieldName, existing);
+rawTrials.(fieldName) = localAppendCompatTable(existing, T);
 link.RawTrials = rawTrials;
+end
+
+function T = localPrepareStrictRawTrialTable(fieldName, T)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+fieldName = upper(string(fieldName));
+if ~ismember("Frame", string(T.Properties.VariableNames))
+    T.Frame = NaN(n, 1);
+end
+if ~ismember("Slot", string(T.Properties.VariableNames))
+    T.Slot = NaN(n, 1);
+end
+if ~ismember("UEIndex", string(T.Properties.VariableNames))
+    if ismember("UEId", string(T.Properties.VariableNames))
+        T.UEIndex = localNumericColumn(T, "UEId", NaN(n, 1));
+    elseif ismember("UEID", string(T.Properties.VariableNames))
+        T.UEIndex = localNumericColumn(T, "UEID", NaN(n, 1));
+    else
+        T.UEIndex = NaN(n, 1);
+    end
+end
+if ~ismember("UEID", string(T.Properties.VariableNames))
+    T.UEID = localNumericColumn(T, "UEIndex", NaN(n, 1));
+end
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    if any(fieldName == ["SRS", "PRACH", "PUCCH"])
+        T.Direction = repmat("UL", n, 1);
+    else
+        T.Direction = repmat("DL", n, 1);
+    end
+end
+end
+
+function Tout = localAppendCompatTable(Ta, Tb)
+if ~(istable(Ta) && ~isempty(Ta))
+    if istable(Tb)
+        Tout = Tb;
+    else
+        Tout = table();
+    end
+    return;
+end
+if ~(istable(Tb) && ~isempty(Tb))
+    Tout = Ta;
+    return;
+end
+vars = union(string(Ta.Properties.VariableNames), string(Tb.Properties.VariableNames), "stable");
+Ta = localEnsureTableVars(Ta, vars, Tb);
+Tb = localEnsureTableVars(Tb, vars, Ta);
+Tout = [Ta(:, cellstr(vars)); Tb(:, cellstr(vars))];
+end
+
+function T = localEnsureTableVars(T, vars, refT)
+for i = 1:numel(vars)
+    v = char(vars(i));
+    if ~ismember(v, T.Properties.VariableNames)
+        T.(v) = localDefaultColumnLike(refT, v, height(T));
+    end
+end
+end
+
+function col = localDefaultColumnLike(refT, varName, nRows)
+if istable(refT) && ismember(varName, refT.Properties.VariableNames)
+    refVal = refT.(varName);
+    if isstring(refVal)
+        col = strings(nRows, 1);
+        return;
+    end
+    if iscellstr(refVal)
+        col = repmat({''}, nRows, 1);
+        return;
+    end
+    if islogical(refVal)
+        col = false(nRows, 1);
+        return;
+    end
+    if isnumeric(refVal)
+        col = NaN(nRows, 1);
+        return;
+    end
+end
+col = strings(nRows, 1);
+end
+
+function vals = localNumericColumn(T, varName, defaultValue)
+vals = defaultValue;
+if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+raw = T.(char(varName));
+if isnumeric(raw) || islogical(raw)
+    vals = double(raw);
+else
+    vals = str2double(string(raw));
+end
+vals = vals(:);
+if numel(vals) ~= height(T)
+    vals = defaultValue;
+end
 end
 
 function tf = localShouldRunStrictPRACHEvidence(scfg, cfg)
@@ -3492,9 +3597,11 @@ end
 function cfg = localEnsureParallelExecution(cfg)
 useParallel = logical(sixgr.util.structGet(cfg, "run.useParallel", false));
 requestedWorkers = max(0, round(double(sixgr.util.structGet(cfg, "run.numWorkers", 0))));
+autoStartParallelPool = logical(sixgr.util.structGet(cfg, "run.autoStartParallelPool", true));
 configuredDisabledReason = string(sixgr.util.structGet(cfg, "run.parallelDisabledReason", ""));
 cfg = sixgr.util.structSet(cfg, "run.parallelRequestedWorkers", double(requestedWorkers));
 cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "");
+cfg = sixgr.util.structSet(cfg, "run.autoStartParallelPool", logical(autoStartParallelPool));
 idleTimeoutMinutes = max(1, double(sixgr.util.structGet(cfg, ...
     "run.parallelPoolIdleTimeoutMinutes", 1440)));
 cfg = sixgr.util.structSet(cfg, "run.parallelPoolIdleTimeoutMinutes", double(idleTimeoutMinutes));
@@ -3527,6 +3634,20 @@ if ~parallelInstalled || ~parallelLicensed || ~parpoolAvailable
     else
         cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "parpool_function_unavailable");
     end
+    return;
+end
+
+if ~autoStartParallelPool
+    cfg.run.useParallel = true;
+    cfg.run.numWorkers = double(requestedWorkers);
+    cfg = sixgr.util.structSet(cfg, "run.parallelDisabledReason", "");
+    cfg = sixgr.util.structSet(cfg, "run.parallelStartMode", "lazy_on_demand");
+    cfg = sixgr.util.structSet(cfg, "run.parallelPoolKindEffective", ...
+        char(lower(strtrim(string(sixgr.util.structGet(cfg, "run.parallelPoolKind", "auto"))))));
+    cfg = sixgr.util.structSet(cfg, "run.parallelPoolSelectionReason", ...
+        "auto_start_parallel_pool_disabled_by_config");
+    cfg = sixgr.util.structSet(cfg, "run.parallelStartFailure", "");
+    cfg = sixgr.util.structSet(cfg, "run.parallelPoolIdleTimeoutEffectiveMinutes", double(idleTimeoutMinutes));
     return;
 end
 

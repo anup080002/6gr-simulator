@@ -81,11 +81,13 @@ try
     out.EstimatedCFO_PreCorrection_Hz = double(trial.EstimatedCFO_PreCorrection_Hz);
     out.EstimatedOscillatorCFO_Hz = double(sixgr.util.structGet(trial, "EstimatedOscillatorCFO_Hz", out.EstimatedCFO_Hz));
     out.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(trial, "EstimatedCommonFrequency_Hz", NaN));
-    out.PhysicalDoppler_Hz = double(sixgr.util.structGet(trial, "PhysicalDoppler_Hz", NaN));
+    out.PhysicalDoppler_Hz = double(sixgr.util.structGet(trial, "PhysicalDoppler_Hz", ...
+        sixgr.util.structGet(freq, "PhysicalDoppler_Hz", NaN)));
     out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
     out.EstimatedDoppler_Hz = localResolveRuntimeDopplerEstimate(out.EstimatedCommonFrequency_Hz, out.EstimatedOscillatorCFO_Hz);
     out.ConfiguredMaxDoppler_Hz = localResolveConfiguredMaxDopplerHz(cfg);
-    out.InjectedDoppler_Hz = localResolveScalarInjectedDopplerHz(replay);
+    out.InjectedDoppler_Hz = localFirstFiniteValue(out.PhysicalDoppler_Hz, ...
+        localResolveScalarInjectedDopplerHz(replay), localResolveConfiguredMaxDopplerHz(cfg));
     if isfinite(out.EstimatedDoppler_Hz) && isfinite(out.InjectedDoppler_Hz)
         out.DopplerError_Hz = out.EstimatedDoppler_Hz - out.InjectedDoppler_Hz;
     end
@@ -170,7 +172,8 @@ if isfield(strictCfg, "StrictValidation") && ...
 end
 
 tx = sixgr.phy.trs.generateTRSWaveform(strictCfg);
-[rxWave, replay] = localApplyTrackingChannelAndNoise(tx.Waveform, cfg, ...
+[rxWave, replay] = localApplyTrackingChannelAndNoise(tx.Waveform, ...
+    localPrepareTRSReceiverObservationConfig(cfg, snr_dB), ...
     double(tx.SampleRateHz), snr_dB, double(strictCfg.NumCSIRSPorts));
 rx = struct();
 rx.Waveform = rxWave;
@@ -179,8 +182,9 @@ rx.NoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", 
 rx.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 rx.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", 0));
 rx.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", 0));
-rx.InjectedDoppler_Hz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", 0));
-rx.PhysicalDoppler_Hz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", 0));
+physicalDopplerHz = localResolvePhysicalDopplerHz(cfg, replay);
+rx.InjectedDoppler_Hz = double(physicalDopplerHz);
+rx.PhysicalDoppler_Hz = double(physicalDopplerHz);
 rx.FaultMode = "normal";
 rx.SampleRateHz = double(tx.SampleRateHz);
 rx.GridSlots = tx.GridSlots;
@@ -255,9 +259,26 @@ maxSamples = NaN;
 try
     info = nrOFDMInfo(cfg.ToolboxCarrier);
     cp = double(sixgr.util.structGet(info, "CyclicPrefixLengths", []));
-    cp = cp(isfinite(cp) & cp >= 0);
+    symLen = double(sixgr.util.structGet(info, "SymbolLengths", []));
+    nfft = double(sixgr.util.structGet(info, "Nfft", NaN));
+    candidates = [];
+    if ~isempty(symLen)
+        symLen = symLen(isfinite(symLen) & symLen > 0);
+        candidates = [candidates; symLen(:)]; %#ok<AGROW>
+    end
+    if isfinite(nfft) && nfft > 0
+        candidates = [candidates; nfft]; %#ok<AGROW>
+    end
     if ~isempty(cp)
-        maxSamples = max(cp);
+        cp = cp(isfinite(cp) & cp >= 0);
+        if ~isempty(cp) && isfinite(nfft) && nfft > 0
+            candidates = [candidates; nfft + max(cp)]; %#ok<AGROW>
+        else
+            candidates = [candidates; cp(:)]; %#ok<AGROW>
+        end
+    end
+    if ~isempty(candidates)
+        maxSamples = max(candidates);
     end
 catch
 end
@@ -390,6 +411,37 @@ replay.ChannelModelApplied = char(localResolveTrialChannelModel(cfg));
 replay.ConfiguredMaxDoppler_Hz = double(localResolveConfiguredMaxDopplerHz(cfg));
 replay.ScalarDopplerInjected = isfinite(scalarDopplerHz);
 replay.InjectedScalarDoppler_Hz = double(scalarDopplerHz);
+replay.PhysicalDoppler_Hz = double(localResolvePhysicalDopplerHz(cfg, replay));
+end
+
+function cfgOut = localPrepareTRSReceiverObservationConfig(cfg, snr_dB)
+cfgOut = cfg;
+cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
+cfgOut = sixgr.util.structSet(cfgOut, "channel.snr_dB", double(snr_dB));
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeSignalFamily", "TRS");
+cfgOut = sixgr.util.structSet(cfgOut, "phy.runtimeSignalFamily", "TRS");
+userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
+if isstruct(userMeta)
+    stripFields = { ...
+        "RuntimeServingBSAntenna", ...
+        "RuntimeServingBSAntennaMeta", ...
+        "RuntimeUEAntenna", ...
+        "RuntimeUEAntennaMeta", ...
+        "RuntimeServingBasePathloss_dB", ...
+        "RuntimeServingPathloss_dB", ...
+        "RuntimeServingShadowFading_dB", ...
+        "RuntimeServingO2I_dB", ...
+        "RuntimeServingRxPower_dBm", ...
+        "RuntimeServingRSRP_dBm", ...
+        "RuntimeServingLargeScaleSINR_dB"};
+    for idx = 1:numel(stripFields)
+        if isfield(userMeta, stripFields{idx})
+            userMeta = rmfield(userMeta, stripFields{idx});
+        end
+    end
+    userMeta.RuntimeTRSReceiverObservationMode = "receiver_snr_calibrated_strict_trs_control_measurement";
+    cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
+end
 end
 
 function [y, nVar] = localAddTrackingNoise(x, replay, snr_dB)
@@ -448,6 +500,38 @@ if ~(isstruct(replay) && logical(sixgr.util.structGet(replay, "ScalarDopplerInje
     return;
 end
 dopplerHz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", NaN));
+end
+
+function dopplerHz = localResolvePhysicalDopplerHz(cfg, replay)
+dopplerHz = localFirstFiniteValue( ...
+    sixgr.util.structGet(cfg, "channel.runtimeSignedDoppler_Hz", NaN), ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingSignedDopplerHz", NaN), ...
+    sixgr.util.structGet(replay, "PhysicalDoppler_Hz", NaN), ...
+    sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", NaN));
+if isfinite(dopplerHz)
+    return;
+end
+if isstruct(replay) && logical(sixgr.util.structGet(replay, "ScalarDopplerInjected", false))
+    dopplerHz = double(sixgr.util.structGet(replay, "InjectedScalarDoppler_Hz", NaN));
+    return;
+end
+if isstruct(replay) && logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false))
+    dopplerHz = NaN;
+    return;
+end
+dopplerHz = 0;
+end
+
+function value = localFirstFiniteValue(varargin)
+value = NaN;
+for ii = 1:nargin
+    raw = double(varargin{ii});
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = raw(1);
+        return;
+    end
+end
 end
 
 function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, sampleRateHz)

@@ -321,28 +321,29 @@ else
         sixgr.util.structGet(cfg, "mimo.n_rx_ant", []), ...
         sixgr.util.structGet(cfg, "channel.nRxAnt", []), ...
         sixgr.util.structGet(cfg, "phy.nRxAnt", []), numLayers), numLayers);
-    logicalPorts = localPositiveInteger(localFirstFiniteScalar( ...
-        localMatrixPortCount(wRaw, numLayers), ...
-        sixgr.util.structGet(grant, "NumLogicalPorts", []), ...
-        sixgr.util.structGet(grant, "PortCount", []), ...
-        sixgr.util.structGet(grant, "PrecodingNumPorts", []), ...
-        sixgr.util.structGet(cfg, "phy.pdsch.numPorts", []), ...
-        sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []), numLayers), numLayers);
+    logicalPorts = localResolveDLLogicalPortCount(cfg, grant, numLayers);
     logicalPorts = min(max(logicalPorts, numLayers), max(numElements, numLayers));
     matrixPortCount = localMatrixPortCount(wRaw, numLayers);
-    if isfinite(matrixPortCount) && matrixPortCount >= numLayers
-        logicalPorts = max(numLayers, round(double(matrixPortCount)));
-    end
-    matrixPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
-    if ~isempty(wRaw)
-        logicalPorts = size(matrixPorts, 1);
+    matrixSourceOverride = "";
+    inputMatrixUsed = false;
+    if isempty(wRaw)
+        matrixPorts = localRectIdentity(logicalPorts, numLayers);
+        matrixSourceOverride = "frozen_identity_ports";
+    elseif isfinite(matrixPortCount) && round(double(matrixPortCount)) == logicalPorts
+        matrixPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
+        inputMatrixUsed = true;
+    elseif isfinite(matrixPortCount) && matrixPortCount > logicalPorts && ~localDLHybridElementDomainEnabled(cfg)
+        [matrixPorts, matrixSourceOverride] = localResolveDLLogicalPrecoder(cfg, grant, numLayers, logicalPorts);
+    else
+        matrixPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
+        inputMatrixUsed = true;
     end
     numWaveformColumns = logicalPorts;
-    active = logicalPorts > 1 || numLayers > 1 || ~isempty(wRaw);
+    active = logicalPorts > 1 || numLayers > 1 || inputMatrixUsed;
     mode = localFirstNonempty(sixgr.util.structGet(grant, "PrecodingMode", ""), ...
         localTernary(active, "explicit-wideband", "siso-bypass"));
-    source = localFirstNonempty(sixgr.util.structGet(grant, "PrecoderSource", ""), ...
-        localTernary(isempty(wRaw), "frozen_identity_ports", "frozen_explicit_matrix"));
+    source = localFirstNonempty(matrixSourceOverride, sixgr.util.structGet(grant, "PrecoderSource", ""), ...
+        localTernary(inputMatrixUsed, "frozen_explicit_matrix", "frozen_identity_ports"));
     stage = localFirstNonempty(sixgr.util.structGet(grant, "PrecodingApplicationStage", ""), ...
         localTernary(active, "nrPDSCHPrecode_before_RE_mapping", "none"));
 end
@@ -409,6 +410,90 @@ else
         "DL precoding matrix must be Nports-by-Nlayers or transpose. Got %dx%d for %d layer(s).", ...
         size(Wraw, 1), size(Wraw, 2), nLayers);
 end
+end
+
+function nPorts = localResolveDLLogicalPortCount(cfg, grant, nLayers)
+nLayers = max(1, round(double(nLayers)));
+configuredPorts = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.maxDLLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.maxLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.nPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.numPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.NumAntennaPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.numAntennaPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.numLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", []), NaN);
+if isfinite(configuredPorts)
+    if configuredPorts <= localMaxNRLogicalPDSCHPorts()
+        nPorts = localPositiveInteger(configuredPorts, nLayers);
+        return;
+    end
+end
+
+grantPorts = localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "NumLogicalPorts", []), ...
+    sixgr.util.structGet(grant, "PortCount", []), NaN);
+if isfinite(grantPorts) && grantPorts <= localMaxNRLogicalPDSCHPorts()
+    nPorts = localPositiveInteger(grantPorts, nLayers);
+    return;
+end
+
+nPorts = nLayers;
+end
+
+function nPorts = localMaxNRLogicalPDSCHPorts()
+% Prevent element-array counts such as 64 from becoming logical NR waveform
+% ports unless the scenario explicitly requests that logical port count.
+nPorts = 32;
+end
+
+function [W, source] = localResolveDLLogicalPrecoder(cfg, grant, nLayers, nPorts)
+source = "frozen_logical_identity_ports_from_element_domain_matrix";
+W = localRectIdentity(nPorts, nLayers);
+pmi = localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "AppliedPrecoderPMI", []), ...
+    sixgr.util.structGet(grant, "PMI", []), ...
+    sixgr.util.structGet(grant, "TPMI", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.PMI", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.pmi", []), NaN);
+mode = localFirstNonempty( ...
+    sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""), ...
+    sixgr.util.structGet(grant, "PMICodebookMode", ""), ...
+    sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", ""), ...
+    "type1_su_mimo");
+try
+    [candidates, ~] = sixgr.phy.dl.pmiCodebookCandidates(cfg, nLayers, nPorts, "Mode", mode);
+    if isempty(candidates)
+        return;
+    end
+    idx = 1;
+    if isfinite(pmi)
+        pmi0 = round(double(pmi));
+        if pmi0 >= 0 && pmi0 < numel(candidates)
+            idx = pmi0 + 1;
+        end
+    end
+    Wcand = double(candidates(idx).W);
+    if isequal(size(Wcand), [nPorts nLayers])
+        W = Wcand;
+        source = "frozen_logical_pmi_codebook_from_element_domain_matrix";
+    end
+catch
+    % Keep the grant executable with a logical-port identity. The input
+    % element-domain matrix cannot define NR PDSCH waveform ports unless
+    % explicit hybrid element-domain waveform generation is enabled.
+end
+end
+
+function tf = localDLHybridElementDomainEnabled(cfg)
+tf = logical(sixgr.util.structGet(cfg, "phy.pdsch.hybridBeamformingEnabled", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.hybridBeamforming", ...
+    sixgr.util.structGet(cfg, "rf.bs.hybridBeamformingEnabled", ...
+    sixgr.util.structGet(cfg, "rf.bs.hybridBeamforming", ...
+    sixgr.util.structGet(cfg, "antenna.bs.hybridBeamformingEnabled", ...
+    sixgr.util.structGet(cfg, "antenna.bs.hybridBeamforming", ...
+    sixgr.util.structGet(cfg, "phy.beamManagement.hybridBeamformingEnabled", false))))))));
 end
 
 function W = localRectIdentity(nPorts, nLayers)

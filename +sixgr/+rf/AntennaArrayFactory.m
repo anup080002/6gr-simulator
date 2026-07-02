@@ -163,6 +163,85 @@ classdef AntennaArrayFactory
         end
 
 
+        function [arr, meta] = logicalPortView(arr, meta, numPorts, sourceToken)
+            %LOGICALPORTVIEW Return a signal-specific logical-port view.
+            % The element geometry is preserved, while the baseband waveform
+            % contract is specialized to the signal's actual port columns.
+            if nargin < 2 || ~isstruct(meta)
+                meta = struct();
+            end
+            if nargin < 3 || ~(isnumeric(numPorts) && isscalar(numPorts) && isfinite(numPorts) && numPorts >= 1)
+                error("AntennaArrayFactory:InvalidLogicalPortView", ...
+                    "A finite positive logical-port count is required.");
+            end
+            if nargin < 4 || strlength(strtrim(string(sourceToken))) == 0
+                sourceToken = "signal_specific_logical_port_view";
+            end
+
+            numPorts = max(1, round(double(numPorts)));
+            numElements = sixgr.rf.AntennaArrayFactory.localPositiveIntegerOrNaN( ...
+                sixgr.util.structGet(arr, "NumElements", NaN));
+            if ~isfinite(numElements)
+                numElements = sixgr.rf.AntennaArrayFactory.localPositiveIntegerOrNaN( ...
+                    sixgr.util.structGet(arr, "Nant", NaN));
+            end
+            if ~isfinite(numElements)
+                numElements = sixgr.rf.AntennaArrayFactory.localPositiveIntegerOrNaN( ...
+                    sixgr.util.structGet(meta, "NumElements", NaN));
+            end
+            if ~isfinite(numElements)
+                numElements = numPorts;
+            end
+            numElements = max(1, round(double(numElements)));
+            if numPorts > numElements
+                error("AntennaArrayFactory:PortElementMismatch", ...
+                    "Signal logical-port count %d exceeds %d runtime antenna element(s).", ...
+                    numPorts, numElements);
+            end
+
+            numRFChains = sixgr.rf.AntennaArrayFactory.localPositiveIntegerOrNaN( ...
+                sixgr.util.structGet(arr, "NumRFChains", NaN));
+            if ~isfinite(numRFChains)
+                numRFChains = sixgr.rf.AntennaArrayFactory.localPositiveIntegerOrNaN( ...
+                    sixgr.util.structGet(meta, "NumRFChains", NaN));
+            end
+            if ~isfinite(numRFChains) || numRFChains < numPorts
+                numRFChains = numPorts;
+            end
+
+            [portToElement, elementsPerPort] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numPorts);
+            portToRF = sixgr.rf.AntennaArrayFactory.localRectIdentity(numRFChains, numPorts);
+
+            arr.NumElements = double(numElements);
+            arr.Nant = double(sixgr.util.structGet(arr, "Nant", numElements));
+            arr.NumPorts = double(numPorts);
+            arr.NumLogicalPorts = double(numPorts);
+            arr.NumWaveformColumns = double(numPorts);
+            arr.NumRFChains = double(numRFChains);
+            arr.WaveformDomain = "logical_port";
+            arr.PortArchitecture = "signal_specific_logical_port_view";
+            arr.PortCountSource = char(string(sourceToken));
+            arr.RFChainCountSource = "signal_specific_logical_port_view";
+            arr.PortToElementMatrix = portToElement;
+            arr.ElementToPortMatrix = portToElement';
+            arr.PortToRFChainMatrix = portToRF;
+            arr.RFChainToPortMatrix = portToRF.';
+            arr.DigitalPortToRFChainMatrix = portToRF;
+            arr.HybridElementToPortMatrix = portToElement;
+            arr.HybridBeamformingEnabled = false;
+            arr.ElementsPerPort = double(elementsPerPort(:).');
+
+            meta.NumElements = double(numElements);
+            meta.NumPorts = double(numPorts);
+            meta.NumLogicalPorts = double(numPorts);
+            meta.NumWaveformColumns = double(numPorts);
+            meta.NumRFChains = double(numRFChains);
+            meta.WaveformDomain = "logical_port";
+            meta.PortCountSource = char(string(sourceToken));
+            meta.RuntimeObjectSource = "AntennaArrayFactory.logicalPortView";
+        end
+
+
         function arch = resolvePortArchitecture(cfg, role, opts)
             arguments
                 cfg (1,1) struct
@@ -326,16 +405,22 @@ classdef AntennaArrayFactory
             signal = upper(strtrim(string(signal)));
             paths = strings(0, 1);
             if roleL == "bs"
-                if signal == "PDSCH" || strlength(signal) == 0
+                if signal == "PDSCH"
                     paths = [paths; "phy.pdsch.numPorts"; "phy.pdsch.nPorts"; "phy.pdsch.NumAntennaPorts"; "phy.pdsch.numAntennaPorts"];
                 end
                 if strlength(signal) == 0
                     paths = [paths; "phy.csirs.numPorts"; "phy.trs.numPorts"];
                 end
+                if strlength(signal) == 0
+                    paths = [paths; "scenario.bs.nTxAnt"; "mimo.n_tx_ant"; "phy.nTxAnt"];
+                end
                 paths = [paths; "antenna.bs.numPorts"; "rf.bs.numPorts"; "scenario.bs.numPorts"];
             else
-                if signal == "PUSCH" || strlength(signal) == 0
+                if signal == "PUSCH"
                     paths = [paths; "phy.pusch.NumAntennaPorts"; "phy.pusch.numAntennaPorts"; "phy.pusch.numPorts"; "phy.pusch.nPorts"];
+                end
+                if strlength(signal) == 0
+                    paths = [paths; "scenario.ue.nRxAnt"; "mimo.n_rx_ant"; "phy.nRxAnt"];
                 end
                 paths = [paths; "antenna.ue.numPorts"; "rf.ue.numPorts"; "scenario.ue.numPorts"];
             end

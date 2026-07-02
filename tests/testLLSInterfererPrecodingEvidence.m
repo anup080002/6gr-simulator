@@ -115,6 +115,11 @@ assert(contains(char(string(T.InterfererPrecodingModeSet(1))), "explicit-wideban
     "Interferer provenance test must expose the interferer precoding mode.");
 assert(contains(char(string(T.InterfererBeamIndexSetSummary(1))), "1|2"), ...
     "Interferer provenance test must expose the interferer beam index set.");
+noiseSource = string(T.NoiseVarianceSource(1));
+assert(~contains(noiseSource, "plus_full_waveform_interference_power"), ...
+    "Shared-slot interference must not be folded into InjectedNoiseVariance as a second scalar noise term.");
+assert(contains(noiseSource, "excluding_interference_modeled_by_shared_slot_covariance"), ...
+    "Noise variance provenance must disclose that shared-slot interference is modeled by covariance, not scalar AWGN.");
 
 ok = true;
 end

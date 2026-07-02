@@ -32,6 +32,10 @@ state.LargeScaleState.Shadow_dB(1,1) = 0;
 state.LargeScaleState.O2I_dB(1,1) = 0;
 [cfgDL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "DL");
 [cfgUL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "UL");
+cfgDL.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
+cfgDL.phy.pdsch.dmrs.typeAPosition = 3;
+cfgDL.phy.dmrs.typeAPosition = 3;
+cfgDL.lls6g.userContext.BeamIndexSet = "1";
 
 grant = struct( ...
     "UEIndex", 1, ...
@@ -54,6 +58,18 @@ grant = struct( ...
     "SRSGatingActive", true, ...
     "ControlEligible", true, ...
     "ControlDecodeOk", true, ...
+    "DCICrcPass", true, ...
+    "PDCCHPayloadMatch", true, ...
+    "PDCCHCausalGrantDecodeOk", true, ...
+    "PDCCHMissedDetection", false, ...
+    "PDCCHFalseAlarm", false, ...
+    "GrantValid", true, ...
+    "NegativeExpectedOk", false, ...
+    "PDCCHBlindSearchEnabled", true, ...
+    "PDCCHREGMappingAvailable", true, ...
+    "PDCCHControlFailureReason", "pdcch_dci_crc_and_payload_match", ...
+    "PDCCHControlEvidenceSource", "pdcch_waveform_dci_crc_and_payload_match", ...
+    "ControlDecodeSource", "pdcch_waveform_dci_crc_and_payload_match", ...
     "GrantControlState", "control_ok", ...
     "CellAcquisitionState", "acquired", ...
     "AccessState", "succeeded", ...
@@ -75,7 +91,80 @@ ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
 
 localAssertRawTrialTable(dl.TrialTable, "DL");
 localAssertRawTrialTable(ul.TrialTable, "UL");
+localAssertLiveExportsKeepDataArtifactsWithPUCCHSideColumns(dl.TrialTable, ul.TrialTable, tmp);
 ok = true;
+end
+
+function localAssertLiveExportsKeepDataArtifactsWithPUCCHSideColumns(dlT, ulT, tmpRoot)
+runFolder = fullfile(tmpRoot, "live_export_side_column_guard");
+layout = sixgr.report.resultLayout(runFolder);
+sixgr.util.ensureFolder(layout.ReportCSVDir);
+dlT = localAddPUCCHSideColumns(dlT, "DL");
+ulT = localAddPUCCHSideColumns(ulT, "UL");
+trialT = localAppendCompatTable(dlT, ulT);
+sixgr.truth.exportLLSLiveSignalChainTables(runFolder, trialT, table(), struct());
+
+channelState = readtable(fullfile(layout.ReportCSVDir, "live_channel_state_tti.csv"), "VariableNamingRule", "preserve");
+stageTrace = readtable(fullfile(layout.ReportCSVDir, "live_tx_rx_stage_trace.csv"), "VariableNamingRule", "preserve");
+localAssertDirectionalSource(channelState, "DL", "air_interface/csv/dl_pdsch_trials.csv", "channel-state live export");
+localAssertDirectionalSource(channelState, "UL", "air_interface/csv/ul_pusch_trials.csv", "channel-state live export");
+localAssertDirectionalSource(stageTrace, "DL", "air_interface/csv/dl_pdsch_trials.csv", "stage-trace live export");
+localAssertDirectionalSource(stageTrace, "UL", "air_interface/csv/ul_pusch_trials.csv", "stage-trace live export");
+end
+
+function T = localAddPUCCHSideColumns(T, direction)
+T.RequestedFormat = repmat(2, height(T), 1);
+T.ResolvedFormat = repmat(2, height(T), 1);
+T.PUCCHResourceId = repmat("pucch_sidecar_for_" + lower(string(direction)) + "_harq_ack", height(T), 1);
+T.UCIType = repmat("harq_ack", height(T), 1);
+end
+
+function Tout = localAppendCompatTable(Ta, Tb)
+if ~(istable(Ta) && ~isempty(Ta))
+    Tout = Tb;
+    return;
+end
+if ~(istable(Tb) && ~isempty(Tb))
+    Tout = Ta;
+    return;
+end
+vars = union(string(Ta.Properties.VariableNames), string(Tb.Properties.VariableNames), "stable");
+Ta = localEnsureTableVars(Ta, vars, Tb);
+Tb = localEnsureTableVars(Tb, vars, Ta);
+Tout = [Ta(:, cellstr(vars)); Tb(:, cellstr(vars))];
+end
+
+function T = localEnsureTableVars(T, vars, refT)
+for ii = 1:numel(vars)
+    name = char(vars(ii));
+    if ~ismember(name, T.Properties.VariableNames)
+        T.(name) = localDefaultColumnLike(refT, name, height(T));
+    end
+end
+end
+
+function col = localDefaultColumnLike(refT, name, n)
+if istable(refT) && ismember(name, refT.Properties.VariableNames)
+    refCol = refT.(name);
+    if islogical(refCol)
+        col = false(n, 1);
+    elseif isnumeric(refCol)
+        col = NaN(n, 1);
+    else
+        col = strings(n, 1);
+    end
+else
+    col = strings(n, 1);
+end
+end
+
+function localAssertDirectionalSource(T, direction, expectedArtifact, label)
+mask = upper(strtrim(string(T.Direction))) == upper(string(direction));
+assert(any(mask), "%s must contain at least one %s row.", label, direction);
+assert(all(strcmpi(string(T.SourceArtifact(mask)), expectedArtifact)) && ...
+    all(strcmpi(string(T.SourceTable(mask)), expectedArtifact)), ...
+    "%s must keep finite-TB %s rows sourced from %s even when PUCCH/UCI side columns are present.", ...
+    label, direction, expectedArtifact);
 end
 
 function localAssertRawTrialTable(T, direction)
@@ -129,11 +218,7 @@ assert(logical(T.AntennaRuntimeObjectCreated(1)) && strlength(string(T.AntennaCo
     "Raw %s trial table must preserve active runtime antenna-object provenance.", direction);
 assert(strcmpi(char(string(T.ChannelArrayModel(1))), "awgn_no_array_channel"), ...
     "Raw %s trial table must honestly disclose the active AWGN no-array channel shortcut used in this focused provenance test.", direction);
-assert(strcmpi(char(string(T.CFOEstimateAvailability(1))), "missing") && ...
-    strcmpi(char(string(T.CFOErrorDefinition(1))), "not_available_without_cfo_estimate") && ...
-    strcmpi(char(string(T.CFOValueStatus(1))), "NOT_AVAILABLE") && ...
-    ~isfinite(double(T.CFOError_Hz(1))), ...
-    "Raw %s trial table must preserve missing-estimate CFO lineage instead of backfilling a fake error value.", direction);
+localAssertCFOValueLineage(T, direction);
 assert(strcmpi(char(string(T.TimingValueStatus(1))), "NOT_APPLICABLE") || strcmpi(char(string(T.TimingValueStatus(1))), "OK") || strcmpi(char(string(T.TimingValueStatus(1))), "NOT_AVAILABLE"), ...
     "Raw %s trial table must classify timing lineage explicitly.", direction);
 assert(strcmpi(char(string(T.LargeScaleSINRValueStatus(1))), "NOT_AVAILABLE") || strcmpi(char(string(T.LargeScaleSINRValueStatus(1))), "MISSING") || strcmpi(char(string(T.LargeScaleSINRValueStatus(1))), "OK"), ...
@@ -147,6 +232,17 @@ assert(isfinite(double(T.PropagationDistance_m(1))) && isfinite(double(T.ToD_s(1
     double(T.ToA_s(1)) >= double(T.ToD_s(1)), ...
     "Raw %s trial table must preserve same-flow timing/geometry evidence.", direction);
 if strcmpi(direction, "DL")
+    dciVars = {'DCICrcPass','PDCCHPayloadMatch','PDCCHCausalGrantDecodeOk','PDCCHMissedDetection','PDCCHFalseAlarm', ...
+        'GrantValid','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable','PDCCHControlFailureReason','PDCCHControlEvidenceSource','ControlDecodeSource'};
+    assert(all(ismember(dciVars, T.Properties.VariableNames)), ...
+        "DL raw trial table must expose decoded PDCCH/DCI lineage fields.");
+    assert(logical(T.DCICrcPass(1)) && logical(T.PDCCHPayloadMatch(1)) && ...
+        logical(T.PDCCHCausalGrantDecodeOk(1)) && logical(T.GrantValid(1)) && ...
+        ~logical(T.PDCCHMissedDetection(1)) && ~logical(T.PDCCHFalseAlarm(1)), ...
+        "DL raw trial table must preserve successful decoded DCI lineage from the finalized grant.");
+    assert(strcmpi(char(string(T.SourceArtifact(1))), "air_interface/csv/dl_pdsch_trials.csv") && ...
+        strcmpi(char(string(T.SourceTable(1))), "air_interface/csv/dl_pdsch_trials.csv"), ...
+        "DL raw trial table must identify itself as PDSCH evidence, not a control-channel artifact.");
     assert(logical(T.PrecodingActive(1)), ...
         "DL raw trial table must mark active precoding when the browser-owned rank-2 beam path is used.");
     assert(logical(T.ExplicitBeamWeightsApplied(1)) && logical(T.BeamformingApplied(1)), ...
@@ -155,8 +251,12 @@ if strcmpi(direction, "DL")
         "DL raw trial table must expose the applied precoder source and mode.");
     assert(strlength(string(T.AppliedBeamIndexSet(1))) > 0, ...
         "DL raw trial table must expose the applied beam index set when explicit precoding is active.");
-    assert(isfinite(double(T.AppliedPrecoderPMI(1))) && strlength(string(T.AppliedPrecoderPMIType(1))) > 0, ...
-        "DL raw trial table must expose the applied precoder PMI and PMI type when explicit precoding is active.");
+    hasCodebookPMI = isfinite(double(T.AppliedPrecoderPMI(1))) && strlength(string(T.AppliedPrecoderPMIType(1))) > 0;
+    hasExplicitMatrix = isfinite(double(T.PrecodingMatrixRows(1))) && double(T.PrecodingMatrixRows(1)) > 0 && ...
+        isfinite(double(T.PrecodingMatrixCols(1))) && double(T.PrecodingMatrixCols(1)) > 0 && ...
+        strlength(string(T.PrecoderSource(1))) > 0;
+    assert(hasCodebookPMI || hasExplicitMatrix, ...
+        "DL raw trial table must expose either codebook PMI lineage or explicit precoder matrix lineage when precoding is active.");
     assert(strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant") && strcmpi(char(string(T.ModulationAuthority(1))), "scheduler_grant"), ...
         "DL raw trial table must disclose scheduler-grant authority when the applied operating point comes from the grant.");
 else
@@ -184,5 +284,22 @@ else
         "UL raw trial table must separate requested beam references from runtime-applied native PUSCH TPMI and codebook port-support beam truth.");
     assert(strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant") && strcmpi(char(string(T.ModulationAuthority(1))), "scheduler_grant"), ...
         "UL raw trial table must disclose scheduler-grant authority when the applied operating point comes from the grant.");
+end
+end
+
+function localAssertCFOValueLineage(T, direction)
+availability = lower(strtrim(string(T.CFOEstimateAvailability(1))));
+definition = lower(strtrim(string(T.CFOErrorDefinition(1))));
+status = upper(strtrim(string(T.CFOValueStatus(1))));
+cfoError = double(T.CFOError_Hz(1));
+if availability == "missing" || status == "NOT_AVAILABLE"
+    assert(availability == "missing" && definition == "not_available_without_cfo_estimate" && ...
+        status == "NOT_AVAILABLE" && ~isfinite(cfoError), ...
+        "Raw %s trial table must preserve missing-estimate CFO lineage instead of backfilling a fake error value.", direction);
+else
+    assert(availability == "available" && ...
+        definition == "residual_post_correction_hz_relative_to_estimated_pre_correction" && ...
+        any(status == ["OK","PARTIAL"]) && isfinite(cfoError), ...
+        "Raw %s trial table must preserve explicit available-estimate CFO lineage and finite residual error.", direction);
 end
 end

@@ -26,8 +26,8 @@ for ii = 1:numel(resources)
         ref = resources(ii).Symbols(:);
         metric = localChunkedReferenceCorrelation(rxRE(:), ref);
         phase = angle(sum(rxRE(:) .* conj(ref), "omitnan"));
-        ampThreshold = localCoverageAmplitudeThreshold(rxRE(:), double(rx.NoiseVariance));
-        observed = nnz(abs(rxRE(:)) > ampThreshold);
+        observed = localObservedRECount(rxRE(:), double(rx.NoiseVariance), ...
+            string(sixgr.util.structGet(rx, "FaultMode", "normal")));
         status = "detection_metric_available";
     catch ME
         status = "detection_failed:" + string(ME.identifier);
@@ -167,6 +167,17 @@ if isempty(chunkMetric)
     metric = double(whole);
 else
     metric = max(double(whole), median(double(chunkMetric), "omitnan"));
+end
+end
+
+function observed = localObservedRECount(rxRE, noiseVariance, faultMode)
+rxRE = rxRE(:);
+finiteMask = isfinite(real(rxRE)) & isfinite(imag(rxRE));
+if lower(strtrim(string(faultMode))) == "missing_resource_subset"
+    ampThreshold = localCoverageAmplitudeThreshold(rxRE(finiteMask), noiseVariance);
+    observed = nnz(finiteMask & abs(rxRE) > ampThreshold);
+else
+    observed = nnz(finiteMask);
 end
 end
 

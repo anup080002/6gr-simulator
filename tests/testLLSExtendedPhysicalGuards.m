@@ -21,6 +21,7 @@ end
 function testLDPCIterationResolver()
 cfg = sixgr.config.defaultConfig();
 cfg = sixgr.config.normalizeConfig(cfg);
+cfg = localRemoveNested(cfg, "phy.ldpc.maxIterations");
 assert(sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL") >= 50, ...
     "LDPC decoder default must use a conformance-style iteration budget, not 8.");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", 1e-5);
@@ -30,8 +31,12 @@ cfgFading = sixgr.config.defaultConfig();
 cfgFading = sixgr.util.structSet(cfgFading, "channel.model", "CDL-C");
 cfgFading = sixgr.util.structSet(cfgFading, "channel.cdlProfile", "CDL-C");
 cfgFading = sixgr.util.structSet(cfgFading, "phy.ldpc.maxIterations", 50);
+assert(sixgr.phy.phycode.resolveLDPCMaxIterations(cfgFading, "Direction", "DL") == 50, ...
+    "Explicit LDPC iteration budgets must remain scenario-authoritative.");
+cfgFading = localRemoveNested(cfgFading, "phy.ldpc.maxIterations");
+cfgFading = sixgr.util.structSet(cfgFading, "phy.ldpc.fadingMinIterations", 100);
 assert(sixgr.phy.phycode.resolveLDPCMaxIterations(cfgFading, "Direction", "DL") >= 100, ...
-    "Concrete CDL/TDL fading channels must lift a low configured LDPC iteration budget.");
+    "Concrete CDL/TDL fading channels may lift the default budget only through an explicit floor policy.");
 end
 
 function testCQITableInferenceFollowsMCS()

@@ -70,6 +70,7 @@
       "save_interference_breakdown": {"required": false, "type": "boolean"},
       "save_energy_trace": {"required": false, "type": "boolean"},
       "batch_size_links": {"required": false, "type": "integer", "min": 1},
+      "auto_start_parallel_pool": {"required": false, "type": "boolean"},
       "parallel_pool_kind": {"required": false, "type": "string", "allowed_values": ["auto", "processes", "local", "threads"]},
       "parallel_pool_idle_timeout_minutes": {"required": false, "type": "number", "min": 1},
       "gpu_enable": {"required": false, "type": "boolean"},

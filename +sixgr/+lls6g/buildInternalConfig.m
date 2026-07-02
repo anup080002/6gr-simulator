@@ -50,6 +50,7 @@ cfg.run.useParallel = logical(cfg.run.numWorkers > 1);
 cfg.run.parallelPoolKind = char(lower(strtrim(string(localGetNested(s, "run_control.parallel_pool_kind", "auto")))));
 cfg.run.parallelPoolIdleTimeoutMinutes = max(1, double(localGetNested(s, ...
     "run_control.parallel_pool_idle_timeout_minutes", 1440)));
+cfg.run.autoStartParallelPool = logical(localGetNested(s, "run_control.auto_start_parallel_pool", true));
 cfg.run.batchSizeLinks = max(1, round(double(localRequireNested(s, "run_control.batch_size_links", "run_control.batch_size_links"))));
 cfg.run.studyMode = char(string(localRequireNested(s, "run_control.study_mode", "run_control.study_mode")));
 cfg.run.simulationMode = char(string(localRequireNested(s, "run_control.simulation_mode", "run_control.simulation_mode")));
@@ -648,9 +649,12 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.riPolicy", char(localPolicyTokenString(
 cfg = sixgr.util.structSet(cfg, "phy.csi.criPolicy", char(localPolicyTokenString(criPolicy)));
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", char(pmiCodebookMode));
 cfg = sixgr.util.structSet(cfg, "phy.csi.codebookType", char(localNormalizeCoreCodebookType(s.mimo.codebook_type)));
-cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", char(localResolveCQITableToken(s)));
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.cqiTable", char(localResolveCQITableToken(s)));
-cfg = sixgr.util.structSet(cfg, "phy.pusch.cqiTable", char(localResolveCQITableToken(s)));
+cqiTableToken = char(localResolveCQITableToken(s));
+cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", cqiTableToken);
+cfg = sixgr.util.structSet(cfg, "phy.csi.dlCQITable", cqiTableToken);
+cfg = sixgr.util.structSet(cfg, "phy.csi.ulCQITable", cqiTableToken);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.cqiTable", cqiTableToken);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.cqiTable", cqiTableToken);
 maxTrustedReferenceSINR = double(localGetNested(s, "csi_acquisition_and_reporting.max_trusted_reference_sinr_db", ...
     localGetNested(s, "csi_acquisition_and_reporting.maxTrustedReferenceSINR_dB", ...
     localGetNested(s, "reference_signals.max_trusted_reference_sinr_db", NaN))));
@@ -1673,6 +1677,16 @@ eqPairs = {
 for i = 1:size(eqPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, "equalization." + eqPairs{i,1}, "phy.equalization." + eqPairs{i,2});
 end
+
+rxEqualizer = string(localGetNested(s, "receiver_algorithms.equalizer", ...
+    localGetNested(s, "equalization.algorithm", "")));
+rxEqualizer = upper(strtrim(rxEqualizer));
+if strlength(rxEqualizer) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.rx.equalizer", char(rxEqualizer));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.equalizer", char(rxEqualizer));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.equalizer", char(rxEqualizer));
+    cfg = sixgr.util.structSet(cfg, "phy.equalization.algorithm", char(rxEqualizer));
+end
 end
 
 function cfg = localApplyTimingAndRFHardwareSurface(cfg, s)
@@ -1770,6 +1784,15 @@ auxPairs = {
     "link_adaptation.rank_threshold", "phy.linkAdaptation.rankThreshold"
     "link_adaptation.rank_threshold", "phy.mimo.svRankThreshold"
     "link_adaptation.min_sinr_for_rank2_dB", "phy.linkAdaptation.minSINRForRank2_dB"
+    "link_adaptation.bootstrap_min_cqi_for_scheduling", "phy.linkAdaptation.bootstrapMinCQIForScheduling"
+    "link_adaptation.dl_bootstrap_min_cqi_for_scheduling", "phy.linkAdaptation.dlBootstrapMinCQIForScheduling"
+    "link_adaptation.ul_bootstrap_min_cqi_for_scheduling", "phy.linkAdaptation.ulBootstrapMinCQIForScheduling"
+    "link_adaptation.bootstrap_preview_backoff_db", "phy.linkAdaptation.bootstrapPreviewBackoff_dB"
+    "link_adaptation.bootstrap_preview_backoff_dB", "phy.linkAdaptation.bootstrapPreviewBackoff_dB"
+    "link_adaptation.dl_bootstrap_preview_backoff_db", "phy.linkAdaptation.dlBootstrapPreviewBackoff_dB"
+    "link_adaptation.ul_bootstrap_preview_backoff_db", "phy.linkAdaptation.ulBootstrapPreviewBackoff_dB"
+    "link_adaptation.ul_srs_to_pusch_sinr_backoff_db", "phy.linkAdaptation.ulSRSToPUSCHSINRBackoff_dB"
+    "link_adaptation.ul_reference_signal_scheduling_backoff_db", "phy.linkAdaptation.ulReferenceSignalSchedulingBackoff_dB"
     "link_adaptation.mcs_backoff_dl_db", "phy.linkAdaptation.dlMCSBackoff_dB"
     "link_adaptation.mcs_backoff_ul_db", "phy.linkAdaptation.ulMCSBackoff_dB"
     "link_adaptation.sinr_to_cqi_mapping_table", "phy.linkAdaptation.sinrToCQITable"

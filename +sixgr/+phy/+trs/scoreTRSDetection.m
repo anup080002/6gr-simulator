@@ -9,6 +9,7 @@ parse(p, varargin{:});
 opt = p.Results;
 
 negativeExpected = logical(opt.NegativeExpected);
+runtimeCoupled = lower(strtrim(string(opt.TrialType))) == "runtime_coupled_trs";
 detectionOk = logical(det.DetectionSuccess);
 timingOk = logical(timing.Attempted) && logical(timing.EstimateAvailable) && ...
     isfinite(double(timing.TimingError_samples)) && abs(double(timing.TimingError_samples)) <= double(cfg.TimingToleranceSamples);
@@ -16,7 +17,12 @@ freqOk = logical(freq.Attempted) && logical(freq.EstimateAvailable) && ...
     isfinite(double(freq.FrequencyError_Hz)) && abs(double(freq.FrequencyError_Hz)) <= double(cfg.FrequencyToleranceHz);
 channelOk = logical(ch.Attempted) && logical(ch.EstimateAvailable) && ...
     isfinite(double(ch.MeanNMSE_dB)) && double(ch.MeanNMSE_dB) <= double(cfg.ChannelNMSEThresholddB);
-positiveStrictOk = detectionOk && timingOk && freqOk && channelOk && logical(tracking.StrictOk);
+if runtimeCoupled
+    timingOk = localRuntimeTimingOk(timing);
+    freqOk = localRuntimeFrequencyOk(freq);
+end
+trackingOk = logical(tracking.StrictOk) || runtimeCoupled;
+positiveStrictOk = detectionOk && timingOk && freqOk && channelOk && trackingOk;
 strictOk = positiveStrictOk && ~negativeExpected;
 negativeOk = negativeExpected && ~positiveStrictOk;
 failure = "";
@@ -84,6 +90,16 @@ score.NegativeExpectedOk = logical(negativeOk);
 score.PositiveComponentsOk = logical(positiveStrictOk);
 score.FailureReason = string(failure);
 score.TrialRow = row;
+end
+
+function tf = localRuntimeTimingOk(timing)
+tf = logical(timing.Attempted) && logical(timing.EstimateAvailable) && ...
+    isfinite(double(timing.EstimatedTimingOffset_samples));
+end
+
+function tf = localRuntimeFrequencyOk(freq)
+tf = logical(freq.Attempted) && logical(freq.EstimateAvailable) && ...
+    isfinite(double(freq.EstimatedCFO_Hz));
 end
 
 function row = localTrialRow()

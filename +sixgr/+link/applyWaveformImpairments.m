@@ -28,6 +28,7 @@ p.addParameter("Endpoint", "rx");
 p.addParameter("UseLegacyGlobalConfig", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
 p.addParameter("ApplyPA", false, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
 p.addParameter("ApplyADC", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
+p.addParameter("ApplyRFChain", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
 p.parse(varargin{:});
 opt = p.Results;
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.applyWaveformImpairments", ...
@@ -42,7 +43,16 @@ if isfinite(ampGain) && ampGain > 0 && abs(ampGain - 1) > 1e-12
     y = y .* cast(ampGain, "like", y);
 end
 
-[y, replay] = localApplyOrderedRFChain(y, cfg, sampleRateHz, replay, opt);
+if logical(opt.ApplyRFChain)
+    [y, replay] = localApplyOrderedRFChain(y, cfg, sampleRateHz, replay, opt);
+else
+    replay.RFImpairmentChainContract = "sixgr.rf.ImpairmentChainConfig/v1";
+    replay.RFEndpoint = string(opt.Endpoint);
+    replay.RFStageOrder = "deferred_receiver_front_end_after_shared_slot_superposition";
+    replay.RFConfiguredStageCount = 0;
+    replay.RFAppliedStageCount = 0;
+    replay.RFExecutionStatus = "deferred_composite_receiver_front_end";
+end
 end
 
 function [y, replay] = localApplyOrderedRFChain(x, cfg, sampleRateHz, replay, opt)

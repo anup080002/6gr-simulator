@@ -407,15 +407,15 @@ switch string(adaptationDomain)
             cqiSource = "runtime_effective_sinr_proxy_for_bler_margin";
         end
     otherwise
-        if localUseAgedMeasuredSINRForCQI(cfg, direction) && isfinite(rawSINR)
+        if isfinite(rawCQI)
+            instantCQI = rawCQI;
+            cqiSource = "runtime_reported_cqi";
+        elseif localUseAgedMeasuredSINRForCQI(cfg, direction) && isfinite(rawSINR)
             feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
             instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
             cqiMeta = localApplyWidebandCQIMeta(cqiMeta, feedback);
             cqiSource = "runtime_aged_measured_sinr_cqi";
             calibrationProfile = string(calibrationProfile) + ":" + string(sixgr.util.structGet(feedback, "Mode", ""));
-        elseif isfinite(rawCQI)
-            instantCQI = rawCQI;
-            cqiSource = "runtime_reported_cqi";
         end
 end
 end
@@ -611,7 +611,7 @@ else
         "phy.linkAdaptation.dlUseAgedMeasuredSINRForCQI"
         "phy.linkAdaptation.useAgedMeasuredSINRForCQI"];
 end
-tf = true;
+tf = false;
 for i = 1:numel(candidates)
     raw = sixgr.util.structGet(cfg, candidates(i), []);
     if isempty(raw)

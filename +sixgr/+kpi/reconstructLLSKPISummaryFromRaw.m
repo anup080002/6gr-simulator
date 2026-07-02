@@ -913,13 +913,7 @@ end
 function T = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, traceT, resourceExposureSec, measurementWindowSec)
 rows = repmat(localContributionRow(), height(E), 1);
 perRowDuration = resourceExposureSec / max(height(E), 1);
-if ismember("DurationSec", string(E.Properties.VariableNames))
-    perRowDuration = localOptionalNumeric(E, "DurationSec", repmat(perRowDuration, height(E), 1));
-elseif ismember("AirInterfaceObservation_ms", string(E.Properties.VariableNames))
-    perRowDuration = localOptionalNumeric(E, "AirInterfaceObservation_ms", repmat(perRowDuration * 1e3, height(E), 1)) ./ 1e3;
-elseif ismember("AirInterfaceTTI_ms", string(E.Properties.VariableNames))
-    perRowDuration = localOptionalNumeric(E, "AirInterfaceTTI_ms", repmat(perRowDuration * 1e3, height(E), 1)) ./ 1e3;
-end
+perRowDuration = localBestPerRowDurationSec(E, repmat(perRowDuration, height(E), 1));
 perRowDuration = localDistributeUniqueSlotDuration(E, perRowDuration, resourceExposureSec);
 crcPass = localOptionalLogical(E, "TBCrcPass", localOptionalLogical(E, "CRCPass", true(height(E), 1)));
 for i = 1:height(E)
@@ -1001,26 +995,26 @@ end
 function [durationSec, source] = localDurationSec(T)
 durationSec = NaN;
 source = "unavailable";
-if ismember("DurationSec", string(T.Properties.VariableNames))
-    vals = localOptionalNumeric(T, "DurationSec", NaN(height(T), 1));
-    [durationSec, source] = localUniqueSlotDurationSec(T, vals, "raw_duration_sec_unique_slot");
+sources = [
+    "DurationSec", "raw_duration_sec"
+    "AirInterfaceObservation_ms", "air_interface_observation_ms"
+    "AirInterfaceTTI_ms", "air_interface_tti_ms"];
+for i = 1:size(sources, 1)
+    [vals, exists] = localDurationColumnSec(T, sources(i, 1));
+    if ~exists
+        continue;
+    end
+    finitePositive = isfinite(vals) & vals > 0;
+    if ~any(finitePositive)
+        continue;
+    end
+    [durationSec, source] = localUniqueSlotDurationSec(T, vals, sources(i, 2) + "_unique_slot");
     if ~(isfinite(durationSec) && durationSec > 0)
         durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan");
-        source = "raw_duration_sec_sum";
+        source = sources(i, 2) + "_sum";
     end
-elseif ismember("AirInterfaceObservation_ms", string(T.Properties.VariableNames))
-    vals = localOptionalNumeric(T, "AirInterfaceObservation_ms", NaN(height(T), 1));
-    [durationSec, source] = localUniqueSlotDurationSec(T, vals ./ 1e3, "air_interface_observation_ms_unique_slot");
-    if ~(isfinite(durationSec) && durationSec > 0)
-        durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan") / 1e3;
-        source = "air_interface_observation_ms_sum";
-    end
-elseif ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
-    vals = localOptionalNumeric(T, "AirInterfaceTTI_ms", NaN(height(T), 1));
-    [durationSec, source] = localUniqueSlotDurationSec(T, vals ./ 1e3, "air_interface_tti_ms_unique_slot");
-    if ~(isfinite(durationSec) && durationSec > 0)
-        durationSec = sum(vals(isfinite(vals) & vals >= 0), "omitnan") / 1e3;
-        source = "air_interface_tti_ms_sum";
+    if isfinite(durationSec) && durationSec > 0
+        return;
     end
 end
 if ~(isfinite(durationSec) && durationSec > 0)
@@ -1092,15 +1086,51 @@ rowDur = repmat(resourceExposureSec / max(n, 1), n, 1);
 if n == 0
     return;
 end
-if ismember("DurationSec", string(T.Properties.VariableNames))
-    rowDur = localOptionalNumeric(T, "DurationSec", rowDur);
-elseif ismember("AirInterfaceTTI_ms", string(T.Properties.VariableNames))
-    rowDur = localOptionalNumeric(T, "AirInterfaceTTI_ms", rowDur * 1e3) ./ 1e3;
-elseif ismember("AirInterfaceObservation_ms", string(T.Properties.VariableNames))
-    rowDur = localOptionalNumeric(T, "AirInterfaceObservation_ms", rowDur * 1e3) ./ 1e3;
-end
+rowDur = localBestPerRowDurationSec(T, rowDur);
 rowDur = double(rowDur(:));
 rowDur(~isfinite(rowDur) | rowDur < 0) = resourceExposureSec / max(n, 1);
+end
+
+function rowDur = localBestPerRowDurationSec(T, fallbackSec)
+n = height(T);
+rowDur = double(fallbackSec(:));
+if numel(rowDur) ~= n
+    rowDur = repmat(double(fallbackSec(1)), n, 1);
+end
+filled = isfinite(rowDur) & rowDur > 0;
+for name = ["DurationSec","AirInterfaceObservation_ms","AirInterfaceTTI_ms"]
+    [vals, exists] = localDurationColumnSec(T, name);
+    if ~exists
+        continue;
+    end
+    vals = double(vals(:));
+    mask = isfinite(vals) & vals > 0 & ~filled;
+    rowDur(mask) = vals(mask);
+    filled(mask) = true;
+end
+invalid = ~(isfinite(rowDur) & rowDur >= 0);
+if any(invalid)
+    fallbackVals = double(fallbackSec(:));
+    if isempty(fallbackVals) || ~isfinite(fallbackVals(1))
+        fallbackVals = 0;
+    end
+    rowDur(invalid) = fallbackVals(1);
+end
+end
+
+function [valsSec, exists] = localDurationColumnSec(T, name)
+name = string(name);
+exists = ismember(name, string(T.Properties.VariableNames));
+valsSec = NaN(height(T), 1);
+if ~exists
+    return;
+end
+vals = localOptionalNumeric(T, name, NaN(height(T), 1));
+if endsWith(name, "_ms")
+    valsSec = vals ./ 1e3;
+else
+    valsSec = vals;
+end
 end
 
 function t = localAttemptStartTimes(T, slotDurationSec)

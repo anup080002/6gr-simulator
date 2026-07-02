@@ -30,6 +30,7 @@ assert(strcmpi(char(string(sixgr.util.structGet(resolved, "channel_model.scenari
     "%s must mirror CDL-C into channel_model.scenario_label.", label);
 assert(strcmpi(char(string(sixgr.util.structGet(resolved, "random_access.channel_model", ""))), "CDL-C"), ...
     "%s must run PRACH/RA on CDL-C.", label);
+localAssertStrictFourStepRAConfig(resolved, label + " resolved");
 assert(abs(double(sixgr.util.structGet(resolved, "channels.delay_spread_ns", NaN)) - 93) < 1e-12, ...
     "%s must use 93 ns UMa delay spread.", label);
 assert(abs(double(sixgr.util.structGet(resolved, "channels.doppler_hz", NaN)) - expectedDopplerHz) < 1e-6, ...
@@ -82,6 +83,16 @@ assert(abs(double(sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", NaN)
     "%s must expose channel.fading.maxDoppler_Hz for channel factory use.", label);
 assert(~logical(sixgr.util.structGet(cfg, "channel.losEnabled", true)), ...
     "%s must keep LOS disabled internally.", label);
+multiUser = struct("NumUsers", double(sixgr.util.structGet(cfg, "scenario.nUE", 1)));
+runtimeState = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime_init"), multiUser, struct(), 1);
+assert(~logical(sixgr.util.structGet(runtimeState.CfgLargeScale, "channel.losEnabled", true)), ...
+    "%s must keep LOS disabled in coupled large-scale runtime.", label);
+assert(~logical(runtimeState.PLModel.LOSEnabled), ...
+    "%s must instantiate TR38901Plus with LOS disabled.", label);
+assert(logical(sixgr.util.structGet(runtimeState.CfgLargeScale, "channel.pathlossEnabled", false)), ...
+    "%s must keep pathloss enabled in coupled large-scale runtime.", label);
+assert(logical(sixgr.util.structGet(runtimeState.CfgLargeScale, "channel.shadowFadingEnabled", false)), ...
+    "%s must keep shadow fading enabled in coupled large-scale runtime.", label);
 assert(all(abs(double(sixgr.util.structGet(cfg, "scenario.mobility.speed_kmh", NaN)) - 100) < 1e-12), ...
     "%s must apply 100 km/h mobility internally.", label);
 assert(strcmpi(char(string(sixgr.util.structGet(cfg, "scenario.mobility.model", ""))), "straightLine"), ...
@@ -112,6 +123,55 @@ assert(isempty(double(sixgr.util.structGet(cfg, "run.snrSweepOffsets_dB", 1))), 
 assert(strcmpi(char(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ""))), ...
     "receiver_noise_figure_thermal_noise"), ...
     "%s must use receiver thermal-noise operation rather than configured-SNR injection.", label);
+localAssertStrictFourStepRAConfig(cfg, label + " internal");
+end
+
+function localAssertStrictFourStepRAConfig(cfg, label)
+required = [ ...
+    "random_access.binding_source"
+    "random_access.restricted_set"
+    "random_access.frequency_start"
+    "random_access.ra_response_window_slots"
+    "random_access.ra_contention_resolution_timer_slots"
+    "random_access.preamble_trans_max"
+    "random_access.power_ramping_step_db"
+    "random_access.preamble_received_target_power_dbm"
+    "random_access.temp_crnti"
+    "random_access.final_crnti"
+    "random_access.msg2_slot"
+    "random_access.msg3_slot"
+    "random_access.msg4_slot"
+    "random_access.dci_payload_bits"
+    "random_access.msg2_pdsch.prb_start"
+    "random_access.msg2_pdsch.num_prb"
+    "random_access.msg2_pdsch.symbol_start"
+    "random_access.msg2_pdsch.num_symbols"
+    "random_access.msg2_pdsch.modulation"
+    "random_access.msg2_pdsch.target_code_rate"
+    "random_access.msg3_pusch.prb_start"
+    "random_access.msg3_pusch.num_prb"
+    "random_access.msg3_pusch.symbol_start"
+    "random_access.msg3_pusch.num_symbols"
+    "random_access.msg3_pusch.mcs"
+    "random_access.msg3_pusch.modulation"
+    "random_access.msg3_pusch.target_code_rate"
+    "random_access.msg4_pdsch.prb_start"
+    "random_access.msg4_pdsch.num_prb"
+    "random_access.msg4_pdsch.symbol_start"
+    "random_access.msg4_pdsch.num_symbols"
+    "random_access.msg4_pdsch.modulation"
+    "random_access.msg4_pdsch.target_code_rate"];
+for idx = 1:numel(required)
+    value = sixgr.util.structGet(cfg, required(idx), []);
+    assert(~isempty(value), "%s must preserve strict four-step RA field %s.", ...
+        label, required(idx));
+end
+assert(strcmpi(char(string(sixgr.util.structGet(cfg, "random_access.binding_source", ""))), ...
+    "scenario_config_pending_sib1"), ...
+    "%s must disclose scenario_config_pending_sib1 RA binding until decoded SIB1 owns the config.", label);
+assert(strcmpi(char(string(sixgr.util.structGet(cfg, "random_access.restricted_set", ""))), ...
+    "UnrestrictedSet"), ...
+    "%s must use strict-supported UnrestrictedSet PRACH.", label);
 end
 
 function localCleanupTempFolder(tmp)

@@ -216,6 +216,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_enabled",
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_max_samples", "impairments.to.value_samples", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_enabled", "impairments.phase_noise.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_model", "impairments.phase_noise.model", "identity");
+cfg = localPreferModernRuntimeValue(cfg, "simulation.monte_carlo_iterations", "run.monte_carlo_iterations", "identity");
 cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localApplyDerivedRadioAliases(cfg, newBase);
 end
@@ -281,6 +282,7 @@ mappings = {
     "run.measurement_slots", "run_control.measurement_slots", "identity"
     "run.num_workers", "run_control.num_workers", "identity"
     "run.batch_size_links", "run_control.batch_size_links", "identity"
+    "run.auto_start_parallel_pool", "run_control.auto_start_parallel_pool", "identity"
     "run.trace_capture_level", "run_control.trace_capture_level", "identity"
     "run.save_intermediate", "run_control.save_intermediate", "identity"
     "radio.range_name", "frequency.range_name", "identity"
@@ -438,6 +440,9 @@ mappings = {
     "reference_signals.trs_ports", "reference_signals.trs.num_ports", "identity"
     "reference_signals.trs_scrambling_id", "reference_signals.trs.scrambling_id", "identity"
     "reference_signals.srs_periodicity_ms", "reference_signals.srs_periodicity_ms", "identity"
+    "reference_signals.srs_slot_within_period", "reference_signals.srs_slot_within_period", "identity"
+    "reference_signals.srs_max_ues_per_slot", "reference_signals.srs_max_ues_per_slot", "identity"
+    "reference_signals.srs_scheduling_policy", "reference_signals.srs_scheduling_policy", "identity"
     "reference_signals.trs_periodicity_ms", "reference_signals.trs_periodicity_ms", "identity"
     "reference_signals.ptrs_enabled", "reference_signals.ptrs.enabled", "identity"
     "reference_signals.csi_rs_enabled", "reference_signals.nzp_csi_rs.enabled", "identity"
@@ -475,12 +480,18 @@ mappings = {
     "random_access.zero_correlation_zone", "random_access.zero_correlation_zone", "identity"
     "random_access.detection_threshold", "random_access.detection_threshold", "identity"
     "random_access.detection_threshold_mode", "random_access.detection_threshold_mode", "identity"
+    "random_access.four_step_ra_required", "random_access.four_step_ra_required", "identity"
+    "random_access.msg4_contention_resolution_required", "random_access.msg4_contention_resolution_required", "identity"
     "random_access.msg3_enabled", "random_access.msg3_enabled", "identity"
     "random_access.min_detection_trials", "random_access.min_detection_trials", "identity"
     "random_access.configuration_index", "random_access.configuration_index", "identity"
     "random_access.subcarrier_spacing_khz", "random_access.subcarrier_spacing_khz", "identity"
     "random_access.n_cell_id", "random_access.n_cell_id", "identity"
     "random_access.root_sequence_index", "random_access.root_sequence_index", "identity"
+    "random_access.sequence_index", "random_access.sequence_index", "identity"
+    "random_access.logical_root_sequence_index", "random_access.logical_root_sequence_index", "identity"
+    "random_access.restricted_set", "random_access.restricted_set", "identity"
+    "random_access.frequency_start", "random_access.frequency_start", "identity"
     "random_access.preamble_index", "random_access.preamble_index", "identity"
     "random_access.prach_format", "random_access.prach_format", "identity"
     "random_access.prach_format", "prach.format", "identity"
@@ -494,6 +505,33 @@ mappings = {
     "random_access.num_prach_occasions", "random_access.num_prach_occasions", "identity"
     "random_access.timing_offset_sweep_samples", "random_access.timing_offset_sweep_samples", "identity"
     "random_access.frequency_offset_sweep_hz", "random_access.frequency_offset_sweep_hz", "identity"
+    "random_access.binding_source", "random_access.binding_source", "identity"
+    "random_access.ra_response_window_slots", "random_access.ra_response_window_slots", "identity"
+    "random_access.ra_contention_resolution_timer_slots", "random_access.ra_contention_resolution_timer_slots", "identity"
+    "random_access.preamble_trans_max", "random_access.preamble_trans_max", "identity"
+    "random_access.power_ramping_step_db", "random_access.power_ramping_step_db", "identity"
+    "random_access.preamble_received_target_power_dbm", "random_access.preamble_received_target_power_dbm", "identity"
+    "random_access.temp_crnti", "random_access.temp_crnti", "identity"
+    "random_access.final_crnti", "random_access.final_crnti", "identity"
+    "random_access.msg2_slot", "random_access.msg2_slot", "identity"
+    "random_access.msg3_slot", "random_access.msg3_slot", "identity"
+    "random_access.msg4_slot", "random_access.msg4_slot", "identity"
+    "random_access.dci_payload_bits", "random_access.dci_payload_bits", "identity"
+    "random_access.msg2_pdsch", "random_access.msg2_pdsch", "identity"
+    "random_access.msg3_pusch", "random_access.msg3_pusch", "identity"
+    "random_access.msg4_pdsch", "random_access.msg4_pdsch", "identity"
+    "random_access_evidence.four_step_ra_required", "random_access_evidence.four_step_ra_required", "identity"
+    "random_access_evidence.msg1_prach_required", "random_access_evidence.msg1_prach_required", "identity"
+    "random_access_evidence.msg2_rar_pdcch_pdsch_required", "random_access_evidence.msg2_rar_pdcch_pdsch_required", "identity"
+    "random_access_evidence.msg3_pusch_required", "random_access_evidence.msg3_pusch_required", "identity"
+    "random_access_evidence.msg4_contention_resolution_required", "random_access_evidence.msg4_contention_resolution_required", "identity"
+    "random_access_evidence.ra_rnti_decode_required", "random_access_evidence.ra_rnti_decode_required", "identity"
+    "random_access_evidence.rar_mac_ce_decode_required", "random_access_evidence.rar_mac_ce_decode_required", "identity"
+    "random_access_evidence.timing_advance_required", "random_access_evidence.timing_advance_required", "identity"
+    "random_access_evidence.contention_resolution_identity_required", "random_access_evidence.contention_resolution_identity_required", "identity"
+    "random_access_evidence.preamble_collision_test_enabled", "random_access_evidence.preamble_collision_test_enabled", "identity"
+    "random_access_evidence.false_alarm_test_enabled", "random_access_evidence.false_alarm_test_enabled", "identity"
+    "random_access_evidence.missed_detection_test_enabled", "random_access_evidence.missed_detection_test_enabled", "identity"
     "coding.data_code_type", "coding.data_code_type", "identity"
     "coding.control_code_type", "coding.control_code_type", "identity"
     "coding.base_graph", "coding.base_graph", "identity"
@@ -965,6 +1003,18 @@ elseif newDiff && oldDiff
     if ~isequaln(oldVal, newToOld) && ~isequaln(newVal, oldToNew)
         cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
     end
+end
+end
+
+function cfg = localPreferModernRuntimeValue(cfg, newPath, oldPath, mode)
+newVal = sixgr.util.structGet(cfg, newPath, []);
+oldVal = sixgr.util.structGet(cfg, oldPath, []);
+if localAliasMissing(newVal) || localAliasMissing(oldVal)
+    return;
+end
+newToOld = localConvert(newVal, mode, "new_to_old");
+if ~isequaln(oldVal, newToOld)
+    cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
 end
 end
 

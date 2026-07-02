@@ -1,6 +1,7 @@
 function [pdcchRx, pdschRx, msg4] = recoverMsg4Waveform(rxWaveform, cfg, raCfg, sched, tx)
 %RECOVERMSG4WAVEFORM Decode temp-C-RNTI PDCCH and Msg4 DL-SCH.
 cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
+cfgRx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgRx, sched.PDSCH);
 cfgRx.phy.pdcch.rnti = double(raCfg.TempCRNTI);
 cfgRx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
 cfgRx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);
@@ -22,7 +23,7 @@ end
     "Carrier", tx.Carrier, "PDSCH", sched.PDSCH, ...
     "TransportBlockSize", double(tx.TransportBlockSize), ...
     "TargetCodeRate", double(sched.TargetCodeRate), "RV", double(sched.RV), ...
-    "SkipTimingEstimate", true);
+    "SkipTimingEstimate", false);
 pdschRx.Info = info;
 if logical(pdschRx.Ok)
     payloadBits = int8(pdschRx.TransportBlock(1:double(tx.Msg4BitLength)));

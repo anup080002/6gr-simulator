@@ -520,7 +520,9 @@ end
 
 function localTouchRun(conn, runID)
 ps = conn.prepareStatement( ...
-    "UPDATE sim_runs SET updated_utc=UTC_TIMESTAMP() WHERE run_id=?");
+    "UPDATE sim_runs SET status_text=CASE " + ...
+    "WHEN status_text='aborted_stale_no_run_process' THEN 'running' " + ...
+    "ELSE status_text END, updated_utc=UTC_TIMESTAMP() WHERE run_id=?");
 cleanupObj = onCleanup(@() ps.close()); %#ok<NASGU>
 ps.setLong(1, int64(runID));
 ps.executeUpdate();

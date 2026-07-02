@@ -896,12 +896,11 @@ effectiveNVar = double(baseNVar);
 source = string(baseSource);
 interferenceNVar = double(sixgr.util.structGet(replay, "InterferenceWaveformVariance", NaN));
 if isfinite(interferenceNVar) && interferenceNVar > 0
-    if isfinite(effectiveNVar) && effectiveNVar >= 0
-        effectiveNVar = effectiveNVar + interferenceNVar;
-    else
-        effectiveNVar = interferenceNVar;
-    end
-    source = source + "_plus_full_waveform_interference_power";
+    % PUCCH observes the already-summed shared-slot waveform.  Do not copy
+    % that live interferer into InjectedNoiseVariance; downstream receivers
+    % interpret this scalar as receiver noise samples and convert it through
+    % the OFDM noise transform.
+    source = source + "_with_interference_in_composite_waveform";
 end
 end
 

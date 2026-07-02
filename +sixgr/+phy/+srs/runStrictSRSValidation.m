@@ -232,7 +232,7 @@ switch string(mode)
         rxCfg.CombOffset = mod(double(cfg.CombOffset) + 1, double(cfg.CombNumber));
         rxCfg.CyclicShift = double(cfg.CyclicShift) + 1;
     case "wrong_port"
-        rxCfg.NumSRSPorts = min(4, max(2, double(cfg.NumSRSPorts) + 1));
+        rxCfg.NumSRSPorts = localDifferentLegalSRSPortCount(double(cfg.NumSRSPorts));
         rxCfg.PortSet = 0:(rxCfg.NumSRSPorts - 1);
 end
 rxCfg = localRefreshSRSConfig(rxCfg);
@@ -240,9 +240,29 @@ end
 
 function out = localWrongPortTransmitConfig(cfg)
 out = cfg;
-out.NumSRSPorts = max(1, min(2, double(cfg.NumSRSPorts) - 2));
+out.NumSRSPorts = localDifferentLegalSRSPortCount(double(cfg.NumSRSPorts));
 out.PortSet = 0:(out.NumSRSPorts - 1);
 out = localRefreshSRSConfig(out);
+end
+
+function nPorts = localDifferentLegalSRSPortCount(configuredPorts)
+legal = [1 2 4 8];
+configuredPorts = round(double(configuredPorts));
+if ~(isfinite(configuredPorts) && configuredPorts >= 1)
+    configuredPorts = 1;
+end
+if configuredPorts == 1
+    nPorts = 2;
+elseif configuredPorts == 2
+    nPorts = 4;
+elseif configuredPorts == 4
+    nPorts = 2;
+elseif configuredPorts == 8
+    nPorts = 4;
+else
+    choices = legal(legal ~= configuredPorts);
+    nPorts = choices(1);
+end
 end
 
 function out = localPartialFullClaimConfig(cfg)

@@ -48,11 +48,19 @@ for ii = 1:max(0, numel(slotDet) - 1)
     accumC = sum(hLate .* conj(hEarly), "omitnan");
     row.DeltaPhi_rad = double(angle(accumC));
     row.EstimatedCommonFrequency_Hz = double(row.DeltaPhi_rad ./ (2 * pi * row.DeltaT_s));
-    row.EstimatedCFO_Hz = double(row.EstimatedCommonFrequency_Hz - physicalDopplerHz);
-    row.FrequencyError_Hz = double(row.EstimatedCFO_Hz - double(rx.InjectedCFO_Hz));
+    if isfinite(physicalDopplerHz)
+        row.EstimatedCFO_Hz = double(row.EstimatedCommonFrequency_Hz - physicalDopplerHz);
+        row.FrequencyError_Hz = double(row.EstimatedCFO_Hz - double(rx.InjectedCFO_Hz));
+    else
+        row.EstimatedCFO_Hz = NaN;
+        row.FrequencyError_Hz = NaN;
+        row.Status = "frequency_estimate_unavailable_physical_doppler_not_deembedded";
+    end
     row.TRSCFOEstimateAvailable = isfinite(row.EstimatedCFO_Hz);
-    row.Status = string(sixgr.phy.trs.localTernary(row.TRSCFOEstimateAvailable, ...
-        "frequency_estimate_available", "frequency_estimate_unavailable"));
+    if strlength(strtrim(string(row.Status))) == 0
+        row.Status = string(sixgr.phy.trs.localTernary(row.TRSCFOEstimateAvailable, ...
+            "frequency_estimate_available", "frequency_estimate_unavailable"));
+    end
     row.TruthStatus = "real_lls_evidence";
     candidateRows(end + 1, 1) = row; %#ok<AGROW>
 
@@ -75,7 +83,7 @@ if isempty(candidateRows)
 end
 
 available = ~isempty(pairEstimates);
-if available
+if available && isfinite(physicalDopplerHz)
     estimatedCommon = sum(pairEstimates .* pairWeights, "omitnan") ./ max(sum(pairWeights, "omitnan"), eps);
     estimated = estimatedCommon - physicalDopplerHz;
 else
@@ -103,8 +111,13 @@ freq.FrequencyError_Hz = double(err);
 end
 
 function dopplerHz = localPhysicalDopplerHz(rx)
-dopplerHz = localFirstFinite(rx, ["PhysicalDoppler_Hz","InjectedDoppler_Hz","InjectedScalarDoppler_Hz"], 0);
-if ~isfinite(dopplerHz)
+dopplerHz = localFirstFinite(rx, ["PhysicalDoppler_Hz","RuntimeSignedDoppler_Hz","InjectedScalarDoppler_Hz","InjectedDoppler_Hz"], NaN);
+if isfinite(dopplerHz)
+    return;
+end
+if isstruct(rx) && logical(localFirstFinite(rx, "ChannelFadingApplied", 0))
+    dopplerHz = NaN;
+else
     dopplerHz = 0;
 end
 end

@@ -2,8 +2,9 @@ function maxIter = resolveLDPCMaxIterations(cfg, varargin)
 %RESOLVELDPCMAXITERATIONS Resolve the runtime LDPC decoder iteration budget.
 %
 % NR does not specify a decoder implementation limit. Use a conformance-style
-% receiver default of 50 iterations unless the resolved config explicitly asks
-% for a higher value. Ultra-reliable study points automatically lift the floor.
+% receiver default of 50 iterations when the scenario does not configure one.
+% If the scenario configures a decoder budget, keep it authoritative instead
+% of silently mutating the receiver implementation.
 
 opt = struct("Direction", "");
 for i = 1:2:numel(varargin)
@@ -22,18 +23,18 @@ configured = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.ldpc.maxNumIter", []), ...
     sixgr.util.structGet(cfg, "phy.ldpc.maxIter", []));
 if isfinite(configured)
-    maxIter = max(configured, 50);
+    maxIter = configured;
 else
     maxIter = 50;
 end
 
 targetBLER = localResolveTargetBLER(cfg, opt.Direction);
-if isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1e-4
+if ~isfinite(configured) && isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1e-4
     maxIter = max(maxIter, 200);
 end
 
 fadingFloor = localResolveFadingIterationFloor(cfg);
-if isfinite(fadingFloor) && fadingFloor > 0 && localIsConcreteFadingChannel(cfg)
+if ~isfinite(configured) && isfinite(fadingFloor) && fadingFloor > 0 && localIsConcreteFadingChannel(cfg)
     maxIter = max(maxIter, fadingFloor);
 end
 

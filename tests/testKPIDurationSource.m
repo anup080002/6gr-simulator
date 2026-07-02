@@ -25,6 +25,17 @@ assert(~any(logical(out.DurationSourceAudit.WallClockUsedForRadioThroughput)), .
     "Wall-clock duration must not be used as the radio throughput denominator.");
 
 raw = struct();
+raw.UL = localDirectionTable("UL", 1);
+raw.DL = localDirectionTable("DL", 1);
+raw.DL.AirInterfaceObservation_ms(:) = NaN;
+raw.DL.AirInterfaceTTI_ms = 0.5;
+out = sixgr.kpi.reconstructLLSKPISummaryFromRaw(raw, "StrictMode", true);
+dlDuration = out.DurationSourceAudit(strcmp(string(out.DurationSourceAudit.Direction), "DL"), :);
+assert(height(dlDuration) == 1 && logical(dlDuration.Pass(1)) && ...
+        contains(string(dlDuration.DurationSource(1)), "air_interface_tti_ms_unique_slot"), ...
+    "A blank AirInterfaceObservation_ms column must fall through to finite AirInterfaceTTI_ms.");
+
+raw = struct();
 raw.UL = [localDirectionTable("UL", 1); localDirectionTable("UL", 1)];
 raw.DL = localDirectionTable("DL", 1);
 out = sixgr.kpi.reconstructLLSKPISummaryFromRaw(raw, "StrictMode", true);

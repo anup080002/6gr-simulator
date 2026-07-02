@@ -3,6 +3,7 @@ function [tx, sched] = generateMsg4Waveform(cfg, raCfg, msg4)
 cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTx);
 sched = localMsg4Schedule(raCfg);
+cfgTx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgTx, sched.PDSCH);
 cfgTx.phy.pdcch.rnti = double(raCfg.TempCRNTI);
 cfgTx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
 cfgTx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);
@@ -36,6 +37,7 @@ tx.Msg4BitLength = double(numel(msg4.PayloadBits));
 tx.TransportBlockSize = double(pdschTx.TransportBlockSize);
 tx.PDCCHInfo = pdcchInfo;
 tx.PDSCHInfo = pdschInfo;
+tx.RAPDSCHConfig = localPDSCHEvidence(cfgTx, sched.PDSCH, pdschInfo);
 end
 
 function sched = localMsg4Schedule(raCfg)
@@ -93,4 +95,18 @@ end
 
 function sz = localGridSize(x)
 sz = [size(x, 1), size(x, 2), max(1, size(x, 3))];
+end
+
+function ev = localPDSCHEvidence(cfgTx, pdsch, info)
+prec = sixgr.util.structGet(info, "Precoding", struct());
+ev = struct();
+ev.NumLayers = double(pdsch.NumLayers);
+ev.ConfiguredNumPorts = double(sixgr.util.structGet(cfgTx, "phy.pdsch.numPorts", NaN));
+ev.ConfiguredNPorts = double(sixgr.util.structGet(cfgTx, "phy.pdsch.nPorts", NaN));
+ev.ExplicitMatrixPresent = ~isempty(sixgr.util.structGet(cfgTx, "phy.pdsch.precoding.matrix", []));
+ev.ResolvedNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
+ev.ResolvedNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
+ev.PrecodingActive = logical(sixgr.util.structGet(prec, "Active", false));
+ev.PrecodingMode = string(sixgr.util.structGet(prec, "Mode", ""));
+ev.PrecodingSource = string(sixgr.util.structGet(prec, "Source", ""));
 end

@@ -57,6 +57,12 @@ ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && is
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
+ip.addParameter('InterferenceContributionTensor', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('InterferenceContributionSource', "", @(x) isempty(x) || ischar(x) || isstring(x));
+ip.addParameter('InterferenceContributionDomain', "receiver_sample_waveform_pre_noise", @(x) isempty(x) || ischar(x) || isstring(x));
+ip.addParameter('InterferenceCovariance', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('InterferenceCovarianceSource', "", @(x) isempty(x) || ischar(x) || isstring(x));
+ip.addParameter('InterferenceCovarianceIncludesNoise', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
 phyGrant = opt.PHYGrant;
@@ -169,7 +175,7 @@ end
 % Timing estimate
 trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTrackingState, cfg);
 sampleRateHz = localCarrierSampleRateHz(carrier);
-knownTimingDelaySamples = localResolveKnownTimingDelaySamples(cfg, trackingCorrection);
+knownTimingDelaySamples = localResolveKnownTimingDelaySamples(cfg, trackingCorrection, sampleRateHz);
 if logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
         isfinite(sampleRateHz) && sampleRateHz > 0
     rxWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -double(trackingCorrection.EstimatedCFO_Hz));
@@ -182,7 +188,11 @@ end
 rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
-if logical(trackingCorrection.TimingEstimateAvailable) && isfinite(double(trackingCorrection.TimingEstimate_samples))
+runtimeAlignedTimingBypass = localRuntimeAlignedTimingBypass(cfg);
+if runtimeAlignedTimingBypass
+    timingEstimateSource = "runtime_aligned_waveform_no_timing_reacquisition";
+    trackingCorrection.TimingCorrectionApplied = false;
+elseif logical(trackingCorrection.TimingEstimateAvailable) && isfinite(double(trackingCorrection.TimingEstimate_samples))
     rawTimingEstimate = double(trackingCorrection.TimingEstimate_samples);
     timingEstimateUsed = true;
     timingEstimateSource = string(trackingCorrection.Source);
@@ -201,7 +211,11 @@ end
 
 timingEstimateForCorrection = rawTimingEstimate;
 if timingEstimateUsed && isfinite(rawTimingEstimate)
-    timingEstimateForCorrection = rawTimingEstimate - double(knownTimingDelaySamples);
+    knownDelayForCorrection = double(knownTimingDelaySamples);
+    if isfinite(knownDelayForCorrection) && rawTimingEstimate > 0 && knownDelayForCorrection > rawTimingEstimate
+        knownDelayForCorrection = rawTimingEstimate;
+    end
+    timingEstimateForCorrection = rawTimingEstimate - knownDelayForCorrection;
 end
 timingResolution = sixgr.phy.sync.resolveTimingApplication(timingEstimateForCorrection, ...
     "EstimateUsed", timingEstimateUsed, ...
@@ -349,23 +363,26 @@ end
 
 % Equalize
 [equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL");
+RIncludesNoise = false;
 if equalizerAlg == "IRC"
-    [Rint, rintInfo] = sixgr.phy.rx.estimateInterferenceCovarianceIRC(rxGrid, Hest, dmrsInd, dmrsSym, nVar);
+    [Rint, rintInfo, RIncludesNoise] = localResolvePUSCHInterferenceCovariance(opt, carrier, ...
+        puschInd, timingResolution.AppliedCorrection_samples, nVar, rxGrid, Hest, dmrsInd, dmrsSym);
 else
     Rint = [];
     rintInfo = struct("Available", false, "Source", "irc_not_requested", ...
-        "Status", "not_applicable", "NAReason", "equalizer_algorithm_is_not_irc");
+        "Status", "not_applicable", "NAReason", "equalizer_algorithm_is_not_irc", ...
+        "CovarianceIncludesNoise", false, "Domain", "not_applicable");
 end
 if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
     equalizerAlg = "MMSE";
 end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
-    "Algorithm", equalizerAlg, "Rint", Rint);
+    "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);
 [ptrsInd, ptrsSym, ptrsInfo] = localResolvePUSCHPTRS(carrier, pusch, cfg);
 enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pusch.ptrs.enableCPECorrection", ...
     sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true)));
 [eqSym, cpeCorrInfo] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, puschInd, rxGrid, Hest, ...
-    ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, enablePTRSCPECorrection);
+    ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enablePTRSCPECorrection);
 try
     numLayersForSINR = double(pusch.NumLayers);
 catch
@@ -380,6 +397,7 @@ try
         hestSymForSINR, nVar, ...
         "Method", char(lower(string(equalizerAlg))), ...
         "Rint", Rint, ...
+        "RIncludesNoise", RIncludesNoise, ...
         "EqualizerResult", equalizerResultForSINR, ...
         "Layers", double(numLayersForSINR), ...
         "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
@@ -412,11 +430,23 @@ csiFromEqualizerResult = sixgr.util.structGet(postEqSINRInfo, "DemapperReliabili
 if ~isempty(csiFromEqualizerResult)
     csi = csiFromEqualizerResult;
 end
+pilotPostEqInfo = localEstimatePUSCHDMRSPostEqResidual(rxGrid, Hest, dmrsInd, dmrsSym, ...
+    nVar, equalizerAlg, Rint, RIncludesNoise, pusch);
+[postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = localApplyPUSCHDMRSPostEqSINRBound( ...
+    postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, pilotPostEqInfo);
+[layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, [], pusch);
+decisionPostEqInfo = localEstimatePUSCHDecisionDirectedPostEqResidual(layerEqSym, pusch);
+[postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = localApplyPUSCHDMRSPostEqSINRBound( ...
+    postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, decisionPostEqInfo);
 receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
 [nVarPostEqDiagnostic, nVarPostEqInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
     "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
     "PostEqSINR_dB", postEqSINR_dB, ...
     "CSI", csi);
+[nVarPostEqDiagnostic, nVarPostEqInfo] = localApplyPUSCHDMRSPostEqNoiseBound( ...
+    nVarPostEqDiagnostic, nVarPostEqInfo, pilotPostEqInfo);
+[nVarPostEqDiagnostic, nVarPostEqInfo] = localApplyPUSCHDMRSPostEqNoiseBound( ...
+    nVarPostEqDiagnostic, nVarPostEqInfo, decisionPostEqInfo);
 [nVarForDecode, nVarDecodeInfo] = localResolvePUSCHDecoderNoiseVariance(nVar, ...
     nVarPostEqDiagnostic, nVarPostEqInfo, cfg);
 
@@ -424,7 +454,6 @@ receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmr
 % equalized REs for non-codebook PUSCH, while native codebook PUSCH
 % consumes the port-domain equalized symbols and applies the codebook-aware
 % de-layering internally.
-[layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, [], pusch);
 [decoderInputSym, decoderInputInfo] = localResolvePUSCHDecoderInputSymbols(eqSym, layerEqSym, pusch);
 puschRxSym = [];
 if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
@@ -649,6 +678,15 @@ rx.PostEqSINRValueRole = char(string(sixgr.util.structGet(postEqSINRInfo, "Value
 rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueStatus", "unavailable")));
 rx.PostEqSINRNAReason = char(string(sixgr.util.structGet(postEqSINRInfo, "NAReason", "")));
 rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayerSINR_dB", NaN));
+rx.PostEqSINRRawEqualizer_dB = double(sixgr.util.structGet(postEqSINRInfo, "RawEqualizerSINR_dB", ...
+    sixgr.util.structGet(postEqSINRInfo, "RawSINR_dB", NaN)));
+rx.PostEqSINRDMRSResidualBoundApplied = logical(sixgr.util.structGet(postEqSINRInfo, "DMRSResidualBoundApplied", false));
+rx.PostEqSINRDMRSResidual_dB = double(sixgr.util.structGet(pilotPostEqInfo, "SINR_dB", NaN));
+rx.PostEqDMRSResidualNoiseVar = double(sixgr.util.structGet(pilotPostEqInfo, "NoiseVariance", NaN));
+rx.PostEqDMRSResidualSource = char(string(sixgr.util.structGet(pilotPostEqInfo, "Source", "")));
+rx.PostEqDecisionResidual_dB = double(sixgr.util.structGet(decisionPostEqInfo, "SINR_dB", NaN));
+rx.PostEqDecisionResidualNoiseVar = double(sixgr.util.structGet(decisionPostEqInfo, "NoiseVariance", NaN));
+rx.PostEqDecisionResidualSource = char(string(sixgr.util.structGet(decisionPostEqInfo, "Source", "")));
 rx.SINRComputationMethod = char(string(sixgr.util.structGet(postEqSINRInfo, "Method", char(lower(string(equalizerAlg))))));
 rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
 rx.EqualizerRequestedType = char(equalizerRequested);
@@ -662,6 +700,8 @@ rx.EqualizerSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerRe
 rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
 rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
+rx.InterferenceCovarianceIncludesNoise = logical(sixgr.util.structGet(rintInfo, "CovarianceIncludesNoise", RIncludesNoise));
+rx.InterferenceCovarianceDomain = char(string(sixgr.util.structGet(rintInfo, "Domain", "")));
 rx.ChannelEstimateAttempted = true;
 rx.ChannelEstimateAvailable = ~isempty(Hest);
 rx.ChannelEstimateSource = "pusch_dmrs_channel_estimate";
@@ -805,6 +845,8 @@ info.HARQSoftBuffer = rx.HARQSoftBuffer;
 info.PreEqualizationNoiseVariance = double(nVar);
 info.PostEqualizationNoiseVariance = nVarPostEqInfo;
 info.DecoderNoiseVariance = nVarDecodeInfo;
+info.PostEqualizationDMRSResidual = pilotPostEqInfo;
+info.PostEqualizationDecisionResidual = decisionPostEqInfo;
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
@@ -954,7 +996,7 @@ end
 end
 
 function [eqSymOut, info] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, puschInd, rxGrid, hEst, ...
-        ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, enabled)
+        ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enabled)
 info = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
     'MeanCPE_deg', NaN, 'NAReason', "");
 eqSymOut = eqSym;
@@ -984,7 +1026,7 @@ end
 
 try
     [eqPTRS, ~, ~] = sixgr.phy.rx.mimoDetect(rxPTRS, hPTRS, nVar, ...
-        "Algorithm", equalizerAlg, "Rint", Rint);
+        "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);
 catch ME
     info.NAReason = "ptrs_equalization_failed:" + string(ME.identifier);
     return;
@@ -1120,6 +1162,69 @@ else
 end
 end
 
+function [Rint, info, includesNoise] = localResolvePUSCHInterferenceCovariance(opt, carrier, ...
+        puschInd, appliedTimingCorrection, nVar, rxGrid, hEst, dmrsInd, dmrsSym)
+includesNoise = false;
+[Rint, info] = sixgr.phy.rx.estimateContributionGridCovariance(opt.InterferenceContributionTensor, ...
+    carrier, puschInd, appliedTimingCorrection, opt.InterferenceContributionSource, ...
+    opt.InterferenceContributionDomain, "pusch");
+if logical(info.Available)
+    return;
+end
+
+[Rint, info, includesNoise] = localResolveProvidedInterferenceCovariance(opt.InterferenceCovariance, ...
+    opt.InterferenceCovarianceSource, opt.InterferenceCovarianceIncludesNoise, max(1, size(rxGrid, 3)));
+if logical(info.Available)
+    return;
+end
+
+[Rint, info] = sixgr.phy.rx.estimateInterferenceCovarianceIRC(rxGrid, hEst, dmrsInd, dmrsSym, nVar);
+includesNoise = true;
+info.CovarianceIncludesNoise = true;
+info.Domain = "dmrs_pilot_residual_receive_antenna_covariance";
+if ~isfield(info, "NAReason")
+    info.NAReason = "";
+end
+end
+
+function [Rint, info, includesNoise] = localResolveProvidedInterferenceCovariance(Rprovided, source, includesNoiseIn, nRx)
+Rint = [];
+includesNoise = logical(includesNoiseIn);
+info = struct("Available", false, ...
+    "Source", "provided_interference_covariance_unavailable", ...
+    "Status", "unavailable", ...
+    "NAReason", "no_provided_interference_covariance", ...
+    "Domain", "provided_receive_antenna_covariance", ...
+    "CovarianceIncludesNoise", logical(includesNoise), ...
+    "NumRxAnt", double(nRx));
+if isempty(Rprovided)
+    return;
+end
+if ~isnumeric(Rprovided)
+    info.NAReason = "provided_interference_covariance_must_be_numeric";
+    return;
+end
+R = double(Rprovided);
+if ~(ismatrix(R) && size(R, 1) == nRx && size(R, 2) == nRx)
+    info.NAReason = "provided_interference_covariance_shape_mismatch";
+    return;
+end
+if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+    info.NAReason = "provided_interference_covariance_nonfinite";
+    return;
+end
+Rint = (R + R') ./ 2;
+src = string(source);
+if strlength(strtrim(src)) == 0
+    src = "provided_interference_covariance";
+end
+info.Available = true;
+info.Source = char(src);
+info.Status = "OK";
+info.NAReason = "";
+info.CovarianceIncludesNoise = logical(includesNoise);
+end
+
 function [Rint, info] = localEstimateDMRSInterferenceCovariance(rxGrid, hEst, dmrsInd, dmrsSym, nVar)
 Rint = [];
 info = struct("Available", false, "Source", "dmrs_residual_covariance_unavailable", ...
@@ -1198,7 +1303,8 @@ tracking = struct( ...
     "KnownTimingDelay_samples", NaN);
 
 raw = explicitState;
-if isempty(raw)
+usingRuntimeUserContext = isempty(raw);
+if usingRuntimeUserContext
     raw = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 end
 if ~(isstruct(raw) && ~isempty(fieldnames(raw)))
@@ -1231,8 +1337,25 @@ end
 timingAvailable = localFirstLogical(raw, ["TimingEstimateAvailable","RuntimeTRSTimingEstimateAvailable"], false);
 timingSamples = localFirstFinite(raw, ["TimingEstimate_samples","RuntimeTRSTimingEstimate_samples","EstimatedTimingOffset_samples"], NaN);
 cfoAvailable = localFirstLogical(raw, ["CFOEstimateAvailable","RuntimeTRSCFOEstimateAvailable"], false);
-cfoHz = localFirstFinite(raw, ["EstimatedOscillatorCFO_Hz","RuntimeTRSEstimatedOscillatorCFO_Hz", ...
-    "EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+oscillatorCFOHz = localFirstFinite(raw, ["EstimatedOscillatorCFO_Hz","RuntimeTRSEstimatedOscillatorCFO_Hz"], NaN);
+legacyCFOHz = localFirstFinite(raw, ["EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+allowRuntimeCommonAsCFO = logical(sixgr.util.structGet(cfg, ...
+    "phy.rx.applyRuntimeTRSCommonFrequencyAsCFO", false));
+injectedCFOHz = localResolveInjectedCFOHz(cfg);
+hasInjectedOscillatorCFO = isfinite(injectedCFOHz) && abs(double(injectedCFOHz)) > 1e-9;
+runtimeLegacyZeroCFO = usingRuntimeUserContext && isfinite(legacyCFOHz) && abs(double(legacyCFOHz)) <= 1e-9;
+runtimeNonzeroTRSCFOWithoutInjectedOscillator = usingRuntimeUserContext && ...
+    ~allowRuntimeCommonAsCFO && ~hasInjectedOscillatorCFO && ~runtimeLegacyZeroCFO && ...
+    isfinite(oscillatorCFOHz) && abs(double(oscillatorCFOHz)) > 1e-9;
+if runtimeNonzeroTRSCFOWithoutInjectedOscillator
+    cfoHz = NaN;
+elseif runtimeLegacyZeroCFO
+    cfoHz = legacyCFOHz;
+elseif usingRuntimeUserContext && ~allowRuntimeCommonAsCFO
+    cfoHz = oscillatorCFOHz;
+else
+    cfoHz = localFirstFiniteValue(oscillatorCFOHz, legacyCFOHz);
+end
 commonHz = localFirstFinite(raw, ["EstimatedCommonFrequency_Hz","RuntimeTRSEstimatedCommonFrequency_Hz", ...
     "EstimatedCommonPhaseFrequency_Hz"], NaN);
 physicalDopplerHz = localFirstFinite(raw, ["PhysicalDoppler_Hz","RuntimeTRSPhysicalDoppler_Hz", ...
@@ -1244,13 +1367,36 @@ tracking.CFOEstimateAvailable = logical(cfoAvailable && isfinite(cfoHz));
 tracking.EstimatedCFO_Hz = double(cfoHz);
 tracking.EstimatedCommonFrequency_Hz = double(commonHz);
 tracking.PhysicalDoppler_Hz = double(physicalDopplerHz);
-tracking.KnownTimingDelay_samples = localFirstFinite(raw, ["KnownTimingDelay_samples","RuntimeChannelFilterDelay_samples", ...
-    "RuntimeChannelTrimSamples"], NaN);
+tracking.KnownTimingDelay_samples = localFirstFinite(raw, ["KnownTimingDelay_samples","RuntimeKnownTimingDelay_samples"], NaN);
 if tracking.TimingEstimateAvailable || tracking.CFOEstimateAvailable
     tracking.Status = "available";
     tracking.NAReason = "";
 else
     tracking.NAReason = "trs_tracking_state_has_no_timing_or_cfo_estimate";
+end
+end
+
+function tf = localRuntimeAlignedTimingBypass(cfg)
+runtimeAligned = logical(sixgr.util.structGet(cfg, ...
+    "lls6g.receiverSync.RuntimeWaveformSampleAligned", false));
+forceApply = logical(sixgr.util.structGet(cfg, ...
+    "phy.rx.applyTimingCorrectionOnAlignedRuntimeWaveform", false));
+injectedTiming = localResolveInjectedTimingOffsetSamples(cfg);
+hasInjectedTiming = isfinite(injectedTiming) && abs(double(injectedTiming)) > 1e-9;
+runtimeTrim = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", 0)));
+hasRuntimeTrim = isfinite(runtimeTrim) && abs(runtimeTrim) > 1e-9;
+tf = runtimeAligned && hasRuntimeTrim && ~forceApply && ~hasInjectedTiming;
+end
+
+function value = localFirstFiniteValue(varargin)
+value = NaN;
+for k = 1:nargin
+    candidate = double(varargin{k});
+    if ~isempty(candidate) && isfinite(candidate(1))
+        value = candidate(1);
+        return;
+    end
 end
 end
 
@@ -1284,6 +1430,13 @@ if ~(logical(sixgr.util.structGet(tracking, "CFOEstimateAvailable", false)) && .
         isfinite(estimatedCFOHz) && isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
     return;
 end
+if localSuppressBlindCFOCorrectionForRuntimeAligned(cfg, tracking)
+    tracking.CFOCorrectionApplied = false;
+    tracking.CFOCorrectionApplied_Hz = NaN;
+    tracking.Status = "available_measurement_only";
+    tracking.CFONAReason = "runtime_aligned_zero_injected_cfo_blind_correction_suppressed";
+    return;
+end
 correctedWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -estimatedCFOHz);
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, correctedWaveform);
 tracking.CFOCorrectionApplied = true;
@@ -1293,6 +1446,18 @@ tracking.NAReason = "";
 tracking.CFONAReason = "";
 tracking = localEstimateResidualCFOAfterCorrection(correctedWaveform, ofdmInfo, sampleRateHz, tracking, ...
     "cyclic_prefix_post_receiver_correction");
+end
+
+function tf = localSuppressBlindCFOCorrectionForRuntimeAligned(cfg, tracking)
+runtimeAligned = logical(sixgr.util.structGet(cfg, ...
+    "lls6g.receiverSync.RuntimeWaveformSampleAligned", false));
+forceBlindCorrection = logical(sixgr.util.structGet(cfg, ...
+    "phy.rx.applyBlindCFOCorrectionOnAlignedRuntimeWaveform", false));
+injectedCFOHz = localResolveInjectedCFOHz(cfg);
+hasInjectedCFO = isfinite(injectedCFOHz) && abs(double(injectedCFOHz)) > 1e-9;
+source = lower(strtrim(string(sixgr.util.structGet(tracking, "Source", ""))));
+sourceIsBlindEstimator = any(contains(source, ["cyclic_prefix", "dmrs_reference_symbol_phase_slope", "reference_symbol_phase_slope"]));
+tf = runtimeAligned && ~forceBlindCorrection && ~hasInjectedCFO && sourceIsBlindEstimator;
 end
 
 function tracking = localEstimateResidualCFOAfterCorrection(rxWaveform, ofdmInfo, sampleRateHz, tracking, source)
@@ -1327,18 +1492,41 @@ function maxCorrection = localMaxTimingCorrectionSamples(carrier)
 maxCorrection = inf;
 end
 
-function delay = localResolveKnownTimingDelaySamples(cfg, tracking)
+function delay = localResolveKnownTimingDelaySamples(cfg, tracking, sampleRateHz)
 delay = double(sixgr.util.structGet(tracking, "KnownTimingDelay_samples", NaN));
 if isfinite(delay)
     return;
 end
-delay = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", ...
-    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelFilterDelay_samples", ...
-    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", ...
-    sixgr.util.structGet(cfg, "phy.rx.knownTimingDelay_samples", 0)))));
-if ~isfinite(delay)
-    delay = 0;
+delay = double(sixgr.util.structGet(cfg, "phy.rx.knownTimingDelay_samples", NaN));
+if isfinite(delay)
+    return;
 end
+filterDelay = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelFilterDelay_samples", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", 0))));
+if ~isfinite(filterDelay)
+    filterDelay = 0;
+end
+pathDelay = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelPathDelay_samples", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelPathDelay_samples", NaN)));
+if ~isfinite(pathDelay)
+    padSamples = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelPadSamples", ...
+        sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelPadSamples", NaN)));
+    trimSamples = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelTrimSamples", ...
+        sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", filterDelay)));
+    if isfinite(padSamples) && isfinite(trimSamples)
+        pathDelay = max(0, padSamples - trimSamples);
+    else
+        pathDelay = 0;
+    end
+end
+propDelay_s = double(sixgr.util.structGet(cfg, "channel.propagationDelay_s", ...
+    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingPropagationDelay_s", NaN)));
+propDelaySamples = 0;
+if isfinite(propDelay_s) && isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0
+    propDelaySamples = max(0, double(propDelay_s) * double(sampleRateHz));
+end
+delay = max(0, double(filterDelay)) + max(0, double(pathDelay)) + double(propDelaySamples);
 end
 
 function cfoHz = localResolveInjectedCFOHz(cfg)
@@ -1639,6 +1827,373 @@ info = struct( ...
     "TPMI", NaN, ...
     "NumPorts", NaN, ...
     "NumLayers", NaN);
+end
+
+function info = localEstimatePUSCHDMRSPostEqResidual(rxGrid, Hest, dmrsInd, dmrsSym, ...
+        nVar, equalizerAlg, Rint, RIncludesNoise, pusch)
+info = struct( ...
+    "Available", false, ...
+    "Source", "post_equalization_dmrs_residual_unavailable", ...
+    "Status", "unavailable", ...
+    "NAReason", "not_computed", ...
+    "NoiseVariance", NaN, ...
+    "SINR_dB", NaN, ...
+    "PerLayerSINR_dB", NaN, ...
+    "ResidualMSE", NaN, ...
+    "ReferencePower", NaN, ...
+    "SampleCount", 0, ...
+    "EqualizerAlgorithm", char(string(equalizerAlg)), ...
+    "CovarianceSource", "not_used", ...
+    "CovarianceIncludesNoise", false, ...
+    "NumLayers", NaN, ...
+    "NumPorts", NaN);
+
+if isempty(rxGrid) || isempty(Hest) || isempty(dmrsInd) || isempty(dmrsSym)
+    info.NAReason = "missing_rx_grid_hest_or_dmrs_reference";
+    return;
+end
+if ~(isscalar(double(nVar)) && isfinite(double(nVar)) && double(nVar) > 0)
+    info.NAReason = "invalid_pre_equalization_noise_variance";
+    return;
+end
+
+try
+    [rxRef, hRef] = nrExtractResources(dmrsInd, rxGrid, Hest);
+catch ME
+    info.NAReason = "dmrs_resource_extraction_failed:" + string(ME.identifier);
+    return;
+end
+if isempty(rxRef) || isempty(hRef)
+    info.NAReason = "empty_dmrs_resource_extraction";
+    return;
+end
+if ndims(hRef) == 2
+    hRef = reshape(hRef, size(hRef, 1), size(hRef, 2), 1);
+end
+
+[Rpilot, covInfo] = localPUSCHDMRSPilotCovariance(Rint, RIncludesNoise, size(rxRef, 2));
+args = {"Algorithm", equalizerAlg};
+if ~isempty(Rpilot)
+    args = [args, {"Rint", Rpilot, "RIncludesNoise", logical(RIncludesNoise)}]; %#ok<AGROW>
+end
+try
+    [eqRef, ~, eqInfo] = sixgr.phy.rx.mimoDetect(rxRef, hRef, double(nVar), args{:});
+catch ME
+    info.NAReason = "dmrs_post_equalization_failed:" + string(ME.identifier);
+    return;
+end
+eqRef = localEnsureSymbolMatrix(eqRef);
+refSym = localEnsureSymbolMatrix(dmrsSym);
+[refSym, eqRef, alignInfo] = localAlignPUSCHDMRSSymbols(refSym, eqRef);
+if ~logical(alignInfo.Available)
+    info.NAReason = char(string(alignInfo.NAReason));
+    return;
+end
+
+valid = isfinite(real(eqRef)) & isfinite(imag(eqRef)) & ...
+    isfinite(real(refSym)) & isfinite(imag(refSym));
+if ~any(valid(:))
+    info.NAReason = "dmrs_post_equalization_residual_has_no_finite_pairs";
+    return;
+end
+err = eqRef - refSym;
+err(~valid) = NaN;
+refUse = refSym;
+refUse(~valid) = NaN;
+residualByLayer = mean(abs(err).^2, 1, "omitnan");
+signalByLayer = mean(abs(refUse).^2, 1, "omitnan");
+good = isfinite(residualByLayer) & residualByLayer >= 0 & ...
+    isfinite(signalByLayer) & signalByLayer > 0;
+if ~any(good)
+    info.NAReason = "dmrs_post_equalization_residual_invalid_power";
+    return;
+end
+noiseVar = mean(max(residualByLayer(good), eps), "omitnan");
+signalPower = mean(signalByLayer(good), "omitnan");
+sinrByLayer = signalByLayer(good) ./ max(residualByLayer(good), eps);
+sinr_dB = 10 * log10(exp(mean(log(max(sinrByLayer, eps)), "omitnan")));
+
+info.Available = true;
+info.Source = "post_equalization_sinr_from_dmrs_residual_bound";
+info.Status = "OK";
+info.NAReason = "";
+info.BoundKind = "dmrs_residual";
+info.BoundSourceToken = "dmrs_residual";
+info.BoundDescription = "dmrs_post_eq_residual";
+info.NoiseVariance = double(max(noiseVar, eps));
+info.SINR_dB = double(sinr_dB);
+perLayer = NaN(1, size(eqRef, 2));
+perLayer(good) = 10 .* log10(max(sinrByLayer, eps));
+info.PerLayerSINR_dB = double(perLayer);
+info.ResidualMSE = double(noiseVar);
+info.ReferencePower = double(signalPower);
+info.SampleCount = double(nnz(valid));
+info.EqualizerAlgorithm = char(string(sixgr.util.structGet(eqInfo, "AlgorithmUsed", equalizerAlg)));
+info.CovarianceSource = char(string(covInfo.Source));
+info.CovarianceIncludesNoise = logical(covInfo.IncludesNoise);
+info.NumLayers = double(localObjectFiniteScalar(pusch, "NumLayers", size(eqRef, 2)));
+info.NumPorts = double(size(eqRef, 2));
+end
+
+function info = localEstimatePUSCHDecisionDirectedPostEqResidual(layerEqSym, pusch)
+info = struct( ...
+    "Available", false, ...
+    "Source", "post_equalization_decision_residual_unavailable", ...
+    "Status", "unavailable", ...
+    "NAReason", "not_computed", ...
+    "BoundKind", "decision_residual", ...
+    "BoundSourceToken", "decision_directed_symbol_residual", ...
+    "BoundDescription", "decision_directed_data_symbol_residual", ...
+    "NoiseVariance", NaN, ...
+    "SINR_dB", NaN, ...
+    "PerLayerSINR_dB", NaN, ...
+    "ResidualMSE", NaN, ...
+    "ReferencePower", NaN, ...
+    "SampleCount", 0, ...
+    "Modulation", "", ...
+    "NumLayers", NaN);
+layerEqSym = localEnsureSymbolMatrix(layerEqSym);
+if isempty(layerEqSym)
+    info.NAReason = "empty_layer_equalized_symbols";
+    return;
+end
+if logical(localObjectValue(pusch, "TransformPrecoding", false))
+    info.NAReason = "decision_directed_qam_residual_invalid_before_dfts_ofdm_inverse_transform";
+    return;
+end
+modulation = string(localObjectValue(pusch, "Modulation", ""));
+info.Modulation = char(modulation);
+[constellation, constInfo] = localPUSCHDecisionConstellation(modulation);
+if isempty(constellation)
+    info.NAReason = char(string(constInfo.NAReason));
+    return;
+end
+
+nLayers = size(layerEqSym, 2);
+residualByLayer = NaN(1, nLayers);
+signalByLayer = NaN(1, nLayers);
+sampleCount = 0;
+constellation = double(constellation(:));
+for layer = 1:nLayers
+    x = layerEqSym(:, layer);
+    valid = isfinite(real(x)) & isfinite(imag(x));
+    x = double(x(valid));
+    if isempty(x)
+        continue;
+    end
+    d2 = abs(x - reshape(constellation, 1, [])).^2;
+    [~, idx] = min(d2, [], 2);
+    nearest = constellation(idx);
+    gainDen = sum(abs(nearest).^2, "omitnan");
+    if isfinite(gainDen) && gainDen > 0
+        gain = sum(x(:) .* conj(nearest(:)), "omitnan") ./ gainDen;
+    else
+        gain = NaN;
+    end
+    if isfinite(real(gain)) && isfinite(imag(gain)) && abs(gain) > 0
+        fitted = gain .* nearest(:);
+    else
+        fitted = nearest(:);
+    end
+    err = x(:) - fitted(:);
+    residualByLayer(layer) = mean(abs(err).^2, "omitnan");
+    signalByLayer(layer) = mean(abs(fitted).^2, "omitnan");
+    sampleCount = sampleCount + numel(x);
+end
+good = isfinite(residualByLayer) & residualByLayer >= 0 & ...
+    isfinite(signalByLayer) & signalByLayer > 0;
+if ~any(good)
+    info.NAReason = "decision_directed_residual_invalid_power";
+    return;
+end
+noiseVar = mean(max(residualByLayer(good), eps), "omitnan");
+signalPower = mean(signalByLayer(good), "omitnan");
+sinrByLayer = signalByLayer(good) ./ max(residualByLayer(good), eps);
+sinr_dB = 10 * log10(exp(mean(log(max(sinrByLayer, eps)), "omitnan")));
+perLayer = NaN(1, nLayers);
+perLayer(good) = 10 .* log10(max(sinrByLayer, eps));
+
+info.Available = true;
+info.Source = "post_equalization_sinr_from_decision_directed_symbol_residual_bound";
+info.Status = "OK";
+info.NAReason = "";
+info.NoiseVariance = double(max(noiseVar, eps));
+info.SINR_dB = double(sinr_dB);
+info.PerLayerSINR_dB = double(perLayer);
+info.ResidualMSE = double(noiseVar);
+info.ReferencePower = double(signalPower);
+info.SampleCount = double(sampleCount);
+info.NumLayers = double(nLayers);
+end
+
+function [constellation, info] = localPUSCHDecisionConstellation(modulation)
+constellation = [];
+info = struct("NAReason", "unsupported_modulation");
+token = upper(strrep(strrep(char(string(modulation)), "-", ""), " ", ""));
+switch token
+    case "QPSK"
+        qm = 2;
+        modName = "QPSK";
+    case "16QAM"
+        qm = 4;
+        modName = "16QAM";
+    case "64QAM"
+        qm = 6;
+        modName = "64QAM";
+    case "256QAM"
+        qm = 8;
+        modName = "256QAM";
+    otherwise
+        info.NAReason = "decision_directed_residual_unsupported_modulation_" + string(modulation);
+        return;
+end
+M = 2 ^ qm;
+bits = zeros(M * qm, 1, "int8");
+for symIdx = 0:M-1
+    base = symIdx * qm;
+    for bitIdx = 1:qm
+        bits(base + bitIdx) = int8(bitget(uint32(symIdx), qm - bitIdx + 1));
+    end
+end
+try
+    constellation = nrSymbolModulate(bits, char(modName));
+catch ME
+    constellation = [];
+    info.NAReason = "nrSymbolModulate_failed:" + string(ME.identifier);
+end
+end
+
+function [Rpilot, info] = localPUSCHDMRSPilotCovariance(Rint, RIncludesNoise, nRx)
+Rpilot = [];
+info = struct("Source", "white_noise_variance", "IncludesNoise", false);
+if isempty(Rint) || ~isnumeric(Rint)
+    return;
+end
+R = double(Rint);
+if ismatrix(R) && size(R, 1) == nRx && size(R, 2) == nRx
+    Rpilot = (R + R') ./ 2;
+    info.Source = "static_receiver_covariance_reused_for_dmrs_residual_bound";
+    info.IncludesNoise = logical(RIncludesNoise);
+end
+end
+
+function [refSym, eqSym, info] = localAlignPUSCHDMRSSymbols(refSym, eqSym)
+info = struct("Available", false, "NAReason", "not_computed");
+if isempty(refSym) || isempty(eqSym)
+    info.NAReason = "empty_dmrs_reference_or_equalized_symbols";
+    return;
+end
+if isequal(size(refSym), size(eqSym))
+    info.Available = true;
+    info.NAReason = "";
+    return;
+end
+if numel(refSym) == numel(eqSym)
+    refSym = reshape(refSym(:), size(eqSym));
+    info.Available = true;
+    info.NAReason = "";
+    return;
+end
+if size(refSym, 2) == 1 && size(eqSym, 2) > 1 && mod(size(refSym, 1), size(eqSym, 2)) == 0 && ...
+        numel(refSym) >= numel(eqSym)
+    refSym = reshape(refSym(1:numel(eqSym)), size(eqSym));
+    info.Available = true;
+    info.NAReason = "";
+    return;
+end
+info.NAReason = sprintf("dmrs_reference_shape_%s_does_not_match_equalized_shape_%s", ...
+    mat2str(size(refSym)), mat2str(size(eqSym)));
+end
+
+function [postEqSINR_dB, postEqSINRPerRE_dB, info] = localApplyPUSCHDMRSPostEqSINRBound( ...
+        postEqSINR_dB, postEqSINRPerRE_dB, info, dmrsInfo)
+if ~(isstruct(dmrsInfo) && logical(sixgr.util.structGet(dmrsInfo, "Available", false)))
+    return;
+end
+dmrsSINR = double(sixgr.util.structGet(dmrsInfo, "SINR_dB", NaN));
+if ~(isscalar(dmrsSINR) && isfinite(dmrsSINR))
+    return;
+end
+boundKind = char(string(sixgr.util.structGet(dmrsInfo, "BoundKind", "dmrs_residual")));
+boundToken = char(string(sixgr.util.structGet(dmrsInfo, "BoundSourceToken", boundKind)));
+boundDescription = char(string(sixgr.util.structGet(dmrsInfo, "BoundDescription", boundKind)));
+oldSINR = double(postEqSINR_dB);
+oldSource = string(sixgr.util.structGet(info, "Source", "post_equalization_sinr_from_equalizer_channel_estimate"));
+oldStatus = string(sixgr.util.structGet(info, "ValueStatus", "unavailable"));
+oldReason = string(sixgr.util.structGet(info, "NAReason", ""));
+if ~(isscalar(oldSINR) && isfinite(oldSINR)) || dmrsSINR < oldSINR
+    if ~(isscalar(oldSINR) && isfinite(oldSINR))
+        oldSINR = NaN;
+    end
+    postEqSINR_dB = double(dmrsSINR);
+    if ~isempty(postEqSINRPerRE_dB)
+        postEqSINRPerRE_dB = min(double(postEqSINRPerRE_dB), double(dmrsSINR));
+    end
+    perLayer = double(sixgr.util.structGet(info, "PerLayerSINR_dB", NaN));
+    dmrsPerLayer = double(sixgr.util.structGet(dmrsInfo, "PerLayerSINR_dB", NaN));
+    if ~isempty(dmrsPerLayer) && any(isfinite(dmrsPerLayer(:)))
+        if isscalar(perLayer) && ~(isfinite(perLayer))
+            perLayer = dmrsPerLayer;
+        elseif numel(perLayer) == numel(dmrsPerLayer)
+            perLayer = min(perLayer, dmrsPerLayer);
+        else
+            perLayer = repmat(double(dmrsSINR), 1, max(1, numel(perLayer)));
+        end
+    else
+        perLayer = repmat(double(dmrsSINR), 1, max(1, numel(perLayer)));
+    end
+    info.PerLayerSINR_dB = double(perLayer);
+    info.SINR_dB = double(postEqSINR_dB);
+    info.RawEqualizerSINR_dB = double(oldSINR);
+    info.UnboundedSource = char(oldSource);
+    info.UnboundedValueStatus = char(oldStatus);
+    info.UnboundedNAReason = char(oldReason);
+    info.Source = "post_equalization_sinr_from_" + string(boundToken) + "_bounded_equalizer_channel_estimate";
+    info.ValueRole = "measured_post_equalization_scheduling_input";
+    info.ValueStatus = "OK_" + string(boundKind) + "_bounded";
+    info.NAReason = sprintf("equalizer_sinr_%s_dB_bounded_by_%s_%.6g_dB", ...
+        localFiniteDisplay(oldSINR), boundDescription, double(dmrsSINR));
+    info.DMRSResidualBoundApplied = true;
+    info.DMRSResidualSINR_dB = double(dmrsSINR);
+    info.DMRSResidualNoiseVariance = double(sixgr.util.structGet(dmrsInfo, "NoiseVariance", NaN));
+    info.ReceiverResidualBoundKind = char(string(boundKind));
+    info.ReceiverResidualBoundSource = char(string(sixgr.util.structGet(dmrsInfo, "Source", "")));
+end
+end
+
+function [nVarOut, info] = localApplyPUSCHDMRSPostEqNoiseBound(nVarIn, info, dmrsInfo)
+nVarOut = double(nVarIn);
+if ~(isstruct(dmrsInfo) && logical(sixgr.util.structGet(dmrsInfo, "Available", false)))
+    return;
+end
+dmrsNVar = double(sixgr.util.structGet(dmrsInfo, "NoiseVariance", NaN));
+if ~(isscalar(dmrsNVar) && isfinite(dmrsNVar) && dmrsNVar > 0)
+    return;
+end
+if ~(isscalar(nVarOut) && isfinite(nVarOut) && nVarOut > 0) || dmrsNVar > nVarOut
+    old = nVarOut;
+    boundKind = char(string(sixgr.util.structGet(dmrsInfo, "BoundKind", "dmrs_residual")));
+    boundToken = char(string(sixgr.util.structGet(dmrsInfo, "BoundSourceToken", boundKind)));
+    nVarOut = double(dmrsNVar);
+    info.ValueStatus = "OK";
+    info.Source = "post_equalization_" + string(boundToken) + "_noise_variance_bound";
+    info.NAReason = "";
+    info.PostEqualizationNoiseVar = double(nVarOut);
+    info.ReductionMethod = "max_equalizer_sinr_noise_and_" + string(boundToken) + "_noise";
+    info.SampleCount = double(max(1, sixgr.util.structGet(dmrsInfo, "SampleCount", 1)));
+    info.DMRSResidualBoundApplied = true;
+    info.DMRSResidualNoiseVariance = double(dmrsNVar);
+    info.UnboundedPostEqualizationNoiseVar = double(old);
+    info.ReceiverResidualBoundKind = char(string(boundKind));
+end
+end
+
+function txt = localFiniteDisplay(value)
+if isscalar(value) && isfinite(value)
+    txt = sprintf("%.6g", double(value));
+else
+    txt = "NaN";
+end
 end
 
 function [nVarForDecode, info] = localResolvePUSCHDecoderNoiseVariance(nVarPreEq, nVarPostEq, postInfo, cfg)

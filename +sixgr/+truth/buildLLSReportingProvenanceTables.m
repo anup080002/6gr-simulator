@@ -40,6 +40,11 @@ for i = 1:numel(specs)
     end
     imageExists = exist(imagePath, "file") == 2;
     unavailableImageExists = exist(unavailableImagePath, "file") == 2;
+    if imageExists && string(stats.PlotRenderStatus) ~= "rendered"
+        iDeleteStaleNormalVisual(imagePath);
+        imageExists = exist(imagePath, "file") == 2;
+        unavailableImageExists = exist(unavailableImagePath, "file") == 2;
+    end
     isUnavailableCard = false;
     countsAsRealPlot = false;
     renderStatus = string(stats.PlotRenderStatus);
@@ -102,6 +107,17 @@ for i = 1:numel(specs)
         "ByteCount", artifactInfo.byte_count);
 end
 T = struct2table(rows);
+end
+
+function iDeleteStaleNormalVisual(imagePath)
+% A suppressed source contract must not keep an older normal PNG/SVG alive.
+try
+    if exist(imagePath, "file") == 2
+        delete(imagePath);
+    end
+catch
+    % The visual integrity gate will still fail if the stale artifact remains.
+end
 end
 
 function T = iBuildPlotRenderStatusTable(manifestT)

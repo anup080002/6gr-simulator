@@ -454,6 +454,13 @@ classdef (Abstract) SchedulerBase < handle
             cqiTable = obj.resolveCQITable();
             cqiRaw = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
                 sixgr.util.structGet(ue, "CQI", NaN), NaN);
+            feedbackValid = logical(sixgr.util.structGet(ue, "FeedbackValid", true));
+            bootstrapCQIUsable = logical(sixgr.util.structGet(ue, ...
+                "BootstrapCQIUsableForScheduling", false));
+            bootstrapCQISource = strtrim(string(sixgr.util.structGet(ue, ...
+                "BootstrapCQISource", "")));
+            isBootstrapCQI = ~feedbackValid && bootstrapCQIUsable && ...
+                strlength(bootstrapCQISource) > 0;
             [causalFeedbackUsable, causalFeedbackStatus, feedbackAgeSlots, feedbackAgeSeconds] = ...
                 localResolveUECausalFeedback(ue, obj.Cfg, dir);
 
@@ -508,6 +515,11 @@ classdef (Abstract) SchedulerBase < handle
                 "CausalFeedbackStatus", char(causalFeedbackStatus), ...
                 "FeedbackAgeSlots", double(feedbackAgeSlots), ...
                 "FeedbackAgeSeconds", double(feedbackAgeSeconds), ...
+                "SubbandSINRVector_dB", char(string(sixgr.util.structGet(ue, "SubbandSINRVector_dB", ""))), ...
+                "AgedSubbandSINRVector_dB", char(string(sixgr.util.structGet(ue, "AgedSubbandSINRVector_dB", ""))), ...
+                "PostEqSINRPerLayer_dB", char(string(sixgr.util.structGet(ue, "PostEqSINRPerLayer_dB", ""))), ...
+                "AgedPostEqSINRPerLayer_dB", char(string(sixgr.util.structGet(ue, "AgedPostEqSINRPerLayer_dB", ""))), ...
+                "AutoQueueAwareWidebandCQIGuard", false, ...
                 "CalibrationProfile", char(localSchedulerCalibrationProfile(obj.Cfg, dir)), ...
                 "InitialNumLayers", double(nLayers), ...
                 "RankSelectionPolicy", "", ...
@@ -526,15 +538,21 @@ classdef (Abstract) SchedulerBase < handle
             useConfiguredCQIAMC = localUseConfiguredCQIAMC(linkAdaptationMode, linkAdaptationPolicy);
             useExplicitUEMCSOverride = isfinite(ueMCSIndex) && ueMCSIndex >= 0 && ...
                 (ismember(ueMCSIndexAuthority, ["explicit_fixed_override","configured_fixed_default","configured_fixed_fallback","explicit","config","override","fixed"]) || ...
+                ueMCSIndexAuthority == "ul_shared_reuse_probe_conservative_mcs" || ...
                 ismember(lower(strtrim(string(linkAdaptationMode))), fixedTokens) || ...
                 ismember(lower(strtrim(string(linkAdaptationPolicy))), fixedTokens));
 
             if useExplicitUEMCSOverride
                 amc.Mode = "fixed_mcs";
                 amc.MCSIndex = round(ueMCSIndex);
-                amc.MCSSelectionSource = "explicit_ue_or_configured_fixed_mcs";
+                if ueMCSIndexAuthority == "ul_shared_reuse_probe_conservative_mcs"
+                    amc.MCSSelectionSource = "ul_shared_reuse_probe_conservative_mcs";
+                    amc.MCSValueStatus = "shared_reuse_probe_pending";
+                else
+                    amc.MCSSelectionSource = "explicit_ue_or_configured_fixed_mcs";
+                    amc.MCSValueStatus = "configured";
+                end
                 amc.CQIProvenance = "not_used_fixed_mcs";
-                amc.MCSValueStatus = "configured";
             elseif useConfiguredCQIAMC
                 amc.Mode = "cqi_table";
                 if ~logical(causalFeedbackUsable)
@@ -550,9 +568,15 @@ classdef (Abstract) SchedulerBase < handle
                     amc.Mode = "cqi_table";
                     amc.MCSIndex = double(cqiDecision.MCSIndex);
                     amc.MCSProfile = cqiDecision.MCSProfile;
-                    amc.MCSSelectionSource = "runtime_cqi_table";
-                    amc.CQIProvenance = "runtime_reported_cqi";
-                    amc.MCSValueStatus = "measured_cqi_mapped";
+                    if isBootstrapCQI
+                        amc.MCSSelectionSource = char(bootstrapCQISource);
+                        amc.CQIProvenance = char(bootstrapCQISource);
+                        amc.MCSValueStatus = "bootstrap_not_measured_cqi";
+                    else
+                        amc.MCSSelectionSource = "runtime_cqi_table";
+                        amc.CQIProvenance = "runtime_reported_cqi";
+                        amc.MCSValueStatus = "measured_cqi_mapped";
+                    end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
@@ -594,9 +618,15 @@ classdef (Abstract) SchedulerBase < handle
                     amc.Mode = "cqi_table";
                     amc.MCSIndex = double(cqiDecision.MCSIndex);
                     amc.MCSProfile = cqiDecision.MCSProfile;
-                    amc.MCSSelectionSource = "runtime_cqi_table";
-                    amc.CQIProvenance = "runtime_reported_cqi";
-                    amc.MCSValueStatus = "measured_cqi_mapped";
+                    if isBootstrapCQI
+                        amc.MCSSelectionSource = char(bootstrapCQISource);
+                        amc.CQIProvenance = char(bootstrapCQISource);
+                        amc.MCSValueStatus = "bootstrap_not_measured_cqi";
+                    else
+                        amc.MCSSelectionSource = "runtime_cqi_table";
+                        amc.CQIProvenance = "runtime_reported_cqi";
+                        amc.MCSValueStatus = "measured_cqi_mapped";
+                    end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
@@ -705,7 +735,7 @@ classdef (Abstract) SchedulerBase < handle
             if nargin < 5 || isempty(symAlloc)
                 symAlloc = [0 obj.SymbolsPerSlot];
             end
-            opt = struct("PlanningOnly", false, "ForceExact", false);
+            opt = struct("PlanningOnly", false, "ForceExact", false, "ConfigOverride", []);
             if ~isempty(varargin)
                 if mod(numel(varargin), 2) ~= 0
                     error("sixgr:SchedulerBase:EstimateTBSBadNV", ...
@@ -719,14 +749,22 @@ classdef (Abstract) SchedulerBase < handle
                             opt.PlanningOnly = logical(value);
                         case "forceexact"
                             opt.ForceExact = logical(value);
+                        case "configoverride"
+                            opt.ConfigOverride = value;
                         otherwise
                             error("sixgr:SchedulerBase:EstimateTBSUnknownNV", ...
                                 "Unknown estimateTBS option '%s'.", char(key));
                     end
                 end
             end
+            cfgTBS = obj.Cfg;
+            cfgOverrideActive = false;
+            if isstruct(opt.ConfigOverride) && ~isempty(fieldnames(opt.ConfigOverride))
+                cfgTBS = opt.ConfigOverride;
+                cfgOverrideActive = true;
+            end
             nSym = double(symAlloc(2));
-            xOverhead = localResolveTBSXOverhead(obj.Direction, obj.Cfg, symAlloc);
+            xOverhead = localResolveTBSXOverhead(obj.Direction, cfgTBS, symAlloc);
             info = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
                 "TBSMode", "approximate", "ViennaEquivalent", false, ...
                 "PlanningOnly", logical(opt.PlanningOnly), ...
@@ -742,11 +780,11 @@ classdef (Abstract) SchedulerBase < handle
             end
             key = "";
 
-            useFastNRE = logical(sixgr.util.structGet(obj.Cfg, "mac.scheduler.fastNREApprox", true));
-            strictMode = logical(sixgr.util.structGet(obj.Cfg, "run.strictMode", false));
-            tbsMode = lower(string(sixgr.util.structGet(obj.Cfg, "mac.scheduler.tbsMode", "approximate")));
-            viennaEquivalent = logical(sixgr.util.structGet(obj.Cfg, "mac.scheduler.viennaEquivalent", false));
-            allowApproxPlanningInStrict = logical(sixgr.util.structGet(obj.Cfg, ...
+            useFastNRE = logical(sixgr.util.structGet(cfgTBS, "mac.scheduler.fastNREApprox", true));
+            strictMode = logical(sixgr.util.structGet(cfgTBS, "run.strictMode", false));
+            tbsMode = lower(string(sixgr.util.structGet(cfgTBS, "mac.scheduler.tbsMode", "approximate")));
+            viennaEquivalent = logical(sixgr.util.structGet(cfgTBS, "mac.scheduler.viennaEquivalent", false));
+            allowApproxPlanningInStrict = logical(sixgr.util.structGet(cfgTBS, ...
                 "mac.scheduler.allowApproximatePlanningInStrictMode", false));
             info.StrictTBSMode = strictMode;
             info.ViennaEquivalent = viennaEquivalent;
@@ -769,7 +807,11 @@ classdef (Abstract) SchedulerBase < handle
             end
             if ~isempty(tbsCache)
                 symStart = round(double(symAlloc(1)));
-                key = localScopedCacheKey(obj.CacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%d|%.4f|planning=%d|force=%d|fast=%d|mode=%s|strict=%d|vienna=%d", ...
+                cacheScopeToken = obj.CacheScopeToken;
+                if cfgOverrideActive
+                    cacheScopeToken = localSchedulerCacheScopeToken(cfgTBS, obj.Direction, obj.Carrier, obj.SymbolsPerSlot);
+                end
+                key = localScopedCacheKey(cacheScopeToken, sprintf("%s|%s|%d|%d|%d|%d|%d|%.4f|planning=%d|force=%d|fast=%d|mode=%s|strict=%d|vienna=%d", ...
                     upper(char(obj.Direction)), upper(char(modStr)), ...
                     round(double(nLayers)), round(double(nPRB)), symStart, round(double(nSym)), ...
                     round(double(xOverhead)), ...
@@ -787,13 +829,17 @@ classdef (Abstract) SchedulerBase < handle
                     return;
                 end
             end
-            nrePerPRB = localFastNREPerPRB(obj.Direction, obj.Cfg, nSym);
+            nrePerPRB = localFastNREPerPRB(obj.Direction, cfgTBS, nSym);
             if ~useFastNRE
                 nreCache = [];
                 if isa(obj.NRECache, 'containers.Map')
                     nreCache = true;
                 end
-                nreKey = localScopedCacheKey(obj.CacheScopeToken, ...
+                cacheScopeToken = obj.CacheScopeToken;
+                if cfgOverrideActive
+                    cacheScopeToken = localSchedulerCacheScopeToken(cfgTBS, obj.Direction, obj.Carrier, obj.SymbolsPerSlot);
+                end
+                nreKey = localScopedCacheKey(cacheScopeToken, ...
                     localNRECacheKey(obj.Direction, nLayers, nPRB, symAlloc));
                 nreCached = false;
                 if ~isempty(nreCache)
@@ -806,10 +852,10 @@ classdef (Abstract) SchedulerBase < handle
                     try
                         carrier = obj.Carrier;
                         if isempty(carrier) || ~isprop(carrier, "NSizeGrid") || double(carrier.NSizeGrid) < max(double(nPRB), 1)
-                            [carrier, ~] = sixgr.phy.grid.makeCarrier(obj.Cfg, ...
-                                "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(obj.Cfg, "phy.carrier.NSizeGrid", nPRB))));
+                            [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTBS, ...
+                                "NSizeGrid", max(max(nPRB,1), double(sixgr.util.structGet(cfgTBS, "phy.carrier.NSizeGrid", nPRB))));
                         end
-                        nrePerPRB = localComputeExactNREPerPRB(obj.Direction, carrier, obj.Cfg, nPRB, symAlloc, modStr, nLayers);
+                        nrePerPRB = localComputeExactNREPerPRB(obj.Direction, carrier, cfgTBS, nPRB, symAlloc, modStr, nLayers);
                         if ~isempty(nreCache) && isfinite(double(nrePerPRB)) && double(nrePerPRB) > 0
                             sixgr.l2.mac.schedulerCache('set', 'NRE', nreKey, double(nrePerPRB));
                         end
@@ -908,6 +954,11 @@ classdef (Abstract) SchedulerBase < handle
                 "PRBSet", double(prbSet(:).'), ...
                 "Modulation", char(string(modStr)), ...
                 "NumLayers", double(nLayers), ...
+                "Layers", double(nLayers), ...
+                "RI", double(nLayers), ...
+                "RIUsed", double(nLayers), ...
+                "Rank", double(nLayers), ...
+                "RankIndicator", double(nLayers), ...
                 "TargetCodeRate", double(targetCodeRate), ...
                 "MCSIndex", double(amc.MCSIndex), ...
                 "MCSTable", char(string(amc.MCSTable)), ...
@@ -982,6 +1033,11 @@ classdef (Abstract) SchedulerBase < handle
             plan.PRBSet = double(best.PRBSet);
             plan.Modulation = char(string(best.Modulation));
             plan.NumLayers = double(best.NumLayers);
+            plan.Layers = double(best.NumLayers);
+            plan.RI = double(best.NumLayers);
+            plan.RIUsed = double(best.NumLayers);
+            plan.Rank = double(best.NumLayers);
+            plan.RankIndicator = double(best.NumLayers);
             plan.TargetCodeRate = double(best.TargetCodeRate);
             plan.MCSIndex = double(best.MCSIndex);
             plan.NREPerPRB = double(best.NREPerPRB);
@@ -1094,8 +1150,21 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
 
-            [exactBits, exactBytes, exactNRE, exactInfo] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
-                "PlanningOnly", false, "ForceExact", true);
+            mappingDecision = localFinalizeGrantMappingType(obj.Cfg, grantOut.Direction, grantOut, symAlloc);
+            grantOut.MappingType = char(mappingDecision.MappingType);
+            grantOut.MappingTypeSelectionSource = char(mappingDecision.Source);
+            grantOut.MappingTypeSelectionReason = char(mappingDecision.Reason);
+            cfgExact = localApplyGrantMappingTypeToCfg(obj.Cfg, grantOut.Direction, mappingDecision.MappingType);
+            try
+                [exactBits, exactBytes, exactNRE, exactInfo] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
+                    "PlanningOnly", false, "ForceExact", true, "ConfigOverride", cfgExact);
+            catch ME
+                grantOut.Valid = false;
+                grantOut.ExactPHYFeasible = false;
+                grantOut.ExactPHYInfeasibilityReason = char("exact_resource_accounting_failed:" + string(ME.message));
+                grantOut.GrantBlocker = grantOut.ExactPHYInfeasibilityReason;
+                return;
+            end
             if ~(isfinite(double(exactBits)) && double(exactBits) > 0 && isfinite(double(exactBytes)) && double(exactBytes) > 0)
                 grantOut.Valid = false;
                 grantOut.ExactPHYFeasible = false;
@@ -1124,6 +1193,10 @@ classdef (Abstract) SchedulerBase < handle
             grantOut.Modulation = char(string(modStr));
             grantOut.NumLayers = double(nLayers);
             grantOut.Layers = double(nLayers);
+            grantOut.RI = double(nLayers);
+            grantOut.RIUsed = double(nLayers);
+            grantOut.Rank = double(nLayers);
+            grantOut.RankIndicator = double(nLayers);
             grantOut.TargetCodeRate = double(targetCodeRate);
             grantOut.NREPerPRB = double(exactNRE);
             grantOut.TBSInputModulation = char(string(modStr));
@@ -1885,11 +1958,15 @@ end
 function amc = localMarkMissingRuntimeCQI(amc, cfg, provenance)
 amc.CausalFeedbackUsable = false;
 amc.CausalFeedbackStatus = char(string(provenance));
-if localSchedulerRequiresMeasuredCQI(cfg)
+if localSchedulerRequiresMeasuredCQI(cfg) || localBootstrapAdmissionRejected(provenance)
     amc.Mode = "cqi_required_no_runtime_feedback";
     amc.MCSIndex = NaN;
     amc.MCSProfile = sixgr.link.resolveMCSProfile(char(string(amc.MCSTable)), -1);
-    amc.MCSSelectionSource = "blocked_missing_runtime_cqi";
+    if localBootstrapAdmissionRejected(provenance)
+        amc.MCSSelectionSource = "blocked_bootstrap_cqi_below_configured_floor";
+    else
+        amc.MCSSelectionSource = "blocked_missing_runtime_cqi";
+    end
     amc.CQIProvenance = char(string(provenance));
     amc.MCSValueStatus = "unavailable_missing_runtime_cqi";
 else
@@ -1900,6 +1977,13 @@ else
     amc.CQIProvenance = char(string(provenance));
     amc.MCSValueStatus = "bootstrap_not_measured_cqi";
 end
+end
+
+function tf = localBootstrapAdmissionRejected(provenance)
+token = lower(strtrim(string(provenance)));
+tf = any(token == ["rejected_below_min_cqi_for_scheduling", ...
+    "bootstrap_cqi_rejected_below_min_cqi_for_scheduling"]) || ...
+    contains(token, "rejected_below_min_cqi_for_scheduling");
 end
 
 function tf = localSchedulerRequiresMeasuredCQI(cfg)
@@ -2066,8 +2150,13 @@ if isempty(rawPRBSet)
     return;
 end
 
-queueAwareReduction = localQueueAwareRankMCSReductionEnabled(obj.Cfg) && ...
-    localQueueAwarePRBDeltaTriggered(obj, amc, rawPRBSet, symAlloc, queueBytes, opt);
+autoSmallPRBGuard = localAutoQueueAwareWidebandCQIGuard(obj, amc, rawPRBSet, symAlloc, queueBytes, opt);
+if autoSmallPRBGuard
+    amc.AutoQueueAwareWidebandCQIGuard = true;
+end
+queueAwareReduction = (localQueueAwareRankMCSReductionEnabled(obj.Cfg) && ...
+    localQueueAwarePRBDeltaTriggered(obj, amc, rawPRBSet, symAlloc, queueBytes, opt)) || ...
+    autoSmallPRBGuard;
 candidateProfiles = localCandidateMCSProfiles(amc, obj.Cfg, queueAwareReduction);
 if localPreserveAMCMCSForQueueLimit(amc) && ~queueAwareReduction && ~isempty(candidateProfiles)
     cand = candidateProfiles(1);
@@ -2080,6 +2169,10 @@ if localPreserveAMCMCSForQueueLimit(amc) && ~queueAwareReduction && ~isempty(can
 end
 bestBits = -inf;
 bestPRBCount = inf;
+robustBest = struct("Valid", false);
+robustBestBits = -inf;
+robustBestPRBCount = inf;
+minGuardPRB = localSmallPRBWidebandCQIGuardMinPRB(obj.Cfg, rawPRBSet);
 for i = 1:numel(candidateProfiles)
     cand = candidateProfiles(i);
     [bestIdxForCand, bestCand] = localFindLargestQueueFit(obj, cand, rawPRBSet, symAlloc, queueBytes, opt);
@@ -2096,13 +2189,37 @@ for i = 1:numel(candidateProfiles)
         chosenCand = bestCand;
     end
     prbSubset = rawPRBSet(1:chosenIdx);
-    if chosenCand.TBSBits > bestBits + 1e-9 || ...
-            (abs(chosenCand.TBSBits - bestBits) <= 1e-9 && numel(prbSubset) < bestPRBCount)
-        best = localBuildQueueLimitedBest(cand, prbSubset, chosenCand, queueBytes);
+    candidateBest = localBuildQueueLimitedBest(cand, prbSubset, chosenCand, queueBytes);
+    if localQueueLimitedPlanBetter(chosenCand.TBSBits, numel(prbSubset), bestBits, bestPRBCount)
+        best = candidateBest;
         bestBits = double(chosenCand.TBSBits);
         bestPRBCount = numel(prbSubset);
     end
+    robustCandidate = ~autoSmallPRBGuard || ...
+        localSmallPRBWidebandCQIRobustCandidate(cand, prbSubset, minGuardPRB, obj.Cfg);
+    if robustCandidate && localQueueLimitedPlanBetter(chosenCand.TBSBits, numel(prbSubset), robustBestBits, robustBestPRBCount)
+        robustBest = candidateBest;
+        robustBestBits = double(chosenCand.TBSBits);
+        robustBestPRBCount = numel(prbSubset);
+    end
 end
+if autoSmallPRBGuard && logical(sixgr.util.structGet(robustBest, "Valid", false))
+    best = robustBest;
+end
+if autoSmallPRBGuard && logical(sixgr.util.structGet(best, "Valid", false))
+    best.QueueAwareReductionEnabled = true;
+    best.QueueAwareReductionApplied = true;
+    best.QueueAwareReductionSource = char(localAppendQueueAwareSource( ...
+        sixgr.util.structGet(best, "QueueAwareReductionSource", ""), ...
+        "wideband_cqi_small_prb_guard"));
+    best.SmallPRBWidebandCQIGuardApplied = true;
+    best.SmallPRBWidebandCQIGuardMinPRB = double(minGuardPRB);
+end
+end
+
+function tf = localQueueLimitedPlanBetter(bits, prbCount, bestBits, bestPRBCount)
+tf = double(bits) > double(bestBits) + 1e-9 || ...
+    (abs(double(bits) - double(bestBits)) <= 1e-9 && double(prbCount) < double(bestPRBCount));
 end
 
 function tf = localPreserveAMCMCSForQueueLimit(amc)
@@ -2130,6 +2247,11 @@ best = struct( ...
     "PRBSet", double(prbSubset(:).'), ...
     "Modulation", char(string(cand.Modulation)), ...
     "NumLayers", double(cand.NumLayers), ...
+    "Layers", double(cand.NumLayers), ...
+    "RI", double(cand.NumLayers), ...
+    "RIUsed", double(cand.NumLayers), ...
+    "Rank", double(cand.NumLayers), ...
+    "RankIndicator", double(cand.NumLayers), ...
     "TargetCodeRate", double(cand.TargetCodeRate), ...
     "MCSIndex", double(cand.MCSIndex), ...
     "NREPerPRB", double(evalOut.NREPerPRB), ...
@@ -2277,7 +2399,12 @@ hasMCSIndex = isfinite(double(sixgr.util.structGet(amc, "MCSIndex", NaN)));
 if (mode == "cqi_table" || mode == "fixed_mcs") && hasMCSIndex
     initialMCS = max(0, min(31, round(double(sixgr.util.structGet(amc, "MCSIndex", 0)))));
     if queueAwareReduction
-        mcsDecMax = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementMax", 2);
+        autoGuard = logical(sixgr.util.structGet(amc, "AutoQueueAwareWidebandCQIGuard", false));
+        defaultMCSDecMax = 2;
+        if autoGuard
+            defaultMCSDecMax = max(2, initialMCS);
+        end
+        mcsDecMax = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementMax", defaultMCSDecMax);
         step1 = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementStep1", 1);
         step2 = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareMCSDecrementStep2", 2);
         decSet = unique([0, 1:mcsDecMax, step1, step2], "stable");
@@ -2339,6 +2466,110 @@ tf = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.queueAwareRankMCSRedu
 if ~tf
     token = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", ""))));
     tf = contains(token, "queue") || contains(token, "buffer");
+end
+end
+
+function tf = localAutoQueueAwareWidebandCQIGuard(obj, amc, rawPRBSet, symAlloc, queueBytes, opt)
+tf = false;
+mode = lower(strtrim(string(sixgr.util.structGet(amc, "Mode", ""))));
+if mode ~= "cqi_table"
+    return;
+end
+source = lower(strjoin([ ...
+    string(sixgr.util.structGet(amc, "MCSSelectionSource", "")), ...
+    string(sixgr.util.structGet(amc, "CQIProvenance", ""))], " "));
+if ~(contains(source, "runtime") || contains(source, "measured"))
+    return;
+end
+if contains(source, "bootstrap") || contains(source, "fixed")
+    return;
+end
+if localHasUsableSubbandSchedulerCSI(amc, rawPRBSet)
+    return;
+end
+minGuardPRB = localSmallPRBWidebandCQIGuardMinPRB(obj.Cfg, rawPRBSet);
+if ~(isfinite(minGuardPRB) && minGuardPRB > 1)
+    return;
+end
+baseCandidates = localCandidateMCSProfiles(amc, obj.Cfg, false);
+if isempty(baseCandidates)
+    return;
+end
+requiredPRB = localFindSmallestQueueCoveringPRB(obj, baseCandidates(1), rawPRBSet, symAlloc, queueBytes, opt);
+mcsIndex = double(sixgr.util.structGet(amc, "MCSIndex", NaN));
+nLayers = double(sixgr.util.structGet(amc, "NumLayers", 1));
+smallSelectedRegion = numel(rawPRBSet) < minGuardPRB || ...
+    (isfinite(requiredPRB) && requiredPRB < minGuardPRB);
+tf = smallSelectedRegion && ...
+    (double(nLayers) > 1 || (isfinite(mcsIndex) && mcsIndex >= localSmallPRBWidebandCQIMCSFloor(obj.Cfg)));
+end
+
+function tf = localSmallPRBWidebandCQIRobustCandidate(cand, prbSubset, minGuardPRB, cfg)
+tf = numel(prbSubset) >= minGuardPRB;
+if tf
+    return;
+end
+floorMCS = localSmallPRBWidebandCQIMCSFloor(cfg);
+mcsIndex = double(sixgr.util.structGet(cand, "MCSIndex", NaN));
+nLayers = double(sixgr.util.structGet(cand, "NumLayers", 1));
+tf = round(max(1, nLayers)) == 1 && ...
+    isfinite(mcsIndex) && round(mcsIndex) < floorMCS;
+end
+
+function tf = localHasUsableSubbandSchedulerCSI(amc, rawPRBSet)
+tf = false;
+requiredBins = max(1, numel(rawPRBSet));
+for fieldName = ["AgedSubbandSINRVector_dB","SubbandSINRVector_dB"]
+    values = localParseNumericVectorToken(sixgr.util.structGet(amc, fieldName, ""));
+    values = values(isfinite(values));
+    if numel(values) >= requiredBins
+        tf = true;
+        return;
+    end
+end
+end
+
+function values = localParseNumericVectorToken(token)
+if isnumeric(token)
+    values = double(token(:));
+    return;
+end
+txt = strtrim(string(token));
+if strlength(txt) == 0
+    values = [];
+    return;
+end
+txt = replace(txt, ["[", "]", ";", ","], " ");
+parts = regexp(char(txt), "[|\\s]+", "split");
+parts = parts(~cellfun("isempty", parts));
+values = str2double(string(parts));
+values = double(values(:));
+end
+
+function minPRB = localSmallPRBWidebandCQIGuardMinPRB(cfg, rawPRBSet)
+minPRB = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.minPRBForWidebandCQIGrant", ...
+    sixgr.util.structGet(cfg, "mac.scheduler.minPRBPerUE", NaN)));
+if ~(isfinite(minPRB) && minPRB >= 1)
+    minPRB = max(4, ceil(0.02 * max(1, numel(rawPRBSet))));
+end
+minPRB = max(1, round(minPRB));
+end
+
+function floorMCS = localSmallPRBWidebandCQIMCSFloor(cfg)
+floorMCS = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.smallPRBWidebandCQIMCSFloor", 10));
+if ~(isfinite(floorMCS) && floorMCS >= 0)
+    floorMCS = 10;
+end
+floorMCS = round(floorMCS);
+end
+
+function source = localAppendQueueAwareSource(source, token)
+source = string(source);
+token = string(token);
+if strlength(strtrim(source)) == 0
+    source = token;
+elseif ~contains(source, token)
+    source = source + "+" + token;
 end
 end
 
@@ -2504,6 +2735,76 @@ if upper(string(direction)) == "UL"
 else
     root = "phy.pdsch";
 end
+end
+
+function decision = localFinalizeGrantMappingType(cfg, direction, grant, symAlloc)
+direction = upper(string(direction));
+root = localPHYRoot(direction);
+grantMap = strtrim(string(sixgr.util.structGet(grant, "MappingType", ...
+    sixgr.util.structGet(grant, "mappingType", ""))));
+cfgMap = strtrim(string(sixgr.util.structGet(cfg, root + ".mappingType", ...
+    sixgr.util.structGet(cfg, root + ".MappingType", ""))));
+if strlength(grantMap) > 0
+    mapType = localNormalizeGrantMappingTypeToken(grantMap);
+    source = "grant_explicit_mapping_type";
+elseif strlength(cfgMap) > 0
+    mapType = localNormalizeGrantMappingTypeToken(cfgMap);
+    source = "configured_mapping_type";
+else
+    mapType = "A";
+    source = "implicit_default_mapping_type";
+end
+
+sa = double(symAlloc(:).');
+if numel(sa) < 2
+    sa = [0 14];
+end
+startSym = max(0, round(double(sa(1))));
+typeAPos = localResolveTypeAPosition(cfg, root);
+reason = source;
+if mapType == "A" && startSym > typeAPos
+    if source == "implicit_default_mapping_type"
+        mapType = "B";
+        source = "scheduler_special_slot_legalization";
+        reason = sprintf("implicit MappingType A is invalid for startSymbol=%d after DMRSTypeAPosition=%d; finalized legal MappingType B before exact PUSCH/PDSCH accounting", ...
+            startSym, round(double(typeAPos)));
+    else
+        reason = sprintf("explicit MappingType A retained; exact resource accounting will reject startSymbol=%d after DMRSTypeAPosition=%d", ...
+            startSym, round(double(typeAPos)));
+    end
+end
+decision = struct("MappingType", string(mapType), "Source", string(source), "Reason", string(reason));
+end
+
+function mapType = localNormalizeGrantMappingTypeToken(value)
+token = upper(strtrim(string(value)));
+switch token
+    case {"A","TYPEA","TYPE_A","MAPPINGTYPEA","MAPPING_TYPE_A"}
+        mapType = "A";
+    case {"B","TYPEB","TYPE_B","MAPPINGTYPEB","MAPPING_TYPE_B"}
+        mapType = "B";
+    otherwise
+        mapType = token;
+end
+end
+
+function typeAPos = localResolveTypeAPosition(cfg, root)
+typeAPos = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, root + ".dmrs.DMRSTypeAPosition", []), ...
+    sixgr.util.structGet(cfg, root + ".DMRSTypeAPosition", []), ...
+    sixgr.util.structGet(cfg, root + ".dmrs.typeApos", []), ...
+    sixgr.util.structGet(cfg, root + ".dmrs.typeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSTypeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.typeApos", []), ...
+    2);
+typeAPos = max(2, min(3, round(double(typeAPos))));
+end
+
+function cfgOut = localApplyGrantMappingTypeToCfg(cfg, direction, mapType)
+cfgOut = cfg;
+root = localPHYRoot(direction);
+cfgOut = sixgr.util.structSet(cfgOut, root + ".mappingType", char(string(mapType)));
+cfgOut = sixgr.util.structSet(cfgOut, root + ".MappingType", char(string(mapType)));
 end
 
 function [ok, reason] = localValidateGrantResourceIntent(obj, grant)

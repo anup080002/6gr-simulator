@@ -469,16 +469,6 @@ classdef ChannelFactory
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 state = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, "DL");
             end
-            if logical(sixgr.util.structGet(state, "Materialized", false))
-                expectedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
-                if ~isempty(waveform) && isfinite(expectedTx) && expectedTx >= 1 && size(waveform, 2) ~= round(expectedTx)
-                    error("ChannelFactory:RuntimeChannelDimensionChange", ...
-                        "Runtime channel '%s' was materialized for %d Tx port(s), but this grant has %d waveform column(s).", ...
-                        char(string(sixgr.util.structGet(state, "LinkKey", ""))), round(expectedTx), size(waveform, 2));
-                end
-                return;
-            end
-
             ip = inputParser;
             ip.addParameter("NumTxAnt", NaN, @(x) isnumeric(x) && isscalar(x));
             ip.addParameter("NumRxAnt", NaN, @(x) isnumeric(x) && isscalar(x));
@@ -488,6 +478,21 @@ classdef ChannelFactory
             ip.addParameter("ReceiveAntennaMeta", struct(), @(x) isempty(x) || isstruct(x));
             ip.parse(varargin{:});
             opt = ip.Results;
+
+            if logical(sixgr.util.structGet(state, "Materialized", false))
+                expectedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
+                requestedTx = double(opt.NumTxAnt);
+                observedTx = size(waveform, 2);
+                if isfinite(requestedTx) && requestedTx >= 1
+                    observedTx = max(observedTx, round(requestedTx));
+                end
+                if isfinite(expectedTx) && expectedTx >= 1 && observedTx > round(expectedTx)
+                    error("ChannelFactory:RuntimeChannelDimensionChange", ...
+                        "Runtime channel '%s' was materialized for %d Tx port(s), but this grant has %d waveform column(s).", ...
+                        char(string(sixgr.util.structGet(state, "LinkKey", ""))), round(expectedTx), round(observedTx));
+                end
+                return;
+            end
 
             modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
             awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
@@ -610,6 +615,10 @@ classdef ChannelFactory
             if ~(isfinite(double(numTx)) && double(numTx) >= 1)
                 numTx = double(sixgr.util.structGet(state, "NumTxAnt", 1));
             end
+            materializedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
+            if isfinite(materializedTx) && materializedTx >= 1
+                numTx = max(double(numTx), round(materializedTx));
+            end
             if isempty(prototype)
                 z = zeros(n, max(1, round(double(numTx))));
             else
@@ -643,7 +652,11 @@ classdef ChannelFactory
                 "RuntimeChannelResetCount", NaN, ...
                 "RuntimeChannelStartSample", NaN, ...
                 "RuntimeChannelEndSample", NaN, ...
-                "RuntimeChannelIdleAdvancedSamples", NaN);
+                "RuntimeChannelIdleAdvancedSamples", NaN, ...
+                "RuntimeChannelMaterializedTxPorts", NaN, ...
+                "RuntimeChannelActiveTxPorts", NaN, ...
+                "RuntimeChannelInputPaddedToMaterializedPorts", false, ...
+                "RuntimeChannelInputPaddingColumns", 0);
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 return;
             end
@@ -653,6 +666,10 @@ classdef ChannelFactory
             replay.RuntimeChannelResetCount = double(sixgr.util.structGet(state, "ResetCount", NaN));
             replay.RuntimeChannelStartSample = double(sixgr.util.structGet(state, "CurrentSampleIndex", 0));
             replay.RuntimeChannelIdleAdvancedSamples = double(sixgr.util.structGet(state, "LastIdleAdvancedSamples", 0));
+            materializedTx = max(1, round(double(sixgr.util.structGet(state, "NumTxAnt", max(1, size(x, 2))))));
+            activeTx = max(1, size(x, 2));
+            replay.RuntimeChannelMaterializedTxPorts = double(materializedTx);
+            replay.RuntimeChannelActiveTxPorts = double(activeTx);
             if ~(logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
                 replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
@@ -661,11 +678,22 @@ classdef ChannelFactory
             end
             replay.ChannelFadingExecutionStatus = "attempted";
             replay.ChannelFadingObjectClass = class(state.Obj);
-            xIn = x;
+            if activeTx > materializedTx
+                error("ChannelFactory:RuntimeChannelDimensionChange", ...
+                    "Runtime channel '%s' was materialized for %d Tx port(s), but this grant has %d waveform column(s).", ...
+                    char(string(sixgr.util.structGet(state, "LinkKey", ""))), materializedTx, activeTx);
+            end
+            xChannel = x;
+            if activeTx < materializedTx
+                xChannel = [x zeros(size(x, 1), materializedTx - activeTx, 'like', x)];
+                replay.RuntimeChannelInputPaddedToMaterializedPorts = true;
+                replay.RuntimeChannelInputPaddingColumns = double(materializedTx - activeTx);
+            end
+            xIn = xChannel;
             padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
             trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
             if padSamples > 0
-                xIn = [x; zeros(padSamples, size(x, 2), 'like', x)];
+                xIn = [xChannel; zeros(padSamples, size(xChannel, 2), 'like', xChannel)];
             end
             try
                 [yRaw, pathGains] = state.Obj(xIn);

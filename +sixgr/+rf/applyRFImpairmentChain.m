@@ -37,7 +37,7 @@ end
 
 xRef = x;
 y = x;
-beforeHash = sixgr.channel.hashChannelRFConfig(localWaveformHashPayload(y));
+beforeHash = localWaveformHash(y);
 chain = localResolveChainConfig(cfg, fs, endpoint, string(opt.Direction), logical(opt.UseLegacyGlobalConfig), ...
     logical(opt.ApplyPA), logical(opt.ApplyADC));
 
@@ -69,7 +69,7 @@ if strlength(string(chain.CarrierPhase.StageName)) > 0
     stageOrder = [stageOrder; string(chain.CarrierPhase.StageName)]; %#ok<AGROW>
 end
 
-afterHash = sixgr.channel.hashChannelRFConfig(localWaveformHashPayload(y));
+afterHash = localWaveformHash(y);
 evm = localEVM(xRef, y);
 replay = localBuildReplay(chain, stageRows, stageOrder, xRef, y);
 strictOk = localResolveStrictOk(chain, beforeHash, afterHash, stageRows, logical(opt.StrictMutationRequired));
@@ -623,16 +623,17 @@ row.StageName = string(stageName);
 row.Endpoint = string(endpoint);
 row.Enabled = logical(enabled);
 row.InputPower = localMeanPower(x);
-row.InputHash = string(sixgr.channel.hashChannelRFConfig(localWaveformHashPayload(x)));
 y = x;
 if logical(enabled)
+    row.InputHash = string(localWaveformHash(x));
     y = fn(x);
     row.OutputPower = localMeanPower(y);
-    row.OutputHash = string(sixgr.channel.hashChannelRFConfig(localWaveformHashPayload(y)));
+    row.OutputHash = string(localWaveformHash(y));
     row.Applied = row.InputHash ~= row.OutputHash;
     row.PowerDelta_dB = 10 * log10(max(row.OutputPower, realmin) ./ max(row.InputPower, realmin));
     row.Status = localTernary(row.Applied, "applied", "configured_identity_no_sample_change");
 else
+    row.InputHash = "disabled_identity";
     row.OutputPower = row.InputPower;
     row.OutputHash = row.InputHash;
     row.Applied = false;
@@ -970,8 +971,20 @@ if isequal(size(rho), [2 2]) && isfinite(rho(1, 2))
 end
 end
 
-function payload = localWaveformHashPayload(x)
-payload = struct("Real", real(double(x(:).')), "Imag", imag(double(x(:).')), "Size", size(x));
+function hash = localWaveformHash(x)
+if isempty(x)
+    hash = sixgr.util.sha256Hex(uint8(char("empty:" + string(class(x)))));
+    return;
+end
+if ~(isnumeric(x) || islogical(x))
+    hash = sixgr.channel.hashChannelRFConfig(struct("Class", class(x), "Size", size(x)));
+    return;
+end
+header = uint8(char("waveform:" + string(class(x)) + ":"));
+dimBytes = reshape(typecast(uint64(size(x)), "uint8"), [], 1);
+realBytes = reshape(typecast(double(real(x(:))), "uint8"), [], 1);
+imagBytes = reshape(typecast(double(imag(x(:))), "uint8"), [], 1);
+hash = sixgr.util.sha256Hex([header(:); dimBytes; realBytes; imagBytes]);
 end
 
 function M = localResolvePortToElementMatrixForStage(x, stageCfg, cfg)

@@ -58,8 +58,11 @@ for ii = 1:numel(names)
         "sixgr.phy.srs.exportStrictSRSArtifacts");
 end
 airPath = fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv");
-sixgr.util.csvWriteTable(airPath, tables.srs_trials);
-rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(tables.srs_trials), ...
+strictTrialsForAir = localEnsureSRSLineageColumns(tables.srs_trials);
+runtimeTrialsForAir = localRuntimeSRSRows(localEnsureSRSLineageColumns(localReadOptionalTable(airPath)));
+airTrials = localAppendCompatTable(runtimeTrialsForAir, strictTrialsForAir);
+sixgr.util.csvWriteTable(airPath, airTrials);
+rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(airTrials), ...
     "sixgr.phy.srs.exportStrictSRSArtifacts");
 compatTables = struct( ...
     "srs_config_strict_control", "srs_config_strict", ...
@@ -71,7 +74,11 @@ compatTables = struct( ...
 for ii = 1:numel(compatNames)
     name = compatNames(ii);
     tableName = string(compatTables.(name));
-    T = tables.(tableName);
+    if tableName == "srs_trials"
+        T = airTrials;
+    else
+        T = tables.(tableName);
+    end
     outPath = compatMap.(name);
     sixgr.util.csvWriteTable(outPath, T);
     rows(numel(names) + 1 + ii) = localManifestRow(outPath, "text/csv", "csv", height(T), ...
@@ -104,6 +111,126 @@ sixgr.util.csvWriteTable(manifestPath, manifest);
 manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
     "sixgr.phy.srs.exportStrictSRSArtifacts"), "AsArray", true);
 sixgr.util.csvWriteTable(manifestPath, manifest);
+end
+
+function T = localEnsureSRSLineageColumns(T)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+n = height(T);
+if ~ismember("Frame", string(T.Properties.VariableNames))
+    T.Frame = NaN(n, 1);
+end
+if ~ismember("Slot", string(T.Properties.VariableNames))
+    T.Slot = NaN(n, 1);
+end
+if ~ismember("UEIndex", string(T.Properties.VariableNames))
+    if ismember("UEId", string(T.Properties.VariableNames))
+        T.UEIndex = localNumericColumn(T, "UEId", NaN(n, 1));
+    elseif ismember("UEID", string(T.Properties.VariableNames))
+        T.UEIndex = localNumericColumn(T, "UEID", NaN(n, 1));
+    else
+        T.UEIndex = NaN(n, 1);
+    end
+end
+if ~ismember("UEID", string(T.Properties.VariableNames))
+    T.UEID = localNumericColumn(T, "UEIndex", NaN(n, 1));
+end
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    T.Direction = repmat("UL", n, 1);
+end
+end
+
+function T = localRuntimeSRSRows(T)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+slot = localNumericColumn(T, "Slot", NaN(height(T), 1));
+frame = localNumericColumn(T, "Frame", NaN(height(T), 1));
+runtimeMask = isfinite(slot) | isfinite(frame);
+T = T(runtimeMask, :);
+end
+
+function Tout = localAppendCompatTable(Ta, Tb)
+if ~(istable(Ta) && ~isempty(Ta))
+    if istable(Tb)
+        Tout = Tb;
+    else
+        Tout = table();
+    end
+    return;
+end
+if ~(istable(Tb) && ~isempty(Tb))
+    Tout = Ta;
+    return;
+end
+vars = union(string(Ta.Properties.VariableNames), string(Tb.Properties.VariableNames), "stable");
+Ta = localEnsureTableVars(Ta, vars, Tb);
+Tb = localEnsureTableVars(Tb, vars, Ta);
+Tout = [Ta(:, cellstr(vars)); Tb(:, cellstr(vars))];
+end
+
+function T = localEnsureTableVars(T, vars, refT)
+for i = 1:numel(vars)
+    v = char(vars(i));
+    if ~ismember(v, T.Properties.VariableNames)
+        T.(v) = localDefaultColumnLike(refT, v, height(T));
+    end
+end
+end
+
+function col = localDefaultColumnLike(refT, varName, nRows)
+if istable(refT) && ismember(varName, refT.Properties.VariableNames)
+    refVal = refT.(varName);
+    if isstring(refVal)
+        col = strings(nRows, 1);
+        return;
+    end
+    if iscellstr(refVal)
+        col = repmat({''}, nRows, 1);
+        return;
+    end
+    if islogical(refVal)
+        col = false(nRows, 1);
+        return;
+    end
+    if isnumeric(refVal)
+        col = NaN(nRows, 1);
+        return;
+    end
+end
+col = strings(nRows, 1);
+end
+
+function vals = localNumericColumn(T, varName, defaultValue)
+vals = defaultValue;
+if ~(istable(T) && ismember(varName, string(T.Properties.VariableNames)))
+    return;
+end
+raw = T.(char(varName));
+if isnumeric(raw) || islogical(raw)
+    vals = double(raw);
+else
+    vals = str2double(string(raw));
+end
+vals = vals(:);
+if numel(vals) ~= height(T)
+    vals = defaultValue;
+end
+end
+
+function T = localReadOptionalTable(pathStr)
+T = table();
+if exist(char(string(pathStr)), "file") ~= 2
+    return;
+end
+try
+    opts = detectImportOptions(char(string(pathStr)), "Delimiter", ",");
+    opts.VariableNamingRule = "preserve";
+    T = readtable(char(string(pathStr)), opts);
+catch
+    T = table();
+end
 end
 
 function payloads = localJsonPayloads(result, csvMap)

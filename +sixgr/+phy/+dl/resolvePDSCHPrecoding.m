@@ -16,6 +16,7 @@ nLayers = double(pdsch.NumLayers);
 nCodewords = localNumCodewords(pdsch, nLayers);
 arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "bs", ...
     "Signal", "PDSCH", "MinimumPorts", max(1, nLayers));
+arch = localCapPDSCHLogicalArchitecture(arch, nLayers);
 
 prec = struct();
 prec.Active = false;
@@ -62,11 +63,20 @@ if isempty(Wcfg)
 end
 
 requestedPorts = localResolvePDSCHRequestedPorts(cfg);
+portsRequestedByConfig = ~isempty(requestedPorts);
+explicitPorts = [];
 if isempty(requestedPorts) && ~isempty(Wcfg) && localExplicitMatrixHasLayerShape(Wcfg, nLayers)
-    requestedPorts = localExplicitMatrixPortCount(Wcfg, nLayers);
+    explicitPorts = localExplicitMatrixPortCount(Wcfg, nLayers);
+    if ~isempty(explicitPorts) && explicitPorts <= localMaxNRLogicalPDSCHPorts()
+        requestedPorts = explicitPorts;
+    end
 end
 if isempty(requestedPorts)
     requestedPorts = double(arch.NumPorts);
+end
+requestedPorts = max(nLayers, round(double(requestedPorts)));
+if ~portsRequestedByConfig && ~isempty(explicitPorts) && explicitPorts > localMaxNRLogicalPDSCHPorts()
+    Wcfg = [];
 end
 
 if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
@@ -213,9 +223,32 @@ paths = ["phy.pdsch.numPorts", "phy.pdsch.nPorts", "phy.pdsch.NumAntennaPorts", 
 for i = 1:numel(paths)
     value = sixgr.util.structGet(cfg, paths(i), []);
     if isnumeric(value) && isscalar(value) && isfinite(double(value)) && double(value) >= 1
-        requestedPorts = max(1, round(double(value)));
-        return;
+        candidate = max(1, round(double(value)));
+        if candidate <= localMaxNRLogicalPDSCHPorts()
+            requestedPorts = candidate;
+            return;
+        end
     end
+end
+end
+
+function arch = localCapPDSCHLogicalArchitecture(arch, nLayers)
+if ~(isstruct(arch) && ~isempty(fieldnames(arch)))
+    return;
+end
+nLayers = max(1, round(double(nLayers)));
+numPorts = double(sixgr.util.structGet(arch, "NumPorts", NaN));
+hybridEnabled = logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false));
+if ~(isfinite(numPorts) && numPorts >= nLayers)
+    arch.NumPorts = double(nLayers);
+    arch.NumLogicalPorts = double(nLayers);
+    arch.NumWaveformColumns = double(nLayers);
+    arch.PortCountSource = "logical_pdsch_ports_raised_to_rank";
+elseif isfinite(numPorts) && numPorts > localMaxNRLogicalPDSCHPorts() && ~hybridEnabled
+    arch.NumPorts = double(nLayers);
+    arch.NumLogicalPorts = double(nLayers);
+    arch.NumWaveformColumns = double(nLayers);
+    arch.PortCountSource = "logical_pdsch_ports_capped_from_element_count";
 end
 end
 
@@ -361,6 +394,14 @@ if ~isempty(nPorts)
     nPorts = max(1, round(double(nPorts)));
 end
 end
+
+function nPorts = localMaxNRLogicalPDSCHPorts()
+% Large BS element counts are not logical NR PDSCH waveform ports. If such
+% a matrix is supplied without explicit PDSCH port configuration, the
+% architecture/default logical port count must drive codebook generation.
+nPorts = 32;
+end
+
 function tf = localHasFinitePMI(cfg)
 tf = false;
 paths = ["phy.pdsch.tpmi", "phy.pdsch.TPMI", "phy.pdsch.pmi", "phy.pdsch.PMI"];

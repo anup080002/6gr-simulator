@@ -652,6 +652,8 @@ def mark_stale_running_runs() -> int:
             if repaired:
                 count += 1
                 continue
+            if run_has_recent_db_activity(run_id, cutoff):
+                continue
             updated_utc = row.get("updated_utc")
             if isinstance(updated_utc, datetime) and updated_utc.replace(tzinfo=timezone.utc) >= cutoff:
                 continue
@@ -699,6 +701,28 @@ def mark_stale_running_runs() -> int:
         return count
     except MYSQL_CONNECTOR_ERRORS:
         return 0
+
+
+def run_has_recent_db_activity(run_id: int, cutoff: datetime) -> bool:
+    try:
+        with db_connection() as conn:
+            with conn.cursor(dictionary=True) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        (SELECT MAX(created_utc) FROM sim_run_logs WHERE run_id=%s) AS latest_log_utc,
+                        (SELECT MAX(created_utc) FROM sim_artifacts WHERE run_id=%s) AS latest_artifact_utc
+                    """,
+                    (int(run_id), int(run_id)),
+                )
+                row = rowify(cur.fetchone() or {})
+    except MYSQL_CONNECTOR_ERRORS:
+        return False
+    latest_values = [row.get("latest_log_utc"), row.get("latest_artifact_utc")]
+    for value in latest_values:
+        if isinstance(value, datetime) and value.replace(tzinfo=timezone.utc) >= cutoff:
+            return True
+    return False
 
 
 def clone_user_profile(username: str) -> dict[str, Any] | None:
@@ -2910,15 +2934,38 @@ CANONICAL_CONTROL_PATH_MAP: tuple[tuple[str, str, str], ...] = (
     ("random_access.subcarrier_spacing_khz", "random_access.subcarrier_spacing_khz", "identity"),
     ("random_access.n_cell_id", "random_access.n_cell_id", "identity"),
     ("random_access.root_sequence_index", "random_access.root_sequence_index", "identity"),
+    ("random_access.sequence_index", "random_access.sequence_index", "identity"),
+    ("random_access.logical_root_sequence_index", "random_access.logical_root_sequence_index", "identity"),
+    ("random_access.restricted_set", "random_access.restricted_set", "identity"),
+    ("random_access.frequency_start", "random_access.frequency_start", "identity"),
     ("random_access.preamble_index", "random_access.preamble_index", "identity"),
     ("random_access.prach_format", "random_access.prach_format", "identity"),
     ("random_access.prach_format", "prach.format", "identity"),
     ("random_access.channel_model", "random_access.channel_model", "identity"),
+    ("random_access.delay_spread_ns", "random_access.delay_spread_ns", "identity"),
     ("random_access.speed_kmh", "random_access.speed_kmh", "identity"),
+    ("random_access.num_rx_antennas", "random_access.num_rx_antennas", "identity"),
+    ("random_access.num_tx_antennas", "random_access.num_tx_antennas", "identity"),
+    ("random_access.timing_tolerance_us", "random_access.timing_tolerance_us", "identity"),
     ("random_access.preamble_length_mode", "random_access.preamble_length_mode", "identity"),
     ("random_access.num_prach_occasions", "random_access.num_prach_occasions", "identity"),
     ("random_access.timing_offset_sweep_samples", "random_access.timing_offset_sweep_samples", "identity"),
     ("random_access.frequency_offset_sweep_hz", "random_access.frequency_offset_sweep_hz", "identity"),
+    ("random_access.binding_source", "random_access.binding_source", "identity"),
+    ("random_access.ra_response_window_slots", "random_access.ra_response_window_slots", "identity"),
+    ("random_access.ra_contention_resolution_timer_slots", "random_access.ra_contention_resolution_timer_slots", "identity"),
+    ("random_access.preamble_trans_max", "random_access.preamble_trans_max", "identity"),
+    ("random_access.power_ramping_step_db", "random_access.power_ramping_step_db", "identity"),
+    ("random_access.preamble_received_target_power_dbm", "random_access.preamble_received_target_power_dbm", "identity"),
+    ("random_access.temp_crnti", "random_access.temp_crnti", "identity"),
+    ("random_access.final_crnti", "random_access.final_crnti", "identity"),
+    ("random_access.msg2_slot", "random_access.msg2_slot", "identity"),
+    ("random_access.msg3_slot", "random_access.msg3_slot", "identity"),
+    ("random_access.msg4_slot", "random_access.msg4_slot", "identity"),
+    ("random_access.dci_payload_bits", "random_access.dci_payload_bits", "identity"),
+    ("random_access.msg2_pdsch", "random_access.msg2_pdsch", "identity"),
+    ("random_access.msg3_pusch", "random_access.msg3_pusch", "identity"),
+    ("random_access.msg4_pdsch", "random_access.msg4_pdsch", "identity"),
     ("coding.data_code_type", "coding.data_code_type", "identity"),
     ("coding.control_code_type", "coding.control_code_type", "identity"),
     ("coding.base_graph", "coding.base_graph", "identity"),
@@ -4994,7 +5041,20 @@ def append_runtime_log_rows(run_id: int, rows: list[tuple[str, str, str]]) -> in
                 """,
                 [(run_id, level, time_str, message) for (level, time_str, message) in rows],
             )
-            cur.execute("UPDATE sim_runs SET updated_utc=UTC_TIMESTAMP() WHERE run_id=%s", (run_id,))
+            cur.execute(
+                """
+                UPDATE sim_runs
+                SET status_text=CASE
+                        WHEN LOWER(COALESCE(status_text,'')) IN
+                             ('aborted_stale_no_run_process','stalled_running_process_no_heartbeat')
+                        THEN 'running'
+                        ELSE status_text
+                    END,
+                    updated_utc=UTC_TIMESTAMP()
+                WHERE run_id=%s
+                """,
+                (run_id,),
+            )
     return len(rows)
 
 
@@ -5679,7 +5739,7 @@ def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, str]:
         "interference_mode": interference_mode or "none",
         "control_integration_mode": control_mode,
         "pbch_mode": "runtime_cell_search_gate" if pbch_required else "disabled",
-        "prach_mode": "runtime_prach_success_gate_simplified_ra" if prach_required else "disabled",
+        "prach_mode": "runtime_four_step_ra_msg1_to_msg4_shared_channel_gated" if prach_required else "disabled",
         "pdcch_mode": "grant_coupled_pdcch_dci_gating" if pdcch_required else "disabled",
         "srs_mode": "srs_freshness_csi_gate" if srs_required else "disabled",
         "pbch_gating_active": pbch_required,

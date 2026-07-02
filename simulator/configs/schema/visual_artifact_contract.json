@@ -73,6 +73,38 @@
       "lls_validity": "real_lls_evidence"
     },
     {
+      "plot_id": "bler_vs_snr",
+      "file_path": "reports/image/bler_vs_snr.png",
+      "source_csv": "air_interface/csv/lls_snr_sweep.csv",
+      "required_columns": ["snr_db", "bler", "truth_status"],
+      "x_semantics": "controlled_fixed_link_snr_db",
+      "y_semantics": "fixed_link_crc_bler",
+      "units": {"x": "dB", "y": "ratio"},
+      "min_rows": 3,
+      "min_unique_x": 3,
+      "min_unique_y": 2,
+      "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth", "diagnostic_only"],
+      "allowed_curve_construction": ["fixed_link_campaign", "controlled_snr_sweep", "none"],
+      "plot_kind": "relation",
+      "lls_validity": "real_lls_evidence"
+    },
+    {
+      "plot_id": "throughput_vs_snr",
+      "file_path": "reports/image/throughput_vs_snr.png",
+      "source_csv": "air_interface/csv/lls_snr_sweep.csv",
+      "required_columns": ["snr_db", "throughput_mbps", "truth_status"],
+      "x_semantics": "controlled_fixed_link_snr_db",
+      "y_semantics": "fixed_link_throughput_mbps",
+      "units": {"x": "dB", "y": "Mbps"},
+      "min_rows": 3,
+      "min_unique_x": 3,
+      "min_unique_y": 2,
+      "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth", "diagnostic_only"],
+      "allowed_curve_construction": ["fixed_link_campaign", "controlled_snr_sweep", "none"],
+      "plot_kind": "relation",
+      "lls_validity": "real_lls_evidence"
+    },
+    {
       "plot_id": "bler_vs_sinr",
       "file_path": "reports/image/bler_vs_sinr.png",
       "source_csv": "reports/csv/bler_vs_sinr.csv",

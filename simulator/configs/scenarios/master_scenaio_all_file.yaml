@@ -74,18 +74,18 @@ canonical_control:
     seed: 104729
     deterministic_mode: true
     link_direction: both
-    n_frames: 12
-    total_slots: 240
+    n_frames: 20
+    total_slots: 400
     warmup_slots: 5
-    measurement_slots: 235
-    n_subframes: 120
-    monte_carlo_iterations: 30
-    num_seeds: 30
-    pilot_runs: 3
-    final_runs: 30
+    measurement_slots: 395
+    n_subframes: 200
+    monte_carlo_iterations: 1
+    num_seeds: 1
+    pilot_runs: 1
+    final_runs: 1
     seed_stride: 17
-    seed_list: [104729, 217463, 319993, 421081, 521173, 631129, 739391, 843931, 947357, 1048583, 1152499, 1264847, 1373653, 1482919, 1591097, 1699949, 1806113, 1913021, 2020127, 2131199, 2243123, 2356991, 2469187, 2582027, 2693171, 2806159, 2917319, 3029687, 3141599, 3258269]
-    campaign_mode: multi_seed_monte_carlo
+    seed_list: [104729]
+    campaign_mode: single_seed_coupled_truth
     fixed_link_campaign_enabled: true
     fixed_link_snr_grid_db: [-6, -4, -2, 0, 2, 4, 6, 8, 10]
     min_campaign_snr_points: 5
@@ -105,6 +105,7 @@ canonical_control:
     run_profile: exhaustive
     num_workers: 24
     batch_size_links: 24
+    auto_start_parallel_pool: false
     trace_capture_level: full
     save_intermediate: true
 
@@ -282,8 +283,11 @@ canonical_control:
     srs_ports: 4
     trs_ports: 1
     trs_scrambling_id: 1
-    srs_periodicity_ms: 20
-    trs_periodicity_ms: 20
+    srs_periodicity_ms: 10
+    srs_slot_within_period: [5, 10, 15, 20]
+    srs_max_ues_per_slot: 2
+    srs_scheduling_policy: multiplex_due_users
+    trs_periodicity_ms: 10
 
   csi:
     dl_csi_enabled: true
@@ -314,6 +318,8 @@ canonical_control:
 
   random_access:
     enabled: true
+    four_step_ra_required: true
+    msg4_contention_resolution_required: true
     preamble_count: 64
     zero_correlation_zone: 8
     detection_threshold: 0.35
@@ -324,6 +330,10 @@ canonical_control:
     subcarrier_spacing_khz: 30
     n_cell_id: 1
     root_sequence_index: 1
+    sequence_index: 1
+    logical_root_sequence_index: 1
+    restricted_set: UnrestrictedSet
+    frequency_start: 0
     preamble_index: 0
     prach_format: B4
     channel_model: CDL-C
@@ -336,6 +346,62 @@ canonical_control:
     num_prach_occasions: 4
     timing_offset_sweep_samples: [0, 4, 8]
     frequency_offset_sweep_hz: [0, 100, 250]
+    binding_source: scenario_config_pending_sib1
+    ra_response_window_slots: 20
+    ra_contention_resolution_timer_slots: 128
+    preamble_trans_max: 10
+    power_ramping_step_db: 2
+    preamble_received_target_power_dbm: -96
+    temp_crnti: 4660
+    final_crnti: 4660
+    msg2_slot: 1
+    msg3_slot: 2
+    msg4_slot: 3
+    dci_payload_bits: 32
+    msg2_pdsch:
+      prb_start: 0
+      num_prb: 24
+      symbol_start: 2
+      num_symbols: 12
+      mcs: 0
+      modulation: QPSK
+      target_code_rate: 0.1171875
+      rv: 0
+      n_layers: 1
+    msg3_pusch:
+      prb_start: 0
+      num_prb: 24
+      symbol_start: 0
+      num_symbols: 14
+      mcs: 0
+      modulation: QPSK
+      target_code_rate: 0.1171875
+      rv: 0
+      n_layers: 1
+    msg4_pdsch:
+      prb_start: 0
+      num_prb: 24
+      symbol_start: 2
+      num_symbols: 12
+      mcs: 0
+      modulation: QPSK
+      target_code_rate: 0.1171875
+      rv: 0
+      n_layers: 1
+
+  random_access_evidence:
+    four_step_ra_required: true
+    msg1_prach_required: true
+    msg2_rar_pdcch_pdsch_required: true
+    msg3_pusch_required: true
+    msg4_contention_resolution_required: true
+    ra_rnti_decode_required: true
+    rar_mac_ce_decode_required: true
+    timing_advance_required: true
+    contention_resolution_identity_required: true
+    preamble_collision_test_enabled: true
+    false_alarm_test_enabled: true
+    missed_detection_test_enabled: true
 
   coding:
     data_code_type: LDPC
@@ -366,7 +432,7 @@ canonical_control:
   receiver:
     channel_estimator: realistic_baseline
     interpolation_method: 2d_linear
-    equalizer: mmse
+    equalizer: irc
     decoder_iterations: 8
 
   impairments:
@@ -502,9 +568,9 @@ canonical_control:
     - path: link_adaptation.cqi_table
       value: table2
     - path: link_adaptation.rank_threshold
-      value: 0.25
+      value: 0.5
     - path: link_adaptation.min_sinr_for_rank2_dB
-      value: 5.0
+      value: 12.0
     - path: link_adaptation.olla_step_down
       value: 0.1
     - path: link_adaptation.olla_step_up
@@ -515,6 +581,14 @@ canonical_control:
       value: 5
     - path: link_adaptation.bootstrap_cqi_mode
       value: estimated
+    - path: link_adaptation.bootstrap_mcs_index
+      value: 0
+    - path: link_adaptation.dl_bootstrap_min_cqi_for_scheduling
+      value: 2
+    - path: link_adaptation.bootstrap_preview_backoff_db
+      value: 20
+    - path: link_adaptation.ul_srs_to_pusch_sinr_backoff_db
+      value: 25
     - path: harq.validation_mode
       value: closed_loop
     - path: harq.save_harq_buffers

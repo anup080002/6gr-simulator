@@ -398,9 +398,9 @@ nLayers = size(sinrLin, 2);
 perLayer = NaN(1, nLayers);
 for layer = 1:nLayers
     x = double(sinrLin(:, layer));
-    x = x(isfinite(x) & x > 0);
+    x = x(isfinite(x) & x >= 0);
     if ~isempty(x)
-        perLayer(layer) = 10 * log10(exp(mean(log(x), "omitnan")));
+        perLayer(layer) = 10 * log10(exp(mean(log(max(x, eps)), "omitnan")));
     end
 end
 end

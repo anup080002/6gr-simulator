@@ -255,20 +255,33 @@ function srs = localApplySRSFromCfg(srs, cfg)
     end
 
     fields = {
-        'BandwidthIndex',
-        'NumSRSSymbols',
-        'SymbolStart',
-        'NumRepetition',
-        'CyclicShift',
-        'FrequencyStart',
-        'FrequencyShift',
-        'FrequencyHopping',
-        'GroupOrSequenceHopping',
-        'SequenceId'};
+        'NumSRSSymbols', 'NumSRSSymbols'
+        'SymbolStart', 'SymbolStart'
+        'Repetition', 'Repetition'
+        'NumRepetition', 'Repetition'
+        'CyclicShift', 'CyclicShift'
+        'FrequencyStart', 'FrequencyStart'
+        'FrequencyShift', 'FrequencyShift'
+        'FrequencyHopping', 'FrequencyHopping'
+        'GroupSeqHopping', 'GroupSeqHopping'
+        'GroupOrSequenceHopping', 'GroupSeqHopping'
+        'NSRSID', 'NSRSID'
+        'SequenceId', 'NSRSID'
+        'KTC', 'KTC'
+        'KBarTC', 'KBarTC'
+        'BHop', 'BHop'
+        'CSRS', 'CSRS'
+        'BSRS', 'BSRS'
+        'ResourceType', 'ResourceType'};
 
-    for k = 1:numel(fields)
-        f = fields{k};
-        v = sixgr.util.structGet(cfg, ['phy.srs.' f], []);
+    for k = 1:size(fields, 1)
+        cfgField = fields{k, 1};
+        srsField = fields{k, 2};
+        v = sixgr.util.structGet(cfg, ['phy.srs.' cfgField], []);
+        if isempty(v)
+            continue;
+        end
+        f = srsField;
         if ~isempty(v) && isprop(srs, f)
             try
                 srs.(f) = v;

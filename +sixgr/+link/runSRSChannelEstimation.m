@@ -6,10 +6,12 @@ p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) isnumeric(x) && isscalar(x));
 p.addParameter("ChannelState", [], @(x) isempty(x) || isstruct(x));
 p.addParameter("TrialIndex", 1, @(x) isnumeric(x) && isscalar(x));
+p.addParameter("SlotIndex", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.parse(varargin{:});
 log = p.Results.Logger;
 snr_dB = double(p.Results.SNR_dB);
 trialIdx = max(1, round(double(p.Results.TrialIndex)));
+slotIdx = double(p.Results.SlotIndex);
 
 out = struct();
 out.Ok = false;
@@ -20,6 +22,10 @@ out.Throughput_Mbps = NaN;
 out.EVM_rms = NaN;
 out.Notes = "";
 out.NMSE_dB = NaN;
+out.NMSEReferenceSource = "";
+out.TrueChannelOracleAvailable = false;
+out.TrueChannelNMSE_dB = NaN;
+out.ChannelNMSEThreshold_dB = NaN;
 out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
 out.QCLAccuracy = NaN;
@@ -34,6 +40,17 @@ out.NoiseVarSource = "";
 out.NoiseVarReason = "";
 out.NoiseVarStrictFailure = false;
 out.ChannelEstimateUsable = false;
+out.DetectionAttempted = false;
+out.DetectionSuccess = false;
+out.DetectionUsable = false;
+out.ResourceExtractionAttempted = false;
+out.ResourceExtractionAvailable = false;
+out.ChannelEstimateAttempted = false;
+out.ChannelEstimateAvailable = false;
+out.SRSChannelEstimateAvailable = false;
+out.StrictReceiverEvidenceOk = false;
+out.StrictOk = false;
+out.SRSRuntimeEvidenceUsable = false;
 out.ConfiguredSNR_dB = double(snr_dB);
 out.AppliedAWGNSNR_dB = NaN;
 out.NoiseOperatingMode = "";
@@ -41,6 +58,8 @@ out.NoisePowerSource = "";
 out.ThermalNoisePower_dBm = NaN;
 out.ServingRxPower_dBm = NaN;
 out.ServingRxPowerSource = "";
+out.PowerContextDirection = "";
+out.PowerContextTotalTxPower_dBm = NaN;
 out.AppliedLargeScaleGain_dB = NaN;
 out.AppliedLargeScaleLoss_dB = NaN;
 out.AppliedBasePathloss_dB = NaN;
@@ -108,18 +127,23 @@ end
 
 try
     tStart = tic;
-    [tx, info] = sixgr.phy.ul.SRS_Tx(cfg);
-    out.SRSOccupiedPRBCount = double(sixgr.util.structGet(tx, "SRSOccupiedPRBCount", NaN));
-    out.SRSCarrierPRBCount = double(sixgr.util.structGet(tx, "SRSCarrierPRBCount", NaN));
-    out.SRSBandwidthFraction = double(sixgr.util.structGet(tx, "SRSBandwidthFraction", NaN));
-    out.SRSFrequencyPRBStart = double(sixgr.util.structGet(tx, "SRSFrequencyPRBStart", NaN));
-    out.SRSFrequencyPRBEnd = double(sixgr.util.structGet(tx, "SRSFrequencyPRBEnd", NaN));
-    out.SRSBandwidthCoverageStatus = char(string(sixgr.util.structGet(tx, "SRSBandwidthCoverageStatus", "")));
+    [cfgSRS, srsCfg] = localBindRuntimeSRSConfig(cfg, slotIdx);
+    [tx, info] = sixgr.phy.ul.SRS_Tx(cfgSRS, ...
+        "Carrier", srsCfg.ToolboxCarrier, ...
+        "SRS", srsCfg.ToolboxSRS);
+    srsCoverage = sixgr.phy.srs.computeSRSCoverage( ...
+        srsCfg.ToolboxCarrier, srsCfg.ToolboxSRS, tx.SRSIndices, srsCfg);
+    out.SRSOccupiedPRBCount = double(srsCoverage.OccupiedPRBCount);
+    out.SRSCarrierPRBCount = double(srsCoverage.CarrierPRBCount);
+    out.SRSBandwidthFraction = double(srsCoverage.CoveragePercent) / 100;
+    out.SRSFrequencyPRBStart = double(srsCoverage.PRBStart);
+    out.SRSFrequencyPRBEnd = double(srsCoverage.PRBEnd);
+    out.SRSBandwidthCoverageStatus = char(string(srsCoverage.BandwidthCoverageStatus));
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
     rng(localTrialSeed(cfg, trialIdx), "twister");
     [rxWave, injectedNoiseVariance, replay, txWaveForReference, chState] = ...
-        localApplySRSChannelAndNoise(tx.Waveform, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, p.Results.ChannelState, trialIdx);
+        localApplySRSChannelAndNoise(tx.Waveform, cfgSRS, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, p.Results.ChannelState, trialIdx);
     out.ChannelState = chState;
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
@@ -128,6 +152,8 @@ try
     out.ThermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
     out.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
     out.ServingRxPowerSource = char(string(sixgr.util.structGet(replay, "ServingRxPowerSource", "")));
+    out.PowerContextDirection = char(string(sixgr.util.structGet(replay, "PowerContextDirection", "")));
+    out.PowerContextTotalTxPower_dBm = double(sixgr.util.structGet(replay, "PowerContextTotalTxPower_dBm", NaN));
     out.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
     out.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
     out.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -145,7 +171,7 @@ try
             isfinite(double(injectedNoiseVariance)) && double(injectedNoiseVariance) >= 0
         noiseVarArgs = {"NoiseVar", double(injectedNoiseVariance)};
     end
-    [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfg, ...
+    [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
         noiseVarArgs{:}, ...
@@ -155,24 +181,59 @@ try
     out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
     out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
     out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
+    if isfinite(double(injectedNoiseVariance)) && double(injectedNoiseVariance) > 0 && ...
+            (~isfinite(out.NoiseVariance) || out.NoiseVariance <= 0)
+        rx.NoiseVar = double(injectedNoiseVariance);
+        out.NoiseVariance = double(injectedNoiseVariance);
+        out.NoiseVarStatus = "OK";
+        out.NoiseVarSource = char(string(sixgr.util.structGet(replay, "NoiseVarianceSource", ...
+            "srs_replay_reference_waveform_awgn")));
+        out.NoiseVarReason = "calibrated_injected_noise_variance_from_receiver_noise_bridge";
+        out.NoiseVarStrictFailure = false;
+    end
     out.MeasurementAttempted = logical(sixgr.util.structGet(rx, "MeasurementAttempted", false));
     out.MeasurementUsable = logical(sixgr.util.structGet(rx, "MeasurementUsable", false));
     out.FailureReason = char(string(sixgr.util.structGet(rx, "FailureReason", "")));
+    out.DetectionAttempted = true;
+    out.ResourceExtractionAttempted = true;
+    out.ResourceExtractionAvailable = ~isempty(sixgr.util.structGet(rx, "SRSIndices", [])) && ...
+        ~isempty(sixgr.util.structGet(rx, "SRSSymbols", []));
+    out.ChannelEstimateAttempted = true;
+    out.ChannelEstimateAvailable = localHasFiniteComplexData(sixgr.util.structGet(rx, "Hest", []));
+    out.SRSChannelEstimateAvailable = logical(out.ChannelEstimateAvailable);
+    out.DetectionSuccess = logical(out.ChannelEstimateAvailable);
+    out.DetectionUsable = logical(out.DetectionSuccess) && logical(out.ResourceExtractionAvailable);
 
     if isempty(rx.Hest)
         out.Ok = false;
         out.Notes = "SRS channel estimate is empty.";
+        out.FailureReason = "srs_channel_estimate_unavailable";
         return;
     end
     out.ChannelEstimateUsable = true;
 
     hEst = localSRSLSEstimate(rx.Hest, rx.RxGrid, tx.SRSIndices, tx.SRSSymbols);
-    [hTrue, symTimes_s, symIdx] = localReferencePilotChannel(tx.Carrier, tx.SRSIndices, tx.SRS, sampleRateHz, injectedDopplerHz);
+    if ~localHasFiniteComplexData(hEst)
+        out.Ok = false;
+        out.Notes = "SRS pilot resource channel estimate is unavailable.";
+        out.FailureReason = "srs_pilot_estimate_unavailable";
+        out.ChannelEstimateAvailable = false;
+        out.SRSChannelEstimateAvailable = false;
+        out.DetectionSuccess = false;
+        out.DetectionUsable = false;
+        return;
+    end
+    [hTrue, symTimes_s, symIdx, nmseReferenceSource] = localReferencePilotChannel( ...
+        txWaveForReference, tx.Carrier, tx.SRSIndices, tx.SRSSymbols, tx.SRS, sampleRateHz, injectedDopplerHz);
     nmse = localNormalizedMSE(hEst, hTrue);
     estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
     out.DopplerEstimateCRLB_Hz = localDopplerCRLBHz(hEst, symTimes_s, rx.NoiseVar);
 
     out.NMSE_dB = 10*log10(max(nmse, eps));
+    out.TrueChannelNMSE_dB = double(out.NMSE_dB);
+    out.NMSEReferenceSource = char(string(nmseReferenceSource));
+    out.TrueChannelOracleAvailable = startsWith(string(nmseReferenceSource), "applied_channel_gain_truth");
+    out.ChannelNMSEThreshold_dB = localResolveSRSNMSEThreshold(cfgSRS);
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
     out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);
     out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
@@ -188,7 +249,7 @@ try
     if isfinite(out.EstimatedDopplerHz) && isfinite(out.InjectedDoppler_Hz)
         out.DopplerError_Hz = out.EstimatedDopplerHz - out.InjectedDoppler_Hz;
     end
-    srsULCSI = sixgr.phy.ul.estimateSRSRITPMI(rx.Hest, rx.NoiseVar, cfg);
+    srsULCSI = sixgr.phy.ul.estimateSRSRITPMI(rx.Hest, rx.NoiseVar, cfgSRS);
     out.EstimatedRI = double(sixgr.util.structGet(srsULCSI, "RI", NaN));
     out.EstimatedTPMI = double(sixgr.util.structGet(srsULCSI, "TPMI", NaN));
     out.RankEstimate = out.EstimatedRI;
@@ -199,7 +260,7 @@ try
     out.TPMICandidateCount = double(sixgr.util.structGet(srsULCSI, "TPMICandidateCount", NaN));
     out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
-    linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfg, ...
+    linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
         "ReceivedGrid", rx.RxGrid, ...
         "ReferenceIndices", tx.SRSIndices, ...
         "ReferenceSymbols", tx.SRSSymbols);
@@ -224,14 +285,31 @@ try
         out.CQIValueStatus = char(string(sixgr.util.structGet(linkState, "CQIValueStatus", "")));
     end
     if isfinite(out.CQI) && out.CQI >= 0
-        [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(out.CQI, "", NaN, cfg, "UL");
+        [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(out.CQI, "", NaN, cfgSRS, "UL");
         out.MCSIndex = double(mcsIndex);
         out.Modulation = char(string(modStr));
         out.TargetCodeRate = double(targetCodeRate);
     end
-    out.Ok = true;
     out.MeasurementAttempted = true;
     out.MeasurementUsable = isfinite(out.SINR_dB) && strcmpi(string(out.SINRValueStatus), "OK");
+    strictNoiseOk = ~logical(out.NoiseVarStrictFailure) && ...
+        (~strictNoiseVarianceRequired || (isfinite(out.NoiseVariance) && out.NoiseVariance >= 0));
+    nmseStrictOk = isfinite(out.NMSE_dB) && out.NMSE_dB <= out.ChannelNMSEThreshold_dB;
+    out.SRSChannelEstimateAvailable = logical(out.SRSChannelEstimateAvailable) && logical(nmseStrictOk);
+    out.SRSRuntimeEvidenceUsable = logical(out.DetectionUsable) && ...
+        logical(out.ResourceExtractionAvailable) && logical(out.ChannelEstimateAvailable) && ...
+        logical(out.SRSChannelEstimateAvailable) && logical(out.MeasurementUsable) && ...
+        logical(strictNoiseOk) && logical(nmseStrictOk);
+    out.StrictReceiverEvidenceOk = logical(out.SRSRuntimeEvidenceUsable);
+    out.StrictOk = logical(out.SRSRuntimeEvidenceUsable);
+    out.Ok = logical(out.StrictOk);
+    if ~logical(out.Ok) && strlength(strtrim(string(out.FailureReason))) == 0
+        if ~logical(nmseStrictOk)
+            out.FailureReason = "srs_channel_nmse_above_threshold";
+        else
+            out.FailureReason = "srs_runtime_evidence_incomplete";
+        end
+    end
     if logical(out.MeasurementUsable)
         out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
             " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz" + ...
@@ -246,6 +324,68 @@ catch ME
     out.Notes = "Failure: " + string(ME.message);
     if ~isempty(log)
         log.warn("runSRSChannelEstimation failed: " + string(ME.message));
+    end
+end
+end
+
+function tf = localHasFiniteComplexData(x)
+tf = false;
+if isempty(x) || ~isnumeric(x)
+    return;
+end
+tf = any(isfinite(real(x(:))) & isfinite(imag(x(:))));
+end
+
+function [cfgOut, srsCfg] = localBindRuntimeSRSConfig(cfg, slotIdx)
+cfgOut = localWithSRSULRuntimeDirection(cfg);
+if isfinite(slotIdx) && slotIdx > 0
+    slot0 = max(0, round(double(slotIdx)) - 1);
+    period = max(1, round(double(sixgr.util.structGet(cfgOut, "phy.srs.period_slots", ...
+        sixgr.util.structGet(cfgOut, "lls6g.reference_signals.srs.periodicity_slots", 1)))));
+    offset = mod(slot0, period);
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.srs.slotNumbers", double(slot0));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.srs.period_offset", double(offset));
+    cfgOut = sixgr.util.structSet(cfgOut, "lls6g.reference_signals.srs.slot_numbers", double(slot0));
+    cfgOut = sixgr.util.structSet(cfgOut, "lls6g.reference_signals.srs.period_offset", double(offset));
+end
+srsCfg = sixgr.phy.srs.buildSRSConfigFromScenario(cfgOut, ...
+    "RunId", "runtime_srs_channel_estimation", ...
+    "ScenarioName", string(sixgr.util.structGet(cfgOut, "meta.loadedFrom", "runtime_srs_channel_estimation")));
+carrier = srsCfg.ToolboxCarrier;
+if ~isempty(srsCfg.ExpectedSlotSet)
+    carrier.NSlot = double(srsCfg.ExpectedSlotSet(1));
+end
+srsCfg.ToolboxCarrier = carrier;
+end
+
+function cfgOut = localWithSRSULRuntimeDirection(cfg)
+cfgOut = cfg;
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeCurrentDirection", "UL");
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.Direction", "UL");
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeSignalFamily", "SRS");
+cfgOut = sixgr.util.structSet(cfgOut, "phy.runtimeSignalFamily", "SRS");
+cfgOut = sixgr.util.structSet(cfgOut, "channel.linkDirection", "UL");
+scsKHz = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfgOut, "phy.numerology.scs_kHz", []), ...
+    sixgr.util.structGet(cfgOut, "phy.carrier.SubcarrierSpacing", []), ...
+    sixgr.util.structGet(cfgOut, "phy.scs", []), ...
+    sixgr.util.structGet(cfgOut, "frame.scs_khz", []), ...
+    30);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.numerology.scs_kHz", double(scsKHz));
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for ii = 1:nargin
+    raw = varargin{ii};
+    if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+        continue;
+    end
+    raw = double(raw(:));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw)
+        value = double(raw(1));
+        return;
     end
 end
 end
@@ -282,20 +422,59 @@ end
 referenceWaveform = y;
 
 cfgReplay = localPrepareSRSReplayCfg(cfg, snr_dB);
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
-replay = impairmentReplay;
-chFields = fieldnames(channelReplay);
-for chIdx = 1:numel(chFields)
-    replay.(chFields{chIdx}) = channelReplay.(chFields{chIdx});
-end
+% Thermal noise is injected below from the replay link budget. Keep this
+% SRS observation at the pre-ADC analog sample point so pathloss attenuation
+% is not quantized to exact zero before the receiver noise is added.
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz, "ApplyADC", false);
+replay = localMergeReplayEvidence(impairmentReplay, channelReplay);
 replay.ChannelModelApplied = char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 replay.ChannelFadingApplied = logical(useFading);
 desiredWaveform = y;
+referenceWaveform = desiredWaveform;
 [y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform);
 replay.InjectedNoiseVariance = double(nVar);
 if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "srs_replay_reference_waveform_awgn";
 end
+end
+
+function replay = localMergeReplayEvidence(primaryReplay, secondaryReplay)
+replay = primaryReplay;
+if ~(isstruct(secondaryReplay) && ~isempty(fieldnames(secondaryReplay)))
+    return;
+end
+fields = fieldnames(secondaryReplay);
+for idx = 1:numel(fields)
+    name = fields{idx};
+    value = secondaryReplay.(name);
+    if ~isfield(replay, name) || localReplayValueHasEvidence(value) || ~localReplayValueHasEvidence(replay.(name))
+        replay.(name) = value;
+    end
+end
+end
+
+function tf = localReplayValueHasEvidence(value)
+tf = false;
+if isempty(value)
+    return;
+end
+if isstring(value) || ischar(value)
+    tf = any(strlength(strtrim(string(value(:)))) > 0);
+    return;
+end
+if isnumeric(value)
+    tf = any(isfinite(double(value(:))));
+    return;
+end
+if islogical(value)
+    tf = true;
+    return;
+end
+if isstruct(value)
+    tf = ~isempty(fieldnames(value));
+    return;
+end
+tf = true;
 end
 
 function cfgOut = localPrepareSRSReplayCfg(cfg, snr_dB)
@@ -427,6 +606,14 @@ if ~isfinite(dopplerHz)
 end
 end
 
+function threshold = localResolveSRSNMSEThreshold(cfg)
+threshold = double(sixgr.util.structGet(cfg, "phy.srs.channelNMSEThresholddB", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.channel_nmse_threshold_db", -8)));
+if ~(isscalar(threshold) && isfinite(threshold))
+    threshold = -8;
+end
+end
+
 function y = localApplyTrackingDoppler(x, sampleRateHz, dopplerHz)
 y = x;
 if ~(isfinite(sampleRateHz) && sampleRateHz > 0 && isfinite(dopplerHz) && dopplerHz ~= 0)
@@ -442,6 +629,23 @@ hEst = [];
 if isempty(srsInd) || isempty(srsSym)
     return;
 end
+if ~isempty(rxGrid)
+    pilotObs = localGridPilotObservations(rxGrid, srsInd);
+    pilotObs = localCollapsePilotObservations(pilotObs);
+    srsSymVec = srsSym(:);
+    N = min(numel(pilotObs), numel(srsSymVec));
+    if N > 0
+        pilotObs = pilotObs(1:N);
+        srsSymVec = srsSymVec(1:N);
+        den = srsSymVec;
+        den(abs(den) < eps) = 1;
+        hGridLS = pilotObs ./ den;
+        if localHasFiniteComplexData(hGridLS)
+            hEst = hGridLS(:);
+            return;
+        end
+    end
+end
 pilotHest = localPilotChannelEstimateSlice(Hest, srsInd);
 if ~isempty(pilotHest)
     hEst = pilotHest(:);
@@ -450,16 +654,7 @@ end
 if isempty(rxGrid)
     return;
 end
-try
-    pilotObs = nrExtractResources(srsInd, rxGrid);
-catch
-    if ndims(rxGrid) >= 3
-        pilotObs = rxGrid(:, :, 1);
-        pilotObs = pilotObs(srsInd);
-    else
-        pilotObs = rxGrid(srsInd);
-    end
-end
+pilotObs = localGridPilotObservations(rxGrid, srsInd);
 pilotObs = localCollapsePilotObservations(pilotObs);
 srsSym = srsSym(:);
 N = min(numel(pilotObs), numel(srsSym));
@@ -471,6 +666,38 @@ srsSym = srsSym(1:N);
 den = srsSym;
 den(abs(den) < eps) = 1;
 hEst = pilotObs ./ den;
+end
+
+function pilotObs = localGridPilotObservations(grid, pilotInd)
+pilotObs = complex([]);
+if isempty(grid) || isempty(pilotInd)
+    return;
+end
+K = size(grid, 1);
+L = size(grid, 2);
+if ~(K > 0 && L > 0)
+    return;
+end
+idx = double(pilotInd(:));
+idx = idx(isfinite(idx) & idx >= 1);
+if isempty(idx)
+    return;
+end
+try
+    maxPort = max(1, ceil(max(idx) / max(K * L, 1)));
+    [k, l, ~] = ind2sub([K, L, maxPort], idx);
+catch
+    return;
+end
+n = numel(k);
+pilotObs = complex(NaN(n, 1));
+for ii = 1:n
+    if k(ii) < 1 || k(ii) > K || l(ii) < 1 || l(ii) > L
+        continue;
+    end
+    v = squeeze(grid(k(ii), l(ii), :));
+    pilotObs(ii) = mean(v(:), "omitnan");
+end
 end
 
 function pilotH = localPilotChannelEstimateSlice(H, pilotInd)
@@ -543,12 +770,83 @@ obs = mean(pilotObs, 2, "omitnan");
 obs = obs(:);
 end
 
-function [hTrue, symTimes_s, symIdx] = localReferencePilotChannel(carrier, pilotInd, srs, sampleRateHz, dopplerHz)
+function [hTrue, symTimes_s, symIdx, source] = localReferencePilotChannel(referenceWaveform, carrier, pilotInd, pilotSym, srs, sampleRateHz, dopplerHz)
 nPorts = max(1, round(double(sixgr.util.structGet(srs, "NumSRSPorts", 1))));
 symIdx = localPilotSymbolIndices(carrier, pilotInd, nPorts);
 symbolTimes = localSymbolCenterTimes(carrier, sampleRateHz);
 symTimes_s = symbolTimes(symIdx);
+hTrue = localReferencePilotChannelFromWaveform(referenceWaveform, carrier, pilotInd, pilotSym, nPorts);
+if localHasFiniteComplexData(hTrue)
+    source = "applied_channel_gain_truth_from_noiseless_reference_waveform";
+    N = min(numel(hTrue), numel(symTimes_s));
+    hTrue = hTrue(1:N);
+    symTimes_s = symTimes_s(1:N);
+    symIdx = symIdx(1:N);
+    return;
+end
 hTrue = exp(1j * 2 * pi * dopplerHz .* symTimes_s(:));
+source = "synthetic_doppler_reference_fallback";
+end
+
+function hTrue = localReferencePilotChannelFromWaveform(referenceWaveform, carrier, pilotInd, pilotSym, nPorts)
+hTrue = complex([]);
+if isempty(referenceWaveform) || isempty(pilotInd) || isempty(pilotSym)
+    return;
+end
+try
+    refGrid = nrOFDMDemodulate(carrier, referenceWaveform);
+catch
+    return;
+end
+pilotObs = localReferenceGridPilotObservations(refGrid, carrier, pilotInd, nPorts);
+pilotObs = localCollapsePilotObservations(pilotObs);
+pilotSym = pilotSym(:);
+N = min(numel(pilotObs), numel(pilotSym));
+if N <= 0
+    return;
+end
+pilotObs = pilotObs(1:N);
+pilotSym = pilotSym(1:N);
+den = pilotSym;
+den(abs(den) < eps) = 1;
+hTrue = pilotObs ./ den;
+mask = isfinite(real(hTrue)) & isfinite(imag(hTrue));
+if ~any(mask)
+    hTrue = complex([]);
+end
+end
+
+function pilotObs = localReferenceGridPilotObservations(refGrid, carrier, pilotInd, nPorts)
+pilotObs = complex([]);
+if isempty(refGrid) || isempty(pilotInd)
+    return;
+end
+K = double(carrier.NSizeGrid) * 12;
+L = double(carrier.SymbolsPerSlot);
+if ~(isfinite(K) && K > 0 && isfinite(L) && L > 0)
+    return;
+end
+nPorts = max(1, round(double(nPorts)));
+idx = double(pilotInd(:));
+idx = idx(isfinite(idx) & idx >= 1);
+if isempty(idx)
+    return;
+end
+try
+    maxPort = max(nPorts, ceil(max(idx) / max(K * L, 1)));
+    [k, l, ~] = ind2sub([K, L, maxPort], idx);
+catch
+    return;
+end
+n = numel(k);
+pilotObs = complex(NaN(n, 1));
+for ii = 1:n
+    if k(ii) < 1 || k(ii) > size(refGrid, 1) || l(ii) < 1 || l(ii) > size(refGrid, 2)
+        continue;
+    end
+    v = squeeze(refGrid(k(ii), l(ii), :));
+    pilotObs(ii) = mean(v(:), "omitnan");
+end
 end
 
 function symIdx = localPilotSymbolIndices(carrier, pilotInd, nPorts)

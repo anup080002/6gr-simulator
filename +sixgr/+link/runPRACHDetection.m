@@ -476,6 +476,7 @@ function [y, replay, noiseOnlyWave] = localApplyPRACHChannelAndNoise(x, cfg, tx,
 if nargin < 5
     snrSource = "prach_receiver_esn0_detection_axis";
 end
+cfg = localWithPRACHULRuntimeDirection(cfg);
 txInfo = struct("OFDM", sixgr.util.structGet(tx, "OFDMInfo", struct()));
 state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
 sampleRateHz = double(sixgr.util.structGet(state, "SampleRate_Hz", localResolveSampleRate(tx, txInfo)));
@@ -545,6 +546,15 @@ if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "prach_receiver_input_esn0_awgn";
 end
 noiseOnlyWave = localNoiseOnlyWaveformLike(y, nVar);
+end
+
+function cfgOut = localWithPRACHULRuntimeDirection(cfg)
+cfgOut = cfg;
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeCurrentDirection", "UL");
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.Direction", "UL");
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeSignalFamily", "PRACH");
+cfgOut = sixgr.util.structSet(cfgOut, "phy.runtimeSignalFamily", "PRACH");
+cfgOut = sixgr.util.structSet(cfgOut, "channel.linkDirection", "UL");
 end
 
 function [y, replay] = localApplyPRACHSampleImpairments(y, replay, sampleRateHz, cfg)

@@ -247,6 +247,8 @@
       "harq_disable_mode": {"required": false, "type": "string"}
     }},
     "random_access": {"parameters": {
+      "four_step_ra_required": {"required": false, "type": "boolean"},
+      "msg4_contention_resolution_required": {"required": false, "type": "boolean"},
       "false_alarm_candidate_scope": {"required": false, "type": "string", "allowed_values": ["requested_preamble", "all_preambles"]}
     }},
     "prach": {"parameters": {

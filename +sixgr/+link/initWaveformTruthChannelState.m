@@ -3,7 +3,9 @@ function state = initWaveformTruthChannelState(cfg, tx, txInfo)
 
 fs = localResolveSampleRate(tx, txInfo);
 numTx = max(1, size(sixgr.util.structGet(tx, "Waveform", zeros(1, 1)), 2));
-numRx = max(1, double(sixgr.util.structGet(cfg, "phy.nRxAnt", numTx)));
+direction = localResolveDirection(cfg);
+runtimeNumTx = localResolveRuntimeTxPortCapacity(cfg, direction, numTx);
+numRx = localResolveRuntimeRxAntennaCount(cfg, direction, runtimeNumTx);
 truthMode = sixgr.link.resolveTruthMode(cfg);
 
 state = struct( ...
@@ -28,20 +30,21 @@ state = struct( ...
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
 if ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
-    direction = localResolveDirection(cfg);
     ueIdx = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", 1))));
     servingCell = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingCellIndex", ...
         sixgr.util.structGet(cfg, "lls6g.userContext.ServingCell", 1)))));
     runtimeState = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
         "UEIndex", ueIdx, "ServingCell", servingCell, ...
         "Seed", sixgr.util.structGet(cfg, "run.seed", NaN));
+    [txRuntimeAntenna, txRuntimeMeta] = localRuntimeAntennaPair(cfg, direction, "tx", runtimeNumTx);
+    [rxRuntimeAntenna, rxRuntimeMeta] = localRuntimeAntennaPair(cfg, direction, "rx", numRx);
     runtimeState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
         runtimeState, cfg, sixgr.util.structGet(tx, "Waveform", []), txInfo, ...
-        "NumTxAnt", numTx, "NumRxAnt", numRx, ...
-        "TransmitAntennaRuntime", localRuntimeAntenna(cfg, direction, "tx"), ...
-        "ReceiveAntennaRuntime", localRuntimeAntenna(cfg, direction, "rx"), ...
-        "TransmitAntennaMeta", localRuntimeAntennaMeta(cfg, direction, "tx"), ...
-        "ReceiveAntennaMeta", localRuntimeAntennaMeta(cfg, direction, "rx"));
+        "NumTxAnt", runtimeNumTx, "NumRxAnt", numRx, ...
+        "TransmitAntennaRuntime", txRuntimeAntenna, ...
+        "ReceiveAntennaRuntime", rxRuntimeAntenna, ...
+        "TransmitAntennaMeta", txRuntimeMeta, ...
+        "ReceiveAntennaMeta", rxRuntimeMeta);
     state.RuntimeChannelState = runtimeState;
     state.RuntimeChannelStateUsed = true;
     state.RuntimeChannelObjectSource = "sixgr.channel.ChannelFactory.materializeRuntimeChannelState";
@@ -98,23 +101,101 @@ if direction ~= "UL"
 end
 end
 
-function ant = localRuntimeAntenna(cfg, direction, endpoint)
+function numRx = localResolveRuntimeRxAntennaCount(cfg, direction, fallback)
+if nargin < 3 || ~(isnumeric(fallback) && isscalar(fallback) && isfinite(fallback) && fallback >= 1)
+    fallback = 1;
+end
+direction = upper(strtrim(string(direction)));
+if direction == "UL"
+    numRx = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", fallback));
+    return;
+end
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+numRx = localFirstFiniteScalar( ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumWaveformColumns", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumPorts", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumWaveformColumns", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumPorts", []), ...
+    sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", []), ...
+    sixgr.util.structGet(cfg, "phy.nRxAnt", []), ...
+    sixgr.util.structGet(cfg, "channel.nRxAnt", []), ...
+    fallback);
+numRx = max(1, round(double(numRx)));
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw)
+        continue;
+    end
+    vals = double(raw(:));
+    vals = vals(isfinite(vals) & vals >= 1);
+    if ~isempty(vals)
+        value = double(vals(1));
+        return;
+    end
+end
+end
+
+function numTx = localResolveRuntimeTxPortCapacity(cfg, direction, activePortCount)
+activePortCount = max(1, round(double(activePortCount)));
+direction = upper(strtrim(string(direction)));
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+if direction == "UL"
+    numTx = localFirstFiniteScalar( ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumWaveformColumns", []), ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumLogicalPorts", []), ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumWaveformColumns", []), ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumLogicalPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.maxULLayers", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.maxLayers", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.dmrs.nPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.numAntennaPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.numPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.nPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.numLayers", []), ...
+        sixgr.util.structGet(cfg, "phy.pusch.nLayers", []), ...
+        activePortCount);
+else
+    numTx = localFirstFiniteScalar( ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumWaveformColumns", []), ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumLogicalPorts", []), ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumWaveformColumns", []), ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumLogicalPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.maxDLLayers", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.maxLayers", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.dmrs.nPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.numPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.NumAntennaPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.numAntennaPorts", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.numLayers", []), ...
+        sixgr.util.structGet(cfg, "phy.pdsch.nLayers", []), ...
+        activePortCount);
+    if isfinite(numTx) && numTx > 32
+        numTx = activePortCount;
+    end
+end
+numTx = max(activePortCount, round(double(numTx)));
+end
+
+function [ant, meta] = localRuntimeAntennaPair(cfg, direction, endpoint, signalPortCount)
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 role = localRuntimeRole(direction, endpoint);
 if role == "BS"
     ant = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
-else
-    ant = sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct());
-end
-end
-
-function meta = localRuntimeAntennaMeta(cfg, direction, endpoint)
-userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
-role = localRuntimeRole(direction, endpoint);
-if role == "BS"
     meta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
 else
+    ant = sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct());
     meta = sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct());
+end
+[needsPortView, portViewSource] = localNeedsSignalPortView(cfg, direction, endpoint, signalPortCount);
+if needsPortView
+    [ant, meta] = sixgr.rf.AntennaArrayFactory.logicalPortView( ...
+        ant, meta, signalPortCount, portViewSource);
 end
 end
 
@@ -133,6 +214,54 @@ else
     else
         role = "UE";
     end
+end
+end
+
+function [tf, sourceToken] = localNeedsSignalPortView(cfg, direction, endpoint, signalPortCount)
+tf = false;
+sourceToken = "";
+if ~(isnumeric(signalPortCount) && isscalar(signalPortCount) && isfinite(signalPortCount) && signalPortCount >= 1)
+    return;
+end
+direction = upper(strtrim(string(direction)));
+endpoint = lower(strtrim(string(endpoint)));
+signalFamily = upper(strtrim(string(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeSignalFamily", ...
+    sixgr.util.structGet(cfg, "phy.runtimeSignalFamily", "")))));
+if direction == "DL" && endpoint == "tx"
+    switch signalFamily
+        case "PDCCH"
+            tf = true;
+            sourceToken = "pdcch_runtime_waveform_port_count";
+        case "PDSCH"
+            tf = true;
+            sourceToken = "pdsch_runtime_waveform_port_count";
+        case {"PBCH","SSB"}
+            tf = true;
+            sourceToken = "ssb_pbch_runtime_waveform_port_count";
+        case {"TRS","CSI-RS","CSIRS"}
+            tf = true;
+            sourceToken = "dl_reference_signal_runtime_waveform_port_count";
+    end
+    if tf
+        return;
+    end
+end
+if ~(direction == "UL" && endpoint == "tx")
+    return;
+end
+switch signalFamily
+    case "PUSCH"
+        tf = true;
+        sourceToken = "pusch_runtime_waveform_port_count";
+    case "PUCCH"
+        tf = true;
+        sourceToken = "pucch_runtime_waveform_port_count";
+    case "PRACH"
+        tf = true;
+        sourceToken = "prach_runtime_waveform_port_count";
+    case "SRS"
+        tf = true;
+        sourceToken = "srs_runtime_waveform_port_count";
 end
 end
 function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, fs)

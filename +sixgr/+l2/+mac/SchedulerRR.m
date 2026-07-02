@@ -263,6 +263,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.SymbolAllocation = symAlloc;
                 g.Modulation = char(string(plan.Modulation));
                 g.NumLayers = double(plan.NumLayers);
+                g.Layers = double(plan.NumLayers);
                 g.TargetCodeRate = double(plan.TargetCodeRate);
                 g.TBSBits = double(plan.TBSBits);
                 g.TBSBytes = double(plan.TBSBytes);
@@ -300,6 +301,11 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.HARQ = harqInfo;
                 g.CQIUsed = localUECQI(ueStates(k));
                 g.PDCCHAggregationLevel = double(neededCCE);
+                g.ReportedRI = double(sixgr.util.structGet(ueStates(k), "RI", NaN));
+                g.RI = double(plan.NumLayers);
+                g.RIUsed = double(plan.NumLayers);
+                g.Rank = double(plan.NumLayers);
+                g.RankIndicator = double(plan.NumLayers);
                 g.MCSIndex = double(plan.MCSIndex);
                 g.DAI = 1;
                 g.K1 = k1;

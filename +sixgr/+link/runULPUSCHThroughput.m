@@ -113,14 +113,16 @@ if exist("nrPUSCH","file") ~= 2 || exist("nrPUSCHDecode","file") ~= 2
     return;
 end
 
+profNTx = localConfiguredULAntennaCount(cfg, "tx", 1);
+profNRx = localConfiguredULAntennaCount(cfg, "rx", 1);
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.runULPUSCHThroughput", ...
     "Stage", "ul_pusch", ...
     "Metadata", struct( ...
     "NumFrames", double(numFrames), ...
     "NSubcarriers", double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)) * 12, ...
     "NSymbols", 14, ...
-    "NRx", double(sixgr.util.structGet(cfg, "channel.nRxAnt", 1)), ...
-    "NTx", double(sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", 1)), ...
+    "NRx", profNRx, ...
+    "NTx", profNTx, ...
     "NLayers", double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)))); %#ok<NASGU>
 
 cfgUL = cfg;
@@ -676,6 +678,19 @@ for n = 1:numFrames
         if isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
             rxArgs = [rxArgs {"NoiseVar", injectedNoiseVariance, "NoiseVarDomain", "time"}]; %#ok<AGROW>
         end
+        if logical(sixgr.util.structGet(replay, "InterferenceContributionTensorAvailable", false)) && ...
+                isfield(replay, "InterferenceContributionTensor")
+            rxArgs = [rxArgs { ...
+                "InterferenceContributionTensor", replay.InterferenceContributionTensor, ...
+                "InterferenceContributionSource", sixgr.util.structGet(replay, "InterferenceContributionSourceIdSet", ""), ...
+                "InterferenceContributionDomain", sixgr.util.structGet(replay, "InterferenceContributionDomain", "receiver_sample_waveform_pre_noise")}]; %#ok<AGROW>
+        elseif logical(sixgr.util.structGet(replay, "InterferenceCovarianceAvailableFromContributions", false)) && ...
+                isfield(replay, "InterferenceCovariance")
+            rxArgs = [rxArgs { ...
+                "InterferenceCovariance", replay.InterferenceCovariance, ...
+                "InterferenceCovarianceSource", sixgr.util.structGet(replay, "InterferenceCovarianceSourceFromContributions", ""), ...
+                "InterferenceCovarianceIncludesNoise", false}]; %#ok<AGROW>
+        end
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
         trialMeasuredPHYEvidence{n} = sixgr.link.deriveMeasuredPHYEvidence(rx);
         replay = localFinalizeImpairmentReplay(replay, cfgFrame, rx, tx, txInfo, useIdealTimingSync);
@@ -873,20 +888,19 @@ for n = 1:numFrames
         trialCSIRSRQ(n) = metrics.CSI_RSRQ_dB;
         trialCSIRSRQSource(n) = string(metrics.CSI_RSRQSource);
         rawMeasuredCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
+        receiverCQI = NaN;
         if isfinite(rawMeasuredCQI)
-            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(rawMeasuredCQI));
-        else
-            trialCQI(n) = NaN;
+            receiverCQI = double(sixgr.util.normalizeReportedCQI(rawMeasuredCQI));
         end
-        if isfinite(trialCQI(n))
+        if schedulerDrivenGrant && isfinite(grantCQIUsed) && grantCQIUsed > 0
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            trialCQISource(n) = "scheduler_grant_cqi_used";
+        elseif isfinite(receiverCQI)
+            trialCQI(n) = receiverCQI;
             trialCQISource(n) = string(sixgr.util.structGet(metrics, "CQISource", "ul_link_state_reference_signal_cqi"));
             if strlength(strtrim(trialCQISource(n))) == 0
                 trialCQISource(n) = "ul_link_state_reference_signal_cqi";
             end
-        end
-        if schedulerDrivenGrant && ~isfinite(trialCQI(n)) && isfinite(grantCQIUsed) && grantCQIUsed > 0
-            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
-            trialCQISource(n) = "scheduler_grant_cqi_used";
         elseif schedulerDrivenGrant && ~isfinite(trialCQI(n))
             trialCQISource(n) = "current_receiver_cqi_unavailable_no_scheduler_grant_cqi";
         end
@@ -1116,10 +1130,9 @@ for n = 1:numFrames
             continue;
         end
 
-        be = sum(txBits(1:L) ~= rxBits(1:L));
-        trialBitErr(n) = double(be);
-        trialBitTot(n) = double(L);
-        bitErr = bitErr + double(be);
+        currentBe = sum(txBits(1:L) ~= rxBits(1:L));
+        finalBe = currentBe;
+        finalBitsCompared = L;
         bitTot = bitTot + double(numel(txBits));
         if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
             trialDecIt(n) = mean(double(rx.ActiveIterations(:)), "omitnan");
@@ -1138,17 +1151,27 @@ for n = 1:numFrames
             end
         end
 
-        currentDecodeOK = rx.Ok && be == 0 && numel(rxBits) == numel(txBits);
+        currentDecodeOK = rx.Ok && currentBe == 0 && numel(rxBits) == numel(txBits);
         hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
         if hasPriorHARQEvidence && ~currentDecodeOK
-            [combinedDecodeOK, combinedDecodeIt] = localDecodeCombinedLLR(tx, combinedLLR, cfgFrame);
+            [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = localDecodeCombinedLLR(tx, combinedLLR, cfgFrame);
+            if combinedDecodeOK
+                [combinedBe, combinedBitsCompared] = localFinalBitErrors(txBits, combinedRxBits);
+                combinedDecodeOK = combinedBitsCompared == numel(txBits) && combinedBe == 0;
+                finalBe = combinedBe;
+                finalBitsCompared = combinedBitsCompared;
+            end
         else
             combinedDecodeOK = logical(currentDecodeOK);
             if isfinite(trialDecIt(n))
                 combinedDecodeIt = double(trialDecIt(n));
             end
         end
-        if currentDecodeOK
+        finalDecodeOK = logical(combinedDecodeOK);
+        trialBitErr(n) = double(finalBe);
+        trialBitTot(n) = double(finalBitsCompared);
+        bitErr = bitErr + double(finalBe);
+        if finalDecodeOK
             bitGood = bitGood + double(numel(txBits));
             trialCRC(n) = 1;
             trialStatus(n) = "PASS";
@@ -1167,10 +1190,10 @@ for n = 1:numFrames
         else
             metrics.CQI = double(trialCQI(n));
             metrics.SINR_dB = double(trialSINR(n));
-            metrics.CRCPass = logical(currentDecodeOK);
+            metrics.CRCPass = logical(finalDecodeOK);
             metrics.CurrentDecodeOK = logical(currentDecodeOK);
-            metrics.CombinedDecodeOK = logical(combinedDecodeOK);
-            metrics.AckObserved = logical(combinedDecodeOK);
+            metrics.CombinedDecodeOK = logical(finalDecodeOK);
+            metrics.AckObserved = logical(finalDecodeOK);
             metrics.DecoderIterations = double(combinedDecodeIt);
             [cfgDyn, laState, laObserveEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "UL", frameIdx, ...
                 "Phase", "after", "Metrics", metrics);
@@ -1189,7 +1212,7 @@ for n = 1:numFrames
             "HARQSoftCombiningReason", harqCombining.CombiningSkipReason, ...
             "LLRCombiningGain_dB", harqCombining.LLRCombiningGain_dB, ...
             "CurrentDecodeOK", logical(currentDecodeOK), ...
-            "CombinedDecodeOK", logical(combinedDecodeOK), ...
+            "CombinedDecodeOK", logical(finalDecodeOK), ...
             "DecoderIterations", combinedDecodeIt, ...
             "GrantSnapshot", grantSnapshot, ...
             "Context", harqContext);
@@ -1420,9 +1443,9 @@ out.TrialTable = localBuildTrialSlice(numFrames);
             sixgr.util.structGet(cfg, "phy.pusch.numLayers", NaN), ...
             trialLayers(idx), 1);
         configuredLayers = max(1, round(double(configuredLayers)));
-        configuredTxAnt = sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", ...
+        configuredTxAnt = localConfiguredULAntennaCount(cfg, "tx", ...
             localFirstFiniteScalar(trialTxPorts(idx), 1));
-        configuredRxAnt = sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", ...
+        configuredRxAnt = localConfiguredULAntennaCount(cfg, "rx", ...
             localFirstFiniteScalar(trialRxAnt(idx), 1));
         T.ConfiguredLayers = repmat(configuredLayers, stopIdx, 1);
         T.ConfiguredTxAntennas = repmat(configuredTxAnt, stopIdx, 1);
@@ -1654,12 +1677,21 @@ effectiveNVar = double(baseNVar);
 source = string(baseSource);
 interferenceNVar = double(sixgr.util.structGet(replay, "InterferenceWaveformVariance", NaN));
 if isfinite(interferenceNVar) && interferenceNVar > 0
-    if isfinite(effectiveNVar) && effectiveNVar >= 0
-        effectiveNVar = effectiveNVar + interferenceNVar;
+    hasSharedSlotInterferenceCovariance = logical(sixgr.util.structGet(replay, ...
+        "InterferenceContributionTensorAvailable", false)) || ...
+        logical(sixgr.util.structGet(replay, "InterferenceCovarianceAvailableFromContributions", false));
+    if hasSharedSlotInterferenceCovariance
+        source = source + "_excluding_interference_modeled_by_shared_slot_covariance";
     else
-        effectiveNVar = interferenceNVar;
+        % Without a covariance/tensor, model unresolved interference as
+        % spatially white impairment variance rather than silently ignoring it.
+        if isfinite(effectiveNVar) && effectiveNVar >= 0
+            effectiveNVar = effectiveNVar + interferenceNVar;
+        else
+            effectiveNVar = interferenceNVar;
+        end
+        source = source + "_with_unresolved_interference_in_composite_waveform_as_white_variance";
     end
-    source = source + "_plus_full_waveform_interference_power";
 end
 end
 
@@ -2382,18 +2414,64 @@ if ~(isstruct(state) && isfield(state, "ContractVersion"))
         "ServingCell", double(sixgr.util.structGet(userMeta, "RuntimeServingCell", 1)));
 end
 numTx = max(1, size(tx.Waveform, 2));
+runtimeNumTx = localResolveRuntimeTxPortCapacity(userMeta, cfg, numTx);
 numRx = localResolveULNumRxAnt(cfg, numTx);
+[txRuntimeAntenna, txRuntimeMeta] = localRuntimeSignalAntennaView(userMeta, ...
+    "RuntimeUEAntenna", "RuntimeUEAntennaMeta", runtimeNumTx, ...
+    "pusch_runtime_waveform_port_count");
+rxRuntimeAntenna = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
+rxRuntimeMeta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
 state = sixgr.channel.ChannelFactory.materializeRuntimeChannelState(state, cfg, tx.Waveform, txInfo, ...
-    "NumTxAnt", numTx, ...
+    "NumTxAnt", runtimeNumTx, ...
     "NumRxAnt", numRx, ...
-    "TransmitAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct()), ...
-    "ReceiveAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct()), ...
-    "TransmitAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct()), ...
-    "ReceiveAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct()));
+    "TransmitAntennaRuntime", txRuntimeAntenna, ...
+    "ReceiveAntennaRuntime", rxRuntimeAntenna, ...
+    "TransmitAntennaMeta", txRuntimeMeta, ...
+    "ReceiveAntennaMeta", rxRuntimeMeta);
 slotStart_s = double(sixgr.util.structGet(userMeta, "RuntimeSlotStartTime_s", NaN));
 if isfinite(slotStart_s) && slotStart_s >= 0
-    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(state, slotStart_s, numTx, tx.Waveform);
+    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(state, slotStart_s, runtimeNumTx, tx.Waveform);
 end
+end
+
+function numTx = localResolveRuntimeTxPortCapacity(userMeta, cfg, activePortCount)
+activePortCount = max(1, round(double(activePortCount)));
+numTx = localFirstFiniteScalar( ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumWaveformColumns", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumLogicalPorts", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumWaveformColumns", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumLogicalPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.maxULLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.maxLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.dmrs.nPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.numAntennaPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.numPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.nPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.numLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.nLayers", []), ...
+    activePortCount);
+if isfinite(numTx) && numTx > localMaxNRLogicalPUSCHPorts()
+    numTx = activePortCount;
+end
+numTx = max(activePortCount, round(double(numTx)));
+end
+
+function nPorts = localMaxNRLogicalPUSCHPorts()
+nPorts = 4;
+end
+
+function [ant, meta] = localRuntimeSignalAntennaView(userMeta, antField, metaField, numPorts, sourceToken)
+ant = sixgr.util.structGet(userMeta, antField, struct());
+meta = sixgr.util.structGet(userMeta, metaField, struct());
+if nargin < 4 || ~(isnumeric(numPorts) && isscalar(numPorts) && isfinite(numPorts) && numPorts >= 1)
+    return;
+end
+if nargin < 5 || strlength(strtrim(string(sourceToken))) == 0
+    sourceToken = "pusch_runtime_waveform_port_count";
+end
+[ant, meta] = sixgr.rf.AntennaArrayFactory.logicalPortView(ant, meta, ...
+    max(1, round(double(numPorts))), sourceToken);
 end
 
 function state = localInitChannelState(cfg, tx, txInfo, snr_dB, trialSeed)
@@ -2438,6 +2516,11 @@ fs = localResolveSampleRate(tx, txInfo);
 numTx = max(1, size(tx.Waveform, 2));
 numRx = localResolveULNumRxAnt(cfg, numTx);
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+[txRuntimeAntenna, txRuntimeMeta] = localRuntimeSignalAntennaView(userMeta, ...
+    "RuntimeUEAntenna", "RuntimeUEAntennaMeta", numTx, ...
+    "pusch_runtime_waveform_port_count");
+rxRuntimeAntenna = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
+rxRuntimeMeta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
 
 ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
     "Model", cfgCh.channel.model, ...
@@ -2445,10 +2528,10 @@ ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
     "NumTxAnt", numTx, ...
     "NumRxAnt", numRx, ...
     "Seed", localChannelSeed(cfg, snr_dB, trialSeed), ...
-    "TransmitAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct()), ...
-    "ReceiveAntennaRuntime", sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct()), ...
-    "TransmitAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct()), ...
-    "ReceiveAntennaMeta", sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct()));
+    "TransmitAntennaRuntime", txRuntimeAntenna, ...
+    "ReceiveAntennaRuntime", rxRuntimeAntenna, ...
+    "TransmitAntennaMeta", txRuntimeMeta, ...
+    "ReceiveAntennaMeta", rxRuntimeMeta);
 state.Meta = localNormalizeChannelRuntimeMeta(sixgr.util.structGet(ch, "Meta", struct()), localResolveChannelArrayModel(cfgCh));
 if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
     state.UseFading = true;
@@ -2476,6 +2559,54 @@ end
 
 function numRx = localResolveULNumRxAnt(cfg, fallback)
 numRx = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", fallback));
+end
+
+function count = localConfiguredULAntennaCount(cfg, role, fallback)
+if nargin < 1 || ~isstruct(cfg)
+    cfg = struct();
+end
+if nargin < 2
+    role = "tx";
+end
+if nargin < 3 || ~(isnumeric(fallback) && isscalar(fallback) && isfinite(fallback) && fallback >= 1)
+    fallback = 1;
+end
+role = upper(string(role));
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+if role == "RX"
+    values = [ ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumPorts", NaN), ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumPorts", NaN), ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumWaveformColumns", NaN), ...
+        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumWaveformColumns", NaN), ...
+        sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "channel.ul.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "phy.ul.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "channel.nRxAntUL", NaN), ...
+        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "antenna.bs.numPorts", NaN), ...
+        sixgr.util.structGet(cfg, "antenna.bs.numElements", NaN), ...
+        sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "phy.nRxAnt", NaN), ...
+        fallback];
+else
+    values = [ ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumPorts", NaN), ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumPorts", NaN), ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumWaveformColumns", NaN), ...
+        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumWaveformColumns", NaN), ...
+        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "channel.ul.nTxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "phy.ul.nTxAnt", NaN), ...
+        sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", NaN), ...
+        sixgr.util.structGet(cfg, "phy.pusch.numPorts", NaN), ...
+        sixgr.util.structGet(cfg, "channel.nTxAntUL", NaN), ...
+        sixgr.util.structGet(cfg, "antenna.ue.numPorts", NaN), ...
+        sixgr.util.structGet(cfg, "antenna.ue.numElements", NaN), ...
+        fallback];
+end
+count = localFirstFiniteScalar(values, fallback);
+count = max(1, round(double(count)));
 end
 
 function [waveOut, pc, cfgOut] = localApplyPUSCHOpenLoopPowerControl(waveIn, cfg, tx, grant)
@@ -2697,7 +2828,8 @@ elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false
 end
 sampleRateHz = localResolveSampleRate(tx, txInfo);
 cfgReplay = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz, ...
+    "ApplyRFChain", false);
 impairFields = fieldnames(impairmentReplay);
 for fi = 1:numel(impairFields)
     replay.(impairFields{fi}) = impairmentReplay.(impairFields{fi});
@@ -2740,6 +2872,12 @@ replay.InterferenceSampleExactSuperpositionError = double(sixgr.util.structGet(i
 replay.InterferenceCovarianceAvailableFromContributions = logical(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceAvailable", false));
 replay.InterferenceCovarianceSourceFromContributions = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceSource", ""));
 replay.InterferenceCovarianceStatusFromContributions = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceStatus", ""));
+if logical(sixgr.util.structGet(interferenceMeta, "ContributionTensorAvailable", false))
+    replay.InterferenceContributionTensor = sixgr.util.structGet(interferenceMeta, "ContributionTensor", []);
+end
+if logical(sixgr.util.structGet(interferenceMeta, "InterferenceCovarianceAvailable", false))
+    replay.InterferenceCovariance = sixgr.util.structGet(interferenceMeta, "InterferenceCovariance", []);
+end
 replay.InterferenceTxRegenerationUsed = logical(sixgr.util.structGet(interferenceMeta, "TxRegenerationUsed", false));
 replay.InterferencePostChannelNormalizationApplied = logical(sixgr.util.structGet(interferenceMeta, "PostChannelNormalizationApplied", false));
 replay.InterferenceRandomPhaseApplied = logical(sixgr.util.structGet(interferenceMeta, "RandomPhaseApplied", false));
@@ -2751,6 +2889,11 @@ noiseFields = fieldnames(noiseInfo);
 for ni = 1:numel(noiseFields)
     replay.(noiseFields{ni}) = noiseInfo.(noiseFields{ni});
 end
+[y, replay] = sixgr.link.applyCompositeReceiverFrontEnd(y, cfgReplay, sampleRateHz, replay, ...
+    "Direction", "UL");
+replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
+replay.RawWaveform = y;
+replay.CorrectedWaveform = y;
 end
 
 function replay = localFinalizeImpairmentReplay(replay, cfg, rx, tx, txInfo, useIdealTimingSync)
@@ -2827,9 +2970,25 @@ delay = double(sixgr.util.structGet(replay, "ChannelTrimSamples", ...
 if ~isfinite(delay)
     delay = 0;
 end
+padSamples = double(sixgr.util.structGet(replay, "ChannelPadSamples", ...
+    sixgr.util.structGet(chState, "ChannelPadSamples", NaN)));
+pathDelay = NaN;
+if isfinite(padSamples)
+    pathDelay = max(0, double(padSamples) - max(0, double(delay)));
+end
 cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", double(delay));
+cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.ChannelTrimSamples", double(delay));
 cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelFilterDelay_samples", double(delay));
 cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", double(delay));
+if isfinite(padSamples)
+    cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.ChannelPadSamples", max(0, double(padSamples)));
+    cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelPadSamples", max(0, double(padSamples)));
+end
+if isfinite(pathDelay)
+    cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.ChannelPathDelay_samples", double(pathDelay));
+    cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelPathDelay_samples", double(pathDelay));
+end
+cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.RuntimeWaveformSampleAligned", true);
 end
 
 function replay = localApplyReceiverSynchronizationReplay(replay, syncState, rx)
@@ -2848,6 +3007,9 @@ replay.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(syncState, ..
     "ResidualCFO_PostCorrection_Hz", replay.ResidualCFO_PostCorrection_Hz));
 replay.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet(syncState, ...
     "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
+if ~logical(replay.CFOCorrectionApplied) && isfinite(double(replay.InjectedCFO_Hz))
+    replay.ResidualCFO_PostCorrection_Hz = double(replay.InjectedCFO_Hz);
+end
 if isfinite(replay.EstimatedCFO_PreCorrection_Hz)
     replay.CFOEstimateAvailability = "available";
 end
@@ -4590,9 +4752,10 @@ catch
 end
 end
 
-function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg)
+function [ok, meanIter, tbBits] = localDecodeCombinedLLR(tx, recLLR, cfg)
 ok = false;
 meanIter = NaN;
+tbBits = int8([]);
 if isempty(recLLR)
     return;
 end
@@ -4629,9 +4792,26 @@ end
 decCbs = decCbs(1:maxLen, :);
 B = double(tx.TransportBlockSize) + double(sixgr.util.structGet(tx, "TransportBlockCRCLength", 24));
 tbCrc = sixgr.phy.tb.desegmentLDPC(decCbs, double(tx.BaseGraph), B);
-[~, crcOk] = sixgr.phy.tb.checkCRC(tbCrc, localSafeCharToken(sixgr.util.structGet(tx, "TransportBlockCRCType", "24A")));
+[tbBits, crcOk] = sixgr.phy.tb.checkCRC(tbCrc, localSafeCharToken(sixgr.util.structGet(tx, "TransportBlockCRCType", "24A")));
+tbBits = int8(tbBits(:));
 ok = logical(crcOk);
 meanIter = mean(itVec(isfinite(itVec)), "omitnan");
+end
+
+function [bitErrors, bitsCompared] = localFinalBitErrors(txBits, rxBits)
+txBits = int8(txBits(:));
+rxBits = int8(rxBits(:));
+bitsCompared = min(numel(txBits), numel(rxBits));
+if bitsCompared == 0
+    bitErrors = numel(txBits);
+    bitsCompared = numel(txBits);
+    return;
+end
+bitErrors = sum(txBits(1:bitsCompared) ~= rxBits(1:bitsCompared));
+if numel(txBits) ~= numel(rxBits)
+    bitErrors = bitErrors + abs(numel(txBits) - numel(rxBits));
+    bitsCompared = max(numel(txBits), numel(rxBits));
+end
 end
 
 function X = localEnsureLLRMatrix(v)
