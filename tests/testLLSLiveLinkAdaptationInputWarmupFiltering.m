@@ -50,5 +50,26 @@ T = readtable(artifacts.LinkAdaptationInputPath, "VariableNamingRule", "preserve
 assert(height(T) == 1, "Live link-adaptation analytics must drop warmup rows when non-warmup rows exist.");
 assert(double(T.MCSIndex(1)) == 18, "Live link-adaptation analytics must retain the applied non-warmup MCS row.");
 
+staleCQI = dlT(2, :);
+staleCQI.WidebandCQI = 1;
+staleCQI.CQIDerivedMCS = 0;
+staleCQI.CQIDerivedModulation = "QPSK";
+staleCQI.CQIDerivedTargetCodeRate = 120 / 1024;
+staleCQI.MCSIndex = 0;
+staleCQI.PostEqSINR_dB = 21.0;
+staleCQI.CQIValueSource = "not_emitted_by_active_channel_runtime_runtime";
+staleCQI.CQIValueStatus = "available";
+staleCQI.PostEqSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
+staleCQI.PostEqSINRValueRole = "measured_post_equalization_scheduling_input";
+staleCQI.PostEqSINRValueStatus = "OK";
+
+artifacts = sixgr.truth.exportLLSLiveDerivedTables(cfg, tmp, struct("DL", staleCQI, "UL", table(), "SRS", table(), "TRS", table()), struct(), struct(), struct());
+T = readtable(artifacts.LinkAdaptationInputPath, "VariableNamingRule", "preserve");
+
+assert(double(T.WidebandCQI(1)) > 1 && double(T.CQIDerivedMCS(1)) > 0, ...
+    "Live link-adaptation analytics must replace stale not-emitted CQI=1 with measured-SINR-derived CQI/MCS.");
+assert(contains(string(T.CQIValueSource(1)), "derived_from_PostEqSINR_dB"), ...
+    "Backfilled live CQI must keep measured SINR provenance for WebGUI plots.");
+
 ok = true;
 end

@@ -2657,7 +2657,7 @@ methods(Static, Access=private)
                 end
             end
         end
-        if sixgr.truth.CoupledTruthRuntime.ulSharedReuseProbeRequired(state, ueIdx)
+        if direction == "UL" && sixgr.truth.CoupledTruthRuntime.ulSharedReuseProbeRequired(state, ueIdx)
             probeMCS = sixgr.truth.CoupledTruthRuntime.resolveULSharedReuseProbeMCS(state.CfgMobility);
             probeProfile = sixgr.link.resolveMCSProfile( ...
                 sixgr.link.resolveConfiguredMCSTable(state.CfgMobility, "UL"), probeMCS);
@@ -6105,16 +6105,31 @@ methods(Static, Access=private)
                 chosenIdx = postEqIdx;
             end
             sinr_dB = double(validSINR(chosenIdx));
-            source = "conservative_min(" + validSource(receiverIdx) + "," + validSource(postEqIdx) + ")";
-            role = "measured_scheduler_csi_conservative_min_channel_estimate_posteq";
-            status = "PASS";
+            source = "measured_scheduler_csi_conservative_min_channel_estimate_posteq";
+            role = "measured_post_equalization_scheduling_input";
+            status = "OK";
             return;
         end
         firstIdx = find(valid, 1, "first");
         sinr_dB = double(validSINR(firstIdx));
-        source = validSource(firstIdx);
-        role = validRole(firstIdx);
-        status = validStatus(firstIdx);
+        [source, role, status] = sixgr.truth.CoupledTruthRuntime.schedulerCQIResolverSINRProvenance( ...
+            validSource(firstIdx), validRole(firstIdx), validStatus(firstIdx));
+    end
+
+    function [source, role, status] = schedulerCQIResolverSINRProvenance(sourceIn, roleIn, statusIn)
+        source = string(sourceIn);
+        role = string(roleIn);
+        status = string(statusIn);
+        token = lower(strjoin([source role], " "));
+        if contains(token, "measured_scheduler_csi") || contains(token, "post_equalization") || ...
+                contains(token, "receiver_hest") || contains(token, "reference_signal_measurement") || ...
+                contains(token, "channel_estimate")
+            source = "measured_scheduler_csi_runtime_receiver_sinr";
+            role = "measured_post_equalization_scheduling_input";
+            if strlength(strtrim(status)) == 0 || lower(strtrim(status)) == "pass"
+                status = "OK";
+            end
+        end
     end
 
     function tf = rowCQIHasMeasuredCSIProvenance(row)

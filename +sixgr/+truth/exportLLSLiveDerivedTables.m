@@ -1827,7 +1827,7 @@ if ismember("CQI", vars)
 end
 
 [sinrEvidence, sinrSource] = localMeasuredCQISINREvidence(T);
-fillIdx = find(~isfinite(widebandCQI) & isfinite(sinrEvidence));
+fillIdx = find(localCQIBackfillRequired(widebandCQI, cqiSource, cqiStatus) & isfinite(sinrEvidence));
 for k = 1:numel(fillIdx)
     idx = fillIdx(k);
     feedback = sixgr.link.resolveWidebandCQI( ...
@@ -1844,6 +1844,22 @@ end
 T.WidebandCQI = widebandCQI;
 T.CQIValueSource = cqiSource;
 T.CQIValueStatus = cqiStatus;
+end
+
+function mask = localCQIBackfillRequired(widebandCQI, cqiSource, cqiStatus)
+sourceToken = lower(strtrim(string(cqiSource)));
+statusToken = lower(strtrim(string(cqiStatus)));
+sourceUnavailable = contains(sourceToken, "not_emitted") | ...
+    contains(sourceToken, "not_recorded") | ...
+    contains(sourceToken, "field_not_emitted") | ...
+    contains(sourceToken, "unavailable") | ...
+    contains(sourceToken, "missing");
+statusUnavailable = contains(statusToken, "unavailable") | ...
+    contains(statusToken, "not_available") | ...
+    contains(statusToken, "missing") | ...
+    contains(statusToken, "failed") | ...
+    contains(statusToken, "rejected");
+mask = ~isfinite(double(widebandCQI)) | sourceUnavailable | statusUnavailable;
 end
 
 function [sinrEvidence, sinrSource] = localMeasuredCQISINREvidence(T)
@@ -1887,18 +1903,20 @@ cqi = localOptionalNumericColumn(T, "WidebandCQI", NaN);
 mcs = localOptionalNumericColumn(T, "CQIDerivedMCS", NaN);
 modulation = string(T.CQIDerivedModulation);
 targetCodeRate = localOptionalNumericColumn(T, "CQIDerivedTargetCodeRate", NaN);
+mcsStaleForCQI = isfinite(cqi) & cqi > 1 & (~isfinite(mcs) | mcs <= 0);
 idxList = find(isfinite(cqi) & ( ...
-    ~isfinite(mcs) | strlength(strtrim(modulation)) == 0 | ~isfinite(targetCodeRate)));
+    ~isfinite(mcs) | mcsStaleForCQI | strlength(strtrim(modulation)) == 0 | ~isfinite(targetCodeRate)));
 for k = 1:numel(idxList)
     idx = idxList(k);
     [modStr, tcr, mcsIdx] = sixgr.link.amcFromCQI(cqi(idx), "", NaN, cfg, direction);
-    if ~isfinite(mcs(idx)) && isfinite(mcsIdx)
+    updateOperatingPoint = (~isfinite(mcs(idx)) || mcsStaleForCQI(idx)) && isfinite(mcsIdx);
+    if updateOperatingPoint
         mcs(idx) = double(mcsIdx);
     end
-    if strlength(strtrim(modulation(idx))) == 0
+    if updateOperatingPoint || strlength(strtrim(modulation(idx))) == 0
         modulation(idx) = string(modStr);
     end
-    if ~isfinite(targetCodeRate(idx)) && isfinite(tcr)
+    if (updateOperatingPoint || ~isfinite(targetCodeRate(idx))) && isfinite(tcr)
         targetCodeRate(idx) = double(tcr);
     end
 end
