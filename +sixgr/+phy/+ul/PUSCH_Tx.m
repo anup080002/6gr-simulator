@@ -571,7 +571,7 @@ if isfinite(grantTBS) && grantTBS > 0
     trBlkSize = round(grantTBS);
     isHARQRetx = logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
     hasExplicitTBContract = ~isempty(overrideTBS) && round(double(overrideTBS)) == trBlkSize;
-    if ~(isHARQRetx || hasExplicitTBContract) && abs(double(scheduledTrBlkSize) - double(trBlkSize)) > 0
+    if ~isHARQRetx && abs(double(scheduledTrBlkSize) - double(trBlkSize)) > 0
         error("sixgr:phy:ul:PUSCHGrantTBSMismatch", ...
             "Frozen PHYGrant TBS=%d but exact nrTBS from the frozen resource contract is %d.", ...
             trBlkSize, round(double(scheduledTrBlkSize)));

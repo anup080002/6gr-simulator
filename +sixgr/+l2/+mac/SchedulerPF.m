@@ -406,6 +406,17 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.MCSSelectionSource = char(string(sixgr.util.structGet(plan, "MCSSelectionSource", "")));
                     g.CQIProvenance = char(string(sixgr.util.structGet(plan, "CQIProvenance", "")));
                     g.MCSValueStatus = char(string(sixgr.util.structGet(plan, "MCSValueStatus", "")));
+                    g.CQIUsed = double(sixgr.util.structGet(plan, "CQIUsed", localUECQI(ueStates(k))));
+                    g.RawCQIDerivedMCS = double(sixgr.util.structGet(plan, "RawCQIDerivedMCS", NaN));
+                    g.CQIBasedMCS = double(sixgr.util.structGet(plan, "CQIBasedMCS", NaN));
+                    g.SmoothedCQI = double(sixgr.util.structGet(plan, "SmoothedCQI", NaN));
+                    g.InstantaneousCQIMCS = double(sixgr.util.structGet(plan, "InstantaneousCQIMCS", NaN));
+                    g.DeltaMCS = double(sixgr.util.structGet(plan, "DeltaMCS", NaN));
+                    g.StaticDeltaMCS = double(sixgr.util.structGet(plan, "StaticDeltaMCS", 0));
+                    g.SchedulerCQIRawCQI = double(sixgr.util.structGet(plan, "SchedulerCQIRawCQI", NaN));
+                    g.SchedulerAdjustedSINR_dB = double(sixgr.util.structGet(plan, "SchedulerAdjustedSINR_dB", NaN));
+                    g.SchedulerSINRBackoff_dB = double(sixgr.util.structGet(plan, "SchedulerSINRBackoff_dB", NaN));
+                    g.SchedulerCQISource = char(string(sixgr.util.structGet(plan, "SchedulerCQISource", "")));
                     g.QueueLimited = logical(plan.QueueLimited);
                     g.QueuePaddingBits = double(sixgr.util.structGet(plan, "QueuePaddingBits", 0));
                     g.QueuePaddingBytes = double(sixgr.util.structGet(plan, "QueuePaddingBytes", 0));
@@ -417,7 +428,6 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.MCSReductionSteps = double(sixgr.util.structGet(plan, "MCSReductionSteps", 0));
                     g.LayerReductionSteps = double(sixgr.util.structGet(plan, "LayerReductionSteps", 0));
                     g.HARQ = harqInfo;
-                    g.CQIUsed = localUECQI(ueStates(k));
                     g.PDCCHAggregationLevel = double(neededCCE);
                     g.ReportedRI = double(sixgr.util.structGet(ueStates(k), "RI", NaN));
                     g.RI = double(plan.NumLayers);

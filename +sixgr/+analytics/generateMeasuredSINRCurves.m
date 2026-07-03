@@ -210,7 +210,8 @@ if localHasColumn(T, "FallbackFlag")
 end
 if localHasColumn(T, "PostEqSINRValueStatus")
     status = strtrim(string(T.PostEqSINRValueStatus));
-    statusOk = status == "OK" | status == "OK_dynamic_range_limited";
+    statusOk = status == "OK" | status == "OK_dynamic_range_limited" | ...
+        status == "OK_decision_residual_bounded";
     statusOk(ismissing(status)) = false;
     mask = mask & statusOk;
 end

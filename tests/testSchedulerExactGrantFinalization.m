@@ -90,5 +90,18 @@ assert(isstruct(job.DCI) && isequal(uint8(job.DCI.Bits(:)), uint8(dci.Bits(:))),
 assert(double(job.PHYGrant.CodingLayout.TBSBits) == double(grant.TBSBits), ...
     "buildGrantPHYJob must preserve exact finalized TBS in the frozen PHYGrant.");
 
+badTBSGrant = grant.PHYGrant;
+badTBSGrant.CodingLayout.TBSBits = double(grant.TBSBits) + 8;
+badTBSGrant.CodingLayout.TBSBitsPerCodeword = double(grant.TBSBits) + 8;
+threw = false;
+try
+    sixgr.phy.dl.PDSCH_Tx(cfg, "PHYGrant", badTBSGrant, ...
+        "TransportBlockSizeOverride", double(grant.TBSBits) + 8, "CompactOutput", true);
+catch ME
+    threw = strcmp(ME.identifier, "sixgr:phy:dl:PDSCHGrantTBSMismatch");
+end
+assert(threw, ...
+    "PDSCH_Tx must not let TransportBlockSizeOverride self-certify a frozen-grant TBS mismatch.");
+
 ok = true;
 end

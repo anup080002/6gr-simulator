@@ -32,7 +32,9 @@ cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
     "OFDMModulate", false);
 [pdschTx, pdschInfo] = sixgr.phy.dl.PDSCH_Tx(cfgSI, ...
     "Carrier", carrier, "PDSCH", pdsch, "TransportBlockBits", paddedBits, ...
-    "TargetCodeRate", targetCodeRate, "RV", double(dci.RV));
+    "TargetCodeRate", targetCodeRate, "RV", double(dci.RV), ...
+    "NumTxAnt", max(1, double(pdsch.NumLayers)), ...
+    "PrecodingMatrix", eye(max(1, double(pdsch.NumLayers))));
 
 siGrid = localAddGrids(pdcchTx.Grid, pdschTx.Grid);
 siWaveform = sixgr.phy.waveform.ofdmModulate(carrier, siGrid);
@@ -178,28 +180,13 @@ cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numLayers", nLayers);
 cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nLayers", nLayers);
 
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
-resolvedPorts = NaN;
 for i = 1:numel(paths)
-    path = paths(i);
-    Wcfg = sixgr.util.structGet(cfgSI, path, []);
-    if isempty(Wcfg)
-        continue;
-    end
-    Wsib = localAdaptSIB1PrecoderMatrix(Wcfg, nLayers);
-    if isempty(Wsib)
-        cfgSI = sixgr.util.structSet(cfgSI, path, []);
-    else
-        cfgSI = sixgr.util.structSet(cfgSI, path, Wsib);
-        resolvedPorts = size(Wsib, 1);
-    end
+    cfgSI = sixgr.util.structSet(cfgSI, paths(i), []);
 end
-if isfinite(resolvedPorts) && resolvedPorts >= nLayers
-    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", resolvedPorts);
-    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", resolvedPorts);
-else
-    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", []);
-    cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", []);
-end
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.numPorts", nLayers);
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.nPorts", nLayers);
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.precoding.enabled", false);
+cfgSI = sixgr.util.structSet(cfgSI, "phy.pdsch.precoding.mode", "broadcast_single_port");
 end
 
 function Wout = localAdaptSIB1PrecoderMatrix(Wcfg, nLayers)

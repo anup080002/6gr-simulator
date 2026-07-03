@@ -249,6 +249,8 @@ canonical_control:
     slice_aware: true
     starvation_guard: true
     cell_edge_boost: true
+    tbsMode: faithful
+    fastNREApprox: false
     large_scale_update_period_slots: 1
     beam_update_period_slots: 1
     beam_count: 32
@@ -589,6 +591,14 @@ canonical_control:
       value: 20
     - path: link_adaptation.ul_srs_to_pusch_sinr_backoff_db
       value: 25
+    - path: link_adaptation.age_reported_cqi
+      value: true
+    - path: link_adaptation.use_aged_measured_sinr_for_cqi
+      value: true
+    - path: link_adaptation.max_csi_aging_penalty_db
+      value: 8
+    - path: link_adaptation.cqi_aging_step_db
+      value: 2
     - path: harq.validation_mode
       value: closed_loop
     - path: harq.save_harq_buffers

@@ -71,6 +71,13 @@ schStrict = sixgr.l2.mac.SchedulerPF(cfgStrict, "Direction", "DL");
 assert(~logical(info.UsedFastNREApprox), "Strict TBS mode must not use the fast NRE approximation.");
 assert(double(nrePerPRB) < 12 * 14, "Strict TBS mode must use actual RE counting with DMRS/overhead removed.");
 
+cfgDefault = sixgr.config.defaultConfig();
+cfgDefault = sixgr.config.normalizeConfig(cfgDefault);
+schDefault = sixgr.l2.mac.SchedulerPF(cfgDefault, "Direction", "DL");
+[~, ~, ~, defaultInfo] = schDefault.estimateTBS("QPSK", 1, 12, [0 14], 0.5);
+assert(~logical(defaultInfo.UsedFastNREApprox) && strcmpi(string(defaultInfo.TBSMode), "faithful"), ...
+    "Default executable TBS sizing must use faithful nrTBS resource accounting, not fast approximation.");
+
 cfgULApprox = sixgr.config.defaultConfig();
 cfgULApprox = sixgr.util.structSet(cfgULApprox, "phy.pusch.transformPrecoding", false);
 cfgULApprox = sixgr.util.structSet(cfgULApprox, "phy.pusch.xOverhead", 0);

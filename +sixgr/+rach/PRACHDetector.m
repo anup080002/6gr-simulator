@@ -10,6 +10,7 @@ addParameter(p, "CandidatePreambles", 0:63, @(x) isnumeric(x));
 addParameter(p, "DetectionThresholdMode", "", @(x) isempty(x) || any(strcmpi(string(x), ["fixed","auto"])));
 addParameter(p, "DetectionThreshold", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "EnableFrequencyEstimationMetric", [], @(x) isempty(x) || islogical(x) || isnumeric(x));
+addParameter(p, "DetectorBackend", "", @(x) isempty(x) || any(strcmpi(string(x), ["full_trace","toolbox_peak"])));
 parse(p, rxWaveform, cfg, varargin{:});
 opts = p.Results;
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.rach.PRACHDetector", ...
@@ -35,8 +36,15 @@ explicitThreshold = double(localFirstNonEmpty(opts.DetectionThreshold, ...
     sixgr.util.structGet(cfg, "DetectionThreshold", 0.02)));
 enableFreq = logical(localFirstNonEmpty(opts.EnableFrequencyEstimationMetric, ...
     sixgr.util.structGet(cfg, "EnableFrequencyEstimationMetric", false)));
+backendMode = lower(string(localFirstNonEmpty(opts.DetectorBackend, ...
+    sixgr.util.structGet(cfg, "DetectorBackend", "full_trace"))));
 
-[idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet);
+if backendMode == "toolbox_peak"
+    [idx0, offset0, detInfo] = localDetectByToolboxPRACHDetect( ...
+        rxWaveform, cfg, occasion, candidateSet, thresholdMode, explicitThreshold);
+else
+    [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet);
+end
 
 peaks = double(detInfo.CorrelationPeaks(:));
 if isempty(peaks)
@@ -50,6 +58,14 @@ if isempty(maxIdx) || ~isfinite(peakMetric)
 end
 candidateDetected = candidateSet(maxIdx);
 [threshold, thresholdInfo] = localResolveThreshold(peaks, thresholdMode, explicitThreshold, cfg, detInfo);
+if backendMode == "toolbox_peak" && isfield(detInfo, "DetectionThreshold")
+    tbThreshold = double(detInfo.DetectionThreshold);
+    if isfinite(tbThreshold) && tbThreshold >= 0
+        threshold = tbThreshold;
+        thresholdInfo.BackgroundComponent = tbThreshold;
+        thresholdInfo.ThresholdScale = 1;
+    end
+end
 detected = isfinite(peakMetric) && peakMetric >= threshold && ~isempty(idx0);
 
 if detected
@@ -104,8 +120,182 @@ det.FrequencyEstimate = freqEst;
 det.Occasion = occasion;
 end
 
+function [idx0, offset0, detInfo] = localDetectByToolboxPRACHDetect(rxWaveform, cfg, occasion, candidateSet, thresholdMode, explicitThreshold)
+carrier = sixgr.util.structGet(occasion, "Carrier", []);
+prach = sixgr.util.structGet(occasion, "PRACH", []);
+if isempty(carrier)
+    carrier = sixgr.util.structGet(cfg, "ToolboxCarrier", []);
+end
+if isempty(prach)
+    prach = sixgr.util.structGet(cfg, "ToolboxPRACH", []);
+end
+carrier = localCarrierObject(carrier);
+prach = localPRACHObject(prach);
+if isempty(carrier) || isempty(prach)
+    error("sixgr:rach:PRACHDetector:MissingToolboxConfig", ...
+        "toolbox_peak PRACH detection requires ToolboxCarrier and ToolboxPRACH in the resolved PRACH config.");
+end
+args = {"PreambleIndex", double(candidateSet)};
+if thresholdMode == "fixed" && isfinite(double(explicitThreshold))
+    args = [args, {"DetectionThreshold", double(explicitThreshold)}]; %#ok<AGROW>
+end
+[idx0, offset, tbInfo] = nrPRACHDetect(carrier, prach, rxWaveform, args{:});
+peaks = double(sixgr.util.structGet(tbInfo, "CorrelationPeaks", nan(numel(candidateSet), 1)));
+peaks = peaks(:);
+if numel(peaks) ~= numel(candidateSet)
+    tmp = nan(numel(candidateSet), 1);
+    tmp(1:min(numel(tmp), numel(peaks))) = peaks(1:min(numel(tmp), numel(peaks)));
+    peaks = tmp;
+end
+offset0 = nan(numel(candidateSet), 1);
+idxDetected = [];
+if ~isempty(idx0)
+    idxDetected = double(idx0(1));
+    idxMatch = find(double(candidateSet(:)) == idxDetected, 1, "first");
+    if ~isempty(idxMatch) && ~isempty(offset)
+        offset0(idxMatch) = double(offset(1));
+    end
+end
+[bestPeak, bestIdx] = max(peaks, [], "omitnan");
+if isempty(bestIdx) || ~isfinite(bestPeak)
+    bestIdx = 1;
+    bestPeak = NaN;
+end
+bestOffset = NaN;
+if ~isempty(offset) && ~isempty(idxDetected)
+    idxMatch = find(double(candidateSet(:)) == idxDetected, 1, "first");
+    if ~isempty(idxMatch)
+        bestIdx = idxMatch;
+    end
+    bestOffset = double(offset(1));
+    if isfinite(bestPeak) && bestIdx <= numel(peaks)
+        peakMax = max(double(peaks), [], "omitnan");
+        if ~(isfinite(peakMax) && peakMax >= 0)
+            peakMax = double(bestPeak);
+        end
+        peaks(bestIdx) = max(double(peaks(bestIdx)), peakMax + max(eps(peakMax), 1e-12));
+        bestPeak = double(peaks(bestIdx));
+    end
+elseif bestIdx <= numel(offset0)
+    bestOffset = double(offset0(bestIdx));
+end
+threshold = double(sixgr.util.structGet(tbInfo, "DetectionThreshold", explicitThreshold));
+detInfo = struct();
+detInfo.CorrelationPeaks = peaks;
+detInfo.CorrelationOffsets = offset0;
+detInfo.BestCandidateIndex = double(bestIdx);
+detInfo.BestCorrelationTrace = struct( ...
+    "PreambleIndex", double(candidateSet(bestIdx)), ...
+    "LagSamples", double(bestOffset), ...
+    "CorrelationAbs", double(bestPeak), ...
+    "NoiseFloor", localCorrelationNoiseFloor(peaks), ...
+    "TraceStatus", "toolbox_peak_only_evidence");
+detInfo.CandidateResults = table(double(candidateSet(:)), peaks(:), offset0(:), ...
+    repmat(double(size(rxWaveform, 2)), numel(candidateSet), 1), ...
+    'VariableNames', {'PreambleIndex','PeakMetric','PeakLagSamples','AntennaCount'});
+detInfo.RxAntennaCount = double(size(rxWaveform, 2));
+detInfo.NumRepeatedSymbols = NaN;
+detInfo.TimingSearchWindow = localEmptyTimingSearchWindow();
+detInfo.TimingSearchWindow.SearchApplied = true;
+detInfo.TimingSearchWindow.Source = "nrPRACHDetect_internal_search";
+detInfo.TimingSearchWindow.SearchLagCount = double(numel(peaks));
+detInfo.TimingSearchWindow.FiniteLagCount = double(sum(isfinite(peaks)));
+detInfo.DetectorBackend = "matlab_5g_toolbox_nrPRACHDetect_peak";
+detInfo.ProcessingFlow = "nrPRACHDetect_carrier_prach_waveform_candidate_peak_search";
+detInfo.DetectionThreshold = threshold;
+end
+
+function carrier = localCarrierObject(carrierIn)
+carrier = carrierIn;
+if isa(carrier, "nrCarrierConfig")
+    return;
+end
+if ~(isstruct(carrierIn) && ~isempty(fieldnames(carrierIn)))
+    carrier = [];
+    return;
+end
+carrier = nrCarrierConfig;
+carrier.SubcarrierSpacing = double(sixgr.util.structGet(carrierIn, "SubcarrierSpacing", 15));
+carrier.NSizeGrid = double(sixgr.util.structGet(carrierIn, "NSizeGrid", 52));
+carrier.NStartGrid = double(sixgr.util.structGet(carrierIn, "NStartGrid", 0));
+carrier.NCellID = double(sixgr.util.structGet(carrierIn, "NCellID", 1));
+carrier.NSlot = double(sixgr.util.structGet(carrierIn, "NSlot", 0));
+carrier.CyclicPrefix = char(string(sixgr.util.structGet(carrierIn, "CyclicPrefix", "normal")));
+end
+
+function prach = localPRACHObject(prachIn)
+prach = prachIn;
+if isa(prach, "nrPRACHConfig")
+    return;
+end
+if ~(isstruct(prachIn) && ~isempty(fieldnames(prachIn)))
+    prach = [];
+    return;
+end
+prach = nrPRACHConfig;
+prach.FrequencyRange = char(string(sixgr.util.structGet(prachIn, "FrequencyRange", "FR1")));
+prach.DuplexMode = char(string(sixgr.util.structGet(prachIn, "DuplexMode", "FDD")));
+prach.ConfigurationIndex = double(sixgr.util.structGet(prachIn, "ConfigurationIndex", 16));
+prach.SubcarrierSpacing = double(sixgr.util.structGet(prachIn, "SubcarrierSpacing", 1.25));
+prach.SequenceIndex = double(sixgr.util.structGet(prachIn, "SequenceIndex", 0));
+prach.PreambleIndex = double(sixgr.util.structGet(prachIn, "PreambleIndex", 0));
+prach.RestrictedSet = char(string(sixgr.util.structGet(prachIn, "RestrictedSet", "UnrestrictedSet")));
+prach.ZeroCorrelationZone = double(sixgr.util.structGet(prachIn, "ZeroCorrelationZone", 0));
+prach.FrequencyStart = double(sixgr.util.structGet(prachIn, "FrequencyStart", 0));
+prach.NPRACHSlot = double(sixgr.util.structGet(prachIn, "NPRACHSlot", 0));
+try
+    prach.TimeIndex = double(sixgr.util.structGet(prachIn, "TimeIndex", 0));
+catch
+end
+end
+
 function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet)
 rx = localMatrix(rxWaveform);
+try
+    [idx0, offset0, detInfo] = localDetectByToolboxPRACHDetect( ...
+        rxWaveform, cfg, occasion, candidateSet, "auto", []);
+    bestIdx = round(double(sixgr.util.structGet(detInfo, "BestCandidateIndex", 1)));
+    bestIdx = max(1, min(numel(candidateSet), bestIdx));
+    ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
+        "PreambleIndex", double(candidateSet(bestIdx)));
+    [tracePeak, traceOffset, lags, metrics, antPeaks, antOffsets, timingWindow] = localCorrelationPeak(rx, ref, cfg);
+    peaks = double(sixgr.util.structGet(detInfo, "CorrelationPeaks", nan(numel(candidateSet), 1)));
+    offsets = double(sixgr.util.structGet(detInfo, "CorrelationOffsets", nan(numel(candidateSet), 1)));
+    if numel(peaks) ~= numel(candidateSet)
+        peaks = nan(numel(candidateSet), 1);
+    end
+    if numel(offsets) ~= numel(candidateSet)
+        offsets = nan(numel(candidateSet), 1);
+    end
+    if isfinite(tracePeak)
+        peaks(bestIdx) = max(peaks(bestIdx), double(tracePeak));
+    end
+    if isfinite(traceOffset)
+        offsets(bestIdx) = double(traceOffset);
+    end
+    if isempty(idx0) && any(isfinite(peaks))
+        idx0 = double(candidateSet(bestIdx));
+    end
+    offset0 = offsets(:);
+    detInfo.CorrelationPeaks = peaks(:);
+    detInfo.CorrelationOffsets = offsets(:);
+    detInfo.BestCandidateIndex = double(bestIdx);
+    detInfo.BestCorrelationTrace = struct( ...
+        "PreambleIndex", double(candidateSet(bestIdx)), ...
+        "LagSamples", double(lags(:)), ...
+        "CorrelationAbs", double(metrics(:)), ...
+        "AntennaPeakMetrics", double(antPeaks(:)), ...
+        "AntennaPeakLags", double(antOffsets(:)), ...
+        "TraceStatus", "real_lls_evidence");
+    detInfo.NumRepeatedSymbols = localFirstFinite(NaN, localRepeatedSymbolCount(ref));
+    detInfo.TimingSearchWindow = timingWindow;
+    detInfo.DetectorBackend = "matlab_5g_toolbox_nrPRACHDetect_plus_best_candidate_full_trace";
+    detInfo.ProcessingFlow = "nrPRACHDetect_all_candidates_then_inrepo_best_candidate_lag_trace";
+    return;
+catch
+    % Fall through to the legacy all-candidate trace path when Toolbox
+    % detection is unavailable for a focused PRACH evidence run.
+end
 peaks = nan(numel(candidateSet), 1);
 offsets = nan(numel(candidateSet), 1);
 traceCells = cell(numel(candidateSet), 1);
@@ -443,8 +633,16 @@ if isfield(src, "CorrelationAbs")
 end
 finiteVals = trace.CorrelationAbs(isfinite(trace.CorrelationAbs));
 if ~isempty(finiteVals)
-    trace.NoiseFloor = localCorrelationNoiseFloor(finiteVals);
-    trace.TraceStatus = "real_lls_evidence";
+    if isfield(src, "NoiseFloor") && isfinite(double(src.NoiseFloor))
+        trace.NoiseFloor = double(src.NoiseFloor);
+    else
+        trace.NoiseFloor = localCorrelationNoiseFloor(finiteVals);
+    end
+    if isfield(src, "TraceStatus") && strlength(strtrim(string(src.TraceStatus))) > 0
+        trace.TraceStatus = string(src.TraceStatus);
+    else
+        trace.TraceStatus = "real_lls_evidence";
+    end
 end
 end
 

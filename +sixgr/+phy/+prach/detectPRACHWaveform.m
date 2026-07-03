@@ -8,6 +8,7 @@ addRequired(p, "prachCfg", @(x) isstruct(x) || isobject(x));
 addParameter(p, "Occasion", struct(), @(x) isstruct(x));
 addParameter(p, "CandidatePreambles", 0:63, @(x) isnumeric(x));
 addParameter(p, "DetectionThreshold", [], @(x) isempty(x) || isnumeric(x));
+addParameter(p, "DetectorBackend", "", @(x) isempty(x) || any(strcmpi(string(x), ["full_trace","toolbox_peak"])));
 parse(p, rxWaveform, prachCfg, varargin{:});
 opt = p.Results;
 
@@ -17,6 +18,9 @@ if ~isempty(opt.DetectionThreshold)
     args = [args, {"DetectionThreshold", opt.DetectionThreshold}]; %#ok<AGROW>
 else
     args = [args, {"DetectionThreshold", prachCfg.DetectionThreshold}]; %#ok<AGROW>
+end
+if strlength(strtrim(string(opt.DetectorBackend))) > 0
+    args = [args, {"DetectorBackend", char(string(opt.DetectorBackend))}]; %#ok<AGROW>
 end
 det = sixgr.rach.PRACHDetector(rxWaveform, prachCfg, args{:});
 det.ProxyUsed = false;

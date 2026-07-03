@@ -215,6 +215,10 @@ trialActualMCSSelectionMode = strings(numFrames,1);
 trialSchedulerGrantMCSSelectionMode = strings(numFrames,1);
 trialOuterLoopEnabled = false(numFrames,1);
 trialOuterLoopAppliedFromGrant = false(numFrames,1);
+trialSchedulerCQIRawCQI = nan(numFrames,1);
+trialSchedulerAdjustedSINR = nan(numFrames,1);
+trialSchedulerSINRBackoff = nan(numFrames,1);
+trialSchedulerCQISource = strings(numFrames,1);
 trialOLLADeltaMCS = NaN(numFrames,1);
 trialOLLAUpdateCount = NaN(numFrames,1);
 trialOLLAState = strings(numFrames,1);
@@ -508,6 +512,17 @@ for n = 1:numFrames
         trialActualMCSSelectionMode(n) = string(localResolveActualMCSSelectionMode(cfgFrame, "UL"));
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
         grantCQIUsed = double(sixgr.util.structGet(grantSnapshotOverride, "CQIUsed", NaN));
+        grantRawCQIDerivedMCS = localFirstFiniteScalar( ...
+            sixgr.util.structGet(grantSnapshotOverride, "RawCQIDerivedMCS", NaN));
+        grantCQIBasedMCS = localFirstFiniteScalar( ...
+            sixgr.util.structGet(grantSnapshotOverride, "CQIBasedMCS", NaN), ...
+            sixgr.util.structGet(grantSnapshotOverride, "LinkAdaptationMCSIndex", NaN));
+        grantCQIProvenance = string(sixgr.util.structGet(grantSnapshotOverride, "CQIProvenance", ""));
+        grantMCSSelectionSource = string(sixgr.util.structGet(grantSnapshotOverride, "MCSSelectionSource", ""));
+        trialSchedulerCQIRawCQI(n) = double(sixgr.util.structGet(grantSnapshotOverride, "SchedulerCQIRawCQI", NaN));
+        trialSchedulerAdjustedSINR(n) = double(sixgr.util.structGet(grantSnapshotOverride, "SchedulerAdjustedSINR_dB", NaN));
+        trialSchedulerSINRBackoff(n) = double(sixgr.util.structGet(grantSnapshotOverride, "SchedulerSINRBackoff_dB", NaN));
+        trialSchedulerCQISource(n) = string(sixgr.util.structGet(grantSnapshotOverride, "SchedulerCQISource", ""));
         if schedulerDrivenGrant
             trialLinkAdaptationMode(n) = "scheduler_grant_replay";
             trialActualMCSSelectionMode(n) = "scheduler_grant";
@@ -892,7 +907,23 @@ for n = 1:numFrames
         if isfinite(rawMeasuredCQI)
             receiverCQI = double(sixgr.util.normalizeReportedCQI(rawMeasuredCQI));
         end
-        if isfinite(receiverCQI)
+        schedulerCQIHasGrantLineage = schedulerDrivenGrant && ...
+            isfinite(grantCQIUsed) && grantCQIUsed > 0 && ...
+            (isfinite(grantRawCQIDerivedMCS) || isfinite(grantCQIBasedMCS) || ...
+            strlength(strtrim(grantCQIProvenance)) > 0 || ...
+            strlength(strtrim(grantMCSSelectionSource)) > 0);
+        if schedulerCQIHasGrantLineage
+            trialCQI(n) = double(sixgr.util.normalizeReportedCQI(grantCQIUsed));
+            sourceToken = strtrim(grantCQIProvenance);
+            if strlength(sourceToken) == 0
+                sourceToken = strtrim(grantMCSSelectionSource);
+            end
+            if strlength(sourceToken) == 0
+                trialCQISource(n) = "scheduler_grant_cqi_used";
+            else
+                trialCQISource(n) = "scheduler_grant:" + sourceToken;
+            end
+        elseif isfinite(receiverCQI)
             trialCQI(n) = receiverCQI;
             trialCQISource(n) = string(sixgr.util.structGet(metrics, "CQISource", "ul_link_state_reference_signal_cqi"));
             if strlength(strtrim(trialCQISource(n))) == 0
@@ -1440,9 +1471,10 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.ConfiguredSNR_dB = trialConfiguredSNR(idx);
         configuredLayers = localFirstFiniteScalar( ...
             sixgr.util.structGet(cfg, "phy.pusch.nLayers", NaN), ...
-            sixgr.util.structGet(cfg, "phy.pusch.numLayers", NaN), ...
-            trialLayers(idx), 1);
-        configuredLayers = max(1, round(double(configuredLayers)));
+            sixgr.util.structGet(cfg, "phy.pusch.numLayers", NaN));
+        if isfinite(configuredLayers)
+            configuredLayers = max(1, round(double(configuredLayers)));
+        end
         configuredTxAnt = localConfiguredULAntennaCount(cfg, "tx", ...
             localFirstFiniteScalar(trialTxPorts(idx), 1));
         configuredRxAnt = localConfiguredULAntennaCount(cfg, "rx", ...
@@ -1513,6 +1545,10 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.SINRComputationMethod = trialSINRComputationMethod(idx);
         T.ConfiguredSNRLikeSourceRejected = trialConfiguredSNRLikeSourceRejected(idx);
         T.CQISource = trialCQISource(idx);
+        T.SchedulerCQIRawCQI = trialSchedulerCQIRawCQI(idx);
+        T.SchedulerAdjustedSINR_dB = trialSchedulerAdjustedSINR(idx);
+        T.SchedulerSINRBackoff_dB = trialSchedulerSINRBackoff(idx);
+        T.SchedulerCQISource = trialSchedulerCQISource(idx);
         T.OuterLoopEnabled = trialOuterLoopEnabled(idx);
         T.OuterLoopApplied = trialOuterLoopAppliedFromGrant(idx);
         T.OLLADeltaMCS = trialOLLADeltaMCS(idx);
@@ -4985,6 +5021,7 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "RawCQIDerivedMCS","LinkAdaptationMCSIndex","LinkAdaptationDecisionReason", ...
     "CQIBasedMCS","SmoothedCQI","InstantaneousCQIMCS","DeltaMCS","StaticDeltaMCS", ...
     "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ", ...
+    "SchedulerCQIRawCQI","SchedulerAdjustedSINR_dB","SchedulerSINRBackoff_dB","SchedulerCQISource", ...
     "MCSIndexAuthority","GrantOperatingPointSource", ...
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk","GrantControlState", ...
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
@@ -5037,6 +5074,8 @@ function txArgs = localAppendGrantReplayTxArgs(txArgs, grant)
 if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
     return;
 end
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
 carrier = sixgr.util.structGet(grant, "CarrierConfig", []);
 pusch = sixgr.util.structGet(grant, "PUSCHConfig", []);
 targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
@@ -5047,21 +5086,32 @@ storedTBSize = double(sixgr.util.structGet(grant, "TBSBits", ...
 if ~isempty(carrier)
     txArgs = [txArgs {"Carrier", carrier}]; %#ok<AGROW>
 end
-if ~isempty(pusch)
+if ~hasPHYGrant && ~isempty(pusch)
     txArgs = [txArgs {"PUSCH", pusch}]; %#ok<AGROW>
 end
-if isfinite(storedTBSize) && storedTBSize > 0
+if localGrantRequiresTransportBlockSizeOverride(grant, hasPHYGrant) && isfinite(storedTBSize) && storedTBSize > 0
     txArgs = [txArgs {"TransportBlockSizeOverride", round(storedTBSize)}]; %#ok<AGROW>
 end
-if isfinite(targetCodeRate) && targetCodeRate > 0
+if ~hasPHYGrant && isfinite(targetCodeRate) && targetCodeRate > 0
     txArgs = [txArgs {"TargetCodeRate", targetCodeRate}]; %#ok<AGROW>
 end
-if isfinite(xOverhead) && xOverhead >= 0
+if ~hasPHYGrant && isfinite(xOverhead) && xOverhead >= 0
     txArgs = [txArgs {"XOverhead", xOverhead}]; %#ok<AGROW>
 end
-if isfinite(numTxAnt) && numTxAnt >= 1
+if ~hasPHYGrant && isfinite(numTxAnt) && numTxAnt >= 1
     txArgs = [txArgs {"NumTxAnt", numTxAnt}]; %#ok<AGROW>
 end
+end
+
+function tf = localGrantRequiresTransportBlockSizeOverride(grant, hasPHYGrant)
+tf = false;
+if logical(hasPHYGrant) || ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+tf = logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "HARQIsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "HARQProcessKey.IsRetransmission", false)) || ...
+    contains(lower(strtrim(string(sixgr.util.structGet(grant, "GrantReason", "")))), "retrans");
 end
 
 function token = localComposeReplayGrantContextId(grant, direction)

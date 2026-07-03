@@ -17,7 +17,7 @@ if isempty(fieldnames(occasion))
 end
 
 seq = sixgr.rach.generatePRACHSequence(cfg, "Occasion", occasion, "PreambleIndex", opts.PreambleIndex);
-[waveform, grid, ofdmInfo] = sixgr.rach.modulatePRACHSymbols(seq.Symbols, seq, cfg);
+[waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq, cfg);
 
 numTxAnt = round(double(sixgr.util.structGet(cfg, "NumTxAntennas", 1)));
 if numTxAnt > 1
@@ -33,9 +33,34 @@ tx.Carrier = seq.Carrier;
 tx.PRACH = seq.PRACH;
 tx.SampleRate_Hz = double(ofdmInfo.SampleRate);
 tx.OFDMInfo = ofdmInfo;
-tx.WaveformGenerationBackend = "inrepo_nrPRACH_symbol_ofdm";
+tx.WaveformGenerationBackend = backend;
 tx.Occasion = occasion;
 tx.PreambleIndex = seq.PreambleIndex;
 tx.SequenceIndex = seq.SequenceIndex;
 tx.Format = seq.Format;
+end
+
+function [waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq, cfg)
+useToolbox = logical(sixgr.util.structGet(cfg, "UseToolboxPRACHOFDMModulator", ...
+    sixgr.util.structGet(cfg, "random_access.use_toolbox_prach_ofdm_modulator", true)));
+if useToolbox
+    try
+        carrier = seq.Carrier;
+        prach = seq.PRACH;
+        grid = nrPRACHGrid(carrier, prach);
+        grid(seq.Indices) = seq.Symbols;
+        [waveform, ofdmInfo] = nrPRACHOFDMModulate(carrier, prach, grid);
+        backend = "matlab_5g_toolbox_nrPRACHOFDMModulate";
+        return;
+    catch ME
+        allowFallback = logical(sixgr.util.structGet(cfg, "AllowInrepoPRACHOFDMFallback", ...
+            sixgr.util.structGet(cfg, "random_access.allow_inrepo_prach_ofdm_fallback", false)));
+        if ~allowFallback
+            error("sixgr:rach:PRACHOFDMModulatorUnavailable", ...
+                "nrPRACHOFDMModulate failed for the resolved PRACH config and fallback is disabled: %s", ME.message);
+        end
+    end
+end
+[waveform, grid, ofdmInfo] = sixgr.rach.modulatePRACHSymbols(seq.Symbols, seq, cfg);
+backend = "inrepo_nrPRACH_symbol_ofdm_explicit_fallback";
 end

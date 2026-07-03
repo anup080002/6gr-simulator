@@ -349,7 +349,7 @@ end
 cfg.mac = localStructEnsure(cfg, 'mac');
 cfg.mac.scheduler = localStructEnsure(cfg.mac, 'scheduler');
 cfg.mac.scheduler.tbsMode = char(localNormalizeTBSMode(localFirstNonEmpty( ...
-    sixgr.util.structGet(cfg, "mac.scheduler.tbsMode", []), "approximate")));
+    sixgr.util.structGet(cfg, "mac.scheduler.tbsMode", []), "faithful")));
 cfg.mac.scheduler.viennaEquivalent = localLogicalWithDefault(localFirstNonEmpty( ...
     sixgr.util.structGet(cfg, "mac.scheduler.viennaEquivalent", []), false), false);
 cfg.mac.scheduler.allowApproximatePlanningInStrictMode = localLogicalWithDefault(localFirstNonEmpty( ...
@@ -359,7 +359,7 @@ if strcmpi(cfg.mac.scheduler.tbsMode, 'faithful') || strcmpi(cfg.mac.scheduler.t
         logical(cfg.mac.scheduler.viennaEquivalent)
     cfg.mac.scheduler.fastNREApprox = false;
 elseif ~isfield(cfg.mac.scheduler, 'fastNREApprox') || isempty(cfg.mac.scheduler.fastNREApprox)
-    cfg.mac.scheduler.fastNREApprox = true;
+    cfg.mac.scheduler.fastNREApprox = false;
 else
     cfg.mac.scheduler.fastNREApprox = logical(cfg.mac.scheduler.fastNREApprox);
 end

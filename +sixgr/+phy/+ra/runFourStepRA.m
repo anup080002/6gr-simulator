@@ -26,8 +26,10 @@ p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("RuntimeSlot", NaN, @(x)isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 opt = p.Results;
+localProgress(opt, "start", "runFourStepRA entered");
 
 localRequireToolboxFunctions();
+localProgress(opt, "toolbox_checked", "required toolbox functions are available");
 [cfg, sib1BindingEvidence] = localApplyDecodedSIB1IfPresent(cfg, opt.SIB1Recovery);
 if logical(opt.RequireDecodedSIB1) && (~istable(sib1BindingEvidence) || height(sib1BindingEvidence) == 0)
     error("sixgr:mac:ra:UE_RACH_CONFIG_ORACLE_READ", ...
@@ -39,6 +41,8 @@ raCfg = sixgr.mac.ra.RAConfig(cfg, ...
     "UEId", opt.UEId, ...
     "CellId", opt.CellId, ...
     "AttemptId", opt.AttemptId);
+localProgress(opt, "ra_config_resolved", sprintf("ue=%g cell=%s preamble=%g", ...
+    double(opt.UEId), localDisplayScalar(opt.CellId), double(raCfg.PreambleIndex)));
 cfg = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
 faultMode = lower(strtrim(string(opt.FaultMode)));
 runFolder = string(opt.RunFolder);
@@ -47,7 +51,9 @@ if strlength(strtrim(runFolder)) == 0
 end
 
 result = localEmptyResult(raCfg, runFolder, faultMode);
+localProgress(opt, "runtime_transport_resolve_start", "");
 runtime = localResolveRuntimeTransport(cfg, raCfg, opt);
+localProgress(opt, "runtime_transport_resolve_done", string(runtime.Mode));
 result = localApplyRuntimeTransportToResult(result, runtime);
 result.SIB1RACHBindingEvidence = sib1BindingEvidence;
 result.SIB1RACHBindingApplied = istable(sib1BindingEvidence) && height(sib1BindingEvidence) > 0;
@@ -63,18 +69,24 @@ oracleRows = localOracleGuardRows(raCfg);
 timerRows = localTimerRowsStart(raCfg);
 
 try
+    localProgress(opt, "msg1_tx_start", "");
     [msg1Tx, occasion] = sixgr.phy.ra.generateMsg1PRACHWaveform(cfg, raCfg);
+    localProgress(opt, "msg1_tx_done", sprintf("samples=%d", size(msg1Tx.Waveform, 1)));
     [msg1Tx.Waveform, msg1Power] = localApplyWaveformTxPower(msg1Tx.Waveform, ...
         powerState.PreambleTxPower_dBm, powerState.ReferenceTxPower_dBm);
     msg1Tx.PowerControl = powerState;
     msg1Tx.PowerControl.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
     result.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
+    localProgress(opt, "msg1_channel_start", "");
     [msg1RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg1", "UL", msg1Tx.Waveform, cfg, raCfg, msg1Tx, runtime);
+    localProgress(opt, "msg1_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo);
     if faultMode == "no_prach_detected"
         msg1RxWave(:) = 0;
     end
+    localProgress(opt, "msg1_detect_start", "");
     det = sixgr.phy.ra.detectMsg1PRACH(msg1RxWave, cfg, raCfg, occasion);
+    localProgress(opt, "msg1_detect_done", sprintf("detected=%d", logical(det.Detected)));
     if isfield(det, "CorrelationTrace")
         result.Msg1DetectionTrace = det.CorrelationTrace;
     end
@@ -101,7 +113,9 @@ try
         "TimingAdvanceCommand", double(ta.TimingAdvanceCommand), ...
         "TemporaryCRNTI", double(raCfg.TempCRNTI), ...
         "ULGrant", grantTx);
+    localProgress(opt, "msg2_tx_start", "");
     [msg2Tx, msg2Sched] = sixgr.phy.ra.generateMsg2RARWaveform(cfg, raCfg, rarTx);
+    localProgress(opt, "msg2_tx_done", sprintf("samples=%d", size(msg2Tx.Waveform, 1)));
     [msg2Tx.Waveform, msg2Power] = localApplyWaveformTxPower(msg2Tx.Waveform, ...
         powerState.Msg2TxPower_dBm, powerState.ReferenceTxPower_dBm);
     msg2Tx.PowerControl = powerState;
@@ -115,10 +129,14 @@ try
     if faultMode == "wrong_ra_rnti"
         attemptedRNTI = double(raCfg.RARNTI) + 1;
     end
+    localProgress(opt, "msg2_channel_start", "");
     [msg2RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg2", "DL", msg2Tx.Waveform, cfg, raCfg, msg2Tx, runtime);
+    localProgress(opt, "msg2_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo);
+    localProgress(opt, "msg2_pdcch_start", "");
     [pdcchRx, pdcchInfo] = sixgr.phy.ra.blindDecodeRARPDCCH(msg2RxWave, cfg, raCfg, msg2Sched, ...
         "RNTIAttempted", attemptedRNTI);
+    localProgress(opt, "msg2_pdcch_done", sprintf("ok=%d", logical(pdcchRx.Ok)));
     msg2WaveForPDSCH = msg2RxWave;
     if faultMode == "rar_pdsch_corrupted"
         msg2WaveForPDSCH = localCorruptWaveform(msg2WaveForPDSCH, 0.75);
@@ -127,7 +145,9 @@ try
     pdschRx2 = struct("Ok", false, "CRCError", true);
     if logical(pdcchRx.Ok) && withinWindow
         cfgMsg2Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "DL");
+        localProgress(opt, "msg2_pdsch_start", "");
         [pdschRx2, rarRx] = sixgr.phy.ra.recoverMsg2RAR(msg2WaveForPDSCH, cfgMsg2Rx, raCfg, msg2Sched, msg2Tx);
+        localProgress(opt, "msg2_pdsch_done", sprintf("ok=%d", logical(sixgr.util.structGet(pdschRx2, "Ok", false))));
     end
     rapidMatches = isstruct(rarRx) && isfield(rarRx, "RAPID") && double(rarRx.RAPID) == double(raCfg.PreambleIndex);
     if isstruct(rarRx) && isfield(rarRx, "ULGrant")
@@ -152,20 +172,26 @@ try
     timerRows = [timerRows; localTimer(raCfg, "ra-ResponseWindow", "stop", double(raCfg.PRACHOccasionSlot), double(raCfg.Msg2Slot), ...
         double(raCfg.PRACHOccasionSlot + raCfg.RAResponseWindowSlots), false, double(raCfg.RAResponseWindowSlots), "OK")]; %#ok<AGROW>
 
+    localProgress(opt, "msg3_tx_start", "");
     msg3TxPayload = sixgr.mac.ra.buildMsg3Payload("UEId", double(raCfg.UEId));
     [msg3Tx, pusch] = sixgr.phy.ra.generateMsg3PUSCHWaveform(cfg, raCfg, grantRx, msg3TxPayload);
+    localProgress(opt, "msg3_tx_done", sprintf("samples=%d", size(msg3Tx.Waveform, 1)));
     [msg3Tx.Waveform, msg3Power] = localApplyWaveformTxPower(msg3Tx.Waveform, ...
         powerState.Msg3TxPower_dBm, powerState.ReferenceTxPower_dBm);
     msg3Tx.PowerControl = powerState;
     msg3Tx.PowerControl.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     result.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     msg3TA = sixgr.phy.ra.applyMsg3TimingAdvance(msg3Tx.Waveform, double(result.TimingAdvanceSamples));
+    localProgress(opt, "msg3_channel_start", "");
     [msg3Wave, runtime, stageInfo] = localResolveStageRxWaveform("Msg3", "UL", msg3TA.Waveform, cfg, raCfg, msg3Tx, runtime);
+    localProgress(opt, "msg3_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo);
     if faultMode == "msg3_pusch_corrupted"
         msg3Wave = localCorruptWaveform(msg3Wave, 1.5);
     end
+    localProgress(opt, "msg3_pusch_start", "");
     [msg3Rx, msg3Decoded] = sixgr.phy.ra.recoverMsg3PUSCH(msg3Wave, cfg, raCfg, grantRx, msg3Tx);
+    localProgress(opt, "msg3_pusch_done", sprintf("ok=%d", logical(sixgr.util.structGet(msg3Rx, "Ok", false))));
     result = localApplyMsg3(result, raCfg, grantRx, msg3TxPayload, msg3Rx, msg3Decoded, pusch);
     if ~logical(sixgr.util.structGet(msg3Rx, "Ok", false)) || ~isfield(msg3Decoded, "ContentionIdentity")
         result = localFail(result, "msg3_pusch_crc_fail", "MSG3_PUSCH_RX");
@@ -186,17 +212,24 @@ try
         result = localFinalize(result, raCfg, events, timerRows, oracleRows, msg1Tx, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, struct(), opt);
         return;
     end
+    localProgress(opt, "msg4_tx_start", "");
     msg4TxPayload = sixgr.mac.ra.buildMsg4ContentionResolution(msg4Identity, "FinalCRNTI", double(raCfg.FinalCRNTI));
     [msg4Tx, msg4Sched] = sixgr.phy.ra.generateMsg4Waveform(cfg, raCfg, msg4TxPayload);
+    localProgress(opt, "msg4_tx_done", sprintf("samples=%d", size(msg4Tx.Waveform, 1)));
     [msg4Tx.Waveform, msg4Power] = localApplyWaveformTxPower(msg4Tx.Waveform, ...
         powerState.Msg4TxPower_dBm, powerState.ReferenceTxPower_dBm);
     msg4Tx.PowerControl = powerState;
     msg4Tx.PowerControl.Msg4TxAmplitudeScale = double(msg4Power.AmplitudeScale);
     result.Msg4TxAmplitudeScale = double(msg4Power.AmplitudeScale);
+    localProgress(opt, "msg4_channel_start", "");
     [msg4RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg4", "DL", msg4Tx.Waveform, cfg, raCfg, msg4Tx, runtime);
+    localProgress(opt, "msg4_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo);
     cfgMsg4Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "DL");
+    localProgress(opt, "msg4_rx_start", "");
     [msg4PdcchRx, msg4PdschRx, msg4Decoded] = sixgr.phy.ra.recoverMsg4Waveform(msg4RxWave, cfgMsg4Rx, raCfg, msg4Sched, msg4Tx);
+    localProgress(opt, "msg4_rx_done", sprintf("pdcch=%d pdsch=%d", ...
+        logical(sixgr.util.structGet(msg4PdcchRx, "Ok", false)), logical(sixgr.util.structGet(msg4PdschRx, "Ok", false))));
     result = localApplyMsg4(result, raCfg, msg3Decoded, msg4PdcchRx, msg4PdschRx, msg4Tx, msg4Decoded, msg4TxPayload);
     if ~logical(result.ContentionIdentityMatches)
         result = localFail(result, "contention_resolution_identity_mismatch", "MSG4_CONTENTION_RESOLUTION_RX");
@@ -216,7 +249,9 @@ try
         result.FailureReason = "strict_ra_acceptance_condition_failed";
     end
     result = localFinalize(result, raCfg, events, timerRows, oracleRows, msg1Tx, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, msg4Tx, opt);
+    localProgress(opt, "complete", sprintf("ra_completed=%d strict=%d", logical(result.RACompleted), logical(result.StrictOk)));
 catch ME
+    localProgress(opt, "error", string(ME.identifier) + ":" + string(ME.message));
     if logical(raCfg.StrictMode)
         rethrow(ME);
     end
@@ -228,6 +263,50 @@ end
 
 if logical(opt.RunNegativeSuite)
     result.NegativeResults = localRunNegativeSuite(cfg, opt, faultMode);
+end
+end
+
+function localProgress(opt, stage, detail)
+if nargin < 3
+    detail = "";
+end
+runFolder = string(opt.RunFolder);
+if strlength(strtrim(runFolder)) == 0
+    return;
+end
+try
+    sixgr.util.ensureFolder(runFolder);
+    runId = matlab.lang.makeValidName(char(string(opt.RunId)));
+    if strlength(string(runId)) == 0
+        runId = "ra_anchor";
+    end
+    path = fullfile(char(runFolder), "logs", "ra_progress_" + string(runId) + ".log");
+    sixgr.util.ensureFolder(fileparts(char(path)));
+    fid = fopen(char(path), "a");
+    if fid > 0
+        cleaner = onCleanup(@() fclose(fid));
+        fprintf(fid, "%s stage=%s detail=%s\n", char(string(datetime("now", "Format", "yyyy-MM-dd'T'HH:mm:ss.SSS"))), ...
+            char(string(stage)), char(string(detail)));
+        clear cleaner;
+    end
+catch
+end
+end
+
+function txt = localDisplayScalar(x)
+if isempty(x)
+    txt = "[]";
+    return;
+end
+try
+    v = double(x);
+    if isscalar(v) && isfinite(v)
+        txt = sprintf("%g", v);
+    else
+        txt = "NaN";
+    end
+catch
+    txt = char(string(x));
 end
 end
 

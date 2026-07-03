@@ -76,6 +76,8 @@ decision = struct( ...
     "CausalFeedbackStatus", char(string(cqiMeta.CausalFeedbackStatus)), ...
     "FeedbackAgeSlots", double(cqiMeta.FeedbackAgeSlots), ...
     "FeedbackAgingPenalty_dB", double(cqiMeta.FeedbackAgingPenalty_dB), ...
+    "DirectionalSINRBackoff_dB", double(cqiMeta.DirectionalSINRBackoff_dB), ...
+    "TotalCQISINRBackoff_dB", double(cqiMeta.TotalCQISINRBackoff_dB), ...
     "AgedSINR_dB", double(cqiMeta.AgedSINR_dB), ...
     "AgedCQI", double(cqiMeta.AgedCQI), ...
     "CSIAgingModel", char(string(cqiMeta.CSIAgingModel)), ...
@@ -336,6 +338,20 @@ end
     rawSubbandSINR, cfg, direction, metrics, "subband", cqiMeta.FeedbackAgingPenalty_dB);
 [agedLayerSINR, layerPenalty, layerTrust] = localApplyVectorCSIAging( ...
     rawLayerSINR, cfg, direction, metrics, "layer", cqiMeta.FeedbackAgingPenalty_dB);
+directionalBackoff_dB = double(cqiMeta.DirectionalSINRBackoff_dB);
+if ~(isfinite(directionalBackoff_dB) && directionalBackoff_dB > 0)
+    directionalBackoff_dB = 0;
+end
+if directionalBackoff_dB > 0
+    if ~isempty(agedSubbandSINR)
+        agedSubbandSINR = double(agedSubbandSINR) - directionalBackoff_dB;
+        subbandPenalty = double(subbandPenalty) + directionalBackoff_dB;
+    end
+    if ~isempty(agedLayerSINR)
+        agedLayerSINR = double(agedLayerSINR) - directionalBackoff_dB;
+        layerPenalty = double(layerPenalty) + directionalBackoff_dB;
+    end
+end
 if ~isempty(agedSubbandSINR)
     cqiMeta.AgedSubbandSINRVector_dB = localVectorToToken(agedSubbandSINR, "%.6g");
     cqiMeta.SubbandAgingPenaltyVector_dB = localVectorToToken(subbandPenalty, "%.6g");
@@ -353,7 +369,7 @@ if ~isempty(agedLayerSINR)
     end
 end
 if isfinite(rawSINR)
-    rawSINR = rawSINR - double(cqiMeta.FeedbackAgingPenalty_dB);
+    rawSINR = rawSINR - double(cqiMeta.TotalCQISINRBackoff_dB);
     cqiMeta.AgedSINR_dB = double(rawSINR);
 elseif ~isempty(agedSubbandSINR)
     rawSINR = localMeanSINR_dB(agedSubbandSINR);
@@ -373,8 +389,8 @@ elseif ~isempty(agedLayerSINR)
     end
 end
 if isfinite(rawCQI)
-    if logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.ageReportedCQI", false))
-        rawCQI = localApplyCQIAging(rawCQI, cqiMeta.FeedbackAgingPenalty_dB, cfg);
+    if logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.ageReportedCQI", true))
+        rawCQI = localApplyCQIAging(rawCQI, cqiMeta.TotalCQISINRBackoff_dB, cfg);
     end
     cqiMeta.AgedCQI = double(rawCQI);
 end
@@ -386,6 +402,7 @@ sinrInput = struct( ...
     "SINRSource", char(rawSINRSource), ...
     "SINRValueRole", char(rawSINRRole), ...
     "SINRValueStatus", char(rawSINRStatus));
+preferMeasuredSINRForCQI = localUseAgedMeasuredSINRForCQI(cfg, direction) && isfinite(rawSINR);
 
 switch string(adaptationDomain)
     case "effective_sinr"
@@ -397,7 +414,12 @@ switch string(adaptationDomain)
             calibrationProfile = string(calibrationProfile) + ":" + string(sixgr.util.structGet(feedback, "Mode", ""));
         end
     case "bler_margin"
-        if isfinite(rawCQI)
+        if preferMeasuredSINRForCQI
+            feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
+            instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
+            cqiMeta = localApplyWidebandCQIMeta(cqiMeta, feedback);
+            cqiSource = "runtime_aged_measured_sinr_cqi_for_bler_margin";
+        elseif isfinite(rawCQI)
             instantCQI = rawCQI;
             cqiSource = "runtime_reported_cqi";
         elseif isfinite(rawSINR)
@@ -407,15 +429,15 @@ switch string(adaptationDomain)
             cqiSource = "runtime_effective_sinr_proxy_for_bler_margin";
         end
     otherwise
-        if isfinite(rawCQI)
-            instantCQI = rawCQI;
-            cqiSource = "runtime_reported_cqi";
-        elseif localUseAgedMeasuredSINRForCQI(cfg, direction) && isfinite(rawSINR)
+        if preferMeasuredSINRForCQI
             feedback = sixgr.link.resolveWidebandCQI(sinrInput, cfg, direction);
             instantCQI = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
             cqiMeta = localApplyWidebandCQIMeta(cqiMeta, feedback);
             cqiSource = "runtime_aged_measured_sinr_cqi";
             calibrationProfile = string(calibrationProfile) + ":" + string(sixgr.util.structGet(feedback, "Mode", ""));
+        elseif isfinite(rawCQI)
+            instantCQI = rawCQI;
+            cqiSource = "runtime_reported_cqi";
         end
 end
 end
@@ -451,6 +473,8 @@ end
 function meta = localCQIMetaDefaults(cfg, direction, metrics)
 [usable, status, ageSlots, age_s, coherence_s, trustWeight, agingPenalty_dB] = ...
     localResolveCausalFeedbackFreshness(cfg, direction, metrics);
+directionalBackoff_dB = localResolveDirectionalSINRBackoff(cfg, direction);
+totalBackoff_dB = max(0, double(agingPenalty_dB)) + max(0, double(directionalBackoff_dB));
 meta = struct( ...
     "CalibrationVersion", char(localCalibrationVersion(cfg, direction)), ...
     "BLERLUTSource", "", ...
@@ -464,6 +488,8 @@ meta = struct( ...
     "CSICoherenceTimeSeconds", double(coherence_s), ...
     "CSITemporalCorrelationWeight", double(trustWeight), ...
     "FeedbackAgingPenalty_dB", double(agingPenalty_dB), ...
+    "DirectionalSINRBackoff_dB", double(directionalBackoff_dB), ...
+    "TotalCQISINRBackoff_dB", double(totalBackoff_dB), ...
     "AgedSINR_dB", NaN, ...
     "AgedCQI", NaN, ...
     "CSIAgingModel", "wideband_jakes_measured_csi", ...
@@ -577,6 +603,29 @@ end
 maxAgeSlots = localFirstFiniteConfigValue(cfg, candidates, inf);
 if ~(isfinite(maxAgeSlots) && maxAgeSlots >= 0)
     maxAgeSlots = inf;
+end
+end
+
+function backoff_dB = localResolveDirectionalSINRBackoff(cfg, direction)
+direction = upper(string(direction));
+if direction == "UL"
+    candidates = [ ...
+        "phy.linkAdaptation.ulMCSBackoff_dB"
+        "phy.linkAdaptation.ulSINRBackoff_dB"
+        "phy.linkAdaptation.mcsBackoffUL_dB"
+        "phy.linkAdaptation.mcsBackoff_dB"
+        "phy.linkAdaptation.sinrBackoff_dB"];
+else
+    candidates = [ ...
+        "phy.linkAdaptation.dlMCSBackoff_dB"
+        "phy.linkAdaptation.dlSINRBackoff_dB"
+        "phy.linkAdaptation.mcsBackoffDL_dB"
+        "phy.linkAdaptation.mcsBackoff_dB"
+        "phy.linkAdaptation.sinrBackoff_dB"];
+end
+backoff_dB = localFirstFiniteConfigValue(cfg, candidates, 0);
+if ~(isfinite(backoff_dB) && backoff_dB > 0)
+    backoff_dB = 0;
 end
 end
 

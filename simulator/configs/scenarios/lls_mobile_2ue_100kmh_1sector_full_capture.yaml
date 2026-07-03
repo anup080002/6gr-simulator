@@ -448,8 +448,8 @@ system:
     maxActiveUEsPerCellPerSlotDL: 2
     maxActiveUEsPerCellPerSlotUL: 2
     maxPRBAllocationPerUE: 273
-    tbsMode: approximate
-    fastNREApprox: true
+    tbsMode: faithful
+    fastNREApprox: false
     allowApproximatePlanningInStrictMode: true
     fairnessAlpha: 1.0
     proportionalFairWindow_ms: 50

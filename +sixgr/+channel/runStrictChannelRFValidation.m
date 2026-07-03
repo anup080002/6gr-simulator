@@ -364,7 +364,7 @@ if ~isprop(ch, prop)
 end
 arr = ch.(prop);
 if isstruct(arr)
-    arr.Size = [1 1 max(1, round(nAnt)) 1 1];
+    arr.Size = [max(1, round(nAnt)) 1 1 1 1];
     if isfield(arr, "ElementSpacing")
         arr.ElementSpacing = [0.5 0.5 1 1];
     end

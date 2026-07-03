@@ -63,6 +63,29 @@ assert(~localAsLogical(missingGates.CampaignCompletionOk(1)) && ...
     ~localAsLogical(missingGates.SampleAdequacyOk(1)), ...
     "Missing campaign evidence must not pass completion or sample adequacy gates.");
 
+tmpScalarMobility = tempname;
+mkdir(tmpScalarMobility);
+cleanupScalarMobility = onCleanup(@() rmdir(tmpScalarMobility, "s")); %#ok<NASGU>
+scalarCfg = cfg;
+scalarCfg.mobility = rmfield(scalarCfg.mobility, "user_paths");
+scalarCfg.mobility.ue_speed_kmh = 200;
+scalarCfg.users.n_users = 2;
+scalarCfg.deployment_topology.max_ue_distance_from_bs_m = 500;
+scalarCfg.deployment_topology.min_ue_distance_from_bs_m = 35;
+sixgr.analytics.buildPhase7ReadinessArtifacts(scalarCfg, tmpScalarMobility);
+traj = readtable(fullfile(tmpScalarMobility, "geometry", "csv", "trajectory_geometry.csv"), ...
+    "VariableNamingRule", "preserve", "TextType", "string");
+ueInit = readtable(fullfile(tmpScalarMobility, "geometry", "csv", "ue_initial_positions.csv"), ...
+    "VariableNamingRule", "preserve", "TextType", "string");
+resolution = readtable(fullfile(tmpScalarMobility, "mobility", "csv", "trajectory_resolution.csv"), ...
+    "VariableNamingRule", "preserve", "TextType", "string");
+assert(height(traj) == 2 && height(ueInit) == 2, ...
+    "Scalar mobility speed plus UE count must synthesize per-UE trajectory geometry.");
+assert(all(string(ueInit.PathSource) == "mobility.ue_speed_kmh"), ...
+    "Synthesized mobility paths must disclose scalar-speed provenance.");
+assert(~strcmp(string(resolution.Status(1)), "no_user_paths"), ...
+    "Scalar-speed mobility must not export no_user_paths when UE count and distance bounds are configured.");
+
 ok = true;
 end
 

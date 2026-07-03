@@ -20,6 +20,7 @@ if strlength(backendOverride) > 0
             "SIXGR_OUTPUT_BACKEND_OVERRIDE must be filesystem or mysql_web, not '%s'.", char(backendOverride));
     end
     backend = backendOverride;
+    scfg = localApplyOutputBackendOverride(scfg, backend);
 end
 logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
 if backend == "mysql_web"
@@ -44,6 +45,37 @@ out.Config = scfg;
 out.Manifest = execOut.Manifest;
 out.Profile = string(execOut.Profile);
 out.Result = execOut.Result;
+end
+
+function scfg = localApplyOutputBackendOverride(scfg, backend)
+backend = lower(strtrim(string(backend)));
+data = scfg.toStruct();
+data = sixgr.util.structSet(data, "output.backend", char(backend));
+switch backend
+    case "filesystem"
+        data = sixgr.util.structSet(data, "output.persistence_mode", "results_folder");
+        data = sixgr.util.structSet(data, "output.persist_to_database", false);
+        data = sixgr.util.structSet(data, "output.persist_to_results_folder", true);
+    case "mysql_web"
+        data = sixgr.util.structSet(data, "output.persistence_mode", "both");
+        data = sixgr.util.structSet(data, "output.persist_to_database", true);
+        data = sixgr.util.structSet(data, "output.persist_to_results_folder", true);
+end
+scfg = sixgr.lls6g.config.ScenarioConfig(data, ...
+    "SourceFiles", scfg.SourceFiles, ...
+    "ConfigPath", scfg.ConfigPath, ...
+    "ConfigHash", localHashScenarioStruct(data), ...
+    "Kind", scfg.Kind);
+end
+
+function cfgHash = localHashScenarioStruct(data)
+txt = jsonencode(data);
+try
+    cfgHash = char(string(sixgr.util.sha256Hex(uint8(unicode2native(char(txt), "UTF-8")))));
+catch ME
+    error("sixgr:lls6g:ConfigHashUnavailable", ...
+        "Unable to compute backend-overridden scenario config SHA-256 hash: %s", ME.message);
+end
 end
 
 function result = localRunWaveformBundleScenario(cfg, scfg, runFolder)
@@ -1037,7 +1069,7 @@ study = sixgr.ctrl.runPDCCHStudyLLS(cfg, ...
 controlTrace = struct();
 if localShouldWriteCSV(scfg)
     sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"), study.PDCCHTrials);
-    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch_control_outputs.csv"), study.SummaryByScenario);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_summary_by_scenario.csv"), study.SummaryByScenario);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_coreset_map.csv"), study.CORESETMap);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_search_space_map.csv"), study.SearchSpaceMap);
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_reg_index_map.csv"), study.REGIndexMap);
@@ -1057,6 +1089,8 @@ if localShouldWriteCSV(scfg)
     if ~isempty(study.MRSSOverlapEvents)
         sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "pdcch6gr_mrss_overlap_events.csv"), study.MRSSOverlapEvents);
     end
+    sixgr.truth.exportLLSEnergyDiagnostics(cfg, fullfile(runFolder, "air_interface"), ...
+        struct("PDCCH", study.PDCCHTrials));
     controlTrace = sixgr.truth.exportControlPlaneTraces(runFolder, struct(), struct("PDCCH", study.PDCCHTrials));
 end
 
@@ -3547,7 +3581,59 @@ root = sixgr.report.resolveResultsRoot(char(string(resultsRoot)));
 bucket = localSanitizeToken(bucket, "lls");
 profile = localSanitizeToken(profile, "scenario");
 leaf = localSanitizeToken(leaf, "current");
-runFolder = fullfile(root, bucket, profile, leaf);
+root = localNormalizeRunFolderPath(root);
+if localRunFolderEndsWithSegments(root, [bucket profile])
+    runFolder = fullfile(root, leaf);
+elseif localRunFolderEndsWithSegments(root, bucket)
+    runFolder = fullfile(root, profile, leaf);
+else
+    runFolder = fullfile(root, bucket, profile, leaf);
+end
+runFolder = localNormalizeRunFolderPath(runFolder);
+end
+
+function tf = localRunFolderEndsWithSegments(pathValue, segments)
+parts = localRunFolderPathParts(pathValue);
+segments = string(segments);
+segments = segments(strlength(segments) > 0);
+if isempty(segments)
+    tf = true;
+    return;
+end
+if numel(parts) < numel(segments)
+    tf = false;
+    return;
+end
+tail = parts(end-numel(segments)+1:end);
+if ispc
+    tf = all(strcmpi(tail, segments));
+else
+    tf = all(strcmp(tail, segments));
+end
+end
+
+function parts = localRunFolderPathParts(pathValue)
+pathValue = string(localNormalizeRunFolderPath(pathValue));
+pathValue = replace(pathValue, "\", "/");
+pathValue = regexprep(pathValue, "/+", "/");
+parts = split(pathValue, "/");
+parts = parts(strlength(parts) > 0);
+end
+
+function pathValue = localNormalizeRunFolderPath(pathValue)
+pathValue = char(string(strtrim(string(pathValue))));
+if strlength(string(pathValue)) == 0
+    pathValue = "";
+    return;
+end
+pathValue = strrep(pathValue, "/", filesep);
+pathValue = strrep(pathValue, "\", filesep);
+while contains(pathValue, [filesep filesep])
+    pathValue = strrep(pathValue, [filesep filesep], filesep);
+end
+if strlength(string(pathValue)) > 1 && endsWith(pathValue, filesep) && ~(ispc && numel(pathValue) == 3 && pathValue(2) == ':')
+    pathValue = char(extractBefore(string(pathValue), strlength(string(pathValue))));
+end
 end
 
 function runFolder = localComposeDBStagingRunFolder(profile, leaf)

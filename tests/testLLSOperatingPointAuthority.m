@@ -90,6 +90,19 @@ ulStaleCQI = sixgr.link.runULPUSCHThroughput(cfgUL, ...
     "InterferenceBundle", struct([]));
 localAssertReceiverCQIPrecedesStaleGrant(dlStaleCQI.TrialTable, "DL");
 localAssertReceiverCQIPrecedesStaleGrant(ulStaleCQI.TrialTable, "UL");
+
+lineageGrant = staleCQIGrant;
+lineageGrant.CQIUsed = 7;
+lineageGrant.RawCQIDerivedMCS = 11;
+lineageGrant.CQIProvenance = "runtime_reported_cqi";
+lineageGrant.MCSSelectionSource = "runtime_link_adaptation_decision";
+lineageGrant.GrantReason = "authoritative_scheduler_cqi_lineage";
+dlLineageCQI = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
+    "NumFrames", 1, ...
+    "SNR_dB", 24, ...
+    "GrantSnapshot", lineageGrant, ...
+    "InterferenceBundle", struct([]));
+localAssertSchedulerCQILineagePrecedesReceiverDiagnostics(dlLineageCQI.TrialTable);
 ok = true;
 end
 
@@ -142,4 +155,18 @@ assert(~contains(lower(string(T.CQISource(1))), "scheduler_grant_cqi_used_no_cur
     "%s CQISource must not claim grant-CQI fallback when receiver CQI evidence exists.", direction);
 assert(double(T.MCS(1)) == 10 && strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant"), ...
     "The applied %s MCS must still remain the finalized scheduler grant while CQI is reported as receiver evidence.", direction);
+end
+
+function localAssertSchedulerCQILineagePrecedesReceiverDiagnostics(T)
+assert(istable(T) && height(T) == 1, ...
+    "Expected a single DL row for scheduler-CQI lineage validation.");
+requiredVars = {'WidebandCQI','CQISource','CQIDerivedMCS','MCS','MCSAuthority'};
+assert(all(ismember(requiredVars, T.Properties.VariableNames)), ...
+    "Raw DL trial row must expose CQI lineage fields.");
+assert(double(T.WidebandCQI(1)) == 7 && double(T.CQIDerivedMCS(1)) == 11, ...
+    "Authoritative scheduler CQI lineage must be preserved in DL trial CQI/MCS fields.");
+assert(contains(lower(string(T.CQISource(1))), "scheduler_grant"), ...
+    "Scheduler-lineage CQISource must disclose scheduler grant authority.");
+assert(double(T.MCS(1)) == 10 && strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant"), ...
+    "Applied DL MCS must remain the finalized scheduler grant while CQI lineage reports the grant-driving CQI.");
 end

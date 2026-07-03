@@ -113,6 +113,7 @@ ctx.DBState = localGetDBState();
 ctx.SourceKind = localResolveConfigSourceKind(ctx.ScenarioStruct, ctx.Config, ctx.DBConfigStruct, ctx.ConfigPath, ctx.SourceFiles);
 ctx.OverlayPath = localDetectBrowserOverlayPath(ctx.ConfigPath, ctx.SourceFiles, ctx.SourceKind);
 ctx.OverlayStruct = localReadOverlayStruct(ctx.OverlayPath);
+ctx.OverlayStruct = localApplyOutputBackendOverrideToOverlay(ctx.OverlayStruct, cfg);
 ctx.BrowserOwnedRun = ctx.SourceKind == "browser_runtime_overlay" || localIsBrowserOverlayPath(ctx.ConfigPath) || strlength(ctx.OverlayPath) > 0;
 ctx.PreOverlayBaseStruct = localReadPreOverlayBaseStruct(ctx.OverlayPath, ctx.SourceFiles);
 
@@ -222,6 +223,34 @@ catch
 end
 if isfield(overlayStruct, "inherits")
     overlayStruct = rmfield(overlayStruct, "inherits");
+end
+end
+
+function overlayStruct = localApplyOutputBackendOverrideToOverlay(overlayStruct, cfg)
+backendOverride = lower(strtrim(string(getenv("SIXGR_OUTPUT_BACKEND_OVERRIDE"))));
+if strlength(backendOverride) == 0
+    return;
+end
+if ~ismember(backendOverride, ["filesystem","mysql_web"])
+    return;
+end
+resolvedBackend = lower(strtrim(string(sixgr.util.structGet(cfg, "outputs.storageBackend", backendOverride))));
+if resolvedBackend ~= backendOverride
+    return;
+end
+if ~(isstruct(overlayStruct) && isscalar(overlayStruct))
+    overlayStruct = struct();
+end
+overlayStruct = sixgr.util.structSet(overlayStruct, "output.backend", char(backendOverride));
+switch backendOverride
+    case "filesystem"
+        overlayStruct = sixgr.util.structSet(overlayStruct, "output.persistence_mode", "results_folder");
+        overlayStruct = sixgr.util.structSet(overlayStruct, "output.persist_to_database", false);
+        overlayStruct = sixgr.util.structSet(overlayStruct, "output.persist_to_results_folder", true);
+    case "mysql_web"
+        overlayStruct = sixgr.util.structSet(overlayStruct, "output.persistence_mode", "both");
+        overlayStruct = sixgr.util.structSet(overlayStruct, "output.persist_to_database", true);
+        overlayStruct = sixgr.util.structSet(overlayStruct, "output.persist_to_results_folder", true);
 end
 end
 

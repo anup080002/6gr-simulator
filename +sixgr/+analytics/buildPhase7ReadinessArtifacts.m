@@ -241,9 +241,10 @@ ueRows = repmat(struct("UEID", NaN, "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
 for i = 1:numel(paths)
     p = paths(i);
     start = localVector(sixgr.util.structGet(p, "initial_position_m", [NaN NaN NaN]), 3);
+    pathSource = string(sixgr.util.structGet(p, "path_source", "mobility.user_paths"));
     ueRows(i) = struct("UEID", localNumber(p, "ue_id", i), "X_m", start(1), ...
         "Y_m", start(2), "Z_m", start(3), "Speed_kmh", localNumber(p, "speed_kmh", localNumber(cfg, "mobility.ue_speed_kmh", NaN)), ...
-        "PathSource", "mobility.user_paths");
+        "PathSource", pathSource);
 end
 ueInitial = localStructRowsToTable(ueRows);
 
@@ -964,9 +965,83 @@ fclose(fid);
 end
 
 function paths = localUserPaths(cfg)
-paths = sixgr.util.structGet(cfg, "mobility.user_paths", struct([]));
+paths = localGet(cfg, "mobility.user_paths", struct([]));
+if isempty(paths)
+    paths = localGet(cfg, "scenario.mobility.userPaths", struct([]));
+end
+if isempty(paths)
+    paths = localSynthesizeUserPathsFromScalarMobility(cfg);
+end
 if isempty(paths)
     paths = struct([]);
+elseif istable(paths)
+    paths = table2struct(paths);
+elseif iscell(paths)
+    try
+        paths = [paths{:}];
+    catch
+        paths = struct([]);
+    end
+elseif ~isstruct(paths)
+    paths = struct([]);
+end
+end
+
+function paths = localSynthesizeUserPathsFromScalarMobility(cfg)
+paths = struct([]);
+speedKmh = localNumber(cfg, ["mobility.ue_speed_kmh","channels.mobility_kmph","scenario.mobility.speed_kmh"], NaN);
+nUE = round(localNumber(cfg, ["users.n_users","deployment_topology.num_ues","scenario.ue.nUE"], 0));
+if ~(isfinite(speedKmh) && speedKmh >= 0 && isfinite(nUE) && nUE >= 1)
+    return;
+end
+radius = localFirstFiniteNumber(cfg, ["deployment_topology.max_ue_distance_from_bs_m", ...
+    "scenario.ue.distribution.max_bs_dist_m", "scenario.ue.distribution.maxBsDistance_m", ...
+    "deployment_topology.cell_radius_m"]);
+minRadius = localFirstFiniteNumber(cfg, ["deployment_topology.min_ue_distance_from_bs_m", ...
+    "scenario.ue.distribution.min_bs_dist_m", "scenario.ue.distribution.minBsDistance_m"]);
+if ~isfinite(radius)
+    radius = minRadius;
+end
+if ~(isfinite(radius) && radius > 0)
+    return;
+end
+if isfinite(minRadius) && minRadius > 0
+    radius = max(radius, minRadius);
+end
+slotMs = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5);
+slots = localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], 1);
+durationS = max(double(slots) * double(slotMs) / 1e3, double(slotMs) / 1e3);
+routeLength = max(0, double(speedKmh) / 3.6 * durationS);
+headingDeg = localNumber(cfg, ["mobility.heading_deg","mobility.direction_deg","scenario.mobility.heading_deg"], 0);
+ueHeight = localNumber(cfg, ["scenario.ue.height_m","deployment_topology.ue_height_m"], 1.5);
+
+paths = repmat(struct("ue_id", NaN, "label", "", "speed_kmh", NaN, ...
+    "initial_position_m", [NaN NaN NaN], "initial_heading_deg", NaN, ...
+    "waypoints_m", struct([]), "loop_mode", "hold", "path_source", "mobility.ue_speed_kmh"), nUE, 1);
+move = routeLength .* [cosd(headingDeg), sind(headingDeg), 0];
+for i = 1:nUE
+    angle = 2 * pi * double(i - 1) / max(1, double(nUE));
+    start = [radius * cos(angle), radius * sin(angle), ueHeight];
+    stop = start + move;
+    paths(i).ue_id = i;
+    paths(i).label = sprintf("ue_%d_scalar_speed_path", i);
+    paths(i).speed_kmh = double(speedKmh);
+    paths(i).initial_position_m = start;
+    paths(i).initial_heading_deg = double(headingDeg);
+    paths(i).waypoints_m = struct("position_m", stop, "hold_time_s", 0);
+    paths(i).loop_mode = "hold";
+    paths(i).path_source = "mobility.ue_speed_kmh";
+end
+end
+
+function value = localFirstFiniteNumber(cfg, paths)
+value = NaN;
+for path = string(paths(:)).'
+    candidate = localNumber(cfg, path, NaN);
+    if isfinite(candidate)
+        value = candidate;
+        return;
+    end
 end
 end
 
@@ -1131,6 +1206,9 @@ end
 
 function stop = localWaypointPosition(p, fallback)
 waypoints = sixgr.util.structGet(p, "waypoints_m", struct([]));
+if isempty(waypoints)
+    waypoints = sixgr.util.structGet(p, "waypoints", struct([]));
+end
 stop = fallback;
 if isstruct(waypoints) && ~isempty(waypoints)
     stop = localVector(sixgr.util.structGet(waypoints(1), "position_m", fallback), 3);

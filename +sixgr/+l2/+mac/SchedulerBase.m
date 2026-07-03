@@ -519,6 +519,10 @@ classdef (Abstract) SchedulerBase < handle
                 "AgedSubbandSINRVector_dB", char(string(sixgr.util.structGet(ue, "AgedSubbandSINRVector_dB", ""))), ...
                 "PostEqSINRPerLayer_dB", char(string(sixgr.util.structGet(ue, "PostEqSINRPerLayer_dB", ""))), ...
                 "AgedPostEqSINRPerLayer_dB", char(string(sixgr.util.structGet(ue, "AgedPostEqSINRPerLayer_dB", ""))), ...
+                "SchedulerCQIRawCQI", double(sixgr.util.structGet(ue, "SchedulerCQIRawCQI", NaN)), ...
+                "SchedulerAdjustedSINR_dB", double(sixgr.util.structGet(ue, "SchedulerAdjustedSINR_dB", NaN)), ...
+                "SchedulerSINRBackoff_dB", double(sixgr.util.structGet(ue, "SchedulerSINRBackoff_dB", NaN)), ...
+                "SchedulerCQISource", char(string(sixgr.util.structGet(ue, "SchedulerCQISource", ""))), ...
                 "AutoQueueAwareWidebandCQIGuard", false, ...
                 "CalibrationProfile", char(localSchedulerCalibrationProfile(obj.Cfg, dir)), ...
                 "InitialNumLayers", double(nLayers), ...
@@ -574,7 +578,7 @@ classdef (Abstract) SchedulerBase < handle
                         amc.MCSValueStatus = "bootstrap_not_measured_cqi";
                     else
                         amc.MCSSelectionSource = "runtime_cqi_table";
-                        amc.CQIProvenance = "runtime_reported_cqi";
+                        amc.CQIProvenance = localSchedulerCQIProvenance(ue, "runtime_reported_cqi");
                         amc.MCSValueStatus = "measured_cqi_mapped";
                     end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
@@ -624,7 +628,7 @@ classdef (Abstract) SchedulerBase < handle
                         amc.MCSValueStatus = "bootstrap_not_measured_cqi";
                     else
                         amc.MCSSelectionSource = "runtime_cqi_table";
-                        amc.CQIProvenance = "runtime_reported_cqi";
+                        amc.CQIProvenance = localSchedulerCQIProvenance(ue, "runtime_reported_cqi");
                         amc.MCSValueStatus = "measured_cqi_mapped";
                     end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
@@ -780,9 +784,9 @@ classdef (Abstract) SchedulerBase < handle
             end
             key = "";
 
-            useFastNRE = logical(sixgr.util.structGet(cfgTBS, "mac.scheduler.fastNREApprox", true));
+            useFastNRE = logical(sixgr.util.structGet(cfgTBS, "mac.scheduler.fastNREApprox", false));
             strictMode = logical(sixgr.util.structGet(cfgTBS, "run.strictMode", false));
-            tbsMode = lower(string(sixgr.util.structGet(cfgTBS, "mac.scheduler.tbsMode", "approximate")));
+            tbsMode = lower(string(sixgr.util.structGet(cfgTBS, "mac.scheduler.tbsMode", "faithful")));
             viennaEquivalent = logical(sixgr.util.structGet(cfgTBS, "mac.scheduler.viennaEquivalent", false));
             allowApproxPlanningInStrict = logical(sixgr.util.structGet(cfgTBS, ...
                 "mac.scheduler.allowApproximatePlanningInStrictMode", false));
@@ -963,6 +967,13 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSIndex", double(amc.MCSIndex), ...
                 "MCSTable", char(string(amc.MCSTable)), ...
                 "CQITable", char(string(amc.CQITable)), ...
+                "CQIUsed", double(sixgr.util.structGet(amc, "CQIUsed", NaN)), ...
+                "RawCQIDerivedMCS", double(sixgr.util.structGet(amc, "RawCQIDerivedMCS", NaN)), ...
+                "CQIBasedMCS", double(sixgr.util.structGet(amc, "CQIBasedMCS", NaN)), ...
+                "SmoothedCQI", double(sixgr.util.structGet(amc, "SmoothedCQI", NaN)), ...
+                "InstantaneousCQIMCS", double(sixgr.util.structGet(amc, "InstantaneousCQIMCS", NaN)), ...
+                "DeltaMCS", double(sixgr.util.structGet(amc, "DeltaMCS", NaN)), ...
+                "StaticDeltaMCS", double(sixgr.util.structGet(amc, "StaticDeltaMCS", 0)), ...
                 "AMCMode", char(string(amc.Mode)), ...
                 "OuterLoopEnabled", logical(sixgr.util.structGet(amc, "OuterLoopEnabled", false)), ...
                 "OuterLoopApplied", logical(sixgr.util.structGet(amc, "OuterLoopApplied", false)), ...
@@ -977,6 +988,10 @@ classdef (Abstract) SchedulerBase < handle
                 "FeedbackAgeSlots", double(sixgr.util.structGet(amc, "FeedbackAgeSlots", NaN)), ...
                 "FeedbackAgeSeconds", double(sixgr.util.structGet(amc, "FeedbackAgeSeconds", NaN)), ...
                 "CalibrationProfile", char(string(sixgr.util.structGet(amc, "CalibrationProfile", ""))), ...
+                "SchedulerCQIRawCQI", double(sixgr.util.structGet(amc, "SchedulerCQIRawCQI", NaN)), ...
+                "SchedulerAdjustedSINR_dB", double(sixgr.util.structGet(amc, "SchedulerAdjustedSINR_dB", NaN)), ...
+                "SchedulerSINRBackoff_dB", double(sixgr.util.structGet(amc, "SchedulerSINRBackoff_dB", NaN)), ...
+                "SchedulerCQISource", char(string(sixgr.util.structGet(amc, "SchedulerCQISource", ""))), ...
                 "GrantBlocker", char(localAMCBlockerReason(amc)), ...
                 "NREPerPRB", double(rawNRE), ...
                 "XOverhead", double(xOverhead), ...
@@ -1040,6 +1055,13 @@ classdef (Abstract) SchedulerBase < handle
             plan.RankIndicator = double(best.NumLayers);
             plan.TargetCodeRate = double(best.TargetCodeRate);
             plan.MCSIndex = double(best.MCSIndex);
+            plan.CQIUsed = double(sixgr.util.structGet(amc, "CQIUsed", plan.CQIUsed));
+            plan.RawCQIDerivedMCS = double(sixgr.util.structGet(amc, "RawCQIDerivedMCS", plan.RawCQIDerivedMCS));
+            plan.CQIBasedMCS = double(sixgr.util.structGet(amc, "CQIBasedMCS", plan.CQIBasedMCS));
+            plan.SmoothedCQI = double(sixgr.util.structGet(amc, "SmoothedCQI", plan.SmoothedCQI));
+            plan.InstantaneousCQIMCS = double(sixgr.util.structGet(amc, "InstantaneousCQIMCS", plan.InstantaneousCQIMCS));
+            plan.DeltaMCS = double(sixgr.util.structGet(amc, "DeltaMCS", plan.DeltaMCS));
+            plan.StaticDeltaMCS = double(sixgr.util.structGet(amc, "StaticDeltaMCS", plan.StaticDeltaMCS));
             plan.NREPerPRB = double(best.NREPerPRB);
             plan.XOverhead = double(sixgr.util.structGet(best, "XOverhead", xOverhead));
             plan.TBSInputModulation = char(string(best.Modulation));
@@ -1146,6 +1168,32 @@ classdef (Abstract) SchedulerBase < handle
                     if logical(sixgr.util.structGet(profile, "Valid", false))
                         modStr = char(string(profile.Modulation));
                         targetCodeRate = double(profile.TargetCodeRate);
+                    end
+                end
+            end
+            cqiUsed = double(sixgr.util.structGet(grantOut, "CQIUsed", NaN));
+            amcMode = lower(strtrim(string(sixgr.util.structGet(grantOut, "AMCMode", ""))));
+            mcsSource = lower(strtrim(string(sixgr.util.structGet(grantOut, "MCSSelectionSource", ...
+                sixgr.util.structGet(grantOut, "MCSIndexAuthority", "")))));
+            cqiDrivenGrant = isfinite(cqiUsed) && cqiUsed > 0 && ...
+                (amcMode == "cqi_table" || contains(mcsSource, "cqi") || contains(mcsSource, "measured"));
+            if cqiDrivenGrant
+                [cqiModStr, cqiTargetCodeRate, cqiMCSIndex] = sixgr.link.amcFromCQI(cqiUsed, "", NaN, obj.Cfg, grantOut.Direction);
+                if isfinite(cqiMCSIndex) && cqiMCSIndex >= 0 && ...
+                        isfinite(cqiTargetCodeRate) && cqiTargetCodeRate > 0 && strlength(string(cqiModStr)) > 0
+                    grantOut.RawCQIDerivedMCS = double(cqiMCSIndex);
+                    if ~isfinite(double(sixgr.util.structGet(grantOut, "InstantaneousCQIMCS", NaN)))
+                        grantOut.InstantaneousCQIMCS = double(cqiMCSIndex);
+                    end
+                    mcsIndex = double(sixgr.util.structGet(grantOut, "MCSIndex", sixgr.util.structGet(grantOut, "MCS", NaN)));
+                    if isfinite(mcsIndex) && round(double(mcsIndex)) > round(double(cqiMCSIndex))
+                        grantOut.MCSIndex = double(round(cqiMCSIndex));
+                        grantOut.MCS = double(round(cqiMCSIndex));
+                        grantOut.Modulation = char(string(cqiModStr));
+                        grantOut.TargetCodeRate = double(cqiTargetCodeRate);
+                        grantOut.MCSValueStatus = "clamped_to_cqi_max";
+                        modStr = char(string(cqiModStr));
+                        targetCodeRate = double(cqiTargetCodeRate);
                     end
                 end
             end
@@ -1944,6 +1992,17 @@ if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
     targetBLER = 0.1;
 end
 profile = "nr_cqi_table_amc:target_bler_" + regexprep(string(sprintf("%.3g", targetBLER)), "[^0-9A-Za-z]+", "p") + ":" + strtrim(version);
+end
+
+function provenance = localSchedulerCQIProvenance(ue, fallback)
+provenance = strtrim(string(sixgr.util.structGet(ue, "SchedulerCQISource", "")));
+if strlength(provenance) == 0
+    provenance = strtrim(string(fallback));
+end
+if strlength(provenance) == 0
+    provenance = "runtime_reported_cqi";
+end
+provenance = char(provenance);
 end
 
 function mcs = localResolveBootstrapMCSIndex(cfg)

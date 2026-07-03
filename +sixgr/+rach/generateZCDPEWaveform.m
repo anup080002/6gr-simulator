@@ -31,7 +31,7 @@ end
 
 carrier = baseSeq.Carrier;
 prach = baseSeq.PRACH;
-[waveform, grid, ofdmInfo] = sixgr.rach.modulatePRACHSymbols(symbols, baseSeq, cfgUse);
+[waveform, grid, ofdmInfo, backend] = localModulateZCDPESymbols(symbols, baseSeq, cfgUse);
 
 numTxAnt = round(double(sixgr.util.structGet(cfgUse, "NumTxAntennas", 1)));
 if numTxAnt > 1
@@ -47,7 +47,7 @@ tx.Carrier = carrier;
 tx.PRACH = prach;
 tx.SampleRate_Hz = double(ofdmInfo.SampleRate);
 tx.OFDMInfo = ofdmInfo;
-tx.WaveformGenerationBackend = "inrepo_nrPRACH_symbol_ofdm";
+tx.WaveformGenerationBackend = backend;
 tx.Occasion = occasion;
 tx.PreambleIndex = baseSeq.PreambleIndex;
 tx.SequenceIndex = baseSeq.SequenceIndex;
@@ -70,6 +70,31 @@ if zseq.IsBackwardCompat
             "ZC-DPE d=0 waveform differs from baseline PRACH by relative norm %.3g.", diffNorm / refNorm);
     end
 end
+end
+
+function [waveform, grid, ofdmInfo, backend] = localModulateZCDPESymbols(symbols, seq, cfg)
+useToolbox = logical(sixgr.util.structGet(cfg, "UseToolboxPRACHOFDMModulator", ...
+    sixgr.util.structGet(cfg, "random_access.use_toolbox_prach_ofdm_modulator", true)));
+if useToolbox
+    try
+        carrier = seq.Carrier;
+        prach = seq.PRACH;
+        grid = nrPRACHGrid(carrier, prach);
+        grid(seq.Indices) = symbols;
+        [waveform, ofdmInfo] = nrPRACHOFDMModulate(carrier, prach, grid);
+        backend = "matlab_5g_toolbox_nrPRACHOFDMModulate";
+        return;
+    catch ME
+        allowFallback = logical(sixgr.util.structGet(cfg, "AllowInrepoPRACHOFDMFallback", ...
+            sixgr.util.structGet(cfg, "random_access.allow_inrepo_prach_ofdm_fallback", false)));
+        if ~allowFallback
+            error("sixgr:rach:ZCDPEOFDMModulatorUnavailable", ...
+                "nrPRACHOFDMModulate failed for the resolved ZC-DPE PRACH config and fallback is disabled: %s", ME.message);
+        end
+    end
+end
+[waveform, grid, ofdmInfo] = sixgr.rach.modulatePRACHSymbols(symbols, seq, cfg);
+backend = "inrepo_nrPRACH_symbol_ofdm_explicit_fallback";
 end
 
 function cfgOut = localWithZCDPEDPI(cfgIn, dpiIndex)

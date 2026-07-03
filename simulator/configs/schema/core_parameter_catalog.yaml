@@ -359,7 +359,7 @@
         "type": {"value_type": "string", "default": "PF", "allowed_values": ["PF", "RR", "MAXCQI", "MaxCqi", "roundRobin", "proportionalFair", "maxCqi", "rr", "pf"]},
         "metricAveraging": {"value_type": "string", "default": "exp"},
         "alpha": {"value_type": "number", "default": 0.9, "min": 0, "max": 1},
-        "tbsMode": {"value_type": "string", "default": "approximate", "allowed_values": ["approximate", "faithful", "strict"]},
+        "tbsMode": {"value_type": "string", "default": "faithful", "allowed_values": ["approximate", "faithful", "strict"]},
         "viennaEquivalent": {"value_type": "boolean", "default": false}
       },
       "harq": {

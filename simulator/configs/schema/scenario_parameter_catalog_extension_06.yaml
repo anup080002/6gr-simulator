@@ -230,7 +230,14 @@
       "effective_sinr_method": {"required": false, "type": "string"},
       "eesm_beta_db": {"required": false, "type": "number", "min": 0},
       "eesm_beta_by_mcs_db": {"required": false, "type": "array"},
-      "eesm_beta_mcs_index": {"required": false, "type": "array"}
+      "eesm_beta_mcs_index": {"required": false, "type": "array"},
+      "age_reported_cqi": {"required": false, "type": "boolean"},
+      "use_aged_measured_sinr_for_cqi": {"required": false, "type": "boolean"},
+      "max_csi_aging_penalty_db": {"required": false, "type": "number", "min": 0},
+      "cqi_aging_step_db": {"required": false, "type": "number", "min_exclusive": 0},
+      "max_csi_age_slots": {"required": false, "type": "number", "min": 0},
+      "dl_max_csi_age_slots": {"required": false, "type": "number", "min": 0},
+      "ul_max_csi_age_slots": {"required": false, "type": "number", "min": 0}
     }},
     "harq": {"parameters": {
       "enable": {"required": false, "type": "boolean"},

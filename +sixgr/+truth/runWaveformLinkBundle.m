@@ -4980,7 +4980,7 @@ if isfinite(targetCodeRate) && targetCodeRate > 0
 end
 storedTBSize = double(sixgr.util.structGet(grant, "TBSBits", ...
     sixgr.util.structGet(grant, "TransportBlockSize", NaN)));
-if isfinite(storedTBSize) && storedTBSize > 0
+if localCoupledGrantRequiresTransportBlockSizeOverride(grant) && isfinite(storedTBSize) && storedTBSize > 0
     txArgs = [txArgs {"TransportBlockSizeOverride", round(storedTBSize)}]; %#ok<AGROW>
 end
 xOverhead = double(sixgr.util.structGet(grant, "XOverhead", NaN));
@@ -4991,6 +4991,17 @@ numTxAnt = double(sixgr.util.structGet(grant, "NumTxAnt", NaN));
 if isfinite(numTxAnt) && numTxAnt >= 1
     txArgs = [txArgs {"NumTxAnt", numTxAnt}]; %#ok<AGROW>
 end
+end
+
+function tf = localCoupledGrantRequiresTransportBlockSizeOverride(grant)
+tf = false;
+if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
+    return;
+end
+tf = logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "HARQIsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "HARQProcessKey.IsRetransmission", false)) || ...
+    contains(lower(strtrim(string(sixgr.util.structGet(grant, "GrantReason", "")))), "retrans");
 end
 
 function sampleRateHz = localResolveCoupledTxSampleRate(tx, txInfo)
@@ -7656,10 +7667,10 @@ if ~(isfinite(interval) && interval >= 1)
     end
 end
 interval = max(1, round(interval));
-if localIsMySQLWebMode(cfg) && isfinite(totalFrames) && totalFrames >= 100
+if isfinite(totalFrames) && totalFrames >= 100
     % Keep browser status live while avoiding per-slot rewrites of bulky
-    % derived/report artifacts during long WebGUI truth runs.
-    interval = max(interval, min(25, max(4, ceil(double(totalFrames) / 40))));
+    % derived/report artifacts during long truth runs.
+    interval = max(interval, min(25, max(10, ceil(double(totalFrames) / 5))));
 end
 end
 
@@ -9487,8 +9498,10 @@ try
     snrToken = "snr_" + string(round(double(snr_dB) * 1000));
     runId = "ra_" + matlab.lang.makeValidName(char(scenarioName)) + "_ue" + string(round(double(ueId))) + ...
         "_trial" + string(round(double(trialIdx))) + "_" + slotToken + "_" + snrToken;
+    raRunFolder = string(sixgr.util.structGet(cfg, "ctrl6gr.OutputDir", ...
+        sixgr.util.structGet(cfg, "run.outputDir", "")));
     ra = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfg, ...
-        "RunFolder", "", ...
+        "RunFolder", char(raRunFolder), ...
         "RunId", runId, ...
         "ScenarioName", scenarioName, ...
         "UEId", double(ueId), ...

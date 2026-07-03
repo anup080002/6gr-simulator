@@ -1793,6 +1793,13 @@ auxPairs = {
     "link_adaptation.ul_bootstrap_preview_backoff_db", "phy.linkAdaptation.ulBootstrapPreviewBackoff_dB"
     "link_adaptation.ul_srs_to_pusch_sinr_backoff_db", "phy.linkAdaptation.ulSRSToPUSCHSINRBackoff_dB"
     "link_adaptation.ul_reference_signal_scheduling_backoff_db", "phy.linkAdaptation.ulReferenceSignalSchedulingBackoff_dB"
+    "link_adaptation.age_reported_cqi", "phy.linkAdaptation.ageReportedCQI"
+    "link_adaptation.use_aged_measured_sinr_for_cqi", "phy.linkAdaptation.useAgedMeasuredSINRForCQI"
+    "link_adaptation.max_csi_aging_penalty_db", "phy.linkAdaptation.maxCSIAgingPenalty_dB"
+    "link_adaptation.cqi_aging_step_db", "phy.linkAdaptation.cqiAgingStep_dB"
+    "link_adaptation.max_csi_age_slots", "phy.linkAdaptation.maxCSIAgeSlots"
+    "link_adaptation.dl_max_csi_age_slots", "phy.linkAdaptation.dlMaxCSIAgeSlots"
+    "link_adaptation.ul_max_csi_age_slots", "phy.linkAdaptation.ulMaxCSIAgeSlots"
     "link_adaptation.mcs_backoff_dl_db", "phy.linkAdaptation.dlMCSBackoff_dB"
     "link_adaptation.mcs_backoff_ul_db", "phy.linkAdaptation.ulMCSBackoff_dB"
     "link_adaptation.sinr_to_cqi_mapping_table", "phy.linkAdaptation.sinrToCQITable"
@@ -2463,14 +2470,15 @@ if isfield(s.system, "scheduler") && isstruct(s.system.scheduler)
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlotDL", maxActiveUEsPerCellPerSlotDL);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlotUL", maxActiveUEsPerCellPerSlotUL);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxPRBAllocationPerUE", maxPRBAllocationPerUE);
-    if isfield(s.system.scheduler, "tbsMode")
-        cfg = sixgr.util.structSet(cfg, "mac.scheduler.tbsMode", ...
-            char(string(localGetNested(s, "system.scheduler.tbsMode", "approximate"))));
+    tbsMode = char(string(localGetNested(s, "system.scheduler.tbsMode", "faithful")));
+    cfg = sixgr.util.structSet(cfg, "system.scheduler.tbsMode", tbsMode);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.tbsMode", tbsMode);
+    fastNREApprox = logical(localGetNested(s, "system.scheduler.fastNREApprox", false));
+    if any(strcmpi(tbsMode, {'faithful','strict'}))
+        fastNREApprox = false;
     end
-    if isfield(s.system.scheduler, "fastNREApprox")
-        cfg = sixgr.util.structSet(cfg, "mac.scheduler.fastNREApprox", ...
-            logical(localGetNested(s, "system.scheduler.fastNREApprox", true)));
-    end
+    cfg = sixgr.util.structSet(cfg, "system.scheduler.fastNREApprox", fastNREApprox);
+    cfg = sixgr.util.structSet(cfg, "mac.scheduler.fastNREApprox", fastNREApprox);
     if isfield(s.system.scheduler, "allowApproximatePlanningInStrictMode")
         cfg = sixgr.util.structSet(cfg, "mac.scheduler.allowApproximatePlanningInStrictMode", ...
             logical(localGetNested(s, "system.scheduler.allowApproximatePlanningInStrictMode", false)));

@@ -279,7 +279,7 @@ if all(strlength(status) == 0)
     status = lower(strtrim(string(localColumnOrDefault(summary, "Status", ""))));
 end
 ok = localColumnOrDefault(summary, "ResultOk", false);
-tf = any(ismember(status, ["completed", "complete", "success", "finished", "true", "1"])) || any(localToLogical(ok));
+tf = any(ismember(status, ["completed", "completed_with_failures", "complete", "success", "finished", "true", "1"])) || any(localToLogical(ok));
 end
 
 function reason = localRunCompletionReason(layout, runCompleted)

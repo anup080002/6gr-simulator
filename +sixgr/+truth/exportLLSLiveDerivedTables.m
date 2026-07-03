@@ -16,6 +16,8 @@ layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
 sixgr.util.ensureFolder(layout.HARQCSVDir);
+analyticsCSVDir = fullfile(layout.Root, "analytics", "csv");
+sixgr.util.ensureFolder(analyticsCSVDir);
 
 dlT = sixgr.util.structGet(rawTrials, "DL", table());
 ulT = sixgr.util.structGet(rawTrials, "UL", table());
@@ -33,6 +35,8 @@ artifacts.BeamProcedureStatsPath = fullfile(layout.ReportCSVDir, "live_beam_mana
 artifacts.CSIFeedbackStatsPath = fullfile(layout.ReportCSVDir, "live_csi_feedback_stats.csv");
 artifacts.CSIRSStatsPath = fullfile(layout.ReportCSVDir, "live_csirs_stats.csv");
 artifacts.LinkAdaptationInputPath = fullfile(layout.ReportCSVDir, "live_link_adaptation_input_table.csv");
+artifacts.SymbolThroughputPath = fullfile(layout.ReportCSVDir, "live_symbol_throughput_table.csv");
+artifacts.SymbolThroughputAnalyticsPath = fullfile(analyticsCSVDir, "symbol_throughput_analytics.csv");
 artifacts.UserPerformancePath = fullfile(layout.ReportCSVDir, "live_user_performance_snapshot.csv");
 artifacts.CoverageLayerPath = fullfile(layout.ReportCSVDir, "live_coverage_layer.csv");
 artifacts.ErrorRateSummaryPath = fullfile(layout.ReportCSVDir, "live_error_rate_summary.csv");
@@ -54,6 +58,7 @@ csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(dlT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
 linkAdaptationT = localBuildLinkAdaptationInputTable(cfg, dlT, ulT);
+symbolThroughputT = localBuildSymbolThroughputTable(cfg, dlT, ulT);
 harqSummaryT = sixgr.util.structGet(slotTrace, "HARQSummaryTable", table());
 harqTimelineT = sixgr.util.structGet(slotTrace, "HARQTimelineTable", table());
 if ~(istable(harqSummaryT) && ismember("Direction", string(harqSummaryT.Properties.VariableNames)))
@@ -94,6 +99,8 @@ sixgr.util.csvWriteTable(artifacts.BeamProcedureStatsPath, beamT);
 sixgr.util.csvWriteTable(artifacts.CSIFeedbackStatsPath, csiT);
 sixgr.util.csvWriteTable(artifacts.CSIRSStatsPath, csirsT);
 sixgr.util.csvWriteTable(artifacts.LinkAdaptationInputPath, linkAdaptationT);
+sixgr.util.csvWriteTable(artifacts.SymbolThroughputPath, symbolThroughputT);
+sixgr.util.csvWriteTable(artifacts.SymbolThroughputAnalyticsPath, symbolThroughputT);
 sixgr.util.csvWriteTable(artifacts.UserPerformancePath, userPerfT);
 sixgr.util.csvWriteTable(artifacts.CoverageLayerPath, coverageT);
 sixgr.util.csvWriteTable(artifacts.ErrorRateSummaryPath, errorRateT);
@@ -119,6 +126,7 @@ artifacts.BeamProcedureStats = beamT;
 artifacts.CSIFeedbackStats = csiT;
 artifacts.CSIRSStats = csirsT;
 artifacts.LinkAdaptationInput = linkAdaptationT;
+artifacts.SymbolThroughput = symbolThroughputT;
 artifacts.UserPerformance = userPerfT;
 artifacts.CoverageLayer = coverageT;
 artifacts.ErrorRateSummary = errorRateT;
@@ -612,6 +620,197 @@ T = localVertcat(parts);
 if isempty(T)
     T = table();
 end
+end
+
+function T = localBuildSymbolThroughputTable(cfg, dlT, ulT)
+symbolsPerSlot = localResolveSymbolsPerSlot(cfg);
+totalSlots = localResolveSymbolThroughputSlotCount(cfg, dlT, ulT);
+slotDuration_s = localResolveSlotDurationSeconds(cfg, totalSlots);
+symbolDuration_s = slotDuration_s / max(1, symbolsPerSlot);
+nSymbols = max(0, totalSlots * symbolsPerSlot);
+
+absIdx0 = (0:nSymbols-1).';
+slotIdx = floor(absIdx0 ./ max(1, symbolsPerSlot));
+symbolInSlot = mod(absIdx0, max(1, symbolsPerSlot));
+
+scheduledDL = zeros(nSymbols, 1);
+scheduledUL = zeros(nSymbols, 1);
+goodDL = zeros(nSymbols, 1);
+goodUL = zeros(nSymbols, 1);
+grantDL = zeros(nSymbols, 1);
+grantUL = zeros(nSymbols, 1);
+mcsDL = nan(nSymbols, 1);
+mcsUL = nan(nSymbols, 1);
+cqiDLSum = zeros(nSymbols, 1);
+cqiULSum = zeros(nSymbols, 1);
+cqiDLCount = zeros(nSymbols, 1);
+cqiULCount = zeros(nSymbols, 1);
+
+[scheduledDL, goodDL, grantDL, mcsDL, cqiDLSum, cqiDLCount] = ...
+    localAccumulateSymbolThroughput(dlT, scheduledDL, goodDL, grantDL, mcsDL, cqiDLSum, cqiDLCount, symbolsPerSlot, "DL");
+[scheduledUL, goodUL, grantUL, mcsUL, cqiULSum, cqiULCount] = ...
+    localAccumulateSymbolThroughput(ulT, scheduledUL, goodUL, grantUL, mcsUL, cqiULSum, cqiULCount, symbolsPerSlot, "UL");
+
+meanDLCQI = nan(nSymbols, 1);
+dlMask = cqiDLCount > 0;
+meanDLCQI(dlMask) = cqiDLSum(dlMask) ./ cqiDLCount(dlMask);
+meanULCQI = nan(nSymbols, 1);
+ulMask = cqiULCount > 0;
+meanULCQI(ulMask) = cqiULSum(ulMask) ./ cqiULCount(ulMask);
+
+scheduledTotal = scheduledDL + scheduledUL;
+goodTotal = goodDL + goodUL;
+source = repmat("configured_symbol_time_axis_no_grant", nSymbols, 1);
+source((grantDL + grantUL) > 0) = "derived_from_real_grant_trial_symbol_allocation";
+
+T = table( ...
+    absIdx0, slotIdx, symbolInSlot, ...
+    double(absIdx0) .* symbolDuration_s, repmat(symbolDuration_s, nSymbols, 1), ...
+    scheduledDL, scheduledUL, scheduledTotal, ...
+    goodDL, goodUL, goodTotal, ...
+    scheduledDL ./ symbolDuration_s ./ 1e6, ...
+    scheduledUL ./ symbolDuration_s ./ 1e6, ...
+    scheduledTotal ./ symbolDuration_s ./ 1e6, ...
+    goodDL ./ symbolDuration_s ./ 1e6, ...
+    goodUL ./ symbolDuration_s ./ 1e6, ...
+    goodTotal ./ symbolDuration_s ./ 1e6, ...
+    grantDL, grantUL, grantDL + grantUL, ...
+    mcsDL, mcsUL, meanDLCQI, meanULCQI, ...
+    source, repmat("symbol_throughput_from_actual_grant_symbol_allocation", nSymbols, 1), ...
+    repmat("OK", nSymbols, 1), ...
+    'VariableNames', {'AbsoluteSymbolIndex','Slot','SymbolInSlot','SymbolStartTime_s','SymbolDuration_s', ...
+    'ScheduledDLBits','ScheduledULBits','ScheduledTotalBits', ...
+    'GoodDLBits','GoodULBits','GoodTotalBits', ...
+    'DLThroughput_Mbps','ULThroughput_Mbps','TotalScheduledThroughput_Mbps', ...
+    'DLGoodput_Mbps','ULGoodput_Mbps','TotalGoodput_Mbps', ...
+    'DLGrantCount','ULGrantCount','TotalGrantCount', ...
+    'MaxDLMCS','MaxULMCS','MeanDLCQI','MeanULCQI', ...
+    'ValueSource','ValueRole','ValueStatus'});
+end
+
+function [scheduledBits, goodBits, grantCount, maxMCS, cqiSum, cqiCount] = ...
+    localAccumulateSymbolThroughput(T, scheduledBits, goodBits, grantCount, maxMCS, cqiSum, cqiCount, symbolsPerSlot, direction)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+nOut = numel(scheduledBits);
+slotVals = localOptionalNumericColumn(T, "Slot", NaN);
+symbolStartVals = localOptionalNumericColumn(T, "SymbolStart", 0);
+numSymbolVals = localOptionalNumericColumn(T, "NumSymbols", NaN);
+tbsVals = localOptionalNumericColumn(T, "TBSBits", NaN);
+offeredVals = localOptionalNumericColumn(T, "OfferedBits", NaN);
+goodVals = localOptionalNumericColumn(T, "GoodBits", NaN);
+crcVals = localOptionalNumericColumn(T, "CRCPass", NaN);
+mcsVals = localOptionalNumericColumn(T, "MCSIndex", NaN);
+mcsFallback = localOptionalNumericColumn(T, "MCS", NaN);
+mcsMissing = ~isfinite(mcsVals) & isfinite(mcsFallback);
+mcsVals(mcsMissing) = mcsFallback(mcsMissing);
+cqiVals = localOptionalNumericColumn(T, "CQIUsed", NaN);
+cqiFallback = localOptionalNumericColumn(T, "WidebandCQI", NaN);
+cqiMissing = ~isfinite(cqiVals) & isfinite(cqiFallback);
+cqiVals(cqiMissing) = cqiFallback(cqiMissing);
+if ~ismember("Direction", string(T.Properties.VariableNames))
+    rowDirection = repmat(string(direction), height(T), 1);
+else
+    rowDirection = upper(strtrim(string(T.Direction)));
+end
+
+for r = 1:height(T)
+    if ~(rowDirection(r) == upper(string(direction)))
+        continue;
+    end
+    slot = round(double(slotVals(r)));
+    if ~(isfinite(slot) && slot >= 0)
+        continue;
+    end
+    sym0 = round(double(symbolStartVals(r)));
+    nSym = round(double(numSymbolVals(r)));
+    if ~(isfinite(sym0) && isfinite(nSym) && nSym >= 1)
+        sym0 = 0;
+        nSym = symbolsPerSlot;
+    end
+    symList = sym0:(sym0 + nSym - 1);
+    symList = symList(symList >= 0 & symList < symbolsPerSlot);
+    if isempty(symList)
+        continue;
+    end
+    idx = slot * symbolsPerSlot + symList(:) + 1;
+    idx = idx(idx >= 1 & idx <= nOut);
+    if isempty(idx)
+        continue;
+    end
+    coveredSymbols = max(1, numel(idx));
+    scheduled = double(tbsVals(r));
+    if ~(isfinite(scheduled) && scheduled >= 0)
+        scheduled = double(offeredVals(r));
+    end
+    if ~(isfinite(scheduled) && scheduled >= 0)
+        scheduled = 0;
+    end
+    delivered = double(goodVals(r));
+    if ~(isfinite(delivered) && delivered >= 0)
+        crcPass = isfinite(double(crcVals(r))) && double(crcVals(r)) ~= 0;
+        delivered = scheduled * double(crcPass);
+    end
+    scheduledBits(idx) = scheduledBits(idx) + scheduled / coveredSymbols;
+    goodBits(idx) = goodBits(idx) + delivered / coveredSymbols;
+    grantCount(idx) = grantCount(idx) + 1;
+    mcs = double(mcsVals(r));
+    if isfinite(mcs)
+        cur = maxMCS(idx);
+        cur(~isfinite(cur) | cur < mcs) = mcs;
+        maxMCS(idx) = cur;
+    end
+    cqi = double(cqiVals(r));
+    if isfinite(cqi)
+        cqiSum(idx) = cqiSum(idx) + cqi;
+        cqiCount(idx) = cqiCount(idx) + 1;
+    end
+end
+end
+
+function symbolsPerSlot = localResolveSymbolsPerSlot(cfg)
+symbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", ...
+    sixgr.util.structGet(cfg, "frame_timing.symbols_per_slot", 14)));
+if ~(isfinite(symbolsPerSlot) && symbolsPerSlot >= 1)
+    symbolsPerSlot = 14;
+end
+symbolsPerSlot = max(1, round(symbolsPerSlot));
+end
+
+function totalSlots = localResolveSymbolThroughputSlotCount(cfg, dlT, ulT)
+totalSlots = double(sixgr.util.structGet(cfg, "run.totalSlots", ...
+    sixgr.util.structGet(cfg, "run_control.total_slots", ...
+    sixgr.util.structGet(cfg, "simulation.n_slots", NaN))));
+if ~(isfinite(totalSlots) && totalSlots >= 1)
+    observed = [];
+    for T = {dlT, ulT}
+        Ti = T{1};
+        if istable(Ti) && ismember("Slot", string(Ti.Properties.VariableNames)) && ~isempty(Ti)
+            vals = localOptionalNumericColumn(Ti, "Slot", NaN);
+            observed = [observed; vals(isfinite(vals))]; %#ok<AGROW>
+        end
+    end
+    if isempty(observed)
+        totalSlots = 0;
+    else
+        totalSlots = max(observed) + 1;
+    end
+end
+totalSlots = max(0, round(totalSlots));
+end
+
+function slotDuration_s = localResolveSlotDurationSeconds(cfg, totalSlots)
+slotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
+if ~(isfinite(slotDuration_ms) && slotDuration_ms > 0)
+    totalTime_ms = double(sixgr.util.structGet(cfg, "run_control.total_time_ms", NaN));
+    if isfinite(totalTime_ms) && totalTime_ms > 0 && totalSlots > 0
+        slotDuration_ms = totalTime_ms / max(1, totalSlots);
+    else
+        slotDuration_ms = 0.5;
+    end
+end
+slotDuration_s = slotDuration_ms / 1e3;
 end
 
 function T = localBuildCSIRSStatsTable(dlT, srsT, trsT)

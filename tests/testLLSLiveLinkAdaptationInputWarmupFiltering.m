@@ -71,5 +71,41 @@ assert(double(T.WidebandCQI(1)) > 1 && double(T.CQIDerivedMCS(1)) > 0, ...
 assert(contains(string(T.CQIValueSource(1)), "derived_from_PostEqSINR_dB"), ...
     "Backfilled live CQI must keep measured SINR provenance for WebGUI plots.");
 
+cfgSymbol = cfg;
+cfgSymbol = sixgr.util.structSet(cfgSymbol, "run.totalSlots", 2);
+cfgSymbol = sixgr.util.structSet(cfgSymbol, "phy.numerology.symbolsPerSlot", 14);
+cfgSymbol = sixgr.util.structSet(cfgSymbol, "phy.numerology.slotDuration_ms", 0.5);
+dlSymbol = dlT(2, :);
+dlSymbol.Slot = 0;
+dlSymbol.SymbolStart = 2;
+dlSymbol.NumSymbols = 2;
+dlSymbol.TBSBits = 200;
+dlSymbol.GoodBits = 100;
+dlSymbol.CQIUsed = 7;
+ulSymbol = dlSymbol;
+ulSymbol.Direction = "UL";
+ulSymbol.Slot = 1;
+ulSymbol.SymbolStart = 0;
+ulSymbol.NumSymbols = 14;
+ulSymbol.TBSBits = 1400;
+ulSymbol.GoodBits = 700;
+ulSymbol.CQIUsed = 5;
+
+artifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgSymbol, tmp, struct("DL", dlSymbol, "UL", ulSymbol, "SRS", table(), "TRS", table()), struct(), struct(), struct());
+S = readtable(artifacts.SymbolThroughputPath, "VariableNamingRule", "preserve");
+
+assert(height(S) == 28, "Two 14-symbol slots must produce 28 symbol-wise throughput rows.");
+dlRow = S(S.Slot == 0 & S.SymbolInSlot == 2, :);
+idleRow = S(S.Slot == 0 & S.SymbolInSlot == 1, :);
+ulRow = S(S.Slot == 1 & S.SymbolInSlot == 0, :);
+assert(abs(double(dlRow.ScheduledDLBits(1)) - 100) < 1e-9 && ...
+    abs(double(dlRow.GoodDLBits(1)) - 50) < 1e-9, ...
+    "DL grant bits must be evenly assigned to the actual two-symbol allocation.");
+assert(double(idleRow.TotalScheduledThroughput_Mbps(1)) == 0 && double(idleRow.TotalGrantCount(1)) == 0, ...
+    "Idle symbols must remain explicit zero-bit time-axis rows.");
+assert(abs(double(ulRow.ScheduledULBits(1)) - 100) < 1e-9 && ...
+    abs(double(ulRow.GoodULBits(1)) - 50) < 1e-9, ...
+    "UL grant bits must be evenly assigned across all fourteen UL symbols.");
+
 ok = true;
 end

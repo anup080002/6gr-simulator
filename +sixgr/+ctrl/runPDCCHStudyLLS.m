@@ -515,7 +515,10 @@ end
 
 n = height(perSlot);
 trialT = table();
-trialT.Status = repmat("OK", n, 1);
+resultLabels = localResultLabel(perSlot);
+passMask = resultLabels == "TRUE_DETECTION";
+trialT.Status = repmat("FAIL", n, 1);
+trialT.Status(passMask) = "PASS";
 trialT.Frame = ones(n,1);
 trialT.Slot = (1:n).';
 trialT.UE = ones(n,1);
@@ -523,12 +526,18 @@ trialT.CORESETID = repmat(cfg.CORESET.CORESETID, n, 1);
 trialT.SearchSpaceID = ones(n,1);
 trialT.AggregationLevel = double(perSlot.AggregationLevel);
 trialT.BlindDecodeCount = double(perSlot.total_blind_decodes);
+trialT.CRCPass = double(passMask);
+trialT.DCICrcPass = logical(passMask);
+trialT.PDCCHPayloadMatch = logical(passMask);
 trialT.FalseAlarmFlag = logical(perSlot.false_alarm);
 trialT.BlockingFlag = logical(perSlot.ambiguous_multiple_pass);
-trialT.ControlCapacityUtilization = min(1, double(perSlot.AggregationLevel) ./ max(height(cfg.CORESET.RBList),1));
-trialT.CORESETUtilization = trialT.ControlCapacityUtilization;
 trialT.DCISize_bits = repmat(cfg.PayloadLengthBits, n, 1);
-trialT.NonOverlappedCCEUsage = double(perSlot.AggregationLevel);
+availableCCECount = localAvailableCCECount(cfg);
+trialT.AvailableCCECount = repmat(availableCCECount, n, 1);
+trialT.UsedCCECount = double(perSlot.AggregationLevel);
+trialT.NonOverlappedCCEUsage = min(1, trialT.UsedCCECount ./ max(trialT.AvailableCCECount, 1));
+trialT.ControlCapacityUtilization = trialT.NonOverlappedCCEUsage;
+trialT.CORESETUtilization = trialT.NonOverlappedCCEUsage;
 trialT.ControlLatency_ms = max(0.01, double(perSlot.decode_latency_proxy_ops) * 1e-3);
 trialT.ComputeLatency_ms = trialT.ControlLatency_ms;
 trialT.AirInterfaceTTI_ms = repmat(0.5, n, 1);
@@ -537,7 +546,7 @@ trialT.MappingType = string(perSlot.MappingType);
 trialT.FrequencyAllocationMode = string(perSlot.FrequencyAllocationMode);
 trialT.RepetitionMode = string(perSlot.RepetitionMode);
 trialT.RepetitionCount = repmat(cfg.RepetitionCount, n, 1);
-trialT.Result = string(localResultLabel(perSlot));
+trialT.Result = string(resultLabels);
 trialT.Notes = repmat("6GR PDCCH study framework", n, 1);
 
 if ~isempty(perCand)
@@ -559,6 +568,22 @@ labels = repmat("MISS", n, 1);
 labels(logical(slotT.true_detection)) = "TRUE_DETECTION";
 labels(logical(slotT.false_positive_wrong_candidate)) = "FALSE_POSITIVE_WRONG_CANDIDATE";
 labels(logical(slotT.ambiguous_multiple_pass)) = "AMBIGUOUS";
+end
+
+function nCCE = localAvailableCCECount(cfg)
+try
+    rbCount = numel(cfg.CORESET.RBList);
+catch
+    rbCount = 1;
+end
+if ~(isfinite(double(rbCount)) && rbCount > 0)
+    rbCount = 1;
+end
+durationSymbols = double(cfg.CORESET.DurationSymbols);
+if ~(isfinite(durationSymbols) && durationSymbols > 0)
+    durationSymbols = 1;
+end
+nCCE = max(1, floor(double(rbCount) * durationSymbols / 6));
 end
 
 function localWriteOutputs(study)
