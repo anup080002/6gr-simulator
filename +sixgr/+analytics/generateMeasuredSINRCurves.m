@@ -209,11 +209,7 @@ if localHasColumn(T, "FallbackFlag")
     mask = mask & ~localToLogical(T.FallbackFlag);
 end
 if localHasColumn(T, "PostEqSINRValueStatus")
-    status = strtrim(string(T.PostEqSINRValueStatus));
-    statusOk = status == "OK" | status == "OK_dynamic_range_limited" | ...
-        status == "OK_decision_residual_bounded";
-    statusOk(ismissing(status)) = false;
-    mask = mask & statusOk;
+    mask = mask & sixgr.util.isAcceptableSINRStatus(T.PostEqSINRValueStatus);
 end
 sinr = localNumericFirst(T, "PostEqSINR_dB", NaN(height(T), 1));
 mask = mask & isfinite(sinr);

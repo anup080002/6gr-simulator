@@ -291,7 +291,7 @@ try
         out.TargetCodeRate = double(targetCodeRate);
     end
     out.MeasurementAttempted = true;
-    out.MeasurementUsable = isfinite(out.SINR_dB) && strcmpi(string(out.SINRValueStatus), "OK");
+    out.MeasurementUsable = isfinite(out.SINR_dB) && sixgr.util.isAcceptableSINRStatus(out.SINRValueStatus);
     strictNoiseOk = ~logical(out.NoiseVarStrictFailure) && ...
         (~strictNoiseVarianceRequired || (isfinite(out.NoiseVariance) && out.NoiseVariance >= 0));
     nmseStrictOk = isfinite(out.NMSE_dB) && out.NMSE_dB <= out.ChannelNMSEThreshold_dB;

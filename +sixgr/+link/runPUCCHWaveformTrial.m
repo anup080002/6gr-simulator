@@ -1042,8 +1042,7 @@ out.CRCApplicable = logical(out.UCICRCApplicable);
 end
 
 function tf = localStatusIsOk(status)
-status = lower(strtrim(string(status)));
-tf = status == "ok" || startsWith(status, "ok_");
+tf = sixgr.util.isAcceptableSINRStatus(status);
 end
 
 function n = localPUCCHUCICRCBitCount(numBits, resolvedFormat)

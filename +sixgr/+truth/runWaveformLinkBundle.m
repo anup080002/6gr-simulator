@@ -9834,7 +9834,8 @@ for k = 1:nTrials
         r.DetectionSuccess = logical(ok);
         r.DetectionUsable = isfinite(r.DetectionMetric) && height(candidateT) > 0;
         r.MeasurementAttempted = true;
-        r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && strcmpi(string(r.ReceiverHestSINRValueStatus), "OK");
+        r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && ...
+            sixgr.util.isAcceptableSINRStatus(r.ReceiverHestSINRValueStatus);
         r.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Ok", false)));
         r.BlockingFlag = double(isfinite(aggLevel) && isfinite(availCCEs) && aggLevel > availCCEs);
         r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", height(candidateT)));
@@ -10698,7 +10699,8 @@ for k = 1:nTrials
         r.DecodeUsable = logical(r.StrictOk);
         r.MeasurementAttempted = true;
         r.MeasurementUsable = isfinite(r.PUCCHControlSINR_dB) || ...
-            (isfinite(r.ReceiverHestSINR_dB) && strcmpi(string(r.ReceiverHestSINRValueStatus), "OK"));
+            (isfinite(r.ReceiverHestSINR_dB) && ...
+            sixgr.util.isAcceptableSINRStatus(r.ReceiverHestSINRValueStatus));
         r.ReceiverUsable = logical(r.StrictReceiverEvidenceOk);
         r.TruthStatus = "real_pucch_waveform_uci_receiver_evidence";
         r.SourceClassification = "active_integrated";
