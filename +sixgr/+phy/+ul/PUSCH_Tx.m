@@ -570,10 +570,11 @@ end
 if isfinite(grantTBS) && grantTBS > 0
     trBlkSize = round(grantTBS);
     isHARQRetx = logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
-    hasExplicitTBContract = ~isempty(overrideTBS) && round(double(overrideTBS)) == trBlkSize;
-    if ~isHARQRetx && abs(double(scheduledTrBlkSize) - double(trBlkSize)) > 0
+    % An override that echoes the frozen grant is not independent evidence.
+    % It must not suppress exact nrTBS validation of a new-data grant.
+    if ~isHARQRetx && abs(double(scheduledTrBlkSize) - double(trBlkSize)) > 1e-9
         error("sixgr:phy:ul:PUSCHGrantTBSMismatch", ...
-            "Frozen PHYGrant TBS=%d but exact nrTBS from the frozen resource contract is %d.", ...
+            "Frozen PHYGrant TBS=%d does not match exact nrTBS=%d for the materialized allocation. Check mac.scheduler.fastNREApprox / tbsMode on the scenario that produced this grant.", ...
             trBlkSize, round(double(scheduledTrBlkSize)));
     end
     if ~isempty(overrideTBS) && round(double(overrideTBS)) ~= trBlkSize
@@ -583,8 +584,6 @@ if isfinite(grantTBS) && grantTBS > 0
     end
     if isHARQRetx
         source = 'frozen_phygrant_harq_original_transport_block_size';
-    elseif hasExplicitTBContract
-        source = 'frozen_phygrant_external_transport_block_bits';
     else
         source = 'frozen_phygrant_transport_block_size';
     end
