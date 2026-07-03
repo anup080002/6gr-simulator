@@ -227,6 +227,11 @@ trialOLLATargetRequiredSINR = NaN(numFrames,1);
 trialOLLAThresholdSource = strings(numFrames,1);
 trialOLLAUpdateCount = NaN(numFrames,1);
 trialOLLAState = strings(numFrames,1);
+trialRankSelectionPolicy = strings(numFrames,1);
+trialRankSelectionSource = strings(numFrames,1);
+trialRankDecisionReason = strings(numFrames,1);
+trialRankDowngradeApplied = false(numFrames,1);
+trialMaxSupportedLayers = NaN(numFrames,1);
 trialCQITable = strings(numFrames,1);
 trialMCSTable = strings(numFrames,1);
 trialCQIDerivedModulation = strings(numFrames,1);
@@ -570,6 +575,11 @@ for n = 1:numFrames
         trialOLLAThresholdSource(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAThresholdSource", ""));
         trialOLLAUpdateCount(n) = double(sixgr.util.structGet(grantSnapshot, "OLLAUpdateCount", NaN));
         trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
+        trialRankSelectionPolicy(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionPolicy", ""));
+        trialRankSelectionSource(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionSource", ""));
+        trialRankDecisionReason(n) = string(sixgr.util.structGet(grantSnapshot, "RankDecisionReason", ""));
+        trialRankDowngradeApplied(n) = logical(sixgr.util.structGet(grantSnapshot, "RankDowngradeApplied", false));
+        trialMaxSupportedLayers(n) = double(sixgr.util.structGet(grantSnapshot, "MaxSupportedLayers", NaN));
         trialPBCHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PBCHGatingActive", false));
         trialPRACHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PRACHGatingActive", false));
         trialPDCCHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHGatingActive", false));
@@ -1570,6 +1580,11 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.OLLAThresholdSource = trialOLLAThresholdSource(idx);
         T.OLLAUpdateCount = trialOLLAUpdateCount(idx);
         T.OLLAState = trialOLLAState(idx);
+        T.RankSelectionPolicy = trialRankSelectionPolicy(idx);
+        T.RankSelectionSource = trialRankSelectionSource(idx);
+        T.RankDecisionReason = trialRankDecisionReason(idx);
+        T.RankDowngradeApplied = trialRankDowngradeApplied(idx);
+        T.MaxSupportedLayers = trialMaxSupportedLayers(idx);
         T.DecoderTruthProxySINR_dB = trialDecoderTruthProxySINR(idx);
         T.DecoderTruthProxySINRSource = trialDecoderTruthProxySINRSource(idx);
         T.SINRValueRole = trialSINRValueRole(idx);
@@ -3491,6 +3506,11 @@ T.InnerLoopEnabled = false(0,1);
 T.OuterLoopApplied = false(0,1);
 T.InnerLoopApplied = false(0,1);
 T.OLLAState = strings(0,1);
+T.RankSelectionPolicy = strings(0,1);
+T.RankSelectionSource = strings(0,1);
+T.RankDecisionReason = strings(0,1);
+T.RankDowngradeApplied = false(0,1);
+T.MaxSupportedLayers = zeros(0,1);
 T.CalibrationProfile = strings(0,1);
 T.InterferenceMode = strings(0,1);
 T.InterferenceContributorCount = zeros(0,1);
@@ -5039,6 +5059,7 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
     "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
     "OLLAUpdateCount","OLLAState", ...
+    "RankSelectionPolicy","RankSelectionSource","RankDecisionReason","RankDowngradeApplied","MaxSupportedLayers", ...
     "RawCQIDerivedMCS","LinkAdaptationMCSIndex","LinkAdaptationDecisionReason", ...
     "CQIBasedMCS","SmoothedCQI","InstantaneousCQIMCS","DeltaMCS","StaticDeltaMCS", ...
     "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ", ...

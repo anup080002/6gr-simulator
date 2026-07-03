@@ -228,6 +228,11 @@ trialOLLATargetRequiredSINR = NaN(numFrames,1);
 trialOLLAThresholdSource = strings(numFrames,1);
 trialOLLAUpdateCount = NaN(numFrames,1);
 trialOLLAState = strings(numFrames,1);
+trialRankSelectionPolicy = strings(numFrames,1);
+trialRankSelectionSource = strings(numFrames,1);
+trialRankDecisionReason = strings(numFrames,1);
+trialRankDowngradeApplied = false(numFrames,1);
+trialMaxSupportedLayers = NaN(numFrames,1);
 trialCQITable = strings(numFrames,1);
 trialMCSTable = strings(numFrames,1);
 trialCQIDerivedModulation = strings(numFrames,1);
@@ -605,6 +610,11 @@ for n = 1:numFrames
         trialOLLAThresholdSource(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAThresholdSource", ""));
         trialOLLAUpdateCount(n) = double(sixgr.util.structGet(grantSnapshot, "OLLAUpdateCount", NaN));
         trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
+        trialRankSelectionPolicy(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionPolicy", ""));
+        trialRankSelectionSource(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionSource", ""));
+        trialRankDecisionReason(n) = string(sixgr.util.structGet(grantSnapshot, "RankDecisionReason", ""));
+        trialRankDowngradeApplied(n) = logical(sixgr.util.structGet(grantSnapshot, "RankDowngradeApplied", false));
+        trialMaxSupportedLayers(n) = double(sixgr.util.structGet(grantSnapshot, "MaxSupportedLayers", NaN));
         harqTrace = localResolveDLHARQTrialTrace(cfgFrame, grantSnapshot, harqContext, frameIdx, isRetransmission);
         trialHARQProcess(n) = double(harqTrace.HARQProcess);
         trialHARQRound(n) = double(harqTrace.HARQRound);
@@ -1587,6 +1597,11 @@ end
         T.EffectiveModulation = T.Modulation;
         T.EffectiveLayers = T.Layers;
         T.EffectiveRank = T.Layers;
+        T.RankSelectionPolicy = trialRankSelectionPolicy(idx);
+        T.RankSelectionSource = trialRankSelectionSource(idx);
+        T.RankDecisionReason = trialRankDecisionReason(idx);
+        T.RankDowngradeApplied = trialRankDowngradeApplied(idx);
+        T.MaxSupportedLayers = trialMaxSupportedLayers(idx);
         T.UEID = T.UEIndex;
         T.RV = trialRV(idx);
         T.HARQProcess = trialHARQProcess(idx);
@@ -3518,6 +3533,11 @@ T.EffectiveMCSIndex = zeros(0,1);
 T.EffectiveModulation = strings(0,1);
 T.EffectiveLayers = zeros(0,1);
 T.EffectiveRank = zeros(0,1);
+T.RankSelectionPolicy = strings(0,1);
+T.RankSelectionSource = strings(0,1);
+T.RankDecisionReason = strings(0,1);
+T.RankDowngradeApplied = false(0,1);
+T.MaxSupportedLayers = zeros(0,1);
 T.UEID = zeros(0,1);
 T.RV = zeros(0,1);
 T.HARQProcess = zeros(0,1);
@@ -5270,6 +5290,7 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
     "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
     "OLLAUpdateCount","OLLAState", ...
+    "RankSelectionPolicy","RankSelectionSource","RankDecisionReason","RankDowngradeApplied","MaxSupportedLayers", ...
     "RawCQIDerivedMCS","LinkAdaptationMCSIndex","LinkAdaptationDecisionReason", ...
     "CQIBasedMCS","SmoothedCQI","InstantaneousCQIMCS","DeltaMCS","StaticDeltaMCS", ...
     "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ", ...

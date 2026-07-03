@@ -680,7 +680,7 @@ classdef SystemLevelRunner
                         end
                     end
                     if nGrantSetsDL > 0
-                        grantsDL = vertcat(grantSetsDL{1:nGrantSetsDL});
+                        grantsDL = localVertcatGrantSets(grantSetsDL, nGrantSetsDL);
                         grantCellDL = vertcat(grantCellsDL{1:nGrantSetsDL});
                     end
                     if t == 1
@@ -736,7 +736,7 @@ classdef SystemLevelRunner
                         end
                     end
                     if nGrantSetsUL > 0
-                        grantsUL = vertcat(grantSetsUL{1:nGrantSetsUL});
+                        grantsUL = localVertcatGrantSets(grantSetsUL, nGrantSetsUL);
                         grantCellUL = vertcat(grantCellsUL{1:nGrantSetsUL});
                     end
                     if t == 1
@@ -1756,6 +1756,81 @@ catch
 end
 end
 
+function grants = localVertcatGrantSets(grantSets, nSets)
+if nargin < 2
+    nSets = numel(grantSets);
+end
+nSets = min(max(round(double(nSets)), 0), numel(grantSets));
+if nSets <= 0
+    grants = struct([]);
+    return;
+end
+sets = grantSets(1:nSets);
+allFields = strings(0, 1);
+for i = 1:numel(sets)
+    if isempty(sets{i})
+        continue;
+    end
+    allFields = union(allFields, string(fieldnames(sets{i})), "stable");
+end
+if isempty(allFields)
+    grants = struct([]);
+    return;
+end
+defaults = struct();
+for i = 1:numel(allFields)
+    fieldName = char(allFields(i));
+    defaults.(fieldName) = localDefaultGrantSetFieldValue(sets, fieldName);
+end
+for i = 1:numel(sets)
+    if isempty(sets{i})
+        continue;
+    end
+    sets{i} = localEnsureGrantSetFields(sets{i}, allFields, defaults);
+end
+grants = vertcat(sets{:});
+end
+
+function grants = localEnsureGrantSetFields(grants, fields, defaults)
+for i = 1:numel(fields)
+    fieldName = char(fields(i));
+    if ~isfield(grants, fieldName)
+        [grants.(fieldName)] = deal(defaults.(fieldName));
+    end
+end
+grants = orderfields(grants, cellstr(fields));
+end
+
+function value = localDefaultGrantSetFieldValue(sets, fieldName)
+value = [];
+for i = 1:numel(sets)
+    s = sets{i};
+    if isempty(s) || ~isfield(s, fieldName)
+        continue;
+    end
+    value = localTypedGrantFieldDefault(s(1).(fieldName));
+    return;
+end
+end
+
+function value = localTypedGrantFieldDefault(sample)
+if ischar(sample) || isstring(sample)
+    value = "";
+elseif islogical(sample)
+    value = false;
+elseif isnumeric(sample)
+    value = NaN;
+elseif isstruct(sample)
+    value = struct();
+elseif istable(sample)
+    value = table();
+elseif iscell(sample)
+    value = {};
+else
+    value = [];
+end
+end
+
 function tf = localRequiresExactGrantNRE(direction, symAlloc)
 tf = false;
 if upper(string(direction)) ~= "UL"
@@ -2424,6 +2499,11 @@ trace.OLLAState = strings(cap,1);
 trace.MCSSelectionSource = strings(cap,1);
 trace.CQIProvenance = strings(cap,1);
 trace.MCSValueStatus = strings(cap,1);
+trace.RankSelectionPolicy = strings(cap,1);
+trace.RankSelectionSource = strings(cap,1);
+trace.RankDecisionReason = strings(cap,1);
+trace.RankDowngradeApplied = false(cap,1);
+trace.MaxSupportedLayers = NaN(cap,1);
 trace.NREPerPRB = NaN(cap,1);
 trace.EstimatedTBSBits = NaN(cap,1);
 trace.EstimatedTBSBytes = NaN(cap,1);
@@ -2637,6 +2717,11 @@ trace.OLLAState(i) = string(sixgr.util.structGet(grant, "OLLAState", ""));
 trace.MCSSelectionSource(i) = string(sixgr.util.structGet(grant, "MCSSelectionSource", ""));
 trace.CQIProvenance(i) = string(sixgr.util.structGet(grant, "CQIProvenance", ""));
 trace.MCSValueStatus(i) = string(sixgr.util.structGet(grant, "MCSValueStatus", ""));
+trace.RankSelectionPolicy(i) = string(sixgr.util.structGet(grant, "RankSelectionPolicy", ""));
+trace.RankSelectionSource(i) = string(sixgr.util.structGet(grant, "RankSelectionSource", ""));
+trace.RankDecisionReason(i) = string(sixgr.util.structGet(grant, "RankDecisionReason", ""));
+trace.RankDowngradeApplied(i) = logical(sixgr.util.structGet(grant, "RankDowngradeApplied", false));
+trace.MaxSupportedLayers(i) = double(sixgr.util.structGet(grant, "MaxSupportedLayers", NaN));
 trace.NREPerPRB(i) = double(sixgr.util.structGet(grant, "NREPerPRB", NaN));
 trace.EstimatedTBSBits(i) = double(sixgr.util.structGet(grant, "EstimatedTBSBits", NaN));
 trace.EstimatedTBSBytes(i) = double(sixgr.util.structGet(grant, "EstimatedTBSBytes", NaN));
@@ -2821,6 +2906,11 @@ T.OLLAState = localTraceString(trace, "OLLAState", idx, n, "");
 T.MCSSelectionSource = localTraceString(trace, "MCSSelectionSource", idx, n, "");
 T.CQIProvenance = localTraceString(trace, "CQIProvenance", idx, n, "");
 T.MCSValueStatus = localTraceString(trace, "MCSValueStatus", idx, n, "");
+T.RankSelectionPolicy = localTraceString(trace, "RankSelectionPolicy", idx, n, "");
+T.RankSelectionSource = localTraceString(trace, "RankSelectionSource", idx, n, "");
+T.RankDecisionReason = localTraceString(trace, "RankDecisionReason", idx, n, "");
+T.RankDowngradeApplied = localTraceLogical(trace, "RankDowngradeApplied", idx, n, false);
+T.MaxSupportedLayers = localTraceNumeric(trace, "MaxSupportedLayers", idx, n, NaN);
 T.NREPerPRB = localTraceNumeric(trace, "NREPerPRB", idx, n, NaN);
 T.EstimatedTBSBits = localTraceNumeric(trace, "EstimatedTBSBits", idx, n, NaN);
 T.EstimatedTBSBytes = localTraceNumeric(trace, "EstimatedTBSBytes", idx, n, NaN);
