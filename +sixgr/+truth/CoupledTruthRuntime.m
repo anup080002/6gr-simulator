@@ -10281,13 +10281,14 @@ methods(Static, Access=private)
             candidates = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "CandidatesAttempted", ...
                 sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "PDCCHCandidatesAttempted", ...
                 sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "BlindDecodeCount", nan(n, 1)))));
-            hestStatus = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRValueStatus", repmat("", n, 1)))));
+            hestStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRValueStatus", repmat("", n, 1))));
             noiseStatus = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "NoiseVarStatus", repmat("", n, 1)))));
             noiseStrictFailure = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "NoiseVarStrictFailure", false(n, 1)));
             chanOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelEstimateAvailable", false(n, 1)));
             resOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ResourceExtractionAvailable", false(n, 1)));
             eqOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "EqualizationAvailable", false(n, 1)));
-            receiverOk = isfinite(receiverSINR) & (hestStatus == "ok" | strlength(hestStatus) == 0);
+            receiverOk = isfinite(receiverSINR) & ...
+                (sixgr.util.isAcceptableSINRStatus(hestStatus) | strlength(hestStatus) == 0);
             noiseOk = isfinite(noiseVar) & noiseVar > 0 & (noiseStatus == "ok" | strlength(noiseStatus) == 0) & ~noiseStrictFailure;
             strict = ~crash & crcApplicable & dciCrcPass & payloadMatch & candidates > 0 & ...
                 receiverOk & noiseOk & chanOk & resOk & eqOk;
@@ -10313,10 +10314,11 @@ methods(Static, Access=private)
             dmrsRequired = isfinite(dmrsCount) & dmrsCount > 0;
             chanOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ChannelEstimateAvailable", false(n, 1)));
             eqOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "EqualizationAvailable", false(n, 1)));
-            hestStatus = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRValueStatus", repmat("", n, 1)))));
+            hestStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverHestSINRValueStatus", repmat("", n, 1))));
             noiseStatus = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "NoiseVarStatus", repmat("", n, 1)))));
             noiseStrictFailure = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "NoiseVarStrictFailure", false(n, 1)));
-            receiverOk = ~dmrsRequired | (isfinite(receiverSINR) & (hestStatus == "ok" | startsWith(hestStatus, "ok_") | strlength(hestStatus) == 0));
+            receiverOk = ~dmrsRequired | (isfinite(receiverSINR) & ...
+                (sixgr.util.isAcceptableSINRStatus(hestStatus) | strlength(hestStatus) == 0));
             noiseOk = isfinite(noiseVar) & noiseVar > 0 & (noiseStatus == "ok" | startsWith(noiseStatus, "ok_") | strlength(noiseStatus) == 0) & ~noiseStrictFailure;
             strict = ~crash & uciMatch & detectionOk & crcOk & resourceOk & controlResourceOk & ...
                 noiseOk & receiverOk & (~dmrsRequired | (chanOk & eqOk));

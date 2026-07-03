@@ -18,13 +18,13 @@ function [llr, info] = demodulateLLR(rxSym, modScheme, noiseVar, varargin)
 %     "Engine"          : "auto" (default) | "nr" | "comm"
 %     "UnitAveragePower": true (default) (Comm Toolbox only)
 %     "SymbolOrder"     : "Gray" (default) (Comm Toolbox only)
-%     "Approx"          : true (default) -> 'approxllr' for qamdemod; false -> 'llr'
+%     "Approx"          : false (default) -> exact 'llr' for qamdemod; true -> 'approxllr'
 
 % Defaults
 opts.Engine = "auto";
 opts.UnitAveragePower = true;
 opts.SymbolOrder = "Gray";
-opts.Approx = true;
+opts.Approx = false;
 
 % Parse name-value pairs
 if rem(numel(varargin),2) ~= 0
