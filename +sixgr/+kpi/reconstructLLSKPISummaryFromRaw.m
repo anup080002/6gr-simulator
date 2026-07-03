@@ -272,8 +272,14 @@ if istable(appLedger) && ~isempty(appLedger)
         [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
         durationSec = localPacketMeasurementWindowSec(appLedger, metrics, measurementWindowSec, warmupDurationSec);
         metrics.Application = localFinalizeLayerMetrics(metrics.Application, appLedger, deliveredBits, duplicateCount, firstCount, durationSec);
-        lat = localPacketLatencyMs(appLedger, success);
-        if ~isempty(lat)
+        [lat, latencyOk, latencyReason] = localPacketLatencyMs(appLedger, success);
+        if ~latencyOk
+            metrics.Application.Status = "schema_invalid";
+            metrics.Application.FailureReason = latencyReason;
+            metrics.Application.SchemaValid = false;
+            metrics.Status = "schema_invalid";
+            metrics.FailureReason = latencyReason;
+        elseif ~isempty(lat)
             metrics.Application.MeanDeliveryLatency_ms = mean(lat, "omitnan");
             metrics.Application.P95DeliveryLatency_ms = localPercentile(lat, 95);
             metrics.MeanDeliveryLatency_ms = metrics.Application.MeanDeliveryLatency_ms;
@@ -398,20 +404,58 @@ end
 [durationSec, ~] = localMeasurementWindowSec(T, NaN, "packet_delivery_ledger", requestedWindowSec, warmupDurationSec);
 end
 
-function lat = localPacketLatencyMs(T, success)
+function [lat, ok, failureReason] = localPacketLatencyMs(T, success)
 lat = [];
+ok = true;
+failureReason = "";
 if ~(istable(T) && ~isempty(T))
     return;
 end
-if ismember("Latency_ms", string(T.Properties.VariableNames))
-    vals = localOptionalNumeric(T, "Latency_ms", NaN(height(T), 1));
-elseif all(ismember(["EnqueueTime_s","DeliveryTime_s"], string(T.Properties.VariableNames)))
-    vals = (localOptionalNumeric(T, "DeliveryTime_s", NaN(height(T), 1)) - ...
-        localOptionalNumeric(T, "EnqueueTime_s", NaN(height(T), 1))) * 1e3;
-else
-    vals = NaN(height(T), 1);
+vars = string(T.Properties.VariableNames);
+precomputed = NaN(height(T), 1);
+if ismember("Latency_ms", vars)
+    precomputed = localOptionalNumeric(T, "Latency_ms", NaN(height(T), 1));
 end
-lat = vals(logical(success(:)) & isfinite(vals(:)));
+hasTimes = all(ismember(["EnqueueTime_s","DeliveryTime_s"], vars));
+if hasTimes
+    enqueueTime = localOptionalNumeric(T, "EnqueueTime_s", NaN(height(T), 1));
+    deliveryTime = localOptionalNumeric(T, "DeliveryTime_s", NaN(height(T), 1));
+    vals = (deliveryTime - enqueueTime) * 1e3;
+    bothFinite = isfinite(precomputed) & isfinite(vals);
+    mismatch = logical(success(:)) & bothFinite(:) & abs(precomputed(:) - vals(:)) > 1e-6;
+    if any(mismatch)
+        ok = false;
+        failureReason = "packet_latency_precomputed_mismatch";
+        return;
+    end
+else
+    vals = precomputed;
+end
+
+succ = logical(success(:));
+negative = succ & isfinite(vals(:)) & vals(:) < -1e-9;
+if any(negative)
+    ok = false;
+    failureReason = "negative_successful_packet_latency";
+    return;
+end
+if all(ismember(["EnqueueCanonicalSlot","DeliveryCanonicalSlot"], vars))
+    enqueueSlot = localOptionalNumeric(T, "EnqueueCanonicalSlot", NaN(height(T), 1));
+    deliverySlot = localOptionalNumeric(T, "DeliveryCanonicalSlot", NaN(height(T), 1));
+elseif all(ismember(["EnqueueSlot","DeliverySlot"], vars))
+    enqueueSlot = localOptionalNumeric(T, "EnqueueSlot", NaN(height(T), 1));
+    deliverySlot = localOptionalNumeric(T, "DeliverySlot", NaN(height(T), 1));
+else
+    enqueueSlot = NaN(height(T), 1);
+    deliverySlot = NaN(height(T), 1);
+end
+slotBackwards = succ & isfinite(enqueueSlot(:)) & isfinite(deliverySlot(:)) & deliverySlot(:) < enqueueSlot(:);
+if any(slotBackwards)
+    ok = false;
+    failureReason = "delivery_slot_before_enqueue_slot";
+    return;
+end
+lat = vals(succ & isfinite(vals(:)));
 end
 
 function [bits, duplicateCount, traceT] = localDeduplicateDeliveries(T, direction, runId, scheduledBits, goodBits, crcPass, resourceExposureSec, measurementWindowSec)

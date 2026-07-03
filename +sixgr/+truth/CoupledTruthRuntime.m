@@ -1604,9 +1604,7 @@ methods(Static, Access=private)
     end
 
     function slotDur_s = slotDuration(cfg)
-        scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
-        slotsPerMs = max(scs / 15, 1);
-        slotDur_s = 1e-3 / slotsPerMs;
+        slotDur_s = sixgr.time.slotDurationSec(cfg);
     end
 
     function [allowDL, allowUL, slotLabel, partition] = slotDuplexState(cfg, canonicalSlot)
@@ -5003,8 +5001,9 @@ methods(Static, Access=private)
         end
         nUsers = min(numel(offeredBits), double(sixgr.util.structGet(state, "NumUsers", numel(offeredBits))));
         slotsPerFrame = max(1, round(double(sixgr.util.structGet(state, "SlotsPerFrame", 10))));
-        enqueueFrame = max(1, round(double(absoluteFrame)));
-        enqueueSlot = (enqueueFrame - 1) * slotsPerFrame + 1;
+        canonicalSlot1 = max(1, round(double(absoluteFrame)));
+        [enqueueFrame, enqueueFrameSlot] = sixgr.time.canonicalSlotToFrameSlot(canonicalSlot1, slotsPerFrame);
+        enqueueSlot = canonicalSlot1;
         enqueueTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec(state, enqueueSlot);
         rows = repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1);
         for ueIdx = 1:nUsers
@@ -5018,15 +5017,18 @@ methods(Static, Access=private)
             row.RNTI = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
             row.EnqueueFrame = double(enqueueFrame);
             row.EnqueueSlot = double(enqueueSlot);
+            row.EnqueueCanonicalSlot = double(enqueueSlot);
+            row.EnqueueSlotInFrame = double(enqueueFrameSlot);
             row.EnqueueTime_s = double(enqueueTime);
             row.OfferedBits = double(bits);
             row.RemainingBits = double(bits);
             row.PacketId = sixgr.truth.CoupledTruthRuntime.composeRuntimePacketId(state, direction, ueIdx, enqueueFrame);
             row.ApplicationPacketId = row.PacketId;
             row.FlowId = direction + "_ue" + string(ueIdx);
-            row.PacketizationSource = "runtime_offered_bits_frame_packet";
+            row.PacketizationSource = "runtime_offered_bits_canonical_slot_packet";
+            row.TimingStatus = "canonical_slot_enqueued";
             row.Status = "queued";
-            row.Notes = "Application packet created from the coupled runtime offered-bit arrival for this frame/UE/direction.";
+            row.Notes = "Application packet created from the coupled runtime offered-bit arrival for this canonical slot/UE/direction.";
             rows(end+1, 1) = row; %#ok<AGROW>
         end
         if ~isempty(rows)
@@ -5102,6 +5104,7 @@ methods(Static, Access=private)
             row.SegmentIndex = double(segmentIndex);
             row.PayloadBits = double(segBits);
             row.ScheduleSlot = double(schedSlot);
+            row.ScheduleCanonicalSlot = double(schedSlot);
             row.ScheduleTime_s = double(schedTime);
             row.Status = "scheduled_pending_harq";
             row.Notes = "MAC SDU segment mapped from queued application packet bits into a finalized new-data PHY grant.";
@@ -5151,8 +5154,11 @@ methods(Static, Access=private)
             sduT.DeliverySuccess(firstMask) = true;
             sduT.FirstSuccessDelivery(firstMask) = true;
             sduT.FirstSuccessSlot(firstMask) = double(feedbackSlot);
+            sduT.DeliveryCanonicalSlot(firstMask) = double(feedbackSlot);
             sduT.DeliveryTime_s(firstMask) = double(deliveryTime);
             sduT.DeliveryLatency_ms(firstMask) = (double(deliveryTime) - double(sduT.ScheduleTime_s(firstMask))) * 1e3;
+            sduT.TimingStatus(firstMask) = sixgr.truth.CoupledTruthRuntime.packetTimingStatus( ...
+                double(sduT.ScheduleTime_s(firstMask)), double(deliveryTime));
             sduT.Status(firstMask) = "first_success_delivery";
         else
             sduT.Status(mask & ~logical(sduT.DeliverySuccess)) = "harq_pending_or_failed";
@@ -5190,8 +5196,11 @@ methods(Static, Access=private)
             packetT.DeliverySuccess(pidx) = true;
             packetT.ReassemblyCompleteFlag(pidx) = true;
             packetT.DeliverySlot(pidx) = double(deliverySlot);
+            packetT.DeliveryCanonicalSlot(pidx) = double(deliverySlot);
             packetT.DeliveryTime_s(pidx) = double(deliveryTime);
             packetT.Latency_ms(pidx) = (double(deliveryTime) - double(packetT.EnqueueTime_s(pidx))) * 1e3;
+            packetT.TimingStatus(pidx) = sixgr.truth.CoupledTruthRuntime.packetTimingStatus( ...
+                double(packetT.EnqueueTime_s(pidx)), double(deliveryTime));
             packetT.HARQAttemptCount(pidx) = sum(double(sduT.HARQAttemptCount(smask)), "omitnan");
             packetT.DeliverySource(pidx) = "harq_first_success_reassembly";
             packetT.Status(pidx) = "delivered";
@@ -5241,7 +5250,23 @@ methods(Static, Access=private)
         if ~(isfinite(slotIdx) && slotIdx >= 1)
             slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", 1));
         end
-        t = max(0, slotIdx - 1) * slotDur;
+        t = sixgr.time.slotStartTimeSec(max(1, slotIdx), slotDur);
+    end
+
+    function status = packetTimingStatus(startTime_s, endTime_s)
+        startTime_s = double(startTime_s);
+        endTime_s = double(endTime_s);
+        if isscalar(startTime_s) && ~isscalar(endTime_s)
+            startTime_s = repmat(startTime_s, size(endTime_s));
+        elseif isscalar(endTime_s) && ~isscalar(startTime_s)
+            endTime_s = repmat(endTime_s, size(startTime_s));
+        end
+        status = strings(size(endTime_s));
+        status(:) = "timing_unknown";
+        ok = isfinite(startTime_s) & isfinite(endTime_s) & endTime_s >= startTime_s - 1e-12;
+        bad = isfinite(startTime_s) & isfinite(endTime_s) & endTime_s < startTime_s - 1e-12;
+        status(ok) = "canonical_timing_ok";
+        status(bad) = "negative_latency_invalid";
     end
 
     function idx = resolveUEIndexFromRNTI(state, rnti)
@@ -9486,14 +9511,14 @@ methods(Static, Access=private)
         row = struct( ...
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
             "PacketId", "", "ApplicationPacketId", "", "FlowId", "", "QFI", NaN, ...
-            "EnqueueFrame", NaN, "EnqueueSlot", NaN, "EnqueueTime_s", NaN, ...
+            "EnqueueFrame", NaN, "EnqueueSlot", NaN, "EnqueueCanonicalSlot", NaN, "EnqueueSlotInFrame", NaN, "EnqueueTime_s", NaN, ...
             "OfferedBits", NaN, "ScheduledBits", 0, "DeliveredBits", 0, "RemainingBits", 0, ...
             "SegmentCount", 0, "HARQAttemptCount", 0, ...
             "FirstGrantSlot", NaN, "FirstGrantTime_s", NaN, ...
             "ReassemblyCompleteFlag", false, "DeliverySuccess", false, ...
-            "DeliverySlot", NaN, "DeliveryTime_s", NaN, "Latency_ms", NaN, ...
+            "DeliverySlot", NaN, "DeliveryCanonicalSlot", NaN, "DeliveryTime_s", NaN, "Latency_ms", NaN, ...
             "PacketizationSource", "", "DeliverySource", "", ...
-            "Status", "", "Notes", "");
+            "TimingStatus", "", "Status", "", "Notes", "");
     end
 
     function row = emptyPacketSDULedgerRow()
@@ -9503,12 +9528,12 @@ methods(Static, Access=private)
             "TransportBlockId", "", "GrantContextId", "", ...
             "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, ...
             "SegmentIndex", NaN, "PayloadBits", NaN, ...
-            "ScheduleSlot", NaN, "ScheduleTime_s", NaN, ...
-            "FirstSuccessSlot", NaN, "DeliveryTime_s", NaN, "DeliveryLatency_ms", NaN, ...
+            "ScheduleSlot", NaN, "ScheduleCanonicalSlot", NaN, "ScheduleTime_s", NaN, ...
+            "FirstSuccessSlot", NaN, "DeliveryCanonicalSlot", NaN, "DeliveryTime_s", NaN, "DeliveryLatency_ms", NaN, ...
             "HARQAttemptCount", 0, "LastAttemptSlot", NaN, "LastRV", NaN, ...
             "TBCrcPass", false, "DeliverySuccess", false, "FirstSuccessDelivery", false, ...
             "ReassemblyCompleteFlag", false, "ApplicationDeliveryFlag", false, ...
-            "Status", "", "Notes", "");
+            "TimingStatus", "", "Status", "", "Notes", "");
     end
 
     function row = emptyHARQTimelineRow()
