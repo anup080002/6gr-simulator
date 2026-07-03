@@ -577,10 +577,10 @@ canonical_control:
       value: 0.1
     - path: link_adaptation.olla_step_up
       value: 0.01
-    - path: link_adaptation.delta_mcs_min
-      value: -5
-    - path: link_adaptation.delta_mcs_max
-      value: 5
+    - path: link_adaptation.olla_margin_min_db
+      value: -10
+    - path: link_adaptation.olla_margin_max_db
+      value: 10
     - path: link_adaptation.bootstrap_cqi_mode
       value: estimated
     - path: link_adaptation.bootstrap_mcs_index

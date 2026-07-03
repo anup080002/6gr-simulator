@@ -1291,17 +1291,23 @@ if isfinite(ollaStepUp) && ollaStepUp > 0
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", 0.12);
 end
-deltaMCSMin = double(localGetNested(s, "link_adaptation.delta_mcs_min", NaN));
-if isfinite(deltaMCSMin)
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", double(deltaMCSMin));
+ollaMarginMinDb = double(localGetNested(s, "link_adaptation.olla_margin_min_db", ...
+    localGetNested(s, "link_adaptation.delta_mcs_min", NaN)));
+if isfinite(ollaMarginMinDb)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMinDb", double(ollaMarginMinDb));
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", double(ollaMarginMinDb));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", -6);
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMinDb", -10);
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", -10);
 end
-deltaMCSMax = double(localGetNested(s, "link_adaptation.delta_mcs_max", NaN));
-if isfinite(deltaMCSMax)
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", double(deltaMCSMax));
+ollaMarginMaxDb = double(localGetNested(s, "link_adaptation.olla_margin_max_db", ...
+    localGetNested(s, "link_adaptation.delta_mcs_max", NaN)));
+if isfinite(ollaMarginMaxDb)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", double(ollaMarginMaxDb));
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", double(ollaMarginMaxDb));
 elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 6);
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", 10);
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 10);
 end
 resetOnRIChange = localGetNested(s, "link_adaptation.reset_on_ri_change", []);
 if ~isempty(resetOnRIChange)

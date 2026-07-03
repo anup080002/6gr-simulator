@@ -222,6 +222,8 @@
       "target_bler_ul": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
       "olla_step_up_db": {"required": false, "type": "number"},
       "olla_step_down_db": {"required": false, "type": "number"},
+      "olla_margin_min_db": {"required": false, "type": "number"},
+      "olla_margin_max_db": {"required": false, "type": "number"},
       "delta_mcs_min": {"required": false, "type": "number"},
       "delta_mcs_max": {"required": false, "type": "number"},
       "pdsch_la_policy": {"required": false, "type": "string"},

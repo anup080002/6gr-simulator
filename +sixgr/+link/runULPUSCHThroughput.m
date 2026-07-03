@@ -219,7 +219,12 @@ trialSchedulerCQIRawCQI = nan(numFrames,1);
 trialSchedulerAdjustedSINR = nan(numFrames,1);
 trialSchedulerSINRBackoff = nan(numFrames,1);
 trialSchedulerCQISource = strings(numFrames,1);
+trialOLLADeltaDb = NaN(numFrames,1);
 trialOLLADeltaMCS = NaN(numFrames,1);
+trialOLLAAdjustedMCSBeforeCQICeiling = NaN(numFrames,1);
+trialOLLABaseRequiredSINR = NaN(numFrames,1);
+trialOLLATargetRequiredSINR = NaN(numFrames,1);
+trialOLLAThresholdSource = strings(numFrames,1);
 trialOLLAUpdateCount = NaN(numFrames,1);
 trialOLLAState = strings(numFrames,1);
 trialCQITable = strings(numFrames,1);
@@ -556,7 +561,13 @@ for n = 1:numFrames
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
         trialOuterLoopEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopEnabled", false));
         trialOuterLoopAppliedFromGrant(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopApplied", false));
+        trialOLLADeltaDb(n) = double(sixgr.util.structGet(grantSnapshot, "OLLADeltaDb", ...
+            sixgr.util.structGet(grantSnapshot, "OLLADeltaMCS", NaN)));
         trialOLLADeltaMCS(n) = double(sixgr.util.structGet(grantSnapshot, "OLLADeltaMCS", NaN));
+        trialOLLAAdjustedMCSBeforeCQICeiling(n) = double(sixgr.util.structGet(grantSnapshot, "OLLAAdjustedMCSBeforeCQICeiling", NaN));
+        trialOLLABaseRequiredSINR(n) = double(sixgr.util.structGet(grantSnapshot, "OLLABaseRequiredSINR_dB", NaN));
+        trialOLLATargetRequiredSINR(n) = double(sixgr.util.structGet(grantSnapshot, "OLLATargetRequiredSINR_dB", NaN));
+        trialOLLAThresholdSource(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAThresholdSource", ""));
         trialOLLAUpdateCount(n) = double(sixgr.util.structGet(grantSnapshot, "OLLAUpdateCount", NaN));
         trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
         trialPBCHGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "PBCHGatingActive", false));
@@ -1551,7 +1562,12 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.SchedulerCQISource = trialSchedulerCQISource(idx);
         T.OuterLoopEnabled = trialOuterLoopEnabled(idx);
         T.OuterLoopApplied = trialOuterLoopAppliedFromGrant(idx);
+        T.OLLADeltaDb = trialOLLADeltaDb(idx);
         T.OLLADeltaMCS = trialOLLADeltaMCS(idx);
+        T.OLLAAdjustedMCSBeforeCQICeiling = trialOLLAAdjustedMCSBeforeCQICeiling(idx);
+        T.OLLABaseRequiredSINR_dB = trialOLLABaseRequiredSINR(idx);
+        T.OLLATargetRequiredSINR_dB = trialOLLATargetRequiredSINR(idx);
+        T.OLLAThresholdSource = trialOLLAThresholdSource(idx);
         T.OLLAUpdateCount = trialOLLAUpdateCount(idx);
         T.OLLAState = trialOLLAState(idx);
         T.DecoderTruthProxySINR_dB = trialDecoderTruthProxySINR(idx);
@@ -3742,7 +3758,7 @@ cqiMask = mode == "cqi_table";
 source(cqiMask) = "runtime_cqi_table";
 status(cqiMask) = "measured_cqi_mapped";
 ollaApplied = logical(localOptionalColumn(T, "OuterLoopApplied", false));
-ollaDelta = double(localOptionalColumn(T, "OLLADeltaMCS", NaN));
+ollaDelta = double(localOptionalColumn(T, "OLLADeltaDb", localOptionalColumn(T, "OLLADeltaMCS", NaN)));
 feedbackAdaptedMask = cqiMask & ollaApplied & isfinite(ollaDelta) & abs(ollaDelta) > 0;
 status(feedbackAdaptedMask) = "measured_feedback_adapted";
 fixedMCSMask = mode == "fixed_mcs";
@@ -3762,10 +3778,13 @@ if ~logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true))
     token = "disabled";
     return;
 end
-if sixgr.link.resolveLinkAdaptationDomain(cfg, direction) == "bler_margin"
-    token = "bler_margin_proxy_delta_mcs";
-else
+domain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
+if domain == "bler_margin"
+    token = "bler_margin_proxy_delta_db";
+elseif domain == "legacy_mcs"
     token = "delta_mcs";
+else
+    token = "delta_db_required_sinr_margin";
 end
 end
 
@@ -5017,7 +5036,9 @@ grant = struct( ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", NaN)), ...
     "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)));
 preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode", ...
-    "OuterLoopEnabled","OuterLoopApplied","OLLADeltaMCS","OLLAUpdateCount","OLLAState", ...
+    "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
+    "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
+    "OLLAUpdateCount","OLLAState", ...
     "RawCQIDerivedMCS","LinkAdaptationMCSIndex","LinkAdaptationDecisionReason", ...
     "CQIBasedMCS","SmoothedCQI","InstantaneousCQIMCS","DeltaMCS","StaticDeltaMCS", ...
     "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ", ...

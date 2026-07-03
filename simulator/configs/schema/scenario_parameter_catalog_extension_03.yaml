@@ -43,6 +43,8 @@
       "cqi_smoothing_mode": {"required": false, "type": "string", "allowed_values": ["fixed", "doppler_adaptive"]},
       "olla_step_down": {"required": false, "type": "number", "min": 0},
       "olla_step_up": {"required": false, "type": "number", "min": 0},
+      "olla_margin_min_db": {"required": false, "type": "number"},
+      "olla_margin_max_db": {"required": false, "type": "number"},
       "delta_mcs_min": {"required": false, "type": "number"},
       "delta_mcs_max": {"required": false, "type": "number"},
       "rank_threshold": {"required": false, "type": "number", "min": 0},

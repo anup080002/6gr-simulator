@@ -2181,7 +2181,12 @@ T.link_adaptation_mcs = localFirstAvailableColumnAsDouble(grants, ["LinkAdaptati
 T.cqi_based_mcs = localFirstAvailableColumnAsDouble(grants, ["CQIBasedMCS"]);
 T.smoothed_cqi = localFirstAvailableColumnAsDouble(grants, ["SmoothedCQI"]);
 T.instantaneous_cqi_mcs = localFirstAvailableColumnAsDouble(grants, ["InstantaneousCQIMCS"]);
-T.delta_mcs = localFirstAvailableColumnAsDouble(grants, ["DeltaMCS", "OLLADeltaMCS"]);
+T.delta_mcs = localFirstAvailableColumnAsDouble(grants, ["DeltaMCS"]);
+T.olla_delta_db = localFirstAvailableColumnAsDouble(grants, ["OLLADeltaDb", "OLLADeltaMCS"]);
+T.olla_adjusted_mcs_before_cqi_ceiling = localFirstAvailableColumnAsDouble(grants, ["OLLAAdjustedMCSBeforeCQICeiling"]);
+T.olla_base_required_sinr_dB = localFirstAvailableColumnAsDouble(grants, ["OLLABaseRequiredSINR_dB"]);
+T.olla_target_required_sinr_dB = localFirstAvailableColumnAsDouble(grants, ["OLLATargetRequiredSINR_dB"]);
+T.olla_threshold_source = localColumnAsText(grants, "OLLAThresholdSource");
 T.static_delta_mcs = localFirstAvailableColumnAsDouble(grants, ["StaticDeltaMCS"]);
 T.mcs_table = localColumnAsText(grants, "MCSTable");
 T.cqi_table = localColumnAsText(grants, "CQITable");
@@ -2196,7 +2201,7 @@ T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
 T.harq_id = localFirstAvailableColumnAsDouble(grants, ["HarqID", "HARQProcessId"]);
 T.ndi = localFirstAvailableColumnAsDouble(grants, ["NDI", "NewDataIndicator"]);
 T.rv = localFirstAvailableColumnAsDouble(grants, ["RV", "RedundancyVersion"]);
-T.olla_offset = localFirstAvailableColumnAsDouble(grants, ["OLLADeltaMCS", "DeltaMCS"]);
+T.olla_offset = T.olla_delta_db;
 T.harq_state = harqState;
 T.scheduler_reason = localColumnAsText(grants, "GrantReason");
 T.effective_sinr_dB = localColumnAsDouble(grants, "SINR_dB");
@@ -4225,22 +4230,26 @@ if localUsesMeasuredFeedbackAdaptation(row)
     end
     cqiBasedMCS = localNumericTableValue(row, "CQIBasedMCS", NaN);
     if isfinite(cqiBasedMCS)
-        deltaMCS = localFirstNumericTableValue(row, ["DeltaMCS", "OLLADeltaMCS"], 0);
+        ollaAdjustedMCS = localNumericTableValue(row, "OLLAAdjustedMCSBeforeCQICeiling", NaN);
         staticDeltaMCS = localNumericTableValue(row, "StaticDeltaMCS", 0);
-        if ~isfinite(deltaMCS), deltaMCS = 0; end
         if ~isfinite(staticDeltaMCS), staticDeltaMCS = 0; end
-        allowedMCS = floor(double(cqiBasedMCS) + double(deltaMCS) + double(staticDeltaMCS));
-        basis = "CQIBasedMCSPlusDelta";
+        if isfinite(ollaAdjustedMCS)
+            allowedMCS = floor(double(ollaAdjustedMCS) + double(staticDeltaMCS));
+            basis = "OLLARequiredSINRAdjustedMCS";
+        else
+            allowedMCS = floor(double(cqiBasedMCS) + double(staticDeltaMCS));
+            basis = "CQIBasedMCSWithoutLegacyOLLADelta";
+        end
         return;
     end
 end
 outerLoopApplied = localAsBoolScalar(localTableValue(row, "OuterLoopApplied", []), false);
-delta = localNumericTableValue(row, "OLLADeltaMCS", NaN);
+ollaAdjustedMCS = localNumericTableValue(row, "OLLAAdjustedMCSBeforeCQICeiling", NaN);
 status = lower(strtrim(string(localTableValue(row, "MCSValueStatus", ""))));
 explicitFeedback = contains(status, "feedback_adapted") || contains(status, "olla");
-if outerLoopApplied && explicitFeedback && isfinite(delta) && delta > 0
-    allowedMCS = floor(double(allowedMCS) + double(delta));
-    basis = basis + "PlusMeasuredOLLADelta";
+if outerLoopApplied && explicitFeedback && isfinite(ollaAdjustedMCS)
+    allowedMCS = min(double(allowedMCS), floor(double(ollaAdjustedMCS)));
+    basis = basis + "WithOLLARequiredSINRAdjustedMCS";
 end
 end
 

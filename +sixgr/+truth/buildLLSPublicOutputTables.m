@@ -806,12 +806,16 @@ if isfinite(linkMCS) && iUsesMeasuredFeedbackAdaptation(row)
 end
 cqiBasedMCS = iFirstNum(row, ["CQIBasedMCS", "cqi_based_mcs"], NaN);
 if isfinite(cqiBasedMCS) && iUsesMeasuredFeedbackAdaptation(row)
-    delta = iFirstNum(row, ["DeltaMCS", "delta_mcs", "OLLADeltaMCS", "olla_offset"], 0);
+    ollaAdjustedMCS = iFirstNum(row, ["OLLAAdjustedMCSBeforeCQICeiling", "olla_adjusted_mcs_before_cqi_ceiling"], NaN);
     staticDelta = iFirstNum(row, ["StaticDeltaMCS", "static_delta_mcs"], 0);
-    if ~isfinite(delta), delta = 0; end
     if ~isfinite(staticDelta), staticDelta = 0; end
-    bound = floor(double(cqiBasedMCS) + double(delta) + double(staticDelta));
-    source = "cqi_based_mcs_plus_delta";
+    if isfinite(ollaAdjustedMCS)
+        bound = floor(double(ollaAdjustedMCS) + double(staticDelta));
+        source = "olla_required_sinr_adjusted_mcs";
+    else
+        bound = floor(double(cqiBasedMCS) + double(staticDelta));
+        source = "cqi_based_mcs_without_legacy_olla_delta";
+    end
     return;
 end
 if isfinite(derived)

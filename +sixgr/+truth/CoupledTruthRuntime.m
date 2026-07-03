@@ -5422,7 +5422,13 @@ methods(Static, Access=private)
         row.AMCMode = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "AMCMode", ""), "");
         row.OuterLoopEnabled = logical(sixgr.util.structGet(grant, "OuterLoopEnabled", false));
         row.OuterLoopApplied = logical(sixgr.util.structGet(grant, "OuterLoopApplied", false));
+        row.OLLADeltaDb = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLADeltaDb", ...
+            sixgr.util.structGet(grant, "OLLADeltaMCS", NaN)), NaN);
         row.OLLADeltaMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLADeltaMCS", NaN), NaN);
+        row.OLLAAdjustedMCSBeforeCQICeiling = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLAAdjustedMCSBeforeCQICeiling", NaN), NaN);
+        row.OLLABaseRequiredSINR_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLABaseRequiredSINR_dB", NaN), NaN);
+        row.OLLATargetRequiredSINR_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLATargetRequiredSINR_dB", NaN), NaN);
+        row.OLLAThresholdSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "OLLAThresholdSource", ""), "");
         row.OLLAUpdateCount = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "OLLAUpdateCount", NaN), NaN);
         row.OLLAState = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "OLLAState", ""), "");
         row.MCSSelectionSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MCSSelectionSource", ""), "");
@@ -5654,6 +5660,7 @@ methods(Static, Access=private)
             return;
         end
         mcsTable = sixgr.link.resolveConfiguredMCSTable(cfg, direction);
+        cqiTable = sixgr.link.resolveConfiguredCQITable(cfg, direction);
         [cqiModStr, cqiTargetCodeRate, cqiMCSIndex] = sixgr.link.amcFromCQI(cqi, "", NaN, cfg, direction);
         cqiProfileValid = isfinite(cqiMCSIndex) && cqiMCSIndex >= 0 && ...
             isfinite(cqiTargetCodeRate) && cqiTargetCodeRate > 0 && strlength(string(cqiModStr)) > 0;
@@ -5674,9 +5681,12 @@ methods(Static, Access=private)
         ollaCount = 0;
         ollaEnabled = false;
         ollaMCSAdjusted = false;
+        ollaDetail = struct("BaseRequiredSINR_dB", NaN, "TargetRequiredSINR_dB", NaN, "ThresholdSource", "");
+        ollaAdjustedMCSBeforeCQICeiling = NaN;
         mcsClampedToCQI = false;
         if useFeedbackDecision
-            ollaDelta = double(sixgr.util.structGet(feedback, "DeltaMCS", 0));
+            ollaDelta = double(sixgr.util.structGet(feedback, "OLLADeltaDb", ...
+                sixgr.util.structGet(feedback, "DeltaMCS", 0)));
             ollaCount = double(sixgr.util.structGet(feedback, "LinkAdaptationStateUpdateCount", 0));
             ollaEnabled = logical(sixgr.util.structGet(feedback, "OuterLoopEnabled", false));
         elseif ~isempty(scheduler) && ismethod(scheduler, "getOLLAMCSDelta")
@@ -5693,7 +5703,10 @@ methods(Static, Access=private)
             if ~(isfinite(cqiCeiling) && cqiCeiling >= 0)
                 cqiCeiling = double(mcsIndex);
             end
-            rawAdjustedMCS = round(double(mcsIndex) + double(ollaDelta));
+            [rawAdjustedMCS, ollaDetail] = sixgr.link.applyOLLADeltaDbToMCSIndex( ...
+                double(mcsIndex), double(ollaDelta), mcsTable, cqiTable, direction, ...
+                "Config", cfg);
+            ollaAdjustedMCSBeforeCQICeiling = double(rawAdjustedMCS);
             adjustedMCS = max(0, min(31, min(rawAdjustedMCS, round(cqiCeiling))));
             prof = sixgr.link.resolveMCSProfile(mcsTable, adjustedMCS);
             if prof.Valid
@@ -5769,7 +5782,7 @@ methods(Static, Access=private)
         else
             selectionSource = "feedback_cqi_derived_reference";
             if ollaMCSAdjusted
-                grant.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+                grant.MCSValueStatus = "measured_cqi_mapped_olla_db_margin_adjusted";
             else
                 grant.MCSValueStatus = "measured_cqi_mapped";
             end
@@ -5805,7 +5818,12 @@ methods(Static, Access=private)
         end
         grant.OuterLoopEnabled = logical(ollaEnabled);
         grant.OuterLoopApplied = logical(ollaEnabled && ollaCount > 0 && isfinite(ollaDelta) && abs(double(ollaDelta)) > 0);
+        grant.OLLADeltaDb = double(ollaDelta);
         grant.OLLADeltaMCS = double(ollaDelta);
+        grant.OLLAAdjustedMCSBeforeCQICeiling = double(ollaAdjustedMCSBeforeCQICeiling);
+        grant.OLLABaseRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "BaseRequiredSINR_dB", NaN));
+        grant.OLLATargetRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "TargetRequiredSINR_dB", NaN));
+        grant.OLLAThresholdSource = char(string(sixgr.util.structGet(ollaDetail, "ThresholdSource", "")));
         grant.OLLAUpdateCount = double(ollaCount);
         grant.SmallPRBWidebandCQIGuardApplied = logical(smallPRBGuardApplied);
         if smallPRBGuardApplied
@@ -9698,7 +9716,9 @@ methods(Static, Access=private)
             "RawCQIDerivedMCS", NaN, "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
             "CQIBasedMCS", NaN, "SmoothedCQI", NaN, "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, "StaticDeltaMCS", NaN, ...
             "AMCMode", "", "OuterLoopEnabled", false, "OuterLoopApplied", false, ...
-            "OLLADeltaMCS", NaN, "OLLAUpdateCount", NaN, "OLLAState", "", ...
+            "OLLADeltaDb", NaN, "OLLADeltaMCS", NaN, "OLLAAdjustedMCSBeforeCQICeiling", NaN, ...
+            "OLLABaseRequiredSINR_dB", NaN, "OLLATargetRequiredSINR_dB", NaN, "OLLAThresholdSource", "", ...
+            "OLLAUpdateCount", NaN, "OLLAState", "", ...
             "MCSSelectionSource", "", "CQIProvenance", "", "MCSValueStatus", "", ...
             "MCSIndexAuthority", "", "GrantOperatingPointSource", "", ...
             "NumLayers", NaN, "Layers", NaN, "CQIUsed", NaN, "RIUsed", NaN, "Rank", NaN, ...

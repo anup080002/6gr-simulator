@@ -66,6 +66,14 @@ decision = struct( ...
     "MCSSelectionSource", char(localResolveMCSSelectionSource(adaptationDomain)), ...
     "MCSValueStatus", "unresolved", ...
     "OLLADomain", char(localResolveOLLADomain(adaptationDomain, adaptationState.OuterLoopEnabled)), ...
+    "OLLADeltaDb", double(adaptationState.DeltaMCS), ...
+    "OLLADeltaMCS", double(adaptationState.DeltaMCS), ...
+    "OLLAMarginMinDb", double(adaptationState.DeltaMCSMin), ...
+    "OLLAMarginMaxDb", double(adaptationState.DeltaMCSMax), ...
+    "OLLAAdjustedMCSBeforeCQICeiling", NaN, ...
+    "OLLABaseRequiredSINR_dB", NaN, ...
+    "OLLATargetRequiredSINR_dB", NaN, ...
+    "OLLAThresholdSource", "", ...
     "CalibrationProfile", char(calibrationProfile), ...
     "CalibrationVersion", char(string(cqiMeta.CalibrationVersion)), ...
     "CQIBLERLUTSource", char(string(cqiMeta.BLERLUTSource)), ...
@@ -194,6 +202,12 @@ if isfinite(instantMCS)
         mcsJumpReset = true;
         resetState = true;
         resetReason = "mcs_jump";
+        cqiBasedMCS = double(instantMCS);
+        adaptationState.CQIBasedMCS = double(cqiBasedMCS);
+        if isfinite(instantCQI)
+            adaptationState.SmoothedCQI = double(instantCQI);
+            decision.SmoothedCQI = double(instantCQI);
+        end
     end
 
     initializeCQIMCS = ~adaptationState.Initialized || ~isfinite(adaptationState.CQIBasedMCS) || resetState;
@@ -236,15 +250,30 @@ cqiCeilingMCS = double(instantMCS);
 if ~(isfinite(cqiCeilingMCS) && cqiCeilingMCS >= 0)
     cqiCeilingMCS = double(maxMCS);
 end
-dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
-selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
-mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
-if selectedMCS > maxMCS
-    selectedMCS = maxMCS;
-    adaptationState.DeltaMCS = double(maxMCS) - double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
-elseif selectedMCS < 0
-    selectedMCS = 0;
-    adaptationState.DeltaMCS = -double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
+ollaAdjustedMCSBeforeCQICeiling = NaN;
+ollaDetail = struct( ...
+    "BaseRequiredSINR_dB", NaN, ...
+    "TargetRequiredSINR_dB", NaN, ...
+    "ThresholdSource", "");
+if string(adaptationDomain) == "legacy_mcs"
+    dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
+    selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
+    mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
+    if selectedMCS > maxMCS
+        selectedMCS = maxMCS;
+        adaptationState.DeltaMCS = double(maxMCS) - double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
+    elseif selectedMCS < 0
+        selectedMCS = 0;
+        adaptationState.DeltaMCS = -double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
+    end
+else
+    [ollaAdjustedMCSBeforeCQICeiling, ollaDetail] = sixgr.link.applyOLLADeltaDbToMCSIndex( ...
+        double(cqiBasedMCS), double(adaptationState.DeltaMCS), mcsTable, cqiTable, direction, ...
+        "Config", cfg);
+    dynamicMCS = double(ollaAdjustedMCSBeforeCQICeiling) + double(adaptationState.StaticDeltaMCS);
+    selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
+    mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
+    selectedMCS = max(0, min(double(maxMCS), double(selectedMCS)));
 end
 profile = sixgr.link.resolveMCSProfile(mcsTable, selectedMCS);
 if ~logical(sixgr.util.structGet(profile, "Valid", false))
@@ -255,9 +284,23 @@ end
 decision.CQIBasedMCS = double(cqiBasedMCS);
 decision.CQIBasedMCSNoOLLA = double(cqiBasedMCS);
 decision.DeltaMCS = double(adaptationState.DeltaMCS);
-decision.OLLAOffsetMCS = double(adaptationState.DeltaMCS);
-decision.OLLAMCSBoundMin = double(adaptationState.DeltaMCSMin);
-decision.OLLAMCSBoundMax = double(adaptationState.DeltaMCSMax);
+decision.OLLADeltaDb = double(adaptationState.DeltaMCS);
+decision.OLLADeltaMCS = double(adaptationState.DeltaMCS);
+decision.OLLAMarginMinDb = double(adaptationState.DeltaMCSMin);
+decision.OLLAMarginMaxDb = double(adaptationState.DeltaMCSMax);
+decision.OLLAAdjustedMCSBeforeCQICeiling = double(ollaAdjustedMCSBeforeCQICeiling);
+decision.OLLABaseRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "BaseRequiredSINR_dB", NaN));
+decision.OLLATargetRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "TargetRequiredSINR_dB", NaN));
+decision.OLLAThresholdSource = char(string(sixgr.util.structGet(ollaDetail, "ThresholdSource", "")));
+if string(adaptationDomain) == "legacy_mcs"
+    decision.OLLAOffsetMCS = double(adaptationState.DeltaMCS);
+    decision.OLLAMCSBoundMin = double(adaptationState.DeltaMCSMin);
+    decision.OLLAMCSBoundMax = double(adaptationState.DeltaMCSMax);
+else
+    decision.OLLAOffsetMCS = NaN;
+    decision.OLLAMCSBoundMin = NaN;
+    decision.OLLAMCSBoundMax = NaN;
+end
 decision.StaticDeltaMCS = double(adaptationState.StaticDeltaMCS);
 decision.Modulation = char(string(profile.Modulation));
 decision.TargetCodeRate = double(profile.TargetCodeRate);
@@ -266,7 +309,11 @@ if mcsClampedToCQI
     decision.MCSValueStatus = "clamped_to_cqi_max";
 elseif adaptationState.OuterLoopEnabled && isfinite(double(adaptationState.DeltaMCS)) && ...
         abs(double(adaptationState.DeltaMCS)) > 0
-    decision.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+    if string(adaptationDomain) == "legacy_mcs"
+        decision.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+    else
+        decision.MCSValueStatus = "measured_cqi_mapped_olla_db_margin_adjusted";
+    end
 else
     decision.MCSValueStatus = "measured_cqi_mapped";
 end
@@ -965,9 +1012,11 @@ if ~logical(outerLoopEnabled)
 end
 switch string(adaptationDomain)
     case "bler_margin"
-        domain = "bler_margin_proxy_delta_mcs";
-    otherwise
+        domain = "bler_margin_proxy_delta_db";
+    case "legacy_mcs"
         domain = "delta_mcs";
+    otherwise
+        domain = "delta_db_required_sinr_margin";
 end
 end
 
@@ -1359,15 +1408,21 @@ if nargin < 2
 end
 boundDirection = lower(string(boundDirection));
 if boundDirection == "min"
-    value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMin", -6));
+    value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMinDb", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_min_db", ...
+        sixgr.util.structGet(cfg, "link_adaptation.olla_margin_min_db", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMin", -10)))));
 else
-    value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMax", 6));
+    value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_max_db", ...
+        sixgr.util.structGet(cfg, "link_adaptation.olla_margin_max_db", ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMax", 10)))));
 end
 if ~isfinite(value)
     if boundDirection == "min"
-        value = -6;
+        value = -10;
     else
-        value = 6;
+        value = 10;
     end
 end
 end

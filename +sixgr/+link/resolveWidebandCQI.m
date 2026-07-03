@@ -37,8 +37,11 @@ if ~sinrInputAccepted
     perRBSINR_dB = [];
 end
 modeToken = localResolveCQIMode(cfg, direction, ~isempty(perRBSINR_dB));
-[thresholds_dB, thresholdSource, thresholdRole] = localResolveCQIThresholds(cfg, direction, tableToken);
 targetBLER = localResolveTargetBLER(cfg, direction);
+[thresholds_dB, thresholdInfo] = sixgr.link.cqiRequiredSINRTable(tableToken, cfg, direction, ...
+    "TargetBLER", targetBLER);
+thresholdSource = string(sixgr.util.structGet(thresholdInfo, "Source", ""));
+thresholdRole = string(sixgr.util.structGet(thresholdInfo, "ValueRole", ""));
 if modeToken == "effective_sinr_bler_lut" && ...
         ~localConfiguredBLERLUTAvailable(cfg, direction, tableToken, targetBLER) && ...
         ~localAllowUncalibratedBLERLUT(cfg, direction)
@@ -979,7 +982,7 @@ function curves = localDefaultBLERLUT(tableToken, thresholds_dB, targetBLER, cfg
 curves = cell(15, 1);
 operatingPoint_dB = double(thresholds_dB(:));
 if numel(operatingPoint_dB) ~= 15
-    operatingPoint_dB = double(localDefaultCQIThresholds(tableToken));
+    operatingPoint_dB = double(sixgr.link.cqiRequiredSINRTable(tableToken, cfg, direction));
     operatingPoint_dB = operatingPoint_dB(:);
 end
 supportOffset_dB = [-6 -4 -3 -2 -1 0 1 2 3 4 6];
@@ -1107,83 +1110,4 @@ if numel(sinrAxis) < 2 || numel(unique(sinrAxis)) < 2
 end
 predLog = interp1(sinrAxis, logBLER, double(effectiveSINR_dB), "linear", "extrap");
 bler = max(min(10.^predLog, 1), 1e-6);
-end
-
-function [thresholds_dB, sourceToken, valueRole] = localResolveCQIThresholds(cfg, direction, tableToken)
-thresholds_dB = [];
-sourceToken = "";
-valueRole = "";
-if nargin < 2 || isempty(direction)
-    direction = "DL";
-end
-dir = upper(string(direction));
-tableToken = lower(strtrim(string(tableToken)));
-tableField = tableToken + "Thresholds_dB";
-if dir == "UL"
-    candidatePaths = [ ...
-        "phy.pusch." + tableField
-        "phy.csi.ul." + tableField
-        "phy.csi.ulCQIThresholds_dB"
-        "phy.csi." + tableField
-        "phy.csi.cqiThresholds_dB"];
-else
-    candidatePaths = [ ...
-        "phy.pdsch." + tableField
-        "phy.csi.dl." + tableField
-        "phy.csi.dlCQIThresholds_dB"
-        "phy.csi." + tableField
-        "phy.csi.cqiThresholds_dB"];
-end
-for i = 1:numel(candidatePaths)
-    raw = sixgr.util.structGet(cfg, candidatePaths(i), []);
-    vals = localThresholdVector(raw);
-    if ~isempty(vals)
-        thresholds_dB = vals;
-        sourceToken = candidatePaths(i);
-        valueRole = "configured_lab_default_override";
-        return;
-    end
-end
-thresholds_dB = localDefaultCQIThresholds(tableToken);
-if isempty(thresholds_dB)
-    return;
-end
-sourceToken = "resolveWidebandCQI.lab_default_threshold_table";
-valueRole = "lab_default";
-end
-
-function vals = localThresholdVector(raw)
-vals = [];
-if isempty(raw)
-    return;
-end
-try
-    vals = double(raw(:).');
-catch
-    vals = [];
-    return;
-end
-vals = vals(isfinite(vals));
-if numel(vals) ~= 15
-    vals = [];
-    return;
-end
-if any(diff(vals) < 0)
-    vals = [];
-end
-end
-
-function thresholds_dB = localDefaultCQIThresholds(tableToken)
-switch lower(strtrim(string(tableToken)))
-    case "table1"
-        thresholds_dB = [ ...
-            -5.90 -4.78 -2.87 -1.02 1.00 3.05 5.08 7.25 9.46 11.81 ...
-            14.34 16.52 18.88 21.47 23.84];
-    case "table2"
-        thresholds_dB = [ ...
-            -5.90 -3.10 -0.40 2.05 4.35 6.64 8.91 11.31 13.79 16.07 ...
-            18.45 20.77 22.98 25.07 27.20];
-    otherwise
-        thresholds_dB = [];
-end
 end

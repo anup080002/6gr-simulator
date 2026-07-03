@@ -2469,10 +2469,13 @@ if ~logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true))
     token = "disabled";
     return;
 end
-if sixgr.link.resolveLinkAdaptationDomain(cfg, direction) == "bler_margin"
-    token = "bler_margin_proxy_delta_mcs";
-else
+domain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
+if domain == "bler_margin"
+    token = "bler_margin_proxy_delta_db";
+elseif domain == "legacy_mcs"
     token = "delta_mcs";
+else
+    token = "delta_db_required_sinr_margin";
 end
 end
 
@@ -8079,7 +8082,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
     'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
     'LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy','SchedulerGrantMCSSelectionMode', ...
-    'CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied','OLLADeltaMCS','OLLAUpdateCount','OLLAState','CalibrationProfile', ...
+    'CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied','OLLADeltaDb','OLLADeltaMCS','OLLAAdjustedMCSBeforeCQICeiling','OLLABaseRequiredSINR_dB','OLLATargetRequiredSINR_dB','OLLAThresholdSource','OLLAUpdateCount','OLLAState','CalibrationProfile', ...
     'RequestedOperatingPointSource','CQITable','MCSTable', ...
     'RankIndicator','PMI','CRI','PMIType', ...
     'PMICodebookMode','CSIReportMode','CSIPayloadBitLength','CSIPayloadHex', ...
@@ -11268,7 +11271,12 @@ row.OuterLoopEnabled = false;
 row.InnerLoopEnabled = false;
 row.OuterLoopApplied = false;
 row.InnerLoopApplied = false;
+row.OLLADeltaDb = NaN;
 row.OLLADeltaMCS = NaN;
+row.OLLAAdjustedMCSBeforeCQICeiling = NaN;
+row.OLLABaseRequiredSINR_dB = NaN;
+row.OLLATargetRequiredSINR_dB = NaN;
+row.OLLAThresholdSource = "";
 row.OLLAUpdateCount = NaN;
 row.OLLAState = "";
 row.CalibrationProfile = "";

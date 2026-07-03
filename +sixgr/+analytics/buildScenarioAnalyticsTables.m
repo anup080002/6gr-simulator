@@ -173,7 +173,12 @@ for i = 1:height(Tin)
     r.IQImbalanceGain_dB = localValue(r0, "ConfiguredIQGainImbalance_dB", NaN);
     r.IQImbalancePhase_deg = localValue(r0, "ConfiguredIQPhaseImbalance_deg", NaN);
     r.ImageRejection_dB = localValue(r0, "IQImbalanceImageRejection_dB", NaN);
+    r.OLLADeltaDb = localValue(r0, ["OLLADeltaDb","OLLADeltaMCS"], NaN);
     r.OLLADeltaMCS = localValue(r0, "OLLADeltaMCS", NaN);
+    r.OLLAAdjustedMCSBeforeCQICeiling = localValue(r0, "OLLAAdjustedMCSBeforeCQICeiling", NaN);
+    r.OLLABaseRequiredSINR_dB = localValue(r0, "OLLABaseRequiredSINR_dB", NaN);
+    r.OLLATargetRequiredSINR_dB = localValue(r0, "OLLATargetRequiredSINR_dB", NaN);
+    r.OLLAThresholdSource = string(localValue(r0, "OLLAThresholdSource", ""));
     r.OLLAState = string(localValue(r0, "OLLAState", ""));
     r.OuterLoopApplied = localValue(r0, "OuterLoopApplied", NaN);
     r.InnerLoopApplied = localValue(r0, "InnerLoopApplied", NaN);
@@ -706,7 +711,9 @@ vars = ["UEIndex","RNTI","Slot","Frame","Direction","MCS","PRBs","TBSBits","Laye
     "WidebandCQI","PMI","RankIndicator","SelectedBeamIndex","BestBeamIndex","BeamHit","BeamGainGap_dB","ConditionNumber_dB", ...
     "PAPR_dB","EVM_rms","NMSE_dB","DecoderIterations","DecoderComplexity","DecodeLatency_ms", ...
     "InjectedDoppler_Hz","EstimatedDoppler_Hz","DopplerError_Hz","TimingOffset_samples","TimingError_samples","ResidualCFO_Hz", ...
-    "IQImbalanceGain_dB","IQImbalancePhase_deg","ImageRejection_dB","OLLADeltaMCS","OLLAState","OuterLoopApplied","InnerLoopApplied", ...
+    "IQImbalanceGain_dB","IQImbalancePhase_deg","ImageRejection_dB","OLLADeltaDb","OLLADeltaMCS", ...
+    "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
+    "OLLAState","OuterLoopApplied","InnerLoopApplied", ...
     "HARQ_ID","HARQ_RV","IsRetransmission","CombiningEnabled","TBSize_DUT","TBSize_Reference","TBSize_Delta","TBSMatch","StrictOk","TruthStatus"];
 end
 

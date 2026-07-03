@@ -64,7 +64,7 @@ classdef (Abstract) SchedulerBase < handle
     properties(Access=protected)
         UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{}, ...
             'LastAck',{},'NumScheduledSlots',{},'NumUnscheduledSlots',{}, ...
-            'OLLADeltaMCS',{},'OLLAUpdateCount',{},'LastOLLAAck',{})
+            'OLLADeltaDb',{},'OLLADeltaMCS',{},'OLLAUpdateCount',{},'LastOLLAAck',{})
         TBSCache = []
         NRECache = []
         CacheScopeToken (1,:) char = ''
@@ -186,7 +186,7 @@ classdef (Abstract) SchedulerBase < handle
         function resetStats(obj)
             obj.UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{}, ...
                 'LastAck',{},'NumScheduledSlots',{},'NumUnscheduledSlots',{}, ...
-                'OLLADeltaMCS',{},'OLLAUpdateCount',{},'LastOLLAAck',{});
+                'OLLADeltaDb',{},'OLLADeltaMCS',{},'OLLAUpdateCount',{},'LastOLLAAck',{});
             try
                 obj.UEIndexMap = containers.Map('KeyType','double','ValueType','double');
             catch
@@ -334,14 +334,16 @@ classdef (Abstract) SchedulerBase < handle
                 return;
             end
             i = obj.ensureUE(double(rnti));
-            delta = double(sixgr.util.structGet(obj.UEStats(i), "OLLADeltaMCS", 0));
+            delta = double(sixgr.util.structGet(obj.UEStats(i), "OLLADeltaDb", ...
+                sixgr.util.structGet(obj.UEStats(i), "OLLADeltaMCS", 0)));
             if logical(ack)
                 delta = delta + localSchedulerOLLAStep(obj.Cfg, "up");
             else
                 delta = delta - localSchedulerOLLAStep(obj.Cfg, "down");
             end
             delta = min(localSchedulerOLLADeltaMax(obj.Cfg), max(localSchedulerOLLADeltaMin(obj.Cfg), delta));
-            obj.UEStats(i).OLLADeltaMCS = double(delta);
+            obj.UEStats(i).OLLADeltaDb = double(delta);
+            obj.UEStats(i).OLLADeltaMCS = double(delta); % Legacy export alias; units are dB.
             obj.UEStats(i).OLLAUpdateCount = double(sixgr.util.structGet(obj.UEStats(i), "OLLAUpdateCount", 0)) + 1;
             obj.UEStats(i).LastOLLAAck = logical(ack);
         end
@@ -354,7 +356,8 @@ classdef (Abstract) SchedulerBase < handle
                 return;
             end
             i = obj.ensureUE(double(rnti));
-            delta = double(sixgr.util.structGet(obj.UEStats(i), "OLLADeltaMCS", 0));
+            delta = double(sixgr.util.structGet(obj.UEStats(i), "OLLADeltaDb", ...
+                sixgr.util.structGet(obj.UEStats(i), "OLLADeltaMCS", 0)));
             updateCount = double(sixgr.util.structGet(obj.UEStats(i), "OLLAUpdateCount", 0));
             if ~isfinite(delta)
                 delta = 0;
@@ -414,6 +417,7 @@ classdef (Abstract) SchedulerBase < handle
                 obj.UEStats(end).LastAck = false;
                 obj.UEStats(end).NumScheduledSlots = 0;
                 obj.UEStats(end).NumUnscheduledSlots = 0;
+                obj.UEStats(end).OLLADeltaDb = 0;
                 obj.UEStats(end).OLLADeltaMCS = 0;
                 obj.UEStats(end).OLLAUpdateCount = 0;
                 obj.UEStats(end).LastOLLAAck = false;
@@ -504,7 +508,14 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSProfile", sixgr.link.resolveMCSProfile(mcsTable, -1), ...
                 "OuterLoopEnabled", logical(localSchedulerOLLAEnabled(obj.Cfg)), ...
                 "OuterLoopApplied", false, ...
+                "OLLADeltaDb", 0, ...
                 "OLLADeltaMCS", 0, ...
+                "OLLAMarginMinDb", double(localSchedulerOLLADeltaMin(obj.Cfg)), ...
+                "OLLAMarginMaxDb", double(localSchedulerOLLADeltaMax(obj.Cfg)), ...
+                "OLLAAdjustedMCSBeforeCQICeiling", NaN, ...
+                "OLLABaseRequiredSINR_dB", NaN, ...
+                "OLLATargetRequiredSINR_dB", NaN, ...
+                "OLLAThresholdSource", "", ...
                 "OLLAUpdateCount", 0, ...
                 "OLLAState", "not_applicable", ...
                 "MCSSelectionSource", "configured_profile", ...
@@ -670,17 +681,20 @@ classdef (Abstract) SchedulerBase < handle
 
             if amc.Mode == "cqi_table" && localSchedulerOLLAEnabled(obj.Cfg)
                 rntiForOLLA = double(sixgr.util.structGet(ue, "RNTI", NaN));
-                [ollaDelta, ollaCount, ollaEnabled] = obj.getOLLAMCSDelta(rntiForOLLA);
+                [ollaDeltaDb, ollaCount, ollaEnabled] = obj.getOLLAMCSDelta(rntiForOLLA);
                 amc.OuterLoopEnabled = logical(ollaEnabled);
-                amc.OLLADeltaMCS = double(ollaDelta);
+                amc.OLLADeltaDb = double(ollaDeltaDb);
+                amc.OLLADeltaMCS = double(ollaDeltaDb); % Legacy export alias; units are dB.
                 amc.OLLAUpdateCount = double(ollaCount);
                 amc.OLLAState = "configured_waiting_for_ack_feedback";
-                if isfinite(amc.MCSIndex) && isfinite(ollaDelta) && ollaCount > 0
+                if isfinite(amc.MCSIndex) && isfinite(ollaDeltaDb) && ollaCount > 0
                     cqiCeilingMCS = double(sixgr.util.structGet(amc, "RawCQIDerivedMCS", amc.MCSIndex));
                     if ~(isfinite(cqiCeilingMCS) && cqiCeilingMCS >= 0)
                         cqiCeilingMCS = double(amc.MCSIndex);
                     end
-                    unclampedMCS = floor(double(amc.MCSIndex) + double(ollaDelta));
+                    [unclampedMCS, ollaDetail] = sixgr.link.applyOLLADeltaDbToMCSIndex( ...
+                        double(amc.MCSIndex), double(ollaDeltaDb), mcsTable, cqiTable, dir, ...
+                        "Config", obj.Cfg);
                     adjustedMCS = max(0, min(31, min(unclampedMCS, floor(double(cqiCeilingMCS)))));
                     prof = sixgr.link.resolveMCSProfile(mcsTable, adjustedMCS);
                     if prof.Valid
@@ -690,10 +704,14 @@ classdef (Abstract) SchedulerBase < handle
                         targetCodeRate = double(prof.TargetCodeRate);
                         amc.OuterLoopApplied = true;
                         amc.OLLAState = "applied_scheduler_ack_nack_delta";
+                        amc.OLLAAdjustedMCSBeforeCQICeiling = double(unclampedMCS);
+                        amc.OLLABaseRequiredSINR_dB = double(ollaDetail.BaseRequiredSINR_dB);
+                        amc.OLLATargetRequiredSINR_dB = double(ollaDetail.TargetRequiredSINR_dB);
+                        amc.OLLAThresholdSource = char(string(ollaDetail.ThresholdSource));
                         if double(unclampedMCS) > double(cqiCeilingMCS)
                             amc.MCSValueStatus = "clamped_to_cqi_max";
                         else
-                            amc.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
+                            amc.MCSValueStatus = "measured_cqi_mapped_olla_db_margin_adjusted";
                         end
                     end
                 end
@@ -977,7 +995,14 @@ classdef (Abstract) SchedulerBase < handle
                 "AMCMode", char(string(amc.Mode)), ...
                 "OuterLoopEnabled", logical(sixgr.util.structGet(amc, "OuterLoopEnabled", false)), ...
                 "OuterLoopApplied", logical(sixgr.util.structGet(amc, "OuterLoopApplied", false)), ...
+                "OLLADeltaDb", double(sixgr.util.structGet(amc, "OLLADeltaDb", sixgr.util.structGet(amc, "OLLADeltaMCS", 0))), ...
                 "OLLADeltaMCS", double(sixgr.util.structGet(amc, "OLLADeltaMCS", 0)), ...
+                "OLLAMarginMinDb", double(sixgr.util.structGet(amc, "OLLAMarginMinDb", NaN)), ...
+                "OLLAMarginMaxDb", double(sixgr.util.structGet(amc, "OLLAMarginMaxDb", NaN)), ...
+                "OLLAAdjustedMCSBeforeCQICeiling", double(sixgr.util.structGet(amc, "OLLAAdjustedMCSBeforeCQICeiling", NaN)), ...
+                "OLLABaseRequiredSINR_dB", double(sixgr.util.structGet(amc, "OLLABaseRequiredSINR_dB", NaN)), ...
+                "OLLATargetRequiredSINR_dB", double(sixgr.util.structGet(amc, "OLLATargetRequiredSINR_dB", NaN)), ...
+                "OLLAThresholdSource", char(string(sixgr.util.structGet(amc, "OLLAThresholdSource", ""))), ...
                 "OLLAUpdateCount", double(sixgr.util.structGet(amc, "OLLAUpdateCount", 0)), ...
                 "OLLAState", char(string(sixgr.util.structGet(amc, "OLLAState", ""))), ...
                 "MCSSelectionSource", char(string(sixgr.util.structGet(amc, "MCSSelectionSource", ""))), ...
@@ -2111,18 +2136,24 @@ end
 end
 
 function value = localSchedulerOLLADeltaMin(cfg)
-value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMin", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaDeltaMCSMin", -6)));
+value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMinDb", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_min_db", ...
+    sixgr.util.structGet(cfg, "link_adaptation.olla_margin_min_db", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMin", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaDeltaMCSMin", -10))))));
 if ~(isscalar(value) && isfinite(value))
-    value = -6;
+    value = -10;
 end
 end
 
 function value = localSchedulerOLLADeltaMax(cfg)
-value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMax", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaDeltaMCSMax", 6)));
+value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_max_db", ...
+    sixgr.util.structGet(cfg, "link_adaptation.olla_margin_max_db", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMax", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaDeltaMCSMax", 10))))));
 if ~(isscalar(value) && isfinite(value))
-    value = 6;
+    value = 10;
 end
 end
 
