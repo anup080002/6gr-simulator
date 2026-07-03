@@ -237,14 +237,15 @@ site = table(1, 1, 0, 0, bsHeight, localNumber(cfg, "scenario.bs.downtilt_deg", 
 
 paths = localUserPaths(cfg);
 ueRows = repmat(struct("UEID", NaN, "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
-    "Speed_kmh", NaN, "PathSource", ""), numel(paths), 1);
+    "Speed_kmh", NaN, "PathSource", "", "PathProvenance", ""), numel(paths), 1);
 for i = 1:numel(paths)
     p = paths(i);
     start = localVector(sixgr.util.structGet(p, "initial_position_m", [NaN NaN NaN]), 3);
     pathSource = string(sixgr.util.structGet(p, "path_source", "mobility.user_paths"));
+    pathProvenance = localPathProvenance(p, pathSource);
     ueRows(i) = struct("UEID", localNumber(p, "ue_id", i), "X_m", start(1), ...
         "Y_m", start(2), "Z_m", start(3), "Speed_kmh", localNumber(p, "speed_kmh", localNumber(cfg, "mobility.ue_speed_kmh", NaN)), ...
-        "PathSource", pathSource);
+        "PathSource", pathSource, "PathProvenance", pathProvenance);
 end
 ueInitial = localStructRowsToTable(ueRows);
 
@@ -261,7 +262,8 @@ end
 function T = localBuildTrajectoryGeometry(paths, cfg)
 rows = repmat(struct("UEID", NaN, "StartX_m", NaN, "StartY_m", NaN, "StartZ_m", NaN, ...
     "EndX_m", NaN, "EndY_m", NaN, "EndZ_m", NaN, "RouteLength_m", NaN, ...
-    "Speed_kmh", NaN, "TraversalTime_s", NaN, "RequiredTraversalSlots", NaN, "LoopMode", ""), numel(paths), 1);
+    "Speed_kmh", NaN, "TraversalTime_s", NaN, "RequiredTraversalSlots", NaN, "LoopMode", "", ...
+    "PathProvenance", ""), numel(paths), 1);
 slotMs = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5);
 for i = 1:numel(paths)
     p = paths(i);
@@ -274,7 +276,8 @@ for i = 1:numel(paths)
     rows(i) = struct("UEID", localNumber(p, "ue_id", i), "StartX_m", start(1), "StartY_m", start(2), ...
         "StartZ_m", start(3), "EndX_m", stop(1), "EndY_m", stop(2), "EndZ_m", stop(3), ...
         "RouteLength_m", dist, "Speed_kmh", speedKmh, "TraversalTime_s", t, ...
-        "RequiredTraversalSlots", ceil(t / (slotMs / 1e3)), "LoopMode", string(sixgr.util.structGet(p, "loop_mode", "")));
+        "RequiredTraversalSlots", ceil(t / (slotMs / 1e3)), "LoopMode", string(sixgr.util.structGet(p, "loop_mode", "")), ...
+        "PathProvenance", localPathProvenance(p, string(sixgr.util.structGet(p, "path_source", "mobility.user_paths"))));
 end
 T = localStructRowsToTable(rows);
 end
@@ -285,8 +288,8 @@ slotMs = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5);
 slots = localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], 0);
 runDurationS = slots * slotMs / 1e3;
 if height(traj) == 0
-    resolution = table(false, slots, runDurationS, NaN, NaN, "no_user_paths", ...
-        'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s','RequiredTraversalSlots','ActualDistanceTravelled_m','Status'});
+    resolution = table(false, slots, runDurationS, NaN, NaN, "no_user_paths", "unavailable_no_user_paths", ...
+        'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s','RequiredTraversalSlots','ActualDistanceTravelled_m','Status','PathProvenance'});
     segments = table();
 else
     requiredSlots = max(traj.RequiredTraversalSlots);
@@ -294,7 +297,8 @@ else
     actualDist = min(traj.RouteLength_m, speedMs .* runDurationS);
     resolution = table(slots >= requiredSlots, slots, runDurationS, requiredSlots, min(actualDist), ...
         localTernary(slots >= requiredSlots, "full_route_duration_configured", "SHORT_MOBILITY_DIAGNOSTIC"), ...
-        'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s','RequiredTraversalSlots','ActualDistanceTravelled_m','Status'});
+        localTrajectoryPathProvenance(traj), ...
+        'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s','RequiredTraversalSlots','ActualDistanceTravelled_m','Status','PathProvenance'});
     segments = traj;
 end
 
@@ -990,47 +994,58 @@ end
 function paths = localSynthesizeUserPathsFromScalarMobility(cfg)
 paths = struct([]);
 speedKmh = localNumber(cfg, ["mobility.ue_speed_kmh","channels.mobility_kmph","scenario.mobility.speed_kmh"], NaN);
-nUE = round(localNumber(cfg, ["users.n_users","deployment_topology.num_ues","scenario.ue.nUE"], 0));
+nUE = round(localNumber(cfg, ["scenario.numUEs","scenario.ue.count","users.n_users","deployment_topology.num_ues","scenario.ue.nUE"], 1));
 if ~(isfinite(speedKmh) && speedKmh >= 0 && isfinite(nUE) && nUE >= 1)
     return;
 end
-radius = localFirstFiniteNumber(cfg, ["deployment_topology.max_ue_distance_from_bs_m", ...
+initDist = localFirstFiniteNumber(cfg, ["scenario.ue.initial_distance_m", ...
+    "deployment_topology.max_ue_distance_from_bs_m", ...
     "scenario.ue.distribution.max_bs_dist_m", "scenario.ue.distribution.maxBsDistance_m", ...
     "deployment_topology.cell_radius_m"]);
 minRadius = localFirstFiniteNumber(cfg, ["deployment_topology.min_ue_distance_from_bs_m", ...
     "scenario.ue.distribution.min_bs_dist_m", "scenario.ue.distribution.minBsDistance_m"]);
-if ~isfinite(radius)
-    radius = minRadius;
-end
-if ~(isfinite(radius) && radius > 0)
-    return;
+if ~isfinite(initDist)
+    initDist = 300;
 end
 if isfinite(minRadius) && minRadius > 0
-    radius = max(radius, minRadius);
+    initDist = max(initDist, minRadius);
 end
+nUE = max(1, round(double(nUE)));
 slotMs = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5);
-slots = localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], 1);
-durationS = max(double(slots) * double(slotMs) / 1e3, double(slotMs) / 1e3);
+slots = localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], 0);
+durationS = max(double(slots) * double(slotMs) / 1e3, 0);
 routeLength = max(0, double(speedKmh) / 3.6 * durationS);
 headingDeg = localNumber(cfg, ["mobility.heading_deg","mobility.direction_deg","scenario.mobility.heading_deg"], 0);
 ueHeight = localNumber(cfg, ["scenario.ue.height_m","deployment_topology.ue_height_m"], 1.5);
+laneSpacing = localNumber(cfg, ["deployment_topology.min_inter_ue_distance_m","users.min_inter_ue_distance_m"], 10);
+if ~(isfinite(laneSpacing) && laneSpacing > 0)
+    laneSpacing = 10;
+end
 
 paths = repmat(struct("ue_id", NaN, "label", "", "speed_kmh", NaN, ...
-    "initial_position_m", [NaN NaN NaN], "initial_heading_deg", NaN, ...
-    "waypoints_m", struct([]), "loop_mode", "hold", "path_source", "mobility.ue_speed_kmh"), nUE, 1);
-move = routeLength .* [cosd(headingDeg), sind(headingDeg), 0];
+    "initial_position_m", [NaN NaN NaN], "initial_heading_deg", NaN, "heading_deg", NaN, ...
+    "route_length_m", NaN, "waypoints_m", struct([]), "loop_mode", "bounce", ...
+    "path_source", "mobility.ue_speed_kmh", "path_provenance", "synthesized_from_scalar_speed", ...
+    "source", "synthesized_from_scalar_mobility_ue_speed_kmh"), nUE, 1);
+heading = [cosd(headingDeg), sind(headingDeg), 0];
+normal = [-sind(headingDeg), cosd(headingDeg), 0];
+move = routeLength .* heading;
 for i = 1:nUE
-    angle = 2 * pi * double(i - 1) / max(1, double(nUE));
-    start = [radius * cos(angle), radius * sin(angle), ueHeight];
+    laneOffset = (double(i) - (double(nUE) + 1) / 2) * laneSpacing;
+    start = [double(initDist), 0, double(ueHeight)] + laneOffset .* normal;
     stop = start + move;
     paths(i).ue_id = i;
     paths(i).label = sprintf("ue_%d_scalar_speed_path", i);
     paths(i).speed_kmh = double(speedKmh);
     paths(i).initial_position_m = start;
     paths(i).initial_heading_deg = double(headingDeg);
+    paths(i).heading_deg = double(headingDeg);
+    paths(i).route_length_m = routeLength;
     paths(i).waypoints_m = struct("position_m", stop, "hold_time_s", 0);
-    paths(i).loop_mode = "hold";
+    paths(i).loop_mode = "bounce";
     paths(i).path_source = "mobility.ue_speed_kmh";
+    paths(i).path_provenance = "synthesized_from_scalar_speed";
+    paths(i).source = "synthesized_from_scalar_mobility_ue_speed_kmh";
 end
 end
 
@@ -1042,6 +1057,29 @@ for path = string(paths(:)).'
         value = candidate;
         return;
     end
+end
+end
+
+function provenance = localPathProvenance(p, fallback)
+provenance = string(sixgr.util.structGet(p, "path_provenance", ...
+    sixgr.util.structGet(p, "PathProvenance", "")));
+if strlength(strtrim(provenance)) == 0
+    provenance = string(fallback);
+end
+if strlength(strtrim(provenance)) == 0
+    provenance = "mobility.user_paths";
+end
+end
+
+function provenance = localTrajectoryPathProvenance(traj)
+provenance = "mobility.user_paths";
+if ~(istable(traj) && height(traj) > 0 && localHasColumn(traj, "PathProvenance"))
+    return;
+end
+values = strtrim(string(traj.PathProvenance));
+values = unique(values(strlength(values) > 0));
+if ~isempty(values)
+    provenance = strjoin(values(:).', "|");
 end
 end
 
@@ -1214,6 +1252,12 @@ if isstruct(waypoints) && ~isempty(waypoints)
     stop = localVector(sixgr.util.structGet(waypoints(1), "position_m", fallback), 3);
 elseif iscell(waypoints) && ~isempty(waypoints)
     stop = localVector(sixgr.util.structGet(waypoints{1}, "position_m", fallback), 3);
+else
+    routeLength = localNumber(p, "route_length_m", NaN);
+    if isfinite(routeLength) && routeLength > 0
+        headingDeg = localNumber(p, ["heading_deg","initial_heading_deg"], 0);
+        stop = fallback + routeLength .* [cosd(headingDeg), sind(headingDeg), 0];
+    end
 end
 end
 
