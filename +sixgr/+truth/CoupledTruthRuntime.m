@@ -869,11 +869,39 @@ methods(Static, Access=private)
         if isstruct(prevLLR) && isempty(fieldnames(prevLLR))
             prevLLR = [];
         end
+        tbContext = sixgr.util.structGet(retx, "TBContext", ...
+            sixgr.util.structGet(sixgr.util.structGet(retx, "LastGrant", struct()), "HARQTBContext", struct()));
         context.TransportBlockBits = int8(retx.TB(:));
         context.RV = double(retx.HARQ.RV);
         context.PreviousCombinedLLR = prevLLR;
         context.GrantSnapshot = sixgr.util.structGet(retx, "LastGrant", struct());
-        context.HARQContext = struct("Direction", char(direction), "UEIndex", double(ueIdx), "RNTI", double(rnti), "HarqID", double(retx.HARQ.HarqID), "NDI", logical(retx.HARQ.NDI), "IsRetransmission", true, "FeedbackDelaySlots", double(state.HARQFeedbackSlots), "RV", double(retx.HARQ.RV), "GrantSnapshot", context.GrantSnapshot);
+        if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+            context.GrantSnapshot.HARQTBContext = tbContext;
+        end
+        softEvidence = false;
+        if isstruct(prevLLR)
+            softEvidence = ~isempty(fieldnames(prevLLR));
+        elseif isnumeric(prevLLR) || islogical(prevLLR)
+            softEvidence = ~isempty(prevLLR);
+        elseif iscell(prevLLR)
+            softEvidence = ~isempty(prevLLR);
+        end
+        context.HARQContext = struct( ...
+            "Direction", char(direction), ...
+            "UEIndex", double(ueIdx), ...
+            "RNTI", double(rnti), ...
+            "HarqID", double(retx.HARQ.HarqID), ...
+            "HARQProcess", double(retx.HARQ.HarqID), ...
+            "NDI", logical(retx.HARQ.NDI), ...
+            "NDIEpoch", double(sixgr.util.structGet(retx.HARQ, "NDIEpoch", ...
+                sixgr.util.structGet(tbContext, "NDIEpoch", NaN))), ...
+            "IsRetransmission", true, ...
+            "FeedbackDelaySlots", double(state.HARQFeedbackSlots), ...
+            "RV", double(retx.HARQ.RV), ...
+            "GrantSnapshot", context.GrantSnapshot, ...
+            "TransportBlockContext", tbContext, ...
+            "SoftCombiningEvidenceAvailable", logical(softEvidence), ...
+            "PreviousCombinedLLRAvailable", logical(softEvidence));
     end
 
     function [state, grants, info] = scheduleDirectionImpl(state, cfg, direction)
@@ -1112,7 +1140,18 @@ methods(Static, Access=private)
             if ~(isstruct(replayGrant) && ~isempty(fieldnames(replayGrant)))
                 replayGrant = grant;
             end
-            replayTBSizeBits = double(numel(sixgr.util.structGet(context, "TransportBlockBits", int8([]))));
+            tbContext = sixgr.util.structGet(sixgr.util.structGet(context, "HARQContext", struct()), ...
+                "TransportBlockContext", sixgr.util.structGet(replayGrant, "HARQTBContext", struct()));
+            replayTBSizeBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
+            replayBitsObserved = double(numel(sixgr.util.structGet(context, "TransportBlockBits", int8([]))));
+            if ~(isfinite(replayTBSizeBits) && replayTBSizeBits > 0)
+                replayTBSizeBits = replayBitsObserved;
+            elseif isfinite(replayBitsObserved) && replayBitsObserved > 0 && ...
+                    round(replayTBSizeBits) ~= round(replayBitsObserved)
+                error("sixgr:truth:HARQReplayTBContextMismatch", ...
+                    "%s HARQ replay TB context TBSBits=%d does not match stored TB bits=%d.", ...
+                    char(direction), round(replayTBSizeBits), round(replayBitsObserved));
+            end
             if isfinite(replayTBSizeBits) && replayTBSizeBits > 0
                 replayGrant.TransportBlockSize = replayTBSizeBits;
                 replayGrant.TBSBits = replayTBSizeBits;
@@ -1122,6 +1161,9 @@ methods(Static, Access=private)
                         double(sixgr.util.structGet(replayGrant, "ScheduledTransportBlockSize", NaN)) > 0)
                     replayGrant.ScheduledTransportBlockSize = replayTBSizeBits;
                 end
+            end
+            if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+                replayGrant.HARQTBContext = tbContext;
             end
             replayGrant.Direction = char(direction);
             replayGrant.UEIndex = double(sixgr.util.structGet(grant, "UEIndex", ueIdx));
@@ -1151,8 +1193,21 @@ methods(Static, Access=private)
                 replayGrant.RIUsed = double(grant.RIUsed);
             end
             replayGrant.HARQ = sixgr.util.structGet(grant, "HARQ", sixgr.util.structGet(replayGrant, "HARQ", struct()));
+            replayGrant.HARQ.HarqID = double(sixgr.util.structGet(sixgr.util.structGet(context, "HARQContext", struct()), "HarqID", ...
+                sixgr.util.structGet(replayGrant.HARQ, "HarqID", NaN)));
+            replayGrant.HARQ.HARQProcess = double(sixgr.util.structGet(sixgr.util.structGet(context, "HARQContext", struct()), "HARQProcess", ...
+                sixgr.util.structGet(replayGrant.HARQ, "HARQProcess", replayGrant.HARQ.HarqID)));
+            replayGrant.HARQ.NDI = logical(sixgr.util.structGet(sixgr.util.structGet(context, "HARQContext", struct()), "NDI", ...
+                sixgr.util.structGet(replayGrant.HARQ, "NDI", false)));
+            replayGrant.HARQ.NDIEpoch = double(sixgr.util.structGet(sixgr.util.structGet(context, "HARQContext", struct()), "NDIEpoch", ...
+                sixgr.util.structGet(tbContext, "NDIEpoch", sixgr.util.structGet(replayGrant.HARQ, "NDIEpoch", NaN))));
+            replayGrant.HARQ.RV = double(sixgr.util.structGet(sixgr.util.structGet(context, "HARQContext", struct()), "RV", ...
+                sixgr.util.structGet(replayGrant.HARQ, "RV", NaN)));
+            replayGrant.HARQ.IsRetransmission = true;
+            replayGrant.IsRetransmission = true;
             context.HARQContext = sixgr.util.structGet(context, "HARQContext", struct());
             context.HARQContext.GrantSnapshot = replayGrant;
+            context.HARQContext.TransportBlockContext = tbContext;
             replayGrant = sixgr.truth.CoupledTruthRuntime.refreezeReplayGrantPHYContract( ...
                 cfg, replayGrant, direction, state, context.HARQContext);
             context.GrantSnapshot = replayGrant;
@@ -1170,10 +1225,16 @@ methods(Static, Access=private)
                 "UEIndex", double(ueIdx), ...
                 "RNTI", double(sixgr.util.structGet(grant, "RNTI", NaN)), ...
                 "HarqID", double(sixgr.util.structGet(harq, "HarqID", NaN)), ...
+                "HARQProcess", double(sixgr.util.structGet(harq, "HARQProcess", ...
+                    sixgr.util.structGet(harq, "HarqID", NaN))), ...
                 "NDI", logical(sixgr.util.structGet(harq, "NDI", true)), ...
+                "NDIEpoch", double(sixgr.util.structGet(harq, "NDIEpoch", NaN)), ...
                 "IsRetransmission", false, ...
                 "FeedbackDelaySlots", double(state.HARQFeedbackSlots), ...
                 "RV", double(sixgr.util.structGet(harq, "RV", 0)), ...
+                "TransportBlockContext", sixgr.util.structGet(grant, "HARQTBContext", struct()), ...
+                "SoftCombiningEvidenceAvailable", false, ...
+                "PreviousCombinedLLRAvailable", false, ...
                 "GrantSnapshot", grant);
         end
         expectedUCI = sixgr.truth.CoupledTruthRuntime.resolveGrantExpectedUCIBits(grant);
@@ -1704,6 +1765,12 @@ methods(Static, Access=private)
     end
 
     function state = processDueFeedback(state)
+        currentSlot = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+        lastProcessedSlot = double(sixgr.util.structGet(state, "LastDueFeedbackProcessedSlot", NaN));
+        if isfinite(currentSlot) && isfinite(lastProcessedSlot) && abs(currentSlot - lastProcessedSlot) < 1e-9
+            return;
+        end
+        state.LastDueFeedbackProcessedSlot = currentSlot;
         grantTrace = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
         if ~(istable(grantTrace) && ~isempty(grantTrace))
             dueGrantMask = false(0, 1);
@@ -1906,6 +1973,35 @@ methods(Static, Access=private)
             grantSnapshot.TBSBits = actualTBSBits;
             grantSnapshot.TBSBytes = floor(actualTBSBits / 8);
         end
+        tbContext = sixgr.util.structGet(context, "TransportBlockContext", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext", struct()));
+        ctxTBSBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
+        if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+            if ~isempty(tbBits) && isfinite(ctxTBSBits) && round(ctxTBSBits) ~= round(numel(tbBits))
+                error("sixgr:truth:HARQStoredTBContextMismatch", ...
+                    "%s HARQ state update observed TB bits=%d but context TBSBits=%d.", ...
+                    char(direction), round(numel(tbBits)), round(ctxTBSBits));
+            end
+            tbContext.HARQProcessId = double(harqId0);
+            tbContext.NDI = logical(ndi);
+            tbContext.NDIEpoch = double(sixgr.util.structGet(context, "NDIEpoch", ...
+                sixgr.util.structGet(tbContext, "NDIEpoch", NaN)));
+            tbContext.LastObservedRV = double(rv);
+            grantSnapshot.HARQTBContext = tbContext;
+        end
+        grantHarq = sixgr.util.structGet(grantSnapshot, "HARQ", struct());
+        if ~isstruct(grantHarq)
+            grantHarq = struct();
+        end
+        grantHarq.HarqID = double(harqId0);
+        grantHarq.HARQProcess = double(harqId0);
+        grantHarq.NDI = logical(ndi);
+        grantHarq.NDIEpoch = double(sixgr.util.structGet(context, "NDIEpoch", ...
+            sixgr.util.structGet(tbContext, "NDIEpoch", NaN)));
+        grantHarq.RV = double(rv);
+        grantHarq.IsRetransmission = logical(isRetx);
+        grantSnapshot.HARQ = grantHarq;
+        grantSnapshot.IsRetransmission = logical(isRetx);
         harq.onTx(rnti, harqId0, uint8(tbBits(:)), grantSnapshot, slotIdx);
         pid = harqId0 + 1;
         if combinedDecodeOK
@@ -1978,8 +2074,27 @@ methods(Static, Access=private)
         t.Frame = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Frame", state.CurrentFrame));
         t.HarqID = double(harqId0);
         t.NDI = double(ndi);
+        t.NDIEpoch = double(sixgr.util.structGet(grantSnapshot, "HARQ.NDIEpoch", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext.NDIEpoch", NaN)));
         t.RV = double(rv);
         t.IsRetransmission = logical(isRetx);
+        t.TBId = char(string(sixgr.util.structGet(grantSnapshot, "HARQTBContext.TBId", "")));
+        t.OriginalTBSBits = double(sixgr.util.structGet(grantSnapshot, "OriginalTBSBits", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext.TBSBits", NaN)));
+        t.CurrentTBSBits = double(sixgr.util.structGet(grantSnapshot, "CurrentTBSBits", ...
+            sixgr.util.structGet(grantSnapshot, "TBSBits", NaN)));
+        t.OriginalRateMatchedBits = double(sixgr.util.structGet(grantSnapshot, "OriginalRateMatchedBits", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext.OriginalRateMatchedBitsTotal", NaN)));
+        t.CurrentRateMatchedBits = double(sixgr.util.structGet(grantSnapshot, "CurrentRateMatchedBits", NaN));
+        t.EffectiveInitialCodeRate = double(sixgr.util.structGet(grantSnapshot, "EffectiveInitialCodeRate", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext.EffectiveInitialCodeRate", NaN)));
+        t.EffectiveCurrentTxCodeRate = double(sixgr.util.structGet(grantSnapshot, "EffectiveCurrentTxCodeRate", NaN));
+        t.ShortIRRetx = logical(sixgr.util.structGet(grantSnapshot, "ShortIRRetx", false));
+        t.CodeBlockLayoutHash = char(string(sixgr.util.structGet(grantSnapshot, "CodeBlockLayoutHash", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext.CodeBlockLayoutHash", ""))));
+        t.HARQContextHash = char(string(sixgr.util.structGet(grantSnapshot, "HARQContextHash", ...
+            sixgr.util.structGet(grantSnapshot, "HARQTBContext.HARQContextHash", ""))));
+        t.HARQContextStatus = char(string(sixgr.util.structGet(grantSnapshot, "HARQContextStatus", "")));
         t.FeedbackDueSlot = double(feedbackDueSlot);
         t.CurrentDecodeOK = logical(currentDecodeOK);
         t.CombinedDecodeOK = logical(combinedDecodeOK);
@@ -2004,7 +2119,12 @@ methods(Static, Access=private)
             "HARQCurrentDecodeOK", logical(currentDecodeOK), "HARQCombinedDecodeOK", logical(combinedDecodeOK), ...
             "HARQCombiningApplied", logical(t.HARQCombiningApplied), "HARQLLRCombiningGain_dB", double(t.LLRCombiningGain_dB), ...
             "HARQPreviousLLRCount", double(t.PreviousLLRCount), "HARQCurrentLLRCount", double(t.CurrentLLRCount), ...
-            "HARQCombinedLLRCount", double(t.CombinedLLRCount));
+            "HARQCombinedLLRCount", double(t.CombinedLLRCount), "NDIEpoch", double(t.NDIEpoch), ...
+            "TBId", string(t.TBId), "OriginalTBSBits", double(t.OriginalTBSBits), "CurrentTBSBits", double(t.CurrentTBSBits), ...
+            "OriginalRateMatchedBits", double(t.OriginalRateMatchedBits), "CurrentRateMatchedBits", double(t.CurrentRateMatchedBits), ...
+            "EffectiveInitialCodeRate", double(t.EffectiveInitialCodeRate), "EffectiveCurrentTxCodeRate", double(t.EffectiveCurrentTxCodeRate), ...
+            "ShortIRRetx", logical(t.ShortIRRetx), "CodeBlockLayoutHash", string(t.CodeBlockLayoutHash), ...
+            "HARQContextHash", string(t.HARQContextHash), "HARQContextStatus", string(t.HARQContextStatus));
     end
 
     function T = annotateHARQTrialTable(T, harqFields)
@@ -2016,14 +2136,34 @@ methods(Static, Access=private)
             if ~ismember(name, string(T.Properties.VariableNames))
                 if islogical(value)
                     T.(name) = repmat(logical(value), n, 1);
+                elseif isstring(value) || ischar(value)
+                    stringValue = string(value);
+                    if isempty(stringValue)
+                        stringValue = "";
+                    end
+                    T.(name) = repmat(stringValue(1), n, 1);
                 else
-                    T.(name) = repmat(double(value), n, 1);
+                    numericValue = double(value);
+                    if isempty(numericValue)
+                        numericValue = NaN;
+                    end
+                    T.(name) = repmat(numericValue, n, 1);
                 end
             else
                 if islogical(value)
                     T.(name)(:) = logical(value);
+                elseif isstring(value) || ischar(value)
+                    stringValue = string(value);
+                    if isempty(stringValue)
+                        stringValue = "";
+                    end
+                    T.(name)(:) = stringValue(1);
                 else
-                    T.(name)(:) = double(value);
+                    numericValue = double(value);
+                    if isempty(numericValue)
+                        numericValue = NaN;
+                    end
+                    T.(name)(:) = numericValue;
                 end
             end
         end
@@ -8617,8 +8757,8 @@ methods(Static, Access=private)
 
     function [a, b] = harmonizeColumns(a, b)
         if isstring(a) || isstring(b) || iscellstr(a) || iscellstr(b) || iscell(a) || iscell(b) || ischar(a) || ischar(b)
-            a = string(a);
-            b = string(b);
+            a = sixgr.truth.CoupledTruthRuntime.normalizeStringColumn(a);
+            b = sixgr.truth.CoupledTruthRuntime.normalizeStringColumn(b);
             a = a(:);
             b = b(:);
             return;
@@ -8631,6 +8771,36 @@ methods(Static, Access=private)
             a = logical(a);
             return;
         end
+    end
+
+    function out = normalizeStringColumn(value)
+        if isstring(value)
+            out = value;
+            return;
+        end
+        if ischar(value)
+            out = string(value);
+            return;
+        end
+        if iscell(value)
+            out = strings(numel(value), 1);
+            for ii = 1:numel(value)
+                item = value{ii};
+                if isempty(item)
+                    out(ii) = "";
+                elseif isstring(item)
+                    out(ii) = item(1);
+                elseif ischar(item)
+                    out(ii) = string(item);
+                elseif isnumeric(item) || islogical(item)
+                    out(ii) = string(item(1));
+                else
+                    out(ii) = string(class(item));
+                end
+            end
+            return;
+        end
+        out = string(value);
     end
 
     function ueid = resolveUEID(ue, idx)
@@ -9540,8 +9710,12 @@ methods(Static, Access=private)
         row = struct( ...
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
             "Slot", NaN, "Frame", NaN, ...
-            "HarqID", NaN, "NDI", NaN, "RV", NaN, ...
+            "HarqID", NaN, "NDI", NaN, "NDIEpoch", NaN, "RV", NaN, ...
             "IsRetransmission", false, "FeedbackDueSlot", NaN, ...
+            "TBId", "", "OriginalTBSBits", NaN, "CurrentTBSBits", NaN, ...
+            "OriginalRateMatchedBits", NaN, "CurrentRateMatchedBits", NaN, ...
+            "EffectiveInitialCodeRate", NaN, "EffectiveCurrentTxCodeRate", NaN, ...
+            "ShortIRRetx", false, "CodeBlockLayoutHash", "", "HARQContextHash", "", "HARQContextStatus", "", ...
             "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
             "PreviousLLRCount", NaN, "CurrentLLRCount", NaN, "CombinedLLRCount", NaN, ...
             "HARQCombiningApplied", false, "LLRCombiningGain_dB", NaN, ...

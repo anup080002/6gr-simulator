@@ -6769,14 +6769,19 @@ sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charse
 end
 
 function localPlotWaterfallOrPlaceholder(pathOut, ctx)
-thr = [localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean"), ...
-    localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean")];
-bler = [localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall"), ...
-    localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall")];
-if any(isfinite(thr)) || any(isfinite(bler))
-    fig = figure("Visible", "off", "Color", "w");
-    cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
-    ax = axes(fig);
+  thr = [localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean"), ...
+      localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean")];
+  bler = [localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall"), ...
+      localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall")];
+  if (any(isfinite(thr)) || any(isfinite(bler))) && ~localConfigFlag(ctx, ["output.save_figures"], true)
+      localExportPlaceholderFigure(pathOut, "Key Gains/Losses Summary", ...
+          "visual_gate=constant_chart_source; aggregate waterfall suppressed because save_figures=false and the source is a single-scenario summary.");
+      return;
+  end
+  if any(isfinite(thr)) || any(isfinite(bler))
+      fig = figure("Visible", "off", "Color", "w");
+      cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
+      ax = axes(fig);
     vals = [localSafeZero(thr(1)) localSafeZero(thr(2)) -localSafeZero(bler(1)) -localSafeZero(bler(2))];
     bar(ax, vals);
     set(ax, 'XTickLabel', {'DL Thr','UL Thr','DL BLER','UL BLER'});

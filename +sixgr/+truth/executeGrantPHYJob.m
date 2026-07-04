@@ -70,11 +70,26 @@ end
 harqContext = sixgr.util.structGet(job, "HARQContext", struct());
 tbBits = sixgr.util.structGet(job, "TransportBlockBits", []);
 replayBits = double(numel(tbBits));
-if ~(isstruct(harqContext) && logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)) && ...
-        isfinite(replayBits) && replayBits > 0)
+tbContext = localReplayTBContext(job);
+resolvedTBSBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
+grant = sixgr.util.structGet(job, "GrantSnapshot", struct());
+grantHarq = sixgr.util.structGet(grant, "HARQ", struct());
+isRetx = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grantHarq, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(sixgr.util.structGet(grant, "PHYGrant", struct()), "HARQProcessKey.IsRetransmission", false)) || ...
+    (isstruct(tbContext) && ~isempty(fieldnames(tbContext)));
+if ~(isRetx && ((isfinite(replayBits) && replayBits > 0) || (isfinite(resolvedTBSBits) && resolvedTBSBits > 0)))
     return;
 end
-grant = sixgr.util.structGet(job, "GrantSnapshot", struct());
+if ~(isfinite(resolvedTBSBits) && resolvedTBSBits > 0)
+    resolvedTBSBits = double(replayBits);
+elseif isfinite(replayBits) && replayBits > 0 && round(resolvedTBSBits) ~= round(replayBits)
+    error("sixgr:truth:HARQReplayJobTBSMismatch", ...
+        "HARQ replay job context TBSBits=%d does not match stored TB bits=%d.", ...
+        round(resolvedTBSBits), round(replayBits));
+end
+harqContext.IsRetransmission = true;
 if ~isstruct(grant)
     grant = struct();
 end
@@ -83,7 +98,7 @@ if ~isstruct(harq)
     harq = struct();
 end
 harq.IsRetransmission = true;
-copyFields = ["HARQProcess","HarqID","RV","NDI","CodewordIndex","TBIdentity"];
+copyFields = ["HARQProcess","HarqID","RV","NDI","NDIEpoch","CodewordIndex","TBIdentity"];
 for i = 1:numel(copyFields)
     f = char(copyFields(i));
     v = sixgr.util.structGet(harqContext, f, []);
@@ -91,21 +106,40 @@ for i = 1:numel(copyFields)
         harq.(f) = v;
     end
 end
+if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+    if ~isfield(harq, "NDI") || isempty(harq.NDI)
+        harq.NDI = logical(sixgr.util.structGet(tbContext, "NDI", false));
+    end
+    if ~isfield(harq, "NDIEpoch") || ~(isfinite(double(sixgr.util.structGet(harq, "NDIEpoch", NaN))))
+        harq.NDIEpoch = double(sixgr.util.structGet(tbContext, "NDIEpoch", NaN));
+    end
+    if ~isfield(harq, "HarqID") || ~(isfinite(double(sixgr.util.structGet(harq, "HarqID", NaN))))
+        harq.HarqID = double(sixgr.util.structGet(tbContext, "HARQProcessId", NaN));
+    end
+    if ~isfield(harq, "HARQProcess") || ~(isfinite(double(sixgr.util.structGet(harq, "HARQProcess", NaN))))
+        harq.HARQProcess = double(sixgr.util.structGet(tbContext, "HARQProcessId", NaN));
+    end
+end
 grant.HARQ = harq;
 grant.IsRetransmission = true;
-grant.TransportBlockSize = double(replayBits);
-grant.TBSBits = double(replayBits);
-grant.TBSBytes = floor(double(replayBits) / 8);
-grant.ScheduledTransportBlockSize = double(replayBits);
+if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+    grant.HARQTBContext = tbContext;
+    job.HARQContext.TransportBlockContext = tbContext;
+    job.HARQContext.HARQTBContext = tbContext;
+end
+grant.TransportBlockSize = double(resolvedTBSBits);
+grant.TBSBits = double(resolvedTBSBits);
+grant.TBSBytes = floor(double(resolvedTBSBits) / 8);
+grant.ScheduledTransportBlockSize = double(resolvedTBSBits);
 
 phyGrant = sixgr.util.structGet(job, "PHYGrant", sixgr.util.structGet(grant, "PHYGrant", struct()));
 phyTBS = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN));
 phyRetx = logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
 needsFreeze = ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
     logical(sixgr.util.structGet(phyGrant, "IsFrozen", false)) && ...
-    isfinite(phyTBS) && round(phyTBS) == round(replayBits) && phyRetx);
+    isfinite(phyTBS) && round(phyTBS) == round(resolvedTBSBits) && phyRetx);
 if needsFreeze
-    if isfield(grant, "PHYGrant")
+    if isfield(grant, "PHYGrant") && ~(isstruct(tbContext) && ~isempty(fieldnames(tbContext)))
         grant = rmfield(grant, "PHYGrant");
     end
     direction = upper(string(sixgr.util.structGet(job, "Direction", sixgr.util.structGet(grant, "Direction", "DL"))));
@@ -120,4 +154,24 @@ grant.PHYGrant = phyGrant;
 grant.PHYGrantContextId = char(string(phyGrant.GrantContextId));
 job.GrantSnapshot = grant;
 job.PHYGrant = phyGrant;
+end
+
+function tbContext = localReplayTBContext(job)
+tbContext = struct();
+if nargin < 1 || ~isstruct(job)
+    return;
+end
+grant = sixgr.util.structGet(job, "GrantSnapshot", struct());
+harqContext = sixgr.util.structGet(job, "HARQContext", struct());
+candidates = { ...
+    sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+    sixgr.util.structGet(harqContext, "HARQTBContext", struct()), ...
+    sixgr.util.structGet(grant, "HARQTBContext", struct())};
+for i = 1:numel(candidates)
+    candidate = candidates{i};
+    if isstruct(candidate) && ~isempty(fieldnames(candidate))
+        tbContext = candidate;
+        return;
+    end
+end
 end

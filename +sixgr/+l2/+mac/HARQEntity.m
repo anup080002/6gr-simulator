@@ -179,8 +179,10 @@ classdef HARQEntity < handle
                 return;
             end
             p = procs(pid);
-            harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'RV', p.RV, 'IsRetransmission', true);
-            retx = struct('HARQ',harq,'TBSBytes',p.TBSBytes,'LastGrant',p.LastGrant,'TB',p.TB);
+            harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
+                'RV', p.RV, 'IsRetransmission', true);
+            retx = struct('HARQ',harq,'TBSBytes',p.TBSBytes,'LastGrant',p.LastGrant, ...
+                'TB',p.TB,'TBContext',p.TBContext);
         end
 
         function txp = allocate(obj, rnti, slot, tbsBytes, varargin)
@@ -255,10 +257,12 @@ classdef HARQEntity < handle
                 procs(pid).RVIdx = 1;
                 procs(pid).RV = obj.RVSequence(1);
                 procs(pid).NDI = ~procs(pid).NDI; % toggle NDI on new TB
+                procs(pid).NDIEpoch = procs(pid).NDIEpoch + 1;
                 procs(pid).TBSBytes = tbsBytes;
                 procs(pid).TB = uint8([]);
                 procs(pid).LastGrant = struct();
                 procs(pid).LastTxSlot = slot;
+                procs(pid).TBContext = struct();
                 procs(pid).SoftBuffer = struct();
                 procs(pid).SoftBufferKey = "";
                 % TxCount incremented in onTx
@@ -266,7 +270,8 @@ classdef HARQEntity < handle
 
             % Prepare output
             p = procs(pid);
-            harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'RV', p.RV, 'IsRetransmission', isRetx);
+            harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
+                'RV', p.RV, 'IsRetransmission', isRetx);
             txp = struct('HARQ',harq,'ProcessIndex',pid,'ExpectTBSizeBytes',p.TBSBytes,'NoFreeProcess',false);
 
             % Write back
@@ -331,6 +336,30 @@ classdef HARQEntity < handle
                     grant.ScheduledTransportBlockSize = actualTBSBits;
                 end
             end
+            harqStruct = sixgr.util.structGet(grant, 'HARQ', struct());
+            if ~isstruct(harqStruct)
+                harqStruct = struct();
+            end
+            harqStruct.HarqID = double(harqId0);
+            harqStruct.HARQProcess = double(harqId0);
+            harqStruct.RV = double(procs(pid).RV);
+            harqStruct.NDI = logical(procs(pid).NDI);
+            harqStruct.NDIEpoch = double(procs(pid).NDIEpoch);
+            harqStruct.IsRetransmission = double(procs(pid).TxCount) > 1;
+            grant.HARQ = harqStruct;
+            grant.IsRetransmission = logical(harqStruct.IsRetransmission);
+            ctx = sixgr.util.structGet(grant, 'HARQTBContext', struct());
+            if ~(isstruct(ctx) && ~isempty(fieldnames(ctx)))
+                ctx = procs(pid).TBContext;
+            end
+            if isstruct(ctx) && ~isempty(fieldnames(ctx))
+                ctx.NDI = logical(procs(pid).NDI);
+                ctx.NDIEpoch = double(procs(pid).NDIEpoch);
+                ctx.HARQProcessId = double(harqId0);
+                ctx.LastObservedRV = double(procs(pid).RV);
+                grant.HARQTBContext = ctx;
+                procs(pid).TBContext = ctx;
+            end
             procs(pid).LastGrant = grant;
             if strlength(string(procs(pid).TBIdentity)) == 0
                 procs(pid).FirstTxSlot = double(slot);
@@ -383,6 +412,10 @@ classdef HARQEntity < handle
             end
             if isfinite(sourceSlot) && isfinite(double(p.LastTxSlot)) && ...
                     abs(double(sourceSlot) - double(p.LastTxSlot)) > 1e-9
+                obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
+                return;
+            end
+            if ~logical(p.AwaitingFeedback)
                 obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
                 return;
             end
@@ -528,6 +561,7 @@ classdef HARQEntity < handle
             p = struct();
             p.Active = false;
             p.NDI = false;
+            p.NDIEpoch = 0;
             p.RVIdx = 1;
             p.RV = 0;
             p.TxCount = 0;
@@ -540,6 +574,7 @@ classdef HARQEntity < handle
             p.FirstTxSlot = NaN;
             p.TBIdentity = "";
             p.LastDropReason = "";
+            p.TBContext = struct();
             p.SoftBuffer = struct();
             p.SoftBufferKey = "";
         end
@@ -547,8 +582,10 @@ classdef HARQEntity < handle
         function p = resetProc(obj, p)
             % Reset process to idle while keeping NDI state (so it toggles next time).
             ndi = p.NDI;
+            ndiEpoch = p.NDIEpoch;
             p = obj.newProcTemplate();
             p.NDI = ndi;
+            p.NDIEpoch = ndiEpoch;
         end
 
         function expireStaleProcesses(obj, rnti, currentSlot)
@@ -577,12 +614,14 @@ classdef HARQEntity < handle
                 ageSlots = double(currentSlot) - double(procs(pid).LastTxSlot);
                 if isfinite(ageSlots) && ageSlots >= timeoutSlots
                     ndi = procs(pid).NDI;
+                    ndiEpoch = procs(pid).NDIEpoch;
                     lastTxSlot = procs(pid).LastTxSlot;
                     if ~isempty(fieldnames(procs(pid).SoftBuffer))
                         obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                     end
                     procs(pid) = obj.newProcTemplate();
                     procs(pid).NDI = ndi;
+                    procs(pid).NDIEpoch = ndiEpoch;
                     procs(pid).LastDropReason = "stale_harq_process_timeout";
                     obj.markDeliveryFeedback(NaN, pid - 1, false, lastTxSlot, currentSlot, "stale_harq_process_timeout");
                     obj.Stats.Drop = obj.Stats.Drop + 1;

@@ -1360,13 +1360,20 @@ classdef (Abstract) SchedulerBase < handle
             freqBits = max(1, ceil(log2(double(nRB * (nRB + 1) / 2))));
 
             harq = sixgr.util.structGet(grant, "HARQ", struct());
-            mcs = max(0, min(31, round(double(sixgr.util.structGet(grant, "MCSIndex", 0)))));
-            ndi = double(logical(sixgr.util.structGet(harq, "NDI", 1)));
-            rv = max(0, min(3, round(double(sixgr.util.structGet(harq, "RV", 0)))));
-            harqId = max(0, min(15, round(double(sixgr.util.structGet(harq, "HarqID", 0)))));
-            dai = max(0, min(3, round(double(sixgr.util.structGet(grant, "DAI", 1)))));
-            k1 = max(0, min(7, round(double(sixgr.util.structGet(grant, "K1", 4)))));
-            k2 = max(0, min(7, round(double(sixgr.util.structGet(grant, "K2", 1)))));
+            mcs = max(0, min(31, round(localFirstFiniteScalar( ...
+                sixgr.util.structGet(grant, "MCSIndex", []), 0))));
+            ndi = double(logical(localFirstFiniteScalar( ...
+                sixgr.util.structGet(harq, "NDI", []), 1)));
+            rv = max(0, min(3, round(localFirstFiniteScalar( ...
+                sixgr.util.structGet(harq, "RV", []), 0))));
+            harqId = max(0, min(15, round(localFirstFiniteScalar( ...
+                sixgr.util.structGet(harq, "HarqID", []), 0))));
+            dai = max(0, min(3, round(localFirstFiniteScalar( ...
+                sixgr.util.structGet(grant, "DAI", []), 1))));
+            k1 = max(0, min(7, round(localFirstFiniteScalar( ...
+                sixgr.util.structGet(grant, "K1", []), 4))));
+            k2 = max(0, min(7, round(localFirstFiniteScalar( ...
+                sixgr.util.structGet(grant, "K2", []), 1))));
             sliv = localTimeDomainAssignIndex(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]), obj.SymbolsPerSlot);
             tdaIndex = max(0, min(15, round(double(sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", ...
                 sixgr.util.structGet(grant, "TDRAIndex", 0))))));

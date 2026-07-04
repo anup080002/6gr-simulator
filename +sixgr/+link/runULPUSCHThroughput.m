@@ -37,7 +37,6 @@ previousCombinedLLR = p.Results.PreviousCombinedLLR;
 interferenceBundle = p.Results.InterferenceBundle;
 chStateIn = p.Results.ChannelState;
 externalChannelState = isstruct(chStateIn) && isfield(chStateIn, "ContractVersion");
-isRetransmission = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
 if ~(isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride)))
     grantSnapshotOverride = sixgr.util.structGet(harqContext, "GrantSnapshot", struct());
 end
@@ -51,15 +50,13 @@ if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
     end
     grantSnapshotOverride.PHYGrant = phyGrantOverride;
     grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
-elseif isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))
-    phyGrantOverride = sixgr.phy.grant.freezePHYGrant(cfg, "UL", grantSnapshotOverride, ...
-        "SNR_dB", snr_dB, ...
-        "HARQContext", harqContext);
-    grantSnapshotOverride.PHYGrant = phyGrantOverride;
-    grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
 end
 [grantSnapshotOverride, phyGrantOverride] = localNormalizeHARQReplayGrantInputs( ...
     cfg, grantSnapshotOverride, phyGrantOverride, transportBlockBits, harqContext, snr_dB, startFrameIndex, startSlotIndex);
+isRetransmission = localInferHARQReplayMode(grantSnapshotOverride, phyGrantOverride, harqContext, transportBlockBits);
+if isRetransmission
+    harqContext.IsRetransmission = true;
+end
 schedulerDrivenGrant = (isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))) || ...
     (isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride)));
 expectedUCIBits = localResolveExpectedUCIBits(p.Results.ExpectedUCIBits, grantSnapshotOverride, harqContext);
@@ -156,6 +153,23 @@ trialUEIndex = NaN(numFrames,1);
 trialRNTI = NaN(numFrames,1);
 trialBaseStationID = NaN(numFrames,1);
 trialMCS = NaN(numFrames,1);
+trialRV = NaN(numFrames,1);
+trialHARQProcess = NaN(numFrames,1);
+trialHARQRound = NaN(numFrames,1);
+trialHARQNDI = NaN(numFrames,1);
+trialHARQIsRetransmission = false(numFrames,1);
+trialHARQNDIEpoch = NaN(numFrames,1);
+trialHARQTBId = strings(numFrames,1);
+trialOriginalTBSBits = NaN(numFrames,1);
+trialCurrentTBSBits = NaN(numFrames,1);
+trialOriginalRateMatchedBits = NaN(numFrames,1);
+trialCurrentRateMatchedBits = NaN(numFrames,1);
+trialEffectiveInitialCodeRate = NaN(numFrames,1);
+trialEffectiveCurrentTxCodeRate = NaN(numFrames,1);
+trialShortIRRetx = false(numFrames,1);
+trialCodeBlockLayoutHash = strings(numFrames,1);
+trialHARQContextHash = strings(numFrames,1);
+trialHARQContextStatus = strings(numFrames,1);
 trialPRB = NaN(numFrames,1);
 trialPRBStart = NaN(numFrames,1);
 trialLayers = NaN(numFrames,1);
@@ -564,6 +578,27 @@ for n = 1:numFrames
         end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
+        [grantSnapshot, harqContext, harqTBContext, harqTBStatus] = localApplyHARQTransportBlockContext( ...
+            "UL", cfgFrame, grantSnapshot, tx, harqContext, previousCombinedLLR);
+        trialRV(n) = double(sixgr.util.structGet(tx, "RV", sixgr.util.structGet(harqContext, "RV", NaN)));
+        trialHARQProcess(n) = double(sixgr.util.structGet(harqContext, "HarqID", ...
+            sixgr.util.structGet(harqContext, "HARQProcess", NaN)));
+        trialHARQRound(n) = double(logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)));
+        trialHARQNDI(n) = double(sixgr.util.structGet(harqTBContext, "NDI", ...
+            sixgr.util.structGet(harqContext, "NDI", NaN)));
+        trialHARQIsRetransmission(n) = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
+        trialHARQNDIEpoch(n) = double(sixgr.util.structGet(harqTBContext, "NDIEpoch", NaN));
+        trialHARQTBId(n) = string(localSafeCharToken(sixgr.util.structGet(harqTBContext, "TBId", "")));
+        trialOriginalTBSBits(n) = double(sixgr.util.structGet(harqTBStatus, "OriginalTBSBits", NaN));
+        trialCurrentTBSBits(n) = double(sixgr.util.structGet(harqTBStatus, "CurrentTBSBits", NaN));
+        trialOriginalRateMatchedBits(n) = double(sixgr.util.structGet(harqTBStatus, "OriginalRateMatchedBits", NaN));
+        trialCurrentRateMatchedBits(n) = double(sixgr.util.structGet(harqTBStatus, "CurrentRateMatchedBits", NaN));
+        trialEffectiveInitialCodeRate(n) = double(sixgr.util.structGet(harqTBStatus, "EffectiveInitialCodeRate", NaN));
+        trialEffectiveCurrentTxCodeRate(n) = double(sixgr.util.structGet(harqTBStatus, "EffectiveCurrentTxCodeRate", NaN));
+        trialShortIRRetx(n) = logical(sixgr.util.structGet(harqTBStatus, "ShortIRRetx", false));
+        trialCodeBlockLayoutHash(n) = string(localSafeCharToken(sixgr.util.structGet(harqTBStatus, "CodeBlockLayoutHash", "")));
+        trialHARQContextHash(n) = string(localSafeCharToken(sixgr.util.structGet(harqTBStatus, "HARQContextHash", "")));
+        trialHARQContextStatus(n) = string(localSafeCharToken(sixgr.util.structGet(harqTBStatus, "HARQContextStatus", "")));
         trialOuterLoopEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopEnabled", false));
         trialOuterLoopAppliedFromGrant(n) = logical(sixgr.util.structGet(grantSnapshot, "OuterLoopApplied", false));
         trialOLLADeltaDb(n) = double(sixgr.util.structGet(grantSnapshot, "OLLADeltaDb", ...
@@ -893,6 +928,9 @@ for n = 1:numFrames
                 "CombinedDecodeOK", false, ...
                 "DecoderIterations", NaN, ...
                 "GrantSnapshot", grantSnapshot, ...
+                "TransportBlockContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+                "HARQTBContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+                "HARQContextStatus", char(string(sixgr.util.structGet(harqContext, "HARQContextStatus", ""))), ...
                 "Context", harqContext);
             continue;
         elseif ~trialDecodeUsable(n)
@@ -1178,6 +1216,9 @@ for n = 1:numFrames
                 "CombinedDecodeOK", false, ...
                 "DecoderIterations", combinedDecodeIt, ...
                 "GrantSnapshot", grantSnapshot, ...
+                "TransportBlockContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+                "HARQTBContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+                "HARQContextStatus", char(string(sixgr.util.structGet(harqContext, "HARQContextStatus", ""))), ...
                 "Context", harqContext);
             continue;
         end
@@ -1267,6 +1308,9 @@ for n = 1:numFrames
             "CombinedDecodeOK", logical(finalDecodeOK), ...
             "DecoderIterations", combinedDecodeIt, ...
             "GrantSnapshot", grantSnapshot, ...
+            "TransportBlockContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+            "HARQTBContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+            "HARQContextStatus", char(string(sixgr.util.structGet(harqContext, "HARQContextStatus", ""))), ...
             "Context", harqContext);
     catch ME
         blockErr = blockErr + 1;
@@ -1503,6 +1547,28 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.ConfiguredLayers = repmat(configuredLayers, stopIdx, 1);
         T.ConfiguredTxAntennas = repmat(configuredTxAnt, stopIdx, 1);
         T.ConfiguredRxAntennas = repmat(configuredRxAnt, stopIdx, 1);
+        T.RV = trialRV(idx);
+        T.HARQProcess = trialHARQProcess(idx);
+        T.HARQProcessId = trialHARQProcess(idx);
+        T.HarqID = trialHARQProcess(idx);
+        T.HARQRound = trialHARQRound(idx);
+        T.NDI = trialHARQNDI(idx);
+        T.HARQNDI = trialHARQNDI(idx);
+        T.IsRetransmission = trialHARQIsRetransmission(idx);
+        T.HARQIsRetransmission = trialHARQIsRetransmission(idx);
+        T.HARQRV = trialRV(idx);
+        T.NDIEpoch = trialHARQNDIEpoch(idx);
+        T.TBId = trialHARQTBId(idx);
+        T.OriginalTBSBits = trialOriginalTBSBits(idx);
+        T.CurrentTBSBits = trialCurrentTBSBits(idx);
+        T.OriginalRateMatchedBits = trialOriginalRateMatchedBits(idx);
+        T.CurrentRateMatchedBits = trialCurrentRateMatchedBits(idx);
+        T.EffectiveInitialCodeRate = trialEffectiveInitialCodeRate(idx);
+        T.EffectiveCurrentTxCodeRate = trialEffectiveCurrentTxCodeRate(idx);
+        T.ShortIRRetx = trialShortIRRetx(idx);
+        T.CodeBlockLayoutHash = trialCodeBlockLayoutHash(idx);
+        T.HARQContextHash = trialHARQContextHash(idx);
+        T.HARQContextStatus = trialHARQContextStatus(idx);
         T.AllocatedPRBCount = trialPRB(idx);
         T.PRBStart = trialPRBStart(idx);
         T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
@@ -3369,6 +3435,28 @@ T.ConfiguredSNR_dB = zeros(0,1);
 T.ConfiguredLayers = zeros(0,1);
 T.ConfiguredTxAntennas = zeros(0,1);
 T.ConfiguredRxAntennas = zeros(0,1);
+T.RV = zeros(0,1);
+T.HARQProcess = zeros(0,1);
+T.HARQProcessId = zeros(0,1);
+T.HarqID = zeros(0,1);
+T.HARQRound = zeros(0,1);
+T.NDI = zeros(0,1);
+T.HARQNDI = zeros(0,1);
+T.IsRetransmission = false(0,1);
+T.HARQIsRetransmission = false(0,1);
+T.HARQRV = zeros(0,1);
+T.NDIEpoch = zeros(0,1);
+T.TBId = strings(0,1);
+T.OriginalTBSBits = zeros(0,1);
+T.CurrentTBSBits = zeros(0,1);
+T.OriginalRateMatchedBits = zeros(0,1);
+T.CurrentRateMatchedBits = zeros(0,1);
+T.EffectiveInitialCodeRate = zeros(0,1);
+T.EffectiveCurrentTxCodeRate = zeros(0,1);
+T.ShortIRRetx = false(0,1);
+T.CodeBlockLayoutHash = strings(0,1);
+T.HARQContextHash = strings(0,1);
+T.HARQContextStatus = strings(0,1);
 T.AppliedAWGNSNR_dB = zeros(0,1);
 T.NoiseVarStatus = strings(0,1);
 T.NoiseVarSource = strings(0,1);
@@ -5071,7 +5159,9 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "TRSStateSource","TRSRuntimeConsumer","TRSInfluencedDecision","TRSInfluenceDefinition","TRSReceiverIntegrationStatus","TRSReceiverIntegrationBlocker", ...
     "ExpectedUCIBits","MultiplexedUCIBits","HARQACKBits","MultiplexedHARQACKBits","UCIOnPUSCHApplied","UCIOnPUSCHSource", ...
     "PUCCHCollisionPolicy","PUCCHSourceSlot","PUCCHGrantId","UCIOnPUSCHEvidenceSource", ...
-    "GrantContextId","GrantWorkerSafe","GrantSharedStateCommitMode","PHYGrant","PHYGrantContextId"];
+    "GrantContextId","GrantWorkerSafe","GrantSharedStateCommitMode","PHYGrant","PHYGrantContextId", ...
+    "HARQTBContext","OriginalTBSBits","CurrentTBSBits","OriginalRateMatchedBits","CurrentRateMatchedBits", ...
+    "EffectiveInitialCodeRate","EffectiveCurrentTxCodeRate","ShortIRRetx","CodeBlockLayoutHash","HARQContextHash","HARQContextStatus"];
 for i = 1:numel(preserveFields)
     fieldName = char(preserveFields(i));
     if isfield(seedGrant, fieldName)
@@ -5200,10 +5290,19 @@ end
 
 function [grant, phyGrant] = localNormalizeHARQReplayGrantInputs(cfg, grant, phyGrant, tbBits, harqContext, snr_dB, frameIdx, slotIdx)
 replayBits = double(numel(tbBits));
-if ~(isfinite(replayBits) && replayBits > 0)
+tbContext = localReplayTBContext(grant, harqContext);
+resolvedTBSBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
+if ~(isfinite(replayBits) && replayBits > 0) && ~(isfinite(resolvedTBSBits) && resolvedTBSBits > 0)
     return;
 end
-isRetx = isstruct(harqContext) && logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
+if ~(isfinite(resolvedTBSBits) && resolvedTBSBits > 0)
+    resolvedTBSBits = double(replayBits);
+elseif isfinite(replayBits) && replayBits > 0 && round(resolvedTBSBits) ~= round(replayBits)
+    error("sixgr:HARQReplay:BadStoredTBContext", ...
+        "UL HARQ replay context TBSBits=%d does not match stored TB bits=%d.", ...
+        round(resolvedTBSBits), round(replayBits));
+end
+isRetx = localInferHARQReplayMode(grant, phyGrant, harqContext, tbBits);
 if ~isstruct(grant)
     grant = struct();
 end
@@ -5214,7 +5313,7 @@ end
 if isRetx
     harq.IsRetransmission = true;
 end
-copyFields = ["HARQProcess","HarqID","RV","NDI","CodewordIndex","TBIdentity"];
+copyFields = ["HARQProcess","HarqID","RV","NDI","NDIEpoch","CodewordIndex","TBIdentity"];
 for i = 1:numel(copyFields)
     f = char(copyFields(i));
     v = sixgr.util.structGet(harqContext, f, []);
@@ -5222,18 +5321,35 @@ for i = 1:numel(copyFields)
         harq.(f) = v;
     end
 end
+if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+    if ~isfield(harq, "NDI") || isempty(harq.NDI)
+        harq.NDI = logical(sixgr.util.structGet(tbContext, "NDI", false));
+    end
+    if ~isfield(harq, "NDIEpoch") || ~(isfinite(double(sixgr.util.structGet(harq, "NDIEpoch", NaN))))
+        harq.NDIEpoch = double(sixgr.util.structGet(tbContext, "NDIEpoch", NaN));
+    end
+    if ~isfield(harq, "HarqID") || ~(isfinite(double(sixgr.util.structGet(harq, "HarqID", NaN))))
+        harq.HarqID = double(sixgr.util.structGet(tbContext, "HARQProcessId", NaN));
+    end
+    if ~isfield(harq, "HARQProcess") || ~(isfinite(double(sixgr.util.structGet(harq, "HARQProcess", NaN))))
+        harq.HARQProcess = double(sixgr.util.structGet(tbContext, "HARQProcessId", NaN));
+    end
+end
 grant.HARQ = harq;
 grant.IsRetransmission = isRetx;
-grant.TransportBlockSize = double(replayBits);
-grant.TBSBits = double(replayBits);
-grant.TBSBytes = floor(double(replayBits) / 8);
-grant.ScheduledTransportBlockSize = double(replayBits);
+if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+    grant.HARQTBContext = tbContext;
+end
+grant.TransportBlockSize = double(resolvedTBSBits);
+grant.TBSBits = double(resolvedTBSBits);
+grant.TBSBytes = floor(double(resolvedTBSBits) / 8);
+grant.ScheduledTransportBlockSize = double(resolvedTBSBits);
 phyTBS = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN));
 phyRetx = logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
 if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
         logical(sixgr.util.structGet(phyGrant, "IsFrozen", false)) && ...
-        isfinite(phyTBS) && round(phyTBS) == round(replayBits) && (~isRetx || phyRetx))
-    if isfield(grant, "PHYGrant")
+        isfinite(phyTBS) && round(phyTBS) == round(resolvedTBSBits) && (~isRetx || phyRetx))
+    if isfield(grant, "PHYGrant") && ~(isstruct(tbContext) && ~isempty(fieldnames(tbContext)))
         grant = rmfield(grant, "PHYGrant");
     end
     phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, "UL", grant, ...
@@ -5242,23 +5358,185 @@ if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
         "Slot", slotIdx, ...
         "HARQContext", harqContext);
 end
-grant.TransportBlockSize = double(replayBits);
-grant.TBSBits = double(replayBits);
-grant.TBSBytes = floor(double(replayBits) / 8);
-grant.ScheduledTransportBlockSize = double(replayBits);
+grant.TransportBlockSize = double(resolvedTBSBits);
+grant.TBSBits = double(resolvedTBSBits);
+grant.TBSBytes = floor(double(resolvedTBSBits) / 8);
+grant.ScheduledTransportBlockSize = double(resolvedTBSBits);
 grant.PHYGrant = phyGrant;
 grant.PHYGrantContextId = char(string(phyGrant.GrantContextId));
+end
+
+function tf = localInferHARQReplayMode(grant, phyGrant, harqContext, tbBits)
+if nargin < 1 || ~isstruct(grant)
+    grant = struct();
+end
+if nargin < 2 || ~isstruct(phyGrant)
+    phyGrant = struct();
+end
+if nargin < 3 || ~isstruct(harqContext)
+    harqContext = struct();
+end
+if nargin < 4
+    tbBits = [];
+end
+tbContext = localReplayTBContext(grant, harqContext);
+replayBits = double(numel(tbBits));
+ctxBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
+hasReplayPayload = (isfinite(replayBits) && replayBits > 0) || (isfinite(ctxBits) && ctxBits > 0);
+if ~hasReplayPayload
+    tf = false;
+    return;
+end
+grantHarq = sixgr.util.structGet(grant, "HARQ", struct());
+tf = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grantHarq, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
+if tf
+    return;
+end
+if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+    tf = true;
+    return;
+end
+tf = localHARQNDIMatchesTBContext(grant, harqContext, tbContext);
+end
+
+function tf = localHARQNDIMatchesTBContext(grant, harqContext, tbContext)
+tf = false;
+if ~(isstruct(tbContext) && ~isempty(fieldnames(tbContext)) && ...
+        isfinite(double(sixgr.util.structGet(tbContext, "TBSBits", NaN))))
+    return;
+end
+currentNDI = sixgr.util.structGet(harqContext, "NDI", []);
+if isempty(currentNDI)
+    currentNDI = sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "NDI", ...
+        sixgr.util.structGet(grant, "NDI", []));
+end
+ctxNDI = sixgr.util.structGet(tbContext, "NDI", []);
+if isempty(currentNDI) || isempty(ctxNDI)
+    tf = true;
+    return;
+end
+if isnumeric(currentNDI) || islogical(currentNDI)
+    currentNDI = double(currentNDI(1));
+end
+if isnumeric(ctxNDI) || islogical(ctxNDI)
+    ctxNDI = double(ctxNDI(1));
+end
+if isfinite(double(currentNDI)) && isfinite(double(ctxNDI))
+    tf = logical(currentNDI) == logical(ctxNDI);
+end
 end
 
 function localAssertReplayTBConsistency(tbBits, grant, direction)
 if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
     return;
 end
-expectedBits = double(sixgr.util.structGet(grant, "TransportBlockSize", NaN));
+tbContext = localReplayTBContext(grant, struct());
+expectedBits = double(sixgr.util.structGet(tbContext, "TBSBits", ...
+    sixgr.util.structGet(grant, "TransportBlockSize", NaN)));
 if isfinite(expectedBits) && expectedBits > 0 && numel(tbBits) ~= round(expectedBits)
     error("sixgr:HARQReplay:BadStoredTB", ...
         "%s HARQ replay TB length %d does not match stored transport block size %d.", ...
         upper(string(direction)), numel(tbBits), round(expectedBits));
+end
+end
+
+function tbContext = localReplayTBContext(grant, harqContext)
+tbContext = struct();
+if nargin < 1 || ~isstruct(grant)
+    grant = struct();
+end
+if nargin < 2 || ~isstruct(harqContext)
+    harqContext = struct();
+end
+candidates = { ...
+    sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
+    sixgr.util.structGet(harqContext, "HARQTBContext", struct()), ...
+    sixgr.util.structGet(grant, "HARQTBContext", struct())};
+for i = 1:numel(candidates)
+    candidate = candidates{i};
+    if isstruct(candidate) && ~isempty(fieldnames(candidate))
+        tbContext = candidate;
+        return;
+    end
+end
+end
+
+function [grantSnapshot, harqContext, tbContext, status] = localApplyHARQTransportBlockContext(direction, cfg, grantSnapshot, tx, harqContext, previousCombinedLLR)
+if nargin < 5 || ~isstruct(harqContext)
+    harqContext = struct();
+end
+if nargin < 6
+    previousCombinedLLR = [];
+end
+tbContext = localReplayTBContext(grantSnapshot, harqContext);
+softCombiningEvidence = localHARQPriorAvailable(previousCombinedLLR);
+rvSequence = double(sixgr.util.structGet(tbContext, "RVSequence", ...
+    sixgr.util.structGet(cfg, "phy.harq.rvSequence", [0 2 3 1])));
+rateMatchedBitsPerCB = double(sixgr.util.structGet(sixgr.util.structGet(tx, "CodingLayout", struct()), "E_r", []));
+rateMatchedBitsTotal = double(sixgr.util.structGet(grantSnapshot, "CodedBitCountG", ...
+    sixgr.util.structGet(tx, "G", sum(rateMatchedBitsPerCB))));
+if ~(isfinite(rateMatchedBitsTotal) && rateMatchedBitsTotal > 0) && ~isempty(rateMatchedBitsPerCB)
+    rateMatchedBitsTotal = double(sum(rateMatchedBitsPerCB));
+end
+meta = struct( ...
+    "Direction", char(upper(string(direction))), ...
+    "Grant", grantSnapshot, ...
+    "PHYGrant", sixgr.util.structGet(grantSnapshot, "PHYGrant", struct()), ...
+    "CodingLayout", sixgr.util.structGet(tx, "CodingLayout", struct()), ...
+    "PreviousContext", tbContext, ...
+    "TransportBlockContext", tbContext, ...
+    "IsRetransmission", logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)), ...
+    "RateMatchedBitsTotal", double(rateMatchedBitsTotal), ...
+    "RateMatchedBitsPerCB", double(rateMatchedBitsPerCB), ...
+    "TBSBits", double(sixgr.util.structGet(tx, "TransportBlockSize", sixgr.util.structGet(grantSnapshot, "TBSBits", NaN))), ...
+    "RV", double(sixgr.util.structGet(tx, "RV", sixgr.util.structGet(harqContext, "RV", NaN))), ...
+    "PreviousRV", double(sixgr.util.structGet(tbContext, "LastObservedRV", NaN)), ...
+    "RVSequence", rvSequence, ...
+    "SoftCombiningEvidenceAvailable", logical(softCombiningEvidence), ...
+    "PreviousCombinedLLRAvailable", logical(softCombiningEvidence));
+[tbContext, status] = sixgr.harq.validateTBContextForTransmission(meta);
+grantHarq = sixgr.util.structGet(grantSnapshot, "HARQ", struct());
+if ~isstruct(grantHarq)
+    grantHarq = struct();
+end
+grantHarq.NDI = logical(tbContext.NDI);
+grantHarq.NDIEpoch = double(tbContext.NDIEpoch);
+if ~isfinite(double(sixgr.util.structGet(grantHarq, "HarqID", NaN))) && isfinite(double(tbContext.HARQProcessId))
+    grantHarq.HarqID = double(tbContext.HARQProcessId);
+end
+if ~isfinite(double(sixgr.util.structGet(grantHarq, "HARQProcess", NaN))) && isfinite(double(tbContext.HARQProcessId))
+    grantHarq.HARQProcess = double(tbContext.HARQProcessId);
+end
+grantHarq.RV = double(sixgr.util.structGet(meta, "RV", NaN));
+grantHarq.IsRetransmission = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false));
+grantSnapshot.HARQ = grantHarq;
+grantSnapshot.IsRetransmission = logical(grantHarq.IsRetransmission);
+grantSnapshot.HARQTBContext = tbContext;
+grantSnapshot.OriginalTBSBits = double(status.OriginalTBSBits);
+grantSnapshot.CurrentTBSBits = double(status.CurrentTBSBits);
+grantSnapshot.OriginalRateMatchedBits = double(status.OriginalRateMatchedBits);
+grantSnapshot.CurrentRateMatchedBits = double(status.CurrentRateMatchedBits);
+grantSnapshot.EffectiveInitialCodeRate = double(status.EffectiveInitialCodeRate);
+grantSnapshot.EffectiveCurrentTxCodeRate = double(status.EffectiveCurrentTxCodeRate);
+grantSnapshot.ShortIRRetx = logical(status.ShortIRRetx);
+grantSnapshot.CodeBlockLayoutHash = char(string(status.CodeBlockLayoutHash));
+grantSnapshot.HARQContextHash = char(string(status.HARQContextHash));
+grantSnapshot.HARQContextStatus = char(string(status.HARQContextStatus));
+harqContext.TransportBlockContext = tbContext;
+harqContext.HARQTBContext = tbContext;
+harqContext.NDI = logical(tbContext.NDI);
+harqContext.NDIEpoch = double(tbContext.NDIEpoch);
+harqContext.RV = double(sixgr.util.structGet(meta, "RV", NaN));
+harqContext.HARQContextHash = char(string(status.HARQContextHash));
+harqContext.HARQContextStatus = char(string(status.HARQContextStatus));
+if ~isfinite(double(sixgr.util.structGet(harqContext, "HarqID", NaN))) && isfinite(double(tbContext.HARQProcessId))
+    harqContext.HarqID = double(tbContext.HARQProcessId);
+end
+if ~isfinite(double(sixgr.util.structGet(harqContext, "HARQProcess", NaN))) && isfinite(double(tbContext.HARQProcessId))
+    harqContext.HARQProcess = double(tbContext.HARQProcessId);
 end
 end
 

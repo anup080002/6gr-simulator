@@ -19,18 +19,17 @@ end
 if nargin < 3 || ~isstruct(grant)
     grant = struct();
 end
-
-existing = sixgr.util.structGet(grant, "PHYGrant", struct());
-if localIsFrozenPHYGrant(existing) && localFrozenPHYGrantHasConsistentDimensions(existing)
-    sixgr.phy.grant.assertPHYGrantDimensions(existing, "reuse_existing_phygrant");
-    phyGrant = existing;
-    return;
-end
-
 direction = upper(string(direction));
 if ~(direction == "DL" || direction == "UL")
     error("sixgr:phy:grant:BadDirection", ...
         "PHYGrant direction must be DL or UL. Got '%s'.", char(direction));
+end
+
+existing = sixgr.util.structGet(grant, "PHYGrant", struct());
+if localCanReuseFrozenPHYGrant(existing, cfg, direction, grant, opt)
+    sixgr.phy.grant.assertPHYGrantDimensions(existing, "reuse_existing_phygrant");
+    phyGrant = existing;
+    return;
 end
 
 isUL = direction == "UL";
@@ -204,6 +203,145 @@ if ~ismatrix(W)
 end
 tf = isfinite(numPorts) && isfinite(numLayers) && numPorts >= numLayers && ...
     size(W, 1) == numPorts && size(W, 2) == numLayers;
+end
+
+function tf = localCanReuseFrozenPHYGrant(existing, cfg, direction, grant, opt)
+tf = false;
+if ~(localIsFrozenPHYGrant(existing) && localFrozenPHYGrantHasConsistentDimensions(existing))
+    return;
+end
+if upper(string(sixgr.util.structGet(existing, "Direction", ""))) ~= upper(string(direction))
+    return;
+end
+
+harqContext = sixgr.util.structGet(opt, "HARQContext", struct());
+harqFromGrant = sixgr.util.structGet(grant, "HARQ", struct());
+requestedIsRetx = logical(sixgr.util.structGet(harqContext, "IsRetransmission", ...
+    sixgr.util.structGet(harqFromGrant, "IsRetransmission", ...
+    sixgr.util.structGet(grant, "IsRetransmission", false))));
+existingIsRetx = logical(sixgr.util.structGet(existing, "HARQProcessKey.IsRetransmission", false));
+if requestedIsRetx ~= existingIsRetx
+    return;
+end
+
+requestedRV = localFirstFiniteScalar( ...
+    sixgr.util.structGet(harqContext, "RV", []), ...
+    sixgr.util.structGet(harqFromGrant, "RV", []), ...
+    sixgr.util.structGet(grant, "RV", []), NaN);
+existingRV = localFirstFiniteScalar(sixgr.util.structGet(existing, "HARQProcessKey.RV", []), NaN);
+if ~localScalarMatches(requestedRV, existingRV, 0)
+    return;
+end
+
+requestedNDI = localFirstFiniteScalar( ...
+    sixgr.util.structGet(harqContext, "NDI", []), ...
+    sixgr.util.structGet(harqFromGrant, "NDI", []), NaN);
+existingNDI = localFirstFiniteScalar(sixgr.util.structGet(existing, "HARQProcessKey.NDI", []), NaN);
+if ~localScalarMatches(requestedNDI, existingNDI, 0)
+    return;
+end
+
+requestedHarqProc = localFirstFiniteScalar( ...
+    sixgr.util.structGet(harqContext, "HARQProcess", []), ...
+    sixgr.util.structGet(harqContext, "HarqID", []), ...
+    sixgr.util.structGet(harqFromGrant, "HARQProcess", []), ...
+    sixgr.util.structGet(harqFromGrant, "HarqID", []), NaN);
+existingHarqProc = localFirstFiniteScalar(sixgr.util.structGet(existing, "HARQProcessKey.HARQProcess", []), NaN);
+if ~localScalarMatches(requestedHarqProc, existingHarqProc, 0)
+    return;
+end
+
+isUL = direction == "UL";
+root = localChannelRoot(isUL);
+requestedPRBSet = localResolvePRBSet(cfg, grant, root);
+existingPRBSet = double(sixgr.util.structGet(existing, "ResourceAllocation.PRBSet", []));
+if ~localNumericVectorMatches(requestedPRBSet, existingPRBSet)
+    return;
+end
+
+requestedSymbolAllocation = localResolveSymbolAllocation(cfg, grant, root);
+existingSymbolAllocation = double(sixgr.util.structGet(existing, "ResourceAllocation.SymbolAllocation", []));
+if ~localNumericVectorMatches(requestedSymbolAllocation, existingSymbolAllocation)
+    return;
+end
+
+requestedNumLayers = localPositiveInteger(localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "NumLayers", []), ...
+    sixgr.util.structGet(grant, "Layers", []), ...
+    sixgr.util.structGet(cfg, root + ".numLayers", []), ...
+    sixgr.util.structGet(cfg, root + ".nLayers", []), 1), 1);
+existingNumLayers = localFirstFiniteScalar(sixgr.util.structGet(existing, "CodingLayout.NumLayers", []), NaN);
+if ~localScalarMatches(requestedNumLayers, existingNumLayers, 0)
+    return;
+end
+
+requestedModulation = char(string(localFirstNonempty( ...
+    sixgr.util.structGet(grant, "Modulation", ""), ...
+    sixgr.util.structGet(cfg, root + ".modulation", "QPSK"))));
+existingModulation = char(string(sixgr.util.structGet(existing, "CodingLayout.Modulation", "")));
+if ~localTextMatches(requestedModulation, existingModulation)
+    return;
+end
+
+requestedTargetCodeRate = localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "TargetCodeRate", []), ...
+    sixgr.util.structGet(cfg, root + ".codeRate", []), NaN);
+existingTargetCodeRate = localFirstFiniteScalar(sixgr.util.structGet(existing, "CodingLayout.TargetCodeRate", []), NaN);
+if ~localScalarMatches(requestedTargetCodeRate, existingTargetCodeRate, 1e-12)
+    return;
+end
+
+requestedTBSBits = localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "TBSBits", []), ...
+    sixgr.util.structGet(grant, "TransportBlockSize", []), ...
+    sixgr.util.structGet(grant, "TBSize_bits", []), NaN);
+existingTBSBits = localFirstFiniteScalar(sixgr.util.structGet(existing, "CodingLayout.TBSBits", []), NaN);
+if ~localScalarMatches(requestedTBSBits, existingTBSBits, 0)
+    return;
+end
+
+requestedXOverhead = localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "XOverhead", []), ...
+    sixgr.util.structGet(cfg, root + ".xOverhead", []), 0);
+existingXOverhead = localFirstFiniteScalar(sixgr.util.structGet(existing, "CodingLayout.XOverhead", []), NaN);
+if ~localScalarMatches(requestedXOverhead, existingXOverhead, 1e-12)
+    return;
+end
+
+tf = true;
+end
+
+function tf = localScalarMatches(requested, actual, tol)
+if nargin < 3
+    tol = 0;
+end
+tf = true;
+if ~(isscalar(requested) && isfinite(double(requested)))
+    return;
+end
+tf = isscalar(actual) && isfinite(double(actual)) && abs(double(requested) - double(actual)) <= tol;
+end
+
+function tf = localNumericVectorMatches(requested, actual)
+requested = double(requested(:).');
+actual = double(actual(:).');
+requested = requested(isfinite(requested));
+actual = actual(isfinite(actual));
+if isempty(requested)
+    tf = true;
+    return;
+end
+tf = numel(requested) == numel(actual) && all(abs(requested - actual) <= 1e-9);
+end
+
+function tf = localTextMatches(requested, actual)
+requested = upper(strtrim(string(requested)));
+actual = upper(strtrim(string(actual)));
+if strlength(requested) < 1
+    tf = true;
+    return;
+end
+tf = strlength(actual) >= 1 && requested == actual;
 end
 
 function prbSet = localResolvePRBSet(cfg, grant, root)

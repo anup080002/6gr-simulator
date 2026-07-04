@@ -532,10 +532,14 @@ end
 function g = localNormalizeGrant(gIn, tmpl, direction, slot)
 g = tmpl;
 if isstruct(gIn) && ~isempty(gIn)
-    f = fieldnames(g);
+    f = fieldnames(gIn);
     for i = 1:numel(f)
-        if isfield(gIn, f{i})
-            g.(f{i}) = gIn.(f{i});
+        g.(f{i}) = gIn.(f{i});
+    end
+    f = fieldnames(tmpl);
+    for i = 1:numel(f)
+        if ~isfield(g, f{i})
+            g.(f{i}) = tmpl.(f{i});
         end
     end
 end
