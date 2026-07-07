@@ -1456,6 +1456,7 @@ rows = [controlRows; dataRows];
 if ~(istable(rows) && height(rows) > 0)
     rows = localEmptyPDCCHGrantBindingEvidenceTable();
 end
+rows = localEnforcePDCCHGrantBindingEvidenceCompleteness(rows);
 
 requiredDirections = strings(0, 1);
 if sixgr.control.isPDCCHGrantBindingRequired(cfg, "DL")
@@ -1488,6 +1489,71 @@ gate.Summary = struct( ...
     "BindingGateOk", logical(gate.BindingGateOk), ...
     "FailureReasons", gate.FailureReasons, ...
     "EvidenceSource", "reports/csv/pdcch_grant_binding_evidence.csv");
+end
+
+function T = localEnforcePDCCHGrantBindingEvidenceCompleteness(T)
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+
+bindingStatus = lower(strtrim(string(localColumnOrDefault(T, "BindingStatus", ""))));
+failureCode = string(localColumnOrDefault(T, "FailureCode", ""));
+grantIds = localFirstStringOrNumericAsString(T, ["GrantId"]);
+dciIds = localFirstStringOrNumericAsString(T, ["DCIId"]);
+dciHashes = localFirstStringOrNumericAsString(T, ["DCIFieldsHash"]);
+grantHashes = localFirstStringOrNumericAsString(T, ["GrantFieldsHash"]);
+decodedCrcOk = localColumnBoolDefault(T, "DecodedPDCCHCRCOK", false);
+
+for ii = 1:height(T)
+    failures = localSplitBindingFailureCodes(failureCode(ii));
+    if strlength(strtrim(grantIds(ii))) == 0
+        failures(end+1, 1) = "grant_id_missing"; %#ok<AGROW>
+    end
+    if strlength(strtrim(dciIds(ii))) == 0
+        failures(end+1, 1) = "decoded_dci_missing"; %#ok<AGROW>
+    end
+    if ~decodedCrcOk(ii)
+        failures(end+1, 1) = "decoded_dci_crc_failed"; %#ok<AGROW>
+    end
+    if strlength(strtrim(dciHashes(ii))) == 0
+        failures(end+1, 1) = "decoded_dci_fields_hash_missing"; %#ok<AGROW>
+    end
+    if strlength(strtrim(grantHashes(ii))) == 0
+        failures(end+1, 1) = "grant_fields_hash_missing"; %#ok<AGROW>
+    end
+    if strlength(strtrim(dciHashes(ii))) > 0 && strlength(strtrim(grantHashes(ii))) > 0 && ...
+            string(dciHashes(ii)) ~= string(grantHashes(ii))
+        failures(end+1, 1) = "dci_grant_fields_hash_mismatch"; %#ok<AGROW>
+    end
+
+    failures = unique(failures(strlength(strtrim(failures)) > 0), "stable");
+    if isempty(failures)
+        if strlength(bindingStatus(ii)) == 0
+            bindingStatus(ii) = "bound";
+        end
+        if bindingStatus(ii) ~= "bound"
+            failures = "grant_binding_failed";
+        end
+    end
+    if ~isempty(failures)
+        bindingStatus(ii) = "failed";
+        failureCode(ii) = strjoin(failures, "|");
+    end
+end
+
+T.BindingStatus = bindingStatus;
+T.FailureCode = failureCode;
+end
+
+function failures = localSplitBindingFailureCodes(raw)
+raw = strtrim(string(raw));
+if strlength(raw) == 0
+    failures = strings(0, 1);
+else
+    failures = split(raw, "|");
+    failures = failures(strlength(strtrim(failures)) > 0);
+end
+failures = string(failures(:));
 end
 
 function T = localPDCCHGrantBindingRowsFromControlTrials(controlT, cfg)

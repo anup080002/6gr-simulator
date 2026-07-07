@@ -10956,21 +10956,13 @@ end
 function tf = localBindingNumbersMatch(lhs, rhs)
 lhs = localFirstFinite(lhs, NaN);
 rhs = localFirstFinite(rhs, NaN);
-if ~(isfinite(lhs) && isfinite(rhs))
-    tf = true;
-else
-    tf = abs(double(lhs) - double(rhs)) < 1e-9;
-end
+tf = isfinite(lhs) && isfinite(rhs) && abs(double(lhs) - double(rhs)) < 1e-9;
 end
 
 function tf = localBindingTextsMatch(lhs, rhs)
 lhs = strtrim(string(lhs));
 rhs = strtrim(string(rhs));
-if strlength(lhs) == 0 || strlength(rhs) == 0
-    tf = true;
-else
-    tf = lhs == rhs;
-end
+tf = strlength(lhs) > 0 && strlength(rhs) > 0 && lhs == rhs;
 end
 
 function value = localTableText(row, names, defaultValue)
