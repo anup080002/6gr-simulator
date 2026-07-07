@@ -159,7 +159,8 @@
       "harq_sweep": {"required": true, "type": "struct"}, "report_periodicity_sweep": {"required": true, "type": "struct"},
       "periodicity_sweep": {"required": true, "type": "struct"}, "repetition_sweep": {"required": true, "type": "struct"},
       "mcs_sweep": {"required": true, "type": "struct"}, "modulation_sweep": {"required": true, "type": "struct"},
-      "shaping_sweep": {"required": true, "type": "struct"}, "decode_iteration_sweep": {"required": true, "type": "struct"}
+      "shaping_sweep": {"required": true, "type": "struct"}, "decode_iteration_sweep": {"required": true, "type": "struct"},
+      "fixed_link_calibration": {"required": false, "type": "struct", "nested_rule": "sweeps_fixed_link_calibration"}
     }},
     "sanity_checks": {"required": true, "parameters": {
       "energy_sanity": {"required": true, "type": "struct"}, "throughput_sanity": {"required": true, "type": "struct"},
@@ -167,5 +168,29 @@
       "rs_overhead_checks": {"required": true, "type": "struct"}, "invalid_mapping_checks": {"required": true, "type": "struct"},
       "unsupported_combination_checks": {"required": true, "type": "struct"}, "reproducibility_checks": {"required": true, "type": "struct"}
     }}
+  },
+  "nested_sections": {
+    "sweeps_fixed_link_calibration": {
+      "parameters": {
+        "enabled": {"required": false, "type": "boolean"},
+        "only": {"required": false, "type": "boolean"},
+        "direction": {"required": false, "type": "string", "allowed_values": ["DL", "UL", "both"]},
+        "channel_model": {"required": false, "type": "string", "allowed_values": ["AWGN", "TDL", "CDL"]},
+        "snr_db": {"required": false, "type": "number_list"},
+        "min_trials": {"required": false, "type": "integer", "min": 1},
+        "max_trials": {"required": false, "type": "integer", "min": 1},
+        "trials_per_drop": {"required": false, "type": "integer", "min": 1},
+        "error_target": {"required": false, "type": "integer", "min": 0},
+        "ci_width_target": {"required": false, "type": "number", "min_exclusive": 0},
+        "confidence_level": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+        "target_bler": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+        "seed": {"required": false, "type": "integer", "min": 0},
+        "require_monotonic_bler": {"required": false, "type": "boolean"},
+        "require_high_snr_pass": {"required": false, "type": "boolean"},
+        "max_sinr_snr_delta_db": {"required": false, "type": "number", "min": 0},
+        "smoke_min_trials": {"required": false, "type": "integer", "min": 1},
+        "truth_min_trials": {"required": false, "type": "integer", "min": 1}
+      }
+    }
   }
 }

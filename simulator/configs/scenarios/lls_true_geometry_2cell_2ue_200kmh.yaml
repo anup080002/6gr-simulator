@@ -1,0 +1,62 @@
+inherits:
+  - ./master_scenaio_all_file.yaml
+
+canonical_control:
+  identity:
+    scenario_id: lls_true_geometry_2cell_2ue_200kmh
+    scenario_name: UE placement geometry 2 cell 2 UE 200 km/h LLS scenario
+    description: WebGUI-selectable waveform-bundle geometry and mobility validation scenario for two cells, two UEs, and 200 km/h motion at 4 GHz.
+    comparison_group_name: geometry_2cell_2ue_200kmh
+    tags:
+      - lls
+      - webgui
+      - geometry
+      - mobility
+      - 2cell
+      - 2ue
+      - 200kmh
+      - waveform_bundle
+  launch:
+    runner_profile: waveform_bundle
+    run_class: ue_placement_geometry_lls
+    scenario_mode: ue_placement_geometry
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: true
+    notes: Trajectory and geometry validation scenario with explicit two-cell placement and 200 km/h mobility evidence requirements.
+  run:
+    fixed_link_campaign_enabled: false
+    study_mode: campaign
+    total_slots: 400
+    warmup_slots: 0
+    measurement_slots: 400
+  topology:
+    num_sites: 2
+    num_sectors_per_site: 1
+    num_cells: 2
+    num_trps: 2
+    num_ues: 2
+    execution_model: slot_coupled_truth
+  channel:
+    model_type: CDL
+    profile: CDL-C
+    doppler_hz: 741.2535448847824
+    doppler_source_mode: derive_from_ue_speed
+    mobility_kmph: 200
+    spatial_consistency_enabled: true
+    pathloss_enabled: true
+    shadow_fading_enabled: true
+  mobility:
+    ue_speed_kmh: 200
+    speed_profile: linear_200kmph
+    direction_model: fixed
+    trajectory_model: linear
+    update_period_s: 0.0005
+
+validation:
+  run_class: ue_placement_geometry_lls
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    values_db: []

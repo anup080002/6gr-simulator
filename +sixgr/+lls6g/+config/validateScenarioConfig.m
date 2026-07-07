@@ -365,10 +365,13 @@ end
 
 snrSweepOffsets = double(cfg.simulation.snr_sweep_offsets_db);
 snrSweepEnabled = logical(localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.enabled", false));
-if (~isempty(snrSweepOffsets) && ~isvector(snrSweepOffsets)) || any(~isfinite(snrSweepOffsets)) || (snrSweepEnabled && isempty(snrSweepOffsets))
+if (~isempty(snrSweepOffsets) && ~isvector(snrSweepOffsets)) || any(~isfinite(snrSweepOffsets))
     error("sixgr:lls6g:config:BadSNRSweepOffsets", ...
-        "simulation.snr_sweep_offsets_db in %s must be a finite numeric vector, and must be non-empty when sweeps_and_matrix.snr_sweep.enabled=true.", localCtx(ctx));
+        "simulation.snr_sweep_offsets_db in %s must be a finite numeric vector.", localCtx(ctx));
 end
+localValidateSNRSweepRequirements(cfg, snrSweepEnabled, ctx);
+localValidateFixedLinkCalibrationRequirements(cfg, ctx);
+localValidateRunClassScenarioRequirements(cfg, ctx);
 
 ulWf = upper(string(cfg.waveform.ul_waveform));
 if ulWf == "DFT-S-OFDM" && ~logical(cfg.waveform.transform_precoding_enabled)
@@ -1062,6 +1065,163 @@ end
 
 function values = localCatalogAllowedNumeric(rule)
 values = double(rule.allowed_numeric_values(:));
+end
+
+function localValidateSNRSweepRequirements(cfg, snrSweepEnabled, ctx)
+if ~snrSweepEnabled
+    return;
+end
+snrPoints = localResolveSNRSweepGrid(cfg);
+if numel(snrPoints) < 2
+    error("sixgr:lls6g:config:SNRSweepNeedsAtLeastTwoPoints", ...
+        "sweeps_and_matrix.snr_sweep.enabled=true in %s requires at least two finite SNR points from sweeps_and_matrix.snr_sweep.values_db or simulation.snr_db + simulation.snr_sweep_offsets_db.", ...
+        localCtx(ctx));
+end
+end
+
+function localValidateFixedLinkCalibrationRequirements(cfg, ctx)
+if ~logical(localOptionalStructValue(cfg, "sweeps_and_matrix.fixed_link_calibration.enabled", false))
+    return;
+end
+
+snrGrid = localFiniteNumericRowVector(localOptionalStructValue(cfg, "sweeps_and_matrix.fixed_link_calibration.snr_db", []));
+if isempty(snrGrid)
+    snrGrid = localResolveSNRSweepGrid(cfg);
+end
+if isempty(snrGrid)
+    error("sixgr:lls6g:config:FixedLinkCalibrationRequiresSNRGrid", ...
+        "sweeps_and_matrix.fixed_link_calibration.enabled=true in %s requires a finite SNR grid.", localCtx(ctx));
+end
+
+minTrials = localOptionalFiniteScalarOrNaN(cfg, "sweeps_and_matrix.fixed_link_calibration.min_trials");
+maxTrials = localOptionalFiniteScalarOrNaN(cfg, "sweeps_and_matrix.fixed_link_calibration.max_trials");
+confidenceLevel = localResolvedConfidenceLevel(cfg);
+targetBLER = localResolvedTargetBLER(cfg);
+
+if ~localIsFiniteIntegerAtLeast(minTrials, 1)
+    error("sixgr:lls6g:config:FixedLinkCalibrationMinTrialsInvalid", ...
+        "sweeps_and_matrix.fixed_link_calibration.min_trials in %s must be an integer >= 1.", localCtx(ctx));
+end
+if ~localIsFiniteIntegerAtLeast(maxTrials, round(minTrials))
+    error("sixgr:lls6g:config:FixedLinkCalibrationTrialRangeInvalid", ...
+        "sweeps_and_matrix.fixed_link_calibration.max_trials in %s must be an integer >= min_trials.", localCtx(ctx));
+end
+if ~(isfinite(confidenceLevel) && confidenceLevel > 0 && confidenceLevel < 1)
+    error("sixgr:lls6g:config:FixedLinkCalibrationConfidenceLevelInvalid", ...
+        "sweeps_and_matrix.fixed_link_calibration.confidence_level in %s must satisfy 0 < confidence_level < 1.", localCtx(ctx));
+end
+if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
+    error("sixgr:lls6g:config:FixedLinkCalibrationTargetBLERInvalid", ...
+        "sweeps_and_matrix.fixed_link_calibration.target_bler in %s must satisfy 0 < target_bler < 1.", localCtx(ctx));
+end
+
+if logical(localOptionalStructValue(cfg, "sweeps_and_matrix.fixed_link_calibration.only", false))
+    noiseMode = strtrim(string(localOptionalStructValue(cfg, "simulation.noise_operating_mode", "")));
+    if noiseMode ~= "standalone_awgn_snr_argument"
+        error("sixgr:lls6g:config:FixedLinkCalibrationOnlyRequiresStandaloneAWGN", ...
+            "sweeps_and_matrix.fixed_link_calibration.only=true in %s requires simulation.noise_operating_mode='standalone_awgn_snr_argument'.", ...
+            localCtx(ctx));
+    end
+end
+end
+
+function localValidateRunClassScenarioRequirements(cfg, ctx)
+runClass = lower(strtrim(string(localOptionalStructValue(cfg, "validation.run_class", ...
+    localOptionalStructValue(cfg, "validation.RunClass", "")))));
+switch runClass
+    case "fixed_snr_sweep_lls"
+        if ~logical(localOptionalStructValue(cfg, "sweeps_and_matrix.fixed_link_calibration.enabled", false))
+            error("sixgr:lls6g:config:RunClassFixedSNRSweepNeedsCalibration", ...
+                "validation.run_class='fixed_snr_sweep_lls' in %s requires sweeps_and_matrix.fixed_link_calibration.enabled=true.", ...
+                localCtx(ctx));
+        end
+        if ~logical(localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.enabled", false))
+            error("sixgr:lls6g:config:RunClassFixedSNRSweepNeedsSweep", ...
+                "validation.run_class='fixed_snr_sweep_lls' in %s requires sweeps_and_matrix.snr_sweep.enabled=true.", ...
+                localCtx(ctx));
+        end
+    case "ue_placement_geometry_lls"
+        userExec = lower(strtrim(string(localOptionalStructValue(cfg, "users.execution_model", ""))));
+        if userExec ~= "slot_coupled_truth"
+            error("sixgr:lls6g:config:RunClassGeometryNeedsSlotCoupledTruth", ...
+                "validation.run_class='ue_placement_geometry_lls' in %s requires users.execution_model='slot_coupled_truth'.", ...
+                localCtx(ctx));
+        end
+        speedKmh = localResolvedMobilitySpeedKmh(cfg);
+        if ~(isfinite(speedKmh) && speedKmh >= 0)
+            error("sixgr:lls6g:config:RunClassGeometryNeedsMobilitySpeed", ...
+                "validation.run_class='ue_placement_geometry_lls' in %s requires a finite mobility.ue_speed_kmh.", ...
+                localCtx(ctx));
+        end
+        if logical(localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.enabled", false))
+            error("sixgr:lls6g:config:RunClassGeometryDisallowsSNRSweep", ...
+                "validation.run_class='ue_placement_geometry_lls' in %s requires sweeps_and_matrix.snr_sweep.enabled=false.", ...
+                localCtx(ctx));
+        end
+end
+end
+
+function snrGrid = localResolveSNRSweepGrid(cfg)
+snrGrid = localFiniteNumericRowVector(localOptionalStructValue(cfg, "sweeps_and_matrix.snr_sweep.values_db", []));
+if ~isempty(snrGrid)
+    return;
+end
+baseSNR = localOptionalFiniteScalarOrNaN(cfg, "simulation.snr_db");
+offsets = localFiniteNumericRowVector(localOptionalStructValue(cfg, "simulation.snr_sweep_offsets_db", []));
+if isfinite(baseSNR) && ~isempty(offsets)
+    snrGrid = baseSNR + offsets;
+else
+    snrGrid = [];
+end
+end
+
+function values = localFiniteNumericRowVector(raw)
+values = [];
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    return;
+end
+values = double(raw(:)).';
+values = values(isfinite(values));
+end
+
+function tf = localIsFiniteIntegerAtLeast(value, minValue)
+tf = isfinite(value) && value >= minValue && abs(value - round(value)) <= eps(max(abs(value), 1));
+end
+
+function value = localResolvedConfidenceLevel(cfg)
+value = localOptionalFiniteScalarOrNaN(cfg, "sweeps_and_matrix.fixed_link_calibration.confidence_level");
+if isfinite(value)
+    return;
+end
+value = localOptionalFiniteScalarOrNaN(cfg, "validation.fixed_link_campaign.confidence_level");
+if ~isfinite(value)
+    value = 0.95;
+end
+end
+
+function value = localResolvedTargetBLER(cfg)
+value = localOptionalFiniteScalarOrNaN(cfg, "sweeps_and_matrix.fixed_link_calibration.target_bler");
+if isfinite(value)
+    return;
+end
+campaignTargets = localFiniteNumericRowVector(localOptionalStructValue(cfg, "validation.fixed_link_campaign.target_bler", []));
+if ~isempty(campaignTargets)
+    value = campaignTargets(1);
+else
+    value = 0.10;
+end
+end
+
+function speedKmh = localResolvedMobilitySpeedKmh(cfg)
+speedKmh = localOptionalFiniteScalarOrNaN(cfg, "mobility.ue_speed_kmh");
+if isfinite(speedKmh)
+    return;
+end
+speedKmh = localOptionalFiniteScalarOrNaN(cfg, "scenario.mobility.speed_kmh");
+if isfinite(speedKmh)
+    return;
+end
+speedKmh = localOptionalFiniteScalarOrNaN(cfg, "channels.mobility_kmph");
 end
 
 function status = localScenarioStudyStatus(cfg)

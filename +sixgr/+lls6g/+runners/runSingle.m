@@ -5267,9 +5267,11 @@ end
 function fixedCfg = localBuildFixedLinkCampaignConfigFromLegacy(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots)
 fixedCfg = struct();
 fixedCfg.Enabled = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.enabled", fixedLinkEnabledDefault));
-fixedCfg.Direction = "both";
-fixedCfg.ChannelModel = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
-fixedCfg.SNR_dB = localFiniteRowVector(controlledSNRGrid, controlledSNRGrid);
+fixedCfg.Direction = string(scfg.get("sweeps_and_matrix.fixed_link_calibration.direction", "both"));
+fixedCfg.ChannelModel = upper(string(scfg.get("sweeps_and_matrix.fixed_link_calibration.channel_model", ...
+    sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
+fixedCfg.SNR_dB = localFiniteRowVector(scfg.get("sweeps_and_matrix.fixed_link_calibration.snr_db", controlledSNRGrid), ...
+    controlledSNRGrid);
 fixedCfg.MCS = [];
 fixedCfg.DLMCS = localFiniteIntegerRowVector(sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", []), []);
 fixedCfg.ULMCS = localFiniteIntegerRowVector(sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", []), []);

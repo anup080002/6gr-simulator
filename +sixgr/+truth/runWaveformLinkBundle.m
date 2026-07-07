@@ -53,6 +53,13 @@ if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
     if logical(persistenceEnabled)
         localWriteFixedLinkCampaignEvidence(runFolder, campaign);
     end
+    if logical(sixgr.util.structGet(campaign, "Enabled", false))
+        sixgr.analytics.exportFixedSNRSweepCurves(rootRunFolder, campaign, cfgExec, ...
+            struct("WriteArtifacts", logical(persistenceEnabled)));
+        if logical(persistenceEnabled)
+            sixgr.visual.plotFixedSNRSweepCurves(rootRunFolder);
+        end
+    end
     out = struct();
     out.Ok = localFixedLinkCampaignEvidenceOk(campaign);
     out.RunFolder = runFolder;
@@ -360,6 +367,14 @@ if istable(fixedLinkSummary) && ~isempty(fixedLinkSummary)
 end
 if logical(persistenceEnabled)
     localWriteFixedLinkCampaignEvidence(runFolder, sixgr.util.structGet(res, "FixedLinkCampaign", struct()));
+end
+if logical(sixgr.util.structGet(sixgr.util.structGet(res, "FixedLinkCampaign", struct()), "Enabled", false))
+    sixgr.analytics.exportFixedSNRSweepCurves(rootRunFolder, ...
+        sixgr.util.structGet(res, "FixedLinkCampaign", struct()), cfgExec, ...
+        struct("WriteArtifacts", logical(persistenceEnabled)));
+    if logical(persistenceEnabled)
+        sixgr.visual.plotFixedSNRSweepCurves(rootRunFolder);
+    end
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "sweep_csv_export", toc(stageStart), toc(bundleStart), "Controlled sweep CSV artifact export completed when fixed-link or raw sweep evidence was available.");

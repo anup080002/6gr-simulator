@@ -81,6 +81,22 @@ HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system
 WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
 DEFAULT_SCENARIO = WAVEFORM_TRUTH_DEFAULT_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
+SCENARIO_RUN_CLASS_LABELS = {
+    "fixed_snr_sweep_lls": "Fixed SNR/SINR Sweep",
+    "ue_placement_geometry_lls": "UE Placement Geometry",
+    "adaptive_system_diagnostic": "Adaptive System Diagnostic",
+    "hybrid_validation": "Hybrid Validation",
+    "fixed_lls_anchor": "Fixed LLS Anchor",
+    "unknown": "Other Scenarios",
+}
+SCENARIO_SELECTOR_GROUP_ORDER = (
+    "fixed_snr_sweep_lls",
+    "ue_placement_geometry_lls",
+    "adaptive_system_diagnostic",
+    "hybrid_validation",
+    "fixed_lls_anchor",
+    "unknown",
+)
 OUTPUT_PERSISTENCE_OPTIONS = ["both", "database", "results_folder"]
 FILESYSTEM_RUN_ID_BASE = 9_000_000_000
 FILESYSTEM_RUN_ID_LIMIT = 9_900_000_000
@@ -154,7 +170,8 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "phase_vs_sample", "label": "phase_vs_sample", "chart_tokens": ["phase vs sample"], "image_tokens": ["phase-vs-sample"]},
     {"id": "power_vs_sample", "label": "power_vs_sample", "chart_tokens": ["power vs sample"], "image_tokens": ["power-vs-sample"]},
     {"id": "bler_vs_mcs", "label": "bler_vs_mcs", "chart_tokens": ["bler vs mcs"], "image_tokens": ["bler-vs-mcs"]},
-    {"id": "bler_vs_sinr", "label": "bler_vs_sinr", "chart_tokens": ["bler vs sinr", "bler vs snr"], "image_tokens": ["bler-vs-sinr"]},
+    {"id": "bler_vs_sinr", "label": "bler_vs_sinr", "chart_tokens": ["bler vs sinr", "bler vs snr"], "image_tokens": ["bler-vs-sinr", "bler-vs-snr", "dl_bler_vs_snr", "ul_bler_vs_snr"]},
+    {"id": "ber_vs_snr", "label": "ber_vs_snr", "chart_tokens": ["ber vs snr", "ber vs sinr"], "image_tokens": ["ber-vs-snr", "dl_ber_vs_snr", "ul_ber_vs_snr"]},
     {"id": "cell_kpi_dashboard", "label": "cell_kpi_dashboard", "prefer": "image", "chart_tokens": ["per cell throughput"], "image_tokens": ["per-cell-throughput", "cell_kpi_dashboard"]},
     {"id": "cell_load_heatmap", "label": "cell_load_heatmap", "chart_tokens": ["candidate cell rank heatmap", "cell load heatmap"], "image_tokens": ["cell load heatmap", "candidate-cell-rank-heatmap", "cell_load_heatmap"]},
     {"id": "channel_impulse_response", "label": "channel_impulse_response", "prefer": "image", "chart_tokens": ["true h tau if available", "channel impulse response"], "image_tokens": ["estimated-hhat-tau", "true-h-tau-if-available", "channel_impulse_response"]},
@@ -189,9 +206,11 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "ssb_burst_beam", "label": "ssb_burst_beam", "chart_tokens": ["ssb index timeline", "pbch ssb map"], "image_tokens": ["ssb-index-timeline", "ssb_burst_beam"]},
     {"id": "state_occupancy_area", "label": "state_occupancy_area", "chart_tokens": ["sleep idle active state occupancy"], "image_tokens": ["state occupancy", "state_occupancy_area"]},
     {"id": "throughput_vs_time", "label": "throughput_vs_time", "chart_tokens": ["throughput over time", "throughput timeline", "throughput vs time"], "image_tokens": ["throughput-over-time", "throughput-vs-time"]},
+    {"id": "throughput_vs_snr", "label": "throughput_vs_snr", "chart_tokens": ["throughput vs snr", "throughput vs sinr", "goodput vs snr"], "image_tokens": ["throughput-vs-snr", "dl_throughput_vs_snr", "ul_throughput_vs_snr"]},
     {"id": "topology_map", "label": "topology_map", "chart_tokens": ["serving cell map"], "image_tokens": ["serving-cell-map", "topology_map"]},
     {"id": "transition_count_bars", "label": "transition_count_bars", "chart_tokens": ["access state transition sankey", "transition count"], "image_tokens": ["transition count", "transition_count_bars"]},
     {"id": "ue_kpi_dashboard", "label": "ue_kpi_dashboard", "prefer": "image", "chart_tokens": ["per ue throughput"], "image_tokens": ["per-ue-throughput", "ue_kpi_dashboard"]},
+    {"id": "measured_sinr_vs_configured_snr", "label": "measured_sinr_vs_configured_snr", "chart_tokens": ["measured sinr vs configured snr", "measured post eq sinr vs configured snr", "applied awgn snr vs measured runtime sinr comparison"], "image_tokens": ["measured_sinr_vs_configured_snr", "measured-sinr-vs-configured-snr"]},
     {"id": "ue_position_scatter", "label": "ue_position_scatter", "chart_tokens": ["bs sector ue topology scatter plot", "ue trajectory overlay", "ue trajectory views"], "image_tokens": ["bs-sector-ue-topology-scatter-plot", "ue-trajectory-overlay", "ue_position_scatter"]},
 ]
 
@@ -3598,6 +3617,185 @@ def scenario_tdd_pattern(config_payload: dict[str, Any]) -> str:
     return "DDDSU"
 
 
+def scenario_cell_count(config_payload: dict[str, Any]) -> int:
+    values = [
+        path_get(config_payload, "deployment_topology.num_cells", 0),
+        path_get(config_payload, "scenario.layout.nCells", 0),
+        path_get(config_payload, "canonical_control.topology.num_cells", 0),
+    ]
+    numeric: list[int] = []
+    for item in values:
+        value = _canonical_positive_int(item)
+        if value is not None and value > 0:
+            numeric.append(value)
+    if numeric:
+        return max(numeric)
+    sites = _canonical_positive_int(path_get(config_payload, "deployment_topology.num_sites", path_get(config_payload, "canonical_control.topology.num_sites", 0)))
+    sectors = _canonical_positive_int(path_get(config_payload, "deployment_topology.num_sectors_per_site", path_get(config_payload, "canonical_control.topology.num_sectors_per_site", 0)))
+    if sites is not None and sectors is not None:
+        return max(1, sites * sectors)
+    return 0
+
+
+def scenario_speed_kmh(config_payload: dict[str, Any]) -> float | None:
+    values = [
+        path_get(config_payload, "mobility.ue_speed_kmh", PATH_MISSING),
+        path_get(config_payload, "channels.mobility_kmph", PATH_MISSING),
+        path_get(config_payload, "scenario.mobility.speed_kmh", PATH_MISSING),
+        path_get(config_payload, "canonical_control.mobility.ue_speed_kmh", PATH_MISSING),
+        path_get(config_payload, "canonical_control.channel.mobility_kmph", PATH_MISSING),
+    ]
+    numeric: list[float] = []
+    for item in values:
+        value = _canonical_numeric(item)
+        if value is not None and value >= 0:
+            numeric.append(value)
+    return max(numeric) if numeric else None
+
+
+def _first_non_empty_scenario_value(config_payload: dict[str, Any], paths: list[str]) -> str:
+    for path in paths:
+        value = path_get(config_payload, path, PATH_MISSING)
+        if value is PATH_MISSING or value is None:
+            continue
+        token = str(value).strip()
+        if token:
+            return token
+    return ""
+
+
+def _normalize_scenario_run_class(raw: Any) -> str:
+    token = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not token:
+        return ""
+    aliases = {
+        "fixed_snr_sweep": "fixed_snr_sweep_lls",
+        "fixed_sinr_sweep": "fixed_snr_sweep_lls",
+        "fixed_snr_sinr_sweep": "fixed_snr_sweep_lls",
+        "sinr_sweep": "fixed_snr_sweep_lls",
+        "snr_sweep": "fixed_snr_sweep_lls",
+        "ue_placement_geometry": "ue_placement_geometry_lls",
+        "geometry": "ue_placement_geometry_lls",
+        "geometry_validation": "ue_placement_geometry_lls",
+    }
+    token = aliases.get(token, token)
+    if token in SCENARIO_RUN_CLASS_LABELS:
+        return token
+    return ""
+
+
+def _normalize_scenario_mode(raw: Any, run_class: str) -> str:
+    token = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "fixed_snr_sweep_lls": "fixed_snr_sweep",
+        "fixed_sinr_sweep": "fixed_snr_sweep",
+        "fixed_snr_sinr_sweep": "fixed_snr_sweep",
+        "ue_placement_geometry_lls": "ue_placement_geometry",
+        "geometry_validation": "ue_placement_geometry",
+    }
+    token = aliases.get(token, token)
+    if token:
+        return token
+    derived = {
+        "fixed_snr_sweep_lls": "fixed_snr_sweep",
+        "ue_placement_geometry_lls": "ue_placement_geometry",
+        "adaptive_system_diagnostic": "adaptive_system_diagnostic",
+        "hybrid_validation": "hybrid_validation",
+        "fixed_lls_anchor": "fixed_lls_anchor",
+    }
+    return derived.get(run_class, "unknown")
+
+
+def _scenario_channel_model(config_payload: dict[str, Any]) -> str:
+    raw = _first_non_empty_scenario_value(
+        config_payload,
+        [
+            "channels.profile",
+            "channel_model.scenario_label",
+            "channels.model_type",
+            "channel_model.model_family",
+            "canonical_control.channel.profile",
+            "canonical_control.channel.model_type",
+        ],
+    )
+    return raw.upper() if raw else "unknown"
+
+
+def _scenario_launch_bool(config_payload: dict[str, Any], *paths: str) -> bool:
+    for path in paths:
+        value = path_get(config_payload, path, PATH_MISSING)
+        if value is not PATH_MISSING:
+            return _coerce_bool(value, False)
+    return False
+
+
+def _scenario_display_count(value: int, singular: str, plural: str | None = None) -> str:
+    suffix = singular if value == 1 else (plural or singular + "s")
+    return f"{value} {suffix}"
+
+
+def _scenario_display_speed(speed_kmh: float | None) -> str:
+    if speed_kmh is None:
+        return "n/a"
+    if abs(speed_kmh - round(speed_kmh)) < 1e-9:
+        return f"{int(round(speed_kmh))} km/h"
+    return f"{speed_kmh:.1f} km/h"
+
+
+def _scenario_display_label(meta: dict[str, Any], scenario_name: str) -> str:
+    run_class = str(meta.get("run_class") or "unknown")
+    channel_model = str(meta.get("channel_model") or "unknown")
+    num_cells = int(meta.get("num_cells") or 0)
+    num_ues = int(meta.get("num_ues") or 0)
+    speed_kmh = meta.get("speed_kmh")
+    if run_class == "fixed_snr_sweep_lls":
+        channel_label = channel_model if channel_model and channel_model != "unknown" else "Channel"
+        ue_label = _scenario_display_count(max(1, num_ues), "UE")
+        return f"Fixed SNR/SINR Sweep · {channel_label} · {ue_label}"
+    if run_class == "ue_placement_geometry_lls":
+        cell_label = _scenario_display_count(max(1, num_cells), "Cell")
+        ue_label = _scenario_display_count(max(1, num_ues), "UE")
+        return f"UE Placement Geometry · {cell_label} · {ue_label} · {_scenario_display_speed(speed_kmh)}"
+    stem = Path(str(scenario_name or "")).stem
+    return humanize_key(stem or scenario_name)
+
+
+def _scenario_badges(meta: dict[str, Any]) -> list[str]:
+    badges: list[str] = []
+    run_class = str(meta.get("run_class") or "unknown")
+    runner_profile = str(meta.get("runner_profile") or "").strip()
+    channel_model = str(meta.get("channel_model") or "").strip()
+    num_cells = int(meta.get("num_cells") or 0)
+    num_ues = int(meta.get("num_ues") or 0)
+    speed_kmh = meta.get("speed_kmh")
+    if run_class in SCENARIO_RUN_CLASS_LABELS:
+        badges.append(SCENARIO_RUN_CLASS_LABELS[run_class])
+    if runner_profile:
+        badges.append(runner_profile)
+    if channel_model and channel_model != "unknown":
+        badges.append(channel_model)
+    if meta.get("sweep_enabled"):
+        badges.append("SNR/SINR sweep")
+    if meta.get("geometry_enabled"):
+        badges.append("Geometry")
+    if num_cells > 0:
+        badges.append(_scenario_display_count(num_cells, "Cell"))
+    if num_ues > 0:
+        badges.append(_scenario_display_count(num_ues, "UE"))
+    if speed_kmh is not None and speed_kmh > 0:
+        badges.append(_scenario_display_speed(speed_kmh))
+    if not meta.get("launch_allowed", True):
+        badges.append("Launch blocked")
+    return badges
+
+
+def _scenario_selector_group_key(meta: dict[str, Any]) -> str:
+    run_class = str(meta.get("run_class") or "unknown")
+    if run_class in SCENARIO_RUN_CLASS_LABELS:
+        return run_class
+    return "unknown"
+
+
 def scenario_waveform_bundle_runtime_readiness(config_payload: dict[str, Any]) -> tuple[bool, str]:
     runner_profile = str(path_get(config_payload, "scenario.runner_profile", "") or "").strip().lower()
     if runner_profile != "waveform_bundle":
@@ -3714,6 +3912,121 @@ def resolved_scenario_launch_contract(scenario_name: str) -> dict[str, Any]:
     return scenario_launch_contract(config_payload, scenario_name)
 
 
+@lru_cache(maxsize=128)
+def _scenario_catalog_metadata_cached(scenario_name: str) -> dict[str, Any]:
+    config_payload, _ = load_resolved_config_payload(scenario_name)
+    contract = scenario_launch_contract(config_payload, scenario_name)
+    fixed_link_campaign_enabled = any(
+        (
+            _scenario_launch_bool(config_payload, "validation.fixed_link_campaign.enabled"),
+            _scenario_launch_bool(config_payload, "canonical_control.run.fixed_link_campaign_enabled"),
+            _scenario_launch_bool(config_payload, "canonical_control.launch.fixed_link_campaign_enabled"),
+        )
+    )
+    raw_run_class = _first_non_empty_scenario_value(
+        config_payload,
+        [
+            "validation.run_class",
+            "validation.RunClass",
+            "scenario.run_class",
+            "scenario.scenario_mode",
+            "run_control.study_mode",
+            "canonical_control.validation.run_class",
+            "canonical_control.validation.RunClass",
+            "canonical_control.launch.run_class",
+        ],
+    )
+    run_class = _normalize_scenario_run_class(raw_run_class)
+    geometry_hint = any(
+        (
+            _scenario_launch_bool(config_payload, "canonical_control.launch.geometry_enabled"),
+            _scenario_launch_bool(config_payload, "canonical_control.launch.mobility_geometry_enabled"),
+            "geometry" in str(path_get(config_payload, "canonical_control.launch.scenario_mode", "") or "").lower(),
+        )
+    )
+    if not run_class:
+        if fixed_link_campaign_enabled or _scenario_launch_bool(config_payload, "canonical_control.launch.sweep_enabled"):
+            run_class = "fixed_snr_sweep_lls"
+        elif geometry_hint:
+            run_class = "ue_placement_geometry_lls"
+        else:
+            run_class = "unknown"
+
+    scenario_mode = _normalize_scenario_mode(
+        _first_non_empty_scenario_value(
+            config_payload,
+            [
+                "scenario.scenario_mode",
+                "validation.scenario_mode",
+                "canonical_control.validation.scenario_mode",
+                "canonical_control.launch.scenario_mode",
+            ],
+        ),
+        run_class,
+    )
+    sweep_enabled = any(
+        (
+            fixed_link_campaign_enabled,
+            _scenario_launch_bool(config_payload, "sweeps_and_matrix.snr_sweep.enabled"),
+            _scenario_launch_bool(config_payload, "canonical_control.launch.sweep_enabled"),
+            run_class == "fixed_snr_sweep_lls",
+            "sweep" in scenario_mode,
+        )
+    )
+    geometry_enabled = any(
+        (
+            geometry_hint,
+            run_class == "ue_placement_geometry_lls",
+            "geometry" in scenario_mode,
+        )
+    )
+    scenario_id = _first_non_empty_scenario_value(
+        config_payload,
+        [
+            "meta.scenario_id",
+            "canonical_control.identity.scenario_id",
+            "scenario.name",
+        ],
+    ) or Path(str(scenario_name or "")).stem
+    description = _first_non_empty_scenario_value(
+        config_payload,
+        [
+            "meta.description",
+            "scenario.description",
+            "canonical_control.identity.description",
+        ],
+    )
+    runner_profile = str(path_get(config_payload, "scenario.runner_profile", "") or "").strip()
+    channel_model = _scenario_channel_model(config_payload)
+    num_cells = scenario_cell_count(config_payload)
+    num_ues = scenario_user_count(config_payload)
+    speed_kmh = scenario_speed_kmh(config_payload)
+    meta = {
+        "scenario_name": str(scenario_name),
+        "scenario_id": scenario_id,
+        "description": description,
+        "run_class": run_class,
+        "scenario_mode": scenario_mode,
+        "runner_profile": runner_profile,
+        "channel_model": channel_model,
+        "sweep_enabled": bool(sweep_enabled),
+        "fixed_link_campaign_enabled": bool(fixed_link_campaign_enabled),
+        "geometry_enabled": bool(geometry_enabled),
+        "num_cells": int(num_cells),
+        "num_ues": int(num_ues),
+        "speed_kmh": speed_kmh,
+        "launch_allowed": bool(contract.get("launch_allowed", True)),
+        "launch_reason": str(contract.get("launch_reason") or ""),
+    }
+    meta["display_label"] = _scenario_display_label(meta, scenario_name)
+    meta["badges"] = _scenario_badges(meta)
+    return meta
+
+
+def scenario_catalog_metadata(scenario_name: str) -> dict[str, Any]:
+    return copy.deepcopy(_scenario_catalog_metadata_cached(scenario_name))
+
+
 def scenario_catalog_label(scenario_name: str) -> str:
     try:
         return str(resolved_scenario_launch_contract(scenario_name)["catalog_label"])
@@ -3722,9 +4035,11 @@ def scenario_catalog_label(scenario_name: str) -> str:
 
 
 def scenario_dropdown_label(scenario_name: str) -> str:
-    """Cheap label for page chrome; do not resolve every scenario contract here."""
-    stem = Path(str(scenario_name or "")).stem
-    return humanize_key(stem or scenario_name)
+    try:
+        return str(_scenario_catalog_metadata_cached(scenario_name)["display_label"])
+    except Exception:
+        stem = Path(str(scenario_name or "")).stem
+        return humanize_key(stem or scenario_name)
 
 
 def resolve_requested_launch_payload(
@@ -15999,6 +16314,17 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
         support_counts[state] = support_counts.get(state, 0) + 1
     truth_modes = infer_browser_truth_modes(config_payload)
     scenario_contract = scenario_launch_contract(config_payload, selected_scenario)
+    scenario_meta = scenario_catalog_metadata(selected_scenario) if selected_scenario else {
+        "scenario_name": "",
+        "run_class": "unknown",
+        "display_label": "No scenario selected",
+        "sweep_enabled": False,
+        "geometry_enabled": False,
+        "fixed_link_campaign_enabled": False,
+        "badges": [],
+        "launch_allowed": True,
+        "launch_reason": "",
+    }
     summary_cards = [
         ("Browser Mode", truth_modes.get("browser_execution_mode_label", "")),
         ("Launch Contract", scenario_contract.get("launch_contract", "")),
@@ -16087,15 +16413,40 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
         )
 
     message_html = f'<section class="panel"><strong>{html.escape(message)}</strong></section>' if message else ""
-    options = []
+    grouped_options: dict[str, list[str]] = {key: [] for key in SCENARIO_SELECTOR_GROUP_ORDER}
     for item in scenarios:
         selected_attr = ' selected="selected"' if item == selected_scenario else ""
-        label = scenario_dropdown_label(item)
-        options.append(f'<option value="{html.escape(item)}"{selected_attr}>{html.escape(label)}</option>')
+        try:
+            item_meta = scenario_catalog_metadata(item)
+            group_key = _scenario_selector_group_key(item_meta)
+            label = str(item_meta.get("display_label") or scenario_dropdown_label(item))
+        except Exception:
+            group_key = "unknown"
+            label = scenario_dropdown_label(item)
+        grouped_options.setdefault(group_key, []).append(
+            f'<option value="{html.escape(item)}"{selected_attr}>{html.escape(label)}</option>'
+        )
+    options = []
+    for group_key in SCENARIO_SELECTOR_GROUP_ORDER:
+        group_items = grouped_options.get(group_key, [])
+        if not group_items:
+            continue
+        group_label = SCENARIO_RUN_CLASS_LABELS.get(group_key, humanize_key(group_key))
+        options.append(f'<optgroup label="{html.escape(group_label)}">{"".join(group_items)}</optgroup>')
+    for group_key, group_items in grouped_options.items():
+        if group_key in SCENARIO_SELECTOR_GROUP_ORDER or not group_items:
+            continue
+        group_label = SCENARIO_RUN_CLASS_LABELS.get(group_key, humanize_key(group_key))
+        options.append(f'<optgroup label="{html.escape(group_label)}">{"".join(group_items)}</optgroup>')
     latest = latest_run_id()
     latest_result = f'/result?run_id={latest}' if latest else "/result"
     latest_analytics = f'/analytics?run_id={latest}' if latest else "/analytics"
     source_chain_html = "".join(f'<span class="pill">{html.escape(item)}</span>' for item in source_chain) or '<span class="mini-note">No source chain available.</span>'
+    scenario_badges_html = "".join(
+        f'<span class="pill">{html.escape(str(item))}</span>'
+        for item in scenario_meta.get("badges", [])
+        if str(item).strip()
+    ) or '<span class="mini-note">No scenario-mode badges available.</span>'
     summary_cards_html = "".join(
         f'<div class="metric-card"><div class="metric-value">{html.escape(value)}</div><div class="metric-label">{html.escape(label)}</div></div>'
         for label, value in summary_cards
@@ -16140,6 +16491,7 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
             {''.join(options)}
           </select>
         </form>
+        <div class="toolbar" style="flex-wrap:wrap;margin-top:10px;">{scenario_badges_html}</div>
         <form id="runForm" method="post" action="/run" style="margin-top:14px;">
           <input type="hidden" name="scenario" value="{html.escape(selected_scenario)}">
           <input type="hidden" id="config_json" name="config_json" value="">
@@ -16194,6 +16546,18 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
           <strong>Resolved Source Chain</strong>
           <div class="mini-note">These are the YAML files merged into the live config editor.</div>
           <div style="margin-top:10px;">{source_chain_html}</div>
+        </div>
+        <div class="meta-card" style="margin-top:16px;">
+          <strong>Scenario Validation Mode</strong>
+          <div class="mini-note">Selected YAML: <code>{html.escape(selected_scenario or 'n/a')}</code></div>
+          <div style="margin-top:10px;">
+            <div><strong>Run Class</strong><br><span class="mini-note">{html.escape(str(scenario_meta.get("run_class") or "unknown"))}</span></div>
+            <div style="margin-top:8px;"><strong>SNR/SINR Sweep Enabled</strong><br><span class="mini-note">{html.escape('Yes' if scenario_meta.get('sweep_enabled') else 'No')}</span></div>
+            <div style="margin-top:8px;"><strong>Geometry / Mobility Placement Enabled</strong><br><span class="mini-note">{html.escape('Yes' if scenario_meta.get('geometry_enabled') else 'No')}</span></div>
+            <div style="margin-top:8px;"><strong>Launch Contract Allowed</strong><br><span class="mini-note">{html.escape('Yes' if scenario_meta.get('launch_allowed') else 'No')}</span></div>
+          </div>
+          <div class="toolbar" style="margin-top:10px;flex-wrap:wrap;">{scenario_badges_html}</div>
+          <div class="mini-note" style="margin-top:8px;">{html.escape(str(scenario_meta.get("launch_reason") or ""))}</div>
         </div>
         <div class="meta-card" style="margin-top:16px;">
           <strong>Default map center</strong><br>

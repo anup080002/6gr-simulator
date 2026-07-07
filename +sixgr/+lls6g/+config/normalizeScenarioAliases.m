@@ -218,6 +218,8 @@ cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_enabled", "
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_model", "impairments.phase_noise.model", "identity");
 cfg = localPreferModernRuntimeValue(cfg, "simulation.monte_carlo_iterations", "run.monte_carlo_iterations", "identity");
 cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
+cfg = localNormalizeFixedLinkCalibrationMode(cfg);
+cfg = localNormalizeFixedSNRSweepRunClass(cfg);
 cfg = localApplyDerivedRadioAliases(cfg, newBase);
 end
 
@@ -257,8 +259,12 @@ mappings = {
     "launch.unsupported_output_policy", "scenario.unsupported_output_policy", "identity"
     "launch.provenance_logging", "scenario.provenance_logging", "identity"
     "launch.notes", "scenario.notes", "identity"
+    "launch.run_class", "validation.run_class", "identity"
+    "launch.run_class", "validation.RunClass", "identity"
     "identity.scenario_id", "scenario.name", "identity"
     "identity.description", "scenario.description", "identity"
+    "validation.run_class", "validation.run_class", "identity"
+    "validation.run_class", "validation.RunClass", "identity"
     "run.seed", "simulation.random_seed", "identity"
     "run.seed", "run_control.seed", "identity"
     "run.seed", "run_control.random_seed_master", "identity"
@@ -277,6 +283,14 @@ mappings = {
     "run.study_mode", "run_control.study_mode", "identity"
     "run.simulation_mode", "run_control.simulation_mode", "identity"
     "run.run_profile", "run_control.run_profile", "identity"
+    "run.fixed_link_campaign_enabled", "sweeps_and_matrix.fixed_link_calibration.enabled", "identity"
+    "run.fixed_link_campaign_only", "sweeps_and_matrix.fixed_link_calibration.only", "identity"
+    "run.fixed_link_snr_grid_db", "sweeps_and_matrix.fixed_link_calibration.snr_db", "identity"
+    "run.fixed_link_snr_grid_db", "sweeps_and_matrix.snr_sweep.values_db", "identity"
+    "run.min_trials_per_sinr_bin", "sweeps_and_matrix.fixed_link_calibration.min_trials", "identity"
+    "run.max_trials_per_sinr_bin", "sweeps_and_matrix.fixed_link_calibration.max_trials", "identity"
+    "run.max_ci_width", "sweeps_and_matrix.fixed_link_calibration.ci_width_target", "identity"
+    "run.confidence_level", "sweeps_and_matrix.fixed_link_calibration.confidence_level", "identity"
     "run.total_slots", "run_control.total_slots", "identity"
     "run.warmup_slots", "run_control.warmup_slots", "identity"
     "run.measurement_slots", "run_control.measurement_slots", "identity"
@@ -843,7 +857,102 @@ if ~found || ~(isfinite(value) && value >= 0)
     return;
 end
 for i = 1:numel(targetPaths)
-    cfg = sixgr.util.structSet(cfg, char(string(targetPaths(i))), double(value));
+        cfg = sixgr.util.structSet(cfg, char(string(targetPaths(i))), double(value));
+end
+end
+
+function cfg = localNormalizeFixedLinkCalibrationMode(cfg)
+if ~logical(sixgr.util.structGet(cfg, "sweeps_and_matrix.fixed_link_calibration.only", false))
+    return;
+end
+mode = strtrim(string(sixgr.util.structGet(cfg, "simulation.noise_operating_mode", "")));
+if mode == "standalone_awgn_snr_argument"
+    return;
+end
+cfg = sixgr.util.structSet(cfg, "simulation.noise_operating_mode", "standalone_awgn_snr_argument");
+cfg = localRecordNormalizationAudit(cfg, "simulation.noise_operating_mode", ...
+    "Auto-normalized simulation.noise_operating_mode to standalone_awgn_snr_argument because sweeps_and_matrix.fixed_link_calibration.only=true.");
+end
+
+function cfg = localNormalizeFixedSNRSweepRunClass(cfg)
+runClass = lower(strtrim(localFirstNonEmptyString([
+    sixgr.util.structGet(cfg, "validation.run_class", "")
+    sixgr.util.structGet(cfg, "validation.RunClass", "")
+    sixgr.util.structGet(cfg, "canonical_control.validation.run_class", "")
+    sixgr.util.structGet(cfg, "canonical_control.validation.RunClass", "")
+    sixgr.util.structGet(cfg, "canonical_control.launch.run_class", "")
+    ])));
+sweepEnabledByLaunch = logical(sixgr.util.structGet(cfg, "canonical_control.launch.sweep_enabled", false));
+if runClass ~= "fixed_snr_sweep_lls" && ~sweepEnabledByLaunch
+    return;
+end
+
+cfg = sixgr.util.structSet(cfg, "sweeps_and_matrix.snr_sweep.enabled", true);
+cfg = localRecordNormalizationAudit(cfg, "sweeps_and_matrix.snr_sweep.enabled", ...
+    "Re-enabled sweeps_and_matrix.snr_sweep.enabled for validation.run_class=fixed_snr_sweep_lls after canonical runtime overrides were applied.");
+
+snrGrid = localFirstFiniteVector( ...
+    sixgr.util.structGet(cfg, "sweeps_and_matrix.fixed_link_calibration.snr_db", []), ...
+    sixgr.util.structGet(cfg, "validation.fixed_link_campaign.snr_db", []), ...
+    sixgr.util.structGet(cfg, "sweeps_and_matrix.snr_sweep.values_db", []));
+if ~isempty(snrGrid)
+    cfg = sixgr.util.structSet(cfg, "sweeps_and_matrix.snr_sweep.values_db", snrGrid);
+    cfg = localRecordNormalizationAudit(cfg, "sweeps_and_matrix.snr_sweep.values_db", ...
+        "Mirrored fixed-link SNR grid into sweeps_and_matrix.snr_sweep.values_db for validation.run_class=fixed_snr_sweep_lls.");
+end
+end
+
+function cfg = localRecordNormalizationAudit(cfg, fieldPath, note)
+cfg = sixgr.util.structSet(cfg, "config_inheritance.overridden_fields", ...
+    localAppendStringListEntry(sixgr.util.structGet(cfg, "config_inheritance.overridden_fields", {}), fieldPath));
+cfg = sixgr.util.structSet(cfg, "config_inheritance.provenance.auto_normalized_fields", ...
+    localAppendStringListEntry(sixgr.util.structGet(cfg, "config_inheritance.provenance.auto_normalized_fields", {}), fieldPath));
+cfg = sixgr.util.structSet(cfg, "config_inheritance.provenance.auto_normalization_notes", ...
+    localAppendStringListEntry(sixgr.util.structGet(cfg, "config_inheritance.provenance.auto_normalization_notes", {}), note));
+end
+
+function values = localAppendStringListEntry(existing, entry)
+values = string.empty(0,1);
+if iscellstr(existing)
+    values = string(existing(:));
+elseif isstring(existing)
+    values = existing(:);
+elseif ischar(existing)
+    values = string(existing);
+end
+candidate = strtrim(string(entry));
+if strlength(candidate) > 0 && ~any(values == candidate)
+    values(end+1,1) = candidate; %#ok<AGROW>
+end
+values = values(strlength(strtrim(values)) > 0);
+values = cellstr(values);
+end
+
+function value = localFirstNonEmptyString(values)
+value = "";
+values = string(values(:));
+for i = 1:numel(values)
+    candidate = strtrim(values(i));
+    if strlength(candidate) > 0
+        value = candidate;
+        return;
+    end
+end
+end
+
+function values = localFirstFiniteVector(varargin)
+values = [];
+for i = 1:nargin
+    candidate = varargin{i};
+    if isempty(candidate) || ~(isnumeric(candidate) || islogical(candidate))
+        continue;
+    end
+    candidate = double(candidate(:)).';
+    candidate = candidate(isfinite(candidate));
+    if ~isempty(candidate)
+        values = candidate;
+        return;
+    end
 end
 end
 

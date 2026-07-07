@@ -42,8 +42,16 @@ sections:
       output: {required: false, type: struct}
       logging: {required: false, type: struct}
       sweeps: {required: false, type: struct}
+      validation: {required: false, type: struct}
       manifest: {required: false, type: struct}
       runtime_overrides: {required: false, type: struct_array}
+  simulation:
+    required: false
+    parameters:
+      noise_operating_mode:
+        required: false
+        type: string
+        allowed_values: [receiver_noise_figure_thermal_noise, standalone_awgn_snr_argument]
   bwp:
     required: false
     parameters:
@@ -248,7 +256,16 @@ sections:
       RunClass:
         required: false
         type: string
-        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation]
+        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls]
+      run_class:
+        required: false
+        type: string
+        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls]
+      publication_mode: {required: false, type: string}
+      required_artifact_audit: {required: false, type: boolean}
+      fixed_snr_sweep_required: {required: false, type: boolean}
+      geometry_evidence_required: {required: false, type: boolean}
+      strict_after_run_artifact_audit: {required: false, type: boolean}
       fixed_link_campaign: {required: false, type: struct, nested_rule: validation_fixed_link_campaign}
 nested_sections:
   validation_fixed_link_campaign:

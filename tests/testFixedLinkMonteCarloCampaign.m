@@ -46,6 +46,107 @@ dlCurve = readtable(dlCurveCsv, "VariableNamingRule", "preserve");
 assert(~isempty(dlCurve) && all(isfinite(double(dlCurve.CI_HalfWidth))), ...
     "DL report-level BLER curve must carry finite Wilson confidence intervals.");
 
+requiredAirCsv = [
+    "air_interface/csv/lls_fixed_link_campaign.csv"
+    "air_interface/csv/lls_snr_sweep.csv"
+    "air_interface/csv/lls_reference_snr_sweep.csv"
+    "air_interface/csv/fixed_link_campaign_task_plan.csv"
+    "air_interface/csv/dl_fixed_link_campaign_trials.csv"
+    "air_interface/csv/ul_fixed_link_campaign_trials.csv"
+    ];
+for relPath = requiredAirCsv.'
+    absPath = fullfile(tmp, strrep(relPath, "/", filesep));
+    assert(exist(absPath, "file") == 2, "Missing fixed-link air-interface CSV: %s", relPath);
+    Ta = readtable(absPath, "VariableNamingRule", "preserve");
+    assert(height(Ta) >= 1, "Fixed-link air-interface CSV is empty: %s", relPath);
+end
+
+requiredReportCsv = [
+    "reports/csv/fixed_snr_sweep_curve_summary.csv"
+    "reports/csv/dl_fixed_snr_bler_curve.csv"
+    "reports/csv/ul_fixed_snr_bler_curve.csv"
+    "reports/csv/dl_fixed_snr_ber_curve.csv"
+    "reports/csv/ul_fixed_snr_ber_curve.csv"
+    "reports/csv/fixed_snr_sweep_point_completeness.csv"
+    "reports/csv/fixed_snr_sweep_curve_crossing.csv"
+    ];
+for relPath = requiredReportCsv.'
+    absPath = fullfile(tmp, strrep(relPath, "/", filesep));
+    assert(exist(absPath, "file") == 2, "Missing fixed-link report CSV: %s", relPath);
+    Tr = readtable(absPath, "VariableNamingRule", "preserve");
+    assert(height(Tr) >= 1, "Fixed-link report CSV is empty: %s", relPath);
+end
+
+normalizedSummary = readtable(fullfile(tmp, "reports", "csv", "fixed_snr_sweep_curve_summary.csv"), "VariableNamingRule", "preserve");
+assert(height(normalizedSummary) == 2 * numel(snrGrid), ...
+    "Normalized fixed-SNR curve summary must have one row per SNR point per enabled direction.");
+requiredCurveCols = ["Direction","ChannelModel","SweepKind","NoiseVariable","SNR_dB","ConfiguredSNR_dB", ...
+    "AppliedSNR_dB","MeanMeasuredSINR_dB","MedianMeasuredSINR_dB","SINRMinusSNRMean_dB", ...
+    "MCS","Modulation","Rank","Layers","TrialCount","TBPassCount","TBFailCount", ...
+    "BLER","BLER_CI_Low","BLER_CI_High","BLER_CI_Width","BitErrors","BitsCompared", ...
+    "BER","BER_CI_Low","BER_CI_High","BER_CI_Width","Throughput_Mbps","Goodput_Mbps", ...
+    "TargetBLER","TargetCrossingSNR_dB","TargetCrossingStatus","StopReason","Incomplete","Status","FailureCode"];
+assert(all(ismember(requiredCurveCols, string(normalizedSummary.Properties.VariableNames))), ...
+    "Normalized fixed-SNR curve summary is missing required audit columns.");
+assert(all(double(normalizedSummary.TrialCount) >= 2), ...
+    "Normalized fixed-SNR curve summary must preserve the configured minimum trials per point.");
+assert(all(double(normalizedSummary.BLER) >= 0 & double(normalizedSummary.BLER) <= 1), ...
+    "Normalized fixed-SNR BLER values must stay within [0,1].");
+assert(all(double(normalizedSummary.BER) >= 0 & double(normalizedSummary.BER) <= 1), ...
+    "Normalized fixed-SNR BER values must stay within [0,1].");
+
+dlTrialsCsv = readtable(fullfile(tmp, "air_interface", "csv", "dl_fixed_link_campaign_trials.csv"), "VariableNamingRule", "preserve");
+requiredTrialCols = ["Direction","SNR_dB","ConfiguredSNR_dB","AppliedSNR_dB","AppliedAWGNSNR_dB", ...
+    "MeasuredPostEqSINR_dB","Status","CRCPass","BitErrors","BitsCompared","MCS","Modulation", ...
+    "Rank","NumLayers","TBSizeBits","RateMatchedBits","EffectiveCodeRate","FixedLinkCampaign", ...
+    "FixedReferenceMode","FixedLinkPointIndex","FixedLinkDropIndex","FixedLinkTrialIndex","FixedLinkSeedHierarchy"];
+assert(all(ismember(requiredTrialCols, string(dlTrialsCsv.Properties.VariableNames))), ...
+    "Normalized fixed-link DL trial CSV is missing required audit columns.");
+assert(all(localAsLogicalVector(dlTrialsCsv.FixedLinkCampaign)) && all(localAsLogicalVector(dlTrialsCsv.FixedReferenceMode)), ...
+    "Normalized fixed-link DL trial CSV must preserve fixed-link reference mode evidence.");
+newTBMask = ~localAsLogicalVector(dlTrialsCsv.IsRetransmission);
+assert(all(double(dlTrialsCsv.EffectiveCodeRate(newTBMask)) <= 1.0 + 1e-9), ...
+    "Normalized fixed-link DL trial CSV must reject effective code rates above 1 for new transport blocks.");
+
+if usejava("jvm")
+    plotInfo = sixgr.visual.plotFixedSNRSweepCurves(tmp);
+    expectedPlots = [
+        "reports/image/dl_bler_vs_snr.png"
+        "reports/image/dl_bler_vs_snr.svg"
+        "reports/image/ul_bler_vs_snr.png"
+        "reports/image/ul_bler_vs_snr.svg"
+        "reports/image/dl_ber_vs_snr.png"
+        "reports/image/dl_ber_vs_snr.svg"
+        "reports/image/ul_ber_vs_snr.png"
+        "reports/image/ul_ber_vs_snr.svg"
+        "reports/image/dl_throughput_vs_snr.png"
+        "reports/image/dl_throughput_vs_snr.svg"
+        "reports/image/ul_throughput_vs_snr.png"
+        "reports/image/ul_throughput_vs_snr.svg"
+        "reports/image/measured_sinr_vs_configured_snr.png"
+        "reports/image/measured_sinr_vs_configured_snr.svg"
+        "reports/image/fixed_snr_trials_per_point.png"
+        "reports/image/fixed_snr_trials_per_point.svg"
+        "reports/image/fixed_snr_ci_width_vs_snr.png"
+        "reports/image/fixed_snr_ci_width_vs_snr.svg"
+        "reports/image/fixed_snr_curve_dashboard.png"
+        "reports/image/fixed_snr_curve_dashboard.svg"
+        ];
+    for relPath = expectedPlots.'
+        absPath = fullfile(tmp, strrep(relPath, "/", filesep));
+        assert(exist(absPath, "file") == 2, "Missing fixed-SNR plot: %s", relPath);
+    end
+    lineage = readtable(fullfile(tmp, "reports", "csv", "fixed_snr_plot_lineage.csv"), "VariableNamingRule", "preserve");
+    assert(height(lineage) == numel(expectedPlots), ...
+        "Fixed-SNR plot lineage must contain one row per emitted PNG/SVG plot file.");
+    assert(all(string(lineage.Status) == "rendered"), ...
+        "Fixed-SNR plot lineage must report rendered status for every required plot.");
+    assert(all(strlength(string(lineage.SourceCSV_SHA256)) == 64), ...
+        "Fixed-SNR plot lineage must hash each source CSV.");
+    assert(numel(plotInfo.Plots) == numel(expectedPlots), ...
+        "Fixed-SNR plot helper must return every rendered PNG/SVG path.");
+end
+
 tmp2 = tempname;
 mkdir(tmp2);
 c2 = onCleanup(@() rmdir(tmp2, "s")); %#ok<NASGU>
@@ -59,6 +160,18 @@ for i = 1:numel(cols)
 end
 
 ok = true;
+end
+
+function values = localAsLogicalVector(raw)
+if islogical(raw)
+    values = logical(raw);
+elseif isnumeric(raw)
+    values = double(raw) ~= 0;
+else
+    token = lower(strtrim(string(raw)));
+    values = token == "1" | token == "true" | token == "yes" | token == "pass";
+end
+values = values(:);
 end
 
 function cfg = localFixtureConfig()

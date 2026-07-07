@@ -3547,7 +3547,9 @@ rankFixed = localValidationRankFixed(cfg, s);
 layersFixed = localValidationLayersFixed(cfg, s);
 modulationFixed = localValidationModulationFixed(cfg, s, fixedMCSActive);
 fixedCampaignEnabled = logical(sixgr.util.structGet(cfg, "validation.fixed_link_campaign.enabled", ...
-    localGetNested(s, "validation.fixed_link_campaign.enabled", false)));
+    localGetNested(s, "validation.fixed_link_campaign.enabled", false))) || ...
+    logical(sixgr.util.structGet(cfg, "sweeps_and_matrix.fixed_link_calibration.enabled", ...
+    localGetNested(s, "sweeps_and_matrix.fixed_link_calibration.enabled", false)));
 
 if fixedCampaignEnabled && adaptiveMode
     runClass = "hybrid_validation";
@@ -3629,7 +3631,8 @@ end
 
 function runClass = localNormalizeRunClassToken(raw)
 token = lower(strtrim(string(raw)));
-if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation"])
+if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation", ...
+        "fixed_snr_sweep_lls", "ue_placement_geometry_lls"])
     runClass = token;
 else
     runClass = "";
