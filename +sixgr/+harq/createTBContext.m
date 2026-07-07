@@ -21,6 +21,9 @@ if ~(direction == "DL" || direction == "UL")
     error("sixgr:harq:BadTBContextDirection", ...
         "HARQ TB context direction must be DL or UL.");
 end
+if ~localShouldCarryPreviousContext(meta, grant, phyGrant, previous)
+    previous = struct();
+end
 
 prbSet = localNumericRow(localFirstNonEmpty( ...
     sixgr.util.structGet(meta, "PRBSet", []), ...
@@ -404,6 +407,54 @@ for i = 1:nargin
         return;
     end
 end
+end
+
+function tf = localFirstLogical(varargin)
+tf = false;
+for i = 1:nargin
+    raw = varargin{i};
+    if isempty(raw)
+        continue;
+    end
+    if islogical(raw)
+        tf = logical(raw(1));
+        return;
+    end
+    if isnumeric(raw)
+        raw = double(raw(:));
+        raw = raw(isfinite(raw));
+        if ~isempty(raw)
+            tf = logical(raw(1));
+            return;
+        end
+    end
+end
+end
+
+function tf = localShouldCarryPreviousContext(meta, grant, phyGrant, previous)
+tf = false;
+if ~(isstruct(previous) && ~isempty(fieldnames(previous)))
+    return;
+end
+isRetx = localFirstLogical( ...
+    sixgr.util.structGet(meta, "IsRetransmission", []), ...
+    sixgr.util.structGet(grant, "IsRetransmission", []), ...
+    sixgr.util.structGet(grant, "HARQ.IsRetransmission", []), ...
+    sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", []), ...
+    false);
+if ~isRetx
+    return;
+end
+previousNDI = localFirstFiniteScalar(sixgr.util.structGet(previous, "NDI", NaN));
+currentNDI = localFirstFiniteScalar( ...
+    sixgr.util.structGet(meta, "NDI", NaN), ...
+    sixgr.util.structGet(grant, "HARQ.NDI", NaN), ...
+    sixgr.util.structGet(grant, "NDI", NaN), ...
+    sixgr.util.structGet(phyGrant, "HARQProcessKey.NDI", NaN));
+if isfinite(previousNDI) && isfinite(currentNDI) && logical(previousNDI) ~= logical(currentNDI)
+    return;
+end
+tf = true;
 end
 
 function value = localPositiveInteger(raw, fallback)
